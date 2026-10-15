@@ -47,6 +47,7 @@ import functools
 import copy
 import math
 import os
+import re
 import sys
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -570,7 +571,43 @@ def resolver_perfil(nome_ou_perfil) -> Perfil:
             return registrar_perfil(barra_chata(nums[0], nums[1], nome))
         if len(nums) >= 1:
             return registrar_perfil(barra_redonda(nums[0], nome))
+    soldado = perfil_soldado_do_nome(nome)
+    if soldado is not None:
+        return registrar_perfil(soldado)
     raise ErroDeDados(f"perfil fora do catálogo, sem geometria conhecida: {nome}")
+
+
+#: o perfil soldado pelas medidas no nome: "VS 500×250×9,5×6,3", "PS 500x250x6,3x9,5", "PERFIL SOLDADO …" (14/10/2026)
+_RE_SOLDADO = re.compile(r"^\s*(VS|CS|CVS|PS|I\s*SOLDADO|PERFIL\s*SOLDADO)\s*([\d.,]+)\s*[x×X*]\s*([\d.,]+)\s*[x×X*]\s*"
+                         r"([\d.,]+)\s*[x×X*]\s*([\d.,]+)\s*$", re.I)
+
+
+def perfil_soldado_do_nome(nome: str) -> Optional[Perfil]:
+    """O I soldado de chapas pelo nome com as medidas (altura × mesa × as duas espessuras, a maior é a da mesa — a
+    ordem das espessuras muda de fabricante para fabricante), com as propriedades de seção calculadas (cm): A, Ix, Iy,
+    W, Z, r, J e Cw — o editor 3D desenha, pesa e o cálculo verifica como os W do catálogo. F12 da análise de 14/10."""
+    m = _RE_SOLDADO.match(str(nome or ""))
+    if not m:
+        return None
+    vals = [_parse_num(m.group(i)) for i in (2, 3, 4, 5)]
+    if any(v is None or v <= 0 for v in vals):
+        return None
+    d, bf, a, b = vals
+    tf, tw = max(a, b), min(a, b)
+    if 2 * tf >= d or tw >= bf:
+        return None
+    D, B, T, Tw = d / 10.0, bf / 10.0, tf / 10.0, tw / 10.0
+    h = D - 2 * T
+    A = 2 * B * T + h * Tw
+    Ix = (B * D ** 3 - (B - Tw) * h ** 3) / 12.0
+    Iy = (2 * T * B ** 3 + h * Tw ** 3) / 12.0
+    dados = {"nome": nome, "familia": m.group(1).upper().replace(" ", ""), "d": d, "bf": bf, "tw": tw, "tf": tf,
+             "massa": round(A * 0.785, 2), "A": round(A, 2), "Ix": round(Ix, 1), "Wx": round(Ix / (D / 2), 1),
+             "Zx": round(B * T * (D - T) + Tw * h ** 2 / 4.0, 1), "rx": round(math.sqrt(Ix / A), 2),
+             "Iy": round(Iy, 1), "Wy": round(Iy / (B / 2), 1), "Zy": round(T * B ** 2 / 2.0 + h * Tw ** 2 / 4.0, 1),
+             "ry": round(math.sqrt(Iy / A), 2), "J": round((2 * B * T ** 3 + (D - T) * Tw ** 3) / 3.0, 2),
+             "Cw": round(T * B ** 3 * (D - T) ** 2 / 24.0, 0), "soldado": True}
+    return Perfil(nome=nome, tipo="I", dados=dados)
 
 
 def _dims(p: Perfil) -> dict:

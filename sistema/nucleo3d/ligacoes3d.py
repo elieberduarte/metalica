@@ -35,6 +35,7 @@ TIPOS_3D = {
     "chumbador_gancho": {"pede": "a placa (chapa) com os furos — um chumbador em J em cada furo", "barras": ("chapa",)},
     "chumbador_placa": {"pede": "a placa (chapa) com os furos — um chumbador com placa de ancoragem em cada furo",
                         "barras": ("chapa",)},
+    "presilhas": {"pede": "as duas barras do perfil duplo (cantoneiras ou U costas com costas)", "barras": ("barra", "barra")},
 }
 
 
@@ -743,6 +744,76 @@ def _chumbadores(ch, p, tipo):
             "avisos": sorted(set(avisos))}
 
 
+# ------------------------------------------------------------------ perfil duplo: as presilhas
+
+#: tipos que não estão na biblioteca da tela /ligacoes (sem verificação de lá): os parâmetros ficam aqui
+LOCAIS = {
+    "presilhas": {
+        "nome": "Presilhas do perfil duplo", "categoria": "tesoura",
+        "descricao": "As chapas de ligação no vão entre as duas cantoneiras (ou U) costas com costas, soldadas nas duas: "
+                     "a quantidade mínima da NBR 8800:2024 (5.3.6.1), igualmente espaçadas.",
+        "parametros": [{"chave": "n", "rotulo": "Quantidade (vazio = a da norma)", "unidade": "", "padrao": ""},
+                       {"chave": "comprimento", "rotulo": "Comprimento da presilha (ao longo da barra)", "unidade": "mm",
+                        "padrao": 60}],
+        "esforcos": [],
+    },
+}
+
+
+def _presilhas(a, b, p):
+    """As presilhas entre as duas barras paralelas do perfil duplo: chapas no vão entre as faces que se olham, com a
+    espessura do vão, soldadas nas duas, igualmente espaçadas no trecho em que as duas correm juntas; tudo num conjunto."""
+    wa = _norm(_sub(a.fim, a.inicio))
+    if abs(_dot(wa, _norm(_sub(b.fim, b.inicio)))) < 0.999:
+        raise ErroDeDados("as presilhas pedem as duas barras do perfil duplo, paralelas")
+    La = math.dist(a.inicio, a.fim)
+    sb = sorted(_dot(_sub(q, a.inicio), wa) for q in (b.inicio, b.fim))
+    s0, s1 = max(0.0, sb[0]), min(La, sb[1])
+    if s1 - s0 < 200.0:
+        raise ErroDeDados("as duas barras quase não correm juntas")
+    r = _sub(b.inicio, a.inicio)
+    gd = _sub(r, _mul(wa, _dot(r, wa)))
+    if math.sqrt(_dot(gd, gd)) < 1.0:
+        raise ErroDeDados("as duas barras estão no mesmo eixo")
+    gd = _norm(gd)
+    fa = _extremos(a, gd)[1]
+    fb = _extremos(b, gd)[0]
+    vao = fb - fa
+    if vao < 3.0:
+        raise ErroDeDados("as duas barras estão encostadas (vão de %.1f mm): não há onde pôr a presilha" % vao)
+    ey = _norm(_cruz(gd, wa))
+    va = [q for q in _malha(a) if abs(_dot(q, gd) - fa) < 1.0]
+    vb = [q for q in _malha(b) if abs(_dot(q, gd) - fb) < 1.0]
+    if not va or not vb:
+        raise ErroDeDados("não achei as faces que se olham no perfil duplo")
+    lo = max(min(_dot(q, ey) for q in va), min(_dot(q, ey) for q in vb))
+    hi = min(max(_dot(q, ey) for q in va), max(_dot(q, ey) for q in vb))
+    if hi - lo < 15.0:
+        raise ErroDeDados("as faces que se olham não se cobrem: confira o perfil duplo")
+    from nucleo3d.de_planta import _presilhas_pela_norma
+    n = int(p.get("n") or 0) or _presilhas_pela_norma(a.perfil)
+    Lp = float(p.get("comprimento") or 60.0)
+    pecas = []
+    ex = wa
+    eyp = ey if _dot(_cruz(ex, ey), gd) > 0 else _mul(ey, -1.0)
+    for k in range(1, n + 1):
+        s = s0 + (s1 - s0) * k / (n + 1.0)
+        base = _add(a.inicio, _mul(wa, s))
+        base = _add(base, _mul(gd, fa - _dot(base, gd)))                 # na face da barra a
+        y0 = lo if eyp is ey else -hi
+        o = _add(_add(base, _mul(ex, -Lp / 2.0)), _mul(eyp, y0 - _dot(base, eyp)))
+        pecas.append(_chapa("Presilha", o, ex, eyp, Lp, hi - lo, round(vao, 2), []))
+    from nucleo2d.detalhe.soldas import _perna
+    soldas = []
+    for ch in pecas:
+        for barra in (a, b):
+            soldas.append((barra.id, ch, {"tipo": "filete", "perna": _perna(vao, float(_perfil(barra.perfil).tw or 3)),
+                                          "lados": 2, "local": "fabrica", "forma": "contorno"}))
+    params = dict(p, n=n, comprimento=Lp, vao=round(vao, 2))
+    return {"pecas": pecas, "alterar": {}, "ajustes": {}, "conjuntos": [(a, pecas + [b])], "soldas": soldas,
+            "parametros": params, "avisos": []}
+
+
 # ------------------------------------------------------------------ escolher as barras
 
 def _barras_para(doc, tipo, ids):
@@ -829,6 +900,8 @@ def _gerar(tipo, barras, p):
         return _gusset(barras[0], barras[1], p)
     if tipo in ("chumbador_gancho", "chumbador_placa"):
         return _chumbadores(barras[0], p, tipo)
+    if tipo == "presilhas":
+        return _presilhas(barras[0], barras[1], p)
     raise ErroDeDados("a ligação %s ainda não sabe se pôr no 3D" % tipo)
 
 
@@ -893,8 +966,10 @@ def tipos(doc=None, ids=()) -> List[dict]:
     from nucleo import acessorios as A
     fora = []
     for tid, info in TIPOS_3D.items():
-        t = A.REGISTRO[tid]
-        d = t.dict()
+        if tid in LOCAIS:
+            d = dict(LOCAIS[tid], id=tid, verifica=False)
+        else:
+            d = A.REGISTRO[tid].dict()
         d["pede"] = info["pede"]
         fora.append(d)
     return fora
@@ -980,11 +1055,16 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
                     mc.update(instancia=inst, conjunto="")
                 else:
                     mc["conjunto"] = mb.get("conjunto")
+                mc.pop("principal", None)
                 ch.atributos = dict(ch.atributos or {}, marcas=mc)
+                if ch.id in trabalho.entidades and not any(n_ is ch for n_ in g["pecas"]):
+                    alterar.setdefault(ch.id, {})["atributos"] = ch.atributos     # a barra que já existia (a outra do par)
         soldas_pendentes += g["soldas"]
         soldas_pendentes += [(x.id, y, d) for x, y, d in g.get("soldas_entre", [])]
         verif = None
         try:
+            if tipo in LOCAIS:
+                raise LookupError("sem verificação na biblioteca")
             parametros_lib = {k: v for k, v in g["parametros"].items() if k in {x.chave for x in A.REGISTRO[tipo].parametros}}
             da_analise = esforcos_da_analise(analise, tipo, barras) if not esforcos else None
             origem = "informados" if esforcos else ("análise do projeto" if da_analise else "padrão da biblioteca")

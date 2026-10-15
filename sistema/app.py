@@ -4119,7 +4119,7 @@ def perfis_para_o_editor(corpo: dict) -> dict:
     from nucleo3d import geometria
     saida = []
     for nome in list(dict.fromkeys(str(n) for n in (corpo.get("nomes") or [])))[:500]:
-        perf = catalogo.perfil_de(nome)
+        perf = catalogo.perfil_de(nome) or geometria.perfil_soldado_do_nome(nome)     # o VS/PS pelas medidas (14/10)
         if perf is None:
             continue
         reg = {"nome": nome, "tipo": getattr(perf, "tipo", "") or "", "massa": perf.massa,

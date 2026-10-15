@@ -137,6 +137,16 @@ try:
     aba.drenar(0.5)
     acab = jsj(f"return ['{ids['pilar0']}', '{ids['pilar1']}', '{ids['viga']}'].map(i => editor.documento.get(i).atributos.acabamento || '');")
     ok(acab == ["pintura", "pintura", ""], f"o acabamento foi para a posição inteira (os dois pilares), não para a viga: {acab}")
+    # 7) o perfil soldado digitado no campo de perfil
+    selecionar(ids["viga"]); aba.drenar(0.6)
+    jsj("""const i = [...editor.el.props.querySelectorAll('.busca-perfil input')][0]; i.focus(); i.value = 'VS 500x250x9,5x6,3';
+           i.dispatchEvent(new Event('input')); return 1;""")
+    aba.drenar(0.3)
+    item = js("(() => { const b = document.querySelector('.lista-perfis button'); return b ? b.textContent : ''; })()") or ""
+    ok("VS 500x250x9,5x6,3" in item, f"a lista oferece o perfil soldado: {item[:60]!r}")
+    js("document.querySelector('.lista-perfis button').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); 1")
+    ok(esperar(f"editor.documento.get('{ids['viga']}').perfil === 'VS 500x250x9,5x6,3'", 15), "a viga ficou com o perfil soldado")
+    ok(esperar("!!editor.cena.perfil('VS 500x250x9,5x6,3')", 10), "o editor conhece a seção do perfil soldado")
     erros("BIM")
 finally:
     try: nav.kill()

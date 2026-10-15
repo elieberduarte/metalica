@@ -432,13 +432,31 @@ export class MetodosPaineis {
       const q = normalizarBusca(entrada.value);
       const todos = this.catalogo.perfis || [];
       achados = (q ? todos.filter(p => normalizarBusca(p.nome).includes(q)) : todos).slice(0, 40);
+      // o perfil soldado pelas medidas ("VS 500x250x9,5x6,3"): o servidor monta a seção (geometria.perfil_soldado_do_nome)
+      const m = /^\s*(VS|CS|CVS|PS|I\s*SOLDADO|PERFIL\s*SOLDADO)\s*([\d.,]+)\s*[x×X*]\s*([\d.,]+)\s*[x×X*]\s*([\d.,]+)\s*[x×X*]\s*([\d.,]+)\s*$/i.exec(entrada.value);
+      if (m && !achados.some(p => p.nome === entrada.value.trim())) {
+        const n = [2, 3, 4, 5].map(i => parseFloat(m[i].replace(',', '.')));
+        const tf = Math.max(n[2], n[3]), tw = Math.min(n[2], n[3]);
+        const area = (2 * n[1] * tf + (n[0] - 2 * tf) * tw) / 100;
+        achados.unshift({ nome: entrada.value.trim(), tipo: 'I', d: n[0], bf: n[1], tw, tf, massa: area * 0.785, soldado: true });
+      }
       marcado = 0;
       desenhar();
     };
-    const escolher = (nome) => {
+    const escolher = async (nome) => {
       entrada.value = nome;
       lista.replaceChildren();
       entrada.blur();
+      const novo = achados.find(p => p.nome === nome && p.soldado);
+      if (novo && !(this.catalogo.perfis || []).some(p => p.nome === nome)) {
+        try {
+          const r = await this.api.perfis([nome]);
+          const lista_ = (r && r.perfis) || [];
+          if (!lista_.length) { this.aviso(`O perfil ${nome} não se monta: confira as medidas (altura × mesa × espessuras).`, 'atencao'); return; }
+          this.catalogo.perfis.push(...lista_);
+          this.cena.acrescentarPerfis(lista_);
+        } catch (e) { this.aviso(`Não foi possível montar o perfil ${nome}: ${e.message}`, 'erro'); return; }
+      }
       aoEscolher(nome);
     };
     entrada.addEventListener('focus', () => { entrada.select(); filtrar(); });

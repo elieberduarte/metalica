@@ -86,13 +86,21 @@ export class MetodosLigacoes {
     const vert = barras.filter(b => Math.abs((b.fim[2] - b.inicio[2]) / (Math.hypot(b.fim[0] - b.inicio[0], b.fim[1] - b.inicio[1], b.fim[2] - b.inicio[2]) || 1)) > 0.7);
     const dir = (b) => { const d = [b.fim[0] - b.inicio[0], b.fim[1] - b.inicio[1], b.fim[2] - b.inicio[2]];
                          const n = Math.hypot(...d) || 1; return d.map(x => x / n); };
-    const colineares = barras.length === 2 && Math.abs(dir(barras[0]).reduce((s, x, i) => s + x * dir(barras[1])[i], 0)) > 0.999;
+    const paralelas = barras.length === 2 && Math.abs(dir(barras[0]).reduce((s, x, i) => s + x * dir(barras[1])[i], 0)) > 0.999;
+    // na mesma reta (a emenda) ou lado a lado (o perfil duplo: as presilhas)
+    const afastamento = paralelas ? (() => {
+      const d0 = dir(barras[0]), r = [0, 1, 2].map(k => barras[1].inicio[k] - barras[0].inicio[k]);
+      const t = r.reduce((s, x, k) => s + x * d0[k], 0);
+      return Math.hypot(...r.map((x, k) => x - t * d0[k]));
+    })() : Infinity;
+    const colineares = paralelas && afastamento < 1;
     const diagonal = (b) => String(b.papel).toLowerCase().startsWith('contravent') || /^L\s|FE RED|TIRANTE/i.test(String(b.perfil));
     if (!barras.length && chapas.length) escolha.value = 'chumbador_gancho';
     else if (barras.length === 2 && barras.some(diagonal) && !barras.every(diagonal)) escolha.value = 'gusset_contravento';
     else if (barras.some(b => ['terça', 'terca', 'longarina'].includes(String(b.papel).toLowerCase()))) escolha.value = 'suporte_terca_cadeirinha';
     else if (barras.length === 2 && vert.length === 1) escolha.value = 'chapa_topo_joelho';
     else if (colineares) escolha.value = 'emenda_banzo';
+    else if (paralelas) escolha.value = 'presilhas';
     else if (barras.length === 2 && !vert.length) escolha.value = 'ligacao_flexivel';
     else if (vert.length === barras.length) escolha.value = 'placa_base_rotulada';
     trocar();

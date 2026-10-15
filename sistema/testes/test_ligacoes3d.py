@@ -336,3 +336,36 @@ def test_chumbadores_nos_furos_da_placa():
     assert {(round(c.inicio[0]), round(c.inicio[1])) for c in cbs} == {(-140, -140), (-140, 140), (140, -140), (140, 140)}
     r2 = ligacoes3d.aplicar(doc, "chumbador_gancho", [placa.id], {"diametro": '1"'})
     assert any("menor que o chumbador" in a for l in r2["ligacoes"] for a in l["avisos"])     # furo 25 < 25,4 + 1
+
+
+def test_presilhas_no_vao_do_perfil_duplo():
+    a = Barra(inicio=(0, 0, 0), fim=(3000, 0, 0), perfil="Barra chata 100 x 8 mm", papel="diagonal", rotacao=90)
+    b = Barra(inicio=(0, 16, 0), fim=(3000, 16, 0), perfil="Barra chata 100 x 8 mm", papel="diagonal", rotacao=90)
+    from nucleo3d.geometria import malha_barra
+    ya = max(v[1] for v in malha_barra(a)[0]); yb = min(v[1] for v in malha_barra(b)[0])
+    doc = _doc(a, b)
+    r = ligacoes3d.aplicar(doc, "presilhas", [a.id, b.id])
+    _aplicar(doc, r)
+    pres = [e for e in _da_ligacao(doc, r["ligacoes"][0]["id"]) if e.tipo == "chapa"]
+    assert len(pres) == 2 and all(abs(p.espessura - (yb - ya)) < 0.01 for p in pres)        # a espessura do vão
+    xs = sorted(p.origem[0] + 30 for p in pres)
+    assert abs(xs[0] - 1000) < 1 and abs(xs[1] - 2000) < 1                                     # igualmente espaçadas
+    from nucleo3d.geometria import malha_chapa
+    ys = [v[1] for p in pres for v in malha_chapa(p)[0]]
+    assert abs(min(ys) - ya) < 0.01 and abs(max(ys) - yb) < 0.01                               # entre as faces
+    assert a.atributos["marcas"]["conjunto"] == b.atributos["marcas"]["conjunto"] == pres[0].atributos["marcas"]["conjunto"]
+    assert len(a.atributos["soldas"]) == 1 and len(b.atributos["soldas"]) == 1
+    tipo = next(t for t in ligacoes3d.tipos() if t["id"] == "presilhas")
+    assert tipo["parametros"] and tipo["pede"]
+
+
+def test_perfil_soldado_pelo_nome():
+    from nucleo3d import geometria as g
+    p = g.resolver_perfil("VS 310x165x9,7x5,8")
+    w = g.resolver_perfil("W 310×38,7")
+    assert p.tipo == "I" and p.tf == 9.7 and p.tw == 5.8
+    for k in ("A", "Ix", "Iy", "Wx", "rx", "ry", "J", "Cw"):
+        assert abs(p.dados[k] - w.dados[k]) / w.dados[k] < 0.03, k                 # o W tem o raio entre alma e mesa
+    assert g.resolver_perfil("PS 500x250x6,3x9,5").tf == 9.5                       # a maior espessura é a da mesa
+    viga = Barra(inicio=(0, 0, 0), fim=(6000, 0, 0), perfil="VS 500x250x9,5x6,3")
+    assert abs(g.peso_barra(viga) - 6.0 * g.resolver_perfil(viga.perfil).dados["massa"]) < 0.5
