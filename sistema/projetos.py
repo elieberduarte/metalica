@@ -286,20 +286,22 @@ def _ler_cabecalho_do_desenho(caminho: str, contar: bool = True) -> dict:
             tudo = f.read()
             cabeca = tudo[:4096].decode("utf-8", "ignore")
             cauda = tudo[-256 * 1024:].decode("utf-8", "ignore")
-            fora["entidades"] = tudo.count(b'"id": "')
+            # o JSON compacto de _gravar_json (desde 05/10) não tem o espaço depois de ":" — o do editor e os antigos têm (15/10:
+            # as pranchas do Vicente saíam com 0 objetos e 0 folhas, e "DXF de todas as pranchas" dizia que não havia pranchas)
+            fora["entidades"] = tudo.count(b'"id": "') + tudo.count(b'"id":"')
             del tudo
         else:                                       # só o que está nas pontas
             cabeca = f.read(4096).decode("utf-8", "ignore")
             f.seek(max(0, tamanho - 256 * 1024))
             cauda = f.read().decode("utf-8", "ignore")
-    fora["pranchas"] = 1 if ('"pranchas": [' in cauda or '"prancha": {' in cauda) else 0
+    fora["pranchas"] = 1 if re.search(r'"pranchas":\s?\[|"prancha":\s?\{', cauda) else 0
     m = re.match(r'\s*\{"nome":\s*"((?:[^"\\]|\\.)*)"', cabeca)
     if m:
         fora["titulo"] = json.loads('"%s"' % m.group(1))
     m = re.search(r'"escala":\s*([0-9.]+)', cabeca[:2048])
     if m:
         fora["escala"] = float(m.group(1))
-    i = cauda.rfind('"vistas": [')
+    i = max(cauda.rfind('"vistas": ['), cauda.rfind('"vistas":['))
     if i >= 0:
         try:
             fim = json.loads("{" + cauda[i:])
