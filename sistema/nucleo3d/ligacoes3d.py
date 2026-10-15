@@ -31,6 +31,10 @@ TIPOS_3D = {
                                          "cada cruzamento", "barras": ("terca", "apoio")},
     "ligacao_flexivel": {"pede": "a viga apoiada e o pilar ou a viga em que ela chega", "barras": ("viga", "apoio")},
     "emenda_banzo": {"pede": "as duas metades do banzo, na mesma reta", "barras": ("barra", "barra")},
+    "gusset_contravento": {"pede": "a diagonal do contravento e o pilar ou a viga em que ela chega", "barras": ("viga", "apoio")},
+    "chumbador_gancho": {"pede": "a placa (chapa) com os furos — um chumbador em J em cada furo", "barras": ("chapa",)},
+    "chumbador_placa": {"pede": "a placa (chapa) com os furos — um chumbador com placa de ancoragem em cada furo",
+                        "barras": ("chapa",)},
 }
 
 
@@ -575,13 +579,182 @@ def _emenda_banzo(a, b, p):
             "parametros": params, "avisos": avisos}
 
 
+# ------------------------------------------------------------------ gusset de contravento
+
+def _casco2(pts):
+    from nucleo3d.producao import _casco
+    return _casco(pts)
+
+
+def _gusset(diag, apoio, p):
+    """A chapa de nó do contravento: no plano da diagonal com o apoio, soldada na face do apoio que olha para a
+    diagonal, encostada na face plana da diagonal (a aba da cantoneira); parafusos na linha do meio dessa face; a
+    diagonal aparada antes da face do apoio."""
+    from nucleo.acessorios import d_parafuso_mm, furo_mm
+    pa = _perfil(apoio.perfil)
+    wa = _norm(_sub(apoio.fim, apoio.inicio))
+    ponta, no, outro = _ponta_perto(diag, apoio.inicio, wa)
+    wd = _norm(_sub(outro, no))                           # da ligação para dentro da diagonal
+    nplano = _cruz(wa, wd)
+    if math.sqrt(_dot(nplano, nplano)) < 0.2:
+        raise ErroDeDados("a diagonal corre junto do apoio: não há plano para a chapa de nó")
+    nplano = _norm(nplano)
+    nf, F, parede, face = _face_do_apoio(apoio, no, wd)
+    if _dot(wd, nf) < 0.15:
+        raise ErroDeDados("a diagonal não sai da face do apoio")
+    t = float(p.get("t") or 8.0)
+    n = int(p.get("n_parafusos") or 2)
+    pas = float(p.get("passo") or 55.0)
+    nome_par = str(p.get("parafuso") or "M16")
+    d, fd = d_parafuso_mm(nome_par), furo_mm(nome_par)
+    classe = str(p.get("classe") or "ASTM A325")
+    folga = float(p.get("folga") or 20.0)
+    # a face plana da diagonal ao longo da normal do plano (a aba da cantoneira): a chapa encosta nela
+    lado, f = _lado_da_alma(diag, nplano)
+    if lado == 0:
+        lado, f = 1, _extremos(diag, nplano)[0]            # seção simétrica: a chapa encosta numa das faces (fica de lado)
+        lado_chapa = -1.0
+    else:
+        lado_chapa = float(lado)
+    # o plano médio da chapa: a face da diagonal mais meia espessura para fora
+    s_meio = f + lado_chapa * t / 2.0
+    # a linha dos parafusos: o meio da faixa da face da diagonal (a aba), no plano da chapa
+    from nucleo3d.geometria import malha_barra
+    vs, _ = malha_barra(diag)
+    perp = _norm(_cruz(nplano, wd))
+    na_face = [q for q in vs if abs(_dot(q, nplano) - f) < 1.0]
+    if na_face:
+        lo_p, hi_p = min(_dot(q, perp) for q in na_face), max(_dot(q, perp) for q in na_face)
+        desl_p = (lo_p + hi_p) / 2.0 - _dot(no, perp)
+        larg_aba = hi_p - lo_p
+    else:
+        desl_p, larg_aba = 0.0, float(p.get("largura_barra") or 60.0)
+    # o ponto onde a linha dos parafusos sai da face do apoio (mais a folga): o primeiro parafuso a 40 + borda
+    base_linha = _add(_add(no, _mul(perp, desl_p)), _mul(nplano, s_meio - _dot(no, nplano)))
+    s_face = _dot(_sub(F, base_linha), nf) / _dot(wd, nf)
+    corte = _add(base_linha, _mul(wd, s_face + folga / _dot(wd, nf)))      # a ponta da diagonal (aparada)
+    borda = max(30.0, 1.75 * d)
+    bolts = [_add(corte, _mul(wd, borda + 10.0 + i * pas)) for i in range(n)]
+    # o contorno: o casco da linha de solda na face e da região dos parafusos com as bordas
+    ex = wa
+    ey = _norm(_sub(nf, _mul(nplano, _dot(nf, nplano))))
+    if _dot(_cruz(ex, ey), _mul(nplano, lado_chapa)) < 0:
+        ex = _mul(ex, -1.0)
+    o_ch = _add(F, _mul(nplano, s_meio - _dot(F, nplano)))
+    def loc(q):
+        r = _sub(q, o_ch)
+        return (_dot(r, ex), _dot(r, ey))
+    pts = []
+    for q in bolts:
+        x, y = loc(q)
+        for ax, ay in ((1, 0), (-1, 0), (0, 1), (0, -1), (0.7, 0.7), (-0.7, 0.7), (0.7, -0.7), (-0.7, -0.7)):
+            pts.append((x + ax * borda, y + ay * borda))
+    xs_b = [loc(q)[0] for q in bolts] + [loc(corte)[0]]
+    pts += [(min(xs_b) - borda, 0.0), (max(xs_b) + borda, 0.0)]
+    casco = _casco2(pts)
+    casco = [(x, max(0.0, y)) for x, y in casco]
+    x0, y0 = min(q[0] for q in casco), min(q[1] for q in casco)
+    cont = [(round(x - x0, 1), round(y - y0, 1)) for x, y in casco]
+    origem = _add(_add(o_ch, _mul(ex, x0)), _mul(ey, y0))
+    furos = []
+    for q in bolts:
+        x, y = loc(q)
+        furos.append({"x": round(x - x0, 2), "y": round(y - y0, 2), "diametro": round(fd, 2)})
+    from nucleo3d.modelo import Chapa
+    ch = Chapa(nome="Chapa de nó (gusset)", origem=tuple(origem), eixo_x=tuple(ex), eixo_y=tuple(ey), contorno=cont,
+               espessura=t, centrada=True, furos=furos, camada="Chapas", material="Aço",
+               aco=str(p.get("aco") or "ASTM A36"), atributos={"tipo_ifc": "IfcPlate"})
+    t_aba = float(_perfil(diag.perfil).tw or _perfil(diag.perfil).tf or 6.35)
+    pars = []
+    for q in bolts:
+        # o meio da pega: chapa + aba, a partir do plano entre as duas
+        c = _add(q, _mul(nplano, -lado_chapa * t_aba / 2.0))
+        pars.append(_parafuso(c, nplano, d, t + t_aba, classe))
+    chave = "cortes_inicio" if ponta == "inicio" else "cortes_fim"
+    rec = "recorte_inicio" if ponta == "inicio" else "recorte_fim"
+    ajustes = {diag.id: {chave: copy.deepcopy(getattr(diag, chave) or []), rec: float(getattr(diag, rec) or 0.0)}}
+    alterar = {diag.id: {chave: [{"normal": _r(nf, 6), "ponto": _r(_sub(_add(F, _mul(nf, folga)), no), 3)}], rec: 0.0}}
+    from nucleo2d.detalhe.soldas import _perna
+    soldas = [(apoio.id, ch, {"tipo": "filete", "perna": _perna(parede, t), "lados": 2, "local": "fabrica", "forma": "T"})]
+    ang = math.degrees(math.acos(max(-1.0, min(1.0, abs(_dot(wd, wa))))))
+    bb = [q[0] for q in cont], [q[1] for q in cont]
+    params = dict(p, comprimento=round(max(bb[0]) - min(bb[0])), altura=round(max(bb[1]) - min(bb[1])), t=t, n_parafusos=n,
+                  passo=pas, parafuso=nome_par, classe=classe, angulo=round(ang, 1), largura_barra=round(larg_aba, 1),
+                  folga=folga)
+    avisos = []
+    if face == "alma":
+        avisos.append("a chapa de nó vai na alma do apoio (entre as mesas): confira o acesso para a solda")
+    return {"pecas": [ch] + pars, "alterar": alterar, "ajustes": ajustes, "conjuntos": [(apoio, [ch])],
+            "soldas": soldas, "parametros": params, "avisos": avisos}
+
+
+# ------------------------------------------------------------------ chumbadores nos furos de uma chapa
+
+def _chumbadores(ch, p, tipo):
+    """Um chumbador em cada furo da chapa (a placa de base desenhada à mão): em J (o gancho fica gravado na barra, como
+    no lançamento) ou com a placa de ancoragem embaixo; para baixo na placa deitada, para trás na placa em pé."""
+    from nucleo.acessorios import DIAMETROS_BARRA
+    from nucleo3d.modelo import Barra, Chapa
+    from nucleo3d import geometria as geo
+    if not (ch.furos or []):
+        raise ErroDeDados("a chapa %s não tem furos para os chumbadores" % (ch.nome or ch.id))
+    ex, ey = _norm(tuple(ch.eixo_x)), _norm(tuple(ch.eixo_y))
+    nrm = _norm(_cruz(ex, ey))
+    t = float(ch.espessura or 0.0)
+    o = tuple(ch.origem)
+    baixo_face = o if not ch.centrada else _sub(o, _mul(nrm, t / 2.0))
+    if abs(nrm[2]) > 0.7:
+        cima = (0.0, 0.0, 1.0)
+        avisos = []
+    else:
+        cima = nrm                                         # a placa em pé: o chumbador entra para trás dela
+        avisos = ["placa em pé: os chumbadores entram pelo lado de trás dela — confira o lado do concreto"]
+    # a face de baixo (a que encosta no concreto/graute)
+    faces = [baixo_face, _add(baixo_face, _mul(nrm, t))]
+    pe = min(faces, key=lambda q: _dot(q, cima))
+    nome = str(p.get("diametro") or '3/4"')
+    d = DIAMETROS_BARRA[nome]
+    L = float(p.get("comprimento") or 996.0)
+    proj = float(p.get("projecao") or 120.0)
+    perfil = "FE RED %s" % nome.replace('"', "''")
+    geo.registrar_perfil(geo.barra_redonda(d, perfil))
+    pecas = []
+    for f in ch.furos:
+        diam = float(f.get("diametro") or min(float(f.get("largura") or 0), float(f.get("altura") or 0)) or 0)
+        if diam and diam < d + 1.0:
+            avisos.append("furo Ø%g menor que o chumbador Ø%g" % (diam, d))
+        c = _add(_add(o, _mul(ex, float(f.get("x", 0)))), _mul(ey, float(f.get("y", 0))))
+        c = _add(c, _mul(nrm, _dot(_sub(pe, c), nrm)))   # no plano da face de baixo
+        topo = _add(c, _mul(cima, proj))
+        fundo = _add(topo, _mul(cima, -L))
+        at = {"tipo_ifc": "IfcMember", "elemento": "Chumbador", "projecao_mm": round(proj)}
+        if tipo == "chumbador_gancho":
+            at["gancho_mm"] = float(p.get("gancho") or 150.0)
+        pecas.append(Barra(nome="Chumbador", inicio=tuple(topo), fim=tuple(fundo), perfil=perfil, papel="chumbador",
+                           camada="Referência", material="Aço", atributos=at))
+        if tipo == "chumbador_placa":
+            a, ta = float(p.get("placa") or 70.0), float(p.get("placa_t") or 9.5)
+            pecas.append(Chapa(nome="Placa de ancoragem", origem=tuple(_add(_add(fundo, _mul(ex, -a / 2)), _mul(ey, -a / 2))),
+                               eixo_x=tuple(ex), eixo_y=tuple(ey), contorno=[(0, 0), (a, 0), (a, a), (0, a)], espessura=ta,
+                               centrada=False, furos=[{"x": a / 2, "y": a / 2, "diametro": round(d + 2)}], camada="Referência",
+                               material="Aço", atributos={"tipo_ifc": "IfcPlate"}))
+    params = dict(p, diametro=nome, comprimento=L, projecao=proj)
+    return {"pecas": pecas, "alterar": {}, "ajustes": {}, "conjuntos": [], "soldas": [], "parametros": params,
+            "avisos": sorted(set(avisos))}
+
+
 # ------------------------------------------------------------------ escolher as barras
 
 def _barras_para(doc, tipo, ids):
     """As barras da seleção no papel que o tipo pede, na ordem dele."""
-    from nucleo3d.modelo import Barra
-    barras = [doc.entidades[i] for i in ids if isinstance(doc.entidades.get(i), Barra)]
+    from nucleo3d.modelo import Barra, Chapa
     pede = TIPOS_3D[tipo]["barras"]
+    if pede == ("chapa",):
+        chapas = [doc.entidades[i] for i in ids if isinstance(doc.entidades.get(i), Chapa)]
+        if not chapas:
+            raise ErroDeDados("selecione %s" % TIPOS_3D[tipo]["pede"])
+        return [[c] for c in chapas]
+    barras = [doc.entidades[i] for i in ids if isinstance(doc.entidades.get(i), Barra)]
     if len(pede) == 1:
         if not barras:
             raise ErroDeDados("selecione %s" % TIPOS_3D[tipo]["pede"])
@@ -652,6 +825,10 @@ def _gerar(tipo, barras, p):
         return _flexivel(barras[0], barras[1], p)
     if tipo == "emenda_banzo":
         return _emenda_banzo(barras[0], barras[1], p)
+    if tipo == "gusset_contravento":
+        return _gusset(barras[0], barras[1], p)
+    if tipo in ("chumbador_gancho", "chumbador_placa"):
+        return _chumbadores(barras[0], p, tipo)
     raise ErroDeDados("a ligação %s ainda não sabe se pôr no 3D" % tipo)
 
 
@@ -724,7 +901,10 @@ def tipos(doc=None, ids=()) -> List[dict]:
 
 
 def assinatura(b) -> list:
-    """o que, mudando na barra, pede a ligação refeita: as pontas, o perfil e a rotação (o editor compara igual)"""
+    """o que, mudando na barra, pede a ligação refeita: as pontas, o perfil e a rotação (o editor compara igual); na
+    chapa (os chumbadores), a origem, o eixo x (× 1000) e a espessura"""
+    if getattr(b, "tipo", "") == "chapa":
+        return [_r(b.origem, 1), _r(_mul(tuple(b.eixo_x), 1000.0), 1), "%g" % float(b.espessura or 0), 0.0]
     return [_r(b.inicio, 1), _r(b.fim, 1), str(b.perfil), round(float(b.rotacao or 0.0), 3)]
 
 

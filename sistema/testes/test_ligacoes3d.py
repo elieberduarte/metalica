@@ -297,3 +297,42 @@ def test_verificacao_com_os_esforcos_da_analise_do_projeto():
     assert lg["origem_esforcos"] == "análise do projeto" and lg["esforcos"]["M_Sd"] == 85.0
     r = ligacoes3d.aplicar(doc, "chapa_topo_joelho", [viga.id, pilar.id])
     assert r["ligacoes"][0]["origem_esforcos"] == "padrão da biblioteca"
+
+
+def test_gusset_do_contravento_sem_colisao():
+    from nucleo3d import conferencia_producao as CP
+    from nucleo3d.producao import _proxy
+    pilar = Barra(inicio=(0, 0, 0), fim=(0, 0, 4000), perfil=W, rotacao=90, papel="pilar")            # mesas em y = ±155
+    diag = Barra(inicio=(0, 0, 3000), fim=(0, 5000, 0), perfil="L 2 1/2'' X 1/4''", papel="contraventamento")
+    doc = _doc(pilar, diag)
+    r = ligacoes3d.aplicar(doc, "gusset_contravento", [diag.id, pilar.id])
+    _aplicar(doc, r)
+    pecas = _da_ligacao(doc, r["ligacoes"][0]["id"])
+    ch = next(e for e in pecas if e.tipo == "chapa")
+    pars = [e for e in pecas if e.tipo == "solido"]
+    assert len(ch.furos) == 2 and len(pars) == 2
+    assert all(abs(abs(p.atributos["parafuso"]["eixo"][0]) - 1) < 1e-6 for p in pars)          # atravessam a aba (ao longo de X)
+    from nucleo3d.geometria import malha_chapa
+    ys = [v[1] for v in malha_chapa(ch)[0]]
+    assert abs(min(ys) - 155.0) < 0.5                                                         # soldada na mesa do pilar
+    assert abs(diag.cortes_inicio[0]["ponto"][1] - 175.0) < 0.5                               # a diagonal 20 mm antes da mesa
+    assert pilar.atributos["marcas"]["conjunto"] == ch.atributos["marcas"]["conjunto"]
+    col = CP.colisoes([_proxy(ch), _proxy(diag), _proxy(pilar)])["achados"]
+    assert col == [], col
+
+
+def test_chumbadores_nos_furos_da_placa():
+    from nucleo3d.modelo import Chapa
+    placa = Chapa(origem=(-200, -200, 0), eixo_x=(1, 0, 0), eixo_y=(0, 1, 0), contorno=[(0, 0), (400, 0), (400, 400), (0, 400)],
+                  espessura=25, centrada=False, furos=[{"x": x, "y": y, "diametro": 25} for x in (60, 340) for y in (60, 340)])
+    doc = _doc(placa)
+    r = ligacoes3d.aplicar(doc, "chumbador_placa", [placa.id])
+    _aplicar(doc, r)
+    pecas = _da_ligacao(doc, r["ligacoes"][0]["id"])
+    cbs = [e for e in pecas if e.tipo == "barra"]
+    ancs = [e for e in pecas if e.tipo == "chapa"]
+    assert len(cbs) == 4 and len(ancs) == 4
+    assert all(abs(c.inicio[2] - 120) < 0.01 and abs(c.fim[2] - (120 - 996)) < 0.01 for c in cbs)
+    assert {(round(c.inicio[0]), round(c.inicio[1])) for c in cbs} == {(-140, -140), (-140, 140), (140, -140), (140, 140)}
+    r2 = ligacoes3d.aplicar(doc, "chumbador_gancho", [placa.id], {"diametro": '1"'})
+    assert any("menor que o chumbador" in a for l in r2["ligacoes"] for a in l["avisos"])     # furo 25 < 25,4 + 1

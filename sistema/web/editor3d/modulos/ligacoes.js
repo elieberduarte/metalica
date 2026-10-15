@@ -66,7 +66,8 @@ export class MetodosLigacoes {
   /** Editar → Aplicar ligação: o tipo, os parâmetros e as peças no lugar, nas barras selecionadas. */
   async dialogoAplicarLigacao() {
     const barras = this.selecao.entidades.filter(e => e.tipo === 'barra');
-    if (!barras.length) { this.dica('Selecione as barras da ligação: o pilar (para a base), a viga e o pilar (chapa de topo)…'); return; }
+    const chapas = this.selecao.entidades.filter(e => e.tipo === 'chapa');
+    if (!barras.length && !chapas.length) { this.dica('Selecione as peças da ligação: o pilar (para a base), a viga e o pilar (chapa de topo), a diagonal e o apoio (chapa de nó), a placa (chumbadores)…'); return; }
     let tipos;
     try { tipos = await this._tiposDeLigacao(); } catch (e) { this.aviso(`Não foi possível ler as ligações: ${e.message}`, 'erro', 0); return; }
     const escolha = el('select');
@@ -86,7 +87,10 @@ export class MetodosLigacoes {
     const dir = (b) => { const d = [b.fim[0] - b.inicio[0], b.fim[1] - b.inicio[1], b.fim[2] - b.inicio[2]];
                          const n = Math.hypot(...d) || 1; return d.map(x => x / n); };
     const colineares = barras.length === 2 && Math.abs(dir(barras[0]).reduce((s, x, i) => s + x * dir(barras[1])[i], 0)) > 0.999;
-    if (barras.some(b => ['terça', 'terca', 'longarina'].includes(String(b.papel).toLowerCase()))) escolha.value = 'suporte_terca_cadeirinha';
+    const diagonal = (b) => String(b.papel).toLowerCase().startsWith('contravent') || /^L\s|FE RED|TIRANTE/i.test(String(b.perfil));
+    if (!barras.length && chapas.length) escolha.value = 'chumbador_gancho';
+    else if (barras.length === 2 && barras.some(diagonal) && !barras.every(diagonal)) escolha.value = 'gusset_contravento';
+    else if (barras.some(b => ['terça', 'terca', 'longarina'].includes(String(b.papel).toLowerCase()))) escolha.value = 'suporte_terca_cadeirinha';
     else if (barras.length === 2 && vert.length === 1) escolha.value = 'chapa_topo_joelho';
     else if (colineares) escolha.value = 'emenda_banzo';
     else if (barras.length === 2 && !vert.length) escolha.value = 'ligacao_flexivel';
@@ -95,7 +99,7 @@ export class MetodosLigacoes {
     const corpo = el('div', {}, el('div', { class: 'campos' }, el('label', { texto: 'Ligação' }), escolha), pede, lugar,
       el('p', { class: 'explica', texto: 'As peças saem com marca, conjunto e solda; a ligação fica paramétrica: selecione uma peça dela para mudar os parâmetros, refazer ou apagar.' }));
     if (await this.dialogo({ titulo: 'Aplicar ligação', corpo, ok: 'Aplicar' }) !== 'ok') return;
-    await this._pedirLigacao({ tipo: escolha.value, ids: barras.map(b => b.id), parametros: form.ler() }, 'Aplicar ligação');
+    await this._pedirLigacao({ tipo: escolha.value, ids: [...barras, ...chapas].map(b => b.id), parametros: form.ler() }, 'Aplicar ligação');
   }
 
   /** Manda o pedido, aplica a resposta num comando só e mostra a verificação. */
@@ -185,8 +189,13 @@ export class MetodosLigacoes {
         const g = geo[bid];
         if (!g) continue;
         const [i, f, perfil, rot] = g;
-        if (!(i.every((x, k) => perto(x, b.inicio[k])) && f.every((x, k) => perto(x, b.fim[k]))) ||
-            String(b.perfil) !== perfil || !perto(Number(b.rotacao || 0), rot)) mudou = true;
+        // a chapa (os chumbadores): a origem, o eixo x × 1000 e a espessura, como nucleo3d/ligacoes3d.assinatura
+        const ehChapa = b.tipo === 'chapa';
+        const pi = ehChapa ? b.origem : b.inicio;
+        const pf = ehChapa ? b.eixo_x.map(v => v * 1000) : b.fim;
+        const pp = ehChapa ? String(Number(b.espessura || 0)) : String(b.perfil);
+        const pr = ehChapa ? 0 : Number(b.rotacao || 0);
+        if (!(i.every((x, k) => perto(x, pi[k])) && f.every((x, k) => perto(x, pf[k]))) || pp !== perfil || !perto(pr, rot)) mudou = true;
       }
       if (mudou || sumiu) fora.push({ id: reg.id, tipo: reg.tipo, sumiu });
     }

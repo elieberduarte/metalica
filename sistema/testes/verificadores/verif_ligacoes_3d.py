@@ -27,6 +27,7 @@ doc = Documento()
 doc.add(Barra(nome="pilar", inicio=(0, 0, 0), fim=(0, 0, 4000), perfil=W, rotacao=90, papel="pilar"))
 doc.add(Barra(nome="viga", inicio=(0, 0, 3500), fim=(0, 6000, 3500), perfil=W, papel="viga"))
 doc.add(Barra(nome="banzo", inicio=(10000, -3000, 0), fim=(10000, 3000, 0), perfil="W 250×32,7", papel="banzo"))
+doc.add(Barra(nome="diag", inicio=(0, 0, 3000), fim=(0, 5000, 0), perfil="L 2 1/2'' X 1/4''", papel="contraventamento"))
 doc.add(Barra(nome="terca", inicio=(7000, 0, 222), fim=(13000, 0, 222), perfil="Ue 150×60×20×2,25", papel="terça"))
 json.dump(doc.dict(), open(os.path.join(PASTA, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
 
@@ -55,7 +56,7 @@ try:
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1400, height=900, deviceScaleFactor=1, mobile=False)
     aba.navegar(f"http://localhost:{PORTA}/editor?projeto=lig", limite=60)
     t0 = time.time()
-    while time.time() - t0 < 60 and not aba.avaliar("!!(window.editor && editor.documento && editor.documento.entidades.size >= 4)"):
+    while time.time() - t0 < 60 and not aba.avaliar("!!(window.editor && editor.documento && editor.documento.entidades.size >= 5)"):
         aba.drenar(0.5)
     aba.drenar(1.0)
     aba.console.clear()
@@ -116,6 +117,14 @@ try:
     n_par = jsj("return [...editor.documento.entidades.values()].filter(e => e.atributos && e.atributos.parafuso).length;")
     ok(n_par == 12, f"4 parafusos da cadeirinha além dos 8 da chapa de topo: {n_par}")
     erros("Cadeirinha")
+
+    # 2c) a chapa de nó do contravento
+    selecionar(ids["diag"], ids["pilar"]); menu("aplicar-ligacao")
+    ok(esperar("editor.el.dialogo.open", 20), "o diálogo abriu para a diagonal")
+    ok(js("editor.el.dialogoCorpo.querySelector('select').value") == "gusset_contravento", "diagonal + pilar sugere a chapa de nó")
+    js("editor.el.dialogoOk.click(); 1")
+    ok(esperar("[...editor.documento.entidades.values()].some(e => e.nome === 'Chapa de nó (gusset)')"), "a chapa de nó entrou")
+    erros("Gusset")
 
     # 3) painel da ligação: trocar a espessura refaz
     lid = topo["atributos"]["ligacao"]["id"]
