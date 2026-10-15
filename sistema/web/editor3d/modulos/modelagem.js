@@ -5,7 +5,10 @@
 // * Treliça entre banzos — montantes e diagonais (Pratt, Howe, Warren) entre os dois banzos, com o encaixe das almas;
 // * Contraventamento em X — entre duas barras paralelas, num ou em vários painéis;
 // * Pilares nos eixos — um pilar em cada cruzamento escolhido dos eixos gravados da obra;
-// * Viga entre pilares — no nível pedido, com o topo da viga no nível.
+// * Viga entre pilares — no nível pedido, com o topo da viga no nível;
+// * Longarinas de fechamento — na face de fora dos pilares de uma parede, alma na horizontal, boca para baixo;
+// * Correntes entre terças — no meio (ou nos terços) de cada vão, de centro a centro das terças;
+// * Copiar para os eixos — a tesoura/o pórtico do eixo dele para os eixos paralelos marcados (aqui mesmo, sem o servidor).
 //
 // A geometria é do servidor (nucleo3d/modelagem.py); aqui ficam os diálogos e o comando. Enquanto o diálogo está aberto,
 // as peças aparecem translúcidas no lugar (a prévia, como o fantasma do Mover) e se refazem a cada campo mudado; o
@@ -13,6 +16,7 @@
 
 import * as THREE from 'three';
 import { el, numero } from '../editor.js';
+import * as C from '../ferramentas/_comum.js';
 
 // a prévia: materiais da casa (nunca descartados), malhas do cache da cena
 const MAT_PREVIA = new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide });
@@ -338,5 +342,121 @@ export class MetodosModelagem {
     const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: `${pilares.length} pilares. A viga vai de eixo a eixo dos pilares; a ligação (chapa de topo, flexível) vem depois, pelo Aplicar ligação.` }));
     const e = await this._dialogoComPrevia({ titulo: 'Viga entre pilares', corpo, ok: 'Lançar viga', pedido: () => ({ ferramenta: 'viga', ids: pilares.map(b => b.id), parametros: f.ler() }) });
     if (e) await this._modelar(e.pedido, 'Viga', e.pronto);
+  }
+
+  async dialogoLongarinas() {
+    const pilares = this.selecao.entidades.filter(e => e.tipo === 'barra' && vert(e));
+    if (pilares.length < 2) { this.dica('Selecione os pilares de uma parede: as longarinas vão de um ao outro, na face de fora.'); return; }
+    const base = Math.max(...pilares.map(b => Math.min(b.inicio[2], b.fim[2])));
+    const topo = Math.min(...pilares.map(b => Math.max(b.inicio[2], b.fim[2])));
+    const f = this._formModelagem([
+      { chave: 'perfil', rotulo: 'Perfil', tipo: 'perfil', valor: this._perfilSugerido('longarina', 'Ue 150×60×20×2,25') },
+      { chave: 'espacamento', rotulo: 'Espaçamento máximo (mm)', tipo: 'numero', valor: 1900 },
+      { chave: 'primeira', rotulo: 'Primeira fiada, altura (mm)', tipo: 'numero', valor: Math.round(base + 1900) },
+      { chave: 'ultima', rotulo: 'Última fiada, altura (mm)', tipo: 'numero', valor: Math.round(topo - 300) },
+      { chave: 'continua', rotulo: 'Longarina', tipo: [['nao', 'uma por vão'], ['sim', 'contínua']], valor: 'nao' },
+      { chave: 'balanco', rotulo: 'Balanço nas pontas (mm)', tipo: 'numero', valor: 0 },
+      { chave: 'lado', rotulo: 'Lado', tipo: [['fora', 'de fora (longe do meio do modelo)'], ['dentro', 'de dentro']], valor: 'fora' },
+      { chave: 'boca', rotulo: 'Boca do U para', tipo: [['baixo', 'baixo (não junta água)'], ['cima', 'cima']], valor: 'baixo' },
+    ]);
+    const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: `${pilares.length} pilares. As fiadas encostam na face mais saliente dos pilares (o plano do fechamento), com a alma na horizontal, igualmente espaçadas entre a primeira e a última.` }));
+    const e = await this._dialogoComPrevia({ titulo: 'Longarinas de fechamento', corpo, ok: 'Lançar longarinas', pedido: () => ({ ferramenta: 'longarinas', ids: pilares.map(b => b.id), parametros: f.ler() }) });
+    if (e) await this._modelar(e.pedido, 'Longarinas', e.pronto);
+  }
+
+  async dialogoCorrentes() {
+    const tercas = this.selecao.entidades.filter(e => e.tipo === 'barra' && !vert(e));
+    if (tercas.length < 2) { this.dica('Selecione as terças (duas linhas ou mais, de uma água ou das duas): as correntes vão de uma linha à outra.'); return; }
+    const f = this._formModelagem([
+      { chave: 'linhas', rotulo: 'Correntes por vão', tipo: [['1', '1 (no meio)'], ['2', '2 (nos terços)'], ['3', '3 (nos quartos)']], valor: '1' },
+      { chave: 'perfil', rotulo: 'Perfil', tipo: 'perfil', valor: this._perfilSugerido('corrente', 'Barra ø 16 mm') },
+    ]);
+    const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: 'Os vãos saem das tesouras e vigas que passam por baixo das terças (e das pontas delas); a corrente vai de centro a centro das terças vizinhas, pelo furo na alma.' }));
+    const e = await this._dialogoComPrevia({ titulo: 'Correntes entre terças', corpo, ok: 'Lançar correntes', pedido: () => ({ ferramenta: 'correntes', ids: tercas.map(b => b.id), parametros: f.ler() }) });
+    if (e) await this._modelar(e.pedido, 'Correntes', e.pronto);
+  }
+
+  /** Copiar para os eixos: a tesoura (o pórtico, o detalhe) selecionada copiada do eixo dela para os eixos marcados,
+   *  paralelos — como o "copiar para os níveis" do Revit. Os marcadores de furo e as cotas vão junto; a prévia é o
+   *  fantasma das próprias peças em cada eixo marcado. */
+  async dialogoCopiarParaEixos() {
+    const ids = C.idsSelecionados(this);
+    if (!ids.length) { this.dica('Selecione as peças a copiar (a tesoura, o pórtico, o detalhe): elas vão do eixo delas para os eixos que você marcar.'); return; }
+    const ref = (this.inferencia && this.inferencia.referencias) || {};
+    const eixos = (ref.eixos || this._eixosRef || []).filter(e => e && e.a && e.b && Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) > 1);
+    if (eixos.length < 2) { this.aviso('A obra não tem eixos gravados: grave-os em Lançamento → Planta de lançamento (ou Detalhamentos → Eixos da obra).', 'atencao', 0); return; }
+    const dirDe = (e) => { const d = [e.b[0] - e.a[0], e.b[1] - e.a[1]]; const n = Math.hypot(...d); return [d[0] / n, d[1] / n]; };
+    // a distância (com sinal) de um ponto em planta à reta do eixo
+    const distA = (e, p) => { const d = dirDe(e); return (p[0] - e.a[0]) * -d[1] + (p[1] - e.a[1]) * d[0]; };
+    const centro = C.caixaDe(this.documento, ids).centro;
+    const origem0 = eixos.reduce((m, e) => (Math.abs(distA(e, centro)) < Math.abs(distA(m, centro)) ? e : m), eixos[0]);
+    const escolha = el('select');
+    for (const e of eixos) escolha.append(el('option', { value: e.nome, texto: `${e.nome} (a ${numero(Math.abs(distA(e, centro)), 0)} mm da seleção)`, selected: e === origem0 }));
+    const marcas = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 12px;max-height:160px;overflow:auto' });
+    const estado = el('p', { class: 'estado-previa' });
+    let caixas = [];
+    const origem = () => eixos.find(e => e.nome === escolha.value) || origem0;
+    const paralelos = (o) => { const d0 = dirDe(o); return eixos.filter(e => e !== o && Math.abs(d0[0] * dirDe(e)[0] + d0[1] * dirDe(e)[1]) > 0.999); };
+    const montarCaixas = () => {
+      marcas.replaceChildren();
+      caixas = paralelos(origem()).map(e => {
+        const c = el('input', { type: 'checkbox' });
+        marcas.append(el('label', { style: 'white-space:nowrap' }, c, ` ${e.nome}`));
+        return [e, c];
+      });
+      if (!caixas.length) marcas.append(el('span', { texto: 'nenhum eixo paralelo ao de origem' }));
+    };
+    montarCaixas();
+    const todos = el('button', { type: 'button', texto: 'Todos / nenhum' });
+    todos.addEventListener('click', () => { const v = !caixas.every(([, c]) => c.checked); for (const [, c] of caixas) c.checked = v; atualizar(); });
+    // o deslocamento em planta do eixo de origem até o eixo de destino (perpendicular a eles)
+    const deslocamento = (o, e) => { const d = dirDe(o); const s = distA(o, e.a); return [-d[1] * s, d[0] * s, 0]; };
+    const destinos = () => caixas.filter(([, c]) => c.checked).map(([e]) => e);
+    garantirEstiloPrevia();
+    const fantasmas = [];
+    const tirar = () => { for (const f of fantasmas.splice(0)) this.cena.previa.remove(f.obj); this.cena.pedirQuadro(); };
+    const atualizar = () => {
+      tirar();
+      const o = origem();
+      for (const e of destinos()) {
+        const dl = deslocamento(o, e);
+        const f = C.fantasmaDe(this, ids);
+        C.posicionarFantasma(f, (q) => C.add(q, dl), (v) => v);
+        this.cena.addPrevia(f.obj);
+        fantasmas.push(f);
+      }
+      const n = destinos().length;
+      estado.textContent = n ? `Prévia: ${ids.length} peça${ids.length === 1 ? '' : 's'} × ${n} eixo${n === 1 ? '' : 's'}` : 'Marque os eixos de destino.';
+    };
+    escolha.addEventListener('change', () => { montarCaixas(); atualizar(); });
+    marcas.addEventListener('change', atualizar);
+    const corpo = el('div', {}, el('div', { class: 'campos' }, el('label', { texto: 'Eixo de origem' }), escolha),
+      el('p', { class: 'explica', texto: `${ids.length} peça${ids.length === 1 ? '' : 's'} selecionada${ids.length === 1 ? '' : 's'}. Copiar para os eixos:` }), marcas, todos, estado);
+    atualizar();
+    const d = this.el.dialogo;
+    d.classList.add('com-previa');
+    let r;
+    try { r = await this.dialogo({ titulo: 'Copiar para os eixos', corpo, ok: 'Copiar' }); }
+    finally { d.classList.remove('com-previa'); tirar(); }
+    if (r !== 'ok' || !destinos().length) return;
+    const o = origem();
+    const { pecas } = C.pecasParaTransformar(this.documento, ids.map(id => this.documento.get(id)).filter(Boolean), true);
+    const cmds = [], novos = [];
+    for (const e of destinos()) {
+      const dl = deslocamento(o, e);
+      const lote = C.copiasTransformadas(pecas, (q) => C.add(q, dl), (v) => v);
+      // o grupo copiado aponta para as cópias dos filhos (e o filho, para a cópia do grupo)
+      const mapa = new Map(pecas.map((p, i) => [p.id, lote[i].id]));
+      for (const c of lote) {
+        if (Array.isArray(c.filhos)) c.filhos = c.filhos.map(id => mapa.get(id) || id);
+        if (c.grupo && mapa.has(c.grupo)) c.grupo = mapa.get(c.grupo);
+      }
+      novos.push(...lote.map(c => c.id));
+      if (lote.length) cmds.push(C.cmdAdicionar(lote, 'Copiar para os eixos'));
+    }
+    if (!cmds.length) return;
+    this.executar(C.cmdComposto(cmds, 'Copiar para os eixos'));
+    this.selecao.definir(novos.filter(id => this.documento.get(id)));
+    this.aviso(`Copiar para os eixos: ${pecas.length} peça${pecas.length === 1 ? '' : 's'} em ${destinos().map(e => e.nome).join(', ')}.`, 'info', 8000);
   }
 }

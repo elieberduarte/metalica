@@ -12,7 +12,9 @@ web/editor3d/ferramentas; aqui ficam as que montam a estrutura em poucos cliques
 * **contraventamento em X** — as duas diagonais entre duas barras paralelas (pilares de uma parede, banzos de duas
   tesouras), num ou em vários painéis;
 * **pilares nos eixos** — um pilar em cada cruzamento de eixos da obra escolhido, da base ao nível do topo;
-* **viga entre pilares** — a viga no nível pedido ligando os pilares escolhidos, na ordem em que estão em planta.
+* **viga entre pilares** — a viga no nível pedido ligando os pilares escolhidos, na ordem em que estão em planta;
+* **longarinas de fechamento** — as fiadas na face de fora dos pilares de uma parede (alma na horizontal, boca para baixo);
+* **correntes entre terças** — no meio (ou nos terços) de cada vão, de centro a centro das terças.
 
 Nada altera o documento recebido: cada função devolve {"novas": [entidades (dict)], "alterar": {...}, "avisos"} para o
 editor aplicar com desfazer.
@@ -392,3 +394,166 @@ def viga_entre_pilares(doc, ids: Sequence[str], p: Optional[dict] = None) -> dic
     avisos = [] if all(max(b.inicio[2], b.fim[2]) >= nivel - 1.0 for b in pilares) else \
         ["algum pilar termina abaixo do nível da viga: confira o topo dos pilares"]
     return {"novas": [x.dict() for x in novas], "resumo": {"vigas": len(novas), "nivel": nivel}, "avisos": avisos}
+
+
+# ------------------------------------------------------------------ longarinas de fechamento
+
+def longarinas(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
+    """As fiadas de longarinas na face de fora dos pilares escolhidos (uma parede), como o gerador do galpão: a alma na
+    horizontal (o eixo forte contra o vento), a boca para baixo (não junta água nem pó), igualmente espaçadas entre a
+    primeira e a última fiada, uma por vão ou contínuas."""
+    from nucleo3d.modelo import Barra
+    p = dict(p or {})
+    pilares = [b for b in _barras(doc, ids) if abs(_norm(_sub(b.fim, b.inicio))[2]) > 0.7]
+    if len(pilares) < 2:
+        raise ErroDeDados("selecione dois ou mais pilares de uma parede: as longarinas vão de um ao outro")
+    perfil = str(p.get("perfil") or "Ue 150×60×20×2,25")
+    pl = _perfil(perfil)
+    esp = float(p.get("espacamento") or 1900.0)
+    base = max(min(b.inicio[2], b.fim[2]) for b in pilares)
+    topo = min(max(b.inicio[2], b.fim[2]) for b in pilares)
+    z0 = float(p["primeira"]) if p.get("primeira") not in (None, "") else base + esp
+    z1 = float(p["ultima"]) if p.get("ultima") not in (None, "") else topo - 300.0
+    balanco = float(p.get("balanco") or 0.0)
+    continua = str(p.get("continua") or "nao") == "sim"
+    boca = str(p.get("boca") or "baixo")
+    # a linha da parede em planta: a direção dos dois pilares mais afastados
+    pes = [(b, (b.inicio[0], b.inicio[1], 0.0)) for b in pilares]
+    a_, b_ = max(((x, y) for x in pes for y in pes), key=lambda xy: math.dist(xy[0][1], xy[1][1]))
+    w = _norm(_sub(b_[1], a_[1]))
+    nw = (-w[1], w[0], 0.0)
+    for _b, q in pes:
+        if abs(_dot(_sub(q, a_[1]), nw)) > 300.0:
+            raise ErroDeDados("os pilares não estão numa linha: selecione os de uma parede só")
+    pes.sort(key=lambda x: _dot(x[1], w))
+    # o lado de fora: para longe do meio do modelo
+    outros = [e for e in doc.entidades.values() if getattr(e, "tipo", "") == "barra" and e.id not in set(ids)]
+    if outros:
+        cx = sum((e.inicio[0] + e.fim[0]) / 2 for e in outros) / len(outros)
+        cy = sum((e.inicio[1] + e.fim[1]) / 2 for e in outros) / len(outros)
+        if _dot(_sub((cx, cy, 0.0), a_[1]), nw) > 0:
+            nw = _mul(nw, -1.0)
+    if str(p.get("lado") or "fora") == "dentro":
+        nw = _mul(nw, -1.0)
+    # o plano das longarinas: a face mais saliente dos pilares (o plano do fechamento fica reto)
+    face = max(_topo(b, nw) - _dot(q, nw) for b, q in pes)
+    d_l = float(pl.d or 150.0)
+    off = face + d_l / 2.0
+    if z1 < z0:
+        zs, passo = [z0], 0.0
+    else:
+        n = max(1, int(math.ceil((z1 - z0) / esp - 1e-6)))
+        passo = (z1 - z0) / n
+        zs = [z0 + k * passo for k in range(n + 1)]
+    novas = []
+    for j, z in enumerate(zs):
+        cs = [(q[0] + nw[0] * off, q[1] + nw[1] * off, z) for _b, q in pes]
+        trechos = [(cs[0], cs[-1])] if continua else list(zip(cs[:-1], cs[1:]))
+        for i, (c0, c1) in enumerate(trechos):
+            dirt = _norm(_sub(c1, c0))
+            if i == 0 and balanco:
+                c0 = _sub(c0, _mul(dirt, balanco))
+            if i == len(trechos) - 1 and balanco:
+                c1 = _add(c1, _mul(dirt, balanco))
+            rot = _rotacao_para_v(dirt, nw)
+            ub = _u_da_barra(dirt, rot)
+            if (boca == "baixo" and ub[2] > 0) or (boca == "cima" and ub[2] < 0):
+                rot = round((rot + 180.0) % 360.0, 3)
+            novas.append(Barra(nome="Longarina", inicio=_r(c0), fim=_r(c1), perfil=perfil, rotacao=rot,
+                               papel="longarina", camada="Terças", material="Aço galvanizado",
+                               atributos={"tipo_ifc": "IfcMember", "fiada": j + 1, "vao": i + 1}))
+    avisos = []
+    if passo and passo > esp + 1e-6:
+        avisos.append("espaçamento acima do pedido")
+    if zs[-1] > topo or zs[0] < base:
+        avisos.append("fiada fora da altura dos pilares: confira a primeira e a última")
+    return {"novas": [b.dict() for b in novas],
+            "resumo": {"linhas": len(zs), "passo": round(passo, 1), "pecas": len(novas)}, "avisos": avisos}
+
+
+# ------------------------------------------------------------------ correntes entre terças
+
+def _estacoes_de_apoio(doc, ids, w, ref_a, ref_z) -> List[float]:
+    """as estações (ao longo de w, a partir de 0) em que outra barra cruza por baixo da linha de terça (ref_a + s·w), em
+    planta: as tesouras e as vigas que apoiam as terças"""
+    fora = []
+    sel = set(ids)
+    for e in doc.entidades.values():
+        if getattr(e, "tipo", "") != "barra" or e.id in sel:
+            continue
+        d = _sub(e.fim, e.inicio)
+        if math.hypot(d[0], d[1]) < 1.0 or abs(_dot(_norm((d[0], d[1], 0.0)), w)) > 0.5:
+            continue                                      # em pé ou paralela às terças
+        den = w[0] * d[1] - w[1] * d[0]
+        if abs(den) < 1e-9:
+            continue
+        rx, ry = e.inicio[0] - ref_a[0], e.inicio[1] - ref_a[1]
+        s = (rx * d[1] - ry * d[0]) / den
+        t = (rx * w[1] - ry * w[0]) / den
+        if not (-0.01 <= t <= 1.01):
+            continue
+        z = e.inicio[2] + d[2] * t
+        if 0.0 <= ref_z - z <= 1500.0:                   # por baixo da terça
+            fora.append(s + _dot(ref_a, w))
+    return fora
+
+
+def correntes(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
+    """As correntes entre as linhas de terças escolhidas (as duas águas, se quiser): `linhas` por vão (1 = no meio,
+    2 = nos terços), de centro a centro das terças, como o gerador do galpão. Os vãos vêm dos apoios que cruzam por
+    baixo das terças (tesouras, vigas) e das pontas delas."""
+    from nucleo3d.modelo import Barra
+    p = dict(p or {})
+    tercas = [b for b in _barras(doc, ids) if abs(_norm(_sub(b.fim, b.inicio))[2]) < 0.7]
+    if len(tercas) < 2:
+        raise ErroDeDados("selecione as terças (duas linhas ou mais): as correntes vão de uma à outra")
+    perfil = str(p.get("perfil") or "Barra ø 16 mm")
+    _perfil(perfil)
+    n_lin = max(1, int(p.get("linhas") or 1))
+    d0 = _sub(tercas[0].fim, tercas[0].inicio)
+    w = _norm((d0[0], d0[1], 0.0))
+    nw = (-w[1], w[0], 0.0)
+    segs = []
+    for b in tercas:
+        a, c = b.inicio, b.fim
+        d = _sub(c, a)
+        if abs(_dot(_norm((d[0], d[1], 0.0)), w)) < 0.98:
+            raise ErroDeDados("as terças escolhidas não são paralelas")
+        if _dot(d, w) < 0:
+            a, c = c, a
+        segs.append((b, a, c, _dot(a, w), _dot(c, w), _dot(_mul(_add(a, c), 0.5), nw)))
+    # as estações dos vãos: as pontas das terças e os apoios por baixo delas
+    est = [s[3] for s in segs] + [s[4] for s in segs]
+    for s in segs:
+        est += [x for x in _estacoes_de_apoio(doc, ids, w, s[1], (s[1][2] + s[2][2]) / 2.0) if s[3] - 1 <= x <= s[4] + 1]
+    juntas = []
+    for x in sorted(est):
+        if not juntas or x - juntas[-1] > 100.0:
+            juntas.append(x)
+
+    def no_eixo(seg, s):
+        _b, a, c, sa, sc, _n = seg
+        t = (s - sa) / ((sc - sa) or 1.0)
+        return _add(a, _mul(_sub(c, a), t))
+    novas = []
+    n_vaos = 0
+    for sa, sb in zip(juntas[:-1], juntas[1:]):
+        linhas = sorted((s for s in segs if s[3] <= sa + 1.0 and s[4] >= sb - 1.0), key=lambda s: s[5])
+        unicas = []                                       # duas peças na mesma linha contam uma vez
+        for s in linhas:
+            if not unicas or s[5] - unicas[-1][5] > 30.0:
+                unicas.append(s)
+        if len(unicas) < 2:
+            continue
+        n_vaos += 1
+        for k in range(1, n_lin + 1):
+            xc = sa + (sb - sa) * k / (n_lin + 1.0)
+            pts = [no_eixo(s, xc) for s in unicas]
+            for q0, q1 in zip(pts[:-1], pts[1:]):
+                novas.append(Barra(nome="Corrente de terça", inicio=_r(q0), fim=_r(q1), perfil=perfil, papel="corrente",
+                                   camada="Terças", material="Aço",
+                                   atributos={"tipo_ifc": "IfcMember", "vao": n_vaos, "linha_corrente": k}))
+    if not novas:
+        raise ErroDeDados("nenhum vão com duas linhas de terças lado a lado")
+    return {"novas": [b.dict() for b in novas], "resumo": {"vaos": n_vaos, "linhas": n_lin, "pecas": len(novas)},
+            "avisos": []}

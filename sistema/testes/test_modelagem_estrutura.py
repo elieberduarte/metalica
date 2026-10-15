@@ -207,3 +207,96 @@ def test_viga_entre_pilares_com_o_topo_no_nivel():
     assert not rv["avisos"]
     rv = modelagem.viga_entre_pilares(doc, ids, {"nivel": 6500})
     assert rv["avisos"]
+
+
+# ------------------------------------------------------------------ longarinas
+
+def _parede():
+    """3 pilares W 250 na linha y = 0 (a parede), alma ao longo de x, e uma tesoura do lado de dentro (y > 0)"""
+    ps = [Barra(nome="P%d" % i, inicio=(x, 0, 0), fim=(x, 0, 7000), perfil="W 250×32,7", papel="pilar", rotacao=0)
+          for i, x in enumerate((0, 6000, 12000))]
+    t = Barra(nome="T", inicio=(0, 0, 7000), fim=(0, 20000, 7000), perfil="W 150×13", papel="banzo")
+    return _doc(*ps, t), ps
+
+
+def test_longarinas_na_face_de_fora_com_a_boca_para_baixo():
+    doc, ps = _parede()
+    r = modelagem.longarinas(doc, [p.id for p in ps], {"primeira": 1000, "ultima": 6500, "espacamento": 1900})
+    bs = _barras(r)
+    n = math.ceil(5500 / 1900)
+    assert r["resumo"]["linhas"] == n + 1
+    assert len(bs) == 2 * (n + 1)                          # dois vãos por fiada
+    zs = sorted({b.inicio[2] for b in bs})
+    assert zs[0] == pytest.approx(1000) and zs[-1] == pytest.approx(6500)
+    face = min(min(q[1] for q in malha_barra(p)[0]) for p in ps)     # o lado de fora é y < 0 (a tesoura está em y > 0)
+    for b in bs:
+        vs, _ = malha_barra(b)
+        # encostada na face de fora do pilar, toda do lado de fora
+        assert max(q[1] for q in vs) == pytest.approx(face, abs=0.5)
+        # a alma na horizontal: a altura da seção (150) ao longo de y, as abas (60) na vertical
+        assert max(q[1] for q in vs) - min(q[1] for q in vs) == pytest.approx(150, abs=0.5)
+        assert max(q[2] for q in vs) - min(q[2] for q in vs) == pytest.approx(60, abs=0.5)
+        # a boca para baixo: a alma em cima, perto do eixo (o centro de gravidade do Ue), e as abas descendo
+        zc = b.inicio[2]
+        assert max(q[2] for q in vs) - zc < zc - min(q[2] for q in vs)
+
+
+def test_longarinas_continuas_e_do_lado_de_dentro():
+    doc, ps = _parede()
+    r = modelagem.longarinas(doc, [p.id for p in ps], {"continua": "sim", "lado": "dentro", "balanco": 200})
+    bs = _barras(r)
+    assert len(bs) == r["resumo"]["linhas"]
+    assert all(b.inicio[1] > 0 for b in bs)
+    assert min(min(b.inicio[0], b.fim[0]) for b in bs) == pytest.approx(-200)
+    # sem primeira/última: da base + espaçamento ao topo − 300
+    assert min(b.inicio[2] for b in bs) == pytest.approx(1900)
+    assert max(b.inicio[2] for b in bs) == pytest.approx(6700)
+
+
+def test_longarinas_recusa_pilares_fora_de_linha():
+    doc, ps = _parede()
+    q = Barra(inicio=(3000, 2000, 0), fim=(3000, 2000, 7000), perfil="W 250×32,7", papel="pilar")
+    doc.add(q)
+    with pytest.raises(ErroDeDados):
+        modelagem.longarinas(doc, [ps[0].id, ps[1].id, q.id], {})
+
+
+# ------------------------------------------------------------------ correntes
+
+def _cobertura():
+    """3 tesouras (banzos em x = 0, 6000, 12000) e 4 linhas de terças contínuas de 0 a 12000 em cima delas"""
+    ts = [Barra(nome="T%d" % i, inicio=(x, 0, 5000), fim=(x, 8000, 5800), perfil="W 150×13", papel="banzo")
+          for i, x in enumerate((0, 6000, 12000))]
+    ls = [Barra(nome="L%d" % k, inicio=(0, y, 5000 + y / 10 + 150), fim=(12000, y, 5000 + y / 10 + 150),
+                perfil="Ue 150×60×20×2,25", papel="terça") for k, y in enumerate((500, 2500, 4500, 6500))]
+    return _doc(*ts, *ls), ts, ls
+
+
+def test_correntes_no_meio_de_cada_vao_pelos_apoios():
+    doc, ts, ls = _cobertura()
+    r = modelagem.correntes(doc, [b.id for b in ls], {"linhas": 1})
+    bs = _barras(r)
+    assert r["resumo"]["vaos"] == 2                        # as tesouras partem as terças contínuas em 2 vãos
+    assert len(bs) == 2 * 3                               # 3 ligações entre 4 linhas, por vão
+    assert sorted({round(b.inicio[0]) for b in bs}) == [3000, 9000]
+    for b in bs:
+        assert b.papel == "corrente" and b.inicio[0] == b.fim[0]
+        # de centro a centro: as pontas no eixo das terças
+        assert any(abs(b.inicio[1] - l.inicio[1]) < 0.5 and abs(b.inicio[2] - l.inicio[2]) < 0.5 for l in ls)
+
+
+def test_correntes_nos_tercos_e_terças_por_vao():
+    doc, ts, _ls = _cobertura()
+    ls = [Barra(inicio=(x0, y, 5200), fim=(x0 + 6000, y, 5200), perfil="Ue 150×60×20×2,25", papel="terça")
+          for y in (500, 2500) for x0 in (0, 6000)]
+    for b in ls:
+        doc.add(b)
+    r = modelagem.correntes(doc, [b.id for b in ls], {"linhas": 2})
+    bs = _barras(r)
+    assert sorted(round(b.inicio[0]) for b in bs) == [2000, 4000, 8000, 10000]
+
+
+def test_correntes_pede_duas_linhas():
+    doc, ts, ls = _cobertura()
+    with pytest.raises(ErroDeDados):
+        modelagem.correntes(doc, [ls[0].id], {})
