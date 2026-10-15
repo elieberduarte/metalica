@@ -61,6 +61,15 @@ export class FerramentaBarra extends Ferramenta {
   get acoAtivo() { return (this.editor && this.editor.acoAtivo) || 'ASTM A572 Gr.50'; }
   get papelAtivo() { return (this.editor && this.editor.papelAtivo) || 'viga'; }
 
+  /** O papel da barra de `a` a `b`: o escolhido; sem escolha (o "viga" de partida), a barra em pé é pilar — o pilar
+   *  desenhado com B, ↑ e 3000 saía "viga" e ia assim para o cálculo e o detalhamento (teste de fluxo, 15/10). */
+  papelPara(a, b) {
+    const p = this.papelAtivo;
+    if (p !== 'viga' || (this.editor && this.editor._papelEscolhido) || !a || !b) return p;
+    const L = C.dist(a, b);
+    return L > 1e-6 && Math.abs(b[2] - a[2]) / L > 0.95 ? 'pilar' : p;
+  }
+
   get rotacaoAtiva() { return this.constructor.rotacao || 0; }
 
   get insercao() { return { altura: 'eixo', largura: 'eixo', da: 0, dl: 0, ...(this.constructor.insercao || {}) }; }
@@ -87,7 +96,7 @@ export class FerramentaBarra extends Ferramenta {
 
   dicaComPerfil(texto) {
     const rot = this.rotacaoAtiva ? ` · ${this.rotacaoAtiva}°` : '';
-    return `${texto} — ${this.perfilAtivo} · ${this.papelAtivo}${rot} (perfil, papel e rotação no painel; ↑↓ os perfis do modelo)`;
+    return `${texto} — ${this.perfilAtivo} · ${this.papelAtivo}${rot} (perfil, papel e rotação no painel; ↑↓ os perfis do modelo antes do 1º clique, depois ↑ trava Z)`;
   }
 
   /** Perfis que o modelo já usa, do mais comum para o menos. */
@@ -129,7 +138,7 @@ export class FerramentaBarra extends Ferramenta {
       return s;
     };
     const acos = [...new Set([...((ed.catalogo && ed.catalogo.acos) || []), this.acoAtivo])];
-    g.append(el('label', { texto: 'Papel' }), lista(PAPEIS, this.papelAtivo, v => { ed.papelAtivo = v; aoTrocar(); }, 'Papel estrutural (vai para o cálculo e o detalhamento)'),
+    g.append(el('label', { texto: 'Papel' }), lista(PAPEIS, this.papelAtivo, v => { ed.papelAtivo = v; ed._papelEscolhido = true; aoTrocar(); }, 'Papel estrutural (vai para o cálculo e o detalhamento)'),
              el('label', { texto: 'Aço' }), lista(acos, this.acoAtivo, v => { ed.acoAtivo = v; }, 'Aço da barra'),
              el('label', { texto: 'Rotação (°)' }),
              lista([0, 90, 180, 270], [0, 90, 180, 270].includes(this.rotacaoAtiva) ? this.rotacaoAtiva : 0,
@@ -199,7 +208,7 @@ export class FerramentaBarra extends Ferramenta {
     const t = String(texto).trim().toLowerCase();
     const papel = t === 'terca' ? 'terça' : t;
     if (PAPEIS.includes(papel)) {
-      if (this.editor) this.editor.papelAtivo = papel;
+      if (this.editor) { this.editor.papelAtivo = papel; this.editor._papelEscolhido = true; }
       this.dica(this.dicaComPerfil(this.inicio ? 'Clique no fim da barra' : 'Clique no início da barra'));
       return true;
     }
@@ -218,15 +227,18 @@ export class FerramentaBarra extends Ferramenta {
 
   onTecla(ev) {
     if (ev.type && ev.type !== 'keydown') return false;
+    // depois do 1º clique as setas travam o eixo, como em toda ferramenta (↑ Z para o pilar, ↓ solta); antes dele, ↑↓
+    // percorrem os perfis do modelo (teste de fluxo, 15/10: o pilar não saía na vertical e o ↑ trocava o perfil)
+    if (this.inicio && (ev.key === 'ArrowUp' || ev.key === 'ArrowDown')) { C.teclaDeEixo(this, ev); this.desenhar(); return true; }
     if (ev.key === 'ArrowUp') { this.trocarPerfil(+1); return true; }
     if (ev.key === 'ArrowDown') { this.trocarPerfil(-1); return true; }
-    // ← e → travam X e Y (convenção da inferência do núcleo); ↑ e ↓ ficam para o perfil
+    // ← e → travam X e Y (convenção da inferência do núcleo)
     if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') { C.teclaDeEixo(this, ev); this.desenhar(); return true; }
     if (ev.key === 'PageUp' || ev.key === 'PageDown') {
       // papel estrutural, sem sair da ferramenta
       const i = PAPEIS.indexOf(this.papelAtivo);
       const j = (i + (ev.key === 'PageUp' ? 1 : -1) + PAPEIS.length) % PAPEIS.length;
-      if (this.editor) this.editor.papelAtivo = PAPEIS[j];
+      if (this.editor) { this.editor.papelAtivo = PAPEIS[j]; this.editor._papelEscolhido = true; }
       this.dica(this.dicaComPerfil('Papel: ' + PAPEIS[j]));
       return true;
     }
@@ -261,7 +273,7 @@ export class FerramentaBarra extends Ferramenta {
       material: '', visivel: true, bloqueada: false, grupo: '',
       inicio: C.copiar(ei.a), fim: C.copiar(ei.b),
       perfil: this.perfilAtivo, rotacao: this.rotacaoAtiva,
-      papel: this.papelAtivo, aco: this.acoAtivo,
+      papel: this.papelPara(ei.a, ei.b), aco: this.acoAtivo,
       recorte_inicio: 0, recorte_fim: 0, atributos: {},
     };
     this.executar(C.cmdAdicionar(ent, 'Criar barra'));
@@ -316,7 +328,8 @@ export class FerramentaBarra extends Ferramenta {
     const peso = reg && reg.massa
       ? `  ·  ${(reg.massa * L / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg`
       : '';
-    const texto = `${formatar(L)}  ·  ${this.perfilAtivo}  ·  ${this.papelAtivo}${peso}`;
+    const papel = this.papelPara(a, b);
+    const texto = `${formatar(L)}  ·  ${this.perfilAtivo}  ·  ${papel}${papel !== this.papelAtivo ? ' (em pé)' : ''}${peso}`;
     this.medida(texto);
     g.add(C.gRotulo(texto, C.meio(a, b), '#4b5563'));
     this.previa(g);
