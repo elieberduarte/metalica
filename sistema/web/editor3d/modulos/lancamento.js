@@ -102,6 +102,8 @@ export class MetodosLancamento {
     const eixos = r.eixos || [];
     this._eixosRef = eixos;           // o painel do bloco diz os eixos perto de cada ponta
     const niveis = r.niveis || [];
+    // o snap nos eixos e nos níveis da obra (F11, 14/10): o cruzamento "A-3", o ponto sobre o eixo, a altura do nível
+    if (this.inferencia) this.inferencia.referencias = { eixos, niveis };
     if (!segs.length && !eixos.length && !niveis.length) return;
     const escuro = !!this.escuro;
     const cores = escuro ? TEMA_EIXO.escuro : TEMA_EIXO.claro;

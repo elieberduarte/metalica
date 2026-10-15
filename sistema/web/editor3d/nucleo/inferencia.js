@@ -24,6 +24,12 @@ export const TIPOS = {
   eixo_z:       { rotulo: 'No eixo Z',   cor: '#2a63c8', glifo: 'eixo',     prio: 6 },
   paralelo:     { rotulo: 'Paralelo',    cor: '#b07cc6', glifo: 'eixo',     prio: 6 },
   perpendicular:{ rotulo: 'Perpendicular', cor: '#b07cc6', glifo: 'eixo',   prio: 4.5 },   // vence o "sobre aresta" no pé
+  // os eixos e os níveis da obra (F11, 14/10): o cruzamento de dois eixos num nível, o ponto sobre um eixo, a altura de
+  // um nível na vertical da âncora; e as direções do plano de trabalho inclinado (a água da cobertura)
+  eixo_obra:    { rotulo: 'Eixo da obra', cor: '#b45309', glifo: 'xis',      prio: 2.5 },
+  nivel:        { rotulo: 'Nível',       cor: '#b45309', glifo: 'quadrado', prio: 2.6 },
+  sobre_eixo_obra: { rotulo: 'Sobre o eixo', cor: '#b45309', glifo: 'losango', prio: 5.5 },
+  eixo_plano:   { rotulo: 'No plano de trabalho', cor: '#7c3aed', glifo: 'eixo', prio: 6 },
   sobre_face:   { rotulo: 'Sobre face',  cor: '#2a63c8', glifo: 'losango',  prio: 7 },
   plano_base:   { rotulo: 'No plano',    cor: '#8a94a6', glifo: 'ponto',    prio: 8 },
 };
@@ -49,6 +55,10 @@ export class Inferencia {
     this.travadoPorShift = false;
     this.ultimo = null;             // último ponto resolvido
     this._contornos = new Map();    // id → {chave, pontos, arestas, raioMM}: o contorno da seção da barra no mundo
+    // o plano de trabalho (ferramenta Plano de trabalho): {origem, normal, ex, ey, nome} ou null = o chão (z da âncora)
+    this.planoTrabalho = null;
+    // os eixos e os níveis da obra (modulos/lancamento._carregarReferencia): {eixos: [{nome, a, b}], niveis: [{nome, z}]}
+    this.referencias = null;
     this._esferas = new Map();      // id → {c, r}: a esfera envolvente da peça, para o descarte pelo raio do cursor
     if (documento && typeof documento.aoMudar === 'function') {
       documento.aoMudar(({ ids, acao }) => {
@@ -168,8 +178,11 @@ export class Inferencia {
 
   /** Descrição do que está travado, para a barra inferior. */
   get descricaoTrava() {
-    if (this.travado === 'aresta') return 'paralelo à aresta (solte o Shift para destravar)';
-    return this.travado ? `eixo ${this.travado.toUpperCase()} travado` : '';
+    const pl = this.planoTrabalho ? `plano de trabalho: ${this.planoTrabalho.nome || 'inclinado'}` : '';
+    let t = '';
+    if (this.travado === 'aresta') t = 'paralelo à aresta (solte o Shift para destravar)';
+    else if (this.travado) t = `eixo ${this.travado.toUpperCase()} travado`;
+    return [t, pl].filter(Boolean).join(' · ');
   }
 
   // ------------------------------------------------------------- resolver
@@ -192,7 +205,7 @@ export class Inferencia {
 
     // 1. Eixo travado: o ponto é a projeção do raio sobre a reta do eixo.
     if (this.travado && this.ancora) {
-      const dir = this.travado === 'aresta' ? this.direcaoTravada : EIXOS[this.travado];
+      const dir = this.travado === 'aresta' ? this.direcaoTravada : (EIXOS[this.travado] || this.direcaoTravada);
       const p = pontoNoEixo(this.ancora, dir, raio);
       const r = { ...base, ponto: p, tipoSnap: this.travado === 'aresta' ? 'paralelo' : 'eixo_' + this.travado };
       return this._concluir(r, tela);
@@ -366,15 +379,79 @@ export class Inferencia {
       }
     }
 
+    // 4b. As direções do plano de trabalho inclinado, a partir da âncora (desenhar ao longo da água)
+    const pl = this.planoTrabalho;
+    if (this.ancora && pl && pl.ex && pl.ey) {
+      for (const [nome, dir] of [['u', pl.ex], ['v', pl.ey]]) {
+        const p = pontoNoEixo(this.ancora, dir, raio);
+        if (!p) continue;
+        const t = this.camera.paraTela(p);
+        const d = Math.hypot(t[0] - x, t[1] - y);
+        if (d <= tol * 1.4 && norma(subtrair(p, this.ancora)) > 1e-6 && t[2] < 1) {
+          cand.push({ tipo: 'eixo_plano', ponto: p, d, rotulo: `No plano (${nome === 'u' ? 'ao longo' : 'atravessado'})`, direcao: dir });
+        }
+      }
+    }
+
+    // 4c. Os eixos e os níveis da obra: o cruzamento de dois eixos em cada nível (e no chão), o ponto sobre um eixo, e a
+    // altura do nível na vertical da âncora
+    const ref = this.referencias;
+    if (ref && ((ref.eixos && ref.eixos.length) || (ref.niveis && ref.niveis.length))) {
+      const zs = [...new Set([0, ...((ref.niveis || []).map(n => +n.z || 0))])];
+      const nomeNivel = (z) => { const n = (ref.niveis || []).find(k => Math.abs((+k.z || 0) - z) < 0.5); return n ? n.nome : (z ? `+${(z / 1000).toFixed(2).replace('.', ',')}` : '±0,00'); };
+      const eixos = ref.eixos || [];
+      // os cruzamentos dos eixos (na planta) uma vez por conjunto de eixos: o mouse só projeta
+      if (this._refDosNos !== ref) {
+        this._refDosNos = ref;
+        this._nosDaObra = [];
+        for (let i = 0; i < eixos.length; i++) {
+          for (let j = i + 1; j < eixos.length; j++) {
+            const A = eixos[i], B = eixos[j];
+            const p2 = cruzamento2d(A.a, A.b, B.a, B.b);
+            if (p2) this._nosDaObra.push({ p2, nome: `${A.nome}-${B.nome}` });
+          }
+        }
+      }
+      for (const { p2, nome } of this._nosDaObra) {
+        for (const z of zs) {
+          const q = [p2[0], p2[1], z];
+          const d = perto(q);
+          if (d !== null) cand.push({ tipo: 'eixo_obra', ponto: q, d, rotulo: `${nome} · ${nomeNivel(z)}` });
+        }
+      }
+      for (const E of eixos) {
+        for (const z of zs) {
+          const q = maisPertoDoSegmento([E.a[0], E.a[1], z], [E.b[0], E.b[1], z], raio);
+          if (!q) continue;
+          const d = perto(q);
+          if (d !== null) cand.push({ tipo: 'sobre_eixo_obra', ponto: q, d: d + 1, rotulo: `Eixo ${E.nome} · ${nomeNivel(z)}` });
+        }
+      }
+      if (this.ancora) {
+        for (const z of zs) {
+          if (Math.abs(z - this.ancora[2]) < 0.5) continue;
+          const q = [this.ancora[0], this.ancora[1], z];
+          const d = perto(q);
+          if (d !== null) cand.push({ tipo: 'nivel', ponto: q, d, rotulo: `Nível ${nomeNivel(z)}` });
+        }
+      }
+    }
+
     // 5. Sobre a face, quando o raio atinge alguma coisa.
     if (alvo) {
       cand.push({ tipo: 'sobre_face', ponto: alvo.ponto, d: tol + 1,
                   id: alvo.id, face: alvo.face, normal: alvo.normal });
     }
 
-    // 6. Último recurso: o plano de trabalho.
-    const zPlano = this.ancora ? this.ancora[2] : 0;
-    cand.push({ tipo: 'plano_base', ponto: cruzarPlano(raio, zPlano), d: tol + 2 });
+    // 6. Último recurso: o plano de trabalho — o chão na altura da âncora ou, com o plano de trabalho definido, o plano
+    // dele (pela âncora, paralelo a ele): o ponto solto cai na água da cobertura, não no chão
+    if (pl && pl.normal) {
+      const o = this.ancora || pl.origem;
+      cand.push({ tipo: 'plano_base', ponto: cruzarPlanoQualquer(raio, o, pl.normal), d: tol + 2, normal: pl.normal });
+    } else {
+      const zPlano = this.ancora ? this.ancora[2] : 0;
+      cand.push({ tipo: 'plano_base', ponto: cruzarPlano(raio, zPlano), d: tol + 2 });
+    }
 
     // empate na tela (o mesmo tipo, a menos de 3 px): ganha o ponto da peça sob o cursor e, depois, o mais perto da câmera —
     // num modelo grande, a ponta de uma peça lá atrás caía no mesmo pixel do canto que o usuário mirava (13/10/2026)
@@ -390,6 +467,7 @@ export class Inferencia {
     });
     const melhor = cand[0];
     if (melhor.aresta) this.ultimaAresta = melhor.aresta;     // para o Shift travar paralelo
+    if (melhor.direcao) this.ultimaAresta = [melhor.ponto, somar(melhor.ponto, melhor.direcao)];   // Shift trava a direção do plano
     return this._concluir({
       ...base,
       ponto: melhor.ponto,
@@ -398,12 +476,13 @@ export class Inferencia {
       aresta: melhor.aresta || null,
       normal: melhor.normal || (alvo ? alvo.normal : [0, 0, 1]),
       tipoSnap: melhor.tipo,
+      rotuloSnap: melhor.rotulo || '',
     }, tela);
   }
 
   _concluir(r, tela) {
     const t = TIPOS[r.tipoSnap] || TIPOS.plano_base;
-    r.rotulo = t.rotulo;
+    r.rotulo = r.rotuloSnap || t.rotulo;
     r.cor = t.cor;
     r.tela = tela;
     this.ultimo = r;
@@ -443,7 +522,8 @@ export class Inferencia {
     texto.setAttribute('y', y - 11);
     texto.setAttribute('class', 'rotulo-snap');
     texto.setAttribute('fill', t.cor);
-    texto.textContent = this.travado ? `${t.rotulo} (travado)` : t.rotulo;
+    const rot = p.rotulo || t.rotulo;
+    texto.textContent = this.travado ? `${rot} (travado)` : rot;
     this.svg.appendChild(texto);
   }
 
@@ -500,6 +580,25 @@ const doc = (svg, tag) => svg.ownerDocument.createElementNS(NS, tag);
 // --------------------------------------------------------- geometria 3D
 
 /** Onde o raio cruza o plano horizontal z = altura. */
+/** O raio contra o plano (ponto `o`, normal `n`); longe na direção do raio quando não cruza para a frente. */
+export function cruzarPlanoQualquer(raio, o, n) {
+  const { origem: r0, direcao: d } = raio;
+  const den = d[0] * n[0] + d[1] * n[1] + d[2] * n[2];
+  if (Math.abs(den) < 1e-9) return [r0[0] + d[0] * 1e4, r0[1] + d[1] * 1e4, r0[2] + d[2] * 1e4];
+  const t = ((o[0] - r0[0]) * n[0] + (o[1] - r0[1]) * n[1] + (o[2] - r0[2]) * n[2]) / den;
+  const k = t < 0 ? 1e4 : t;
+  return [r0[0] + d[0] * k, r0[1] + d[1] * k, r0[2] + d[2] * k];
+}
+
+/** O cruzamento das retas AB e CD na planta (x, y), ou null quando são paralelas. */
+export function cruzamento2d(A, B, Cc, D) {
+  const r = [B[0] - A[0], B[1] - A[1]], s = [D[0] - Cc[0], D[1] - Cc[1]];
+  const den = r[0] * s[1] - r[1] * s[0];
+  if (Math.abs(den) < 1e-9) return null;
+  const t = ((Cc[0] - A[0]) * s[1] - (Cc[1] - A[1]) * s[0]) / den;
+  return [A[0] + t * r[0], A[1] + t * r[1]];
+}
+
 export function cruzarPlano(raio, altura = 0) {
   const { origem: o, direcao: d } = raio;
   if (Math.abs(d[2]) < 1e-9) return [o[0] + d[0] * 1e4, o[1] + d[1] * 1e4, altura];

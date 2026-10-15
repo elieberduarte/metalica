@@ -13,6 +13,7 @@ const ARQUIVOS = [
   ['./circulo.js', 'desenho'],
   ['./poligono.js', 'desenho'],
   ['./arco.js', 'desenho'],
+  ['./plano.js', 'desenho'],
   // edição
   ['./pushpull.js', 'edicao'],
   ['./offset.js', 'edicao'],

@@ -20,7 +20,7 @@
   var GRUPOS = [
     { nome: 'Selecionar', itens: [F('selecionar', ['selecionar'], ['selecionar'])] },
     { nome: 'Desenhar', recolhe: 4, itens: [F('linha', ['linha'], ['linha']), F('polilinha', ['polilinha']), F('retangulo', ['retangulo'], ['retangulo']),
-      F('circulo', ['circulo'], ['circulo']), F('arco', ['arco'], ['arco']), F('poligono', null, ['poligono'])] },
+      F('circulo', ['circulo'], ['circulo']), F('arco', ['arco'], ['arco']), F('poligono', null, ['poligono']), F('plano', null, ['plano'])] },
     { nome: 'Modificar', recolhe: 3, itens: [F('mover', ['mover'], ['mover']), F('copiar', ['copiar'], ['copiar']), F('girar', ['girar'], ['girar']),
       F('espelhar', ['espelhar'], ['espelhar']), F('escalar', ['escalar'], ['escalar']), F('offset', ['offset'], ['offset']), F('empurrar', ['esticar'], ['pushpull']), F('apagar', ['apagar'])],
       mais: [F('aparar', ['aparar']), F('estender', ['estender'], ['estender']), F('concordar', ['concordar']),
