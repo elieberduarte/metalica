@@ -150,10 +150,12 @@ export class MetodosBloco {
   _aoMudarSelecaoBloco(ids) {
     if (this._pintandoBloco) return;
     const pecas = new Set(ids.map(i => pecaDe(this.documento.get(i))));
-    if (ids.length > 1 && pecas.size === 1 && !pecas.has(null) && !pecas.has(undefined)) {
+    // na seleção por peça (Alt+clique) as barras do mesmo bloco não viram o bloco: sem o painel e sem o destaque
+    // das vizinhas, que pintava tudo o que encosta e parecia o grupo inteiro selecionado (usuário, 15/10)
+    if (ids.length > 1 && pecas.size === 1 && !pecas.has(null) && !pecas.has(undefined) && !this.selecao.modoPeca) {
       this._mostrarBloco([...pecas][0], ids);
     } else {
-      this._fecharBloco(false);
+      this._fecharBloco(!!this.selecao.modoPeca);
     }
   }
 
