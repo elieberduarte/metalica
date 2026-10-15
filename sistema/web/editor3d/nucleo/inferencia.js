@@ -453,6 +453,27 @@ export class Inferencia {
       cand.push({ tipo: 'plano_base', ponto: cruzarPlano(raio, zPlano), d: tol + 2 });
     }
 
+    // oclusão (15/10/2026, "pega um ponto de origem nada a ver atrás da placa, no pé da placa de trás"): com uma face sob o
+    // cursor, o ponto notável que fica ATRÁS dela — o canto da peça escondida, o cruzamento dos eixos no chão lá atrás — não
+    // vale; antes só a distância na tela contava e a extremidade escondida ganhava da face (prioridade maior). A folga
+    // cresce com a distância do ponto ao cursor na tela: o canto e a aresta da própria face mirada, vista de lado, ficam
+    // um pouco mais fundos que o acerto e continuam valendo.
+    if (alvo && alvo.ponto) {
+      const ESCONDE = new Set(['extremidade', 'meio', 'sobre_aresta', 'centro', 'interseccao', 'perpendicular',
+                               'eixo_obra', 'sobre_eixo_obra', 'nivel']);
+      const vh = subtrair(alvo.ponto, ro);
+      const tHit = vh[0] * rd[0] + vh[1] * rd[1] + vh[2] * rd[2];
+      for (let i = cand.length - 1; i >= 0; i--) {
+        const c = cand[i];
+        if (!ESCONDE.has(c.tipo)) continue;
+        const vc = subtrair(c.ponto, ro);
+        const tc = vc[0] * rd[0] + vc[1] * rd[1] + vc[2] * rd[2];
+        const mmpx = orto ? mmpxFixo : Math.max(tc, 1) * kPersp;
+        const folgaMM = 3 + 3 * (c.d + 2) * (mmpx > 0 ? mmpx : 1);
+        if (tc > tHit + folgaMM) cand.splice(i, 1);
+      }
+    }
+
     // empate na tela (o mesmo tipo, a menos de 3 px): ganha o ponto da peça sob o cursor e, depois, o mais perto da câmera —
     // num modelo grande, a ponta de uma peça lá atrás caía no mesmo pixel do canto que o usuário mirava (13/10/2026)
     const alvoId = alvo ? alvo.id : null;
