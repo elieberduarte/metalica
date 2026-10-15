@@ -9,6 +9,7 @@
 // * Longarinas de fechamento — na face de fora dos pilares de uma parede, alma na horizontal, boca para baixo;
 // * Correntes entre terças — no meio (ou nos terços) de cada vão, de centro a centro das terças;
 // * Mão-francesa — da alma da terça à mesa de baixo do apoio, a 45°, nos dois lados;
+// * Bases nos pilares dos eixos — a placa de base da biblioteca em todos os pilares dos cruzamentos marcados;
 // * Copiar para os eixos — a tesoura/o pórtico do eixo dele para os eixos paralelos marcados (aqui mesmo, sem o servidor).
 //
 // A geometria é do servidor (nucleo3d/modelagem.py); aqui ficam os diálogos e o comando. Enquanto o diálogo está aberto,
@@ -61,6 +62,25 @@ function cruzamentosDosEixos(eixos) {
   return fora.sort();
 }
 
+/** os cruzamentos dos eixos com a posição em planta: [{nome, x, y}] */
+function nosDosEixos(eixos) {
+  const fora = [];
+  for (let i = 0; i < eixos.length; i++) {
+    for (let j = i + 1; j < eixos.length; j++) {
+      const e1 = eixos[i], e2 = eixos[j];
+      const d1 = [e1.b[0] - e1.a[0], e1.b[1] - e1.a[1]], d2 = [e2.b[0] - e2.a[0], e2.b[1] - e2.a[1]];
+      const den = d1[0] * d2[1] - d1[1] * d2[0];
+      if (Math.abs(den) < 1e-6 * Math.hypot(...d1) * Math.hypot(...d2)) continue;
+      const t = ((e2.a[0] - e1.a[0]) * d2[1] - (e2.a[1] - e1.a[1]) * d2[0]) / den;
+      const u = ((e2.a[0] - e1.a[0]) * d1[1] - (e2.a[1] - e1.a[1]) * d1[0]) / den;
+      if (t < -0.01 || t > 1.01 || u < -0.01 || u > 1.01) continue;
+      const n1 = String(e1.nome || ''), n2 = String(e2.nome || '');
+      fora.push({ nome: /^[A-Za-z]+$/.test(n1) ? `${n1}-${n2}` : `${n2}-${n1}`, x: e1.a[0] + d1[0] * t, y: e1.a[1] + d1[1] * t });
+    }
+  }
+  return fora.sort((a, b) => a.nome.localeCompare(b.nome));
+}
+
 export class MetodosModelagem {
   /** Um formulário de campos simples: [{chave, rotulo, valor, tipo: 'numero'|'texto'|'perfil'|opções[]}] → {corpo, ler()} */
   _formModelagem(campos) {
@@ -105,9 +125,9 @@ export class MetodosModelagem {
   }
 
   /** Manda o pedido, aplica as barras novas e as alterações num comando só e diz o que saiu. */
-  async _pedirModelagem(pedido) {
-    const resp = await fetch('/api/modelo/modelar', { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      body: JSON.stringify({ documento: this.documento.paraJSON(), ...pedido }) });
+  async _pedirModelagem(pedido, rota = '/api/modelo/modelar') {
+    const resp = await fetch(rota, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ documento: this.documento.paraJSON(), projeto: this.projeto || null, ...pedido }) });
     const r = await resp.json();
     if (!resp.ok || r.erro) throw new Error(r.erro || resp.statusText);
     return r;
@@ -115,7 +135,7 @@ export class MetodosModelagem {
 
   /** O diálogo com a prévia ao vivo: `pedido()` lê o formulário; devolve {pedido, pronto} no OK (pronto = a resposta
    *  da prévia, quando o formulário não mudou depois dela) ou null. */
-  async _dialogoComPrevia({ titulo, corpo, ok, pedido }) {
+  async _dialogoComPrevia({ titulo, corpo, ok, pedido, rota }) {
     garantirEstiloPrevia();
     const estado = el('p', { class: 'estado-previa', texto: 'Prévia…' });
     corpo.append(estado);
@@ -140,7 +160,7 @@ export class MetodosModelagem {
       }
       const chave = JSON.stringify(p);
       try {
-        const r = await this._pedirModelagem(p);
+        const r = await this._pedirModelagem(p, rota);
         await this._perfisDaPrevia(r.novas || []);
         if (minha !== vez || fechado) return;
         tirar();
@@ -198,17 +218,17 @@ export class MetodosModelagem {
     } catch (e) { /* sem a seção, a prévia sai com a padrão */ }
   }
 
-  /** As barras da resposta como malhas translúcidas (do cache da cena) e o eixo de cada uma. */
+  /** As barras e as chapas da resposta como malhas translúcidas (do cache da cena) e o eixo de cada barra. */
   _grupoDaPrevia(novas) {
     const g = new THREE.Group();
     g.name = 'previa-modelagem';
     g.renderOrder = 980;
     const eixos = [];
     for (const d of novas) {
-      if (d.tipo !== 'barra') continue;
-      eixos.push(...d.inicio, ...d.fim);
+      if (d.tipo !== 'barra' && d.tipo !== 'chapa') continue;
+      if (d.tipo === 'barra') eixos.push(...d.inicio, ...d.fim);
       let geo;
-      try { geo = this.cena._geometriaBarra(d); } catch (e) { geo = null; }
+      try { geo = d.tipo === 'barra' ? this.cena._geometriaBarra(d) : this.cena._geometriaChapa(d); } catch (e) { geo = null; }
       if (!geo || !geo.geom) continue;
       const m = new THREE.Mesh(geo.geom, MAT_PREVIA);
       m.matrixAutoUpdate = false;
@@ -371,6 +391,7 @@ export class MetodosModelagem {
     const f = this._formModelagem([
       { chave: 'linhas', rotulo: 'Correntes por vão', tipo: [['1', '1 (no meio)'], ['2', '2 (nos terços)'], ['3', '3 (nos quartos)']], valor: '1' },
       { chave: 'perfil', rotulo: 'Perfil', tipo: 'perfil', valor: this._perfilSugerido('corrente', 'Barra ø 16 mm') },
+      { chave: 'cumeeira', rotulo: 'Pela cumeeira', tipo: [['v', 'em V (o tirante de cumeeira do gerador)'], ['reta', 'reta, de terça a terça']], valor: 'v' },
     ]);
     const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: 'Os vãos saem das tesouras e vigas que passam por baixo das terças (e das pontas delas); a corrente vai de centro a centro das terças vizinhas, pelo furo na alma.' }));
     const e = await this._dialogoComPrevia({ titulo: 'Correntes entre terças', corpo, ok: 'Lançar correntes', pedido: () => ({ ferramenta: 'correntes', ids: tercas.map(b => b.id), parametros: f.ler() }) });
@@ -477,5 +498,60 @@ export class MetodosModelagem {
       ' A cantoneira fica no plano vertical da terça, com uma aba deitada nele (encosta na alma da terça).' }));
     const e = await this._dialogoComPrevia({ titulo: 'Mão-francesa', corpo, ok: 'Lançar', pedido: () => ({ ferramenta: 'mao_francesa', ids: bs.map(b => b.id), parametros: f.ler() }) });
     if (e) await this._modelar(e.pedido, 'Mão-francesa', e.pronto);
+  }
+
+  /** Bases nos pilares pelos eixos: a placa de base (a ligação da biblioteca, rotulada ou engastada) em todos os
+   *  pilares dos cruzamentos marcados de uma vez — os que já têm base ficam de fora. */
+  async dialogoBasesNosEixos() {
+    const ref = (this.inferencia && this.inferencia.referencias) || {};
+    const eixos = (ref.eixos || this._eixosRef || []).filter(e => e && e.a && e.b);
+    if (eixos.length < 2) { this.aviso('A obra não tem eixos gravados: grave-os em Lançamento → Planta de lançamento (ou Detalhamentos → Eixos da obra).', 'atencao', 0); return; }
+    const pilares = [...this.documento.entidades.values()].filter(e => e.tipo === 'barra' && vert(e));
+    // o pilar de cada cruzamento: o pé (a ponta de baixo) a até 150 mm do nó, em planta
+    const pe = (b) => (b.inicio[2] <= b.fim[2] ? b.inicio : b.fim);
+    const comBase = new Set();
+    for (const e of this.documento.entidades.values()) {
+      const l = e.atributos && e.atributos.ligacao;
+      if (l && String(l.tipo).startsWith('placa_base')) for (const id of (l.pecas || [])) comBase.add(id);
+    }
+    const nos = nosDosEixos(eixos).map(n => ({ ...n, pilar: pilares.find(b => Math.hypot(pe(b)[0] - n.x, pe(b)[1] - n.y) <= 150) }))
+      .filter(n => n.pilar);
+    if (!nos.length) { this.aviso('Nenhum pilar nos cruzamentos dos eixos gravados (o pé a até 150 mm do cruzamento).', 'atencao', 0); return; }
+    let tipos;
+    try { tipos = await this._tiposDeLigacao(); } catch (e) { this.aviso(`Não foi possível ler as ligações: ${e.message}`, 'erro', 0); return; }
+    tipos = tipos.filter(t => String(t.id).startsWith('placa_base'));
+    const escolha = el('select');
+    for (const t of tipos) escolha.append(el('option', { value: t.id, texto: t.nome }));
+    const lugar = el('div');
+    let form = null;
+    const trocar = () => { form = this._formParametros(tipos.find(t => t.id === escolha.value)); lugar.replaceChildren(form.corpo); };
+    escolha.addEventListener('change', trocar);
+    trocar();
+    const marcas = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 12px;max-height:160px;overflow:auto' });
+    const caixas = nos.map(n => {
+      const ja = comBase.has(n.pilar.id);
+      const c = el('input', { type: 'checkbox', checked: !ja, disabled: ja });
+      marcas.append(el('label', { style: 'white-space:nowrap', title: ja ? 'já tem placa de base' : n.pilar.perfil }, c, ` ${n.nome}${ja ? ' (já tem)' : ''}`));
+      return [n, c];
+    });
+    const todos = el('button', { type: 'button', texto: 'Todos / nenhum' });
+    todos.addEventListener('click', () => {
+      const livres = caixas.filter(([, c]) => !c.disabled);
+      const v = !livres.every(([, c]) => c.checked);
+      for (const [, c] of livres) c.checked = v;
+      corpo.dispatchEvent(new Event('change'));
+    });
+    const corpo = el('div', {}, el('div', { class: 'campos' }, el('label', { texto: 'Base' }), escolha), lugar,
+      el('p', { class: 'explica', texto: `${nos.length} pilares nos cruzamentos dos eixos. A placa, os chumbadores, a marca, o conjunto e a solda saem como no Aplicar ligação, e a ligação continua editável.` }),
+      marcas, todos);
+    const pedido = () => {
+      const ids = caixas.filter(([, c]) => c.checked && !c.disabled).map(([n]) => n.pilar.id);
+      if (!ids.length) throw new Error('Nenhum pilar marcado.');
+      return { tipo: escolha.value, ids, parametros: form.ler() };
+    };
+    let e;
+    try { e = await this._dialogoComPrevia({ titulo: 'Bases nos pilares dos eixos', corpo, ok: 'Lançar bases', pedido, rota: '/api/modelo/ligacao' }); }
+    catch (err) { this.dica(err.message); return; }
+    if (e) await this._pedirLigacao(e.pedido, 'Bases nos pilares');
   }
 }

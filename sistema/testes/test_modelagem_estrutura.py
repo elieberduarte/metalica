@@ -352,3 +352,39 @@ def test_mao_francesa_sem_terca_ou_sem_apoio():
     doc.add(longe)
     with pytest.raises(ErroDeDados):
         modelagem.mao_francesa(doc, [longe.id], {})
+
+
+def _duas_aguas():
+    """duas águas de 10 % (cumeeira em y = 5000): 3 linhas de terças de cada lado, um vão de 6 m entre duas tesouras"""
+    def z(y):
+        return 5000 + 0.1 * min(y, 10000 - y) + 150
+    ts = [Barra(nome="T%d" % i, inicio=(x, 0, 5000), fim=(x, 5000, 5500), perfil="W 150×13", papel="banzo")
+          for i, x in enumerate((0, 6000))]
+    ts += [Barra(nome="U%d" % i, inicio=(x, 5000, 5500), fim=(x, 10000, 5000), perfil="W 150×13", papel="banzo")
+           for i, x in enumerate((0, 6000))]
+    ls = [Barra(inicio=(0, y, z(y)), fim=(6000, y, z(y)), perfil="Ue 150×60×20×2,25", papel="terça")
+          for y in (500, 2500, 4500, 5500, 7500, 9500)]
+    return _doc(*ts, *ls), ls, z
+
+
+def test_correntes_fecham_em_v_na_cumeeira():
+    doc, ls, z = _duas_aguas()
+    r = modelagem.correntes(doc, [b.id for b in ls], {"linhas": 1})
+    bs = _barras(r)
+    v = [b for b in bs if b.atributos.get("cumeeira")]
+    assert len(v) == 2 and len(bs) == 4 + 2                # 2 + 2 correntes e o V no lugar da reta do meio
+    # as duas pernas do V vão ao mesmo ponto: na cumeeira (y 5000), no plano dos centros das terças, 6 % adiante
+    c = v[0].fim
+    assert v[1].fim == c
+    assert c[1] == pytest.approx(5000, abs=0.5)
+    assert c[2] == pytest.approx(z(5000), abs=0.5)
+    assert c[0] == pytest.approx(3000 + 0.06 * 6000, abs=0.5)
+    assert {round(b.inicio[1]) for b in v} == {4500, 5500}
+
+
+def test_correntes_reta_na_cumeeira_e_uma_agua_sem_v():
+    doc, ls, z = _duas_aguas()
+    r = modelagem.correntes(doc, [b.id for b in ls], {"cumeeira": "reta"})
+    assert len(r["novas"]) == 5 and not any(b["atributos"].get("cumeeira") for b in r["novas"])
+    r = modelagem.correntes(doc, [b.id for b in ls[:3]], {})
+    assert len(r["novas"]) == 2 and not any(b["atributos"].get("cumeeira") for b in r["novas"])

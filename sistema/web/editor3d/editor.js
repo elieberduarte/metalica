@@ -2019,6 +2019,7 @@ export class Editor {
       'modelar-longarinas': () => this.dialogoLongarinas(),
       'modelar-correntes': () => this.dialogoCorrentes(),
       'modelar-mao-francesa': () => this.dialogoMaoFrancesa(),
+      'modelar-bases': () => this.dialogoBasesNosEixos(),
       'copiar-para-eixos': () => this.dialogoCopiarParaEixos(),
       'memorial-lancamento': () => this.memorialDoLancamento(),
       'planta-lancamento': () => this._irPara(`/cad?projeto=${encodeURIComponent(this.projeto || '')}&desenho=${encodeURIComponent('planta-de-lançamento')}`),

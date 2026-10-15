@@ -499,10 +499,63 @@ def _estacoes_de_apoio(doc, ids, w, ref_a, ref_z) -> List[float]:
     return fora
 
 
+def _cumeeira_entre(pts, nw) -> Optional[int]:
+    """o índice i do par de linhas (i, i+1) que passa pela cumeeira — onde a inclinação quebra: sobe até a linha i e
+    desce depois da i+1 (ou, sem linha de um dos lados, deixa de subir) —, ou None (uma água só, cobertura plana)"""
+    n = len(pts)
+    if n < 3:
+        return None
+    c = [_dot(q, nw) for q in pts]
+    z = [q[2] for q in pts]
+
+    def m(j):                                             # a inclinação entre as linhas j e j+1
+        return (z[j + 1] - z[j]) / ((c[j + 1] - c[j]) or 1e-9)
+    TOL = 0.005                                           # 0,5 %
+    for i in range(n - 1):
+        esq = m(i - 1) if i >= 1 else None
+        dir_ = m(i + 1) if i + 2 < n else None
+        if esq is not None and dir_ is not None:
+            if esq > TOL and dir_ < -TOL:
+                return i
+        elif esq is not None:
+            if esq > TOL and m(i) < esq / 2.0:
+                return i
+        elif dir_ is not None:
+            if dir_ < -TOL and m(i) > dir_ / 2.0:
+                return i
+    return None
+
+
+def _ponto_da_cumeeira(pts, i, nw, w, xv):
+    """o encontro dos planos dos centros das terças das duas águas (a cumeeira), na estação xv ao longo das terças"""
+    c = [_dot(q, nw) for q in pts]
+    z = [q[2] for q in pts]
+    linhas = []
+    if i >= 1:
+        linhas.append((c[i - 1], z[i - 1], c[i], z[i]))
+    if i + 2 < len(pts):
+        linhas.append((c[i + 2], z[i + 2], c[i + 1], z[i + 1]))
+    cm = (c[i] + c[i + 1]) / 2.0
+    zm = max(z[i], z[i + 1])
+    if len(linhas) == 2:
+        (a0, b0, a1, b1), (e0, f0, e1, f1) = linhas
+        m1 = (b1 - b0) / ((a1 - a0) or 1e-9)
+        m2 = (f1 - f0) / ((e1 - e0) or 1e-9)
+        if abs(m1 - m2) > 1e-9:
+            cx = (f0 - b0 + m1 * a0 - m2 * e0) / (m1 - m2)
+            if min(c[i], c[i + 1]) - 1.0 <= cx <= max(c[i], c[i + 1]) + 1.0:
+                cm, zm = cx, b0 + m1 * (cx - a0)
+    elif linhas:
+        a0, b0, a1, b1 = linhas[0]
+        zm = b0 + (b1 - b0) / ((a1 - a0) or 1e-9) * (cm - a0)
+    return (w[0] * xv + nw[0] * cm, w[1] * xv + nw[1] * cm, zm)
+
+
 def correntes(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
     """As correntes entre as linhas de terças escolhidas (as duas águas, se quiser): `linhas` por vão (1 = no meio,
     2 = nos terços), de centro a centro das terças, como o gerador do galpão. Os vãos vêm dos apoios que cruzam por
-    baixo das terças (tesouras, vigas) e das pontas delas."""
+    baixo das terças (tesouras, vigas) e das pontas delas. Com as duas águas, a ligação pela cumeeira fecha em V
+    (`cumeeira` = "v", o tirante de cumeeira do gerador) ou vai reta ("reta")."""
     from nucleo3d.modelo import Barra
     p = dict(p or {})
     tercas = [b for b in _barras(doc, ids) if abs(_norm(_sub(b.fim, b.inicio))[2]) < 0.7]
@@ -511,6 +564,7 @@ def correntes(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
     perfil = str(p.get("perfil") or "Barra ø 16 mm")
     _perfil(perfil)
     n_lin = max(1, int(p.get("linhas") or 1))
+    em_v = str(p.get("cumeeira") or "v") == "v"
     d0 = _sub(tercas[0].fim, tercas[0].inicio)
     w = _norm((d0[0], d0[1], 0.0))
     nw = (-w[1], w[0], 0.0)
@@ -550,10 +604,21 @@ def correntes(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
         for k in range(1, n_lin + 1):
             xc = sa + (sb - sa) * k / (n_lin + 1.0)
             pts = [no_eixo(s, xc) for s in unicas]
-            for q0, q1 in zip(pts[:-1], pts[1:]):
-                novas.append(Barra(nome="Corrente de terça", inicio=_r(q0), fim=_r(q1), perfil=perfil, papel="corrente",
-                                   camada="Terças", material="Aço",
-                                   atributos={"tipo_ifc": "IfcMember", "vao": n_vaos, "linha_corrente": k}))
+            kc = _cumeeira_entre(pts, nw) if em_v else None
+            for i, (q0, q1) in enumerate(zip(pts[:-1], pts[1:])):
+                at = {"tipo_ifc": "IfcMember", "vao": n_vaos, "linha_corrente": k}
+                if i != kc:
+                    novas.append(Barra(nome="Corrente de terça", inicio=_r(q0), fim=_r(q1), perfil=perfil, papel="corrente",
+                                       camada="Terças", material="Aço", atributos=at))
+                    continue
+                # o tirante de cumeeira em V, como o gerador do galpão: as duas terças de cima vão ao mesmo ponto da
+                # cumeeira (no plano dos centros das terças), adiantado 6 % do vão ao longo dela
+                adiante = 0.06 * (sb - sa)
+                xv = xc + adiante if xc + adiante <= sb else xc - adiante
+                C = _ponto_da_cumeeira(pts, kc, nw, w, xv)
+                for q in (q0, q1):
+                    novas.append(Barra(nome="Tirante de cumeeira", inicio=_r(q), fim=_r(C), perfil=perfil, papel="corrente",
+                                       camada="Terças", material="Aço", atributos=dict(at, cumeeira=True)))
     if not novas:
         raise ErroDeDados("nenhum vão com duas linhas de terças lado a lado")
     return {"novas": [b.dict() for b in novas], "resumo": {"vaos": n_vaos, "linhas": n_lin, "pecas": len(novas)},

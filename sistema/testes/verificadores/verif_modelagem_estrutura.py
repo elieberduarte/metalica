@@ -150,6 +150,22 @@ try:
     ok(conta("contraventamento") == 4, f"2 painéis × 2 diagonais: {conta('contraventamento')}")
     erros("Contraventamento")
 
+    # 5a) bases nos pilares dos eixos: os dois pilares (A-1, A-2) de uma vez; da segunda vez, já têm
+    selecionar()
+    ok(dialogo("modelar-bases"), "o diálogo Bases nos pilares dos eixos abriu")
+    cx = jsj("return [...editor.el.dialogoCorpo.querySelectorAll('input[type=checkbox]')].map(c => [c.parentElement.textContent.trim(), c.checked, c.disabled]);")
+    ok(cx == [["A-1", True, False], ["A-2", True, False]], f"só os cruzamentos com pilar, marcados: {cx}")
+    ok(esperar(f"{PREVIA} >= 4", 30), f"a prévia com as placas e os chumbadores: {js(PREVIA)}")
+    ok_dialogo()
+    ok(esperar("[...editor.documento.entidades.values()].filter(e => e.nome === 'Placa de base').length === 2", 30), "as 2 placas de base entraram")
+    ok(js(PREVIA) == 0, "a prévia saiu")
+    ok(dialogo("modelar-bases"), "o diálogo abriu de novo")
+    cx = jsj("return [...editor.el.dialogoCorpo.querySelectorAll('input[type=checkbox]')].map(c => [c.checked, c.disabled]);")
+    ok(cx == [[False, True], [False, True]], f"da segunda vez, os dois já têm base (bloqueados): {cx}")
+    ok(esperar("(editor.el.dialogoCorpo.querySelector('.estado-previa') || {}).textContent === 'Nenhum pilar marcado.'", 10), "e a prévia diz que não há pilar marcado")
+    js("editor.el.dialogoCancelar.click(); 1"); aba.drenar(0.4)
+    erros("Bases")
+
     # 5b) longarinas nos dois pilares do eixo A (a parede ao longo de y; o resto do modelo fica em x < 30000)
     selecionar(*jsj("return [...editor.documento.entidades.values()].filter(e => e.papel === 'pilar').map(e => e.id);"))
     ok(dialogo("modelar-longarinas"), "o diálogo Longarinas abriu")
