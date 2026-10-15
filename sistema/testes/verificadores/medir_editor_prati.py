@@ -63,8 +63,39 @@ try:
       const out = {};
       ed.ativarFerramenta('linha');
       inf.limparAncora();
+      // a grade da tela (15/10) é montada em segundo plano quando a câmera para; aqui, de uma vez, medindo
+      let ag = performance.now(); inf.prepararGrade(); out.grade_montar = +(performance.now() - ag).toFixed(1);
+      out.grade_sempre = inf._grade ? inf._grade.sempre.length : -1;
       out.snap_aquecendo = medir(([x, y]) => inf.resolver(x, y, {}));
       out.snap_sem_ancora = medir(([x, y]) => inf.resolver(x, y, {}));
+      // o snap sem a grade (a varredura inteira, enquanto ela não está pronta); o ponto achado tem de ser o mesmo
+      inf.semGrade = true;
+      out.snap_sem_grade = medir(([x, y]) => inf.resolver(x, y, {}));
+      inf.semGrade = false;
+      const chave = (r) => [r.tipoSnap, r.entidade, ...r.ponto.map(v => Math.round(v))].join('|');
+      const dif = [];
+      const compara = () => {
+        for (let i = 0; i < 300; i++) {
+          const x = W * (0.03 + 0.94 * ((i * 37) % 300) / 300), y = H * (0.05 + 0.9 * ((i * 53) % 300) / 300);
+          inf.semGrade = true; const a = chave(inf.resolver(x, y, {}));
+          inf.semGrade = false; const b = chave(inf.resolver(x, y, {}));
+          if (a !== b) dif.push([Math.round(x), Math.round(y), a, b]);
+        }
+      };
+      compara();
+      // de perto (a esfera perto da câmera, fora do meio da tela, cresce na perspectiva)
+      const b0 = [...doc.entidades.values()].filter(e => e.tipo === 'barra')[50], s0 = inf._esferaDe(b0.id, b0);
+      ed.camera.enquadrar([[s0.c[0] - 2 * s0.r, s0.c[1] - 2 * s0.r, s0.c[2] - 2 * s0.r], [s0.c[0] + 2 * s0.r, s0.c[1] + 2 * s0.r, s0.c[2] + 2 * s0.r]]);
+      ed.camera.concluirAnimacao && ed.camera.concluirAnimacao();
+      inf.prepararGrade();
+      compara();
+      ed.camera.zoomExtensao(); ed.camera.concluirAnimacao && ed.camera.concluirAnimacao();
+      inf.prepararGrade();
+      inf.definirAncora([...doc.entidades.values()].find(e => e.tipo === 'barra').inicio);
+      compara();
+      inf.limparAncora();
+      out.grade_diferencas = dif.length;
+      out.grade_exemplos = dif.slice(0, 3);
       // onde vai o tempo do snap: o raio da seleção (sob) é a parte fixa; o resto é a varredura dos pontos
       out.snap_so_raio = medir(([x, y]) => { sel.raioEm(x, y); sel.sob(x, y); });
       // três pontos lembrados e uma âncora (o alinhamento entra em todo movimento)
@@ -112,6 +143,8 @@ try:
         for k in ("snap_sem_ancora", "snap_com_alinhamento", "clique_sob", "tab_todosSob", "alcas_30", "mover_previa_200", "clique_com_caixa"):
             if r[k]["p90"] > LIMITE_MOUSE:
                 falhas.append(f"{k}: p90 {r[k]['p90']} ms > {LIMITE_MOUSE} ms")
+        if r.get("grade_diferencas"):
+            falhas.append(f"a grade do snap achou outro ponto em {r['grade_diferencas']} posições: {r.get('grade_exemplos')}")
         if not r.get("fantasma_pecas"):
             falhas.append("o fantasma do Mover não aparece no desenho em lote")
         if r.get("fantasma_montar_200", 0) > 400:

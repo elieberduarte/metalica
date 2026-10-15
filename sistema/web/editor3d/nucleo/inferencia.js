@@ -10,7 +10,7 @@
 // Um eixo travado à mão vence tudo.
 
 import { subtrair, somar, escalar, normalizar, norma, baseDaBarra,
-         pontosDe, arestasDe, contornoNoMundo, caixaDePontos } from './documento.js';
+         pontosDe, arestasDe, contornoNoMundo, caixaDePontos, facesDaChapa } from './documento.js';
 
 /** Cor e glifo de cada tipo, como no SketchUp. */
 export const TIPOS = {
@@ -47,6 +47,9 @@ const COR_EIXO = { x: '#c0392b', y: '#2e8b57', z: '#2a63c8' };
 const LEMBRAVEIS = new Set(['extremidade', 'meio', 'centro', 'interseccao', 'eixo_obra']);
 const NS = 'http://www.w3.org/2000/svg';
 
+//: a chave numérica da célula da grade da tela: coluna × CHAVE_GRADE + linha (a tela tem bem menos de 4096 / 48 linhas)
+const CHAVE_GRADE = 4096;
+
 export class Inferencia {
   /**
    * @param svg  overlay <svg> sobre o canvas, onde os glifos são desenhados
@@ -72,16 +75,19 @@ export class Inferencia {
     this._lembrados = [];
     this._pairando = null;
     this._esferas = new Map();      // id → {c, r}: a esfera envolvente da peça, para o descarte pelo raio do cursor
+    this._geos = new Map();         // id → {ent, pts, arestas}: os pontos e as arestas da chapa e do sólido (_geoDe)
     if (documento && typeof documento.aoMudar === 'function') {
       documento.aoMudar(({ ids, acao }) => {
         if (acao === 'aparencia') return;
+        this._grade = null;
         if (acao === 'tudo' || !ids || !ids.length) {
           this._esferas.clear();
+          this._geos.clear();
           // o modelo novo: aquece o snap um pouco depois (dá tempo do catálogo de perfis chegar)
           if (acao === 'tudo' && typeof setTimeout === 'function') { clearTimeout(this._timerAquecer); this._timerAquecer = setTimeout(() => this.aquecer(), 1500); }
           return;
         }
-        for (const i of ids) this._esferas.delete(i);
+        for (const i of ids) { this._esferas.delete(i); this._geos.delete(i); }
       });
     }
   }
@@ -102,6 +108,29 @@ export class Inferencia {
     s = { c, r };
     this._esferas.set(id, s);
     return s;
+  }
+
+  /** Os pontos e as arestas da peça para o snap, guardados por peça (15/10: o sólido refazia o conjunto de arestas e a chapa
+   *  as duas faces a cada movimento do mouse). As arestas usam os MESMOS objetos de ponto que `pts`, para a projeção na
+   *  tela de cada ponto servir às arestas. A peça que muda é esquecida pelo aviso do documento. */
+  _geoDe(id, ent) {
+    if (ent.tipo === 'barra') return { pts: [ent.inicio, ent.fim], arestas: [[ent.inicio, ent.fim]] };
+    let g = this._geos.get(id);
+    if (g && g.ent === ent && g.v === (ent.tipo === 'solido' ? ent.vertices : ent.contorno)) return g;
+    let pts, arestas;
+    if (ent.tipo === 'chapa') {
+      const [f0, f1] = facesDaChapa(ent);
+      pts = [...f0, ...f1];
+      arestas = [];
+      for (const f of [f0, f1]) f.forEach((a, i) => arestas.push([a, f[(i + 1) % f.length]]));
+      f0.forEach((a, i) => arestas.push([a, f1[i]]));
+    } else {
+      pts = pontosDe(ent);
+      arestas = arestasDe(ent);
+    }
+    g = { ent, v: ent.tipo === 'solido' ? ent.vertices : ent.contorno, pts, arestas };
+    this._geos.set(id, g);
+    return g;
   }
 
   /** O contorno da seção da barra no mundo, nas duas pontas (com o recorte), e as arestas do perfil: as de cada ponta e as que
@@ -190,6 +219,108 @@ export class Inferencia {
     };
     this.aquecido = false;
     agenda(passo);
+  }
+
+  /**
+   * As peças perto do pixel (x, y) num modelo grande, por uma grade na tela (15/10, item 5 do briefing: o snap no PRATI
+   * levava 15–23 ms, p90 33–48, varrendo as 27 mil peças a cada movimento do mouse). A grade guarda a esfera de cada peça
+   * projetada na tela, em células de 48 px; ela é refeita só quando a câmera, o tamanho da tela ou o modelo mudam (o mouse
+   * que anda com a câmera parada só lê a célula). A esfera grande na tela, ou a que envolve a câmera, vai para a lista das
+   * que entram sempre. Montar custa ~30–70 ms no PRATI: é feito em segundo plano, quando a câmera para, e enquanto a
+   * grade não está pronta vale a varredura de sempre (devolve null, como no modelo pequeno).
+   */
+  _pertoNaTela(x, y, folgaPx) {
+    const doc = this.documento, cam = this.camera;
+    // semGrade: a varredura inteira, para conferir que a grade acha o mesmo (medir_editor_prati.py)
+    if (this.semGrade || !doc || !doc.entidades || doc.entidades.size < 1500 || !cam || !cam.ativa || typeof cam.paraTela !== 'function'
+        || typeof cam.mmPorPixel !== 'function') return null;
+    const assinatura = this._assinaturaCamera();
+    const g = this._grade;
+    if (!g || g.assinatura !== assinatura || g.folgaPx !== folgaPx) { this._pedirGrade(assinatura, folgaPx); return null; }
+    const cel = g.celulas.get(Math.floor(x / g.passo) * CHAVE_GRADE + Math.floor(y / g.passo));
+    return cel ? g.sempre.concat(cel) : g.sempre;
+  }
+
+  /** O estado da câmera que a grade da tela supõe: a projeção, o tamanho e as duas matrizes. */
+  _assinaturaCamera() {
+    const cam = this.camera, a = cam.ativa;
+    return [cam.projecao, cam.largura, cam.altura, ...(a.matrixWorld ? a.matrixWorld.elements : []),
+            ...(a.projectionMatrix ? a.projectionMatrix.elements : [])].join(',');
+  }
+
+  /** Monta a grade quando o navegador fica à toa, se a câmera ainda estiver onde estava (senão o próximo movimento pede). */
+  _pedirGrade(assinatura, folgaPx) {
+    if (this._gradePedida === assinatura) return;
+    this._gradePedida = assinatura;
+    const montar = () => {
+      this._gradePedida = null;
+      if (this._assinaturaCamera() !== assinatura) return;
+      this._grade = this._montarGrade(assinatura, folgaPx);
+    };
+    const ocioso = () => (typeof requestIdleCallback === 'function' ? requestIdleCallback(montar, { timeout: 500 }) : montar());
+    if (typeof setTimeout === 'function') setTimeout(ocioso, 120); else montar();
+  }
+
+  /** A grade pronta agora, sem esperar (os testes de desempenho). */
+  prepararGrade(folgaPx = Math.round(this.tolerancia * 1.5) + 4) {
+    this._grade = this._montarGrade(this._assinaturaCamera(), folgaPx);
+    return this._grade;
+  }
+
+  _montarGrade(assinatura, folgaPx) {
+    const doc = this.documento, cam = this.camera;
+    const passo = 48;
+    const orto = cam.projecao === 'ortografica';
+    const mmpxOrto = orto ? cam.mmPorPixel() : 0;
+    const E = 1 / 1000;                                             // a cena em metros; o documento em mm (ESCALA da câmera)
+    const W = cam.largura || 1, H = cam.altura || 1;
+    const m = cam.ativa.matrixWorldInverse && cam.ativa.matrixWorldInverse.elements, P = cam.ativa.projectionMatrix && cam.ativa.projectionMatrix.elements;
+    if (!orto && (!m || !P)) return null;
+    const celulas = new Map(), sempre = [];
+    // a folga: o ponto da peça que pega está DENTRO da esfera, e o cursor a até `folgaPx` dele na tela — então o cursor
+    // está a até `folgaPx` da caixa da esfera projetada; mais 30 % e 2 px de margem
+    const folga = folgaPx * 1.3 + 2;
+    // a caixa da esfera projetada em perspectiva, exata (as retas tangentes que saem da câmera, em cada eixo da tela); a
+    // conta de antes (raio ÷ mm por pixel no centro) encolhia a esfera perto da câmera e fora do meio da tela
+    const tangentes = (a, d, R) => {
+      const den = d * d - R * R, s = Math.sqrt(Math.max(0, a * a + den));
+      return [(a * d - R * s) / den, (a * d + R * s) / den];
+    };
+    for (const [id, ent] of doc.entidades) {
+      const s = this._esferaDe(id, ent);
+      if (!s) continue;                                             // sem pontos: o resolver também pula
+      let sx0, sx1, sy0, sy1;
+      if (orto) {
+        const rpx = mmpxOrto > 0 ? s.r / mmpxOrto : Infinity;
+        if (!isFinite(rpx)) { sempre.push(id); continue; }
+        const t = cam.paraTela(s.c);
+        sx0 = t[0] - rpx; sx1 = t[0] + rpx; sy0 = t[1] - rpx; sy1 = t[1] + rpx;
+      } else {
+        const X = s.c[0] * E, Y = s.c[1] * E, Z = s.c[2] * E, R = s.r * E;
+        const xc = m[0] * X + m[4] * Y + m[8] * Z + m[12], yc = m[1] * X + m[5] * Y + m[9] * Z + m[13];
+        const d = -(m[2] * X + m[6] * Y + m[10] * Z + m[14]);      // a profundidade (a câmera olha para -z)
+        if (d < -R) continue;                                       // atrás da câmera, inteira
+        if (d <= R * 1.02 + 1e-6) { sempre.push(id); continue; }   // cruza o plano da câmera: a projeção não tem borda
+        const [tx0, tx1] = tangentes(xc, d, R), [ty0, ty1] = tangentes(yc, d, R);
+        sx0 = ((P[0] * tx0 - P[8]) * 0.5 + 0.5) * W; sx1 = ((P[0] * tx1 - P[8]) * 0.5 + 0.5) * W;
+        sy0 = (-(P[5] * ty1 - P[9]) * 0.5 + 0.5) * H; sy1 = (-(P[5] * ty0 - P[9]) * 0.5 + 0.5) * H;
+      }
+      const x0 = Math.floor((sx0 - folga) / passo), x1 = Math.floor((sx1 + folga) / passo);
+      const y0 = Math.floor((sy0 - folga) / passo), y1 = Math.floor((sy1 + folga) / passo);
+      if (!(Number.isFinite(x0) && Number.isFinite(x1) && Number.isFinite(y0) && Number.isFinite(y1))) { sempre.push(id); continue; }
+      // fora da tela: fica fora da grade (o cursor nunca está lá)
+      if (x1 < 0 || y1 < 0 || x0 > W / passo || y0 > H / passo) continue;
+      const cx0 = Math.max(x0, 0), cx1 = Math.min(x1, Math.ceil(W / passo)), cy0 = Math.max(y0, 0), cy1 = Math.min(y1, Math.ceil(H / passo));
+      if ((cx1 - cx0 + 1) * (cy1 - cy0 + 1) > 40) { sempre.push(id); continue; }    // grande na tela: entra sempre
+      for (let i = cx0; i <= cx1; i++) {
+        for (let j = cy0; j <= cy1; j++) {
+          const k = i * CHAVE_GRADE + j;
+          const l = celulas.get(k);
+          if (l) l.push(id); else celulas.set(k, [id]);
+        }
+      }
+    }
+    return { assinatura, folgaPx, passo, celulas, sempre };
   }
 
   // --------------------------------------------------------- estado externo
@@ -305,17 +436,29 @@ export class Inferencia {
     // 2. Pontos notáveis das entidades próximas do cursor.
     const arestasPerto = [];
     let examinadas = 0;
+    const naTelaDe = new Map();          // ponto (o objeto) → a projeção dele, neste movimento do mouse
     // primeiro a peça sob o cursor e as selecionadas: o laço para em 4000 peças, e num modelo grande (o PRATI CD, 7.800) as do
     // fim da lista — o agulhamento — nunca eram examinadas e o canto delas não pegava (13/10/2026)
     const doc = this.documento;
     const primeiras = [];
     if (alvo && alvo.id) primeiras.push(alvo.id);
     for (const i of (this.selecao && this.selecao.ids) || []) primeiras.push(i);
+    // num modelo grande, só as peças da célula da grade da tela sob o cursor (_pertoNaTela); as primeiras entram sempre
+    const naTela = this._pertoNaTela(x, y, tolPonto + 4);
     const ordem = function* () {
       const vistas = new Set();
       for (const i of primeiras) {
         const e = doc.get(i);
         if (e && !vistas.has(i)) { vistas.add(i); yield [i, e]; }
+      }
+      if (naTela) {
+        for (const i of naTela) {
+          if (vistas.has(i)) continue;
+          vistas.add(i);
+          const e = doc.get(i);
+          if (e) yield [i, e];
+        }
+        return;
       }
       for (const [i, e] of doc.entidades) if (!vistas.has(i)) yield [i, e];
     };
@@ -342,7 +485,8 @@ export class Inferencia {
     for (const [id, ent] of ordem()) {
       if (!this.documento.aparece(ent)) continue;
       if (longeDoRaio(id, ent)) continue;
-      const pts = pontosDe(ent);
+      const geo = this._geoDe(id, ent);
+      let pts = geo.pts;
       if (!pts.length) continue;
 
       // Descarte rápido: se a entidade inteira está longe do cursor na tela, pule —
@@ -352,6 +496,7 @@ export class Inferencia {
       for (const p of pts) {
         const t = this.camera.paraTela(p);
         projetados.push(t);
+        naTelaDe.set(p, t);
         if (t[2] > 1) continue;
         visivel = true;
         if (t[0] < sx0) sx0 = t[0];
@@ -370,7 +515,9 @@ export class Inferencia {
       // eram examinadas)
       if (++examinadas > 400) break;
       if (contorno) {
-        for (const p of contorno.pontos) { pts.push(p); projetados.push(this.camera.paraTela(p)); }
+        // uma cópia: `pts` é o guardado da peça
+        pts = pts.concat(contorno.pontos);
+        for (const p of contorno.pontos) { const t = this.camera.paraTela(p); projetados.push(t); naTelaDe.set(p, t); }
       }
 
       let algumPerto = false;
@@ -383,8 +530,12 @@ export class Inferencia {
           cand.push({ tipo: 'extremidade', ponto: pts[i], d, id });
         }
       }
-      const ars = contorno ? arestasDe(ent).concat(contorno.arestas) : arestasDe(ent);
+      const ars = contorno ? geo.arestas.concat(contorno.arestas) : geo.arestas;
       for (const [a, b] of ars) {
+        // descarte exato pela tela: com as duas pontas na frente da câmera, a aresta projetada é o segmento entre as
+        // projeções delas, e o meio e o ponto mais perto do raio caem nele — longe do cursor, nada desta aresta pega
+        const ta = naTelaDe.get(a) || this.camera.paraTela(a), tb = naTelaDe.get(b) || this.camera.paraTela(b);
+        if (ta[2] <= 1 && tb[2] <= 1 && distanciaAoSegmento2d(x, y, ta, tb) > tol + 1e-6) continue;
         const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
         const dm = perto(m);
         if (dm !== null) { cand.push({ tipo: 'meio', ponto: m, d: dm, id }); algumPerto = true; }
@@ -588,10 +739,21 @@ export class Inferencia {
     // num modelo grande, a ponta de uma peça lá atrás caía no mesmo pixel do canto que o usuário mirava (13/10/2026)
     const alvoId = alvo ? alvo.id : null;
     const prof = (c) => (c._z === undefined ? (c._z = this.camera.paraTela(c.ponto)[2]) : c._z);
+    // só os candidatos da melhor prioridade disputam (é o primeiro critério da ordem): com o modelo grande inteiro na tela
+    // eram ~2 mil a ordenar a cada movimento, cada comparação projetando o ponto na tela (15/10)
+    // O empate é contado a partir do MAIS PERTO: disputam só os que ficam a menos de 3 px dele. A ordenação antiga
+    // comparava aos pares ("a menos de 3 px um do outro"), o que não é transitivo: o vencedor dependia dos outros
+    // candidatos da lista e às vezes era um canto mais longe (comparação no PRATI, 15/10).
+    let prioMin = Infinity;
+    for (const c of cand) { const pr = (TIPOS[c.tipo] || TIPOS.plano_base).prio; if (pr < prioMin) prioMin = pr; }
+    let dMin = Infinity;
+    for (const c of cand) if ((TIPOS[c.tipo] || TIPOS.plano_base).prio === prioMin && c.d < dMin) dMin = c.d;
+    if (cand.length > 1) {
+      let w = 0;
+      for (const c of cand) if ((TIPOS[c.tipo] || TIPOS.plano_base).prio === prioMin && c.d - dMin < 3) cand[w++] = c;
+      cand.length = w;
+    }
     cand.sort((a, b) => {
-      const pa = (TIPOS[a.tipo] || TIPOS.plano_base).prio, pb = (TIPOS[b.tipo] || TIPOS.plano_base).prio;
-      if (pa !== pb) return pa - pb;
-      if (Math.abs(a.d - b.d) >= 3) return a.d - b.d;
       const aa = a.id && a.id === alvoId ? 0 : 1, ab = b.id && b.id === alvoId ? 0 : 1;
       if (aa !== ab) return aa - ab;
       return prof(a) - prof(b) || a.d - b.d;
@@ -789,6 +951,15 @@ export function pontoNoEixo(origem, direcao, raio) {
 }
 
 /** Ponto do segmento [a,b] mais próximo do raio do cursor, ou null se fora dele. */
+/** Distância (na tela) do ponto (x, y) ao segmento de `ta` a `tb` (projeções [x, y, …]). */
+export function distanciaAoSegmento2d(x, y, ta, tb) {
+  const dx = tb[0] - ta[0], dy = tb[1] - ta[1];
+  const L2 = dx * dx + dy * dy;
+  let s = L2 > 1e-12 ? ((x - ta[0]) * dx + (y - ta[1]) * dy) / L2 : 0;
+  s = s < 0 ? 0 : s > 1 ? 1 : s;
+  return Math.hypot(x - (ta[0] + s * dx), y - (ta[1] + s * dy));
+}
+
 export function maisPertoDoSegmento(a, b, raio) {
   const dir = subtrair(b, a);
   const L = norma(dir);
