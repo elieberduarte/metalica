@@ -276,17 +276,23 @@ def contravento_x(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
     wa, wb = _norm(_sub(a.fim, a.inicio)), _norm(_sub(b.fim, b.inicio))
     if abs(_dot(wa, wb)) < 0.98:
         raise ErroDeDados("as duas barras não são paralelas")
+
+    def uteis(x, w):
+        """as pontas de verdade da barra (o encurtamento das pontas descontado: a viga que para na face do pilar)"""
+        return (_add(x.inicio, _mul(w, float(x.recorte_inicio or 0.0))), _sub(x.fim, _mul(w, float(x.recorte_fim or 0.0))))
+    a_ini, a_fim = uteis(a, wa)
+    b_ini, b_fim = uteis(b, wb)
     if _dot(wa, wb) < 0:
-        b0, b1 = b.fim, b.inicio
+        b0, b1 = b_fim, b_ini
     else:
-        b0, b1 = b.inicio, b.fim
+        b0, b1 = b_ini, b_fim
     perfil = str(p.get("perfil") or "FE RED 1/2''")
     paineis = max(1, int(p.get("paineis") or 1))
     # o trecho comum, pela direção da primeira
     def s_de(q):
         return _dot(_sub(q, a.inicio), wa)
-    s0 = max(0.0, min(s_de(b0), s_de(b1)))
-    s1 = min(math.dist(a.inicio, a.fim), max(s_de(b0), s_de(b1)))
+    s0 = max(s_de(a_ini), min(s_de(b0), s_de(b1)))
+    s1 = min(s_de(a_fim), max(s_de(b0), s_de(b1)))
     margem = float(p.get("margem") or 0.0)
     s0, s1 = s0 + margem, s1 - margem
     if s1 - s0 < 300.0:
@@ -424,11 +430,17 @@ def viga_entre_pilares(doc, ids: Sequence[str], p: Optional[dict] = None) -> dic
     continua = str(p.get("continua") or "nao") == "sim"
     trechos = [(ordem[0], ordem[-1])] if continua else list(zip(ordem[:-1], ordem[1:]))
     novas = []
+    folga = float(p.get("folga") or 0.0)
     for a, b in trechos:
         p0 = (a.inicio[0], a.inicio[1], z)
         p1 = (b.inicio[0], b.inicio[1], z)
+        w = _norm(_sub(p1, p0))
+        # a viga vai de eixo a eixo (a linha do cálculo), com a ponta encurtada até a face de cada pilar
+        r0 = _topo(a, w) - _dot((a.inicio[0], a.inicio[1], 0.0), w) + folga
+        r1 = _topo(b, _mul(w, -1.0)) - _dot((b.inicio[0], b.inicio[1], 0.0), _mul(w, -1.0)) + folga
         novas.append(Barra(nome="Viga", inicio=_r(p0), fim=_r(p1), perfil=perfil, papel="viga", camada="Vigas",
-                           material="Aço", atributos={"tipo_ifc": "IfcBeam"}))
+                           material="Aço", recorte_inicio=round(max(0.0, r0), 2), recorte_fim=round(max(0.0, r1), 2),
+                           atributos={"tipo_ifc": "IfcBeam"}))
     avisos = [] if all(max(b.inicio[2], b.fim[2]) >= nivel - 1.0 for b in pilares) else \
         ["algum pilar termina abaixo do nível da viga: confira o topo dos pilares"]
     return {"novas": [x.dict() for x in novas], "resumo": {"vigas": len(novas), "nivel": nivel}, "avisos": avisos}
@@ -767,29 +779,60 @@ def mao_francesa(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
             dt = _norm(_sub((0.0, 0.0, -1.0), _mul(wt, -wt[2])))
             e_t = _topo(t, dt) - _dot(N, dt)
             T0 = _add(N, _mul(dt, e_t - recuo))
-            # a mesa de baixo do apoio, na vertical do cruzamento
+            # embaixo: na altura da mesa de baixo do apoio (`recuo` acima da face de baixo), mas FORA dela — além da
+            # ponta da mesa, onde fica a orelha/enrijecedor da fixação (a cantoneira não atravessa o apoio)
             wa = _norm(_sub(a.fim, a.inicio))
             da_ = _norm(_sub((0.0, 0.0, -1.0), _mul(wa, -wa[2])))
             e_a = _topo(a, da_) - _dot(A, da_)
             desce = (e_a - recuo) / max(abs(da_[2]), 0.2)
-            B = (A[0], A[1], A[2] - desce)
-            h = T0[2] - B[2]
+            # o plano vertical da terça: a normal horizontal; e a meia largura do apoio ao longo da terça
+            n_p = _norm(_cruz(wt, (0.0, 0.0, 1.0)))
+            wth = _norm(_sub(wt, _mul(wa, _dot(wt, wa))))
+            h = T0[2] - (A[2] - desce)
             if h < 50.0:
                 continue                                  # sem altura para a mão-francesa
             dist = h / math.tan(ang)
-            # o plano vertical da terça: a normal horizontal (uma aba da L deitada nele)
-            n_p = _norm(_cruz(wt, (0.0, 0.0, 1.0)))
+            # a cantoneira encosta na face de trás da alma da terça (o lado oposto à boca do U), deste lado do plano
+            ut = _u_da_barra(wt, t.rotacao)
+            lado_alma = _mul(n_p, 1.0 if _dot(ut, n_p) <= 0 else -1.0)
+            face_alma = _topo(t, lado_alma)
             pares += 1
             for s in ((1.0, -1.0) if lados == "ambos" else (1.0,)):
-                if not (0.0 <= st * Lt + s * dist <= Lt):
+                meia = _topo(a, _mul(wth, s)) - _dot(A, _mul(wth, s))
+                B = _add((A[0], A[1], A[2] - desce), _mul(wth, s * (meia + recuo)))
+                off = _dot(_sub(B, N), wt) + s * dist      # da terça (N) até a ponta de cima, ao longo dela
+                if not (0.0 <= st * Lt + off <= Lt):
                     continue                              # a terça acaba antes: deste lado não cabe
-                T = _add(T0, _mul(wt, s * dist))
-                d = _norm(_sub(B, T))
-                novas.append(Barra(nome="Mão-francesa", inicio=_r(T), fim=_r(B), perfil=perfil,
-                                   rotacao=_rotacao_para_v(d, n_p), papel="mão-francesa", camada="Terças",
-                                   material="Aço galvanizado",
-                                   atributos={"tipo_ifc": "IfcMember", "terca": t.id, "apoio": a.id}))
+                T = _add(T0, _mul(wt, off))
+                novas.append(_cantoneira_encostada(T, B, perfil, n_p, lado_alma, face_alma,
+                                                   {"tipo_ifc": "IfcMember", "terca": t.id, "apoio": a.id}))
     if not novas:
         raise ErroDeDados("nenhum apoio logo abaixo das terças escolhidas (até 1,5 m) com altura para a mão-francesa")
     return {"novas": [b.dict() for b in novas], "resumo": {"apoios": pares, "pecas": len(novas)},
-            "avisos": ["a fixação (o parafuso na alma da terça, a chapinha na mesa do apoio) vem pelo Aplicar ligação ou por um detalhe"]}
+            "avisos": ["a fixação (o parafuso na alma da terça; embaixo, a orelha ou o enrijecedor na mesa do apoio) "
+                       "vem pelo Aplicar ligação ou por um detalhe"]}
+
+
+def _cantoneira_encostada(T, B, perfil, n_p, lado, face, atributos):
+    """A cantoneira de T a B com uma aba deitada no plano (normal n_p) encostada na face `face` (ao longo de `lado`) e
+    a outra aba para fora: dos quatro giros, o que deixa a aba larga na face, e a peça toda além dela (0,5 mm)."""
+    from nucleo3d.modelo import Barra
+    from nucleo3d.geometria import malha_barra
+    d = _norm(_sub(B, T))
+    c = _norm(_cruz(d, n_p))                              # no plano, perpendicular à cantoneira
+    r0 = _rotacao_para_v(d, n_p)
+    melhor = None
+    for k in range(4):
+        rot = round((r0 + 90.0 * k) % 360.0, 3)
+        b = Barra(nome="Mão-francesa", inicio=_r(T), fim=_r(B), perfil=perfil, rotacao=rot, papel="mão-francesa",
+                  camada="Terças", material="Aço galvanizado", atributos=dict(atributos))
+        vs, _ = malha_barra(b)
+        lo = min(_dot(q, lado) for q in vs)
+        rente = [_dot(q, c) for q in vs if _dot(q, lado) <= lo + 1.0]
+        largura = (max(rente) - min(rente)) if rente else 0.0
+        if melhor is None or largura > melhor[0] + 1e-6:
+            melhor = (largura, b, face + 0.5 - lo)
+    _l, b, desloca = melhor
+    b.inicio = _r(_add(b.inicio, _mul(lado, desloca)))
+    b.fim = _r(_add(b.fim, _mul(lado, desloca)))
+    return b

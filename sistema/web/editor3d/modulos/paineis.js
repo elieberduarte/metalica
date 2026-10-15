@@ -280,7 +280,7 @@ export class MetodosPaineis {
     g.append(el('label', { texto: 'Aço' }),
       this._lista(uniao(this.catalogo.acos, [this.acoAtivo]), this.acoAtivo, v => { this.acoAtivo = v; }));
     g.append(el('label', { texto: 'Papel' }),
-      this._lista(PAPEIS, this.papelAtivo, v => { this.papelAtivo = v; }));
+      this._lista(PAPEIS, this.papelAtivo, v => { this.papelAtivo = v; this._papelEscolhido = true; }));
     g.append(el('label', { texto: 'Camada' }),
       this._lista([...this.documento.camadas.keys()], this.camadaAtiva,
                   v => { this.camadaAtiva = v; this._agendarPaineis('camadas'); }));

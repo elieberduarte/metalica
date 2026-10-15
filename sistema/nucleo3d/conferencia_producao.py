@@ -574,6 +574,43 @@ def producao(doc) -> List[dict]:
     return achados
 
 
+def _sem_passante_pelo_furo(doc, achados) -> list:
+    """Tira as colisões da barra passante (tirante, barra roscada, chumbador) com a peça que tem um furo marcado (o
+    marcador da ferramenta Furo, `atributos.furo.peca`) por onde ela passa: o eixo da barra a até meio furo + 1 mm do
+    centro do furo — o tirante no furo do SC1 não é colisão."""
+    from nucleo2d.detalhe.base import _RE_PASSANTE
+    from nucleo3d.modelo import Barra
+    furos = collections.defaultdict(list)
+    for e in doc.entidades.values():
+        f = (e.atributos or {}).get("furo") if isinstance(e.atributos, dict) else None
+        if isinstance(f, dict) and f.get("peca") and f.get("ponto"):
+            furos[f["peca"]].append((np.asarray(f["ponto"], float), float(f.get("d") or 0.0)))
+    if not furos:
+        return list(achados)
+
+    def passante(e):
+        return isinstance(e, Barra) and (str(e.papel) == "chumbador" or bool(_RE_PASSANTE.search(str(e.perfil) + " " + str(e.nome or ""))))
+
+    def pelo_furo(b, outra):
+        a0, a1 = np.asarray(b.inicio, float), np.asarray(b.fim, float)
+        w = a1 - a0
+        L2 = float(w @ w) or 1.0
+        for P, d in furos.get(outra.id, ()):
+            t = float((P - a0) @ w) / L2
+            if -0.05 <= t <= 1.05 and float(np.linalg.norm(a0 + w * t - P)) <= d / 2.0 + 1.0:
+                return True
+        return False
+    fora = []
+    for a in achados:
+        ids = a.get("ids") or []
+        if str(a.get("regra", "")).startswith("colisao") and len(ids) == 2:
+            x, y = doc.entidades.get(ids[0]), doc.entidades.get(ids[1])
+            if x is not None and y is not None and ((passante(x) and pelo_furo(x, y)) or (passante(y) and pelo_furo(y, x))):
+                continue
+        fora.append(a)
+    return fora
+
+
 # ------------------------------------------------------------------ tudo
 
 def conferir(doc, quais: Sequence[str] = ("colisao", "execucao", "producao"), ids: Optional[Sequence[str]] = None,
@@ -597,7 +634,7 @@ def conferir(doc, quais: Sequence[str] = ("colisao", "execucao", "producao"), id
     malhas: Dict[str, _Malha] = {}
     if "colisao" in quais:
         r = colisoes(proxies, avisar)
-        achados += r["achados"]
+        achados += _sem_passante_pelo_furo(doc, r["achados"])
         info["colisao"] = {k: r[k] for k in ("pares", "conferidos", "parcial")}
     if "execucao" in quais:
         achados += execucao(doc, proxies, malhas)

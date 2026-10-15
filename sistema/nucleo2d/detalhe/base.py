@@ -503,6 +503,8 @@ def _pecas(doc: Documento, puladas: Optional[list] = None, fora_do_aco: Optional
             continue
         if not isinstance(ent, Solido):
             continue
+        if _eh_furo(ent):
+            continue                                  # o marcador de furo (a cor dele não é material): viaja com os fixadores
         t = _tipo_ifc(ent)
         nao_aco = material_nao_aco(ent)
         if nao_aco is not None:

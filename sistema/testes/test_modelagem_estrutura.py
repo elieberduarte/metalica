@@ -313,7 +313,17 @@ def _portico_com_tercas():
     return _doc(v, *ts), v, ts
 
 
-def test_mao_francesa_a_45_graus_da_terca_a_mesa_de_baixo():
+def _colisoes(doc, novas):
+    """as colisões da conferência (a mesma do Conferir antes de detalhar) com as peças novas no modelo"""
+    from nucleo3d.conferencia_producao import colisoes
+    from nucleo3d.producao import _proxy
+    d2 = Documento.de_dict(doc.dict())
+    for b in novas:
+        d2.add(b)
+    return colisoes([_proxy(e) for e in d2.entidades.values()])["achados"]
+
+
+def test_mao_francesa_a_45_graus_sem_atravessar_terca_nem_apoio():
     doc, v, ts = _portico_com_tercas()
     r = modelagem.mao_francesa(doc, [t.id for t in ts], {})           # só as terças: o apoio é achado por baixo
     bs = _barras(r)
@@ -321,14 +331,17 @@ def test_mao_francesa_a_45_graus_da_terca_a_mesa_de_baixo():
     for b in bs:
         alto, baixo = (b.inicio, b.fim) if b.inicio[2] > b.fim[2] else (b.fim, b.inicio)
         assert b.papel == "mão-francesa"
-        # embaixo: na vertical da viga, na mesa de baixo (30 mm para dentro da face)
-        assert baixo[0] == pytest.approx(6000) and baixo[2] == pytest.approx(6000 - 155 + 30, abs=0.5)
-        # em cima: na terça, 30 mm acima da face de baixo dela, e no plano vertical da terça
-        assert alto[1] == baixo[1] and alto[1] in (2000, 5000)
+        # embaixo: 30 mm acima da face de baixo da viga, além da ponta da mesa (bf/2 + 30), onde vai a orelha
+        assert abs(baixo[0] - 6000) == pytest.approx(165 / 2 + 30, abs=0.5)
+        assert baixo[2] == pytest.approx(6000 - 155 + 30, abs=0.5)
+        # em cima: 30 mm acima da face de baixo da terça
         assert alto[2] == pytest.approx(6230 - 75 + 30, abs=0.5)
         # 45°: o que anda na horizontal é o que desce
         assert abs(alto[0] - baixo[0]) == pytest.approx(alto[2] - baixo[2], abs=0.5)
-    assert sorted(round(min(b.inicio[0], b.fim[0])) for b in bs)[0] < 6000 < max(max(b.inicio[0], b.fim[0]) for b in bs)
+        # encostada na face de trás da alma da terça (fora dela, ao lado do plano da terça)
+        assert 0 < abs(alto[1] - round(alto[1], -3)) < 60
+    # a conferência não acha colisão nenhuma: nem com a terça, nem com a viga, nem entre as duas de um apoio
+    assert _colisoes(doc, bs) == []
 
 
 def test_mao_francesa_um_lado_angulo_e_apoio_escolhido():
@@ -340,8 +353,18 @@ def test_mao_francesa_um_lado_angulo_e_apoio_escolhido():
     assert len(bs) == 1
     b = bs[0]
     alto, baixo = (b.inicio, b.fim) if b.inicio[2] > b.fim[2] else (b.fim, b.inicio)
-    assert baixo[0] == pytest.approx(9000)
+    assert abs(baixo[0] - 9000) == pytest.approx(165 / 2 + 30, abs=0.5)
     assert (alto[2] - baixo[2]) / abs(alto[0] - baixo[0]) == pytest.approx(math.tan(math.radians(60)), rel=1e-3)
+
+
+def test_viga_entre_pilares_para_na_face_dos_pilares():
+    r = modelagem.pilares_nos_eixos(EIXOS, ["A-1", "B-1"], {"topo": 6000, "perfil": "W 250×32,7"})
+    doc = _doc(*_barras(r))
+    rv = modelagem.viga_entre_pilares(doc, list(doc.entidades), {"perfil": "W 310×38,7", "nivel": 6000})
+    v = _barras(rv)[0]
+    # o pilar com a alma no pórtico (x): a face a d/2 = 129 do eixo
+    assert v.recorte_inicio == pytest.approx(129, abs=0.5) and v.recorte_fim == pytest.approx(129, abs=0.5)
+    assert _colisoes(doc, [v]) == []
 
 
 def test_mao_francesa_sem_terca_ou_sem_apoio():
@@ -488,3 +511,35 @@ def test_parede_lateral_nao_ganha_terca_de_topo_sem_pedir():
     assert r["resumo"]["topo"] == 0
     r = modelagem.longarinas(doc, [p.id for p in ps], {"topo": "sim"})
     assert r["resumo"]["topo"] == 2 and all(b.nome == "Longarina de topo" for b in _barras(r) if b.atributos.get("topo"))
+
+
+def test_tirante_no_furo_do_sc1_nao_e_colisao_e_o_x_para_na_ponta_util():
+    from nucleo3d.conferencia_producao import conferir
+    a = Barra(nome="BA", inicio=(0, 0, 6000), fim=(0, 12000, 6000), perfil="W 250×32,7", papel="viga",
+              recorte_inicio=129, recorte_fim=129)
+    b = Barra(nome="BB", inicio=(6000, 0, 6000), fim=(6000, 12000, 6000), perfil="W 250×32,7", papel="viga",
+              recorte_inicio=129, recorte_fim=129)
+    doc = _doc(a, b)
+    r = modelagem.contravento_x(doc, [a.id, b.id], {"paineis": 1, "perfil": "FE RED 5/8''", "suporte": "sc1"})
+    tir = [e for e in r["novas"] if e.get("papel") == "contraventamento"]
+    # o X começa e acaba nas pontas úteis das vigas (129 da ponta do eixo), não no eixo do pilar: os suportes ficam lá
+    assert len(tir) == 2
+    ys = sorted(round(e["inicio"][1]) for e in r["novas"] if e.get("papel") == "suporte")
+    assert ys[0] >= 129 - 30 and ys[-1] <= 12000 - 129 + 30, ys
+    d2 = Documento.de_dict(doc.dict())
+    for e in r["novas"]:
+        d2.entidades[e["id"]] = Documento.de_dict({"entidades": [e]}).entidades[e["id"]]
+    achados = [x for x in conferir(d2, quais=("colisao",))["achados"] if x["regra"].startswith("colisao")]
+    assert achados == [], achados
+
+
+def test_marcador_de_furo_do_sc1_nao_vira_peca_fora_do_aco_no_detalhamento():
+    from nucleo2d.detalhar import levantar
+    a = Barra(nome="BA", inicio=(0, 0, 6000), fim=(0, 12000, 6000), perfil="W 250×32,7", papel="viga")
+    b = Barra(nome="BB", inicio=(6000, 0, 6000), fim=(6000, 12000, 6000), perfil="W 250×32,7", papel="viga")
+    doc = _doc(a, b)
+    r = modelagem.contravento_x(doc, [a.id, b.id], {"paineis": 1, "perfil": "FE RED 5/8''", "suporte": "sc1"})
+    d2 = Documento.de_dict(dict(doc.dict(), entidades=doc.dict()["entidades"] + r["novas"]))
+    assert any((e.atributos or {}).get("furo") for e in d2.entidades.values())
+    lev = levantar(d2)
+    assert not any("não são de aço" in str(x) for x in (lev.get("avisos") or [])), lev.get("avisos")
