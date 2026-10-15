@@ -3,7 +3,8 @@
 //
 // Abre com F1 (no 3D) ou pelo menu ? › Guia rápido das ferramentas. Lista cada ferramenta registrada, por grupo, com o
 // atalho, o como usar e o aviso das que não estão à vista na barra lateral; um clique na linha abre a ferramenta. Depois,
-// os comandos de modelar pela seleção (que ficam nos menus) e as teclas que valem em todas as ferramentas. A busca filtra.
+// os comandos que ficam nos menus (modelar pela seleção, ligações, produção, conferir/BIM) e as teclas que valem em
+// todas as ferramentas. A busca filtra.
 
 import { GRUPOS } from '../ferramentas/indice.js';
 
@@ -39,18 +40,42 @@ const COMO = {
   editar_chapa: 'As alças da chapa no 3D (o botão direito na chapa também tem "Editar chapa no 2D"). Com a chapa escolhida: clique num vértice e onde ele vai (ou "dx;dy"); o meio do lado cria um vértice; o furo também anda. "ch20" chanfra, "r30" arredonda.',
 };
 
-//: os comandos de modelar pela seleção, que ficam nos menus (a ação do editor e o como usar)
+//: os comandos que ficam nos menus, por grupo: [ação do editor, nome, como usar] (os textos do met-lica-96, 15/10)
 const COMANDOS = [
-  ['modelar-pilares', 'Pilares nos eixos', 'Pilares nos cruzamentos dos eixos gravados, da base ao topo pelos níveis.'],
-  ['modelar-bases', 'Bases nos pilares dos eixos', 'Placa de base e chumbadores nos pilares dos eixos.'],
-  ['modelar-viga', 'Viga entre pilares', 'Selecione os pilares: a viga entre eles, na altura escolhida.'],
-  ['modelar-trelica', 'Treliça entre banzos', 'Selecione os dois banzos: montantes e diagonais (Warren, Pratt, Howe) com o encaixe.'],
-  ['modelar-tercas', 'Terças por espaçamento', 'Selecione as tesouras ou vigas: as terças distribuídas pelo espaçamento.'],
-  ['modelar-contravento', 'Contraventamento em X', 'Selecione dois pilares ou tesouras: o X entre eles.'],
-  ['modelar-longarinas', 'Longarinas de fechamento', 'As longarinas de fechamento entre os pilares.'],
-  ['modelar-correntes', 'Correntes entre terças', 'As correntes (e o tirante de cumeeira) entre as terças.'],
-  ['modelar-mao-francesa', 'Mão-francesa', 'A mão-francesa entre a terça e a tesoura.'],
-  ['copiar-para-eixos', 'Copiar para os eixos', 'A seleção copiada para os outros eixos (também no botão direito).'],
+  ['Modelar pela seleção', [
+    ['modelar-pilares', 'Pilares nos eixos', 'Marque os cruzamentos dos eixos gravados: um pilar em cada, da base ao topo, com a alma no pórtico.'],
+    ['modelar-bases', 'Bases nos pilares dos eixos', 'A placa de base com chumbadores (rotulada/engastada) em todos os pilares marcados de uma vez; os que já têm ficam de fora.'],
+    ['modelar-viga', 'Viga entre pilares', 'Selecione os pilares: a viga com o topo no nível, parando na face de cada pilar.'],
+    ['modelar-trelica', 'Treliça entre banzos', 'Selecione os dois banzos: montantes e diagonais (Pratt, Howe, Warren) encaixados nas faces.'],
+    ['modelar-tercas', 'Terças por espaçamento', 'Selecione as tesouras/vigas de uma água: terças igualmente espaçadas, sentadas no topo.'],
+    ['modelar-contravento', 'Contraventamento em X', 'Selecione duas barras paralelas: o X em painéis; entre banzos, já nos suportes SC1.'],
+    ['modelar-longarinas', 'Longarinas de fechamento', 'Selecione os pilares de uma parede: as fiadas na face de fora (boca para baixo); no oitão, a terça inclinada.'],
+    ['modelar-correntes', 'Correntes entre terças', 'Selecione as terças: no meio (ou nos terços) de cada vão; nas duas águas, o V da cumeeira.'],
+    ['modelar-mao-francesa', 'Mão-francesa', 'Selecione as terças: a cantoneira da alma da terça à mesa de baixo da viga, a 45°, nos dois lados.'],
+    ['copiar-para-eixos', 'Copiar para os eixos', 'A tesoura/o pórtico selecionado copiado para os eixos paralelos marcados (também no botão direito).'],
+  ]],
+  ['Ligações e detalhes', [
+    ['aplicar-ligacao', 'Aplicar ligação', 'Selecione as peças (pilar; viga + pilar; terça + banzo; tirante + banzos…): a ligação da biblioteca com marca, conjunto e solda, editável depois.'],
+    ['salvar-detalhe', 'Salvar como detalhe', 'A ligação montada à mão (chapas, parafusos) e a barra dela viram um detalhe da empresa.'],
+    ['aplicar-detalhe', 'Aplicar detalhe', 'Um detalhe da empresa nas barras selecionadas, na ponta certa.'],
+  ]],
+  ['Produção (marcas, conjuntos, soldas)', [
+    ['numerar', 'Numerar peças', 'Marca P e M às peças sem marca; as iguais ficam com a mesma (o critério do detalhamento).'],
+    ['criar-conjunto', 'Criar conjunto', 'Selecione as peças da montagem de fábrica (a viga com as chapas): vira um conjunto com peça principal.'],
+    ['acrescentar-ao-conjunto', 'Acrescentar ao conjunto', 'As peças soltas da seleção entram no conjunto das outras.'],
+    ['tirar-do-conjunto', 'Tirar do conjunto', 'As peças selecionadas saem do conjunto.'],
+    ['soldar', 'Soldar', 'Onde as peças selecionadas se encostam: filete ou penetração, perna, lados, fábrica ou obra.'],
+    ['converter-chapa', 'Converter em chapa', 'O sólido desenhado à mão (retângulo empurrado) vira chapa de verdade.'],
+    ['renumerar', 'Renumerar tudo', 'Refaz todas as marcas a partir de P1/M1 (bloqueado com a numeração travada).'],
+    ['travar-numeracao', 'Numeração travada', 'Projeto emitido: as marcas não se renumeram mais.'],
+  ]],
+  ['Conferir e ver (BIM)', [
+    ['conferir-producao', 'Conferir antes de detalhar', 'Colisão, execução das ligações e produção; com seleção, só a região dela.'],
+    ['tabela-pecas', 'Tabela de peças', 'A tabela ao vivo do modelo: filtra, seleciona, CSV.'],
+    ['sequencia-montagem', 'Sequência de montagem', 'A obra fase a fase (o 4D), pela fase de cada peça.'],
+    ['etiquetas', 'Etiquetas das marcas', 'As marcas P/M escritas sobre as peças.'],
+    ['salvar-vista', 'Salvar vista (Alt+0)', 'Guarda câmera, corte/caixa, cores e ocultos; Alt+1…9 voltam.'],
+  ]],
 ];
 
 //: as teclas que valem em todas as ferramentas
@@ -136,9 +161,10 @@ export function abrirGuiaFerramentas(editor) {
         corpo.append(linha);
       }
     }
-    const cmds = COMANDOS.filter(([acao, nome, como]) => doc.querySelector(`[data-acao="${acao}"]`) && casa(nome, como, 'modelar seleção'));
-    if (cmds.length) {
-      corpo.append(el(doc, 'h4', { texto: 'Modelar pela seleção (comandos)' }));
+    for (const [grupoCmd, lista] of COMANDOS) {
+      const cmds = lista.filter(([acao, nome, como]) => doc.querySelector(`[data-acao="${acao}"]`) && casa(nome, como, grupoCmd));
+      if (!cmds.length) continue;
+      corpo.append(el(doc, 'h4', { texto: `${grupoCmd} — comandos dos menus` }));
       for (const [acao, nome, como] of cmds) {
         corpo.append(el(doc, 'button', { type: 'button', class: 'guia-linha', title: 'Abrir este comando',
           onclick: () => { fechar(); const b = doc.querySelector(`[data-acao="${acao}"]`); if (b) b.click(); } },
