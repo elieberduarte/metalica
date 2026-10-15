@@ -50,6 +50,40 @@ const NS = 'http://www.w3.org/2000/svg';
 //: a chave numérica da célula da grade da tela: coluna × CHAVE_GRADE + linha (a tela tem bem menos de 4096 / 48 linhas)
 const CHAVE_GRADE = 4096;
 
+/**
+ * As quinas vivas de um anel da seção: onde o canto é arredondado (o tubo, a dobra do perfil formado), o encontro das duas
+ * faces retas vizinhas — o ponto que se usa para encostar um perfil no outro sem invadir (usuário, 15/10). Os lados retos
+ * são os segmentos bem maiores que a mediana (o arco sai em pedaços curtos); entre dois retos seguidos não há arco.
+ * `.internos`: os índices dos pontos do meio de cada arco que ganhou quina (saem do snap: só atrapalham perto dela).
+ */
+export function quinasVivas(anel) {
+  const n = anel.length;
+  const out = [];
+  out.internos = new Set();
+  if (n < 5) return out;
+  const comp = anel.map((p, i) => { const q = anel[(i + 1) % n]; return Math.hypot(q[0] - p[0], q[1] - p[1]); });
+  const med = comp.slice().sort((a, b) => a - b)[Math.floor(n / 2)];
+  const reto = comp.map(c => c > 3 * med);
+  const retos = reto.reduce((l, r, i) => { if (r) l.push(i); return l; }, []);
+  if (retos.length < 2) return out;
+  for (let k = 0; k < retos.length; k++) {
+    const i = retos[k], j = retos[(k + 1) % retos.length];
+    if ((i + 1) % n === j) continue;                          // canto vivo de verdade: o vértice já está no anel
+    let arco = 0;
+    for (let s = (i + 1) % n; s !== j; s = (s + 1) % n) arco += comp[s];
+    const a0 = anel[i], a1 = anel[(i + 1) % n], b0 = anel[j], b1 = anel[(j + 1) % n];
+    const dx = a1[0] - a0[0], dy = a1[1] - a0[1], ex = b1[0] - b0[0], ey = b1[1] - b0[1];
+    const den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-9 * Math.hypot(dx, dy) * Math.hypot(ex, ey)) continue;   // paralelas: não é canto
+    const t = ((b0[0] - a0[0]) * ey - (b0[1] - a0[1]) * ex) / den;
+    const p = [a0[0] + t * dx, a0[1] + t * dy];
+    if (Math.hypot(p[0] - a1[0], p[1] - a1[1]) > 2 * arco + 1e-6) continue;          // longe do arco: não é a quina dele
+    out.push(p);
+    for (let s = (i + 2) % n; s !== (j + 1) % n && s !== j; s = (s + 1) % n) out.internos.add(s);
+  }
+  return out;
+}
+
 export class Inferencia {
   /**
    * @param svg  overlay <svg> sobre o canvas, onde os glifos são desenhados
@@ -67,6 +101,7 @@ export class Inferencia {
     this.travadoPorShift = false;
     this.ultimo = null;             // último ponto resolvido
     this._contornos = new Map();    // id → {chave, pontos, arestas, raioMM}: o contorno da seção da barra no mundo
+    this._quinas = new WeakSet();   // os pontos de quina viva do contorno (vencem o empate com os do arco ao lado)
     // o plano de trabalho (ferramenta Plano de trabalho): {origem, normal, ex, ey, nome} ou null = o chão (z da âncora)
     this.planoTrabalho = null;
     // os eixos e os níveis da obra (modulos/lancamento._carregarReferencia): {eixos: [{nome, a, b}], niveis: [{nome, z}]}
@@ -158,7 +193,14 @@ export class Inferencia {
           arestas.push([p0[i], p0[j]], [p1[i], p1[j]], [p0[i], p1[i]]);
           raioMM = Math.max(raioMM, Math.hypot(anel[i][0], anel[i][1]));
         }
-        pontos.push(...p0, ...p1);
+        for (let i = 0; i < anel.length; i++) if (!anel.internos || !anel.internos.has(i)) pontos.push(p0[i], p1[i]);
+        // a quina viva do canto arredondado (tubo, dobrado): o encontro das faces retas, nas duas pontas e ao longo dela
+        for (const q of (anel.quinas || [])) {
+          const a = no(o0, q), b = no(o1, q);
+          this._quinas.add(a); this._quinas.add(b);
+          pontos.push(a, b);
+          arestas.push([a, b]);
+        }
       }
       c = { chave, pontos, arestas, raioMM };
       this._contornos.set(b.id, c);
@@ -187,6 +229,7 @@ export class Inferencia {
         return r;
       });
       if (!aneis.length || aneis.reduce((n, a) => n + a.length, 0) > 80) aneis = null;
+      else for (const a of aneis) { const q = quinasVivas(a); a.quinas = q; a.internos = q.internos; }
     }
     if (pronto) this._aneis.set(perfil, aneis);
     return aneis;
@@ -527,7 +570,7 @@ export class Inferencia {
         const d = Math.hypot(t[0] - x, t[1] - y);
         if (d <= tolPonto) {
           algumPerto = true;
-          cand.push({ tipo: 'extremidade', ponto: pts[i], d, id });
+          cand.push({ tipo: 'extremidade', ponto: pts[i], d, id, quina: this._quinas.has(pts[i]) });
         }
       }
       const ars = contorno ? geo.arestas.concat(contorno.arestas) : geo.arestas;
@@ -756,6 +799,8 @@ export class Inferencia {
     cand.sort((a, b) => {
       const aa = a.id && a.id === alvoId ? 0 : 1, ab = b.id && b.id === alvoId ? 0 : 1;
       if (aa !== ab) return aa - ab;
+      // na mesma peça, a quina viva vence o ponto do arco empatado com ela na tela (de longe ficam a 2–3 px)
+      if (a.id === b.id && !!a.quina !== !!b.quina) return a.quina ? -1 : 1;
       return prof(a) - prof(b) || a.d - b.d;
     });
     const melhor = cand[0];
