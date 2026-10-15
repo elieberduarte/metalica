@@ -57,6 +57,7 @@ Rotas da API:
     GET  /api/modelo/ligacoes-3d                               as ligações da biblioteca que se põem no 3D
     POST /api/modelo/ligacao {documento, tipo, ids, parametros, ligacao}   aplica (ou refaz) a ligação nas barras
     POST /api/modelo/ligacao/remover {documento, ligacao}      apaga a ligação e devolve as barras
+    POST /api/modelo/modelar {documento, ferramenta, ids, parametros, eixos, cruzamentos}   terças, treliça, contravento, pilares, viga
     POST /api/modelo/conferencia {documento, ids, quais}       colisão, execução das ligações e produção
     GET  /api/detalhes-3d · POST /api/detalhes-3d/<salvar|aplicar|excluir>   o detalhe do usuário (modelo de ligação)
     GET  /api/projetos/<slug>/esforcos     esforços da estrutura inteira (o último cálculo); POST calcula (tela /esforcos)
@@ -4188,6 +4189,22 @@ def aplicar_ligacao(corpo: dict) -> dict:
                               esforcos=corpo.get("esforcos") or None, analise=analise)
 
 
+def modelar_estrutura(corpo: dict) -> dict:
+    """POST /api/modelo/modelar {documento, ferramenta, ids, parametros, eixos, cruzamentos}: as ferramentas de
+    modelagem pela seleção (nucleo3d/modelagem.py) — terças, treliça, contravento em X, pilares nos eixos, viga entre
+    pilares. Devolve as barras novas e as alterações, para o editor aplicar com desfazer."""
+    from nucleo3d import modelagem
+    f = str(corpo.get("ferramenta") or "")
+    p = corpo.get("parametros") or {}
+    if f == "pilares":
+        return modelagem.pilares_nos_eixos(list(corpo.get("eixos") or []), list(corpo.get("cruzamentos") or []), p)
+    fn = {"tercas": modelagem.tercas, "trelica": modelagem.trelica, "contravento": modelagem.contravento_x,
+          "viga": modelagem.viga_entre_pilares}.get(f)
+    if fn is None:
+        raise ErroDeDados("ferramenta de modelagem desconhecida: %s" % f)
+    return fn(_documento_de(corpo), list(corpo.get("ids") or []), p)
+
+
 def conferir_modelo(corpo: dict) -> dict:
     """POST /api/modelo/conferencia {documento, ids, quais}: colisão pela forma, execução das ligações (borda, passo,
     parafuso sem furo, furo sem parafuso, espaço da chave) e produção (sem marca, a conferir, fora da lista, sem peça
@@ -4998,6 +5015,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(aplicar_ligacao(corpo))
             if rota == "/api/modelo/ligacao/remover":
                 return self._json(remover_ligacao(corpo))
+            if rota == "/api/modelo/modelar":
+                return self._json(modelar_estrutura(corpo))
             if rota == "/api/modelo/conferencia":
                 return self._json(conferir_modelo(corpo))
             if rota == "/api/lento":

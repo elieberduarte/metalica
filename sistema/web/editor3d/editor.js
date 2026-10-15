@@ -49,6 +49,7 @@ import { MetodosLigacoes } from './modulos/ligacoes.js';
 import { MetodosConferencia } from './modulos/conferencia.js';
 import { MetodosDetalhesUsuario } from './modulos/detalhes_usuario.js';
 import { MetodosBIM } from './modulos/bim.js';
+import { MetodosModelagem } from './modulos/modelagem.js';
 
 /** Copia os métodos das classes dos módulos para a classe (getters e setters também). */
 function aplicarMetodos(alvo, ...fontes) {
@@ -2006,6 +2007,12 @@ export class Editor {
       'aplicar-detalhe': () => this.aplicarDetalhe(),
       'eixos-obra': () => this.dialogoEixos(),
       'lancar-estrutura': () => this.dialogoLancar(),
+      // a modelagem pela seleção (modulos/modelagem.js, 14/10)
+      'modelar-tercas': () => this.dialogoTercas(),
+      'modelar-trelica': () => this.dialogoTrelica(),
+      'modelar-contravento': () => this.dialogoContraventoX(),
+      'modelar-pilares': () => this.dialogoPilaresNosEixos(),
+      'modelar-viga': () => this.dialogoVigaEntrePilares(),
       'memorial-lancamento': () => this.memorialDoLancamento(),
       'planta-lancamento': () => this._irPara(`/cad?projeto=${encodeURIComponent(this.projeto || '')}&desenho=${encodeURIComponent('planta-de-lançamento')}`),
       referencia: () => this.alternarReferencia(),
@@ -2469,7 +2476,7 @@ export class Editor {
 // os métodos que moram nos módulos (web/editor3d/modulos/)
 aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico, MetodosLancamento,
   MetodosApoios, MetodosBloco, MetodosBarrasDoBloco, MetodosDivisao, MetodosExplodir, MetodosEdicaoChapa, MetodosPadrao3D,
-  MetodosProducao, MetodosLigacoes, MetodosConferencia, MetodosDetalhesUsuario, MetodosBIM);
+  MetodosProducao, MetodosLigacoes, MetodosConferencia, MetodosDetalhesUsuario, MetodosBIM, MetodosModelagem);
 
 // ================================================================= apoio
 
