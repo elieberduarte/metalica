@@ -43,6 +43,7 @@ import { MetodosDivisao } from './modulos/divisao.js';
 import { MetodosExplodir } from './modulos/explodir.js';
 import { ligarCotasAssociativas } from './modulos/cotas.js';
 import { ligarMenuDeContexto } from './modulos/menu_contexto.js';
+import { ligarGuia } from './modulos/guia_ferramentas.js';
 import { MetodosEdicaoChapa } from './modulos/edicao_chapa.js';
 import { MetodosPadrao3D } from './modulos/padrao_3d.js';
 import { MetodosProducao } from './modulos/producao.js';
@@ -270,6 +271,8 @@ export class Editor {
     ligarCotasAssociativas(this);
     // o menu do botão direito (clique sem arrastar; arrastado continua sendo o pan)
     ligarMenuDeContexto(this);
+    // o guia rápido das ferramentas: F1 e o menu ? da barra (15/10)
+    ligarGuia(this);
     this.pilha.aoMudar(() => this._atualizarMenuEditar());
     this.selecao.aoMudar(() => {
       if (this._destaqueAtivo && this.selecao.ids.size === 0) { this._destaqueAtivo = false; this.cena.destacar(null); }

@@ -226,6 +226,7 @@
       F('Tema claro / escuro', 'tema', { antes: 'Ver › Tema claro / escuro' }),
     ] },
     { nome: '?', itens: [
+      F('Guia rápido das ferramentas…', 'guia', { kbd: 'F1', dica: 'todas as ferramentas do 3D, os atalhos e como usar' }),
       { texto: 'Ajuda do programa…', link: '/ajuda', nova: true, antes: 'Ver › Ajuda do programa…' },
       F('Onde foi parar cada item do menu antigo…', 'mapa', { dica: 'os menus mudaram na 0.8.54' }),
       HR,
@@ -480,6 +481,7 @@
     if (fn.indexOf('vista-') === 0) { if (window.mostrarVista) window.mostrarVista(fn.slice(6)); return; }
     if (fn === 'paineis') { var p = $('#btn-paineis'); if (p) p.click(); return; }
     if (fn === 'mapa') { ondeFoiParar(); return; }
+    if (fn === 'guia') { abrirGuia(); return; }
     if (fn === 'seguir') { var s = $('#seguir'); if (s) s.click(); return; }
     if (fn === 'modo-planta' || fn === 'modo-elevacao') { var b = document.querySelector('.grupo-modo button[data-modo="' + fn.slice(5) + '"]'); if (b) b.click(); return; }
     if (fn === 'trocar') { var t = $('#btn-trocar'); if (t) t.click(); return; }
@@ -590,6 +592,22 @@
     b.title = t === 'escuro' ? 'Tema claro' : 'Tema escuro';
     b.setAttribute('aria-label', b.title);
   }
+
+  // ------------------------------------------------------------ ? › Guia rápido das ferramentas (15/10)
+  // O guia mora no 3D (modulos/guia_ferramentas.js, lê as ferramentas registradas): com o 3D fechado ou no modo "ver",
+  // mostra o 3D, carrega o editor e espera ele ficar pronto. F1 aqui na barra também abre.
+  function abrirGuia() {
+    var inicio = Date.now();
+    if (!visivel('3d') && window.mostrarVista) window.mostrarVista('3d');
+    // o 3D no modo "ver" não tem as ferramentas: carrega o editor no quadro (o mesmo caminho dos comandos do 3D)
+    if (!docPronto('3d')) { try { var w3 = janela('3d'); if (w3 && w3.visorLeve) w3.visorLeve.editar(); } catch (e) { /* carregando */ } }
+    (function tentar() {
+      var w = docPronto('3d') ? janela('3d') : null;
+      if (w && typeof w.abrirGuiaFerramentas === 'function') { w.abrirGuiaFerramentas(); try { w.focus(); } catch (e) { /* sem foco */ } return; }
+      if (Date.now() - inicio < 60000) setTimeout(tentar, 200);
+    })();
+  }
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'F1') { ev.preventDefault(); abrirGuia(); } });
 
   // ------------------------------------------------------------ ? › Onde foi parar cada item do menu antigo
   function ondeFoiParar() {
