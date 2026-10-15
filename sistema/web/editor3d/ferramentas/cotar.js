@@ -7,6 +7,9 @@
 // de entidade precisa existir no documento nem no IFC. Os dados originais ficam em
 // `atributos.cota = { a, b, deslocamento, texto, normal }`, e é por eles que a cota
 // deve ser regerada se as pontas mudarem.
+//
+// Clicando numa aresta (o snap "Sobre aresta", não no canto), como no SketchUp: a cota é a da própria aresta, de ponta a
+// ponta — só falta afastar e clicar (15/10).
 
 import { Ferramenta, paraMilimetros, formatar } from './base.js';
 import * as C from './_comum.js';
@@ -40,6 +43,18 @@ export class FerramentaCotar extends Ferramenta {
 
   onPonto(p) {
     if (!p) return;
+    if (!this.a && p.tipoSnap === 'sobre_aresta' && Array.isArray(p.aresta) && C.dist(p.aresta[0], p.aresta[1]) > 1e-3) {
+      // a cota da aresta inteira: as duas pontas dela, presas à peça
+      const [a, b] = p.aresta;
+      this.a = C.copiar(a); this.b = C.copiar(b); this.daAresta = true;
+      this.refA = this._ref({ ...p, ponto: a }); this.refB = this._ref({ ...p, ponto: b });
+      this.planoBase = C.planoDoPonto(this.editor, p);
+      this.montarPlano();
+      this.desloc = this.deslocamentoDe(this.pontoNoPlanoDaCota(p));
+      this.dica(`Cota da aresta (${formatar(C.dist(a, b))}): afaste a linha de cota e clique, ou digite o afastamento`);
+      this.desenhar();
+      return;
+    }
     if (!this.a) {
       this.a = C.copiar(p.ponto);
       // a ponta presa à peça que o snap pegou: a cota acompanha quando ela mudar (F20, modulos/cotas.js)
@@ -77,6 +92,7 @@ export class FerramentaCotar extends Ferramenta {
   }
 
   cancelar() {
+    if (this.daAresta) { this.reiniciar(); this.dica(FerramentaCotar.dica); return; }
     if (this.b) { this.b = null; this.dica('Clique na segunda extremidade'); this.desenhar(); return; }
     if (this.a) { this.reiniciar(); this.dica(FerramentaCotar.dica); return; }
     C.voltarParaSelecao(this.editor);
@@ -135,7 +151,7 @@ export class FerramentaCotar extends Ferramenta {
 
   reiniciar() {
     C.desancorar(this.editor);
-    this.a = null; this.b = null; this.atual = null; this.desloc = 0; this.refA = null; this.refB = null;
+    this.a = null; this.b = null; this.atual = null; this.desloc = 0; this.refA = null; this.refB = null; this.daAresta = false;
     this.limparPrevia();
     this.medida('');
   }

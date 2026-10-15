@@ -115,6 +115,24 @@ try:
        f"esticar a cópia leva a cota copiada, e a de antes fica: {r}")
     ok(r and r["espelhada"] and r["espelhada"]["refs"] is None and r["espelhada"]["a"] == [0, 2927, 129],
        f"a cota espelhada sai solta, no lugar refletido: {r and r['espelhada']}")
+    # a cota da aresta: um clique na aresta (não no canto) e o afastamento — a aresta inteira, presa à peça
+    r = jsj("""const ed = editor, doc = ed.documento;
+      const ch = doc.add({ tipo: 'chapa', nome: 'CH2', camada: 'Chapas', origem: [0, 8000, 0], eixo_x: [1, 0, 0], eixo_y: [0, 1, 0],
+        contorno: [[0, 0], [200, 0], [200, 100], [0, 100]], espessura: 10, centrada: false, furos: [], atributos: {} });
+      ed.ativarFerramenta('cotar'); const f = ed.ativa;
+      const antes = new Set(doc.entidades.keys());
+      f.onPonto({ ponto: [80, 8000, 10], entidade: ch.id, tipoSnap: 'sobre_aresta', aresta: [[0, 8000, 10], [200, 8000, 10]], normal: [0, 0, 1], tela: [0, 0] });
+      const modo = !!f.daAresta && !!f.b;
+      f.onPonto({ ponto: [80, 7800, 10], entidade: null, tipoSnap: 'plano_base', normal: [0, 0, 1], tela: [0, 0] });
+      const c = [...doc.entidades.values()].find(e => !antes.has(e.id) && e.atributos && e.atributos.cota);
+      // Esc cancela a cota da aresta inteira
+      f.onPonto({ ponto: [80, 8000, 10], entidade: ch.id, tipoSnap: 'sobre_aresta', aresta: [[0, 8000, 10], [200, 8000, 10]], normal: [0, 0, 1], tela: [0, 0] });
+      f.cancelar();
+      return { modo, texto: c && c.atributos.cota.texto, a: c && c.atributos.cota.a, b: c && c.atributos.cota.b,
+               refs: c && c.atributos.cota.refs.map(x => x && x.id === ch.id), limpo: !f.a && !f.b };""")
+    ok(r and r["modo"] and r["texto"] == "200 mm" and r["a"] == [0, 8000, 10] and r["b"] == [200, 8000, 10] and r["refs"] == [True, True],
+       f"um clique na aresta e o afastamento: a cota da aresta inteira, presa à chapa: {r}")
+    ok(r and r["limpo"], f"o Esc cancela a cota da aresta: {r and r['limpo']}")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:2]]}")
 finally:
