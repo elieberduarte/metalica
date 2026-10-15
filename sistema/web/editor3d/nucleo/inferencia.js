@@ -30,12 +30,19 @@ export const TIPOS = {
   nivel:        { rotulo: 'Nível',       cor: '#b45309', glifo: 'quadrado', prio: 2.6 },
   sobre_eixo_obra: { rotulo: 'Sobre o eixo', cor: '#b45309', glifo: 'losango', prio: 5.5 },
   eixo_plano:   { rotulo: 'No plano de trabalho', cor: '#7c3aed', glifo: 'eixo', prio: 6 },
+  // alinhado com um ponto lembrado (o mouse parou nele): o "a partir do ponto" do SketchUp — na reta do eixo a partir da
+  // âncora, onde a coordenada coincide com a do ponto (vence o eixo puro); sem âncora, sobre as retas X/Y/Z do ponto
+  alinhado:     { rotulo: 'Alinhado',    cor: '#b07cc6', glifo: 'eixo',     prio: 5.7 },
+  alinhado_livre: { rotulo: 'Alinhado',  cor: '#b07cc6', glifo: 'eixo',     prio: 6.5 },
   sobre_face:   { rotulo: 'Sobre face',  cor: '#2a63c8', glifo: 'losango',  prio: 7 },
   plano_base:   { rotulo: 'No plano',    cor: '#8a94a6', glifo: 'ponto',    prio: 8 },
 };
 
 // "aresta": a direção da aresta travada com Shift (paralelo), preenchida na hora
 const EIXOS = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
+const COR_EIXO = { x: '#c0392b', y: '#2e8b57', z: '#2a63c8' };
+//: os pontos que ficam lembrados quando o mouse para neles
+const LEMBRAVEIS = new Set(['extremidade', 'meio', 'centro', 'interseccao', 'eixo_obra']);
 const NS = 'http://www.w3.org/2000/svg';
 
 export class Inferencia {
@@ -59,6 +66,9 @@ export class Inferencia {
     this.planoTrabalho = null;
     // os eixos e os níveis da obra (modulos/lancamento._carregarReferencia): {eixos: [{nome, a, b}], niveis: [{nome, z}]}
     this.referencias = null;
+    // os pontos notáveis em que o mouse parou (até 3, o mais recente primeiro) e o que está sob o mouse agora
+    this._lembrados = [];
+    this._pairando = null;
     this._esferas = new Map();      // id → {c, r}: a esfera envolvente da peça, para o descarte pelo raio do cursor
     if (documento && typeof documento.aoMudar === 'function') {
       documento.aoMudar(({ ids, acao }) => {
@@ -134,7 +144,16 @@ export class Inferencia {
   // --------------------------------------------------------- estado externo
 
   definirAncora(p) { this.ancora = p ? p.slice(0, 3) : null; }
-  limparAncora() { this.ancora = null; this.destravar(); }
+  limparAncora() { this.ancora = null; this.destravar(); this._lembrados = []; this._pairando = null; }
+
+  /** Os pontos lembrados para o alinhamento: [{ponto, rotulo}] (o mais recente primeiro). */
+  get lembrados() { return this._lembrados.slice(); }
+
+  _lembrar(ponto, rotulo) {
+    const l = this._lembrados.filter(q => norma(subtrair(q.ponto, ponto)) > 0.5);
+    l.unshift({ ponto: ponto.slice(0, 3), rotulo });
+    this._lembrados = l.slice(0, 3);
+  }
 
   travarEixo(eixo) {
     this.travado = (eixo === this.travado) ? null : eixo;
@@ -153,7 +172,8 @@ export class Inferencia {
       if (ev.key === 'ArrowDown') { this.destravar(); return true; }
       if (ev.key === 'Shift' && !this.travadoPorShift) {
         const t = this.ultimo && this.ultimo.tipoSnap;
-        const eixo = t === 'eixo_x' ? 'x' : t === 'eixo_y' ? 'y' : t === 'eixo_z' ? 'z' : null;
+        const eixo = t === 'eixo_x' ? 'x' : t === 'eixo_y' ? 'y' : t === 'eixo_z' ? 'z'
+          : (t === 'alinhado' && this.ultimo.eixoAlinhado) || null;
         if (eixo) { this.travado = eixo; this.travadoPorShift = true; return true; }
         // sobre uma aresta (a do banzo inclinado): Shift trava paralelo a ela
         const ar = (this.ultimo && this.ultimo.aresta) || this.ultimaAresta;
@@ -437,6 +457,29 @@ export class Inferencia {
       }
     }
 
+    // 4d. Alinhado com um ponto lembrado: com âncora, na reta de cada eixo a partir dela, no ponto em que a coordenada
+    // daquele eixo é a do ponto lembrado; sem ela (ou além disso), sobre as retas X/Y/Z que passam pelo ponto lembrado
+    for (const L of this._lembrados) {
+      const P = L.ponto;
+      for (const [nome, dir] of Object.entries(EIXOS)) {
+        if (this.ancora) {
+          const s = (P[0] - this.ancora[0]) * dir[0] + (P[1] - this.ancora[1]) * dir[1] + (P[2] - this.ancora[2]) * dir[2];
+          const Q = somar(this.ancora, escalar(dir, s));
+          if (Math.abs(s) > 1 && norma(subtrair(Q, P)) > 1) {
+            const d = perto(Q);
+            if (d !== null) cand.push({ tipo: 'alinhado', ponto: Q, d, de: P, eixoAlinhado: nome,
+                                        rotulo: `Alinhado com ${L.rotulo.toLowerCase()} (${nome.toUpperCase()})` });
+          }
+        }
+        const q = pontoNoEixo(P, dir, raio);
+        if (!q || norma(subtrair(q, P)) < 1) continue;
+        const t = this.camera.paraTela(q);
+        const d = Math.hypot(t[0] - x, t[1] - y);
+        if (d <= tol && t[2] < 1) cand.push({ tipo: 'alinhado_livre', ponto: q, d, de: P, eixoAlinhado: nome,
+                                              rotulo: `Na direção ${nome.toUpperCase()} de ${L.rotulo.toLowerCase()}` });
+      }
+    }
+
     // 5. Sobre a face, quando o raio atinge alguma coisa.
     if (alvo) {
       cand.push({ tipo: 'sobre_face', ponto: alvo.ponto, d: tol + 1,
@@ -487,6 +530,15 @@ export class Inferencia {
       return prof(a) - prof(b) || a.d - b.d;
     });
     const melhor = cand[0];
+    // o ponto notável em que o mouse parou (250 ms ou mais) fica lembrado quando ele sai de cima — base do alinhamento
+    const agora = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const notavel = LEMBRAVEIS.has(melhor.tipo);
+    const h = this._pairando;
+    if (h && !(notavel && norma(subtrair(h.ponto, melhor.ponto)) < 0.5)) {
+      if (agora - h.desde >= 250) this._lembrar(h.ponto, h.rotulo);
+      this._pairando = null;
+    }
+    if (notavel && !this._pairando) this._pairando = { ponto: melhor.ponto.slice(0, 3), desde: agora, rotulo: (TIPOS[melhor.tipo] || {}).rotulo || 'Ponto' };
     if (melhor.aresta) this.ultimaAresta = melhor.aresta;     // para o Shift travar paralelo
     if (melhor.direcao) this.ultimaAresta = [melhor.ponto, somar(melhor.ponto, melhor.direcao)];   // Shift trava a direção do plano
     return this._concluir({
@@ -498,13 +550,14 @@ export class Inferencia {
       normal: melhor.normal || (alvo ? alvo.normal : [0, 0, 1]),
       tipoSnap: melhor.tipo,
       rotuloSnap: melhor.rotulo || '',
+      ...(melhor.de ? { alinhadoCom: melhor.de, eixoAlinhado: melhor.eixoAlinhado, corSnap: COR_EIXO[melhor.eixoAlinhado] } : {}),
     }, tela);
   }
 
   _concluir(r, tela) {
     const t = TIPOS[r.tipoSnap] || TIPOS.plano_base;
     r.rotulo = r.rotuloSnap || t.rotulo;
-    r.cor = t.cor;
+    r.cor = r.corSnap || t.cor;
     r.tela = tela;
     this.ultimo = r;
     return r;
@@ -536,13 +589,35 @@ export class Inferencia {
       this.svg.appendChild(l);
     }
 
-    desenharGlifo(this.svg, x, y, t.glifo, t.cor);
+    // o alinhamento: a linha pontilhada do ponto lembrado até o ponto, na cor do eixo
+    const cor = p.cor || t.cor;
+    if (p.alinhadoCom) {
+      const a = this.camera.paraTela(p.alinhadoCom);
+      if (a[2] <= 1) {
+        const l = doc(this.svg, 'line');
+        l.setAttribute('x1', a[0]); l.setAttribute('y1', a[1]); l.setAttribute('x2', x); l.setAttribute('y2', y);
+        l.setAttribute('stroke', cor); l.setAttribute('stroke-width', 1.2); l.setAttribute('stroke-dasharray', '2 4');
+        this.svg.appendChild(l);
+      }
+    }
+    // os pontos lembrados: uma marquinha em cada (o usuário vê o que o snap guardou)
+    for (const L of this._lembrados) {
+      const a = this.camera.paraTela(L.ponto);
+      if (a[2] > 1 || !isFinite(a[0])) continue;
+      const c = doc(this.svg, 'circle');
+      c.setAttribute('cx', a[0]); c.setAttribute('cy', a[1]); c.setAttribute('r', 3);
+      c.setAttribute('fill', 'none'); c.setAttribute('stroke', '#b07cc6'); c.setAttribute('stroke-width', 1.4);
+      c.setAttribute('class', 'ponto-lembrado');
+      this.svg.appendChild(c);
+    }
+
+    desenharGlifo(this.svg, x, y, t.glifo, cor);
 
     const texto = doc(this.svg, 'text');
     texto.setAttribute('x', x + 15);
     texto.setAttribute('y', y - 11);
     texto.setAttribute('class', 'rotulo-snap');
-    texto.setAttribute('fill', t.cor);
+    texto.setAttribute('fill', cor);
     const rot = p.rotulo || t.rotulo;
     texto.textContent = this.travado ? `${rot} (travado)` : rot;
     this.svg.appendChild(texto);
