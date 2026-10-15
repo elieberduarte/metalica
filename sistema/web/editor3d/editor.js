@@ -759,7 +759,8 @@ export class Editor {
     }
     // no meio de uma operação (há um ponto clicado: a âncora) o número é medida mesmo antes de o mouse andar — antes o
     // "3" de "3000" digitado logo depois do clique virava o atalho da vista 3 (teste de fluxo, 15/10)
-    const operando = (this._textoMedida || this.inferencia.ancora) && this.idAtiva !== 'selecionar';
+    const operando = (this._textoMedida || this.inferencia.ancora || (f && typeof f.esperaValor === 'function' && f.esperaValor()))
+      && this.idAtiva !== 'selecionar';
     if (operando && !ev.altKey && /^[0-9.,;\-]$/.test(ev.key)) {
       ev.preventDefault();
       this.el.medida.focus();

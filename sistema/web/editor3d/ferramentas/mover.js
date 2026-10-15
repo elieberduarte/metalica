@@ -88,7 +88,8 @@ export class FerramentaMover extends Ferramenta {
             : (C.comp(this.delta) > 1e-6 ? this.delta : null);
     if (!dir) return false;
     dir = C.normalizar(dir);
-    if (this.eixo && C.comp(this.delta) > 1e-6 && C.dot(this.delta, dir) < 0) dir = C.mul(dir, -1);
+    // o mouse precisa estar claramente do lado de trás (1 mm): parado sobre a âncora, o resto numérico mandava o pilar para baixo (fluxo, 15/10)
+    if (this.eixo && C.comp(this.delta) > 1e-6 && C.dot(this.delta, dir) < -1) dir = C.mul(dir, -1);
     this.aplicar(C.mul(dir, d));
     return true;
   }

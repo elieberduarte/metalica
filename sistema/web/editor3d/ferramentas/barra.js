@@ -220,7 +220,8 @@ export class FerramentaBarra extends Ferramenta {
               ? C.sub(this.atual, this.inicio) : null;
     if (!dir) return false;
     dir = C.normalizar(dir);
-    if (this.eixo && this.atual && C.dot(C.sub(this.atual, this.inicio), dir) < 0) dir = C.mul(dir, -1);
+    // o mouse precisa estar claramente do lado de trás (1 mm): parado sobre a âncora, o resto numérico mandava o pilar para baixo (fluxo, 15/10)
+    if (this.eixo && this.atual && C.dot(C.sub(this.atual, this.inicio), dir) < -1) dir = C.mul(dir, -1);
     this.criar(this.inicio, C.add(this.inicio, C.mul(dir, d)));
     return true;
   }

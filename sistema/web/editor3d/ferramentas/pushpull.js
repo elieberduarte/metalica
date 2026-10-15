@@ -207,6 +207,11 @@ export class FerramentaPushPull extends Ferramenta {
   }
 
   _iniciar(p, ev) {
+    // a face que está debaixo do cursor, como no SketchUp — não o ponto para onde o snap puxou: o canto da chapa pego pelo
+    // snap fazia a face de cima virar "esticar o lado" (teste de fluxo, 15/10)
+    const sob = p && p.tela && this.editor.selecao && typeof this.editor.selecao.sob === 'function'
+      ? this.editor.selecao.sob(p.tela[0], p.tela[1]) : null;
+    if (sob && sob.id) p = { ...p, entidade: sob.id, ponto: sob.ponto, normal: sob.normal, face: sob.face };
     const entAlvo = p && p.entidade && this.documento && this.documento.get(p.entidade);
     if (entAlvo && entAlvo.tipo === 'chapa') return this.iniciarChapa(p, entAlvo);
     const barra = this.barraApontada(p);

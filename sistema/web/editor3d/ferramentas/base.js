@@ -51,6 +51,16 @@ export class Ferramenta {
   executar(cmd) { return this.editor.executar(cmd); }
   previa(obj) { return this.editor.previa(obj); }
   limparPrevia() { return this.editor.limparPrevia(); }
+
+  /** Há um comando recém-terminado que a medida digitada corrige (o "corrigir logo depois")? O editor manda então o
+   *  número para a caixa de medidas, mesmo sem âncora e sem medida na tela (antes o "9" de "90" depois do Girar ia
+   *  embora como atalho — fluxo de 15/10). Vale o que a ferramenta guardou e ainda é o último da pilha. */
+  esperaValor() {
+    const p = this.editor && this.editor.pilha;
+    if (!p || !Array.isArray(p.feitos) || !p.feitos.length) return false;
+    const topo = p.feitos[p.feitos.length - 1];
+    return [this._ultimoFeito, this._ultimo, this.ultimo, this.ultimoArray].some(u => u && u.cmd === topo);
+  }
   dica(texto) { return this.editor.dica(texto); }
   medida(texto) { return this.editor.medida(texto); }
 }

@@ -63,7 +63,8 @@ export class FerramentaLinha extends Ferramenta {
     let dir = this.eixo ? C.EIXOS[this.eixo].vetor
             : (this.dir && C.comp(this.dir) > 1e-6) ? this.dir : null;
     if (!dir) return false;
-    if (this.eixo && this.dir && C.dot(this.dir, dir) < 0) dir = C.mul(dir, -1);
+    // o mouse precisa estar claramente do lado de trás (1 mm), como na Barra (fluxo, 15/10)
+    if (this.eixo && this.dir && C.dot(this.dir, dir) < -1) dir = C.mul(dir, -1);
     this.acrescentar(C.add(base, C.mul(C.normalizar(dir), Math.abs(d))));
     return true;
   }
