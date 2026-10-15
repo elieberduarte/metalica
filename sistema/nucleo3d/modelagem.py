@@ -14,7 +14,8 @@ web/editor3d/ferramentas; aqui ficam as que montam a estrutura em poucos cliques
 * **pilares nos eixos** — um pilar em cada cruzamento de eixos da obra escolhido, da base ao nível do topo;
 * **viga entre pilares** — a viga no nível pedido ligando os pilares escolhidos, na ordem em que estão em planta;
 * **longarinas de fechamento** — as fiadas na face de fora dos pilares de uma parede (alma na horizontal, boca para baixo);
-* **correntes entre terças** — no meio (ou nos terços) de cada vão, de centro a centro das terças.
+* **correntes entre terças** — no meio (ou nos terços) de cada vão, de centro a centro das terças;
+* **mão-francesa** — da alma da terça à mesa de baixo do apoio, a 45°, nos dois lados de cada apoio.
 
 Nada altera o documento recebido: cada função devolve {"novas": [entidades (dict)], "alterar": {...}, "avisos"} para o
 editor aplicar com desfazer.
@@ -557,3 +558,88 @@ def correntes(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
         raise ErroDeDados("nenhum vão com duas linhas de terças lado a lado")
     return {"novas": [b.dict() for b in novas], "resumo": {"vaos": n_vaos, "linhas": n_lin, "pecas": len(novas)},
             "avisos": []}
+
+
+# ------------------------------------------------------------------ mão-francesa
+
+def _cruzamento_em_planta(a0, a1, b0, b1):
+    """(t, u) da interseção em planta das retas a0→a1 e b0→b1 (parâmetros de 0 a 1 em cada), ou None se paralelas"""
+    da = (a1[0] - a0[0], a1[1] - a0[1])
+    db = (b1[0] - b0[0], b1[1] - b0[1])
+    den = da[0] * db[1] - da[1] * db[0]
+    if abs(den) < 1e-9 * max(1.0, math.hypot(*da) * math.hypot(*db)):
+        return None
+    rx, ry = b0[0] - a0[0], b0[1] - a0[1]
+    return (rx * db[1] - ry * db[0]) / den, (rx * da[1] - ry * da[0]) / den
+
+
+def mao_francesa(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
+    """A mão-francesa da terça à mesa de baixo do apoio (a tesoura de alma cheia, a viga), nos dois lados de cada apoio:
+    a cantoneira no plano vertical da terça, a `angulo` graus da horizontal, com uma aba deitada nesse plano (encosta
+    na alma da terça). Selecionadas só as terças, os apoios são as barras que cruzam por baixo delas; selecionados
+    também os apoios, só esses."""
+    from nucleo3d.modelo import Barra
+    p = dict(p or {})
+    bs = [b for b in _barras(doc, ids) if abs(_norm(_sub(b.fim, b.inicio))[2]) < 0.7]
+    tercas = [b for b in bs if str(b.papel).lower() in ("terça", "terca", "longarina")]
+    apoios = [b for b in bs if b not in tercas]
+    if not tercas:
+        raise ErroDeDados("selecione as terças (e, se quiser, os apoios): a mão-francesa vai da terça à mesa de baixo do apoio")
+    if not apoios:
+        sel = set(ids)
+        apoios = [e for e in doc.entidades.values() if getattr(e, "tipo", "") == "barra" and e.id not in sel
+                  and str(getattr(e, "papel", "")).lower() not in ("terça", "terca", "corrente", "longarina", "contraventamento")
+                  and abs(_norm(_sub(e.fim, e.inicio))[2]) < 0.7]
+    perfil = str(p.get("perfil") or "L 1 1/2'' X 1/8''")
+    _perfil(perfil)
+    ang = math.radians(float(p.get("angulo") or 45.0))
+    if not (math.radians(20) <= ang <= math.radians(70)):
+        raise ErroDeDados("o ângulo da mão-francesa fica entre 20° e 70°")
+    recuo = float(p.get("recuo") or 30.0)
+    lados = str(p.get("lados") or "ambos")
+    novas = []
+    pares = 0
+    for t in tercas:
+        wt = _norm(_sub(t.fim, t.inicio))
+        Lt = math.dist(t.inicio, t.fim)
+        for a in apoios:
+            r = _cruzamento_em_planta(t.inicio, t.fim, a.inicio, a.fim)
+            if r is None:
+                continue
+            st, sa = r
+            if not (-0.001 <= st <= 1.001 and -0.001 <= sa <= 1.001):
+                continue
+            N = _add(t.inicio, _mul(_sub(t.fim, t.inicio), st))
+            A = _add(a.inicio, _mul(_sub(a.fim, a.inicio), sa))
+            if not (0.0 < N[2] - A[2] <= 1500.0):
+                continue                                  # o apoio não está logo abaixo da terça
+            # para baixo no plano da terça (perpendicular a ela) e a meia altura dela nessa direção
+            dt = _norm(_sub((0.0, 0.0, -1.0), _mul(wt, -wt[2])))
+            e_t = _topo(t, dt) - _dot(N, dt)
+            T0 = _add(N, _mul(dt, e_t - recuo))
+            # a mesa de baixo do apoio, na vertical do cruzamento
+            wa = _norm(_sub(a.fim, a.inicio))
+            da_ = _norm(_sub((0.0, 0.0, -1.0), _mul(wa, -wa[2])))
+            e_a = _topo(a, da_) - _dot(A, da_)
+            desce = (e_a - recuo) / max(abs(da_[2]), 0.2)
+            B = (A[0], A[1], A[2] - desce)
+            h = T0[2] - B[2]
+            if h < 50.0:
+                continue                                  # sem altura para a mão-francesa
+            dist = h / math.tan(ang)
+            # o plano vertical da terça: a normal horizontal (uma aba da L deitada nele)
+            n_p = _norm(_cruz(wt, (0.0, 0.0, 1.0)))
+            pares += 1
+            for s in ((1.0, -1.0) if lados == "ambos" else (1.0,)):
+                if not (0.0 <= st * Lt + s * dist <= Lt):
+                    continue                              # a terça acaba antes: deste lado não cabe
+                T = _add(T0, _mul(wt, s * dist))
+                d = _norm(_sub(B, T))
+                novas.append(Barra(nome="Mão-francesa", inicio=_r(T), fim=_r(B), perfil=perfil,
+                                   rotacao=_rotacao_para_v(d, n_p), papel="mão-francesa", camada="Terças",
+                                   material="Aço galvanizado",
+                                   atributos={"tipo_ifc": "IfcMember", "terca": t.id, "apoio": a.id}))
+    if not novas:
+        raise ErroDeDados("nenhum apoio logo abaixo das terças escolhidas (até 1,5 m) com altura para a mão-francesa")
+    return {"novas": [b.dict() for b in novas], "resumo": {"apoios": pares, "pecas": len(novas)},
+            "avisos": ["a fixação (o parafuso na alma da terça, a chapinha na mesa do apoio) vem pelo Aplicar ligação ou por um detalhe"]}

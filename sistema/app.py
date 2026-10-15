@@ -57,7 +57,7 @@ Rotas da API:
     GET  /api/modelo/ligacoes-3d                               as ligações da biblioteca que se põem no 3D
     POST /api/modelo/ligacao {documento, tipo, ids, parametros, ligacao}   aplica (ou refaz) a ligação nas barras
     POST /api/modelo/ligacao/remover {documento, ligacao}      apaga a ligação e devolve as barras
-    POST /api/modelo/modelar {documento, ferramenta, ids, parametros, eixos, cruzamentos}   terças, treliça, contravento, pilares, viga, longarinas, correntes
+    POST /api/modelo/modelar {documento, ferramenta, ids, parametros, eixos, cruzamentos}   terças, treliça, contravento, pilares, viga, longarinas, correntes, mão-francesa
     POST /api/modelo/conferencia {documento, ids, quais}       colisão, execução das ligações e produção
     GET  /api/detalhes-3d · POST /api/detalhes-3d/<salvar|aplicar|excluir>   o detalhe do usuário (modelo de ligação)
     GET  /api/projetos/<slug>/esforcos     esforços da estrutura inteira (o último cálculo); POST calcula (tela /esforcos)
@@ -4200,7 +4200,7 @@ def modelar_estrutura(corpo: dict) -> dict:
         return modelagem.pilares_nos_eixos(list(corpo.get("eixos") or []), list(corpo.get("cruzamentos") or []), p)
     fn = {"tercas": modelagem.tercas, "trelica": modelagem.trelica, "contravento": modelagem.contravento_x,
           "viga": modelagem.viga_entre_pilares, "longarinas": modelagem.longarinas,
-          "correntes": modelagem.correntes}.get(f)
+          "correntes": modelagem.correntes, "mao_francesa": modelagem.mao_francesa}.get(f)
     if fn is None:
         raise ErroDeDados("ferramenta de modelagem desconhecida: %s" % f)
     return fn(_documento_de(corpo), list(corpo.get("ids") or []), p)

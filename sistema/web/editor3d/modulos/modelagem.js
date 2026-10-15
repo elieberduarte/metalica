@@ -8,6 +8,7 @@
 // * Viga entre pilares — no nível pedido, com o topo da viga no nível;
 // * Longarinas de fechamento — na face de fora dos pilares de uma parede, alma na horizontal, boca para baixo;
 // * Correntes entre terças — no meio (ou nos terços) de cada vão, de centro a centro das terças;
+// * Mão-francesa — da alma da terça à mesa de baixo do apoio, a 45°, nos dois lados;
 // * Copiar para os eixos — a tesoura/o pórtico do eixo dele para os eixos paralelos marcados (aqui mesmo, sem o servidor).
 //
 // A geometria é do servidor (nucleo3d/modelagem.py); aqui ficam os diálogos e o comando. Enquanto o diálogo está aberto,
@@ -458,5 +459,23 @@ export class MetodosModelagem {
     this.executar(C.cmdComposto(cmds, 'Copiar para os eixos'));
     this.selecao.definir(novos.filter(id => this.documento.get(id)));
     this.aviso(`Copiar para os eixos: ${pecas.length} peça${pecas.length === 1 ? '' : 's'} em ${destinos().map(e => e.nome).join(', ')}.`, 'info', 8000);
+  }
+
+  async dialogoMaoFrancesa() {
+    const bs = this.selecao.entidades.filter(e => e.tipo === 'barra' && !vert(e));
+    const tercas = bs.filter(b => ['terça', 'terca', 'longarina'].includes(String(b.papel).toLowerCase()));
+    if (!tercas.length) { this.dica('Selecione as terças (e, se quiser, os apoios): a mão-francesa vai da alma da terça à mesa de baixo da tesoura ou viga por baixo.'); return; }
+    const apoios = bs.length - tercas.length;
+    const f = this._formModelagem([
+      { chave: 'perfil', rotulo: 'Perfil', tipo: 'perfil', valor: this._perfilSugerido('mão-francesa', "L 1 1/2'' X 1/8''") },
+      { chave: 'angulo', rotulo: 'Ângulo com a horizontal (°)', tipo: 'numero', valor: 45 },
+      { chave: 'lados', rotulo: 'Lados do apoio', tipo: [['ambos', 'os dois'], ['um', 'um só']], valor: 'ambos' },
+      { chave: 'recuo', rotulo: 'Furo a partir da face (mm)', tipo: 'numero', valor: 30 },
+    ]);
+    const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: `${tercas.length} terça${tercas.length === 1 ? '' : 's'}` +
+      (apoios ? ` e ${apoios} apoio${apoios === 1 ? '' : 's'} escolhido${apoios === 1 ? '' : 's'}.` : '; os apoios são as tesouras e vigas logo abaixo delas.') +
+      ' A cantoneira fica no plano vertical da terça, com uma aba deitada nele (encosta na alma da terça).' }));
+    const e = await this._dialogoComPrevia({ titulo: 'Mão-francesa', corpo, ok: 'Lançar', pedido: () => ({ ferramenta: 'mao_francesa', ids: bs.map(b => b.id), parametros: f.ler() }) });
+    if (e) await this._modelar(e.pedido, 'Mão-francesa', e.pronto);
   }
 }

@@ -2018,6 +2018,7 @@ export class Editor {
       'modelar-viga': () => this.dialogoVigaEntrePilares(),
       'modelar-longarinas': () => this.dialogoLongarinas(),
       'modelar-correntes': () => this.dialogoCorrentes(),
+      'modelar-mao-francesa': () => this.dialogoMaoFrancesa(),
       'copiar-para-eixos': () => this.dialogoCopiarParaEixos(),
       'memorial-lancamento': () => this.memorialDoLancamento(),
       'planta-lancamento': () => this._irPara(`/cad?projeto=${encodeURIComponent(this.projeto || '')}&desenho=${encodeURIComponent('planta-de-lançamento')}`),

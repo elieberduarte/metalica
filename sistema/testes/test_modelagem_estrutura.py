@@ -300,3 +300,55 @@ def test_correntes_pede_duas_linhas():
     doc, ts, ls = _cobertura()
     with pytest.raises(ErroDeDados):
         modelagem.correntes(doc, [ls[0].id], {})
+
+
+# ------------------------------------------------------------------ mão-francesa
+
+def _portico_com_tercas():
+    """uma viga de cobertura W 310 em x = 6000 (ao longo de y, plana) e duas terças Ue 150 em cima dela, ao longo de x"""
+    v = Barra(nome="V", inicio=(6000, 0, 6000), fim=(6000, 10000, 6000), perfil="W 310×38,7", papel="viga")
+    zt = 6000 + 155 + 75                                   # a terça sentada na mesa de cima
+    ts = [Barra(nome="T%d" % k, inicio=(0, y, zt), fim=(12000, y, zt), perfil="Ue 150×60×20×2,25", papel="terça",
+                rotacao=0) for k, y in enumerate((2000, 5000))]
+    return _doc(v, *ts), v, ts
+
+
+def test_mao_francesa_a_45_graus_da_terca_a_mesa_de_baixo():
+    doc, v, ts = _portico_com_tercas()
+    r = modelagem.mao_francesa(doc, [t.id for t in ts], {})           # só as terças: o apoio é achado por baixo
+    bs = _barras(r)
+    assert r["resumo"]["apoios"] == 2 and len(bs) == 4                 # dois lados em cada terça
+    for b in bs:
+        alto, baixo = (b.inicio, b.fim) if b.inicio[2] > b.fim[2] else (b.fim, b.inicio)
+        assert b.papel == "mão-francesa"
+        # embaixo: na vertical da viga, na mesa de baixo (30 mm para dentro da face)
+        assert baixo[0] == pytest.approx(6000) and baixo[2] == pytest.approx(6000 - 155 + 30, abs=0.5)
+        # em cima: na terça, 30 mm acima da face de baixo dela, e no plano vertical da terça
+        assert alto[1] == baixo[1] and alto[1] in (2000, 5000)
+        assert alto[2] == pytest.approx(6230 - 75 + 30, abs=0.5)
+        # 45°: o que anda na horizontal é o que desce
+        assert abs(alto[0] - baixo[0]) == pytest.approx(alto[2] - baixo[2], abs=0.5)
+    assert sorted(round(min(b.inicio[0], b.fim[0])) for b in bs)[0] < 6000 < max(max(b.inicio[0], b.fim[0]) for b in bs)
+
+
+def test_mao_francesa_um_lado_angulo_e_apoio_escolhido():
+    doc, v, ts = _portico_com_tercas()
+    outra = Barra(inicio=(9000, 0, 6000), fim=(9000, 10000, 6000), perfil="W 310×38,7", papel="viga")
+    doc.add(outra)
+    r = modelagem.mao_francesa(doc, [ts[0].id, outra.id], {"lados": "um", "angulo": 60})
+    bs = _barras(r)
+    assert len(bs) == 1
+    b = bs[0]
+    alto, baixo = (b.inicio, b.fim) if b.inicio[2] > b.fim[2] else (b.fim, b.inicio)
+    assert baixo[0] == pytest.approx(9000)
+    assert (alto[2] - baixo[2]) / abs(alto[0] - baixo[0]) == pytest.approx(math.tan(math.radians(60)), rel=1e-3)
+
+
+def test_mao_francesa_sem_terca_ou_sem_apoio():
+    doc, v, ts = _portico_com_tercas()
+    with pytest.raises(ErroDeDados):
+        modelagem.mao_francesa(doc, [v.id], {})
+    longe = Barra(inicio=(0, 9000, 9000), fim=(12000, 9000, 9000), perfil="Ue 150×60×20×2,25", papel="terça")
+    doc.add(longe)
+    with pytest.raises(ErroDeDados):
+        modelagem.mao_francesa(doc, [longe.id], {})

@@ -174,6 +174,17 @@ try:
     ok(len(cr) == 4 and all(abs(c[0][1] - 2500) < 1 and abs(c[1][1] - 2500) < 1 for c in cr), f"no meio do vão (y 2500): {cr[:1]}")
     erros("Correntes")
 
+    # 5c2) mão-francesa das terças às tesouras por baixo (as terças vão de T1 a T2: na ponta, só cabe para dentro)
+    selecionar(*jsj("return [...editor.documento.entidades.values()].filter(e => e.papel === 'terça').map(e => e.id);"))
+    ok(dialogo("modelar-mao-francesa"), "o diálogo Mão-francesa abriu")
+    ok(esperar(f"{PREVIA} === 10", 20), f"a prévia: 5 terças × 2 tesouras, um lado cada: {js(PREVIA)}")
+    ok_dialogo()
+    ok(esperar("[...editor.documento.entidades.values()].some(e => e.papel === 'mão-francesa')"), "as mãos-francesas entraram")
+    mf = jsj("return [...editor.documento.entidades.values()].filter(e => e.papel === 'mão-francesa').map(e => [e.inicio, e.fim]);")
+    ang = [abs(m[0][2] - m[1][2]) / max(1e-9, ((m[0][0] - m[1][0]) ** 2 + (m[0][1] - m[1][1]) ** 2) ** 0.5) for m in mf]
+    ok(len(mf) == 10 and all(abs(x - 1) < 0.01 for x in ang), f"10 a 45°: {[round(x, 3) for x in ang]}")
+    erros("Mão-francesa")
+
     # 5d) copiar a treliça (y 20000, paralela aos eixos 1 e 2) do eixo 2 para o eixo 1: 10 m para trás
     trel = jsj("return [...editor.documento.entidades.values()].filter(e => e.atributos && e.atributos.origem && e.atributos.origem.peca === 'TRELIÇA').map(e => e.id);")
     selecionar(*trel)

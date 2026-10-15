@@ -91,7 +91,7 @@ export const CAMPOS_GEOMETRICOS = {
 // os papéis que o detalhamento e o encaixe leem (nucleo2d/detalhe/nomes.py, nucleo3d/alma_na_face.py) — 14/10: antes só os 6
 // primeiros, e a treliça desenhada à mão não tinha como ser banzo, montante ou diagonal
 const PAPEIS = ['pilar', 'viga', 'terça', 'contraventamento', 'longarina', 'barra',
-  'banzo', 'montante', 'diagonal', 'corrente', 'travamento', 'chumbador', 'presilha', 'suporte'];
+  'banzo', 'montante', 'diagonal', 'corrente', 'travamento', 'chumbador', 'presilha', 'suporte', 'mão-francesa'];
 export { PAPEIS };
 
 /** Cria uma entidade completa a partir de um registro parcial. */
