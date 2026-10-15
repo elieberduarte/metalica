@@ -114,6 +114,7 @@ class _Malha:
         self.v = vs
         self.t = np.asarray(unicos, int) if unicos else np.zeros((0, 3), int)
         self.caixa = (vs.min(axis=0), vs.max(axis=0)) if len(vs) else (np.zeros(3), np.zeros(3))
+        self.obb = _caixa_orientada(vs)
         self._raio = None
         if len(self.t):
             a, b, c = vs[self.t[:, 0]], vs[self.t[:, 1]], vs[self.t[:, 2]]
@@ -253,6 +254,88 @@ def _caixas_cruzam(a, b, folga=0.0):
     return bool(np.all(a[0] - folga <= b[1]) and np.all(b[0] - folga <= a[1]))
 
 
+def _caixa_orientada(vs):
+    """A caixa da peça nas direções principais dos vértices (o comprimento da barra, a altura e a largura da seção):
+    (centro, eixos nas linhas, meias medidas). Contém todos os vértices — é caixa de verdade, só não alinhada aos
+    eixos do mundo, e numa diagonal de treliça é muito menor que a alinhada."""
+    if len(vs) < 2:
+        return None
+    c = vs.mean(axis=0)
+    try:
+        _w, R = np.linalg.eigh(np.cov((vs - c).T))
+    except np.linalg.LinAlgError:
+        return None
+    R = R.T
+    p = (vs - c) @ R.T
+    lo, hi = p.min(axis=0), p.max(axis=0)
+    return (c + ((lo + hi) / 2.0) @ R, R, (hi - lo) / 2.0)
+
+
+def _pares_proximos(malhas) -> List[tuple]:
+    """Os pares (a, b) de malhas que podem colidir: as caixas alinhadas se cruzam com FUNDURA de sobra e as orientadas
+    também (na treliça, a diagonal tem a caixa alinhada enorme e cruza a de todas as vizinhas). Em lote, com numpy: o
+    teste par a par levava 50 s + 18 s no Posto CB (14,5 mil peças, 2 milhões de testes de caixa)."""
+    n = len(malhas)
+    if n < 2:
+        return []
+    lo = np.array([m.caixa[0] for m in malhas], float)
+    hi = np.array([m.caixa[1] for m in malhas], float)
+    ordem = np.argsort(lo[:, 0], kind="stable")
+    lo_s, hi_s = lo[ordem], hi[ordem]
+    x0 = lo_s[:, 0]
+    I, J = [], []
+    for k in range(n - 1):
+        fim = int(np.searchsorted(x0, hi_s[k, 0] - FUNDURA, side="right"))
+        if fim <= k + 1:
+            continue
+        sl = slice(k + 1, fim)
+        ok = np.all(lo_s[sl] + FUNDURA <= hi_s[k], axis=1) & np.all(lo_s[k] + FUNDURA <= hi_s[sl], axis=1)
+        js = np.nonzero(ok)[0]
+        if len(js):
+            I.append(np.full(len(js), k))
+            J.append(js + k + 1)
+    if not I:
+        return []
+    I = ordem[np.concatenate(I)]
+    J = ordem[np.concatenate(J)]
+    # as caixas orientadas, em lotes
+    tem = np.array([m.obb is not None for m in malhas])
+    C = np.array([m.obb[0] if m.obb is not None else np.zeros(3) for m in malhas], float)
+    R = np.array([m.obb[1] if m.obb is not None else np.eye(3) for m in malhas], float)
+    H = np.array([m.obb[2] if m.obb is not None else np.zeros(3) for m in malhas], float)
+    folga = 2.0 * FUNDURA - 0.3
+    manter = np.ones(len(I), bool)
+    for c0 in range(0, len(I), 20000):
+        ii, jj = I[c0:c0 + 20000], J[c0:c0 + 20000]
+        Ra, Rb = R[ii], R[jj]
+        eixos = np.concatenate((Ra, Rb, np.cross(Ra[:, :, None, :], Rb[:, None, :, :]).reshape(len(ii), 9, 3)), axis=1)
+        nn = np.linalg.norm(eixos, axis=2)
+        valido = nn > 1e-6
+        eixos = eixos / np.maximum(nn, 1e-12)[:, :, None]
+        ra = (np.abs(np.einsum("pkd,pid->pki", eixos, Ra)) * H[ii][:, None, :]).sum(axis=2)
+        rb = (np.abs(np.einsum("pkd,pid->pki", eixos, Rb)) * H[jj][:, None, :]).sum(axis=2)
+        dist = np.abs(np.einsum("pkd,pd->pk", eixos, C[jj] - C[ii]))
+        sep = np.any(valido & (dist > ra + rb - folga), axis=1) & tem[ii] & tem[jj]
+        manter[c0:c0 + 20000] = ~sep
+    return [(int(a), int(b)) for a, b in zip(I[manter], J[manter])]
+
+
+def _separadas(A, B, folga: float) -> bool:
+    """As caixas orientadas se sobrepõem menos de `folga` em alguma direção (o teste dos eixos separadores: as 3 + 3
+    faces e os 9 cruzamentos de arestas)? Então nenhum ponto fica `folga`/2 dentro das duas peças: não há colisão."""
+    if A is None or B is None:
+        return False
+    ca, Ra, ha = A
+    cb, Rb, hb = B
+    eixos = np.vstack((Ra, Rb, np.cross(Ra[:, None, :], Rb[None, :, :]).reshape(9, 3)))
+    n = np.linalg.norm(eixos, axis=1)
+    ok = n > 1e-6
+    eixos = eixos[ok] / n[ok][:, None]
+    ra = np.abs(eixos @ Ra.T) @ ha
+    rb = np.abs(eixos @ Rb.T) @ hb
+    return bool(np.any(np.abs(eixos @ (cb - ca)) > ra + rb - folga))
+
+
 # ------------------------------------------------------------------ colisão
 
 #: mm: o ponto dentro das duas peças precisa estar pelo menos isto longe da superfície de cada uma — a diagonal U92
@@ -277,17 +360,7 @@ def colisoes(pecas: Sequence, avisar=None, limite_s: float = 120.0) -> dict:
             continue
         if len(m.t):
             malhas.append(m)
-    # varredura pela coordenada x da caixa
-    ordem = sorted(range(len(malhas)), key=lambda i: malhas[i].caixa[0][0])
-    pares = []
-    ativos: List[int] = []
-    for i in ordem:
-        x0 = malhas[i].caixa[0][0]
-        ativos = [j for j in ativos if malhas[j].caixa[1][0] >= x0 - 1.0]
-        for j in ativos:
-            if _caixas_cruzam(malhas[i].caixa, malhas[j].caixa, -FUNDURA):
-                pares.append((j, i))
-        ativos.append(i)
+    pares = _pares_proximos(malhas)
     avisar("%d pares de peças próximas" % len(pares))
     achados = []
     t0 = time.time()
@@ -312,10 +385,14 @@ def colisoes(pecas: Sequence, avisar=None, limite_s: float = 120.0) -> dict:
                 Q = Q[X.dentro(Q)]                         # o "para dentro" de face virada do IFC sai aqui
                 if not len(Q):
                     continue
+                if len(Q) > 400:                           # a profundidade em até 400 pontos espaçados basta
+                    Q = Q[np.linspace(0, len(Q) - 1, 400).astype(int)]
                 prof = np.minimum(X.distancia(Q), Y.distancia(Q))
                 k = int(np.argmax(prof))
                 if prof[k] > melhor:
                     melhor, ponto = float(prof[k]), Q[k]
+                if melhor >= 1.5:
+                    break                                  # já é funda: o outro sentido não muda nada
             if melhor >= 1.5 or (recuo == 1.0 and melhor < FUNDURA):
                 break                                      # já é funda; ou nem a 1 mm há sobreposição
         if melhor >= FUNDURA:
