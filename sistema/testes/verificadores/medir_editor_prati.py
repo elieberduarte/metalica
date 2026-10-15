@@ -45,7 +45,11 @@ try:
     while time.time() - t0 < 400 and not aba.avaliar("!!(window.editor && editor.documento && editor.documento.entidades.size > 1000 && editor.cena.objetos.size > 1000)"):
         aba.drenar(1)
     print(f"  abriu em {time.time() - t0:.0f} s:", aba.avaliar("JSON.stringify({ pecas: editor.documento.entidades.size, objetos: editor.cena.objetos.size, lote: !!editor.cena.lote })"))
-    aba.drenar(3)
+    t1 = time.time()
+    while time.time() - t1 < 120 and not aba.avaliar("!!editor.inferencia.aquecido"):
+        aba.drenar(0.5)
+    print(f"  snap aquecido em segundo plano em {time.time() - t1:.1f} s depois de abrir:", aba.avaliar("!!editor.inferencia.aquecido"))
+    aba.drenar(1)
     r = aba.avaliar("""(async () => {
       const ed = editor, doc = ed.documento, inf = ed.inferencia, sel = ed.selecao, cena = ed.cena;
       const mc = await import('/editor3d/modulos/menu_contexto.js'), cx = await import('/editor3d/modulos/caixa_corte.js');

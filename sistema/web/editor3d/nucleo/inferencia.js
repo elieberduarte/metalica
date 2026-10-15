@@ -73,7 +73,12 @@ export class Inferencia {
     if (documento && typeof documento.aoMudar === 'function') {
       documento.aoMudar(({ ids, acao }) => {
         if (acao === 'aparencia') return;
-        if (acao === 'tudo' || !ids || !ids.length) { this._esferas.clear(); return; }
+        if (acao === 'tudo' || !ids || !ids.length) {
+          this._esferas.clear();
+          // o modelo novo: aquece o snap um pouco depois (dá tempo do catálogo de perfis chegar)
+          if (acao === 'tudo' && typeof setTimeout === 'function') { clearTimeout(this._timerAquecer); this._timerAquecer = setTimeout(() => this.aquecer(), 1500); }
+          return;
+        }
         for (const i of ids) this._esferas.delete(i);
       });
     }
@@ -102,20 +107,13 @@ export class Inferencia {
    *  reta. `raioPx`: o tamanho da seção na tela, para a folga do descarte rápido. */
   _contornoDaBarra(b) {
     if (!this.cena || typeof this.cena._secaoDoPerfil !== 'function') return null;
-    const chave = [b.perfil, b.rotacao || 0, b.recorte_inicio || 0, b.recorte_fim || 0, ...b.inicio, ...b.fim].join('|');
+    // a seção provisória (o perfil ainda não chegou do servidor) não fica guardada: a chave muda quando ele chega
+    const pronto = typeof this.cena.perfil !== 'function' || !!this.cena.perfil(b.perfil);
+    const chave = [b.perfil, b.rotacao || 0, b.recorte_inicio || 0, b.recorte_fim || 0, ...b.inicio, ...b.fim, pronto ? 1 : 0].join('|');
     let c = this._contornos.get(b.id);
     if (!c || c.chave !== chave) {
-      let forma = null;
-      try { forma = this.cena._secaoDoPerfil(b.perfil); } catch { forma = null; }
-      if (!forma || typeof forma.extractPoints !== 'function') return null;
-      const ext = forma.extractPoints(8);
-      const aneis = [ext.shape, ...(ext.holes || [])].filter(a => a && a.length >= 3).map(a => {
-        const r = a.map(p => [p.x, p.y]);
-        const ult = r[r.length - 1];
-        if (Math.hypot(ult[0] - r[0][0], ult[1] - r[0][1]) < 1e-6) r.pop();     // o anel fechado repete o primeiro
-        return r;
-      });
-      if (!aneis.length || aneis.reduce((n, a) => n + a.length, 0) > 80) return null;
+      const aneis = this._aneisDoPerfil(b.perfil, pronto);
+      if (!aneis) return null;
       const { t, u, v } = baseDaBarra(b.inicio, b.fim, b.rotacao);
       const o0 = somar(b.inicio, escalar(t, b.recorte_inicio || 0));
       const o1 = somar(b.fim, escalar(t, -(b.recorte_fim || 0)));
@@ -139,6 +137,57 @@ export class Inferencia {
     const mmpx = typeof this.camera.mmPorPixel === 'function' ? this.camera.mmPorPixel() : 0;
     const raioPx = mmpx > 1e-9 ? 2 * c.raioMM / mmpx + 2 : 40;
     return { pontos: c.pontos, arestas: c.arestas, raioPx };
+  }
+
+  /** Os anéis da seção do perfil (o contorno e os furos, no plano dela), guardados por perfil — antes cada barra refazia
+   *  os pontos da forma. null quando não há seção ou ela tem pontos demais para o snap (> 80). */
+  _aneisDoPerfil(perfil, pronto = true) {
+    if (!this._aneis) this._aneis = new Map();
+    if (pronto && this._aneis.has(perfil)) return this._aneis.get(perfil);
+    let forma = null;
+    try { forma = this.cena._secaoDoPerfil(perfil); } catch { forma = null; }
+    let aneis = null;
+    if (forma && typeof forma.extractPoints === 'function') {
+      const ext = forma.extractPoints(8);
+      aneis = [ext.shape, ...(ext.holes || [])].filter(a => a && a.length >= 3).map(a => {
+        const r = a.map(p => [p.x, p.y]);
+        const ult = r[r.length - 1];
+        if (Math.hypot(ult[0] - r[0][0], ult[1] - r[0][1]) < 1e-6) r.pop();     // o anel fechado repete o primeiro
+        return r;
+      });
+      if (!aneis.length || aneis.reduce((n, a) => n + a.length, 0) > 80) aneis = null;
+    }
+    if (pronto) this._aneis.set(perfil, aneis);
+    return aneis;
+  }
+
+  /**
+   * Aquece o snap depois de abrir o modelo: o contorno de cada barra e a esfera de cada peça, aos poucos (8 ms por vez,
+   * quando o navegador está à toa) — antes o primeiro movimento do mouse fazia isso tudo de uma vez (~120 ms no PRATI CD,
+   * 27 mil peças). A barra de perfil que ainda não chegou fica para quando o mouse passar nela.
+   */
+  aquecer() {
+    const doc = this.documento;
+    if (!doc || !doc.entidades) return;
+    const vez = (this._vezAquecimento || 0) + 1;
+    this._vezAquecimento = vez;
+    const ids = [...doc.entidades.keys()];
+    let i = 0;
+    const agenda = (f) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(f, { timeout: 400 }) : setTimeout(f, 16));
+    const passo = () => {
+      if (this._vezAquecimento !== vez) return;                // outro modelo abriu: este aquecimento parou
+      const ate = performance.now() + 8;
+      while (i < ids.length && performance.now() < ate) {
+        const e = doc.get(ids[i++]);
+        if (!e) continue;
+        if (e.tipo === 'barra' && (typeof this.cena.perfil !== 'function' || this.cena.perfil(e.perfil))) this._contornoDaBarra(e);
+        this._esferaDe(e.id, e);
+      }
+      if (i < ids.length) agenda(passo);
+      else this.aquecido = true;
+    };
+    this.aquecido = false;
+    agenda(passo);
   }
 
   // --------------------------------------------------------- estado externo
