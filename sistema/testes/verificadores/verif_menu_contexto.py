@@ -102,6 +102,30 @@ try:
     aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="Escape", code="Escape", windowsVirtualKeyCode=27)
     aba.drenar(0.2)
     ok(not aba.avaliar("!!document.querySelector('.menu-contexto')"), "Esc fecha o menu")
+    # teclado: Alt+H oculta a seleção, Alt+Shift+H mostra, Alt+I isola (na ferramenta Selecionar)
+    def tecla(k, mods):
+        aba.cmd("Input.dispatchKeyEvent", type="keyDown", key=k, code="Key" + k.upper(), windowsVirtualKeyCode=ord(k.upper()), modifiers=mods)
+        aba.cmd("Input.dispatchKeyEvent", type="keyUp", key=k, code="Key" + k.upper(), windowsVirtualKeyCode=ord(k.upper()), modifiers=mods)
+        aba.drenar(0.2)
+    aba.avaliar(f"editor.ativarFerramenta('selecionar'); editor.selecao.definir(['{pos['id']}'])")
+    tecla("h", 1)
+    oc = aba.avaliar(f"!editor.documento.aparece(editor.documento.get('{pos['id']}'))")
+    tecla("H", 1 | 8)
+    volta = aba.avaliar(f"editor.documento.aparece(editor.documento.get('{pos['id']}'))")
+    aba.avaliar(f"editor.selecao.definir(['{pos['id']}'])")
+    tecla("i", 1); iso = aba.avaliar("!!editor._isolamento")
+    tecla("i", 1); saiu = aba.avaliar("!editor._isolamento")
+    ok(oc and volta, f"Alt+H oculta a seleção e Alt+Shift+H mostra de volta: {(oc, volta)}")
+    ok(iso and saiu, f"Alt+I isola a seleção e de novo volta ao modelo: {(iso, saiu)}")
+    # a chapa: "Editar chapa (alças)" no menu, que abre a ferramenta já nela
+    r = json.loads(aba.avaliar("""(async () => { const mc = await import('/editor3d/modulos/menu_contexto.js'); const ed = editor, doc = ed.documento;
+      const ch = doc.add({ tipo: 'chapa', nome: 'CH', camada: 'Chapas', origem: [0, 3000, 0], eixo_x: [1, 0, 0], eixo_y: [0, 1, 0],
+        contorno: [[0, 0], [200, 0], [200, 200], [0, 200]], espessura: 10, centrada: true, furos: [], atributos: {} });
+      ed.selecao.definir([ch.id]);
+      const it = mc.itensDoMenu(ed, -1000, -1000).find(i => i && i.rotulo && i.rotulo.startsWith('Editar chapa'));
+      if (it) it.fazer();
+      return JSON.stringify({ tem: !!it, ativa: ed.idAtiva, chapa: !!ed.ativa && ed.ativa.chapa === ch.id }); })()"""))
+    ok(r["tem"] and r["ativa"] == "editar_chapa" and r["chapa"], f"na chapa, 'Editar chapa (alças)' abre a ferramenta já nela: {r}")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:2]]}")
 finally:

@@ -36,6 +36,29 @@ function ocultas(doc) {
   return doc.ocultasAMao;
 }
 
+/** Oculta as peças `ids` só na vista (Alt+H na seleção). */
+export function ocultarNaVista(editor, ids) {
+  const doc = editor.documento;
+  if (!ids.length) { editor.dica('Selecione o que ocultar.'); return 0; }
+  const o = ocultas(doc);
+  for (const i of ids) o.add(i);
+  editor.selecao.limpar();
+  doc.notificarAparencia();
+  editor.dica(`${ids.length} peça(s) oculta(s) na vista (o modelo não muda) — Alt+Shift+H ou botão direito no vazio: "Mostrar ocultas"`);
+  return ids.length;
+}
+
+/** Traz de volta as ocultas à mão (Alt+Shift+H). */
+export function mostrarOcultas(editor) {
+  const doc = editor.documento;
+  const n = doc.ocultasAMao ? doc.ocultasAMao.size : 0;
+  if (!n) { editor.dica('Nenhuma peça oculta.'); return 0; }
+  doc.ocultasAMao.clear();
+  doc.notificarAparencia();
+  editor.dica(`${n} peça(s) oculta(s) de volta à vista.`);
+  return n;
+}
+
 /** Os itens do menu para o que está sob (x, y) na tela: [{rotulo, tecla, fazer, desligado}] ou '-' (separador). */
 export function itensDoMenu(editor, x, y) {
   const doc = editor.documento, sel = editor.selecao;
@@ -56,15 +79,9 @@ export function itensDoMenu(editor, x, y) {
     itens.push(
       { rotulo: 'Selecionar semelhantes', fazer: () => { sel.semelhantes(e.id); editor.dica('Selecionados os objetos semelhantes.'); } },
       { rotulo: 'Zoom na seleção', fazer: () => editor.camera.zoomSelecao(ids) },
-      { rotulo: editor._isolamento ? 'Voltar ao modelo' : 'Isolar', fazer: () => (editor._isolamento ? editor.sairDoIsolamento() : editor.isolarSelecao()) },
+      { rotulo: editor._isolamento ? 'Voltar ao modelo' : 'Isolar', tecla: 'Alt+I', fazer: () => (editor._isolamento ? editor.sairDoIsolamento() : editor.isolarSelecao()) },
       { rotulo: 'Caixa de corte na seleção', fazer: () => caixaNaSelecao(editor) },
-      { rotulo: 'Ocultar', fazer: () => {
-          const o = ocultas(doc);
-          for (const i of ids) o.add(i);
-          sel.limpar();
-          doc.notificarAparencia();
-          editor.dica(`${ids.length} peça(s) oculta(s) na vista (o modelo não muda) — botão direito no vazio: "Mostrar ocultas"`);
-        } },
+      { rotulo: 'Ocultar', tecla: 'Alt+H', fazer: () => ocultarNaVista(editor, ids) },
       '-',
       { rotulo: 'Mover', tecla: 'M', fazer: ferramenta('mover') },
       { rotulo: 'Copiar', tecla: 'K', fazer: ferramenta('copiar') },
@@ -73,6 +90,8 @@ export function itensDoMenu(editor, x, y) {
     );
     // a modelagem pela seleção (modulos/modelagem.js, do outro lado da divisão): copiar a peça para os outros eixos
     if (typeof editor.dialogoCopiarParaEixos === 'function') itens.push({ rotulo: 'Copiar para os eixos…', fazer: () => editor.dialogoCopiarParaEixos() });
+    // a chapa: as alças de vértice, de lado e de furo (a ferramenta Editar chapa, que abre já nela)
+    if (ents.some(q => q.tipo === 'chapa')) itens.push({ rotulo: 'Editar chapa (alças)', fazer: ferramenta('editar_chapa') });
     if (perfil) itens.push({ rotulo: 'Virar perfil', tecla: 'V', fazer: ferramenta('virar') },
                            { rotulo: 'Encaixar ponta', fazer: ferramenta('encaixar') });
     itens.push('-', { rotulo: 'Apagar', tecla: 'Del', fazer: () => editor.apagarSelecao() });
@@ -85,11 +104,7 @@ export function itensDoMenu(editor, x, y) {
     itens.push('-', { rotulo: 'Tirar a caixa de corte', fazer: () => { definirCaixaDeCorte(editor, null); editor.dica('Caixa de corte tirada: o modelo inteiro de volta.'); } });
   }
   if (nOcultas) {
-    itens.push('-', { rotulo: `Mostrar ocultas (${nOcultas})`, fazer: () => {
-      doc.ocultasAMao.clear();
-      doc.notificarAparencia();
-      editor.dica('As peças ocultas voltaram à vista.');
-    } });
+    itens.push('-', { rotulo: `Mostrar ocultas (${nOcultas})`, tecla: 'Alt+Shift+H', fazer: () => mostrarOcultas(editor) });
   }
   return itens;
 }

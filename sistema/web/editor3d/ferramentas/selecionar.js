@@ -13,6 +13,7 @@
 import { Ferramenta, formatar } from './base.js';
 import * as C from './_comum.js';
 import { pontoNoEixo } from '../nucleo/inferencia.js';
+import { ocultarNaVista, mostrarOcultas } from '../modulos/menu_contexto.js';
 
 const MAX_ALCAS = 30;          // barras selecionadas com alça (mais que isso, nenhuma: a tela vira confete)
 const RAIO_ALCA = 8;           // px
@@ -133,6 +134,10 @@ export class Selecionar extends Ferramenta {
       if (ev.key === 'c' && primeira) { sel.porCamada(primeira.camada); return true; }
       if (ev.key === 'p' && primeira && primeira.perfil) { sel.porPerfil(primeira.perfil); return true; }
       if (ev.key === 't' && primeira) { sel.porTipo(primeira.tipo); return true; }
+      // ocultar e isolar pelo teclado (o mesmo do menu do botão direito): Alt+H oculta, Alt+Shift+H mostra, Alt+I isola
+      const k = String(ev.key).toLowerCase();
+      if (k === 'h') { if (ev.shiftKey) mostrarOcultas(this.editor); else ocultarNaVista(this.editor, [...sel.ids]); this.limparPrevia(); this._comAlcas = false; return true; }
+      if (k === 'i') { if (this.editor._isolamento) this.editor.sairDoIsolamento(); else if (sel.ids.size) this.editor.isolarSelecao(); return true; }
     }
     return false;
   }
