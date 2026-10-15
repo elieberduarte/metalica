@@ -141,6 +141,19 @@ try:
     ok(cx == [[-500, -500, -100], [500, 500, 3000]], f"a vista volta a caixa de corte: {cx}")
     js("document.querySelector('.barra-vistas button').click(); 1"); aba.drenar(0.6)
     ok(not js("!!editor.cena.caixaCorte"), "a vista sem caixa tira a caixa")
+    # 5c) os atalhos: Alt+2 vai à segunda vista (a da caixa), Alt+1 à primeira, Alt+0 abre o Salvar vista
+    def alt(n):
+        js("document.activeElement && document.activeElement.blur && document.activeElement.blur(); 1")
+        for t in ("keyDown", "keyUp"):
+            aba.cmd("Input.dispatchKeyEvent", type=t, modifiers=1, key=str(n), code=f"Digit{n}", windowsVirtualKeyCode=48 + n)
+        aba.drenar(0.6)
+    alt(2)
+    ok(js("!!editor.cena.caixaCorte"), "Alt+2 foi à vista com a caixa de corte")
+    alt(1)
+    ok(not js("!!editor.cena.caixaCorte"), "Alt+1 voltou à primeira vista")
+    alt(0)
+    ok(js("editor.el.dialogo.open && editor.el.dialogoTitulo.textContent === 'Salvar vista'"), "Alt+0 abre o Salvar vista")
+    js("editor.el.dialogoCancelar.click(); 1"); aba.drenar(0.3)
     # 6) a árvore por conjunto → posição e o escopo tipo × instância no painel
     jsj("""const s = [...editor.el.arvore.querySelectorAll('select')][0]; s.value = 'conjunto'; s.dispatchEvent(new Event('change')); return 1;""")
     aba.drenar(0.6)

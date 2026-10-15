@@ -246,6 +246,20 @@ export class MetodosBIM {
     this._desenharVistas();
   }
 
+  /** Alt+1…Alt+9: a vista salva n (na ordem das abas); Alt+0: salvar a vista. As teclas 1–7 sozinhas são as vistas
+   *  padrão e o Ctrl+número é do navegador (pedido do usuário, 15/10). Pelo código da tecla: o Alt muda o ev.key em
+   *  alguns teclados. Devolve true quando tratou. */
+  atalhoDeVista(ev) {
+    const m = /^(?:Digit|Numpad)([0-9])$/.exec(ev.code || '');
+    if (!m || ev.ctrlKey || ev.metaKey || ev.shiftKey) return false;
+    const n = +m[1];
+    if (n === 0) { this.salvarVista(); return true; }
+    const vistas = (this.documento.metadados && this.documento.metadados.vistas) || [];
+    if (!vistas[n - 1]) { this.dica(vistas.length ? `Não há vista ${n}: o modelo tem ${vistas.length} (Alt+1 a Alt+${vistas.length}).` : 'Nenhuma vista salva: Alt+0 salva a vista atual.'); return true; }
+    this.irParaVista(vistas[n - 1]);
+    return true;
+  }
+
   _desenharVistas() {
     const vistas = (this.documento && this.documento.metadados && this.documento.metadados.vistas) || [];
     if (!vistas.length) { if (this._barraVistas) { this._barraVistas.remove(); this._barraVistas = null; } return; }
@@ -254,8 +268,8 @@ export class MetodosBIM {
       this._barraVistas.style.cssText = 'position:absolute;left:12px;bottom:34px;z-index:35;display:flex;gap:4px;flex-wrap:wrap;max-width:70%';
       (this.el.palco || document.body).append(this._barraVistas);
     }
-    this._barraVistas.replaceChildren(...vistas.map(v => {
-      const b = el('button', { type: 'button', texto: v.nome, title: 'Ir para a vista · botão direito: apagar' });
+    this._barraVistas.replaceChildren(...vistas.map((v, i) => {
+      const b = el('button', { type: 'button', texto: v.nome, title: `Ir para a vista${i < 9 ? ` (Alt+${i + 1})` : ''} · botão direito: apagar` });
       b.style.cssText = 'padding:3px 10px;border-radius:12px;border:1px solid rgba(127,127,127,.5);background:var(--painel, #fff);' +
         'color:inherit;font-size:12px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.15)';
       b.addEventListener('click', () => this.irParaVista(v));

@@ -791,6 +791,8 @@ export class Editor {
     if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); this.apagarSelecao(); return; }
     // F9, e não uma letra: letra solta já é atalho de ferramenta.
     if (ev.key === 'F9') { ev.preventDefault(); this.alternarAnalise(); return; }
+    // Alt+1…9: as vistas salvas; Alt+0: salvar a vista (modulos/bim.js)
+    if (ev.altKey && this.atalhoDeVista(ev)) { ev.preventDefault(); return; }
     if (ev.altKey) return;
     if (/^[1-7]$/.test(ev.key)) { ev.preventDefault(); this.camera.vista(TECLAS_VISTA[+ev.key - 1]); return; }
     if (k === 'z' && !this.atalhos.has('z')) { this.camera.zoomExtensao(); return; }
