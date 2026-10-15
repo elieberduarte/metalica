@@ -172,9 +172,12 @@ export class Selecao {
     // o clique pega o bloco (a treliça inteira): `grupoDe` diz quem vai junto; Alt+clique, uma barra só — e deixa
     // o clique em "modo peça" até o Esc (ou o clique no vazio), para somar (Shift) e alternar (Ctrl) peças soltas
     // sem segurar o Alt o tempo todo (pedido do usuário, 13/10: as duas cantoneiras de um montante)
+    // com o Alt seguro, cada clique seguinte soma a peça (e tira, se já estava) — o Alt+clique não troca mais a
+    // seleção de peças soltas já feita (pedido do usuário, 15/10: "com Alt só seleciona uma de cada vez")
+    const altSomando = ev.altKey && this.modoPeca && this.ids.size > 0;
     if (ev.altKey) this.modoPeca = true;
     const grupo = (this.grupoDe && !ev.altKey && !this.modoPeca) ? this.grupoDe(id) : [id];
-    if (ev.ctrlKey || ev.metaKey) {
+    if (ev.ctrlKey || ev.metaKey || (altSomando && !ev.shiftKey)) {
       if (grupo.every(i => this.ids.has(i))) this.tirar(grupo); else this.somar(grupo);
     } else if (ev.shiftKey) this.somar(grupo);
     else this.definir(grupo);
