@@ -105,6 +105,9 @@ PARAMETROS_PADRAO = {
     "aco_tubos": "",                    # o aço dos tubos (TQ, TR, TC) na verificação; vazio = o aço de cada peça no modelo
     # etapa 4 (07/10): a 2ª ordem da NBR 8800:2024 (4.10.7) nas ELU e a verificação de cada peça pela norma
     "segunda_ordem": True,
+    # o tirante (barra redonda) só trabalha à tração: na 2ª ordem a diagonal comprimida do X sai da rigidez (15/10, a
+    # Kaefer do engenheiro: os X de Ø8 comprimidos entravam com o P-Δ e a iteração divergia)
+    "tirantes_so_tracao": True,
     # etapa 5 (07/10): as bases pela NBR 8800:2024, 6.7, com as reações concomitantes
     "base_fck_mpa": 25.0,               # o concreto do bloco de fundação
     "base_aco_placa": "ASTM A36",       # a placa de base (os chumbadores da 6.7 são ASTM A36)
@@ -116,6 +119,12 @@ PARAMETROS_PADRAO = {
     # a permeabilidade do prédio fechado (C_pi, NBR 6123:2023, 6.3.2.1): o pré-moldado e o galpão fechado do aço. O padrão
     # é a hipótese da norma para o caso corrente — duas faces opostas igualmente permeáveis (+0,2 e −0,3)
     "aberturas": "duas faces opostas",
+    # o fechamento lateral que não desce até o chão (15/10, a Kaefer do engenheiro: lona nos 4 lados até 2,00 m acima do
+    # piso, a faixa de baixo aberta para o vento passar): a cota (m, acima das bases) onde a parede começa
+    "parede_z_inferior": 0.0,
+    # a viga no alinhamento da parede (a do topo dos pilares) recebe a faixa de cima da parede como uma fiada de
+    # longarina; sem isso a faixa toda vai para as longarinas abaixo dela
+    "parede_nas_vigas": False,
 }
 
 ALMA = ("montante", "diagonal")
@@ -154,7 +163,8 @@ def _secao(nome: str, duplo: bool, cache: dict) -> Optional[dict]:
                 Wy = Wx if abs(Ix - Iy) < 1e-12 else Iy / max(r, 1e-6)
             J = (p.dados.get("J") or p.J or 0) * 1e-8 if hasattr(p, "dados") else (p.J or 0) * 1e-8
             s = {"A": A, "Iz": Ix, "Iy": Iy, "J": J or min(Ix, Iy) * 0.01, "Wz": Wx, "Wy": Wy,
-                 "kg_m": p.massa or A * 7850.0, "tipo": getattr(p, "tipo", "")}
+                 "kg_m": p.massa or A * 7850.0, "tipo": getattr(p, "tipo", ""),
+                 "redonda": (getattr(p, "dados", None) or {}).get("tipo") == "redonda" and getattr(p, "tipo", "") == "barra"}
         cache[nome] = _SECOES[nome] = s
     s = cache[nome]
     if s is None:
@@ -1443,7 +1453,9 @@ def _vento_fechado(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dic
       são as paredes laterais (zona 1 até z1 da borda de barlavento, zona 2 depois). A face com longarinas ligadas à
       estrutura recebe a pressão nas longarinas (a faixa de altura de cada fiada: meio caminho até as vizinhas, da cota
       das bases ao topo da parede); sem elas, nos pilares da borda pela largura de influência (meia distância aos
-      vizinhos da face), na altura toda do pilar: w = (C_e − C_pi)·q·largura (kN/m);
+      vizinhos da face), na altura toda do pilar: w = (C_e − C_pi)·q·largura (kN/m). A parede que não desce até o chão
+      (`parede_z_inferior`, a lona da Kaefer a 2,00 m do piso) começa ali; com `parede_nas_vigas` a viga do alinhamento
+      da face (a do topo dos pilares) é a fiada de cima;
     * telhado: pelas terças (a faixa de cada uma) ou pelos trechos do banzo de cima, como o caminho da cobertura isolada —
       EF/GH na água de barlavento/sotavento com o vento perpendicular à cumeeira; EG, FH e IJ pela distância ao oitão de
       barlavento (b/2, b e o resto, NOTA 3 da Tabela 7) com o vento ao longo dela.
@@ -1523,7 +1535,28 @@ def _vento_fechado(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dic
     if soltas:
         avisos.append("vento (galpão fechado): %d trecho(s) de longarina sem ligação com os apoios no esqueleto — a pressão "
                       "daquelas paredes foi para os pilares da borda" % soltas)
-    # o topo da parede: o beiral nas faces ao longo da cumeeira (as faces s); a altura média do oitão nas outras
+    # a viga no alinhamento de uma face que já tem longarinas (a do topo dos pilares) vira a fiada de cima dela
+    vigas_parede = 0
+    if P.get("parede_nas_vigas") and faces_long:
+        for i, br in enumerate(barras):
+            if br["papel"] != "viga" or br.get("hipotese") or i not in ligadas:
+                continue
+            a_, b_ = nos[br["a"]], nos[br["b"]]
+            if abs(float(b_[2] - a_[2])) > 0.05 * br["L"]:
+                continue                                  # inclinada: não é a viga do topo da parede
+            d = br["R"][0][:2]
+            m = (a_ + b_)[:2] / 2.0
+            if abs(float(d @ n2)) >= abs(float(d @ u2)):
+                cand = [((0, 0), abs(float(m @ u2) - s0)), ((0, 1), abs(float(m @ u2) - s1))]
+            else:
+                cand = [((1, 0), abs(float(m @ n2) - t0)), ((1, 1), abs(float(m @ n2) - t1))]
+            face, dist_face = min(cand, key=lambda c: c[1])
+            if dist_face <= FILA_TOL and face in faces_long:
+                faces_long[face].append(i)
+                vigas_parede += 1
+    # a parede começa em z_par (a lona da Kaefer para a 2,00 m do piso); o topo: o beiral nas faces ao longo da cumeeira
+    # (as faces s); a altura média do oitão nas outras
+    z_par = z_base + max(0.0, float(P.get("parede_z_inferior") or 0.0))
     topo_face = {0: z_bei, 1: (z_bei + z_top) / 2.0}
     alt_faixa: Dict[Tuple[int, int], Dict[int, float]] = {}
     for face, bs in faces_long.items():
@@ -1531,10 +1564,17 @@ def _vento_fechado(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dic
         fiadas = sorted(_agrupar(zs, COTA_BASE_TOL).items())
         alt_faixa[face] = {}
         for k, (z, ks) in enumerate(fiadas):
-            lo = (z + fiadas[k - 1][0]) / 2.0 if k > 0 else z_base
+            lo = max((z + fiadas[k - 1][0]) / 2.0 if k > 0 else z_par, z_par)
             hi = (z + fiadas[k + 1][0]) / 2.0 if k + 1 < len(fiadas) else max(topo_face[face[0]], z)
             for i in ks:
                 alt_faixa[face][i] = max(hi - lo, 0.0)
+
+    def acima(i):
+        """a fração do trecho de pilar acima de onde a parede começa"""
+        za, zb = sorted((float(nos[barras[i]["a"]][2]), float(nos[barras[i]["b"]][2])))
+        if zb - za < 1e-6:
+            return 1.0 if za >= z_par else 0.0
+        return min(1.0, max(0.0, (zb - max(za, z_par)) / (zb - za)))
 
     def somar(dist, i, v):
         dist[i] = dist.get(i, np.zeros(3)) + v
@@ -1589,7 +1629,7 @@ def _vento_fechado(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dic
                         continue
                     pnet = (ce[(dirn, letra)] - v) * q                    # + empurra a face para dentro
                     for i in pil[k]:
-                        somar(dist, i, pnet * larg[c_] * sinal * dv3)     # para dentro: a favor do vento a barlavento
+                        somar(dist, i, pnet * larg[c_] * sinal * acima(i) * dv3)  # para dentro: a favor do vento a barlavento
                     if exemplo is None and letra == L_b and larg[c_] > 0:
                         exemplo = {"caso": "V%s %s" % (rot, _nome_cpi(v)), "pilar": k, "face": letra, "Ce": ce[(dirn, letra)],
                                    "Cpi": v, "q_kN_m2": round(q, 4), "largura_m": round(larg[c_], 3),
@@ -1605,7 +1645,7 @@ def _vento_fechado(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dic
                         continue
                     pnet = (ce[(dirn, letra)] - v) * q
                     for i in pil[k]:
-                        somar(dist, i, pnet * larg2[c_] * sinal * tr3)
+                        somar(dist, i, pnet * larg2[c_] * sinal * acima(i) * tr3)
             # as faces com longarinas: a faixa de altura de cada fiada
             for face, alts in alt_faixa.items():
                 eixo_f, lado = face
@@ -1650,7 +1690,7 @@ def _vento_fechado(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dic
             "coeficientes": {"%s %s" % k: round(v_, 3) for k, v_ in sorted(ce.items())},
             "paredes": {"caminho": ("longarinas em %d face(s); pilares da borda nas outras" % len(faces_long)) if faces_long
                         else "pilares da borda (largura de influência, altura toda)",
-                        "longarinas_soltas": soltas},
+                        "longarinas_soltas": soltas, "z_inferior": round(z_par - z_base, 3), "vigas_na_parede": vigas_parede},
             "exemplo_parede": exemplo, "observacoes": list(coefs.observacoes)}
     return casos, info
 

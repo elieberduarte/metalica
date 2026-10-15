@@ -142,6 +142,9 @@ def analisar(M: dict, sol: dict, combs: Dict[str, dict], nocionais_no_vento: boo
     AE._recuperar_soltos(ul0, f0, rec0)
     p0 = np.einsum("nij,nje->nei", ke, ul0) + f0                                     # (n, ne, 12)
     Nini = -(p0[:, :, 0] + wx * lt["L"][:, None] / 2.0)                              # (n, ne) a normal média
+    # os tirantes (barra redonda) só à tração: a diagonal comprimida do X sai da rigidez, e volta se for tracionada
+    tir = np.array([bool(br["sec"].get("redonda")) for br in M["barras"]], bool) \
+        if M["par"].get("tirantes_so_tracao", True) else np.zeros(n, bool)
     saida: Dict[str, dict] = {}
     for e, c in enumerate(elu):
         U, N = U1[:, e].copy(), Nini[:, e].copy()
@@ -149,8 +152,9 @@ def analisar(M: dict, sol: dict, combs: Dict[str, dict], nocionais_no_vento: boo
         rhs_n = Fn[:, e] + Fnoc[:, e]
         instavel, convergiu, it = None, False, 0
         pontas = None
+        ativo = ~(tir & (N < 0.0))
         for it in range(1, MAX_ITERACOES + 1):
-            kt = ke + AE._kg_local_lote(lt, N)
+            kt = (ke + AE._kg_local_lote(lt, N)) * ativo[:, None, None]
             kc, f0c, rec = AE._condensar_lote(lt, kt, f0e)
             rhs = rhs_n - AE._somar_nos_graus(lt, ndof, AE._forcas_para_global(lt, f0c))[:, 0]
             try:
@@ -170,10 +174,18 @@ def analisar(M: dict, sol: dict, combs: Dict[str, dict], nocionais_no_vento: boo
             dN = float(np.abs(Nn - N).max(initial=0.0))
             dU = float(np.abs(Un - U).max(initial=0.0))
             U, N = Un, Nn
-            if dN <= TOLERANCIA * max(1.0, float(np.abs(Nn).max(initial=0.0))) and dU <= TOLERANCIA * max(float(np.abs(Un).max(initial=0.0)), 1e-6):
+            novo = ativo
+            if tir.any():
+                # o tirante desligado volta se o alongamento dele daria tração
+                Npot = -(np.einsum("nj,nj->n", ke[:, 0, :], ul[:, :, 0]))
+                novo = ~(tir & np.where(ativo, Nn < 0.0, Npot <= 0.0))
+            mudou = bool((novo != ativo).any())
+            ativo = novo
+            if not mudou and dN <= TOLERANCIA * max(1.0, float(np.abs(Nn).max(initial=0.0))) and dU <= TOLERANCIA * max(float(np.abs(Un).max(initial=0.0)), 1e-6):
                 convergiu = True
                 break
         r: dict = {"iteracoes": it, "convergiu": convergiu, "instavel": instavel, "base": analises[e][1], "imperfeicao": analises[e][2],
+                   "tirantes_desligados": int((tir & ~ativo).sum()),
                    "nocional": {"dir": [round(float(v), 4) for v in dirs[e]],
                                 "H_kN": round(float(NOCIONAL * grav[:, e].sum()) if dirs[e].any() else 0.0, 3)}}
         d1 = np.hypot(*_horizontal(U1[:, e], topos).T)

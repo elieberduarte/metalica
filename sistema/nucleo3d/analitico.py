@@ -37,6 +37,9 @@ APOIA_EM = {
     "apoio_terca": ("montante", "banzo", "diagonal", "pilar", "viga"),
     "corrente": ("terça",),
     "viga": ("pilar", "viga", "banzo"),
+    # a longarina (a travessa do fechamento) presa no pilar por onde passa — sem isso ela só ficava presa onde um
+    # contraventamento criava o nó (a Kaefer do engenheiro, 15/10: os pilares sem X ficavam sem a travessa)
+    "longarina": ("pilar", "viga"),
     "contraventamento": ("banzo", "pilar", "viga", "montante", "diagonal", "terça"),
     "pilar": ("banzo", "viga"),
     "banzo": ("pilar", "banzo", "viga", "montante"),
@@ -95,8 +98,9 @@ def _linhas_do(doc) -> List[dict]:
     out = []
     for ent in doc.entidades.values():
         o = _origem(ent)
-        if ent.tipo == "barra" and ent.papel == "presilha":
-            continue                    # a presilha da cantoneira dupla: liga as duas L, não é barra da estrutura
+        if ent.tipo == "barra" and ent.papel in ("presilha", "chumbador"):
+            continue                    # a presilha da cantoneira dupla (liga as duas L) e o chumbador (é da base, que
+            #                             a análise trata pelo apoio): não são barras da estrutura
         if ent.tipo == "barra":
             out.append({"a": tuple(ent.inicio), "b": tuple(ent.fim), "papel": ent.papel or "barra",
                         "peca": o.get("peca"), "grupo": o.get("peca") or o.get("planta") or ent.id,
@@ -411,6 +415,11 @@ def analitico(doc, base: Optional[float] = None) -> dict:
             if p[2] <= base + 50.0 and ln["papel"] in ("pilar", "viga"):
                 continue                                   # o pé do pilar (e da escada) é a base
             melhor = None
+            # a ponta de baixo do montante vertical (o montante de apoio da tesoura): a viga alta embaixo fica meia
+            # altura abaixo dela — a W410 da Kaefer do engenheiro (15/10), 204 mm, mais longe que a diagonal da própria
+            # tesoura que chega 176 mm acima no mesmo montante, e a ponta subia para a diagonal (a tesoura sem apoio)
+            outra_ponta = nos[ln["nb"] if lado == "na" else ln["na"]]
+            pe_do_montante = ln["papel"] == "montante" and outra_ponta[2] - p[2] > 0.9 * math.dist(outra_ponta, p)
             for j in set(gl.perto(p)):
                 if j == k or linhas[j]["papel"] not in alvo or linhas[j]["grupo"] == ln["grupo"] and (
                         ln["papel"] in ("terça", "viga") or ponta_trelica):
@@ -422,6 +431,9 @@ def analitico(doc, base: Optional[float] = None) -> dict:
                 tol = TOL_ALMA if alma_de_outra and ln["papel"] != "terça" else TOL_APOIO
                 # o banzo (onde a terça senta) vale mais que a alma ao lado: a alma só se for bem mais perto
                 if ln["papel"] == "terça" and linhas[j]["papel"] in ALMA:
+                    d = d + TOL_APOIO / 2.0
+                # no pé do montante, a alma da própria peça só se for bem mais perto que o apoio
+                if pe_do_montante and linhas[j]["papel"] in ALMA and linhas[j]["grupo"] == ln["grupo"]:
                     d = d + TOL_APOIO / 2.0
                 if d <= tol and (melhor is None or d < melhor[0]):
                     melhor = (d, j, t, q)

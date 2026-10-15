@@ -200,6 +200,31 @@ def perfil_cantoneira(b1: float, b2: float, t: float, nome: str = "",
     return _registrar(Perfil(nome=nome, tipo="L", dados=dados))
 
 
+_RE_D_T = re.compile(r"^(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)$")
+
+
+def tubo_circular_de(medidas: str, nome: str) -> Optional[Perfil]:
+    """o tubo circular fora do catálogo ("TC 180×6,3": o Ø180 do modelo do engenheiro da Kaefer, 15/10) pelas fórmulas
+    da coroa circular, com os mesmos dados dos tubos do catálogo (cm, cm², cm⁴, cm³, kg/m)"""
+    m = _RE_D_T.match(medidas.strip())
+    if not m:
+        return None
+    D, t = float(m.group(1)), float(m.group(2))
+    if not (0 < t < D / 2):
+        return None
+    De, Di = D / 10.0, (D - 2 * t) / 10.0
+    A = math.pi * (De ** 2 - Di ** 2) / 4.0
+    I = math.pi * (De ** 4 - Di ** 4) / 64.0
+    W, Z = I / (De / 2.0), (De ** 3 - Di ** 3) / 6.0
+    r = math.sqrt(I / A)
+    rotulo = str(nome).strip() or "TC %s×%s" % (("%g" % D).replace(".", ","), ("%g" % t).replace(".", ","))
+    return _registrar(Perfil(nome=rotulo, tipo="tubo", dados={
+        "nome": rotulo, "familia": "tubo", "grupo": "tubo", "tipo": "redondo", "dim": "ø%g×%g" % (D, t), "t": t,
+        "massa": round(A * 0.785, 2), "D": D, "A": round(A, 3), "Ix": round(I, 2), "Iy": round(I, 2), "Wx": round(W, 2),
+        "Wy": round(W, 2), "rx": round(r, 3), "ry": round(r, 3), "J": round(2 * I, 2), "Zx": round(Z, 2), "Zy": round(Z, 2),
+        "Wt": round(2 * W, 2), "origem": "calculado (fora do catálogo)"}))
+
+
 def _barra_redonda(d_mm: float, nome: str, rosqueada: bool = False) -> Perfil:
     from nucleo3d import geometria
     p = geometria.barra_redonda(d_mm, nome)
@@ -266,7 +291,10 @@ def perfil_de_fabrica(nome: str) -> Optional[Perfil]:
         return _barra_redonda(d, rotulo)
     m = _RE_TUBO.match(s)
     if m:
-        return banco().get(s)
+        p = banco().get(s)
+        if p is None and m.group(1) == "TC":
+            p = tubo_circular_de(m.group(2), nome)
+        return p
     m = _RE_L3.match(s)
     if m:
         b1, b2, t = (float(x) for x in m.groups())
