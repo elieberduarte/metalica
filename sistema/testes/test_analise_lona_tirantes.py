@@ -169,3 +169,45 @@ def test_tirante_so_tracao_na_segunda_ordem():
     N2 = -r2["pontas"][:, 0]
     assert r2["tirantes_desligados"] == 0
     assert N2[3] == pytest.approx(-N2[4], rel=0.05) and N2[3] < 0.6 * N[3]
+
+
+def test_tubo_retangular_fora_do_catalogo_e_o_do_catalogo_batem():
+    p = PF.perfil_de_fabrica("TR 127×100×2,0")
+    assert p is not None and p.dados["tipo"] == "retangular" and (p.dados["h"], p.dados["b"]) == (127.0, 100.0)
+    assert p.dados["A"] == pytest.approx(12.7 * 10.0 - 12.3 * 9.6, rel=1e-3)
+    q = PF.tubo_retangular_de("100X40X1.5", "x")
+    s_tab = AE._secao("TR 100×40×1,5", False, {})              # o do catálogo (cantos arredondados): perto
+    assert q.dados["A"] == pytest.approx(s_tab["A"] * 1e4, rel=0.03)
+
+
+def test_perfil_de_calculo_da_peca_vale_na_analise():
+    """os 2 U boca com boca (a travessa da Kaefer) com perfil_calculo = o tubo que eles formam: a análise usa o tubo,
+    uma barra só (não o par dobrado), e guarda o perfil modelado"""
+    doc = _dois_pilares_com_travessa()
+    lon = next(e for e in doc.entidades.values() if e.papel == "longarina")
+    doc.remover(lon.id)
+    for s, rot in ((1.0, 180.0), (-1.0, 0.0)):
+        doc.add(Barra(inicio=(0.0, 38.1 * s, 3000.0), fim=(5000.0, 38.1 * s, 3000.0), perfil="U 127×50×2,00 (FF)",
+                      rotacao=rot, papel="longarina",
+                      atributos={"origem": {"peca": "TR1"}, "perfil_calculo": "TR 127×100×2,0"}))
+    M = AE.montar(doc, PAR)
+    lon = [br for br in M["barras"] if br["papel"] == "longarina"]
+    assert lon and all(br["perfil"] == "TR 127×100×2,0" and not br["duplo"] and br["perfil_modelo"] == "U 127×50×2,00 (FF)"
+                       for br in lon)
+    assert lon[0]["sec"]["Iy"] == pytest.approx(AE._secao("TR 127×100×2,0", False, {})["Iy"])
+
+
+def test_sanfona_do_3d_para_no_pe_da_tesoura_sobre_viga_alta():
+    """a tesoura em cima da viga alta (eixo 204 mm abaixo do pé): a sanfona do 3D não desce até o eixo da viga"""
+    from nucleo3d import cobertura_movel as CM
+    from test_cobertura_movel import PAR as PAR_CM, _modelo
+    doc = _modelo()
+    for e in list(doc.entidades.values()):
+        if e.papel == "viga":
+            e.perfil = "W 410×60,0"
+            e.inicio, e.fim = (e.inicio[0], e.inicio[1], 4796.5), (e.fim[0], e.fim[1], 4796.5)
+        elif e.papel == "pilar":
+            e.fim = (e.fim[0], e.fim[1], 4580.5)
+    CM.aplicar(doc, PAR_CM, "aberta")
+    zs = [min(e.inicio[2], e.fim[2]) for e in doc.entidades.values() if (e.atributos or {}).get("elemento") == "sanfona"]
+    assert zs and min(zs) == pytest.approx(5000.0)

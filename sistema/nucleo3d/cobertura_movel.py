@@ -75,13 +75,17 @@ def aplicar(doc: Documento, par: Optional[dict] = None, situacao: str = "aberta"
             c.atributos = at
             doc.add(c)
             n_pecas += 1
-    # a sanfona, pelos mesmos nós da análise
+    # a sanfona, pelos mesmos nós da análise — mas no 3D a ponta de baixo fica no pé da tesoura: o nó de cálculo do
+    # apoio desce até o eixo da viga (a W410 da Kaefer do engenheiro, 15/10: a sanfona entrava 204 mm na viga)
     nos = M["nos"]
+    z_pe = min(min(e.inicio[2], e.fim[2]) for e in molde if isinstance(e, Barra)) if any(isinstance(e, Barra) for e in molde) else None
     ns = 0
     for k, (t1, t2) in enumerate(zip(mv["tesouras"], mv["tesouras"][1:])):
         for (top1, bot1), (top2, bot2) in zip(t1["lados"], t2["lados"]):
             for a, b in ((top1, bot2), (bot1, top2)):
                 A, B = tuple(float(v) * 1000.0 for v in nos[a]), tuple(float(v) * 1000.0 for v in nos[b])
+                if z_pe is not None:
+                    A, B = (A[0], A[1], max(A[2], z_pe)), (B[0], B[1], max(B[2], z_pe))
                 if sum((A[j] - B[j]) ** 2 for j in range(3)) < 1.0:
                     continue
                 at = {"elemento": "sanfona", "cobertura_movel": {"k": k, "situacao": situacao}}

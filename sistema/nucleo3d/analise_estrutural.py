@@ -489,17 +489,21 @@ def montar(doc, par: Optional[dict] = None) -> dict:
         L = float(np.linalg.norm(b - a))
         if L < 1e-4:
             continue
-        sec = _secao(br.get("perfil") or "", bool(br.get("duplo")), cache)
-        if sec is None:
-            sem_secao[br.get("perfil") or "?"] += 1
-            continue
         at = (getattr(ent, "atributos", None) or {}) if ent is not None else {}
+        # a seção composta que trabalha como uma só (os 2 U soldados boca com boca da Kaefer = tubo 127×100×2, 15/10):
+        # a peça diz o perfil de cálculo; o modelado continua no 3D e nas listas
+        perfil, duplo = (str(at["perfil_calculo"]), False) if at.get("perfil_calculo") else (br.get("perfil") or "", bool(br.get("duplo")))
+        sec = _secao(perfil, duplo, cache)
+        if sec is None:
+            sem_secao[perfil or "?"] += 1
+            continue
         barras.append({
             "a": int(br["a"]), "b": int(br["b"]), "L": L, "papel": br.get("papel") or "barra",
             "papel_trelica": at.get("papel_trelica"), "elemento": at.get("elemento"), "grupo": at.get("origem_2d") or br.get("grupo"),
-            "marca": at.get("marca") or at.get("peca"), "perfil": br.get("perfil") or "", "ids": list(br.get("ids") or []),
+            "marca": at.get("marca") or at.get("peca"), "perfil": perfil, "ids": list(br.get("ids") or []),
+            **({"perfil_modelo": br.get("perfil")} if at.get("perfil_calculo") else {}),
             "aco": (getattr(ent, "aco", "") or "") if ent is not None else "",
-            "sec": sec, "duplo": bool(br.get("duplo")), "rot": float(getattr(ent, "rotacao", 0.0) or 0.0) if ent is not None else 0.0,
+            "sec": sec, "duplo": duplo, "rot": float(getattr(ent, "rotacao", 0.0) or 0.0) if ent is not None else 0.0,
             "R": _eixos(a, b, float(getattr(ent, "rotacao", 0.0) or 0.0) if ent is not None else 0.0),
             "soltos": [],
         })

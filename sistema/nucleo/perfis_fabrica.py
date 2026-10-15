@@ -225,6 +225,33 @@ def tubo_circular_de(medidas: str, nome: str) -> Optional[Perfil]:
         "Wt": round(2 * W, 2), "origem": "calculado (fora do catálogo)"}))
 
 
+_RE_H_B_T = re.compile(r"^(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)$")
+
+
+def tubo_retangular_de(medidas: str, nome: str) -> Optional[Perfil]:
+    """o tubo retangular fora do catálogo ("TR 127×100×2": os 2 U 127×50×2 soldados boca com boca da travessa da
+    Kaefer, 15/10) pelas fórmulas da seção vazada de cantos vivos (h na altura, b na largura); cm, cm², cm⁴, cm³"""
+    m = _RE_H_B_T.match(medidas.strip())
+    if not m:
+        return None
+    h, b, t = (float(x) for x in m.groups())
+    if not (0 < t < min(h, b) / 2):
+        return None
+    H, B, T = h / 10.0, b / 10.0, t / 10.0
+    hi, bi = H - 2 * T, B - 2 * T
+    A = B * H - bi * hi
+    Ix = (B * H ** 3 - bi * hi ** 3) / 12.0
+    Iy = (H * B ** 3 - hi * bi ** 3) / 12.0
+    Am = (B - T) * (H - T)
+    J = 4 * Am ** 2 * T / (2 * ((B - T) + (H - T)))
+    rotulo = str(nome).strip() or "TR %g×%g×%g" % (h, b, t)
+    return _registrar(Perfil(nome=rotulo, tipo="tubo", dados={
+        "nome": rotulo, "familia": "tubo", "grupo": "tubo", "tipo": "retangular", "dim": "%g×%g×%g" % (h, b, t), "t": t,
+        "massa": round(A * 0.785, 3), "b": b, "h": h, "A": round(A, 3), "Ix": round(Ix, 2), "Iy": round(Iy, 2),
+        "Wx": round(Ix / (H / 2), 2), "Wy": round(Iy / (B / 2), 2), "rx": round(math.sqrt(Ix / A), 2),
+        "ry": round(math.sqrt(Iy / A), 2), "J": round(J, 2), "origem": "calculado (fora do catálogo)"}))
+
+
 def _barra_redonda(d_mm: float, nome: str, rosqueada: bool = False) -> Perfil:
     from nucleo3d import geometria
     p = geometria.barra_redonda(d_mm, nome)
@@ -294,6 +321,8 @@ def perfil_de_fabrica(nome: str) -> Optional[Perfil]:
         p = banco().get(s)
         if p is None and m.group(1) == "TC":
             p = tubo_circular_de(m.group(2), nome)
+        elif p is None and m.group(1) == "TR":
+            p = tubo_retangular_de(m.group(2), nome)
         return p
     m = _RE_L3.match(s)
     if m:
