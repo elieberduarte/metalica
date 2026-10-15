@@ -3,7 +3,7 @@
 // Saíram de editor.js (que tinha quase 5 mil linhas) sem mudar o corpo: esta classe só
 // guarda os métodos, e editor.js os copia para Editor.prototype (aplicarMetodos).
 
-import { PAPEIS, areaDaChapa, comprimentoDaBarra, direcaoDaBarra, escalar, somar } from '../nucleo/documento.js';
+import { PAPEIS, areaDaChapa, medidasDaChapa, comprimentoDaBarra, direcaoDaBarra, escalar, somar } from '../nucleo/documento.js';
 import { lerPerfil } from '../nucleo/trocar_perfil.js';
 import { Comando } from '../nucleo/comandos.js';
 import { chapaEditavel } from './edicao_chapa.js';
@@ -139,6 +139,9 @@ export class MetodosPaineis {
                     v => aplicar({ centrada: v === 'sim' }, 'Posição da espessura')));
       const massa = ents.reduce((s, e) => s + areaDaChapa(e) * (e.espessura || 0) * 7.85e-6, 0);
       if (um) {
+        const md = medidasDaChapa(um);
+        if (md) gc.append(el('label', { texto: 'Medidas' }),
+          el('span', { class: 'valor', texto: `${numero(um.espessura || 0, 2)} × ${numero(md[1])} × ${numero(md[0])} mm`, title: 'espessura × largura × comprimento (o menor retângulo que envolve o contorno)' }));
         gc.append(el('label', { texto: 'Área' }), el('span', { class: 'valor', texto: `${numero(areaDaChapa(um) / 1e6, 4)} m²` }));
         gc.append(el('label', { texto: 'Furos' }), el('span', { class: 'valor', texto: String((um.furos || []).length) }));
         gc.append(el('label', { texto: 'Origem' }), el('span', { class: 'valor', texto: ponto3(um.origem) }));

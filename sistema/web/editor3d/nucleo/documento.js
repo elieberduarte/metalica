@@ -209,6 +209,28 @@ export function arestasSoltasDe(ent) {
   return out;
 }
 
+/** [comprimento, largura] da chapa em mm: o menor retângulo que envolve o contorno, girado pelos lados dele
+ *  (a chapa de corte que se tira da bobina; na retangular, os próprios lados). */
+export function medidasDaChapa(ch) {
+  const p = ch.contorno || [];
+  if (p.length < 3) return null;
+  let melhor = null;
+  for (let i = 0; i < p.length; i++) {
+    const q = p[(i + 1) % p.length];
+    const dx = q[0] - p[i][0], dy = q[1] - p[i][1], n = Math.hypot(dx, dy);
+    if (n < 1e-6) continue;
+    const ux = dx / n, uy = dy / n;
+    let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+    for (const v of p) {
+      const a = v[0] * ux + v[1] * uy, b = -v[0] * uy + v[1] * ux;
+      a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b);
+    }
+    const da = a1 - a0, db = b1 - b0;
+    if (!melhor || da * db < melhor[0] * melhor[1] - 1e-6) melhor = [da, db];
+  }
+  return melhor && [Math.max(...melhor), Math.min(...melhor)];
+}
+
 /** Área do contorno da chapa, em mm² (mesmo cálculo do Python, descontando furos). */
 export function areaDaChapa(ch) {
   const p = ch.contorno || [];

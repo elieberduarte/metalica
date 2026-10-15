@@ -10,7 +10,7 @@
 //     filtro, clique para selecionar e CSV — e ela se refaz quando o modelo muda (o "schedule" do Revit).
 
 import { el, numero, volumeDe } from '../editor.js';
-import { clonar, areaDaChapa, comprimentoDaBarra } from '../nucleo/documento.js';
+import { clonar, areaDaChapa, medidasDaChapa, comprimentoDaBarra } from '../nucleo/documento.js';
 import { Comando } from '../nucleo/comandos.js';
 import { definirCaixaDeCorte } from './caixa_corte.js';
 
@@ -104,7 +104,8 @@ export class MetodosBIM {
       out.push(['Perfil', `${e.perfil}${e.papel ? ' · ' + e.papel : ''}`]);
       out.push(['Comprimento', `${numero(comprimentoDaBarra(e))} mm`]);
     } else if (e.tipo === 'chapa') {
-      out.push(['Chapa', `${numero(e.espessura || 0, 2)} mm · ${numero(areaDaChapa(e) / 1e6, 3)} m² · ${(e.furos || []).length} furo(s)`]);
+      const md = medidasDaChapa(e);
+      out.push(['Chapa', `${numero(e.espessura || 0, 2)}${md ? ` × ${numero(md[1])} × ${numero(md[0])}` : ''} mm · ${numero(areaDaChapa(e) / 1e6, 3)} m² · ${(e.furos || []).length} furo(s)`]);
     } else if (a.parafuso) {
       out.push(['Parafuso', `M${numero(a.parafuso.d)} × ${numero(a.parafuso.L)} ${a.parafuso.classe || ''}`]);
     }

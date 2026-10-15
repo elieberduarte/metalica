@@ -39,7 +39,8 @@ VERSAO_3D = 1
 #: 2 (06/10): o vínculo com o 2D — peça e planta de origem, elemento da planta, marca do pré-moldado e caixa.
 #: 3 (12/10): a sigla da terça (TC3, TC46…) para a busca do modo ver achar a peça pelo nome do projeto.
 #: 4 (15/10): o comprimento da peça (L, mm) para a ficha rápida do modo ver.
-VERSAO_FICHAS = 4
+#: 5 (15/10): a largura da chapa (W, mm) — as medidas espessura × largura × comprimento.
+VERSAO_FICHAS = 5
 MAGICA = b"MCEL"
 
 #: Vértices por bloco (índice de 16 bits).
@@ -332,6 +333,27 @@ def _texto_perfil(reg: dict) -> str:
     return str(m.get("perfil") or "")
 
 
+def _medidas_chapa(contorno) -> Optional[Tuple[float, float]]:
+    """(comprimento, largura) da chapa em mm: o menor retângulo que envolve o contorno, girado pelos lados dele
+    (o mesmo do editor, medidasDaChapa)."""
+    if len(contorno) < 3:
+        return None
+    melhor = None
+    for i in range(len(contorno)):
+        p, q = contorno[i], contorno[(i + 1) % len(contorno)]
+        dx, dy = q[0] - p[0], q[1] - p[1]
+        n = math.hypot(dx, dy)
+        if n < 1e-6:
+            continue
+        ux, uy = dx / n, dy / n
+        a = [v[0] * ux + v[1] * uy for v in contorno]
+        b = [-v[0] * uy + v[1] * ux for v in contorno]
+        da, db = max(a) - min(a), max(b) - min(b)
+        if melhor is None or da * db < melhor[0] * melhor[1] - 1e-6:
+            melhor = (da, db)
+    return (max(melhor), min(melhor)) if melhor else None
+
+
 def _comprimento(reg: dict, vs, fs) -> float:
     """O comprimento da peça em mm: a barra pelo de corte (o do detalhamento, com recortes e cortes no ângulo);
     o sólido (o IFC) e a chapa pela maior aresta da malha — na peça extrudada, a do comprimento."""
@@ -344,6 +366,10 @@ def _comprimento(reg: dict, vs, fs) -> float:
             return comprimentos_da_barra(Barra(**limpo))[1]
         except Exception:                                   # noqa: BLE001 — sem o comprimento, a ficha sai sem ele
             return 0.0
+    if reg.get("tipo") == "chapa":
+        md = _medidas_chapa(reg.get("contorno") or [])
+        if md:
+            return md[0]
     maior = 0.0
     for f in fs or ():
         for k in range(len(f)):
@@ -383,6 +409,10 @@ def _ficha(reg: dict, camadas_idx: Dict[str, int], centro, volume_mm3: float, vs
         comp = _comprimento(reg, vs, fs)
         if comp >= 1.0:
             f["L"] = round(comp)
+    if reg.get("tipo") == "chapa":
+        md = _medidas_chapa(reg.get("contorno") or [])
+        if md and md[1] >= 1.0:
+            f["W"] = round(md[1])
     for k_ori, k in (("posicao", "pos"), ("conjunto", "cj"), ("marca", "mc")):
         if marcas.get(k_ori):
             f[k] = str(marcas[k_ori])

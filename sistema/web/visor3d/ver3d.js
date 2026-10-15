@@ -286,7 +286,7 @@ function fecharPainel() {
 function ficha(i) {
   const f = visor.fichas[i];
   const cam = visor.cabecalho.camadas[f.c] || {};
-  const linhas = [['Perfil', f.p], ['Camada', cam.nome], ['Material', f.m], ['Comprimento', f.L ? nf(f.L) + ' mm' : null], ['Peso',f.kg ? nf(f.kg, f.kg < 10 ? 2 : 1) + ' kg' : null],
+  const linhas = [['Perfil', f.p], ['Camada', cam.nome], ['Material', f.m], f.W ? ['Medidas', `${f.p.replace(/^CH\s*/, '').replace('.', ',')} × ${nf(f.W)} × ${nf(f.L)} mm`] : ['Comprimento', f.L ? nf(f.L) + ' mm' : null], ['Peso',f.kg ? nf(f.kg, f.kg < 10 ? 2 : 1) + ' kg' : null],
                   ['Posição', f.pos], ['Conjunto', f.cj], ['Marca', f.mc],
                   ['Iguais', visor.selecaoVarias.size > 1 ? `${nf(visor.selecaoVarias.size)} peças da posição (marcadas)` : null]].filter(x => x[1]);
   abrirPainel('ficha', f.n || 'Peça', `<dl>${linhas.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
