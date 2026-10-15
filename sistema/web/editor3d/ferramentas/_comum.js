@@ -685,6 +685,19 @@ export function gPoligono(pontos, cor = CORES.face, opacidade = 0.28) {
 }
 
 /** Malha de prévia a partir de vértices e faces (faces com n lados). */
+/** Só a superfície translúcida das faces (convexas), sem os contornos: o corpo da peça na prévia. */
+export function gSuperficie(vertices, faces, cor = CORES.face, opacidade = 0.35) {
+  const pos = [];
+  for (const f of faces) {
+    for (let i = 1; i < f.length - 1; i++) pos.push(...vertices[f[0]], ...vertices[f[i]], ...vertices[f[i + 1]]);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: cor, transparent: true, opacity: opacidade, side: THREE.DoubleSide, depthWrite: false }));
+  m.renderOrder = 979;
+  return m;
+}
+
 export function gMalha(vertices, faces, cor = CORES.face, opacidade = 0.35) {
   const pos = [];
   for (const f of faces) {

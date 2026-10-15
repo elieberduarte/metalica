@@ -306,6 +306,9 @@ export class FerramentaBarra extends Ferramenta {
     g.add(C.gLinha(sa, cor, { fechada: true }));
     g.add(C.gLinha(sb, cor, { fechada: true }));
     for (let i = 0; i < sa.length; i++) g.add(C.gLinha([sa[i], sb[i]], cor));
+    // o corpo do perfil, translúcido (as faces ao longo dele): a peça "cheia" enquanto desenha, como no Tekla
+    const n = sa.length;
+    g.add(C.gSuperficie([...sa, ...sb], sa.map((_, i) => [i, (i + 1) % n, n + (i + 1) % n, n + i]), cor, 0.22));
     g.add(C.gLinha([a, b], C.CORES.desenho, { tracejada: true }));
     if (C.comp(ei.desloc) > 0.5) g.add(C.gLinha([ei.a, ei.b], C.CORES.guia, { tracejada: true }));   // o eixo do perfil
     const L = C.dist(a, b);

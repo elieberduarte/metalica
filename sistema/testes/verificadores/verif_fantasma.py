@@ -98,6 +98,14 @@ try:
     print("     ", r)
     ok(r and r["t"] == [0, 800, 0], f"no Copiar, a cópia translúcida segue o mouse: {r and r['t']}")
     ok(r and r["sem"] and r["linhas"] > 0, f"a peça que mudou depois de copiada fica com o desenho de antes (sem fantasma errado): {r and (r['sem'], r['linhas'])}")
+    r = jsj("""const ed = editor, cena = ed.cena;
+      ed.ativarFerramenta('barra'); const f = ed.ativa;
+      f.onPonto({ ponto: [0, 20000, 0], tela: [0, 0], tipoSnap: 'plano_base', normal: [0, 0, 1] }, {});
+      f.onMover({ ponto: [3000, 20000, 0], tela: [0, 0], tipoSnap: 'plano_base', normal: [0, 0, 1] }, {});
+      let corpo = 0, tri = 0; cena.previa.traverse(x => { if (x.isMesh && x.material && x.material.transparent && Math.abs(x.material.opacity - 0.22) < 1e-6) { corpo++; tri = x.geometry.attributes.position.count / 3; } });
+      f.cancelar(); f.cancelar(); ed.limparPrevia();
+      return { corpo, tri };""")
+    ok(r and r["corpo"] == 1 and r["tri"] >= 12, f"a prévia da Barra tem o corpo do perfil translúcido (as faces ao longo): {r}")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:2]]}")
 finally:
