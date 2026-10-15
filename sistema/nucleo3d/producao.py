@@ -254,8 +254,8 @@ def numerar(doc, compactar: bool = False, conferir_todas: bool = False, avisar=N
             if c and mapa_conj.get(c, c) != c:
                 mf["conjunto"] = mapa_conj[c]
                 mudancas[f.id] = {"marcas": mf}
-    novas = sorted({pos_novo[e.id] for e in pecas if pos_novo[e.id] and pos_novo[e.id] not in set(pos_ant.values())},
-                   key=_natural)
+    ja_havia = set(pos_ant.values())                     # uma vez (dentro da compreensão era n² — 5 s no Posto CB)
+    novas = sorted({pos_novo[e.id] for e in pecas if pos_novo[e.id] and pos_novo[e.id] not in ja_havia}, key=_natural)
     resumo = {"pecas": len(pecas), "analisadas": len(alvos), "alteradas": len(mudancas),
               "posicoes": len({pos_novo[e.id] for e in pecas}), "conjuntos": len({conj_novo[e.id] for e in pecas}),
               "posicoes_novas": novas, "separadas": [list(t) for t in separadas], "compactada": bool(compactar)}

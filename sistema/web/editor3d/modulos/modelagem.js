@@ -135,8 +135,12 @@ export class MetodosModelagem {
 
   /** Manda o pedido, aplica as barras novas e as alterações num comando só e diz o que saiu. */
   async _pedirModelagem(pedido, rota = '/api/modelo/modelar') {
+    // a geometria só precisa da seleção e das peças que as ferramentas consultam: numa obra grande (o Posto CB, 17 mil
+    // peças e 20 MB) mandar tudo a cada prévia levava segundos. O SC1 numera as peças dele: vai o modelo inteiro.
+    const sc1 = pedido.ferramenta === 'contravento' && String((pedido.parametros || {}).suporte || '') === 'sc1';
+    const documento = (rota === '/api/modelo/modelar' && !sc1) ? this._documentoEnxuto(pedido) : this.documento.paraJSON();
     const resp = await fetch(rota, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      body: JSON.stringify({ documento: this.documento.paraJSON(), projeto: this.projeto || null, ...pedido }) });
+      body: JSON.stringify({ documento, projeto: this.projeto || null, ...pedido }) });
     const r = await resp.json();
     if (!resp.ok || r.erro) throw new Error(r.erro || resp.statusText);
     return r;
@@ -645,5 +649,24 @@ export class MetodosModelagem {
     if (grupos.size > 1) linhas.push(el('tr', { class: 'total' }, el('td', { texto: 'Total' }), el('td'), el('td'),
       el('td', { class: 'n', texto: `${numero(tot, 1)} kg` })));
     return linhas;
+  }
+
+  /** O documento só com o que as ferramentas de modelagem leem: as peças escolhidas, as vigas, banzos e pilares (os
+   *  apoios, as estações dos vãos, o lado de fora da parede), as correntes e terças que já existem, e as peças do mesmo
+   *  bloco (o encaixe das almas da treliça). */
+  _documentoEnxuto(pedido) {
+    const ids = new Set(pedido.ids || []);
+    const USADOS = new Set(['viga', 'banzo', 'pilar', 'corrente', 'travamento', 'terça', 'terca', 'longarina']);
+    const peca = (e) => ((e.atributos || {}).origem || {}).peca;
+    const blocos = new Set();
+    for (const id of ids) { const e = this.documento.get(id); if (e && peca(e)) blocos.add(peca(e)); }
+    const entidades = [];
+    for (const e of this.documento.entidades.values()) {
+      if (ids.has(e.id) || (e.tipo === 'barra' && USADOS.has(String(e.papel || '').toLowerCase())) || (blocos.size && blocos.has(peca(e)))) {
+        entidades.push(clonar(e));
+      }
+    }
+    const d = this.documento;
+    return { nome: d.nome, unidade: d.unidade, entidades, camadas: {}, materiais: {}, projeto: d.projeto, metadados: d.metadados };
   }
 }
