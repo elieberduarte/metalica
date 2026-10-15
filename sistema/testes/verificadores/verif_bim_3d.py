@@ -148,6 +148,16 @@ try:
     ok("Fornecedor" in (js("editor.el.props.textContent") or ""), "o painel mostra a propriedade")
     ok(bool(js("[...editor.el.camadas.querySelectorAll('select option')].some(o => o.value === 'u:Fornecedor')")), "o Colorir por oferece a propriedade")
 
+    # 6c) a sequência de montagem: até o Lote 1 a viga (Lote 2) some; fechando, volta
+    js("editor.selecao.limpar(); 1")
+    menu("sequencia-montagem")
+    ok(esperar("!!document.querySelector('.painel-sequencia ul li')", 10), "o painel da sequência abriu com as fases")
+    js("document.querySelectorAll('.painel-sequencia ul li')[0].click(); 1"); aba.drenar(0.4)
+    oc = jsj("return editor.documento.ocultosNaVista ? [...editor.documento.ocultosNaVista] : [];")
+    ok(oc == [ids["viga"]], f"até o Lote 1: só a viga (Lote 2) escondida: {oc}")
+    js("[...document.querySelectorAll('.painel-sequencia button')].find(b => b.textContent === '×').click(); 1"); aba.drenar(0.4)
+    ok(not js("editor.documento.ocultosNaVista && editor.documento.ocultosNaVista.size"), "fechar a sequência mostra tudo de novo")
+
     # 7) o perfil soldado digitado no campo de perfil
     selecionar(ids["viga"]); aba.drenar(0.6)
     jsj("""const i = [...editor.el.props.querySelectorAll('.busca-perfil input')][0]; i.focus(); i.value = 'VS 500x250x9,5x6,3';

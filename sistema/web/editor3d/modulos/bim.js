@@ -49,6 +49,7 @@ export class MetodosBIM {
   _aposMudancaBIM() {
     this._agendarEtiquetas(true);
     if (this._painelTabela) this._agendarTabela();
+    if (this._painelSequencia) { clearTimeout(this._timerSequencia); this._timerSequencia = setTimeout(() => this._desenharSequencia(), 500); }
     this._desenharVistas();
   }
 
@@ -261,6 +262,130 @@ export class MetodosBIM {
       });
       return b;
     }));
+  }
+
+  // ---------------------------------------------------------------- sequência de montagem (o "4D")
+
+  /** As fases do modelo em ordem natural, com as peças e o peso de cada uma. */
+  fasesDoModelo() {
+    const fases = new Map();
+    for (const e of this.documento.entidades.values()) {
+      const f = e.atributos && e.atributos.fase;
+      if (!f) continue;
+      if (!fases.has(f)) fases.set(f, { fase: f, ids: [], peso: 0 });
+      const g = fases.get(f);
+      g.ids.push(e.id);
+      g.peso += this.pesoDaPeca(e);
+    }
+    return [...fases.values()].sort((a, b) => String(a.fase).localeCompare(String(b.fase), 'pt-BR', { numeric: true }));
+  }
+
+  abrirSequencia() {
+    if (this._painelSequencia) { this._fecharSequencia(); return; }
+    this._sequencia = { ate: null, semFase: true };
+    this._painelSequencia = el('div', { class: 'painel-apoios painel-sequencia' });
+    this._painelSequencia.style.maxWidth = '420px';
+    (this.el.palco || document.body).append(this._painelSequencia);
+    const fases = this.fasesDoModelo();
+    if (fases.length) this._sequencia.ate = fases.length - 1;
+    this._desenharSequencia();
+  }
+
+  _fecharSequencia() {
+    clearInterval(this._tocandoSequencia);
+    this._tocandoSequencia = null;
+    if (this._painelSequencia) { this._painelSequencia.remove(); this._painelSequencia = null; }
+    this._sequencia = null;
+    // as cores e os grupos ocultos de antes
+    this._aplicarCorPor();
+    this._ocultarGrupos(this._gruposOcultos || new Set());
+  }
+
+  /** Mostra o modelo até a fase `ate`: as depois somem, a atual em laranja, as de antes em cinza. */
+  _aplicarSequencia() {
+    const s = this._sequencia;
+    if (!s) return;
+    const fases = this.fasesDoModelo();
+    const ordem = new Map(fases.map((f, i) => [f.fase, i]));
+    const ate = s.ate == null ? fases.length - 1 : s.ate;
+    const ocultos = new Set();
+    for (const e of this.documento.entidades.values()) {
+      const f = e.atributos && e.atributos.fase;
+      if (f ? ordem.get(f) > ate : !s.semFase) ocultos.add(e.id);
+    }
+    this.documento.ocultosNaVista = ocultos.size ? ocultos : null;
+    this.cena.definirCorPorValor((e) => {
+      const f = e.atributos && e.atributos.fase;
+      if (!f) return '#cbd5e1';
+      const i = ordem.get(f);
+      return i === ate ? '#f59e0b' : '#8b95a5';
+    });
+    this.documento.notificarAparencia();
+  }
+
+  _desenharSequencia() {
+    const p = this._painelSequencia;
+    if (!p) return;
+    const s = this._sequencia;
+    const fases = this.fasesDoModelo();
+    const corpo = el('div', { class: 'painel-apoios-corpo' });
+    if (!fases.length) {
+      corpo.append(el('p', { texto: 'Nenhuma peça tem fase ainda. Selecione as peças da primeira etapa de montagem no 3D e use o campo abaixo — ou o campo Fase / lote do painel Produção.' }));
+    } else {
+      const ate = s.ate == null ? fases.length - 1 : Math.min(s.ate, fases.length - 1);
+      s.ate = ate;
+      const faixa = el('input', { type: 'range', min: 0, max: fases.length - 1, step: 1, value: ate, style: 'width:100%' });
+      faixa.addEventListener('input', () => { s.ate = Number(faixa.value); this._aplicarSequencia(); this._desenharSequencia(); });
+      const passo = (d) => { s.ate = Math.max(0, Math.min(fases.length - 1, s.ate + d)); this._aplicarSequencia(); this._desenharSequencia(); };
+      const tocar = el('button', { type: 'button', texto: this._tocandoSequencia ? '■ parar' : '▶ tocar' });
+      tocar.addEventListener('click', () => {
+        if (this._tocandoSequencia) { clearInterval(this._tocandoSequencia); this._tocandoSequencia = null; this._desenharSequencia(); return; }
+        s.ate = 0; this._aplicarSequencia();
+        this._tocandoSequencia = setInterval(() => {
+          if (!this._sequencia || s.ate >= fases.length - 1) { clearInterval(this._tocandoSequencia); this._tocandoSequencia = null; this._desenharSequencia(); return; }
+          s.ate += 1; this._aplicarSequencia(); this._desenharSequencia();
+        }, 1200);
+        this._desenharSequencia();
+      });
+      const semFase = el('input', { type: 'checkbox', checked: s.semFase });
+      semFase.addEventListener('change', () => { s.semFase = semFase.checked; this._aplicarSequencia(); });
+      const atual = fases[ate];
+      const acum = fases.slice(0, ate + 1).reduce((t, f) => t + f.peso, 0);
+      corpo.append(
+        el('div', { style: 'display:flex;gap:6px;align-items:center;margin-bottom:4px' },
+          el('button', { type: 'button', texto: '◀', title: 'Fase anterior', onclick: () => passo(-1) }), faixa,
+          el('button', { type: 'button', texto: '▶', title: 'Próxima fase', onclick: () => passo(1) }), tocar),
+        el('p', { texto: `Até ${atual.fase} (${ate + 1} de ${fases.length}): ${numero(atual.ids.length)} peça(s) nesta fase, ${numero(acum / 1000, 2)} t montadas até aqui.` }),
+        el('label', { style: 'display:block' }, semFase, ' mostrar as peças sem fase (em cinza claro)'));
+      const ul = el('ul');
+      fases.forEach((f, i) => {
+        const li = el('li', { texto: `${f.fase} — ${numero(f.ids.length)} peça(s), ${numero(f.peso, 0)} kg`, title: 'Clique: ir até esta fase · duplo clique: selecionar as peças dela',
+          style: i === ate ? 'font-weight:600;color:#b45309' : (i > ate ? 'opacity:.55' : '') });
+        li.addEventListener('click', () => { s.ate = i; this._aplicarSequencia(); this._desenharSequencia(); });
+        li.addEventListener('dblclick', () => this.selecao.definir(f.ids));
+        ul.append(li);
+      });
+      corpo.append(ul);
+    }
+    // pôr as peças selecionadas numa fase (montar a sequência clicando no 3D)
+    const nomeFase = el('input', { type: 'text', placeholder: 'Etapa 1', style: 'width:8em' });
+    const por = el('button', { type: 'button', texto: 'pôr a seleção nesta fase' });
+    por.addEventListener('click', () => {
+      const v = nomeFase.value.trim();
+      const ids = [...this.selecao.ids];
+      if (!v || !ids.length) { this.dica('Selecione as peças no 3D e escreva o nome da fase.'); return; }
+      this.alterarEntidades(ids, (e) => ({ atributos: { ...clonar(e.atributos || {}), fase: v } }), `Fase ${v}`);
+      const fs = this.fasesDoModelo();
+      s.ate = Math.max(0, fs.findIndex(f => f.fase === v));
+      this._aplicarSequencia();
+      this._desenharSequencia();
+    });
+    corpo.append(el('div', { style: 'display:flex;gap:6px;align-items:center;margin-top:6px' }, nomeFase, por));
+    p.replaceChildren(
+      el('div', { class: 'painel-apoios-titulo' }, el('strong', { texto: 'Sequência de montagem' }),
+        el('button', { type: 'button', texto: '×', title: 'Fechar (volta as cores de antes)', onclick: () => this._fecharSequencia() })),
+      corpo);
+    this._aplicarSequencia();
   }
 
   // ---------------------------------------------------------------- árvore do modelo por propriedade

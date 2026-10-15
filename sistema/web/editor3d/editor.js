@@ -1969,6 +1969,7 @@ export class Editor {
       'verificar-apoios': () => this.verificarApoios(),
       'conferir-producao': () => this.conferirAntesDeDetalhar(),
       'tabela-pecas': () => this.abrirTabela(),
+      'sequencia-montagem': () => this.abrirSequencia(),
       'etiquetas': () => this.alternarEtiquetas(),
       'salvar-vista': () => this.salvarVista(),
       'ficha-mouse': () => { this.fichaDesligada = !this.fichaDesligada; this.dica(this.fichaDesligada ? 'Ficha ao passar o mouse desligada.' : 'Ficha ao passar o mouse ligada.'); },
