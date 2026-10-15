@@ -711,15 +711,83 @@ def _desenho_da_telha(pos: Posicao, p: "_Papel", esc: float, off: float, off2: f
 
 
 # ============================================================ detalhe de uma posição
+
+# ------------------------------------------------------------------ só as peças que importam (o Editar chapa, 15/10)
+
+def _chave_crua(e) -> str:
+    """a marca com que a entidade entra no detalhamento, sem montar a malha (a posição; sem ela, o nome — na barra,
+    o nome ou o perfil, como em _proxy_da_barra)"""
+    m = (getattr(e, "atributos", None) or {}).get("marcas") or {}
+    if m.get("posicao"):
+        return str(m["posicao"])
+    if getattr(e, "tipo", "") == "barra":
+        return str(getattr(e, "nome", "") or getattr(e, "perfil", "") or e.id)
+    return str(getattr(e, "nome", "") or e.id)
+
+
+def _caixa_crua(e, folga: float = 0.0):
+    """a caixa da entidade pelos dados dela (as pontas da barra com a meia seção folgada, os cantos da chapa, os
+    vértices do sólido), sem montar a malha; None quando não é peça"""
+    t = getattr(e, "tipo", "")
+    if t == "barra":
+        pts, folga = [tuple(e.inicio), tuple(e.fim)], folga + 1000.0
+    elif t == "chapa":
+        o, ex, ey = e.origem, e.eixo_x, e.eixo_y
+        pts = [tuple(o[i] + x * ex[i] + y * ey[i] for i in range(3)) for x, y in (e.contorno or [(0.0, 0.0)])]
+        folga += float(e.espessura or 0.0) + 1.0
+    else:
+        pts = [tuple(v) for v in (getattr(e, "vertices", None) or [])]
+    if not pts:
+        return None
+    return ([min(p[i] for p in pts) - folga for i in range(3)], [max(p[i] for p in pts) + folga for i in range(3)])
+
+
+def _documento_com(doc: Documento, ents) -> Documento:
+    """um documento só com estas entidades (as mesmas, sem copiar): o detalhamento delas não precisa do resto"""
+    d = Documento(nome=doc.nome, unidade=doc.unidade, projeto=doc.projeto, metadados=doc.metadados)
+    d.camadas, d.materiais = doc.camadas, doc.materiais
+    d.entidades = {e.id: e for e in ents}
+    return d
+
+
+def _da_marca(doc: Documento, marca: str) -> Optional[Documento]:
+    """as entidades que podem ser da posição `marca` (a chave crua começa pelo miolo dela: as variantes "P7 (b)" e as
+    barras sem marca "nome · comprimento" vêm juntas); None quando nenhuma"""
+    miolo = re.split(r" \(| · | #", marca)[0]
+    ents = [e for e in doc.entidades.values() if getattr(e, "tipo", "") in ("barra", "chapa", "solido")
+            and _chave_crua(e).startswith(miolo)]
+    return _documento_com(doc, ents) if ents else None
+
+
+def _fixadores_perto(fixadores, pecas, folga: float = 300.0):
+    """os parafusos (e marcadores de furo) na caixa das peças, com folga — os outros não furam estas peças"""
+    pts = [v for p in pecas for v in (p.vertices or [])]
+    if not pts:
+        return list(fixadores)
+    lo = [min(v[i] for v in pts) - folga for i in range(3)]
+    hi = [max(v[i] for v in pts) + folga for i in range(3)]
+    fora = []
+    for f in fixadores:
+        vs = f.vertices or []
+        if vs and all(min(v[i] for v in vs) <= hi[i] and max(v[i] for v in vs) >= lo[i] for i in range(3)):
+            fora.append(f)
+    return fora
+
 def detalhar_posicao(doc: Documento, marca: str, editavel: bool = True, ajustes: Optional[dict] = None,
                      nomes: Optional[dict] = None) -> Tuple[Desenho, Posicao]:
     """Desenho "Detalhe – <marca>" com a célula da posição. Chapa paramétrica sai com os
-    furos editáveis e `metadados.detalhe_posicao` guarda o que "Aplicar furos" precisa."""
-    pecas, _ = _pecas(doc)
+    furos editáveis e `metadados.detalhe_posicao` guarda o que "Aplicar furos" precisa.
+    Só as peças que podem ser da posição e os parafusos perto delas são montados (15/10: montar a obra inteira
+    levava 15 s na PRATI, 27 mil objetos, a cada Editar chapa); sem achar, o caminho completo."""
+    sub = _da_marca(doc, marca)
+    pecas, _ = _pecas(sub if sub is not None else doc)
     lista = [e for e in pecas if str(_marcas(e).get("posicao") or e.nome or e.id) == marca]
+    if not lista and sub is not None:
+        pecas, _ = _pecas(doc)
+        lista = [e for e in pecas if str(_marcas(e).get("posicao") or e.nome or e.id) == marca]
     if not lista:
         raise ErroDeDados("não há peça com a posição %s no modelo." % marca)
-    posicoes, camadas = _posicoes_de(lista, _fixadores(doc))
+    posicoes, camadas = _posicoes_de(lista, _fixadores_perto(_fixadores(doc), lista))
     aplicar_ajustes_de_furos(posicoes, ajustes)
     oblongar_tercas(posicoes, camadas)
     aplicar_nomes(posicoes, nomes)

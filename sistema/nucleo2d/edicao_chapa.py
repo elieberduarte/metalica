@@ -87,7 +87,15 @@ def referencias_no_plano(doc, pos, nomes: Optional[Dict[str, str]] = None, raio:
     ys = [v[1] for v in pos.vertices]
     zs = [v[2] for v in pos.vertices]
     caixa = ((min(xs) - raio, max(xs) + raio), (min(ys) - raio, max(ys) + raio), (min(zs) - raio, max(zs) + raio))
-    pecas, _ = _pecas(doc)
+    # só as peças cuja caixa crua (pelos dados, sem a malha) chega perto da chapa (15/10: montar a obra inteira levava
+    # 9 s na PRATI a cada "no local")
+    from nucleo2d.detalhe.celulas import _caixa_crua, _documento_com
+    perto = []
+    for e in doc.entidades.values():
+        cx = _caixa_crua(e)
+        if cx is not None and all(cx[1][i] >= caixa[i][0] and cx[0][i] <= caixa[i][1] for i in range(3)):
+            perto.append(e)
+    pecas, _ = _pecas(_documento_com(doc, perto))
     fixadores = _fixadores(doc)
     proprias = {tuple(round(q, 1) for q in v) for v in pos.vertices[:8]}
     fora: List[dict] = []
