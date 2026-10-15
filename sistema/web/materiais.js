@@ -168,6 +168,7 @@ function irPara(k) {
   if (busca) busca.hidden = !COM_FILTRO.has(k);
   if (k === 'resumos') abrirResumos();
   if (k === 'conferencia') abrirConferencia();
+  if (k === 'arquivos') atualizarArquivos();
   if (k === 'orcamento') abrirOrcamento();
   filtrar();
 }
@@ -469,6 +470,7 @@ function desenhar(L) {
   // ---- arquivos
   c.append(painel('arquivos', el('div', { id: 'arquivos-corpo' })));
   desenharArquivos();
+  atualizarArquivos();
 
   montarAbas(contagem);
   if (ABA === 'resumos') abrirResumos();
@@ -545,9 +547,25 @@ const DOCUMENTOS = [
   ['obra', 'html', 'Resumo da obra (HTML)', 'O resumo da obra no navegador'],
 ];
 
+// todos os arquivos do projeto lidos do disco (15/10: o usuário usa esta aba como "caminho padrão de procura de
+// informações"): o que for gravado na pasta do projeto — pelo programa ou por um relatório — aparece sozinho, ao abrir a
+// aba, ao voltar para a janela e depois de gerar algo aqui
+let ARQUIVOS = null, ARQ_PEDINDO = false;
+async function atualizarArquivos() {
+  if (!PROJETO || ARQ_PEDINDO) return;
+  ARQ_PEDINDO = true;
+  try { ARQUIVOS = (await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/arquivos`)).todos || []; desenharArquivos(); }
+  catch (e) { /* servidor antigo sem a rota: fica a lista que veio com os materiais */ }
+  finally { ARQ_PEDINDO = false; }
+}
+window.addEventListener('focus', () => { if (ABA === 'arquivos') atualizarArquivos(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && ABA === 'arquivos') atualizarArquivos(); });
+
 function desenharArquivos() {
   const alvo = $('#arquivos-corpo');
   if (!alvo) return;
+  const todos = ARQUIVOS || (LISTA && LISTA.arquivos && LISTA.arquivos.todos);
+  if (todos) { desenharTodosArquivos(alvo, todos); return; }
   const linhas = [];
   const arq = (LISTA && LISTA.arquivos) || {};
   // os resumos: os gerados agora na aba Resumos valem; senão, os que a lista encontrou na pasta
@@ -584,6 +602,43 @@ function desenharArquivos() {
     el('div', { class: 'passos' }, el('button', { type: 'button', class: 'botao-m', onclick: abrirPasta, texto: 'Abrir a pasta detalhamento/' })))));
 }
 
+/** As duas seções pela lista do disco: os documentos da obra (documentos/) e tudo o que foi gerado, o mais novo primeiro. */
+function desenharTodosArquivos(alvo, todos) {
+  const tipoDoc = (nome) => ({ pdf: 'PDF', xlsx: 'Excel', xls: 'Excel', csv: 'Excel', docx: 'Word', doc: 'Word', md: 'Texto', txt: 'Texto',
+    png: 'Imagem', jpg: 'Imagem', jpeg: 'Imagem', dwg: 'DWG', dxf: 'DXF', ifc: 'IFC', zip: 'Pacote', html: 'Navegador' })[String(nome).split('.').pop().toLowerCase()] || 'Arquivo';
+  // a versão de antes do mesmo documento (outra data no nome) fica na lista, apagada, com o nome da que vale
+  const nomeArq = (d) => el('span', {}, el('a', { href: d.url, target: '_blank', rel: 'noopener', texto: d.rotulo, style: d.anterior ? 'opacity:.55' : '' }),
+    d.anterior ? el('div', { class: 'dica', texto: `versão anterior — a que vale é ${d.anterior}` }) : '');
+  // o PDF da lista impresso antes da lista de agora (24/09 contra 13/10): avisa para gerar de novo
+  const desc = (d) => {
+    const velho = /^lista-de-materiais\.pdf$/i.test(d.nome) && LISTA && LISTA.gerado && d.alterado.slice(0, 16).replace('T', ' ') < String(LISTA.gerado).slice(0, 16);
+    return velho ? 'A lista em PDF — anterior à lista de agora: gere de novo em "Lista em PDF"' : d.descricao;
+  };
+  const docs = todos.filter(d => d.documento), gerados = todos.filter(d => !d.documento);
+  const secaoDocs = secao('Documentos da obra', 'a pasta documentos/ do projeto: análises, relatórios, comparativos com a fábrica e o que chega de fora',
+    el('div', {}, docs.length ? tabela([
+      { titulo: 'Documento', valor: nomeArq, classe: 'b' },
+      { titulo: 'Tipo', valor: (d) => tipoDoc(d.nome), classe: 'c' },
+      { titulo: 'Nome no disco', valor: (d) => d.nome, classe: 'mono' },
+      { titulo: 'Tamanho (kB)', valor: (d) => d.tamanho_kb, classe: 'r', num: true, casas: 1 },
+      { titulo: 'Data', valor: (d) => dataBR(d.alterado) },
+    ], docs, null, (d) => d.nome) : vazio('Nenhum documento ainda. Guarde na pasta documentos/ do projeto os PDFs e planilhas da obra: eles aparecem aqui.'),
+    el('div', { class: 'passos' }, el('button', { type: 'button', class: 'botao-m', onclick: () => abrirPasta('documentos'), texto: 'Abrir a pasta documentos/' }))));
+  const secaoGer = secao('Arquivos gerados', 'tudo o que está na pasta do projeto — pranchas, listas, resumos, análises, IFC —, o mais novo primeiro',
+    el('div', {}, gerados.length ? tabela([
+      { titulo: 'Arquivo', valor: nomeArq, classe: 'b' },
+      { titulo: 'O que é', valor: desc, classe: 'quebra' },
+      { titulo: 'Pasta', valor: (d) => (d.pasta || '—') + '/', classe: 'mono' },
+      { titulo: 'Nome no disco', valor: (d) => d.nome, classe: 'mono' },
+      { titulo: 'Tamanho (kB)', valor: (d) => d.tamanho_kb, classe: 'r', num: true, casas: 1 },
+      { titulo: 'Gerado em', valor: (d) => dataBR(d.alterado) },
+    ], gerados, null, (d) => d.pasta + '/' + d.nome) : vazio('Nenhum arquivo gerado ainda. "Atualizar pelo modelo 3D" grava a lista e os CSVs; os resumos saem na aba Resumos da obra.'),
+    el('div', { class: 'passos' },
+      el('button', { type: 'button', class: 'botao-m', onclick: () => atualizarArquivos(), texto: 'Atualizar a lista' }),
+      el('button', { type: 'button', class: 'botao-m', onclick: () => abrirPasta(''), texto: 'Abrir a pasta do projeto' }))));
+  alvo.replaceChildren(secaoDocs, secaoGer);
+}
+
 /* ------------------------------------------------------------------- ações */
 async function carregar(recalcular = false) {
   if (!PROJETO) { aviso('Abra a lista por um projeto (gerenciador → projeto → Lista de materiais).', true); return; }
@@ -608,6 +663,7 @@ async function gerarPDF() {
   try {
     const r = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/materiais/pdf`, {});
     if (LISTA) { LISTA.arquivos = Object.assign(LISTA.arquivos || {}, { pdf: r.pdf }); desenharArquivos(); }
+    atualizarArquivos();
     avisoComLinks(`Lista em PDF gravada em detalhamento/${r.pdf.nome}.`, [[r.pdf.url, 'Abrir o PDF']]);
   } catch (e) {
     aviso(`Não foi possível gerar o PDF: ${e.message}`, true);
@@ -987,6 +1043,7 @@ async function gerarResumos(valores, botao, estado) {
     RESUMOS = guardado; RESUMOS_MONTADO = true;
     desenharResumos();
     desenharArquivos();
+    atualizarArquivos();
   } catch (e) {
     clearInterval(vigia);
     estado.replaceChildren(`Não foi possível gerar os resumos: ${e.message}`);

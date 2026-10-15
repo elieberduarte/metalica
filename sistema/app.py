@@ -82,6 +82,7 @@ Rotas da API:
     POST /api/projetos/<slug>/resumos {dados}            grava os dados e gera o resumo da obra e o de materiais (HTML + PDF)
     GET  /api/projetos/<slug>/conferencias               as pendências de conferência do resumo da obra com as respostas do usuário
     POST /api/projetos/<slug>/conferencias {chave, resposta, situacao}  registra a resposta a uma pendência (conferencias.json)
+    GET  /api/projetos/<slug>/arquivos                  todos os arquivos de entrega do projeto, lidos do disco (a aba Arquivos)
     POST /api/projetos/<slug>/pranchas  pranchas (folhas com carimbo) a partir dos desenhos 2D
     POST /api/projetos/<slug>/importar-dxf  DXF em texto → entidades do CAD
     POST /api/projetos/<slug>/importar-pdf  PDF vetorial (base64) → entidades do CAD, em mm de papel
@@ -2350,6 +2351,14 @@ def _documentos_da_obra(pasta_projeto: str) -> list:
     return saida
 
 
+def arquivos_do_projeto(s: str) -> dict:
+    """GET /api/projetos/<s>/arquivos: todos os arquivos de entrega do projeto, lidos do disco agora (saida/arquivos_projeto):
+    o que o programa ou um relatório gravar na pasta do projeto aparece sozinho na aba Arquivos (15/10)."""
+    from saida import arquivos_projeto
+    url = lambda cam: "/saida/" + os.path.relpath(cam, PROJETOS).replace("\\", "/")    # noqa: E731
+    return {"todos": arquivos_projeto.listar(_gerente()._existente(s), url)}
+
+
 # ============================================================ conferência das pendências (13/10)
 #: As respostas do usuário às pendências de conferência do resumo da obra, no projeto, com o histórico de cada uma.
 ARQ_CONFERENCIAS = "conferencias.json"
@@ -2634,6 +2643,8 @@ def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] =
     arquivos["resumos"] = _arquivos_dos_resumos(pasta)
     # os documentos da obra (análises, comparativos com a fábrica), na pasta documentos/ do projeto (13/10)
     arquivos["documentos"] = _documentos_da_obra(g._existente(s))
+    # e todos os de entrega do projeto, de qualquer pasta (15/10): a aba se monta por eles
+    arquivos["todos"] = arquivos_do_projeto(s)["todos"]
     lista["arquivos"] = arquivos
     # a contagem da aba Conferência (13/10)
     try:
@@ -4748,6 +4759,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(dados_dos_resumos(partes[0]))
                 if len(partes) == 2 and partes[1] == "conferencias":
                     return self._json(conferencias_do_projeto(partes[0]))
+                if len(partes) == 2 and partes[1] == "arquivos":
+                    return self._json(arquivos_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] in ("orcamento", "comercial") and not COMERCIAL:
                     return self._erro(SO_NO_DEV, 404)
                 if len(partes) == 2 and partes[1] == "orcamento":

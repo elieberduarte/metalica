@@ -62,6 +62,9 @@
         I('DXF de todas as pranchas…', '2d', 'dxf-pranchas', { dica: 'todas juntas num arquivo, e uma por arquivo num ZIP', antes: 'Arquivo › DXF de todas as pranchas…' }),
       ]),
       HR,
+      // a lista de tudo o que o projeto tem (15/10: "vou usar isso como caminho padrão de procura de informações")
+      { texto: 'Arquivos do projeto…', link: '/materiais?projeto={projeto}#arquivos',
+        dica: 'documentos da obra, pranchas, listas, resumos e análises: tudo o que foi gerado, o mais novo primeiro' },
       I('Abrir a pasta do projeto', '2d', 'abrir-pasta', { antes: 'Arquivo › Abrir a pasta dos desenhos' }),
     ] },
     { nome: 'Modelo', itens: [
