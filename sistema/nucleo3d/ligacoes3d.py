@@ -17,6 +17,7 @@ import collections
 import copy
 import dataclasses
 import math
+import re
 from typing import Dict, List, Optional, Sequence
 
 from nucleo.base import ErroDeDados
@@ -36,6 +37,7 @@ TIPOS_3D = {
     "chumbador_placa": {"pede": "a placa (chapa) com os furos — um chumbador com placa de ancoragem em cada furo",
                         "barras": ("chapa",)},
     "presilhas": {"pede": "as duas barras do perfil duplo (cantoneiras ou U costas com costas)", "barras": ("barra", "barra")},
+    "suporte_contravento": {"pede": "o tirante e o(s) banzo(s) ou viga(s) em que ele chega", "barras": ("tirante", "apoio")},
 }
 
 
@@ -814,6 +816,134 @@ def _presilhas(a, b, p):
             "parametros": params, "avisos": []}
 
 
+# ------------------------------------------------------------------ contravento: o tirante nos suportes (SC1)
+
+LOCAIS["suporte_contravento"] = {
+    "nome": "Contravento: tirante nos suportes SC1", "categoria": "contraventamento",
+    "descricao": "O detalhe validado na portaria (30/09, banco de detalhes): em cada ponta do tirante uma cantoneira em "
+                 "pé no topo do banzo, centrada nele e girada no ângulo do tirante, com o furo a 45 mm do pé; o "
+                 "tirante reto entre os furos, passando 40 mm de cada um (porca e rosca).",
+    "parametros": [{"chave": "variante", "rotulo": "Suporte (banco de detalhes)", "unidade": "", "padrao": "SC1",
+                    "opcoes": ["SC1"]}],
+    "esforcos": [],
+}
+
+
+def _suporte_contravento(tirante, apoios, p):
+    """O tirante entre os suportes da variante (SC1): o mesmo desenho da montagem pelos quadros
+    (de_quadros._contravento_com_sc) — a L em pé no topo do banzo, a aba do furo em esquadro com o tirante, o meio
+    da L no eixo do banzo; o tirante esticado de furo a furo mais `passa`. Ponta sem banzo perto fica como está."""
+    import numpy as np
+    from nucleo import banco_detalhes
+    from nucleo2d.reconhecer import perfil_do_texto
+    from nucleo3d.modelo import Barra
+    from nucleo3d import geometria as G
+    var = banco_detalhes.variante(str(p.get("variante") or "SC1")) or banco_detalhes.variante("SC1")
+    col = var.get("colocacao") or {}
+    r = perfil_do_texto(col.get("peca") or "")
+    perfil = r["perfil"] if r else "L 2'' X 3/16''"
+    alt, fz = float(col.get("altura") or 90.0), float(col.get("furo_z") or 45.0)
+    passa, fd = float(col.get("passa") or 40.0), float(col.get("furo_d") or 16.0)
+    pf = _perfil(perfil)
+    t_, aba = float(pf.tw or pf.tf or 4.76), float(pf.bf or pf.d or 50.8)
+    borda = aba / 2.0
+    cache = {}
+
+    def secao(rot):
+        rk = round(rot % 360.0, 2)
+        if rk not in cache:
+            cache[rk] = np.array(G.malha_barra(Barra(inicio=(0, 0, 0), fim=(0, 0, 100), perfil=perfil, rotacao=rk))[0])
+        return rk, cache[rk]
+
+    def pose(H, u_out):
+        uh = np.array((u_out[0], u_out[1], 0.0))
+        uh /= np.linalg.norm(uh)
+        nh = np.array((-uh[1], uh[0], 0.0))
+
+        def nota(rot):
+            rk, v = secao(rot)
+            pu, pn = v @ uh, v @ nh
+            return (np.ptp(pu) + np.ptp(pn)) + 0.01 * (pu.max() - pn.min()), rk, pu.max(), pn.min()
+        melhor = min((nota(x) for x in np.arange(0.0, 360.0, 0.5)), key=lambda x: x[0])
+        melhor = min((nota(melhor[1] + dd) for dd in np.arange(-0.5, 0.51, 0.05)), key=lambda x: x[0])
+        _s, rot, hi_u, lo_n = melhor
+        eixo = H + uh * (-(hi_u - t_ / 2.0)) + nh * (-(lo_n + borda))
+        return rot, eixo, secao(rot)[1] + eixo
+
+    pontas = [np.array(tirante.inicio, float), np.array(tirante.fim, float)]
+    Hs, ns, axs, apo = [], [], [], []
+    for q in pontas:
+        melhor = None
+        for ap in apoios:
+            wa = np.array(_norm(_sub(ap.fim, ap.inicio)))
+            a0 = np.array(ap.inicio, float)
+            # a distância em planta da ponta ao eixo do apoio
+            wh = np.array((wa[0], wa[1], 0.0))
+            if np.linalg.norm(wh) < 1e-6:
+                continue
+            wh /= np.linalg.norm(wh)
+            r_ = (q - a0) * np.array((1, 1, 0))
+            dist = float(np.linalg.norm(r_ - wh * (r_ @ wh)))
+            if melhor is None or dist < melhor[0]:
+                melhor = (dist, ap, wa, a0, wh)
+        if melhor is None or melhor[0] > 600.0:
+            Hs.append(None); ns.append(None); axs.append(None); apo.append(None)
+            continue
+        _d, ap, wa, a0, wh = melhor
+        Pb = a0 + wa * float((q - a0) @ wa)
+        nb, _ = _eixo_secao_mais_perto(ap, (0.0, 0.0, 1.0))
+        topo = _extremos(ap, nb)[1]
+        z_top = float((Pb + np.array(nb) * (topo - float(np.array(nb) @ Pb)))[2])     # o topo do banzo sobre o eixo
+        Hs.append(np.array((Pb[0], Pb[1], z_top + fz)))
+        ns.append(np.array((-wh[1], wh[0], 0.0)))
+        axs.append(np.array((Pb[0], Pb[1], 0.0)))
+        apo.append(ap)
+    if not any(h is not None for h in Hs):
+        raise ErroDeDados("nenhuma ponta do tirante chega a um banzo ou viga selecionado (até 600 mm em planta)")
+    fixos = [h if h is not None else pontas[k] for k, h in enumerate(Hs)]
+    for _it in range(4):
+        u = (fixos[1] - fixos[0]) / np.linalg.norm(fixos[1] - fixos[0])
+        for k, u_out in ((0, -u), (1, u)):
+            if Hs[k] is None:
+                continue
+            _rot, _eixo, v = pose(fixos[k], u_out)
+            meio = (v.min(axis=0) + v.max(axis=0)) / 2.0
+            fixos[k] = fixos[k] + ns[k] * float((axs[k] - meio) @ ns[k])
+    u = (fixos[1] - fixos[0]) / np.linalg.norm(fixos[1] - fixos[0])
+    q0 = fixos[0] - u * passa if Hs[0] is not None else pontas[0]
+    q1 = fixos[1] + u * passa if Hs[1] is not None else pontas[1]
+    pecas, conjuntos, soldas = [], [], []
+    from nucleo2d.detalhe.soldas import _perna
+    for k, u_out in ((0, -u), (1, u)):
+        if Hs[k] is None:
+            continue
+        rot, eixo, _v = pose(fixos[k], u_out)
+        z0 = float(fixos[k][2]) - fz
+        sc = Barra(nome=var.get("id") or "SC1", inicio=(float(eixo[0]), float(eixo[1]), z0),
+                   fim=(float(eixo[0]), float(eixo[1]), z0 + alt), perfil=perfil, rotacao=round(float(rot), 2), papel="suporte",
+                   camada="Suportes", material="Aço", atributos={"tipo_ifc": "IfcMember", "sigla": var.get("id"), "variante": var.get("id")})
+        # o furo da L: o marcador que o detalhamento lê (o mesmo da ferramenta Furo), atravessando a aba
+        H = fixos[k]
+        face = H - u_out * (t_ / 2.0 + 0.5)
+        lados = [face + (np.array((-u_out[1], u_out[0], 0.0)) * math.cos(a) + np.array((0, 0, 1.0)) * math.sin(a)) * (fd / 2.0)
+                 for a in (2 * math.pi * j / 8 for j in range(8))]
+        furo = G.prisma([tuple(float(c) for c in q) for q in lados], tuple(float(c) for c in u_out * (t_ + 1.0)),
+                        nome="Furo Ø%g" % fd, camada="Furos", material="Cor #1f2430")
+        furo.atributos = {"tipo_ifc": "IfcOpeningElement", "exportar": False,
+                          "furo": {"d": fd, "ponto": [round(float(c), 2) for c in face], "eixo": [round(float(c), 6) for c in u_out],
+                                   "profundidade": t_ + 1.0, "peca": sc.id}}
+        pecas += [sc, furo]
+        conjuntos.append((apo[k], [sc]))
+        soldas.append((apo[k].id, sc, {"tipo": "filete", "perna": _perna(t_, float(_perfil(apo[k].perfil).tf or 4)),
+                                       "lados": 2, "local": "fabrica", "forma": "T"}))
+    ajustes = {tirante.id: {"inicio": tuple(tirante.inicio), "fim": tuple(tirante.fim)}}
+    alterar = {tirante.id: {"inicio": tuple(round(float(c), 2) for c in q0), "fim": tuple(round(float(c), 2) for c in q1)}}
+    params = dict(p, variante=var.get("id"))
+    avisos = [] if all(h is not None for h in Hs) else ["uma das pontas do tirante não chega a um banzo selecionado: ficou como estava"]
+    return {"pecas": pecas, "alterar": alterar, "ajustes": ajustes, "conjuntos": conjuntos, "soldas": soldas,
+            "parametros": params, "avisos": avisos}
+
+
 # ------------------------------------------------------------------ escolher as barras
 
 def _barras_para(doc, tipo, ids):
@@ -832,6 +962,12 @@ def _barras_para(doc, tipo, ids):
         return [[b] for b in barras]
     if pede == ("terca", "apoio"):
         return _pares_terca_apoio(barras)
+    if pede == ("tirante", "apoio"):
+        redondo = lambda b: bool(re.search(r"RED|Ø|TIRANTE|REDOND", str(b.perfil), re.I))      # noqa: E731
+        tir = [b for b in barras if str(b.papel).lower().startswith("contravent") or redondo(b)]
+        if len(tir) != 1 or len(barras) < 2:
+            raise ErroDeDados("selecione %s (um tirante só)" % TIPOS_3D[tipo]["pede"])
+        return [[tir[0]] + [b for b in barras if b is not tir[0]]]
     if len(barras) != 2:
         raise ErroDeDados("selecione %s (duas barras)" % TIPOS_3D[tipo]["pede"])
     a, b = barras
@@ -902,6 +1038,8 @@ def _gerar(tipo, barras, p):
         return _chumbadores(barras[0], p, tipo)
     if tipo == "presilhas":
         return _presilhas(barras[0], barras[1], p)
+    if tipo == "suporte_contravento":
+        return _suporte_contravento(barras[0], barras[1:], p)
     raise ErroDeDados("a ligação %s ainda não sabe se pôr no 3D" % tipo)
 
 
@@ -1028,17 +1166,18 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
         lid = ligacao if (ligacao and len(grupos) == 1) else _id_ligacao()
         p = {k: v for k, v in base_parametros.items() if v not in (None, "")}
         g = _gerar(tipo, barras, p)
+        for bid, campos in g["alterar"].items():
+            b = trabalho.entidades[bid]
+            for k, v in campos.items():
+                setattr(b, k, copy.deepcopy(v))
+            alterar.setdefault(bid, {}).update(copy.deepcopy(campos))
+        # a geometria das barras DEPOIS da ligação (o tirante esticado até a castanha): é a que o editor compara
         reg = {"id": lid, "tipo": tipo, "parametros": g["parametros"], "pecas": [b.id for b in barras],
                "ajustes": g["ajustes"], "geometria": {b.id: assinatura(b) for b in barras}}
         for e in g["pecas"]:
             e.atributos = dict(e.atributos or {}, ligacao=dict(reg, papel=e.nome))
             trabalho.add(e)
             novas.append(e)
-        for bid, campos in g["alterar"].items():
-            b = trabalho.entidades[bid]
-            for k, v in campos.items():
-                setattr(b, k, copy.deepcopy(v))
-            alterar.setdefault(bid, {}).update(copy.deepcopy(campos))
         # o conjunto: a chapa soldada entra no conjunto da barra
         for barra, chapas in g["conjuntos"]:
             mb = dict((barra.atributos or {}).get("marcas") or {})

@@ -95,7 +95,9 @@ export class MetodosLigacoes {
     })() : Infinity;
     const colineares = paralelas && afastamento < 1;
     const diagonal = (b) => String(b.papel).toLowerCase().startsWith('contravent') || /^L\s|FE RED|TIRANTE/i.test(String(b.perfil));
+    const tirante = (b) => /RED|Ø|TIRANTE|REDOND/i.test(String(b.perfil));
     if (!barras.length && chapas.length) escolha.value = 'chumbador_gancho';
+    else if (barras.length >= 2 && barras.filter(tirante).length === 1) escolha.value = 'suporte_contravento';
     else if (barras.length === 2 && barras.some(diagonal) && !barras.every(diagonal)) escolha.value = 'gusset_contravento';
     else if (barras.some(b => ['terça', 'terca', 'longarina'].includes(String(b.papel).toLowerCase()))) escolha.value = 'suporte_terca_cadeirinha';
     else if (barras.length === 2 && vert.length === 1) escolha.value = 'chapa_topo_joelho';

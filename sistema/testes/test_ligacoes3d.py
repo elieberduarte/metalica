@@ -369,3 +369,32 @@ def test_perfil_soldado_pelo_nome():
     assert g.resolver_perfil("PS 500x250x6,3x9,5").tf == 9.5                       # a maior espessura é a da mesa
     viga = Barra(inicio=(0, 0, 0), fim=(6000, 0, 0), perfil="VS 500x250x9,5x6,3")
     assert abs(g.peso_barra(viga) - 6.0 * g.resolver_perfil(viga.perfil).dados["massa"]) < 0.5
+
+
+def test_tirante_nos_suportes_sc1():
+    from nucleo3d import conferencia_producao as CP
+    from nucleo3d.producao import _proxy
+    b1 = Barra(inicio=(0, -1000, 0), fim=(0, 7000, 0), perfil="W 250×32,7", papel="banzo")          # topo em z = 129
+    b2 = Barra(inicio=(6000, -1000, 0), fim=(6000, 7000, 0), perfil="W 250×32,7", papel="banzo")
+    tir = Barra(inicio=(0, 0, 200), fim=(6000, 5000, 200), perfil="FE RED 1/2''", papel="contraventamento")
+    doc = _doc(b1, b2, tir)
+    r = ligacoes3d.aplicar(doc, "suporte_contravento", [b1.id, tir.id, b2.id])
+    _aplicar(doc, r)
+    pecas = _da_ligacao(doc, r["ligacoes"][0]["id"])
+    scs = [e for e in pecas if e.tipo == "barra"]
+    furos = [e for e in pecas if e.tipo == "solido"]
+    assert len(scs) == 2 and len(furos) == 2
+    for sc in scs:
+        assert abs(min(sc.inicio[2], sc.fim[2]) - 129.0) < 0.01 and abs(abs(sc.fim[2] - sc.inicio[2]) - 90.0) < 0.01
+    assert abs(tir.inicio[2] - 174.0) < 0.5 and abs(tir.fim[2] - 174.0) < 0.5                  # o tirante no furo, a 45 do pé
+    # o tirante passa 40 mm além de cada furo: comprimento entre os furos + 80
+    furo_pts = [f.atributos["furo"]["ponto"] for f in furos]
+    import math as _m
+    assert _m.dist(tir.inicio, tir.fim) > _m.dist(furo_pts[0], furo_pts[1]) + 70
+    assert b1.atributos["marcas"]["conjunto"] == scs[0].atributos["marcas"]["conjunto"] or \
+        b1.atributos["marcas"]["conjunto"] == scs[1].atributos["marcas"]["conjunto"]
+    col = CP.colisoes([_proxy(e) for e in (b1, b2, *scs)])["achados"]
+    assert col == [], col
+    # apagar devolve o tirante como era
+    _aplicar(doc, ligacoes3d.remover(doc, r["ligacoes"][0]["id"]))
+    assert tuple(tir.inicio) == (0, 0, 200) and tuple(tir.fim) == (6000, 5000, 200)
