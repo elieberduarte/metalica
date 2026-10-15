@@ -329,6 +329,9 @@ export class Documento {
     const ent = this.entidades.get(id);
     if (!ent) return null;
     Object.assign(ent, clonar(campos));
+    // o campo que vem undefined sai da peça: é o "antes" do desfazer de um campo que a peça não tinha (os recortes do
+    // Recortar ficavam depois do Ctrl+Z — o clonar por JSON descarta as chaves undefined; fluxo de 15/10)
+    for (const k of Object.keys(campos)) if (campos[k] === undefined) delete ent[k];
     if (ent.camada && !this.camadas.has(ent.camada)) {
       this.camadas.set(ent.camada, { nome: ent.camada, cor: '#8a94a6', visivel: true, bloqueada: false });
     }

@@ -75,7 +75,10 @@ export class MetodosExplodir {
       const j = juntarBarras(ents);
       if (!j) { this.aviso('As barras só se juntam quando têm o mesmo perfil e estão na mesma reta.', 'atencao'); return; }
       const c = clonar(j.base);
-      delete c.id;
+      // a barra unida fica com o id da original (o pedaço sem a marca de emenda: o Dividir deixa o id nele) — a cota presa a
+      // ela e o que mais aponta para a peça continuam valendo depois de dividir e juntar (fluxo de 15/10)
+      const original = ents.find(e => !(e.atributos && e.atributos.emenda_de)) || ents[0];
+      c.id = original.id;
       c.inicio = j.inicio; c.fim = j.fim;
       c.recorte_inicio = 0; c.recorte_fim = 0;
       c.cortes_inicio = []; c.cortes_fim = [];
