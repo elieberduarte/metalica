@@ -610,3 +610,22 @@ def test_correntes_so_param_nas_vigas_e_banzos_e_pulam_as_que_ja_existem():
     d2.add(nova)
     r3 = modelagem.correntes(d2, [b.id for b in ls] + [nova.id], {"linhas": 1})
     assert len(r3["novas"]) == 2 and r3["avisos"]
+
+
+def test_trelica_e_contravento_sc1_nao_mudam_o_documento_recebido():
+    import json
+    def foto(d):
+        return json.dumps(d.dict(), sort_keys=True, default=str)
+    doc, sup, inf = _banzos(peca="TESOURA 1#1")
+    # uma alma que já estava no bloco: o encaixe mexe nela na cópia, não no recebido
+    doc.add(Barra(inicio=(0, 0, 0), fim=(0, 0, 1000), perfil="U 100×40×2,65", papel="montante",
+                  atributos={"origem": {"peca": "TESOURA 1#1"}}))
+    antes = foto(doc)
+    modelagem.trelica(doc, [sup.id, inf.id], {"tipo": "pratt", "passo": 1500})
+    assert foto(doc) == antes
+    a = Barra(inicio=(0, 0, 6000), fim=(0, 12000, 6000), perfil="W 250×32,7", papel="viga")
+    b = Barra(inicio=(6000, 0, 6000), fim=(6000, 12000, 6000), perfil="W 250×32,7", papel="viga")
+    doc = _doc(a, b)
+    antes = foto(doc)
+    r = modelagem.contravento_x(doc, [a.id, b.id], {"paineis": 2, "perfil": "FE RED 5/8''", "suporte": "sc1"})
+    assert foto(doc) == antes and r["resumo"]["suportes"] == 8

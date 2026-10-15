@@ -278,9 +278,10 @@ def trelica(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
     avisos = avisos_bloco
     # o encaixe das almas no banzo (a meia-esquadria e o recorte na face), como na montagem pela planta
     try:
-        from nucleo3d.modelo import Documento
         from nucleo3d import alma_na_face
-        tmp = Documento.de_dict(doc.dict())
+        from nucleo3d.ligacoes3d import _copia_de_trabalho
+        do_bloco = [e.id for e in doc.entidades.values() if ((getattr(e, "atributos", None) or {}).get("origem") or {}).get("peca") == peca]
+        tmp = _copia_de_trabalho(doc, do_bloco + [sup.id, inf.id])
         for bid, campos in alterar.items():
             for k_, v_ in campos.items():
                 setattr(tmp.entidades[bid], k_, v_)
@@ -356,22 +357,25 @@ def _com_suporte_sc1(doc, a, b, diagonais, paineis) -> dict:
     if abs(_norm(_sub(a.fim, a.inicio))[2]) > 0.7:
         raise ErroDeDados("o suporte SC1 é do contravento de cobertura (a cantoneira no topo do banzo): "
                           "entre pilares, lance sem suporte e aplique a ligação depois")
-    base = doc.dict()
-    base["entidades"] = list(base["entidades"]) + [d.dict() for d in diagonais]
-    por_id = {e["id"]: e for e in base["entidades"]}
+    import copy
+    trabalho = ligacoes3d._copia_de_trabalho(doc, [a.id, b.id])
+    for d in diagonais:
+        trabalho.add(d)
     novos_ids = [d.id for d in diagonais]
     alterar: Dict[str, dict] = {}
     for d in diagonais:
-        r = ligacoes3d.aplicar(Documento.de_dict(base), "suporte_contravento", [d.id, a.id, b.id])
+        r = ligacoes3d.aplicar(trabalho, "suporte_contravento", [d.id, a.id, b.id])
         for e in r["novas"]:
-            base["entidades"].append(e)
-            por_id[e["id"]] = e
-            novos_ids.append(e["id"])
+            ent = next(iter(Documento.de_dict({"entidades": [e]}).entidades.values()))
+            trabalho.add(ent)
+            novos_ids.append(ent.id)
         for i, campos in r["alterar"].items():
-            por_id[i].update({k: (list(v) if isinstance(v, tuple) else v) for k, v in campos.items()})
-            if i not in novos_ids:
+            ent = trabalho.entidades[i]
+            for k, v in campos.items():
+                setattr(ent, k, copy.deepcopy(tuple(v) if k in ("inicio", "fim") else v))
+            if i not in {x.id for x in diagonais} and i not in novos_ids:
                 alterar.setdefault(i, {}).update(campos)
-    novas = [por_id[i] for i in novos_ids]
+    novas = [trabalho.entidades[i].dict() for i in novos_ids]
     # os nós com dois suportes no mesmo lugar
     scs = [e for e in novas if e.get("papel") == "suporte"]
     juntos = sum(1 for i, x in enumerate(scs) for y in scs[i + 1:] if math.dist(x["inicio"], y["inicio"]) < 60.0)

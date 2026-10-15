@@ -69,7 +69,10 @@ def test_salvar_e_aplicar_a_chapa_de_topo_numa_viga_girada():
     v2 = Barra(nome="v2", inicio=(26000, 0, 3500), fim=(20000, 0, 3500), perfil=W, papel="viga")           # chega pelo fim
     doc.add(p2)
     doc.add(v2)
+    import json
+    antes = json.dumps(doc.dict(), sort_keys=True, default=str)
     r = DU.aplicar(doc, defin, [v2.id, p2.id])
+    assert json.dumps(doc.dict(), sort_keys=True, default=str) == antes       # o recebido não muda
     _aplicar(doc, r)
     novas = [e for e in doc.entidades.values() if ((e.atributos or {}).get("detalhe_usuario") or {}).get("barra") == v2.id]
     chapa = next(e for e in novas if e.tipo == "chapa")

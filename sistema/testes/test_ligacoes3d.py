@@ -398,3 +398,19 @@ def test_tirante_nos_suportes_sc1():
     # apagar devolve o tirante como era
     _aplicar(doc, ligacoes3d.remover(doc, r["ligacoes"][0]["id"]))
     assert tuple(tir.inicio) == (0, 0, 200) and tuple(tir.fim) == (6000, 5000, 200)
+
+
+def test_aplicar_e_refazer_nao_mudam_o_documento_recebido():
+    """a cópia de trabalho é rasa (só as barras da ligação copiadas a fundo): o modelo recebido fica igual"""
+    import json
+    pilar = Barra(nome="pilar", inicio=(0, 0, 0), fim=(0, 0, 4000), perfil=W, rotacao=90, papel="pilar")
+    viga = Barra(nome="viga", inicio=(0, 0, 3500), fim=(0, 6000, 3500), perfil=W, papel="viga")
+    doc = _doc(pilar, viga)
+    antes = json.dumps(doc.dict(), sort_keys=True, default=str)
+    r = ligacoes3d.aplicar(doc, "chapa_topo_joelho", [viga.id, pilar.id])
+    assert json.dumps(doc.dict(), sort_keys=True, default=str) == antes
+    _aplicar(doc, r)
+    depois = json.dumps(doc.dict(), sort_keys=True, default=str)
+    lid = r["ligacoes"][0]["id"]
+    ligacoes3d.aplicar(doc, "chapa_topo_joelho", [], {"t": 19}, ligacao=lid)
+    assert json.dumps(doc.dict(), sort_keys=True, default=str) == depois

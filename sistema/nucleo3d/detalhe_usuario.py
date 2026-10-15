@@ -174,7 +174,8 @@ def aplicar(doc, defin: dict, ids_alvo: Sequence[str], ponta: str = "auto") -> d
     altera o `doc`: devolve {"novas", "alterar", "avisos"}."""
     from nucleo3d.modelo import Barra, Documento
     from nucleo3d import producao
-    trabalho = Documento.de_dict(doc.dict())              # cópia: o recebido não muda
+    from nucleo3d.ligacoes3d import _copia_de_trabalho
+    trabalho = _copia_de_trabalho(doc, ids_alvo)          # o recebido não muda (só as barras do detalhe copiadas a fundo)
     alvos = [trabalho.entidades[i] for i in ids_alvo if isinstance(trabalho.entidades.get(i), Barra)]
     if not alvos:
         raise ErroDeDados("selecione a barra em que o detalhe vai (a mesma função da barra de referência dele)")

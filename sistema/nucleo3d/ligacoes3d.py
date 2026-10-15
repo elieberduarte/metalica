@@ -1126,6 +1126,30 @@ def _id_ligacao():
     return "L" + uuid.uuid4().hex[:10]
 
 
+def _copia_de_trabalho(doc, ids):
+    """A cópia em que a ligação trabalha: o dicionário das peças copiado, mas só as peças que a ligação altera (as
+    escolhidas) copiadas a fundo — copiar o modelo inteiro (Documento.de_dict(doc.dict())) levava 3,6 s no Posto CB,
+    17 mil peças, a cada ligação e a cada refazer."""
+    from nucleo3d.modelo import Documento
+    t = Documento(nome=doc.nome, unidade=doc.unidade, projeto=doc.projeto, metadados=copy.deepcopy(doc.metadados))
+    t.camadas, t.materiais = copy.deepcopy(doc.camadas), copy.deepcopy(doc.materiais)     # poucas; o add cria camada
+    t.entidades = dict(doc.entidades)
+    t._copiadas = set()
+    _copiar_em(t, ids)
+    return t
+
+
+def _copiar_em(trabalho, ids):
+    """as peças `ids` da cópia de trabalho passam a ser cópias de verdade (antes de a ligação mexer nelas)"""
+    feitas = getattr(trabalho, "_copiadas", None)
+    if feitas is None:
+        return                                           # documento de trabalho já copiado inteiro
+    for i in ids or ():
+        if i in trabalho.entidades and i not in feitas:
+            trabalho.entidades[i] = copy.deepcopy(trabalho.entidades[i])
+            feitas.add(i)
+
+
 def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = None, ligacao: Optional[str] = None,
             esforcos: Optional[dict] = None, analise: Optional[dict] = None) -> dict:
     """A ligação `tipo` nas barras `ids` (uma ligação por pilar, nas bases), ou `ligacao` (o id de uma aplicada) refeita
@@ -1136,7 +1160,7 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
     from nucleo import acessorios as A
     if tipo not in TIPOS_3D:
         raise ErroDeDados("ligação desconhecida para o 3D: %s" % tipo)
-    trabalho = Documento.de_dict(doc.dict())                # cópia: o recebido não muda
+    trabalho = _copia_de_trabalho(doc, ids)                # o recebido não muda
     remover: List[str] = []
     restaurar: Dict[str, dict] = {}
     base_parametros = dict(parametros or {})
@@ -1146,6 +1170,7 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
             raise ErroDeDados("a ligação %s não está mais no modelo" % ligacao)
         reg = velhas[0].atributos["ligacao"]
         ids = list(reg.get("pecas") or [])
+        _copiar_em(trabalho, ids)
         base_parametros = dict(reg.get("parametros") or {}, **(parametros or {}))
         _limpar_soldas(trabalho, velhas, ids)
         for e in velhas:
