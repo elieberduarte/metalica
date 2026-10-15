@@ -575,9 +575,10 @@ def producao(doc) -> List[dict]:
 
 
 def _sem_passante_pelo_furo(doc, achados) -> list:
-    """Tira as colisões da barra passante (tirante, barra roscada, chumbador) com a peça que tem um furo marcado (o
-    marcador da ferramenta Furo, `atributos.furo.peca`) por onde ela passa: o eixo da barra a até meio furo + 1 mm do
-    centro do furo — o tirante no furo do SC1 não é colisão."""
+    """Tira as colisões que são a ligação de projeto, não peça batendo: a barra passante (tirante, barra roscada,
+    chumbador) no furo marcado da outra peça (o marcador da ferramenta Furo, `atributos.furo.peca` — o tirante no SC1);
+    a corrente atravessando a alma da terça ou da longarina (o furo de fábrica); e duas correntes que se encontram pela
+    ponta (o nó, o V da cumeeira)."""
     from nucleo2d.detalhe.base import _RE_PASSANTE
     from nucleo3d.modelo import Barra
     furos = collections.defaultdict(list)
@@ -585,8 +586,6 @@ def _sem_passante_pelo_furo(doc, achados) -> list:
         f = (e.atributos or {}).get("furo") if isinstance(e.atributos, dict) else None
         if isinstance(f, dict) and f.get("peca") and f.get("ponto"):
             furos[f["peca"]].append((np.asarray(f["ponto"], float), float(f.get("d") or 0.0)))
-    if not furos:
-        return list(achados)
 
     def passante(e):
         return isinstance(e, Barra) and (str(e.papel) == "chumbador" or bool(_RE_PASSANTE.search(str(e.perfil) + " " + str(e.nome or ""))))
@@ -600,13 +599,29 @@ def _sem_passante_pelo_furo(doc, achados) -> list:
             if -0.05 <= t <= 1.05 and float(np.linalg.norm(a0 + w * t - P)) <= d / 2.0 + 1.0:
                 return True
         return False
+    def papel(e):
+        return str(getattr(e, "papel", "") or "").lower()
+
+    def corrente(e):
+        return isinstance(e, Barra) and papel(e) in ("corrente", "travamento")
+
+    def no_comum(x, y):
+        """as duas barras se encontram pela ponta (o nó das correntes, o vértice do V da cumeeira)"""
+        return any(math.dist(p, q) <= 30.0 for p in (x.inicio, x.fim) for q in (y.inicio, y.fim))
     fora = []
     for a in achados:
         ids = a.get("ids") or []
         if str(a.get("regra", "")).startswith("colisao") and len(ids) == 2:
             x, y = doc.entidades.get(ids[0]), doc.entidades.get(ids[1])
-            if x is not None and y is not None and ((passante(x) and pelo_furo(x, y)) or (passante(y) and pelo_furo(y, x))):
-                continue
+            if x is not None and y is not None:
+                if (passante(x) and pelo_furo(x, y)) or (passante(y) and pelo_furo(y, x)):
+                    continue
+                # a corrente passa pela alma da terça (ou da longarina) no furo de fábrica, de centro a centro
+                if (corrente(x) and papel(y) in ("terça", "terca", "longarina")) or \
+                        (corrente(y) and papel(x) in ("terça", "terca", "longarina")):
+                    continue
+                if corrente(x) and corrente(y) and no_comum(x, y):
+                    continue
         fora.append(a)
     return fora
 

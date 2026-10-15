@@ -80,6 +80,36 @@ def _topo(barra, n):
 
 # ------------------------------------------------------------------ terças por espaçamento
 
+def _juntar_trechos(infos, perp, tol: float = 50.0):
+    """Os trechos de um mesmo banzo (a tesoura com o banzo de cima partido nos nós, como vem do IFC ou da montagem pela
+    planta) viram um apoio só, da ponta mais baixa à mais alta: o mesmo plano vertical (perp) e a mesma reta. Cada
+    item é (barra, baixa, alta, direção); o do trecho mais comprido representa a seção (o topo pela malha)."""
+    grupos = []
+    for it in sorted(infos, key=lambda x: _dot(x[1], perp)):
+        a, baixa, alta, t = it
+        for g in grupos:
+            b0, bb, ba, bt = g[0]
+            if abs(_dot(_sub(baixa, bb), perp)) > tol or abs(_dot(t, bt)) < 0.995:
+                continue
+            # na mesma reta: a distância da ponta à reta do primeiro trecho
+            r = _sub(baixa, bb)
+            fora = _sub(r, _mul(bt, _dot(r, bt)))
+            if math.sqrt(_dot(fora, fora)) <= tol:
+                g.append(it)
+                break
+        else:
+            grupos.append([it])
+    juntos = []
+    for g in grupos:
+        bt = g[0][3]
+        pontas = [q for it in g for q in (it[1], it[2])]
+        baixa = min(pontas, key=lambda q: _dot(q, bt))
+        alta = max(pontas, key=lambda q: _dot(q, bt))
+        rep = max(g, key=lambda it: math.dist(it[1], it[2]))[0]
+        juntos.append((rep, baixa, alta, bt))
+    return juntos
+
+
 def tercas(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
     """As terças sobre as tesouras/vigas escolhidas (pelo menos duas, lado a lado em planta)."""
     from nucleo3d.modelo import Barra
@@ -111,9 +141,10 @@ def tercas(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
             raise ErroDeDados("o apoio %s está em pé: as terças vão sobre tesouras ou vigas" % (a.nome or a.id))
         infos.append((a, baixa, alta, t))
     perp = _norm(_cruz((0.0, 0.0, 1.0), (t0[0], t0[1], 0.0)))
-    infos.sort(key=lambda x: _dot(x[1], perp))
     if any(abs(_dot((x[3][0], x[3][1], 0.0), perp)) > 0.2 for x in infos):
         raise ErroDeDados("os apoios não estão paralelos em planta: selecione as tesouras de uma água")
+    infos = _juntar_trechos(infos, perp)
+    infos.sort(key=lambda x: _dot(x[1], perp))
     # a normal da água (para cima)
     nr = _norm(_cruz(perp, t0))
     if nr[2] < 0:
@@ -571,13 +602,40 @@ def longarinas(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
 
 # ------------------------------------------------------------------ correntes entre terças
 
+def _dist_segmentos(p0, p1, q0, q1) -> float:
+    """a menor distância entre os segmentos p0–p1 e q0–q1"""
+    d1, d2, r = _sub(p1, p0), _sub(q1, q0), _sub(p0, q0)
+    a, e, f = _dot(d1, d1), _dot(d2, d2), _dot(d2, r)
+    if a < 1e-9 and e < 1e-9:
+        return math.dist(p0, q0)
+    if a < 1e-9:
+        s_, t_ = 0.0, min(1.0, max(0.0, f / e))
+    else:
+        c = _dot(d1, r)
+        if e < 1e-9:
+            t_, s_ = 0.0, min(1.0, max(0.0, -c / a))
+        else:
+            b = _dot(d1, d2)
+            den = a * e - b * b
+            s_ = min(1.0, max(0.0, (b * f - c * e) / den)) if den > 1e-9 else 0.0
+            t_ = (b * s_ + f) / e
+            if t_ < 0.0:
+                t_, s_ = 0.0, min(1.0, max(0.0, -c / a))
+            elif t_ > 1.0:
+                t_, s_ = 1.0, min(1.0, max(0.0, (b - c) / a))
+    return math.dist(_add(p0, _mul(d1, s_)), _add(q0, _mul(d2, t_)))
+
+
 def _estacoes_de_apoio(doc, ids, w, ref_a, ref_z) -> List[float]:
     """as estações (ao longo de w, a partir de 0) em que outra barra cruza por baixo da linha de terça (ref_a + s·w), em
-    planta: as tesouras e as vigas que apoiam as terças"""
+    planta: as tesouras e as vigas que apoiam as terças — só viga e banzo (a diagonal, o montante e a presilha da
+    treliça cruzam também e partiam o vão em pedaços: 8 406 correntes no Posto CB, 15/10)"""
     fora = []
     sel = set(ids)
     for e in doc.entidades.values():
         if getattr(e, "tipo", "") != "barra" or e.id in sel:
+            continue
+        if str(getattr(e, "papel", "") or "").lower() not in ("viga", "banzo"):
             continue
         d = _sub(e.fim, e.inicio)
         if math.hypot(d[0], d[1]) < 1.0 or abs(_dot(_norm((d[0], d[1], 0.0)), w)) > 0.5:
@@ -689,6 +747,24 @@ def correntes(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
         return _add(a, _mul(_sub(c, a), t))
     novas = []
     n_vaos = 0
+    # as correntes que o modelo já tem (a obra montada pela planta, o galpão gerado): o par de terças que já tem corrente
+    # naquele vão não ganha outra (no Posto CB as novas cruzavam as de antes, 15/10)
+    existentes = [(e.inicio, e.fim) for e in doc.entidades.values() if getattr(e, "tipo", "") == "barra"
+                  and str(getattr(e, "papel", "") or "").lower() in ("corrente", "travamento")]
+    repetidas = 0
+    longe = set()
+
+    def toca(e0, e1, seg, sa_, sb_):
+        """a corrente e0→e1 passa a até 150 mm do eixo da terça `seg` dentro do vão (presa no eixo, na face ou no furo
+        da alma — a obra montada pela planta prende na face)"""
+        _b, a0, c0, s0_, s1_, _n = seg
+        x0, x1 = max(s0_, sa_), min(s1_, sb_)
+        if x1 <= x0:
+            return False
+        return _dist_segmentos(e0, e1, no_eixo(seg, x0), no_eixo(seg, x1)) <= 150.0
+
+    def par_ja_tem(seg0, seg1, sa_, sb_):
+        return any(toca(e0, e1, seg0, sa_, sb_) and toca(e0, e1, seg1, sa_, sb_) for e0, e1 in existentes)
     for sa, sb in zip(juntas[:-1], juntas[1:]):
         linhas = sorted((s for s in segs if s[3] <= sa + 1.0 and s[4] >= sb - 1.0), key=lambda s: s[5])
         unicas = []                                       # duas peças na mesma linha contam uma vez
@@ -698,13 +774,30 @@ def correntes(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
         if len(unicas) < 2:
             continue
         n_vaos += 1
+        com_corrente = {i for i in range(len(unicas) - 1) if existentes and par_ja_tem(unicas[i], unicas[i + 1], sa, sb)}
+        # só terças vizinhas de verdade: até 3,5 m uma da outra e no mesmo plano (a inclinação entre elas parecida com a
+        # da água) — a seleção de coberturas diferentes, lado a lado em planta, não liga uma na outra
+        xm = (sa + sb) / 2.0
+        cz = [(s_[5], no_eixo(s_, xm)[2]) for s_ in unicas]
+        incl = [(cz[i + 1][1] - cz[i][1]) / max(cz[i + 1][0] - cz[i][0], 1.0) for i in range(len(unicas) - 1)]
+        for i in range(len(unicas) - 1):
+            dc = cz[i + 1][0] - cz[i][0]
+            vizinhas = [incl[j] for j in (i - 1, i + 1) if 0 <= j < len(incl)]
+            quebra = vizinhas and all(abs(incl[i] - v) > 0.15 for v in vizinhas) and abs(incl[i]) > 0.3
+            if dc > 3500.0 or quebra:
+                longe.add((n_vaos, i))
         for k in range(1, n_lin + 1):
             xc = sa + (sb - sa) * k / (n_lin + 1.0)
             pts = [no_eixo(s, xc) for s in unicas]
             kc = _cumeeira_entre(pts, nw) if em_v else None
             for i, (q0, q1) in enumerate(zip(pts[:-1], pts[1:])):
                 at = {"tipo_ifc": "IfcMember", "vao": n_vaos, "linha_corrente": k}
+                if (n_vaos, i) in longe:
+                    continue
                 if i != kc:
+                    if i in com_corrente:
+                        repetidas += 1
+                        continue
                     novas.append(Barra(nome="Corrente de terça", inicio=_r(q0), fim=_r(q1), perfil=perfil, papel="corrente",
                                        camada="Terças", material="Aço", atributos=at))
                     continue
@@ -712,14 +805,21 @@ def correntes(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
                 # cumeeira (no plano dos centros das terças), adiantado 6 % do vão ao longo dela
                 adiante = 0.06 * (sb - sa)
                 xv = xc + adiante if xc + adiante <= sb else xc - adiante
+                if i in com_corrente:
+                    repetidas += 2
+                    continue
                 C = _ponto_da_cumeeira(pts, kc, nw, w, xv)
                 for q in (q0, q1):
                     novas.append(Barra(nome="Tirante de cumeeira", inicio=_r(q), fim=_r(C), perfil=perfil, papel="corrente",
                                        camada="Terças", material="Aço", atributos=dict(at, cumeeira=True)))
     if not novas:
+        if repetidas:
+            raise ErroDeDados("estes vãos já têm correntes entre as terças escolhidas (%d ficaram de fora)" % repetidas)
         raise ErroDeDados("nenhum vão com duas linhas de terças lado a lado")
     return {"novas": [b.dict() for b in novas], "resumo": {"vaos": n_vaos, "linhas": n_lin, "pecas": len(novas)},
-            "avisos": []}
+            "avisos": (["%d corrente(s) não entraram: o par de terças já tinha corrente naquele vão" % repetidas] if repetidas else []) +
+                      (["%d ligação(ões) entre terças longe uma da outra (mais de 3,5 m, ou de outro plano) ficaram de fora: "
+                        "selecione as terças de uma cobertura" % len(longe)] if longe else [])}
 
 
 # ------------------------------------------------------------------ mão-francesa
@@ -747,10 +847,14 @@ def mao_francesa(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
     apoios = [b for b in bs if b not in tercas]
     if not tercas:
         raise ErroDeDados("selecione as terças (e, se quiser, os apoios): a mão-francesa vai da terça à mesa de baixo do apoio")
-    if not apoios:
+    automatico = not apoios
+    if automatico:
+        # só vigas e banzos (a mão-francesa trava a mesa de baixo da viga de alma cheia); de cada cruzamento, o de
+        # logo abaixo da terça — sobre a treliça, é o banzo de cima, sem altura: não sai (montante, diagonal e forro
+        # não são apoio)
         sel = set(ids)
         apoios = [e for e in doc.entidades.values() if getattr(e, "tipo", "") == "barra" and e.id not in sel
-                  and str(getattr(e, "papel", "")).lower() not in ("terça", "terca", "corrente", "longarina", "contraventamento")
+                  and str(getattr(e, "papel", "")).lower() in ("viga", "banzo")
                   and abs(_norm(_sub(e.fim, e.inicio))[2]) < 0.7]
     perfil = str(p.get("perfil") or "L 1 1/2'' X 1/8''")
     _perfil(perfil)
@@ -764,7 +868,23 @@ def mao_francesa(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
     for t in tercas:
         wt = _norm(_sub(t.fim, t.inicio))
         Lt = math.dist(t.inicio, t.fim)
-        for a in apoios:
+        candidatos = list(apoios)
+        if automatico:
+            # o apoio logo abaixo de cada ponto da terça: em cada estação, o de cima
+            def altura_sob(a):
+                r_ = _cruzamento_em_planta(t.inicio, t.fim, a.inicio, a.fim)
+                if r_ is None or not (-0.001 <= r_[0] <= 1.001 and -0.001 <= r_[1] <= 1.001):
+                    return None
+                N_ = _add(t.inicio, _mul(_sub(t.fim, t.inicio), r_[0]))
+                A_ = _add(a.inicio, _mul(_sub(a.fim, a.inicio), r_[1]))
+                return (round(r_[0] * Lt / 50.0), A_[2]) if 0.0 < N_[2] - A_[2] <= 1500.0 else None
+            melhores = {}
+            for a in apoios:
+                k = altura_sob(a)
+                if k is not None and (k[0] not in melhores or k[1] > melhores[k[0]][0]):
+                    melhores[k[0]] = (k[1], a)
+            candidatos = [a for _z, a in melhores.values()]
+        for a in candidatos:
             r = _cruzamento_em_planta(t.inicio, t.fim, a.inicio, a.fim)
             if r is None:
                 continue
@@ -789,8 +909,8 @@ def mao_francesa(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
             n_p = _norm(_cruz(wt, (0.0, 0.0, 1.0)))
             wth = _norm(_sub(wt, _mul(wa, _dot(wt, wa))))
             h = T0[2] - (A[2] - desce)
-            if h < 50.0:
-                continue                                  # sem altura para a mão-francesa
+            if h < 120.0:
+                continue                                  # sem altura (o banzo de cima da treliça dá ~100): não sai
             dist = h / math.tan(ang)
             # a cantoneira encosta na face de trás da alma da terça (o lado oposto à boca do U), deste lado do plano
             ut = _u_da_barra(wt, t.rotacao)

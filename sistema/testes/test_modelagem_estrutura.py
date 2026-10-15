@@ -543,3 +543,70 @@ def test_marcador_de_furo_do_sc1_nao_vira_peca_fora_do_aco_no_detalhamento():
     assert any((e.atributos or {}).get("furo") for e in d2.entidades.values())
     lev = levantar(d2)
     assert not any("não são de aço" in str(x) for x in (lev.get("avisos") or [])), lev.get("avisos")
+
+
+def test_tercas_juntam_os_trechos_do_banzo_partido_nos_nos():
+    """o banzo de cima partido em trechos (um por painel, como vem do IFC): selecionados os trechos das duas tesouras,
+    as terças saem iguais às do banzo inteiro"""
+    doc_i, t1, t2 = _duas_tesouras()
+    r_inteiro = modelagem.tercas(doc_i, [t1.id, t2.id], {"espacamento": 1500})
+    trechos = []
+    for y in (0, 5000):
+        for k in range(4):
+            x0, x1 = 1500 * k, 1500 * (k + 1)
+            trechos.append(Barra(inicio=(x0, y, 5000 + 0.1 * x0), fim=(x1, y, 5000 + 0.1 * x1), perfil="W 150×13", papel="banzo"))
+    doc = _doc(*trechos)
+    r = modelagem.tercas(doc, [b.id for b in trechos], {"espacamento": 1500})
+    assert r["resumo"] == r_inteiro["resumo"]
+    a = sorted(tuple(round(c) for c in b["inicio"]) for b in r["novas"])
+    b_ = sorted(tuple(round(c) for c in b["inicio"]) for b in r_inteiro["novas"])
+    assert a == b_
+
+
+def test_conferencia_aceita_a_corrente_na_alma_da_terca_e_o_no_das_correntes():
+    from nucleo3d.conferencia_producao import conferir
+    doc, ls, z = _duas_aguas()
+    # a terça girada com a alma de pé no eixo (a corrente entra na alma, não no vazio do U)
+    for t in ls:
+        t.rotacao = 90.0
+    r = modelagem.correntes(doc, [b.id for b in ls], {"linhas": 1})
+    d2 = Documento.de_dict(dict(doc.dict(), entidades=doc.dict()["entidades"] + r["novas"]))
+    achados = [x for x in conferir(d2, quais=("colisao",))["achados"] if x["regra"].startswith("colisao")]
+    nomes = [{d2.entidades[i].papel for i in x["ids"]} for x in achados]
+    assert not any("corrente" in n for n in nomes), nomes
+
+
+def test_mao_francesa_nao_pega_montante_diagonal_nem_forro_da_trelica():
+    # a terça sobre a treliça: logo abaixo, o banzo de cima (sem altura); mais abaixo, montante, diagonal e forro
+    bs = Barra(inicio=(3000, 0, 5000), fim=(3000, 8000, 5000), perfil="U 100×40×2,65", papel="banzo")
+    bi = Barra(inicio=(3000, 0, 4000), fim=(3000, 8000, 4000), perfil="U 100×40×2,65", papel="banzo")
+    dg = Barra(inicio=(3000, 1000, 4000), fim=(3000, 3000, 5000), perfil="U 100×40×2,65", papel="diagonal")
+    fo = Barra(inicio=(0, 2000, 4300), fim=(6000, 2000, 4300), perfil="U 100×40×2,65", papel="forro")
+    t = Barra(inicio=(0, 2000, 5050 + 75), fim=(6000, 2000, 5050 + 75), perfil="Ue 150×60×20×2,25", papel="terça")
+    doc = _doc(bs, bi, dg, fo, t)
+    with pytest.raises(ErroDeDados):
+        modelagem.mao_francesa(doc, [t.id], {})
+    # escolhido o banzo de baixo à mão, sai
+    r = modelagem.mao_francesa(doc, [t.id, bi.id], {})
+    assert len(r["novas"]) == 2
+
+
+def test_correntes_so_param_nas_vigas_e_banzos_e_pulam_as_que_ja_existem():
+    doc, ts, ls = _cobertura()
+    # uma diagonal e um forro cruzando por baixo das terças no meio do vão: não partem o vão
+    doc.add(Barra(inicio=(3000, 0, 5000), fim=(3100, 8000, 5500), perfil="L 2'' X 3/16''", papel="diagonal"))
+    doc.add(Barra(inicio=(4000, 0, 5100), fim=(4000, 8000, 5100), perfil="L 2'' X 3/16''", papel="forro"))
+    r = modelagem.correntes(doc, [b.id for b in ls], {"linhas": 1})
+    assert r["resumo"]["vaos"] == 2 and len(r["novas"]) == 6
+    # lançadas uma vez, a segunda não repete
+    d2 = Documento.de_dict(dict(doc.dict(), entidades=doc.dict()["entidades"] + r["novas"]))
+    with pytest.raises(ErroDeDados):
+        modelagem.correntes(d2, [b.id for b in ls], {"linhas": 1})
+    # nos terços também não: o par já tem corrente naquele vão
+    with pytest.raises(ErroDeDados):
+        modelagem.correntes(d2, [b.id for b in ls], {"linhas": 2})
+    # uma terça a mais (de fora do par que já tem): só o par novo ganha corrente
+    nova = Barra(inicio=(0, 8500, 5000 + 850 + 150), fim=(12000, 8500, 5000 + 850 + 150), perfil="Ue 150×60×20×2,25", papel="terça")
+    d2.add(nova)
+    r3 = modelagem.correntes(d2, [b.id for b in ls] + [nova.id], {"linhas": 1})
+    assert len(r3["novas"]) == 2 and r3["avisos"]
