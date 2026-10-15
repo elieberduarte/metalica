@@ -89,7 +89,14 @@ try:
         tecla("Enter")
         aba.drenar(0.3)
 
-    js("""editor.camera.enquadrar([[-1500, -2500, 0], [7500, 2500, 3500]]); editor.camera.concluirAnimacao && editor.camera.concluirAnimacao(); return 1;""")
+    # a abertura do editor faz um enquadramento animado próprio, que às vezes termina depois do nosso e o desfaz: espera
+    # a câmera assentar, enquadra e confere que ela ficou
+    pos_cam = lambda: js("const c = editor.camera.ativa.position; return [c.x, c.y, c.z].map(v => Math.round(v * 1000));")
+    for _ in range(5):
+        aba.drenar(0.8)
+        js("""editor.camera.enquadrar([[-1500, -2500, 0], [7500, 2500, 3500]]); editor.camera.concluirAnimacao && editor.camera.concluirAnimacao(); return 1;""")
+        a_ = pos_cam(); aba.drenar(0.8)
+        if pos_cam() == a_: break
     aba.drenar(0.5)
     barras = lambda: js("return [...editor.documento.entidades.values()].filter(e => e.tipo === 'barra').map(e => ({ id: e.id, i: e.inicio.map(Math.round), f: e.fim.map(Math.round), papel: e.papel }));")
 

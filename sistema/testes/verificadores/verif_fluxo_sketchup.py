@@ -89,7 +89,14 @@ try:
         tecla("Enter")
         aba.drenar(0.3)
 
-    js("""editor.camera.enquadrar([[-5000, -6000, -500], [11000, 8000, 3000]]); editor.camera.concluirAnimacao && editor.camera.concluirAnimacao(); return 1;""")
+    # a abertura do editor faz um enquadramento animado próprio, que às vezes termina depois do nosso e o desfaz: espera
+    # a câmera assentar, enquadra e confere que ela ficou
+    pos_cam = lambda: js("const c = editor.camera.ativa.position; return [c.x, c.y, c.z].map(v => Math.round(v * 1000));")
+    for _ in range(5):
+        aba.drenar(0.8)
+        js("""editor.camera.enquadrar([[-5000, -6000, -500], [11000, 8000, 3000]]); editor.camera.concluirAnimacao && editor.camera.concluirAnimacao(); return 1;""")
+        a_ = pos_cam(); aba.drenar(0.8)
+        if pos_cam() == a_: break
     aba.drenar(0.5)
     barras = lambda: js("return [...editor.documento.entidades.values()].filter(e => e.tipo === 'barra').map(e => ({ id: e.id, i: e.inicio.map(Math.round), f: e.fim.map(Math.round), papel: e.papel }));")
 
@@ -115,6 +122,7 @@ try:
     h2 = (solidos() or [{}])[0].get("lim")
     tecla("Escape")
     ok(h1 and h1[2] == [0, 1000] and h2 and h2[2] == [0, 1500] and len(solidos()) == 1, f"P na face: 1000 e o 1500 logo depois corrige: {(h1 and h1[2], h2 and h2[2])}")
+    aba.drenar(0.8)   # o tempo de uma pessoa entre um comando e outro (sem ele o clique seguinte saía calculado antes da tela assentar)
     # 3. O na face de cima e 200
     tecla("o")
     clicar(*tela([o[0] + 1500, o[1] + 1000, 1500]))
