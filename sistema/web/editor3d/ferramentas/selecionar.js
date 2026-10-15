@@ -4,6 +4,8 @@
 // esquerda para a direita pega só o que está inteiramente dentro; da direita para a
 // esquerda pega também o que apenas toca, como em qualquer CAD. Duplo clique amplia a
 // seleção para os objetos semelhantes (mesmo tipo e mesmo perfil).
+// Tab, com o mouse parado, passa o destaque para a peça de trás (Shift+Tab volta), como no Revit; o clique no mesmo
+// lugar seleciona a destacada — a peça escondida atrás da outra sem girar a vista.
 
 import { Ferramenta } from './base.js';
 
@@ -40,13 +42,31 @@ export class Selecionar extends Ferramenta {
                                            : 'janela: o que tocar');
       return;
     }
+    this._tela = p.tela.slice(0, 2);
+    // o ciclo do Tab vale enquanto o mouse fica no lugar
+    const c = this._noCiclo(p.tela);
+    if (c) {
+      this.editor.selecao.realcarSobre(c.ids[c.i]);
+      const e = this.editor.documento.get(c.ids[c.i]);
+      this.editor.medida(e ? this.editor.descreverEntidade(e) : '');
+      return;
+    }
+    this._ciclo = null;
     // Sem arrasto: só destaca o que está sob o cursor.
     const alvo = this.editor.selecao.sob(p.tela[0], p.tela[1]);
     this.editor.selecao.realcarSobre(alvo ? alvo.id : null);
     this.editor.medida(alvo ? this.editor.descreverEntidade(alvo.entidade) : '');
   }
 
+  /** O ciclo do Tab, se o ponto `tela` está onde ele começou (3 px). */
+  _noCiclo(tela) {
+    const c = this._ciclo;
+    return c && tela && Math.hypot(tela[0] - c.pos[0], tela[1] - c.pos[1]) <= 3 ? c : null;
+  }
+
   onPonto(p, ev) {
+    const c = this._noCiclo(p.tela);
+    if (c) { this.editor.selecao.clicar(c.ids[c.i], ev); this._ciclo = null; return; }
     const alvo = this.editor.selecao.sob(p.tela[0], p.tela[1]);
     this.editor.selecao.clicar(alvo ? alvo.id : null, ev);
   }
@@ -80,6 +100,7 @@ export class Selecionar extends Ferramenta {
   onTecla(ev) {
     if (ev.type !== 'keydown') return false;
     const sel = this.editor.selecao;
+    if (ev.key === 'Tab' && !ev.ctrlKey && !ev.altKey) return this._tab(ev.shiftKey ? -1 : 1);
     // Alt + clique de tipo: atalhos de seleção por critério.
     if (ev.altKey && !ev.ctrlKey) {
       const primeira = sel.entidades[0];
@@ -90,7 +111,27 @@ export class Selecionar extends Ferramenta {
     return false;
   }
 
+  /** Tab: o destaque passa para a próxima peça sob o cursor (de trás); `passo` -1 volta. */
+  _tab(passo) {
+    const pos = this._tela;
+    if (!pos) return true;
+    let c = this._noCiclo(pos);
+    if (!c) {
+      const ids = this.editor.selecao.todosSob(pos[0], pos[1]);
+      if (ids.length < 2) { this.editor.dica(ids.length ? 'Só uma peça sob o cursor.' : 'Nada sob o cursor.'); return true; }
+      c = this._ciclo = { pos: pos.slice(), ids, i: 0 };
+    }
+    c.i = (c.i + passo + c.ids.length) % c.ids.length;
+    this.editor.selecao.realcarSobre(c.ids[c.i]);
+    const e = this.editor.documento.get(c.ids[c.i]);
+    const nome = e ? (e.perfil || e.nome || e.tipo) : '';
+    this.editor.dica(`Tab: ${c.i + 1} de ${c.ids.length} sob o cursor — ${nome} · clique seleciona esta · Shift+Tab volta`);
+    this.editor.medida(e ? this.editor.descreverEntidade(e) : '');
+    return true;
+  }
+
   cancelar() {
+    this._ciclo = null;
     this._fecharJanela();
     this.editor.selecao.limpar();
   }

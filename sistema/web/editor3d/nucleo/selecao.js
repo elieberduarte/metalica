@@ -99,6 +99,27 @@ export class Selecao {
     return null;
   }
 
+  /**
+   * Todas as peças sob o cursor, da mais perto para a mais longe (sem repetir; só as que aparecem e fora do pedaço
+   * cortado): a lista do Tab da ferramenta Selecionar — a peça que está atrás de outra (o "Tab" do Revit).
+   */
+  todosSob(x, y) {
+    this.raio.setFromCamera(this._ndc(x, y), this.camera.ativa);
+    const alvos = this.cena.alvos;
+    if (!alvos.length) return [];
+    this.raio.params.Line.threshold = 6 * this.camera.mmPorPixel();
+    const corte = this.cena.planosCorte && this.cena.planosCorte.length ? this.cena.planosCorte : null;
+    const ids = [];
+    for (const h of this.raio.intersectObjects(alvos, false)) {
+      if (!h.object.isMesh) continue;
+      if (corte && corte.some(pl => pl.distanceToPoint(h.point) < -1e-6)) continue;
+      const id = h.entidadeId || (h.object.userData.entidadeDe ? h.object.userData.entidadeDe(h.faceIndex) : h.object.userData.entidade);
+      const e = id && this.documento.get(id);
+      if (e && this.documento.aparece(e) && !ids.includes(id)) ids.push(id);
+    }
+    return ids;
+  }
+
   /** Raio do cursor, em milímetros: origem e direção. */
   raioEm(x, y) {
     this.raio.setFromCamera(this._ndc(x, y), this.camera.ativa);
