@@ -120,6 +120,27 @@ try:
         ok(r and r["diag"] and r["est45"] == [0, 2325], f"[{jeito}] e corta a 45° (x + y = 2325 na ponta toda): {r and (r['diag'], r['est45'])}")
         ok(r and r["volta"] == [0, 2000], f"[{jeito}] Ctrl+Z volta a ponta: {r and r['volta']}")
         ok(r and r["bico"]["x"] == [0, 2050] and "não é um corte só" in r["bico"]["dica"], f"[{jeito}] a ponta com dois planos fica como está, com o aviso: {r and r['bico']}")
+    # a barra do catálogo: o U virado 180° gira pelo meio da caixa da seção (não pelo centro de gravidade, junto da alma)
+    t0 = time.time()
+    while time.time() - t0 < 30 and not aba.avaliar("!!editor.cena.perfil('U 150×50×3,00 (FF)')"):
+        aba.avaliar("editor.cena._secaoDoPerfil('U 150×50×3,00 (FF)'), 0"); aba.drenar(0.5)
+    r = jsj("""const ed = editor, doc = ed.documento;
+      const b = doc.add({ tipo: 'barra', nome: 'U', perfil: 'U 150×50×3,00 (FF)', inicio: [0, 3000, 0], fim: [2000, 3000, 0], rotacao: 0, papel: 'terça', camada: 'Estrutura', atributos: {} });
+      const furo = doc.add({ tipo: 'solido', nome: 'FURO 13.5', camada: 'Furos', vertices: [[1000, 3000, 60], [1000, 3005, 60]], faces: [], arestas_vivas: [[0, 1]], atributos: { furo: { peca: b.id } } });
+      ed.ativarFerramenta('virar'); const f = ed.ativa;
+      const contorno = (e) => f._contorno(e, [1000, 3000, 0], 0);
+      const lim = (pts) => [0, 1, 2].map(i => [Math.round(Math.min(...pts.map(p => p[i])) * 10) / 10, Math.round(Math.max(...pts.map(p => p[i])) * 10) / 10]);
+      const antes = lim(contorno(doc.get(b.id)));
+      const cg = doc.get(b.id).inicio.slice();
+      f._barraSob = () => ({ e: doc.get(b.id), ponto: [1000, 3000, 0] });
+      f.onPonto({}, { ctrlKey: true });
+      const e1 = doc.get(b.id), depois = lim(contorno(e1));
+      return { antes, depois, rot: e1.rotacao, andou: [0, 1, 2].map(i => Math.round((e1.inicio[i] - cg[i]) * 10) / 10),
+               furo: doc.get(furo.id).vertices.map(p => p.map(x => Math.round(x * 10) / 10)) };""")
+    print("     ", r)
+    ok(r and r["antes"] == r["depois"] and r["rot"] == 180, f"o U do catálogo virado 180° ocupa a mesma caixa (girou pelo meio da seção): {r and (r['antes'], r['depois'])}")
+    ok(r and abs(sum(abs(x) for x in r["andou"]) - 27.4) < 1.5, f"o nó (centro de gravidade) andou para o outro lado da alma: {r and r['andou']}")
+    ok(r and all(abs(p[2] + 60) < 0.2 for p in r["furo"]), f"o furo da barra girou junto (z 60 → -60): {r and r['furo']}")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:2]]}")
 finally:

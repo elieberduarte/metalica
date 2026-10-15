@@ -6,8 +6,11 @@
 //   Shift + clique .... gira o passo ao contrário
 //   Ctrl + clique ..... vira 180° (a boca do U, a aba da cantoneira para o outro lado)
 //   digite o ângulo ... e Enter: vira o passo dos próximos cliques (15, 45, 22,5…)
-// Com barras já selecionadas, o clique numa delas vira todas (cada uma no próprio eixo). O eixo e os nós não
-// mudam — é o campo Rotação do painel de propriedades, a um clique; Ctrl+Z desfaz.
+// Com barras já selecionadas, o clique numa delas vira todas (cada uma no próprio eixo); muda o campo
+// Rotação do painel de propriedades, a um clique; Ctrl+Z desfaz.
+// O giro é em torno do meio da caixa da seção, como o Virar do SketchUp (usuário, 14/10: "ele gira no entorno da face do
+// perfil" — o nó é o centro de gravidade, que no U e na cantoneira fica junto da alma ou do canto): o U virado 180°
+// troca a boca de lado no mesmo espaço; os nós andam o que for preciso para isso, e os furos vão junto.
 // O perfil que veio do IFC como malha também vira: no eixo dele (o maior eixo principal), pelo meio da caixa da seção
 // (revisão 14/10; antes a ferramenta mandava usar o Girar).
 
@@ -59,14 +62,48 @@ export class FerramentaVirar extends Ferramenta {
     return (ev && ev.shiftKey ? -1 : 1) * this.constructor.passo;
   }
 
+  /** O meio da caixa da seção, no sistema dela (a origem é o centro de gravidade). */
+  _centroDaSecao(perfil) {
+    try {
+      const pts = this.cena._secaoDoPerfil(perfil).extractPoints(8).shape;
+      const xs = pts.map(q => q.x), ys = pts.map(q => q.y);
+      return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+    } catch (e) { return [0, 0]; }
+  }
+
+  /**
+   * A barra virada `delta` graus em torno do meio da caixa da seção: {campos, fp, fv} — a rotação nova e os nós andados
+   * para o meio da seção ficar no lugar (os cortes das pontas, relativos ao nó, ficam onde estão no mundo); `fp`/`fv` levam
+   * os marcadores de furo da barra junto.
+   */
+  _virada(b, delta) {
+    const r1 = norm360((b.rotacao || 0) + delta);
+    const [cx, cy] = this._centroDaSecao(b.perfil);
+    const B0 = baseDaBarra(b.inicio, b.fim, b.rotacao || 0), B1 = baseDaBarra(b.inicio, b.fim, r1);
+    const off0 = C.add(C.mul(B0.u, cx), C.mul(B0.v, cy)), off1 = C.add(C.mul(B1.u, cx), C.mul(B1.v, cy));
+    const desl = C.sub(off0, off1);
+    const campos = { rotacao: r1 };
+    if (C.comp(desl) > 1e-6) {
+      campos.inicio = C.add(b.inicio, desl).map(x => Math.round(x * 1e4) / 1e4);
+      campos.fim = C.add(b.fim, desl).map(x => Math.round(x * 1e4) / 1e4);
+      for (const k of ['cortes_inicio', 'cortes_fim']) {
+        if (Array.isArray(b[k]) && b[k].length) campos[k] = b[k].map(c => ({ ...c, ponto: C.sub(c.ponto, desl) }));
+      }
+    }
+    const O = C.add(b.inicio, off0);
+    const fv = (w) => C.add(C.add(C.mul(B0.t, C.dot(w, B0.t)), C.mul(B1.u, C.dot(w, B0.u))), C.mul(B1.v, C.dot(w, B0.v)));
+    return { campos, fp: (p) => C.add(O, fv(C.sub(p, O))), fv };
+  }
+
   /** O contorno da seção da barra girada de `delta`, no ponto do eixo mais perto de `ponto`. */
   _contorno(b, ponto, delta) {
     const forma = this.cena._secaoDoPerfil(b.perfil);
     const pts = forma.extractPoints(8).shape;
-    const { t, u, v } = baseDaBarra(b.inicio, b.fim, norm360((b.rotacao || 0) + delta));
-    const L = C.dist(b.inicio, b.fim);
-    const s = Math.max(0, Math.min(L, C.dot(C.sub(ponto, b.inicio), t)));
-    const O = C.add(b.inicio, C.mul(t, s));
+    const vb = delta ? { ...b, ...this._virada(b, delta).campos } : b;
+    const { t, u, v } = baseDaBarra(vb.inicio, vb.fim, norm360(vb.rotacao || 0));
+    const L = C.dist(vb.inicio, vb.fim);
+    const s = Math.max(0, Math.min(L, C.dot(C.sub(ponto, vb.inicio), t)));
+    const O = C.add(vb.inicio, C.mul(t, s));
     return pts.map(q => C.add(O, C.add(C.mul(u, q.x), C.mul(v, q.y))));
   }
 
@@ -101,7 +138,14 @@ export class FerramentaVirar extends Ferramenta {
     const cmds = [];
     for (const id of ids) {
       const e = this.documento.get(id);
-      if (e.tipo === 'barra') { cmds.push(C.cmdAlterar(id, { rotacao: norm360((e.rotacao || 0) + d) }, 'Virar perfil')); continue; }
+      if (e.tipo === 'barra') {
+        const { campos, fp, fv } = this._virada(e, d);
+        cmds.push(C.cmdAlterar(id, campos, 'Virar perfil'));
+        for (const m of C.pecasParaTransformar(this.documento, [e]).pecas) {
+          if (m.id !== id) cmds.push(C.cmdAlterar(m.id, C.camposTransformados(m, fp, fv), 'Virar perfil'));
+        }
+        continue;
+      }
       // a malha: gira no próprio eixo, com os marcadores de furo dela
       const q = quadroDaMalha(e);
       if (!q) continue;
