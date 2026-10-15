@@ -796,6 +796,27 @@ class _Exportador:
         if marcas.get("nome"):
             props.append(self._prop_valor("Nome", "IFCLABEL", str(marcas["nome"]),
                                           descricao="nome de produção"))
+        # a informação de produção dada no editor 3D (14/10/2026): sai no IFC e volta na importação
+        if marcas.get("principal"):
+            props.append(self._prop_valor("PecaPrincipal", "IFCBOOLEAN", True,
+                                          descricao="peça principal do conjunto de montagem"))
+        if at.get("fase"):
+            props.append(self._prop_valor("Fase", "IFCLABEL", str(at["fase"]), descricao="fase / lote de montagem"))
+        if at.get("acabamento"):
+            props.append(self._prop_valor("Acabamento", "IFCLABEL", str(at["acabamento"])))
+        lig = at.get("ligacao") if isinstance(at.get("ligacao"), dict) else None
+        if lig and lig.get("tipo"):
+            props.append(self._prop_valor("Ligacao", "IFCLABEL", str(lig["tipo"]),
+                                          descricao="ligação da biblioteca aplicada no 3D"))
+        soldas = at.get("soldas") if isinstance(at.get("soldas"), dict) else None
+        if soldas:
+            nomes_t = {"filete": "filete", "penetracao": "penetração"}
+            nomes_l = {"fabrica": "fábrica", "obra": "obra", "nenhuma": "sem solda"}
+            txt = "; ".join("%s: %s %s mm%s %s" % (k, nomes_t.get(d.get("tipo"), d.get("tipo", "")), d.get("perna", ""),
+                                                   " 2 lados" if d.get("lados") == 2 else "", nomes_l.get(d.get("local"), ""))
+                            for k, d in sorted(soldas.items()) if isinstance(d, dict))
+            if txt:
+                props.append(self._prop_valor("Soldas", "IFCTEXT", txt[:250], descricao="soldas definidas com as outras posições"))
         props += self._reserva_aparencia(ent)
         return props
 

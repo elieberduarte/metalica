@@ -459,6 +459,15 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
     consumida = lambda p: p.classe == "telha" and all(m in md["posicoes"] for m in (getattr(p, "marcas", None) or [p.marca]))   # noqa: E731
     lista = [p for p in lista if not consumida(p)]
     linhas = [_linha_posicao(p, categorias.get(p.marca, "OUTROS")) for p in lista]
+    # a fase e o acabamento dados no editor 3D (o lado BIM, 14/10/2026): os das peças da posição
+    if pecas:
+        por_id = {e.id: e for e in pecas}
+        for li, p in zip(linhas, lista):
+            ats = [(por_id[i].atributos or {}) for i in (p.global_ids or []) if i in por_id]
+            for campo in ("fase", "acabamento"):
+                vals = sorted({str(a.get(campo)) for a in ats if a.get(campo)})
+                if vals:
+                    li[campo] = ", ".join(vals)
     for i, t in enumerate(md["telhas"], 1):
         # MD/CU: o padrão da fábrica, o mesmo das pranchas (detalhar)
         nome_md = (nomes_telhas or {}).get(str(t["conjunto"])) or "MD%d" % i     # o mesmo das pranchas (D9, 11/10)
@@ -640,6 +649,12 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
 
     conjuntos = _conjuntos(pecas or [], por_marca, nomes_conjuntos)
     soldas = _soldas(pecas or [], por_marca) + _soldas_dos_conjuntos(pecas or [], fixadores, conjuntos)
+    # as soldas definidas no 3D como de obra (entre peças que chegam separadas): por par de posições
+    try:
+        from nucleo2d.detalhe.soldas import soldas_de_obra
+        soldas_obra = soldas_de_obra(pecas or [])
+    except Exception:                                    # noqa: BLE001
+        soldas_obra = []
     ressalvas = [{"marca": p.marca, "perfil": p.perfil, "observacoes": list(p.observacoes)} for p in lista if p.observacoes]
     from saida.dobras import com_bitola_e_mm
     # o nome do perfil para quem lê, com a bitola e a espessura em mm (pedido do usuário, 05/10: "sempre coloque
@@ -669,6 +684,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         "dobrados": dobrados,
         "conjuntos": conjuntos,
         "soldas": soldas,
+        "soldas_obra": soldas_obra,
         "acessorios": [{"nome": k, "quantidade": v} for k, v in sorted((acessorios or {}).items())],
         "ressalvas": ressalvas,
     }
@@ -914,12 +930,14 @@ def gravar_romaneio_da_lista(caminho: str, lista: dict) -> str:
                        li.get("classe", ""), li.get("perfil", ""), li.get("material", ""), li.get("quantidade", 0),
                        li.get("comprimento") or "", li.get("largura") or "", _num_csv(li["espessura"], 1) if li.get("espessura") else "",
                        li.get("furos", ""), li.get("parafusos", ""), _num_csv(li.get("peso") or 0.0, 3),
-                       _num_csv(li.get("peso_total") or 0.0, 2), "; ".join(li.get("observacoes") or [])])
+                       _num_csv(li.get("peso_total") or 0.0, 2), "; ".join(li.get("observacoes") or []),
+                       li.get("fase", ""), li.get("acabamento", "")])
     for a in lista.get("acessorios") or []:
-        linhas.append(["", "", "", "Acessório", a["nome"], "", a["quantidade"], "", "", "", "", "", "", "", "só na lista"])
+        linhas.append(["", "", "", "Acessório", a["nome"], "", a["quantidade"], "", "", "", "", "", "", "", "só na lista", "", ""])
+    # Fase e Acabamento no fim (14/10/2026): as colunas de antes ficam no mesmo lugar para quem já lê o CSV
     return _csv(caminho, ["Nome", "Posicao", "Conjuntos", "Tipo", "Perfil / chapa", "Material", "Qtd",
                           "Comprimento (mm)", "Largura (mm)", "Espessura (mm)", "Furos", "Parafusos",
-                          "Peso unit (kg)", "Peso total (kg)", "Observacoes"], linhas)
+                          "Peso unit (kg)", "Peso total (kg)", "Observacoes", "Fase", "Acabamento"], linhas)
 
 
 def gravar(pasta: str, lista: dict, posicoes: Sequence[Posicao], acessorios: Dict[str, int]) -> dict:
@@ -968,13 +986,17 @@ def gravar(pasta: str, lista: dict, posicoes: Sequence[Posicao], acessorios: Dic
                                   "Peso unitario (kg)", "Peso total (kg)"],
                                  [[c.get("nome", ""), c["marca"], c["categoria"], c["instancias"], c["pecas_unidade"], c["composicao_texto"],
                                    _num_csv(c["peso_unitario"]), _num_csv(c["peso_total"])] for c in lista["conjuntos"]])
-    if lista.get("soldas"):
+    if lista.get("soldas") or lista.get("soldas_obra"):
+        # as de obra (definidas no editor 3D): uma linha por par de posições, a quantidade de encontros como instâncias
+        obra = [[("obra: %s" % o["pecas"]), o["quantidade"], o["pecas"], o["tipo"], _num_csv(o["perna"], 1), o["lados"],
+                 _num_csv(o["comprimento"], 1), "obra", _num_csv(o["comprimento"] * o["lados"] / 1000.0, 3),
+                 _num_csv(o["comprimento"] * o["lados"] * o["quantidade"] / 1000.0, 2)] for o in lista.get("soldas_obra") or []]
         arquivos["soldas"] = _csv(os.path.join(pasta, "soldas.csv"),
                                   ["Montagem", "Instancias", "Pecas", "Tipo", "Perna (mm)", "Lados", "Comprimento (mm)",
                                    "Local", "Cordao por unidade (m)", "Cordao total (m)"],
                                   [[sd["montagem"], sd["instancias"], c["pecas"], c["tipo"], _num_csv(c["perna_mm"], 1), c["lados"],
                                     _num_csv(c["comprimento_mm"], 1), c["local"], _num_csv(sd["m_unidade"], 3), _num_csv(sd["m_total"], 2)]
-                                   for sd in lista["soldas"] for c in sd["cordoes"]])
+                                   for sd in lista.get("soldas") or [] for c in sd["cordoes"]] + obra)
     if lista.get("pre_moldados"):
         arquivos["pre_moldados"] = _csv(os.path.join(pasta, "pre-moldados.csv"),
                                         ["Nome", "Material", "Categoria", "Tipo IFC", "Pecas", "Comprimento (m)", "Volume (m3)",

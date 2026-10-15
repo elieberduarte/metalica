@@ -2331,6 +2331,9 @@ class Importador:
         propriedades = self.propriedades_de(prod)
         material, material_ifc = self.material_de(prod, corpo, propriedades)
         marcas = marcas_de(nome, descricao, propriedades)
+        producao = producao_do_pset(propriedades)
+        if producao.pop("principal", False) and marcas:
+            marcas["principal"] = True
 
         if corpo is None:
             if todas:
@@ -2369,6 +2372,7 @@ class Importador:
                 parametrica.atributos["propriedades"] = propriedades
             if marcas:
                 parametrica.atributos["marcas"] = marcas
+            parametrica.atributos.update(producao)
             self.doc.add(parametrica)
             return
 
@@ -2401,6 +2405,7 @@ class Importador:
             solido.atributos["propriedades"] = propriedades
         if marcas:
             solido.atributos["marcas"] = marcas
+        solido.atributos.update(producao)
         self.doc.add(solido)
 
 
@@ -2518,6 +2523,20 @@ def camada_semantica(tipo: str, nome: str) -> str:
     if t in ("IFCMEMBER", "IFCMEMBERSTANDARDCASE"):
         return "Barras"
     return ""
+
+
+def producao_do_pset(propriedades: dict) -> dict:
+    """A informação de produção que o exportador grava no Pset_MetalicaCalculo (o editor 3D, 14/10/2026): fase,
+    acabamento e peça principal — de volta para a peça na reimportação."""
+    calc = (propriedades or {}).get("Pset_MetalicaCalculo") or {}
+    fora = {}
+    for chave, campo in (("Fase", "fase"), ("Acabamento", "acabamento")):
+        v = calc.get(chave)
+        if isinstance(v, str) and v.strip():
+            fora[campo] = v.strip()
+    if calc.get("PecaPrincipal") in (True, "T", ".T.", "true", "True"):
+        fora["principal"] = True
+    return fora
 
 
 def marcas_de(nome: str, descricao: str, propriedades: dict) -> dict:
