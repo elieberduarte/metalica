@@ -68,7 +68,10 @@ export class Selecao {
       || (h.object.userData.entidadeDe
         ? h.object.userData.entidadeDe(h.faceIndex != null ? h.faceIndex : h.index)   // linha em lote: o vértice
         : h.object.userData.entidade);
+    // o pedaço cortado pela seção (ou fora da caixa de corte) não pega o clique: está escondido
+    const corte = this.cena.planosCorte && this.cena.planosCorte.length ? this.cena.planosCorte : null;
     const hits = this.raio.intersectObjects(alvos, false).filter(h => {
+      if (corte && corte.some(pl => pl.distanceToPoint(h.point) < -1e-6)) return false;
       const e = this.documento.get(idDe(h));
       return e && this.documento.aparece(e);
     });

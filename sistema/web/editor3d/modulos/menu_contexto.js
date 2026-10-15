@@ -6,6 +6,7 @@
 // e o IFC não mudam — e não briga com o "Colorir por", que troca o conjunto dele (ocultosNaVista) inteiro.
 
 import { quadroDaMalha } from '../ferramentas/_malha_perfil.js';
+import { caixaNaSelecao, definirCaixaDeCorte } from './caixa_corte.js';
 
 const ARRASTO = 5;   // px: mais que isso entre apertar e soltar é pan, não clique
 
@@ -56,6 +57,7 @@ export function itensDoMenu(editor, x, y) {
       { rotulo: 'Selecionar semelhantes', fazer: () => { sel.semelhantes(e.id); editor.dica('Selecionados os objetos semelhantes.'); } },
       { rotulo: 'Zoom na seleção', fazer: () => editor.camera.zoomSelecao(ids) },
       { rotulo: editor._isolamento ? 'Voltar ao modelo' : 'Isolar', fazer: () => (editor._isolamento ? editor.sairDoIsolamento() : editor.isolarSelecao()) },
+      { rotulo: 'Caixa de corte na seleção', fazer: () => caixaNaSelecao(editor) },
       { rotulo: 'Ocultar', fazer: () => {
           const o = ocultas(doc);
           for (const i of ids) o.add(i);
@@ -69,6 +71,8 @@ export function itensDoMenu(editor, x, y) {
       { rotulo: 'Girar', tecla: 'Q', fazer: ferramenta('girar') },
       { rotulo: 'Espelhar', tecla: 'W', fazer: ferramenta('espelhar') },
     );
+    // a modelagem pela seleção (modulos/modelagem.js, do outro lado da divisão): copiar a peça para os outros eixos
+    if (typeof editor.dialogoCopiarParaEixos === 'function') itens.push({ rotulo: 'Copiar para os eixos…', fazer: () => editor.dialogoCopiarParaEixos() });
     if (perfil) itens.push({ rotulo: 'Virar perfil', tecla: 'V', fazer: ferramenta('virar') },
                            { rotulo: 'Encaixar ponta', fazer: ferramenta('encaixar') });
     itens.push('-', { rotulo: 'Apagar', tecla: 'Del', fazer: () => editor.apagarSelecao() });
@@ -76,6 +80,9 @@ export function itensDoMenu(editor, x, y) {
     itens.push({ titulo: 'Modelo' },
       { rotulo: 'Selecionar tudo', tecla: 'Ctrl+A', fazer: () => sel.tudo() },
       { rotulo: 'Zoom na extensão', fazer: () => editor.camera.zoomExtensao() });
+  }
+  if (editor.cena && editor.cena.caixaCorte) {
+    itens.push('-', { rotulo: 'Tirar a caixa de corte', fazer: () => { definirCaixaDeCorte(editor, null); editor.dica('Caixa de corte tirada: o modelo inteiro de volta.'); } });
   }
   if (nOcultas) {
     itens.push('-', { rotulo: `Mostrar ocultas (${nOcultas})`, fazer: () => {

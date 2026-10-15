@@ -361,6 +361,8 @@ export class Documento {
     if (this.ocultosNaVista && this.ocultosNaVista.has(ent.id)) return false;
     // as ocultas à mão (o "Ocultar" do menu do botão direito): também só na vista
     if (this.ocultasAMao && this.ocultasAMao.has(ent.id)) return false;
+    // as que ficaram fora da caixa de corte (modulos/caixa_corte.js): só na vista
+    if (this.foraDaCaixa && this.foraDaCaixa.has(ent.id)) return false;
     const c = this.camadas.get(ent.camada);
     return !c || c.visivel !== false;
   }

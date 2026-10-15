@@ -213,8 +213,37 @@ export class Cena {
    * aponta — é o que a seta desenhada pela ferramenta indica. Só o modelo é cortado;
    * grade, eixos e prévias continuam inteiros.
    */
+  /**
+   * A caixa de corte (o "Section Box" do Revit, 14/10): só o que está dentro de [min, max] (mm) aparece — seis planos
+   * virados para dentro, no mesmo caminho do plano de corte (os materiais e o lote). A caixa e o plano são um ou outro.
+   */
+  definirCaixaCorte(caixa) {
+    this.caixaCorte = caixa ? [caixa[0].slice(), caixa[1].slice()] : null;
+    this.planoCorte = null;
+    this.planosCorte = [];
+    if (caixa) {
+      const [lo, hi] = caixa;
+      for (let i = 0; i < 3; i++) {
+        const n = [0, 0, 0];
+        n[i] = 1;
+        this.planosCorte.push(new THREE.Plane(new THREE.Vector3(...n), -lo[i] * ESCALA));
+        n[i] = -1;
+        this.planosCorte.push(new THREE.Plane(new THREE.Vector3(...n), hi[i] * ESCALA));
+      }
+    }
+    this.cacheMaterial.clear();
+    if (this.lote) this.lote.aplicarCorte(this.planosCorte);
+    for (const id of this.objetos.keys()) this._pintar(id);
+    if (this.aoRepintar) this.aoRepintar();
+    this.pedirQuadro();
+  }
+
   definirPlanoCorte(dado) {
     this.planoCorte = dado ? { origem: dado.origem.slice(), normal: dado.normal.slice() } : null;
+    this.caixaCorte = null;
+    // o plano tira a caixa de corte: as peças que estavam fora dela voltam
+    const voltam = !!(this.documento && this.documento.foraDaCaixa);
+    if (voltam) this.documento.foraDaCaixa = null;
     if (dado) {
       const n = new THREE.Vector3(...dado.normal).normalize();
       const o = new THREE.Vector3(...dado.origem).multiplyScalar(ESCALA);
@@ -224,7 +253,8 @@ export class Cena {
     }
     this.cacheMaterial.clear();
     if (this.lote) this.lote.aplicarCorte(this.planosCorte);
-    for (const id of this.objetos.keys()) this._pintar(id);
+    if (voltam) this.repintarTudo();
+    else for (const id of this.objetos.keys()) this._pintar(id);
     if (this.aoRepintar) this.aoRepintar();
     this.pedirQuadro();
   }
