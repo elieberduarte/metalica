@@ -21,6 +21,12 @@ function lerAreaTransferencia(editor) {
   return RESERVA;
 }
 
+//: os campos que dão a forma e o lugar da peça: a cópia na área de transferência só vira fantasma se eles batem com os da
+//: peça no modelo (a que mudou ou foi apagada depois de copiada fica com o desenho de antes)
+const FORMA = ['tipo', 'inicio', 'fim', 'rotacao', 'perfil', 'origem', 'eixo_x', 'eixo_y', 'espessura', 'centrada', 'contorno',
+               'vertices', 'faces', 'cortes_inicio', 'cortes_fim', 'recortes'];
+const formaDe = (e) => JSON.stringify(FORMA.map(k => (e[k] === undefined ? null : e[k])));
+
 function gravarAreaTransferencia(editor, conteudo) {
   RESERVA = conteudo;
   const at = editor && editor.areaTransferencia;
@@ -44,6 +50,7 @@ export class FerramentaCopiar extends Ferramenta {
     this.atual = null;
     this.base = null;                  // o ponto de referência: o primeiro clique
     this.coladas = 0;
+    this._fantasma = null;
     const ids = C.idsSelecionados(this.editor);
     if (ids.length) this.copiarSelecao(ids);
     this.conteudo = lerAreaTransferencia(this.editor);
@@ -150,6 +157,15 @@ export class FerramentaCopiar extends Ferramenta {
     this.dica(`Colado ${this.coladas}× — clique de novo para outra cópia (sempre medida da mesma referência), Esc para sair`);
   }
 
+  /** O fantasma do que vai ser colado: as peças da área de transferência que continuam iguais no modelo. */
+  _fantasmaAtual() {
+    if (!this._fantasma) {
+      const iguais = this.conteudo.entidades.filter(e => { const a = this.documento && this.documento.get(e.id); return a && formaDe(a) === formaDe(e); });
+      this._fantasma = C.fantasmaDe(this.editor, iguais.map(e => e.id));
+    }
+    return this._fantasma;
+  }
+
   /** Antes da referência: só o ponto sob o ponteiro, para o usuário ver o snap. */
   desenharBase() {
     this.limparPrevia();
@@ -160,7 +176,12 @@ export class FerramentaCopiar extends Ferramenta {
     this.limparPrevia();
     if (!this.conteudo) return;
     const g = C.grupo();
+    // a própria peça, translúcida, onde vai ser colada (o fantasma); o desenho de antes para a que não tem objeto igual
+    const f = this._fantasmaAtual();
+    C.posicionarFantasma(f, (q) => C.add(q, this.delta), (v) => v);
+    g.add(f.obj);
     for (const ent of this.conteudo.entidades) {
+      if (f.ids.has(ent.id)) continue;
       const pts = C.pontosDaEntidade(ent).map(q => C.add(q, this.delta));
       if (pts.length === 2) g.add(C.gLinha(pts, C.CORES.ok));
       else if (pts.length >= 3) g.add(C.gLinha(pts, C.CORES.ok, { fechada: true }));

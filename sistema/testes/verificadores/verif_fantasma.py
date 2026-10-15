@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Prévia fantasma (14/10/2026): no Mover e no Girar a própria peça aparece translúcida no destino (não só a silhueta),
+"""Prévia fantasma (14/10/2026): no Mover, Girar, Espelhar e Copiar a própria peça aparece translúcida no destino (não só a silhueta),
 com as malhas da cena — limpar a prévia não as descarta —, sem pegar o clique nem o snap."""
 import json, os, shutil, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -81,6 +81,23 @@ try:
     ok(r and r["descartadas"] == 0, f"limpar a prévia não descarta a malha da cena: {r and r['descartadas']}")
     ok(r and r["rc"] == 0, "o fantasma não pega o raio (clique/snap)")
     ok(r and r["mg"] and abs(r["mg"][1] - 1) < 1e-3 and abs(r["mg"][4] + 1) < 1e-3, f"no Girar, o fantasma girado 90° (x vira y): {r and r['mg'] and r['mg'][:6]}")
+    r = jsj("""const ed = editor, doc = ed.documento, cena = ed.cena;
+      const v = doc.add({ tipo: 'barra', nome: 'viga3', perfil: 'W 250×32,7', inicio: [0, 9000, 0], fim: [2000, 9000, 0], rotacao: 0, papel: 'viga', camada: 'Estrutura', atributos: {} });
+      const achar = () => { let fan = null; cena.previa.traverse(x => { if (!fan && x.isMesh && x.material && x.material.userData.compartilhada) fan = x; }); return fan; };
+      ed.selecao.definir([v.id]); ed.ativarFerramenta('copiar'); let f = ed.ativa;
+      f.onPonto({ ponto: [0, 9000, 0], tela: [0, 0] }); f.onMover({ ponto: [0, 9800, 0], tela: [0, 0] });
+      const fa = achar(); const t = fa ? fa.parent.parent.matrix.elements.slice(12, 15).map(Math.round) : null;
+      f.cancelar(); ed.limparPrevia();
+      // a peça mudou depois de copiada: a área de transferência ficou com a forma de antes — sem fantasma, com o desenho de antes
+      doc.alterar(v.id, { fim: [2500, 9000, 0] });
+      ed.selecao.limpar(); ed.ativarFerramenta('copiar'); f = ed.ativa;
+      f.onPonto({ ponto: [0, 9000, 0], tela: [0, 0] }); f.onMover({ ponto: [0, 9800, 0], tela: [0, 0] });
+      const sem = !achar(); let linhas = 0; cena.previa.traverse(x => { if (x.isLine) linhas++; });
+      f.cancelar(); ed.limparPrevia();
+      return { t, sem, linhas };""")
+    print("     ", r)
+    ok(r and r["t"] == [0, 800, 0], f"no Copiar, a cópia translúcida segue o mouse: {r and r['t']}")
+    ok(r and r["sem"] and r["linhas"] > 0, f"a peça que mudou depois de copiada fica com o desenho de antes (sem fantasma errado): {r and (r['sem'], r['linhas'])}")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:2]]}")
 finally:
