@@ -376,17 +376,21 @@ export class MetodosModelagem {
     if (pilares.length < 2) { this.dica('Selecione os pilares de uma parede: as longarinas vão de um ao outro, na face de fora.'); return; }
     const base = Math.max(...pilares.map(b => Math.min(b.inicio[2], b.fim[2])));
     const topo = Math.min(...pilares.map(b => Math.max(b.inicio[2], b.fim[2])));
+    const topoMax = Math.max(...pilares.map(b => Math.max(b.inicio[2], b.fim[2])));
+    const oitao = topoMax - topo > 300;
     const f = this._formModelagem([
       { chave: 'perfil', rotulo: 'Perfil', tipo: 'perfil', valor: this._perfilSugerido('longarina', 'Ue 150×60×20×2,25') },
       { chave: 'espacamento', rotulo: 'Espaçamento máximo (mm)', tipo: 'numero', valor: 1900 },
       { chave: 'primeira', rotulo: 'Primeira fiada, altura (mm)', tipo: 'numero', valor: Math.round(base + 1900) },
-      { chave: 'ultima', rotulo: 'Última fiada, altura (mm)', tipo: 'numero', valor: Math.round(topo - 300) },
+      { chave: 'ultima', rotulo: 'Última fiada, altura (mm)', tipo: 'numero', valor: Math.round(topoMax - 300) },
       { chave: 'continua', rotulo: 'Longarina', tipo: [['nao', 'uma por vão'], ['sim', 'contínua']], valor: 'nao' },
       { chave: 'balanco', rotulo: 'Balanço nas pontas (mm)', tipo: 'numero', valor: 0 },
       { chave: 'lado', rotulo: 'Lado', tipo: [['fora', 'de fora (longe do meio do modelo)'], ['dentro', 'de dentro']], valor: 'fora' },
       { chave: 'boca', rotulo: 'Boca do U para', tipo: [['baixo', 'baixo (não junta água)'], ['cima', 'cima']], valor: 'baixo' },
+      { chave: 'topo', rotulo: 'Terça no topo dos pilares', tipo: [['sim', oitao ? 'sim (a terça de oitão inclinada)' : 'sim (longarina de topo)'], ['nao', 'não']], valor: oitao ? 'sim' : 'nao' },
+      { chave: 'abaixo_topo', rotulo: 'Borda de cima, abaixo do topo (mm)', tipo: 'numero', valor: 0 },
     ]);
-    const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: `${pilares.length} pilares. As fiadas encostam na face mais saliente dos pilares (o plano do fechamento), com a alma na horizontal, igualmente espaçadas entre a primeira e a última.` }));
+    const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: `${pilares.length} pilares${oitao ? ' de alturas diferentes (oitão): cada fiada só vai entre os pilares que passam dela, e a terça inclinada acompanha o topo deles' : ''}. As fiadas encostam na face mais saliente dos pilares (o plano do fechamento), com a alma na horizontal, igualmente espaçadas entre a primeira e a última.` }));
     const e = await this._dialogoComPrevia({ titulo: 'Longarinas de fechamento', corpo, ok: 'Lançar longarinas', pedido: () => ({ ferramenta: 'longarinas', ids: pilares.map(b => b.id), parametros: f.ler() }) });
     if (e) await this._modelar(e.pedido, 'Longarinas', e.pronto);
   }

@@ -13,7 +13,8 @@ web/editor3d/ferramentas; aqui ficam as que montam a estrutura em poucos cliques
   tesouras), num ou em vários painéis;
 * **pilares nos eixos** — um pilar em cada cruzamento de eixos da obra escolhido, da base ao nível do topo;
 * **viga entre pilares** — a viga no nível pedido ligando os pilares escolhidos, na ordem em que estão em planta;
-* **longarinas de fechamento** — as fiadas na face de fora dos pilares de uma parede (alma na horizontal, boca para baixo);
+* **longarinas de fechamento** — as fiadas na face de fora dos pilares de uma parede (alma na horizontal, boca para baixo)
+  e, no oitão, a terça inclinada pelo topo dos pilares;
 * **correntes entre terças** — no meio (ou nos terços) de cada vão, de centro a centro das terças;
 * **mão-francesa** — da alma da terça à mesa de baixo do apoio, a 45°, nos dois lados de cada apoio.
 
@@ -519,16 +520,41 @@ def longarinas(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
             novas.append(Barra(nome="Longarina", inicio=_r(c0), fim=_r(c1), perfil=perfil, rotacao=rot,
                                papel="longarina", camada="Terças", material="Aço galvanizado",
                                atributos={"tipo_ifc": "IfcMember", "fiada": j + 1, "vao": i + 1}))
+    # a terça no topo (a "terça de oitão inclinada", decisão do usuário 15/10): de pilar a pilar pela linha dos topos,
+    # no plano das longarinas, com a borda de cima `abaixo_topo` abaixo do topo dos pilares — inclinada no oitão,
+    # reta na parede lateral
+    oitao = topo_max - topo > 300.0
+    n_topo = 0
+    if str(p.get("topo") or ("sim" if oitao else "nao")) == "sim":
+        abaixo = float(p.get("abaixo_topo") or 0.0)
+        for k in range(len(pes) - 1):
+            (_b0, q0), (_b1, q1) = pes[k], pes[k + 1]
+            c0 = (q0[0] + nw[0] * off, q0[1] + nw[1] * off, alto[k])
+            c1 = (q1[0] + nw[0] * off, q1[1] + nw[1] * off, alto[k + 1])
+            dirt = _norm(_sub(c1, c0))
+            rot = _rotacao_para_v(dirt, nw)
+            ub = _u_da_barra(dirt, rot)
+            if (boca == "baixo" and ub[2] > 0) or (boca == "cima" and ub[2] < 0):
+                rot = round((rot + 180.0) % 360.0, 3)
+            t = Barra(nome="Terça de oitão" if abs(alto[k] - alto[k + 1]) > 1.0 else "Longarina de topo",
+                      inicio=_r(c0), fim=_r(c1), perfil=perfil, rotacao=rot, papel="longarina", camada="Terças",
+                      material="Aço galvanizado", atributos={"tipo_ifc": "IfcMember", "topo": True, "vao": k + 1})
+            # a borda de cima na linha dos topos (a malha manda: o Ue não é simétrico)
+            dz = (max(alto[k], alto[k + 1]) - abaixo) - _topo(t, (0.0, 0.0, 1.0))
+            t.inicio = _r(_add(t.inicio, (0.0, 0.0, dz)))
+            t.fim = _r(_add(t.fim, (0.0, 0.0, dz)))
+            novas.append(t)
+            n_topo += 1
     avisos = []
     if passo and passo > esp + 1e-6:
         avisos.append("espaçamento acima do pedido")
     if zs[0] < base:
         avisos.append("fiada abaixo do pé dos pilares: confira a primeira")
-    if topo_max - topo > 300.0:
+    if oitao and not n_topo:
         avisos.append("pilares de alturas diferentes (oitão): cada fiada só vai entre os pilares que passam dela; "
-                      "o fechamento junto da água (a terça de oitão inclinada) fica por conta")
+                      "a terça inclinada do topo ficou desligada")
     return {"novas": [b.dict() for b in novas],
-            "resumo": {"linhas": len(zs), "passo": round(passo, 1), "pecas": len(novas)}, "avisos": avisos}
+            "resumo": {"linhas": len(zs), "passo": round(passo, 1), "pecas": len(novas), "topo": n_topo}, "avisos": avisos}
 
 
 # ------------------------------------------------------------------ correntes entre terças

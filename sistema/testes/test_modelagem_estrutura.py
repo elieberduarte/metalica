@@ -398,7 +398,7 @@ def test_longarinas_no_oitao_so_entre_os_pilares_que_passam_da_fiada():
           for y, h in ((0, 6000), (5000, 8000), (10000, 10000), (15000, 8000), (20000, 6000))]
     t = Barra(inicio=(0, 0, 6000), fim=(30000, 0, 6000), perfil="W 150×13", papel="viga")
     doc = _doc(*ps, t)
-    r = modelagem.longarinas(doc, [p.id for p in ps], {"primeira": 1500, "espacamento": 1900})
+    r = modelagem.longarinas(doc, [p.id for p in ps], {"primeira": 1500, "espacamento": 1900, "topo": "nao"})
     bs = _barras(r)
     # as fiadas de 1,50 a 9,70 m (o pilar mais alto − 300); na de 6,42 m só os dois vãos do meio (pilares de 8 e 10 m)
     assert r["resumo"]["linhas"] == 6
@@ -416,7 +416,7 @@ def test_longarinas_no_oitao_so_entre_os_pilares_que_passam_da_fiada():
     assert not any(b.inicio[2] > 7700 for b in bs)
     assert any("oitão" in a for a in r["avisos"])
     # contínua: o maior trecho seguido dos que passam
-    r = modelagem.longarinas(doc, [p.id for p in ps], {"primeira": 6500, "ultima": 6500, "continua": "sim"})
+    r = modelagem.longarinas(doc, [p.id for p in ps], {"primeira": 6500, "ultima": 6500, "continua": "sim", "topo": "nao"})
     b = _barras(r)[0]
     assert sorted((round(b.inicio[1]), round(b.fim[1]))) == [5000, 15000]
 
@@ -451,3 +451,40 @@ def test_contravento_sc1_avisa_no_com_dois_tirantes_e_recusa_pilares():
     doc = _doc(p1, p2)
     with pytest.raises(ErroDeDados):
         modelagem.contravento_x(doc, [p1.id, p2.id], {"suporte": "sc1"})
+
+
+def test_terca_de_oitao_inclinada_pelo_topo_dos_pilares():
+    alturas = ((0, 6000), (5000, 8000), (10000, 10000), (15000, 8000), (20000, 6000))
+    ps = [Barra(inicio=(0, y, 0), fim=(0, y, h), perfil="W 250×32,7", papel="pilar") for y, h in alturas]
+    t = Barra(inicio=(0, 0, 6000), fim=(30000, 0, 6000), perfil="W 150×13", papel="viga")
+    doc = _doc(*ps, t)
+    r = modelagem.longarinas(doc, [p.id for p in ps], {"primeira": 1500})       # oitão: a terça do topo por padrão
+    topo = [b for b in _barras(r) if b.atributos.get("topo")]
+    assert r["resumo"]["topo"] == 4 and len(topo) == 4
+    h = dict(alturas)
+    for b in topo:
+        assert b.nome == "Terça de oitão"
+        y0, y1 = sorted((b.inicio[1], b.fim[1]))
+        # de pilar a pilar, na inclinação da água (2 m em 5 m)
+        assert (round(y0), round(y1)) in ((0, 5000), (5000, 10000), (10000, 15000), (15000, 20000))
+        assert abs(b.fim[2] - b.inicio[2]) == pytest.approx(2000, abs=0.5)
+        # a borda de cima rente ao topo dos pilares: na ponta alta, o topo da malha é o topo do pilar
+        vs, _ = malha_barra(b)
+        assert max(q[2] for q in vs) == pytest.approx(max(h[round(y0)], h[round(y1)]), abs=0.5)
+        # no plano das longarinas (a mesma distância da parede)
+        assert b.inicio[0] == pytest.approx(min(x.inicio[0] for x in _barras(r) if not x.atributos.get("topo")), abs=0.5)
+    # abaixo do topo, e desligada: as fiadas avisam do oitão
+    r2 = modelagem.longarinas(doc, [p.id for p in ps], {"primeira": 1500, "abaixo_topo": 100})
+    t2 = [b for b in _barras(r2) if b.atributos.get("topo")][0]
+    assert max(q[2] for q in malha_barra(t2)[0]) == pytest.approx(
+        max(h[round(t2.inicio[1])], h[round(t2.fim[1])]) - 100, abs=0.5)
+    r3 = modelagem.longarinas(doc, [p.id for p in ps], {"primeira": 1500, "topo": "nao"})
+    assert r3["resumo"]["topo"] == 0 and any("oitão" in a for a in r3["avisos"])
+
+
+def test_parede_lateral_nao_ganha_terca_de_topo_sem_pedir():
+    doc, ps = _parede()
+    r = modelagem.longarinas(doc, [p.id for p in ps], {})
+    assert r["resumo"]["topo"] == 0
+    r = modelagem.longarinas(doc, [p.id for p in ps], {"topo": "sim"})
+    assert r["resumo"]["topo"] == 2 and all(b.nome == "Longarina de topo" for b in _barras(r) if b.atributos.get("topo"))

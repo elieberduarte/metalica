@@ -22,6 +22,9 @@ doc.add(Barra(nome="T1", inicio=(0, 0, 5000), fim=(6000, 0, 5600), perfil="W 150
 doc.add(Barra(nome="T2", inicio=(0, 5000, 5000), fim=(6000, 5000, 5600), perfil="W 150×13", papel="banzo"))
 doc.add(Barra(nome="BS", inicio=(0, 20000, 1000), fim=(6000, 20000, 1000), perfil="U 100×40×2,65", papel="banzo"))
 doc.add(Barra(nome="BI", inicio=(0, 20000, 0), fim=(6000, 20000, 0), perfil="U 100×40×2,65", papel="banzo"))
+# um oitão longe do resto (pilares de 6, 8 e 6 m), com papel "barra" para não entrar nas etapas que pegam os pilares
+for i, (y, h) in enumerate(((0, 6000), (5000, 8000), (10000, 6000))):
+    doc.add(Barra(nome="O%d" % (i + 1), inicio=(-20000, y, 0), fim=(-20000, y, h), perfil="W 250×32,7", papel="barra"))
 json.dump(doc.dict(), open(os.path.join(PASTA, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
 
 srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
@@ -49,7 +52,7 @@ try:
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1400, height=900, deviceScaleFactor=1, mobile=False)
     aba.navegar(f"http://localhost:{PORTA}/editor?projeto=mod", limite=60)
     t0 = time.time()
-    while time.time() - t0 < 60 and not aba.avaliar("!!(window.editor && editor.documento && editor.documento.entidades.size >= 4)"):
+    while time.time() - t0 < 60 and not aba.avaliar("!!(window.editor && editor.documento && editor.documento.entidades.size >= 7)"):
         aba.drenar(0.5)
     aba.drenar(1.0)
     aba.console.clear()
@@ -233,6 +236,18 @@ try:
     js("editor.desfazer(); 1"); aba.drenar(0.4)
     ok(jsj("return editor.documento.entidades.size;") == n0, "Ctrl+Z tira as cópias de uma vez")
     erros("Copiar para os eixos")
+
+    # 5e) o oitão: as fiadas entre os pilares que passam delas e a terça de oitão inclinada pelo topo
+    selecionar(ids["O1"], ids["O2"], ids["O3"])
+    ok(dialogo("modelar-longarinas"), "o diálogo Longarinas abriu no oitão")
+    sel_topo = jsj("const l = [...editor.el.dialogoCorpo.querySelectorAll('label')].find(l => l.textContent.startsWith('Terça no topo')); return l.nextElementSibling.value;")
+    ok(sel_topo == "sim", f"pilares de alturas diferentes: a terça do topo vem ligada: {sel_topo}")
+    ok_dialogo()
+    ok(esperar("[...editor.documento.entidades.values()].some(e => e.nome === 'Terça de oitão')"), "as terças de oitão entraram")
+    to = jsj("return [...editor.documento.entidades.values()].filter(e => e.nome === 'Terça de oitão').map(e => [e.inicio, e.fim]);")
+    ok(len(to) == 2 and all(abs(abs(t[1][2] - t[0][2]) - 2000) < 1 for t in to), f"2 inclinadas (2 m em 5 m): {to}")
+    ok(all(t[0][0] < -20000 for t in to), "do lado de fora do oitão (longe do resto do modelo)")
+    erros("Oitão")
 
     # 6) sem seleção: a dica, sem diálogo
     selecionar()
