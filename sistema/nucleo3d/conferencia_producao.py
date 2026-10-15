@@ -43,11 +43,54 @@ REGRAS = {
 
 # ------------------------------------------------------------------ malha: triângulos e ponto dentro
 
+def _cruz_lote(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """produto vetorial linha a linha, sem o np.cross (que move eixos e copia a cada chamada)"""
+    return np.stack([a[:, 1] * b[:, 2] - a[:, 2] * b[:, 1], a[:, 2] * b[:, 0] - a[:, 0] * b[:, 2],
+                     a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0]], axis=1)
+
+
+def _normal_newell(P: np.ndarray) -> np.ndarray:
+    Q = np.roll(P, -1, axis=0)
+    return np.array([np.sum((P[:, 1] - Q[:, 1]) * (P[:, 2] + Q[:, 2])), np.sum((P[:, 2] - Q[:, 2]) * (P[:, 0] + Q[:, 0])),
+                     np.sum((P[:, 0] - Q[:, 0]) * (P[:, 1] + Q[:, 1]))])
+
+
+def _convexa(vs: np.ndarray, f) -> bool:
+    """a face plana é convexa? (todas as viradas do contorno para o mesmo lado da normal)"""
+    P = vs[list(f)]
+    n = _normal_newell(P)
+    if not np.any(n):
+        return False
+    a = np.roll(P, 1, axis=0)
+    c = np.roll(P, -1, axis=0)
+    giros = _cruz_lote(P - a, c - P) @ n
+    return bool(np.all(giros >= -1e-9 * max(1.0, float(np.abs(giros).max()))))
+
+
+def _orelhas(vs: np.ndarray, f) -> List[tuple]:
+    """a face côncava (a ponta do I, a face com o furo costurado): a triangulação do geometria, no sentido da face"""
+    from nucleo3d.geometria import _projetar_no_plano, triangular
+    try:
+        pts2, (_u, _v, fn) = _projetar_no_plano([tuple(vs[i]) for i in f])
+        fora = []
+        tris = triangular(pts2)
+        if not tris:
+            raise ValueError("sem triângulos")
+        idx = np.asarray(tris, int)
+        A, B, C = vs[[f[i] for i in idx[:, 0]]], vs[[f[i] for i in idx[:, 1]]], vs[[f[i] for i in idx[:, 2]]]
+        sentido = _cruz_lote(B - A, C - A) @ np.asarray(fn, float)
+        for (a, b, c), s in zip(idx, sentido):
+            fora.append((f[a], f[b], f[c]) if s >= 0 else (f[a], f[c], f[b]))
+        return fora
+    except Exception:                                      # noqa: BLE001 — face degenerada: o leque
+        return [(f[0], f[k], f[k + 1]) for k in range(1, len(f) - 1)]
+
+
 class _Malha:
-    """A malha de uma peça triangulada uma vez, com a orientação para fora e a caixa."""
+    """A malha de uma peça triangulada uma vez, com a orientação para fora e a caixa. Os triângulos do raio (arestas,
+    determinantes) ficam guardados: a mesma peça é testada contra várias vizinhas."""
 
     def __init__(self, ent):
-        from nucleo3d.geometria import _projetar_no_plano, triangular
         vs = np.asarray(ent.vertices, float)
         tris = []
         for f in ent.faces or []:
@@ -55,15 +98,11 @@ class _Malha:
                 continue
             if len(f) == 3:
                 tris.append(tuple(f))
-                continue
-            try:
-                pts2, (_u, _v, fn) = _projetar_no_plano([tuple(vs[i]) for i in f])
-                for a, b, c in triangular(pts2):
-                    # a triangulação pode virar o sentido: o triângulo segue a normal da face
-                    tn = np.cross(vs[f[b]] - vs[f[a]], vs[f[c]] - vs[f[a]])
-                    tris.append((f[a], f[b], f[c]) if float(np.dot(tn, fn)) >= 0 else (f[a], f[c], f[b]))
-            except Exception:                              # noqa: BLE001 — face degenerada: o leque
+            elif len(f) == 4 or _convexa(vs, f):
+                # o retângulo do perfil e a face convexa: o leque, no sentido da face (a imensa maioria)
                 tris.extend((f[0], f[k], f[k + 1]) for k in range(1, len(f) - 1))
+            else:
+                tris.extend(_orelhas(vs, f))
         # o mesmo triângulo duas vezes (face repetida no IFC) estraga a paridade do raio
         vistos, unicos = set(), []
         for tr in tris:
@@ -71,14 +110,14 @@ class _Malha:
             if k not in vistos and len(set(tr)) == 3:
                 vistos.add(k)
                 unicos.append(tr)
-        tris = unicos
         self.id = ent.id
         self.v = vs
-        self.t = np.asarray(tris, int) if tris else np.zeros((0, 3), int)
+        self.t = np.asarray(unicos, int) if unicos else np.zeros((0, 3), int)
         self.caixa = (vs.min(axis=0), vs.max(axis=0)) if len(vs) else (np.zeros(3), np.zeros(3))
+        self._raio = None
         if len(self.t):
             a, b, c = vs[self.t[:, 0]], vs[self.t[:, 1]], vs[self.t[:, 2]]
-            n = np.cross(b - a, c - a)
+            n = _cruz_lote(b - a, c - a)
             vol = float(np.einsum("ij,ij->i", a, n).sum())
             if vol < 0:                                    # as faces viradas para dentro
                 self.t = self.t[:, ::-1]
@@ -90,37 +129,46 @@ class _Malha:
             self.ok = np.zeros(0, bool)
             self.n = np.zeros((0, 3))
 
+    def _dados_do_raio(self):
+        if self._raio is None:
+            D = np.array([1.0, 1.3e-3, 1.7e-3])
+            D = D / np.linalg.norm(D)
+            V0, V1, V2 = self.v[self.t[:, 0]], self.v[self.t[:, 1]], self.v[self.t[:, 2]]
+            e1, e2 = V1 - V0, V2 - V0
+            pv = _cruz_lote(np.broadcast_to(D, e2.shape), e2)
+            det = np.einsum("ij,ij->i", e1, pv)
+            ok = np.abs(det) > 1e-12
+            inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+            self._raio = (D, V0, e1, e2, pv, ok, inv, np.minimum(np.minimum(V0, V1), V2), np.maximum(np.maximum(V0, V1), V2))
+        return self._raio
+
     def dentro(self, P: np.ndarray) -> np.ndarray:
         """quais pontos estão dentro da malha (raio com paridade, Möller–Trumbore em lote)"""
         if not len(self.t) or not len(P):
             return np.zeros(len(P), bool)
+        D, V0a, e1a, e2a, pva, oka, inva, tmin, tmax = self._dados_do_raio()
         # o raio quase ao longo de +x (levemente torto, para não cair em aresta): só contam os triângulos que estão à
         # frente dos pontos e cobrem o y e o z deles (com a folga do desvio do raio)
-        D = np.array([1.0, 1.3e-3, 1.7e-3])
-        D = D / np.linalg.norm(D)
-        V0a, V1a, V2a = self.v[self.t[:, 0]], self.v[self.t[:, 1]], self.v[self.t[:, 2]]
-        tmin = np.minimum(np.minimum(V0a, V1a), V2a)
-        tmax = np.maximum(np.maximum(V0a, V1a), V2a)
         folga = 2e-3 * float(self.caixa[1][0] - min(float(P[:, 0].min()), float(self.caixa[0][0]))) + 1.0
         sel = ((tmax[:, 0] >= P[:, 0].min()) & (tmax[:, 1] >= P[:, 1].min() - 1.0) & (tmin[:, 1] <= P[:, 1].max() + folga)
-               & (tmax[:, 2] >= P[:, 2].min() - 1.0) & (tmin[:, 2] <= P[:, 2].max() + folga))
+               & (tmax[:, 2] >= P[:, 2].min() - 1.0) & (tmin[:, 2] <= P[:, 2].max() + folga) & oka)
         if not sel.any():
             return np.zeros(len(P), bool)
-        V0, V1, V2 = V0a[sel], V1a[sel], V2a[sel]
-        e1, e2 = V1 - V0, V2 - V0
-        pv = np.cross(D, e2)
-        det = np.einsum("ij,ij->i", e1, pv)
-        ok = np.abs(det) > 1e-12
-        inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+        V0, e1, e2, pv, inv = V0a[sel], e1a[sel], e2a[sel], pva[sel], inva[sel]
         dentro = np.zeros(len(P), bool)
         for i0 in range(0, len(P), 512):
             Q = P[i0:i0 + 512]
-            tv = Q[:, None, :] - V0[None, :, :]
-            u = np.einsum("nmj,mj->nm", tv, pv) * inv
-            qv = np.cross(tv, e1[None, :, :])
-            v = np.einsum("nmj,j->nm", qv, D) * inv
-            t = np.einsum("nmj,mj->nm", qv, e2) * inv
-            hit = ok[None, :] & (u >= 0) & (v >= 0) & (u + v <= 1) & (t > 1e-9)
+            tx = Q[:, 0:1] - V0[None, :, 0]
+            ty = Q[:, 1:2] - V0[None, :, 1]
+            tz = Q[:, 2:3] - V0[None, :, 2]
+            u = (tx * pv[None, :, 0] + ty * pv[None, :, 1] + tz * pv[None, :, 2]) * inv
+            # qv = tv × e1, escrito à mão (o np.cross em lote gastava metade do tempo em cópias)
+            qx = ty * e1[None, :, 2] - tz * e1[None, :, 1]
+            qy = tz * e1[None, :, 0] - tx * e1[None, :, 2]
+            qz = tx * e1[None, :, 1] - ty * e1[None, :, 0]
+            v = (qx * D[0] + qy * D[1] + qz * D[2]) * inv
+            t = (qx * e2[None, :, 0] + qy * e2[None, :, 1] + qz * e2[None, :, 2]) * inv
+            hit = (u >= 0) & (v >= 0) & (u + v <= 1) & (t > 1e-9)
             dentro[i0:i0 + 512] = (hit.sum(axis=1) % 2) == 1
         return dentro
 
@@ -167,8 +215,9 @@ class _Malha:
             fora[i0:i0 + 256] = dist.min(axis=1)
         return fora
 
-    def amostras(self, lo, hi, recuo: float) -> np.ndarray:
-        """pontos das faces dentro da caixa [lo, hi], `recuo` mm para dentro da peça (conferidos dentro dela)"""
+    def amostras(self, lo, hi, recuo: float, conferir: bool = True) -> np.ndarray:
+        """pontos das faces dentro da caixa [lo, hi], `recuo` mm para dentro da peça (conferidos dentro dela, salvo com
+        `conferir=False`: a colisão confere só os poucos que caíram dentro da vizinha)"""
         if not len(self.t):
             return np.zeros((0, 3))
         V0, V1, V2 = self.v[self.t[:, 0]], self.v[self.t[:, 1]], self.v[self.t[:, 2]]
@@ -197,7 +246,7 @@ class _Malha:
         if len(P) > MAX_PONTOS:
             P = P[np.linspace(0, len(P) - 1, MAX_PONTOS).astype(int)]
         # só os que caíram mesmo dentro da peça: a malha do IFC pode ter face virada, e o "para dentro" dela iria para fora
-        return P[self.dentro(P)] if len(P) else P
+        return P[self.dentro(P)] if (conferir and len(P)) else P
 
 
 def _caixas_cruzam(a, b, folga=0.0):
@@ -253,13 +302,16 @@ def colisoes(pecas: Sequence, avisar=None, limite_s: float = 120.0) -> dict:
         melhor, ponto = 0.0, None
         for recuo in (1.0, 4.0):                           # a 1 mm (parede fina) e a 4 mm (mesa grossa) da superfície
             for X, Y in ((A, B), (B, A)):
-                P = X.amostras(lo, hi, recuo)
+                P = X.amostras(lo, hi, recuo, conferir=False)
                 if not len(P):
                     continue
                 d = Y.dentro(P)
                 if not d.any():
                     continue
                 Q = P[d]
+                Q = Q[X.dentro(Q)]                         # o "para dentro" de face virada do IFC sai aqui
+                if not len(Q):
+                    continue
                 prof = np.minimum(X.distancia(Q), Y.distancia(Q))
                 k = int(np.argmax(prof))
                 if prof[k] > melhor:
