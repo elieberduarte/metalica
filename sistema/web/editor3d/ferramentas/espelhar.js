@@ -55,6 +55,9 @@ export function simetriaDaSecao(pts) {
 export function camposEspelhados(ent, plano, secao) {
   const { fp, fv } = refletor(plano);
   const campos = C.camposTransformados(ent, fp, fv);
+  // a cota espelhada se solta das peças: na barra refletida o ponto preso cairia do outro lado da seção (F20)
+  const ct = campos.atributos && campos.atributos.cota;
+  if (ct && ct.refs) campos.atributos = { ...campos.atributos, cota: { ...ct, refs: null } };
   if (ent.tipo === 'barra') {
     const pts = secao(ent.perfil);
     if (!pts) return { erro: `${ent.perfil}: a seção do perfil não está no banco do editor — não dá para saber se ela é simétrica` };

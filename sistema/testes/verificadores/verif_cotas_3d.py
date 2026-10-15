@@ -89,6 +89,32 @@ try:
       const solta = !c().refs; editor.documento.alterar('{V}', {{ fim: [1000, 0, 0] }});
       return {{ solta, a: c().a.map(Math.round) }};""")
     ok(r and r["solta"] and r["a"] == [2000, 73, 329], f"a cota movida sozinha se solta das peças (não segue mais a viga): {r}")
+    # cópia da viga com a cota (Mover com cópia): a cota copiada segue a viga copiada; a de antes, a viga de antes
+    r = jsj("""const ed = editor, doc = ed.documento;
+      const v = doc.add({ tipo: 'barra', nome: 'viga2', perfil: 'W 250×32,7', inicio: [0, 5000, 0], fim: [3000, 5000, 0], rotacao: 0, papel: 'viga', camada: 'Estrutura', atributos: {} });
+      ed.ativarFerramenta('cotar'); let f = ed.ativa;
+      f.onPonto({ ponto: [0, 5073, 129], entidade: v.id, tipoSnap: 'extremidade', normal: [0, 0, 1], tela: [0, 0] });
+      f.onPonto({ ponto: [3000, 5073, 129], entidade: v.id, tipoSnap: 'extremidade', normal: [0, 0, 1], tela: [0, 0] });
+      f.criar(300);
+      const c = [...doc.entidades.values()].filter(e => e.atributos && e.atributos.cota).pop();
+      ed.selecao.definir([v.id, c.id]); ed.ativarFerramenta('mover'); f = ed.ativa;
+      const r = f.comandosPara([0, 1000, 0], 1, 'Mover'); ed.executar(r.cmds[0]);
+      const nv = r.novos.map(id => doc.get(id)).find(e => e.tipo === 'barra'), nc = r.novos.map(id => doc.get(id)).find(e => e.atributos.cota);
+      const refs = nc.atributos.cota.refs && nc.atributos.cota.refs.map(x => x && x.id);
+      doc.alterar(nv.id, { fim: [3500, 6000, 0] });
+      const ct = doc.get(nc.id).atributos.cota, co = doc.get(c.id).atributos.cota;
+      // espelhar a viga com a cota (cópia): a cota espelhada se solta
+      ed.selecao.definir([v.id, c.id]); ed.ativarFerramenta('espelhar'); ed.ativa.ids = [v.id, c.id];
+      const antes = new Set(doc.entidades.keys());
+      ed.ativa.aplicar({ p: [0, 4000, 0], n: [0, 1, 0] }, false);
+      const ec = [...doc.entidades.values()].find(e => !antes.has(e.id) && e.atributos && e.atributos.cota);
+      return { refs, nv: nv.id, copia_b: ct.b.map(Math.round), copia_texto: ct.texto, orig_b: co.b.map(Math.round),
+               espelhada: ec ? { refs: ec.atributos.cota.refs, a: ec.atributos.cota.a.map(Math.round) } : null };""")
+    ok(r and r["refs"] == [r["nv"], r["nv"]], f"a cota copiada junto fica presa à viga copiada: {r and r['refs']}")
+    ok(r and r["copia_b"] == [3500, 6073, 129] and r["copia_texto"] == "3,50 m" and r["orig_b"] == [3000, 5073, 129],
+       f"esticar a cópia leva a cota copiada, e a de antes fica: {r}")
+    ok(r and r["espelhada"] and r["espelhada"]["refs"] is None and r["espelhada"]["a"] == [0, 2927, 129],
+       f"a cota espelhada sai solta, no lugar refletido: {r and r['espelhada']}")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:2]]}")
 finally:

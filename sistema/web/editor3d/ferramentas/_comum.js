@@ -294,11 +294,18 @@ export function comMarcadoresDeFuro(documento, ents) {
   return extra.length ? ents.concat(extra) : ents;
 }
 
-/** Nas cópias: o marcador de furo copiado passa a ser da cópia da peça dele (`mapa`: id original → id da cópia). */
+/** Nas cópias: o marcador de furo copiado passa a ser da cópia da peça dele, e a cota, das cópias das peças dela (`mapa`:
+ * id original → id da cópia). */
 export function religarMarcadores(lote, mapa) {
   for (const c of lote) {
     const f = c.atributos && c.atributos.furo;
     if (f && f.peca && mapa.has(f.peca)) c.atributos = { ...c.atributos, furo: { ...f, peca: mapa.get(f.peca) } };
+    // a cota copiada junto com as peças segue as cópias delas (F20); a ponta presa a uma peça que ficou, se solta
+    const ct = c.atributos && c.atributos.cota;
+    if (ct && Array.isArray(ct.refs)) {
+      const refs = ct.refs.map(r => (r && mapa.has(r.id) ? { ...r, id: mapa.get(r.id) } : null));
+      c.atributos = { ...c.atributos, cota: { ...ct, refs: refs.some(Boolean) ? refs : null } };
+    }
   }
   return lote;
 }

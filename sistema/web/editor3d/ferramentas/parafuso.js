@@ -193,7 +193,7 @@ export function lerNomeDoParafuso(nome) {
 const PORCAS = [[10, 6], [13, 8], [16, 10], [18, 12], [19, 12], [21, 14], [24, 16], [27, 18], [30, 20], [34, 22], [36, 24]];
 
 /** Autovetores da covariância dos pontos (Jacobi 3×3): os eixos principais da peça. */
-function eixosPrincipais(pts) {
+export function eixosPrincipais(pts) {
   const n = pts.length;
   const m = [0, 1, 2].map(i => pts.reduce((s, q) => s + q[i], 0) / n);
   const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
@@ -270,6 +270,8 @@ export class FerramentaParafuso extends Ferramenta {
     const modelo = sel.map(e => tamanhoDoFixador(e)).find(Boolean);
     if (modelo) this._definir({ d: modelo.d, L: modelo.L || this.tamanho.L, classe: modelo.classe || this.tamanho.classe });
     this._atualizarDica();
+    const n = this._selecionadosParaPega().length;
+    if (n) this.dica(`${n} parafuso(s) selecionado(s): "Recalcular pela pega" no painel ajusta o comprimento deles · ou clique numa face para lançar`);
   }
 
   desativar() { this.limparPrevia(); this.medida(''); }
@@ -424,6 +426,60 @@ export class FerramentaParafuso extends Ferramenta {
     return [...cont.values()].sort((a, b) => b.n - a.n).slice(0, 14);
   }
 
+  /** Os parafusos da seleção que dá para recalcular: com o tamanho no nome ("BOLT (A325) 16x50") e o eixo conhecido. */
+  _selecionadosParaPega() {
+    const sel = (this.selecao && this.selecao.entidades) || [];
+    return sel.filter(e => e && e.tipo === 'solido' && lerNomeDoParafuso(e.nome) && quadroDoParafuso(e));
+  }
+
+  /**
+   * "Recalcular pela pega": o parafuso já colocado (antes da regra dos comprimentos comerciais, ou depois de a peça
+   * mudar de espessura) mede de novo o pacote que aperta e passa ao comprimento comercial dele — porca na pega nova,
+   * nome e lista de materiais juntos. Só nos escolhidos, nunca sozinho: o comprimento de projeto (o 3/8"×1.1/4" do
+   * PRATI) pode ter sido pedido assim. O que bate na alma ou não encosta em nada fica como está. Ctrl+Z desfaz.
+   */
+  recalcularPelaPega(ents = this._selecionadosParaPega()) {
+    const cmds = [];
+    const mudou = new Map();
+    let iguais = 0, semPacote = 0, travados = 0;
+    for (const e of ents) {
+      const t = lerNomeDoParafuso(e.nome), q = quadroDoParafuso(e);
+      if (!t || !q) continue;
+      if (!C.editavel(this.editor, e)) { travados++; continue; }
+      const alcance = Math.max(200, t.L + 60);
+      const pac = pacoteDoEixo(this._pertoDoEixo(q.ponto, q.eixo, alcance), q.ponto, q.eixo, alcance,
+                               { cena: this.editor && this.editor.cena, caixaDe: (x) => this._caixaDe(x) });
+      if (!pac || !(pac.pega > 0) || pac.bloqueio) { semPacote++; continue; }
+      const reg = (e.atributos && e.atributos.parafuso) || {};
+      // o do IFC (lido da malha) tem o apoio da cabeça arredondado ao milímetro: encosta na face da 1ª parede
+      let t0 = pac.paredes.length ? pac.paredes[0].t0 : 0;
+      if (reg.ponto || Math.abs(t0) > 1.5) t0 = 0;
+      if (t0) q.ponto = C.add(q.ponto, C.mul(q.eixo, t0));
+      const pega = Math.round((pac.pega - t0) * 100) / 100;
+      const L = comprimentoPelaPega(t.d, pega);
+      if (Math.abs(L - t.L) < 1e-6 && reg.pega && Math.abs(reg.pega - pega) < 0.05) { iguais++; continue; }
+      const g = geometriaDoParafuso(t.d, L, q.ponto, C.mul(q.eixo, -1), pega);
+      const nome = nomeDoParafuso(t.classe, t.d, L);
+      const marcas = { ...((e.atributos && e.atributos.marcas) || {}), perfil: nome };
+      cmds.push(C.cmdAlterar(e.id, {
+        nome, vertices: g.vertices, faces: g.faces,
+        atributos: { ...e.atributos, marcas,
+                     parafuso: { ...reg, d: t.d, L, classe: t.classe || reg.classe || '', ponto: C.copiar(q.ponto), eixo: C.copiar(q.eixo), pega } },
+      }, 'Recalcular pela pega'));
+      const k = `${num(t.L)} → ${num(L)}`;
+      mudou.set(k, (mudou.get(k) || 0) + 1);
+    }
+    if (cmds.length) this.executar(cmds.length > 1 ? C.cmdComposto(cmds, `${cmds.length} parafusos pela pega`) : cmds[0]);
+    C.avisarBloqueadas(this.editor, travados);
+    const partes = [];
+    if (cmds.length) partes.push(`${cmds.length} recalculado(s) (${[...mudou].map(([k, n]) => (n > 1 ? `${n} × ` : '') + k + ' mm').join(', ')})`);
+    if (iguais) partes.push(`${iguais} já no comprimento da pega`);
+    if (semPacote) partes.push(`${semPacote} sem pacote no eixo (a cabeça não encosta em nada ou o eixo bate numa parede) — ficaram como estavam`);
+    this.dica(partes.length ? partes.join(' · ') + (cmds.length ? ' · Ctrl+Z desfaz' : '') : 'Selecione parafusos (BOLT …) para recalcular pela pega');
+    if (this.editor._agendarPaineis) this.editor._agendarPaineis('props');
+    return { recalculados: cmds.length, iguais, semPacote, travados };
+  }
+
   /** Opções no painel de propriedades (chamado pelo editor). */
   painel(raiz, el) {
     raiz.append(el('div', { class: 'resumo-selecao' }, el('strong', { texto: 'Parafuso a lançar' }),
@@ -458,6 +514,12 @@ export class FerramentaParafuso extends Ferramenta {
       raiz.append(el('div', { class: 'acoes' }, el('button', { type: 'button', texto: `Furar pelos parafusos já colocados (${colocados.length})`,
         title: 'Abre o furo em toda peça que cada parafuso atravessa e ainda não tem furo no eixo (malha e barra do catálogo), e fecha os furos sem parafuso: o que ficou fora do corpo dele e o de parafuso apagado — os da ferramenta Furo ficam; Ctrl+Z desfaz tudo',
         onclick: () => this.furarPelosColocados() })));
+    }
+    const paraPega = this._selecionadosParaPega();
+    if (paraPega.length) {
+      raiz.append(el('div', { class: 'acoes' }, el('button', { type: 'button', texto: `Recalcular pela pega os selecionados (${paraPega.length})`,
+        title: 'Mede de novo o pacote que cada parafuso selecionado aperta e passa ao comprimento comercial dele (a porca vai para a pega nova, o nome e a lista de materiais acompanham) — para os colocados antes da regra dos comprimentos fáceis ou depois de uma peça mudar de espessura; Ctrl+Z desfaz',
+        onclick: () => this.recalcularPelaPega(paraPega) })));
     }
     const usados = this._usadosNoModelo();
     if (usados.length) {

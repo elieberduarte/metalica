@@ -11,11 +11,16 @@
 // O corte vai em `cortes_inicio`/`cortes_fim` (o ponto relativo ao nó da ponta, nos eixos do
 // mundo), o mesmo formato da regra automática: o 3D, o IFC, o peso e a lista de corte já contam
 // com ele, e o desfazer (Ctrl+Z) volta.
+//
+// O perfil que veio do IFC como malha também encaixa (revisão 14/10): os vértices da tampa da ponta andam ao longo do
+// eixo até o plano (corta em ângulo ou estica). Na malha vale um plano por ponta e só na ponta reta ou em ângulo — a
+// que tem recorte ou bico fica como está, com o aviso.
 
 import { Ferramenta } from './base.js';
 import * as C from './_comum.js';
 import { alturasDeCorte, prismaCortado } from '../nucleo/cena.js';
 import { baseDaBarra } from '../nucleo/documento.js';
+import { quadroDaMalha, encaixeDaMalha } from './_malha_perfil.js';
 
 const r4 = (x) => Math.round(x * 1e4) / 1e4;
 
@@ -61,7 +66,7 @@ export class FerramentaEncaixar extends Ferramenta {
   static nome = 'Encaixar ponta';
   static atalho = '';
   static grupo = 'estrutura';
-  static dica = 'Clique na barra a ajustar';
+  static dica = 'Clique no perfil a ajustar (barra ou malha do IFC)';
   static icone = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
 <path d="M3 20h18"/><path d="M3 16.5h18" stroke-dasharray="2 2"/><path d="M6 16.5 15 4l3.5 2.5-7.2 10"/></svg>`;
 
@@ -98,9 +103,17 @@ export class FerramentaEncaixar extends Ferramenta {
     const alvo = this._sob(p);
     if (!alvo || alvo.id === this.barra) return;
     const b = this.documento.get(this.barra);
-    const r = b && encaixeNaFace(b, alvo.ponto, alvo.normal);
-    if (!r) return;
-    const no = r.ponta === 'inicio' ? b.inicio : b.fim;
+    if (!b) return;
+    let no;
+    if (b.tipo === 'barra') {
+      const r = encaixeNaFace(b, alvo.ponto, alvo.normal);
+      if (!r) return;
+      no = r.ponta === 'inicio' ? b.inicio : b.fim;
+    } else {
+      const q = quadroDaMalha(b), r = q && encaixeDaMalha(b.vertices, b.faces, q, alvo.ponto, alvo.normal);
+      if (!r || r.erro) return;
+      no = C.add(q.centro, C.mul(q.eixo, r.ponta === 'inicio' ? q.t0 : q.t1));
+    }
     // a prévia: o nó que vai para a face e o plano do corte
     const n = C.normalizar(alvo.normal), u = C.perpendicular(n), v = C.cross(n, u), s = 120;
     const Q = alvo.ponto;
@@ -113,9 +126,9 @@ export class FerramentaEncaixar extends Ferramenta {
     const alvo = this._sob(p);
     if (!this.barra) {
       const e = alvo && this.documento.get(alvo.id);
-      if (!e || e.tipo !== 'barra') {
-        this.dica(e ? 'Essa peça é uma malha (veio do IFC ou é um sólido): o Encaixar corta só as barras do catálogo. Para ela, use o Empurrar/Puxar na face da ponta'
-                    : 'Clique numa barra (perfil) para ajustar a ponta dela');
+      if (!e || (e.tipo !== 'barra' && !quadroDaMalha(e))) {
+        this.dica(e ? 'Essa peça não é um perfil comprido (chapa, nó, fixador): o Encaixar ajusta pontas de perfis. Para ela, use o Empurrar/Puxar na face'
+                    : 'Clique num perfil (barra ou malha do IFC) para ajustar a ponta dele');
         return;
       }
       if (!C.editavel(this.editor, e)) { this.dica(C.DICA_BLOQUEADA); return; }
@@ -131,6 +144,7 @@ export class FerramentaEncaixar extends Ferramenta {
     }
     const b = this.documento.get(this.barra);
     const somar = !!(ev && ev.shiftKey);
+    if (b && b.tipo !== 'barra') { this._encaixarMalha(b, alvo, somar); return; }
     const r = encaixeNaFace(b, alvo.ponto, alvo.normal, somar);
     if (!r) { this.dica('Essa face corre ao longo da barra: não corta a ponta. Escolha a face em que ela chega'); return; }
     if (!corteValido(this.cena, { ...b, ...r.campos })) {
@@ -149,8 +163,31 @@ export class FerramentaEncaixar extends Ferramenta {
     }
   }
 
+  /** A ponta da malha do IFC levada ao plano da face (um plano por ponta). */
+  _encaixarMalha(b, alvo, somar) {
+    if (somar) { this.dica('Na malha vale um plano por ponta (o bico, com Shift, é só na barra do catálogo): clique sem Shift'); return; }
+    const q = quadroDaMalha(b);
+    const r = q && encaixeDaMalha(b.vertices, b.faces, q, alvo.ponto, alvo.normal);
+    if (!r || r.erro) { this.dica((r && r.erro) || 'Essa malha não é um perfil comprido'); return; }
+    const campos = { vertices: r.vertices };
+    // a malha de antes dos furos do editor (para refazê-los) leva o mesmo encaixe
+    const base = b.atributos && b.atributos.malha_sem_furos_editor;
+    if (base) {
+      const rb = encaixeDaMalha(base.vertices, base.faces, q, alvo.ponto, alvo.normal);
+      if (!rb || rb.erro) { this.dica((rb && rb.erro) || 'A malha de antes dos furos não aceitou o encaixe'); return; }
+      campos.atributos = { ...b.atributos, malha_sem_furos_editor: { vertices: rb.vertices, faces: base.faces } };
+    }
+    this.executar(C.cmdAlterar(b.id, C.marcarParaConferir(b, campos), 'Encaixar ponta'));
+    this.limparPrevia();
+    this.barra = null;
+    this.selecao.limpar();
+    this.dica('Ponta da malha encaixada. Clique no próximo perfil (Ctrl+Z desfaz)');
+  }
+
   onTecla(ev) {
     if (this.barra && (ev.key === 'Delete' || ev.key === 'Backspace')) {
+      const b = this.documento.get(this.barra);
+      if (b && b.tipo !== 'barra') { this.dica('Na malha o encaixe não fica guardado como corte: o Ctrl+Z volta a ponta'); return true; }
       this.executar(C.cmdAlterar(this.barra, { cortes_inicio: [], cortes_fim: [] }, 'Tirar os cortes das pontas'));
       this.dica('Cortes tirados: a barra está reta de nó a nó. Clique na face para encaixar de novo, ou Esc');
       return true;
