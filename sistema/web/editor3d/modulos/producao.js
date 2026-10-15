@@ -512,6 +512,32 @@ export class MetodosProducao {
     g.append(el('label', { texto: 'Fase / lote' }), vazio(this._texto(fase || '', v => mudarAtributo('fase', v, v ? `Fase ${v}` : 'Sem fase')), fase));
     g.append(el('label', { texto: 'Acabamento' }),
       this._lista(ACABAMENTOS, comumA('acabamento') ?? '', v => mudarAtributo('acabamento', v, v ? `Acabamento: ${v}` : 'Sem acabamento')));
+    // as propriedades do usuário (os parâmetros compartilhados do Revit): campos livres, no mesmo "Aplicar a"
+    const chavesU = [...new Set(pecas.flatMap(e => Object.keys((e.atributos && e.atributos.props_usuario) || {})))].sort();
+    const mudarPropU = (k, v, rotulo) => this.alterarEntidades(idsDoEscopo(), (e) => {
+      const a = clonar(e.atributos || {});
+      const pu = { ...(a.props_usuario || {}) };
+      if (v) pu[k] = v; else delete pu[k];
+      if (Object.keys(pu).length) a.props_usuario = pu; else delete a.props_usuario;
+      return { atributos: a };
+    }, rotulo);
+    for (const k of chavesU) {
+      const v0 = (pecas[0].atributos.props_usuario || {})[k];
+      const igual = pecas.every(e => ((e.atributos && e.atributos.props_usuario) || {})[k] === v0);
+      g.append(el('label', { texto: k, title: 'Propriedade do usuário — apague o valor para tirar' }),
+        vazio(this._texto(igual ? (v0 || '') : '', v => mudarPropU(k, v, v ? `${k}: ${v}` : `Tirar ${k}`)), igual ? v0 : undefined));
+    }
+    const maisU = el('button', { type: 'button', class: 'mini', texto: '+ propriedade', title: 'Um campo livre (fornecedor, nota fiscal, observação…) — vai na ficha, na tabela, no Colorir por e no IFC' });
+    maisU.addEventListener('click', async () => {
+      const nomeK = el('input', { type: 'text', placeholder: 'Fornecedor', style: 'width:100%' });
+      const valorK = el('input', { type: 'text', placeholder: 'Gerdau', style: 'width:100%' });
+      const corpo = el('div', { class: 'campos' }, el('label', { texto: 'Propriedade' }), nomeK, el('label', { texto: 'Valor' }), valorK);
+      if (await this.dialogo({ titulo: 'Nova propriedade', corpo, ok: 'Acrescentar' }) !== 'ok') return;
+      const k = nomeK.value.trim(), v = valorK.value.trim();
+      if (!k || !v) { this.aviso('Dê o nome e o valor da propriedade.', 'atencao'); return; }
+      mudarPropU(k, v, `${k}: ${v}`);
+    });
+    g.append(el('span'), maisU);
     if (um && um.tipo === 'chapa' && !marcasDe(um).posicao && this.projeto) {
       g.append(el('span', { class: 'explica', style: 'grid-column:1/-1',
         texto: 'Para editar a chapa no 2D (furos, contorno), numere primeiro: Editar → Numerar peças.' }));

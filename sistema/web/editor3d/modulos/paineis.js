@@ -731,7 +731,10 @@ export class MetodosPaineis {
       case 'aco': return ent.aco || ent.material || null;
       case 'nome': return marcas.nome || marcas.nome_projeto || null;
       case 'ligacao': return (ent.atributos && ent.atributos.ligacao && ent.atributos.ligacao.tipo) || null;
-      default: return null;
+      default:
+        // a propriedade do usuário ("u:Fornecedor")
+        if (modo && modo.startsWith('u:')) return ((ent.atributos && ent.atributos.props_usuario) || {})[modo.slice(2)] || null;
+        return null;
     }
   }
 
@@ -765,7 +768,9 @@ export class MetodosPaineis {
     const opcoes = [['padrao', 'camada e material'], ['conjunto', 'conjunto de montagem'],
                     ['posicao', 'posição (marca da peça)'], ['perfil', 'perfil'], ['tipo', 'tipo IFC'],
                     ['nome', 'nome de produção'], ['papel', 'papel (pilar, viga, terça…)'], ['fase', 'fase / lote'],
-                    ['acabamento', 'acabamento'], ['aco', 'aço'], ['ligacao', 'ligação aplicada']];
+                    ['acabamento', 'acabamento'], ['aco', 'aço'], ['ligacao', 'ligação aplicada'],
+                    ...[...new Set([...this.documento.entidades.values()].flatMap(e => Object.keys((e.atributos && e.atributos.props_usuario) || {})))]
+                      .sort().map(k => [`u:${k}`, k])];
     const sel = el('select', { title: 'Pinta cada peça pela cor do grupo a que pertence' },
       ...opcoes.map(([v, t]) => el('option', { value: v, texto: t, selected: v === modo ? 'selected' : undefined })));
     sel.value = modo;

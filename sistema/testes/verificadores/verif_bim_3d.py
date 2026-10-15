@@ -137,6 +137,17 @@ try:
     aba.drenar(0.5)
     acab = jsj(f"return ['{ids['pilar0']}', '{ids['pilar1']}', '{ids['viga']}'].map(i => editor.documento.get(i).atributos.acabamento || '');")
     ok(acab == ["pintura", "pintura", ""], f"o acabamento foi para a posição inteira (os dois pilares), não para a viga: {acab}")
+    # 6b) uma propriedade do usuário (a posição inteira, pelo "Aplicar a" que ficou em "todas da mesma posição")
+    selecionar(ids["pilar0"]); aba.drenar(0.6)
+    js("[...editor.el.props.querySelectorAll('button')].find(b => b.textContent === '+ propriedade').click(); 1")
+    ok(esperar("editor.el.dialogo.open", 10), "o diálogo da propriedade abriu")
+    jsj("""const i = editor.el.dialogoCorpo.querySelectorAll('input'); i[0].value = 'Fornecedor'; i[1].value = 'Gerdau'; return 1;""")
+    js("editor.el.dialogoOk.click(); 1"); aba.drenar(0.6)
+    pu = jsj(f"return ['{ids['pilar0']}', '{ids['pilar1']}', '{ids['viga']}'].map(i => (editor.documento.get(i).atributos.props_usuario || {{}}).Fornecedor || '');")
+    ok(pu == ["Gerdau", "Gerdau", ""], f"a propriedade foi para os dois pilares da posição: {pu}")
+    ok("Fornecedor" in (js("editor.el.props.textContent") or ""), "o painel mostra a propriedade")
+    ok(bool(js("[...editor.el.camadas.querySelectorAll('select option')].some(o => o.value === 'u:Fornecedor')")), "o Colorir por oferece a propriedade")
+
     # 7) o perfil soldado digitado no campo de perfil
     selecionar(ids["viga"]); aba.drenar(0.6)
     jsj("""const i = [...editor.el.props.querySelectorAll('.busca-perfil input')][0]; i.focus(); i.value = 'VS 500x250x9,5x6,3';

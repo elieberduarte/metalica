@@ -2536,6 +2536,10 @@ def producao_do_pset(propriedades: dict) -> dict:
             fora[campo] = v.strip()
     if calc.get("PecaPrincipal") in (True, "T", ".T.", "true", "True"):
         fora["principal"] = True
+    usuario = (propriedades or {}).get("Pset_Usuario") or {}
+    pu = {str(k): str(v) for k, v in usuario.items() if isinstance(v, (str, int, float)) and str(v).strip()}
+    if pu:
+        fora["props_usuario"] = pu
     return fora
 
 

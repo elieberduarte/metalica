@@ -116,6 +116,7 @@ export class MetodosBIM {
     if (a.detalhe_usuario) out.push(['Detalhe', a.detalhe_usuario.nome]);
     const sold = a.soldas ? Object.keys(a.soldas).length : 0;
     if (sold) out.push(['Soldas', `com ${Object.keys(a.soldas).join(', ')}`]);
+    for (const [k, v] of Object.entries(a.props_usuario || {})) out.push([k, v]);
     if (a.marca_a_conferir) out.push(['Atenção', 'mudou depois de copiada — Numerar']);
     out.push(['Camada', e.camada || '—']);
     return out;
@@ -372,7 +373,9 @@ export class MetodosBIM {
         case 'fase': chave = a.fase || '(sem fase)'; break;
         case 'papel': chave = parafuso ? 'parafuso' : (e.papel || e.tipo); break;
         case 'acabamento': chave = a.acabamento || '(sem acabamento)'; break;
-        default: chave = parafuso ? (e.nome || 'parafuso') : (m.posicao || '(sem marca)');
+        default:
+          if (por.startsWith('u:')) { chave = (a.props_usuario || {})[por.slice(2)] || `(sem ${por.slice(2)})`; break; }
+          chave = parafuso ? (e.nome || 'parafuso') : (m.posicao || '(sem marca)');
       }
       if (!grupos.has(chave)) grupos.set(chave, { chave, ids: [], qtd: 0, comprimento: 0, peso: 0, perfis: new Set() });
       const g = grupos.get(chave);
@@ -395,7 +398,9 @@ export class MetodosBIM {
     const { linhas, total } = this.linhasDaTabela(por);
     const visiveis = filtro ? linhas.filter(g => `${g.chave} ${[...g.perfis].join(' ')}`.toLowerCase().includes(filtro)) : linhas;
     const sel = el('select');
-    for (const [v, t] of [['posicao', 'posição'], ['perfil', 'perfil'], ['conjunto', 'conjunto'], ['fase', 'fase'], ['papel', 'papel'], ['acabamento', 'acabamento']]) {
+    const chavesU = [...new Set([...this.documento.entidades.values()].flatMap(e => Object.keys((e.atributos && e.atributos.props_usuario) || {})))].sort();
+    for (const [v, t] of [['posicao', 'posição'], ['perfil', 'perfil'], ['conjunto', 'conjunto'], ['fase', 'fase'], ['papel', 'papel'], ['acabamento', 'acabamento'],
+                          ...chavesU.map(k => [`u:${k}`, k])]) {
       sel.append(el('option', { value: v, texto: t, selected: v === por }));
     }
     sel.addEventListener('change', () => { this._tabelaPor = sel.value; this._desenharTabela(); });

@@ -754,6 +754,14 @@ class _Exportador:
         self._pset(tipo_pset, comum, self.atual)
         if extras:
             self._pset("Pset_MetalicaCalculo", extras, self.atual)
+        self._pset_usuario(ent)
+
+    def _pset_usuario(self, ent: Entidade):
+        """As propriedades do usuário dadas no editor 3D (campos livres, 14/10/2026) num Pset próprio."""
+        pu = (ent.atributos or {}).get("props_usuario")
+        if isinstance(pu, dict) and pu:
+            self._pset("Pset_Usuario", [self._prop_valor(str(k), "IFCLABEL", str(v)) for k, v in sorted(pu.items()) if v],
+                       self.atual)
 
     def _calculo(self, ent: Entidade, perfil: str, aco: str, comprimento: float,
                  peso: float) -> List[str]:
@@ -1036,6 +1044,7 @@ class _Exportador:
                 self._prop_valor("Perfil", "IFCLABEL", "—"),
                 self._prop_valor("Origem", "IFCLABEL", solido.origem_ifc or "modelado"),
             ] + self._reserva_aparencia(solido), self.atual)
+            self._pset_usuario(solido)
         return self.atual
 
     # ------------------------------------------------------------ percurso

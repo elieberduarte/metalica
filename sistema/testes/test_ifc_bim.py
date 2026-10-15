@@ -17,7 +17,8 @@ def test_fase_acabamento_e_principal_vao_e_voltam_pelo_ifc(tmp_path):
               atributos={"marcas": {"posicao": "P7", "conjunto": "M3", "instancia": "c1", "principal": True},
                          "fase": "Lote 2", "acabamento": "galvanizado a fogo",
                          "ligacao": {"id": "L1", "tipo": "chapa_topo_joelho"},
-                         "soldas": {"P9": {"tipo": "filete", "perna": 6, "lados": 2, "local": "fabrica"}}})
+                         "soldas": {"P9": {"tipo": "filete", "perna": 6, "lados": 2, "local": "fabrica"}},
+                         "props_usuario": {"Fornecedor": "Gerdau", "Nota": "NF 1234"}})
     doc.add(b)
     arq = str(tmp_path / "bim.ifc")
     exportar(doc, arq)
@@ -29,6 +30,7 @@ def test_fase_acabamento_e_principal_vao_e_voltam_pelo_ifc(tmp_path):
     assert peca.atributos.get("fase") == "Lote 2"
     assert peca.atributos.get("acabamento") == "galvanizado a fogo"
     assert peca.atributos["marcas"].get("principal") is True
+    assert peca.atributos.get("props_usuario") == {"Fornecedor": "Gerdau", "Nota": "NF 1234"}
 
 
 def test_lista_de_materiais_leva_fase_acabamento_e_solda_de_obra(tmp_path):
