@@ -359,6 +359,8 @@ export class Documento {
     if (this.foraDoIsolamento && this.foraDoIsolamento.has(ent.id)) return false;
     // os grupos ocultos na legenda do "Colorir por" (perfil, posição…): só na vista, não vão para o modelo gravado
     if (this.ocultosNaVista && this.ocultosNaVista.has(ent.id)) return false;
+    // as ocultas à mão (o "Ocultar" do menu do botão direito): também só na vista
+    if (this.ocultasAMao && this.ocultasAMao.has(ent.id)) return false;
     const c = this.camadas.get(ent.camada);
     return !c || c.visivel !== false;
   }
