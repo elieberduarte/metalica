@@ -3,7 +3,7 @@
 //
 // * Terças por espaçamento — nas tesouras/vigas selecionadas, sentadas no topo, nunca acima do espaçamento pedido;
 // * Treliça entre banzos — montantes e diagonais (Pratt, Howe, Warren) entre os dois banzos, com o encaixe das almas;
-// * Contraventamento em X — entre duas barras paralelas, num ou em vários painéis;
+// * Contraventamento em X — entre duas barras paralelas, num ou em vários painéis (na cobertura, já nos suportes SC1);
 // * Pilares nos eixos — um pilar em cada cruzamento escolhido dos eixos gravados da obra;
 // * Viga entre pilares — no nível pedido, com o topo da viga no nível;
 // * Longarinas de fechamento — na face de fora dos pilares de uma parede, alma na horizontal, boca para baixo;
@@ -173,6 +173,7 @@ export class MetodosModelagem {
         if (res.linhas) partes.push(`${res.linhas} linhas`);
         if (res.passo) partes.push(`passo ${numero(res.passo, 0)} mm`);
         if (res.paineis) partes.push(`${res.paineis} painéis`);
+        if (res.suportes) partes.push(`${res.suportes} suportes`);
         estado.className = 'estado-previa';
         estado.textContent = `Prévia: ${partes.join(' · ')}` + ((r.avisos || []).length ? ` — ${r.avisos.join('; ')}` : '');
       } catch (e) {
@@ -261,10 +262,13 @@ export class MetodosModelagem {
     const novas = (r.novas || []).map(d => d.id).filter(id => this.documento.get(id));
     this.selecao.definir(novas);
     await this._completarPerfis();
+    // peças que saem com ligação (o SC1 do contravento): entram na conferência das ligações desatualizadas
+    if ((r.novas || []).some(d => d.atributos && d.atributos.ligacao) && typeof this._conferirLigacoes === 'function') this._conferirLigacoes();
     const res = r.resumo || {};
     const partes = [`${novas.length} peça${novas.length === 1 ? '' : 's'}`];
     if (res.passo) partes.push(`passo ${numero(res.passo, 0)} mm`);
     if (res.paineis) partes.push(`${res.paineis} painéis`);
+    if (res.suportes) partes.push(`${res.suportes} suportes`);
     this.aviso(`${rotulo}: ${partes.join(' · ')}.${(r.avisos || []).length ? ' ' + r.avisos.join('; ') + '.' : ''}`,
       (r.avisos || []).length ? 'atencao' : 'info', 9000);
     return r;
@@ -311,8 +315,10 @@ export class MetodosModelagem {
       { chave: 'perfil', rotulo: 'Perfil', tipo: 'perfil', valor: this._perfilSugerido('contraventamento', "FE RED 1/2''") },
       { chave: 'paineis', rotulo: 'Painéis', tipo: 'numero', valor: vert(bs[0]) ? 2 : 1 },
       { chave: 'margem', rotulo: 'Afastamento das pontas (mm)', tipo: 'numero', valor: 0 },
+      { chave: 'suporte', rotulo: 'Nas pontas', tipo: [['sc1', 'suportes SC1 no topo dos banzos (cobertura)'], ['nenhum', 'sem suporte, de eixo a eixo']],
+        valor: vert(bs[0]) ? 'nenhum' : 'sc1' },
     ]);
-    const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: 'Duas diagonais por painel, de eixo a eixo; a ligação (chapa ou suporte do tirante) vem depois, pelo Aplicar ligação.' }));
+    const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: 'Duas diagonais por painel. Com o SC1 (o detalhe validado na portaria), cada tirante sai esticado de furo a furo nas cantoneiras em pé no topo dos banzos, com marca, conjunto e solda, e a ligação continua editável. Entre pilares, ou com outro detalhe, lance sem suporte e use o Aplicar ligação.' }));
     const e = await this._dialogoComPrevia({ titulo: 'Contraventamento em X', corpo, ok: 'Lançar', pedido: () => ({ ferramenta: 'contravento', ids: bs.map(b => b.id), parametros: f.ler() }) });
     if (e) await this._modelar(e.pedido, 'Contraventamento', e.pronto);
   }

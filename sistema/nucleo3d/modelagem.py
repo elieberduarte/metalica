@@ -304,7 +304,43 @@ def contravento_x(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
         for p0, p1 in ((em_a(sa), em_b(sb)), (em_b(sa), em_a(sb))):
             novas.append(Barra(nome="Contraventamento", inicio=_r(p0), fim=_r(p1), perfil=perfil, papel=papel,
                                camada="Contraventamento", material="Aço", atributos={"tipo_ifc": "IfcMember"}))
+    if str(p.get("suporte") or "nenhum") == "sc1":
+        return _com_suporte_sc1(doc, a, b, novas, paineis)
     return {"novas": [x.dict() for x in novas], "resumo": {"paineis": paineis, "pecas": len(novas)}, "avisos": []}
+
+
+def _com_suporte_sc1(doc, a, b, diagonais, paineis) -> dict:
+    """As diagonais do contravento de cobertura já nos suportes SC1 (a ligação suporte_contravento da biblioteca, a
+    mesma do Aplicar ligação): uma ligação por tirante, cada uma vendo as anteriores. O nó em que chegam dois tirantes
+    (entre dois painéis) ganha dois SC1 no mesmo ponto — não se inventa o suporte de dois furos: vai como aviso."""
+    from nucleo3d import ligacoes3d
+    from nucleo3d.modelo import Documento
+    if abs(_norm(_sub(a.fim, a.inicio))[2]) > 0.7:
+        raise ErroDeDados("o suporte SC1 é do contravento de cobertura (a cantoneira no topo do banzo): "
+                          "entre pilares, lance sem suporte e aplique a ligação depois")
+    base = doc.dict()
+    base["entidades"] = list(base["entidades"]) + [d.dict() for d in diagonais]
+    por_id = {e["id"]: e for e in base["entidades"]}
+    novos_ids = [d.id for d in diagonais]
+    alterar: Dict[str, dict] = {}
+    for d in diagonais:
+        r = ligacoes3d.aplicar(Documento.de_dict(base), "suporte_contravento", [d.id, a.id, b.id])
+        for e in r["novas"]:
+            base["entidades"].append(e)
+            por_id[e["id"]] = e
+            novos_ids.append(e["id"])
+        for i, campos in r["alterar"].items():
+            por_id[i].update({k: (list(v) if isinstance(v, tuple) else v) for k, v in campos.items()})
+            if i not in novos_ids:
+                alterar.setdefault(i, {}).update(campos)
+    novas = [por_id[i] for i in novos_ids]
+    # os nós com dois suportes no mesmo lugar
+    scs = [e for e in novas if e.get("papel") == "suporte"]
+    juntos = sum(1 for i, x in enumerate(scs) for y in scs[i + 1:] if math.dist(x["inicio"], y["inicio"]) < 60.0)
+    avisos = ["%d nó(s) com dois tirantes chegando: dois SC1 no mesmo ponto — defina o suporte desse nó (um de dois "
+              "furos, ou afaste os tirantes)" % juntos] if juntos else []
+    return {"novas": novas, "alterar": alterar,
+            "resumo": {"paineis": paineis, "pecas": len(novas), "suportes": len(scs)}, "avisos": avisos}
 
 
 # ------------------------------------------------------------------ pilares nos eixos
@@ -413,8 +449,11 @@ def longarinas(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
     esp = float(p.get("espacamento") or 1900.0)
     base = max(min(b.inicio[2], b.fim[2]) for b in pilares)
     topo = min(max(b.inicio[2], b.fim[2]) for b in pilares)
+    # no oitão os pilares sobem até a água: a fiada só entra no vão em que os dois chegam acima dela (folga)
+    folga_topo = float(p.get("folga_topo") or 300.0)
+    topo_max = max(max(b.inicio[2], b.fim[2]) for b in pilares)
     z0 = float(p["primeira"]) if p.get("primeira") not in (None, "") else base + esp
-    z1 = float(p["ultima"]) if p.get("ultima") not in (None, "") else topo - 300.0
+    z1 = float(p["ultima"]) if p.get("ultima") not in (None, "") else topo_max - folga_topo
     balanco = float(p.get("balanco") or 0.0)
     continua = str(p.get("continua") or "nao") == "sim"
     boca = str(p.get("boca") or "baixo")
@@ -447,9 +486,26 @@ def longarinas(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
         passo = (z1 - z0) / n
         zs = [z0 + k * passo for k in range(n + 1)]
     novas = []
+    alto = [max(b_.inicio[2], b_.fim[2]) for b_, _q in pes]
     for j, z in enumerate(zs):
         cs = [(q[0] + nw[0] * off, q[1] + nw[1] * off, z) for _b, q in pes]
-        trechos = [(cs[0], cs[-1])] if continua else list(zip(cs[:-1], cs[1:]))
+        # os pilares que passam da fiada (com a folga): os trechos ficam entre pilares vizinhos que passam
+        ok_ = [h >= z + folga_topo - 1e-6 for h in alto]
+        if continua:
+            # contínua: o maior trecho de pilares seguidos que passam
+            blocos, atual = [], []
+            for k in range(len(cs)):
+                if ok_[k]:
+                    atual.append(k)
+                else:
+                    if len(atual) >= 2:
+                        blocos.append(atual)
+                    atual = []
+            if len(atual) >= 2:
+                blocos.append(atual)
+            trechos = [(cs[bl[0]], cs[bl[-1]]) for bl in blocos]
+        else:
+            trechos = [(cs[k], cs[k + 1]) for k in range(len(cs) - 1) if ok_[k] and ok_[k + 1]]
         for i, (c0, c1) in enumerate(trechos):
             dirt = _norm(_sub(c1, c0))
             if i == 0 and balanco:
@@ -466,8 +522,11 @@ def longarinas(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
     avisos = []
     if passo and passo > esp + 1e-6:
         avisos.append("espaçamento acima do pedido")
-    if zs[-1] > topo or zs[0] < base:
-        avisos.append("fiada fora da altura dos pilares: confira a primeira e a última")
+    if zs[0] < base:
+        avisos.append("fiada abaixo do pé dos pilares: confira a primeira")
+    if topo_max - topo > 300.0:
+        avisos.append("pilares de alturas diferentes (oitão): cada fiada só vai entre os pilares que passam dela; "
+                      "o fechamento junto da água (a terça de oitão inclinada) fica por conta")
     return {"novas": [b.dict() for b in novas],
             "resumo": {"linhas": len(zs), "passo": round(passo, 1), "pecas": len(novas)}, "avisos": avisos}
 

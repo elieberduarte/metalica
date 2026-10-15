@@ -201,6 +201,20 @@ try:
     ok(len(mf) == 10 and all(abs(x - 1) < 0.01 for x in ang), f"10 a 45°: {[round(x, 3) for x in ang]}")
     erros("Mão-francesa")
 
+    # 5c3) contravento de cobertura entre as duas tesouras: já nos suportes SC1
+    n_cv = conta("contraventamento")
+    selecionar(ids["T1"], ids["T2"])
+    ok(dialogo("modelar-contravento"), "o diálogo Contraventamento abriu para as tesouras")
+    ok(js("[...editor.el.dialogoCorpo.querySelectorAll('select')].pop().value") == "sc1", "entre banzos, o padrão é o SC1")
+    ok(esperar(f"{PREVIA} >= 6", 30), f"a prévia: 2 tirantes e 4 suportes: {js(PREVIA)}")
+    ok_dialogo()
+    ok(esperar(f"[...editor.documento.entidades.values()].filter(e => e.papel === 'suporte').length === 4", 30), "os 4 suportes SC1 entraram")
+    ok(conta("contraventamento") == n_cv + 2, "e os 2 tirantes")
+    lig = jsj("return [...new Set([...editor.documento.entidades.values()].filter(e => e.papel === 'suporte').map(e => e.atributos.ligacao && e.atributos.ligacao.tipo))];")
+    ok(lig == ["suporte_contravento"], f"a ligação fica registrada (editável): {lig}")
+    ok(not js("!!document.querySelector('.faixa-ligacoes')"), "sem a faixa de ligação desatualizada")
+    erros("Contravento com SC1")
+
     # 5d) copiar a treliça (y 20000, paralela aos eixos 1 e 2) do eixo 2 para o eixo 1: 10 m para trás
     trel = jsj("return [...editor.documento.entidades.values()].filter(e => e.atributos && e.atributos.origem && e.atributos.origem.peca === 'TRELIÇA').map(e => e.id);")
     selecionar(*trel)

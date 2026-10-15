@@ -388,3 +388,66 @@ def test_correntes_reta_na_cumeeira_e_uma_agua_sem_v():
     assert len(r["novas"]) == 5 and not any(b["atributos"].get("cumeeira") for b in r["novas"])
     r = modelagem.correntes(doc, [b.id for b in ls[:3]], {})
     assert len(r["novas"]) == 2 and not any(b["atributos"].get("cumeeira") for b in r["novas"])
+
+
+# ------------------------------------------------------------------ longarinas no oitão, contravento com SC1
+
+def test_longarinas_no_oitao_so_entre_os_pilares_que_passam_da_fiada():
+    # o oitão: pilares de 6, 8, 10, 8 e 6 m (a água sobe até o meio)
+    ps = [Barra(inicio=(0, y, 0), fim=(0, y, h), perfil="W 250×32,7", papel="pilar")
+          for y, h in ((0, 6000), (5000, 8000), (10000, 10000), (15000, 8000), (20000, 6000))]
+    t = Barra(inicio=(0, 0, 6000), fim=(30000, 0, 6000), perfil="W 150×13", papel="viga")
+    doc = _doc(*ps, t)
+    r = modelagem.longarinas(doc, [p.id for p in ps], {"primeira": 1500, "espacamento": 1900})
+    bs = _barras(r)
+    # as fiadas de 1,50 a 9,70 m (o pilar mais alto − 300); na de 6,42 m só os dois vãos do meio (pilares de 8 e 10 m)
+    assert r["resumo"]["linhas"] == 6
+    assert max(b.inicio[2] for b in bs) == pytest.approx(6420)
+    assert sorted(sorted((round(b.inicio[1]), round(b.fim[1]))) for b in bs if round(b.inicio[2]) == 6420) == [[5000, 10000], [10000, 15000]]
+    for b in bs:
+        z = b.inicio[2]
+        ys = sorted((b.inicio[1], b.fim[1]))
+        # nenhum trecho apoiado num pilar que não passa da fiada + 300
+        for y in ys:
+            h = dict(((0, 6000), (5000, 8000), (10000, 10000), (15000, 8000), (20000, 6000)))[round(y)]
+            assert h >= z + 300 - 1e-6, (y, z)
+    # abaixo de 5,7 m, as 4 peças; acima de 7,7 m, nenhuma (só o pilar do meio passa)
+    assert sum(1 for b in bs if b.inicio[2] < 5700) % 4 == 0
+    assert not any(b.inicio[2] > 7700 for b in bs)
+    assert any("oitão" in a for a in r["avisos"])
+    # contínua: o maior trecho seguido dos que passam
+    r = modelagem.longarinas(doc, [p.id for p in ps], {"primeira": 6500, "ultima": 6500, "continua": "sim"})
+    b = _barras(r)[0]
+    assert sorted((round(b.inicio[1]), round(b.fim[1]))) == [5000, 15000]
+
+
+def test_contravento_de_cobertura_ja_nos_suportes_sc1():
+    a = Barra(nome="BA", inicio=(0, 0, 6000), fim=(0, 12000, 6000), perfil="W 250×32,7", papel="banzo")
+    b = Barra(nome="BB", inicio=(6000, 0, 6000), fim=(6000, 12000, 6000), perfil="W 250×32,7", papel="banzo")
+    doc = _doc(a, b)
+    r = modelagem.contravento_x(doc, [a.id, b.id], {"paineis": 1, "perfil": "FE RED 5/8''", "suporte": "sc1"})
+    assert r["resumo"]["suportes"] == 4                   # 2 tirantes × 2 pontas
+    scs = [e for e in r["novas"] if e.get("papel") == "suporte"]
+    tir = [e for e in r["novas"] if e.get("papel") == "contraventamento"]
+    assert len(tir) == 2 and all(e["atributos"].get("ligacao", {}).get("tipo") == "suporte_contravento" for e in scs)
+    # a L em pé no topo do banzo (W 250: topo em 6000 + 129)
+    assert all(abs(min(e["inicio"][2], e["fim"][2]) - (6000 + 129)) < 1.0 for e in scs)
+    # o tirante esticado de furo a furo (já não vai de eixo a eixo)
+    assert all(t["inicio"][2] > 6000 + 100 for t in tir)
+    # as marcas e a solda gravadas nos banzos vão em "alterar"
+    assert set(r["alterar"]) <= {a.id, b.id} and r["alterar"]
+    assert not r["avisos"]
+
+
+def test_contravento_sc1_avisa_no_com_dois_tirantes_e_recusa_pilares():
+    a = Barra(inicio=(0, 0, 6000), fim=(0, 12000, 6000), perfil="W 250×32,7", papel="banzo")
+    b = Barra(inicio=(6000, 0, 6000), fim=(6000, 12000, 6000), perfil="W 250×32,7", papel="banzo")
+    doc = _doc(a, b)
+    r = modelagem.contravento_x(doc, [a.id, b.id], {"paineis": 2, "perfil": "FE RED 5/8''", "suporte": "sc1"})
+    assert r["resumo"]["suportes"] == 8
+    assert r["avisos"] and "2 nó" in r["avisos"][0]
+    p1 = Barra(inicio=(0, 0, 0), fim=(0, 0, 6000), perfil="W 250×32,7", papel="pilar")
+    p2 = Barra(inicio=(6000, 0, 0), fim=(6000, 0, 6000), perfil="W 250×32,7", papel="pilar")
+    doc = _doc(p1, p2)
+    with pytest.raises(ErroDeDados):
+        modelagem.contravento_x(doc, [p1.id, p2.id], {"suporte": "sc1"})
