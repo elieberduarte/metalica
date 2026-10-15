@@ -172,6 +172,31 @@ try:
         girou = max(abs(a_ - b_) for a_, b_ in zip(alvo0["posicao"], cam1["posicao"])) > 1
         ok(girou and depois and math.hypot(depois[0] - xy[0], depois[1] - xy[1]) < 25,
            f"arrastar sobre a peça gira em volta dela: ela fica no lugar da tela ({depois[:2] if depois else None} × {xy[:2]})")
+        # num vão ao lado da peça (a treliça da Kaefer do engenheiro, 15/10: "gira em torno do ponto errado"), o giro se
+        # apoia na profundidade das peças em volta, no raio do cursor: esse ponto fica parado sob o cursor (antes o giro
+        # era em volta do alvo da câmera, no meio do modelo)
+        gap = aba.avaliar(f"""(() => {{ const v = {F3}.visor; const [x, y] = v.paraTela({xy[2]});
+          for (const d of [12, 20, 30, 45, 60]) for (const [ax, ay] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {{
+            const gx = x + ax * d, gy = y + ay * d; if (v.escolher(gx, gy) >= 0) continue;
+            const p = v._focoPerto(gx, gy); if (!p) continue;
+            const prof = (q) => q.clone().sub(v.camera.position).dot(v.camera.getWorldDirection(q.clone()));
+            window.__pivoVao = p;
+            return [gx, gy, prof(p), prof(v.controles.target)]; }}
+          return null; }})()""")
+        ok(bool(gap), "achou um vão ao lado da peça com o apoio das vizinhas")
+        if gap:
+            gx, gy = r[0] + gap[0], r[1] + gap[1]
+            aba.cmd("Input.dispatchMouseEvent", type="mousePressed", x=gx, y=gy, button="left", buttons=1, clickCount=1)
+            for k in range(1, 11):
+                aba.cmd("Input.dispatchMouseEvent", type="mouseMoved", x=gx + 6 * k, y=gy + 2 * k, button="left", buttons=1)
+            aba.cmd("Input.dispatchMouseEvent", type="mouseReleased", x=gx + 60, y=gy + 20, button="left", buttons=0, clickCount=1)
+            aba.drenar(0.5)
+            tela = aba.avaliar(f"""(() => {{ const v = {F3}.visor; v.camera.updateMatrixWorld();
+              const q = window.__pivoVao.clone().project(v.camera);
+              return [(q.x + 1) / 2 * v.tela.clientWidth, (1 - q.y) / 2 * v.tela.clientHeight]; }})()""")
+            ok(tela and math.hypot(tela[0] - gap[0], tela[1] - gap[1]) < 3,
+               f"arrastar no vão gira em volta do ponto das peças em volta, parado sob o cursor ({tela} × {gap[:2]}; "
+               f"profundidade {gap[2]:.0f} mm, o alvo estava a {gap[3]:.0f} mm)")
 
     # Editar: o editor no mesmo quadro, com a mesma vista e a mesma peça
     xy = aba.avaliar(f"(() => {{ const v = {F3}.visor; v.enquadrar('iso'); const i = v.fichas.findIndex(f => f.id === 'b1'); const [x, y] = v.paraTela(i); return [x, y, i]; }})()")

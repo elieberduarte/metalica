@@ -745,13 +745,14 @@ export class Visor3D {
   /** Arrastar sobre uma peça gira em volta do ponto dela sob o cursor, como no editor (camera.js, "como no
    *  SketchUp"): o ponto fica parado na tela e nada pula. O giro do OrbitControls era em volta do alvo, que o zoom no
    *  cursor leva para longe — com a peça selecionada no meio da tela, ela saía de vista (pedido do usuário, 06/10).
-   *  No vazio, o giro de sempre. */
+   *  Num vão, a peça mais perto em volta do cursor; no vazio, o chão do prédio ou, por último, o alvo da câmera. */
   _orbitarNoCursor(ev) {
     if (ev.pointerType === 'touch' || (ev.button !== 0 && ev.button !== 1) || !this.fichas) return;
     const r = this.tela.getBoundingClientRect();
     // o ponto conferido (dentro do modelo e no raio do cursor): o da placa pode vir errado e o giro em volta dele levava
-    // o modelo embora (09/10)
-    const pivo = this._focoSeguro(ev.clientX - r.left, ev.clientY - r.top);
+    // o modelo embora (09/10). Num vão, a peça mais perto em volta; sem nenhuma, o chão do prédio sob o cursor (15/10)
+    const x = ev.clientX - r.left, y = ev.clientY - r.top;
+    const pivo = this._focoSeguro(x, y) || this._focoPerto(x, y) || this._focoNoVazio(x, y);
     if (!pivo) return;
     this.controles.enableRotate = false;
     let ultimo = { x: ev.clientX, y: ev.clientY }, mexeu = false;
@@ -834,6 +835,36 @@ export class Visor3D {
     return p && caixa.containsPoint(p) ? p : null;
   }
 
+  /** Num vão entre as peças (a treliça e os tirantes da Kaefer do engenheiro, 15/10: "gira em torno do ponto errado" —
+   *  o cursor caía entre as barras e o giro ia para o alvo da câmera, no meio do prédio), o apoio como no editor
+   *  (camera.js, _pecaPertoDoCursor): a peça mais perto da câmera no quadrado de 2·meio px em volta do cursor (um
+   *  desenho só, em n × n pontos) dá a profundidade, e o ponto fica no raio do cursor (a tela não pula). null sem peça
+   *  em volta (ou sem imagem em ponto flutuante na placa). */
+  _focoPerto(x, y, meio = 200, n = 100) {
+    if (!this.renderer.extensions.has('EXT_color_buffer_float')) return null;
+    if (!this._alvoBloco) this._alvoBloco = new THREE.WebGLRenderTarget(n, n, { type: THREE.FloatType });
+    const v = this._pixel(x, y, 'ponto', this._alvoBloco, new Float32Array(n * n * 4), meio, n);
+    const cam = this.camera;
+    cam.updateMatrixWorld();
+    const dirVista = cam.getWorldDirection(new THREE.Vector3());
+    const caixa = this._caixaModelo.clone().expandByScalar(this._esferaModelo.radius * 0.1 + 1000);
+    const p = new THREE.Vector3();
+    let melhor = Infinity;
+    for (let i = 0; i < n * n; i++) {
+      if (!(v[4 * i + 3] > 0.5)) continue;
+      p.set(v[4 * i], v[4 * i + 1], v[4 * i + 2]);
+      if (!caixa.containsPoint(p)) continue;               // o ponto da placa fora do lugar (09/10): não vale
+      const d = p.sub(cam.position).dot(dirVista);
+      if (d > 0 && d < melhor) melhor = d;
+    }
+    if (!Number.isFinite(melhor)) return null;
+    const W = this.tela.clientWidth, H = this.tela.clientHeight;
+    const raio = new THREE.Raycaster();
+    raio.setFromCamera(new THREE.Vector2(x / Math.max(W, 1) * 2 - 1, -(y / Math.max(H, 1)) * 2 + 1), cam);
+    const cos = Math.max(raio.ray.direction.dot(dirVista), 1e-3);
+    return raio.ray.origin.clone().addScaledVector(raio.ray.direction, melhor / cos);
+  }
+
   /** O pan do botão direito "agarra" o ponto sob o cursor (a peça ou o chão; no vazio, o plano do alvo): ele acompanha
    *  o mouse exatamente, perto ou longe. O do OrbitControls anda pela distância até o alvo — depois do zoom na peça o
    *  alvo vem junto e o pan quase parava (09/10). */
@@ -841,7 +872,7 @@ export class Visor3D {
     if (ev.pointerType === 'touch' || ev.button !== 2 || !this.fichas) return;
     const r = this.tela.getBoundingClientRect();
     const x0 = ev.clientX - r.left, y0 = ev.clientY - r.top;
-    const ancora = this._focoSeguro(x0, y0) || this._focoNoVazio(x0, y0);
+    const ancora = this._focoSeguro(x0, y0) || this._focoPerto(x0, y0) || this._focoNoVazio(x0, y0);
     if (!ancora) return;
     const cam = this.camera;
     const plano = new THREE.Plane().setFromNormalAndCoplanarPoint(cam.getWorldDirection(new THREE.Vector3()), ancora);
@@ -954,8 +985,9 @@ export class Visor3D {
 
   // ---------------------------------------------------------------- escolha pelo toque
 
-  /** Desenha só o pixel (x, y) com a variante `qual` das malhas ('escolha' ou 'ponto') e o lê. */
-  _pixel(x, y, qual, alvo, saida) {
+  /** Desenha só o pixel (x, y) com a variante `qual` das malhas ('escolha' ou 'ponto') e o lê. Com `meio` (px CSS), o
+   *  quadrado de lado 2·meio em volta de (x, y), desenhado no alvo inteiro (n × n) e lido todo. */
+  _pixel(x, y, qual, alvo, saida, meio = 0, n = 1) {
     const w = this.tela.clientWidth, h = this.tela.clientHeight;
     const fundo = this.cena.background;
     this.cena.background = null;
@@ -969,11 +1001,12 @@ export class Visor3D {
       if (m.arestas) { trocas.push([m.arestas, m.arestas.visible, true]); m.arestas.visible = false; }
     }
     const dpr = this.renderer.getPixelRatio();
-    this.camera.setViewOffset(w * dpr, h * dpr, Math.round(x * dpr), Math.round(y * dpr), 1, 1);
+    const lado = meio ? Math.round(2 * meio * dpr) : 1;
+    this.camera.setViewOffset(w * dpr, h * dpr, Math.round((x - meio) * dpr), Math.round((y - meio) * dpr), lado, lado);
     this.renderer.setRenderTarget(alvo);
     this.renderer.clear();
     this.renderer.render(this.cena, this.camera);
-    this.renderer.readRenderTargetPixels(alvo, 0, 0, 1, 1, saida);
+    this.renderer.readRenderTargetPixels(alvo, 0, 0, n, n, saida);
     this.renderer.setRenderTarget(null);
     this.camera.clearViewOffset();
     for (const t of trocas) { if (t[2]) t[0].visible = t[1]; else t[0].material = t[1]; }
@@ -1034,6 +1067,7 @@ export class Visor3D {
     this.textura.dispose();
     if (this._alvo) this._alvo.dispose();
     if (this._alvoPonto) this._alvoPonto.dispose();
+    if (this._alvoBloco) this._alvoBloco.dispose();
     this.renderer.dispose();
   }
 }
