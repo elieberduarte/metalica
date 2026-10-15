@@ -262,6 +262,84 @@ export class MetodosBIM {
     }));
   }
 
+  // ---------------------------------------------------------------- árvore do modelo por propriedade
+
+  /** O seletor do topo da árvore: por camada (como era) ou pela organização de produção, como o navegador do Revit. */
+  _seletorArvore() {
+    const modo = this.arvorePor || 'camada';
+    const sel = el('select', { title: 'Como a árvore organiza as peças' });
+    for (const [v, t] of [['camada', 'camada'], ['conjunto', 'conjunto → posição'], ['perfil', 'perfil → posição'],
+                          ['fase', 'fase → conjunto'], ['papel', 'papel → perfil']]) {
+      sel.append(el('option', { value: v, texto: t, selected: v === modo }));
+    }
+    sel.addEventListener('change', () => { this.arvorePor = sel.value; this._agendarPaineis('arvore'); });
+    return el('div', { class: 'cor-por', style: 'margin:2px 4px 6px' }, el('label', { texto: 'Organizar por' }), sel);
+  }
+
+  _arvorePorPropriedade(raiz) {
+    const modo = this.arvorePor;
+    const m_ = (e) => marcasDe(e);
+    const parafuso = (e) => !!(e.atributos && e.atributos.parafuso) || /BOLT|PARAFUSO/i.test(e.nome || '');
+    const perfil = (e) => (e.tipo === 'barra' ? e.perfil : e.tipo === 'chapa' ? `CH ${numero(e.espessura || 0, 2)}` : (m_(e).perfil || e.nome || e.tipo));
+    const niveis = {
+      conjunto: [(e) => parafuso(e) ? 'parafusos' : (m_(e).conjunto || '(sem conjunto)'), (e) => m_(e).posicao || '(sem marca)'],
+      perfil: [(e) => parafuso(e) ? 'parafusos' : perfil(e), (e) => m_(e).posicao || '(sem marca)'],
+      fase: [(e) => (e.atributos && e.atributos.fase) || '(sem fase)', (e) => m_(e).conjunto || '(sem conjunto)'],
+      papel: [(e) => parafuso(e) ? 'parafuso' : (e.papel || e.tipo), (e) => perfil(e)],
+    }[modo];
+    if (!niveis) return;
+    const arv = new Map();
+    for (const e of this.documento.entidades.values()) {
+      const a = e.atributos || {};
+      if (a.tipo === 'cota' || a.tipo === 'construcao' || e.tipo === 'grupo') continue;
+      const k1 = niveis[0](e), k2 = niveis[1](e);
+      if (!arv.has(k1)) arv.set(k1, new Map());
+      const sub = arv.get(k1);
+      if (!sub.has(k2)) sub.set(k2, []);
+      sub.get(k2).push(e);
+    }
+    this._ramosBIM = this._ramosBIM || new Set();
+    const ord = (a, b) => String(a).localeCompare(String(b), 'pt-BR', { numeric: true });
+    const arvore = el('div', { class: 'arvore' });
+    const ramoDe = (caminho, rotulo, ids, filhos) => {
+      const ramo = el('div', { class: 'ramo' });
+      const aberto = this._ramosBIM.has(caminho);
+      if (aberto) ramo.dataset.aberto = '';
+      const nsel = ids.filter(i => this.selecao.tem(i)).length;
+      ramo.append(el('button', { type: 'button', class: 'titulo', title: 'Clique abre/fecha · duplo clique seleciona tudo daqui',
+        onclick: () => { if (aberto) this._ramosBIM.delete(caminho); else this._ramosBIM.add(caminho); this._agendarPaineis('arvore'); },
+        ondblclick: (ev) => { if (ev.shiftKey) this.selecao.somar(ids); else this.selecao.definir(ids); } },
+        el('span', { texto: String(rotulo) }),
+        el('span', { class: 'contagem', texto: nsel ? `${nsel}/${ids.length}` : String(ids.length) })));
+      if (aberto) ramo.append(filhos());
+      return ramo;
+    };
+    for (const k1 of [...arv.keys()].sort(ord)) {
+      const sub = arv.get(k1);
+      const ids1 = [...sub.values()].flat().map(e => e.id);
+      arvore.append(ramoDe(`${modo}|${k1}`, k1, ids1, () => {
+        const folhas = el('div', { class: 'folhas' });
+        for (const k2 of [...sub.keys()].sort(ord)) {
+          const ents = sub.get(k2);
+          folhas.append(ramoDe(`${modo}|${k1}|${k2}`, `${k2}`, ents.map(e => e.id), () => {
+            const f2 = el('div', { class: 'folhas' });
+            for (const e of ents.slice(0, 300)) {
+              f2.append(el('button', { type: 'button', class: 'folha', 'aria-selected': String(this.selecao.tem(e.id)),
+                title: this.descreverEntidade(e), onclick: (ev) => this.selecao.clicar(e.id, ev),
+                ondblclick: () => this.camera.zoomSelecao([e.id]) },
+                el('span', { texto: m_(e).nome || m_(e).posicao || e.nome || e.tipo }),
+                el('span', { class: 'detalhe', texto: e.tipo === 'barra' ? `${numero(comprimentoDaBarra(e))} mm` : perfil(e) })));
+            }
+            if (ents.length > 300) f2.append(el('div', { class: 'vazio', style: 'padding:2px 6px', texto: `+ ${ents.length - 300} (duplo clique no ramo seleciona todas)` }));
+            return f2;
+          }));
+        }
+        return folhas;
+      }));
+    }
+    raiz.append(arvore);
+  }
+
   // ---------------------------------------------------------------- tabela de peças ao vivo
 
   abrirTabela() {

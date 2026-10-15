@@ -123,6 +123,20 @@ try:
     alvo1 = jsj("return editor.camera.controles.target.toArray();")
     ok(alvo1 and all(abs(a - b) < 1e-3 for a, b in zip(alvo0, alvo1)), f"a vista voltou o alvo da câmera: {alvo0} = {alvo1}")
     ok(len(jsj("return editor.documento.metadados.vistas || [];")) == 1, "a vista ficou gravada no modelo")
+    # 6) a árvore por conjunto → posição e o escopo tipo × instância no painel
+    jsj("""const s = [...editor.el.arvore.querySelectorAll('select')][0]; s.value = 'conjunto'; s.dispatchEvent(new Event('change')); return 1;""")
+    aba.drenar(0.6)
+    ramos = js("[...editor.el.arvore.querySelectorAll('.ramo > .titulo')].map(b => b.textContent).join('|')") or ""
+    ok("M1" in ramos and "M2" in ramos, f"a árvore organizada por conjunto: {ramos}")
+    selecionar(ids["pilar0"]); aba.drenar(0.6)
+    jsj("""const l = [...editor.el.props.querySelectorAll('label')].find(l => l.textContent === 'Aplicar a');
+           const s = l.nextElementSibling; s.value = 'posicao'; s.dispatchEvent(new Event('change')); return 1;""")
+    aba.drenar(0.6)
+    jsj("""const l = [...editor.el.props.querySelectorAll('label')].find(l => l.textContent === 'Acabamento');
+           const s = l.nextElementSibling; s.value = 'pintura'; s.dispatchEvent(new Event('change')); return 1;""")
+    aba.drenar(0.5)
+    acab = jsj(f"return ['{ids['pilar0']}', '{ids['pilar1']}', '{ids['viga']}'].map(i => editor.documento.get(i).atributos.acabamento || '');")
+    ok(acab == ["pintura", "pintura", ""], f"o acabamento foi para a posição inteira (os dois pilares), não para a viga: {acab}")
     erros("BIM")
 finally:
     try: nav.kill()

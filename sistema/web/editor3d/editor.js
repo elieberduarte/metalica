@@ -2401,6 +2401,9 @@ export class Editor {
         'Modelo vazio. Desenhe com as ferramentas à esquerda, ou use Arquivo → Gerar do galpão / Modelo de exemplo.' }));
       return;
     }
+    // organizar por camada (abaixo) ou por conjunto, perfil, fase, papel (modulos/bim.js — o navegador do Revit)
+    raiz.append(this._seletorArvore());
+    if ((this.arvorePor || 'camada') !== 'camada') { this._arvorePorPropriedade(raiz); raiz.scrollTop = rolagem; return; }
     const arvore = el('div', { class: 'arvore' });
     const porCamada = new Map();
     for (const e of this.documento.entidades.values()) {

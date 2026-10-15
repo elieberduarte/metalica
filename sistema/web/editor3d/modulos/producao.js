@@ -429,18 +429,30 @@ export class MetodosProducao {
     const pecas = ents.filter(ehPecaDeProducao);
     if (!pecas.length) return;
     const um = pecas.length === 1 ? pecas[0] : null;
-    const ids = pecas.map(e => e.id);
     const g = this._grupo(raiz, 'Produção');
+    // tipo × instância, como no Revit: a mudança vale para a seleção, para a posição inteira ou para o conjunto inteiro
+    const escopo = this.escopoProducao || 'selecao';
+    const idsDoEscopo = () => {
+      if (escopo === 'selecao') return pecas.map(e => e.id);
+      const chaves = new Set(pecas.map(e => marcasDe(e)[escopo === 'posicao' ? 'posicao' : 'conjunto']).filter(Boolean));
+      const campo = escopo === 'posicao' ? 'posicao' : 'conjunto';
+      const fora = [...this.documento.entidades.values()].filter(x => ehPecaDeProducao(x) && chaves.has(marcasDe(x)[campo])).map(x => x.id);
+      return fora.length ? fora : pecas.map(e => e.id);
+    };
+    const selEscopo = this._lista([['selecao', 'só as selecionadas'], ['posicao', 'todas da mesma posição'], ['conjunto', 'todo o conjunto']],
+      escopo, v => { this.escopoProducao = v; this._agendarPaineis('props'); });
+    selEscopo.title = 'A quem vale a mudança dos campos abaixo (posição, nome, fase, acabamento) — como tipo × instância do Revit';
+    g.append(el('label', { texto: 'Aplicar a' }), selEscopo);
     const comumM = (k) => { const v = marcasDe(pecas[0])[k]; return pecas.every(e => marcasDe(e)[k] === v) ? v : undefined; };
     const comumA = (k) => { const v = (pecas[0].atributos || {})[k]; return pecas.every(e => (e.atributos || {})[k] === v) ? v : undefined; };
-    const mudarMarca = (k, v, rotulo, extra = {}) => this.alterarEntidades(ids, (e) => {
+    const mudarMarca = (k, v, rotulo, extra = {}) => this.alterarEntidades(idsDoEscopo(), (e) => {
       const a = clonar(e.atributos || {});
       a.marcas = { ...(a.marcas || {}) };
       if (v) a.marcas[k] = v; else delete a.marcas[k];
       Object.assign(a, extra);
       return { atributos: a };
     }, rotulo);
-    const mudarAtributo = (k, v, rotulo) => this.alterarEntidades(ids, (e) => {
+    const mudarAtributo = (k, v, rotulo) => this.alterarEntidades(idsDoEscopo(), (e) => {
       const a = clonar(e.atributos || {});
       if (v) a[k] = v; else delete a[k];
       return { atributos: a };
