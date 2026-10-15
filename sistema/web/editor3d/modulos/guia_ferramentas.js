@@ -7,6 +7,7 @@
 // todas as ferramentas. A busca filtra.
 
 import { GRUPOS } from '../ferramentas/indice.js';
+import { definirAtalho, restaurarAtalhos, temPersonalizados, teclaDoEvento, rotuloAtalho, motivoRecusa } from './atalhos.js';
 
 //: como usar, curto — o passo a passo de cada ferramenta (a dica dela fica de reserva)
 const COMO = {
@@ -80,7 +81,7 @@ const COMANDOS = [
 
 //: as teclas que valem em todas as ferramentas
 const TECLAS = [
-  ['Espaço', 'volta à Seleção'], ['Esc', 'cancela o passo / solta a ferramenta'],
+  ['Espaço', 'volta à Seleção'], ['Shift+letra', 'as ferramentas de detalhe (Shift+E Estender, Shift+D Dividir…); os atalhos se trocam aqui no guia'], ['Esc', 'cancela o passo / solta a ferramenta'],
   ['digitar um número', 'a medida, a qualquer momento (e logo depois de terminar, corrige o último)'],
   ['→  ←  ↑', 'travam o eixo X, Y e Z (↓ solta)'], ['Shift', 'trava o eixo ou a aresta que o snap mostra'],
   ['parar o mouse num canto', 'o ponto fica lembrado: depois o snap alinha com ele (e com dois: o X de um e o Y do outro)'],
@@ -128,17 +129,63 @@ export function abrirGuiaFerramentas(editor) {
   const busca = el(doc, 'input', { type: 'search', placeholder: 'buscar (ex.: parafuso, esticar, eixo, cota)…', class: 'guia-busca' });
   const corpo = el(doc, 'div', { class: 'guia-corpo' });
   const fechar = () => { fundo.remove(); doc.removeEventListener('keydown', tecla, true); };
-  const tecla = (ev) => { if (ev.key === 'Escape' || ev.key === 'F1') { ev.preventDefault(); ev.stopPropagation(); fechar(); } };
+  // trocar o atalho: o clique no <kbd> da ferramenta espera a próxima tecla (Esc cancela, Delete tira o atalho)
+  let capturando = null;
+  const aviso = el(doc, 'p', { class: 'guia-aviso guia-aviso-atalho', hidden: '' });
+  const avisar = (texto) => { aviso.textContent = texto; aviso.hidden = !texto; };
+  const capturar = (F, kbd) => {
+    if (capturando) capturando.kbd.classList.remove('guia-capturando');
+    capturando = { F, kbd };
+    kbd.classList.add('guia-capturando');
+    kbd.textContent = 'tecla…';
+    avisar(`${F.nome}: aperte a letra ou Shift+letra do atalho novo · Delete tira o atalho · Esc cancela`);
+  };
+  const terminarCaptura = (ev) => {
+    const { F } = capturando;
+    capturando = null;
+    if (ev.key === 'Escape') { avisar(''); preencher(); return; }
+    const t = (ev.key === 'Delete' || ev.key === 'Backspace') ? '' : teclaDoEvento(ev);
+    if (t === null || (t && motivoRecusa(t))) {
+      avisar(`Não serve para atalho: ${t ? motivoRecusa(t) : 'use uma letra ou Shift+letra (Ctrl e Alt já têm dono)'}.`);
+      preencher();
+      return;
+    }
+    const r = definirAtalho(editor, F.id, t);
+    const outro = r.tirado && editor.ferramentas.get(r.tirado);
+    avisar(!r.ok ? `Não serve para atalho: ${r.motivo}.`
+      : t ? `${F.nome}: ${rotuloAtalho(t)}${outro ? ` (tirado de ${outro.nome}, que ficou sem atalho)` : ''}.`
+        : `${F.nome} ficou sem atalho.`);
+    preencher();
+  };
+  const tecla = (ev) => {
+    if (capturando) {
+      // Shift sozinho é o começo do Shift+letra: espera a letra
+      if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(ev.key)) return;
+      ev.preventDefault(); ev.stopPropagation();
+      terminarCaptura(ev);
+      return;
+    }
+    if (ev.key === 'Escape' || ev.key === 'F1') { ev.preventDefault(); ev.stopPropagation(); fechar(); }
+  };
+  const restaurar = el(doc, 'button', { type: 'button', texto: 'Atalhos padrão', title: 'Volta todos os atalhos de teclado ao padrão',
+    onclick: () => { restaurarAtalhos(editor); avisar('Os atalhos voltaram ao padrão.'); preencher(); } });
   caixa.append(
     el(doc, 'div', { class: 'guia-cab' },
       el(doc, 'b', { texto: 'Guia rápido das ferramentas' }),
-      el(doc, 'span', { class: 'guia-sub', texto: 'clique numa ferramenta para usar · F1 abre e fecha' }),
+      el(doc, 'span', { class: 'guia-sub', texto: 'clique numa ferramenta para usar · no atalho, para trocar a tecla · F1 abre e fecha' }),
+      restaurar,
       el(doc, 'button', { type: 'button', texto: 'Fechar (Esc)', onclick: fechar })),
-    busca, corpo);
+    busca, aviso, corpo);
   fundo.append(caixa);
   fundo.addEventListener('mousedown', (ev) => { if (ev.target === fundo) fechar(); });
 
   const ferramentas = [...(editor.ferramentas ? editor.ferramentas.values() : [])];
+  const kbdAtalho = (F) => {
+    if (F.id === 'selecionar') return el(doc, 'kbd', { texto: F.atalho || '—', title: 'O Espaço é sempre a Seleção' });
+    const k = el(doc, 'kbd', { class: 'guia-atalho', texto: F.atalho || '—', title: 'Clique para trocar a tecla do atalho' });
+    k.addEventListener('click', (ev) => { ev.preventDefault(); ev.stopPropagation(); capturar(F, k); });
+    return k;
+  };
   const preencher = () => {
     const q = norm(busca.value);
     corpo.replaceChildren();
@@ -155,7 +202,7 @@ export function abrirGuiaFerramentas(editor) {
           el(doc, 'span', { class: 'guia-icone', html: F.icone || '' }),
           el(doc, 'span', { class: 'guia-nome' }, el(doc, 'b', { texto: F.nome }),
             visivel ? null : el(doc, 'small', { class: 'guia-fora', texto: 'fora da barra lateral' })),
-          el(doc, 'kbd', { texto: F.atalho || '—' }),
+          kbdAtalho(F),
           el(doc, 'span', { class: 'guia-como', texto: COMO[F.id] || F.dica || '' }));
         linha.dataset.id = F.id;
         corpo.append(linha);
@@ -185,6 +232,7 @@ export function abrirGuiaFerramentas(editor) {
       corpo.prepend(el(doc, 'p', { class: 'guia-aviso', texto: `${fora} ferramenta(s) não cabem na barra lateral nesta tela: use por aqui, pelo atalho ou pelo menu do botão direito.` }));
     }
     if (!corpo.children.length) corpo.append(el(doc, 'p', { class: 'guia-aviso', texto: 'Nada com essa busca.' }));
+    restaurar.hidden = !temPersonalizados();
   };
   busca.addEventListener('input', preencher);
   busca.addEventListener('keydown', (ev) => {
@@ -229,6 +277,9 @@ function estilo() {
 .guia-icone svg { width: 20px; height: 20px; } .guia-nome small { display: block; color: #d97706; font-size: 11px; }
 .guia-linha kbd, .guia-teclas kbd { font-family: var(--mono, monospace); font-size: 11.5px; justify-self: start; }
 .guia-como { color: var(--texto2, inherit); line-height: 1.35; }
+.guia-atalho { cursor: pointer; border-bottom: 1px dashed currentColor; } .guia-atalho:hover { outline: 1px solid var(--azul, #1f6fd6); }
+.guia-capturando { outline: 2px solid var(--azul, #1f6fd6); }
+.guia-aviso-atalho { margin: 0 16px 8px; }
 .guia-teclas { display: grid; grid-template-columns: 210px 1fr; gap: 5px 12px; font-size: 12.5px; padding: 4px 6px; }
 .guia-aviso { margin: 8px 0 0; padding: 7px 10px; border-radius: 6px; background: var(--azul-fraco, #fff7e6); font-size: 12.5px; }
 @media (max-width: 700px) { .guia-linha { grid-template-columns: 26px 1fr 60px; } .guia-como { grid-column: 2 / -1; } .guia-teclas { grid-template-columns: 1fr; } }

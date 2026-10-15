@@ -47,7 +47,7 @@ export function pontaEstendida(b, ponta, alvo, secao, { ateEixo = false, folga =
 export class FerramentaEstender extends Ferramenta {
   static id = 'estender';
   static nome = 'Estender / aparar';
-  static atalho = '';
+  static atalho = 'Shift+E';
   static grupo = 'estrutura';
   static dica = 'Clique na barra a estender ou aparar (perto da ponta que vai andar)';
   static icone = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

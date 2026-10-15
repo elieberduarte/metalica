@@ -64,7 +64,7 @@ export function encaixeNaFace(barra, P, n, somar = false) {
 export class FerramentaEncaixar extends Ferramenta {
   static id = 'encaixar';
   static nome = 'Encaixar ponta';
-  static atalho = '';
+  static atalho = 'Shift+N';
   static grupo = 'estrutura';
   static dica = 'Clique no perfil a ajustar (barra ou malha do IFC)';
   static icone = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

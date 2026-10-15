@@ -94,7 +94,7 @@ export function planoDoChanfro(b, ponta, lado, a, secA) {
 export class FerramentaRecortar extends Ferramenta {
   static id = 'recortar';
   static nome = 'Recortar';
-  static atalho = '';
+  static atalho = 'Shift+R';
   static grupo = 'estrutura';
   static dica = 'Clique na barra a recortar, perto da ponta';
   static icone = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

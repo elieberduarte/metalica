@@ -98,6 +98,10 @@ export class FerramentaFuro extends FerramentaParafuso {
   //: longo da peça, 'atravessado' = na largura da face)
   static comp = null;
   static direcao = 'peca';
+  //: o passo e o padrão (linhas × colunas) são do Furo: sem estes, ele herdava os do Parafuso e mudar
+  //: um mudava o outro (decisão do usuário, 15/10: cada ferramenta com o seu)
+  static passo = 5;
+  static padrao = { linhas: 1, g: 60, colunas: 1, p: 60 };
 
   ativar() {
     this._indice = new IndiceDeCaixas(this.documento, { folgaBarra: 300 });

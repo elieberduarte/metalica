@@ -51,7 +51,7 @@ export function arredondarCanto(pts, i, r, lados = 8) {
 export class FerramentaEditarChapa extends Ferramenta {
   static id = 'editar_chapa';
   static nome = 'Editar chapa';
-  static atalho = '';
+  static atalho = 'Shift+C';
   static grupo = 'estrutura';
   static dica = 'Clique na chapa (ou selecione-a antes): arraste vértice, meio do lado ou furo · Delete apaga · "ch20" / "r30" no canto';
   static icone = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

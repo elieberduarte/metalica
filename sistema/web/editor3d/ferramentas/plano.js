@@ -28,7 +28,7 @@ export function planoDeTrabalho(origem, normal) {
 export class FerramentaPlano extends Ferramenta {
   static id = 'plano';
   static nome = 'Plano de trabalho';
-  static atalho = '';
+  static atalho = 'Shift+P';
   static grupo = 'desenho';
   static dica = 'Clique numa face para desenhar no plano dela (ou três pontos soltos) · Z ou Delete voltam ao chão';
   static icone = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

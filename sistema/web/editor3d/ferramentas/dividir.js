@@ -34,7 +34,7 @@ export function pedacosDaBarra(b, cortes) {
 export class FerramentaDividir extends Ferramenta {
   static id = 'dividir';
   static nome = 'Dividir barra';
-  static atalho = '';
+  static atalho = 'Shift+D';
   static grupo = 'estrutura';
   static dica = 'Clique na barra onde ela se divide · digite a distância da ponta mais perto ou "/3" para partes iguais';
   static icone = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

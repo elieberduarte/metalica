@@ -44,6 +44,8 @@ import { MetodosExplodir } from './modulos/explodir.js';
 import { ligarCotasAssociativas } from './modulos/cotas.js';
 import { ligarMenuDeContexto } from './modulos/menu_contexto.js';
 import { ligarGuia } from './modulos/guia_ferramentas.js';
+import { aplicarAtalhos, teclaDoEvento } from './modulos/atalhos.js';
+import { ligarBarraLateral } from './modulos/barra_lateral.js';
 import { MetodosEdicaoChapa } from './modulos/edicao_chapa.js';
 import { MetodosPadrao3D } from './modulos/padrao_3d.js';
 import { MetodosProducao } from './modulos/producao.js';
@@ -273,6 +275,8 @@ export class Editor {
     ligarMenuDeContexto(this);
     // o guia rápido das ferramentas: F1 e o menu ? da barra (15/10)
     ligarGuia(this);
+    // a barra lateral em janela baixa: compacta, duas colunas e, no fim, setas de rolagem (15/10)
+    ligarBarraLateral(this);
     this.pilha.aoMudar(() => this._atualizarMenuEditar());
     this.selecao.aoMudar(() => {
       if (this._destaqueAtivo && this.selecao.ids.size === 0) { this._destaqueAtivo = false; this.cena.destacar(null); }
@@ -354,11 +358,9 @@ export class Editor {
 
   async _carregarFerramentas() {
     const { ferramentas, falhas } = await carregarFerramentas();
-    for (const F of ferramentas) {
-      this.ferramentas.set(F.id, F);
-      const tecla = F.atalho === 'Espaço' ? ' ' : String(F.atalho || '').toLowerCase();
-      if (tecla && !this.atalhos.has(tecla)) this.atalhos.set(tecla, F.id);
-    }
+    for (const F of ferramentas) this.ferramentas.set(F.id, F);
+    // o padrão de cada ferramenta + as trocas do usuário (guia F1); vale letra e Shift+letra (modulos/atalhos.js)
+    aplicarAtalhos(this);
     if (!this.ferramentas.has('selecionar')) {
       this.aviso('A ferramenta de seleção não carregou; o editor fica só com navegação.', 'erro');
     }
@@ -802,7 +804,8 @@ export class Editor {
     if (ev.altKey) return;
     if (/^[1-7]$/.test(ev.key)) { ev.preventDefault(); this.camera.vista(TECLAS_VISTA[+ev.key - 1]); return; }
     if (k === 'z' && !this.atalhos.has('z')) { this.camera.zoomExtensao(); return; }
-    const id = this.atalhos.get(k);
+    // Shift+letra é um atalho próprio (Shift+E Estender); sem dono, vale a letra (Shift+M continua o Mover)
+    const id = this.atalhos.get(teclaDoEvento(ev)) || (ev.shiftKey ? this.atalhos.get(k) : null);
     if (id) { ev.preventDefault(); this.ativarFerramenta(id); }
   }
 
