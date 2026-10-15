@@ -28,6 +28,7 @@ export class FerramentaGirar extends Ferramenta {
     this.copia = false;
     this.eixoForcado = null;
     this.ultimoArray = null;
+    this.ultimo = null;
     this.ids = C.idsSelecionados(this.editor);
     this.dica(this.ids.length ? FerramentaGirar.dica
                               : 'Nada selecionado: selecione o que girar');
@@ -62,6 +63,7 @@ export class FerramentaGirar extends Ferramenta {
       this.plano.origem = this.centro;
       C.ancorar(this.editor, this.centro);
       this.ultimoArray = null;
+      this.ultimo = null;
       this.copia = !!(ev && ev.ctrlKey);
       this.dica('Clique para a direção de referência (0°)');
       this.desenhar();
@@ -87,7 +89,7 @@ export class FerramentaGirar extends Ferramenta {
       if (arr) { this.arranjar(arr[1].toLowerCase() === '/' ? 'dividir' : 'multiplicar',
                                 parseInt(arr[2], 10)); return true; }
     }
-    if (!this.centro || !this.ref) return false;
+    if (!this.centro || !this.ref) return this._corrigirUltimo(t);
     const g = parseFloat(t.replace(',', '.').replace(/[°º]/g, ''));
     if (!isFinite(g) || g === 0) return false;
     this.aplicar(g);
@@ -162,36 +164,69 @@ export class FerramentaGirar extends Ferramenta {
     if (!this.ids.length || !isFinite(graus) || Math.abs(graus) < 1e-6) { this.reiniciar(); return; }
     if (this.copia) {
       const { cmds, novos } = this.comandosPara(graus, 1, 'Copiar girando');
-      this.executar(C.cmdComposto(cmds, 'Copiar girando'));
+      const cmd = C.cmdComposto(cmds, 'Copiar girando');
+      this.executar(cmd);
       this.ultimoArray = { graus, ids: this.ids.slice(), centro: this.centro,
-                           plano: this.plano, ref: this.ref, criadas: novos };
+                           plano: this.plano, ref: this.ref, criadas: novos, n: 1, modo: 'multiplicar', cmd };
+      this.ultimo = null;
       this.reiniciar();
       this.medida(`cópia a ${C.num(graus)}°`);
       this.dica('Cópia girada — digite "*6" para o array radial');
       return;
     }
     const { cmds } = this.comandosPara(graus, 0, 'Girar');
-    if (cmds.length) this.executar(C.cmdComposto(cmds, 'Girar'));
+    const cmd = cmds.length ? C.cmdComposto(cmds, 'Girar') : null;
+    if (cmd) this.executar(cmd);
     C.avisarBloqueadas(this.editor, this.bloqueadas);
     this.ultimoArray = null;
+    this.ultimo = cmd ? { graus, ids: this.ids.slice(), centro: this.centro, plano: this.plano, ref: this.ref, cmd } : null;
     this.reiniciar();
-    this.dica(FerramentaGirar.dica);
+    this.dica(cmd ? `Girado ${C.num(graus)}° — digite outro ângulo para corrigir` : FerramentaGirar.dica);
   }
 
   arranjar(modo, n) {
     if (!this.ultimoArray || n < 1) return;
     const a = this.ultimoArray;
+    if (!this._ehOUltimo(a.cmd)) { this.ultimoArray = null; this.dica('Outro comando veio depois da cópia: faça a cópia de novo para o array'); return; }
     if (this.editor && typeof this.editor.desfazer === 'function') this.editor.desfazer();
     this.ids = a.ids.slice();
     this.centro = a.centro; this.plano = a.plano; this.ref = a.ref;
     const passo = modo === 'dividir' ? a.graus / n : a.graus;
     const { cmds, novos } = this.comandosPara(passo, n, `Array radial ${n}`);
-    this.executar(C.cmdComposto(cmds, 'Array radial'));
-    this.ultimoArray = { ...a, graus: a.graus, criadas: novos };
+    const cmd = C.cmdComposto(cmds, 'Array radial');
+    this.executar(cmd);
+    this.ultimoArray = { ...a, graus: a.graus, criadas: novos, n, modo, cmd };
     this.centro = null; this.plano = null; this.ref = null;   // pronto para um giro novo
     this.dica(`${n} cópias a cada ${C.num(passo)}°`);
     this.medida(`${n} × ${C.num(passo)}°`);
     this.limparPrevia();
+  }
+
+  /** O comando `cmd` ainda é o último da pilha (nada veio depois dele)? */
+  _ehOUltimo(cmd) {
+    const p = this.editor && this.editor.pilha;
+    return !!(cmd && p && Array.isArray(p.feitos) && p.feitos[p.feitos.length - 1] === cmd);
+  }
+
+  /** O ângulo digitado logo depois de girar ou copiar girando: refaz o último no mesmo centro e plano (como no SketchUp). */
+  _corrigirUltimo(t) {
+    const g = parseFloat(String(t).replace(',', '.').replace(/[°º]/g, ''));
+    if (!isFinite(g) || g === 0 || /[*/xX;]/.test(t)) return false;
+    const arr = this.ultimoArray, mov = this.ultimo, ult = arr || mov;
+    if (!ult || !this._ehOUltimo(ult.cmd)) return false;
+    this.editor.desfazer();
+    this.ids = ult.ids.slice();
+    this.centro = ult.centro; this.plano = ult.plano; this.ref = ult.ref;
+    const n = arr ? arr.n : 0, passo = arr && arr.modo === 'dividir' ? g / arr.n : g;
+    const { cmds, novos } = this.comandosPara(passo, n, arr ? 'Copiar girando' : 'Girar');
+    const cmd = C.cmdComposto(cmds, arr ? (n > 1 ? 'Array radial' : 'Copiar girando') : 'Girar');
+    this.executar(cmd);
+    if (arr) this.ultimoArray = { ...arr, graus: g, criadas: novos, cmd };
+    else this.ultimo = { ...mov, graus: g, cmd };
+    this.centro = null; this.plano = null; this.ref = null;
+    this.medida(arr ? `${n} × ${C.num(passo)}°` : `${C.num(g)}°`);
+    this.dica(`${arr ? 'Cópia(s) refeita(s)' : 'Girado'} a ${C.num(passo)}° — digite outro ângulo para corrigir`);
+    return true;
   }
 
   reiniciar() {

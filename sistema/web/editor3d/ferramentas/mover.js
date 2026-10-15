@@ -4,6 +4,8 @@
 // mesma direção e "/3" divide o mesmo deslocamento em três — o array linear do
 // SketchUp. A medida digitada aceita um comprimento ("3000", "3,5m") na direção
 // corrente, ou um deslocamento completo "dx;dy;dz".
+// Logo depois de mover ou copiar (e do "*5"/"/3"), digitar outra distância corrige o último movimento na mesma direção
+// — o espaçamento das cópias, no array — como no SketchUp; só enquanto o último comando da pilha for o do Mover.
 
 import { Ferramenta, paraMilimetros, listaDeMedidas, formatar } from './base.js';
 import * as C from './_comum.js';
@@ -22,7 +24,8 @@ export class FerramentaMover extends Ferramenta {
     this.delta = [0, 0, 0];
     this.eixo = null;
     this.copiar = false;
-    this.ultimoArray = null;   // { delta, ids }
+    this.ultimoArray = null;   // { delta, ids, n, modo, cmd }
+    this.ultimo = null;        // o último Mover: { delta, ids, cmd }
     this.ids = C.idsSelecionados(this.editor);
     this.dica(this.ids.length ? FerramentaMover.dica
                               : 'Nada selecionado: selecione o que mover (barra de espaço)');
@@ -55,6 +58,7 @@ export class FerramentaMover extends Ferramenta {
       this.base = C.copiar(p.ponto);
       C.ancorar(this.editor, this.base);
       this.ultimoArray = null;
+      this.ultimo = null;
       this.copiar = !!(ev && ev.ctrlKey);
       this.dica('Clique no destino, digite a distância, ou Ctrl para copiar');
       this.desenhar();
@@ -72,7 +76,7 @@ export class FerramentaMover extends Ferramenta {
       if (arr) { this.arranjar(arr[1].toLowerCase() === '/' ? 'dividir' : 'multiplicar',
                                 parseInt(arr[2], 10)); return true; }
     }
-    if (!this.base) return false;
+    if (!this.base) return this._corrigirUltimo(t);
     if (t.includes(';')) {
       const m = listaDeMedidas(t);
       if (m.length >= 3 && m.every(isFinite)) { this.aplicar([m[0], m[1], m[2]]); return true; }
@@ -139,35 +143,79 @@ export class FerramentaMover extends Ferramenta {
     if (!this.ids.length || C.comp(delta) < 1e-6) { this.reiniciar(); return; }
     if (this.copiar) {
       const { cmds, novos } = this.comandosPara(delta, 1, 'Copiar');
-      this.executar(C.cmdComposto(cmds, 'Copiar'));
-      this.ultimoArray = { delta: C.copiar(delta), ids: this.ids.slice(), criadas: novos };
+      const cmd = C.cmdComposto(cmds, 'Copiar');
+      this.executar(cmd);
+      this.ultimoArray = { delta: C.copiar(delta), ids: this.ids.slice(), criadas: novos, n: 1, modo: 'multiplicar', cmd };
+      this.ultimo = null;
       this.reiniciar();
       this.medida(`cópia a ${formatar(C.comp(delta))}`);
       this.dica('Cópia feita — digite "*5" para repetir ou "/3" para dividir');
       return;
     }
     const { cmds } = this.comandosPara(delta, 0, 'Mover');
-    if (cmds.length) this.executar(C.cmdComposto(cmds, 'Mover'));
+    const cmd = cmds.length ? C.cmdComposto(cmds, 'Mover') : null;
+    if (cmd) this.executar(cmd);
     C.avisarBloqueadas(this.editor, this.bloqueadas);
     this.ultimoArray = null;
+    this.ultimo = cmd ? { delta: C.copiar(delta), ids: this.ids.slice(), cmd } : null;
     this.reiniciar();
-    this.dica(FerramentaMover.dica);
+    this.dica(cmd ? `Movido ${formatar(C.comp(delta))} — digite outra distância para corrigir` : FerramentaMover.dica);
   }
 
   /** Array linear: refaz a última cópia como n cópias. */
   arranjar(modo, n) {
     if (!this.ultimoArray || n < 1) return;
     const { delta, ids } = this.ultimoArray;
+    if (!this._ehOUltimo(this.ultimoArray.cmd)) { this.ultimoArray = null; this.dica('Outro comando veio depois da cópia: faça a cópia de novo para repetir'); return; }
     if (this.editor && typeof this.editor.desfazer === 'function') this.editor.desfazer();
     this.ids = ids.slice();
     const passo = modo === 'dividir' ? C.mul(delta, 1 / n) : delta;
     const copias = n;
     const { cmds, novos } = this.comandosPara(passo, copias,
       modo === 'dividir' ? `Dividir em ${n}` : `Repetir ${n} vezes`);
-    this.executar(C.cmdComposto(cmds, modo === 'dividir' ? 'Dividir cópia' : 'Repetir cópia'));
-    this.ultimoArray = { delta, ids, criadas: novos };
+    const cmd = C.cmdComposto(cmds, modo === 'dividir' ? 'Dividir cópia' : 'Repetir cópia');
+    this.executar(cmd);
+    this.ultimoArray = { delta, ids, criadas: novos, n, modo, cmd };
     this.dica(`${copias} cópias. Continue digitando "*n" ou "/n" para ajustar.`);
     this.medida(`${copias} × ${formatar(C.comp(passo))}`);
+  }
+
+  /** O comando `cmd` ainda é o último da pilha (nada veio depois dele)? */
+  _ehOUltimo(cmd) {
+    const p = this.editor && this.editor.pilha;
+    return !!(cmd && p && Array.isArray(p.feitos) && p.feitos[p.feitos.length - 1] === cmd);
+  }
+
+  /** A distância digitada logo depois de mover ou copiar: refaz o último na mesma direção com ela. */
+  _corrigirUltimo(t) {
+    if (t.includes(';')) return false;
+    const d = paraMilimetros(t);
+    if (!isFinite(d) || d <= 0) return false;
+    const arr = this.ultimoArray, mov = this.ultimo;
+    const ult = arr || mov;
+    if (!ult || !this._ehOUltimo(ult.cmd)) return false;
+    const dir = C.normalizar(ult.delta);
+    this.editor.desfazer();
+    this.ids = ult.ids.slice();
+    if (arr) {
+      // no array: a distância nova é o passo (*n) ou o total dividido (/n)
+      const delta = C.mul(dir, d), passo = arr.modo === 'dividir' ? C.mul(delta, 1 / arr.n) : delta;
+      const { cmds, novos } = this.comandosPara(passo, arr.n, 'Copiar');
+      const cmd = C.cmdComposto(cmds, arr.n > 1 ? 'Repetir cópia' : 'Copiar');
+      this.executar(cmd);
+      this.ultimoArray = { ...arr, delta, criadas: novos, cmd };
+      this.medida(`${arr.n} × ${formatar(C.comp(passo))}`);
+      this.dica(`Cópia(s) refeita(s) a ${formatar(C.comp(passo))} — digite outra distância, "*n" ou "/n"`);
+      return true;
+    }
+    const delta = C.mul(dir, d);
+    const { cmds } = this.comandosPara(delta, 0, 'Mover');
+    const cmd = C.cmdComposto(cmds, 'Mover');
+    this.executar(cmd);
+    this.ultimo = { ...mov, delta, cmd };
+    this.medida(formatar(d));
+    this.dica(`Movido ${formatar(d)} — digite outra distância para corrigir`);
+    return true;
   }
 
   reiniciar() {
