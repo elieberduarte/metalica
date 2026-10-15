@@ -113,6 +113,24 @@
       // o acesso rápido (pedido do usuário, 07/10): a tesoura de aço pelo desenho selecionado fora do submenu — também no
       // botão direito do CAD, com as linhas selecionadas
       I('Gerar tesoura pelo desenho selecionado…', '2d', 'estr-trelica', { dica: 'selecione as linhas da tesoura (banzos, diagonais, montantes) e lance de eixo a eixo — também no botão direito' }),
+      // a modelagem pela seleção no 3D (modulos/modelagem.js, 14–15/10): escolhe as peças, preenche o diálogo, a prévia
+      // mostra antes do OK — na barra única não aparecia (os menus do editor.html ficam escondidos aqui)
+      S('Modelar pela seleção (3D)', [
+        T('pelos eixos gravados'),
+        I('Pilares nos eixos…', '3d', 'modelar-pilares', { dica: 'um pilar em cada cruzamento marcado' }),
+        I('Bases nos pilares dos eixos…', '3d', 'modelar-bases', { dica: 'a placa com chumbadores em todos de uma vez' }),
+        I('Viga entre pilares…', '3d', 'modelar-viga', { requer: 'sel', dica: 'selecione os pilares' }),
+        T('cobertura'),
+        I('Treliça entre banzos…', '3d', 'modelar-trelica', { requer: 'sel', dica: 'selecione os dois banzos' }),
+        I('Terças por espaçamento…', '3d', 'modelar-tercas', { requer: 'sel', dica: 'selecione as tesouras ou vigas de uma água' }),
+        I('Correntes entre terças…', '3d', 'modelar-correntes', { requer: 'sel', dica: 'selecione as terças' }),
+        I('Mão-francesa…', '3d', 'modelar-mao-francesa', { requer: 'sel', dica: 'selecione as terças (e, se quiser, os apoios)' }),
+        I('Contraventamento em X…', '3d', 'modelar-contravento', { requer: 'sel', dica: 'selecione duas barras paralelas; na cobertura, já nos suportes SC1' }),
+        T('fechamento'),
+        I('Longarinas de fechamento…', '3d', 'modelar-longarinas', { requer: 'sel', dica: 'selecione os pilares de uma parede; no oitão, com a terça inclinada' }),
+        HR,
+        I('Copiar para os eixos…', '3d', 'copiar-para-eixos', { requer: 'sel', dica: 'a tesoura ou o pórtico para os eixos paralelos marcados' }),
+      ], { dica: 'pilares, vigas, terças, treliça, contravento… com prévia' }),
       HR,
       I('Eixos da obra…', '3d', 'eixos-obra', { antes: 'Estrutura › Eixos da obra…' }),
       HR,
@@ -124,6 +142,11 @@
       ]),
       I('Verificar apoios…', '3d', 'verificar-apoios', { antes: 'Estrutura › Verificar apoios…' }),
       { texto: 'Ligações e acessórios…', link: '/ligacoes', dica: 'abre a tela das ligações', antes: 'Estrutura › Ligações e acessórios…' },
+      I('Aplicar ligação…', '3d', 'aplicar-ligacao', { requer: 'sel', dica: 'a ligação da biblioteca nas peças selecionadas, com marca, conjunto e solda; editável depois', antes: 'Editar › Aplicar ligação…' }),
+      S('Detalhes da empresa', [
+        I('Salvar como detalhe…', '3d', 'salvar-detalhe', { requer: 'sel', dica: 'a ligação montada à mão vira detalhe da biblioteca', antes: 'Editar › Salvar como detalhe…' }),
+        I('Aplicar detalhe…', '3d', 'aplicar-detalhe', { requer: 'sel', dica: 'um detalhe da biblioteca nas barras selecionadas', antes: 'Editar › Aplicar detalhe…' }),
+      ]),
       HR, T('cálculo'),
       { texto: 'Análise estrutural…', link: '/analise-estrutural?projeto={projeto}', dica: 'o unifilar com as cargas, os diagramas de esforços, o mapa de tensões e as reações nas bases (o modelo inteiro em 3D)' },
       I('Cobertura retrátil: ver aberta', '3d', 'cobertura-aberta', { dica: 'as tesouras e a sanfona da análise no 3D, abertas ao longo do comprimento todo' }),
@@ -138,6 +161,23 @@
     // Detalhamento (03/10/2026): o Desenho e o detalhar/pranchas da Produção num menu só; Cálculo foi para o Modelo;
     // Produção e Comercial viraram etapas da barra do projeto (web/etapas.js)
     { nome: 'Detalhamento', itens: [
+      // a produção no 3D (modulos/producao.js e conferencia.js, 14/10): marcas, conjuntos, soldas e a conferência
+      T('produção'),
+      I('Numerar peças', '3d', 'numerar', { dica: 'marca P e M às peças sem marca, as iguais juntas', antes: 'Editar › Numerar peças' }),
+      S('Conjuntos', [
+        I('Criar conjunto…', '3d', 'criar-conjunto', { requer: 'sel', antes: 'Editar › Criar conjunto…' }),
+        I('Acrescentar ao conjunto', '3d', 'acrescentar-ao-conjunto', { requer: 'sel', antes: 'Editar › Acrescentar ao conjunto' }),
+        I('Tirar do conjunto', '3d', 'tirar-do-conjunto', { requer: 'sel', antes: 'Editar › Tirar do conjunto' }),
+        I('Desfazer conjunto', '3d', 'desfazer-conjunto', { requer: 'sel', antes: 'Editar › Desfazer conjunto' }),
+      ]),
+      I('Soldar…', '3d', 'soldar', { requer: 'sel', dica: 'onde as peças selecionadas se encostam: filete ou penetração, fábrica ou obra', antes: 'Editar › Soldar…' }),
+      I('Converter em chapa', '3d', 'converter-chapa', { requer: 'sel', dica: 'o sólido desenhado à mão vira chapa de verdade', antes: 'Editar › Converter em chapa' }),
+      S('Numeração', [
+        I('Renumerar tudo…', '3d', 'renumerar', { antes: 'Editar › Renumerar tudo…' }),
+        I('Numeração travada (liga/desliga)', '3d', 'travar-numeracao', { dica: 'projeto emitido: as marcas não se renumeram mais', antes: 'Editar › Numeração travada' }),
+      ]),
+      I('Conferir antes de detalhar…', '3d', 'conferir-producao', { dica: 'colisão, execução das ligações e produção; com seleção, só a região dela', antes: 'Ver › Conferir antes de detalhar…' }),
+      HR,
       I('Detalhar peças e conjuntos…', '3d', 'detalhar-pecas', { antes: 'Desenhos › Detalhar peças e conjuntos…' }),
       I('Detalhar as peças de um IFC…', '3d', 'detalhar-ifc', { dica: 'IFC do TecnoMETAL ou de outro programa', antes: 'Arquivo › Detalhar as peças de um IFC…' }),
       HR,
@@ -218,6 +258,12 @@
         F('Sem piso', 'piso-nenhum'),
       ]),
       I('Arquitetônico, eixos e níveis', '3d', 'referencia', { antes: 'Ver › Arquitetônico, eixos e níveis' }),
+      // o lado BIM (modulos/bim.js, 14/10): a tabela ao vivo, o 4D, as marcas na tela e as vistas salvas
+      HR, T('modelo BIM'),
+      I('Tabela de peças', '3d', 'tabela-pecas', { dica: 'ao vivo, filtra e seleciona; CSV', antes: 'Ver › Tabela de peças' }),
+      I('Sequência de montagem…', '3d', 'sequencia-montagem', { dica: 'a obra fase a fase (o 4D)', antes: 'Ver › Sequência de montagem…' }),
+      I('Etiquetas das marcas', '3d', 'etiquetas', { antes: 'Ver › Etiquetas das marcas' }),
+      I('Salvar vista…', '3d', 'salvar-vista', { kbd: 'Alt+0', dica: 'Alt+1 a Alt+9 voltam às vistas salvas', antes: 'Ver › Salvar vista…' }),
       HR, T('desenho 2D'),
       I('Grade', '2d', 'grade', { antes: 'Ver › Grade ligada/desligada' }),
       I('Orto', '2d', 'orto', { kbd: 'F8', antes: 'Ver › Orto ligado/desligado' }),
