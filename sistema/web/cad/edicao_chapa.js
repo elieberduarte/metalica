@@ -109,7 +109,7 @@ export class MetodosEdicaoChapaCAD {
         (r.espelhadas ? `; ${r.espelhadas} chapa(s) do outro lado do prédio receberam a edição espelhada` : '') +
         (r.padrao_maquina ? `; furos na terça levados ao padrão da máquina em ${r.padrao_maquina} chapa(s)` : '') +
         '. O detalhamento se refaz sozinho em seguida.';
-      await this._sairDaEdicao(r.nome);
+      await this._sairDaEdicao(r.nome, true);
       this.aviso(msg, 'info', 12000);
     } catch (e) { this.aviso(`Não foi possível concluir: ${e.message}`, 'erro', 0); this.dica(''); }
   }
@@ -128,7 +128,7 @@ export class MetodosEdicaoChapaCAD {
 
   /** Volta para onde a edição começou (o desenho de antes, ou o 3D); sem para onde voltar, fica no detalhe — o
    *  regenerado pelo Concluir (`regenerado`), ou este, que deixa de ser ambiente de edição. */
-  async _sairDaEdicao(regenerado) {
+  async _sairDaEdicao(regenerado, mudou = false) {
     const voltar = this._voltarEdicao;
     this._voltarEdicao = undefined;
     if (voltar === '__3d__') {
@@ -136,7 +136,15 @@ export class MetodosEdicaoChapaCAD {
       // ficava na tela da edição, pedido do usuário, 02/10); fora dela, a tela vira o 3D
       let anterior = null;
       try { anterior = sessionStorage.getItem(CHAVE_ULTIMO + this.projeto); } catch { anterior = null; }
-      (window.metalicaNavegar || ((u) => { location.href = u; }))(this.urlDoEditor());
+      if (window.parent !== window) {
+        // o 3D aberto ao lado não recarrega (15/10: 27 mil objetos na PRATI a cada volta): ele busca só as peças que
+        // mudaram — também no Cancelar, porque abrir a edição pode ter convertido a chapa do IFC em paramétrica (o
+        // modelo do servidor mudou); sem nada mudado, só confere. A área recarrega se não der
+        try { window.parent.postMessage({ metalica: 'modelo-editado', concluiu: !!mudou }, location.origin); }
+        catch { (window.metalicaNavegar || ((u) => { location.href = u; }))(this.urlDoEditor()); }
+      } else {
+        (window.metalicaNavegar || ((u) => { location.href = u; }))(this.urlDoEditor());
+      }
       if (window.parent !== window && anterior && anterior !== this.nomeDesenho) await this.abrirDesenho(anterior);
       else if (window.parent !== window && regenerado) await this.abrirDesenho(regenerado);
       return;

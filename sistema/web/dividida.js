@@ -85,6 +85,7 @@ function navegar(url) {
   const tres = ['/editor', '/editor3d', '/3d', '/visor3d/ver3d.html'].includes(u.pathname);
   const id = tres ? 'f3d' : 'f2d';
   if (!u.searchParams.get('projeto')) u.searchParams.set('projeto', PROJETO);
+  if (!tres && desenhoNoLugar(u)) return;
   fontes[id] = u.pathname + u.search;
   $('#' + id).dataset.src = '';                // recarrega: o pedido traz o que mudou (modelo novo, destaque…)
   if (!tres && u.searchParams.get('desenho')) $('#desenho').value = u.searchParams.get('desenho');
@@ -188,6 +189,38 @@ function referencia3d() {
   } catch (e) { /* outra tela */ }
 }
 
+/** O CAD já aberto neste projeto só troca de desenho, sem recarregar o quadro (15/10: o Editar chapa recarregava o CAD
+ *  inteiro). Só quando o pedido traz o desenho (e o "voltar" da edição) e nada mais; senão, false. */
+function desenhoNoLugar(u) {
+  const d = u.searchParams.get('desenho');
+  if (!d || !['/cad', '/desenho'].includes(u.pathname)) return false;
+  if ([...u.searchParams.keys()].some(k => !['projeto', 'desenho', 'voltar'].includes(k))) return false;
+  const f = $('#f2d');
+  let w = null;
+  try { w = f.contentWindow; } catch (e) { return false; }
+  try {
+    if (!f.dataset.src || !w || !w.cad || typeof w.cad.abrirDesenho !== 'function') return false;
+    if (new URL(w.location.href).searchParams.get('projeto') !== u.searchParams.get('projeto')) return false;
+    w.cad._voltarEdicao = u.searchParams.get('voltar') || undefined;
+    w.cad.abrirDesenho(d);
+  } catch (e) { return false; }
+  $('#desenho').value = d;
+  mostrarVista(vista === 'ambos' ? 'ambos' : '2d');
+  return true;
+}
+
+/** O 2D mudou o modelo pela edição da chapa (Concluir): o 3D aberto troca só as peças que mudaram; sem ele (o modo
+ *  ver, o editor com edição por gravar), recarrega como antes. */
+async function sincronizar3d() {
+  mostrarVista(vista === 'ambos' ? 'ambos' : '3d');
+  let w = null;
+  try { w = $('#f3d').contentWindow; } catch (e) { w = null; }
+  try {
+    if (w && w.editor && typeof w.editor.sincronizarComServidor === 'function' && await w.editor.sincronizarComServidor()) return;
+  } catch (e) { /* recarrega */ }
+  recarregar3d();
+}
+
 function recarregar3d() {
   const f = $('#f3d');
   let w = null;
@@ -208,6 +241,7 @@ async function iniciar() {
     if (ev.origin !== location.origin || !ev.data || !ev.data.metalica) return;
     const deUmLado = ev.source === $('#f2d').contentWindow || ev.source === $('#f3d').contentWindow;
     if (ev.data.metalica === 'navegar' && deUmLado) { navegar(ev.data.url); return; }
+    if (ev.data.metalica === 'modelo-editado' && ev.source === $('#f2d').contentWindow) { sincronizar3d(); return; }
     // o 2D mudou o modelo (a planta da Estrutura sincronizou o 3D): o modo ver recarrega já; o editor, sem edição
     // pendente, também (com, avisa) — 06/10
     if (ev.data.metalica === 'modelo-mudou' && ev.source === $('#f2d').contentWindow) { recarregar3d(); return; }

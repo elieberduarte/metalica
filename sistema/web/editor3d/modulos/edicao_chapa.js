@@ -4,6 +4,7 @@
 // 15/10: dois cliques na chapa, ou "Editar chapa no 2D" no botão direito, abrem essa tela (antes eram as alças no 3D).
 
 import { ComandoAlterar } from '../nucleo/comandos.js';
+import { criar } from '../nucleo/documento.js';
 
 /** A chapa (paramétrica ou a placa sólida do IFC, que vira paramétrica ao abrir) com marca de posição, ou null. */
 export function chapaEditavel(ent) {
@@ -60,5 +61,47 @@ export class MetodosEdicaoChapa {
       (window.metalicaNavegar || ((u) => { location.href = u; }))(
         `/cad?projeto=${encodeURIComponent(this.projeto)}&desenho=${encodeURIComponent(j.nome)}&voltar=__3d__`);
     } catch (e) { this.aviso(`Não foi possível abrir a edição de ${ch.nome}: ${e.message}`, 'erro', 0); this.dica(''); }
+  }
+
+  /** O modelo do servidor mudou por fora (o Concluir da edição da chapa no 2D, na área 2D + 3D): troca só as peças
+   *  que mudaram, sem remontar a cena — recarregar o 3D da PRATI (27 mil objetos) a cada volta levava segundos
+   *  (pedido do usuário, 15/10). Devolve false quando não deu (a área recarrega como antes): edição local por gravar,
+   *  modelo que não abriu, ou quase tudo mudado. */
+  async sincronizarComServidor() {
+    if (!this.projeto || this._modeloNaoAbriu) return false;
+    if (this._autosavePendente || this._autosalvando) return false;      // a edição do 3D por gravar não é trocada por cima
+    let modelo;
+    try { modelo = await this.api.modeloDoProjeto(this.projeto); } catch (e) { return false; }
+    const dj = modelo && modelo.documento;
+    if (!dj || !Array.isArray(dj.entidades)) return false;
+    const doc = this.documento;
+    const servidor = new Map(dj.entidades.map(e => [e.id, e]));
+    const trocar = [], novas = [], sair = [];
+    for (const [id, e] of servidor) {
+      const local = doc.entidades.get(id);
+      if (!local) { novas.push(e); continue; }
+      // o texto direto: as peças vêm do mesmo JSON, com as chaves na mesma ordem (27 mil na PRATI em 0,6 s; ordenar as
+      // chaves e recriar cada uma levava 5 s). A peça editada aqui com outra ordem só é trocada à toa
+      if (JSON.stringify(local) !== JSON.stringify(e)) trocar.push(e);
+    }
+    for (const id of doc.entidades.keys()) if (!servidor.has(id)) sair.push(id);
+    const n = trocar.length + novas.length + sair.length;
+    if (n > 0.5 * Math.max(1, doc.entidades.size)) return false;          // mudou quase tudo: recarregar é melhor
+    if (n) {
+      doc.lote(() => {
+        for (const id of sair) doc.remover(id);
+        for (const e of trocar) { doc.entidades.set(e.id, criar(e)); doc.notificar([e.id], 'alterar'); }
+        for (const e of novas) doc.add(e);
+      });
+    }
+    // o que veio do servidor não é edição desta tela: não grava de volta, e a próxima gravação parte desta versão
+    if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
+    this._autosavePendente = false;
+    this._sujo = false;
+    if (modelo.alterado) this._modeloAlterado = modelo.alterado;
+    if (n) this.pilha.limpar();                                            // o desfazer apontava para o modelo de antes
+    if (n && typeof this._completarPerfis === 'function') this._completarPerfis();
+    this.aviso(n ? `3D atualizado com a edição do 2D: ${n} peça${n === 1 ? '' : 's'}, sem recarregar a tela.` : '3D em dia com o 2D.', 'info', 6000);
+    return true;
   }
 }
