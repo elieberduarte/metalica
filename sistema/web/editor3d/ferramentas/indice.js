@@ -20,6 +20,7 @@ const ARQUIVOS = [
   ['./girar.js', 'edicao'],
   ['./escalar.js', 'edicao'],
   ['./copiar.js', 'edicao'],
+  ['./espelhar.js', 'edicao'],
   // medição
   ['./medir.js', 'medicao'],
   ['./cotar.js', 'medicao'],

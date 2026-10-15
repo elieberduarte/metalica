@@ -22,7 +22,7 @@
     { nome: 'Desenhar', recolhe: 4, itens: [F('linha', ['linha'], ['linha']), F('polilinha', ['polilinha']), F('retangulo', ['retangulo'], ['retangulo']),
       F('circulo', ['circulo'], ['circulo']), F('arco', ['arco'], ['arco']), F('poligono', null, ['poligono'])] },
     { nome: 'Modificar', recolhe: 3, itens: [F('mover', ['mover'], ['mover']), F('copiar', ['copiar'], ['copiar']), F('girar', ['girar'], ['girar']),
-      F('espelhar', ['espelhar']), F('escalar', ['escalar'], ['escalar']), F('offset', ['offset'], ['offset']), F('empurrar', ['esticar'], ['pushpull']), F('apagar', ['apagar'])],
+      F('espelhar', ['espelhar'], ['espelhar']), F('escalar', ['escalar'], ['escalar']), F('offset', ['offset'], ['offset']), F('empurrar', ['esticar'], ['pushpull']), F('apagar', ['apagar'])],
       mais: [F('aparar', ['aparar']), F('estender', ['estender'], ['estender']), F('concordar', ['concordar']),
         F('juntar', ['juntar']), F('explodir', ['explodir']), F('copiar_propriedades', ['copiar_propriedades'])] },
     { nome: 'Anotar', recolhe: 2, itens: [F('texto', ['texto']), F('cota', ['cota'], ['cotar']), F('chamada', ['chamada']), F('hachura', ['hachura']),
