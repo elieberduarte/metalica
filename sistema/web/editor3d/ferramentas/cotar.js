@@ -10,6 +10,7 @@
 
 import { Ferramenta, paraMilimetros, formatar } from './base.js';
 import * as C from './_comum.js';
+import { refDoPonto, geometriaDaCota } from '../modulos/cotas.js';
 
 export class FerramentaCotar extends Ferramenta {
   static id = 'cotar';
@@ -41,6 +42,8 @@ export class FerramentaCotar extends Ferramenta {
     if (!p) return;
     if (!this.a) {
       this.a = C.copiar(p.ponto);
+      // a ponta presa à peça que o snap pegou: a cota acompanha quando ela mudar (F20, modulos/cotas.js)
+      this.refA = this._ref(p);
       C.ancorar(this.editor, this.a);
       this.planoBase = C.planoDoPonto(this.editor, p);
       this.dica('Clique na segunda extremidade');
@@ -50,6 +53,7 @@ export class FerramentaCotar extends Ferramenta {
     if (!this.b) {
       if (C.iguais(this.a, p.ponto, 1e-6)) return;
       this.b = C.copiar(p.ponto);
+      this.refB = this._ref(p);
       this.montarPlano();
       this.dica('Afaste a linha de cota e clique, ou digite o afastamento');
       this.desenhar();
@@ -80,6 +84,11 @@ export class FerramentaCotar extends Ferramenta {
 
   // ------------------------------------------------------------- interno
 
+  _ref(p) {
+    const ent = p && p.entidade && this.documento && this.documento.get(p.entidade);
+    return ent && p.tipoSnap !== 'plano_base' ? refDoPonto(ent, p.ponto) : null;
+  }
+
   /** Direção de afastamento: perpendicular à cota, dentro do plano da face. */
   montarPlano() {
     const dir = C.normalizar(C.sub(this.b, this.a));
@@ -100,20 +109,7 @@ export class FerramentaCotar extends Ferramenta {
 
   /** Vértices e arestas do desenho da cota. */
   geometria(desloc) {
-    const off = C.mul(this.lado, desloc);
-    // sobra da chamada e traço a 45° proporcionais à cota (numa cota de 60 mm os 60 e 45 mm
-    // fixos de antes eram maiores que a própria medida), com os valores antigos de teto
-    const L = C.dist(this.a, this.b);
-    const s = Math.max(2, Math.min(60, 0.12 * L)), tr = Math.max(1.5, Math.min(45, 0.07 * L));
-    const sobra = C.mul(this.lado, desloc >= 0 ? s : -s);
-    const a = this.a, b = this.b;
-    const a1 = C.add(a, off), b1 = C.add(b, off);
-    const a2 = C.add(a1, sobra), b2 = C.add(b1, sobra);
-    const t = C.mul(C.add(this.dir, this.lado), tr / Math.SQRT2);
-    const v = [a, b, a1, b1, a2, b2,
-               C.sub(a1, t), C.add(a1, t), C.sub(b1, t), C.add(b1, t)];
-    const arestas = [[0, 4], [1, 5], [2, 3], [6, 7], [8, 9]];
-    return { vertices: v, arestas };
+    return geometriaDaCota(this.a, this.b, desloc, this.lado);
   }
 
   criar(desloc) {
@@ -128,7 +124,8 @@ export class FerramentaCotar extends Ferramenta {
         tipo: 'cota',
         exportar: false,                // anotação: não é peça (fica fora do IFC e das listas)
         cota: { a: C.copiar(this.a), b: C.copiar(this.b), deslocamento: desloc,
-                texto, normal: C.copiar(this.normal), lado: C.copiar(this.lado) },
+                texto, normal: C.copiar(this.normal), lado: C.copiar(this.lado),
+                refs: [this.refA || null, this.refB || null] },
       },
     };
     this.executar(C.cmdAdicionar(ent, 'Cotar'));
@@ -138,7 +135,7 @@ export class FerramentaCotar extends Ferramenta {
 
   reiniciar() {
     C.desancorar(this.editor);
-    this.a = null; this.b = null; this.atual = null; this.desloc = 0;
+    this.a = null; this.b = null; this.atual = null; this.desloc = 0; this.refA = null; this.refB = null;
     this.limparPrevia();
     this.medida('');
   }

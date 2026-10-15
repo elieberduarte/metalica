@@ -41,6 +41,7 @@ import { MetodosBloco } from './modulos/bloco.js';
 import { MetodosBarrasDoBloco } from './modulos/barras_do_bloco.js';
 import { MetodosDivisao } from './modulos/divisao.js';
 import { MetodosExplodir } from './modulos/explodir.js';
+import { ligarCotasAssociativas } from './modulos/cotas.js';
 import { MetodosEdicaoChapa } from './modulos/edicao_chapa.js';
 import { MetodosPadrao3D } from './modulos/padrao_3d.js';
 import { MetodosProducao } from './modulos/producao.js';
@@ -263,6 +264,8 @@ export class Editor {
     this._iniciarBIM();                              // ficha ao passar o mouse, etiquetas, vistas (modulos/bim.js)
 
     this.documento.aoMudar((ev) => this._aposMudanca(ev));
+    // as cotas da ferramenta Cotar acompanham as peças em que foram presas (F20, 14/10)
+    ligarCotasAssociativas(this);
     this.pilha.aoMudar(() => this._atualizarMenuEditar());
     this.selecao.aoMudar(() => {
       if (this._destaqueAtivo && this.selecao.ids.size === 0) { this._destaqueAtivo = false; this.cena.destacar(null); }
