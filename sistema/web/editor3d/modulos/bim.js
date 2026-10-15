@@ -12,6 +12,7 @@
 import { el, numero, volumeDe } from '../editor.js';
 import { clonar, areaDaChapa, comprimentoDaBarra } from '../nucleo/documento.js';
 import { Comando } from '../nucleo/comandos.js';
+import { definirCaixaDeCorte } from './caixa_corte.js';
 
 const RHO = 7.85e-6;          // kg/mm³
 const LIMITE_ETIQUETAS = 700;
@@ -208,6 +209,7 @@ export class MetodosBIM {
       camera: { posicao: cam.ativa.position.toArray(), alvo: cam.controles.target.toArray(), projecao: cam.projecao,
                 zoom: cam.ortografica.zoom },
       corte: this.cena.planoCorte ? clonar(this.cena.planoCorte) : null,
+      caixa: this.cena.caixaCorte ? clonar(this.cena.caixaCorte) : null,     // a caixa de corte (modulos/caixa_corte.js)
       cor_por: this.corPor || 'padrao',
       ocultos: this._gruposOcultos ? [...this._gruposOcultos] : [],
     };
@@ -216,7 +218,7 @@ export class MetodosBIM {
   async salvarVista() {
     const nome = el('input', { type: 'text', value: `Vista ${(this.documento.metadados.vistas || []).length + 1}`, style: 'width:100%' });
     const corpo = el('div', {}, el('label', { texto: 'Nome da vista' }), nome,
-      el('p', { class: 'explica', texto: 'Guarda o enquadramento, a projeção, o corte (Seção), as cores por propriedade e os grupos ocultos. Fica gravada no modelo, numa aba embaixo da tela.' }));
+      el('p', { class: 'explica', texto: 'Guarda o enquadramento, a projeção, o corte (Seção ou caixa de corte), as cores por propriedade e os grupos ocultos. Fica gravada no modelo, numa aba embaixo da tela.' }));
     if (await this.dialogo({ titulo: 'Salvar vista', corpo, ok: 'Salvar' }) !== 'ok') return;
     const v = this._estadoDaVista(nome.value.trim() || 'Vista');
     const lista = (this.documento.metadados.vistas || []).filter(x => x.nome !== v.nome).concat([v]);
@@ -231,6 +233,7 @@ export class MetodosBIM {
     if (v.camera.projecao === 'ortografica' && v.camera.zoom) { this.camera.ortografica.zoom = v.camera.zoom; this.camera.ortografica.updateProjectionMatrix(); }
     this.camera.irPara(new THREE_(...v.camera.posicao), new THREE_(...v.camera.alvo));
     this.cena.definirPlanoCorte(v.corte || null);
+    definirCaixaDeCorte(this, v.caixa || null);
     if ((v.cor_por || 'padrao') !== (this.corPor || 'padrao')) { this.corPor = v.cor_por || 'padrao'; this._aplicarCorPor(); }
     this._ocultarGrupos(new Set(v.ocultos || []));
     this._agendarPaineis('camadas');

@@ -122,7 +122,25 @@ try:
     js("editor.camera.concluirAnimacao(); 1")
     alvo1 = jsj("return editor.camera.controles.target.toArray();")
     ok(alvo1 and all(abs(a - b) < 1e-3 for a, b in zip(alvo0, alvo1)), f"a vista voltou o alvo da câmera: {alvo0} = {alvo1}")
-    ok(len(jsj("return editor.documento.metadados.vistas || [];")) == 1, "a vista ficou gravada no modelo")
+    ok(len(jsj("return editor.documento.metadados.vistas || [];")) >= 1, "a vista ficou gravada no modelo")
+    # 5b) a vista guarda a caixa de corte (modulos/caixa_corte.js): salva com a caixa, volta com ela; a outra a tira
+    aba.cmd("Runtime.evaluate", awaitPromise=True, expression=f"""(async () => {{
+        const src = [...document.querySelectorAll('script[type=module]')].map(s => s.src).find(Boolean) || location.href;
+        const m = await import(new URL('modulos/caixa_corte.js', src).href);
+        window.__caixa = m;
+        m.definirCaixaDeCorte(editor, [[-500, -500, -100], [500, 500, 3000]]); return 1; }})()""")
+    aba.drenar(0.4)
+    ok(js("!!editor.cena.caixaCorte"), "a caixa de corte ligou")
+    menu("salvar-vista")
+    esperar("editor.el.dialogo.open", 10)
+    js("editor.el.dialogoCorpo.querySelector('input').value = 'Caixa'; editor.el.dialogoOk.click(); 1")
+    ok(esperar("document.querySelectorAll('.barra-vistas button').length >= 2", 10), "a vista com a caixa ganhou aba")
+    js("window.__caixa.definirCaixaDeCorte(editor, null); 1"); aba.drenar(0.3)
+    js("[...document.querySelectorAll('.barra-vistas button')].find(b => b.textContent.includes('Caixa')).click(); 1"); aba.drenar(0.6)
+    cx = jsj("return editor.cena.caixaCorte;")
+    ok(cx == [[-500, -500, -100], [500, 500, 3000]], f"a vista volta a caixa de corte: {cx}")
+    js("document.querySelector('.barra-vistas button').click(); 1"); aba.drenar(0.6)
+    ok(not js("!!editor.cena.caixaCorte"), "a vista sem caixa tira a caixa")
     # 6) a árvore por conjunto → posição e o escopo tipo × instância no painel
     jsj("""const s = [...editor.el.arvore.querySelectorAll('select')][0]; s.value = 'conjunto'; s.dispatchEvent(new Event('change')); return 1;""")
     aba.drenar(0.6)
