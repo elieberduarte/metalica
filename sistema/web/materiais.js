@@ -734,7 +734,7 @@ function desenharConferencia() {
     partes.push(secao('Pendências de conferência', null, vazio('As pendências vêm do resumo da obra. Gere os resumos na aba "Resumos da obra" e volte aqui.')));
   } else {
     const linhas = (C.itens || []).map(linha);
-    partes.push(secao('Pendências de conferência', `${n(C.abertas)} em aberto de ${n(C.itens.length)} · resumo da obra de ${dataBR(C.gerado)}`,
+    partes.push(secao('Pendências de conferência', `${n(C.itens.filter((it) => it.situacao !== 'resolvida').length)} em aberto de ${n(C.itens.length)} · resumo da obra de ${dataBR(C.gerado)}`,
       el('div', { class: 'rolagem' }, tabela([
         { titulo: 'Peça', valor: (l) => l.it.peca || '—', classe: 'b' },
         { titulo: 'Perfil', valor: (l) => l.it.perfil || '' },
