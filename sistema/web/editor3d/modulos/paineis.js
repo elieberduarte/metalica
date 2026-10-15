@@ -706,6 +706,13 @@ export class MetodosPaineis {
       case 'posicao': return marcas.posicao || null;
       case 'perfil': return perfilDaPeca(ent);
       case 'tipo': return (ent.atributos && ent.atributos.tipo_ifc) || ent.papel || ent.tipo || null;
+      // as propriedades BIM (14/10): fase, papel, acabamento, aço, nome de produção e a ligação de que a peça faz parte
+      case 'fase': return (ent.atributos && ent.atributos.fase) || null;
+      case 'papel': return ent.papel || null;
+      case 'acabamento': return (ent.atributos && ent.atributos.acabamento) || null;
+      case 'aco': return ent.aco || ent.material || null;
+      case 'nome': return marcas.nome || marcas.nome_projeto || null;
+      case 'ligacao': return (ent.atributos && ent.atributos.ligacao && ent.atributos.ligacao.tipo) || null;
       default: return null;
     }
   }
@@ -738,7 +745,9 @@ export class MetodosPaineis {
   _seletorCorPor() {
     const modo = this.corPor || 'padrao';
     const opcoes = [['padrao', 'camada e material'], ['conjunto', 'conjunto de montagem'],
-                    ['posicao', 'posição (marca da peça)'], ['perfil', 'perfil'], ['tipo', 'tipo IFC']];
+                    ['posicao', 'posição (marca da peça)'], ['perfil', 'perfil'], ['tipo', 'tipo IFC'],
+                    ['nome', 'nome de produção'], ['papel', 'papel (pilar, viga, terça…)'], ['fase', 'fase / lote'],
+                    ['acabamento', 'acabamento'], ['aco', 'aço'], ['ligacao', 'ligação aplicada']];
     const sel = el('select', { title: 'Pinta cada peça pela cor do grupo a que pertence' },
       ...opcoes.map(([v, t]) => el('option', { value: v, texto: t, selected: v === modo ? 'selected' : undefined })));
     sel.value = modo;

@@ -47,6 +47,7 @@ import { MetodosProducao } from './modulos/producao.js';
 import { MetodosLigacoes } from './modulos/ligacoes.js';
 import { MetodosConferencia } from './modulos/conferencia.js';
 import { MetodosDetalhesUsuario } from './modulos/detalhes_usuario.js';
+import { MetodosBIM } from './modulos/bim.js';
 
 /** Copia os métodos das classes dos módulos para a classe (getters e setters também). */
 function aplicarMetodos(alvo, ...fontes) {
@@ -259,6 +260,7 @@ export class Editor {
         this._reprocessarMouse();
       });
     };
+    this._iniciarBIM();                              // ficha ao passar o mouse, etiquetas, vistas (modulos/bim.js)
 
     this.documento.aoMudar((ev) => this._aposMudanca(ev));
     this.pilha.aoMudar(() => this._atualizarMenuEditar());
@@ -945,6 +947,7 @@ export class Editor {
     this._sujo = true;
     this._agendarAutosave();
     this._agendarConferenciaDasLigacoes();
+    this._aposMudancaBIM();
   }
 
   /** Troca o documento inteiro (abrir, importar, gerar do galpão). */
@@ -1962,6 +1965,10 @@ export class Editor {
       desempenho: () => this.dialogoDesempenho(),
       'verificar-apoios': () => this.verificarApoios(),
       'conferir-producao': () => this.conferirAntesDeDetalhar(),
+      'tabela-pecas': () => this.abrirTabela(),
+      'etiquetas': () => this.alternarEtiquetas(),
+      'salvar-vista': () => this.salvarVista(),
+      'ficha-mouse': () => { this.fichaDesligada = !this.fichaDesligada; this.dica(this.fichaDesligada ? 'Ficha ao passar o mouse desligada.' : 'Ficha ao passar o mouse ligada.'); },
       'cobertura-aberta': () => this.coberturaRetratil('aberta'),
       'cobertura-retraida': () => this.coberturaRetratil('retraida'),
       esqueleto: () => this.alternarEsqueleto(),
@@ -2455,7 +2462,7 @@ export class Editor {
 // os métodos que moram nos módulos (web/editor3d/modulos/)
 aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico, MetodosLancamento,
   MetodosApoios, MetodosBloco, MetodosBarrasDoBloco, MetodosDivisao, MetodosExplodir, MetodosEdicaoChapa, MetodosPadrao3D,
-  MetodosProducao, MetodosLigacoes, MetodosConferencia, MetodosDetalhesUsuario);
+  MetodosProducao, MetodosLigacoes, MetodosConferencia, MetodosDetalhesUsuario, MetodosBIM);
 
 // ================================================================= apoio
 
