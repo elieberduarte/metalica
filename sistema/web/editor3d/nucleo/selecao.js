@@ -100,6 +100,40 @@ export class Selecao {
   }
 
   /**
+   * O número de uma cota sob o cursor (15/10, o usuário: "não consigo selecionar a cota clicando no número para
+   * excluí-la"). O número é um texto HTML por cima do 3D (editor._atualizarRotulos, .rotulo-cota: centrado no ponto e
+   * acima dele) que não recebe o clique; o raio passava por ele e só a linha fina da cota contava. A caixa é a do texto
+   * na tela (monoespaçado de 11,5 px), com 3 px de folga. Devolve o mesmo formato do `sob`, ou null.
+   */
+  rotuloSob(x, y) {
+    const rot = this.cena && this.cena.rotulos;
+    if (!rot || !rot.size) return null;
+    const corte = this.cena.planosCorte && this.cena.planosCorte.length ? this.cena.planosCorte : null;
+    const H = 11.5 * 1.35 + 2, folga = 3;
+    let melhor = null;
+    for (const [id, r] of rot) {
+      const ent = this.documento.get(id);
+      if (!ent || !this.documento.aparece(ent)) continue;
+      if (corte) {
+        const v = new THREE.Vector3(r.ponto[0] * ESCALA, r.ponto[1] * ESCALA, r.ponto[2] * ESCALA);
+        if (corte.some(pl => pl.distanceToPoint(v) < -1e-6)) continue;
+      }
+      const t = this.camera.paraTela(r.ponto);
+      if (t[2] > 1) continue;
+      const W = String(r.texto || '').length * 6.9 + 10;
+      const x0 = t[0] - W / 2 - folga, x1 = t[0] + W / 2 + folga;
+      const y0 = t[1] - 1.25 * H - folga, y1 = t[1] - 0.25 * H + folga;
+      if (x < x0 || x > x1 || y < y0 || y > y1) continue;
+      // dois números um sobre o outro: o mais perto da câmera
+      if (!melhor || t[2] < melhor.z) melhor = { id, ent, ponto: r.ponto, z: t[2] };
+    }
+    return melhor ? { id: melhor.id, entidade: melhor.ent, ponto: melhor.ponto.slice(0, 3), normal: [0, 0, 1], face: -1, distancia: 0, rotulo: true } : null;
+  }
+
+  /** O que a Seleção pega sob o cursor: o número da cota primeiro (ele fica por cima de tudo na tela), depois o 3D. */
+  sobOuRotulo(x, y) { return this.rotuloSob(x, y) || this.sob(x, y); }
+
+  /**
    * Todas as peças sob o cursor, da mais perto para a mais longe (sem repetir; só as que aparecem e fora do pedaço
    * cortado): a lista do Tab da ferramenta Selecionar — a peça que está atrás de outra (o "Tab" do Revit).
    */

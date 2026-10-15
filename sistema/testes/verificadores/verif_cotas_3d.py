@@ -133,6 +133,27 @@ try:
     ok(r and r["modo"] and r["texto"] == "200 mm" and r["a"] == [0, 8000, 10] and r["b"] == [200, 8000, 10] and r["refs"] == [True, True],
        f"um clique na aresta e o afastamento: a cota da aresta inteira, presa à chapa: {r}")
     ok(r and r["limpo"], f"o Esc cancela a cota da aresta: {r and r['limpo']}")
+    # o número da cota pega o clique (15/10, o usuário: "não consigo selecionar a cota clicando no número para
+    # excluí-la"): com o mouse de verdade no centro do número (o texto HTML por cima do 3D), a cota fica selecionada e
+    # o Delete a apaga
+    jsj(f"""editor.ativarFerramenta('selecionar'); editor.selecao.limpar && editor.selecao.limpar();
+      const c = editor.documento.get('{CT}').atributos.cota; const m = [0, 1, 2].map(i => (c.a[i] + c.b[i]) / 2);
+      editor.camera.enquadrar([[m[0] - 1500, m[1] - 1500, m[2] - 800], [m[0] + 1500, m[1] + 1500, m[2] + 800]]);
+      editor.camera.concluirAnimacao && editor.camera.concluirAnimacao(); return 1;""")
+    aba.drenar(1.2)
+    xy = jsj(f"""const s = editor._spansRotulo.get('{CT}'); if (!s || s.hidden) return null;
+      const r = s.getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)];""")
+    if xy:
+        aba.cmd("Input.dispatchMouseEvent", type="mouseMoved", x=xy[0], y=xy[1], buttons=0); aba.drenar(0.2)
+        aba.cmd("Input.dispatchMouseEvent", type="mousePressed", x=xy[0], y=xy[1], button="left", clickCount=1, buttons=1)
+        aba.cmd("Input.dispatchMouseEvent", type="mouseReleased", x=xy[0], y=xy[1], button="left", clickCount=1, buttons=0)
+        aba.drenar(0.4)
+    sel = jsj("return [...editor.selecao.ids];")
+    ok(xy and sel == [CT], f"o clique no número da cota seleciona a cota: {xy}, {sel}")
+    aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="Delete", windowsVirtualKeyCode=46)
+    aba.cmd("Input.dispatchKeyEvent", type="keyUp", key="Delete", windowsVirtualKeyCode=46)
+    aba.drenar(0.4)
+    ok(jsj(f"return !editor.documento.get('{CT}');"), "e o Delete apaga a cota")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:2]]}")
 finally:

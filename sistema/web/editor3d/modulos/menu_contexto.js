@@ -63,7 +63,8 @@ export function mostrarOcultas(editor) {
 export function itensDoMenu(editor, x, y) {
   const doc = editor.documento, sel = editor.selecao;
   const r = editor.el.canvas.getBoundingClientRect();
-  const sob = sel.sob(x - r.left, y - r.top);
+  // o número da cota também (ele fica por cima do 3D e não recebia o clique)
+  const sob = sel.sobOuRotulo ? sel.sobOuRotulo(x - r.left, y - r.top) : sel.sob(x - r.left, y - r.top);
   if (sob && sob.id && !sel.ids.has(sob.id)) sel.definir([sob.id]);
   const ids = [...sel.ids];
   const ents = ids.map(i => doc.get(i)).filter(Boolean);

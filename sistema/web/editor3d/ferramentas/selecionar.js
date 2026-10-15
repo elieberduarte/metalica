@@ -77,7 +77,7 @@ export class Selecionar extends Ferramenta {
     }
     this._ciclo = null;
     // Sem arrasto: só destaca o que está sob o cursor.
-    const alvo = this.editor.selecao.sob(p.tela[0], p.tela[1]);
+    const alvo = this.editor.selecao.sobOuRotulo(p.tela[0], p.tela[1]);
     this.editor.selecao.realcarSobre(alvo ? alvo.id : null);
     this.editor.medida(alvo ? this.editor.descreverEntidade(alvo.entidade) : '');
   }
@@ -91,7 +91,7 @@ export class Selecionar extends Ferramenta {
   onPonto(p, ev) {
     const c = this._noCiclo(p.tela);
     if (c) { this.editor.selecao.clicar(c.ids[c.i], ev); this._ciclo = null; this._desenharAlcas(); return; }
-    const alvo = this.editor.selecao.sob(p.tela[0], p.tela[1]);
+    const alvo = this.editor.selecao.sobOuRotulo(p.tela[0], p.tela[1]);
     this.editor.selecao.clicar(alvo ? alvo.id : null, ev);
     this._desenharAlcas();
   }
@@ -110,7 +110,7 @@ export class Selecionar extends Ferramenta {
   }
 
   onDuploClique(p, ev) {
-    const alvo = this.editor.selecao.sob(p.tela[0], p.tela[1]);
+    const alvo = this.editor.selecao.sobOuRotulo(p.tela[0], p.tela[1]);
     if (!alvo) { this.editor.selecao.tudo(); return; }
     // peça com marca de posição (IFC) num projeto: o duplo clique abre o detalhe dela
     // no CAD; Shift mantém a seleção dos semelhantes
