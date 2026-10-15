@@ -2405,10 +2405,39 @@ def conferencias_do_projeto(s: str) -> dict:
         itens.append({"chave": x["chave"], "peca": x.get("peca") or "", "perfil": x.get("perfil") or "", "o_que": x.get("o_que") or "",
                       "ids": x.get("ids") or [], "atual": True, "situacao": r.get("situacao") or "aberta",
                       "resposta": r.get("resposta") or "", "quando": r.get("quando") or "", "historico": r.get("historico") or []})
+    # as incompatibilidades com o projeto de concreto (o relatório ao projetista), cada ocorrência com as peças para o 3D (15/10)
+    inc = _incompatibilidades(s)
+    for x in inc.get("itens") or []:
+        r = guardadas.get(x["chave"]) or {}
+        vistas.add(x["chave"])
+        x.update({"atual": True, "situacao": r.get("situacao") or x.get("situacao") or "aberta", "resposta": r.get("resposta") or "",
+                  "quando": r.get("quando") or "", "historico": r.get("historico") or []})
     antigas = [dict(v, chave=k, atual=False) for k, v in guardadas.items() if k not in vistas]
     antigas.sort(key=lambda v: v.get("quando") or "", reverse=True)
-    return {"gerado": gerado, "sem_resumo": not gerado, "itens": itens, "antigas": antigas,
-            "abertas": sum(1 for it in itens if it["situacao"] != "resolvida")}
+    return {"gerado": gerado, "sem_resumo": not gerado, "itens": itens, "antigas": antigas, "incompatibilidades": inc,
+            "abertas": sum(1 for it in itens + (inc.get("itens") or []) if it["situacao"] != "resolvida")}
+
+
+#: As incompatibilidades do projeto (concreto × aço etc.) para a aba Conferência: {titulo, documento, gerado, itens: [{chave,
+#: item, titulo, peca, perfil, o_que, ids, situacao}]} — gravado por quem fez o relatório (15/10).
+ARQ_INCOMPATIBILIDADES = "incompatibilidades.json"
+
+
+def _incompatibilidades(s: str) -> dict:
+    caminho = os.path.join(_gerente()._existente(s), ARQ_INCOMPATIBILIDADES)
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(d, dict) or not isinstance(d.get("itens"), list):
+        return {}
+    doc = str(d.get("documento") or "")
+    cam_doc = os.path.join(_gerente()._existente(s), PASTA_DOCUMENTOS, doc) if doc else ""
+    d["documento_url"] = ("/saida/" + os.path.relpath(cam_doc, PROJETOS).replace("\\", "/")) if cam_doc and os.path.exists(cam_doc) else ""
+    d["itens"] = [dict(x, chave=str(x.get("chave") or ""), ids=list(x.get("ids") or [])) for x in d["itens"]
+                  if isinstance(x, dict) and x.get("chave")]
+    return d
 
 
 def gravar_conferencia(s: str, corpo: dict) -> dict:

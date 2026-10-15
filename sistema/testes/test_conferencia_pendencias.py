@@ -45,6 +45,30 @@ class TestConferencia(unittest.TestCase):
         self.assertEqual([i["situacao"] for i in r["itens"]], ["aberta", "aberta"])
         self.assertEqual(r["itens"][0]["ids"], ["g1"])
 
+    def test_incompatibilidades_entram_na_conferencia(self):
+        """o incompatibilidades.json do projeto (o relatório ao projetista, 15/10): cada ocorrência com as peças para o 3D, a
+        situação inicial dela (cancelada = resolvida), a resposta guardada como as outras e o link do PDF em documentos/"""
+        os.makedirs(os.path.join(self.proj, app.PASTA_DOCUMENTOS))
+        with open(os.path.join(self.proj, app.PASTA_DOCUMENTOS, "Relatorio.pdf"), "wb") as f:
+            f.write(b"%PDF")
+        with open(os.path.join(self.proj, app.ARQ_INCOMPATIBILIDADES), "w", encoding="utf-8") as f:
+            json.dump({"titulo": "Incompatibilidades", "documento": "Relatorio.pdf", "itens": [
+                {"chave": "incompat:1:a", "item": 1, "titulo": "Caixa × V6", "peca": "Duplex 1", "o_que": "tubo dentro da viga", "ids": ["e1", "c1"]},
+                {"chave": "incompat:7:b", "item": 7, "titulo": "Piscina", "peca": "A7", "o_que": "corrigido", "ids": ["e2"], "situacao": "resolvida"},
+                {"item": 9, "o_que": "sem chave: fica de fora"}]}, f)
+        r = app.conferencias_do_projeto(self.s)
+        inc = r["incompatibilidades"]
+        self.assertEqual([x["chave"] for x in inc["itens"]], ["incompat:1:a", "incompat:7:b"])
+        self.assertEqual([x["situacao"] for x in inc["itens"]], ["aberta", "resolvida"])
+        self.assertEqual(inc["itens"][0]["ids"], ["e1", "c1"])
+        self.assertTrue(inc["documento_url"].endswith("/documentos/Relatorio.pdf"))
+        self.assertEqual(r["abertas"], 1)
+        r = app.gravar_conferencia(self.s, {"chave": "incompat:1:a", "resposta": "Projetista vai rebaixar a caixa.", "situacao": "resolvida"})
+        it = r["incompatibilidades"]["itens"][0]
+        self.assertEqual((it["situacao"], it["resposta"]), ("resolvida", "Projetista vai rebaixar a caixa."))
+        self.assertEqual(r["abertas"], 0)
+        self.assertEqual(r["antigas"], [])                         # a resposta da incompatibilidade não vira "antiga"
+
     def test_responder_resolver_e_historico(self):
         self._resumo_com([{"peca": "CH7", "perfil": "PLATE", "o_que": "dimensões diferem do nome: conferir"},
                           {"peca": "T.C.4", "perfil": "U150X50", "o_que": "furo(s) em 12 de 14 peças: conferir"}])

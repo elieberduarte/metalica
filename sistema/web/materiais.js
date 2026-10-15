@@ -704,43 +704,60 @@ function desenharConferencia() {
   const badge = document.querySelector('#abas button[data-aba="conferencia"]');
   if (badge) { const q = badge.querySelector('.qtd'); if (C.abertas) { if (q) q.textContent = n(C.abertas); else badge.append(el('span', { class: 'qtd', texto: n(C.abertas) })); } else if (q) q.remove(); }
   const partes = [];
+  const oQue = (l) => el('div', {}, l.it.o_que, l.ids ? el('a', { href: '#', class: 'conf-3d', texto: 'ver no 3D ↗', title: 'Mostrar estas peças no modelo 3D ao lado (13/10)',
+    onclick: (ev) => {
+      ev.preventDefault();
+      const tr = ev.target.closest('tr');
+      document.querySelectorAll('#conferencia-corpo tr.no-3d').forEach((t) => t.classList.remove('no-3d'));
+      if (tr) tr.classList.add('no-3d');
+      abrirLado3D(l.ids, l.ids.split(',').filter(Boolean).length, document.querySelector('#conferencia-corpo .conf-area'));
+    } }) : null);
+  const linha = (it) => {
+    const resposta = el('textarea', { class: 'conf-resposta', placeholder: 'O que foi conferido e a decisão…', spellcheck: 'false' });
+    resposta.value = it.resposta || '';
+    const sit = el('select', { class: 'conf-situacao' }, ...SITUACOES.map(([v, t]) => el('option', { value: v, texto: t, selected: v === (it.situacao || 'aberta') })));
+    const quando = el('small', { class: 'conf-quando', texto: it.quando ? `registrado em ${dataBR(it.quando)}` : '' });
+    const botao = el('button', { type: 'button', class: 'botao-m principal', texto: 'Registrar', onclick: async () => {
+      botao.disabled = true;
+      try {
+        const situacao = sit.value === 'aberta' && resposta.value.trim() ? 'respondida' : sit.value;
+        CONF = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/conferencias`,
+          { chave: it.chave, resposta: resposta.value.trim(), situacao, peca: it.peca, perfil: it.perfil, o_que: it.o_que });
+        desenharConferencia();
+        aviso('Resposta registrada no projeto (conferencias.json). Para levar ao PDF do resumo da obra, use "Gerar de novo" na aba Resumos da obra.');
+      } catch (e) { aviso(e.message, true); botao.disabled = false; }
+    } });
+    const ids = (it.ids || []).join(',');
+    return { it, resposta, sit, quando, botao, ids };
+  };
   if (C.sem_resumo) {
     partes.push(secao('Pendências de conferência', null, vazio('As pendências vêm do resumo da obra. Gere os resumos na aba "Resumos da obra" e volte aqui.')));
   } else {
-    const linha = (it) => {
-      const resposta = el('textarea', { class: 'conf-resposta', placeholder: 'O que foi conferido e a decisão…', spellcheck: 'false' });
-      resposta.value = it.resposta || '';
-      const sit = el('select', { class: 'conf-situacao' }, ...SITUACOES.map(([v, t]) => el('option', { value: v, texto: t, selected: v === (it.situacao || 'aberta') })));
-      const quando = el('small', { class: 'conf-quando', texto: it.quando ? `registrado em ${dataBR(it.quando)}` : '' });
-      const botao = el('button', { type: 'button', class: 'botao-m principal', texto: 'Registrar', onclick: async () => {
-        botao.disabled = true;
-        try {
-          const situacao = sit.value === 'aberta' && resposta.value.trim() ? 'respondida' : sit.value;
-          CONF = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/conferencias`,
-            { chave: it.chave, resposta: resposta.value.trim(), situacao, peca: it.peca, perfil: it.perfil, o_que: it.o_que });
-          desenharConferencia();
-          aviso('Resposta registrada no projeto (conferencias.json). Para levar ao PDF do resumo da obra, use "Gerar de novo" na aba Resumos da obra.');
-        } catch (e) { aviso(e.message, true); botao.disabled = false; }
-      } });
-      const ids = (it.ids || []).join(',');
-      return { it, resposta, sit, quando, botao, ids };
-    };
     const linhas = (C.itens || []).map(linha);
     partes.push(secao('Pendências de conferência', `${n(C.abertas)} em aberto de ${n(C.itens.length)} · resumo da obra de ${dataBR(C.gerado)}`,
       el('div', { class: 'rolagem' }, tabela([
         { titulo: 'Peça', valor: (l) => l.it.peca || '—', classe: 'b' },
         { titulo: 'Perfil', valor: (l) => l.it.perfil || '' },
-        { titulo: 'O que conferir', valor: (l) => el('div', {}, l.it.o_que, l.ids ? el('a', { href: '#', class: 'conf-3d', texto: 'ver no 3D ↗', title: 'Mostrar estas peças no modelo 3D ao lado (13/10)',
-            onclick: (ev) => {
-              ev.preventDefault();
-              const tr = ev.target.closest('tr');
-              document.querySelectorAll('#conferencia-corpo tr.no-3d').forEach((t) => t.classList.remove('no-3d'));
-              if (tr) tr.classList.add('no-3d');
-              abrirLado3D(l.ids, l.ids.split(',').filter(Boolean).length, document.querySelector('#conferencia-corpo .conf-area'));
-            } }) : null), classe: 'quebra' },
+        { titulo: 'O que conferir', valor: oQue, classe: 'quebra' },
         { titulo: 'Resposta', valor: (l) => l.resposta, classe: 'quebra conf-cel' },
         { titulo: 'Situação', valor: (l) => el('div', { class: 'conf-acao' }, l.sit, l.botao, l.quando) },
       ], linhas, null, (l) => [l.it.peca, l.it.perfil, l.it.o_que, l.it.resposta].join(' ')))));
+  }
+  // as incompatibilidades com o projeto de concreto (o relatório ao projetista, 15/10): cada ocorrência com o ver no 3D — para
+  // localizar no modelo o que o PDF descreve; a resposta e a situação ficam no mesmo histórico
+  const inc = C.incompatibilidades || {};
+  if ((inc.itens || []).length) {
+    const abertasInc = inc.itens.filter((it) => it.situacao !== 'resolvida').length;
+    partes.push(secao(inc.titulo || 'Incompatibilidades', `${n(abertasInc)} em aberto de ${n(inc.itens.length)}` + (inc.gerado ? ` · relatório de ${dataBR(inc.gerado)}` : ''),
+      el('div', {}, inc.documento_url ? el('p', { class: 'dica' }, 'O relatório enviado ao projetista: ',
+        el('a', { href: inc.documento_url, target: '_blank', rel: 'noopener', texto: inc.documento })) : null,
+      el('div', { class: 'rolagem' }, tabela([
+        { titulo: 'Item', valor: (l) => el('div', {}, el('b', { texto: `${l.it.item}. ${l.it.titulo || ''}` }), el('div', { class: 'dica', texto: l.it.perfil || '' })), classe: 'quebra' },
+        { titulo: 'Onde', valor: (l) => l.it.peca || '—', classe: 'b quebra' },
+        { titulo: 'O que conferir', valor: oQue, classe: 'quebra' },
+        { titulo: 'Resposta', valor: (l) => l.resposta, classe: 'quebra conf-cel' },
+        { titulo: 'Situação', valor: (l) => el('div', { class: 'conf-acao' }, l.sit, l.botao, l.quando) },
+      ], inc.itens.map(linha), null, (l) => [l.it.titulo, l.it.peca, l.it.o_que, l.it.resposta].join(' '))))));
   }
   // o histórico da obra: cada resposta dada, da mais nova para a mais antiga, inclusive as pendências que já saíram do resumo
   const eventos = [];
