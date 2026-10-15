@@ -76,8 +76,22 @@ try:
       inf.limparAncora(); await pairar([3000, 2000, 10]);
       const b = em([3000, 1000, 10], 2, 0);
       const rb = { tipo: b.tipoSnap, p: b.ponto.map(Math.round), eixo: b.eixoAlinhado };
+      // dois pontos lembrados: o X de um e o Y do outro
+      inf.limparAncora();
+      const ch2 = doc.add({ tipo: 'chapa', nome: 'CH2', camada: 'Chapas', origem: [500, 3500, 0], eixo_x: [1, 0, 0], eixo_y: [0, 1, 0],
+        contorno: [[0, 0], [200, 0], [200, 200], [0, 200]], espessura: 10, centrada: false, furos: [], atributos: {} });
+      for (let i = 0; i < 40 && !ed.cena.objetos.has(ch2.id); i++) await new Promise(r => setTimeout(r, 100));
+      ed.camera.enquadrar([[-500, -1500, -200], [4000, 4200, 800]]); ed.camera.concluirAnimacao();
+      await new Promise(r => setTimeout(r, 300));
+      inf.resolver(10, 10, {});
+      await pairar([3000, 2000, 10]); await pairar([500, 3500, 10]);
+      inf.definirAncora([0, 0, 10]);
+      const c2 = em([3000, 3500, 10], 2, 1);
+      inf.desenhar(c2);
+      const linhas2 = inf.svg.querySelectorAll('line[stroke-dasharray="2 4"]').length;
+      const rc = { tipo: c2.tipoSnap, p: c2.ponto.map(Math.round), rot: c2.rotulo, linhas: linhas2, n: inf.lembrados.length };
       inf.limparAncora(); inf.limpar();
-      return JSON.stringify({ canto, lembrados, ra, pontilhada, marca, trava, rb }); })()""")
+      return JSON.stringify({ canto, lembrados, ra, pontilhada, marca, trava, rb, rc }); })()""")
     r = json.loads(r) if r else None
     print("     ", r)
     ok(r and r["canto"] == "extremidade" and r["lembrados"] == [[3000, 2000, 10]], f"o canto em que o mouse parou ficou lembrado: {r and (r['canto'], r['lembrados'])}")
@@ -85,6 +99,8 @@ try:
        f"com âncora, no eixo X o snap trava na coordenada do canto, na cor do eixo: {r and r['ra']}")
     ok(r and r["pontilhada"] and r["marca"] == 1, f"a linha pontilhada do canto até o ponto e a marquinha do ponto lembrado: {r and (r['pontilhada'], r['marca'])}")
     ok(r and r["trava"] == "x", f"o Shift trava o eixo do alinhamento: {r and r['trava']}")
+    ok(r and r["rc"]["tipo"] == "alinhado2" and r["rc"]["p"] == [3000, 3500, 10] and r["rc"]["linhas"] == 2,
+       f"com dois pontos lembrados: o X de um e o Y do outro, com as duas linhas pontilhadas: {r and r['rc']}")
     ok(r and r["rb"]["tipo"] == "alinhado_livre" and r["rb"]["eixo"] == "y" and r["rb"]["p"][0] == 3000 and r["rb"]["p"][2] == 10,
        f"sem âncora, a reta Y que passa pelo canto: {r and r['rb']}")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]

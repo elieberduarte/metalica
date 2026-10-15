@@ -34,6 +34,8 @@ export const TIPOS = {
   // âncora, onde a coordenada coincide com a do ponto (vence o eixo puro); sem âncora, sobre as retas X/Y/Z do ponto
   alinhado:     { rotulo: 'Alinhado',    cor: '#b07cc6', glifo: 'eixo',     prio: 5.7 },
   alinhado_livre: { rotulo: 'Alinhado',  cor: '#b07cc6', glifo: 'eixo',     prio: 6.5 },
+  // o X de um ponto lembrado e o Y de outro, na altura da âncora (o canto definido por duas referências)
+  alinhado2:    { rotulo: 'Alinhado com dois pontos', cor: '#b07cc6', glifo: 'xis', prio: 5.6 },
   sobre_face:   { rotulo: 'Sobre face',  cor: '#2a63c8', glifo: 'losango',  prio: 7 },
   plano_base:   { rotulo: 'No plano',    cor: '#8a94a6', glifo: 'ponto',    prio: 8 },
 };
@@ -529,6 +531,22 @@ export class Inferencia {
       }
     }
 
+    // 4e. Alinhado com dois pontos lembrados: o X de um e o Y do outro, na altura da âncora (ou do chão), no plano —
+    // o canto que as duas referências definem
+    if (this._lembrados.length >= 2 && !(pl && pl.normal)) {
+      const z = this.ancora ? this.ancora[2] : 0;
+      for (const L1 of this._lembrados) {
+        for (const L2 of this._lembrados) {
+          if (L1 === L2) continue;
+          const Q = [L1.ponto[0], L2.ponto[1], z];
+          if (Math.hypot(Q[0] - L1.ponto[0], Q[1] - L1.ponto[1]) < 1 || Math.hypot(Q[0] - L2.ponto[0], Q[1] - L2.ponto[1]) < 1) continue;
+          const d = perto(Q);
+          if (d !== null) cand.push({ tipo: 'alinhado2', ponto: Q, d, de: [L1.ponto, L2.ponto], cores: [COR_EIXO.y, COR_EIXO.x],
+                                      rotulo: `X de ${L1.rotulo.toLowerCase()} · Y de ${L2.rotulo.toLowerCase()}` });
+        }
+      }
+    }
+
     // 5. Sobre a face, quando o raio atinge alguma coisa.
     if (alvo) {
       cand.push({ tipo: 'sobre_face', ponto: alvo.ponto, d: tol + 1,
@@ -599,7 +617,8 @@ export class Inferencia {
       normal: melhor.normal || (alvo ? alvo.normal : [0, 0, 1]),
       tipoSnap: melhor.tipo,
       rotuloSnap: melhor.rotulo || '',
-      ...(melhor.de ? { alinhadoCom: melhor.de, eixoAlinhado: melhor.eixoAlinhado, corSnap: COR_EIXO[melhor.eixoAlinhado] } : {}),
+      ...(melhor.de ? { alinhadoCom: melhor.de, eixoAlinhado: melhor.eixoAlinhado, corSnap: COR_EIXO[melhor.eixoAlinhado],
+                        coresAlinhamento: melhor.cores || null } : {}),
     }, tela);
   }
 
@@ -641,13 +660,16 @@ export class Inferencia {
     // o alinhamento: a linha pontilhada do ponto lembrado até o ponto, na cor do eixo
     const cor = p.cor || t.cor;
     if (p.alinhadoCom) {
-      const a = this.camera.paraTela(p.alinhadoCom);
-      if (a[2] <= 1) {
+      // um ponto (o alinhamento num eixo) ou dois (o X de um e o Y do outro): uma linha pontilhada de cada
+      const de = Array.isArray(p.alinhadoCom[0]) ? p.alinhadoCom : [p.alinhadoCom];
+      de.forEach((P, k) => {
+        const a = this.camera.paraTela(P);
+        if (a[2] > 1) return;
         const l = doc(this.svg, 'line');
         l.setAttribute('x1', a[0]); l.setAttribute('y1', a[1]); l.setAttribute('x2', x); l.setAttribute('y2', y);
-        l.setAttribute('stroke', cor); l.setAttribute('stroke-width', 1.2); l.setAttribute('stroke-dasharray', '2 4');
+        l.setAttribute('stroke', (p.coresAlinhamento && p.coresAlinhamento[k]) || cor); l.setAttribute('stroke-width', 1.2); l.setAttribute('stroke-dasharray', '2 4');
         this.svg.appendChild(l);
-      }
+      });
     }
     // os pontos lembrados: uma marquinha em cada (o usuário vê o que o snap guardou)
     for (const L of this._lembrados) {
