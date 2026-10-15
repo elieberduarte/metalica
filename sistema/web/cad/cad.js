@@ -961,6 +961,8 @@ class CAD {
       // a janela de seleção em curso acompanha o zoom: o primeiro canto fica no ponto do desenho clicado
       if (pressao && this.tela.retangulo) { this.tela.retangulo = [this.tela.paraTela(pressao.mundo), px(ev)]; this.tela.pedirQuadro(); }
     }, { passive: false });
+    // duplo clique com o botão do meio enquadra: o Chrome não manda dblclick para ele, só auxclick com detail 2
+    c.addEventListener('auxclick', (ev) => { if (ev.button === 1 && ev.detail === 2) this.tela.enquadrar(); });
     c.addEventListener('dblclick', (ev) => {
       if (ev.button === 1) { this.tela.enquadrar(); return; }
       // duplo clique num texto, chamada ou cota: edita o texto ali mesmo (pedido do usuário, 01/10)
@@ -1026,7 +1028,9 @@ class CAD {
       if (ev.key.toLowerCase() === 'z') { this.tela.enquadrar(); return; }
       // número ou sinal digitado no canvas vai para a caixa de medidas
       if (/^[-0-9.,@<]$/.test(ev.key)) { this.el.medida.focus(); return; }
-      for (const F of FERRAMENTAS) if (F.atalho && ev.key === F.atalho) { ev.preventDefault(); this.ativarFerramenta(F.id); return; }
+      // com o Caps Lock ligado chega 'K': o atalho vale igual (as duplas, TR e MA, já baixavam a letra)
+      const kk = ev.key.toLowerCase();
+      for (const F of FERRAMENTAS) if (F.atalho && kk === F.atalho) { ev.preventDefault(); this.ativarFerramenta(F.id); return; }
     });
   }
 

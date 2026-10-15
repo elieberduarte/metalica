@@ -22,6 +22,10 @@ export function naUnidade(mm) {
   const casas = unidadeMedidas === 'm' ? 3 : 1, k = 10 ** casas;
   return String(Math.round(mm / UNIDADES[unidadeMedidas] * k) / k).replace('.', ',');
 }
+/** A medida (mm) na unidade das medidas, com o nome dela: "1.300 mm", "130 cm", "1,3 m". */
+const medidaComUnidade = (mm) => (unidadeMedidas === 'mm' ? `${fmt(mm)} mm` : `${naUnidade(mm)} ${unidadeMedidas}`);
+/** Só o número (o Δx do Medir), na unidade das medidas. */
+const numeroNaUnidade = (mm) => (unidadeMedidas === 'mm' ? fmt(mm) : naUnidade(mm));
 /** O texto da caixa MEDIDAS na unidade das medidas: os números até o último "mm" ("4.750 mm", "35 × 70 mm", "R 120 · corda 300 mm")
  *  convertidos; ângulo (30°), nome de eixo ("A:", "do eixo 1", depois do mm) e fator (×2) ficam. */
 export function textoNaUnidade(t) {
@@ -1404,14 +1408,20 @@ export class Aparar extends Ferramenta {
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6h16M4 18h16M12 3v18" stroke-dasharray="4 2"/><path d="M9 9l6 6"/></svg>';
   onPonto(p, ev) {
     const e = this.editor.tela.sob(ev.px);
-    if (e && e.tipo === 'arco') { this._apararArco(e, p); return; }
-    if (!e || e.tipo !== 'linha') { this.dica('Aparar funciona em linhas e arcos: clique no trecho a remover'); return; }
+    // o trecho que sai é o do MOUSE, não o do snap: clicando ao lado de uma interseção, o snap levava o ponto para ela e
+    // saía o trecho do outro lado (teste de fluxo, 15/10)
+    const q = ev && ev.px ? this.editor.tela.paraMundo(ev.px) : p;
+    if (e && e.tipo === 'arco') { this._apararArco(e, q); return; }
+    if (e && e.tipo === 'circulo') { this._apararCirculo(e, q); return; }
+    if (e && e.tipo === 'polilinha') { this._apararPolilinha(e, q); return; }
+    if (!e || e.tipo !== 'linha') { this.dica('Aparar funciona em linhas, polilinhas, arcos e círculos: clique no trecho a remover'); return; }
     const outros = [...this.doc.entidades.values()].filter(o => o.id !== e.id && this.doc.visivel(o));
     const cortes = [];
     for (const o of outros) cortes.push(...cortesComEntidade(e.a, e.b, o));
-    if (!cortes.length) { this.dica('A linha não cruza nenhuma outra'); return; }
     const L = dist(e.a, e.b), ts = cortes.map(c => dist(e.a, c) / L).filter(t => t > 1e-6 && t < 1 - 1e-6).sort((a, b) => a - b);
-    const tp = dist(e.a, maisProximoSeg(p, e.a, e.b)) / L;
+    // só os cortes do meio contam: a linha que só encosta numa outra pela ponta saía apagada inteira
+    if (!ts.length) { this.dica('A linha não cruza nenhuma outra'); return; }
+    const tp = dist(e.a, maisProximoSeg(q, e.a, e.b)) / L;
     const limites = [0, ...ts, 1];
     let i = 0;
     while (i < limites.length - 1 && !(tp >= limites[i] && tp <= limites[i + 1])) i++;
@@ -1438,6 +1448,81 @@ export class Aparar extends Ferramenta {
     if (lim[i] > 1e-6) restantes.push(criar({ ...e, id: undefined, inicio: e.inicio, fim: e.inicio + lim[i] }));
     if (lim[i + 1] < span - 1e-6) restantes.push(criar({ ...e, id: undefined, inicio: e.inicio + lim[i + 1], fim: e.inicio + span }));
     for (const r of restantes) { r.inicio = ((r.inicio % 360) + 360) % 360; r.fim = ((r.fim % 360) + 360) % 360; }
+    this.editor.executar(new ComandoComposto([new ComandoRemover([e.id]), new ComandoAdicionar(restantes)], 'Aparar'));
+  }
+  /** Círculo: sai o trecho entre os dois cortes em volta do clique; fica um arco (precisa de dois cortes, como no TRIM). */
+  _apararCirculo(e, p) {
+    const n = (g) => ((g % 360) + 360) % 360;
+    const ang = (q) => n(Math.atan2(q[1] - e.centro[1], q[0] - e.centro[0]) * 180 / Math.PI);
+    const outros = [...this.doc.entidades.values()].filter(o => o.id !== e.id && this.doc.visivel(o));
+    const as = [];
+    for (const o of outros) for (const q of cortesNoCirculo(e.centro, e.raio, o)) {
+      const g = ang(q);
+      if (!as.some(x => Math.abs(x - g) < 1e-6 || Math.abs(Math.abs(x - g) - 360) < 1e-6)) as.push(g);
+    }
+    if (as.length < 2) { this.dica('O círculo precisa ser cortado em dois pontos para aparar um trecho'); return; }
+    as.sort((a, b) => a - b);
+    const g = ang(p);
+    const depois = as.find(x => x > g) ?? as[0];
+    const antes = [...as].reverse().find(x => x < g) ?? as[as.length - 1];
+    const arco = criar({ ...e, id: undefined, tipo: 'arco', inicio: depois, fim: antes });
+    this.editor.executar(new ComandoComposto([new ComandoRemover([e.id]), new ComandoAdicionar([arco])], 'Aparar'));
+  }
+  /** Polilinha: os cortes pelo comprimento ao longo dela; sai o trecho entre os dois em volta do clique. Na aberta ficam
+   *  os pedaços das duas pontas; na fechada, um pedaço só, de corte a corte, dando a volta. */
+  _apararPolilinha(e, p) {
+    const segs = segmentosDe(e);
+    if (!segs.length) return;
+    const S = [0];
+    for (const [a, b] of segs) S.push(S[S.length - 1] + dist(a, b));
+    const T = S[S.length - 1];
+    if (T < 1e-9) return;
+    const outros = [...this.doc.entidades.values()].filter(o => o.id !== e.id && this.doc.visivel(o));
+    const cortes = [];
+    segs.forEach(([a, b], k) => {
+      for (const o of outros) for (const x of cortesComEntidade(a, b, o)) cortes.push(S[k] + dist(a, x));
+    });
+    const fechada = !!(e.fechada && e.vertices.length > 2);
+    const unicos = [];
+    for (const c of cortes.sort((a, b) => a - b)) {
+      const cc = fechada ? ((c % T) + T) % T : c;
+      if (!fechada && (cc < 1e-6 || cc > T - 1e-6)) continue;
+      if (!unicos.some(u => Math.abs(u - cc) < 1e-6 || (fechada && Math.abs(Math.abs(u - cc) - T) < 1e-6))) unicos.push(cc);
+    }
+    unicos.sort((a, b) => a - b);
+    if (fechada ? unicos.length < 2 : !unicos.length) { this.dica(fechada ? 'O contorno precisa ser cortado em dois pontos para aparar um trecho' : 'A polilinha não cruza nenhuma outra'); return; }
+    // o ponto do clique ao longo da polilinha (pelo segmento mais perto)
+    let k0 = 0, dmin = Infinity;
+    segs.forEach(([a, b], k) => { const d = dist(p, maisProximoSeg(p, a, b)); if (d < dmin) { dmin = d; k0 = k; } });
+    const sp = S[k0] + dist(segs[k0][0], maisProximoSeg(p, segs[k0][0], segs[k0][1]));
+    const pontoEm = (x) => {
+      let k = 0;
+      while (k < segs.length - 1 && x > S[k + 1]) k++;
+      const [a, b] = segs[k], L = (S[k + 1] - S[k]) || 1, t = Math.max(0, Math.min(1, (x - S[k]) / L));
+      return [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+    };
+    // os pontos da polilinha de `de` a `ate` (de < ate), com os vértices do meio
+    const trecho = (de, ate) => {
+      const out = [pontoEm(de)];
+      for (let k = 1; k < segs.length; k++) if (S[k] > de + 1e-6 && S[k] < ate - 1e-6) out.push(segs[k][0]);
+      out.push(pontoEm(ate));
+      return out;
+    };
+    const nova = (vs) => criar({ ...e, id: undefined, vertices: vs, fechada: false });
+    const restantes = [];
+    if (!fechada) {
+      const lim = [0, ...unicos, T];
+      let i = 0;
+      while (i < lim.length - 1 && !(sp >= lim[i] && sp <= lim[i + 1])) i++;
+      if (lim[i] > 1e-6) restantes.push(nova(trecho(0, lim[i])));
+      if (lim[i + 1] < T - 1e-6) restantes.push(nova(trecho(lim[i + 1], T)));
+    } else {
+      // o corte logo depois do clique e o logo antes; fica o caminho de "depois" até "antes", dando a volta
+      const depois = unicos.find(x => x > sp) ?? unicos[0];
+      const antes = [...unicos].reverse().find(x => x < sp) ?? unicos[unicos.length - 1];
+      const vs = depois < antes ? trecho(depois, antes) : [...trecho(depois, T), ...trecho(0, antes).slice(1)];
+      restantes.push(nova(vs));
+    }
     this.editor.executar(new ComandoComposto([new ComandoRemover([e.id]), new ComandoAdicionar(restantes)], 'Aparar'));
   }
 }
@@ -1566,7 +1651,7 @@ export class Estender extends Ferramenta {
     if (!melhor) { this.dica('Nada nessa direção para a linha chegar'); return; }
     const nova = criar({ ...e, a: inverte ? melhor.x : e.a, b: inverte ? e.b : melhor.x });
     this.editor.executar(new ComandoSubstituir([nova], 'Estender'));
-    this.dica(`Estendida ${fmt(melhor.d)} mm · próxima linha (Esc sai)`);
+    this.dica(`Estendida ${medidaComUnidade(melhor.d)} · próxima linha (Esc sai)`);
   }
   /** A ponta do arco mais perto do clique segue pela mesma curva até a primeira linha, arco ou círculo. */
   _estenderArco(e, p) {
@@ -1587,7 +1672,7 @@ export class Estender extends Ferramenta {
     const n = (g) => ((g % 360) + 360) % 360;
     const nova = criar(peloFim ? { ...e, fim: n(e.fim + melhor) } : { ...e, inicio: n(e.inicio - melhor) });
     this.editor.executar(new ComandoSubstituir([nova], 'Estender'));
-    this.dica(`Arco estendido ${fmt(e.raio * melhor * Math.PI / 180)} mm na curva · próxima (Esc sai)`);
+    this.dica(`Arco estendido ${medidaComUnidade(e.raio * melhor * Math.PI / 180)} na curva · próxima (Esc sai)`);
   }
 }
 
@@ -1600,6 +1685,8 @@ export class Concordar extends Ferramenta {
   onPonto(p, ev) {
     const e = this.editor.tela.sob(ev.px);
     if (!e || e.tipo !== 'linha') { this.dica('Concordar funciona entre duas linhas'); return; }
+    // o lado que fica é o do MOUSE: o snap levava o clique para o próprio encontro e o lado caía na direção a→b
+    p = ev && ev.px ? this.editor.tela.paraMundo(ev.px) : p;
     if (!this.primeira) { this.primeira = { e, p }; this.dica('Agora a segunda linha'); return; }
     if (e.id === this.primeira.e.id) { this.dica('Clique numa segunda linha, diferente da primeira'); return; }
     const res = this._concordar(this.primeira.e, this.primeira.p, e, p, this.raio);
@@ -1677,14 +1764,22 @@ export class Offset extends Ferramenta {
       const d = (dfix ?? Math.abs((p[0] - e.a[0]) * nx + (p[1] - e.a[1]) * ny)) * lado;
       return criar({ ...e, id: undefined, a: [e.a[0] + nx * d, e.a[1] + ny * d], b: [e.b[0] + nx * d, e.b[1] + ny * d] });
     }
-    // polilinha: desloca cada vértice pela bissetriz das normais (bom para contornos simples)
+    // polilinha: desloca cada vértice pela bissetriz das normais (bom para contornos simples). O lado é o do segmento
+    // mais perto do clique (antes o sinal pela área e pelo "dentro" saía invertido, e a aberta era tratada como fechada:
+    // o último vértice se ligava ao primeiro — teste de fluxo, 15/10)
     const v = e.vertices, n = v.length, out = [];
-    const sinal = area(v) >= 0 ? 1 : -1;
-    const dentroP = dentroDe(p, v);
-    const d = (dfix ?? Math.min(...segmentosDe(e).map(([s, t]) => distSegP(p, s, t)))) * (dentroP ? -1 : 1) * sinal;
+    const fechada = !!(e.fechada && n > 2);
+    let sMin = null, dMin = Infinity;
+    for (const [a, b] of segmentosDe(e)) { const dd = distSegP(p, a, b); if (dd < dMin) { dMin = dd; sMin = [a, b]; } }
+    if (!sMin) return null;
+    const nn = normal(sMin[0], sMin[1]);
+    const lado = Math.sign((p[0] - sMin[0][0]) * nn[0] + (p[1] - sMin[0][1]) * nn[1]) || 1;
+    const d = (dfix ?? dMin) * lado;
     for (let i = 0; i < n; i++) {
       const prev = v[(i - 1 + n) % n], cur = v[i], next = v[(i + 1) % n];
-      const n1 = normal(prev, cur), n2 = normal(cur, next);
+      // nas pontas da aberta vale a normal do único segmento que chega nelas
+      const n1 = !fechada && i === 0 ? normal(cur, next) : normal(prev, cur);
+      const n2 = !fechada && i === n - 1 ? n1 : normal(cur, next);
       let bx = n1[0] + n2[0], by = n1[1] + n2[1];
       const l = Math.hypot(bx, by) || 1;
       const cosHalf = Math.max(0.2, (n1[0] * bx + n1[1] * by) / l);
@@ -1700,7 +1795,7 @@ export class Medir extends Ferramenta {
   static id = 'medir'; static nome = 'Medir'; static atalho = 'u'; static grupo = 'medicao'; static dica = 'Primeiro ponto';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 17L17 3l4 4L7 21z"/><path d="M8 12l2 2M11 9l2 2M14 6l2 2"/></svg>';
   reiniciar() { super.reiniciar(); this.a = null; }
-  onPonto(p) { if (!this.a) { this.a = p; this.editor.snap.ultimo = p; this.dica('Segundo ponto'); return; } this.editor.aviso(`Distância: ${fmt(dist(this.a, p))} mm  ·  Δx ${fmt(p[0] - this.a[0])}  Δy ${fmt(p[1] - this.a[1])}  ·  ∠ ${fmt(ang(this.a, p) * 180 / Math.PI)}°`); this.reiniciar(); }
+  onPonto(p) { if (!this.a) { this.a = p; this.editor.snap.ultimo = p; this.dica('Segundo ponto'); return; } this.editor.aviso(`Distância: ${medidaComUnidade(dist(this.a, p))}  ·  Δx ${numeroNaUnidade(p[0] - this.a[0])}  Δy ${numeroNaUnidade(p[1] - this.a[1])}  ·  ∠ ${fmt(ang(this.a, p) * 180 / Math.PI)}°`); this.reiniciar(); }
   onMover(p) { if (this.a) { this.editor.previa([criar({ tipo: 'linha', camada: 'AUXILIAR', a: this.a, b: p })]); this.editor.medida(`${fmt(dist(this.a, p))} mm`); } }
 }
 
