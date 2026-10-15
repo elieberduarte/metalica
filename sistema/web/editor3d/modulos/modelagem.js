@@ -7,9 +7,30 @@
 // * Pilares nos eixos — um pilar em cada cruzamento escolhido dos eixos gravados da obra;
 // * Viga entre pilares — no nível pedido, com o topo da viga no nível.
 //
-// A geometria é do servidor (nucleo3d/modelagem.py); aqui ficam os diálogos e o comando.
+// A geometria é do servidor (nucleo3d/modelagem.py); aqui ficam os diálogos e o comando. Enquanto o diálogo está aberto,
+// as peças aparecem translúcidas no lugar (a prévia, como o fantasma do Mover) e se refazem a cada campo mudado; o
+// diálogo vai para o canto e o fundo clareia para deixar ver o modelo.
 
+import * as THREE from 'three';
 import { el, numero } from '../editor.js';
+
+// a prévia: materiais da casa (nunca descartados), malhas do cache da cena
+const MAT_PREVIA = new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide });
+const LIN_PREVIA = new THREE.LineBasicMaterial({ color: 0x1d4ed8, transparent: true, opacity: 0.9 });
+MAT_PREVIA.userData.compartilhada = true;
+LIN_PREVIA.userData.compartilhada = true;
+const ESPERA_PREVIA = 250;          // ms depois do último campo mudado
+
+let estiloPrevia = false;
+function garantirEstiloPrevia() {
+  if (estiloPrevia) return;
+  estiloPrevia = true;
+  document.head.append(el('style', { texto:
+    'dialog.com-previa { margin: 64px 16px auto auto; max-width: min(420px, calc(100vw - 32px)); }' +
+    'dialog.com-previa::backdrop { background: rgba(10, 18, 30, .06); }' +
+    'dialog .estado-previa { margin: 8px 0 0; font-size: 12px; color: var(--texto-fraco, #64748b); }' +
+    'dialog .estado-previa.erro { color: var(--vermelho, #dc2626); }' }));
+}
 
 const vert = (b) => {
   const d = [b.fim[0] - b.inicio[0], b.fim[1] - b.inicio[1], b.fim[2] - b.inicio[2]];
@@ -79,15 +100,136 @@ export class MetodosModelagem {
   }
 
   /** Manda o pedido, aplica as barras novas e as alterações num comando só e diz o que saiu. */
-  async _modelar(pedido, rotulo) {
-    let r;
+  async _pedirModelagem(pedido) {
+    const resp = await fetch('/api/modelo/modelar', { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ documento: this.documento.paraJSON(), ...pedido }) });
+    const r = await resp.json();
+    if (!resp.ok || r.erro) throw new Error(r.erro || resp.statusText);
+    return r;
+  }
+
+  /** O diálogo com a prévia ao vivo: `pedido()` lê o formulário; devolve {pedido, pronto} no OK (pronto = a resposta
+   *  da prévia, quando o formulário não mudou depois dela) ou null. */
+  async _dialogoComPrevia({ titulo, corpo, ok, pedido }) {
+    garantirEstiloPrevia();
+    const estado = el('p', { class: 'estado-previa', texto: 'Prévia…' });
+    corpo.append(estado);
+    const d = this.el.dialogo;
+    let grupo = null, timer = null, vez = 0, ultima = null, fechado = false;
+    const tirar = () => {
+      if (!grupo) return;
+      this.cena.previa.remove(grupo);
+      grupo.traverse(x => { if (x.isLineSegments && x.geometry) x.geometry.dispose(); });
+      grupo = null;
+      this.cena.pedirQuadro();
+    };
+    const atualizar = async () => {
+      const minha = ++vez;
+      let p;
+      try { p = pedido(); } catch (e) {
+        tirar();
+        ultima = null;
+        estado.className = 'estado-previa erro';
+        estado.textContent = e.message;
+        return;
+      }
+      const chave = JSON.stringify(p);
+      try {
+        const r = await this._pedirModelagem(p);
+        await this._perfisDaPrevia(r.novas || []);
+        if (minha !== vez || fechado) return;
+        tirar();
+        grupo = this._grupoDaPrevia(r.novas || []);
+        this.cena.addPrevia(grupo);
+        ultima = { chave, r };
+        const res = r.resumo || {};
+        const n = (r.novas || []).length;
+        const partes = [`${n} peça${n === 1 ? '' : 's'}`];
+        if (res.linhas) partes.push(`${res.linhas} linhas`);
+        if (res.passo) partes.push(`passo ${numero(res.passo, 0)} mm`);
+        if (res.paineis) partes.push(`${res.paineis} painéis`);
+        estado.className = 'estado-previa';
+        estado.textContent = `Prévia: ${partes.join(' · ')}` + ((r.avisos || []).length ? ` — ${r.avisos.join('; ')}` : '');
+      } catch (e) {
+        if (minha !== vez || fechado) return;
+        tirar();
+        ultima = null;
+        estado.className = 'estado-previa erro';
+        estado.textContent = e.message;
+      }
+    };
+    const mudou = () => { clearTimeout(timer); timer = setTimeout(atualizar, ESPERA_PREVIA); };
+    corpo.addEventListener('input', mudou);
+    corpo.addEventListener('change', mudou);
+    d.classList.add('com-previa');
+    atualizar();
+    let res;
+    try { res = await this.dialogo({ titulo, corpo, ok }); }
+    finally {
+      fechado = true;
+      clearTimeout(timer);
+      corpo.removeEventListener('input', mudou);
+      corpo.removeEventListener('change', mudou);
+      d.classList.remove('com-previa');
+      tirar();
+    }
+    if (res !== 'ok') return null;
+    const p = pedido();
+    return { pedido: p, pronto: ultima && ultima.chave === JSON.stringify(p) ? ultima.r : null };
+  }
+
+  /** As seções que o catálogo do editor não traz (dobrados, redondos): pedidas ao servidor antes de desenhar. */
+  async _perfisDaPrevia(novas) {
+    const cat = this.cena.catalogo && this.cena.catalogo.perfis;
+    if (!(cat instanceof Map)) return;
+    const faltam = [...new Set(novas.filter(d => d.tipo === 'barra').map(d => d.perfil))].filter(n => n && !cat.has(n));
+    if (!faltam.length) return;
     try {
-      this.dica(`${rotulo}…`);
-      const resp = await fetch('/api/modelo/modelar', { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
-        body: JSON.stringify({ documento: this.documento.paraJSON(), ...pedido }) });
-      r = await resp.json();
-      if (!resp.ok || r.erro) throw new Error(r.erro || resp.statusText);
-    } catch (e) { this.aviso(`${rotulo}: ${e.message}`, 'erro', 0); return null; }
+      const r = await this.api.perfis(faltam);
+      const lista = (r && r.perfis) || [];
+      const ja = new Set((this.catalogo.perfis || []).map(p => p.nome));
+      for (const p of lista) if (!ja.has(p.nome)) this.catalogo.perfis.push(p);
+      this.cena.acrescentarPerfis(lista);
+    } catch (e) { /* sem a seção, a prévia sai com a padrão */ }
+  }
+
+  /** As barras da resposta como malhas translúcidas (do cache da cena) e o eixo de cada uma. */
+  _grupoDaPrevia(novas) {
+    const g = new THREE.Group();
+    g.name = 'previa-modelagem';
+    g.renderOrder = 980;
+    const eixos = [];
+    for (const d of novas) {
+      if (d.tipo !== 'barra') continue;
+      eixos.push(...d.inicio, ...d.fim);
+      let geo;
+      try { geo = this.cena._geometriaBarra(d); } catch (e) { geo = null; }
+      if (!geo || !geo.geom) continue;
+      const m = new THREE.Mesh(geo.geom, MAT_PREVIA);
+      m.matrixAutoUpdate = false;
+      m.matrix.copy(geo.matriz);
+      m.userData.compartilhada = true;           // a malha é do cache da cena: limparPrevia não a descarta
+      m.raycast = () => {};
+      g.add(m);
+    }
+    if (eixos.length) {
+      const bg = new THREE.BufferGeometry();
+      bg.setAttribute('position', new THREE.Float32BufferAttribute(eixos, 3));
+      const l = new THREE.LineSegments(bg, LIN_PREVIA);
+      l.raycast = () => {};
+      g.add(l);
+    }
+    return g;
+  }
+
+  async _modelar(pedido, rotulo, pronto = null) {
+    let r = pronto;
+    if (!r) {
+      try {
+        this.dica(`${rotulo}…`);
+        r = await this._pedirModelagem(pedido);
+      } catch (e) { this.aviso(`${rotulo}: ${e.message}`, 'erro', 0); return null; }
+    }
     const cmd = this._comandoDaLigacao(r, rotulo);
     if (!cmd) { this.aviso(`${rotulo}: nada a lançar.`, 'info'); return r; }
     this.executar(cmd);
@@ -116,8 +258,8 @@ export class MetodosModelagem {
       { chave: 'boca', rotulo: 'Boca do U para', tipo: [['cumeeira', 'a cumeeira'], ['beiral', 'o beiral']], valor: 'cumeeira' },
     ]);
     const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: `${apoios.length} apoios. As terças saem igualmente espaçadas (nunca acima do máximo), sentadas no topo dos apoios, com a alma perpendicular à água.` }));
-    if (await this.dialogo({ titulo: 'Terças por espaçamento', corpo, ok: 'Lançar terças' }) !== 'ok') return;
-    await this._modelar({ ferramenta: 'tercas', ids: apoios.map(b => b.id), parametros: f.ler() }, 'Terças');
+    const e = await this._dialogoComPrevia({ titulo: 'Terças por espaçamento', corpo, ok: 'Lançar terças', pedido: () => ({ ferramenta: 'tercas', ids: apoios.map(b => b.id), parametros: f.ler() }) });
+    if (e) await this._modelar(e.pedido, 'Terças', e.pronto);
   }
 
   async dialogoTrelica() {
@@ -133,8 +275,8 @@ export class MetodosModelagem {
       { chave: 'montantes', rotulo: 'Montantes na Warren', tipo: [['nao', 'não'], ['sim', 'sim']], valor: 'nao' },
     ]);
     const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: 'Os nós igualmente espaçados no trecho em que os banzos correm juntos; as almas encaixam nas faces dos banzos (meia-esquadria), como na montagem pela planta, e tudo entra no mesmo bloco.' }));
-    if (await this.dialogo({ titulo: 'Treliça entre banzos', corpo, ok: 'Lançar treliça' }) !== 'ok') return;
-    await this._modelar({ ferramenta: 'trelica', ids: bs.map(b => b.id), parametros: f.ler() }, 'Treliça');
+    const e = await this._dialogoComPrevia({ titulo: 'Treliça entre banzos', corpo, ok: 'Lançar treliça', pedido: () => ({ ferramenta: 'trelica', ids: bs.map(b => b.id), parametros: f.ler() }) });
+    if (e) await this._modelar(e.pedido, 'Treliça', e.pronto);
   }
 
   async dialogoContraventoX() {
@@ -146,8 +288,8 @@ export class MetodosModelagem {
       { chave: 'margem', rotulo: 'Afastamento das pontas (mm)', tipo: 'numero', valor: 0 },
     ]);
     const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: 'Duas diagonais por painel, de eixo a eixo; a ligação (chapa ou suporte do tirante) vem depois, pelo Aplicar ligação.' }));
-    if (await this.dialogo({ titulo: 'Contraventamento em X', corpo, ok: 'Lançar' }) !== 'ok') return;
-    await this._modelar({ ferramenta: 'contravento', ids: bs.map(b => b.id), parametros: f.ler() }, 'Contraventamento');
+    const e = await this._dialogoComPrevia({ titulo: 'Contraventamento em X', corpo, ok: 'Lançar', pedido: () => ({ ferramenta: 'contravento', ids: bs.map(b => b.id), parametros: f.ler() }) });
+    if (e) await this._modelar(e.pedido, 'Contraventamento', e.pronto);
   }
 
   async dialogoPilaresNosEixos() {
@@ -171,10 +313,17 @@ export class MetodosModelagem {
       { chave: 'alma', rotulo: 'Alma no plano dos eixos', tipo: [['numerados', 'numerados (o pórtico)'], ['letras', 'com letra']], valor: 'numerados' },
     ]);
     const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: `${nomes.length} cruzamentos dos eixos gravados:` }), marcas, todos);
-    if (await this.dialogo({ titulo: 'Pilares nos eixos', corpo, ok: 'Lançar pilares' }) !== 'ok') return;
-    const escolhidos = caixas.filter(([, c]) => c.checked).map(([n]) => n);
-    if (!escolhidos.length) { this.dica('Nenhum cruzamento escolhido.'); return; }
-    await this._modelar({ ferramenta: 'pilares', eixos, cruzamentos: escolhidos, parametros: f.ler() }, 'Pilares');
+    // nenhum cruzamento marcado: nada (o servidor, com a lista vazia, lançaria em todos)
+    const pedido = () => {
+      const escolhidos = caixas.filter(([, c]) => c.checked).map(([n]) => n);
+      if (!escolhidos.length) throw new Error('Nenhum cruzamento escolhido.');
+      return { ferramenta: 'pilares', eixos, cruzamentos: escolhidos, parametros: f.ler() };
+    };
+    todos.addEventListener('click', () => corpo.dispatchEvent(new Event('change')));
+    let e;
+    try { e = await this._dialogoComPrevia({ titulo: 'Pilares nos eixos', corpo, ok: 'Lançar pilares', pedido }); }
+    catch (err) { this.dica(err.message); return; }
+    if (e) await this._modelar(e.pedido, 'Pilares', e.pronto);
   }
 
   async dialogoVigaEntrePilares() {
@@ -187,7 +336,7 @@ export class MetodosModelagem {
       { chave: 'continua', rotulo: 'Viga', tipo: [['nao', 'uma por vão'], ['sim', 'contínua']], valor: 'nao' },
     ]);
     const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: `${pilares.length} pilares. A viga vai de eixo a eixo dos pilares; a ligação (chapa de topo, flexível) vem depois, pelo Aplicar ligação.` }));
-    if (await this.dialogo({ titulo: 'Viga entre pilares', corpo, ok: 'Lançar viga' }) !== 'ok') return;
-    await this._modelar({ ferramenta: 'viga', ids: pilares.map(b => b.id), parametros: f.ler() }, 'Viga');
+    const e = await this._dialogoComPrevia({ titulo: 'Viga entre pilares', corpo, ok: 'Lançar viga', pedido: () => ({ ferramenta: 'viga', ids: pilares.map(b => b.id), parametros: f.ler() }) });
+    if (e) await this._modelar(e.pedido, 'Viga', e.pronto);
   }
 }
