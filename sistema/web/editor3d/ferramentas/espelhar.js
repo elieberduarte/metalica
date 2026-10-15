@@ -108,7 +108,7 @@ export class FerramentaEspelhar extends Ferramenta {
 
   ativar() {
     this.ids = C.idsSelecionados(this.editor);
-    this.a = null; this.atual = null; this.mover = false;
+    this.a = null; this.atual = null; this.mover = false; this._fantasma = null;
     this.dica(this.ids.length ? FerramentaEspelhar.dica : 'Nada selecionado: selecione o que espelhar e chame a ferramenta de novo');
     this.medida('');
   }
@@ -192,22 +192,29 @@ export class FerramentaEspelhar extends Ferramenta {
     C.avisarBloqueadas(this.editor, bloqueadas);
     if (fora.length) this.editor.aviso(`${fora.length} peça(s) não espelhada(s): ${[...new Set(fora)].slice(0, 3).join('; ')}`, 'atencao');
     if (!mover && novos.length) this.selecao.definir(novos.map(c => c.id));
-    this.a = null; C.desancorar(this.editor); this.limparPrevia();
+    this.a = null; this._fantasma = null; C.desancorar(this.editor); this.limparPrevia();
     this.dica(`${mover ? 'Espelhada(s)' : 'Cópia espelhada de'} ${mover ? alteracoes.length : novos.length} peça(s) (Ctrl+Z desfaz)`);
   }
 
   desenhar(plano) {
     this.limparPrevia();
     if (!plano) return;
-    const { fp } = refletor(plano);
+    const { fp, fv } = refletor(plano);
     const g = C.grupo();
     // o espelho: um retângulo vertical pelo plano
     const c = this.a, t = C.normalizar(C.cross(plano.n, [0, 0, 1]));
     const s = 3000;
     const q = (a, b) => C.add(c, C.add(C.mul(t, a), [0, 0, b]));
     g.add(C.gPoligono([q(-s, -s / 3), q(s, -s / 3), q(s, s), q(-s, s)], C.CORES.face || '#7aa7f0', 0.12));
+    // a própria peça, translúcida, refletida (o fantasma); a silhueta só para a que não tem objeto próprio
+    const chave = this.ids.join('|');
+    if (!this._fantasma || this._fantasma.chave !== chave) this._fantasma = { chave, ...C.fantasmaDe(this.editor, this.ids) };
+    C.posicionarFantasma(this._fantasma, fp, fv);
+    g.add(this._fantasma.obj);
     for (const id of this.ids) {
+      if (this._fantasma.ids.has(id)) continue;
       const e = this.documento.get(id);
+      if (!e) continue;
       const pts = C.pontosDaEntidade(e).map(fp);
       if (pts.length === 2) g.add(C.gLinha(pts, C.CORES.ok));
       else if (pts.length >= 3) g.add(C.gLinha(pts, C.CORES.ok, { fechada: e.tipo === 'chapa' }));

@@ -1383,9 +1383,11 @@ export class Cena {
     for (const f of this.previa.children.slice()) {
       this.previa.remove(f);
       f.traverse && f.traverse(x => {
+        // o fantasma das ferramentas (C.fantasmaDe) usa as malhas e materiais da própria cena: ficam
+        if (x.userData && x.userData.compartilhada) return;
         if (x.geometry) x.geometry.dispose();
         if (x.material) (Array.isArray(x.material) ? x.material : [x.material])
-          .forEach(m => m.dispose && m.dispose());
+          .forEach(m => m.dispose && !(m.userData && m.userData.compartilhada) && m.dispose());
       });
     }
     this.pedirQuadro();

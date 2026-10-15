@@ -750,6 +750,57 @@ export function gRotulo(texto, posicao, cor = '#0b3d91', fundo = 'rgba(255,255,2
 }
 
 /** Grupo de prévia pronto para entregar ao núcleo. */
+// ------------------------------------------------------------- prévia fantasma
+
+//: a peça de verdade, translúcida, acompanhando o mouse no Mover/Girar/Espelhar (o SketchUp mostra a própria peça, não
+//: uma silhueta): os materiais e as malhas são os da cena (compartilhados — a limpeza da prévia não os descarta)
+const MAX_FANTASMA = 400;
+const MAT_FANTASMA = new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide });
+const LIN_FANTASMA = new THREE.LineBasicMaterial({ color: 0x1d4ed8, transparent: true, opacity: 0.7 });
+MAT_FANTASMA.userData.compartilhada = true;
+LIN_FANTASMA.userData.compartilhada = true;
+
+/**
+ * O fantasma das peças `ids`: {obj, ids} — `obj` é um grupo com as cópias rasas dos objetos da cena (mesma malha), `ids`
+ * as que entraram. A peça do desenho em lote (modelo grande) não tem objeto próprio e fica de fora: para ela vale a
+ * silhueta de sempre. Montado uma vez por operação; a cada movimento só a matriz muda (C.posicionarFantasma).
+ */
+export function fantasmaDe(editor, ids) {
+  const cena = editor && editor.cena;
+  const g = new THREE.Group();
+  const dentro = new Set();
+  if (!cena || !cena.objetos) return { obj: g, ids: dentro };
+  for (const id of ids) {
+    if (dentro.size >= MAX_FANTASMA) break;
+    const o = cena.objetos.get(id);
+    if (!o || (o.userData && o.userData.lote)) continue;
+    const c = o.clone(true);
+    c.traverse(x => {
+      if (x.isMesh) x.material = MAT_FANTASMA;
+      else if (x.isLine) x.material = LIN_FANTASMA;
+      else if (x.isSprite || x.isPoints) x.visible = false;
+      x.userData = { ...x.userData, compartilhada: true };
+      x.raycast = () => {};                       // o fantasma não pega o clique nem o snap
+    });
+    g.add(c);
+    dentro.add(id);
+  }
+  g.matrixAutoUpdate = false;
+  g.renderOrder = 980;
+  return { obj: g, ids: dentro };
+}
+
+/** Põe o fantasma na transformação (fp, fv) — a mesma que a ferramenta aplica às peças. */
+export function posicionarFantasma(f, fp, fv) {
+  if (!f || !f.obj) return;
+  const o = fp([0, 0, 0]), ex = fv([1, 0, 0]), ey = fv([0, 1, 0]), ez = fv([0, 0, 1]);
+  f.obj.matrix.set(ex[0], ey[0], ez[0], o[0],
+                   ex[1], ey[1], ez[1], o[1],
+                   ex[2], ey[2], ez[2], o[2],
+                   0, 0, 0, 1);
+  f.obj.matrixWorldNeedsUpdate = true;
+}
+
 export function grupo(...filhos) {
   const g = new THREE.Group();
   for (const f of filhos) if (f) g.add(f);

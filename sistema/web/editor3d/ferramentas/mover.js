@@ -218,8 +218,16 @@ export class FerramentaMover extends Ferramenta {
     return true;
   }
 
+  /** O fantasma da seleção (montado uma vez por operação). */
+  _fantasmaAtual() {
+    const chave = this.ids.join('|');
+    if (!this._fantasma || this._fantasma.chave !== chave) this._fantasma = { chave, ...C.fantasmaDe(this.editor, this.ids) };
+    return this._fantasma;
+  }
+
   reiniciar() {
     C.desancorar(this.editor);
+    this._fantasma = null;
     this.base = null;
     this.delta = [0, 0, 0];
     this.eixo = null;
@@ -235,8 +243,12 @@ export class FerramentaMover extends Ferramenta {
     const g = C.grupo(
       C.gLinha([this.base, fim], this.eixo ? C.EIXOS[this.eixo].cor : C.CORES.desenho),
       C.gPonto(this.base, C.CORES.guia), C.gPonto(fim, C.CORES.desenho));
-    // silhueta da seleção deslocada
+    // a própria peça, translúcida, no destino (o fantasma); a silhueta só para a que não tem objeto próprio (modelo grande)
+    const f = this._fantasmaAtual();
+    C.posicionarFantasma(f, (q) => C.add(q, this.delta), (v) => v);
+    g.add(f.obj);
     for (const ent of this.entidades()) {
+      if (f.ids.has(ent.id)) continue;
       const pts = C.pontosDaEntidade(ent).map(q => C.add(q, this.delta));
       if (ent.tipo === 'barra' && pts.length === 2) g.add(C.gLinha(pts, C.CORES.ok));
       else if (pts.length >= 3) g.add(C.gLinha(pts, C.CORES.ok, { fechada: ent.tipo === 'chapa' }));
