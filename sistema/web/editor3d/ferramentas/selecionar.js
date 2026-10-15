@@ -115,6 +115,12 @@ export class Selecionar extends Ferramenta {
     // peça com marca de posição (IFC) num projeto: o duplo clique abre o detalhe dela
     // no CAD; Shift mantém a seleção dos semelhantes
     const ent = alvo.entidade || this.editor.documento.get(alvo.id);
+    // a chapa: os dois cliques abrem a tela de edição dela no 2D (pedido do usuário, 15/10); Shift continua semelhantes
+    const chapa = ent && (ent.tipo === 'chapa' || (ent.atributos && ent.atributos.tipo_ifc === 'IfcPlate'));
+    if (chapa && this.editor.projeto && !(ev && ev.shiftKey) && this.editor.abrirChapaNo2D) {
+      this.editor.abrirChapaNo2D(ent);
+      return;
+    }
     const marcas = (ent && ent.atributos && ent.atributos.marcas) || {};
     if (marcas.posicao && this.editor.projeto && !(ev && ev.shiftKey) && this.editor.abrirDetalheDaPeca) {
       this.editor.abrirDetalheDaPeca(ent);

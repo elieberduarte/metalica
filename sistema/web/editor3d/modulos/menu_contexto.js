@@ -90,8 +90,14 @@ export function itensDoMenu(editor, x, y) {
     );
     // a modelagem pela seleção (modulos/modelagem.js, do outro lado da divisão): copiar a peça para os outros eixos
     if (typeof editor.dialogoCopiarParaEixos === 'function') itens.push({ rotulo: 'Copiar para os eixos…', fazer: () => editor.dialogoCopiarParaEixos() });
-    // a chapa: as alças de vértice, de lado e de furo (a ferramenta Editar chapa, que abre já nela)
-    if (ents.some(q => q.tipo === 'chapa')) itens.push({ rotulo: 'Editar chapa (alças)', fazer: ferramenta('editar_chapa') });
+    // a chapa: a tela de edição no 2D (sozinha ou com as peças em volta; o Concluir atualiza o 3D — pedido do usuário,
+    // 15/10) e as alças de vértice, de lado e de furo no próprio 3D (a ferramenta Editar chapa)
+    const ch = ents.length === 1 && (ents[0].tipo === 'chapa' || (ents[0].atributos && ents[0].atributos.tipo_ifc === 'IfcPlate')) ? ents[0] : null;
+    if (ch && editor.projeto && typeof editor.abrirChapaNo2D === 'function') {
+      itens.push({ rotulo: 'Editar chapa no 2D', fazer: () => editor.abrirChapaNo2D(ch, 'isolada') },
+                 { rotulo: 'Editar chapa no 2D, no local', fazer: () => editor.abrirChapaNo2D(ch, 'local') });
+    }
+    if (ents.some(q => q.tipo === 'chapa')) itens.push({ rotulo: 'Alças da chapa no 3D', fazer: ferramenta('editar_chapa') });
     if (perfil) itens.push({ rotulo: 'Virar perfil', tecla: 'V', fazer: ferramenta('virar') },
                            { rotulo: 'Encaixar ponta', fazer: ferramenta('encaixar') });
     itens.push('-', { rotulo: 'Apagar', tecla: 'Del', fazer: () => editor.apagarSelecao() });

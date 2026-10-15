@@ -117,15 +117,18 @@ try:
     tecla("i", 1); saiu = aba.avaliar("!editor._isolamento")
     ok(oc and volta, f"Alt+H oculta a seleção e Alt+Shift+H mostra de volta: {(oc, volta)}")
     ok(iso and saiu, f"Alt+I isola a seleção e de novo volta ao modelo: {(iso, saiu)}")
-    # a chapa: "Editar chapa (alças)" no menu, que abre a ferramenta já nela
+    # a chapa: "Editar chapa no 2D" (a tela auxiliar, 15/10) e "Alças da chapa no 3D", que abre a ferramenta já nela
     r = json.loads(aba.avaliar("""(async () => { const mc = await import('/editor3d/modulos/menu_contexto.js'); const ed = editor, doc = ed.documento;
       const ch = doc.add({ tipo: 'chapa', nome: 'CH', camada: 'Chapas', origem: [0, 3000, 0], eixo_x: [1, 0, 0], eixo_y: [0, 1, 0],
         contorno: [[0, 0], [200, 0], [200, 200], [0, 200]], espessura: 10, centrada: true, furos: [], atributos: {} });
       ed.selecao.definir([ch.id]);
-      const it = mc.itensDoMenu(ed, -1000, -1000).find(i => i && i.rotulo && i.rotulo.startsWith('Editar chapa'));
+      const itens = mc.itensDoMenu(ed, -1000, -1000).filter(i => i && i.rotulo);
+      const no2d = itens.map(i => i.rotulo).filter(r => r.startsWith('Editar chapa no 2D'));
+      const it = itens.find(i => i.rotulo.startsWith('Alças da chapa'));
       if (it) it.fazer();
-      return JSON.stringify({ tem: !!it, ativa: ed.idAtiva, chapa: !!ed.ativa && ed.ativa.chapa === ch.id }); })()"""))
-    ok(r["tem"] and r["ativa"] == "editar_chapa" and r["chapa"], f"na chapa, 'Editar chapa (alças)' abre a ferramenta já nela: {r}")
+      return JSON.stringify({ tem: !!it, no2d, ativa: ed.idAtiva, chapa: !!ed.ativa && ed.ativa.chapa === ch.id }); })()"""))
+    ok(r["no2d"] == ["Editar chapa no 2D", "Editar chapa no 2D, no local"], f"na chapa, o menu oferece a edição no 2D: {r['no2d']}")
+    ok(r["tem"] and r["ativa"] == "editar_chapa" and r["chapa"], f"na chapa, 'Alças da chapa no 3D' abre a ferramenta já nela: {r}")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:2]]}")
 finally:
