@@ -737,7 +737,14 @@ export class Tela {
       let d;
       if (e.tipo === 'cota') {
         const g = Tela.geometriaCota(e, this.doc.escala);
-        d = g ? Math.min(distanciaEntidade(p, e), this._distSeg(p, g.a1, g.a2), this._distTextoCota(p, e)) : Infinity;
+        if (!g) d = Infinity;
+        else {
+          // a cota é acertada pela linha de cota e pelo número; pelos pontos medidos (que ficam EM CIMA da peça) ela
+          // ainda vale, mas perde para a linha que está ali — o clique na aresta da peça cotada pegava a cota (15/10)
+          const dVista = Math.min(this._distSeg(p, g.a1, g.a2), this._distTextoCota(p, e));
+          const dPontos = distanciaEntidade(p, e);
+          d = dVista < t ? dVista : dPontos + t * 0.5;
+        }
       } else d = distanciaEntidade(p, e, this.doc.escala);
       if (d < t && d < dm) { dm = d; melhor = e; }
     }
@@ -775,8 +782,17 @@ export class Tela {
     } else if (e.tipo === 'hachura') {
       trechos = [];
       for (const c of e.contornos || []) c.forEach((q, i) => trechos.push([q, c[(i + 1) % c.length]]));
-    } else return true;
+    } else if (e.tipo === 'arco') trechos = segmentosDe(e);
+    else if (e.tipo !== 'circulo') return true;
     const x0 = Math.min(m1[0], m2[0]), x1 = Math.max(m1[0], m2[0]), y0 = Math.min(m1[1], m2[1]), y1 = Math.max(m1[1], m2[1]);
+    if (e.tipo === 'circulo') {
+      // a janela toca o TRAÇO do círculo: o ponto da janela mais perto do centro fica dentro e o canto mais longe fora
+      // (a janela inteira dentro do círculo, sem tocar o traço, pegava o círculo — teste de fluxo, 15/10)
+      const nx = Math.max(x0, Math.min(e.centro[0], x1)), ny = Math.max(y0, Math.min(e.centro[1], y1));
+      const dmin = Math.hypot(e.centro[0] - nx, e.centro[1] - ny);
+      const dmax = Math.max(...[[x0, y0], [x1, y0], [x0, y1], [x1, y1]].map(q => Math.hypot(q[0] - e.centro[0], q[1] - e.centro[1])));
+      return dmin <= e.raio && dmax >= e.raio;
+    }
     const cruza = (a, b) => {
       if (dentro(a) || dentro(b)) return true;
       // Liang–Barsky: o segmento atravessa o retângulo?

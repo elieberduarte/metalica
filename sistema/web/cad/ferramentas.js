@@ -88,6 +88,10 @@ export class Ferramenta {
   onValor(texto) {}
   onTecla(ev) { return false; }
   onSoltar(p, ev) {}
+  /** Ctrl+Z no meio da ferramenta: devolva true se desfez um passo dela (o ponto clicado), sem mexer no desenho. */
+  desfazerPasso() { return false; }
+  /** Depois de um Ctrl+Z que desfez um comando do desenho (`c`), a ferramenta acerta o estado dela. */
+  aposDesfazer(c) {}
   dica(t) { this.editor.dica(t); }
   novaEntidade(reg) { return criar({ ...reg, camada: reg.camada || this.camada }); }
 }
@@ -395,10 +399,10 @@ function direcoesEm(editor, p, anterior) {
 export class Linha extends Ferramenta {
   static id = 'linha'; static nome = 'Linha'; static atalho = 'l'; static dica = 'Clique no primeiro ponto';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20 20 4"/><circle cx="4" cy="20" r="1.5"/><circle cx="20" cy="4" r="1.5"/></svg>';
-  reiniciar() { super.reiniciar(); this.ultimo = null; this.editor.snap.direcoes = []; }
+  reiniciar() { super.reiniciar(); this.ultimo = null; this.feitas = 0; this.editor.snap.direcoes = []; }
   onPonto(p) {
     if (this.ultimo && dist(p, this.ultimo) < 1e-6) return;
-    if (this.ultimo) this.editor.executar(new ComandoAdicionar([this.novaEntidade({ tipo: 'linha', a: this.ultimo, b: p })], 'Linha'));
+    if (this.ultimo) { this.editor.executar(new ComandoAdicionar([this.novaEntidade({ tipo: 'linha', a: this.ultimo, b: p })], 'Linha')); this.feitas = (this.feitas || 0) + 1; }
     this.editor.snap.direcoes = direcoesEm(this.editor, p, this.ultimo);
     this.ultimo = p; this.editor.snap.ultimo = p;
     this.dica('Próximo ponto, ou digite o comprimento · Enter/Esc termina · o cursor gruda na continuação da linha anterior');
@@ -418,6 +422,17 @@ export class Linha extends Ferramenta {
     this.onPonto(polar(this.ultimo, a, comp));
   }
   onTecla(ev) { if (ev.key === 'Enter' || ev.key === ' ') { this.reiniciar(); return true; } return false; }
+  // só o primeiro ponto dado: o Ctrl+Z desiste dele (antes desfazia o objeto anterior do desenho)
+  desfazerPasso() { if (this.ultimo && !this.feitas) { this.reiniciar(); return true; } return false; }
+  /** O Ctrl+Z tirou o último trecho: a próxima linha sai da ponta de antes (saía da ponta apagada — teste de fluxo, 15/10). */
+  aposDesfazer(c) {
+    const e = (c && c.entidades || [])[0];
+    if (!this.ultimo || !this.feitas || !e || e.tipo !== 'linha' || dist(e.b, this.ultimo) > 1e-6) return;
+    this.feitas--;
+    this.ultimo = e.a; this.editor.snap.ultimo = e.a;
+    this.editor.snap.direcoes = direcoesEm(this.editor, e.a, null);
+    this.onMover(this.editor.tela.cursor || e.a);
+  }
 }
 
 export class Polilinha extends Linha {
@@ -442,9 +457,35 @@ export class Polilinha extends Linha {
   }
   onTecla(ev) {
     if (ev.key === 'Enter' || ev.key === ' ') { this.terminar(false); return true; }
-    if (ev.key.toLowerCase() === 'c' && this.pontos.length > 2) { this.terminar(true); return true; }
+    // o C é a opção "fechar" desde o 1º vértice: com menos de 3 ele abria o Círculo e os pontos se perdiam
+    if (ev.key.toLowerCase() === 'c' && !ev.ctrlKey && !ev.altKey && !ev.metaKey && this.pontos.length) {
+      if (this.pontos.length > 2) this.terminar(true); else this.dica('C fecha a polilinha com 3 vértices ou mais');
+      return true;
+    }
     return false;
   }
+  /** Duplo clique termina, como no AutoCAD (o 2º clique do duplo, no mesmo lugar, não vira vértice). */
+  onDuploClique() {
+    const n = this.pontos.length;
+    if (n >= 2) {
+      const [a, b] = [this.pontos[n - 2], this.pontos[n - 1]];
+      const z = this.editor.tela.vp ? this.editor.tela.vp.z : 1;
+      if (dist(a, b) * z < 3) this.pontos.pop();
+    }
+    this.terminar(false);
+    return true;
+  }
+  desfazerPasso() {
+    if (!this.pontos.length) return false;
+    this.pontos.pop();
+    this.ultimo = this.pontos.length ? this.pontos[this.pontos.length - 1] : null;
+    this.editor.snap.ultimo = this.ultimo;
+    if (!this.pontos.length) { this.reiniciar(); return true; }
+    this.onMover(this.editor.tela.cursor || this.ultimo);
+    this.dica(`${this.pontos.length} vértice(s) · próximo ponto ou comprimento · Enter termina · C fecha`);
+    return true;
+  }
+  aposDesfazer() {}
 }
 
 export class Retangulo extends Ferramenta {
@@ -460,10 +501,16 @@ export class Retangulo extends Ferramenta {
   onMover(p) { if (this.a) { this.editor.previa([this._ret(this.a, p)]); this.editor.medida(`${fmt(Math.abs(p[0] - this.a[0]))} × ${fmt(Math.abs(p[1] - this.a[1]))} mm`); } }
   onValor(t) {
     if (!this.a) return;
-    const [w, h] = t.split(/[;x]/).map(paraMilimetros);
+    const partes = t.split(/[;x]/);
+    const [w, h] = partes.map(paraMilimetros);
     if (w == null || h == null) return;
-    this.onPonto([this.a[0] + w, this.a[1] + h]);
+    // o retângulo vai para o lado do cursor, como a Linha com o comprimento e o Retângulo do 3D; com sinal, vale o sinal
+    const cur = this.editor.tela.cursor || this.a;
+    const sx = /^\s*-/.test(partes[0]) ? 1 : (cur[0] >= this.a[0] ? 1 : -1);
+    const sy = /^\s*-/.test(partes[1] || '') ? 1 : (cur[1] >= this.a[1] ? 1 : -1);
+    this.onPonto([this.a[0] + sx * w, this.a[1] + sy * h]);
   }
+  desfazerPasso() { if (!this.a) return false; this.reiniciar(); return true; }
 }
 
 export class Circulo extends Ferramenta {
@@ -484,6 +531,14 @@ export class Circulo extends Ferramenta {
     if (v == null) return;
     this.onPonto([this.c[0] + (diam ? v / 2 : v), this.c[1]]);
   }
+  // com o centro dado, o D começa o diâmetro ("d500", como a dica promete): antes abria a Cota
+  onTecla(ev) {
+    if (this.c && ev.key.toLowerCase() === 'd' && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+      const m = this.editor.el.medida; m.value = 'd'; m.focus(); return true;
+    }
+    return false;
+  }
+  desfazerPasso() { if (!this.c) return false; this.reiniciar(); return true; }
 }
 
 export class ArcoTresPontos extends Ferramenta {
@@ -514,6 +569,15 @@ export class ArcoTresPontos extends Ferramenta {
     if (this.pts.length === 1) this.editor.previa([criar({ tipo: 'linha', camada: this.camada, a: this.pts[0], b: p })]);
     else if (this.pts.length === 2) { const e = this._arco(this.pts[0], this.pts[1], p); if (e) this.editor.previa([e]); }
   }
+  desfazerPasso() {
+    if (!this.pts.length) return false;
+    this.pts.pop();
+    if (!this.pts.length) { this.reiniciar(); return true; }
+    this.editor.snap.ultimo = this.pts[this.pts.length - 1];
+    this.dica('Ponto do arco (no meio)');
+    this.onMover(this.editor.tela.cursor || this.pts[0]);
+    return true;
+  }
 }
 
 export class Texto extends Ferramenta {
@@ -537,6 +601,7 @@ export class Chamada extends Ferramenta {
     this.reiniciar();
   }
   onMover(p) { if (this.alvo) this.editor.previa([criar({ tipo: 'chamada', camada: 'TEXTO', alvo: this.alvo, posicao: p, texto: '…', altura: this.editor.alturaTexto })]); }
+  desfazerPasso() { if (!this.alvo) return false; this.reiniciar(); return true; }
 }
 
 /**
@@ -550,6 +615,11 @@ export class Cota extends Ferramenta {
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16V8M20 16V8M4 12h16"/><path d="M7 10l-3 2 3 2M17 10l3 2-3 2"/></svg>';
   reiniciar() { super.reiniciar(); this.p1 = null; this.p2 = null; this._f = undefined; this.modo = this.modo || 'linear'; this.dica(`Primeiro ponto da cota · modo: ${Cota.NOMES[this.modo]} (L/H/V/A troca) · tamanho: ${this.padrao ? 'padrão (P volta ao automático)' : 'pelo desenho em volta (P fixa o padrão)'}`); }
   static NOMES = { linear: 'linear', h: 'horizontal', v: 'vertical', alinhada: 'alinhada' };
+  desfazerPasso() {
+    if (this.p2) { this.p2 = null; this._f = undefined; this.editor.snap.ultimo = this.p1; this.editor.previa([]); this.dica('Segundo ponto'); return true; }
+    if (this.p1) { this.reiniciar(); return true; }
+    return false;
+  }
   /** O tamanho que a cota toma do desenho em volta (pedido do usuário, 07/10: "as cotas não se adaptam ao modelo
    *  importado"): a altura típica (a mediana) dos textos e das cotas que estão perto, em mm de papel, dividida pela
    *  altura padrão — o fator que vai na cota e multiplica o texto, a ponta e os afastamentos juntos. Sem pelo menos
@@ -863,7 +933,7 @@ export class Esticar extends Ferramenta {
   onValor(t) {
     if (!this.dentro || !this.base) return;
     const v = paraMilimetros(t);
-    if (v == null) return;
+    if (v == null) { this.dica('Medida não entendida: 500, 50cm ou 0,5m'); return; }
     const alvo = this.editor.tela.cursor || this.base;
     let dir = this.normal || [alvo[0] - this.base[0], alvo[1] - this.base[1]];
     if (this.normal) { const k = (alvo[0] - this.base[0]) * dir[0] + (alvo[1] - this.base[1]) * dir[1]; if (k < 0) dir = [-dir[0], -dir[1]]; }
@@ -879,6 +949,8 @@ export class Hachura extends Ferramenta {
     const cand = [...this.doc.entidades.values()].filter(e => e.tipo === 'polilinha' && e.fechada && e.vertices.length >= 3 && this.doc.visivel(e) && dentroDe(p, e.vertices));
     if (!cand.length) { this.dica('Nenhum contorno fechado aqui: desenhe uma polilinha fechada (C) primeiro'); return; }
     cand.sort((a, b) => Math.abs(area(a.vertices)) - Math.abs(area(b.vertices)));
+    // dois cliques no mesmo contorno empilhavam duas hachuras iguais (lixo invisível)
+    if ([...this.doc.entidades.values()].some(h => h.tipo === 'hachura' && (h.atributos || {}).contorno === cand[0].id)) { this.dica('Este contorno já tem hachura'); return; }
     this.editor.executar(new ComandoAdicionar([criar({ tipo: 'hachura', camada: 'HACHURA', contornos: [cand[0].vertices.map(v => [...v])], padrao: 'aco', atributos: { contorno: cand[0].id } })], 'Hachura'));
   }
 }
@@ -889,7 +961,7 @@ const area = (pts) => pts.reduce((s, p, i) => { const q = pts[(i + 1) % pts.leng
 class Transformadora extends Ferramenta {
   /** Ferramentas que agem sobre a seleção: se não há, o primeiro clique seleciona. */
   static grupo = 'edicao';
-  reiniciar() { super.reiniciar(); this.base = null; this.modoCopia = false; this.ids = [...this.editor.tela.selecao]; this.dica(this.ids.length ? this._comCopia(this.constructor.dica) : 'Selecione os objetos primeiro (clique ou janela) e depois use a ferramenta'); }
+  reiniciar() { super.reiniciar(); this.base = null; this.modoCopia = false; this.editor.snap.direcoes = []; this.ids = [...this.editor.tela.selecao]; this.dica(this.ids.length ? this._comCopia(this.constructor.dica) : 'Selecione os objetos primeiro (clique ou janela) e depois use a ferramenta'); }
   /** Mover e Girar: um toque no Ctrl liga/desliga a cópia (o original fica), como no SketchUp. */
   get aceitaCopia() { return false; }
   alternarCopia() {
@@ -904,11 +976,24 @@ class Transformadora extends Ferramenta {
     return this._dicaAtual + (this.modoCopia ? ' · (cópia) Ctrl: mover o original' : ' · Ctrl: cópia');
   }
   copiaAgora(ev) { return this.aceitaCopia && (!!this.modoCopia !== !!(ev && ev.ctrlKey)); }
-  selecionadas() { return this.ids.map(id => this.doc.get(id)).filter(Boolean); }
+  // o que está em camada travada sai da operação (a regra do trava_pecas.js): o Remover/Alterar já eram barrados, mas a
+  // cópia (Copiar, Espelhar, Ctrl) passava e criava cópias dentro da camada travada (teste de fluxo, 15/10)
+  selecionadas() { return this.ids.map(id => this.doc.get(id)).filter(e => e && !(this.doc.bloqueada && this.doc.bloqueada(e))); }
+  /** A base dada: o snap passa a oferecer a guia de 0° e 90° a partir dela (como na Linha) — a distância digitada com o
+   *  cursor quase na vertical saía torta. */
+  _guiasDaBase(p) { this.editor.snap.ultimo = p; this.editor.snap.direcoes = [[1, 0], [0, 1]]; }
+  /** Sem seleção, a janela seleciona (a dica manda "clique ou janela"); com seleção, não há janela. */
+  querJanela() { return !this.ids.length; }
+  onSoltar(p, ev) {
+    if (this.ids.length || !ev || !ev.arrasto) { this.onPonto(p, ev); return; }
+    const ids = this.editor.tela.naJanela(ev.arrasto.de, ev.arrasto.para);
+    if (ids.length) { this.editor.selecionar(ids); this.ids = ids; this.dica(this._comCopia(this.constructor.dica)); }
+  }
   onPonto(p, ev) {
     if (!this.ids.length) {
       const e = this.editor.tela.sob(ev.px);
-      if (e) { this.editor.selecionar([e.id]); this.ids = [e.id]; this.dica(this.constructor.dica); }
+      // a peça inteira, como na Selecionar (Alt: só a linha)
+      if (e) { const ids = ev.altKey ? [e.id] : this.editor.pecaDe(e.id); this.editor.selecionar(ids); this.ids = ids; this.dica(this._comCopia(this.constructor.dica)); }
       return;
     }
     this.passo(p, ev);
@@ -971,7 +1056,7 @@ export class Mover extends Transformadora {
   copiar = false;
   get aceitaCopia() { return !this.copiar; }
   passo(p, ev) {
-    if (!this.base) { this.base = p; this.editor.snap.ultimo = p; this.dica(this._comCopia('Ponto de destino, ou digite a distância')); return; }
+    if (!this.base) { this.base = p; this._guiasDaBase(p); this.dica(this._comCopia('Ponto de destino, ou digite a distância (ou dx;dy)')); return; }
     const d = [p[0] - this.base[0], p[1] - this.base[1]];
     const novas = this.selecionadas().map(e => transladar(e, d));
     if (!this.copiar && this.copiaAgora(ev)) {
@@ -1037,10 +1122,16 @@ export class Mover extends Transformadora {
   }
   onValor(t) {
     if (!this.base) return;
+    // "500;300" (ou "@500;300"): o deslocamento em x e y, como o "largura;altura" do Retângulo
+    const xy = String(t).trim().match(/^@?\s*([^;]+);\s*([^;]+)$/);
+    if (xy) {
+      const dx = paraMilimetros(xy[1]), dy = paraMilimetros(xy[2]);
+      if (dx != null && dy != null) { this.passo([this.base[0] + dx, this.base[1] + dy], {}); return; }
+    }
     const alvo = this.editor.tela.cursor || this.base;
     const m = t.match(/^(.*?)(?:<|@)(-?\d+(?:[.,]\d+)?)$/);
     const comp = paraMilimetros(m ? m[1] : t);
-    if (comp == null) return;
+    if (comp == null) { this.dica('Medida não entendida: 1500, 1,5m, 1500@30 ou 500;300'); return; }
     this.passo(polar(this.base, m ? parseFloat(m[2].replace(',', '.')) * Math.PI / 180 : ang(this.base, alvo), comp), {});
   }
 }
@@ -1075,7 +1166,7 @@ export class Girar extends Transformadora {
     return this.selecionadas().map(e => transformar(e, f, (a) => a + theta * 180 / Math.PI));
   }
   passo(p, ev) {
-    if (!this.base) { this.base = p; this.editor.snap.ultimo = p; this.dica(this._comCopia('Ponto de referência do ângulo, ou digite o ângulo em graus')); return; }
+    if (!this.base) { this.base = p; this._guiasDaBase(p); this.dica(this._comCopia('Ponto de referência do ângulo, ou digite o ângulo em graus')); return; }
     if (!this.ref) { this.ref = p; this.dica(this._comCopia('Novo ângulo')); return; }
     this._aplicar(ang(this.base, p) - ang(this.base, this.ref), ev);
   }
@@ -1086,7 +1177,7 @@ export class Girar extends Transformadora {
   onValor(t) {
     if (!this.base) return;
     const g = parseFloat(t.replace(',', '.'));
-    if (!isFinite(g)) return;
+    if (!isFinite(g)) { this.dica('Ângulo não entendido: digite os graus (90, -45, 22,5)'); return; }
     this._aplicar(g * Math.PI / 180, {});
   }
 }
@@ -1098,6 +1189,8 @@ export class Girar extends Transformadora {
  * texto, da cota, espaçamento da hachura) fica como está, como no Calibrar.
  */
 export class Escalar extends Transformadora {
+  /** A Escala pergunta antes de escalar o que está em camada travada (calibrar o desenho do cliente): ela vê todas. */
+  todasSelecionadas() { return this.ids.map(id => this.doc.get(id)).filter(Boolean); }
   static id = 'escalar'; static nome = 'Escala (fator ou referência)'; static atalho = '';
   static dica = 'Ponto base da escala (ou já digite o fator e Enter: a base é o centro da seleção) · R: por referência';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="10" height="10"/><path d="M9 11V5h10v10h-6"/><path d="M13 11l6-6M15 5h4v4"/></svg>';
@@ -1105,7 +1198,7 @@ export class Escalar extends Transformadora {
   _escalar(k) {
     const c = this.base;
     const f = (p) => [c[0] + (p[0] - c[0]) * k, c[1] + (p[1] - c[1]) * k];
-    return this.selecionadas().map(e => transformar(e, f, (a) => a, k));
+    return this.todasSelecionadas().map(e => transformar(e, f, (a) => a, k));
   }
   async _aplicar(k) {
     if (!(k > 0) || !isFinite(k)) { this.dica('Fator inválido: tem de ser maior que zero'); return; }
@@ -1115,7 +1208,7 @@ export class Escalar extends Transformadora {
       this.reiniciar();
       return;
     }
-    const sel = this.selecionadas();
+    const sel = this.todasSelecionadas();
     const cmd = new ComandoSubstituir(this._escalar(k), `Escala ×${String(Math.round(k * 10000) / 10000).replace('.', ',')}`);
     const travadas = sel.filter(e => this.doc.bloqueada && this.doc.bloqueada(e)).length;
     if (travadas) {
@@ -1205,7 +1298,7 @@ export class Espelhar extends Transformadora {
     return this.selecionadas().map(e => transformar(e, f, (g) => 2 * angEixo - g, 1, true));
   }
   passo(p) {
-    if (!this.base) { this.base = p; this.editor.snap.ultimo = p; this.dica('Segundo ponto do eixo'); return; }
+    if (!this.base) { this.base = p; this._guiasDaBase(p); this.dica('Segundo ponto do eixo'); return; }
     if (dist(p, this.base) < 1e-6) return;
     const novas = this._espelhar(this.base, p);
     const grupo = novoGrupoCopia();
@@ -1284,7 +1377,14 @@ class SobreSelecao extends Ferramenta {
   ativar() {
     super.ativar();
     const ids = [...this.editor.tela.selecao];
-    if (ids.length) { this.aplicar(ids); this.editor.ativarFerramenta('selecionar'); }
+    if (ids.length) { this.aplicar(ids); this._voltarComAviso(); }
+  }
+  /** Volta à Selecionar sem perder o que a ferramenta disse ("4 linhas soltas", "Nada para explodir"): o reiniciar da
+   *  Selecionar reescrevia a dica na hora. */
+  _voltarComAviso() {
+    const msg = this.editor.el && this.editor.el.dica ? this.editor.el.dica.textContent : '';
+    this.editor.ativarFerramenta('selecionar');
+    if (msg) { this.editor.dica(msg); this.editor.aviso(msg, 'info', 6000); }
   }
   onPonto(p, ev) {
     const e = this.editor.tela.sob(ev.px);
@@ -1311,7 +1411,8 @@ export class Explodir extends SobreSelecao {
     const remover = [], novas = [];
     for (const id of ids) {
       const e = this.doc.get(id);
-      if (!e || !this.doc.visivel(e)) continue;
+      // a travada fica como está (a polilinha ficava e ganhava as linhas soltas por cima)
+      if (!e || !this.doc.visivel(e) || this.doc.bloqueada(e)) continue;
       if (e.tipo === 'polilinha') {
         const vs = e.vertices, n = vs.length;
         const segs = [];
@@ -1349,7 +1450,7 @@ export class Juntar extends SobreSelecao {
   }
   aplicar(ids) {
     const tol = 0.5;
-    const pecas = ids.map(id => this.doc.get(id)).filter(e => e && (e.tipo === 'linha' || e.tipo === 'polilinha') && this.doc.visivel(e));
+    const pecas = ids.map(id => this.doc.get(id)).filter(e => e && (e.tipo === 'linha' || e.tipo === 'polilinha') && this.doc.visivel(e) && !this.doc.bloqueada(e));
     if (pecas.length < 2) { this.dica('Selecione duas ou mais linhas que se tocam e tecle Enter'); return; }
     // cada objeto vira uma cadeia de pontos; as cadeias que se tocam pelas pontas emendam
     let cadeias = pecas.map(e => ({ pts: e.tipo === 'linha' ? [e.a, e.b] : [...e.vertices], fechada: e.tipo === 'polilinha' && !!e.fechada, fontes: [e] }));
@@ -1399,7 +1500,7 @@ export class Juntar extends SobreSelecao {
   ativar() {
     Ferramenta.prototype.ativar.call(this);
     const ids = [...this.editor.tela.selecao];
-    if (ids.length > 1) { this.aplicar(ids); this.editor.ativarFerramenta('selecionar'); }
+    if (ids.length > 1) { this.aplicar(ids); this._voltarComAviso(); }
   }
 }
 

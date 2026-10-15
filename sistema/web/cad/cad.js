@@ -504,7 +504,14 @@ class CAD {
     if (recusa) { this.aviso(recusa, 'atencao', 10000); return null; }
     return this.pilha.executar(cmd);
   }
-  desfazer() { const c = this.pilha.desfazer(); if (c) this.dica(`Desfeito: ${c.rotulo}`); }
+  desfazer() {
+    // no meio de uma ferramenta (o 1º ponto da linha, os vértices da polilinha), o Ctrl+Z volta um passo dela — antes
+    // desfazia o objeto anterior do desenho e o ponto continuava preso ao cursor (teste de fluxo, 15/10)
+    const f = this.ferramenta;
+    if (f && typeof f.desfazerPasso === 'function' && f.desfazerPasso()) { this.tela.pedirQuadro(); return; }
+    const c = this.pilha.desfazer();
+    if (c) { this.dica(`Desfeito: ${c.rotulo}`); if (f && typeof f.aposDesfazer === 'function') f.aposDesfazer(c); }
+  }
   refazer() { const c = this.pilha.refazer(); if (c) this.dica(`Refeito: ${c.rotulo}`); }
 
   // ------------------------------------------------------------ seleção
@@ -923,7 +930,9 @@ class CAD {
         this.tela.pedirQuadro();
         return;
       }
-      if (pressao && pressao.movido && this.ferramenta && this.ferramenta.onSoltar !== Ferramenta.prototype.onSoltar) {
+      // a janela só aparece na ferramenta que a usa (o Mover sem seleção a usa; com a seleção feita, o arrasto é o movimento)
+      if (pressao && pressao.movido && this.ferramenta && this.ferramenta.onSoltar !== Ferramenta.prototype.onSoltar
+          && (typeof this.ferramenta.querJanela !== 'function' || this.ferramenta.querJanela())) {
         this.tela.retangulo = [this.tela.paraTela(pressao.mundo), p];
       }
       if (!pressao || !pressao.movido) {
@@ -965,6 +974,8 @@ class CAD {
     c.addEventListener('auxclick', (ev) => { if (ev.button === 1 && ev.detail === 2) this.tela.enquadrar(); });
     c.addEventListener('dblclick', (ev) => {
       if (ev.button === 1) { this.tela.enquadrar(); return; }
+      // a ferramenta que termina no duplo clique (a Polilinha, como no AutoCAD)
+      if (ev.button === 0 && this.ferramenta && typeof this.ferramenta.onDuploClique === 'function' && this.ferramenta.onDuploClique()) return;
       // duplo clique num texto, chamada ou cota: edita o texto ali mesmo (pedido do usuário, 01/10)
       if (ev.button === 0 && this.ferramenta && this.ferramenta.constructor.id === 'selecionar') {
         const e = this.tela.sob(px(ev));
