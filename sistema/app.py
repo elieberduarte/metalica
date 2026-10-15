@@ -606,13 +606,56 @@ def _migrar_modelo(d):
     return d
 
 
+#: o modelo já montado, guardado em binário (pickle) por arquivo, enquanto ele não muda no disco: {caminho: ((mtime_ns,
+#: tamanho), bytes)}. Cada pedido recebe uma cópia nova (as rotas mexem nas peças); ler e montar os 52 MB da PRATI a
+#: cada Editar chapa levava ~2,7 s, a cópia ~1 s (15/10). As duas obras mais recentes.
+_MODELOS_EM_MEMORIA: "collections.OrderedDict" = None
+_TRAVA_MODELOS = threading.Lock()
+
+
 def _documento3d_do_projeto(s: str):
+    import collections as _col
+    import pickle
     from nucleo3d.modelo import Documento
-    lido = _mtime_do_modelo(s)
+    global _MODELOS_EM_MEMORIA
+    caminho = _gerente().caminho_modelo(s)
+    try:
+        st = os.stat(caminho)
+        chave = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        chave = None
+    lido = chave[0] if chave else None   # antes de ler: a regravação confere que ninguém gravou no meio
+    if chave is not None:
+        with _TRAVA_MODELOS:
+            if _MODELOS_EM_MEMORIA is None:
+                _MODELOS_EM_MEMORIA = _col.OrderedDict()
+            guardado = _MODELOS_EM_MEMORIA.get(caminho)
+            if guardado is not None and guardado[0] == chave:
+                _MODELOS_EM_MEMORIA.move_to_end(caminho)
+                dados = guardado[1]
+            else:
+                dados = None
+        if dados is not None:
+            try:
+                doc = pickle.loads(dados)
+                doc._mtime_lido = lido
+                return doc
+            except Exception:                    # noqa: BLE001 — a memória estragada não impede ler do disco
+                pass
     d = _migrar_modelo(_gerente().abrir_modelo(s))
     if d is None:
         raise ErroDeDados("o projeto ainda não tem modelo 3D: importe o IFC ou gere o galpão.")
     doc = Documento.de_dict(d)
+    if chave is not None:
+        try:
+            dados = pickle.dumps(doc, protocol=pickle.HIGHEST_PROTOCOL)   # antes de qualquer rota mexer nele
+            with _TRAVA_MODELOS:
+                _MODELOS_EM_MEMORIA[caminho] = (chave, dados)
+                _MODELOS_EM_MEMORIA.move_to_end(caminho)
+                while len(_MODELOS_EM_MEMORIA) > 2:
+                    _MODELOS_EM_MEMORIA.popitem(last=False)
+        except Exception:                        # noqa: BLE001 — sem memória, só fica mais lento
+            pass
     doc._mtime_lido = lido               # para a regravação conferir que ninguém gravou no meio
     return doc
 
