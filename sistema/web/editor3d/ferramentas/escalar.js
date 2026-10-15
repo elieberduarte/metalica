@@ -5,6 +5,9 @@
 // Digitar "2" aplica o fator 2; digitar "2000" ou "2,5m" (com unidade ou acima de
 // 50) é lido como a medida final do lado que está sendo puxado; "2;1;1" dá um
 // fator por eixo.
+//
+// A alça é escolhida pela TELA: a bolinha mais perto do cursor (15/10). Antes valia o ponto 3D do snap, e na barra em I
+// o meio da face lateral da caixa fica no ar, entre as mesas: o raio passava e pegava outra coisa (ou outra alça).
 
 import { Ferramenta, paraMilimetros, listaDeMedidas, formatar } from './base.js';
 import * as C from './_comum.js';
@@ -36,7 +39,12 @@ export class FerramentaEscalar extends Ferramenta {
 
   onMover(p) {
     if (!p) return;
-    if (!this.alca) { this.desenhar(); return; }
+    if (!this.alca) {
+      // a alça sob o cursor fica destacada antes do clique
+      this.sobAlca = this.alcaNaTela(p);
+      this.desenhar();
+      return;
+    }
     this.fatores = this.fatoresDe(p);
     this.desenhar();
   }
@@ -47,7 +55,7 @@ export class FerramentaEscalar extends Ferramenta {
       this.ids = C.idsSelecionados(this.editor);
       this.caixa = C.caixaDe(this.documento, this.ids);
       if (!this.ids.length) { this.dica('Selecione o que escalar antes.'); return; }
-      const a = this.alcaMaisProxima(p.ponto);
+      const a = this.alcaNaTela(p) || this.alcaMaisProxima(p.ponto);
       if (!a) { this.dica('Clique mais perto de uma das alças da caixa.'); return; }
       this.alca = a;
       this.ancora = this.pontoDaAlca(a.sinais.map(s => -s));
@@ -121,19 +129,40 @@ export class FerramentaEscalar extends Ferramenta {
     return [0, 1, 2].map(i => s[i] < 0 ? min[i] : s[i] > 0 ? max[i] : centro[i]);
   }
 
-  /** Oito cantos e seis meios de face. */
+  /** Oito cantos e seis meios de face. O eixo sem tamanho (a caixa da barra é o eixo dela) não tem alça: escalar nele não
+   *  muda nada, e as alças dele caíam no centro, em cima umas das outras; a caixa que é uma linha não tem cantos (seriam as
+   *  pontas de novo). */
   alcas() {
     const lista = [];
-    for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) {
-      lista.push({ sinais: [x, y, z], uniforme: true, eixo: -1, nome: 'XYZ' });
+    const t = this.caixa ? this.tamanhos() : [1, 1, 1];
+    const vivos = [0, 1, 2].filter(e => t[e] >= 1);
+    if (vivos.length >= 2) {
+      for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) {
+        lista.push({ sinais: [x, y, z], uniforme: true, eixo: -1, nome: 'XYZ' });
+      }
     }
     const nomes = ['X', 'Y', 'Z'];
-    for (let e = 0; e < 3; e++) for (const s of [-1, 1]) {
+    for (const e of vivos) for (const s of [-1, 1]) {
       const sinais = [0, 0, 0];
       sinais[e] = s;
       lista.push({ sinais, uniforme: false, eixo: e, nome: nomes[e] });
     }
     return lista;
+  }
+
+  /** A alça cuja bolinha está a até 14 px do cursor na tela (a mais perto), ou null. */
+  alcaNaTela(p) {
+    const cam = this.editor && this.editor.camera;
+    if (!p || !p.tela || !cam || typeof cam.paraTela !== 'function' || !this.ids.length) return null;
+    let melhor = null, dmin = 14;
+    for (const a of this.alcas()) {
+      const t = cam.paraTela(this.pontoDaAlca(a.sinais));
+      if (t[2] > 1) continue;
+      const d = Math.hypot(t[0] - p.tela[0], t[1] - p.tela[1]);
+      // no empate (o canto e o meio da face no mesmo pixel, de longe), ganha o meio da face
+      if (d < dmin - 0.5 || (d < dmin + 0.5 && melhor && melhor.uniforme && !a.uniforme)) { dmin = Math.min(d, dmin); melhor = a; }
+    }
+    return melhor;
   }
 
   alcaMaisProxima(ponto) {
@@ -192,7 +221,7 @@ export class FerramentaEscalar extends Ferramenta {
 
   reiniciar() {
     C.desancorar(this.editor);
-    this.alca = null; this.ancora = null; this.fatores = [1, 1, 1];
+    this.alca = null; this.ancora = null; this.fatores = [1, 1, 1]; this.sobAlca = null;
     this.limparPrevia();
     this.medida('');
   }
@@ -213,7 +242,12 @@ export class FerramentaEscalar extends Ferramenta {
     for (const a of this.alcas()) {
       const p = this.pontoDaAlca(a.sinais);
       const ativa = this.alca && a.sinais.join() === this.alca.sinais.join();
-      g.add(C.gPonto(p, ativa ? C.CORES.aviso : C.CORES.desenho));
+      const sob = !this.alca && this.sobAlca && a.sinais.join() === this.sobAlca.sinais.join();
+      g.add(C.gPonto(p, ativa ? C.CORES.aviso : sob ? C.CORES.ok : C.CORES.desenho));
+    }
+    if (!this.alca && this.sobAlca) {
+      g.add(C.gRotulo(this.sobAlca.uniforme ? 'canto: escala por igual' : `meio da face: só no eixo ${this.sobAlca.nome}`,
+                      this.pontoDaAlca(this.sobAlca.sinais)));
     }
     if (this.alca) {
       const { fp } = this.transformador(this.fatores);
