@@ -18,6 +18,7 @@
 
 import * as THREE from 'three';
 import { el, numero } from '../editor.js';
+import { clonar, comprimentoDaBarra } from '../nucleo/documento.js';
 import * as C from '../ferramentas/_comum.js';
 
 // a prévia: materiais da casa (nunca descartados), malhas do cache da cena
@@ -27,6 +28,11 @@ MAT_PREVIA.userData.compartilhada = true;
 LIN_PREVIA.userData.compartilhada = true;
 const ESPERA_PREVIA = 250;          // ms depois do último campo mudado
 
+// "Numerar as peças novas" (15/10): lembrado por quem usa; só as peças lançadas (e as que a operação tocou) ganham marca
+const CHAVE_NUMERAR = 'metalica.modelagem.numerar';
+function lerNumerar() { try { return localStorage.getItem(CHAVE_NUMERAR) !== 'nao'; } catch (e) { return true; } }
+function gravarNumerar(v) { try { localStorage.setItem(CHAVE_NUMERAR, v ? 'sim' : 'nao'); } catch (e) { /* sem armazenamento: só nesta vez */ } }
+
 let estiloPrevia = false;
 function garantirEstiloPrevia() {
   if (estiloPrevia) return;
@@ -35,7 +41,10 @@ function garantirEstiloPrevia() {
     'dialog.com-previa { margin: 64px 16px auto auto; max-width: min(420px, calc(100vw - 32px)); }' +
     'dialog.com-previa::backdrop { background: rgba(10, 18, 30, .06); }' +
     'dialog .estado-previa { margin: 8px 0 0; font-size: 12px; color: var(--texto-fraco, #64748b); }' +
-    'dialog .estado-previa.erro { color: var(--vermelho, #dc2626); }' }));
+    'dialog .estado-previa.erro { color: var(--vermelho, #dc2626); }' +
+    'dialog .material-previa { margin: 4px 0 0; font-size: 12px; border-collapse: collapse; width: 100%; }' +
+    'dialog .material-previa td { padding: 1px 6px 1px 0; } dialog .material-previa td.n { text-align: right; white-space: nowrap; }' +
+    'dialog .material-previa tr.total td { border-top: 1px solid rgba(127,127,127,.4); font-weight: 600; }' }));
 }
 
 const vert = (b) => {
@@ -135,10 +144,17 @@ export class MetodosModelagem {
 
   /** O diálogo com a prévia ao vivo: `pedido()` lê o formulário; devolve {pedido, pronto} no OK (pronto = a resposta
    *  da prévia, quando o formulário não mudou depois dela) ou null. */
-  async _dialogoComPrevia({ titulo, corpo, ok, pedido, rota }) {
+  async _dialogoComPrevia({ titulo, corpo, ok, pedido, rota, numerar = true }) {
     garantirEstiloPrevia();
     const estado = el('p', { class: 'estado-previa', texto: 'Prévia…' });
+    // as peças novas já com a marca de posição e de conjunto (o Numerar, só nelas)
+    const caixaNum = numerar ? el('input', { type: 'checkbox', checked: lerNumerar() }) : null;
+    if (caixaNum) corpo.append(el('label', { class: 'numerar-novas', style: 'display:flex;gap:6px;align-items:center;margin-top:8px',
+      title: 'Dá as marcas P e M só às peças que esta ferramenta lança (pelo critério do detalhamento); as outras peças do modelo não mudam' },
+      caixaNum, 'Numerar as peças novas (P/M)'));
     corpo.append(estado);
+    const material = el('table', { class: 'material-previa' });
+    corpo.append(material);
     const d = this.el.dialogo;
     let grupo = null, timer = null, vez = 0, ultima = null, fechado = false;
     const tirar = () => {
@@ -154,6 +170,7 @@ export class MetodosModelagem {
       try { p = pedido(); } catch (e) {
         tirar();
         ultima = null;
+        material.replaceChildren();
         estado.className = 'estado-previa erro';
         estado.textContent = e.message;
         return;
@@ -176,10 +193,12 @@ export class MetodosModelagem {
         if (res.suportes) partes.push(`${res.suportes} suportes`);
         estado.className = 'estado-previa';
         estado.textContent = `Prévia: ${partes.join(' · ')}` + ((r.avisos || []).length ? ` — ${r.avisos.join('; ')}` : '');
+        material.replaceChildren(...this._linhasDeMaterial(r.novas || []));
       } catch (e) {
         if (minha !== vez || fechado) return;
         tirar();
         ultima = null;
+        material.replaceChildren();
         estado.className = 'estado-previa erro';
         estado.textContent = e.message;
       }
@@ -201,7 +220,8 @@ export class MetodosModelagem {
     }
     if (res !== 'ok') return null;
     const p = pedido();
-    return { pedido: p, pronto: ultima && ultima.chave === JSON.stringify(p) ? ultima.r : null };
+    if (caixaNum) gravarNumerar(caixaNum.checked);
+    return { pedido: p, pronto: ultima && ultima.chave === JSON.stringify(p) ? ultima.r : null, numerar: !!(caixaNum && caixaNum.checked) };
   }
 
   /** As seções que o catálogo do editor não traz (dobrados, redondos): pedidas ao servidor antes de desenhar. */
@@ -248,7 +268,7 @@ export class MetodosModelagem {
     return g;
   }
 
-  async _modelar(pedido, rotulo, pronto = null) {
+  async _modelar(pedido, rotulo, pronto = null, numerar = false) {
     let r = pronto;
     if (!r) {
       try {
@@ -256,6 +276,8 @@ export class MetodosModelagem {
         r = await this._pedirModelagem(pedido);
       } catch (e) { this.aviso(`${rotulo}: ${e.message}`, 'erro', 0); return null; }
     }
+    r = clonar(r);                     // a resposta da prévia não muda (as marcas entram nesta cópia)
+    const num = numerar ? await this._numerarAsNovas(r) : null;
     const cmd = this._comandoDaLigacao(r, rotulo);
     if (!cmd) { this.aviso(`${rotulo}: nada a lançar.`, 'info'); return r; }
     this.executar(cmd);
@@ -269,6 +291,8 @@ export class MetodosModelagem {
     if (res.passo) partes.push(`passo ${numero(res.passo, 0)} mm`);
     if (res.paineis) partes.push(`${res.paineis} painéis`);
     if (res.suportes) partes.push(`${res.suportes} suportes`);
+    if (num && num.novas.length) partes.push(`marcas ${num.novas.slice(0, 6).join(', ')}${num.novas.length > 6 ? '…' : ''}`);
+    else if (num) partes.push('marcas das posições que já existiam');
     this.aviso(`${rotulo}: ${partes.join(' · ')}.${(r.avisos || []).length ? ' ' + r.avisos.join('; ') + '.' : ''}`,
       (r.avisos || []).length ? 'atencao' : 'info', 9000);
     return r;
@@ -288,7 +312,7 @@ export class MetodosModelagem {
     ]);
     const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: `${apoios.length} apoios. As terças saem igualmente espaçadas (nunca acima do máximo), sentadas no topo dos apoios, com a alma perpendicular à água.` }));
     const e = await this._dialogoComPrevia({ titulo: 'Terças por espaçamento', corpo, ok: 'Lançar terças', pedido: () => ({ ferramenta: 'tercas', ids: apoios.map(b => b.id), parametros: f.ler() }) });
-    if (e) await this._modelar(e.pedido, 'Terças', e.pronto);
+    if (e) await this._modelar(e.pedido, 'Terças', e.pronto, e.numerar);
   }
 
   async dialogoTrelica() {
@@ -305,7 +329,7 @@ export class MetodosModelagem {
     ]);
     const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: 'Os nós igualmente espaçados no trecho em que os banzos correm juntos; as almas encaixam nas faces dos banzos (meia-esquadria), como na montagem pela planta, e tudo entra no mesmo bloco.' }));
     const e = await this._dialogoComPrevia({ titulo: 'Treliça entre banzos', corpo, ok: 'Lançar treliça', pedido: () => ({ ferramenta: 'trelica', ids: bs.map(b => b.id), parametros: f.ler() }) });
-    if (e) await this._modelar(e.pedido, 'Treliça', e.pronto);
+    if (e) await this._modelar(e.pedido, 'Treliça', e.pronto, e.numerar);
   }
 
   async dialogoContraventoX() {
@@ -320,7 +344,7 @@ export class MetodosModelagem {
     ]);
     const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: 'Duas diagonais por painel. Com o SC1 (o detalhe validado na portaria), cada tirante sai esticado de furo a furo nas cantoneiras em pé no topo dos banzos, com marca, conjunto e solda, e a ligação continua editável. Entre pilares, ou com outro detalhe, lance sem suporte e use o Aplicar ligação.' }));
     const e = await this._dialogoComPrevia({ titulo: 'Contraventamento em X', corpo, ok: 'Lançar', pedido: () => ({ ferramenta: 'contravento', ids: bs.map(b => b.id), parametros: f.ler() }) });
-    if (e) await this._modelar(e.pedido, 'Contraventamento', e.pronto);
+    if (e) await this._modelar(e.pedido, 'Contraventamento', e.pronto, e.numerar);
   }
 
   async dialogoPilaresNosEixos() {
@@ -354,7 +378,7 @@ export class MetodosModelagem {
     let e;
     try { e = await this._dialogoComPrevia({ titulo: 'Pilares nos eixos', corpo, ok: 'Lançar pilares', pedido }); }
     catch (err) { this.dica(err.message); return; }
-    if (e) await this._modelar(e.pedido, 'Pilares', e.pronto);
+    if (e) await this._modelar(e.pedido, 'Pilares', e.pronto, e.numerar);
   }
 
   async dialogoVigaEntrePilares() {
@@ -368,7 +392,7 @@ export class MetodosModelagem {
     ]);
     const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: `${pilares.length} pilares. A viga vai de eixo a eixo dos pilares; a ligação (chapa de topo, flexível) vem depois, pelo Aplicar ligação.` }));
     const e = await this._dialogoComPrevia({ titulo: 'Viga entre pilares', corpo, ok: 'Lançar viga', pedido: () => ({ ferramenta: 'viga', ids: pilares.map(b => b.id), parametros: f.ler() }) });
-    if (e) await this._modelar(e.pedido, 'Viga', e.pronto);
+    if (e) await this._modelar(e.pedido, 'Viga', e.pronto, e.numerar);
   }
 
   async dialogoLongarinas() {
@@ -392,7 +416,7 @@ export class MetodosModelagem {
     ]);
     const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: `${pilares.length} pilares${oitao ? ' de alturas diferentes (oitão): cada fiada só vai entre os pilares que passam dela, e a terça inclinada acompanha o topo deles' : ''}. As fiadas encostam na face mais saliente dos pilares (o plano do fechamento), com a alma na horizontal, igualmente espaçadas entre a primeira e a última.` }));
     const e = await this._dialogoComPrevia({ titulo: 'Longarinas de fechamento', corpo, ok: 'Lançar longarinas', pedido: () => ({ ferramenta: 'longarinas', ids: pilares.map(b => b.id), parametros: f.ler() }) });
-    if (e) await this._modelar(e.pedido, 'Longarinas', e.pronto);
+    if (e) await this._modelar(e.pedido, 'Longarinas', e.pronto, e.numerar);
   }
 
   async dialogoCorrentes() {
@@ -405,7 +429,7 @@ export class MetodosModelagem {
     ]);
     const corpo = el('div', {}, f.corpo, el('p', { class: 'explica', texto: 'Os vãos saem das tesouras e vigas que passam por baixo das terças (e das pontas delas); a corrente vai de centro a centro das terças vizinhas, pelo furo na alma.' }));
     const e = await this._dialogoComPrevia({ titulo: 'Correntes entre terças', corpo, ok: 'Lançar correntes', pedido: () => ({ ferramenta: 'correntes', ids: tercas.map(b => b.id), parametros: f.ler() }) });
-    if (e) await this._modelar(e.pedido, 'Correntes', e.pronto);
+    if (e) await this._modelar(e.pedido, 'Correntes', e.pronto, e.numerar);
   }
 
   /** Copiar para os eixos: a tesoura (o pórtico, o detalhe) selecionada copiada do eixo dela para os eixos marcados,
@@ -507,7 +531,7 @@ export class MetodosModelagem {
       (apoios ? ` e ${apoios} apoio${apoios === 1 ? '' : 's'} escolhido${apoios === 1 ? '' : 's'}.` : '; os apoios são as tesouras e vigas logo abaixo delas.') +
       ' A cantoneira fica no plano vertical da terça, com uma aba deitada nele (encosta na alma da terça).' }));
     const e = await this._dialogoComPrevia({ titulo: 'Mão-francesa', corpo, ok: 'Lançar', pedido: () => ({ ferramenta: 'mao_francesa', ids: bs.map(b => b.id), parametros: f.ler() }) });
-    if (e) await this._modelar(e.pedido, 'Mão-francesa', e.pronto);
+    if (e) await this._modelar(e.pedido, 'Mão-francesa', e.pronto, e.numerar);
   }
 
   /** Bases nos pilares pelos eixos: a placa de base (a ligação da biblioteca, rotulada ou engastada) em todos os
@@ -560,8 +584,66 @@ export class MetodosModelagem {
       return { tipo: escolha.value, ids, parametros: form.ler() };
     };
     let e;
-    try { e = await this._dialogoComPrevia({ titulo: 'Bases nos pilares dos eixos', corpo, ok: 'Lançar bases', pedido, rota: '/api/modelo/ligacao' }); }
+    try { e = await this._dialogoComPrevia({ titulo: 'Bases nos pilares dos eixos', corpo, ok: 'Lançar bases', pedido, rota: '/api/modelo/ligacao', numerar: false }); }
     catch (err) { this.dica(err.message); return; }
     if (e) await this._pedirLigacao(e.pedido, 'Bases nos pilares');
+  }
+
+  /** O Numerar só nas peças desta operação, antes de aplicar: o modelo "como vai ficar" vai ao servidor, e as marcas
+   *  (posição, conjunto) entram nos atributos das peças novas e das que a operação alterou — as outras peças sem
+   *  marca continuam sem (o Numerar do menu é que numera tudo). Devolve {novas: [posições novas]} ou null. */
+  async _numerarAsNovas(r) {
+    const base = this.documento.paraJSON();
+    const porId = new Map(base.entidades.map(e => [e.id, e]));
+    for (const id of (r.remover || [])) porId.delete(id);
+    for (const [id, campos] of Object.entries(r.alterar || {})) if (porId.has(id)) porId.set(id, { ...porId.get(id), ...clonar(campos) });
+    for (const d of (r.novas || [])) porId.set(d.id, clonar(d));
+    base.entidades = [...porId.values()];
+    let n;
+    try { n = await this.api.numerar(base, {}); }
+    catch (e) { this.aviso(`As peças entram sem marca (o Numerar falhou: ${e.message}).`, 'atencao', 8000); return null; }
+    const mud = n.mudancas || {};
+    const aplicar = (at, patch) => {
+      const a = { ...(at || {}) };
+      for (const [k, v] of Object.entries(patch)) { if (v === null || v === undefined) delete a[k]; else a[k] = v; }
+      return a;
+    };
+    const posicoes = new Set();
+    for (const d of (r.novas || [])) {
+      if (!mud[d.id]) continue;
+      d.atributos = aplicar(d.atributos, mud[d.id]);
+      const m = d.atributos.marcas || {};
+      if (m.posicao) posicoes.add(m.posicao);
+    }
+    for (const id of Object.keys(r.alterar || {})) {
+      if (!mud[id]) continue;
+      const atual = r.alterar[id].atributos || (this.documento.get(id) || {}).atributos;
+      r.alterar[id] = { ...r.alterar[id], atributos: aplicar(atual, mud[id]) };
+    }
+    const novasNoModelo = new Set(((n.resumo || {}).posicoes_novas) || []);
+    return { novas: [...posicoes].filter(p => novasNoModelo.has(p)).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })) };
+  }
+
+  /** O material do que vai sair, por perfil (barras) e por espessura (chapas): peças, metros e quilos — a conferência
+   *  antes do OK, como a tabela de quantidades do Revit. Linhas da tabela da prévia. */
+  _linhasDeMaterial(novas) {
+    const grupos = new Map();
+    for (const d of novas) {
+      if (d.tipo !== 'barra' && d.tipo !== 'chapa') continue;
+      const chave = d.tipo === 'barra' ? d.perfil : `Chapa #${numero(d.espessura || 0, 2)}`;
+      const g = grupos.get(chave) || { n: 0, m: 0, kg: 0, barra: d.tipo === 'barra' };
+      g.n += 1;
+      if (d.tipo === 'barra') g.m += comprimentoDaBarra(d) / 1000;
+      try { g.kg += (typeof this.pesoDaPeca === 'function' ? this.pesoDaPeca(d) : 0) || 0; } catch (e) { /* sem peso */ }
+      grupos.set(chave, g);
+    }
+    if (!grupos.size) return [];
+    const linhas = [...grupos.entries()].sort((a, b) => b[1].kg - a[1].kg).map(([nome, g]) => el('tr', {},
+      el('td', { texto: nome }), el('td', { class: 'n', texto: `${g.n} pç` }),
+      el('td', { class: 'n', texto: g.barra ? `${numero(g.m, 1)} m` : '' }), el('td', { class: 'n', texto: `${numero(g.kg, 1)} kg` })));
+    const tot = [...grupos.values()].reduce((s, g) => s + g.kg, 0);
+    if (grupos.size > 1) linhas.push(el('tr', { class: 'total' }, el('td', { texto: 'Total' }), el('td'), el('td'),
+      el('td', { class: 'n', texto: `${numero(tot, 1)} kg` })));
+    return linhas;
   }
 }
