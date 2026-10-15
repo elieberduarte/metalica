@@ -66,7 +66,7 @@ export class FerramentaPoligono extends Ferramenta {
       this.desenhar();
       return true;
     }
-    if (!this.centro) return false;
+    if (!this.centro) return C.corrigirUltimo(this, texto);
     const r = paraMilimetros(t);
     if (!isFinite(r) || r <= 0) return false;
     this.criar(r);
@@ -113,7 +113,9 @@ export class FerramentaPoligono extends Ferramenta {
       atributos: { forma: 'poligono', raio, lados: this.lados,
                    ajuste: this.circunscrito ? 'circunscrito' : 'inscrito' },
     });
-    this.executar(C.cmdAdicionar(ent, 'Desenhar polígono'));
+    const cmd = C.cmdAdicionar(ent, 'Desenhar polígono');
+    this.executar(cmd);
+    C.lembrarUltimo(this, cmd, { centro: this.centro, plano: this.plano, atual: this.atual });
     this.reiniciar();
     this.dica(this.dicaInicial());
   }

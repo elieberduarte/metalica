@@ -89,6 +89,40 @@ try:
     ok(r and r["g90"] and abs(r["a"][0]) <= 1 and abs(abs(r["a"][1] - 5000) - 1000) <= 1, f"girou 90°: {r and r['a']}")
     ok(r and r["g45"] and abs(r["b"][0] - 707) <= 1 and abs(abs(r["b"][1] - 5000) - 707) <= 1, f"o 45 digitado depois corrigiu para 45°: {r and r['b']}")
     ok(r and r["c"] == [1000, 5000, 0], f"o Ctrl+Z volta à posição de antes do giro: {r and r['c']}")
+    # Empurrar/Puxar: puxar a face de cima da chapa 20 (10 → 30) e o 30 digitado logo depois corrige (→ 40)
+    r = jsj("""const ed = editor, doc = ed.documento;
+      const ch = doc.add({ tipo: 'chapa', nome: 'CH', camada: 'Chapas', origem: [0, 9000, 0], eixo_x: [1, 0, 0], eixo_y: [0, 1, 0],
+        contorno: [[0, 0], [300, 0], [300, 200], [0, 200]], espessura: 10, centrada: false, furos: [], atributos: {} });
+      ed.ativarFerramenta('pushpull'); const f = ed.ativa;
+      f.onPonto({ ponto: [150, 9100, 10], entidade: ch.id, normal: [0, 0, 1], tela: [0, 0], tipoSnap: 'sobre_face' }, {});
+      const pegou = !!f.alvo;
+      f.onValor('20'); const e1 = doc.get(ch.id).espessura;
+      const corr = f.onValor('30'); const e2 = doc.get(ch.id).espessura;
+      ed.desfazer(); const e3 = doc.get(ch.id).espessura;
+      return { pegou, e1, corr, e2, e3 };""")
+    print("     ", r)
+    ok(r and r["pegou"] and r["e1"] == 30 and r["corr"] and r["e2"] == 40 and r["e3"] == 10,
+       f"Empurrar/Puxar: puxou 20 (10 → 30), o 30 digitado depois corrigiu (→ 40), o Ctrl+Z volta aos 10: {r}")
+    # Retângulo e Círculo: a medida digitada logo depois corrige o que acabou de ser desenhado (sem duplicar)
+    r = jsj("""const ed = editor, doc = ed.documento;
+      const P = (q) => ({ ponto: q, tela: [0, 0], normal: [0, 0, 1], tipoSnap: 'plano_base', entidade: null });
+      const formas = (nome) => [...doc.entidades.values()].filter(e => e.nome === nome);
+      const ext = (e) => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); return [Math.round(Math.max(...xs) - Math.min(...xs)), Math.round(Math.max(...ys) - Math.min(...ys))]; };
+      ed.ativarFerramenta('retangulo'); let f = ed.ativa;
+      f.onPonto(P([0, 12000, 0]), {}); f.onMover(P([300, 12200, 0]), {});
+      f.onValor('2000;1000'); const r1 = formas('Retângulo').map(ext);
+      const c1 = f.onValor('2500;1000'); const r2 = formas('Retângulo').map(ext);
+      const ruim = f.onValor('abc'); const r3 = formas('Retângulo').map(ext);
+      ed.ativarFerramenta('circulo'); f = ed.ativa;
+      f.onPonto(P([0, 15000, 0]), {}); f.onMover(P([100, 15000, 0]), {});
+      f.onValor('500'); const k1 = formas('Círculo').map(e => e.atributos.raio);
+      f.onValor('800'); const k2 = formas('Círculo').map(e => e.atributos.raio);
+      ed.desfazer(); const k3 = formas('Círculo').length;
+      return { r1, c1, r2, ruim, r3, k1, k2, k3 };""")
+    print("     ", r)
+    ok(r and r["r1"] == [[2000, 1000]] and r["c1"] and r["r2"] == [[2500, 1000]], f"Retângulo 2000×1000 e o 2500;1000 digitado depois corrigiu, sem duplicar: {r and (r['r1'], r['r2'])}")
+    ok(r and not r["ruim"] and r["r3"] == [[2500, 1000]], f"um texto que não serve não estraga o que foi desenhado: {r and r['r3']}")
+    ok(r and r["k1"] == [500] and r["k2"] == [800] and r["k3"] == 0, f"Círculo de raio 500 corrigido para 800; o Ctrl+Z tira o círculo: {r and (r['k1'], r['k2'], r['k3'])}")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:2]]}")
 finally:

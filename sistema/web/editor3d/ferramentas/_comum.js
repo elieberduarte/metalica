@@ -348,6 +348,26 @@ export function marcarParaConferir(ent, campos) {
   return campos;
 }
 
+/**
+ * "Corrigir logo depois" (o SketchUp, 15/10): a ferramenta guarda o comando que acabou de executar e o estado de
+ * antes de zerar; a medida digitada em seguida (C.corrigirUltimo) desfaz esse comando, volta o estado e passa a medida
+ * ao onValor da própria ferramenta — o retângulo de 2000×1000 vira 2500×1000 sem desenhar de novo. Só enquanto o
+ * comando é o último da pilha; se a medida não servir, refaz o que tinha desfeito.
+ */
+export function lembrarUltimo(ferr, cmd, estado) { ferr._ultimoFeito = { cmd, estado }; }
+
+export function corrigirUltimo(ferr, texto) {
+  const u = ferr._ultimoFeito, ed = ferr.editor, p = ed && ed.pilha;
+  if (!u || !p || !Array.isArray(p.feitos) || p.feitos[p.feitos.length - 1] !== u.cmd) return false;
+  ferr._ultimoFeito = null;
+  ed.desfazer();
+  Object.assign(ferr, u.estado);
+  let ok = false;
+  try { ok = ferr.onValor(texto) === true; } catch (e) { ok = false; }
+  if (!ok) { ed.refazer(); if (typeof ferr.reiniciar === 'function') ferr.reiniciar(); ferr._ultimoFeito = u; }
+  return ok;
+}
+
 /** A peça pode ser mudada? (travada ou em camada bloqueada, não — D4) */
 export function editavel(editor, ent) {
   const doc = editor && editor.documento;

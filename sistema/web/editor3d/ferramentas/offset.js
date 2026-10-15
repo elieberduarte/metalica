@@ -45,7 +45,7 @@ export class FerramentaOffset extends Ferramenta {
   }
 
   onValor(texto) {
-    if (!this.alvo) return false;
+    if (!this.alvo) return C.corrigirUltimo(this, texto);
     const v = paraMilimetros(texto);
     if (!isFinite(v) || v === 0) return false;
     const sinal = this.d < -0.5 ? -1 : 1;     // ~0 é ruído: sem sinal, para fora
@@ -131,7 +131,9 @@ export class FerramentaOffset extends Ferramenta {
       nome: 'Deslocamento', camada: this.alvo.camada || 'Estrutura',
       atributos: { origem_offset: this.alvo.id, distancia: d },
     });
-    this.executar(C.cmdAdicionar(ent, 'Deslocar contorno'));
+    const cmd = C.cmdAdicionar(ent, 'Deslocar contorno');
+    this.executar(cmd);
+    C.lembrarUltimo(this, cmd, { alvo: this.alvo, d });
     this.reiniciar();
     this.dica(`Deslocamento de ${formatar(Math.abs(d))} criado.`);
   }

@@ -62,7 +62,7 @@ export class FerramentaCirculo extends Ferramenta {
       this.desenhar();
       return true;
     }
-    if (!this.centro) return false;
+    if (!this.centro) return C.corrigirUltimo(this, texto);
     const r = paraMilimetros(t);
     if (!isFinite(r) || r <= 0) return false;
     this.criar(r);
@@ -101,7 +101,9 @@ export class FerramentaCirculo extends Ferramenta {
       camada: (this.editor && this.editor.camadaAtiva) || 'Estrutura',
       atributos: { forma: 'circulo', raio, lados: this.lados },
     });
-    this.executar(C.cmdAdicionar(ent, 'Desenhar círculo'));
+    const cmd = C.cmdAdicionar(ent, 'Desenhar círculo');
+    this.executar(cmd);
+    C.lembrarUltimo(this, cmd, { centro: this.centro, plano: this.plano, atual: this.atual });
     this.reiniciar();
     this.dica(FerramentaCirculo.dica);
   }

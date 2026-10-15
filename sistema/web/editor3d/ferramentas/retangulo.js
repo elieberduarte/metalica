@@ -51,7 +51,7 @@ export class FerramentaRetangulo extends Ferramenta {
   }
 
   onValor(texto) {
-    if (!this.canto) return false;
+    if (!this.canto) return C.corrigirUltimo(this, texto);
     const m = listaDeMedidas(texto);
     let u, v;
     if (m.length >= 2 && isFinite(m[0]) && isFinite(m[1])) {
@@ -95,7 +95,9 @@ export class FerramentaRetangulo extends Ferramenta {
     const ordenado = (u * v >= 0) ? pts : pts.slice().reverse();
     const ent = C.solidoDeContorno(ordenado, {
       nome: 'Retângulo', camada: (this.editor && this.editor.camadaAtiva) || 'Estrutura' });
-    this.executar(C.cmdAdicionar(ent, 'Desenhar retângulo'));
+    const cmd = C.cmdAdicionar(ent, 'Desenhar retângulo');
+    this.executar(cmd);
+    C.lembrarUltimo(this, cmd, { canto: this.canto, plano: this.plano, atual: this.atual });
     this.reiniciar();
     this.dica(FerramentaRetangulo.dica);
   }

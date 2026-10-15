@@ -7,7 +7,7 @@
 //   · duplo clique                 → repete a última distância na face apontada;
 //   · barra (perfil)               → a ponta apontada anda no eixo dela: estica ou encurta, a outra
 //                                    ponta parada (os cortes no ângulo da ponta vão junto).
-// A distância pode ser digitada a qualquer momento.
+// A distância pode ser digitada a qualquer momento — e logo depois de terminar, corrige o último (como no SketchUp).
 
 import { Ferramenta, paraMilimetros, formatar } from './base.js';
 import * as C from './_comum.js';
@@ -61,7 +61,7 @@ export class FerramentaPushPull extends Ferramenta {
   }
 
   onValor(texto) {
-    if (!this.alvo) return false;
+    if (!this.alvo) return this._corrigirUltimo(texto);
     const d = paraMilimetros(texto);
     if (!isFinite(d) || d === 0) return false;
     // sem sinal, vale o sentido em que o usuário já estava puxando; parado sobre a
@@ -243,7 +243,7 @@ export class FerramentaPushPull extends Ferramenta {
     if (!this.alvo || !isFinite(d) || Math.abs(d) < 1e-6) { this.reiniciar(); return; }
     if (this.alvo.barra) {
       const eb = this.documento.get(this.alvo.id);
-      this.executar(C.cmdAlterar(this.alvo.id, C.marcarParaConferir(eb, this.resultadoBarra(d)), d > 0 ? 'Esticar barra' : 'Encurtar barra'));
+      this._executarLembrando(C.cmdAlterar(this.alvo.id, C.marcarParaConferir(eb, this.resultadoBarra(d)), d > 0 ? 'Esticar barra' : 'Encurtar barra'), d);
       this.constructor.ultimaDistancia = d;
       this.reiniciar();
       this.dica(`Última distância: ${formatar(Math.abs(d))} (duplo clique repete)`);
@@ -251,20 +251,39 @@ export class FerramentaPushPull extends Ferramenta {
     }
     if (this.alvo.chapa) {
       const ec = this.documento.get(this.alvo.id);
-      this.executar(C.cmdAlterar(this.alvo.id, C.marcarParaConferir(ec, this.resultadoChapa(d)),
-        this.alvo.chapa === 'lado' ? 'Esticar chapa' : 'Espessura da chapa'));
+      this._executarLembrando(C.cmdAlterar(this.alvo.id, C.marcarParaConferir(ec, this.resultadoChapa(d)),
+        this.alvo.chapa === 'lado' ? 'Esticar chapa' : 'Espessura da chapa'), d);
       this.constructor.ultimaDistancia = d;
       this.reiniciar();
       this.dica(`Última distância: ${formatar(Math.abs(d))} (duplo clique repete)`);
       return;
     }
     const geo = this.resultado(d);
-    this.executar(C.cmdAlterar(this.alvo.id,
+    this._executarLembrando(C.cmdAlterar(this.alvo.id,
       C.marcarParaConferir(this.documento.get(this.alvo.id), { vertices: geo.vertices, faces: geo.faces }),
-      this.novaFace || !this.alvo.fechado ? 'Puxar face' : 'Mover face'));
+      this.novaFace || !this.alvo.fechado ? 'Puxar face' : 'Mover face'), d);
     this.constructor.ultimaDistancia = d;
     this.reiniciar();
     this.dica(`Última distância: ${formatar(Math.abs(d))} (duplo clique repete)`);
+  }
+
+  /** Executa e guarda o que foi feito, para a distância digitada logo depois corrigir (o alvo de antes e o comando). */
+  _executarLembrando(cmd, d) {
+    this.executar(cmd);
+    this._ultimo = { alvo: this.alvo, novaFace: this.novaFace, d, cmd };
+  }
+
+  /** A distância digitada logo depois: desfaz o último e refaz com ela, no mesmo sentido — só se nada veio depois. */
+  _corrigirUltimo(texto) {
+    const u = this._ultimo, p = this.editor && this.editor.pilha;
+    if (!u || !p || p.feitos[p.feitos.length - 1] !== u.cmd) return false;
+    const d = paraMilimetros(texto);
+    if (!isFinite(d) || d === 0) return false;
+    this.editor.desfazer();
+    this.alvo = u.alvo;
+    this.novaFace = u.novaFace;
+    this.aplicar(d < 0 ? d : Math.abs(d) * Math.sign(u.d));
+    return true;
   }
 
   reiniciar() {
