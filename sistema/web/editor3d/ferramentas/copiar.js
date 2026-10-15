@@ -50,6 +50,7 @@ export class FerramentaCopiar extends Ferramenta {
     this.atual = null;
     this.base = null;                  // o ponto de referência: o primeiro clique
     this.coladas = 0;
+    C.descartarFantasma(this._fantasma);
     this._fantasma = null;
     const ids = C.idsSelecionados(this.editor);
     if (ids.length) this.copiarSelecao(ids);

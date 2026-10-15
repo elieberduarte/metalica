@@ -755,30 +755,42 @@ export function gRotulo(texto, posicao, cor = '#0b3d91', fundo = 'rgba(255,255,2
 //: a peça de verdade, translúcida, acompanhando o mouse no Mover/Girar/Espelhar (o SketchUp mostra a própria peça, não
 //: uma silhueta): os materiais e as malhas são os da cena (compartilhados — a limpeza da prévia não os descarta)
 const MAX_FANTASMA = 400;
+const MAX_MONTAR = 150;          // peças do desenho em lote montadas para o fantasma
 const MAT_FANTASMA = new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide });
 const LIN_FANTASMA = new THREE.LineBasicMaterial({ color: 0x1d4ed8, transparent: true, opacity: 0.7 });
 MAT_FANTASMA.userData.compartilhada = true;
 LIN_FANTASMA.userData.compartilhada = true;
 
 /**
- * O fantasma das peças `ids`: {obj, ids} — `obj` é um grupo com as cópias rasas dos objetos da cena (mesma malha), `ids`
- * as que entraram. A peça do desenho em lote (modelo grande) não tem objeto próprio e fica de fora: para ela vale a
- * silhueta de sempre. Montado uma vez por operação; a cada movimento só a matriz muda (C.posicionarFantasma).
+ * O fantasma das peças `ids`: {obj, ids, proprias} — `obj` é um grupo com as cópias rasas dos objetos da cena (mesma
+ * malha), `ids` as que entraram. A peça do desenho em lote (modelo grande: o PRATI CD) não tem objeto próprio: ela é
+ * montada aqui (até MAX_MONTAR por operação; a barra e a chapa reaproveitam a geometria do cache da cena, o sólido
+ * ganha uma — `proprias`, que C.descartarFantasma solta no fim). Montado uma vez por operação; a cada movimento só a
+ * matriz muda (C.posicionarFantasma).
  */
 export function fantasmaDe(editor, ids) {
   const cena = editor && editor.cena;
   const g = new THREE.Group();
-  const dentro = new Set();
-  if (!cena || !cena.objetos) return { obj: g, ids: dentro };
+  const dentro = new Set(), proprias = [];
+  if (!cena || !cena.objetos) return { obj: g, ids: dentro, proprias };
+  const doCache = new Set(cena.cacheGeometria ? cena.cacheGeometria.values() : []);
+  let montadas = 0;
   for (const id of ids) {
     if (dentro.size >= MAX_FANTASMA) break;
-    const o = cena.objetos.get(id);
-    if (!o || (o.userData && o.userData.lote)) continue;
-    const c = o.clone(true);
+    let o = cena.objetos.get(id), nova = false;
+    if (!o || (o.userData && o.userData.lote)) {
+      const ent = editor.documento && editor.documento.get(id);
+      if (!ent || montadas >= MAX_MONTAR || typeof cena._construirEntidade !== 'function') continue;
+      try { o = cena._construirEntidade(ent); } catch (e) { o = null; }
+      if (!o) continue;
+      nova = true; montadas++;
+    }
+    const c = nova ? o : o.clone(true);
     c.traverse(x => {
       if (x.isMesh) x.material = MAT_FANTASMA;
       else if (x.isLine) x.material = LIN_FANTASMA;
       else if (x.isSprite || x.isPoints) x.visible = false;
+      if (nova && x.geometry && !doCache.has(x.geometry)) proprias.push(x.geometry);
       x.userData = { ...x.userData, compartilhada: true };
       x.raycast = () => {};                       // o fantasma não pega o clique nem o snap
     });
@@ -787,7 +799,14 @@ export function fantasmaDe(editor, ids) {
   }
   g.matrixAutoUpdate = false;
   g.renderOrder = 980;
-  return { obj: g, ids: dentro };
+  return { obj: g, ids: dentro, proprias };
+}
+
+/** Solta a geometria que o fantasma montou para ele (a do desenho em lote); a da cena fica. */
+export function descartarFantasma(f) {
+  if (!f || !f.proprias) return;
+  for (const geo of f.proprias) geo.dispose();
+  f.proprias = [];
 }
 
 /** Põe o fantasma na transformação (fp, fv) — a mesma que a ferramenta aplica às peças. */

@@ -108,6 +108,10 @@ try:
         for k in ("snap_sem_ancora", "snap_com_alinhamento", "clique_sob", "tab_todosSob", "alcas_30", "mover_previa_200", "clique_com_caixa"):
             if r[k]["p90"] > LIMITE_MOUSE:
                 falhas.append(f"{k}: p90 {r[k]['p90']} ms > {LIMITE_MOUSE} ms")
+        if not r.get("fantasma_pecas"):
+            falhas.append("o fantasma do Mover não aparece no desenho em lote")
+        if r.get("fantasma_montar_200", 0) > 400:
+            falhas.append(f"montar o fantasma levou {r['fantasma_montar_200']} ms")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     if erros: print("  erros no console:", [x[1][:200] for x in erros[:3]])
 finally:

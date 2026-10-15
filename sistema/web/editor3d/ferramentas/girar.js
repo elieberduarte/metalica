@@ -231,6 +231,7 @@ export class FerramentaGirar extends Ferramenta {
 
   reiniciar() {
     C.desancorar(this.editor);
+    C.descartarFantasma(this._fantasma);
     this._fantasma = null;
     this.centro = null; this.plano = null; this.ref = null;
     this.angulo = 0; this.copia = false;
@@ -272,7 +273,7 @@ export class FerramentaGirar extends Ferramenta {
                      C.CORES.desenho));
       // a própria peça, translúcida, girada (o fantasma); a silhueta só para a que não tem objeto próprio
       const chave = this.ids.join('|');
-      if (!this._fantasma || this._fantasma.chave !== chave) this._fantasma = { chave, ...C.fantasmaDe(this.editor, this.ids) };
+      if (!this._fantasma || this._fantasma.chave !== chave) { C.descartarFantasma(this._fantasma); this._fantasma = { chave, ...C.fantasmaDe(this.editor, this.ids) }; }
       C.posicionarFantasma(this._fantasma, fp, fv);
       g.add(this._fantasma.obj);
       for (const ent of this.entidades()) {

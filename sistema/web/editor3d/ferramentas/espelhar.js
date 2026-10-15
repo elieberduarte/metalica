@@ -108,7 +108,7 @@ export class FerramentaEspelhar extends Ferramenta {
 
   ativar() {
     this.ids = C.idsSelecionados(this.editor);
-    this.a = null; this.atual = null; this.mover = false; this._fantasma = null;
+    this.a = null; this.atual = null; this.mover = false; C.descartarFantasma(this._fantasma); this._fantasma = null;
     this.dica(this.ids.length ? FerramentaEspelhar.dica : 'Nada selecionado: selecione o que espelhar e chame a ferramenta de novo');
     this.medida('');
   }
@@ -192,7 +192,7 @@ export class FerramentaEspelhar extends Ferramenta {
     C.avisarBloqueadas(this.editor, bloqueadas);
     if (fora.length) this.editor.aviso(`${fora.length} peça(s) não espelhada(s): ${[...new Set(fora)].slice(0, 3).join('; ')}`, 'atencao');
     if (!mover && novos.length) this.selecao.definir(novos.map(c => c.id));
-    this.a = null; this._fantasma = null; C.desancorar(this.editor); this.limparPrevia();
+    this.a = null; C.descartarFantasma(this._fantasma); this._fantasma = null; C.desancorar(this.editor); this.limparPrevia();
     this.dica(`${mover ? 'Espelhada(s)' : 'Cópia espelhada de'} ${mover ? alteracoes.length : novos.length} peça(s) (Ctrl+Z desfaz)`);
   }
 
@@ -208,7 +208,7 @@ export class FerramentaEspelhar extends Ferramenta {
     g.add(C.gPoligono([q(-s, -s / 3), q(s, -s / 3), q(s, s), q(-s, s)], C.CORES.face || '#7aa7f0', 0.12));
     // a própria peça, translúcida, refletida (o fantasma); a silhueta só para a que não tem objeto próprio
     const chave = this.ids.join('|');
-    if (!this._fantasma || this._fantasma.chave !== chave) this._fantasma = { chave, ...C.fantasmaDe(this.editor, this.ids) };
+    if (!this._fantasma || this._fantasma.chave !== chave) { C.descartarFantasma(this._fantasma); this._fantasma = { chave, ...C.fantasmaDe(this.editor, this.ids) }; }
     C.posicionarFantasma(this._fantasma, fp, fv);
     g.add(this._fantasma.obj);
     for (const id of this.ids) {

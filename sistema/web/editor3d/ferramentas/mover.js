@@ -221,12 +221,13 @@ export class FerramentaMover extends Ferramenta {
   /** O fantasma da seleção (montado uma vez por operação). */
   _fantasmaAtual() {
     const chave = this.ids.join('|');
-    if (!this._fantasma || this._fantasma.chave !== chave) this._fantasma = { chave, ...C.fantasmaDe(this.editor, this.ids) };
+    if (!this._fantasma || this._fantasma.chave !== chave) { C.descartarFantasma(this._fantasma); this._fantasma = { chave, ...C.fantasmaDe(this.editor, this.ids) }; }
     return this._fantasma;
   }
 
   reiniciar() {
     C.desancorar(this.editor);
+    C.descartarFantasma(this._fantasma);
     this._fantasma = null;
     this.base = null;
     this.delta = [0, 0, 0];
