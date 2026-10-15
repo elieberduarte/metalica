@@ -1610,7 +1610,24 @@ class CAD {
         modo.addEventListener('change', () => this.executar(new ComandoAlterar({ [e.id]: { modo: modo.value } }, 'Modo da cota')));
         g.append(el('label', { texto: 'Modo' }), modo);
       }
-      if (e.tipo === 'circulo' || e.tipo === 'arco') campo('Raio', 'raio', 'number', { step: '1' });
+      if (e.tipo === 'circulo' && e.camada === 'FURO') {
+        // o furo da chapa (15/10): o diâmetro, o que entra nele e a folga — a escolha de cada furo (mais justo ou mais folgado)
+        // é feita aqui; o padrão é 1,5 mm de folga no mínimo. "Aplicar furos e tamanho" leva o diâmetro novo ao modelo
+        const fa = e.atributos || {};
+        const diam = el('input', { type: 'number', step: '0.5', value: String(Math.round(e.raio * 2 * 10) / 10) });
+        diam.addEventListener('change', () => {
+          const v = parseFloat(diam.value.replace(',', '.'));
+          if (isFinite(v) && v > 0) this.executar(new ComandoAlterar({ [e.id]: { raio: v / 2 } }, 'Diâmetro do furo'));
+        });
+        g.append(el('label', { texto: 'Diâmetro do furo' }), diam);
+        if (fa.fixador) {
+          const folga = e.raio * 2 - (+fa.fixador_d || 0);
+          g.append(el('label', { texto: 'Entra no furo' }), el('div', { texto: fa.fixador }),
+            el('label', { texto: 'Folga' }), el('div', { texto: `${formatarMm(folga, 1)} mm` + (folga < 1.45 ? ' — menos que 1,5 mm' : ''),
+              style: folga < 1.45 ? 'color:var(--erro, #b91c1c)' : '' }));
+        }
+        g.append(el('div', { class: 'origem', texto: 'Mudou o furo? "Aplicar furos e tamanho" (menu Detalhamento) leva o diâmetro novo ao modelo 3D.' }));
+      } else if (e.tipo === 'circulo' || e.tipo === 'arco') campo('Raio', 'raio', 'number', { step: '1' });
       if (e.tipo === 'linha') g.append(el('label', { texto: 'Comprimento' }), el('div', { texto: formatarMm(Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1])) + ' mm' }));
       if (e.tipo === 'hachura') {
         const pad = el('select', {}, ...['aco', 'concreto', 'solido'].map(m => el('option', { value: m, texto: m, selected: e.padrao === m ? 'selected' : undefined })));

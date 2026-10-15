@@ -10,7 +10,7 @@ from nucleo3d.modelo import Barra, Chapa, Documento, Solido
 from nucleo3d import geometria as _geo
 from nucleo2d.desenho import Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota, Chamada
 from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desenhar_furos, RHO_ACO, _area_2d,
-                                _arestas_dos_furos, _ordem_natural, _autovetores, _lacos_2d)
+                                _arestas_dos_furos, _ordem_natural, _autovetores, _lacos_2d, polegada_de, mm_da_bitola)
 from saida.desenhos import _mm
 
 
@@ -892,9 +892,24 @@ def barras_passantes(pos: Posicao, ent: Solido, barras: Sequence[Solido], eixos_
             continue
         pt = tuple(cc[i] + eixo[i] * t for i in range(3))
         u, v = _dot(_sub(pt, c), e1) - u0, _dot(_sub(pt, c), e2) - v0
-        if any(math.hypot(u - g.x, v - g.y) <= max(g.d, g.larg, g.alt, 10.0) / 2 + 3.0 for g in frente):
-            cont[_nome_passante(b.nome)] += 1
+        g = next((g for g in frente if math.hypot(u - g.x, v - g.y) <= max(g.d, g.larg, g.alt, 10.0) / 2 + 3.0), None)
+        if g is not None:
+            nome = _nome_passante(_texto_da_barra(b))
+            cont[nome] += 1
+            if not g.fixador:                         # o parafuso achado no furo vale mais que a barra que passa perto
+                m = re.search(r"Ø(.+)$", nome)
+                g.fixador_d = mm_da_bitola(m.group(1)) if m else 0.0
+                g.fixador = nome
     pos.passantes = dict(cont)
+
+
+def _texto_da_barra(b: Solido) -> str:
+    """o nome da barra redonda com a bitola: o do IFC ("BARRA ROSCADA Ø 5/8''") ou, na peça gerada por script, o perfil
+    (a "BR1-480" do Vicente é FE RED 1", 15/10)"""
+    nome = b.nome or ""
+    if _RE_PASSANTE.search(nome):
+        return nome
+    return str(_marcas(b).get("perfil") or getattr(b, "perfil", "") or nome)
 
 
 def parafusos_da_posicao(pos: Posicao, ent: Solido, fixadores: Sequence[Solido], eixos_fix: Optional[dict] = None) -> None:
@@ -929,28 +944,36 @@ def parafusos_da_posicao(pos: Posicao, ent: Solido, fixadores: Sequence[Solido],
         if info is None or _eh_furo(f):
             continue
         cc, eixo, meio, ext, porca = info
-        if not all(caixa[i][0] - folga <= cc[i] <= caixa[i][1] + folga for i in range(3)):
+        # a caixa da chapa mais o meio comprimento do fixador: o chumbador da base (150 de embutimento + o graute) tem o
+        # centro bem abaixo da chapa e ficava de fora (as bases do Vicente sem chumbador no detalhe, 15/10)
+        if not all(caixa[i][0] - folga - meio <= cc[i] <= caixa[i][1] + folga + meio for i in range(3)):
             continue
         u, v, w = _dot(_sub(cc, c), e1) - u0, _dot(_sub(cc, c), e2) - v0, _dot(_sub(cc, c), e3) - w0
-        bate = False
+        bate = None
         # furo de frente: eixo do fixador ao longo de e3, centro perto do furo no plano (e1, e2)
         if frente and abs(_dot(eixo, e3)) > 0.7 and abs(w) <= meio + pos.T / 2 + 20.0:
-            bate = any(math.hypot(u - g.x, v - g.y) <= max(g.d, g.larg, g.alt, 10.0) / 2 + 3.0 for g in frente)
+            bate = next((g for g in frente if math.hypot(u - g.x, v - g.y) <= max(g.d, g.larg, g.alt, 10.0) / 2 + 3.0), None)
         # furo de topo (mesa): eixo ao longo de e2, centro perto do furo no plano (e1, e3)
-        if not bate and topo and abs(_dot(eixo, e2)) > 0.7:
+        if bate is None and topo and abs(_dot(eixo, e2)) > 0.7:
             # o furo da mesa está no frame de pos.local, com w centrado (w0 é o meio): é o
             # `w` de cima; o `wt` a partir do mínimo errava meia largura e o parafuso
             # colocado no 3D na ponta da terça não entrava na contagem
             wt = _dot(_sub(cc, c), e3) - min(q[2] for q in P)
             tol = lambda g: max(g.d, g.larg, g.alt, 10.0) / 2 + 3.0     # noqa: E731
-            bate = any(math.hypot(u - g.x, w - g.y) <= tol(g) or math.hypot(u - g.x, wt - g.y) <= tol(g) for g in topo)
-        if not bate:
+            bate = next((g for g in topo if math.hypot(u - g.x, w - g.y) <= tol(g) or math.hypot(u - g.x, wt - g.y) <= tol(g)), None)
+        if bate is None:
             continue
         nome, pela_porca = _nome_do_parafuso(f, ext)
         if porca or pela_porca:
             porcas += 1
         else:
             contagem[nome] += 1
+            # o furo guarda o que entra nele (a bitola e a folga no detalhe, 15/10)
+            d_fix, _ = _diametro_do_fixador(f, ext)
+            pol = polegada_de(d_fix)
+            tipo_fix = "chumbador" if re.search(r"CHUMB|HIT|ANCOR", f.nome or "", re.I) else "parafuso"
+            bate.fixador = "%s Ø%s" % (tipo_fix, pol or "%s mm" % _mm(d_fix, 1))
+            bate.fixador_d = d_fix
     pos.parafusos = dict(contagem)
     pos.porcas = porcas
 
@@ -1133,6 +1156,10 @@ def inferir_furos_de_barra(pos: Posicao, ent: Solido, fixadores: Sequence[Solido
     ws = [q[2] for q in pos.local]
     w_min, w_max = min(ws), max(ws)
     novos, marcados = 0, 0
+    # (prioridade, furo, do marcador?) — ver abaixo: os que atravessam a parede de verdade entram
+    # primeiro — o marcador que termina 1 mm antes da parede (o do TQ1 encostado na alma do U75x40 do Vicente, 15/10)
+    # furava a peça vizinha com o diâmetro dele
+    candidatos = []
     for f in fixadores:
         # só os parafusos colocados no editor: os do IFC vêm com o furo da barra modelado,
         # e nos poucos em que a análise não o casa (furo movido pela regra, oblongo) um furo
@@ -1144,8 +1171,10 @@ def inferir_furos_de_barra(pos: Posicao, ent: Solido, fixadores: Sequence[Solido
         if cf is None or not all(caixa[i][0] - folga <= cf[i] <= caixa[i][1] + folga for i in range(3)):
             continue
         marcado = _furo_marcado(f)
+        meio0 = None
         if marcado:
             cc, eixo, meio, d_marcado = marcado           # furo feito no editor: eixo e diâmetro gravados
+            meio0 = meio
             meio += pos.T + 2.0                           # o plano da alma pode ser a face de fora ou o meio da parede
             ext = None
         else:
@@ -1201,10 +1230,26 @@ def inferir_furos_de_barra(pos: Posicao, ent: Solido, fixadores: Sequence[Solido
         else:
             d, _ = _diametro_do_fixador(f, ext)
             d_furo = fabrica.furo_padrao_mm(d)           # NBR 8800: d + 1,5 até 24 mm (D4, 11/10; antes d + 1)
-        if any(g.vista == vista and math.hypot(x - g.x, y - g.y) < max(d_furo, g.d, g.larg) for g in pos.furos):
+        novo = Furo("redondo", float(round(x)), float(round(y)), d_furo, vista=vista)
+        fu = (f.atributos or {}).get("furo") or {}
+        comp = float(fu.get("comp") or 0.0) if marcado else 0.0
+        if comp > d_furo + 0.5 and fu.get("dir"):
+            # o marcador oblongo (d de largura × comp de comprimento, no rumo de "dir"): o rasgo na vista, deitado ou em pé
+            g_ = tuple(float(c) for c in fu["dir"])
+            ax_y = 1 if vista == "frente" else 2
+            em_x = abs(_dot(g_, (e1, e2, e3)[0])) >= abs(_dot(g_, (e1, e2, e3)[ax_y]))
+            novo = Furo("oblongo", float(round(x)), float(round(y)), larg=comp if em_x else d_furo,
+                        alt=d_furo if em_x else comp, vista=vista)
+        # o marcador que atravessa a parede define o furo (medida e forma gravadas); o parafuso só o deduz (d + 1,5);
+        # o marcador que só alcança a parede pela tolerância fica por último
+        prioridade = 1 if meio0 is None else 0 if abs(t if t is not None else 0.0) <= meio0 else 2
+        candidatos.append((prioridade, novo, bool(marcado)))
+    for _, novo, do_marcador in sorted(candidatos, key=lambda c: c[0]):
+        tam = max(novo.d, novo.larg, novo.alt)
+        if any(g.vista == novo.vista and math.hypot(novo.x - g.x, novo.y - g.y) < max(tam, g.d, g.larg) for g in pos.furos):
             continue
-        pos.furos.append(Furo("redondo", float(round(x)), float(round(y)), d_furo, vista=vista))
-        if marcado:
+        pos.furos.append(novo)
+        if do_marcador:
             marcados += 1
         else:
             novos += 1
@@ -1625,7 +1670,7 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
                 com_parafuso[marca] = (sum(1 for c in contagem if c), len(ents))
     eixos_fix = _eixos_dos_fixadores(fixadores) if fixadores else {}
     # barras que atravessam furos de chapa (barra roscada na castanha, tirante): uma de cada posição basta
-    barras_r = [e for e in pecas if isinstance(e, Solido) and _RE_PASSANTE.search(e.nome or "")]
+    barras_r = [e for e in pecas if isinstance(e, Solido) and _RE_PASSANTE.search(_texto_da_barra(e))]
     eixos_bar = _eixos_dos_fixadores(barras_r) if barras_r else {}
     for marca, pos in por_marca.items():
         try:

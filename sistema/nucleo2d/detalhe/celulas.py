@@ -10,6 +10,7 @@ from nucleo3d.modelo import Documento, Solido, Chapa
 from nucleo3d import geometria as _geo
 from nucleo2d.desenho import Desenho, Polilinha, Circulo, Cota
 from saida.detalhamento import mesa_de_baixo_do_outro_lado
+from saida.detalhamento import polegada_de
 from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desenhar_furos, RHO_ACO, _area_2d,
                                 _arestas_dos_furos, _ordem_natural, _autovetores, _lacos_2d)
 from saida.desenhos import Estilo, _mm
@@ -88,11 +89,19 @@ def _cabecalho(pos: Posicao) -> List[str]:
     else:
         linhas = [titulo + "   L = %s mm" % _mm(pos.comprimento), com_bitola_e_mm(pos.perfil)]
     furos = pos.rotulo_furos() if pos.classe not in ("telha", "indefinida") else ""
-    if furos:
+    com_fix = pos.rotulo_furos_fixadores() if furos else []
+    if com_fix:
+        # o furo com o que entra nele e a folga (15/10): "furos: 4x Ø27 – ferro redondo Ø1" (folga 1,6)"
+        linhas.append("furos: " + com_fix[0])
+        linhas += ["       " + t for t in com_fix[1:]]
+    elif furos:
         # um furo só: "furo Ø17"; vários: "furos: 4x Ø14, 2x OBL 14x26"
         linhas.append(("furo " + furos[3:]) if (furos.startswith("1x ") and ", " not in furos) else ("furos: " + furos))
     if pos.parafusos or pos.porcas or getattr(pos, "passantes", None):
-        linhas.append(("parafusos: " if pos.parafusos else "fixação: ") + pos.rotulo_parafusos())
+        # a bitola em polegada no lugar do diâmetro em mm do nome ("M19.05 x 200" → "Ø3/4" x 200")
+        rot = re.sub(r"\bM(\d+(?:\.\d+)?)", lambda m: ("Ø" + polegada_de(float(m.group(1)))) if polegada_de(float(m.group(1))) else m.group(0),
+                     pos.rotulo_parafusos())
+        linhas.append(("parafusos: " if pos.parafusos else "fixação: ") + rot)
     if pos.peso:
         # a peça leve com uma casa a mais: 0,13 × 88 não dava os 11,1 do total da G.1 (análise das pranchas, 29/09)
         linhas.append("%s kg/pç  total %s kg" % (_mm(pos.peso, 3 if pos.peso < 1.0 else 2), _mm(pos.peso_total, 1)))
@@ -157,6 +166,9 @@ def _furos_editaveis(p: "_Papel", atr: dict, furos: Sequence[Furo]):
     mover, apagar ou desenhar outra na camada FURO é o que "Aplicar furos ao 3D" lê."""
     for i, f in enumerate(furos):
         p.atr = dict(atr, furo=i, tipo_furo=f.tipo)
+        if getattr(f, "fixador", ""):
+            # o que entra no furo: o CAD mostra com a folga ao mudar o diâmetro do furo (15/10)
+            p.atr.update(fixador=f.fixador, fixador_d=round(f.fixador_d, 3))
         if f.tipo == "redondo":
             p.circulo(f.x, f.y, f.d / 2, "FURO")
         elif f.tipo == "oblongo":

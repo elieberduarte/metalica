@@ -229,6 +229,15 @@ class Furo:
     alt: float = 0.0          # oblongo: largura
     pontos: List[Tuple[float, float]] = field(default_factory=list)   # recorte
     vista: str = "frente"     # frente (e3), topo (e2)
+    fixador: str = ""         # o que entra no furo ("parafuso Ø5/8\"", "barra roscada Ø1\"", "chumbador Ø3/4\"")
+    fixador_d: float = 0.0    # o diâmetro nominal dele (mm), para a folga
+
+    def folga(self) -> Optional[float]:
+        """o furo menos o diâmetro do que entra nele (o oblongo pela largura menor); None sem fixador achado"""
+        if not self.fixador_d:
+            return None
+        livre = self.d if self.tipo == "redondo" else min(self.larg, self.alt) if self.tipo == "oblongo" else 0.0
+        return livre - self.fixador_d if livre else None
 
     def rotulo(self) -> str:
         if self.tipo == "redondo":
@@ -243,6 +252,47 @@ def _medida_de_furo(v: float) -> float:
     até 0,15 dele: "Ø12,9" saía ao lado de "Ø13" na mesma barra (análise das pranchas, 29/09)."""
     m = round(v * 2.0) / 2.0
     return m if abs(v - m) <= 0.15 else v
+
+
+#: A folga mínima entre o furo e o parafuso, a barra ou o chumbador que entra nele (o usuário, 15/10: "por padrão deixe
+#: 1,5 mm mínimo de folga"; a escolha de cada furo, mais folgado ou mais justo, é feita no detalhe da chapa). O furo cotado
+#: pelo projetista fica como está: o detalhe só avisa.
+FOLGA_MINIMA_FURO = 1.5
+#: As bitolas em polegada (mm → rótulo) dos parafusos, barras e chumbadores.
+POLEGADAS = ((6.35, '1/4"'), (7.94, '5/16"'), (9.525, '3/8"'), (11.11, '7/16"'), (12.7, '1/2"'), (15.875, '5/8"'),
+             (19.05, '3/4"'), (22.225, '7/8"'), (25.4, '1"'), (28.575, '1.1/8"'), (31.75, '1.1/4"'), (34.925, '1.3/8"'),
+             (38.1, '1.1/2"'), (44.45, '1.3/4"'), (50.8, '2"'))
+
+
+def polegada_de(d: float) -> str:
+    """'5/8"' para 15,875; vazio quando não é bitola em polegada (o M16 métrico fica M16: a tolerância é só a do
+    arredondamento do nome, 15.88)"""
+    for mm, rot in POLEGADAS:
+        if abs(float(d or 0.0) - mm) <= 0.05:
+            return rot
+    return ""
+
+
+def mm_da_bitola(texto: str) -> float:
+    """o diâmetro (mm) de uma bitola escrita: '1"', '5/8"', '1.1/4"', '1 1/4"', '16 mm', '16'"""
+    t = str(texto or "").replace("''", '"').replace(",", ".").strip().rstrip('"').strip()
+    if t.lower().endswith("mm"):
+        t = t[:-2].strip()
+        try:
+            return float(t)
+        except ValueError:
+            return 0.0
+    m = re.match(r"^(\d+)[.\s-]+(\d+)/(\d+)$", t)
+    if m:
+        return (int(m.group(1)) + int(m.group(2)) / int(m.group(3))) * 25.4
+    m = re.match(r"^(\d+)/(\d+)$", t)
+    if m:
+        return int(m.group(1)) / int(m.group(2)) * 25.4
+    try:
+        v = float(t)
+    except ValueError:
+        return 0.0
+    return v * 25.4 if v <= 3.0 else v
 
 
 @dataclass
@@ -303,6 +353,27 @@ class Posicao:
         """"1x Ø17", "4x Ø14, 2x OBL 14x26" — o recorte fica de fora (tem cota própria)."""
         cont = collections.Counter(f.rotulo() for f in self.furos if f.tipo in ("redondo", "oblongo"))
         return ", ".join("%dx %s" % (n, r) for r, n in sorted(cont.items(), key=lambda kv: kv[0]))
+
+    def rotulo_furos_fixadores(self) -> List[str]:
+        """Os furos com o que entra em cada um e a folga (15/10, o usuário: "colocar a bitola do parafuso no detalhe"):
+        ['4x Ø27 – barra roscada Ø1" (folga 1,6)', '2x Ø13 – parafuso Ø1/2" (folga 0,3 < 1,5)']; o furo sem fixador
+        achado sai só com a medida. Vazio quando nenhum furo tem fixador (fica o rotulo_furos de sempre)."""
+        furos = [f for f in self.furos if f.tipo in ("redondo", "oblongo")]
+        if not any(f.fixador for f in furos):
+            return []
+        cont: Dict[tuple, int] = collections.Counter()
+        for f in furos:
+            fol = f.folga()
+            cont[(f.rotulo(), f.fixador, None if fol is None else round(fol, 1))] += 1
+        fora = []
+        for (rot, fix, fol), n in sorted(cont.items(), key=lambda kv: (kv[0][0], kv[0][1])):
+            t = "%dx %s" % (n, rot)
+            if fix:
+                t += " – %s" % fix
+                if fol is not None:
+                    t += " (folga %s%s)" % (_mm(fol, 1), " < %s" % _mm(FOLGA_MINIMA_FURO, 1) if fol < FOLGA_MINIMA_FURO - 0.05 else "")
+            fora.append(t)
+        return fora
 
 
 # ======================================================================== leitura
