@@ -38,7 +38,8 @@ VERSAO_3D = 1
 #: Versão das fichas (pecas.json): mudou o que elas levam, os 3D leves guardados são refeitos.
 #: 2 (06/10): o vínculo com o 2D — peça e planta de origem, elemento da planta, marca do pré-moldado e caixa.
 #: 3 (12/10): a sigla da terça (TC3, TC46…) para a busca do modo ver achar a peça pelo nome do projeto.
-VERSAO_FICHAS = 3
+#: 4 (15/10): o comprimento da peça (L, mm) para a ficha rápida do modo ver.
+VERSAO_FICHAS = 4
 MAGICA = b"MCEL"
 
 #: Vértices por bloco (índice de 16 bits).
@@ -331,7 +332,29 @@ def _texto_perfil(reg: dict) -> str:
     return str(m.get("perfil") or "")
 
 
-def _ficha(reg: dict, camadas_idx: Dict[str, int], centro, volume_mm3: float, vs=None) -> dict:
+def _comprimento(reg: dict, vs, fs) -> float:
+    """O comprimento da peça em mm: a barra pelo de corte (o do detalhamento, com recortes e cortes no ângulo);
+    o sólido (o IFC) e a chapa pela maior aresta da malha — na peça extrudada, a do comprimento."""
+    if reg.get("tipo") == "barra":
+        from nucleo3d.modelo import Barra
+        from nucleo3d.geometria import comprimentos_da_barra
+        campos = set(Barra.__dataclass_fields__)
+        limpo = {k: (tuple(v) if isinstance(v, list) and k in ("inicio", "fim") else v) for k, v in reg.items() if k in campos}
+        try:
+            return comprimentos_da_barra(Barra(**limpo))[1]
+        except Exception:                                   # noqa: BLE001 — sem o comprimento, a ficha sai sem ele
+            return 0.0
+    maior = 0.0
+    for f in fs or ():
+        for k in range(len(f)):
+            a, b = vs[f[k - 1]], vs[f[k]]
+            d = (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2
+            if d > maior:
+                maior = d
+    return math.sqrt(maior)
+
+
+def _ficha(reg: dict, camadas_idx: Dict[str, int], centro, volume_mm3: float, vs=None, fs=None) -> dict:
     atrib = reg.get("atributos") or {}
     marcas = atrib.get("marcas") or {}
     material = str(reg.get("material") or "")
@@ -356,6 +379,10 @@ def _ficha(reg: dict, camadas_idx: Dict[str, int], centro, volume_mm3: float, vs
         f["pm"] = "%s@%s" % (atrib["peca"], atrib["eixo"])
     if volume_mm3 > 0 and ("aço" in material.lower() or "aco" in material.lower() or reg.get("tipo") in ("barra", "chapa")):
         f["kg"] = round(volume_mm3 * _RHO_ACO / 1e9, 2)
+    if vs:
+        comp = _comprimento(reg, vs, fs)
+        if comp >= 1.0:
+            f["L"] = round(comp)
     for k_ori, k in (("posicao", "pos"), ("conjunto", "cj"), ("marca", "mc")):
         if marcas.get(k_ori):
             f[k] = str(marcas[k_ori])
@@ -459,7 +486,7 @@ def gerar_3d(modelo: dict, progresso=None) -> Tuple[bytes, dict, dict]:
             for a, b in _arestas(vs, p["fs"], cos_lim):
                 ar.append(a + base)
                 ar.append(b + base)
-            fichas.append(_ficha(p["reg"], camadas_idx, p["centro"], _volume(vs, tris), vs))
+            fichas.append(_ficha(p["reg"], camadas_idx, p["centro"], _volume(vs, tris), vs, p["fs"]))
             base += len(vs)
             n_tri += len(tris)
         n_vert += nv
@@ -507,7 +534,7 @@ def gerar_3d(modelo: dict, progresso=None) -> Tuple[bytes, dict, dict]:
                          x[1] * esc[0], y[1] * esc[1], z[1] * esc[2], ty,
                          x[2] * esc[0], y[2] * esc[1], z[2] * esc[2], tz,
                          float(len(fichas))))
-            fichas.append(_ficha(p["reg"], camadas_idx, p["centro"], vol, p["vs"]))
+            fichas.append(_ficha(p["reg"], camadas_idx, p["centro"], vol, p["vs"], p["fs"]))
         n_copias += len(g["itens"])
         n_tri += len(tris) * len(g["itens"])
         formas_cab.append({
