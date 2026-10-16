@@ -256,6 +256,34 @@ def p14_quadros_vazios(aba):
        "na Original, o rodapé diz o que mandar e o Enviar para quadro chama a atenção")
 
 
+def p26_padroes_da_planta(aba):
+    """P26: o diálogo "Montar o 3D pela planta" mostrava banzo 6,00 m e ASTM A36 como se fossem lidos do desenho; eram o
+    padrão do programa. A planta da Portaria ("PLANTA NO NÍVEL DO FORRO") não traz o nível."""
+    print("P26 — de onde vêm o nível e o aço do Montar o 3D pela planta")
+    s = projeto("Portaria planta")
+    nome = "Projeto recebido – portaria"
+    post(f"/api/projetos/{s}/desenhos/{urllib.parse.quote(nome)}", {"desenho": {"nome": nome, "unidade": "mm", "escala": 1, "camadas": {}, "vistas": [], "metadados": {},
+         "entidades": [{"id": "t1", "tipo": "texto", "camada": "TEXTO", "posicao": [0, 0], "texto": "PLANTA NO NÍVEL DO FORRO"},
+                       {"id": "t2", "tipo": "texto", "camada": "TEXTO", "posicao": [0, 9000], "texto": "PLANTA NO NÍVEL 4,25"}]}})
+    aba.navegar(f"{base}/cad?projeto={s}&desenho={urllib.parse.quote(nome)}", limite=60)
+    esperar(aba, "window.cad && document.body.dataset.pronto === '1'")
+    clicar(aba, '.menu[data-menu="vistas"] > button')
+    clicar(aba, '[data-acao="montar-planta"]')
+    esperar(aba, "document.querySelector('#dialogo').open && document.querySelector('#dialogo-titulo').textContent.includes('pela planta')", 20)
+    corpo = lambda: aba.avaliar("document.querySelector('#dialogo-corpo').textContent") or ""
+    sel = aba.avaliar("document.querySelector('#dialogo-corpo select').value")
+    if sel != "PLANTA NO NÍVEL DO FORRO":
+        aba.avaliar("(() => { const s = document.querySelector('#dialogo-corpo select'); s.value = 'PLANTA NO NÍVEL DO FORRO'; s.dispatchEvent(new Event('change')); return 1; })()")
+    t = corpo()
+    ok("é o padrão" in t and "confira na elevação" in t, f"o banzo sem nível no título é dito padrão: «{t[t.find('Banzo inferior:'):][:90]}»")
+    ok("padrão do programa" in t, "o aço é dito padrão do programa (o projeto não teve as folhas lidas)")
+    aba.avaliar("(() => { const s = document.querySelector('#dialogo-corpo select'); s.value = 'PLANTA NO NÍVEL 4,25'; s.dispatchEvent(new Event('change')); return 1; })()")
+    t = corpo()
+    v = aba.avaliar("[...document.querySelectorAll('#dialogo-corpo input[type=text]')][0].value")
+    ok(v == "4,25" and "lido do título" in t, f"com o nível no título, o banzo vem dele ({v})")
+    aba.avaliar("document.querySelector('#dialogo').close(); 1")
+
+
 chrome = next(c for c in CHROMES if os.path.exists(c)); cdp = _porta_livre(); perfil = tempfile.mkdtemp(prefix="verif_primeiro_uso_")
 nav = subprocess.Popen([chrome, "--headless=new", "--disable-gpu", "--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars",
                         "--no-first-run", "--remote-allow-origins=*", f"--user-data-dir={perfil}", f"--remote-debugging-port={cdp}", "about:blank"],
@@ -271,7 +299,7 @@ try:
     # python verif_primeiro_uso_ui.py p07 → só os blocos cujo nome começa assim
     for bloco in [b for b in (p02_p13_recebido, p06_vao_pequeno, p11_p12_cad, p07_menu_antes_do_editor,
                                 p08_folhas_sem_pedir_o_arquivo, p19_resultado_do_recebido,
-                                p14_quadros_vazios)
+                                p14_quadros_vazios, p26_padroes_da_planta)
                   if not sys.argv[1:] or any(b.__name__.startswith(a) for a in sys.argv[1:])]:
         try:
             bloco(aba)

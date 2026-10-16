@@ -840,6 +840,23 @@ def trelicas_lidas(s: str) -> dict:
         return json.load(f)
 
 
+def _aco_das_folhas(recebido: dict):
+    """O aço dos perfis escrito nas folhas do projeto ("PERFIS DOBRADOS: AÇO ASTM A36;"), com o nome do catálogo de
+    materiais: (nome, texto da folha) ou None. Vale a linha dos perfis; sem ela, a primeira que citar um aço."""
+    import re as _re
+    import unicodedata
+    from nucleo import materiais
+    chave = lambda t: _re.sub(r"[^A-Z0-9]", "", unicodedata.normalize("NFKD", str(t)).encode("ascii", "ignore").decode().upper())  # noqa: E731
+    nomes = sorted(materiais.ACOS, key=len, reverse=True)          # o nome mais longo primeiro (A572 Gr.50 antes de A572)
+    linhas = [str(x) for x in (recebido.get("materiais") or [])]
+    for linha in sorted(linhas, key=lambda t: 0 if _re.search(r"(?i)perfi", t) else 1):
+        k = chave(linha)
+        for n in nomes:
+            if chave(n) in k:
+                return n, linha.strip()
+    return None
+
+
 def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
     """POST /api/projetos/<s>/desenhos/<nome>/montar-pela-planta: o projeto recebido em
     DXF, sem 3D, vira modelo pela planta estrutural (nucleo3d/de_planta.py): cada linha
@@ -864,7 +881,14 @@ def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
     if corpo.get("sugerir"):
         titulos = sorted({str(e.get("texto") or "").strip() for e in ents if e.get("tipo") == "texto"
                           and _re.match(r"(?i)^\s*(PLANTA|LOCA[ÇC][ÃA]O)", str(e.get("texto") or ""))})
-        return {"titulos": titulos[:200], "padrao": dict(de_planta.PADRAO)}
+        padrao = dict(de_planta.PADRAO)
+        # de onde vem cada valor (P26, primeiro uso 16/10: o banzo 6,00 m e o ASTM A36 pareciam lidos do desenho, eram
+        # padrão): o aço sai das folhas do projeto quando o passo 2 as leu; o nível, a tela lê do título da planta
+        origem = {"aco": "padrao"}
+        lido = _aco_das_folhas(g.ler(s).get("projeto_recebido") or {})
+        if lido:
+            padrao["aco"], origem["aco"], origem["aco_texto"] = lido[0], "folhas", lido[1]
+        return {"titulos": titulos[:200], "padrao": padrao, "origem": origem}
     par = dict(corpo.get("parametros") or {})
     # as decisões do usuário sobre o projeto (treliça deitada, elevação que é duas peças) ficam
     # gravadas no projeto: montar de novo, do zero, as mantém

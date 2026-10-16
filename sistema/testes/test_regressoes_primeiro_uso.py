@@ -127,5 +127,34 @@ class TestFolhasDoDxfGuardado(_ComProjeto):
         self.assertEqual(r["projeto_recebido"]["carimbo"]["revisao"], "R03")
 
 
+class TestOrigemDosPadroesDaPlanta(_ComProjeto):
+    """P26 — o diálogo "Montar o 3D pela planta" mostrava banzo 6,00 m e ASTM A36 como se fossem lidos do desenho (eram
+    padrão). O servidor diz de onde vem o aço e o lê das folhas do projeto quando o passo 2 as leu."""
+
+    def _desenho(self):
+        from nucleo2d.desenho import Texto
+        des = Desenho(nome="Projeto recebido – portaria")
+        des.add(Texto(posicao=(0, 0), texto="PLANTA NO NÍVEL DO FORRO"))
+        self.g.salvar_desenho(self.s, des.nome, des.dict())
+        return des.nome
+
+    def test_aco_padrao_e_dito_padrao(self):
+        r = app.montar_pela_planta(self.s, self._desenho(), {"sugerir": True})
+        self.assertEqual(r["origem"]["aco"], "padrao")
+
+    def test_aco_lido_das_folhas(self):
+        from test_folhas_recebidas import _dxf
+        nome = self._desenho()
+        app.ler_projeto_recebido(self.s, {"arquivo": "portaria.dxf", "conteudo": _dxf()})
+        r = app.montar_pela_planta(self.s, nome, {"sugerir": True})
+        self.assertEqual((r["origem"]["aco"], r["padrao"]["aco"]), ("folhas", "ASTM A36"))
+        self.assertIn("PERFIS DOBRADOS", r["origem"]["aco_texto"])
+
+    def test_nome_do_catalogo(self):
+        self.assertEqual(app._aco_das_folhas({"materiais": ["CHAPAS: AÇO ASTM A36", "PERFIS LAMINADOS: AÇO ASTM A572 GR.50"]}),
+                         ("ASTM A572 Gr.50", "PERFIS LAMINADOS: AÇO ASTM A572 GR.50"))
+        self.assertIsNone(app._aco_das_folhas({"materiais": ["PARAFUSOS ASTM A325"]}))
+
+
 if __name__ == "__main__":
     unittest.main()

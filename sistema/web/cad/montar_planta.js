@@ -131,6 +131,22 @@ export class MetodosMontarPlantaCAD {
     const base = el('input', { type: 'text', value: metros(p.base), size: 6, title: 'Nível da base dos pilares, em metros' });
     const tercas = seletor(titulos, p.tercas, true);
     const aco = el('input', { type: 'text', value: p.aco || 'ASTM A36', size: 14 });
+    // de onde vem cada valor (P26, primeiro uso 16/10: 6,00 m e ASTM A36 pareciam lidos do desenho e eram padrão)
+    const org = sug.origem || {};
+    const notaAco = el('div', { class: 'explica' + (org.aco === 'folhas' ? '' : ' atencao'), texto: org.aco === 'folhas'
+      ? `Aço lido das folhas do projeto: "${org.aco_texto}".`
+      : 'Aço: padrão do programa, não lido do projeto — confira nas notas do projetista (Ler folhas e considerações de cálculo).' });
+    const notaNivel = el('div', { class: 'explica' });
+    let nivelMexido = false;
+    nivel.addEventListener('input', () => { nivelMexido = true; notaNivel.textContent = ''; notaNivel.className = 'explica'; });
+    const nivelDaPlanta = () => {
+      const m = String(planta.value || '').match(/N[ÍI]VEL\s*(?:DE\s*)?\+?\s*(\d{1,3}[.,]\d{1,3})/i);
+      if (nivelMexido) return;
+      if (m) { nivel.value = m[1].replace('.', ','); notaNivel.className = 'explica'; notaNivel.textContent = `Banzo inferior: ${nivel.value} m, lido do título da planta.`; }
+      else { nivel.value = metros(p.nivel); notaNivel.className = 'explica atencao'; notaNivel.textContent = `Banzo inferior: ${nivel.value} m é o padrão (o título "${planta.value}" não traz o nível) — confira na elevação.`; }
+    };
+    planta.addEventListener('change', nivelDaPlanta);
+    nivelDaPlanta();
     const modo = el('select', {}, el('option', { value: 'substituir', texto: 'Substituir o modelo 3D (o atual vai para o histórico)' }),
       el('option', { value: 'acrescentar', texto: 'Acrescentar ao modelo 3D' }));
     const ifc = el('input', { type: 'checkbox' });
@@ -157,6 +173,7 @@ export class MetodosMontarPlantaCAD {
         el('label', { texto: 'Planta das terças' }), tercas,
         el('label', { texto: 'Aço' }), aco,
         el('label', { texto: 'Modelo' }), modo),
+      notaNivel, notaAco,
       ...(outras.length ? [el('fieldset', { class: 'montagem' }, el('legend', { texto: 'Outras plantas, cada uma no seu nível' }),
         el('div', { class: 'explica', texto: 'Vigas VM e treliças nomeadas dessas plantas entram no nível ao lado (m), alinhadas pelos balões dos eixos; o pilar sobe até a peça mais alta que tiver em cima. Desmarque a da planta estrutural e as que não são de estrutura.' }),
         tabOutras)] : []),
