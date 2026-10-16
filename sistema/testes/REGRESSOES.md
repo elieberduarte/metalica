@@ -120,3 +120,4 @@ Achados dos testes de primeiro uso (`Projeto/BRIEFINGS/Briefing-primeiro-uso*.md
 | 16/10 | Portaria Hermes: Ctrl+K "projeto recebido" não achava o desenho, e o Trocar de desenho só existia em Detalhamento | 127d282 | verif_primeiro_uso_ui P17 (desenho da Portaria) |
 | 16/10 | Portaria Hermes: o painel de camadas punha CORTE…AUXILIAR vazias no topo e misturava as camadas do DXF com as do Metálica | a58af94 | verif_primeiro_uso_ui P16 (DXF da Portaria) |
 | 16/10 | Portaria Hermes: logo depois do primeiro Detalhar, "Atualizando os desenhos (o detalhamento do programa mudou)" e tudo refeito | 643aa00 | test_regressoes_primeiro_uso TestDetalharNaoSeDaPorVelhoNoMeio |
+| 16/10 | Portaria Hermes (rodada 2): com o 2D à mostra, Modelo › Eixos da obra… trocava para o 3D e não abria nada | dd6d58a | verif_primeiro_uso_ui P07 (rodada 2) |
