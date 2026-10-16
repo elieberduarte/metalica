@@ -5439,6 +5439,11 @@ def main():
     global JANELA_PROPRIA
     os.makedirs(PROJETOS, exist_ok=True)
     _registro_em_arquivo()
+    # O detalhamento automático (desenhos_vivos) é conta pura em Python por minutos, dentro deste processo: com o
+    # intervalo padrão de troca de tarefa (5 ms), cada leitura de arquivo das outras rotas esperava a vez — a lista de
+    # projetos ia de 0,06 s a 24 s e a tela inicial ficava branca (Mercado Conceito, 16/10). Em 0,2 ms ela sai em 0,4 s;
+    # sem disputa o intervalo não custa nada.
+    sys.setswitchinterval(0.0002)
     com_janela = "--janela" in sys.argv or ((versao.CONGELADO or DEV) and "--sem-navegador" not in sys.argv)
     preferida = PORTA_DEV if DEV else PORTA_PADRAO
     if "--porta" in sys.argv:

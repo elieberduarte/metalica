@@ -236,7 +236,15 @@ async function carregar() {
   // o servidor pode estar reiniciando (no desenvolvimento, a cada .py alterado): espera ele voltar em vez de mostrar
   // "Nenhum projeto ainda" — a lista vazia parecia que os projetos tinham sumido (07/10)
   for (let i = 0; ; i++) {
-    try { projetos = await api('/api/projetos'); listaChegou = true; break; } catch (e) {
+    // a lista que demora (o programa ocupado com um detalhamento automático em segundo plano): diz que está carregando,
+    // em vez da tela em branco (16/10)
+    const t0 = Date.now();
+    const espera = setInterval(() => {
+      const s = Math.round((Date.now() - t0) / 1000);
+      if (s >= 2) $('#lista').replaceChildren(el('p', { class: 'nota', texto: `Carregando os projetos… ${s} s — o programa está ocupado (provavelmente atualizando os desenhos de um projeto em segundo plano).` }));
+    }, 1000);
+    try { projetos = await api('/api/projetos'); listaChegou = true; clearInterval(espera); break; } catch (e) {
+      clearInterval(espera);
       $('#vazio').hidden = true;
       if (i >= 40) {
         $('#lista').replaceChildren(el('p', { class: 'nota' }, `Não foi possível listar os projetos (${e.message}). Os projetos continuam na pasta. `,
