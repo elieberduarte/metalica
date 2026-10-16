@@ -266,13 +266,20 @@ def conferir(pasta: str) -> List[dict]:
             pos = str(c.get("marca") or "")
             if not c.get("copia") or not it or not pos or eh_conjunto(c):
                 continue
-            vals = [(int(k["item"].get("quantidade") or 0), por_unidade(k, pos)) for k in conjuntos]
-            if any(v is None for _q, v in vals):
+            # a marca da cópia pode juntar posições ("M110 / P94"): soma o que cada uma leva
+            toks = [t.strip() for t in pos.split("/") if t.strip()]
+            vals = [(int(k["item"].get("quantidade") or 0), [por_unidade(k, t) for t in toks]) for k in conjuntos]
+            if any(v is None for _q, vs in vals for v in vs):
                 continue                          # família com composições diferentes: não dá para saber a conta
-            esperado = sum(q * v for q, v in vals)
+            esperado = sum(q * sum(vs) for q, vs in vals)
             if esperado and int(it.get("quantidade") or 0) != esperado:
                 achar("copias", "fabrica", f"prancha {num}: cópia de {it.get('nome')} ({pos}) com {it.get('quantidade')}x, "
                                            f"mas os conjuntos desta prancha levam {esperado}")
+            elif not conjuntos and str(it.get("nome") or "") in R and int(it.get("quantidade") or 0) != int(R[it["nome"]]["Qtd"]):
+                # sem conjunto desenhado na prancha (suportes na das terças, chapas de base na dos chumbadores): a cópia
+                # leva o total da obra (pedido do usuário, 28/09)
+                achar("copias", "fabrica", f"prancha {num}: cópia de {it.get('nome')} ({pos}) com {it.get('quantidade')}x, "
+                                           f"sem conjunto desenhado nela: devia ser o total da obra, {R[it['nome']]['Qtd']}")
 
     # nomes: toda posição do romaneio aparece em alguma prancha — na célula dela ou dentro de um conjunto desenhado
     # (a barra da tesoura é fabricada pela elevação do conjunto)

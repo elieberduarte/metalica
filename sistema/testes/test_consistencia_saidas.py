@@ -102,6 +102,21 @@ def test_copia_local_com_a_quantidade_de_uma_tesoura_so():
     assert [x["conferencia"] for x in a] == ["copias"] and "levam 8" in a[0]["texto"]
 
 
+def test_copia_em_prancha_sem_conjunto_leva_o_total_da_obra():
+    """Na prancha das terças e na dos chumbadores não há conjunto desenhado: a cópia do suporte/chapa de base leva o
+    total da obra (pedido do usuário, 28/09)"""
+    o = obra_coerente()
+    o["pranchas"][1]["celulas"].append({"titulo": "CH2 – 08x", "copia": True, "marca": "P13", "item": {"nome": "CH2", "quantidade": 8, "classe": "Chapa", "peso": 1.63}})
+    o["pranchas"][1]["celulas"][0]["copia"] = True        # a família de terças vira só referência: nenhum conjunto desenhado
+    o["pranchas"][1]["celulas"][0]["item"] = None
+    assert "copias" not in confs(o)
+    o["pranchas"][1]["celulas"][1]["item"]["quantidade"] = 2
+    assert "copias" in confs(o)
+    # com conjunto desenhado na prancha, a peça que não é dele não vira "total da obra" (Água Gelada: DP.2.1 "M110 / P94")
+    o = obra_coerente()
+    o["pranchas"][0]["celulas"].append({"titulo": "B1 – 03x", "copia": True, "marca": "M99 / P77", "item": {"nome": "B1", "quantidade": 3, "classe": "Barra"}})
+    assert "copias" not in confs(o)
+
 def test_nome_de_conjunto_que_e_outro_conjunto():
     """Sooro, N01/M02: a prancha "T4" desenha M8 + M9, e o T4 da planta e do romaneio é M6"""
     o = obra_coerente()
