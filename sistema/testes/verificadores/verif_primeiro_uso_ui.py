@@ -492,8 +492,71 @@ def q01_pdf_recusado_ver_no_3d(aba):
     aba.console[:] = [m for m in aba.console if not ("400" in m[1] and "/pranchas/pdf" in m[1])]
 
 
+def q02_q03_dialogo_detalhar(aba):
+    """Q03: as opções do Detalhar se perdiam (o diálogo voltava ao padrão e a atualização automática também). Q02
+    (decisão do usuário: o padrão da máquina vence): a caixa diz o que faz, e o fim do Detalhar mostra o que mudou no 3D
+    com Desfazer."""
+    print("Q02/Q03 — diálogo Detalhar com as opções do projeto e o que mudou no 3D")
+    s = projeto("Sooro opções", tipo="ifc")
+    post(f"/api/projetos/{s}/modelo", {"documento": {"nome": "Sooro", "entidades": [
+        {"tipo": "barra", "id": "b1", "camada": "Vigas", "perfil": "U150X50X2.28", "inicio": [0, 0, 3000], "fim": [0, 6000, 3000],
+         "atributos": {"marcas": {"posicao": "M92"}}}]}})
+    arq = os.path.join(_pasta_do_projeto(urllib.parse.unquote(s)), "projeto.json")
+    with open(arq, encoding="utf-8") as f:
+        pj = json.load(f)
+    pj["opcoes_detalhamento"] = {"regra_tercas": False, "rotular": True}
+    with open(arq, "w", encoding="utf-8") as f:
+        json.dump(pj, f)
+    aba.navegar(f"{base}/editor?projeto={s}", limite=60)
+    esperar(aba, "window.editor && window.editor.projeto && document.body.dataset.pronto === '1'", 60)
+    aba.avaliar("window.editor.dialogoDetalharPecas(); 1")
+    esperar(aba, "window.editor.el.dialogo.open && /Detalhar peças/.test(window.editor.el.dialogoTitulo.textContent)", 30)
+    estado = aba.avaliar("""(() => { const ls = [...window.editor.el.dialogoCorpo.querySelectorAll('label')];
+        const caixa = (t) => { const l = ls.find(x => x.textContent.startsWith(t)); return l && l.nextElementSibling ? l.nextElementSibling.checked : null; };
+        return { regra: caixa('Chapas de ligação das terças no passo da máquina'), rotular: caixa('Rotular posições'),
+                 antigo: ls.some(x => x.textContent === 'Furação das terças no padrão da fábrica'),
+                 explica: /vai para o 3D sempre/.test(window.editor.el.dialogoCorpo.textContent) }; })()""") or {}
+    ok(estado.get("regra") is False and estado.get("rotular") is True, f"Q03: o diálogo abre com as opções do projeto {estado}")
+    ok(estado.get("antigo") is False and estado.get("explica"), "Q02: a caixa com o nome do que faz e o padrão de fábrica explicado")
+    aba.avaliar("window.editor.el.dialogo.close('cancelar'); 1")
+    aba.drenar(0.5)
+    # o fim do Detalhar: o que mudou no 3D, e o Desfazer pede a versão de antes
+    aba.avaliar("""window.__pedidos = []; const f0 = window.fetch; window.fetch = (u, o) => { if (String(u).includes('desfazer-detalhar')) {
+        window.__pedidos.push([String(u), o && o.body]); return Promise.resolve(new Response(JSON.stringify({ erro: 'teste' }), { status: 400 })); } return f0(u, o); };
+        window.editor._mudancasDoDetalhar({ posicoes: ['T.O.6 (M92)'], etapas: ['4 furo(s) de terças e das chapas parafusadas nelas viraram oblongos 25×13'],
+                                            convertidas: 0, desfazer: 'modelo-20261016-120703-marco.json.gz' }); 1""")
+    abriu = esperar(aba, "window.editor.el.dialogo.open && /mudou no 3D/.test(window.editor.el.dialogoTitulo.textContent) && !!window.editor.el.dialogoCorpo.querySelector('button.desfazer-detalhar')", 20)
+    ok(abriu, "o quadro O que o detalhamento mudou no 3D, com as etapas e o Desfazer")
+    if abriu:
+        clicar(aba, "button.desfazer-detalhar")
+        pedido = esperar(aba, "window.__pedidos.length === 1", 10)
+        corpo = aba.avaliar("window.__pedidos[0] && window.__pedidos[0][1]") or ""
+        ok(pedido and "modelo-20261016-120703-marco.json.gz" in corpo, f"Desfazer pede a versão de antes: {corpo}")
+    aba.console[:] = [m for m in aba.console if "desfazer-detalhar" not in m[1] and "400" not in m[1]]
+
+
+def q12_busca_pelo_nome_de_producao(aba):
+    """Q12: o aviso e o erro do PDF diziam "T.O.6" e a busca (Ctrl+K, a do 3D) respondia "Nada com esse nome": o editor
+    aberto antes do Detalhar não tinha os nomes de produção. A busca lê os nomes do servidor."""
+    print("Q12 — a busca acha a peça pelo nome de produção")
+    s = projeto("Sooro busca", tipo="ifc")
+    post(f"/api/projetos/{s}/modelo", {"documento": {"nome": "Sooro", "entidades": [
+        {"tipo": "barra", "id": i, "camada": "Vigas", "perfil": "U150X50X2.28", "inicio": [x, 0, 3000], "fim": [x, 6000, 3000],
+         "atributos": {"marcas": {"posicao": "M92"}}} for i, x in (("b1", 0), ("b2", 2000))]}})
+    det = os.path.join(_pasta_do_projeto(urllib.parse.unquote(s)), "detalhamento")
+    os.makedirs(det, exist_ok=True)
+    with open(os.path.join(det, "nomes.json"), "w", encoding="utf-8") as f:
+        json.dump({"posicoes": {"M92": "T.O.6"}, "ifc": {"M92": "T.O.6"}}, f)
+    aba.navegar(f"{base}/editor?projeto={s}", limite=60)
+    esperar(aba, "window.editor && window.editor.projeto && document.body.dataset.pronto === '1'", 60)
+    aba.avaliar("window.editor.pesquisarPecas('T.O.6'); 1")            # a 1ª pede os nomes ao servidor
+    achou = esperar(aba, "window.editor.pesquisarPecas('T.O.6').total === 2", 10)
+    rot = aba.avaliar("(window.editor.pesquisarPecas('T.O.6').grupos[0] || {}).chave") or ""
+    ok(achou and rot == "T.O.6 (M92)", f"a busca acha as 2 cópias da T.O.6 pelo nome de produção ({rot})")
+
+
 #: os blocos dos achados Q (IFC → pranchas), rodados depois dos P
-BLOCOS_Q = (q01_pdf_recusado_ver_no_3d,)
+BLOCOS_Q = (q01_pdf_recusado_ver_no_3d, q02_q03_dialogo_detalhar, q12_busca_pelo_nome_de_producao)
 
 
 chrome = next(c for c in CHROMES if os.path.exists(c)); cdp = _porta_livre(); perfil = tempfile.mkdtemp(prefix="verif_primeiro_uso_")

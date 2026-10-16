@@ -679,7 +679,9 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
 
     # ---- parafusos e fixadores, com o local de uso
     fixadores = _so_parafusos(_fixadores(doc))
-    parafusos = _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_conj, conj_info)
+    from nucleo2d.detalhar import projeto_recebido
+    parafusos = _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_conj, conj_info,
+                                     recebido=projeto_recebido(doc))
     n_parafusos = sum(p["qtd"] for p in parafusos if p["parafuso"])
 
     # ---- telhas: por trecho (cobertura, fechamento, forro) e código
@@ -741,7 +743,7 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
     }
 
 
-def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_conj, conj_info) -> List[dict]:
+def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_conj, conj_info, recebido: bool = False) -> List[dict]:
     """Cada tamanho de parafuso (e porca/arruela) com a quantidade e os locais de uso — o
     par de famílias das peças que ele atravessa (a peça é a que tem o furo em volta do eixo
     do fixador) e as peças envolvidas."""
@@ -789,8 +791,16 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
     contagem: Dict[str, dict] = collections.OrderedDict()
     # as porcas e arruelas soltas de ponta roscada saem no padrão da fábrica (1 porca + 2 arruelas por
     # ponta, na bitola da barra — pedido do usuário, 28/09), no local da barra; as outras, como estão
-    from nucleo2d.detalhe.base import pontas_roscadas, PORCAS_POR_PONTA, ARRUELAS_POR_PONTA
+    from nucleo2d.detalhe.base import (pontas_roscadas, PORCAS_POR_PONTA, ARRUELAS_POR_PONTA, PORCAS_POR_PERNA_CHUMBADOR,
+                                       ARRUELAS_POR_PERNA_CHUMBADOR)
     pontas, usados = pontas_roscadas(pecas, fixadores)
+    # o chumbador nunca na regra do parafuso (N07, decisão do usuário 16/10): no projeto recebido, as porcas e arruelas
+    # que o projetista pôs (contadas como estão); no nosso, 2 porcas + 1 arruela por perna
+    eh_chumbador = lambda pt: familia_peca(pt["peca"])[0] == "chumbador" or         tipos.get(str(_marcas(pt["peca"]).get("posicao") or pt["peca"].nome or "")) == "chumbador"     # noqa: E731
+    if recebido:
+        for pt in pontas:
+            if eh_chumbador(pt):
+                usados.difference_update(pt["fixadores"])
     for f in fixadores:
         if f.id in usados:
             continue
@@ -849,7 +859,12 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
     for pt in pontas:
         fam = familia_peca(pt["peca"])
         local = rotulos.get(fam[0], fam[0])
-        for chave, q in (("Porca %s" % (pt["bitola"] or "?"), PORCAS_POR_PONTA), ("Arruela %s" % (pt["bitola"] or "?"), ARRUELAS_POR_PONTA)):
+        n_porcas, n_arruelas = PORCAS_POR_PONTA, ARRUELAS_POR_PONTA
+        if eh_chumbador(pt):
+            if recebido:
+                continue                                        # as do modelo, contadas acima
+            n_porcas, n_arruelas = PORCAS_POR_PERNA_CHUMBADOR, ARRUELAS_POR_PERNA_CHUMBADOR
+        for chave, q in (("Porca %s" % (pt["bitola"] or "?"), n_porcas), ("Arruela %s" % (pt["bitola"] or "?"), n_arruelas)):
             r = contagem.setdefault(chave, {"parafuso": False, "qtd": 0, "locais": collections.OrderedDict(), "d": pt["d"]})
             r["qtd"] += q
             lr = r["locais"].setdefault(local, {"qtd": 0, "pecas": set(), "ids": []})

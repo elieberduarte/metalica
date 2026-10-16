@@ -893,20 +893,22 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     if "x0" in mq_:                              # os lado a lado: os dois até a faixa
                         mq_["y0"] = uy0 - FOLGA * 0.5
             # os detalhes: as chapas dos conjuntos da prancha; sem conjunto, as das mesmas categorias
-            comp_p = [x for c in cels_p for x in ((c.get("item") or {}).get("composicao") or [])
+            # (x, unidades): a composição é de UMA unidade do conjunto — a T1 03x leva 3 × 8 CH2 (Q04, primeiro uso
+            # 16/10: a 03/13 dizia "CH2 08x" com 3 tesouras, e quem somasse as pranchas fabricava errado)
+            comp_p = [(x, max(1, _quantidade_da_celula(c))) for c in cels_p for x in ((c.get("item") or {}).get("composicao") or [])
                       if str(x.get("classe") or "").startswith("chapa")]
-            alvo = {x["marca"] for x in comp_p}
+            alvo = {x["marca"] for x, _ in comp_p}
             cats_p = {c["categoria"] for c in cels_p}
-            nomes_alvo = {x["nome"] for x in comp_p}
+            nomes_alvo = {x["nome"] for x, _ in comp_p}
             if alvo:
                 # as chapas das tesouras e os chumbamentos delas ("CB1 + CH9"), cada uma com quantas estão
                 # desenhadas na prancha (pedido do usuário, 28/09: "a quantidade total vai na prancha da
                 # chaparia, aqui é quantas tem nessa prancha"): uma cópia do detalhe, e o de antes segue na fila
                 # para a prancha das chapas
                 por_marca, por_nome = collections.Counter(), collections.Counter()
-                for x in comp_p:
-                    por_marca[x["marca"]] += int(x.get("qtd") or 0)
-                    por_nome[x["nome"]] += int(x.get("qtd") or 0)
+                for x, unidades in comp_p:
+                    por_marca[x["marca"]] += int(x.get("qtd") or 0) * unidades
+                    por_nome[x["nome"]] += int(x.get("qtd") or 0) * unidades
                 candidatas, vistas_ch = [], set()
                 for c in itens:
                     if any(c is x for x in cels_p) or c.get("empilhada") or c.get("pai") is not None:
@@ -1235,6 +1237,15 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     onde.setdefault(str(mk), i_p)
             if c.get("montagem"):
                 onde.setdefault("montagem:" + c["montagem"], i_p)
+    for cels, leg_ in zip(pranchas, legendas):
+        ref_ = {}
+        for c in cels:
+            if c.get("local") and c.get("original") is not None:
+                ref_.update(_referencia_da_copia(c, onde, total))
+        if ref_:
+            # na legenda, cada cópia com o total da obra e a prancha em que é fabricada (Q04)
+            leg_["blocos"] = [(b_[0], [(n_, ("%s · %s" % (q_, ref_[n_])) if n_ in ref_ else q_) for n_, q_ in b_[1]])
+                              if b_[0].startswith("PARA MONTAR") else b_ for b_ in leg_["blocos"]]
     # a montagem de cada chapa ("CH9" -> "CB1 + CH9"): as chamadas apontam os chumbamentos nos apoios
     montagem_de = {pt: c["montagem"] for cels in pranchas for c in cels if _eh_chumbamento(c.get("montagem"))
                    for pt in c["montagem"].split(" + ")}
@@ -1530,7 +1541,7 @@ def _juntar_quase_vazias(pranchas: list, molduras: list, legendas: list, qx0: fl
             destino = None
             # a mais perto primeiro (a anterior, depois as de antes, depois as de depois): perto das outras da categoria
             for j in list(range(i - 1, -1, -1)) + list(range(i + 1, len(pranchas))):
-                if j == i or any(c["categoria"] == "LOCALIZACAO" or c.get("empilhada") for c in pranchas[j]):
+                if j == i or any(c.get("categoria") == "LOCALIZACAO" or c.get("empilhada") for c in pranchas[j]):
                     continue
                 # a quase vazia de antes ainda vai sair: recebendo este bloco, ficava cheia demais para sair e
                 # sobrava uma prancha misturada e rala (as terças sem furo com as últimas barras, 29/09)
@@ -2579,7 +2590,7 @@ def _blocos_da_legenda(cels: Sequence[dict], detalhes: Sequence[dict] = ()) -> L
     quantidade: as tesouras, as peças e os detalhes da faixa, com a quantidade desta prancha) e as
     SIGLAS que aparecem nela (as dos nomes, das peças das tesouras e dos detalhes). Pedido do usuário,
     28/09: "as legendas devem ser só dos elementos que estão nessa prancha, precisa reduzir bastante"."""
-    linhas, nomes = [], []
+    linhas, nomes, montar = [], [], []
     for c in list(cels) + list(detalhes):
         it = c.get("item") or {}
         nome = str(it.get("nome") or c.get("montagem") or c.get("marca") or "")
@@ -2612,11 +2623,15 @@ def _blocos_da_legenda(cels: Sequence[dict], detalhes: Sequence[dict] = ()) -> L
                 nome = "%s … %s" % (partes_n[0], partes_n[-1])
         q = _quantidade_da_celula(c)
         linha = (nome, "%02dx" % q if q else "")
-        if linha not in linhas:
-            linhas.append(linha)
+        # a cópia local (fabricada em outra prancha) vai no bloco PARA MONTAR (Q04)
+        destino = montar if c.get("local") else linhas
+        if linha not in destino:
+            destino.append(linha)
         nomes.append(nome)
         nomes += [x["nome"] for x in (it.get("composicao") or [])]
     blocos = [("NESTA PRANCHA", linhas)] if linhas else []
+    if montar:
+        blocos.append(("PARA MONTAR (fabricar em outra PR.)", montar))
     siglas = siglas_usadas(nomes)
     if _titulo_da_trelica(cels):
         siglas = [(s, "Viga caixote" if s == "T" else t) for s, t in siglas]
@@ -2652,6 +2667,31 @@ def _sem_recuo_lateral(c: dict) -> Optional[dict]:
     cc["w"], cc["h"] = (bx1 - bx0) / cc["k"], (by1 - by0) / cc["k"] + FAIXA
     _aplicar_arranjo(cc)
     return cc
+
+
+def _referencia_da_copia(c: dict, onde: Dict[str, int], total: int) -> Dict[str, str]:
+    """A cópia local diz o que ela é (Q04, primeiro uso 16/10: a mesma chapa em várias pranchas, "CH2 08x" nas tesouras
+    e "CH2 56x" nas chapas, e nada dizia que era cópia — quem somasse fabricava em dobro): o título ganha "(ref.)"
+    ("CH2 – 24x (ref.)") e devolve {nome na legenda: "total 56x: fabricar pela PR. 11/14"} para o bloco PARA MONTAR."""
+    orig = c["original"]
+    tot = _quantidade_da_celula(orig)
+    pr = onde.get("montagem:" + orig["montagem"]) if orig.get("montagem") else None
+    for mk in [orig.get("marca")] + list((orig.get("item") or {}).get("marcas") or []):
+        if pr is None and mk:
+            pr = onde.get(str(mk))
+    textos = [e for e in c["entidades"] if isinstance(e, Texto)]
+    if textos:
+        titulo = max(textos, key=lambda e: e.altura)
+        if "(ref.)" not in titulo.texto:
+            t2 = copy.copy(titulo)
+            t2.texto = re.sub(r"(–\s*\d+x)\s*$", lambda m_: m_.group(1) + " (ref.)", titulo.texto)
+            c["entidades"] = [t2 if e is titulo else e for e in c["entidades"]]
+            c.pop("_ents_escala0", None)
+    it = c.get("item") or {}
+    nome = _nome_da_celula(c, str(it.get("nome") or c.get("montagem") or c.get("marca") or ""))
+    if pr is None:
+        return {nome: "referência"}
+    return {nome: ("total %02dx: fabricar pela PR. %02d/%02d" % (tot, pr, total)) if tot else "fabricar pela PR. %02d/%02d" % (pr, total)}
 
 
 def _copia_local(c: dict, n: int) -> dict:
@@ -2693,6 +2733,9 @@ def _copia_local(c: dict, n: int) -> dict:
             e.camada = "CHAPAS-VISTA"
         ents.append(e)
     cc = dict(c, entidades=ents, local=True, qtd_local=n, original=original)
+    # a célula da família (fora dos itens) não tem categoria: a da original, senão a das chapas — sem ela a junção das
+    # pranchas quase vazias parava com KeyError 'categoria' (Depósito Químico: a cópia de "DP.1.1 + DP.1.2", 16/10)
+    cc.setdefault("categoria", original.get("categoria") or "CHAPAS")
     if c is not original and original.get("_para_copia") is c:
         # a célula da família: o lugar na montagem (categoria, ordem, item) é o da original
         for k_ in ("categoria", "_ordem", "item", "marca", "montagem", "chave", "titulo"):

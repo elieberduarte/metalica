@@ -155,6 +155,32 @@ def _cotas_da_terca(p: "_Papel", furos: Sequence[Furo], L: float, off: float, of
     return ("dupla", extra)
 
 
+def _nota_furos_da_terca(furos: Sequence[Furo], H: float) -> str:
+    """A altura dos furos da terça por escrito (Q05, primeiro uso 16/10: "a altura dos furos não está cotada" — e era o
+    passo de 60/80 do projeto × 50 da máquina que travava o PDF). A cadeia vertical fica de fora (decisão de 28/09: o par
+    é o da máquina, a cadeia só atrapalha); a nota diz o 1º furo a partir da base e o passo do par:
+    "furos na alma: 1º a 50 da base, par a 50 (passo da máquina)"."""
+    colunas: List[List[Furo]] = []
+    for f in sorted(furos, key=lambda f_: f_.x):
+        if colunas and f.x - colunas[-1][-1].x <= 2.0:
+            colunas[-1].append(f)
+        else:
+            colunas.append([f])
+    maquina = 50.0 if H <= 200.0 + 0.5 else 100.0
+    padroes: Dict[Tuple[int, int], int] = collections.Counter()
+    for c in colunas:
+        if len(c) >= 2:
+            ys = sorted(f.y for f in c)
+            padroes[(int(round(ys[0])), int(round(ys[-1] - ys[0])))] += 1
+    if not padroes:
+        return ""
+    partes = []
+    for (y1, passo), _n in padroes.most_common(3):
+        partes.append("1º a %d da base, par a %d (%s)" % (
+            y1, passo, "passo da máquina" if abs(passo - maquina) <= 0.5 else "fora do passo da máquina: %g" % maquina))
+    return "furos na alma: " + "; ".join(partes)
+
+
 #: Na terça, quanto a linha dos furos simples e a total descem a mais (mm de papel).
 FOLGA_COTA_TERCA = 6.0
 #: Na terça, a distância entre as linhas de cota — simples, duplos, total (mm de papel).
@@ -256,12 +282,19 @@ def desenho_de_tercas_sem_furo(posicoes: Sequence[Posicao], chave: str, desenho:
     p.cota_v(0, H, L, off)                            # a altura; a seção não vai (o perfil está no título)
     ordem = sorted(posicoes, key=lambda q: _ordem_natural(q.nome or q.marca))
     for k, q in enumerate(ordem):
-        p.cota_h(0, L, 0, -(off + passo * k), texto="%s COMP=%dmm – %02dx" % (q.nome or q.marca, round(q.comprimento), q.quantidade))
+        p.cota_h(0, L, 0, -(off + passo * k), texto="%s COMP=%dmm – %02dx%s" % (q.nome or q.marca, round(q.comprimento), q.quantidade,
+                                                                              "  PREVER EMENDA" if acima_da_barra_comercial(q) else ""))
     total = sum(q.quantidade for q in ordem)
     peso = sum(float(q.peso_total or 0.0) for q in ordem)
     linhas = ["%s – %02dx   (sem furo)" % (", ".join(q.nome or q.marca for q in ordem), total),
               com_bitola_e_mm(maior.perfil),
               "total %s kg" % _mm(peso, 1)]
+    longas = [q.nome or q.marca for q in ordem if acima_da_barra_comercial(q)]
+    if longas:
+        # a célula típica também avisa (Q07, primeiro uso 16/10: a A.T.1 de 29,4 m saiu sem "prever emenda")
+        from saida.lista_producao import BARRAS_COMERCIAIS
+        linhas.append("%s maior%s que a barra comercial de %s m: prever emenda" % (
+            ", ".join(longas), "es" if len(longas) > 1 else "", _mm(max(BARRAS_COMERCIAIS) / 1000.0)))
     y = H + (off + 2.0) * esc
     atr0 = p.atr
     for i, txt in enumerate(reversed(linhas)):
@@ -383,6 +416,8 @@ def _ponto_da_dobra(pos: Posicao) -> Optional[float]:
 ARESTA_INCLINADA = 0.25
 #: Aresta menor que isto (mm) não se cota (o chanfro do canto; nas chapas pequenas os números encavalavam).
 MENOR_ARESTA_COTADA = 30.0
+#: O menor chanfro cotado (mm): abaixo disso é aresta de malha, não corte.
+MENOR_CHANFRO = 3.0
 
 
 def _cotas_das_arestas(p, contorno, L: float, H: float) -> int:
@@ -400,18 +435,42 @@ def _cotas_das_arestas(p, contorno, L: float, H: float) -> int:
         dx, dy = b[0] - a[0], b[1] - a[1]
         c = math.hypot(dx, dy)
         return c > 1e-6 and abs(dx) > 0.02 * c and abs(dy) > 0.02 * c
-    if not any(inclinada(a, b) and math.dist(a, b) > ARESTA_INCLINADA * maior for a, b in arestas):
-        return 0
     area = sum(a[0] * b[1] - b[0] * a[1] for a, b in arestas) / 2.0
     fora = -1.0 if area > 0 else 1.0               # anti-horário: o lado de fora é a direita de a→b
     postas = 0
+    grande = any(inclinada(a, b) and math.dist(a, b) > ARESTA_INCLINADA * maior for a, b in arestas)
+    # o chanfro (o canto cortado, pequeno): os catetos, "20×20" (Q06, primeiro uso 16/10: a CH2 tinha os quatro cantos
+    # cortados sem medida); os iguais numa cota só, no de cima à esquerda: "4x 20×20"
+    chanfros: Dict[Tuple[int, int], list] = collections.defaultdict(list)
+    for a, b in arestas:
+        c = math.dist(a, b)
+        if inclinada(a, b) and MENOR_CHANFRO <= c < max(MENOR_ARESTA_COTADA, ARESTA_INCLINADA * maior if not grande else 0.0):
+            catetos = tuple(sorted((int(round(abs(b[0] - a[0]))), int(round(abs(b[1] - a[1]))))))
+            chanfros[catetos].append((a, b))
+    for (c1, c2), lados in chanfros.items():
+        a, b = max(lados, key=lambda ab: (ab[0][1] + ab[1][1]) - 0.001 * (ab[0][0] + ab[1][0]))
+        p.d.add(Cota(modo="alinhada", p1=p._p(*a), p2=p._p(*b), deslocamento=fora * 4.0,
+                     texto=("%dx " % len(lados) if len(lados) > 1 else "") + "%d×%d" % (c1, c2), atributos=dict(p.atr)))
+        postas += 1
+    if not grande:
+        return postas
     for a, b in arestas:
         c = math.dist(a, b)
         if c < MENOR_ARESTA_COTADA:
+            if not inclinada(a, b) and c >= MENOR_CHANFRO:
+                # a ponta truncada da cunha (Q06: a CH1 e a CH4 sem a medida da ponta): o lado curto reto também
+                p.d.add(Cota(modo="alinhada", p1=p._p(*a), p2=p._p(*b), deslocamento=fora * 6.0,
+                             texto="%d" % round(c), atributos=dict(p.atr)))
+                postas += 1
             continue
         dx, dy = b[0] - a[0], b[1] - a[1]
         if not inclinada(a, b):
-            continue                                # as horizontais e verticais: pelas cotas da caixa
+            if c < 0.98 * (abs(L) if abs(dy) < abs(dx) else abs(H)):
+                # o lado reto que não vai de ponta a ponta (a ponta da cunha): a caixa não o mede (Q06)
+                p.d.add(Cota(modo="alinhada", p1=p._p(*a), p2=p._p(*b), deslocamento=fora * 6.0,
+                             texto="%d" % round(c), atributos=dict(p.atr)))
+                postas += 1
+            continue                                # as horizontais e verticais de ponta a ponta: pelas cotas da caixa
         p.d.add(Cota(modo="alinhada", p1=p._p(*a), p2=p._p(*b), deslocamento=fora * 6.0,
                      texto="%d" % round(c), atributos=dict(p.atr)))
         ux, uy = dx / c, dy / c
@@ -516,6 +575,12 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
         p.cota_h(c0, c1, 0, -(off3 if cadeia == "dupla" else off2 if cadeia else off))
     # na terça a altura dos furos é o padrão da máquina de corte (50 ou 100 mm): a cadeia
     # vertical só atrapalha; ficam a altura da peça e as cotas horizontais
+    if terca and xs:
+        # a altura dos furos por escrito, abaixo das cotas (Q05)
+        nota = _nota_furos_da_terca(furos_frente, H)
+        if nota:
+            fundo = (off + PASSO_COTA_TERCA * (cadeia[1] + 2)) if isinstance(cadeia, tuple) else                     (off + PASSO_COTA_TERCA) if cadeia is True else max(off, off2)
+            p.texto(0, -(fundo + 6.0) * esc, nota, 2.0 * esc)
     cadeia = bool(ys) and not terca and p.cadeia_v([0.0] + ys + [H], L, off, exigir_espaco=False)
     desl_alt = off3 if cadeia == "dupla" else off2 if cadeia else off
     p.cota_v(0, H, x_alt, lado_alt * desl_alt)
@@ -582,7 +647,14 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
             u_k = _ponto_da_dobra(pos)
             if u_k is not None:
                 p.cadeia_h([0.0, u_k, L], y_topo + w_min, -off, exigir_espaco=False)
-        p.cota_v(y_topo + w_min, y_topo + w_max, L, off)
+        if furos_topo:
+            # o furo da aba até a quina e até a borda (o gabarito, Q06, primeiro uso 16/10: na CH13 e na CH14 o furo só
+            # tinha a cota no comprimento), e a largura da aba por fora
+            p.cadeia_v([y_topo + w_min] + sorted({round(y_topo + f.y, 1) for f in furos_topo}) + [y_topo + w_max], L, off,
+                       exigir_espaco=False)
+            p.cota_v(y_topo + w_min, y_topo + w_max, L, off2)
+        else:
+            p.cota_v(y_topo + w_min, y_topo + w_max, L, off)
         # o nome embaixo da vista e das cotas dela, como título da vista (o usuário o desceu à mão na CH15 e na CH16
         # da Sala, 01/10); em cima ele ficava entre as duas vistas e parecia da de frente
         y_pe = min([q[1] - p.dy for q in p.pontos[n_pts:]] + [y_topo + w_min])
@@ -601,7 +673,9 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
         _vista(p, pos, (0, 2), 1, +1.0, 0, y_baixo, _arestas_dos_furos(pos, 1, +1.0, (0, 2)))
         _desenhar_furos(p, est, furos_baixo, 0, y_baixo)
         p.cadeia_h([0.0] + sorted({round(f.x, 1) for f in furos_baixo}) + [L], y_baixo + w_min, -off, exigir_espaco=False)
-        p.cota_v(y_baixo + w_min, y_baixo + w_max, L, off)
+        p.cadeia_v([y_baixo + w_min] + sorted({round(y_baixo + f.y, 1) for f in furos_baixo}) + [y_baixo + w_max], L, off,
+                   exigir_espaco=False)                     # o gabarito do furo (Q06)
+        p.cota_v(y_baixo + w_min, y_baixo + w_max, L, off2)
         y_pe = min([q[1] - p.dy for q in p.pontos[n_pts:]] + [y_baixo + w_min])
         p.texto(0, y_pe - 4.5 * esc, "MESA DE BAIXO (vista por cima) – %s" % (pos.nome or pos.marca), 2.0 * esc)
 

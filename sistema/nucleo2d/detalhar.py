@@ -625,6 +625,15 @@ def _unidade_pela_maioria(total: collections.Counter, fracao: float = 0.8):
     return None
 
 
+def projeto_recebido(doc: Documento) -> bool:
+    """O modelo veio pronto do projetista (IFC importado, ou o projeto recebido em DXF/PDF): as porcas e arruelas do
+    chumbador ficam como ele pôs (N07, decisão do usuário 16/10). `metadados.origem_projeto` ("recebido" | "nosso"),
+    que o servidor marca pelo tipo do projeto; sem ele, o modelo importado de IFC é recebido."""
+    m = getattr(doc, "metadados", None) or {}
+    o = m.get("origem_projeto")
+    return o == "recebido" if o else bool(m.get("importacao"))
+
+
 def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Optional[dict] = None,
              nomes: Optional[dict] = None, regra_so_maquina: bool = False) -> dict:
     """Só o levantamento: as peças de produção do modelo agrupadas em posições, com a
@@ -663,7 +672,7 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
     # as porcas e arruelas soltas no padrão da fábrica: 1 porca + 2 arruelas por ponta roscada
     try:
         from nucleo2d.detalhe.base import acessorios_no_padrao
-        acessorios = acessorios_no_padrao(acessorios, pecas, _fixadores(doc))
+        acessorios = acessorios_no_padrao(acessorios, pecas, _fixadores(doc), recebido=projeto_recebido(doc))
     except Exception as exc:                        # noqa: BLE001 — a contagem não derruba o levantamento
         avisos_lev.append("porcas e arruelas soltas contadas como no modelo (o padrão 1 porca + 2 arruelas "
                           "por ponta roscada não foi aplicado: %s)" % exc)

@@ -504,6 +504,8 @@ def acao_de_projeto(s: str, acao: str, corpo: dict) -> dict:
         r = g.restaurar_modelo(s, corpo.get("arquivo"))
         r["alterado"] = _alterado_modelo(s)
         return r
+    if acao == "desfazer-detalhar":
+        return desfazer_detalhamento(s, corpo)
     raise ErroDeDados("ação desconhecida para o projeto: " + acao)
 
 
@@ -1109,7 +1111,7 @@ def _padronizar_3d(s: str, doc, regra: bool = True, converter: bool = False) -> 
     from nucleo2d import detalhar as det
     from nucleo2d.detalhe.base import _marcas
     from nucleo2d.detalhe.celulas import ajustar_suportes_as_tercas
-    out = {"mudou": False, "posicoes": set(), "avisos": [], "convertidas": 0}
+    out = {"mudou": False, "posicoes": set(), "avisos": [], "convertidas": 0, "etapas": []}
     antes = _impressao_das_pecas(doc)
 
     def marcou(n, posicoes=()):
@@ -1127,6 +1129,14 @@ def _padronizar_3d(s: str, doc, regra: bool = True, converter: bool = False) -> 
         out["avisos"].append(re_["aviso"])
     ra = _alinhar_furos_das_barras(s, doc, gravar=False)
     rr, ro = ra.get("retirados") or {}, ra.get("oblongados") or {}
+    # o que cada etapa fez, para o "O que o detalhamento mudou no 3D" (Q02, primeiro uso 16/10: nenhuma tela dizia)
+    if ra.get("furos"):
+        out["etapas"].append("%d furo(s) de %d terça(s)/barra(s) levados ao lugar dos furos das chapas e dos parafusos"
+                             % (ra["furos"], ra.get("barras") or 0))
+    if rr.get("furos"):
+        out["etapas"].append("%d furo(s) sem parafuso nem barra retirados de %d terça(s)" % (rr["furos"], rr.get("barras") or 0))
+    if ro.get("furos"):
+        out["etapas"].append("%d furo(s) de terças e das chapas parafusadas nelas viraram oblongos 25×13" % ro["furos"])
     marcou(ra.get("barras") or rr.get("furos") or rr.get("limpas") or ro.get("furos") or ro.get("chapas"), ra.get("posicoes"))
     tipos_ = (_nomes_producao(s) or {}).get("tipos") or _tipos_de_producao(s, doc)
     marcas_ = lambda f: {m.strip() for k, t in tipos_.items() if f(str(t)) for m in str(k).split("/")}  # noqa: E731
@@ -1136,6 +1146,7 @@ def _padronizar_3d(s: str, doc, regra: bool = True, converter: bool = False) -> 
         det.alinhar_furos_das_barras_as_chapas(doc)
         out["avisos"].append("suporte de terça na furação da máquina (50 mm no eixo da terça): %d chapa(s): %s"
                              % (sup["chapas"], ", ".join(sup["posicoes"][:12])))
+        out["etapas"].append("%d suporte(s) de terça com o par de furos no passo da máquina" % sup["chapas"])
     marcou(sup["chapas"], sup["posicoes"])
     if regra:
         _progresso(s, "furação da máquina nas chapas de ligação…")
@@ -1145,6 +1156,7 @@ def _padronizar_3d(s: str, doc, regra: bool = True, converter: bool = False) -> 
             det.alinhar_furos_das_barras_as_chapas(doc)
             out["avisos"].append("furação da máquina aplicada no 3D a %d chapa(s): %s"
                                  % (padr["chapas"], ", ".join(padr["posicoes"][:12])))
+            out["etapas"].append("%d chapa(s) de ligação das terças com a furação no passo da máquina" % padr["chapas"])
         marcou(padr["chapas"], padr["posicoes"])
     else:
         padr = {"chapas": 0}
@@ -1160,6 +1172,20 @@ def _padronizar_3d(s: str, doc, regra: bool = True, converter: bool = False) -> 
     out["posicoes"] = sorted({str(_marcas(doc.entidades[i]).get("posicao") or doc.entidades[i].nome or i)
                               for i in mudadas if i in doc.entidades})
     return out
+
+
+def desfazer_detalhamento(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/desfazer-detalhar {arquivo}: o "Desfazer" do fim do Detalhar (Q02, primeiro uso 16/10). O
+    3D volta à versão de antes (`arquivo`, a do histórico que o Detalhar devolveu em mudancas_3d.desfazer; a atual fica
+    no histórico) e a atualização automática fica parada — senão refaria o padrão de fábrica na hora. Os desenhos são
+    os do 3D padronizado: as pranchas não saem até o próximo Detalhar (o padrão vence: é a regra da fábrica)."""
+    g = _gerente()
+    with _vivos().trava(s):
+        r = g.restaurar_modelo(s, corpo.get("arquivo"))
+        _vivos().gravar_carimbo(s, completo=False, extra={"desfeito": {"quando": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                                                      "arquivo": r.get("restaurado")}})
+    r["alterado"] = _alterado_modelo(s)
+    return r
 
 
 def _com_as_ligadas(doc, fora: list) -> list:
@@ -1200,14 +1226,35 @@ def _com_as_ligadas(doc, fora: list) -> list:
     return fora
 
 
+#: as opções do Detalhar guardadas no projeto (projeto.json "opcoes_detalhamento", Q03)
+OPCOES_DETALHAMENTO = ("regra_tercas", "rotular", "converter")
+
+
+def _marcar_origem(s: str, doc) -> None:
+    """De onde veio o projeto, para a lista de materiais (N07, decisão do usuário 16/10): o que veio pronto do projetista
+    (IFC, ou o projeto recebido em DXF/PDF) segue as porcas e arruelas dele no chumbador; o nosso, 2 porcas + 1 arruela
+    por perna (nucleo2d.detalhar.projeto_recebido)."""
+    doc.metadados["origem_projeto"] = "recebido" if _gerente().ler(s).get("tipo") in ("ifc", "recebido") else "nosso"
+
+
 def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, lista_producao) -> dict:
     _progresso(s, "abrindo o modelo…")
     doc = _documento3d_do_projeto(s)
+    _marcar_origem(s, doc)
     # O 3D é a peça (regra combinada com o usuário, 02/10): as regras de fábrica vão para o modelo e são gravadas
     # nele (_padronizar_3d); o desenho só mostra o que o 3D tem, sem regra própria. A atualização automática também
     # grava — menos com o editor 3D aberto no projeto, que perderia a edição dele: aí o desenho sai do 3D como está
     # e o que falta fica apontado para o editor aplicar (pendente_3d, botão "Aplicar no 3D").
     automatico = bool(corpo.get("automatico"))
+    # as opções do diálogo (rotular, chapas de ligação no passo, converter) são do projeto: a atualização automática
+    # usa as mesmas, e o diálogo abre com elas (Q03, primeiro uso 16/10: dois minutos depois do Detalhar com "Rotular",
+    # a atualização refez tudo com os padrões e as pranchas saíram sem rótulo)
+    if automatico:
+        corpo = dict(g.ler(s).get("opcoes_detalhamento") or {}, **corpo)
+    else:
+        opcoes = {k: bool(corpo[k]) for k in OPCOES_DETALHAMENTO if k in corpo}
+        if opcoes:
+            g.tocar(s, opcoes_detalhamento=dict(g.ler(s).get("opcoes_detalhamento") or {}, **opcoes))
     gravar = not automatico or not _vivos().editor_aberto(s)
     import copy as _copy
     alvo = doc if gravar else _copy.deepcopy(doc)
@@ -1234,6 +1281,15 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
         _progresso(s, "gravando o modelo…")
         try:
             _regravar_modelo(s, doc)
+            if padr3d["mudou"] and not automatico:
+                # a versão de antes (o marco que a gravação acabou de guardar): o Desfazer volta a ela (Q02)
+                hist = g.listar_historico(s)
+                nomes_ifc = (r.get("nomes") or {}).get("ifc") or {}
+                r["mudancas_3d"] = {
+                    "posicoes": ["%s (%s)" % (nomes_ifc[m], m) if nomes_ifc.get(m) and nomes_ifc[m] != m else m
+                                 for m in padr3d["posicoes"]],
+                    "etapas": padr3d["etapas"], "convertidas": padr3d["convertidas"],
+                    "desfazer": hist[0]["arquivo"] if hist else None}
         except ModeloMudouNoMeio:
             # o desenho vale (saiu do 3D corrigido na memória), mas o 3D não recebeu: fica pendente
             pendente = {"posicoes": padr3d["posicoes"], "quando": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -1333,11 +1389,13 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     # o carimbo do que foi usado (modelo, código, furação, eixos): mudou, os desenhos se refazem sozinhos
     _vivos().gravar_carimbo(s, geracoes, completo=set(grupos) >= set(GRUPOS.keys()), extra={"pendente_3d": r.get("pendente_3d") or {},
                                                                                     "fora_da_maquina": r.get("fora_da_maquina") or [],
-                                                                                    "fora_da_maquina_pecas": r.get("fora_da_maquina_pecas") or []})
+                                                                                    "fora_da_maquina_pecas": r.get("fora_da_maquina_pecas") or [],
+                                                                                    "desfeito": None})
     g.tocar(s)
     return {"desenhos": desenhos, "posicoes": len(r["posicoes"]), "conjuntos": len(r["conjuntos"]),
             "pecas": sum(p["quantidade"] for p in r["posicoes"]), "peso_total": r["peso_total"],
             "regra_tercas": r["regra_tercas"], "avisos": r["avisos"], "convertidas": r.get("convertidas", 0),
+            "mudancas_3d": r.get("mudancas_3d"),
             "romaneio": _descrever_arquivo(arquivos["romaneio"], pasta) if arquivos.get("romaneio") else None,
             "materiais": {k: _descrever_arquivo(v, pasta) for k, v in arquivos.items()}}
 
@@ -2778,6 +2836,7 @@ def gerar_resumos_projeto(s: str, corpo: dict, porta: Optional[int] = None) -> d
     try:
         _progresso(s, "levantando as peças do modelo…")
         doc = _documento3d_do_projeto(s)
+        _marcar_origem(s, doc)                         # as porcas do chumbador: recebido × nosso (N07)
         r = detalhar(doc, grupos=["localizacao"], nomes=_nomes_producao(s), converter=False, ajustes=_ajustes_furos(s),
                      avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
         nomes = r.get("nomes") or {}
@@ -2924,6 +2983,7 @@ def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] =
             lista = json.load(f)
     else:
         doc = _documento3d_do_projeto(s)
+        _marcar_origem(s, doc)
         nomes = _nomes_producao(s)
         lev = levantar(doc, regra_tercas=corpo.get("regra_tercas", True) is not False, ajustes=_ajustes_furos(s), nomes=nomes)
         lista = lista_producao.montar(lev["posicoes"], lev["categorias"], lev["acessorios"], pecas=lev["pecas"],
@@ -4304,6 +4364,9 @@ def _conferir_para_emitir(s: str, desenhos) -> None:
     if motivo or (vivos.estado(s, conferir=False) or {}).get("atualizando"):
         falta.append("os desenhos estão sendo atualizados com o 3D (%s): espere terminar" % (motivo or "atualização em andamento"))
     c = vivos.ler_carimbo(s)
+    if c.get("desfeito"):
+        falta.append("o Detalhar foi desfeito (o 3D voltou à versão de antes dele) e os desenhos não são do 3D atual: "
+                     "Detalhar de novo")
     pend = (c.get("pendente_3d") or {}).get("posicoes") or []
     if pend:
         falta.append("o padrão de fábrica ainda não foi gravado no 3D em %d posição(ões) (%s): use \"Aplicar no 3D\" no "
@@ -4635,6 +4698,8 @@ def conferir_modelo(corpo: dict) -> dict:
         doc = _documento_de(corpo)
         s = str(corpo.get("projeto") or "")
         com_fabrica = "producao" in quais and s and os.path.isdir(os.path.join(PROJETOS, s))
+        if s and os.path.isdir(os.path.join(PROJETOS, s)):
+            _nomes_no_modelo(doc, _nomes_producao(s) or {})        # os nomes das pranchas nos achados (Q12)
         r = conferencia_producao.conferir(doc, quais=quais, ids=corpo.get("ids") or None,
                                           progresso=(lambda f, e: progresso(0.85 * f, e) if f < 1.0 else None) if com_fabrica else progresso)
         if com_fabrica:
@@ -4646,6 +4711,22 @@ def conferir_modelo(corpo: dict) -> dict:
         return r
     finally:
         _PROGRESSO_CONFERENCIA.pop(tarefa, None)
+
+
+def nomes_producao_do_projeto(s: str) -> dict:
+    """GET /api/projetos/<s>/nomes-producao: {posicoes: {marca do IFC: nome de produção}, conjuntos: {...}} — a busca do
+    3D acha "T.O.6" mesmo com o editor aberto antes do Detalhar (Q12, primeiro uso 16/10: o Ctrl+K dizia "Nada com esse
+    nome" para o nome que o aviso e o erro do PDF mostravam)."""
+    n = _nomes_producao(s) or {}
+
+    def por_marca(d):
+        out = {}
+        for k, v in (d or {}).items():
+            for m in str(k).split("/"):
+                if m.strip():
+                    out[m.strip()] = v
+        return out
+    return {"posicoes": por_marca(n.get("ifc") or n.get("posicoes")), "conjuntos": por_marca(n.get("ifc_conjuntos") or n.get("conjuntos"))}
 
 
 def _conferir_fabrica(s: str, doc) -> list:
@@ -5151,6 +5232,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._modelo_leve(partes[0], partes[2:])
                 if len(partes) == 2 and partes[1] == "historico":
                     return self._json({"historico": _gerente().listar_historico(partes[0])})
+                if len(partes) == 2 and partes[1] == "nomes-producao":
+                    return self._json(nomes_producao_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "exportar":
                     q = parse_qs(urlparse(self.path).query)
                     r = exportar_projeto(partes[0], (q.get("historico") or ["0"])[0] in ("1", "true"),

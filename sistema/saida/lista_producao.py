@@ -423,6 +423,49 @@ def comparar_dobras(perfis: Sequence[dict]) -> dict:
                      "(linha média, como a NBR 6355): ≈ %.2f·t" % (dobras.RAIO_INTERNO, dobras.FATOR_K, dobras.desconto_por_dobra(1.0))}
 
 
+#: O parafuso como o IFC do TecnoMETAL o chama: "BOLT (A) 12x30", "BOLT (A325) 16x50" (a classe, quando vem).
+_RE_BOLT_IFC = re.compile(r"^\s*BOLT\s*\(([^)]*)\)\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+)\s*$", re.I)
+
+
+def acessorios_da_lista(acessorios: Dict[str, int]) -> List[dict]:
+    """Os acessórios da lista com o parafuso por extenso (Q08, primeiro uso 16/10: "BOLT (A) 12x30 264", sem classe,
+    norma nem porca): "Parafuso sextavado Ø1/2" x 1.1/4" ASTM A307 + porca e arruela" — a mesma descrição e a mesma regra
+    da classe do resumo de compras (saida/resumos.descricao_parafuso: a do modelo quando o nome a traz, senão A325 a
+    partir de Ø16 × 50 e A307 abaixo) — e a porca e a arruela de cada parafuso contadas em linhas próprias. [{nome,
+    quantidade, origem?}]."""
+    from saida.resumos import descricao_parafuso
+    fora: Dict[str, dict] = collections.OrderedDict()
+
+    def somar(nome, n, origem=None):
+        it = fora.setdefault(nome, {"nome": nome, "quantidade": 0})
+        it["quantidade"] += n
+        if origem:
+            it.setdefault("origem", [])
+            if origem not in it["origem"]:
+                it["origem"].append(origem)
+    porcas: Dict[str, int] = collections.Counter()
+    for nome, n in sorted((acessorios or {}).items()):
+        m = _RE_BOLT_IFC.match(str(nome))
+        if not m:
+            somar(nome, n)
+            continue
+        classe = m.group(1).strip().upper().replace("ASTM", "").replace(" ", "")
+        classe = classe if re.match(r"^(A\d{3}|\d+\.\d)$", classe) else None
+        _curto, desc, d = descricao_parafuso("M%s x %s" % (m.group(2).replace(",", "."), m.group(3)), classe)
+        # o do modelo (métrico) com a classe, e o equivalente da compra em polegada como o resumo de compras o pede
+        mc = re.search(r"Ø(\S+) x (\S+) ASTM (\S+)", desc)
+        if mc and d:
+            desc = "Parafuso sextavado M%g x %s – ASTM %s (na compra: Ø%s x %s) + porca e arruela" % (
+                d, m.group(3), mc.group(3), mc.group(1), mc.group(2))
+        somar(desc, n, nome)
+        if d:
+            porcas["M%g" % d] += n
+    for bitola, n in sorted(porcas.items()):
+        somar("Porca sextavada %s (dos parafusos)" % bitola, n)
+        somar("Arruela lisa %s (dos parafusos)" % bitola, n)
+    return [dict(it, origem=", ".join(it["origem"])) if it.get("origem") else it for it in fora.values()]
+
+
 def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: Dict[str, int],
            pecas=None, barra: float = 0.0, projeto: Optional[dict] = None,
            nomes_conjuntos: Optional[Dict[str, str]] = None, escolhas: Optional[Dict[str, str]] = None,
@@ -685,7 +728,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         "conjuntos": conjuntos,
         "soldas": soldas,
         "soldas_obra": soldas_obra,
-        "acessorios": [{"nome": k, "quantidade": v} for k, v in sorted((acessorios or {}).items())],
+        "acessorios": acessorios_da_lista(acessorios),
         "ressalvas": ressalvas,
     }
 

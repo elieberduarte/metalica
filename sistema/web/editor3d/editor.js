@@ -1843,7 +1843,7 @@ export class Editor {
 
   async dialogoDetalharPecas() {
     if (!this.projeto) { this.aviso('Abra o modelo por um projeto (gerenciador) para detalhar.', 'atencao'); return; }
-    const grupos = [['tesouras', 'Tesouras (com as barras e chapas delas)'], ['conjuntos', 'Conjuntos (vigas, pilares e outros)'], ['tercas', 'Terças (com suportes e chapas)'], ['contraventamentos', 'Contraventamentos (com tirantes e peças de ponta)'], ['agulhamentos', 'Agulhamentos'], ['extras', 'Extras (perfil de forro, de fechamento, barras soltas)'], ['telhas', 'Telhas'], ['chaparias', 'Chaparias (todas as chapas, 1:10)'], ['localizacao', 'Planta de localização (marcas no lugar de montagem, com os eixos)'], ['chumbacao', 'Planta de chumbação (chumbadores e chapas de base nos eixos)'], ['completo', 'Desenho completo (tudo num desenho só, 1:25)']];
+    const grupos = [['tesouras', 'Tesouras (com as barras e chapas delas)'], ['conjuntos', 'Conjuntos (vigas, pilares e outros)'], ['tercas', 'Terças (com suportes e chapas)'], ['contraventamentos', 'Contraventamentos (com tirantes e peças de ponta)'], ['agulhamentos', 'Agulhamentos'], ['extras', 'Extras (perfil de forro, de fechamento, barras soltas)'], ['telhas', 'Telhas'], ['chaparias', 'Chaparias (todas as chapas, 1:10)'], ['localizacao', 'Planta de localização (marcas no lugar de montagem, com os eixos)'], ['chumbacao', 'Planta de chumbação (chumbadores e chapas de base nos eixos)'], ['elevacoes', 'Elevações (as filas de pilares e as fachadas, com as marcas)'], ['completo', 'Desenho completo (tudo num desenho só, 1:25)']];
     const caixas = {};
     const grade = el('div', { class: 'campos' });
     for (const [k] of grupos) caixas[k] = el('input', { type: 'checkbox', checked: 'checked' });
@@ -1863,12 +1863,23 @@ export class Editor {
     const rotular = el('input', { type: 'checkbox' });
     const converter = el('input', { type: 'checkbox', checked: 'checked' });
     const substituir = el('input', { type: 'checkbox', checked: 'checked' });
-    grade.append(el('label', { texto: 'Furação das terças no padrão da fábrica', title: 'Terça com menos de 200 mm: furos a 50 mm na vertical e 60 na horizontal; com 200 mm ou mais: 100 × 60. Vale para os suportes com a mesma furação.' }), regra,
+    // as opções são do projeto: o diálogo abre com as do último Detalhar, e a atualização automática usa as mesmas (Q03)
+    try {
+      const pj = await (await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}`)).json();
+      const op = (pj.projeto || pj || {}).opcoes_detalhamento || {};
+      if (typeof op.regra_tercas === 'boolean') regra.checked = op.regra_tercas;
+      if (typeof op.rotular === 'boolean') rotular.checked = op.rotular;
+      if (typeof op.converter === 'boolean') converter.checked = op.converter;
+    } catch { /* sem o projeto, os padrões */ }
+    // o nome diz o que a caixa faz: o resto do padrão de fábrica vale sempre (Q02, primeiro uso 16/10 — "desliguei a
+    // regra e mexeu na furação mesmo assim"; decisão do usuário: o padrão da máquina vence o projeto)
+    grade.append(el('label', { texto: 'Chapas de ligação das terças no passo da máquina', title: 'Leva também as chapas de ligação das terças (as que não são suporte) à furação da máquina: par a 50 mm na altura até 200 mm, 100 acima. O resto do padrão de fábrica vale sempre.' }), regra,
                  el('label', { texto: 'Rotular posições nos conjuntos', title: 'Escreve o nome de cada barra ao lado dela na elevação da tesoura. Desligado por padrão: a fábrica gabarita a tesoura e mede peça a peça.' }), rotular,
                  el('label', { texto: 'Chapas planas viram chapas paramétricas no 3D', title: 'Furos e tamanho da chapa ficam editáveis no desenho. Desligado, a chapa continua o sólido que veio do IFC.' }), converter,
                  el('label', { texto: 'Substituir os desenhos de detalhamento anteriores' }), substituir);
     const corpo = el('div', {},
       el('p', { class: 'explica', texto: 'Cada posição (marca de peça do IFC) vira uma célula com título "P12 – 112x", perfil ou chapa, contorno, furos e cotas; as peças iguais são contadas, não repetidas. Cada conjunto (marca de montagem) vira uma elevação com a cadeia de cotas dos nós e a lista de perfis. Sai também o romaneio em detalhamento/romaneio.csv.' }),
+      el('p', { class: 'explica padrao-fabrica', texto: 'O padrão de fábrica vai para o 3D sempre (a máquina manda sobre o projeto): furo de terça sem parafuso nem barra sai, os furos das terças e das chapas parafusadas nelas viram oblongos 25×13, e o suporte de terça fica com o par no passo da máquina (50 mm até 200 de altura, 100 acima). No fim aparece o que mudou no 3D, com Desfazer.' }),
       grade);
     if (await this.dialogo({ titulo: 'Detalhar peças e conjuntos', corpo, ok: 'Detalhar e abrir' }) !== 'ok') return;
     const escolhidos = grupos.map(([k]) => k).filter(k => caixas[k].checked);
@@ -1890,10 +1901,41 @@ export class Editor {
                  (j.avisos && j.avisos.length ? ` ${j.avisos.length} aviso(s) no relatório.` : ''), 'info', 15000);
       parar();
       this.dica('Detalhamento pronto.');
+      // o que o padrão de fábrica mudou no 3D, com o Desfazer, antes de ir aos desenhos (Q02)
+      if (j.mudancas_3d && (j.mudancas_3d.posicoes || []).length && await this._mudancasDoDetalhar(j.mudancas_3d) === 'desfeito') return;
       // abre no desenho completo (pedido do usuário, 28/09); sem ele, no primeiro gerado
       const abrir = j.desenhos.find(d => d.grupo === 'completo') || j.desenhos[0];
       if (abrir) this._abrirCAD(abrir.nome);
     } catch (e) { parar(); this.aviso(`Não foi possível detalhar: ${e.message}`, 'erro', 0); this.dica(''); }
+  }
+
+  /** "O que o detalhamento mudou no 3D" (Q02, primeiro uso 16/10): as etapas do padrão de fábrica e as posições
+   *  mexidas, com "Desfazer", que volta o 3D à versão de antes do Detalhar (POST desfazer-detalhar). Devolve
+   *  'desfeito' quando desfez. */
+  async _mudancasDoDetalhar(m) {
+    let desfazer = false;
+    const pos = m.posicoes || [];
+    const corpo = el('div', { class: 'mudancas-3d' },
+      el('p', { class: 'explica', texto: `O padrão de fábrica foi gravado no 3D em ${pos.length} posição(ões)${m.convertidas ? ` e ${m.convertidas} chapa(s) plana(s) viraram chapas paramétricas` : ''}:` }),
+      el('ul', {}, ...(m.etapas || []).map(e => el('li', { texto: e }))),
+      el('details', {}, el('summary', { texto: `As posições (${pos.length})` }), el('p', { class: 'lista-posicoes', texto: pos.join(', ') })));
+    if (m.desfazer) {
+      corpo.append(el('p', { class: 'explica', texto: 'Desfazer volta o 3D à versão de antes do Detalhar (a atual fica no histórico). Os desenhos param de se refazer e as pranchas não saem até o próximo Detalhar.' }),
+        el('button', { type: 'button', class: 'desfazer-detalhar', texto: 'Desfazer (o 3D volta à versão de antes)',
+                       onclick: () => { desfazer = true; this.el.dialogo.close('cancelar'); } }));
+    }
+    await this.dialogo({ titulo: 'O que o detalhamento mudou no 3D', corpo, ok: 'Abrir os desenhos', cancelar: 'Fechar' });
+    if (!desfazer) return 'ok';
+    try {
+      const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/desfazer-detalhar`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify({ arquivo: m.desfazer }),
+      });
+      const j = await r.json();
+      if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+      this._autosavePendente = false;
+      window.location.reload();
+      return 'desfeito';
+    } catch (e) { this.aviso(`Não foi possível desfazer: ${e.message}`, 'erro', 0); return 'desfeito'; }
   }
 
   /**

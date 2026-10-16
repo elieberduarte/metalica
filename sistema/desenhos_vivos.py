@@ -190,6 +190,8 @@ def por_que_velho(s: str) -> str:
     antes = ler_carimbo(s)
     if not antes:
         return "detalhamento feito antes da atualização automática"
+    if antes.get("desfeito"):
+        return ""          # o Detalhar foi desfeito (Desfazer, Q02): parado até o próximo Detalhar
     agora = carimbo(s)
     for chave, motivo in (("codigo", "o detalhamento do programa mudou"), ("modelo", "o modelo 3D mudou"),
                           ("ajustes", "a furação ajustada mudou"), ("eixos", "os eixos mudaram")):
@@ -218,6 +220,7 @@ def estado(s: str, conferir: bool = True) -> dict:
     e["pendente_3d"] = c.get("pendente_3d") or {}
     e["fora_da_maquina"] = c.get("fora_da_maquina") or []
     e["fora_da_maquina_pecas"] = c.get("fora_da_maquina_pecas") or []      # o "Ver no 3D" de cada terça (Q01)
+    e["desfeito"] = c.get("desfeito") or None        # o CAD avisa: os desenhos não são do 3D atual (Q02)
     e["pranchas_descartadas"] = c.get("pranchas_descartadas") or []
     if c.get("erro") and not e.get("erro"):
         e["erro"] = c["erro"]

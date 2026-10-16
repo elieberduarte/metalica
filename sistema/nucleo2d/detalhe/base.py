@@ -2058,6 +2058,9 @@ def _eh_redonda_perfil(perfil: str) -> bool:
 #: fábrica põe 1 porca sextavada e 2 arruelas lisas (pedido do usuário, 28/09: "é 1 porca e 2
 #: arruelas por padrão … mantenha esse padrão para tudo"), e não o que o projetista modelou.
 PORCAS_POR_PONTA = 1
+#: O chumbador no projeto nosso: porca e contraporca + 1 arruela por perna (decisão do usuário, 16/10, N07).
+PORCAS_POR_PERNA_CHUMBADOR = 2
+ARRUELAS_POR_PERNA_CHUMBADOR = 1
 ARRUELAS_POR_PONTA = 2
 
 
@@ -2156,12 +2159,23 @@ def pontas_do_modelo(doc) -> Dict[str, dict]:
     return cache
 
 
-def acessorios_no_padrao(acessorios: Dict[str, int], pecas: Sequence[Solido], fixadores: Sequence[Solido]) -> Dict[str, int]:
+def acessorios_no_padrao(acessorios: Dict[str, int], pecas: Sequence[Solido], fixadores: Sequence[Solido],
+                         recebido: bool = False) -> Dict[str, int]:
     """A contagem de acessórios da lista de materiais com as porcas e arruelas soltas no padrão da
     fábrica: as de ponta roscada viram 1 porca + 2 arruelas por ponta, na bitola da barra; as que
-    sobram, nomeadas pela forma (porca ou arruela e a bitola) em vez de "BOLT () 0x0"."""
+    sobram, nomeadas pela forma (porca ou arruela e a bitola) em vez de "BOLT () 0x0".
+
+    O chumbador nunca entra na regra do parafuso (decisão do usuário, 16/10, N07 do auditor na ME-Sooro: faltavam 28
+    porcas de 3/4" na compra): no projeto `recebido` (o IFC/DXF do projetista) as porcas e arruelas dele ficam como o
+    projetista pôs no modelo (na Sooro, 2 porcas por perna); no projeto nosso, 2 porcas (porca e contraporca) + 1
+    arruela por perna."""
     from saida.resumos import _fixador_solto
     pontas, usados = pontas_roscadas(pecas, fixadores)
+    chumbadores = _ids_de_chumbadores(pecas)
+    if recebido:
+        for p in pontas:
+            if p["peca"].id in chumbadores:
+                usados.difference_update(p["fixadores"])     # contadas como estão no modelo, pela forma
     fora = collections.Counter(acessorios or {})
     for f in _so_parafusos(fixadores):
         if len(f.vertices) < 4 or not _fixador_sem_tamanho(f):
@@ -2180,9 +2194,34 @@ def acessorios_no_padrao(acessorios: Dict[str, int], pecas: Sequence[Solido], fi
         fora[("Arruela lisa Ø%s" if arruela else "Porca sextavada Ø%s UNC") % pol] += 1
     for p in pontas:
         pol = p["bitola"] or "?"
+        if p["peca"].id in chumbadores:
+            if recebido:
+                continue
+            fora["Porca sextavada Ø%s UNC" % pol] += PORCAS_POR_PERNA_CHUMBADOR
+            fora["Arruela lisa Ø%s" % pol] += ARRUELAS_POR_PERNA_CHUMBADOR
+            continue
         fora["Porca sextavada Ø%s UNC" % pol] += PORCAS_POR_PONTA
         fora["Arruela lisa Ø%s" % pol] += ARRUELAS_POR_PONTA
     return dict(fora)
+
+
+def _ids_de_chumbadores(pecas: Sequence[Solido]) -> set:
+    """As barras redondas que são chumbador: a barra paramétrica com o papel, e a que atravessa a chapa de base deitada
+    (o chumbamento montado — a mesma regra dos nomes de produção, nomes.py)."""
+    ids = {e.id for e in pecas if str(getattr(e, "papel", "") or "") == "chumbador"}
+    try:
+        from nucleo2d.detalhe.montagens import grupos_montados, _eh_chapa
+        por_id = {e.id: e for e in pecas}
+        marcas = set()
+        for g in grupos_montados(pecas, (), lambda m: m):
+            if g["tipo"] == "chumbamento":
+                # o grupo traz as peças de um exemplar; as marcas valem para todas as cópias
+                marcas |= {str(_marcas(por_id[i]).get("posicao") or por_id[i].nome) for i in g["pecas"]
+                           if i in por_id and not _eh_chapa(por_id[i])}
+        ids |= {e.id for e in pecas if str(_marcas(e).get("posicao") or e.nome) in marcas}
+    except Exception:                                 # noqa: BLE001 — sem a montagem, só o papel
+        pass
+    return ids
 
 # ============================================================ nomes de produção
 #: Prefixo do nome de produção por tipo de item (padrão dos desenhos da fábrica).

@@ -714,9 +714,25 @@ export class MetodosPaineis {
    * olha acento. Quando o termo inteiro é o nome de uma peça do projeto ("transição 8"), só
    * ela vem — e não a TRANSIÇÃO 18 nem tudo que tem um 8 —, um grupo por peça montada.
    */
+  /** Os nomes de produção do projeto (T.O.6 → M92), do servidor: o editor aberto antes do Detalhar não tem marcas.nome
+   *  e a busca não achava o nome que o aviso e o erro do PDF mostravam (Q12, primeiro uso 16/10). Relidos a cada 20 s. */
+  _nomesDeProducao() {
+    if (!this.projeto) return {};
+    const agora = Date.now();
+    if (!this._nomesProd || agora - this._nomesProd.quando > 20000) {
+      this._nomesProd = Object.assign(this._nomesProd || { posicoes: {}, conjuntos: {} }, { quando: agora });
+      fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/nomes-producao`, { cache: 'no-store' })
+        .then(r => (r.ok ? r.json() : null))
+        .then(j => { if (j) Object.assign(this._nomesProd, { posicoes: j.posicoes || {}, conjuntos: j.conjuntos || {} }); })
+        .catch(() => { /* sem servidor: só os nomes do modelo */ });
+    }
+    return this._nomesProd;
+  }
+
   pesquisarPecas(termo) {
     const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
       .replace(/[×*]/g, 'x').replace(/\s+/g, ' ').trim();
+    const prod = this._nomesDeProducao();
     const frase = norm(termo);
     const palavras = frase.split(' ').filter(Boolean);
     const itens = [];
@@ -728,7 +744,8 @@ export class MetodosPaineis {
       // parafuso e chumbador têm o diâmetro em mm (HIT-V 15.875x250): a bitola em polegada entra no texto (5/8", 14/10)
       const d = a.parafuso && +a.parafuso.d;
       const pol = d ? POLEGADAS.filter(([mm]) => Math.abs(d - mm) < 0.02).map(([, p]) => p + ' ø' + p).join(' ') : '';
-      const texto = norm([ent.nome, m.posicao, m.conjunto, m.nome, m.nome_conjunto, m.perfil, ent.perfil, ent.camada,
+      const texto = norm([ent.nome, m.posicao, m.conjunto, m.nome, m.nome_conjunto, (prod.posicoes || {})[m.posicao],
+        (prod.conjuntos || {})[m.conjunto], m.perfil, ent.perfil, ent.camada,
         a.tipo_ifc, ent.origem_ifc, ent.papel, pol, ...nomes].filter(Boolean).join(' '));
       itens.push({ ent, m, o, nomes, texto });
     }
@@ -747,7 +764,10 @@ export class MetodosPaineis {
         const detalhe = pelaPeca.length
           ? [o.peca && o.peca.includes('#') ? `peça nº ${o.peca.split('#')[1]}` : '', ent.camada].filter(Boolean).join(' · ')
           : [m.perfil && m.perfil !== chave ? m.perfil : (ent.perfil || ''), m.conjunto ? `conj. ${m.conjunto}` : '', ent.camada].filter(Boolean).join(' · ');
-        const rotulo = pelaPeca.length ? (o.planta || String(chave).split('#')[0]) + (o.sigla && !o.planta ? ` (${ent.perfil || ''})` : '') : chave;
+        // a posição com o nome de produção, como nas pranchas: "T.O.6 (M92)" (Q12)
+        const nomeProd = m.nome || (prod.posicoes || {})[m.posicao];
+        const rotulo = pelaPeca.length ? (o.planta || String(chave).split('#')[0]) + (o.sigla && !o.planta ? ` (${ent.perfil || ''})` : '')
+          : (nomeProd && m.posicao && chave === m.posicao && nomeProd !== chave ? `${nomeProd} (${chave})` : chave);
         g = { chave: rotulo, detalhe, ids: [], cor: '#7d8a9e' };
         grupos.set(chave, g);
       }
