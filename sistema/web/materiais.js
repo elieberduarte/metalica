@@ -225,7 +225,10 @@ function desenhar(L) {
   const barrasPerfil = el('div', { class: 'barras-peso' }, perfisTop.map(g => [
     el('span', { class: 'nome mono', texto: g.perfil_nome || g.perfil, title: g.posicoes.join(' ') }),
     el('span', { class: 'trilho' }, el('i', { style: `width:${(100 * g.peso / maxP).toFixed(1)}%` })),
-    el('span', { class: 'kg' }, el('b', { texto: n(g.peso, 1) + ' kg' }), ` · ${n(g.barras?.quantidade || 0)} barras`),
+    // a terça e o dobrado maior que a barra vêm sob medida: "0 barras" parecia nada (P23, primeiro uso 16/10)
+    el('span', { class: 'kg' }, el('b', { texto: n(g.peso, 1) + ' kg' }), g.barras?.quantidade
+      ? ` · ${n(g.barras.quantidade)} barras` + (g.barras.sob_medida_pecas ? ` + ${n(g.barras.sob_medida_pecas)} sob medida` : '')
+      : (g.barras?.sob_medida_pecas ? ` · ${n(g.barras.sob_medida_pecas)} peças sob medida` : ' · sob medida')),
   ]).flat());
   const ressalvas = (L.ressalvas || []);
   c.append(painel('geral', el('div', { class: 'grade-geral' },

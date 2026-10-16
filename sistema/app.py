@@ -4051,6 +4051,15 @@ def lancar_estrutura(s: str, corpo: dict) -> dict:
                               avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
         _progresso(s, "gravando o modelo 3D…")
         _regravar_modelo(s, r["doc"])
+        # o peso do "Estrutura lançada" é o da lista de materiais, o mesmo do 3D: o do modelo pesa as chapas pela área e
+        # dava 1.874 kg contra 1.886,1 kg na lista e 1,9 t no 3D (P23, primeiro uso 16/10); o do modelo fica guardado
+        r["resumo"]["peso_modelo_kg"] = r["resumo"].get("peso_kg")
+        try:
+            da_lista = peso_do_projeto(s).get("aco_kg")
+        except Exception:                                   # noqa: BLE001 — sem a lista, vale o do modelo
+            da_lista = None
+        if da_lista:
+            r["resumo"]["peso_kg"] = da_lista
         registro = {"parametros": r["parametros"], "dados_galpao": r["dados"].dict(), "resumo": r["resumo"],
                     "avisos": r["avisos"], "quando": time.strftime("%Y-%m-%d %H:%M:%S")}
         g._atualizar(s, lancamento=registro)

@@ -1337,7 +1337,7 @@ def inferir_furos_das_chapas(pos: Posicao, ent: Solido, furos_ch: Sequence[tuple
             pos.furos.append(Furo("redondo", float(round(x)), float(round(y)), larg, vista=vista))
         novos += 1
     if novos:
-        pos.observacoes.append("%d furo(s) pelos furos da chapa de ligação (a barra veio sem o furo no IFC)" % novos)
+        pos.observacoes.append("%d furo(s) pelos furos da chapa de ligação (a barra veio sem o furo no modelo)" % novos)
     return novos
 
 

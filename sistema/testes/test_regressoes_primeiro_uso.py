@@ -156,5 +156,32 @@ class TestOrigemDosPadroesDaPlanta(_ComProjeto):
         self.assertIsNone(app._aco_das_folhas({"materiais": ["PARAFUSOS ASTM A325"]}))
 
 
+class TestPesoDoLancamentoIgualALista(_ComProjeto):
+    """P23 — a portaria lançada nos eixos (5 × 6,2 m) dizia 1.874 kg no "Estrutura lançada", 1.886,1 kg na lista de
+    materiais e 1,9 t no 3D; e a lista falava em "a barra veio sem o furo no IFC" num modelo que não veio de IFC."""
+
+    def setUp(self):
+        super().setUp()
+        app._PESOS.clear()
+        app.gravar_eixos_projeto(self.s, {"eixos": {
+            "eixo_g": [1.0, 0.0], "perp_g": [0.0, 1.0], "z_base": 0.0,
+            "letras": [{"nome": "A", "pos": 0.0}, {"nome": "B", "pos": 5000.0}],
+            "numeros": [{"nome": "1", "pos": 0.0}, {"nome": "2", "pos": 6200.0}]}})
+        self.r = app.lancar_estrutura(self.s, {"parametros": {}})
+
+    def test_o_mesmo_peso_da_lista(self):
+        lista = app.peso_do_projeto(self.s)["aco_kg"]
+        self.assertEqual(self.r["resumo"]["peso_kg"], lista)
+        self.assertEqual(self.g.ler(self.s)["lancamento"]["resumo"]["peso_kg"], lista)
+        self.assertTrue(self.r["resumo"]["peso_modelo_kg"])            # o do modelo fica guardado
+
+    def test_observacoes_sem_ifc(self):
+        from nucleo2d import detalhar as det
+        lev = det.levantar(app._documento3d_do_projeto(self.s), regra_tercas=False)
+        obs = [o for p in lev["posicoes"] for o in (p.observacoes or [])]
+        self.assertTrue(any("furo" in o for o in obs))                 # o caso existe neste modelo
+        self.assertFalse([o for o in obs if "IFC" in o])
+
+
 if __name__ == "__main__":
     unittest.main()

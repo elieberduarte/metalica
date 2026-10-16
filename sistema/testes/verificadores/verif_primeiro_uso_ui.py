@@ -175,6 +175,16 @@ def p22_nome_e_posicao(aba):
     ok(any("marcas de fabricação" in g for g in grupos) and not any("Peça (IFC)" in g for g in grupos), f"o grupo da marca não fala em IFC: {grupos[:6]}")
 
 
+def p23_lista_sob_medida(aba):
+    """P23: na lista de materiais da portaria lançada, "Ue 250… 354 kg · 0 barras" parecia nada (são peças sob medida)."""
+    print("P23 — perfis sob medida na lista de materiais")
+    s = _lancado_nos_eixos(aba, "Portaria lista")
+    aba.navegar(f"{base}/materiais?projeto={s}", limite=120)
+    esperar(aba, "document.querySelectorAll('.barras-peso .kg').length > 3", 120)
+    kgs = aba.avaliar("[...document.querySelectorAll('.barras-peso .kg')].map(k => k.textContent)") or []
+    ok(kgs and not [k for k in kgs if "· 0 barras" in k] and any("sob medida" in k for k in kgs), f"sem «0 barras», com «sob medida»: {kgs[:8]}")
+
+
 def _item_da_barra(texto):
     return f"""(() => {{ let a = null; (function andar(l) {{ for (const it of (Array.isArray(l) ? l : [])) {{ if (a) return; if (it && it.texto === {json.dumps(texto)}) a = it; else if (it && (it.sub || it.itens)) andar(it.sub || it.itens); }} }})(window.barraUnica.mapa); return a; }})()"""
 
@@ -416,7 +426,7 @@ try:
     for bloco in [b for b in (p02_p13_recebido, p06_vao_pequeno, p11_p12_cad, p07_menu_antes_do_editor,
                                 p08_folhas_sem_pedir_o_arquivo, p19_resultado_do_recebido,
                                 p14_quadros_vazios, p26_padroes_da_planta, p21_peso_do_modelo_vazio,
-                                p22_nome_e_posicao) + BLOCOS_Q
+                                p22_nome_e_posicao, p23_lista_sob_medida) + BLOCOS_Q
                   if not sys.argv[1:] or any(b.__name__.startswith(a) for a in sys.argv[1:])]:
         try:
             bloco(aba)
