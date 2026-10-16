@@ -345,6 +345,9 @@ export class MetodosPaineis {
    *  Devolve {texto, dica} ou null. */
   textoDoPeso() {
     const t = (kg) => `${numero(kg / 1000, 1)} t`;
+    // o peso do projeto vem do modelo gravado no servidor: logo depois de "Novo modelo › Em branco" ainda era o do
+    // anterior ("Aço 4,3 t" com 0 objetos, P21 do primeiro uso, 16/10)
+    if (!this.documento || !this.documento.tamanho) return null;
     if (!this.projeto) {
       const kg = this.massaDoModelo();
       return kg ? { texto: `aço ≈ ${t(kg)}`, dica: 'Aço estimado: barras pelo perfil, chapas pela área, sólidos de aço pelo volume' } : null;
@@ -354,7 +357,10 @@ export class MetodosPaineis {
       this._pesoBuscando = true;
       fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/peso`).then(r => r.json()).then(r => {
         this._peso = r; this._pesoChave = chave;
-      }).catch(() => { this._pesoChave = chave; }).finally(() => { this._pesoBuscando = false; this._atualizarCarimbo(); });
+      }).catch(() => { this._pesoChave = chave; }).finally(() => {
+        this._pesoBuscando = false; this._atualizarCarimbo();
+        if (this._agendarPaineis) this._agendarPaineis('props');      // o painel do modelo mostrava "—" até outro clique
+      });
     }
     const p = this._peso;
     if (!p || !p.aco_kg) return null;

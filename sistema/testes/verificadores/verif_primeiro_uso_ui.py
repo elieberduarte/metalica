@@ -284,6 +284,39 @@ def p26_padroes_da_planta(aba):
     aba.avaliar("document.querySelector('#dialogo').close(); 1")
 
 
+def _projeto_com_a_portaria(nome):
+    """um projeto com o modelo do Projeto recebido da Portaria (608 barras, 4,2 t)"""
+    import base64
+    s = projeto(nome, tipo="recebido")
+    with open(PORTARIA, "rb") as f:
+        post(f"/api/projetos/{s}/projeto-2d", {"arquivo": os.path.basename(PORTARIA), "ifc": False, "conteudo_b64": base64.b64encode(f.read()).decode()})
+    return s
+
+
+ACO_DO_PAINEL = "[...document.querySelectorAll('label')].filter(l => l.textContent === 'Aço' && l.nextElementSibling && l.nextElementSibling.classList.contains('valor')).map(l => l.nextElementSibling.textContent).join('|')"
+
+
+def p21_peso_do_modelo_vazio(aba):
+    """P21: depois de Novo modelo › Em branco, o painel do modelo mostrava 0 objetos e "Aço 4,3 t" (o peso do modelo
+    anterior, que vem do modelo gravado no servidor)."""
+    print("P21 — peso do modelo em branco")
+    if not os.path.exists(PORTARIA):
+        ok(False, "sem o DXF da Portaria em Projeto/OBRAS/Portaria-Hermes"); return
+    s = _projeto_com_a_portaria("Portaria peso")
+    aba.navegar(f"{base}/editor?projeto={s}", limite=90)
+    esperar(aba, "window.editor && document.body.dataset.pronto === '1'", 90)
+    esperar(aba, f"/ t/.test({ACO_DO_PAINEL})", 30)
+    antes = aba.avaliar(ACO_DO_PAINEL)
+    ok(" t" in (antes or ""), f"com a Portaria, o painel mostra o aço ({antes})")
+    aba.avaliar("window.editor.novo(); 1")
+    esperar(aba, "window.editor.el.dialogo.open", 10)
+    aba.avaliar("window.editor.el.dialogoOk.click(); 1")
+    esperar(aba, "window.editor.documento.tamanho === 0", 10)
+    aba.drenar(1.5)
+    depois = aba.avaliar(ACO_DO_PAINEL)
+    ok(aba.avaliar("window.editor.documento.tamanho") == 0 and depois == "—", f"no modelo em branco, Aço é «—» ({depois})")
+
+
 chrome = next(c for c in CHROMES if os.path.exists(c)); cdp = _porta_livre(); perfil = tempfile.mkdtemp(prefix="verif_primeiro_uso_")
 nav = subprocess.Popen([chrome, "--headless=new", "--disable-gpu", "--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars",
                         "--no-first-run", "--remote-allow-origins=*", f"--user-data-dir={perfil}", f"--remote-debugging-port={cdp}", "about:blank"],
@@ -299,7 +332,7 @@ try:
     # python verif_primeiro_uso_ui.py p07 → só os blocos cujo nome começa assim
     for bloco in [b for b in (p02_p13_recebido, p06_vao_pequeno, p11_p12_cad, p07_menu_antes_do_editor,
                                 p08_folhas_sem_pedir_o_arquivo, p19_resultado_do_recebido,
-                                p14_quadros_vazios, p26_padroes_da_planta)
+                                p14_quadros_vazios, p26_padroes_da_planta, p21_peso_do_modelo_vazio)
                   if not sys.argv[1:] or any(b.__name__.startswith(a) for a in sys.argv[1:])]:
         try:
             bloco(aba)
