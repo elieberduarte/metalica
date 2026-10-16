@@ -122,6 +122,8 @@ class CAD {
       this.aviso('Sem projeto: o desenho fica só nesta janela. Abra pelo gerenciador para gravar no projeto.', 'atencao', 0);
     }
     const pedirArquitetonico = this.projeto && this.parametros.get('arquitetonico') === '1';
+    const pedirRecebido = this.projeto && this.parametros.get('recebido') === '1';
+    if (pedirRecebido) { const url = new URL(location.href); url.searchParams.delete('recebido'); history.replaceState(null, '', url); }
     if (pedirArquitetonico) {
       // projeto novo "a partir do arquitetônico": abre (ou cria) a planta e pede o arquivo
       const url = new URL(location.href); url.searchParams.delete('arquitetonico'); history.replaceState(null, '', url);
@@ -136,10 +138,12 @@ class CAD {
     if (pedirArquitetonico) {
       // o seletor de arquivo só abre com um clique do usuário: o botão do diálogo é esse clique
       setTimeout(async () => {
-        const corpo = el('div', {}, el('div', { class: 'explica', texto: 'Projeto a partir do arquitetônico. O caminho: (1) o DXF ou PDF da planta do cliente vira a referência, travada e em cinza; (2) Malha de eixos… desenha os eixos por cima dela; (3) Gravar eixos no projeto; (4) Lançar estrutura no 3D monta e dimensiona o galpão nos eixos.' }));
+        const corpo = el('div', {}, el('div', { class: 'explica', texto: 'Projeto a partir do arquitetônico. O caminho: (1) o DXF ou PDF da planta do cliente vira a referência, travada e em cinza; (2) Malha de eixos… desenha os eixos por cima dela; (3) Gravar eixos no projeto; (4) Lançar estrutura no 3D monta e dimensiona o galpão nos eixos.' }),
+          el('div', { class: 'explica', texto: 'É o projeto estrutural (com perfis e tesouras)? Cancele e use Desenho → Projeto recebido (DXF/PDF) → modelo 3D e IFC…' }));
         if (await this.dialogo({ titulo: 'Arquitetônico do cliente', corpo, ok: 'Escolher o arquivo (DXF ou PDF)…' }) === 'ok') $('#arquivo-arquitetonico').click();
       }, 200);
     }
+    if (pedirRecebido) setTimeout(() => this.introProjetoRecebido(), 200);
     try { if (localStorage.getItem('cad.orto') === '1') this.snap.orto = true; } catch { /* sem armazenamento */ }
     this._agendarPaineis('props', 'camadas', 'snap', 'vistas');
     this._atualizarCarimbo();
@@ -1104,7 +1108,7 @@ class CAD {
       'pm-configuracao': () => this.configuracaoPreMoldado(),
       'gravar-eixos': () => this.gravarEixos(),
       'lancar-3d': () => this.lancarNo3D(),
-      'projeto-2d': () => $('#arquivo-projeto-2d').click(),
+      'projeto-2d': () => this.introProjetoRecebido(),
       reconhecer: () => this.reconhecerPecas(),
       'montar-planta': () => this.dialogoMontarPelaPlanta(),
       'folhas-recebidas': () => this.lerFolhasRecebidas(),
@@ -1385,6 +1389,16 @@ class CAD {
       ...(r.avisos || []).map(a => el('div', { class: 'explica atencao', texto: a })));
     const acao = await this.dialogo({ titulo: 'Peças reconhecidas', corpo, ok: novas.length ? 'Gerar o modelo 3D…' : 'OK' });
     if (acao === 'ok' && novas.length) this.dialogoGerar3D();
+  }
+
+  /** Antes do seletor de arquivo, o que o Projeto recebido faz (P13, primeiro uso 16/10: o seletor do Windows abria
+   *  sem explicar nada). O seletor só abre com um clique do usuário: o botão do diálogo é esse clique. */
+  async introProjetoRecebido() {
+    if (!this.projeto) { this.aviso('Abra ou crie um projeto antes (o modelo 3D e o IFC ficam nele).', 'atencao'); return; }
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: 'Projeto estrutural recebido (do escritório de cálculo), em DXF ou PDF. O sistema lê as vistas (planta, tesouras, pórticos, fachadas), a escala de cada uma pelas cotas, os eixos e os perfis escritos junto das barras, e monta o modelo 3D. O desenho fica gravado no projeto, com as peças reconhecidas numa camada própria, para conferir e corrigir.' }),
+      el('div', { class: 'explica', texto: 'É a planta do cliente (arquitetônico, sem estrutura)? Use Lançamento → Arquitetônico do cliente.' }));
+    if (await this.dialogo({ titulo: 'Projeto recebido → modelo 3D', corpo, ok: 'Escolher o arquivo (DXF ou PDF)…' }) === 'ok') $('#arquivo-projeto-2d').click();
   }
 
   /** Projeto recebido: DXF/PDF → desenho + peças + modelo 3D + IFC, numa ida ao servidor. */

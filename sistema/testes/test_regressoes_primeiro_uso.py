@@ -79,5 +79,25 @@ class TestVaoForaDaFaixaComVirgula(unittest.TestCase):
         self.assertNotIn("4.5", msg)
 
 
+class TestProjetoRecebidoMudaOTipo(_ComProjeto):
+    """P25 — o cartão do projeto dizia "LANÇADO SOBRE O ARQUITETÔNICO" para um projeto recebido (o tipo ficava o do
+    começo, escolhido por falta de opção)."""
+
+    def test_lancamento_vira_recebido(self):
+        import base64
+        import io
+        import ezdxf
+        d = ezdxf.new("R2010")
+        d.modelspace().add_line((0, 0), (6000, 0))
+        buf = io.StringIO()
+        d.write(buf)
+        app.projeto_2d_para_modelo(self.s, {"arquivo": "portaria.dxf", "ifc": False,
+                                            "conteudo_b64": base64.b64encode(buf.getvalue().encode()).decode()})
+        p = self.g.ler(self.s)
+        self.assertEqual(p["tipo"], "recebido")
+        cartao = next(c for c in self.g.listar() if c["slug"] == self.s)
+        self.assertEqual(cartao["tipo_rotulo"], "Projeto recebido (DXF/PDF)")
+
+
 if __name__ == "__main__":
     unittest.main()

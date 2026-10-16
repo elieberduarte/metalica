@@ -58,7 +58,8 @@ ENTREGAS = [("memorial", "Memorial"), ("desenhos", "Desenhos DXF"), ("pranchas",
             ("lista", "Lista de material"), ("detalhamento", "Detalhamento"),
             ("desenhos-2d", "Desenhos 2D"), ("ifc", "IFC exportado")]
 TIPOS = {"galpao": "Galpão dimensionado", "ifc": "Modelo a partir de IFC",
-         "desenho": "Modelo desenhado em 2D", "lancamento": "Lançado sobre o arquitetônico"}
+         "desenho": "Modelo desenhado em 2D", "lancamento": "Lançado sobre o arquitetônico",
+         "recebido": "Projeto recebido (DXF/PDF)"}
 IDENTIFICACAO = ("nome", "cliente", "local", "responsavel")
 
 

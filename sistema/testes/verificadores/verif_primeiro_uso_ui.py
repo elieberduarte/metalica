@@ -47,6 +47,29 @@ def projeto(nome, tipo="lancamento"):
     return urllib.parse.quote(post("/api/projetos", {"nome": nome, "tipo": tipo})["slug"])
 
 
+def p02_p13_recebido(aba):
+    """P02: na tela inicial não havia "Recebi o projeto estrutural"; o engenheiro com o DXF do projetista importava como
+    arquitetônico. P13: o Projeto recebido abria o seletor do Windows sem explicar nada antes."""
+    print("P02/P13 — Novo pelo CAD 2D com o projeto estrutural recebido")
+    aba.navegar(base + "/", limite=60)
+    esperar(aba, "document.querySelector('#btn-novo-cad') && document.querySelector('#contagem') && !/carregando/.test(document.querySelector('#contagem').textContent)")
+    sel = "#btn-novo-cad" if aba.avaliar("document.querySelector('#btn-novo-cad').offsetParent !== null") else '[data-acao="novo-cad"]'
+    clicar(aba, sel)
+    esperar(aba, "document.querySelector('#dlg').open")
+    marcado = aba.avaliar("(document.querySelector('input[name=dlg-comeco]:checked') || {}).value")
+    ok(marcado == "recebido", f"a opção do projeto recebido existe e vem marcada ({marcado})")
+    aba.cmd("Input.insertText", text="Portaria recebida")
+    clicar(aba, "#dlg-ok")
+    esperar(aba, "location.pathname === '/cad' && window.cad && document.body.dataset.pronto === '1'", 60)
+    esperar(aba, "window.cad.el && document.querySelector('dialog[open]')", 10)
+    titulo = aba.avaliar("(document.querySelector('dialog[open] h3, dialog[open] .titulo, dialog[open] header') || {}).textContent || document.querySelector('dialog[open]') && document.querySelector('dialog[open]').textContent.slice(0, 60)") or ""
+    ok(aba.avaliar("location.pathname") == "/cad" and "Projeto recebido" in titulo, f"o CAD abre explicando o Projeto recebido antes do arquivo («{titulo.strip()[:50]}»)")
+    s = aba.avaliar("new URL(location.href).searchParams.get('projeto')")
+    tipo = json.load(urllib.request.urlopen(f"{base}/api/projetos/{urllib.parse.quote(s)}", timeout=30)).get("projeto", {}).get("tipo")
+    ok(tipo == "recebido", f"o projeto nasce com o tipo recebido ({tipo})")
+    aba.avaliar("document.querySelector('dialog[open]') && document.querySelector('dialog[open]').close('cancelar'); 1")
+
+
 def p06_vao_pequeno(aba):
     """P06: eixos com 4 m de vão — o Lançar estrutura nos eixos avisa antes (5 a 60 m) e oferece Pilares nos eixos,
     em vez de aceitar e voltar com "Vão: valor 4.0 fora da faixa" depois do clique."""
@@ -92,6 +115,11 @@ def p11_p12_cad(aba):
     ok(bool(aba.avaliar("!!document.querySelector('.menu.aberto')")), "o menu Lançamento abriu com o clique")
     tecla_esc(aba)
     ok(not aba.avaliar("!!document.querySelector('.menu.aberto')"), "Esc fecha o menu aberto")
+    clicar(aba, '.menu[data-menu="desenho"] > button')
+    clicar(aba, '[data-acao="projeto-2d"]')
+    t = aba.avaliar("(document.querySelector('dialog[open]') || {}).textContent || ''") or ""
+    ok("Projeto recebido" in t and "Escolher o arquivo" in t, "Desenho → Projeto recebido explica antes de abrir o seletor de arquivo")
+    aba.avaliar("document.querySelector('dialog[open]') && document.querySelector('dialog[open]').close('cancelar'); 1")
     aba.avaliar("window.cad.aviso('Não foi possível montar: teste', 'erro', 0); window.cad.aviso('Não foi possível montar: teste', 'erro', 0); 1")
     n = aba.avaliar("[...document.querySelectorAll('#avisos .aviso')].filter(c => c.textContent.includes('montar: teste')).length")
     ok(n == 1, f"o mesmo aviso repetido fica um só ({n})")
@@ -118,7 +146,7 @@ try:
     aba = Aba(alvos[0]["webSocketDebuggerUrl"])
     for dm in ("Page", "Runtime", "Log"): aba.cmd(f"{dm}.enable")
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1600, height=1000, deviceScaleFactor=1, mobile=False)
-    for bloco in (p06_vao_pequeno, p11_p12_cad):
+    for bloco in (p02_p13_recebido, p06_vao_pequeno, p11_p12_cad):
         try:
             bloco(aba)
         except Exception as e:                       # noqa: BLE001

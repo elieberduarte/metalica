@@ -104,6 +104,7 @@ function urlDoProjeto(p, destino) {
   if (destino === 'cad') return area('2d');
   if (p.tipo === 'desenho') return area('2d');    // começa desenhando
   if (p.tipo === 'lancamento') return p.tem_modelo ? area('3d') : area('2d', 'planta-de-lançamento');
+  if (p.tipo === 'recebido') return area(p.tem_modelo ? '3d' : '2d');
   return p.tipo === 'ifc' ? area('3d') : `/dimensionar?projeto=${s}`;
 }
 
@@ -325,20 +326,24 @@ async function novoProjetoPeloCad() {
     titulo: 'Novo projeto pelo CAD 2D',
     texto: 'O projeto abre no CAD 2D. Depois de criado, as ferramentas são as mesmas nos dois começos.',
     campos: [...CAMPOS_PROJETO, {
-      id: 'comeco', rotulo: 'Como começar', valor: 'arquitetonico', opcoes: [
-        { valor: 'arquitetonico', titulo: 'Tenho a planta do cliente (DXF ou PDF)',
+      id: 'comeco', rotulo: 'Como começar', valor: 'recebido', opcoes: [
+        { valor: 'recebido', titulo: 'Recebi o projeto estrutural (DXF ou PDF)',
+          texto: 'Do escritório de cálculo, com perfis, tesouras e eixos: o sistema lê as vistas e monta o 3D; você confere e corrige.' },
+        { valor: 'arquitetonico', titulo: 'Tenho a planta do cliente — arquitetônico (DXF ou PDF)',
           texto: 'Lança a malha de eixos por cima dela; o Modelo 3D monta e dimensiona o galpão nos eixos (pilares, tesouras ou vigas, terças, contraventos, bases).' },
         { valor: 'desenho', titulo: 'Desenhar a estrutura eu mesmo',
           texto: 'CAD vazio: desenhe linha por linha (uma tesoura, um pórtico, uma peça), diga o perfil de cada linha e gere o modelo 3D do desenho.' },
       ] }],
     ok: 'Criar e abrir o CAD' });
   if (!v) return;
-  const arq = v.comeco !== 'desenho';
   const { comeco, ...dados } = v;
+  // o projeto estrutural recebido (P02, primeiro uso 16/10): antes só havia "planta do cliente" ou "desenhar", e o
+  // engenheiro com o DXF do projetista importava como arquitetônico
+  const tipo = { recebido: 'recebido', arquitetonico: 'lancamento' }[comeco] || 'desenho';
   try {
     carregando(true, 'Criando o projeto…');
-    const criado = await postar('/api/projetos', { ...dados, tipo: arq ? 'lancamento' : 'desenho' });
-    location.href = `/cad?projeto=${encodeURIComponent(criado.slug)}` + (arq ? '&arquitetonico=1' : '');
+    const criado = await postar('/api/projetos', { ...dados, tipo });
+    location.href = `/cad?projeto=${encodeURIComponent(criado.slug)}` + ({ recebido: '&recebido=1', lancamento: '&arquitetonico=1' }[tipo] || '');
   } catch (e) {
     carregando(false);
     recado('Não foi possível criar o projeto', e.message, 'erro');

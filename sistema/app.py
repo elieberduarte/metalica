@@ -3538,6 +3538,9 @@ def projeto_2d_para_modelo(s: str, corpo: dict) -> dict:
         des.nome = nome_des
         _progresso(s, "gravando o desenho…")
         g.salvar_desenho(s, nome_des, des.dict())
+        if g.ler(s).get("tipo") in ("lancamento", "desenho"):
+            # o projeto passa a ser "recebido": o cartão dizia "Lançado sobre o arquitetônico" (P25, primeiro uso 16/10)
+            g._atualizar(s, tipo="recebido")
         saida = {"desenho": nome_des, "lido": {k: v for k, v in lido.items() if k != "ids"},
                  "vistas": r["vistas"], "resumo": r["resumo"], "textos_sem_linha": r["textos_sem_linha"][:60],
                  "avisos": list(lido.get("avisos") or []) + r["avisos"] + mont["avisos"], "montagens": mont["montagens"],
