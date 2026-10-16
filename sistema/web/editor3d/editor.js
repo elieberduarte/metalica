@@ -2325,7 +2325,7 @@ export class Editor {
         const pecas = new Set(ids.map(i => pecaDe(this.documento.get(i))).filter(Boolean));
         if (pecas.size === 1) {
           const p = [...pecas][0];
-          this.dica(`${p.split('#')[0]} — ${ids.length} barras. Esc limpa a seleção; Ver → Esqueleto volta aos perfis.`);
+          this.dica(`${p.split('#')[0]} — ${ids.length} barras. Esc limpa a seleção; Ver → Esqueleto (só linhas) volta aos perfis.`);
         }
       });
     }
@@ -2505,8 +2505,11 @@ export class Editor {
     const rolagem = raiz.scrollTop;
     raiz.replaceChildren();
     if (!this.documento.tamanho) {
-      raiz.append(el('div', { class: 'vazio', style: 'padding:6px', texto:
-        'Modelo vazio. Desenhe com as ferramentas à esquerda, ou use Arquivo → Gerar do galpão / Modelo de exemplo.' }));
+      // os botões aqui mesmo: o texto citava "Arquivo → Gerar do galpão", que na tela do projeto se chama outra coisa (P27, 16/10)
+      raiz.append(el('div', { class: 'vazio', style: 'padding:6px' },
+        el('div', { texto: 'Modelo vazio. Desenhe com as ferramentas à esquerda, ou:' }),
+        el('button', { type: 'button', texto: 'Gerar do galpão dimensionado…', style: 'margin:6px 6px 0 0', onclick: () => this.dialogoGalpao() }),
+        el('button', { type: 'button', texto: 'Modelo de exemplo', style: 'margin-top:6px', onclick: () => this.carregarExemplo() })));
       return;
     }
     // organizar por camada (abaixo) ou por conjunto, perfil, fase, papel (modulos/bim.js — o navegador do Revit)

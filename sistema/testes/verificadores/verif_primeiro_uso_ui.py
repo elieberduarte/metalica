@@ -85,6 +85,9 @@ def p06_vao_pequeno(aba):
                                                 "numeros": [{"nome": "1", "pos": 0.0}, {"nome": "2", "pos": 6200.0}]}})
     aba.navegar(f"{base}/editor?projeto={s}", limite=60)
     esperar(aba, "window.editor && window.editor.projeto")
+    # P27: a árvore do modelo vazio traz os botões, em vez de citar "Arquivo → Gerar do galpão" (outro nome na tela do projeto)
+    bts = aba.avaliar("[...window.editor.el.arvore.querySelectorAll('button')].map(b => b.textContent)") or []
+    ok("Gerar do galpão dimensionado…" in bts and "Modelo de exemplo" in bts, f"P27: árvore vazia com os botões {bts}")
     aba.avaliar("window.editor.dialogoLancar(); 1")
     esperar(aba, "window.editor.el.dialogo.open")
     txt = aba.avaliar("window.editor.el.dialogoCorpo.textContent") or ""

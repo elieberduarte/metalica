@@ -284,7 +284,7 @@ export class MetodosLancamento {
     this._referencia = null;
   }
 
-  /** Ver → Arquitetônico e eixos: liga e desliga o que está no chão. */
+  /** Ver → Arquitetônico, eixos e níveis: liga e desliga o que está no chão. */
   alternarReferencia() {
     this._referenciaVisivel = this._referenciaVisivel === false;
     if (this._referencia) { this._referencia.visible = this._referenciaVisivel; this.cena.pedirQuadro(); }
