@@ -4399,11 +4399,18 @@ def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao
 def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str = "Detalhamento – localização",
                            ignorar: Sequence[str] = (), nomes: Optional[Dict[str, str]] = None,
                            camadas_pecas: Optional[Dict[str, str]] = None, eixos: Optional[dict] = None,
-                           nomes_producao: Optional[dict] = None) -> Desenho:
+                           nomes_producao: Optional[dict] = None,
+                           vistas_pedidas: Sequence[str] = ("topo", "frente", "lateral"),
+                           titulo_planta: str = "", deitar_em_y: Optional[bool] = None,
+                           rotular_de_topo: bool = False) -> Desenho:
     """Planta e duas elevações esquemáticas do modelo inteiro (cada peça é o contorno
     convexo da sua projeção, em linha fina) com a marca de cada conjunto e de cada peça
     solta escrita no lugar em que está montada: é a planta de montagem que diz onde vai
-    cada item detalhado. `ignorar`: marcas de posição que ficam fora (telhas)."""
+    cada item detalhado. `ignorar`: marcas de posição que ficam fora (telhas).
+    `vistas_pedidas` (topo, frente, lateral) e `titulo_planta`: o pré-moldado usa só a planta (a locação dos pilares,
+    a fôrma de cada nível) ou só os dois cortes (16/10). `deitar_em_y`: o lado comprido (y) na horizontal, fixo — as
+    plantas dos níveis giram todas iguais, pelo prédio, não pelas peças de cada uma; `rotular_de_topo`: a peça vista de
+    topo também ganha a marca na planta (o pilar do pré-moldado; a terça vista de ponta da metálica não)."""
     from nucleo2d.pranchas import escala_normalizada
     fora = set(ignorar or ())
     pecas = [e for e in pecas if str(_marcas(e).get("posicao") or e.nome) not in fora]
@@ -4416,7 +4423,7 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
     ext = [maximo[i] - minimo[i] for i in range(3)]
     # a planta fica com o lado comprido na horizontal; a elevação longitudinal embaixo
     # dela partilha o eixo horizontal; a transversal vai à direita
-    comprido_em_y = ext[1] > ext[0]
+    comprido_em_y = ext[1] > ext[0] if deitar_em_y is None else bool(deitar_em_y)
     if comprido_em_y:
         # de cima (observador em +z, w = -z): direita = y, cima do papel = -x
         u_pl, v_pl, w_pl = (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0), (0.0, 0.0, -1.0)
@@ -4426,9 +4433,10 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
         u_pl, v_pl, w_pl = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, -1.0)
         u_lo, v_lo, w_lo = (1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, 1.0, 0.0)       # vista de -y
         u_tr, v_tr, w_tr = (0.0, -1.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0)      # vista de -x
-    vistas = [("PLANTA DE LOCALIZAÇÃO", "topo", u_pl, v_pl, w_pl),
+    vistas = [(titulo_planta or "PLANTA DE LOCALIZAÇÃO", "topo", u_pl, v_pl, w_pl),
               ("ELEVAÇÃO LONGITUDINAL", "frente", u_lo, v_lo, w_lo),
               ("ELEVAÇÃO TRANSVERSAL", "lateral", u_tr, v_tr, w_tr)]
+    vistas = [vv for vv in vistas if vv[1] in vistas_pedidas] or vistas
     ex_modelo = _eixos_do_modelo(doc, eixos, nomes_producao)
     # as elevações são cortes: só o que está na fatia do plano do pórtico típico, cada peça recortada nela
     # (id -> pontos 3D); a planta vê tudo
@@ -4451,9 +4459,10 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
         us = [_dot(p, u) for p in pts]
         vs = [_dot(p, v) for p in pts]
         return max(us) - min(us), max(vs) - min(vs)
-    l_pl, a_pl = extensao(u_pl, v_pl)
-    l_lo, a_lo = extensao(u_lo, v_lo, "ELEVAÇÃO LONGITUDINAL")
-    l_tr, a_tr = extensao(u_tr, v_tr, "ELEVAÇÃO TRANSVERSAL")
+    tem = {vv[1] for vv in vistas}
+    l_pl, a_pl = extensao(u_pl, v_pl) if "topo" in tem else (0.0, 0.0)
+    l_lo, a_lo = extensao(u_lo, v_lo, "ELEVAÇÃO LONGITUDINAL") if "frente" in tem else (0.0, 0.0)
+    l_tr, a_tr = extensao(u_tr, v_tr, "ELEVAÇÃO TRANSVERSAL") if "lateral" in tem else (0.0, 0.0)
     folga_papel = 45.0
     # papel útil de uma A1 deitada, descontados carimbo e margens
     esc = escala_normalizada(max((l_pl + folga_papel * 0 + max(l_tr, 0.0)) / 760.0,
@@ -4462,8 +4471,9 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
     folga = folga_papel * esc
     atr_base = {"detalhe": "localizacao"}
     h_txt = 2.5 * esc
-    posicoes_vistas = [(0.0, a_lo + folga), (0.0, 0.0), (l_lo + folga, 0.0)]
-    for (nome, tipo, u, v, w), (x0, y0) in zip(vistas, posicoes_vistas):
+    lugar = {"topo": (0.0, a_lo + folga if "frente" in tem else 0.0), "frente": (0.0, 0.0),
+             "lateral": (l_lo + folga if "frente" in tem else 0.0, 0.0)}
+    for (nome, tipo, u, v, w), (x0, y0) in zip(vistas, [lugar[vv[1]] for vv in vistas]):
         plano, cortes = fatias[nome]
         visiveis = [q for lst in cortes.values() for q in lst]
         us = [_dot(p, u) for p in visiveis]
@@ -4520,7 +4530,7 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
             pv = [_dot(q, v) - v0 for q in vc]
             ext3c = max(max(q[i] for q in vc) - min(q[i] for q in vc) for i in range(3))
             ext2 = max(max(pu) - min(pu), max(pv) - min(pv))
-            if ext3c > 0 and ext2 < 0.3 * ext3c:
+            if ext3c > 0 and ext2 < 0.3 * ext3c and not (rotular_de_topo and tipo == "topo"):
                 continue
             rotulos.append(((nomes or {}).get(rotulo) or rotulo, (sum(pu) / len(pu), sum(pv) / len(pv))))
         rotulos.sort(key=lambda r: (r[1][1], r[1][0]))

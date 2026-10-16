@@ -1911,42 +1911,50 @@ export class Editor {
       if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
       return j;
     };
-    let resumo;
+    let resumo, gerais;
     this.dica('Contando as peças de concreto do modelo…');
-    try { await this._gravarAntesDeGerar(); resumo = (await pedir({ resumo: true })).familias || []; }
+    try { await this._gravarAntesDeGerar(); const j0 = await pedir({ resumo: true }); resumo = j0.familias || []; gerais = j0.gerais || []; }
     catch (e) { this.aviso(`Não foi possível ler o pré-moldado: ${e.message}`, 'erro', 0); this.dica(''); return; }
     this.dica('');
     const familias = resumo.filter(f => f.pecas > 0);
     if (!familias.length) { this.aviso('O modelo não tem peças de concreto (pré-moldado) para detalhar.', 'atencao', 8000); return; }
-    const caixas = {};
+    const caixas = {}, caixasG = {};
     for (const f of familias) caixas[f.familia] = el('input', { type: 'checkbox', checked: 'checked' });
+    for (const g of gerais) caixasG[g.chave] = el('input', { type: 'checkbox', checked: 'checked' });
+    const todas = [...Object.values(caixas), ...Object.values(caixasG)];
     const todos = el('input', { type: 'checkbox', checked: 'checked' });
     const acertarTodos = () => {
-      const n = familias.filter(f => caixas[f.familia].checked).length;
-      todos.checked = n === familias.length; todos.indeterminate = n > 0 && n < familias.length;
+      const n = todas.filter(c => c.checked).length;
+      todos.checked = n === todas.length; todos.indeterminate = n > 0 && n < todas.length;
     };
-    todos.addEventListener('change', () => { for (const f of familias) caixas[f.familia].checked = todos.checked; acertarTodos(); });
-    for (const f of familias) caixas[f.familia].addEventListener('change', acertarTodos);
+    todos.addEventListener('change', () => { for (const c of todas) c.checked = todos.checked; acertarTodos(); });
+    for (const c of todas) c.addEventListener('change', acertarTodos);
     const grade = el('div', { class: 'campos' });
     grade.append(el('label', { texto: 'Marcar / desmarcar todos', style: 'font-weight:600' }), todos);
+    grade.append(el('label', { texto: 'Desenhos de conjunto', style: 'font-weight:600;grid-column:1 / -1;margin-top:6px' }));
+    // as plantas, os cortes e as elevações são os mesmos da metálica (localização e elevações), com as marcas das fôrmas
+    for (const g of gerais) grade.append(el('label', { texto: g.titulo }), caixasG[g.chave]);
+    grade.append(el('label', { texto: 'Fôrma de cada peça', style: 'font-weight:600;grid-column:1 / -1;margin-top:6px' }));
     for (const f of familias) grade.append(el('label', { texto: `${f.titulo} (${f.pecas.toLocaleString('pt-BR')} peça${f.pecas === 1 ? '' : 's'})` }), caixas[f.familia]);
     const substituir = el('input', { type: 'checkbox', checked: 'checked' });
     grade.append(el('label', { texto: 'Substituir os desenhos do pré-moldado anteriores' }), substituir);
     const corpo = el('div', {},
-      el('p', { class: 'explica', texto: 'Só a estrutura de concreto, sem a metálica. Cada peça diferente vira uma célula de fôrma com a marca do projeto (VL18, P12…) e a quantidade: elevação, vista lateral e planta, com a cadeia de cotas (a altura dos consoles, o dente, o encaixe) e a total; volume, peso e o fck. Os consoles entram no pilar em que encostam; peças iguais são contadas, não repetidas. Um desenho por família, em 1:25.' }),
+      el('p', { class: 'explica', texto: 'Só a estrutura de concreto, sem a metálica. Desenhos de conjunto: a locação dos pilares e fundações nos eixos, a planta de fôrma de cada nível, os cortes e as elevações das fachadas, com a marca de cada peça no lugar. Fôrma de cada peça: uma célula por peça diferente (VL18, P12… e a quantidade) com elevação, lateral e planta, a cadeia de cotas (a altura dos consoles, o dente, o encaixe), volume, peso e fck; os consoles entram no pilar em que encostam, peças iguais são contadas. As marcas são as mesmas nos dois.' }),
       grade);
     if (await this.dialogo({ titulo: 'Detalhar pré-moldado', corpo, ok: 'Detalhar e abrir' }) !== 'ok') return;
     const escolhidas = familias.map(f => f.familia).filter(k => caixas[k].checked);
-    if (!escolhidas.length) return;
+    const geraisPedidos = gerais.map(g => g.chave).filter(k => caixasG[k].checked);
+    if (!escolhidas.length && !geraisPedidos.length) return;
     this.aviso('Detalhando o pré-moldado: a etapa corrente aparece na linha de baixo.', 'info', 6000);
     const parar = this._acompanharProgresso('Pré-moldado: ');
     try {
-      const j = await pedir({ familias: escolhidas, substituir: substituir.checked });
+      const j = await pedir({ familias: escolhidas, gerais: geraisPedidos, substituir: substituir.checked });
       parar();
       this.dica('Pré-moldado detalhado.');
       this.aviso(`Pré-moldado: ${j.pecas.toLocaleString('pt-BR')} peças em ${j.marcas.toLocaleString('pt-BR')} marcas, ${j.desenhos.length} desenho(s): ` +
-                 j.desenhos.map(d => `${d.titulo} (${d.marcas})`).join(', ') + '.' + (j.avisos && j.avisos.length ? ' ' + j.avisos.join(' · ') : ''), 'info', 15000);
-      if (j.desenhos[0]) this._abrirCAD(j.desenhos[0].nome);
+                 j.desenhos.map(d => d.marcas ? `${d.titulo} (${d.marcas} marcas)` : d.titulo).join(', ') + '.' + (j.avisos && j.avisos.length ? ' ' + j.avisos.join(' · ') : ''), 'info', 15000);
+      const abrir = j.desenhos.find(d => d.familia === 'locacao') || j.desenhos[0];
+      if (abrir) this._abrirCAD(abrir.nome);
     } catch (e) { parar(); this.aviso(`Não foi possível detalhar o pré-moldado: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 

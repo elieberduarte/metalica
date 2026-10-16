@@ -438,11 +438,14 @@ def desenhar_celula(desenho: Desenho, p: PecaPM, dx: float, dy: float):
 
 
 def desenhos(doc: Documento, familias: Optional[Sequence[str]] = None, prefixo: str = "pré-moldado",
-             avisar=None) -> Dict[str, Desenho]:
-    """{família: Desenho} com as fôrmas das peças das famílias pedidas (todas, sem `familias`)."""
+             avisar=None, reps: Optional[Sequence[PecaPM]] = None) -> Dict[str, Desenho]:
+    """{família: Desenho} com as fôrmas das peças das famílias pedidas (todas, sem `familias`). `reps`: as peças já
+    agrupadas (as do modelo inteiro, as mesmas marcas dos desenhos de conjunto)."""
     avisar = avisar or (lambda *a: None)
-    pecas = pecas_do_modelo(doc, familias, avisar)
-    reps = agrupar(pecas)
+    if reps is None:
+        reps = agrupar(pecas_do_modelo(doc, familias, avisar))
+    if familias:
+        reps = [r for r in reps if r.familia in set(familias)]
     titulos = dict([(k, t) for k, t, _p in FAMILIAS] + [OUTRAS])
     saida: Dict[str, Desenho] = {}
     ordem = [k for k, _t, _p in FAMILIAS[::-1]] + [OUTRAS[0]]       # pilares e vigas primeiro
@@ -470,3 +473,136 @@ def resumo(doc: Documento) -> List[dict]:
             cont[f] += 1
     titulos = [(k, t) for k, t, _p in FAMILIAS[::-1]] + [OUTRAS]
     return [{"familia": k, "titulo": t, "pecas": cont.get(k, 0)} for k, t in titulos]
+
+
+# ------------------------------------------------------------------ desenhos de conjunto (16/10)
+# As plantas, os cortes e as elevações são os da metálica (nucleo2d/detalhe/conjuntos.py: desenho_de_localizacao e
+# desenho_de_elevacoes), com as peças de concreto marcadas pela marca da fôrma — o rótulo na planta é o mesmo da célula.
+
+#: (chave, título do desenho)
+GERAIS: Sequence[Tuple[str, str]] = (
+    ("locacao", "Planta de locação dos pilares"),
+    ("formas_niveis", "Plantas de fôrma por nível"),
+    ("cortes", "Cortes"),
+    ("elevacoes", "Elevações"),
+)
+#: Topos de vigas e lajes a menos disto (mm) são o mesmo nível; nível com menos peças que NIVEL_MINIMO não sai.
+TOL_NIVEL = 100.0
+NIVEL_MINIMO = 3
+
+
+def _marcadas(reps: Sequence[PecaPM]) -> Tuple[List[Solido], Dict[str, str]]:
+    """Cópias das peças de concreto com a marca da fôrma como conjunto (a localização da metálica rotula os conjuntos,
+    também nos cortes): a peça principal com a posição «marca'», o console com «marca'c» — a instância do pilar fica
+    com os consoles dele. Devolve as cópias e {id: família}."""
+    import copy as _copy
+    out, fam = [], {}
+    for r in reps:
+        for inst in r.instancias:
+            for k, e in enumerate(inst.ents):
+                c = _copy.copy(e)
+                a = dict(e.atributos or {})
+                a["marcas"] = {"conjunto": r.marca, "posicao": r.marca + ("'c" if k else "'"), "perfil": inst.nome}
+                c.atributos = a
+                out.append(c)
+                fam[c.id] = r.familia
+    return out, fam
+
+
+def _z(e) -> Tuple[float, float]:
+    zs = [v[2] for v in e.vertices]
+    return min(zs), max(zs)
+
+
+def niveis(reps: Sequence[PecaPM]) -> List[float]:
+    """Os níveis da estrutura: o topo das vigas e lajes agrupado (o console e o pilar não contam)."""
+    tops = []
+    for r in reps:
+        if r.familia not in ("pilares_vigas", "lajes") or re.search(r"pilar", _sem_acento(r.nome)):
+            continue
+        for inst in r.instancias:
+            tops.append(_z(inst.ents[0])[1])
+    grupos: List[List[float]] = []
+    for z in sorted(tops):
+        if grupos and z - grupos[-1][-1] <= TOL_NIVEL:
+            grupos[-1].append(z)
+        else:
+            grupos.append([z])
+    return [max(g) for g in grupos if len(g) >= NIVEL_MINIMO]
+
+
+def _nivel_txt(z: float) -> str:
+    return ("%+.2f" % (z / 1000.0)).replace(".", ",")
+
+
+def desenhos_gerais(doc: Documento, reps: Sequence[PecaPM], pedidos: Sequence[str], eixos: Optional[dict] = None,
+                    prefixo: str = "pré-moldado", avisar=None) -> Dict[str, Desenho]:
+    """{chave: Desenho} dos desenhos de conjunto pedidos (GERAIS), pelos geradores da metálica."""
+    from nucleo.base import ErroDeDados
+    from nucleo2d.detalhe.conjuntos import desenho_de_localizacao, desenho_de_elevacoes
+    from nucleo2d.detalhar import _anexar_quadro
+    avisar = avisar or (lambda *a: None)
+    pecas, fam = _marcadas(reps)
+    titulos = dict(GERAIS)
+    # o lado comprido do prédio inteiro: todas as plantas giram iguais
+    todos = [v for e in pecas for v in e.vertices]
+    deitar = (max(v[1] for v in todos) - min(v[1] for v in todos)) > (max(v[0] for v in todos) - min(v[0] for v in todos)) if todos else None
+    saida: Dict[str, Desenho] = {}
+
+    def nome(k):
+        return "%s – %s" % (prefixo, titulos[k])
+
+    def eh(e, padrao):
+        return bool(re.search(padrao, _sem_acento(str((e.atributos.get("marcas") or {}).get("perfil") or e.nome or ""))))
+
+    try:
+        if "locacao" in pedidos:
+            avisar("planta de locação dos pilares…")
+            # o pilar e o bloco (ou a sapata) — a estaca, o colarinho e o enchimento empilhavam marcas no mesmo ponto
+            sel = [e for e in pecas if (eh(e, r"pilar|bloco|sapata|calice") and not eh(e, r"enchimento")) and not eh(e, CONSOLE)]
+            if sel:
+                saida["locacao"] = desenho_de_localizacao(doc, sel, nome("locacao"), eixos=eixos, vistas_pedidas=("topo",),
+                                                          titulo_planta="PLANTA DE LOCAÇÃO DOS PILARES E FUNDAÇÕES",
+                                                          deitar_em_y=deitar, rotular_de_topo=True)
+        if "formas_niveis" in pedidos:
+            zs = niveis(reps)
+            plantas = []
+            for z in zs:
+                avisar("planta de fôrma do nível %s…" % _nivel_txt(z))
+                sel = []
+                for e in pecas:
+                    z0, z1 = _z(e)
+                    if fam[e.id] == "fundacoes":
+                        continue
+                    if abs(z1 - z) <= TOL_NIVEL and not eh(e, CONSOLE):
+                        sel.append(e)                       # as vigas e lajes do nível
+                    elif eh(e, r"pilar") and z0 < z - TOL_NIVEL < z1:
+                        sel.append(e)                       # o pilar que passa por ele
+                if len(sel) >= NIVEL_MINIMO:
+                    try:
+                        plantas.append((z, desenho_de_localizacao(doc, sel, "nível", eixos=eixos, vistas_pedidas=("topo",),
+                                                                  titulo_planta="PLANTA DE FÔRMA – NÍVEL %s" % _nivel_txt(z),
+                                                                  deitar_em_y=deitar, rotular_de_topo=True)))
+                    except ErroDeDados:
+                        continue
+            if plantas:
+                dc = Desenho(nome=nome("formas_niveis"), escala=max(d.escala for _z_, d in plantas))
+                y = 0.0
+                for z, d in sorted(plantas, key=lambda t: -t[0]):         # de cima para baixo
+                    y = _anexar_quadro(dc, d, "NÍVEL %s" % _nivel_txt(z), y)
+                dc.metadados["premoldado"] = {"niveis": [round(z, 1) for z, _d in plantas]}
+                saida["formas_niveis"] = dc
+        if "cortes" in pedidos:
+            avisar("cortes…")
+            sel = [e for e in pecas]
+            saida["cortes"] = desenho_de_localizacao(doc, sel, nome("cortes"), eixos=eixos,
+                                                     vistas_pedidas=("frente", "lateral"), deitar_em_y=deitar)
+        if "elevacoes" in pedidos:
+            avisar("elevações das fachadas…")
+            sel = [e for e in pecas if fam[e.id] != "fundacoes"]
+            saida["elevacoes"] = desenho_de_elevacoes(doc, sel, nome("elevacoes"), eixos=eixos)
+    except ErroDeDados as e:
+        avisar("desenho de conjunto não gerado: %s" % e)
+    for k, d in saida.items():
+        d.metadados.setdefault("premoldado", {})["geral"] = k
+    return saida

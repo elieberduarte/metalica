@@ -34,6 +34,7 @@ doc.add(caixa("Pilar", 0, 0, 0, 400, 400, 6000, "P1", tipo="IfcColumn"))
 doc.add(caixa("Console", 400, 100, 4000, 700, 300, 4400, "C1", tipo="IfcSlab"))          # encosta no pilar
 doc.add(caixa("Viga L", 400, 0, 4400, 6400, 300, 5000, "VL1"))
 doc.add(caixa("Viga L", 400, 3000, 4400, 6400, 3300, 5000, "VL1"))                      # igual à de cima
+doc.add(caixa("Viga R", 0, 400, 4400, 300, 3000, 5000, "VR1"))                          # o nível +5,00 com 3 vigas
 doc.add(caixa("Laje Alveolar", 0, 6000, 5000, 5000, 7250, 5200, "LA1"))
 doc.add(caixa("Bloco", -500, -500, -800, 900, 900, 0, "B1", material="CONCRETE/Fck-25", tipo="IfcColumn"))
 doc.add(caixa("A 100x100x3/8", 0, 0, 6000, 100, 100, 6010, "ACH1", material="STEEL/A36", tipo="IfcPlate"))
@@ -84,9 +85,11 @@ try:
                " const cb = [...d.querySelectorAll('input[type=checkbox]')]; return {labels, n: cb.length};")
     ok(tela is not None, "a tela Detalhar pré-moldado abriu")
     if tela:
-        fams = [l for l in tela["labels"] if "peças" in l]
+        fams = [l for l in tela["labels"] if " peça" in l]
         print("  famílias:", fams)
-        ok(any(l.startswith("Pilares e vigas (3") for l in fams), "pilares e vigas: 3 peças (o console não conta à parte)")
+        ok(any(l.startswith("Pilares e vigas (4 peças") for l in fams), "pilares e vigas: 4 peças (o console não conta à parte)")
+        ok(all(t in tela["labels"] for t in ("Planta de locação dos pilares", "Plantas de fôrma por nível", "Cortes", "Elevações")),
+           "os desenhos de conjunto na tela (locação, fôrma por nível, cortes, elevações)")
         ok(any(l.startswith("Fundações (1") for l in fams) and any(l.startswith("Lajes") for l in fams), "fundações e lajes na lista")
         ok(not any("Outras" in l for l in fams), "o inserto de aço não vira 'outras peças de concreto'")
         meio = jsj("const d = [...document.querySelectorAll('dialog[open], .dialogo')].find(d => /Detalhar pré-moldado/.test(d.textContent));"
@@ -101,8 +104,16 @@ try:
         ok(bool(aba.avaliar("!!window.__abriu")), f"detalhou e pediu para abrir o CAD em {aba.avaliar('window.__abriu')}")
         arqs = sorted(os.listdir(os.path.join(PASTA, "desenhos-2d")))
         print("  desenhos:", arqs)
-        pv = next((a for a in arqs if "pilares" in a), None)
+        pv = next((a for a in arqs if "pilares-e-vigas" in a), None)
         ok(pv is not None and any("fundações" in a for a in arqs) and any("lajes" in a for a in arqs), "um desenho por família")
+        ok(any("locação" in a for a in arqs) and any("plantas-de-fôrma" in a for a in arqs) and any("cortes" in a for a in arqs),
+           "os desenhos de conjunto gravados (locação, plantas de fôrma, cortes)")
+        ok("locação" in str(aba.avaliar("window.__abriu")), "abre na planta de locação")
+        loc = next((a for a in arqs if "locação" in a), None)
+        if loc:
+            dl = json.load(open(os.path.join(PASTA, "desenhos-2d", loc), encoding="utf-8"))
+            tl = [e.get("texto") for e in (dl["entidades"].values() if isinstance(dl["entidades"], dict) else dl["entidades"]) if e.get("tipo") == "texto"]
+            ok("P1" in tl and "B1" in tl, f"a locação marca o pilar e o bloco (P1, B1) no lugar ({sorted(set(map(str, tl)))[:12]})")
         if pv:
             d = json.load(open(os.path.join(PASTA, "desenhos-2d", pv), encoding="utf-8"))
             ents = d["entidades"].values() if isinstance(d["entidades"], dict) else d["entidades"]

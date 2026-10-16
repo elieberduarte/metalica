@@ -944,9 +944,10 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
 
 
 def detalhar_premoldado(s: str, corpo: dict) -> dict:
-    """POST /api/projetos/<s>/detalhar-premoldado {familias, substituir} — a fôrma de cada peça pré-moldada do modelo
-    (nucleo2d/detalhe/premoldado_formas.py): um desenho por família (pilares e vigas, lajes, fundações, contenções),
-    peças iguais contadas. {resumo: true} só conta as peças de cada família (o diálogo mostra antes). 16/10."""
+    """POST /api/projetos/<s>/detalhar-premoldado {familias, gerais, substituir} — a fôrma de cada peça pré-moldada do
+    modelo (nucleo2d/detalhe/premoldado_formas.py): um desenho por família (pilares e vigas, lajes, fundações,
+    contenções), peças iguais contadas; `gerais` (locacao, formas_niveis, cortes, elevacoes): os desenhos de conjunto
+    pelos geradores da metálica. {resumo: true} conta as peças de cada família e diz os desenhos de conjunto. 16/10."""
     from nucleo2d.detalhe import premoldado_formas as PF
     g = _gerente()
     with _vivos().trava(s):
@@ -954,9 +955,15 @@ def detalhar_premoldado(s: str, corpo: dict) -> dict:
             _progresso(s, "abrindo o modelo…")
             doc = _documento3d_do_projeto(s)
             if corpo.get("resumo"):
-                return {"familias": PF.resumo(doc)}
-            fams = [str(f) for f in (corpo.get("familias") or []) if f] or None
-            ds = PF.desenhos(doc, fams, avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
+                return {"familias": PF.resumo(doc), "gerais": [{"chave": k, "titulo": t} for k, t in PF.GERAIS]}
+            fams = [str(f) for f in (corpo.get("familias") or []) if f]
+            gerais = [str(k) for k in (corpo.get("gerais") or []) if k]
+            avisar = lambda *a: _progresso(s, " ".join(str(x) for x in a))           # noqa: E731
+            # as peças do modelo inteiro, agrupadas uma vez: as marcas da fôrma são as das plantas e dos cortes
+            reps = PF.agrupar(PF.pecas_do_modelo(doc, None, avisar))
+            ds = dict(PF.desenhos(doc, fams, avisar=avisar, reps=reps)) if fams else {}
+            if gerais:
+                ds.update(PF.desenhos_gerais(doc, reps, gerais, eixos=g.ler(s).get("eixos"), avisar=avisar))
             if not ds:
                 raise ErroDeDados("o modelo não tem peças de concreto nas famílias pedidas.")
             substituir = corpo.get("substituir", True) is not False
