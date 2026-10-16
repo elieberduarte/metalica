@@ -137,3 +137,12 @@ html.embutida #btn-voltar, html.embutida #link-editor, html.embutida #link-divid
 .botoes.editar-chapa { margin-top: 6px; }
 .botoes.editar-chapa button { background: #b45309; color: #fff; border-color: #b45309; }
 .faixa-edicao-opcao { order: 2; display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; }
+/* resultado do Projeto recebido em blocos: Não deu · Deu certo · Confira (P19, primeiro uso 16/10) */
+.dialogo-corpo .bloco-resultado { display: flex; flex-direction: column; gap: 4px; border-left: 3px solid var(--borda); padding: 2px 0 2px 10px; }
+.dialogo-corpo .bloco-resultado h4, .dialogo-corpo .resultado-recebido > h4 { margin: 0; font-size: 13px; }
+.dialogo-corpo .bloco-resultado.erro { border-left-color: #dc2626; }
+.dialogo-corpo .bloco-resultado.erro h4, .dialogo-corpo .bloco-resultado.erro .explica { color: #dc2626; }
+.dialogo-corpo .bloco-resultado.ok { border-left-color: #16a34a; }
+.dialogo-corpo .bloco-resultado.atencao { border-left-color: #d97706; }
+.dialogo-corpo .bloco-resultado.atencao .explica { color: #d97706; }
+.dialogo-corpo .resultado-recebido { display: flex; flex-direction: column; gap: 10px; max-height: 64vh; overflow: auto; }

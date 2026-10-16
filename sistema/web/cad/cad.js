@@ -64,6 +64,26 @@ const textoEscala = (v) => {
 };
 const numero = (v, casas = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
 
+/** Os avisos do Projeto recebido por gravidade (P19, primeiro uso 16/10: 15 vistas, 8 "sem título" repetindo "escala não
+ *  encontrada… usei mm" e o aviso que importava — a planta sem eixos — no fim): os que impedem o 3D montado vão para
+ *  "Não deu", os repetidos de escala viram uma linha só com a contagem, o resto fica em "Confira". */
+function avisosDoRecebido(avisos) {
+  const graves = [], confira = [], semEscala = [];
+  for (const a of avisos || []) {
+    const m = /^vista "(.*)": escala não encontrada pelas cotas; usei mm — confira\.?$/.exec(a);
+    if (m) semEscala.push(m[1] || 'sem título');
+    else if (/não tem eixos|não sai sozinha|acerte as origens|não foi possível|nenhuma (vista|peça|barra)/i.test(a)) graves.push(a);
+    else confira.push(a);
+  }
+  if (semEscala.length) {
+    const titulos = semEscala.filter(t => t !== 'sem título'), anonimas = semEscala.length - titulos.length;
+    const nomes = [...titulos.map(t => `"${t}"`), ...(anonimas ? [`${anonimas} sem título`] : [])].join(', ');
+    confira.unshift(semEscala.length === 1 ? `1 vista sem escala pelas cotas (${nomes}): usei mm — confira.`
+      : `${semEscala.length} vistas sem escala pelas cotas (${nomes}): usei mm — confira.`);
+  }
+  return { graves, confira };
+}
+
 class CAD {
   constructor() {
     this.parametros = new URLSearchParams(location.search);
@@ -1429,25 +1449,39 @@ class CAD {
     await this.abrirDesenho(r.desenho);
     const res = r.resumo || {};
     const g = r.gerado || {};
-    const lista = el('ul', { class: 'lista-avisos' });
-    for (const v of r.vistas || []) lista.append(el('li', { texto: `${v.titulo || 'Vista ' + v.id} — ${tipoDeVista(v.tipo)}, ${v.barras} barra(s), escala ${textoEscala(v)}` }));
     const papeis = Object.entries(res.papeis || {}).map(([n, q]) => `${q} ${n}`).join(', ');
-    const itens = [
-      el('div', { class: 'explica', texto: r.modelo
-        ? `Modelo 3D: ${numero(g.barras || 0)} barra(s), ${g.posicoes || 0} posição(ões), ${g.conjuntos || 0} conjunto(s), ${numero(g.peso_kg || 0)} kg. No desenho: ${res.barras || 0} peça(s) reconhecida(s) (${papeis}).`
-        : 'Nenhuma peça foi reconhecida: o modelo 3D não foi gerado. Veja os avisos abaixo.' }),
-      lista,
-    ];
-    if (r.ifc) itens.push(el('div', { class: 'explica' }, 'IFC: ', el('a', { href: r.ifc.url, download: r.ifc.nome, texto: `${r.ifc.nome} (${numero(r.ifc.tamanho_kb, 0)} kB)` })));
-    if (res.a_conferir) itens.push(el('div', { class: 'explica atencao', texto: `${res.a_conferir} peça(s) herdaram o perfil da camada (sem texto junto): estão em PEÇAS A CONFERIR, em rosa.` }));
     const semPerfil = Object.entries(r.sem_perfil || {});
+    // o aviso do servidor sobre as peças sem perfil já é dito em "Confira", com os perfis usados
+    const { graves, confira } = avisosDoRecebido((r.avisos || []).filter(a => !(semPerfil.length && /só pela forma/.test(a))));
+    if (!r.modelo) graves.unshift('Nenhuma peça foi reconhecida: o modelo 3D não foi gerado.');
+    if (res.a_conferir) confira.push(`${res.a_conferir} peça(s) herdaram o perfil da camada (sem texto junto): estão em PEÇAS A CONFERIR, em rosa.`);
     if (semPerfil.length) {
       const pp = r.perfis_padrao || {};
-      itens.push(el('div', { class: 'explica atencao', texto: `${semPerfil.reduce((s, [, q]) => s + q, 0)} peça(s) reconhecida(s) só pela forma, sem perfil escrito, entraram no 3D com o perfil padrão de cada papel: ` + semPerfil.map(([p, q]) => `${q} ${p} → ${pp[p] || '?'}`).join('; ') + '. Para trocar, no CAD use Vistas do modelo → Gerar modelo 3D do desenho… (um perfil por papel) ou, no 3D, Trocar perfil.' }));
+      confira.push(`${semPerfil.reduce((s, [, q]) => s + q, 0)} peça(s) reconhecida(s) só pela forma, sem perfil escrito, entraram no 3D com o perfil padrão de cada papel: ` + semPerfil.map(([p, q]) => `${q} ${p} → ${pp[p] || '?'}`).join('; ') + '. Para trocar, no CAD use Vistas do modelo → Gerar modelo 3D do desenho… (um perfil por papel) ou, no 3D, Trocar perfil.');
     }
-    // o aviso do servidor sobre as peças sem perfil já foi dito acima, com os perfis usados
-    for (const a of r.avisos || []) if (!(semPerfil.length && /só pela forma/.test(a))) itens.push(el('div', { class: 'explica atencao', texto: a }));
-    const acao = await this.dialogo({ titulo: 'Projeto recebido', corpo: el('div', {}, ...itens), ok: r.modelo ? 'Abrir o modelo 3D' : 'OK' });
+    const bloco = (titulo, classe, linhas) => el('div', { class: 'bloco-resultado ' + classe },
+      el('h4', { texto: titulo }), ...linhas.map(l => (l.nodeType ? l : el('div', { class: 'explica', texto: l }))));
+    const itens = [];
+    // o que impede o 3D montado vem primeiro (no fim de 20 linhas ninguém lia)
+    if (graves.length) itens.push(bloco(`Não deu (${graves.length})`, 'erro', graves));
+    if (r.modelo) {
+      const certo = [`Modelo 3D: ${numero(g.barras || 0)} barra(s), ${g.posicoes || 0} posição(ões), ${g.conjuntos || 0} conjunto(s), ${numero(g.peso_kg || 0)} kg. No desenho: ${res.barras || 0} peça(s) reconhecida(s) (${papeis}).`];
+      if (r.ifc) certo.push(el('div', { class: 'explica' }, 'IFC: ', el('a', { href: r.ifc.url, download: r.ifc.nome, texto: `${r.ifc.nome} (${numero(r.ifc.tamanho_kb, 0)} kB)` })));
+      itens.push(bloco('Deu certo', 'ok', certo));
+    }
+    if (confira.length) itens.push(bloco(`Confira (${confira.length})`, 'atencao', confira));
+    const vistas = r.vistas || [];
+    if (vistas.length) {
+      const lista = el('ul', { class: 'lista-avisos' });
+      for (const v of vistas) lista.append(el('li', { texto: `${v.titulo || 'Vista ' + v.id} — ${tipoDeVista(v.tipo)}, ${v.barras} barra(s), escala ${textoEscala(v)}` }));
+      itens.push(el('details', {}, el('summary', { texto: `${vistas.length} vista(s) lida(s)` }), lista));
+    }
+    const passos = [];
+    if (graves.some(a => /eixos|origens/.test(a))) passos.push('Posicionar as vistas: Vistas do modelo → Gerar modelo 3D do desenho… (a origem de cada vista na planta). Até lá, o 3D mostra as vistas lado a lado, não montadas.');
+    if (r.modelo) passos.push('Abrir o modelo 3D e conferir as peças em rosa (PEÇAS A CONFERIR).');
+    passos.push('Ler as folhas e as considerações de cálculo: Modelo › Montar pelo projeto recebido › 2 (o DXF já ficou no projeto).');
+    itens.push(el('h4', { texto: 'Próximos passos' }), el('ol', { class: 'lista-avisos' }, ...passos.map(p => el('li', { texto: p }))));
+    const acao = await this.dialogo({ titulo: 'Projeto recebido', corpo: el('div', { class: 'resultado-recebido' }, ...itens), ok: r.modelo ? 'Abrir o modelo 3D' : 'OK' });
     if (acao === 'ok' && r.modelo) (window.metalicaNavegar || ((u) => { location.href = u; }))(this.urlDoEditor());
   }
 

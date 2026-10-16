@@ -187,6 +187,41 @@ def p08_folhas_sem_pedir_o_arquivo(aba):
     aba.avaliar("document.querySelector('#dialogo').close(); 1")
 
 
+PORTARIA = os.path.join(BASE, "..", "Projeto", "OBRAS", "Portaria-Hermes", "Portaria projeto Hermes 30.09.dxf")
+
+
+def escolher_arquivo(aba, seletor, caminho):
+    """o arquivo no campo, como a janela do Windows faria (DOM.setFileInputFiles dispara o change)"""
+    doc = aba.cmd("DOM.getDocument", depth=-1, pierce=True)
+    no = aba.cmd("DOM.querySelector", nodeId=doc["root"]["nodeId"], selector=seletor)["nodeId"]
+    aba.cmd("DOM.setFileInputFiles", files=[os.path.abspath(caminho)], nodeId=no)
+    aba.drenar(0.5)
+
+
+def p19_resultado_do_recebido(aba):
+    """P19: o resultado do Projeto recebido da Portaria era um paredão — 15 vistas, 8 "sem título" repetindo "escala não
+    encontrada… usei mm" e o aviso que importava (a planta sem eixos: as vistas não montam) no fim."""
+    print("P19 — resultado do Projeto recebido (DXF da Portaria)")
+    if not os.path.exists(PORTARIA):
+        ok(False, "sem o DXF da Portaria em Projeto/OBRAS/Portaria-Hermes"); return
+    s = projeto("Portaria resultado", tipo="recebido")
+    aba.navegar(f"{base}/cad?projeto={s}", limite=60)
+    esperar(aba, "window.cad && document.body.dataset.pronto === '1'")
+    escolher_arquivo(aba, "#arquivo-projeto-2d", PORTARIA)
+    esperar(aba, "document.querySelector('#dialogo').open && document.querySelector('#dialogo-ok').textContent === 'Ler o projeto'", 30)
+    clicar(aba, "#dialogo-ok")
+    esperar(aba, "document.querySelector('#dialogo').open && document.querySelector('#dialogo-titulo').textContent === 'Projeto recebido'", 240)
+    blocos = aba.avaliar("[...document.querySelectorAll('#dialogo-corpo .resultado-recebido > *')].map(e => (e.querySelector('h4, summary') || e).textContent.trim().slice(0, 60))") or []
+    ok(blocos and blocos[0].startswith("Não deu"), f"o primeiro bloco é o que não deu: {blocos[:5]}")
+    primeiro = aba.avaliar("(document.querySelector('#dialogo-corpo .bloco-resultado.erro') || {}).textContent || ''") or ""
+    ok("eixos" in primeiro, f"o aviso de posicionamento está no bloco Não deu: «{primeiro[:120]}»")
+    corpo = aba.avaliar("document.querySelector('#dialogo-corpo').textContent") or ""
+    n = corpo.count("escala não encontrada") + corpo.count("sem escala pelas cotas")
+    ok(n == 1 and "8 vistas sem escala" in corpo, f"a escala não encontrada aparece uma vez, com a contagem ({n})")
+    ok("Próximos passos" in corpo, "tem Próximos passos")
+    aba.avaliar("document.querySelector('#dialogo').close(); 1")
+
+
 chrome = next(c for c in CHROMES if os.path.exists(c)); cdp = _porta_livre(); perfil = tempfile.mkdtemp(prefix="verif_primeiro_uso_")
 nav = subprocess.Popen([chrome, "--headless=new", "--disable-gpu", "--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars",
                         "--no-first-run", "--remote-allow-origins=*", f"--user-data-dir={perfil}", f"--remote-debugging-port={cdp}", "about:blank"],
@@ -201,7 +236,7 @@ try:
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1600, height=1000, deviceScaleFactor=1, mobile=False)
     # python verif_primeiro_uso_ui.py p07 → só os blocos cujo nome começa assim
     for bloco in [b for b in (p02_p13_recebido, p06_vao_pequeno, p11_p12_cad, p07_menu_antes_do_editor,
-                                p08_folhas_sem_pedir_o_arquivo)
+                                p08_folhas_sem_pedir_o_arquivo, p19_resultado_do_recebido)
                   if not sys.argv[1:] or any(b.__name__.startswith(a) for a in sys.argv[1:])]:
         try:
             bloco(aba)
