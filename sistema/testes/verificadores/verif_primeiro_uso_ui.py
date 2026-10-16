@@ -142,6 +142,27 @@ def p11_p12_cad(aba):
     ok(n == 1, f"no 3D, o mesmo aviso repetido fica um só ({n})")
 
 
+def _item_da_barra(texto):
+    return f"""(() => {{ let a = null; (function andar(l) {{ for (const it of (Array.isArray(l) ? l : [])) {{ if (a) return; if (it && it.texto === {json.dumps(texto)}) a = it; else if (it && (it.sub || it.itens)) andar(it.sub || it.itens); }} }})(window.barraUnica.mapa); return a; }})()"""
+
+
+def p07_menu_antes_do_editor(aba):
+    """P07: com o 3D no modo "ver", o comando do menu da tela do projeto carregava o editor e clicava logo que o
+    window.editor nascia, antes de o projeto chegar: "Abra um projeto: as treliças lidas vêm…" com o projeto aberto, e o
+    Detalhar não abria."""
+    print("P07 — comando do menu com o 3D no modo ver")
+    s = projeto("Portaria menu")
+    for texto, conferir, rotulo in (("Detalhar peças e conjuntos…", "(() => { try { const d = document.querySelector('#f3d').contentWindow.document.querySelector('dialog[open]'); return !!d && d.textContent.includes('Tesouras (com as barras'); } catch (e) { return false; } })()", "o diálogo Detalhar peças e conjuntos abre"),
+                                    ("5. Conferir as treliças lidas…", "location.pathname === '/trelicas'", "Conferir as treliças lidas vai para /trelicas")):
+        aba.navegar(f"{base}/dividida?projeto={s}&vista=3d", limite=60)
+        esperar(aba, "window.barraUnica && (() => { try { return !!document.querySelector('#f3d').contentWindow.visorLeve; } catch (e) { return false; } })()")
+        ok(aba.avaliar(f"!!{_item_da_barra(texto)}"), f"o item «{texto}» existe no menu")
+        aba.avaliar(f"window.barraUnica.executar({_item_da_barra(texto)}); 1")
+        foi = esperar(aba, conferir, 60)
+        aviso = aba.avaliar("(() => { try { return [...document.querySelector('#f3d').contentWindow.document.querySelectorAll('.aviso, #avisos > *')].map(a => a.textContent).join(' | '); } catch (e) { return ''; } })()") or ""
+        ok(foi and "Abra" not in aviso, f"{rotulo} (avisos: «{aviso[:80]}»)")
+
+
 chrome = next(c for c in CHROMES if os.path.exists(c)); cdp = _porta_livre(); perfil = tempfile.mkdtemp(prefix="verif_primeiro_uso_")
 nav = subprocess.Popen([chrome, "--headless=new", "--disable-gpu", "--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars",
                         "--no-first-run", "--remote-allow-origins=*", f"--user-data-dir={perfil}", f"--remote-debugging-port={cdp}", "about:blank"],
@@ -154,12 +175,15 @@ try:
     aba = Aba(alvos[0]["webSocketDebuggerUrl"])
     for dm in ("Page", "Runtime", "Log"): aba.cmd(f"{dm}.enable")
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1600, height=1000, deviceScaleFactor=1, mobile=False)
-    for bloco in (p02_p13_recebido, p06_vao_pequeno, p11_p12_cad):
+    # python verif_primeiro_uso_ui.py p07 → só os blocos cujo nome começa assim
+    for bloco in [b for b in (p02_p13_recebido, p06_vao_pequeno, p11_p12_cad, p07_menu_antes_do_editor)
+                  if not sys.argv[1:] or any(b.__name__.startswith(a) for a in sys.argv[1:])]:
         try:
             bloco(aba)
         except Exception as e:                       # noqa: BLE001
             ok(False, f"{bloco.__name__}: {e}")
-    erros = [m for m in aba.console if m[0] in ("error", "excecao")]
+    # o 3D leve de um projeto sem modelo responde 404 (o visor mostra "sem modelo"): não é erro da tela
+    erros = [m for m in aba.console if m[0] in ("error", "excecao") and not ("404" in m[1] and "/3d-leve" in m[1])]
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:
     try: nav.kill()

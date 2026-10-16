@@ -294,6 +294,12 @@
     var w = janela(lado);
     try { return w && LADOS[lado].pronto(w) ? w.document : null; } catch (e) { return null; }
   }
+  /** a tela terminou de carregar (o projeto aberto): o window.editor nasce antes de o projeto chegar, e um comando
+   * clicado nesse meio dizia "Abra um projeto…" com o projeto aberto (P07 do teste de primeiro uso, 16/10) */
+  function docCarregado(lado) {
+    var d = docPronto(lado);
+    try { return d && d.body && d.body.dataset.pronto === '1' ? d : null; } catch (e) { return null; }
+  }
   function vista() { return window.vistaAtual ? window.vistaAtual() : 'ambos'; }
   function visivel(lado) { var v = vista(); return v === 'ambos' || v === lado; }
 
@@ -516,7 +522,8 @@
     }
     var inicio = Date.now();
     (function tentar() {
-      var d = docPronto(it.lado);
+      // espera a tela carregar de vez; se ela nunca se der por pronta (falha no meio da carga), roda assim mesmo em 20 s
+      var d = docCarregado(it.lado) || (Date.now() - inicio > 20000 ? docPronto(it.lado) : null);
       if (d) {
         var o = original(it, d);
         if (o) { ultimoLado = it.lado; o.click(); }
@@ -652,7 +659,7 @@
     // o 3D no modo "ver" não tem as ferramentas: carrega o editor no quadro (o mesmo caminho dos comandos do 3D)
     if (!docPronto('3d')) { try { var w3 = janela('3d'); if (w3 && w3.visorLeve) w3.visorLeve.editar(); } catch (e) { /* carregando */ } }
     (function tentar() {
-      var w = docPronto('3d') ? janela('3d') : null;
+      var w = docCarregado('3d') ? janela('3d') : null;
       if (w && typeof w.abrirGuiaFerramentas === 'function') { w.abrirGuiaFerramentas(); try { w.focus(); } catch (e) { /* sem foco */ } return; }
       if (Date.now() - inicio < 60000) setTimeout(tentar, 200);
     })();
