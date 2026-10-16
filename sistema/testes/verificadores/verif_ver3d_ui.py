@@ -114,6 +114,36 @@ try:
     ok(aba.avaliar(F3 + ".visor.visivelCamada.filter(x => x === false).length") >= 1, "desligar uma camada a esconde")
     aba.avaliar(F3 + ".document.querySelector('#painel-corpo input[data-c]').click()")
 
+    # o que se oculta aqui fica quando o projeto se atualiza (usuário, Mercado Conceito, 16/10: "as camadas que são ocultas
+    # voltam a aparecer quando o projeto é atualizado"): a tela recarrega o modo ver (dividida.js recarregar3d, o "troca
+    # sozinho em instantes") — antes o grupo oculto do Pintar e a camada desligada voltavam
+    aba.avaliar(f"(() => {{ const s = {F3}.document.getElementById('pintar'); s.value = 'perfil'; s.dispatchEvent(new Event('change')); return 1; }})()")
+    grupo = aba.avaliar(F3 + ".document.querySelector('#painel-corpo [data-olho]').closest('.linha-lista').querySelector('span').textContent")
+    aba.avaliar(F3 + ".document.querySelector('#painel-corpo [data-olho]').click()")
+    n_grupo = aba.avaliar(F3 + ".visor.ocultas.size")
+    aba.avaliar(F3 + ".document.querySelector('[data-painel=camadas]').click()")
+    # uma camada à mostra (a Parafusos do modelo de teste já vem desligada do editor)
+    LIGADA = "[..." + F3 + ".document.querySelectorAll('#painel-corpo input[data-c]:checked')].pop()"
+    camada = aba.avaliar(LIGADA + ".closest('label').querySelector('span').textContent")
+    aba.avaliar(LIGADA + ".click()")
+    aba.avaliar(f"(() => {{ const s = {F3}.document.getElementById('pintar'); s.value = 'perfil'; s.dispatchEvent(new Event('change')); return 1; }})()")
+    ok(n_grupo > 0 and aba.avaliar(F3 + ".visor.ocultas.size") == n_grupo, f"ocultos: o grupo {grupo} ({n_grupo} peças) e a camada {camada}")
+    aba.avaliar(F3 + ".location.reload(); 1")
+    aba.drenar(1.0)
+    ok(esperar(aba, F3 + ".ver3dPronto && " + F3 + ".visor && " + F3 + ".visor.fichas", 60), "o modo ver recarregou (o projeto atualizado)")
+    ok(aba.avaliar(F3 + ".document.getElementById('pintar').value") == "perfil", "continua pintado por perfil")
+    ok(aba.avaliar(F3 + ".visor.ocultas.size") == n_grupo, f"o grupo {grupo} continua oculto ({aba.avaliar(F3 + '.visor.ocultas.size')} de {n_grupo})")
+    ok(aba.avaliar(F3 + f".visor.cabecalho.camadas.findIndex(c => c.nome === {json.dumps(camada)})") >= 0
+       and aba.avaliar(F3 + f".visor.visivelCamada[{F3}.visor.cabecalho.camadas.findIndex(c => c.nome === {json.dumps(camada)})]") is False,
+       f"a camada {camada} continua desligada")
+    ok(aba.avaliar(F3 + ".document.querySelector('#painel-corpo [data-olho]:not(:checked)') !== null"),
+       "a legenda reabre com a caixinha do grupo desmarcada")
+    # limpa para o resto do teste
+    aba.avaliar(F3 + ".localStorage.removeItem('ver3d:obra'); " + F3 + ".location.reload(); 1")
+    aba.drenar(1.0)
+    ok(esperar(aba, F3 + ".ver3dPronto && " + F3 + ".visor && " + F3 + ".visor.fichas && " + F3 + ".visor.ocultas.size === 0", 60),
+       "sem o guardado, abre com tudo à mostra")
+
     # o desenho do piso como camada (usuário, 16/10: "transformar esse desenho do piso em uma camada que possa ser
     # oculta"): arquitetônico, eixos e níveis um a um no alto de Camadas e de Pintar; continua oculto com o tema trocado
     aba.avaliar(F3 + ".visor.definirReferencia({segmentos: [[0, 0, 6000, 0], [0, 0, 0, 3000]], "

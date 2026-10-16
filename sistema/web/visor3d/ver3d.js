@@ -32,6 +32,20 @@ let legenda = [];
 let doEditor = null;
 try { doEditor = JSON.parse(localStorage.getItem(`vista3d:${PROJETO}`) || 'null'); } catch (e) { doEditor = null; }
 let ocultasDoEditor = [];
+// o que se ocultou AQUI no modo ver, por projeto: os grupos do Pintar (pelo nome, em cada modo) e as camadas ligadas ou
+// desligadas — antes ficava só na memória da página, e quando o 3D se atualizava ("o modelo mudou… troca sozinho") ou com
+// F5 tudo voltava a aparecer (usuário, Mercado Conceito, 16/10: "as camadas que são ocultas voltam a aparecer quando o
+// projeto é atualizado"). Pelo nome: a peça nova do mesmo perfil ou da mesma camada já nasce oculta.
+const CHAVE_DO_VER = `ver3d:${PROJETO}`;
+function lerDoVer() {
+  try { const v = JSON.parse(localStorage.getItem(CHAVE_DO_VER) || 'null'); if (v && typeof v === 'object') return v; } catch (e) { /* sem armazenamento */ }
+  return {};
+}
+let doVer = { pintar: null, grupos: {}, camadas: {}, ...lerDoVer() };
+const PINTAR_DO_VER = doVer.pintar;            // lido antes: o "como no editor" da abertura grava por cima
+function gravarDoVer() {
+  try { localStorage.setItem(CHAVE_DO_VER, JSON.stringify(doVer)); } catch (e) { /* sem armazenamento */ }
+}
 
 // a paleta dos grupos, a mesma do editor (editor3d/editor.js, corDeGrupo): por perfil a mesma peça tem a mesma cor nos dois
 const PALETA_GRUPOS = ['#d94a4a', '#2f9e5f', '#3d6fd6', '#e08a1e', '#8e44ad', '#17a2b8',
@@ -74,6 +88,20 @@ function pintar(modo) {
     }
   }
   if (ocultasDoEditor.length) visor.ocultarPecas(ocultasDoEditor, true);
+  const ocultosAqui = new Set((doVer.grupos || {})[modo] || []);
+  for (const g of legenda) if (ocultosAqui.has(g.nome)) visor.ocultarPecas(g.ids, true);
+  if (doVer.pintar !== modo) { doVer.pintar = modo; gravarDoVer(); }
+}
+
+/** Depois de abrir: o que se ocultou aqui no modo ver da outra vez (camadas e o Pintar com os grupos ocultos). */
+function aplicarDoVer() {
+  const cams = visor.cabecalho.camadas || [];
+  cams.forEach((c, i) => { const v = (doVer.camadas || {})[c.nome]; if (typeof v === 'boolean' && v !== (visor.visivelCamada[i] !== false)) visor.mostrarCamada(i, v); });
+  const sel = $('#pintar');
+  if (PINTAR_DO_VER && sel && sel.value !== PINTAR_DO_VER && [...sel.options].some(o => o.value === PINTAR_DO_VER)) {
+    sel.value = PINTAR_DO_VER;
+    pintar(PINTAR_DO_VER);
+  }
 }
 
 /** Depois de abrir: as peças que o editor ocultou somem, e o Pintar começa como no editor. */
@@ -281,6 +309,9 @@ async function abrir() {
     esperarVersaoNova(versao);
   }
   aplicarDoEditor();
+  aplicarDoVer();
+  if (vista && vista.painel === 'legenda' && $('#pintar').value !== 'material') painelLegenda($('#pintar').value);
+  else if (vista && vista.painel === 'camadas') painelCamadas();
   window.ver3dPronto = { ms, pecas: visor.nPecas };
   aplicarTema(null);
   carregarReferencia();
@@ -344,7 +375,7 @@ function guardarVista() {
   if (!visor || !visor.cabecalho) return;
   try {
     sessionStorage.setItem(CHAVE_VISTA, JSON.stringify({ projeto: PROJETO, quando: Date.now(), ...visor.lerCamera(),
-      selecao: [...visor.selecaoVarias].map(i => visor.fichas[i].id) }));
+      selecao: [...visor.selecaoVarias].map(i => visor.fichas[i].id), painel: painelAtual }));
   } catch (e) { /* sem armazenamento */ }
 }
 function vistaGuardada() {
@@ -411,7 +442,11 @@ function painelCamadas() {
       <input type="checkbox" data-c="${i}" ${visor.visivelCamada[i] !== false ? 'checked' : ''}>
       <i style="background:${esc(c.cor)}"></i><span>${esc(c.nome)}</span><em>${nf(c.pecas)}</em></label>` : '').join(''));
   ligarSecaoPiso();
-  $('#painel-corpo').querySelectorAll('input[data-c]').forEach(el => el.onchange = () => visor.mostrarCamada(+el.dataset.c, el.checked));
+  $('#painel-corpo').querySelectorAll('input[data-c]').forEach(el => el.onchange = () => {
+    visor.mostrarCamada(+el.dataset.c, el.checked);
+    doVer.camadas = { ...(doVer.camadas || {}), [cams[+el.dataset.c].nome]: el.checked };
+    gravarDoVer();
+  });
 }
 
 function painelLegenda(modo) {
@@ -423,7 +458,14 @@ function painelLegenda(modo) {
     + '<p class="dica">Clique num grupo para ir à primeira peça dele; a caixinha mostra ou oculta o grupo.</p>');
   $('#painel-corpo').querySelectorAll('[data-olho]').forEach(cb => {
     cb.onclick = ev => ev.stopPropagation();
-    cb.onchange = () => { const g = legenda[+cb.dataset.olho]; visor.ocultarPecas(g.ids, !cb.checked); };
+    cb.onchange = () => {
+      const g = legenda[+cb.dataset.olho];
+      visor.ocultarPecas(g.ids, !cb.checked);
+      const modo = $('#pintar').value, nomes = new Set((doVer.grupos || {})[modo] || []);
+      if (cb.checked) nomes.delete(g.nome); else nomes.add(g.nome);
+      doVer.grupos = { ...(doVer.grupos || {}), [modo]: [...nomes] };
+      gravarDoVer();
+    };
   });
   ligarSecaoPiso();
   $('#painel-corpo').querySelectorAll('[data-k]').forEach(el => el.onclick = (ev) => {
