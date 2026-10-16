@@ -86,6 +86,17 @@ bloco no 2e3414c).
 | 16/10 | dev: tela inicial em branco por minutos (a lista de 0,06 s a 24 s com o detalhamento automático rodando) | 73a5df4 | test_regressoes_mercado TestTelaInicialComDetalhamentoRodando |
 | 16/10 | Mercado: "as elevações geradas pelo detalhamento do pré-moldado não ficaram legais" (a fachada pela peça mais de fora — só o muro da calçada —, contorno convexo, marcas amontoadas) | este pacote | test_regressoes_mercado TestElevacoesECortesDoPremoldado |
 
+## Tesoura de aço: posição das peças (boca do U, lado da cantoneira)
+
+Regra única em `nucleo3d/regras_trelica.py` (T1–T5); todo gerador chama `orientar` antes do encaixe e a
+conferência do 3D chama `conferir`. Teste principal: `test_regras_trelica.py` — gera pela tesoura do desenho
+(Docas, linha de centro com alma em U, planta em x e em y), pela treliça do editor (alma U e L), pelo galpão
+treliçado, pela planta do Posto e pelos quadros; a lista de fora da regra tem de vir vazia.
+
+| Data | O que o usuário via | Correção | Teste |
+|---|---|---|---|
+| 16/10 | Mercado Hermes: "toda tesoura nova volta com a configuração antiga" — montante de canto com a boca para fora, cantoneiras da alma uma de cada lado, diagonal em U virada (826 peças); Posto: cantoneira da PM6 copa do outro lado; CD Bom Dia: alma Ue em pé "para o fim" | ccf52cf | test_regras_trelica (todos os caminhos de geração); test_conferencia: Verificar apoios acusa |
+
 ## Primeiro uso (agentes engenheiro-primeiro-uso e detalhista-primeiro-uso-ifc)
 
 Achados dos testes de primeiro uso (`Projeto/BRIEFINGS/Briefing-primeiro-uso*.md`), feitos pelas telas com `testes/navegar.py`.
