@@ -42,4 +42,33 @@ def rota_get(h, rota: str) -> bool:
 
 
 def rota_post(h, rota: str, corpo: dict) -> bool:
-    return False
+    """POST /api/dev/chats/responder {id, token, texto} (a vez) ou {id, token, respostas: {pergunta: opção}} (a pergunta
+    com opções): o gancho do chat (painel_dev/ganchos.py) pega e acorda o chat. POST /api/dev/chats/descartar {id, token}:
+    tira da caixa (o usuário responde no VS Code)."""
+    if rota not in ("/api/dev/chats/responder", "/api/dev/chats/descartar"):
+        return False
+    import time
+    from nucleo.base import ErroDeDados
+    from painel_dev import ganchos as G
+    corpo = corpo if isinstance(corpo, dict) else {}
+    sid, token = str(corpo.get("id") or ""), str(corpo.get("token") or "")
+    pend = G._arq(G.PENDENTES, sid)
+    p = G._ler(pend)
+    if not p or p.get("token") != token:
+        raise ErroDeDados("essa pergunta já não está esperando: o chat seguiu (respondida no VS Code?) ou foi trocada por outra")
+    if rota.endswith("/descartar"):
+        G._apagar(pend, token)
+        h._json({"ok": True})
+        return True
+    if p.get("tipo") == "pergunta":
+        respostas = corpo.get("respostas")
+        if not isinstance(respostas, dict) or not respostas:
+            raise ErroDeDados("escolha uma opção (ou escreva a resposta) para cada pergunta")
+        G.gravar(G._arq(G.RESPOSTAS, sid), {"token": token, "respostas": {str(k): str(v) for k, v in respostas.items()}, "t": time.time()})
+    else:
+        texto = str(corpo.get("texto") or "").strip()
+        if not texto:
+            raise ErroDeDados("escreva a resposta")
+        G.gravar(G._arq(G.RESPOSTAS, sid), {"token": token, "texto": texto[:20000], "t": time.time()})
+    h._json({"ok": True})
+    return True

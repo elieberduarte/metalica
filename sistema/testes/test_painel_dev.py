@@ -83,3 +83,107 @@ def test_chamada_de_agente_com_erro_nao_conta():
         {"type": "user", "timestamp": _iso(time.time()), "message": {"content": [
             {"type": "tool_result", "tool_use_id": "u9", "is_error": True, "content": "Agent type 'x' not found"}]}}])
     assert s.agentes == {}
+
+
+# ------------------------------------------------------------------ ganchos (responder pelo painel)
+import io
+import sys
+import threading
+
+from painel_dev import ganchos
+
+
+def _caixa(monkeypatch):
+    base = tempfile.mkdtemp(prefix="caixa_")
+    for nome in ("PENDENTES", "RESPOSTAS", "AVISOS"):
+        monkeypatch.setattr(ganchos, nome, os.path.join(base, nome.lower()))
+    monkeypatch.setattr(ganchos, "PASSO", 0.05)
+    return base
+
+
+def _rodar(fn, d, saida):
+    class _Std:
+        def __init__(self):
+            self.buffer = io.BytesIO()
+
+        def flush(self):
+            pass
+    err, out = _Std(), _Std()
+    velho = sys.stderr, sys.stdout
+    sys.stderr, sys.stdout = err, out
+    try:
+        saida["rc"] = fn(d)
+    finally:
+        sys.stderr, sys.stdout = velho
+    saida["err"] = err.buffer.getvalue().decode("utf-8")
+    saida["out"] = out.buffer.getvalue().decode("utf-8")
+
+
+def _esperar_pendente(sid):
+    for _ in range(100):
+        p = ganchos._ler(ganchos._arq(ganchos.PENDENTES, sid))
+        if p:
+            return p
+        time.sleep(0.02)
+    raise AssertionError("o gancho não registrou a pendência")
+
+
+def test_parada_acorda_o_chat_com_a_resposta_do_painel(monkeypatch):
+    _caixa(monkeypatch)
+    tr = os.path.join(tempfile.mkdtemp(), "t.jsonl")
+    open(tr, "w").close()
+    saida = {}
+    th = threading.Thread(target=_rodar, args=(ganchos.parada, {"session_id": "s1", "last_assistant_message": "TM1 ou T1A?",
+                                                                "transcript_path": tr}, saida))
+    th.start()
+    p = _esperar_pendente("s1")
+    assert p["tipo"] == "vez" and p["texto"] == "TM1 ou T1A?"
+    ganchos.gravar(ganchos._arq(ganchos.RESPOSTAS, "s1"), {"token": "outro", "texto": "não vale"})   # token velho: ignora
+    time.sleep(0.2)
+    assert th.is_alive()
+    ganchos.gravar(ganchos._arq(ganchos.RESPOSTAS, "s1"), {"token": p["token"], "texto": "Use T1A + T1B."})
+    th.join(5)
+    assert saida["rc"] == 2 and "Use T1A + T1B." in saida["err"]
+    assert not os.path.exists(ganchos._arq(ganchos.PENDENTES, "s1"))
+
+
+def test_parada_sai_calada_quando_o_usuario_responde_no_vs_code(monkeypatch):
+    _caixa(monkeypatch)
+    tr = os.path.join(tempfile.mkdtemp(), "t.jsonl")
+    with open(tr, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"type": "user", "timestamp": _iso(time.time() - 30), "message": {"content": "pedido antigo"}}) + "\n")
+    saida = {}
+    th = threading.Thread(target=_rodar, args=(ganchos.parada, {"session_id": "s2", "last_assistant_message": "pronto",
+                                                                "transcript_path": tr}, saida))
+    th.start()
+    _esperar_pendente("s2")
+    time.sleep(0.2)
+    assert th.is_alive()                     # o pedido antigo, de antes de parar, não conta
+    with open(tr, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"type": "user", "timestamp": _iso(time.time() + 1), "message": {"content": "agora o P07"}}) + "\n")
+    th.join(5)
+    assert saida["rc"] == 0 and saida["err"] == ""
+    assert not os.path.exists(ganchos._arq(ganchos.PENDENTES, "s2"))
+
+
+def test_pergunta_com_opcoes_respondida_no_painel(monkeypatch):
+    _caixa(monkeypatch)
+    entrada = {"questions": [{"question": "Qual nome?", "header": "Nome", "multiSelect": False,
+                              "options": [{"label": "TM1", "description": ""}, {"label": "T1A + T1B", "description": ""}]}]}
+    saida = {}
+    th = threading.Thread(target=_rodar, args=(ganchos.pergunta, {"session_id": "s3", "tool_input": entrada}, saida))
+    th.start()
+    p = _esperar_pendente("s3")
+    assert p["tipo"] == "pergunta" and p["perguntas"][0]["question"] == "Qual nome?"
+    ganchos.gravar(ganchos._arq(ganchos.RESPOSTAS, "s3"), {"token": p["token"], "respostas": {"Qual nome?": "T1A + T1B"}})
+    th.join(5)
+    out = json.loads(saida["out"])["hookSpecificOutput"]
+    assert out["permissionDecision"] == "allow"
+    assert out["updatedInput"]["answers"] == {"Qual nome?": "T1A + T1B"}
+    assert out["updatedInput"]["questions"] == entrada["questions"]
+
+
+def test_aviso_de_permissao_vai_para_a_caixa(monkeypatch):
+    _caixa(monkeypatch)
+    ganchos.aviso({"session_id": "s4", "notification_type": "permission_prompt", "message": "Claude needs your permission to use Bash"})
+    assert ganchos._ler(ganchos._arq(ganchos.AVISOS, "s4"))["texto"].startswith("Claude needs")

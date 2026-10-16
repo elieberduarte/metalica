@@ -300,6 +300,46 @@ def _frentes(ids_em_commits: set) -> List[dict]:
     return out
 
 
+def caixa_de_entrada(agora: float, sessoes: Dict[str, "Sessao"]) -> List[dict]:
+    """O que os chats esperam do usuário (painel_dev/ganchos.py grava): a vez terminada com a última mensagem, a
+    pergunta com opções, o pedido de permissão. Some quando o chat segue (o usuário respondeu no VS Code)."""
+    from painel_dev import ganchos as G
+    itens = []
+    for arq in glob.glob(os.path.join(G.PENDENTES, "*.json")):
+        p = G._ler(arq)
+        if not p or not p.get("sessao"):
+            continue
+        sid, t = p["sessao"], float(p.get("t") or 0)
+        if p.get("tipo") == "pergunta":
+            if agora > float(p.get("prazo") or t + G.ESPERA_PERGUNTA):
+                continue
+        elif agora - t > G.ESPERA_PARADA:
+            continue
+        s = sessoes.get(sid)
+        if p.get("tipo") == "vez" and s and s.ultimo and s.ultimo > t + 20:
+            continue                                     # o chat já seguiu
+        r = G._ler(G._arq(G.RESPOSTAS, sid))
+        enviada = bool(r and r.get("token") == p.get("token"))
+        try:
+            parada = enviada and agora - os.path.getmtime(G._arq(G.RESPOSTAS, sid)) > 20
+        except OSError:
+            parada = False
+        itens.append({"tipo": p.get("tipo"), "sessao": sid, "token": p.get("token"), "t": t, "texto": p.get("texto") or "",
+                      "perguntas": p.get("perguntas") or [], "prazo": p.get("prazo"), "enviada": enviada,
+                      "nao_entregue": parada})
+    for arq in glob.glob(os.path.join(G.AVISOS, "*.json")):
+        a = G._ler(arq)
+        if not a or not a.get("sessao") or agora - float(a.get("t") or 0) > 3600:
+            continue
+        s = sessoes.get(a["sessao"])
+        if s and s.ultimo and s.ultimo > float(a["t"]) + 5:
+            continue                                     # já respondida no VS Code
+        if any(i["sessao"] == a["sessao"] and i["tipo"] == "pergunta" for i in itens):
+            continue
+        itens.append({"tipo": "permissao", "sessao": a["sessao"], "t": a["t"], "texto": a.get("texto") or ""})
+    return sorted(itens, key=lambda i: i["t"])
+
+
 def painel(horas: float = 24.0) -> dict:
     agora = time.time()
     with _TRAVA:
@@ -402,5 +442,16 @@ def painel(horas: float = 24.0) -> dict:
         for k in conflitos:
             alertas.append({"tipo": "conflito", "chat": ", ".join(rotulo(x) for x in k["chats"]),
                             "texto": f"{len(k['chats'])} chats editaram {k['arquivo']} e ele está sem commit"})
-        return {"agora": agora, "horas": horas, "chats": chats, "alertas": alertas, "linha": linha,
+        caixa = caixa_de_entrada(agora, {s.id: s for s in _SESSOES.values()})
+        com_pendencia = {i["sessao"] for i in caixa}
+        for c in chats:
+            c["pendencia"] = c["id"] in com_pendencia
+            if c["pendencia"] and c["estado"] in ("parado", "inativo"):
+                c["estado"] = "sua_vez"
+        for i in caixa:
+            s = _SESSOES.get(next((a for a, x in _SESSOES.items() if x.id == i["sessao"]), ""), None)
+            i["nome"] = nome_de.get(i["sessao"]) or ""
+            i["titulo"] = (s.titulo if s else "") or i["sessao"][:8]
+        alertas = [a for a in alertas if not (a["tipo"] == "sua_vez" and a.get("id") in com_pendencia)]
+        return {"agora": agora, "horas": horas, "chats": chats, "alertas": alertas, "linha": linha, "caixa": caixa,
                 "frentes": _frentes(ids), "commits_git": g["log"][:40], "pastas": pastas_das_conversas()}
