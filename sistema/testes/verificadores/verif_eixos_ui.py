@@ -51,6 +51,19 @@ try:
     foto(aba, "_eixos.png")
     aba.avaliar("window.editor.el.dialogo.close('cancelar'); 1")
     aba.drenar(0.5)
+    # P04 (primeiro uso, 16/10): o eixo gravado no diálogo tem de chegar ao snap e a "Pilares nos eixos" sem F5
+    aba.avaliar("window.editor.dialogoEixos(); 1")
+    t0 = time.time()
+    while time.time() - t0 < 60 and not aba.avaliar("window.editor.el.dialogo.open && window.editor.el.dialogoCorpo.querySelectorAll('input').length > 0"): aba.drenar(0.5)
+    aba.avaliar("[...window.editor.el.dialogoCorpo.querySelectorAll('button')].find(b => b.textContent === '+ eixo').click(); 1")
+    novo = aba.avaliar("""(() => { const c = window.editor.el.dialogoCorpo; const vs = [...c.querySelectorAll('input')].map(i => i.value);
+        const antes = new Set((window.editor.inferencia.referencias && window.editor.inferencia.referencias.eixos || []).map(e => e.nome));
+        return vs.find(v => v && isNaN(+v) && !antes.has(v)) || vs.find(v => v && !antes.has(v) && v.length <= 3) || ''; })()""")
+    aba.avaliar("[...document.querySelectorAll('dialog[open] button')].find(b => b.textContent.trim() === 'Gravar no projeto').click(); 1")
+    t0 = time.time()
+    while time.time() - t0 < 20 and not aba.avaliar(f"(window.editor.inferencia.referencias.eixos || []).some(e => e.nome === {json.dumps(novo)})"): aba.drenar(0.5)
+    nomes = aba.avaliar("(window.editor.inferencia.referencias.eixos || []).map(e => e.nome).join(',')") or ""
+    ok(bool(novo) and novo in nomes.split(","), f"o eixo novo «{novo}» chega ao 3D sem recarregar (eixos do snap: {nomes})")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:

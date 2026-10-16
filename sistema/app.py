@@ -2234,6 +2234,8 @@ def gravar_eixos_projeto(s: str, corpo: dict) -> dict:
     if not ex:
         raise ErroDeDados("eixos inválidos: informe ao menos um eixo com nome e posição.")
     ex["origem"] = "usuario"
+    # a hora em que o usuário gravou: a malha da Planta de lançamento só vence se for mexida depois (P04, 16/10)
+    ex["gravado_em"] = time.time()
     g._atualizar(s, eixos=ex)
     return {"eixos": ex, "gravados": True}
 
@@ -3763,6 +3765,12 @@ def referencia_do_lancamento(s: str) -> dict:
     else:
         malha = []
     p = g.ler(s)
+    gravados = p.get("eixos") or {}
+    if malha and str(gravados.get("origem") or "") == "usuario" and float(gravados.get("gravado_em") or 0.0) > os.path.getmtime(caminho):
+        # gravados no diálogo Eixos da obra DEPOIS da última mudança na planta: valem eles — a malha da planta (no teste de
+        # primeiro uso, as linhas do DXF importado) escondia o eixo 2 recém-gravado do 3D e de Pilares nos eixos (P04, 16/10)
+        malha = []
+        saida["planta_diverge"] = True
     # sem eixos gravados, os identificados do modelo — os mesmos das plantas (pedido do usuário, 29/09:
     # "trazer os eixos para o modelo 3D para ver de que lado está cada coisa")
     ex = None if _eixos.sem_eixos(p.get("eixos")) else (_eixos.de_dict(p.get("eixos")) or _eixos_automaticos(s))
