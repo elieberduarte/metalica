@@ -185,6 +185,30 @@ def p23_lista_sob_medida(aba):
     ok(kgs and not [k for k in kgs if "· 0 barras" in k] and any("sob medida" in k for k in kgs), f"sem «0 barras», com «sob medida»: {kgs[:8]}")
 
 
+def p15_zoom_da_roda(aba):
+    """P15: no CAD, cada evento da roda dava 1,15×, forte ou fraco (16 roladas da folha até ler os textos), e o x/y do
+    rodapé ficava parado durante o zoom."""
+    print("P15 — zoom da roda no CAD")
+    s = projeto("Portaria zoom", tipo="desenho")
+    aba.navegar(f"{base}/cad?projeto={s}", limite=60)
+    esperar(aba, "window.cad && document.body.dataset.pronto === '1'")
+    r = aba.avaliar("(() => { const q = document.querySelector('#tela, canvas').getBoundingClientRect(); return [q.left + q.width / 2, q.top + q.height / 2]; })()")
+
+    def rolar(dy, x, y):
+        z0 = aba.avaliar("window.cad.tela.vp.z")
+        aba.cmd("Input.dispatchMouseEvent", type="mouseWheel", x=x, y=y, deltaX=0, deltaY=dy)
+        aba.drenar(0.3)
+        return aba.avaliar("window.cad.tela.vp.z") / z0
+
+    fraco = rolar(-100, r[0], r[1])
+    forte = rolar(-500, r[0], r[1])
+    ok(fraco > 1.1 and forte > fraco * 1.5, f"a rolagem forte aproxima mais que a fraca ({fraco:.2f}× × {forte:.2f}×)")
+    c0 = aba.avaliar("window.cad.el.coord.textContent")
+    rolar(100, r[0] - 200, r[1] - 120)
+    c1 = aba.avaliar("window.cad.el.coord.textContent")
+    ok(c1 != c0 and "x" in c1, f"o x/y do rodapé acompanha o zoom («{c0}» → «{c1}»)")
+
+
 def _item_da_barra(texto):
     return f"""(() => {{ let a = null; (function andar(l) {{ for (const it of (Array.isArray(l) ? l : [])) {{ if (a) return; if (it && it.texto === {json.dumps(texto)}) a = it; else if (it && (it.sub || it.itens)) andar(it.sub || it.itens); }} }})(window.barraUnica.mapa); return a; }})()"""
 
@@ -426,7 +450,7 @@ try:
     for bloco in [b for b in (p02_p13_recebido, p06_vao_pequeno, p11_p12_cad, p07_menu_antes_do_editor,
                                 p08_folhas_sem_pedir_o_arquivo, p19_resultado_do_recebido,
                                 p14_quadros_vazios, p26_padroes_da_planta, p21_peso_do_modelo_vazio,
-                                p22_nome_e_posicao, p23_lista_sob_medida) + BLOCOS_Q
+                                p22_nome_e_posicao, p23_lista_sob_medida, p15_zoom_da_roda) + BLOCOS_Q
                   if not sys.argv[1:] or any(b.__name__.startswith(a) for a in sys.argv[1:])]:
         try:
             bloco(aba)

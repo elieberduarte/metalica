@@ -1003,7 +1003,13 @@ class CAD {
     });
     c.addEventListener('wheel', (ev) => {
       ev.preventDefault();
-      this.tela.zoom(ev.deltaY < 0 ? 1.15 : 1 / 1.15, px(ev));
+      // o passo acompanha a força da rolagem (P15, primeiro uso 16/10: 1,15× por evento, forte ou fraca, davam 16 roladas
+      // da folha até ler os textos); um dente da roda (100) segue ≈ 1,16×; trackpad e rolagem em linhas/páginas também
+      const d = ev.deltaY * (ev.deltaMode === 1 ? 33 : ev.deltaMode === 2 ? 800 : 1);
+      this.tela.zoom(Math.min(4, Math.max(1 / 4, Math.pow(1.0015, -d))), px(ev));
+      // as coordenadas do rodapé seguem o cursor também no zoom
+      const m = this.tela.paraMundo(px(ev));
+      this.el.coord.textContent = `x ${formatarMm(m[0])}  y ${formatarMm(m[1])}`;
       // a janela de seleção em curso acompanha o zoom: o primeiro canto fica no ponto do desenho clicado
       if (pressao && this.tela.retangulo) { this.tela.retangulo = [this.tela.paraTela(pressao.mundo), px(ev)]; this.tela.pedirQuadro(); }
     }, { passive: false });
