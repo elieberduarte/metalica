@@ -204,14 +204,30 @@ def refazer(s: str) -> dict:
             t_det = time.time() - t0
             lista = app.lista_de_materiais(s)
             res = app.gerar_resumos_projeto(s, {})
+            consist = consistencia_da_obra(app, tmp, s)
         finally:
             _res.gerar_resumos = original
-        return fotografar(tmp, s, det, lista, res, t_det, time.time() - t0)
+        return fotografar(tmp, s, det, lista, res, t_det, time.time() - t0, consist)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def fotografar(tmp, s, det, lista, res, t_det, t_total) -> dict:
+def consistencia_da_obra(app, tmp, s) -> list:
+    """As pranchas como o Montar pranchas da tela as monta (todos os desenhos de detalhamento, A1) e a conferência
+    das saídas (saida/consistencia.py: o mesmo número em romaneio, lista, 3D e pranchas — auditoria da ME-Sooro,
+    16/10). Os achados entram na fotografia; o que aparece de novo (ou some) sai na comparação."""
+    from saida import consistencia
+    desenhos = sorted(os.path.basename(a).replace(".desenho.json", "")
+                      for a in glob.glob(os.path.join(tmp, s, "desenhos-2d", "detalhamento-*.desenho.json")))
+    if desenhos:
+        try:
+            app.montar_pranchas_projeto(s, {"desenhos": desenhos, "formato": "A1", "titulo": "Pranchas", "substituir": True})
+        except Exception as e:                                        # noqa: BLE001
+            return [f"pranchas: não montaram ({e})"]
+    return [f"{a['conferencia']} ({a['gravidade']}): {a['texto']}" for a in consistencia.conferir(os.path.join(tmp, s))]
+
+
+def fotografar(tmp, s, det, lista, res, t_det, t_total, consistencia=None) -> dict:
     t = lista.get("totais") or {}
     posicoes = {}
     for p in lista.get("posicoes") or []:
@@ -221,6 +237,8 @@ def fotografar(tmp, s, det, lista, res, t_det, t_total) -> dict:
                            "peso": round(float(p.get("peso_total") or 0), 2)}
     desenhos = {}
     for arq in sorted(glob.glob(os.path.join(tmp, s, "desenhos-2d", "*.desenho.json"))):
+        if os.path.basename(arq) == "pranchas.desenho.json":
+            continue                                   # as pranchas entram pela conferência de consistência
         with open(arq, encoding="utf-8") as f:
             d = json.load(f)
         ents = d.get("entidades") or []
@@ -237,6 +255,7 @@ def fotografar(tmp, s, det, lista, res, t_det, t_total) -> dict:
         "resumo": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in (res.get("numeros") or {}).items()},
         "posicoes": posicoes, "desenhos": desenhos,
         "avisos": sorted(set(det.get("avisos") or [])),
+        "consistencia": sorted(consistencia or []),
     }
 
 
@@ -300,6 +319,18 @@ def comparar(antes: dict, agora: dict) -> list:
     novos_av = sorted(set(agora.get("avisos") or []) - set(antes.get("avisos") or []))
     if novos_av:
         d.append(f"avisos novos ({len(novos_av)}): " + " | ".join(a[:140] for a in novos_av[:5]))
+    # consistência das saídas: só compara quando a rodada aceita já a tinha (as antigas não montavam as pranchas)
+    if "consistencia" in antes:
+        ca, cn = set(antes.get("consistencia") or []), set(agora.get("consistencia") or [])
+        if cn - ca:
+            d.append(f"consistência — achados NOVOS ({len(cn - ca)}):")
+            d.extend("   " + x[:200] for x in sorted(cn - ca)[:20])
+        if ca - cn:
+            d.append(f"consistência — achados que sumiram ({len(ca - cn)}):")
+            d.extend("   " + x[:200] for x in sorted(ca - cn)[:20])
+    elif agora.get("consistencia"):
+        d.append(f"consistência (primeira vez, {len(agora['consistencia'])} achado(s)):")
+        d.extend("   " + x[:200] for x in agora["consistencia"][:20])
     return d
 
 
