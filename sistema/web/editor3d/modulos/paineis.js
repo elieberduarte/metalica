@@ -76,8 +76,9 @@ export class MetodosPaineis {
     // --- gerais ---
     const g = el('div', { class: 'campos' });
     if (um) {
-      g.append(el('label', { texto: 'Nome' }), this._texto(um.nome || '', v =>
-        aplicar({ nome: v }, 'Renomear')));
+      // o nome livre não é a marca: "Nome P1" e "Posição P11" na mesma peça, qual é a marca? (P22, primeiro uso 16/10)
+      g.append(el('label', { texto: 'Nome no modelo (livre)', title: 'Nome livre, para você achar a peça no modelo. A marca de fabricação é a Posição, no grupo Peça (marcas de fabricação).' }),
+        this._texto(um.nome || '', v => aplicar({ nome: v }, 'Renomear')));
     }
     g.append(el('label', { texto: 'Camada' }),
       this._lista([...this.documento.camadas.keys()], comum('camada'),
@@ -155,7 +156,7 @@ export class MetodosPaineis {
       // nome de produção com a quantidade; no sólido, dimensões pelos eixos e massa
       const a = um.atributos || {}, marcas = a.marcas || {};
       if (marcas.posicao || marcas.conjunto || marcas.perfil || a.tipo_ifc) {
-        const gi = this._grupo(raiz, 'Peça (IFC)');
+        const gi = this._grupo(raiz, 'Peça (marcas de fabricação)');
         const linha = (rotulo, valor, acao) => {
           const v = el('span', { class: 'valor' + (acao ? ' clicavel' : ''), texto: String(valor), title: acao ? 'Clique: selecionar todas com o mesmo valor' : undefined });
           if (acao) v.addEventListener('click', acao);

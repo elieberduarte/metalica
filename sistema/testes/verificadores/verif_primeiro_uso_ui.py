@@ -142,6 +142,39 @@ def p11_p12_cad(aba):
     ok(n == 1, f"no 3D, o mesmo aviso repetido fica um só ({n})")
 
 
+def _lancado_nos_eixos(aba, nome):
+    """o caminho do engenheiro: eixos A–B × 1–2 (5 × 6,2 m) e "Lançar a estrutura nos eixos" no 3D; devolve o projeto"""
+    s = projeto(nome)
+    post(f"/api/projetos/{s}/eixos", {"eixos": {"eixo_g": [1.0, 0.0], "perp_g": [0.0, 1.0], "z_base": 0.0,
+                                                "letras": [{"nome": "A", "pos": 0.0}, {"nome": "B", "pos": 5000.0}],
+                                                "numeros": [{"nome": "1", "pos": 0.0}, {"nome": "2", "pos": 6200.0}]}})
+    aba.navegar(f"{base}/editor?projeto={s}", limite=60)
+    esperar(aba, "window.editor && document.body.dataset.pronto === '1'")
+    aba.avaliar("window.editor.dialogoLancar(); 1")
+    esperar(aba, "window.editor.el.dialogo.open && !window.editor.el.dialogoOk.hidden && window.editor.el.dialogoOk.textContent === 'Lançar'", 30)
+    aba.avaliar("window.editor.el.dialogoOk.click(); 1")
+    # o "Estrutura lançada", com o botão Abrir o modelo lançado
+    esperar(aba, "window.editor.el.dialogo.open && window.editor.el.dialogoOk.textContent === 'Abrir o modelo lançado'", 120)
+    aba.avaliar("window.editor.el.dialogoOk.click(); 1")
+    esperar(aba, "window.editor.documento && window.editor.documento.barras.length > 0 && document.body.dataset.pronto === '1'", 120)
+    aba.drenar(1.0)
+    return s
+
+
+def p22_nome_e_posicao(aba):
+    """P22: o pilar lançado mostrava título "P11 – 04x", "Nome P1" (o campo livre) e "Posição P11" — qual é a marca?"""
+    print("P22 — Nome livre × Posição no pilar lançado")
+    _lancado_nos_eixos(aba, "Portaria nome")
+    pid = aba.avaliar("(window.editor.documento.barras.find(b => b.papel === 'pilar' && b.atributos && b.atributos.marcas && b.atributos.marcas.posicao) || {}).id")
+    ok(bool(pid), f"um pilar com a marca de posição ({pid})")
+    aba.avaliar(f"window.editor.selecao.definir([{json.dumps(pid)}]); 1")
+    aba.drenar(1.0)
+    rotulos = aba.avaliar("[...document.querySelectorAll('.campos > label')].map(l => l.textContent)") or []
+    grupos = aba.avaliar("[...document.querySelectorAll('.grupo-campos, .grupo')].map(g => (g.querySelector('h3, h4, summary, .titulo') || g).textContent.trim().slice(0, 40))") or []
+    ok("Nome no modelo (livre)" in rotulos and "Posição" in rotulos, f"o campo livre não se chama só Nome: {rotulos[:6]}")
+    ok(any("marcas de fabricação" in g for g in grupos) and not any("Peça (IFC)" in g for g in grupos), f"o grupo da marca não fala em IFC: {grupos[:6]}")
+
+
 def _item_da_barra(texto):
     return f"""(() => {{ let a = null; (function andar(l) {{ for (const it of (Array.isArray(l) ? l : [])) {{ if (a) return; if (it && it.texto === {json.dumps(texto)}) a = it; else if (it && (it.sub || it.itens)) andar(it.sub || it.itens); }} }})(window.barraUnica.mapa); return a; }})()"""
 
@@ -382,7 +415,8 @@ try:
     # python verif_primeiro_uso_ui.py p07 → só os blocos cujo nome começa assim
     for bloco in [b for b in (p02_p13_recebido, p06_vao_pequeno, p11_p12_cad, p07_menu_antes_do_editor,
                                 p08_folhas_sem_pedir_o_arquivo, p19_resultado_do_recebido,
-                                p14_quadros_vazios, p26_padroes_da_planta, p21_peso_do_modelo_vazio) + BLOCOS_Q
+                                p14_quadros_vazios, p26_padroes_da_planta, p21_peso_do_modelo_vazio,
+                                p22_nome_e_posicao) + BLOCOS_Q
                   if not sys.argv[1:] or any(b.__name__.startswith(a) for a in sys.argv[1:])]:
         try:
             bloco(aba)
