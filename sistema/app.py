@@ -4303,7 +4303,23 @@ def conferir_modelo(corpo: dict) -> dict:
     principal) — nucleo3d/conferencia_producao.py; com `ids`, a colisão e a execução só na região deles."""
     from nucleo3d import conferencia_producao
     quais = tuple(corpo.get("quais") or ("colisao", "execucao", "producao"))
-    return conferencia_producao.conferir(_documento_de(corpo), quais=quais, ids=corpo.get("ids") or None)
+    # o andamento para a barra do editor (GET /api/modelo/conferencia/progresso?tarefa=…), 16/10
+    tarefa = str(corpo.get("tarefa") or "")[:40]
+    t0 = time.time()
+
+    def progresso(f: float, etapa: str) -> None:
+        if tarefa:
+            _PROGRESSO_CONFERENCIA[tarefa] = {"fracao": round(max(0.0, min(1.0, f)), 3), "etapa": etapa,
+                                              "ha_s": round(time.time() - t0, 1)}
+    try:
+        return conferencia_producao.conferir(_documento_de(corpo), quais=quais, ids=corpo.get("ids") or None,
+                                             progresso=progresso)
+    finally:
+        _PROGRESSO_CONFERENCIA.pop(tarefa, None)
+
+
+#: tarefa → {fracao, etapa, ha_s}: a conferência do modelo em andamento (conferir_modelo)
+_PROGRESSO_CONFERENCIA: Dict[str, dict] = {}
 
 
 def detalhes_3d(acao: str, corpo: dict) -> dict:
@@ -4840,6 +4856,9 @@ class Handler(BaseHTTPRequestHandler):
                 if len(partes) == 3 and partes[1] == "desenhos":
                     return self._json({"desenho": _gerente().abrir_desenho(partes[0], partes[2])})
                 return self._json(projeto_completo(partes[0]))
+            if rota == "/api/modelo/conferencia/progresso":
+                t = (parse_qs(urlparse(self.path).query).get("tarefa") or [""])[0]
+                return self._json(_PROGRESSO_CONFERENCIA.get(t) or {})
             if rota == "/api/modelo/catalogo":
                 return self._json(catalogo_3d())
             if rota == "/api/modelo/ligacoes-3d":

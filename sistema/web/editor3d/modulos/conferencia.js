@@ -18,14 +18,46 @@ export class MetodosConferencia {
     this.dica(ids.length ? `Conferindo a região das ${ids.length} peça(s) selecionada(s)…`
                          : 'Conferindo o modelo inteiro: colisão, execução das ligações e produção (o modelo grande leva alguns minutos)…');
     let r;
+    const tarefa = `conf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const parar = this._barraDaConferencia(tarefa);
     try {
       const resp = await fetch('/api/modelo/conferencia', { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
-        body: JSON.stringify({ documento: this.documento.paraJSON(), ids: ids.length ? ids : null }) });
+        body: JSON.stringify({ documento: this.documento.paraJSON(), ids: ids.length ? ids : null, tarefa }) });
       r = await resp.json();
       if (!resp.ok || r.erro) throw new Error(r.erro || resp.statusText);
-    } catch (e) { this.aviso(`Não foi possível conferir: ${e.message}`, 'erro', 0); return; }
+    } catch (e) { parar(); this.aviso(`Não foi possível conferir: ${e.message}`, 'erro', 0); return; }
+    parar();
     this.dica('');
     this._mostrarConferencia(r, ids.length);
+  }
+
+  /** A barra de andamento no rodapé (usuário, 16/10): o servidor conta a etapa e a fração; aqui pergunta a cada meio
+   *  segundo. Devolve a função que tira a barra. */
+  _barraDaConferencia(tarefa) {
+    const rodape = this.el.dica && this.el.dica.parentNode;
+    if (!rodape) return () => {};
+    if (this._barraConferencia) this._barraConferencia.remove();
+    const cheio = el('span', { class: 'barra-progresso-cheio' });
+    const pct = el('span', { class: 'barra-progresso-pct', texto: '0 %' });
+    const barra = el('span', { class: 'barra-progresso', title: 'Andamento da conferência' }, el('span', { class: 'barra-progresso-trilho' }, cheio), pct);
+    this.el.dica.after(barra);
+    this._barraConferencia = barra;
+    let vivo = true;
+    const tique = async () => {
+      if (!vivo) return;
+      try {
+        const p = await (await fetch(`/api/modelo/conferencia/progresso?tarefa=${encodeURIComponent(tarefa)}`, { cache: 'no-store' })).json();
+        if (vivo && p && typeof p.fracao === 'number') {
+          const v = Math.round(p.fracao * 100);
+          cheio.style.width = `${v}%`;
+          pct.textContent = `${v} %`;
+          this.dica(`Conferindo: ${p.etapa}${p.ha_s >= 3 ? ` · ${Math.round(p.ha_s)} s` : ''}`);
+        }
+      } catch { /* servidor ocupado: tenta no próximo tique */ }
+      if (vivo) this._timerConferencia = setTimeout(tique, 500);
+    };
+    this._timerConferencia = setTimeout(tique, 300);
+    return () => { vivo = false; clearTimeout(this._timerConferencia); barra.remove(); if (this._barraConferencia === barra) this._barraConferencia = null; };
   }
 
   _fecharConferencia() {

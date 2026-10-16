@@ -343,14 +343,18 @@ def _separadas(A, B, folga: float) -> bool:
 FUNDURA = 0.4
 
 
-def colisoes(pecas: Sequence, avisar=None, limite_s: float = 120.0) -> dict:
-    """As peças que se atravessam: {"achados": [...], "pares": conferidos, "parcial": bool}."""
+def colisoes(pecas: Sequence, avisar=None, limite_s: float = 120.0, progresso=None) -> dict:
+    """As peças que se atravessam: {"achados": [...], "pares": conferidos, "parcial": bool}. `progresso(fração, texto)`:
+    o andamento de 0 a 1 (a barra do editor, 16/10)."""
     import time
     avisar = avisar or (lambda *a: None)
+    progresso = progresso or (lambda *a: None)
     from nucleo2d.detalhe.fora_do_aco import eh_telha_ou_painel
     from ifc.importar import funilaria
     malhas = []
-    for e in pecas:
+    for n_e, e in enumerate(pecas):
+        if n_e % 200 == 0:
+            progresso(0.25 * n_e / max(1, len(pecas)), "montando a forma das peças (%d de %d)" % (n_e, len(pecas)))
         perfil = str(((e.atributos or {}).get("marcas") or {}).get("perfil") or e.nome or "")
         if eh_telha_ou_painel(e) or "TELHA" in perfil.upper() or funilaria(perfil):
             continue                                       # telha e rufo se sobrepõem de propósito (o transpasse)
@@ -360,14 +364,20 @@ def colisoes(pecas: Sequence, avisar=None, limite_s: float = 120.0) -> dict:
             continue
         if len(m.t):
             malhas.append(m)
+    progresso(0.25, "procurando as peças próximas")
     pares = _pares_proximos(malhas)
     avisar("%d pares de peças próximas" % len(pares))
+    progresso(0.3, "colisão: %d pares de peças próximas" % len(pares))
     achados = []
     t0 = time.time()
     feitos = 0
     for a_i, b_i in pares:
         if time.time() - t0 > limite_s:
             break
+        if feitos % 50 == 0:
+            # pelo que já foi, ou pelo tempo limite se ele chegar antes
+            f = max(feitos / max(1, len(pares)), (time.time() - t0) / limite_s)
+            progresso(0.3 + 0.7 * min(1.0, f), "colisão: %d de %d pares conferidos" % (feitos, len(pares)))
         feitos += 1
         A, B = malhas[a_i], malhas[b_i]
         lo = np.maximum(A.caixa[0], B.caixa[0])
@@ -706,9 +716,12 @@ def _sem_passante_pelo_furo(doc, achados) -> list:
 # ------------------------------------------------------------------ tudo
 
 def conferir(doc, quais: Sequence[str] = ("colisao", "execucao", "producao"), ids: Optional[Sequence[str]] = None,
-             avisar=None) -> dict:
-    """A conferência pedida; `ids` limita a colisão e a execução às peças em volta da seleção."""
+             avisar=None, progresso=None) -> dict:
+    """A conferência pedida; `ids` limita a colisão e a execução às peças em volta da seleção. `progresso(fração,
+    etapa)`: o andamento de 0 a 1 — preparar 0–5 %, colisão 5–80 %, ligações 80–95 %, produção 95–100 %."""
     from nucleo3d.producao import pecas_de_producao, _proxy
+    progresso = progresso or (lambda *a: None)
+    progresso(0.0, "preparando as peças")
     pecas_ent = pecas_de_producao(doc)
     proxies = []
     for e in pecas_ent:
@@ -725,13 +738,16 @@ def conferir(doc, quais: Sequence[str] = ("colisao", "execucao", "producao"), id
     achados, info = [], {}
     malhas: Dict[str, _Malha] = {}
     if "colisao" in quais:
-        r = colisoes(proxies, avisar)
+        r = colisoes(proxies, avisar, progresso=lambda f, t: progresso(0.05 + 0.75 * f, t))
         achados += _sem_passante_pelo_furo(doc, r["achados"])
         info["colisao"] = {k: r[k] for k in ("pares", "conferidos", "parcial")}
     if "execucao" in quais:
+        progresso(0.8, "execução das ligações (borda, passo, furos, chave)")
         achados += execucao(doc, proxies, malhas)
     if "producao" in quais:
+        progresso(0.95, "produção (marcas e conjuntos)")
         achados += producao(doc)
+    progresso(1.0, "pronto")
     nome = {e.id: e for e in doc.entidades.values()}
     for a in achados:
         if not a.get("texto"):

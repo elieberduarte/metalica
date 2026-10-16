@@ -677,6 +677,11 @@ kbd {
 .rodape .dica { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rodape .trava { font-family: var(--mono); font-size: 11px; color: var(--azul2); font-weight: 600; }
 .rodape .espaco { flex: 1 1 auto; }
+/* a barra de andamento da conferência (modulos/conferencia.js) */
+.rodape .barra-progresso { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.rodape .barra-progresso-trilho { position: relative; width: 160px; height: 8px; border-radius: 4px; background: var(--borda, rgba(127,127,127,.3)); overflow: hidden; }
+.rodape .barra-progresso-cheio { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--azul2, #1f6fd0); border-radius: 4px; transition: width .4s ease; }
+.rodape .barra-progresso-pct { font-family: var(--mono); font-size: 11px; color: var(--texto3); min-width: 34px; }
 .rodape .estado-servidor { font-size: 11px; color: var(--texto3); font-family: var(--mono); }
 
 .caixa-medidas { display: flex; align-items: center; gap: 6px; }
