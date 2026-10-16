@@ -190,5 +190,54 @@ class TestTelaInicialComDetalhamentoRodando(unittest.TestCase):
         self.assertLess(dt, 3.0, "a lista de 25 projetos levou %.1f s com uma conta pesada ao lado" % dt)
 
 
+class TestElevacoesECortesDoPremoldado(unittest.TestCase):
+    """"As elevações geradas pelo detalhamento do pré-moldado não ficaram legais" (16/10): o gerador da metálica pegava
+    a fachada pela peça mais de fora (o muro da calçada — a frente saía só com ele) e desenhava o contorno convexo, com
+    as marcas amontoadas. Agora: a fachada pela linha dos pilares, a geometria das peças, as marcas sem se sobrepor, e o
+    corte hachurado como concreto."""
+
+    def _modelo(self):
+        doc = Documento()
+        for k, x in enumerate((0, 6000, 12000)):
+            for y in (0, 8000):
+                doc.add(caixa("Pilar", X0 + x - 200, Y0 + y - 300, -1000, X0 + x + 200, Y0 + y + 300, 7300, ref="P%d" % (k + 1)))
+        for y in (0, 8000):
+            doc.add(caixa("Viga L", X0, Y0 + y - 150, 3500, X0 + 12000, Y0 + y + 150, 4200, tipo="IfcBeam", ref="VL1"))
+        for x in (0, 6000, 12000):
+            doc.add(caixa("Viga R", X0 + x - 150, Y0, 6600, X0 + x + 150, Y0 + 8000, 7300, tipo="IfcBeam", ref="VR1"))
+        # o muro da calçada, 3 m na frente da linha dos pilares
+        doc.add(caixa("Muro", X0 - 1000, Y0 - 3200, -500, X0 + 13000, Y0 - 3000, 900, tipo="IfcBeam", ref="M1"))
+        return doc
+
+    def test_frente_pela_linha_dos_pilares_com_as_marcas_sem_sobrepor(self):
+        from nucleo2d.desenho import Texto
+        from nucleo2d.detalhe import premoldado_formas as PF
+        doc = self._modelo()
+        reps = PF.agrupar(PF.pecas_do_modelo(doc))
+        d = PF.desenhos_gerais(doc, reps, ["elevacoes"])["elevacoes"]           # a entrada da rota
+        textos = [e for e in d.entidades.values() if isinstance(e, Texto)]
+        tits = sorted(((e.posicao[1], e.texto) for e in textos if e.texto.startswith("ELEVAÇÃO")), reverse=True)
+        self.assertTrue(tits and tits[0][1].startswith("ELEVAÇÃO FRENTE"))
+        y_frente, y_prox = tits[0][0], (tits[1][0] if len(tits) > 1 else -1e12)
+        marcas = [e for e in textos if (e.atributos or {}).get("marca") and y_prox < e.posicao[1] < y_frente + 30000]
+        self.assertTrue({"P1", "VL1"} <= {e.texto for e in marcas}, [e.texto for e in marcas])
+        self.assertTrue(any((e.atributos or {}).get("nivel") for e in textos), "sem os níveis na elevação")
+        h = 2.0 * d.escala
+        caixas = [(e.posicao[0] - 0.35 * h * len(e.texto), e.posicao[1], e.posicao[0] + 0.35 * h * len(e.texto), e.posicao[1] + h) for e in marcas]
+        for i, a in enumerate(caixas):
+            for b in caixas[i + 1:]:
+                self.assertFalse(a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3], "marcas sobrepostas")
+
+    def test_corte_hachurado_como_concreto_com_as_marcas_das_cortadas(self):
+        from nucleo2d.desenho import Hachura, Texto
+        from nucleo2d.detalhe import premoldado_formas as PF
+        doc = self._modelo()
+        reps = PF.agrupar(PF.pecas_do_modelo(doc))
+        d = PF.desenhos_gerais(doc, reps, ["cortes"])["cortes"]
+        hach = [e for e in d.entidades.values() if isinstance(e, Hachura)]
+        self.assertTrue(hach and all(e.padrao == "concreto" for e in hach))
+        self.assertIn("VL1", {e.texto for e in d.entidades.values() if isinstance(e, Texto)})
+
+
 if __name__ == "__main__":
     unittest.main()

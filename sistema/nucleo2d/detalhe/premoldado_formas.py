@@ -592,10 +592,12 @@ def _nivel_txt(z: float) -> str:
 
 
 def desenhos_gerais(doc: Documento, reps: Sequence[PecaPM], pedidos: Sequence[str], eixos: Optional[dict] = None,
-                    prefixo: str = "pré-moldado", avisar=None) -> Dict[str, Desenho]:
-    """{chave: Desenho} dos desenhos de conjunto pedidos (GERAIS), pelos geradores da metálica."""
+                    prefixo: str = "pré-moldado", avisar=None, niveis_projeto=None) -> Dict[str, Desenho]:
+    """{chave: Desenho} dos desenhos de conjunto pedidos (GERAIS): a locação e as plantas de fôrma pelos geradores da
+    metálica; os cortes e as elevações pela geometria das peças (desenho_de_cortes_pm, desenho_de_elevacoes_pm), com
+    os níveis do projeto (`niveis_projeto`; sem eles, os do modelo)."""
     from nucleo.base import ErroDeDados
-    from nucleo2d.detalhe.conjuntos import desenho_de_localizacao, desenho_de_elevacoes
+    from nucleo2d.detalhe.conjuntos import desenho_de_localizacao
     from nucleo2d.detalhar import _anexar_quadro
     avisar = avisar or (lambda *a: None)
     pecas, fam = _marcadas(reps)
@@ -650,18 +652,259 @@ def desenhos_gerais(doc: Documento, reps: Sequence[PecaPM], pedidos: Sequence[st
                 saida["formas_niveis"] = dc
         if "cortes" in pedidos:
             avisar("cortes…")
-            sel = [e for e in pecas]
-            saida["cortes"] = desenho_de_localizacao(doc, sel, nome("cortes"), eixos=eixos,
-                                                     vistas_pedidas=("frente", "lateral"), deitar_em_y=deitar)
+            saida["cortes"] = desenho_de_cortes_pm(doc, reps, nome("cortes"), eixos=eixos, niveis_projeto=niveis_projeto)
         if "elevacoes" in pedidos:
             avisar("elevações das fachadas…")
-            sel = [e for e in pecas if fam[e.id] != "fundacoes"]
-            saida["elevacoes"] = desenho_de_elevacoes(doc, sel, nome("elevacoes"), eixos=eixos)
+            saida["elevacoes"] = desenho_de_elevacoes_pm(doc, reps, nome("elevacoes"), eixos=eixos,
+                                                         niveis_projeto=niveis_projeto)
     except ErroDeDados as e:
         avisar("desenho de conjunto não gerado: %s" % e)
     for k, d in saida.items():
         d.metadados.setdefault("premoldado", {})["geral"] = k
     return saida
+
+
+# ------------------------------------------------------------------ elevações e cortes pela geometria (16/10)
+# "As elevações geradas pelo detalhamento do pré-moldado não ficaram legais" (usuário, 16/10): o gerador da metálica
+# desenha cada peça pelo contorno convexo — no pré-moldado o pilar com os consoles, a laje e a viga viravam caixas
+# sobrepostas, com as marcas amontoadas. Aqui a vista é a do CAD (nucleo2d/vistas: contorno aparente e arestas vivas,
+# a seção hachurada no corte), só com as peças da fachada (ou do vão do corte), com a marca de cada peça no meio do que
+# ela ocupa no desenho, os eixos que cruzam a vista e os níveis do projeto.
+
+#: A fachada: as peças a até isto (mm) do plano de fora entram na elevação (o pilar, a viga e a laje da borda).
+FAIXA_FACHADA = 1500.0
+#: Fachada com menos peças que isto não sai (o lado recuado sem nada na borda).
+MINIMO_FACHADA = 4
+#: Peça que ocupa menos que isto (mm) no desenho não ganha marca (o console, o inserto).
+MENOR_MARCA = 400.0
+ALTURA_MARCA = 2.0          # mm de papel
+ESCALA_GERAL = 100.0        # 1:100
+
+
+def _dot3(a, b) -> float:
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _vista_no_desenho(d: Desenho, doc: Documento, ids: Sequence[str], origem, normal, cortar: bool,
+                      profundidade: float, nome: str, y_topo: float):
+    """A vista (nucleo2d.vistas) acrescentada a `d` com o topo em `y_topo`; devolve (novas entidades, para_2d) — para_2d
+    leva um ponto 3D ao desenho, pela caixa que a vista gravou."""
+    from nucleo2d import vistas as V
+    from nucleo2d.desenho import Hachura
+    antes = set(d.entidades)
+    vista = V.Vista(origem=tuple(origem), normal=tuple(normal), acima=(0.0, 0.0, 1.0), profundidade=profundidade,
+                    cortar=cortar, entidades=list(ids), rotular=False, nome=nome, tipo="corte" if cortar else "frente")
+    V.gerar(doc, vista, d, deslocamento=(0.0, 0.0))
+    rec = d.vistas[-1]
+    novas = [k for k in d.entidades if k not in antes]
+    # o topo da vista em y_topo: a vista nasce com o canto de baixo em (0, 0)
+    dy = y_topo - float(rec["altura"])
+    from nucleo2d.detalhe.base import _mover
+    for k in novas:
+        _mover(d.entidades[k], 0.0, dy)
+        e = d.entidades[k]
+        if isinstance(e, Hachura):
+            e.padrao = "concreto"
+    rec["canto"] = [0.0, dy]
+    u, v, _w = vista.eixos()
+    ref = rec["ref2d"]
+
+    def para_2d(q):
+        r = (q[0] - origem[0], q[1] - origem[1], q[2] - origem[2])
+        return (_dot3(r, u) - ref[0], _dot3(r, v) - ref[1] + dy)
+    return novas, para_2d, (u, v)
+
+
+def _marcas_na_vista(d: Desenho, novas, marca_de: Dict[str, str], so_cortadas: bool = False) -> int:
+    """A marca de cada peça no meio do que ela ocupa na vista (pelas entidades que a vista gravou com a origem da
+    peça); a mesma marca perto não se repete e o texto não cai em cima de outro."""
+    from nucleo2d.desenho import Hachura, Texto
+    caixas: Dict[str, list] = {}
+    for k in novas:
+        e = d.entidades[k]
+        o = (e.atributos or {}).get("origem")
+        if not o or o not in marca_de or (so_cortadas and not isinstance(e, Hachura)):
+            continue
+        for p in e.pontos():
+            c = caixas.setdefault(o, [p[0], p[1], p[0], p[1]])
+            c[0], c[1], c[2], c[3] = min(c[0], p[0]), min(c[1], p[1]), max(c[2], p[0]), max(c[3], p[1])
+    h = ALTURA_MARCA * d.escala
+    postos: List[Tuple[str, float, float, tuple]] = []
+    for o, (x0, y0, x1, y1) in sorted(caixas.items(), key=lambda kv: (kv[1][1], kv[1][0])):
+        if max(x1 - x0, y1 - y0) < MENOR_MARCA:
+            continue
+        m = marca_de[o]
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        if any(t == m and math.hypot(cx - a, cy - b) < 8 * h for t, a, b, _c in postos):
+            continue
+        larg = 0.7 * h * len(m)
+        cx_ = None
+        for passo in (0, 1, -1, 2, -2):
+            yy = cy + passo * 1.3 * h
+            cb = (cx - larg / 2, yy - h / 2, cx + larg / 2, yy + h / 2)
+            if not any(cb[0] < c[2] and c[0] < cb[2] and cb[1] < c[3] and c[1] < cb[3] for _t, _a, _b, c in postos):
+                cx_ = (cx, yy, cb)
+                break
+        if cx_ is None:
+            continue
+        postos.append((m, cx_[0], cx_[1], cx_[2]))
+        d.add(Texto(camada="TEXTO", posicao=(cx_[0], cx_[1] - h / 2), texto=m, altura=ALTURA_MARCA, alinhamento="centro",
+                    atributos={"detalhe": "premoldado-vista", "origem": o, "marca": m}))
+    return len(postos)
+
+
+def _eixos_e_niveis(d: Desenho, para_2d, uv, segs, niveis_mm: Sequence[Tuple[str, float]], caixa2d, origem) -> None:
+    """Os eixos que cruzam a vista (as linhas de eixo perpendiculares ao plano, em pé, com a bolinha em cima) com as
+    cotas entre eles, e os níveis (linha tracejada de lado a lado e a cota com o nome)."""
+    from nucleo2d.desenho import Circulo, Linha, Texto
+    x0, y0, x1, y1 = caixa2d
+    esc = d.escala
+    u, _v = uv
+    xs_eixos = []
+    for sg in segs or ():
+        a, b = sg["a"], sg["b"]
+        dirx = (b[0] - a[0], b[1] - a[1], 0.0)
+        L = math.hypot(dirx[0], dirx[1])
+        if L < 1e-6 or abs(_dot3(dirx, u)) / L > 0.2:
+            continue                                        # o eixo paralelo à vista não a cruza
+        x = para_2d((a[0], a[1], 0.0))[0]
+        if not (x0 - 500 <= x <= x1 + 500):
+            continue
+        topo = y1 + 8.0 * esc
+        d.add(Linha(camada="EIXO", a=(x, y0 - 4.0 * esc), b=(x, topo), atributos={"eixo": sg["nome"]}))
+        r = 4.0 * esc
+        d.add(Circulo(camada="EIXO", centro=(x, topo + r), raio=r))
+        d.add(Texto(camada="EIXO", posicao=(x, topo + r - 1.25 * esc), texto=str(sg["nome"]), altura=2.5, alinhamento="centro"))
+        xs_eixos.append(x)
+    if len(xs_eixos) >= 2:
+        p = _Papel(d, {"detalhe": "premoldado-vista"})
+        xs = sorted(set(round(x) for x in xs_eixos))
+        p.cadeia_h(xs, y0, -8.0, exigir_espaco=False)
+        p.cota_h(xs[0], xs[-1], y0, -15.0)
+    for nome_n, z in niveis_mm:
+        y = para_2d((origem[0], origem[1], z))[1]
+        if not (y0 - 3000 <= y <= y1 + 3000):
+            continue
+        d.add(Linha(camada="AUXILIAR", a=(x0 - 12.0 * esc, y), b=(x1 + 2.0 * esc, y), atributos={"nivel": nome_n}))
+        d.add(Texto(camada="TEXTO", posicao=(x0 - 12.0 * esc, y + 0.6 * esc), texto=nome_n, altura=2.0,
+                    atributos={"nivel": nome_n}))
+
+
+def _caixa_das(d: Desenho, chaves) -> Tuple[float, float, float, float]:
+    pts = [p for k in chaves for p in d.entidades[k].pontos()]
+    if not pts:
+        return (0.0, 0.0, 0.0, 0.0)
+    return (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts))
+
+
+def _niveis_para_vista(niveis_projeto, reps) -> List[Tuple[str, float]]:
+    if niveis_projeto:
+        return [(str(n.get("nome") or _nivel_txt(float(n.get("z") or 0.0))), float(n.get("z") or 0.0))
+                for n in niveis_projeto if isinstance(n, dict)]
+    return [(nome_do_nivel(z), z) for z in niveis(reps)]
+
+
+def desenho_de_elevacoes_pm(doc: Documento, reps: Sequence[PecaPM], titulo: str, eixos: Optional[dict] = None,
+                            niveis_projeto=None) -> Desenho:
+    """As fachadas do pré-moldado (frente, fundos e os dois lados), uma embaixo da outra, pela geometria das peças da
+    borda (FAIXA_FACHADA), com as marcas, os eixos e os níveis."""
+    from nucleo.base import ErroDeDados
+    from nucleo3d import eixos as _eixos
+    from nucleo2d.desenho import Texto
+    marca_de = {e.id: r.marca for r in reps for inst in r.instancias for e in inst.ents}
+    fam_de = {e.id: r.familia for r in reps for inst in r.instancias for e in inst.ents}
+    ents = [doc.entidades[i] for i in marca_de if i in doc.entidades and fam_de[i] != "fundacoes"]
+    if not ents:
+        raise ErroDeDados("sem peças de concreto para as elevações.")
+    V = np.array([v for e in ents for v in e.vertices])
+    # o plano de cada fachada é a linha de fora dos pilares (a estrutura): pela peça mais de fora, a frente do Mercado
+    # era o muro da calçada e a fachada saía só com ele
+    pil = [e for e in ents if re.search(r"pilar", _sem_acento(_nome(e)))]
+    Vp = np.array([v for e in pil for v in e.vertices]) if pil else V
+    mn, mx = Vp.min(axis=0), Vp.max(axis=0)
+    c = (V.min(axis=0) + V.max(axis=0)) / 2
+    ex = _eixos.de_dict(eixos) if eixos and not _eixos.sem_eixos(eixos) else None
+    segs = _eixos.segmentos(ex) if ex else []
+    nv = _niveis_para_vista(niveis_projeto, reps)
+    lados = [("FRENTE", (0.0, 1.0, 0.0), 1, mn[1], 1.0), ("FUNDOS", (0.0, -1.0, 0.0), 1, mx[1], -1.0),
+             ("LATERAL ESQUERDA", (1.0, 0.0, 0.0), 0, mn[0], 1.0), ("LATERAL DIREITA", (-1.0, 0.0, 0.0), 0, mx[0], -1.0)]
+    d = Desenho(nome=titulo, escala=ESCALA_GERAL)
+    y = 0.0
+    feitas = 0
+    for nome_l, w, k, plano, sinal in lados:
+        ids = [e.id for e in ents if min(sinal * (v[k] - plano) for v in e.vertices) <= FAIXA_FACHADA]
+        if len(ids) < MINIMO_FACHADA:
+            continue
+        origem = [float(c[0]), float(c[1]), float(c[2])]
+        origem[k] = float(plano - sinal * 10.0)
+        novas, para_2d, uv = _vista_no_desenho(d, doc, ids, origem, w, False, FAIXA_FACHADA + 10.0, nome_l, y)
+        caixa = _caixa_das(d, novas)
+        _marcas_na_vista(d, novas, marca_de)
+        _eixos_e_niveis(d, para_2d, uv, segs, nv, caixa, origem)
+        # o nome da fachada pelo eixo que corre nela
+        nome_eixo = ""
+        for sg in segs:
+            a, b = sg["a"], sg["b"]
+            if abs(a[k] - b[k]) < 1.0 and abs(a[k] - plano) <= FAIXA_FACHADA + 600:
+                nome_eixo = sg["nome"]
+                break
+        d.add(Texto(camada="TEXTO", posicao=(caixa[0], caixa[1] - 26.0 * d.escala),
+                    texto="ELEVAÇÃO %s%s" % (nome_l, " – EIXO %s" % nome_eixo if nome_eixo else ""), altura=4.0,
+                    atributos={"cabecalho": 0}))
+        y = caixa[1] - 60.0 * d.escala
+        feitas += 1
+    if not feitas:
+        raise ErroDeDados("nenhuma fachada com peças suficientes para uma elevação.")
+    return d
+
+
+def desenho_de_cortes_pm(doc: Documento, reps: Sequence[PecaPM], titulo: str, eixos: Optional[dict] = None,
+                         niveis_projeto=None) -> Desenho:
+    """Os cortes A-A (transversal) e B-B (longitudinal) no meio de um vão, até o pórtico seguinte, com a seção das peças
+    cortadas hachurada (concreto) e a marca delas, os eixos que cruzam o corte e os níveis."""
+    from nucleo.base import ErroDeDados
+    from nucleo3d import eixos as _eixos
+    from nucleo2d.desenho import Texto
+    marca_de = {e.id: r.marca for r in reps for inst in r.instancias for e in inst.ents}
+    ents = [doc.entidades[i] for i in marca_de if i in doc.entidades]
+    if not ents:
+        raise ErroDeDados("sem peças de concreto para os cortes.")
+    V = np.array([v for e in ents for v in e.vertices])
+    mn, mx = V.min(axis=0), V.max(axis=0)
+    c = (mn + mx) / 2
+    ex = _eixos.de_dict(eixos) if eixos and not _eixos.sem_eixos(eixos) else None
+    segs = _eixos.segmentos(ex) if ex else []
+    nv = _niveis_para_vista(niveis_projeto, reps)
+
+    def vao(k):
+        """(meio do vão perto do centro, distância ao eixo seguinte) na direção k (0 = x, 1 = y), pelos eixos."""
+        pos = sorted({round(sg["a"][k]) for sg in segs if abs(sg["a"][k] - sg["b"][k]) < 1.0})
+        if len(pos) >= 2:
+            pares = list(zip(pos, pos[1:]))
+            a, b = min(pares, key=lambda p: abs((p[0] + p[1]) / 2 - c[k]))
+            return (a + b) / 2, (b - a) / 2 + 800.0
+        return float(c[k]), 4000.0
+    d = Desenho(nome=titulo, escala=ESCALA_GERAL)
+    y = 0.0
+    for nome_c, k in (("CORTE A-A (transversal)", 0), ("CORTE B-B (longitudinal)", 1)):
+        meio, prof = vao(k)
+        w = (1.0, 0.0, 0.0) if k == 0 else (0.0, 1.0, 0.0)
+        origem = [float(c[0]), float(c[1]), float(c[2])]
+        origem[k] = meio
+        ids = [e.id for e in ents if min(v[k] for v in e.vertices) <= meio + prof and max(v[k] for v in e.vertices) >= meio]
+        try:
+            novas, para_2d, uv = _vista_no_desenho(d, doc, ids, origem, w, True, prof, nome_c, y)
+        except ErroDeDados:
+            continue
+        caixa = _caixa_das(d, novas)
+        _marcas_na_vista(d, novas, marca_de, so_cortadas=True)
+        _eixos_e_niveis(d, para_2d, uv, segs, nv, caixa, origem)
+        d.add(Texto(camada="TEXTO", posicao=(caixa[0], caixa[1] - 26.0 * d.escala), texto=nome_c, altura=4.0,
+                    atributos={"cabecalho": 0}))
+        y = caixa[1] - 60.0 * d.escala
+    if not d.entidades:
+        raise ErroDeDados("os cortes não alcançaram nenhuma peça.")
+    return d
 
 
 # ------------------------------------------------------------------ o completo (16/10)

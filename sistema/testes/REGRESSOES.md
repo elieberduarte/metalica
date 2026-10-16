@@ -75,6 +75,7 @@ bloco no 2e3414c).
 | 16/10 | Mercado: a faixa do Neoprene voltava a cada abertura do editor (a migração dos eixos das chapas o reorientava) | a70b3b0 | TestNeopreneNaoEhAco (migração) |
 | 16/10 | Mercado: "o projeto importado não está mostrando os níveis" (o Tekla manda um pavimento só) | 03563c7 | test_regressoes_mercado TestNiveisAutomaticos |
 | 16/10 | dev: tela inicial em branco por minutos (a lista de 0,06 s a 24 s com o detalhamento automático rodando) | 73a5df4 | test_regressoes_mercado TestTelaInicialComDetalhamentoRodando |
+| 16/10 | Mercado: "as elevações geradas pelo detalhamento do pré-moldado não ficaram legais" (a fachada pela peça mais de fora — só o muro da calçada —, contorno convexo, marcas amontoadas) | este pacote | test_regressoes_mercado TestElevacoesECortesDoPremoldado |
 
 ## Primeiro uso (agentes engenheiro-primeiro-uso e detalhista-primeiro-uso-ifc)
 

@@ -987,7 +987,8 @@ def detalhar_premoldado(s: str, corpo: dict) -> dict:
             reps = PF.agrupar(PF.pecas_do_modelo(doc, None, avisar))
             ds = dict(PF.desenhos(doc, fams, avisar=avisar, reps=reps)) if fams else {}
             if gerais:
-                ds.update(PF.desenhos_gerais(doc, reps, gerais, eixos=g.ler(s).get("eixos"), avisar=avisar))
+                ds.update(PF.desenhos_gerais(doc, reps, gerais, eixos=g.ler(s).get("eixos"), avisar=avisar,
+                                             niveis_projeto=g.ler(s).get("niveis")))
             if not ds:
                 raise ErroDeDados("o modelo não tem peças de concreto nas famílias pedidas.")
             substituir = corpo.get("substituir", True) is not False
