@@ -1897,6 +1897,59 @@ export class Editor {
     } catch (e) { parar(); this.aviso(`Não foi possível detalhar: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 
+  /**
+   * Detalhar o pré-moldado (16/10): a fôrma de cada peça de concreto do modelo — elevação, lateral e planta com as
+   * cotas, os consoles junto do pilar, peças iguais contadas — um desenho por família, sem nada da metálica
+   * (rota /detalhar-premoldado, nucleo2d/detalhe/premoldado_formas.py).
+   */
+  async dialogoDetalharPremoldado() {
+    if (!this.projeto) { this.aviso('Abra o modelo por um projeto (gerenciador) para detalhar.', 'atencao'); return; }
+    const rota = `/api/projetos/${encodeURIComponent(this.projeto)}/detalhar-premoldado`;
+    const pedir = async (corpo) => {
+      const r = await fetch(rota, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(corpo) });
+      const j = await r.json();
+      if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+      return j;
+    };
+    let resumo;
+    this.dica('Contando as peças de concreto do modelo…');
+    try { await this._gravarAntesDeGerar(); resumo = (await pedir({ resumo: true })).familias || []; }
+    catch (e) { this.aviso(`Não foi possível ler o pré-moldado: ${e.message}`, 'erro', 0); this.dica(''); return; }
+    this.dica('');
+    const familias = resumo.filter(f => f.pecas > 0);
+    if (!familias.length) { this.aviso('O modelo não tem peças de concreto (pré-moldado) para detalhar.', 'atencao', 8000); return; }
+    const caixas = {};
+    for (const f of familias) caixas[f.familia] = el('input', { type: 'checkbox', checked: 'checked' });
+    const todos = el('input', { type: 'checkbox', checked: 'checked' });
+    const acertarTodos = () => {
+      const n = familias.filter(f => caixas[f.familia].checked).length;
+      todos.checked = n === familias.length; todos.indeterminate = n > 0 && n < familias.length;
+    };
+    todos.addEventListener('change', () => { for (const f of familias) caixas[f.familia].checked = todos.checked; acertarTodos(); });
+    for (const f of familias) caixas[f.familia].addEventListener('change', acertarTodos);
+    const grade = el('div', { class: 'campos' });
+    grade.append(el('label', { texto: 'Marcar / desmarcar todos', style: 'font-weight:600' }), todos);
+    for (const f of familias) grade.append(el('label', { texto: `${f.titulo} (${f.pecas.toLocaleString('pt-BR')} peça${f.pecas === 1 ? '' : 's'})` }), caixas[f.familia]);
+    const substituir = el('input', { type: 'checkbox', checked: 'checked' });
+    grade.append(el('label', { texto: 'Substituir os desenhos do pré-moldado anteriores' }), substituir);
+    const corpo = el('div', {},
+      el('p', { class: 'explica', texto: 'Só a estrutura de concreto, sem a metálica. Cada peça diferente vira uma célula de fôrma com a marca do projeto (VL18, P12…) e a quantidade: elevação, vista lateral e planta, com a cadeia de cotas (a altura dos consoles, o dente, o encaixe) e a total; volume, peso e o fck. Os consoles entram no pilar em que encostam; peças iguais são contadas, não repetidas. Um desenho por família, em 1:25.' }),
+      grade);
+    if (await this.dialogo({ titulo: 'Detalhar pré-moldado', corpo, ok: 'Detalhar e abrir' }) !== 'ok') return;
+    const escolhidas = familias.map(f => f.familia).filter(k => caixas[k].checked);
+    if (!escolhidas.length) return;
+    this.aviso('Detalhando o pré-moldado: a etapa corrente aparece na linha de baixo.', 'info', 6000);
+    const parar = this._acompanharProgresso('Pré-moldado: ');
+    try {
+      const j = await pedir({ familias: escolhidas, substituir: substituir.checked });
+      parar();
+      this.dica('Pré-moldado detalhado.');
+      this.aviso(`Pré-moldado: ${j.pecas.toLocaleString('pt-BR')} peças em ${j.marcas.toLocaleString('pt-BR')} marcas, ${j.desenhos.length} desenho(s): ` +
+                 j.desenhos.map(d => `${d.titulo} (${d.marcas})`).join(', ') + '.' + (j.avisos && j.avisos.length ? ' ' + j.avisos.join(' · ') : ''), 'info', 15000);
+      if (j.desenhos[0]) this._abrirCAD(j.desenhos[0].nome);
+    } catch (e) { parar(); this.aviso(`Não foi possível detalhar o pré-moldado: ${e.message}`, 'erro', 0); this.dica(''); }
+  }
+
   /** Só as peças pedidas: furos das barras nas chapas e nos parafusos, e as células delas
    *  redesenhadas nos desenhos de detalhamento (rota /atualizar-pecas). */
   async atualizarPecas(marcas) {
@@ -2012,6 +2065,7 @@ export class Editor {
       'desenho-corte': () => this.gerarDesenhoDoCorte(),
       'desenho-selecao': () => this.dialogoVistasDaSelecao(),
       'detalhar-pecas': () => this.dialogoDetalharPecas(),
+      'detalhar-premoldado': () => this.dialogoDetalharPremoldado(),
       'cantos-redondos': () => this.dialogoCantosRedondos(),
       'multidobras-3d': () => this.dialogoMultidobras3D(),
       explodir: () => this.explodirSelecao(),

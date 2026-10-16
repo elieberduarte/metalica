@@ -182,6 +182,7 @@
       I('Conferir antes de detalhar…', '3d', 'conferir-producao', { dica: 'colisão, execução das ligações e produção; com seleção, só a região dela', antes: 'Ver › Conferir antes de detalhar…' }),
       HR,
       I('Detalhar peças e conjuntos…', '3d', 'detalhar-pecas', { antes: 'Desenhos › Detalhar peças e conjuntos…' }),
+      I('Detalhar pré-moldado…', '3d', 'detalhar-premoldado', { dica: 'só a estrutura de concreto: a fôrma de cada peça' }),
       I('Detalhar as peças de um IFC…', '3d', 'detalhar-ifc', { dica: 'IFC do TecnoMETAL ou de outro programa', antes: 'Arquivo › Detalhar as peças de um IFC…' }),
       HR,
       S('Pranchas', [

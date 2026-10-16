@@ -943,6 +943,56 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
             _fim_progresso(s)
 
 
+def detalhar_premoldado(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/detalhar-premoldado {familias, substituir} — a fôrma de cada peça pré-moldada do modelo
+    (nucleo2d/detalhe/premoldado_formas.py): um desenho por família (pilares e vigas, lajes, fundações, contenções),
+    peças iguais contadas. {resumo: true} só conta as peças de cada família (o diálogo mostra antes). 16/10."""
+    from nucleo2d.detalhe import premoldado_formas as PF
+    g = _gerente()
+    with _vivos().trava(s):
+        try:
+            _progresso(s, "abrindo o modelo…")
+            doc = _documento3d_do_projeto(s)
+            if corpo.get("resumo"):
+                return {"familias": PF.resumo(doc)}
+            fams = [str(f) for f in (corpo.get("familias") or []) if f] or None
+            ds = PF.desenhos(doc, fams, avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
+            if not ds:
+                raise ErroDeDados("o modelo não tem peças de concreto nas famílias pedidas.")
+            substituir = corpo.get("substituir", True) is not False
+            geracao = _vivos().nova_geracao()
+            avisos, saida = [], []
+            for fam, desenho in ds.items():
+                nome = desenho.nome
+                if os.path.exists(g._caminho_desenho(s, nome)):
+                    if not substituir:
+                        avisos.append("%s: já existia, ficou o de antes" % nome)
+                        continue
+                    try:
+                        from nucleo2d.desenho import Desenho
+                        from nucleo2d.pranchas import manter_montagem
+                        mm = manter_montagem(Desenho.de_dict(g.abrir_desenho(s, nome)), desenho)
+                        if mm["folhas"] or mm["a_mao"]:
+                            avisos.append("%s: montagem mantida — %d folha(s), %d célula(s) atualizada(s)"
+                                          % (nome, mm["folhas"], mm["atualizadas"]))
+                    except ErroDeDados:
+                        pass
+                    g.excluir_desenho(s, nome)
+                desenho.metadados["gerado_por"] = "detalhamento-premoldado"
+                desenho.metadados["versao"] = versao.VERSAO
+                desenho.metadados["geracao"] = geracao
+                with _TRAVA_GRAVAR_DESENHO:
+                    _vivos().registrar_desenho(s, _slug(nome), geracao)
+                    salvo = g.salvar_desenho(s, nome, desenho.dict())
+                info = desenho.metadados.get("premoldado") or {}
+                saida.append({"familia": fam, "nome": salvo["nome"], "titulo": nome, "pecas": info.get("pecas", 0),
+                              "marcas": info.get("marcas", 0), "entidades": desenho.tamanho})
+            return {"desenhos": saida, "pecas": sum(d["pecas"] for d in saida),
+                    "marcas": sum(d["marcas"] for d in saida), "avisos": avisos}
+        finally:
+            _fim_progresso(s)
+
+
 _VIVOS = None
 
 
@@ -4996,6 +5046,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(gerar_vista_2d(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "detalhar":
                     return self._json(detalhar_projeto(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "detalhar-premoldado":
+                    return self._json(detalhar_premoldado(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "calcular":
                     return self._json(calcular_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "dimensionar":
