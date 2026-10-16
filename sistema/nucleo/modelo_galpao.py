@@ -135,9 +135,11 @@ class DadosGalpao:
         """Erros de entrada com mensagem em português e faixa aceitável."""
         def faixa(campo, valor, minimo, maximo, unidade=""):
             if valor is None or not (minimo <= valor <= maximo):
+                def br(v):      # 4,5 e não 4.5 (P06, primeiro uso 16/10)
+                    return ("%g" % v).replace(".", ",") if isinstance(v, (int, float)) else str(v)
                 raise ErroDeDados(
-                    f"{campo}: valor {valor} fora da faixa aceitável "
-                    f"({minimo} a {maximo} {unidade}).".replace("  ", " "))
+                    f"{campo}: valor {br(valor)} fora da faixa aceitável "
+                    f"({br(minimo)} a {br(maximo)} {unidade}).".replace("  ", " "))
         faixa("Vão", self.vao, 5, 60, "m")
         faixa("Comprimento", self.comprimento, 5, 300, "m")
         faixa("Pé-direito", self.pe_direito, 2.5, 20, "m")

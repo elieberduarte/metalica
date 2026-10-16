@@ -1,0 +1,95 @@
+# -*- coding: utf-8 -*-
+"""Achados de tela dos testes de primeiro uso (16/10/2026, Projeto/BRIEFINGS/Briefing-primeiro-uso*.md): cada bloco
+refaz, com eventos de verdade, o que o engenheiro novo fez e confere que não volta a acontecer. Servidor próprio numa
+pasta temporária (nunca a 8765/8766). Ver sistema/testes/REGRESSOES.md, seção "Primeiro uso"."""
+import json, os, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request
+BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
+from verificar_editor import Aba, CHROMES, _json, _porta_livre
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:                                   # noqa: BLE001
+    pass
+
+PORTA = _porta_livre()
+DADOS = tempfile.mkdtemp(prefix="metalica_primeiro_uso_")
+srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+base = f"http://localhost:{PORTA}"
+for _ in range(80):
+    try:
+        urllib.request.urlopen(base + "/api/versao", timeout=2); break
+    except Exception:
+        time.sleep(0.5)
+falhas = []
+
+
+def ok(c, m):
+    print(("  ok    " if c else "  FALHA ") + m)
+    if not c: falhas.append(m)
+
+
+def post(rota, corpo):
+    return json.load(urllib.request.urlopen(urllib.request.Request(base + rota, data=json.dumps(corpo).encode(),
+                     headers={"Content-Type": "application/json"}), timeout=600))
+
+
+def esperar(aba, expr, limite=60.0):
+    t0 = time.time()
+    while time.time() - t0 < limite:
+        if aba.avaliar(expr):
+            return True
+        aba.drenar(0.3)
+    return False
+
+
+def projeto(nome, tipo="lancamento"):
+    return urllib.parse.quote(post("/api/projetos", {"nome": nome, "tipo": tipo})["slug"])
+
+
+def p06_vao_pequeno(aba):
+    """P06: eixos com 4 m de vão — o Lançar estrutura nos eixos avisa antes (5 a 60 m) e oferece Pilares nos eixos,
+    em vez de aceitar e voltar com "Vão: valor 4.0 fora da faixa" depois do clique."""
+    print("P06 — vão de 4 m no Lançar estrutura nos eixos")
+    s = projeto("Portaria vão pequeno")
+    post(f"/api/projetos/{s}/eixos", {"eixos": {"eixo_g": [1.0, 0.0], "perp_g": [0.0, 1.0], "z_base": 0.0,
+                                                "letras": [{"nome": "A", "pos": 0.0}, {"nome": "B", "pos": 4000.0}],
+                                                "numeros": [{"nome": "1", "pos": 0.0}, {"nome": "2", "pos": 6200.0}]}})
+    aba.navegar(f"{base}/editor?projeto={s}", limite=60)
+    esperar(aba, "window.editor && window.editor.projeto")
+    aba.avaliar("window.editor.dialogoLancar(); 1")
+    esperar(aba, "window.editor.el.dialogo.open")
+    txt = aba.avaliar("window.editor.el.dialogoCorpo.textContent") or ""
+    botao = aba.avaliar("window.editor.el.dialogoOk.hidden ? '' : window.editor.el.dialogoOk.textContent") or ""
+    ok("5 a 60 m" in txt and "4,00" in txt, f"o diálogo avisa a faixa antes: {txt[:110]}")
+    ok(botao != "Lançar", f"sem o botão Lançar (botão: «{botao}»)")
+    aba.avaliar("window.editor.el.dialogo.close('cancelar'); 1")
+
+
+chrome = next(c for c in CHROMES if os.path.exists(c)); cdp = _porta_livre(); perfil = tempfile.mkdtemp(prefix="verif_primeiro_uso_")
+nav = subprocess.Popen([chrome, "--headless=new", "--disable-gpu", "--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars",
+                        "--no-first-run", "--remote-allow-origins=*", f"--user-data-dir={perfil}", f"--remote-debugging-port={cdp}", "about:blank"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+try:
+    for _ in range(60):
+        alvos = [t for t in _json(f"http://127.0.0.1:{cdp}/json/list") if t.get("type") == "page"]
+        if alvos: break
+        time.sleep(0.5)
+    aba = Aba(alvos[0]["webSocketDebuggerUrl"])
+    for dm in ("Page", "Runtime", "Log"): aba.cmd(f"{dm}.enable")
+    aba.cmd("Emulation.setDeviceMetricsOverride", width=1600, height=1000, deviceScaleFactor=1, mobile=False)
+    for bloco in (p06_vao_pequeno,):
+        try:
+            bloco(aba)
+        except Exception as e:                       # noqa: BLE001
+            ok(False, f"{bloco.__name__}: {e}")
+    erros = [m for m in aba.console if m[0] in ("error", "excecao")]
+    ok(not erros, f"sem erros no console: {erros[:3]}")
+finally:
+    try: nav.kill()
+    except Exception: pass
+    srv.kill()
+    shutil.rmtree(DADOS, ignore_errors=True)
+print()
+print("FALHAS:", len(falhas))
+sys.exit(1 if falhas else 0)

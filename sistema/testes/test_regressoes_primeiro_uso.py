@@ -65,5 +65,19 @@ class TestEixosGravadosDepoisDaPlanta(_ComProjeto):
         self.assertEqual(self._nomes(), ["1", "A", "B"])
 
 
+class TestVaoForaDaFaixaComVirgula(unittest.TestCase):
+    """P06 — "Não foi possível lançar: Vão: valor 4.0 fora da faixa aceitável (5 a 60 m)": com ponto decimal e sem dizer
+    o que fazer. A conta do servidor fala português; a tela avisa antes (verif_lancar_vao_pequeno)."""
+
+    def test_mensagem_com_virgula(self):
+        from nucleo.base import ErroDeDados
+        from nucleo.modelo_galpao import DadosGalpao
+        with self.assertRaises(ErroDeDados) as c:
+            DadosGalpao(vao=4.5).validar()
+        msg = str(c.exception)
+        self.assertIn("4,5", msg)
+        self.assertNotIn("4.5", msg)
+
+
 if __name__ == "__main__":
     unittest.main()

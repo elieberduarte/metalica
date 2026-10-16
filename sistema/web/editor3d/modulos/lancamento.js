@@ -315,6 +315,14 @@ export class MetodosLancamento {
       return;
     }
     const g = d.geometria;
+    if (!(g.vao >= 5000 && g.vao <= 60000)) {
+      // o motor do galpão vai de 5 a 60 m: avisa antes, e não depois do Lançar com "valor 4.0 fora da faixa" (P06, 16/10)
+      const corpo = el('div', {},
+        el('p', { class: 'explica atencao', texto: `O lançamento automático vai de 5 a 60 m de vão; estes eixos dão ${metros(g.vao)} m (${g.letras[0]}–${g.letras[g.letras.length - 1]}).` }),
+        el('p', { class: 'explica', texto: 'Para um vão fora dessa faixa, modele pela seleção: Pilares nos eixos…, depois Viga entre pilares… e Terças por espaçamento… (grupo Modelar pela seleção). Se o vão está errado, corrija os eixos em Eixos da obra.' }));
+      if (await this.dialogo({ titulo: 'Lançar estrutura nos eixos', corpo, ok: 'Pilares nos eixos…' }) === 'ok') this.dialogoPilaresNosEixos();
+      return;
+    }
     const p = { ...(d.padrao || {}), ...(d.parametros || {}) };
     const entradas = {};
     const grade = el('div', { class: 'campos lancamento' });
