@@ -99,5 +99,33 @@ class TestProjetoRecebidoMudaOTipo(_ComProjeto):
         self.assertEqual(cartao["tipo_rotulo"], "Projeto recebido (DXF/PDF)")
 
 
+class TestFolhasDoDxfGuardado(_ComProjeto):
+    """P08 — o passo "2. Ler folhas e considerações de cálculo" abria de novo a janela do Windows pedindo o DXF que o
+    passo 1 já tinha importado. O passo 1 guarda o DXF nos documentos da obra e o passo 2 lê dele."""
+
+    def _importar(self, texto, nome="portaria.dxf"):
+        import base64
+        app.projeto_2d_para_modelo(self.s, {"arquivo": nome, "ifc": False, "conteudo_b64": base64.b64encode(texto.encode("utf-8")).decode()})
+
+    def test_passo_2_le_o_dxf_do_passo_1(self):
+        from test_folhas_recebidas import _dxf
+        self._importar(_dxf())
+        self.assertEqual(app.ler_projeto_recebido(self.s, {"ler": True})["dxf_guardado"], "portaria.dxf")
+        r = app.ler_projeto_recebido(self.s, {})                # sem arquivo: o guardado
+        self.assertEqual([f["numero"] for f in r["projeto_recebido"]["folhas"]], ["01/03", "02/03", "03/03"])
+        self.assertEqual(r["projeto_recebido"]["arquivo"], "portaria.dxf")
+        docs = [d["nome"] for d in app._documentos_da_obra(self.g._existente(self.s))]
+        self.assertIn("portaria.dxf", docs)                     # aparece na aba Arquivos
+
+    def test_revisao_com_o_mesmo_nome_guarda_a_anterior(self):
+        from test_folhas_recebidas import _dxf
+        self._importar(_dxf())
+        self._importar(_dxf().replace("R02", "R03"))
+        lixo = os.path.join(self.g._existente(self.s), app.PASTA_DOCUMENTOS, ".lixeira")
+        self.assertEqual(len(os.listdir(lixo)), 1)
+        r = app.ler_projeto_recebido(self.s, {})
+        self.assertEqual(r["projeto_recebido"]["carimbo"]["revisao"], "R03")
+
+
 if __name__ == "__main__":
     unittest.main()

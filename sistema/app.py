@@ -2217,8 +2217,16 @@ def ler_projeto_recebido(s: str, corpo: dict) -> dict:
     import datetime as _dt
     from nucleo2d import folhas_recebidas
     g = _gerente()
+    guardado = _dxf_recebido_guardado(s)
     if corpo.get("ler"):
-        return {"projeto_recebido": g.ler(s).get("projeto_recebido")}
+        return {"projeto_recebido": g.ler(s).get("projeto_recebido"),
+                "dxf_guardado": os.path.basename(guardado) if guardado else None}
+    if not (corpo.get("conteudo_b64") or corpo.get("conteudo")) and guardado:
+        # o DXF do passo 1 (Projeto recebido) ficou nos documentos da obra: o passo 2 não pede o arquivo de novo (P08)
+        import base64
+        with open(guardado, "rb") as f:
+            corpo = dict(corpo, conteudo_b64=base64.b64encode(f.read()).decode(),
+                         arquivo=corpo.get("arquivo") or os.path.basename(guardado))
     dados = folhas_recebidas.ler(_texto_do_dxf(corpo))
     if not dados["folhas"] and not dados["cargas"]:
         raise ErroDeDados("o DXF não tem folhas com carimbo no espaço do papel (os layouts): nada a ler.")
@@ -2233,6 +2241,40 @@ def ler_projeto_recebido(s: str, corpo: dict) -> dict:
             campos[chave] = valor
     g._atualizar(s, **campos)
     return {"projeto_recebido": dados, "preenchidos": sorted(k for k in campos if k != "projeto_recebido")}
+
+
+def _guardar_dxf_recebido(s: str, arquivo: str, dados: bytes) -> str:
+    """O DXF do projetista, como chegou, em <projeto>/documentos/ (a aba Arquivos mostra): o passo 2 do roteiro (folhas e
+    considerações de cálculo) lê dele em vez de pedir o arquivo de novo (P08, primeiro uso 16/10). Outro arquivo com o
+    mesmo nome e conteúdo diferente (uma revisão) manda o anterior para documentos/.lixeira, com a data."""
+    import time as _time
+    g = _gerente()
+    pasta = os.path.join(g._existente(s), PASTA_DOCUMENTOS)
+    os.makedirs(pasta, exist_ok=True)
+    nome = os.path.basename(str(arquivo or "")) or "projeto-recebido.dxf"
+    cam = os.path.join(pasta, nome)
+    if os.path.isfile(cam):
+        with open(cam, "rb") as f:
+            igual = f.read() == dados
+        if not igual:
+            lixo = os.path.join(pasta, ".lixeira")
+            os.makedirs(lixo, exist_ok=True)
+            base, ext = os.path.splitext(nome)
+            os.replace(cam, os.path.join(lixo, "%s-%s%s" % (base, _time.strftime("%Y%m%d-%H%M%S"), ext)))
+    with open(cam + ".gravando", "wb") as f:
+        f.write(dados)
+    os.replace(cam + ".gravando", cam)
+    g._atualizar(s, dxf_recebido=nome)
+    return cam
+
+
+def _dxf_recebido_guardado(s: str):
+    """O caminho do DXF recebido guardado pelo passo 1, se ainda estiver lá."""
+    nome = _gerente().ler(s).get("dxf_recebido")
+    if not nome:
+        return None
+    cam = os.path.join(_gerente()._existente(s), PASTA_DOCUMENTOS, os.path.basename(nome))
+    return cam if os.path.isfile(cam) else None
 
 
 def gravar_eixos_projeto(s: str, corpo: dict) -> dict:
@@ -3563,6 +3605,8 @@ def projeto_2d_para_modelo(s: str, corpo: dict) -> dict:
         des.nome = nome_des
         _progresso(s, "gravando o desenho…")
         g.salvar_desenho(s, nome_des, des.dict())
+        if tipo == "dxf":
+            _guardar_dxf_recebido(s, arquivo, dados)
         if g.ler(s).get("tipo") in ("lancamento", "desenho"):
             # o projeto passa a ser "recebido": o cartão dizia "Lançado sobre o arquitetônico" (P25, primeiro uso 16/10)
             g._atualizar(s, tipo="recebido")

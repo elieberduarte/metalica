@@ -163,6 +163,30 @@ def p07_menu_antes_do_editor(aba):
         ok(foi and "Abra" not in aviso, f"{rotulo} (avisos: «{aviso[:80]}»)")
 
 
+def p08_folhas_sem_pedir_o_arquivo(aba):
+    """P08: o passo "2. Ler folhas e considerações de cálculo" abria direto a janela do Windows pedindo o DXF de novo (o
+    passo 1 já o tinha importado). Agora pergunta antes e lê o DXF guardado no projeto."""
+    print("P08 — passo 2 do projeto recebido lê o DXF do passo 1")
+    import base64
+    from test_folhas_recebidas import _dxf
+    s = projeto("Portaria folhas")
+    post(f"/api/projetos/{s}/projeto-2d", {"arquivo": "portaria.dxf", "ifc": False, "conteudo_b64": base64.b64encode(_dxf().encode()).decode()})
+    aba.navegar(f"{base}/cad?projeto={s}", limite=60)
+    esperar(aba, "window.cad && document.body.dataset.pronto === '1'")
+    aba.avaliar("window.__seletores = 0; const c0 = HTMLInputElement.prototype.click; HTMLInputElement.prototype.click = function () { if (this.type === 'file') window.__seletores++; return c0.apply(this, arguments); }; 1")
+    clicar(aba, '.menu[data-menu="vistas"] > button')
+    clicar(aba, '[data-acao="folhas-recebidas"]')
+    esperar(aba, "document.querySelector('#dialogo').open", 15)
+    t = aba.avaliar("document.querySelector('#dialogo').textContent") or ""
+    ok("portaria.dxf" in t and "passo 1" in t and "Escolher outro arquivo" in t, f"pergunta antes, com o DXF do passo 1: «{t.strip()[:90]}»")
+    clicar(aba, "#dialogo-ok")
+    esperar(aba, "document.querySelector('#dialogo').open && /3 folha/.test(document.querySelector('#dialogo').textContent)", 30)
+    t = aba.avaliar("document.querySelector('#dialogo').textContent") or ""
+    ok("3 folha" in t and "CONSTRUTORA ROSA DOS VENTOS" in t, f"lê as folhas do DXF guardado: «{t.strip()[:90]}»")
+    ok(aba.avaliar("window.__seletores") == 0, f"sem abrir a janela de arquivo ({aba.avaliar('window.__seletores')})")
+    aba.avaliar("document.querySelector('#dialogo').close(); 1")
+
+
 chrome = next(c for c in CHROMES if os.path.exists(c)); cdp = _porta_livre(); perfil = tempfile.mkdtemp(prefix="verif_primeiro_uso_")
 nav = subprocess.Popen([chrome, "--headless=new", "--disable-gpu", "--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars",
                         "--no-first-run", "--remote-allow-origins=*", f"--user-data-dir={perfil}", f"--remote-debugging-port={cdp}", "about:blank"],
@@ -176,7 +200,8 @@ try:
     for dm in ("Page", "Runtime", "Log"): aba.cmd(f"{dm}.enable")
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1600, height=1000, deviceScaleFactor=1, mobile=False)
     # python verif_primeiro_uso_ui.py p07 → só os blocos cujo nome começa assim
-    for bloco in [b for b in (p02_p13_recebido, p06_vao_pequeno, p11_p12_cad, p07_menu_antes_do_editor)
+    for bloco in [b for b in (p02_p13_recebido, p06_vao_pequeno, p11_p12_cad, p07_menu_antes_do_editor,
+                                p08_folhas_sem_pedir_o_arquivo)
                   if not sys.argv[1:] or any(b.__name__.startswith(a) for a in sys.argv[1:])]:
         try:
             bloco(aba)

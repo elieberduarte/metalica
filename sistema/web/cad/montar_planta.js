@@ -67,14 +67,33 @@ export class MetodosMontarPlantaCAD {
    *  cálculo, normas e materiais — o servidor lê e grava no projeto (`projeto_recebido`). */
   async lerFolhasRecebidas() {
     if (!this.projeto) { this.aviso('Abra o desenho dentro de um projeto.', 'atencao'); return; }
-    const entrada = el('input', { type: 'file', accept: '.dxf' });
-    const arquivo = await new Promise((ok) => { entrada.addEventListener('change', () => ok(entrada.files && entrada.files[0])); entrada.click(); });
-    if (!arquivo) return;
+    const rota = `/api/projetos/${encodeURIComponent(this.projeto)}/projeto-recebido`;
+    // o DXF do passo 1 fica nos documentos da obra: lê dele, sem abrir a janela do Windows de novo (P08, primeiro uso 16/10)
+    let guardado = null;
+    try { guardado = (await postar(rota, { ler: true })).dxf_guardado || null; } catch (e) { guardado = null; }
+    let outro = !guardado;
+    if (guardado) {
+      const escolher = el('button', { type: 'button', texto: 'Escolher outro arquivo…' });
+      const corpo = el('div', {},
+        el('div', { class: 'explica', texto: `Ler as folhas (carimbo, considerações de cálculo, normas e materiais) do DXF "${guardado}", o mesmo do passo 1?` }),
+        el('div', { class: 'explica' }, 'É outro arquivo? ', escolher));
+      escolher.addEventListener('click', () => { outro = true; document.getElementById('dialogo-ok').click(); });
+      if (await this.dialogo({ titulo: 'Folhas do projeto recebido', corpo, ok: 'Ler as folhas' }) !== 'ok') return;
+    } else {
+      const corpo = el('div', { class: 'explica', texto: 'Escolha o DXF do projetista: as folhas (os layouts do espaço do papel) trazem o carimbo e as considerações de cálculo. Use antes o passo 1 (Importar o projeto) e o arquivo fica guardado no projeto.' });
+      if (await this.dialogo({ titulo: 'Folhas do projeto recebido', corpo, ok: 'Escolher o arquivo…' }) !== 'ok') return;
+    }
+    let pedido = {};
+    if (outro) {
+      const entrada = el('input', { type: 'file', accept: '.dxf' });
+      const arquivo = await new Promise((ok) => { entrada.addEventListener('change', () => ok(entrada.files && entrada.files[0])); entrada.click(); });
+      if (!arquivo) return;
+      pedido = { arquivo: arquivo.name, conteudo_b64: await base64DoArquivo(arquivo) };
+    }
     this.dica('Lendo as folhas do DXF…');
     let r;
     try {
-      r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/projeto-recebido`,
-        { arquivo: arquivo.name, conteudo_b64: await base64DoArquivo(arquivo) });
+      r = await postar(rota, pedido);
     } catch (e) { this.aviso(`Não foi possível ler as folhas: ${e.message}`, 'erro', 0); this.dica(''); return; }
     this.dica('');
     const d = r.projeto_recebido || {};
