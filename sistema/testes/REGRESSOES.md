@@ -132,6 +132,11 @@ Achados dos testes de primeiro uso (`Projeto/BRIEFINGS/Briefing-primeiro-uso*.md
 | 16/10 | Primeiro uso: a Ajuda sem o roteiro IFC → pranchas (Q22) | 9ad28b8 | test_regressoes_primeiro_uso_ifc TestAjudaComORoteiroDoIfc; test_ajuda_menus |
 | 16/10 | ME-Sooro: com nada selecionado, os padrões de desenho pareciam propriedades de uma peça (Q24) | 9ad28b8 | verif_primeiro_uso_ui Q24 |
 | 16/10 | Sala dos Compressores: a cópia de CH3 na prancha da "T2" (M2 + M7) com 2x em vez de 12x — a composição da montada pelas peças de um exemplar (Q04, bateria) | 9ad28b8 | test_regressoes_primeiro_uso_ifc TestCopiaNaTesouraDeMetadesDiferentes |
+| 16/10 | ME-Sooro: a cantoneira furada com prefixo CH ("CH = Chapa" na legenda) — decisão: CT.n (Q14) | 95a572a | test_regressoes_primeiro_uso_ifc TestNomesDecididosPeloUsuario |
+| 16/10 | ME-Sooro: a "T4" da prancha (montada M8 + M9) não era a "T4" do romaneio (meia M6) — decisão: meias MT.n, montadas T (N01/R01) | 95a572a | test_regressoes_primeiro_uso_ifc TestNomesDecididosPeloUsuario |
+| 16/10 | ME-Sooro: o modelo com M12 e a compra pedindo Ø1/2" — decisão: métrico ou polegada por projeto (N04) | 95a572a | test_regressoes_primeiro_uso_ifc TestParafusoDaCompraPorProjeto; verif_primeiro_uso_ui Q02/Q03 |
+| 16/10 | ME-Sooro (2ª rodada): o Conferir acusava 21 terças fora do passo da máquina que o Detalhar acerta (R12) | 95a572a | test_regressoes_primeiro_uso_ifc TestConferirAntesDoPrimeiroDetalhar |
+| 16/10 | ME-Sooro (2ª rodada): "Gerando o PDF de 1 folha(s)" para 14 folhas, com o desenho das pranchas acima de 4 MB (R20) | 95a572a | verif_primeiro_uso_ui Q18 |
 | 16/10 | Portaria Hermes: o pilar lançado mostrava "Nome P1" e "Posição P11" (qual é a marca?), no grupo "Peça (IFC)" de um modelo que não veio de IFC | 226d225 | verif_primeiro_uso_ui P22 (lançado nos eixos pela tela) |
 | 16/10 | Portaria Hermes: 1.874 kg no "Estrutura lançada" × 1.886,1 kg na lista × 1,9 t no 3D; "Ue 250… · 0 barras"; "a barra veio sem o furo no IFC" num modelo lançado | 45bd45d | test_regressoes_primeiro_uso TestPesoDoLancamentoIgualALista; verif_primeiro_uso_ui P23 |
 | 16/10 | Portaria Hermes: zoom da roda do CAD fixo em 1,15× (16 roladas até ler os textos) e o x/y do rodapé parado no zoom | 882b03f | verif_primeiro_uso_ui P15 |
