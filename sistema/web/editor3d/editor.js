@@ -2353,7 +2353,11 @@ export class Editor {
       (this._registroErros || (this._registroErros = [])).push(
         conteudo instanceof Node ? conteudo.textContent : String(conteudo));
     }
+    // o mesmo aviso de novo substitui o anterior (P11, primeiro uso 16/10)
+    const texto = conteudo instanceof Node ? conteudo.textContent : String(conteudo);
+    for (const c of [...this.el.avisos.children]) if (c.dataset.texto === texto) c.remove();
     const caixa = el('div', { class: 'aviso', dados: { tipo }, role: tipo === 'erro' ? 'alert' : 'status' });
+    caixa.dataset.texto = texto;
     caixa.append(conteudo instanceof Node ? conteudo : el('span', { texto: conteudo }));
     caixa.append(el('button', { type: 'button', 'aria-label': 'Fechar', texto: '×',
                                 onclick: () => caixa.remove() }));

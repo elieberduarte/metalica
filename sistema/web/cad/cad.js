@@ -196,6 +196,8 @@ class CAD {
     if (this.nomeDesenho && this.nomeDesenho !== nome && this._temPendente()) {
       if (!(await this._gravarOuConfirmar('Abrir o outro desenho mesmo assim'))) return;
     }
+    // os avisos fixos (erros sem tempo) eram do desenho anterior (P11)
+    if (this.nomeDesenho !== nome) for (const c of [...this.el.avisos.querySelectorAll('[data-fixo]')]) c.remove();
     try {
       const r = await pedir(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(nome)}`);
       this.nomeDesenho = nome;
@@ -1018,6 +1020,8 @@ class CAD {
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); ev.shiftKey ? this.refazer() : this.desfazer(); return; }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'y') { ev.preventDefault(); this.refazer(); return; }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); this.salvar(); return; }
+      // Esc fecha primeiro o menu aberto, como em qualquer programa (P12, primeiro uso 16/10: o menu ficava por cima do desenho)
+      if (ev.key === 'Escape' && document.querySelector('.menu.aberto')) { this._fecharMenus(); return; }
       if (ev.key === 'Escape') { if (this.ferramenta) { this.ferramenta.cancelar(); } this.selecionar([]); if (this.ferramenta.constructor.id !== 'selecionar') this.ativarFerramenta('selecionar'); return; }
       if (ev.key === 'F8') { ev.preventDefault(); this.definirOrto(!this.snap.orto); return; }
       // os atalhos de duas letras, como no AutoCAD: MA (o MATCHPROP) abre Copiar propriedades e TR (o TRIM) o Aparar
@@ -2602,10 +2606,17 @@ class CAD {
 
   // -------------------------------------------------------------- avisos
   aviso(conteudo, tipo = 'info', duracao = 6000) {
+    // o mesmo aviso de novo substitui o anterior, e no máximo 4 na pilha (P11, primeiro uso 16/10: dois "Não foi possível
+    // montar…" vermelhos e fixos ficavam por cima do desenho por várias telas)
+    const texto = typeof conteudo === 'string' ? conteudo : (conteudo.textContent || '');
+    for (const c of [...this.el.avisos.children]) if (c.dataset.texto === texto) c.remove();
     const caixa = el('div', { class: 'aviso', 'data-tipo': tipo, role: tipo === 'erro' ? 'alert' : 'status' });
+    caixa.dataset.texto = texto;
+    if (!duracao) caixa.dataset.fixo = '1';
     caixa.append(typeof conteudo === 'string' ? document.createTextNode(conteudo) : conteudo);
     caixa.append(el('button', { type: 'button', title: 'fechar', texto: '×', onclick: () => caixa.remove() }));
     this.el.avisos.append(caixa);
+    while (this.el.avisos.children.length > 4) this.el.avisos.firstElementChild.remove();
     if (duracao) setTimeout(() => caixa.remove(), duracao);
   }
 

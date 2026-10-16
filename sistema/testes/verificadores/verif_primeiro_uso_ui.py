@@ -66,6 +66,46 @@ def p06_vao_pequeno(aba):
     aba.avaliar("window.editor.el.dialogo.close('cancelar'); 1")
 
 
+def clicar(aba, seletor):
+    r = aba.avaliar(f"(() => {{ const b = document.querySelector({json.dumps(seletor)}); if (!b) return null; const q = b.getBoundingClientRect(); return [q.left + q.width / 2, q.top + q.height / 2]; }})()")
+    if not r:
+        raise RuntimeError("não achei " + seletor)
+    for tipo in ("mouseMoved", "mousePressed", "mouseReleased"):
+        aba.cmd("Input.dispatchMouseEvent", type=tipo, x=r[0], y=r[1], button="left", clickCount=1)
+    aba.drenar(0.3)
+
+
+def tecla_esc(aba):
+    for tipo in ("rawKeyDown", "keyUp"):
+        aba.cmd("Input.dispatchKeyEvent", type=tipo, key="Escape", code="Escape", windowsVirtualKeyCode=27)
+    aba.drenar(0.3)
+
+
+def p11_p12_cad(aba):
+    """P12: Esc não fechava o menu aberto do CAD (ficava por cima do desenho). P11: o mesmo aviso de erro fixo
+    se repetia na pilha, e os fixos seguiam ao trocar de desenho."""
+    print("P11/P12 — menus e avisos do CAD")
+    s = projeto("Portaria CAD", tipo="desenho")
+    aba.navegar(f"{base}/cad?projeto={s}", limite=60)
+    esperar(aba, "window.cad && document.body.dataset.pronto === '1'")
+    clicar(aba, '.menu[data-menu="lancamento"] > button')
+    ok(bool(aba.avaliar("!!document.querySelector('.menu.aberto')")), "o menu Lançamento abriu com o clique")
+    tecla_esc(aba)
+    ok(not aba.avaliar("!!document.querySelector('.menu.aberto')"), "Esc fecha o menu aberto")
+    aba.avaliar("window.cad.aviso('Não foi possível montar: teste', 'erro', 0); window.cad.aviso('Não foi possível montar: teste', 'erro', 0); 1")
+    n = aba.avaliar("[...document.querySelectorAll('#avisos .aviso')].filter(c => c.textContent.includes('montar: teste')).length")
+    ok(n == 1, f"o mesmo aviso repetido fica um só ({n})")
+    for i in range(7):
+        aba.avaliar(f"window.cad.aviso('aviso {i}', 'info', 60000); 1")
+    n = aba.avaliar("document.querySelectorAll('#avisos .aviso').length")
+    ok(n <= 4, f"a pilha de avisos não passa de 4 ({n})")
+    aba.navegar(f"{base}/editor?projeto={s}", limite=60)
+    esperar(aba, "window.editor && window.editor.el && window.editor.el.avisos")
+    aba.avaliar("window.editor.aviso('Falhou: teste', 'erro'); window.editor.aviso('Falhou: teste', 'erro'); 1")
+    n = aba.avaliar("[...window.editor.el.avisos.children].filter(c => c.textContent.includes('Falhou: teste')).length")
+    ok(n == 1, f"no 3D, o mesmo aviso repetido fica um só ({n})")
+
+
 chrome = next(c for c in CHROMES if os.path.exists(c)); cdp = _porta_livre(); perfil = tempfile.mkdtemp(prefix="verif_primeiro_uso_")
 nav = subprocess.Popen([chrome, "--headless=new", "--disable-gpu", "--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars",
                         "--no-first-run", "--remote-allow-origins=*", f"--user-data-dir={perfil}", f"--remote-debugging-port={cdp}", "about:blank"],
@@ -78,7 +118,7 @@ try:
     aba = Aba(alvos[0]["webSocketDebuggerUrl"])
     for dm in ("Page", "Runtime", "Log"): aba.cmd(f"{dm}.enable")
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1600, height=1000, deviceScaleFactor=1, mobile=False)
-    for bloco in (p06_vao_pequeno,):
+    for bloco in (p06_vao_pequeno, p11_p12_cad):
         try:
             bloco(aba)
         except Exception as e:                       # noqa: BLE001
