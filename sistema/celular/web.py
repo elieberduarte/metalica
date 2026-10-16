@@ -69,6 +69,10 @@ def rota_get(h, rota: str) -> bool:
                 partes.append(f.read())
         with open(os.path.join(WEB, "acesso-celular-inicio.js"), encoding="utf-8") as f:
             partes.append(f.read())
+        pd = os.path.join(WEB, "painel_dev", "inicio.js")          # o botão do Painel DEV (painel_dev/web.py)
+        if os.path.isfile(pd):
+            with open(pd, encoding="utf-8") as f:
+                partes.append(f.read())
         corpo = "\n;\n".join(partes).encode("utf-8")
         h.send_response(200)
         h.send_header("Content-Type", "text/javascript; charset=utf-8")

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="/tema-janela.js"></script>
+<title>Painel DEV — Metálica</title>
+<link rel="stylesheet" href="/estilo.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231f6feb'/><path d='M7 9h18M7 16h12M7 23h15' stroke='%23fff' stroke-width='2.6' stroke-linecap='round'/></svg>">
+<script>
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<style>
+  .topo .acoes { margin-left: auto; }
+  .pd { max-width: 1500px; margin: 0 auto; padding: 14px 20px 60px; }
+  .pd-resumo { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+  .pd-num { background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 8px 14px; font-size: 13px; color: var(--texto2); }
+  .pd-num b { font-size: 20px; color: var(--texto); margin-right: 6px; }
+  .pd-num.verde b { color: var(--verde); } .pd-num.amarelo b { color: var(--amarelo); } .pd-num.verm b { color: var(--verm); }
+  .pd-resumo .dir { margin-left: auto; display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--texto3); }
+  .pd-alertas { display: grid; gap: 6px; margin-bottom: 14px; }
+  .pd-alerta { border-radius: var(--raio-p); padding: 8px 12px; font-size: 13.5px; display: flex; gap: 10px; align-items: baseline; cursor: default; }
+  .pd-alerta b { white-space: nowrap; }
+  .pd-alerta.sua_vez { background: var(--amarelo-fundo); color: var(--amarelo); cursor: pointer; }
+  .pd-alerta.parado { background: var(--azul-fraco); color: var(--azul-tinta); cursor: pointer; }
+  .pd-alerta.conflito { background: var(--verm-fundo); color: var(--verm); }
+  .pd-corpo { display: grid; grid-template-columns: minmax(0, 1fr) 430px; gap: 16px; align-items: start; }
+  @media (max-width: 1100px) { .pd-corpo { grid-template-columns: 1fr; } }
+  .pd-chats { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 12px; }
+  @media (max-width: 560px) { .pd-chats { grid-template-columns: 1fr; } }
+  .pd-card { background: var(--painel); border: 1px solid var(--borda); border-left: 4px solid var(--borda-forte); border-radius: var(--raio); padding: 10px 14px 12px; font-size: 13px; }
+  .pd-card.trabalhando { border-left-color: var(--verde-barra); } .pd-card.sua_vez { border-left-color: var(--amarelo-barra); }
+  .pd-card.parado { border-left-color: var(--azul2); } .pd-card.selecionado { box-shadow: 0 0 0 2px var(--azul2); }
+  .pd-cab { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .pd-nome { font-family: var(--mono); font-size: 12px; background: var(--azul-fraco); color: var(--azul-tinta); border-radius: 4px; padding: 1px 6px; }
+  .pd-titulo { font-weight: 600; font-size: 14.5px; color: var(--texto); }
+  .pd-estado { margin-left: auto; font-size: 12px; font-weight: 600; border-radius: 10px; padding: 2px 9px; white-space: nowrap; }
+  .pd-estado.trabalhando { background: var(--verde-fundo); color: var(--verde); }
+  .pd-estado.sua_vez { background: var(--amarelo-fundo); color: var(--amarelo); }
+  .pd-estado.parado { background: var(--azul-fraco); color: var(--azul-tinta); }
+  .pd-estado.inativo { background: var(--painel2); color: var(--texto3); }
+  .pd-estado.trabalhando::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--verde-barra); margin-right: 5px; animation: pdpulso 1.4s infinite; }
+  @keyframes pdpulso { 50% { opacity: .25; } }
+  .pd-bloco { margin-top: 8px; }
+  .pd-rot { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--texto3); margin-bottom: 2px; }
+  .pd-rot span { text-transform: none; letter-spacing: 0; }
+  .pd-txt { color: var(--texto2); line-height: 1.4; }
+  .pd-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .pd-chip { font-family: var(--mono); font-size: 11.5px; background: var(--painel2); border: 1px solid var(--borda); border-radius: 4px; padding: 1px 6px; color: var(--texto2); }
+  .pd-chip.quente { background: var(--verm-fundo); border-color: transparent; color: var(--verm); }
+  .pd-chip.ag-rodando { background: var(--verde-fundo); color: var(--verde); border-color: transparent; }
+  .pd-chip.ag-terminou { color: var(--texto3); }
+  .pd-lista { margin: 0; padding-left: 16px; color: var(--texto2); } .pd-lista li { margin: 1px 0; }
+  .pd-acoes { margin-top: 8px; display: flex; gap: 8px; }
+  .pd-acoes button { font-size: 12px; padding: 3px 9px; }
+  .pd-lado { position: sticky; top: 10px; display: grid; gap: 12px; }
+  .pd-caixa { background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 10px 12px; }
+  .pd-caixa h2 { font-size: 13.5px; margin: 0 0 8px; color: var(--azul); display: flex; align-items: center; gap: 8px; }
+  .pd-caixa h2 button { margin-left: auto; font-size: 11.5px; padding: 1px 8px; }
+  .pd-linha { max-height: 62vh; overflow: auto; font-size: 12.5px; }
+  .pd-ev { display: grid; grid-template-columns: 42px 1fr; gap: 6px; padding: 5px 0; border-bottom: 1px solid var(--borda); }
+  .pd-ev time { color: var(--texto3); font-family: var(--mono); font-size: 11.5px; }
+  .pd-ev .quem { font-weight: 600; color: var(--texto); }
+  .pd-ev .tipo { font-size: 10.5px; border-radius: 3px; padding: 0 4px; margin-right: 4px; }
+  .pd-ev .tipo.commit { background: var(--verde-fundo); color: var(--verde); }
+  .pd-ev .tipo.mensagem { background: var(--azul-fraco); color: var(--azul-tinta); }
+  .pd-ev .tipo.agente { background: var(--amarelo-fundo); color: var(--amarelo); }
+  .pd-ev .txt { color: var(--texto2); }
+  table.pd-frentes { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.pd-frentes td, table.pd-frentes th { border-bottom: 1px solid var(--borda); padding: 5px 4px; text-align: left; vertical-align: top; }
+  table.pd-frentes th { color: var(--texto2); font-weight: 600; }
+  .pd-frentes .dec { color: var(--amarelo); font-size: 12px; }
+  details.pd-inativos { margin-top: 14px; } details.pd-inativos summary { cursor: pointer; color: var(--texto2); font-size: 13px; margin-bottom: 8px; }
+  dialog.pd-msgs { width: min(900px, 94vw); max-height: 86vh; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--painel); color: var(--texto); padding: 0; }
+  dialog.pd-msgs header { display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--borda); font-weight: 600; }
+  dialog.pd-msgs header button { margin-left: auto; }
+  dialog.pd-msgs .msgs { padding: 10px 14px; overflow: auto; max-height: 74vh; font-size: 13px; }
+  .pd-msg { border: 1px solid var(--borda); border-radius: var(--raio-p); padding: 7px 10px; margin-bottom: 8px; }
+  .pd-msg.saiu { border-left: 3px solid var(--azul2); } .pd-msg.chegou { border-left: 3px solid var(--verde-barra); }
+  .pd-msg .cab { font-size: 12px; color: var(--texto3); margin-bottom: 3px; }
+  .pd-vazio { color: var(--texto3); font-size: 13px; padding: 20px; text-align: center; }
+  .pd-erro { background: var(--verm-fundo); color: var(--verm); border-radius: var(--raio-p); padding: 8px 10px; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<header class="topo">
+  <div class="marca">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 9h20M6 16h14M6 23h17" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+    <h1>Painel DEV<span>O que cada chat do Claude Code está fazendo · desenvolvimento</span></h1>
+  </div>
+  <div class="acoes">
+    <button type="button" id="btn-tema" title="Alternar tema claro/escuro">Tema</button>
+    <button type="button" onclick="location.href='/'" title="Voltar à tela de projetos">← Projetos</button>
+  </div>
+</header>
+
+<main class="pd">
+  <div id="erro"></div>
+  <div class="pd-resumo" id="resumo"></div>
+  <div class="pd-alertas" id="alertas"></div>
+  <div class="pd-corpo">
+    <section>
+      <div class="pd-chats" id="chats"><div class="pd-vazio">lendo as conversas…</div></div>
+      <details class="pd-inativos" id="inativos-caixa"><summary id="inativos-titulo">Inativos</summary><div class="pd-chats" id="inativos"></div></details>
+    </section>
+    <aside class="pd-lado">
+      <div class="pd-caixa">
+        <h2>Linha do tempo <span id="filtro-linha" style="font-weight:400;color:var(--texto3);font-size:12px"></span><button type="button" id="limpar-filtro" hidden>todos</button></h2>
+        <div class="pd-linha" id="linha"></div>
+      </div>
+      <div class="pd-caixa">
+        <h2>Frentes (briefings)</h2>
+        <div id="frentes"></div>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<dialog class="pd-msgs" id="dlg-msgs">
+  <header><span id="dlg-titulo">Mensagens</span><button type="button" onclick="this.closest('dialog').close()">Fechar</button></header>
+  <div class="msgs" id="dlg-corpo"></div>
+</dialog>
+
+<script src="/painel_dev/painel.js"></script>
+</body>
+</html>

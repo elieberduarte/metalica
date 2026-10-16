@@ -6,7 +6,7 @@ listados) fica em %TEMP%\\metalica_navegar\\estado.json, de modo que um agente v
 por vez, olhando a captura e decidindo o próximo — como uma pessoa na frente da tela.
 
     python testes/navegar.py iniciar                  servidor de teste com pasta de projetos VAZIA + Chrome
-    python testes/navegar.py iniciar --copiar=C:\...\obra   a pasta de projetos com uma CÓPIA dessa obra
+    python testes/navegar.py iniciar --copiar=C:\\...\\obra   a pasta de projetos com uma CÓPIA dessa obra
     python testes/navegar.py ver [nome]               captura + elementos clicáveis numerados + texto visível
     python testes/navegar.py clicar 12|"Texto" [--duplo|--direito]
     python testes/navegar.py xy 800 500 [--duplo|--direito]   clique num ponto (canvas do CAD/3D)
@@ -305,7 +305,7 @@ def iniciar(args):
         # --copiar=<pasta de um projeto>: começa com uma CÓPIA dessa obra (o original não é tocado)
         if x.startswith("--copiar="):
             origem = os.path.abspath(x.split("=", 1)[1])
-            shutil.copytree(origem, os.path.join(dados, os.path.basename(origem.rstrip("\/"))))
+            shutil.copytree(origem, os.path.join(dados, os.path.basename(origem.rstrip("\\/"))))
     porta = _porta_livre()
     extra = ["--dev"] if "--dev" in args else []
     log = open(os.path.join(PASTA, "servidor.log"), "w", encoding="utf-8")
