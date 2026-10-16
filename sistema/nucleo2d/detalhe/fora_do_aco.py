@@ -74,6 +74,10 @@ def material_nao_aco(ent) -> Optional[Tuple[str, float]]:
     if perfil and re.search(PERFIL_DE_ACO, perfil.strip()):
         return None
     m = _sem_acento(str(getattr(ent, "material", "") or ""))
+    # o neoprene do Tekla vem com material "STEEL/SHORE A-60" (a dureza Shore): pelo "STEEL" entrava como peça de aço,
+    # com furação de fábrica pendente no 3D — a faixa "fora do padrão de fábrica: Neoprene" (Mercado Conceito, 16/10)
+    if re.search(r"neoprene|elastomer|\bshore\b", "%s %s" % (m, _sem_acento(str(getattr(ent, "nome", "") or "")))):
+        return "neoprene", 1250.0
     if m and re.search(r"steel|aco\b|a36|a572|a500|astm|civil|usi|zar", m):
         return None
     for padrao, categoria, rho in MATERIAIS_NAO_ACO:
