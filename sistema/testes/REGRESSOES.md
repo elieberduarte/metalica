@@ -113,6 +113,25 @@ Achados dos testes de primeiro uso (`Projeto/BRIEFINGS/Briefing-primeiro-uso*.md
 | 16/10 | ME-Sooro (IFC do TecnoMETAL): o PDF das pranchas recusado — 17 terças "fora do passo da máquina" no 1º Detalhar (só o 2º as acertava) | 2e73392 | test_regressoes_primeiro_uso_ifc TestPrimeiroDetalharNoPassoDaMaquina |
 | 16/10 | ME-Sooro: o erro do PDF dizia "T.O.6: furos a 60 mm…" e nada levava à peça (a busca não achava T.O.6) | 2e73392 | test_regressoes_primeiro_uso_ifc TestPdfRecusadoLevaAPeca; verif_primeiro_uso_ui Q01 |
 | 16/10 | ME-Sooro: o Conferir antes de detalhar não acusava o que trava o PDF nem a cantoneira de 29,4 m, e dava 9 "sem espaço para a chave" sem dizer qual parafuso | 2e73392 | test_regressoes_primeiro_uso_ifc TestConferirAcusaOQueTravaOPdf |
+| 16/10 | ME-Sooro: "desliguei a regra e o programa mexeu na furação mesmo assim, sem avisar" (Q02 — decisão: o padrão da máquina vence; a caixa com nome honesto, o que mudou no 3D e Desfazer) | 6496ada | test_regressoes_primeiro_uso_ifc TestOQueODetalharMudouNo3D; verif_primeiro_uso_ui Q02/Q03 |
+| 16/10 | ME-Sooro: a atualização automática refazia o Detalhar com os padrões e as pranchas saíam sem o "Rotular" escolhido (Q03) | 6496ada | test_regressoes_primeiro_uso_ifc TestOpcoesDoDetalharValemNaAtualizacao; verif_primeiro_uso_ui Q02/Q03 |
+| 16/10 | ME-Sooro: "CH2 08x" na prancha da T1 03x (são 24) e "CH2 56x" na das chapas, sem dizer que era cópia (Q04, N02) | 6496ada | test_regressoes_primeiro_uso_ifc TestCopiaDaChapaNaPranchaDaTesoura |
+| 16/10 | Depósito Químico: as pranchas não montavam (KeyError 'categoria' na cópia de "DP.1.1 + DP.1.2") | 6496ada | test_regressoes_primeiro_uso_ifc TestPranchasDoDepositoQuimico |
+| 16/10 | ME-Sooro: a altura dos furos da terça sem cota, os chanfros da CH2 e o furo da cantoneira até a aba sem cota, a A.T.1 de 29,4 m sem "prever emenda" (Q05, Q06, Q07) | 6496ada | test_regressoes_primeiro_uso_ifc TestCotasQueAFabricaPrecisa |
+| 16/10 | ME-Sooro: "BOLT (A) 12x30" na lista, sem classe nem porca; 28 porcas Ø3/4" do chumbador faltando na compra (Q08, N07 — decisão: recebido segue o projetista, nosso 2 porcas + 1 arruela) | 6496ada | test_regressoes_primeiro_uso_ifc TestParafusosEPorcasNaLista |
+| 16/10 | ME-Sooro: a busca não achava "T.O.6" (o nome do aviso) com o editor aberto antes do Detalhar (Q12) | 6496ada | verif_primeiro_uso_ui Q12 |
+| 16/10 | ME-Sooro: a planta de chumbação sem a locação dos chumbadores (o CB2 a 262 mm do eixo D sem cota) (Q09) | 9ad28b8 | test_regressoes_primeiro_uso_ifc TestLocacaoDosChumbadores |
+| 16/10 | ME-Sooro: "Detalhar as peças de um IFC…" não fazia nada (o navegador bloqueava a janela do arquivo) (Q11) | 9ad28b8 | verif_primeiro_uso_ui Q11 |
+| 16/10 | ME-Sooro: o 3D com 16 × 13 eixos antes do Detalhar e as pranchas com 7 × 5 (Q13) | 9ad28b8 | test_regressoes_primeiro_uso_ifc TestEixosDo3DSaoOsDasPranchas |
+| 16/10 | ME-Sooro: "L 1 1/2'' X 1/8' '" com as aspas soltas; "PLATE 270x120x6 #1/4\"" com duas espessuras (Q14, Q15) | 9ad28b8 | test_regressoes_primeiro_uso_ifc TestGrafiaDaCantoneira, TestChapaComUmaEspessura |
+| 16/10 | ME-Sooro: "(folga 1 < 1,5)" em toda terça e chapa da prancha do projeto recebido (Q16) | 9ad28b8 | test_regressoes_primeiro_uso_ifc TestFolgaNaPranchaDoProjetoRecebido |
+| 16/10 | ME-Sooro: os avisos do Detalhar de antes ficavam na tela; "Gerando o PDF de 1 prancha(s)" para 13 folhas (Q18) | 9ad28b8 | verif_primeiro_uso_ui Q18 |
+| 16/10 | ME-Sooro: não havia DXF de corte das chapas (Q19) | 9ad28b8 | test_regressoes_primeiro_uso_ifc TestDxfDeCorteDasChapas; verif_primeiro_uso_ui Q19 |
+| 16/10 | ME-Sooro: o diálogo Montar pranchas não lembrava o Projetista nem a revisão (Q20) | 9ad28b8 | test_regressoes_primeiro_uso_ifc TestCarimboLembrado; verif_primeiro_uso_ui Q20 |
+| 16/10 | ME-Sooro: o 3D abria sem dizer o que o IFC trouxe (Q21) | 9ad28b8 | test_regressoes_primeiro_uso_ifc TestResumoDaImportacao; verif_primeiro_uso_ui Q21 |
+| 16/10 | Primeiro uso: a Ajuda sem o roteiro IFC → pranchas (Q22) | 9ad28b8 | test_regressoes_primeiro_uso_ifc TestAjudaComORoteiroDoIfc; test_ajuda_menus |
+| 16/10 | ME-Sooro: com nada selecionado, os padrões de desenho pareciam propriedades de uma peça (Q24) | 9ad28b8 | verif_primeiro_uso_ui Q24 |
+| 16/10 | Sala dos Compressores: a cópia de CH3 na prancha da "T2" (M2 + M7) com 2x em vez de 12x — a composição da montada pelas peças de um exemplar (Q04, bateria) | 9ad28b8 | test_regressoes_primeiro_uso_ifc TestCopiaNaTesouraDeMetadesDiferentes |
 | 16/10 | Portaria Hermes: o pilar lançado mostrava "Nome P1" e "Posição P11" (qual é a marca?), no grupo "Peça (IFC)" de um modelo que não veio de IFC | 226d225 | verif_primeiro_uso_ui P22 (lançado nos eixos pela tela) |
 | 16/10 | Portaria Hermes: 1.874 kg no "Estrutura lançada" × 1.886,1 kg na lista × 1,9 t no 3D; "Ue 250… · 0 barras"; "a barra veio sem o furo no IFC" num modelo lançado | 45bd45d | test_regressoes_primeiro_uso TestPesoDoLancamentoIgualALista; verif_primeiro_uso_ui P23 |
 | 16/10 | Portaria Hermes: zoom da roda do CAD fixo em 1,15× (16 roladas até ler os textos) e o x/y do rodapé parado no zoom | 882b03f | verif_primeiro_uso_ui P15 |
