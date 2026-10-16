@@ -91,6 +91,11 @@ function pintar(modo) {
       pintarGrupos(legenda);
     }
   }
+  if (modo !== 'material') {
+    let mudou = false;
+    for (const g of legenda) { const c = corEscolhida(modo, g.chave || g.nome); if (c) { g.cor = c; mudou = true; } }
+    if (mudou) pintarGrupos(legenda);
+  }
   // a legenda em ordem alfabética (usuário, Mercado Conceito, 16/10: "organizar por ordem alfabética"); antes, da que
   // tinha mais peças para a que tinha menos. As cores não mudam: vêm do nome (a paleta do editor em ordem de nome)
   legenda.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true, sensitivity: 'base' }));
@@ -98,6 +103,48 @@ function pintar(modo) {
   const ocultosAqui = new Set((doVer.grupos || {})[modo] || []);
   for (const g of legenda) if (ocultosAqui.has(g.nome)) visor.ocultarPecas(g.ids, true);
   if (doVer.pintar !== modo) { doVer.pintar = modo; gravarDoVer(); }
+}
+
+/** A cor de cada grupo se troca clicando no quadradinho dela (usuário, Mercado Conceito, 16/10: "não consigo alterar a
+ *  cor das camadas?"): nos grupos do Pintar, na seção Sistema e nas camadas. Guardada por projeto, por modo do Pintar e
+ *  nome do grupo (ou a chave do sistema); trocar a cor de um grupo de outro modo passa o Pintar para esse modo. */
+function corEscolhida(modo, chave) { return ((doVer.cores || {})[modo] || {})[chave]; }
+const quadradinho = (modo, chave, cor) =>
+  `<i class="cor" data-cor-modo="${esc(modo)}" data-cor-chave="${esc(chave)}" title="Trocar a cor" style="background:${esc(cor)}"></i>`;
+function paraHex(cor) {
+  const c = document.createElement('canvas').getContext('2d');
+  c.fillStyle = '#000'; c.fillStyle = cor;
+  return String(c.fillStyle).startsWith('#') ? String(c.fillStyle) : '#888888';
+}
+let seletorCor = null;
+function escolherCor(el) {
+  const modo = el.dataset.corModo, chave = el.dataset.corChave;
+  if (!seletorCor) {
+    seletorCor = document.createElement('input');
+    seletorCor.type = 'color';
+    seletorCor.id = 'seletor-cor';
+    Object.assign(seletorCor.style, { position: 'fixed', width: '1px', height: '1px', opacity: '0', border: '0', padding: '0' });
+    document.body.appendChild(seletorCor);
+  }
+  const r = el.getBoundingClientRect();
+  seletorCor.style.left = r.left + 'px'; seletorCor.style.top = r.bottom + 'px';
+  seletorCor.value = paraHex(el.style.background || getComputedStyle(el).backgroundColor);
+  seletorCor.oninput = seletorCor.onchange = () => { aplicarCor(modo, chave, seletorCor.value); el.style.background = seletorCor.value; };
+  try { seletorCor.showPicker(); } catch (e) { seletorCor.click(); }
+}
+function aplicarCor(modo, chave, hex) {
+  doVer.cores = { ...(doVer.cores || {}), [modo]: { ...((doVer.cores || {})[modo] || {}), [chave]: hex } };
+  gravarDoVer();
+  const sel = $('#pintar');
+  if (sel.value === modo) {
+    const g = legenda.find(x => (x.chave || x.nome) === chave);
+    if (g) { g.cor = hex; pintarGrupos([g]); }
+    return;
+  }
+  if (![...sel.options].some(o => o.value === modo)) return;
+  sel.value = modo;
+  pintar(modo);
+  if (painelAtual === 'legenda') painelLegenda(modo);
 }
 
 /** Depois de abrir: o que se ocultou aqui no modo ver da outra vez (camadas e o Pintar com os grupos ocultos). */
@@ -362,7 +409,7 @@ function secaoPiso(comSistema = true) {
   const sistemas = comSistema ? gruposDeSistema() : [];
   if (sistemas.length >= 2) html += '<p class="titulo-secao">Sistema</p>' + sistemas.map(g => `<label class="linha-lista">
       <input type="checkbox" data-sistema="${g.chave}" ${g.ids.some(i => visor.ocultasSistema.has(i)) ? '' : 'checked'}>
-      <i style="background:${g.cor}"></i><span>${esc(g.nome)}</span><em>${nf(g.n)}</em></label>`).join('');
+      ${quadradinho('sistema', g.chave, corEscolhida('sistema', g.chave) || g.cor)}<span>${esc(g.nome)}</span><em>${nf(g.n)}</em></label>`).join('');
   return html ? html + '<p class="titulo-secao">Modelo</p>' : '';
 }
 
@@ -370,7 +417,11 @@ function secaoPiso(comSistema = true) {
  *  apresentação ao cliente"): pelo material — concreto é pré-moldado; aço (e a barra sem material) é metálica. O aço e o
  *  neoprene que vêm no modelo do pré-moldado (a camada dele é quase toda de concreto: as porcas, arruelas e cantoneiras
  *  das ligações dele) ficam com o pré-moldado. O resto (o PVC das descidas…) é Outros. */
-const SISTEMAS = { metalica: ['Metálica', '#2f6fd6'], outros: ['Outros', '#e08a1e'], premoldado: ['Pré-moldado (concreto)', '#8f969e'] };
+const SISTEMAS = { metalica: ['Metálica', '#2f6fd6'], outros: ['Outros', '#e08a1e'], premoldado: ['Pré-moldado (concreto)', '#8f969e'],
+  terreno: ['Terreno, rua e calçada', '#b9a27a'] };
+// o terreno, a rua e a calçada num sistema só (usuário, 16/10: "terreno, rua e calçada como uma camada única; parede
+// pode deixar junto com o pré-moldado"): pelo nome da peça, antes do material (no IFC do Mercado são lajes de concreto)
+const TERRENO = /^\s*(terreno|ruas?|cal[çc]adas?|passeios?)\b/i;
 const CONCRETO = /concret|fck|cimento|\bc\s?[1-9]\d\b/i;
 const ACO = /steel|a[çc]o\b|astm|\ba36\b|a5\d\d|a32[05]|a307|s2\d\d|s3\d\d|ar\s?3\d\d|zar|galv|shore|neopren|elast/i;
 const NEOPRENE = /shore|neopren|elast/i;
@@ -384,11 +435,12 @@ function gruposDeSistema() {
     q[0]++; if (CONCRETO.test(fichas[i].m || '')) q[1]++;
     porCamada.set(fichas[i].c, q);
   }
-  const ids = { metalica: [], outros: [], premoldado: [] };
+  const ids = { metalica: [], outros: [], premoldado: [], terreno: [] };
   for (let i = 0; i < n; i++) {
     const m = fichas[i].m || '', q = porCamada.get(fichas[i].c);
     let s = 'outros';
-    if (CONCRETO.test(m)) s = 'premoldado';
+    if (TERRENO.test(fichas[i].p || '') || TERRENO.test(fichas[i].n || '')) s = 'terreno';
+    else if (CONCRETO.test(m)) s = 'premoldado';
     else if (!m || ACO.test(m)) s = q[1] * 2 >= q[0] ? 'premoldado' : NEOPRENE.test(m) ? 'outros' : 'metalica';
     ids[s].push(i);
   }
@@ -495,7 +547,7 @@ function painelCamadas() {
   const cams = visor.cabecalho.camadas;
   abrirPainel('camadas', 'Camadas', secaoPiso() + cams.map((c, i) => c.pecas ? `<label class="linha-lista">
       <input type="checkbox" data-c="${i}" ${visor.visivelCamada[i] !== false ? 'checked' : ''}>
-      <i style="background:${esc(c.cor)}"></i><span>${esc(c.nome)}</span><em>${nf(c.pecas)}</em></label>` : '').join(''));
+      ${quadradinho('camada', c.nome, corEscolhida('camada', c.nome) || c.cor)}<span>${esc(c.nome)}</span><em>${nf(c.pecas)}</em></label>` : '').join(''));
   ligarSecaoPiso();
   $('#painel-corpo').querySelectorAll('input[data-c]').forEach(el => el.onchange = () => {
     visor.mostrarCamada(+el.dataset.c, el.checked);
@@ -511,9 +563,9 @@ function painelLegenda(modo) {
   const oculto = modo === 'sistema' ? (g => g.ids.some(i => visor.ocultasSistema.has(i))) : (g => g.ids.some(i => visor.ocultas.has(i)));
   abrirPainel('legenda', titulo, secaoPiso(modo !== 'sistema') + legenda.slice(0, 200).map((g, k) => `<div class="linha-lista" data-k="${k}">
       <input type="checkbox" data-olho="${k}" title="Mostrar / ocultar este grupo" ${oculto(g) ? '' : 'checked'}>
-      <i style="background:${g.cor}"></i><span title="${esc(g.nome)}">${esc(g.nome)}</span><em>${nf(g.n)}</em></div>`).join('')
+      ${quadradinho(modo, g.chave || g.nome, g.cor)}<span title="${esc(g.nome)}">${esc(g.nome)}</span><em>${nf(g.n)}</em></div>`).join('')
     + (legenda.length > 200 ? `<p class="dica">e mais ${legenda.length - 200} grupos</p>` : '')
-    + '<p class="dica">Clique num grupo para ir à primeira peça dele; a caixinha mostra ou oculta o grupo.</p>');
+    + '<p class="dica">Clique num grupo para ir à primeira peça dele; a caixinha mostra ou oculta o grupo; o quadradinho troca a cor.</p>');
   $('#painel-corpo').querySelectorAll('[data-olho]').forEach(cb => {
     cb.onclick = ev => ev.stopPropagation();
     cb.onchange = () => {
@@ -676,6 +728,12 @@ function ligar() {
 
   $('#btn-editar').onclick = irParaEditor;
   $('#painel-fechar').onclick = fecharPainel;
+  $('#painel-corpo').addEventListener('click', ev => {
+    const el = ev.target.closest && ev.target.closest('i.cor');
+    if (!el) return;
+    ev.preventDefault(); ev.stopPropagation();
+    escolherCor(el);
+  }, true);
   document.querySelector('[data-painel="camadas"]').onclick = () => (painelAtual === 'camadas' ? fecharPainel() : painelCamadas());
   $('#btn-medir').onclick = () => (medindo ? (pararMedida(), fecharPainel()) : iniciarMedida());
   $('#btn-enquadrar').onclick = () => visor.enquadrar('iso');

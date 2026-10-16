@@ -33,10 +33,13 @@ ents += [_peca("laj%d" % i, 1000.0 * i, "Laje Alveolar", "CONCRETE/Fck-40", PRE,
 ents += [_peca("est0", 0.0, "Estaca", "CONCRETE/Fck-25", PRE, z=-2000)]
 ents += [_peca("por0", 5000.0, "PORCA 3/4", "STEEL/A325", PRE), _peca("neo0", 6000.0, "Neoprene", "STEEL/SHORE A-60", PRE)]
 ents += [_peca("pvc0", 8000.0, "Descida Pluvial", "MISCELLANEOUS/PVC", "400 Descidas pluviais")]
+# o terreno, a rua e a calçada (lajes de concreto no IFC do Mercado) num sistema só; a parede fica no pré-moldado
+ents += [_peca("ter0", 0.0, "Terreno", "CONCRETE/Fck-40", PRE, z=-500), _peca("rua0", 2000.0, "Rua ", "CONCRETE/Fck-40", PRE, z=-500),
+         _peca("cal0", 4000.0, "Calçada", "CONCRETE/Fck-40", PRE, z=-500), _peca("par0", 9000.0, "Parede", "CONCRETE/Fck-40", "3 Arquitetura")]
 for i, perfil in enumerate(["U 150×60×3,00 (FF)", "L 2\"×3/16\"", "Ue 250×85×25×2,65", "L 1½\"×3/16\""]):
     ents.append({"id": "bar%d" % i, "tipo": "barra", "nome": "banzo", "camada": "Tesouras", "material": "",
                  "inicio": [0, 1000.0 * i, 6000], "fim": [6000, 1000.0 * i, 6000], "perfil": perfil, "rotacao": 0.0})
-camadas = {n: {"nome": n, "cor": "#888888", "visivel": True} for n in (PRE, "400 Descidas pluviais", "Tesouras")}
+camadas = {n: {"nome": n, "cor": "#888888", "visivel": True} for n in (PRE, "3 Arquitetura", "400 Descidas pluviais", "Tesouras")}
 for nome, modelo in (("obra", {"nome": "obra", "unidade": "mm", "entidades": ents, "camadas": camadas, "materiais": {}}), ("aco", _modelo())):
     os.makedirs(os.path.join(DADOS, nome))
     json.dump({"nome": nome, "tipo": "ifc", "alterado": "2026-10-16T09:00:00"}, open(os.path.join(DADOS, nome, "projeto.json"), "w", encoding="utf-8"))
@@ -90,8 +93,9 @@ try:
     ok(aba.avaliar("!!document.querySelector('#pintar option[value=sistema]')"), "o Pintar tem \"por sistema\"")
     aba.avaliar(PINTAR % "sistema")
     leg = json.loads(aba.avaliar(LEGENDA) or "[]")
-    ok([x[:2] for x in leg] == [["Metálica", 4], ["Outros", 1], ["Pré-moldado (concreto)", 9]],
-       f"por sistema: a metálica (as barras), o PVC em Outros, o concreto com as porcas e o neoprene dele no pré-moldado ({leg})")
+    ok([x[:2] for x in leg] == [["Metálica", 4], ["Outros", 1], ["Pré-moldado (concreto)", 10], ["Terreno, rua e calçada", 3]],
+       f"por sistema: a metálica (as barras), o PVC em Outros, o concreto (e a parede) com as porcas e o neoprene dele no pré-moldado, "
+       f"o terreno, a rua e a calçada juntos ({leg})")
     ok(aba.avaliar("document.getElementById('painel-titulo').textContent") == "Pintado por sistema", "o título da legenda")
     ok(aba.avaliar("document.querySelectorAll('#painel-corpo input[data-sistema]').length") == 0,
        "por sistema, a legenda já é o Sistema (sem a seção repetida)")
@@ -99,7 +103,7 @@ try:
     # 2. a seção Sistema em Camadas: desligar a metálica, em qualquer modo do Pintar, e depois de recarregar
     aba.avaliar("document.querySelector('[data-painel=camadas]').click()")
     sis = json.loads(aba.avaliar(SISTEMA) or "[]")
-    ok([s[0] for s in sis] == ["metalica", "outros", "premoldado"] and all(s[1] for s in sis), f"Camadas: a seção Sistema ({sis})")
+    ok([s[0] for s in sis] == ["metalica", "outros", "premoldado", "terreno"] and all(s[1] for s in sis), f"Camadas: a seção Sistema ({sis})")
     aba.avaliar("document.querySelector('#painel-corpo input[data-sistema=metalica]').click()")
     BARRAS = "visor.fichas.map((f, i) => i).filter(i => /^bar/.test(visor.fichas[i].id))"
     ok(aba.avaliar(f"(() => {{ const b = {BARRAS}; return b.length === 4 && b.every(i => visor.ocultasSistema.has(i)) && visor.ocultasSistema.size === 4; }})()"),
@@ -120,12 +124,46 @@ try:
     # 3. a legenda por perfil em ordem alfabética (antes: da que tinha mais peças para a que tinha menos)
     aba.avaliar(PINTAR % "perfil")
     nomes = [x[0] for x in json.loads(aba.avaliar(LEGENDA) or "[]")]
-    esperado = ["Descida Pluvial", "Estaca", "L 1½\"×3/16\"", "L 2\"×3/16\"", "Laje Alveolar", "Neoprene", "Pilar", "PORCA 3/4",
-                "U 150×60×3,00 (FF)", "Ue 250×85×25×2,65"]
+    esperado = ["Calçada", "Descida Pluvial", "Estaca", "L 1½\"×3/16\"", "L 2\"×3/16\"", "Laje Alveolar", "Neoprene", "Parede", "Pilar",
+                "PORCA 3/4", "Rua ", "Terreno", "U 150×60×3,00 (FF)", "Ue 250×85×25×2,65"]
     ok(nomes == esperado, f"por perfil, em ordem alfabética ({nomes})")
     aba.avaliar(PINTAR % "camada")
     nomes = [x[0] for x in json.loads(aba.avaliar(LEGENDA) or "[]")]
-    ok(nomes == ["200 Pré-Fabricado", "400 Descidas pluviais", "Tesouras"], f"por camada também ({nomes})")
+    ok(nomes == ["3 Arquitetura", "200 Pré-Fabricado", "400 Descidas pluviais", "Tesouras"], f"por camada também, com os números em ordem ({nomes})")
+
+    # 5. trocar a cor (usuário, 16/10: "não consigo alterar a cor das camadas?"): o quadradinho abre o seletor de cor
+    COR = "(() => { const i = visor.fichas.findIndex(f => f.id === '%s'); return [visor.corBase[i * 3], visor.corBase[i * 3 + 1], visor.corBase[i * 3 + 2]]; })()"
+    TROCAR = "(() => { const s = document.getElementById('seletor-cor'); s.value = '%s'; s.dispatchEvent(new Event('input')); s.dispatchEvent(new Event('change')); return 1; })()"
+    aba.avaliar(PINTAR % "sistema")
+    aba.avaliar("document.querySelector('[data-painel=camadas]').click()")
+    aba.avaliar("document.querySelector('#painel-corpo i.cor[data-cor-chave=premoldado]').click()")
+    ok(aba.avaliar("!!document.getElementById('seletor-cor')"), "clicar no quadradinho do Pré-moldado abre o seletor de cor")
+    ok(aba.avaliar("document.querySelector('#painel-corpo input[data-sistema=premoldado]').checked") is True,
+       "e não desmarca a caixinha do lado")
+    aba.avaliar(TROCAR % "#ff0000")
+    ok(aba.avaliar(COR % "pil0") == [255, 0, 0], f"o pré-moldado fica vermelho ({aba.avaliar(COR % 'pil0')})")
+    ok(aba.avaliar(COR % "ter0") != [255, 0, 0], "o terreno não")
+    # a cor de um perfil, na legenda
+    aba.avaliar(PINTAR % "perfil")
+    aba.avaliar("(() => { const l = [...document.querySelectorAll('#painel-corpo .linha-lista')].find(l => l.querySelector('span').textContent === 'Pilar'); l.querySelector('i.cor').click(); return 1; })()")
+    ok(aba.avaliar("visor.selecionada") in (None, -1) or aba.avaliar("visor.fichas[visor.selecionada] && visor.fichas[visor.selecionada].id") != "pil0",
+       "o clique no quadradinho não vai à peça do grupo")
+    aba.avaliar(TROCAR % "#00ff00")
+    ok(aba.avaliar(COR % "pil0") == [0, 255, 0], "por perfil, o Pilar verde")
+    # a cor de uma camada, com o Pintar em outro modo: passa a pintar por camada
+    aba.avaliar("document.querySelector('[data-painel=camadas]').click()")
+    aba.avaliar("document.querySelector('#painel-corpo i.cor[data-cor-chave=Tesouras]').click()")
+    aba.avaliar(TROCAR % "#0000ff")
+    ok(aba.avaliar("document.getElementById('pintar').value") == "camada" and aba.avaliar(COR % "bar0") == [0, 0, 255],
+       "trocar a cor da camada Tesouras passa o Pintar para por camada, com as barras azuis")
+    aba.avaliar("location.reload(); 1")
+    aba.drenar(1.0)
+    ok(esperar(aba, PRONTO, 60), "recarregado")
+    ok(aba.avaliar(COR % "bar0") == [0, 0, 255], "a cor da camada continua depois de recarregar")
+    aba.avaliar(PINTAR % "sistema")
+    ok(aba.avaliar(COR % "pil0") == [255, 0, 0], "e a do sistema também")
+    aba.avaliar(PINTAR % "perfil")
+    ok(aba.avaliar(COR % "pil0") == [0, 255, 0], "e a do perfil também")
 
     # 4. só aço: nada a separar
     aba.navegar(base + "/visor3d/ver3d.html?projeto=aco", limite=60)
