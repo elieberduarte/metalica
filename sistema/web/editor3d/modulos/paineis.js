@@ -810,6 +810,8 @@ export class MetodosPaineis {
         onclick: () => {
           const novo = new Set(this._gruposOcultos || []);
           if (novo.has(chave)) novo.delete(chave); else novo.add(chave);
+          // a lista é refeita: guarda a rolagem para ela voltar no mesmo grupo (antes ia para o início — usuário, 16/10)
+          this._rolagemGrupos = lista.scrollTop;
           this._ocultarGrupos(novo);
         } });
       olhoGrupo.innerHTML = oculto
@@ -829,6 +831,12 @@ export class MetodosPaineis {
       lista.append(linha);
     }
     const semGrupo = this.documento.entidades.size - [...grupos.values()].reduce((s, v) => s + v.length, 0);
+    if (this._rolagemGrupos) {
+      const topo = this._rolagemGrupos;
+      this._rolagemGrupos = 0;
+      lista.scrollTop = topo;
+      requestAnimationFrame(() => { lista.scrollTop = topo; });
+    }
     caixa.append(el('div', { class: 'nota-grupos', texto:
       `${numero(grupos.size)} grupo(s)` + (semGrupo ? ` · ${numero(semGrupo)} peça(s) sem ${modo} ficam em cinza` : '') +
       (chaves.length > LIMITE ? ` · legenda mostra os ${LIMITE} primeiros` : '') }), lista);
