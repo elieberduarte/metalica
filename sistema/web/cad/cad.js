@@ -480,7 +480,10 @@ class CAD {
       .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }));
     if (!lista.length) { this.aviso('O projeto não tem pranchas ainda: Desenho → Montar pranchas (automático)… ou Gerar pranchas das folhas.', 'atencao'); return; }
     if (this.nomeDesenho && lista.some(d => d.nome === this.nomeDesenho)) await this.salvar({ avisar: false });
-    this.dica(`Gerando o PDF de ${lista.length} prancha(s)…`);
+    // as folhas, não os desenhos: o desenho das pranchas tem todas lado a lado (Q18, primeiro uso 16/10: "Gerando o PDF de
+    // 1 prancha(s)…" para 13 folhas)
+    const folhas = lista.reduce((s, d) => s + (Number(d.pranchas) || 1), 0);
+    this.dica(`Gerando o PDF de ${folhas} folha(s)…`);
     try {
       const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(lista[0].nome)}/pdf`, { desenhos: lista.map(d => d.nome), titulo: 'pranchas' });
       const a = r.arquivo || {};
@@ -2648,10 +2651,11 @@ class CAD {
     }
     const formato = el('select', {}, ...['A0', 'A1', 'A2', 'A3', 'A4'].map(f => el('option', { value: f, texto: f, selected: f === 'A1' ? 'selected' : undefined })));
     const campos = {
-      obra: el('input', { type: 'text', value: projeto.nome || '' }),
+      // o que foi digitado da última vez (gravado no projeto pelo servidor, Q20)
+      obra: el('input', { type: 'text', value: (projeto.carimbo_pranchas || {}).obra || projeto.nome || '' }),
       cliente: el('input', { type: 'text', value: projeto.cliente || '' }),
       responsavel: el('input', { type: 'text', value: projeto.responsavel || '' }),
-      revisao: el('input', { type: 'text', value: '00' }),
+      revisao: el('input', { type: 'text', value: (projeto.carimbo_pranchas || {}).revisao || '00' }),
       data: el('input', { type: 'text', value: '', placeholder: 'mês / ano de hoje' }),
       titulo: el('input', { type: 'text', value: 'Pranchas', title: 'Nome do desenho com todas as pranchas lado a lado' }),
     };

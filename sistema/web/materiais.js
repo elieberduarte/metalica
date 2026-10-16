@@ -386,8 +386,21 @@ function desenhar(L) {
   c.append(pCorte);
 
   // ---- chapas
+  // o DXF de corte (Q19, primeiro uso 16/10: não havia; o DXF do desenho das chaparias trazia cotas, textos e tirantes)
+  const botaoCorte = el('button', { type: 'button', class: 'corte-chapas', texto: 'DXF de corte (1:1)…',
+    title: 'Um DXF por chapa, em milímetro real, só o contorno (camada CORTE) e os furos (FURO), num ZIP: CH2_6,35mm_56x.dxf',
+    onclick: async () => {
+      botaoCorte.disabled = true;
+      aviso('Gerando o DXF de corte das chapas…');
+      try {
+        const r = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/corte-chapas`, {});
+        aviso(`DXF de corte: ${r.chapas} chapa(s) em ${r.arquivo.nome} (pasta detalhamento do projeto).`);
+        const a = document.createElement('a'); a.href = r.arquivo.url; a.download = r.arquivo.nome; document.body.append(a); a.click(); a.remove();
+      } catch (e) { aviso(`Não foi possível gerar o DXF de corte: ${e.message}`, true); }
+      botaoCorte.disabled = false;
+    } });
   c.append(painel('chapas', (L.chapas || []).length
-    ? secao('Chapas', 'por espessura e material; área = contorno (ou desenvolvimento, na dobrada) × quantidade',
+    ? secao('Chapas', 'por espessura e material; área = contorno (ou desenvolvimento, na dobrada) × quantidade', el('div', {}, el('div', { class: 'acoes-corte' }, botaoCorte),
       tabela([
         { titulo: 'Espessura (mm)', chave: 'espessura', classe: 'c b', num: true, casas: 1 }, { titulo: 'Material', chave: 'material' },
         { titulo: 'Posições', valor: (g) => marcas(g.posicoes, 30), classe: 'quebra' },
@@ -396,7 +409,7 @@ function desenhar(L) {
         { titulo: 'Peso (kg)', chave: 'peso', classe: 'r b', num: true, casas: 1 },
       ], L.chapas, ['TOTAL', '', '', n(L.chapas.reduce((s, g) => s + g.pecas, 0)), n(L.chapas.reduce((s, g) => s + g.area_m2, 0), 2),
                     n(L.chapas.reduce((s, g) => s + g.peso, 0), 1)],
-      (g) => [g.espessura, g.material, g.posicoes.join(' ')].join(' ')))
+      (g) => [g.espessura, g.material, g.posicoes.join(' ')].join(' '))))
     : vazio('Sem chapas nesta lista.')));
 
   // ---- telhas (e rufos, que estão no romaneio pela categoria)

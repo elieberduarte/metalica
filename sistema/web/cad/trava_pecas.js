@@ -137,6 +137,8 @@ export class MetodosTravaPecasCAD {
     const chave = JSON.stringify([pend, fora, desc]);
     if (chave === this._pendenciasAvisadas) return;
     this._pendenciasAvisadas = chave;
+    // o aviso de antes sai: depois de um Detalhar que resolveu, ficava o amarelo velho na tela (Q18, primeiro uso 16/10)
+    if (this._avisoPendencias) { this._avisoPendencias.closest('.aviso')?.remove(); this._avisoPendencias = null; }
     const partes = [];
     if (pend.length) partes.push(`o 3D está fora do padrão de fábrica em ${pend.length} posição(ões) (${pend.slice(0, 8).join(', ')}${pend.length > 8 ? '…' : ''}): os desenhos mostram o 3D como está — no editor 3D, "Aplicar no 3D"`);
     if (fora.length) partes.push(`${fora.length} terça(s) com o par de furos fora do passo da máquina, ligadas sem chapa — no 3D, ponha a chapa de ligação (suporte de terça) ou leve o par ao passo da máquina`);
@@ -149,6 +151,7 @@ export class MetodosTravaPecasCAD {
     caixa.append(partes.join(' · ') + '.');
     if (fora.length) caixa.append(this._listaVerNo3D(pecas.length ? pecas : fora.map(t => ({ texto: t, ids: [] }))));
     this.aviso(caixa, 'atencao', 0);
+    this._avisoPendencias = caixa;
   }
 
   /** O erro de emitir as pranchas (PDF/DXF recusado, regra R6): a mensagem e, para cada peça que o servidor mandou

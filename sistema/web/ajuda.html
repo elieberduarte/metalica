@@ -81,6 +81,17 @@
   <a href="#limites">O que o programa ainda não faz</a>
 </div>
 
+<h2 id="ifc-pranchas">Do IFC às pranchas (roteiro)</h2>
+<p>O caminho de quem recebe o modelo pronto (TecnoMETAL, Tekla, CYPE) e precisa das pranchas de fabricação — os menus são os da barra de cima da tela do projeto:</p>
+<ol>
+  <li>Na tela de projetos, <b>Novo a partir de IFC…</b>: o 3D abre com o cartão <i>Importado</i> (quantas barras, chapas, fixadores e telhas vieram, os perfis fora do catálogo e as marcas do IFC).</li>
+  <li><b>Detalhamento › Conferir antes de detalhar…</b>: colisões, ligações sem espaço para a chave (com o parafuso e as peças), a terça fora do passo da máquina (que impede o PDF) e a peça maior que a barra comercial — cada linha seleciona e enquadra as peças.</li>
+  <li><b>Detalhamento › Detalhar peças e conjuntos…</b>: o padrão de fábrica vai para o 3D (furo de terça sem uso sai, furos das terças oblongos, suporte de terça no passo da máquina) e, no fim, aparece o que mudou, com <i>Desfazer</i>. As opções ficam no projeto e valem para a atualização automática.</li>
+  <li><b>Detalhamento › Pranchas › Montar pranchas (automático)…</b>: as folhas com carimbo; a chapa repetida na prancha da tesoura sai com a quantidade daquela prancha e "(ref.)", e a legenda diz em que prancha ela é fabricada. O diálogo lembra obra, projetista e revisão.</li>
+  <li><b>Arquivo › Exportar › PDF de todas as pranchas…</b>: se a emissão for recusada (terça ligada sem chapa fora do passo da máquina, Detalhar desfeito), o aviso traz cada peça com <i>Ver no 3D</i>.</li>
+  <li>A lista de materiais (etapa Produção): romaneio, parafusos com a classe, porcas e arruelas, e na aba <i>Chapas</i> o <b>DXF de corte (1:1)…</b> — um DXF por chapa, só contorno e furos.</li>
+</ol>
+
 <h2 id="lancamento">Do arquitetônico à estrutura (lançamento)</h2>
 <p>Para um projeto que começa na planta do cliente: na tela de projetos, <b>Novo pelo CAD 2D (DXF/PDF)…</b> e a opção <i>Tenho a planta do cliente — arquitetônico</i>. O CAD abre a <b>Planta de lançamento</b> e pede o DXF ou o PDF.</p>
 <ol>

@@ -60,6 +60,39 @@ def acima_da_barra_comercial(pos: Posicao) -> bool:
             and (pos.comprimento or 0.0) > max(BARRAS_COMERCIAIS) + 0.5)
 
 
+#: O nome de chapa do IFC com a espessura no fim: "PLATE 270x120x6", "PL 150x123x5".
+_RE_CHAPA_NOME = re.compile(r"^\s*(PLATE|PL|CH|CHAPA)\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*$", re.I)
+
+
+def _grafia_do_perfil(perfil: str) -> str:
+    """A polegada escrita como nas outras peças (Q14, primeiro uso 16/10: a cantoneira do IFC saía "L 1 1/2'' X 1/8' '",
+    com as aspas soltas): "L 1.1/2\" x 1/8\"". Só para mostrar; o nome gravado não muda."""
+    s = re.sub(r"'\s*'", '"', str(perfil or ""))
+    s = re.sub(r"(\d) (\d+/\d+)", r"\1.\2", s)
+    return re.sub(r"\s+X\s+", " x ", s)
+
+
+def _perfil_e_espessura(pos: Posicao) -> str:
+    """A chapa com uma espessura só (Q15, primeiro uso 16/10: "PLATE 270x120x6 #1/4"" — o 6 do nome do IFC e o 1/4" da
+    peça; qual chapa pegar?): a medida do nome sem a espessura dele, a comercial com o mm ("PLATE 270x120 #1/4" (6,35
+    mm)") e, se o nome diz outra espessura (mais de 0,5 mm), "(no modelo: 6 mm)"."""
+    rot = _rotulo_espessura(pos)
+    t = pos.espessura or pos.T
+    m = _RE_CHAPA_NOME.match(str(pos.perfil or ""))
+    if not m:
+        return "%s  %s" % (pos.perfil, rot)
+    t_nome = float(m.group(4).replace(",", "."))
+    txt = "%s %sx%s %s" % (m.group(1).upper(), m.group(2), m.group(3), rot)
+    if rot.startswith("#") and "mm" not in rot:
+        # o mm da polegada (1/4" = 6,35), não o da malha (6,4): é a chapa que se pega
+        m_p = re.match(r'^#(?:(\d+)\.)?(\d+)/(\d+)"', rot)
+        mm_com = 25.4 * ((int(m_p.group(1) or 0)) + int(m_p.group(2)) / int(m_p.group(3))) if m_p else t
+        txt += " (%s mm)" % _mm(round(mm_com + 1e-6, 2) if abs(mm_com - t) <= 0.06 else t, 2)
+    if abs(t_nome - t) > 0.5 + 1e-6:
+        txt += "  (no modelo: %s mm)" % _mm(t_nome, 2)
+    return txt
+
+
 def _cabecalho(pos: Posicao) -> List[str]:
     """Legenda enxuta, só o principal: nome e quantidade com o comprimento no título, o
     perfil, os parafusos e o peso. O tipo da peça fica no título do quadro; a marca do
@@ -70,11 +103,11 @@ def _cabecalho(pos: Posicao) -> List[str]:
         linhas = [titulo, "%s  %s  desenv. %s x %s mm" % (pos.perfil, _rotulo_espessura(pos),
                                                           _mm(pos.desenvolvimento[0]), _mm(pos.desenvolvimento[1]))]
     elif pos.classe in ("chapa", "chapa_dobrada"):
-        linhas = [titulo, "%s  %s" % (pos.perfil, _rotulo_espessura(pos))]
+        linhas = [titulo, _perfil_e_espessura(pos)]
         if getattr(pos, "nome_suporte", ""):
             # a chapa que é o suporte de terça sozinha: S.T.n no título, o nome da chapa ao lado do perfil
             linhas = ["%s – %02dx" % (pos.nome_suporte, pos.quantidade),
-                      "%s  %s  %s" % (pos.nome or pos.marca, pos.perfil, _rotulo_espessura(pos))]
+                      "%s  %s" % (pos.nome or pos.marca, _perfil_e_espessura(pos))]
     elif pos.classe == "barra_conformada":
         linhas = [titulo + "   L desenv. %s mm" % _mm(pos.comprimento), com_bitola_e_mm(pos.perfil)]
     elif pos.classe == "telha":
@@ -87,7 +120,7 @@ def _cabecalho(pos: Posicao) -> List[str]:
     elif pos.classe == "indefinida":
         linhas = [titulo, pos.perfil]
     else:
-        linhas = [titulo + "   L = %s mm" % _mm(pos.comprimento), com_bitola_e_mm(pos.perfil)]
+        linhas = [titulo + "   L = %s mm" % _mm(pos.comprimento), _grafia_do_perfil(com_bitola_e_mm(pos.perfil))]
     furos = pos.rotulo_furos() if pos.classe not in ("telha", "indefinida") else ""
     com_fix = pos.rotulo_furos_fixadores() if furos else []
     if com_fix:

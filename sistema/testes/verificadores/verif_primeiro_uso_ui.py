@@ -571,8 +571,130 @@ def q12_busca_pelo_nome_de_producao(aba):
     ok(achou and rot == "T.O.6 (M92)", f"a busca acha as 2 cópias da T.O.6 pelo nome de produção ({rot})")
 
 
+
+def q11_detalhar_ifc_avulso(aba):
+    """Q11: "Detalhar as peças de um IFC…" não fazia nada — pelo menu da tela do projeto o editor carregava e clicava no
+    campo de arquivo sem o gesto do usuário (o navegador bloqueava calado). Agora um diálogo explica e tem o botão."""
+    print("Q11 — Detalhar um IFC avulso abre um diálogo visível")
+    s = projeto("Sooro avulso", tipo="ifc")
+    aba.navegar(f"{base}/editor?projeto={s}", limite=60)
+    esperar(aba, "window.editor && window.editor.projeto && document.body.dataset.pronto === '1'", 60)
+    aba.avaliar("document.querySelector('[data-acao=\"detalhar-ifc\"]').click(); 1")
+    abriu = esperar(aba, "window.editor.el.dialogo.open && !!window.editor.el.dialogoCorpo.querySelector('button.escolher-ifc')", 10)
+    txt = aba.avaliar("window.editor.el.dialogoCorpo.textContent") or ""
+    ok(abriu and "Detalhar peças e conjuntos" in txt, f"o diálogo explica e tem o botão Escolher o arquivo ({txt[:80]})")
+    aba.avaliar("window.editor.el.dialogo.close('cancelar'); 1")
+
+
+def q18_avisos_e_contagem_do_pdf(aba):
+    """Q18: os avisos do Detalhar de antes seguiam na tela depois do novo, e a dica do PDF contava os desenhos
+    ("Gerando o PDF de 1 prancha(s)…" para 13 folhas)."""
+    print("Q18 — o aviso velho sai e a dica do PDF conta as folhas")
+    s = projeto("Sooro folhas", tipo="desenho")
+    post(f"/api/projetos/{s}/desenhos/pranchas", {"desenho": {"nome": "pranchas", "entidades": [
+        {"tipo": "linha", "id": "l1", "camada": "0", "a": [0, 0], "b": [100, 100]}],
+        "metadados": {"pranchas": [{"numero": i, "celulas": []} for i in (1, 2, 3)]}}})
+    texto = "T.O.6: furos a 60 mm na altura (máquina: 50)"
+    det = os.path.join(_pasta_do_projeto(urllib.parse.unquote(s)), "detalhamento")
+    os.makedirs(det, exist_ok=True)
+    with open(os.path.join(det, "carimbo.json"), "w", encoding="utf-8") as f:
+        json.dump({"desenhos": {}, "fora_da_maquina": [texto],
+                   "fora_da_maquina_pecas": [{"nome": "T.O.6", "marca": "M92", "texto": texto, "ids": ["b1"]}]}, f)
+    aba.navegar(f"{base}/cad?projeto={s}&desenho=pranchas", limite=60)
+    esperar(aba, "window.cad && document.body.dataset.pronto === '1'", 60)
+    esperar(aba, "!!document.querySelector('.aviso[data-tipo=atencao] button.ver-no-3d')", 30)
+    aba.avaliar("window.__dicas = []; const d0 = window.cad.dica.bind(window.cad); window.cad.dica = (t) => { window.__dicas.push(String(t)); return d0(t); }; window.cad.pdfDasPranchas(); 1")
+    contou = esperar(aba, "window.__dicas.some(t => /Gerando o PDF de 3 folha/.test(t))", 20)
+    ok(contou, "a dica do PDF conta as 3 folhas (%s)" % (aba.avaliar("window.__dicas.join(' | ')") or "")[:120])
+    aba.avaliar("window.cad._avisarPendencias({ pendente_3d: {}, fora_da_maquina: [], pranchas_descartadas: [] }); 1")
+    saiu = esperar(aba, "!document.querySelector('.aviso[data-tipo=atencao] button.ver-no-3d')", 5)
+    ok(saiu, "o aviso amarelo das terças sai quando as pendências acabam")
+    aba.console[:] = [m for m in aba.console if not ("400" in m[1] and "/pranchas/pdf" in m[1])]
+
+
+LISTA_SOORO = os.path.join(BASE, "..", "Projeto", "OBRAS", "ME-Sooro", "teste-primeiro-uso", "lista-de-materiais.json")
+
+
+def q19_dxf_de_corte_na_aba_chapas(aba):
+    """Q19: não havia DXF de corte das chapas. A aba Chapas da lista de materiais tem "DXF de corte (1:1)…", que pede o
+    ZIP ao servidor e baixa."""
+    print("Q19 — DXF de corte na aba Chapas")
+    if not os.path.exists(LISTA_SOORO):
+        print("  (sem a lista da ME-Sooro do teste: pulado)")
+        return
+    s = projeto("Sooro corte", tipo="ifc")
+    det = os.path.join(_pasta_do_projeto(urllib.parse.unquote(s)), "detalhamento")
+    os.makedirs(det, exist_ok=True)
+    shutil.copy(LISTA_SOORO, os.path.join(det, "lista-de-materiais.json"))
+    aba.navegar(f"{base}/materiais?projeto={s}#chapas", limite=60)
+    tem = esperar(aba, "!!document.querySelector('button.corte-chapas')", 30)
+    ok(tem, "a aba Chapas tem o botão DXF de corte (1:1)…")
+    if not tem:
+        return
+    aba.avaliar("""window.__corte = 0; const f0 = window.fetch; window.fetch = (u, o) => { if (String(u).includes('/corte-chapas')) {
+        window.__corte++; return Promise.resolve(new Response(JSON.stringify({ chapas: 17, nomes: ['CH2_6,35mm_56x.dxf'],
+        arquivo: { nome: 'corte-chapas.zip', url: '#' } }), { status: 200 })); } return f0(u, o); }; 1""")
+    clicar(aba, "button.corte-chapas")
+    feito = esperar(aba, "window.__corte === 1 && /17 chapa/.test(document.querySelector('#aviso').textContent)", 10)
+    ok(feito, "o botão pede o ZIP e diz quantas chapas (%s)" % (aba.avaliar("document.querySelector('#aviso').textContent") or "")[:80])
+
+
+def q20_dialogo_das_pranchas_lembra(aba):
+    """Q20: o diálogo Montar pranchas voltava ao padrão (o Projetista e a revisão redigitados a cada vez)."""
+    print("Q20 — Montar pranchas abre com o que foi digitado da última vez")
+    s = projeto("Sooro carimbo", tipo="desenho")
+    arq = os.path.join(_pasta_do_projeto(urllib.parse.unquote(s)), "projeto.json")
+    with open(arq, encoding="utf-8") as f:
+        pj = json.load(f)
+    pj.update(responsavel="Eng. Camila", carimbo_pranchas={"obra": "Sooro – galpão", "revisao": "02"})
+    with open(arq, "w", encoding="utf-8") as f:
+        json.dump(pj, f)
+    post(f"/api/projetos/{s}/desenhos/rascunho", {"desenho": {"nome": "rascunho", "entidades": [
+        {"tipo": "linha", "id": "l1", "camada": "0", "a": [0, 0], "b": [100, 100]}]}})
+    aba.navegar(f"{base}/cad?projeto={s}&desenho=rascunho", limite=60)
+    esperar(aba, "window.cad && document.body.dataset.pronto === '1'", 60)
+    aba.avaliar("window.cad.dialogoPranchas(); 1")
+    esperar(aba, "!!document.querySelector('dialog[open]') && /Montar pranchas/.test(document.querySelector('dialog[open]').textContent)", 15)
+    vals = aba.avaliar("[...document.querySelectorAll('dialog[open] label')].filter(l => ['Obra', 'Projetista', 'Revisão'].includes(l.firstChild && l.firstChild.textContent)).map(l => l.querySelector('input').value)") or []
+    ok(vals == ["Sooro – galpão", "Eng. Camila", "02"], f"o diálogo abre com a obra, o projetista e a revisão gravados: {vals}")
+    aba.avaliar("document.querySelector('dialog[open]').close('cancelar'); 1")
+
+
+def q21_cartao_importado(aba):
+    """Q21: depois de importar o IFC o 3D abria sem dizer o que veio; agora o cartão "Importado" com as contagens e o
+    próximo passo, uma vez."""
+    print("Q21 — cartão Importado no 3D")
+    s = projeto("Sooro importado", tipo="ifc")
+    arq = os.path.join(_pasta_do_projeto(urllib.parse.unquote(s)), "projeto.json")
+    with open(arq, encoding="utf-8") as f:
+        pj = json.load(f)
+    pj["importacao_resumo"] = {"pecas": 4047, "barras": 1085, "chapas": 652, "fixadores": 1342, "telhas": 968, "outras": 0,
+                               "perfis_fora": [], "n_perfis_fora": 0, "marcas": {"pecas": 162, "conjuntos": 125, "exemplo": "M1, P106"}}
+    pj["origem_ifc"] = "teste.ifc"
+    with open(arq, "w", encoding="utf-8") as f:
+        json.dump(pj, f)
+    aba.navegar(f"{base}/editor?projeto={s}", limite=60)
+    esperar(aba, "window.editor && window.editor.projeto && document.body.dataset.pronto === '1'", 60)
+    tem = esperar(aba, "!!document.querySelector('.cartao-importado')", 15)
+    txt = aba.avaliar("(document.querySelector('.cartao-importado') || {}).textContent || ''") or ""
+    ok(tem and "4.047" in txt and "652 chapas" in txt and "Próximo: Detalhar" in txt, f"o cartão Importado: {txt[:120]}")
+
+
+def q24_padroes_recolhidos(aba):
+    """Q24: com nada selecionado, o painel Propriedades mostrava "Perfil W310×38,7 / Aço / Papel viga / Camada Chapas" —
+    os padrões de desenho pareciam propriedades. Agora o resumo do modelo, e os padrões num bloco recolhido com o nome."""
+    print("Q24 — os padrões de desenho recolhidos no painel sem seleção")
+    s = projeto("Sooro painel", tipo="ifc")
+    aba.navegar(f"{base}/editor?projeto={s}", limite=60)
+    esperar(aba, "window.editor && window.editor.projeto && document.body.dataset.pronto === '1'", 60)
+    aba.avaliar("window.editor.selecao.definir([]); window.editor._agendarPaineis('props'); 1")
+    tem = esperar(aba, "!!window.editor.el.props.querySelector('details.padroes-de-desenho')", 10)
+    estado = aba.avaliar("(() => { const d = window.editor.el.props.querySelector('details.padroes-de-desenho'); return d ? [d.open, d.querySelector('summary').textContent] : null; })()")
+    ok(tem and estado and estado[0] is False and "Padrões para desenhar novas peças" in estado[1], f"padrões recolhidos e com nome: {estado}")
+
+
 #: os blocos dos achados Q (IFC → pranchas), rodados depois dos P
-BLOCOS_Q = (q01_pdf_recusado_ver_no_3d, q02_q03_dialogo_detalhar, q12_busca_pelo_nome_de_producao)
+BLOCOS_Q = (q01_pdf_recusado_ver_no_3d, q02_q03_dialogo_detalhar, q12_busca_pelo_nome_de_producao, q11_detalhar_ifc_avulso, q18_avisos_e_contagem_do_pdf, q19_dxf_de_corte_na_aba_chapas, q20_dialogo_das_pranchas_lembra, q21_cartao_importado, q24_padroes_recolhidos)
 
 
 chrome = next(c for c in CHROMES if os.path.exists(c)); cdp = _porta_livre(); perfil = tempfile.mkdtemp(prefix="verif_primeiro_uso_")

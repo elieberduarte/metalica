@@ -185,7 +185,7 @@
       HR,
       I('Detalhar peças e conjuntos…', '3d', 'detalhar-pecas', { antes: 'Desenhos › Detalhar peças e conjuntos…' }),
       I('Detalhar pré-moldado…', '3d', 'detalhar-premoldado', { dica: 'só a estrutura de concreto: a fôrma de cada peça' }),
-      I('Detalhar as peças de um IFC…', '3d', 'detalhar-ifc', { dica: 'IFC do TecnoMETAL ou de outro programa', antes: 'Arquivo › Detalhar as peças de um IFC…' }),
+      I('Detalhar um IFC avulso (outro arquivo)…', '3d', 'detalhar-ifc', { dica: 'um IFC que não é o deste projeto; o deste projeto: Detalhar peças e conjuntos…', antes: 'Arquivo › Detalhar as peças de um IFC…' }),
       HR,
       S('Pranchas', [
         I('Montar pranchas (automático)…', '2d', 'pranchas', { antes: 'Desenhos › Montar pranchas (automático)…' }),

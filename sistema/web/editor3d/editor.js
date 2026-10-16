@@ -337,6 +337,7 @@ export class Editor {
     this._atualizarCarimbo();
     this._atualizarMenuEditar();
     document.body.dataset.pronto = '1';
+    if (this.projeto) this._cartaoDaImportacao();
     this._publicarErros();
   }
 
@@ -1909,6 +1910,40 @@ export class Editor {
     } catch (e) { parar(); this.aviso(`Não foi possível detalhar: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 
+  /** O cartão "Importado" (Q21, primeiro uso 16/10: o 3D abria sem dizer o que o IFC trouxe): as contagens por tipo, os
+   *  perfis fora do catálogo e as marcas, com o próximo passo. Uma vez por importação (a hora dela fica na memória da aba). */
+  async _cartaoDaImportacao() {
+    let pj = null;
+    try { pj = (await (await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}`)).json()).projeto; } catch { return; }
+    const r = pj && pj.importacao_resumo;
+    if (!r) return;
+    const chave = `metalica.importado.${this.projeto}.${pj.origem_ifc || ''}.${r.pecas}`;
+    try { if (localStorage.getItem(chave)) return; localStorage.setItem(chave, '1'); } catch { /* sem armazenamento: mostra */ }
+    const n = (x) => Number(x || 0).toLocaleString('pt-BR');
+    const m = r.marcas || {};
+    const caixa = el('span', { class: 'cartao-importado' },
+      el('strong', { texto: `Importado: ${n(r.pecas)} peças` }),
+      ` — ${n(r.barras)} barras, ${n(r.chapas)} chapas, ${n(r.fixadores)} fixadores, ${n(r.telhas)} telhas${r.outras ? `, ${n(r.outras)} outras` : ''}; ` +
+      (r.n_perfis_fora ? `${r.n_perfis_fora} perfil(is) fora do catálogo (${(r.perfis_fora || []).slice(0, 5).join(', ')}${r.n_perfis_fora > 5 ? '…' : ''}); ` : 'todos os perfis no catálogo; ') +
+      (m.pecas ? `marcas do IFC: ${n(m.pecas)} peças e ${n(m.conjuntos)} conjuntos (${m.exemplo}). ` : 'sem marcas do IFC (Editar › Numerar peças). '),
+      el('button', { type: 'button', texto: 'Próximo: Detalhar peças e conjuntos…', onclick: () => this.dialogoDetalharPecas() }));
+    this.aviso(caixa, 'info', 0);
+  }
+
+  /** Detalhar um IFC avulso (Q11, primeiro uso 16/10): o comando chegado pelo menu da tela do projeto carregava o editor
+   *  e clicava no campo de arquivo sem o gesto do usuário — o navegador bloqueava a janela calado — e, num projeto que
+   *  já veio de IFC, parecia ser por ali que se detalha. Um diálogo explica e abre a janela num clique de verdade. */
+  async dialogoDetalharIfcAvulso() {
+    const escolher = el('button', { type: 'button', class: 'escolher-ifc', texto: 'Escolher o arquivo IFC…',
+      onclick: () => { this._modoArquivo = 'detalhar'; this.el.dialogo.close('cancelar'); this.el.arquivoIfc.click(); } });
+    const corpo = el('div', {},
+      el('p', { class: 'explica', texto: 'Lê um IFC de detalhamento (TecnoMETAL, Tekla…) que NÃO está neste projeto e gera o DXF de produção, o romaneio e o relatório dele, sem mexer no modelo aberto.' }),
+      this.projeto ? el('p', { class: 'explica', texto: 'Para detalhar o modelo deste projeto (o IFC que você já importou), use Detalhamento › Detalhar peças e conjuntos….' }) : null,
+      escolher);
+    const r = await this.dialogo({ titulo: 'Detalhar um IFC avulso', corpo, ok: this.projeto ? 'Detalhar este projeto…' : null, cancelar: 'Fechar' });
+    if (r === 'ok' && this.projeto) this.dialogoDetalharPecas();
+  }
+
   /** "O que o detalhamento mudou no 3D" (Q02, primeiro uso 16/10): as etapas do padrão de fábrica e as posições
    *  mexidas, com "Desfazer", que volta o 3D à versão de antes do Detalhar (POST desfazer-detalhar). Devolve
    *  'desfeito' quando desfez. */
@@ -2079,7 +2114,7 @@ export class Editor {
       'do-galpao': () => this.dialogoGalpao(),
       'importar-ifc': () => { this._modoArquivo = 'importar'; this.el.arquivoIfc.click(); },
       'inspecionar-ifc': () => { this._modoArquivo = 'inspecionar'; this.el.arquivoIfc.click(); },
-      'detalhar-ifc': () => { this._modoArquivo = 'detalhar'; this.el.arquivoIfc.click(); },
+      'detalhar-ifc': () => this.dialogoDetalharIfcAvulso(),
       'exportar-ifc': () => this.exportarIFC(),
       'restaurar-modelo': () => this.dialogoRestaurarModelo(),
       desfazer: () => this.desfazer(),

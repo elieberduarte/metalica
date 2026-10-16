@@ -331,6 +331,7 @@ class Posicao:
     porcas: int = 0           # porcas/arruelas junto dos furos (fixadores sem tamanho no nome)
     passantes: Dict[str, int] = field(default_factory=dict)   # {'barra roscada Ø5/8"': 1}: barra que atravessa o furo
     eixo_ifc: Optional[dict] = None     # o eixo do IFC (Revit): {comprimento, raio (None: reto), angulo}; em arco, calandrada
+    furos_do_projeto: bool = False      # o projeto recebido (IFC/DXF do projetista): o furo dele vale, sem o alerta da folga (Q16)
 
     @property
     def peso_total(self) -> float:
@@ -371,7 +372,10 @@ class Posicao:
             if fix:
                 t += " – %s" % fix
                 if fol is not None:
-                    t += " (folga %s%s)" % (_mm(fol, 1), " < %s" % _mm(FOLGA_MINIMA_FURO, 1) if fol < FOLGA_MINIMA_FURO - 0.05 else "")
+                    # o "< 1,5" é para o furo que nós calculamos (regra de 15/10: o cotado pelo projetista vale); no
+                    # projeto recebido a prancha não leva o alerta (Q16, primeiro uso 16/10: "é erro? fabrico assim?")
+                    alerta = fol < FOLGA_MINIMA_FURO - 0.05 and not self.furos_do_projeto
+                    t += " (folga %s%s)" % (_mm(fol, 1), " < %s" % _mm(FOLGA_MINIMA_FURO, 1) if alerta else "")
             fora.append(t)
         return fora
 

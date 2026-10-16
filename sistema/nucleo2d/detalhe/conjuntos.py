@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from nucleo.base import ErroDeDados
 from nucleo3d.modelo import Documento, Solido, Chapa
 from nucleo2d.desenho import Desenho, Linha, Polilinha, Texto
+from nucleo2d.desenho import Cota as _Cota
 from nucleo2d import vistas as _vistas
 from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desenhar_furos, RHO_ACO, _area_2d,
                                 _arestas_dos_furos, _ordem_natural, _autovetores, _lacos_2d)
@@ -4246,6 +4247,57 @@ def _desenhar_eixos(p: "_Papel", eixos: dict, u, v, u0: float, v0: float, esc: f
             p.cota_v(min(xs_letras), max(xs_letras), x_esq, -12.0)
 
 
+def _locacao_dos_chumbadores(p: "_Papel", ex: dict, chumb: Sequence[Solido], u, v, u0: float, v0: float,
+                             nomes: Optional[Dict[str, str]] = None) -> int:
+    """A locação de cada grupo de chumbadores (os de uma base: até 400 mm entre si em planta) até o eixo de letra e o de
+    número mais perto — o que a obra mede para pôr o chumbador no concreto (Q09, primeiro uso 16/10: a planta de
+    chumbação só tinha os eixos e a marca num pontinho; o CB2 de D1/D7 a ~260 mm do eixo sem cota). O grupo no eixo (a
+    menos de 5 mm) não leva cota. Devolve quantas cotas pôs."""
+    from nucleo3d.eixos import segmentos
+    linhas = segmentos(ex)
+    centros = []
+    for e in chumb:
+        vs = e.vertices
+        centros.append((sum(q[0] for q in vs) / len(vs), sum(q[1] for q in vs) / len(vs), e))
+    grupos: List[list] = []
+    for c in centros:
+        for g in grupos:
+            if any(math.hypot(c[0] - o[0], c[1] - o[1]) <= 400.0 for o in g):
+                g.append(c)
+                break
+        else:
+            grupos.append([c])
+    postas = 0
+    for g in grupos:
+        cx = sum(o[0] for o in g) / len(g)
+        cy = sum(o[1] for o in g) / len(g)
+        marca = str(_marcas(g[0][2]).get("posicao") or g[0][2].nome or "")
+        for tipo in ("letra", "numero"):
+            melhor = None
+            for s in linhas:
+                if s["tipo"] != tipo:
+                    continue
+                ax, ay, bx, by = s["a"][0], s["a"][1], s["b"][0], s["b"][1]
+                dx, dy = bx - ax, by - ay
+                L2 = dx * dx + dy * dy
+                if L2 < 1e-9:
+                    continue
+                k = ((cx - ax) * dx + (cy - ay) * dy) / L2
+                fx, fy = ax + k * dx, ay + k * dy
+                dist = math.hypot(cx - fx, cy - fy)
+                if melhor is None or dist < melhor[0]:
+                    melhor = (dist, fx, fy, s["nome"])
+            if melhor is None or melhor[0] < 5.0:
+                continue
+            dist, fx, fy, nome_eixo = melhor
+            pf = (_dot((fx, fy, 0.0), u) - u0, _dot((fx, fy, 0.0), v) - v0)
+            pc = (_dot((cx, cy, 0.0), u) - u0, _dot((cx, cy, 0.0), v) - v0)
+            p.d.add(_Cota(modo="alinhada", p1=p._p(*pf), p2=p._p(*pc), deslocamento=4.0, texto="%d" % round(dist),
+                          atributos=dict(p.atr, locacao=(nomes or {}).get(marca) or marca, eixo=str(nome_eixo))))
+            postas += 1
+    return postas
+
+
 def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao: Optional[dict],
                          titulo: str = "Detalhamento – chumbação", eixos: Optional[dict] = None,
                          nomes: Optional[Dict[str, str]] = None) -> Desenho:
@@ -4366,6 +4418,8 @@ def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao
         p.texto(cx + 1.5 * esc, cy + 3.0 * esc, rotulo, h_txt, "TEXTO")
     if ex:
         _desenhar_eixos(p, ex, u, v, u0, v0, esc, larg_v, alt_v)
+        if not so_chapas:
+            _locacao_dos_chumbadores(p, ex, chumb, u, v, u0, v0, nomes)
     if not ex:
         # sem eixos, as totais das peças; com eixos, a cadeia entre eixos já fecha com a total dela — a total das
         # peças ia até a ponta das linhas de eixo (37828 no depósito, no vazio) e, medindo as peças, ficava fora

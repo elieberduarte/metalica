@@ -277,7 +277,10 @@ export class MetodosPaineis {
   /** Sem seleção: os padrões que as ferramentas de desenho usam, e o resumo do modelo. */
   _propsPadroes(raiz) {
     raiz.append(el('div', { class: 'resumo-selecao' }, el('strong', { texto: 'Nada selecionado' }),
-                   el('span', { texto: 'padrões de desenho' })));
+                   el('span', { texto: 'o resumo do modelo' })));
+    // os padrões das ferramentas num bloco recolhido, com o nome do que são (Q24, primeiro uso 16/10: "Perfil W310×38,7 /
+    // Aço / Papel viga / Camada Chapas" com nada selecionado pareciam as propriedades de uma peça)
+    const padroes = el('details', { class: 'padroes-de-desenho' }, el('summary', { texto: 'Padrões para desenhar novas peças' }));
     const g = el('div', { class: 'campos' });
     g.append(el('label', { texto: 'Perfil' }),
       this._buscaPerfil(this.perfilAtivo, n => { this.definirPerfilAtivo(n); this.dica(`Perfil ativo: ${n}`); }));
@@ -288,7 +291,7 @@ export class MetodosPaineis {
     g.append(el('label', { texto: 'Camada' }),
       this._lista([...this.documento.camadas.keys()], this.camadaAtiva,
                   v => { this.camadaAtiva = v; this._agendarPaineis('camadas'); }));
-    raiz.append(g);
+    padroes.append(g);
 
     const est = this.documento.estatisticas();
     const gm = this._grupo(raiz, 'Modelo');
@@ -299,6 +302,7 @@ export class MetodosPaineis {
     linha('Sólidos', numero(est.solidos));
     const peso = this.textoDoPeso();
     linha('Aço', peso ? peso.texto : '—');
+    raiz.append(padroes);
   }
 
   /** O aço do modelo, em kg (pedido do usuário, 02/10: "acrescentar o peso total da estrutura"): barras pelo perfil,

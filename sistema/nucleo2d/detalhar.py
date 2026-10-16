@@ -677,6 +677,9 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
         avisos_lev.append("porcas e arruelas soltas contadas como no modelo (o padrão 1 porca + 2 arruelas "
                           "por ponta roscada não foi aplicado: %s)" % exc)
     posicoes = fundir_posicoes_iguais(posicoes, camadas)
+    if projeto_recebido(doc):
+        for p in posicoes:
+            p.furos_do_projeto = True                 # o furo do projetista vale (Q16)
     avisar("%d peças em %d posições" % (len(pecas), len(posicoes)))
     mudadas = regra_furacao_terca(posicoes, camadas, so_maquina=regra_so_maquina) if regra_tercas else {}
     ajustadas = aplicar_ajustes_de_furos(posicoes, ajustes)
@@ -1089,11 +1092,21 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         for c in conjuntos_info:
             if c["marca"] in itens:
                 itens[c["marca"]]["composicao"] = _composicao(c["composicao"])
+        comp_de = {mk: c["composicao"] for c in conjuntos_info for mk in (c.get("marcas") or [c["marca"]])}
         for m in montadas:
             rot_m = " + ".join(m["rotulos"])
             if rot_m in itens:
-                itens[rot_m]["composicao"] = _composicao(collections.Counter(
-                    str(_marcas(e).get("posicao") or e.nome) for e in m["pecas"]))
+                # a soma das metades (a composição de uma unidade de cada uma): contada pelas peças do exemplar, a
+                # tesoura de metades diferentes perdia as chapas que a separação das instâncias dava à vizinha — a
+                # "M2 + M7" da Sala dizia CH3 x1 (são 4 + 2) e a cópia na prancha saía 2x em vez de 12x (conferência de
+                # consistência, Q04, 16/10)
+                if all(r in comp_de for r in m["rotulos"]):
+                    soma_m = collections.Counter()
+                    for r in m["rotulos"]:
+                        soma_m.update(comp_de[r])
+                else:
+                    soma_m = collections.Counter(str(_marcas(e).get("posicao") or e.nome) for e in m["pecas"])
+                itens[rot_m]["composicao"] = _composicao(soma_m)
         d.metadados["detalhamento"] = {"grupo": "conjuntos", "conjuntos": [c["marca"] for c in conjuntos_info], "itens": itens}
         faixas["conjuntos"] = (fns, 1400.0, dict(d.metadados["detalhamento"]))
         familias_completo.extend(((t if t in dict(FAMILIAS) else "conjunto") or "conjunto", t or "conjunto", f) for t, f in fns)

@@ -294,9 +294,9 @@ class TestCopiaDaChapaNaPranchaDaTesoura(_SooroDetalhada):
             from saida import consistencia
         except ImportError:
             self.skipTest("saida/consistencia.py ainda não está no programa")
-        r = consistencia.conferir(os.path.join(self.pasta, SLUG))
-        achados = r.get("achados", r) if isinstance(r, dict) else r
-        copias = [a for a in achados if (a.get("tipo") if isinstance(a, dict) else None) == "copias"]
+        achados = consistencia.conferir(os.path.join(self.pasta, SLUG))
+        self.assertTrue(isinstance(achados, list))
+        copias = [a["texto"] for a in achados if a.get("conferencia") == "copias"]
         self.assertEqual(copias, [])
 
 
@@ -378,6 +378,183 @@ class TestParafusosEPorcasNaLista(_SooroDetalhada):
         self.assertEqual(porcas("nosso", tirar=um), 56)
 
 
+class TestFolgaNaPranchaDoProjetoRecebido(_SooroDetalhada):
+    """Q16 — "(folga 1 < 1,5)" em toda terça e chapa da prancha: "é erro? fabrico assim?". A folga mínima é para o furo
+    que nós calculamos (regra de 15/10: o furo do projetista vale); no projeto recebido sai só a folga, sem o alerta."""
+
+    def test_sem_alerta_na_sooro(self):
+        pasta = os.path.join(self.pasta, SLUG, "desenhos-2d")
+        textos = []
+        for arq in os.listdir(pasta):
+            if arq.startswith("detalhamento-") and arq.endswith(".desenho.json"):
+                with open(os.path.join(pasta, arq), encoding="utf-8") as f:
+                    textos += [e.get("texto") or "" for e in json.load(f)["entidades"] if e.get("tipo") == "texto"]
+        self.assertTrue(any("(folga 1)" in x for x in textos))
+        self.assertFalse([x for x in textos if "< 1,5" in x][:3])
+
+    def test_alerta_continua_no_projeto_nosso(self):
+        from saida.detalhamento import Posicao, Furo
+        p = Posicao(marca="CH1", tipo_ifc="IfcPlate")
+        p.furos = [Furo(tipo="redondo", x=10, y=10, d=13.0, fixador='parafuso Ø12 mm', fixador_d=12.0)]
+        self.assertIn("< 1,5", p.rotulo_furos_fixadores()[0])
+        p.furos_do_projeto = True
+        self.assertNotIn("< 1,5", p.rotulo_furos_fixadores()[0])
+
+
+class TestChapaComUmaEspessura(_SooroDetalhada):
+    """Q15 — "a chapa tem dois números de espessura": "PLATE 270x120x6 #1/4"" (o 6 do nome do IFC, a peça com 6,35)."""
+
+    def test_uma_espessura_so(self):
+        import re
+        with open(os.path.join(self.pasta, SLUG, "desenhos-2d", "detalhamento-chaparias.desenho.json"), encoding="utf-8") as f:
+            textos = [e.get("texto") or "" for e in json.load(f)["entidades"] if e.get("tipo") == "texto"]
+        self.assertIn('PLATE 270x120 #1/4" (6,35 mm)', textos)
+        self.assertFalse([x for x in textos if re.search(r"PLATE \d+x\d+x\d+\s+#", x)][:3])
+
+
+class TestGrafiaDaCantoneira(_SooroDetalhada):
+    """Q14 (a grafia; o prefixo CH da cantoneira espera a decisão do usuário) — "L 1 1/2'' X 1/8' '" com as aspas soltas."""
+
+    def test_polegada_escrita_direito(self):
+        textos = []
+        pasta = os.path.join(self.pasta, SLUG, "desenhos-2d")
+        for arq in os.listdir(pasta):
+            if arq.startswith("detalhamento-") and "completo" not in arq and arq.endswith(".desenho.json"):
+                with open(os.path.join(pasta, arq), encoding="utf-8") as f:
+                    textos += [e.get("texto") or "" for e in json.load(f)["entidades"] if e.get("tipo") == "texto"]
+        self.assertIn('L 1.1/2" x 1/8"', textos)
+        self.assertFalse([x for x in textos if "' '" in x][:3])
+
+
+class TestLocacaoDosChumbadores(_SooroDetalhada):
+    """Q09 — "planta de chumbação sem a locação dos chumbadores": só os eixos e o rótulo CB num pontinho; o CB2 de D1/D7
+    fica a ~260 mm do eixo D sem cota (montador M03)."""
+
+    def test_cota_do_grupo_ate_o_eixo(self):
+        with open(os.path.join(self.pasta, SLUG, "desenhos-2d", "detalhamento-chumbação.desenho.json"), encoding="utf-8") as f:
+            ents = json.load(f)["entidades"]
+        loc = [e for e in ents if e.get("tipo") == "cota" and (e.get("atributos") or {}).get("locacao")]
+        self.assertTrue(loc)
+        cb2 = [int(e["texto"]) for e in loc if (e["atributos"]["locacao"] == "CB2" and e["atributos"].get("eixo") == "D")]
+        self.assertTrue(any(250 <= x <= 275 for x in cb2), cb2)
+
+
+class TestEixosDo3DSaoOsDasPranchas(_SooroDetalhada):
+    """Q13 — "os eixos do 3D não são os eixos das pranchas": antes do 1º Detalhar o 3D identificava 16 × 13 eixos (sem as
+    tesouras reconhecidas) e as pranchas saíam com 7 × 5; "eixo 12" no 3D não existia na prancha."""
+
+    def test_antes_e_depois_do_detalhar(self):
+        novo = SLUG + "-sem-detalhar"
+        os.makedirs(os.path.join(self.pasta, novo))
+        shutil.copy(os.path.join(SOORO, "projeto.json"), os.path.join(self.pasta, novo, "projeto.json"))
+        with gzip.open(os.path.join(SOORO, "modelo-importado.json.gz"), "rb") as f, \
+                open(os.path.join(self.pasta, novo, "modelo.json"), "wb") as o:
+            shutil.copyfileobj(f, o)
+
+        def nomes(ex):
+            return [x["nome"] for x in ex["numeros"]], [x["nome"] for x in ex["letras"]]
+        antes = nomes(app.eixos_do_projeto(novo)["eixos"])
+        depois = nomes(app.eixos_do_projeto(SLUG)["eixos"])
+        self.assertEqual(antes, depois)
+        self.assertEqual(antes, (["1", "2", "3", "4", "5", "6", "7"], ["A", "B", "C", "D", "E"]))
+        ref = sorted({e.get("nome") for e in app.referencia_do_lancamento(novo).get("eixos", [])})
+        self.assertEqual(ref, sorted(antes[0] + antes[1]))
+
+
+class TestDxfDeCorteDasChapas(_SooroDetalhada):
+    """Q19 — "não há DXF de corte das chapas": o DXF do desenho das chaparias juntava cotas, textos, chumbadores e
+    tirantes. Agora um DXF por chapa, em mm reais, só o contorno (CORTE) e os furos (FURO), num ZIP."""
+
+    def test_um_dxf_por_chapa_so_contorno_e_furos(self):
+        import collections
+        import zipfile
+        import ezdxf
+        r = app.corte_das_chapas(SLUG)
+        self.assertGreaterEqual(r["chapas"], 15)
+        z = zipfile.ZipFile(os.path.join(self.pasta, SLUG, "detalhamento", "corte-chapas.zip"))
+        nomes = z.namelist()
+        ch2 = [n for n in nomes if n.startswith("CH2_")]
+        self.assertEqual(len(ch2), 1)
+        self.assertRegex(ch2[0], r"^CH2_6,\d+mm_56x\.dxf$")
+        tmp = tempfile.mkdtemp(prefix="corte_")
+        for n in nomes:
+            arq = os.path.join(tmp, n)
+            with open(arq, "wb") as f:
+                f.write(z.read(n))
+            msp = ezdxf.readfile(arq).modelspace()
+            tipos = collections.Counter((e.dxftype(), e.dxf.layer) for e in msp)
+            self.assertEqual(sum(q for (tp, cam), q in tipos.items() if cam == "CORTE"), 1, (n, tipos))
+            self.assertFalse([k for k in tipos if k[0] in ("TEXT", "MTEXT", "DIMENSION", "INSERT")], (n, tipos))
+            if n == ch2[0]:
+                self.assertEqual(tipos.get(("CIRCLE", "FURO")), 2)
+                pts = list(next(iter(msp.query("LWPOLYLINE"))).get_points("xy"))
+                ext = sorted((max(q[i] for q in pts) - min(q[i] for q in pts)) for i in (0, 1))
+                self.assertAlmostEqual(ext[0], 120.0, delta=1.0)                  # 270 × 120 em mm reais
+                self.assertAlmostEqual(ext[1], 270.0, delta=1.0)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestCarimboLembrado(_SooroDetalhada):
+    """Q20 — "o diálogo não lembra o que digitei": o Projetista digitado em Montar pranchas não ficava no projeto e
+    a revisão voltava a 00."""
+
+    def test_projetista_e_revisao_ficam_no_projeto(self):
+        g = app._gerente()
+        nomes = [d["nome"] for d in g.listar_desenhos(SLUG, contar=False) if d["nome"].startswith("detalhamento-chap")]
+        app.montar_pranchas_projeto(SLUG, {"desenhos": nomes, "formato": "A1", "titulo": "Pranchas Q20",
+                                           "carimbo": {"responsavel": "Eng. Camila", "revisao": "01"}})
+        p = g.ler(SLUG)
+        self.assertEqual(p.get("responsavel"), "Eng. Camila")
+        self.assertEqual((p.get("carimbo_pranchas") or {}).get("revisao"), "01")
+        # sem digitar de novo: a revisão gravada vale
+        r = app.montar_pranchas_projeto(SLUG, {"desenhos": nomes, "formato": "A1", "titulo": "Pranchas Q20b"})
+        from nucleo2d.desenho import Desenho
+        d = Desenho.de_dict(g.abrir_desenho(SLUG, r["desenho"]))
+        textos = [e.texto for e in d.entidades.values() if getattr(e, "texto", None)]
+        self.assertTrue(any("REV. 01" in x for x in textos))
+        self.assertIn("ENG. CAMILA", [x.upper() for x in textos])
+
+
+class TestResumoDaImportacao(_SooroDetalhada):
+    """Q21 — "nenhum resumo do que o IFC trouxe": a detalhista juntou os números pelo painel de camadas."""
+
+    def test_resumo_da_sooro(self):
+        from nucleo3d.modelo import Documento
+        with gzip.open(os.path.join(SOORO, "modelo-importado.json.gz"), "rt", encoding="utf-8") as f:
+            doc = Documento.de_dict(json.load(f))
+        r = app._resumo_da_importacao(doc)
+        self.assertEqual(r["pecas"], 4047)
+        self.assertEqual((r["chapas"], r["fixadores"], r["telhas"]), (652, 1342, 968))
+        self.assertEqual(r["n_perfis_fora"], 0)
+        self.assertGreater(r["marcas"]["pecas"], 100)
+
+    def test_importar_grava_o_resumo_no_projeto(self):
+        import base64
+        from projetos import Projetos
+        s = Projetos(self.pasta).criar("IFC pequeno", tipo="ifc")["slug"]
+        ifc = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dados_ifc", "estrutura_mm.ifc")
+        with open(ifc, "rb") as f:
+            r = app.importar_ifc_no_projeto(s, {"nome": "estrutura_mm.ifc", "conteudo_b64": base64.b64encode(f.read()).decode()})
+        self.assertIn("resumo", r)
+        self.assertEqual(app._gerente().ler(s).get("importacao_resumo"), r["resumo"])
+
+
+class TestAjudaComORoteiroDoIfc(unittest.TestCase):
+    """Q22 — "a Ajuda não guia o caminho do IFC": texto corrido, sem um roteiro IFC → pranchas. O roteiro no topo, com os
+    caminhos da barra (test_ajuda_menus confere que cada caminho em negrito existe)."""
+
+    def test_roteiro(self):
+        import re
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "ajuda.html"), encoding="utf-8") as f:
+            h = f.read()
+        i = h.index('id="ifc-pranchas"')
+        bloco = h[i:h.index("<h2", i + 10)]
+        for c in ("Novo a partir de IFC", "Detalhamento › Conferir antes de detalhar", "Detalhamento › Detalhar peças e conjuntos",
+                  "Detalhamento › Pranchas › Montar pranchas (automático)", "Arquivo › Exportar › PDF de todas as pranchas",
+                  "DXF de corte (1:1)"):
+            self.assertIn(c, re.sub(r"<[^>]+>", "", bloco))
+
+
 DEPOSITO = os.path.join(RAIZ, "Projeto", "bateria", "entradas", "me-sooro-depósito-químico")
 
 
@@ -399,6 +576,39 @@ class TestPranchasDoDepositoQuimico(unittest.TestCase):
             nomes = [d["nome"] for d in g.listar_desenhos(slug, contar=False) if d["nome"].startswith("detalhamento-")]
             r = app.montar_pranchas_projeto(slug, {"desenhos": nomes, "formato": "A1"})
             self.assertGreater(len(r["pranchas"]), 5)
+        finally:
+            app.PROJETOS = antigo
+            shutil.rmtree(pasta, ignore_errors=True)
+
+
+
+SALA = os.path.join(RAIZ, "Projeto", "bateria", "entradas", "me-sooro-sala-compressores")
+
+
+@unittest.skipUnless(os.path.exists(os.path.join(SALA, "modelo.json")), "sem a entrada da bateria da Sala dos Compressores")
+class TestCopiaNaTesouraDeMetadesDiferentes(unittest.TestCase):
+    """Q04 na tesoura montada de metades diferentes (conferência de consistência da bateria, 16/10): na Sala dos
+    Compressores, a "T2 – 02x" (M2 + M7) dizia CH3 x1 na composição (são 4 + 2) e a cópia na prancha saía 2x em vez de 12x —
+    a composição era contada pelas peças de um exemplar, e a separação das instâncias dava chapas à vizinha."""
+
+    def test_copia_confere_com_as_metades(self):
+        from saida import consistencia
+        antigo = app.PROJETOS
+        pasta = tempfile.mkdtemp(prefix="regr_sala_")
+        try:
+            slug = os.path.basename(SALA)
+            shutil.copytree(SALA, os.path.join(pasta, slug))
+            app.PROJETOS = pasta
+            app.detalhar_projeto(slug, {})
+            g = app._gerente()
+            with open(os.path.join(pasta, slug, "desenhos-2d", "detalhamento-tesouras.desenho.json"), encoding="utf-8") as f:
+                itens = json.load(f)["metadados"]["detalhamento"]["itens"]
+            ch3 = {x["nome"]: x["qtd"] for x in itens["M2 + M7"]["composicao"]}.get("CH3")
+            self.assertEqual(ch3, 6)
+            nomes = [d["nome"] for d in g.listar_desenhos(slug, contar=False) if d["nome"].startswith("detalhamento-")]
+            app.montar_pranchas_projeto(slug, {"desenhos": nomes, "formato": "A1"})
+            copias = [a["texto"] for a in consistencia.conferir(os.path.join(pasta, slug)) if a["conferencia"] == "copias"]
+            self.assertEqual(copias, [])
         finally:
             app.PROJETOS = antigo
             shutil.rmtree(pasta, ignore_errors=True)

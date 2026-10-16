@@ -580,11 +580,45 @@ def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
             doc = imp.importar(destino)
         _progresso(s, "gravando o modelo 3D…")
         _regravar_modelo(s, doc)
-        g.tocar(s, tipo="ifc", origem_ifc=nome)
+        resumo = _resumo_da_importacao(doc)
+        g.tocar(s, tipo="ifc", origem_ifc=nome, importacao_resumo=resumo)
     finally:
         _fim_progresso(s)
     return {"projeto": s, "estatisticas": doc.estatisticas(),
-            "relatorio": doc.metadados.get("importacao", {})}
+            "relatorio": doc.metadados.get("importacao", {}), "resumo": resumo}
+
+
+def _resumo_da_importacao(doc) -> dict:
+    """O que o IFC trouxe (Q21, primeiro uso 16/10: o 3D abria sem dizer nada e a detalhista juntou os números pelo
+    painel de camadas): {pecas, barras, chapas, fixadores, telhas, outras, perfis_fora (os perfis que o catálogo não
+    conhece), marcas: {pecas, conjuntos, exemplo}} — o editor mostra o cartão "Importado" uma vez."""
+    from nucleo3d.modelo import Chapa
+    from nucleo3d.producao import pecas_de_producao
+    from nucleo2d.detalhe.base import TIPOS_ACESSORIO, _tipo_ifc, _marcas
+    import re as _re
+    ents = list(doc.entidades.values())
+    pecas = pecas_de_producao(doc)
+    ids_p = {e.id for e in pecas}
+    telha = lambda e: getattr(e, "camada", "") == "Telhas" or "TELHA" in str(_marcas(e).get("perfil") or "").upper()   # noqa: E731
+    chapa = lambda e: isinstance(e, Chapa) or _tipo_ifc(e) == "IfcPlate"                                               # noqa: E731
+    fix = [e for e in ents if _tipo_ifc(e) in TIPOS_ACESSORIO and not telha(e)]
+    tel = [e for e in ents if telha(e)]
+    ch = [e for e in pecas if chapa(e) and not telha(e)]
+    ba = [e for e in pecas if not chapa(e) and not telha(e)]
+    # fora do catálogo: os que o levantamento não acha o peso teórico (o mesmo aviso do Detalhar)
+    try:
+        from nucleo2d.detalhar import levantar
+        fora = sorted({str(q.perfil) for q in levantar(doc, regra_tercas=False)["posicoes"] if getattr(q, "sem_peso_teorico", False)})
+    except Exception:                                           # noqa: BLE001 — o resumo não derruba a importação
+        fora = []
+    pos = {str(_marcas(e).get("posicao")) for e in pecas if _marcas(e).get("posicao")}
+    conj = {str(_marcas(e).get("conjunto")) for e in pecas if _marcas(e).get("conjunto")}
+    ordem = lambda m: (_re.sub(r"\d+", "", m), int((_re.findall(r"\d+", m) or ["0"])[0]))        # noqa: E731
+    return {"pecas": len(ents), "barras": len(ba), "chapas": len(ch), "fixadores": len(fix), "telhas": len(tel),
+            "outras": max(0, len(ents) - len(ba) - len(ch) - len(fix) - len(tel)),
+            "perfis_fora": fora[:30], "n_perfis_fora": len(fora),
+            "marcas": {"pecas": len(pos), "conjuntos": len(conj),
+                       "exemplo": ", ".join(sorted(pos, key=ordem)[:1] + sorted(pos, key=ordem)[-1:]) if pos else ""}}
 
 
 # ---- desenhos 2D (CAD): ver nucleo2d/
@@ -1089,15 +1123,22 @@ def _tipos_de_producao(s: str, doc) -> dict:
     detalhamento só das terças numa cópia do modelo (~7 s na ME-Sooro), que dá os tipos de todas as posições. O padrão
     de fábrica no 3D precisa deles para achar os suportes de terça — sem eles, o 1º Detalhar de um IFC novo deixava
     17 terças da ME-Sooro fora do passo da máquina e o PDF recusado; só o 2º as acertava (Q01, primeiro uso 16/10)."""
+    return _nomes_provisorios(s, doc).get("tipos") or {}
+
+
+def _nomes_provisorios(s: str, doc) -> dict:
+    """Os nomes de produção de um projeto ainda não detalhado (tipos por marca e por conjunto: terça, suporte, tesoura…),
+    pelo detalhamento só das terças numa cópia do modelo — o padrão de fábrica (Q01) e os eixos do 3D (Q13) precisam
+    deles antes do 1º Detalhar. Nada é gravado."""
     import copy as _copy
     from nucleo2d import detalhar as det
-    _progresso(s, "reconhecendo as terças e os suportes…")
+    _progresso(s, "reconhecendo as terças, os suportes e as tesouras…")
     try:
         r = det.detalhar(_copy.deepcopy(doc), grupos=["tercas"], regra_tercas=False, converter=False,
                          ajustes=_ajustes_furos(s), nomes=None)
     except ErroDeDados:
         return {}
-    return (r.get("nomes") or {}).get("tipos") or {}
+    return r.get("nomes") or {}
 
 
 def _padronizar_3d(s: str, doc, regra: bool = True, converter: bool = False) -> dict:
@@ -2151,6 +2192,10 @@ def eixos_do_projeto(s: str) -> dict:
     gravados = _eixos.de_dict(p.get("eixos"))
     if gravados:
         return {"eixos": gravados, "gravados": True}
+    # os mesmos do 3D e das pranchas: com os nomes provisórios antes do 1º Detalhar (Q13)
+    ex = _eixos_automaticos(s)
+    if ex is not None:
+        return {"eixos": ex, "gravados": False}
     doc = _documento3d_do_projeto(s)
     try:
         return {"eixos": _eixos.identificar_eixos(doc, _nomes_producao(s)), "gravados": False}
@@ -3494,9 +3539,19 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
                        "escala": (item.get("escala") if isinstance(item, dict) else None),
                        "chaves": (item.get("chaves") if isinstance(item, dict) else None)})
     p = g.ler(s)
-    carimbo = {"obra": p.get("nome") or s, "cliente": p.get("cliente") or "",
-               "responsavel": p.get("responsavel") or "", "revisao": "00"}
+    cp = p.get("carimbo_pranchas") or {}
+    carimbo = {"obra": cp.get("obra") or p.get("nome") or s, "cliente": p.get("cliente") or "",
+               "responsavel": p.get("responsavel") or "", "revisao": cp.get("revisao") or "00"}
     carimbo.update({k: v for k, v in (corpo.get("carimbo") or {}).items() if v not in (None, "")})
+    # o que foi digitado no diálogo fica no projeto: o diálogo abre com ele na próxima vez (Q20, primeiro uso 16/10: "tive
+    # que redigitar o Projetista"); cliente e projetista são os do projeto, a obra e a revisão das pranchas à parte
+    dig = {k: str(v).strip() for k, v in (corpo.get("carimbo") or {}).items() if isinstance(v, str) and v.strip()}
+    novos = {k: dig[k] for k in ("cliente", "responsavel") if k in dig and dig[k] != (p.get(k) or "")}
+    cp_novo = dict(cp, **{k: dig[k] for k in ("obra", "revisao") if k in dig})
+    if cp_novo != cp:
+        novos["carimbo_pranchas"] = cp_novo
+    if novos:
+        g.tocar(s, **novos)
     titulo = (corpo.get("titulo") or "Pranchas").strip() or "Pranchas"
     folhas = montar_pranchas(fontes, formato=corpo.get("formato") or "A1", carimbo=carimbo, titulo="Prancha",
                              indice=corpo.get("indice", True) is not False)
@@ -4006,7 +4061,16 @@ def _eixos_automaticos(s: str) -> Optional[dict]:
         guardado = _CACHE_EIXOS_AUTO.get(s)
         if guardado and guardado[0] == chave:
             return guardado[1]
-        ex = _eixos.identificar_eixos(_documento3d_do_projeto(s), _nomes_producao(s))
+        doc = _documento3d_do_projeto(s)
+        # sem o nomes.json (antes do 1º Detalhar), os nomes provisórios: sem as tesouras reconhecidas, o 3D mostrava 16 × 13
+        # eixos na ME-Sooro e as pranchas, 7 × 5 (Q13, primeiro uso 16/10)
+        nomes = _nomes_producao(s) or {}
+        if not nomes.get("tipos"):
+            try:
+                nomes = _nomes_provisorios(s, doc)
+            finally:
+                _fim_progresso(s)
+        ex = _eixos.identificar_eixos(doc, nomes)
     except (ErroDeDados, ValueError, OSError):
         return None
     _CACHE_EIXOS_AUTO[s] = (chave, ex)
@@ -4711,6 +4775,23 @@ def conferir_modelo(corpo: dict) -> dict:
         return r
     finally:
         _PROGRESSO_CONFERENCIA.pop(tarefa, None)
+
+
+def corte_das_chapas(s: str) -> dict:
+    """POST /api/projetos/<s>/corte-chapas: o ZIP com um DXF por chapa, em mm reais, só contorno (CORTE) e furos (FURO)
+    — saida/corte_chapas.py (Q19, primeiro uso 16/10: não havia DXF de corte; o do desenho das chaparias trazia cotas,
+    textos e tirantes). Em <projeto>/detalhamento/corte-chapas.zip."""
+    from nucleo2d.detalhar import levantar
+    from saida import corte_chapas
+    doc = _documento3d_do_projeto(s)
+    _marcar_origem(s, doc)
+    lev = levantar(doc, regra_tercas=False, ajustes=_ajustes_furos(s), nomes=_nomes_producao(s))
+    pasta = os.path.join(_gerente()._existente(s), "detalhamento")
+    r = corte_chapas.gravar_zip(lev["posicoes"], os.path.join(pasta, "corte-chapas.zip"))
+    if not r["chapas"]:
+        raise ErroDeDados("o modelo não tem chapas planas para o corte.")
+    _gerente().tocar(s)
+    return {"arquivo": _descrever_arquivo(r["arquivo"], _gerente()._existente(s)), "chapas": r["chapas"], "nomes": r["nomes"]}
 
 
 def nomes_producao_do_projeto(s: str) -> dict:
@@ -5466,6 +5547,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(dimensionar_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "materiais":
                     return self._json(lista_de_materiais(partes[0], recalcular=True, corpo=corpo))
+                if len(partes) == 2 and partes[1] == "corte-chapas":
+                    return self._json(corte_das_chapas(partes[0]))
                 if len(partes) == 3 and partes[1] == "materiais" and partes[2] == "perfil-compra":
                     return self._json(gravar_perfil_compra(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "materiais" and partes[2] == "emenda":
