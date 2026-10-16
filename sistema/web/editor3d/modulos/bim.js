@@ -44,6 +44,9 @@ export class MetodosBIM {
     canvas.addEventListener('pointerdown', () => this._esconderFicha());
     this.selecao.aoMudar(() => this._agendarEtiquetas(true));
     setTimeout(() => this._desenharVistas(), 0);
+    // o modelo aberto (ou reaberto): o Colorir por e os grupos ocultos guardados deste projeto voltam (16/10)
+    this.documento.aoMudar(({ acao }) => { if (acao === 'tudo') setTimeout(() => this._restaurarVista3d(), 0); });
+    if (this.documento.entidades.size) setTimeout(() => this._restaurarVista3d(), 0);
   }
 
   /** Depois de cada mudança do documento (editor._aposMudanca): etiquetas, tabela e abas das vistas em dia. */

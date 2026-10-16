@@ -507,6 +507,45 @@ export class MetodosPaineis {
     this.documento.ocultosNaVista = ids.size ? ids : null;
     this.documento.notificarAparencia();
     this._agendarPaineis('camadas');
+    this._gravarVista3d();
+  }
+
+  /**
+   * O "Colorir por", os grupos ocultos e as cores de cada grupo, guardados neste navegador por projeto (usuário, 16/10:
+   * ao recarregar os grupos ocultos voltavam, e o modo ver não sabia deles nem das cores). O modo ver (visor3d/ver3d.js)
+   * lê a mesma chave: esconde as mesmas peças e pinta com as mesmas cores. Só a vista — o modelo gravado não muda.
+   */
+  _gravarVista3d() {
+    if (!this.projeto || this._restaurandoVista3d) return;
+    const modo = this.corPor || 'padrao';
+    const v = { cor_por: modo, ocultos: [...(this._gruposOcultos || [])], ids_ocultos: [...(this.documento.ocultosNaVista || [])], grupos: null };
+    if (modo !== 'padrao' && this._coresGrupo) {
+      const por = new Map();
+      for (const ent of this.documento.entidades.values()) {
+        const k = this._chaveDeGrupo(ent, modo);
+        if (k == null || !this._coresGrupo.has(k)) continue;
+        if (!por.has(k)) por.set(k, []);
+        por.get(k).push(ent.id);
+      }
+      v.grupos = [...por].map(([k, ids]) => [String(k), this._coresGrupo.get(k), ids]);
+    }
+    try { localStorage.setItem(`vista3d:${this.projeto}`, JSON.stringify(v)); } catch (e) { /* sem armazenamento */ }
+  }
+
+  /** Volta o que `_gravarVista3d` guardou, depois de abrir o modelo. */
+  _restaurarVista3d() {
+    if (!this.projeto) return;
+    let v = null;
+    try { v = JSON.parse(localStorage.getItem(`vista3d:${this.projeto}`) || 'null'); } catch (e) { v = null; }
+    if (!v) return;
+    this._restaurandoVista3d = true;
+    try {
+      this.corPor = v.cor_por || 'padrao';
+      this._aplicarCorPor();
+      this._ocultarGrupos(new Set(v.ocultos || []));
+    } finally { this._restaurandoVista3d = false; }
+    this._gravarVista3d();
+    this._agendarPaineis('camadas');
   }
 
   _painelCamadas() {
@@ -753,10 +792,17 @@ export class MetodosPaineis {
     if (modo === 'padrao') {
       this._coresGrupo = null;
       if (!(this.analiseEstado && this.analiseEstado.ligado)) this.cena.definirCorPorValor(null);
+      this._gravarVista3d();
       return;
     }
     if (this.analiseEstado && this.analiseEstado.ligado) this._mostrarAnalise(false);
+    // a cor sai da ordem da legenda (o nome do grupo, em ordem natural), não da ordem em que a cena pinta: a mesma
+    // peça tem a mesma cor ao reabrir e no modo ver
     const cores = new Map();
+    const chaves = new Set();
+    for (const ent of this.documento.entidades.values()) { const k = this._chaveDeGrupo(ent, modo); if (k != null) chaves.add(k); }
+    [...chaves].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR', { numeric: true }))
+      .forEach((k, i) => cores.set(k, corDeGrupo(i)));
     this._coresGrupo = cores;
     this.cena.definirCorPorValor((ent) => {
       const chave = this._chaveDeGrupo(ent, modo);
@@ -764,6 +810,7 @@ export class MetodosPaineis {
       if (!cores.has(chave)) cores.set(chave, corDeGrupo(cores.size));
       return cores.get(chave);
     });
+    this._gravarVista3d();
   }
 
   _seletorCorPor() {

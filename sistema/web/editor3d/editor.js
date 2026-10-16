@@ -962,6 +962,8 @@ export class Editor {
       this._agendarPaineis('props', 'arvore', 'camadas', 'materiais');
     }
     this._atualizarCarimbo();
+    // a vista guardada voltando ao abrir (Colorir por, grupos ocultos) só pinta: o modelo não mudou, nada a gravar
+    if (this._restaurandoVista3d && acao === 'aparencia') return;
     this._sujo = true;
     this._agendarAutosave();
     this._agendarConferenciaDasLigacoes();

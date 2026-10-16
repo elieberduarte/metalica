@@ -27,6 +27,71 @@ let painelAtual = null;
 let medindo = false, medida = [];                // pontos da medida em curso: {local, ponto}
 let objMedida = null;
 let legenda = [];
+// o que o editor deixou para este projeto (editor3d/modulos/paineis.js, _gravarVista3d): o Colorir por, as cores de cada
+// grupo e as peças ocultas — o modo ver abre igual (usuário, 16/10)
+let doEditor = null;
+try { doEditor = JSON.parse(localStorage.getItem(`vista3d:${PROJETO}`) || 'null'); } catch (e) { doEditor = null; }
+let ocultasDoEditor = [];
+
+// a paleta dos grupos, a mesma do editor (editor3d/editor.js, corDeGrupo): por perfil a mesma peça tem a mesma cor nos dois
+const PALETA_GRUPOS = ['#d94a4a', '#2f9e5f', '#3d6fd6', '#e08a1e', '#8e44ad', '#17a2b8',
+  '#c2185b', '#7cb342', '#f4c20d', '#6d4c41', '#00897b', '#5c6bc0', '#ef6c00', '#4db6ac',
+  '#ad1457', '#9e9d24', '#1e88e5', '#e64a19', '#546e7a', '#8d6e63'];
+function corDeGrupo(i) {
+  if (i < PALETA_GRUPOS.length) return PALETA_GRUPOS[i];
+  const k = i - PALETA_GRUPOS.length;
+  return `hsl(${((k * 137.508) % 360).toFixed(1)}, ${[72, 58, 80][k % 3]}%, ${[48, 62, 36][k % 3]}%)`;
+}
+const NOMES_COR_POR = { conjunto: 'conjunto', posicao: 'posição', perfil: 'perfil', tipo: 'tipo IFC', nome: 'nome de produção',
+  papel: 'papel', fase: 'fase', acabamento: 'acabamento', aco: 'aço', ligacao: 'ligação' };
+
+/** Pinta os grupos [{nome, cor, ids}] (índices das peças) com a cor de cada um. */
+function pintarGrupos(lista) {
+  const c = document.createElement('canvas').getContext('2d');
+  for (const g of lista) {
+    c.fillStyle = '#000'; c.fillStyle = g.cor;                     // hsl() ou #hex → #rrggbb
+    const h = String(c.fillStyle), rr = parseInt(h.slice(1, 3), 16), gg = parseInt(h.slice(3, 5), 16), bb = parseInt(h.slice(5, 7), 16);
+    for (const i of g.ids) { visor.corBase[i * 3] = rr; visor.corBase[i * 3 + 1] = gg; visor.corBase[i * 3 + 2] = bb; }
+  }
+  visor._repintar();
+}
+
+/** O modo de pintar pedido, com as cores do editor: os grupos dele (modo "editor"), ou a paleta dele em ordem de nome. */
+function pintar(modo) {
+  if (modo === 'editor' && doEditor && doEditor.grupos) {
+    visor.pintarPor('perfil');                                         // zera as ocultas e tira o material
+    const pos = new Map(visor.fichas.map((f, i) => [f.id, i]));
+    legenda = doEditor.grupos.map(([nome, cor, ids]) => {
+      const idx = ids.map(id => pos.get(id)).filter(i => i !== undefined);
+      return { nome, cor, n: idx.length, ids: idx };
+    }).filter(g => g.n).sort((a, b) => b.n - a.n || a.nome.localeCompare(b.nome));
+    pintarGrupos(legenda);
+  } else {
+    legenda = visor.pintarPor(modo);
+    if (modo !== 'material') {
+      [...legenda].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true })).forEach((g, k) => { g.cor = corDeGrupo(k); });
+      pintarGrupos(legenda);
+    }
+  }
+  if (ocultasDoEditor.length) visor.ocultarPecas(ocultasDoEditor, true);
+}
+
+/** Depois de abrir: as peças que o editor ocultou somem, e o Pintar começa como no editor. */
+function aplicarDoEditor() {
+  if (!doEditor) return;
+  const pos = new Map(visor.fichas.map((f, i) => [f.id, i]));
+  ocultasDoEditor = (doEditor.ids_ocultos || []).map(id => pos.get(id)).filter(i => i !== undefined);
+  const sel = $('#pintar');
+  if (doEditor.grupos && doEditor.grupos.length && sel) {
+    const o = document.createElement('option');
+    o.value = 'editor';
+    o.textContent = `como no editor (${NOMES_COR_POR[doEditor.cor_por] || doEditor.cor_por})`;
+    sel.prepend(o);
+    sel.value = 'editor';
+    pintar('editor');
+  } else if (ocultasDoEditor.length) visor.ocultarPecas(ocultasDoEditor, true);
+  if (ocultasDoEditor.length) situacao(`${situacaoBase} · ${nf(ocultasDoEditor.length)} peça(s) ocultas no editor`);
+}
 const NA_DIVIDIDA = window.parent !== window;
 let daDivisao = false;
 
@@ -215,6 +280,7 @@ async function abrir() {
     situacao(`Modo ver · ${nf(visor.nPecas)} peças · o modelo mudou: atualizando o 3D, troca sozinho em instantes…`);
     esperarVersaoNova(versao);
   }
+  aplicarDoEditor();
   window.ver3dPronto = { ms, pecas: visor.nPecas };
   aplicarTema(null);
   carregarReferencia();
@@ -316,7 +382,7 @@ function painelCamadas() {
 }
 
 function painelLegenda(modo) {
-  const titulo = modo === 'camada' ? 'Pintado por camada' : 'Pintado por perfil';
+  const titulo = modo === 'editor' ? $('#pintar').selectedOptions[0].textContent.replace(/^como/, 'Pintado como') : modo === 'camada' ? 'Pintado por camada' : 'Pintado por perfil';
   abrirPainel('legenda', titulo, legenda.slice(0, 200).map((g, k) => `<div class="linha-lista" data-k="${k}">
       <input type="checkbox" data-olho="${k}" title="Mostrar / ocultar este grupo" ${g.ids.some(i => visor.ocultas.has(i)) ? '' : 'checked'}>
       <i style="background:${g.cor}"></i><span title="${esc(g.nome)}">${esc(g.nome)}</span><em>${nf(g.n)}</em></div>`).join('')
@@ -488,7 +554,7 @@ function ligar() {
   document.querySelectorAll('[data-vista]').forEach(b => b.onclick = () => visor.enquadrar(b.dataset.vista));
   $('#pintar').onchange = () => {
     const modo = $('#pintar').value;
-    legenda = visor.pintarPor(modo);
+    pintar(modo);
     if (modo === 'material') { if (painelAtual === 'legenda') fecharPainel(); } else painelLegenda(modo);
   };
   let espera = null;
