@@ -520,7 +520,9 @@ try:
         except Exception as e:                       # noqa: BLE001
             ok(False, f"{bloco.__name__}: {e}")
     # o 3D leve de um projeto sem modelo responde 404 (o visor mostra "sem modelo"): não é erro da tela
-    erros = [m for m in aba.console if m[0] in ("error", "excecao") and not ("404" in m[1] and "/3d-leve" in m[1])]
+    # e o "sair sem salvar?" do editor com o modelo em branco não gravado (P21), que o Chrome sem janela bloqueia
+    erros = [m for m in aba.console if m[0] in ("error", "excecao") and not ("404" in m[1] and "/3d-leve" in m[1])
+             and "Blocked attempt to show a 'beforeunload'" not in m[1]]
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:
     try: nav.kill()
