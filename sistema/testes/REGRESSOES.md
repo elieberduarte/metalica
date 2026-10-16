@@ -96,6 +96,7 @@ treliçado, pela planta do Posto e pelos quadros; a lista de fora da regra tem d
 | Data | O que o usuário via | Correção | Teste |
 |---|---|---|---|
 | 16/10 | Mercado Hermes: "toda tesoura nova volta com a configuração antiga" — montante de canto com a boca para fora, cantoneiras da alma uma de cada lado, diagonal em U virada (826 peças); Posto: cantoneira da PM6 copa do outro lado; CD Bom Dia: alma Ue em pé "para o fim" | ccf52cf | test_regras_trelica (todos os caminhos de geração); test_conferencia: Verificar apoios acusa |
+| 16/10 | Mercado Hermes (anexo e tesouras do galpão): o topo do painel de ponta, vindo como "diagonal", com a boca para cima — "o banzo superior das tesouras nunca pode ser com a boca para cima" (T6) | 8656eb6 | test_regras_trelica::test_banzo_de_cima_nunca_de_boca_para_cima |
 
 ## Primeiro uso (agentes engenheiro-primeiro-uso e detalhista-primeiro-uso-ifc)
 
