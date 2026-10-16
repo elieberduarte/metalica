@@ -213,3 +213,40 @@ def test_conferencia_do_3d_e_verificar_apoios_acusam():
     assert any(a["tipo"] == "posicao" and "regra T" in a["texto"] for a in conf["apontamentos"])
     R.orientar(doc.entidades.values())
     assert conferencia_3d.conferir(doc, telha=False, soltas=False)["contagens"]["fora_da_posicao"] == 0
+
+
+def _ponta_do_anexo(giro_topo):
+    """a ponta da tesoura do anexo do Mercado Hermes (16/10): o painel de ponta com um X, e a peça de cima dele veio do
+    desenho como "diagonal" (horizontal, no topo do painel); o banzo de cima segue um degrau acima"""
+    at = {"origem": {"peca": "TX"}}
+    U1, U2 = "U 150×60×3,00 (FF)", "U 100×50×3,00 (FF)"
+    pts = [((0, 0, 0), (0, 400, 0), U2, "montante"), ((0, 0, 0), (0, 0, 400), U1, "banzo"),
+           ((0, 0, 0), (0, 400, 400), U2, "diagonal"), ((0, 0, 400), (0, 400, 0), U2, "diagonal"),
+           ((0, 0, 400), (0, 400, 400), U2, "diagonal"),                       # o topo do painel, como veio
+           ((0, 400, 0), (0, 400, 450), U2, "montante"), ((0, 400, 0), (0, 2000, 0), U1, "banzo"),
+           ((0, 400, 450), (0, 2000, 550), U1, "banzo"), ((0, 2000, 0), (0, 2000, 550), U2, "montante"),
+           ((0, 400, 450), (0, 2000, 0), U2, "diagonal")]
+    bs = []
+    for k, (a, b, perfil, papel) in enumerate(pts):
+        bs.append(Barra(nome="P%d" % k, inicio=a, fim=b, perfil=perfil, papel=papel, rotacao=0.0, atributos=dict(at)))
+    topo = bs[4]
+    topo.rotacao = R._giro_para(topo.direcao, (0.0, 0.0, 1.0)) if giro_topo == "cima" else 0.0
+    return bs, topo
+
+
+def test_banzo_de_cima_nunca_de_boca_para_cima():
+    """T6 (usuário, 16/10): "o banzo superior das tesouras nunca pode ser com a boca para cima" — nem a peça do topo do
+    painel de ponta que veio como diagonal (a T4 a abria para cima)"""
+    bs, topo = _ponta_do_anexo("cima")
+    assert _boca(topo)[2] > 0.99
+    assert any(e["regra"] == "T6" and e["nome"] == topo.nome for e in R.conferir(bs))
+    R.orientar(bs)
+    assert R.conferir(bs) == []
+    t = R.trelicas(bs)[0]
+    for b, p in t["barras"]:
+        if R.no_topo(b, t):
+            assert _boca(b)[2] < -0.9, (b.nome, _boca(b))       # todo o contorno de cima abre para baixo
+    assert _boca(topo)[2] < -0.99
+    # o banzo de baixo continua de boca para cima (o miolo) e a diagonal de dentro não é topo
+    assert _boca(bs[6])[2] > 0.99
+    assert not R.no_topo(bs[9], t)

@@ -197,7 +197,8 @@ def telha_ao_lado(doc, limite: float = 20.0) -> List[dict]:
 
 
 REGRA_EM_TEXTO = {"T2": "banzo em U com a boca para o miolo", "T3": "peça em pé em U com a boca para o meio do vão",
-                  "T4": "diagonal em U com a boca para cima", "T5": "cantoneira com a aba do mesmo lado das outras"}
+                  "T4": "diagonal em U com a boca para cima",
+                  "T6": "banzo de cima com a boca para baixo, nunca para cima", "T5": "cantoneira com a aba do mesmo lado das outras"}
 
 
 def posicao_na_trelica(barras) -> List[dict]:
