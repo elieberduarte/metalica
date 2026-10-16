@@ -21,6 +21,7 @@ import { Pilha, Comando, ComandoAdicionar, ComandoRemover, ComandoAlterar }
 import { Cena, MODOS, ESCALA, PESADOS, medir } from './nucleo/cena.js';
 import { lerPerfil, nomeDoPerfil, trocarSecao, BITOLAS } from './nucleo/trocar_perfil.js';
 import { Camera, VISTAS } from './nucleo/camera.js';
+import { acompanhar as acompanharTarefa } from '../progresso.js';
 import { Selecao } from './nucleo/selecao.js';
 import { Esqueleto, pecaDe } from './nucleo/esqueleto.js';
 import { Inferencia } from './nucleo/inferencia.js';
@@ -418,16 +419,14 @@ export class Editor {
    * Enquanto uma operação longa roda no servidor (detalhar, importar IFC), mostra a
    * etapa corrente na linha de dica. Devolve a função que para de acompanhar.
    */
-  _acompanharProgresso(prefixo = '') {
+  _acompanharProgresso(prefixo = '', tarefa = null) {
+    // a barra de andamento padrão (web/progresso.js, 16/10) no rodapé, ao lado da linha de dica
     if (!this.projeto) return () => {};
-    const url = `/api/projetos/${encodeURIComponent(this.projeto)}/progresso`;
-    const timer = setInterval(async () => {
-      try {
-        const p = await (await fetch(url, { cache: 'no-store' })).json();
-        if (p && p.etapa) this.dica(`${prefixo}${p.etapa}${p.ha_s >= 3 ? ` (${Math.round(p.ha_s)} s)` : ''}`);
-      } catch { /* servidor ocupado ou fora: tenta de novo no próximo tique */ }
-    }, 700);
-    return () => clearInterval(timer);
+    const rotulo = prefixo.replace(/[:\s]+$/, '');
+    return acompanharTarefa({
+      url: `/api/projetos/${encodeURIComponent(this.projeto)}/progresso`,
+      tarefa: tarefa || 'editor.' + rotulo.toLowerCase(), rotulo, onde: this.el.dica, dica: (t) => this.dica(t),
+    });
   }
 
   /** Caixa de medidas: o que a ferramenta está medindo agora. */

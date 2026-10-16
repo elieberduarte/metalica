@@ -27,4 +27,7 @@
   window.addEventListener('pagehide', function () {
     try { navigator.sendBeacon('/api/fechou?j=' + id + sufixo); } catch (e) { /* idem */ }
   });
+  // a barra de andamento padrão (web/progresso.js, 16/10): toda chamada demorada ao servidor ganha a barra sozinha
+  try { import('/progresso.js').then(function (m) { m.vigiarChamadas(); }).catch(function () {}); }
+  catch (e) { /* navegador sem import(): fica sem a barra */ }
 })();

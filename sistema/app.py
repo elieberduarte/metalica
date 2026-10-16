@@ -1472,8 +1472,52 @@ def dimensionar_projeto(s: str, corpo: dict) -> dict:
         _fim_progresso(s)
 
 
-def _progresso(s: str, etapa: str):
-    PROGRESSO[s] = {"etapa": str(etapa), "quando": time.time()}
+#: "(200 de 1432)" ou "rodada 2 de até 5" no texto da etapa: o andamento dela (a barra das telas, web/progresso.js, 16/10)
+_I_DE_N = re.compile(r"\((\d+)\s+de\s+(\d+)\)|(\d+)\s+de\s+até\s+(\d+)")
+
+
+def _tarefa_padrao(rota: str):
+    """Todo pedido de projeto (POST /api/projetos/<s>/…) começa com uma etapa, se o projeto não tem tarefa em curso: a
+    barra das telas sempre tem o que mostrar, mesmo na rota que não conta as etapas. Devolve (s, início) ou None."""
+    if not rota.startswith("/api/projetos/"):
+        return None
+    partes = rota.split("/api/projetos/", 1)[1].strip("/").split("/")
+    if len(partes) < 2 or not partes[0]:
+        return None
+    s = partes[0]
+    if s in PROGRESSO:
+        return None
+    _progresso(s, "começando…")
+    return (s, PROGRESSO[s]["inicio"])
+
+
+def _fim_tarefa_padrao(tarefa) -> None:
+    """No fim do pedido, tira a etapa se ainda é a desta tarefa (o mesmo início): a rota que não chamava
+    _fim_progresso deixava a etapa velha pendurada para a próxima tela (o Aplicar furos, 16/10)."""
+    if not tarefa:
+        return
+    s, inicio = tarefa
+    p = PROGRESSO.get(s)
+    if p and p.get("inicio") == inicio:
+        PROGRESSO.pop(s, None)
+
+
+def _progresso(s: str, etapa: str, fracao: Optional[float] = None):
+    """A etapa corrente da tarefa demorada do projeto `s`, para a barra de andamento das telas (web/progresso.js).
+    `fracao` (0–1) é o andamento da tarefa inteira, quando ela sabe; o "(i de n)" do texto vira o da etapa."""
+    agora = time.time()
+    antes = PROGRESSO.get(s)
+    m = _I_DE_N.search(str(etapa))
+    PROGRESSO[s] = {"etapa": str(etapa), "quando": agora, "inicio": antes["inicio"] if antes else agora,
+                    "fracao": None if fracao is None else max(0.0, min(1.0, float(fracao))),
+                    "fracao_etapa": _fracao_do_texto(m)}
+
+
+def _fracao_do_texto(m) -> Optional[float]:
+    if not m:
+        return None
+    i, n = (m.group(1), m.group(2)) if m.group(1) else (m.group(3), m.group(4))
+    return int(i) / int(n) if int(n) > 0 else None
 
 
 def _fim_progresso(s: str):
@@ -1481,10 +1525,17 @@ def _fim_progresso(s: str):
 
 
 def progresso_do_projeto(s: str) -> dict:
+    """{etapa, ha_s (desde a etapa), desde_s (desde o começo da tarefa), fracao?, fracao_etapa?}"""
     p = PROGRESSO.get(s)
     if not p:
         return {"etapa": "", "ha_s": 0}
-    return {"etapa": p["etapa"], "ha_s": round(time.time() - p["quando"], 1)}
+    agora = time.time()
+    out = {"etapa": p["etapa"], "ha_s": round(agora - p["quando"], 1), "desde_s": round(agora - p.get("inicio", p["quando"]), 1)}
+    if p.get("fracao") is not None:
+        out["fracao"] = round(p["fracao"], 4)
+    if p.get("fracao_etapa") is not None:
+        out["fracao_etapa"] = round(min(1.0, p["fracao_etapa"]), 4)
+    return out
 
 
 def _alinhar_furos_das_barras(s: str, doc, gravar: bool = True) -> dict:
@@ -5123,10 +5174,12 @@ class Handler(BaseHTTPRequestHandler):
         # pedido em curso segura o encerramento automático (fechar a janela no meio do
         # Detalhar deixava o projeto com os desenhos antigos na lixeira e os novos por gravar)
         _em_curso(+1)
+        tarefa = _tarefa_padrao(rota)
         try:
             return self._do_post(rota)
         finally:
             _em_curso(-1)
+            _fim_tarefa_padrao(tarefa)
 
     def _do_post(self, rota):
         try:

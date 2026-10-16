@@ -46,7 +46,7 @@ TELAS = [("web/cad/", {"cad"}), ("web/editor3d/", {"editor"}), ("web/dividida", 
          ("web/ligacoes", {"ligacoes"}), ("web/catalogo", {"catalogo"}), ("web/inicio", {"inicio"}),
          ("web/index.html", {"inicio"}), ("web/app.js", {"dimensionar"}), ("web/dimensionar", {"dimensionar"})]
 #: Comuns a todas as telas.
-COMUNS = ("web/estilo.css", "web/versao.js", "web/vivo.js", "web/atualizacao.js", "web/tema-janela.js",
+COMUNS = ("web/estilo.css", "web/versao.js", "web/vivo.js", "web/progresso.js", "web/atualizacao.js", "web/tema-janela.js",
           "web/lentidao.js", "web/lib/", "web/etapas.js")
 #: Arquivos de tela com verificador próprio fora do mapa de telas.
 PROPRIOS = [("web/faixa_ferramentas", ["verif_faixa_ui"]), ("web/visor3d/", ["verif_ver3d_ui", "verif_camera_modelos"]),

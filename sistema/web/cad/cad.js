@@ -7,6 +7,7 @@
 import { Desenho2D, clonar, valorCota, pontosDe, criar, segmentosDe, dist, maisProximoSeg } from './nucleo/desenho2d.js';
 import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia, ComandoAdicionar, ComandoComposto, ComandoEscala } from './nucleo/comandos.js';
 import { Tela, formatarMm } from './nucleo/tela.js';
+import { acompanhar as acompanharTarefa } from '../progresso.js';
 import { Snap } from './nucleo/snap.js';
 import { FERRAMENTAS, GRUPOS, Ferramenta, textoNaUnidade } from './ferramentas.js';
 import { MetodosLancamentoCAD, DESENHO_LANCAMENTO } from './lancamento.js';
@@ -268,8 +269,13 @@ class CAD {
       if (e.atualizando && !avisouAtualizando) {
         avisouAtualizando = true;
         this.aviso(`Atualizando os desenhos de detalhamento${e.motivo ? ` (${e.motivo})` : ''}… a tela recarrega sozinha quando terminar.`, 'info', 12000);
+        // a atualização roda em segundo plano, sem chamada desta tela: a barra padrão acompanha pelo andamento do projeto
+        if (!this._pararVivos) this._pararVivos = this._acompanharProgresso('Atualizando os desenhos: ', 'cad.atualizacao-automatica');
       }
-      if (!e.atualizando) avisouAtualizando = false;
+      if (!e.atualizando) {
+        avisouAtualizando = false;
+        if (this._pararVivos) { this._pararVivos(!e.erro); this._pararVivos = null; }
+      }
       this._avisarPendencias(e);                    // 3D fora do padrão, terça fora da máquina, arrumação descartada
       if (e.erro && e.erro !== avisouErro) { avisouErro = e.erro; this.aviso(`A atualização automática dos desenhos não terminou: ${e.erro}`, 'atencao', 0); }
       const nova = (e.desenhos || {})[this.nomeDesenho];
@@ -904,16 +910,14 @@ class CAD {
    * Enquanto uma operação longa roda no servidor (detalhar, importar IFC), mostra a
    * etapa corrente na linha de dica. Devolve a função que para de acompanhar.
    */
-  _acompanharProgresso(prefixo = '') {
+  _acompanharProgresso(prefixo = '', tarefa = null) {
+    // a barra de andamento padrão (web/progresso.js, 16/10) no rodapé, ao lado da linha de dica
     if (!this.projeto) return () => {};
-    const url = `/api/projetos/${encodeURIComponent(this.projeto)}/progresso`;
-    const timer = setInterval(async () => {
-      try {
-        const p = await (await fetch(url, { cache: 'no-store' })).json();
-        if (p && p.etapa) this.dica(`${prefixo}${p.etapa}${p.ha_s >= 3 ? ` (${Math.round(p.ha_s)} s)` : ''}`);
-      } catch { /* servidor ocupado ou fora: tenta de novo no próximo tique */ }
-    }, 700);
-    return () => clearInterval(timer);
+    const rotulo = prefixo.replace(/[:\s]+$/, '');
+    return acompanharTarefa({
+      url: `/api/projetos/${encodeURIComponent(this.projeto)}/progresso`,
+      tarefa: tarefa || 'cad.' + rotulo.toLowerCase(), rotulo, onde: this.el.dica, dica: (t) => this.dica(t),
+    });
   }
 
   medida(t) { if (document.activeElement !== this.el.medida) this.el.medida.placeholder = textoNaUnidade(t) || 'digite e Enter'; }   // na unidade das medidas

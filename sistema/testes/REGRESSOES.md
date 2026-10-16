@@ -42,6 +42,15 @@ pequena). Os passos A–H dele estão no cabeçalho do arquivo.
 | 16/10 | editor, modelo com o piso a +637 m: o pan no vazio disparava 14× o mouse (apoiado no plano z = 0, 637 m abaixo) | camera.js `_chaoDoModelo` | verif_camera_modelos F (piso-alto) |
 | 16/10 | editor, torre de 134 m: a roda no vazio mirava o chão a 2 raios do prédio e o modelo escapava | camera.js `_focoDoCursor` (chão do modelo dentro da planta) | verif_camera_modelos E (alto) |
 
+## Barra de andamento
+
+Testes: `test_barra_progresso.py` e `verificadores/verif_barra_progresso.py`.
+
+| Data | O que o usuário via | Correção | Teste |
+|---|---|---|---|
+| 16/10 | só o texto da etapa ("Pré-moldado: desenhando lajes… (19 s)"), e em muitas telas nem isso — sem saber quanto faltava | web/progresso.js (barra padrão + vigilância das chamadas), `_progresso` com fração | verif_barra_progresso, TestFracaoDaBarra |
+| 16/10 | "Aplicar furos" deixava a etapa velha pendurada: a próxima tela mostrava "conferindo os eixos das chapas…" | `_tarefa_padrao` / `_fim_tarefa_padrao` no do_POST | TestTarefaPadrao |
+
 ## Desenho completo (2D)
 
 Testes: `test_regressoes_completo.py` e `verificadores/verif_detalhar_premoldado.py` (o completo no CAD).
@@ -95,3 +104,9 @@ Achados dos testes de primeiro uso (`Projeto/BRIEFINGS/Briefing-primeiro-uso*.md
 | 16/10 | Primeiro uso: nenhum botão Novo… dizia "DXF"; os da pasta vazia sem dica e com outros nomes | 4b8747e | verif_primeiro_uso_ui P20 (no bloco P02/P13) |
 | 16/10 | Primeiro uso: a Ajuda citava "Novo a partir do arquitetônico…" e "Desenho → Montar o 3D pela planta", que não existem | 4c5c2c0 | test_ajuda_menus (Ajuda) |
 | 16/10 | Primeiro uso: a árvore vazia do 3D mandava a "Arquivo → Gerar do galpão" (outro nome na tela do projeto) | 4c5c2c0 | test_ajuda_menus (textos das telas); verif_primeiro_uso_ui P27 |
+| 16/10 | Portaria Hermes: Modelo › 5. Conferir as treliças lidas (3D no modo ver) dizia "Abra um projeto…" com o projeto aberto, e o Detalhar peças não abria | f8a2c2d | verif_primeiro_uso_ui P07 |
+| 16/10 | Portaria Hermes: o passo 2 do projeto recebido (Ler folhas) abria a janela do Windows pedindo de novo o DXF do passo 1, sem explicar | 59fcd59 | test_regressoes_primeiro_uso TestFolhasDoDxfGuardado; verif_primeiro_uso_ui P08 |
+| 16/10 | Portaria Hermes: o resultado do Projeto recebido era um paredão (8 "escala não encontrada" repetidos) e o aviso que importava — a planta sem eixos — vinha no fim | 72d64c4 | verif_primeiro_uso_ui P19 (DXF da Portaria) |
+| 16/10 | Portaria Hermes: a aba Montagem mostrava os quadros vazios sem dizer como enchê-los (o "Enviar para quadro" só existe na Original) | c56c608 | verif_primeiro_uso_ui P14 |
+| 16/10 | Portaria Hermes: o Montar o 3D pela planta mostrava banzo 6,00 m e ASTM A36 como lidos do desenho; eram o padrão | 3a32bc7 | test_regressoes_primeiro_uso TestOrigemDosPadroesDaPlanta; verif_primeiro_uso_ui P26 |
+| 16/10 | Portaria Hermes: Novo modelo › Em branco → painel com 0 objetos e "Aço 4,3 t" (o peso do modelo anterior) | 632b886 | verif_primeiro_uso_ui P21 (modelo da Portaria) |
