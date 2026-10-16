@@ -192,6 +192,11 @@ def por_que_velho(s: str) -> str:
         return "detalhamento feito antes da atualização automática"
     if antes.get("desfeito"):
         return ""          # o Detalhar foi desfeito (Desfazer, Q02): parado até o próximo Detalhar
+    if trava(s).locked():
+        # o detalhamento está rodando (o botão ou esta atualização): no meio dele o carimbo só tem as gerações dos
+        # desenhos já gravados, sem o código, e isto dizia "o programa mudou" — a atualização entrava na fila e refazia
+        # tudo logo depois do Detalhar (P24, primeiro uso 16/10); o carimbo completo chega no fim
+        return ""
     agora = carimbo(s)
     for chave, motivo in (("codigo", "o detalhamento do programa mudou"), ("modelo", "o modelo 3D mudou"),
                           ("ajustes", "a furação ajustada mudou"), ("eixos", "os eixos mudaram")):

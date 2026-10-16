@@ -183,5 +183,33 @@ class TestPesoDoLancamentoIgualALista(_ComProjeto):
         self.assertFalse([o for o in obs if "IFC" in o])
 
 
+class TestDetalharNaoSeDaPorVelhoNoMeio(_ComProjeto):
+    """P24 — logo depois do primeiro Detalhar, a tela dizia "Atualizando os desenhos (o detalhamento do programa
+    mudou)…" e refazia tudo: no meio do Detalhar o carimbo só tinha as gerações dos desenhos (sem o código), os
+    desenhos "detalhamento-*" já existiam, e a consulta da tela ao estado concluía "o programa mudou"."""
+
+    def test_sem_motivo_durante_e_depois(self):
+        import threading
+        app.gravar_eixos_projeto(self.s, {"eixos": {
+            "eixo_g": [1.0, 0.0], "perp_g": [0.0, 1.0], "z_base": 0.0,
+            "letras": [{"nome": "A", "pos": 0.0}, {"nome": "B", "pos": 5000.0}],
+            "numeros": [{"nome": "1", "pos": 0.0}, {"nome": "2", "pos": 6200.0}]}})
+        app.lancar_estrutura(self.s, {"parametros": {}})
+        vivos = app._vivos()
+        grupos = ["tesouras", "conjuntos", "tercas", "contraventamentos", "agulhamentos", "extras", "telhas",
+                  "chaparias", "localizacao", "chumbacao", "completo"]            # os do diálogo Detalhar
+        fim = threading.Event()
+        t = threading.Thread(target=lambda: (app.detalhar_projeto(self.s, {"grupos": grupos}), fim.set()), daemon=True)
+        t.start()
+        motivos = set()
+        while not fim.is_set() and t.is_alive():
+            motivos.add(vivos.por_que_velho(self.s))      # o que a tela ouviria ao perguntar o estado
+            time.sleep(0.01)
+        t.join(600)
+        motivos.add(vivos.por_que_velho(self.s))
+        self.assertTrue(fim.is_set())
+        self.assertEqual(motivos, {""})
+
+
 if __name__ == "__main__":
     unittest.main()
