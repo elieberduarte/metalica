@@ -209,6 +209,27 @@ def p15_zoom_da_roda(aba):
     ok(c1 != c0 and "x" in c1, f"o x/y do rodapé acompanha o zoom («{c0}» → «{c1}»)")
 
 
+def p18_uma_barra_de_ferramentas(aba):
+    """P18 (guarda): o engenheiro viu as mesmas ferramentas na faixa de cima e na coluna da esquerda da tela do projeto.
+    Não reproduziu em 16/10 (nem pelo modo ver → editor); o bloco segura as duas escolhas de Ver › Tela."""
+    print("P18 — uma barra de ferramentas só na tela do projeto")
+    s = projeto("Portaria ferramentas")
+    for modo in ("", "faixa", "colunas"):
+        aba.navegar(f"{base}/", limite=30)
+        aba.avaliar(f"(() => {{ try {{ {'localStorage.removeItem' if not modo else 'localStorage.setItem'}('metalica.ferramentas'{', ' + json.dumps(modo) if modo else ''}); }} catch (e) {{}} return 1; }})()")
+        aba.navegar(f"{base}/dividida?projeto={s}&vista=3d", limite=60)
+        esperar(aba, "(() => { try { return !!document.querySelector('#f3d').contentWindow.visorLeve; } catch (e) { return false; } })()")
+        aba.avaliar("document.querySelector('#f3d').contentWindow.visorLeve.editar(); 1")
+        esperar(aba, "(() => { try { const d = document.querySelector('#f3d').contentWindow.document; return d.location.pathname === '/editor' && d.body.dataset.pronto === '1'; } catch (e) { return false; } })()", 60)
+        aba.drenar(1.0)
+        vis = aba.avaliar("""(() => { const d = document.querySelector('#f3d').contentWindow.document, col = d.querySelector('#barra-ferramentas'),
+            fx = document.querySelector('#faixa-ferramentas');
+            const ve = (e) => !!e && getComputedStyle(e).display !== 'none' && !e.hidden && e.getBoundingClientRect().width > 0;
+            return [ve(col), ve(fx) && fx.children.length > 0]; })()""") or [None, None]
+        ok(vis.count(True) == 1, f"«{modo or 'sem escolha'}»: uma barra só (coluna, faixa) = {vis}")
+    aba.avaliar("(() => { try { localStorage.removeItem('metalica.ferramentas'); } catch (e) {} return 1; })()")
+
+
 def _item_da_barra(texto):
     return f"""(() => {{ let a = null; (function andar(l) {{ for (const it of (Array.isArray(l) ? l : [])) {{ if (a) return; if (it && it.texto === {json.dumps(texto)}) a = it; else if (it && (it.sub || it.itens)) andar(it.sub || it.itens); }} }})(window.barraUnica.mapa); return a; }})()"""
 
@@ -450,7 +471,8 @@ try:
     for bloco in [b for b in (p02_p13_recebido, p06_vao_pequeno, p11_p12_cad, p07_menu_antes_do_editor,
                                 p08_folhas_sem_pedir_o_arquivo, p19_resultado_do_recebido,
                                 p14_quadros_vazios, p26_padroes_da_planta, p21_peso_do_modelo_vazio,
-                                p22_nome_e_posicao, p23_lista_sob_medida, p15_zoom_da_roda) + BLOCOS_Q
+                                p22_nome_e_posicao, p23_lista_sob_medida, p15_zoom_da_roda,
+                                p18_uma_barra_de_ferramentas) + BLOCOS_Q
                   if not sys.argv[1:] or any(b.__name__.startswith(a) for a in sys.argv[1:])]:
         try:
             bloco(aba)
