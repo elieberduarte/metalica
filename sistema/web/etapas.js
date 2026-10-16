@@ -153,7 +153,15 @@
     else if (x.botao) x.botao.click();
     else if (x.grupo) destacarNo3D(x.grupo.ids);
     else if (x.peca) procurarPeca(x.peca);
+    else if (x.desenho) abrirDesenho(x.desenho);
     else if (x.acao === 'tema') trocarTema();
+  }
+  /** um desenho do projeto no 2D da área de trabalho (o seletor de desenho do topo) */
+  function abrirDesenho(nome) {
+    var sel = document.getElementById('desenho');
+    if (!sel) { location.href = '/dividida?projeto=' + encodeURIComponent(PROJETO) + '&vista=2d&desenho=' + encodeURIComponent(nome); return; }
+    if ((window.vistaAtual ? window.vistaAtual() : 'ambos') === '3d' && window.mostrarVista) window.mostrarVista('2d');
+    if (sel.value !== nome) { sel.value = nome; sel.dispatchEvent(new Event('change')); }
   }
   function trocarTema() {
     var b = document.getElementById('btn-tema-area') || document.getElementById('btn-tema');
@@ -305,6 +313,11 @@
     lista.push({ tipo: 'projeto', texto: 'Todos os projetos', cam: 'tela inicial', link: '/' });
     lista.push({ tipo: 'projeto', texto: 'Tema claro / escuro', cam: 'botão ☾/☀ do cabeçalho', acao: 'tema' });
     (DADOS ? DADOS.biblioteca : []).forEach(function (x) { lista.push(Object.assign({ tipo: 'biblioteca', cam: 'Biblioteca' }, x)); });
+    // os desenhos do projeto (P17, primeiro uso 16/10: Ctrl+K "projeto recebido" só achava comandos)
+    var selDes = document.getElementById('desenho');
+    if (selDes && !selDes.disabled) [].forEach.call(selDes.options, function (o) {
+      lista.push({ tipo: 'desenho', texto: o.textContent, cam: o.value === selDes.value ? 'aberto no 2D' : 'abrir no 2D', desenho: o.value });
+    });
     var mapa = (window.barraUnica && window.barraUnica.mapa) || [];
     function percorrer(itens, caminho) {
       (itens || []).forEach(function (it) {

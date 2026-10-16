@@ -45,6 +45,8 @@
         I('Modelo de exemplo', '3d', 'exemplo', { antes: 'Arquivo › Modelo de exemplo' }),
       ]),
       I('Abrir modelo de um arquivo…', '3d', 'abrir', { antes: 'Arquivo › Abrir modelo de um arquivo…' }),
+      // também aqui, onde quem vem do AutoCAD procura (P17, primeiro uso 16/10: só em Detalhamento, ~6 ações)
+      S('Trocar de desenho', [{ lista: 'desenhos' }, HR, I('Outro desenho do projeto…', '2d', 'abrir')], { dica: 'os desenhos 2D do projeto' }),
       HR,
       S('Importar', [
         I('IFC de outro programa…', '3d', 'importar-ifc', { antes: 'Arquivo › IFC de outro programa…' }),

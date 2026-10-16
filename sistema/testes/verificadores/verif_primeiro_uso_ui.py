@@ -230,6 +230,27 @@ def p18_uma_barra_de_ferramentas(aba):
     aba.avaliar("(() => { try { localStorage.removeItem('metalica.ferramentas'); } catch (e) {} return 1; })()")
 
 
+def p17_busca_acha_desenho(aba):
+    """P17: Ctrl+K "projeto recebido" só achava comandos, e o Trocar de desenho morava só em Detalhamento (~6 ações)."""
+    print("P17 — Ctrl+K acha os desenhos do projeto")
+    if not os.path.exists(PORTARIA):
+        ok(False, "sem o DXF da Portaria em Projeto/OBRAS/Portaria-Hermes"); return
+    s = _projeto_com_a_portaria("Portaria desenhos")
+    post(f"/api/projetos/{s}/desenhos/{urllib.parse.quote('Rascunho')}", {"desenho": {"nome": "Rascunho", "unidade": "mm", "escala": 1, "camadas": {}, "vistas": [], "metadados": {}, "entidades": []}})
+    aba.navegar(f"{base}/dividida?projeto={s}&vista=2d&desenho=Rascunho", limite=60)
+    esperar(aba, "window.etapasProjeto && document.querySelector('#desenho') && document.querySelector('#desenho').options.length >= 2", 30)
+    ok(bool(aba.avaliar(_item_da_barra("Trocar de desenho") + " && " + "window.barraUnica.mapa[0].itens.some(i => i && i.texto === 'Trocar de desenho')")), "Arquivo › Trocar de desenho existe")
+    aba.avaliar("window.etapasProjeto.abrirBusca(); 1")
+    esperar(aba, "document.querySelector('.be-fundo.on input') === document.activeElement", 10)
+    aba.cmd("Input.insertText", text="recebido")
+    esperar(aba, "[...document.querySelectorAll('.be-r .be-tipo')].some(t => t.textContent === 'desenho')", 10)
+    achados = aba.avaliar("[...document.querySelectorAll('.be-r')].map(r => r.textContent)") or []
+    ok(any(a.startswith("desenho") and "Projeto recebido" in a for a in achados), f"aparece o DESENHO Projeto recebido: {achados[:3]}")
+    aba.avaliar("[...document.querySelectorAll('.be-r')].find(r => r.querySelector('.be-tipo').textContent === 'desenho').click(); 1")
+    foi = esperar(aba, "(() => { const s = document.querySelector('#desenho'), o = s.selectedOptions[0]; return !!o && o.textContent.startsWith('Projeto recebido') && decodeURIComponent(document.querySelector('#f2d').src).includes('desenho=' + o.value); })()", 20)
+    ok(foi, f"o clique abre o desenho no 2D ({aba.avaliar('document.querySelector(\'#desenho\').value')})")
+
+
 def _item_da_barra(texto):
     return f"""(() => {{ let a = null; (function andar(l) {{ for (const it of (Array.isArray(l) ? l : [])) {{ if (a) return; if (it && it.texto === {json.dumps(texto)}) a = it; else if (it && (it.sub || it.itens)) andar(it.sub || it.itens); }} }})(window.barraUnica.mapa); return a; }})()"""
 
@@ -472,7 +493,7 @@ try:
                                 p08_folhas_sem_pedir_o_arquivo, p19_resultado_do_recebido,
                                 p14_quadros_vazios, p26_padroes_da_planta, p21_peso_do_modelo_vazio,
                                 p22_nome_e_posicao, p23_lista_sob_medida, p15_zoom_da_roda,
-                                p18_uma_barra_de_ferramentas) + BLOCOS_Q
+                                p18_uma_barra_de_ferramentas, p17_busca_acha_desenho) + BLOCOS_Q
                   if not sys.argv[1:] or any(b.__name__.startswith(a) for a in sys.argv[1:])]:
         try:
             bloco(aba)
