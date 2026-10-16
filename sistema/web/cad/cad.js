@@ -482,8 +482,12 @@ class CAD {
     if (this.nomeDesenho && lista.some(d => d.nome === this.nomeDesenho)) await this.salvar({ avisar: false });
     // as folhas, não os desenhos: o desenho das pranchas tem todas lado a lado (Q18, primeiro uso 16/10: "Gerando o PDF de
     // 1 prancha(s)…" para 13 folhas)
-    const folhas = lista.reduce((s, d) => s + (Number(d.pranchas) || 1), 0);
-    this.dica(`Gerando o PDF de ${folhas} folha(s)…`);
+    // a lista rápida dá 1 para o desenho de várias folhas (R20, 2ª rodada): o aberto conta pelas folhas dele
+    const folhasDe = (d) => (d.nome === this.nomeDesenho && Array.isArray((this.doc.metadados || {}).pranchas))
+      ? this.doc.metadados.pranchas.length : null;
+    const contadas = lista.map(folhasDe);
+    const folhas = contadas.every(n => n !== null) ? contadas.reduce((s, n) => s + n, 0) : null;
+    this.dica(folhas ? `Gerando o PDF de ${folhas} folha(s)…` : 'Gerando o PDF das pranchas…');
     try {
       const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(lista[0].nome)}/pdf`, { desenhos: lista.map(d => d.nome), titulo: 'pranchas' });
       const a = r.arquivo || {};

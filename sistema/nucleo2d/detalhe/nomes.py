@@ -419,6 +419,8 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
     def anterior(mapa, chaves, prefixo):
         for k in chaves:
             n = mapa.get(k)
+            if n and prefixo == "T" and re.match(r"MT\d+$", n):
+                n = n[1:]                     # a meia-tesoura guardada como MT3 continua com o número dela (N01)
             if n and _nome_numero(n, prefixo):
                 return n
         return ""
@@ -475,7 +477,12 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
     por_tipo = collections.defaultdict(list)
     for p in posicoes:
         if p.marca not in nomes_pos and p.marca not in fixos:
-            por_tipo[tipo[p.marca]].append(p)
+            t_ = tipo[p.marca]
+            # a cantoneira (barra) com papel de chapa: o nome CT.n — a legenda dizia "CH = Chapa" numa cantoneira (Q14);
+            # o tipo dela (suporte de terça…) não muda, só o prefixo do nome
+            if PREFIXO_NOME.get(t_) == "CH" and str(p.classe or "").startswith("barra"):
+                t_ = "cantoneira"
+            por_tipo[t_].append(p)
     pendentes_pos: list = []
     for t, lista in por_tipo.items():
         prefixo = PREFIXO_NOME.get(t) or "P."

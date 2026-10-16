@@ -427,7 +427,7 @@ def comparar_dobras(perfis: Sequence[dict]) -> dict:
 _RE_BOLT_IFC = re.compile(r"^\s*BOLT\s*\(([^)]*)\)\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+)\s*$", re.I)
 
 
-def acessorios_da_lista(acessorios: Dict[str, int]) -> List[dict]:
+def acessorios_da_lista(acessorios: Dict[str, int], metrico: bool = False) -> List[dict]:
     """Os acessórios da lista com o parafuso por extenso (Q08, primeiro uso 16/10: "BOLT (A) 12x30 264", sem classe,
     norma nem porca): "Parafuso sextavado Ø1/2" x 1.1/4" ASTM A307 + porca e arruela" — a mesma descrição e a mesma regra
     da classe do resumo de compras (saida/resumos.descricao_parafuso: a do modelo quando o nome a traz, senão A325 a
@@ -451,10 +451,11 @@ def acessorios_da_lista(acessorios: Dict[str, int]) -> List[dict]:
             continue
         classe = m.group(1).strip().upper().replace("ASTM", "").replace(" ", "")
         classe = classe if re.match(r"^(A\d{3}|\d+\.\d)$", classe) else None
-        _curto, desc, d = descricao_parafuso("M%s x %s" % (m.group(2).replace(",", "."), m.group(3)), classe)
-        # o do modelo (métrico) com a classe, e o equivalente da compra em polegada como o resumo de compras o pede
+        _curto, desc, d = descricao_parafuso("M%s x %s" % (m.group(2).replace(",", "."), m.group(3)), classe, metrico=metrico)
+        # o do modelo (métrico) com a classe, e o equivalente da compra em polegada como o resumo de compras o pede (na
+        # compra métrica, opção do projeto — N04 —, a descrição já é a do modelo)
         mc = re.search(r"Ø(\S+) x (\S+) ASTM (\S+)", desc)
-        if mc and d:
+        if mc and d and not metrico:
             desc = "Parafuso sextavado M%g x %s – ASTM %s (na compra: Ø%s x %s) + porca e arruela" % (
                 d, m.group(3), mc.group(3), mc.group(1), mc.group(2))
         somar(desc, n, nome)
@@ -470,7 +471,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
            pecas=None, barra: float = 0.0, projeto: Optional[dict] = None,
            nomes_conjuntos: Optional[Dict[str, str]] = None, escolhas: Optional[Dict[str, str]] = None,
            nomes_telhas: Optional[Dict[str, str]] = None, fixadores=None,
-           emendas: Optional[Sequence[str]] = None, cobertura: Optional[bool] = None) -> dict:
+           emendas: Optional[Sequence[str]] = None, cobertura: Optional[bool] = None, parafuso_metrico: bool = False) -> dict:
     """A lista inteira, pronta para gravar em JSON. `barra` em mm (0 = automático);
     `cobertura`: a obra tem cobertura (o detalhar diz, pelos nomes); sem ela, a treliça é viga caixote e não tesoura
     (None: pela lista — telha ou terça na obra);
@@ -728,7 +729,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         "conjuntos": conjuntos,
         "soldas": soldas,
         "soldas_obra": soldas_obra,
-        "acessorios": acessorios_da_lista(acessorios),
+        "acessorios": acessorios_da_lista(acessorios, metrico=parafuso_metrico),
         "ressalvas": ressalvas,
     }
 

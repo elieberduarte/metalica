@@ -2240,6 +2240,10 @@ PREFIXO_NOME = collections.OrderedDict([
     ("barra_roscada", "BR"), ("gancho", "G."), ("chumbador", "CB"), ("cantoneira_forro", "A.T."), ("perfil_fechamento", "F.T."),
     ("rufo", "RF"), ("calha", "CL"),
     ("barra", "B."), ("telha", "TL"), ("conjunto", "DP."), ("parte", ""),
+    # a cantoneira furada que tem papel de chapa (suporte, castanha): CT., não CH (decisão do usuário, 16/10 — Q14)
+    ("cantoneira", "CT."),
+    # a meia-tesoura (metade de uma tesoura montada): MT; a montada, nas pranchas, segue T (decisão do usuário, 16/10 — N01)
+    ("meia_tesoura", "MT"),
 ])
 TIPOS_NOME = {
     "tesoura": "Tesoura", "pilar": "Pilar", "viga": "Viga de pórtico", "terca_cobertura": "Terça de cobertura", "terca_lateral": "Terça lateral",
@@ -2252,6 +2256,8 @@ TIPOS_NOME = {
     "barra_roscada": "Barra roscada", "gancho": "Gancho", "chumbador": "Chumbador", "cantoneira_forro": "Acabamento de telha",
     "perfil_fechamento": "Fixação de telha", "parte": "Parte de conjunto",
     "rufo": "Rufo", "calha": "Calha",
+    "cantoneira": "Cantoneira (furada na fábrica)",
+    "meia_tesoura": "Meia-tesoura (metade da tesoura montada)",
 }
 #: Diâmetro (mm) abaixo do qual a barra redonda comprida é agulhamento diagonal (Ø3/8"
 #: com gancho), não contraventamento (Ø1/2" com esticador).

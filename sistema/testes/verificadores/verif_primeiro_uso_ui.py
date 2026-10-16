@@ -520,7 +520,7 @@ def q02_q03_dialogo_detalhar(aba):
     arq = os.path.join(_pasta_do_projeto(urllib.parse.unquote(s)), "projeto.json")
     with open(arq, encoding="utf-8") as f:
         pj = json.load(f)
-    pj["opcoes_detalhamento"] = {"regra_tercas": False, "rotular": True}
+    pj["opcoes_detalhamento"] = {"regra_tercas": False, "rotular": True, "parafuso_compra": "metrico"}
     with open(arq, "w", encoding="utf-8") as f:
         json.dump(pj, f)
     aba.navegar(f"{base}/editor?projeto={s}", limite=60)
@@ -534,6 +534,9 @@ def q02_q03_dialogo_detalhar(aba):
                  explica: /vai para o 3D sempre/.test(window.editor.el.dialogoCorpo.textContent) }; })()""") or {}
     ok(estado.get("regra") is False and estado.get("rotular") is True, f"Q03: o diálogo abre com as opções do projeto {estado}")
     ok(estado.get("antigo") is False and estado.get("explica"), "Q02: a caixa com o nome do que faz e o padrão de fábrica explicado")
+    # N04 (decisão do usuário 16/10): o parafuso da compra é opção do projeto
+    compra = aba.avaliar("(window.editor.el.dialogoCorpo.querySelector('select.parafuso-compra') || {}).value")
+    ok(compra == "metrico", f"N04: Parafusos na compra abre com a opção do projeto ({compra})")
     aba.avaliar("window.editor.el.dialogo.close('cancelar'); 1")
     aba.drenar(0.5)
     # o fim do Detalhar: o que mudou no 3D, e o Desfazer pede a versão de antes
@@ -591,8 +594,10 @@ def q18_avisos_e_contagem_do_pdf(aba):
     ("Gerando o PDF de 1 prancha(s)…" para 13 folhas)."""
     print("Q18 — o aviso velho sai e a dica do PDF conta as folhas")
     s = projeto("Sooro folhas", tipo="desenho")
+    # acima de 4 MB a lista de desenhos lê só as pontas do arquivo e dá "pranchas: 1" (R20 da 2ª rodada: "Gerando o PDF de
+    # 1 folha(s)" para 14 folhas) — o desenho daqui passa disso
     post(f"/api/projetos/{s}/desenhos/pranchas", {"desenho": {"nome": "pranchas", "entidades": [
-        {"tipo": "linha", "id": "l1", "camada": "0", "a": [0, 0], "b": [100, 100]}],
+        {"tipo": "linha", "id": "l%d" % k, "camada": "0", "a": [k % 900, k // 900], "b": [k % 900 + 5, k // 900]} for k in range(90000)],
         "metadados": {"pranchas": [{"numero": i, "celulas": []} for i in (1, 2, 3)]}}})
     texto = "T.O.6: furos a 60 mm na altura (máquina: 50)"
     det = os.path.join(_pasta_do_projeto(urllib.parse.unquote(s)), "detalhamento")
@@ -601,7 +606,7 @@ def q18_avisos_e_contagem_do_pdf(aba):
         json.dump({"desenhos": {}, "fora_da_maquina": [texto],
                    "fora_da_maquina_pecas": [{"nome": "T.O.6", "marca": "M92", "texto": texto, "ids": ["b1"]}]}, f)
     aba.navegar(f"{base}/cad?projeto={s}&desenho=pranchas", limite=60)
-    esperar(aba, "window.cad && document.body.dataset.pronto === '1'", 60)
+    esperar(aba, "window.cad && document.body.dataset.pronto === '1' && window.cad.doc.tamanho > 80000", 180)
     esperar(aba, "!!document.querySelector('.aviso[data-tipo=atencao] button.ver-no-3d')", 30)
     aba.avaliar("window.__dicas = []; const d0 = window.cad.dica.bind(window.cad); window.cad.dica = (t) => { window.__dicas.push(String(t)); return d0(t); }; window.cad.pdfDasPranchas(); 1")
     contou = esperar(aba, "window.__dicas.some(t => /Gerando o PDF de 3 folha/.test(t))", 20)

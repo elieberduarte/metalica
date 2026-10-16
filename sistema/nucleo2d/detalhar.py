@@ -287,7 +287,7 @@ UMA_POR_LINHA = {"terca_cobertura", "terca_marquise"}
 #: A barra com nome de chapa (as cantoneiras dos suportes, CH15, CH16): detalhada junto das chapas, mas no quadro dela
 #: e fora do arquivo de corte — a cantoneira é furada na fábrica, a chapa fora (pedido do usuário, 02/10: "separar as
 #: cantoneiras L das chapas PLATES ... pode confundir na hora de enviar o arquivo para a empresa cortar as chapas")
-_CH_BARRA = re.compile(r"CH\d")
+_CH_BARRA = re.compile(r"(CH|CT\.)\d")          # a cantoneira com papel de chapa: CT.n desde 16/10 (Q14)
 
 
 def _cantoneira_ch(p) -> bool:
@@ -924,6 +924,22 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                 montadas, meias_cobertas = tesouras_montadas(meias)
             except Exception as exc:                  # noqa: BLE001 — as meias saem como antes
                 avisos.append("tesouras montadas não levantadas: %s" % exc)
+        # as metades de tesoura montada: MT1, MT2… (decisão do usuário, 16/10 — N01: a "T4" da prancha, a montada, não era a
+        # "T4" do romaneio, a metade); a montada segue T nas pranchas
+        trocados = {}
+        for m in montadas:
+            for r in m["rotulos"]:
+                for mk in [r] + r.split(" / "):
+                    if re.match(r"T\d+$", str(nomes_conj.get(mk) or "")):
+                        trocados[nomes_conj[mk]] = "M" + nomes_conj[mk]
+                        nomes_conj[mk] = "M" + nomes_conj[mk]
+        if trocados:
+            for c in conjuntos_info:
+                c["nome"] = nomes_conj.get(c["marca"], "")
+            for mapa in (nomeacao.get("ifc_conjuntos") or {}, nomeacao.get("ifc") or {}):
+                for mk, n in list(mapa.items()):
+                    if n in trocados:
+                        mapa[mk] = trocados[n]
         itens_montadas = {}
         pos_por_marca = {p.marca: p for p in posicoes}
 

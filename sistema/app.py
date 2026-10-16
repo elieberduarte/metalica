@@ -1268,14 +1268,17 @@ def _com_as_ligadas(doc, fora: list) -> list:
 
 
 #: as opções do Detalhar guardadas no projeto (projeto.json "opcoes_detalhamento", Q03)
-OPCOES_DETALHAMENTO = ("regra_tercas", "rotular", "converter")
+OPCOES_DETALHAMENTO = ("regra_tercas", "rotular", "converter", "parafuso_compra")
 
 
 def _marcar_origem(s: str, doc) -> None:
     """De onde veio o projeto, para a lista de materiais (N07, decisão do usuário 16/10): o que veio pronto do projetista
     (IFC, ou o projeto recebido em DXF/PDF) segue as porcas e arruelas dele no chumbador; o nosso, 2 porcas + 1 arruela
     por perna (nucleo2d.detalhar.projeto_recebido)."""
-    doc.metadados["origem_projeto"] = "recebido" if _gerente().ler(s).get("tipo") in ("ifc", "recebido") else "nosso"
+    p = _gerente().ler(s)
+    doc.metadados["origem_projeto"] = "recebido" if p.get("tipo") in ("ifc", "recebido") else "nosso"
+    # o parafuso da compra: polegada (ASTM) ou o métrico do modelo — opção do projeto (N04, decisão do usuário 16/10)
+    doc.metadados["parafuso_compra"] = (p.get("opcoes_detalhamento") or {}).get("parafuso_compra") or "polegada"
 
 
 def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, lista_producao) -> dict:
@@ -1293,7 +1296,8 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     if automatico:
         corpo = dict(g.ler(s).get("opcoes_detalhamento") or {}, **corpo)
     else:
-        opcoes = {k: bool(corpo[k]) for k in OPCOES_DETALHAMENTO if k in corpo}
+        opcoes = {k: (("metrico" if corpo[k] == "metrico" else "polegada") if k == "parafuso_compra" else bool(corpo[k]))
+                  for k in OPCOES_DETALHAMENTO if k in corpo}
         if opcoes:
             g.tocar(s, opcoes_detalhamento=dict(g.ler(s).get("opcoes_detalhamento") or {}, **opcoes))
     gravar = not automatico or not _vivos().editor_aberto(s)
@@ -1416,6 +1420,7 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
         categorias = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
         lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
                                       barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
+                                      parafuso_metrico=doc.metadados.get("parafuso_compra") == "metrico",
                                       nomes_conjuntos=(r.get("nomes") or {}).get("ifc_conjuntos"), escolhas=_perfis_compra(s), emendas=_perfis_emenda(s),
                                       cobertura=(r.get("nomes") or {}).get("cobertura"),
                                       nomes_telhas=(r.get("nomes") or {}).get("telhas"),
@@ -2891,7 +2896,8 @@ def gerar_resumos_projeto(s: str, corpo: dict, porta: Optional[int] = None) -> d
         lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
                                       projeto=_identificacao_do_projeto(s), nomes_conjuntos=nomes.get("ifc_conjuntos"),
                                       escolhas=_perfis_compra(s), emendas=_perfis_emenda(s), cobertura=nomes.get("cobertura"),
-                                      nomes_telhas=nomes.get("telhas"), fixadores=r.get("objetos_fixadores"))
+                                      nomes_telhas=nomes.get("telhas"), fixadores=r.get("objetos_fixadores"),
+                                      parafuso_metrico=doc.metadados.get("parafuso_compra") == "metrico")
         # o aço fora das peças (gradil, piso de chapa perfurada) entra na compra do resumo de materiais (06/10)
         lista["pre_moldados"] = r.get("fora_do_aco") or []
         lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"], "avisos": r["avisos"]}
@@ -3034,7 +3040,8 @@ def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] =
         lista = lista_producao.montar(lev["posicoes"], lev["categorias"], lev["acessorios"], pecas=lev["pecas"],
                                       barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
                                       nomes_conjuntos=nomes.get("ifc_conjuntos"), escolhas=_perfis_compra(s), emendas=_perfis_emenda(s),
-                                      cobertura=nomes.get("cobertura"))
+                                      cobertura=nomes.get("cobertura"),
+                                      parafuso_metrico=doc.metadados.get("parafuso_compra") == "metrico")
         lista["pre_moldados"] = lev.get("fora_do_aco") or []
         lista["estrutura_a_conferir"] = lev.get("estrutura_a_conferir") or []
         lista_producao.gravar(pasta, lista, lev["posicoes"], lev["acessorios"])
@@ -4822,7 +4829,9 @@ def _conferir_fabrica(s: str, doc) -> list:
     from nucleo3d.geometria import malha
     alvo = _copy.deepcopy(doc)
     try:
-        _padronizar_3d(s, alvo, regra=True, converter=False)
+        # como o Detalhar: as chapas planas viram paramétricas antes (sem isso o suporte de terça não ia ao passo e o
+        # Conferir acusava 21 terças da Sooro que o Detalhar acerta — R12 da 2ª rodada do teste de primeiro uso, 16/10)
+        _padronizar_3d(s, alvo, regra=True, converter=True)
     finally:
         _fim_progresso(s)
     lev = det.levantar(alvo, regra_tercas=False, ajustes=_ajustes_furos(s), nomes=_nomes_producao(s))

@@ -67,7 +67,7 @@ def _de_corte(c: dict) -> bool:
     it = c.get("item") or {}
     if c.get("montagem") and not it:
         return not _eh_chumbamento(c["montagem"])
-    return it.get("categoria") == "CHAPAS" or bool(re.match(r"CH\d", str(it.get("nome") or "")))
+    return it.get("categoria") == "CHAPAS" or bool(re.match(r"(CH|CT\.)\d", str(it.get("nome") or "")))
 
 
 def escala_normalizada(minima: float) -> float:
@@ -477,7 +477,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         # as peças com nome de chapa (CH15, CH16: cantoneiras de suporte) num quadro delas, logo depois das chapas: a
         # cantoneira é furada na fábrica e a chapa fora — juntas confundiam o envio para o corte (pedido do usuário,
         # 02/10; antes, 28/09, iam no quadro das chapas)
-        if c["categoria"] == "BARRAS" and re.match(r"CH\d", str((c.get("item") or {}).get("nome") or "")):
+        if c["categoria"] == "BARRAS" and re.match(r"(CH|CT\.)\d", str((c.get("item") or {}).get("nome") or "")):
             c["categoria"] = "CANTONEIRAS"
         # a barra roscada e o gancho (as peças de ponta dos contraventos e das agulhas) vão com eles (28/09)
         if (c.get("item") or {}).get("tipo") in ("barra_roscada", "gancho"):

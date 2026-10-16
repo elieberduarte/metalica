@@ -215,7 +215,11 @@ def _chapas_por_rotulo(chapas) -> List[dict]:
     return sorted(juntas.values(), key=lambda j: (j["t"], j["material"]))
 
 
-def descricao_parafuso(nome: str, classe: Optional[str] = None) -> Tuple[str, str, Optional[float]]:
+#: A classe métrica equivalente na compra métrica (N04, 16/10): o A307 é o 4.6, o A325 o 8.8.
+CLASSE_METRICA = {"A307": "4.6", "A325": "8.8", "A490": "10.9"}
+
+
+def descricao_parafuso(nome: str, classe: Optional[str] = None, metrico: bool = False) -> Tuple[str, str, Optional[float]]:
     """"M12 x 35" → ("Parafuso M12x35", 'Parafuso sextavado Ø1/2" x 1.1/2" ASTM A307 + porca e arruela', 12)."""
     m = re.match(r"M(\d+(?:[.,]\d+)?)\s*x\s*(\d+)", nome or "", re.I)
     if not m:
@@ -225,6 +229,10 @@ def descricao_parafuso(nome: str, classe: Optional[str] = None) -> Tuple[str, st
     pol = _pol_mais_perto(d) or "M%g" % d
     lpol = _COMPRIMENTO_POL.get(L) or _COMPRIMENTO_POL.get(min(_COMPRIMENTO_POL, key=lambda k: abs(k - L)))
     classe = classe or ("A325" if (d >= 16 and L >= 50) else "A307")     # a do modelo ("BOLT (A325) …") quando há
+    if metrico:
+        # a compra no métrico do modelo (opção do projeto, N04): M12 x 35 classe 4.6, sem a conversão para polegada
+        return ("Parafuso M%gx%d" % (d, L), "Parafuso sextavado M%g x %d classe %s + porca e arruela"
+                % (d, L, CLASSE_METRICA.get(classe.upper().replace(" ", ""), classe)), d)
     return ("Parafuso M%gx%d" % (d, L), "Parafuso sextavado Ø%s x %s ASTM %s + porca e arruela" % (pol, lpol, classe), d)
 
 
@@ -681,7 +689,8 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
     fixadores = _so_parafusos(_fixadores(doc))
     from nucleo2d.detalhar import projeto_recebido
     parafusos = _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_conj, conj_info,
-                                     recebido=projeto_recebido(doc))
+                                     recebido=projeto_recebido(doc),
+                                     metrico=(getattr(doc, "metadados", None) or {}).get("parafuso_compra") == "metrico")
     n_parafusos = sum(p["qtd"] for p in parafusos if p["parafuso"])
 
     # ---- telhas: por trecho (cobertura, fechamento, forro) e código
@@ -743,7 +752,8 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
     }
 
 
-def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_conj, conj_info, recebido: bool = False) -> List[dict]:
+def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_conj, conj_info, recebido: bool = False,
+                         metrico: bool = False) -> List[dict]:
     """Cada tamanho de parafuso (e porca/arruela) com a quantidade e os locais de uso — o
     par de famílias das peças que ele atravessa (a peça é a que tem o furo em volta do eixo
     do fixador) e as peças envolvidas."""
@@ -876,7 +886,7 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
             nome, desc = descricao_chumbador(r["d"], chave.rsplit(" ", 1)[-1])
         elif r["parafuso"]:
             mc = re.search(r"\((A\d{3}[^)]*)\)", chave)
-            nome, desc, _d = descricao_parafuso(chave.split(" (")[0].replace(" ", ""), mc.group(1) if mc else None)
+            nome, desc, _d = descricao_parafuso(chave.split(" (")[0].replace(" ", ""), mc.group(1) if mc else None, metrico=metrico)
         else:
             nome = chave
             desc = ("Arruela lisa Ø%s" if chave.startswith("Arruela") else "Porca sextavada Ø%s UNC") % chave.split(" ", 1)[1]

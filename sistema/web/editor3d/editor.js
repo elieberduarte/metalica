@@ -1864,6 +1864,10 @@ export class Editor {
     const rotular = el('input', { type: 'checkbox' });
     const converter = el('input', { type: 'checkbox', checked: 'checked' });
     const substituir = el('input', { type: 'checkbox', checked: 'checked' });
+    // o parafuso da compra: polegada (ASTM, como sempre) ou o métrico do modelo — decisão por projeto (N04, 16/10)
+    const parafusoCompra = el('select', { class: 'parafuso-compra' },
+      el('option', { value: 'polegada', texto: 'em polegada (ASTM A307/A325: M12 → Ø1/2")' }),
+      el('option', { value: 'metrico', texto: 'métricos, como no modelo (M12, classe 4.6/8.8)' }));
     // as opções são do projeto: o diálogo abre com as do último Detalhar, e a atualização automática usa as mesmas (Q03)
     try {
       const pj = await (await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}`)).json();
@@ -1871,13 +1875,15 @@ export class Editor {
       if (typeof op.regra_tercas === 'boolean') regra.checked = op.regra_tercas;
       if (typeof op.rotular === 'boolean') rotular.checked = op.rotular;
       if (typeof op.converter === 'boolean') converter.checked = op.converter;
+      if (op.parafuso_compra === 'metrico' || op.parafuso_compra === 'polegada') parafusoCompra.value = op.parafuso_compra;
     } catch { /* sem o projeto, os padrões */ }
     // o nome diz o que a caixa faz: o resto do padrão de fábrica vale sempre (Q02, primeiro uso 16/10 — "desliguei a
     // regra e mexeu na furação mesmo assim"; decisão do usuário: o padrão da máquina vence o projeto)
     grade.append(el('label', { texto: 'Chapas de ligação das terças no passo da máquina', title: 'Leva também as chapas de ligação das terças (as que não são suporte) à furação da máquina: par a 50 mm na altura até 200 mm, 100 acima. O resto do padrão de fábrica vale sempre.' }), regra,
                  el('label', { texto: 'Rotular posições nos conjuntos', title: 'Escreve o nome de cada barra ao lado dela na elevação da tesoura. Desligado por padrão: a fábrica gabarita a tesoura e mede peça a peça.' }), rotular,
                  el('label', { texto: 'Chapas planas viram chapas paramétricas no 3D', title: 'Furos e tamanho da chapa ficam editáveis no desenho. Desligado, a chapa continua o sólido que veio do IFC.' }), converter,
-                 el('label', { texto: 'Substituir os desenhos de detalhamento anteriores' }), substituir);
+                 el('label', { texto: 'Substituir os desenhos de detalhamento anteriores' }), substituir,
+                 el('label', { texto: 'Parafusos na compra', title: 'Como a lista de materiais e o resumo de compras pedem os parafusos. Fica gravado no projeto.' }), parafusoCompra);
     const corpo = el('div', {},
       el('p', { class: 'explica', texto: 'Cada posição (marca de peça do IFC) vira uma célula com título "P12 – 112x", perfil ou chapa, contorno, furos e cotas; as peças iguais são contadas, não repetidas. Cada conjunto (marca de montagem) vira uma elevação com a cadeia de cotas dos nós e a lista de perfis. Sai também o romaneio em detalhamento/romaneio.csv.' }),
       el('p', { class: 'explica padrao-fabrica', texto: 'O padrão de fábrica vai para o 3D sempre (a máquina manda sobre o projeto): furo de terça sem parafuso nem barra sai, os furos das terças e das chapas parafusadas nelas viram oblongos 25×13, e o suporte de terça fica com o par no passo da máquina (50 mm até 200 de altura, 100 acima). No fim aparece o que mudou no 3D, com Desfazer.' }),
@@ -1892,7 +1898,7 @@ export class Editor {
       await this._gravarAntesDeGerar();
       const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/detalhar`, {
         method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
-        body: JSON.stringify({ grupos: escolhidos, regra_tercas: regra.checked, rotular: rotular.checked, substituir: substituir.checked, converter: converter.checked }),
+        body: JSON.stringify({ grupos: escolhidos, regra_tercas: regra.checked, rotular: rotular.checked, substituir: substituir.checked, converter: converter.checked, parafuso_compra: parafusoCompra.value }),
       });
       const j = await r.json();
       if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);

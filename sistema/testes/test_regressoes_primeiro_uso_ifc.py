@@ -327,7 +327,7 @@ class TestCotasQueAFabricaPrecisa(_SooroDetalhada):
 
     def test_q06_furo_da_cantoneira_ate_a_aba(self):
         verticais = [abs(e["p2"][1] - e["p1"][1]) for e in self._todos()
-                     if e.get("tipo") == "cota" and e.get("modo") == "v" and (e.get("atributos") or {}).get("nome") == "CH14"]
+                     if e.get("tipo") == "cota" and e.get("modo") == "v" and (e.get("atributos") or {}).get("nome") in ("CH14", "CT.2")]      # CT.2 desde a decisão do Q14
         self.assertGreaterEqual(sum(1 for v in verticais if abs(v - 32.0) < 1.0), 2, verticais)
 
     def test_q07_prever_emenda_na_celula_tipica(self):
@@ -560,6 +560,79 @@ class TestAjudaComORoteiroDoIfc(unittest.TestCase):
                   "Detalhamento › Pranchas › Montar pranchas (automático)", "Arquivo › Exportar › PDF de todas as pranchas",
                   "DXF de corte (1:1)"):
             self.assertIn(c, re.sub(r"<[^>]+>", "", bloco))
+
+
+class TestNomesDecididosPeloUsuario(_SooroDetalhada):
+    """Decisões do usuário de 16/10 sobre os nomes: Q14 — a cantoneira furada (CH13/CH14/CH15 da Sooro, "CH = Chapa" na
+    legenda) vira CT.n; N01 — as meias-tesouras (T1–T6 no romaneio) viram MT1, MT2…, e a montada das pranchas segue T
+    (a "T4" da prancha não era a "T4" do romaneio)."""
+
+    def _nomes(self):
+        with open(os.path.join(self.pasta, SLUG, "detalhamento", "nomes.json"), encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_cantoneira_ct(self):
+        import csv
+        n = self._nomes()
+        self.assertEqual(sorted(v for v in n["posicoes"].values() if v.startswith("CT.")), ["CT.1", "CT.2", "CT.3"])
+        with open(os.path.join(self.pasta, SLUG, "detalhamento", "romaneio.csv"), encoding="utf-8-sig") as f:
+            linhas = list(csv.reader(f, delimiter=";"))
+        self.assertFalse([r[0] for r in linhas if len(r) > 3 and r[3] == "Barra" and r[0].startswith("CH")])
+        from nucleo2d.pranchas import siglas_usadas
+        self.assertIn(("CT.", "Cantoneira (furada na fábrica)"), siglas_usadas(["CT.1"]))
+
+    def test_meias_mt_e_montadas_t(self):
+        n = self._nomes()
+        meias = {k: v for k, v in n["conjuntos"].items() if v.startswith(("T", "MT")) and not v.startswith("T.")}
+        self.assertTrue(meias and all(v.startswith("MT") for v in meias.values()), meias)
+        self.assertTrue(all(v.startswith("T") for v in (n.get("montadas") or {}).values()), n.get("montadas"))
+        from saida import consistencia
+        self.assertEqual([a["texto"] for a in consistencia.conferir(os.path.join(self.pasta, SLUG)) if a["conferencia"] == "nomes"], [])
+
+
+class TestParafusoDaCompraPorProjeto(unittest.TestCase):
+    """N04 (decisão do usuário 16/10: por projeto) — o modelo tem M12 e a compra pedia Ø1/2" ASTM; agora o projeto escolhe
+    polegada (como sempre) ou o métrico do modelo."""
+
+    def test_descricao_metrica(self):
+        from saida.resumos import descricao_parafuso
+        self.assertIn("ASTM A307", descricao_parafuso("M12 x 30")[1])
+        self.assertEqual(descricao_parafuso("M12 x 30", metrico=True)[1], "Parafuso sextavado M12 x 30 classe 4.6 + porca e arruela")
+        self.assertEqual(descricao_parafuso("M16 x 50", metrico=True)[1], "Parafuso sextavado M16 x 50 classe 8.8 + porca e arruela")
+
+    def test_lista_metrica(self):
+        from saida.lista_producao import acessorios_da_lista
+        ac = {a["nome"]: a["quantidade"] for a in acessorios_da_lista({"BOLT (A) 12x30": 10}, metrico=True)}
+        self.assertEqual(ac.get("Parafuso sextavado M12 x 30 classe 4.6 + porca e arruela"), 10)
+        self.assertFalse([k for k in ac if "Ø1/2" in k])
+
+    @unittest.skipUnless(_TEM_SOORO, "sem a ME-Sooro do teste de primeiro uso")
+    def test_opcao_gravada_e_usada(self):
+        from projetos import Projetos
+        pasta = _SOORO["pasta"]
+        s = "me-sooro-metrico"
+        shutil.copytree(os.path.join(pasta, SLUG), os.path.join(pasta, s))
+        app.detalhar_projeto(s, {"parafuso_compra": "metrico", "grupos": ["tercas"]})
+        p = Projetos(pasta).ler(s)
+        self.assertEqual((p.get("opcoes_detalhamento") or {}).get("parafuso_compra"), "metrico")
+        lista = app.lista_de_materiais(s, recalcular=True)
+        nomes = [a["nome"] for a in lista["acessorios"]]
+        self.assertTrue(any(x.startswith("Parafuso sextavado M12 x 35 classe 4.6") for x in nomes), nomes[:6])
+
+
+class TestConferirAntesDoPrimeiroDetalhar(_SooroDetalhada):
+    """R12 da 2ª rodada (resto do Q17): no modelo recém-importado o Conferir dizia "21 terça(s) fora do passo da máquina:
+    as pranchas não são emitidas até resolver", mas o Detalhar acertava todas — o Conferir padronizava a cópia sem
+    converter as chapas planas em paramétricas, e o suporte de terça não ia ao passo."""
+
+    def test_sem_falso_fora_da_maquina(self):
+        novo = SLUG + "-conferir"
+        os.makedirs(os.path.join(self.pasta, novo))
+        shutil.copy(os.path.join(SOORO, "projeto.json"), os.path.join(self.pasta, novo, "projeto.json"))
+        with gzip.open(os.path.join(SOORO, "modelo-importado.json.gz"), "rt", encoding="utf-8") as f:
+            m = json.load(f)
+        r = app.conferir_modelo({"documento": m, "projeto": novo, "quais": ["producao"]})
+        self.assertEqual([a["texto"] for a in r["achados"] if a["regra"] == "maquina"], [])
 
 
 DEPOSITO = os.path.join(RAIZ, "Projeto", "bateria", "entradas", "me-sooro-depósito-químico")
