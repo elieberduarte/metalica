@@ -222,6 +222,40 @@ def p19_resultado_do_recebido(aba):
     aba.avaliar("document.querySelector('#dialogo').close(); 1")
 
 
+def _dxf_simples():
+    import io
+    import ezdxf
+    d = ezdxf.new("R2010")
+    for a, b in (((0, 0), (12000, 0)), ((12000, 0), (12000, 8000)), ((12000, 8000), (0, 8000)), ((0, 8000), (0, 0))):
+        d.modelspace().add_line(a, b)
+    buf = io.StringIO(); d.write(buf)
+    return buf.getvalue()
+
+
+def p14_quadros_vazios(aba):
+    """P14: a aba Montagem só dizia "ponha em cada quadro a parte do projeto que ele pede" no rodapé; o "Enviar para
+    quadro" só aparece na Original e nada ligava uma à outra."""
+    print("P14 — quadros vazios da Montagem")
+    import base64
+    s = projeto("Portaria montagem")
+    post(f"/api/projetos/{s}/arquitetonico", {"arquivo": "planta.dxf", "conteudo_b64": base64.b64encode(_dxf_simples().encode()).decode()})
+    aba.navegar(f"{base}/cad?projeto={s}", limite=60)
+    esperar(aba, "window.cad && document.body.dataset.pronto === '1' && document.querySelector('[data-aba=montagem]') && !document.querySelector('[data-aba=montagem]').hidden", 30)
+    clicar(aba, "[data-aba=montagem]")
+    esperar(aba, "window.cad.nomeDesenho === 'montagem' && document.querySelectorAll('.quadro-titulo').length > 5", 30)
+    aba.drenar(1.0)
+    vazios = aba.avaliar("[...document.querySelectorAll('.quadro-vazio')].map(v => [v.textContent, v.hidden])") or []
+    ok(len(vazios) >= 8 and all("Vazio" in t and "Enviar para quadro" in t and "Ir ao Original" in t for t, _ in vazios),
+       f"cada quadro vazio diz o que pôr e tem Ir ao Original ({len(vazios)}: {vazios[:1]})")
+    ok(any(not h for _, h in vazios), "algum aparece na tela inteira")
+    aba.avaliar("[...document.querySelectorAll('.quadro-vazio')].find(v => !v.hidden).querySelector('button').setAttribute('data-teste', '1'); 1")
+    clicar(aba, "[data-teste='1']")
+    ok(esperar(aba, "window.cad.nomeDesenho && window.cad.nomeDesenho !== 'montagem'", 20), f"Ir ao Original abre a Original ({aba.avaliar('window.cad.nomeDesenho')})")
+    esperar(aba, "document.body.textContent.includes('Para o quadro')", 10)
+    ok(aba.avaliar("document.body.textContent.includes('Para o quadro') && document.querySelector('#btn-enviar-quadro').classList.contains('chama') && !document.querySelector('#btn-enviar-quadro').hidden"),
+       "na Original, o rodapé diz o que mandar e o Enviar para quadro chama a atenção")
+
+
 chrome = next(c for c in CHROMES if os.path.exists(c)); cdp = _porta_livre(); perfil = tempfile.mkdtemp(prefix="verif_primeiro_uso_")
 nav = subprocess.Popen([chrome, "--headless=new", "--disable-gpu", "--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars",
                         "--no-first-run", "--remote-allow-origins=*", f"--user-data-dir={perfil}", f"--remote-debugging-port={cdp}", "about:blank"],
@@ -236,7 +270,8 @@ try:
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1600, height=1000, deviceScaleFactor=1, mobile=False)
     # python verif_primeiro_uso_ui.py p07 → só os blocos cujo nome começa assim
     for bloco in [b for b in (p02_p13_recebido, p06_vao_pequeno, p11_p12_cad, p07_menu_antes_do_editor,
-                                p08_folhas_sem_pedir_o_arquivo, p19_resultado_do_recebido)
+                                p08_folhas_sem_pedir_o_arquivo, p19_resultado_do_recebido,
+                                p14_quadros_vazios)
                   if not sys.argv[1:] or any(b.__name__.startswith(a) for a in sys.argv[1:])]:
         try:
             bloco(aba)

@@ -34,6 +34,23 @@ body.arrastando-quadro, body.arrastando-quadro * { cursor: nwse-resize !importan
   font-family: var(--mono); font-size: 10.5px; color: var(--texto3); pointer-events: none;
 }
 
+/* o quadro vazio diz o que pôr nele (P14, primeiro uso 16/10) */
+.quadro-vazio {
+  position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  padding: 0 14px; box-sizing: border-box; overflow: hidden; text-align: center; font-size: 12px; color: var(--texto2);
+  pointer-events: none;
+}
+.quadro-vazio .qv-curto, .quadro-vazio .qv-medio, .quadro-vazio .qv-longo { display: none; }
+.quadro-vazio[data-cabe="curto"] .qv-curto, .quadro-vazio[data-cabe="medio"] .qv-medio,
+.quadro-vazio[data-cabe="tudo"] .qv-medio, .quadro-vazio[data-cabe="tudo"] .qv-longo { display: block; }
+/* o "Enviar para quadro" chama a atenção depois do "Ir ao Original" de um quadro vazio */
+.abas-projeto button.enviar-quadro.chama { animation: chama-enviar 0.8s ease-in-out 0s 6 alternate; }
+@keyframes chama-enviar { to { box-shadow: 0 0 0 4px color-mix(in srgb, #2563eb 45%, transparent); } }
+.quadro-vazio button {
+  pointer-events: auto; margin-top: 4px; padding: 3px 10px; border: 1px solid var(--destaque, #2563eb); border-radius: var(--raio-p, 4px);
+  background: var(--destaque, #2563eb); color: #fff; font: inherit; font-size: 12px; cursor: pointer;
+}
+
 .quadro-mais {
   position: absolute; pointer-events: auto; display: flex; align-items: center; justify-content: center;
   border: 0; background: transparent; color: var(--texto3); font: inherit; font-size: 13px; cursor: pointer;

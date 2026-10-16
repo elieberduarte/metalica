@@ -377,7 +377,7 @@ class Montagem {
     const nomes = new Set(lista.map(d => d.nome));
     if (aba === 'original') {
       const nome = (this.m && this.m.original) || this.original || DESENHO_LANCAMENTO;
-      if (!nomes.has(nome)) { this.cad.aviso('Este projeto ainda não tem a planta do cliente. Comece por "Novo a partir do arquitetônico" na tela inicial.', 'atencao'); return; }
+      if (!nomes.has(nome)) { this.cad.aviso('Este projeto ainda não tem a planta do cliente: importe-a em Lançamento → Arquitetônico do cliente (DXF/PDF)….', 'atencao'); return; }
       await this.cad.abrirDesenho(nome);
     } else if (aba === 'detalhamento') {
       if (!nomes.has(DESENHO_COMPLETO)) { this.cad.aviso('O projeto ainda não foi detalhado (Produção › Detalhar peças e conjuntos).', 'info'); return; }
@@ -455,7 +455,7 @@ class Montagem {
     };
     selQ.addEventListener('change', sincronizar);
     // o primeiro quadro ainda vazio é a sugestão
-    const vazio = m.quadros.find(q => !q.fonte && q.tipo !== 'implantacao');
+    const vazio = m.quadros.find(q => q.id === this.quadroPedido) || m.quadros.find(q => !q.fonte && q.tipo !== 'implantacao');
     if (vazio) selQ.value = vazio.id;
     sincronizar();
     const corpo = el('div', { class: 'enviar-quadro-dialogo' },
@@ -565,6 +565,9 @@ class Montagem {
   _controles(ret) {
     const m = this.m;
     const vivos = new Set();
+    // os quadros com desenho mandado da Original (o que o programa desenha sozinho não conta)
+    const cheios = new Set();
+    for (const e of this.cad.doc.entidades.values()) { const a = e.atributos || {}; if (a.quadro && !a.gerado) cheios.add(a.quadro); }
     for (const q of m.quadros) {
       const t = TIPOS[q.tipo] || TIPOS.tesoura;
       const [x, y, w, h] = ret(q);
@@ -605,16 +608,52 @@ class Montagem {
       tam.hidden = w < 120 || h < 50;
       if (q.tipo === 'ligacoes') this._escolhas(q, x, y, w, h);
       if (q.tipo === 'implantacao') this._caixaNiveis(q, x, y, w, h);
+      this._seVazio(q, !cheios.has(q.id) && !q.fonte && !(q.envios || []).length, t, x, y, w, h);
       vivos.add(q.id);
     }
-    for (const n of [...this.camada.querySelectorAll('[data-quadro],[data-alca],[data-tamanho],[data-escolhas],[data-niveis]')]) {
-      const id = n.dataset.quadro || n.dataset.alca || n.dataset.tamanho || n.dataset.escolhas || n.dataset.niveis;
+    for (const n of [...this.camada.querySelectorAll('[data-quadro],[data-alca],[data-tamanho],[data-escolhas],[data-niveis],[data-vazio]')]) {
+      const id = n.dataset.quadro || n.dataset.alca || n.dataset.tamanho || n.dataset.escolhas || n.dataset.niveis || n.dataset.vazio;
       if (!vivos.has(id)) n.remove();
     }
     let mais = this.camada.querySelector('.quadro-mais');
     if (!mais) mais = this.camada.appendChild(el('button', { type: 'button', class: 'quadro-mais', title: 'Mais um quadro de tesoura: um para cada tipo de tesoura do projeto', onclick: () => this.maisTesoura() }, '+ corte tesoura'));
     const [x, y, w, h] = ret(m.vaga);
     Object.assign(mais.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
+  }
+
+  /** O quadro vazio diz o que pôr nele e como (P14, primeiro uso 16/10: a aba só dizia "ponha em cada quadro a parte do
+   *  projeto que ele pede", e o "Enviar para quadro" só aparece na Original, sem nada ligando uma à outra). A implantação
+   *  e as elevações são desenhadas pelo programa; os detalhes de ligação têm a escolha do banco no lugar. */
+  _seVazio(q, vazio, t, x, y, w, h) {
+    let v = this.camada.querySelector(`[data-vazio="${q.id}"]`);
+    const doPrograma = q.tipo === 'implantacao' || q.tipo === 'elevacao' || q.tipo === 'ligacoes';
+    if (!vazio || doPrograma) { if (v) v.remove(); return; }
+    if (!v) {
+      const como = 'Selecione-o na Original e clique "Enviar para quadro".';
+      v = this.camada.appendChild(el('div', { class: 'quadro-vazio', 'data-vazio': q.id, title: `Vazio — ${t.diz}. ${como}` },
+        el('div', { class: 'qv-curto', texto: 'Vazio' }),
+        el('div', { class: 'qv-medio', texto: `Vazio — ${t.diz}.` }),
+        el('div', { class: 'qv-longo', texto: como }),
+        el('button', { type: 'button', onclick: () => this._irAoOriginalPara(q) }, 'Ir ao Original')));
+    }
+    // entre o título (em cima) e o tamanho (embaixo): o texto que cabe — "Vazio", o que vai no quadro, e como pôr
+    // (o texto inteiro fica na dica); no quadro pequeno, nada
+    const alto = h - 30 - 18;
+    Object.assign(v.style, { left: x + 'px', top: (y + 30) + 'px', width: w + 'px', height: Math.max(0, alto) + 'px' });
+    v.dataset.cabe = w >= 230 && alto >= 115 ? 'tudo' : w >= 150 && alto >= 70 ? 'medio' : 'curto';
+    v.hidden = w < 110 || alto < 50;
+  }
+
+  /** "Ir ao Original" de um quadro vazio: abre a Original, diz no rodapé o que mandar para ele e o "Enviar para quadro"
+   *  chama a atenção; o diálogo de envio já vem com este quadro escolhido. */
+  async _irAoOriginalPara(q) {
+    const t = TIPOS[q.tipo] || TIPOS.tesoura;
+    this.quadroPedido = q.id;
+    await this.ir('original');
+    if (this.cad.nomeDesenho === DESENHO_MONTAGEM) return;          // a Original não abriu (o aviso já disse por quê)
+    this.cad.dica(`Para o quadro ${t.rotulo}${q.nome && q.nome !== t.rotulo ? ' ' + q.nome : ''}: selecione ${t.diz} e clique "Enviar para quadro" (ou clique nele e marque a área com dois cantos).`);
+    this.botaoEnviar.classList.add('chama');
+    setTimeout(() => this.botaoEnviar.classList.remove('chama'), 6000);
   }
 
   // ------------------------------------------------------------------ banco de detalhes (etapa 5)
