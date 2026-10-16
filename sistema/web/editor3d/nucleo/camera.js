@@ -228,11 +228,15 @@ export class Camera {
       this.apoioDoZoom = 'peça';
       return perto;
     }
-    const plano = this._planoTrabalho
-      || (this._planoTrabalho = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0));
-    const p = new THREE.Vector3();
-    if (raio.ray.intersectPlane(plano, p)
-        && p.distanceTo(this.ativa.position) <= limite) {
+    // sem peça: o chão do modelo dentro da planta dele (a torre de 134 m mirava o chão a 2 raios dela e escapava da
+    // tela, 16/10, verif_camera_modelos E); o modelo vazio fica com o plano de trabalho (z = 0), para começar a desenhar
+    let p = this._chaoDoModelo(ndc);
+    if (!p && this._modeloVazio()) {
+      const plano = this._planoTrabalho
+        || (this._planoTrabalho = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0));
+      p = raio.ray.intersectPlane(plano, new THREE.Vector3());
+    }
+    if (p && p.distanceTo(this.ativa.position) <= limite) {
       this.apoioDoZoom = 'plano';
       return p;
     }
@@ -350,15 +354,8 @@ export class Camera {
     if (!this.ativa || !this.ativa.isPerspectiveCamera) return;
     const ndc = this._ndcDoEvento(ev);
     let p = this._pecaSobCursor(ndc);
-    if (!p) {
-      const raio = this._raio || (this._raio = new THREE.Raycaster());
-      raio.setFromCamera(ndc, this.ativa);
-      const plano = this._planoTrabalho
-        || (this._planoTrabalho = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0));
-      const q = new THREE.Vector3();
-      if (!raio.ray.intersectPlane(plano, q)) return;
-      p = q;
-    }
+    if (!p) p = this._chaoDoModelo(ndc);
+    if (!p) return;
     const dir = new THREE.Vector3();
     this.ativa.getWorldDirection(dir);
     const prof = p.clone().sub(this.ativa.position).dot(dir);
@@ -366,6 +363,40 @@ export class Camera {
       this.controles.target.copy(this.ativa.position).addScaledVector(dir, prof);
       this.controles.update();
     }
+  }
+
+  /**
+   * No vazio, o chão do modelo (a cota mais baixa dele) sob o cursor, só dentro da planta do modelo com folga, como no
+   * modo ver (visor3d.js, _focoNoVazio); fora dela, null (o alvo fica onde está). O plano z = 0 ficava 637 m abaixo do
+   * modelo com o piso na cota do terreno (Bellacasa) e o pan no vazio disparava 14× o mouse (16/10, verif_camera_modelos F).
+   */
+  _chaoDoModelo(ndc) {
+    const doc = this.cena && this.cena.documento;
+    if (!doc) return null;
+    // a caixa guardada até o modelo mudar: refazê-la passa por todos os vértices (27 mil peças no PRATI)
+    if (this._docDaCaixa !== doc) {
+      this._docDaCaixa = doc;
+      this._caixaGuardada = null;
+      doc.aoMudar(() => { this._caixaGuardada = null; });
+    }
+    const cx = this._caixaGuardada || (this._caixaGuardada = doc.caixa());
+    if (this._modeloVazio()) return null;
+    const [min, max] = [cx[0].map(v => v * ESCALA), cx[1].map(v => v * ESCALA)];
+    const folga = Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) * 0.125;
+    const raio = this._raio || (this._raio = new THREE.Raycaster());
+    raio.setFromCamera(ndc, this.ativa);
+    const q = new THREE.Vector3();
+    if (!raio.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), -min[2]), q)) return null;
+    const dentro = q.x >= min[0] - folga && q.x <= max[0] + folga && q.y >= min[1] - folga && q.y <= max[1] + folga;
+    return dentro ? q : null;
+  }
+
+  /** Sem peça no modelo (a caixa é um ponto). */
+  _modeloVazio() {
+    const doc = this.cena && this.cena.documento;
+    if (!doc || !doc.entidades || !doc.entidades.size) return true;
+    const cx = this._caixaGuardada;
+    return !!cx && cx[0].every((v, i) => Math.abs(cx[1][i] - v) < 1e-6);
   }
 
   /**

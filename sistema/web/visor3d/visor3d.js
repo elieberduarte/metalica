@@ -872,10 +872,10 @@ export class Visor3D {
     if (ev.pointerType === 'touch' || ev.button !== 2 || !this.fichas) return;
     const r = this.tela.getBoundingClientRect();
     const x0 = ev.clientX - r.left, y0 = ev.clientY - r.top;
-    const ancora = this._focoSeguro(x0, y0) || this._focoPerto(x0, y0) || this._focoNoVazio(x0, y0);
-    if (!ancora) return;
+    const profundo = this._focoSeguro(x0, y0) || this._focoPerto(x0, y0) || this._focoNoVazio(x0, y0);
+    if (!profundo) return;
     const cam = this.camera;
-    const plano = new THREE.Plane().setFromNormalAndCoplanarPoint(cam.getWorldDirection(new THREE.Vector3()), ancora);
+    const plano = new THREE.Plane().setFromNormalAndCoplanarPoint(cam.getWorldDirection(new THREE.Vector3()), profundo);
     const raio = new THREE.Raycaster();
     const noPlano = (cx, cy) => {
       const ndc = new THREE.Vector2(cx / Math.max(this.tela.clientWidth, 1) * 2 - 1, -(cy / Math.max(this.tela.clientHeight, 1)) * 2 + 1);
