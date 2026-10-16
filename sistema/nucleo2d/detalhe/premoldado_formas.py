@@ -522,6 +522,25 @@ def niveis(reps: Sequence[PecaPM]) -> List[float]:
             continue
         for inst in r.instancias:
             tops.append(_z(inst.ents[0])[1])
+    return _agrupar_niveis(tops)
+
+
+def niveis_do_modelo(doc: Documento) -> List[float]:
+    """Os níveis do pré-moldado direto do modelo, sem montar as malhas (o 3D pede a cada abertura): o topo das vigas,
+    lajes e capas de concreto agrupado. O IFC do Tekla traz um pavimento só ("Undefined", no 0,00), e o 3D do Mercado
+    Conceito abria sem nível nenhum (16/10). Vazio quando o modelo não tem viga nem laje de concreto."""
+    tops = []
+    for e in doc.entidades.values():
+        if not isinstance(e, Solido) or not getattr(e, "visivel", True) or not e.vertices:
+            continue
+        n = _sem_acento(_nome(e))
+        if not re.search(r"viga|laje|capa", n) or re.search(CONSOLE, n) or not eh_concreto(e):
+            continue
+        tops.append(max(v[2] for v in e.vertices))
+    return _agrupar_niveis(tops)
+
+
+def _agrupar_niveis(tops: Sequence[float]) -> List[float]:
     grupos: List[List[float]] = []
     for z in sorted(tops):
         if grupos and z - grupos[-1][-1] <= TOL_NIVEL:
@@ -529,6 +548,10 @@ def niveis(reps: Sequence[PecaPM]) -> List[float]:
         else:
             grupos.append([z])
     return [max(g) for g in grupos if len(g) >= NIVEL_MINIMO]
+
+
+def nome_do_nivel(z: float) -> str:
+    return "Nível %s" % _nivel_txt(z)
 
 
 def _nivel_txt(z: float) -> str:

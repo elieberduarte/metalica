@@ -3786,7 +3786,35 @@ def referencia_do_lancamento(s: str) -> dict:
             continue
     saida["niveis"] = [{"nome": str(n.get("nome") or "")[:40], "z": float(n.get("z") or 0.0)}
                        for n in (p.get("niveis") or []) if isinstance(n, dict)]
+    if not saida["niveis"]:
+        # sem níveis gravados (o projeto importado de IFC): os do modelo, pelo topo das vigas e lajes de concreto — o
+        # Tekla manda um pavimento só (16/10, Mercado Conceito)
+        saida["niveis"] = _niveis_automaticos(s)
+        saida["niveis_automaticos"] = bool(saida["niveis"])
     return saida
+
+
+#: projeto → ((mtime, tamanho) do modelo, níveis): os níveis automáticos, refeitos só quando o modelo muda
+_CACHE_NIVEIS_AUTO: Dict[str, tuple] = {}
+
+
+def _niveis_automaticos(s: str) -> list:
+    from nucleo2d.detalhe import premoldado_formas as PF
+    try:
+        st = os.stat(_gerente().caminho_modelo(s))
+        chave = (st.st_mtime_ns, st.st_size)
+    except (OSError, ErroDeDados):
+        return []
+    guardado = _CACHE_NIVEIS_AUTO.get(s)
+    if guardado and guardado[0] == chave:
+        return guardado[1]
+    try:
+        zs = PF.niveis_do_modelo(_documento3d_do_projeto(s))
+    except Exception:                                       # noqa: BLE001 — sem os níveis, o 3D abre como antes
+        zs = []
+    niveis = [{"nome": PF.nome_do_nivel(z), "z": round(z, 1)} for z in zs]
+    _CACHE_NIVEIS_AUTO[s] = (chave, niveis)
+    return niveis
 
 
 def lancar_estrutura(s: str, corpo: dict) -> dict:
