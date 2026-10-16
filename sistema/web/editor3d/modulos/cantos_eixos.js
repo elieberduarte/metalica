@@ -79,6 +79,7 @@ export class MetodosCantosEixos {
     if (await this.dialogo({ titulo: 'Eixos da obra', corpo, ok: 'Gravar no projeto' }) !== 'ok') return;
     try {
       const r = await this.api.gravarEixos(this.projeto, { eixos: ler() });
+      if (r.eixos && r.eixos.vazio) { this.aviso('Eixos apagados e gravados: o projeto fica sem eixos (as plantas não voltam aos automáticos). Gere o detalhamento de novo.', 'info', 12000); return; }
       this.aviso(`Eixos gravados: ${(r.eixos.letras || []).map(e => e.nome).join(', ')} e ${(r.eixos.numeros || []).map(e => e.nome).join(', ')}. Gere o detalhamento de novo para as plantas saírem com eles.`, 'info', 12000);
     } catch (e) { this.aviso(`Não foi possível gravar os eixos: ${e.message}`, 'erro', 0); }
   }

@@ -4175,6 +4175,8 @@ def _cortar_na_fatia(e: Solido, w, a: float, b: float) -> List[Tuple[float, floa
 def _eixos_do_modelo(doc: Documento, eixos: Optional[dict], nomes_producao: Optional[dict]) -> Optional[dict]:
     """Os eixos gravados no projeto, ou identificados do modelo agora (None se não der)."""
     from nucleo3d import eixos as _eixos
+    if _eixos.sem_eixos(eixos):                                 # o usuário apagou todos: a planta sai sem eixos
+        return None
     pronto = _eixos.de_dict(eixos)
     if pronto:
         return pronto

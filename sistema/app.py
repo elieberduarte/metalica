@@ -1865,6 +1865,8 @@ def eixos_do_projeto(s: str) -> dict:
     (com o nomes.json do detalhamento, quando há)."""
     from nucleo3d import eixos as _eixos
     p = _gerente().ler(s)
+    if _eixos.sem_eixos(p.get("eixos")):
+        return {"eixos": p["eixos"], "gravados": True}
     gravados = _eixos.de_dict(p.get("eixos"))
     if gravados:
         return {"eixos": gravados, "gravados": True}
@@ -2165,7 +2167,13 @@ def gravar_eixos_projeto(s: str, corpo: dict) -> dict:
     if corpo.get("apagar"):
         g._atualizar(s, eixos=None)
         return {"eixos": None, "gravados": False}
-    ex = _eixos.de_dict(corpo.get("eixos"))
+    pedido = corpo.get("eixos")
+    if isinstance(pedido, dict) and not (pedido.get("letras") or pedido.get("numeros")):
+        # todos apagados no diálogo e gravado: o projeto fica sem eixos (não volta aos automáticos, que eram os errados)
+        ex = _eixos.vazio(pedido)
+        g._atualizar(s, eixos=ex)
+        return {"eixos": ex, "gravados": True}
+    ex = _eixos.de_dict(pedido)
     if not ex:
         raise ErroDeDados("eixos inválidos: informe ao menos um eixo com nome e posição.")
     ex["origem"] = "usuario"
@@ -3700,7 +3708,7 @@ def referencia_do_lancamento(s: str) -> dict:
     p = g.ler(s)
     # sem eixos gravados, os identificados do modelo — os mesmos das plantas (pedido do usuário, 29/09:
     # "trazer os eixos para o modelo 3D para ver de que lado está cada coisa")
-    ex = _eixos.de_dict(p.get("eixos")) or _eixos_automaticos(s)
+    ex = None if _eixos.sem_eixos(p.get("eixos")) else (_eixos.de_dict(p.get("eixos")) or _eixos_automaticos(s))
     if malha:
         # a malha desenhada na planta manda: os eixos como estão no 2D agora, com os mesmos nomes (06/10); no piso — a
         # altura dos eixos deduzidos do modelo é a do topo dele, e as bolinhas ficavam no ar

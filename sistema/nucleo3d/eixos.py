@@ -364,6 +364,25 @@ def identificar_eixos(doc: Documento, nomes: Optional[dict] = None) -> dict:
             "limites": {"g": [round(min(gv), 1), round(max(gv), 1)], "p": [round(min(pv), 1), round(max(pv), 1)]}}
 
 
+def sem_eixos(d: Optional[dict]) -> bool:
+    """O usuário apagou todos os eixos e gravou (16/10): o projeto fica sem eixos — as plantas não voltam a
+    identificar os automáticos do modelo."""
+    return isinstance(d, dict) and bool(d.get("vazio"))
+
+
+def vazio(d: Optional[dict]) -> dict:
+    """O registro "sem eixos" do projeto, com a direção do galpão e o nível de base de antes (para o diálogo)."""
+    d = d if isinstance(d, dict) else {}
+    try:
+        g = [float(d["eixo_g"][0]), float(d["eixo_g"][1])]
+        L = math.hypot(g[0], g[1]) or 1.0
+        g = [g[0] / L, g[1] / L]
+    except (KeyError, TypeError, ValueError, IndexError):
+        g = [1.0, 0.0]
+    return {"vazio": True, "eixo_g": g, "perp_g": [-g[1], g[0]], "numeros": [], "letras": [],
+            "z_base": float(d.get("z_base") or 0.0), "origem": "usuario", "fonte_letras": ""}
+
+
 def de_dict(d: Optional[dict]) -> Optional[dict]:
     """O que veio do projeto (ou do usuário), validado; None quando não serve."""
     if not isinstance(d, dict):
