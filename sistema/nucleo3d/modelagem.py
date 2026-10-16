@@ -287,6 +287,15 @@ def trelica(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
                 setattr(tmp.entidades[bid], k_, v_)
         for b in novas:
             tmp.add(b)
+        # as regras de posição das peças (regras_trelica, 16/10): os banzos com a boca para o miolo, os montantes para o
+        # meio do vão, a cantoneira sempre do mesmo lado — antes as almas saíam com o giro 0 e os banzos como desenhados
+        from nucleo3d import regras_trelica
+        da_trelica = [tmp.entidades[sup.id], tmp.entidades[inf.id]] + [tmp.entidades[b.id] for b in novas]
+        giro0 = {b.id: float(b.rotacao or 0.0) for b in da_trelica[:2]}
+        regras_trelica.orientar(da_trelica, por_grupo=False)
+        for b in da_trelica[:2]:
+            if abs(float(b.rotacao or 0.0) - giro0[b.id]) > 1e-6:
+                alterar.setdefault(b.id, {})["rotacao"] = b.rotacao
         alma_na_face.encaixar(tmp.entidades.values())
         novas = [tmp.entidades[b.id] for b in novas]
     except Exception as exc:                              # noqa: BLE001 — sem o encaixe, as almas vão de nó a nó

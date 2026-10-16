@@ -548,7 +548,8 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             continue
         w = tuple((B[c] - A[c]) / math.dist(A, B) for c in range(3))
         atr = dict(base, origem={"peca": marca}, papel_trelica=papel,
-                   **({"calandrar_raio": d.get("raio_banzo_sup")} if papel == "banzo_sup" and d.get("raio_banzo_sup") else {}))
+                   **({"calandrar_raio": d.get("raio_banzo_sup")} if papel == "banzo_sup" and d.get("raio_banzo_sup") else {}),
+                   **({"boca_virada": True} if virar_b[i] else {}))
         # a ponta em U conta como banzo: as cantoneiras encaixam nela, e ela não é recortada como alma
         papel_3d = "banzo" if (papel.startswith("banzo") or papel == "extremidade") else ("diagonal" if papel == "secundaria" else papel)
         nome = "%s %s %d" % (marca, nome_papel.get(papel, papel), i + 1)
@@ -633,7 +634,7 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
         giro = _giro_para(w, fora_do_plano)
         if re.match(r"(?i)^\s*Ue?\s", perfil) and papel != "secundaria":
             # a alma em U ou Ue: a altura do perfil atravessa o plano (entra entre os dois U do banzo composto, ou na boca
-            # do banzo — CD Bom Dia, 11/10); a boca no plano, sempre para o mesmo lado (para cima; a em pé, para o fim)
+            # do banzo — CD Bom Dia, 11/10); a boca no plano, para cima (a em pé, para o meio do vão: regras_trelica T3/T4)
             ls_ = math.hypot(u1 - u0, v1 - v0) or 1.0
             nx_, ny_ = -(v1 - v0) / ls_, (u1 - u0) / ls_
             if ny_ < -0.3 or (abs(ny_) <= 0.3 and nx_ < 0):
@@ -702,6 +703,10 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
                           papel="presilha", aco=aco, camada=camada, nome="%s presilha %d.%d" % (marca, i + 1, k_p), rotacao=0.0,
                           atributos=dict(atr, presilha_de=perfil, papel_trelica="presilha")))
             n += 1
+    # as regras de posição das peças da treliça (nucleo3d/regras_trelica, 16/10 — uma regra só para todo gerador): o que
+    # o desenho deixou em outra posição é girado aqui, antes dos cantos e do encaixe (que dependem do giro)
+    from nucleo3d import regras_trelica
+    regras_trelica.orientar(feitas, por_grupo=False)
     _cantos_em_meia_esquadria(segs, pares, perfis_u, P, fora_do_plano)
     # o encaixe de fábrica (nucleo3d/alma_na_face, o mesmo do 3D pelos quadros): a cantoneira entra na boca do U e para
     # na alma dele, cortada no ângulo; o bico no montante e a bissetriz entre diagonais. Antes a ponta da cantoneira

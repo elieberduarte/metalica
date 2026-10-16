@@ -329,6 +329,7 @@ class _Construtor:
             for i, c in enumerate(comps, start=1):
                 marca_de[(papel, c)] = "%s%d" % (MARCAS[papel], i)
 
+        feitas = []
         for k, x in enumerate(self.xs):
             for b in t.barras:
                 if b.rotulo in pular:
@@ -339,9 +340,13 @@ class _Construtor:
                 comp = round(t.comprimento(b) / 100.0, 2)
                 marca = marca_de.get((b.papel, comp), MARCAS[b.papel])
                 papel3d = "banzo" if b.papel.startswith("banzo") else b.papel
-                self._barra(b.papel, ini, fim, perfis[b.papel], papel3d, "Estrutura",
-                            "Aço", self.dg.aco_perfis, nomes[b.papel], marca=marca,
-                            portico=k + 1, barra=b.rotulo, familia=b.papel)
+                feitas.append(self._barra(b.papel, ini, fim, perfis[b.papel], papel3d, "Estrutura",
+                                          "Aço", self.dg.aco_perfis, nomes[b.papel], marca=marca,
+                                          portico=k + 1, barra=b.rotulo, familia=b.papel))
+        # as regras de posição das peças da treliça (regras_trelica, 16/10): banzo em U com a boca para o miolo, montante
+        # para o meio do vão, cantoneira sempre do mesmo lado — antes tudo saía com o giro 0
+        from nucleo3d import regras_trelica
+        regras_trelica.orientar(feitas)
 
     def _travamento_banzo_inferior(self):
         """Tirantes que travam o banzo inferior de uma tesoura à vizinha."""

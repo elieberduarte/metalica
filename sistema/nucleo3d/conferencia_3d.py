@@ -196,6 +196,23 @@ def telha_ao_lado(doc, limite: float = 20.0) -> List[dict]:
     return out
 
 
+REGRA_EM_TEXTO = {"T2": "banzo em U com a boca para o miolo", "T3": "peça em pé em U com a boca para o meio do vão",
+                  "T4": "diagonal em U com a boca para cima", "T5": "cantoneira com a aba do mesmo lado das outras"}
+
+
+def posicao_na_trelica(barras) -> List[dict]:
+    """as peças da treliça fora das regras de posição (nucleo3d/regras_trelica — usuário, 16/10: "perfis de canto com a
+    boca virada para o lado errado"): o U de boca para fora, a cantoneira do outro lado do plano"""
+    from nucleo3d import regras_trelica
+    out = []
+    for v in regras_trelica.conferir(barras):
+        out.append({"tipo": "posicao", "ids": [v["id"]], "ponto": v["ponto"],
+                    "texto": "%s (%s, %s) girada %.0f° da regra %s: %s" % (
+                        v["nome"] or v["perfil"], v["perfil"], v["papel"], v["erro_graus"], v["regra"],
+                        REGRA_EM_TEXTO.get(v["regra"], ""))})
+    return out
+
+
 def conferir(doc, telha: bool = True, soltas: bool = True) -> dict:
     """as quatro contas no modelo; devolve {apontamentos: [...] (do mais grave para o menos), contagens}. Sem `soltas`,
     as pontas soltas ficam de fora (a tela Verificar apoios já as diz pelas regras dela)"""
@@ -204,10 +221,12 @@ def conferir(doc, telha: bool = True, soltas: bool = True) -> dict:
     soltas = pontas_soltas(barras, list(doc.solidos)) if soltas else []
     ch = choques(barras)
     tl = telha_ao_lado(doc) if telha else []
-    ordem = {"repetida": 0, "choque": 1, "degrau": 2, "dobra": 3, "ponta_solta": 4}
-    aps = sorted(rep + ch + tl + soltas, key=lambda a: (ordem.get(a["tipo"], 9), -abs(a.get("mm") or 0)))
+    pos = posicao_na_trelica(barras)
+    ordem = {"repetida": 0, "choque": 1, "posicao": 2, "degrau": 3, "dobra": 4, "ponta_solta": 5}
+    aps = sorted(rep + ch + pos + tl + soltas, key=lambda a: (ordem.get(a["tipo"], 9), -abs(a.get("mm") or 0)))
     return {"apontamentos": aps,
             "contagens": {"repetidas": len(rep), "choques": len(ch), "pontas_soltas": len(soltas),
+                          "fora_da_posicao": len(pos),
                           "tercas_em_balanco": sum(1 for a in soltas if "balanço" in a["texto"]),
                           "telha_degraus": sum(1 for a in tl if a["tipo"] == "degrau"),
                           "telha_dobras": sum(1 for a in tl if a["tipo"] == "dobra"),
@@ -218,10 +237,11 @@ def avisos(conf: dict, desl: Sequence[float] = (0.0, 0.0), telha_min: float = 50
     """os apontamentos em texto de aviso, com o ponto em mm do DESENHO (o modelo − `desl`), como os outros avisos da
     montagem (a montagem troca o ponto pelos eixos). A telha abaixo de `telha_min` fica só na contagem"""
     c = conf["contagens"]
-    out = ["Conferência do 3D: %d peça(s) repetida(s), %d choque(s) entre peças, %d ponta(s) solta(s) (%d terça(s) em "
-           "balanço), telha ao lado: %d degrau(s) e %d dobra(s) acima de 20 mm (%d acima de 5 cm)."
-           % (c["repetidas"], c["choques"], c["pontas_soltas"], c["tercas_em_balanco"], c["telha_degraus"],
-              c["telha_dobras"], c["telha_acima_de_5cm"])]
+    out = ["Conferência do 3D: %d peça(s) repetida(s), %d choque(s) entre peças, %d peça(s) da treliça fora da posição "
+           "da regra, %d ponta(s) solta(s) (%d terça(s) em balanço), telha ao lado: %d degrau(s) e %d dobra(s) acima de "
+           "20 mm (%d acima de 5 cm)."
+           % (c["repetidas"], c["choques"], c.get("fora_da_posicao", 0), c["pontas_soltas"], c["tercas_em_balanco"],
+              c["telha_degraus"], c["telha_dobras"], c["telha_acima_de_5cm"])]
     for a in conf["apontamentos"]:
         if a["tipo"] in ("degrau", "dobra") and abs(a.get("mm") or 0) < telha_min:
             continue

@@ -32,6 +32,10 @@ def modelo_certo():
     for x in (1000.0, 3000.0, 5000.0):                  # terças nos nós
         doc.add(barra((x, 0.0, 6870.0), (x, 5000.0, 6870.0), "terça"))
     doc.add(barra((0.0, 0.0, 6800.0), (1000.0, 5000.0, 6800.0), "contraventamento"))   # o vão travado
+    # o U de cada peça na posição da regra (regras_trelica, 16/10: a boca do banzo para o miolo, a do montante para o meio
+    # do vão) — o modelo certo não pode ter peça fora da posição
+    from nucleo3d import regras_trelica
+    regras_trelica.orientar(doc.entidades.values())
     return doc
 
 

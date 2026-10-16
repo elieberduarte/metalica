@@ -126,7 +126,8 @@ def test_trelica_warren_e_bloco_existente_dos_banzos():
     bs = _barras(r)
     assert all(b.papel == "diagonal" for b in bs) and len(bs) == 6
     assert all(b.atributos["origem"]["peca"] == "TESOURA 1#1" for b in bs)
-    assert r["alterar"] == {}
+    # os banzos já são do bloco: só o giro muda (a boca do U para o miolo, regras_trelica T2 — 16/10)
+    assert all(set(c) == {"rotacao"} for c in r["alterar"].values())
 
 
 def test_trelica_encaixa_as_almas_nas_faces_dos_banzos():
@@ -134,11 +135,17 @@ def test_trelica_encaixa_as_almas_nas_faces_dos_banzos():
     r = modelagem.trelica(doc, [sup.id, inf.id], {"tipo": "pratt", "passo": 1500})
     assert not r["avisos"], r["avisos"]
     bs = _barras(r)
+    # os banzos com o giro da regra (regras_trelica T2, 16/10: a boca do U para o miolo — as abas viradas para dentro)
+    for bz in (sup, inf):
+        bz.rotacao = r["alterar"].get(bz.id, {}).get("rotacao", bz.rotacao)
+    face_sup = min(q[2] for q in malha_barra(sup)[0])
+    face_inf = max(q[2] for q in malha_barra(inf)[0])
+    assert face_sup < 1000 - 20 and face_inf > 20                     # as abas do U descem/sobem para o miolo
     # as almas não atravessam os banzos: a malha fica entre a face de baixo do de cima e a de cima do de baixo
     for b in bs:
         vs, _ = malha_barra(b)
-        assert max(q[2] for q in vs) <= 1000 - 49 + 1.0, (b.papel, max(q[2] for q in vs))
-        assert min(q[2] for q in vs) >= 49 - 1.0
+        assert max(q[2] for q in vs) <= face_sup + 1.0, (b.papel, max(q[2] for q in vs))
+        assert min(q[2] for q in vs) >= face_inf - 1.0
 
 
 # ------------------------------------------------------------------ contravento

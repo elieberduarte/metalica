@@ -575,7 +575,8 @@ def verificar(doc, tol: float = TOL_ENCOSTO, eixos=None) -> dict:
     # conta: o degrau entre chapas vizinhas e a dobra na caída, de 30 mm para cima). As pontas soltas, as regras de cima
     # já dizem (peça voando, ponta sem apoio, terça em balanço)
     from nucleo3d import conferencia_3d
-    regra_3d = {"repetida": "repetida", "choque": "choque", "degrau": "telha_degrau", "dobra": "telha_dobra"}
+    regra_3d = {"repetida": "repetida", "choque": "choque", "degrau": "telha_degrau", "dobra": "telha_dobra",
+                "posicao": "posicao_trelica"}
     for a in conferencia_3d.conferir(doc, soltas=False)["apontamentos"]:
         if a["tipo"] not in regra_3d or (a["tipo"] in ("degrau", "dobra") and abs(a["mm"]) < 30):
             continue

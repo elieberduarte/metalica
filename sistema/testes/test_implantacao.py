@@ -129,8 +129,11 @@ def test_tesouras_encostadas_cada_montante_de_ponta_abre_para_a_sua():
         if (b.atributos or {}).get("papel_trelica") != "extremidade":
             continue
         w = tuple(b.fim[c] - b.inicio[c] for c in range(3))
-        u, _v, _w = base_local(w, b.rotacao)
-        abre[round(b.inicio[0])] = round(u[0])
+        u, v, _w = base_local(w, b.rotacao)
+        # a aba (ou a boca) que fica no plano da tesoura; na cantoneira de abas iguais, u ou v (a outra atravessa o plano
+        # sempre do mesmo lado: regras_trelica T5, 16/10)
+        no_plano = u if abs(u[1]) < 0.5 else v
+        abre[round(b.inicio[0])] = round(no_plano[0])
     # as pontas de fora abrem para dentro; no apoio do meio, a de 10000 abre para trás (−x) e a de 10330 para frente (+x)
     assert abre == {0: 1, 10000: -1, 10330: 1, 20330: -1}, abre
 
@@ -155,8 +158,11 @@ def test_montante_em_u_no_meio_da_tesoura_abre_para_o_meio_do_vao():
         if (b.atributos or {}).get("papel_trelica") != "extremidade" or abs(b.inicio[0] - b.fim[0]) > 1:
             continue
         w = tuple(b.fim[c] - b.inicio[c] for c in range(3))
-        u, _v, _w = base_local(w, b.rotacao)
-        abre[round(b.inicio[0])] = round(u[0])
+        u, v, _w = base_local(w, b.rotacao)
+        # a aba (ou a boca) que fica no plano da tesoura; na cantoneira de abas iguais, u ou v (a outra atravessa o plano
+        # sempre do mesmo lado: regras_trelica T5, 16/10)
+        no_plano = u if abs(u[1]) < 0.5 else v
+        abre[round(b.inicio[0])] = round(no_plano[0])
     assert abre == {0: 1, 5000: 1, 15000: -1, 20000: -1}, abre
 
 
