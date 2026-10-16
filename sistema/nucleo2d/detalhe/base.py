@@ -496,7 +496,16 @@ def _pecas(doc: Documento, puladas: Optional[list] = None, fora_do_aco: Optional
         if isinstance(ent, Chapa):
             if (_tipo_ifc(ent) or "IfcPlate") in TIPOS_PECA:
                 try:
-                    pecas.append(_proxy_da_chapa(ent))
+                    px = _proxy_da_chapa(ent)
+                    # a chapa paramétrica também passa pelo material: o neoprene do Tekla ("STEEL/SHORE A-60") virou
+                    # chapa num detalhamento de antes e seguia como aço, com a faixa "fora do padrão: Neoprene" a cada
+                    # abertura do editor (Mercado Conceito, 16/10)
+                    nao_aco = material_nao_aco(px)
+                    if nao_aco is not None:
+                        if fora_do_aco is not None:
+                            fora_do_aco.append((px, nao_aco[0], nao_aco[1]))
+                        continue
+                    pecas.append(px)
                 except Exception as exc:              # noqa: BLE001 — chapa degenerada não derruba o lote
                     if puladas is not None:
                         puladas.append((str(_marcas(ent).get("posicao") or ent.nome or ent.id), str(exc) or "sem geometria"))
