@@ -292,6 +292,22 @@ def p07_menu_antes_do_editor(aba):
         ok(foi and "Abra" not in aviso, f"{rotulo} (avisos: «{aviso[:80]}»)")
 
 
+def p07_menu_com_o_2d_a_mostra(aba):
+    """P07, rodada 2: com o 2D à mostra, Modelo › Eixos da obra… trocava para o 3D no modo ver e não abria nada — o quadro
+    do 3D ainda nem tinha o modo ver quando o comando pediu o editor, e o pedido (único) se perdia."""
+    print("P07 (rodada 2) — comando do 3D com o 2D à mostra")
+    s = projeto("Portaria eixos")
+    post(f"/api/projetos/{s}/eixos", {"eixos": {"eixo_g": [1.0, 0.0], "perp_g": [0.0, 1.0], "z_base": 0.0,
+                                                "letras": [{"nome": "A", "pos": 0.0}, {"nome": "B", "pos": 5000.0}],
+                                                "numeros": [{"nome": "1", "pos": 0.0}, {"nome": "2", "pos": 6200.0}]}})
+    aba.navegar(f"{base}/dividida?projeto={s}&vista=2d", limite=60)
+    esperar(aba, "window.barraUnica && (() => { try { return !!document.querySelector('#f2d').contentWindow.cad; } catch (e) { return false; } })()")
+    ok(aba.avaliar(f"!!{_item_da_barra('Eixos da obra…')}"), "o item «Eixos da obra…» existe no menu")
+    aba.avaliar(f"window.barraUnica.executar({_item_da_barra('Eixos da obra…')}); 1")
+    foi = esperar(aba, "(() => { try { const w = document.querySelector('#f3d').contentWindow; return !!(w.editor && w.editor.el.dialogo.open && /Eixos/.test(w.editor.el.dialogoTitulo.textContent)); } catch (e) { return false; } })()", 60)
+    ok(foi, "o diálogo Eixos da obra abre (o editor é pedido quando o modo ver fica pronto)")
+
+
 def p08_folhas_sem_pedir_o_arquivo(aba):
     """P08: o passo "2. Ler folhas e considerações de cálculo" abria direto a janela do Windows pedindo o DXF de novo (o
     passo 1 já o tinha importado). Agora pergunta antes e lê o DXF guardado no projeto."""
@@ -572,7 +588,7 @@ try:
     for dm in ("Page", "Runtime", "Log"): aba.cmd(f"{dm}.enable")
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1600, height=1000, deviceScaleFactor=1, mobile=False)
     # python verif_primeiro_uso_ui.py p07 → só os blocos cujo nome começa assim
-    for bloco in [b for b in (p02_p13_recebido, p06_vao_pequeno, p11_p12_cad, p07_menu_antes_do_editor,
+    for bloco in [b for b in (p02_p13_recebido, p06_vao_pequeno, p11_p12_cad, p07_menu_antes_do_editor, p07_menu_com_o_2d_a_mostra,
                                 p08_folhas_sem_pedir_o_arquivo, p19_resultado_do_recebido,
                                 p14_quadros_vazios, p26_padroes_da_planta, p21_peso_do_modelo_vazio,
                                 p22_nome_e_posicao, p23_lista_sob_medida, p15_zoom_da_roda,

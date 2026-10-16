@@ -518,12 +518,14 @@
     // o editor e esperava 60 s por ele; no PRATI CD (27 mil peças) não dava tempo e nada acontecia (14/10)
     if (it.lado === '3d' && it.acao === 'exportar-ifc' && !docPronto('3d')) { exportarIfcGravado(); return; }
     if (!visivel(it.lado) && window.mostrarVista) window.mostrarVista(it.lado);
-    // o 3D no modo "ver" (web/visor3d) não edita: o comando carrega o editor no quadro, com a mesma vista, e roda nele
-    if (it.lado === '3d' && !docPronto('3d')) {
-      try { var w3 = janela('3d'); if (w3 && w3.visorLeve) w3.visorLeve.editar(); } catch (e) { /* ainda carregando */ }
-    }
-    var inicio = Date.now();
+    // o 3D no modo "ver" (web/visor3d) não edita: o comando carrega o editor no quadro, com a mesma vista, e roda nele.
+    // Pedido dentro da espera: com o 2D à mostra o quadro do 3D ainda nem tinha o modo ver quando o comando rodava, e o
+    // pedido único se perdia — "Eixos da obra…" não abria nada (rodada 2 do primeiro uso, 16/10)
+    var inicio = Date.now(), pediuEditor = false;
     (function tentar() {
+      if (it.lado === '3d' && !pediuEditor && !docPronto('3d')) {
+        try { var w3 = janela('3d'); if (w3 && w3.visorLeve) { w3.visorLeve.editar(); pediuEditor = true; } } catch (e) { /* ainda carregando */ }
+      }
       // espera a tela carregar de vez; se ela nunca se der por pronta (falha no meio da carga), roda assim mesmo em 20 s
       var d = docCarregado(it.lado) || (Date.now() - inicio > 20000 ? docPronto(it.lado) : null);
       if (d) {
@@ -659,8 +661,9 @@
     var inicio = Date.now();
     if (!visivel('3d') && window.mostrarVista) window.mostrarVista('3d');
     // o 3D no modo "ver" não tem as ferramentas: carrega o editor no quadro (o mesmo caminho dos comandos do 3D)
-    if (!docPronto('3d')) { try { var w3 = janela('3d'); if (w3 && w3.visorLeve) w3.visorLeve.editar(); } catch (e) { /* carregando */ } }
+    var pediuEditor = false;
     (function tentar() {
+      if (!pediuEditor && !docPronto('3d')) { try { var w3 = janela('3d'); if (w3 && w3.visorLeve) { w3.visorLeve.editar(); pediuEditor = true; } } catch (e) { /* carregando */ } }
       var w = docCarregado('3d') ? janela('3d') : null;
       if (w && typeof w.abrirGuiaFerramentas === 'function') { w.abrirGuiaFerramentas(); try { w.focus(); } catch (e) { /* sem foco */ } return; }
       if (Date.now() - inicio < 60000) setTimeout(tentar, 200);
