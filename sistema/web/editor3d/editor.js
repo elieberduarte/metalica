@@ -1847,7 +1847,17 @@ export class Editor {
     const grupos = [['tesouras', 'Tesouras (com as barras e chapas delas)'], ['conjuntos', 'Conjuntos (vigas, pilares e outros)'], ['tercas', 'Terças (com suportes e chapas)'], ['contraventamentos', 'Contraventamentos (com tirantes e peças de ponta)'], ['agulhamentos', 'Agulhamentos'], ['extras', 'Extras (perfil de forro, de fechamento, barras soltas)'], ['telhas', 'Telhas'], ['chaparias', 'Chaparias (todas as chapas, 1:10)'], ['localizacao', 'Planta de localização (marcas no lugar de montagem, com os eixos)'], ['chumbacao', 'Planta de chumbação (chumbadores e chapas de base nos eixos)'], ['completo', 'Desenho completo (tudo num desenho só, 1:25)']];
     const caixas = {};
     const grade = el('div', { class: 'campos' });
-    for (const [k, r] of grupos) { caixas[k] = el('input', { type: 'checkbox', checked: 'checked' }); grade.append(el('label', { texto: r }), caixas[k]); }
+    for (const [k] of grupos) caixas[k] = el('input', { type: 'checkbox', checked: 'checked' });
+    // marcar / desmarcar todos os desenhos de uma vez (usuário, 16/10); fica meio marcado quando só alguns estão
+    const todos = el('input', { type: 'checkbox', checked: 'checked' });
+    const acertarTodos = () => {
+      const n = grupos.filter(([k]) => caixas[k].checked).length;
+      todos.checked = n === grupos.length; todos.indeterminate = n > 0 && n < grupos.length;
+    };
+    todos.addEventListener('change', () => { for (const [k] of grupos) caixas[k].checked = todos.checked; acertarTodos(); });
+    for (const [k] of grupos) caixas[k].addEventListener('change', acertarTodos);
+    grade.append(el('label', { texto: 'Marcar / desmarcar todos', style: 'font-weight:600' }), todos);
+    for (const [k, r] of grupos) grade.append(el('label', { texto: r }), caixas[k]);
     const regra = el('input', { type: 'checkbox', checked: 'checked' });
     // os nomes ao lado de cada barra da tesoura atrapalhavam quem gabarita a treliça e mede
     // peça a peça: saem desligados, e quem quiser liga
