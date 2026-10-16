@@ -831,3 +831,30 @@ def test_ponta_da_terca_fora_dos_apoios_pela_reta_de_1_5_m():
     apoios = [(0.0, 1000.0), (4000.0, 1100.0), (8000.0, 1200.0), (8200.0, 1256.0)]
     assert de_planta._altura_pelos_apoios(apoios, 10700.0) == pytest.approx(1256.0 + (1256.0 - 1100.0) / 4200.0 * 2500.0, abs=1.0)    # pela base de 4,2 m
     assert de_planta._altura_pelos_apoios(apoios, 2000.0) == pytest.approx(1050.0)
+
+
+def test_hachura_e_cota_no_desenho_nao_param_a_montagem(resultado):
+    """Portaria Hermes (16/10, teste de primeiro uso): o DXF do projetista tinha 6 hachuras na camada
+    "treliça" e a montagem morria com "falha no cálculo: 'posicao'" — a hachura não tem ponto de
+    inserção, só contornos. Hachura, cota e chamada dentro da planta não podem parar a montagem."""
+    extras = [{"tipo": "hachura", "camada": "treliça", "contornos": [[[1000.0, -40.0], [1400.0, -40.0], [1400.0, 40.0]]],
+               "padrao": "solido"},
+              {"tipo": "cota", "camada": "COTA", "p1": [0.0, -800.0], "p2": [L_TES, -800.0], "deslocamento": 300.0},
+              {"tipo": "chamada", "camada": "TEXTO", "alvo": [4500.0, 0.0], "posicao": [4800.0, 900.0], "texto": "VER DET."},
+              {"tipo": "hachura", "camada": "treliça", "contornos": []}]
+    ents = planta() + extras + locacao() + plantas_das_tercas() + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
+    ents += elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
+    r = de_planta.montar(ents, {"nivel": 6000.0, "origem": False})
+    def barras(res):
+        return sum(1 for e in res["doc"].entidades.values() if isinstance(e, Barra))
+    assert barras(r) == barras(resultado) > 0     # as anotações não mudam o que se monta
+
+
+def test_planta_sem_pecas_nomeadas_avisa_e_nao_devolve_modelo_vazio():
+    """Portaria Hermes (16/10): o desenho do projetista não tem os nomes TESOURA/PAINEL na planta; a montagem
+    terminava com 0 barras, sem aviso, e o modelo vazio substituía o anterior. Agora diz o que procurou."""
+    from nucleo.base import ErroDeDados
+    ents = [linha((0.0, 0.0), (9000.0, 0.0)), linha((0.0, 6000.0), (9000.0, 6000.0)),
+            texto((2000.0, -4000.0), "PLANTA NO NÍVEL DO FORRO", altura=5.0)] + baloes(0, 0)
+    with pytest.raises(ErroDeDados, match="Nenhuma peça foi montada"):
+        de_planta.montar(ents, {"planta": "PLANTA NO NÍVEL DO FORRO", "origem": False})

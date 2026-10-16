@@ -88,11 +88,20 @@ def _pt(e) -> Ponto2:
         return (e["centro"][0] + e["raio"] * math.cos(meio), e["centro"][1] + e["raio"] * math.sin(meio))
     if t == "circulo":
         return (e["centro"][0], e["centro"][1])
-    return (e["posicao"][0], e["posicao"][1])
+    if "posicao" in e:
+        return (e["posicao"][0], e["posicao"][1])
+    # hachura e cota não têm ponto de inserção (Portaria Hermes, 16/10: 6 hachuras na camada
+    # "treliça" paravam a montagem com KeyError 'posicao'); sem ponto nenhum, fica fora de toda caixa
+    if t == "hachura":
+        cont = e.get("contornos") or []
+        return (cont[0][0][0], cont[0][0][1]) if cont and cont[0] else None
+    if e.get("p1") is not None:
+        return (e["p1"][0], e["p1"][1])
+    return None
 
 
 def _dentro(p, caixa) -> bool:
-    return caixa[0] <= p[0] <= caixa[2] and caixa[1] <= p[1] <= caixa[3]
+    return p is not None and caixa[0] <= p[0] <= caixa[2] and caixa[1] <= p[1] <= caixa[3]
 
 
 class _Seg(tuple):
@@ -128,11 +137,13 @@ def _segmentos(ents: Iterable[dict], so_camadas=None) -> List[Tuple[Ponto2, Pont
 def _copiar_mov(e: dict, dx: float, dy: float) -> dict:
     """a entidade deslocada (mesma id: é a mesma peça do desenho, vista no lugar da obra)"""
     n = dict(e)
-    for k in ("a", "b", "centro", "posicao"):
+    for k in ("a", "b", "centro", "posicao", "p1", "p2", "alvo"):
         if k in n and n[k] is not None:
             n[k] = [n[k][0] + dx, n[k][1] + dy] + list(n[k][2:])
     if "vertices" in n:
         n["vertices"] = [[v[0] + dx, v[1] + dy] + list(v[2:]) for v in n["vertices"]]
+    if n.get("contornos"):
+        n["contornos"] = [[[v[0] + dx, v[1] + dy] for v in c] for c in n["contornos"]]
     return n
 
 
@@ -3557,6 +3568,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                       % (len(aparadas), "; ".join("%s na %s, %d mm" % a_ for a_ in aparadas)))
 
     doc = doc or Documento(nome=str(par.get("nome") or "Modelo pela planta"))
+    n_barras_antes = len(doc.barras)
     for nome_c in ("Treliças", "Vigas", "Pilares", "Terças", "Contraventamento", "Correntes"):
         doc.camadas.setdefault(nome_c, Camada(nome=nome_c))
     pecas: List[dict] = []          # {ent, perfil, papel, L, conjunto}
@@ -4881,6 +4893,14 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     resumo["encaixe"] = {"blocos": len(encaixe), "justos": sum(1 for e_ in encaixe if abs(e_["dif"]) <= 50),
                          "a_conferir": sum(1 for e_ in encaixe if e_.get("a_conferir"))}
     eixos_p = eixos_da_planta(ents, caixa_p, desl)
+    if len(doc.barras) == n_barras_antes:
+        # Portaria Hermes (16/10, teste de primeiro uso): a montagem terminava com 0 barras, sem dizer
+        # nada, e o modelo vazio ia por cima do anterior
+        raise ErroDeDados(
+            "Nenhuma peça foi montada pela planta \"%s\": não achei nela nomes de peça (TESOURA 1, PAINEL 2, "
+            "TRANSIÇÃO 1, VM-…) sobre as linhas da estrutura com a elevação de mesmo nome. Este caminho serve ao "
+            "projeto desenhado em planta + elevações nomeadas. O modelo atual não foi alterado. Para outro tipo de "
+            "desenho, use Projeto recebido → modelo 3D, ou lance a estrutura nos eixos." % par["planta"])
     from nucleo3d.trelicas_lidas import montar_lista
     # os nomes da planta sem elevação no desenho: onde estão escritos (no modelo), para a tela
     sem_el: Dict[str, List[list]] = collections.defaultdict(list)
