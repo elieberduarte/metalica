@@ -113,6 +113,40 @@ try:
     aba.avaliar(F3 + ".document.querySelector('#painel-corpo input[data-c]').click()")
     ok(aba.avaliar(F3 + ".visor.visivelCamada.filter(x => x === false).length") >= 1, "desligar uma camada a esconde")
     aba.avaliar(F3 + ".document.querySelector('#painel-corpo input[data-c]').click()")
+
+    # o desenho do piso como camada (usuário, 16/10: "transformar esse desenho do piso em uma camada que possa ser
+    # oculta"): arquitetônico, eixos e níveis um a um no alto de Camadas e de Pintar; continua oculto com o tema trocado
+    aba.avaliar(F3 + ".visor.definirReferencia({segmentos: [[0, 0, 6000, 0], [0, 0, 0, 3000]], "
+                "eixos: [{nome: 'A', a: [0, 0, 0], b: [0, 6000, 0]}], niveis: [{nome: 'N1', z: 3000}]}); 1")
+    ok(esperar(aba, F3 + ".visor.partesReferencia().join() === 'arquitetonico,eixos,niveis'", 10),
+       "a planta no chão em três partes (arquitetônico, eixos, níveis)")
+    aba.avaliar(F3 + ".document.getElementById('painel-fechar').click()")
+    aba.avaliar(F3 + ".document.querySelector('[data-painel=camadas]').click()")
+    n = aba.avaliar(F3 + ".document.querySelectorAll('#painel-corpo input[data-piso]').length")
+    ok(n == 3, f"Camadas: o desenho do piso, os eixos e os níveis no alto ({n})")
+    ok(aba.avaliar(F3 + ".document.querySelectorAll('#painel-corpo input[data-c]').length") == 3, "e as 3 camadas do modelo embaixo")
+    aba.avaliar(F3 + ".document.querySelector('#painel-corpo input[data-piso=arquitetonico]').click()")
+    VIS = F3 + ".visor.referencia.getObjectByName('{}').visible"
+    ok(aba.avaliar(VIS.format("arquitetonico")) is False and aba.avaliar(VIS.format("eixos")) is True,
+       "desmarcar o desenho do piso o esconde e deixa os eixos")
+    ok(aba.avaliar(F3 + ".localStorage.getItem('ver3d.pisoOculto')") == '["arquitetonico"]', "lembrado neste navegador")
+    aba.avaliar(F3 + ".visor.definirTema(!" + F3 + ".visor.escuro); 1")
+    ok(esperar(aba, F3 + ".visor.referencia && " + VIS.format("arquitetonico") + " === false && " + VIS.format("niveis"), 10),
+       "trocado o tema (a planta é refeita), o desenho do piso continua oculto")
+    aba.avaliar(F3 + ".visor.definirTema(!" + F3 + ".visor.escuro); 1")
+    aba.avaliar(f"(() => {{ const s = {F3}.document.getElementById('pintar'); s.value = 'perfil'; s.dispatchEvent(new Event('change')); return 1; }})()")
+    ok(aba.avaliar(F3 + ".document.querySelector('#painel-corpo input[data-piso=arquitetonico]').checked") is False,
+       "Pintar por perfil: o desenho do piso no alto da legenda, desmarcado")
+    # com o botão Planta e níveis desligado, marcar uma parte liga o botão
+    aba.avaliar(F3 + ".document.getElementById('btn-planta').click()")
+    ok(aba.avaliar(F3 + ".visor.referencia.visible") is False, "o botão Planta e níveis desliga o piso inteiro")
+    aba.avaliar(F3 + ".document.querySelector('#painel-corpo input[data-piso=arquitetonico]').click()")
+    ok(aba.avaliar(F3 + ".visor.referencia.visible && " + VIS.format("arquitetonico")) is True
+       and aba.avaliar(F3 + ".document.getElementById('btn-planta').classList.contains('ligado')") is True,
+       "marcar o desenho do piso com o botão desligado liga o botão e mostra o desenho")
+    aba.avaliar(f"(() => {{ const s = {F3}.document.getElementById('pintar'); s.value = 'material'; s.dispatchEvent(new Event('change')); return 1; }})()")
+    aba.avaliar(F3 + ".visor.definirReferencia(null); 1")
+
     aba.avaliar(f"(() => {{ const b = {F3}.document.getElementById('busca'); b.value = 'chapa de base'; b.dispatchEvent(new Event('input')); return 1; }})()")
     ok(esperar(aba, F3 + ".document.querySelectorAll('#painel-corpo .linha-lista').length === 1", 5), "a busca acha a chapa")
 

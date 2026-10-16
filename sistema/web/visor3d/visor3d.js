@@ -626,6 +626,7 @@ export class Visor3D {
       const o = (this.cabecalho && this.cabecalho.origem) || [0, 0, 0];
       this.referencia.position.set(-o[0], -o[1], -o[2]);
       this.referencia.visible = this._referenciaLigada !== false;
+      for (const g of this.referencia.children) g.visible = !(this._partesOcultas && this._partesOcultas.has(g.name));
       this.cena.add(this.referencia);
     }
     this.pedirQuadro();
@@ -633,6 +634,16 @@ export class Visor3D {
   ligarReferencia(sim) {
     this._referenciaLigada = !!sim;
     if (this.referencia) this.referencia.visible = !!sim;
+    this.pedirQuadro();
+  }
+  /** As partes da planta no chão que existem neste projeto ('arquitetonico', 'eixos', 'niveis' — referencia.js). */
+  partesReferencia() { return this.referencia ? this.referencia.children.map(g => g.name) : []; }
+  /** Uma parte da planta no chão como camada (16/10): fica oculta também quando o tema muda e a planta é refeita. */
+  mostrarParteReferencia(nome, sim) {
+    if (!this._partesOcultas) this._partesOcultas = new Set();
+    if (sim) this._partesOcultas.delete(nome); else this._partesOcultas.add(nome);
+    const g = this.referencia && this.referencia.getObjectByName(nome);
+    if (g) g.visible = !!sim;
     this.pedirQuadro();
   }
 

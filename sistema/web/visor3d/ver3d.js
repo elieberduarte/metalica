@@ -296,12 +296,44 @@ async function carregarReferencia() {
   const b = $('#btn-planta');
   if (b) b.classList.toggle('ligado', ligada);
   visor.ligarReferencia(ligada);
+  for (const nome of pisoOculto()) visor.mostrarParteReferencia(nome, false);
   try {
     const r = await (await fetch(`/api/projetos/${encodeURIComponent(PROJETO)}/lancamento/referencia`, { cache: 'no-store' })).json();
     const tem = r && !r.erro && ((r.segmentos || []).length || (r.eixos || []).length || (r.niveis || []).length);
     visor.definirReferencia(tem ? r : null);
     if (b) b.hidden = !tem;
   } catch (e) { if (b) b.hidden = true; }
+}
+
+/** O desenho do piso como camadas (usuário, 16/10: "transformar esse desenho do piso em uma camada que possa ser
+ *  oculta"): o arquitetônico, os eixos e os níveis ligam e desligam um a um no alto dos painéis Camadas e Pintar —
+ *  lembrado neste navegador; o botão Planta e níveis continua ligando e desligando os três juntos. */
+const PARTES_PISO = { arquitetonico: ['Desenho do piso (arquitetônico)', '#9aa3ae'], eixos: ['Eixos', '#7c3aed'], niveis: ['Níveis', '#1f5fbf'] };
+function pisoOculto() {
+  try { return JSON.parse(localStorage.getItem('ver3d.pisoOculto') || '[]'); } catch (e) { return []; }
+}
+function secaoPiso() {
+  const partes = visor.partesReferencia();
+  if (!partes.length) return '';
+  const ocultas = new Set(pisoOculto());
+  return '<p class="titulo-secao">No piso</p>' + partes.map(n => { const [nome, cor] = PARTES_PISO[n] || [n, '#999'];
+    return `<label class="linha-lista"><input type="checkbox" data-piso="${esc(n)}" ${ocultas.has(n) ? '' : 'checked'}>
+      <i style="background:${cor}"></i><span>${esc(nome)}</span></label>`; }).join('')
+    + '<p class="titulo-secao">Modelo</p>';
+}
+function ligarSecaoPiso() {
+  $('#painel-corpo').querySelectorAll('input[data-piso]').forEach(cb => {
+    cb.onclick = ev => ev.stopPropagation();
+    cb.onchange = () => {
+      const nome = cb.dataset.piso, ocultas = new Set(pisoOculto());
+      if (cb.checked) ocultas.delete(nome); else ocultas.add(nome);
+      try { localStorage.setItem('ver3d.pisoOculto', JSON.stringify([...ocultas])); } catch (e) { /* sem armazenamento */ }
+      visor.mostrarParteReferencia(nome, cb.checked);
+      // ligar uma parte com o botão desligado liga o botão (senão a caixinha marcada não mostraria nada)
+      const b = $('#btn-planta');
+      if (cb.checked && b && !b.classList.contains('ligado')) b.click();
+    };
+  });
 }
 
 let situacaoBase = '';
@@ -375,15 +407,16 @@ function escolher(i, centrar) {
 
 function painelCamadas() {
   const cams = visor.cabecalho.camadas;
-  abrirPainel('camadas', 'Camadas', cams.map((c, i) => c.pecas ? `<label class="linha-lista">
+  abrirPainel('camadas', 'Camadas', secaoPiso() + cams.map((c, i) => c.pecas ? `<label class="linha-lista">
       <input type="checkbox" data-c="${i}" ${visor.visivelCamada[i] !== false ? 'checked' : ''}>
       <i style="background:${esc(c.cor)}"></i><span>${esc(c.nome)}</span><em>${nf(c.pecas)}</em></label>` : '').join(''));
+  ligarSecaoPiso();
   $('#painel-corpo').querySelectorAll('input[data-c]').forEach(el => el.onchange = () => visor.mostrarCamada(+el.dataset.c, el.checked));
 }
 
 function painelLegenda(modo) {
   const titulo = modo === 'editor' ? $('#pintar').selectedOptions[0].textContent.replace(/^como/, 'Pintado como') : modo === 'camada' ? 'Pintado por camada' : 'Pintado por perfil';
-  abrirPainel('legenda', titulo, legenda.slice(0, 200).map((g, k) => `<div class="linha-lista" data-k="${k}">
+  abrirPainel('legenda', titulo, secaoPiso() + legenda.slice(0, 200).map((g, k) => `<div class="linha-lista" data-k="${k}">
       <input type="checkbox" data-olho="${k}" title="Mostrar / ocultar este grupo" ${g.ids.some(i => visor.ocultas.has(i)) ? '' : 'checked'}>
       <i style="background:${g.cor}"></i><span title="${esc(g.nome)}">${esc(g.nome)}</span><em>${nf(g.n)}</em></div>`).join('')
     + (legenda.length > 200 ? `<p class="dica">e mais ${legenda.length - 200} grupos</p>` : '')
@@ -392,6 +425,7 @@ function painelLegenda(modo) {
     cb.onclick = ev => ev.stopPropagation();
     cb.onchange = () => { const g = legenda[+cb.dataset.olho]; visor.ocultarPecas(g.ids, !cb.checked); };
   });
+  ligarSecaoPiso();
   $('#painel-corpo').querySelectorAll('[data-k]').forEach(el => el.onclick = (ev) => {
     if (ev.target.closest('input')) return;
     const g = legenda[+el.dataset.k];

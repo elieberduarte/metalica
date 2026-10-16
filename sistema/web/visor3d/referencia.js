@@ -95,21 +95,23 @@ export function montarReferencia(r, { escuro = false, caixa = null, zChao = 0 } 
   grupo.name = 'referencia';
   const cores = escuro ? TEMA.escuro : TEMA.claro;
   const segs = r.segmentos || [], eixos = r.eixos || [], niveis = r.niveis || [];
+  // cada parte no seu grupo (arquitetonico, eixos, niveis): o modo ver liga e desliga uma a uma, como camadas
+  // (usuário, 16/10: "transformar esse desenho do piso em uma camada que possa ser oculta")
+  const parte = (nome) => { const g = new THREE.Group(); g.name = nome; grupo.add(g); return g; };
   if (segs.length) {
     const pos = new Float32Array(segs.length * 6);
     segs.forEach((s, i) => pos.set([s[0], s[1], zChao, s[2], s[3], zChao], i * 6));
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     const l = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: cor(escuro ? COR_ARQ.escuro : COR_ARQ.claro), transparent: true, opacity: 0.9 }));
-    l.name = 'arquitetonico';
-    grupo.add(semToque(l));
+    parte('arquitetonico').add(semToque(l));
   }
   if (eixos.length) {
     const pos = [];
     for (const e of eixos) pos.push(e.a[0], e.a[1], e.a[2] || 0, e.b[0], e.b[1], e.b[2] || 0);
     const l = tracejado(pos, cores.linha, escuro ? 0.6 : 0.7, 900, 600);
-    l.name = 'eixos';
-    grupo.add(l);
+    const gEixos = parte('eixos');
+    gEixos.add(l);
     const L = Math.max(...eixos.map(e => Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1])));
     const raio = Math.min(Math.max(L * 0.012, 250), 700);
     for (const e of eixos) {
@@ -120,7 +122,7 @@ export function montarReferencia(r, { escuro = false, caixa = null, zChao = 0 } 
           s.scale.setScalar(diam);
           s.position.set(p[0] + sinal * dx / d * diam * 0.6, p[1] + sinal * dy / d * diam * 0.6, p[2] || 0);
         });
-        grupo.add(s);
+        gEixos.add(s);
       }
     }
   }
@@ -136,8 +138,8 @@ export function montarReferencia(r, { escuro = false, caixa = null, zChao = 0 } 
       const pos = [];
       for (const n of niveis) { const z = n.z; pos.push(x0, y0, z, x1, y0, z, x1, y0, z, x1, y1, z, x1, y1, z, x0, y1, z, x0, y1, z, x0, y0, z); }
       const l = tracejado(pos, cores.nivel, escuro ? 0.3 : 0.55, 1200, 800);
-      l.name = 'niveis';
-      grupo.add(l);
+      const gNiveis = parte('niveis');
+      gNiveis.add(l);
       // os níveis na mesma cota viram uma cabeça só, com os nomes juntos; os muito perto alternam o canto
       const porCota = new Map();
       for (const n of niveis) { const k = Math.round(n.z); porCota.set(k, [...(porCota.get(k) || []), n.nome]); }
@@ -149,7 +151,7 @@ export function montarReferencia(r, { escuro = false, caixa = null, zChao = 0 } 
         const x = outro ? x0 : x1, y = outro ? y1 : y0;
         // a placa do nível menor que a do editor (pedido do usuário, 06/10): 22 px na tela, até 0,9 m no modelo
         naTela(s, 22, 900, alt => { s.scale.set(alt * s.userData.proporcao, alt, 1); s.position.set(x, y, z); });
-        grupo.add(s);
+        gNiveis.add(s);
       });
     }
   }
