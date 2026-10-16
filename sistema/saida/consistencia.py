@@ -60,8 +60,9 @@ def _perto(a, b, rel=TOL_TOTAL, absoluto=0.05) -> bool:
 
 
 def _composicao(texto) -> Dict[str, int]:
-    """"1× P1, 2× P2" → {"P1": 1, "P2": 2}"""
-    return {k: int(v) for v, k in re.findall(r"(\d+)\s*[×x]\s*([^,\s]+)", str(texto or ""))}
+    """"1× P1, 2× P2, 2× P3 (b)" → {"P1": 1, "P2": 2, "P3 (b)": 2} — a variante "(b)" é outra posição (Água Gelada:
+    CH9 = P3 e CH13 = P3 (b); lida como "P3", a conferência somava as duas e acusava cópia errada)"""
+    return {k.strip(): int(v) for v, k in re.findall(r"(\d+)\s*[×x]\s*([^,]+?)\s*(?=,|$)", str(texto or ""))}
 
 
 def _posicoes_do_3d(pasta) -> Optional[collections.Counter]:
@@ -261,6 +262,15 @@ def conferir(pasta: str) -> List[dict]:
         por_prancha[(c.get("arquivo"), c.get("prancha"))].append(c)
     for (_arq, num), cs in sorted(por_prancha.items(), key=lambda kv: (str(kv[0][0]), kv[0][1] or 0)):
         conjuntos = [c for c in cs if not c.get("copia") and c.get("item") and eh_conjunto(c)]
+        copias = [c for c in cs if c.get("copia") and c.get("item") and c.get("marca") and not eh_conjunto(c)]
+        # variantes: o detalhamento separa P3 em "P3" (CH9) e "P3 (b)" (CH13), mas a composição do conjunto pode
+        # continuar dizendo só "P3" (Água Gelada) — aí a conta é a soma das cópias das variantes
+        base_de = lambda t: re.sub(r"\s*\([^)]*\)$", "", t.strip())       # noqa: E731
+        soma_variantes = collections.Counter()
+        for c in copias:
+            toks = [t.strip() for t in str(c["marca"]).split("/") if t.strip()]
+            if len(toks) == 1:
+                soma_variantes[base_de(toks[0])] += int(c["item"].get("quantidade") or 0)
         for c in cs:
             it = c.get("item") or {}
             pos = str(c.get("marca") or "")
@@ -272,7 +282,18 @@ def conferir(pasta: str) -> List[dict]:
             if any(v is None for _q, vs in vals for v in vs):
                 continue                          # família com composições diferentes: não dá para saber a conta
             esperado = sum(q * sum(vs) for q, vs in vals)
-            if esperado and int(it.get("quantidade") or 0) != esperado:
+            tem = int(it.get("quantidade") or 0)
+            if len(toks) == 1:
+                b = base_de(toks[0])
+                sem_variante = toks[0] == b and not any(re.match(re.escape(b) + r"\s*\(", p_) for k in conjuntos
+                                                         for m in metades(k) for p_ in comp_de.get(m, {}))
+                if sem_variante and soma_variantes[b] != tem:
+                    # há cópias das variantes junto: a conta é a soma delas
+                    if esperado and soma_variantes[b] != esperado:
+                        achar("copias", "fabrica", f"prancha {num}: cópias de {b} e das variantes somam {soma_variantes[b]}x, "
+                                                   f"mas os conjuntos desta prancha levam {esperado}")
+                    continue
+            if esperado and tem != esperado:
                 achar("copias", "fabrica", f"prancha {num}: cópia de {it.get('nome')} ({pos}) com {it.get('quantidade')}x, "
                                            f"mas os conjuntos desta prancha levam {esperado}")
             elif not conjuntos and str(it.get("nome") or "") in R and int(it.get("quantidade") or 0) != int(R[it["nome"]]["Qtd"]):

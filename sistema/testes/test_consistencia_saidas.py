@@ -117,6 +117,27 @@ def test_copia_em_prancha_sem_conjunto_leva_o_total_da_obra():
     o["pranchas"][0]["celulas"].append({"titulo": "B1 – 03x", "copia": True, "marca": "M99 / P77", "item": {"nome": "B1", "quantidade": 3, "classe": "Barra"}})
     assert "copias" not in confs(o)
 
+def test_composicao_com_variante_b_e_outra_posicao():
+    """Água Gelada: "2× P13, 1× P13 (b)" — a cópia de P13 leva só as P13; antes as duas eram somadas"""
+    o = obra_coerente()
+    o["cj"][0]["Composicao"] = "1× P1, 2× P13, 1× P13 (b)"
+    o["pranchas"][0]["celulas"].append({"titulo": "CH2b – 04x", "copia": True, "marca": "P13 (b)",
+                                       "item": {"nome": "CH2b", "quantidade": 4, "classe": "Chapa"}})
+    assert "copias" not in confs(o)
+    assert C._composicao("1× P1, 2× P3 (b), 3× M7") == {"P1": 1, "P3 (b)": 2, "M7": 3}
+
+
+def test_variantes_que_a_composicao_nao_distingue_somam():
+    """Água Gelada: a composição diz "2× P13" e o detalhamento separou em CH2 (P13) e CH2b (P13 (b)); na prancha, as
+    duas cópias somam o que os conjuntos levam (6 + 2 = 8) — está certo; só uma delas com 8 seria contar duas vezes"""
+    o = obra_coerente()
+    o["pranchas"][0]["celulas"][1]["item"]["quantidade"] = 6
+    o["pranchas"][0]["celulas"].append({"titulo": "CH2b – 02x", "copia": True, "marca": "P13 (b)",
+                                       "item": {"nome": "CH2b", "quantidade": 2, "classe": "Chapa"}})
+    assert "copias" not in confs(o)
+    o["pranchas"][0]["celulas"][1]["item"]["quantidade"] = 8
+    assert "copias" in confs(o)
+
 def test_nome_de_conjunto_que_e_outro_conjunto():
     """Sooro, N01/M02: a prancha "T4" desenha M8 + M9, e o T4 da planta e do romaneio é M6"""
     o = obra_coerente()
