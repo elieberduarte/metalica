@@ -42,6 +42,10 @@ PERFIL_DE_ACO = (r"^(w|hp|ipe|ipn|upn|u|c|l|t|tq|tr|cs|cvs|vs|ue)\s*[\d.,\"/ ]+\
 #: O que não é peça de produção nem acessório e é de aço (o gradil do guarda-corpo, o piso de chapa perfurada):
 #: entra na lista pela malha, com a observação — o peso depende das seções do modelo (06/10).
 NOME_DE_ACO = r"aco\b|steel|a36|a572|astm|chapa|tela|perfurad|gradil|grade|guarda.?corpo|corrimao|metal"
+#: A telha e o painel de fechamento lançados no modelo (o sólido IfcCovering do sistema ou de um gerador, o isopainel):
+#: não são peça de produção nem gradil — a "TP25 0,5 mm (Isoeste Metálica)" caía em "aço fora das peças" pelo "Metálica"
+#: do nome e saía chapa por chapa em "Gradis, pisos e outras peças de aço" no resumo de materiais (PRATI, 14/10)
+NOME_DE_TELHA = r"\btelha\b|\btp\s*-?\d{2}\b|isopainel|isofachada|termoacustic|sanduiche"
 OBS_PELA_MALHA = ("peso pela malha do IFC: conferir as seções com o projeto ou o fornecedor (a chapa perfurada vem sem os furos; "
                   "barra maciça no lugar de tubo pesa várias vezes mais — o corrimão do gradil da Passarela, 06/10)")
 
@@ -118,6 +122,15 @@ def volume_da_malha(vertices, faces) -> float:
         return 0.0
     A, B, C = P[ia], P[ib], P[ic]
     return float(abs(np.einsum("ij,ij->i", A, np.cross(B, C)).sum()) / 6.0)
+
+
+def eh_telha_ou_painel(ent) -> bool:
+    """O sólido de telha ou de painel de fechamento (IfcCovering, os atributos de telha do sistema, o nome ou o material
+    de telha/isopainel)."""
+    atr = getattr(ent, "atributos", None) or {}
+    if atr.get("tipo_ifc") == "IfcCovering" or atr.get("telha") or atr.get("telha_lancada"):
+        return True
+    return bool(re.search(NOME_DE_TELHA, _sem_acento("%s %s" % (getattr(ent, "material", "") or "", getattr(ent, "nome", "") or ""))))
 
 
 def item_fora_das_pecas(ent) -> Tuple[str, float]:
