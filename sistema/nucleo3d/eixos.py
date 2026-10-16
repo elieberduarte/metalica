@@ -259,6 +259,94 @@ def _chapas_de_apoio(pecas, tipos: dict, z_teto: float) -> list:
     return []
 
 
+#: O pilar que marca eixo: em pé e com pelo menos esta altura (mm) — bloco, colarinho e enchimento do pré-moldado
+#: também vêm como IfcColumn, com 0,5 a 1 m.
+ALTURA_MINIMA_PILAR = 2500.0
+#: A linha de pilares que é eixo: 2 pilares ou mais (o pórtico tem 2); a mais fraca a menos disto (mm) de uma linha
+#: mais cheia é a mesma (o pilar da escada, o de canto deslocado) e não vira eixo próprio.
+DISTANCIA_MINIMA_EIXOS = 2000.0
+
+
+def _direcao_da_malha(pecas) -> Optional[Tuple[float, float]]:
+    """A direção da malha ortogonal pela MODA dos ângulos em planta (módulo 90°, de décimo em décimo de grau, pesada
+    pelo comprimento ao quadrado), afinada pela média só das peças a até 0,5° dela: a média de todas
+    (`_direcao_dominante`) puxava a malha meio grau para as peças inclinadas (escada, rampa)."""
+    hist: Dict[int, float] = {}
+    angs = []
+    for e in pecas:
+        d, L = _eixo_em_planta(e)
+        if d is None or L < 300.0:
+            continue
+        a = math.degrees(math.atan2(d[1], d[0])) % 90.0
+        angs.append((a, L * L))
+        k = int(round(a * 10)) % 900
+        hist[k] = hist.get(k, 0.0) + L * L
+    if not hist:
+        return None
+    pico = max(hist, key=lambda k: hist[k] + 0.5 * (hist.get((k - 1) % 900, 0.0) + hist.get((k + 1) % 900, 0.0))) / 10.0
+    c = sn = 0.0
+    for a, w in angs:
+        dif = (a - pico + 45.0) % 90.0 - 45.0
+        if abs(dif) <= 0.5:
+            c += w * math.cos(math.radians((pico + dif) * 4))
+            sn += w * math.sin(math.radians((pico + dif) * 4))
+    ang = math.degrees(math.atan2(sn, c)) / 4 if math.hypot(c, sn) > 1e-9 else pico
+    return _limpo((math.cos(math.radians(ang)), math.sin(math.radians(ang))))
+
+
+def _pilares(pecas, tipos: dict) -> list:
+    """Os pilares do modelo: IfcColumn, o tipo "pilar" do nomes.json ou a barra de papel pilar, em pé e altos."""
+    saida = []
+    for e in pecas:
+        a = getattr(e, "atributos", None) or {}
+        t = str(tipos.get(str(_marcas(e).get("posicao") or "")) or "")
+        if not (a.get("tipo_ifc") == "IfcColumn" or t.startswith("pilar") or getattr(e, "papel", "") == "pilar"):
+            continue
+        vs = _vertices(e)
+        if len(vs) < 2:
+            continue
+        zs = [v[2] for v in vs]
+        if max(zs) - min(zs) >= ALTURA_MINIMA_PILAR and _em_pe(e):
+            saida.append(e)
+    return saida
+
+
+def _eixos_pelos_pilares(pecas, tipos: dict) -> Optional[dict]:
+    """A malha pelos pilares (o prédio sem treliça: pré-moldado, mercado — 16/10, o Mercado Conceito veio do Tekla sem
+    a malha de eixos e sem marca de conjunto, e a direção saía pela forma em L do prédio, a 51°). A direção é a que
+    mais se repete nas peças (a malha ortogonal); os eixos, as linhas com bastante pilar alinhado. Numerados ao longo
+    do x (o mais perto dele), letras ao longo do y. None se não há pilares que bastem. A linha de 1 pilar só não é
+    eixo (o usuário acrescenta no diálogo dos eixos)."""
+    pil = _pilares(pecas, tipos)
+    if len(pil) < 4:
+        return None
+    d = _direcao_da_malha(pecas) or (1.0, 0.0)
+    g = max((d, (-d[1], d[0]), (-d[0], -d[1]), (d[1], -d[0])), key=lambda v: (round(v[0], 9), -v[1]))
+    p = (-g[1], g[0])
+    cs = [_centroide(_vertices(e)) for e in pil]
+
+    def linhas(u) -> List[float]:
+        q = [c[0] * u[0] + c[1] * u[1] for c in cs]
+        grupos: List[List[float]] = []
+        for v in sorted(q):
+            if grupos and v - grupos[-1][-1] <= GAP_EIXO:
+                grupos[-1].append(v)
+            else:
+                grupos.append([v])
+        aceitas: List[float] = []
+        for gr in sorted((gr for gr in grupos if len(gr) >= 2), key=lambda gr: -len(gr)):
+            pos = sum(gr) / len(gr)
+            if all(abs(pos - a) >= DISTANCIA_MINIMA_EIXOS for a in aceitas):
+                aceitas.append(pos)
+        return sorted(aceitas)
+
+    gs_n, ps = linhas(g), linhas(p)
+    if not gs_n or not ps:
+        return None
+    z_base = min(v[2] for e in pil for v in _vertices(e))
+    return {"g": g, "p": p, "numeros": gs_n, "letras": ps, "z_base": z_base}
+
+
 def identificar_eixos(doc: Documento, nomes: Optional[dict] = None) -> dict:
     """Os eixos pelo modelo. `nomes`: o nomes.json do detalhamento (tipos por marca e por
     conjunto). Os eixos numerados são as treliças — as tesouras do nomes.json ou, sem elas, os
@@ -308,6 +396,16 @@ def identificar_eixos(doc: Documento, nomes: Optional[dict] = None) -> dict:
         trel = melhor
         if trel:
             tes = [e for e in pecas if marca_conj(e) and serve_conjunto(marca_conj(e), e)]
+    pelos_pilares = None if trel else _eixos_pelos_pilares(pecas, tipos)
+    if pelos_pilares:
+        g, p = pelos_pilares["g"], pelos_pilares["p"]
+        gv = [v[0] * g[0] + v[1] * g[1] for v in todos_v]
+        pv = [v[0] * p[0] + v[1] * p[1] for v in todos_v]
+        return {"eixo_g": [round(g[0], 6), round(g[1], 6)], "perp_g": [round(p[0], 6), round(p[1], 6)],
+                "numeros": [{"nome": str(i + 1), "pos": round(v, 1)} for i, v in enumerate(pelos_pilares["numeros"])],
+                "letras": [{"nome": _letra(i), "pos": round(v, 1)} for i, v in enumerate(pelos_pilares["letras"])],
+                "z_base": round(pelos_pilares["z_base"], 1), "origem": "auto", "fonte_letras": "pilares",
+                "limites": {"g": [round(min(gv), 1), round(max(gv), 1)], "p": [round(min(pv), 1), round(max(pv), 1)]}}
     if trel:
         g = (vao[1], -vao[0])
         if g[0] < 0 or (abs(g[0]) < 1e-9 and g[1] < 0):
