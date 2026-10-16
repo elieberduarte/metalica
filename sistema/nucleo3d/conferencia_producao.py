@@ -38,7 +38,22 @@ REGRAS = {
     "marca_a_conferir": "Peça que mudou depois de copiada (marca a conferir)",
     "fora_da_lista": "Sólido que não entra na lista de materiais (sem tipo de peça)",
     "sem_principal": "Conjunto sem peça principal",
+    # o que trava a emissão das pranchas e a peça que não sai de uma barra (Q17/Q07, primeiro uso 16/10)
+    "maquina": "Terça com o par de furos fora do passo da máquina, ligada sem chapa (o PDF das pranchas é recusado)",
+    "barra_comercial": "Peça maior que a barra comercial de 12 m (prever emenda)",
 }
+
+
+def rotulo(e) -> str:
+    """O nome da peça nos achados: o de produção com a marca do IFC ("T.C.4 (M92)") depois do Detalhar; antes, a marca
+    (Q12/Q17, primeiro uso 16/10: o Conferir dizia P26 × M10 e as pranchas CH8 e T.C.4)."""
+    if e is None:
+        return "?"
+    m = (e.atributos or {}).get("marcas") or {}
+    pos, nome = str(m.get("posicao") or ""), str(m.get("nome") or "")
+    if nome and pos and nome != pos:
+        return "%s (%s)" % (nome, pos)
+    return nome or pos or e.nome or e.id
 
 
 # ------------------------------------------------------------------ malha: triângulos e ponto dentro
@@ -603,8 +618,22 @@ def execucao(doc, pecas: Sequence, malhas_por_id: Optional[Dict[str, "_Malha"]] 
             m = caixas[k]
             dentro = m.dentro(P)
             if dentro.any():
-                achados.append({"regra": "chave", "ids": [b["id"], m.id], "ponto": [round(float(x), 1) for x in P[dentro][0]],
-                                "texto": "não há espaço para a chave: a peça vizinha ocupa o lugar da cabeça ou da porca"})
+                # qual parafuso, em que peças, e quem ocupa o lugar (Q17: 9 linhas iguais sem dizer qual)
+                # em volta do furo (no eixo é o vazio do furo): um anel ao longo do corpo do parafuso
+                rr = 0.5 * d + 3.0
+                corpo = np.asarray([c + a * t * L / 2.0 + (u * math.cos(g) + v * math.sin(g)) * rr
+                                    for t in (-0.6, -0.3, 0.0, 0.3, 0.6) for g in (0.0, 1.5708, 3.1416, 4.7124)])
+                lig = []
+                for j in perto:
+                    mj = caixas[j]
+                    if mj.id != m.id and mj.id != b["id"] and mj.dentro(corpo).any():
+                        lig.append(mj.id)
+                ents = doc.entidades
+                nome_b = "parafuso M%g × %g" % (round(d), round(L)) if d > 0 and L > 0 else "parafuso"
+                onde = " em %s" % " × ".join(rotulo(ents.get(i)) for i in lig[:2]) if lig else ""
+                achados.append({"regra": "chave", "ids": [b["id"], m.id] + lig[:2], "ponto": [round(float(x), 1) for x in P[dentro][0]],
+                                "texto": "%s%s: não há espaço para a chave — %s ocupa o lugar da cabeça ou da porca"
+                                         % (nome_b, onde, rotulo(ents.get(m.id)))})
                 break
     return achados
 
@@ -754,8 +783,7 @@ def conferir(doc, quais: Sequence[str] = ("colisao", "execucao", "producao"), id
             ps = []
             for i in a["ids"]:
                 e = nome.get(i)
-                m = ((e.atributos or {}).get("marcas") or {}) if e is not None else {}
-                ps.append(m.get("posicao") or (e.nome if e is not None else i) or i)
+                ps.append(rotulo(e) if e is not None else i)
             a["texto"] = "%s × %s" % (ps[0], ps[1]) if len(ps) >= 2 else str(ps[0])
     resumo = collections.Counter(a["regra"] for a in achados)
     return {"achados": achados, "resumo": dict(resumo), "regras": REGRAS, "info": info}

@@ -1082,6 +1082,22 @@ def _impressao_das_pecas(doc) -> dict:
     return out
 
 
+def _tipos_de_producao(s: str, doc) -> dict:
+    """{marca: tipo de produção} (terca_cobertura, suporte_terca…) de um projeto que ainda não foi detalhado: o
+    detalhamento só das terças numa cópia do modelo (~7 s na ME-Sooro), que dá os tipos de todas as posições. O padrão
+    de fábrica no 3D precisa deles para achar os suportes de terça — sem eles, o 1º Detalhar de um IFC novo deixava
+    17 terças da ME-Sooro fora do passo da máquina e o PDF recusado; só o 2º as acertava (Q01, primeiro uso 16/10)."""
+    import copy as _copy
+    from nucleo2d import detalhar as det
+    _progresso(s, "reconhecendo as terças e os suportes…")
+    try:
+        r = det.detalhar(_copy.deepcopy(doc), grupos=["tercas"], regra_tercas=False, converter=False,
+                         ajustes=_ajustes_furos(s), nomes=None)
+    except ErroDeDados:
+        return {}
+    return (r.get("nomes") or {}).get("tipos") or {}
+
+
 def _padronizar_3d(s: str, doc, regra: bool = True, converter: bool = False) -> dict:
     """As regras de fábrica aplicadas no modelo 3D, na ordem da prioridade combinada com o usuário (02/10): 1) o limite
     da máquina — o passo na altura da terça, 50 mm até 200 de altura, 100 acima —, 2) a ligação manda — o furo da terça
@@ -1112,7 +1128,7 @@ def _padronizar_3d(s: str, doc, regra: bool = True, converter: bool = False) -> 
     ra = _alinhar_furos_das_barras(s, doc, gravar=False)
     rr, ro = ra.get("retirados") or {}, ra.get("oblongados") or {}
     marcou(ra.get("barras") or rr.get("furos") or rr.get("limpas") or ro.get("furos") or ro.get("chapas"), ra.get("posicoes"))
-    tipos_ = (_nomes_producao(s) or {}).get("tipos") or {}
+    tipos_ = (_nomes_producao(s) or {}).get("tipos") or _tipos_de_producao(s, doc)
     marcas_ = lambda f: {m.strip() for k, t in tipos_.items() if f(str(t)) for m in str(k).split("/")}  # noqa: E731
     _progresso(s, "suporte de terça no passo da máquina…")
     sup = ajustar_suportes_as_tercas(doc, marcas_(lambda t: t.startswith("terca")), marcas_(lambda t: t == "suporte_terca"))
@@ -1130,12 +1146,58 @@ def _padronizar_3d(s: str, doc, regra: bool = True, converter: bool = False) -> 
             out["avisos"].append("furação da máquina aplicada no 3D a %d chapa(s): %s"
                                  % (padr["chapas"], ", ".join(padr["posicoes"][:12])))
         marcou(padr["chapas"], padr["posicoes"])
+    else:
+        padr = {"chapas": 0}
+    if sup["chapas"] or padr["chapas"]:
+        # o suporte e a chapa de ligação foram para o passo da máquina depois de os furos das terças serem alinhados a
+        # eles: as terças vão de novo atrás deles, pelo mesmo caminho (aos parafusos, sem uso, oblongos). Sem isso a
+        # ME-Sooro saía do 1º Detalhar com 17 terças "fora do passo da máquina" e o PDF recusado, e só o 2º Detalhar as
+        # acertava (Q01 do teste de primeiro uso, 16/10)
+        _alinhar_furos_das_barras(s, doc, gravar=False)
     depois = _impressao_das_pecas(doc)
     mudadas = {i for i in set(antes) | set(depois) if antes.get(i) != depois.get(i)}
     out["mudou"] = bool(mudadas)
     out["posicoes"] = sorted({str(_marcas(doc.entidades[i]).get("posicao") or doc.entidades[i].nome or i)
                               for i in mudadas if i in doc.entidades})
     return out
+
+
+def _com_as_ligadas(doc, fora: list) -> list:
+    """Em cada terça fora do passo da máquina (fora_do_limite_da_maquina_pecas), as barras em que ela se liga pelos
+    parafusos — a terça sem chapa no banzo da tesoura: o "Ver no 3D" mostra as duas (Q01, 16/10). Pela caixa: o
+    parafuso dentro da caixa da terça e da outra barra."""
+    if not fora:
+        return fora
+    from nucleo3d.geometria import malha
+    from nucleo3d.modelo import Chapa
+    from nucleo3d.producao import pecas_de_producao
+    from nucleo2d.detalhe.base import TIPOS_ACESSORIO, _tipo_ifc
+    caixas = {}
+
+    def caixa(e):
+        if e.id not in caixas:
+            try:
+                vs = malha(e)[0]
+                caixas[e.id] = (tuple(min(v[i] for v in vs) - 3.0 for i in range(3)), tuple(max(v[i] for v in vs) + 3.0 for i in range(3)))
+            except Exception:                                    # noqa: BLE001 — sem malha, sem caixa
+                caixas[e.id] = None
+        return caixas[e.id]
+
+    def dentro(p, c):
+        return c is not None and all(c[0][i] <= p[i] <= c[1][i] for i in range(3))
+    centros = []
+    for e in doc.entidades.values():
+        if _tipo_ifc(e) in TIPOS_ACESSORIO and getattr(e, "camada", "") != "Telhas":
+            c = caixa(e)
+            if c:
+                centros.append(tuple((c[0][i] + c[1][i]) / 2.0 for i in range(3)))
+    barras = [e for e in pecas_de_producao(doc) if not isinstance(e, Chapa) and _tipo_ifc(e) != "IfcPlate"]
+    for f in fora:
+        proprias = set(f["ids"])
+        pts = [p for i in f["ids"] if i in doc.entidades for p in centros if dentro(p, caixa(doc.entidades[i]))]
+        ligadas = [e.id for e in barras if e.id not in proprias and any(dentro(p, caixa(e)) for p in pts)]
+        f["ligadas"] = ligadas[:40]
+    return fora
 
 
 def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, lista_producao) -> dict:
@@ -1181,8 +1243,10 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     r["pendente_3d"] = pendente
     # o que o padrão no 3D não conseguiu (a terça ligada a outra barra sem chapa, com o par fora do passo da máquina):
     # as pranchas não são emitidas sem isso resolvido (R6)
-    from nucleo2d.detalhar import fora_do_limite_da_maquina
-    r["fora_da_maquina"] = fora_do_limite_da_maquina(r.get("objetos_posicoes") or [], r.get("camadas") or {})
+    from nucleo2d.detalhe.base import fora_do_limite_da_maquina_pecas
+    fora_pecas = _com_as_ligadas(doc, fora_do_limite_da_maquina_pecas(r.get("objetos_posicoes") or [], r.get("camadas") or {}))
+    r["fora_da_maquina"] = [f["texto"] for f in fora_pecas]
+    r["fora_da_maquina_pecas"] = fora_pecas
     _progresso(s, "gravando os desenhos…")
     substituir = corpo.get("substituir", True) is not False
     if substituir:
@@ -1268,7 +1332,8 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     _gravar_ajuste(os.path.join(pasta, "relatorio.json"), relatorio)
     # o carimbo do que foi usado (modelo, código, furação, eixos): mudou, os desenhos se refazem sozinhos
     _vivos().gravar_carimbo(s, geracoes, completo=set(grupos) >= set(GRUPOS.keys()), extra={"pendente_3d": r.get("pendente_3d") or {},
-                                                                                    "fora_da_maquina": r.get("fora_da_maquina") or []})
+                                                                                    "fora_da_maquina": r.get("fora_da_maquina") or [],
+                                                                                    "fora_da_maquina_pecas": r.get("fora_da_maquina_pecas") or []})
     g.tocar(s)
     return {"desenhos": desenhos, "posicoes": len(r["posicoes"]), "conjuntos": len(r["conjuntos"]),
             "pecas": sum(p["quantidade"] for p in r["posicoes"]), "peso_total": r["peso_total"],
@@ -4236,10 +4301,15 @@ def _conferir_para_emitir(s: str, desenhos) -> None:
                      "editor ou o Detalhar" % (len(pend), ", ".join(pend[:10])))
     fora = c.get("fora_da_maquina") or []
     if fora:
-        falta.append("terça(s) com furos fora do passo da máquina, ligadas sem chapa (o 3D não pôde corrigir sozinho): "
-                     + "; ".join(fora[:10]) + " — acerte a ligação no 3D")
+        # o que fazer, e cada terça com o caminho até ela (Q01, 16/10: nada na tela levava à peça)
+        falta.append("%d terça(s) com o par de furos fora do passo da máquina, ligadas a outra barra sem chapa (o 3D não "
+                     "pôde corrigir sozinho): %s%s — no 3D, ponha a chapa de ligação (suporte de terça) entre a terça e a "
+                     "barra, ou leve o par de furos ao passo da máquina; depois Detalhar de novo"
+                     % (len(fora), "; ".join(fora[:10]), "…" if len(fora) > 10 else ""))
     if falta:
-        raise ErroDeDados("As pranchas não podem ser emitidas: " + " · ".join(falta) + ".")
+        e = ErroDeDados("As pranchas não podem ser emitidas: " + " · ".join(falta) + ".")
+        e.pecas = c.get("fora_da_maquina_pecas") or []
+        raise e
 
 
 def exportar_desenho_pdf(s: str, nome: str, corpo: dict) -> dict:
@@ -4553,10 +4623,64 @@ def conferir_modelo(corpo: dict) -> dict:
             _PROGRESSO_CONFERENCIA[tarefa] = {"fracao": round(max(0.0, min(1.0, f)), 3), "etapa": etapa,
                                               "ha_s": round(time.time() - t0, 1)}
     try:
-        return conferencia_producao.conferir(_documento_de(corpo), quais=quais, ids=corpo.get("ids") or None,
-                                             progresso=progresso)
+        doc = _documento_de(corpo)
+        s = str(corpo.get("projeto") or "")
+        com_fabrica = "producao" in quais and s and os.path.isdir(os.path.join(PROJETOS, s))
+        r = conferencia_producao.conferir(doc, quais=quais, ids=corpo.get("ids") or None,
+                                          progresso=(lambda f, e: progresso(0.85 * f, e) if f < 1.0 else None) if com_fabrica else progresso)
+        if com_fabrica:
+            progresso(0.86, "furação da máquina e barra comercial (o que o Detalhar faria)")
+            r["achados"] += _conferir_fabrica(s, doc)
+            from collections import Counter
+            r["resumo"] = dict(Counter(a["regra"] for a in r["achados"]))
+            progresso(1.0, "pronto")
+        return r
     finally:
         _PROGRESSO_CONFERENCIA.pop(tarefa, None)
+
+
+def _conferir_fabrica(s: str, doc) -> list:
+    """As regras de fábrica no Conferir antes de detalhar (Q17, primeiro uso 16/10: o que travava o PDF não estava na
+    lista): o padrão de fábrica aplicado numa cópia do modelo, como o Detalhar faz, e o que sobra — a terça fora do passo
+    da máquina ligada sem chapa (regra "maquina", a que recusa as pranchas) — e a peça maior que a barra comercial
+    (regra "barra_comercial", Q07)."""
+    import copy as _copy
+    from nucleo2d import detalhar as det
+    from nucleo2d.detalhe.base import fora_do_limite_da_maquina_pecas
+    from nucleo2d.detalhe.celulas import acima_da_barra_comercial
+    from nucleo3d.geometria import malha
+    alvo = _copy.deepcopy(doc)
+    try:
+        _padronizar_3d(s, alvo, regra=True, converter=False)
+    finally:
+        _fim_progresso(s)
+    lev = det.levantar(alvo, regra_tercas=False, ajustes=_ajustes_furos(s), nomes=_nomes_producao(s))
+
+    def ponto(ids):
+        for i in ids:
+            e = alvo.entidades.get(i)
+            if e is None:
+                continue
+            try:
+                vs = malha(e)[0]
+                return [round(sum(q[k] for q in vs) / len(vs), 1) for k in range(3)]
+            except Exception:                                    # noqa: BLE001
+                continue
+        return [0.0, 0.0, 0.0]
+    achados = []
+    for f in _com_as_ligadas(alvo, fora_do_limite_da_maquina_pecas(lev["posicoes"], lev["camadas"])):
+        ids = [i for i in f["ids"] + f.get("ligadas", []) if i in doc.entidades]
+        achados.append({"regra": "maquina", "ids": ids, "ponto": ponto(f["ids"]),
+                        "texto": "%s (%dx) — ponha a chapa de ligação (suporte de terça) ou leve o par ao passo da máquina"
+                                 % (f["texto"], len(f["ids"]))})
+    for p in lev["posicoes"]:
+        if acima_da_barra_comercial(p):
+            achados.append({"regra": "barra_comercial", "ids": [i for i in p.global_ids if i in doc.entidades],
+                            "ponto": ponto(p.global_ids),
+                            "texto": "%s%s: %s mm (%dx) — maior que a barra de 12 m, prever emenda" % (
+                                p.nome or p.marca, " (%s)" % p.marca if p.nome and p.nome != p.marca else "",
+                                "{:,.0f}".format(p.comprimento).replace(",", "."), p.quantidade)})
+    return achados
 
 
 #: tarefa → {fracao, etapa, ha_s}: a conferência do modelo em andamento (conferir_modelo)
@@ -4818,7 +4942,10 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(corpo)
 
     def _erro(self, mensagem, status=400, detalhe=""):
-        self._json({"erro": str(mensagem), "detalhe": detalhe}, status)
+        corpo = {"erro": str(mensagem), "detalhe": detalhe}
+        if getattr(mensagem, "pecas", None):              # o caminho até cada peça do erro (o PDF recusado, Q01)
+            corpo["pecas"] = mensagem.pecas
+        self._json(corpo, status)
 
     def _modelo_leve(self, s: str, resto: list):
         """GET /api/projetos/<s>/3d-leve[/pecas]: o 3D leve do modo "ver" (saida/modelo_leve.py). Pronto, vai

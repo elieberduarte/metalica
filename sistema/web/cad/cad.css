@@ -146,3 +146,7 @@ html.embutida #btn-voltar, html.embutida #link-editor, html.embutida #link-divid
 .dialogo-corpo .bloco-resultado.atencao { border-left-color: #d97706; }
 .dialogo-corpo .bloco-resultado.atencao .explica { color: #d97706; }
 .dialogo-corpo .resultado-recebido { display: flex; flex-direction: column; gap: 10px; max-height: 64vh; overflow: auto; }
+/* o erro/aviso das pranchas com a lista das peças e o "Ver no 3D" de cada uma (Q01, primeiro uso 16/10) */
+.aviso ul.lista-ver-no-3d { margin: 4px 0 0; padding-left: 18px; max-height: 220px; overflow-y: auto; }
+.aviso ul.lista-ver-no-3d li { margin: 2px 0; }
+.aviso button.ver-no-3d { font-size: 11px; padding: 0 6px; margin-left: 4px; cursor: pointer; }

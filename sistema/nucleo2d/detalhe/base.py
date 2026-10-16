@@ -1844,6 +1844,13 @@ def fora_do_limite_da_maquina(posicoes: Sequence[Posicao], camadas: Dict[str, st
     fura os dois de uma vez): o que o padrão no 3D não conseguiu levar (a ligação com outra barra, sem chapa). Sem
     isso resolvido as pranchas não são emitidas (regra R6, 02/10). Devolve ["M10: 2 furos a 80 mm na altura (máquina:
     50)", ...]."""
+    return [f["texto"] for f in fora_do_limite_da_maquina_pecas(posicoes, camadas)]
+
+
+def fora_do_limite_da_maquina_pecas(posicoes: Sequence[Posicao], camadas: Dict[str, str]) -> List[dict]:
+    """O mesmo de fora_do_limite_da_maquina, com o caminho até a peça (Q01 do teste de primeiro uso, 16/10: o PDF era
+    recusado com "T.O.6: furos a 60 mm…" e nada levava à terça): [{"nome", "marca", "passos", "maquina", "ids",
+    "texto"}] — `ids` são as peças do 3D da posição (todas as cópias)."""
     fora = []
     for p in posicoes:
         if not _eh_terca(p, camadas.get(p.marca, "")):
@@ -1852,7 +1859,9 @@ def fora_do_limite_da_maquina(posicoes: Sequence[Posicao], camadas: Dict[str, st
         ruins = sorted({round(a[3]) for a in (_assinatura(g) for g in _grupos_de_furos(p.furos))
                         if a and a[1] > 1 and abs(a[3] - pv) > 0.5})
         if ruins:
-            fora.append("%s: furos a %s mm na altura (máquina: %g)" % (p.nome or p.marca, "/".join(map(str, ruins)), pv))
+            fora.append({"nome": p.nome or p.marca, "marca": p.marca, "passos": ruins, "maquina": pv,
+                         "ids": list(dict.fromkeys(p.global_ids)),
+                         "texto": "%s: furos a %s mm na altura (máquina: %g)" % (p.nome or p.marca, "/".join(map(str, ruins)), pv)})
     return fora
 
 

@@ -317,6 +317,56 @@ def p21_peso_do_modelo_vazio(aba):
     ok(aba.avaliar("window.editor.documento.tamanho") == 0 and depois == "—", f"no modelo em branco, Aço é «—» ({depois})")
 
 
+# ---------------------------------------------------------------- IFC → pranchas (Eng. Camila, achados Q)
+
+def _pasta_do_projeto(slug):
+    for raiz, dirs, _ in os.walk(DADOS):
+        if os.path.basename(raiz) == slug and os.path.exists(os.path.join(raiz, "projeto.json")):
+            return raiz
+    raise RuntimeError("pasta do projeto %s não achada" % slug)
+
+
+def q01_pdf_recusado_ver_no_3d(aba):
+    """Q01: o PDF das pranchas recusado por terças fora do passo da máquina ("T.O.6: furos a 60 mm…") e nada levava à
+    peça. O aviso amarelo e o erro vermelho trazem cada terça com "Ver no 3D", que abre o editor com as peças (e a barra
+    em que a terça se liga) em destaque."""
+    print("Q01 — PDF recusado: cada terça com Ver no 3D")
+    s = projeto("Sooro pranchas", tipo="desenho")
+    # 3 barras no 3D: as duas cópias da terça T.O.6 e o banzo em que ela se liga
+    post(f"/api/projetos/{s}/modelo", {"documento": {"nome": "Sooro", "entidades": [
+        {"tipo": "barra", "id": i, "nome": n, "camada": "Vigas", "perfil": "U150X50X2.28", "inicio": [x, 0, 3000], "fim": [x, 6000, 3000],
+         "atributos": {"marcas": {"posicao": "M92", "nome": "T.O.6"} if n != "banzo" else {"posicao": "M1"}}}
+        for i, n, x in (("b1", "T.O.6", 0), ("b2", "T.O.6", 2000), ("b3", "banzo", 4000))]}})
+    post(f"/api/projetos/{s}/desenhos/pranchas", {"desenho": {"nome": "pranchas", "entidades": [
+        {"tipo": "linha", "id": "l1", "camada": "0", "a": [0, 0], "b": [100, 100]}],
+        "metadados": {"pranchas": [{"numero": 1, "celulas": []}]}}})
+    texto = "T.O.6: furos a 60 mm na altura (máquina: 50)"
+    det = os.path.join(_pasta_do_projeto(urllib.parse.unquote(s)), "detalhamento")
+    os.makedirs(det, exist_ok=True)
+    with open(os.path.join(det, "carimbo.json"), "w", encoding="utf-8") as f:
+        json.dump({"desenhos": {}, "fora_da_maquina": [texto],
+                   "fora_da_maquina_pecas": [{"nome": "T.O.6", "marca": "M92", "texto": texto, "ids": ["b1", "b2"], "ligadas": ["b3"]}]}, f)
+    aba.navegar(f"{base}/cad?projeto={s}&desenho=pranchas", limite=60)
+    esperar(aba, "window.cad && document.body.dataset.pronto === '1'", 60)
+    amarelo = esperar(aba, "[...document.querySelectorAll('.aviso[data-tipo=atencao] button.ver-no-3d')].length === 1", 30)
+    ok(amarelo, "o aviso amarelo traz a T.O.6 com Ver no 3D")
+    aba.avaliar("window.cad.pdfDasPranchas(); 1")
+    vermelho = esperar(aba, "[...document.querySelectorAll('.aviso[data-tipo=erro]')].some(a => /T.O.6/.test(a.textContent) && a.querySelector('button.ver-no-3d'))", 60)
+    ok(vermelho, "o erro do PDF traz a T.O.6 com Ver no 3D")
+    txt = aba.avaliar("[...document.querySelectorAll('.aviso[data-tipo=erro]')].map(a => a.textContent).join(' ')") or ""
+    ok("chapa de ligação" in txt, f"o erro diz o que fazer: {txt[:160]}")
+    clicar(aba, ".aviso[data-tipo=erro] button.ver-no-3d")
+    no3d = esperar(aba, "location.pathname === '/editor' && window.editor && window.editor.selecao && window.editor.selecao.ids.size === 3", 60)
+    ok(no3d, "Ver no 3D abre o editor com as 2 cópias da terça e o banzo selecionados (%s)"
+       % aba.avaliar("location.pathname + ' ' + (window.editor && window.editor.selecao ? window.editor.selecao.ids.size : '-')"))
+    # o 400 do PDF recusado é o caso testado, não erro da tela
+    aba.console[:] = [m for m in aba.console if not ("400" in m[1] and "/pranchas/pdf" in m[1])]
+
+
+#: os blocos dos achados Q (IFC → pranchas), rodados depois dos P
+BLOCOS_Q = (q01_pdf_recusado_ver_no_3d,)
+
+
 chrome = next(c for c in CHROMES if os.path.exists(c)); cdp = _porta_livre(); perfil = tempfile.mkdtemp(prefix="verif_primeiro_uso_")
 nav = subprocess.Popen([chrome, "--headless=new", "--disable-gpu", "--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars",
                         "--no-first-run", "--remote-allow-origins=*", f"--user-data-dir={perfil}", f"--remote-debugging-port={cdp}", "about:blank"],
@@ -332,7 +382,7 @@ try:
     # python verif_primeiro_uso_ui.py p07 → só os blocos cujo nome começa assim
     for bloco in [b for b in (p02_p13_recebido, p06_vao_pequeno, p11_p12_cad, p07_menu_antes_do_editor,
                                 p08_folhas_sem_pedir_o_arquivo, p19_resultado_do_recebido,
-                                p14_quadros_vazios, p26_padroes_da_planta, p21_peso_do_modelo_vazio)
+                                p14_quadros_vazios, p26_padroes_da_planta, p21_peso_do_modelo_vazio) + BLOCOS_Q
                   if not sys.argv[1:] or any(b.__name__.startswith(a) for a in sys.argv[1:])]:
         try:
             bloco(aba)

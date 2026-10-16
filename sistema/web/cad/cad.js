@@ -43,7 +43,11 @@ async function pedir(rota, opcoes = {}) {
   const texto = await r.text();
   let dados = null;
   try { dados = texto ? JSON.parse(texto) : null; } catch { dados = null; }
-  if (!r.ok || (dados && dados.erro)) throw new Error((dados && dados.erro) || `${r.status} ${r.statusText}`);
+  if (!r.ok || (dados && dados.erro)) {
+    const erro = new Error((dados && dados.erro) || `${r.status} ${r.statusText}`);
+    erro.dados = dados;                              // o PDF recusado traz as peças (Q01)
+    throw erro;
+  }
   return dados;
 }
 const postar = (rota, corpo) => pedir(rota, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(corpo || {}) });
@@ -465,7 +469,7 @@ class CAD {
       this.aviso(el('span', {}, 'PDF gerado: ', el('a', { href: a.url, target: '_blank', rel: 'noopener', texto: a.nome || 'abrir' }), a.tamanho_kb ? ` · ${numero(a.tamanho_kb, 0)} kB` : ''), 'info', 0);
       this.dica('PDF exportado.');
       window.open(a.url, '_blank');
-    } catch (e) { this.aviso(`Não foi possível gerar o PDF: ${e.message}`, 'erro', 0); }
+    } catch (e) { this._avisoDeEmissao(e, 'Não foi possível gerar o PDF'); }
   }
 
   /** Um PDF com todas as pranchas do projeto: o desenho das pranchas lado a lado (uma página por
@@ -483,7 +487,7 @@ class CAD {
       this.aviso(el('span', {}, `PDF com ${r.paginas} página(s): `, el('a', { href: a.url, target: '_blank', rel: 'noopener', texto: a.nome || 'abrir' }), a.tamanho_kb ? ` · ${numero(a.tamanho_kb, 0)} kB` : ''), 'info', 0);
       this.dica('PDF das pranchas exportado (pasta pranchas/ do projeto).');
       window.open(a.url, '_blank');
-    } catch (e) { this.aviso(`Não foi possível gerar o PDF: ${e.message}`, 'erro', 0); }
+    } catch (e) { this.dica(''); this._avisoDeEmissao(e, 'Não foi possível gerar o PDF'); }
   }
 
   /** DXF de todas as pranchas: o completo (todas lado a lado num arquivo só) e um ZIP com uma prancha por arquivo (papel 1:1). */
@@ -505,7 +509,7 @@ class CAD {
         ...(r.corte ? ['. Para o corte, em tamanho real: ', el('a', { href: r.corte.url, download: r.corte.nome || true, texto: r.corte.nome })] : [])),
         'info', 0);
       this.dica('DXF das pranchas exportado.');
-    } catch (e) { this.aviso(`Não foi possível exportar o DXF das pranchas: ${e.message}`, 'erro', 0); }
+    } catch (e) { this.dica(''); this._avisoDeEmissao(e, 'Não foi possível exportar o DXF das pranchas'); }
   }
 
   async inserirVista(definicao, titulo) {

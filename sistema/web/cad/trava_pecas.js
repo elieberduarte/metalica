@@ -139,9 +139,50 @@ export class MetodosTravaPecasCAD {
     this._pendenciasAvisadas = chave;
     const partes = [];
     if (pend.length) partes.push(`o 3D está fora do padrão de fábrica em ${pend.length} posição(ões) (${pend.slice(0, 8).join(', ')}${pend.length > 8 ? '…' : ''}): os desenhos mostram o 3D como está — no editor 3D, "Aplicar no 3D"`);
-    if (fora.length) partes.push(`terça(s) com o par de furos fora do passo da máquina, ligadas sem chapa: ${fora.slice(0, 5).join('; ')}${fora.length > 5 ? '…' : ''} — acerte a ligação no 3D`);
+    if (fora.length) partes.push(`${fora.length} terça(s) com o par de furos fora do passo da máquina, ligadas sem chapa — no 3D, ponha a chapa de ligação (suporte de terça) ou leve o par ao passo da máquina`);
     if (pend.length || fora.length) partes.push('as pranchas não são emitidas até resolver');
     if (desc.length) partes.push(`a arrumação feita à mão em ${desc.length} célula(s) da prancha foi descartada porque o detalhe mudou (${desc.slice(0, 6).join(', ')}${desc.length > 6 ? '…' : ''}): arrume de novo`);
-    if (partes.length) this.aviso(partes.join(' · ') + '.', 'atencao', 0);
+    if (!partes.length) return;
+    const pecas = (e && e.fora_da_maquina_pecas) || [];
+    // cada terça com o caminho até ela (Q01, primeiro uso 16/10: o aviso dizia "T.O.6" e nada levava à peça)
+    const caixa = document.createElement('span');
+    caixa.append(partes.join(' · ') + '.');
+    if (fora.length) caixa.append(this._listaVerNo3D(pecas.length ? pecas : fora.map(t => ({ texto: t, ids: [] }))));
+    this.aviso(caixa, 'atencao', 0);
+  }
+
+  /** O erro de emitir as pranchas (PDF/DXF recusado, regra R6): a mensagem e, para cada peça que o servidor mandou
+   *  (`pecas` no erro), um "Ver no 3D" que abre o editor com ela e a barra em que se liga em destaque (Q01). */
+  _avisoDeEmissao(erro, titulo) {
+    const pecas = (erro && erro.dados && erro.dados.pecas) || [];
+    if (!pecas.length) { this.aviso(`${titulo}: ${erro.message}`, 'erro', 0); return; }
+    const caixa = document.createElement('span');
+    caixa.append(`${titulo}: ${erro.message}`);
+    caixa.append(this._listaVerNo3D(pecas));
+    this.aviso(caixa, 'erro', 0);
+  }
+
+  /** <ul> com uma linha por peça ("T.O.6: furos a 60 mm na altura (máquina: 50)") e o botão "Ver no 3D". */
+  _listaVerNo3D(pecas) {
+    const ul = document.createElement('ul');
+    ul.className = 'lista-ver-no-3d';
+    for (const p of pecas.slice(0, 30)) {
+      const li = document.createElement('li');
+      li.append(p.texto || p.nome || '');
+      const ids = [...(p.ids || []), ...(p.ligadas || [])];
+      if (ids.length && this.projeto) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'ver-no-3d';
+        b.textContent = 'Ver no 3D';
+        b.title = `Abre o 3D com ${p.nome || 'a peça'} (${(p.ids || []).length} peça(s))${(p.ligadas || []).length ? ' e a barra em que ela se liga' : ''} em destaque`;
+        b.dataset.ids = ids.join(',');
+        b.addEventListener('click', () => this._sairPara(this.urlDoEditor(`&destacar=${encodeURIComponent('ids:' + ids.join(','))}`)));
+        li.append(' ', b);
+      }
+      ul.append(li);
+    }
+    if (pecas.length > 30) { const li = document.createElement('li'); li.textContent = `… e mais ${pecas.length - 30}`; ul.append(li); }
+    return ul;
   }
 }

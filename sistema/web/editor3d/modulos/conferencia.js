@@ -8,7 +8,8 @@
 
 import { el } from '../editor.js';
 
-const ORDEM = ['colisao_funda', 'colisao', 'parafuso_sem_furo', 'borda', 'passo', 'chave', 'furo_sem_parafuso',
+// a máquina primeiro: é o que recusa o PDF das pranchas (Q17, primeiro uso 16/10)
+const ORDEM = ['maquina', 'barra_comercial', 'colisao_funda', 'colisao', 'parafuso_sem_furo', 'borda', 'passo', 'chave', 'furo_sem_parafuso',
   'sem_marca', 'marca_a_conferir', 'fora_da_lista', 'sem_principal'];
 
 export class MetodosConferencia {
@@ -22,7 +23,7 @@ export class MetodosConferencia {
     const parar = this._barraDaConferencia(tarefa);
     try {
       const resp = await fetch('/api/modelo/conferencia', { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
-        body: JSON.stringify({ documento: this.documento.paraJSON(), ids: ids.length ? ids : null, tarefa }) });
+        body: JSON.stringify({ documento: this.documento.paraJSON(), ids: ids.length ? ids : null, tarefa, projeto: this.projeto || null }) });
       r = await resp.json();
       if (!resp.ok || r.erro) throw new Error(r.erro || resp.statusText);
     } catch (e) { parar(); this.aviso(`Não foi possível conferir: ${e.message}`, 'erro', 0); return; }
@@ -80,7 +81,9 @@ export class MetodosConferencia {
     };
     const corpo = el('div', { class: 'painel-apoios-corpo' });
     const col = (r.info && r.info.colisao) || null;
-    let cabeca = achados.length ? `${achados.length.toLocaleString('pt-BR')} achado(s)` : 'Nenhum achado: nada se atravessa, as ligações têm furo, borda, passo e chave, e as peças têm marca.';
+    let cabeca = achados.length ? `${achados.length.toLocaleString('pt-BR')} achado(s)` : 'Nenhum achado: nada se atravessa, as ligações têm furo, borda, passo e chave, as terças cabem no passo da máquina e as peças têm marca.';
+    const travam = achados.filter(a => a.regra === 'maquina').length;
+    if (travam) cabeca += ` — ${travam} terça(s) fora do passo da máquina: as pranchas não são emitidas até resolver.`;
     if (nSel) cabeca += ` na região das ${nSel} peça(s) selecionada(s) (a produção é do modelo inteiro).`;
     if (col && col.parcial) cabeca += ` A colisão conferiu ${col.conferidos} de ${col.pares} pares no tempo limite: selecione uma região e confira de novo para o resto.`;
     corpo.append(el('p', { texto: cabeca }));

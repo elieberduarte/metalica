@@ -217,6 +217,7 @@ def estado(s: str, conferir: bool = True) -> dict:
     # o padrão de fábrica que falta gravar no 3D (o editor estava aberto): o editor mostra "Aplicar"
     e["pendente_3d"] = c.get("pendente_3d") or {}
     e["fora_da_maquina"] = c.get("fora_da_maquina") or []
+    e["fora_da_maquina_pecas"] = c.get("fora_da_maquina_pecas") or []      # o "Ver no 3D" de cada terça (Q01)
     e["pranchas_descartadas"] = c.get("pranchas_descartadas") or []
     if c.get("erro") and not e.get("erro"):
         e["erro"] = c["erro"]
