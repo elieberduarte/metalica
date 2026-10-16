@@ -48,8 +48,8 @@
       <input type="search" id="busca" placeholder="Buscar por nome, cliente ou local" aria-label="Buscar projeto">
       <button type="button" id="btn-importar-pacote" title="Abre um pacote de projeto (.metalica.zip) exportado por outro usuário, com o modelo, os desenhos, as pranchas e tudo o que foi feito nele">Importar pacote…</button>
       <button type="button" id="btn-novo-ifc" title="Cria um projeto a partir de um modelo IFC de outro programa (TecnoMETAL, Tekla, Revit…)">Novo a partir de IFC…</button>
-      <button type="button" id="btn-novo-cad" title="Cria o projeto no CAD 2D: a partir da planta do cliente (os eixos por cima dela e a estrutura montada nos eixos) ou desenhando a estrutura linha por linha">Novo pelo CAD 2D…</button>
-      <button type="button" id="btn-novo" class="principal">Novo projeto</button>
+      <button type="button" id="btn-novo-cad" title="Cria o projeto no CAD 2D: com o projeto estrutural recebido (DXF/PDF), com a planta do cliente (os eixos por cima dela e a estrutura montada nos eixos) ou desenhando a estrutura linha por linha">Novo pelo CAD 2D (DXF/PDF)…</button>
+      <button type="button" id="btn-novo" class="principal" title="Dimensiona um galpão pelos dados (vão, comprimento, pé-direito, vento) e gera o modelo 3D">Novo projeto de galpão</button>
     </div>
   </section>
 
@@ -63,9 +63,9 @@
     <h3>Nenhum projeto ainda</h3>
     <p>Um projeto guarda o dimensionamento, o modelo 3D e tudo o que for gerado a partir dele, numa pasta só.</p>
     <div class="vazio-acoes">
-      <button type="button" class="principal" data-acao="novo">Novo projeto de galpão</button>
-      <button type="button" data-acao="novo-ifc">Novo a partir de um IFC…</button>
-        <button type="button" data-acao="novo-cad">Novo pelo CAD 2D…</button>
+      <button type="button" class="principal" data-acao="novo" title="Dimensiona um galpão pelos dados (vão, comprimento, pé-direito, vento) e gera o modelo 3D">Novo projeto de galpão</button>
+      <button type="button" data-acao="novo-ifc" title="Cria um projeto a partir de um modelo IFC de outro programa (TecnoMETAL, Tekla, Revit…)">Novo a partir de IFC…</button>
+        <button type="button" data-acao="novo-cad" title="Cria o projeto no CAD 2D: com o projeto estrutural recebido (DXF/PDF), com a planta do cliente (os eixos por cima dela e a estrutura montada nos eixos) ou desenhando a estrutura linha por linha">Novo pelo CAD 2D (DXF/PDF)…</button>
     </div>
   </div>
 

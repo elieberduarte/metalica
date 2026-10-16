@@ -53,6 +53,11 @@ def p02_p13_recebido(aba):
     print("P02/P13 — Novo pelo CAD 2D com o projeto estrutural recebido")
     aba.navegar(base + "/", limite=60)
     esperar(aba, "document.querySelector('#btn-novo-cad') && document.querySelector('#contagem') && !/carregando/.test(document.querySelector('#contagem').textContent)")
+    # P20: os botões Novo… da pasta vazia e da barra com o mesmo nome e com dica
+    pares = aba.avaliar("""[['novo', 'btn-novo'], ['novo-ifc', 'btn-novo-ifc'], ['novo-cad', 'btn-novo-cad']].map(([a, b]) => {
+        const x = document.querySelector(`[data-acao="${a}"]`), y = document.getElementById(b);
+        return [x.textContent.trim(), y.textContent.trim(), !!x.title, !!y.title]; })""") or []
+    ok(pares and all(p[0] == p[1] and p[2] and p[3] for p in pares), f"P20: botões Novo… iguais nos dois lugares e com dica: {pares}")
     sel = "#btn-novo-cad" if aba.avaliar("document.querySelector('#btn-novo-cad').offsetParent !== null") else '[data-acao="novo-cad"]'
     clicar(aba, sel)
     esperar(aba, "document.querySelector('#dlg').open")
