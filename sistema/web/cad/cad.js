@@ -1753,11 +1753,15 @@ class CAD {
   _painelCamadas() {
     const raiz = this.el.camadas; raiz.replaceChildren();
     const cont = new Map();
-    for (const e of this.doc.entidades.values()) cont.set(e.camada, (cont.get(e.camada) || 0) + 1);
+    const doArquivo = new Set();           // as camadas com linhas vindas do DXF/PDF importado
+    for (const e of this.doc.entidades.values()) {
+      cont.set(e.camada, (cont.get(e.camada) || 0) + 1);
+      if (ORIGENS_DE_IMPORTACAO.has((e.atributos || {}).origem)) doArquivo.add(e.camada);
+    }
     const lista = el('div', { class: 'lista-linhas' });
     const olho = (v) => v ? '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>'
       : '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".45"/><path d="M3 13L13 3" stroke="currentColor" stroke-width="1.3"/></svg>';
-    for (const [nome, c] of this.doc.camadas) {
+    const linhaDa = (nome, c) => {
       const linha = el('div', { class: 'linha', title: 'Clique: camada ativa · duplo clique: selecionar o que está nela' });
       if (c.visivel === false) linha.dataset.oculta = '';
       if (nome === this.camadaAtiva) linha.dataset.ativa = '';
@@ -1768,7 +1772,25 @@ class CAD {
       linha.addEventListener('click', (ev) => { if (ev.target.closest('button, input')) return; this.camadaAtiva = nome; this._agendarPaineis('camadas', 'props'); this.dica(`Camada ativa: ${nome}`); });
       linha.addEventListener('dblclick', (ev) => { if (ev.target.closest('button, input')) return; this.selecionar([...this.doc.entidades.values()].filter(e => e.camada === nome).map(e => e.id)); });
       linha.append(vis, cor, el('span', { class: 'nome', texto: nome }), el('span', { class: 'contagem', texto: numero(cont.get(nome) || 0) }));
-      lista.append(linha);
+      return linha;
+    };
+    if (!doArquivo.size) {
+      for (const [nome, c] of this.doc.camadas) lista.append(linhaDa(nome, c));
+    } else {
+      // com um DXF importado, as camadas do arquivo à parte e as do Metálica vazias recolhidas (P16, primeiro uso 16/10:
+      // CORTE…AUXILIAR com 0 no topo pareciam dizer que nada entrou, e "0, 1, 6, 20, 画層 50…" vinham misturadas)
+      const arq = this.doc.metadados && (this.doc.metadados.arquivo_recebido || this.doc.metadados.arquivo);
+      const doc = [...this.doc.camadas].filter(([n]) => doArquivo.has(n));
+      const nossas = [...this.doc.camadas].filter(([n]) => !doArquivo.has(n));
+      const cheias = nossas.filter(([n]) => cont.get(n) || n === this.camadaAtiva), vazias = nossas.filter(([n]) => !cont.get(n) && n !== this.camadaAtiva);
+      lista.append(el('div', { class: 'grupo-camadas', texto: `Do arquivo${arq ? ' ' + arq : ''} (${doc.length})` }), ...doc.map(([n, c]) => linhaDa(n, c)));
+      lista.append(el('div', { class: 'grupo-camadas', texto: `Do Metálica (${nossas.length})` }), ...cheias.map(([n, c]) => linhaDa(n, c)));
+      if (vazias.length) {
+        const caixa = el('details', { class: 'camadas-vazias' }, el('summary', { texto: `${vazias.length} vazia(s)` }), ...vazias.map(([n, c]) => linhaDa(n, c)));
+        caixa.open = !!this._camadasVaziasAbertas;
+        caixa.addEventListener('toggle', () => { this._camadasVaziasAbertas = caixa.open; });
+        lista.append(caixa);
+      }
     }
     raiz.append(lista);
     const acoes = el('div', { class: 'acoes-painel' });

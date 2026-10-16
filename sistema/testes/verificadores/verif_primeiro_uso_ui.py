@@ -251,6 +251,26 @@ def p17_busca_acha_desenho(aba):
     ok(foi, f"o clique abre o desenho no 2D ({aba.avaliar('document.querySelector(\'#desenho\').value')})")
 
 
+def p16_camadas_do_arquivo(aba):
+    """P16: depois de importar o DXF da Portaria, o painel de camadas punha CORTE…AUXILIAR com 0 no topo e misturava
+    as camadas do arquivo ("0, 1, 6, 20, 画層 50, MOB…") com as do Metálica."""
+    print("P16 — camadas do arquivo × do Metálica")
+    if not os.path.exists(PORTARIA):
+        ok(False, "sem o DXF da Portaria em Projeto/OBRAS/Portaria-Hermes"); return
+    s = _projeto_com_a_portaria("Portaria camadas")
+    nome = "Projeto recebido – " + os.path.splitext(os.path.basename(PORTARIA))[0]
+    aba.navegar(f"{base}/cad?projeto={s}&desenho={urllib.parse.quote(nome)}", limite=90)
+    esperar(aba, "window.cad && document.body.dataset.pronto === '1' && document.querySelector('.lista-linhas .linha')", 90)
+    filhos = aba.avaliar("""[...document.querySelector('.lista-linhas').children].map(c => c.classList.contains('grupo-camadas') ? 'G:' + c.textContent
+        : c.tagName === 'DETAILS' ? 'V:' + [...c.querySelectorAll('.linha .nome')].map(n => n.textContent).join(',')
+        : c.querySelector('.nome').textContent + '=' + c.querySelector('.contagem').textContent)""") or []
+    ok(filhos and filhos[0].startswith("G:Do arquivo") and "Portaria" in filhos[0], f"o grupo do arquivo vem primeiro, com o nome do DXF: {filhos[:2]}")
+    meu = next((i for i, f in enumerate(filhos) if f.startswith("G:Do Metálica")), None)
+    vazias = next((f for f in filhos if f.startswith("V:")), "")
+    ok(meu is not None and not [f for f in filhos[:meu] if f.endswith("=0")], f"nenhuma camada vazia antes do grupo do Metálica: {filhos[:meu][:6] if meu else filhos[:6]}")
+    ok("CORTE" in vazias and "AUXILIAR" in vazias, f"as vazias do Metálica recolhidas: {vazias[:80]}")
+
+
 def _item_da_barra(texto):
     return f"""(() => {{ let a = null; (function andar(l) {{ for (const it of (Array.isArray(l) ? l : [])) {{ if (a) return; if (it && it.texto === {json.dumps(texto)}) a = it; else if (it && (it.sub || it.itens)) andar(it.sub || it.itens); }} }})(window.barraUnica.mapa); return a; }})()"""
 
@@ -493,7 +513,7 @@ try:
                                 p08_folhas_sem_pedir_o_arquivo, p19_resultado_do_recebido,
                                 p14_quadros_vazios, p26_padroes_da_planta, p21_peso_do_modelo_vazio,
                                 p22_nome_e_posicao, p23_lista_sob_medida, p15_zoom_da_roda,
-                                p18_uma_barra_de_ferramentas, p17_busca_acha_desenho) + BLOCOS_Q
+                                p18_uma_barra_de_ferramentas, p17_busca_acha_desenho, p16_camadas_do_arquivo) + BLOCOS_Q
                   if not sys.argv[1:] or any(b.__name__.startswith(a) for a in sys.argv[1:])]:
         try:
             bloco(aba)
