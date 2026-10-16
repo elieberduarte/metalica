@@ -333,8 +333,15 @@ class TestCotasQueAFabricaPrecisa(_SooroDetalhada):
     def test_q07_prever_emenda_na_celula_tipica(self):
         # o "COMP=" é texto ou o texto da cota, conforme a versão da célula típica
         textos = [e.get("texto") or "" for e in self._todos() if e.get("tipo") in ("texto", "cota")]
-        self.assertTrue(any(x.startswith("A.T.1 COMP=29400mm") and "PREVER EMENDA" in x for x in textos))
-        self.assertTrue(any("maiores que a barra comercial de 12 m: prever emenda" in x for x in textos))
+        tipica = [x for x in textos if x.startswith("A.T.1 COMP=29400mm")]
+        if tipica:
+            # a A.T.1 na célula típica das peças sem furo (agrupada com a A.T.2): o aviso na linha dela e no título
+            self.assertTrue(all("PREVER EMENDA" in x for x in tipica), tipica)
+            self.assertTrue(any("maiores que a barra comercial de 12 m: prever emenda" in x for x in textos))
+        else:
+            # a A.T.1 na célula dela: o cabeçalho já avisa
+            self.assertTrue(any(x.startswith("A.T.1 – ") and "29400" in x for x in textos))
+            self.assertTrue(any("maior que a barra comercial de 12 m: prever emenda" in x for x in textos))
 
 
 class TestParafusosEPorcasNaLista(_SooroDetalhada):
