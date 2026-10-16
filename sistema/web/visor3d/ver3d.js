@@ -80,6 +80,10 @@ function pintar(modo) {
       return { nome, cor, n: idx.length, ids: idx };
     }).filter(g => g.n).sort((a, b) => b.n - a.n || a.nome.localeCompare(b.nome));
     pintarGrupos(legenda);
+  } else if (modo === 'sistema') {
+    visor.pintarPor('perfil');                                         // zera as ocultas e tira o material
+    legenda = gruposDeSistema().map(g => ({ ...g }));
+    pintarGrupos(legenda);
   } else {
     legenda = visor.pintarPor(modo);
     if (modo !== 'material') {
@@ -87,6 +91,9 @@ function pintar(modo) {
       pintarGrupos(legenda);
     }
   }
+  // a legenda em ordem alfabética (usuário, Mercado Conceito, 16/10: "organizar por ordem alfabética"); antes, da que
+  // tinha mais peças para a que tinha menos. As cores não mudam: vêm do nome (a paleta do editor em ordem de nome)
+  legenda.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true, sensitivity: 'base' }));
   if (ocultasDoEditor.length) visor.ocultarPecas(ocultasDoEditor, true);
   const ocultosAqui = new Set((doVer.grupos || {})[modo] || []);
   for (const g of legenda) if (ocultosAqui.has(g.nome)) visor.ocultarPecas(g.ids, true);
@@ -95,6 +102,9 @@ function pintar(modo) {
 
 /** Depois de abrir: o que se ocultou aqui no modo ver da outra vez (camadas e o Pintar com os grupos ocultos). */
 function aplicarDoVer() {
+  for (const g of gruposDeSistema()) if ((doVer.sistemas || {})[g.chave] === false) visor.ocultarSistema(g.ids, true);
+  const opcao = $('#pintar option[value=sistema]');
+  if (opcao && gruposDeSistema().length < 2) opcao.remove();             // só aço (ou só concreto): não há o que separar
   const cams = visor.cabecalho.camadas || [];
   cams.forEach((c, i) => { const v = (doVer.camadas || {})[c.nome]; if (typeof v === 'boolean' && v !== (visor.visivelCamada[i] !== false)) visor.mostrarCamada(i, v); });
   const sel = $('#pintar');
@@ -343,16 +353,61 @@ const PARTES_PISO = { arquitetonico: ['Desenho do piso (arquitetônico)', '#9aa3
 function pisoOculto() {
   try { return JSON.parse(localStorage.getItem('ver3d.pisoOculto') || '[]'); } catch (e) { return []; }
 }
-function secaoPiso() {
+function secaoPiso(comSistema = true) {
   const partes = visor.partesReferencia();
-  if (!partes.length) return '';
   const ocultas = new Set(pisoOculto());
-  return '<p class="titulo-secao">No piso</p>' + partes.map(n => { const [nome, cor] = PARTES_PISO[n] || [n, '#999'];
+  let html = partes.length ? '<p class="titulo-secao">No piso</p>' + partes.map(n => { const [nome, cor] = PARTES_PISO[n] || [n, '#999'];
     return `<label class="linha-lista"><input type="checkbox" data-piso="${esc(n)}" ${ocultas.has(n) ? '' : 'checked'}>
-      <i style="background:${cor}"></i><span>${esc(nome)}</span></label>`; }).join('')
-    + '<p class="titulo-secao">Modelo</p>';
+      <i style="background:${cor}"></i><span>${esc(nome)}</span></label>`; }).join('') : '';
+  const sistemas = comSistema ? gruposDeSistema() : [];
+  if (sistemas.length >= 2) html += '<p class="titulo-secao">Sistema</p>' + sistemas.map(g => `<label class="linha-lista">
+      <input type="checkbox" data-sistema="${g.chave}" ${g.ids.some(i => visor.ocultasSistema.has(i)) ? '' : 'checked'}>
+      <i style="background:${g.cor}"></i><span>${esc(g.nome)}</span><em>${nf(g.n)}</em></label>`).join('');
+  return html ? html + '<p class="titulo-secao">Modelo</p>' : '';
+}
+
+/** O sistema de cada peça (usuário, Mercado Conceito, 16/10: "separar apenas pré-moldado (estrutura) e metálica para
+ *  apresentação ao cliente"): pelo material — concreto é pré-moldado; aço (e a barra sem material) é metálica. O aço e o
+ *  neoprene que vêm no modelo do pré-moldado (a camada dele é quase toda de concreto: as porcas, arruelas e cantoneiras
+ *  das ligações dele) ficam com o pré-moldado. O resto (o PVC das descidas…) é Outros. */
+const SISTEMAS = { metalica: ['Metálica', '#2f6fd6'], outros: ['Outros', '#e08a1e'], premoldado: ['Pré-moldado (concreto)', '#8f969e'] };
+const CONCRETO = /concret|fck|cimento|\bc\s?[1-9]\d\b/i;
+const ACO = /steel|a[çc]o\b|astm|\ba36\b|a5\d\d|a32[05]|a307|s2\d\d|s3\d\d|ar\s?3\d\d|zar|galv|shore|neopren|elast/i;
+const NEOPRENE = /shore|neopren|elast/i;
+let _sistemas = null;
+function gruposDeSistema() {
+  if (_sistemas) return _sistemas;
+  const fichas = visor.fichas || [], n = Math.min(fichas.length, visor.nPecas);
+  const porCamada = new Map();                                           // camada → [peças, de concreto]
+  for (let i = 0; i < n; i++) {
+    const q = porCamada.get(fichas[i].c) || [0, 0];
+    q[0]++; if (CONCRETO.test(fichas[i].m || '')) q[1]++;
+    porCamada.set(fichas[i].c, q);
+  }
+  const ids = { metalica: [], outros: [], premoldado: [] };
+  for (let i = 0; i < n; i++) {
+    const m = fichas[i].m || '', q = porCamada.get(fichas[i].c);
+    let s = 'outros';
+    if (CONCRETO.test(m)) s = 'premoldado';
+    else if (!m || ACO.test(m)) s = q[1] * 2 >= q[0] ? 'premoldado' : NEOPRENE.test(m) ? 'outros' : 'metalica';
+    ids[s].push(i);
+  }
+  _sistemas = Object.entries(ids).filter(([, l]) => l.length)
+    .map(([chave, l]) => ({ chave, nome: SISTEMAS[chave][0], cor: SISTEMAS[chave][1], n: l.length, ids: l }));
+  return _sistemas;
+}
+function alternarSistema(chave, mostrar) {
+  const g = gruposDeSistema().find(x => x.chave === chave);
+  if (!g) return;
+  visor.ocultarSistema(g.ids, !mostrar);
+  doVer.sistemas = { ...(doVer.sistemas || {}), [chave]: !!mostrar };
+  gravarDoVer();
 }
 function ligarSecaoPiso() {
+  $('#painel-corpo').querySelectorAll('input[data-sistema]').forEach(cb => {
+    cb.onclick = ev => ev.stopPropagation();
+    cb.onchange = () => alternarSistema(cb.dataset.sistema, cb.checked);
+  });
   $('#painel-corpo').querySelectorAll('input[data-piso]').forEach(cb => {
     cb.onclick = ev => ev.stopPropagation();
     cb.onchange = () => {
@@ -450,9 +505,12 @@ function painelCamadas() {
 }
 
 function painelLegenda(modo) {
-  const titulo = modo === 'editor' ? $('#pintar').selectedOptions[0].textContent.replace(/^como/, 'Pintado como') : modo === 'camada' ? 'Pintado por camada' : 'Pintado por perfil';
-  abrirPainel('legenda', titulo, secaoPiso() + legenda.slice(0, 200).map((g, k) => `<div class="linha-lista" data-k="${k}">
-      <input type="checkbox" data-olho="${k}" title="Mostrar / ocultar este grupo" ${g.ids.some(i => visor.ocultas.has(i)) ? '' : 'checked'}>
+  const titulo = modo === 'editor' ? $('#pintar').selectedOptions[0].textContent.replace(/^como/, 'Pintado como')
+    : modo === 'camada' ? 'Pintado por camada' : modo === 'sistema' ? 'Pintado por sistema' : 'Pintado por perfil';
+  // por sistema, a própria legenda é o Sistema (as caixinhas são as mesmas da seção Sistema)
+  const oculto = modo === 'sistema' ? (g => g.ids.some(i => visor.ocultasSistema.has(i))) : (g => g.ids.some(i => visor.ocultas.has(i)));
+  abrirPainel('legenda', titulo, secaoPiso(modo !== 'sistema') + legenda.slice(0, 200).map((g, k) => `<div class="linha-lista" data-k="${k}">
+      <input type="checkbox" data-olho="${k}" title="Mostrar / ocultar este grupo" ${oculto(g) ? '' : 'checked'}>
       <i style="background:${g.cor}"></i><span title="${esc(g.nome)}">${esc(g.nome)}</span><em>${nf(g.n)}</em></div>`).join('')
     + (legenda.length > 200 ? `<p class="dica">e mais ${legenda.length - 200} grupos</p>` : '')
     + '<p class="dica">Clique num grupo para ir à primeira peça dele; a caixinha mostra ou oculta o grupo.</p>');
@@ -460,6 +518,7 @@ function painelLegenda(modo) {
     cb.onclick = ev => ev.stopPropagation();
     cb.onchange = () => {
       const g = legenda[+cb.dataset.olho];
+      if (g.chave && $('#pintar').value === 'sistema') { alternarSistema(g.chave, cb.checked); return; }
       visor.ocultarPecas(g.ids, !cb.checked);
       const modo = $('#pintar').value, nomes = new Set((doVer.grupos || {})[modo] || []);
       if (cb.checked) nomes.delete(g.nome); else nomes.add(g.nome);

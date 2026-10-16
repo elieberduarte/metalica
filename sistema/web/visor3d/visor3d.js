@@ -186,6 +186,7 @@ export class Visor3D {
     this.selecionada = -1;
     this.selecaoVarias = new Set();       // as peças escolhidas (uma do clique, várias do 2D ao lado)
     this.ocultas = new Set();             // peças escondidas pela legenda do Pintar (grupo de perfil ou camada)
+    this.ocultasSistema = new Set();      // pelo Sistema (pré-moldado / metálica): à parte, vale em todo modo do Pintar
     this.emDestaque = false;              // com várias vindas do 2D, o resto do modelo fica esmaecido
     this.corFantasma = [215, 220, 230];
     this.arestasLigadas = opcoes.arestas !== false;
@@ -426,6 +427,12 @@ export class Visor3D {
     this._repintar();
   }
 
+  /** Esconde (ou mostra) as peças `ids` de um sistema (pré-moldado, metálica…) — não se perde ao trocar o Pintar. */
+  ocultarSistema(ids, ocultar) {
+    for (const i of ids) { if (ocultar) this.ocultasSistema.add(i); else this.ocultasSistema.delete(i); }
+    this._repintar();
+  }
+
   /** Liga ou desliga a camada `i` (índice das camadas do cabeçalho). */
   mostrarCamada(i, visivel) {
     this.visivelCamada[i] = !!visivel;
@@ -571,7 +578,7 @@ export class Visor3D {
     const k0 = this.escuro ? 0 : CLAREAR_NO_CLARO, cb = this.corBase;
     for (let i = 0; i < this.nPecas; i++) {
       const k = i * 4;
-      const vis = this.visivelCamada[this.camadaDe[i]] !== false && !this.ocultas.has(i);
+      const vis = this.visivelCamada[this.camadaDe[i]] !== false && !this.ocultas.has(i) && !this.ocultasSistema.has(i);
       if (sel.has(i)) { d[k] = 31; d[k + 1] = 122; d[k + 2] = 224; }
       else if (fant) { d[k] = fant[0]; d[k + 1] = fant[1]; d[k + 2] = fant[2]; }
       else for (let j = 0; j < 3; j++) d[k + j] = cb[i * 3 + j] + (255 - cb[i * 3 + j]) * k0;
