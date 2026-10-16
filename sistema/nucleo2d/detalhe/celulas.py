@@ -1037,10 +1037,14 @@ def reorientar_chapas(doc: Documento, doc_ifc: Documento) -> dict:
     desenho —, e escreve em TODAS as instâncias a furação e o contorno atuais dessa
     referência, no sistema novo. Os parafusos de cada instância vão atrás do furo que
     mudou de lugar. Devolve {"posicoes", "chapas", "parafusos", "sem_origem": [ids]}."""
+    from nucleo2d.detalhe.fora_do_aco import material_nao_aco
     por_pos: Dict[str, List[Chapa]] = collections.OrderedDict()
     for e in doc.entidades.values():
         a = e.atributos or {}
-        if isinstance(e, Chapa) and a.get("convertida_de") == "solido" and not a.get("eixos_conferidos"):
+        # a chapa que não é de aço (o neoprene do Tekla convertido em chapa) não tem furação a acertar: com o editor
+        # aberto ela ficava pendente para sempre — a faixa "fora do padrão de fábrica: Neoprene" (Mercado, 16/10)
+        if (isinstance(e, Chapa) and a.get("convertida_de") == "solido" and not a.get("eixos_conferidos")
+                and material_nao_aco(e) is None):
             por_pos.setdefault(str((a.get("marcas") or {}).get("posicao") or e.nome or e.id), []).append(e)
     saida = {"posicoes": 0, "chapas": 0, "parafusos": 0, "sem_origem": []}
     if not por_pos:
