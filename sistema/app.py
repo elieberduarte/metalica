@@ -994,6 +994,31 @@ def detalhar_premoldado(s: str, corpo: dict) -> dict:
                 info = desenho.metadados.get("premoldado") or {}
                 saida.append({"familia": fam, "nome": salvo["nome"], "titulo": nome, "pecas": info.get("pecas", 0),
                               "marcas": info.get("marcas", 0), "entidades": desenho.tamanho})
+            # o completo: todos os desenhos do pré-moldado do projeto — os de agora e os que já estavam (detalhar uma
+            # família só não o deixa pela metade), cada um no seu quadro; o 2D abre nele (16/10)
+            from nucleo2d.desenho import Desenho
+            agora = {_slug(d.nome): d for d in ds.values()}
+            completo_slug = _slug("pré-moldado – completo")
+            partes = list(ds.values())
+            for item in g.listar_desenhos(s, contar=False):
+                if item["nome"] in agora or item["nome"] == completo_slug or not item["nome"].startswith(_slug("pré-moldado – ")):
+                    continue
+                try:
+                    d = Desenho.de_dict(g.abrir_desenho(s, item["nome"]))
+                except ErroDeDados:
+                    continue
+                if d.metadados.get("gerado_por") == "detalhamento-premoldado":
+                    partes.append(d)
+            _progresso(s, "desenho completo…")
+            completo = PF.desenho_completo(partes)
+            if completo is not None:
+                completo.metadados.update(gerado_por="detalhamento-premoldado", versao=versao.VERSAO, geracao=geracao)
+                g.excluir_desenho(s, completo.nome)
+                with _TRAVA_GRAVAR_DESENHO:
+                    _vivos().registrar_desenho(s, _slug(completo.nome), geracao)
+                    salvo = g.salvar_desenho(s, completo.nome, completo.dict())
+                saida.append({"familia": "completo", "nome": salvo["nome"], "titulo": completo.nome, "pecas": 0,
+                              "marcas": 0, "entidades": completo.tamanho})
             return {"desenhos": saida, "pecas": sum(d["pecas"] for d in saida),
                     "marcas": sum(d["marcas"] for d in saida), "avisos": avisos}
         finally:

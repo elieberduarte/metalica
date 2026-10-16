@@ -45,6 +45,8 @@ FORA = r"terreno|solo\b|rua\b|calcada|piso\b|vaga|pavimento|asfalto|grama|meio.?
 #: Camada que é de pré-moldado pelo nome (quando o material não diz).
 CAMADA_PM = r"pre.?fabric|pre.?moldad|concreto|precast"
 CONSOLE = r"console|consolo"
+#: Concreto moldado na obra (sem célula de fôrma de fábrica): a capa sobre as lajes alveolares.
+MOLDADO_NO_LOCAL = r"\bcapa\b"
 RHO_CONCRETO = 2500.0          # kg/m³
 ESCALA = 25.0                   # 1:25
 #: Arestas: a dobra entre duas faces a mais disto (graus) é aresta viva; a faceta do cilindro (estaca redonda) não é.
@@ -394,6 +396,32 @@ def _juntar_perto(vals, total: float) -> List[float]:
     return out
 
 
+#: Três ou mais intervalos seguidos menores que isto (mm de papel) são as facetas de um círculo — o furo da estaca no
+#: bloco, os alvéolos da contenção vistos de lado — e viram um intervalo só: os números saíam um em cima do outro
+#: ("2224335532245", 16/10). Um chanfro ou um dente sozinho, entre intervalos grandes, fica.
+MIUDO_PAPEL = 4.0
+SEGUIDOS_FACETA = 3
+
+
+def _sem_facetas(pts: Sequence[float], minimo: float) -> List[float]:
+    """Os pontos da cadeia sem os do meio das sequências de SEGUIDOS_FACETA ou mais intervalos menores que `minimo`."""
+    if len(pts) < SEGUIDOS_FACETA + 1:
+        return list(pts)
+    miudo = [pts[k + 1] - pts[k] < minimo for k in range(len(pts) - 1)]
+    fora, k = set(), 0
+    while k < len(miudo):
+        if not miudo[k]:
+            k += 1
+            continue
+        fim = k
+        while fim < len(miudo) and miudo[fim]:
+            fim += 1
+        if fim - k >= SEGUIDOS_FACETA:
+            fora.update(range(k + 1, fim))          # ficam o primeiro e o último ponto da sequência
+        k = fim
+    return [p for i, p in enumerate(pts) if i not in fora]
+
+
 def _num(x: float) -> str:
     return ("%.0f" % x) if abs(x - round(x)) < 0.05 else ("%.1f" % x).replace(".", ",")
 
@@ -405,7 +433,9 @@ def desenhar_celula(desenho: Desenho, p: PecaPM, dx: float, dy: float):
     # "premoldado" não liga nenhuma ferramenta do aço (elas olham detalhe == "posicao")
     pap = _Papel(desenho, {"detalhe": "premoldado", "posicao": p.marca, "familia": p.familia}, dx, dy)
     Lx, Ly, Lz = p.dims
-    gap = 22.0 * esc
+    # entre as vistas cabem a cadeia e a total da vista lateral (a −8 e a −15 mm, com o número): com 22 mm a total da
+    # lateral caía em cima da ponta da elevação (16/10)
+    gap = 34.0 * esc
     # posições das vistas na célula (origem = canto de baixo à esquerda da elevação)
     origem = {"ELEVAÇÃO": (0.0, 0.0), "VISTA LATERAL": (Lx + gap, 0.0), "PLANTA": (0.0, -(Ly + gap))}
     for titulo, iu, iv, iw, sinal in VISTAS:
@@ -415,8 +445,8 @@ def desenhar_celula(desenho: Desenho, p: PecaPM, dx: float, dy: float):
             pap.linha(ox + u1, oy + v1, ox + u2, oy + v2, "VISTA" if vis else "OCULTA")
         larg, alt = (p.dims[iu], p.dims[iv])
         # cotas: a cadeia dos pontos da forma (só o que aparece) e a total por fora
-        us = _juntar_perto({round(s[0]) for s in segs if s[4]} | {round(s[2]) for s in segs if s[4]}, larg)
-        vs = _juntar_perto({round(s[1]) for s in segs if s[4]} | {round(s[3]) for s in segs if s[4]}, alt)
+        us = _sem_facetas(_juntar_perto({round(s[0]) for s in segs if s[4]} | {round(s[2]) for s in segs if s[4]}, larg), MIUDO_PAPEL * esc)
+        vs = _sem_facetas(_juntar_perto({round(s[1]) for s in segs if s[4]} | {round(s[3]) for s in segs if s[4]}, alt), MIUDO_PAPEL * esc)
         fez_u = 2 < len(us) <= MAX_PONTOS_CADEIA and pap.cadeia_h([ox + x for x in us], oy, -8.0, exigir_espaco=False)
         pap.cota_h(ox, ox + larg, oy, -15.0 if fez_u else -8.0)
         fez_v = 2 < len(vs) <= MAX_PONTOS_CADEIA and pap.cadeia_v([oy + y for y in vs], ox, -8.0, exigir_espaco=False)
@@ -446,6 +476,9 @@ def desenhos(doc: Documento, familias: Optional[Sequence[str]] = None, prefixo: 
         reps = agrupar(pecas_do_modelo(doc, familias, avisar))
     if familias:
         reps = [r for r in reps if r.familia in set(familias)]
+    # a capa da laje é concretada na obra, sobre as alveolares: não tem fôrma de fábrica — saía como uma "peça" de
+    # 54 × 53 m (16/10); fica nas plantas de fôrma e nos cortes
+    reps = [r for r in reps if not re.search(MOLDADO_NO_LOCAL, _sem_acento(r.nome))]
     titulos = dict([(k, t) for k, t, _p in FAMILIAS] + [OUTRAS])
     saida: Dict[str, Desenho] = {}
     ordem = [k for k, _t, _p in FAMILIAS[::-1]] + [OUTRAS[0]]       # pilares e vigas primeiro
@@ -629,3 +662,41 @@ def desenhos_gerais(doc: Documento, reps: Sequence[PecaPM], pedidos: Sequence[st
     for k, d in saida.items():
         d.metadados.setdefault("premoldado", {})["geral"] = k
     return saida
+
+
+# ------------------------------------------------------------------ o completo (16/10)
+# "A prancha do 2D gerada pelo detalhamento do pré-fabricado precisaria abrir o projeto completo" (usuário, 16/10): como
+# o "Detalhamento – completo" da metálica, todos os desenhos do pré-moldado num só, cada um no seu quadro — o 2D abre
+# nele com a disciplina Pré-moldado (web/dividida.js).
+
+#: A ordem dos quadros: os desenhos de conjunto, depois as fôrmas (pilares e vigas primeiro).
+ORDEM_COMPLETO: Sequence[str] = tuple(k for k, _t in GERAIS) + tuple(k for k, _t, _p in FAMILIAS[::-1]) + (OUTRAS[0],)
+
+
+def chave_do_desenho(d: Desenho) -> Optional[str]:
+    """A chave do desenho do pré-moldado (a família da fôrma ou o desenho de conjunto), ou None."""
+    m = d.metadados.get("premoldado") or {}
+    return m.get("geral") or m.get("familia")
+
+
+def desenho_completo(partes: Sequence[Desenho], prefixo: str = "pré-moldado") -> Optional[Desenho]:
+    """"pré-moldado – completo": os desenhos de `partes` (um por chave, na ORDEM_COMPLETO), cada um num quadro com o
+    título dele; None sem nenhum."""
+    from nucleo2d.detalhar import _anexar_quadro
+    por: Dict[str, Desenho] = {}
+    for d in partes:
+        k = chave_do_desenho(d)
+        if k in ORDEM_COMPLETO and k not in por and d.entidades:
+            por[k] = d
+    if not por:
+        return None
+    dc = Desenho(nome="%s – completo" % prefixo, escala=ESCALA)
+    y = 0.0
+    for k in ORDEM_COMPLETO:
+        if k in por:
+            y = _anexar_quadro(dc, por[k], por[k].nome.split(" – ", 1)[-1].upper(), y)
+    fams = [por[k].metadados.get("premoldado") or {} for k in ORDEM_COMPLETO if k in por]
+    dc.metadados["premoldado"] = {"completo": [k for k in ORDEM_COMPLETO if k in por],
+                                  "pecas": sum(int(m.get("pecas") or 0) for m in fams),
+                                  "marcas": sum(int(m.get("marcas") or 0) for m in fams)}
+    return dc

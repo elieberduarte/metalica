@@ -39,6 +39,19 @@ function avisar(txt, ms = 6000) {
   if (txt && ms) avisoTimer = setTimeout(() => { a.hidden = true; }, ms);
 }
 
+/** Com os dois completos — o "Detalhamento – completo" da metálica e o "pré-moldado – completo" (16/10) —, o da
+ *  disciplina escolhida no CAD para este projeto (a chave MET/PRÉ, web/cad/estrutura.js); sem escolha, o do projeto
+ *  pré-moldado; senão o gerado por último (a lista vem do mais novo): depois de "Detalhar pré-moldado", o dele. */
+function completoDaDisciplina(completos, projeto) {
+  if (completos.length < 2) return completos[0];
+  const ePM = (d) => /^pr[eé]-moldado-/.test(d.nome || '');
+  let disc = '';
+  try { disc = localStorage.getItem(`cad.estrutura.disciplina.${PROJETO}`) || ''; } catch (e) { disc = ''; }
+  if (!disc && (projeto || {}).area === 'premoldado') disc = 'premoldado';
+  if (disc) return completos.find(d => ePM(d) === (disc === 'premoldado')) || completos[0];
+  return completos[0];
+}
+
 async function pedir(rota) {
   const r = await fetch(rota, { cache: 'no-store' });
   const j = await r.json().catch(() => ({}));
@@ -313,7 +326,7 @@ async function iniciar() {
   // endereço não pede outro desenho
   const eCompleto = (d) => /(^|-)completo$/.test(d.nome || '');
   desenhos.sort((a, b) => Number(eCompleto(b)) - Number(eCompleto(a)));
-  const completo = desenhos.find(eCompleto);
+  const completo = completoDaDisciplina(desenhos.filter(eCompleto), projeto);
   const inicial = PARAMS.get('desenho') || (completo && completo.nome) || desenhoDaPlanta || (desenhos[0] && desenhos[0].nome) || '';
   const sel = $('#desenho');
   for (const d of desenhos) {

@@ -198,6 +198,17 @@ __all__ = ["detalhar", "GRUPOS", "GRUPOS_BASE", "TITULOS_ANTIGOS", "regra_furaca
 
 
 
+def _papel_na_escala(e, k: float) -> None:
+    """Multiplica por `k` o que a entidade mede em mm de papel (a altura do texto, o tamanho da cota, o passo da
+    hachura): o mesmo tamanho na folha quando ela passa de um desenho em 1:N para um em 1:(N/k)."""
+    if isinstance(e, Cota):
+        e.fator = (e.fator or 1.0) * k
+    elif hasattr(e, "altura"):
+        e.altura = e.altura * k
+    if hasattr(e, "espacamento"):
+        e.espacamento = e.espacamento * k
+
+
 def _anexar_faixa(dc: Desenho, banda: Desenho, titulo: str, y_topo: float, meta_faixa: Optional[dict] = None) -> float:
     """Copia as entidades de `banda` para `dc`, transladadas para ficarem abaixo de
     `y_topo` com o título da faixa por cima; funde células e metadados. Devolve o y do
@@ -220,10 +231,15 @@ def _anexar_faixa(dc: Desenho, banda: Desenho, titulo: str, y_topo: float, meta_
     for nome, cam in banda.camadas.items():
         if nome not in dc.camadas:
             dc.camadas[nome] = _copy.deepcopy(cam)
+    # o que é de papel (texto, cota, chamada, hachura) na escala do desenho de destino: a planta em 1:125 dentro do
+    # completo em 1:25 trazia as marcas e os nomes dos eixos 5× menores — tracinhos (16/10, test_regressoes_completo)
+    k = (banda.escala / esc) if banda.escala and esc and abs(banda.escala - esc) > 1e-9 else 1.0
     for e in banda.entidades.values():
         e2 = _copy.deepcopy(e)
         _mover(e2, dx, dy)
         e2.atributos = dict(e2.atributos or {}, faixa=titulo)
+        if k != 1.0:
+            _papel_na_escala(e2, k)
         dc.add(e2)
     for c in banda.metadados.get("celulas") or []:
         dc.metadados.setdefault("celulas", []).append([round(c[0] + dx, 1), round(c[1] + dy, 1), round(c[2] + dx, 1), round(c[3] + dy, 1)])

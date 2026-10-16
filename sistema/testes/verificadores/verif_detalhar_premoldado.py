@@ -108,7 +108,9 @@ try:
         ok(pv is not None and any("fundações" in a for a in arqs) and any("lajes" in a for a in arqs), "um desenho por família")
         ok(any("locação" in a for a in arqs) and any("plantas-de-fôrma" in a for a in arqs) and any("cortes" in a for a in arqs),
            "os desenhos de conjunto gravados (locação, plantas de fôrma, cortes)")
-        ok("locação" in str(aba.avaliar("window.__abriu")), "abre na planta de locação")
+        # 16/10: abre no "pré-moldado – completo" (todos os desenhos do pré-moldado, cada um no seu quadro)
+        ok("completo" in str(aba.avaliar("window.__abriu")) and any("pré-moldado-completo" in a for a in arqs),
+           f"abre no pré-moldado – completo ({aba.avaliar('window.__abriu')})")
         loc = next((a for a in arqs if "locação" in a), None)
         if loc:
             dl = json.load(open(os.path.join(PASTA, "desenhos-2d", loc), encoding="utf-8"))
@@ -131,6 +133,28 @@ try:
             json.load(urllib.request.urlopen(req, timeout=120))
             d2 = json.load(open(os.path.join(PASTA, "desenhos-2d", pv), encoding="utf-8"))
             ok(len(d2["entidades"]) == n1, f"refazer substitui, não empilha ({n1} → {len(d2['entidades'])})")
+        # o completo no CAD: sem a faixa "os textos do arquivo importado são de um desenho em ~1:50" — a mediana dos
+        # textos das plantas (1:125, no tamanho da folha em 1:25) pedia ajustar a escala de um desenho gerado (16/10)
+        import urllib.parse
+        # como no Mercado: a maioria dos textos vem das plantas (1:125), 5× maiores no completo — a mediana dava 1:50
+        # e o CAD pedia "Ajustar a escala"; aqui, com poucas plantas, os textos do completo gravado são aumentados
+        cam = os.path.join(PASTA, "desenhos-2d", "pré-moldado-completo.desenho.json")
+        dc = json.load(open(cam, encoding="utf-8"))
+        for e in (dc["entidades"].values() if isinstance(dc["entidades"], dict) else dc["entidades"]):
+            if e.get("tipo") == "texto":
+                e["altura"] = float(e.get("altura") or 2.5) * 5
+        json.dump(dc, open(cam, "w", encoding="utf-8"), ensure_ascii=False)
+        aba.console.clear()
+        aba.navegar(f"http://localhost:{PORTA}/cad?projeto=obra&desenho=" + urllib.parse.quote("pré-moldado-completo"), limite=60)
+        t0 = time.time()
+        while time.time() - t0 < 60 and not aba.avaliar("!!(window.cad && document.body.dataset.pronto === '1')"):
+            aba.drenar(0.5)
+        aba.drenar(2.0)
+        avisos = aba.avaliar("[...document.querySelectorAll('.aviso')].map(a => a.textContent).join(' | ')") or ""
+        sug = aba.avaliar("JSON.stringify(window.cad.doc.escalaDosTextos())")
+        print("  escala pelos textos do completo:", sug)            # outra escala que 25 = o caso que avisava
+        ok(aba.avaliar("window.cad.doc.tamanho > 0") and "arquivo importado" not in avisos,
+           f"o completo abre no CAD sem pedir para ajustar a escala ({avisos[:120]!r})")
     e = [m for m in aba.console if m[0] in ("error", "excecao") and "favicon" not in m[1]]
     ok(not e, "sem erros no console" + (f" — {[x[1][:200] for x in e[:3]]}" if e else ""))
 finally:

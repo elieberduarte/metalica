@@ -1953,7 +1953,8 @@ export class Editor {
       this.dica('Pré-moldado detalhado.');
       this.aviso(`Pré-moldado: ${j.pecas.toLocaleString('pt-BR')} peças em ${j.marcas.toLocaleString('pt-BR')} marcas, ${j.desenhos.length} desenho(s): ` +
                  j.desenhos.map(d => d.marcas ? `${d.titulo} (${d.marcas} marcas)` : d.titulo).join(', ') + '.' + (j.avisos && j.avisos.length ? ' ' + j.avisos.join(' · ') : ''), 'info', 15000);
-      const abrir = j.desenhos.find(d => d.familia === 'locacao') || j.desenhos[0];
+      // o completo (todos os desenhos do pré-moldado, cada um no seu quadro, 16/10); sem ele, a locação
+      const abrir = j.desenhos.find(d => d.familia === 'completo') || j.desenhos.find(d => d.familia === 'locacao') || j.desenhos[0];
       if (abrir) this._abrirCAD(abrir.nome);
     } catch (e) { parar(); this.aviso(`Não foi possível detalhar o pré-moldado: ${e.message}`, 'erro', 0); this.dica(''); }
   }
