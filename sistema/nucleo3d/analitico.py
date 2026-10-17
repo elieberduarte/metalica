@@ -22,6 +22,7 @@ from __future__ import annotations
 import collections
 import math
 from typing import Dict, List, Optional, Tuple
+from nucleo3d.modelo import origem_de
 
 TOL_NO = 60.0           # pontas mais perto que isso são o mesmo nó
 TOL_DUPLO = 200.0       # as duas barras do perfil duplo: pontas a até isso uma da outra
@@ -90,7 +91,7 @@ def _entre_segmentos(a, b, c, d) -> Tuple[float, float, float, Ponto]:
 
 
 def _origem(ent) -> dict:
-    return (getattr(ent, "atributos", None) or {}).get("origem") or {}
+    return origem_de(ent)
 
 
 def _linhas_do(doc) -> List[dict]:

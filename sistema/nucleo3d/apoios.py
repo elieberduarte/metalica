@@ -21,6 +21,7 @@ from __future__ import annotations
 import collections
 import math
 from typing import Dict, List, Tuple
+from nucleo3d.modelo import origem_de
 
 __all__ = ["verificar", "TOL_ENCOSTO"]
 
@@ -124,7 +125,7 @@ class _Elem:
         self.peca = peca
         self.segs = segs
         self.raio = 0.0                 # meia seção do sólido (a barra usa a tolerância)
-        orig = (getattr(ent, "atributos", None) or {}).get("origem") or {}
+        orig = origem_de(ent)
         # o nome da peça no projeto; sem ele, o da treliça de origem ("TESOURA 1#12" → "TESOURA 1");
         # o nome da barra (o perfil) é o último recurso
         self.nome = (orig.get("planta") or orig.get("locacao") or orig.get("sigla")
@@ -167,10 +168,10 @@ def _elementos(doc) -> List[_Elem]:
     for b in doc.barras:
         if b.papel == "presilha":          # liga as duas cantoneiras da alma dupla: não apoia nem é apoiada
             continue
-        orig = (b.atributos or {}).get("origem") or {}
+        orig = origem_de(b)
         out.append(_Elem(b, [(tuple(b.inicio), tuple(b.fim))], b.papel, orig.get("peca")))
     for s in doc.solidos:
-        orig = (s.atributos or {}).get("origem") or {}
+        orig = origem_de(s)
         v = [tuple(p) for p in s.vertices]
         if not v:
             continue
@@ -286,7 +287,7 @@ def verificar(doc, tol: float = TOL_ENCOSTO, eixos=None) -> dict:
     pontas_ok = pontas_total = 0
     pontas_de: Dict[str, tuple] = {}
     for peca, lst in por_peca.items():
-        if ((getattr(els[lst[0]].ent, "atributos", None) or {}).get("origem") or {}).get("corte"):
+        if origem_de(els[lst[0]].ent).get("corte"):
             continue                        # a copa do pilar em árvore é apoio, não apoiada: as pontas dela são livres
         pts = [(p, i) for i in lst for s in els[i].segs for p in s]
         if max(p[2] for p, _i in pts) - min(p[2] for p, _i in pts) < 150.0:

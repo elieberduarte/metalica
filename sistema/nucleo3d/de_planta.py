@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from nucleo.base import ErroDeDados
+from nucleo3d.modelo import origem_de
 
 __all__ = ["montar", "PADRAO", "ler_elevacoes", "pecas_da_planta", "quadro_do_usado"]
 
@@ -3203,7 +3204,7 @@ def _encostar_tercas_na_face(tercas, barreiras, nivel: float) -> List[Tuple[str,
                 continue
             b.inicio = (A[0] + n[0] * alvo, A[1] + n[1] * alvo, A[2])
             b.fim = (B[0] + n[0] * alvo, B[1] + n[1] * alvo, B[2])
-            sig = str(((b.atributos or {}).get("origem") or {}).get("sigla") or "terça")
+            sig = str(origem_de(b).get("sigla") or "terça")
             feitas.append((sig, (b.inicio[0] + b.fim[0]) / 2, (b.inicio[1] + b.fim[1]) / 2))
             break
     return feitas
@@ -4511,7 +4512,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         # a terça assentada no topo verdadeiro dos banzos que ela cruza (12/10: "terças entrando no banzo, terça
         # voando") — a altura acima vinha do meio do banzo na elevação com um banzo de 40 mm fixo
         def _barreira(e):
-            nome_e = _sem_acento(str(((e.atributos or {}).get("origem") or {}).get("planta") or "")).upper()
+            nome_e = _sem_acento(str(origem_de(e).get("planta") or "")).upper()
             return nome_e.startswith("PAINEL") or nome_e.startswith("TRANSICAO")
         # os apoios só da mesma cobertura (camada Treliças): as treliças da base da caixa d'água (TRELIÇA 7, a 7,46 m)
         # passam por cima das terças do telhado e as erguiam até 23 cm (12/10)

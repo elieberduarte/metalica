@@ -18,7 +18,7 @@ from types import SimpleNamespace
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from nucleo3d.geometria import base_local, secao
-from nucleo3d.modelo import Barra
+from nucleo3d.modelo import Barra, origem_de
 
 FOLGA = 10.0            # mm entre a ponta da alma e a face do banzo
 PERTO = 450.0           # mm: o banzo "do nó" passa a até isso da ponta da alma (o caixão tem o eixo fora do nó)
@@ -137,7 +137,7 @@ def aparar(entidades: Iterable, folga: float = FOLGA) -> Dict[str, int]:
     blocos: Dict[str, Dict[str, list]] = defaultdict(lambda: {"banzo": [], "alma": []})
     for b in entidades:
         atr = getattr(b, "atributos", None) or {}
-        peca = (atr.get("origem") or {}).get("peca")
+        peca = origem_de(b).get("peca")
         if not peca:
             continue
         chave = re.sub(r" \([^()]*\)(#\d+)$", r"\1", peca)
@@ -284,7 +284,7 @@ def _blocos(entidades):
     blocos: Dict[str, Dict[str, list]] = defaultdict(lambda: {"banzo": [], "alma": []})
     for b in entidades:
         atr = getattr(b, "atributos", None) or {}
-        peca = (atr.get("origem") or {}).get("peca")
+        peca = origem_de(b).get("peca")
         if not peca:
             continue
         chave = re.sub(r" \([^()]*\)(#\d+)$", r"\1", peca)

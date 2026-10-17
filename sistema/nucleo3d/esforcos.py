@@ -30,6 +30,7 @@ import numpy as np
 
 from nucleo3d.analitico import analitico
 from nucleo import cargas as _cargas
+from nucleo3d.modelo import origem_de
 
 E_ACO = 200e6          # kN/m²
 G_ACO = 77e6           # kN/m²
@@ -628,7 +629,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
             if e in w_e:
                 continue
             ent_e = doc.entidades.get(barras[e]["ids"][0]) if hasattr(doc.entidades, "get") else None
-            nome_e = (((getattr(ent_e, "atributos", None) or {}).get("origem") or {}).get("escada")) or "?"
+            nome_e = origem_de(ent_e).get("escada") or "?"
             pat_por[nome_e].update((int(ia[pos[e]]), int(ib[pos[e]])))
         cantos = {k: sorted(v) for k, v in pat_por.items()}
         area_p = 0.0
@@ -761,7 +762,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
             for k in ("a", "b"):
                 ids_do_no[br[k]].update(br["ids"])
             ent = doc.entidades.get(br["ids"][0]) if hasattr(doc.entidades, "get") else None
-            nome = (((getattr(ent, "atributos", None) or {}).get("origem") or {}).get("locacao")) if ent else None
+            nome = origem_de(ent).get("locacao") if ent else None
             for k in ("a", "b"):
                 nome_do_no.setdefault(br[k], nome)
     pilares = []

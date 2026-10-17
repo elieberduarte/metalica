@@ -24,7 +24,7 @@ import math
 from typing import Dict, List, Optional, Tuple
 
 from nucleo3d.geometria import base_local, secao
-from nucleo3d.modelo import Solido
+from nucleo3d.modelo import Solido, origem_de
 
 TELHA_PADRAO = {"nome": "TP40 0,5 mm (Isoeste Metálica)", "modelo": "TP40", "largura_util": 1020.0, "altura_onda": 40.0,
                 "comprimento_max": 12000.0, "massa_m2": 4.62}
@@ -49,7 +49,7 @@ def _topo_da_terca(b) -> float:
 
 
 def _e_barreira(b) -> bool:
-    o = (b.atributos or {}).get("origem") or {}
+    o = origem_de(b)
     nome = str(o.get("planta") or o.get("peca") or "").upper()
     return b.papel == "banzo" and (nome.startswith("PAINEL") or nome.startswith("TRANSI"))
 
@@ -124,7 +124,7 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
             za, zb = b.inicio[2] + top, b.fim[2] + top
             if sb < sa:
                 sa, sb, za, zb = sb, sa, zb, za
-            o = (b.atributos or {}).get("origem") or {}
+            o = origem_de(b)
             reg.append({"b": b, "s0": sa, "s1": sb, "t": t, "z0": za, "z1": zb, "sigla": o.get("sigla") or (b.atributos or {}).get("sigla") or ""})
             direcao[b.id] = d
 
@@ -176,7 +176,7 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                         degraus.append((baixa, lado_b, dt - 50.0))
                     if dt <= 2 * vao_max:
                         k = (id(q["b"]), id(r["b"]))
-                        o_b = ((barr["b"].atributos or {}).get("origem") or {}) if barr is not None else {}
+                        o_b = origem_de(barr["b"]) if barr is not None else {}
                         motivo = ("parede" if barr is not None else "vao" if dt > vao_max else "inclinacao")
                         g = sem_telha.setdefault(k, {"de": q["sigla"], "para": r["sigla"], "motivo": motivo, "vao": round(dt),
                                                      "dz": round(z_em(r, sm) - z_em(q, sm)), "comp": 0.0,
@@ -888,7 +888,7 @@ def _apoios_da_terca(b, apoios, grade, CEL):
                 if La < 1:
                     continue
                 _lo_a, hi_a = _ext_z(a)
-                o = (a.atributos or {}).get("origem") or {}
+                o = origem_de(a)
                 nome = str(o.get("planta") or o.get("peca") or a.papel)
                 barr = _e_barreira(a)
                 den = bx * ay - by * ax
@@ -944,7 +944,7 @@ def alinhar_tercas(tercas, barras, tol: float = 10.0, maximo: float = 300.0, vao
     # desce; a do meio da água senta na tesoura que passa
     pontas_peca: Dict[str, list] = collections.defaultdict(list)
     for a in apoios:
-        pc = ((a.atributos or {}).get("origem") or {}).get("peca")
+        pc = origem_de(a).get("peca")
         if pc:
             pontas_peca[pc] += [(a.inicio[0], a.inicio[1]), (a.fim[0], a.fim[1])]
     extremos = {}
@@ -969,7 +969,7 @@ def alinhar_tercas(tercas, barras, tol: float = 10.0, maximo: float = 300.0, vao
         return min(abs(s_ - smin), abs(s_ - smax)) <= 400.0
 
     def sigla(b):
-        o = (b.atributos or {}).get("origem") or {}
+        o = origem_de(b)
         return o.get("sigla") or (b.atributos or {}).get("sigla") or ""
 
     # A. a terça da calha

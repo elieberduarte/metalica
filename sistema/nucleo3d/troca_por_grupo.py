@@ -27,6 +27,7 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 from nucleo.base import ErroDeDados
+from nucleo3d.modelo import origem_de
 
 # os grupos com regra própria, na ordem da tela; os outros papéis entram depois, pelo nome do papel
 GRUPOS = (
@@ -443,7 +444,7 @@ def aplicar(doc, trocas: List[dict]) -> dict:
         if grupo_da_barra(e) in ("tercas",) or str(getattr(e, "papel", "")).lower() in ("terça", "terca"):
             continue
         chaves.add(RT._chave_grupo(e))
-        peca = ((e.atributos or {}).get("origem") or {}).get("peca") if isinstance((e.atributos or {}).get("origem"), dict) else None
+        peca = origem_de(e).get("peca")
         if peca:
             chaves.add(("peca", str(peca)))
     regras = (0, 0, 0, 0)
@@ -453,7 +454,7 @@ def aplicar(doc, trocas: List[dict]) -> dict:
             if not isinstance(e, Barra):
                 continue
             a = e.atributos or {}
-            o = a.get("origem") if isinstance(a.get("origem"), dict) else {}
+            o = origem_de(e)
             if RT._chave_grupo(e) in chaves or (o.get("peca") and ("peca", str(o["peca"])) in chaves):
                 lista.append(e)
         regras = RT.aplicar(lista)

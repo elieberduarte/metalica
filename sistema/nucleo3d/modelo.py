@@ -28,6 +28,14 @@ Ponto = Tuple[float, float, float]
 
 # --------------------------------------------------------------- utilidades
 
+def origem_de(ent) -> dict:
+    """`atributos.origem` sempre como dicionário (vazio quando falta ou não é um): o script do PRATI (13/10) gravou ali o
+    nome do DXF como texto em 1.086 peças, e o Verificar apoios caía nelas (16/10)"""
+    a = ent.get("atributos") if isinstance(ent, dict) else getattr(ent, "atributos", None)
+    o = a.get("origem") if isinstance(a, dict) else None
+    return o if isinstance(o, dict) else {}
+
+
 def novo_id(prefixo="e") -> str:
     return f"{prefixo}{uuid.uuid4().hex[:12]}"
 

@@ -20,6 +20,7 @@ from __future__ import annotations
 import collections
 import math
 from typing import Dict, List, Optional, Sequence
+from nucleo3d.modelo import origem_de
 
 #: os papéis que cruzam as outras peças por projeto (o X do contraventamento, a corrente entre terças)
 CRUZAM_POR_PROJETO = {"contraventamento", "corrente", "esticador", "agulha", "tirante"}
@@ -28,13 +29,13 @@ NOS_NORMAIS = {frozenset(("pilar", "viga")), frozenset(("viga",)), frozenset(("p
 
 
 def _peca(e) -> str:
-    o = (e.atributos or {}).get("origem") or {}
+    o = origem_de(e)
     return str(o.get("peca") or o.get("planta") or o.get("sigla") or e.id)
 
 
 def _nome(e) -> str:
     """o nome da peça para o texto: "TESOURA 8" (sem o número do conjunto), a sigla da terça, o papel"""
-    o = (e.atributos or {}).get("origem") or {}
+    o = origem_de(e)
     n = str(o.get("peca") or o.get("planta") or "").split("#")[0].strip()
     if n:
         return n

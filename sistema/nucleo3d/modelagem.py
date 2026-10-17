@@ -25,6 +25,7 @@ import math
 from typing import Dict, List, Optional, Sequence
 
 from nucleo.base import ErroDeDados
+from nucleo3d.modelo import origem_de
 
 
 def _sub(a, b): return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
@@ -255,8 +256,8 @@ def trelica(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
     membros = [(a, b, r) for a, b, r in membros if math.dist(a, b) > 1.0]
     novas = []
     # o bloco da treliça: o dos banzos, quando já têm (as almas encaixam nas faces deles), ou o nome pedido
-    peca = next((str((b.atributos or {}).get("origem", {}).get("peca")) for b in (sup, inf)
-                 if ((b.atributos or {}).get("origem") or {}).get("peca")), None) or str(p.get("nome") or "TRELIÇA")
+    peca = next((str(origem_de(b).get("peca")) for b in (sup, inf)
+                 if origem_de(b).get("peca")), None) or str(p.get("nome") or "TRELIÇA")
     for a, b, papel in membros:
         novas.append(Barra(nome=papel.capitalize(), inicio=_r(a), fim=_r(b), perfil=perfil_m if papel == "montante" else perfil_d,
                            papel=papel, camada="Treliças", material="Aço",
@@ -266,7 +267,7 @@ def trelica(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
     avisos_bloco = []
     for b, papel in ((sup, "banzo"), (inf, "banzo")):
         at = dict(b.atributos or {})
-        orig = dict(at.get("origem") or {})
+        orig = dict(origem_de(b))
         if not orig.get("peca"):
             orig["peca"] = peca
             at["origem"] = orig
@@ -280,7 +281,7 @@ def trelica(doc, ids: Sequence[str], p: Optional[dict] = None) -> dict:
     try:
         from nucleo3d import alma_na_face
         from nucleo3d.ligacoes3d import _copia_de_trabalho
-        do_bloco = [e.id for e in doc.entidades.values() if ((getattr(e, "atributos", None) or {}).get("origem") or {}).get("peca") == peca]
+        do_bloco = [e.id for e in doc.entidades.values() if origem_de(e).get("peca") == peca]
         tmp = _copia_de_trabalho(doc, do_bloco + [sup.id, inf.id])
         for bid, campos in alterar.items():
             for k_, v_ in campos.items():
