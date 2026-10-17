@@ -29,6 +29,12 @@ from nucleo3d.modelo import Solido, origem_de
 TELHA_PADRAO = {"nome": "TP40 0,5 mm (Isoeste Metálica)", "modelo": "TP40", "largura_util": 1020.0, "altura_onda": 40.0,
                 "comprimento_max": 12000.0, "massa_m2": 4.62}
 ESPESSURA_DESENHO = 6.0          # mm: o pano no 3D (a chapa tem 0,5 mm; 6 mm para aparecer)
+# a calha em todo encontro das águas baixas (17/10, o usuário: "as telhas devem ter um afastamento entre si e a calha
+# ficará centralizada deixando os cobrimentos necessários para a água não infiltrar para dentro da cobertura")
+AFASTAMENTO_CALHA = 150.0        # mm entre as pontas das telhas das duas águas, no vale
+COBRIMENTO_CALHA = 100.0         # mm de telha por cima da calha, de cada lado (a calha do vale: 150 + 2 × 100 = 350)
+AFASTAMENTO_PAREDE = 100.0       # mm da ponta da telha até a face da parede em que a água desce (a calha encostada nela)
+FUNDO_CALHA = 150.0              # mm de fundo da calha, abaixo da ponta das telhas
 
 
 def _perfil(nome):
@@ -204,6 +210,7 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                         panos.append(abertos.pop(k))
                     abertos[k] = dict(rec, s0=sa, s1=sb)
             fim_de = {}                                  # a terça → a inclinação da água dela na ponta (para o beiral)
+            no_vale = set()                              # as terças da calha de duas terças (o V numa terça é outro caso)
             for seq in cadeia:
                 zs_ = [z_em(r, sm) for r in seq]
                 ts_ = [r["t"] for r in seq]
@@ -211,20 +218,33 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                 if inc_:
                     fim_de[id(seq[0]["b"])] = inc_[0]
                     fim_de[id(seq[-1]["b"])] = inc_[-1]
+
+                def desce_ate(j, inc_=inc_):
+                    """a água desce no vão j até o vale, sem subir no vão de antes (a terça baixa no meio de uma água — o
+                    par da cumeeira de x 42,07 do Posto, 85 mm abaixo — não é vale: é apontamento)"""
+                    return inc_[j] < -0.005 and (j == 0 or inc_[j - 1] < 0.005)
+
+                def sobe_de(j, inc_=inc_):
+                    return inc_[j] > 0.005 and (j == len(inc_) - 1 or inc_[j + 1] > -0.005)
                 for i, (q, r) in enumerate(zip(seq, seq[1:])):
-                    # o vale estreito entre duas águas (a de antes desce até q, a de depois sobe a partir de r, e o pano
-                    # entre as duas quase plano, até 1 m): é a calha, não telha — a calha de x 10,06, 21,37 e 33,96 do Posto
-                    no_fundo = 0 < i and i + 1 < len(inc_) and inc_[i - 1] < -0.005 and inc_[i + 1] > 0.005
-                    # e o par no fundo do vale que passa por cima da transição dele (a TRANSIÇÃO 3 do Posto: a terça da
-                    # calha no encontro das duas águas deixava o pano em 5 %)
-                    vale = no_fundo and ts_[i + 1] - ts_[i] <= 1000.0 and (
-                        abs(inc_[i]) <= 0.03 or (id(q["b"]), id(r["b"])) in por_cima)
+                    # o vale estreito entre duas águas (a de antes desce até q, a de depois sobe a partir de r, até 1 m uma da
+                    # outra): é a calha, não telha — as calhas de x 10,06, 21,37 e 33,96 do Posto. Qualquer inclinação entre as
+                    # duas (17/10: a terça do fundo 0,1 m abaixo da vizinha a 0,45 m — a linha x 10,06 — ficava sem calha)
+                    no_fundo = 0 < i and i + 1 < len(inc_) and desce_ate(i - 1) and sobe_de(i + 1)
+                    vale = no_fundo and ts_[i + 1] - ts_[i] <= 1000.0
                     # o par de terças da cumeeira (as duas águas sobem até elas, até 0,5 m uma da outra): a cumeeira cobre o
                     # meio (a peça de funilaria), não a telha — o par a 0,35 m das cumeeiras de x 27,6 e 41,9 do Posto
                     cume = (0 < i and i + 1 < len(inc_) and inc_[i - 1] > 0.005 and inc_[i + 1] < -0.005
                             and ts_[i + 1] - ts_[i] <= 500.0)
                     if vale:
                         abrir(("calha", id(q["b"]), id(r["b"])), {"q": q, "r": r, "calha": True})
+                        no_vale.update((id(q["b"]), id(r["b"])))
+                        # as telhas das duas águas entram na calha até ficarem a AFASTAMENTO_CALHA uma da outra
+                        bal = (ts_[i + 1] - ts_[i] - AFASTAMENTO_CALHA) / 2.0
+                        if bal > 20.0:
+                            for ter, lado, m_ in ((q, +1, inc_[i - 1]), (r, -1, inc_[i + 1])):
+                                abrir(("beiral", id(ter["b"]), lado, round(bal / 10), round(m_ * 1000)),
+                                      {"q": ter, "r": ter, "beiral": True, "lado": lado, "L": bal, "m": m_})
                     elif cume:
                         abrir(("cumeeira", id(q["b"]), id(r["b"])), {"q": q, "r": r, "cumeeira": True})
                     else:
@@ -235,7 +255,8 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                 ts_ = [r["t"] for r in seq]
                 inc_ = [(zs_[i + 1] - zs_[i]) / (ts_[i + 1] - ts_[i]) for i in range(len(seq) - 1)]
                 for k_ in range(1, len(seq) - 1):
-                    if inc_[k_ - 1] < -0.005 and inc_[k_] > 0.005 and ts_[k_] - ts_[k_ - 1] > 1000.0 and ts_[k_ + 1] - ts_[k_] > 1000.0:
+                    if (inc_[k_ - 1] < -0.005 and (k_ == 1 or inc_[k_ - 2] < 0.005) and inc_[k_] > 0.005
+                            and (k_ == len(inc_) - 1 or inc_[k_ + 1] > -0.005) and id(seq[k_]["b"]) not in no_vale):
                         abrir(("calhaV", id(seq[k_]["b"])), {"q": seq[k_], "r": seq[k_], "calha": True, "eixo": True})
             for ter, lado, L in degraus:
                 if L > 50.0:
@@ -247,15 +268,19 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                 t_c = q["t"] + (r["t"] - q["t"]) * fr
                 for ter, lado in ((q, +1), (r, -1)):
                     L = (t_c - 100.0 - ter["t"]) if lado > 0 else (ter["t"] - (t_c + 100.0))
-                    if not (50.0 < L <= 1600.0):
+                    if not (-300.0 < L <= 1600.0):
                         continue
                     m = fim_de.get(id(ter["b"]), 0.0)
-                    abrir(("beiral", id(ter["b"]), lado, round(L / 10), round(m * 1000)),
-                          {"q": ter, "r": ter, "beiral": True, "lado": lado, "L": L, "m": m})
-                    # a água que desce até a parede: a calha encostada na face dela (a água não escorre na parede)
-                    if m * lado < -0.005:
+                    # a água que desce até a parede (o frontão das TRANSIÇÕES 2/3 do Posto na linha da calha): a telha para a
+                    # AFASTAMENTO_PAREDE da face e a calha fica encostada nela, por baixo da ponta da telha
+                    desce = m * lado < -0.005
+                    Lt = L - AFASTAMENTO_PAREDE if desce else L
+                    if Lt > 50.0:
+                        abrir(("beiral", id(ter["b"]), lado, round(Lt / 10), round(m * 1000)),
+                              {"q": ter, "r": ter, "beiral": True, "lado": lado, "L": Lt, "m": m})
+                    if desce and L > 0.0:
                         abrir(("calhaP", id(ter["b"]), lado, round(L / 10)),
-                              {"q": ter, "r": ter, "calha": True, "parede": True, "lado": lado, "L": L, "m": m})
+                              {"q": ter, "r": ter, "calha": True, "parede": True, "lado": lado, "L": L, "Lt": max(0.0, Lt), "m": m})
             for seq in cadeia:
                 # a conferência da sequência: os trechos retos da água (3 ou mais terças com a mesma inclinação, até 0,5 %)
                 # são o plano da telha; a terça fora deles é conferida pela reta do trecho vizinho de cada lado (até 2 terças
@@ -379,22 +404,35 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                 continue
             q, r = p["q"], p["r"]
             p["d"], p["n"] = d, n
+            meia = AFASTAMENTO_CALHA / 2.0 + COBRIMENTO_CALHA
             if p.get("eixo"):
-                # a calha do vale em V: 300 mm de largura, centrada na terça
+                # a calha do V numa terça: centrada nela, as telhas param a AFASTAMENTO_CALHA / 2 de cada lado (_chapas)
                 def lado_(s_, k_):
                     a_ = ponto(q, s_)
-                    return (a_[0] + n[0] * 150.0 * k_, a_[1] + n[1] * 150.0 * k_, a_[2])
+                    return (a_[0] + n[0] * meia * k_, a_[1] + n[1] * meia * k_, a_[2])
                 p["cantos"] = [lado_(p["s0"], -1), lado_(p["s1"], -1), lado_(p["s1"], 1), lado_(p["s0"], 1)]
                 continue
             if p.get("parede"):
-                # a calha da parede: os últimos 300 mm do beiral, encostada na face
-                L, m, lado = p["L"], p["m"], p["lado"]
+                # a calha da parede: da face até COBRIMENTO_CALHA por baixo da ponta da telha, na altura da ponta
+                L, Lt, m, lado = p["L"], p.get("Lt", p["L"]), p["m"], p["lado"]
 
                 def ate(s_, x_):
                     a_ = ponto(q, s_)
-                    return (a_[0] + n[0] * x_ * lado, a_[1] + n[1] * x_ * lado, a_[2] + m * L * lado)
-                x0 = max(0.0, L - 300.0)
+                    return (a_[0] + n[0] * x_ * lado, a_[1] + n[1] * x_ * lado, a_[2] + m * Lt * lado)
+                x0 = Lt - COBRIMENTO_CALHA
                 p["cantos"] = [ate(p["s0"], x0), ate(p["s1"], x0), ate(p["s1"], L), ate(p["s0"], L)]
+                continue
+            if p.get("calha"):
+                # a calha entre as duas terças do vale: centrada no vão, AFASTAMENTO_CALHA + 2 × COBRIMENTO_CALHA de largura
+                tc_ = (q["t"] + r["t"]) / 2.0
+                dt_ = (r["t"] - q["t"]) or 1.0
+
+                def no_vao(s_, t_):
+                    f = (t_ - q["t"]) / dt_
+                    A_, B_ = ponto(q, s_), ponto(r, s_)
+                    return tuple(A_[j] + (B_[j] - A_[j]) * f for j in range(3))
+                p["cantos"] = [no_vao(p["s0"], tc_ - meia), no_vao(p["s1"], tc_ - meia), no_vao(p["s1"], tc_ + meia),
+                               no_vao(p["s0"], tc_ + meia)]
                 continue
             if p.get("beiral"):
                 # da terça para fora, na inclinação da água (lado +1: t crescente)
@@ -605,12 +643,24 @@ def _partir(secoes, comp_max: float):
     return [pt_ for pt_ in partes if len(pt_) >= 2]
 
 
-def _chapas(panos, telha):
+def _chapas(panos, telha, vales=()):
     """As chapas de telha no sentido da caída: a cobertura de cada direção cortada em faixas da largura útil da telha
     (ao longo das terças, contadas do começo da água) e, em cada faixa, os panos seguidos (a terça de cima de um é a de
     baixo do outro) viram UMA chapa, da primeira à última terça (com o beiral) — as emendas correm na caída, como na
-    obra. Devolve [{secoes: [(A, B)] (as bordas da chapa em cada terça), a, b, origem, d, n}]."""
+    obra. `vales`: as calhas do V numa terça — a chapa que acaba nela para a AFASTAMENTO_CALHA / 2 do eixo. Devolve
+    [{secoes: [(A, B)] (as bordas da chapa em cada terça), a, b, origem, d, n}]."""
     W = float(telha.get("largura_util") or 1020.0)
+    em_v: Dict[int, list] = collections.defaultdict(list)
+    for c in vales:
+        if c.get("eixo"):
+            em_v[id(c["q"]["b"])].append((c["s0"], c["s1"]))
+
+    def recua(parte, k_ponta, k_viz):
+        """a seção da ponta recuada AFASTAMENTO_CALHA / 2 na direção da seção vizinha (a telha não chega no eixo do V)"""
+        (A, B), (C, D) = parte[k_ponta], parte[k_viz]
+        dist = math.hypot((C[0] + D[0] - A[0] - B[0]) / 2.0, (C[1] + D[1] - A[1] - B[1]) / 2.0) or 1.0
+        f = min(0.5, AFASTAMENTO_CALHA / 2.0 / dist)
+        parte[k_ponta] = (tuple(A[j] + (C[j] - A[j]) * f for j in range(3)), tuple(B[j] + (D[j] - B[j]) * f for j in range(3)))
     por_dir: Dict[tuple, list] = collections.defaultdict(list)
     for p in panos:
         if p.get("borda") or p.get("calha") or p.get("cumeeira") or "d" not in p:
@@ -643,6 +693,7 @@ def _chapas(panos, telha):
                         seq_t.append(p_["r"])
                         p_ = de.get(id(p_["r"]["b"]))
                     secoes = [(_pt(t_, a2, d, n), _pt(t_, b2, d, n)) for t_ in seq_t]
+                    terca_da = {id(sec): t_ for sec, t_ in zip(secoes, seq_t)}
                     # o beiral nas pontas (até a face da parede)
                     for bb in beirais:
                         ext = lambda P, bb=bb: (P[0] + n[0] * bb["L"] * bb["lado"], P[1] + n[1] * bb["L"] * bb["lado"], P[2] + bb["m"] * bb["L"] * bb["lado"])
@@ -652,6 +703,11 @@ def _chapas(panos, telha):
                             secoes.insert(0, (ext(secoes[0][0]), ext(secoes[0][1])))
                     # uma chapa por água (a cumeeira e o vale separam), até o comprimento da telha (12 m na TP 40)
                     for parte in _partir(secoes, float(telha.get("comprimento_max") or 12000.0)):
+                        parte = list(parte)
+                        for k_ponta, k_viz in ((0, 1), (len(parte) - 1, len(parte) - 2)):
+                            t_ = terca_da.get(id(parte[k_ponta]))
+                            if t_ is not None and any(x0 < b2 - 1 and x1 > a2 + 1 for x0, x1 in em_v.get(id(t_["b"]), ())):
+                                recua(parte, k_ponta, k_viz)
                         chapas.append({"secoes": parte, "a": a2, "b": b2, "origem": origem, "d": d, "n": n})
                 # o beiral sozinho (a água de uma terça só até a parede)
                 usados = {id(x) for x in comuns}
@@ -965,7 +1021,7 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
     tercas = [b for b in doc.barras if b.papel in ("terça", "terca")]
     an = _analise(tercas, doc.barras, vao_max, tol_plano)
     feitos = an["panos"]
-    chapas = _chapas(feitos, telha)
+    chapas = _chapas(feitos, telha, an["calhas"])
     for ch in chapas:
         so = _solido_da_chapa(ch, telha, camada)
         so.atributos = {"tipo_ifc": "IfcCovering", "telha_lancada": True, "telha": telha["modelo"],
@@ -996,9 +1052,11 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
     for c in an["calhas"]:
         cs = c["cantos"]
         # a calha do vale em V e a da parede ficam no nível da telha (a telha entra nela); a entre duas terças, abaixo
-        topo = (max(v[2] for v in cs) + 50.0) if (c.get("eixo") or c.get("parede")) else (min(v[2] for v in cs) - 20.0)
+        # por baixo da ponta das telhas, que entram nela COBRIMENTO_CALHA (17/10: a do V e a da parede ficavam 50 mm por
+        # cima da telha)
+        topo = min(v[2] for v in cs) - 15.0
         de = [(x, y, topo) for x, y, _z in cs]
-        vs = [(x, y, topo - 200.0) for x, y, _z in cs] + de
+        vs = [(x, y, topo - FUNDO_CALHA) for x, y, _z in cs] + de
         fs = [[0, 1, 2, 3], [7, 6, 5, 4], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]]
         so = Solido(nome="Calha", camada="Calhas", vertices=vs, faces=fs)
         so.atributos = {"tipo_ifc": "IfcPipeSegment", "calha_lancada": True, "entre": [c["q"]["sigla"], c["r"]["sigla"]]}

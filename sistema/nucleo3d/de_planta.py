@@ -3483,6 +3483,16 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     ents = desenho.dict()["entidades"] if hasattr(desenho, "dict") else list(desenho)
     # o quadro do que foi usado (gerado numa montagem anterior) não é projeto: fica de fora
     ents = [e for e in ents if not str(e.get("camada", "")).upper().startswith(PREFIXO_QUADRO)]
+    # a altura dos textos é de papel (× a escala do desenho = o tamanho real) e a leitura (o bloco do título, os balões, o
+    # meio do nome) foi afinada na base de 1:20: o desenho noutra escala vem para ela (17/10, o Posto CB passou a 1:50 no
+    # CAD com os textos do mesmo tamanho real — altura ÷ 2,5 — e a remontagem lia a caixa d'água com 2.324 peças e a obra
+    # 14 m fora do lugar)
+    esc_d = float(par.get("escala") or ESCALA_LEITURA)
+    if abs(esc_d - ESCALA_LEITURA) > 1e-6:
+        k_esc = esc_d / ESCALA_LEITURA
+        ents = [dict(e, altura=float(e["altura"]) * k_esc) if e.get("tipo") == "texto" and e.get("altura") else e for e in ents]
+        par["escala_desenho"] = esc_d
+        par["escala"] = ESCALA_LEITURA
     usados: Dict[str, set] = {"planta": set(), "tercas": set(), "locacao": set()}
     outras_feitas: List[dict] = []
     caixas_dagua: List[dict] = []
@@ -4966,6 +4976,8 @@ def avisos_pelos_eixos(avisos: List[str], eixos_p: Optional[dict], desl=(0.0, 0.
 # =====================================================================================
 
 PREFIXO_QUADRO = "QUADRO "
+#: a escala em que a leitura dos textos foi afinada (o Posto CB veio do DXF em 1:20)
+ESCALA_LEITURA = 20.0
 CAMADAS_QUADRO = {
     "QUADRO PEÇAS": {"cor": "#1f6feb", "espessura": 0.35},
     "QUADRO NOMES": {"cor": "#16202e", "espessura": 0.25},

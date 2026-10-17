@@ -935,7 +935,10 @@ def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
     for k in ("deitadas", "duas_pecas"):
         if k not in par and decisoes.get(k):
             par[k] = decisoes[k]
-    par.setdefault("escala", float(bruto.get("escala") or 20.0))     # altura dos textos das elevações (Treliças lidas)
+    # a escala é a do desenho como está agora: a altura dos textos é de papel nessa escala (17/10, o Posto CB passou de 1:20
+    # a 1:50 no CAD, e a escala 20 gravada na montagem anterior fazia a remontagem ler a caixa d'água errada)
+    par.pop("escala_desenho", None)
+    par["escala"] = float(bruto.get("escala") or 20.0)
     modo = str(corpo.get("modo") or "substituir")
     base = None
     if modo == "acrescentar":

@@ -858,3 +858,27 @@ def test_planta_sem_pecas_nomeadas_avisa_e_nao_devolve_modelo_vazio():
             texto((2000.0, -4000.0), "PLANTA NO NÍVEL DO FORRO", altura=5.0)] + baloes(0, 0)
     with pytest.raises(ErroDeDados, match="Nenhuma peça foi montada"):
         de_planta.montar(ents, {"planta": "PLANTA NO NÍVEL DO FORRO", "origem": False})
+
+def test_desenho_noutra_escala_le_igual():
+    """o desenho trocado de 1:20 para 1:50 no CAD com os textos do mesmo tamanho real (a altura de papel ÷ 2,5 — o Posto CB,
+    15/10): o título grande que separa uma vista da outra (≥ 20 mm de papel em 1:20) ficava pequeno, e a planta da caixa
+    d'água engolia as vistas de cima (2.324 peças, a obra 14 m fora do lugar). A montagem traz os textos para a base de 1:20"""
+    import copy
+    DX = 100000.0
+    mez = [linha((0.0 + DX, 2950.0), (L_TES + DX, 2950.0), "metalica4"), linha((0.0 + DX, 3050.0), (L_TES + DX, 3050.0), "metalica4"),
+           texto((3000.0 + DX, 3150.0), "VM-2Ue150X70X20X2,65"), texto((2000.0 + DX, -4000.0), "PLANTA NO NÍVEL 3,17m", altura=25.0)]
+    corte = [texto((2000.0 + DX, 9000.0), "CORTE AA", altura=25.0)]          # outra vista logo acima, com o título dela
+    for y in (10000.0, 10100.0, 13000.0, 13100.0):
+        corte.append(linha((0.0 + DX, y), (L_TES + DX, y), "metalica4"))
+    corte += [texto((3000.0 + DX, 10300.0), "VM-2Ue150X70X20X2,65"), texto((3000.0 + DX, 13300.0), "VM-2Ue150X70X20X2,65")]
+    ents = planta() + locacao() + plantas_das_tercas() + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
+    ents += baloes(DX, 0) + mez + corte + elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
+    par = {"nivel": 6000.0, "origem": False, "outras": [{"planta": "PLANTA NO NÍVEL 3,17m", "nivel": 3170.0}]}
+    r20 = de_planta.montar(copy.deepcopy(ents), dict(par, escala=20.0))
+    em50 = [dict(e, altura=e["altura"] / 2.5) if e.get("tipo") == "texto" else e for e in copy.deepcopy(ents)]
+    r50 = de_planta.montar(em50, dict(par, escala=50.0))
+
+    def mezanino(r):
+        return sorted((round(b.inicio[0]), round(b.inicio[1]), round(b.inicio[2])) for b in r["doc"].barras if b.camada == "Mezanino")
+    assert len(mezanino(r20)) == 2 and mezanino(r50) == mezanino(r20)
+    assert len(r50["doc"].barras) == len(r20["doc"].barras)

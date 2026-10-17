@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """As telhas lançadas em cima das terças (nucleo3d/telhas_cobertura.py, 12/10/2026)."""
+import pytest
+
 from nucleo3d.modelo import Barra, Documento
 from nucleo3d import telhas_cobertura as T
 
@@ -161,7 +163,14 @@ def test_calha_no_vale_em_v():
     r = T.lancar(doc)
     assert r["calhas_vale"] == 1
     calha = [s for s in doc.solidos if s.camada == "Calhas"][0]
-    assert all(4040 <= v[0] <= 4360 for v in calha.vertices)            # 300 mm centrada na terça
+    # 17/10: centrada na terça, 150 de afastamento entre as telhas + 100 de cobrimento de cada lado = 350 mm, e por baixo
+    # da ponta das telhas (antes: 300 mm, 50 mm por cima da telha)
+    assert min(v[0] for v in calha.vertices) == pytest.approx(4200.0 - 175.0, abs=1)
+    assert max(v[0] for v in calha.vertices) == pytest.approx(4200.0 + 175.0, abs=1)
+    telhas = _telhado(doc)
+    pontas = [v for s in telhas for v in s.vertices if 3900.0 < v[0] < 4500.0]
+    assert pontas and all(abs(v[0] - 4200.0) >= 75.0 - 1 for v in pontas)  # as telhas param a 75 mm do eixo
+    assert max(v[2] for v in calha.vertices) < min(v[2] for v in pontas)
 
 
 def test_fechamento_duplo_no_painel():
@@ -352,3 +361,58 @@ def test_trelica_acima_da_telha_no_meio_do_telhado_e_revestida():
         _terca(doc2, i * 1400.0, 7000.0 + i * 1400.0 * 0.05, "TC1", y0=-3000.0, y1=3000.0)
     _tesoura(doc2, 0.0, 6990.0, x0=-500.0, x1=6100.0)
     assert T.lancar(doc2)["revestimentos"] == 0
+
+
+# ------------------------------------------------------------------ a calha em todo encontro das águas baixas (17/10)
+def test_vale_com_a_terca_do_fundo_baixa_ao_lado_ganha_calha():
+    """a terça do fundo 100 mm abaixo da vizinha a 0,45 m (a linha x 10,06 do Posto): antes, nem vale de duas terças (o
+    vão entre elas não era plano) nem V (vizinha a menos de 1 m) — a linha inteira sem calha. Agora: a calha centrada no
+    vão, 350 mm, as telhas a 150 mm uma da outra e por cima dela"""
+    doc = Documento()
+    for i in range(4):                                         # a água da esquerda desce 5 % até x 4200
+        _terca(doc, i * 1400.0, 7210.0 - i * 1400.0 * 0.05, "TC1")
+    _terca(doc, 4650.0, 7000.0 - 100.0, "TC2")                  # a do fundo, 0,45 m adiante e 100 mm abaixo
+    for i in range(4):                                         # a da direita sobe 5 % a partir de x 6050
+        _terca(doc, 6050.0 + i * 1400.0, 6990.0 + i * 1400.0 * 0.05, "TC3")
+    T.lancar(doc)
+    calhas = [s for s in doc.solidos if s.camada == "Calhas"]
+    assert calhas, "o vale ficou sem calha"
+    xs = [v[0] for s in calhas for v in s.vertices]
+    assert max(xs) - min(xs) == pytest.approx(350.0, abs=2) and (min(xs) + max(xs)) / 2 == pytest.approx(4425.0, abs=2)
+    esq = max(v[0] for s in _telhado(doc) for v in s.vertices if v[0] < 4425.0)
+    dir_ = min(v[0] for s in _telhado(doc) for v in s.vertices if v[0] > 4425.0)
+    assert dir_ - esq == pytest.approx(150.0, abs=2)               # o afastamento entre as telhas
+    assert esq - min(xs) >= 99.0 and max(xs) - dir_ >= 99.0         # o cobrimento de cada lado
+    assert max(v[2] for s in calhas for v in s.vertices) < 7000.0 - 100.0 + 60.0
+
+
+def test_calha_da_parede_por_baixo_da_ponta_da_telha():
+    """a água desce até a parede (o frontão da TRANSIÇÃO 3 do Posto, na linha da calha): a telha para a 100 mm da face e a
+    calha fica encostada na parede, por baixo da ponta da telha (antes: 50 mm por cima da telha)"""
+    doc = Documento()
+    for i in range(4):
+        _terca(doc, i * 1400.0, 7210.0 - i * 1400.0 * 0.05, "TC1")
+    _banzo(doc, (5000.0, -500.0, 8000.0), (5000.0, 6500.0, 8000.0), "TRANSIÇÃO 3 (tesoura de cima)")
+    for i in range(3):
+        _terca(doc, 5800.0 + i * 1400.0, 7000.0 + i * 1400.0 * 0.05, "TC2")
+    T.lancar(doc)
+    calhas = [s for s in doc.solidos if s.camada == "Calhas" and max(v[0] for v in s.vertices) < 5000.0]
+    assert calhas
+    ponta = max(v[0] for s in _telhado(doc) for v in s.vertices if v[0] < 5000.0)
+    z_ponta = min(v[2] for s in _telhado(doc) for v in s.vertices if abs(v[0] - ponta) < 1.0)
+    c = calhas[0]
+    assert max(v[0] for v in c.vertices) > ponta + 50.0              # a calha vai além da ponta da telha, até a parede
+    assert min(v[0] for v in c.vertices) <= ponta - 99.0             # e entra 100 mm por baixo dela
+    assert max(v[2] for v in c.vertices) < z_ponta
+
+
+def test_terca_baixa_no_meio_da_agua_nao_vira_calha():
+    """o par da cumeeira com uma das terças 85 mm abaixo (x 42,07 do Posto): as águas não descem até ela — não é vale, não
+    leva calha (fica o apontamento da telha ao lado)"""
+    doc = Documento()
+    xs = [0.0, 1280.0, 2560.0, 2910.0, 4190.0, 5470.0]
+    zs = [7150.0, 7214.0, 7279.0, 7195.0, 7214.0, 7148.0]
+    for x, z in zip(xs, zs):
+        _terca(doc, x, z, "TC1")
+    T.lancar(doc)
+    assert not [s for s in doc.solidos if s.camada == "Calhas"]
