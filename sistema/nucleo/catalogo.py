@@ -413,6 +413,9 @@ def perfil_de(nome) -> Optional[Perfil]:
             return perfis_fabrica.perfil_u_frio(d["d"], d["bf"], d["t"])
         if it.familia == "L" and d.get("b"):
             return perfis_fabrica.perfil_cantoneira(d["b"], d.get("b2") or d["b"], d["t"])
+        if it.familia == "Cr" and d.get("d") and d.get("bf") and d.get("t"):
+            # a cartola (a terça dos estudos, 16/10): a tabela já traz as propriedades; o 3D desenha pela linha média
+            return Perfil(nome=it.nome, tipo="Cr", dados=dict(d, nome=it.nome, tw=d["t"], tf=d["t"]))
         if it.familia == "barra_redonda" and d.get("d"):
             from nucleo3d import geometria
             return geometria.barra_redonda(d["d"], it.nome)

@@ -575,12 +575,26 @@ def orientar(entidades: Iterable, por_grupo: bool = True) -> int:
 FOLGA_FACE = 0.0         # mm: a folga entre a tesoura que chega e a face interna da platibanda (4.8: "parar na face")
 
 
+_SECOES: Dict[str, Optional[list]] = {}
+
+
+def _pontos_da_secao(perfil: str) -> Optional[list]:
+    """o contorno da seção, guardado por perfil (a 4.8 pede a seção de cada peça de cada encontro: no Mercado eram 40 mil
+    contas da mesma meia dúzia de perfis, 15 s da troca por grupo)"""
+    k = str(perfil or "")
+    if k not in _SECOES:
+        try:
+            from nucleo3d.geometria import resolver_perfil, secao
+            _SECOES[k] = list(secao(resolver_perfil(k)))
+        except Exception:                                 # noqa: BLE001
+            _SECOES[k] = None
+    return _SECOES[k]
+
+
 def _extensao(b, direcao: Ponto) -> float:
     """quanto o material da barra se estende do eixo dela na direção dada (pela seção girada), em mm"""
-    try:
-        from nucleo3d.geometria import resolver_perfil, secao
-        pts = secao(resolver_perfil(b.perfil))
-    except Exception:                                     # noqa: BLE001 — sem a seção: meia largura de 50
+    pts = _pontos_da_secao(b.perfil)
+    if not pts:                                           # sem a seção: meia largura de 50
         return 50.0
     u, v, _w = _eixos(b)
     return max(_dot(_add(_mul(u, x), _mul(v, y)), direcao) for x, y in pts)

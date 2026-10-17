@@ -55,6 +55,7 @@ import { MetodosConferencia } from './modulos/conferencia.js';
 import { MetodosDetalhesUsuario } from './modulos/detalhes_usuario.js';
 import { MetodosBIM } from './modulos/bim.js';
 import { MetodosModelagem } from './modulos/modelagem.js';
+import { MetodosTrocaGrupos } from './modulos/troca_grupos.js';
 
 /** Copia os métodos das classes dos módulos para a classe (getters e setters também). */
 function aplicarMetodos(alvo, ...fontes) {
@@ -2189,6 +2190,7 @@ export class Editor {
       'modelar-mao-francesa': () => this.dialogoMaoFrancesa(),
       'modelar-bases': () => this.dialogoBasesNosEixos(),
       'copiar-para-eixos': () => this.dialogoCopiarParaEixos(),
+      'trocar-grupos': () => this.dialogoTrocarGrupos(),
       'memorial-lancamento': () => this.memorialDoLancamento(),
       'planta-lancamento': () => this._irPara(`/cad?projeto=${encodeURIComponent(this.projeto || '')}&desenho=${encodeURIComponent('planta-de-lançamento')}`),
       referencia: () => this.alternarReferencia(),
@@ -2659,7 +2661,7 @@ export class Editor {
 // os métodos que moram nos módulos (web/editor3d/modulos/)
 aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico, MetodosLancamento,
   MetodosApoios, MetodosBloco, MetodosBarrasDoBloco, MetodosDivisao, MetodosExplodir, MetodosEdicaoChapa, MetodosPadrao3D,
-  MetodosProducao, MetodosLigacoes, MetodosConferencia, MetodosDetalhesUsuario, MetodosBIM, MetodosModelagem);
+  MetodosProducao, MetodosLigacoes, MetodosConferencia, MetodosDetalhesUsuario, MetodosBIM, MetodosModelagem, MetodosTrocaGrupos);
 
 // ================================================================= apoio
 

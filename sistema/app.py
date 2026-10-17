@@ -58,6 +58,7 @@ Rotas da API:
     POST /api/modelo/ligacao {documento, tipo, ids, parametros, ligacao}   aplica (ou refaz) a ligação nas barras
     POST /api/modelo/ligacao/remover {documento, ligacao}      apaga a ligação e devolve as barras
     POST /api/modelo/modelar {documento, ferramenta, ids, parametros, eixos, cruzamentos}   terças, treliça, contravento, pilares, viga, longarinas, correntes, mão-francesa
+    POST /api/modelo/trocar-grupos {documento, trocas?}        os grupos por perfil / a troca de perfis por grupo (estudos)
     POST /api/modelo/conferencia {documento, ids, quais}       colisão, execução das ligações e produção
     GET  /api/detalhes-3d · POST /api/detalhes-3d/<salvar|aplicar|excluir>   o detalhe do usuário (modelo de ligação)
     GET  /api/projetos/<slug>/esforcos     esforços da estrutura inteira (o último cálculo); POST calcula (tela /esforcos)
@@ -4751,6 +4752,19 @@ def modelar_estrutura(corpo: dict) -> dict:
     return fn(_documento_de(corpo), list(corpo.get("ids") or []), p)
 
 
+def trocar_perfis_por_grupo(corpo: dict) -> dict:
+    """POST /api/modelo/trocar-grupos {documento, trocas?}: sem `trocas`, os grupos do modelo por perfil (terças, banzos,
+    montantes, diagonais, os outros papéis); com `trocas` [{grupo, de, para, forma}], a troca de uma vez — terça sentada
+    no mesmo lugar (também a cartola), cantoneira dupla na alma e de volta, as regras das tesouras nas treliças tocadas
+    (nucleo3d/troca_por_grupo.py, pedido do usuário para os estudos, 16/10). Devolve as mudanças para o editor aplicar
+    com desfazer; não grava nada."""
+    from nucleo3d import troca_por_grupo
+    doc = _documento_de(corpo)
+    if not corpo.get("trocas"):
+        return {"grupos": troca_por_grupo.grupos(doc)}
+    return troca_por_grupo.aplicar(doc, list(corpo.get("trocas") or []))
+
+
 def conferir_modelo(corpo: dict) -> dict:
     """POST /api/modelo/conferencia {documento, ids, quais}: colisão pela forma, execução das ligações (borda, passo,
     parafuso sem furo, furo sem parafuso, espaço da chave) e produção (sem marca, a conferir, fora da lista, sem peça
@@ -5686,6 +5700,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(remover_ligacao(corpo))
             if rota == "/api/modelo/modelar":
                 return self._json(modelar_estrutura(corpo))
+            if rota == "/api/modelo/trocar-grupos":
+                return self._json(trocar_perfis_por_grupo(corpo))
             if rota == "/api/modelo/conferencia":
                 return self._json(conferir_modelo(corpo))
             if rota == "/api/lento":

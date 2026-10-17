@@ -629,6 +629,9 @@ def _dims(p: Perfil) -> dict:
         if not str(p.nome).strip().lower().startswith("ue"):
             lab = 0.0                       # "U 100×50×2,00 (FF)": sem enrijecedor
         return dict(forma="Ue", h=p.d, b=p.bf, tw=p.tw, tf=p.tw, lab=lab)
+    if p.tipo == "Cr":
+        return dict(forma="Cr", h=p.d, b=p.bf, tw=dd.get("t", p.tw), tf=dd.get("t", p.tw),
+                    lab=dd.get("enrijecedor") or 0.0)
     if p.tipo == "L":
         b = dd.get("b") or p.bf
         # abas desiguais (L 100×50: "b2" é a menor): a maior em pé, a menor deitada; antes as duas saíam iguais
@@ -821,6 +824,11 @@ def secao_com_furos(perfil) -> Tuple[List[Ponto2], List[List[Ponto2]]]:
         else:
             media = [(b / 2, yf), (xw, yf), (xw, -yf), (b / 2, -yf)]
         externo = _contorno_de_espessura(media, t)
+    elif forma == "Cr":
+        # a cartola (chapéu): as abas de apoio embaixo, o chapéu para +v (nucleo/secoes_frio._linha_cr)
+        from nucleo.secoes_frio import _linha_cr
+        t = tw
+        externo = _contorno_de_espessura(_linha_cr(h, b, max(g.get("lab", 0.0), t), t), t)
     elif forma == "L":
         t = tw
         externo = [(-b / 2, -h / 2), (b / 2, -h / 2), (b / 2, -h / 2 + t),
