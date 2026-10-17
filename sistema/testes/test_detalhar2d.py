@@ -793,7 +793,8 @@ def test_nomes_de_producao_no_modelo_real():
     r = det.detalhar(doc, grupos=["barras", "tesouras", "localizacao"], converter=False)
     nm = r["nomes"]
     chave_m2 = next(k for k in nm["conjuntos"] if "M2" in k.split(" / "))
-    assert nm["conjuntos"][chave_m2] == "T1"                  # as 8 tesouras correntes lideram
+    # as 8 tesouras correntes lideram; M2 é a metade da tesoura montada: MT1 (decisão do usuário 16/10, N01 — 95a572a)
+    assert nm["conjuntos"][chave_m2] == "MT1"
     tesouras = [c for c in r["conjuntos"] if c["categoria"] == "TESOURAS"]
     # tesoura com outra composição (furação de suporte, chapa de base) é detalhe próprio
     # (pedido do usuário em 23/09; antes era um detalhe por lado com as variantes anotadas)
@@ -832,7 +833,8 @@ def test_nomes_de_producao_no_modelo_real():
     assert not any(" + " in tx and tx.startswith("T1") for tx in textos_c) and not any("(M2)" in tx for tx in textos_c)
     itens_t = {v["nome"]: v["perfil"] for v in r["desenhos"]["tesouras"].metadados["detalhamento"]["itens"].values()
                if v.get("categoria") == "TESOURAS" and v.get("classe") == "Conjunto"}
-    assert itens_t.get("T1") == "tesoura montada (metades T1 + T1)" and itens_t.get("T2") == "tesoura montada (metades T1 + T2)"
+    # as metades com o nome delas, MT (decisão do usuário 16/10, N01 — 95a572a)
+    assert itens_t.get("T1") == "tesoura montada (metades MT1 + MT1)" and itens_t.get("T2") == "tesoura montada (metades MT1 + MT2)"
     # camadas por tipo de peça
     cams = {e.camada for e in r["desenhos"]["tesouras"].entidades.values()}
     assert {"BANZOS", "DIAGONAIS", "CHAPAS"} <= {c.split(" ")[0] for c in cams}
@@ -855,8 +857,8 @@ def test_nomes_de_producao_no_modelo_real():
     assert {"TERCAS", "TIRANTES", "DIAGONAIS"} <= cams_b
     assert nm["camadas_2d"]["M13"] == "TERCAS" and nm["camadas_2d"]["P10"] == "MONTANTES"
     textos_l = [e.texto for e in r["desenhos"]["localizacao"].entidades.values() if isinstance(e, Texto)]
-    assert "T1" in textos_l and "T.C.1" in textos_l
-    assert nm["ifc"]["M2"] == "T1" and nm["ifc"]["P36"] == nm["posicoes"]["P36"]
+    assert "MT1" in textos_l and "T.C.1" in textos_l          # a meia-tesoura na planta: MT1 (16/10, N01)
+    assert nm["ifc"]["M2"] == "MT1" and nm["ifc"]["P36"] == nm["posicoes"]["P36"]
     r2 = det.detalhar(doc, grupos=["barras"], converter=False, nomes=nm)
     assert r2["nomes"]["posicoes"] == nm["posicoes"] and r2["nomes"]["conjuntos"] == nm["conjuntos"]
     # o resumo e a lista de materiais levam o nome
