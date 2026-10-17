@@ -152,6 +152,16 @@ Achados dos testes de primeiro uso (`Projeto/BRIEFINGS/Briefing-primeiro-uso*.md
 | 16/10 | ME-Sooro: o modelo com M12 e a compra pedindo Ø1/2" — decisão: métrico ou polegada por projeto (N04) | 95a572a | test_regressoes_primeiro_uso_ifc TestParafusoDaCompraPorProjeto; verif_primeiro_uso_ui Q02/Q03 |
 | 16/10 | ME-Sooro (2ª rodada): o Conferir acusava 21 terças fora do passo da máquina que o Detalhar acerta (R12) | 95a572a | test_regressoes_primeiro_uso_ifc TestConferirAntesDoPrimeiroDetalhar |
 | 16/10 | ME-Sooro (2ª rodada): "Gerando o PDF de 1 folha(s)" para 14 folhas, com o desenho das pranchas acima de 4 MB (R20) | 95a572a | verif_primeiro_uso_ui Q18 |
+| 17/10 | ME-Sooro (2ª rodada): a prancha das elevações com outra malha de eixos (1–16 × A–M) e as plantas com 1–7 × A–E (R02) | 9531a1c | test_regressoes_primeiro_uso_ifc TestSegundaRodadaDaCamila::test_r02 |
+| 17/10 | ME-Sooro (2ª rodada): a agulha A.D.9.1 (barra curva, 2× FE 3/8" 1.131 mm) não aparecia em prancha nenhuma de corte (R04) | 9531a1c | TestSegundaRodadaDaCamila::test_r04 |
+| 17/10 | ME-Sooro (2ª rodada): porcas do chumbador com três quantidades — "6x porca/chumbador" (eram 4 porcas + 2 arruelas), 1 porca + 2 arruelas por perna na tesoura e o do modelo na lista (R05) | 9531a1c | TestSegundaRodadaDaCamila::test_r05 |
+| 17/10 | ME-Sooro (2ª rodada): "CH2 – 56x, parafusos: 1x M16 x 40" e a lista com 48 — 8 CH2 sem parafuso no modelo, sem aviso (R06) | 9531a1c | TestSegundaRodadaDaCamila::test_r06 |
+| 17/10 | ME-Sooro (2ª rodada): os furos fora do par da terça (a 35 e a 75 da base na T.C.4) sem cota nem nota (R07) | 9531a1c | TestSegundaRodadaDaCamila::test_r07 |
+| 17/10 | ME-Sooro (2ª rodada): a F.T.1 e a B.10 curvas saíam sem raio — "sem raio a calandra não trabalha" (R08) | 9531a1c | TestSegundaRodadaDaCamila::test_r08 |
+| 17/10 | ME-Sooro (2ª rodada): o chumbador sem a rosca e sem quanto a ponta passa da chapa (R09) | 9531a1c | TestSegundaRodadaDaCamila::test_r09 |
+| 17/10 | ME-Sooro (2ª rodada): a locação dos chumbadores com cotas de 21 e 29 mm (0,2 mm no papel), sem dizer de que eixo nem para que lado, e sem o nível (R11) | 9531a1c | TestSegundaRodadaDaCamila::test_r11 |
+| 17/10 | HEAD: o pytest falhava em test_detalhar2d e test_pranchas2d (esperavam T1/CH depois da decisão MT/CT de 16/10, 95a572a) | c0ab2d6 | os próprios testes |
+| 17/10 | HEAD: arrastar no vazio do modo ver dava ReferenceError (`ancora` usada sem definição desde 53ce645; a definição estava só no disco) | 0c14393 | verif_camera_modelos (F) |
 | 16/10 | Portaria Hermes: o pilar lançado mostrava "Nome P1" e "Posição P11" (qual é a marca?), no grupo "Peça (IFC)" de um modelo que não veio de IFC | 226d225 | verif_primeiro_uso_ui P22 (lançado nos eixos pela tela) |
 | 16/10 | Portaria Hermes: 1.874 kg no "Estrutura lançada" × 1.886,1 kg na lista × 1,9 t no 3D; "Ue 250… · 0 barras"; "a barra veio sem o furo no IFC" num modelo lançado | 45bd45d | test_regressoes_primeiro_uso TestPesoDoLancamentoIgualALista; verif_primeiro_uso_ui P23 |
 | 16/10 | Portaria Hermes: zoom da roda do CAD fixo em 1,15× (16 roladas até ler os textos) e o x/y do rodapé parado no zoom | 882b03f | verif_primeiro_uso_ui P15 |
