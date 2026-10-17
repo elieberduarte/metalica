@@ -172,3 +172,6 @@ Achados dos testes de primeiro uso (`Projeto/BRIEFINGS/Briefing-primeiro-uso*.md
 | 16/10 | Portaria Hermes (rodada 2): com o 2D à mostra, Modelo › Eixos da obra… trocava para o 3D e não abria nada | dd6d58a | verif_primeiro_uso_ui P07 (rodada 2) |
 | 16/10 | Mercado (de novo, no modo ver): os grupos do Pintar e as camadas ocultas no modo ver voltavam ao atualizar o projeto (6283ad4 só guardava as do editor) | d363d4a | verif_ver3d_ui (recarregar o quadro) + verif_vista3d_guardada |
 | 16/10 | PRATI CD - Metálica: o Verificar apoios caía (atributos.origem gravado como texto pelo script da obra em 1.086 peças) | 4e1c532 | test_origem_em_texto |
+| 17/10 | Posto CB: a telha parava em degraus de até 1,35 m da borda diagonal da TRANSIÇÃO 16 (terça emendada no apoio; última terça antes da parede diagonal) | a2d716a | test_borda_escalonada_pela_linha_emendada + test_telha_ate_a_face_da_parede_diagonal |
+| 17/10 | Posto CB: degrau de 133 mm na telha na calha x 34,06 (a ponta da linha subia sozinha ao plano e o resto ficava embaixo) | a2d716a | test_linha_da_calha_emendada_sobe_inteira + test_linha_emendada_nao_sobe_para_dentro_de_outra_peca |
+| 17/10 | Posto CB: a TRANSIÇÃO 1 e as tesouras de cima atravessando a telha sem o revestimento e o rufo do corte BB | a2d716a | test_trelica_acima_da_telha_no_meio_do_telhado_e_revestida |
