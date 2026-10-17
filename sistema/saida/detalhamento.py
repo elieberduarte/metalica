@@ -328,7 +328,8 @@ class Posicao:
     camada_2d: str = ""       # camada do desenho pelo tipo da peça (TERCAS, DIAGONAIS…)
     tipo_nome: str = ""       # tipo de produção (tesoura, terca_cobertura, contraventamento…)
     parafusos: Dict[str, int] = field(default_factory=dict)   # {"M12x35": 4}: os que atravessam a peça
-    porcas: int = 0           # porcas/arruelas junto dos furos (fixadores sem tamanho no nome)
+    porcas: int = 0           # porcas junto dos furos (fixadores sem tamanho no nome)
+    arruelas: int = 0         # arruelas soltas junto dos furos (separadas das porcas pela forma — R05, 16/10)
     passantes: Dict[str, int] = field(default_factory=dict)   # {'barra roscada Ø5/8"': 1}: barra que atravessa o furo
     eixo_ifc: Optional[dict] = None     # o eixo do IFC (Revit): {comprimento, raio (None: reto), angulo}; em arco, calandrada
     espessura_nominal: Optional[float] = None   # a espessura declarada na peça (atributos.espessura): vale quando o nome não a traz
@@ -343,12 +344,16 @@ class Posicao:
         Ø5/8") e as porcas dela ("2x porca 5/8""); porca sem barra achada: "porca/chumbador"."""
         partes = ["%dx %s" % (n, r) for r, n in sorted(self.parafusos.items(), key=lambda kv: _ordem_natural(kv[0]))]
         partes += ["%dx %s" % (n, r) if n > 1 else r for r, n in sorted(self.passantes.items())]
-        if self.porcas:
+        arruelas = int(getattr(self, "arruelas", 0) or 0)
+        if self.porcas or arruelas:
             bitola = ""
             if len(self.passantes) == 1:
                 m = re.search(r"Ø\s*(.+)$", next(iter(self.passantes)))
                 bitola = (" " + m.group(1).strip()) if m else ""
-            partes.append("%dx porca%s" % (self.porcas, bitola) if self.passantes else "%dx porca/chumbador" % self.porcas)
+            # porca e arruela separadas: "6x porca/chumbador" eram 4 porcas + 2 arruelas (R05, primeiro uso IFC 16/10)
+            ferr = " + ".join(x for x in ("%dx porca%s" % (self.porcas, bitola) if self.porcas else "",
+                                          "%dx arruela%s" % (arruelas, bitola) if arruelas else "") if x)
+            partes.append(ferr if self.passantes else "%s (do chumbador)" % ferr)
         return ", ".join(partes)
 
     def rotulo_furos(self) -> str:
@@ -1143,7 +1148,7 @@ _ANALISES: Dict[tuple, tuple] = {}
 LIMITE_ANALISES = 20000
 #: Campos que dizem quem é a posição (quantidade, conjuntos…), não o que a análise mede.
 _IDENTIDADE = {"marca", "quantidade", "conjuntos", "global_ids", "vertices", "faces", "observacoes",
-               "nome", "camada_2d", "tipo_nome", "parafusos", "porcas", "passantes", "marcas"}
+               "nome", "camada_2d", "tipo_nome", "parafusos", "porcas", "arruelas", "parafusos_em", "passantes", "marcas"}
 
 
 def _copia(v):

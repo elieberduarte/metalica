@@ -927,7 +927,7 @@ def parafusos_da_posicao(pos: Posicao, ent: Solido, fixadores: Sequence[Solido],
     `pos.parafusos` = {"M12 x 35": 4} e `pos.porcas` = fixadores sem tamanho no nome
     (porca, arruela) junto dos furos. Chapa sem furo e sem parafuso é soldada, e ganha
     a nota."""
-    pos.parafusos, pos.porcas = {}, 0
+    pos.parafusos, pos.porcas, pos.arruelas = {}, 0, 0
     if not pos.eixos or not fixadores or pos.classe == "indefinida":
         if pos.classe == "chapa" and not pos.furos:
             pos.observacoes.append("sem furo e sem parafuso: chapa soldada")
@@ -948,7 +948,7 @@ def parafusos_da_posicao(pos: Posicao, ent: Solido, fixadores: Sequence[Solido],
             pos.observacoes.append("sem furo e sem parafuso: chapa soldada")
         return
     contagem: Dict[str, int] = collections.Counter()
-    porcas = 0
+    porcas = arruelas = 0
     for f in fixadores:
         info = eixos_fix.get(f.id)
         if info is None or _eh_furo(f):
@@ -975,7 +975,11 @@ def parafusos_da_posicao(pos: Posicao, ent: Solido, fixadores: Sequence[Solido],
             continue
         nome, pela_porca = _nome_do_parafuso(f, ext)
         if porca or pela_porca:
-            porcas += 1
+            # a arruela à parte da porca (R05: "6x porca/chumbador" eram 4 porcas + 2 arruelas)
+            if _eh_arruela(f):
+                arruelas += 1
+            else:
+                porcas += 1
         else:
             contagem[nome] += 1
             # o furo guarda o que entra nele (a bitola e a folga no detalhe, 15/10)
@@ -986,6 +990,7 @@ def parafusos_da_posicao(pos: Posicao, ent: Solido, fixadores: Sequence[Solido],
             bate.fixador_d = d_fix
     pos.parafusos = dict(contagem)
     pos.porcas = porcas
+    pos.arruelas = arruelas
 
 
 def largura_da_chamada(texto: str, altura: float, esc: float) -> float:
@@ -1720,7 +1725,47 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
         except Exception as e:                      # noqa: BLE001 — uma peça não derruba o lote
             pos.classe = "indefinida"
             pos.observacoes.append("falha na análise: %s" % e)
+    if eixos_fix:
+        try:
+            _parafusos_em_todas(pecas, por_marca, eixos_fix)
+        except Exception:                           # noqa: BLE001 — sem a conferência, o rótulo de sempre
+            pass
     return list(por_marca.values()), camadas
+
+
+def _parafusos_em_todas(pecas: Sequence[Solido], por_marca: Dict[str, Posicao], eixos_fix: dict) -> None:
+    """A chapa com parafuso contado num exemplar: quantos exemplares da posição têm parafuso de verdade no modelo (R06 da
+    2ª rodada do primeiro uso IFC, 16/10: "CH2 – 56x, parafusos: 1x M16 x 40" e a lista com 48 — as 16 CH2 da T2 não têm
+    parafuso no modelo). Grava `parafusos_em` = (com, total) e a observação quando nem todos têm."""
+    import numpy as np
+    alvo = {m: p for m, p in por_marca.items() if p.classe in ("chapa", "chapa_dobrada") and p.parafusos}
+    if not alvo:
+        return
+    so_paraf = [(cc, meio) for cc, _eixo, meio, _ext, porca in eixos_fix.values() if not porca]
+    if not so_paraf:
+        return
+    C = np.asarray([c for c, _m in so_paraf], dtype=float)
+    M = np.asarray([m for _c, m in so_paraf], dtype=float)
+    ents: Dict[str, List[Solido]] = collections.defaultdict(list)
+    for e in pecas:
+        m = str(_marcas(e).get("posicao") or e.nome or e.id)
+        if m in alvo:
+            ents[m].append(e)
+    for marca, lista in ents.items():
+        pos = alvo[marca]
+        com = 0
+        for e in lista:
+            cx = _caixa(e)
+            lo = np.asarray([cx[i][0] for i in range(3)])
+            hi = np.asarray([cx[i][1] for i in range(3)])
+            folga = (M + 5.0)[:, None]
+            if ((C >= lo - folga) & (C <= hi + folga)).all(axis=1).any():
+                com += 1
+        total = len(lista)
+        if 0 < com < total:
+            pos.parafusos_em = (com, total)
+            pos.observacoes.append("parafuso em %d das %d peças desta posição no modelo (as outras %d sem parafuso): "
+                                   "conferir com o projeto" % (com, total, total - com))
 
 
 # ============================================================ regra das terças
@@ -2217,6 +2262,100 @@ def acessorios_no_padrao(acessorios: Dict[str, int], pecas: Sequence[Solido], fi
         fora["Porca sextavada Ø%s UNC" % pol] += PORCAS_POR_PONTA
         fora["Arruela lisa Ø%s" % pol] += ARRUELAS_POR_PONTA
     return dict(fora)
+
+
+def _eh_arruela(f: Solido) -> bool:
+    """A porca/arruela solta é arruela (o disco fino) pela forma — a mesma régua da lista (saida.resumos._fixador_solto)."""
+    from saida.resumos import _fixador_solto
+    cc, pca = _autovetores(f.vertices)
+    ext = [max(_dot(_sub(v, cc), a) for v in f.vertices) - min(_dot(_sub(v, cc), a) for v in f.vertices) for a in pca]
+    return _fixador_solto(ext)[2]
+
+
+def chumbadores_do_modelo(doc) -> set:
+    """Os ids das barras que são chumbador (`_ids_de_chumbadores`), uma vez por documento."""
+    cache = getattr(doc, "_chumbadores", None)
+    if cache is None:
+        # as peças do levantamento (com as chapas paramétricas, pelos proxies): o chumbamento se reconhece pela chapa de
+        # base que o chumbador atravessa
+        cache = _ids_de_chumbadores(_pecas(doc, [], [], [])[0])
+        try:
+            doc._chumbadores = cache
+        except AttributeError:
+            pass
+    return cache
+
+
+def ferragens_das_pontas(doc, pontas: Sequence[dict], recebido: bool) -> Dict[Tuple[str, str], int]:
+    """Porcas e arruelas das pontas roscadas, pela MESMA regra da lista de materiais (`acessorios_no_padrao`):
+    {("porca" | "arruela", bitola): n}. Tirante, agulha, barra roscada: 1 porca + 2 arruelas por ponta. Chumbador: no
+    projeto recebido, as porcas e arruelas que o projetista pôs (pela forma); no nosso, 2 porcas + 1 arruela por perna.
+    A legenda da tesoura dizia 1 porca + 2 arruelas por perna do chumbador e a lista, o do modelo (R05 da 2ª rodada do
+    primeiro uso IFC, 16/10: "6, 2 e 4 porcas por chumbador — não sei quantas mandar")."""
+    chumb = chumbadores_do_modelo(doc)
+    saida: Dict[Tuple[str, str], int] = collections.Counter()
+    for pt in pontas:
+        bit = pt.get("bitola") or ""
+        if pt["peca"].id in chumb:
+            if recebido:
+                for fid in pt.get("fixadores") or []:
+                    f = doc.entidades.get(fid)
+                    if f is not None and getattr(f, "vertices", None):
+                        saida[("arruela" if _eh_arruela(f) else "porca", bit)] += 1
+            else:
+                saida[("porca", bit)] += PORCAS_POR_PERNA_CHUMBADOR
+                saida[("arruela", bit)] += ARRUELAS_POR_PERNA_CHUMBADOR
+            continue
+        saida[("porca", bit)] += PORCAS_POR_PONTA
+        saida[("arruela", bit)] += ARRUELAS_POR_PONTA
+    return saida
+
+
+def rosca_dos_chumbadores(doc, pecas: Sequence[Solido], posicoes) -> int:
+    """A rosca e a ponta de cada chumbador pelo modelo (R09 da 2ª rodada do primeiro uso IFC, 16/10: "CB1 – 11x L desenv.
+    996 mm FE RED 3/4''", sem a rosca nem quanto fica para fora — "para rosquear eu preciso da rosca"). Num exemplar de
+    cada posição de chumbador: a rosca vai da ponta até a face de baixo da porca/arruela mais baixa, mais 10 mm (dois
+    fios), arredondada para cima de 5 em 5; a ponta, da ponta à face de baixo da chapa de base que ele atravessa. Grava
+    `rosca_chumbador` e `ponta_acima_da_chapa` (mm) na posição; devolve quantas ganharam a rosca."""
+    ids = _ids_de_chumbadores(pecas)
+    if not ids:
+        return 0
+    mapa = pontas_do_modelo(doc)
+    por_peca: Dict[str, List[str]] = collections.defaultdict(list)
+    for fid, pt in mapa.items():
+        por_peca[pt["peca"].id].append(fid)
+    por_marca: Dict[str, Solido] = {}
+    for e in pecas:
+        if e.id in ids and e.id in por_peca:
+            por_marca.setdefault(str(_marcas(e).get("posicao") or e.nome or ""), e)
+    chapas = [e for e in pecas if _tipo_ifc(e).startswith("IfcPlate") or isinstance(getattr(e, "parametrica", None), Chapa)]
+    n = 0
+    for pos in posicoes:
+        e = next((por_marca[m] for m in marcas_de(pos) if m in por_marca), None)
+        if e is None:
+            continue
+        z_ponta = max(v[2] for v in e.vertices)
+        baixos = []
+        for fid in por_peca[e.id]:
+            f = doc.entidades.get(fid)
+            if f is not None and getattr(f, "vertices", None):
+                baixos.append(min(v[2] for v in f.vertices))
+        if not baixos:
+            continue
+        pos.rosca_chumbador = 5.0 * math.ceil((z_ponta - min(baixos) + 10.0) / 5.0 - 1e-9)
+        # a chapa de base atravessada: a caixa em planta contém a perna e fica abaixo da ponta
+        xs = [v[0] for v in e.vertices]
+        ys = [v[1] for v in e.vertices]
+        fundo = None
+        for c in chapas:
+            cx = _caixa(c)
+            if cx[0][0] <= max(xs) and cx[0][1] >= min(xs) and cx[1][0] <= max(ys) and cx[1][1] >= min(ys) \
+                    and cx[2][1] < z_ponta and cx[2][1] > z_ponta - 400.0:
+                fundo = cx[2][0] if fundo is None else max(fundo, cx[2][0])
+        if fundo is not None:
+            pos.ponta_acima_da_chapa = round(z_ponta - fundo)
+        n += 1
+    return n
 
 
 def _ids_de_chumbadores(pecas: Sequence[Solido]) -> set:

@@ -319,7 +319,8 @@ class TestCotasQueAFabricaPrecisa(_SooroDetalhada):
         textos = [e.get("texto") or "" for e in self._desenho("terças") if e.get("tipo") == "texto"]
         notas = [x for x in textos if x.startswith("furos na alma: ")]
         self.assertTrue(notas, "toda terça com furo duplo leva a nota da altura dos furos")
-        self.assertIn("furos na alma: 1º a 50 da base, par a 50 (passo da máquina)", notas)
+        # (desde o R07 da 2ª rodada a nota segue com os furos simples: "…; furos simples a 75 da base")
+        self.assertTrue(any(x.startswith("furos na alma: 1º a 50 da base, par a 50 (passo da máquina)") for x in notas), notas)
 
     def test_q06_chanfro_da_chapa(self):
         cotas = [e.get("texto") for e in self._todos() if e.get("tipo") == "cota" and (e.get("atributos") or {}).get("nome") == "CH2"]
@@ -633,6 +634,86 @@ class TestConferirAntesDoPrimeiroDetalhar(_SooroDetalhada):
             m = json.load(f)
         r = app.conferir_modelo({"documento": m, "projeto": novo, "quais": ["producao"]})
         self.assertEqual([a["texto"] for a in r["achados"] if a["regra"] == "maquina"], [])
+
+
+class TestSegundaRodadaDaCamila(_SooroDetalhada):
+    """2ª rodada do teste de primeiro uso IFC → pranchas (Projeto/BRIEFINGS/Briefing-primeiro-uso-ifc-rodada2.md), os
+    achados ERRO NA FÁBRICA R02, R04–R09 e R11 (o R03 e o R10 esperam a decisão do usuário), na ME-Sooro como veio do TecnoMETAL."""
+
+    def _desenho(self, nome):
+        with open(os.path.join(self.pasta, SLUG, "desenhos-2d", "detalhamento-%s.desenho.json" % nome), encoding="utf-8") as f:
+            return json.load(f)["entidades"]
+
+    def _todos(self):
+        pasta = os.path.join(self.pasta, SLUG, "desenhos-2d")
+        for arq in os.listdir(pasta):
+            if arq.startswith("detalhamento-") and "completo" not in arq and arq.endswith(".desenho.json"):
+                with open(os.path.join(pasta, arq), encoding="utf-8") as f:
+                    yield from json.load(f)["entidades"]
+
+    def _celula(self, posicao):
+        """Os textos da célula da posição (marca do IFC), em todos os desenhos."""
+        return [e.get("texto") or "" for e in self._todos() if e.get("tipo") in ("texto", "cota")
+                and (e.get("atributos") or {}).get("detalhe") == "posicao"
+                and set(posicao.split(" / ")) & set(str((e.get("atributos") or {}).get("posicao") or "").split(" / "))]
+
+    def _marca(self, nome):
+        with open(os.path.join(self.pasta, SLUG, "detalhamento", "nomes.json"), encoding="utf-8") as f:
+            return next(m for m, n in json.load(f)["posicoes"].items() if n == nome)
+
+    def test_r02_elevacoes_nos_eixos_das_plantas(self):
+        """A prancha das elevações com outra malha (1–16 × A–M) e as plantas com 1–7 × A–E: as elevações chamavam a
+        identificação dos eixos sem os nomes de produção."""
+        def nomes(d):
+            return {str(e.get("texto")) for e in self._desenho(d) if e.get("camada") == "EIXO" and e.get("texto")}
+        elev, loc = nomes("elevações"), nomes("localização")
+        self.assertTrue(elev)
+        self.assertLessEqual(elev, loc)
+
+    def test_r04_barra_curva_na_lista_de_corte(self):
+        """A A.D.9.1 (2× FE 3/8" 1.131 mm, "Barra curva") sumia: fora da célula típica das redondas e sem célula própria."""
+        textos = [e.get("texto") or "" for e in self._todos() if e.get("tipo") == "texto"]
+        self.assertTrue(any(x.startswith("A.D.9.1 COMP=1131mm") for x in textos), [x for x in textos if "A.D.9" in x][:5])
+
+    def test_r05_porcas_do_chumbador_por_uma_regra_so(self):
+        """6x "porca/chumbador" na chumbação (eram porcas + arruelas), 1 porca + 2 arruelas por perna na tesoura (a regra do
+        tirante) e o do modelo na lista: agora a porca e a arruela do projetista nos três (recebido, N07)."""
+        ch5 = self._celula(self._marca("CH5"))
+        self.assertIn("fixação: 4x porca + 2x arruela (do chumbador)", ch5)
+        self.assertFalse([x for x in self._todos() if "porca/chumbador" in str(x.get("texto") or "")])
+        t1 = [e.get("texto") or "" for e in self._desenho("tesouras") if (e.get("atributos") or {}).get("nome") == "T1"]
+        self.assertIn('8x porca sext. Ø3/4" + 4x arruela lisa Ø3/4"', t1)
+        with open(os.path.join(self.pasta, SLUG, "detalhamento", "lista-de-materiais.json"), encoding="utf-8") as f:
+            ac = {a["nome"]: a["quantidade"] for a in json.load(f)["acessorios"]}
+        self.assertEqual(ac.get('Porca sextavada Ø3/4" UNC'), 56)              # 28 pernas × 2, como a prancha
+
+    def test_r06_chapa_com_parafuso_em_parte_das_pecas(self):
+        """"CH2 – 56x, parafusos: 1x M16 x 40" e a lista com 48: as CH2 de uma tesoura não têm parafuso no modelo."""
+        ch2 = self._celula(self._marca("CH2"))
+        self.assertTrue(any("parafuso em 48 das 56 peças" in x for x in ch2), [x for x in ch2 if "parafuso" in x])
+
+    def test_r07_furos_simples_da_terca_com_altura(self):
+        tc4 = self._celula(self._marca("T.C.4"))
+        self.assertTrue(any(x.startswith("furos na alma: ") and "furos simples a 35 (2x) e a 75 (2x) da base" in x for x in tc4), tc4)
+
+    def test_r08_peca_curva_com_raio(self):
+        ft1 = self._celula(self._marca("F.T.1"))
+        self.assertTrue(any(x.startswith("CURVA: R ext. 520 / R int. 490") for x in ft1), ft1)
+
+    def test_r09_chumbador_com_rosca_e_aco(self):
+        cb1 = self._celula(self._marca("CB1"))
+        self.assertTrue(any(x.startswith("ROSCA 80 em cada ponta") for x in cb1), cb1)
+        self.assertIn("ROSCA 80", cb1)                                         # a cota da rosca no desenho
+
+    def test_r11_quadro_de_locacao_dos_chumbadores(self):
+        """"21" e "29" com uma linha de cota de 0,2 mm no papel, sem dizer X ou Y nem de onde, e sem o nível."""
+        ents = self._desenho("chumbação")
+        quadro = [e["texto"] for e in ents if (e.get("atributos") or {}).get("quadro_locacao") and e.get("texto")]
+        linhas = [x for x in quadro if x.startswith("CB")]
+        self.assertEqual(len(linhas), 18, quadro)
+        self.assertTrue(all("eixo" in x and "topo " in x for x in linhas), linhas)
+        self.assertTrue(any("no eixo" in x for x in linhas))
+        self.assertTrue(any("do eixo D para o" in x for x in linhas if x.startswith("CB2")), linhas)
 
 
 DEPOSITO = os.path.join(RAIZ, "Projeto", "bateria", "entradas", "me-sooro-depósito-químico")

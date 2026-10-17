@@ -34,7 +34,7 @@ class TestCastanha(unittest.TestCase):
         pos.porcas = 6
         linhas = _cabecalho(pos)
         self.assertIn("furos: 2x Ø21", linhas)
-        self.assertIn("fixação: 6x porca/chumbador", linhas)
+        self.assertIn("fixação: 6x porca (do chumbador)", linhas)      # porca e arruela separadas desde o R05 (17/10)
 
 
 if __name__ == "__main__":

@@ -3247,14 +3247,18 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         itens_p = ["%dx %s" % (q, k) for k, q in sorted(paraf.items(), key=lambda kv: _ordem_natural(kv[0]))]
         # as soltas de ponta roscada no padrão da fábrica: 1 porca + 2 arruelas por ponta (28/09) — a ponta
         # procurada em todas as barras do modelo (a do chumbador não está na tesoura)
-        from nucleo2d.detalhe.base import pontas_do_modelo, soltas_no_conjunto, PORCAS_POR_PONTA, ARRUELAS_POR_PONTA
+        # (o chumbador pela regra da lista — o do projetista no projeto recebido, 2 porcas + 1 arruela no nosso: R05)
+        from nucleo2d.detalhe.base import pontas_do_modelo, soltas_no_conjunto, ferragens_das_pontas
+        from nucleo2d.detalhar import projeto_recebido
         mapa = pontas_do_modelo(doc)
         soltas = soltas_no_conjunto(doc, instancia)
         pontas = {id(mapa[f]): mapa[f] for f in soltas if f in mapa}
-        por_bitola = collections.Counter(pt["bitola"] or "" for pt in pontas.values())
-        for bit, n_ in sorted(por_bitola.items()):
+        ferr = ferragens_das_pontas(doc, list(pontas.values()), projeto_recebido(doc))
+        for bit in sorted({b for _t, b in ferr}):
             b_ = " Ø%s" % bit if bit else ""
-            itens_p.append("%dx porca sext.%s + %dx arruela lisa%s" % (n_ * PORCAS_POR_PONTA, b_, n_ * ARRUELAS_POR_PONTA, b_))
+            np_, na_ = ferr.get(("porca", bit), 0), ferr.get(("arruela", bit), 0)
+            itens_p.append(" + ".join(x for x in ("%dx porca sext.%s" % (np_, b_) if np_ else "",
+                                                  "%dx arruela lisa%s" % (na_, b_) if na_ else "") if x))
         resto = sum(1 for f in soltas if f not in mapa)
         if resto:
             itens_p.append("%dx porca/arruela" % resto)
@@ -4274,11 +4278,16 @@ def _desenhar_eixos(p: "_Papel", eixos: dict, u, v, u0: float, v0: float, esc: f
 
 
 def _locacao_dos_chumbadores(p: "_Papel", ex: dict, chumb: Sequence[Solido], u, v, u0: float, v0: float,
-                             nomes: Optional[Dict[str, str]] = None) -> int:
+                             nomes: Optional[Dict[str, str]] = None, chapas: Sequence[Solido] = (),
+                             esc: float = 0.0) -> List[Tuple[str, str, str, str, str]]:
     """A locação de cada grupo de chumbadores (os de uma base: até 400 mm entre si em planta) até o eixo de letra e o de
     número mais perto — o que a obra mede para pôr o chumbador no concreto (Q09, primeiro uso 16/10: a planta de
-    chumbação só tinha os eixos e a marca num pontinho; o CB2 de D1/D7 a ~260 mm do eixo sem cota). O grupo no eixo (a
-    menos de 5 mm) não leva cota. Devolve quantas cotas pôs."""
+    chumbação só tinha os eixos e a marca num pontinho; o CB2 de D1/D7 a ~260 mm do eixo sem cota).
+
+    R11 (2ª rodada, 16/10): as cotas de 21 e 29 mm viravam um risco de 0,2 mm no papel, sem dizer se era em X ou em Y nem
+    a partir de onde, e não havia o nível. A cota só sai com pelo menos 1,5 mm de papel; cada grupo ganha uma linha no
+    quadro de locação (devolvida): (marca, cruzamento, até o eixo de letra, até o eixo de número, topo da chapa) — com
+    "no eixo" quando está nele e o eixo vizinho para o lado em que o grupo sai."""
     from nucleo3d.eixos import segmentos
     linhas = segmentos(ex)
     centros = []
@@ -4293,35 +4302,65 @@ def _locacao_dos_chumbadores(p: "_Papel", ex: dict, chumb: Sequence[Solido], u, 
                 break
         else:
             grupos.append([c])
-    postas = 0
+    quadro = []
     for g in grupos:
         cx = sum(o[0] for o in g) / len(g)
         cy = sum(o[1] for o in g) / len(g)
         marca = str(_marcas(g[0][2]).get("posicao") or g[0][2].nome or "")
+        rotulo = (nomes or {}).get(marca) or marca
+        textos, cruz = {}, {}
         for tipo in ("letra", "numero"):
             melhor = None
-            for s in linhas:
-                if s["tipo"] != tipo:
+            mesmos = []
+            for s_ in linhas:
+                if s_["tipo"] != tipo:
                     continue
-                ax, ay, bx, by = s["a"][0], s["a"][1], s["b"][0], s["b"][1]
+                ax, ay, bx, by = s_["a"][0], s_["a"][1], s_["b"][0], s_["b"][1]
                 dx, dy = bx - ax, by - ay
                 L2 = dx * dx + dy * dy
                 if L2 < 1e-9:
                     continue
+                mesmos.append(s_)
                 k = ((cx - ax) * dx + (cy - ay) * dy) / L2
                 fx, fy = ax + k * dx, ay + k * dy
                 dist = math.hypot(cx - fx, cy - fy)
                 if melhor is None or dist < melhor[0]:
-                    melhor = (dist, fx, fy, s["nome"])
-            if melhor is None or melhor[0] < 5.0:
+                    melhor = (dist, fx, fy, s_["nome"], s_)
+            if melhor is None:
                 continue
-            dist, fx, fy, nome_eixo = melhor
+            dist, fx, fy, nome_eixo, s0 = melhor
+            cruz[tipo] = str(nome_eixo)
+            if dist < 5.0:
+                textos[tipo] = "no eixo %s" % nome_eixo
+                continue
+            # o eixo vizinho para o lado em que o grupo sai: diz a direção sem depender de X/Y do papel
+            nx, ny = (cx - fx) / dist, (cy - fy) / dist
+            viz = None
+            for s_ in mesmos:
+                if s_ is s0:
+                    continue
+                d_ = (s_["a"][0] - fx) * nx + (s_["a"][1] - fy) * ny
+                if d_ > 1.0 and (viz is None or d_ < viz[0]):
+                    viz = (d_, s_["nome"])
+            textos[tipo] = "%d do eixo %s %s" % (round(dist), nome_eixo,
+                                                ("para o %s" % viz[1]) if viz else "para fora da malha")
+            if esc and dist < 1.5 * esc:
+                continue                                    # menos de 1,5 mm no papel: só no quadro
             pf = (_dot((fx, fy, 0.0), u) - u0, _dot((fx, fy, 0.0), v) - v0)
             pc = (_dot((cx, cy, 0.0), u) - u0, _dot((cx, cy, 0.0), v) - v0)
             p.d.add(_Cota(modo="alinhada", p1=p._p(*pf), p2=p._p(*pc), deslocamento=4.0, texto="%d" % round(dist),
-                          atributos=dict(p.atr, locacao=(nomes or {}).get(marca) or marca, eixo=str(nome_eixo))))
-            postas += 1
-    return postas
+                          atributos=dict(p.atr, locacao=rotulo, eixo=str(nome_eixo))))
+        topo = None
+        for c_ in chapas:
+            vs_ = c_.vertices
+            if any(math.hypot(q[0] - cx, q[1] - cy) <= 400.0 for q in vs_):
+                z_ = max(q[2] for q in vs_)
+                topo = z_ if topo is None else max(topo, z_)
+        quadro.append((rotulo, "%s-%s" % (cruz.get("letra", "?"), cruz.get("numero", "?")),
+                       textos.get("letra", "—"), textos.get("numero", "—"),
+                       ("%+.3f" % (topo / 1000.0)).replace(".", ",") if topo is not None else "—"))
+    quadro.sort(key=lambda r: (_ordem_natural(r[0]), r[1]))
+    return quadro
 
 
 def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao: Optional[dict],
@@ -4407,6 +4446,7 @@ def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao
     p = _Papel(d, dict(atr_base, vista="PLANTA DE CHUMBAÇÃO"), 0.0, 0.0)
     _registrar_camadas_de_pecas(d)
     rotulos = []
+    quadro_loc = []
     for e in itens:
         pts = [(_dot(q, u) - u0, _dot(q, v) - v0) for q in e.vertices]
         casco = _casco(pts)
@@ -4445,7 +4485,7 @@ def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao
     if ex:
         _desenhar_eixos(p, ex, u, v, u0, v0, esc, larg_v, alt_v)
         if not so_chapas:
-            _locacao_dos_chumbadores(p, ex, chumb, u, v, u0, v0, nomes)
+            quadro_loc = _locacao_dos_chumbadores(p, ex, chumb, u, v, u0, v0, nomes, chapas=chapas, esc=esc)
     if not ex:
         # sem eixos, as totais das peças; com eixos, a cadeia entre eixos já fecha com a total dela — a total das
         # peças ia até a ponta das linhas de eixo (37828 no depósito, no vazio) e, medindo as peças, ficava fora
@@ -4463,6 +4503,13 @@ def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao
     p.texto(0, -(10.0 + 8.0 + 4.5) * esc, "%d chumbador(es) e %d chapa(s) de base, vistos de cima, nos eixos da obra"
             % (n_chumb, n_chapas)
             + (" (sem chumbador no modelo: os furos das chapas marcam onde eles passam)" if so_chapas else ""), 2.0 * esc)
+    if quadro_loc:
+        # o quadro de locação embaixo do título (R11): uma linha por grupo, a distância a cada eixo e para que lado
+        y_q = -(10.0 + 8.0 + 4.5 + 7.0) * esc
+        p.atr = dict(atr_t, quadro_locacao=True)
+        p.texto(0, y_q, "LOCAÇÃO DOS CHUMBADORES — centro do grupo até os eixos (mm); topo da chapa de base (m)", 2.5 * esc)
+        for k, (rot_, cruz_, t_l, t_n, topo_) in enumerate(quadro_loc, 1):
+            p.texto(0, y_q - 4.0 * k * esc, "%s em %s: %s; %s; topo %s" % (rot_, cruz_, t_l, t_n, topo_), 2.0 * esc)
     p.atr = atr_t
     ext_c = p.extremos
     d.metadados.setdefault("celulas", []).append([round(t, 1) for t in ext_c])
@@ -4678,7 +4725,8 @@ MINIMO_ELEVACAO = 0.08
 
 def desenho_de_elevacoes(doc: Documento, pecas: Sequence[Solido], titulo: str = "Detalhamento – elevações",
                          ignorar: Sequence[str] = (), nomes: Optional[Dict[str, str]] = None,
-                         camadas_pecas: Optional[Dict[str, str]] = None, eixos: Optional[dict] = None) -> Desenho:
+                         camadas_pecas: Optional[Dict[str, str]] = None, eixos: Optional[dict] = None,
+                         nomes_producao: Optional[dict] = None) -> Desenho:
     """Cada parede do modelo vista de fora, inteira — não o corte do pórtico típico da localização (pedido do usuário,
     14/10: "trazer as elevações laterais e frontal"; o corte "parece estar incompleto"). As peças da faixa da parede
     (FAIXA_ELEVACAO do plano de fora) projetadas pelo contorno convexo, a marca de cada conjunto no lugar, a peça solta
@@ -4700,7 +4748,9 @@ def desenho_de_elevacoes(doc: Documento, pecas: Sequence[Solido], titulo: str = 
              ("X máx", (-1.0, 0.0, 0.0), (0.0, 1.0, 0.0), 0, maximo[0], -1.0)]
     v = (0.0, 0.0, 1.0)
     itens = _itens_de_localizacao(pecas)
-    ex_modelo = _eixos_do_modelo(doc, eixos, None)
+    # os eixos com os nomes de produção, como a localização e a chumbação: sem eles a identificação achava outra malha
+    # (1–16 × A–M na ME-Sooro, contra 1–7 × A–E das plantas — R02 da 2ª rodada do primeiro uso IFC, 16/10)
+    ex_modelo = _eixos_do_modelo(doc, eixos, nomes_producao)
     segs = []
     if ex_modelo:
         from nucleo3d.eixos import segmentos

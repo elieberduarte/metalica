@@ -1192,12 +1192,26 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             else:
                 alvo.nome_suporte = nomes_st[k]
     gabarito = _conjuntos_de_gabarito(posicoes, tipo_de_conj)
+    try:
+        from nucleo2d.detalhe.base import rosca_dos_chumbadores
+        rosca_dos_chumbadores(doc, pecas, posicoes)          # a rosca e a ponta na célula do chumbador (R09)
+    except Exception as exc:                                 # noqa: BLE001 — sem a rosca, a célula de sempre
+        avisos.append("rosca dos chumbadores não medida: %s" % exc)
     for chave in grupos:
         g = GRUPOS_BASE.get(chave)
         if not g or chave in ("conjuntos", "localizacao", "completo"):
             continue
         lista = [p for p in _ordenar(posicoes) if p.classe in g["classes"]
                  and not (p.classe == "telha" and all(m in md["posicoes"] for m in marcas_de(p)))]
+        # a barra redonda curva que só existe no detalhe típico do agulhamento (a A.D.9.1 da ME-Sooro, com o gancho
+        # curvo) vai com as barras redondas para cortar: na prancha das barras ela não tinha célula (está no típico) nem
+        # entrava no típico das redondas — sumia das pranchas (R04 da 2ª rodada do primeiro uso IFC, 16/10)
+        curva_no_tipico = lambda p_: (p_.classe == "barra_conformada" and _eh_redonda_perfil(p_.perfil)    # noqa: E731
+                                      and p_.marca in tirantes_em_grupo)
+        if chave == "tirantes":
+            lista += [p for p in _ordenar(posicoes) if curva_no_tipico(p)]
+        elif chave == "barras":
+            lista = [p for p in lista if not curva_no_tipico(p)]
         # a barra com nome de chapa (CH15, CH16: as cantoneiras dos suportes) vai com as chapas: o desenho delas é o
         # de corte (pedido do usuário, 01/10: "isso vai para a empresa cortar"), na escala dele
         if "chapas" in grupos and chave in ("chapas", "barras"):
@@ -1227,7 +1241,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         tipicas_sf = collections.OrderedDict()
         if chave in ("barras", "tirantes"):
             for p in lista:
-                if terca_sem_furo(p, nomeacao["tipos"].get(p.marca) or p.tipo_nome):
+                if terca_sem_furo(p, nomeacao["tipos"].get(p.marca) or p.tipo_nome) or (chave == "tirantes" and curva_no_tipico(p)):
                     tipicas_sf.setdefault(re.sub(r"\s+", "", p.perfil or "").upper(), []).append(p)
             tipicas_sf = collections.OrderedDict((k, v) for k, v in tipicas_sf.items() if len(v) >= MINIMO_TIPICO_SEM_FURO)
             fora_sf = {id(p) for v in tipicas_sf.values() for p in v}
@@ -1349,7 +1363,8 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         try:
             elevacoes = desenho_de_elevacoes(doc, pecas, GRUPOS["elevacoes"]["titulo"],
                                              ignorar=[p.marca for p in posicoes if p.classe == "telha"],
-                                             nomes=nomeacao["ifc"], camadas_pecas=camadas_ifc, eixos=eixos)
+                                             nomes=nomeacao["ifc"], camadas_pecas=camadas_ifc, eixos=eixos,
+                                             nomes_producao=nomeacao)
         except ErroDeDados as e:
             avisos.append("elevações não geradas: %s" % e)
     chumbacao = None

@@ -110,6 +110,9 @@ def _cabecalho(pos: Posicao) -> List[str]:
                       "%s  %s" % (pos.nome or pos.marca, _perfil_e_espessura(pos))]
     elif pos.classe == "barra_conformada":
         linhas = [titulo + "   L desenv. %s mm" % _mm(pos.comprimento), com_bitola_e_mm(pos.perfil)]
+        rc = raio_da_curva(pos) if not _eh_redonda_perfil(pos.perfil) else None
+        if rc:
+            linhas.append(texto_do_raio(rc))           # o raio da calandra (R08)
     elif pos.classe == "telha":
         c = compra_da_telha(pos)
         return [titulo + "   L = %s mm" % _mm(c["comprimento"]),
@@ -121,6 +124,11 @@ def _cabecalho(pos: Posicao) -> List[str]:
         linhas = [titulo, pos.perfil]
     else:
         linhas = [titulo + "   L = %s mm" % _mm(pos.comprimento), _grafia_do_perfil(com_bitola_e_mm(pos.perfil))]
+    if getattr(pos, "rosca_chumbador", None):
+        # o chumbador: a rosca de cada ponta e quanto a ponta passa da face de baixo da chapa de base, pelo modelo (R09)
+        ponta = getattr(pos, "ponta_acima_da_chapa", None)
+        linhas.append("ROSCA %d em cada ponta%s" % (round(pos.rosca_chumbador), (
+            "; ponta a %d da face de baixo da chapa de base" % ponta) if ponta else ""))
     furos = pos.rotulo_furos() if pos.classe not in ("telha", "indefinida") else ""
     com_fix = pos.rotulo_furos_fixadores() if furos else []
     if com_fix:
@@ -130,11 +138,15 @@ def _cabecalho(pos: Posicao) -> List[str]:
     elif furos:
         # um furo só: "furo Ø17"; vários: "furos: 4x Ø14, 2x OBL 14x26"
         linhas.append(("furo " + furos[3:]) if (furos.startswith("1x ") and ", " not in furos) else ("furos: " + furos))
-    if pos.parafusos or pos.porcas or getattr(pos, "passantes", None):
+    if pos.parafusos or pos.porcas or getattr(pos, "arruelas", 0) or getattr(pos, "passantes", None):
         # a bitola em polegada no lugar do diâmetro em mm do nome ("M19.05 x 200" → "Ø3/4" x 200")
         rot = re.sub(r"\bM(\d+(?:\.\d+)?)", lambda m: ("Ø" + polegada_de(float(m.group(1)))) if polegada_de(float(m.group(1))) else m.group(0),
                      pos.rotulo_parafusos())
         linhas.append(("parafusos: " if pos.parafusos else "fixação: ") + rot)
+        em = getattr(pos, "parafusos_em", None)
+        if em:
+            # só uma parte dos exemplares tem o parafuso no modelo (R06: as CH2 da T2 da ME-Sooro): quantos
+            linhas.append("  (parafuso em %d das %d peças no modelo; %d sem: conferir)" % (em[0], em[1], em[1] - em[0]))
     if pos.peso:
         # a peça leve com uma casa a mais: 0,13 × 88 não dava os 11,1 do total da G.1 (análise das pranchas, 29/09)
         linhas.append("%s kg/pç  total %s kg" % (_mm(pos.peso, 3 if pos.peso < 1.0 else 2), _mm(pos.peso_total, 1)))
@@ -205,12 +217,18 @@ def _nota_furos_da_terca(furos: Sequence[Furo], H: float) -> str:
         if len(c) >= 2:
             ys = sorted(f.y for f in c)
             padroes[(int(round(ys[0])), int(round(ys[-1] - ys[0])))] += 1
-    if not padroes:
+    # o furo que não está num par (o isolado a meia altura, os dois da ponta da T.C.4 lado a lado): a altura dele também
+    # por escrito — a furadeira faria a 50 (R07 da 2ª rodada do primeiro uso IFC, 16/10: "a 35 e a 75, sem cota nem nota")
+    simples: Dict[int, int] = collections.Counter(int(round(c[0].y)) for c in colunas if len(c) == 1)
+    if not padroes and not simples:
         return ""
     partes = []
     for (y1, passo), _n in padroes.most_common(3):
         partes.append("1º a %d da base, par a %d (%s)" % (
             y1, passo, "passo da máquina" if abs(passo - maquina) <= 0.5 else "fora do passo da máquina: %g" % maquina))
+    if simples:
+        partes.append("furo%s simples a %s da base" % ("s" if sum(simples.values()) > 1 else "", " e a ".join(
+            "%d%s" % (y_, " (%dx)" % n_ if n_ > 1 and len(simples) > 1 else "") for y_, n_ in sorted(simples.items()))))
     return "furos na alma: " + "; ".join(partes)
 
 
@@ -336,8 +354,10 @@ def desenho_de_tercas_sem_furo(posicoes: Sequence[Posicao], chave: str, desenho:
         p.linha(x_, y_, x_ + L, y_, camada="COTA")
         for xt in (x_, x_ + L):
             p.linha(xt, y_ - 1.2 * esc, xt, y_ + 1.2 * esc, camada="COTA")
-        p.texto(x_ + L / 2.0, y_ + 0.8 * esc, "%s COMP=%dmm – %02dx%s" % (q.nome or q.marca, round(q.comprimento), q.quantidade,
-                                                                       "  PREVER EMENDA" if acima_da_barra_comercial(q) else ""),
+        p.texto(x_ + L / 2.0, y_ + 0.8 * esc, "%s COMP=%dmm%s – %02dx%s" % (
+            q.nome or q.marca, round(q.comprimento),
+            " (desenv., curva: ver o agulhamento)" if q.classe == "barra_conformada" else "",     # a A.D.9.1 (R04)
+            q.quantidade, "  PREVER EMENDA" if acima_da_barra_comercial(q) else ""),
                 2.0 * esc, "COTA", alinhamento="centro")
     total = sum(q.quantidade for q in ordem)
     peso = sum(float(q.peso_total or 0.0) for q in ordem)
@@ -467,6 +487,77 @@ def _ponto_da_dobra(pos: Posicao) -> Optional[float]:
     if melhor is None or melhor[0] >= (u1 - u0) - 5.0 or melhor[0] < 0.2 * (u1 - u0):
         return None
     return round(melhor[1] - u0)
+
+
+def raio_da_curva(pos: Posicao) -> Optional[dict]:
+    """O raio da barra curva em planta (R08 da 2ª rodada do primeiro uso IFC, 16/10: a F.T.1 e a B.10 saíam com o arco
+    desenhado e as cotas 440 + 8155 / flecha 535, sem raio — "sem raio a calandra não trabalha"). O eixo em arco do IFC
+    (Revit) quando vem; senão um círculo ajustado (mínimos quadrados) a cada face da vista de cima, no trecho que sai da
+    faixa reta. {"externo", "interno", "angulo", "fonte"} (mm, graus) ou None quando não é arco (resíduo > 2 %)."""
+    e = getattr(pos, "eixo_ifc", None) or {}
+    if e.get("raio"):
+        return {"externo": None, "interno": None, "eixo": float(e["raio"]),
+                "angulo": float(e.get("angulo") or 0.0), "fonte": "eixo do modelo"}
+    pts = [(q[0], q[2]) for q in pos.local or ()]
+    if len(pts) < 8:
+        return None
+    import numpy as np
+    P = np.asarray(pts, dtype=float)
+    u0, u1 = P[:, 0].min(), P[:, 0].max()
+    if u1 - u0 < 200.0:
+        return None
+    # a faixa reta: a da ponta que se estende mais ao longo da peça (como _ponto_da_dobra); o resto é a curva
+    melhor = None
+    for fim_ in (u0, u1):
+        ws = P[np.abs(P[:, 0] - fim_) <= 1.0, 1]
+        if not len(ws):
+            continue
+        lo, hi = ws.min() - 2.0, ws.max() + 2.0
+        na = (P[:, 1] >= lo) & (P[:, 1] <= hi)
+        ext = P[na, 0].max() - P[na, 0].min()
+        if melhor is None or ext > melhor[0]:
+            melhor = (ext, na)
+    if melhor is None:
+        return None
+    C_ = P[~melhor[1]]
+    if len(C_) < 6:
+        return None
+    # um círculo para as duas faces (concêntricas): o centro pelos mínimos quadrados; cada face pela distância ao centro
+    x, y = C_[:, 0], C_[:, 1]
+    sol, *_ = np.linalg.lstsq(np.column_stack([x, y, np.ones_like(x)]), x * x + y * y, rcond=None)
+    cx, cy = sol[0] / 2.0, sol[1] / 2.0
+    r = float(np.sqrt(max(sol[2] + cx * cx + cy * cy, 0.0)))
+    if r < 50.0 or r > 1e6:
+        return None
+    d = np.hypot(x - cx, y - cy)
+    # por setor do arco, a face de fora (a maior distância) e a de dentro (a menor): constantes num arco de verdade; as
+    # pontas (o corte inclinado) ficam fora da conta
+    a = np.degrees(np.arctan2(y - cy, x - cx))
+    a = (a - a.mean() + 180.0) % 360.0 - 180.0 + a.mean()
+    bordas = np.linspace(a.min(), a.max(), 9)
+    fora_, dentro_ = [], []
+    for i in range(1, 7):
+        sel = (a >= bordas[i]) & (a <= bordas[i + 1])
+        if sel.any():
+            fora_.append(d[sel].max())
+            dentro_.append(d[sel].min())
+    if len(fora_) < 4:
+        return None
+    r_ext, r_int = float(np.median(fora_)), float(np.median(dentro_))
+    var = (max(fora_) - min(fora_)) / r_ext
+    if var > 0.12 or r_ext - r_int > 0.5 * r_ext:
+        return None
+    return {"externo": r_ext, "interno": r_int, "eixo": None, "angulo": float(a.max() - a.min()), "fonte": "geometria",
+            "aproximado": var > 0.05}
+
+
+def texto_do_raio(rc: dict) -> str:
+    """"CURVA: R ext. 7.330 / R int. 7.300, arco 66° (calandrar)"."""
+    if rc.get("eixo"):
+        return "CURVA: R = %s no eixo%s (calandrar)" % (_mm(rc["eixo"]), (", arco %d°" % round(rc["angulo"])) if rc.get("angulo") else "")
+    return "CURVA: R ext. %s%s / R int. %s, arco %d° (calandrar%s)" % (
+        "≈ " if rc.get("aproximado") else "", _mm(5.0 * round(rc["externo"] / 5.0)), _mm(5.0 * round(rc["interno"] / 5.0)),
+        round(rc["angulo"]), "; raio variável no modelo: conferir" if rc.get("aproximado") else "")
 
 
 #: Chapa com aresta inclinada maior que esta fração do lado maior não é retangular: cada lado ganha a cota dele.
@@ -738,6 +829,8 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
 
     if pos.tipo_nome == "gancho" and pos.local:
         _rosca_do_gancho(p, pos, esc, off)
+    elif getattr(pos, "rosca_chumbador", None) and pos.local:
+        _rosca_do_chumbador(p, pos, esc)
 
     # chamada de cada grupo de furos (os de uma ligação), entre a peça e o título
     if furos_frente:
@@ -796,6 +889,37 @@ def _rosca_do_gancho(p, pos: Posicao, esc: float, off: float):
     desenhar_rosca(p, u1, u2, vc, d, esc)
     p.linha(u1 if reta_no_fim else u2, v0, u1 if reta_no_fim else u2, v1, "ACO-FINO")     # o fim da rosca
     p.cota_h(u1, u2, v1, 4.0, texto="ROSCA %d" % round(comp))   # rente à barra: o título vem logo acima
+
+
+def _rosca_do_chumbador(p, pos: Posicao, esc: float):
+    """A rosca nas pontas do chumbador (R09): na ponta da vista em que as pernas estão separadas (a outra é a dobra do
+    U, ou a do L), cada perna com as linhas da rosca ao longo de `rosca_chumbador` e uma cota "ROSCA n"."""
+    us = [q[0] for q in pos.local]
+    u_a, u_b = min(us), max(us)
+
+    def pernas(u0):
+        vs = sorted(q[1] for q in pos.local if abs(q[0] - u0) <= 2.0)
+        grupos = []
+        for v_ in vs:
+            if grupos and v_ - grupos[-1][-1] <= 3.0:
+                grupos[-1].append(v_)
+            else:
+                grupos.append([v_])
+        return [(min(g), max(g)) for g in grupos]
+    pa, pb = pernas(u_a), pernas(u_b)
+    # a ponta é o lado com mais pernas separadas (no U, as duas; na dobra, uma faixa só)
+    u_ponta, lista = (u_b, pb) if len(pb) >= len(pa) else (u_a, pa)
+    sentido = -1.0 if u_ponta == u_b else 1.0
+    comp = min(float(pos.rosca_chumbador), 0.9 * (u_b - u_a))
+    u_fim = u_ponta + sentido * comp
+    for k, (v0, v1) in enumerate(lista):
+        d = v1 - v0
+        if d <= 0.5:
+            continue
+        desenhar_rosca(p, min(u_ponta, u_fim), max(u_ponta, u_fim), (v0 + v1) / 2.0, d, esc)
+        p.linha(u_fim, v0, u_fim, v1, "ACO-FINO")                    # o fim da rosca
+        if k == len(lista) - 1:
+            p.cota_h(min(u_ponta, u_fim), max(u_ponta, u_fim), v1, 4.0, texto="ROSCA %d" % round(comp))
 
 
 class _PapelPontilhado:
