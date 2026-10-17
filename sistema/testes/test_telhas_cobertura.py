@@ -228,3 +228,127 @@ def test_telha_ao_lado_aponta_o_degrau_e_a_dobra():
     degraus = [a for a in r["ao_lado"] if a["tipo"] == "degrau"]
     assert dobras and 40 <= abs(dobras[0]["mm"]) <= 60 and abs(dobras[0]["ponto"][0] - 2800) < 5
     assert degraus and 40 <= abs(degraus[0]["mm"]) <= 60
+
+# ------------------------------------------------------------------ a cobertura do Posto CB revista pelo 3D (17/10/2026)
+def _banzo(doc, a, b, nome, perfil="U 150×70×4,75 (FF)"):
+    tr = Barra(inicio=a, fim=b, perfil=perfil, papel="banzo", camada="Treliças")
+    tr.atributos = {"origem": {"planta": nome, "peca": nome + "#1"}}
+    doc.add(tr)
+    return tr
+
+
+def _telhado(doc):
+    return [s for s in doc.solidos if s.camada == "Telhas" and not (s.atributos or {}).get("fechamento")]
+
+
+def test_borda_escalonada_pela_linha_emendada():
+    """a terça de baixo emendada no apoio bem onde a de cima acaba (a linha x 30,13 do Posto, partida na tesoura de y 11,45,
+    junto da TRANSIÇÃO 16): a borda vai até a ponta da LINHA — com a ponta do pedaço, o triângulo não saía e a telha parava
+    em degraus de até 1,3 m da borda"""
+    doc = Documento()
+    _terca(doc, 0.0, 7000.0, "TC1", y1=2000.0)
+    _terca(doc, 0.0, 7000.0, "TC1", y0=2000.0, y1=6000.0)
+    _terca(doc, 1400.0, 7070.0, "TC2", y0=2000.0, y1=6000.0)
+    r = T.lancar(doc)
+    rec = [s for s in doc.solidos if (s.atributos or {}).get("recorte")]
+    assert r["recortes"] >= 2 and rec
+    assert min(min(v[1] for v in s.vertices) for s in rec) <= 1.0      # a borda chega na ponta da linha (y 0)
+
+
+def test_telha_ate_a_face_da_parede_diagonal():
+    """a última terça antes da parede em diagonal, sem terça do outro lado (a x 35,34 do Posto, junto da TRANSIÇÃO 16 e da
+    TRANSIÇÃO 1): a telha segue em chapas recortadas até 100 mm da face; antes ficava o triângulo aberto (até 1,25 m)"""
+    doc = Documento()
+    _agua(doc, 0.0, 3, 7000.0, 0.05)
+    _banzo(doc, (2900.0, 0.0, 8000.0), (4400.0, 6000.0, 8000.0), "TRANSIÇÃO 9")
+    T.lancar(doc)
+
+    def face(y):
+        return 2900.0 + 1500.0 * y / 6000.0
+    alem = [s for s in _telhado(doc) if max(v[0] for v in s.vertices) > 3300.0]
+    assert alem, "a telha não passou da última terça (x 2800)"
+    for s in _telhado(doc):
+        for v in s.vertices:
+            assert v[0] <= face(v[1]) + 1.0                             # nada passa da parede
+    # a parede paralela mais perto (a TRELIÇA 6 do Posto, a borda do telhado ao lado da TRANSIÇÃO 16) segura a telha
+    doc2 = Documento()
+    _agua(doc2, 0.0, 3, 7000.0, 0.05)
+    _banzo(doc2, (2900.0, 0.0, 8000.0), (4400.0, 6000.0, 8000.0), "TRANSIÇÃO 9")
+    _banzo(doc2, (3000.0, 0.0, 7600.0), (3000.0, 6000.0, 7600.0), "TRELIÇA 6", perfil="U 100×40×2,25 (FF)")
+    T.lancar(doc2)
+    assert not [s for s in _telhado(doc2) if max(v[0] for v in s.vertices) > 2850.0]
+
+
+def test_linha_da_calha_emendada_sobe_inteira():
+    """a terça da calha emendada (a x 34,06 do Posto): o pedaço da ponta, ao lado da água, sobe ao plano; o resto da
+    linha, fora de qualquer água, subia nada — a telha fazia um degrau de 133 mm na emenda. A linha sobe inteira"""
+    doc = Documento()
+    for i in range(5):
+        x = 8500.0 + i * 1400.0
+        _terca(doc, x, 7100.0 + i * 1400.0 * 0.05, "TC2", y1=700.0)
+    lo, hi = T._ext_z(Barra(inicio=(0, 0, 0), fim=(0, 6000, 0), perfil=PERFIL))
+    z_plano = 7100.0 - 0.05 * 1400 + hi
+    ponta = _terca(doc, 7100.0, z_plano - 100.0 - hi, "TC2", y1=700.0)
+    resto = _terca(doc, 7100.0, z_plano - 100.0 - hi, "TC2", y0=700.0, y1=6000.0)
+    tr = Barra(inicio=(7000.0, -500.0, 0), fim=(7000.0, 6500.0, 0), perfil="U 150×70×4,75 (FF)", papel="banzo", camada="Treliças")
+    _lo_t, hi_t = T._ext_z(tr)
+    z_tr = ponta.inicio[2] + lo - hi_t
+    tr.inicio, tr.fim = (7000.0, -500.0, z_tr), (7000.0, 6500.0, z_tr)
+    tr.atributos = {"origem": {"planta": "TRANSIÇÃO 8", "peca": "TRANSIÇÃO 8#1"}}
+    doc.add(tr)
+    z0 = resto.inicio[2]
+    T.alinhar_tercas([b for b in doc.barras if b.papel == "terça"], doc.barras)
+    assert abs(ponta.inicio[2] + hi - z_plano) < 5
+    assert abs(resto.inicio[2] - ponta.inicio[2]) < 2 and abs(resto.fim[2] - ponta.fim[2]) < 2 and resto.inicio[2] > z0 + 90
+
+
+def test_linha_emendada_nao_sobe_para_dentro_de_outra_peca():
+    """a mesma linha, mas com uma peça em pé atravessando o resto dela logo acima (os montantes da tesoura de cima da
+    TRANSIÇÃO 3 do Posto, na linha da calha ao norte da TRANSIÇÃO 1): subir a poria dentro da peça — fica, e a conferência
+    aponta o degrau"""
+    doc = Documento()
+    for i in range(5):
+        x = 8500.0 + i * 1400.0
+        _terca(doc, x, 7100.0 + i * 1400.0 * 0.05, "TC2", y1=700.0)
+    lo, hi = T._ext_z(Barra(inicio=(0, 0, 0), fim=(0, 6000, 0), perfil=PERFIL))
+    z_plano = 7100.0 - 0.05 * 1400 + hi
+    ponta = _terca(doc, 7100.0, z_plano - 100.0 - hi, "TC2", y1=700.0)
+    resto = _terca(doc, 7100.0, z_plano - 100.0 - hi, "TC2", y0=700.0, y1=6000.0)
+    tr = Barra(inicio=(7000.0, -500.0, 0), fim=(7000.0, 6500.0, 0), perfil="U 150×70×4,75 (FF)", papel="banzo", camada="Treliças")
+    _lo_t, hi_t = T._ext_z(tr)
+    z_tr = ponta.inicio[2] + lo - hi_t
+    tr.inicio, tr.fim = (7000.0, -500.0, z_tr), (7000.0, 6500.0, z_tr)
+    tr.atributos = {"origem": {"planta": "TRANSIÇÃO 3", "peca": "TRANSIÇÃO 3#1"}}
+    doc.add(tr)
+    z0 = resto.inicio[2]
+    for y in (2000.0, 3500.0, 5000.0):                           # os montantes: do pé da terça até 1,4 m acima
+        m = Barra(inicio=(7100.0, y, z0 - 70.0), fim=(7100.0, y, z0 + 1400.0), perfil="L 2\"×3/16\"", papel="montante", camada="Treliças")
+        m.atributos = {"origem": {"planta": "TRANSIÇÃO 3 (tesoura de cima)", "peca": "TRANSIÇÃO 3 (tesoura de cima)#1"}}
+        doc.add(m)
+    T.alinhar_tercas([b for b in doc.barras if b.papel == "terça"], doc.barras)
+    assert resto.inicio[2] == z0
+
+
+def test_trelica_acima_da_telha_no_meio_do_telhado_e_revestida():
+    """a treliça com telhado dos dois lados e o banzo de cima 0,4 m acima da telha (a TRANSIÇÃO 1 do Posto; as tesouras
+    de cima das TRANSIÇÕES 2/3/5/6): o corte BB manda "REVESTIR … COM TELHA OU RUFO" e "RUFO MOLDURA" no topo — a telha em
+    pé nas duas faces, da telha até o topo, e o rufo; antes ficava a treliça pelada atravessando a telha"""
+    doc = Documento()
+    for i in range(5):
+        _terca(doc, i * 1400.0, 7000.0 + i * 1400.0 * 0.05, "TC1", y0=-3000.0, y1=3000.0)
+    _banzo(doc, (-500.0, 0.0, 6000.0), (6100.0, 0.0, 6000.0), "TRANSIÇÃO 1")
+    _banzo(doc, (-500.0, 0.0, 7800.0), (6100.0, 0.0, 7800.0), "TRANSIÇÃO 1")
+    r = T.lancar(doc)
+    rev = [s for s in doc.solidos if (s.atributos or {}).get("revestimento")]
+    assert r["revestimentos"] == len(rev) >= 2
+    assert {v[1] > 0 for s in rev for v in s.vertices} == {True, False}      # nas duas faces
+    for s in rev:
+        assert max(v[2] for v in s.vertices) > 7800.0 and min(v[2] for v in s.vertices) > 7000.0
+    rufo = [s for s in doc.solidos if (s.atributos or {}).get("rufo_lancado")]
+    assert rufo and 5000.0 <= r["rufo_ml"] * 1000.0 <= 6600.0
+    # o banzo de baixo (sob a telha) e uma tesoura comum (o topo sob a telha) não ganham nada
+    doc2 = Documento()
+    for i in range(5):
+        _terca(doc2, i * 1400.0, 7000.0 + i * 1400.0 * 0.05, "TC1", y0=-3000.0, y1=3000.0)
+    _tesoura(doc2, 0.0, 6990.0, x0=-500.0, x1=6100.0)
+    assert T.lancar(doc2)["revestimentos"] == 0
