@@ -290,10 +290,20 @@ def chamadas_de_furos(p, furos, H: float, esc: float, L: Optional[float] = None)
 MINIMO_TIPICO_SEM_FURO = 2
 
 
+_RE_CANTONEIRA = re.compile(r"^\s*(L|2L|CANT)\s*\d", re.I)
+
+
 def terca_sem_furo(pos: Posicao, tipo: str) -> bool:
-    """A terça sem furo nenhum (a de parede do depósito químico, só apoiada): vai para o detalhe típico
-    do perfil (`desenho_de_tercas_sem_furo`), como os contraventos."""
-    return pos.classe == "barra" and str(tipo or "").startswith("terca") and not pos.furos
+    """A terça sem furo nenhum (a de parede do depósito químico, só apoiada) e a cantoneira sem furo (as diagonais e os
+    montantes 2L das treliças, os verticais do agulhamento — PRATI, 13/10: "todas essas cantoneiras poderiam ser representadas
+    de maneira simplificada"): vão para o detalhe típico do perfil (`desenho_de_tercas_sem_furo`), como os contraventos."""
+    if pos.furos:
+        return False
+    if pos.classe == "barra_redonda":
+        return True                                   # o tirante reto (A.D.) também: lista por bitola (PRATI, 14/10)
+    if pos.classe != "barra":
+        return False
+    return str(tipo or "").startswith("terca") or bool(_RE_CANTONEIRA.match(str(pos.perfil or "")))
 
 
 def desenho_de_tercas_sem_furo(posicoes: Sequence[Posicao], chave: str, desenho: Desenho, dx: float, dy: float
@@ -314,12 +324,26 @@ def desenho_de_tercas_sem_furo(posicoes: Sequence[Posicao], chave: str, desenho:
     _vista(p, maior, (0, 1), 2, +1.0, 0, 0, set())
     p.cota_v(0, H, L, off)                            # a altura; a seção não vai (o perfil está no título)
     ordem = sorted(posicoes, key=lambda q: _ordem_natural(q.nome or q.marca))
+    # a lista: um traço do tamanho da maior por posição, com o texto centrado nele — tudo em escala do desenho (a cota com
+    # deslocamento em mm de papel se desarrumava quando a prancha reduzia a célula, e o texto comprido caía na linha vizinha:
+    # "desconfigurou as legendas", PRATI 14/10); mais de 30 posições, em colunas
+    POR_COLUNA = 30
+    passo_col = max(L, 60.0 * esc) + 10.0 * esc
     for k, q in enumerate(ordem):
-        p.cota_h(0, L, 0, -(off + passo * k), texto="%s COMP=%dmm – %02dx%s" % (q.nome or q.marca, round(q.comprimento), q.quantidade,
-                                                                              "  PREVER EMENDA" if acima_da_barra_comercial(q) else ""))
+        col, lin = divmod(k, POR_COLUNA)
+        x_ = col * passo_col
+        y_ = -(off + passo * lin) * esc
+        p.linha(x_, y_, x_ + L, y_, camada="COTA")
+        for xt in (x_, x_ + L):
+            p.linha(xt, y_ - 1.2 * esc, xt, y_ + 1.2 * esc, camada="COTA")
+        p.texto(x_ + L / 2.0, y_ + 0.8 * esc, "%s COMP=%dmm – %02dx%s" % (q.nome or q.marca, round(q.comprimento), q.quantidade,
+                                                                       "  PREVER EMENDA" if acima_da_barra_comercial(q) else ""),
+                2.0 * esc, "COTA", alinhamento="centro")
     total = sum(q.quantidade for q in ordem)
     peso = sum(float(q.peso_total or 0.0) for q in ordem)
-    linhas = ["%s – %02dx   (sem furo)" % (", ".join(q.nome or q.marca for q in ordem), total),
+    nomes_ = [q.nome or q.marca for q in ordem]
+    titulo_nomes = ", ".join(nomes_) if len(nomes_) <= 12 else "%s … %s (%d posições)" % (nomes_[0], nomes_[-1], len(nomes_))
+    linhas = ["%s – %02dx   (sem furo)" % (titulo_nomes, total),
               com_bitola_e_mm(maior.perfil),
               "total %s kg" % _mm(peso, 1)]
     longas = [q.nome or q.marca for q in ordem if acima_da_barra_comercial(q)]
@@ -933,8 +957,15 @@ def detalhar_posicao(doc: Documento, marca: str, editavel: bool = True, ajustes:
 
 def _posicao_bruta(ent: Solido, marca: str) -> Posicao:
     m = _marcas(ent)
-    return Posicao(marca=marca, tipo_ifc="IfcPlate", perfil=re.sub(r"\s+", " ", str(m.get("perfil") or ent.nome or "")),
-                   material=_material(ent), vertices=[tuple(v) for v in ent.vertices], faces=[list(f) for f in ent.faces])
+    pos = Posicao(marca=marca, tipo_ifc="IfcPlate", perfil=re.sub(r"\s+", " ", str(m.get("perfil") or ent.nome or "")),
+                  material=_material(ent), vertices=[tuple(v) for v in ent.vertices], faces=[list(f) for f in ent.faces])
+    # a espessura declarada na peça (o rufo de 0,5 mm), como no levantamento (nucleo2d.detalhe.base._posicoes_de, 14/10)
+    try:
+        esp = (getattr(ent, "atributos", None) or {}).get("espessura")
+        pos.espessura_nominal = float(esp) if esp else None
+    except (TypeError, ValueError):
+        pos.espessura_nominal = None
+    return pos
 
 
 def _custo_forma(A: Sequence[Tuple[float, float]], B: Sequence[Tuple[float, float]], celula: float = 4.0, teto: float = 8.0) -> float:

@@ -2529,7 +2529,7 @@ class CAD {
 
   async dialogoDetalhar() {
     if (!this.projeto) { this.aviso('Detalhar precisa de um projeto aberto.', 'atencao'); return; }
-    const grupos = [['tesouras', 'Tesouras (com as barras e chapas delas)'], ['conjuntos', 'Conjuntos (vigas, pilares e outros)'], ['tercas', 'Terças (com suportes e chapas)'], ['contraventamentos', 'Contraventamentos (com tirantes e peças de ponta)'], ['agulhamentos', 'Agulhamentos'], ['extras', 'Extras (perfil de forro, de fechamento, barras soltas)'], ['telhas', 'Telhas'], ['chaparias', 'Chaparias (todas as chapas, 1:10)'], ['localizacao', 'Planta de localização (marcas no lugar de montagem)'], ['completo', 'Desenho completo (tudo num desenho só, 1:25)']];
+    const grupos = [['tesouras', 'Tesouras (com as barras e chapas delas)'], ['conjuntos', 'Conjuntos (vigas, pilares e outros)'], ['tercas', 'Terças (com suportes e chapas)'], ['contraventamentos', 'Contraventamentos (com tirantes e peças de ponta)'], ['agulhamentos', 'Agulhamentos'], ['extras', 'Extras (perfil de forro, de fechamento, barras soltas)'], ['telhas', 'Telhas'], ['chaparias', 'Chaparias (todas as chapas, 1:10)'], ['localizacao', 'Planta de localização (marcas no lugar de montagem)'], ['elevacoes', 'Elevações das fachadas (cada parede vista de fora, com as marcas)'], ['completo', 'Desenho completo (tudo num desenho só, 1:25)']];
     const caixas = {};
     const lista = el('div', { class: 'lista-opcoes' });
     for (const [k] of grupos) caixas[k] = el('input', { type: 'checkbox', checked: 'checked' });

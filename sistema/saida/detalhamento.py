@@ -331,6 +331,7 @@ class Posicao:
     porcas: int = 0           # porcas/arruelas junto dos furos (fixadores sem tamanho no nome)
     passantes: Dict[str, int] = field(default_factory=dict)   # {'barra roscada Ø5/8"': 1}: barra que atravessa o furo
     eixo_ifc: Optional[dict] = None     # o eixo do IFC (Revit): {comprimento, raio (None: reto), angulo}; em arco, calandrada
+    espessura_nominal: Optional[float] = None   # a espessura declarada na peça (atributos.espessura): vale quando o nome não a traz
     furos_do_projeto: bool = False      # o projeto recebido (IFC/DXF do projetista): o furo dele vale, sem o alerta da folga (Q16)
 
     @property
@@ -1156,8 +1157,11 @@ def _copia(v):
 def _chave_analise(pos: Posicao, eixos):
     try:
         e = tuple(tuple(float(k) for k in x) for x in eixos) if eixos is not None else None
+        # a espessura declarada entra na chave: o rufo de 0,5 mm analisado sem ela (outro caminho que monta a posição) virava
+        # "chapa" maciça, e a análise guardada valia depois para o Detalhar, que a convertia em chapa plana no 3D (PRATI, 14/10)
         return (pos.tipo_ifc, pos.perfil, e, tuple(tuple(v) for v in pos.vertices),
-                tuple(tuple(f) for f in pos.faces), tuple(sorted((pos.eixo_ifc or {}).items())))
+                tuple(tuple(f) for f in pos.faces), tuple(sorted((pos.eixo_ifc or {}).items())),
+                getattr(pos, "espessura_nominal", None))
     except (TypeError, ValueError):
         return None
 
@@ -1229,12 +1233,13 @@ def _analisar(pos: Posicao, eixos=None) -> Posicao:
     if pos.tipo_ifc == "IfcPlate":
         pos.contorno, pos.furos = _contorno_e_furos(pos, 2, +1.0, (0, 1), "frente")
         nominal = _chapa_nominal(perfil)
-        t_nom = nominal[2] if nominal else pos.T
+        t_decl = getattr(pos, "espessura_nominal", None) or None     # declarada na peça (o rufo gerado: 0,5 mm)
+        t_nom = nominal[2] if nominal else (t_decl or pos.T)
         pos.espessura = pos.T
         pos.comprimento = pos.L
         if pos.T > 1.25 * t_nom + 0.5 or not pos.contorno:
             pos.classe = "chapa_dobrada"
-            _desenvolver_chapa(pos, nominal[2] if nominal else None)
+            _desenvolver_chapa(pos, nominal[2] if nominal else t_decl)
         else:
             pos.classe = "chapa"
             # qualquer lado fora do nome: a CH11 da Sala é "PLATE 148x148x6" com 148 x 240 na malha, e passava

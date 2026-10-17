@@ -131,6 +131,7 @@ from nucleo2d.detalhe.conjuntos import (  # noqa: E402,F401
     _instancias,
     _instancias_do_conjunto,
     _itens_de_localizacao,
+    desenho_de_elevacoes,
     _lado_do_conjunto,
     _multiplo,
     _rotular_barras,
@@ -273,6 +274,7 @@ QUADROS = [("tesoura", "TESOURAS"), ("viga", "VIGAS"), ("pilar", "PILARES"), ("c
 #: Título do quadro de cada tipo de posição (peça avulsa), na ordem em que saem.
 QUADROS_POSICOES = [("planta_telhas", "PAGINAÇÃO DAS TELHAS DA COBERTURA (PLANTA)"), ("quadro_telhas", "QUADRO DAS TELHAS DA COBERTURA"),
                     ("paginacao", "PAGINAÇÃO DAS TELHAS – COMPRIMENTOS REAIS"), ("multidobra", "TELHAS MULTI-DOBRA"), ("cumeeira", "CUMEEIRAS"), ("terca_cobertura", "TERÇAS DE COBERTURA"), ("terca_marquise", "TERÇAS DE MARQUISE"),
+                    ("terca_lateral", "TERÇAS LATERAIS"), ("terca_oitao", "TERÇAS DE OITÃO"),     # saíam "TERCA LATERALS" (PRATI, 13/10)
                     ("suporte_terca", "SUPORTES DE TERÇA"), ("suporte_tirante", "SUPORTES DE TIRANTE"), ("montagem", "PEÇAS MONTADAS – FRENTE E LATERAL"), ("agulhamento", "AGULHAMENTOS"),
                     ("suporte_agulhamento", "SUPORTES DE AGULHAMENTO"), ("contraventamento", "CONTRAVENTAMENTOS"),
                     ("suporte_contraventamento", "SUPORTES DE CONTRAVENTAMENTO"), ("castanha", "CASTANHAS"),
@@ -1223,7 +1225,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         # as terças sem furo nenhum, num detalhe típico por perfil, empilhadas como os contraventos (pedido do
         # usuário, 29/09) — com duas ou mais do mesmo perfil; a posição continua na tabela
         tipicas_sf = collections.OrderedDict()
-        if chave == "barras":
+        if chave in ("barras", "tirantes"):
             for p in lista:
                 if terca_sem_furo(p, nomeacao["tipos"].get(p.marca) or p.tipo_nome):
                     tipicas_sf.setdefault(re.sub(r"\s+", "", p.perfil or "").upper(), []).append(p)
@@ -1270,10 +1272,13 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             tipo_sf = nomeacao["tipos"].get(grupo_sf[0].marca) or grupo_sf[0].tipo_nome
             celulas_sf.append((tipo_sf, (lambda dd, x, y, g_=grupo_sf, k_=chave_sf: desenho_de_tercas_sem_furo(g_, k_, dd, x, y))))
             d.metadados["detalhamento"]["itens"][chave_sf] = {
-                "quantidade": sum(q.quantidade for q in grupo_sf), "perfil": "terças sem furo %s" % grupo_sf[0].perfil,
+                "quantidade": sum(q.quantidade for q in grupo_sf),
+                "perfil": "%s sem furo %s" % ("terças" if str(tipo_sf or "").startswith("terca") else
+                                              "barras redondas" if grupo_sf[0].classe == "barra_redonda" else "cantoneiras", grupo_sf[0].perfil),
                 "material": grupo_sf[0].material, "comprimento": 0, "espessura": 0,
                 "peso": round(sum(float(q.peso_total or 0.0) for q in grupo_sf), 2), "classe": "Conjunto",
-                "categoria": "TERÇAS", "nome": ", ".join(q.nome or q.marca for q in grupo_sf),
+                "categoria": "TERÇAS" if str(tipo_sf or "").startswith("terca") else "TIRANTES" if grupo_sf[0].classe == "barra_redonda" else "BARRAS",
+                "nome": ", ".join(q.nome or q.marca for q in grupo_sf),
                 "marcas": [m for q in grupo_sf for m in marcas_de(q)]}
         celulas_g += celulas_sf
         # peças montadas (suporte de terça soldado, chapa de base com os chumbadores): junto
@@ -1338,6 +1343,15 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                                                  eixos=eixos, nomes_producao=nomeacao)
         except ErroDeDados as e:
             avisos.append("planta de localização não gerada: %s" % e)
+    elevacoes = None
+    if "elevacoes" in pedidos:
+        avisar("elevações das fachadas…")
+        try:
+            elevacoes = desenho_de_elevacoes(doc, pecas, GRUPOS["elevacoes"]["titulo"],
+                                             ignorar=[p.marca for p in posicoes if p.classe == "telha"],
+                                             nomes=nomeacao["ifc"], camadas_pecas=camadas_ifc, eixos=eixos)
+        except ErroDeDados as e:
+            avisos.append("elevações não geradas: %s" % e)
     chumbacao = None
     if "chumbacao" in pedidos or "completo" in pedidos:
         avisar("planta de chumbação…")
@@ -1368,6 +1382,9 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         elif chave == "chumbacao":
             if chumbacao is not None:
                 desenhos[chave] = chumbacao
+        elif chave == "elevacoes":
+            if elevacoes is not None:
+                desenhos[chave] = elevacoes
         elif chave == "completo":
             if faixas or localizacao is not None:
                 avisar("desenho completo…")

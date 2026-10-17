@@ -31,6 +31,7 @@ GRUPOS = collections.OrderedDict([
     ("telhas", {"titulo": "Detalhamento – telhas", "escala": 50.0, "base": "telhas"}),
     ("chaparias", {"titulo": "Detalhamento – chaparias", "escala": 10.0, "base": "chapas"}),
     ("localizacao", {"titulo": "Detalhamento – localização", "escala": 100.0}),
+    ("elevacoes", {"titulo": "Detalhamento – elevações", "escala": 100.0}),
     ("chumbacao", {"titulo": "Detalhamento – chumbação", "escala": 100.0}),
     ("completo", {"titulo": "Detalhamento – completo", "escala": 25.0}),
 ])
@@ -706,7 +707,7 @@ def _proxy_da_barra(b: Barra) -> Solido:
     vem do catálogo pelo nome, então um nome de fábrica (U92X40X2.25) também funciona.
     """
     verts, faces = _geo.malha_barra(b)
-    s = Solido(id=b.id, nome=b.nome or b.perfil, camada=b.camada, material=b.material,
+    s = Solido(id=b.id, nome=b.nome or b.perfil, camada=b.camada, material=b.material or getattr(b, "aco", "") or "",
                visivel=b.visivel, bloqueada=b.bloqueada, grupo=b.grupo,
                atributos=dict(b.atributos or {}),
                vertices=[tuple(float(x) for x in v) for v in verts], faces=[list(f) for f in faces])
@@ -722,7 +723,7 @@ def _proxy_da_chapa(ch: Chapa) -> Solido:
     """Sólido equivalente a uma Chapa paramétrica (mesmo id e atributos), com a malha
     gerada dos parâmetros; `parametrica` aponta para a chapa."""
     verts, faces = _geo.malha_chapa(ch)
-    s = Solido(id=ch.id, nome=ch.nome, camada=ch.camada, material=ch.material, visivel=ch.visivel,
+    s = Solido(id=ch.id, nome=ch.nome, camada=ch.camada, material=ch.material or getattr(ch, "aco", "") or "", visivel=ch.visivel,
                bloqueada=ch.bloqueada, grupo=ch.grupo, atributos=dict(ch.atributos or {}),
                vertices=[tuple(float(x) for x in v) for v in verts], faces=[list(f) for f in faces])
     s.atributos.setdefault("tipo_ifc", "IfcPlate")
@@ -1627,12 +1628,23 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
         pos = por_marca.get(marca)
         if pos is None:
             t = _tipo_ifc(ent)
+            perfil_m = str(m.get("perfil") or "")
+            ch_p = getattr(ent, "parametrica", None)
+            if not perfil_m and isinstance(ch_p, Chapa):
+                # chapa paramétrica sem marcas (gerador, editor): o perfil é a espessura, como o lançamento grava — com o
+                # NOME da peça no lugar, a assinatura separava chapas iguais só pelo nome (CH2…CH79 do PRATI, 13/10)
+                perfil_m = "CH %s" % ("%g" % round(float(ch_p.espessura), 2)).replace(".", ",")
             pos = Posicao(marca=marca, tipo_ifc="IfcPlate" if t.startswith("IfcPlate") else t,
-                          perfil=re.sub(r"\s+", " ", str(m.get("perfil") or ent.nome or "")),
+                          perfil=re.sub(r"\s+", " ", perfil_m or str(ent.nome or "")),
                           material=_material(ent),
                           vertices=[tuple(v) for v in ent.vertices], faces=[list(f) for f in ent.faces],
                           eixo_ifc=(ent.atributos or {}).get("eixo_ifc"))
             pos.papel = _papel_declarado(ent)
+            esp_decl = (ent.atributos or {}).get("espessura")
+            try:
+                pos.espessura_nominal = float(esp_decl) if esp_decl else None
+            except (TypeError, ValueError):
+                pos.espessura_nominal = None
             por_marca[marca] = pos
             camadas[marca] = ent.camada or ""
             # perfil trocado no 3D: o original do projeto e a data vão para a lista
@@ -1688,7 +1700,9 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
                 _posicao_de_chapa(pos, ch)
             else:
                 analisar(pos)
-                if fixadores:
+                if fixadores and not _funilaria(pos.perfil):
+                    # o rufo e a calha não levam furo de parafuso: a caixa deles cobre o topo da parede e pegava os
+                    # parafusos das terças (24 "furos" por trecho de rufo, PRATI 13/10)
                     inferir_furos_de_parafusos(pos, primeiro[marca], fixadores, centros)
                     if inferir_furos_de_barra(pos, primeiro[marca], fixadores, centros) and marca in com_parafuso:
                         n_c, n_t = com_parafuso[marca]
