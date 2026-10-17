@@ -83,10 +83,10 @@ def test_conferir_acusa_cada_regra_e_aplicar_corrige():
     regras = _regras(bs)
     # 1.4 (pontas sem o perfil do banzo), 2.2 (banzo de boca para fora do plano), 2.3 (alma), 2.4 (cantoneira de um lado e do outro)
     assert {"1.4", "2.2", "2.3", "2.4"} <= regras, regras
-    n_class, n_giro = R.aplicar(bs)
+    n_class, n_giro, _n, _e = R.aplicar(bs)
     assert n_class == 2 and n_giro > 0
     assert R.conferir(bs) == []
-    assert R.aplicar(bs) == (0, 0)                    # idempotente: rodar de novo não mexe em nada
+    assert R.aplicar(bs) == (0, 0, 0, 0)              # idempotente: rodar de novo não mexe em nada
 
 
 def test_1_4_ponta_recebe_o_perfil_do_banzo():
@@ -338,3 +338,176 @@ def test_conferencia_do_3d_e_verificar_apoios_acusam():
     assert any(a["tipo"] == "posicao" and "regra 1.4" in a["texto"] for a in conf["apontamentos"])
     R.aplicar(doc.entidades.values())
     assert conferencia_3d.conferir(doc, telha=False, soltas=False)["contagens"]["fora_da_posicao"] == 0
+
+
+# ------------------------------------------------------------------ 4.8: a tesoura para na face interna da platibanda
+def _painel(x, y0, y1, z0=1000, z1=2500, nome="P"):
+    """uma platibanda em pé no plano x = const (U 100: 50 mm para cada lado do plano), de y0 a y1"""
+    at = {"origem": {"peca": nome}}
+    U = "U 100×50×3,00 (FF)"
+    bs = [Barra(nome=nome + " BI", inicio=(x, y0, z0), fim=(x, y1, z0), perfil=U, papel="banzo", atributos=dict(at)),
+          Barra(nome=nome + " BS", inicio=(x, y0, z1), fim=(x, y1, z1), perfil=U, papel="banzo", atributos=dict(at))]
+    for y in range(int(y0), int(y1) + 1, 1500):
+        bs.append(Barra(nome=nome + " M%d" % y, inicio=(x, y, z0), fim=(x, y, z1), perfil=U, papel="montante", atributos=dict(at)))
+    bs.append(Barra(nome=nome + " D", inicio=(x, y0, z0), fim=(x, y0 + 1500, z1), perfil=U, papel="diagonal", atributos=dict(at)))
+    return bs
+
+
+def _tesoura_em_x(x0, x1, y, nome="T", z0=1500, z1=2000):
+    """uma tesoura em pé no plano y = const, de x0 a x1 (ponta em x0): banzos U 150, ponta e alma U 100"""
+    at = {"origem": {"peca": nome}}
+    bs = [Barra(nome=nome + " BI", inicio=(x0, y, z0), fim=(x1, y, z0), perfil=U_BZ, papel="banzo", atributos=dict(at, papel_trelica="banzo_inf")),
+          Barra(nome=nome + " BS", inicio=(x0, y, z1), fim=(x1, y, z1 + 300), perfil=U_BZ, papel="banzo", atributos=dict(at, papel_trelica="banzo_sup")),
+          Barra(nome=nome + " P0", inicio=(x0, y, z0), fim=(x0, y, z1), perfil=U_BZ, papel="montante", atributos=dict(at)),
+          Barra(nome=nome + " P1", inicio=(x1, y, z0), fim=(x1, y, z1 + 300), perfil=U_BZ, papel="montante", atributos=dict(at)),
+          Barra(nome=nome + " D0", inicio=(x0, y, z1), fim=(x0 + 1500, y, z0), perfil=U_AL, papel="diagonal", atributos=dict(at)),
+          Barra(nome=nome + " M1", inicio=(x0 + 1500, y, z0), fim=(x0 + 1500, y, z1 + 100), perfil=U_AL, papel="montante", atributos=dict(at)),
+          Barra(nome=nome + " D1", inicio=(x0 + 1500, y, z1 + 100), fim=(x0 + 3000, y, z0), perfil=U_AL, papel="diagonal", atributos=dict(at)),
+          Barra(nome=nome + " M2", inicio=(x0 + 3000, y, z0), fim=(x0 + 3000, y, z1 + 200), perfil=U_AL, papel="montante", atributos=dict(at))]
+    return bs
+
+
+def test_4_8_tesoura_para_na_face_interna_da_platibanda():
+    """usuário, 16/10 (Mercado Hermes, tesoura da ala entrando no painel oeste): "o final da tesoura nunca pode invadir a
+    platibanda, deve sempre parar na face interna". O painel em x = 2900 (U 100: a face interna em 2950); a tesoura vinha
+    até x = 2850 — 50 mm além do eixo do painel"""
+    painel = _painel(2900.0, 0.0, 9000.0)
+    tes = _tesoura_em_x(2850.0, 8850.0, 4500.0)
+    bs = painel + tes
+    R.classificar(bs)
+    R.orientar(bs)
+    inv = R.conferir(bs)
+    assert {e["nome"] for e in inv if e["regra"] == "4.8"} >= {"T BI", "T BS", "T P0", "T D0"}, inv
+    assert not [e for e in inv if e["regra"] == "4.8" and e["nome"].startswith("P ")]   # a platibanda não é acusada
+    n = R.recuar(bs)
+    assert n >= 4
+    por = _por_nome(bs)
+    face = 2950.0
+    # o montante de ponta: a face externa (a alma do U, que está do lado do painel) na face interna do painel
+    ext = R._extensao(por["T P0"], (-1.0, 0.0, 0.0))
+    assert por["T P0"].inicio[0] == pytest.approx(face + ext, abs=0.01)
+    assert por["T P0"].fim[0] == pytest.approx(face + ext, abs=0.01)
+    # os banzos e a diagonal param no eixo do montante de ponta (o recuo é pela normal: só encurtam, o z não muda)
+    for nome in ("T BI", "T BS", "T D0"):
+        assert por[nome].inicio[0] == pytest.approx(face + ext, abs=0.01), nome
+    assert por["T BS"].inicio[2] == 2000.0 and por["T BI"].fim[0] == 8850.0
+    assert por["T P0"].fim == por["T BS"].inicio and por["T P0"].inicio == por["T BI"].inicio   # os nós continuam nós
+    # nada da tesoura além da face; a platibanda intacta; rodar de novo não mexe; com o encaixe, conferir limpo
+    assert not [e for e in R.conferir(bs) if e["regra"] == "4.8"]
+    assert all(b.inicio[0] == 2900.0 and b.fim[0] == 2900.0 for b in painel)
+    assert R.recuar(bs) == 0
+    R.aplicar(bs)
+    assert R.conferir(bs) == []
+
+
+def test_4_8_so_recua_nunca_prolonga_e_ignora_quem_atravessa():
+    # a tesoura que termina 300 mm antes do painel fica como está
+    bs = _painel(2900.0, 0.0, 9000.0) + _tesoura_em_x(3250.0, 9250.0, 4500.0)
+    R.classificar(bs)
+    R.orientar(bs)
+    assert not [e for e in R.conferir(bs) if e["regra"] == "4.8"]
+    assert R.recuar(bs) == 0
+    assert _por_nome(bs)["T P0"].inicio[0] == 3250.0
+    # a treliça que atravessa a outra (a viga de transição no meio da tesoura contínua) não é "a que chega"
+    bs = _painel(6000.0, 0.0, 9000.0, nome="VT") + _tesoura_em_x(0.0, 12000.0, 4500.0)
+    R.classificar(bs)
+    R.orientar(bs)
+    assert not [e for e in R.conferir(bs) if e["regra"] == "4.8"]
+    assert R.recuar(bs) == 0
+    # dois painéis que se encontram no canto: nenhum passa pelo outro — é a meia-esquadria (3.1), não a 4.8
+    bs = _painel(0.0, 0.0, 6000.0, nome="PA") + [Barra(nome="PB " + b.nome[2:], inicio=(b.inicio[1], 0.0, b.inicio[2]),
+                                                      fim=(b.fim[1], 0.0, b.fim[2]), perfil=b.perfil, papel=b.papel,
+                                                      atributos={"origem": {"peca": "PB"}}) for b in _painel(0.0, 0.0, 6000.0)]
+    R.classificar(bs)
+    R.orientar(bs)
+    assert not [e for e in R.conferir(bs) if e["regra"] == "4.8"]
+
+
+# ------------------------------------------------------------------ 3.1: nada atravessa o banzo
+def test_3_1a_ponta_que_fura_o_banzo_e_acusada_e_aplicar_encaixa():
+    """usuário, 16/10 (Mercado Hermes, montado por script): "algumas diagonais não passaram a regra dos recortes, ainda
+    estão com a ponta furando o banzo" — as almas iam de eixo a eixo e o encaixe nunca rodou. Agora o encaixe é parte de
+    `aplicar` e a conferência acusa a ponta sem corte"""
+    from nucleo3d.geometria import malha_barra
+    bs = _tesoura_a_mao()
+    R.classificar(bs)
+    R.orientar(bs)                                     # posição certa, mas sem o encaixe (como o script deixava)
+    furos = [e for e in R.conferir(bs) if e["regra"] == "3.1"]
+    # as diagonais: a quina da ponta inclinada desce além da face (o montante reto em U entra na boca e para no nó,
+    # acima da alma do banzo: não fura); as pontas em U 150, da largura do banzo, também
+    assert {e["nome"] for e in furos} >= {"DU0", "DU1", "M0", "M6000"}, furos
+    assert "M3000" not in {e["nome"] for e in furos}
+    assert all(e["mm"] > 0 for e in furos)
+    *_resto, n_enc = R.aplicar(bs)
+    assert n_enc > 0
+    assert R.conferir(bs) == []
+    # a malha da alma não passa da face de dentro da alma do banzo (a alma em U entra na boca dele e para nela): a de
+    # baixo do banzo de baixo + a espessura, a de cima do banzo de cima − a espessura
+    por = _por_nome(bs)
+    esp = 3.0
+    alma_bi = min(q[2] for q in malha_barra(por["BI"])[0]) + esp
+    alma_bs = max(q[2] for q in malha_barra(por["BS"])[0]) - esp
+    for nome in ("M3000", "DU0", "DU1"):
+        vs, _ = malha_barra(por[nome])
+        assert min(q[2] for q in vs) >= alma_bi - 0.5, (nome, min(q[2] for q in vs), alma_bi)
+        assert max(q[2] for q in vs) <= alma_bs + 0.5, (nome, max(q[2] for q in vs), alma_bs)
+
+
+def test_3_1b_trecho_de_montante_todo_dentro_do_banzo_e_absorvido():
+    """Mercado Hermes (T.2, T.3, P.12): o montante partido em dois no nó de cima deixava um trecho de 50–74 mm todo dentro
+    do banzo — o encaixe não corta mais que 35% da peça e o trecho ficava furando"""
+    bs = _tesoura_a_mao()
+    por = _por_nome(bs)
+    m = por["M3000"]                                   # 0 → 1000: parte em 950 e 950 → 1000 (o trecho de 50 mm)
+    m.fim = (0, 3000, 950)
+    toco = Barra(nome="M3000b", inicio=(0, 3000, 950), fim=(0, 3000, 1000), perfil=U_AL, papel="montante",
+                 rotacao=m.rotacao, atributos=dict(m.atributos))
+    bs.append(toco)
+    R.aplicar(bs)
+    dentro = [e for e in R.conferir(bs) if e["regra"] == "3.1" and e["nome"] == "M3000b"]
+    assert dentro and dentro[0]["mm"] < 0               # acusado como peça toda dentro do banzo
+    absorvidos = R.juntar_trechos(bs)
+    assert absorvidos == [toco]
+    assert m.fim == (0, 3000, 1000)                     # o montante vai de banzo a banzo
+    bs.remove(toco)
+    R.aplicar(bs)
+    assert R.conferir(bs) == []
+
+
+def test_3_1b_emenda_com_outra_peca_chegando_e_no_nao_se_junta():
+    """a emenda com outra peça chegando é um nó: o montante de baixo não se estende; o trecho todo dentro do banzo só sai"""
+    bs = _tesoura_a_mao()
+    por = _por_nome(bs)
+    m = por["M3000"]
+    m.fim = (0, 3000, 950)
+    toco = Barra(nome="M3000b", inicio=(0, 3000, 950), fim=(0, 3000, 1000), perfil=U_AL, papel="montante",
+                 rotacao=m.rotacao, atributos=dict(m.atributos))
+    bs.append(toco)
+    bs.append(Barra(nome="X", inicio=(0, 3000, 950), fim=(0, 4000, 0), perfil=U_AL, papel="diagonal",
+                    atributos=dict(m.atributos)))
+    assert R.juntar_trechos(bs) == [toco]
+    assert m.fim == (0, 3000, 950)
+
+
+def test_3_1b_degrau_entre_dois_banzos_sai():
+    """o corte CC do Mercado Hermes (MT.1/MT.2): o topo do painel de ponta em z 0 e o banzo inclinado começando 50 mm
+    acima, ligados por um "montante" de 50 mm que fica todo dentro dos dois U 150 — não é peça"""
+    at = {"origem": {"peca": "DG"}}
+    U1 = "U 150×60×4,75 (FF)"
+    U2 = "U 100×50×3,00 (FF)"
+    bs = [Barra(nome="BI", inicio=(0, 0, -850), fim=(0, 1500, -850), perfil=U1, papel="banzo", atributos=dict(at)),
+          Barra(nome="TOPO", inicio=(0, 0, 0), fim=(0, 400, 0), perfil=U1, papel="banzo", atributos=dict(at)),
+          Barra(nome="BS", inicio=(0, 400, 50), fim=(0, 1500, 150), perfil=U1, papel="banzo", atributos=dict(at)),
+          Barra(nome="PONTA", inicio=(0, 0, -850), fim=(0, 0, 0), perfil=U1, papel="montante", atributos=dict(at)),
+          Barra(nome="M", inicio=(0, 400, -850), fim=(0, 400, 0), perfil=U2, papel="montante", atributos=dict(at)),
+          Barra(nome="DEGRAU", inicio=(0, 400, 0), fim=(0, 400, 50), perfil=U2, papel="montante", atributos=dict(at)),
+          Barra(nome="D", inicio=(0, 400, 50), fim=(0, 1500, -850), perfil=U2, papel="diagonal", atributos=dict(at)),
+          Barra(nome="P2", inicio=(0, 1500, -850), fim=(0, 1500, 150), perfil=U1, papel="montante", atributos=dict(at))]
+    R.aplicar(bs)
+    assert any(e["regra"] == "3.1" and e["nome"] == "DEGRAU" and e["mm"] < 0 for e in R.conferir(bs))
+    absorvidos = R.juntar_trechos(bs)
+    assert [b.nome for b in absorvidos] == ["DEGRAU"]
+    assert _por_nome(bs)["M"].fim == (0, 400, 0)          # o montante de baixo não se estende (o nó tem banzo e diagonal)
+    bs = [b for b in bs if b.nome != "DEGRAU"]
+    R.aplicar(bs)
+    assert R.conferir(bs) == []

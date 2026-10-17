@@ -31,6 +31,30 @@ v = a altura do perfil (a 2ª aba).
   2.7  A peça virada de propósito (`atributos.boca_virada`, o "virar" do painel) fica com a boca ao contrário da regra.
   2.8  Fora destas regras: tubos, barras redondas, I/W, a barra secundária "um lado só", a presilha, o banzo composto/caixa
        (`secao_dupla`, pelo croqui da legenda).
+
+3. FÁBRICA
+  3.1  Nada atravessa o banzo: a ponta da alma (montante, diagonal) para na face do banzo, cortada no plano dela
+       (meia-esquadria), com bico no montante e bissetriz entre diagonais (nucleo3d/alma_na_face.encaixar). O nó de
+       cálculo continua no eixo do banzo; o corte é da peça. Adendos de 16/10 (usuário: "algumas diagonais não passaram
+       a regra dos recortes, ainda estão com a ponta furando o banzo"):
+  3.1a O encaixe faz parte da regra: `aplicar` encaixa depois de classificar, orientar e recuar — vale para todo gerador
+       e todo script de obra, sem depender de cada um lembrar de chamar. A conferência acusa a ponta de alma que chega
+       num banzo com material além da face dele e sem o corte ("3.1", com os mm que furam).
+  3.1b O trecho de alma que cabe inteiro dentro do material do(s) banzo(s) (o corte das duas pontas soma mais que o
+       comprimento dele) não é peça. Se é um montante partido e nenhuma outra peça chega na emenda, o trecho vizinho
+       alinhado vai até o nó (UMA peça de banzo a banzo); se a emenda é um nó (o degrau de 50 mm entre o topo do painel
+       de ponta e o banzo inclinado, no corte CC do Mercado), o trecho só sai — os banzos já se tocam. `juntar_trechos`
+       devolve os trechos; quem tira a peça do modelo é quem monta. A conferência acusa ("3.1", peça dentro do banzo).
+
+4. O ENTORNO DA TESOURA
+  4.8  Encontro da tesoura com platibanda ou fechamento (a peça que chega × a peça que passa) — usuário, 16/10: "o final da
+       tesoura nunca pode invadir a platibanda, deve sempre parar na face interna". A platibanda é a peça contínua; a
+       tesoura é a interrompida. O limite da tesoura é o plano da face interna da platibanda (a face do perfil dela voltada
+       para a tesoura) deslocado da folga de montagem FOLGA_FACE: nenhuma peça da tesoura (banzos, montante de ponta,
+       diagonal de ponta) tem material além desse plano — o montante de ponta fica paralelo à face, com a sua face externa
+       na folga; os banzos e a diagonal param no eixo do montante de ponta, cortados no ângulo quando chegam inclinados.
+       A platibanda não muda. Vale para qualquer treliça que passa (treliça de cumeeira, viga de transição): a que chega para
+       na face da que passa. Só recua, nunca prolonga (a tesoura que termina antes da platibanda fica como está).
 """
 from __future__ import annotations
 
@@ -548,10 +572,243 @@ def orientar(entidades: Iterable, por_grupo: bool = True) -> int:
     return mudou
 
 
-def aplicar(entidades: Iterable, por_grupo: bool = True) -> Tuple[int, int]:
-    """o que todo gerador chama antes do encaixe: (peças reclassificadas, peças giradas)"""
+FOLGA_FACE = 0.0         # mm: a folga entre a tesoura que chega e a face interna da platibanda (4.8: "parar na face")
+
+
+def _extensao(b, direcao: Ponto) -> float:
+    """quanto o material da barra se estende do eixo dela na direção dada (pela seção girada), em mm"""
+    try:
+        from nucleo3d.geometria import resolver_perfil, secao
+        pts = secao(resolver_perfil(b.perfil))
+    except Exception:                                     # noqa: BLE001 — sem a seção: meia largura de 50
+        return 50.0
+    u, v, _w = _eixos(b)
+    return max(_dot(_add(_mul(u, x), _mul(v, y)), direcao) for x, y in pts)
+
+
+def _vertical(t) -> bool:
+    return abs(t["n"][2]) < 0.3
+
+
+def _encontros(ts: List[dict]) -> List[tuple]:
+    """(A, B, sA, limite, dentro): a treliça A chega na treliça B (planos perpendiculares, as duas em pé); sA é o lado de
+    B em que A está; `limite` é a distância do plano de B até onde A pode ir (meia largura de B + a folga); `dentro(p)`
+    diz se o ponto p está na frente de B (no retângulo dela)"""
+    out = []
+    for A in ts:
+        if not _vertical(A):
+            continue
+        for B in ts:
+            if B is A or not _vertical(B) or abs(_dot(A["n"], B["n"])) > 0.3:
+                continue
+            nB, cB = B["n"], B["centro"]
+            sA = 1.0 if _dot(_sub(A["centro"], cB), nB) >= 0 else -1.0
+            ptsB = [p for b, _p in B["barras"] for p in (b.inicio, b.fim)]
+            eB = B["eixo"]
+            lo, hi = min(_dot(p, eB) for p in ptsB) - 50.0, max(_dot(p, eB) for p in ptsB) + 50.0
+            zlo, zhi = min(p[2] for p in ptsB) - 50.0, max(p[2] for p in ptsB) + 50.0
+
+            def dentro(p, eB=eB, lo=lo, hi=hi, zlo=zlo, zhi=zhi):
+                return lo <= _dot(p, eB) <= hi and zlo <= p[2] <= zhi
+            hB = max(_extensao(b, _mul(nB, sA)) for b, _p in B["barras"])
+            limite = hB + FOLGA_FACE
+            ptsA = [p for b, _p in A["barras"] for p in (b.inicio, b.fim)]
+            # A CHEGA em B: fica inteira de um lado do plano de B (não o atravessa: a parede que cruza várias tesouras
+            # não é a peça que chega) e tem ponto na frente de B, perto da face ou já dentro
+            if min(sA * _dot(_sub(p, cB), nB) for p in ptsA) < -(hB + 5.0):
+                continue
+            if not any(dentro(p) and sA * _dot(_sub(p, cB), nB) < limite + 100.0 for p in ptsA):
+                continue
+            # B PASSA por A: estende-se para os dois lados do plano de A (no canto entre dois painéis ninguém passa:
+            # é meia-esquadria, regra 3.1)
+            gB = [_dot(_sub(p, A["centro"]), A["n"]) for p in ptsB]
+            if min(gB) > -20.0 or max(gB) < 20.0:
+                continue
+            out.append((A, B, sA, limite, dentro))
+    return out
+
+
+def invasoes(entidades: Iterable, por_grupo: bool = True) -> List[tuple]:
+    """4.8: (barra de A, B, mm além do limite) para cada peça da tesoura que chega com material além da face interna da
+    treliça que passa"""
+    ts = trelicas(list(entidades), por_grupo)
+    out = []
+    for A, B, sA, limite, dentro in _encontros(ts):
+        nB, cB = B["n"], B["centro"]
+        for b, _p in A["barras"]:
+            w = _unit(_sub(b.fim, b.inicio))
+            paralela = abs(_dot(w, nB)) < 0.3                    # o montante de ponta: corre ao longo da face
+            ext = _extensao(b, _mul(nB, -sA)) if paralela else 0.0
+            pior = 0.0
+            for p in (b.inicio, b.fim):
+                if not dentro(p):
+                    continue
+                f = sA * _dot(_sub(p, cB), nB) - ext           # a face do material mais perto de B
+                if f < limite - 0.5:
+                    pior = max(pior, limite - f)
+            if pior > 0:
+                out.append((b, B, round(pior, 1)))
+    return out
+
+
+def recuar(entidades: Iterable, por_grupo: bool = True) -> int:
+    """4.8: leva a ponta da tesoura que chega até a face interna da treliça que passa. O montante de ponta diz até onde
+    vai o eixo dele (a face externa do material na folga); cada ponto de barra além desse plano é transladado até ele
+    ao longo da normal da platibanda (o recuo puro: a ponta continua em pé, o banzo e a diagonal só encurtam) — as
+    barras que chegavam no mesmo nó continuam chegando. Só recua, nunca prolonga. Devolve quantas barras mudaram"""
     lista = list(entidades)
-    return classificar(lista, por_grupo), orientar(lista, por_grupo)
+    ts = trelicas(lista, por_grupo)
+    mudou = set()
+    for A, B, sA, limite, dentro in _encontros(ts):
+        nB, cB = B["n"], B["centro"]
+        f = lambda p: sA * _dot(_sub(p, cB), nB)                  # noqa: E731 — a distância do plano de B, para A
+        # 1. o montante de ponta (corre ao longo da face): o eixo dele fica em limite + a extensão do material
+        alvo = limite
+        for b, _p in A["barras"]:
+            w = _unit(_sub(b.fim, b.inicio))
+            if abs(_dot(w, nB)) < 0.3 and any(dentro(p) for p in (b.inicio, b.fim)):   # a ponta, mesmo mais alta que B
+                ext = _extensao(b, _mul(nB, -sA))
+                if min(f(b.inicio), f(b.fim)) - ext < limite - 0.5:
+                    alvo = max(alvo, limite + ext)
+        # 2. cada ponto de barra além do alvo vai ao plano do alvo, pela normal da platibanda
+        for b, _p in A["barras"]:
+            for k in ("inicio", "fim"):
+                p = getattr(b, k)
+                if dentro(p) and f(p) < alvo - 0.5:
+                    setattr(b, k, tuple(round(c, 3) for c in _add(p, _mul(nB, sA * (alvo - f(p))))))
+                    mudou.add(id(b))
+    return len(mudou)
+
+
+def _alma_e_banzos(entidades):
+    """[(alma, [banzos do bloco dela])] — o mesmo agrupamento do encaixe (atributos.origem.peca)"""
+    from nucleo3d import alma_na_face
+    out = []
+    for g in alma_na_face._blocos(entidades).values():
+        if g["banzo"]:
+            out.extend((a, g["banzo"]) for a in g["alma"])
+    return out
+
+
+def _face_da_ponta(alma, k, banzos, sem_limite=False):
+    """a face do banzo em que a ponta k da alma chega (o dicionário do encaixe: E, d, p, face, t…), ou None.
+    `sem_limite`: também quando o corte passa do limite do encaixe (MAX_FRACAO) — o trecho todo dentro do banzo"""
+    from nucleo3d import alma_na_face as AF
+    antigo = AF.MAX_FRACAO
+    if sem_limite:
+        AF.MAX_FRACAO = 10.0
+    try:
+        return AF._face_no_banzo(alma, k, banzos, AF.FOLGA_ENCAIXE)
+    finally:
+        AF.MAX_FRACAO = antigo
+
+
+def _corte_da_ponta(alma, k, banzos, sem_limite=False):
+    """o que a ponta k da alma recua ao longo dela até a face do banzo (negativo: a face está além do nó — a alma em U
+    entra na boca do banzo e para na alma dele), ou None se a ponta não chega em banzo"""
+    r = _face_da_ponta(alma, k, banzos, sem_limite)
+    return None if r is None else r["t"]
+
+
+def _quanto_fura(alma, r) -> float:
+    """quanto (mm, na direção da face) o material da ponta reta da alma passa da face do banzo: as quinas da seção no
+    plano da ponta comparadas com a face (a quina da diagonal inclinada desce além do nó)"""
+    from nucleo3d import alma_na_face as AF
+    pts = AF._pontos_da_secao(alma.perfil)
+    if not pts:
+        return 0.0
+    u, v, _w = base_local_barra(alma)
+    p = r["p"]
+    menor = min(x * _dot(u, p) + y * _dot(v, p) for x, y in pts)
+    return max(0.0, r["face"] - menor)
+
+
+def base_local_barra(b):
+    return _eixos(b)
+
+
+def _todo_dentro(a, banzos) -> bool:
+    """3.1b: o trecho de alma cujo material está inteiro dentro do(s) banzo(s) — o corte das duas pontas soma mais que
+    o comprimento (ou o de uma ponta só já passa dele)"""
+    L = math.dist(a.inicio, a.fim)
+    ts = [_corte_da_ponta(a, k, banzos, sem_limite=True) for k in (0, 1)]
+    if any(t is not None and t >= 0.95 * L for t in ts):
+        return True
+    return all(t is not None for t in ts) and ts[0] + ts[1] >= 0.95 * L
+
+
+def furos_no_banzo(entidades: Iterable) -> List[tuple]:
+    """3.1a/3.1b: (alma, ponta, mm) — a ponta que chega no banzo com material além da face e sem corte; mm = -1 para o
+    trecho todo dentro do banzo"""
+    out = []
+    for a, banzos in _alma_e_banzos(list(entidades)):
+        if _todo_dentro(a, banzos):
+            out.append((a, 0, -1.0))                      # 3.1b: o trecho todo dentro do banzo
+            continue
+        for k in (0, 1):
+            r = _face_da_ponta(a, k, banzos, sem_limite=True)
+            if r is None:
+                continue
+            cortes = a.cortes_inicio if k == 0 else a.cortes_fim
+            if cortes:
+                continue                                  # encaixada (o plano da face ou o recorte do usuário)
+            recorte = float((a.recorte_inicio if k == 0 else a.recorte_fim) or 0.0)
+            fura = _quanto_fura(a, r) - recorte * abs(_dot(r["d"], r["p"]))
+            if fura > 1.0:
+                out.append((a, k, round(fura, 1)))
+    return out
+
+
+def juntar_trechos(entidades: Iterable) -> List:
+    """3.1b: o trecho de montante todo dentro do banzo é absorvido pelo trecho alinhado vizinho (que passa a ir até o
+    nó), quando nenhuma outra peça chega na emenda. Devolve os trechos absorvidos — quem monta tira do modelo"""
+    lista = [e for e in entidades if hasattr(e, "inicio") and hasattr(e, "fim")]
+    absorvidos = []
+    for a, banzos in _alma_e_banzos(lista):
+        if any(a is x for x in absorvidos) or not _todo_dentro(a, banzos):
+            continue
+        if a.papel != "montante":
+            absorvidos.append(a)                          # a diagonal toda dentro do banzo: só sai
+            continue
+        w = _unit(_sub(a.fim, a.inicio))
+        for k_emenda in (0, 1):                           # a ponta da emenda: a que não está no nó do banzo
+            J = a.inicio if k_emenda == 0 else a.fim
+            no = a.fim if k_emenda == 0 else a.inicio
+            vizinhos = [o for o in lista if o is not a and o not in absorvidos
+                        and any(math.dist(J, q) < 1.0 for q in (o.inicio, o.fim))]
+            alinhados = [o for o in vizinhos if getattr(o, "papel", "") == "montante"
+                         and abs(_dot(_unit(_sub(o.fim, o.inicio)), w)) > 0.999]
+            if len(vizinhos) != 1 or len(alinhados) != 1:
+                continue                                  # chega outra peça na emenda: é um nó, não emenda
+            o = alinhados[0]
+            if math.dist(o.inicio, J) < 1.0:
+                o.inicio = tuple(no)
+            else:
+                o.fim = tuple(no)
+            absorvidos.append(a)
+            break
+        else:
+            absorvidos.append(a)                          # a emenda é um nó (o degrau entre dois banzos): só sai
+    return absorvidos
+
+
+def aplicar(entidades: Iterable, por_grupo: bool = True) -> Tuple[int, int, int, int]:
+    """o que todo gerador e todo script de obra chamam: (peças reclassificadas, peças giradas, peças recuadas da
+    platibanda, pontas encaixadas no banzo). Depois do recuo as peças são orientadas de novo (a direção mudou um pouco e
+    o triedro pode ter trocado o vetor auxiliar); o encaixe (3.1a) vem por último, porque depende do giro e da posição"""
+    from nucleo3d import alma_na_face
+    lista = list(entidades)
+    n_class = classificar(lista, por_grupo)
+    n_giro = orientar(lista, por_grupo)
+    n_rec = recuar(lista, por_grupo)
+    if n_rec:
+        n_giro += orientar(lista, por_grupo)
+    antes = {id(b): (repr(getattr(b, "cortes_inicio", None)), repr(getattr(b, "cortes_fim", None)))
+             for b in lista if hasattr(b, "cortes_inicio")}
+    alma_na_face.encaixar(lista)
+    n_enc = sum(1 for b in lista if hasattr(b, "cortes_inicio")
+                and antes.get(id(b)) != (repr(b.cortes_inicio), repr(b.cortes_fim)))
+    return n_class, n_giro, n_rec, n_enc
 
 
 def conferir(entidades: Iterable, tol_graus: float = 5.0, por_grupo: bool = True) -> List[dict]:
@@ -588,6 +845,12 @@ def conferir(entidades: Iterable, tol_graus: float = 5.0, por_grupo: bool = True
             if c < cos_tol:
                 acusa(b, papel, "2.3" if forma(b.perfil) == "L" else _regra(b, papel, t),
                       round(math.degrees(math.acos(max(-1.0, min(1.0, c)))), 1))
+    for a, k, mm in furos_no_banzo(list(entidades)):
+        out.append({"id": a.id, "nome": a.nome, "perfil": a.perfil, "papel": _papel(a) or a.papel, "regra": "3.1",
+                    "erro_graus": 0.0, "mm": mm, "ponto": [round(x) for x in (a.inicio if k == 0 else a.fim)]})
+    for b, _B, mm in invasoes(list(entidades), por_grupo):
+        out.append({"id": b.id, "nome": b.nome, "perfil": b.perfil, "papel": _papel(b), "regra": "4.8",
+                    "erro_graus": 0.0, "mm": mm, "ponto": [round(x) for x in b.inicio]})
     return out
 
 

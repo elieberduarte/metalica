@@ -201,7 +201,9 @@ REGRA_EM_TEXTO = {"1.2": "peça no contorno de cima é banzo superior (papel e p
                   "2.2": "banzo abre para dentro da treliça (o de cima para baixo, o de baixo para cima)",
                   "2.3": "peça da alma abre para o meio do vão; diagonal nunca para cima",
                   "2.4": "cantoneira simples: aba de pé do lado fixo, aba deitada na direção da boca",
-                  "2.5": "cantoneira em par: uma em cada aba do banzo, abas de pé para o centro"}
+                  "2.5": "cantoneira em par: uma em cada aba do banzo, abas de pé para o centro",
+                  "4.8": "a tesoura para na face interna da platibanda/fechamento, nunca a invade",
+                  "3.1": "a ponta da alma para na face do banzo, cortada (encaixe de fábrica)"}
 
 
 def posicao_na_trelica(barras) -> List[dict]:
@@ -211,7 +213,14 @@ def posicao_na_trelica(barras) -> List[dict]:
     from nucleo3d import regras_trelica
     out = []
     for v in regras_trelica.conferir(barras):
-        como = "fora da" if v["regra"].startswith("1.") else "girada %.0f° da" % v["erro_graus"]
+        if v["regra"] == "3.1" and v.get("mm", 0) < 0:
+            como = "toda dentro do banzo (juntar com o trecho vizinho) —"
+        elif v["regra"] == "3.1":
+            como = "furando %.0f mm o banzo —" % v["mm"]
+        elif v["regra"] == "4.8":
+            como = "%.0f mm além da" % v["mm"]
+        else:
+            como = "fora da" if v["regra"].startswith("1.") else "girada %.0f° da" % v["erro_graus"]
         out.append({"tipo": "posicao", "ids": [v["id"]], "ponto": v["ponto"],
                     "texto": "%s (%s, %s) %s regra %s: %s" % (v["nome"] or v["perfil"], v["perfil"], v["papel"], como,
                                                              v["regra"], REGRA_EM_TEXTO.get(v["regra"], ""))})
