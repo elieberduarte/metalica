@@ -43,6 +43,33 @@ export class MetodosApoios {
     this._mostrarApoios(r);
   }
 
+  /** As peças das treliças fora das regras de montagem (posicao_trelica): o modelo inteiro passa pelas regras no servidor
+   *  (nucleo3d/regras_trelica.corrigir_modelo) — sem remontar, com as edições do 3D mantidas — numa entrada de desfazer,
+   *  e o Verificar apoios roda de novo (17/10: os modelos antigos acusavam até serem remontados). */
+  async corrigirPelasRegras() {
+    this.dica('Corrigindo pelas regras das tesouras…');
+    let r;
+    try {
+      const resp = await fetch('/api/modelo/regras-trelica', { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ documento: this.documento.paraJSON() }) });
+      r = await resp.json();
+      if (!resp.ok || r.erro) throw new Error(r.erro || resp.statusText);
+    } catch (e) { this.aviso(`Corrigir pelas regras: ${e.message}`, 'erro', 0); return; }
+    const s = r.resumo || {};
+    if (!Object.keys(r.alterar || {}).length && !(r.remover || []).length) {
+      this.aviso('Corrigir pelas regras: o modelo já está dentro das regras das tesouras.', 'info');
+      return;
+    }
+    await this._numerarAsNovas(r);                    // a peça que mudou de perfil (ponta, topo do painel) é conferida
+    const cmd = this._comandoDaLigacao(r, 'Corrigir pelas regras das tesouras');
+    if (cmd) this.executar(cmd);
+    this.aviso(`Corrigir pelas regras: ${s.pecas || 0} peça(s) — ${s.giradas || 0} girada(s), ${s.reclassificadas || 0} reclassificada(s), ` +
+      `${s.recuadas || 0} recuada(s) da platibanda, ${s.encaixadas || 0} encaixada(s) no banzo` +
+      (s.trechos_tirados ? `, ${s.trechos_tirados} trecho(s) dentro do banzo tirado(s)` : '') + '. Ctrl+Z desfaz.' +
+      ((r.avisos || []).length ? ' ' + r.avisos.join('; ') + '.' : ''), (r.avisos || []).length ? 'atencao' : 'info', 15000);
+    await this.verificarApoios();
+  }
+
   _fecharApoios() {
     if (this._painelApoios) { this._painelApoios.remove(); this._painelApoios = null; }
   }
@@ -86,6 +113,11 @@ export class MetodosApoios {
       el('div', { class: 'painel-apoios-titulo' },
         el('strong', { texto: 'Verificar apoios' }),
         el('button', { type: 'button', texto: 'Conferir de novo', onclick: () => this.verificarApoios() }),
+        achados.some(a => a.regra === 'posicao_trelica')
+          ? el('button', { type: 'button', class: 'corrigir-regras', texto: 'Corrigir pelas regras',
+                           title: 'Gira, encaixa e recua as peças das treliças pelas regras de montagem das tesouras, no modelo como está (sem remontar). Ctrl+Z desfaz.',
+                           onclick: () => this.corrigirPelasRegras() })
+          : null,
         el('button', { type: 'button', texto: '×', title: 'Fechar', onclick: () => this._fecharApoios() })),
       corpo);
     (this.el.palco || document.body).append(this._painelApoios);

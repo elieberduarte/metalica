@@ -868,4 +868,49 @@ def conferir(entidades: Iterable, tol_graus: float = 5.0, por_grupo: bool = True
     return out
 
 
+def corrigir_modelo(doc) -> dict:
+    """o modelo inteiro pelas regras, sem remontar (17/10: os modelos antigos — CD Bom Dia, Posto, PRATI, Docas — acusavam
+    no Verificar apoios até serem remontados, e remontar perde as edições feitas no 3D): aplicar, o trecho de alma dentro
+    do banzo sai (3.1b) e aplicar de novo. O documento recebido muda (é a cópia do editor); devolve {"novas": [],
+    "alterar": {id: campos}, "remover": [ids], "resumo", "avisos"} para o editor aplicar com desfazer. A peça que mudou de
+    perfil (1.2/1.4) fica com o peso novo e a marca a conferir (o Numerar decide)"""
+    from nucleo3d.modelo import Barra
+    barras = [e for e in doc.entidades.values() if isinstance(e, Barra)]
+    antes = {e.id: e.dict() for e in barras}
+    n1 = aplicar(list(doc.entidades.values()))
+    tirados = juntar_trechos(list(doc.entidades.values()))
+    for a in tirados:
+        doc.entidades.pop(a.id, None)
+    n2 = aplicar(list(doc.entidades.values())) if tirados else (0, 0, 0, 0)
+    alterar = {}
+    for e in barras:
+        if e.id not in doc.entidades:
+            continue
+        d0, d1 = antes[e.id], e.dict()
+        if d1.get("perfil") != d0.get("perfil"):
+            a = d1.get("atributos") or {}
+            if isinstance(a.get("marcas"), dict):
+                a["marcas"]["perfil"] = d1["perfil"]
+                if a["marcas"].get("posicao"):
+                    a["marca_a_conferir"] = True
+            if "peso_kg" in a:
+                try:
+                    from nucleo3d.geometria import peso_barra
+                    a["peso_kg"] = round(peso_barra(e), 2)
+                except Exception:                         # noqa: BLE001
+                    pass
+            a["trocas_de_perfil"] = list(a.get("trocas_de_perfil") or []) + [
+                {"de": d0.get("perfil"), "para": d1.get("perfil"), "como": "regras das tesouras"}]
+            d1["atributos"] = a
+        mud = {k: v for k, v in d1.items() if k != "id" and d0.get(k) != v}
+        if mud:
+            alterar[e.id] = mud
+    fora = conferir(list(doc.entidades.values()))
+    soma = [x + y for x, y in zip(n1, n2)]
+    return {"novas": [], "alterar": alterar, "remover": [a.id for a in tirados],
+            "resumo": {"reclassificadas": soma[0], "giradas": soma[1], "recuadas": soma[2], "encaixadas": soma[3],
+                       "trechos_tirados": len(tirados), "pecas": len(alterar), "fora_depois": len(fora)},
+            "avisos": ["%d peça(s) continuam fora da regra (veja o Verificar apoios)" % len(fora)] if fora else []}
+
+
 TEXTO_REGRAS = __doc__

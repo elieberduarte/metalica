@@ -59,6 +59,7 @@ Rotas da API:
     POST /api/modelo/ligacao/remover {documento, ligacao}      apaga a ligação e devolve as barras
     POST /api/modelo/modelar {documento, ferramenta, ids, parametros, eixos, cruzamentos}   terças, treliça, contravento, pilares, viga, longarinas, correntes, mão-francesa
     POST /api/modelo/trocar-grupos {documento, trocas?}        os grupos por perfil / a troca de perfis por grupo (estudos)
+    POST /api/modelo/regras-trelica {documento}                 o modelo pelas regras das tesouras, sem remontar
     POST /api/modelo/conferencia {documento, ids, quais}       colisão, execução das ligações e produção
     GET  /api/detalhes-3d · POST /api/detalhes-3d/<salvar|aplicar|excluir>   o detalhe do usuário (modelo de ligação)
     GET  /api/projetos/<slug>/esforcos     esforços da estrutura inteira (o último cálculo); POST calcula (tela /esforcos)
@@ -4799,6 +4800,14 @@ def trocar_perfis_por_grupo(corpo: dict) -> dict:
     return troca_por_grupo.aplicar(doc, list(corpo.get("trocas") or []))
 
 
+def corrigir_pelas_regras(corpo: dict) -> dict:
+    """POST /api/modelo/regras-trelica {documento}: o modelo inteiro pelas regras de montagem das tesouras, sem remontar
+    (nucleo3d/regras_trelica.corrigir_modelo — os modelos antigos acusavam no Verificar apoios, 17/10). Devolve as mudanças
+    para o editor aplicar com desfazer; não grava nada."""
+    from nucleo3d import regras_trelica
+    return regras_trelica.corrigir_modelo(_documento_de(corpo))
+
+
 def conferir_modelo(corpo: dict) -> dict:
     """POST /api/modelo/conferencia {documento, ids, quais}: colisão pela forma, execução das ligações (borda, passo,
     parafuso sem furo, furo sem parafuso, espaço da chave) e produção (sem marca, a conferir, fora da lista, sem peça
@@ -5738,6 +5747,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(modelar_estrutura(corpo))
             if rota == "/api/modelo/trocar-grupos":
                 return self._json(trocar_perfis_por_grupo(corpo))
+            if rota == "/api/modelo/regras-trelica":
+                return self._json(corrigir_pelas_regras(corpo))
             if rota == "/api/modelo/conferencia":
                 return self._json(conferir_modelo(corpo))
             if rota == "/api/lento":
