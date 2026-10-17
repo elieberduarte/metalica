@@ -874,8 +874,54 @@ function desenharPrevia() {
       (arq.materiais || {}).xlsx ? el('a', { class: 'botao-m', href: arq.materiais.xlsx.url, download: '', texto: 'Excel',
         title: 'Baixar o resumo de materiais em planilha: resumo, perfis e barras, chapas, parafusos e chumbadores, lista de materiais e conjuntos' }) : null,
       a.html ? el('button', { type: 'button', class: 'botao-m', texto: 'Imprimir', onclick: () => { try { frame.contentWindow.print(); } catch (e) { window.open(a.html.url, '_blank'); } } }) : null,
+      // a foto do resumo da obra pela vista que o usuário escolher no 3D (14/10): abre o modelo ao lado, gira, "Tirar a foto"
+      DOC_ATUAL === 'obra' ? el('button', { type: 'button', class: 'botao-m', texto: 'Escolher a vista da foto',
+        title: 'Abre o modelo 3D ao lado: gire até a posição que preferir e clique em "Tirar a foto com esta vista" — os resumos são gerados de novo com as fotos nessa direção',
+        onclick: escolherVistaDaFoto }) : null,
       el('button', { type: 'button', class: 'botao-m', texto: 'Abrir pasta', onclick: abrirPasta })),
     el('div', { class: 'doc-lado' }, frame));
+}
+
+/* ------------------------------------------------------------------- a vista da foto do resumo da obra (14/10)
+ * O 3D ao lado do documento; o usuário gira o modelo e tira a foto: a direção da câmera (do observador para o modelo) vai
+ * para o projeto (POST resumos/foto) e os resumos são gerados de novo — o editor sem janela enquadra o modelo sozinho
+ * nessa direção, por isso vale a direção, não o zoom. */
+function escolherVistaDaFoto() {
+  abrirLado3D('', 0);
+  if (!LADO3D) return;
+  const barra = LADO3D.caixa.querySelector('.lado3d-barra');
+  if (!barra || barra.querySelector('.btn-foto')) return;
+  const escolhida = (RESUMOS && RESUMOS.dados && RESUMOS.dados._foto_capa) || null;
+  LADO3D.info.textContent = escolhida ? 'vista da foto escolhida por você — gire e tire de novo, ou volte ao automático' : 'gire até a posição que preferir e tire a foto';
+  const tirar = el('button', { type: 'button', class: 'botao-m principal btn-foto', texto: 'Tirar a foto com esta vista',
+    title: 'Grava esta direção de câmera e gera os resumos de novo com as fotos vistas daqui' });
+  tirar.addEventListener('click', async () => {
+    let cam = null;
+    try { cam = LADO3D.frame.contentWindow.visor.lerCamera(); } catch (e) { cam = null; }
+    if (!cam) { aviso('O modelo 3D ainda não abriu ao lado; espere um instante e tente de novo.', true); return; }
+    const d = [cam.posicao[0] - cam.alvo[0], cam.posicao[1] - cam.alvo[1], cam.posicao[2] - cam.alvo[2]];
+    tirar.disabled = true;
+    try {
+      await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/resumos/foto`, { dir: d });
+      if (RESUMOS && RESUMOS.dados) RESUMOS.dados._foto_capa = { dir: d };
+      LADO3D.info.textContent = 'vista gravada: gerando os resumos com as fotos vistas daqui…';
+      const form = document.querySelector('#resumos-corpo form');
+      if (form) form.requestSubmit();
+    } catch (e) {
+      aviso(`Não foi possível gravar a vista da foto: ${e.message}`, true);
+    } finally { tirar.disabled = false; }
+  });
+  const voltar = el('button', { type: 'button', class: 'botao-m btn-foto', texto: 'Automático',
+    title: 'Esquece a vista escolhida: a foto volta a ser a aérea do lado em que o aço está' });
+  voltar.addEventListener('click', async () => {
+    try {
+      await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/resumos/foto`, { apagar: true });
+      if (RESUMOS && RESUMOS.dados) RESUMOS.dados._foto_capa = null;
+      LADO3D.info.textContent = 'vista automática (aérea do lado do aço) na próxima geração dos resumos';
+    } catch (e) { aviso(`Não foi possível apagar a vista: ${e.message}`, true); }
+  });
+  const sep = barra.querySelector('.sep');
+  if (sep) sep.after(tirar, voltar); else barra.append(tirar, voltar);
 }
 
 /* ------------------------------------------------------------------- troca do perfil de compra (06/10)

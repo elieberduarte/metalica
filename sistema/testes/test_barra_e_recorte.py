@@ -119,4 +119,16 @@ def test_dobrado_em_6m_terca_e_peca_longa_sob_medida():
     assert p["barras"] == 3 and p["barras_sem_aproveitamento"] == 3     # 2 por barra (3 mm de corte)
     assert abs(p["kg_compra"] - 4.53 * (3 * 6 + 14 * 7.253)) < 0.01
     assert abs(p["kg_sem_aproveitamento"] - 4.53 * (3 * 6 + 14 * 7.253)) < 0.01
-    assert "+14 sob medida" in rz._html_compra({"compra": {"perfis": [p]}})
+    # o "+14 sob medida" embaixo das barras saiu da compra a pedido do usuário (14/10): as peças sob medida contam no
+    # peso e no plano de corte, não na célula das barras
+    assert "sob medida" not in rz._html_compra({"compra": {"perfis": [p]}})
+
+
+def test_hardbolt_sai_como_hardbolt_e_nao_como_quimico():
+    """O Hardbolt (chumbador mecânico) saía como "Chumbador químico HIT-V" na compra e entrava na conta dos cartuchos de
+    químico (PRATI, 14/10: "vamos trabalhar apenas com hardbolt nessa estrutura")."""
+    from saida import resumos as rz
+    assert rz._eh_hardbolt("Chumbador Hardbolt 12x150") and rz._eh_hardbolt("x", {"hardbolt": {"d": 8}})
+    assert not rz._eh_hardbolt("CHUMBADOR QUÍMICO HIT-V 12.7x280")
+    nome, desc = rz.descricao_hardbolt(12.0, "150")
+    assert nome == "Chumbador Hardbolt M12 x 150" and "HIT" not in desc and "químico" in desc and "sem porca" in desc

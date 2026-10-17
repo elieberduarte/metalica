@@ -46,6 +46,7 @@ NOME_DE_ACO = r"aco\b|steel|a36|a572|astm|chapa|tela|perfurad|gradil|grade|guard
 #: não são peça de produção nem gradil — a "TP25 0,5 mm (Isoeste Metálica)" caía em "aço fora das peças" pelo "Metálica"
 #: do nome e saía chapa por chapa em "Gradis, pisos e outras peças de aço" no resumo de materiais (PRATI, 14/10)
 NOME_DE_TELHA = r"\btelha\b|\btp\s*-?\d{2}\b|isopainel|isofachada|termoacustic|sanduiche"
+OBS_TELHA = "área pelas chapas do modelo; peso pela massa por m² do fabricante, quando o modelo a traz"
 OBS_PELA_MALHA = ("peso pela malha do IFC: conferir as seções com o projeto ou o fornecedor (a chapa perfurada vem sem os furos; "
                   "barra maciça no lugar de tubo pesa várias vezes mais — o corrimão do gradil da Passarela, 06/10)")
 
@@ -133,6 +134,22 @@ def eh_telha_ou_painel(ent) -> bool:
     return bool(re.search(NOME_DE_TELHA, _sem_acento("%s %s" % (getattr(ent, "material", "") or "", getattr(ent, "nome", "") or ""))))
 
 
+def _area_da_telha(ent) -> float:
+    """A área (m²) da chapa de telha ou do painel: a que o modelo traz (area_m2; largura × altura ou comprimento), senão
+    as duas maiores extensões da caixa."""
+    atr = getattr(ent, "atributos", None) or {}
+    if atr.get("area_m2") is not None:
+        return float(atr["area_m2"])
+    larg, alt = atr.get("largura"), atr.get("altura") or atr.get("comprimento")
+    if larg and alt:
+        return float(larg) * float(alt) * 1e-6
+    vs = getattr(ent, "vertices", None) or []
+    if not vs:
+        return 0.0
+    ext = sorted((max(v[i] for v in vs) - min(v[i] for v in vs) for i in range(3)), reverse=True)
+    return ext[0] * ext[1] * 1e-6
+
+
 def item_fora_das_pecas(ent) -> Tuple[str, float]:
     """(categoria, massa específica) do sólido que não é peça de produção nem acessório (o guarda-corpo, o piso, a
     laje): antes ele sumia calado do levantamento — o gradil, o piso de chapa perfurada e a argamassa da Passarela
@@ -140,6 +157,8 @@ def item_fora_das_pecas(ent) -> Tuple[str, float]:
     nao_aco = material_nao_aco(ent)
     if nao_aco is not None:
         return nao_aco
+    if eh_telha_ou_painel(ent):
+        return "telha", 0.0
     texto = _sem_acento("%s %s" % (getattr(ent, "material", "") or "", getattr(ent, "nome", "") or ""))
     if re.search(NOME_DE_ACO, texto):
         return "aço fora das peças", 7850.0
@@ -185,15 +204,31 @@ def resumo_fora_do_aco(itens: Sequence[tuple]) -> List[dict]:
         if categoria == "terreno":
             continue
         nome = _ID_REVIT.sub("", str(getattr(ent, "nome", "") or "?").strip()) or "?"
+        atr = getattr(ent, "atributos", None) or {}
+        if categoria == "telha":
+            # por tipo, não chapa por chapa ("TP25 0,5 mm (Isoeste Metálica) — fila 09 …, chapa 12" → o tipo)
+            nome = str(atr.get("telha") or nome.split(" — ")[0]).strip() or nome
         mat = str(getattr(ent, "material", "") or "")
         g = grupos.setdefault((nome, mat), {"nome": nome, "material": mat, "categoria": categoria,
                                             "massa_especifica": rho, "quantidade": 0, "volume_m3": 0.0,
                                             "peso_kg": 0.0, "area_m2": 0.0, "comprimento_m": 0.0, "abertas": 0,
-                                            "tipo_ifc": str((ent.atributos or {}).get("tipo_ifc") or ""),
-                                            "observacao": OBS_PELA_MALHA if categoria == "aço fora das peças" else ""})
+                                            "tipo_ifc": str(atr.get("tipo_ifc") or ""),
+                                            "observacao": OBS_PELA_MALHA if categoria == "aço fora das peças" else
+                                            (OBS_TELHA if categoria == "telha" else "")})
         vs = getattr(ent, "vertices", None) or []
         fs = getattr(ent, "faces", None) or []
         g["quantidade"] += 1
+        if categoria == "telha":
+            # a área do modelo (a malha trapezoidal não dá a área da chapa) e o peso pela massa por m² do fabricante
+            a_ = _area_da_telha(ent)
+            g["area_m2"] += a_
+            g["peso_kg"] += a_ * float(atr.get("massa_m2") or 0.0)
+            # o comprimento da chapa (no sentido das ondas), para os metros lineares de telha do resumo
+            c_ = atr.get("altura") or atr.get("comprimento") or atr.get("altura_max")
+            if not c_ and vs:
+                c_ = max(max(v[i] for v in vs) - min(v[i] for v in vs) for i in range(3))
+            g["comprimento_m"] += float(c_ or 0.0) * 1e-3
+            continue
         maior, esp = _extensoes(vs) if categoria == "aço fora das peças" else (0.0, 0.0)
         g["comprimento_m"] += maior * 1e-3              # o do guarda-corpo, do piso; não o do conjunto de vergalhões
         if malha_aberta(fs):

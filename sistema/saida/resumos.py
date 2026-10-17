@@ -176,10 +176,28 @@ def fracao_polegada(t: float) -> str:
     return ('%d.%d/%d"' % (inteiro, resto, den)) if inteiro else '%d/%d"' % (resto, den)
 
 
+def _bitolas_finas() -> List[float]:
+    """As bitolas de chapa fina dos fornecedores (abaixo de 1,5 mm: #26 0,45 … #18 1,25), para a funilaria."""
+    ts = set()
+    try:
+        from nucleo import catalogo
+        ts |= {float(b.get("t_mm") or 0.0) for b in catalogo.bitolas()}
+        ts |= {float(i.dados.get("t") or 0.0) for i in catalogo.itens("chapa")}     # as chapas finas do catálogo (0,45 … 1,20)
+    except Exception:                                       # noqa: BLE001 — sem catálogo, as bitolas de sempre
+        ts |= set(BITOLAS_FINAS)
+    return sorted(t for t in ts if 0.0 < t < 1.5)
+
+
+#: A bitola (#) das chapas finas galvanizadas, que a tabela de dobras não traz: #26 0,45 … #18 1,20 (14/10).
+BITOLAS_FINAS = {0.45: 26, 0.6: 24, 0.75: 22, 0.9: 20, 1.2: 18}
+
+
 def chapa_comercial(t: float) -> float:
     """A chapa que se compra para a espessura do modelo: a mesma, ou a próxima acima (06/10: 4,30 → #7 4,50;
-    10,30 → 1/2"; a peça não sai mais fina que o projeto). Acima da maior, fica a do modelo."""
-    for tc in _espessuras_comerciais():
+    10,30 → 1/2"; a peça não sai mais fina que o projeto). Acima da maior, fica a do modelo. A chapa fina (o rufo de
+    0,50 mm) compra na bitola fina (#26, #24…), não na #16 de 1,5 mm — o rufo saía com 3× o peso (PRATI, 14/10)."""
+    candidatas = (_bitolas_finas() if t < 1.5 - 0.06 else []) + _espessuras_comerciais()
+    for tc in candidatas:
         if tc >= t - 0.06:
             return tc
     return t
@@ -202,15 +220,17 @@ def _chapas_por_rotulo(chapas) -> List[dict]:
         j["m2"] += float(g.get("area_m2") or 0.0)
         j["modelo"].add(round(t, 2))
     for j in juntas.values():
-        b = bitola_de(j["t"])
+        b = bitola_de(j["t"]) or next((n for t_, n in BITOLAS_FINAS.items() if abs(t_ - j["t"]) < 0.03), None)
         j["bitola"] = "#%d" % b if b else ""
         j["mm"] = "%smm" % _n(j["t"], 2)
         j["polegada"] = _polegada_da_chapa(j["t"]) or ""
         j["rotulo"] = " - ".join(x for x in (j["bitola"], j["mm"], j["polegada"]) if x)
-        outras = sorted(x for x in j.pop("modelo") if abs(x - j["t"]) >= 0.06)
-        # a espessura do modelo com a polegada dela quando bate (5,60mm ≈ 7/32", que não está no catálogo)
+        todas = sorted(j.pop("modelo"))
+        # a espessura do modelo sempre escrita (o usuário estranhou a coluna vazia, 14/10), com a polegada dela quando bate
+        # (5,60mm ≈ 7/32", que não está no catálogo); `diferente` marca a linha em que a do modelo não é a comercial
         j["modelo"] = ", ".join("%smm%s" % (_n(x, 2), (" (≈%s)" % fracao_polegada(x)) if fracao_polegada(x) else "")
-                                for x in outras)
+                                for x in todas)
+        j["diferente"] = any(abs(x - j["t"]) >= 0.06 for x in todas)
         j["kg_compra"] = j["m2"] * j["t"] * 7.85
     return sorted(juntas.values(), key=lambda j: (j["t"], j["material"]))
 
@@ -269,6 +289,20 @@ def cartuchos_quimico(ml: float) -> dict:
 
 def _eh_chumbador(nome: str) -> bool:
     return bool(re.match(r"\s*(CHUMBADOR|PARABOLT|HARDBOLT)", str(nome or ""), re.I))
+
+
+def _eh_hardbolt(nome: str, atributos: Optional[dict] = None) -> bool:
+    """O chumbador mecânico Hardbolt (a cabeça com a arruela flangeada, sem químico): saía como "Chumbador químico HIT-V" e
+    entrava na conta dos cartuchos de químico (PRATI, 14/10: "vamos trabalhar apenas com hardbolt nessa estrutura")."""
+    return bool(re.search(r"HARDBOLT", str(nome or ""), re.I)) or bool((atributos or {}).get("hardbolt"))
+
+
+def descricao_hardbolt(d: float, L) -> Tuple[str, str]:
+    """O Hardbolt pelo diâmetro e comprimento (mm): ("Chumbador Hardbolt M12 x 150", "Chumbador mecânico Hardbolt M12 x
+    150 mm (Hard), cabeça sextavada com arruela flangeada — sem porca, arruela solta nem químico")."""
+    return ("Chumbador Hardbolt M%g x %s" % (float(d), L),
+            "Chumbador mecânico Hardbolt M%g x %s mm (Hard), cabeça sextavada com arruela flangeada — sem porca, arruela "
+            "solta nem químico" % (float(d), L))
 
 
 def descricao_chumbador(d: float, L) -> Tuple[str, str]:
@@ -708,6 +742,13 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
     peso_aco = sum(kg for f, kg in peso_fam.items() if f not in FORA_DO_ACO)
     peso_telhas = telhas["kg_total"]
     ml_telhas = telhas["ml_total"]
+    m2_telhas = telhas["m2_total"]
+    # as telhas e os painéis lançados no modelo (fora das posições de produção) também nos totais (PRATI, 14/10: "faltou as
+    # telhas no resumo" — o quadro saía 0,00 ml com a tabela de telhas e painéis cheia)
+    for t_ in _telhas_lancadas(lista):
+        ml_telhas += t_["ml"]
+        m2_telhas += t_["m2"]
+        peso_telhas += t_["kg"]
     peso_funilaria = peso_fam.get("funilaria", 0.0)
     for g in grupos_peso:
         g["pct"] = 100.0 * g["kg"] / peso_aco if peso_aco else 0.0
@@ -740,7 +781,7 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
                     "peso_telhas": peso_telhas, "peso_funilaria": peso_funilaria,
                     "total": peso_aco + peso_telhas + peso_funilaria, "parafusos": n_parafusos,
                     "inclinacao": inclinacao, "kg_m2": (peso_aco / area_m2) if area_m2 else None,
-                    "m2_telhas": telhas["m2_total"], "m2_pintura": pintura["total_m2"]},
+                    "m2_telhas": m2_telhas, "m2_pintura": pintura["total_m2"]},
         "dimensoes": {"eixos": " ".join(t["eixo"] for t in tes_inst), "comprimento_total": (tes_inst[-1]["pos_g"] - tes_inst[0]["pos_g"]) if tes_inst else 0.0,
                       "trechos": [{k: v for k, v in tr.items() if k not in ("inicio", "fim", "tesouras")} for tr in trechos],
                       "projecao": projecao_total, "area_m2": area_m2, "nivel_apoio": nivel_apoio, "apoio_por_chapa": apoio_por_chapa,
@@ -750,6 +791,73 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
         "perfis_kg": peso_aco - chaparia_total["kg"] if chaparia_total["kg"] else perfis_kg,
         "avisos": list(lev.get("avisos") or []),
     }
+
+
+def _no_poligono(xs, ys, poly) -> "object":
+    """Os pontos (xs, ys) dentro do polígono `poly` (raio de paridade, vetorizado)."""
+    import numpy as np
+    dentro = np.zeros(len(xs), dtype=bool)
+    n = len(poly)
+    for i in range(n):
+        x1, y1 = poly[i]
+        x2, y2 = poly[(i + 1) % n]
+        cruza = ((y1 > ys) != (y2 > ys))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            xc = x1 + (ys - y1) * (x2 - x1) / ((y2 - y1) if y2 != y1 else 1e-12)
+        dentro ^= cruza & (xs < xc)
+    return dentro
+
+
+def _atravessa_parametrica(e, cc, eixo, alcance: float, folga: float = 1.0) -> Optional[bool]:
+    """O eixo do fixador (de cc − alcance a cc + alcance) passa por dentro da peça paramétrica `e` (o proxy da Barra ou da
+    Chapa)? Na barra, os pontos do eixo no sistema dela (base_local, como a malha) dentro da seção e do comprimento; na chapa,
+    dentro da espessura e do contorno (o furo não conta: o fixador passa nele). None: a peça não é paramétrica."""
+    import numpy as np
+    from nucleo3d.modelo import Barra, Chapa
+    p = getattr(e, "parametrica", None)
+    if not isinstance(p, (Barra, Chapa)):
+        return None
+    passo = 0.5
+    ts = np.arange(-alcance, alcance + passo, passo)
+    pts = np.asarray(cc, dtype=float)[None, :] + ts[:, None] * np.asarray(eixo, dtype=float)[None, :]
+    try:
+        if isinstance(p, Barra):
+            from nucleo3d.geometria import base_local, secao
+            ini, fim = np.asarray(p.inicio, dtype=float), np.asarray(p.fim, dtype=float)
+            L = float(np.linalg.norm(fim - ini))
+            if L < 1.0:
+                return False
+            d = (fim - ini) / L
+            u, v, w = (np.asarray(x, dtype=float) for x in base_local(tuple(d), float(p.rotacao or 0.0)))
+            rel = pts - ini
+            z = rel @ w
+            ok = (z >= -folga) & (z <= L + folga)
+            if not ok.any():
+                return False
+            poly = [(float(a), float(b)) for a, b in secao(p.perfil)]
+            x, y = rel[ok] @ u, rel[ok] @ v
+            xs_, ys_ = [q[0] for q in poly], [q[1] for q in poly]
+            caixa = (x >= min(xs_) - folga) & (x <= max(xs_) + folga) & (y >= min(ys_) - folga) & (y <= max(ys_) + folga)
+            if not caixa.any():
+                return False
+            return bool(_no_poligono(x[caixa], y[caixa], poly).any())
+        ex, ey = np.asarray(p.eixo_x, dtype=float), np.asarray(p.eixo_y, dtype=float)
+        ex, ey = ex / np.linalg.norm(ex), ey / np.linalg.norm(ey)
+        nz = np.cross(ex, ey)
+        nz = nz / np.linalg.norm(nz)
+        t = float(p.espessura or 0.0)
+        o = np.asarray(p.origem, dtype=float) - (nz * t / 2.0 if p.centrada else 0.0)
+        rel = pts - o
+        z = rel @ nz
+        ok = (z >= -folga) & (z <= t + folga)
+        if not ok.any():
+            return False
+        poly = [(float(a), float(b)) for a, b in (p.contorno or [])]
+        if len(poly) < 3:
+            return False
+        return bool(_no_poligono(rel[ok] @ ex, rel[ok] @ ey, poly).any())
+    except Exception:                                       # noqa: BLE001 — perfil fora do catálogo: fica o teste dos vértices
+        return None
 
 
 def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_conj, conj_info, recebido: bool = False,
@@ -823,8 +931,11 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
             d = float(m.group(1).replace(",", "."))
             # o chumbador químico (barra roscada HIT-V embutida no concreto, 09/10) sai com o nome dele, não como parafuso
             mc = re.search(r"\((A\d{3}[^)]*)\)", f.nome or "")
-            chave = ("CHUMBADOR %g x %s" % (d, m.group(2))) if _eh_chumbador(f.nome) else (
-                "M%g x %s" % (d, m.group(2)) + (" (%s)" % mc.group(1).strip() if mc else ""))
+            if _eh_hardbolt(f.nome, (f.atributos or {})):
+                chave = "HARDBOLT %g x %s" % (d, m.group(2))       # o mecânico: não é o químico HIT-V (PRATI, 14/10)
+            else:
+                chave = ("CHUMBADOR %g x %s" % (d, m.group(2))) if _eh_chumbador(f.nome) else (
+                    "M%g x %s" % (d, m.group(2)) + (" (%s)" % mc.group(1).strip() if mc else ""))
             eh_parafuso = True
         else:
             chave, d, _arruela = _fixador_solto(ext)
@@ -845,6 +956,28 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
             lat2 = (D[mask] ** 2).sum(axis=1) - t[mask] ** 2
             if (lat2 <= raio * raio).any():
                 atravessadas.append(e)
+        if not atravessadas:
+            # a barra extrudada só tem vértices nas pontas: o parafuso no meio da terça (ou da cantoneira do suporte) não
+            # achava vértice perto do eixo e saía "sem peça reconhecida em volta" (PRATI, 14/10) — o eixo contra a peça
+            # paramétrica de verdade (seção da barra, espessura e contorno da chapa)
+            # as candidatas das células do segmento inteiro (a do centro só via a peça quando ela caía na mesma célula de
+            # 500 mm que o meio do chumbador — que fica dentro do concreto)
+            alc = meio + 40.0
+            pontas_ = [tuple(cc[k] + s_ * alc * eixo[k] for k in range(3)) for s_ in (-1.0, 1.0)]
+            lo = [int(math.floor(min(q[k] for q in pontas_) / cel)) for k in range(3)]
+            hi = [int(math.floor(max(q[k] for q in pontas_) / cel)) for k in range(3)]
+            vistos = set()
+            for i in range(lo[0], hi[0] + 1):
+                for j in range(lo[1], hi[1] + 1):
+                    for k in range(lo[2], hi[2] + 1):
+                        for e, cx in grade.get((i, j, k), []):
+                            if e.id in vistos:
+                                continue
+                            vistos.add(e.id)
+                            if not all(min(q[a] for q in pontas_) <= cx[a + 3] + 25 and max(q[a] for q in pontas_) >= cx[a] - 25 for a in range(3)):
+                                continue
+                            if _atravessa_parametrica(e, cc, eixo, alc):
+                                atravessadas.append(e)
         fams = sorted({familia_peca(e) for e in atravessadas}, key=lambda x: x[0])
         if not fams:
             local = ("sem peça reconhecida em volta", ())
@@ -882,7 +1015,9 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
             lr["pecas"].add(fam[1])
     saida = []
     for chave, r in contagem.items():
-        if r["parafuso"] and chave.startswith("CHUMBADOR"):
+        if r["parafuso"] and chave.startswith("HARDBOLT"):
+            nome, desc = descricao_hardbolt(r["d"], chave.rsplit(" ", 1)[-1])
+        elif r["parafuso"] and chave.startswith("CHUMBADOR"):
             nome, desc = descricao_chumbador(r["d"], chave.rsplit(" ", 1)[-1])
         elif r["parafuso"]:
             mc = re.search(r"\((A\d{3}[^)]*)\)", chave)
@@ -894,6 +1029,7 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
         if r.get("sem_arruela") and r["sem_arruela"] >= r["qtd"]:
             desc = desc.replace(" + porca e arruela", " + porca (a arruela é chapa do projeto)")
         saida.append({"nome": nome, "descricao": desc, "qtd": r["qtd"], "parafuso": r["parafuso"], "d": r["d"],
+                      "sem_porca": chave.startswith("HARDBOLT"),
                       "sem_arruela": int(r.get("sem_arruela") or 0), "embutimento": r.get("embutimento"), "quimico": r.get("quimico"),
                       "locais": [{"local": k, "qtd": v["qtd"], "pecas": sorted(v["pecas"], key=_ordem_natural), "ids": v.get("ids") or []}
                                  for k, v in locais]})
@@ -1148,7 +1284,7 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
     for c in _chapas_por_rotulo(lista.get("chapas")):
         m2 = c["m2"]
         chapas.append({"rotulo": c["rotulo"], "bitola": c["bitola"], "mm": c["mm"], "polegada": c["polegada"], "modelo": c["modelo"],
-                       "material": c["material"], "m2": m2, "kg": c["kg_compra"], "pecas": c["pecas"],
+                       "diferente": bool(c.get("diferente")), "material": c["material"], "m2": m2, "kg": c["kg_compra"], "pecas": c["pecas"],
                        "chapas": int(math.ceil(m2 * (1.0 + perda / 100.0) / area_chapa - 1e-9)) if m2 > 0 else 0})
     # cada parafuso vem com 1 porca e 1 arruela ("+ porca e arruela"); as porcas e arruelas soltas (pontas roscadas,
     # chumbadores) somam na bitola delas
@@ -1158,6 +1294,8 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
             # os ids dos parafusos do item: o "ver no 3D ↗" da linha (14/10, "onde vão esses 6 parafusos?")
             pf.append({"nome": it["nome"], "descricao": it["descricao"], "qtd": it["qtd"],
                        "ids": [i for lc in it.get("locais") or [] for i in lc.get("ids") or []]})
+            if it.get("sem_porca"):
+                continue                                     # o Hardbolt: a cabeça e a arruela flangeada são dele, sem químico
             porcas[_bitola_pol(it.get("d"))] += it["qtd"]
             # a arruela que já é chapa do projeto (a CH2 do chumbador da CH1) não se compra solta
             if it["qtd"] - int(it.get("sem_arruela") or 0):
@@ -1177,24 +1315,24 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
         r["m2"] += it["m2"]
         r["kg"] += it["kg"]
         r["pecas"] += it["qtd"]
-    return {"perfis": perfis, "chapas": chapas, "outros_aco": _outros_aco(lista), "perda_chapas": perda, "chapa_comercial": CHAPA_COMERCIAL,
+    return {"perfis": perfis, "chapas": chapas, "outros_aco": _outros_aco(lista), "telhas_lancadas": _telhas_lancadas(lista),
+            "perda_chapas": perda, "chapa_comercial": CHAPA_COMERCIAL,
             "parafusos": pf, "porcas": sorted(porcas.items(), key=lambda kv: ordem_b(kv[0])),
             "arruelas": sorted(arruelas.items(), key=lambda kv: ordem_b(kv[0])), "telhas": list(telhas_p.values()),
             "quimicos": [dict(v, nome=k, **cartuchos_quimico(v["ml"])) for k, v in quimico.items()]}
 
 
 def _barras_e_sob_medida(barras: int, sob: int, nome: str = "barras") -> str:
-    """"40 barras" ou "7 barras + 14 peças sob medida"."""
-    t = "%d %s" % (barras, nome)
-    return t + (" + %d peças sob medida" % sob if sob else "")
+    """"340 barras": as barras comerciais mais as peças compradas no comprimento delas (sob medida), num número só — o
+    usuário não quer o "sob medida" escrito na compra (14/10) nem a célula vazia ("por que não tem o número de barras?")."""
+    return "%d %s" % (int(barras or 0) + int(sob or 0), nome)
 
 
 def _celula_barras(barras: int, p: dict) -> str:
-    """A célula das barras no quadro de compra: o número, e embaixo as peças sob medida, quando há (13/10)."""
-    sob = int(p.get("sob_medida_pecas") or 0)
-    if not sob:
-        return str(barras or "")
-    return "%s<br><span class=\"cinza\">+%d sob medida</span>" % (barras or "—", sob)
+    """A célula das barras no quadro de compra: as barras comerciais mais as peças compradas no comprimento delas — a terça
+    toda sob medida mostrava "—" e o usuário perguntou pelo número (14/10)."""
+    n = int(barras or 0) + int(p.get("sob_medida_pecas") or 0)
+    return str(n) if n else ""
 
 
 def _mesmo_nome(perfil: str) -> str:
@@ -1222,6 +1360,23 @@ def _barras_sem_aproveitamento(posicoes: List[dict], barra: float, sob_medida: s
             por_barra = max(1, int((barra + PERDA_CORTE) // (L + PERDA_CORTE)))
             n += int(math.ceil(q / por_barra - 1e-9))
     return n
+
+
+def _telhas_lancadas(lista: dict) -> List[dict]:
+    """As telhas e os painéis de fechamento lançados no modelo (sólidos, fora das posições de produção), por tipo: peças,
+    m² e kg (pela massa por m² do fabricante, quando o modelo a traz). Antes iam chapa por chapa para "Gradis, pisos e
+    outras peças de aço" (PRATI, 14/10)."""
+    g: Dict[str, dict] = collections.OrderedDict()
+    for it in lista.get("pre_moldados") or []:
+        if it.get("categoria") != "telha":
+            continue
+        nome = str(it.get("nome") or "?")
+        r = g.setdefault(nome, {"item": nome, "pecas": 0, "ml": 0.0, "m2": 0.0, "kg": 0.0})
+        r["pecas"] += int(it.get("quantidade") or 0)
+        r["ml"] += float(it.get("comprimento_m") or 0.0)
+        r["m2"] += float(it.get("area_m2") or 0.0)
+        r["kg"] += float(it.get("peso_kg") or 0.0)
+    return sorted(g.values(), key=lambda r: r["item"])
 
 
 def _outros_aco(lista: dict) -> List[dict]:
@@ -1887,7 +2042,7 @@ def html_resumo_materiais(R: dict, paginado: bool = False) -> str:
     h = "<div class=\"fam\"><h3>Chaparia<small>todas as chapas</small></h3><table>"
     for c in ch:
         mat = (" (%s)" % c["material"]) if c.get("material") and len({x.get("material") for x in ch}) > 1 else ""
-        mat += (" — modelo %s" % c["modelo"]) if c.get("modelo") else ""
+        mat += (" — modelo %s" % c["modelo"]) if c.get("diferente") else ""
         h += "<tr><td>%s</td><td class=\"kg\">%s kg</td><td class=\"m\">%d pç / %s m²</td><td class=\"q\"></td></tr>" % (_esc(c["rotulo"] + mat), _n(c["kg"], 2), c["pecas"], _n(c["m2"], 2))
     h += "<tr><td class=\"item\">Total chaparia</td><td class=\"kg item\">%s kg</td><td class=\"m item\">%d pç</td><td class=\"q\"></td></tr></table></div>" % (_n(R["chaparia_total"]["kg"], 2), R["chaparia_total"]["pecas"])
     blocos.append(h)
@@ -1954,7 +2109,7 @@ def _html_compra(R: dict) -> str:
     if C.get("perfis"):
         h.append("<h3>Perfis e barras</h3><p class=\"explica\">Um por tipo de perfil, cruzado com o catálogo; barras comerciais pelo plano "
                  "de corte da lista; W em 12 m; tubos, redondos e laminados em polegada em 6 m (a peça maior sai com emenda); "
-                 "dobrados em 6 m; terças e dobrados maiores que 6 m sob medida (no comprimento da peça, sem sobra).</p>")
+                 "dobrados em 6 m; terças e dobrados maiores que 6 m no comprimento da peça, sem sobra.</p>")
 
         def nome_perfil(p):
             # o nome do catálogo em cima, o do IFC embaixo (06/10); fora do catálogo, o do IFC e de onde veio o kg/m
@@ -2008,6 +2163,18 @@ def _html_compra(R: dict) -> str:
                      % (_n(tot_sem - tot_com, 1), _n(100.0 * (tot_sem - tot_com) / tot_sem, 1)))
         if any(_classe_compra(p) for p in C["perfis"]):
             h.append(_LEGENDA_COMPRA)
+    if C.get("telhas_lancadas"):
+        T_ = C["telhas_lancadas"]
+        h.append("<h3>Telhas e painéis de fechamento</h3><p class=\"explica\">As telhas e os painéis lançados no modelo "
+                 "(fechamentos e cobertura), por tipo: a área das chapas do modelo e o peso pela massa por m² do fabricante, "
+                 "quando ela está no modelo.</p>")
+        h.append(_tabela(["Item", ("Peças", "r"), ("ml", "r"), ("m²", "r"), ("kg", "r"), "Pedido"],
+                         [[(x["item"], "b"), (x["pecas"], "r"), (_n(x.get("ml") or 0.0, 2), "r"), (_n(x["m2"], 2), "r"),
+                           (_n(x["kg"], 1) if x["kg"] else "—", "r"), ""] for x in T_],
+                         rodape=[("TOTAL", "b"), (sum(x["pecas"] for x in T_), "r"), (_n(sum(x.get("ml") or 0.0 for x in T_), 2), "r"),
+                                 (_n(sum(x["m2"] for x in T_), 2), "r"),
+                                 (_n(sum(x["kg"] for x in T_), 1) if any(x["kg"] for x in T_) else "—", "r"), ""],
+                         larguras=["40%", "9%", "12%", "12%", "12%", "15%"]))
     if C.get("outros_aco"):
         h.append("<h3>Gradis, pisos e outras peças de aço</h3><p class=\"explica\">O que o IFC traz fora das peças de perfil e chapa; "
                  "o comprimento é a maior extensão de cada peça, somada.</p>")
@@ -2025,15 +2192,15 @@ def _html_compra(R: dict) -> str:
                  % (_n(cl / 1000.0, 2), _n(ca / 1000.0, 2), _n(C["perda_chapas"], 0)))
         h.append(_tabela(["Bitola", "Espessura", "Polegada", "No modelo", "Material", ("Peças", "r"), ("m²", "r"), ("kg", "r"),
                           ("Chapas", "r"), "Pedido"],
-                         [[(c.get("bitola") or "—", "b"), (c.get("mm") or c["rotulo"], "b"), (c.get("polegada") or "—", "b"),
+                         [[(c.get("bitola") or c.get("polegada") or "—", "b"), (c.get("mm") or c["rotulo"], "b"), (c.get("polegada") or "—", "b"),
                            c.get("modelo") or "", c.get("material") or "", (c["pecas"], "r"), (_n(c["m2"], 2), "r"), (_n(c["kg"], 1), "r"),
                            (c["chapas"], "r"), ""] for c in C["chapas"]],
                          rodape=[("TOTAL", "b"), "", "", "", "", (sum(c["pecas"] for c in C["chapas"]), "r"),
                                  (_n(sum(c["m2"] for c in C["chapas"]), 2), "r"), (_n(sum(c["kg"] for c in C["chapas"]), 1), "r"),
                                  (sum(c["chapas"] for c in C["chapas"]), "r"), ""],
                          larguras=["7%", "10%", "8%", "17%", "14%", "7%", "9%", "10%", "8%", "10%"],
-                         classes_linhas=["compra-similar" if c.get("modelo") else "" for c in C["chapas"]]))
-        if any(c.get("modelo") for c in C["chapas"]):
+                         classes_linhas=["compra-similar" if c.get("diferente") else "" for c in C["chapas"]]))
+        if any(c.get("diferente") for c in C["chapas"]):
             h.append("<p class=\"legenda-compra\"><span style=\"background:#fff4d6\">&nbsp;</span>a chapa do modelo não é "
                      "comercial: compra na espessura padrão acima</p>")
     if C.get("parafusos") or C.get("porcas") or C.get("arruelas"):

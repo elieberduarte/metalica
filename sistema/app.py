@@ -104,6 +104,7 @@ import re
 import shutil
 import sys
 import threading
+import math
 import time
 import traceback
 import webbrowser
@@ -2687,11 +2688,36 @@ def quebrar_cantos_projeto(s: str, corpo: dict) -> dict:
 CAMPOS_RESUMO = ("revisao", "descricao", "telha", "eixos", "notas_tesouras", "data", "perda_chapas")
 
 
+def foto_capa_projeto(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/resumos/foto {dir: [x, y, z]} grava a direção da câmera das fotos do resumo da obra (a vista que
+    o usuário escolheu no 3D: "movimentar o desenho e, na posição que achar melhor, tirar a foto", 14/10); {apagar: true}
+    volta ao automático (a aérea do lado do aço). A foto em si sai quando os resumos são gerados de novo."""
+    g = _gerente()
+    if corpo.get("apagar"):
+        g._atualizar(s, foto_capa=None)
+        return {"foto_capa": None}
+    d = corpo.get("dir")
+    try:
+        d = [float(c) for c in d]
+        n = math.sqrt(sum(c * c for c in d))
+        if len(d) != 3 or not n or not all(math.isfinite(c) for c in d):
+            raise ValueError
+        d = [round(c / n, 4) for c in d]
+    except (TypeError, ValueError):
+        raise ErroDeDados("direção da câmera inválida: informe [x, y, z] do observador para o modelo.")
+    if d[2] < -0.05:
+        raise ErroDeDados("a câmera ficaria abaixo do chão: escolha uma vista de cima ou de lado.")
+    reg = {"dir": d, "quando": time.strftime("%Y-%m-%d %H:%M:%S")}
+    g._atualizar(s, foto_capa=reg)
+    return {"foto_capa": reg}
+
+
 def dados_dos_resumos(s: str) -> dict:
     """GET /api/projetos/<s>/resumos: o que o IFC não traz (revisão, descrição do projeto,
     descrição comercial da telha, letras dos eixos, notas das tesouras) e as sugestões."""
     p = _gerente().ler(s)
     dados = dict(p.get("dados_resumo") or {})
+    dados["_foto_capa"] = p.get("foto_capa") or None          # a vista escolhida das fotos (a tela mostra e deixa apagar)
     origem = str(p.get("origem_ifc") or "")
     m = re.search(r"\.(R\d+)", origem, re.I)
     sug = {"revisao": (m.group(1).upper() if m else ""), "descricao": "Projeto de fabricação da cobertura metálica",
@@ -2920,6 +2946,14 @@ def gerar_resumos_projeto(s: str, corpo: dict, porta: Optional[int] = None) -> d
             R.setdefault("avisos", []).append("dossiê sem os desenhos: %s" % exc)
         if porta and R["dossie"]:
             _progresso(s, "fotografando o modelo 3D…")
+            # a direção das fotos: a vista que o usuário escolheu no 3D ao lado do resumo (foto_capa) ou, sem ela, a aérea
+            # do lado em que o aço está (14/10)
+            try:
+                escolhida = (g.ler(s).get("foto_capa") or {}).get("dir")
+                R["dossie"]["dir_foto"] = escolhida or dossie.direcao_pelo_aco(doc, lev["pecas"])
+                R["dossie"]["foto_escolhida"] = bool(escolhida)
+            except Exception:                             # noqa: BLE001 — sem a direção, o ângulo de sempre
+                pass
             try:
                 R["dossie"]["fotos"] = dossie.fotografar(porta, s, os.path.join(pasta, "dossie"), R["dossie"],
                                                          tem_telhas=bool(R["numeros"].get("ml_telhas")),
@@ -5576,6 +5610,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(gravar_perfil_compra(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "materiais" and partes[2] == "emenda":
                     return self._json(gravar_emenda_perfil(partes[0], corpo))
+                if len(partes) == 3 and partes[1] == "resumos" and partes[2] == "foto":
+                    return self._json(foto_capa_projeto(partes[0], corpo if isinstance(corpo, dict) else {}))
                 if len(partes) == 2 and partes[1] == "resumos":
                     return self._json(gerar_resumos_projeto(partes[0], corpo, self.server.server_address[1]))
                 if len(partes) == 2 and partes[1] == "conferencias":

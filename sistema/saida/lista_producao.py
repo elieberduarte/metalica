@@ -1221,7 +1221,7 @@ def corpo_html(lista: dict) -> str:
                                 (_n(g["comprimento_m"], 1) if g.get("comprimento_m") else "—", "r"), (_n(g["volume_m3"], 3), "r"),
                                 (_n(g["area_m2"], 1) if g.get("area_m2") else "—", "r"),
                                 (_n(g["massa_especifica"]) if g["massa_especifica"] else "—", "r"),
-                                (_n(g["peso_kg"], 1) if g["massa_especifica"] else "—", "r b")] for g in pm],
+                                (_n(g["peso_kg"], 1) if g["massa_especifica"] or g.get("peso_kg") else "—", "r b")] for g in pm],
                               rodape=[("TOTAL", "l b"), ("", "l"), ("", "l"), (_n(sum(g["quantidade"] for g in pm)), "c b"), ("", "r"),
                                       (_n(sum(g["volume_m3"] for g in pm), 3), "r b"), ("", "r"), ("", "r"),
                                       (_n(sum(g["peso_kg"] for g in pm), 1), "r b")],

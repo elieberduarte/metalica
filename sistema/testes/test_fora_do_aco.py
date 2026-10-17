@@ -172,3 +172,36 @@ def test_material_do_tqs_pela_propriedade():
     aco.atributos["propriedades"] = {"Pset": {"Material": "ASTM A572"}}
     assert fa.material_nao_aco(aco) is None
     assert fa.material_nao_aco(_solido("V2", "IfcBeam", v, f, "Vigas")) is None     # sem propriedade: fica no aço
+
+
+def test_telha_lancada_sai_por_tipo_com_area_e_peso_fora_dos_gradis():
+    """A telha e o isopainel lançados no modelo (IfcCovering) não são "aço fora das peças": a "TP25 0,5 mm (Isoeste
+    Metálica)" caía nos gradis pelo "Metálica" do nome e saía chapa por chapa no resumo de materiais (PRATI, 14/10)."""
+    from saida import resumos
+    doc = _modelo()
+    for i in range(3):
+        v, f = _caixa(1020.0, 25.5, 2000.0, dx=i * 1020.0)
+        s = _solido("TP25 0,5 mm (Isoeste Metálica) — fila 09 (face interna), chapa %d" % (i + 1), "IfcCovering", v, f, "Telha")
+        s.atributos.update(telha="TP25 0,5 mm (Isoeste Metálica)", area_m2=2.04, massa_m2=4.62)
+        doc.add(s)
+    v, f = _caixa(1040.0, 50.0, 10000.0, dy=500.0)
+    p = _solido("Isofachada PIR MG 2F50 (Kingspan Isoeste) — fila 17, painel 1", "IfcCovering", v, f, "Telha")
+    p.atributos.update(largura=1040.0, altura=10000.0)
+    doc.add(p)
+    v, f = _caixa(3000.0, 20.0, 1200.0, dy=9000.0)
+    doc.add(_solido("Guarda-corpo:Gradil 190:6777980", "IfcRailing", v, f, "Aço ASTM A36"))
+    lev = det.levantar(doc)
+    fora = {g["nome"]: g for g in lev["fora_do_aco"]}
+    tp = fora["TP25 0,5 mm (Isoeste Metálica)"]
+    assert tp["categoria"] == "telha" and tp["quantidade"] == 3
+    assert abs(tp["area_m2"] - 6.1) < 0.05 and abs(tp["peso_kg"] - 6.12 * 4.62) < 0.5
+    iso = fora["Isofachada PIR MG 2F50 (Kingspan Isoeste)"]
+    assert iso["categoria"] == "telha" and abs(iso["area_m2"] - 10.4) < 0.05 and iso["peso_kg"] == 0
+    lista = {"pre_moldados": lev["fora_do_aco"]}
+    outros = resumos._outros_aco(lista)
+    assert len(outros) == 1 and all("TP25" not in x["item"] and "Isofachada" not in x["item"] for x in outros)
+    tl = {x["item"]: x for x in resumos._telhas_lancadas(lista)}
+    assert abs(tl["TP25 0,5 mm (Isoeste Metálica)"]["ml"] - 6.0) < 0.05          # 3 chapas de 2,0 m (a maior extensão)
+    assert abs(tl["Isofachada PIR MG 2F50 (Kingspan Isoeste)"]["ml"] - 10.0) < 0.05  # a altura do painel
+    assert tl["TP25 0,5 mm (Isoeste Metálica)"]["pecas"] == 3 and set(tl) == {"TP25 0,5 mm (Isoeste Metálica)",
+                                                                             "Isofachada PIR MG 2F50 (Kingspan Isoeste)"}

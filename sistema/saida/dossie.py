@@ -808,6 +808,41 @@ def _nivel(z: float) -> str:
 
 #: Ângulo das fotos do dossiê (diagnostico.js, ANGULOS).
 ANGULO = "aerea_frente"
+#: A direção da câmera "aérea de frente" (diagnostico.js): observador em +x, −y, acima.
+DIR_AEREA = (0.95, -1.25, 0.8)
+
+
+def direcao_pelo_aco(doc, pecas) -> List[float]:
+    """A direção da câmera aérea do lado em que o aço está: o centro das peças de aço contra o centro do modelo inteiro
+    (o pré-moldado junto) decide o sinal de x e de y — no PRATI a "aérea de frente" (+x, −y) mostrava o pré-moldado e o aço
+    ficava atrás (usuário, 14/10: "inverter a visão dessa foto para dar mais destaque à estrutura metálica"). Sem diferença
+    clara (menos de 5 % da extensão), fica o lado de sempre."""
+    def centro(vs):
+        # o centro da caixa, não a média dos vértices: os milhares de parafusos e furos do aço puxariam a média para ele
+        return [(min(v[i] for v in vs) + max(v[i] for v in vs)) / 2.0 for i in range(2)]
+    vs_aco = [v for e in pecas for v in (getattr(e, "vertices", None) or [])]
+    vs_tudo = []
+    for e in doc.entidades.values():
+        if getattr(e, "vertices", None):
+            vs_tudo.extend(e.vertices)
+        elif hasattr(e, "inicio") and hasattr(e, "fim"):
+            vs_tudo.extend([tuple(e.inicio), tuple(e.fim)])
+    if len(vs_aco) < 4 or len(vs_tudo) < 4:
+        return list(DIR_AEREA)
+    ca, ct = centro(vs_aco), centro(vs_tudo)
+    ext = [max(v[i] for v in vs_tudo) - min(v[i] for v in vs_tudo) for i in range(2)]
+    sx = DIR_AEREA[0] if abs(ca[0] - ct[0]) < 0.05 * max(ext[0], 1.0) else abs(DIR_AEREA[0]) * (1.0 if ca[0] > ct[0] else -1.0)
+    sy = DIR_AEREA[1] if abs(ca[1] - ct[1]) < 0.05 * max(ext[1], 1.0) else abs(DIR_AEREA[1]) * (1.0 if ca[1] > ct[1] else -1.0)
+    return [round(sx, 3), round(sy, 3), DIR_AEREA[2]]
+
+
+def _angulo(X: dict) -> dict:
+    """O pedido de ângulo das fotos: a direção escolhida pelo usuário ou calculada pelo lado do aço (`X["dir_foto"]`), senão
+    o ângulo de sempre."""
+    d = X.get("dir_foto")
+    if isinstance(d, (list, tuple)) and len(d) == 3:
+        return {"dir": [float(c) for c in d]}
+    return {"angulo": ANGULO}
 
 
 def pedidos_de_fotos(X: dict, tem_telhas: bool = False) -> List[dict]:
@@ -816,7 +851,7 @@ def pedidos_de_fotos(X: dict, tem_telhas: bool = False) -> List[dict]:
     daquele pavimento em cinza (o prédio inteiro deixava o tipo do tamanho de um risco); e cada pavimento sozinho,
     com o concreto em volta e cada peça na cor do tipo."""
     # a capa mostra a estrutura (com as telhas, o galpão virava uma laje cinza)
-    pedidos = [{"nome": "capa", "angulo": ANGULO}]
+    pedidos = [dict({"nome": "capa"}, **_angulo(X))]
     pavs = X.get("pavimentos") or []
     papel_do_id = {}
     for b in X.get("estrutura") or []:
@@ -838,11 +873,11 @@ def pedidos_de_fotos(X: dict, tem_telhas: bool = False) -> List[dict]:
             ids = [i for i in b["ids"] if i in andar]
             if not ids:
                 continue
-            pedidos.append({"nome": "tipo-" + b["chave"], "angulo": ANGULO, "destaque": ids, "cor": b["cor"],
-                            "contexto": sorted(andar) + list(p.get("contexto") or []), "enquadrar": sorted(andar),
-                            "_onde": p["nome"]})
+            pedidos.append(dict({"nome": "tipo-" + b["chave"], "destaque": ids, "cor": b["cor"],
+                                 "contexto": sorted(andar) + list(p.get("contexto") or []), "enquadrar": sorted(andar),
+                                 "_onde": p["nome"]}, **_angulo(X)))
         else:
-            pedidos.append({"nome": "tipo-" + b["chave"], "angulo": ANGULO, "destaque": list(b["ids"]), "cor": b["cor"]})
+            pedidos.append(dict({"nome": "tipo-" + b["chave"], "destaque": list(b["ids"]), "cor": b["cor"]}, **_angulo(X)))
     for k, p in enumerate(pavs):
         ids = list(p.get("ids_andar") or [])
         if not ids:
@@ -851,8 +886,8 @@ def pedidos_de_fotos(X: dict, tem_telhas: bool = False) -> List[dict]:
         for i in ids:
             b = papel_do_id.get(i)
             cores[b["cor"] if b else "#6c757d"].append(i)
-        pedidos.append({"nome": "pav-%d" % k, "angulo": ANGULO, "destaque": ids, "cores": dict(cores),
-                        "contexto": list(p.get("contexto") or []), "enquadrar": "destaque"})
+        pedidos.append(dict({"nome": "pav-%d" % k, "destaque": ids, "cores": dict(cores),
+                             "contexto": list(p.get("contexto") or []), "enquadrar": "destaque"}, **_angulo(X)))
     return pedidos
 
 
