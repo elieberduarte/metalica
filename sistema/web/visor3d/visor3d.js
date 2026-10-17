@@ -25,7 +25,7 @@ const TEMA_CLARO = { fundo: '#f4f6fa', linha: '#10203c', alfa: 0.12 };
 /** No claro, as cores das camadas puxadas para o branco: o azul-marinho das vigas pesava no fundo claro (06/10). */
 const CLAREAR_NO_CLARO = 0.45;
 /** A marca das peças escolhidas (como o editor, web/editor3d/nucleo/cena.js): altura na tela, limites. */
-const FRACAO_ANEL = 0.07, FRACAO_SETA = 0.06, MAIS_PECAS_COM_ANEL = 400, MAIS_ANEIS = 40;
+const FRACAO_ANEL = 0.07, FRACAO_SETA = 0.06, MAIS_PECAS_COM_ANEL = 20000, MAIS_ANEIS = 40;
 /** Peças a menos disto (mm) dividem o anel; a barra comprida e fina (tirante, contravento) ganha uma seta. */
 const JUNTAR_ANEIS = 600, BARRA_FINA = 8;
 let _texturaDoAnel = null, _texturaDaSeta = null;
@@ -517,14 +517,40 @@ export class Visor3D {
       if (d[0] > 1500 && d[0] > BARRA_FINA * Math.max(d[1], 1)) setas.push(p);
       else aneis.push(p);
     }
-    // junta as coladas, em cadeia; o anel fica na peça do grupo mais perto do meio dele
+    // junta as coladas, em cadeia; o anel fica na peça do grupo mais perto do meio dele. Peças demais (os 192 chumbadores
+    // de uma pendência, 14/10: "não circula as peças, não consegui encontrar"): junta por distância cada vez maior até
+    // caberem MAIS_ANEIS anéis — cada anel marca uma região; antes ficava sem marca nenhuma
+    const juntar = (pontos, dist) => {
+      // por célula de grade (do tamanho da distância): rápido com milhares de peças; vizinhas na mesma célula viram um grupo
+      const celulas = new Map();
+      for (const p of pontos) {
+        const k = `${Math.floor(p[0] / dist)},${Math.floor(p[1] / dist)},${Math.floor(p[2] / dist)}`;
+        if (!celulas.has(k)) celulas.set(k, []);
+        celulas.get(k).push(p);
+      }
+      return [...celulas.values()];
+    };
     let grupos = [];
-    for (const p of aneis) {
-      const junto = grupos.filter(g => g.some(o => Math.hypot(o[0] - p[0], o[1] - p[1], o[2] - p[2]) <= JUNTAR_ANEIS));
-      grupos = grupos.filter(g => !junto.includes(g));
-      grupos.push([p, ...junto.flat()]);
+    if (aneis.length <= 400) {
+      for (const p of aneis) {
+        const junto = grupos.filter(g => g.some(o => Math.hypot(o[0] - p[0], o[1] - p[1], o[2] - p[2]) <= JUNTAR_ANEIS));
+        grupos = grupos.filter(g => !junto.includes(g));
+        grupos.push([p, ...junto.flat()]);
+      }
+    } else {
+      grupos = juntar(aneis, JUNTAR_ANEIS);
     }
-    if (grupos.length + setas.length > MAIS_ANEIS) { this.pedirQuadro(); return; }
+    let dist = JUNTAR_ANEIS;
+    while (grupos.length + Math.min(setas.length, MAIS_ANEIS / 2) > MAIS_ANEIS && dist < 1e7) {
+      dist *= 2;
+      grupos = juntar(aneis, dist);
+    }
+    if (setas.length > MAIS_ANEIS / 2) {
+      // setas demais: viram anéis, juntadas com as outras
+      grupos = juntar(aneis.concat(setas), dist);
+      while (grupos.length > MAIS_ANEIS && dist < 1e7) { dist *= 2; grupos = juntar(aneis.concat(setas), dist); }
+      setas.length = 0;
+    }
     const naPeca = (g) => {
       const m = [0, 1, 2].map(k => g.reduce((t, o) => t + o[k], 0) / g.length);
       return g.reduce((a, o) => (Math.hypot(o[0] - m[0], o[1] - m[1], o[2] - m[2]) < Math.hypot(a[0] - m[0], a[1] - m[1], a[2] - m[2]) ? o : a));
@@ -901,6 +927,9 @@ export class Visor3D {
       raio.setFromCamera(ndc, cam);
       return raio.ray.intersectPlane(plano, new THREE.Vector3());
     };
+    // o ponto agarrado é o do cursor, na profundidade achada: no vazio o último recurso é o alvo da câmera, no meio da
+    // tela, e agarrá-lo fazia o modelo pular para baixo do mouse no primeiro movimento (16/10, verif_camera_modelos F)
+    const ancora = noPlano(x0, y0) || profundo;
     const antes = this.controles.enablePan;
     this.controles.enablePan = false;
     let mexeu = false;

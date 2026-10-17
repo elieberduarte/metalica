@@ -21,7 +21,8 @@ function textura(c) {
   return t;
 }
 
-/** O balão do eixo: a bolinha com o nome. */
+/** O balão do eixo: a bolinha com o nome. Escondido atrás das peças (usuário, 13/10: "essas bolotas dos eixos ficam aparecendo
+ *  o tempo todo mesmo por trás de outros elementos"): teste de profundidade ligado, sem escrever profundidade. */
 function balao(nome, cores) {
   const c = document.createElement('canvas');
   c.width = c.height = 128;
@@ -30,7 +31,7 @@ function balao(nome, cores) {
   g.beginPath(); g.arc(64, 64, 56, 0, Math.PI * 2); g.fill(); g.stroke();
   g.fillStyle = cores.traco; g.font = `bold ${nome.length > 2 ? 44 : 60}px Arial, sans-serif`;
   g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(nome, 64, 68);
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: textura(c), depthTest: false, transparent: true }));
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: textura(c), depthTest: true, depthWrite: false, transparent: true }));
   s.renderOrder = 10;
   return semToque(s);
 }
@@ -52,7 +53,7 @@ function cabecaDoNivel(nome, z, cores) {
   g.beginPath(); g.moveTo(0, 60); g.lineTo(w, 60); g.stroke();
   g.font = 'bold 44px Arial, sans-serif'; g.textBaseline = 'alphabetic'; g.fillText(nome, 84, 50);
   g.font = '40px Arial, sans-serif'; g.fillText(cota, 84, 104);
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: textura(c), depthTest: false, transparent: true }));
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: textura(c), depthTest: true, depthWrite: false, transparent: true }));
   s.center.set(0.02, 60 / 128);
   s.renderOrder = 10;
   s.userData.proporcao = w / 128;

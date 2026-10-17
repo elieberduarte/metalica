@@ -69,12 +69,12 @@ def _resumo_do_modelo(caminho: str) -> str:
 
 def _assinatura(pasta_projeto: str) -> str:
     """O conteúdo do modelo e as versões do formato: mudou um, o 3D leve guardado está velho."""
-    from saida.pacote_celular import VERSAO_3D, VERSAO_FICHAS
+    from saida.pacote_celular import VERSAO_3D, VERSAO_FICHAS, GERACAO_MALHAS
     try:
         resumo = _resumo_do_modelo(os.path.join(pasta_projeto, "modelo.json"))
     except OSError:
         return ""
-    return hashlib.sha1(("%s:%d:%d" % (resumo, VERSAO_3D, VERSAO_FICHAS)).encode()).hexdigest()
+    return hashlib.sha1(("%s:%d:%d:%d" % (resumo, VERSAO_3D, VERSAO_FICHAS, GERACAO_MALHAS)).encode()).hexdigest()
 
 
 def _guardados(pasta_projeto: str) -> Optional[dict]:

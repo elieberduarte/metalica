@@ -35,6 +35,9 @@ import time
 from typing import Dict, List, Optional, Tuple
 
 VERSAO_3D = 1
+#: A geração das malhas (não muda o formato do arquivo, só o conteúdo): entra na assinatura do cache para o pacote
+#: velho ser refeito. 2 (13/10): as barras saem com os furos dos marcadores abertos de verdade.
+GERACAO_MALHAS = 2
 #: Versão das fichas (pecas.json): mudou o que elas levam, os 3D leves guardados são refeitos.
 #: 2 (06/10): o vínculo com o 2D — peça e planta de origem, elemento da planta, marca do pré-moldado e caixa.
 #: 3 (12/10): a sigla da terça (TC3, TC46…) para a busca do modo ver achar a peça pelo nome do projeto.
@@ -57,8 +60,9 @@ _RHO_ACO = 7850.0      # kg/m³
 
 # ------------------------------------------------------------------ malha de cada peça
 
-def _malha(reg: dict) -> Optional[Tuple[list, list]]:
-    """(vértices, faces) da entidade crua do modelo.json, ou None se não tem geometria."""
+def _malha(reg: dict, furos: Optional[list] = None) -> Optional[Tuple[list, list]]:
+    """(vértices, faces) da entidade crua do modelo.json, ou None se não tem geometria. `furos`: os marcadores de
+    furo da barra (atributos.furo), que viram furo de verdade na malha dela."""
     tipo = reg.get("tipo")
     if tipo == "solido":
         vs, fs = reg.get("vertices") or [], reg.get("faces") or []
@@ -78,10 +82,41 @@ def _malha(reg: dict) -> Optional[Tuple[list, list]]:
         if isinstance(limpo.get(chave), list):
             limpo[chave] = tuple(limpo[chave])
     try:
-        vs, fs = malha(cls(**limpo))
+        ent = cls(**limpo)
+        if furos and tipo == "barra":
+            from nucleo3d.geometria import malha_barra_furada
+            vs, fs = malha_barra_furada(ent, furos)
+        else:
+            vs, fs = malha(ent)
     except Exception:
         return None
     return [list(v) for v in vs], fs
+
+
+def _furos_das_barras(entidades) -> Tuple[Dict[str, list], set]:
+    """Os marcadores de furo (ferramenta Furo/Parafuso, atributos.furo) das barras que sabem ser furadas:
+    ({id da barra: [furo]}, {ids dos marcadores}) — a barra sai furada e o marcador não é desenhado."""
+    from nucleo3d.modelo import Barra
+    from nucleo3d.geometria import barra_furavel
+    barras = {e.get("id"): e for e in entidades if e.get("tipo") == "barra"}
+    por, marcadores, furavel = {}, set(), {}
+    for e in entidades:
+        f = (e.get("atributos") or {}).get("furo")
+        if not f or e.get("tipo") != "solido" or f.get("peca") not in barras:
+            continue
+        pid = f["peca"]
+        if pid not in furavel:
+            reg = barras[pid]
+            campos = set(Barra.__dataclass_fields__)
+            limpo = {k: (tuple(v) if isinstance(v, list) and k in ("inicio", "fim") else v) for k, v in reg.items() if k in campos}
+            try:
+                furavel[pid] = barra_furavel(Barra(**limpo))
+            except Exception:
+                furavel[pid] = False
+        if furavel[pid]:
+            por.setdefault(pid, []).append(f)
+            marcadores.add(e.get("id"))
+    return por, marcadores
 
 
 def _triangulos(vs, f) -> List[Tuple[int, int, int]]:
@@ -436,8 +471,11 @@ def gerar_3d(modelo: dict, progresso=None) -> Tuple[bytes, dict, dict]:
     materiais = modelo.get("materiais") or {}
     nomes_camadas = list(camadas.keys())
     pecas: List[dict] = []
+    furos_de, marcadores = _furos_das_barras(modelo.get("entidades") or [])
     for reg in modelo.get("entidades") or []:
-        m = _malha(reg)
+        if reg.get("id") in marcadores:
+            continue                                        # o furo já está aberto na barra
+        m = _malha(reg, furos_de.get(reg.get("id")))
         if not m:
             continue
         cam = reg.get("camada") or ""
