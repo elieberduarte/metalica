@@ -419,8 +419,8 @@ def comparar_dobras(perfis: Sequence[dict]) -> dict:
     tot = {k: round(sum(li[k] for li in linhas), 1) for k in ("peso_modelo", "peso_teorico", "peso_desconto", "diferenca")}
     tot["diferenca_pct"] = round(100.0 * tot["diferenca"] / tot["peso_teorico"], 2) if tot["peso_teorico"] else 0.0
     return {"linhas": linhas, "totais": tot,
-            "regra": "desconto por dobra de 90° = 2(ri + t) − π/2 (ri + k·t), com ri = %g·t e k = %g "
-                     "(linha média, como a NBR 6355): ≈ %.2f·t" % (dobras.RAIO_INTERNO, dobras.FATOR_K, dobras.desconto_por_dobra(1.0))}
+            "regra": "regra de peso da fábrica: (soma das medidas externas − %g·t por dobra) × t × %g kg/m² por mm"
+                     % (dobras.DESCONTO_PESO_T, dobras.KG_M2_POR_MM)}
 
 
 #: O parafuso como o IFC do TecnoMETAL o chama: "BOLT (A) 12x30", "BOLT (A325) 16x50" (a classe, quando vem).

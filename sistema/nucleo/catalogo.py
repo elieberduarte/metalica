@@ -282,6 +282,24 @@ def _carregar() -> List[Item]:
             continue                      # o valor de tabela vence o calculado
         vistos.add(_chave(i.nome))
         todos.append(i)
+    # o kg/m dos perfis dobrados pela regra de peso da fábrica (usuário, 14/10: "seguir a regra de cálculo, por exemplo
+    # Ue 200×75×25×2,25" = (soma externa − 2·t por dobra) × t × 8 kg/m² por mm — saida/dobras.py); o da tabela ou da linha
+    # média fica em dados["massa_tabela"]. As propriedades de cálculo (A, I, W…) não mudam.
+    try:
+        from saida import dobras as _dobras
+    except Exception:                                   # noqa: BLE001 — sem o módulo, fica o da tabela
+        _dobras = None
+    if _dobras is not None:
+        for i in todos:
+            if i.grupo != "formado a frio" or not i.massa:
+                continue
+            d_ = i.dados
+            kg = _dobras.kg_m_do_formado(i.familia, d_.get("d") or 0.0, d_.get("bf") or d_.get("b") or 0.0,
+                                         d_.get("enrijecedor") or 0.0, d_.get("t") or 0.0, b2=d_.get("b2") or 0.0)
+            if kg and kg > 0:
+                d_.setdefault("massa_tabela", round(float(i.massa), 3))
+                d_["massa_regra"] = "fábrica: (soma externa − 2·t por dobra) × t × 8 kg/m² por mm"
+                i.massa = round(kg, 3)
     # ordem de exibição: família, depois altura e massa
     ordem = list(FAMILIAS)
     # sem massa (modelo de telha sem tabela publicada) vai para o fim da família

@@ -13,17 +13,23 @@ def test_desconto_por_dobra_na_linha_media():
     assert abs(dobras.desconto_por_dobra(2.0) - 3.2876) < 1e-3
 
 
-def test_bate_com_a_tabela_da_nbr_6355():
-    # U 150×50×2,25 = 4,28 kg/m e Ue 150×50×17×2,25 = 4,75 kg/m na norma
-    assert abs(dobras.pesos("U 150x50x2,25")["kg_m_desconto"] - 4.28) < 0.01
-    assert abs(dobras.pesos("C150X50X17X2.25")["kg_m_desconto"] - 4.75) < 0.01
+def test_regra_de_peso_da_fabrica():
+    """a planilha do usuário (14/10): Ue 200×75×25×2,25 = (0,2 + 2·0,075 + 2·0,025 − 8·0,00225) × 18 = 6,876 kg/m —
+    2·t por dobra e 8 kg/m² por mm de espessura"""
+    assert abs(dobras.pesos("Ue 200x75x25x2,25")["kg_m_desconto"] - 6.876) < 1e-3
+    assert abs(dobras.pesos("U 150x50x2,25")["kg_m_desconto"] - (250 - 4 * 2.25) * 2.25 * 8e-3) < 1e-3
+    assert abs(dobras.kg_m_do_formado("Ue", 200, 75, 25, 2.25) - 6.876) < 1e-3
+    assert abs(dobras.kg_m_do_formado("L", 0, 50, 0, 3.0, b2=50) - (100 - 2 * 3.0) * 3.0 * 8e-3) < 1e-6
+    from nucleo import catalogo
+    it = catalogo.item("Ue 200×75×25×2,25")
+    assert abs(it.massa - 6.876) < 1e-3 and it.dados.get("massa_tabela") and "8 kg/m²" in it.dados.get("massa_regra", "")
 
 
 def test_teorico_pela_soma_externa_e_desenvolvido():
     r = dobras.pesos("U150X50X2.28", comprimento_m=10.0)
     assert r["soma_externa"] == 250.0 and r["dobras"] == 2
-    assert abs(r["desenvolvido"] - (250.0 - 2 * dobras.desconto_por_dobra(2.28))) < 0.1
-    assert abs(r["peso_teorico"] - 250.0 * 2.28 * 7.85e-3 * 10.0) < 1e-6
+    assert abs(r["desenvolvido"] - (250.0 - 2 * 2 * 2.28)) < 0.1
+    assert abs(r["peso_teorico"] - 250.0 * 2.28 * 8e-3 * 10.0) < 1e-6
     assert r["peso_desconto"] < r["peso_teorico"]
 
 

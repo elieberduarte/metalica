@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 """Peso dos perfis dobrados: teórico × com o desconto das dobras.
 
+REGRA DE PESO (usuário, 14/10): kg/m = (soma das medidas externas − 2·t por dobra) × t × 8 kg/m² por mm — o Ue
+200×75×25×2,25 dá (200 + 150 + 50 − 18) × 2,25 × 0,008 = 6,876 kg/m. É ela que pesa as peças e dá o kg/m da compra e do
+catálogo (`kg_m_regra`, `kg_m_do_formado`). O texto abaixo (o arco da dobra na linha média) segue valendo só para o
+corte da tira na fábrica.
+
 O modelo 3D (e o peso que sai da malha) tem as dobras em canto vivo. Na fábrica o perfil
 sai de uma tira da bobina, e a largura dessa tira — o **desenvolvido** — é menor que a
 soma das medidas externas: em cada dobra o material faz um arco em vez de dois lados de
@@ -27,6 +32,14 @@ RHO = 7.85e-3          # kg por (mm² · m)
 #: Raio interno da dobra em espessuras e posição da linha neutra (fração de t).
 RAIO_INTERNO = 1.0
 FATOR_K = 0.5
+
+#: A REGRA DE PESO da fábrica (usuário, 14/10, a planilha dele: Ue 200×75×25×2,25 = (0,2 + 2·0,075 + 2·0,025 − 8·0,00225)
+#: × 18 = 6,876 kg/m): o desenvolvido para o peso desconta 2·t por dobra e a chapa pesa 8 kg/m² por mm de espessura. Vale
+#: para o peso e o kg/m de todo perfil dobrado (posições, compra, catálogo). O desconto geométrico da dobra
+#: (`desconto_por_dobra`, o arco na linha média) continua só para o corte da tira na fábrica (fabrica.py).
+DESCONTO_PESO_T = 2.0              # espessuras descontadas por dobra
+KG_M2_POR_MM = 8.0                 # kg/m² de chapa por mm de espessura
+RHO_PESO = KG_M2_POR_MM * 1e-3     # kg por (mm de tira × mm de espessura × m de perfil)
 
 #: nº de dobras e medidas externas somadas por família (h = alma, b = aba, d = enrijecedor)
 _FAMILIAS = {
@@ -82,16 +95,44 @@ def geometria(perfil: str) -> Optional[dict]:
     return {"familia": fam, "h": h, "b": b, "d": d, "t": t, "dobras": dobras, "soma_externa": soma(h, b, d)}
 
 
+def kg_m_regra(soma_externa: float, n_dobras: int, t: float) -> float:
+    """kg/m do perfil dobrado pela regra da fábrica: (soma das medidas externas − 2·t por dobra) × t × 8 kg/m² por mm."""
+    return (soma_externa - n_dobras * DESCONTO_PESO_T * t) * t * RHO_PESO
+
+
+#: nº de dobras e soma das medidas externas das famílias do catálogo (h = alma, b = aba, d = enrijecedor; na cantoneira
+#: dobrada b e b2 são as duas abas)
+_FAMILIAS_CATALOGO = {"U": "U", "Ue": "UE", "Ze": "ZE", "Z45": "ZE", "Cr": "CR"}
+
+
+def kg_m_do_formado(familia: str, h: float, b: float, d: float, t: float, b2: float = 0.0) -> Optional[float]:
+    """O kg/m pela regra da fábrica para um item do catálogo ("formado a frio"): U, Ue, Ze, Z45 (as quatro dobras),
+    cartola e cantoneira dobrada. None quando a família não é dobrada."""
+    if not t or t <= 0:
+        return None
+    if familia == "L":
+        return kg_m_regra(float(b) + float(b2 or b), 1, float(t)) if b else None
+    if familia == "Cr":
+        # cartola no catálogo: altura × topo × abas ("Cr 20×30×12" = laterais de 20, topo de 30, abas de 12)
+        return kg_m_regra(float(b) + 2.0 * float(h) + 2.0 * float(d or 0.0), 4, float(t)) if h and b else None
+    fam = _FAMILIAS_CATALOGO.get(familia)
+    if fam is None or not h or not b:
+        return None
+    n, soma = _FAMILIAS[fam]
+    return kg_m_regra(soma(float(h), float(b), float(d or 0.0)), n, float(t))
+
+
 def pesos(perfil: str, comprimento_m: float = 1.0) -> Optional[dict]:
     """{soma_externa, dobras, desconto_dobra, desenvolvido, kg_m_teorico, kg_m_desconto,
-    peso_teorico, peso_desconto} para `comprimento_m` metros do perfil."""
+    peso_teorico, peso_desconto} para `comprimento_m` metros do perfil, pela regra de peso da fábrica (2·t por dobra,
+    8 kg/m² por mm): o teórico sem o desconto das dobras, o "com desconto" com ele."""
     g = geometria(perfil)
     if g is None:
         return None
-    desc = desconto_por_dobra(g["t"])
+    desc = DESCONTO_PESO_T * g["t"]
     desenv = g["soma_externa"] - g["dobras"] * desc
-    kt = g["soma_externa"] * g["t"] * RHO
-    kd = desenv * g["t"] * RHO
+    kt = g["soma_externa"] * g["t"] * RHO_PESO
+    kd = kg_m_regra(g["soma_externa"], g["dobras"], g["t"])
     return {"familia": g["familia"], "t": g["t"], "soma_externa": round(g["soma_externa"], 2), "dobras": g["dobras"],
             "desconto_dobra": round(desc, 2), "desenvolvido": round(desenv, 1),
             "kg_m_teorico": round(kt, 3), "kg_m_desconto": round(kd, 3),
