@@ -35,7 +35,7 @@ def modelo_certo():
     # o U de cada peça na posição da regra (regras_trelica, 16/10: a boca do banzo para o miolo, a do montante para o meio
     # do vão) — o modelo certo não pode ter peça fora da posição
     from nucleo3d import regras_trelica
-    regras_trelica.orientar(doc.entidades.values())
+    regras_trelica.aplicar(doc.entidades.values())
     return doc
 
 

@@ -211,7 +211,7 @@ def test_perfil_da_barra_e_secao_dupla_da_legenda():
     # a alma em Ue simples: a altura (eixo v) atravessa o plano, a boca no plano
     d = next(b for b in por["diagonal"] if b.perfil.startswith("Ue"))
     u, v, _w = base_local(tuple(d.fim[c] - d.inicio[c] for c in range(3)), d.rotacao)
-    assert abs(abs(v[1]) - 1) < 1e-6 and abs(u[1]) < 1e-6 and u[2] > 0
+    assert abs(abs(v[1]) - 1) < 1e-6 and abs(u[1]) < 1e-6 and u[2] < 0        # a diagonal nunca para cima (regra 2.3, 16/10)
 
 
 def test_vao_e_boca_dados_no_painel_perfis_da_tesoura():

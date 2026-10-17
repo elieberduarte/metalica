@@ -4191,7 +4191,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                       % len(tirar))
     # as regras de posição das peças da treliça (regras_trelica, 16/10): o mesmo giro em todo gerador, antes do encaixe
     from nucleo3d import regras_trelica
-    regras_trelica.orientar([p["ent"] for p in pecas])
+    regras_trelica.aplicar([p["ent"] for p in pecas])
     na_face = alma_na_face.encaixar([p["ent"] for p in pecas])
     if nos_no_eixo["pontas"]:
         avisos.append("Nós no eixo do banzo (NBR 8800:2024, 6.5.2): %d ponta(s) de montante e diagonal levadas da linha "

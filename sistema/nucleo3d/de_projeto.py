@@ -346,7 +346,7 @@ class _Construtor:
         # as regras de posição das peças da treliça (regras_trelica, 16/10): banzo em U com a boca para o miolo, montante
         # para o meio do vão, cantoneira sempre do mesmo lado — antes tudo saía com o giro 0
         from nucleo3d import regras_trelica
-        regras_trelica.orientar(feitas)
+        regras_trelica.aplicar(feitas)
 
     def _travamento_banzo_inferior(self):
         """Tirantes que travam o banzo inferior de uma tesoura à vizinha."""

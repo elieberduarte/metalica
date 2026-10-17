@@ -196,21 +196,25 @@ def telha_ao_lado(doc, limite: float = 20.0) -> List[dict]:
     return out
 
 
-REGRA_EM_TEXTO = {"T2": "banzo em U com a boca para o miolo", "T3": "peça em pé em U com a boca para o meio do vão",
-                  "T4": "diagonal em U com a boca para cima",
-                  "T6": "banzo de cima com a boca para baixo, nunca para cima", "T5": "cantoneira com a aba do mesmo lado das outras"}
+REGRA_EM_TEXTO = {"1.2": "peça no contorno de cima é banzo superior (papel e perfil do banzo)",
+                  "1.4": "ponta da treliça com o perfil do banzo",
+                  "2.2": "banzo abre para dentro da treliça (o de cima para baixo, o de baixo para cima)",
+                  "2.3": "peça da alma abre para o meio do vão; diagonal nunca para cima",
+                  "2.4": "cantoneira simples: aba de pé do lado fixo, aba deitada na direção da boca",
+                  "2.5": "cantoneira em par: uma em cada aba do banzo, abas de pé para o centro"}
 
 
 def posicao_na_trelica(barras) -> List[dict]:
-    """as peças da treliça fora das regras de posição (nucleo3d/regras_trelica — usuário, 16/10: "perfis de canto com a
-    boca virada para o lado errado"): o U de boca para fora, a cantoneira do outro lado do plano"""
+    """as peças da treliça fora das regras de montagem (nucleo3d/regras_trelica — usuário, 16/10: "perfis de canto com a
+    boca virada para o lado errado"): o U de boca para fora, a cantoneira do outro lado do plano, a ponta sem o perfil
+    do banzo, o topo do painel de ponta que não virou banzo"""
     from nucleo3d import regras_trelica
     out = []
     for v in regras_trelica.conferir(barras):
+        como = "fora da" if v["regra"].startswith("1.") else "girada %.0f° da" % v["erro_graus"]
         out.append({"tipo": "posicao", "ids": [v["id"]], "ponto": v["ponto"],
-                    "texto": "%s (%s, %s) girada %.0f° da regra %s: %s" % (
-                        v["nome"] or v["perfil"], v["perfil"], v["papel"], v["erro_graus"], v["regra"],
-                        REGRA_EM_TEXTO.get(v["regra"], ""))})
+                    "texto": "%s (%s, %s) %s regra %s: %s" % (v["nome"] or v["perfil"], v["perfil"], v["papel"], como,
+                                                             v["regra"], REGRA_EM_TEXTO.get(v["regra"], ""))})
     return out
 
 

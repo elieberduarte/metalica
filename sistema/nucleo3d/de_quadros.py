@@ -507,7 +507,7 @@ def gerar(desenho: dict, parametros: Optional[dict] = None, pasta_dados: Optiona
     # ------------------------------------------------------------ o encaixe de fábrica da alma
     try:
         from nucleo3d import regras_trelica                # as regras de posição das peças da treliça (16/10)
-        regras_trelica.orientar([b for b in doc.barras])
+        regras_trelica.aplicar([b for b in doc.barras])
         enc = alma_na_face.encaixar([b for b in doc.barras])
     except Exception as ex:                          # a leitura estranha fica como está, avisada
         enc = {}

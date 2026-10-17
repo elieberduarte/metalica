@@ -1,35 +1,36 @@
 # -*- coding: utf-8 -*-
-"""Regras de posição das peças da treliça de aço — uma regra só para todo gerador (16/10/2026).
+"""Regras de montagem da treliça de aço — o que cada peça é e como fica (uma regra só para todo gerador).
 
 O usuário (16/10): "o sistema continua gerando peças com perfil errado, aleatório… toda vez que gera uma tesoura nova volta
-com a configuração antiga, perfis de canto com a boca virada para o lado errado; tornar regras do sistema". Até aqui cada
-gerador girava as peças do seu jeito (de_planta_estrutura seguia as regras de 07–12/10; a treliça entre banzos do editor, o
-galpão e os scripts deixavam o giro 0 — a cantoneira com a aba para um lado ou para o outro conforme o sentido da barra, o U
-de canto com a boca para fora). Este módulo diz, peça a peça, como a seção fica; `orientar` aplica e `conferir` acusa —
-todo gerador chama `orientar` no fim e o teste (testes/test_regras_trelica.py) gera tesouras por todos os caminhos e falha
-se alguma peça sair da regra.
+com a configuração antiga… tornar regras do sistema". As regras foram recriadas e aprovadas por ele em 16/10 à noite
+(Projeto/ANALISES/Montagem/Regras-de-montagem-das-tesouras-revisao-geral-2026-10-16.docx, com as respostas). Todo gerador
+chama `aplicar` (classificar + orientar) antes do encaixe de fábrica; `conferir` acusa, na conferência do 3D e no Verificar
+apoios; testes/test_regras_trelica.py gera por todos os caminhos e cai se alguma peça sair da regra.
 
-As regras (eixos da seção como em geometria.base_local: w ao longo da barra, u = para onde o U abre / a 1ª aba da
-cantoneira, v = a altura do perfil / a 2ª aba):
+Eixos da seção como em geometria.base_local: w ao longo da barra, u = para onde o U abre (a 1ª aba da cantoneira),
+v = a altura do perfil (a 2ª aba).
 
-  T1  Cada treliça tem um plano; n é a normal dele, com o sinal fixo (+x, senão +y, senão +z): todas as peças da mesma
-      treliça usam o mesmo n.
-  T2  Banzo em U/Ue: a altura do perfil atravessa o plano (v ∥ n) e a boca (u) fica no plano, virada para o miolo — o lado
-      de onde chegam as barras da alma ligadas a ele (regra do usuário 07/10 e 11/10); sem alma ligada, para o centro da
-      treliça.
-  T3  Peça em pé em U/Ue (montante, extremidade, o canto da platibanda): v ∥ n e a boca para o meio do vão da treliça —
-      o montante de canto abre para dentro, nunca para fora (usuário 11/10 e 16/10).
-  T4  Diagonal em U/Ue: v ∥ n e a boca no plano, para cima (a deitada, para o meio do vão) — usuário 11/10.
-  T6  Banzo de cima: a peça deitada no contorno de cima da treliça (nada da treliça acima dela — o banzo superior, e
-      também o trecho do topo de um painel de ponta que veio do desenho como "diagonal") NUNCA fica com a boca para
-      cima: v ∥ n e a boca no plano, para baixo (usuário, 16/10: "o banzo superior das tesouras nunca pode ser com a
-      boca para cima"). Vale acima da T2 e da T4.
-  T5  Cantoneira simples da alma: uma aba atravessando o plano, sempre para o mesmo lado (u = +n), a outra no plano
-      (usuário 07/10: "ficam sempre do mesmo lado do plano"); nunca pelo sentido em que a barra foi desenhada.
+1. O QUE É CADA PEÇA (pelo contorno, não pelo nome que veio do desenho)
+  1.2  Banzo superior = toda peça deitada/inclinada no contorno de cima da treliça (nada da treliça acima dela) — também o
+       topo do painel de ponta que o desenho chamou de "diagonal". Vira papel "banzo" e recebe o perfil do banzo.
+  1.4  Ponta = a peça em pé que fecha a treliça em cada apoio: recebe o perfil do banzo ("as pontas sempre devem seguir o
+       perfil do banzo"). A peça cujo perfil veio da legenda do projeto (`perfil_do_projeto`) não muda: o projeto manda.
 
-Ficam de fora (não são peças da treliça plana ou têm regra própria): cantoneira dupla (o par espelhado do gerador),
-presilha, barra secundária "um lado só", tubos, barras redondas e perfis I/W. A peça que o usuário virou de propósito
-(`atributos.boca_virada`, o "virar" do painel Perfis da tesoura) entra na treliça mas não é girada nem acusada.
+2. COMO CADA PEÇA FICA — princípio único: a treliça se fecha para dentro
+  2.0  Um plano por treliça; n é a normal dele com o sinal fixo (+x, senão +y, senão +z). Nada depende do sentido da linha.
+  2.1  Todo U/Ue com a alma atravessando o plano (as abas no plano): v ∥ n.
+  2.2  Banzos abrem para dentro: o de cima para baixo, o de baixo para cima (o lado das peças da alma ligadas). O banzo
+       intermediário (alma dos dois lados) abre para cima. Consequência: nenhum banzo de cima abre para cima.
+  2.3  Peças da alma (ponta, montante, diagonal) abrem para o meio do vão; a diagonal NUNCA para cima (a perpendicular que
+       desce); o montante no meio exato do vão abre para a ponta alta. A ponta e o canto abrem para dentro.
+  2.4  Cantoneira simples = um U cortado ao meio: a aba que atravessa o plano sempre do mesmo lado (+n, o mesmo em toda a
+       obra); a aba deitada no plano aponta para onde a boca do U apontaria (2.2/2.3).
+  2.5  Cantoneira em par = um U partido: uma em cada aba do banzo, a aba que atravessa o plano apontando para o centro
+       (uma de cada lado), as abas deitadas as duas na direção da boca (2.3); presilhas entre elas (norma 5.3.6.1).
+  2.6  U deitado fora da treliça (escora, viga lateral) nunca abre para cima — fica com o gerador.
+  2.7  A peça virada de propósito (`atributos.boca_virada`, o "virar" do painel) fica com a boca ao contrário da regra.
+  2.8  Fora destas regras: tubos, barras redondas, I/W, a barra secundária "um lado só", a presilha, o banzo composto/caixa
+       (`secao_dupla`, pelo croqui da legenda).
 """
 from __future__ import annotations
 
@@ -100,7 +101,7 @@ def forma(perfil: str) -> Optional[str]:
 def _papel(b) -> Optional[str]:
     a = getattr(b, "atributos", None) or {}
     pt = str(a.get("papel_trelica") or "")
-    if pt in _FORA or a.get("um_lado_so") or a.get("cantoneira_dupla") or a.get("secao_dupla"):
+    if pt in _FORA or a.get("um_lado_so") or a.get("secao_dupla"):
         return None
     pp = str(getattr(b, "papel", "") or "")
     if pp in _FORA:
@@ -207,21 +208,23 @@ def _normal(barras: List) -> Optional[Tuple[Ponto, Ponto]]:
     return _unit(n), c
 
 
-def _sem_pares(barras: List) -> List:
-    """tira os perfis duplos (2L, 2U): duas barras do mesmo perfil, paralelas, lado a lado (a até 250 mm, a mesma faixa
-    ao longo) — o par espelhado tem regra própria no gerador, não é a cantoneira simples da T5"""
-    fora = set()
+def _pares(barras: List, n: Ponto, centro: Ponto) -> Dict[int, int]:
+    """2.5: os pares de cantoneiras (mesmo perfil, paralelas, lado a lado a até 250 mm, a mesma faixa ao longo):
+    {id(barra): lado} com lado = +1/−1, de que lado do plano a cantoneira está (pelo afastamento; se encostadas no plano,
+    pelo atributo cantoneira_dupla a/b do gerador)"""
+    out = {}
     por_perfil = collections.defaultdict(list)
     for b in barras:
-        por_perfil[str(b.perfil)].append(b)
+        if forma(b.perfil) == "L":
+            por_perfil[str(b.perfil)].append(b)
     for lista in por_perfil.values():
-        if len(lista) < 2:
-            continue
         for i, a in enumerate(lista):
             wa = _unit(_sub(a.fim, a.inicio))
             ma = tuple((a.inicio[k] + a.fim[k]) / 2.0 for k in range(3))
             La = math.dist(a.inicio, a.fim)
             for b in lista[i + 1:]:
+                if id(a) in out and id(b) in out:
+                    continue
                 wb = _unit(_sub(b.fim, b.inicio))
                 if abs(_dot(wa, wb)) < 0.995:
                     continue
@@ -231,18 +234,24 @@ def _sem_pares(barras: List) -> List:
                     continue
                 if abs(math.dist(b.inicio, b.fim) - La) > 0.25 * La:
                     continue
-                fora.update((id(a), id(b)))
-    return [b for b in barras if id(b) not in fora]
+                da, db = _dot(_sub(ma, centro), n), _dot(_sub(mb, centro), n)
+                if abs(da - db) > 1.0:
+                    out[id(a)], out[id(b)] = (1 if da > db else -1), (1 if db > da else -1)
+                else:
+                    la = str((getattr(a, "atributos", None) or {}).get("cantoneira_dupla") or "a")
+                    out[id(a)] = -1 if la == "a" else 1
+                    out[id(b)] = -out[id(a)]
+    return out
 
 
 def trelicas(entidades: Iterable, por_grupo: bool = True) -> List[dict]:
-    """[{n, centro, eixo (a direção dos banzos), barras: [(barra, papel)]}] — cada treliça plana do modelo.
+    """[{n, centro, eixo, meio, vao, alta, barras: [(barra, papel)], par: {id: lado}, vultos}] — cada treliça plana do modelo.
     `por_grupo=False`: as barras dadas são de uma treliça só (o gerador passa as que acabou de fazer) — não separa pelo
     bloco/conjunto, só pelas ligações"""
     from nucleo3d.modelo import Barra
     por_chave = collections.defaultdict(list)
     vultos = collections.defaultdict(list)             # todas as barras da treliça, também as de regra própria (o
-    for e in entidades:                                # banzo composto, os pares): o que está acima de uma peça (T6)
+    for e in entidades:                                # banzo composto): o que está acima de uma peça (1.2)
         if not isinstance(e, Barra):
             continue
         a_ = getattr(e, "atributos", None) or {}
@@ -256,38 +265,39 @@ def trelicas(entidades: Iterable, por_grupo: bool = True) -> List[dict]:
     out = []
     for _k, lista in por_chave.items():
         for comp in _componentes(lista):
-            comp_todo = comp
             if len(comp) < 3:
                 continue
             pl = _normal(comp)
             if pl is None:
                 continue
             n, c = pl
-            # o eixo e o vão pelos banzos de todas as barras (o banzo em caixão — dois U lado a lado — é par e sai da
-            # lista, mas é ele que diz a direção da treliça: a viga de transição do Posto)
             banzos = [b for b in comp if _papel(b) == "banzo"]
             ref = banzos or comp
-            comp = _sem_pares(comp)
-            # o eixo da treliça: a direção (no plano) do banzo mais comprido
+            # o eixo da treliça: a direção (no plano) do banzo mais comprido, com o sinal fixo
             maior = max(ref, key=lambda b: math.dist(b.inicio, b.fim))
             eixo = _sinal_fixo(_unit(_no_plano(_unit(_sub(maior.fim, maior.inicio)), n)))
             # o meio do vão: o meio da extensão das barras ao longo do eixo (não o centroide, que anda com a alma)
-            proj = [_dot(p, eixo) for b in ref + comp for p in (b.inicio, b.fim)]
-            meio = _add(_no_plano(c, eixo), _mul(eixo, (min(proj) + max(proj)) / 2.0))
-            lo = [min(min(b.inicio[k], b.fim[k]) for b in comp_todo) - 300.0 for k in range(3)]
-            hi = [max(max(b.inicio[k], b.fim[k]) for b in comp_todo) + 300.0 for k in range(3)]
+            pts = [p for b in comp for p in (b.inicio, b.fim)]
+            proj = [_dot(p, eixo) for p in pts]
+            lo_p, hi_p = min(proj), max(proj)
+            meio = _add(_no_plano(c, eixo), _mul(eixo, (lo_p + hi_p) / 2.0))
+            # a ponta alta: a ponta em que o contorno de cima está mais alto (empate: +eixo)
+            up = _no_plano((0.0, 0.0, 1.0), n)
+            z0 = max((_dot(p, up) for p, q in zip(pts, proj) if q < lo_p + 300.0), default=0.0)
+            z1 = max((_dot(p, up) for p, q in zip(pts, proj) if q > hi_p - 300.0), default=0.0)
+            alta = _mul(eixo, -1.0) if z0 > z1 + 20.0 else eixo
+            lo = [min(min(b.inicio[k], b.fim[k]) for b in comp) - 300.0 for k in range(3)]
+            hi = [max(max(b.inicio[k], b.fim[k]) for b in comp) + 300.0 for k in range(3)]
             dentro = [o for o in vultos[_k] if all(min(o.inicio[k], o.fim[k]) <= hi[k] and max(o.inicio[k], o.fim[k]) >= lo[k]
                                                    for k in range(3))
                       and abs(_dot(_sub(o.inicio, c), n)) < 300.0 and abs(_dot(_sub(o.fim, c), n)) < 300.0]
-            t = {"n": n, "centro": c, "eixo": eixo, "meio": meio, "vao": max(proj) - min(proj),
-                 "barras": [(b, _papel(b)) for b in comp], "vultos": dentro}
-            t["lado_L"] = _lado_da_maioria(t)
-            out.append(t)
+            out.append({"n": n, "centro": c, "eixo": eixo, "meio": meio, "vao": hi_p - lo_p, "alta": alta,
+                        "barras": [(b, _papel(b)) for b in comp], "par": _pares(comp, n, c), "vultos": dentro})
     return out
 
 
 def lado_da_aba(b, n) -> int:
-    """T5: para que lado do plano sai a aba da cantoneira que atravessa o plano (+1, −1; 0 = nenhuma atravessa: torta)"""
+    """2.4/2.5: para que lado do plano sai a aba da cantoneira que atravessa o plano (+1, −1; 0 = nenhuma: torta)"""
     u, v, _w = _eixos(b)
     for e in (u, v):
         c = _dot(e, n)
@@ -296,13 +306,10 @@ def lado_da_aba(b, n) -> int:
     return 0
 
 
-def _lado_da_maioria(t) -> float:
-    """o lado em que fica a aba das cantoneiras simples desta treliça: o da maioria (empate: +n)"""
-    soma = 0
-    for b, p in t["barras"]:
-        if p != "banzo" and forma(b.perfil) == "L":
-            soma += lado_da_aba(b, t["n"])
-    return -1.0 if soma < 0 else 1.0
+def _aba_deitada(b, n) -> Ponto:
+    """a aba da cantoneira que fica no plano"""
+    u, v, _w = _eixos(b)
+    return v if abs(_dot(u, n)) > abs(_dot(v, n)) else u
 
 
 # ------------------------------------------------------------------ o giro de cada peça
@@ -323,33 +330,8 @@ def _em_pe(b, t) -> bool:
     return abs(_dot(w, t["eixo"])) < math.cos(math.radians(EM_PE))
 
 
-def _miolo_do_banzo(b, t) -> Optional[Ponto]:
-    """T2: o lado (no plano) de onde chegam as barras da alma ligadas ao banzo; sem ligação, o centro da treliça; None
-    quando chegam tantas de um lado quanto do outro (o banzo do meio, entre dois painéis: fica como o gerador fez)"""
-    w = _unit(_sub(b.fim, b.inicio))
-    lado = _unit(_cross(t["n"], w))                       # perpendicular ao banzo, no plano
-    soma = 0.0
-    ligadas = 0
-    for o, pap in t["barras"]:
-        if o is b or pap == "banzo":
-            continue
-        for p, q in ((o.inicio, o.fim), (o.fim, o.inicio)):
-            if _dist_pt_seg(p, b.inicio, b.fim) <= TOL_LIGA:
-                s = _dot(_sub(q, p), lado)
-                if abs(s) > 1.0:
-                    soma += 1.0 if s > 0 else -1.0
-                    ligadas += 1
-                break
-        else:
-            # o montante que passa pela ponta do banzo (o banzo morre no meio dele): sai para os dois lados
-            if any(_dist_pt_seg(p, o.inicio, o.fim) <= TOL_LIGA for p in (b.inicio, b.fim)):
-                ligadas += 2
-    if ligadas and abs(soma) < 0.5:
-        return None
-    if abs(soma) < 0.5:
-        mid = tuple((b.inicio[k] + b.fim[k]) / 2.0 for k in range(3))
-        soma = _dot(_sub(t["centro"], mid), lado)
-    return lado if soma >= 0 else _mul(lado, -1.0)
+def _mid(b) -> Ponto:
+    return tuple((b.inicio[k] + b.fim[k]) / 2.0 for k in range(3))
 
 
 def _cima(t) -> Optional[Ponto]:
@@ -358,13 +340,43 @@ def _cima(t) -> Optional[Ponto]:
     return _unit(up) if math.sqrt(_dot(up, up)) > 0.5 else None
 
 
+def _miolo_do_banzo(b, t) -> Ponto:
+    """2.2: o lado (no plano) de onde chegam as peças da alma ligadas ao banzo; ligadas dos dois lados (o banzo
+    intermediário) → para cima; sem ligação → o centro da treliça"""
+    w = _unit(_sub(b.fim, b.inicio))
+    lado = _unit(_cross(t["n"], w))                       # perpendicular ao banzo, no plano
+    mais, menos = 0, 0                                    # peças da alma ligadas, de cada lado do banzo
+    for o, pap in t["barras"]:
+        if o is b or pap == "banzo":
+            continue
+        for p, q in ((o.inicio, o.fim), (o.fim, o.inicio)):
+            if _dist_pt_seg(p, b.inicio, b.fim) <= TOL_LIGA:
+                s = _dot(_sub(q, p), lado)
+                if s > 1.0:
+                    mais += 1
+                elif s < -1.0:
+                    menos += 1
+                break
+        else:
+            # o montante que passa pela ponta do banzo (o banzo morre no meio dele): sai para os dois lados
+            if any(_dist_pt_seg(p, o.inicio, o.fim) <= TOL_LIGA for p in (b.inicio, b.fim)):
+                mais += 1
+                menos += 1
+    if mais and menos:                                    # o banzo intermediário (decisão 3): para cima
+        up = _cima(t)
+        if up is not None:
+            return lado if _dot(lado, up) > 0 else _mul(lado, -1.0)
+    soma = float(mais - menos) if (mais or menos) else _dot(_sub(t["centro"], _mid(b)), lado)
+    return lado if soma >= 0 else _mul(lado, -1.0)
+
+
 def no_topo(b, t) -> bool:
-    """T6: a peça deitada sem nada da treliça acima do meio dela — o contorno de cima (o banzo superior)"""
+    """1.2: a peça deitada sem nada da treliça acima do meio dela — o contorno de cima (o banzo superior)"""
     up = _cima(t)
     if up is None or _em_pe(b, t):
         return False
     h_ax = _unit(_cross(t["n"], up))                      # a horizontal no plano
-    mid = tuple((b.inicio[k] + b.fim[k]) / 2.0 for k in range(3))
+    mid = _mid(b)
     hm, ym = _dot(mid, h_ax), _dot(mid, up)
     for o in t.get("vultos") or [o for o, _p in t["barras"]]:
         if o is b:
@@ -382,67 +394,90 @@ def no_topo(b, t) -> bool:
     return True
 
 
-def alvo_u(b, papel: str, t: dict) -> Optional[Ponto]:
-    """a direção em que o eixo u da seção deve ficar, pela regra; None se a peça está fora da regra"""
-    f = forma(getattr(b, "perfil", ""))
-    if f is None:
-        return None
+def na_ponta(b, t) -> bool:
+    """1.4: a peça em pé numa das duas pontas da treliça"""
+    if not _em_pe(b, t):
+        return False
+    d = abs(_dot(_sub(_mid(b), t["meio"]), t["eixo"]))
+    return d > t["vao"] / 2.0 - 80.0
+
+
+def perfil_do_banzo(t) -> Optional[str]:
+    """o perfil do banzo superior da treliça (o mais usado; sem banzo de cima marcado, o de qualquer banzo)"""
+    cont, cont2 = collections.Counter(), collections.Counter()
+    for o in t.get("vultos") or [o for o, _p in t["barras"]]:
+        a = getattr(o, "atributos", None) or {}
+        pt = str(a.get("papel_trelica") or "")
+        if pt == "banzo_sup" or (not pt and str(getattr(o, "papel", "")) == "banzo" and no_topo(o, t)):
+            cont[str(o.perfil)] += 1
+        elif pt.startswith("banzo") or str(getattr(o, "papel", "")) == "banzo":
+            cont2[str(o.perfil)] += 1
+    for c in (cont, cont2):
+        if c:
+            return c.most_common(1)[0][0]
+    return None
+
+
+def _alvo_no_plano(b, papel: str, t: dict) -> Ponto:
+    """2.2/2.3: para onde a boca do U aponta (no plano); na cantoneira, para onde aponta a aba deitada"""
     w = _unit(_sub(b.fim, b.inicio))
     n = t["n"]
-    if f == "L":
-        if papel == "banzo":
-            return None                                   # banzo em cantoneira: fora destas regras
-        return _mul(n, t.get("lado_L", 1.0))              # T5: a aba que sai do plano, do lado da treliça
-    # U / Ue
-    if no_topo(b, t):                                     # T6: o banzo de cima nunca de boca para cima
-        baixo = _unit(_cross(n, w))
-        return baixo if _dot(baixo, _cima(t)) < 0 else _mul(baixo, -1.0)
-    if papel == "banzo":
-        return _miolo_do_banzo(b, t)                      # T2
     lado = _unit(_cross(n, w))                            # perpendicular à peça, no plano
+    up = _cima(t)
+    if no_topo(b, t):                                     # 2.2: o banzo de cima (também o que veio como "diagonal") abre para baixo
+        if up is not None:
+            return lado if _dot(lado, up) < 0 else _mul(lado, -1.0)
+        return lado if _dot(_sub(t["centro"], _mid(b)), lado) >= 0 else _mul(lado, -1.0)
+    if papel == "banzo":
+        return _miolo_do_banzo(b, t)                      # 2.2
     if _em_pe(b, t) or papel in ("montante", "extremidade"):
-        mid = tuple((b.inicio[k] + b.fim[k]) / 2.0 for k in range(3))
-        d = _dot(_sub(t.get("meio", t["centro"]), mid), t["eixo"])
+        d = _dot(_sub(t["meio"], _mid(b)), t["eixo"])    # 2.3: a peça em pé abre para o meio do vão
         if abs(d) < 25.0:
-            d = 1.0                                       # o montante no meio do vão: para +eixo (o sinal fixo)
-        para_o_meio = d * _dot(lado, t["eixo"])
-        return lado if para_o_meio >= 0 else _mul(lado, -1.0)          # T3
-    if abs(lado[2]) > 0.3:                                # T4: para cima
-        return lado if lado[2] > 0 else _mul(lado, -1.0)
-    mid = tuple((b.inicio[k] + b.fim[k]) / 2.0 for k in range(3))
-    return lado if _dot(_sub(t["centro"], mid), lado) >= 0 else _mul(lado, -1.0)
+            d = _dot(t["alta"], t["eixo"])                # no meio exato: para a ponta alta
+        return lado if d * _dot(lado, t["eixo"]) >= 0 else _mul(lado, -1.0)
+    if up is not None and abs(_dot(lado, up)) > 0.3:     # 2.3: a diagonal nunca para cima
+        return lado if _dot(lado, up) < 0 else _mul(lado, -1.0)
+    d = _dot(_sub(t["meio"], _mid(b)), t["eixo"])         # a diagonal quase em pé (sem "cima" na perpendicular): o meio
+    return lado if d * _dot(lado, t["eixo"]) >= 0 else _mul(lado, -1.0)
 
 
-REGRA = {"banzo": "T2", "montante": "T3", "extremidade": "T3", "diagonal": "T4"}
+def _alvo_fora_do_plano(b, t: dict) -> Ponto:
+    """2.4/2.5: para que lado sai a aba da cantoneira que atravessa o plano: +n (o lado fixo da obra); no par, para o
+    centro (a cantoneira de cada aba do banzo aponta para a outra)"""
+    lado = t["par"].get(id(b))
+    return _mul(t["n"], -float(lado)) if lado else t["n"]
+
+
+def alvo_u(b, papel: str, t: dict) -> Optional[Ponto]:
+    """a direção em que o eixo u da seção deve ficar (U: a boca; L: a aba que atravessa o plano); None = fora da regra"""
+    f = forma(getattr(b, "perfil", ""))
+    if f is None or (f == "L" and papel == "banzo"):
+        return None                                       # banzo em cantoneira: fora destas regras
+    return _alvo_fora_do_plano(b, t) if f == "L" else _alvo_no_plano(b, papel, t)
 
 
 def _regra(b, papel, t) -> str:
     if forma(b.perfil) == "L":
-        return "T5"
-    if no_topo(b, t):
-        return "T6"
-    if papel == "diagonal" and _em_pe(b, t):
-        return "T3"
-    return REGRA.get(papel, "T2")
+        return "2.5" if id(b) in t["par"] else "2.4"
+    if papel == "banzo" or no_topo(b, t):
+        return "2.2"
+    return "2.3"
 
 
-# ------------------------------------------------------------------ aplicar e conferir
-def _giro_da_cantoneira(b, w, alvo, n) -> float:
-    """T5: dos giros que põem uma aba atravessando o plano para o lado `alvo`, o que deixa a outra aba (a deitada no
-    plano) para onde ela já estava — a ponta em cantoneira continua com a aba deitada para dentro da tesoura"""
+# ------------------------------------------------------------------ classificar, orientar, conferir
+def _giro_da_cantoneira(w, fora, plano) -> float:
+    """dos quatro giros da cantoneira, o que põe uma aba atravessando o plano para `fora` e a outra deitada para `plano`"""
     from nucleo3d.geometria import base_local
-    u0, v0, _ = _eixos(b)
-    deitada = u0 if abs(_dot(u0, n)) < abs(_dot(v0, n)) else v0
-    base = _giro_para(w, alvo)
+    base = _giro_para(w, fora)
     melhor, nota = round(base, 3), -9.0
     for d in (0.0, 90.0, -90.0, 180.0):
         g = (base + d) % 360.0
         u, v, _w = base_local(w, g)
-        cruza, outra = (u, v) if abs(_dot(u, n)) > abs(_dot(v, n)) else (v, u)
-        if _dot(cruza, alvo) < 0.9:
+        cruza, outra = (u, v) if abs(_dot(u, fora)) > abs(_dot(v, fora)) else (v, u)
+        if _dot(cruza, fora) < 0.9:
             continue
-        if _dot(outra, deitada) > nota:
-            melhor, nota = round(g, 3), _dot(outra, deitada)
+        if _dot(outra, plano) > nota:
+            melhor, nota = round(g, 3), _dot(outra, plano)
     return melhor
 
 
@@ -450,24 +485,62 @@ def _virada(b) -> bool:
     return bool((getattr(b, "atributos", None) or {}).get("boca_virada"))
 
 
+def _trocar_perfil(b, perfil: str):
+    b.perfil = perfil
+    a = getattr(b, "atributos", None)
+    if isinstance(a, dict):
+        if isinstance(a.get("marcas"), dict):
+            a["marcas"]["perfil"] = perfil
+        if "peso_kg" in a:
+            try:
+                from nucleo3d.geometria import peso_barra
+                a["peso_kg"] = round(peso_barra(b), 2)
+            except Exception:                             # noqa: BLE001
+                pass
+
+
+def classificar(entidades: Iterable, por_grupo: bool = True) -> int:
+    """1.2 e 1.4: a peça no contorno de cima vira banzo superior (papel e perfil do banzo); a ponta recebe o perfil do
+    banzo. A peça com o perfil da legenda do projeto (`perfil_do_projeto`) não muda. Devolve quantas mudaram"""
+    lista = list(entidades)
+    mudou = 0
+    for t in trelicas(lista, por_grupo):
+        pb = perfil_do_banzo(t)
+        for b, papel in t["barras"]:
+            a = getattr(b, "atributos", None)
+            if not isinstance(a, dict):
+                a = b.atributos = {}
+            if a.get("perfil_do_projeto"):
+                continue
+            if papel != "banzo" and no_topo(b, t):        # 1.2
+                b.papel = "banzo"
+                a["papel_trelica"] = "banzo_sup"
+                if "funcao" in a:
+                    a["funcao"] = "banzo superior"
+                if pb and forma(pb) == "U" and str(b.perfil) != pb:
+                    _trocar_perfil(b, pb)
+                mudou += 1
+            elif papel != "banzo" and na_ponta(b, t) and pb and forma(pb) == "U" and str(b.perfil) != pb:   # 1.4
+                _trocar_perfil(b, pb)
+                mudou += 1
+    return mudou
+
+
 def orientar(entidades: Iterable, por_grupo: bool = True) -> int:
-    """gira cada peça das treliças pela regra; devolve quantas mudaram"""
+    """gira cada peça das treliças pela regra (seção 2); devolve quantas mudaram"""
     lista = list(entidades)
     mudou = 0
     for t in trelicas(lista, por_grupo):
         for b, papel in t["barras"]:
-            if _virada(b):
-                continue
             alvo = alvo_u(b, papel, t)
             if alvo is None:
                 continue
             w = _unit(_sub(b.fim, b.inicio))
+            vira = -1.0 if _virada(b) else 1.0            # 2.7: virada de propósito = a boca ao contrário da regra
             if forma(b.perfil) == "L":
-                if lado_da_aba(b, t["n"]) == int(t["lado_L"]):
-                    continue                              # T5 já cumprida (a aba certa do lado certo)
-                g = _giro_da_cantoneira(b, w, alvo, t["n"])
+                g = _giro_da_cantoneira(w, alvo, _mul(_alvo_no_plano(b, papel, t), vira))
             else:
-                g = round(_giro_para(w, alvo), 3)
+                g = round(_giro_para(w, _mul(alvo, vira)), 3)
             atual = float(getattr(b, "rotacao", 0.0) or 0.0) % 360.0
             if abs(((g - atual) + 180.0) % 360.0 - 180.0) > 0.5:
                 b.rotacao = g
@@ -475,30 +548,46 @@ def orientar(entidades: Iterable, por_grupo: bool = True) -> int:
     return mudou
 
 
+def aplicar(entidades: Iterable, por_grupo: bool = True) -> Tuple[int, int]:
+    """o que todo gerador chama antes do encaixe: (peças reclassificadas, peças giradas)"""
+    lista = list(entidades)
+    return classificar(lista, por_grupo), orientar(lista, por_grupo)
+
+
 def conferir(entidades: Iterable, tol_graus: float = 5.0, por_grupo: bool = True) -> List[dict]:
-    """as peças fora da regra: [{id, nome, perfil, papel, regra, erro_graus, ponto}]"""
+    """as peças fora da regra: [{id, nome, perfil, papel, regra, erro_graus, ponto}] — regra 1.2 (devia ser banzo),
+    1.4 (ponta sem o perfil do banzo), 2.2–2.5 (posição)"""
     out = []
     cos_tol = math.cos(math.radians(tol_graus))
+
+    def acusa(b, papel, regra, erro):
+        out.append({"id": b.id, "nome": b.nome, "perfil": b.perfil, "papel": papel, "regra": regra,
+                    "erro_graus": erro, "ponto": [round(x) for x in b.inicio]})
+
     for t in trelicas(list(entidades), por_grupo):
+        pb = perfil_do_banzo(t)
         for b, papel in t["barras"]:
-            if _virada(b):
-                continue
+            a = getattr(b, "atributos", None) or {}
+            if not a.get("perfil_do_projeto"):
+                if papel != "banzo" and no_topo(b, t):
+                    acusa(b, papel, "1.2", 0.0)
+                elif papel != "banzo" and na_ponta(b, t) and pb and forma(pb) == "U" and str(b.perfil) != pb:
+                    acusa(b, papel, "1.4", 0.0)
             alvo = alvo_u(b, papel, t)
             if alvo is None:
                 continue
-            u, v, w = _eixos(b)
+            vira = -1.0 if _virada(b) else 1.0
             if forma(b.perfil) == "L":
-                # T5: tanto faz qual das abas (abas iguais: girar 90° só espelha), vale o lado da que sai do plano
-                if lado_da_aba(b, t["n"]) == int(t["lado_L"]):
+                lado = lado_da_aba(b, t["n"])
+                if lado != (1 if _dot(alvo, t["n"]) > 0 else -1):
+                    acusa(b, papel, _regra(b, papel, t), 180.0 if lado else 90.0)
                     continue
-                out.append({"id": b.id, "nome": b.nome, "perfil": b.perfil, "papel": papel, "regra": "T5",
-                            "erro_graus": 180.0 if lado_da_aba(b, t["n"]) else 90.0, "ponto": [round(x) for x in b.inicio]})
-                continue
-            c = _dot(u, alvo)
+                c = _dot(_aba_deitada(b, t["n"]), _mul(_alvo_no_plano(b, papel, t), vira))
+            else:
+                c = _dot(_eixos(b)[0], _mul(alvo, vira))
             if c < cos_tol:
-                out.append({"id": b.id, "nome": b.nome, "perfil": b.perfil, "papel": papel, "regra": _regra(b, papel, t),
-                            "erro_graus": round(math.degrees(math.acos(max(-1.0, min(1.0, c)))), 1),
-                            "ponto": [round(x) for x in b.inicio]})
+                acusa(b, papel, "2.3" if forma(b.perfil) == "L" else _regra(b, papel, t),
+                      round(math.degrees(math.acos(max(-1.0, min(1.0, c)))), 1))
     return out
 
 

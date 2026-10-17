@@ -549,7 +549,8 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
         w = tuple((B[c] - A[c]) / math.dist(A, B) for c in range(3))
         atr = dict(base, origem={"peca": marca}, papel_trelica=papel,
                    **({"calandrar_raio": d.get("raio_banzo_sup")} if papel == "banzo_sup" and d.get("raio_banzo_sup") else {}),
-                   **({"boca_virada": True} if virar_b[i] else {}))
+                   **({"boca_virada": True} if virar_b[i] else {}),
+                   **({"perfil_do_projeto": True} if perfis_b[i] else {}))   # a legenda manda (regime 0.1)
         # a ponta em U conta como banzo: as cantoneiras encaixam nela, e ela não é recortada como alma
         papel_3d = "banzo" if (papel.startswith("banzo") or papel == "extremidade") else ("diagonal" if papel == "secundaria" else papel)
         nome = "%s %s %d" % (marca, nome_papel.get(papel, papel), i + 1)
@@ -706,7 +707,7 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
     # as regras de posição das peças da treliça (nucleo3d/regras_trelica, 16/10 — uma regra só para todo gerador): o que
     # o desenho deixou em outra posição é girado aqui, antes dos cantos e do encaixe (que dependem do giro)
     from nucleo3d import regras_trelica
-    regras_trelica.orientar(feitas, por_grupo=False)
+    regras_trelica.aplicar(feitas, por_grupo=False)
     _cantos_em_meia_esquadria(segs, pares, perfis_u, P, fora_do_plano)
     # o encaixe de fábrica (nucleo3d/alma_na_face, o mesmo do 3D pelos quadros): a cantoneira entra na boca do U e para
     # na alma dele, cortada no ângulo; o bico no montante e a bissetriz entre diagonais. Antes a ponta da cantoneira

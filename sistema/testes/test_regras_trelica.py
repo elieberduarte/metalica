@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Regras de posição das peças da treliça (nucleo3d/regras_trelica.py) — o usuário, 16/10: "o sistema continua gerando
-peças com perfil errado, aleatório… toda vez que gera uma tesoura nova volta com a configuração antiga, perfis de canto com
-a boca virada para o lado errado; tornar regras do sistema".
+"""Regras de montagem das tesouras (nucleo3d/regras_trelica.py) — recriadas e aprovadas pelo usuário em 16/10
+(Projeto/ANALISES/Montagem/Regras-de-montagem-das-tesouras-revisao-geral-2026-10-16.docx): "o sistema continua gerando
+peças com perfil errado, aleatório… toda vez que gera uma tesoura nova volta com a configuração antiga".
 
-Cada gerador de treliça chama `regras_trelica.orientar` antes do encaixe de fábrica; aqui cada caminho gera uma treliça e
-`regras_trelica.conferir` tem de voltar vazio. Se um gerador novo (ou um antigo mexido) esquecer a regra, este teste cai.
-Os caminhos: a tesoura pelo desenho (de_planta_estrutura), a treliça entre banzos do editor 3D (modelagem.trelica), o
-galpão treliçado (de_projeto), o projeto recebido pela planta (de_planta, o Posto) e o 3D pelos quadros (de_quadros)."""
-import math
+Cada gerador chama `regras_trelica.aplicar` antes do encaixe de fábrica; aqui cada caminho gera uma treliça e `conferir`
+tem de voltar vazio. Os caminhos: a tesoura pelo desenho (de_planta_estrutura), a treliça entre banzos do editor 3D
+(modelagem.trelica), o galpão treliçado (de_projeto), o projeto recebido pela planta (de_planta, o Posto) e o 3D pelos
+quadros (de_quadros). Os testes unitários cobrem cada regra numerada (1.2, 1.4, 2.2–2.5) e as decisões do usuário."""
 import os
 import sys
 
@@ -27,28 +26,46 @@ from nucleo3d.modelo import Barra, Documento                                # no
 U_BZ = "U 150×50×3,00 (FF)"
 U_AL = "U 100×40×2,65"
 L_AL = 'L 1½"×1/8"'
+N = (1.0, 0.0, 0.0)                                   # a normal do plano x = 0 (sinal fixo)
 
 
 def _boca(b):
     return base_local(b.direcao, b.rotacao)[0]
 
 
-def _tesoura_a_mao(giro_banzo=0.0, giro_alma_u=0.0, l_alternada=True):
+def _deitada(b):
+    return R._aba_deitada(b, N)
+
+
+def _regras(bs):
+    return {e["regra"] for e in R.conferir(bs)}
+
+
+def _tesoura_a_mao(giro_banzo=0.0, giro_alma_u=0.0, l_alternada=True, ponta_alta=None):
     """uma tesoura plana em y-z (x = 0), 6 m × 1 m: banzos em U, montantes de ponta e do meio em U, diagonais em U e em L;
-    os giros dados de propósito fora da regra (o giro 0 de quem não orienta, a cantoneira pelo sentido do desenho)"""
+    os giros dados de propósito fora da regra (o giro 0 de quem não orienta, a cantoneira pelo sentido do desenho).
+    `ponta_alta` = "y0" ou "y1" levanta o banzo de cima naquela ponta (a ponta alta da tesoura)"""
     at = {"origem": {"peca": "TT"}}
-    bs = [Barra(nome="BS", inicio=(0, 0, 1000), fim=(0, 6000, 1000), perfil=U_BZ, papel="banzo", rotacao=giro_banzo,
-                atributos=dict(at)),
+    z0, z1 = 1000, 1000
+    if ponta_alta == "y0":
+        z0 = 1300
+    elif ponta_alta == "y1":
+        z1 = 1300
+    bs = [Barra(nome="BS", inicio=(0, 0, z0), fim=(0, 6000, z1), perfil=U_BZ, papel="banzo", rotacao=giro_banzo,
+                atributos=dict(at, papel_trelica="banzo_sup")),
           Barra(nome="BI", inicio=(0, 0, 0), fim=(0, 6000, 0), perfil=U_BZ, papel="banzo", rotacao=giro_banzo,
-                atributos=dict(at))]
+                atributos=dict(at, papel_trelica="banzo_inf"))]
+
+    def ztopo(y):
+        return z0 + (z1 - z0) * y / 6000.0
     for y in (0, 3000, 6000):                         # os montantes em U: as duas pontas (o canto) e o do meio
-        bs.append(Barra(nome="M%d" % y, inicio=(0, y, 0), fim=(0, y, 1000), perfil=U_AL, papel="montante",
+        bs.append(Barra(nome="M%d" % y, inicio=(0, y, 0), fim=(0, y, ztopo(y)), perfil=U_AL, papel="montante",
                         rotacao=giro_alma_u, atributos=dict(at)))
     for k, (y0, y1) in enumerate(((0, 1500), (1500, 3000))):
-        bs.append(Barra(nome="DU%d" % k, inicio=(0, y0, 1000), fim=(0, y1, 0), perfil=U_AL, papel="diagonal",
+        bs.append(Barra(nome="DU%d" % k, inicio=(0, y0, ztopo(y0)), fim=(0, y1, 0), perfil=U_AL, papel="diagonal",
                         rotacao=giro_alma_u, atributos=dict(at)))
     for k, (y0, y1) in enumerate(((3000, 4500), (6000, 4500), (4500, 4500))):
-        a, b = ((0, y0, 0), (0, y1, 1000)) if k != 1 else ((0, y0, 0), (0, y1, 1000))
+        a, b = (0, y0, 0), (0, y1, ztopo(y1))
         if l_alternada and k % 2:
             a, b = b, a                               # desenhada ao contrário: sem a regra, a aba vai para o outro lado
         bs.append(Barra(nome="DL%d" % k, inicio=a, fim=b, perfil=L_AL, papel="montante" if k == 2 else "diagonal",
@@ -56,58 +73,165 @@ def _tesoura_a_mao(giro_banzo=0.0, giro_alma_u=0.0, l_alternada=True):
     return bs
 
 
-def test_conferir_acusa_cada_regra_e_orientar_corrige():
+def _por_nome(bs):
+    return {b.nome: b for b in bs}
+
+
+# ------------------------------------------------------------------ as regras, uma a uma
+def test_conferir_acusa_cada_regra_e_aplicar_corrige():
     bs = _tesoura_a_mao(giro_banzo=0.0, giro_alma_u=0.0)
-    erros = R.conferir(bs)
-    regras = {e["regra"] for e in erros}
-    # T2 (banzo de boca para fora do plano), T3 (montantes), T4 (diagonais em U) e T5 (cantoneira de um lado e do outro)
-    assert {"T2", "T3", "T4", "T5"} <= regras, erros
-    assert R.orientar(bs) > 0
+    regras = _regras(bs)
+    # 1.4 (pontas sem o perfil do banzo), 2.2 (banzo de boca para fora do plano), 2.3 (alma), 2.4 (cantoneira de um lado e do outro)
+    assert {"1.4", "2.2", "2.3", "2.4"} <= regras, regras
+    n_class, n_giro = R.aplicar(bs)
+    assert n_class == 2 and n_giro > 0
     assert R.conferir(bs) == []
-    assert R.orientar(bs) == 0                        # idempotente: rodar de novo não mexe em nada
+    assert R.aplicar(bs) == (0, 0)                    # idempotente: rodar de novo não mexe em nada
 
 
-def test_a_regra_de_cada_peca():
+def test_1_4_ponta_recebe_o_perfil_do_banzo():
     bs = _tesoura_a_mao()
-    R.orientar(bs)
-    por = {b.nome: b for b in bs}
-    # T2: o banzo de cima abre para baixo, o de baixo para cima; a altura do perfil atravessa o plano (x)
-    assert _boca(por["BS"])[2] == pytest.approx(-1.0, abs=1e-6)
-    assert _boca(por["BI"])[2] == pytest.approx(1.0, abs=1e-6)
-    assert abs(base_local(por["BS"].direcao, por["BS"].rotacao)[1][0]) == pytest.approx(1.0, abs=1e-6)
-    # T3: os montantes de canto abrem para dentro (nunca para fora) e o do meio para o meio do vão
-    assert _boca(por["M0"])[1] > 0.99
+    R.aplicar(bs)
+    por = _por_nome(bs)
+    assert por["M0"].perfil == U_BZ and por["M6000"].perfil == U_BZ
+    assert por["M3000"].perfil == U_AL                # o montante do meio não é ponta
+    assert por["DU0"].perfil == U_AL
+
+
+def test_1_4_a_legenda_do_projeto_manda():
+    """regime 0.1: a peça com o perfil da legenda (perfil_do_projeto) não muda, nem é acusada"""
+    bs = _tesoura_a_mao()
+    por = _por_nome(bs)
+    por["M0"].atributos["perfil_do_projeto"] = True
+    R.aplicar(bs)
+    assert por["M0"].perfil == U_AL and por["M6000"].perfil == U_BZ
+    assert not [e for e in R.conferir(bs) if e["nome"] == "M0"]
+
+
+def test_2_1_e_2_2_banzos_abrem_para_dentro():
+    bs = _tesoura_a_mao()
+    R.aplicar(bs)
+    por = _por_nome(bs)
+    assert _boca(por["BS"])[2] == pytest.approx(-1.0, abs=1e-6)      # o de cima para baixo
+    assert _boca(por["BI"])[2] == pytest.approx(1.0, abs=1e-6)       # o de baixo para cima
+    for nome in ("BS", "BI", "M0", "M3000", "DU0"):                  # 2.1: a altura do perfil atravessa o plano
+        assert abs(base_local(por[nome].direcao, por[nome].rotacao)[1][0]) == pytest.approx(1.0, abs=1e-6), nome
+
+
+def test_2_2_banzo_intermediario_abre_para_cima():
+    """decisão 3: o banzo com alma chegando dos dois lados abre para cima"""
+    bs = _tesoura_a_mao()
+    at = {"origem": {"peca": "TT"}}
+    # um segundo painel em cima do primeiro: o banzo de cima vira intermediário (montantes acima e abaixo dele)
+    bs.append(Barra(nome="BT", inicio=(0, 0, 2000), fim=(0, 6000, 2000), perfil=U_BZ, papel="banzo", atributos=dict(at)))
+    for y in (0, 3000, 6000):
+        bs.append(Barra(nome="MT%d" % y, inicio=(0, y, 1000), fim=(0, y, 2000), perfil=U_AL, papel="montante", atributos=dict(at)))
+    bs.append(Barra(nome="DT", inicio=(0, 0, 2000), fim=(0, 3000, 1000), perfil=U_AL, papel="diagonal", atributos=dict(at)))
+    R.aplicar(bs)
+    por = _por_nome(bs)
+    assert _boca(por["BS"])[2] > 0.99                                # intermediário: para cima
+    assert _boca(por["BT"])[2] < -0.99                               # o novo contorno de cima: para baixo
+    assert R.conferir(bs) == []
+
+
+def test_2_3_alma_abre_para_o_meio_e_diagonal_nunca_para_cima():
+    bs = _tesoura_a_mao()
+    R.aplicar(bs)
+    por = _por_nome(bs)
+    assert _boca(por["M0"])[1] > 0.99                                # a ponta abre para dentro
     assert _boca(por["M6000"])[1] < -0.99
-    # T4: a diagonal em U abre para cima
-    for k in (0, 1):
-        assert _boca(por["DU%d" % k])[2] > 0.3
-    # T5: as três cantoneiras com a aba que sai do plano do mesmo lado
-    lados = {R.lado_da_aba(por["DL%d" % k], (1.0, 0.0, 0.0)) for k in range(3)}
-    assert len(lados) == 1 and 0 not in lados
+    for k in (0, 1):                                                 # decisão 1: a diagonal nunca para cima
+        assert _boca(por["DU%d" % k])[2] < -0.3, (k, _boca(por["DU%d" % k]))
+    # a diagonal "para cima" é acusada pela 2.3
+    por["DU0"].rotacao = (por["DU0"].rotacao + 180.0) % 360.0
+    assert any(e["regra"] == "2.3" and e["nome"] == "DU0" for e in R.conferir(bs))
 
 
-def test_boca_virada_pelo_usuario_fica():
+@pytest.mark.parametrize("alta, sinal", [("y1", 1.0), ("y0", -1.0), (None, 1.0)])
+def test_2_3_montante_no_meio_abre_para_a_ponta_alta(alta, sinal):
+    """decisão 4: o montante no meio exato do vão abre para a ponta alta (tesoura reta: +eixo)"""
+    bs = _tesoura_a_mao(ponta_alta=alta)
+    R.aplicar(bs)
+    assert _boca(_por_nome(bs)["M3000"])[1] * sinal > 0.99
+
+
+def test_2_4_cantoneira_simples_e_um_u_cortado_ao_meio():
+    """decisão 5: a aba de pé sempre para +n (o mesmo lado em toda a obra); a aba deitada para onde a boca do U iria"""
     bs = _tesoura_a_mao()
-    R.orientar(bs)
-    m = next(b for b in bs if b.nome == "M0")
+    R.aplicar(bs)
+    por = _por_nome(bs)
+    for k in range(3):
+        assert R.lado_da_aba(por["DL%d" % k], N) == 1, k
+    assert _deitada(por["DL2"])[1] < -0.99                           # o montante em L (y 4500, à direita do meio): para o meio
+    for k in (0, 1):                                                 # as diagonais em L: a aba deitada para baixo
+        assert _deitada(por["DL%d" % k])[2] < -0.3, (k, _deitada(por["DL%d" % k]))
+    # do outro lado do plano: acusada pela 2.4 com 180°
+    por["DL0"].rotacao = (por["DL0"].rotacao + 180.0) % 360.0
+    assert any(e["regra"] == "2.4" and e["nome"] == "DL0" and e["erro_graus"] == 180.0 for e in R.conferir(bs))
+
+
+def test_2_5_cantoneira_em_par_e_um_u_partido():
+    """o par: uma de cada lado do plano, as abas de pé para o centro e as deitadas as duas na direção da boca"""
+    bs = _tesoura_a_mao()
+    at = {"origem": {"peca": "TT"}}
+    a = Barra(nome="PA", inicio=(-30, 1500, 0), fim=(-30, 3000, 1000), perfil=L_AL, papel="diagonal", rotacao=0.0, atributos=dict(at))
+    b = Barra(nome="PB", inicio=(30, 3000, 1000), fim=(30, 1500, 0), perfil=L_AL, papel="diagonal", rotacao=0.0, atributos=dict(at))
+    bs += [a, b]
+    assert any(e["regra"] == "2.5" for e in R.conferir(bs))
+    R.aplicar(bs)
+    assert R.conferir(bs) == []
+    assert R.lado_da_aba(a, N) == 1 and R.lado_da_aba(b, N) == -1  # para o centro: a de x<0 aponta +x, a de x>0 aponta −x
+    da, db = _deitada(a), _deitada(b)
+    assert da[2] < -0.3 and db[2] < -0.3                             # a diagonal: nunca para cima
+    assert abs(da[1] - db[1]) < 1e-6 and abs(da[2] - db[2]) < 1e-6  # as duas na mesma direção
+
+
+def test_1_2_topo_do_painel_de_ponta_vira_banzo():
+    """a ponta da tesoura do anexo do Mercado Hermes (16/10): o painel de ponta com um X, e a peça de cima dele veio do
+    desenho como "diagonal" (horizontal, no topo do painel). Decisão 2: vira banzo superior, com o perfil do banzo, e
+    abre para baixo"""
+    at = {"origem": {"peca": "TX"}}
+    U1, U2 = "U 150×60×3,00 (FF)", "U 100×50×3,00 (FF)"
+    pts = [((0, 0, 0), (0, 400, 0), U2, "montante"), ((0, 0, 0), (0, 0, 400), U1, "banzo"),
+           ((0, 0, 0), (0, 400, 400), U2, "diagonal"), ((0, 0, 400), (0, 400, 0), U2, "diagonal"),
+           ((0, 0, 400), (0, 400, 400), U2, "diagonal"),                       # o topo do painel, como veio
+           ((0, 400, 0), (0, 400, 450), U2, "montante"), ((0, 400, 0), (0, 2000, 0), U1, "banzo"),
+           ((0, 400, 450), (0, 2000, 550), U1, "banzo"), ((0, 2000, 0), (0, 2000, 550), U2, "montante"),
+           ((0, 400, 450), (0, 2000, 0), U2, "diagonal")]
+    bs = [Barra(nome="P%d" % k, inicio=a, fim=b, perfil=perfil, papel=papel, rotacao=0.0, atributos=dict(at))
+          for k, (a, b, perfil, papel) in enumerate(pts)]
+    topo = bs[4]
+    topo.rotacao = R._giro_para(topo.direcao, (0.0, 0.0, 1.0))         # de boca para cima, como saiu
+    assert any(e["regra"] == "1.2" and e["nome"] == topo.nome for e in R.conferir(bs))
+    R.aplicar(bs)
+    assert topo.papel == "banzo" and topo.atributos["papel_trelica"] == "banzo_sup" and topo.perfil == U1
+    assert _boca(topo)[2] < -0.99
+    assert bs[8].perfil == U1 and bs[0].perfil == U2                     # 1.4: a ponta em U do banzo; o montante do painel não
+    assert R.conferir(bs) == []
+    assert _boca(bs[6])[2] > 0.99                                        # o banzo de baixo continua para cima
+
+
+def test_2_7_boca_virada_pelo_usuario_fica():
+    bs = _tesoura_a_mao()
+    R.aplicar(bs)
+    m = next(b for b in bs if b.nome == "M3000")
     m.rotacao = (m.rotacao + 180.0) % 360.0
     m.atributos["boca_virada"] = True                 # o "virar" do painel Perfis da tesoura
     assert R.conferir(bs) == []
     giro = m.rotacao
-    R.orientar(bs)
+    R.aplicar(bs)
     assert m.rotacao == giro
 
 
-def test_pares_e_presilhas_ficam_fora():
+def test_2_8_presilha_e_secundaria_ficam_fora():
     bs = _tesoura_a_mao()
-    R.orientar(bs)
-    # o par de cantoneiras (2L) espelhado: uma em cada aba, cada uma de um lado — não é a cantoneira simples da T5
+    R.aplicar(bs)
     at = {"origem": {"peca": "TT"}}
-    a = Barra(nome="PA", inicio=(-30, 1500, 0), fim=(-30, 3000, 1000), perfil=L_AL, papel="diagonal", rotacao=0.0,
-              atributos=dict(at))
-    b = Barra(nome="PB", inicio=(30, 1500, 0), fim=(30, 3000, 1000), perfil=L_AL, papel="diagonal", rotacao=90.0,
-              atributos=dict(at))
-    assert R.conferir(bs + [a, b]) == []
+    bs.append(Barra(nome="PR", inicio=(-30, 2000, 400), fim=(30, 2000, 400), perfil=L_AL, papel="presilha", rotacao=0.0,
+                    atributos=dict(at, papel_trelica="presilha")))
+    bs.append(Barra(nome="SEC", inicio=(40, 1000, 200), fim=(40, 5000, 200), perfil=L_AL, papel="diagonal", rotacao=33.0,
+                    atributos=dict(at, um_lado_so=True)))
+    assert R.conferir(bs) == []
 
 
 # ------------------------------------------------------------------ cada gerador
@@ -203,50 +327,14 @@ def test_3d_pelos_quadros():
 
 
 def test_conferencia_do_3d_e_verificar_apoios_acusam():
-    """o modelo que já existe (importado, de script, de antes da regra) mostra a peça fora da posição na conferência"""
+    """o modelo que já existe (importado, de script, de antes da regra) mostra a peça fora da regra na conferência"""
     from nucleo3d import conferencia_3d
     doc = Documento()
     for b in _tesoura_a_mao():
         doc.add(b)
     conf = conferencia_3d.conferir(doc, telha=False, soltas=False)
     assert conf["contagens"]["fora_da_posicao"] > 0
-    assert any(a["tipo"] == "posicao" and "regra T" in a["texto"] for a in conf["apontamentos"])
-    R.orientar(doc.entidades.values())
+    assert any(a["tipo"] == "posicao" and "regra 2." in a["texto"] for a in conf["apontamentos"])
+    assert any(a["tipo"] == "posicao" and "regra 1.4" in a["texto"] for a in conf["apontamentos"])
+    R.aplicar(doc.entidades.values())
     assert conferencia_3d.conferir(doc, telha=False, soltas=False)["contagens"]["fora_da_posicao"] == 0
-
-
-def _ponta_do_anexo(giro_topo):
-    """a ponta da tesoura do anexo do Mercado Hermes (16/10): o painel de ponta com um X, e a peça de cima dele veio do
-    desenho como "diagonal" (horizontal, no topo do painel); o banzo de cima segue um degrau acima"""
-    at = {"origem": {"peca": "TX"}}
-    U1, U2 = "U 150×60×3,00 (FF)", "U 100×50×3,00 (FF)"
-    pts = [((0, 0, 0), (0, 400, 0), U2, "montante"), ((0, 0, 0), (0, 0, 400), U1, "banzo"),
-           ((0, 0, 0), (0, 400, 400), U2, "diagonal"), ((0, 0, 400), (0, 400, 0), U2, "diagonal"),
-           ((0, 0, 400), (0, 400, 400), U2, "diagonal"),                       # o topo do painel, como veio
-           ((0, 400, 0), (0, 400, 450), U2, "montante"), ((0, 400, 0), (0, 2000, 0), U1, "banzo"),
-           ((0, 400, 450), (0, 2000, 550), U1, "banzo"), ((0, 2000, 0), (0, 2000, 550), U2, "montante"),
-           ((0, 400, 450), (0, 2000, 0), U2, "diagonal")]
-    bs = []
-    for k, (a, b, perfil, papel) in enumerate(pts):
-        bs.append(Barra(nome="P%d" % k, inicio=a, fim=b, perfil=perfil, papel=papel, rotacao=0.0, atributos=dict(at)))
-    topo = bs[4]
-    topo.rotacao = R._giro_para(topo.direcao, (0.0, 0.0, 1.0)) if giro_topo == "cima" else 0.0
-    return bs, topo
-
-
-def test_banzo_de_cima_nunca_de_boca_para_cima():
-    """T6 (usuário, 16/10): "o banzo superior das tesouras nunca pode ser com a boca para cima" — nem a peça do topo do
-    painel de ponta que veio como diagonal (a T4 a abria para cima)"""
-    bs, topo = _ponta_do_anexo("cima")
-    assert _boca(topo)[2] > 0.99
-    assert any(e["regra"] == "T6" and e["nome"] == topo.nome for e in R.conferir(bs))
-    R.orientar(bs)
-    assert R.conferir(bs) == []
-    t = R.trelicas(bs)[0]
-    for b, p in t["barras"]:
-        if R.no_topo(b, t):
-            assert _boca(b)[2] < -0.9, (b.nome, _boca(b))       # todo o contorno de cima abre para baixo
-    assert _boca(topo)[2] < -0.99
-    # o banzo de baixo continua de boca para cima (o miolo) e a diagonal de dentro não é topo
-    assert _boca(bs[6])[2] > 0.99
-    assert not R.no_topo(bs[9], t)
