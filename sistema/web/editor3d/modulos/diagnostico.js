@@ -191,7 +191,8 @@ export class MetodosDiagnostico {
     doc.aparece = (ent) => {
       const cam = String((ent && ent.camada) || '');
       if (/^refer/i.test(cam)) return false;
-      if (comTelhas && /^(telhas?|rufos?|calhas?|cumeeiras?)$/i.test(cam) && ent && ent.visivel !== false) return true;
+      // a lona de ilustração (Kaefer, 19/10) também: escondida no modelo, só nas fotos "com lona" do resumo
+      if (comTelhas && /^(telhas?|rufos?|calhas?|cumeeiras?|lonas?)$/i.test(cam) && ent && ent.visivel !== false) return true;
       return aparecia(ent);
     };
     const esconderReferencia = () => {

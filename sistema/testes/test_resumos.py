@@ -185,3 +185,20 @@ def test_linha_do_parafuso_na_compra_leva_os_ids_para_ver_no_3d():
     h = resumos._html_compra({"compra": C})
     assert 'data-ids="a1,a2,a3"' in h
     assert h.count("data-ids=") == 1                          # a porca e a arruela não levam
+
+
+def test_resumo_da_obra_com_as_fotos_sem_e_com_a_lona(tmp_path):
+    """Kaefer (19/10): os pares de fotos sem/com lona entram lado a lado depois dos números; sem as fotos, nada"""
+    fotos = {}
+    for k in (1, 2):
+        for q in ("sem", "com"):
+            cam = tmp_path / ("lona-%d-%s.jpg" % (k, q))
+            cam.write_bytes(b"\xff\xd8\xff\xd9")
+            fotos["lona-%d-%s" % (k, q)] = str(cam)
+    R = {"projeto": {"nome": "QUADRA"}, "dados": {}, "dimensoes": {}, "numeros": {"peso_aco": 1000.0, "parafusos": 0},
+         "grupos_peso": [], "tesouras": [], "parafusos": [], "familias": [], "chaparia": [], "avisos": [],
+         "dossie": {"fotos": fotos}}
+    obra = resumos.html_resumo_obra(R)
+    assert obra.count("Sem a lona") == 2 and obra.count("Com a lona") == 2 and 'class="com-lona"' in obra
+    R["dossie"]["fotos"] = {}
+    assert 'class="com-lona"' not in resumos.html_resumo_obra(R)

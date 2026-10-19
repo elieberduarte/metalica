@@ -63,3 +63,19 @@ def test_trelica_sem_cobertura_e_viga_caixote():
     assert pranchas._titulo_da_trelica([{"item": {"categoria": "TESOURAS", "nome": "T1"}}]) is None
     assert lista_producao._tipo_do_conjunto({"categoria": "TESOURAS", "titulo_categoria": "Vigas caixote"}) == "Viga caixote"
     assert lista_producao._tipo_do_conjunto({"categoria": "TESOURAS"}) == "Tesoura/pórtico"
+
+
+def test_fotos_com_e_sem_a_lona_de_ilustracao():
+    """Kaefer (19/10): com a camada Lona no modelo, o resumo pede os pares sem/com lona nos mesmos ângulos — a "com"
+    pelo modo "+telhas" do editor, que mostra a camada escondida; sem lona, nenhum par a mais"""
+    doc = SimpleNamespace(entidades={"a": SimpleNamespace(camada="Pilares"), "b": SimpleNamespace(camada="Lona")})
+    assert dossie.tem_lona(doc)
+    assert not dossie.tem_lona(SimpleNamespace(entidades={"a": SimpleNamespace(camada="Pilares")}))
+    pedidos = dossie.pedidos_de_fotos({"tem_lona": True, "dir_foto": [-0.95, 1.25, 0.8]})
+    nomes = [p["nome"] for p in pedidos]
+    assert nomes[:5] == ["capa", "lona-1-sem", "lona-1-com", "lona-2-sem", "lona-2-com"]
+    por = {p["nome"]: p for p in pedidos}
+    assert por["lona-1-com"]["angulo"].endswith("+telhas") and "+telhas" not in str(por["lona-1-sem"].get("angulo", ""))
+    assert por["lona-1-sem"]["dir"] == por["lona-1-com"]["dir"] == [-0.95, 1.25, 0.8]
+    assert por["lona-2-com"]["dir"][:2] == [-1.35, 0.7]                       # o mesmo lado da aérea escolhida
+    assert [p["nome"] for p in dossie.pedidos_de_fotos({})] == ["capa"]

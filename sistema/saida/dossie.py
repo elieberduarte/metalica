@@ -381,7 +381,7 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
         svgs["implantacao"] = planta_svg(geo, eixos_ok, R=R, largura=186.0, altura_max=150.0, rotulos_tesouras=True)
     legenda = [(b["titulo"], b["cor"]) for b in estrutura]
     return {"varios": varios, "pavimentos": pavs, "estrutura": estrutura, "svg": svgs, "legenda": legenda,
-            "tem_cobertura": tem_cobertura, "eixos": eixos_ok}
+            "tem_cobertura": tem_cobertura, "eixos": eixos_ok, "tem_lona": tem_lona(doc)}
 
 
 def _eixos_das_tesouras(R: dict, eixos: Optional[dict]) -> Dict[str, str]:
@@ -836,6 +836,17 @@ def direcao_pelo_aco(doc, pecas) -> List[float]:
     return [round(sx, 3), round(sy, 3), DIR_AEREA[2]]
 
 
+#: A camada da lona de ilustração (Kaefer, 19/10): escondida no modelo, aparece só nas fotos "com lona" do resumo — o
+#: editor a mostra no modo "+telhas" das fotos (diagnostico.js), como as telhas.
+CAMADA_LONA = re.compile(r"^lonas?$", re.I)
+
+
+def tem_lona(doc) -> bool:
+    """O modelo tem a lona de ilustração (o fechamento que não é peça de aço)."""
+    return any(CAMADA_LONA.match(str(getattr(e, "camada", "") or "")) and getattr(e, "visivel", True) is not False
+               for e in doc.entidades.values())
+
+
 def _angulo(X: dict) -> dict:
     """O pedido de ângulo das fotos: a direção escolhida pelo usuário ou calculada pelo lado do aço (`X["dir_foto"]`), senão
     o ângulo de sempre."""
@@ -852,6 +863,13 @@ def pedidos_de_fotos(X: dict, tem_telhas: bool = False) -> List[dict]:
     com o concreto em volta e cada peça na cor do tipo."""
     # a capa mostra a estrutura (com as telhas, o galpão virava uma laje cinza)
     pedidos = [dict({"nome": "capa"}, **_angulo(X))]
+    # a obra com e sem a lona (Kaefer, 19/10: "quero ela com lona e sem lona"): os mesmos dois ângulos — a aérea da capa e
+    # a perspectiva baixa do mesmo lado —, um par por ângulo
+    if X.get("tem_lona"):
+        d = X.get("dir_foto") if isinstance(X.get("dir_foto"), (list, tuple)) and len(X["dir_foto"]) == 3 else DIR_AEREA
+        for k, dr in enumerate(([float(c) for c in d], [math.copysign(1.35, d[0]), math.copysign(0.7, d[1]), 0.3]), 1):
+            pedidos.append({"nome": "lona-%d-sem" % k, "dir": dr})
+            pedidos.append({"nome": "lona-%d-com" % k, "angulo": ANGULO + "+telhas", "dir": dr})
     pavs = X.get("pavimentos") or []
     papel_do_id = {}
     for b in X.get("estrutura") or []:

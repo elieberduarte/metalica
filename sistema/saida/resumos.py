@@ -1560,6 +1560,10 @@ table.compra-perfis .cinza { font-size: 6.4pt; }
 figure { margin: 0; }
 .capa { margin: 3.5mm 0 0; border-radius: 3mm; overflow: hidden; break-inside: avoid; }
 .capa img { display: block; width: 100%; height: 78mm; object-fit: cover; }
+.com-lona { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin: 3.5mm 0 0; break-inside: avoid; }
+.com-lona figure { margin: 0; }
+.com-lona img { display: block; width: 100%; height: 52mm; object-fit: cover; border-radius: 2mm; border: 1px solid var(--linha); }
+.com-lona figcaption { font-size: 7.2pt; color: var(--mudo); margin-top: 1mm; }
 figure.desenho { margin: 1mm 0 1.5mm; text-align: center; break-inside: avoid; }
 figure.desenho svg { max-width: 100%; height: auto; }
 figure figcaption { font-size: 7pt; color: var(--mudo); margin-top: .8mm; text-align: center; }
@@ -1779,6 +1783,13 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
     if R.get("mais_pesada") and R["mais_pesada"].get("nome"):
         q.append(("Mais pesada · içamento", _n(R["mais_pesada"]["kg"], 1), "kg", "%s (%s)" % (R["mais_pesada"]["nome"], R["mais_pesada"]["tipo"])))
     partes.append(_ficha(q))
+    # a obra sem e com a lona (Kaefer, 19/10), lado a lado no mesmo ângulo
+    pares = [(_foto(R, "lona-%d-sem" % k), _foto(R, "lona-%d-com" % k)) for k in (1, 2)]
+    pares = [p for p in pares if p[0] and p[1]]
+    if pares:
+        partes.append("<div class=\"com-lona\">%s</div>" % "".join(
+            "<figure><img src=\"%s\" alt=\"\"><figcaption>%s</figcaption></figure>" % (img, leg)
+            for sem, com in pares for img, leg in ((sem, "Sem a lona"), (com, "Com a lona (ilustração: fora do peso e da lista)"))))
     sec = 0
     # ---- a obra desenhada
     svgs = X.get("svg") or {}
