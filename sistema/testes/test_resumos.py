@@ -202,3 +202,20 @@ def test_resumo_da_obra_com_as_fotos_sem_e_com_a_lona(tmp_path):
     assert obra.count("Sem a lona") == 2 and obra.count("Com a lona") == 2 and 'class="com-lona"' in obra
     R["dossie"]["fotos"] = {}
     assert 'class="com-lona"' not in resumos.html_resumo_obra(R)
+
+
+def test_resumo_da_obra_com_a_cobertura_retratil_aberta_e_retraida(tmp_path):
+    """Kaefer (19/10): a implantação aberta e retraída lado a lado e as legendas das fotos pela situação"""
+    fotos = {}
+    for k in (1, 2):
+        for q in ("sem", "com"):
+            cam = tmp_path / ("lona-%d-%s.jpg" % (k, q))
+            cam.write_bytes(b"\xff\xd8\xff\xd9")
+            fotos["lona-%d-%s" % (k, q)] = str(cam)
+    R = {"projeto": {"nome": "QUADRA"}, "dados": {}, "dimensoes": {}, "numeros": {"peso_aco": 1000.0, "parafusos": 0},
+         "grupos_peso": [], "tesouras": [], "parafusos": [], "familias": [], "chaparia": [], "avisos": [],
+         "dossie": {"fotos": fotos, "cobertura_movel": True, "legenda": [],
+                    "svg": {"implantacao": "<svg id='a'></svg>", "implantacao_retraida": "<svg id='r'></svg>"}}}
+    obra = resumos.html_resumo_obra(R)
+    assert 'class="lado-movel"' in obra and "<svg id='r'>" in obra
+    assert "Cobertura retraída · sem a lona" in obra and "Cobertura aberta · com a lona" in obra

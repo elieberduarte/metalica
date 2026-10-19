@@ -1566,6 +1566,8 @@ figure { margin: 0; }
 .com-lona figcaption { font-size: 7.2pt; color: var(--mudo); margin-top: 1mm; }
 figure.desenho { margin: 1mm 0 1.5mm; text-align: center; break-inside: avoid; }
 figure.desenho svg { max-width: 100%; height: auto; }
+.lado-movel { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; align-items: end; break-inside: avoid; }
+.lado-movel figcaption { font: 600 8pt 'Segoe UI', Arial; color: var(--mudo); margin-top: 1mm; }
 figure figcaption { font-size: 7pt; color: var(--mudo); margin-top: .8mm; text-align: center; }
 .legenda { display: flex; flex-wrap: wrap; gap: 1mm 4.5mm; font-size: 7.4pt; color: var(--texto); margin: 0 0 2mm; justify-content: center; }
 .legenda i, h3.tipo i, .pecas-pav i { display: inline-block; width: 4mm; height: 2.2mm; border-radius: .5mm; margin-right: 1.4mm; vertical-align: -.2mm; }
@@ -1784,12 +1786,17 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
         q.append(("Mais pesada · içamento", _n(R["mais_pesada"]["kg"], 1), "kg", "%s (%s)" % (R["mais_pesada"]["nome"], R["mais_pesada"]["tipo"])))
     partes.append(_ficha(q))
     # a obra sem e com a lona (Kaefer, 19/10), lado a lado no mesmo ângulo
-    pares = [(_foto(R, "lona-%d-sem" % k), _foto(R, "lona-%d-com" % k)) for k in (1, 2)]
-    pares = [p for p in pares if p[0] and p[1]]
+    # com a cobertura retrátil, o primeiro par é ela aberta e o segundo retraída
+    movel = bool((R.get("dossie") or {}).get("cobertura_movel"))
+    pares = [(k, _foto(R, "lona-%d-sem" % k), _foto(R, "lona-%d-com" % k)) for k in (1, 2)]
+    pares = [p for p in pares if p[1] and p[2]]
     if pares:
+        def legenda(k, com):
+            t = "com a lona (ilustração: fora do peso e da lista)" if com else "sem a lona"
+            return ("Cobertura aberta" if k == 1 else "Cobertura retraída") + " · " + t if movel else t[0].upper() + t[1:]
         partes.append("<div class=\"com-lona\">%s</div>" % "".join(
-            "<figure><img src=\"%s\" alt=\"\"><figcaption>%s</figcaption></figure>" % (img, leg)
-            for sem, com in pares for img, leg in ((sem, "Sem a lona"), (com, "Com a lona (ilustração: fora do peso e da lista)"))))
+            "<figure><img src=\"%s\" alt=\"\"><figcaption>%s</figcaption></figure>" % (img, legenda(k, com))
+            for k, sem, com_ in pares for img, com in ((sem, False), (com_, True))))
     sec = 0
     # ---- a obra desenhada
     svgs = X.get("svg") or {}
@@ -1812,7 +1819,13 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
     else:
         sec += 1
         partes.append(_h2(sec, "Implantação", ("eixos %s" % _eixos_rotulo(X.get("eixos"))) if X.get("eixos") else ""))
-        if svgs.get("implantacao"):
+        if svgs.get("implantacao") and svgs.get("implantacao_retraida"):
+            # a cobertura retrátil (Kaefer, 19/10): aberta e retraída lado a lado
+            partes.append("<div class=\"lado-movel\">%s</div>" % "".join(
+                "<figure class=\"desenho\">%s<figcaption>%s</figcaption></figure>" % (svgs[k], t)
+                for k, t in (("implantacao", "Cobertura aberta"), ("implantacao_retraida", "Cobertura retraída"))))
+            partes.append(_legenda(X.get("legenda") or []))
+        elif svgs.get("implantacao"):
             partes.append("<figure class=\"desenho\">%s</figure>" % svgs["implantacao"])
             partes.append(_legenda(X.get("legenda") or []))
         # o que o desenho não mostra, em cartões

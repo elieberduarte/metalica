@@ -91,14 +91,23 @@ export class Api {
   /** O servidor manda o modelo como está no disco; se não vier um JSON inteiro (arquivo emendado
    *  por gravações antigas), pede de novo pelo caminho completo, que conserta o arquivo. */
   async modeloDoProjeto(slug) {
+    // ?cobertura=aberta|retraida na página (as fotos do resumo da obra, 19/10): o modelo com a cobertura retrátil nessa
+    // situação, montado pelo servidor só para ver — essa página não grava (salvarModeloDoProjeto recusa)
+    const cobertura = this._cobertura();
+    if (cobertura) return pedir(this._r('/api/projetos/' + encodeURIComponent(slug) + '/modelo?cobertura=' + encodeURIComponent(cobertura)));
     const rota = this._r('/api/projetos/' + encodeURIComponent(slug) + '/modelo');
     const r = await pedir(rota);
     return r === null ? pedir(rota + '?completo=1') : r;
   }
 
+  _cobertura() {
+    try { return new URLSearchParams(location.search).get('cobertura') || ''; } catch { return ''; }
+  }
+
   /** O documento vai como texto JSON e o servidor o grava como veio, sem ler e reescrever (no Bella
    *  Casa, 05/10, eram 200 MB por json.loads e json.dumps a cada gravação automática). */
   salvarModeloDoProjeto(slug, documentoJSON, baseAlterado = null) {
+    if (this._cobertura()) return Promise.reject(new Error('o modelo da foto (cobertura em outra situação) não se grava'));
     const cab = { 'Content-Type': 'application/json; charset=utf-8', 'X-Modelo-Cru': '1' };
     if (baseAlterado !== null && baseAlterado !== undefined) cab['X-Base-Alterado'] = String(baseAlterado);
     if (documentoJSON && Array.isArray(documentoJSON.entidades)) cab['X-Entidades'] = String(documentoJSON.entidades.length);

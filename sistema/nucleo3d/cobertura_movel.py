@@ -12,11 +12,13 @@ veio, para a sincronização da planta trocá-las junto (e gerar de novo). A an�
 """
 from __future__ import annotations
 
+import collections
 import copy
+import hashlib
 import re
 from typing import List, Optional, Sequence, Tuple
 
-from nucleo3d.modelo import Barra, Camada, Chapa, Documento, Solido, novo_id
+from nucleo3d.modelo import Barra, Camada, Chapa, Documento, Solido
 
 SITUACOES = ("aberta", "retraida")
 
@@ -30,6 +32,24 @@ def _mover(ent, d):
         ent.origem = soma(ent.origem)
     elif isinstance(ent, Solido):
         ent.vertices = [soma(v) for v in ent.vertices]
+
+
+def _id_estavel(*partes) -> str:
+    """o id da peça gerada pelo que ela é (tesoura k, peça do molde, lado da sanfona…), não sorteado: a tesoura k tem o
+    mesmo id aberta e retraída — o resumo da obra (19/10) levanta as peças do modelo como está e fotografa e desenha a
+    cobertura na outra situação com os mesmos ids"""
+    return "e" + hashlib.sha1("|".join(str(p) for p in partes).encode("utf-8")).hexdigest()[:12]
+
+
+def _assinatura(e) -> str:
+    """a peça do molde na posição da planta (igual a cada aplicar: o molde volta para lá)"""
+    r = lambda p: ",".join("%.0f" % v for v in p)
+    if isinstance(e, Barra):
+        return "b:%s:%s:%s" % (r(e.inicio), r(e.fim), e.perfil)
+    if isinstance(e, Chapa):
+        return "c:%s" % r(e.origem)
+    vs = getattr(e, "vertices", None) or []
+    return "s:%s:%d" % (r(vs[0]) if vs else "", len(vs))
 
 
 def gerada(ent) -> bool:
@@ -70,13 +90,19 @@ def aplicar(doc: Documento, par: Optional[dict] = None, situacao: str = "aberta"
     planta = next(((e.atributos or {}).get("planta") for e in molde if (e.atributos or {}).get("planta")), None)
     n_pecas = 0
     desl = []
+    vezes = collections.Counter()
+    assin = []
+    for e in molde:
+        a = _assinatura(e)
+        vezes[a] += 1
+        assin.append("%s#%d" % (a, vezes[a]))
     for k, t in enumerate(mv["tesouras"]):
         dt = (t["t"] - mv["t0"]) * 1000.0
         d = (n[0] * dt, n[1] * dt, 0.0)
         desl.append(d)
-        for e in molde:
+        for e, a in zip(molde, assin):
             c = copy.deepcopy(e)
-            c.id = novo_id()
+            c.id = _id_estavel("cm", k, a)
             _mover(c, d)
             at = dict(c.atributos or {})
             if at.get("origem_2d"):
@@ -91,8 +117,8 @@ def aplicar(doc: Documento, par: Optional[dict] = None, situacao: str = "aberta"
     z_pe = min(min(e.inicio[2], e.fim[2]) for e in molde if isinstance(e, Barra)) if any(isinstance(e, Barra) for e in molde) else None
     ns = 0
     for k, (t1, t2) in enumerate(zip(mv["tesouras"], mv["tesouras"][1:])):
-        for (top1, bot1), (top2, bot2) in zip(t1["lados"], t2["lados"]):
-            for a, b in ((top1, bot2), (bot1, top2)):
+        for lado, ((top1, bot1), (top2, bot2)) in enumerate(zip(t1["lados"], t2["lados"])):
+            for x, (a, b) in enumerate(((top1, bot2), (bot1, top2))):
                 A, B = tuple(float(v) * 1000.0 for v in nos[a]), tuple(float(v) * 1000.0 for v in nos[b])
                 if z_pe is not None:
                     A, B = (A[0], A[1], max(A[2], z_pe)), (B[0], B[1], max(B[2], z_pe))
@@ -101,7 +127,7 @@ def aplicar(doc: Documento, par: Optional[dict] = None, situacao: str = "aberta"
                 at = {"elemento": "sanfona", "cobertura_movel": {"k": k, "situacao": situacao}}
                 if planta:
                     at["planta"] = planta
-                doc.add(Barra(nome="Sanfona %d-%d" % (k + 1, k + 2), camada="Contraventamento", inicio=A, fim=B,
+                doc.add(Barra(id=_id_estavel("sf", k, lado, x), nome="Sanfona %d-%d" % (k + 1, k + 2), camada="Contraventamento", inicio=A, fim=B,
                               perfil=P.get("perfil_sanfona") or "TQ 50×50×2,0", papel="contraventamento", atributos=at))
                 ns += 1
     n_lona = lona_da_cobertura(doc, molde, n, desl, situacao, camada_lona) if lona else 0
@@ -193,13 +219,13 @@ def lona_da_cobertura(doc: Documento, molde, n, desl, situacao: str, camada: str
             fora = (q[0] + sg * u[0] * T, q[1] + sg * u[1] * T)
             pecas.append(_prisma([(q[0], q[1], z_pe), (q[0], q[1], p[2]), (fora[0], fora[1], p[2]), (fora[0], fora[1], z_pe)], v))
         vs, fs = _juntar(pecas)
-        doc.add(Solido(nome="Lona %d-%d" % (k + 1, k + 2), camada=camada, vertices=vs, faces=fs, material="Lona PVC",
+        doc.add(Solido(id=_id_estavel("lona", k), nome="Lona %d-%d" % (k + 1, k + 2), camada=camada, vertices=vs, faces=fs, material="Lona PVC",
                        atributos=dict(at, lona_movel={"vao": k, "situacao": situacao})))
     # o arco fechado nas duas extremidades
     for sn, sg in ((trechos[0][0], -1.0), (trechos[-1][1], 1.0)):
         sec = [em((arco[0][0], arco[0][1], z_pe), sn)] + [em(p, sn) for p in arco] + [em((arco[-1][0], arco[-1][1], z_pe), sn)]
         vs, fs = _prisma(sec, (n[0] * sg * T, n[1] * sg * T, 0.0))
-        doc.add(Solido(nome="Lona frontão", camada=camada, vertices=vs, faces=fs, material="Lona PVC",
+        doc.add(Solido(id=_id_estavel("lona-frontao", sg), nome="Lona frontão", camada=camada, vertices=vs, faces=fs, material="Lona PVC",
                        atributos=dict(at, lona_movel={"frontao": sg, "situacao": situacao})))
     return len(trechos) + 2
 

@@ -172,8 +172,10 @@ def _nome_pav(camada: str) -> str:
 
 # ============================================================ estrutura por tipo
 
-def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[dict] = None) -> dict:
-    """O dossiê: pavimentos, estrutura por tipo (papel × comprimento) e os desenhos em SVG."""
+def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[dict] = None,
+             movel: Optional[dict] = None) -> dict:
+    """O dossiê: pavimentos, estrutura por tipo (papel × comprimento) e os desenhos em SVG. `movel`: os parâmetros da
+    cobertura retrátil (o modelo já vem com ela aberta): a planta dela retraída vai ao lado e as fotos mostram as duas."""
     posicoes = list(lev["posicoes"])
     pecas = [e for e in lev["pecas"] if e.vertices]
     tipos = _por_marca(nomes.get("tipos"))
@@ -378,10 +380,45 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
             p["ids_andar"] = sorted(ids)
             p["contexto"] = contexto_de_concreto(doc, pecas, z0, z1)
     else:
-        svgs["implantacao"] = planta_svg(geo, eixos_ok, R=R, largura=186.0, altura_max=150.0, rotulos_tesouras=True)
+        # a cobertura retrátil (Kaefer, 19/10): aberta e retraída lado a lado
+        if movel is not None:
+            try:
+                svgs["implantacao_retraida"] = planta_svg(_geo_retraida(doc, geo, movel), eixos_ok, R=R, largura=92.0,
+                                                          altura_max=150.0)
+            except Exception:                                   # noqa: BLE001 — sem ela, a aberta sozinha
+                svgs.pop("implantacao_retraida", None)
+        lado = "implantacao_retraida" in svgs
+        svgs["implantacao"] = planta_svg(geo, eixos_ok, R=R, largura=92.0 if lado else 186.0, altura_max=150.0,
+                                         rotulos_tesouras=True)
     legenda = [(b["titulo"], b["cor"]) for b in estrutura]
     return {"varios": varios, "pavimentos": pavs, "estrutura": estrutura, "svg": svgs, "legenda": legenda,
-            "tem_cobertura": tem_cobertura, "eixos": eixos_ok, "tem_lona": tem_lona(doc)}
+            "tem_cobertura": tem_cobertura, "eixos": eixos_ok, "tem_lona": tem_lona(doc),
+            "cobertura_movel": movel is not None}
+
+
+def _geo_retraida(doc, geo: Dict[str, dict], movel: dict) -> Dict[str, dict]:
+    """A geometria da planta com a cobertura retrátil retraída: as peças geradas (tesouras, sanfona) têm o mesmo id nas
+    duas situações (cobertura_movel._id_estavel); só a posição delas muda, o papel e a cor ficam os da aberta."""
+    import copy
+    from nucleo3d import cobertura_movel as CM
+    from nucleo2d.detalhe.base import _proxy_da_barra
+    d2 = copy.deepcopy(doc)
+    CM.aplicar(d2, movel, "retraida")
+    saida = {}
+    for i, g in geo.items():
+        e = d2.entidades.get(i)
+        if e is None:
+            continue
+        if CM.gerada(e) and hasattr(e, "inicio"):
+            px = _proxy_da_barra(e)
+            zs = [v[2] for v in px.vertices]
+            try:
+                seg = _eixo_da_peca(px)
+            except Exception:                                   # noqa: BLE001
+                seg = None
+            g = dict(g, seg=seg, z0=min(zs), z1=max(zs), verts=px.vertices)
+        saida[i] = g
+    return saida
 
 
 def _eixos_das_tesouras(R: dict, eixos: Optional[dict]) -> Dict[str, str]:
@@ -865,9 +902,12 @@ def pedidos_de_fotos(X: dict, tem_telhas: bool = False) -> List[dict]:
     pedidos = [dict({"nome": "capa"}, **_angulo(X))]
     # a obra com e sem a lona (Kaefer, 19/10: "quero ela com lona e sem lona"): os mesmos dois ângulos — a aérea da capa e
     # a perspectiva baixa do mesmo lado —, um par por ângulo
+    # com a cobertura retrátil, o segundo par é ela retraída no mesmo ângulo (fotografar: outra carga do modelo)
     if X.get("tem_lona"):
         d = X.get("dir_foto") if isinstance(X.get("dir_foto"), (list, tuple)) and len(X["dir_foto"]) == 3 else DIR_AEREA
-        for k, dr in enumerate(([float(c) for c in d], [math.copysign(1.35, d[0]), math.copysign(0.7, d[1]), 0.3]), 1):
+        d = [float(c) for c in d]
+        segundo = d if X.get("cobertura_movel") else [math.copysign(1.35, d[0]), math.copysign(0.7, d[1]), 0.3]
+        for k, dr in enumerate((d, segundo), 1):
             pedidos.append({"nome": "lona-%d-sem" % k, "dir": dr})
             pedidos.append({"nome": "lona-%d-com" % k, "angulo": ANGULO + "+telhas", "dir": dr})
     pavs = X.get("pavimentos") or []
@@ -920,11 +960,20 @@ def fotografar(porta: int, slug: str, pasta: str, X: dict, tem_telhas: bool = Fa
     pedidos = pedidos_de_fotos(X, tem_telhas)
     onde = {p["nome"]: p.get("_onde") for p in pedidos}
     pedidos = [{k: v for k, v in p.items() if not k.startswith("_")} for p in pedidos]
+    # a cobertura retrátil: tudo com ela aberta e o segundo par de fotos da lona com ela retraída (outra carga do modelo)
+    if X.get("cobertura_movel"):
+        lotes = [("aberta", [p for p in pedidos if not p["nome"].startswith("lona-2-")]),
+                 ("retraida", [p for p in pedidos if p["nome"].startswith("lona-2-")])]
+    else:
+        lotes = [(None, pedidos)]
     erro = None
     for gpu in (True, False):
         try:
-            fotos = imagens3d.fotografar(porta, slug, pasta, pedidos, largura=1500, altura=1000, escala=1.0, capa=None,
-                                         avisar=avisar, gpu=gpu)
+            fotos = {}
+            for cobertura, lote in lotes:
+                if lote:
+                    fotos.update(imagens3d.fotografar(porta, slug, pasta, lote, largura=1500, altura=1000, escala=1.0, capa=None,
+                                                      avisar=avisar, gpu=gpu, cobertura=cobertura))
             X["fotos_onde"] = {k: v for k, v in onde.items() if v}
             return fotos
         except Exception as exc:                                # noqa: BLE001

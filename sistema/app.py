@@ -2919,6 +2919,13 @@ def gerar_resumos_projeto(s: str, corpo: dict, porta: Optional[int] = None) -> d
     try:
         _progresso(s, "levantando as peças do modelo…")
         doc = _documento3d_do_projeto(s)
+        # a cobertura retrátil (Kaefer, 19/10): o resumo fala dela aberta, em qualquer situação em que o modelo esteja; a
+        # retraída entra na planta ao lado e nas fotos dela (os ids das peças geradas são os mesmos nas duas)
+        from nucleo3d import cobertura_movel as CM
+        par_movel = None
+        if any(CM.gerada(e) for e in doc.entidades.values()):
+            par_movel = dict(g.ler(s).get("analise_parametros") or {})
+            CM.aplicar(doc, par_movel, "aberta")
         _marcar_origem(s, doc)                         # as porcas do chumbador: recebido × nosso (N07)
         r = detalhar(doc, grupos=["localizacao"], nomes=_nomes_producao(s), converter=False, ajustes=_ajustes_furos(s),
                      avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
@@ -2946,7 +2953,7 @@ def gerar_resumos_projeto(s: str, corpo: dict, porta: Optional[int] = None) -> d
         loc = (r.get("desenhos") or {}).get("localizacao")
         eixos = g.ler(s).get("eixos") or (loc.metadados.get("eixos") if loc is not None else None)
         try:
-            R["dossie"] = dossie.levantar(doc, lev, lista, nomes, R, eixos)
+            R["dossie"] = dossie.levantar(doc, lev, lista, nomes, R, eixos, movel=par_movel)
         except Exception as exc:                          # noqa: BLE001 — sem o dossiê, o resumo sai com as tabelas
             R["dossie"] = {}
             R.setdefault("avisos", []).append("dossiê sem os desenhos: %s" % exc)
@@ -4589,6 +4596,16 @@ def modelo_do_projeto(s: str) -> dict:
     return {"documento": doc, "existe": doc is not None, "alterado": _alterado_modelo(s), "aberto_por": outro}
 
 
+def modelo_na_situacao(s: str, situacao: str) -> dict:
+    """GET /api/projetos/<s>/modelo?cobertura=aberta|retraida: o modelo com a cobertura retrátil na situação pedida, sem
+    gravar nem marcar o projeto como aberto — o editor das fotos do resumo da obra (?render=1&cobertura=…, 19/10)"""
+    from nucleo3d import cobertura_movel as CM
+    doc = _documento3d_do_projeto(s)
+    if situacao in CM.SITUACOES and any(CM.gerada(e) for e in doc.entidades.values()):
+        CM.aplicar(doc, dict(_gerente().ler(s).get("analise_parametros") or {}), situacao)
+    return {"documento": doc.dict(), "existe": True, "alterado": _alterado_modelo(s), "aberto_por": None, "situacao": situacao}
+
+
 def modelo_do_projeto_cru(s: str):
     """A mesma resposta de `modelo_do_projeto`, com o modelo do jeito que está no disco, sem passar
     pelo Python: no Bella Casa (200 MB) ler e reescrever o JSON levava 21 dos 40 s de abrir o editor
@@ -5392,6 +5409,9 @@ class Handler(BaseHTTPRequestHandler):
             if rota.startswith("/api/projetos/"):
                 partes = rota.split("/api/projetos/", 1)[1].strip("/").split("/")
                 if len(partes) == 2 and partes[1] == "modelo":
+                    cobertura = (parse_qs(urlparse(self.path).query).get("cobertura") or [""])[0]
+                    if cobertura:
+                        return self._json(modelo_na_situacao(partes[0], cobertura))
                     completo = (parse_qs(urlparse(self.path).query).get("completo") or [""])[0]
                     cru = None if completo else modelo_do_projeto_cru(partes[0])
                     if cru is not None:

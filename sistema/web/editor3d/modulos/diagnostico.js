@@ -191,8 +191,10 @@ export class MetodosDiagnostico {
     doc.aparece = (ent) => {
       const cam = String((ent && ent.camada) || '');
       if (/^refer/i.test(cam)) return false;
-      // a lona de ilustração (Kaefer, 19/10) também: escondida no modelo, só nas fotos "com lona" do resumo
-      if (comTelhas && /^(telhas?|rufos?|calhas?|cumeeiras?|lonas?)$/i.test(cam) && ent && ent.visivel !== false) return true;
+      // a lona de ilustração (Kaefer, 19/10): só nas fotos "com lona" do resumo — nas outras não, nem com a camada ligada
+      // no modelo (as "sem a lona" saíam com ela)
+      if (/^lonas?$/i.test(cam)) return comTelhas && !!ent && ent.visivel !== false;
+      if (comTelhas && /^(telhas?|rufos?|calhas?|cumeeiras?)$/i.test(cam) && ent && ent.visivel !== false) return true;
       return aparecia(ent);
     };
     const esconderReferencia = () => {
@@ -261,8 +263,12 @@ export class MetodosDiagnostico {
     cena._corDe = (ent) => (corDestaque && cena.destaque && ent && cena.destaque.has(ent.id) && corDaPeca(ent.id)) || corDe(ent);
     const apareciaAntes = doc.aparece;
     doc.aparece = (ent) => (visiveis && ent && !visiveis.has(ent.id) ? false : apareciaAntes(ent));
+    let repintada = false;
     window.__render = async (nomes, formato = 'image/jpeg', qualidade = 0.92) => {
       const saida = [];
+      // a cena foi montada antes das regras daqui (a lona com a camada ligada no modelo saía na foto "sem a lona", 19/10):
+      // repinta uma vez antes da primeira foto
+      if (!repintada) { repintada = true; cena.repintarTudo(); await quadros(4); }
       for (const pedido of nomes) {
         const obj = pedido && typeof pedido === 'object' ? pedido : null;
         // "aerea_frente+telhas": o mesmo ângulo com a cobertura

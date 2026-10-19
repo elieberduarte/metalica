@@ -22,7 +22,8 @@ ANGULOS = ("aerea_frente", "aerea_tras", "perspectiva", "lateral", "topo")
 
 def fotografar(porta_servidor: int, slug: str, pasta: str, angulos: Sequence[str] = ANGULOS,
                largura: int = 1600, altura: int = 1000, escala: float = 1.5, timeout: float = 240.0,
-               avisar=None, capa: Optional[str] = "aerea_frente", gpu: bool = False) -> Dict[str, str]:
+               avisar=None, capa: Optional[str] = "aerea_frente", gpu: bool = False,
+               cobertura: Optional[str] = None) -> Dict[str, str]:
     """Abre o modelo do projeto e grava uma imagem por ângulo. Devolve {ângulo: caminho}. Com `capa`, grava
     também ``capa.jpg``: o mesmo ângulo num quadro quase quadrado, do tamanho da foto da capa da proposta."""
     avisar = avisar or (lambda *a: None)
@@ -30,6 +31,8 @@ def fotografar(porta_servidor: int, slug: str, pasta: str, angulos: Sequence[str
     porta = porta_livre()
     perfil = os.path.join(os.environ.get("TEMP", "."), "chrome_render_%d" % porta)
     url = "http://127.0.0.1:%d/editor?projeto=%s&render=1" % (porta_servidor, quote(slug))
+    if cobertura:                                    # a cobertura retrátil numa situação (o resumo da obra, 19/10)
+        url += "&cobertura=" + quote(cobertura)
     proc = subprocess.Popen(
         [navegador(), "--headless=new", "--hide-scrollbars", "--no-sandbox", "--disable-extensions",
          # com `gpu`, a placa de vídeo (o modelo grande — as 13 mil peças do Vicente — não abre no swiftshader em 4 min)

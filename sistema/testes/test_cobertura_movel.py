@@ -156,3 +156,25 @@ def test_a_lona_da_cobertura_segue_a_situacao():
     assert ys_da_lona() == (-33, 2033)                               # a pilha nos 2 m da ponta
     assert CM.aplicar(doc, PAR, "aberta")["lona"] == 6 and ys_da_lona() == (-33, 10033)
     assert CM.aplicar(doc, PAR, "aberta", lona=False)["lona"] == 0 and ys_da_lona() is None
+
+
+def test_ids_iguais_aberta_e_retraida_e_a_planta_retraida_do_resumo():
+    """Kaefer (19/10): o resumo levanta o modelo aberto e desenha/fotografa a cobertura retraída pelos mesmos ids — a
+    tesoura k, a sanfona e a lona têm o mesmo id nas duas situações (antes eram sorteados a cada aplicar)"""
+    from saida import dossie
+    doc = _modelo()
+    CM.aplicar(doc, PAR, "aberta", lona=True)
+    ids_a = {k for k, e in doc.entidades.items() if CM.gerada(e) or (e.atributos or {}).get("elemento") == CM.LONA}
+    CM.aplicar(doc, PAR, "retraida")
+    ids_r = {k for k, e in doc.entidades.items() if CM.gerada(e) or (e.atributos or {}).get("elemento") == CM.LONA}
+    assert ids_a == ids_r and len(ids_a) == 45 + 16 + 6
+    # a planta da retraída (dossie._geo_retraida): as tesouras na pilha, o resto como está
+    CM.aplicar(doc, PAR, "aberta")
+    geo = {k: {"papel": "tesouras" if (e.atributos or {}).get("elemento") == "trelica" else "pilares", "seg": None,
+               "z0": 0.0, "z1": 0.0, "verts": []}
+           for k, e in doc.entidades.items() if (e.atributos or {}).get("elemento") in ("trelica", "pilar")}
+    g2 = dossie._geo_retraida(doc, geo, PAR)
+    assert set(g2) == set(geo)
+    ys = [v[1] for k, g in g2.items() if g["papel"] == "tesouras" for v in g["verts"]]
+    assert max(ys) < 2100 and min(ys) > -100                       # nos 2 m da ponta
+    assert all(g2[k] is geo[k] for k in geo if geo[k]["papel"] == "pilares")

@@ -79,3 +79,24 @@ def test_fotos_com_e_sem_a_lona_de_ilustracao():
     assert por["lona-1-sem"]["dir"] == por["lona-1-com"]["dir"] == [-0.95, 1.25, 0.8]
     assert por["lona-2-com"]["dir"][:2] == [-1.35, 0.7]                       # o mesmo lado da aérea escolhida
     assert [p["nome"] for p in dossie.pedidos_de_fotos({})] == ["capa"]
+
+
+def test_cobertura_retratil_fotografa_aberta_e_o_segundo_par_retraido(monkeypatch, tmp_path):
+    """Kaefer (19/10): com a cobertura retrátil, tudo é fotografado com ela aberta e o segundo par da lona com ela
+    retraída, no mesmo ângulo (outra carga do modelo: ?cobertura=retraida)"""
+    from saida import imagens3d
+    X = {"tem_lona": True, "cobertura_movel": True, "dir_foto": [0.95, -1.25, 0.8]}
+    por = {p["nome"]: p for p in dossie.pedidos_de_fotos(X)}
+    assert por["lona-2-sem"]["dir"] == por["lona-1-sem"]["dir"]
+    lotes = []
+
+    def falso(porta, slug, pasta, pedidos, cobertura=None, **kw):
+        lotes.append((cobertura, [p["nome"] for p in pedidos]))
+        return {p["nome"]: str(tmp_path / (p["nome"] + ".jpg")) for p in pedidos}
+    monkeypatch.setattr(imagens3d, "fotografar", falso)
+    fotos = dossie.fotografar(1, "obra", str(tmp_path / "dossie"), X)
+    assert lotes == [("aberta", ["capa", "lona-1-sem", "lona-1-com"]), ("retraida", ["lona-2-sem", "lona-2-com"])]
+    assert set(fotos) == {"capa", "lona-1-sem", "lona-1-com", "lona-2-sem", "lona-2-com"}
+    lotes.clear()
+    dossie.fotografar(1, "obra", str(tmp_path / "dossie"), {"tem_lona": True})
+    assert [c for c, _ in lotes] == [None]
