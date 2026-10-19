@@ -519,7 +519,8 @@ def test_telha_passa_por_cima_do_fechamento_na_linha_dela(acima, por_cima):
                  camada="Platibanda", rotacao=270.0)
     z_sup = plano + acima - T._ext_z(topo)[1]
     for z in (z_sup - 1100.0, z_sup):
-        b = Barra(inicio=(x_f, 0.0, z), fim=(x_f, 6000.0, z), perfil="U 100×50×3,00 (FF)", papel="banzo",
+        # 5 mm além da ponta das terças (a P.15 do Mercado vai até a face do pilar, a terça para antes)
+        b = Barra(inicio=(x_f, 0.0, z), fim=(x_f, 6005.0, z), perfil="U 100×50×3,00 (FF)", papel="banzo",
                   camada="Platibanda", rotacao=270.0)
         b.atributos = {"origem": {"peca": "P.15"}, "conjunto": "P.15"}
         doc.add(b)

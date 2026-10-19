@@ -978,7 +978,12 @@ def _fechamentos(doc, panos, telha, camada):
 
                 def zt_f(s_, P=P):
                     # embaixo da telha que passa por cima do fechamento (o beiral sobre ele)
-                    z_ = z_sobre(P(min(max(s_, 1.0), L - 1.0), 0.0)[:2])      # 1 mm para dentro (a ponta na borda)
+                    # o ponto ou um vizinho até 0,3 m (a ponta do fechamento passa uns mm da ponta da terça e do beiral)
+                    z_ = None
+                    for ds in (0.0, -10.0, 10.0, -100.0, 100.0, -300.0, 300.0):
+                        z_ = z_sobre(P(min(max(s_ + ds, 1.0), L - 1.0), 0.0)[:2])
+                        if z_ is not None:
+                            break
                     return zt(s_) if z_ is None or z_ <= zb + 300.0 else min(zt(s_), z_ - 3.0)
                 a_ = 0.0
                 while a_ < L - 1.0:
