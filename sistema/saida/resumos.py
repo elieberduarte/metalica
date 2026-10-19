@@ -336,6 +336,11 @@ def funilaria_da_lista(lista: dict) -> List[dict]:
     return saida
 
 
+def _coef(kg: float, base: float, casas: int = 2) -> str:
+    """O coeficiente de peso (kg/m ou kg/m²): kg ÷ base, ou "—" sem base"""
+    return _n(kg / base, casas) if base and kg else "—"
+
+
 def _tabela_funilaria(R: dict) -> str:
     """A tabela dos rufos e das calhas, uma linha por marca, com o total."""
     F = R.get("funilaria") or []
@@ -343,14 +348,17 @@ def _tabela_funilaria(R: dict) -> str:
         return ""
     linhas = [[("<b>%s</b>" % _esc(x["nome"]), "c"), _esc("%s — %s" % (x["tipo"], x["perfil"])),
                (_n(x["desenvolvimento"], 0), "r"), (_n(x["comprimento"] / 1000.0, 2), "r"), (x["qtd"], "c"),
-               (_n(x["ml"], 2), "r"), (_n(x["m2"], 2), "r"), (_n(x["kg"], 1), "r")] for x in F]
-    rod = [("TOTAL", "b"), "", "", "", (sum(x["qtd"] for x in F), "c"), (_n(sum(x["ml"] for x in F), 2), "r"),
-           (_n(sum(x["m2"] for x in F), 2), "r"), (_n(sum(x["kg"] for x in F), 1), "r")]
+               (_n(x["ml"], 2), "r"), (_n(x["m2"], 2), "r"), (_coef(x["kg"], x["ml"], 3), "r"), (_coef(x["kg"], x["m2"], 3), "r"),
+               (_n(x["kg"], 1), "r")] for x in F]
+    ml, m2, kg = sum(x["ml"] for x in F), sum(x["m2"] for x in F), sum(x["kg"] for x in F)
+    rod = [("TOTAL", "b"), "", "", "", (sum(x["qtd"] for x in F), "c"), (_n(ml, 2), "r"), (_n(m2, 2), "r"), "",
+           (_coef(kg, m2, 3), "r"), (_n(kg, 1), "r")]
     return (_tabela([("Marca", "c"), "Descrição", ("Desenv. (mm)", "r"), ("Comp. (m)", "r"), ("Qtd", "c"), ("Total (ml)", "r"),
-                     ("m²", "r"), ("kg", "r")], linhas, rodape=rod, bruto=True,
-                    larguras=["8%", "38%", "10%", "9%", "6%", "10%", "9%", "10%"])
+                     ("m²", "r"), ("kg/m", "r"), ("kg/m²", "r"), ("kg", "r")], linhas, rodape=rod, bruto=True,
+                    larguras=["7%", "30%", "9%", "8%", "5%", "9%", "8%", "8%", "8%", "8%"])
             + "<p class=\"nota\">Desenvolvimento: a largura da chapa planificada de cada peça (a soma das abas da "
-              "dobra); comprimento: o da peça. m² da chapa planificada.</p>")
+              "dobra); comprimento: o da peça. m² da chapa planificada; kg/m por metro de peça e kg/m² da chapa "
+              "(espessura × 7,85 kg/m² por mm).</p>")
 
 
 def trelica_em_pe(pecas) -> bool:
@@ -1783,7 +1791,7 @@ def _bloco_tipo(R: dict, b: dict, varios: bool) -> str:
         larg = ["7%", "8%", "15%", "10%", "12%", "9%", "28%", "11%"]
         rod = [("%d" % b["qtd"], "c"), ("TOTAL", "b"), "", "", "", "", "", (_n(b["kg"], 1), "r")]
     else:
-        colunas = [("Qtd", "c"), ("Comprimento", "r"), ("Total", "r"), "Marca", "Perfil"] + (["Onde"] if varios else []) + [("kg", "r")]
+        colunas = [("Qtd", "c"), ("Comprimento", "r"), ("Total", "r"), "Marca", "Perfil"] + (["Onde"] if varios else []) + [("kg/m", "r"), ("kg", "r")]
         linhas = []
         for k, li in enumerate(b["linhas"], 1):
             marcas = ", ".join(li["marcas"][:6]) + (" …" if len(li["marcas"]) > 6 else "")
@@ -1792,10 +1800,12 @@ def _bloco_tipo(R: dict, b: dict, varios: bool) -> str:
                    ("%s m" % _n(li["qtd"] * li["comprimento"] / 1000.0, 1), "r"), _esc(marcas), "<span class=\"cinza\">%s</span>" % _esc(perfis)]
             if varios:
                 row.append("<span class=\"cinza\">%s</span>" % _esc(" · ".join("%s %d" % (p, q) for p, q in li.get("onde") or [])))
+            row.append((_coef(li.get("kg") or 0.0, li["qtd"] * li["comprimento"] / 1000.0), "r"))
             row.append((_n(li.get("kg") or 0.0, 1), "r"))
             linhas.append(row)
-        larg = (["9%", "13%", "11%", "17%", "20%", "20%", "10%"] if varios else ["10%", "14%", "12%", "14%", "38%", "12%"])
-        rod = [("%d un" % b["qtd"], "c"), "", ("%s m" % _n(b["m"], 1), "r"), ("TOTAL", "b"), ""] + ([""] if varios else []) + [(_n(b["kg"], 1), "r")]
+        larg = (["9%", "12%", "10%", "15%", "19%", "18%", "8%", "9%"] if varios else ["10%", "13%", "11%", "13%", "33%", "9%", "11%"])
+        rod = [("%d un" % b["qtd"], "c"), "", ("%s m" % _n(b["m"], 1), "r"), ("TOTAL", "b"), ""] + ([""] if varios else []) + \
+              ["", (_n(b["kg"], 1), "r")]
     tabela = _tabela(colunas, linhas, rodape=rod, larguras=larg, bruto=True, classe="tipo",
                      ids_linhas=[",".join(li.get("ids") or []) for li in b["linhas"]])
     foto = _foto(R, "tipo-" + b["chave"])
@@ -2017,19 +2027,20 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
                                        " - multidobra" if it["codigo"] == "MD" else (" - cumeeira" if it["codigo"] == "CU" else "")) \
                     + (" - cortada na largura" if it["cortada"] else "")
                 linhas.append([it["codigo_n"], texto, (it["qtd"], "c"), (_n(it["comprimento"] / 1000.0, 2), "r"), (_n(it["ml"], 2), "r"),
-                               (_n(it.get("m2") or 0.0, 2), "r"), (_n(it["kg"], 1), "r")])
+                               (_n(it.get("m2") or 0.0, 2), "r"), (_coef(it["kg"], it.get("m2") or 0.0), "r"), (_n(it["kg"], 1), "r")])
             if miudos:
                 codigos = [it["codigo_n"] for it in miudos]
                 texto = "%s - %s (%d comprimentos: %s a %s - ver relação de telhas)" % (
                     miudos[0].get("descricao") or desc or ("Telha %s" % miudos[0]["perfil"]), rot_trecho[trecho], len(miudos), codigos[0], codigos[-1])
                 linhas.append(["%d tipos" % len(miudos), texto, (sum(it["qtd"] for it in miudos), "c"), ("vários", "r"),
                                (_n(sum(it["ml"] for it in miudos), 2), "r"), (_n(sum(it.get("m2") or 0.0 for it in miudos), 2), "r"),
+                               (_coef(sum(it["kg"] for it in miudos), sum(it.get("m2") or 0.0 for it in miudos)), "r"),
                                (_n(sum(it["kg"] for it in miudos), 1), "r")])
         sub = " + ".join("%s %s ml" % (rot_trecho[k], _n(v, 2)) for k, v in T["ml_por_trecho"].items())
-        partes.append(_tabela(["Tipo", "Descrição", ("Qtd", "c"), ("Comp. (m)", "r"), ("Total (ml)", "r"), ("m²", "r"), ("kg", "r")], linhas,
+        partes.append(_tabela(["Tipo", "Descrição", ("Qtd", "c"), ("Comp. (m)", "r"), ("Total (ml)", "r"), ("m²", "r"), ("kg/m²", "r"), ("kg", "r")], linhas,
                               rodape=[("TOTAL", "b"), sub, "", "", (_n(T["ml_total"], 2), "r"), (_n(T.get("m2_total") or 0.0, 2), "r"),
-                                      (_n(T["kg_total"], 1), "r")],
-                              larguras=["10%", "47%", "6%", "9%", "10%", "9%", "9%"]))
+                                      (_coef(T["kg_total"], T.get("m2_total") or 0.0), "r"), (_n(T["kg_total"], 1), "r")],
+                              larguras=["10%", "41%", "6%", "8%", "9%", "9%", "8%", "9%"]))
         partes.append("<p class=\"nota\">m² pela largura útil (%s m).</p>" % _n(T["largura_util"] / 1000.0, 2))
     # ---- rufos e calhas, peça por peça (19/10)
     if R.get("funilaria"):
@@ -2137,8 +2148,8 @@ def html_resumo_materiais(R: dict, paginado: bool = False) -> str:
         def pecas(pf):
             itens = " · ".join("%s %dx %s" % (x["nome"], x["qtd"], _n(x["comprimento"])) for x in pf.get("lista") or [])
             return ("<tr><td colspan=\"4\" class=\"pecas-perfil\">%s <span class=\"cinza\">(mm)</span></td></tr>" % _esc(itens)) if itens else ""
-        return "".join("<tr><td>%s</td><td class=\"kg\">%s kg</td><td class=\"m\">%s m</td><td class=\"q\"></td></tr>%s"
-                       % (_esc(pf["perfil"]), _n(pf["kg"], 2), _n(pf["m"], 2), pecas(pf)) for pf in perfis)
+        return "".join("<tr><td>%s</td><td class=\"kg\">%s kg</td><td class=\"m\">%s m · %s kg/m</td><td class=\"q\"></td></tr>%s"
+                       % (_esc(pf["perfil"]), _n(pf["kg"], 2), _n(pf["m"], 2), _coef(pf["kg"], pf["m"]), pecas(pf)) for pf in perfis)
     for f in R["familias"]:
         h = "<div class=\"fam\"><h3>%s<small>%02dx</small></h3>" % (_esc(f["titulo"]), f["n"])
         if f.get("composicao"):
@@ -2159,7 +2170,8 @@ def html_resumo_materiais(R: dict, paginado: bool = False) -> str:
     for c in ch:
         mat = (" (%s)" % c["material"]) if c.get("material") and len({x.get("material") for x in ch}) > 1 else ""
         mat += (" — modelo %s" % c["modelo"]) if c.get("diferente") else ""
-        h += "<tr><td>%s</td><td class=\"kg\">%s kg</td><td class=\"m\">%d pç / %s m²</td><td class=\"q\"></td></tr>" % (_esc(c["rotulo"] + mat), _n(c["kg"], 2), c["pecas"], _n(c["m2"], 2))
+        h += "<tr><td>%s</td><td class=\"kg\">%s kg</td><td class=\"m\">%d pç / %s m² · %s kg/m²</td><td class=\"q\"></td></tr>" % (
+            _esc(c["rotulo"] + mat), _n(c["kg"], 2), c["pecas"], _n(c["m2"], 2), _coef(c["kg"], c["m2"]))
     h += "<tr><td class=\"item\">Total chaparia</td><td class=\"kg item\">%s kg</td><td class=\"m item\">%d pç</td><td class=\"q\"></td></tr></table></div>" % (_n(R["chaparia_total"]["kg"], 2), R["chaparia_total"]["pecas"])
     blocos.append(h)
     # parafusos
@@ -2287,13 +2299,13 @@ def _html_compra(R: dict) -> str:
         h.append("<h3>Telhas e painéis de fechamento</h3><p class=\"explica\">As telhas e os painéis lançados no modelo "
                  "(fechamentos e cobertura), por tipo: a área das chapas do modelo e o peso pela massa por m² do fabricante, "
                  "quando ela está no modelo.</p>")
-        h.append(_tabela(["Item", ("Peças", "r"), ("ml", "r"), ("m²", "r"), ("kg", "r"), "Pedido"],
+        h.append(_tabela(["Item", ("Peças", "r"), ("ml", "r"), ("m²", "r"), ("kg/m²", "r"), ("kg", "r"), "Pedido"],
                          [[(x["item"], "b"), (x["pecas"], "r"), (_n(x.get("ml") or 0.0, 2), "r"), (_n(x["m2"], 2), "r"),
-                           (_n(x["kg"], 1) if x["kg"] else "—", "r"), ""] for x in T_],
+                           (_coef(x["kg"] or 0.0, x["m2"]), "r"), (_n(x["kg"], 1) if x["kg"] else "—", "r"), ""] for x in T_],
                          rodape=[("TOTAL", "b"), (sum(x["pecas"] for x in T_), "r"), (_n(sum(x.get("ml") or 0.0 for x in T_), 2), "r"),
-                                 (_n(sum(x["m2"] for x in T_), 2), "r"),
+                                 (_n(sum(x["m2"] for x in T_), 2), "r"), "",
                                  (_n(sum(x["kg"] for x in T_), 1) if any(x["kg"] for x in T_) else "—", "r"), ""],
-                         larguras=["40%", "9%", "12%", "12%", "12%", "15%"]))
+                         larguras=["36%", "8%", "11%", "11%", "9%", "11%", "14%"]))
     if C.get("outros_aco"):
         h.append("<h3>Gradis, pisos e outras peças de aço</h3><p class=\"explica\">O que o IFC traz fora das peças de perfil e chapa; "
                  "o comprimento é a maior extensão de cada peça, somada.</p>")

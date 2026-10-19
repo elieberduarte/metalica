@@ -248,3 +248,13 @@ def test_quantidade_da_linha_na_cor_dela():
     """Kaefer (19/10): a quantidade de cada linha do tipo na cor da peça na foto"""
     assert 'class="pilula"' in resumos._pilula({"cor": "#e03131"}, "4 un") and "#e03131" in resumos._pilula({"cor": "#e03131"}, "4 un")
     assert resumos._pilula({}, "4 un") == "4 un"
+
+
+def test_coeficiente_de_peso_nas_tabelas():
+    """PRATI (19/10): o resumo dava os kg e os m² dos rufos sem o coeficiente usado; agora kg/m e kg/m² escritos (a chapa
+    de 0,50 mm: 3,925 kg/m²) — o mesmo nas telhas, na chaparia e nos perfis"""
+    R = {"funilaria": [{"nome": "RF2", "tipo": "Rufo", "perfil": "Rufo chapa galvanizada 0,50 mm", "desenvolvimento": 969.0,
+                        "comprimento": 6000.0, "qtd": 16, "ml": 96.0, "m2": 93.024, "kg": 365.1}]}
+    t = resumos._tabela_funilaria(R)
+    assert "kg/m²" in t and "3,925" in t and "3,803" in t                    # 365,1 ÷ 93,024 e 365,1 ÷ 96
+    assert resumos._coef(10.0, 0.0) == "—"
