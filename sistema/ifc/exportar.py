@@ -476,8 +476,19 @@ class _Exportador:
     def __init__(self, documento: Documento, projeto_nome=None, autor=None,
                  organizacao=None, incluir_propriedades=True, incluir_quantidades=True,
                  solidos_como="brep", sitio_nome=None, predio_nome=None,
-                 pavimento_nome=None, descricao=None, data=None):
+                 pavimento_nome=None, descricao=None, data=None, pintura=None):
         self.doc = documento
+        # a pintura da tela (o modo ver, 19/10 — usuário: "exportar com a estrutura de uma cor e a cobertura de outra, igual
+        # temos no modo ver"): {grupos: [{nome, cor, ids}]} — cada peça do grupo sai com a cor dele e na camada (layer) com o
+        # nome dele, que é o que o visualizador agrupa ("Group by Layer" do Trimble Connect); a peça fora dos grupos fica
+        # com a cor e a camada do modelo
+        self._pintura: Dict[str, Tuple[str, str]] = {}
+        self._cor_da_camada: Dict[str, str] = {}
+        for g in ((pintura or {}).get("grupos") or []):
+            nome, cor = str(g.get("nome") or "Grupo"), str(g.get("cor") or "#8a94a6")
+            self._cor_da_camada[nome] = cor
+            for i in g.get("ids") or []:
+                self._pintura[str(i)] = (nome, cor)
         self.arq = _Arquivo()
         self.projeto_nome = projeto_nome or documento.nome or "Projeto"
         self.autor = autor or "Engenheiro"
@@ -671,8 +682,9 @@ class _Exportador:
                 self.arq.add(f"IFCSTYLEDITEM({item},({estilo}),$)")
         rep = self.arq.add(f"IFCSHAPEREPRESENTATION({self.corpo},{_texto('Body')},"
                            f"{_texto(tipo)},{_lista(itens)})")
-        if ent.camada:
-            self._por_camada.setdefault(ent.camada, []).append(rep)
+        camada = self._pintura[ent.id][0] if ent.id in self._pintura else ent.camada
+        if camada:
+            self._por_camada.setdefault(camada, []).append(rep)
         return self.arq.add(f"IFCPRODUCTDEFINITIONSHAPE($,$,{_lista([rep])})")
 
     # ------------------------------------------------------------ aparência
@@ -699,7 +711,10 @@ class _Exportador:
         return self.arq.por_chave(chave, fabrica)
 
     def _estilo_do_elemento(self, ent: Entidade) -> str:
-        """Estilo do material de aparência; sem material, o da camada."""
+        """Estilo do grupo da pintura da tela; senão o do material de aparência; sem material, o da camada."""
+        if ent.id in self._pintura:
+            nome, cor = self._pintura[ent.id]
+            return self._estilo(nome, cor, 1.0)
         material = self.doc.materiais.get(ent.material) if ent.material else None
         if material is not None:
             return self._estilo(material.nome, material.cor, material.opacidade)
@@ -712,7 +727,7 @@ class _Exportador:
         """Um IfcPresentationLayerWithStyle por camada que tem representação."""
         for nome, reps in self._por_camada.items():
             camada = self.doc.camadas.get(nome)
-            cor = camada.cor if camada else "#8a94a6"
+            cor = self._cor_da_camada.get(nome) or (camada.cor if camada else "#8a94a6")
             ligada = camada.visivel if camada else True
             bloqueada = camada.bloqueada if camada else False
             estilo = self._estilo(nome, cor, 1.0)

@@ -650,9 +650,13 @@
       caixa.lastChild.onclick = function () { caixa.remove(); };
     };
     if (!proj) { mostrar('Abra um projeto para exportar o IFC do modelo.', true); return; }
-    mostrar('Exportando o IFC do modelo gravado… (num modelo grande como o do PRATI, cerca de um minuto)');
+    // as cores do Pintar do modo ver (metálica de uma cor, pré-moldado de outra…) vão junto: o IFC sai como está na tela
+    var pintura = null;
+    try { var v3 = janela('3d'); pintura = v3 && v3.pinturaParaIfc ? v3.pinturaParaIfc() : null; } catch (e) { pintura = null; }
+    mostrar('Exportando o IFC do modelo gravado' + (pintura ? ', com as cores do Pintar da tela' : '')
+      + '… (num modelo grande como o do PRATI, cerca de um minuto)');
     fetch('/api/modelo/ifc/exportar', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ projeto: proj }) })
+                                        body: JSON.stringify(pintura ? { projeto: proj, pintura: pintura } : { projeto: proj }) })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (r) {
         if (!r.ok || r.j.erro) { mostrar('Não foi possível exportar o IFC: ' + (r.j.erro || r.j.mensagem || 'erro no servidor'), true); return; }

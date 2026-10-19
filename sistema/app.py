@@ -4997,7 +4997,8 @@ def exportar_ifc(corpo: dict) -> dict:
     caminho = exp.exportar(doc, os.path.join(pasta, nome + ".ifc"),
                            projeto_nome=doc.nome,
                            autor=corpo.get("autor") or "",
-                           organizacao=corpo.get("organizacao") or "")
+                           organizacao=corpo.get("organizacao") or "",
+                           pintura=corpo.get("pintura") or None)   # as cores do modo ver (19/10)
     return {"arquivo": _descrever_arquivo(caminho, pasta),
             "entidades": len(doc.entidades)}
 

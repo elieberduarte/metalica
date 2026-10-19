@@ -109,6 +109,14 @@ function pintar(modo) {
  *  cor das camadas?"): nos grupos do Pintar, na seção Sistema e nas camadas. Guardada por projeto, por modo do Pintar e
  *  nome do grupo (ou a chave do sistema); trocar a cor de um grupo de outro modo passa o Pintar para esse modo. */
 function corEscolhida(modo, chave) { return ((doVer.cores || {})[modo] || {})[chave]; }
+/** A pintura da tela para o IFC do modelo (usuário, 19/10: "exportar com a estrutura de uma cor e a cobertura de outra,
+ *  igual temos no modo ver"): os grupos do Pintar com a cor e as peças (ids do modelo) — a barra manda junto no pedido do
+ *  IFC e cada peça sai com a cor e na camada do grupo. Sem pintura (o modo "material"), null: o IFC sai como o modelo. */
+window.pinturaParaIfc = () => {
+  if (!visor.fichas || !Array.isArray(legenda) || !legenda.length || !doVer.pintar || doVer.pintar === 'material') return null;
+  return { modo: doVer.pintar, grupos: legenda.map(g => ({ nome: g.nome, cor: paraHex(g.cor),
+    ids: g.ids.map(i => (visor.fichas[i] || {}).id).filter(Boolean) })) };
+};
 const quadradinho = (modo, chave, cor) =>
   `<i class="cor" data-cor-modo="${esc(modo)}" data-cor-chave="${esc(chave)}" title="Trocar a cor" style="background:${esc(cor)}"></i>`;
 function paraHex(cor) {
