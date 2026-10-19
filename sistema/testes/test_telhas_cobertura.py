@@ -196,6 +196,24 @@ def test_fechamento_duplo_no_painel():
         assert min(v[2] for v in f.vertices) <= 5950.0 and max(v[2] for v in f.vertices) >= 7650.0
 
 
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("peca,esperado", [("P.3#1", 12), ("VT.1", 12), ("T.7#1", 0), ("MT.2#38800", 0)])
+def test_fechamento_na_platibanda_com_os_nomes_da_regra(peca, esperado):
+    """Mercado Hermes, 19/10 ("precisamos lançar as telhas"): as platibandas com os nomes da regra 7 das tesouras (P.n,
+    VT.n) não ganhavam fechamento nenhum — o gerador só conhecia os nomes do Posto (PAINEL, TRANSIÇÃO…). A tesoura (T.n,
+    MT.n) no perímetro fica de fora: no Mercado ela encosta no fechamento ou na parede de concreto"""
+    doc = Documento()
+    _agua(doc, 0.0, 6, 7000.0, 0.05)
+    for z in (6000.0, 7600.0):
+        b = Barra(inicio=(-200.0, 0.0, z), fim=(-200.0, 6000.0, z), perfil="U 100×40×2,25 (FF)", papel="banzo", camada="Treliças")
+        b.atributos = {"origem": {"peca": peca}, "conjunto": peca}
+        doc.add(b)
+    r = T.lancar(doc)
+    assert r["fechamentos"] == esperado
+
+
 def test_telha_segue_sob_o_telhado_de_cima():
     """a água de baixo acaba numa terça a 0,44 m de outra 4 m acima: a telha de baixo segue até 50 mm antes dela"""
     doc = Documento()

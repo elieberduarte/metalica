@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import collections
 import math
+import re
 from typing import Dict, List, Optional, Tuple
 
 from nucleo3d.geometria import base_local, secao
@@ -781,7 +782,11 @@ def _fechamentos(doc, panos, telha, camada):
     for e in _ap._elementos(doc):
         nome_ = str(e.peca or "").upper()
         # (e a tesoura da borda — a TESOURA 6 do Posto, em y 53,40, entre a curva do PAINEL 8 e o PAINEL 15)
-        if e.papel == "banzo" and nome_.startswith(("PAINEL", "TRANSI", "TRELI", "TESOURA")):
+        # (e as treliças com os nomes da regra 7 das tesouras — P.n platibanda/fechamento, VT.n, VL.n: o Mercado, 19/10, não
+        # ganhava fechamento nenhum; a tesoura T.n/MT.n no perímetro fica de fora — no Mercado ela encosta no fechamento ou na
+        # parede de concreto; o teste de perímetro abaixo é que separa a do perímetro da do meio)
+        if e.papel == "banzo" and (nome_.startswith(("PAINEL", "TRANSI", "TRELI", "TESOURA"))
+                                   or re.match(r"^(P|VT|VL)\.\d", nome_)):
             paineis[e.peca].append(e)
     W = float(telha.get("largura_util") or 1020.0)
     solidos, ml, area = [], 0.0, 0.0
