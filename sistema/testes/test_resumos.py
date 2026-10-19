@@ -258,3 +258,17 @@ def test_coeficiente_de_peso_nas_tabelas():
     t = resumos._tabela_funilaria(R)
     assert "kg/m²" in t and "3,925" in t and "3,803" in t                    # 365,1 ÷ 93,024 e 365,1 ÷ 96
     assert resumos._coef(10.0, 0.0) == "—"
+
+
+def test_rufos_com_o_mesmo_coeficiente_na_mesma_chapa():
+    """PRATI (19/10): "porque foi considerado coeficiente diferente apesar de ser a mesma chapa" — a área e o peso da
+    lista vêm arredondados peça a peça (o RF7 de 0,0235 m² saía 0,01 m² e 4,167 kg/m²); agora a área exata e o peso
+    teórico (área × espessura × 7,85): 3,925 kg/m² em todas as linhas da chapa de 0,50 mm"""
+    lista = {"posicoes": [
+        {"nome": "RF1", "categoria": "RUFOS", "perfil": "Rufo chapa galvanizada 0,50 mm", "quantidade": 16, "comprimento": 969,
+         "largura": 6000, "espessura": 0.5, "area_m2": 93.024, "peso_total": 365.1},
+        {"nome": "RF7", "categoria": "RUFOS", "perfil": "Rufo chapa galvanizada 0,50 mm", "quantidade": 2, "comprimento": 51,
+         "largura": 230, "espessura": 0.5, "area_m2": 0.01, "peso_total": 0.1}]}
+    F = resumos.funilaria_da_lista(lista)
+    assert {round(x["kg"] / x["m2"], 3) for x in F} == {3.925}
+    assert abs(F[1]["m2"] - 2 * 0.051 * 0.230) < 1e-9

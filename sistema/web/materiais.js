@@ -976,7 +976,8 @@ function ligarPendencias(frame) {
   const st = doc.createElement('style');
   st.textContent = '@media screen{tr[data-ids]{cursor:pointer}tr[data-ids]:hover td{background:#f2f7dc}'
     + 'tr[data-ids].no-3d td{background:#e3efb8}'
-    + 'tr[data-ids] td:last-child::after{content:"  ver no 3D ↗";color:#35434C;font-weight:600;white-space:nowrap}}';
+    // curto (19/10): o "ver no 3D ↗" depois do kg alargava a tabela ao lado da foto e o perfil quebrava em 3 linhas
+    + 'tr[data-ids] td:last-child::after{content:" 3D ↗";color:#35434C;font-weight:600;white-space:nowrap}}';
   doc.head.append(st);
   doc.querySelectorAll('tr[data-ids]').forEach((tr) => {
     tr.title = 'Mostrar estas peças no modelo 3D ao lado do relatório';

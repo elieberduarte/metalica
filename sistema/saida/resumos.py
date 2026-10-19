@@ -329,9 +329,15 @@ def funilaria_da_lista(lista: dict) -> List[dict]:
         if desenv > comp:                              # a peça curta e larga: o desenvolvimento é o lado menor
             desenv, comp = comp, desenv
         tipo = "Calha" if (re.search(r"CALHA", perfil, re.I) or re.match(r"CL\d", nome)) else "Rufo"
+        m2 = (qtd * desenv * comp / 1e6) or float(p.get("area_m2") or 0.0)
+        esp = float(p.get("espessura") or 0.0)
+        # o peso teórico (área × espessura × 7,85): a mesma chapa com o mesmo kg/m² em todas as linhas — o da lista vem
+        # arredondado peça a peça e o coeficiente variava (3,914 a 4,263 na chapa de 0,50 mm, 19/10); o total é o mesmo
+        kg = m2 * esp * 7.85 if esp else float(p.get("peso_total") or (p.get("peso") or 0.0) * qtd)
         saida.append({"nome": nome, "tipo": tipo, "perfil": perfil, "desenvolvimento": desenv, "comprimento": comp, "qtd": qtd,
-                      "ml": qtd * comp / 1000.0, "m2": float(p.get("area_m2") or qtd * desenv * comp / 1e6),
-                      "kg": float(p.get("peso_total") or (p.get("peso") or 0.0) * qtd)})
+                      # a área exata da chapa planificada (a da lista vem arredondada: o RF7 de 0,0235 m² saía 0,01 e o
+                      # kg/m² da mesma chapa de 0,50 mm dava 4,167 em vez de 3,925, 19/10)
+                      "ml": qtd * comp / 1000.0, "m2": m2, "kg": kg})
     saida.sort(key=lambda x: (x["tipo"] != "Calha", _ordem_natural(x["nome"])))
     return saida
 
@@ -1646,7 +1652,8 @@ h3.tipo::before { display: none; }
 h3.tipo i { width: 5mm; height: 3.2mm; }
 h3.tipo small { margin-left: auto; font: 600 7.4pt 'Segoe UI', Arial; color: var(--mudo); letter-spacing: .04em; }
 .bloco-tipo.lado { break-inside: avoid; }
-.lado-a-lado { display: grid; grid-template-columns: 74mm 1fr; gap: 3.5mm; align-items: start; }   /* a foto maior (19/10) */
+/* a foto ao lado da tabela: 64 mm (com 74 a tabela das treliças da PRATI, com o kg/m, quebrava o perfil em 3 linhas, 19/10) */
+.lado-a-lado { display: grid; grid-template-columns: 64mm 1fr; gap: 3mm; align-items: start; }
 table.tipo { font-size: 7.4pt; }
 .num-linha { display: inline-block; min-width: 3.6mm; height: 3.6mm; line-height: 3.6mm; border-radius: 1.8mm; color: #fff;
   font-weight: 700; font-size: 6.6pt; text-align: center; margin-right: 1mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -1795,7 +1802,8 @@ def _bloco_tipo(R: dict, b: dict, varios: bool) -> str:
         linhas = []
         for k, li in enumerate(b["linhas"], 1):
             marcas = ", ".join(li["marcas"][:6]) + (" …" if len(li["marcas"]) > 6 else "")
-            perfis = ", ".join(li["perfis"][:3]) + (" …" if len(li["perfis"]) > 3 else "")
+            # o nome do perfil não quebra no meio ("U / 150×50×3,00 / (FF)" em 3 linhas), só entre um perfil e outro
+            perfis = ", ".join(p.replace(" ", " ") for p in li["perfis"][:3]) + (" …" if len(li["perfis"]) > 3 else "")
             row = [(_pilula(li, "%d un" % li["qtd"], k if numerar else None), "c"), ("<b>%s</b>" % _esc(_m(li["comprimento"])), "r"),
                    ("%s m" % _n(li["qtd"] * li["comprimento"] / 1000.0, 1), "r"), _esc(marcas), "<span class=\"cinza\">%s</span>" % _esc(perfis)]
             if varios:
@@ -1803,7 +1811,7 @@ def _bloco_tipo(R: dict, b: dict, varios: bool) -> str:
             row.append((_coef(li.get("kg") or 0.0, li["qtd"] * li["comprimento"] / 1000.0), "r"))
             row.append((_n(li.get("kg") or 0.0, 1), "r"))
             linhas.append(row)
-        larg = (["9%", "12%", "10%", "15%", "19%", "18%", "8%", "9%"] if varios else ["10%", "13%", "11%", "13%", "33%", "9%", "11%"])
+        larg = (["9%", "12%", "10%", "15%", "19%", "18%", "8%", "9%"] if varios else ["13%", "12%", "10%", "10%", "33%", "9%", "13%"])
         rod = [("%d un" % b["qtd"], "c"), "", ("%s m" % _n(b["m"], 1), "r"), ("TOTAL", "b"), ""] + ([""] if varios else []) + \
               ["", (_n(b["kg"], 1), "r")]
     tabela = _tabela(colunas, linhas, rodape=rod, larguras=larg, bruto=True, classe="tipo",
