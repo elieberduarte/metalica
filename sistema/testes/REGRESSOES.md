@@ -189,3 +189,4 @@ Achados dos testes de primeiro uso (`Projeto/BRIEFINGS/Briefing-primeiro-uso*.md
 | 19/10 | Kaefer, resumo da obra: os chumbadores Ø20 da base saíam em "Contraventamentos", os X Ø8 em "Travamentos e agulhamentos" e as travessas da lona (2U 127, papel longarina) em "Terças" — o papel declarado no modelo era ignorado | 561d2d3 | test_nomes_papel_declarado (com e sem a placa de base) |
 | 19/10 | Kaefer: o reforço Ue 180×70×20 em pé do pilar redondo caía na categoria Terças da lista | 561d2d3 | test_nomes_papel_declarado (peça em pé não é terça) |
 | 19/10 | Kaefer: a foto da capa do resumo da obra cortava a estrutura (a imagem 3:2 num quadro de 78 mm com object-fit: cover) | b296542 | test_resumos test_a_capa_mostra_a_foto_inteira |
+| 19/10 | Mercado: o lançamento das telhas não punha fechamento nas platibandas com os nomes da regra (P.n, VT.n) | 6c3e423 | test_telhas_cobertura test_fechamento_na_platibanda_com_os_nomes_da_regra |
