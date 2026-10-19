@@ -1090,101 +1090,104 @@ def _corte(mm):
     return int(math.ceil(mm / 50.0) * 50)
 
 
+PASSO_RUFO = 250.0               # mm: de quanto em quanto a altura do rufo é lida ao longo do fechamento (segue a telha)
+
+
 def _rufos_do_fechamento(A, u, L, fora_, off_f, off_d, zb, zt, z_sobre, baixo_de, painel):
     """Os rufos de um trecho de fechamento (Mercado Hermes, 19/10: "pode lançar as calhas e rufos"), chapa galvanizada
-    #26 como o rufo moldura do Posto — cada um com a altura nas duas pontas do trecho (acompanha a telha, que sobe ao
-    longo da platibanda: "o rufo deve acompanhar a telha") e emendado depois com os trechos vizinhos numa peça só
-    (_rufos_emendados: "os rufos laterais da doca ficaram picotados"):
+    #26 como o rufo moldura do Posto. A altura é lida a cada PASSO_RUFO ao longo do trecho — o rufo segue a telha, com a
+    inclinação e as quebras dela ("quando a cobertura tem uma inclinação o rufo deve seguir a inclinação da telha"; antes
+    eram só as duas pontas da barra, e com uma delas fora do telhado o rufo ficava reto, em degraus ou com a beirada para
+    cima) — e os trechos seguidos são emendados depois numa peça só (_rufos_emendados: "as peças de rufo/calhas devem ser
+    peças inteiriças"):
       - capa: no topo, por cima das duas telhas do fechamento, com as abas descendo RUFO_ABA por fora (onde a telha do
-        telhado não passa por cima — o beiral sobre o fechamento);
-      - encosto: onde a telha do telhado encosta no fechamento — uma perna na parede e a outra por cima da telha; perto
-        do topo (a perna chega na aba da capa) a capa desce até a telha e é uma peça só, dobrada por cima da platibanda
-        ("essa aba a mais faz parte da estrutura que fica dobrada em cima da platibanda");
-      - contra-rufo: onde ali é a calha, a perna da parede entrando nela.
+        telhado não passa por cima — o beiral sobre o fechamento); a mesma seção no lado inteiro;
+      - encosto: onde a telha do telhado encosta no fechamento — uma perna na parede (até a capa, no máximo) e a outra por
+        cima da telha;
+      - contra-rufo: onde ali é a calha — da calha até RUFO_ENCOSTO acima da crista da telha (antes parava 150 mm acima da
+        calha, embaixo da telha: "na caixa d'água o rufo ficou embaixo da telha").
     Do lado de fora, o fechamento que acaba acima de um telhado ou de uma calha mais baixos desce até eles (zb_fora) e o
     pé leva o encosto ou o contra-rufo. Devolve os trechos (dicionários), não os sólidos."""
     dentro = (-fora_[0], -fora_[1])
-    sm = L / 2.0
+    n = max(2, int(math.ceil(L / PASSO_RUFO)) + 1)
+    ss = [L * i / (n - 1) for i in range(n)]
     out = []
 
-    def rufo(tipo, nome, corte, face, caixas):
-        # caixas: (x0, x1, (z0 em 0, z0 em L), (z1 em 0, z1 em L)) — x medido do eixo para `face`
-        out.append({"tipo": tipo, "nome": nome, "corte": corte, "painel": painel, "face": face, "A": A, "u": u, "L": L,
-                    "caixas": caixas})
+    def trecho(tipo, nome, corte, face, xs, est):
+        # xs: [(x0, x1)] das chapas (do eixo para `face`); est: [(s, [(z0, z1) de cada chapa])]
+        if len(est) >= 2:
+            out.append({"tipo": tipo, "nome": nome, "corte": corte, "painel": painel, "face": face, "A": A, "u": u,
+                        "xs": xs, "est": est})
 
-    def no(face, x_, s_=sm):
+    def no(face, x_, s_):
         return (A[0] + u[0] * s_ + face[0] * x_, A[1] + u[1] * s_ + face[1] * x_)
-    pontas = (0.0, L)
-    topo = tuple(zt(s_) + 2.0 for s_ in pontas)
-    cima = tuple(z_ + RUFO_ESP for z_ in topo)
-    baixo = tuple(z_ - RUFO_ABA for z_ in topo)
-    sobre = any(z_sobre(no(f_, x_)) is not None for f_, x_ in ((fora_, off_f), (dentro, off_d)))
+    sobre = any(z_sobre(no(f_, x_, L / 2.0)) is not None for f_, x_ in ((fora_, off_f), (dentro, off_d)))
     xf, xd = off_f + ONDA_FECH, off_d + ONDA_FECH
+    if not sobre:
+        est = []
+        for s_ in ss:
+            t_ = zt(s_) + 2.0
+            est.append((s_, [(t_, t_ + RUFO_ESP), (t_ - RUFO_ABA, t_ + RUFO_ESP), (t_ - RUFO_ABA, t_ + RUFO_ESP)]))
+        trecho("capa", "Rufo capa", _corte(xf + xd + 2 * RUFO_ESP + 2 * RUFO_ABA), fora_,
+               [(-xd - RUFO_ESP, xf + RUFO_ESP), (xf, xf + RUFO_ESP), (-xd - RUFO_ESP, -xd)], est)
 
-    def lado(face, off):
-        # o que está ao lado do fechamento nas duas pontas do trecho (o mesmo tipo nas duas; senão, o do meio)
-        a, b = baixo_de(face, off, 0.0), baixo_de(face, off, L)
-        if a[0] is None or a[0] != b[0]:
-            a = b = baixo_de(face, off, sm)
-        return a[0], (a[1], b[1])
-    capa = [(-xd - RUFO_ESP, xf + RUFO_ESP, topo, cima), (xf, xf + RUFO_ESP, baixo, cima)]
-    # do lado de dentro
-    tipo_, zs = lado(dentro, off_d) if not sobre else (None, None)
-    feito = False
-    if tipo_ == "calha" and all(zb < z_ < zt(s_) for z_, s_ in zip(zs, pontas)):
-        rufo("contra-rufo", "Contra-rufo", _corte(RUFO_ENCOSTO + 50.0), dentro,
-             [(xd, xd + RUFO_ESP, tuple(z_ - 30.0 for z_ in zs), tuple(z_ + RUFO_ENCOSTO for z_ in zs))])
-    elif tipo_ == "telha" and all(zb + 50.0 < z_ < zt(s_) - 50.0 for z_, s_ in zip(zs, pontas)):
-        crista = tuple(z_ + ONDA_FECH for z_ in zs)
-        if all(c_ + RUFO_ENCOSTO >= b_ - 50.0 for c_, b_ in zip(crista, baixo)):
-            # perto do topo: a capa desce pela face de dentro até a telha e dobra por cima dela — uma peça só
-            alt = max(t_ - c_ for t_, c_ in zip(topo, crista))
-            rufo("capa", "Rufo capa com encosto", _corte(xf + xd + 2 * RUFO_ESP + RUFO_ABA + alt + RUFO_ENCOSTO), fora_,
-                 capa + [(-xd - RUFO_ESP, -xd, crista, cima),
-                         (-xd - RUFO_ENCOSTO, -xd, crista, tuple(c_ + RUFO_ESP for c_ in crista))])
-            feito = True
-        else:
-            rufo("encosto", "Rufo de encosto", _corte(2 * RUFO_ENCOSTO), dentro,
-                 [(xd, xd + RUFO_ESP, crista, tuple(c_ + RUFO_ENCOSTO for c_ in crista)),
-                  (xd, xd + RUFO_ENCOSTO, crista, tuple(c_ + RUFO_ESP for c_ in crista))])
-    if not sobre and not feito:
-        rufo("capa", "Rufo capa", _corte(xf + xd + 2 * RUFO_ESP + 2 * RUFO_ABA), fora_,
-             capa + [(-xd - RUFO_ESP, -xd, baixo, cima)])
-    # do lado de fora: o pé do fechamento no telhado ou na calha de baixo (o fechamento desce até eles: zb_fora)
-    tipo_, zs = lado(fora_, off_f)
-    if tipo_ == "telha" and all(z_ <= zb + 300.0 for z_ in zs):
-        crista = tuple(z_ + ONDA_FECH for z_ in zs)
-        rufo("encosto", "Rufo de encosto", _corte(2 * RUFO_ENCOSTO), fora_,
-             [(xf, xf + RUFO_ESP, crista, tuple(c_ + RUFO_ENCOSTO for c_ in crista)),
-              (xf, xf + RUFO_ENCOSTO, crista, tuple(c_ + RUFO_ESP for c_ in crista))])
-    elif tipo_ == "calha" and all(z_ < zb for z_ in zs):
-        rufo("contra-rufo", "Contra-rufo", _corte(RUFO_ENCOSTO + 50.0), fora_,
-             [(xf, xf + RUFO_ESP, tuple(z_ - 30.0 for z_ in zs), tuple(z_ + RUFO_ENCOSTO for z_ in zs))])
+    def ao_lado(face, off, x_, de_fora):
+        # o encosto e o contra-rufo de um lado, em trechos seguidos onde o telhado (ou a calha) está ao lado
+        corridas, atual = [], None
+        for s_ in ss:
+            tipo_, z_ = baixo_de(face, off, s_)
+            teto = zt(s_) + 2.0 - (0.0 if sobre else 0.0)
+            k = None
+            if tipo_ == "calha" and (z_ < zb if de_fora else zb < z_ < teto):
+                k = "contra-rufo"
+                cr = z_ + 15.0 + ONDA_FECH                    # a crista da telha que entra na calha
+                zs = [(z_ - 30.0, min(cr + RUFO_ENCOSTO, teto))]
+            elif tipo_ == "telha" and (z_ <= zb + 300.0 if de_fora else zb + 50.0 < z_ < teto - 50.0):
+                k = "encosto"
+                cr = z_ + ONDA_FECH
+                zs = [(cr, min(cr + RUFO_ENCOSTO, teto)), (cr, cr + RUFO_ESP)]
+            if k is None:
+                atual = None
+                continue
+            if atual is None or atual[0] != k:
+                atual = (k, [])
+                corridas.append(atual)
+            atual[1].append((s_, zs))
+        for k, est in corridas:
+            if k == "encosto":
+                trecho("encosto", "Rufo de encosto", _corte(2 * RUFO_ENCOSTO), face,
+                       [(x_, x_ + RUFO_ESP), (x_, x_ + RUFO_ENCOSTO)], est)
+            else:
+                trecho("contra-rufo", "Contra-rufo", _corte(30.0 + 15.0 + ONDA_FECH + RUFO_ENCOSTO + 50.0), face,
+                       [(x_, x_ + RUFO_ESP)], est)
+    if not sobre:
+        ao_lado(dentro, off_d, xd, False)
+    ao_lado(fora_, off_f, xf, True)
     return out
 
 
 def _rufos_emendados(trechos):
     """Os trechos de rufo seguidos — o mesmo tipo, a mesma seção, em linha e com as alturas batendo na emenda — viram uma
     peça só (19/10, o usuário no Mercado: "os rufos laterais da doca ficaram picotados, precisam ser uma peça só"); o
-    sólido passa por todas as emendas (a altura acompanha a telha trecho a trecho)."""
+    sólido passa por todas as estações (a altura acompanha a telha)."""
     def chave(t):
         return (t["tipo"], t["nome"], t["painel"], round(t["face"][0], 3), round(t["face"][1], 3),
-                tuple((round(c[0], 1), round(c[1], 1)) for c in t["caixas"]))
+                tuple((round(a, 1), round(b, 1)) for a, b in t["xs"]))
 
-    def ponta(t, k):
-        s_ = t["L"] if k else 0.0
+    def ponto(t, k):
+        s_ = t["est"][k][0]
         return (t["A"][0] + t["u"][0] * s_, t["A"][1] + t["u"][1] * s_)
 
     def seguem(t1, t2):
         # t2 começa onde t1 acaba, na mesma direção, com as alturas batendo
         return (t1["u"][0] * t2["u"][0] + t1["u"][1] * t2["u"][1] > 0.9999
-                and math.dist(ponta(t1, 1), ponta(t2, 0)) < 5.0
-                and all(abs(c1[2][1] - c2[2][0]) < 5.0 and abs(c1[3][1] - c2[3][0]) < 5.0
-                        for c1, c2 in zip(t1["caixas"], t2["caixas"])))
+                and math.dist(ponto(t1, -1), ponto(t2, 0)) < 5.0
+                and all(abs(a[0] - b[0]) < 5.0 and abs(a[1] - b[1]) < 5.0
+                        for a, b in zip(t1["est"][-1][1], t2["est"][0][1])))
     grupos: Dict[tuple, list] = collections.defaultdict(list)
     for t in trechos:
         grupos[chave(t)].append(t)
-    pecas = []
+    out = []
     for lst in grupos.values():
         livres = list(lst)
         while livres:
@@ -1201,35 +1204,31 @@ def _rufos_emendados(trechos):
                         continue
                     livres.remove(t)
                     mudou = True
-            pecas.append(cad)
-    out = []
-    for cad in pecas:
-        t0 = cad[0]
-        face = t0["face"]
-        # as estações: a ponta de cada trecho e a última ponta
-        est = [(ponta(t, 0), [(c[2][0], c[3][0]) for c in t["caixas"]]) for t in cad]
-        est.append((ponta(cad[-1], 1), [(c[2][1], c[3][1]) for c in cad[-1]["caixas"]]))
-        vs, fs = [], []
-        n_est = len(est)
-        for i, c in enumerate(t0["caixas"]):
-            x0, x1 = c[0], c[1]
-            o = len(vs)
-            for (px, py), zs in est:
-                z0, z1 = zs[i]
-                for x_, z_ in ((x0, z0), (x1, z0), (x1, z1), (x0, z1)):
-                    vs.append((px + face[0] * x_, py + face[1] * x_, z_))
-            for k in range(n_est - 1):
-                a, b = o + 4 * k, o + 4 * (k + 1)
-                fs += [[a, b, b + 1, a + 1], [a + 1, b + 1, b + 2, a + 2], [a + 2, b + 2, b + 3, a + 3], [a + 3, b + 3, b, a]]
-            u_ = o + 4 * (n_est - 1)
-            fs += [[o + 3, o + 2, o + 1, o], [u_, u_ + 1, u_ + 2, u_ + 3]]
-        corte = max(t["corte"] for t in cad)
-        compr = sum(t["L"] for t in cad)
-        so = Solido(nome="%s (ch. galv. #26, corte %d)" % (t0["nome"], corte), camada="Rufos", vertices=vs, faces=fs)
-        so.atributos = {"tipo_ifc": "IfcCovering", "rufo_lancado": True, "rufo": t0["tipo"], "painel": t0["painel"],
-                        "corte": corte, "comprimento": round(compr),
-                        "marcas": {"perfil": "Rufo %s corte %d" % (t0["tipo"], corte)}}
-        out.append(so)
+            t0 = cad[0]
+            face = t0["face"]
+            est = []
+            for k, t in enumerate(cad):
+                pts = [((t["A"][0] + t["u"][0] * s_, t["A"][1] + t["u"][1] * s_), zs) for s_, zs in t["est"]]
+                est += pts if k == 0 else pts[1:]
+            vs, fs = [], []
+            n_est = len(est)
+            for i, (x0, x1) in enumerate(t0["xs"]):
+                o = len(vs)
+                for (px, py), zs in est:
+                    z0, z1 = zs[i]
+                    for x_, z_ in ((x0, z0), (x1, z0), (x1, z1), (x0, z1)):
+                        vs.append((px + face[0] * x_, py + face[1] * x_, z_))
+                for k in range(n_est - 1):
+                    a, b = o + 4 * k, o + 4 * (k + 1)
+                    fs += [[a, b, b + 1, a + 1], [a + 1, b + 1, b + 2, a + 2], [a + 2, b + 2, b + 3, a + 3], [a + 3, b + 3, b, a]]
+                u_ = o + 4 * (n_est - 1)
+                fs += [[o + 3, o + 2, o + 1, o], [u_, u_ + 1, u_ + 2, u_ + 3]]
+            compr = sum(math.dist(est[k][0], est[k + 1][0]) for k in range(n_est - 1))
+            so = Solido(nome="%s (ch. galv. #26, corte %d)" % (t0["nome"], t0["corte"]), camada="Rufos", vertices=vs, faces=fs)
+            so.atributos = {"tipo_ifc": "IfcCovering", "rufo_lancado": True, "rufo": t0["tipo"], "painel": t0["painel"],
+                            "corte": t0["corte"], "comprimento": round(compr),
+                            "marcas": {"perfil": "Rufo %s corte %d" % (t0["tipo"], t0["corte"])}}
+            out.append(so)
     return out
 
 
@@ -1383,6 +1382,34 @@ def _solido_da_chapa(ch, telha, camada, espessura=ESPESSURA_DESENHO, normal=(0.0
     return s
 
 
+def _calhas_emendadas(calhas):
+    """as calhas em cadeias de pedaços seguidos: a ponta de um (cantos[1], cantos[2]) no começo do outro (cantos[0],
+    cantos[3]), a 5 mm, e a mesma altura"""
+    livres = [c for c in calhas if len(c.get("cantos") or []) == 4]
+    cadeias = []
+
+    def segue(c1, c2):
+        return (math.dist(c1["cantos"][1][:2], c2["cantos"][0][:2]) < 5.0
+                and math.dist(c1["cantos"][2][:2], c2["cantos"][3][:2]) < 5.0
+                and abs(min(v[2] for v in c1["cantos"]) - min(v[2] for v in c2["cantos"])) < 5.0)
+    while livres:
+        cad = [livres.pop(0)]
+        mudou = True
+        while mudou:
+            mudou = False
+            for c in list(livres):
+                if segue(cad[-1], c):
+                    cad.append(c)
+                elif segue(c, cad[0]):
+                    cad.insert(0, c)
+                else:
+                    continue
+                livres.remove(c)
+                mudou = True
+        cadeias.append(cad)
+    return cadeias
+
+
 CALHA_ESP = 6.0                  # mm: a chapa da calha no 3D (a #24 tem 0,65 mm; 6 mm para aparecer)
 
 
@@ -1458,17 +1485,20 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
         doc.add(s)
     # a calha: a caixa entre as duas terças do vale, logo abaixo da telha (200 mm de fundo)
     ml_calha = 0.0
-    for c in an["calhas"]:
-        cs = c["cantos"]
-        # a calha do vale em V e a da parede ficam no nível da telha (a telha entra nela); a entre duas terças, abaixo
-        # por baixo da ponta das telhas, que entram nela COBRIMENTO_CALHA (17/10: a do V e a da parede ficavam 50 mm por
-        # cima da telha)
-        topo = min(v[2] for v in cs) - 15.0
+    # a calha do vale em V e a da parede ficam no nível da telha (a telha entra nela); a entre duas terças, abaixo por
+    # baixo da ponta das telhas, que entram nela COBRIMENTO_CALHA (17/10: a do V e a da parede ficavam 50 mm por cima da
+    # telha). As seguidas (a mesma largura e altura, em linha) numa peça só (19/10: "as peças de rufo/calhas devem ser
+    # peças inteiriças" — saía uma por terça)
+    for cad in _calhas_emendadas(an["calhas"]):
+        cs = [cad[0]["cantos"][0], cad[-1]["cantos"][1], cad[-1]["cantos"][2], cad[0]["cantos"][3]]
+        topo = min(v[2] for c in cad for v in c["cantos"]) - 15.0
         vs, fs = _calha_em_u(cs, topo)
         so = Solido(nome="Calha", camada="Calhas", vertices=vs, faces=fs)
-        so.atributos = {"tipo_ifc": "IfcPipeSegment", "calha_lancada": True, "entre": [c["q"]["sigla"], c["r"]["sigla"]]}
+        so.atributos = {"tipo_ifc": "IfcPipeSegment", "calha_lancada": True,
+                        "entre": [cad[0]["q"]["sigla"], cad[0]["r"]["sigla"]],
+                        "comprimento": round(math.dist(cs[0][:2], cs[1][:2]))}
         doc.add(so)
-        ml_calha += c["s1"] - c["s0"]
+        ml_calha += sum(c["s1"] - c["s0"] for c in cad)
     for for_ in [e.id for e in doc.solidos if (e.atributos or {}).get("cumeeira_lancada")]:
         doc.remover(for_)
     ml_cume = 0.0

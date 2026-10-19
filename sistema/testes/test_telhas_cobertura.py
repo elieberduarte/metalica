@@ -617,16 +617,55 @@ def test_rufo_acompanha_a_telha_e_e_uma_peca_so():
     assert enc[0].atributos["comprimento"] == 7000
 
 
-def test_capa_desce_ate_a_telha_perto_do_topo():
-    """Mercado Hermes, 19/10 ("essa aba a mais faz parte da estrutura que fica dobrada em cima da platibanda"): com a
-    telha a uns 0,2 m do topo, a perna do encosto chegava na aba da capa — duas chapas. Agora a capa desce pela face de
-    dentro até a telha e dobra por cima dela: uma peça só"""
+def test_capa_e_encosto_inteiros_perto_do_topo():
+    """Mercado Hermes, 19/10 ("as peças de rufo/calhas devem ser peças inteiriças, não deve ser feita essa quebra em
+    peças menores/picadas"): onde a telha chegava perto do topo a capa virava "capa com encosto" e o lado saía em
+    pedaços de tipos diferentes. Agora o lado tem uma capa inteira e um encosto inteiro, que para na capa"""
     doc = Documento()
     _agua(doc, 0.0, 6, 7000.0, 0.0)
     _platibanda_em_x(doc, -200.0, 6500.0, 7300.0)
     T.lancar(doc)
     rufos = [s for s in doc.solidos if (s.atributos or {}).get("rufo_lancado")]
-    assert [s.nome.split(" (")[0] for s in rufos] == ["Rufo capa com encosto"]
+    assert sorted(s.nome.split(" (")[0] for s in rufos) == ["Rufo capa", "Rufo de encosto"]
+    capa = [s for s in rufos if s.atributos["rufo"] == "capa"][0]
+    enc = [s for s in rufos if s.atributos["rufo"] == "encosto"][0]
+    assert max(v[2] for v in enc.vertices) <= max(v[2] for v in capa.vertices) + 1.0
+
+
+def test_rufo_segue_a_telha_com_a_platibanda_passando_do_telhado():
+    """Mercado Hermes, 19/10 ("quando a cobertura tem uma inclinação o rufo deve seguir a inclinação da telha", "uma
+    beirada do rufo ficou acima"): a platibanda vai além do telhado nas duas pontas; a altura do rufo vinha das pontas da
+    barra e, com elas fora do telhado, do meio — o rufo ficava reto. Agora é lida ao longo dele"""
+    doc = Documento()
+    _agua(doc, 0.0, 6, 7000.0, 0.05)                              # sobe 350 mm de x 0 a 7000
+    _platibanda_em_x(doc, -200.0, 6600.0, 8600.0, partes=1, x0=-1500.0, x1=8500.0)
+    T.lancar(doc)
+    enc = [s for s in doc.solidos if (s.atributos or {}).get("rufo") == "encosto"]
+    assert len(enc) == 1
+    vs = enc[0].vertices
+    xs = sorted({round(v[0]) for v in vs})
+    z_em = lambda x: min(v[2] for v in vs if abs(v[0] - x) < 1.0)
+    inclinacao = (z_em(xs[-1]) - z_em(xs[0])) / (xs[-1] - xs[0])
+    assert inclinacao == pytest.approx(0.05, abs=0.005)
+
+
+def test_contra_rufo_sobe_acima_da_telha_e_calha_inteira():
+    """Mercado Hermes, 19/10 ("na caixa d'água o rufo ficou embaixo da telha"): o contra-rufo parava 150 mm acima da
+    calha, embaixo da ponta da telha; agora sobe RUFO_ENCOSTO acima da crista dela. E as terças partidas em duas (uma
+    calha por pedaço de terça) dão uma calha só ("as peças de rufo/calhas devem ser peças inteiriças")"""
+    doc = Documento()
+    for i in range(6):
+        x = i * 1400.0
+        for y0, y1 in ((0.0, 3000.0), (3000.0, 6000.0)):
+            _terca(doc, x, 7000.0 + 5 * 1400 * 0.05 - x * 0.05, "TC1", y0=y0, y1=y1)
+    _platibanda(doc, 7550.0, 6400.0, 7900.0)
+    T.lancar(doc)
+    calhas = [s for s in doc.solidos if s.camada == "Calhas"]
+    assert len(calhas) == 1
+    telhado = [s for s in doc.solidos if (s.atributos or {}).get("telha_lancada") and not s.atributos.get("fechamento")]
+    crista = max(v[2] for s in telhado for v in s.vertices if v[0] > 6900.0)
+    cr = [s for s in doc.solidos if (s.atributos or {}).get("rufo") == "contra-rufo"]
+    assert cr and max(v[2] for v in cr[0].vertices) >= crista + 100.0
 
 
 def test_calha_aberta_em_cima():
