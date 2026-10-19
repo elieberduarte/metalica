@@ -577,7 +577,8 @@ def verificar(doc, tol: float = TOL_ENCOSTO, eixos=None, posicao: bool = True) -
     # já dizem (peça voando, ponta sem apoio, terça em balanço)
     from nucleo3d import conferencia_3d
     regra_3d = {"repetida": "repetida", "choque": "choque", "degrau": "telha_degrau", "dobra": "telha_dobra",
-                "posicao": "posicao_trelica"}
+                "posicao": "posicao_trelica", "borda_aberta": "cobertura_borda_aberta", "sem_rufo": "cobertura_sem_rufo",
+                "rufo_choque": "cobertura_choque"}
     # sem `posicao`: as regras das tesouras ficam de fora (a reanálise acabou de passar o modelo por elas — é a conta
     # mais demorada: 35 s no CD Bom Dia)
     for a in conferencia_3d.conferir(doc, soltas=False, posicao=posicao)["apontamentos"]:

@@ -228,7 +228,191 @@ def posicao_na_trelica(barras) -> List[dict]:
     return out
 
 
-def conferir(doc, telha: bool = True, soltas: bool = True, posicao: bool = True) -> dict:
+#: as regras da cobertura (19/10/2026, aprovadas pelo usuário no Mercado Hermes: "está aprovado o modelo ficou íntegro,
+#: pode tornar regra") — Projeto/ANALISES/Montagem/Regras-da-cobertura-telhas-calhas-rufos-2026-10-19
+COBERTURA_CEL = 100.0            # mm: a grade em planta com que o telhado é lido para achar as bordas
+COBERTURA_MIN = 500.0            # mm: o trecho de borda aberta que vira apontamento
+
+
+def _caixa(vs):
+    return [min(v[i] for v in vs) for i in range(3)], [max(v[i] for v in vs) for i in range(3)]
+
+
+def cobertura(doc) -> List[dict]:
+    """A conferência da cobertura lançada (as regras de 19/10): toda borda de telhado fechada — calha, rufo, fechamento,
+    parede ou o telhado de cima — e nenhuma chapa de calha ou rufo atravessando peça.
+
+    * borda_aberta: o trecho de borda de telhado (≥ COBERTURA_MIN) sem nada até 0,35 m para fora, nem logo abaixo da
+      ponta (o beiral por cima do fechamento), nem um telhado mais alto por cima;
+    * sem_rufo: a borda encostada numa parede (sólido que não é da cobertura — o concreto) sem rufo nem calha (a regra 8:
+      telha encostada em parede leva rufo de encosto; achado no Mercado na caixa d'água e na casa de máquinas);
+    * rufo_choque: a chapa de calha ou de rufo passando por dentro de uma barra (o volume pela seção girada), 3 mm de
+      folga — os cantos, as pontas de topo, a terça junto da platibanda, o pé da passarela."""
+    sol = list(doc.solidos)
+
+    def at(s):
+        return s.atributos or {}
+    telhado = [s for s in sol if (at(s).get("telha_lancada") and not at(s).get("fechamento")) or at(s).get("cumeeira_lancada")]
+    if not telhado:
+        return []
+    cobre = [s for s in sol if at(s).get("calha_lancada") or at(s).get("rufo_lancado")]
+    fech = [s for s in sol if at(s).get("fechamento")]
+    paredes = [s for s in sol if s not in telhado and s not in cobre and s not in fech and s.vertices
+               and not at(s).get("telha_lancada") and not str(s.camada or "").startswith("Passarela")]
+    out: List[dict] = []
+    CEL = COBERTURA_CEL
+    alt: Dict[tuple, float] = {}
+    for s in telhado:
+        vs = s.vertices
+        for f in s.faces:
+            if len(f) < 3:
+                continue
+            pts = [vs[i] for i in f]
+            z = max(p[2] for p in pts)
+            for i in range(1, len(pts) - 1):
+                a, b, c = pts[0], pts[i], pts[i + 1]
+                d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+                if abs(d) < 1e-9:
+                    continue
+                for gx in range(int(min(a[0], b[0], c[0]) // CEL), int(max(a[0], b[0], c[0]) // CEL) + 1):
+                    for gy in range(int(min(a[1], b[1], c[1]) // CEL), int(max(a[1], b[1], c[1]) // CEL) + 1):
+                        px, py = (gx + 0.5) * CEL, (gy + 0.5) * CEL
+                        l1 = ((b[1] - c[1]) * (px - c[0]) + (c[0] - b[0]) * (py - c[1])) / d
+                        l2 = ((c[1] - a[1]) * (px - c[0]) + (a[0] - c[0]) * (py - c[1])) / d
+                        if min(l1, l2, 1 - l1 - l2) >= -0.02 and z > alt.get((gx, gy), -1e18):
+                            alt[(gx, gy)] = z
+    # o que fecha: as caixas em planta (com 40 mm de folga) e a faixa de altura
+    G = 1000.0
+    itens = []
+    grade: Dict[tuple, list] = collections.defaultdict(list)
+    for tipo, ss in (("cobre", cobre), ("fechamento", fech), ("parede", paredes)):
+        for s in ss:
+            lo, hi = _caixa(s.vertices)
+            k = len(itens)
+            itens.append((lo, hi, tipo))
+            for gx in range(int((lo[0] - 40) // G), int((hi[0] + 40) // G) + 1):
+                for gy in range(int((lo[1] - 40) // G), int((hi[1] + 40) // G) + 1):
+                    grade[(gx, gy)].append(k)
+
+    def ali(px, py, z):
+        tipos = set()
+        for k in grade.get((int(px // G), int(py // G)), ()):
+            lo, hi, t = itens[k]
+            if lo[0] - 40 <= px <= hi[0] + 40 and lo[1] - 40 <= py <= hi[1] + 40 and lo[2] - 300 <= z <= hi[2] + 300:
+                tipos.add(t)
+        return tipos
+    achados = []
+    for (gx, gy), z in alt.items():
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            vz = alt.get((gx + dx, gy + dy))
+            if vz is not None and (abs(vz - z) < 400 or vz > z):
+                continue                                  # o telhado segue (ou o degrau para o de cima)
+            if any(alt.get((gx + dx * j, gy + dy * j), -1e18) > z + 50 for j in range(2, 12)):
+                continue                                  # sob o telhado de cima
+            cx, cy = (gx + 0.5) * CEL, (gy + 0.5) * CEL
+            tipos = set()
+            for dist in (0.0, 50.0, 100.0, 150.0, 250.0, 350.0):
+                tipos |= ali(cx + dx * (CEL / 2 + dist), cy + dy * (CEL / 2 + dist), z)
+            if "cobre" in tipos or "fechamento" in tipos:
+                continue
+            achados.append(("sem_rufo" if "parede" in tipos else "borda_aberta", dx, dy, cx, cy, z))
+    # os trechos: a mesma linha (o lado, a coordenada na perpendicular), seguidos até 0,3 m
+    linhas: Dict[tuple, list] = collections.defaultdict(list)
+    for t, dx, dy, cx, cy, z in achados:
+        linhas[(t, dx, dy, round(cx / CEL) if dx else round(cy / CEL))].append((cy if dx else cx, cx, cy, z))
+    for (t, dx, dy, _l), pts in linhas.items():
+        pts.sort()
+        trecho = [pts[0]]
+        for p in pts[1:] + [None]:
+            if p is not None and p[0] - trecho[-1][0] <= 300.0:
+                trecho.append(p)
+                continue
+            comp = trecho[-1][0] - trecho[0][0] + CEL
+            if comp >= COBERTURA_MIN:
+                meio = trecho[len(trecho) // 2]
+                if t == "borda_aberta":
+                    texto = "borda de telhado aberta em %.1f m (sem calha, rufo, fechamento nem parede)" % (comp / 1000.0)
+                else:
+                    texto = "telha encostada na parede sem rufo em %.1f m (rufo de encosto)" % (comp / 1000.0)
+                out.append({"tipo": t, "texto": texto, "ponto": [round(meio[1]), round(meio[2]), round(meio[3])],
+                            "ids": [], "mm": round(comp)})
+            if p is not None:
+                trecho = [p]
+    out += _cobertura_choques(doc, cobre)
+    return out
+
+
+def _cobertura_choques(doc, cobre) -> List[dict]:
+    """as chapas de calha e rufo por dentro das barras (pontos a cada 60 mm nas faces das chapas × a caixa da barra no
+    eixo dela, pela malha): um apontamento por par chapa × peça, a partir de 3 pontos"""
+    from nucleo3d.geometria import malha_barra
+    FOLGA, CEL = 3.0, 1000.0
+
+    def sub(a, b):
+        return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+    def dot(a, b):
+        return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+    barras = []
+    grade: Dict[tuple, list] = collections.defaultdict(list)
+    for b in doc.barras:
+        try:
+            vs, _ = malha_barra(b)
+        except Exception:
+            continue
+        L = math.dist(b.inicio, b.fim)
+        if L < 1.0:
+            continue
+        w = tuple((b.fim[i] - b.inicio[i]) / L for i in range(3))
+        ref = (0.0, 0.0, 1.0) if abs(w[2]) < 0.9 else (1.0, 0.0, 0.0)
+        u = (w[1] * ref[2] - w[2] * ref[1], w[2] * ref[0] - w[0] * ref[2], w[0] * ref[1] - w[1] * ref[0])
+        nu = math.sqrt(dot(u, u))
+        u = (u[0] / nu, u[1] / nu, u[2] / nu)
+        v = (w[1] * u[2] - w[2] * u[1], w[2] * u[0] - w[0] * u[2], w[0] * u[1] - w[1] * u[0])
+        pu = [dot(sub(p, b.inicio), u) for p in vs]
+        pv = [dot(sub(p, b.inicio), v) for p in vs]
+        k = len(barras)
+        barras.append((b, w, u, v, L, min(pu), max(pu), min(pv), max(pv)))
+        lo, hi = _caixa(vs)
+        for gx in range(int(lo[0] // CEL), int(hi[0] // CEL) + 1):
+            for gy in range(int(lo[1] // CEL), int(hi[1] // CEL) + 1):
+                grade[(gx, gy)].append(k)
+    pares: Dict[tuple, list] = {}
+    for s in cobre:
+        vs = s.vertices
+        for f in s.faces:
+            if len(f) != 4:
+                continue
+            a, b_, c, d = [vs[i] for i in f]
+            n1 = max(1, int(math.dist(a, b_) / 60.0))
+            n2 = max(1, int(math.dist(a, d) / 60.0))
+            for i in range(n1 + 1):
+                for j in range(n2 + 1):
+                    x, y = i / n1, j / n2
+                    p = tuple(a[k] * (1 - x) * (1 - y) + b_[k] * x * (1 - y) + c[k] * x * y + d[k] * (1 - x) * y
+                              for k in range(3))
+                    for k in grade.get((int(p[0] // CEL), int(p[1] // CEL)), ()):
+                        br, w, u, v, L, u0, u1, v0, v1 = barras[k]
+                        q = sub(p, br.inicio)
+                        t = dot(q, w)
+                        if not (FOLGA < t < L - FOLGA):
+                            continue
+                        if u0 + FOLGA < dot(q, u) < u1 - FOLGA and v0 + FOLGA < dot(q, v) < v1 - FOLGA:
+                            r = pares.setdefault((s.id, _peca(br)), [0, p, s, br])
+                            r[0] += 1
+    out = []
+    for (_sid, peca), (n, p, s, br) in pares.items():
+        if n < 3:
+            continue
+        a = s.atributos or {}
+        quem = "calha" if a.get("calha_lancada") else "rufo %s%s" % (a.get("rufo") or "", (" da " + a["painel"]) if a.get("painel") else "")
+        nm = str(origem_de(br).get("peca") or "").split("#")[0].strip() or br.nome or br.papel
+        out.append({"tipo": "rufo_choque", "texto": "%s passando por dentro de %s (%s)" % (quem, nm, br.papel),
+                    "ponto": [round(c) for c in p], "ids": [s.id, br.id]})
+    return out
+
+
+def conferir(doc, telha: bool = True, soltas: bool = True, posicao: bool = True, cobertura_: bool = True) -> dict:
     """as quatro contas no modelo; devolve {apontamentos: [...] (do mais grave para o menos), contagens}. Sem `soltas`,
     as pontas soltas ficam de fora (a tela Verificar apoios já as diz pelas regras dela)"""
     barras = list(doc.barras)
@@ -237,15 +421,20 @@ def conferir(doc, telha: bool = True, soltas: bool = True, posicao: bool = True)
     ch = choques(barras)
     tl = telha_ao_lado(doc) if telha else []
     pos = posicao_na_trelica(barras) if posicao else []
-    ordem = {"repetida": 0, "choque": 1, "posicao": 2, "degrau": 3, "dobra": 4, "ponta_solta": 5}
-    aps = sorted(rep + ch + pos + tl + soltas, key=lambda a: (ordem.get(a["tipo"], 9), -abs(a.get("mm") or 0)))
+    cob = cobertura(doc) if cobertura_ else []
+    ordem = {"repetida": 0, "choque": 1, "rufo_choque": 2, "borda_aberta": 3, "sem_rufo": 4, "posicao": 5, "degrau": 6,
+             "dobra": 7, "ponta_solta": 8}
+    aps = sorted(rep + ch + cob + pos + tl + soltas, key=lambda a: (ordem.get(a["tipo"], 9), -abs(a.get("mm") or 0)))
     return {"apontamentos": aps,
             "contagens": {"repetidas": len(rep), "choques": len(ch), "pontas_soltas": len(soltas),
                           "fora_da_posicao": len(pos),
                           "tercas_em_balanco": sum(1 for a in soltas if "balanço" in a["texto"]),
                           "telha_degraus": sum(1 for a in tl if a["tipo"] == "degrau"),
                           "telha_dobras": sum(1 for a in tl if a["tipo"] == "dobra"),
-                          "telha_acima_de_5cm": sum(1 for a in tl if abs(a["mm"]) >= 50)}}
+                          "telha_acima_de_5cm": sum(1 for a in tl if abs(a["mm"]) >= 50),
+                          "cobertura_bordas_abertas": sum(1 for a in cob if a["tipo"] == "borda_aberta"),
+                          "cobertura_sem_rufo": sum(1 for a in cob if a["tipo"] == "sem_rufo"),
+                          "cobertura_choques": sum(1 for a in cob if a["tipo"] == "rufo_choque")}}
 
 
 def avisos(conf: dict, desl: Sequence[float] = (0.0, 0.0), telha_min: float = 50.0) -> List[str]:
@@ -254,9 +443,10 @@ def avisos(conf: dict, desl: Sequence[float] = (0.0, 0.0), telha_min: float = 50
     c = conf["contagens"]
     out = ["Conferência do 3D: %d peça(s) repetida(s), %d choque(s) entre peças, %d peça(s) da treliça fora da posição "
            "da regra, %d ponta(s) solta(s) (%d terça(s) em balanço), telha ao lado: %d degrau(s) e %d dobra(s) acima de "
-           "20 mm (%d acima de 5 cm)."
+           "20 mm (%d acima de 5 cm); cobertura: %d borda(s) aberta(s), %d sem rufo na parede, %d calha/rufo batendo em peça."
            % (c["repetidas"], c["choques"], c.get("fora_da_posicao", 0), c["pontas_soltas"], c["tercas_em_balanco"],
-              c["telha_degraus"], c["telha_dobras"], c["telha_acima_de_5cm"])]
+              c["telha_degraus"], c["telha_dobras"], c["telha_acima_de_5cm"], c.get("cobertura_bordas_abertas", 0),
+              c.get("cobertura_sem_rufo", 0), c.get("cobertura_choques", 0))]
     for a in conf["apontamentos"]:
         if a["tipo"] in ("degrau", "dobra") and abs(a.get("mm") or 0) < telha_min:
             continue
