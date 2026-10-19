@@ -128,7 +128,7 @@ def situacao(pasta_projeto: str) -> dict:
         return {"situacao": "pronto", "versao": a["versao"]}
     if not os.path.isfile(os.path.join(pasta_projeto, "modelo.json")):
         return {"situacao": "sem modelo"}
-    return dict(_situacao.get(_cache(pasta_projeto)) or {"situacao": "velho"})
+    return dict(_situacao.get(_cache(pasta_projeto)) or {"situacao": "velho", "etapa": "esperando a gravação terminar"})
 
 
 def _trocar(novo: str, destino: str):
@@ -154,9 +154,14 @@ def gerar(pasta_projeto: str) -> dict:
         ass = _assinatura(pasta_projeto)
         os.makedirs(c, exist_ok=True)
 
+        # a fração e a etapa no formato da barra de andamento padrão (web/progresso.js: {etapa, fracao}) — o modo ver
+        # mostra a barra enquanto atualiza (usuário, 19/10: "conseguimos colocar uma barrinha de carregamento quando a
+        # estrutura está atualizando o modelo?")
         def progresso(k, n):
-            _situacao[c] = {"situacao": "preparando", "progresso": round(0.15 + 0.8 * k / max(n, 1), 2)}
-        _situacao[c] = {"situacao": "preparando", "progresso": 0.05}
+            f = round(0.15 + 0.8 * k / max(n, 1), 2)
+            _situacao[c] = {"situacao": "preparando", "progresso": f, "fracao": f,
+                            "etapa": "montando as peças (%d de %d)" % (k, n)}
+        _situacao[c] = {"situacao": "preparando", "progresso": 0.05, "fracao": 0.05, "etapa": "lendo o modelo gravado"}
         try:
             with open(os.path.join(pasta_projeto, "modelo.json"), encoding="utf-8") as f:
                 modelo = json.load(f)
@@ -210,7 +215,7 @@ def pedir(pasta_projeto: str) -> dict:
             return {"situacao": "sem modelo"}
         s = _situacao.get(c)
         if not (s and s.get("situacao") in ("na fila", "preparando")):
-            s = _situacao[c] = {"situacao": "na fila", "progresso": 0.0}
+            s = _situacao[c] = {"situacao": "na fila", "progresso": 0.0, "fracao": 0.0, "etapa": "na fila"}
             threading.Thread(target=_gerar_calado, args=(pasta_projeto,), name="3d-leve", daemon=True).start()
     velhos = _guardados(pasta_projeto)
     if velhos:

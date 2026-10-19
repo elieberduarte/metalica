@@ -12,6 +12,7 @@
 // O tema acompanha o da tela de fora na hora (a barra troca o do editor pelo botão dele, que aqui não há).
 
 import { Visor3D } from './visor3d.js';
+import { acompanhar } from '../progresso.js';
 
 const $ = s => document.querySelector(s);
 const q = new URLSearchParams(location.search);
@@ -373,7 +374,10 @@ async function abrir() {
   }
   if (r.headers.get('X-Atualizando')) {
     situacao(`Modo ver · ${nf(visor.nPecas)} peças · o modelo mudou: atualizando o 3D, troca sozinho em instantes…`);
-    esperarVersaoNova(versao);
+    // a barra de andamento padrão ao lado (usuário, 19/10: "uma barrinha de carregamento quando a estrutura está
+    // atualizando o modelo"): o servidor conta a etapa e a fração no /estado
+    const parar = acompanhar({ url: `${API}/estado`, tarefa: '3d-leve', rotulo: 'Atualizando o 3D', onde: $('#situacao') });
+    esperarVersaoNova(versao, parar);
   }
   aplicarDoEditor();
   aplicarDoVer();
@@ -505,12 +509,12 @@ function vistaGuardada() {
 window.addEventListener('pagehide', guardarVista);
 
 /** O modelo mudou: abriu o 3D de antes e o novo está sendo feito; pronto, troca (a vista fica). */
-function esperarVersaoNova(versao) {
+function esperarVersaoNova(versao, parar = () => {}) {
   const t = setInterval(async () => {
     try {
       const s = await (await fetch(`${API}/estado`, { cache: 'no-store' })).json();
-      if ((s.situacao === 'pronto' && s.versao !== versao) || s.situacao === 'sem modelo') { clearInterval(t); guardarVista(); location.reload(); }
-      else if (s.situacao === 'erro') { clearInterval(t); situacao('Não foi possível atualizar o 3D leve: ' + (s.erro || '')); }
+      if ((s.situacao === 'pronto' && s.versao !== versao) || s.situacao === 'sem modelo') { clearInterval(t); parar(true); guardarVista(); location.reload(); }
+      else if (s.situacao === 'erro') { clearInterval(t); parar(false); situacao('Não foi possível atualizar o 3D leve: ' + (s.erro || '')); }
     } catch (e) { /* tenta de novo */ }
   }, 2000);
 }

@@ -126,3 +126,25 @@ def test_modelo_vazio_nao_mostra_o_anterior(tmp_path):
         json.dump(m, f)
     assert L.pedir(pasta)["situacao"] in ("na fila", "preparando", "atualizando")
     _esperar_pronto(pasta)
+
+
+def test_o_estado_traz_a_fracao_e_a_etapa_para_a_barra(tmp_path, monkeypatch):
+    """usuário, 19/10 (Mercado, modo ver "o modelo mudou: atualizando o 3D"): "conseguimos colocar uma barrinha de
+    carregamento quando a estrutura está atualizando o modelo?" — o /estado traz {fracao, etapa}, o que a barra de
+    andamento padrão (web/progresso.js) lê"""
+    from saida import pacote_celular
+    pasta = _projeto(tmp_path)
+    vistos = []
+    original = pacote_celular.gerar_3d
+
+    def devagar(modelo, progresso=None):
+        def prog(k, n):
+            progresso(k, n)
+            vistos.append(L.situacao(pasta))
+        return original(modelo, prog)
+    monkeypatch.setattr(pacote_celular, "gerar_3d", devagar)
+    L.gerar(pasta)
+    meio = [s for s in vistos if s.get("situacao") == "preparando"]
+    assert meio and all(isinstance(s.get("fracao"), float) and 0.0 <= s["fracao"] <= 1.0 for s in meio)
+    assert all("montando as peças" in s.get("etapa", "") for s in meio)
+    assert L.situacao(pasta)["situacao"] == "pronto"
