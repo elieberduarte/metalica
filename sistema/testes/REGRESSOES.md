@@ -188,3 +188,4 @@ Achados dos testes de primeiro uso (`Projeto/BRIEFINGS/Briefing-primeiro-uso*.md
 | 19/10 | Mercado (anexo): com a tesoura selecionada, as vigas pré-moldadas onde ela apoia saíam laranja como a seleção (o destaque das vizinhas no lote) | 51b004e | verif_bloco_vizinhas |
 | 19/10 | Kaefer, resumo da obra: os chumbadores Ø20 da base saíam em "Contraventamentos", os X Ø8 em "Travamentos e agulhamentos" e as travessas da lona (2U 127, papel longarina) em "Terças" — o papel declarado no modelo era ignorado | 561d2d3 | test_nomes_papel_declarado (com e sem a placa de base) |
 | 19/10 | Kaefer: o reforço Ue 180×70×20 em pé do pilar redondo caía na categoria Terças da lista | 561d2d3 | test_nomes_papel_declarado (peça em pé não é terça) |
+| 19/10 | Kaefer: a foto da capa do resumo da obra cortava a estrutura (a imagem 3:2 num quadro de 78 mm com object-fit: cover) | b296542 | test_resumos test_a_capa_mostra_a_foto_inteira |
