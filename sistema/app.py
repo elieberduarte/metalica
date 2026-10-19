@@ -2897,6 +2897,10 @@ def _arquivos_dos_resumos(pasta: str) -> dict:
             cam = os.path.join(pasta, "%s.%s" % (nome, ext))
             if os.path.exists(cam):
                 a[ext] = _descrever_arquivo(cam, pasta)
+        # a prévia nas folhas do PDF (19/10), em dossie/
+        cam = os.path.join(pasta, "dossie", "%s.folhas.html" % nome)
+        if a and os.path.exists(cam):
+            a["folhas"] = _descrever_arquivo(cam, pasta)
         if a:
             arquivos[chave] = a
     return arquivos
@@ -2978,7 +2982,7 @@ def gerar_resumos_projeto(s: str, corpo: dict, porta: Optional[int] = None) -> d
         g.tocar(s)
         saida = {"numeros": R["numeros"], "avisos": R.get("avisos") or [], "dados": dados}
         for k, v in arquivos.items():
-            saida[k] = {n: _descrever_arquivo(c, pasta) for n, c in v.items() if n in ("html", "pdf", "xlsx")}
+            saida[k] = {n: _descrever_arquivo(c, pasta) for n, c in v.items() if n in ("html", "pdf", "xlsx", "folhas")}
             if v.get("erro_pdf"):
                 saida[k]["erro_pdf"] = v["erro_pdf"]
         return saida
@@ -5548,6 +5552,12 @@ class Handler(BaseHTTPRequestHandler):
             if rota.startswith("/saida/"):
                 rel = posixpath.normpath(rota[len("/saida/"):]).lstrip("/\\")
                 return self._arquivo(os.path.join(PROJETOS, rel), PROJETOS)
+            if rota == "/lib/paged.polyfill.js":
+                # o Paged.js do PDF (saida/printpdf.PAGED_JS) para a prévia dos resumos em folhas (19/10)
+                from saida import printpdf
+                cam = next((c for c in printpdf.PAGED_JS if os.path.exists(c)), None)
+                if cam:
+                    return self._arquivo(cam, os.path.dirname(cam))
             # estáticos da interface
             rel = posixpath.normpath(rota.lstrip("/")).lstrip("/\\")
             return self._arquivo(os.path.join(WEB, rel), WEB)

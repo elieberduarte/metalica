@@ -293,15 +293,16 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
         if qtd <= 0:
             continue
         L = int(round(u["comprimento"]))
-        # comprimentos a menos de 5 mm são o mesmo (a mesma peça com o arredondamento do IFC)
-        alvo = next((k for k in bloco["linhas"] if abs(k - L) <= 5), L)
-        li = bloco["linhas"].setdefault(alvo, {"comprimento": alvo, "qtd": 0, "kg": 0.0, "marcas": [], "perfis": [],
+        perfil = str(u["principal"].perfil or "")
+        # comprimentos a menos de 5 mm são o mesmo (a mesma peça com o arredondamento do IFC); perfis diferentes, linhas
+        # diferentes (Kaefer, 19/10: os pilares W310×32,7, W460×52,0 e TC 180×6,3 de 7,67 m saíam numa linha só)
+        alvo = next((k for k in bloco["linhas"] if k[1] == perfil and abs(k[0] - L) <= 5), (L, perfil))
+        li = bloco["linhas"].setdefault(alvo, {"comprimento": alvo[0], "qtd": 0, "kg": 0.0, "marcas": [], "perfis": [],
                                                "onde": collections.Counter(), "ids": []})
         li["qtd"] += qtd
         li["kg"] += qtd * u["kg_un"]
         if u["nome"] not in li["marcas"]:
             li["marcas"].append(u["nome"])
-        perfil = str(u["principal"].perfil or "")
         if perfil and perfil not in li["perfis"]:
             li["perfis"].append(perfil)
         for k, v in onde.items():
@@ -317,7 +318,7 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
         if not b or not b["linhas"]:
             continue
         linhas = []
-        for li in sorted(b["linhas"].values(), key=lambda x: -x["comprimento"]):
+        for li in sorted(b["linhas"].values(), key=lambda x: (-x["comprimento"], x["perfis"])):
             li["marcas"].sort(key=_ordem_natural)
             li["onde"] = [(p, int(round(li["onde"][p]))) for p in nomes_pav if round(li["onde"].get(p, 0))] if varios else []
             linhas.append(li)

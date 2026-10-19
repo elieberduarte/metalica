@@ -113,3 +113,26 @@ def test_foto_da_retraida_com_lona_so_a_da_cobertura():
     X = {"tem_lona": True, "cobertura_movel": True, "lona_paredes": ["w"]}
     por = {p["nome"]: p for p in dossie.pedidos_de_fotos(X)}
     assert por["lona-2-com"]["ocultar"] == ["w"] and "ocultar" not in por["lona-1-com"] and "ocultar" not in por["lona-2-sem"]
+
+
+def test_linhas_do_tipo_separadas_por_perfil():
+    """Kaefer (19/10): os pilares W310×32,7, W460×52,0 e TC 180×6,3 com o mesmo comprimento saíam numa linha só
+    ("18 un · 7,67 m · W 310×32,7, W 460×52,0, TC 180×6,3") e pareciam do perfil errado — perfil diferente, linha diferente"""
+    from nucleo3d.modelo import Barra, Documento
+    from nucleo2d.detalhar import detalhar
+    from nucleo2d.detalhe.base import _categoria
+    from saida import lista_producao, resumos
+    doc = Documento(nome="quadra")
+    for k, perfil in enumerate(["W 460×52,0"] * 3 + ["W 310×32,7"] * 2 + ["TC 180×6,3"]):
+        doc.add(Barra(nome="P%d" % (k + 1), inicio=(0.0, 5000.0 * k, 0.0), fim=(0.0, 5000.0 * k, 7674.5), perfil=perfil, papel="pilar"))
+    doc.add(Barra(nome="V", inicio=(0.0, 0.0, 7843.5), fim=(0.0, 25000.0, 7843.5), perfil="W 310×44,5", papel="viga"))
+    r = detalhar(doc, grupos=["localizacao"], converter=False)
+    nomes = r.get("nomes") or {}
+    cat = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
+    lista = lista_producao.montar(r["objetos_posicoes"], cat, r["acessorios"], pecas=r["objetos_pecas"], projeto={"nome": "q"})
+    lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"], "avisos": r["avisos"]}
+    R = resumos.levantar_resumos(doc, lev, lista, nomes, {})
+    X = dossie.levantar(doc, lev, lista, nomes, R, None)
+    pil = next(b for b in X["estrutura"] if b["chave"] == "pilares")
+    linhas = {tuple(li["perfis"]): li["qtd"] for li in pil["linhas"]}
+    assert linhas == {("W 460×52,0",): 3, ("W 310×32,7",): 2, ("TC 180×6,3",): 1}

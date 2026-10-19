@@ -2380,6 +2380,18 @@ def planilha_de_materiais(R: dict, lista: Optional[dict], caminho: str) -> str:
 ARQ_NUMEROS = "resumo-numeros.json"
 
 
+#: o Paged.js pelo servidor (app.py, /lib/paged.polyfill.js) — o do PDF vem por file://, que a tela não abre
+URL_PAGED_JS = "/lib/paged.polyfill.js"
+#: as folhas na tela: o fundo cinza e cada folha branca com sombra, como num visualizador de PDF
+#: (aplicado depois que o Paged.js termina: o estilo do documento ele reprocessa e o de tela não pegava)
+CSS_FOLHAS = ("<script>new MutationObserver(function (m, o) {"
+              "if (document.documentElement.getAttribute('data-paged') !== 'done') return; o.disconnect();"
+              "var s = document.createElement('style'); s.textContent = '@media screen{html,body{background:#dfe4ea !important}"
+              ".pagedjs_pages{padding:12px 0}.pagedjs_page{background:#fff;margin:0 auto 14px !important;"
+              "box-shadow:0 1px 8px rgba(16,32,60,.28)}}'; document.head.appendChild(s);"
+              "}).observe(document.documentElement, {attributes: true});</script>")
+
+
 def gerar_resumos(pasta: str, R: dict, imprimir_pdf: bool = True) -> dict:
     """Grava resumo-da-obra.html/.pdf e resumo-de-materiais.html/.pdf em `pasta`."""
     from projetos import trocar_arquivo
@@ -2401,6 +2413,18 @@ def gerar_resumos(pasta: str, R: dict, imprimir_pdf: bool = True) -> dict:
             f.write(h)
         trocar_arquivo(caminho + ".parcial", caminho)
         saida[chave] = {"html": caminho}
+        # a prévia da tela nas folhas do PDF (19/10): a mesma versão paginada do PDF, com o Paged.js pelo servidor e as
+        # folhas destacadas na tela; em dossie/, fora da aba Arquivos
+        try:
+            from saida import printpdf
+            folhas = fn(R, paginado=True).replace(printpdf.paged_js_url(), URL_PAGED_JS).replace("</head>", CSS_FOLHAS + "</head>", 1)
+            os.makedirs(os.path.join(pasta, "dossie"), exist_ok=True)
+            cam_f = os.path.join(pasta, "dossie", titulo + ".folhas.html")
+            with open(cam_f, "w", encoding="utf-8") as f:
+                f.write(folhas)
+            saida[chave]["folhas"] = cam_f
+        except Exception:                              # noqa: BLE001 — sem o Paged.js, a prévia contínua
+            pass
         if imprimir_pdf:
             from saida import printpdf
             pdf = os.path.join(pasta, titulo + ".pdf")

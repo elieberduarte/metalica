@@ -862,10 +862,15 @@ function desenharPrevia() {
     ...[['obra', 'Resumo da obra'], ['materiais', 'Resumo de materiais']].map(([k, t]) => el('button', { type: 'button', class: k === DOC_ATUAL ? 'ativa' : '', disabled: !arq[k], texto: t,
       onclick: () => { DOC_ATUAL = k; desenharPrevia(); } })));
   const quando = (a.pdf || a.html || {}).alterado;
-  const frame = a.html ? el('iframe', { src: `${a.html.url}?t=${encodeURIComponent(quando || '')}`, title: 'Prévia do resumo' }) : vazio('Sem a versão HTML deste resumo.');
-  if (a.html && DOC_ATUAL === 'materiais') frame.addEventListener('load', () => ligarTrocas(frame));
-  // as linhas com peças do modelo (data-ids): as pendências da obra e, no de materiais, os parafusos da compra (14/10)
-  if (a.html) frame.addEventListener('load', () => ligarPendencias(frame));
+  // a prévia nas folhas do PDF (19/10: "a divisão real da folha"), ou contínua; a escolha fica na aba
+  const folhas = !!a.folhas && VER_FOLHAS;
+  const fonte = folhas ? a.folhas : a.html;
+  const frame = fonte ? el('iframe', { src: `${fonte.url}?t=${encodeURIComponent(quando || '')}`, title: 'Prévia do resumo' }) : vazio('Sem a versão HTML deste resumo.');
+  if (fonte) frame.addEventListener('load', () => depoisDasFolhas(frame, () => {
+    if (DOC_ATUAL === 'materiais') ligarTrocas(frame);
+    // as linhas com peças do modelo (data-ids): as pendências da obra e, no de materiais, os parafusos da compra (14/10)
+    ligarPendencias(frame);
+  }));
   fecharLado3D();                                   // o documento novo começa sem o 3D ao lado
   alvo.replaceChildren(
     el('div', { class: 'doc-barra' }, alternar, el('span', { class: 'quando', texto: quando ? `gerado em ${dataBR(quando)}` : '' }), el('span', { class: 'sep' }),
@@ -873,6 +878,9 @@ function desenharPrevia() {
       // o resumo de materiais em planilha (09/10): baixa com o nome de entrega ("OBRA - Resumo de materiais (dd.mm.aaaa).xlsx")
       (arq.materiais || {}).xlsx ? el('a', { class: 'botao-m', href: arq.materiais.xlsx.url, download: '', texto: 'Excel',
         title: 'Baixar o resumo de materiais em planilha: resumo, perfis e barras, chapas, parafusos e chumbadores, lista de materiais e conjuntos' }) : null,
+      a.folhas ? el('button', { type: 'button', class: 'botao-m', texto: folhas ? 'Ver contínuo' : 'Ver em folhas',
+        title: folhas ? 'O documento contínuo, sem as quebras de folha' : 'As folhas do PDF, com as quebras de página como vão sair',
+        onclick: () => { VER_FOLHAS = !folhas; try { localStorage.setItem('metalica.resumo.folhas', VER_FOLHAS ? '1' : '0'); } catch (e) { /* sem armazenamento */ } desenharPrevia(); } }) : null,
       a.html ? el('button', { type: 'button', class: 'botao-m', texto: 'Imprimir', onclick: () => { try { frame.contentWindow.print(); } catch (e) { window.open(a.html.url, '_blank'); } } }) : null,
       // a foto do resumo da obra pela vista que o usuário escolher no 3D (14/10): abre o modelo ao lado, gira, "Tirar a foto"
       DOC_ATUAL === 'obra' ? el('button', { type: 'button', class: 'botao-m', texto: 'Escolher a vista da foto',
@@ -928,6 +936,21 @@ function escolherVistaDaFoto() {
  * No resumo de materiais, o nome de cada perfil abre os parecidos do catálogo: a mesma forma, os lados até 25 %
  * diferentes, se atendem (área e inércias pelo menos as do projeto), o kg/m. A escolha fica gravada no projeto,
  * a lista se atualiza na hora e os resumos se refazem. */
+/* a prévia em folhas (19/10): o Paged.js monta as folhas depois do load e as linhas que levam ao 3D só existem depois
+ * disso — as ligações esperam o sinal de fim (data-paged="done", o mesmo que o PDF espera) */
+let VER_FOLHAS = (() => { try { return localStorage.getItem('metalica.resumo.folhas') !== '0'; } catch (e) { return true; } })();
+function depoisDasFolhas(frame, fn) {
+  const t0 = Date.now();
+  (function tentar() {
+    let doc = null;
+    try { doc = frame.contentDocument; } catch (e) { return; }
+    if (!doc) return;
+    const paginado = !!doc.querySelector('script[src*="paged.polyfill"]');
+    if (!paginado || doc.documentElement.dataset.paged === 'done' || Date.now() - t0 > 60000) { fn(); return; }
+    setTimeout(tentar, 200);
+  })();
+}
+
 function ligarTrocas(frame) {
   let doc;
   try { doc = frame.contentDocument; } catch (e) { return; }
