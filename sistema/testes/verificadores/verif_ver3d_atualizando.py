@@ -81,6 +81,18 @@ try:
         txt = aba.avaliar("document.querySelector('.barra-andamento').title || ''")
         print("       barra:", txt)
         ok("Atualizando o 3D" in txt, "a barra diz o que está fazendo")
+        # 19/10 (o usuário: "é esse que ficou escondido atrás do reanalisar estrutura?"): a barra entrava no fluxo da
+        # página depois do #situacao (que é fixo no rodapé) e subia para o canto de cima, atrás dos botões. Ela fica no
+        # rodapé, logo acima do aviso, e não cobre nenhum botão
+        pos = aba.avaliar("""(() => { const b = document.querySelector('.barra-andamento').getBoundingClientRect();
+            const s = document.getElementById('situacao').getBoundingClientRect();
+            const bot = [...document.querySelectorAll('button')].filter(x => x.offsetParent).map(x => x.getBoundingClientRect());
+            const cobre = bot.some(r => b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top);
+            return {topo: b.top, base: b.bottom, esq: b.left, alt: innerHeight, sit: s.top, cobre}; })()""")
+        print("       posição:", pos)
+        ok(pos["topo"] > pos["alt"] - 80 and pos["base"] <= pos["sit"] + 2 and pos["esq"] < 40,
+           "a barra fica no rodapé, logo acima do aviso (não no alto da tela)")
+        ok(not pos["cobre"], "a barra não fica por trás de nenhum botão")
     # a versão nova fica pronta: a página troca sozinha (recarrega) com as peças novas, sem a barra
     ok(esperar("!!window.ver3dPronto && window.visor && window.visor.nPecas === 5000 && !document.querySelector('.barra-andamento')", 120),
        f"trocou sozinho para a versão nova e a barra sumiu (antes {n0} peças)")
