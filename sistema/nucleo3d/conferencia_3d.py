@@ -228,7 +228,7 @@ def posicao_na_trelica(barras) -> List[dict]:
     return out
 
 
-def conferir(doc, telha: bool = True, soltas: bool = True) -> dict:
+def conferir(doc, telha: bool = True, soltas: bool = True, posicao: bool = True) -> dict:
     """as quatro contas no modelo; devolve {apontamentos: [...] (do mais grave para o menos), contagens}. Sem `soltas`,
     as pontas soltas ficam de fora (a tela Verificar apoios já as diz pelas regras dela)"""
     barras = list(doc.barras)
@@ -236,7 +236,7 @@ def conferir(doc, telha: bool = True, soltas: bool = True) -> dict:
     soltas = pontas_soltas(barras, list(doc.solidos)) if soltas else []
     ch = choques(barras)
     tl = telha_ao_lado(doc) if telha else []
-    pos = posicao_na_trelica(barras)
+    pos = posicao_na_trelica(barras) if posicao else []
     ordem = {"repetida": 0, "choque": 1, "posicao": 2, "degrau": 3, "dobra": 4, "ponta_solta": 5}
     aps = sorted(rep + ch + pos + tl + soltas, key=lambda a: (ordem.get(a["tipo"], 9), -abs(a.get("mm") or 0)))
     return {"apontamentos": aps,

@@ -800,6 +800,20 @@ html.sem-paineis .aba-paineis { right: 0; }
 .painel-apoios-corpo li:hover { color: var(--azul); text-decoration: underline; }
 .painel-apoios-corpo li.mais { cursor: default; text-decoration: none; opacity: .7; }
 
+/* Modelo → Reanalisar estrutura: a prévia por regra (marca o que corrigir) e o que fica para conferir */
+.painel-reanalise { width: min(440px, calc(100% - 20px)); }
+.painel-reanalise .reanalise-secao { margin: 10px 0 2px; font-size: 11px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--texto2, inherit); opacity: .8; }
+.painel-reanalise .reanalise-ok { margin: 3px 0; opacity: .75; }
+.painel-reanalise .reanalise-expl { margin: 2px 0 4px; opacity: .8; }
+.painel-reanalise summary input { vertical-align: -2px; margin: 0 2px 0 0; cursor: pointer; }
+.painel-reanalise .reanalise-sel { border: 1px solid var(--borda); border-radius: 6px; background: var(--painel);
+  color: var(--texto); padding: 2px 8px; margin: 2px 0 4px; cursor: pointer; font-size: 12px; }
+.painel-reanalise .reanalise-acoes { position: sticky; bottom: -10px; padding: 8px 0 2px; background: var(--painel); }
+.painel-reanalise .aplicar-reanalise { width: 100%; border: 1px solid var(--azul); border-radius: 6px; background: var(--azul);
+  color: #fff; font-weight: 600; padding: 6px 10px; cursor: pointer; }
+.painel-reanalise .aplicar-reanalise:disabled { opacity: .5; cursor: default; }
+
 /* painel do bloco (elemento treliçado selecionado): abaixo do painel dos apoios, se os dois abrirem */
 .painel-bloco { top: auto; bottom: 44px; }
 .painel-bloco .bloco-ponta { margin: 8px 0 2px; font-weight: 600; }

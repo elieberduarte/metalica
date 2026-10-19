@@ -237,7 +237,7 @@ def _achado(regra, texto, ponto, ids, peca="", **extra) -> dict:
     return d
 
 
-def verificar(doc, tol: float = TOL_ENCOSTO, eixos=None) -> dict:
+def verificar(doc, tol: float = TOL_ENCOSTO, eixos=None, posicao: bool = True) -> dict:
     """confere as regras de apoio. Devolve {resumo, achados} — cada achado com a regra, o
     texto em linguagem de obra, o ponto (x, y, z) e as ids das peças. Com `eixos` (as linhas
     de `nucleo3d.eixos.segmentos`), o achado diz também onde fica na malha ("eixo 4 / entre B e C")."""
@@ -578,7 +578,9 @@ def verificar(doc, tol: float = TOL_ENCOSTO, eixos=None) -> dict:
     from nucleo3d import conferencia_3d
     regra_3d = {"repetida": "repetida", "choque": "choque", "degrau": "telha_degrau", "dobra": "telha_dobra",
                 "posicao": "posicao_trelica"}
-    for a in conferencia_3d.conferir(doc, soltas=False)["apontamentos"]:
+    # sem `posicao`: as regras das tesouras ficam de fora (a reanálise acabou de passar o modelo por elas — é a conta
+    # mais demorada: 35 s no CD Bom Dia)
+    for a in conferencia_3d.conferir(doc, soltas=False, posicao=posicao)["apontamentos"]:
         if a["tipo"] not in regra_3d or (a["tipo"] in ("degrau", "dobra") and abs(a["mm"]) < 30):
             continue
         achados.append(_achado(regra_3d[a["tipo"]], a["texto"], a["ponto"], a["ids"], **({"mm": a["mm"]} if "mm" in a else {})))

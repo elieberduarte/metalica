@@ -302,7 +302,8 @@ window.addEventListener('message', ev => {
 
 // ------------------------------------------------------------------ editar (o editor completo)
 
-function irParaEditor() {
+function irParaEditor(extra) {
+  const pedido = extra && !(extra instanceof Event) ? extra : {};
   if (visor && visor.cabecalho) {
     const cam = visor.lerCamera();
     const sel = visor.fichas ? [...visor.selecaoVarias].slice(0, 5000).map(i => visor.fichas[i].id) : [];
@@ -310,7 +311,8 @@ function irParaEditor() {
       sessionStorage.setItem('metalica.vistaDoVisor', JSON.stringify({ projeto: PROJETO, quando: Date.now(), ...cam, selecao: sel }));
     } catch (e) { /* sem armazenamento: abre no enquadramento do editor */ }
   }
-  const url = `/editor?projeto=${encodeURIComponent(PROJETO)}`;
+  const url = `/editor?projeto=${encodeURIComponent(PROJETO)}` +
+    Object.entries(pedido).map(([k, v]) => `&${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('');
   // dentro da área de trabalho, a dividida troca o quadro (e passa a lembrar que o 3D é o editor)
   if (window.parent !== window) {
     try { window.parent.postMessage({ metalica: 'navegar', url }, location.origin); return; } catch (e) { /* abre aqui */ }
@@ -735,6 +737,7 @@ function ligar() {
   visor.controles.addEventListener('change', () => { if (medida.length === 2) posicionarRotulo(); });
 
   $('#btn-editar').onclick = irParaEditor;
+  $('#btn-reanalisar').onclick = () => irParaEditor({ reanalisar: '1' });       // o editor abre já com a prévia
   $('#painel-fechar').onclick = fecharPainel;
   $('#painel-corpo').addEventListener('click', ev => {
     const el = ev.target.closest && ev.target.closest('i.cor');

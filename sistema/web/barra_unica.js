@@ -70,6 +70,9 @@
       I('Abrir a pasta do projeto', '2d', 'abrir-pasta', { antes: 'Arquivo › Abrir a pasta dos desenhos' }),
     ] },
     { nome: 'Modelo', itens: [
+      // em destaque, no alto (usuário, 19/10): o modelo antigo pelas regras de hoje, com a prévia antes de mudar
+      I('Reanalisar estrutura…', '3d', 'reanalisar-estrutura', { destaque: true, dica: 'o modelo antigo pelas regras de hoje: tocos, diagonais soltas, peças repetidas, regras das tesouras — prévia antes de mudar' }),
+      HR,
       S('Lançar pelo arquitetônico', [
         T('do arquitetônico do cliente ao modelo 3D'),
         I('1. Importar o arquitetônico (DXF/PDF)…', '2d', 'arquitetonico', { antes: 'Arquivo › Arquitetônico do cliente (DXF/PDF)…' }),
@@ -455,6 +458,7 @@
       var falta = motivo(it);
       var b = botaoDoItem(it.texto, falta || it.dica, marcado(it));
       if (it.kbd) { var k = document.createElement('kbd'); k.textContent = it.kbd; b.appendChild(k); }
+      if (it.destaque) b.classList.add('destaque');
       if (o && o.title) b.title = o.title;
       if ((o && o.disabled) || falta) b.disabled = true;
       b.addEventListener('click', function (ev) { ev.stopPropagation(); fechar(); executar(it); });

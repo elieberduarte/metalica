@@ -56,6 +56,7 @@ import { MetodosDetalhesUsuario } from './modulos/detalhes_usuario.js';
 import { MetodosBIM } from './modulos/bim.js';
 import { MetodosModelagem } from './modulos/modelagem.js';
 import { MetodosTrocaGrupos } from './modulos/troca_grupos.js';
+import { MetodosReanalise } from './modulos/reanalise.js';
 
 /** Copia os métodos das classes dos módulos para a classe (getters e setters também). */
 function aplicarMetodos(alvo, ...fontes) {
@@ -322,6 +323,11 @@ export class Editor {
     if (this.projeto && this.parametros.get('lancar') === '1') {
       const url = new URL(location.href); url.searchParams.delete('lancar'); history.replaceState(null, '', url);
       setTimeout(() => this.dialogoLancar(), 300);
+    }
+    // o botão Reanalisar estrutura do modo ver (web/visor3d) abre o editor já com a prévia
+    if (this.projeto && this.parametros.get('reanalisar') === '1') {
+      const url = new URL(location.href); url.searchParams.delete('reanalisar'); history.replaceState(null, '', url);
+      setTimeout(() => this.reanalisarEstrutura(), 300);
     }
     if (this.parametros.get('destacar')) this._destacar(this.parametros.get('destacar'));
     else if (!pedidoNaUrl) {
@@ -2139,6 +2145,7 @@ export class Editor {
       'alternar-tema': () => this.alternarTema(),
       desempenho: () => this.dialogoDesempenho(),
       'verificar-apoios': () => this.verificarApoios(),
+      'reanalisar-estrutura': () => this.reanalisarEstrutura(),
       'conferir-producao': () => this.conferirAntesDeDetalhar(),
       'tabela-pecas': () => this.abrirTabela(),
       'sequencia-montagem': () => this.abrirSequencia(),
@@ -2661,7 +2668,8 @@ export class Editor {
 // os métodos que moram nos módulos (web/editor3d/modulos/)
 aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico, MetodosLancamento,
   MetodosApoios, MetodosBloco, MetodosBarrasDoBloco, MetodosDivisao, MetodosExplodir, MetodosEdicaoChapa, MetodosPadrao3D,
-  MetodosProducao, MetodosLigacoes, MetodosConferencia, MetodosDetalhesUsuario, MetodosBIM, MetodosModelagem, MetodosTrocaGrupos);
+  MetodosProducao, MetodosLigacoes, MetodosConferencia, MetodosDetalhesUsuario, MetodosBIM, MetodosModelagem, MetodosTrocaGrupos,
+  MetodosReanalise);
 
 // ================================================================= apoio
 

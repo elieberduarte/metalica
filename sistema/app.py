@@ -60,6 +60,8 @@ Rotas da API:
     POST /api/modelo/modelar {documento, ferramenta, ids, parametros, eixos, cruzamentos}   terças, treliça, contravento, pilares, viga, longarinas, correntes, mão-francesa
     POST /api/modelo/trocar-grupos {documento, trocas?}        os grupos por perfil / a troca de perfis por grupo (estudos)
     POST /api/modelo/regras-trelica {documento}                 o modelo pelas regras das tesouras, sem remontar
+    POST /api/projetos/<slug>/reanalisar · /api/modelo/reanalisar {documento, quais?}   Reanalisar estrutura: o modelo
+         antigo pelas regras de hoje, com prévia por regra (nucleo3d/reanalise.py)
     POST /api/modelo/conferencia {documento, ids, quais}       colisão, execução das ligações e produção
     GET  /api/detalhes-3d · POST /api/detalhes-3d/<salvar|aplicar|excluir>   o detalhe do usuário (modelo de ligação)
     GET  /api/projetos/<slug>/esforcos     esforços da estrutura inteira (o último cálculo); POST calcula (tela /esforcos)
@@ -4811,6 +4813,22 @@ def corrigir_pelas_regras(corpo: dict) -> dict:
     return regras_trelica.corrigir_modelo(_documento_de(corpo))
 
 
+def reanalisar_estrutura(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/reanalisar e /api/modelo/reanalisar {documento, quais?}: o modelo antigo pelas regras de
+    hoje, sem remontar (nucleo3d/reanalise.py — usuário, 19/10: "pegar esse tipo de erro de concepção que já corrigimos
+    em outros modelos"): peças repetidas, tocos e pontas soltas das treliças, as regras das tesouras e o peso, e o que só
+    se aponta. Devolve a prévia por regra e as mudanças para o editor aplicar com desfazer; não grava nada."""
+    from nucleo3d import reanalise
+    doc = _documento_de(corpo)
+    quais = corpo.get("quais")
+    avisar = (lambda etapa, f: _progresso(s, etapa, fracao=f)) if s else None
+    try:
+        return reanalise.reanalisar(doc, quais=list(quais) if isinstance(quais, list) else None, avisar=avisar)
+    finally:
+        if s:
+            _fim_progresso(s)
+
+
 def conferir_modelo(corpo: dict) -> dict:
     """POST /api/modelo/conferencia {documento, ids, quais}: colisão pela forma, execução das ligações (borda, passo,
     parafuso sem furo, furo sem parafuso, espaço da chave) e produção (sem marca, a conferir, fora da lista, sem peça
@@ -5659,6 +5677,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(cobertura_movel_do_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "detalhar-posicao":
                     return self._json(detalhar_posicao_projeto(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "reanalisar":
+                    return self._json(reanalisar_estrutura(partes[0], corpo if isinstance(corpo, dict) else {}))
                 if len(partes) == 2 and partes[1] == "atualizar-pecas":
                     return self._json(atualizar_pecas_projeto(partes[0], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "gerar-3d":
@@ -5753,6 +5773,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(trocar_perfis_por_grupo(corpo))
             if rota == "/api/modelo/regras-trelica":
                 return self._json(corrigir_pelas_regras(corpo))
+            if rota == "/api/modelo/reanalisar":
+                return self._json(reanalisar_estrutura("", corpo))
             if rota == "/api/modelo/conferencia":
                 return self._json(conferir_modelo(corpo))
             if rota == "/api/lento":
