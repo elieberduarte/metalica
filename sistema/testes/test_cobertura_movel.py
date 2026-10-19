@@ -131,3 +131,28 @@ def test_giro_do_pilar_so_na_analise_e_a_secao_para_desenhar():
     assert abs(sum(x * y for x, y in zip(a, b))) < 1e-6 and girado["0,0"]["giro"] == 90.0   # 90° no plano horizontal
     assert girado["10000,0"]["ey"] == pil["10000,0"]["ey"]
     assert any("girado só na análise" in x for x in r["avisos"])
+
+
+def test_a_lona_da_cobertura_segue_a_situacao():
+    """Kaefer (19/10): "a lona não segue o modelo retraído". A lona da cobertura (ilustração) é gerada junto com as
+    tesouras: aberta, cobre o comprimento todo; retraída, só a pilha na ponta; abrir de novo a traz de volta sozinha
+    (lona=None mantém a que havia). Fica fora da lista (exportar False, sem tipo de peça) e na camada Lona escondida."""
+    doc = _modelo()
+
+    def ys_da_lona():
+        vs = [v for e in doc.entidades.values() if (e.atributos or {}).get("elemento") == CM.LONA for v in e.vertices]
+        return (round(min(v[1] for v in vs)), round(max(v[1] for v in vs))) if vs else None
+
+    r = CM.aplicar(doc, PAR, "aberta", lona=True)
+    assert r["lona"] == 4 + 2                                        # 4 vãos + os 2 frontões
+    assert ys_da_lona() == (-33, 10033)                              # 30 mm além das tesouras das pontas + a espessura
+    lonas = [e for e in doc.entidades.values() if (e.atributos or {}).get("elemento") == CM.LONA]
+    assert all(e.atributos["exportar"] is False and "tipo_ifc" not in e.atributos for e in lonas)
+    assert doc.camadas["Lona"].visivel is False
+    # o arco por cima do banzo de cima (6500 + meia altura do TQ 50) e a ponta até o pé da tesoura (5000)
+    zs = [v[2] for e in lonas for v in e.vertices]
+    assert round(max(zs)) == 6500 + 25 + 3 and round(min(zs)) == 5000
+    CM.aplicar(doc, PAR, "retraida")
+    assert ys_da_lona() == (-33, 2033)                               # a pilha nos 2 m da ponta
+    assert CM.aplicar(doc, PAR, "aberta")["lona"] == 6 and ys_da_lona() == (-33, 10033)
+    assert CM.aplicar(doc, PAR, "aberta", lona=False)["lona"] == 0 and ys_da_lona() is None

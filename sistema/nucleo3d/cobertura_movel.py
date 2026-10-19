@@ -13,9 +13,10 @@ veio, para a sincronização da planta trocá-las junto (e gerar de novo). A an�
 from __future__ import annotations
 
 import copy
-from typing import Optional
+import re
+from typing import List, Optional, Sequence, Tuple
 
-from nucleo3d.modelo import Barra, Chapa, Documento, Solido, novo_id
+from nucleo3d.modelo import Barra, Camada, Chapa, Documento, Solido, novo_id
 
 SITUACOES = ("aberta", "retraida")
 
@@ -35,9 +36,11 @@ def gerada(ent) -> bool:
     return bool((getattr(ent, "atributos", None) or {}).get("cobertura_movel"))
 
 
-def aplicar(doc: Documento, par: Optional[dict] = None, situacao: str = "aberta") -> dict:
+def aplicar(doc: Documento, par: Optional[dict] = None, situacao: str = "aberta", lona: Optional[bool] = None) -> dict:
     """troca no `doc` as tesouras lançadas (e as geradas antes) pelas da cobertura retrátil na `situacao`; devolve o
-    resumo. Erro de dados se o modelo não tem a tesoura molde apoiada nas vigas"""
+    resumo. Erro de dados se o modelo não tem a tesoura molde apoiada nas vigas. `lona`: True gera a lona da cobertura
+    (ilustração, `lona_da_cobertura`), False a tira; None mantém como estava — a que já havia é gerada de novo na posição
+    das tesouras (Kaefer, 19/10: "a lona não segue o modelo retraído")"""
     from nucleo.base import ErroDeDados
     from nucleo3d import analise_estrutural as AE
     if situacao not in SITUACOES:
@@ -57,13 +60,20 @@ def aplicar(doc: Documento, par: Optional[dict] = None, situacao: str = "aberta"
     # fora: as tesouras (lançadas e geradas) e a sanfona gerada antes
     fora = [k for k, e in doc.entidades.items()
             if (e.atributos or {}).get("elemento") == "trelica" or (gerada(e) and (e.atributos or {}).get("elemento") == "sanfona")]
+    lonas = [e for e in doc.entidades.values() if (e.atributos or {}).get("elemento") == LONA]
+    camada_lona = lonas[0].camada if lonas else CAMADA_LONA
+    if lona is None:
+        lona = bool(lonas)
+    fora += [e.id for e in lonas]
     for k in fora:
         doc.remover(k)
     planta = next(((e.atributos or {}).get("planta") for e in molde if (e.atributos or {}).get("planta")), None)
     n_pecas = 0
+    desl = []
     for k, t in enumerate(mv["tesouras"]):
         dt = (t["t"] - mv["t0"]) * 1000.0
         d = (n[0] * dt, n[1] * dt, 0.0)
+        desl.append(d)
         for e in molde:
             c = copy.deepcopy(e)
             c.id = novo_id()
@@ -94,9 +104,104 @@ def aplicar(doc: Documento, par: Optional[dict] = None, situacao: str = "aberta"
                 doc.add(Barra(nome="Sanfona %d-%d" % (k + 1, k + 2), camada="Contraventamento", inicio=A, fim=B,
                               perfil=P.get("perfil_sanfona") or "TQ 50×50×2,0", papel="contraventamento", atributos=at))
                 ns += 1
-    return {"situacao": situacao, "tesouras": len(mv["tesouras"]), "pecas_tesouras": n_pecas, "sanfona": ns,
+    n_lona = lona_da_cobertura(doc, molde, n, desl, situacao, camada_lona) if lona else 0
+    return {"situacao": situacao, "tesouras": len(mv["tesouras"]), "pecas_tesouras": n_pecas, "sanfona": ns, "lona": n_lona,
             "passo_m": mv["passo_m"], "comprimento_m": mv["comprimento_m"], "saiu": len(fora),
             "peso_tesoura_kg": mv["peso_tesoura_kg"], "planta": planta}
+
+
+# ------------------------------------------------------------------ a lona da cobertura (ilustração)
+
+LONA = "lona_cobertura"
+CAMADA_LONA = "Lona"
+#: a lona fica fora das tesouras: acima do banzo de cima, além das pontas e das tesouras das extremidades (mm)
+FOLGA_LONA = 30.0
+ESPESSURA_LONA = 3.0
+
+
+def _prisma(secao: Sequence[Tuple[float, float, float]], v: Sequence[float]) -> Tuple[List[tuple], List[List[int]]]:
+    """vértices e faces do prisma da seção plana (convexa) extrudada por v, as faces anti-horárias vistas de fora"""
+    m = len(secao)
+    nrm = [sum((secao[i][a] - secao[(i + 1) % m][a]) * (secao[i][b] + secao[(i + 1) % m][b]) for i in range(m))
+           for a, b in ((1, 2), (2, 0), (0, 1))]
+    if sum(nrm[i] * v[i] for i in range(3)) < 0:
+        secao = list(secao)[::-1]
+    vs = [tuple(p) for p in secao] + [tuple(p[k] + v[k] for k in range(3)) for p in secao]
+    faces = [list(range(m))[::-1], list(range(m, 2 * m))] + [[i, (i + 1) % m, m + (i + 1) % m, m + i] for i in range(m)]
+    return vs, faces
+
+
+def _juntar(pecas) -> Tuple[List[tuple], List[List[int]]]:
+    """os prismas num sólido só (cascas separadas)"""
+    vs, fs = [], []
+    for v, f in pecas:
+        base = len(vs)
+        vs.extend(v)
+        fs.extend([[base + i for i in face] for face in f])
+    return vs, fs
+
+
+def _meia_altura(perfil: str) -> float:
+    m = re.search(r"(\d+(?:[.,]\d+)?)", str(perfil or ""))
+    return float(m.group(1).replace(",", ".")) / 2.0 if m else 25.0
+
+
+def lona_da_cobertura(doc: Documento, molde, n, desl, situacao: str, camada: str = CAMADA_LONA) -> int:
+    """A lona da cobertura retrátil (Kaefer, 19/10), só para ilustrar (fora da lista de materiais e do IFC): um sólido por
+    vão entre tesouras vizinhas, pelo arco do banzo de cima de cada uma, descendo nas pontas até o pé da tesoura, e o
+    arco fechado nas duas tesouras das extremidades. Segue a situação: aberta, nos vãos do comprimento todo; retraída,
+    dobrada nos vãos curtos da pilha. Devolve quantos sólidos."""
+    sup = [e for e in molde if isinstance(e, Barra) and (e.atributos or {}).get("papel_trelica") == "banzo_sup"]
+    barras = [e for e in molde if isinstance(e, Barra)]
+    if not sup or not desl:
+        return 0
+    u = (-n[1], n[0], 0.0)                                     # ao longo do vão da tesoura
+    h = max(_meia_altura(e.perfil) for e in sup)
+    pts = {}
+    for e in sup:
+        for p in (e.inicio, e.fim):
+            pts[round(p[0] * u[0] + p[1] * u[1], 1)] = p
+    arco = [pts[k] for k in sorted(pts)]
+    z_pe = min(min(e.inicio[2], e.fim[2]) for e in barras)
+    G = FOLGA_LONA
+    # o arco por cima do banzo (meia altura do tubo) e esticado 30 mm além de cada ponta
+    arco = [(p[0], p[1], p[2] + h) for p in arco]
+    arco = [(arco[0][0] - u[0] * G, arco[0][1] - u[1] * G, arco[0][2])] + arco + \
+           [(arco[-1][0] + u[0] * G, arco[-1][1] + u[1] * G, arco[-1][2])]
+    # as tesouras na ordem ao longo do trilho; o primeiro e o último vão passam 30 mm das tesouras das extremidades
+    s = sorted(d[0] * n[0] + d[1] * n[1] for d in desl)
+    trechos = [[a, b] for a, b in zip(s, s[1:])] or [[s[0], s[0]]]
+    trechos[0][0] -= G
+    trechos[-1][1] += G
+    if camada not in doc.camadas:
+        doc.camadas[camada] = Camada(camada, "#eef1f4", visivel=False)
+    T = ESPESSURA_LONA
+    at = {"elemento": LONA, "exportar": False, "ilustracao": True,
+          "obs": "lona da cobertura retrátil, só ilustração: fora da lista de materiais e do IFC"}
+
+    def em(p, sn):
+        return (p[0] + n[0] * sn, p[1] + n[1] * sn, p[2])
+
+    for k, (a, b) in enumerate(trechos):
+        v = (n[0] * (b - a), n[1] * (b - a), 0.0)
+        pecas = []
+        for p, q in zip(arco, arco[1:]):
+            p0, q0 = em(p, a), em(q, a)
+            pecas.append(_prisma([p0, q0, (q0[0], q0[1], q0[2] + T), (p0[0], p0[1], p0[2] + T)], v))
+        for p, sg in ((arco[0], -1.0), (arco[-1], 1.0)):      # as pontas da tesoura, até o pé
+            q = em(p, a)
+            fora = (q[0] + sg * u[0] * T, q[1] + sg * u[1] * T)
+            pecas.append(_prisma([(q[0], q[1], z_pe), (q[0], q[1], p[2]), (fora[0], fora[1], p[2]), (fora[0], fora[1], z_pe)], v))
+        vs, fs = _juntar(pecas)
+        doc.add(Solido(nome="Lona %d-%d" % (k + 1, k + 2), camada=camada, vertices=vs, faces=fs, material="Lona PVC",
+                       atributos=dict(at, lona_movel={"vao": k, "situacao": situacao})))
+    # o arco fechado nas duas extremidades
+    for sn, sg in ((trechos[0][0], -1.0), (trechos[-1][1], 1.0)):
+        sec = [em((arco[0][0], arco[0][1], z_pe), sn)] + [em(p, sn) for p in arco] + [em((arco[-1][0], arco[-1][1], z_pe), sn)]
+        vs, fs = _prisma(sec, (n[0] * sg * T, n[1] * sg * T, 0.0))
+        doc.add(Solido(nome="Lona frontão", camada=camada, vertices=vs, faces=fs, material="Lona PVC",
+                       atributos=dict(at, lona_movel={"frontao": sg, "situacao": situacao})))
+    return len(trechos) + 2
 
 
 # ------------------------------------------------------------------ a planta (o 2D acompanha o 3D)
