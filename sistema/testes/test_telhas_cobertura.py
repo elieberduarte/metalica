@@ -434,3 +434,42 @@ def test_terca_baixa_no_meio_da_agua_nao_vira_calha():
         _terca(doc, x, z, "TC1")
     T.lancar(doc)
     assert not [s for s in doc.solidos if s.camada == "Calhas"]
+
+
+def _painel(doc, peca, x=-200.0, zs=(6000.0, 7600.0)):
+    for z in zs:
+        b = Barra(inicio=(x, 0.0, z), fim=(x, 6000.0, z), perfil="U 100×40×2,25 (FF)", papel="banzo", camada="Platibanda")
+        b.atributos = {"origem": {"peca": peca}, "conjunto": peca}
+        doc.add(b)
+
+
+@pytest.mark.parametrize("z_baixo,esperado", [(5900.0, 12), (6900.0, 0)])
+def test_fechamento_no_degrau_entre_dois_telhados(z_baixo, esperado):
+    """Mercado Hermes, 19/10 ("faltou fechamento em telha nesses espaços"): a platibanda com telhado dos dois lados em
+    planta — o de cima do lado de dentro e o de baixo (o anexo, a faixa norte) no pé dela — ficava sem fechamento, como se
+    estivesse no meio do telhado. O de baixo no pé (5,90 com o banzo de baixo a 6,00) é o lado de fora; com a telha dos
+    dois lados acima do banzo de baixo (6,90) a treliça atravessa o telhado e segue sem (é o revestimento)"""
+    doc = Documento()
+    _agua(doc, 0.0, 6, 7000.0, 0.05)
+    _agua(doc, -6200.0, 5, z_baixo, 0.0, sigla="TC7")             # o telhado de baixo, à esquerda, até x −600
+    _painel(doc, "P.5")
+    r = T.lancar(doc)
+    assert r["fechamentos"] == esperado
+    fora = [s for s in doc.solidos if (s.atributos or {}).get("face") == "fora"]
+    assert len(fora) == esperado // 2
+    for f in fora:
+        assert max(v[0] for v in f.vertices) <= -200.0 - 100.0          # a face de fora é a do telhado de baixo
+
+
+@pytest.mark.parametrize("peca,esperado", [("P.13", 12), ("PAINEL 3", 0)])
+def test_platibanda_sem_telhado_de_lado_nenhum(peca, esperado):
+    """Mercado Hermes, 19/10: a faixa em volta do terraço (P.13, P.14) não tem telhado de lado nenhum e ficava sem
+    fechamento. A P.n (platibanda/fechamento pela regra 7) fecha, com o lado de fora o mais longe da obra; o painel do
+    Posto sem telhado continua de fora"""
+    doc = Documento()
+    _agua(doc, 0.0, 6, 7000.0, 0.05)
+    _painel(doc, peca, x=-5000.0)
+    r = T.lancar(doc)
+    assert r["fechamentos"] == esperado
+    for f in [s for s in doc.solidos if (s.atributos or {}).get("face") == "fora"]:
+        assert max(v[0] for v in f.vertices) <= -5000.0 - 100.0         # para fora da obra (o telhado está à direita)

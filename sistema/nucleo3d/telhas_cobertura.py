@@ -776,6 +776,25 @@ def _fechamentos(doc, panos, telha, camada):
 
     def coberto(pt):
         return any(_dentro_poli(pt, polis[k]) for k in grade.get((int(pt[0] // CEL), int(pt[1] // CEL)), ()))
+
+    def z_telhado(pt):
+        # a altura do telhado mais alto em pt (o plano do pano pela normal de Newell), ou None
+        zs = []
+        for k in grade.get((int(pt[0] // CEL), int(pt[1] // CEL)), ()):
+            if not _dentro_poli(pt, polis[k]):
+                continue
+            c = panos[k]["cantos"]
+            nx = sum((c[i][1] - c[i - 1][1]) * (c[i][2] + c[i - 1][2]) for i in range(len(c)))
+            ny = sum((c[i][2] - c[i - 1][2]) * (c[i][0] + c[i - 1][0]) for i in range(len(c)))
+            nz = sum((c[i][0] - c[i - 1][0]) * (c[i][1] + c[i - 1][1]) for i in range(len(c)))
+            if abs(nz) < 1e-9:
+                zs.append(max(v[2] for v in c))
+                continue
+            x0, y0, z0 = (sum(v[j] for v in c) / len(c) for j in range(3))
+            zs.append(z0 - (nx * (pt[0] - x0) + ny * (pt[1] - y0)) / nz)
+        return max(zs) if zs else None
+    cx = sum(v[0] for pl in polis for v in pl) / max(1, sum(len(pl) for pl in polis))
+    cy = sum(v[1] for pl in polis for v in pl) / max(1, sum(len(pl) for pl in polis))
     paineis: Dict[str, list] = collections.defaultdict(list)
     # toda treliça do perímetro (o painel da testeira, a transição e a treliça da borda — a borda diagonal do Posto são as
     # TRANSIÇÕES 14–16 e a TRELIÇA 3): a que tem telhado de um lado e nada do outro
@@ -825,13 +844,39 @@ def _fechamentos(doc, panos, telha, camada):
             def lado_livre(M, k_):
                 # o telhado pode passar do painel em beiral até 0,9 m (o PAINEL 15 do Posto)
                 return not any(coberto((M[0] + nh[0] * x_ * k_, M[1] + nh[1] * x_ * k_)) for x_ in (900.0, 1500.0))
+            def z_lado(M, k_):
+                zs = [z_telhado((M[0] + nh[0] * x_ * k_, M[1] + nh[1] * x_ * k_)) for x_ in (400.0, 900.0, 1500.0)]
+                zs = [z_ for z_ in zs if z_ is not None]
+                return max(zs) if zs else None
             # em três pontos ao longo do trecho, por maioria (o meio do PAINEL 15 cai no vão da cumeeira, sem telha)
             votos = [0, 0]
+            nada = 0
             for f_ in (0.2, 0.5, 0.8):
                 M = (A[0] + (B[0] - A[0]) * f_, A[1] + (B[1] - A[1]) * f_)
-                votos[0] += lado_coberto(M, +1) and lado_livre(M, -1)
-                votos[1] += lado_coberto(M, -1) and lado_livre(M, +1)
+                v0 = lado_coberto(M, +1) and lado_livre(M, -1)
+                v1 = lado_coberto(M, -1) and lado_livre(M, +1)
+                votos[0] += v0
+                votos[1] += v1
+                if v0 or v1:
+                    continue
+                # o degrau (Mercado, 19/10: "faltou fechamento em telha nesses espaços" — a P.5 em cima do anexo, a P.6 em
+                # cima da faixa norte): telhado dos dois lados em planta, mas o de um lado no pé da treliça e o do outro
+                # 0,60 m ou mais acima dele — a treliça é a parede do degrau, e o de baixo é o lado de fora. (A treliça que
+                # atravessa o telhado no meio, com a telha dos dois lados acima do banzo de baixo, é o revestimento.)
+                za, zb_ = z_lado(M, +1), z_lado(M, -1)
+                if za is not None and zb_ is not None:
+                    alto, baixo, k_alto = (za, zb_, 0) if za > zb_ else (zb_, za, 1)
+                    if baixo <= zmin + 300.0 and alto >= baixo + 600.0:
+                        votos[k_alto] += 1
+                elif za is None and zb_ is None:
+                    nada += 1
             mais, menos = votos[0] >= 2 and votos[0] > votos[1], votos[1] >= 2 and votos[1] > votos[0]
+            if mais == menos and nada == 3 and re.match(r"^P\.\d", str(peca).upper()):
+                # a platibanda/fechamento (P.n, a regra 7) sem telhado de lado nenhum — a faixa em volta do terraço do
+                # Mercado (P.13/P.14, 19/10): fecha do mesmo jeito, com o lado de fora o mais longe do centro da obra
+                M = ((A[0] + B[0]) / 2.0, (A[1] + B[1]) / 2.0)
+                mais = nh[0] * (cx - M[0]) + nh[1] * (cy - M[1]) > 0.0
+                menos = not mais
             if mais == menos:
                 cum += L
                 continue                                 # telhado dos dois lados, ou de nenhum: não é perímetro
