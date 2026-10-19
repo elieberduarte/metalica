@@ -26,7 +26,7 @@ const REGRAS = [
   ['telha_degrau', 'Telha: degrau entre chapas vizinhas'],
   ['telha_dobra', 'Telha: dobra na caída (terça fora da reta)'],
   // as regras de posição das peças da treliça (nucleo3d/regras_trelica.py, 16/10/2026)
-  ['posicao_trelica', 'Peça da treliça fora da posição (boca do U, lado da cantoneira)'],
+  ['posicao_trelica', 'Peça da treliça fora da regra (boca do U, lado da cantoneira, encaixe, degrau, nó fora do eixo, terça torcida)'],
 ];
 
 export class MetodosApoios {

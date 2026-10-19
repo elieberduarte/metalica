@@ -45,6 +45,13 @@ v = a altura do perfil (a 2ª aba).
        alinhado vai até o nó (UMA peça de banzo a banzo); se a emenda é um nó (o degrau de 50 mm entre o topo do painel
        de ponta e o banzo inclinado, no corte CC do Mercado), o trecho só sai — os banzos já se tocam. `juntar_trechos`
        devolve os trechos; quem tira a peça do modelo é quem monta. A conferência acusa ("3.1", peça dentro do banzo).
+  3.1c O degrau no banzo de cima (usuário, 19/10, faixa norte do Mercado: "esse ponto não passou na regra do recorte"):
+       dois trechos do banzo superior que se encontram na mesma estação com um desnível menor que as seções (o material
+       de um dentro do outro) — o montante do degrau sobe até o nó de cima (o encaixe o corta na face do banzo de cima) e
+       o banzo de baixo nasce na face do montante (recortado). Sem montante no degrau, a conferência acusa.
+  3.2  Nós no eixo do banzo (NBR 8800:2024, 6.5.2): a ponta de montante/diagonal a menos de 100 mm do eixo de um banzo,
+       na mesma estação e sem banzo no ponto dela, vai para o eixo (a emenda de montante partido é da 3.1b). No Mercado a
+       alma do painel da ponta da meia-tesoura parava 50 mm abaixo do banzo plano.
 
 4. O ENTORNO DA TESOURA
   4.8  Encontro da tesoura com platibanda ou fechamento (a peça que chega × a peça que passa) — usuário, 16/10: "o final da
@@ -55,6 +62,11 @@ v = a altura do perfil (a 2ª aba).
        na folga; os banzos e a diagonal param no eixo do montante de ponta, cortados no ângulo quando chegam inclinados.
        A platibanda não muda. Vale para qualquer treliça que passa (treliça de cumeeira, viga de transição): a que chega para
        na face da que passa. Só recua, nunca prolonga (a tesoura que termina antes da platibanda fica como está).
+       Na altura vale só a folga do desenho (5 mm): a treliça que só encosta por cima ou por baixo da outra (a fachada sobre
+       a faixa norte do Mercado) não é "a que chega".
+  4.9  A terça com o eixo forte perpendicular à água (a alma do Ue, o chapéu da cartola), sentada no apoio: entre 10° e
+       70° fora é acusada e girada de volta (perto de 90° é a terça deitada de propósito, o beiral do Docas). Usuário,
+       19/10: "essa terça ficou torcida demais" (a NC-3 da faixa norte, 30,6°).
 """
 from __future__ import annotations
 
@@ -620,7 +632,9 @@ def _encontros(ts: List[dict]) -> List[tuple]:
             ptsB = [p for b, _p in B["barras"] for p in (b.inicio, b.fim)]
             eB = B["eixo"]
             lo, hi = min(_dot(p, eB) for p in ptsB) - 50.0, max(_dot(p, eB) for p in ptsB) + 50.0
-            zlo, zhi = min(p[2] for p in ptsB) - 50.0, max(p[2] for p in ptsB) + 50.0
+            # na altura, só a folga do desenho: com 50 mm a treliça que só encosta por cima ou por baixo (a fachada do
+            # Mercado sobre a faixa norte, banzos a 28 mm) virava "a que chega" e era recuada 100 mm (19/10)
+            zlo, zhi = min(p[2] for p in ptsB) - 5.0, max(p[2] for p in ptsB) + 5.0
 
             def dentro(p, eB=eB, lo=lo, hi=hi, zlo=zlo, zhi=zhi):
                 return lo <= _dot(p, eB) <= hi and zlo <= p[2] <= zhi
@@ -806,6 +820,218 @@ def juntar_trechos(entidades: Iterable) -> List:
     return absorvidos
 
 
+# ------------------------------------------------------------------ 3.2 os nós no eixo do banzo
+NO_UNICO = 100.0         # mm: a ponta de alma a menos disso do eixo do banzo é o nó dele (NBR 8800:2024, 6.5.2)
+
+
+def nos_fora_do_eixo(entidades: Iterable, por_grupo: bool = True) -> List[tuple]:
+    """3.2: (peça da alma, ponta 0|1, o ponto no eixo do banzo, mm) — a ponta de montante/diagonal que para entre 3 e
+    NO_UNICO mm do eixo de um banzo da mesma treliça, na mesma estação, sem banzo nenhum no ponto dela. No Mercado (19/10)
+    o painel da ponta da meia-tesoura tinha a alma 50 mm abaixo do banzo plano: as peças não se tocavam"""
+    out = []
+    for t in trelicas(list(entidades), por_grupo):
+        up = _cima(t)
+        if up is None:
+            continue
+        h = _horizontal(t)
+        bz = [b for b, p in t["barras"] if p == "banzo"]
+        for a, p in t["barras"]:
+            if p not in ("montante", "diagonal", "extremidade"):
+                continue
+            wa = _unit(_sub(a.fim, a.inicio))
+            for k, q in ((0, tuple(a.inicio)), (1, tuple(a.fim))):
+                if any(_proj_no_segmento(q, b.inicio, b.fim) < 3.0 for b in bz):
+                    continue                              # já está num banzo
+                if any(o is not a and min(math.dist(q, o.inicio), math.dist(q, o.fim)) < 3.0
+                       and abs(_dot(wa, _unit(_sub(o.fim, o.inicio)))) > 0.999 for o, _p in t["barras"]):
+                    continue                              # a emenda de um montante partido: é da 3.1b, não um nó
+                melhor = None
+                for b in bz:
+                    e0, e1 = _dot(b.inicio, h), _dot(b.fim, h)
+                    eq = _dot(q, h)
+                    if not (min(e0, e1) - 1.0 <= eq <= max(e0, e1) + 1.0) or abs(e1 - e0) < 1.0:
+                        continue
+                    s = (eq - e0) / (e1 - e0)
+                    no = _add(b.inicio, _mul(_sub(b.fim, b.inicio), s))
+                    d = abs(_dot(_sub(no, q), up))
+                    if 3.0 <= d <= NO_UNICO and abs(_dot(_sub(no, q), t["n"])) < 5.0 and (melhor is None or d < melhor[1]):
+                        melhor = (no, d)
+                if melhor:
+                    out.append((a, k, melhor[0], round(melhor[1], 1)))
+    return out
+
+
+def nos_no_eixo(entidades: Iterable, por_grupo: bool = True) -> int:
+    """3.2: leva cada ponta de alma fora do eixo (nos_fora_do_eixo) para o eixo do banzo; devolve quantas"""
+    n = 0
+    for a, k, no, _mm in nos_fora_do_eixo(entidades, por_grupo):
+        setattr(a, "inicio" if k == 0 else "fim", tuple(round(c, 3) for c in no))
+        n += 1
+    return n
+
+
+# ------------------------------------------------------------------ 3.1c o degrau no banzo de cima
+def _proj_no_segmento(p, a, b) -> float:
+    ab = _sub(b, a)
+    L2 = _dot(ab, ab)
+    t = 0.0 if L2 < 1e-9 else max(0.0, min(1.0, _dot(_sub(p, a), ab) / L2))
+    return math.dist(p, _add(a, _mul(ab, t)))
+
+
+def _horizontal(t) -> Optional[Ponto]:
+    """a horizontal no plano da treliça (a estação de um nó é a posição nela; o eixo da treliça é o do banzo mais
+    comprido, que pode ser inclinado)"""
+    up = _cima(t)
+    return None if up is None else _unit(_cross(t["n"], up))
+
+
+def _em_pe_na_estacao(a, t) -> bool:
+    w = _unit(_sub(a.fim, a.inicio))
+    h = _horizontal(t) or t["eixo"]
+    return abs(_dot(w, h)) < 0.2
+
+
+def degraus(entidades: Iterable, por_grupo: bool = True) -> List[dict]:
+    """3.1c: os degraus do banzo de cima — dois trechos do banzo superior da mesma treliça que se encontram na mesma
+    estação com um desnível menor que a soma das seções (o material de um entra no do outro). [{t, alto, baixo, de_cima,
+    de_baixo, k_baixo, desnivel, coberto (uma peça em pé vai do nó de baixo ao de cima), montante (a peça em pé que chega
+    no nó de baixo, ou None)}]. Usuário, 19/10 (faixa norte do Mercado): "esse ponto não passou na regra do recorte" —
+    o banzo de cima e o de baixo se encontravam no degrau sem corte, um sobre o outro"""
+    out = []
+    for t in trelicas(list(entidades), por_grupo):
+        up = _cima(t)
+        if up is None:
+            continue
+        h = _horizontal(t)
+        sup = [b for b, p in t["barras"] if p == "banzo" and (str((getattr(b, "atributos", None) or {}).get(
+            "papel_trelica") or "") == "banzo_sup" or no_topo(b, t))]
+        em_pe = [b for b, p in t["barras"] if p in ("montante", "extremidade") and _em_pe_na_estacao(b, t)]
+        pts = [(b, k, tuple(b.inicio if k == 0 else b.fim)) for b in sup for k in (0, 1)]
+        for i, (b1, k1, p1) in enumerate(pts):
+            for b2, k2, p2 in pts[i + 1:]:
+                if b1 is b2:
+                    continue
+                d = _sub(p1, p2)
+                dz = _dot(d, up)
+                if abs(_dot(d, h)) > 5.0 or abs(_dot(d, t["n"])) > 5.0 or abs(dz) < 5.0:
+                    continue
+                o1 = b1.fim if k1 == 0 else b1.inicio
+                o2 = b2.fim if k2 == 0 else b2.inicio
+                if _dot(_sub(o1, p1), h) * _dot(_sub(o2, p2), h) >= 0:
+                    continue                              # os dois do mesmo lado: não é um degrau no caminho do banzo
+                (bc, pc), (bb, kb, pb) = ((b1, p1), (b2, k2, p2)) if dz > 0 else ((b2, p2), (b1, k1, p1))
+                if _extensao(bc, _mul(up, -1.0)) + _extensao(bb, up) <= abs(dz) + 0.5:
+                    continue                              # o desnível já separa as seções: nada se sobrepõe
+                coberto = any(_proj_no_segmento(pc, a.inicio, a.fim) < 3.0 and _proj_no_segmento(pb, a.inicio, a.fim) < 3.0
+                              for a in em_pe)
+                mont = next((a for a in em_pe if min(math.dist(pb, a.inicio), math.dist(pb, a.fim)) < 3.0), None)
+                out.append({"t": t, "alto": pc, "baixo": pb, "de_cima": bc, "de_baixo": bb, "k_baixo": kb,
+                            "desnivel": round(abs(dz), 1), "coberto": coberto, "montante": mont})
+    return out
+
+
+def subir_montantes(entidades: Iterable, por_grupo: bool = True) -> int:
+    """3.1c: no degrau do banzo de cima, o montante que chega no nó de baixo sobe até o nó de cima (o encaixe o corta
+    na face do banzo de cima) e o banzo de baixo nasce na face do montante (recortado). Sem montante no degrau, a
+    conferência acusa — não se inventa peça. Devolve quantos degraus foram resolvidos"""
+    n = 0
+    for g in degraus(entidades, por_grupo):
+        m = g["montante"]
+        if g["coberto"] or m is None:
+            continue
+        if math.dist(m.inicio, g["baixo"]) < 3.0:
+            m.inicio = tuple(round(c, 3) for c in g["alto"])
+        else:
+            m.fim = tuple(round(c, 3) for c in g["alto"])
+        bb, kb = g["de_baixo"], g["k_baixo"]
+        outra = bb.fim if kb == 0 else bb.inicio
+        rec = _extensao(m, _unit(_sub(outra, g["baixo"])))
+        if kb == 0:
+            bb.recorte_inicio = max(float(getattr(bb, "recorte_inicio", 0.0) or 0.0), round(rec, 1))
+        else:
+            bb.recorte_fim = max(float(getattr(bb, "recorte_fim", 0.0) or 0.0), round(rec, 1))
+        n += 1
+    return n
+
+
+# ------------------------------------------------------------------ 4.9 a terça com a alma perpendicular à água
+TERCA_TORCIDA = (10.0, 70.0)   # graus: entre esses, é a terça girada por engano (perto de 90° é a deitada de propósito)
+
+
+def _agua_da_terca(tc, barras) -> Optional[Ponto]:
+    """a normal da água sob a terça (para cima): a do banzo de cima mais perto que ela cruza"""
+    w = _unit(_sub(tc.fim, tc.inicio))
+    melhor, dmin = None, 400.0
+    for b in barras:
+        if b is tc or getattr(b, "papel", "") != "banzo":
+            continue
+        wb = _unit(_sub(b.fim, b.inicio))
+        if abs(_dot(w, wb)) > 0.7:
+            continue
+        n = _unit(_cross(w, wb))
+        if abs(n[2]) < 0.3:
+            continue
+        # a distância entre as duas retas, medida nos trechos (a terça passa por cima do banzo)
+        d = min(_proj_no_segmento(p, b.inicio, b.fim) for p in
+                [_add(tc.inicio, _mul(_sub(tc.fim, tc.inicio), s / 20.0)) for s in range(21)])
+        if d < dmin:
+            melhor, dmin = (n if n[2] > 0 else _mul(n, -1.0)), d
+    return melhor
+
+
+def tercas_torcidas(entidades: Iterable) -> List[tuple]:
+    """4.9: (terça, normal da água, desvio em graus) — a terça cujo eixo forte (a alma do Ue, o chapéu da cartola) sai
+    da perpendicular à água entre TERCA_TORCIDA. Usuário, 19/10: "essa terça ficou torcida demais" (a NC-3 da faixa norte
+    do Mercado, 30,6°: o gerador mediu a inclinação do topo da tesourinha bem em cima do degrau de 50 mm)"""
+    lista = [e for e in entidades if hasattr(e, "inicio") and hasattr(e, "perfil")]
+    banzos = [b for b in lista if getattr(b, "papel", "") == "banzo"]
+    out = []
+    for tc in lista:
+        if str(getattr(tc, "papel", "")).lower() not in ("terça", "terca"):
+            continue
+        n = _agua_da_terca(tc, banzos)
+        if n is None:
+            continue
+        v = _eixos(tc)[1]
+        desvio = math.degrees(math.acos(min(1.0, abs(_dot(v, n)))))
+        if TERCA_TORCIDA[0] < desvio < TERCA_TORCIDA[1]:
+            out.append((tc, n, round(desvio, 1)))
+    return out
+
+
+def _extensao_secao(perfil, rotacao, w, direcao) -> float:
+    pts = _pontos_da_secao(perfil)
+    if not pts:
+        return 0.0
+    from nucleo3d.geometria import base_local
+    u, v, _ = base_local(w, rotacao)
+    return max(_dot(_add(_mul(u, x), _mul(v, y)), direcao) for x, y in pts)
+
+
+def girar_tercas(entidades: Iterable) -> int:
+    """4.9: a terça torcida volta à perpendicular da água, sentada no mesmo apoio (a face de baixo não sai do lugar)"""
+    n_ok = 0
+    for tc, n, _d in tercas_torcidas(entidades):
+        w = _unit(_sub(tc.fim, tc.inicio))
+        v0 = _eixos(tc)[1]
+        alvo = n if _dot(v0, n) >= 0 else _mul(n, -1.0)
+        from nucleo3d.geometria import base_local
+        u0, vv0, _ = base_local(w, 0.0)
+        rot1 = math.degrees(math.atan2(-_dot(alvo, u0), _dot(alvo, vv0))) % 360.0
+        baixo = _mul(n, -1.0)
+        e0 = _extensao_secao(tc.perfil, float(tc.rotacao or 0.0), w, baixo)
+        e1 = _extensao_secao(tc.perfil, rot1, w, baixo)
+        d = e1 - e0
+        tc.inicio = tuple(round(c, 3) for c in _add(tc.inicio, _mul(n, d)))
+        tc.fim = tuple(round(c, 3) for c in _add(tc.fim, _mul(n, d)))
+        tc.rotacao = round(rot1, 3)
+        n_ok += 1
+    return n_ok
+
+
+ULTIMO_APLICAR: Dict[str, int] = {}
+
+
 def aplicar(entidades: Iterable, por_grupo: bool = True) -> Tuple[int, int, int, int]:
     """o que todo gerador e todo script de obra chamam: (peças reclassificadas, peças giradas, peças recuadas da
     platibanda, pontas encaixadas no banzo). Depois do recuo as peças são orientadas de novo (a direção mudou um pouco e
@@ -817,11 +1043,16 @@ def aplicar(entidades: Iterable, por_grupo: bool = True) -> Tuple[int, int, int,
     n_rec = recuar(lista, por_grupo)
     if n_rec:
         n_giro += orientar(lista, por_grupo)
+    n_nos = nos_no_eixo(lista, por_grupo)                  # 3.2, antes do degrau (o montante passa a chegar no nó)
+    n_deg = subir_montantes(lista, por_grupo)              # 3.1c, antes do encaixe (o montante novo é cortado nele)
+    n_ter = girar_tercas(lista)                            # 4.9 (só quando as terças vieram junto: o modelo inteiro)
     antes = {id(b): (repr(getattr(b, "cortes_inicio", None)), repr(getattr(b, "cortes_fim", None)))
              for b in lista if hasattr(b, "cortes_inicio")}
     alma_na_face.encaixar(lista)
     n_enc = sum(1 for b in lista if hasattr(b, "cortes_inicio")
                 and antes.get(id(b)) != (repr(b.cortes_inicio), repr(b.cortes_fim)))
+    ULTIMO_APLICAR.clear()
+    ULTIMO_APLICAR.update(nos=n_nos, degraus=n_deg, tercas=n_ter)
     return n_class, n_giro, n_rec, n_enc
 
 
@@ -865,6 +1096,17 @@ def conferir(entidades: Iterable, tol_graus: float = 5.0, por_grupo: bool = True
     for b, _B, mm in invasoes(list(entidades), por_grupo):
         out.append({"id": b.id, "nome": b.nome, "perfil": b.perfil, "papel": _papel(b), "regra": "4.8",
                     "erro_graus": 0.0, "mm": mm, "ponto": [round(x) for x in b.inicio]})
+    for a_, k, _no, mm in nos_fora_do_eixo(list(entidades), por_grupo):
+        out.append({"id": a_.id, "nome": a_.nome, "perfil": a_.perfil, "papel": a_.papel, "regra": "3.2",
+                    "erro_graus": 0.0, "mm": mm, "ponto": [round(x) for x in (a_.inicio if k == 0 else a_.fim)]})
+    for g in degraus(list(entidades), por_grupo):
+        if not g["coberto"]:
+            b = g["de_cima"]
+            out.append({"id": b.id, "nome": b.nome, "perfil": b.perfil, "papel": "banzo", "regra": "3.1c",
+                        "erro_graus": 0.0, "mm": g["desnivel"], "ponto": [round(x) for x in g["alto"]]})
+    for tc, _n, desvio in tercas_torcidas(list(entidades)):
+        out.append({"id": tc.id, "nome": tc.nome, "perfil": tc.perfil, "papel": "terça", "regra": "4.9",
+                    "erro_graus": desvio, "ponto": [round(x) for x in tc.inicio]})
     return out
 
 

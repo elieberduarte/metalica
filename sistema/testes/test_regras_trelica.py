@@ -511,3 +511,95 @@ def test_3_1b_degrau_entre_dois_banzos_sai():
     bs = [b for b in bs if b.nome != "DEGRAU"]
     R.aplicar(bs)
     assert R.conferir(bs) == []
+
+
+# ------------------------------------------------------------------ 19/10: o que passava na regra (Mercado, faixa norte)
+def _tesoura_com_degrau(degrau=40.0, montante_ate_o_no=True):
+    """uma tesoura em y-z (x = 0) com o degrau no banzo de cima como a tesourinha da faixa norte do Mercado: o trecho
+    inclinado termina em z 950 e o plano da ponta começa degrau mm abaixo. U 150×50: a seção tem 50 mm no plano, então
+    um degrau menor que isso põe o material de um banzo dentro do outro"""
+    at = {"origem": {"peca": "TD"}}
+    zb = 950.0 - degrau
+    topo_m = zb if montante_ate_o_no else zb - 50.0
+    return [Barra(nome="BI", inicio=(0, 0, 0), fim=(0, 3000, 0), perfil=U_BZ, papel="banzo", atributos=dict(at, papel_trelica="banzo_inf")),
+            Barra(nome="BS1", inicio=(0, 0, 1000), fim=(0, 2000, 950), perfil=U_BZ, papel="banzo", atributos=dict(at, papel_trelica="banzo_sup")),
+            Barra(nome="BS2", inicio=(0, 2000, zb), fim=(0, 3000, zb), perfil=U_BZ, papel="banzo", atributos=dict(at, papel_trelica="banzo_sup")),
+            Barra(nome="P0", inicio=(0, 0, 0), fim=(0, 0, 1000), perfil=U_BZ, papel="montante", atributos=dict(at)),
+            Barra(nome="M1", inicio=(0, 1000, 0), fim=(0, 1000, 975), perfil=U_AL, papel="montante", atributos=dict(at)),
+            Barra(nome="D0", inicio=(0, 0, 1000), fim=(0, 1000, 0), perfil=U_AL, papel="diagonal", atributos=dict(at)),
+            Barra(nome="D1", inicio=(0, 1000, 975), fim=(0, 2000, 0), perfil=U_AL, papel="diagonal", atributos=dict(at)),
+            Barra(nome="M2", inicio=(0, 2000, 0), fim=(0, 2000, topo_m), perfil=U_AL, papel="montante", atributos=dict(at)),
+            Barra(nome="D2", inicio=(0, 2000, topo_m), fim=(0, 3000, 0), perfil=U_AL, papel="diagonal", atributos=dict(at)),
+            Barra(nome="P1", inicio=(0, 3000, 0), fim=(0, 3000, zb), perfil=U_BZ, papel="montante", atributos=dict(at))]
+
+
+def test_3_1c_degrau_no_banzo_de_cima_o_montante_sobe():
+    """usuário, 19/10 (imagem 3, tesourinha da faixa norte): "esse ponto não passou na regra do recorte" — os dois trechos
+    do banzo de cima se encontravam no degrau sem corte, um sobre o outro. Decisão dele: manter o degrau, o montante sobe
+    até o banzo de cima e o de baixo nasce na face do montante"""
+    bs = _tesoura_com_degrau()
+    assert "3.1c" in _regras(bs)
+    R.aplicar(bs)
+    por = _por_nome(bs)
+    assert por["M2"].fim == (0.0, 2000.0, 950.0)                # o montante vai até o nó do banzo de cima
+    face = R._extensao(por["M2"], (0.0, 1.0, 0.0))               # o material do montante do lado do banzo de baixo
+    assert face > 0 and por["BS2"].recorte_inicio == pytest.approx(face, abs=0.2)   # o de baixo nasce na face dele
+    assert "3.1c" not in _regras(bs) and "3.1" not in _regras(bs)
+    # um degrau que já separa as seções (60 mm num U de 50) não é acusado
+    largo = _tesoura_com_degrau(degrau=60.0)
+    R.orientar(largo)                                            # os banzos na posição da regra (50 mm no plano)
+    assert not R.degraus(largo)
+
+
+def test_3_2_no_da_alma_vai_para_o_eixo_do_banzo():
+    """Mercado (meia-tesoura MT.1, 19/10): no painel da ponta a alma parava 50 mm abaixo do eixo do banzo plano — as peças
+    não se tocavam e o montante do degrau não chegava no nó. NBR 8800, 6.5.2: a menos de 100 mm é um nó só"""
+    bs = _tesoura_com_degrau(montante_ate_o_no=False)
+    assert "3.2" in _regras(bs)
+    R.aplicar(bs)
+    por = _por_nome(bs)
+    assert por["D2"].inicio[2] == pytest.approx(910.0)           # a diagonal foi para o eixo do banzo de baixo
+    assert por["M2"].fim == (0.0, 2000.0, 950.0)                 # e o montante, depois, até o de cima (3.1c)
+    assert not ({"3.2", "3.1c"} & _regras(bs))
+
+
+def _terca_sobre(bs, giro, x0=-600.0, x1=600.0, y=1500.0):
+    """uma terça Ue 150 ao longo de x, cruzando o banzo de cima da tesoura a mão (z 1000), sentada nele"""
+    t = Barra(nome="TC", inicio=(x0, y, 1100.0), fim=(x1, y, 1100.0), perfil="Ue 150×60×20×2,00", papel="terça",
+              rotacao=giro)
+    bs.append(t)
+    return t
+
+
+def test_4_9_terca_torcida_volta_a_agua_sentada_no_apoio():
+    """usuário, 19/10 (imagem 3, terça NC-3 da faixa norte): "essa terça ficou torcida demais" — 30,6° fora da água: o
+    gerador mediu a inclinação do topo da tesourinha bem em cima do degrau. Nenhuma regra conferia o giro da terça"""
+    from nucleo3d.geometria import malha_barra
+    bs = _tesoura_a_mao()
+    R.aplicar(bs)
+    t = _terca_sobre(bs, 30.0)
+    baixo0 = min(v[2] for v in malha_barra(t)[0])
+    assert "4.9" in _regras(bs)
+    assert R.girar_tercas(bs) == 1
+    v = base_local(t.direcao, t.rotacao)[1]
+    assert abs(v[2]) > 0.999                                     # a alma em pé (a água é plana aqui)
+    assert min(v[2] for v in malha_barra(t)[0]) == pytest.approx(baixo0, abs=0.5)   # no mesmo apoio
+    assert "4.9" not in _regras(bs)
+    # a terça deitada de propósito (o beiral do Docas, 90°) não é acusada nem mexida
+    bs2 = _tesoura_a_mao()
+    R.aplicar(bs2)
+    _terca_sobre(bs2, 90.0)
+    assert "4.9" not in _regras(bs2) and R.girar_tercas(bs2) == 0
+
+
+def test_4_8_trelica_so_empilhada_nao_e_a_que_chega():
+    """Mercado, 19/10: a fachada (base em +5,01) passa logo acima da faixa norte (topo +4,99) — só se tocam na altura.
+    Com 50 mm de folga na altura a 4.8 a via como "a que chega" e recuava o fechamento da faixa 100 mm"""
+    painel = _painel(2900.0, 0.0, 9000.0, z0=1528.0, z1=2500.0)   # a fachada: começa 28 mm acima do topo da tesoura
+    tes = _tesoura_em_x(2900.0, 8850.0, 4500.0, z0=500.0, z1=1500.0)
+    for b in tes:                                                # a tesoura toda abaixo do painel
+        b.inicio = (b.inicio[0], b.inicio[1], min(b.inicio[2], 1500.0))
+        b.fim = (b.fim[0], b.fim[1], min(b.fim[2], 1500.0))
+    bs = painel + tes
+    assert R.invasoes(bs) == []
+    assert R.recuar(bs) == 0
