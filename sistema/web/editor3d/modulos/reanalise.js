@@ -30,21 +30,46 @@ export class MetodosReanalise {
     return { ultimo: f[f.length - 1] || null, feitos: f.length, desfeitos: (p.desfeitos || []).length };
   }
 
+  /** O pedido ao servidor. A conexão que cai no meio (o servidor do modo dev reinicia a cada .py salvo: no CD Bom Dia,
+   *  19/10, "Failed to fetch" depois de 40 s) não é erro da conta: espera o servidor voltar e pede de novo (até 3 vezes). */
   async _pedirReanalise(quais) {
     const url = this.projeto ? `/api/projetos/${encodeURIComponent(this.projeto)}/reanalisar` : '/api/modelo/reanalisar';
     const assinatura = this._assinaturaDoModelo();
-    try {
-      const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
-        body: JSON.stringify({ documento: this.documento.paraJSON(), ...(quais ? { quais } : {}) }) });
-      const r = await resp.json();
-      if (!resp.ok || r.erro) throw new Error(r.erro || resp.statusText);
-      r._assinatura = assinatura;
-      r._quais = quais;
-      return r;
-    } catch (e) {
-      this.aviso(`Reanalisar estrutura: ${e.message}`, 'erro', 0);
-      return null;
+    const corpo = JSON.stringify({ documento: this.documento.paraJSON(), ...(quais ? { quais } : {}) });
+    for (let tentativa = 1; ; tentativa++) {
+      let resp;
+      try {
+        resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: corpo });
+      } catch (e) {                                          // a conexão caiu: o servidor saiu do ar no meio
+        if (tentativa >= 3 || !(await this._esperarServidor())) {
+          this.aviso(`Reanalisar estrutura: o servidor não respondeu (${e.message}). Tente de novo.`, 'erro', 0);
+          return null;
+        }
+        this.dica('O servidor reiniciou no meio da conta — refazendo a reanálise…');
+        continue;
+      }
+      try {
+        const r = await resp.json();
+        if (!resp.ok || r.erro) throw new Error(r.erro || resp.statusText);
+        r._assinatura = assinatura;
+        r._quais = quais;
+        return r;
+      } catch (e) {
+        this.aviso(`Reanalisar estrutura: ${e.message}`, 'erro', 0);
+        return null;
+      }
     }
+  }
+
+  /** Espera o servidor voltar (até 90 s); true se voltou. */
+  async _esperarServidor(limiteMs = 90000) {
+    const t0 = Date.now();
+    this.dica('O servidor saiu do ar no meio da conta — esperando ele voltar…');
+    while (Date.now() - t0 < limiteMs) {
+      await new Promise(ok => setTimeout(ok, 1000));
+      try { if ((await fetch('/api/versao', { cache: 'no-store' })).ok) return true; } catch (e) { /* ainda fora do ar */ }
+    }
+    return false;
   }
 
   _fecharReanalise() {

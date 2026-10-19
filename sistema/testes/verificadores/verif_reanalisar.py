@@ -136,6 +136,19 @@ try:
     ok(esperar(f"editor.documento.entidades.size === {N0}", 10), f"Ctrl+Z volta as {N0} peças de uma vez")
     erros("Desfazer")
 
+    # 5) a conexão cai no meio (o servidor do modo dev reinicia a cada .py salvo — CD Bom Dia, 19/10: "Failed to fetch"):
+    #    a tela espera o servidor voltar e refaz a reanálise sozinha, sem o aviso de erro
+    js("""(() => { const orig = window.fetch; let caiu = false;
+          window.fetch = function (u, o) {
+            if (!caiu && String(u).includes('/reanalisar')) { caiu = true; return Promise.reject(new TypeError('Failed to fetch')); }
+            return orig.apply(this, arguments); };
+          return 1; })()""")
+    clicar(".painel-reanalise .painel-apoios-titulo button")      # Analisar de novo
+    ok(esperar("!!document.querySelector('.painel-reanalise .aplicar-reanalise')", 60),
+       "com a conexão caindo no meio, a prévia abriu mesmo assim (refeita depois que o servidor respondeu)")
+    ok(not js("document.body.textContent.includes('o servidor não respondeu')"), "sem o aviso de erro")
+    erros("Conexão caindo")
+
 finally:
     try: nav.kill()
     except Exception: pass

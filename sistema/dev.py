@@ -8,6 +8,8 @@ responder em poucos segundos (o programa reaberto vê o sinal de vida da janela 
 Mudança só nas telas (js, html, css) não precisa de reinício: a janela avisa e F5 basta.
 
 Quando o servidor termina por conta própria (o usuário fechou a janela), o vigia termina junto.
+Com uma tarefa em curso (o Reanalisar estrutura, o Detalhar, a análise), o reinício espera ela terminar (até
+ESPERA_TAREFA): vários chats salvam .py o tempo todo, e o reinício no meio dava "Failed to fetch" na tela (19/10).
 """
 import os
 import subprocess
@@ -18,6 +20,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 IGNORAR = {"testes", "projetos", "__pycache__", "web", "saida_pdf", ".git"}
 INTERVALO = 1.0            # s entre olhadas no código
 ESPERA_PORTA = 8.0         # s para a porta ficar livre depois de derrubar o servidor
+ESPERA_TAREFA = 600.0      # s, no máximo, esperando a tarefa em curso terminar antes de reiniciar
 
 
 def _registro():
@@ -66,6 +69,35 @@ def _porta_ocupada(porta: int) -> bool:
         s.close()
 
 
+def _ocupado(porta: int) -> list:
+    """os pedidos em curso no servidor (GET /api/dev/ocupado); [] se está livre ou não responde"""
+    import json
+    import urllib.request
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:%d/api/dev/ocupado" % porta, timeout=3) as r:
+            d = json.loads(r.read().decode("utf-8"))
+        return list(d.get("pedidos") or []) if d.get("ocupado") else []
+    except Exception:                                    # noqa: BLE001 — sem resposta: reinicia como antes
+        return []
+
+
+def _esperar_ocioso(porta: int, limite: float = ESPERA_TAREFA, intervalo: float = 1.0) -> float:
+    """espera o servidor ficar sem pedido em curso (no máximo `limite` s); devolve quanto esperou"""
+    t0 = time.time()
+    avisou = False
+    while time.time() - t0 < limite:
+        pedidos = _ocupado(porta)
+        if not pedidos:
+            break
+        if not avisou:
+            p = pedidos[0]
+            print("[dev] %s tarefa em curso (%s, há %.0f s) — o reinício espera ela terminar" % (
+                time.strftime("%H:%M:%S"), p.get("rota"), p.get("ha_s") or 0), flush=True)
+            avisou = True
+        time.sleep(intervalo)
+    return time.time() - t0
+
+
 def _subir(reaberto: bool) -> subprocess.Popen:
     cmd = [sys.executable, os.path.join(BASE, "app.py"), "--dev"] + [a for a in sys.argv[1:] if a != "--dev"]
     if reaberto:
@@ -92,6 +124,9 @@ def main():
         mudados = [c for c, t in agora.items() if vistos.get(c) != t] + [c for c in vistos if c not in agora]
         if not mudados:
             continue
+        if _esperar_ocioso(porta) > 0.5:
+            agora = _carimbos()                            # o que mais mudou durante a espera entra no mesmo reinício
+            mudados = [c for c, t in agora.items() if vistos.get(c) != t] + [c for c in vistos if c not in agora]
         vistos = agora
         print("[dev] %s mudou: %s — reiniciando" % (time.strftime("%H:%M:%S"),
               ", ".join(os.path.relpath(c, BASE) for c in mudados[:4])), flush=True)

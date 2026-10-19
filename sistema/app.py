@@ -5358,6 +5358,10 @@ class Handler(BaseHTTPRequestHandler):
         rota = unquote(urlparse(self.path).path)
         if self._de_fora():
             return self._erro("pedido de fora do programa recusado", 403)
+        if DEV and rota == "/api/dev/ocupado":
+            # o vigia do dev.py pergunta antes de reiniciar (antes do _ULTIMO_PEDIDO: a pergunta dele a cada segundo não é
+            # uma página viva) — 19/10: o reinício no meio do Reanalisar estrutura dava "Failed to fetch"
+            return self._json(_ocupado())
         _ULTIMO_PEDIDO[0] = time.time()
         if self._licenca_get(rota):
             return
@@ -5582,11 +5586,15 @@ class Handler(BaseHTTPRequestHandler):
         # pedido em curso segura o encerramento automático (fechar a janela no meio do
         # Detalhar deixava o projeto com os desenhos antigos na lixeira e os novos por gravar)
         _em_curso(+1)
+        with _TRAVA_JANELAS:
+            _ROTAS_EM_CURSO[id(self)] = (rota, time.time())
         tarefa = _tarefa_padrao(rota)
         try:
             return self._do_post(rota)
         finally:
             _em_curso(-1)
+            with _TRAVA_JANELAS:
+                _ROTAS_EM_CURSO.pop(id(self), None)
             _fim_tarefa_padrao(tarefa)
 
     def _do_post(self, rota):
@@ -5904,6 +5912,20 @@ _PEDIDOS_EM_CURSO = [0]
 def _em_curso(delta: int):
     with _TRAVA_JANELAS:
         _PEDIDOS_EM_CURSO[0] = max(0, _PEDIDOS_EM_CURSO[0] + delta)
+
+
+#: os pedidos em curso (rota, início), para o vigia do modo dev esperar a tarefa terminar antes de reiniciar
+_ROTAS_EM_CURSO: dict = {}
+
+
+def _ocupado() -> dict:
+    """GET /api/dev/ocupado (só no --dev): {ocupado, pedidos: [{rota, ha_s}]} — o vigia (dev.py) adia o reinício enquanto
+    há pedido em curso. O dev reiniciava a cada .py salvo por qualquer chat e derrubava a tarefa longa no meio (o
+    Reanalisar estrutura do CD Bom Dia, 80 s, 19/10: "Failed to fetch")"""
+    agora = time.time()
+    with _TRAVA_JANELAS:
+        pedidos = [{"rota": r, "ha_s": round(agora - t0, 1)} for r, t0 in _ROTAS_EM_CURSO.values()]
+    return {"ocupado": bool(pedidos), "pedidos": sorted(pedidos, key=lambda p: -p["ha_s"])}
 
 
 def _trabalho_em_curso() -> bool:
