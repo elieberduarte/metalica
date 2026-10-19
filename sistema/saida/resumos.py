@@ -1268,8 +1268,11 @@ def chave_da_pendencia(x: dict) -> str:
 
 
 def _avisos_que_contam(avisos) -> List[str]:
-    """Os avisos do levantamento que mudam um número (peso) ou pedem conferência; os outros ficam no detalhamento."""
-    return [str(a) for a in avisos if "peso" in str(a).lower() or "conferir" in str(a).lower()]
+    """Os avisos do levantamento que mudam um número (peso) ou pedem conferência; os outros ficam no detalhamento. As
+    peças fora do nosso escopo (a cobertura industrializada do cliente) são uma decisão já tomada, não pendência (o
+    usuário, Kaefer 19/10: "essa informação está correta")."""
+    return [str(a) for a in avisos if ("peso" in str(a).lower() or "conferir" in str(a).lower())
+            and "fora do nosso escopo" not in str(a).lower()]
 
 
 def _perimetro_m(perfil: str) -> Optional[float]:

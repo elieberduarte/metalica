@@ -320,3 +320,12 @@ def test_fotos_da_lona_numa_fileira_so():
     css = re.search(r"\.com-lona\.quatro \{([^}]*)\}", resumos._CSS).group(1)
     assert "repeat(4, 1fr)" in css
     assert "aspect-ratio: 3 / 2" in re.search(r"\.com-lona\.quatro img \{([^}]*)\}", resumos._CSS).group(1)
+
+
+def test_pecas_fora_do_escopo_nao_sao_pendencia():
+    """Kaefer (19/10): o aviso das 2.200 peças da cobertura industrializada (do cliente) saía nas pendências "a conferir";
+    é uma decisão tomada — fica fora delas. Os outros avisos que mudam o peso continuam"""
+    avisos = ["2200 peça(s) fora do nosso escopo (cobertura retrátil industrializada, fornecimento do cliente): ficaram fora "
+              "do detalhamento, da lista de materiais e do peso — estão no 3D e no cálculo",
+              "2 posição(ões) sem peso teórico"]
+    assert resumos._avisos_que_contam(avisos) == ["2 posição(ões) sem peso teórico"]
