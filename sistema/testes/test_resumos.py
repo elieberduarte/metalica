@@ -229,3 +229,16 @@ def test_a_capa_mostra_a_foto_inteira():
         "chaparia": [], "avisos": []}))
     assert css and "object-fit: contain" in css.group(1)
 
+
+def test_tipo_de_8_linhas_vai_ao_lado_da_foto(tmp_path):
+    """Kaefer (19/10): os contraventamentos (8 linhas) saíam com a foto grande em cima e o bloco não cabia no fim da
+    folha — ia inteiro para a próxima e deixava meia folha em branco; até 12 linhas, a tabela vai ao lado da foto"""
+    cam = tmp_path / "tipo-contrav.jpg"
+    cam.write_bytes(b"\xff\xd8\xff\xd9")
+    R = {"dossie": {"fotos": {"tipo-contrav": str(cam)}}}
+    linhas = [{"comprimento": 7000.0 - 100 * k, "qtd": 4, "kg": 10.0, "marcas": ["CV.%d" % k], "perfis": ["Barra redonda ø 8 mm"],
+               "onde": [], "ids": []} for k in range(8)]
+    b = {"chave": "contrav", "titulo": "Contraventamentos", "cor": "#e03131", "ids": [], "qtd": 32, "m": 200.0, "kg": 80.0,
+         "linhas": linhas}
+    assert 'class="bloco-tipo lado"' in resumos._bloco_tipo(R, b, False)
+

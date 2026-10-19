@@ -1745,9 +1745,15 @@ def _bloco_tipo(R: dict, b: dict, varios: bool) -> str:
         if (R.get("dados") or {}).get("notas_tesouras"):
             nota += " " + R["dados"]["notas_tesouras"]
         nota = "<p class=\"nota\">%s</p>" % _esc(nota)
-    if fig and len(b["linhas"]) <= 7:
+    # foto e tabela lado a lado até 12 linhas: com a foto grande em cima, o bloco de 8 linhas dos contraventamentos da
+    # Kaefer não cabia no fim da folha e ia inteiro para a próxima, deixando meia folha em branco (19/10)
+    if fig and len(b["linhas"]) <= LINHAS_LADO_A_LADO:
         return "<section class=\"bloco-tipo lado\">%s<div class=\"lado-a-lado\">%s<div>%s%s</div></div></section>" % (cab, fig, tabela, nota)
     return "<section class=\"bloco-tipo\">%s%s%s%s</section>" % (cab, fig, tabela, nota)
+
+
+#: até quantas linhas a tabela de um tipo de estrutura vai ao lado da foto (acima disso, a foto em cima)
+LINHAS_LADO_A_LADO = 12
 
 
 def html_resumo_obra(R: dict, paginado: bool = False) -> str:
