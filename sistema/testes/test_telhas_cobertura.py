@@ -173,6 +173,12 @@ def test_calha_no_vale_em_v():
     assert max(v[2] for v in calha.vertices) < min(v[2] for v in pontas)
 
 
+def _ext(doc, direcao):
+    """quanto os banzos da treliça se estendem do eixo na direção (a face em que a telha encosta)"""
+    from nucleo3d.regras_trelica import _extensao
+    return max(_extensao(b, direcao) for b in doc.barras if b.papel == "banzo")
+
+
 def test_fechamento_duplo_no_painel():
     """o painel da testeira em x −200 (banzos a 6,00 e 7,60), o telhado à direita dele: a TP 40 em pé nas duas faces"""
     doc = Documento()
@@ -188,10 +194,11 @@ def test_fechamento_duplo_no_painel():
     fora = [f for f in fech if f.atributos["face"] == "fora"]
     dentro = [f for f in fech if f.atributos["face"] == "dentro"]
     assert len(fora) == 6 and len(dentro) == 6
+    ext_f, ext_d = _ext(doc, (-1.0, 0.0, 0.0)), _ext(doc, (1.0, 0.0, 0.0))
     for f in fora:
-        assert max(v[0] for v in f.vertices) <= -200.0 - 100.0          # do lado de fora (sem telhado)
+        assert max(v[0] for v in f.vertices) <= -200.0 - ext_f + 0.5     # do lado de fora (sem telhado)
     for f in dentro:
-        assert min(v[0] for v in f.vertices) >= -200.0 + 100.0          # do lado do telhado
+        assert min(v[0] for v in f.vertices) >= -200.0 + ext_d - 0.5     # do lado do telhado
     for f in fech:
         assert min(v[2] for v in f.vertices) <= 5950.0 and max(v[2] for v in f.vertices) >= 7650.0
 
@@ -458,7 +465,7 @@ def test_fechamento_no_degrau_entre_dois_telhados(z_baixo, esperado):
     fora = [s for s in doc.solidos if (s.atributos or {}).get("face") == "fora"]
     assert len(fora) == esperado // 2
     for f in fora:
-        assert max(v[0] for v in f.vertices) <= -200.0 - 100.0          # a face de fora é a do telhado de baixo
+        assert max(v[0] for v in f.vertices) <= -200.0 - _ext(doc, (-1.0, 0.0, 0.0)) + 0.5    # a do telhado de baixo
 
 
 @pytest.mark.parametrize("peca,esperado", [("P.13", 12), ("PAINEL 3", 0)])
@@ -472,4 +479,58 @@ def test_platibanda_sem_telhado_de_lado_nenhum(peca, esperado):
     r = T.lancar(doc)
     assert r["fechamentos"] == esperado
     for f in [s for s in doc.solidos if (s.atributos or {}).get("face") == "fora"]:
-        assert max(v[0] for v in f.vertices) <= -5000.0 - 100.0         # para fora da obra (o telhado está à direita)
+        assert max(v[0] for v in f.vertices) <= -5000.0 - _ext(doc, (-1.0, 0.0, 0.0)) + 0.5   # para fora da obra
+
+
+def test_fechamento_encosta_na_face_da_trelica():
+    """Mercado Hermes, 19/10 ("veja porque os fechamentos laterais estão ficando afastados da estrutura"): a telha do
+    fechamento ficava a 110 mm do eixo da treliça em qualquer perfil — 60 mm de folga na U 100×50. Agora o fundo da onda
+    encosta na face das barras, dos dois lados"""
+    doc = Documento()
+    _agua(doc, 0.0, 6, 7000.0, 0.05)
+    for z in (6000.0, 7600.0):
+        b = Barra(inicio=(-200.0, 0.0, z), fim=(-200.0, 6000.0, z), perfil="U 100×50×3,00 (FF)", papel="banzo",
+                  camada="Platibanda", rotacao=270.0)
+        b.atributos = {"origem": {"peca": "P.1"}, "conjunto": "P.1"}
+        doc.add(b)
+    T.lancar(doc)
+    fech = [s for s in doc.solidos if (s.atributos or {}).get("fechamento")]
+    assert fech
+    for f in fech:
+        if f.atributos["face"] == "fora":
+            assert max(v[0] for v in f.vertices) == pytest.approx(-200.0 - _ext(doc, (-1.0, 0.0, 0.0)), abs=0.5)
+        else:
+            assert min(v[0] for v in f.vertices) == pytest.approx(-200.0 + _ext(doc, (1.0, 0.0, 0.0)), abs=0.5)
+
+
+@pytest.mark.parametrize("acima,por_cima", [(0.0, True), (1000.0, False)])
+def test_telha_passa_por_cima_do_fechamento_na_linha_dela(acima, por_cima):
+    """Mercado Hermes, 19/10, o degrau da ala para o galpão ("essa passa por cima da lateral externa", "essa não tem"): a
+    treliça de fechamento logo depois da última terça, com o topo na linha da telha, ficava com a faixa aberta entre a
+    terça e ela e o fechamento subindo até a telha. Agora a telha segue por cima da treliça e passa da telha de fora
+    (a onda e 50 mm), e o fechamento para embaixo dela. A platibanda que sobe acima da telha continua como era"""
+    doc = Documento()
+    _agua(doc, 0.0, 6, 7000.0, 0.05)                              # sobe até x 7000 (a última terça)
+    from nucleo3d.telhas_cobertura import _topo_da_terca
+    t = [b for b in doc.barras if abs(b.inicio[0] - 7000.0) < 1][0]
+    x_f = 7322.0
+    plano = t.inicio[2] + _topo_da_terca(t) + 0.05 * (x_f - 7000.0)   # a linha da telha no eixo da treliça
+    topo = Barra(inicio=(x_f, 0.0, 0.0), fim=(x_f, 6000.0, 0.0), perfil="U 100×50×3,00 (FF)", papel="banzo",
+                 camada="Platibanda", rotacao=270.0)
+    z_sup = plano + acima - T._ext_z(topo)[1]
+    for z in (z_sup - 1100.0, z_sup):
+        b = Barra(inicio=(x_f, 0.0, z), fim=(x_f, 6000.0, z), perfil="U 100×50×3,00 (FF)", papel="banzo",
+                  camada="Platibanda", rotacao=270.0)
+        b.atributos = {"origem": {"peca": "P.15"}, "conjunto": "P.15"}
+        doc.add(b)
+    T.lancar(doc)
+    telhado = [s for s in doc.solidos if (s.atributos or {}).get("telha_lancada") and not s.atributos.get("fechamento")]
+    fora = [s for s in doc.solidos if (s.atributos or {}).get("face") == "fora"]
+    x_max = max(v[0] for s in telhado for v in s.vertices)
+    x_fora = max(v[0] for s in fora for v in s.vertices)          # a crista da onda do fechamento de fora
+    if por_cima:
+        assert x_max >= x_fora + 40.0                             # passa da telha de fora
+        z_fundo = min(v[2] for s in telhado for v in s.vertices if v[0] > x_f - 1.0)
+        assert max(v[2] for s in fora for v in s.vertices) <= z_fundo + 1.0     # o fechamento para embaixo dela
+    else:
+        assert x_max <= 7000.0 + 1.0                              # a telha para na última terça, como antes

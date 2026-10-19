@@ -36,6 +36,7 @@ AFASTAMENTO_CALHA = 150.0        # mm entre as pontas das telhas das duas águas
 COBRIMENTO_CALHA = 100.0         # mm de telha por cima da calha, de cada lado (a calha do vale: 150 + 2 × 100 = 350)
 AFASTAMENTO_PAREDE = 100.0       # mm da ponta da telha até a face da parede em que a água desce (a calha encostada nela)
 FUNDO_CALHA = 150.0              # mm de fundo da calha, abaixo da ponta das telhas
+ALTURA_ONDA_FECHAMENTO = 40.0   # mm: a onda da telha do fechamento (a TP 40), que o beiral por cima dele passa
 
 
 def _perfil(nome):
@@ -76,6 +77,9 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
     # para a borda contra a parede diagonal: todo banzo conta (a TRELIÇA 6 do Posto, 0,5 m acima da telha, é a borda do
     # telhado ao lado da TRANSIÇÃO 16 — a telha não passa dela)
     paredes_todas = [b for b in barras if b.papel == "banzo"]
+    # as treliças de fechamento (os nomes da regra 7): a telha pode passar por cima delas (o beiral sobre o fechamento)
+    fech_b = [b for b in barras if b.papel == "banzo"
+              and re.match(r"^(P|VT|VL)\.\d", str(origem_de(b).get("peca") or "").upper())]
     CEL = 3000.0
     grade_b: Dict[tuple, list] = collections.defaultdict(list)
     for k, (a, c) in enumerate(barreiras):
@@ -282,6 +286,50 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                     if desce and L > 0.0:
                         abrir(("calhaP", id(ter["b"]), lado, round(L / 10)),
                               {"q": ter, "r": ter, "calha": True, "parede": True, "lado": lado, "L": L, "Lt": max(0.0, Lt), "m": m})
+            # o beiral por cima do fechamento (Mercado, 19/10: "essa passa por cima da lateral externa" — a telha da ala no
+            # degrau para o galpão): a treliça de fechamento (P.n, VT.n, VL.n) logo depois da última terça, com o topo na
+            # linha da telha (de 5 mm acima a 0,30 m abaixo) — a telha segue por cima dela, apoiada no banzo de cima, e passa da telha
+            # do fechamento de fora (a onda e 50 mm de pingadeira); o fechamento para embaixo dela (_fechamentos)
+            for seq in cadeia:
+                if len(seq) < 2:
+                    continue
+                for ter, lado in ((seq[0], -1), (seq[-1], +1)):
+                    if any(k[0] == "beiral" and k[1] == id(ter["b"]) and k[2] == lado for k in pares_aqui if len(k) > 2):
+                        continue                             # já tem beiral (a parede, o degrau)
+                    m = fim_de.get(id(ter["b"]), 0.0)
+                    z_ter = z_em(ter, sm)
+                    melhor = None
+                    altos = {}                               # o banzo mais alto de cada treliça ali (o de cima)
+                    for fb in fech_b:
+                        fa_, fz_ = fb.inicio, fb.fim
+                        Lf = math.hypot(fz_[0] - fa_[0], fz_[1] - fa_[1])
+                        if Lf < 50.0 or abs(((fz_[0] - fa_[0]) * n[0] + (fz_[1] - fa_[1]) * n[1]) / Lf) > 0.02:
+                            continue                         # paralela à terça
+                        s_a = fa_[0] * d[0] + fa_[1] * d[1]
+                        s_b = fz_[0] * d[0] + fz_[1] * d[1]
+                        if not (min(s_a, s_b) - 5.0 <= sm <= max(s_a, s_b) + 5.0):
+                            continue
+                        t_f = fa_[0] * n[0] + fa_[1] * n[1]
+                        dist = (t_f - ter["t"]) * lado
+                        if not (0.0 < dist <= 600.0):
+                            continue
+                        f_ = 0.0 if abs(s_b - s_a) < 1 else (sm - s_a) / (s_b - s_a)
+                        topo_f = fa_[2] + (fz_[2] - fa_[2]) * f_ + _ext_z(fb)[1]
+                        k_ = (str(origem_de(fb).get("peca")), round(t_f / 50.0))
+                        if k_ not in altos or topo_f > altos[k_][0]:
+                            altos[k_] = (topo_f, dist, t_f, fb)
+                    for topo_f, dist, t_f, fb in altos.values():
+                        plano = z_ter + m * (t_f - ter["t"])
+                        # o topo até 5 mm acima da linha (a telha apoia nele); mais alto, a telha teria de dobrar para
+                        # passar (a P.3 e a P.8 do Mercado, 30 mm acima: ficam como platibanda)
+                        if plano - 300.0 <= topo_f <= plano + 5.0 and (melhor is None or dist < melhor[0]):
+                            melhor = (dist, fb)
+                    if melhor is not None:
+                        from nucleo3d.regras_trelica import _extensao
+                        dist, fb = melhor
+                        L = dist + _extensao(fb, (n[0] * lado, n[1] * lado, 0.0)) + float(ALTURA_ONDA_FECHAMENTO) + 50.0
+                        abrir(("beiral", id(ter["b"]), lado, round(L / 10), round(m * 1000)),
+                              {"q": ter, "r": ter, "beiral": True, "lado": lado, "L": L, "m": m, "sobre_fechamento": True})
             for seq in cadeia:
                 # a conferência da sequência: os trechos retos da água (3 ou mais terças com a mesma inclinação, até 0,5 %)
                 # são o plano da telha; a terça fora deles é conferida pela reta do trecho vizinho de cada lado (até 2 terças
@@ -759,6 +807,37 @@ def _dentro_poli(pt, poli) -> bool:
     return dentro
 
 
+def _z_no_plano(c, pt):
+    """a altura em pt (x, y) do plano do polígono c (pela normal de Newell)"""
+    nx = sum((c[i][1] - c[i - 1][1]) * (c[i][2] + c[i - 1][2]) for i in range(len(c)))
+    ny = sum((c[i][2] - c[i - 1][2]) * (c[i][0] + c[i - 1][0]) for i in range(len(c)))
+    nz = sum((c[i][0] - c[i - 1][0]) * (c[i][1] + c[i - 1][1]) for i in range(len(c)))
+    if abs(nz) < 1e-9:
+        return max(v[2] for v in c)
+    x0, y0, z0 = (sum(v[j] for v in c) / len(c) for j in range(3))
+    return z0 - (nx * (pt[0] - x0) + ny * (pt[1] - y0)) / nz
+
+
+def _afastamento_das_faces(doc):
+    """(peça, face) → quanto as barras da treliça se estendem do eixo para o lado da face (a telha encosta ali); sem
+    barras (a peça em sólido), os 110 mm de antes"""
+    from nucleo3d.regras_trelica import _extensao
+    por_peca: Dict[str, list] = collections.defaultdict(list)
+    for b in doc.barras:
+        pc = origem_de(b).get("peca")
+        if pc and b.papel in ("banzo", "montante", "diagonal"):
+            por_peca[pc].append(b)
+    cache: Dict[tuple, float] = {}
+
+    def afastamento(peca, face):
+        k = (peca, round(face[0], 3), round(face[1], 3))
+        if k not in cache:
+            bs = por_peca.get(peca) or []
+            cache[k] = max((_extensao(b, (face[0], face[1], 0.0)) for b in bs), default=110.0) if bs else 110.0
+        return cache[k]
+    return afastamento
+
+
 def _fechamentos(doc, panos, telha, camada):
     """Os fechamentos laterais (12/10/2026, "lançar as telhas dos fechamentos laterais ... vai ficar mais claro como
     ficaram as telhas que precisam de recortes"): em cada painel (a testeira), a TP 40 em pé na face de FORA — o lado sem
@@ -783,16 +862,19 @@ def _fechamentos(doc, panos, telha, camada):
         for k in grade.get((int(pt[0] // CEL), int(pt[1] // CEL)), ()):
             if not _dentro_poli(pt, polis[k]):
                 continue
-            c = panos[k]["cantos"]
-            nx = sum((c[i][1] - c[i - 1][1]) * (c[i][2] + c[i - 1][2]) for i in range(len(c)))
-            ny = sum((c[i][2] - c[i - 1][2]) * (c[i][0] + c[i - 1][0]) for i in range(len(c)))
-            nz = sum((c[i][0] - c[i - 1][0]) * (c[i][1] + c[i - 1][1]) for i in range(len(c)))
-            if abs(nz) < 1e-9:
-                zs.append(max(v[2] for v in c))
-                continue
-            x0, y0, z0 = (sum(v[j] for v in c) / len(c) for j in range(3))
-            zs.append(z0 - (nx * (pt[0] - x0) + ny * (pt[1] - y0)) / nz)
+            zs.append(_z_no_plano(panos[k]["cantos"], pt))
         return max(zs) if zs else None
+    sobre = [k for k, p in enumerate(panos) if p.get("sobre_fechamento")]
+
+    def z_sobre(pt):
+        # a altura do beiral que passa por cima do fechamento em pt (o fundo da telha), ou None
+        zs = []
+        for k in sobre:
+            if _dentro_poli(pt, polis[k]):
+                c = panos[k]["cantos"]
+                zs.append(_z_no_plano(c, pt))
+        return min(zs) if zs else None
+    afastamento = _afastamento_das_faces(doc)
     cx = sum(v[0] for pl in polis for v in pl) / max(1, sum(len(pl) for pl in polis))
     cy = sum(v[1] for pl in polis for v in pl) / max(1, sum(len(pl) for pl in polis))
     paineis: Dict[str, list] = collections.defaultdict(list)
@@ -885,23 +967,32 @@ def _fechamentos(doc, panos, telha, camada):
 
             def zt(s_):
                 return A[2] + (B[2] - A[2]) * s_ / L + 60.0
-            # o fechamento é duplo: a telha nas duas faces do painel (110 mm do eixo, as ondas para fora de cada face)
+            # o fechamento é duplo: a telha nas duas faces do painel, as ondas para fora de cada face — encostada na face
+            # das barras da treliça (19/10, o usuário no Mercado: "os fechamentos laterais estão ficando afastados da
+            # estrutura" — eram 110 mm do eixo em qualquer perfil, 60 mm de folga na U 100×50)
             for face in (fora_, (-fora_[0], -fora_[1])):
-                def P(s_, z_, face=face):
-                    return (A[0] + u[0] * s_ + face[0] * 110.0, A[1] + u[1] * s_ + face[1] * 110.0, z_)
+                off = afastamento(peca, face)
+
+                def P(s_, z_, face=face, off=off):
+                    return (A[0] + u[0] * s_ + face[0] * off, A[1] + u[1] * s_ + face[1] * off, z_)
+
+                def zt_f(s_, P=P):
+                    # embaixo da telha que passa por cima do fechamento (o beiral sobre ele)
+                    z_ = z_sobre(P(min(max(s_, 1.0), L - 1.0), 0.0)[:2])      # 1 mm para dentro (a ponta na borda)
+                    return zt(s_) if z_ is None or z_ <= zb + 300.0 else min(zt(s_), z_ - 3.0)
                 a_ = 0.0
                 while a_ < L - 1.0:
                     b_ = min(L, a_ + W)
                     if tem_acima(A, B, (a_ + b_) / 2.0 / L):
                         a_ = b_
                         continue
-                    ch = {"secoes": [(P(a_, zb), P(b_, zb)), (P(a_, zt(a_)), P(b_, zt(b_)))],
+                    ch = {"secoes": [(P(a_, zb), P(b_, zb)), (P(a_, zt_f(a_)), P(b_, zt_f(b_)))],
                           "a": cum + a_, "b": cum + b_, "origem": 0.0, "d": u, "n": nh}
                     so = _solido_da_chapa(ch, telha, camada, normal=(face[0], face[1], 0.0))
                     so.atributos = {"tipo_ifc": "IfcCovering", "telha_lancada": True, "fechamento": True, "telha": telha["modelo"],
                                     "painel": peca.split("#")[0], "face": "fora" if face is fora_ else "dentro"}
                     solidos.append(so)
-                    area += (b_ - a_) * ((zt(a_) + zt(b_)) / 2 - zb)
+                    area += (b_ - a_) * ((zt_f(a_) + zt_f(b_)) / 2 - zb)
                     if face is fora_:
                         ml += b_ - a_                    # o perímetro com fechamento (uma face)
                     a_ = b_
