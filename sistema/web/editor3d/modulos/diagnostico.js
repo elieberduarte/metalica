@@ -266,6 +266,57 @@ export class MetodosDiagnostico {
     cena._corDe = (ent) => (corDestaque && cena.destaque && ent && cena.destaque.has(ent.id) && corDaPeca(ent.id)) || corDe(ent);
     const apareciaAntes = doc.aparece;
     doc.aparece = (ent) => ((visiveis && ent && !visiveis.has(ent.id)) || (ocultos && ent && ocultos.has(ent.id)) ? false : apareciaAntes(ent));
+    // as etiquetas desenhadas por cima da foto: cada uma na peça da linha mais perto da câmera e dentro do quadro,
+    // empurrada para cima quando encosta noutra
+    const comRotulos = (rotulos, formato, qualidade) => {
+      const cv = this.el.canvas;
+      const cam = this.camera.ativa;
+      const V = cam.position.constructor;
+      const esc = cena.raiz.scale.x;
+      const c2 = document.createElement('canvas');
+      c2.width = cv.width; c2.height = cv.height;
+      const g = c2.getContext('2d');
+      g.drawImage(cv, 0, 0);
+      const tam = Math.max(12, Math.round(c2.height * 0.05));
+      g.font = `700 ${tam}px "Segoe UI", Arial, sans-serif`;
+      g.textBaseline = 'middle';
+      const caixas = [];
+      for (const r of rotulos) {
+        let melhor = null;
+        for (const id of r.ids || []) {
+          if (!doc.get(id)) continue;
+          const cx = doc.caixa([id]);
+          const p = new V((cx[0][0] + cx[1][0]) / 2 * esc, (cx[0][1] + cx[1][1]) / 2 * esc, (cx[0][2] + cx[1][2]) / 2 * esc);
+          const q = p.clone().project(cam);
+          if (q.z < -1 || q.z > 1 || Math.abs(q.x) > 0.92 || Math.abs(q.y) > 0.9) continue;
+          const d = p.distanceTo(cam.position);
+          if (!melhor || d < melhor.d) melhor = { d, x: (q.x + 1) / 2 * c2.width, y: (1 - q.y) / 2 * c2.height };
+        }
+        if (!melhor) continue;
+        const w = g.measureText(r.texto).width + tam * 0.9, h = tam * 1.5;
+        let bx = Math.min(Math.max(melhor.x - w / 2, 4), c2.width - w - 4), by = Math.max(melhor.y - h - tam * 2.2, 4);
+        for (let k = 0; k < 40 && caixas.some((c) => bx < c.x + c.w + 6 && bx + w + 6 > c.x && by < c.y + c.h + 4 && by + h + 4 > c.y); k++) {
+          by = by - h * 0.6 < 4 ? by + h * 1.2 : by - h * 0.6;
+        }
+        caixas.push({ x: bx, y: by, w, h, r, px: melhor.x, py: melhor.y });
+      }
+      // os traços e os pontos primeiro, as etiquetas por cima (o traço de uma cruzava a etiqueta da outra)
+      g.lineWidth = Math.max(2, tam * 0.12);
+      for (const c of caixas) {
+        g.strokeStyle = c.r.cor; g.fillStyle = c.r.cor;
+        g.beginPath(); g.moveTo(c.px, c.py); g.lineTo(c.x + c.w / 2, c.y + c.h); g.stroke();
+        g.beginPath(); g.arc(c.px, c.py, tam * 0.22, 0, Math.PI * 2); g.fill();
+      }
+      for (const c of caixas) {
+        g.strokeStyle = c.r.cor; g.fillStyle = '#ffffff';
+        g.beginPath();
+        if (g.roundRect) g.roundRect(c.x, c.y, c.w, c.h, c.h / 2.6); else g.rect(c.x, c.y, c.w, c.h);
+        g.fill(); g.stroke();
+        g.fillStyle = c.r.cor;
+        g.fillText(c.r.texto, c.x + tam * 0.45, c.y + c.h / 2 + 1);
+      }
+      return c2.toDataURL(formato, qualidade);
+    };
     let repintada = false;
     window.__render = async (nomes, formato = 'image/jpeg', qualidade = 0.92) => {
       const saida = [];
@@ -321,7 +372,12 @@ export class MetodosDiagnostico {
         cena._ajustarSombras && cena._ajustarSombras();
         await quadros(3);
         cena.desenhar(this.camera.ativa);
-        saida.push({ nome: obj ? String(obj.nome || nome) : String(pedido).replace('+', '_'), imagem: this.el.canvas.toDataURL(formato, qualidade) });
+        let imagem = this.el.canvas.toDataURL(formato, qualidade);
+        // `rotulos` (as fotos dos tipos do resumo, 19/10): a marca de cada linha na cor dela, presa à peça mais à frente
+        if (obj && Array.isArray(obj.rotulos) && obj.rotulos.length) {
+          try { imagem = comRotulos(obj.rotulos, formato, qualidade) || imagem; } catch (e) { /* a foto sem as etiquetas */ }
+        }
+        saida.push({ nome: obj ? String(obj.nome || nome) : String(pedido).replace('+', '_'), imagem });
       }
       if (destacando) { cena.destacar(null); destacando = false; }
       corDestaque = null;

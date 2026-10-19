@@ -1032,6 +1032,20 @@ def _cores_das_linhas(b: dict, so: Optional[set] = None) -> Dict[str, list]:
     return dict(cores)
 
 
+def _rotulos_das_linhas(b: dict, so: Optional[set] = None) -> List[dict]:
+    """A etiqueta de cada linha na foto do tipo (19/10): a marca na cor da linha, presa à peça mais à frente dela
+    (diagnostico.js, __render) — no PDF, sem o 3D ligado, é ela que diz qual peça é qual"""
+    saida = []
+    for li in b.get("linhas") or []:
+        ids = [i for i in li.get("ids") or [] if so is None or i in so]
+        marcas = list(li.get("marcas") or [])
+        if not ids or not marcas:
+            continue
+        saida.append({"texto": ", ".join(marcas[:2]) + (" …" if len(marcas) > 2 else ""), "cor": li.get("cor") or b["cor"],
+                      "ids": ids})
+    return saida
+
+
 def pedidos_de_fotos(X: dict, tem_telhas: bool = False) -> List[dict]:
     """As fotos que o dossiê pede ao editor 3D (window.__render): a capa; cada tipo de estrutura em destaque na cor
     dele, com o resto apagado — na obra de vários pavimentos, no pavimento onde ele mais aparece, com o resto do aço
@@ -1074,12 +1088,13 @@ def pedidos_de_fotos(X: dict, tem_telhas: bool = False) -> List[dict]:
             if not ids:
                 continue
             pedidos.append(dict({"nome": "tipo-" + b["chave"], "destaque": ids, "cor": b["cor"],
-                                 "cores": _cores_das_linhas(b, set(ids)), "fantasma": "claro",
+                                 "cores": _cores_das_linhas(b, set(ids)), "fantasma": "claro", "rotulos": _rotulos_das_linhas(b, set(ids)),
                                  "contexto": sorted(andar) + list(p.get("contexto") or []), "enquadrar": sorted(andar),
                                  "_onde": p["nome"]}, **_angulo(X)))
         else:
             pedidos.append(dict({"nome": "tipo-" + b["chave"], "destaque": list(b["ids"]), "cor": b["cor"],
-                                 "cores": _cores_das_linhas(b), "fantasma": "claro"}, **_angulo(X)))
+                                 "cores": _cores_das_linhas(b), "fantasma": "claro", "rotulos": _rotulos_das_linhas(b)},
+                                **_angulo(X)))
     for k, p in enumerate(pavs):
         ids = list(p.get("ids_andar") or [])
         if not ids:

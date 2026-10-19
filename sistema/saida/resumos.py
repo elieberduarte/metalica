@@ -1589,7 +1589,7 @@ h3.tipo::before { display: none; }
 h3.tipo i { width: 5mm; height: 3.2mm; }
 h3.tipo small { margin-left: auto; font: 600 7.4pt 'Segoe UI', Arial; color: var(--mudo); letter-spacing: .04em; }
 .bloco-tipo.lado { break-inside: avoid; }
-.lado-a-lado { display: grid; grid-template-columns: 60mm 1fr; gap: 3.5mm; align-items: start; }
+.lado-a-lado { display: grid; grid-template-columns: 74mm 1fr; gap: 3.5mm; align-items: start; }   /* a foto maior (19/10) */
 table.tipo { font-size: 7.4pt; }
 .pilula { display: inline-block; padding: 0 1.6mm; border: 1px solid; border-radius: 2.2mm; white-space: nowrap;
   -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -1739,7 +1739,7 @@ def _bloco_tipo(R: dict, b: dict, varios: bool) -> str:
                 row.append("<span class=\"cinza\">%s</span>" % _esc(" · ".join("%s %d" % (p, q) for p, q in li.get("onde") or [])))
             row.append((_n(li.get("kg") or 0.0, 1), "r"))
             linhas.append(row)
-        larg = (["9%", "13%", "11%", "17%", "20%", "20%", "10%"] if varios else ["9%", "14%", "12%", "22%", "31%", "12%"])
+        larg = (["9%", "13%", "11%", "17%", "20%", "20%", "10%"] if varios else ["10%", "14%", "12%", "14%", "38%", "12%"])
         rod = [("%d un" % b["qtd"], "c"), "", ("%s m" % _n(b["m"], 1), "r"), ("TOTAL", "b"), ""] + ([""] if varios else []) + [(_n(b["kg"], 1), "r")]
     tabela = _tabela(colunas, linhas, rodape=rod, larguras=larg, bruto=True, classe="tipo",
                      ids_linhas=[",".join(li.get("ids") or []) for li in b["linhas"]])

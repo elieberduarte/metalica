@@ -155,8 +155,12 @@ def test_elevacoes_e_cores_das_linhas():
     assert ">1<" in fr and ">4<" in fr and "17,80" in fr
     assert "+8,00" in lat and "+9,00" in lat                                             # o topo do aço e o do cliente
     b = {"chave": "pilares", "cor": "#364fc7", "ids": ["p1", "p2", "p3"],
-         "linhas": [{"ids": ["p1", "p2"], "cor": dossie.CORES_LINHAS[0]}, {"ids": ["p3"], "cor": dossie.CORES_LINHAS[1]}]}
+         "linhas": [{"ids": ["p1", "p2"], "cor": dossie.CORES_LINHAS[0], "marcas": ["PL1"]},
+                    {"ids": ["p3"], "cor": dossie.CORES_LINHAS[1], "marcas": ["PL2"]}]}
     pedidos = dossie.pedidos_de_fotos({"estrutura": [dict(b, kg=10.0, titulo="Pilares")]})
     tipo = next(p for p in pedidos if p["nome"] == "tipo-pilares")
     assert tipo["cores"] == {dossie.CORES_LINHAS[0]: ["p1", "p2"], dossie.CORES_LINHAS[1]: ["p3"]} and tipo["fantasma"] == "claro"
+    # a etiqueta de cada linha na foto (para quem só tem o PDF): a marca, na cor da linha, nas peças dela
+    assert tipo["rotulos"] == [{"texto": "PL1", "cor": dossie.CORES_LINHAS[0], "ids": ["p1", "p2"]},
+                               {"texto": "PL2", "cor": dossie.CORES_LINHAS[1], "ids": ["p3"]}]
     assert len(set(dossie.CORES_LINHAS[:4])) == 4
