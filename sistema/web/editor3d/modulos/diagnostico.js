@@ -253,6 +253,7 @@ export class MetodosDiagnostico {
     const fantasmaLinhaClaro = new THREE.LineBasicMaterial({ color: new THREE.Color('#c3c9d4') });
     cena._materialFantasma = () => fantasmaClaro;
     cena.corFantasmaFoto = '#dde2ea';                                  // o mesmo no modelo grande (nucleo/lote.js)
+    let fantasmaFraco = false;
     cena._materialFantasmaLinha = () => fantasmaLinhaClaro;
     // a cor do destaque (a do tipo na legenda do dossiê) e o que fica na cena (o aço do pavimento e o concreto em volta)
     // `cor`: uma cor para todo o destaque; `cores`: {cor: [ids]} — cada peça na cor do tipo dela (a foto do pavimento)
@@ -284,6 +285,19 @@ export class MetodosDiagnostico {
           for (const [cor, lista] of Object.entries(obj.cores)) for (const i of lista) corDestaque.set(i, cor);
         }
         cena.corDestaqueFoto = corDestaque ? corDaPeca : null;
+        // `fantasma: 'claro'` (as fotos dos tipos do resumo, 19/10): o resto da estrutura bem apagado — quase a cor do
+        // fundo, arestas suaves e, fora do modo lote (que não tem transparência por peça), transparente
+        const claro = !!(obj && obj.fantasma === 'claro');
+        if (claro !== fantasmaFraco) {
+          fantasmaFraco = claro;
+          fantasmaClaro.color.set(claro ? '#f6f8fa' : '#dde2ea');
+          fantasmaClaro.transparent = claro; fantasmaClaro.opacity = claro ? 0.3 : 1; fantasmaClaro.depthWrite = !claro;
+          fantasmaClaro.needsUpdate = true;
+          fantasmaLinhaClaro.color.set(claro ? '#e8ebf0' : '#c3c9d4');
+          cena.corFantasmaFoto = claro ? '#f6f8fa' : '#dde2ea';
+          cena.arestaFantasmaFoto = claro ? '#e3e7ed' : null;
+          cena.repintarTudo(); await quadros(3);
+        }
         const novosOcultos = obj && Array.isArray(obj.ocultar) && obj.ocultar.length ? new Set(obj.ocultar) : null;
         if (querTelhas !== comTelhas || novosVisiveis || visiveis || novosOcultos || ocultos) {
           comTelhas = querTelhas; visiveis = novosVisiveis; ocultos = novosOcultos; cena.repintarTudo(); await quadros(4);

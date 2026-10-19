@@ -64,6 +64,10 @@ _CAMADA_SEMANTICA = re.compile(
     r"calhas?|cumeeiras?|refer\w*|barras?|agulhamentos?|longarinas?|perfis?|acess[óo]rios?|fixadores?|"
     r"diagonais|montantes?|banzos?|treli[çc]as?|elementos?|outros|geral|0|padr[ãa]o|default|metálica|metalica)$", re.I)
 #: Cores dos pavimentos no corte esquemático (na ordem de cota).
+#: As cores das linhas de cada tipo na foto dele e na tabela (Kaefer, 19/10: "uma diferenciação por cores de cada
+#: elemento"): fortes, distintas entre si e do cinza do resto
+CORES_LINHAS = ["#e03131", "#1c7ed6", "#2f9e44", "#f08c00", "#ae3ec9", "#0ca678", "#d6336c", "#5c7cfa", "#fab005",
+                "#74b816", "#1098ad", "#862e9c"]
 CORES_PAV = ["#1f6feb", "#2f9e44", "#d9480f", "#7048e8", "#c2255c", "#0f8a7e", "#c77700", "#495057", "#3f7cc4", "#ae3ec9"]
 
 
@@ -340,6 +344,11 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
         b.update({"linhas": linhas, "qtd": sum(t["qtd"] for t in tes), "kg": sum(t["kg_total"] for t in tes),
                   "m": sum(t["qtd"] * t["comprimento"] for t in tes) / 1000.0})
 
+    # a cor de cada linha (a mesma na foto do tipo e na tabela)
+    for b in estrutura:
+        for k, li in enumerate(b["linhas"]):
+            li["cor"] = CORES_LINHAS[k % len(CORES_LINHAS)]
+
     # ---- os pavimentos: peças, kg e o que cada um tem por papel (por andar e no total)
     if varios:
         for p in pavs:
@@ -395,6 +404,12 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
         lado = "implantacao_retraida" in svgs
         svgs["implantacao"] = planta_svg(geo, eixos_ok, R=R, largura=92.0 if lado else 186.0, altura_max=150.0,
                                          rotulos_tesouras=True)
+        # as elevações (19/10): a lateral olhando o lado comprido, a frontal o curto
+        for chave, frontal in (("elevacao_lateral", False), ("elevacao_frontal", True)):
+            try:
+                svgs[chave] = elevacao_svg(geo, eixos_ok, frontal=frontal)
+            except Exception:                                   # noqa: BLE001 — sem ela, o resumo segue
+                svgs.pop(chave, None)
     legenda = [(b["titulo"], b["cor"]) for b in estrutura]
     if any(g["papel"] == "cliente" for g in geo.values()):
         legenda.append(PAPEIS["cliente"])
@@ -861,6 +876,89 @@ def corte_svg(geo: Dict[str, dict], pavs: List[dict], pav_de: Dict[str, str], co
     return f.svg("desenho corte")
 
 
+_LARG_ELEVACAO = dict(_LARG_PAPEL, pilares=0.55, pilaretes=0.4, cliente=0.18)
+
+
+def elevacao_svg(geo: Dict[str, dict], eixos: Optional[dict], frontal: bool = False, largura: float = 186.0,
+                 altura_max: float = 95.0) -> str:
+    """A elevação da obra de um pavimento: a estrutura projetada num plano vertical — `frontal` olhando o lado curto,
+    senão o comprido (lateral) —, as barras pela cor do papel (a parte do cliente em cinza), os eixos daquela direção
+    com as bolhas embaixo, os níveis (o piso e o topo do aço) à esquerda e as cotas: entre eixos embaixo, a altura à
+    direita."""
+    if not geo:
+        return ""
+    if eixos and eixos.get("eixo_g"):
+        g = tuple(eixos["eixo_g"])[:2]
+        q = tuple(eixos.get("perp_g") or (-g[1], g[0]))[:2]
+    else:
+        g, q = (1.0, 0.0), (0.0, 1.0)
+    pts = [v for d in geo.values() for v in d["verts"][:: max(1, len(d["verts"]) // 16)]]
+    ext_g = max(v[0] * g[0] + v[1] * g[1] for v in pts) - min(v[0] * g[0] + v[1] * g[1] for v in pts)
+    ext_q = max(v[0] * q[0] + v[1] * q[1] for v in pts) - min(v[0] * q[0] + v[1] * q[1] for v in pts)
+    longo_g = ext_g >= ext_q
+    # a direção horizontal do desenho e os eixos que a cortam
+    usa_g = longo_g != frontal
+    h = g if usa_g else q
+    marcos = sorted((eixos or {}).get("numeros" if usa_g else "letras") or [], key=lambda x: x["pos"])
+
+    def hz(v):
+        return (v[0] * h[0] + v[1] * h[1], v[2])
+    hs = [hz(v)[0] for v in pts] + [x["pos"] for x in marcos]
+    zs = [d["z0"] for d in geo.values()] + [d["z1"] for d in geo.values()]
+    x0, x1, z0, z1 = min(hs), max(hs), min(min(zs), 0.0), max(zs)
+    f = _Folha(x0, z0, x1, z1, largura, altura_max, margem=(16.0, 20.0 if marcos else 12.0, 6.0, 26.0))
+    # o piso
+    f.linha((x0 - 800.0, 0.0), (x1 + 800.0, 0.0), "#868e96", 0.25)
+    # eixos (traço-ponto, por baixo)
+    for x in marcos:
+        f.linha((x["pos"], 0.0), (x["pos"], z1 + 300.0), "#c0392b", 0.12, ' stroke-dasharray="3 0.8 0.6 0.8"')
+    ordem = {k: i for i, k in enumerate(["cliente"] + _ORDEM_PINTURA)}
+    for d in sorted(geo.values(), key=lambda d: ordem.get(d["papel"], 0)):
+        cor = PAPEIS.get(d["papel"], PAPEIS["outros"])[1]
+        larg = _LARG_ELEVACAO.get(d["papel"], 0.25)
+        if d["seg"]:
+            a, b = hz(d["seg"][0]), hz(d["seg"][1])
+            if math.dist(a, b) * f.k >= 0.3:
+                f.linha(a, b, cor, larg, ' stroke-linecap="round"')
+                continue
+        # peça vista de topo (a barra na direção do olhar): um ponto
+        a = hz(d["verts"][0])
+        x, y = f.p(*a)
+        f.add('<circle cx="%.2f" cy="%.2f" r="%.2f" fill="%s"/>' % (x, y, max(larg, 0.25), cor))
+    # níveis à esquerda: o piso, o topo do aço (o nosso) e, com a parte do cliente, o topo dela
+    nosso = [d["z1"] for d in geo.values() if d["papel"] != "cliente"]
+    niveis = [0.0] + ([max(nosso)] if nosso else []) + ([z1] if nosso and z1 > max(nosso) + 50.0 else [])
+    for z in niveis:
+        _, y = f.p(x0, z)
+        f.add('<line x1="%.2f" y1="%.2f" x2="%.2f" y2="%.2f" stroke="#1f6feb" stroke-width="0.12" stroke-dasharray="0.8 0.6"/>'
+              % (f.me - 18.0, y, f.me - 1.0, y))
+        f.add('<path d="M%.2f %.2f l1.2 -1.6 h-2.4 z" fill="#1f6feb"/>' % (f.me - 15.0, y))
+        f.texto(f.me - 13.0, y - 0.6, _nivel(z), tam=2.0, cor="#1f6feb", ancora="start", papel=True)
+    # bolhas e cotas embaixo
+    _, ypiso = f.p(x0, 0.0)
+    if marcos:
+        yb = f.H - 4.0
+        for x in marcos:
+            px, _ = f.p(x["pos"], 0.0)
+            f.add('<line x1="%.2f" y1="%.2f" x2="%.2f" y2="%.2f" stroke="#c0392b" stroke-width="0.12"/>' % (px, ypiso + 0.5, px, yb - 2.6))
+            f.add('<circle cx="%.2f" cy="%.2f" r="2.6" fill="#fff" stroke="#c0392b" stroke-width="0.25"/>' % (px, yb))
+            f.texto(px, yb + 0.85, x["nome"], tam=2.4, cor="#c0392b", papel=True, peso=700)
+        ps = [f.p(x["pos"], 0.0)[0] for x in marcos]
+        for a, b, xa_, xb_ in zip(ps, ps[1:], marcos, marcos[1:]):
+            _cota(f, a, b, ypiso + 5.5, True, _n((xb_["pos"] - xa_["pos"]) / 1000.0, 2))
+        if len(ps) > 2:
+            _cota(f, ps[0], ps[-1], ypiso + 10.5, True, _n((marcos[-1]["pos"] - marcos[0]["pos"]) / 1000.0, 2))
+    else:
+        xa, _ = f.p(x0, 0.0)
+        xb, _ = f.p(x1, 0.0)
+        _cota(f, xa, xb, ypiso + 5.5, True, _n((x1 - x0) / 1000.0, 2))
+    # a altura à direita (do piso ao topo)
+    xr, _ = f.p(x1, 0.0)
+    _, ytopo = f.p(x1, z1)
+    _cota(f, ytopo, ypiso, xr + 6.0, False, _n((z1 - 0.0) / 1000.0, 2))
+    return f.svg("desenho elevacao")
+
+
 def _nivel(z: float) -> str:
     return ("+" if z >= 0 else "") + _n(z / 1000.0, 2)
 
@@ -924,6 +1022,16 @@ def _angulo(X: dict) -> dict:
     return {"angulo": ANGULO}
 
 
+def _cores_das_linhas(b: dict, so: Optional[set] = None) -> Dict[str, list]:
+    """{cor: [ids]} das linhas do tipo (a cor de cada linha da tabela); sem cor nas linhas, a do tipo"""
+    cores: Dict[str, list] = collections.defaultdict(list)
+    for li in b.get("linhas") or []:
+        for i in li.get("ids") or []:
+            if so is None or i in so:
+                cores[li.get("cor") or b["cor"]].append(i)
+    return dict(cores)
+
+
 def pedidos_de_fotos(X: dict, tem_telhas: bool = False) -> List[dict]:
     """As fotos que o dossiê pede ao editor 3D (window.__render): a capa; cada tipo de estrutura em destaque na cor
     dele, com o resto apagado — na obra de vários pavimentos, no pavimento onde ele mais aparece, com o resto do aço
@@ -966,10 +1074,12 @@ def pedidos_de_fotos(X: dict, tem_telhas: bool = False) -> List[dict]:
             if not ids:
                 continue
             pedidos.append(dict({"nome": "tipo-" + b["chave"], "destaque": ids, "cor": b["cor"],
+                                 "cores": _cores_das_linhas(b, set(ids)), "fantasma": "claro",
                                  "contexto": sorted(andar) + list(p.get("contexto") or []), "enquadrar": sorted(andar),
                                  "_onde": p["nome"]}, **_angulo(X)))
         else:
-            pedidos.append(dict({"nome": "tipo-" + b["chave"], "destaque": list(b["ids"]), "cor": b["cor"]}, **_angulo(X)))
+            pedidos.append(dict({"nome": "tipo-" + b["chave"], "destaque": list(b["ids"]), "cor": b["cor"],
+                                 "cores": _cores_das_linhas(b), "fantasma": "claro"}, **_angulo(X)))
     for k, p in enumerate(pavs):
         ids = list(p.get("ids_andar") or [])
         if not ids:

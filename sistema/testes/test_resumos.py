@@ -242,3 +242,9 @@ def test_tipo_de_8_linhas_vai_ao_lado_da_foto(tmp_path):
          "linhas": linhas}
     assert 'class="bloco-tipo lado"' in resumos._bloco_tipo(R, b, False)
 
+
+
+def test_quantidade_da_linha_na_cor_dela():
+    """Kaefer (19/10): a quantidade de cada linha do tipo na cor da peça na foto"""
+    assert 'class="pilula"' in resumos._pilula({"cor": "#e03131"}, "4 un") and "#e03131" in resumos._pilula({"cor": "#e03131"}, "4 un")
+    assert resumos._pilula({}, "4 un") == "4 un"

@@ -136,3 +136,27 @@ def test_linhas_do_tipo_separadas_por_perfil():
     pil = next(b for b in X["estrutura"] if b["chave"] == "pilares")
     linhas = {tuple(li["perfis"]): li["qtd"] for li in pil["linhas"]}
     assert linhas == {("W 460×52,0",): 3, ("W 310×32,7",): 2, ("TC 180×6,3",): 1}
+
+
+def test_elevacoes_e_cores_das_linhas():
+    """Kaefer (19/10): o resumo da obra com a elevação lateral e a frontal (os eixos de cada direção, níveis e cotas) e
+    cada linha do tipo numa cor — a mesma na foto (pedido "cores") e na tabela —, com o resto da estrutura apagado"""
+    def barra(i, a, b, papel):
+        vs = [a, b]
+        return i, {"papel": papel, "seg": (a, b), "z0": min(a[2], b[2]), "z1": max(a[2], b[2]), "verts": vs}
+    geo = dict([barra("p1", (0, 0, 0), (0, 0, 8000), "pilares"), barra("p2", (0, 38000, 0), (0, 38000, 8000), "pilares"),
+                barra("p3", (17800, 0, 0), (17800, 0, 8000), "pilares"),
+                barra("v1", (0, 0, 8000), (0, 38000, 8000), "vigas_i"), barra("t1", (0, 0, 9000), (17800, 0, 9000), "cliente")])
+    eixos = {"eixo_g": (1.0, 0.0), "numeros": [{"nome": "1", "pos": 0.0}, {"nome": "4", "pos": 17800.0}],
+             "letras": [{"nome": "A", "pos": 0.0}, {"nome": "I", "pos": 38000.0}]}
+    lat = dossie.elevacao_svg(geo, eixos, frontal=False)
+    fr = dossie.elevacao_svg(geo, eixos, frontal=True)
+    assert ">A<" in lat and ">I<" in lat and ">1<" not in lat and "38,00" in lat           # olhando o lado comprido
+    assert ">1<" in fr and ">4<" in fr and "17,80" in fr
+    assert "+8,00" in lat and "+9,00" in lat                                             # o topo do aço e o do cliente
+    b = {"chave": "pilares", "cor": "#364fc7", "ids": ["p1", "p2", "p3"],
+         "linhas": [{"ids": ["p1", "p2"], "cor": dossie.CORES_LINHAS[0]}, {"ids": ["p3"], "cor": dossie.CORES_LINHAS[1]}]}
+    pedidos = dossie.pedidos_de_fotos({"estrutura": [dict(b, kg=10.0, titulo="Pilares")]})
+    tipo = next(p for p in pedidos if p["nome"] == "tipo-pilares")
+    assert tipo["cores"] == {dossie.CORES_LINHAS[0]: ["p1", "p2"], dossie.CORES_LINHAS[1]: ["p3"]} and tipo["fantasma"] == "claro"
+    assert len(set(dossie.CORES_LINHAS[:4])) == 4

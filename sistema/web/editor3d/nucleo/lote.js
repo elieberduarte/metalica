@@ -533,7 +533,7 @@ export class Lote {
     if (fantasma) base = cena.corFantasmaFoto || (cena.escuro ? '#2e3642' : '#d7dce6');
     const estado = this.estado.get(id);
     let corMalha = base;
-    let corAresta = misturar(base, cena.escuro ? '#f0f5ff' : '#101822', 0.55);
+    let corAresta = fantasma && cena.arestaFantasmaFoto ? cena.arestaFantasmaFoto : misturar(base, cena.escuro ? '#f0f5ff' : '#101822', 0.55);
     const vizinha = !!(cena.destaqueVizinhas && cena.destaqueVizinhas.has(id));
     if (cena.destaque && cena.destaque.has(id) && !vizinha && estado !== 'sobre') {
       // a peça em destaque na cor cheia: misturada ao azul ela sumia no cinza do resto (30/09)

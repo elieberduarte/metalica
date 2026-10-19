@@ -1571,6 +1571,10 @@ figure.desenho { margin: 1mm 0 1.5mm; text-align: center; break-inside: avoid; }
 figure.desenho svg { max-width: 100%; height: auto; }
 .lado-movel { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; align-items: end; break-inside: avoid; }
 .lado-movel figcaption { font: 600 8pt 'Segoe UI', Arial; color: var(--mudo); margin-top: 1mm; }
+.elevacoes { margin-top: 3mm; }
+.elevacoes figure.elev { margin: 2mm 0 0; }
+.elevacoes figure.elev svg { max-height: 95mm; }
+.elevacoes figcaption { font: 600 8pt 'Segoe UI', Arial; color: var(--mudo); margin-top: 1mm; text-align: center; }
 figure figcaption { font-size: 7pt; color: var(--mudo); margin-top: .8mm; text-align: center; }
 .legenda { display: flex; flex-wrap: wrap; gap: 1mm 4.5mm; font-size: 7.4pt; color: var(--texto); margin: 0 0 2mm; justify-content: center; }
 .legenda i, h3.tipo i, .pecas-pav i { display: inline-block; width: 4mm; height: 2.2mm; border-radius: .5mm; margin-right: 1.4mm; vertical-align: -.2mm; }
@@ -1587,6 +1591,8 @@ h3.tipo small { margin-left: auto; font: 600 7.4pt 'Segoe UI', Arial; color: var
 .bloco-tipo.lado { break-inside: avoid; }
 .lado-a-lado { display: grid; grid-template-columns: 60mm 1fr; gap: 3.5mm; align-items: start; }
 table.tipo { font-size: 7.4pt; }
+.pilula { display: inline-block; padding: 0 1.6mm; border: 1px solid; border-radius: 2.2mm; white-space: nowrap;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 table.tipo td.c, table.tipo td.r { white-space: nowrap; }
 .foto-tipo img { display: block; width: 100%; border-radius: 2mm; border: 1px solid var(--linha); }
 .bloco-tipo:not(.lado) .foto-tipo { max-width: 120mm; margin: 0 auto 2mm; }
@@ -1701,6 +1707,14 @@ def _legenda(itens) -> str:
     return "<div class=\"legenda\">%s</div>" % "".join("<span><i style=\"background:%s\"></i>%s</span>" % (_esc(c), _esc(t)) for t, c in itens)
 
 
+def _pilula(li: dict, texto: str) -> str:
+    """A quantidade da linha na cor dela — a mesma da peça na foto do tipo (19/10)"""
+    cor = li.get("cor")
+    if not cor:
+        return _esc(texto)
+    return "<span class=\"pilula\" style=\"background:%s33;border-color:%s\">%s</span>" % (_esc(cor), _esc(cor), _esc(texto))
+
+
 def _bloco_tipo(R: dict, b: dict, varios: bool) -> str:
     """Um tipo de estrutura: o título com a cor da planta, a foto do 3D com ele em destaque e a tabela por comprimento
     (cada linha abre o 3D com as peças dela, na tela)."""
@@ -1708,7 +1722,7 @@ def _bloco_tipo(R: dict, b: dict, varios: bool) -> str:
     tes = b["chave"] == "tesouras" and any("vao" in li for li in b["linhas"])
     if tes:
         colunas = [("Qtd", "c"), "Tipo", "Eixos", ("Vão", "r"), ("Comprimento", "r"), ("Altura*", "r"), "Banzos / treliçamento", ("kg", "r")]
-        linhas = [[(li["qtd"], "c"), (", ".join(li["marcas"]), "b"), li.get("eixos") or "", ("%s m" % _n(li["vao"] / 1000.0, 2), "r"),
+        linhas = [[(_pilula(li, str(li["qtd"])), "c"), (", ".join(li["marcas"]), "b"), li.get("eixos") or "", ("%s m" % _n(li["vao"] / 1000.0, 2), "r"),
                    (_m(li["comprimento"]), "r"), ("%s m" % _n(li["altura"] / 1000.0, 2), "r"), " / ".join(li["perfis"]),
                    (_n(li["kg"], 1), "r")] for li in b["linhas"]]
         larg = ["7%", "8%", "15%", "10%", "12%", "9%", "28%", "11%"]
@@ -1719,7 +1733,7 @@ def _bloco_tipo(R: dict, b: dict, varios: bool) -> str:
         for li in b["linhas"]:
             marcas = ", ".join(li["marcas"][:6]) + (" …" if len(li["marcas"]) > 6 else "")
             perfis = ", ".join(li["perfis"][:3]) + (" …" if len(li["perfis"]) > 3 else "")
-            row = [("%d un" % li["qtd"], "c"), ("<b>%s</b>" % _esc(_m(li["comprimento"])), "r"),
+            row = [(_pilula(li, "%d un" % li["qtd"]), "c"), ("<b>%s</b>" % _esc(_m(li["comprimento"])), "r"),
                    ("%s m" % _n(li["qtd"] * li["comprimento"] / 1000.0, 1), "r"), _esc(marcas), "<span class=\"cinza\">%s</span>" % _esc(perfis)]
             if varios:
                 row.append("<span class=\"cinza\">%s</span>" % _esc(" · ".join("%s %d" % (p, q) for p, q in li.get("onde") or [])))
@@ -1839,6 +1853,12 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
         elif svgs.get("implantacao"):
             partes.append("<figure class=\"desenho\">%s</figure>" % svgs["implantacao"])
             partes.append(_legenda(X.get("legenda") or []))
+        # as elevações lateral e frontal (19/10), com a legenda das cores da implantação
+        if svgs.get("elevacao_lateral") or svgs.get("elevacao_frontal"):
+            elev = "".join("<figure class=\"desenho elev\">%s<figcaption>%s</figcaption></figure>" % (svgs[k], t)
+                           for k, t in (("elevacao_lateral", "Elevação lateral"), ("elevacao_frontal", "Elevação frontal"))
+                           if svgs.get(k))
+            partes.append("<div class=\"elevacoes\">%s</div>" % elev)
         # o que o desenho não mostra, em cartões
         c = []
         if dim.get("n_tesouras", 0) > 1 and not X.get("eixos"):
