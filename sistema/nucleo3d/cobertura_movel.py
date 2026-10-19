@@ -52,6 +52,19 @@ def _assinatura(e) -> str:
     return "s:%s:%d" % (r(vs[0]) if vs else "", len(vs))
 
 
+#: a cobertura retrátil industrializada (`movel_fornecimento` = "cliente", Kaefer 19/10): as tesouras e a sanfona geradas
+#: ficam fora do nosso escopo (nucleo2d.detalhe.base.fora_do_escopo) — no 3D, nas fotos e no cálculo, não na lista
+FORA_DO_ESCOPO = "cobertura retrátil industrializada, fornecimento do cliente"
+
+
+def _escopo(at: dict, P: dict) -> dict:
+    if str(P.get("movel_fornecimento") or "") == "cliente":
+        at["fora_do_escopo"] = FORA_DO_ESCOPO
+    else:
+        at.pop("fora_do_escopo", None)
+    return at
+
+
 def gerada(ent) -> bool:
     return bool((getattr(ent, "atributos", None) or {}).get("cobertura_movel"))
 
@@ -108,6 +121,7 @@ def aplicar(doc: Documento, par: Optional[dict] = None, situacao: str = "aberta"
             if at.get("origem_2d"):
                 at["origem_2d"] = "%s#%d" % (str(at["origem_2d"]).split("#")[0], k)
             at["cobertura_movel"] = {"k": k, "situacao": situacao, "d": [round(v, 3) for v in d]}
+            _escopo(at, P)
             c.atributos = at
             doc.add(c)
             n_pecas += 1
@@ -124,7 +138,7 @@ def aplicar(doc: Documento, par: Optional[dict] = None, situacao: str = "aberta"
                     A, B = (A[0], A[1], max(A[2], z_pe)), (B[0], B[1], max(B[2], z_pe))
                 if sum((A[j] - B[j]) ** 2 for j in range(3)) < 1.0:
                     continue
-                at = {"elemento": "sanfona", "cobertura_movel": {"k": k, "situacao": situacao}}
+                at = _escopo({"elemento": "sanfona", "cobertura_movel": {"k": k, "situacao": situacao}}, P)
                 if planta:
                     at["planta"] = planta
                 doc.add(Barra(id=_id_estavel("sf", k, lado, x), nome="Sanfona %d-%d" % (k + 1, k + 2), camada="Contraventamento", inicio=A, fim=B,

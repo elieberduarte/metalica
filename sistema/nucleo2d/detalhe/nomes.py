@@ -313,6 +313,13 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             t = pap
         elif pap in ("corrente", "travamento"):
             t = "agulhamento"
+        # o papel que a barra declara vale antes da geometria (Kaefer, 19/10): os chumbadores Ø20 da base gerada saíam
+        # "contraventamentos" (o chumbamento não fechava pela geometria), as travessas da lona "terças de cobertura" e o
+        # X de Ø8 "agulhamento diagonal" (pelo diâmetro)
+        elif pap in ("chumbador", "contraventamento") and (cls == "barra_redonda" or (cls == "barra_conformada" and _eh_redonda_perfil(p.perfil))):
+            t = pap                                  # o X de Ø8 do projetista é contravento, não agulhamento diagonal
+        elif pap == "longarina" and cls in ("barra", "barra_conformada"):
+            t = "terca_oitao" if de_parede(p) == "oitao" else "terca_lateral"   # a longarina é sempre de fechamento
         elif cls in ("chapa", "chapa_dobrada"):
             # suporte de terça é a chapa em que a terça encosta (geometria), não a que
             # tem a furação parecida: a chapinha de ponta do agulhamento tem os mesmos furos

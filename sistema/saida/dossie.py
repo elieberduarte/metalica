@@ -42,6 +42,8 @@ PAPEIS = collections.OrderedDict([
     ("dispositivos", ("Dispositivos", "#c2255c")),
     ("suportes", ("Suportes e peças curtas", "#adb5bd")),
     ("outros", ("Outras barras", "#6c757d")),
+    # a parte do cliente (a cobertura retrátil industrializada, 19/10): só desenhada, fora das contas
+    ("cliente", ("Fora do escopo (do cliente)", "#c3c9d1")),
 ])
 #: Tipo de peça (nucleo2d.detalhe.nomes) → papel, para o que não se decide pela geometria.
 _PAPEL_DO_TIPO = {
@@ -363,6 +365,8 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
         for e in u["pecas"]:
             papel_da_peca[e.id] = u["papel"]
     geo = _geometria(pecas, papel_da_peca, eixo)
+    # o que é do cliente (fora do escopo, fora das peças do levantamento) entra só no desenho, em cinza
+    geo.update(_geometria_do_cliente(doc))
     for i, m in marca_da_peca.items():
         if i in geo:
             geo[i]["marca"] = m
@@ -391,9 +395,28 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
         svgs["implantacao"] = planta_svg(geo, eixos_ok, R=R, largura=92.0 if lado else 186.0, altura_max=150.0,
                                          rotulos_tesouras=True)
     legenda = [(b["titulo"], b["cor"]) for b in estrutura]
+    if any(g["papel"] == "cliente" for g in geo.values()):
+        legenda.append(PAPEIS["cliente"])
     return {"varios": varios, "pavimentos": pavs, "estrutura": estrutura, "svg": svgs, "legenda": legenda,
-            "tem_cobertura": tem_cobertura, "eixos": eixos_ok, "tem_lona": tem_lona(doc),
+            "tem_cobertura": tem_cobertura, "eixos": eixos_ok, "tem_lona": tem_lona(doc), "lona_paredes": lona_das_paredes(doc),
             "cobertura_movel": movel is not None}
+
+
+def _geometria_do_cliente(doc) -> Dict[str, dict]:
+    """As barras fora do nosso escopo (a cobertura retrátil industrializada) para o desenho: o papel "cliente", em cinza."""
+    from nucleo2d.detalhe.base import _proxy_da_barra, fora_do_escopo
+    geo = {}
+    for e in getattr(doc, "entidades", {}).values() if doc is not None else ():
+        if not fora_do_escopo(e) or not hasattr(e, "inicio"):
+            continue
+        try:
+            px = _proxy_da_barra(e)
+            seg = _eixo_da_peca(px)
+        except Exception:                                       # noqa: BLE001
+            continue
+        zs = [v[2] for v in px.vertices]
+        geo[e.id] = {"papel": "cliente", "seg": seg, "z0": min(zs), "z1": max(zs), "verts": px.vertices}
+    return geo
 
 
 def _geo_retraida(doc, geo: Dict[str, dict], movel: dict) -> Dict[str, dict]:
@@ -878,6 +901,13 @@ def direcao_pelo_aco(doc, pecas) -> List[float]:
 CAMADA_LONA = re.compile(r"^lonas?$", re.I)
 
 
+def lona_das_paredes(doc) -> List[str]:
+    """Os ids da lona de ilustração que não é a da cobertura retrátil (a das paredes): fora da foto da cobertura retraída
+    com a lona (o usuário, 19/10: "pode deixar essa foto sem as lonas laterais")."""
+    return [e.id for e in doc.entidades.values() if CAMADA_LONA.match(str(getattr(e, "camada", "") or ""))
+            and ((getattr(e, "atributos", None) or {}).get("elemento") != "lona_cobertura")]
+
+
 def tem_lona(doc) -> bool:
     """O modelo tem a lona de ilustração (o fechamento que não é peça de aço)."""
     return any(CAMADA_LONA.match(str(getattr(e, "camada", "") or "")) and getattr(e, "visivel", True) is not False
@@ -909,7 +939,10 @@ def pedidos_de_fotos(X: dict, tem_telhas: bool = False) -> List[dict]:
         segundo = d if X.get("cobertura_movel") else [math.copysign(1.35, d[0]), math.copysign(0.7, d[1]), 0.3]
         for k, dr in enumerate((d, segundo), 1):
             pedidos.append({"nome": "lona-%d-sem" % k, "dir": dr})
-            pedidos.append({"nome": "lona-%d-com" % k, "angulo": ANGULO + "+telhas", "dir": dr})
+            com = {"nome": "lona-%d-com" % k, "angulo": ANGULO + "+telhas", "dir": dr}
+            if k == 2 and X.get("cobertura_movel") and X.get("lona_paredes"):
+                com["ocultar"] = list(X["lona_paredes"])            # retraída: só a lona da cobertura
+            pedidos.append(com)
     pavs = X.get("pavimentos") or []
     papel_do_id = {}
     for b in X.get("estrutura") or []:

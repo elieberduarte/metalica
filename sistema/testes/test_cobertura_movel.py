@@ -178,3 +178,25 @@ def test_ids_iguais_aberta_e_retraida_e_a_planta_retraida_do_resumo():
     ys = [v[1] for k, g in g2.items() if g["papel"] == "tesouras" for v in g["verts"]]
     assert max(ys) < 2100 and min(ys) > -100                       # nos 2 m da ponta
     assert all(g2[k] is geo[k] for k in geo if geo[k]["papel"] == "pilares")
+
+
+def test_cobertura_industrializada_fica_fora_da_lista():
+    """Kaefer (19/10): "a cobertura é industrializada… vamos orçar até o perfil onde ela se apoia". Com o fornecimento
+    do cliente, as tesouras e a sanfona geradas ficam no 3D (e no cálculo), mas o levantamento da lista, do peso, dos
+    resumos e do orçamento não as conta; com o nosso, contam como antes"""
+    from nucleo2d.detalhar import levantar
+    from saida import dossie
+    doc = _modelo()
+    CM.aplicar(doc, dict(PAR, movel_fornecimento="cliente"), "aberta")
+    ger = [e for e in doc.entidades.values() if CM.gerada(e)]
+    assert len(ger) == 61 and all(e.atributos.get("fora_do_escopo") == CM.FORA_DO_ESCOPO for e in ger)
+    lev = levantar(doc)
+    ids = {e.id for e in lev["pecas"]}
+    assert not ids & {e.id for e in ger} and len(ids) == 6                  # só os 4 pilares e as 2 vigas
+    # o desenho do resumo mostra a cobertura em cinza (fora das contas)
+    geo = dossie._geometria_do_cliente(doc)
+    assert set(geo) == {e.id for e in ger} and {g["papel"] for g in geo.values()} == {"cliente"}
+    # de novo pelo nosso fornecimento: as peças voltam para a lista
+    CM.aplicar(doc, PAR, "aberta")
+    assert not any(e.atributos.get("fora_do_escopo") for e in doc.entidades.values() if CM.gerada(e))
+    assert len(levantar(doc)["pecas"]) == 6 + 61

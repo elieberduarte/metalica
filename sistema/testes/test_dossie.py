@@ -100,3 +100,16 @@ def test_cobertura_retratil_fotografa_aberta_e_o_segundo_par_retraido(monkeypatc
     lotes.clear()
     dossie.fotografar(1, "obra", str(tmp_path / "dossie"), {"tem_lona": True})
     assert [c for c, _ in lotes] == [None]
+
+
+def test_foto_da_retraida_com_lona_so_a_da_cobertura():
+    """o usuário (19/10): "pode deixar essa foto sem as lonas laterais" — a foto da cobertura retraída com a lona oculta
+    a lona das paredes (a que não é lona_cobertura); a da aberta continua com todas"""
+    doc = SimpleNamespace(entidades={
+        "p": SimpleNamespace(id="p", camada="Pilares", atributos={}),
+        "c": SimpleNamespace(id="c", camada="Lona", atributos={"elemento": "lona_cobertura"}),
+        "w": SimpleNamespace(id="w", camada="Lona", atributos={"elemento": "lona"})})
+    assert dossie.lona_das_paredes(doc) == ["w"]
+    X = {"tem_lona": True, "cobertura_movel": True, "lona_paredes": ["w"]}
+    por = {p["nome"]: p for p in dossie.pedidos_de_fotos(X)}
+    assert por["lona-2-com"]["ocultar"] == ["w"] and "ocultar" not in por["lona-1-com"] and "ocultar" not in por["lona-2-sem"]

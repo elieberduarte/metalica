@@ -791,6 +791,8 @@ const PREMISSAS = [
   ['movel_comprimento_retraida', '  comprimento retraída (m)', 'num', null, 'aco'],
   ['movel_lado_retraida', '  pilha na ponta', 'sel', [['y_menor', 'de baixo na planta (Y menor)'], ['y_maior', 'de cima na planta (Y maior)']], 'aco'],
   ['movel_peso_total_kg', '  peso total do fabricante (kg)', 'num', null, 'aco'],
+  // industrializada (Kaefer, 19/10): as tesouras e a sanfona ficam no 3D e no cálculo, fora da lista e do orçamento
+  ['movel_fornecimento', '  fornecimento', 'sel', [['nosso', 'nosso (na lista e no orçamento)'], ['cliente', 'industrializada, do cliente (fora da lista)']], 'aco'],
   ['perfil_sanfona', '  braço da sanfona (perfil)', 'txt', null, 'aco'],
   ['fy_mpa', 'fy para o mapa (MPa)', 'num'],
   ['segunda_ordem', '2ª ordem nas ELU', 'sel', [['true', 'sim (P-Δ, NBR 8800:2024 4.10.7)'], ['false', 'não (só 1ª ordem)']]],

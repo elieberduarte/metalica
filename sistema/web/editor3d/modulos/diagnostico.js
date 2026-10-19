@@ -259,10 +259,12 @@ export class MetodosDiagnostico {
     let corDestaque = null;
     const corDaPeca = (id) => (corDestaque instanceof Map ? corDestaque.get(id) || null : corDestaque);
     let visiveis = null;
+    // `ocultar`: ids que ficam fora desta foto (a lona das paredes na foto da cobertura retraída, 19/10)
+    let ocultos = null;
     const corDe = cena._corDe.bind(cena);
     cena._corDe = (ent) => (corDestaque && cena.destaque && ent && cena.destaque.has(ent.id) && corDaPeca(ent.id)) || corDe(ent);
     const apareciaAntes = doc.aparece;
-    doc.aparece = (ent) => (visiveis && ent && !visiveis.has(ent.id) ? false : apareciaAntes(ent));
+    doc.aparece = (ent) => ((visiveis && ent && !visiveis.has(ent.id)) || (ocultos && ent && ocultos.has(ent.id)) ? false : apareciaAntes(ent));
     let repintada = false;
     window.__render = async (nomes, formato = 'image/jpeg', qualidade = 0.92) => {
       const saida = [];
@@ -282,8 +284,9 @@ export class MetodosDiagnostico {
           for (const [cor, lista] of Object.entries(obj.cores)) for (const i of lista) corDestaque.set(i, cor);
         }
         cena.corDestaqueFoto = corDestaque ? corDaPeca : null;
-        if (querTelhas !== comTelhas || novosVisiveis || visiveis) {
-          comTelhas = querTelhas; visiveis = novosVisiveis; cena.repintarTudo(); await quadros(4);
+        const novosOcultos = obj && Array.isArray(obj.ocultar) && obj.ocultar.length ? new Set(obj.ocultar) : null;
+        if (querTelhas !== comTelhas || novosVisiveis || visiveis || novosOcultos || ocultos) {
+          comTelhas = querTelhas; visiveis = novosVisiveis; ocultos = novosOcultos; cena.repintarTudo(); await quadros(4);
         }
         if (ids && ids.length) {
           cena.destacar(ids);
@@ -309,7 +312,7 @@ export class MetodosDiagnostico {
       if (destacando) { cena.destacar(null); destacando = false; }
       corDestaque = null;
       cena.corDestaqueFoto = null;
-      if (comTelhas || visiveis) { comTelhas = false; visiveis = null; cena.repintarTudo(); }
+      if (comTelhas || visiveis || ocultos) { comTelhas = false; visiveis = null; ocultos = null; cena.repintarTudo(); }
       const cam = this.camera.perspectiva || this.camera.ativa;
       if (cam.clearViewOffset) cam.clearViewOffset();
       return saida;

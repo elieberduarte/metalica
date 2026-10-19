@@ -1793,6 +1793,8 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
     if pares:
         def legenda(k, com):
             t = "com a lona (ilustração: fora do peso e da lista)" if com else "sem a lona"
+            if movel and k == 2 and com:
+                t = "com a lona da cobertura (ilustração: fora do peso e da lista)"
             return ("Cobertura aberta" if k == 1 else "Cobertura retraída") + " · " + t if movel else t[0].upper() + t[1:]
         partes.append("<div class=\"com-lona\">%s</div>" % "".join(
             "<figure><img src=\"%s\" alt=\"\"><figcaption>%s</figcaption></figure>" % (img, legenda(k, com))

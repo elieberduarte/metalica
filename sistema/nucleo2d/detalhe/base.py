@@ -469,6 +469,13 @@ def _material(ent) -> str:
     return m
 
 
+def fora_do_escopo(ent) -> str:
+    """O motivo de a peça não ser nossa (`atributos["fora_do_escopo"]`): a cobertura retrátil industrializada, de
+    fornecimento do cliente (Kaefer, 19/10: "vamos orçar até o perfil onde ela se apoia"). Fica no 3D, nas fotos e no
+    cálculo; fora do detalhamento, da lista de materiais, do peso, dos resumos e do orçamento."""
+    return str((getattr(ent, "atributos", None) or {}).get("fora_do_escopo") or "")
+
+
 def _pecas(doc: Documento, puladas: Optional[list] = None, fora_do_aco: Optional[list] = None,
            proxies: Optional[list] = None):
     """Sólidos do modelo que são peças de produção, e os acessórios contados.
@@ -486,6 +493,8 @@ def _pecas(doc: Documento, puladas: Optional[list] = None, fora_do_aco: Optional
     from nucleo2d.detalhe.fora_do_aco import material_nao_aco, proxy_estrutural
     pecas, acessorios = [], collections.Counter()
     for ent in doc.entidades.values():
+        if fora_do_escopo(ent):
+            continue                                  # do cliente (a cobertura industrializada): só no 3D e no cálculo
         if isinstance(ent, Barra):
             if (_tipo_ifc(ent) or ent.tipo_ifc()) in TIPOS_PECA:
                 try:
@@ -1777,6 +1786,12 @@ def _eh_terca(pos: Posicao, camada: str) -> bool:
         return False
     if re.search(r"ter[cç]a", camada or "", re.I):
         return True
+    # a peça em pé não é terça (Kaefer, 19/10: o reforço Ue 180×70×20 do pilar redondo, 3 m na vertical, saía em Terças)
+    vs = getattr(pos, "vertices", None) or []
+    if vs:
+        ext = [max(v[i] for v in vs) - min(v[i] for v in vs) for i in range(3)]
+        if ext[2] > 2.0 * max(ext[0], ext[1]):
+            return False
     # o papel declarado no modelo só acrescenta (auditoria D6, 11/10): a terça do Tekla (.PURLIN.) ou a lançada na planta
     # não é a própria posição-conjunto da convenção do TecnoMETAL e virava agulhamento. Um papel "viga" não tira — o
     # IFCBEAM sem ObjectType sai "viga" no importador, e a terça do TecnoMETAL é IFCBEAM

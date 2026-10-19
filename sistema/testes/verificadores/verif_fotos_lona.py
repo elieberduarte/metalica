@@ -80,11 +80,26 @@ try:
                {"nome": "sem2", "angulo": "aerea_frente"}])
     d_com, d_sem = diferenca(f["sem"], f["com"]), diferenca(f["sem"], f["sem2"])
     ok(d_com > 4 * max(d_sem, 0.5), f"a foto com a lona difere da sem (diferença média {d_com:.2f} × {d_sem:.2f} entre duas sem)")
+    # a foto com a lona e uma parte dela oculta (`ocultar`: a das paredes na retraída, 19/10) — toda oculta = a sem
+    ids = json.loads(js("JSON.stringify([...editor.documento.entidades.values()].filter(e => e.camada === 'Lona').map(e => e.id))") or "[]")
+    g = fotos([{"nome": "oculta", "angulo": "aerea_frente+telhas", "ocultar": ids}])
+    ok(bool(ids) and diferenca(g["oculta"], f["sem"]) < 0.5, f"com a lona toda em `ocultar` a foto é a sem ({len(ids)} peças de lona)")
     erros("fotos da aberta")
 
     # 2) ?cobertura=retraida: as tesouras empilhadas nos 2 m da ponta, e essa página não grava
     aba.cmd("Page.navigate", url=f"http://127.0.0.1:{PORTA}/editor?projeto=quadra&render=1&cobertura=retraida")
-    ok(esperar("window.__renderPronto === true"), "o editor das fotos da retraída ficou pronto")
+    pronta = esperar("window.__renderPronto === true", 150)
+    if not pronta:                                          # o diagnóstico de quando não fica pronta
+        import urllib.request
+        t0 = time.time()
+        try:
+            corpo = urllib.request.urlopen(f"http://127.0.0.1:{PORTA}/api/projetos/quadra/modelo?cobertura=retraida", timeout=60).read()
+            print("    rota da retraída:", len(corpo), "bytes em %.1f s" % (time.time() - t0))
+        except Exception as exc:
+            print("    rota da retraída falhou:", exc)
+        print("    página:", js("location.href"), js("document.readyState"), js("!!window.editor"), js("String(window.__renderPronto)"))
+        print("    console:", [m[1][:200] for m in aba.console[-8:]])
+    ok(pronta, "o editor das fotos da retraída ficou pronto")
     ys = json.loads(js("JSON.stringify([...editor.documento.entidades.values()].filter(e => e.atributos && e.atributos.elemento"
                        " === 'trelica').map(e => [e.inicio[1], e.fim[1]]).flat())") or "[]")
     ok(ys and max(ys) <= 2001 and min(ys) >= -1, f"a retraída veio empilhada na ponta (y {min(ys or [0]):.0f} a {max(ys or [0]):.0f})")

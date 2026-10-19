@@ -657,6 +657,11 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
         avisos_lev.append("%d peça(s) que não são de aço (%s) ficaram fora do detalhamento e do peso de aço: estão na "
                           "lista de pré-moldados (volume e peso), na lista de materiais"
                           % (len(fora), ", ".join("%s: %d" % kv for kv in cats.most_common())))
+    from nucleo2d.detalhe.base import fora_do_escopo
+    escopo = collections.Counter(fora_do_escopo(e) for e in doc.entidades.values() if fora_do_escopo(e))
+    if escopo:
+        avisos_lev.append("%d peça(s) fora do nosso escopo (%s): ficaram fora do detalhamento, da lista de materiais e do "
+                          "peso — estão no 3D e no cálculo" % (sum(escopo.values()), "; ".join(escopo)))
     a_conferir = []
     if proxies:
         avisar("medindo a estrutura de aço que veio sem peças separadas…")
