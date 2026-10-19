@@ -263,7 +263,61 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                     if (inc_[k_ - 1] < -0.005 and (k_ == 1 or inc_[k_ - 2] < 0.005) and inc_[k_] > 0.005
                             and (k_ == len(inc_) - 1 or inc_[k_ + 1] > -0.005) and id(seq[k_]["b"]) not in no_vale):
                         abrir(("calhaV", id(seq[k_]["b"])), {"q": seq[k_], "r": seq[k_], "calha": True, "eixo": True})
+            def trelicas_alem(ter, lado, alcance):
+                """as treliças de fechamento (P.n, VT.n, VL.n) paralelas à terça, do lado de fora dela até `alcance`, no
+                trecho sm: [(topo do banzo mais alto, distância do eixo à terça, t, o banzo)]"""
+                altos = {}
+                for fb in fech_b:
+                    fa_, fz_ = fb.inicio, fb.fim
+                    Lf = math.hypot(fz_[0] - fa_[0], fz_[1] - fa_[1])
+                    if Lf < 50.0 or abs(((fz_[0] - fa_[0]) * n[0] + (fz_[1] - fa_[1]) * n[1]) / Lf) > 0.02:
+                        continue                             # paralela à terça
+                    s_a = fa_[0] * d[0] + fa_[1] * d[1]
+                    s_b = fz_[0] * d[0] + fz_[1] * d[1]
+                    if not (min(s_a, s_b) - 5.0 <= sm <= max(s_a, s_b) + 5.0):
+                        continue
+                    t_f = fa_[0] * n[0] + fa_[1] * n[1]
+                    dist = (t_f - ter["t"]) * lado
+                    if not (0.0 < dist <= alcance):
+                        continue
+                    f_ = 0.0 if abs(s_b - s_a) < 1 else (sm - s_a) / (s_b - s_a)
+                    topo_f = fa_[2] + (fz_[2] - fa_[2]) * f_ + _ext_z(fb)[1]
+                    k_ = (str(origem_de(fb).get("peca")), round(t_f / 50.0))
+                    if k_ not in altos or topo_f > altos[k_][0]:
+                        altos[k_] = (topo_f, dist, t_f, fb)
+                return sorted(altos.values(), key=lambda x: x[1])
+
+            # a calha da parede na borda baixa (Mercado, 19/10: "pode lançar as calhas e rufos"): a água desce para fora da
+            # última terça e a platibanda (P.n, VT.n, VL.n) logo depois sobe acima da telha — a telha vai até 100 mm da
+            # face do fechamento de dentro dela e a calha fica encostada nele, por baixo da ponta da telha (como a calha da
+            # parede da transição do Posto). Vale antes do degrau: o fechamento fica entre a terça e o telhado de cima
+            com_parede = set()
+            for seq in cadeia:
+                if len(seq) < 2:
+                    continue
+                for ter, lado in ((seq[0], -1), (seq[-1], +1)):
+                    m = fim_de.get(id(ter["b"]), 0.0)
+                    if m * lado >= -0.005:
+                        continue                             # a água não desce para este lado
+                    z_ter = z_em(ter, sm)
+                    for topo_f, dist, t_f, fb in trelicas_alem(ter, lado, 1600.0):
+                        if topo_f <= z_ter + m * (t_f - ter["t"]) + 30.0:
+                            continue                         # não sobe acima da telha: não é parede
+                        from nucleo3d.regras_trelica import _extensao
+                        L = dist - _extensao(fb, (-n[0] * lado, -n[1] * lado, 0.0)) - ALTURA_ONDA_FECHAMENTO - ESPESSURA_DESENHO
+                        Lt = L - AFASTAMENTO_PAREDE
+                        if Lt > 50.0:
+                            abrir(("beiral", id(ter["b"]), lado, round(Lt / 10), round(m * 1000)),
+                                  {"q": ter, "r": ter, "beiral": True, "lado": lado, "L": Lt, "m": m})
+                        if L > 0.0:
+                            abrir(("calhaP", id(ter["b"]), lado, round(L / 10)),
+                                  {"q": ter, "r": ter, "calha": True, "parede": True, "lado": lado, "L": L,
+                                   "Lt": max(0.0, Lt), "m": m, "borda_baixa": True})
+                            com_parede.add((id(ter["b"]), lado))
+                        break
             for ter, lado, L in degraus:
+                if (id(ter["b"]), lado) in com_parede:
+                    continue                                 # a calha da parede no lugar do degrau
                 if L > 50.0:
                     m = fim_de.get(id(ter["b"]), 0.0)
                     abrir(("beiral", id(ter["b"]), lado, round(L / 10), round(m * 1000)),
@@ -299,31 +353,13 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                     m = fim_de.get(id(ter["b"]), 0.0)
                     z_ter = z_em(ter, sm)
                     melhor = None
-                    altos = {}                               # o banzo mais alto de cada treliça ali (o de cima)
-                    for fb in fech_b:
-                        fa_, fz_ = fb.inicio, fb.fim
-                        Lf = math.hypot(fz_[0] - fa_[0], fz_[1] - fa_[1])
-                        if Lf < 50.0 or abs(((fz_[0] - fa_[0]) * n[0] + (fz_[1] - fa_[1]) * n[1]) / Lf) > 0.02:
-                            continue                         # paralela à terça
-                        s_a = fa_[0] * d[0] + fa_[1] * d[1]
-                        s_b = fz_[0] * d[0] + fz_[1] * d[1]
-                        if not (min(s_a, s_b) - 5.0 <= sm <= max(s_a, s_b) + 5.0):
-                            continue
-                        t_f = fa_[0] * n[0] + fa_[1] * n[1]
-                        dist = (t_f - ter["t"]) * lado
-                        if not (0.0 < dist <= 600.0):
-                            continue
-                        f_ = 0.0 if abs(s_b - s_a) < 1 else (sm - s_a) / (s_b - s_a)
-                        topo_f = fa_[2] + (fz_[2] - fa_[2]) * f_ + _ext_z(fb)[1]
-                        k_ = (str(origem_de(fb).get("peca")), round(t_f / 50.0))
-                        if k_ not in altos or topo_f > altos[k_][0]:
-                            altos[k_] = (topo_f, dist, t_f, fb)
-                    for topo_f, dist, t_f, fb in altos.values():
+                    for topo_f, dist, t_f, fb in trelicas_alem(ter, lado, 600.0):
                         plano = z_ter + m * (t_f - ter["t"])
                         # o topo até 5 mm acima da linha (a telha apoia nele); mais alto, a telha teria de dobrar para
                         # passar (a P.3 e a P.8 do Mercado, 30 mm acima: ficam como platibanda)
-                        if plano - 300.0 <= topo_f <= plano + 5.0 and (melhor is None or dist < melhor[0]):
+                        if plano - 300.0 <= topo_f <= plano + 5.0:
                             melhor = (dist, fb)
+                            break
                     if melhor is not None:
                         from nucleo3d.regras_trelica import _extensao
                         dist, fb = melhor
@@ -874,6 +910,14 @@ def _fechamentos(doc, panos, telha, camada):
                 c = panos[k]["cantos"]
                 zs.append(_z_no_plano(c, pt))
         return min(zs) if zs else None
+    calhas_k = [k for k, p in enumerate(panos) if p.get("calha")]
+
+    def calha_em(pt):
+        # o topo da calha em pt (15 mm abaixo da ponta da telha, como em lancar), ou None
+        for k in calhas_k:
+            if _dentro_poli(pt, polis[k]):
+                return min(v[2] for v in panos[k]["cantos"]) - 15.0
+        return None
     afastamento = _afastamento_das_faces(doc)
     cx = sum(v[0] for pl in polis for v in pl) / max(1, sum(len(pl) for pl in polis))
     cy = sum(v[1] for pl in polis for v in pl) / max(1, sum(len(pl) for pl in polis))
@@ -1001,8 +1045,110 @@ def _fechamentos(doc, panos, telha, camada):
                     if face is fora_:
                         ml += b_ - a_                    # o perímetro com fechamento (uma face)
                     a_ = b_
+            if not tem_acima(A, B, 0.5):
+                solidos += _rufos_do_fechamento(A, u, L, fora_, afastamento(peca, fora_),
+                                                afastamento(peca, (-fora_[0], -fora_[1])), zb, zt, z_sobre, z_telhado,
+                                                calha_em, peca.split("#")[0])
             cum += L
     return solidos, ml, area
+
+
+RUFO_ESP = 6.0                   # mm: a chapa do rufo no 3D (a #26 tem 0,5 mm; 6 mm para aparecer)
+RUFO_ABA = 100.0                 # mm: a aba do rufo capa descendo por fora de cada telha do fechamento
+RUFO_ENCOSTO = 150.0             # mm: cada perna do rufo de encosto (na parede e por cima da telha)
+
+
+def _corte(mm):
+    """o corte da chapa do rufo, de 50 em 50 mm"""
+    return int(math.ceil(mm / 50.0) * 50)
+
+
+def _rufos_do_fechamento(A, u, L, fora_, off_f, off_d, zb, zt, z_sobre, z_telhado, calha_em, painel):
+    """Os rufos de um trecho de fechamento (Mercado Hermes, 19/10: "pode lançar as calhas e rufos"), chapa galvanizada
+    #26 como o rufo moldura do Posto:
+      - capa: no topo, por cima das duas telhas do fechamento, com as abas descendo RUFO_ABA por fora (onde a telha do
+        telhado não passa por cima — o beiral sobre o fechamento);
+      - encosto: do lado de dentro, onde a telha do telhado encosta no fechamento — uma perna na parede e a outra por
+        cima da telha; contra-rufo (só a perna da parede, entrando na calha) onde ali é a calha;
+      - pingadeira: do lado de fora, quando o fechamento acaba acima de um telhado ou de uma calha mais baixos (o degrau):
+        do pé da telha do fechamento até o de baixo, com a aba por cima da telha (ou entrando na calha); o telhado de
+        baixo encostado no pé do fechamento leva o encosto, como do lado de dentro."""
+    dentro = (-fora_[0], -fora_[1])
+    onda = ALTURA_ONDA_FECHAMENTO + ESPESSURA_DESENHO
+    sm = L / 2.0
+    out = []
+
+    def no(face, x_, s_=sm):
+        return (A[0] + u[0] * s_ + face[0] * x_, A[1] + u[1] * s_ + face[1] * x_)
+
+    def rufo(tipo, nome, corte, caixas, face):
+        # caixas: (x0, x1, z0(s), z1(s)) — x medido do eixo para `face`
+        vs, fs = [], []
+        for x0, x1, z0, z1 in caixas:
+            o = len(vs)
+            for s_ in (0.0, L):
+                for x_, z_ in ((x0, z0(s_)), (x1, z0(s_)), (x1, z1(s_)), (x0, z1(s_))):
+                    vs.append((A[0] + u[0] * s_ + face[0] * x_, A[1] + u[1] * s_ + face[1] * x_, z_))
+            fs += [[o, o + 1, o + 2, o + 3], [o + 7, o + 6, o + 5, o + 4], [o, o + 4, o + 5, o + 1],
+                   [o + 1, o + 5, o + 6, o + 2], [o + 2, o + 6, o + 7, o + 3], [o + 3, o + 7, o + 4, o]]
+        so = Solido(nome="%s (ch. galv. #26, corte %d)" % (nome, corte), camada="Rufos", vertices=vs, faces=fs)
+        so.atributos = {"tipo_ifc": "IfcCovering", "rufo_lancado": True, "rufo": tipo, "painel": painel, "corte": corte,
+                        "comprimento": round(L), "marcas": {"perfil": "Rufo %s corte %d" % (tipo, corte)}}
+        out.append(so)
+
+    def const(z_):
+        return lambda s_: z_
+    sobre = any(z_sobre(no(f_, x_)) is not None for f_, x_ in ((fora_, off_f), (dentro, off_d)))
+    # a capa: de fora da onda de fora até fora da onda de dentro, as abas descendo
+    if not sobre:
+        xf, xd = off_f + onda, off_d + onda
+        topo = (lambda s_: zt(s_) + 2.0)
+        cima = (lambda s_: zt(s_) + 2.0 + RUFO_ESP)
+        baixo = (lambda s_: zt(s_) + 2.0 - RUFO_ABA)
+        rufo("capa", "Rufo capa", _corte(xf + xd + 2 * RUFO_ESP + 2 * RUFO_ABA),
+             [(-xd - RUFO_ESP, xf + RUFO_ESP, topo, cima), (xf, xf + RUFO_ESP, baixo, cima),
+              (-xd - RUFO_ESP, -xd, baixo, cima)], fora_)
+
+    def mais_perto(face, off):
+        for x_ in (60.0, 150.0, 300.0):
+            pt = no(face, off + onda + x_)
+            zc = calha_em(pt)
+            if zc is not None:
+                return "calha", zc
+            zr = z_telhado(pt)
+            if zr is not None:
+                return "telha", zr
+        return None, None
+    # o encosto, do lado de dentro
+    if not sobre:
+        tipo_, z_ = mais_perto(dentro, off_d)
+        x_ = off_d + onda
+        if tipo_ == "calha" and zb < z_ < zt(sm):
+            rufo("contra-rufo", "Contra-rufo", _corte(RUFO_ENCOSTO + 50.0),
+                 [(x_, x_ + RUFO_ESP, const(z_ - 30.0), const(z_ + RUFO_ENCOSTO))], dentro)
+        elif tipo_ == "telha" and zb + 50.0 < z_ < zt(sm) - 50.0:
+            zt_ = z_ + onda                                   # a crista da telha do telhado
+            rufo("encosto", "Rufo de encosto", _corte(2 * RUFO_ENCOSTO),
+                 [(x_, x_ + RUFO_ESP, const(zt_), const(zt_ + RUFO_ENCOSTO)),
+                  (x_, x_ + RUFO_ENCOSTO, const(zt_), const(zt_ + RUFO_ESP))], dentro)
+    # a pingadeira, do lado de fora: o fechamento acaba acima de um telhado ou de uma calha mais baixos
+    tipo_, z_ = mais_perto(fora_, off_f)
+    x_ = off_f + onda
+    if tipo_ == "telha" and zb - 30.0 <= z_ <= zb + 300.0:
+        # o telhado de baixo encosta no pé do fechamento (a faixa norte do Mercado na P.6): o encosto do lado de fora
+        zt_ = z_ + onda
+        rufo("encosto", "Rufo de encosto", _corte(2 * RUFO_ENCOSTO),
+             [(x_, x_ + RUFO_ESP, const(zt_), const(zt_ + RUFO_ENCOSTO)),
+              (x_, x_ + RUFO_ENCOSTO, const(zt_), const(zt_ + RUFO_ESP))], fora_)
+    elif tipo_ is not None and z_ < zb - 30.0:
+        if tipo_ == "calha":
+            fundo, aba = z_ - 30.0, []
+        else:
+            fundo = z_ + onda
+            aba = [(x_, x_ + RUFO_ENCOSTO, const(fundo), const(fundo + RUFO_ESP))]
+        rufo("pingadeira", "Rufo pingadeira", _corte(zb + 100.0 - fundo + (RUFO_ENCOSTO if aba else 0.0)),
+             [(x_, x_ + RUFO_ESP, const(fundo), const(zb + 100.0))] + aba, fora_)
+    return out
 
 
 def _revestimentos(doc, panos, telha, camada):
@@ -1177,6 +1323,10 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
         doc.add(so)
     # a calha e a cumeeira contam como telhado (o pedaço de tesoura na linha da calha não é borda)
     fech, fech_ml, fech_area = _fechamentos(doc, feitos + an["calhas"] + an["cumeeiras"], telha, camada)
+    rufos_f = [so for so in fech if (so.atributos or {}).get("rufo_lancado")]
+    fech = [so for so in fech if not (so.atributos or {}).get("rufo_lancado")]
+    for so in rufos_f:
+        doc.add(so)
     for so in fech:
         doc.add(so)
     # e a treliça que sobe acima da telha no meio do telhado: revestida e com rufo no topo (o corte BB do Posto)
@@ -1244,6 +1394,8 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
         "calhas": len(an["calhas"]), "calha_ml": round(ml_calha / 1000.0, 1),
         "calhas_vale": sum(1 for c in an["calhas"] if c.get("eixo")), "calhas_parede": sum(1 for c in an["calhas"] if c.get("parede")),
         "fechamentos": len(fech), "fechamento_ml": round(fech_ml / 1000.0, 1), "fechamento_m2": round(fech_area / 1e6, 1),
+        "rufos_fechamento": {t: round(sum(so.atributos["comprimento"] for so in rufos_f if so.atributos["rufo"] == t) / 1000.0, 1)
+                             for t in sorted({so.atributos["rufo"] for so in rufos_f})},
         "revestimentos": sum(1 for so in rev if (so.atributos or {}).get("revestimento")), "revestimento_m2": round(rev_area / 1e6, 1),
         "rufo_ml": round(rufo_ml / 1000.0, 1),
         "cumeeiras": len(an["cumeeiras"]), "cumeeira_ml": round(ml_cume / 1000.0, 1),

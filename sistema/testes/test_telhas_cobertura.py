@@ -535,3 +535,50 @@ def test_telha_passa_por_cima_do_fechamento_na_linha_dela(acima, por_cima):
         assert max(v[2] for s in fora for v in s.vertices) <= z_fundo + 1.0     # o fechamento para embaixo dela
     else:
         assert x_max <= 7000.0 + 1.0                              # a telha para na última terça, como antes
+
+
+def _platibanda(doc, x, z_inf, z_sup, peca="P.1"):
+    for z in (z_inf, z_sup):
+        b = Barra(inicio=(x, 0.0, z), fim=(x, 6000.0, z), perfil="U 100×50×3,00 (FF)", papel="banzo", camada="Platibanda",
+                  rotacao=270.0)
+        b.atributos = {"origem": {"peca": peca}, "conjunto": peca}
+        doc.add(b)
+
+
+def test_calha_da_parede_na_borda_baixa_contra_a_platibanda():
+    """Mercado Hermes, 19/10 ("pode lançar as calhas e rufos"): a água que desce para a platibanda P.n no fim do telhado
+    não tinha calha (o gerador só conhecia a parede do Posto, a transição entre duas terças). Agora a telha para a 100 mm
+    da telha de dentro do fechamento e a calha fica encostada nele, por baixo da ponta da telha; o contra-rufo do
+    fechamento entra nela e o topo leva o rufo capa"""
+    doc = Documento()
+    _agua(doc, 0.0, 6, 7000.0 + 5 * 1400 * 0.05, -0.05)           # desce até x 7000
+    _platibanda(doc, 7550.0, 6400.0, 7900.0)
+    r = T.lancar(doc)
+    assert r["calhas_parede"] >= 1
+    calha = [s for s in doc.solidos if s.camada == "Calhas"]
+    assert calha
+    face = 7550.0 - T._afastamento_das_faces(doc)("P.1", (-1.0, 0.0)) - 46.0      # a crista da telha de dentro
+    assert max(v[0] for c in calha for v in c.vertices) == pytest.approx(face, abs=1)
+    telhado = [s for s in doc.solidos if (s.atributos or {}).get("telha_lancada") and not s.atributos.get("fechamento")]
+    assert max(v[0] for s in telhado for v in s.vertices) == pytest.approx(face - 100.0, abs=1)
+    rufos = {(s.atributos or {}).get("rufo") for s in doc.solidos if (s.atributos or {}).get("rufo_lancado")}
+    assert {"capa", "contra-rufo"} <= rufos
+
+
+@pytest.mark.parametrize("caso,esperado", [("encosta", "encosto"), ("degrau", "pingadeira")])
+def test_rufos_do_fechamento(caso, esperado):
+    """Mercado Hermes, 19/10: o encosto onde a telha do telhado encosta na platibanda (a água sobe até ela, o topo 1 m
+    acima) e a pingadeira no pé do fechamento que acaba acima de um telhado mais baixo (o degrau, como a P.5 sobre o
+    anexo)"""
+    doc = Documento()
+    if caso == "encosta":
+        _agua(doc, 0.0, 6, 7000.0, 0.05)                          # sobe até x 7000 (7350)
+        _platibanda(doc, 7300.0, 6800.0, 8400.0)
+    else:
+        _agua(doc, 0.0, 6, 7000.0, 0.05)
+        _agua(doc, -6200.0, 5, 5500.0, 0.0, sigla="TC7")           # o telhado de baixo, 1 m abaixo do pé do fechamento
+        _platibanda(doc, -200.0, 6600.0, 7600.0, peca="P.5")
+    T.lancar(doc)
+    rufos = [s for s in doc.solidos if (s.atributos or {}).get("rufo") == esperado]
+    assert rufos
+    assert all(s.camada == "Rufos" and s.atributos["corte"] % 50 == 0 for s in rufos)
