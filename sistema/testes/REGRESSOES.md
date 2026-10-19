@@ -186,3 +186,5 @@ Achados dos testes de primeiro uso (`Projeto/BRIEFINGS/Briefing-primeiro-uso*.md
 | 19/10 | CD Bom Dia: Reanalisar estrutura deu "Failed to fetch" — o servidor do modo dev reiniciou no meio da conta (outro chat salvou um .py) | c88ada3 | test_dev_espera + verif_reanalisar (a conexão caindo no meio) |
 | 19/10 | Mercado (anexo): o clique selecionava todas as tesouras iguais (a peça de origem sem a instância, "T.7") | 801b740 | verif_bloco_instancia |
 | 19/10 | Mercado (anexo): com a tesoura selecionada, as vigas pré-moldadas onde ela apoia saíam laranja como a seleção (o destaque das vizinhas no lote) | 51b004e | verif_bloco_vizinhas |
+| 19/10 | Kaefer, resumo da obra: os chumbadores Ø20 da base saíam em "Contraventamentos", os X Ø8 em "Travamentos e agulhamentos" e as travessas da lona (2U 127, papel longarina) em "Terças" — o papel declarado no modelo era ignorado | 561d2d3 | test_nomes_papel_declarado (com e sem a placa de base) |
+| 19/10 | Kaefer: o reforço Ue 180×70×20 em pé do pilar redondo caía na categoria Terças da lista | 561d2d3 | test_nomes_papel_declarado (peça em pé não é terça) |
