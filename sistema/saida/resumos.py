@@ -377,6 +377,22 @@ def trelica_em_pe(pecas) -> bool:
     return ext[2] > 2.0 * max(ext[0], ext[1])
 
 
+def projecao_informada(texto) -> Optional[Tuple[Optional[Tuple[float, float]], float]]:
+    """"18 x 38" → ((18000, 38000) mm, 684 m²); "684" ou "684 m²" → (None, 684); vazio ou ilegível → None"""
+    t = str(texto or "").strip().lower().replace(",", ".")
+    m = re.match(r"^([\d.]+)\s*m?\s*[x×*]\s*([\d.]+)\s*m?$", t)
+    try:
+        if m:
+            a, b = float(m.group(1)), float(m.group(2))
+            return ((a * 1000.0, b * 1000.0), a * b) if a > 0 and b > 0 else None
+        m = re.match(r"^([\d.]+)\s*(m2|m²)?$", t)
+        if m and float(m.group(1)) > 0:
+            return (None, float(m.group(1)))
+    except ValueError:
+        return None
+    return None
+
+
 def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados: Optional[dict] = None) -> dict:
     """Todos os números dos dois documentos, a partir do levantamento (`lev`), da lista de
     materiais montada (`lista`) e dos nomes de produção (`nomes`)."""
@@ -665,7 +681,22 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
         vs = [v for e in pecas if e.vertices for v in e.vertices if a0 <= _dot(v, eixo_g) <= a1]
         tr["projecao"] = caixa_em_planta(vs)
     projecao_total = caixa_em_planta(todos_v)
+    # sem tesouras nossas (a cobertura do cliente na Kaefer, 19/10), a projeção é entre os eixos dos pilares: a caixa de
+    # todas as peças pegava as placas de base no chão (18,45 × 38,65 = 713 m² em vez de 17,80 × 38,00 = 676 m²)
+    entre_eixos = False
+    if not trechos:
+        cs = [_centro(e.vertices) for e in pecas if e.vertices and _tipo_da_peca(e) == "pilar"]
+        if len(cs) >= 3:
+            projecao_total = caixa_em_planta(cs)
+            entre_eixos = projecao_total[0] > 0 and projecao_total[1] > 0
     area_m2 = sum(tr["projecao"][0] * tr["projecao"][1] for tr in trechos) / 1e6 if trechos else projecao_total[0] * projecao_total[1] / 1e6
+    # a projeção informada nos Dados do resumo vale sobre a do modelo (a Kaefer: a cobertura fabricada tem 18 x 38 e no
+    # modelo ela foi ajustada a 17,80 entre as vigas do engenheiro, 19/10)
+    informada = projecao_informada((dados or {}).get("projecao"))
+    if informada:
+        dims, area_m2 = informada
+        if dims:
+            projecao_total = dims
     nivel_apoio = min((t["z_apoio"] for t in tes_inst), default=None)
     apoio_por_chapa = bool(tes_inst) and all(t["apoio_por_chapa"] for t in tes_inst)
 
@@ -847,7 +878,8 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
                     "m2_telhas": m2_telhas, "m2_pintura": pintura["total_m2"]},
         "dimensoes": {"eixos": " ".join(t["eixo"] for t in tes_inst), "comprimento_total": (tes_inst[-1]["pos_g"] - tes_inst[0]["pos_g"]) if tes_inst else 0.0,
                       "trechos": [{k: v for k, v in tr.items() if k not in ("inicio", "fim", "tesouras")} for tr in trechos],
-                      "projecao": projecao_total, "area_m2": area_m2, "nivel_apoio": nivel_apoio, "apoio_por_chapa": apoio_por_chapa,
+                      "projecao": projecao_total, "projecao_entre_eixos": entre_eixos and not informada,
+                      "projecao_informada": bool(informada), "area_m2": area_m2, "nivel_apoio": nivel_apoio, "apoio_por_chapa": apoio_por_chapa,
                       "n_tesouras": len(tes_inst)},
         "tesouras": tipos_tes, "tercas": tercas, "grupos_peso": grupos_peso, "telhas": telhas, "parafusos": parafusos,
         "familias": familias, "chaparia": chaparia, "chaparia_total": chaparia_total, "funilaria": funilaria_da_lista(lista),
@@ -1963,7 +1995,8 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
         if vaos:
             c.append(("Vão entre apoios", " · ".join("%s m" % _n(v / 1000.0, 2) for v in vaos), "das tesouras"))
         if dim.get("projecao"):
-            c.append(("Projeção com beirais", "%s × %s m" % (_n(dim["projecao"][0] / 1000.0, 2), _n(dim["projecao"][1] / 1000.0, 2)),
+            c.append(("Projeção informada" if dim.get("projecao_informada") else
+                      "Projeção entre eixos" if dim.get("projecao_entre_eixos") else "Projeção com beirais", "%s × %s m" % (_n(dim["projecao"][0] / 1000.0, 2), _n(dim["projecao"][1] / 1000.0, 2)),
                       "área %s m²" % _n(dim.get("area_m2") or 0.0, 2)))
         if dim.get("nivel_apoio") is not None:
             c.append(("Nível de apoio", "%s%s m" % ("+" if dim["nivel_apoio"] >= 0 else "", _n(dim["nivel_apoio"] / 1000.0, 3)),

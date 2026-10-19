@@ -203,3 +203,34 @@ def test_trelica_em_pe_nao_e_tesoura():
     assert "tesouras" not in chaves and "trelicas_v" in chaves
     tv = next(b for b in X["estrutura"] if b["chave"] == "trelicas_v")
     assert len(tv["linhas"]) == 2 and all("vao" not in li for li in tv["linhas"])     # uma linha por marca
+
+
+def test_projecao_entre_eixos_sem_tesouras():
+    """Kaefer (19/10): sem tesouras nossas (a cobertura é do cliente), a projeção do kg/m² pegava a caixa de todas as
+    peças, com as placas de base no chão (18,45 × 38,65 = 713 m²); agora é entre os eixos dos pilares"""
+    from nucleo3d.modelo import Barra, Chapa, Documento
+    from nucleo2d.detalhar import detalhar
+    from nucleo2d.detalhe.base import _categoria
+    from saida import lista_producao, resumos
+    doc = Documento(nome="quadra")
+    k = 0
+    for x in (0.0, 17800.0):
+        for y in (0.0, 38000.0):
+            k += 1
+            doc.add(Barra(nome="P%d" % k, inicio=(x, y, 0.0), fim=(x, y, 8000.0), perfil="W 460×52,0", papel="pilar"))
+            doc.add(Chapa(nome="CH base", origem=(x, y, -16.0), contorno=[(-325, -225), (325, -225), (325, 225), (-325, 225)],
+                          espessura=16.0, centrada=False))
+        doc.add(Barra(nome="V", inicio=(x, 0.0, 7843.5), fim=(x, 38000.0, 7843.5), perfil="W 310×44,5", papel="viga"))
+    r = detalhar(doc, grupos=["localizacao"], converter=False)
+    cat = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
+    lista = lista_producao.montar(r["objetos_posicoes"], cat, r["acessorios"], pecas=r["objetos_pecas"], projeto={"nome": "q"})
+    lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"], "avisos": r["avisos"]}
+    R = resumos.levantar_resumos(doc, lev, lista, r.get("nomes") or {}, {})
+    d = R["dimensoes"]
+    assert d["projecao_entre_eixos"] and sorted(round(v) for v in d["projecao"]) == [17800, 38000]
+    assert abs(d["area_m2"] - 676.4) < 0.01
+    # a projeção informada nos Dados do resumo vale sobre a do modelo (a cobertura fabricada da Kaefer tem 18 x 38)
+    R2 = resumos.levantar_resumos(doc, lev, lista, r.get("nomes") or {}, {"projecao": "18 x 38"})
+    assert R2["dimensoes"]["projecao_informada"] and R2["dimensoes"]["area_m2"] == 684.0
+    assert abs(R2["numeros"]["kg_m2"] - R2["numeros"]["peso_aco"] / 684.0) < 1e-9
+    assert resumos.projecao_informada("684 m²") == (None, 684.0) and resumos.projecao_informada("abc") is None
