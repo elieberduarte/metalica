@@ -199,9 +199,9 @@ def test_resumo_da_obra_com_as_fotos_sem_e_com_a_lona(tmp_path):
          "grupos_peso": [], "tesouras": [], "parafusos": [], "familias": [], "chaparia": [], "avisos": [],
          "dossie": {"fotos": fotos}}
     obra = resumos.html_resumo_obra(R)
-    assert obra.count("Sem a lona") == 2 and obra.count("Com a lona") == 2 and 'class="com-lona"' in obra
+    assert obra.count("Sem a lona") == 2 and obra.count("Com a lona") == 2 and 'class="com-lona quatro"' in obra
     R["dossie"]["fotos"] = {}
-    assert 'class="com-lona"' not in resumos.html_resumo_obra(R)
+    assert 'class="com-lona' not in resumos.html_resumo_obra(R)
 
 
 def test_resumo_da_obra_com_a_cobertura_retratil_aberta_e_retraida(tmp_path):
@@ -272,3 +272,51 @@ def test_rufos_com_o_mesmo_coeficiente_na_mesma_chapa():
     F = resumos.funilaria_da_lista(lista)
     assert {round(x["kg"] / x["m2"], 3) for x in F} == {3.925}
     assert abs(F[1]["m2"] - 2 * 0.051 * 0.230) < 1e-9
+
+
+def test_tabela_comprida_parte_sem_deixar_o_cabecalho_sozinho():
+    """Kaefer e PRATI (19/10): a tabela de até 8 linhas pulava inteira para a folha seguinte (52 mm em branco antes dos
+    Pesos da Kaefer, 78 mm antes dos Rufos da PRATI) e, na maior, o cabeçalho ficava sozinho no pé da folha. Agora parte
+    a partir de 6 linhas, com o cabeçalho e as 3 primeiras num tbody que não se parte e as 2 últimas com o total noutro"""
+    import re
+    linhas = [["L%d" % i, ("%d" % i, "r")] for i in range(11)]
+    t = resumos._tabela(["Grupo", ("kg", "r")], linhas, rodape=[("TOTAL", "b"), ("55", "r")])
+    cab = re.search(r'<tbody class="com-cab">(.*?)</tbody>', t).group(1)
+    assert "<th>Grupo</th>" in cab and cab.count("<td>L") == 3 and "L2<" in cab and "L3<" not in cab
+    fim = re.search(r'<tbody class="com-total">(.*?)</tbody>', t).group(1)
+    assert "L9<" in fim and "L10<" in fim and "TOTAL" in fim and "L8<" not in fim
+    assert t.count("<table") == 1 and "inteira" not in t                       # a mesma tabela, as mesmas colunas
+    seis = resumos._tabela(["Grupo"], [["x"]] * 6)
+    assert "inteira" not in seis and 'class="com-cab"' in seis                # 6 linhas já partem
+    assert 'class="inteira"' in resumos._tabela(["Grupo"], [["x"]] * 5)        # 5, não
+    css = resumos._CSS
+    assert re.search(r"tbody\.com-cab, tbody\.com-total \{ break-inside: avoid; \}", css)
+
+
+def test_tipo_comprido_comeca_ao_lado_da_foto(tmp_path):
+    """PRATI (19/10): o tipo com mais de 12 linhas (Longarinas, 28) punha a foto de 120 mm em cima, centralizada, com as
+    faixas dos lados vazias; e, como a foto não se parte, ficavam 87 mm em branco no pé da folha anterior. Agora as 8
+    primeiras linhas vão ao lado da foto e o resto segue embaixo, na largura da folha"""
+    import re
+    cam = tmp_path / "tipo-longarinas.jpg"
+    cam.write_bytes(b"\xff\xd8\xff\xd9")
+    R = {"dossie": {"fotos": {"tipo-longarinas": str(cam)}}}
+    linhas = [{"comprimento": 12000.0 - 100 * k, "qtd": 2, "kg": 10.0, "marcas": ["T.L%d" % k], "perfis": ["Ue 200×75×25×2,25"],
+               "onde": [], "ids": ["p%d" % k]} for k in range(28)]
+    b = {"chave": "longarinas", "titulo": "Longarinas", "cor": "#ae3ec9", "ids": [], "qtd": 56, "m": 600.0, "kg": 280.0,
+         "linhas": linhas}
+    h = resumos._bloco_tipo(R, b, False)
+    assert 'class="bloco-tipo longa"' in h
+    lado, resto = h.split('<div class="lado-a-lado">', 1)[1].split("</div></div>", 1)
+    assert "<figure" in lado and lado.count('data-ids="p') == resumos.LINHAS_AO_LADO_DA_FOTO == 8
+    assert resto.count('data-ids="p') == 20 and 'class="tipo continua"' in resto and "TOTAL" in resto
+    assert re.search(r"\.bloco-tipo\.longa \.lado-a-lado \{ break-inside: avoid; \}", resumos._CSS)
+
+
+def test_fotos_da_lona_numa_fileira_so():
+    """Kaefer (19/10): as 4 fotos sem/com a lona em 2 × 2 com 52 mm ocupavam meia folha sozinhas e a implantação pulava
+    (144 mm em branco); numa fileira, inteiras (3:2), cabem no pé da capa"""
+    import re
+    css = re.search(r"\.com-lona\.quatro \{([^}]*)\}", resumos._CSS).group(1)
+    assert "repeat(4, 1fr)" in css
+    assert "aspect-ratio: 3 / 2" in re.search(r"\.com-lona\.quatro img \{([^}]*)\}", resumos._CSS).group(1)

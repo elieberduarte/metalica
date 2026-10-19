@@ -1554,6 +1554,8 @@ th { text-align: left; font: 600 6.6pt 'Segoe UI', Arial; letter-spacing: .09em;
      border-bottom: 1.2px solid var(--pri); padding: 1.4mm 1.5mm; vertical-align: bottom; }
 td { padding: 1.05mm 1.5mm; border-bottom: 1px solid var(--linha); vertical-align: top; }
 table.inteira { break-inside: avoid; }
+/* a tabela comprida: o cabeçalho não fica sozinho no pé da folha, nem uma linha sozinha com o total na seguinte */
+tbody.com-cab, tbody.com-total { break-inside: avoid; }
 td.r, th.r { text-align: right; }
 td.r { white-space: nowrap; }
 td.c, th.c { text-align: center; }
@@ -1630,6 +1632,11 @@ figure { margin: 0; }
 .com-lona figure { margin: 0; }
 .com-lona img { display: block; width: 100%; height: 52mm; object-fit: cover; border-radius: 2mm; border: 1px solid var(--linha); }
 .com-lona figcaption { font-size: 7.2pt; color: var(--mudo); margin-top: 1mm; }
+/* as quatro fotos (aberta e retraída, sem e com a lona) numa fileira, inteiras (3:2): cabem no pé da capa embaixo dos
+   números; em 2 × 2 com 52 mm ocupavam meia folha sozinhas e a implantação pulava, 144 mm em branco (Kaefer, 19/10) */
+.com-lona.quatro { grid-template-columns: repeat(4, 1fr); gap: 2.5mm; }
+.com-lona.quatro img { height: auto; aspect-ratio: 3 / 2; object-fit: contain; background: #f7f9fc; }
+.com-lona.quatro figcaption { font-size: 6.6pt; line-height: 1.25; }
 figure.desenho { margin: 1mm 0 1.5mm; text-align: center; break-inside: avoid; }
 figure.desenho svg { max-width: 100%; height: auto; }
 .lado-movel { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; align-items: end; break-inside: avoid; }
@@ -1652,6 +1659,8 @@ h3.tipo::before { display: none; }
 h3.tipo i { width: 5mm; height: 3.2mm; }
 h3.tipo small { margin-left: auto; font: 600 7.4pt 'Segoe UI', Arial; color: var(--mudo); letter-spacing: .04em; }
 .bloco-tipo.lado { break-inside: avoid; }
+.bloco-tipo.longa .lado-a-lado { break-inside: avoid; }            /* a foto e as primeiras linhas juntas; o resto parte */
+table.tipo.continua { margin-top: 1.2mm; }
 /* a foto ao lado da tabela: 64 mm (com 74 a tabela das treliças da PRATI, com o kg/m, quebrava o perfil em 3 linhas, 19/10) */
 .lado-a-lado { display: grid; grid-template-columns: 64mm 1fr; gap: 3mm; align-items: start; }
 table.tipo { font-size: 7.4pt; }
@@ -1814,8 +1823,8 @@ def _bloco_tipo(R: dict, b: dict, varios: bool) -> str:
         larg = (["9%", "12%", "10%", "15%", "19%", "18%", "8%", "9%"] if varios else ["13%", "12%", "10%", "10%", "33%", "9%", "13%"])
         rod = [("%d un" % b["qtd"], "c"), "", ("%s m" % _n(b["m"], 1), "r"), ("TOTAL", "b"), ""] + ([""] if varios else []) + \
               ["", (_n(b["kg"], 1), "r")]
-    tabela = _tabela(colunas, linhas, rodape=rod, larguras=larg, bruto=True, classe="tipo",
-                     ids_linhas=[",".join(li.get("ids") or []) for li in b["linhas"]])
+    ids = [",".join(li.get("ids") or []) for li in b["linhas"]]
+    tabela = _tabela(colunas, linhas, rodape=rod, larguras=larg, bruto=True, classe="tipo", ids_linhas=ids)
     foto = _foto(R, "tipo-" + b["chave"])
     onde = (X.get("fotos_onde") or {}).get("tipo-" + b["chave"])
     fig = ("<figure class=\"foto-tipo\"><img src=\"%s\" alt=\"\"><figcaption>%s em destaque%s</figcaption></figure>"
@@ -1836,11 +1845,22 @@ def _bloco_tipo(R: dict, b: dict, varios: bool) -> str:
     # Kaefer não cabia no fim da folha e ia inteiro para a próxima, deixando meia folha em branco (19/10)
     if fig and len(b["linhas"]) <= LINHAS_LADO_A_LADO:
         return "<section class=\"bloco-tipo lado\">%s<div class=\"lado-a-lado\">%s<div>%s%s</div></div></section>" % (cab, fig, tabela, nota)
+    if fig:
+        # a tabela comprida (19/10): as primeiras linhas ao lado da foto e o resto embaixo, na largura da folha, partindo
+        # entre as folhas; com a foto de 120 mm em cima, centralizada, sobravam as faixas dos lados e, como a foto não se
+        # parte, o pé da folha anterior ficava vazio (87 mm na PRATI, Longarinas com 28 linhas)
+        k = LINHAS_AO_LADO_DA_FOTO
+        cima = _tabela(colunas, linhas[:k], larguras=larg, bruto=True, classe="tipo", ids_linhas=ids[:k])
+        baixo = _tabela(colunas, linhas[k:], rodape=rod, larguras=larg, bruto=True, classe="tipo continua", ids_linhas=ids[k:])
+        return ("<section class=\"bloco-tipo longa\">%s<div class=\"lado-a-lado\">%s<div>%s</div></div>%s%s</section>"
+                % (cab, fig, cima, baixo, nota))
     return "<section class=\"bloco-tipo\">%s%s%s%s</section>" % (cab, fig, tabela, nota)
 
 
-#: até quantas linhas a tabela de um tipo de estrutura vai ao lado da foto (acima disso, a foto em cima)
+#: até quantas linhas a tabela de um tipo de estrutura vai inteira ao lado da foto
 LINHAS_LADO_A_LADO = 12
+#: acima disso, quantas linhas vão ao lado da foto (a altura dela) antes de a tabela seguir na largura da folha
+LINHAS_AO_LADO_DA_FOTO = 8
 
 
 def html_resumo_obra(R: dict, paginado: bool = False) -> str:
@@ -1892,9 +1912,9 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
             if movel and k == 2 and com:
                 t = "com a lona da cobertura (ilustração: fora do peso e da lista)"
             return ("Cobertura aberta" if k == 1 else "Cobertura retraída") + " · " + t if movel else t[0].upper() + t[1:]
-        partes.append("<div class=\"com-lona\">%s</div>" % "".join(
+        partes.append("<div class=\"com-lona%s\">%s</div>" % (" quatro" if len(pares) > 1 else "", "".join(
             "<figure><img src=\"%s\" alt=\"\"><figcaption>%s</figcaption></figure>" % (img, legenda(k, com))
-            for k, sem, com_ in pares for img, com in ((sem, False), (com_, True))))
+            for k, sem, com_ in pares for img, com in ((sem, False), (com_, True)))))
     sec = 0
     # ---- a obra desenhada
     svgs = X.get("svg") or {}
@@ -2383,18 +2403,37 @@ def _tabela(colunas, linhas, rodape=None, larguras=None, bruto=False, classe=Non
     cols = ("<colgroup>%s</colgroup>" % "".join("<col style=\"width:%s\">" % w for w in larguras)) if larguras else ""
     th = "".join(cel(c, "th") for c in colunas)
     cl, il = list(classes_linhas or []), list(ids_linhas or [])
-    corpo = "".join("<tr%s%s>%s</tr>" % ((" class=\"%s\"" % cl[i]) if i < len(cl) and cl[i] else "",
+    corpo_linhas = ["<tr%s%s>%s</tr>" % ((" class=\"%s\"" % cl[i]) if i < len(cl) and cl[i] else "",
                                          (" data-ids=\"%s\"" % html.escape(il[i])) if i < len(il) and il[i] else "",
                                          "".join(cel(c) for c in l))
-                    for i, l in enumerate(linhas))
+                    for i, l in enumerate(linhas)]
+    corpo = "".join(corpo_linhas)
     pe = ("<tr class=\"total\">%s</tr>" % "".join(cel(c) for c in rodape)) if rodape else ""
-    # a tabela curta não se parte entre páginas (o cabeçalho ficava sozinho no pé da página, 08/10)
-    classe = " ".join(x for x in (classe, "inteira" if len(linhas) <= 8 else "") if x)
     topo = ("<tr class=\"grupos\">%s</tr>" % "".join(
         "<th%s%s>%s</th>" % ((" colspan=\"%d\"" % n) if n > 1 else "", (" class=\"%s\"" % c) if c else "", _esc(t))
         for t, n, c in grupos)) if grupos else ""
+    if len(linhas) > LINHAS_TABELA_INTEIRA:
+        # a tabela comprida (19/10): o cabeçalho e as primeiras linhas num tbody que não se parte (o Paged.js respeita o
+        # break-inside do tbody) e o resto noutro, partindo entre as folhas — o cabeçalho ficava sozinho no pé da folha e
+        # as linhas todas na seguinte (Pesos e a continuação das Longarinas da PRATI); a mesma tabela, as mesmas colunas
+        # e as últimas linhas com o total, que também não se partem (sem uma linha sozinha no alto da folha seguinte)
+        k, f = LINHAS_COM_O_CABECALHO, len(linhas) - LINHAS_COM_O_TOTAL
+        meio = "".join(corpo_linhas[k:f])
+        return ("<table%s>%s<tbody class=\"com-cab\">%s<tr class=\"cab\">%s</tr>%s</tbody>%s<tbody class=\"com-total\">%s%s</tbody>"
+                "</table>" % ((" class=\"%s\"" % classe) if classe else "", cols, topo, th, "".join(corpo_linhas[:k]),
+                              ("<tbody>%s</tbody>" % meio) if meio else "", "".join(corpo_linhas[f:]), pe))
+    # a tabela curta não se parte entre páginas (o cabeçalho ficava sozinho no pé da página, 08/10)
+    classe = " ".join(x for x in (classe, "inteira" if len(linhas) <= LINHAS_TABELA_INTEIRA else "") if x)
     return "<table%s>%s<thead>%s<tr>%s</tr></thead><tbody>%s%s</tbody></table>" % (
         (" class=\"%s\"" % classe) if classe else "", cols, topo, th, corpo, pe)
+
+
+#: até quantas linhas a tabela não se parte entre as folhas (com o cabeçalho e o total protegidos, a de 6 linhas já
+#: pode partir: 8 deixava 78 mm em branco no pé da folha antes dos Rufos e calhas da PRATI, 19/10)
+LINHAS_TABELA_INTEIRA = 5
+#: na tabela maior, quantas linhas vão sempre junto do cabeçalho e quantas junto do total
+LINHAS_COM_O_CABECALHO = 3
+LINHAS_COM_O_TOTAL = 2
 
 
 # ============================================================ planilha (Excel)
