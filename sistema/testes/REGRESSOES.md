@@ -190,3 +190,4 @@ Achados dos testes de primeiro uso (`Projeto/BRIEFINGS/Briefing-primeiro-uso*.md
 | 19/10 | Kaefer: o reforço Ue 180×70×20 em pé do pilar redondo caía na categoria Terças da lista | 561d2d3 | test_nomes_papel_declarado (peça em pé não é terça) |
 | 19/10 | Kaefer: a foto da capa do resumo da obra cortava a estrutura (a imagem 3:2 num quadro de 78 mm com object-fit: cover) | b296542 | test_resumos test_a_capa_mostra_a_foto_inteira |
 | 19/10 | Mercado: o lançamento das telhas não punha fechamento nas platibandas com os nomes da regra (P.n, VT.n) | 6c3e423 | test_telhas_cobertura test_fechamento_na_platibanda_com_os_nomes_da_regra |
+| 19/10 | Kaefer, resumo da obra: os pilares W 310×32,7, W 460×52,0 e TC 180×6,3 de 7,67 m saíam numa linha só (agrupados só pelo comprimento) e pareciam do perfil errado | a0bb5f6 | test_dossie test_linhas_do_tipo_separadas_por_perfil |
