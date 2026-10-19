@@ -1558,8 +1558,11 @@ table.compra-perfis .cinza { font-size: 6.4pt; }
 
 /* ---------------- o dossiê (09/10): a foto da capa, os desenhos, a estrutura por tipo e os pavimentos */
 figure { margin: 0; }
-.capa { margin: 3.5mm 0 0; border-radius: 3mm; overflow: hidden; break-inside: avoid; }
-.capa img { display: block; width: 100%; height: 78mm; object-fit: cover; }
+.capa { margin: 3.5mm 0 0; border-radius: 3mm; overflow: hidden; break-inside: avoid;
+  background: linear-gradient(#f7f9fc, #ffffff 60%, #eef2f7); }   /* o mesmo fundo de estúdio das fotos (diagnostico.js) */
+/* a foto inteira na faixa (contain): com "cover" a de 3:2 perdia em cima e embaixo o que passava dos 78 mm e a estrutura
+   saía cortada (Kaefer, 19/10) */
+.capa img { display: block; width: 100%; height: 88mm; object-fit: contain; }
 .com-lona { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin: 3.5mm 0 0; break-inside: avoid; }
 .com-lona figure { margin: 0; }
 .com-lona img { display: block; width: 100%; height: 52mm; object-fit: cover; border-radius: 2mm; border: 1px solid var(--linha); }

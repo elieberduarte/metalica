@@ -219,3 +219,13 @@ def test_resumo_da_obra_com_a_cobertura_retratil_aberta_e_retraida(tmp_path):
     obra = resumos.html_resumo_obra(R)
     assert 'class="lado-movel"' in obra and "<svg id='r'>" in obra
     assert "Cobertura retraída · sem a lona" in obra and "Cobertura aberta · com a lona" in obra
+
+
+def test_a_capa_mostra_a_foto_inteira():
+    """Kaefer (19/10): a foto da capa (3:2) num quadro baixo com object-fit: cover cortava a estrutura"""
+    import re
+    css = re.search(r"\.capa img \{([^}]*)\}", resumos.html_resumo_obra({"projeto": {"nome": "X"}, "dados": {}, "dimensoes": {},
+        "numeros": {"peso_aco": 1.0, "parafusos": 0}, "grupos_peso": [], "tesouras": [], "parafusos": [], "familias": [],
+        "chaparia": [], "avisos": []}))
+    assert css and "object-fit: contain" in css.group(1)
+
