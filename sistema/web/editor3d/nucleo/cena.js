@@ -1297,9 +1297,13 @@ export class Cena {
         this.modo !== 'arestas' && this.modo !== 'raiox') arestas.visible = false;
   }
 
-  /** Destaque: só `ids` ficam com a cor normal, o resto do modelo vira fantasma. null desliga. */
-  destacar(ids) {
+  /** Destaque: só `ids` ficam com a cor normal, o resto do modelo vira fantasma. null desliga. `vizinhas` (dentro de
+   *  `ids`): as peças que só acompanham o foco — no painel do bloco, no que as pontas encostam — ficam na cor delas, sem o
+   *  laranja do destaque das peças em lote (usuário, 19/10: "porque ele pinta as vigas junto?" — a viga pré-moldada onde a
+   *  tesoura apoia saía laranja como a tesoura selecionada). */
+  destacar(ids, vizinhas = null) {
     this.destaque = ids && ids.length ? new Set(ids) : null;
+    this.destaqueVizinhas = this.destaque && vizinhas && vizinhas.size ? new Set(vizinhas) : null;
     for (const id of this.objetos.keys()) this._pintar(id);
     // a seleção por cima de novo: a peça em destaque ganha a cor dele (a seleção foi feita antes do destaque)
     if (this.aoRepintar) this.aoRepintar();

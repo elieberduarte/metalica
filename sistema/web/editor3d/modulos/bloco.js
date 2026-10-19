@@ -276,7 +276,9 @@ export class MetodosBloco {
     (this.el.palco || document.body).append(this._painelBloco);
     // o bloco e o que ele toca em destaque; o resto apagado
     this._pintandoBloco = true;
-    try { this.cena.destacar([...destacar]); } finally { this._pintandoBloco = false; }
+    // as vizinhas acompanham na cor delas; só o bloco fica na cor do destaque
+    const vizinhas = new Set([...destacar].filter(i => !ids.includes(i)));
+    try { this.cena.destacar([...destacar], vizinhas); } finally { this._pintandoBloco = false; }
     this._destaqueBloco = true;
     this._destaqueAtivo = true;
     this.dica(`${nome}: ${ids.length} barras. As peças em que ele encosta ficam em destaque.`);

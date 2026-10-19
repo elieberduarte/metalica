@@ -534,7 +534,8 @@ export class Lote {
     const estado = this.estado.get(id);
     let corMalha = base;
     let corAresta = misturar(base, cena.escuro ? '#f0f5ff' : '#101822', 0.55);
-    if (cena.destaque && cena.destaque.has(id) && estado !== 'sobre') {
+    const vizinha = !!(cena.destaqueVizinhas && cena.destaqueVizinhas.has(id));
+    if (cena.destaque && cena.destaque.has(id) && !vizinha && estado !== 'sobre') {
       // a peça em destaque na cor cheia: misturada ao azul ela sumia no cinza do resto (30/09)
       const foto = cena.corDestaqueFoto ? cena.corDestaqueFoto(id) : null;
       corMalha = foto || COR_DESTAQUE;
@@ -604,7 +605,8 @@ export class Lote {
   _porContorno(id) {
     // a peça em destaque (a escolhida no 2D) com o contorno na cor dele e forte: o azul fraco por cima dela
     // era o que se via, e ela parecia só mais uma selecionada (30/09)
-    const destacada = !!(this.cena.destaque && this.cena.destaque.has(id));
+    const destacada = !!(this.cena.destaque && this.cena.destaque.has(id) &&
+                         !(this.cena.destaqueVizinhas && this.cena.destaqueVizinhas.has(id)));
     const cor = destacada ? COR_DESTAQUE : COR_SELECAO;
     const opacidade = destacada ? 0.9 : 0.32;
     const velho = this.contornos.get(id);
