@@ -36,7 +36,13 @@ DISPARAR = """(() => { window.__fim = null;
     .then(r => { window.__fim = r.status; }, () => { window.__fim = -1; }); return 1; })()"""
 BARRAS = """JSON.stringify([...document.querySelectorAll('.barra-andamento')].map(b => ({
   flutua: b.classList.contains('flutuante'), no_rodape: !!b.closest('.rodape'), papel: b.getAttribute('role'),
-  modo: b.dataset.modo, texto: b.title || b.textContent })))"""
+  modo: b.dataset.modo, texto: b.title || b.textContent, ...cores(b) })))"""
+# a luminância (0 escuro, 1 claro) do fundo e do texto da barra, para conferir o tema (Mercado, 19/10: a flutuante saía
+# escura no tema claro, com o texto escuro por cima)
+BARRAS = r"""(() => { const lum = (c) => { const v = (c.match(/[\d.]+/g) || [0, 0, 0]).slice(0, 3).map(Number).map(x => x / 255)
+  .map(x => x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+  const cores = (b) => { const e = getComputedStyle(b); return { fundo: lum(e.backgroundColor), letra: lum(e.color) }; };
+  return """ + BARRAS + """; })()"""
 
 
 def esperar(aba, expr, limite=60):
@@ -106,6 +112,14 @@ try:
     viu, depois = disparar_e_ver(aba, "materiais")
     ok(bool(viu) and viu[0]["flutua"] and not viu[0]["no_rodape"], "materiais: a barra flutua embaixo (a tela não tem rodapé)")
     ok(depois == [], "materiais: e some no fim")
+    # a flutuante segue o tema da tela: clara no claro, escura no escuro, e o texto legível nas duas (contraste ≥ 4,5)
+    for tema in ("claro", "escuro"):
+        aba.avaliar("document.documentElement.setAttribute('data-tema', '%s'); 1" % tema)
+        viu, _d = disparar_e_ver(aba, "materiais, tema " + tema)
+        f_, l_ = (viu[0]["fundo"], viu[0]["letra"]) if viu else (0.0, 0.0)
+        contraste = (max(f_, l_) + 0.05) / (min(f_, l_) + 0.05)
+        ok(bool(viu) and (f_ > 0.6 if tema == "claro" else f_ < 0.1) and contraste >= 4.5,
+           f"materiais, tema {tema}: a barra flutuante no tema (fundo {f_:.2f}, texto {l_:.2f}, contraste {contraste:.1f})")
 
     # 3. editor: o acompanhamento da tela e a vigilância não fazem duas barras
     aba.navegar(base + "/editor?projeto=obra", limite=60)

@@ -1,6 +1,8 @@
 // A barra de andamento das tarefas demoradas — o padrão de todas as telas (pedido do usuário, 16/10/2026: "criar barras
 // de processo para todas as tarefas que têm esses processamentos em segundo plano, análises, verificações,
 // detalhamentos… tornar isso um padrão do sistema").
+// A flutuante segue o tema da tela (--painel/--texto/--borda): a variável de antes (--fundo2) não existia em tela
+// nenhuma e ela saía escura no tema claro, com o texto escuro do tema por cima (Mercado, 19/10)
 //
 // Enquanto o servidor trabalha, a tela pergunta o andamento (GET …/progresso: {etapa, fracao?, ha_s, desde_s}) e a barra
 // mostra, nesta ordem de preferência:
@@ -36,7 +38,8 @@ function _injetarEstilo() {
 .barra-andamento-texto { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .barra-andamento.flutuante { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 9999;
   max-width: min(720px, calc(100vw - 32px)); padding: 8px 14px; border-radius: 8px;
-  background: var(--fundo2, #1c2430); color: var(--texto, #e8edf3); box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+  background: var(--painel, #1c2430); color: var(--texto, #e8edf3); border: 1px solid var(--borda, transparent);
+  box-shadow: 0 4px 18px rgba(16,32,60,.22); }
 @media (prefers-reduced-motion: reduce) { .barra-andamento[data-modo="correndo"] .barra-andamento-cheio { animation: none; left: 0; } }
 `;
   document.head.appendChild(s);
