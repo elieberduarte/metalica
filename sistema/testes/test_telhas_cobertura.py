@@ -679,3 +679,23 @@ def test_calha_aberta_em_cima():
         xs = [v[0] for v in c.vertices]
         no_alto = [v[0] for v in c.vertices if v[2] > topo - 1.0]
         assert all(min(abs(x - min(xs)), abs(x - max(xs))) <= T.CALHA_ESP + 0.5 for x in no_alto)
+
+
+def test_capas_em_meia_esquadria_no_canto():
+    """Mercado Hermes, 19/10 (a conferência do modelo): nas quinas a capa de cada lado corria até o eixo da outra treliça e
+    as abas atravessavam ela (P.13 × P.14, P.12 × P.10/P.11, P.9 × P.3/P.6). Agora as duas vão até o encontro dos eixos e
+    terminam em meia-esquadria: nenhuma chapa da capa de um lado entra na outra treliça"""
+    doc = Documento()
+    _agua(doc, 0.0, 6, 7000.0, 0.05)
+    for peca, a, b in (("P.1", (-200.0, -200.0), (-200.0, 6000.0)), ("P.2", (-200.0, -200.0), (7000.0, -200.0))):
+        for z in (6600.0, 8600.0):
+            br = Barra(inicio=(a[0], a[1], z), fim=(b[0], b[1], z), perfil="U 100×50×3,00 (FF)", papel="banzo",
+                       camada="Platibanda", rotacao=270.0)
+            br.atributos = {"origem": {"peca": peca}, "conjunto": peca}
+            doc.add(br)
+    T.lancar(doc)
+    capas = {s.atributos["painel"]: s for s in doc.solidos if (s.atributos or {}).get("rufo") == "capa"}
+    assert set(capas) == {"P.1", "P.2"} and all(s.atributos.get("cantos") == 1 for s in capas.values())
+    # a capa da P.1 (ao longo de y): do lado de dentro (x > −150) não passa da face de dentro da P.2 (y −150)
+    assert all(v[1] >= -150.0 - 1.0 for v in capas["P.1"].vertices if v[0] > -150.0)
+    assert all(v[0] >= -150.0 - 1.0 for v in capas["P.2"].vertices if v[1] > -150.0)

@@ -874,7 +874,7 @@ def _afastamento_das_faces(doc):
     return afastamento
 
 
-def _fechamentos(doc, panos, telha, camada):
+def _fechamentos(doc, panos, telha, camada, paredes_out=None):
     """Os fechamentos laterais (12/10/2026, "lançar as telhas dos fechamentos laterais ... vai ficar mais claro como
     ficaram as telhas que precisam de recortes"): em cada painel (a testeira), a TP 40 em pé na face de FORA — o lado sem
     telhado —, do banzo de baixo ao de cima, em chapas da largura útil ao longo do painel (o curvo, trecho a trecho), com
@@ -936,6 +936,7 @@ def _fechamentos(doc, panos, telha, camada):
     W = float(telha.get("largura_util") or 1020.0)
     solidos, ml, area = [], 0.0, 0.0
     rufos = []                                           # os trechos de rufo (emendados no fim)
+    paredes_f = []                                       # os banzos de cima de toda treliça de fechamento (o encontro de topo)
     for peca, lst in paineis.items():
         segs = [sg for e in lst for sg in e.segs]
         zmin = min(min(a[2], b[2]) for a, b in segs)
@@ -961,6 +962,9 @@ def _fechamentos(doc, panos, telha, camada):
             L = math.hypot(B[0] - A[0], B[1] - A[1])
             if L < 30.0:
                 continue
+            nh_ = (-(B[1] - A[1]) / L, (B[0] - A[0]) / L)
+            paredes_f.append((A, B, zmin, max(A[2], B[2]), peca.split("#")[0],
+                              max(afastamento(peca, nh_), afastamento(peca, (-nh_[0], -nh_[1])))))
             u = ((B[0] - A[0]) / L, (B[1] - A[1]) / L)
             nh = (-u[1], u[0])
             # o lado do telhado: coberto até 1,5 m da face (o PAINEL 21 do Posto fica a mais de 0,4 m da telha); o de fora:
@@ -1076,7 +1080,9 @@ def _fechamentos(doc, panos, telha, camada):
                 rufos += _rufos_do_fechamento(A, u, L, fora_, off_fo, afastamento(peca, (-fora_[0], -fora_[1])), zb, zt,
                                               z_sobre, baixo_de, peca.split("#")[0])
             cum += L
-    return solidos + _rufos_emendados(rufos), ml, area
+    if paredes_out is not None:
+        paredes_out.extend(paredes_f)
+    return solidos + _rufos_emendados(rufos, paredes_f), ml, area
 
 
 RUFO_ESP = 6.0                   # mm: a chapa do rufo no 3D (a #26 tem 0,5 mm; 6 mm para aparecer)
@@ -1166,7 +1172,37 @@ def _rufos_do_fechamento(A, u, L, fora_, off_f, off_d, zb, zt, z_sobre, baixo_de
     return out
 
 
-def _rufos_emendados(trechos):
+def _ponta_na_parede(P, fora_u, zs, painel, paredes):
+    """O encontro de topo (19/10, a conferência do Mercado: a capa da P.9 da faixa norte entrava na P.3 e na P.6, a
+    calha da faixa nas cantoneiras das pontas e a da P.4 na P.14): a ponta P de um rufo ou de uma calha, saindo na
+    direção fora_u, que chega (até 0,4 m) numa treliça de fechamento atravessada, na altura dela, para na face da telha
+    dela. paredes: (A, B, z de baixo, z de cima, painel, meia largura) dos banzos de cima. Devolve a ponta nova ou None"""
+    melhor = None
+    for A, B, z0, z1, painel_p, off in paredes:
+        if painel_p == painel:
+            continue
+        Lw = math.hypot(B[0] - A[0], B[1] - A[1])
+        if Lw < 1.0:
+            continue
+        w = ((B[0] - A[0]) / Lw, (B[1] - A[1]) / Lw)
+        sen = abs(fora_u[0] * w[1] - fora_u[1] * w[0])
+        if sen < 0.7 or min(zs) > z1 + 100.0 or max(zs) < z0 - 100.0:
+            continue
+        den = fora_u[0] * w[1] - fora_u[1] * w[0]
+        tt = ((A[0] - P[0]) * w[1] - (A[1] - P[1]) * w[0]) / den             # de P até a linha da parede, para fora
+        C = (P[0] + fora_u[0] * tt, P[1] + fora_u[1] * tt)
+        tw = (C[0] - A[0]) * w[0] + (C[1] - A[1]) * w[1]
+        if not (-50.0 <= tw <= Lw + 50.0) or not (-400.0 < tt < 400.0):
+            continue
+        recuo = (off + ONDA_FECH) / sen
+        novo = (C[0] - fora_u[0] * recuo, C[1] - fora_u[1] * recuo)
+        recua = (P[0] - novo[0]) * fora_u[0] + (P[1] - novo[1]) * fora_u[1]
+        if melhor is None or recua > melhor[0]:
+            melhor = (recua, novo)                        # a que mais recua (a ponta fica fora de todas)
+    return None if melhor is None else melhor[1]
+
+
+def _rufos_emendados(trechos, paredes=()):
     """Os trechos de rufo seguidos — o mesmo tipo, a mesma seção, em linha e com as alturas batendo na emenda — viram uma
     peça só (19/10, o usuário no Mercado: "os rufos laterais da doca ficaram picotados, precisam ser uma peça só"); o
     sólido passa por todas as estações (a altura acompanha a telha)."""
@@ -1187,7 +1223,7 @@ def _rufos_emendados(trechos):
     grupos: Dict[tuple, list] = collections.defaultdict(list)
     for t in trechos:
         grupos[chave(t)].append(t)
-    out = []
+    cadeias = []                                         # (o primeiro trecho, as estações)
     for lst in grupos.values():
         livres = list(lst)
         while livres:
@@ -1204,31 +1240,93 @@ def _rufos_emendados(trechos):
                         continue
                     livres.remove(t)
                     mudou = True
-            t0 = cad[0]
-            face = t0["face"]
             est = []
             for k, t in enumerate(cad):
                 pts = [((t["A"][0] + t["u"][0] * s_, t["A"][1] + t["u"][1] * s_), zs) for s_, zs in t["est"]]
                 est += pts if k == 0 else pts[1:]
-            vs, fs = [], []
-            n_est = len(est)
-            for i, (x0, x1) in enumerate(t0["xs"]):
-                o = len(vs)
-                for (px, py), zs in est:
-                    z0, z1 = zs[i]
-                    for x_, z_ in ((x0, z0), (x1, z0), (x1, z1), (x0, z1)):
-                        vs.append((px + face[0] * x_, py + face[1] * x_, z_))
-                for k in range(n_est - 1):
-                    a, b = o + 4 * k, o + 4 * (k + 1)
-                    fs += [[a, b, b + 1, a + 1], [a + 1, b + 1, b + 2, a + 2], [a + 2, b + 2, b + 3, a + 3], [a + 3, b + 3, b, a]]
-                u_ = o + 4 * (n_est - 1)
-                fs += [[o + 3, o + 2, o + 1, o], [u_, u_ + 1, u_ + 2, u_ + 3]]
-            compr = sum(math.dist(est[k][0], est[k + 1][0]) for k in range(n_est - 1))
-            so = Solido(nome="%s (ch. galv. #26, corte %d)" % (t0["nome"], t0["corte"]), camada="Rufos", vertices=vs, faces=fs)
-            so.atributos = {"tipo_ifc": "IfcCovering", "rufo_lancado": True, "rufo": t0["tipo"], "painel": t0["painel"],
-                            "corte": t0["corte"], "comprimento": round(compr),
-                            "marcas": {"perfil": "Rufo %s corte %d" % (t0["tipo"], t0["corte"])}}
-            out.append(so)
+            cadeias.append((cad[0], est))
+    # os cantos (19/10, a conferência do Mercado: nas quinas a capa de um lado corria até o eixo da outra treliça e as
+    # abas atravessavam ela): dois rufos do mesmo tipo com as pontas no mesmo canto vão até o encontro dos eixos e
+    # terminam em meia-esquadria — cada chapa da seção para no plano bissetor do canto
+    def direcao(est):
+        (ax, ay), (bx, by) = est[0][0], est[-1][0]
+        n_ = math.hypot(bx - ax, by - ay) or 1.0
+        return ((bx - ax) / n_, (by - ay) / n_)
+    dirs = [direcao(est) for _t, est in cadeias]
+    cantos = {}                                          # (cadeia, ponta) → (ponto do canto, direção da outra)
+    for i, (ti, ei) in enumerate(cadeias):
+        ui = dirs[i]
+        for pi, P in ((0, ei[0][0]), (1, ei[-1][0])):
+            for j, (tj, ej) in enumerate(cadeias):
+                if j == i or tj["tipo"] != ti["tipo"]:
+                    continue
+                uj = dirs[j]
+                if abs(ui[0] * uj[0] + ui[1] * uj[1]) > 0.9:
+                    continue
+                for pj, Q in ((0, ej[0][0]), (1, ej[-1][0])):
+                    zi = (ei[0] if pi == 0 else ei[-1])[1][0][1]
+                    zj = (ej[0] if pj == 0 else ej[-1])[1][0][1]
+                    if math.dist(P, Q) > 300.0 or abs(zi - zj) > 100.0:
+                        continue                         # longe, ou em outra altura (o encontro de topo, abaixo)
+                    den = ui[0] * uj[1] - ui[1] * uj[0]
+                    tt = ((Q[0] - P[0]) * uj[1] - (Q[1] - P[1]) * uj[0]) / den
+                    C = (P[0] + ui[0] * tt, P[1] + ui[1] * tt)
+                    if math.dist(C, P) > 300.0 or math.dist(C, Q) > 300.0:
+                        continue
+                    # a direção da outra no canto: saindo dele (se esta chega) ou chegando nele (se esta sai)
+                    sai_j = (uj if pj == 0 else (-uj[0], -uj[1]))
+                    cantos[(i, pi)] = (C, sai_j if pi == 1 else (-sai_j[0], -sai_j[1]))
+    out = []
+    for i, (t0, est) in enumerate(cadeias):
+        face = t0["face"]
+        u_ = dirs[i]
+        est = list(est)
+
+        def desloc(pi, x_):
+            # quanto a chapa a `x_` do eixo anda ao longo da peça na ponta pi (o plano bissetor do canto)
+            if (i, pi) not in cantos:
+                return 0.0
+            _C, uo = cantos[(i, pi)]
+            u1, u2 = (u_, uo) if pi == 1 else (uo, u_)
+            den = 1.0 + u1[0] * u2[0] + u1[1] * u2[1]
+            if den < 1e-6:
+                return 0.0
+            outro = u2 if pi == 1 else u1
+            return -x_ * (face[0] * outro[0] + face[1] * outro[1]) / den
+        for pi in (0, 1):
+            if (i, pi) in cantos:
+                k = 0 if pi == 0 else -1
+                est[k] = (cantos[(i, pi)][0], est[k][1])
+                continue
+            # o encontro de topo (a P.9 da faixa norte chegando na P.3 e na P.6, mais altas): a ponta que chega numa outra
+            # treliça de fechamento para na face da telha dela, em vez de entrar nela
+            k = 0 if pi == 0 else -1
+            fora_u = (u_[0], u_[1]) if pi == 1 else (-u_[0], -u_[1])
+            novo = _ponta_na_parede(est[k][0], fora_u, [z for par in est[k][1] for z in par], t0["painel"], paredes)
+            if novo is not None:
+                est[k] = (novo, est[k][1])
+        vs, fs = [], []
+        n_est = len(est)
+        for b_i, (x0, x1) in enumerate(t0["xs"]):
+            o = len(vs)
+            for k, ((px, py), zs) in enumerate(est):
+                z0, z1 = zs[b_i]
+                pi = 0 if k == 0 else (1 if k == n_est - 1 else None)
+                for x_, z_ in ((x0, z0), (x1, z0), (x1, z1), (x0, z1)):
+                    d_ = desloc(pi, x_) if pi is not None else 0.0
+                    vs.append((px + face[0] * x_ + u_[0] * d_, py + face[1] * x_ + u_[1] * d_, z_))
+            for k in range(n_est - 1):
+                a, b = o + 4 * k, o + 4 * (k + 1)
+                fs += [[a, b, b + 1, a + 1], [a + 1, b + 1, b + 2, a + 2], [a + 2, b + 2, b + 3, a + 3], [a + 3, b + 3, b, a]]
+            ul = o + 4 * (n_est - 1)
+            fs += [[o + 3, o + 2, o + 1, o], [ul, ul + 1, ul + 2, ul + 3]]
+        compr = sum(math.dist(est[k][0], est[k + 1][0]) for k in range(n_est - 1))
+        so = Solido(nome="%s (ch. galv. #26, corte %d)" % (t0["nome"], t0["corte"]), camada="Rufos", vertices=vs, faces=fs)
+        so.atributos = {"tipo_ifc": "IfcCovering", "rufo_lancado": True, "rufo": t0["tipo"], "painel": t0["painel"],
+                        "corte": t0["corte"], "comprimento": round(compr),
+                        "marcas": {"perfil": "Rufo %s corte %d" % (t0["tipo"], t0["corte"])},
+                        **({"cantos": sum(1 for pi in (0, 1) if (i, pi) in cantos)} if any((i, pi) in cantos for pi in (0, 1)) else {})}
+        out.append(so)
     return out
 
 
@@ -1462,7 +1560,8 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
                                                  for (a1, b1), (a2, b2) in zip(ch["secoes"], ch["secoes"][1:])))}
         doc.add(so)
     # a calha e a cumeeira contam como telhado (o pedaço de tesoura na linha da calha não é borda)
-    fech, fech_ml, fech_area = _fechamentos(doc, feitos + an["calhas"] + an["cumeeiras"], telha, camada)
+    paredes_f = []
+    fech, fech_ml, fech_area = _fechamentos(doc, feitos + an["calhas"] + an["cumeeiras"], telha, camada, paredes_f)
     rufos_f = [so for so in fech if (so.atributos or {}).get("rufo_lancado")]
     fech = [so for so in fech if not (so.atributos or {}).get("rufo_lancado")]
     for so in rufos_f:
@@ -1492,6 +1591,16 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
     for cad in _calhas_emendadas(an["calhas"]):
         cs = [cad[0]["cantos"][0], cad[-1]["cantos"][1], cad[-1]["cantos"][2], cad[0]["cantos"][3]]
         topo = min(v[2] for c in cad for v in c["cantos"]) - 15.0
+        # as pontas na face da treliça de fechamento atravessada (o encontro de topo, como o rufo)
+        cmp_ = math.dist(cs[0][:2], cs[1][:2]) or 1.0
+        uc = ((cs[1][0] - cs[0][0]) / cmp_, (cs[1][1] - cs[0][1]) / cmp_)
+        for i0, i1, fu in ((0, 3, (-uc[0], -uc[1])), (1, 2, uc)):
+            P = ((cs[i0][0] + cs[i1][0]) / 2.0, (cs[i0][1] + cs[i1][1]) / 2.0)
+            novo = _ponta_na_parede(P, fu, [topo - FUNDO_CALHA, topo], None, paredes_f)
+            if novo is not None:
+                dx_, dy_ = novo[0] - P[0], novo[1] - P[1]
+                cs[i0] = (cs[i0][0] + dx_, cs[i0][1] + dy_, cs[i0][2])
+                cs[i1] = (cs[i1][0] + dx_, cs[i1][1] + dy_, cs[i1][2])
         vs, fs = _calha_em_u(cs, topo)
         so = Solido(nome="Calha", camada="Calhas", vertices=vs, faces=fs)
         so.atributos = {"tipo_ifc": "IfcPipeSegment", "calha_lancada": True,
