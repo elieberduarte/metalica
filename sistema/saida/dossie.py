@@ -1039,17 +1039,29 @@ def _cores_das_linhas(b: dict, so: Optional[set] = None) -> Dict[str, list]:
     return dict(cores)
 
 
+#: Até quantas linhas a foto do tipo leva a etiqueta com a marca; acima disso, o número da linha numa bolinha (as 30+
+#: linhas de agulhamentos da PRATI viravam um emaranhado de etiquetas, 19/10)
+ROTULOS_COM_MARCA = 6
+
+
+def numerar(b: dict) -> bool:
+    """O tipo com muitas linhas vai por números (a tabela é a legenda da foto)"""
+    return len(b.get("linhas") or []) > ROTULOS_COM_MARCA
+
+
 def _rotulos_das_linhas(b: dict, so: Optional[set] = None) -> List[dict]:
-    """A etiqueta de cada linha na foto do tipo (19/10): a marca na cor da linha, presa à peça mais à frente dela
-    (diagnostico.js, __render) — no PDF, sem o 3D ligado, é ela que diz qual peça é qual"""
+    """A etiqueta de cada linha na foto do tipo (19/10): a marca na cor da linha, presa à peça mais à frente dela; com
+    muitas linhas, só o número da linha numa bolinha em cima da peça (diagnostico.js, __render) — no PDF, sem o 3D
+    ligado, é ela que diz qual peça é qual"""
     saida = []
-    for li in b.get("linhas") or []:
+    por_numero = numerar(b)
+    for k, li in enumerate(b.get("linhas") or [], 1):
         ids = [i for i in li.get("ids") or [] if so is None or i in so]
         marcas = list(li.get("marcas") or [])
         if not ids or not marcas:
             continue
-        saida.append({"texto": ", ".join(marcas[:2]) + (" …" if len(marcas) > 2 else ""), "cor": li.get("cor") or b["cor"],
-                      "ids": ids})
+        texto = str(k) if por_numero else ", ".join(marcas[:2]) + (" …" if len(marcas) > 2 else "")
+        saida.append({"texto": texto, "cor": li.get("cor") or b["cor"], "ids": ids, "numero": por_numero})
     return saida
 
 

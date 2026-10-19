@@ -301,6 +301,19 @@ export class MetodosDiagnostico {
         }
         if (!melhor) continue;
         pontos.push([melhor.x, melhor.y]);
+        if (r.numero) {
+          // o número da linha numa bolinha em cima da peça (o tipo com muitas linhas): sem traço, só sai do lugar se
+          // encostar noutra
+          const dn = tam * 1.15;
+          let bx = melhor.x - dn / 2, by = melhor.y - dn / 2;
+          for (const [ox, oy] of [[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [-1, -1], [1, 1], [-1, 1], [0, -2], [2, 0], [0, 2], [-2, 0]]) {
+            if (!bate(melhor.x - dn / 2 + ox * dn * 1.05, melhor.y - dn / 2 + oy * dn * 1.05, dn, dn)) {
+              bx = melhor.x - dn / 2 + ox * dn * 1.05; by = melhor.y - dn / 2 + oy * dn * 1.05; break;
+            }
+          }
+          caixas.push({ x: bx, y: by, w: dn, h: dn, r, px: melhor.x, py: melhor.y, numero: true });
+          continue;
+        }
         const w = g.measureText(r.texto).width + tam * 0.9, h = tam * 1.5, d = tam * 2.2;
         let bx = null, by = null;
         for (const [ox, oy] of [[0, -1], [-1, -1], [1, -1], [0, 1], [-1, 1], [1, 1], [-1.4, 0], [1.4, 0], [0, -2], [-1.6, -1.6], [1.6, -1.6], [0, 2]]) {
@@ -317,12 +330,28 @@ export class MetodosDiagnostico {
       g.lineWidth = Math.max(2, tam * 0.12);
       for (const c of caixas) {
         g.strokeStyle = c.r.cor; g.fillStyle = c.r.cor;
+        if (c.numero) {
+          // a bolinha deslocada ganha um traço curto até a peça
+          if (Math.hypot(c.px - (c.x + c.w / 2), c.py - (c.y + c.h / 2)) > c.w * 0.6) {
+            g.beginPath(); g.moveTo(c.px, c.py); g.lineTo(c.x + c.w / 2, c.y + c.h / 2); g.stroke();
+          }
+          continue;
+        }
         // o traço até a borda mais perto da etiqueta
         const ex = Math.min(Math.max(c.px, c.x), c.x + c.w), ey = Math.min(Math.max(c.py, c.y), c.y + c.h);
         g.beginPath(); g.moveTo(c.px, c.py); g.lineTo(ex, ey); g.stroke();
         g.beginPath(); g.arc(c.px, c.py, tam * 0.22, 0, Math.PI * 2); g.fill();
       }
       for (const c of caixas) {
+        if (c.numero) {
+          g.fillStyle = c.r.cor; g.strokeStyle = '#ffffff'; g.lineWidth = Math.max(2, tam * 0.1);
+          g.beginPath(); g.arc(c.x + c.w / 2, c.y + c.h / 2, c.w / 2, 0, Math.PI * 2); g.fill(); g.stroke();
+          g.fillStyle = '#ffffff'; g.textAlign = 'center';
+          g.font = `700 ${Math.round(tam * 0.72)}px "Segoe UI", Arial, sans-serif`;
+          g.fillText(c.r.texto, c.x + c.w / 2, c.y + c.h / 2 + 1);
+          g.textAlign = 'left'; g.font = `700 ${tam}px "Segoe UI", Arial, sans-serif`;
+          continue;
+        }
         g.strokeStyle = c.r.cor; g.fillStyle = '#ffffff';
         g.beginPath();
         if (g.roundRect) g.roundRect(c.x, c.y, c.w, c.h, c.h / 2.6); else g.rect(c.x, c.y, c.w, c.h);

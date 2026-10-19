@@ -161,8 +161,13 @@ def test_elevacoes_e_cores_das_linhas():
     tipo = next(p for p in pedidos if p["nome"] == "tipo-pilares")
     assert tipo["cores"] == {dossie.CORES_LINHAS[0]: ["p1", "p2"], dossie.CORES_LINHAS[1]: ["p3"]} and tipo["fantasma"] == "claro"
     # a etiqueta de cada linha na foto (para quem só tem o PDF): a marca, na cor da linha, nas peças dela
-    assert tipo["rotulos"] == [{"texto": "PL1", "cor": dossie.CORES_LINHAS[0], "ids": ["p1", "p2"]},
-                               {"texto": "PL2", "cor": dossie.CORES_LINHAS[1], "ids": ["p3"]}]
+    assert tipo["rotulos"] == [{"texto": "PL1", "cor": dossie.CORES_LINHAS[0], "ids": ["p1", "p2"], "numero": False},
+                               {"texto": "PL2", "cor": dossie.CORES_LINHAS[1], "ids": ["p3"], "numero": False}]
+    # com muitas linhas (as 30+ de agulhamentos da PRATI poluíam a foto), o número da linha numa bolinha
+    muitas = {"chave": "x", "cor": "#000000", "linhas": [{"ids": ["i%d" % k], "cor": "#e03131", "marcas": ["A.D.%d" % k]}
+                                                          for k in range(dossie.ROTULOS_COM_MARCA + 1)]}
+    rot = dossie._rotulos_das_linhas(muitas)
+    assert [r["texto"] for r in rot] == [str(k) for k in range(1, dossie.ROTULOS_COM_MARCA + 2)] and all(r["numero"] for r in rot)
     assert len(set(dossie.CORES_LINHAS[:4])) == 4
 
 

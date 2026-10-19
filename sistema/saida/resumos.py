@@ -1640,6 +1640,8 @@ h3.tipo small { margin-left: auto; font: 600 7.4pt 'Segoe UI', Arial; color: var
 .bloco-tipo.lado { break-inside: avoid; }
 .lado-a-lado { display: grid; grid-template-columns: 74mm 1fr; gap: 3.5mm; align-items: start; }   /* a foto maior (19/10) */
 table.tipo { font-size: 7.4pt; }
+.num-linha { display: inline-block; min-width: 3.6mm; height: 3.6mm; line-height: 3.6mm; border-radius: 1.8mm; color: #fff;
+  font-weight: 700; font-size: 6.6pt; text-align: center; margin-right: 1mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .pilula { display: inline-block; padding: 0 1.6mm; border: 1px solid; border-radius: 2.2mm; white-space: nowrap;
   -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 table.tipo td.c, table.tipo td.r { white-space: nowrap; }
@@ -1756,12 +1758,14 @@ def _legenda(itens) -> str:
     return "<div class=\"legenda\">%s</div>" % "".join("<span><i style=\"background:%s\"></i>%s</span>" % (_esc(c), _esc(t)) for t, c in itens)
 
 
-def _pilula(li: dict, texto: str) -> str:
-    """A quantidade da linha na cor dela — a mesma da peça na foto do tipo (19/10)"""
+def _pilula(li: dict, texto: str, numero: Optional[int] = None) -> str:
+    """A quantidade da linha na cor dela — a mesma da peça na foto do tipo (19/10); com `numero`, o número da linha na
+    bolinha da foto antes dela (o tipo com muitas linhas)"""
     cor = li.get("cor")
     if not cor:
         return _esc(texto)
-    return "<span class=\"pilula\" style=\"background:%s33;border-color:%s\">%s</span>" % (_esc(cor), _esc(cor), _esc(texto))
+    num = ("<span class=\"num-linha\" style=\"background:%s\">%d</span>" % (_esc(cor), numero)) if numero else ""
+    return "%s<span class=\"pilula\" style=\"background:%s33;border-color:%s\">%s</span>" % (num, _esc(cor), _esc(cor), _esc(texto))
 
 
 def _bloco_tipo(R: dict, b: dict, varios: bool) -> str:
@@ -1769,20 +1773,22 @@ def _bloco_tipo(R: dict, b: dict, varios: bool) -> str:
     (cada linha abre o 3D com as peças dela, na tela)."""
     X = R.get("dossie") or {}
     tes = b["chave"] == "tesouras" and any("vao" in li for li in b["linhas"])
+    from saida.dossie import numerar as _numerar
+    numerar = _numerar(b)                          # muitas linhas: o número da linha, o mesmo da bolinha na foto
     if tes:
         colunas = [("Qtd", "c"), "Tipo", "Eixos", ("Vão", "r"), ("Comprimento", "r"), ("Altura*", "r"), "Banzos / treliçamento", ("kg", "r")]
-        linhas = [[(_pilula(li, str(li["qtd"])), "c"), (", ".join(li["marcas"]), "b"), li.get("eixos") or "", ("%s m" % _n(li["vao"] / 1000.0, 2), "r"),
+        linhas = [[(_pilula(li, str(li["qtd"]), k if numerar else None), "c"), (", ".join(li["marcas"]), "b"), li.get("eixos") or "", ("%s m" % _n(li["vao"] / 1000.0, 2), "r"),
                    (_m(li["comprimento"]), "r"), ("%s m" % _n(li["altura"] / 1000.0, 2), "r"), " / ".join(li["perfis"]),
-                   (_n(li["kg"], 1), "r")] for li in b["linhas"]]
+                   (_n(li["kg"], 1), "r")] for k, li in enumerate(b["linhas"], 1)]
         larg = ["7%", "8%", "15%", "10%", "12%", "9%", "28%", "11%"]
         rod = [("%d" % b["qtd"], "c"), ("TOTAL", "b"), "", "", "", "", "", (_n(b["kg"], 1), "r")]
     else:
         colunas = [("Qtd", "c"), ("Comprimento", "r"), ("Total", "r"), "Marca", "Perfil"] + (["Onde"] if varios else []) + [("kg", "r")]
         linhas = []
-        for li in b["linhas"]:
+        for k, li in enumerate(b["linhas"], 1):
             marcas = ", ".join(li["marcas"][:6]) + (" …" if len(li["marcas"]) > 6 else "")
             perfis = ", ".join(li["perfis"][:3]) + (" …" if len(li["perfis"]) > 3 else "")
-            row = [(_pilula(li, "%d un" % li["qtd"]), "c"), ("<b>%s</b>" % _esc(_m(li["comprimento"])), "r"),
+            row = [(_pilula(li, "%d un" % li["qtd"], k if numerar else None), "c"), ("<b>%s</b>" % _esc(_m(li["comprimento"])), "r"),
                    ("%s m" % _n(li["qtd"] * li["comprimento"] / 1000.0, 1), "r"), _esc(marcas), "<span class=\"cinza\">%s</span>" % _esc(perfis)]
             if varios:
                 row.append("<span class=\"cinza\">%s</span>" % _esc(" · ".join("%s %d" % (p, q) for p, q in li.get("onde") or [])))
