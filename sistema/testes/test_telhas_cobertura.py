@@ -565,11 +565,12 @@ def test_calha_da_parede_na_borda_baixa_contra_a_platibanda():
     assert {"capa", "contra-rufo"} <= rufos
 
 
-@pytest.mark.parametrize("caso,esperado", [("encosta", "encosto"), ("degrau", "pingadeira")])
+@pytest.mark.parametrize("caso,esperado", [("encosta", "encosto"), ("degrau", "encosto")])
 def test_rufos_do_fechamento(caso, esperado):
     """Mercado Hermes, 19/10: o encosto onde a telha do telhado encosta na platibanda (a água sobe até ela, o topo 1 m
-    acima) e a pingadeira no pé do fechamento que acaba acima de um telhado mais baixo (o degrau, como a P.5 sobre o
-    anexo)"""
+    acima). No degrau (a P.5 sobre o anexo, a P.15 sobre a calha) o fechamento de fora acabava no banzo de baixo e uma
+    chapa alta fechava até o telhado de baixo — "aqui não vai calha, será puxado a telha", "baixar a telha e reduzir o
+    tamanho": agora a telha de fora desce até 50 mm da crista da telha de baixo e o pé leva o encosto"""
     doc = Documento()
     if caso == "encosta":
         _agua(doc, 0.0, 6, 7000.0, 0.05)                          # sobe até x 7000 (7350)
@@ -582,3 +583,60 @@ def test_rufos_do_fechamento(caso, esperado):
     rufos = [s for s in doc.solidos if (s.atributos or {}).get("rufo") == esperado]
     assert rufos
     assert all(s.camada == "Rufos" and s.atributos["corte"] % 50 == 0 for s in rufos)
+    assert not any((s.atributos or {}).get("rufo") == "pingadeira" for s in doc.solidos)
+    if caso == "degrau":
+        fora = [s for s in doc.solidos if (s.atributos or {}).get("face") == "fora"]
+        crista = 5500.0 + T._topo_da_terca(doc.barras[-3]) + 46.0          # a telha de baixo (o fundo + a onda)
+        assert min(v[2] for s in fora for v in s.vertices) == pytest.approx(crista + 50.0, abs=2.0)
+
+
+def _platibanda_em_x(doc, y, z_inf, z_sup, partes=3, x0=0.0, x1=7000.0, peca="P.2"):
+    """a platibanda ao longo de x (o lado da água), com os banzos em `partes` barras"""
+    for z in (z_inf, z_sup):
+        for k in range(partes):
+            xa, xb = x0 + (x1 - x0) * k / partes, x0 + (x1 - x0) * (k + 1) / partes
+            b = Barra(inicio=(xa, y, z), fim=(xb, y, z), perfil="U 100×50×3,00 (FF)", papel="banzo", camada="Platibanda",
+                      rotacao=270.0)
+            b.atributos = {"origem": {"peca": peca}, "conjunto": peca}
+            doc.add(b)
+
+
+def test_rufo_acompanha_a_telha_e_e_uma_peca_so():
+    """Mercado Hermes, 19/10 ("os rufos laterais da doca ficaram picotados, precisam ser uma peça só", "o rufo deve
+    acompanhar a telha"): na platibanda ao longo da água o encosto ficava na altura do meio de cada barra do banzo —
+    degraus, um pedaço por barra. Agora a altura vai nas pontas de cada trecho e os trechos seguidos viram uma peça"""
+    doc = Documento()
+    _agua(doc, 0.0, 6, 7000.0, 0.05)                              # sobe 350 mm de x 0 a 7000
+    _platibanda_em_x(doc, -200.0, 6600.0, 8600.0)
+    T.lancar(doc)
+    enc = [s for s in doc.solidos if (s.atributos or {}).get("rufo") == "encosto"]
+    assert len(enc) == 1
+    vs = enc[0].vertices
+    z_em = lambda x: min(v[2] for v in vs if abs(v[0] - x) < 1.0)
+    assert z_em(7000.0) - z_em(0.0) == pytest.approx(350.0, abs=5.0)
+    assert enc[0].atributos["comprimento"] == 7000
+
+
+def test_capa_desce_ate_a_telha_perto_do_topo():
+    """Mercado Hermes, 19/10 ("essa aba a mais faz parte da estrutura que fica dobrada em cima da platibanda"): com a
+    telha a uns 0,2 m do topo, a perna do encosto chegava na aba da capa — duas chapas. Agora a capa desce pela face de
+    dentro até a telha e dobra por cima dela: uma peça só"""
+    doc = Documento()
+    _agua(doc, 0.0, 6, 7000.0, 0.0)
+    _platibanda_em_x(doc, -200.0, 6500.0, 7300.0)
+    T.lancar(doc)
+    rufos = [s for s in doc.solidos if (s.atributos or {}).get("rufo_lancado")]
+    assert [s.nome.split(" (")[0] for s in rufos] == ["Rufo capa com encosto"]
+
+
+def test_calha_aberta_em_cima():
+    """Mercado Hermes, 19/10 ("ficou um tubo fechado"): a calha era uma caixa fechada; agora o fundo e as duas abas"""
+    doc = Documento()
+    _agua(doc, 0.0, 6, 7000.0 + 5 * 1400 * 0.05, -0.05)
+    _platibanda(doc, 7550.0, 6400.0, 7900.0)
+    T.lancar(doc)
+    for c in [s for s in doc.solidos if s.camada == "Calhas"]:
+        topo = max(v[2] for v in c.vertices)
+        xs = [v[0] for v in c.vertices]
+        no_alto = [v[0] for v in c.vertices if v[2] > topo - 1.0]
+        assert all(min(abs(x - min(xs)), abs(x - max(xs))) <= T.CALHA_ESP + 0.5 for x in no_alto)
