@@ -32,10 +32,18 @@ function grupoDoPapel(ent) {
   return 'outro';
 }
 
-/** A peça de origem (a treliça inteira): "TESOURA 1#12". */
+/** A peça de origem (a treliça inteira): "TESOURA 1#12". Quando a origem traz só o tipo ("T.7", o gerador do Mercado) e o
+ *  conjunto traz a instância ("T.7#2"), vale o conjunto — senão o clique pegava todas as tesouras iguais como um bloco só
+ *  (usuário, 19/10, anexo do Mercado: "não consigo selecionar uma tesoura inteira, ele seleciona todas"). */
 export function pecaDe(ent) {
-  const o = ent && ent.atributos && ent.atributos.origem;
-  return (o && o.peca) || null;
+  const a = ent && ent.atributos;
+  const o = a && a.origem;
+  const p = (o && typeof o === 'object' && o.peca) || null;
+  if (p && !String(p).includes('#')) {
+    const c = String((a && a.conjunto) || '');
+    if (c.startsWith(p + '#')) return c;
+  }
+  return p;
 }
 
 /** O eixo do sólido: os centros dos anéis quando é varredura (a tampa diz quantos pontos
