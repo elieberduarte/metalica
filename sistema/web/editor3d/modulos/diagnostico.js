@@ -281,6 +281,11 @@ export class MetodosDiagnostico {
       g.font = `700 ${tam}px "Segoe UI", Arial, sans-serif`;
       g.textBaseline = 'middle';
       const caixas = [];
+      // cada etiqueta na peça da linha que fica mais longe das já marcadas (com muitas linhas, as 17 terças da PRATI, todas
+      // iam para o mesmo canto, o mais perto da câmera) e no primeiro lugar livre em volta dela
+      const pontos = [];
+      const bate = (x, y, w, h) => x < 4 || y < 4 || x + w > c2.width - 4 || y + h > c2.height - 4
+        || caixas.some((c) => x < c.x + c.w + 6 && x + w + 6 > c.x && y < c.y + c.h + 4 && y + h + 4 > c.y);
       for (const r of rotulos) {
         let melhor = null;
         for (const id of r.ids || []) {
@@ -289,14 +294,22 @@ export class MetodosDiagnostico {
           const p = new V((cx[0][0] + cx[1][0]) / 2 * esc, (cx[0][1] + cx[1][1]) / 2 * esc, (cx[0][2] + cx[1][2]) / 2 * esc);
           const q = p.clone().project(cam);
           if (q.z < -1 || q.z > 1 || Math.abs(q.x) > 0.92 || Math.abs(q.y) > 0.9) continue;
-          const d = p.distanceTo(cam.position);
-          if (!melhor || d < melhor.d) melhor = { d, x: (q.x + 1) / 2 * c2.width, y: (1 - q.y) / 2 * c2.height };
+          const x = (q.x + 1) / 2 * c2.width, y = (1 - q.y) / 2 * c2.height;
+          const longe = pontos.length ? Math.min(...pontos.map((o) => Math.hypot(o[0] - x, o[1] - y))) : 0;
+          const nota = longe - p.distanceTo(cam.position) * 1e-6;
+          if (!melhor || nota > melhor.nota) melhor = { nota, x, y };
         }
         if (!melhor) continue;
-        const w = g.measureText(r.texto).width + tam * 0.9, h = tam * 1.5;
-        let bx = Math.min(Math.max(melhor.x - w / 2, 4), c2.width - w - 4), by = Math.max(melhor.y - h - tam * 2.2, 4);
-        for (let k = 0; k < 40 && caixas.some((c) => bx < c.x + c.w + 6 && bx + w + 6 > c.x && by < c.y + c.h + 4 && by + h + 4 > c.y); k++) {
-          by = by - h * 0.6 < 4 ? by + h * 1.2 : by - h * 0.6;
+        pontos.push([melhor.x, melhor.y]);
+        const w = g.measureText(r.texto).width + tam * 0.9, h = tam * 1.5, d = tam * 2.2;
+        let bx = null, by = null;
+        for (const [ox, oy] of [[0, -1], [-1, -1], [1, -1], [0, 1], [-1, 1], [1, 1], [-1.4, 0], [1.4, 0], [0, -2], [-1.6, -1.6], [1.6, -1.6], [0, 2]]) {
+          const x = melhor.x - w / 2 + ox * (w / 2 + d * 0.6), y = melhor.y - h / 2 + oy * (h / 2 + d);
+          if (!bate(x, y, w, h)) { bx = x; by = y; break; }
+        }
+        if (bx === null) {                                 // sem lugar livre: em cima, empurrada até não encostar
+          bx = Math.min(Math.max(melhor.x - w / 2, 4), c2.width - w - 4); by = Math.max(melhor.y - h - d, 4);
+          for (let k = 0; k < 40 && bate(bx, by, w, h); k++) by = by - h * 0.6 < 4 ? by + h * 1.2 : by - h * 0.6;
         }
         caixas.push({ x: bx, y: by, w, h, r, px: melhor.x, py: melhor.y });
       }
@@ -304,7 +317,9 @@ export class MetodosDiagnostico {
       g.lineWidth = Math.max(2, tam * 0.12);
       for (const c of caixas) {
         g.strokeStyle = c.r.cor; g.fillStyle = c.r.cor;
-        g.beginPath(); g.moveTo(c.px, c.py); g.lineTo(c.x + c.w / 2, c.y + c.h); g.stroke();
+        // o traço até a borda mais perto da etiqueta
+        const ex = Math.min(Math.max(c.px, c.x), c.x + c.w), ey = Math.min(Math.max(c.py, c.y), c.y + c.h);
+        g.beginPath(); g.moveTo(c.px, c.py); g.lineTo(ex, ey); g.stroke();
         g.beginPath(); g.arc(c.px, c.py, tam * 0.22, 0, Math.PI * 2); g.fill();
       }
       for (const c of caixas) {

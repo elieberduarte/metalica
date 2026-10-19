@@ -164,3 +164,37 @@ def test_elevacoes_e_cores_das_linhas():
     assert tipo["rotulos"] == [{"texto": "PL1", "cor": dossie.CORES_LINHAS[0], "ids": ["p1", "p2"]},
                                {"texto": "PL2", "cor": dossie.CORES_LINHAS[1], "ids": ["p3"]}]
     assert len(set(dossie.CORES_LINHAS[:4])) == 4
+
+
+def test_trelica_em_pe_nao_e_tesoura():
+    """PRATI (19/10): as treliças de fechamento em pé (TV, 10,2 m de altura e 0,4 × 0,9 em planta) entravam na tabela de
+    tesouras com vão de 0,20 m (a espessura) e altura igual ao comprimento; agora são "Treliças verticais", uma linha por
+    marca, sem vão nem flecha"""
+    from nucleo3d.modelo import Barra, Documento
+    from nucleo2d.detalhar import detalhar
+    from nucleo2d.detalhe.base import _categoria
+    from saida import lista_producao, resumos
+    doc = Documento(nome="cd")
+    for k, x in enumerate((0.0, 6000.0, 12000.0)):
+        conj = "TV%d" % (1 if k < 2 else 2)
+        alto = 10200.0 if k < 2 else 9000.0
+        at = lambda pos: {"marcas": {"posicao": pos, "conjunto": conj}}
+        for y, lado in ((0.0, "E"), (600.0, "D")):
+            doc.add(Barra(nome="B", inicio=(x, y, 0.0), fim=(x, y, alto), perfil="U 150×50×3,00 (FF)", papel="banzo",
+                          atributos=at("BZ%s%s" % (lado, conj))))
+        for j in range(8):
+            z0, z1 = alto * j / 8.0, alto * (j + 1) / 8.0
+            doc.add(Barra(nome="D", inicio=(x, 0.0, z0), fim=(x, 600.0, z1), perfil="L 38×3 (FF)", papel="diagonal",
+                          atributos=at("D%s" % conj)))
+    r = detalhar(doc, grupos=["localizacao"], converter=False)
+    nomes = r.get("nomes") or {}
+    cat = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
+    lista = lista_producao.montar(r["objetos_posicoes"], cat, r["acessorios"], pecas=r["objetos_pecas"], projeto={"nome": "cd"})
+    lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"], "avisos": r["avisos"]}
+    R = resumos.levantar_resumos(doc, lev, lista, nomes, {})
+    assert R["tesouras"] == []
+    X = dossie.levantar(doc, lev, lista, nomes, R, None)
+    chaves = [b["chave"] for b in X["estrutura"]]
+    assert "tesouras" not in chaves and "trelicas_v" in chaves
+    tv = next(b for b in X["estrutura"] if b["chave"] == "trelicas_v")
+    assert len(tv["linhas"]) == 2 and all("vao" not in li for li in tv["linhas"])     # uma linha por marca

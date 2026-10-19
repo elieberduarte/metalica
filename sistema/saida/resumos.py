@@ -314,6 +314,55 @@ def descricao_chumbador(d: float, L) -> Tuple[str, str]:
 
 
 # ============================================================ levantamento
+def funilaria_da_lista(lista: dict) -> List[dict]:
+    """Os rufos e as calhas da lista de materiais, peça por peça (19/10): a marca, a descrição, o desenvolvimento (a
+    largura da chapa planificada: o "comprimento" da chapa dobrada na lista), o comprimento da peça (a "largura"), a
+    quantidade, os metros lineares, a área e o peso — antes o resumo só tinha o total em kg e em m²."""
+    saida = []
+    for p in (lista or {}).get("posicoes") or []:
+        perfil = str(p.get("perfil") or "")
+        nome = str(p.get("nome") or p.get("marca") or "")
+        if p.get("categoria") != "RUFOS" and not re.search(r"RUFO|CALHA", perfil, re.I):
+            continue
+        qtd = int(p.get("quantidade") or 0)
+        desenv, comp = float(p.get("comprimento") or 0.0), float(p.get("largura") or 0.0)
+        if desenv > comp:                              # a peça curta e larga: o desenvolvimento é o lado menor
+            desenv, comp = comp, desenv
+        tipo = "Calha" if (re.search(r"CALHA", perfil, re.I) or re.match(r"CL\d", nome)) else "Rufo"
+        saida.append({"nome": nome, "tipo": tipo, "perfil": perfil, "desenvolvimento": desenv, "comprimento": comp, "qtd": qtd,
+                      "ml": qtd * comp / 1000.0, "m2": float(p.get("area_m2") or qtd * desenv * comp / 1e6),
+                      "kg": float(p.get("peso_total") or (p.get("peso") or 0.0) * qtd)})
+    saida.sort(key=lambda x: (x["tipo"] != "Calha", _ordem_natural(x["nome"])))
+    return saida
+
+
+def _tabela_funilaria(R: dict) -> str:
+    """A tabela dos rufos e das calhas, uma linha por marca, com o total."""
+    F = R.get("funilaria") or []
+    if not F:
+        return ""
+    linhas = [[("<b>%s</b>" % _esc(x["nome"]), "c"), _esc("%s — %s" % (x["tipo"], x["perfil"])),
+               (_n(x["desenvolvimento"], 0), "r"), (_n(x["comprimento"] / 1000.0, 2), "r"), (x["qtd"], "c"),
+               (_n(x["ml"], 2), "r"), (_n(x["m2"], 2), "r"), (_n(x["kg"], 1), "r")] for x in F]
+    rod = [("TOTAL", "b"), "", "", "", (sum(x["qtd"] for x in F), "c"), (_n(sum(x["ml"] for x in F), 2), "r"),
+           (_n(sum(x["m2"] for x in F), 2), "r"), (_n(sum(x["kg"] for x in F), 1), "r")]
+    return (_tabela([("Marca", "c"), "Descrição", ("Desenv. (mm)", "r"), ("Comp. (m)", "r"), ("Qtd", "c"), ("Total (ml)", "r"),
+                     ("m²", "r"), ("kg", "r")], linhas, rodape=rod, bruto=True,
+                    larguras=["8%", "38%", "10%", "9%", "6%", "10%", "9%", "10%"])
+            + "<p class=\"nota\">Desenvolvimento: a largura da chapa planificada de cada peça (a soma das abas da "
+              "dobra); comprimento: o da peça. m² da chapa planificada.</p>")
+
+
+def trelica_em_pe(pecas) -> bool:
+    """A treliça de pé — muito mais alta do que larga em planta: a TV de fechamento da PRATI (10,2 m de altura, 0,4 × 0,9
+    em planta) entrava como tesoura, com vão de 0,20 m e altura igual ao comprimento (19/10)."""
+    vs = [v for e in pecas for v in (getattr(e, "vertices", None) or [])]
+    if not vs:
+        return False
+    ext = [max(v[i] for v in vs) - min(v[i] for v in vs) for i in range(3)]
+    return ext[2] > 2.0 * max(ext[0], ext[1])
+
+
 def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados: Optional[dict] = None) -> dict:
     """Todos os números dos dois documentos, a partir do levantamento (`lev`), da lista de
     materiais montada (`lista`) e dos nomes de produção (`nomes`)."""
@@ -385,8 +434,8 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
         except Exception:                                   # noqa: BLE001
             grupos = [lista_p]
         for g in grupos:
-            if len(g) < 4:
-                continue
+            if len(g) < 4 or trelica_em_pe(g):
+                continue                                  # a treliça em pé (de fechamento, a TV) não é tesoura
             tes_inst.append({"tipo": nome_t, "pecas": g})
     eixo_g = None
     todos_v = [v for e in pecas if e.vertices for v in e.vertices]
@@ -787,7 +836,7 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
                       "projecao": projecao_total, "area_m2": area_m2, "nivel_apoio": nivel_apoio, "apoio_por_chapa": apoio_por_chapa,
                       "n_tesouras": len(tes_inst)},
         "tesouras": tipos_tes, "tercas": tercas, "grupos_peso": grupos_peso, "telhas": telhas, "parafusos": parafusos,
-        "familias": familias, "chaparia": chaparia, "chaparia_total": chaparia_total,
+        "familias": familias, "chaparia": chaparia, "chaparia_total": chaparia_total, "funilaria": funilaria_da_lista(lista),
         "perfis_kg": peso_aco - chaparia_total["kg"] if chaparia_total["kg"] else perfis_kg,
         "avisos": list(lev.get("avisos") or []),
     }
@@ -1976,6 +2025,12 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
                                       (_n(T["kg_total"], 1), "r")],
                               larguras=["10%", "47%", "6%", "9%", "10%", "9%", "9%"]))
         partes.append("<p class=\"nota\">m² pela largura útil (%s m).</p>" % _n(T["largura_util"] / 1000.0, 2))
+    # ---- rufos e calhas, peça por peça (19/10)
+    if R.get("funilaria"):
+        sec += 1
+        F = R["funilaria"]
+        partes.append(_h2(sec, "Rufos e calhas", "%d peças · %s ml" % (sum(x["qtd"] for x in F), _n(sum(x["ml"] for x in F), 2))))
+        partes.append(_tabela_funilaria(R))
     # ---- parafusos
     P = R["parafusos"]
     sec += 1
@@ -2218,6 +2273,9 @@ def _html_compra(R: dict) -> str:
                      % (_n(tot_sem - tot_com, 1), _n(100.0 * (tot_sem - tot_com) / tot_sem, 1)))
         if any(_classe_compra(p) for p in C["perfis"]):
             h.append(_LEGENDA_COMPRA)
+    if R.get("funilaria"):
+        h.append("<h3>Rufos e calhas</h3><p class=\"explica\">Peça por peça: o desenvolvimento é a largura da chapa planificada.</p>")
+        h.append(_tabela_funilaria(R))
     if C.get("telhas_lancadas"):
         T_ = C["telhas_lancadas"]
         h.append("<h3>Telhas e painéis de fechamento</h3><p class=\"explica\">As telhas e os painéis lançados no modelo "

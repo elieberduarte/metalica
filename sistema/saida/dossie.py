@@ -28,6 +28,8 @@ PAPEIS = collections.OrderedDict([
     ("pilares", ("Pilares", "#364fc7")),
     ("pilaretes", ("Pilaretes", "#15aabf")),
     ("tesouras", ("Tesouras", "#d9480f")),
+    # a treliça em pé (de fechamento, a TV da PRATI, 19/10): não é tesoura
+    ("trelicas_v", ("Treliças verticais", "#0b7285")),
     ("caixote", ("Vigas caixote", "#c77700")),
     ("vigas_tubo", ("Vigas tubo", "#0f8a7e")),
     ("vigas_i", ("Vigas I", "#2f9e44")),
@@ -262,7 +264,9 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
             for e in u["principais"]:
                 vert_max[pav_de.get(e.id, "")] = max(vert_max[pav_de.get(e.id, "")], u["comprimento"])
     for u in unidades:
-        if u["trelica"]:
+        if u["trelica"] and u["dir"] == "v":           # o banzo em pé: a treliça de fechamento (TV), não tesoura
+            u["papel"] = "trelicas_v"
+        elif u["trelica"]:
             u["papel"] = "tesouras" if tem_cobertura else "caixote"
         elif _PAPEL_DO_TIPO.get(u["tipo"]):
             u["papel"] = _PAPEL_DO_TIPO[u["tipo"]]
@@ -300,7 +304,10 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
         perfil = str(u["principal"].perfil or "")
         # comprimentos a menos de 5 mm são o mesmo (a mesma peça com o arredondamento do IFC); perfis diferentes, linhas
         # diferentes (Kaefer, 19/10: os pilares W310×32,7, W460×52,0 e TC 180×6,3 de 7,67 m saíam numa linha só)
-        alvo = next((k for k in bloco["linhas"] if k[1] == perfil and abs(k[0] - L) <= 5), (L, perfil))
+        # o conjunto montado (treliça, dispositivo) é uma peça própria: uma linha por marca (as treliças T1, T2, T6… de 10,15 m
+        # da PRATI saíam numa linha só)
+        dono = u["nome"] if u["conjunto"] else ""
+        alvo = next((k for k in bloco["linhas"] if k[1] == perfil and k[2] == dono and abs(k[0] - L) <= 5), (L, perfil, dono))
         li = bloco["linhas"].setdefault(alvo, {"comprimento": alvo[0], "qtd": 0, "kg": 0.0, "marcas": [], "perfis": [],
                                                "onde": collections.Counter(), "ids": []})
         li["qtd"] += qtd
@@ -624,12 +631,12 @@ class _Folha:
                 'font-family="Segoe UI, Arial, sans-serif">%s</svg>' % (classe, self.W, self.H, self.W, self.H, "".join(self.partes)))
 
 
-_LARG_PAPEL = {"pilares": 0.0, "pilaretes": 0.0, "tesouras": 0.7, "caixote": 0.55, "vigas_tubo": 0.6, "vigas_i": 0.6,
+_LARG_PAPEL = {"pilares": 0.0, "pilaretes": 0.0, "tesouras": 0.7, "trelicas_v": 0.6, "caixote": 0.55, "vigas_tubo": 0.6, "vigas_i": 0.6,
                "vigas_u": 0.5, "vigas": 0.5, "tercas": 0.3, "longarinas": 0.3, "diagonais": 0.3, "contrav": 0.25,
                "travamentos": 0.18, "fechamento": 0.18, "dispositivos": 0.35, "outros": 0.25}
 #: A ordem de pintura: o fino por baixo, o principal por cima.
 _ORDEM_PINTURA = ["travamentos", "fechamento", "contrav", "diagonais", "longarinas", "tercas", "outros", "dispositivos", "vigas",
-                  "vigas_u", "vigas_i", "vigas_tubo", "caixote", "tesouras", "pilaretes", "pilares"]
+                  "vigas_u", "vigas_i", "vigas_tubo", "caixote", "tesouras", "trelicas_v", "pilaretes", "pilares"]
 
 
 def _cota(f: _Folha, a: float, b: float, fixo: float, horizontal: bool, texto: str, cor="#2b8a3e"):
