@@ -116,6 +116,35 @@ try:
     ap.avaliar("document.querySelector('#folha [data-s=aberta]').click()")
     ok(esperar(ap, "window.visor !== window.__visorAntes && " + ABERTO, 60), "e volta à aberta")
     ok(imagem(ap) == vista, "a mesma imagem de antes da troca")
+    # ------------------------------------------------------------ as camadas desligadas ficam desligadas (19/10)
+    # "se eu desativo a lona, quando mudo de retraída para aberta a lona volta — isso vale para os outros modelos também"
+    VIS = "(n => { const v = window.visor; const i = v.cabecalho.camadas.findIndex(c => c.nome === n); return v.visivelCamada[i] !== false; })"
+    ap.avaliar("document.querySelector('.ferramentas [data-f=camadas]').click()")
+    esperar(ap, "!!document.querySelector('#folha .camada')", 5)
+    nome = ap.avaliar("(() => { const el = [...document.querySelectorAll('#folha .camada')].find(x => x.textContent.includes('Contraventamento'));"
+                      " el.click(); return 'Contraventamento'; })()")
+    ok(ap.avaliar(f"{VIS}('{nome}')") is False, "a camada do contraventamento (a sanfona) desligada")
+    ap.avaliar("window.__visorAntes = window.visor; document.querySelector('.ferramentas [data-f=vistas]').click()")
+    esperar(ap, "!!document.querySelector('#folha [data-s=retraida]')", 5)
+    ap.avaliar("document.querySelector('#folha [data-s=retraida]').click()")
+    ok(esperar(ap, "window.visor !== window.__visorAntes && " + ABERTO, 60), "troca para Retraída")
+    ok(ap.avaliar(f"{VIS}('{nome}')") is False, "a camada continua desligada depois de trocar a situação")
+    ap.navegar(base + "/celular/#/", limite=30)
+    esperar(ap, "document.querySelectorAll('.projeto').length === 2")
+    ap.navegar(base + "/celular/#/p/cobertura/modelo", limite=30)
+    ok(esperar(ap, ABERTO, 60) and ap.avaliar(f"{VIS}('{nome}')") is False, "e depois de sair e voltar ao projeto")
+    ap.avaliar("location.reload()")
+    ok(esperar(ap, ABERTO, 60) and ap.avaliar(f"{VIS}('{nome}')") is False, "e depois de recarregar (guardada no aparelho)")
+    ap.navegar(base + "/celular/#/p/comum/modelo", limite=30)
+    ok(esperar(ap, ABERTO, 60) and ap.avaliar("window.visor.visivelCamada.every((x, i) => (x !== false) === (window.visor.cabecalho.camadas[i].visivel !== false))"),
+       "a escolha é do projeto: a obra comum abre com as camadas como o modelo dela traz")
+    ap.navegar(base + "/celular/#/p/cobertura/modelo", limite=30)
+    esperar(ap, ABERTO, 60)
+    ap.avaliar("document.querySelector('.ferramentas [data-f=camadas]').click()")
+    esperar(ap, "!!document.querySelector('#folha .camada')", 5)
+    ap.avaliar("[...document.querySelectorAll('#folha .camada')].find(x => x.textContent.includes('Contraventamento')).click()")
+    ok(ap.avaliar(f"{VIS}('{nome}')") is True, "religar também fica (a camada volta)")
+
     st = ap.avaliar("fetch('/celular/dados/cobertura/manifesto.json').then(r => r.json()).then(j => j.cobertura_movel.atual)")
     ok(st == "aberta", f"nada gravado: o projeto continua na situação do PC ({st})")
 finally:

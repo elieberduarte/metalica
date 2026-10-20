@@ -358,6 +358,7 @@ async function telaModelo(slug, m, medir, camera) {
   if (v !== visor) return;          // trocou de tela no meio
   v.definirTema(escuro());          // depois de carregar: o piso se acomoda à caixa do modelo
   v.definirFichas(await json(`${slug}/${arqs.pecas}`, versaoDe(m, arqs.pecas)));
+  aplicarCamadas(v, slug);          // as camadas que a pessoa desligou neste projeto continuam desligadas
   if (camera) {                     // trocou a situação da cobertura: a vista fica onde estava
     v.camera.position.copy(camera.posicao);
     v.controles.target.copy(camera.alvo);
@@ -462,6 +463,29 @@ function mostrarFicha(v, i) {
   $('#soltar').onclick = () => { v.selecionar(-1); fecharFolha(); };
 }
 
+// As camadas ligadas e desligadas, por projeto e pelo NOME da camada (19/10): ficavam só no 3D aberto, e trocar
+// aberta/retraída, sair e voltar ou reabrir o projeto religava tudo — a lona desligada voltava. Pelo nome, e não pela
+// posição: as duas situações da cobertura não trazem as camadas necessariamente na mesma ordem.
+const CAMADAS = 'metalica-camadas:';
+const camadasNaMemoria = {};
+function camadasEscolhidas(slug) {
+  if (!camadasNaMemoria[slug]) {
+    try { camadasNaMemoria[slug] = JSON.parse(localStorage.getItem(CAMADAS + slug)) || {}; } catch (e) { camadasNaMemoria[slug] = {}; }
+  }
+  return camadasNaMemoria[slug];
+}
+function lembrarCamada(slug, nome, visivel) {
+  const c = camadasEscolhidas(slug);
+  c[nome] = visivel;
+  try { localStorage.setItem(CAMADAS + slug, JSON.stringify(c)); } catch (e) { /* sem armazenamento: vale até fechar */ }
+}
+function aplicarCamadas(v, slug) {
+  const c = camadasEscolhidas(slug);
+  v.cabecalho.camadas.forEach((cam, i) => {
+    if (typeof c[cam.nome] === 'boolean' && (v.visivelCamada[i] !== false) !== c[cam.nome]) v.mostrarCamada(i, c[cam.nome]);
+  });
+}
+
 function folhaCamadas(v) {
   const cams = v.cabecalho.camadas;
   abrirFolha(`<div class="nome">Camadas</div><div style="margin-top:6px">${cams.map((c, i) => c.pecas ? `
@@ -471,6 +495,7 @@ function folhaCamadas(v) {
     const i = +el.dataset.i, ch = el.querySelector('.chave');
     ch.classList.toggle('ligada');
     v.mostrarCamada(i, ch.classList.contains('ligada'));
+    lembrarCamada(visorSlug, cams[i].nome, ch.classList.contains('ligada'));
   });
 }
 
