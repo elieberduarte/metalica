@@ -2886,6 +2886,13 @@ def _lista_da_tesoura(p: ProjetoGalpao, add, n_port: int):
     if trav is not None and trav.geometria.get("quantidade"):
         add("TV", "Travamento lateral do banzo inferior", trav.perfil,
             int(trav.geometria["quantidade"]), trav.geometria.get("comprimento_m", 0.0))
+        if p.elemento("Viga de oitão"):
+            # no vão de cada ponta, a ancoragem por cima de cada linha: do banzo de baixo à viga de oitão
+            d = p.dados
+            h = (d.altura_cumeeira + d.altura_beiral) / 2.0 - d.pe_direito
+            add("TVA", "Ancoragem do travamento do banzo inferior (até a viga de oitão)", trav.perfil,
+                2 * int(trav.geometria.get("linhas_por_tesoura") or 0),
+                math.hypot(d.espacamento_porticos, h))
 
 
 def _perfil_sintetico(nome: str):

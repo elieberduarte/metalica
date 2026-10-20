@@ -433,9 +433,12 @@ def test_oitao_apoiado_vira_viga_de_oitao():
     tesouras = {b.atributos.get("origem_2d") for b in doc.barras if b.atributos.get("papel_trelica")}
     assert len(tesouras) == p.dados.n_porticos - 2
     assert sum(1 for b in doc.barras if b.atributos.get("marca") == "VO") == 4
-    # as linhas de travamento do banzo de baixo do vão da ponta se ancoram no pilarete de oitão
+    # as linhas de travamento do banzo de baixo do vão da ponta se ancoram no pilarete de oitão e, por cima,
+    # na viga de oitão (o triângulo no plano vertical): só com a de baixo, Δ2/Δ1 = 2,13 no 3D; com as duas, ~1,46
     tv_ponta = [b for b in doc.barras if b.atributos.get("marca") == "TV" and min(b.inicio[0], b.fim[0]) < 1.0]
     assert tv_ponta
+    assert sum(1 for b in doc.barras if b.atributos.get("elemento") == "Ancoragem do travamento do banzo inferior")         == lista["TVA"]
+    assert r["segunda_ordem"]["resumo"]["razao_max"] < 1.6
     assert not r["instavel"] and usos["PO"] < 1.1 and usos["VO"] < 1.1, usos
 
 

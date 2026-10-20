@@ -402,8 +402,6 @@ class _Construtor:
             for iv in range(len(self.xs) - 1):
                 xa, xb = self.xs[iv], self.xs[iv + 1]
                 za, zb = z, z
-                # a ponta é viga de oitão (não há banzo de baixo ali): a linha vai até a longarina de oitão da
-                # altura do banzo de baixo, onde se ancora
                 # a ponta é viga de oitão (não há banzo de baixo ali): a linha vai ao pilarete de oitão mais perto,
                 # na altura do banzo de baixo — rígido nessa direção (na longarina de oitão, mola mole: Δ2/Δ1 2,3)
                 ya, yb = y, y
@@ -419,6 +417,16 @@ class _Construtor:
                 self._barra("travamento", (xa, ya, za), (xb, yb, zb),
                             perfil, "contraventamento", "Contraventamento", "Aço",
                             self.dg.aco_chapas, el.nome, linha=j + 1, vao=iv + 1)
+                # e por cima: do banzo de baixo da última tesoura à viga de oitão, na mesma linha — com o de
+                # baixo, um triângulo no plano vertical: para o lado que o banzo for, um dos dois traciona (só
+                # com o horizontal, o banzo da última tesoura saía para o lado da ponta: Δ2/Δ1 2,1 no 3D)
+                for ponta, x_t, x_o in ((self._ponta_apoiada(iv), self.xs[1], self.xs[0]),
+                                         (self._ponta_apoiada(iv + 1), self.xs[-2], self.xs[-1])):
+                    if ponta and getattr(self, "perf_vo", None) is not None:
+                        z_vo = self._z_agua(y) + self._d_apoio() / 2.0 - self.perf_vo.d / 2.0
+                        self._barra("travamento", (x_t, y, z), (x_o, y, z_vo), perfil, "contraventamento",
+                                    "Contraventamento", "Aço", self.dg.aco_chapas,
+                                    "Ancoragem do travamento do banzo inferior", linha=j + 1, vao=iv + 1)
 
     def _misulas(self):
         g = self.g
