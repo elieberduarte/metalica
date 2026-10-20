@@ -386,6 +386,7 @@ async function telaModelo(slug, m, medir, camera) {
   }
   if (v !== visor) return;
   aplicarCamadas(v, slug);          // as camadas que a pessoa desligou neste projeto continuam desligadas
+  if (Object.keys(coresEscolhidas(slug)).length) aplicarCores(v, slug);    // e as cores que ela escolheu
   if (camera) {                     // trocou a situação da cobertura: a vista fica onde estava
     v.camera.position.copy(camera.posicao);
     v.controles.target.copy(camera.alvo);
@@ -522,13 +523,97 @@ function aplicarCamadas(v, slug) {
   for (const g of v.sistemas || []) if (c['sistema:' + g.chave] === false) v.ocultarSistema(g.ids, true);
 }
 
+// A cor de cada camada e de cada sistema, trocada no quadradinho da folha Camadas (usuário, 20/10: "alterar a cor da
+// layer também, isso fica só na versão dele"): guardada só neste aparelho, por obra, pelo nome da camada ou a chave do
+// sistema; uma peça na camada e no sistema pintados fica com a cor escolhida por último
+const CORES = 'metalica-cores:';
+const coresNaMemoria = {};
+function coresEscolhidas(slug) {
+  if (!coresNaMemoria[slug]) {
+    try { coresNaMemoria[slug] = JSON.parse(localStorage.getItem(CORES + slug)) || {}; } catch (e) { coresNaMemoria[slug] = {}; }
+  }
+  return coresNaMemoria[slug];
+}
+function lembrarCor(slug, chave, hex) {
+  const c = coresEscolhidas(slug);
+  delete c[chave];                  // a escolhida por último vai para o fim e pinta por cima
+  if (hex) c[chave] = hex;
+  try { localStorage.setItem(CORES + slug, JSON.stringify(c)); } catch (e) { /* sem armazenamento: vale até fechar */ }
+}
+function esquecerCores(slug) {
+  coresNaMemoria[slug] = {};
+  try { localStorage.removeItem(CORES + slug); } catch (e) { /* sem armazenamento */ }
+}
+/** As cores do modelo (pelo material) e, por cima, as escolhidas neste aparelho. */
+function aplicarCores(v, slug) {
+  v.corBase.set(v.corMaterial);
+  for (const [chave, hex] of Object.entries(coresEscolhidas(slug))) {
+    const ids = chave.startsWith('sistema:') ? ((v.sistemas || []).find(g => g.chave === chave.slice(8)) || {}).ids || []
+      : chave.startsWith('camada:') ? idsDaCamada(v, chave.slice(7)) : [];
+    const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+    for (const i of ids) { v.corBase[i * 3] = r; v.corBase[i * 3 + 1] = g; v.corBase[i * 3 + 2] = b; }
+  }
+  v._repintar();
+}
+/** O quadradinho com a cor que as peças do grupo têm no 3D (usuário, 20/10: "a layer está com a bolinha de uma cor e no
+ *  modelo está outra"): antes era a cor da camada no arquivo, quase sempre cinza, e o 3D pinta pelo material. A cor mais
+ *  comum entre as peças, clareada como no tema claro do visor; grupo com mais de uma cor mostra as principais lado a lado.
+ *  Devolve [o fundo do quadradinho, a cor de base para o seletor]. */
+const CLAREAR_NO_CLARO = 0.45;     // o mesmo do visor3d.js
+function corNoModelo(v, ids) {
+  if (!ids.length) return null;
+  const conta = new Map(), cb = v.corBase, passo = Math.max(1, Math.floor(ids.length / 5000));
+  for (let k = 0; k < ids.length; k += passo) { const i = ids[k] * 3, c = (cb[i] << 16) | (cb[i + 1] << 8) | cb[i + 2]; conta.set(c, (conta.get(c) || 0) + 1); }
+  const k0 = v.escuro ? 0 : CLAREAR_NO_CLARO, tot = Math.ceil(ids.length / passo);
+  const hex = (c, claro) => '#' + [16, 8, 0].map(s => { const x = (c >> s) & 255; return Math.trunc(claro ? x + (255 - x) * k0 : x).toString(16).padStart(2, '0'); }).join('');
+  const prim = [...conta].sort((a, b) => b[1] - a[1]).filter(([, n], j) => j === 0 || n / tot >= 0.05).slice(0, 3);
+  const fundo = prim.length === 1 ? hex(prim[0][0], true)
+    : `linear-gradient(90deg, ${prim.map(([c], j) => `${hex(c, true)} ${j * 100 / prim.length}% ${(j + 1) * 100 / prim.length}%`).join(', ')})`;
+  return [fundo, hex(prim[0][0], false)];
+}
+function idsDaCamada(v, nome) {
+  const cams = v.cabecalho.camadas, n = Math.min(v.fichas.length, v.nPecas), ids = [];
+  for (let i = 0; i < n; i++) if ((cams[v.fichas[i].c] || {}).nome === nome) ids.push(i);
+  return ids;
+}
+function pintarQuadradinhos(v) {
+  folha.querySelectorAll('.camada i.cor').forEach(el => {
+    const chave = el.dataset.cor;
+    const ids = chave.startsWith('sistema:') ? ((v.sistemas || []).find(g => g.chave === chave.slice(8)) || {}).ids || [] : idsDaCamada(v, chave.slice(7));
+    const cor = corNoModelo(v, ids);
+    if (cor) { el.style.background = cor[0]; el.dataset.base = cor[1]; }
+  });
+}
+let seletorCor = null;
+function escolherCor(v, el) {
+  if (!seletorCor) {
+    seletorCor = document.createElement('input');
+    seletorCor.type = 'color';
+    seletorCor.id = 'seletor-cor';
+    Object.assign(seletorCor.style, { position: 'fixed', left: '50%', bottom: '40%', width: '1px', height: '1px', opacity: '0', border: '0', padding: '0' });
+    document.body.appendChild(seletorCor);
+  }
+  const chave = el.dataset.cor;
+  seletorCor.value = /^#[0-9a-f]{6}$/i.test(el.dataset.base || '') ? el.dataset.base : '#8a94a6';
+  seletorCor.oninput = seletorCor.onchange = () => {
+    lembrarCor(visorSlug, chave, seletorCor.value);
+    aplicarCores(v, visorSlug);
+    pintarQuadradinhos(v);          // a peça da camada é também do sistema: os dois quadradinhos acompanham
+    $('#cores-originais').hidden = false;
+  };
+  try { seletorCor.showPicker(); } catch (e) { seletorCor.click(); }
+}
+
 let PISO_NOMES = {};                 // os nomes das partes do piso: os do modo ver do PC (referencia.js, lido ao abrir o 3D)
 
 /** As camadas como no painel do modo ver do PC (20/10, "na tela do mobile não aparecem as mesmas camadas que aparecem no
  *  sistema"): No piso (planta, eixos, níveis), Sistema (metálica, pré-moldado…, quando há mais de um) e as do Modelo. */
 function folhaCamadas(v) {
-  const cams = v.cabecalho.camadas;
-  const linha = (tipo, k, cor, nome, n, ligada) => `<div class="camada" data-tipo="${tipo}" data-k="${esc(k)}"><i style="background:${esc(cor)}"></i>
+  const cams = v.cabecalho.camadas, cores = coresEscolhidas(visorSlug);
+  // o quadradinho da camada e do sistema troca a cor e mostra a das peças no 3D (o do piso não: são as linhas do desenho)
+  const linha = (tipo, k, cor, nome, n, ligada, chaveCor) => `<div class="camada" data-tipo="${tipo}" data-k="${esc(k)}">${chaveCor
+      ? `<i class="cor" data-cor="${esc(chaveCor)}" role="button" aria-label="Trocar a cor de ${esc(nome)}"></i>`
+      : `<i style="background:${esc(cor)}"></i>`}
     <span>${esc(nome)}${n != null ? `<br><span class="mais-fraco">${nf(n)} peças</span>` : ''}</span><div class="chave ${ligada ? 'ligada' : ''}"></div></div>`;
   const ocultasPiso = (v._partesOcultas || new Set());
   const piso = v.partesReferencia();
@@ -537,10 +622,15 @@ function folhaCamadas(v) {
   if (piso.length) secoes.push('<div class="titulo-secao">No piso</div>' + piso.map(n => { const [nome, cor] = PISO_NOMES[n] || [n, '#999'];
     return linha('piso', n, cor, nome, null, !ocultasPiso.has(n)); }).join(''));
   if (sistemas.length) secoes.push('<div class="titulo-secao">Sistema</div>' + sistemas.map(g =>
-    linha('sistema', g.chave, g.cor, g.nome, g.n, !g.ids.some(i => v.ocultasSistema.has(i)))).join(''));
-  const modelo = cams.map((c, i) => c.pecas ? linha('camada', i, c.cor, c.nome, c.pecas, v.visivelCamada[i] !== false) : '').join('');
+    linha('sistema', g.chave, g.cor, g.nome, g.n, !g.ids.some(i => v.ocultasSistema.has(i)), 'sistema:' + g.chave)).join(''));
+  const modelo = cams.map((c, i) => c.pecas ? linha('camada', i, c.cor, c.nome, c.pecas, v.visivelCamada[i] !== false, 'camada:' + c.nome) : '').join('');
   secoes.push((secoes.length ? '<div class="titulo-secao">Modelo</div>' : '') + modelo);
-  abrirFolha(`<div class="nome">Camadas</div><div style="margin-top:6px">${secoes.join('')}</div>`);
+  abrirFolha(`<div class="nome">Camadas</div><div style="margin-top:6px">${secoes.join('')}</div>
+    <p class="mais-fraco dica-cor">Toque no quadradinho para trocar a cor. A cor fica só neste aparelho.</p>
+    <button class="botao" id="cores-originais" ${Object.keys(cores).length ? '' : 'hidden'}>Voltar às cores do modelo</button>`);
+  pintarQuadradinhos(v);
+  folha.querySelectorAll('.camada i.cor').forEach(el => el.onclick = (ev) => { ev.stopPropagation(); escolherCor(v, el); });
+  $('#cores-originais').onclick = () => { esquecerCores(visorSlug); aplicarCores(v, visorSlug); folhaCamadas(v); };
   folha.querySelectorAll('.camada').forEach(el => el.onclick = () => {
     const k = el.dataset.k, ch = el.querySelector('.chave');
     ch.classList.toggle('ligada');

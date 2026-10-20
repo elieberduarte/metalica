@@ -174,6 +174,49 @@ try:
     tocar(ap, bot[0], bot[1])
     ok(esperar(ap, "visor.apresentacao === true && localStorage.getItem('pref.apresentacao') === '1'", 5), "tocar de novo liga")
     foto(ap, "celular_apresentacao.png")
+    # a cor das camadas (20/10): o quadradinho mostra a cor das peças no 3D ("a layer está com a bolinha de uma cor e no
+    # modelo está outra" — era a cor da camada no arquivo, e o 3D pinta pelo material); tocar nele troca a cor, só no aparelho
+    ap.avaliar("document.getElementById('folha').hidden = true")
+    ap.avaliar("document.querySelector('[data-f=camadas]').click()")
+    ok(esperar(ap, "document.querySelectorAll('#folha .camada i.cor').length >= 2", 5), "Camadas: os quadradinhos de cor")
+    # a cor na tela de cada peça (a textura do visor) contra o fundo do quadradinho da camada dela
+    CONFERE = """(() => { const v = window.visor, cams = v.cabecalho.camadas, d = v.dadosTex, ruins = [];
+        for (const el of document.querySelectorAll('#folha .camada i.cor[data-cor^="camada:"]')) {
+          const nome = el.dataset.cor.slice(7), i = v.fichas.findIndex(f => (cams[f.c] || {}).nome === nome);
+          const tela = 'rgb(' + [d[i * 4], d[i * 4 + 1], d[i * 4 + 2]].join(', ') + ')';
+          const cs = getComputedStyle(el), fundo = cs.backgroundImage !== 'none' ? cs.backgroundImage : cs.backgroundColor;   // várias cores: lado a lado
+          if (!fundo.includes(tela)) ruins.push(nome + ': ' + fundo + ' × ' + tela);
+        } return JSON.stringify(ruins); })()"""
+    ruins = json.loads(ap.avaliar(CONFERE) or '["?"]')
+    ok(ruins == [], f"o quadradinho de cada camada tem a cor das peças dela no 3D ({ruins})")
+    CAM = "camada:Vigas"
+    r = ap.avaliar("(() => { const b = document.querySelector('#folha i.cor[data-cor=\"%s\"]').getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2, b.width]; })()" % CAM)
+    ok(r[2] >= 24, f"o quadradinho é do tamanho do dedo ({r[2]:.0f} px)")
+    tocar(ap, r[0], r[1])
+    ok(esperar(ap, "!!document.getElementById('seletor-cor')", 5), "tocar no quadradinho abre o seletor de cor")
+    ok(ap.avaliar("document.querySelector('#folha i.cor[data-cor=\"%s\"]').closest('.camada').querySelector('.chave').classList.contains('ligada')" % CAM),
+       "e não desliga a camada")
+    ap.avaliar("(() => { const s = document.getElementById('seletor-cor'); s.value = '#ff0000'; s.dispatchEvent(new Event('input')); s.dispatchEvent(new Event('change')); return 1; })()")
+    VIGA = "(() => { const v = window.visor, i = v.fichas.findIndex(f => (v.cabecalho.camadas[f.c] || {}).nome === 'Vigas'); return [v.corBase[i * 3], v.corBase[i * 3 + 1], v.corBase[i * 3 + 2]]; })()"
+    ok(ap.avaliar(VIGA) == [255, 0, 0], f"a viga fica vermelha no 3D ({ap.avaliar(VIGA)})")
+    ok(json.loads(ap.avaliar("localStorage.getItem('metalica-cores:obra-celular')") or "{}") == {CAM: "#ff0000"}, "a cor fica guardada no aparelho, por obra")
+    ruins = json.loads(ap.avaliar(CONFERE) or '["?"]')
+    ok(ruins == [], f"e o quadradinho acompanha ({ruins})")
+    ok(not ap.avaliar("document.getElementById('cores-originais').hidden"), "aparece o Voltar às cores do modelo")
+    foto(ap, "celular_cores.png")
+    # sair e abrir a obra de novo: a cor continua
+    rota3d = ap.avaliar("location.hash")
+    ap.avaliar("location.hash = '#/'")
+    esperar(ap, "document.querySelectorAll('.projeto').length === 1", 15)
+    ap.avaliar("location.hash = %s" % json.dumps(rota3d))
+    ok(esperar(ap, "window.visor && window.visor.fichas && !document.querySelector('.carregando') && (%s)[0] === 255" % VIGA, 60),
+       "aberta de novo, a viga continua vermelha")
+    ap.avaliar("document.querySelector('[data-f=camadas]').click()")
+    esperar(ap, "!!document.getElementById('cores-originais')", 5)
+    ap.avaliar("document.getElementById('cores-originais').click()")
+    ok(esperar(ap, "(%s)[0] !== 255 && !localStorage.getItem('metalica-cores:obra-celular')" % VIGA, 5)
+       and json.loads(ap.avaliar(CONFERE) or '["?"]') == [], "Voltar às cores do modelo: a viga e o quadradinho voltam à cor do material")
+    ap.avaliar("document.getElementById('folha').hidden = true")
     alvo = ap.avaliar("""(() => { const v = window.visor; let m = -1, k = 0; v.fichas.forEach((f, i) => { if (v.visivelCamada[f.c] !== false && (f.kg || 0) > k) { k = f.kg; m = i; } });
         const [x, y] = v.paraTela(m); const r = v.tela.getBoundingClientRect(); return [x + r.left, y + r.top, m]; })()""")
     tocar(ap, alvo[0], alvo[1])
