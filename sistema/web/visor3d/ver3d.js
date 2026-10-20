@@ -559,14 +559,44 @@ function escolher(i, centrar) {
 
 function painelCamadas() {
   const cams = visor.cabecalho.camadas;
-  abrirPainel('camadas', 'Camadas', secaoPiso() + cams.map((c, i) => c.pecas ? `<label class="linha-lista">
+  const linha = (c, i, recuo) => c.pecas ? `<label class="linha-lista${recuo ? ' no-grupo' : ''}">
       <input type="checkbox" data-c="${i}" ${visor.visivelCamada[i] !== false ? 'checked' : ''}>
-      ${quadradinho('camada', c.nome, corEscolhida('camada', c.nome) || c.cor)}<span>${esc(c.nome)}</span><em>${nf(c.pecas)}</em></label>` : '').join(''));
+      ${quadradinho('camada', c.nome, corEscolhida('camada', c.nome) || c.cor)}<span>${esc(c.nome)}</span><em>${nf(c.pecas)}</em></label>` : '';
+  // os grupos de camadas (19/10/2026, o usuário no Mercado: "agrupar layers onde seja possível desabilitar a layer de um
+  // grupo todo de uma vez"): a caixinha do grupo liga e desliga todas as camadas dele; as camadas do grupo logo abaixo
+  const membros = new Map();
+  cams.forEach((c, i) => { if (c.grupo && c.pecas) { if (!membros.has(c.grupo)) membros.set(c.grupo, []); membros.get(c.grupo).push(i); } });
+  const feitos = new Set();
+  let html = '';
+  cams.forEach((c, i) => {
+    if (!c.grupo || !membros.has(c.grupo)) { html += linha(c, i, false); return; }
+    if (feitos.has(c.grupo)) return;
+    feitos.add(c.grupo);
+    const is = membros.get(c.grupo), vis = is.filter(k => visor.visivelCamada[k] !== false).length;
+    html += `<label class="linha-lista grupo-camadas"><input type="checkbox" data-g="${esc(c.grupo)}" ${vis ? 'checked' : ''}>
+      <span>${esc(c.grupo)}</span><em>${nf(is.reduce((t, k) => t + cams[k].pecas, 0))}</em></label>`
+      + is.map(k => linha(cams[k], k, true)).join('');
+  });
+  abrirPainel('camadas', 'Camadas', secaoPiso() + html);
   ligarSecaoPiso();
-  $('#painel-corpo').querySelectorAll('input[data-c]').forEach(el => el.onchange = () => {
+  const corpo = $('#painel-corpo');
+  corpo.querySelectorAll('input[data-g]').forEach(el => {
+    const is = membros.get(el.dataset.g);
+    const vis = is.filter(k => visor.visivelCamada[k] !== false).length;
+    el.indeterminate = vis > 0 && vis < is.length;                  // parte do grupo oculta
+    el.onchange = () => {
+      const novo = { ...(doVer.camadas || {}) };
+      for (const k of is) { visor.mostrarCamada(k, el.checked); novo[cams[k].nome] = el.checked; }
+      doVer.camadas = novo;
+      gravarDoVer();
+      painelCamadas();
+    };
+  });
+  corpo.querySelectorAll('input[data-c]').forEach(el => el.onchange = () => {
     visor.mostrarCamada(+el.dataset.c, el.checked);
     doVer.camadas = { ...(doVer.camadas || {}), [cams[+el.dataset.c].nome]: el.checked };
     gravarDoVer();
+    if (cams[+el.dataset.c].grupo) painelCamadas();               // a caixinha do grupo acompanha
   });
 }
 

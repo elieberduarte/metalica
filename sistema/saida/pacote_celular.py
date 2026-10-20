@@ -631,6 +631,8 @@ def gerar_3d(modelo: dict, progresso=None) -> Tuple[bytes, dict, dict]:
         c = camadas.get(nome) or {}
         cam = {"nome": nome, "cor": c.get("cor") or "#8a94a6", "visivel": c.get("visivel", True) is not False,
                "pecas": sum(1 for f in fichas if f["c"] == ci)}
+        if c.get("grupo"):
+            cam["grupo"] = c["grupo"]                     # o grupo de camadas (um olho para o grupo todo, 19/10)
         if ci in caixas:
             cam["caixa"] = [[round(v, 1) for v in caixas[ci][0]], [round(v, 1) for v in caixas[ci][1]]]
         cab_camadas.append(cam)

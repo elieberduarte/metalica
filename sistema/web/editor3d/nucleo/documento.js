@@ -453,7 +453,8 @@ export class Documento {
       doc.camadas = new Map();
       for (const [k, v] of Object.entries(d.camadas)) {
         doc.camadas.set(k, { nome: v.nome || k, cor: v.cor || '#8a94a6',
-                             visivel: v.visivel !== false, bloqueada: !!v.bloqueada });
+                             visivel: v.visivel !== false, bloqueada: !!v.bloqueada,
+                             ...(v.grupo ? { grupo: v.grupo } : {}) });
       }
     }
     if (d.materiais && Object.keys(d.materiais).length) {

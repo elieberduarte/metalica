@@ -107,11 +107,14 @@ def _copia_para_dict(v):
 
 @dataclass
 class Camada:
-    """Tag no sentido do SketchUp: controla visibilidade e cor padrão."""
+    """Tag no sentido do SketchUp: controla visibilidade e cor padrão. `grupo`: o grupo de camadas em que ela está no
+    painel (19/10/2026, o usuário no Mercado: "agrupar layers onde seja possível desabilitar a layer de um grupo todo de
+    uma vez" — ex. "Cobertura": as telhas, as calhas e os rufos); vazio, solta."""
     nome: str
     cor: str = "#8a94a6"
     visivel: bool = True
     bloqueada: bool = False
+    grupo: str = ""
 
 
 @dataclass

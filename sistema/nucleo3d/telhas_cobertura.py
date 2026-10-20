@@ -25,7 +25,7 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 from nucleo3d.geometria import base_local, secao
-from nucleo3d.modelo import Solido, origem_de
+from nucleo3d.modelo import Camada, Solido, origem_de
 
 TELHA_PADRAO = {"nome": "TP40 0,5 mm (Isoeste Metálica)", "modelo": "TP40", "largura_util": 1020.0, "altura_onda": 40.0,
                 "comprimento_max": 12000.0, "massa_m2": 4.62}
@@ -36,6 +36,7 @@ AFASTAMENTO_CALHA = 150.0        # mm entre as pontas das telhas das duas águas
 COBRIMENTO_CALHA = 100.0         # mm de telha por cima da calha, de cada lado (a calha do vale: 150 + 2 × 100 = 350)
 AFASTAMENTO_PAREDE = 100.0       # mm da ponta da telha até a face da parede em que a água desce (a calha encostada nela)
 FUNDO_CALHA = 150.0              # mm de fundo da calha, abaixo da ponta das telhas
+GRUPO_COBERTURA = "Cobertura — telhas, calhas e rufos"   # o grupo de camadas do que o lançamento faz
 ALTURA_ONDA_FECHAMENTO = 40.0   # mm: a onda da telha do fechamento (a TP 40), que o beiral por cima dele passa
 
 
@@ -1633,6 +1634,17 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
         ml_cume += c["s1"] - c["s0"]
     fora, aguas, vaos_grandes = an["fora"], an["aguas"], an["vaos_grandes"]
     area = sum(p.get("area", 0.0) for p in feitos) / 1e6
+    # as camadas da cobertura num grupo só (19/10/2026, o usuário no Mercado: "criar uma layer com as telhas, calhas e
+    # rufos agrupadas no mesmo elemento"): um olho no painel liga e desliga a cobertura toda; a camada que já está num
+    # grupo fica nele
+    for so in doc.solidos:
+        a_ = so.atributos or {}
+        if a_.get("telha_lancada") or a_.get("calha_lancada") or a_.get("rufo_lancado") or a_.get("cumeeira_lancada"):
+            cam = doc.camadas.get(so.camada)
+            if cam is None:
+                cam = doc.camadas[so.camada] = Camada(nome=so.camada)
+            if not cam.grupo:
+                cam.grupo = GRUPO_COBERTURA
     lista_aguas = sorted(aguas.values(), key=lambda a: (a["caida_pct"], -a["comprimento"]))
     for a in lista_aguas:
         a["largura"] = round(a["largura"])

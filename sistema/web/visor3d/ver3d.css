@@ -40,6 +40,9 @@ html, body.ver3d { height: 100%; margin: 0; overflow: hidden; background: var(--
 .linha-lista { display: flex; align-items: center; gap: 8px; padding: 5px 2px; border-bottom: 1px solid var(--borda); cursor: pointer; }
 .linha-lista:last-child { border-bottom: 0; }
 .linha-lista:hover { background: var(--painel2); }
+/* os grupos de camadas (19/10/2026): o grupo em destaque e as camadas dele recuadas */
+.linha-lista.grupo-camadas { font-weight: 600; background: var(--painel2); }
+.linha-lista.no-grupo { padding-left: 22px; }
 .linha-lista i { width: 12px; height: 12px; border-radius: 3px; flex: none; border: 1px solid rgba(0,0,0,.15); }
 .linha-lista i.cor { cursor: pointer; width: 14px; height: 14px; }
 .linha-lista i.cor:hover { outline: 2px solid var(--texto2); outline-offset: 1px; }

@@ -5,7 +5,7 @@
 
 import { PAPEIS, areaDaChapa, medidasDaChapa, comprimentoDaBarra, direcaoDaBarra, escalar, somar } from '../nucleo/documento.js';
 import { lerPerfil } from '../nucleo/trocar_perfil.js';
-import { Comando } from '../nucleo/comandos.js';
+import { Comando, ComandoComposto } from '../nucleo/comandos.js';
 import { chapaEditavel } from './edicao_chapa.js';
 import { $, ComandoAparencia, contarPor, corDeGrupo, corHex, dimensoesPrincipais, el, metros, normalizarBusca, numero, ponto3, uniao, volumeDe } from '../editor.js';
 
@@ -559,6 +559,62 @@ export class MetodosPaineis {
     this._agendarPaineis('camadas');
   }
 
+  /** Os grupos recolhidos no painel de camadas (só a vista, guardado neste navegador por projeto). */
+  _camadasRecolhidas() {
+    if (!this._recolhidas) {
+      let v = [];
+      try { v = JSON.parse(localStorage.getItem(`camadas-recolhidas:${this.projeto || ''}`) || '[]'); } catch (e) { v = []; }
+      this._recolhidas = new Set(Array.isArray(v) ? v : []);
+    }
+    return this._recolhidas;
+  }
+
+  _gravarCamadasRecolhidas(r) {
+    try { localStorage.setItem(`camadas-recolhidas:${this.projeto || ''}`, JSON.stringify([...r])); } catch (e) { /* sem armazenamento */ }
+  }
+
+  /**
+   * Agrupar camadas (19/10/2026): o nome do grupo (um novo ou um que já existe) e as camadas dele marcadas; as que eram do
+   * grupo e ficaram desmarcadas saem dele. Um Ctrl+Z desfaz tudo.
+   */
+  async _agruparCamadas() {
+    const cams = [...this.documento.camadas];
+    const grupos = [...new Set(cams.map(([, c]) => c.grupo).filter(Boolean))];
+    const campo = el('input', { value: '', placeholder: 'ex.: Cobertura', spellcheck: 'false', list: 'grupos-de-camadas' });
+    const lista = el('datalist', { id: 'grupos-de-camadas' });
+    for (const g of grupos) lista.append(el('option', { value: g }));
+    const caixas = new Map();
+    const marcas = el('div', { class: 'lista-agrupar' });
+    for (const [nome, c] of cams) {
+      const cb = el('input', { type: 'checkbox' });
+      cb.dataset.camada = nome;
+      caixas.set(nome, cb);
+      marcas.append(el('label', { class: 'linha-agrupar' }, cb, el('span', { texto: nome }),
+                       el('span', { class: 'dim', texto: c.grupo ? ` (${c.grupo})` : '' })));
+    }
+    // o nome de um grupo que já existe marca as camadas dele
+    campo.addEventListener('input', () => {
+      const g = campo.value.trim();
+      if (!grupos.includes(g)) return;
+      for (const [nome, c] of cams) caixas.get(nome).checked = c.grupo === g;
+    });
+    const corpo = el('div', { class: 'campos' }, el('label', { texto: 'Grupo' }), campo, lista,
+                     el('label', { texto: 'Camadas' }), marcas);
+    if (await this.dialogo({ titulo: 'Agrupar camadas', corpo, ok: 'Agrupar' }) !== 'ok') return;
+    const g = campo.value.trim();
+    if (!g) { this.aviso('Dê um nome ao grupo.', 'atencao'); return; }
+    const cmds = [];
+    for (const [nome, c] of cams) {
+      const marcada = caixas.get(nome).checked;
+      if (marcada && c.grupo !== g) cmds.push(new ComandoAparencia('camadas', nome, { grupo: g }, `Agrupar ${g}`));
+      else if (!marcada && c.grupo === g) cmds.push(new ComandoAparencia('camadas', nome, { grupo: '' }, `Agrupar ${g}`));
+    }
+    if (!cmds.length) { this.dica('Nada mudou no grupo.'); return; }
+    this.executar(new ComandoComposto(cmds, `Agrupar camadas: ${g}`));
+    this._agendarPaineis('camadas');
+    this.dica(`Grupo ${g}: o olho do grupo liga e desliga todas as camadas dele (Ctrl+Z desfaz).`);
+  }
+
   _painelCamadas() {
     const raiz = this.el.camadas;
     raiz.replaceChildren();
@@ -571,8 +627,9 @@ export class MetodosPaineis {
     const cadeado = (b) => b
       ? '<svg width="13" height="13" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.2" fill="currentColor"/><path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>'
       : '<svg width="13" height="13" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".6"/><path d="M5 7V5a3 3 0 0 1 5.6-1.5" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".6"/></svg>';
-    for (const [nome, c] of this.documento.camadas) {
+    const linhaCamada = (nome, c, noGrupo) => {
       const linha = el('div', { class: 'linha', title: 'Clique: camada ativa · duplo clique: selecionar o que está nela' });
+      if (noGrupo) linha.dataset.noGrupo = '';
       if (c.visivel === false) linha.dataset.oculta = '';
       if (nome === this.camadaAtiva) linha.dataset.ativa = '';
       const vis = el('button', { type: 'button', class: 'alternador', 'aria-pressed': String(c.visivel !== false),
@@ -608,11 +665,67 @@ export class MetodosPaineis {
       excluir.textContent = '×';
       if (n || this.documento.camadas.size <= 1) excluir.style.opacity = '.35';
       linha.append(vis, cor, rotulo, el('span', { class: 'contagem', texto: numero(n) }), trava, excluir);
-      lista.append(linha);
+      return linha;
+    };
+    // os grupos de camadas (19/10/2026, o usuário no Mercado: "criar uma ferramenta para agrupar layers onde seja possível
+    // desabilitar a layer de um grupo todo de uma vez"): o cabeçalho com um olho e um cadeado para o grupo todo (um Ctrl+Z
+    // desfaz), a seta que recolhe e o × que desagrupa; as camadas do grupo logo abaixo, recuadas
+    const membros = new Map();
+    for (const [nome, c] of this.documento.camadas) {
+      if (!c.grupo) continue;
+      if (!membros.has(c.grupo)) membros.set(c.grupo, []);
+      membros.get(c.grupo).push(nome);
+    }
+    const feitos = new Set();
+    for (const [nome, c] of this.documento.camadas) {
+      if (!c.grupo) { lista.append(linhaCamada(nome, c, false)); continue; }
+      if (feitos.has(c.grupo)) continue;
+      feitos.add(c.grupo);
+      const g = c.grupo, nomes = membros.get(g), cams = nomes.map(k => this.documento.camadas.get(k));
+      const recolhido = this._camadasRecolhidas().has(g);
+      const visiveis = cams.filter(k => k.visivel !== false).length;
+      const travadas = cams.filter(k => k.bloqueada).length;
+      const cab = el('div', { class: 'linha grupo-camadas', title: 'Grupo de camadas · duplo clique: selecionar o que está nele' });
+      cab.dataset.grupo = g;
+      if (!visiveis) cab.dataset.oculta = '';
+      const seta = el('button', { type: 'button', class: 'alternador seta-grupo', title: recolhido ? 'Abrir o grupo' : 'Recolher o grupo',
+        onclick: () => {
+          const r = this._camadasRecolhidas();
+          if (r.has(g)) r.delete(g); else r.add(g);
+          this._gravarCamadasRecolhidas(r);
+          this._agendarPaineis('camadas');
+        } });
+      seta.textContent = recolhido ? '▸' : '▾';
+      const todos = (campo, valor, rotulo) => this.executar(new ComandoComposto(
+        nomes.map(k => new ComandoAparencia('camadas', k, { [campo]: valor }, rotulo)), rotulo));
+      const vis = el('button', { type: 'button', class: 'alternador', 'aria-pressed': String(visiveis > 0),
+        title: visiveis ? `Ocultar o grupo ${g} (${nomes.length} camadas)` : `Mostrar o grupo ${g}`,
+        onclick: () => todos('visivel', !visiveis, `${visiveis ? 'Ocultar' : 'Mostrar'} grupo ${g}`) });
+      vis.innerHTML = olho(visiveis > 0);
+      if (visiveis && visiveis < cams.length) vis.style.opacity = '.6';           // parte do grupo oculta
+      const trava = el('button', { type: 'button', class: 'alternador', 'aria-pressed': String(travadas === cams.length),
+        title: travadas === cams.length ? `Desbloquear o grupo ${g}` : `Bloquear o grupo ${g}`,
+        onclick: () => todos('bloqueada', travadas !== cams.length,
+                             `${travadas === cams.length ? 'Desbloquear' : 'Bloquear'} grupo ${g}`) });
+      trava.innerHTML = cadeado(travadas === cams.length);
+      const desagrupar = el('button', { type: 'button', class: 'alternador excluir-camada',
+        title: `Desagrupar: as ${nomes.length} camadas ficam soltas (as peças não mudam)`,
+        onclick: () => { todos('grupo', '', `Desagrupar ${g}`); this.dica(`Grupo ${g} desfeito (Ctrl+Z desfaz).`); } });
+      desagrupar.textContent = '×';
+      const n = nomes.reduce((t, k) => t + (cont.get(k) || 0), 0);
+      cab.addEventListener('dblclick', (ev) => {
+        if (ev.target.closest('button, input')) return;
+        nomes.forEach((k, i) => this.selecao.porCamada(k, ev.shiftKey || i > 0));
+      });
+      cab.append(seta, vis, el('span', { class: 'nome', texto: g }), el('span', { class: 'contagem', texto: numero(n) }),
+                 trava, desagrupar);
+      lista.append(cab);
+      if (!recolhido) for (const k of nomes) lista.append(linhaCamada(k, this.documento.camadas.get(k), true));
     }
     raiz.append(lista);
     const acoes = el('div', { class: 'acoes-painel' });
     acoes.append(el('button', { type: 'button', texto: '+ Nova camada', onclick: () => this._novaCamada() }));
+    acoes.append(el('button', { type: 'button', texto: 'Agrupar camadas', title: 'Juntar camadas num grupo: um olho liga e desliga o grupo todo', onclick: () => this._agruparCamadas() }));
     acoes.append(el('button', { type: 'button', texto: 'Mostrar todas', onclick: () => {
       for (const [nome, c] of this.documento.camadas) {
         if (c.visivel === false) this.executar(new ComandoAparencia('camadas', nome, { visivel: true }, 'Mostrar todas'));

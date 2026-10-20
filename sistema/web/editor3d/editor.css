@@ -543,6 +543,13 @@ kbd {
 .linha .alternador:hover { color: var(--azul2); background: var(--azul-fraco); }
 .linha .alternador[aria-pressed="true"] { color: var(--azul2); }
 .linha[data-oculta] .nome { opacity: .45; text-decoration: line-through; }
+/* os grupos de camadas (19/10/2026): o cabeçalho do grupo e as camadas dele recuadas */
+.linha.grupo-camadas { background: var(--painel2); font-weight: 600; margin-top: 2px; }
+.linha.grupo-camadas .seta-grupo { width: 16px; padding: 0; font-size: 11px; color: var(--texto2); }
+.linha[data-no-grupo] { padding-left: 22px; }
+.lista-agrupar { max-height: 46vh; overflow: auto; border: 1px solid var(--borda); border-radius: 4px; padding: 4px 6px; }
+.lista-agrupar .linha-agrupar { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 12.5px; }
+.lista-agrupar .dim { color: var(--texto3); }
 .linha input[type="color"] { width: 20px; height: 18px; border: 1px solid var(--borda);
   border-radius: 3px; padding: 0; background: none; cursor: pointer; }
 
