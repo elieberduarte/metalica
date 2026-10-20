@@ -61,7 +61,8 @@ def _parear(c):
     st, cab, _ = _pedir(c, "/celular/parear?c=" + cod)
     assert st == 302
     cookie = cab["Set-Cookie"]
-    assert "HttpOnly" in cookie and "SameSite=Strict" in cookie
+    # Lax: com Strict, o QR lido pela câmera pareava e a primeira tela dizia que não (verif_celular_qr_outro_app)
+    assert "HttpOnly" in cookie and "SameSite=Lax" in cookie
     return cookie.split(";")[0].split("=", 1)[1]
 
 

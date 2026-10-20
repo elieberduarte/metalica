@@ -694,7 +694,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 return self._pagina(403, "Código vencido ou já usado",
                                     "No computador, abra <i>Acesso pelo celular</i> e gere um QR code novo. "
                                     "Cada código vale uma vez, por 5 minutos.", cabeca)
-            cookie = "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=34560000%s" % (
+            # SameSite=Lax, e não Strict: a câmera entrega o link do QR como navegação de FORA do site,
+            # e com Strict o Chrome grava a chave mas não a manda no redirecionamento logo abaixo — o
+            # aparelho ficava pareado e a primeira tela dizia que não (19/10). O Lax só deixa a chave ir
+            # em navegação GET de primeiro plano, e este servidor só responde GET de leitura.
+            cookie = "%s=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=34560000%s" % (
                 COOKIE, valor, "; Secure" if cel.https else "")
             return self._enviar(302, b"", "text/plain", {"Location": "/celular/", "Set-Cookie": cookie,
                                                           "Cache-Control": "no-store"}, cabeca)
