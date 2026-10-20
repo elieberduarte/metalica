@@ -33,6 +33,7 @@ const ARQUIVOS = [
   ['./furo.js', 'estrutura'],
   ['./encaixar.js', 'estrutura'],
   ['./estender.js', 'estrutura'],
+  ['./estender_telha.js', 'estrutura'],
   ['./dividir.js', 'estrutura'],
   ['./recortar.js', 'estrutura'],
   ['./editar_chapa.js', 'estrutura'],
