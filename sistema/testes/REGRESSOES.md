@@ -118,6 +118,7 @@ pelo caminho da câmera — link vindo de fora do site — fica em `verif_celula
 |---|---|---|---|
 | 19/10 | "Cobertura retrátil: ver aberta / ver retraída" no menu Modelo de todos os projetos — a cobertura é de um projeto só | aef5650 | verif_cobertura_barra |
 | 19/10 | celular: aberta/retraída não aparecia na Kaefer — o pacote era de antes e, sem o projeto mudar, não era refeito | 0dd4c87 | test_pacote_cobertura_movel `test_pacote_de_antes_e_refeito_quando_o_formato_muda`, verif_celular_cobertura |
+| 19/10 | celular: a lona desligada voltava ao trocar retraída/aberta — e em todo projeto as camadas desligadas voltavam ao sair e voltar | f7b4201 | verif_celular_cobertura (camadas) |
 
 ## Primeiro uso (agentes engenheiro-primeiro-uso e detalhista-primeiro-uso-ifc)
 
