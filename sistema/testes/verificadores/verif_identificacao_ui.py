@@ -14,6 +14,8 @@
   · Fase 4: "Lançar as terças nos eixos" lê a planta de terças (folha 13): 56 peças com as marcas da tabela (T.C.1 ×14,
     T.C.2 ×12, T.C.2-A ×8, T.C.2-B ×8, T.C.3 ×14), o pé de +6,45 a +7,30 pelo corte na vista da tesoura; no 3D, 56 barras
     com papel terça (U127, o eixo meio perfil acima do pé);
+  · etapa 4: "Lançar contraventos e vigas" — 32 contraventos (CV1–CV8; os 16 do banzo de cima inclinados com o telhado),
+    as correntes (as "A DEFINIR" com aviso), 6 VC (treliçadas, pela folha delas) e 6 VT, também no 3D;
   · Fase 5: com 5 barras antigas no modelo (o 3D desmontado do caminho antigo), "Montar o modelo 3D" avisa delas, deixa o
     modelo só com o identificado (as 141 barras das T2 e as 56 terças), guarda o anterior no histórico e abre o 3D;
   · Fase 6: uma terça andou 300 mm no 3D; "Trazer do 3D o que mudou" leva o movimento à Implantação (no papel do quadro)
@@ -184,6 +186,28 @@ try:
     borda = min(tercas3d, key=lambda e: e["inicio"][2]) if tercas3d else None
     ok(borda and abs(borda["inicio"][2] - (6454.5 + 63.5)) < 2 and borda["perfil"].startswith("U 127"), f"a terça da borda: U127 com o eixo em +6,52 ({borda and borda['inicio'][2]}, {borda and borda['perfil']})")
 
+    # ---- Etapa 4: contraventos (folhas 14 e 15), correntes e as vigas VC (treliçada) e VT (simples) onde a locação marca
+    clicar_em(botao("Confirmar as terças"))
+    ok(esperar("!document.querySelector('[data-etapa=contraventos]').classList.contains('bloqueada')", 10), "confirmadas as terças, os contraventos se liberam")
+    clicar_em(botao("Lançar contraventos e vigas"))
+    ok(esperar("[...window.cad.doc.entidades.values()].some(e => (e.atributos || {}).identificacao === 'outra')", 60), "contraventos e vigas lançados na Implantação")
+    conta = aba.avaliar("""(() => { const c = {}; for (const e of window.cad.doc.entidades.values()) { const a = e.atributos || {}; if (a.identificacao !== 'outra') continue;
+      const k = a.elemento === 'trelica' ? 'VC' : a.marca === 'VT' ? 'VT' : a.papel; c[k] = (c[k] || 0) + 1; } return c; })()""") or {}
+    ok(conta.get("contraventamento") == 32 and conta.get("VC") == 6 and conta.get("VT") == 6 and conta.get("corrente", 0) >= 80,
+       f"32 contraventos (CV1–CV8), 6 VC, 6 VT e as correntes: {conta}")
+    t = painel()
+    ok("A DEFINIR" in t and "alma não tem perfil escrito" in t, "os avisos: as correntes A DEFINIR e a alma da VC sem perfil")
+    t0 = time.time()
+    while time.time() - t0 < 60 and sum(1 for e in modelo3d() if e.get("papel") == "contraventamento") < 32:
+        aba.drenar(1.0)
+    m3 = modelo3d()
+    cvs = [e for e in m3 if e.get("papel") == "contraventamento"]
+    inclinados = sum(1 for e in cvs if abs(e["inicio"][2] - e["fim"][2]) > 100)
+    ok(len(cvs) == 32 and all(e.get("camada") == "Contraventamento" for e in cvs), f"no 3D: 32 contraventos na camada Contraventamento ({len(cvs)})")
+    ok(inclinados == 16, f"os 16 do banzo de cima sobem com o telhado; os 16 do de baixo ficam no plano dele ({inclinados} inclinados)")
+    vc = [e for e in m3 if str((e.get("atributos") or {}).get("marca", "")).startswith("VC")]
+    ok(len(vc) >= 6 * 10, f"as VC viraram treliças no 3D ({len(vc)} barras)")
+
     clicar_em("[...document.querySelectorAll('.ident-tesoura')].find(d => d.textContent.includes('T3')).querySelector('.ident-ver')")
     ok(esperar("window.cad.nomeDesenho === 'planta-de-lançamento' && !document.querySelector('#painel-ident').hidden", 30), "Ver leva ao Original com o painel junto")
     aba.drenar(1.0)
@@ -219,7 +243,8 @@ try:
     papeis = {}
     for e in m3:
         papeis[e.get("papel")] = papeis.get(e.get("papel"), 0) + 1
-    ok(soltas == 0 and papeis.get("terça") == 56 and len(m3) == 56 + 141, f"o modelo ficou só com o identificado: {len(m3)} peças, {papeis.get('terça')} terças, {soltas} antigas")
+    ok(soltas == 0 and papeis.get("terça") == 56 and papeis.get("contraventamento") == 32 and len(m3) >= 56 + 141 + 32,
+       f"o modelo ficou só com o identificado: {len(m3)} peças, {papeis.get('terça')} terças, {papeis.get('contraventamento')} contraventos, {soltas} antigas")
     hist = len(os.listdir(os.path.join(pasta, "historico"))) if os.path.isdir(os.path.join(pasta, "historico")) else 0
     ok(hist > hist_antes, f"o modelo de antes foi para o histórico ({hist_antes} → {hist})")
 

@@ -931,7 +931,10 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
                 else:
                     h = _altura_secao(s)
                     z += {"eixo": h / 2.0, "base": h}.get(alin, 0.0)
-                A, B = (e.a[0], e.a[1], z), (e.b[0], e.b[1], z)
+                # a ponta b numa cota própria (`nivel_fim`, a Identificação para modelagem, 20/10): o contravento no plano do
+                # telhado sobe com o banzo; o alinhamento vale igual nas duas pontas
+                zb = z + (_nivel(a.get("nivel_fim"), tab, 0.0) - _nivel(a.get("nivel_topo"), tab, 3000.0)) if a.get("nivel_fim") is not None else z
+                A, B = (e.a[0], e.a[1], z), (e.b[0], e.b[1], zb)
                 L = math.dist(A, B)
                 if L < 1:
                     raise ErroDeDados("a viga tem comprimento nulo")
@@ -939,12 +942,14 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
                     # a terça lançada pela Identificação para modelagem (20/10): a viga de aço com papel "terça" (o
                     # detalhamento e os resumos separam pelo papel), na camada das terças
                     papel = a.get("papel") or "viga"
-                    terca = papel in ("terça", "terca")
-                    cam_b = "Terças" if terca else camada
+                    cam_b, cor_b, nome_b = {"terça": ("Terças", "#0f766e", "Terça"), "terca": ("Terças", "#0f766e", "Terça"),
+                                            "contraventamento": ("Contraventamento", "#16a34a", "Contravento"),
+                                            "corrente": ("Correntes", "#65a30d", "Corrente"),
+                                            "travamento": ("Travamentos", "#0891b2", "Travamento")}.get(papel, (camada, None, "Viga"))
                     if cam_b not in doc.camadas:
-                        doc.camadas[cam_b] = Camada(nome=cam_b, cor="#0f766e")
+                        doc.camadas[cam_b] = Camada(nome=cam_b, cor=cor_b or "#4b5563")
                     bar = Barra(inicio=A, fim=B, perfil=s.get("perfil", "W 310×38,7"), papel=papel, aco=s.get("aco", "ASTM A572 Gr.50"),
-                                rotacao=float(a.get("rotacao") or 0.0), camada=cam_b, nome="%s %s" % ("Terça" if terca else "Viga", marca), atributos=base)
+                                rotacao=float(a.get("rotacao") or 0.0), camada=cam_b, nome="%s %s" % (nome_b, marca), atributos=base)
                     doc.add(bar)
                     n_aco += 1
                 else:

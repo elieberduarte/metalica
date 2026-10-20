@@ -129,3 +129,32 @@ def test_hangar_tercas_na_planta(hangar):
     zs = sorted({p["z_pe"] for p in r["pecas"]})
     assert zs[0] == pytest.approx(6454.5, abs=1) and zs[-1] == pytest.approx(7303.1, abs=1)
     assert all(p["perfil"] == PERFIL for p in r["pecas"])
+
+
+def test_viga_de_aco_inclinada_pelo_nivel_fim():
+    """o contravento no plano do telhado: a ponta b na cota dela (nivel_fim), o papel e a camada dele"""
+    des = Desenho(nome="planta", escala=100.0)
+    des.add(Linha(camada="ESTRUTURA", a=(0.0, 0.0), b=(4600.0, 4700.0), atributos={
+        "elemento": "viga", "material": "aco", "papel": "contraventamento", "marca": "CV1",
+        "secao": {"perfil": 'Barra redonda ø 1/2"'}, "nivel_topo": 6415.8, "nivel_fim": 6812.0, "alinhamento": "eixo"}))
+    doc = _modelo(des)
+    b = next(x for x in doc.entidades.values() if isinstance(x, Barra))
+    assert b.papel == "contraventamento" and b.camada == "Contraventamento"
+    assert b.inicio[2] == pytest.approx(6415.8) and b.fim[2] == pytest.approx(6812.0)
+
+
+def test_hangar_contraventos_e_vigas(hangar):
+    from nucleo3d import identificacao as I
+    des, v = hangar
+    loc = v["locacao"]
+    grav = {k: [{"nome": x["nome"], "pos": x["pos"]} for x in loc["eixos"][k]] for k in ("numeros", "letras")}
+    tes = [{"tipo": t["tipo"], "eixos": t["eixos"], "caixa": t["vista"]["caixa"]} for t in v["tesouras"] if t["vista"] and t["eixos"]]
+    r = I.outras_pecas(des, v["folhas"], loc, grav, tes, 6000.0)
+    cv = [b for b in r["barras"] if b["papel"] == "contraventamento"]
+    assert len(cv) == 32 and collections.Counter(b["marca"] for b in cv) == {"CV%d" % i: 4 for i in range(1, 9)}
+    assert sum(1 for b in cv if b["plano"] == "sup" and abs(b["z_a"] - b["z_b"]) > 100) == 16
+    assert all(b["perfil"] == 'Barra redonda ø 1/2"' for b in cv)
+    assert collections.Counter(t["marca"] for t in r["trelicas"]) == {"VC01": 2, "VC02": 1, "VC03": 2, "VC04": 1}
+    assert all(len(t["desenho"]["barras"]) >= 15 for t in r["trelicas"])
+    assert sum(1 for b in r["barras"] if b["marca"] == "VT") == 6
+    assert any("A DEFINIR" in a and "L 25×25" in a for a in r["avisos"])

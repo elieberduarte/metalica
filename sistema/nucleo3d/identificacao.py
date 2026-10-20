@@ -624,6 +624,16 @@ def _alma_nas_faces(ents: List[dict]) -> List[dict]:
     polis = [[tuple(v) for v in e["vertices"]] for e in ents if e.get("tipo") == "polilinha" and e.get("fechada") and len(e.get("vertices") or []) >= 3]
     if not polis:
         return ents
+    # a alma em zigue-zague numa polilinha aberta só (a viga de rigidez VC01 do Hangar): um trecho por lado, cada um cortado
+    abertas = []
+    for e in ents:
+        if e.get("tipo") == "polilinha" and not e.get("fechada") and len(e.get("vertices") or []) >= 3:
+            vs = e["vertices"]
+            for i, (P, Q) in enumerate(zip(vs, vs[1:])):
+                abertas.append(dict({k: v for k, v in e.items() if k not in ("vertices", "fechada", "tipo")}, tipo="linha",
+                                    a=list(P), b=list(Q), id="%s-z%d" % (e.get("id") or "p", i)))
+    if abertas:
+        ents = [e for e in ents if not (e.get("tipo") == "polilinha" and not e.get("fechada") and len(e.get("vertices") or []) >= 3)] + abertas
     saida = []
     for e in ents:
         if e.get("tipo") != "linha":
@@ -835,3 +845,320 @@ def tercas_da_planta(des: Desenho, caixa_planta, locacao: dict, gravados: dict, 
         if m.startswith("T.C") and contagem.get(m, 0) != info["qtd"]:
             avisos.append("%s: %d na planta, %d na tabela." % (m, contagem.get(m, 0), info["qtd"]))
     return {"pecas": sorted(pecas, key=lambda pc: (pc["u"], pc["g_a"] or 0)), "tabela": tab, "avisos": avisos}
+
+
+# ---------------------------------------------------------------------------------- Etapa 4: contraventos e outras peças
+
+_MARCA_PECA = re.compile(r"^\s*((?:CV|AG|CR|TR|VC|VT|VB|VU|MF)\s*\d*(?:-[A-Z])?)\b", re.I)
+_TAB_PECA = re.compile(r"^\s*((?:CV|AG|CR|TR)\s*\d+)\s*-\s*(.+?)\s*L\s*=\s*([\d.,]+)\s*-\s*(\d+)\s*P", re.I)
+
+
+def _papel_da_legenda(texto: str) -> Optional[str]:
+    t = texto.upper()
+    if re.search(r"CONTRAVENT", t):
+        return "contraventamento"
+    if re.search(r"AGULHAMENT|CORRENTE", t):
+        return "corrente"
+    if re.search(r"A\s+DEFINIR", t):
+        return "a definir"
+    return None
+
+
+def _legenda_de_cores(des: Desenho, caixa, fora_de) -> Dict[str, dict]:
+    """A legenda de cores da folha: a linha curta de cada camada, fora da planta (à direita da malha), com o texto ao lado
+    ("Ø1/2 - contraventos") → {camada: {texto, perfil, papel}}."""
+    from nucleo2d.reconhecer import perfil_do_texto
+    textos = [e for e in des.entidades.values() if isinstance(e, Texto) and _dentro(e, caixa)]
+    out: Dict[str, dict] = {}
+    for e in des.entidades.values():
+        if not isinstance(e, Linha) or not _dentro(e, caixa) or min(e.a[0], e.b[0]) < fora_de:
+            continue
+        if abs(e.a[1] - e.b[1]) > 1 or not 300 <= abs(e.b[0] - e.a[0]) <= 3000:
+            continue
+        x1, y = max(e.a[0], e.b[0]), e.a[1]
+        ao_lado = [t for t in textos if 0 <= t.posicao[0] - x1 <= 2500 and abs(t.posicao[1] - y) <= 250]
+        if not ao_lado:
+            continue
+        t = min(ao_lado, key=lambda t: abs(t.posicao[1] - y)).texto.strip()
+        p = perfil_do_texto(t.split(" - ")[0])
+        out[e.camada] = {"texto": t, "perfil": p["perfil"] if p else None, "papel": _papel_da_legenda(t)}
+    return out
+
+
+class _Tesouras:
+    """As tesouras dos eixos (o tipo e a vista geral de cada eixo numerado), postas como foram coladas — centradas entre
+    os eixos com letra, a base no apoio —, para dar a cota de um ponto da cobertura: o eixo do banzo de cima ou de baixo
+    e o pé das terças, em cada u (ao longo da tesoura, do eixo A)."""
+
+    def __init__(self, des: Desenho, tesouras_: List[dict], uB: float, apoio: float):
+        self.apoio = apoio
+        self.por_eixo: Dict[str, dict] = {}
+        for t in tesouras_:
+            if not t.get("caixa"):
+                continue
+            r = tesoura_da_folha(des, t["caixa"])
+            if not r.get("entidades"):
+                continue
+            x0, y0 = r["caixa"][0]
+            polis = [[(v[0] - x0, v[1] - y0) for v in e["vertices"]] for e in r["entidades"]
+                     if e.get("tipo") == "polilinha" and e.get("fechada") and len(e.get("vertices") or []) >= 3
+                     and max(v[0] for v in e["vertices"]) - min(v[0] for v in e["vertices"]) > 1000]
+            info = {"tipo": t["tipo"], "u_esq": uB / 2.0 - r["largura"] / 2.0, "polis": polis,
+                    "cortes": _secoes_de_terca(des, t["caixa"], r["caixa"])}
+            for n in t.get("eixos") or []:
+                self.por_eixo[n] = info
+
+    def _faixas(self, info, s):
+        """os banzos (contornos fechados) na abscissa s: [(y de baixo, y de cima)], de baixo para cima"""
+        out = []
+        for poli in info["polis"]:
+            ys = []
+            for (ax, ay), (bx, by) in zip(poli, poli[1:] + poli[:1]):
+                if (ax - s) * (bx - s) <= 0 and abs(bx - ax) > 1e-9:
+                    ys.append(ay + (by - ay) * (s - ax) / (bx - ax))
+            if len(ys) >= 2:
+                out.append((min(ys), max(ys)))
+        return sorted(out)
+
+    def banzo(self, eixo: str, u: float, qual: str) -> Optional[float]:
+        info = self.por_eixo.get(eixo)
+        if not info:
+            return None
+        fx = self._faixas(info, u - info["u_esq"])
+        if not fx:
+            return None
+        lo, hi = fx[-1] if qual == "sup" else fx[0]
+        return round(self.apoio + (lo + hi) / 2.0, 1)
+
+    def terca(self, eixo: str, u: float, h_terca: float) -> Optional[float]:
+        """o eixo da terça em u: o pé pela terça em corte mais perto (ou entre as duas vizinhas) + meia altura dela"""
+        info = self.por_eixo.get(eixo)
+        if not info or not info["cortes"]:
+            return None
+        cs = sorted((info["u_esq"] + s_, pe) for s_, pe in info["cortes"])
+        perto = min(cs, key=lambda c: abs(c[0] - u))
+        if abs(perto[0] - u) <= 150:
+            pe = perto[1]
+        else:
+            antes = [c for c in cs if c[0] <= u]
+            depois = [c for c in cs if c[0] >= u]
+            if not antes or not depois:
+                pe = perto[1]
+            else:
+                a, b = antes[-1], depois[0]
+                pe = a[1] + (b[1] - a[1]) * (u - a[0]) / ((b[0] - a[0]) or 1.0)
+        return round(self.apoio + pe + h_terca / 2.0, 1)
+
+
+def _membros_em_barras(lt: dict) -> Optional[dict]:
+    """a leitura da tesoura (leitura_quadros.ler_tesoura) no formato do desenho da treliça da planta — o mesmo de
+    implantacao.js _desenhoDaLeitura: [u0, v0, u1, v1, papel] com a origem no canto de baixo à esquerda"""
+    ms = [m for m in lt.get("membros") or [] if not m.get("moldura")]
+    if len(ms) < 3:
+        return None
+    bz = [m for m in ms if m["papel"] == "banzo"]
+
+    def h_em(m, s):
+        return min(m["h0"], m["h1"]) if abs(m["s1"] - m["s0"]) < 1e-6 else m["h0"] + (m["h1"] - m["h0"]) * (s - m["s0"]) / (m["s1"] - m["s0"])
+    barras = []
+    for m in ms:
+        papel = m["papel"] if m["papel"] in ("montante", "diagonal") else "diagonal"
+        if m["papel"] == "banzo":
+            s = (m["s0"] + m["s1"]) / 2
+            h = h_em(m, s)
+            outros = [h_em(o, s) for o in bz if o is not m and min(o["s0"], o["s1"]) - 1 <= s <= max(o["s0"], o["s1"]) + 1]
+            abaixo, acima = any(x < h - 50 for x in outros), any(x > h + 50 for x in outros)
+            papel = "diagonal" if abaixo and acima else "banzo_sup" if abaixo else "banzo_inf"
+        barras.append([m["s0"], m["h0"], m["s1"], m["h1"], papel])
+    s0 = min(min(b[0], b[2]) for b in barras)
+    h0 = min(min(b[1], b[3]) for b in barras)
+    out = [[round(b[0] - s0, 1), round(b[1] - h0, 1), round(b[2] - s0, 1), round(b[3] - h0, 1), b[4]] for b in barras]
+    return {"barras": out, "vao": round(max(max(b[0], b[2]) for b in out), 1), "altura": round(max(max(b[1], b[3]) for b in out), 1)}
+
+
+#: a alma da viga treliçada sem perfil escrito (a VC do Hangar só escreve o banzo): a menor cantoneira que o projeto usa
+ALMA_PADRAO = "L 25×25"
+
+
+def _meia_altura(perfil: Optional[str]) -> float:
+    from nucleo3d.de_planta_estrutura import _altura_do_perfil
+    try:
+        return _altura_do_perfil(perfil) / 2.0 if perfil else 63.5
+    except Exception:                                                # noqa: BLE001
+        return 63.5
+
+
+def _vigas_das_folhas(des: Desenho, folhas_: List[dict]) -> Dict[str, dict]:
+    """As vigas das folhas "VIGA … VC01 - 2 PÇ": {sigla: {folha, qtd, perfil, trelica (o desenho, se for treliçada)}}."""
+    from nucleo2d.reconhecer import perfil_do_texto
+    from nucleo3d import leitura_quadros as LQ
+    out: Dict[str, dict] = {}
+    for f in folhas_:
+        m = re.match(r"\s*VIGA\b.*?\b((?:VC|VT|VB|VR|VP)\d*)\s*-\s*(\d+)\s*P", f["titulo"], re.I)
+        if not m or not f["caixa"]:
+            continue
+        sigla = m.group(1).upper()
+        perfil = None
+        for e in des.entidades.values():
+            if isinstance(e, Texto) and _dentro(e, f["caixa"]) and re.search(r"L\s*=", e.texto or ""):
+                p = perfil_do_texto(e.texto)
+                if p:
+                    perfil = p["perfil"]
+                    break
+        r = tesoura_da_folha(des, f["caixa"])
+        trelica = None
+        if r.get("entidades") and (r.get("altura") or 0) > 300:
+            lt, _ap, _el = LQ.ler_tesoura({"id": "v", "tipo": "tesoura", "nome": sigla, "escala": 1, "x": 0.0, "y": 0.0}, r["entidades"])
+            trelica = _membros_em_barras(lt)
+        out[sigla] = {"folha": f["folha"], "qtd": int(m.group(2)), "perfil": perfil, "trelica": trelica,
+                      "largura": r.get("largura"), "altura": r.get("altura")}
+    return out
+
+
+def outras_pecas(des: Desenho, folhas_: List[dict], locacao: dict, gravados: dict, tesouras_: List[dict], apoio: float,
+                 h_terca: float = 127.0) -> dict:
+    """A etapa 4 da Identificação para modelagem (20/10/2026): o que a planta de contraventos e a locação desenham além das
+    tesouras e das terças, nos eixos gravados.
+
+    · Contraventos (CV) das plantas de contraventamento, no plano do banzo de cima ou do de baixo (pelo título da folha):
+      cada ponta na cota do eixo daquele banzo, na tesoura do eixo mais perto — o contravento inclinado como o telhado;
+    · agulhamentos (AG) e correntes, no plano das terças (o eixo da terça em cada ponta);
+    · o perfil pela legenda de cores da folha (a camada → "Ø1/2 - contraventos"); a camada "A DEFINIR" do projetista
+      vai com o perfil das correntes e vira aviso; a marca pelo texto ao lado (CV1, AG3…);
+    · as vigas das folhas "VIGA … VC01 - 2 PÇ" postas onde a locação marca a sigla: a treliçada (a viga de rigidez VC,
+      em pé entre as tesouras, a base na base delas) pelo desenho da folha dela; a simples (VT) no plano do banzo de baixo.
+
+    Devolve {barras: [{marca, papel, perfil, g_a, p_a, z_a, g_b, p_b, z_b}], trelicas: [{marca, g_a, g_b, p, z_base,
+    desenho, perfil}], avisos}."""
+    avisos: List[str] = []
+    ex = locacao["eixos"]
+    g, p = ex["eixo_g"], ex["perp_g"]
+    gl = _grade_da_folha(des, locacao["caixa"])
+    nums = sorted(gravados.get("numeros") or [], key=lambda e: e["pos"])
+    lets = sorted(gravados.get("letras") or [], key=lambda e: str(e["nome"]))
+    lnums = sorted(ex.get("numeros") or [], key=lambda v: v["pos"])
+    nome_num = {round(v["pos"], 1): (nums[i]["nome"] if i < len(nums) else v["nome"]) for i, v in enumerate(lnums)}
+    pA = lets[0]["pos"] if lets else 0.0
+    sentido = -1.0 if len(lets) > 1 and lets[-1]["pos"] < pA else 1.0
+    uB = abs(lets[-1]["pos"] - pA) if len(lets) > 1 else 0.0
+    T = _Tesouras(des, tesouras_, uB, apoio)
+
+    def no_sistema(pt, dx, dy):
+        x, y = pt[0] + dx, pt[1] + dy
+        return x * g[0] + y * g[1], x * p[0] + y * p[1]
+
+    def eixo_perto(gv):
+        v = min(lnums, key=lambda v: abs(v["pos"] - gv)) if lnums else None
+        return nome_num[round(v["pos"], 1)] if v else None
+
+    barras, a_definir, sem_cota = [], 0, 0
+    perfis_a_definir = set()
+    for f in folhas_:
+        if not f["caixa"] or not re.search(r"CONTRAVENT", f["titulo"], re.I) or not re.search(r"PLANTA", f["titulo"], re.I):
+            continue                                     # só as plantas (as folhas de peças e de aletas são detalhe)
+        plano = "inf" if re.search(r"INFERIOR", f["titulo"], re.I) else "sup"
+        gp = _grade_da_folha(des, f["caixa"])
+        if len(gp["h"]) != len(gl["h"]) or len(gp["v"]) != len(gl["v"]):
+            avisos.append("folha %d: a malha não é a da locação — os contraventos dela ficaram de fora." % f["folha"])
+            continue
+        dx = sum(b - a for a, b in zip(gp["v"], gl["v"])) / len(gl["v"])
+        dy = sum(b - a for a, b in zip(gp["h"], gl["h"])) / len(gl["h"])
+        xmax = max(gp["v"]) if gp["v"] else f["caixa"][1][0]
+        leg = _legenda_de_cores(des, f["caixa"], xmax + 1500)
+        corrente = next((v["perfil"] for v in leg.values() if v["papel"] == "corrente" and v["perfil"] and "Ø" not in v["texto"]), None)
+        textos = [e for e in des.entidades.values() if isinstance(e, Texto) and _dentro(e, f["caixa"]) and _MARCA_PECA.match(e.texto or "")]
+        for e in des.entidades.values():
+            if not isinstance(e, Linha) or not _dentro(e, f["caixa"]) or max(e.a[0], e.b[0]) > xmax + 500:
+                continue
+            info = leg.get(e.camada)
+            if not info or not info["papel"]:
+                continue
+            papel, perfil = info["papel"], info["perfil"]
+            if papel == "a definir":
+                a_definir += 1
+                papel, perfil = "corrente", corrente
+                perfis_a_definir.add(corrente or "o padrão")
+            ga, pa = no_sistema(e.a, dx, dy)
+            gb, pb = no_sistema(e.b, dx, dy)
+            ua, ub = (pa - pA) * sentido, (pb - pA) * sentido
+            ea, eb = eixo_perto(ga), eixo_perto(gb)
+            if papel == "contraventamento":
+                za, zb = T.banzo(ea, ua, plano), T.banzo(eb, ub, plano)
+            else:
+                za, zb = T.terca(ea, ua, h_terca), T.terca(eb, ub, h_terca)
+            if za is None or zb is None:
+                sem_cota += 1
+                za = zb = za if za is not None else (zb if zb is not None else apoio)
+            mx, my = (e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2
+            L = math.dist(e.a, e.b)
+            txt = min(textos, key=lambda t: math.hypot(t.posicao[0] - mx, t.posicao[1] - my), default=None)
+            marca = _MARCA_PECA.match(txt.texto).group(1).upper().replace(" ", "") if txt and math.hypot(txt.posicao[0] - mx, txt.posicao[1] - my) < 0.6 * L else ""
+            if papel == "corrente" and not marca.startswith(("AG", "CR")):
+                marca = "AG" if "AGULH" in (e.camada or "").upper() and "Ø" in (info["texto"] or "") else "CR"
+            barras.append({"marca": marca, "papel": papel, "perfil": perfil, "plano": plano if papel == "contraventamento" else "terças",
+                           "g_a": round(ga, 1), "p_a": round(pa, 1), "z_a": za, "g_b": round(gb, 1), "p_b": round(pb, 1), "z_b": zb})
+    if a_definir:
+        avisos.append("%d corrente(s) na camada \"A DEFINIR\" do projetista: foram com o perfil das correntes (%s) — confirme com o projetista."
+                      % (a_definir, ", ".join(sorted(perfis_a_definir))))
+    if sem_cota:
+        avisos.append("%d peça(s) sem a tesoura do eixo delas lida: ficaram na cota do apoio — confira." % sem_cota)
+
+    # as vigas: as das folhas de viga, onde a locação marca a sigla
+    vigas = _vigas_das_folhas(des, folhas_)
+    trelicas = []
+    if vigas:
+        siglas = [e for e in des.entidades.values() if isinstance(e, Texto) and _dentro(e, locacao["caixa"])
+                  and re.match(r"^\s*(%s)\s*$" % "|".join(re.escape(s) for s in vigas), e.texto or "", re.I)]
+        candidatas = []
+        for e in des.entidades.values():
+            if not _dentro(e, locacao["caixa"]) or re.search(r"EIXO|COTA|CONCRETO|TEXTO|MARCA|FOLHA", e.camada or "", re.I):
+                continue
+            if isinstance(e, Polilinha):
+                xs, ys = [v[0] for v in e.vertices], [v[1] for v in e.vertices]
+            elif isinstance(e, Linha):
+                xs, ys = [e.a[0], e.b[0]], [e.a[1], e.b[1]]
+            else:
+                continue
+            w, h = max(xs) - min(xs), max(ys) - min(ys)
+            if max(w, h) < 1000 or min(w, h) > 300:
+                continue
+            P = ((min(xs) + max(xs)) / 2, min(ys)) if h >= w else (min(xs), (min(ys) + max(ys)) / 2)
+            Q = ((min(xs) + max(xs)) / 2, max(ys)) if h >= w else (max(xs), (min(ys) + max(ys)) / 2)
+            ga, pa = no_sistema(P, 0.0, 0.0)
+            gb, pb = no_sistema(Q, 0.0, 0.0)
+            if abs(pa - pb) > 50 or abs(ga - gb) < 1000:
+                continue                                     # só a que corre ao longo do galpão, entre tesouras
+            candidatas.append((P, Q, ga, gb, (pa + pb) / 2))
+        usadas = collections.Counter()
+        for t in siglas:
+            sig = t.texto.strip().upper()
+            perto = min(candidatas, key=lambda c: math.hypot((c[0][0] + c[1][0]) / 2 - t.posicao[0], (c[0][1] + c[1][1]) / 2 - t.posicao[1]), default=None)
+            if not perto or math.hypot((perto[0][0] + perto[1][0]) / 2 - t.posicao[0], (perto[0][1] + perto[1][1]) / 2 - t.posicao[1]) > 1500:
+                continue
+            candidatas.remove(perto)
+            _P, _Q, ga, gb, pp = perto
+            v = vigas[sig]
+            u = (pp - pA) * sentido
+            ea, eb = eixo_perto(min(ga, gb)), eixo_perto(max(ga, gb))
+            usadas[sig] += 1
+            if v["trelica"]:
+                trelicas.append({"marca": sig, "g_a": round(min(ga, gb), 1), "g_b": round(max(ga, gb), 1), "p": round(pp, 1), "u": round(u, 1),
+                                 "perfil_alma": ALMA_PADRAO,
+                                 # a base da viga na base das tesouras: o eixo do banzo de baixo meio perfil acima do apoio
+                                 "z_base": round(apoio + _meia_altura(v["perfil"]), 1), "desenho": v["trelica"], "perfil": v["perfil"],
+                                 "eixos": [ea, eb]})
+            else:
+                za, zb = T.banzo(ea, u, "inf"), T.banzo(eb, u, "inf")
+                if za is None or zb is None:
+                    za = zb = apoio
+                barras.append({"marca": sig, "papel": "travamento", "perfil": v["perfil"], "plano": "inf",
+                               "g_a": round(min(ga, gb), 1), "p_a": round(pp, 1), "z_a": za, "g_b": round(max(ga, gb), 1), "p_b": round(pp, 1), "z_b": zb})
+        for sig, v in sorted(vigas.items()):
+            if usadas[sig] != v["qtd"]:
+                avisos.append("%s: %d na locação, %d no título da folha %d." % (sig, usadas[sig], v["qtd"], v["folha"]))
+            if v["trelica"] and not v["perfil"]:
+                avisos.append("%s: sem o perfil escrito na folha %d (vai o padrão)." % (sig, v["folha"]))
+            if v["trelica"] and usadas[sig]:
+                avisos.append("%s: a alma não tem perfil escrito na folha %d — foi com %s; confirme com o projetista." % (sig, v["folha"], ALMA_PADRAO))
+    return {"barras": barras, "trelicas": trelicas, "avisos": avisos,
+            "resumo": dict(collections.Counter(b["marca"] or b["papel"] for b in barras) + collections.Counter(t["marca"] for t in trelicas))}

@@ -21,6 +21,12 @@
 // terças) e lança cada peça na Implantação como viga de aço com papel "terça", apoiada pela face de baixo; o 3D vem junto
 // pela planta. Lançar de novo troca as terças lançadas antes.
 //
+// Etapa 4 (contraventos e outras peças): "Lançar contraventos e vigas" lê as plantas de contraventamento e a locação
+// (identificacao.outras_pecas): os contraventos no plano do banzo de cima ou do de baixo, cada ponta na cota do banzo da
+// tesoura do eixo dela (inclinados como o telhado); agulhamentos e correntes no plano das terças; o perfil pela legenda de
+// cores; as vigas das folhas de viga onde a locação marca a sigla — a treliçada (VC) pelo desenho da folha dela, como a
+// tesoura, mas atravessada; a simples (VT) no plano do banzo de baixo. Lançar de novo troca as lançadas antes.
+//
 // Fase 5 (montar): a Implantação já leva o 3D junto a cada gravação (só as peças dela). "Montar o modelo 3D" fecha:
 // o que está no modelo e não veio da identificação (o 3D desmontado do caminho antigo, peças à mão) vai para o histórico
 // — com a pergunta, dizendo quantas —, o modelo passa a ser o identificado (/estrutura/3d sem sincronia, marco no
@@ -195,7 +201,16 @@ export class MetodosIdentificacao {
         botao(nTercas ? 'Lançar de novo' : 'Lançar as terças nos eixos', () => this._lancarTercasIdent(), { class: nTercas ? '' : 'primario',
           title: 'Lê a planta de terças, põe cada peça nos eixos gravados, na cota do corte dela na vista da tesoura, e lança na Implantação' }),
         botao('Confirmar as terças ✓', () => this._confirmarIdent('tercas'), { class: 'ident-confirmar', disabled: nTercas ? undefined : true })) : null);
-    const sec4 = etapa('contraventos', ETAPAS[3][1], ...folhas(v.contraventos), ...folhas(v.outras));
+    const livre4 = this._liberada('contraventos');
+    const nOutras = this.ativa ? [...this.cad.doc.entidades.values()].filter(e => (e.atributos || {}).identificacao === 'outra').length : (id.outras || {}).n || 0;
+    const resO = id.outras || {};
+    const sec4 = etapa('contraventos', ETAPAS[3][1], ...folhas(v.contraventos), ...folhas(v.outras),
+      nOutras ? el('div', { class: 'ident-linha ok', texto: `${nOutras} peça(s) lançada(s) na Implantação` + (resO.resumo ? ` (${resO.resumo})` : '') + '.' }) : null,
+      avisos(resO.avisos),
+      livre4 ? el('div', { class: 'ident-botoes' },
+        botao(nOutras ? 'Lançar de novo' : 'Lançar contraventos e vigas', () => this._lancarOutrasIdent(), { class: nOutras ? '' : 'primario',
+          title: 'Contraventos e correntes das plantas de contraventamento e as vigas (VC, VT) onde a locação marca, nos eixos gravados' }),
+        botao('Confirmar ✓', () => this._confirmarIdent('contraventos'), { class: 'ident-confirmar', disabled: nOutras ? undefined : true })) : null);
     const podeMontar = et.locacao === 'confirmada' && et.tesouras === 'confirmada';
     const faltamEt = ETAPAS.filter(([k]) => et[k] !== 'confirmada').map(([, r]) => r.toLowerCase());
     const montado = id.montado;
@@ -398,6 +413,48 @@ export class MetodosIdentificacao {
     this._desenharIdent();
     this.cad.aviso(`Modelo 3D montado pelo identificado: ${n} peça(s)${outras.length ? `; ${outras.length} antiga(s) foram para o histórico` : ''}.`, 'info', 12000);
     (window.metalicaNavegar || ((u) => { location.href = u; }))(this.cad.urlDoEditor());
+  }
+
+  /** Etapa 4: contraventos, correntes e vigas lançados na Implantação, nos eixos gravados. */
+  async _lancarOutrasIdent() {
+    if (!this.ativa) await this.ir('montagem');
+    if (!this.ativa) return;
+    const id = this._ident(), v = id.varredura;
+    const qi = this._quadroImplantacao();
+    if (!qi || !qi.mapa) { this.cad.aviso('Falta a Implantação com os eixos.', 'atencao'); return; }
+    const apoio = await this._apoioIdent();
+    if (apoio == null) return;
+    let r;
+    try {
+      r = await pedir(`/api/projetos/${encodeURIComponent(this.cad.projeto)}/identificacao/outras`, {
+        original: this.m.original || this.original, locacao: v.locacao, folhas: v.folhas, apoio,
+        tesouras: (v.tesouras || []).filter(t => t.vista && t.eixos.length).map(t => ({ tipo: t.tipo, eixos: t.eixos, caixa: t.vista.caixa })) });
+    } catch (e) { this.cad.aviso('Não consegui ler os contraventos e as vigas: ' + e.message, 'erro', 0); return; }
+    const novas = [];
+    for (const b of r.barras || []) {
+      novas.push(criar({ tipo: 'linha', camada: 'ESTRUTURA', a: this._paraPapel(qi, [b.g_a, b.p_a]), b: this._paraPapel(qi, [b.g_b, b.p_b]),
+        atributos: { elemento: 'viga', material: 'aco', papel: b.papel, identificacao: 'outra', marca: b.marca || b.papel, quadro: qi.id,
+          secao: { perfil: b.perfil || 'Barra redonda ø 1/2"', aco: 'ASTM A36' }, nivel_topo: b.z_a, nivel_fim: b.z_b, alinhamento: 'eixo', plano: b.plano } }));
+    }
+    for (const t of r.trelicas || []) {
+      novas.push(criar({ tipo: 'linha', camada: 'ESTRUTURA', a: this._paraPapel(qi, [t.g_a, t.p]), b: this._paraPapel(qi, [t.g_b, t.p]),
+        atributos: { elemento: 'trelica', material: 'aco', identificacao: 'outra', marca: t.marca, quadro: qi.id, familia_eixo: 'letra',
+          perfis: { banzo_sup: t.perfil, banzo_inf: t.perfil, diagonal: t.perfil_alma }, cantoneira: 'simples', aco: 'ASTM A572 Gr.50',
+          nivel_base: t.z_base, acima_do_nivel: 0, eixos: t.eixos, u: t.u,
+          desenho: { barras: t.desenho.barras, vao: t.desenho.vao, altura: t.desenho.altura, raio_banzo_sup: null } } }));
+    }
+    if (!novas.length) { this.cad.aviso('Nenhum contravento nem viga lidos: ' + (r.avisos || []).join(' '), 'atencao', 0); return; }
+    const antes = [...this.cad.doc.entidades.values()].filter(e => (e.atributos || {}).identificacao === 'outra').map(e => e.id);
+    const cmds = [];
+    if (antes.length) cmds.push(new ComandoRemover(antes, 'Peças lançadas antes'));
+    cmds.push(new ComandoAdicionar(novas, `Contraventos e vigas (${novas.length})`));
+    if (!this.cad.doc.camadas.has('ESTRUTURA') && this.cad._garantirCamadaEstrutura) this.cad._garantirCamadaEstrutura();
+    this.cad.executar(cmds.length > 1 ? new ComandoComposto(cmds, `Contraventos e vigas (${novas.length})`) : cmds[0]);
+    const resumo = Object.entries(r.resumo || {}).sort((a, b) => a[0].localeCompare(b[0], 'pt-BR', { numeric: true })).map(([m, n]) => `${n} ${m}`).join(', ');
+    this._guardarIdent({ ...this._ident(), outras: { n: novas.length, resumo, avisos: r.avisos || [] } });
+    await this.cad.salvar({ avisar: false });
+    this.cad.aviso(`${novas.length} peça(s) lançada(s) na Implantação: ${resumo}. O 3D acompanha a planta; Ctrl+Z desfaz.`, (r.avisos || []).length ? 'atencao' : 'info', 14000);
+    this._desenharIdent();
   }
 
   _confirmarIdent(nome) {
