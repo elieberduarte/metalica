@@ -264,6 +264,11 @@ function fonteOpcoes(campo) {
         { valor: 'alvenaria cerâmica 14 cm' }, { valor: 'alvenaria de bloco de concreto 14 cm' },
         { valor: 'sem fechamento' },
       ] };
+    case 'topo_pilar_oitao':
+      return { tipo: 'select', itens: [
+        { valor: '', rotulo: 'solto (furo oblongo) — a ponta igual aos outros pórticos' },
+        { valor: 'apoiado', rotulo: 'apoiado — a ponta vira viga de oitão sobre os pilaretes' },
+      ] };
     case 'cidade':
       return { tipo: 'datalist', itens: (cargas.cidades || [])
         .map(ci => ({ valor: ci.nome, rotulo: `V₀ = ${nf(ci.V0, 0)} m/s` })) };

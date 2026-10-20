@@ -106,6 +106,7 @@ MARCAS = {"pilar": "P1", "viga": "V1", "misula_alma": "M1", "misula_mesa": "M2",
           "banzo superior": "BS", "banzo inferior": "BI",
           "diagonal": "D", "montante": "M", "travamento": "TV",
           "terca": "T1", "corrente": "TC", "longarina": "L1", "corrente_longarina": "CL",
+          "pilar_oitao": "PO", "longarina_oitao": "LO", "viga_oitao": "VO", "mao_francesa": "MF",
           "contrav_cobertura": "CC", "contrav_vertical": "CV",
           "chapa_joelho": "CH1", "chapa_cumeeira": "CH2", "placa_base": "CH3",
           "pedestal": "PD", "telha": "TL", "fechamento": "FC"}
@@ -268,6 +269,8 @@ class _Construtor:
 
     # ------------------------------------------------------------------ montagem
     def montar(self) -> Documento:
+        vo = self._elemento("Viga de oitão")
+        self.perf_vo = geo.registrar_perfil(geo.resolver_perfil(vo.perfil)) if vo is not None else None
         self._pilares()
         if self.dg.eh_trelicado:
             self._tesoura()
@@ -275,7 +278,9 @@ class _Construtor:
             self._vigas()
             self._misulas()
         self._tercas_e_correntes()
+        self._maos_francesas_viga()
         self._longarinas()
+        self._oitao()
         self._contraventamento_cobertura()
         self._contraventamento_vertical()
         self._travamento_banzo_inferior()
@@ -294,8 +299,10 @@ class _Construtor:
         el = self._nome_elemento("Pilar", "Pilar")
         for k, x in enumerate(self.xs):
             for lado, y in (("esquerdo", 0.0), ("direito", self.V)):
+                # na ponta apoiada, o de canto sobe até a face de baixo da viga de oitão
+                topo = self._z_baixo_oitao(y) if self._ponta_apoiada(k) else self.topo_pilar
                 # rotação 90°: alma no plano do pórtico (eixo forte no Y global)
-                self._barra("pilar", (x, y, 0.0), (x, y, self.topo_pilar), self.pilar, "pilar",
+                self._barra("pilar", (x, y, 0.0), (x, y, topo), self.pilar, "pilar",
                             "Estrutura", "Aço", self.dg.aco_perfis, el, rotacao=90.0,
                             portico=k + 1, lado=lado)
 
@@ -304,6 +311,8 @@ class _Construtor:
         g = self.g
         com_misula = bool(g.com_misula and g.L_misula > 0)
         for k, x in enumerate(self.xs):
+            if self._ponta_apoiada(k):
+                continue
             for agua, y0 in ((1, 0.0), (2, self.V)):
                 # o trecho da mísula (a partir do joelho): a análise 3D não confere ali o W sozinho — a
                 # seção é a da mísula, verificada na ligação, como no cálculo do galpão
@@ -333,6 +342,7 @@ class _Construtor:
         # a terça e a telha assentam no banzo de cima, não no W de referência da viga (no galpão
         # de 20 m, o W 360 punha as terças ~75 mm acima do banzo)
         self.d_apoio_terca = perfis["banzo superior"].d
+        self.bf_apoio = perfis["banzo superior"].bf
         pular = {"mont_esq", "mont_dir"} if self.dg.ligacao_tesoura == "rígida" else set()
 
         # marca por comprimento, na mesma ordem da lista de material
@@ -346,6 +356,8 @@ class _Construtor:
 
         feitas = []
         for k, x in enumerate(self.xs):
+            if self._ponta_apoiada(k):
+                continue
             for b in t.barras:
                 if b.rotulo in pular:
                     continue
@@ -386,7 +398,23 @@ class _Construtor:
         for j, n in enumerate(alvos):
             y, z = n.x * 10.0, self.H + n.y * 10.0
             for iv in range(len(self.xs) - 1):
-                self._barra("travamento", (self.xs[iv], y, z), (self.xs[iv + 1], y, z),
+                xa, xb = self.xs[iv], self.xs[iv + 1]
+                za, zb = z, z
+                # a ponta é viga de oitão (não há banzo de baixo ali): a linha vai até a longarina de oitão da
+                # altura do banzo de baixo, onde se ancora
+                # a ponta é viga de oitão (não há banzo de baixo ali): a linha vai ao pilarete de oitão mais perto,
+                # na altura do banzo de baixo — rígido nessa direção (na longarina de oitão, mola mole: Δ2/Δ1 2,3)
+                ya, yb = y, y
+                ys_po = self._ys_escora() if self._elemento("Pilar de oitão") is not None else []
+                if self._ponta_apoiada(iv):
+                    if not ys_po:
+                        continue
+                    xa, ya, za = self.xs[0], min(ys_po, key=lambda v: abs(v - y)), self.H
+                if self._ponta_apoiada(iv + 1):
+                    if not ys_po:
+                        continue
+                    xb, yb, zb = self.xs[-1], min(ys_po, key=lambda v: abs(v - y)), self.H
+                self._barra("travamento", (xa, ya, za), (xb, yb, zb),
                             perfil, "contraventamento", "Contraventamento", "Aço",
                             self.dg.aco_chapas, el.nome, linha=j + 1, vao=iv + 1)
 
@@ -402,6 +430,8 @@ class _Construtor:
                  and isinstance(getattr(lig, "dados", None), dict) else None)
         extra = {"altura_ligacao_mm": h_lig} if h_lig else {}
         for k, x in enumerate(self.xs):
+            if self._ponta_apoiada(k):
+                continue
             for agua, y0 in ((1, 0.0), (2, self.V)):
                 sy = 1.0 if agua == 1 else -1.0
                 u = (0.0, sy * self.c, self.s)             # ao longo da viga
@@ -565,6 +595,109 @@ class _Construtor:
                                     "Terças", "Aço", self.dg.aco_chapas, "Corrente de longarina",
                                     lado=lado, vao=iv + 1, linha_corrente=k)
 
+    # ------------------------------------------------------------------ oitão
+    def _maos_francesas_viga(self):
+        """As mãos-francesas da viga de alma cheia: da mesa de baixo dela à terça, a 45°, nas linhas de
+        terça do cálculo (`Mão-francesa da viga`), dos dois lados, nos pórticos internos (na ponta, os
+        pilaretes de oitão travam a mesa de baixo)."""
+        mf = self._elemento("Mão-francesa da viga")
+        meia = getattr(self, "meia_tercas", None)
+        if mf is None or not meia or self.dg.eh_trelicado:
+            return
+        perf = geo.registrar_perfil(geo.resolver_perfil(mf.perfil))
+        linhas = [j - 1 for j in (mf.geometria.get("linhas_de_terca") or []) if 0 < j <= len(meia)]
+        for k, x in enumerate(self.xs):
+            if k in (0, len(self.xs) - 1):
+                continue                          # na ponta, os pilaretes de oitão travam a mesa de baixo
+            for agua in (1, 2):
+                for j in linhas:
+                    y = meia[j] if agua == 1 else self.V - meia[j]
+                    nrm = self._normal_agua(y)
+                    base = (x, y - nrm[1] * self.viga.d / 2.0, self._z_agua(y) - nrm[2] * self.viga.d / 2.0)
+                    zt = self._centro_terca(x, y)[2]
+                    h = zt - base[2]
+                    for s in (-1.0, 1.0):
+                        xt = x + s * h
+                        if xt < self.xs[0] - 1.0 or xt > self.xs[-1] + 1.0:
+                            continue                  # deste lado não há terça (a ponta)
+                        self._barra("mao_francesa", base, self._centro_terca(xt, y), perf, "mão-francesa",
+                                    "Terças", "Aço", self.dg.aco_chapas, mf.nome, portico=k + 1, agua=agua,
+                                    linha=j + 1)
+
+    def _ponta_apoiada(self, k: int) -> bool:
+        """O pórtico k é o de uma ponta que virou viga de oitão (apoiada nos pilaretes)."""
+        return (k in (0, len(self.xs) - 1) and self.dg.oitao_apoiado
+                and self._elemento("Viga de oitão") is not None)
+
+    def _z_baixo_oitao(self, y: float) -> float:
+        """Cota da face de baixo do que o pilarete encontra em cima, na posição y: a viga de oitão
+        (apoiado) ou a viga/banzo de cima do pórtico da ponta (solto)."""
+        if self._ponta_apoiada(0):
+            d_vo = self.perf_vo.d
+            return self._z_agua(y) + self._d_apoio() / 2.0 - d_vo
+        return self._z_agua(y) - self._d_apoio() / 2.0
+
+    def _oitao(self):
+        """A estrutura do oitão: pilaretes nas linhas dos nós do X da cobertura (o vento do oitão sobe até
+        a treliça de contraventamento) e longarinas de oitão entre eles e os pilares de canto.
+
+        Topo apoiado: a ponta é a viga de oitão (W, uma por água, com o topo no nível do apoio das
+        terças), contínua sobre os pilaretes. Topo solto: o pórtico da ponta fica e o pilarete encosta
+        na face de baixo da viga/banzo de cima dele em furo oblongo vertical (só o vento passa). Nos
+        dois, o pilarete fica no plano do pórtico (na tesoura com o topo solto, ele passa pelo banzo
+        de baixo: a ligação é ao de cima, que tem o X da cobertura)."""
+        po = self._elemento("Pilar de oitão")
+        if po is None or not getattr(self, "meia_tercas", None):
+            return
+        perf = geo.registrar_perfil(geo.resolver_perfil(po.perfil))
+        lo = self._elemento("Longarina de oitão")
+        perf_l = geo.registrar_perfil(geo.resolver_perfil(lo.perfil)) if lo is not None else None
+        apoiado = self._ponta_apoiada(0)
+        ys = self._ys_escora()
+        zs = list(dsn._fiadas_longarina(self.g)[0]) if perf_l else []
+        if perf_l and self.dg.eh_trelicado and apoiado and all(abs(z - self.H) > 300.0 for z in zs):
+            zs = sorted(zs + [self.H])          # a fiada onde o travamento do banzo de baixo se ancora
+        self.x_lo_oitao = {}
+        for k_o, (x0, s) in enumerate(((self.xs[0], -1.0), (self.xs[-1], 1.0)), start=1):
+            if apoiado:
+                vo = self._elemento("Viga de oitão")
+                d_off = self._d_apoio() / 2.0 - self.perf_vo.d / 2.0       # topo da VO = topo do apoio das terças
+                for agua, y0 in ((1, 0.0), (2, self.V)):
+                    self._barra("viga_oitao", (x0, y0, self._z_agua(y0) + d_off),
+                                (x0, self.V / 2, self._z_agua(self.V / 2) + d_off), self.perf_vo, "viga",
+                                "Estrutura", "Aço", self.dg.aco_perfis, vo.nome, oitao=k_o, agua=agua,
+                                viga_de_cobertura=True, origem_2d="O%d" % k_o)
+            xp = x0
+            for j, y in enumerate(ys):
+                # no plano do pórtico, até a face de baixo da viga de oitão (apoiado) ou da viga/banzo de cima
+                # da ponta (solto: furo oblongo vertical — a análise 3D tira a rigidez axial do trecho de cima)
+                zt = self._z_baixo_oitao(y)
+                self._barra("pilar_oitao", (xp, y, 0.0), (xp, y, zt), perf, "pilar", "Estrutura", "Aço",
+                            self.dg.aco_perfis, po.nome, rotacao=0.0, oitao=k_o, posicao=j + 1,
+                            **({} if apoiado else {"topo_oblongo": True}))
+            if not perf_l:
+                continue
+            xl = xp + s * (perf.d / 2.0 + perf_l.d / 2.0)
+            self.x_lo_oitao[k_o] = xl
+            apoios = [0.0] + ys + [self.V]
+            for jf, z in enumerate(zs):
+                for a, b in zip(apoios, apoios[1:]):
+                    self._barra("longarina_oitao", (xl, a, z), (xl, b, z), perf_l, "longarina", "Terças",
+                                "Aço galvanizado", self.dg.aco_tercas, lo.nome, rotacao=90.0 * s,
+                                oitao=k_o, fiada=jf + 1)
+            # as correntes da longarina de oitão, no meio de cada painel, de fiada em fiada e até o que
+            # está em cima (a viga de oitão ou a viga/banzo da ponta), que leva o peso
+            n_corr = int((lo.geometria or {}).get("n_correntes") or 0)
+            if n_corr and zs:
+                barra = geo.registrar_perfil(geo.barra_redonda(DIAM_CORRENTE, "Barra ø 16 mm"))
+                for a, b in zip(apoios, apoios[1:]):
+                    for kc in range(1, n_corr + 1):
+                        yc = a + (b - a) * kc / (n_corr + 1.0)
+                        pts = [(xl, yc, z) for z in sorted(zs)] + [(x0, yc, self._z_baixo_oitao(yc))]
+                        for p0, p1 in zip(pts, pts[1:]):
+                            self._barra("corrente_longarina", p0, p1, barra, "corrente", "Terças", "Aço",
+                                        self.dg.aco_chapas, "Corrente de longarina de oitão", oitao=k_o)
+
     # ------------------------------------------------------------------ contraventamento
     def _perfil_contraventamento(self, nome: str) -> Perfil:
         el = self._elemento(nome)
@@ -660,6 +793,8 @@ class _Construtor:
         z_top = self.H + (viga.d / 2) / c           # topo da viga no plano da chapa
         el = "Ligação viga-pilar"
         for k, x in enumerate(self.xs):
+            if self._ponta_apoiada(k):
+                continue
             for lado, y in (("esquerdo", self.pilar.d / 2 + tch / 2),
                             ("direito", self.V - self.pilar.d / 2 - tch / 2)):
                 self._chapa("chapa_joelho", (x, y, z_top), (1.0, 0.0, 0.0),
@@ -679,6 +814,8 @@ class _Construtor:
         furosc = [{"x": sx * gabc / 2, "y": yy, "diametro": dfc}
                   for yy in ysc for sx in (-1, 1)]
         for k, x in enumerate(self.xs):
+            if self._ponta_apoiada(k):
+                continue
             for agua, dy in ((1, -tcc / 2), (2, tcc / 2)):
                 self._chapa("chapa_cumeeira", (x, self.V / 2 + dy, self.hc),
                             (1.0, 0.0, 0.0), (0.0, 0.0, 1.0), contc, tcc,

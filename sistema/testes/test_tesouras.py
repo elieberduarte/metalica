@@ -405,3 +405,83 @@ def test_x_vertical_sobe_ate_o_beiral_na_tesoura_apoiada():
     r = AE.calcular(doc, {"base": "engastada", "telha": 0.105, "sobrecarga": p.cargas["sobrecarga"],
                           "v0": d.v0, "categoria": "II", "classe": "B", "modelo_vento": "fechado"})
     assert r["segunda_ordem"]["resumo"]["razao_max"] < 1.4
+
+
+def _analise_3d(p, d, base):
+    from nucleo3d import analise_estrutural as AE
+    from nucleo3d import de_projeto
+    doc = de_projeto.modelo_do_galpao(p)
+    r = AE.calcular(doc, {"base": base, "telha": 0.105, "sobrecarga": p.cargas["sobrecarga"],
+                          "v0": d.v0, "categoria": "II", "classe": "B", "modelo_vento": "fechado"})
+    usos = {}
+    for pc in r["verificacao"]["pecas"]:
+        usos[pc.get("marca")] = max(usos.get(pc.get("marca"), 0.0), pc.get("uso") or 0.0)
+    return doc, r, usos
+
+
+def test_oitao_apoiado_vira_viga_de_oitao():
+    """O oitão não tinha estrutura: a análise 3D jogava o vento dele no pilar de canto. Agora pilaretes
+    nas linhas do X da cobertura e longarinas de oitão. Com o topo do pilarete apoiado (à escolha,
+    usuário 20/10), a viga de oitão substitui a tesoura das pontas e o pilarete leva o peso dela."""
+    d = _dados(diagonais_tesoura="Pratt", v0=45.0, topo_pilar_oitao="apoiado")
+    p = galpao.dimensionar(d)
+    po, vo = p.elemento("Pilar de oitão"), p.elemento("Viga de oitão")
+    assert po is not None and vo is not None and po.esforcos["topo"] == "apoiado" and po.esforcos["N_kN"] > 0
+    lista = {x.marca: x.quantidade for x in p.lista_material}
+    assert lista["VO"] == 4 and lista["P2"] == 4 and lista.get("LO")
+    doc, r, usos = _analise_3d(p, d, "engastada")
+    tesouras = {b.atributos.get("origem_2d") for b in doc.barras if b.atributos.get("papel_trelica")}
+    assert len(tesouras) == p.dados.n_porticos - 2
+    assert sum(1 for b in doc.barras if b.atributos.get("marca") == "VO") == 4
+    # as linhas de travamento do banzo de baixo do vão da ponta se ancoram no pilarete de oitão
+    tv_ponta = [b for b in doc.barras if b.atributos.get("marca") == "TV" and min(b.inicio[0], b.fim[0]) < 1.0]
+    assert tv_ponta
+    assert not r["instavel"] and usos["PO"] < 1.1 and usos["VO"] < 1.1, usos
+
+
+def test_oitao_solto_e_o_padrao_do_alma_cheia():
+    """Por padrão a ponta fica igual aos outros pórticos e o topo do pilarete é solto
+    na vertical (furo oblongo): na análise 3D o trecho de cima fica sem rigidez axial — passa o vento,
+    não o peso. Com a ligação curta que se tentou antes, Δ2/Δ1 ia a 9."""
+    from nucleo.modelo_galpao import DadosGalpao
+    d = DadosGalpao(comprimento=40.0)
+    p = galpao.dimensionar(d)
+    po = p.elemento("Pilar de oitão")
+    assert po.esforcos["topo"] == "solto" and p.elemento("Viga de oitão") is None
+    doc, r, usos = _analise_3d(p, d, "articulada")
+    pos = [b for b in doc.barras if b.atributos.get("marca") == "PO"]
+    assert pos and all(b.atributos.get("topo_oblongo") for b in pos)
+    assert sum(1 for b in doc.barras if b.papel == "viga") == 2 * p.dados.n_porticos
+    assert r["segunda_ordem"]["resumo"]["razao_max"] < 1.4
+    assert usos["PO"] < 1.1, usos
+
+
+def test_topo_do_pilar_de_oitao_a_escolha():
+    import pytest
+    from nucleo.base import ErroDeDados
+    from nucleo.modelo_galpao import DadosGalpao
+    assert galpao.dimensionar(DadosGalpao(topo_pilar_oitao="apoiado")).elemento("Viga de oitão") is not None
+    assert galpao.dimensionar(_dados(topo_pilar_oitao="solto")).elemento("Viga de oitão") is None
+    # o padrão é solto nos dois tipos
+    assert galpao.dimensionar(_dados()).elemento("Viga de oitão") is None
+    assert galpao.dimensionar(_dados()).elemento("Pilar de oitão").esforcos["topo"] == "solto"
+    with pytest.raises(ErroDeDados, match="oitão"):
+        DadosGalpao(topo_pilar_oitao="pendurado").validar()
+
+
+def test_maos_francesas_da_viga_de_alma_cheia():
+    """A viga de alma cheia sob sucção é verificada com a mesa de baixo travada a cada vão/4 (até 3 m) por
+    mãos-francesas que não existiam no 3D nem na lista (usuário, 20/10: gerar). Agora estão nos dois, nos
+    pórticos internos, da mesa de baixo à terça; a análise 3D não as põe na linha pelo eixo."""
+    from nucleo.modelo_galpao import DadosGalpao
+    from nucleo3d import de_projeto
+    from nucleo3d.analitico import _linhas_do
+    p = galpao.dimensionar(DadosGalpao(comprimento=40.0))
+    mf = p.elemento("Mão-francesa da viga")
+    assert mf is not None and mf.ok and mf.geometria["Lb_m"] <= 3.0
+    lista = {x.marca: x.quantidade for x in p.lista_material}
+    doc = de_projeto.modelo_do_galpao(p)
+    no_3d = [b for b in doc.barras if b.atributos.get("marca") == "MF"]
+    assert lista["MF"] == mf.geometria["quantidade"] == len(no_3d)
+    assert all(b.papel == "mão-francesa" for b in no_3d)
+    assert not any(ln["papel"] == "mão-francesa" for ln in _linhas_do(doc))

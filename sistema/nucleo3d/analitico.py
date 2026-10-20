@@ -37,12 +37,12 @@ APOIA_EM = {
     # o perfil ao lado da treliça que recebe as terças (o U da TRANSIÇÃO 1 do Posto CB): preso nela
     "apoio_terca": ("montante", "banzo", "diagonal", "pilar", "viga"),
     # e a corrente do fechamento lateral, de fiada em fiada da longarina (galpão gerado, 20/10)
-    "corrente": ("terça", "longarina"),
+    "corrente": ("terça", "longarina", "viga", "banzo"),
     "viga": ("pilar", "viga", "banzo"),
     # a longarina (a travessa do fechamento) presa no pilar por onde passa — sem isso ela só ficava presa onde um
     # contraventamento criava o nó (a Kaefer do engenheiro, 15/10: os pilares sem X ficavam sem a travessa)
     "longarina": ("pilar", "viga"),
-    "contraventamento": ("banzo", "pilar", "viga", "montante", "diagonal", "terça"),
+    "contraventamento": ("banzo", "pilar", "viga", "montante", "diagonal", "terça", "longarina"),
     "pilar": ("banzo", "viga"),
     "banzo": ("pilar", "banzo", "viga", "montante"),
     # a alma da mão-francesa (PM6) termina na face do pilar, a meia seção do eixo
@@ -100,9 +100,11 @@ def _linhas_do(doc) -> List[dict]:
     out = []
     for ent in doc.entidades.values():
         o = _origem(ent)
-        if ent.tipo == "barra" and ent.papel in ("presilha", "chumbador"):
+        if ent.tipo == "barra" and ent.papel in ("presilha", "chumbador", "mão-francesa"):
             continue                    # a presilha da cantoneira dupla (liga as duas L) e o chumbador (é da base, que
-            #                             a análise trata pelo apoio): não são barras da estrutura
+            #                             a análise trata pelo apoio): não são barras da estrutura; a mão-francesa trava a
+            #                             mesa de baixo, o que a linha pelo eixo não representa (a terça desce ao eixo da
+            #                             viga e ela virava uma barra horizontal de 0,4 m à flexão — galpão gerado, 20/10)
         if ent.tipo == "barra":
             out.append({"a": tuple(ent.inicio), "b": tuple(ent.fim), "papel": ent.papel or "barra",
                         "peca": o.get("peca"), "grupo": o.get("peca") or o.get("planta") or ent.id,

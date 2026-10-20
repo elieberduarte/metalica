@@ -111,6 +111,11 @@ class DadosGalpao:
     linhas_correntes: int = 1            # linhas de tirantes por água
     fechamento_lateral: str = "telha metálica"
     altura_fechamento: float = 0.0       # 0 = até o pé-direito
+    # o topo do pilar de oitão: "apoiado" (a ponta vira viga de oitão contínua sobre os pilaretes) ou
+    # "solto" (furo oblongo: só o vento do oitão; a ponta igual aos outros pórticos). Vazio = solto
+    # (usuário, 20/10: as duas opções, à escolha). Na tesoura, o apoiado ainda pede o contraventamento
+    # vertical entre tesouras no vão da ponta (a última tesoura fica com o banzo de baixo mal travado)
+    topo_pilar_oitao: str = ""
 
     # cargas
     sobrecarga_cobertura: float = 0.25   # kN/m²
@@ -162,6 +167,8 @@ class DadosGalpao:
         faixa("Deslocamento horizontal (H/…)", self.desloc_horizontal, 50, 1000, "")
         if self.comprimento < self.espacamento_porticos:
             raise ErroDeDados("O comprimento do galpão é menor que o espaçamento entre pórticos.")
+        if str(self.topo_pilar_oitao or "").strip().lower() not in ("", "apoiado", "solto"):
+            raise ErroDeDados("Topo do pilar de oitão \"%s\": use \"apoiado\" ou \"solto\"." % self.topo_pilar_oitao)
         if self.comprimento < self.vao:
             raise ErroDeDados("Comprimento menor que o vão ainda não é calculado: o vento da NBR 6123 "
                               "(Tabelas 6 e 7) é montado com o comprimento como a maior dimensão. "
@@ -226,6 +233,11 @@ class DadosGalpao:
         return 1
 
     # --- grandezas derivadas ---
+    @property
+    def oitao_apoiado(self) -> bool:
+        """O pórtico das pontas é a viga de oitão apoiada nos pilaretes (senão, igual aos outros)."""
+        return str(self.topo_pilar_oitao or "").strip().lower().startswith("apoi")
+
     @property
     def eh_trelicado(self) -> bool:
         """True quando o pórtico é uma tesoura treliçada sobre pilares."""

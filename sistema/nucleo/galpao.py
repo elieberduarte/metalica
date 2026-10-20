@@ -61,6 +61,7 @@ def dimensionar(dados: DadosGalpao) -> ProjetoGalpao:
         _analise_portico(p)
         _contraventamentos(p)
         _tercas_escora(p)
+        _oitao(p)
         _ligacoes(p)
         _base(p)
         _lista_de_material(p)
@@ -396,6 +397,210 @@ def _flexo_compressao_terca(p: ProjetoGalpao, perfil_nome: str, n_corr: int, N: 
     v.passo("Interação", "N/N_Rd + M/M_Rd ≤ 1", "%s/%s + %s/%s" % (
         fmt(N, 1), fmt(vc.Rd, 1), fmt(amp * M_sd, 1), fmt(M_rd, 1)), fmt(soma, 2))
     return v
+
+
+def _mao_francesa(p: ProjetoGalpao, N: float, L_cm: float, elemento: str) -> Optional[Resultado]:
+    """A cantoneira mais leve que leva N (kN) à compressão no comprimento L (cm)."""
+    aco = nbr8800._aco(p.dados.aco_chapas)
+    ultimo = None
+    # a partir de L 1½": menor que isso não cabe o parafuso com borda (pensar na execução, 14/10)
+    for perf in [c for c in banco().candidatos(tipo="L") if float(c.dados.get("b") or c.d or 0) >= 38.0]:
+        try:
+            r = nbr8800.compressao(perf, aco, Lx=L_cm, Ly=L_cm, N_Sd=N, cantoneira_simplificada=True,
+                                   elemento=elemento)
+        except ErroDeDados:
+            continue
+        ultimo = r
+        if r.ok:
+            return r
+    return ultimo
+
+
+def _maos_francesas_viga(p: ProjetoGalpao, Lb_cm: float, esf_viga: dict, viga: Perfil):
+    """As mãos-francesas que a viga de alma cheia sob sucção supõe: o cálculo a verifica com a mesa de
+    baixo travada a cada `Lb` (vão/4 até 3 m), e quem trava é a mão-francesa da terça à mesa de baixo
+    — antes ela não existia no 3D nem na lista (usuário, 20/10: gerar). Uma a cada m terças, nos dois
+    lados da viga; a força é 2 % da força na mesa (NBR 8800, item 4.11) ÷ cos 45°."""
+    d = p.dados
+    passo = float(p.cargas.get("espacamento_tercas_real") or d.espacamento_tercas)
+    n_lin = int(p.cargas.get("linhas_tercas_por_agua") or 0)
+    terca = p.elemento("Terça")
+    if n_lin <= 0 or terca is None:
+        return
+    m = max(1, int(Lb_cm / 100.0 / passo + 1e-9))
+    linhas = list(range(m - 1, n_lin, m))
+    if not linhas:
+        return
+    braco = max(1.0, (viga.d - viga.tf) / 10.0)                 # cm
+    N = max(0.02 * abs(esf_viga.get("M", 0.0)) / braco * math.sqrt(2.0), 2.0)
+    d_t = achar_perfil(terca.perfil).d
+    h = (viga.d + d_t / 2.0) / 10.0                              # cm, da mesa de baixo ao eixo da terça
+    L = math.sqrt(2.0) * h
+    r = _mao_francesa(p, N, L, "Mão-francesa da viga")
+    if r is None:
+        return
+    # só nos pórticos internos: na ponta a viga leva meia faixa e a mesa de baixo é travada pelos pilaretes
+    # de oitão (com o topo solto; com o apoiado a ponta é a viga de oitão)
+    lados = 2 * max(0, d.n_porticos - 2)
+    p.elementos.append(ElementoDimensionado(
+        nome="Mão-francesa da viga", perfil=r.perfil, material=d.aco_chapas, resultado=r,
+        esforcos={"N_kN": round(N, 2), "criterio": "2 % da força na mesa ÷ cos 45° (NBR 8800, item 4.11)"},
+        geometria={"linhas_de_terca": [j + 1 for j in linhas], "a_cada": m, "Lb_m": round(Lb_cm / 100.0, 2),
+                   "comprimento_m": round(L / 100.0, 3), "quantidade": 2 * len(linhas) * lados}))
+
+
+def _vento_oitao(p: ProjetoGalpao) -> Tuple[float, float]:
+    """(pressão, sucção) de cálculo na parede do oitão, kN/m² sem majorar: a maior pressão (vento
+    longitudinal, oitão de barlavento) e a maior sucção (vento transversal, zona 1 do oitão)."""
+    linhas = [l for l in p.vento["objeto"].tabela() if "oitão" in l["superfície"].lower()]
+    if not linhas:
+        return 0.0, 0.0
+    return (max(0.0, max(l["p (kN/m²)"] for l in linhas)),
+            min(0.0, min(l["p (kN/m²)"] for l in linhas)))
+
+
+def altura_no_oitao(d: DadosGalpao, y: float) -> float:
+    """Altura (m) do eixo da cobertura na posição y do vão (do eixo do pilar esquerdo)."""
+    return d.altura_beiral + (d.inclinacao / 100.0) * min(y, d.vao - y)
+
+
+def _oitao(p: ProjetoGalpao):
+    """A estrutura do oitão: pilaretes nas linhas dos nós do X da cobertura e longarinas entre eles.
+
+    O vento no oitão sobe pelos pilaretes até os nós da treliça de contraventamento da cobertura
+    (é a força F do contraventamento) e desce à base; as longarinas vencem de pilarete a pilarete.
+    Antes não havia nada: a análise 3D jogava o vento do oitão no pilar de canto, e a longarina de
+    cima dos vãos das pontas virava escora (131 % no galpão padrão, análise de 20/10).
+
+    Pilarete: viga biapoiada do chão ao banzo/viga, com o maior entre a pressão e a sucção do oitão
+    na largura do painel; o topo é solto na vertical (furo oblongo) — não leva peso da cobertura.
+    """
+    d = p.dados
+    cob = p.elemento("Contraventamento de cobertura")
+    long_lat = p.elemento("Longarina")
+    if cob is None:
+        return
+    n = max(2, int(cob.geometria.get("paineis") or 2))
+    larg = d.vao / n
+    ys = [d.vao * k / n for k in range(1, n)]
+    pres, suc = _vento_oitao(p)
+    w = max(pres, abs(suc))
+    if w <= 0 or not ys:
+        return
+    alturas = [altura_no_oitao(d, y) for y in ys]
+    H = max(alturas)
+    cotas = list((long_lat.geometria.get("cotas_fiadas_m") or []) if long_lat else [])
+    Lb = (max(b - a for a, b in zip([0.0] + cotas, cotas + [H])) if cotas else H)
+    q = 1.4 * w * larg                                       # kN/m
+    apoiado = d.oitao_apoiado
+    N = 0.0
+    if apoiado:
+        N = _viga_de_oitao(p, larg)
+        if N is None:
+            return
+    aco = nbr8800._aco(d.aco_perfis)
+    r = None
+    for perf in banco().candidatos(tipo="I", familia="W"):
+        try:
+            if apoiado:
+                # flexo-compressão: o peso da viga de oitão (reação no apoio interno) com o vento do oitão —
+                # as duas majoradas juntas, a favor da segurança
+                ri = nbr8800.verificar_viga(perf, aco, H * 100.0, q_Sd=q / 100.0, q_servico=w * larg / 100.0,
+                                            Lb=Lb * 100.0, Cb=1.0, limite="L/250", N_Sd=N, Lx=H * 100.0,
+                                            Ly=Lb * 100.0, elemento="Pilar de oitão")
+            else:
+                ri = nbr8800.verificar_viga(perf, aco, H * 100.0, q_Sd=q / 100.0, q_servico=w * larg / 100.0,
+                                            Lb=Lb * 100.0, Cb=1.0, limite="L/250", elemento="Pilar de oitão")
+        except ErroDeDados:
+            continue
+        if ri.ok:
+            r = ri
+            break
+    if r is None:
+        p.avisos.append("Nenhum W do catálogo atende o pilar de oitão (H = %s): aproxime os pilaretes "
+                        "(mais painéis no contraventamento)." % fmt(H, 2, "m"))
+        return
+    if apoiado:
+        r.hipotese("topo", "apoia a viga de oitão (o pórtico das pontas): N = %s com o vento do oitão"
+                   % fmt(N, 1, "kN"), "rotina")
+    else:
+        r.hipotese("topo", "topo solto na vertical (furo oblongo): só o vento do oitão, sem peso da cobertura",
+                   "rotina")
+    p.elementos.append(ElementoDimensionado(
+        nome="Pilar de oitão", perfil=r.perfil, material=d.aco_perfis, resultado=r,
+        esforcos={"q_kN_m": round(q, 3), "w_kN_m2": round(w, 3), "M_kNm": round(q * H * H / 8.0, 2),
+                  "reacao_topo_kN": round(q * H / 2.0, 2), "N_kN": round(N, 2),
+                  "topo": "apoiado" if apoiado else "solto"},
+        geometria={"posicoes_m": [round(y, 4) for y in ys], "alturas_m": [round(h, 4) for h in alturas],
+                   "largura_m": round(larg, 4), "por_oitao": len(ys), "quantidade": 2 * len(ys),
+                   "Lb_m": round(Lb, 3)}))
+    # longarinas do oitão: de pilarete a pilarete (e ao pilar de canto), nas fiadas do fechamento; na
+    # tesoura com a ponta em viga de oitão, mais uma na altura do banzo de baixo — é onde as linhas de
+    # travamento do banzo de baixo do vão da ponta se ancoram (não há mais tesoura ali)
+    if not cotas:
+        return
+    if d.eh_trelicado and apoiado and all(abs(c - d.pe_direito) > 0.3 for c in cotas):
+        cotas = sorted(cotas + [d.pe_direito])
+    esp = cotas[1] - cotas[0] if len(cotas) > 1 else cotas[0] * 2
+    base = dict(aco=d.aco_tercas, vao=larg, carga_gravidade=1.4 * pres * esp,
+                carga_succao=1.4 * abs(suc) * esp, inclinacao=0.0,
+                carga_servico_gravidade=pres * esp, carga_servico_succao=abs(suc) * esp)
+    opcoes = nbr14762.dimensionar_terca(correntes=(0, 1), apenas_aprovados=True, **base) or         nbr14762.dimensionar_terca(correntes=(1, 2), apenas_aprovados=False, **base)
+    if not opcoes:
+        return
+    melhor = sorted(opcoes, key=lambda r_: (not r_.ok, 0))[0]
+    melhor.elemento = "Longarina de oitão L = %s m" % fmt(larg, 2)
+    for v in melhor.verificacoes:
+        v.titulo = v.titulo.replace("gravidade", "pressão do vento")
+    p.elementos.append(ElementoDimensionado(
+        nome="Longarina de oitão", perfil=melhor.perfil, material=d.aco_tercas, resultado=melhor,
+        esforcos={"pressao_kN_m2": round(pres, 3), "succao_kN_m2": round(suc, 3)},
+        geometria={"vao_m": round(larg, 4), "cotas_fiadas_m": cotas, "paineis": n,
+                   "n_correntes": melhor.dados.get("n_correntes", 0),
+                   "quantidade": 2 * n * len(cotas)}))
+
+
+def _viga_de_oitao(p: ProjetoGalpao, larg: float) -> Optional[float]:
+    """A viga de oitão (o pórtico das pontas com o topo do pilarete apoiado): W contínua sobre os
+    pilaretes e os pilares de canto, com meia faixa de cobertura. Gravidade com a mesa de cima
+    travada pelas terças; sucção com a de baixo solta no vão entre pilaretes. Devolve a reação no
+    pilarete (kN, apoio interno: 1,25·q·L), ou None quando nada passa."""
+    d = p.dados
+    g, sc = p.cargas["g_cobertura"], p.cargas["sobrecarga"]
+    succ = abs(min(0.0, p.cargas.get("succao_telhado") or 0.0))
+    faixa = d.espacamento_porticos / 2.0
+    L = larg / math.cos(math.radians(d.angulo_telhado))
+    passo = p.cargas.get("espacamento_tercas_real") or d.espacamento_tercas
+    q_g = (1.25 * g + 1.5 * sc) * faixa + 1.25 * 0.3            # + peso próprio estimado (0,3 kN/m)
+    q_s = max(0.0, (1.4 * succ - g) * faixa)
+    aco = nbr8800._aco(d.aco_perfis)
+    escolhido = None
+    for perf in banco().candidatos(tipo="I", familia="W"):
+        try:
+            rg = nbr8800.verificar_viga(perf, aco, L * 100.0, q_Sd=q_g / 100.0, q_servico=(g + sc) * faixa / 100.0,
+                                        Lb=passo * 100.0, limite="L/250", elemento="Viga de oitão")
+            if not rg.ok:
+                continue
+            rs = nbr8800.verificar_viga(perf, aco, L * 100.0, q_Sd=q_s / 100.0, Lb=L * 100.0, limite="L/120",
+                                        elemento="Viga de oitão")
+        except ErroDeDados:
+            continue
+        if rs.ok:
+            for v in rs.verificacoes:
+                v.titulo = "Sucção — " + v.titulo
+                rg.add(v)
+            escolhido = rg
+            break
+    if escolhido is None:
+        p.avisos.append("Nenhum W do catálogo atende a viga de oitão: use o topo do pilar de oitão solto.")
+        return None
+    escolhido.hipotese("modelo", "contínua sobre os pilaretes; verificada como biapoiada em cada vão "
+                       "(qL²/8, a favor da segurança)", "rotina")
+    p.elementos.append(ElementoDimensionado(
+        nome="Viga de oitão", perfil=escolhido.perfil, material=d.aco_perfis, resultado=escolhido,
+        esforcos={"q_gravidade_kN_m": round(q_g, 3), "q_succao_kN_m": round(q_s, 3)},
+        geometria={"vao_m": round(L, 4), "quantidade": 4, "comprimento_m": round(d.comprimento_agua, 3)}))
+    return 1.25 * q_g * L
 
 
 def _tercas_escora(p: ProjetoGalpao):
@@ -784,6 +989,8 @@ def _analise_alma_cheia(p: ProjetoGalpao):
                   "caso": esf["pilar"].get("caso_M", "")},
         geometria={"altura_m": d.pe_direito, "Kx": Kx, "Ly_cm": Ly, "Cb": round(cb_pilar, 2)}))
 
+    if Lb_viga > esp_terca + 1.0:
+        _maos_francesas_viga(p, Lb_viga, esf["viga"], achar_perfil(res_viga.perfil))
     if desloc and desloc.get("razao", 0) > 1.0:
         _diagnostico_deslocamento(p, viga0, pilar0, desloc)
 
@@ -2315,12 +2522,22 @@ def _lista_de_material(p: ProjetoGalpao):
     cob = p.elemento("Contraventamento de cobertura")
     vert = p.elemento("Contraventamento vertical")
 
+    # o pórtico das pontas apoiado nos pilaretes vira a viga de oitão: tesouras/vigas só nos internos
+    vo = p.elemento("Viga de oitão")
+    n_int = n_port - 2 if vo else n_port
     if pilar:
-        add("P1", "Pilar do pórtico", pilar.perfil, 2 * n_port, d.pe_direito)
+        if vo and d.eh_trelicado:
+            # os de canto sobem ao beiral, onde apoia a viga de oitão
+            add("P1", "Pilar do pórtico", pilar.perfil, 2 * n_int, d.pe_direito)
+            add("P2", "Pilar de canto (até a viga de oitão)", pilar.perfil, 4, d.altura_beiral)
+        else:
+            add("P1", "Pilar do pórtico", pilar.perfil, 2 * n_port, d.pe_direito)
     if d.eh_trelicado:
-        _lista_da_tesoura(p, add, n_port)
+        _lista_da_tesoura(p, add, n_int)
     elif viga:
-        add("V1", "Viga do pórtico (uma água)", viga.perfil, 2 * n_port, d.comprimento_agua)
+        add("V1", "Viga do pórtico (uma água)", viga.perfil, 2 * n_int, d.comprimento_agua)
+    if vo:
+        add("VO", "Viga de oitão (uma água, contínua sobre os pilaretes)", vo.perfil, 4, d.comprimento_agua)
     if terca:
         linhas = terca.geometria.get("linhas", 0) * 2          # duas águas
         vaos = n_port - 1
@@ -2362,6 +2579,20 @@ def _lista_de_material(p: ProjetoGalpao):
                           perfil="Barra ø 16 mm", material=d.aco_chapas, quantidade=q_cl,
                           comprimento_m=round(comp_cl, 2), peso_unit_kg=round(1.58 * comp_cl, 2),
                           peso_total_kg=round(1.58 * comp_cl * q_cl, 1), area_pintura_m2=0.0))
+    mfv = p.elemento("Mão-francesa da viga")
+    if mfv:
+        add("MF", "Mão-francesa da viga (até a terça)", mfv.perfil, int(mfv.geometria["quantidade"]),
+            mfv.geometria["comprimento_m"], material=d.aco_chapas)
+    # a estrutura do oitão (os dois): pilaretes, um por altura, e longarinas entre eles
+    po = p.elemento("Pilar de oitão")
+    if po:
+        for h in sorted(set(po.geometria.get("alturas_m") or [])):
+            q_h = 2 * sum(1 for x in po.geometria["alturas_m"] if x == h)
+            add("PO", "Pilar de oitão", po.perfil, q_h, h)
+    lo = p.elemento("Longarina de oitão")
+    if lo:
+        add("LO", "Longarina de oitão", lo.perfil, int(lo.geometria.get("quantidade") or 0),
+            lo.geometria.get("vao_m", 5.0), material=d.aco_tercas, pintada=False)
     if cob:
         add("CC", "Diagonal de contraventamento de cobertura", cob.perfil,
             int(cob.geometria.get("quantidade", 8)),

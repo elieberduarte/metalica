@@ -60,7 +60,8 @@ class TestGalpaoCap16(unittest.TestCase):
         return [e for e in self.doc.entidades.values() if e.nome == marca]
 
     def test_pilares_dois_por_portico(self):
-        pil = [b for b in self.doc.barras if b.papel == "pilar"]
+        # os do pórtico (os pilaretes de oitão, desde 20/10, levam `oitao`)
+        pil = [b for b in self.doc.barras if b.papel == "pilar" and not b.atributos.get("oitao")]
         self.assertEqual(self.d.n_porticos, 9)
         self.assertEqual(len(pil), 2 * self.d.n_porticos)
         perfil = self.projeto.elemento("Pilar").perfil
@@ -164,7 +165,7 @@ class TestGalpaoCap16(unittest.TestCase):
         tc = self._por_marca("TC")
         # por vão e por linha de corrente: (linhas − 1) trechos + 1 tirante, por água
         self.assertEqual(len(tc), (self.d.n_porticos - 1) * n_corr * 2 * linhas)
-        lg = [b for b in self.doc.barras if b.papel == "longarina"]
+        lg = [b for b in self.doc.barras if b.papel == "longarina" and not b.atributos.get("oitao")]
         geo_l = self.projeto.elemento("Longarina").geometria
         # as fiadas ficam nas alturas publicadas pelo cálculo, no meio de cada faixa de
         # parede, as mesmas da elevação longitudinal

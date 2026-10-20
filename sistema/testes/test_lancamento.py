@@ -182,7 +182,8 @@ def test_lancar_trelicado_nos_eixos(lancado):
     assert s["dimensionado"] and s["ok"] and s["porticos"] == 6 and s["vao_m"] == pytest.approx(15.0)
     # padrão da tesoura: apoiada, com a base engastada (a combinação estável)
     assert r["dados"].ligacao_tesoura == "apoiada" and r["dados"].base_rotulada is False
-    pilares = [b for b in doc.barras if b.papel == "pilar"]
+    # os do pórtico (os pilaretes de oitão, desde 20/10, levam `oitao`)
+    pilares = [b for b in doc.barras if b.papel == "pilar" and not (b.atributos or {}).get("oitao")]
     assert len(pilares) == 12
     xs = sorted({round(b.inicio[0]) for b in pilares})
     ys = sorted({round(b.inicio[1]) for b in pilares})
@@ -233,7 +234,7 @@ def test_lancar_alma_cheia():
     ex = L.eixos_do_desenho(L.malha_de_eixos((0.0, 0.0), "4x6000", "12000", escala=100))
     r = L.lancar(ex, {"sistema": "alma cheia", "pe_direito": 5.0})
     doc = r["doc"]
-    papeis = collections.Counter(b.papel for b in doc.barras)
+    papeis = collections.Counter(b.papel for b in doc.barras if not (b.atributos or {}).get("oitao"))
     assert papeis["pilar"] == 10 and papeis["viga"] == 10
     vigas = [b for b in doc.barras if b.papel == "viga"]
     conj = {b.atributos["marcas"]["conjunto"] for b in vigas}

@@ -185,6 +185,22 @@ def _eixos(a: np.ndarray, b: np.ndarray, rotacao: float) -> np.ndarray:
     return np.stack([ex, ey, ez])
 
 
+def _folga_no_topo(nos: np.ndarray, barras: List[dict]) -> None:
+    """O topo em furo oblongo vertical (o pilar de oitão com o topo solto, galpão gerado 20/10): o último
+    trecho da peça, até o topo, fica sem rigidez axial — passa força horizontal (o vento do oitão) e não
+    passa peso da cobertura."""
+    topo: Dict[str, int] = {}
+    for i, br in enumerate(barras):
+        if not br.get("topo_oblongo") or not br["ids"]:
+            continue
+        z = max(float(nos[br["a"]][2]), float(nos[br["b"]][2]))
+        j = topo.get(br["ids"][0])
+        if j is None or z > max(float(nos[barras[j]["a"]][2]), float(nos[barras[j]["b"]][2])):
+            topo[br["ids"][0]] = i
+    for i in topo.values():
+        barras[i]["sec"] = dict(barras[i]["sec"], A=barras[i]["sec"]["A"] * 1e-4)
+
+
 def _rigidez_local(L, A, Iy, Iz, J) -> np.ndarray:
     """12×12 da barra de pórtico espacial; graus por ponta: ux uy uz rx ry rz (local)"""
     k = np.zeros((12, 12))
@@ -505,6 +521,7 @@ def montar(doc, par: Optional[dict] = None) -> dict:
             "elemento": "trelica" if at.get("papel_trelica") in ("banzo_sup", "banzo_inf", "diagonal", "montante") and
             at.get("origem_2d") else at.get("elemento"), "grupo": at.get("origem_2d") or br.get("grupo"),
             "viga_cobertura": bool(at.get("viga_de_cobertura")), "misula": at.get("misula"),
+            "topo_oblongo": bool(at.get("topo_oblongo")),
             "marca": at.get("marca") or at.get("peca"), "perfil": perfil, "ids": list(br.get("ids") or []),
             **({"perfil_modelo": br.get("perfil")} if at.get("perfil_calculo") else {}),
             "aco": (getattr(ent, "aco", "") or "") if ent is not None else "",
@@ -524,6 +541,7 @@ def montar(doc, par: Optional[dict] = None) -> dict:
         hip = _travamento_hipotese(nos, barras, P, cache, avisos)
         barras += hip
     _trocar_perfis(barras, P, cache, avisos)
+    _folga_no_topo(nos, barras)
     _girar_pilares(nos, barras, P, avisos)
     # quem chega em cada nó
     no_barras: Dict[int, List[int]] = collections.defaultdict(list)

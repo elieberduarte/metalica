@@ -72,7 +72,7 @@ def test_desenhos_e_modelo_3d_seguem_a_longarina():
     assert desenhos._Geo(p).longarina.nome == lg.perfil
     from nucleo3d import de_projeto
     doc = de_projeto.modelo_do_galpao(p)
-    perfis_3d = {e.perfil for e in doc.barras if e.papel == "longarina"}
+    perfis_3d = {e.perfil for e in doc.barras if e.papel == "longarina" and not e.atributos.get("oitao")}
     assert perfis_3d == {lg.perfil}, perfis_3d
 
 
