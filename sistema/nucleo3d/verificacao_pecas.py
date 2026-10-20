@@ -489,6 +489,24 @@ def verificar(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = 
         rv = np.where(redonda[None, :, None], 0.0, rv)
     inter = np.nan_to_num(inter, nan=0.0, posinf=99.0)
     uso_st = np.maximum(inter, rv)
+    # a viga com mísula (o galpão gerado): no trecho dela a seção é a da mísula, mais alta, e quem a
+    # verifica é a ligação do joelho; o W sozinho só a partir do fim dela (o mesmo critério do
+    # cálculo do galpão — antes a viga do galpão padrão dava 164 % no joelho)
+    com_misula = set()
+    nos_m = np.asarray(M["nos"], float)
+    for i, br in enumerate(barras):
+        m = br.get("misula")
+        if not m or not S:
+            continue
+        a, b = nos_m[br["a"]], nos_m[br["b"]]
+        frac = X[i] / max(float(X[i, -1]), 1e-9)
+        pos = a[None, :] + frac[:, None] * (b - a)[None, :]
+        # os nós da análise estão em m; o ponto e o comprimento da mísula, em mm (o 3D)
+        p0 = np.asarray(m["ponto"], float) / 1000.0
+        dentro = np.linalg.norm(pos - p0[None, :], axis=1) < (float(m["comprimento_mm"]) - 1.0) / 1000.0
+        if dentro.any():
+            uso_st[:, i, dentro] = 0.0
+            com_misula.add(i)
     uso_bc = uso_st.max(axis=2) if S else np.zeros((ne, n))                       # (ne, n)
     uso_bc[:, ~valida] = 0.0
     # por peça: a pior combinação, barra e seção; a esbeltez
@@ -556,6 +574,8 @@ def verificar(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = 
         if uso_esb > 1.0 and uso_esb > u:
             # a esbeltez é um limite (passa ou não), não um uso da resistência: entra só quando passa do limite
             u, verif = uso_esb, "esbeltez"
+        if com_misula & set(bs):
+            obs.append("trecho da mísula verificado na ligação do joelho: o perfil conferido do fim da mísula em diante")
         item.update(uso=round(min(u, 99.0), 3), verif=verif, lam=round(lam, 1), lam_lim=lim, obs=obs)
         saida_pecas.append(item)
     uso_env = uso_bc.max(axis=0) if ne else np.zeros(n)

@@ -461,3 +461,40 @@ def test_validar_recusa_antes_de_calcular():
                       (dict(flecha_viga=0), "Flecha da viga")):
         with pytest.raises(ErroDeDados, match=texto):
             _cap16(**kw).validar()
+
+def test_correntes_das_longarinas_no_3d_e_na_lista():
+    """O cálculo verifica a longarina com ao menos uma linha de correntes (travando a mesa e
+    levando o peso), mas o 3D e a lista não tinham nenhuma: na análise 3D a longarina ficava
+    solta nos 5 m e dava 195 %. Agora a corrente vai de fiada em fiada até a terça do beiral."""
+    from nucleo3d import de_projeto
+    from nucleo3d.analitico import APOIA_EM
+    p = dimensionar(_cap16())
+    n = p.elemento("Longarina").geometria["n_correntes"]
+    assert n >= 1
+    cl = [x for x in p.lista_material if x.marca == "CL"]
+    assert cl and cl[0].quantidade == 2 * (p.dados.n_porticos - 1) * n
+    doc = de_projeto.modelo_do_galpao(p)
+    barras = [b for b in doc.barras if b.atributos.get("marca") == "CL"]
+    assert barras and all(b.papel == "corrente" for b in barras)
+    assert "longarina" in APOIA_EM["corrente"]
+
+
+def test_analise_3d_carrega_o_portico_de_alma_cheia():
+    """A análise 3D só carregava cobertura sobre treliça: no galpão de alma cheia gerado telha,
+    sobrecarga e vento não entravam ("o modelo não tem banzo superior de treliça") e tudo saía
+    com 0 % de uso. A viga do galpão vai marcada como viga de cobertura."""
+    from nucleo3d import analise_estrutural as AE
+    from nucleo3d import de_projeto
+    p = dimensionar(_cap16(comprimento=20.0))
+    doc = de_projeto.modelo_do_galpao(p)
+    r = AE.calcular(doc, {"base": "articulada", "telha": 0.105, "sobrecarga": p.cargas["sobrecarga"],
+                          "v0": 40.0, "categoria": "II", "classe": "B", "modelo_vento": "fechado"})
+    assert not r["instavel"]
+    assert not any("não tem banzo superior" in a for a in r["avisos"])
+    vigas = [pc for pc in r["verificacao"]["pecas"] if pc.get("papel") == "viga"]
+    uso_viga = max(pc["uso"] for pc in vigas)
+    assert uso_viga > 0.4, uso_viga
+    # a mísula: o W sozinho só do fim dela em diante (antes, 164 % no joelho com o galpão a 96 %)
+    assert uso_viga <= p.elemento("Viga").razao + 0.05, (uso_viga, p.elemento("Viga").razao)
+    assert any("mísula" in o for pc in vigas for o in pc.get("obs") or [])
+

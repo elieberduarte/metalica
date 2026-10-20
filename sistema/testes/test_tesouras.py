@@ -328,3 +328,60 @@ def test_analise_3d_carrega_o_galpao_gerado():
     # carregado de verdade: o banzo de cima trabalha (o cálculo do galpão dá ~98 %; sem carga dava ~0)
     uso_sup = max(pc["uso"] for pc in r["verificacao"]["pecas"] if pc.get("papel") == "banzo_sup")
     assert uso_sup > 0.5, uso_sup
+
+
+def test_terca_escora_do_contraventamento_e_x_nas_linhas_de_terca():
+    """A terça na linha do nó do X da cobertura é montante da treliça de contraventamento: na
+    análise 3D do 20×40 (V0 45) dava 160 % com N = 24 kN e o cálculo nunca a verificava à
+    compressão. Agora: flexo-compressão (NBR 14762, 9.9); quando a terça comum não passa, só
+    essas terças, nos vãos contraventados, ganham perfil próprio (T2), no cálculo, na lista e
+    no 3D — e o X do 3D cai nas linhas de terça (caía entre elas)."""
+    from nucleo3d import de_projeto
+    p = galpao.dimensionar(_dados(diagonais_tesoura="Pratt", v0=45.0))
+    terca, esc = p.elemento("Terça"), p.elemento("Terça-escora do contraventamento")
+    assert terca.esforcos["N_escora_kN"] > 20.0
+    assert esc is not None and esc.ok and esc.perfil != terca.perfil
+    assert any("Flexo-compressão" in v.titulo for v in esc.resultado.verificacoes)
+    lista = {x.marca: x.quantidade for x in p.lista_material}
+    assert lista["T2"] == esc.geometria["quantidade"]
+    assert lista["T1"] + lista["T2"] == terca.geometria["linhas"] * 2 * (p.dados.n_porticos - 1)
+    doc = de_projeto.modelo_do_galpao(p)
+    t2 = [b for b in doc.barras if b.atributos.get("marca") == "T2"]
+    assert len(t2) == lista["T2"] and all(b.perfil == esc.perfil for b in t2)
+    meia = de_projeto._Construtor(p, True, True)._ys_tercas()[0]
+    ys_terca = {round(y) for y in meia} | {round(20000 - y) for y in meia}
+    nos_x = {round(b.inicio[1]) for b in doc.barras if b.atributos.get("marca") == "CC"}
+    assert nos_x - {0, 20000} <= ys_terca
+
+
+def test_vento_na_faixa_de_parede_acima_do_pilar():
+    """Tesoura apoiada: a parede sobe do topo do pilar ao beiral (a altura da tesoura no apoio),
+    e o vento dessa faixa não entrava no pórtico — o momento na base saía ~20 % menor que na
+    análise 3D (94,6 × 113,7 kN·m no 20×40)."""
+    from nucleo import analise
+    p = galpao.dimensionar(_dados(diagonais_tesoura="Pratt", v0=45.0))
+    h = galpao.faixa_acima_do_pilar(p.dados)
+    assert h > 0.5
+    modelo = p.esforcos["modelo"]
+    nodais = [c for nome, cs in modelo.casos.items() if nome.startswith("Vcpi") for c in cs
+              if getattr(c, "tipo", "") == "nodal" and abs(getattr(c, "Fx", 0.0)) > 0]
+    assert len(nodais) >= 2
+    assert galpao.faixa_acima_do_pilar(_dados(ligacao_tesoura="rígida")) == 0.0
+
+
+def test_terca_assentada_no_banzo_de_cima():
+    """O 3D da tesoura assentava a terça e a telha pela altura do W de referência da viga (W 360
+    no galpão de 20 m): a terça ficava ~75 mm acima do banzo."""
+    import math
+    from nucleo3d import de_projeto
+    from saida import desenhos as dsn
+    p = galpao.dimensionar(_dados())
+    doc = de_projeto.modelo_do_galpao(p)
+    d_bs = dsn._perfil(p.elemento("Banzo superior da tesoura").perfil).d
+    d_t = dsn._perfil(p.elemento("Terça").perfil).d
+    g = de_projeto._Construtor(p, True, True)
+    for t in [b for b in doc.barras if b.papel == "terça" and b.atributos.get("agua") == 1][:5]:
+        y, z = t.inicio[1], t.inicio[2]
+        # distância ao eixo da água (z = hb + i·y), perpendicular a ele
+        dist = (z - g.hb - g.i * y) / math.sqrt(1 + g.i ** 2)
+        assert abs(dist - (d_bs / 2 + d_t / 2)) < 2.0, (dist, d_bs, d_t)

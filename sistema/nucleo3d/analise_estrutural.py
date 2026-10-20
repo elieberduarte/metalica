@@ -504,6 +504,7 @@ def montar(doc, par: Optional[dict] = None) -> dict:
             # que o editor pinta) e marca a treliça pelo papel_trelica
             "elemento": "trelica" if at.get("papel_trelica") in ("banzo_sup", "banzo_inf", "diagonal", "montante") and
             at.get("origem_2d") else at.get("elemento"), "grupo": at.get("origem_2d") or br.get("grupo"),
+            "viga_cobertura": bool(at.get("viga_de_cobertura")), "misula": at.get("misula"),
             "marca": at.get("marca") or at.get("peca"), "perfil": perfil, "ids": list(br.get("ids") or []),
             **({"perfil_modelo": br.get("perfil")} if at.get("perfil_calculo") else {}),
             "aco": (getattr(ent, "aco", "") or "") if ent is not None else "",
@@ -1072,8 +1073,8 @@ def _travamento_hipotese(nos: np.ndarray, barras: List[dict], P: dict, cache: di
 def _tesouras_e_cobertura(M: dict) -> dict:
     """os nós do banzo superior das treliças com a área de influência de cada trecho: {barra: (Ls, Lh, largura)}"""
     nos, barras = M["nos"], M["barras"]
-    sup = [i for i, br in enumerate(barras) if br.get("papel_trelica") == "banzo_sup" or
-           (br["papel"] == "banzo" and br.get("elemento") != "trelica" and False)]
+    # e a viga de alma cheia que recebe a cobertura (o pórtico do galpão gerado, 20/10)
+    sup = [i for i, br in enumerate(barras) if br.get("papel_trelica") == "banzo_sup" or br.get("viga_cobertura")]
     por_trelica: Dict[str, List[int]] = collections.defaultdict(list)
     for i in sup:
         por_trelica[barras[i]["grupo"]].append(i)
@@ -1155,7 +1156,7 @@ def _tercas_da_cobertura(M: dict, cob: dict, avisos: List[str]) -> dict:
         return {}
     no_cob: Dict[int, int] = {}
     for br in barras:
-        if br.get("elemento") == "trelica" and br["grupo"] in cob["coberturas"]:
+        if (br.get("elemento") == "trelica" or br.get("viga_cobertura")) and br["grupo"] in cob["coberturas"]:
             no_cob[br["a"]] = no_cob[br["b"]] = cob["coberturas"][br["grupo"]]
     pecas: Dict[str, List[int]] = collections.defaultdict(list)
     for i, br in enumerate(barras):

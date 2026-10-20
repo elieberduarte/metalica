@@ -83,9 +83,13 @@ class TestGalpaoCap16(unittest.TestCase):
         linhas = terca.geometria["linhas"]                   # por água
         tercas = [b for b in self.doc.barras if b.papel == "terça"]
         self.assertEqual(len(tercas), linhas * 2 * (self.d.n_porticos - 1))
+        escora = self.projeto.elemento("Terça-escora do contraventamento")
         for b in tercas:
             self.assertEqual(b.camada, "Terças")
-            self.assertEqual(b.perfil, terca.perfil)
+            # as terças nas linhas do X, nos vãos contraventados, são escoras (T2) quando o
+            # cálculo pediu perfil próprio para elas (análise de 20/10)
+            esperado = escora.perfil if b.atributos.get("marca") == "T2" else terca.perfil
+            self.assertEqual(b.perfil, esperado)
         # mesmas posições da planta de cobertura: 200 mm do beiral, 250 mm da cumeeira
         passo = self.doc.metadados["passo_tercas_mm"]
         util = 10000.0 - 200.0 - 250.0
@@ -139,10 +143,13 @@ class TestGalpaoCap16(unittest.TestCase):
         self.assertEqual(len(cob), 24)                         # 2 vãos × 6 painéis × X
         self.assertEqual(len(ver), 8)                          # 2 vãos × 2 paredes × X
         self.assertEqual({round(min(b.inicio[0], b.fim[0]) / 5000) for b in cob}, {0, 7})
-        # 6 painéis: nós a cada vão/6 no sentido do vão
+        # 6 painéis: nós a cada vão/6 no sentido do vão, cada um na linha de terça mais perto (a
+        # terça é o montante da treliça de contraventamento — análise de 20/10)
         ys = sorted({round(min(b.inicio[1], b.fim[1]), 3) for b in cob})
         self.assertEqual(len(ys), 6)
-        self.assertAlmostEqual(ys[1] - ys[0], 20000.0 / 6, places=3)
+        passo = doc.metadados["passo_tercas_mm"]
+        for k, y in enumerate(ys):
+            self.assertLessEqual(abs(y - 20000.0 * k / 6), passo / 2 + 1.0)
         self.assertEqual(doc.metadados["vaos_contraventados"], [1, 8])
         # a versão antiga do cálculo, sem `vaos_contraventados`, não é lida
         q = copy.deepcopy(self.projeto)

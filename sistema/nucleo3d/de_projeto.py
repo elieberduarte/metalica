@@ -105,7 +105,7 @@ def _vaos_padrao(n_vaos: int) -> List[int]:
 MARCAS = {"pilar": "P1", "viga": "V1", "misula_alma": "M1", "misula_mesa": "M2",
           "banzo superior": "BS", "banzo inferior": "BI",
           "diagonal": "D", "montante": "M", "travamento": "TV",
-          "terca": "T1", "corrente": "TC", "longarina": "L1",
+          "terca": "T1", "corrente": "TC", "longarina": "L1", "corrente_longarina": "CL",
           "contrav_cobertura": "CC", "contrav_vertical": "CV",
           "chapa_joelho": "CH1", "chapa_cumeeira": "CH2", "placa_base": "CH3",
           "pedestal": "PD", "telha": "TL", "fechamento": "FC"}
@@ -301,11 +301,19 @@ class _Construtor:
 
     def _vigas(self):
         el = self._nome_elemento("Viga", "Viga do pórtico")
+        g = self.g
+        com_misula = bool(g.com_misula and g.L_misula > 0)
         for k, x in enumerate(self.xs):
             for agua, y0 in ((1, 0.0), (2, self.V)):
+                # o trecho da mísula (a partir do joelho): a análise 3D não confere ali o W sozinho — a
+                # seção é a da mísula, verificada na ligação, como no cálculo do galpão
+                extra = {"misula": {"ponto": [x, y0, self.H], "comprimento_mm": round(g.L_misula, 1)}}                     if com_misula else {}
                 self._barra("viga", (x, y0, self.H), (x, self.V / 2, self.hc),
                             self.viga, "viga", "Estrutura", "Aço", self.dg.aco_perfis,
-                            el, portico=k + 1, agua=agua)
+                            el, portico=k + 1, agua=agua,
+                            # a viga recebe a cobertura (a análise 3D põe telha, sobrecarga e vento
+                            # nela pelas terças, como no banzo de cima da tesoura)
+                            viga_de_cobertura=True, origem_2d="P%d" % (k + 1), **extra)
 
     def _tesoura(self):
         """A tesoura de cada pórtico, barra por barra, com o perfil de cada família.
@@ -322,6 +330,9 @@ class _Construtor:
             el = self._elemento(NOME_DA_BARRA[papel])
             perfis[papel] = dsn._perfil(el.perfil) if el and el.perfil else self.viga
             nomes[papel] = el.nome if el else NOME_DA_BARRA[papel]
+        # a terça e a telha assentam no banzo de cima, não no W de referência da viga (no galpão
+        # de 20 m, o W 360 punha as terças ~75 mm acima do banzo)
+        self.d_apoio_terca = perfis["banzo superior"].d
         pular = {"mont_esq", "mont_dir"} if self.dg.ligacao_tesoura == "rígida" else set()
 
         # marca por comprimento, na mesma ordem da lista de material
@@ -429,17 +440,47 @@ class _Construtor:
         passo = util / n
         return [rec_beiral + k * passo for k in range(n + 1)], passo
 
+    def _paineis_cobertura(self) -> int:
+        geo_c = self._geometria_contrav("Contraventamento de cobertura")
+        try:
+            n_pain = int(geo_c.get("paineis") or 0)
+        except (TypeError, ValueError):
+            n_pain = 0
+        return n_pain if n_pain >= 1 else max(2, int(round(self.V / max(self.g.esp_port, 1.0))))
+
+    def _ys_escora(self, meia: Optional[List[float]] = None) -> List[float]:
+        """Os nós internos do X de cobertura, cada um na linha de terça mais perto (em planta): a
+        terça é o montante da treliça de contraventamento — antes o X caía entre terças."""
+        meia = meia if meia is not None else getattr(self, "meia_tercas", None)
+        n = self._paineis_cobertura()
+        alvo = [self.V * k / n for k in range(1, n)]
+        if not meia:
+            return alvo
+        linhas = sorted(set([round(y, 3) for y in meia] + [round(self.V - y, 3) for y in meia]))
+        return [min(linhas, key=lambda y: abs(y - a)) for a in alvo]
+
+    def _d_apoio(self) -> float:
+        """Altura do que recebe a terça: o banzo de cima da tesoura ou a viga de alma cheia."""
+        return getattr(self, "d_apoio_terca", None) or self.viga.d
+
     def _centro_terca(self, x: float, y: float) -> Ponto:
         """Centroide da terça apoiada na mesa superior da viga, na posição y."""
-        off = self.viga.d / 2 + self.terca.d / 2
+        off = self._d_apoio() / 2 + self.terca.d / 2
         n = self._normal_agua(y)
         return (x, y + n[1] * off, self._z_agua(y) + n[2] * off)
 
     def _tercas_e_correntes(self):
         meia, passo = self._ys_tercas()
+        self.meia_tercas = meia
         el = self._nome_elemento("Terça", "Terça")
         ang = math.degrees(self.theta)
         linhas = []
+        # as terças nas linhas dos nós do X, nos vãos contraventados, são escoras (T2, quando o
+        # cálculo pediu perfil próprio para elas)
+        ys_esc = self._ys_escora(meia)
+        vaos_cob = set(self._vaos_de(self._geometria_contrav("Contraventamento de cobertura")))
+        esc = self._elemento("Terça-escora do contraventamento")
+        perf_esc = geo.registrar_perfil(geo.resolver_perfil(esc.perfil)) if esc is not None else None
         for agua in (1, 2):
             ys = meia if agua == 1 else [self.V - y for y in meia]
             for j, y in enumerate(ys):
@@ -447,9 +488,11 @@ class _Construtor:
                 for iv in range(len(self.xs) - 1):
                     a = self._centro_terca(self.xs[iv], y)
                     b = self._centro_terca(self.xs[iv + 1], y)
+                    escora = perf_esc is not None and iv in vaos_cob and any(abs(y - ye) < 1.0 for ye in ys_esc)
                     # eixo forte perpendicular ao plano da água
-                    self._barra("terca", a, b, self.terca, "terça", "Terças",
-                                "Aço galvanizado", self.dg.aco_tercas, el,
+                    self._barra("terca", a, b, perf_esc if escora else self.terca, "terça", "Terças",
+                                "Aço galvanizado", self.dg.aco_tercas,
+                                esc.nome if escora else el, marca="T2" if escora else None,
                                 rotacao=ang if agua == 1 else -ang,
                                 agua=agua, linha=j + 1, vao=iv + 1)
         self.linhas_tercas = linhas
@@ -496,6 +539,31 @@ class _Construtor:
                                 (self.xs[iv + 1], yw, z), self.longarina, "longarina",
                                 "Terças", "Aço galvanizado", self.dg.aco_tercas, el,
                                 rotacao=ang, lado=lado, fiada=j + 1, vao=iv + 1)
+        self._correntes_longarinas(zs, off)
+
+    def _correntes_longarinas(self, zs: List[float], off: float):
+        """Correntes do fechamento lateral: na mesma posição das da terça, de fiada em fiada e da
+        de cima até a terça do beiral, que recebe o peso das longarinas.
+
+        O cálculo verifica a longarina com as correntes travando a mesa e levando o peso próprio
+        (`_longarinas`, ao menos uma linha); sem elas no 3D e na lista, a análise 3D via a
+        longarina solta nos 5 m e reprovava (195 %, análise de 20/10)."""
+        el_l = self._elemento("Longarina")
+        n_corr = int((el_l.geometria or {}).get("n_correntes") or 0) if el_l else 0
+        if n_corr <= 0 or not zs or not getattr(self, "meia_tercas", None):
+            return
+        barra = geo.registrar_perfil(geo.barra_redonda(DIAM_CORRENTE, "Barra ø 16 mm"))
+        y_beiral = self.meia_tercas[0]
+        for iv in range(len(self.xs) - 1):
+            x1, x2 = self.xs[iv], self.xs[iv + 1]
+            for k in range(1, n_corr + 1):
+                xc = x1 + (x2 - x1) * k / (n_corr + 1.0)
+                for lado, yw, yt in (("esquerdo", -off, y_beiral), ("direito", self.V + off, self.V - y_beiral)):
+                    pts = [(xc, yw, z) for z in sorted(zs)] + [self._centro_terca(xc, yt)]
+                    for j in range(len(pts) - 1):
+                        self._barra("corrente_longarina", pts[j], pts[j + 1], barra, "corrente",
+                                    "Terças", "Aço", self.dg.aco_chapas, "Corrente de longarina",
+                                    lado=lado, vao=iv + 1, linha_corrente=k)
 
     # ------------------------------------------------------------------ contraventamento
     def _perfil_contraventamento(self, nome: str) -> Perfil:
@@ -537,15 +605,10 @@ class _Construtor:
         el = self._nome_elemento("Contraventamento de cobertura",
                                  "Contraventamento de cobertura")
         geo_c = self._geometria_contrav("Contraventamento de cobertura")
-        try:
-            n_pain = int(geo_c.get("paineis") or 0)
-        except (TypeError, ValueError):
-            n_pain = 0
-        if n_pain < 1:
-            n_pain = max(2, int(round(self.V / max(self.g.esp_port, 1.0))))
+        n_pain = self._paineis_cobertura()
         self.paineis_cobertura = n_pain
         self.vaos_cobertura = self._vaos_de(geo_c)
-        ys = [self.V * k / n_pain for k in range(n_pain + 1)]
+        ys = [0.0] + self._ys_escora() + [self.V]
         for iv in self.vaos_cobertura:
             x1, x2 = self.xs[iv], self.xs[iv + 1]
             for k in range(n_pain):
@@ -680,7 +743,7 @@ class _Construtor:
         """Telhas das duas águas e fechamento das paredes, como sólidos finos."""
         e = ESPESSURA_TELHA
         C, V, H, hc = self.C, self.V, self.H, self.hc
-        off = self.viga.d / 2 + self.terca.d                # topo da terça
+        off = self._d_apoio() / 2 + self.terca.d            # topo da terça
         for agua, (y0, y1) in ((1, (0.0, V / 2)), (2, (V, V / 2))):
             n = self._normal_agua(y0 if agua == 1 else y0 - 1.0)
             p0 = (0.0, y0 + n[1] * off, self._z_agua(y0) + n[2] * off)

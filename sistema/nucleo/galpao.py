@@ -60,6 +60,7 @@ def dimensionar(dados: DadosGalpao) -> ProjetoGalpao:
         _longarinas(p)
         _analise_portico(p)
         _contraventamentos(p)
+        _tercas_escora(p)
         _ligacoes(p)
         _base(p)
         _lista_de_material(p)
@@ -268,27 +269,7 @@ def _tercas(p: ProjetoGalpao):
     esp = util / n_esp                       # espaçamento real, em m
     n_linhas = n_esp + 1
 
-    g = p.cargas["g_cobertura"]              # kN/m²
-    sc = p.cargas["sobrecarga"]
-    crit = _pressoes_criticas(p)
-    # sucção mais severa entre todos os casos de C_pi
-    succao = min(min(c["telhado_barlavento"], c["telhado_sotavento"]) for c in crit.values())
-
-    vao = d.espacamento_porticos
-    # gravidade: 1,25·g + 1,5·sc  (permanente de pequena variabilidade, NBR 8800 Tab. 1)
-    q_grav = (1.25 * g + 1.5 * sc) * esp
-    # sucção: 1,4·vento aliviado por 1,0·g (permanente favorável). O módulo da NBR 14762
-    # espera a sucção como valor positivo (para cima), daí o sinal invertido.
-    q_suc = max(0.0, (1.4 * abs(succao) - 1.0 * g) * esp)
-    q_serv_grav = (g + sc) * esp
-    q_serv_suc = max(0.0, (abs(succao) - g) * esp)
-    # NBR 6120:2019, item 6.4: 1 kN concentrado no meio do vão, só com a permanente
-    # (auditoria C4) — governa nos vãos curtos
-    comuns = dict(inclinacao=d.angulo_telhado, carga_servico_gravidade=q_serv_grav,
-                  carga_servico_succao=q_serv_suc,
-                  carga_concentrada=1.5 * cargas.CARGA_CONCENTRADA_COBERTURA,
-                  carga_permanente=1.25 * g * esp,
-                  limite_flecha_gravidade=float(d.flecha_terca))
+    vao, q_grav, q_suc, succao, comuns = _cargas_da_terca(p, esp)
 
     def busca(correntes, apenas_aprovados, perfis=None):
         return nbr14762.dimensionar_terca(
@@ -339,6 +320,130 @@ def _tercas(p: ProjetoGalpao):
     p.cargas["linhas_tercas_por_agua"] = n_linhas
     p.cargas["succao_telhado"] = succao
 
+
+def _cargas_da_terca(p: ProjetoGalpao, esp: float):
+    """(vão, q gravidade, q sucção, sucção crítica, argumentos comuns) da terça a `esp` m."""
+    d = p.dados
+    g = p.cargas["g_cobertura"]              # kN/m²
+    sc = p.cargas["sobrecarga"]
+    crit = _pressoes_criticas(p)
+    # sucção mais severa entre todos os casos de C_pi
+    succao = min(min(c["telhado_barlavento"], c["telhado_sotavento"]) for c in crit.values())
+
+    vao = d.espacamento_porticos
+    # gravidade: 1,25·g + 1,5·sc  (permanente de pequena variabilidade, NBR 8800 Tab. 1)
+    q_grav = (1.25 * g + 1.5 * sc) * esp
+    # sucção: 1,4·vento aliviado por 1,0·g (permanente favorável). O módulo da NBR 14762
+    # espera a sucção como valor positivo (para cima), daí o sinal invertido.
+    q_suc = max(0.0, (1.4 * abs(succao) - 1.0 * g) * esp)
+    q_serv_grav = (g + sc) * esp
+    q_serv_suc = max(0.0, (abs(succao) - g) * esp)
+    # NBR 6120:2019, item 6.4: 1 kN concentrado no meio do vão, só com a permanente
+    # (auditoria C4) — governa nos vãos curtos
+    comuns = dict(inclinacao=d.angulo_telhado, carga_servico_gravidade=q_serv_grav,
+                  carga_servico_succao=q_serv_suc,
+                  carga_concentrada=1.5 * cargas.CARGA_CONCENTRADA_COBERTURA,
+                  carga_permanente=1.25 * g * esp,
+                  limite_flecha_gravidade=float(d.flecha_terca))
+
+    return vao, q_grav, q_suc, succao, comuns
+
+
+#: Força de escora acima disto (kN) faz a terça ser verificada à flexo-compressão.
+N_ESCORA_MIN = 0.5
+
+
+def _forca_de_escora(p: ProjetoGalpao) -> float:
+    """Compressão na terça que é montante da treliça do contraventamento de cobertura (kN).
+
+    A treliça horizontal do vão contraventado vence o vão do galpão entre os beirais e recebe
+    o vento do oitão nos nós (F/n em cada um); com o X só à tração, o montante interno mais
+    carregado — a terça na linha do nó — leva o cortante do painel vizinho ao do apoio, F/2 −
+    F/n, e nunca menos que a carga de um nó. Antes não se verificava: na análise 3D do 20×40
+    (V0 45) a terça dessas linhas dava 160 % com N = 24 kN."""
+    cob = p.elemento("Contraventamento de cobertura")
+    if cob is None:
+        return 0.0
+    F = float(cob.esforcos.get("F_oitao_kN") or 0.0)
+    n = int(cob.geometria.get("paineis") or 2)
+    return max(F / 2.0 - F / n, F / n) if n >= 3 else F / 2.0
+
+
+def _flexo_compressao_terca(p: ProjetoGalpao, perfil_nome: str, n_corr: int, N: float,
+                            res_flexao=None) -> Verificacao:
+    """NBR 14762:2010, item 9.9: N/N_Rd + M_Sd/M_Rd ≤ 1, com o momento da sucção (o mesmo vento)
+    amplificado por 1/(1 − N/N_ex). `res_flexao`: o Resultado da terça com esse perfil."""
+    d = p.dados
+    sec = nbr14762.secao_do_perfil(achar_perfil(perfil_nome))
+    L = d.espacamento_porticos * 100.0
+    Lc = L / (n_corr + 1)
+    vc = nbr14762.compressao_mrd(sec, d.aco_tercas, N_Sd=N, KxLx=L, KyLy=Lc, KtLt=Lc)
+    flex = next((v for v in (res_flexao.verificacoes if res_flexao else [])
+                 if "sucção" in v.titulo and "Flexão Mx" in v.titulo), None)
+    M_sd, M_rd = (abs(flex.Sd), abs(flex.Rd)) if flex else (0.0, 1.0)
+    N_ex = math.pi ** 2 * nbr14762.E * sec.Ix / L ** 2
+    amp = 1.0 / max(1e-6, 1.0 - N / N_ex)
+    soma = N / vc.Rd + amp * M_sd / M_rd if vc.Rd > 0 else float("inf")
+    v = Verificacao("Flexo-compressão — terça como escora do contraventamento de cobertura",
+                    norma="NBR 14762:2010, item 9.9", Sd=round(soma, 4), Rd=1.0, unidade="—")
+    v.passo("Força de escora (montante da treliça de cobertura)", "N = F/2 − F/n", "",
+            fmt(N, 1, "kN"))
+    v.passo("Compressão resistente", "N_c,Rd (9.8.2), KxLx = L, KyLy = KtLt = L/(correntes+1)",
+            "L = %s; L/(n+1) = %s" % (fmt(L, 0, "cm"), fmt(Lc, 0, "cm")), fmt(vc.Rd, 1, "kN"))
+    v.passo("Momento de sucção amplificado", "M_Sd/(1 − N/N_ex)",
+            "%s / (1 − %s/%s)" % (fmt(M_sd, 1), fmt(N, 1), fmt(N_ex, 0)),
+            fmt(amp * M_sd, 1, "kN·cm"))
+    v.passo("Interação", "N/N_Rd + M/M_Rd ≤ 1", "%s/%s + %s/%s" % (
+        fmt(N, 1), fmt(vc.Rd, 1), fmt(amp * M_sd, 1), fmt(M_rd, 1)), fmt(soma, 2))
+    return v
+
+
+def _tercas_escora(p: ProjetoGalpao):
+    """A terça dos vãos contraventados que é montante da treliça de cobertura: flexo-compressão.
+
+    Se a terça comum passa, a verificação entra nela. Senão, só as terças dessas linhas, nos
+    vãos contraventados, ganham o Ue mais leve que passa (marca T2) — as outras continuam."""
+    d = p.dados
+    terca = p.elemento("Terça")
+    cob = p.elemento("Contraventamento de cobertura")
+    N = _forca_de_escora(p)
+    if terca is None or cob is None or N < N_ESCORA_MIN:
+        return
+    n_corr = int(terca.geometria.get("n_correntes") or 0)
+    v = _flexo_compressao_terca(p, terca.perfil, n_corr, N, terca.resultado)
+    n_linhas = max(1, int(cob.geometria.get("paineis") or 2) - 1)
+    terca.esforcos["N_escora_kN"] = round(N, 2)
+    if v.ok:
+        terca.resultado.add(v)
+        return
+    vao, q_grav, q_suc, _s, comuns = _cargas_da_terca(p, float(terca.geometria.get("espacamento_m") or 1.6))
+    candidatas = nbr14762.dimensionar_terca(
+        aco=d.aco_tercas, vao=vao, carga_gravidade=q_grav, carga_succao=q_suc,
+        correntes=(n_corr,), apenas_aprovados=True, **comuns)
+    escolhida, ve = None, None
+    for r in candidatas:
+        ve = _flexo_compressao_terca(p, r.perfil, n_corr, N, r)
+        if ve.ok:
+            escolhida = r
+            break
+    if escolhida is None:
+        # nenhuma passa: a terça comum fica com a verificação reprovada (o galpão não passa)
+        terca.resultado.add(v)
+        p.avisos.append("A terça que é escora do contraventamento de cobertura (N = %s) não passa à "
+                        "flexo-compressão com nenhum Ue do catálogo: adote escora própria (tubo ou "
+                        "cantoneira dupla) nas linhas do X ou mais painéis." % fmt(N, 1, "kN"))
+        return
+    escolhida.add(ve)
+    escolhida.elemento = "Terça-escora"
+    vaos = cob.geometria.get("vaos_contraventados") or []
+    p.elementos.append(ElementoDimensionado(
+        nome="Terça-escora do contraventamento", perfil=escolhida.perfil, material=d.aco_tercas,
+        resultado=escolhida, esforcos={"N_kN": round(N, 2), "q_succao_kN_m": round(q_suc, 3)},
+        geometria={"vao_m": vao, "n_correntes": n_corr, "linhas_por_vao": n_linhas,
+                   "vaos_contraventados": list(vaos), "quantidade": n_linhas * len(vaos)}))
+    p.avisos.append("As terças nas linhas do X da cobertura (%d por vão contraventado) são escoras do "
+                    "contraventamento (N = %s): %s no lugar de %s." % (
+                        n_linhas, fmt(N, 1, "kN"), escolhida.perfil, terca.perfil))
 
 def _longarinas(p: ProjetoGalpao):
     """Longarinas de fechamento lateral pela NBR 14762, sob pressão e sucção do vento.
@@ -502,7 +607,22 @@ def _carregar_portico(modelo, p: ProjetoGalpao, pilar: Perfil, viga: Perfil, pp=
             modelo.distribuida(caso, b, c["parede_barlavento"] * s * M, "global_x")
         for b in pil_dir:
             modelo.distribuida(caso, b, -c["parede_sotavento"] * s * M, "global_x")
+        # tesoura apoiada: a parede sobe do topo do pilar até o beiral (a altura da tesoura no apoio)
+        # e o vento dessa faixa entra no topo do pilar — antes ficava fora (0,8 m no 20×40; a
+        # análise 3D dava o momento na base ~20 % maior, análise de 20/10)
+        if faixa_acima_do_pilar(d) > 1e-6:
+            h = faixa_acima_do_pilar(d)
+            topo_esq, topo_dir = _topos_dos_pilares(modelo)
+            modelo.nodal(caso, topo_esq, Fx=c["parede_barlavento"] * s * h)
+            modelo.nodal(caso, topo_dir, Fx=-c["parede_sotavento"] * s * h)
     return crit
+
+
+def faixa_acima_do_pilar(d: DadosGalpao) -> float:
+    """Altura de parede acima do topo do pilar (m): na tesoura apoiada, do pé-direito ao beiral."""
+    if d.eh_trelicado and d.ligacao_tesoura == "apoiada":
+        return max(0.0, d.altura_beiral - d.pe_direito)
+    return 0.0
 
 
 def _tem_barra(modelo, rotulo) -> bool:
@@ -2205,8 +2325,13 @@ def _lista_de_material(p: ProjetoGalpao):
         vaos = n_port - 1
         # terças e longarinas vêm galvanizadas (fora da área a pintar, como a lista de
         # material e o memorial dizem): antes entravam e quase dobravam a área e a tinta
-        add("T1", "Terça", terca.perfil, linhas * vaos, d.espacamento_porticos,
+        escora = p.elemento("Terça-escora do contraventamento")
+        n_t2 = int(escora.geometria.get("quantidade") or 0) if escora else 0
+        add("T1", "Terça", terca.perfil, linhas * vaos - n_t2, d.espacamento_porticos,
             material=d.aco_tercas, pintada=False)
+        if n_t2:
+            add("T2", "Terça-escora do contraventamento (linhas do X)", escora.perfil, n_t2,
+                d.espacamento_porticos, material=d.aco_tercas, pintada=False)
         n_corr = terca.geometria.get("n_correntes", 0)
         if n_corr:
             pecas.append(Peca(marca="TC", descricao="Corrente/tirante de terça ø 16 mm",
@@ -2225,6 +2350,17 @@ def _lista_de_material(p: ProjetoGalpao):
     if perfil_long:
         add("L1", "Longarina de fechamento", perfil_long, n_long * 2 * (n_port - 1),
             d.espacamento_porticos, material=d.aco_tercas, pintada=False)
+    # correntes do fechamento: a longarina foi verificada com elas (_longarinas), da fiada de baixo
+    # até a terça do beiral, que leva o peso — antes ficavam fora do 3D e da lista
+    n_corr_l = int(longarina.geometria.get("n_correntes") or 0) if longarina else 0
+    cotas = (longarina.geometria.get("cotas_fiadas_m") or []) if longarina else []
+    if n_corr_l and cotas:
+        comp_cl = d.altura_beiral - min(cotas) + 0.3
+        q_cl = 2 * (n_port - 1) * n_corr_l
+        pecas.append(Peca(marca="CL", descricao="Corrente de longarina ø 16 mm (até a terça do beiral)",
+                          perfil="Barra ø 16 mm", material=d.aco_chapas, quantidade=q_cl,
+                          comprimento_m=round(comp_cl, 2), peso_unit_kg=round(1.58 * comp_cl, 2),
+                          peso_total_kg=round(1.58 * comp_cl * q_cl, 1), area_pintura_m2=0.0))
     if cob:
         add("CC", "Diagonal de contraventamento de cobertura", cob.perfil,
             int(cob.geometria.get("quantidade", 8)),
