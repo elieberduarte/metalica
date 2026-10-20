@@ -19,6 +19,8 @@ SCR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
 from test_pacote_celular import _modelo
+from test_cobertura_movel import PAR, _modelo as _modelo_cobertura
+from nucleo3d import cobertura_movel as CM
 
 if "import celular.web" not in open(os.path.join(BASE, "app.py"), encoding="utf-8").read():
     print("  pulado: o app.py desta cópia não carrega o acesso pelo celular (extensões do desenvolvimento)")
@@ -31,7 +33,21 @@ DADOS = tempfile.mkdtemp(prefix="metalica_celmaq_")
 proj = os.path.join(DADOS, "obra-maquete")
 os.makedirs(proj)
 json.dump({"nome": "Obra da maquete", "alterado": "2026-10-20T10:00:00"}, open(os.path.join(proj, "projeto.json"), "w", encoding="utf-8"))
-json.dump(_modelo(), open(os.path.join(proj, "modelo.json"), "w", encoding="utf-8"))
+MODELO = _modelo()
+# uma diagonal de tesoura inclinada a 45°, com cor própria: simplificada, tem de virar uma barra na direção dela (a caixa
+# só girada na planta fazia dela uma placa da altura da diagonal — usuário, 20/10, no S25)
+MODELO["entidades"].append({"id": "d1", "tipo": "barra", "nome": "diagonal", "camada": "Vigas", "material": "Aço diagonal",
+                            "inicio": [0, 4000, 0], "fim": [3000, 4000, 3000], "perfil": "W 200×22,5", "rotacao": 0.0})
+MODELO["materiais"]["Aço diagonal"] = {"nome": "Aço diagonal", "cor": "#ff00ff"}
+json.dump(MODELO, open(os.path.join(proj, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
+# a cobertura retrátil (usuário, 20/10: "ter a visualização do modelo aberto e fechado na maquete"): a pequena do
+# test_cobertura_movel, gravada aberta
+cob = os.path.join(DADOS, "cobertura")
+os.makedirs(cob)
+json.dump({"nome": "Cobertura retrátil", "alterado": "2026-10-20T10:00:00", "analise_parametros": PAR}, open(os.path.join(cob, "projeto.json"), "w", encoding="utf-8"))
+_doc = _modelo_cobertura()
+CM.aplicar(_doc, PAR, "aberta")
+json.dump(_doc.dict(), open(os.path.join(cob, "modelo.json"), "w", encoding="utf-8"))
 REAL = os.environ.get("METALICA_MAQUETE_OBRA")
 if REAL:
     destino = os.path.join(DADOS, "obra-real")
@@ -101,7 +117,7 @@ ESPERADO = """(() => { const v = window.visor; let n = 0, peq = 0; const mn = [1
   return JSON.stringify({ n, peq, medidas: [0, 1, 2].map(r => (mx[r] - mn[r]) / 1000) }); })()"""
 # a maquete montada de novo pelo módulo, para medir a caixa dela no espaço da realidade aumentada
 CAIXA = """(async () => { const M = await import('./maquete.js'), T = await import('three'); const v = window.visor;
-  const r = await M.montarMaquete(v, await (await fetch(v.urlModelo)).arrayBuffer(), null);
+  const r = await M.montarMaquete(v, await (await fetch(v.urlModelo)).arrayBuffer(), {});
   const c = new T.Box3().setFromObject(r.grupo); const s = c.getSize(new T.Vector3()), m = c.getCenter(new T.Vector3());
   let pontos = 0; r.grupo.traverse(o => { if (o.isMesh) pontos += o.geometry.attributes.position.count; });
   window._maq = r;
@@ -135,7 +151,8 @@ try:
     ap.navegar(cel + "/celular/parear?c=" + codigo, limite=30)
     ap.navegar(cel + "/celular/#/p/obra-maquete/modelo", limite=30)
     t0 = time.time()
-    ok(esperar(ap, ABERTO, 120), "o 3D da obra abre no celular (%.0f s)" % (time.time() - t0))
+    # com a obra real na pasta, o PC prepara o pacote dela também, e a fila demora
+    ok(esperar(ap, ABERTO, 600 if REAL else 120), "o 3D da obra abre no celular (%.0f s)" % (time.time() - t0))
 
     # 1. Vistas → Maquete na mesa (o Chrome sem janela não tem realidade aumentada: o aviso)
     ap.avaliar("document.querySelector('[data-f=vistas]').click()")
@@ -158,18 +175,64 @@ try:
     ok(abs(cx["altura"] - esp["medidas"][2] * escala) < 1e-3, f"a altura da obra (z) vira o Y da maquete ({cx['altura']:.4f})")
     ok(cx["normais"], "toda malha tem a normal de cada vértice (as quinas vivas)")
     # passando do limite, as peças pesadas vão com a forma de fora (a caixa justa): nenhuma sai, a caixa da obra não muda
+    # no limite de 12 triângulos por peça, todas viram caixa; a da diagonal (a malha da cor dela) tem os lados de uma barra
     SIMPL = """(async () => { const M = await import('./maquete.js'), T = await import('three'); const v = window.visor;
-      const r = await M.montarMaquete(v, await (await fetch(v.urlModelo)).arrayBuffer(), null, null, 100);
+      const r = await M.montarMaquete(v, await (await fetch(v.urlModelo)).arrayBuffer(), { limite: %d });
       const s = new T.Box3().setFromObject(r.grupo).getSize(new T.Vector3());
-      return JSON.stringify({ pecas: r.pecas, simplificadas: r.simplificadas, triangulos: r.triangulos, deFora: r.deFora, x: s.x, y: s.y, z: s.z }); })()"""
+      const diag = r.grupo.children.find(o => /Cor_ff(72|00)ff/.test(o.name)), p = diag ? diag.geometry.attributes.position : null;
+      let lados = [];
+      if (p) { const q0 = new T.Vector3().fromBufferAttribute(p, 0), d = [];
+        for (let k = 1; k < p.count; k++) { const x = new T.Vector3().fromBufferAttribute(p, k).distanceTo(q0); if (x > 1e-6 && !d.some(y => Math.abs(y - x) < 1e-6)) d.push(x); }
+        d.sort((a, b) => a - b); lados = [d[0], d[1], Math.sqrt(Math.max(0, d[d.length - 1] ** 2 - d[0] ** 2 - d[1] ** 2))]; }
+      return JSON.stringify({ pecas: r.pecas, simplificadas: r.simplificadas, triangulos: r.triangulos, deFora: r.deFora, x: s.x, y: s.y, z: s.z,
+        lados, mm: 1000 * r.escala }); })()""" % (12 * esp["n"])
     sp = json.loads(ap.avaliar(SIMPL) or "{}")
     cheia = json.loads(ap.avaliar("""(async () => { const T = await import('three'); const s = new T.Box3().setFromObject(window._maq.grupo).getSize(new T.Vector3());
       return JSON.stringify([s.x, s.y, s.z, window._maq.triangulos]); })()""") or "[0,0,0,0]")
-    ok(sp.get("simplificadas", 0) > 0 and sp.get("pecas") == esp["n"] and sp.get("deFora") == 0 and sp.get("triangulos", 1e9) <= 100,
-       f"no limite de 100 triângulos (a maquete cheia tem {cheia[3]}): {sp.get('simplificadas')} peças simplificadas, nenhuma de fora ({sp.get('triangulos')} triângulos)")
-    ok(all(abs(sp.get(k, 0) - cheia[j]) < 1e-4 for j, k in enumerate("xyz")), f"e a caixa da obra é a mesma ({sp.get('x')}, {sp.get('y')}, {sp.get('z')} × {cheia[:3]})")
+    ok(sp.get("simplificadas", 0) > 0 and sp.get("pecas") == esp["n"] and sp.get("deFora") == 0 and sp.get("triangulos", 1e9) <= 12 * esp["n"],
+       f"no limite de {12 * esp['n']} triângulos (a maquete cheia tem {cheia[3]}): {sp.get('simplificadas')} peças simplificadas, nenhuma de fora ({sp.get('triangulos')} triângulos)")
+    lados = [round(x * sp.get("mm", 0)) for x in sp.get("lados", [])]
+    ok(len(lados) == 3 and lados[2] > 4000 and lados[1] < 260, f"a diagonal simplificada é uma barra na direção dela, não uma placa (lados {lados} mm)")
+    # a caixa girada de uma peça pode passar uns décimos da caixa dela alinhada à obra
+    ok(all(abs(sp.get(k, 0) - cheia[j]) < 0.003 for j, k in enumerate("xyz")), f"e a caixa da obra é a mesma ({sp.get('x')}, {sp.get('y')}, {sp.get('z')} × {cheia[:3]})")
 
     ap.avaliar(DESENHAR); foto(ap, "celular_maquete_desenho.png"); ap.avaliar("document.getElementById('foto-maquete').remove()")
+    # as arestas do 3D da tela (o caminho do Android)
+    # e todas as camadas, cada uma na sua malha, ligadas como na tela (os parafusos desligados): ligar e desligar na câmera
+    AR = """(async () => { const M = await import('./maquete.js'); const v = window.visor;
+      const ch = v.cabecalho.camadas.findIndex(c => c.nome === 'Chapas'); v.mostrarCamada(ch, false);
+      const r = await M.montarMaquete(v, await (await fetch(v.urlModelo)).arrayBuffer(), { limite: M.LIMITES.webxr, arestas: true, todas: true });
+      v.mostrarCamada(ch, true);
+      const linhas = r.grupo.children.filter(o => o.isLineSegments).reduce((n, o) => n + o.geometry.attributes.position.count / 2, 0);
+      const vis = (nome) => r.grupo.children.filter(o => o.userData.camada === nome).map(o => o.visible);
+      M.aplicarVisiveis(r.grupo, new Set(['camada:Vigas', 'camada:Parafusos']));
+      const desl = { vigas: vis('Vigas'), chapas: vis('Chapas'), parafusos: vis('Parafusos') };
+      M.aplicarVisiveis(r.grupo, new Set());
+      return JSON.stringify({ arestas: r.arestas, linhas, pecas: r.pecas, camadas: r.camadas, desl, ligadas: vis('Vigas') }); })()"""
+    ar = json.loads(ap.avaliar(AR) or "{}")
+    ok(ar.get("arestas", 0) > 50 and ar.get("linhas") == ar.get("arestas"), f"no Android a maquete leva as arestas do 3D ({ar.get('arestas')})")
+    cams = {c["nome"]: c["ligada"] for c in ar.get("camadas", [])}
+    ok(cams.get("Chapas") is False and cams.get("Vigas") is True and "Parafusos" not in cams,
+       f"todas as camadas vão, ligadas como na tela — Chapas desligada na tela vai desligada; os parafusos, pequenos, ficam de fora ({cams})")
+    d = ar.get("desl", {})
+    ok(d.get("vigas") and not any(d["vigas"]) and d.get("chapas") and all(d["chapas"]) and all(ar.get("ligadas", [False])),
+       f"desligar Vigas esconde só as malhas dela, e ligar traz de volta ({d})")
+    # o desenho do piso na maquete: eixos e níveis no quadro dela, ligáveis
+    PISO = """(async () => { const M = await import('./maquete.js'), T = await import('three');
+      const dados = { segmentos: [[0, 0, 10000, 0]], eixos: [{ nome: 'A', a: [0, 0, 0], b: [0, 8000, 0] }, { nome: '1', a: [0, 0, 0], b: [10000, 0, 0] }],
+                      niveis: [{ nome: '+3,00', z: 3000 }] };
+      const piso = await M.pisoDaMaquete(dados, { cx: 5000, cy: 4000, z0: 0, s: 0.001 }, [0, 0, 0]);
+      piso.updateMatrixWorld(true);
+      const caixa = (nome) => { const b = new T.Box3(); piso.userData.ref.getObjectByName(nome).traverse(o => { if (o.isLineSegments) b.expandByObject(o); }); return [b.min.toArray(), b.max.toArray()]; };
+      const niv = caixa('niveis'), eix = caixa('eixos');
+      M.aplicarVisiveis(piso, new Set(['piso:eixos']));
+      return JSON.stringify({ partes: piso.userData.partes, niv, eix, eixosVisiveis: piso.userData.ref.getObjectByName('eixos').visible,
+        niveisVisiveis: piso.userData.ref.getObjectByName('niveis').visible }); })()"""
+    pz = json.loads(ap.avaliar(PISO) or "{}")
+    ok(pz.get("partes") == ["arquitetonico", "eixos", "niveis"], f"o piso leva o arquitetônico, os eixos e os níveis ({pz.get('partes')})")
+    niv = pz.get("niv", [[0, 0, 0], [0, 0, 0]])
+    ok(abs(niv[1][1] - 3.0) < 0.05 and abs(niv[0][0] + 5.0) < 0.3, f"o nível +3,00 a 3 m de altura na maquete de 1:1000, no quadro dela ({niv})")
+    ok(pz.get("eixosVisiveis") is False and pz.get("niveisVisiveis") is True, "desligar os eixos esconde só eles")
     # 2. o .usdz do iPhone
     dados = base64.b64decode(ap.avaliar(USDZ) or "")
     z = zipfile.ZipFile(io.BytesIO(dados))
@@ -257,11 +320,56 @@ try:
     ok(esperar(ap, "(document.getElementById('folha').innerText || '').includes('sem câmera no teste')", 10)
        and not ap.avaliar("!!document.getElementById('ra-sobre')"), "a câmera recusada: o aviso, e nada fica por cima da tela")
 
-    # obra real (opcional): o tamanho e o tempo da maquete inteira
+    # a cobertura retrátil: as duas situações no mesmo quadro — a parte fixa no mesmo lugar, a parte móvel não
+    ap.navegar(cel + "/celular/#/p/cobertura/modelo", limite=30)
+    ok(esperar(ap, "document.getElementById('titulo') && document.getElementById('titulo').textContent === 'Cobertura retrátil' && " + ABERTO, 120),
+       "a cobertura retrátil abre no celular")
+    SIT = """(async () => { const M = await import('./maquete.js'), T = await import('three'); const v = window.visor;
+      const op = { limite: M.LIMITES.webxr, todas: true };
+      const r1 = await M.montarMaquete(v, await (await fetch(v.urlModelo)).arrayBuffer(), op);
+      const s = v.outrasSituacoesRA[0], fichas = (await s.pecas()).pecas, buf2 = await (await fetch(s.modelo)).arrayBuffer();
+      const w = M.visorDaOutra(v, fichas, M.lerCabecalho(buf2).camadas);
+      const r2 = await M.montarMaquete(w, buf2, { ...op, quadro: r1.quadro });
+      const caixas = (r) => { const m = {}; for (const o of r.grupo.children) { const k = o.userData.camada; m[k] = (m[k] || new T.Box3()).expandByObject(o); }
+        return Object.fromEntries(Object.entries(m).map(([k, b]) => [k, [...b.min.toArray(), ...b.max.toArray()].map(x => Math.round(x * 1e4))])); };
+      const c1 = caixas(r1), c2 = caixas(r2), iguais = [], mudaram = [];
+      for (const k of Object.keys(c1)) (JSON.stringify(c1[k]) === JSON.stringify(c2[k]) ? iguais : mudaram).push(k);
+      const pos = new Map(v.fichas.map((f, i) => [f.id, i]));
+      const cores = fichas.every((f, j) => { const i = pos.get(f.id); return i === undefined || [0, 1, 2].every(k => w.corBase[j * 3 + k] === v.corBase[i * 3 + k]); });
+      return JSON.stringify({ rotulos: [v.situacaoRA.rotulo, s.rotulo], iguais, mudaram, escalas: [r1.escala, r2.escala], pecas: [r1.pecas, r2.pecas], cores }); })()"""
+    st = json.loads(ap.avaliar(SIT) or "{}")
+    ok(st.get("rotulos") == ["Aberta", "Retraída"], f"as situações: {st.get('rotulos')}")
+    ok(st.get("iguais") and st.get("mudaram") and st.get("escalas", [0, 1])[0] == st.get("escalas", [0, 1])[1] and st.get("pecas", [0, 1])[0] == st.get("pecas", [0, 1])[1],
+       f"no mesmo quadro: a parte fixa no mesmo lugar ({st.get('iguais')}), a móvel não ({st.get('mudaram')})")
+    ok(st.get("cores") is True, "a outra situação com as cores da tela (pela peça)")
+    # Android: as duas situações vão para a câmera
+    ap.avaliar("window.ultimaMaquete = null; document.querySelector('[data-f=vistas]').click()")
+    esperar(ap, "!!document.getElementById('ra-obra')", 5)
+    tocar(ap, "#ra-obra")
+    ok(esperar(ap, "!!window.ultimaMaquete && !!document.querySelector('#ra-acoes button.forte')", 60)
+       and ap.avaliar("JSON.stringify(window.ultimaMaquete.situacoes)") == '["Aberta","Retraída"]'
+       and "troque na câmera" in (ap.avaliar("document.getElementById('folha').innerText") or ""), "Android: aberta e retraída, para trocar na câmera")
+    # iPhone: um link por situação
+    ap.avaliar("""(() => { const o = DOMTokenList.prototype.supports; window._sup = o;
+      DOMTokenList.prototype.supports = function (t) { return t === 'ar' ? true : o.call(this, t); }; return 1; })()""")
+    ap.avaliar("window.ultimaMaquete = null; document.querySelector('[data-f=vistas]').click()")
+    esperar(ap, "!!document.getElementById('ra-obra')", 5)
+    tocar(ap, "#ra-obra")
+    dois = esperar(ap, "document.querySelectorAll('#ra-acoes a[rel=ar]').length === 2", 60)
+    textos = ap.avaliar("[...document.querySelectorAll('#ra-acoes a[rel=ar]')].map(a => a.textContent.trim()).join('|')")
+    ok(dois and textos == "Abrir aberta|Abrir retraída", f"iPhone: Abrir aberta e Abrir retraída ({textos})")
+    foto(ap, "celular_maquete_cobertura_iphone.png")
+    ap.avaliar("DOMTokenList.prototype.supports = window._sup")
+
+    # obra real (opcional): o tamanho e o tempo da maquete inteira — pelo caminho do iPhone na tela (sem a simulação do
+    # Android dos passos de cima) e, depois, pelo do Android
+    ap.avaliar("Object.defineProperty(navigator, 'xr', { configurable: true, value: undefined }); 1")
     if REAL:
         ap.navegar(cel + "/celular/#/p/obra-real/modelo", limite=30)
         t0 = time.time()
-        ok(esperar(ap, ABERTO, 600), "a obra real abre no celular (%.0f s)" % (time.time() - t0))
+        nome_real = json.load(open(os.path.join(REAL, "projeto.json"), encoding="utf-8")).get("nome", "")
+        ok(esperar(ap, "document.getElementById('titulo') && document.getElementById('titulo').textContent === %s && %s" % (json.dumps(nome_real), ABERTO), 600),
+           "a obra real abre no celular (%.0f s)" % (time.time() - t0))
         ap.avaliar("window.ultimaMaquete = null; document.querySelector('[data-f=vistas]').click()")
         esperar(ap, "!!document.getElementById('ra-obra')", 5)
         t0 = time.time()
@@ -278,7 +386,16 @@ try:
         dados = base64.b64decode(ap.avaliar(USDZ) or "")
         print(f"        obra real: {um.get('pecas')} peças, {um.get('deFora')} de fora, {um.get('simplificadas')} simplificadas, {um.get('triangulos')} triângulos, 1:{um.get('escala')}, "
               f".usdz {len(dados) / 1048576:.1f} MB em {time.time() - t0:.1f} s")
-        ok(um.get("triangulos", 0) <= 150000 and len(dados) > 0, "a obra real cabe no limite de triângulos")
+        ok(um.get("triangulos", 0) <= 300000 and len(dados) > 0, "a obra real cabe no limite de triângulos")
+        # o caminho do Android: quase inteira, com as arestas — a foto com a luz da maquete
+        t0 = time.time()
+        andr = json.loads(ap.avaliar("""(async () => { const M = await import('./maquete.js'); const v = window.visor;
+          const r = await M.montarMaquete(v, await (await fetch(v.urlModelo)).arrayBuffer(), { limite: M.LIMITES.webxr, arestas: true, todas: true });
+          window._maq = r; return JSON.stringify({ pecas: r.pecas, triangulos: r.triangulos, arestas: r.arestas, simplificadas: r.simplificadas, deFora: r.deFora }); })()""") or "{}")
+        print(f"        Android: {andr.get('pecas')} peças, {andr.get('simplificadas')} simplificadas, {andr.get('triangulos')} triângulos, "
+              f"{andr.get('arestas')} arestas, em {time.time() - t0:.1f} s")
+        ok(andr.get("triangulos", 0) <= 1000000 and andr.get("arestas", 0) > 0, "Android: no limite, com as arestas")
+        ap.avaliar(DESENHAR); foto(ap, "celular_maquete_obra_real_android.png"); ap.avaliar("document.getElementById('foto-maquete').remove()")
 
     for nome, a in (("computador", pc), ("celular", ap)):
         erros = [m for m in a.console if m[0] in ("error", "excecao") and "401" not in str(m) and "405" not in str(m)]

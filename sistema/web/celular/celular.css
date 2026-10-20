@@ -222,3 +222,14 @@ a.ra-abrir img { width: 1px; height: 1px; opacity: 0; }
 #ra-sobre button { min-width: 52px; height: 52px; border-radius: 14px; border: 0; background: rgba(10, 20, 40, .7); color: #fff; font: inherit; font-size: 17px; padding: 0 14px; }
 #ra-sobre button[data-ra=sair] { background: #1f5fbf; }
 #ra-sobre .ra-escala { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; background: rgba(10, 20, 40, .62); border-radius: 10px; padding: 6px 8px; }
+/* na câmera: Camadas e Aberta/Retraída logo abaixo da dica; o painel das camadas por cima da imagem, com rolagem */
+#ra-sobre .ra-barra-cima { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 84px); }
+#ra-sobre .ra-barra-cima:empty { display: none; }
+#ra-sobre .ra-painel { position: absolute; left: 12px; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 148px); bottom: 96px;
+  overflow: auto; background: rgba(10, 20, 40, .82); border-radius: 14px; padding: 8px 14px 14px; }
+#ra-sobre .ra-painel[hidden] { display: none; }
+#ra-sobre .ra-titulo { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; opacity: .7; margin: 12px 0 4px; }
+#ra-sobre .ra-linha { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid rgba(255, 255, 255, .12); font-size: 15px; }
+#ra-sobre .ra-linha input { width: 22px; height: 22px; accent-color: #2f6fd6; flex: none; }
+#ra-sobre .ra-linha i { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+#ra-sobre .ra-painel button { margin-top: 12px; width: 100%; background: #1f5fbf; }
