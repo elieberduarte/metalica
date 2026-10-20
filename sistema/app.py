@@ -36,6 +36,7 @@ Rotas da API:
     POST /api/projetos/<slug>/dimensionar {parametros, aplicar}  o perfil mais leve que passa em cada posição
     GET  /api/projetos/<slug>/memorial?marca=&didatico=   memorial de cálculo da peça em quatro camadas (tela /memorial)
     POST /api/projetos/<slug>/arquitetonico {arquivo, conteudo_b64, tipo, fator, escala}   arquitetônico → Planta de lançamento
+    POST /api/projetos/<slug>/identificacao/varrer {caixa?}   Identificação para modelagem: a varredura do Original
     POST /api/projetos/<slug>/lancamento/{malha|eixos|estrutura|memorial}   malha de eixos, eixos da planta, lançar, memorial
     GET  /api/projetos/<slug>/lancamento[/referencia]   dados do diálogo Lançar estrutura; linhas do arquitetônico e dos eixos
     GET  /dividida?projeto=<slug>                        tela dividida: o Desenho 2D e o modelo 3D lado a lado, a seleção de um mostra o outro
@@ -4000,6 +4001,28 @@ def importar_arquitetonico(s: str, corpo: dict) -> dict:
         _fim_progresso(s)
 
 
+def varrer_para_identificacao(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/identificacao/varrer {original?, caixa?}: a Identificação para modelagem (20/10/2026). Sem
+    `caixa`, a varredura única do Original — a planta de locação (eixos e níveis), as tesouras (tipo, vista e eixos) e as
+    folhas das etapas seguintes, tudo como sugestão (nucleo3d/identificacao.varrer); com `caixa` ([[x0, y0], [x1, y1]],
+    a planta que o usuário marcou no Original), só os eixos dela. Não grava nada: o painel da Montagem confirma."""
+    from nucleo2d.desenho import Desenho
+    from nucleo3d import identificacao, lancamento
+    g = _gerente()
+    nome = str(corpo.get("original") or lancamento.DESENHO_LANCAMENTO)
+    _progresso(s, "abrindo o Original…")
+    try:
+        des = Desenho.de_dict(g.abrir_desenho(s, nome))
+        if corpo.get("caixa"):
+            (x0, y0), (x1, y1) = corpo["caixa"]
+            caixa = [[min(x0, x1), min(y0, y1)], [max(x0, x1), max(y0, y1)]]
+            _progresso(s, "lendo os eixos da área marcada…")
+            return {"eixos": identificacao.eixos_marcados(des, caixa), "caixa": caixa}
+        return identificacao.varrer(des, avisar=lambda t: _progresso(s, t))
+    finally:
+        _fim_progresso(s)
+
+
 def malha_de_eixos_projeto(s: str, corpo: dict) -> dict:
     """POST /api/projetos/<s>/lancamento/malha {origem, vaos_numeros, vaos_letras, angulo,
     escala}: as linhas, bolinhas e cotas da malha de eixos, para o CAD acrescentar como
@@ -5763,6 +5786,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(pdf_do_memorial(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "arquitetonico":
                     return self._json(importar_arquitetonico(partes[0], corpo))
+                if len(partes) == 3 and partes[1] == "identificacao" and partes[2] == "varrer":
+                    return self._json(varrer_para_identificacao(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "lancamento" and partes[2] == "malha":
                     return self._json(malha_de_eixos_projeto(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "lancamento" and partes[2] == "eixos":

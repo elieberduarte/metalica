@@ -37,6 +37,7 @@ import { Ferramenta } from './ferramentas.js';
 import { MetodosImplantacao } from './implantacao.js';
 import { MetodosPerfisTesoura } from './perfis_tesoura.js';
 import { MetodosCorteEixos } from './corte_eixos.js';
+import { MetodosIdentificacao } from './identificacao.js';
 
 export const DESENHO_MONTAGEM = 'montagem';
 export const DESENHO_COMPLETO = 'detalhamento-completo';
@@ -353,6 +354,11 @@ class Montagem {
     this.botaoLer.hidden = atual !== 'montagem';
     if (![...this.abas.querySelectorAll('button')].some(b => !b.hidden)) this.abas.hidden = true;   // nenhum: sem a barra
     if (atual !== 'montagem' && this.painel) this.painel.hidden = true;
+    // o painel da Identificação para modelagem (identificacao.js) fica na Montagem e no Original, para ir e voltar conferindo
+    if (this.painelIdent) {
+      this.painelIdent.hidden = !this._identAberta || !(atual === 'montagem' || atual === 'original');
+      if (!this.painelIdent.hidden) this._desenharIdent();
+    }
     this.mOriginal = null;
     if (this.naOriginal && nomes.has(DESENHO_MONTAGEM)) this.mOriginal = mm;
     // a montagem antiga sem quadros (ou criada por outro caminho): ganha a padrão
@@ -989,8 +995,9 @@ class Montagem {
 }
 
 // a implantação e as elevações (implantacao.js)
-// e os perfis da tesoura (perfis_tesoura.js) e o corte do 3D nas elevações (corte_eixos.js)
-for (const M of [MetodosImplantacao, MetodosPerfisTesoura, MetodosCorteEixos]) {
+// e os perfis da tesoura (perfis_tesoura.js), o corte do 3D nas elevações (corte_eixos.js) e a Identificação para modelagem
+// (identificacao.js)
+for (const M of [MetodosImplantacao, MetodosPerfisTesoura, MetodosCorteEixos, MetodosIdentificacao]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) {
     if (k === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(Montagem.prototype, k)) throw new Error(`método repetido na Montagem: ${k}`);

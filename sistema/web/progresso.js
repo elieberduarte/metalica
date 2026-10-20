@@ -159,7 +159,7 @@ const ROTULOS = {
   'dimensionar': 'Dimensionando', 'memorial': 'Memorial', 'conferencia': 'Conferindo', 'aplicar-pecas': 'Aplicando no 3D',
   'aplicar-furos': 'Aplicando os furos', 'aplicar-3d': 'Aplicando no 3D', 'aplicar-trocas': 'Aplicando as trocas', 'trocar-grupos': 'Trocando os perfis por grupo', 'regras-trelica': 'Corrigindo pelas regras das tesouras', 'reanalisar': 'Reanalisando a estrutura',
   'vista2d': 'Gerando a vista', 'gerar-3d': 'Gerando o 3D', 'montar-pela-planta': 'Montando pela planta',
-  'projeto-2d': 'Projeto recebido', 'reconhecer': 'Reconhecendo', 'arquitetonico': 'Arquitetônico', 'exportar': 'Exportando',
+  'projeto-2d': 'Projeto recebido', 'varrer': 'Identificação', 'reconhecer': 'Reconhecendo', 'arquitetonico': 'Arquitetônico', 'exportar': 'Exportando',
   'imagens': 'Imagens 3D', 'cantos': 'Cantos', 'multidobras-3d': 'Multidobras', 'cobertura-movel': 'Cobertura móvel',
   'ler': 'Lendo os quadros', 'revisao': 'Revisão da original', 'estrutura': 'Lançando a estrutura', '3d': 'Gerando o 3D',
   'do3d': 'Planta pelo 3D', 'apoios': 'Verificando os apoios', 'numerar': 'Numerando', 'atualizar-pecas': 'Atualizando as peças',
