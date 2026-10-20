@@ -160,6 +160,9 @@ PORTA_DEV = 8766
 COMERCIAL = os.environ.get("METALICA_COMERCIAL", "0" if versao.CONGELADO else "1") == "1"
 #: a tela das licenças dentro do programa (licencas_dev.py, 11/10): só no desenvolvimento — o instalado não leva o módulo
 LICENCAS_DEV = not versao.CONGELADO
+#: a obra no terreno do cliente (saida/local_obra.py, 20/10): só no desenvolvimento enquanto é teste — a imagem vem da
+#: Esri gratuita; METALICA_TERRENO=0/1 força um ou outro
+TERRENO = os.environ.get("METALICA_TERRENO", "0" if versao.CONGELADO else "1") == "1"
 SO_NO_DEV = "a parte comercial (orçamento, proposta, contrato e obra) fica só na versão de desenvolvimento."
 
 
@@ -5530,6 +5533,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(modelo_do_projeto(partes[0]))
                 if len(partes) >= 2 and partes[1] == "3d-leve":
                     return self._modelo_leve(partes[0], partes[2:])
+                if len(partes) >= 2 and partes[1] == "terreno" and TERRENO:
+                    # a obra no terreno (20/10): a amarração, a imagem guardada no projeto e a busca do endereço
+                    from saida import local_obra
+                    r = local_obra.rota_get(_gerente(), partes[0], partes[2:], parse_qs(urlparse(self.path).query))
+                    return self._arquivo(r["arquivo"], PROJETOS) if "arquivo" in r else self._json(r)
                 if len(partes) == 2 and partes[1] == "historico":
                     return self._json({"historico": _gerente().listar_historico(partes[0])})
                 if len(partes) == 2 and partes[1] == "nomes-producao":
@@ -5775,6 +5783,11 @@ class Handler(BaseHTTPRequestHandler):
                 partes = rota.split("/api/projetos/", 1)[1].strip("/").split("/")
                 if len(partes) == 2 and partes[1] == "vista2d":
                     return self._json(gerar_vista_2d(partes[0], corpo))
+                if len(partes) >= 2 and partes[1] == "terreno" and TERRENO:
+                    from saida import local_obra
+                    s_t = partes[0]
+                    return self._json(local_obra.rota_post(_gerente(), s_t, partes[2:], corpo if isinstance(corpo, dict) else {},
+                                                           lambda etapa, fracao=None: _progresso(s_t, etapa, fracao)))
                 if len(partes) == 2 and partes[1] == "detalhar":
                     return self._json(detalhar_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "detalhar-premoldado":

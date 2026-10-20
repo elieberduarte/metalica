@@ -72,3 +72,21 @@ html, body.ver3d { height: 100%; margin: 0; overflow: hidden; background: var(--
 .sol-controles output { float: right; color: var(--texto2); font-variant-numeric: tabular-nums; }
 .sol-controles input[type=range] { display: block; width: 100%; margin-top: 4px; accent-color: var(--azul); }
 .sol-controles button { font: inherit; font-size: 12px; }
+
+/* a obra no terreno (20/10, terreno.js): a fonte da imagem no canto, a busca e o Ajustar */
+#terreno-fonte { position: fixed; right: 10px; bottom: 8px; font-size: 11px; color: var(--texto2); pointer-events: none;
+  text-shadow: 0 0 3px var(--fundo); max-width: 50vw; text-align: right; }
+#palco.ajustando-terreno #tela { cursor: move; }
+.terreno-busca { display: flex; gap: 4px; margin: 4px 0 6px; }
+.terreno-busca input, #terreno-wms input { flex: 1; min-width: 0; font: 12.5px var(--sans); padding: 5px 8px; border: 1px solid var(--borda);
+  border-radius: var(--raio-p); background: var(--painel); color: var(--texto); }
+#terreno-wms input { display: block; width: 100%; box-sizing: border-box; margin: 4px 0; }
+.painel-terreno button { font: 12.5px var(--sans); border: 1px solid var(--borda); background: var(--painel); color: var(--texto);
+  border-radius: var(--raio-p); padding: 5px 10px; cursor: pointer; margin: 2px 4px 2px 0; }
+.painel-terreno button.ligado { background: var(--azul-fraco); border-color: var(--azul2); color: var(--azul-tinta); }
+.painel-terreno button.forte { background: var(--azul2); border-color: var(--azul2); color: #fff; font-weight: 600; }
+.painel-terreno button:disabled { opacity: .6; cursor: default; }
+.terreno-dl { margin: 6px 0 8px !important; }
+.terreno-fonte-sel { display: flex; align-items: center; gap: 6px; font-size: 12.5px; margin: 4px 0; }
+.terreno-fonte-sel select { flex: 1; font: inherit; }
+#terreno-resultados .linha-lista span { white-space: normal; }

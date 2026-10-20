@@ -164,6 +164,7 @@ const ROTULOS = {
   'ler': 'Lendo os quadros', 'revisao': 'Revisão da original', 'estrutura': 'Lançando a estrutura', '3d': 'Gerando o 3D',
   'do3d': 'Planta pelo 3D', 'apoios': 'Verificando os apoios', 'numerar': 'Numerando', 'atualizar-pecas': 'Atualizando as peças',
   'planta-cargas': 'Planta de cargas', 'comparacao-pdf': 'Quadro de comparação', 'pecas-pdf': 'PDF das peças',
+  'baixar-imagem': 'Baixando a imagem do terreno', 'buscar-endereco': 'Procurando o endereço',
 };
 
 function _caminho(url) {

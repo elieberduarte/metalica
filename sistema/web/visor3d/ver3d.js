@@ -16,6 +16,7 @@ import { gruposDeSistema as _gruposDeSistema } from './sistemas.js';
 import { PARTES_PISO } from './referencia.js';
 import { SOL_PADRAO, definirSol, controlesDoSol, ligarControlesDoSol } from './sol.js';
 import { acompanhar } from '../progresso.js';
+import { Terreno } from './terreno.js';
 
 const $ = s => document.querySelector(s);
 const q = new URLSearchParams(location.search);
@@ -27,6 +28,7 @@ const escuro = () => document.documentElement.getAttribute('data-tema') === 'esc
   (!document.documentElement.getAttribute('data-tema') && matchMedia('(prefers-color-scheme: dark)').matches);
 
 let visor = null;
+let terreno = null;                              // a obra no terreno (terreno.js)
 let painelAtual = null;
 let medindo = false, medida = [];                // pontos da medida em curso: {local, ponto}
 let objMedida = null;
@@ -411,6 +413,7 @@ async function abrir() {
   window.ver3dPronto = { ms, pecas: visor.nPecas };
   aplicarTema(null);
   carregarReferencia();
+  carregarTerreno();
   ligar();
   if (NA_DIVIDIDA) { try { window.parent.postMessage({ metalica: 'pronto3d' }, location.origin); } catch (e) { /* sem a tela de fora */ } }
 }
@@ -431,6 +434,16 @@ async function carregarReferencia() {
     if (b) b.hidden = !tem;
   } catch (e) { if (b) b.hidden = true; }
 }
+
+/** A obra no terreno do cliente (20/10, terreno.js): a imagem de satélite no chão pela amarração do projeto. O botão
+ *  só aparece onde o servidor tem o terreno (por enquanto o desenvolvimento). */
+async function carregarTerreno() {
+  terreno = new Terreno(visor, PROJETO, { abrirPainel, corpo: () => $('#painel-corpo'), situacao, palco: $('#palco'),
+    painelAtual: () => painelAtual, aoMudar: marcarTerreno });
+  window.terreno = terreno;
+  try { if (await terreno.carregar()) { $('#btn-terreno').hidden = false; marcarTerreno(); } } catch (e) { /* sem o terreno */ }
+}
+function marcarTerreno() { $('#btn-terreno').classList.toggle('ligado', !!(terreno && terreno.malha && terreno.ligado)); }
 
 /** O desenho do piso como camadas (usuário, 16/10: "transformar esse desenho do piso em uma camada que possa ser
  *  oculta"): o arquitetônico, os eixos e os níveis ligam e desligam um a um no alto dos painéis Camadas e Pintar —
@@ -525,6 +538,7 @@ function fecharPainel() {
   $('#painel').hidden = true;
   painelAtual = null;
   if (medindo) pararMedida();
+  if (terreno && terreno.ajustando) terreno.ajustar(false);
 }
 
 function ficha(i) {
@@ -782,6 +796,7 @@ function ligar() {
     visor.ligarReferencia(sim);
     try { localStorage.setItem('ver3d.planta', sim ? '1' : '0'); } catch (e) { /* sem armazenamento */ }
   };
+  $('#btn-terreno').onclick = () => (painelAtual === 'terreno' ? fecharPainel() : terreno && terreno.painel());
   $('#btn-arestas').onclick = () => { const b = $('#btn-arestas'); b.classList.toggle('ligado'); visor.ligarArestas(b.classList.contains('ligado')); };
   $('#btn-apresentacao').onclick = () => { if (painelAtual === 'apresentacao') fecharPainel(); else painelApresentacao(); };
   document.querySelectorAll('[data-vista]').forEach(b => b.onclick = () => visor.enquadrar(b.dataset.vista));
