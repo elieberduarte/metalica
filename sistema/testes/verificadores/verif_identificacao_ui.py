@@ -8,6 +8,9 @@
     com os vãos lidos e grava 6 + 2 eixos no projeto;
   · confirmada a locação, as tesouras se liberam: T1 no eixo 6, T2 nos 3, 4 e 5, T2-A no 2, T3 no 1, cada uma com a
     vista geral (folhas 20, 17, 17, 23);
+  · Fase 3: "Colar nos eixos 3, 4, 5…" da T2 pergunta o nível do apoio (o Hangar não escreve), cola a tesoura da folha 17
+    na Elevação 3 em tamanho real (20 m, centrada entre A e B: 0,30 m para fora de cada lado, avisado) e abre o Tesoura…
+    com a marca T2 e os eixos 3, 4, 5 marcados; Lançar põe a T2 nos três eixos da implantação;
   · "Ver" leva ao Original com o painel junto; recarregar a página guarda as etapas confirmadas;
   · o Original não é mexido (as mesmas entidades antes e depois)."""
 import base64, json, os, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request
@@ -116,10 +119,35 @@ try:
     ok("T1 nos eixos 6" in junto and "T2 nos eixos 3, 4, 5" in junto and "T2-A nos eixos 2" in junto and "T3 nos eixos 1" in junto,
        f"as tesouras nos eixos da locação: {junto[:300]}")
     ok("folha 20" in junto and "folha 17" in junto and "folha 23" in junto, "cada uma com a vista geral (folhas 20, 17, 23)")
-    ok(aba.avaliar(f"!!({botao('Elevação 3')})"), "a T2 tem o botão da elevação do eixo 3")
+    ok(aba.avaliar(f"!!({botao('Colar nos eixos 3, 4, 5')})"), "a T2 tem o botão Colar nos eixos 3, 4, 5")
+
+    # ---- Fase 3: a T2 colada na elevação do eixo 3 e lançada nos eixos 3, 4 e 5 pelo Tesoura…
+    clicar_em(botao("Colar nos eixos 3, 4, 5"))
+    ok(esperar("document.querySelector('#dialogo').open && document.querySelector('#dialogo-titulo').textContent === 'Nível do apoio das tesouras'", 20),
+       "sem nível de apoio no projeto, o painel pergunta a cota do apoio")
+    aba.avaliar("document.querySelector('#dialogo-corpo input').value = '6000'; 1")
+    clicar("#dialogo-ok")
+    ok(esperar("document.querySelector('#dialogo').open && document.querySelector('#dialogo-titulo').textContent === 'Tesoura da Elevação 3'", 60), "a T2 foi colada na Elevação 3 e o Tesoura… abriu")
+    marca = aba.avaliar("[...document.querySelectorAll('#dialogo-corpo input[type=text]')].map(i => i.value)[0]")
+    marcados = aba.avaliar("[...document.querySelectorAll('#dialogo-corpo input[type=checkbox]:checked')].map(i => i.value).filter(v => /^[0-9]+$/.test(v))") or []
+    info = aba.avaliar("(document.querySelector('#dialogo-corpo .explica') || {}).textContent || ''") or ""
+    ok(marca == "T2" and marcados == ["3", "4", "5"], f"o Tesoura… vem com a marca T2 e os eixos 3, 4, 5 marcados: {marca} {marcados}")
+    ok("20,000 m de comprimento" in info and "+6,00" in info, f"a leitura: 20 m de tesoura, apoio em +6,00: «{info[:220]}»")
+    import re as _re
+    nb = int((_re.search(r"(\d+) barras", info) or [0, 0])[1])
+    ok(nb >= 40, f"a alma atravessando o banzo desenhado em contorno é cortada nas faces: {nb} barras lidas (eram 13)")
+    avisos = aba.avaliar("[...document.querySelectorAll('#avisos .aviso')].map(a => a.textContent).join(' | ')") or ""
+    ok("0,30 m para fora de cada lado" in avisos, f"o aviso diz que a tesoura passa 0,30 m de cada lado do vão A–B: «{avisos[:300]}»")
+    clicar("#dialogo-ok")
+    ok(esperar("(document.querySelector('[data-tipo=T2]') || {}).classList && document.querySelector('[data-tipo=T2]').classList.contains('lancada')", 30), "a T2 aparece como lançada no painel")
+    trels = aba.avaliar("[...window.cad.doc.entidades.values()].filter(e => (e.atributos || {}).elemento === 'trelica').map(e => e.atributos.marca + '@' + e.atributos.eixo).sort()") or []
+    ok(trels == ["T2@3", "T2@4", "T2@5"], f"a implantação tem a T2 nos eixos 3, 4 e 5: {trels}")
 
     clicar_em("[...document.querySelectorAll('.ident-tesoura')].find(d => d.textContent.includes('T3')).querySelector('.ident-ver')")
     ok(esperar("window.cad.nomeDesenho === 'planta-de-lançamento' && !document.querySelector('#painel-ident').hidden", 30), "Ver leva ao Original com o painel junto")
+    aba.drenar(1.0)
+    ok(not aba.avaliar("[...document.querySelectorAll('#avisos .aviso')].some(a => a.textContent.includes('Ajustar a escala'))"),
+       "o Original do projeto recebido não sugere mudar a escala dele")
     clicar("[data-aba=montagem]")
     ok(esperar("window.cad.nomeDesenho === 'montagem' && !document.querySelector('#painel-ident').hidden", 30), "a aba Montagem volta, com o painel")
 

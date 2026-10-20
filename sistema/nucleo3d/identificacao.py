@@ -26,7 +26,7 @@ import math
 import re
 from typing import Dict, List, Optional
 
-from nucleo2d.desenho import Circulo, Cota, Desenho, Linha, Polilinha, Texto
+from nucleo2d.desenho import Arco, Circulo, Cota, Desenho, Linha, Polilinha, Texto
 
 _FOLHA = re.compile(r"FOLHA\s*(\d+)\s*/\s*(\d+)", re.I)
 _NUMERO = re.compile(r"^\s*[\d.,]+\s*$")
@@ -488,3 +488,154 @@ def eixos_marcados(des: Desenho, caixa) -> dict:
             "numeros": [{"nome": v["nome"], "pos": round(v["pos"], 1)} for v in r.get("numeros") or []],
             "letras": [{"nome": v["nome"], "pos": round(v["pos"], 1)} for v in r.get("letras") or []],
             "avisos": list(r.get("avisos") or [])}
+
+
+# ---------------------------------------------------------------------------------------------------- Fase 3: tesouras
+
+#: camadas que não são barra da tesoura (cotas, textos, telha, terças e suportes, chapas, marcas, a moldura, o concreto)
+_NAO_BARRA = re.compile(r"cota|dim|texto|text|telha|lantern|ter[cç]a|hach|corrente|eixo|tracej|chapa|marca|folha|t[ií]tulo|"
+                        r"concreto|suporte|longarina|parafuso|furo|solda|auxiliar|oculta|tabela|definir|legenda", re.I)
+
+
+def _segmentos_de(e) -> List[tuple]:
+    if isinstance(e, Linha):
+        return [(tuple(e.a), tuple(e.b))]
+    if isinstance(e, Polilinha):
+        vs = [tuple(v) for v in e.vertices]
+        segs = list(zip(vs, vs[1:]))
+        if e.fechada and len(vs) > 2:
+            segs.append((vs[-1], vs[0]))
+        return segs
+    ps = e.pontos() if hasattr(e, "pontos") else []
+    return list(zip(ps, ps[1:]))
+
+
+def _dist_seg(p, a, b) -> float:
+    ax, ay = a
+    dx, dy = b[0] - ax, b[1] - ay
+    L2 = dx * dx + dy * dy
+    t = 0.0 if L2 < 1e-12 else max(0.0, min(1.0, ((p[0] - ax) * dx + (p[1] - ay) * dy) / L2))
+    return math.hypot(p[0] - ax - t * dx, p[1] - ay - t * dy)
+
+
+def _cruzam_seg(a, b, c, d) -> bool:
+    def lado(p, q, r):
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+    d1, d2, d3, d4 = lado(c, d, a), lado(c, d, b), lado(a, b, c), lado(a, b, d)
+    return ((d1 > 0) != (d2 > 0)) and ((d3 > 0) != (d4 > 0))
+
+
+def tesoura_da_folha(des: Desenho, caixa, tol: float = 30.0) -> dict:
+    """O desenho da tesoura na folha da vista geral: o maior grupo de barras ligadas (banzo, diagonal, montante — sem
+    cotas, terças, chapas, telha, concreto) e os textos em volta dele (a legenda de perfis, que o "Tesoura…" lê). O ponto
+    de referência é o meio de baixo do grupo: a tesoura é colada centrada entre os eixos com letra, no nível do apoio, sem
+    esticar (seguir o projeto: o que não casar com o vão vira aviso). {entidades, caixa, ref, largura, altura, camadas}."""
+    from dataclasses import asdict
+    ents = [e for e in des.entidades.values() if _dentro(e, caixa) and not _NAO_BARRA.search(e.camada or "")
+            and isinstance(e, (Linha, Polilinha, Arco))]
+    if not ents:
+        return {"entidades": [], "avisos": ["a folha não tem barras (banzo, diagonal, montante) nas camadas dela."]}
+    segs = [(i, s) for i, e in enumerate(ents) for s in _segmentos_de(e)]
+    cel = 500.0
+    grade: Dict[tuple, List[int]] = collections.defaultdict(list)
+    for k, (i, (a, b)) in enumerate(segs):
+        for cx in range(int(math.floor((min(a[0], b[0]) - tol) / cel)), int(math.floor((max(a[0], b[0]) + tol) / cel)) + 1):
+            for cy in range(int(math.floor((min(a[1], b[1]) - tol) / cel)), int(math.floor((max(a[1], b[1]) + tol) / cel)) + 1):
+                grade[(cx, cy)].append(k)
+    pai = list(range(len(ents)))
+
+    def raiz(i):
+        while pai[i] != i:
+            pai[i] = pai[pai[i]]
+            i = pai[i]
+        return i
+    for lst in grade.values():
+        for x in range(len(lst)):
+            i, (a, b) = segs[lst[x]]
+            for y in range(x + 1, len(lst)):
+                j, (c, d) = segs[lst[y]]
+                if raiz(i) == raiz(j):
+                    continue
+                if (_cruzam_seg(a, b, c, d) or min(_dist_seg(a, c, d), _dist_seg(b, c, d), _dist_seg(c, a, b), _dist_seg(d, a, b)) <= tol):
+                    pai[raiz(i)] = raiz(j)
+    grupos: Dict[int, List[int]] = collections.defaultdict(list)
+    for i in range(len(ents)):
+        grupos[raiz(i)].append(i)
+
+    def cx_de(ids):
+        ps = [p for i in ids for p in ents[i].pontos()]
+        return min(p[0] for p in ps), min(p[1] for p in ps), max(p[0] for p in ps), max(p[1] for p in ps)
+    melhor = max(grupos.values(), key=lambda ids: (lambda c: (c[2] - c[0]) * max(1.0, c[3] - c[1]))(cx_de(ids)))
+    x0, y0, x1, y1 = cx_de(melhor)
+    folga = 0.08 * (x1 - x0)
+    textos = [e for e in des.entidades.values() if isinstance(e, Texto) and _dentro(e, caixa)
+              and x0 - folga <= e.posicao[0] <= x1 + folga and y0 - folga <= e.posicao[1] <= y1 + folga]
+    escolhidas = [ents[i] for i in melhor]
+    camadas = collections.Counter(e.camada for e in escolhidas)
+    fora = len(ents) - len(melhor)
+    saida = _alma_nas_faces([asdict(e) for e in escolhidas])
+    return {"entidades": saida + [asdict(e) for e in textos], "caixa": [[round(x0, 1), round(y0, 1)], [round(x1, 1), round(y1, 1)]],
+            "ref": [round((x0 + x1) / 2, 1), round(y0, 1)], "largura": round(x1 - x0, 1), "altura": round(y1 - y0, 1),
+            "camadas": dict(camadas), "barras": len(melhor),
+            "avisos": (["%d linha(s) solta(s) da folha ficaram de fora (outros desenhos, a legenda)." % fora] if fora else [])}
+
+
+def _dentro_poligono(p, poli) -> bool:
+    x, y = p
+    dentro = False
+    for i in range(len(poli)):
+        (x1, y1), (x2, y2) = poli[i], poli[(i + 1) % len(poli)]
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            dentro = not dentro
+    return dentro
+
+
+def _fora_dos_poligonos(a, b, polis, minimo: float = 20.0) -> List[tuple]:
+    """Os pedaços do segmento a–b fora dos polígonos (o que atravessa o banzo desenhado em contorno sai)."""
+    ts = [0.0, 1.0]
+    r = (b[0] - a[0], b[1] - a[1])
+    for poli in polis:
+        for i in range(len(poli)):
+            c, d = poli[i], poli[(i + 1) % len(poli)]
+            s = (d[0] - c[0], d[1] - c[1])
+            den = r[0] * s[1] - r[1] * s[0]
+            if abs(den) < 1e-9:
+                continue
+            t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den
+            u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den
+            if -1e-9 <= t <= 1 + 1e-9 and -1e-9 <= u <= 1 + 1e-9:
+                ts.append(min(1.0, max(0.0, t)))
+    ts = sorted(set(round(t, 9) for t in ts))
+    pedacos = []
+    for t0, t1 in zip(ts, ts[1:]):
+        m = (a[0] + r[0] * (t0 + t1) / 2, a[1] + r[1] * (t0 + t1) / 2)
+        if any(_dentro_poligono(m, p) for p in polis):
+            continue
+        P, Q = (a[0] + r[0] * t0, a[1] + r[1] * t0), (a[0] + r[0] * t1, a[1] + r[1] * t1)
+        if math.dist(P, Q) >= minimo:
+            pedacos.append((P, Q))
+    return pedacos
+
+
+def _alma_nas_faces(ents: List[dict]) -> List[dict]:
+    """O banzo desenhado como contorno fechado (o retângulo do U127 no Hangar) com a alma em linha simples que o atravessa
+    de face externa a face externa: a linha da alma é cortada nas faces dos banzos — como o detalhista desenha e como o
+    leitor da tesoura (o do Posto) espera. No Hangar, a T2 passou de 13 para 47 barras lidas (20/10)."""
+    polis = [[tuple(v) for v in e["vertices"]] for e in ents if e.get("tipo") == "polilinha" and e.get("fechada") and len(e.get("vertices") or []) >= 3]
+    if not polis:
+        return ents
+    saida = []
+    for e in ents:
+        if e.get("tipo") != "linha":
+            saida.append(e)
+            continue
+        pedacos = _fora_dos_poligonos(tuple(e["a"]), tuple(e["b"]), polis)
+        if len(pedacos) == 1 and math.dist(pedacos[0][0], tuple(e["a"])) < 1e-6 and math.dist(pedacos[0][1], tuple(e["b"])) < 1e-6:
+            saida.append(e)
+            continue
+        for i, (P, Q) in enumerate(pedacos):
+            n = dict(e, a=[round(P[0], 2), round(P[1], 2)], b=[round(Q[0], 2), round(Q[1], 2)])
+            if i:
+                n["id"] = "%s-%d" % (e.get("id") or "l", i)
+            saida.append(n)
+    return saida

@@ -10,6 +10,13 @@
 // cada eixo, a folha no Original. O estado (a varredura e as etapas confirmadas) fica em metadados.montagem.identificacao.
 //
 // Os métodos entram na classe Montagem (montagem.js), como os de implantacao.js.
+//
+// Fase 3 (tesouras): "Colar nos eixos…" pega o desenho da tesoura na folha da vista geral (o servidor acha o grupo de
+// barras: identificacao.tesoura_da_folha), cola na elevação do primeiro eixo sugerido em tamanho real — centrado entre os
+// eixos com letra, o apoio no nível de apoio, sem esticar — e abre o "Tesoura…" da elevação com a marca e os eixos
+// sugeridos marcados; o usuário confere os perfis e lança.
+
+import { criar } from './nucleo/desenho2d.js';
 
 function el(tag, attrs = {}, ...filhos) {
   const e = document.createElement(tag);
@@ -137,17 +144,27 @@ export class MetodosIdentificacao {
 
     // 2. tesouras
     const livreT = this._liberada('tesouras');
-    const linhasT = (v.tesouras || []).map(t => el('div', { class: 'ident-tesoura' },
-      el('div', { class: 'ident-linha' }, el('span', {}, el('b', { texto: t.tipo }),
-        t.eixos.length ? ` nos eixos ${t.eixos.join(', ')}` : ' — não está na locação'), ver(t.vista && t.vista.caixa)),
-      t.vista ? el('div', { class: 'ident-sub', texto: `vista: folha ${t.vista.folha} (${t.vista.mostra || t.vista.titulo})` +
-        (t.folhas.length > 1 ? ` · também nas folhas ${t.folhas.slice(1).map(f => f.folha).join(', ')}` : '') }) : null,
-      livreT && t.eixos.length ? el('div', { class: 'ident-botoes' }, ...t.eixos.slice(0, 6).map(n => botao(`Elevação ${n}`, () => this.abrirElevacao(n, 'numero'),
-        { title: `Abre a elevação do eixo ${n}: cole ali a tesoura ${t.tipo} copiada da folha ${t.vista ? t.vista.folha : ''} (Copiar no Original, Ctrl+V por 2 pontos)` }))) : null));
+    const lancadas = (this.ativa && this.m && this.m.tipos) || this._tiposCache || {};
+    if (this.ativa && this.m) this._tiposCache = this.m.tipos || {};
+    const linhasT = (v.tesouras || []).map(t => {
+      const lanc = lancadas[t.tipo];
+      return el('div', { class: 'ident-tesoura' + (lanc ? ' lancada' : ''), 'data-tipo': t.tipo },
+        el('div', { class: 'ident-linha' }, el('span', {}, el('b', { texto: t.tipo }),
+          t.eixos.length ? ` nos eixos ${t.eixos.join(', ')}` : ' — não está na locação', lanc ? el('span', { class: 'ident-ok', texto: ' · lançada ✓' }) : null),
+          ver(t.vista && t.vista.caixa)),
+        t.vista ? el('div', { class: 'ident-sub', texto: `vista: folha ${t.vista.folha} (${t.vista.mostra || t.vista.titulo})` +
+          (t.folhas.length > 1 ? ` · também nas folhas ${t.folhas.slice(1).map(f => f.folha).join(', ')}` : '') }) : null,
+        livreT && t.vista ? el('div', { class: 'ident-botoes' },
+          botao(t.eixos.length ? `${lanc ? 'Colar de novo' : 'Colar'} nos eixos ${t.eixos.join(', ')}…` : 'Colar numa elevação…', () => this._colarTesouraIdent(t),
+            { class: lanc ? '' : 'primario', title: `Cola a ${t.tipo} da folha ${t.vista.folha} na elevação do eixo ${t.eixos[0] || '(escolha)'}, em tamanho real, e abre o Tesoura… com os eixos marcados` }),
+          lanc && t.eixos.length ? botao(`Elevação ${t.eixos[0]}`, () => this.abrirElevacao(t.eixos[0], 'numero')) : null) : null);
+    });
+    const faltam = (v.tesouras || []).filter(t => t.eixos.length && !lancadas[t.tipo]).map(t => t.tipo);
     const sec2 = etapa('tesouras', ETAPAS[1][1],
       linhasT.length ? linhasT : el('div', { class: 'explica', texto: 'Nenhuma tesoura achada pelos títulos (T1, T2…).' }),
-      livreT ? el('div', { class: 'explica', texto: 'Por enquanto: Ver mostra a vista no Original; copie a tesoura e cole na elevação de cada eixo (Ctrl+V por 2 pontos). O posicionamento automático vem na próxima etapa do sistema.' }) : null,
-      livreT ? el('div', { class: 'ident-botoes' }, botao('Confirmar as tesouras ✓', () => this._confirmarIdent('tesouras'), { class: 'ident-confirmar' })) : null);
+      livreT ? el('div', { class: 'explica', texto: 'Colar põe a tesoura na elevação do primeiro eixo, em tamanho real, centrada entre os eixos com letra e no nível de apoio; no Tesoura… confira os perfis e os eixos e lance.' }) : null,
+      livreT ? el('div', { class: 'ident-botoes' }, botao('Confirmar as tesouras ✓', () => this._confirmarIdent('tesouras'), { class: 'ident-confirmar',
+        title: faltam.length ? `Ainda não lançadas: ${faltam.join(', ')} (dá para confirmar assim mesmo)` : 'Fecha a etapa' })) : null);
 
     // 3 e 4. terças, contraventos e o resto: as folhas achadas
     const folhas = (lst) => (lst || []).map(f => el('div', { class: 'ident-linha' }, el('span', { texto: `Folha ${f.folha} — ${f.titulo}` }), ver(f.caixa)));
@@ -212,6 +229,67 @@ export class MetodosIdentificacao {
       try { await pedir(`/api/projetos/${encodeURIComponent(this.cad.projeto)}/niveis`, { niveis: lista }); } catch (e) { this.cad.aviso('Não gravei os níveis sugeridos: ' + e.message, 'atencao'); }
     }
     await this.editarNiveis();
+    this._desenharIdent();
+  }
+
+  /** O nível do apoio das tesouras: o nível do projeto com "apoio" no nome; senão a pergunta (uma vez), que vira nível. */
+  async _apoioIdent() {
+    const niveis = await this._niveis();
+    const ap = niveis.find(n => /apoio/i.test(n.nome));
+    if (ap) return ap.z;
+    const id = this._ident() || {};
+    const alto = [...niveis].sort((a, b) => b.z - a.z)[0];
+    const campo = el('input', { type: 'text', value: alto && alto.z ? String(alto.z) : '', placeholder: 'ex.: 6000', spellcheck: 'false' });
+    campo.addEventListener('keydown', ev => ev.stopPropagation());
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: 'Em que cota as tesouras apoiam (o topo dos pilares, a chapa de apoio)? O projeto não escreve esse nível. Ele vira o nível "Apoio das tesouras" do projeto (muda depois em Níveis…).' }),
+      el('label', {}, 'Apoio das tesouras (mm) ', campo));
+    if (await this.cad.dialogo({ titulo: 'Nível do apoio das tesouras', corpo, ok: 'Gravar' }) !== 'ok') return null;
+    const z = parseFloat(String(campo.value).replace(',', '.'));
+    if (!isFinite(z)) { this.cad.aviso('A cota não foi entendida: use mm (6000).', 'atencao'); return null; }
+    const lista = [...niveis.map(n => ({ nome: n.nome, z: n.z })), { nome: 'Apoio das tesouras', z }];
+    if (!lista.some(n => n.z === 0)) lista.push({ nome: '±0,00', z: 0 });
+    await pedir(`/api/projetos/${encodeURIComponent(this.cad.projeto)}/niveis`, { niveis: lista });
+    this.cad._niveisProjeto = null;
+    this._niveisCache = await this._niveis();
+    await this.refazerQuadrosDaObra();
+    if (typeof this._renovarCaixasNiveis === 'function') this._renovarCaixasNiveis();
+    this._guardarIdent({ ...id, apoio: z });
+    return z;
+  }
+
+  /** Fase 3: a tesoura da folha da vista geral colada na elevação do primeiro eixo e o Tesoura… com os eixos sugeridos. */
+  async _colarTesouraIdent(t) {
+    if (!this.ativa) await this.ir('montagem');
+    if (!this.ativa) return;
+    const z = await this._apoioIdent();
+    if (z == null) return;
+    const original = this.m.original || this.original;
+    let r;
+    try {
+      r = await pedir(`/api/projetos/${encodeURIComponent(this.cad.projeto)}/identificacao/tesoura`, { original, caixa: t.vista.caixa });
+    } catch (e) { this.cad.aviso(`Não consegui pegar a ${t.tipo} da folha ${t.vista.folha}: ${e.message}`, 'erro', 0); return; }
+    if (!(r.entidades || []).length) { this.cad.aviso(`A folha ${t.vista.folha} não tem o desenho da ${t.tipo}: ${(r.avisos || []).join(' ')}`, 'atencao', 0); return; }
+    // a elevação do primeiro eixo sugerido (sem eixo na locação: o primeiro numerado — o usuário marca os eixos no Tesoura…)
+    const eixo = t.eixos[0] || ((this._familia('numero')[0] || {}).nome);
+    if (!eixo) { this.cad.aviso('Grave os eixos da locação primeiro.', 'atencao'); return; }
+    const q = await this.abrirElevacao(eixo, 'numero');
+    const cruz = this._cruzamDaElevacao(q);
+    const us = cruz.map(c => c.u);
+    const uMeio = us.length ? (Math.min(...us) + Math.max(...us)) / 2 : r.largura / 2;
+    const vao = us.length > 1 ? Math.max(...us) - Math.min(...us) : null;
+    // a cópia como a do Ctrl+C no Original (um ponto de referência: o meio de baixo), colada em tamanho real
+    this._prepararCopia(r.entidades.map(e => criar(e)));
+    this._copiaPendente.kOrig = r.escala_original || 100;
+    this._copiaPendente.desenho = original;
+    this._guardarCopia([r.ref]);
+    this._colar([this._paraPapel(q, [uMeio, z])], false);
+    const sobra = vao != null ? (r.largura - vao) / 2 : null;
+    const casa = sobra == null ? '' : Math.abs(sobra) < 5 ? `, o mesmo vão dos eixos ${cruz[0].nome}–${cruz[cruz.length - 1].nome}`
+      : `; entre ${cruz[0].nome} e ${cruz[cruz.length - 1].nome} há ${metros(vao)} m — centrada, ${metros(Math.abs(sobra))} m ${sobra > 0 ? 'para fora' : 'para dentro'} de cada lado (confira no projeto)`;
+    this.cad.aviso(`${t.tipo} da folha ${t.vista.folha} colada na Elevação ${eixo}: ${r.barras} barras, ${metros(r.largura)} m × ${metros(r.altura)} m${casa}. Confira no Tesoura… e lance.`, sobra && Math.abs(sobra) > 5 ? 'atencao' : 'info', 16000);
+    const lancou = await this.tesouraDaElevacao(q, { marca: t.tipo, eixos: t.eixos.length ? t.eixos : [eixo] });
+    if (lancou) this._tiposCache = this.m.tipos || {};
     this._desenharIdent();
   }
 

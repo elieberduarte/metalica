@@ -860,8 +860,10 @@ export class MetodosImplantacao {
    * "Tesoura…" no título da elevação: o desenho selecionado dentro dela (banzos, diagonais, montantes — em linha simples
    * ou dupla) vira o tipo de tesoura (T1…) e é lançado no eixo da elevação e nos outros eixos marcados, como elemento da
    * implantação. O apoio (o ponto mais baixo) fica onde ele foi colado: o nível do projeto mais perto, com a diferença.
+   * `opcoes` (a Identificação para modelagem, 20/10): {marca, eixos} sugeridos — a marca do tipo (T2) e os eixos em que a
+   * locação o põe já vêm marcados. Devolve true quando lançou.
    */
-  async tesouraDaElevacao(q) {
+  async tesouraDaElevacao(q, opcoes = {}) {
     const doc = this.cad.doc;
     const todasSel = [...this.cad.tela.selecao].map(id => doc.get(id)).filter(e => e && ['linha', 'polilinha', 'arco'].includes(e.tipo)
       && (e.atributos || {}).quadro === q.id && !(e.atributos || {}).gerado);
@@ -961,14 +963,15 @@ export class MetodosImplantacao {
     const daFonte = trels.find(e => ((e.atributos.desenho || {}).fonte || []).some(id => idsSel.has(id)));
     const usadas = new Set(trels.map(e => e.atributos.marca));
     const livre = () => { let n = 1; while (usadas.has('T' + n)) n++; return 'T' + n; };
-    const marca = el('input', { type: 'text', size: 6, value: daFonte ? daFonte.atributos.marca : livre(), spellcheck: 'false' });
+    const marca = el('input', { type: 'text', size: 6, value: opcoes.marca || (daFonte ? daFonte.atributos.marca : livre()), spellcheck: 'false' });
     const nivSel = el('select', {}, el('option', { value: '', texto: '— número —' }),
       ...niveis.map(n => el('option', { value: n.nome, texto: `${n.nome} (${n.z ? cota(n.z) : '±0,00'})`, selected: casado && casado.nome === n.nome ? 'selected' : undefined })));
     const info = el('div', { class: 'explica' });
     const fam = this._familia(q.familia);
     const caixaEixos = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 12px;max-height:120px;overflow:auto;min-width:0' },
       ...fam.map(e => el('label', { style: 'display:inline-flex;flex-direction:row;align-items:center;gap:4px;color:var(--texto);font-size:13px' },
-        el('input', { type: 'checkbox', value: e.nome, checked: e.nome === q.eixo || trels.some(t => t.atributos.marca === (daFonte && daFonte.atributos.marca) && t.atributos.eixo === e.nome) }), e.nome)));
+        el('input', { type: 'checkbox', value: e.nome, checked: opcoes.eixos ? opcoes.eixos.includes(e.nome)
+          : (e.nome === q.eixo || trels.some(t => t.atributos.marca === (daFonte && daFonte.atributos.marca) && t.atributos.eixo === e.nome)) }), e.nome)));
     const todosBtn = el('button', { type: 'button', texto: 'todos', onclick: () => { for (const c of caixaEixos.querySelectorAll('input')) c.checked = true; } });
     const cruz = this._cruzamDaElevacao(q);
     const escreverInfo = () => {
@@ -1135,6 +1138,7 @@ export class MetodosImplantacao {
     const resumo = partes.length > 1 ? `${partes.length} tesouras por eixo (${marcasP.join(', ')})` : `Tesoura ${marcasP[0]}`;
     this.cad.aviso(`${resumo} lançada(s) nos eixos ${eixos.join(', ')}${todasJuntas ? ' (e as outras de mesma marca mudaram junto)' : ''}: apoio em ${cota(z0)} m. ` +
       'Aparecem na implantação e no 3D; duplo clique numa delas abre a elevação do eixo. Ctrl+Z desfaz.', 'info', 14000);
+    return true;
   }
 
   /** As emendas do desenho de uma tesoura: onde há dois montantes em pé lado a lado (150 a 800 mm, cada um com ao

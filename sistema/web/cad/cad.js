@@ -245,7 +245,8 @@ class CAD {
       // o desenho gerado pelo programa (o detalhamento, o completo) não é importado: no completo as plantas em 1:125
       // levam os textos ao tamanho da folha em 1:25 e a mediana deles pedia "Ajustar a escala para 1:50" (16/10)
       const md = this.doc.metadados || {};
-      if (!md.gerado_por && !md.detalhamento && !this._conferirEscalaDaPlanta()) this._sugerirEscalaDoImportado(null);
+      // o Original do projeto recebido (20/10) não se mexe: nada de "Ajustar a escala para 1:25" nele
+      if (!md.gerado_por && !md.detalhamento && !(md.arquitetonico || {}).recebido && !this._conferirEscalaDaPlanta()) this._sugerirEscalaDoImportado(null);
     } catch (e) {
       // o desenho não veio: nada é gravado com o nome dele, senão a tela vazia (ou o que se
       // desenhasse nela) ia por cima do arquivo que existe
