@@ -44,6 +44,8 @@ MAX_FALHAS = 60
 JANELA_FALHAS = 600.0
 #: Arquivos do Three.js que as telas do celular importam (mais nada de web/lib).
 LIB_LIBERADA = {"three.module.js", "OrbitControls.js"}
+#: Do visor do modo ver do PC: o 3D leve, o desenho do piso e os sistemas (metálica, pré-moldado…) — 20/10.
+VISOR_LIBERADO = {"visor3d.js", "referencia.js", "sistemas.js"}
 #: O que sai SEM a chave do aparelho: o manifesto e o logo. O navegador busca o manifesto sem o
 #: cookie (é o padrão dele) e, com 401, o Chrome não achava nome nem ícone — o "instalar" virava um
 #: atalho com uma letra cinza (19/10). Nenhum dos dois diz nada de projeto.
@@ -132,6 +134,9 @@ class Celular:
         self._fio = None
         self._fila: "queue.Queue[str]" = queue.Queue()
         self._situacao: Dict[str, dict] = {}         # slug -> {"situacao", "progresso", "erro"}
+        #: slug -> o desenho do piso (no programa: app.referencia_do_lancamento, posto por celular/web.py); sem ele, o
+        #: pacote sai sem as camadas "No piso"
+        self.referencia = None
         self._operario = None
         self._vigia = None
         self._parar = threading.Event()
@@ -351,7 +356,8 @@ class Celular:
             return ""
         from saida.pacote_celular import RESUMOS
         fontes = ["projeto.json", "modelo.json", "detalhamento/lista-de-materiais.json", "detalhamento/resumo-numeros.json",
-                  "desenhos-2d/pranchas.desenho.json"] + ["detalhamento/" + a for a, _t in RESUMOS]
+                  "desenhos-2d/pranchas.desenho.json", "desenhos-2d/planta-de-lançamento.desenho.json"] + \
+            ["detalhamento/" + a for a, _t in RESUMOS]
         partes = []
         for rel in fontes:
             c = os.path.join(pasta, rel)
@@ -399,7 +405,13 @@ class Celular:
                 self._situacao[slug] = {"situacao": "preparando", "progresso": round(0.1 + 0.8 * k / max(n, 1), 2)}
         with self._trava:
             self._situacao[slug] = {"situacao": "preparando", "progresso": 0.05}
-        m = gerar_pacote(pasta, destino, slug, progresso)
+        ref = None
+        if self.referencia:
+            try:
+                ref = self.referencia(slug)
+            except Exception:                           # noqa: BLE001 — sem o desenho do piso, o resto do pacote sai igual
+                ref = None
+        m = gerar_pacote(pasta, destino, slug, progresso, referencia=ref)
         with open(os.path.join(destino, "fonte.txt"), "w", encoding="utf-8") as f:
             f.write(assinatura)
         with self._trava:
@@ -751,8 +763,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return self._enviar(401, b"", "text/plain", {"Cache-Control": "no-store"}, cabeca)
         if rota in ("/", "/celular"):
             return self._enviar(302, b"", "text/plain", {"Location": "/celular/"}, cabeca)
-        if rota == "/visor3d/visor3d.js":                # o visor do 3D leve (o mesmo do modo "ver" do PC)
-            return self._arquivo(os.path.join(WEB, "visor3d", "visor3d.js"), cabeca)
+        if rota.startswith("/visor3d/"):                 # o visor do 3D leve (o mesmo do modo "ver" do PC)
+            nome = rota[len("/visor3d/"):]
+            if nome in VISOR_LIBERADO:
+                return self._arquivo(os.path.join(WEB, "visor3d", nome), cabeca)
+            return self._enviar(404, b"", "text/plain", cabeca=cabeca)
         if rota.startswith("/lib/"):
             nome = rota[len("/lib/"):]
             if nome in LIB_LIBERADA:

@@ -12,6 +12,8 @@
 // O tema acompanha o da tela de fora na hora (a barra troca o do editor pelo botão dele, que aqui não há).
 
 import { Visor3D } from './visor3d.js';
+import { gruposDeSistema as _gruposDeSistema } from './sistemas.js';
+import { PARTES_PISO } from './referencia.js';
 import { acompanhar } from '../progresso.js';
 
 const $ = s => document.querySelector(s);
@@ -410,7 +412,6 @@ async function carregarReferencia() {
 /** O desenho do piso como camadas (usuário, 16/10: "transformar esse desenho do piso em uma camada que possa ser
  *  oculta"): o arquitetônico, os eixos e os níveis ligam e desligam um a um no alto dos painéis Camadas e Pintar —
  *  lembrado neste navegador; o botão Planta e níveis continua ligando e desligando os três juntos. */
-const PARTES_PISO = { arquitetonico: ['Desenho do piso (arquitetônico)', '#9aa3ae'], eixos: ['Eixos', '#7c3aed'], niveis: ['Níveis', '#1f5fbf'] };
 function pisoOculto() {
   try { return JSON.parse(localStorage.getItem('ver3d.pisoOculto') || '[]'); } catch (e) { return []; }
 }
@@ -427,48 +428,10 @@ function secaoPiso(comSistema = true) {
   return html ? html + '<p class="titulo-secao">Modelo</p>' : '';
 }
 
-/** O sistema de cada peça (usuário, Mercado Conceito, 16/10: "separar apenas pré-moldado (estrutura) e metálica para
- *  apresentação ao cliente"): pelo material — concreto é pré-moldado; aço (e a barra sem material) é metálica. O aço e o
- *  neoprene que vêm no modelo do pré-moldado (a camada dele é quase toda de concreto: as porcas, arruelas e cantoneiras
- *  das ligações dele) ficam com o pré-moldado. O resto (o PVC das descidas…) é Outros. */
-const SISTEMAS = { metalica: ['Metálica', '#2f6fd6'], cobertura: ['Cobertura — telhas, calhas e rufos', '#3aa69b'],
-  outros: ['Outros', '#e08a1e'], premoldado: ['Pré-moldado (concreto)', '#8f969e'], terreno: ['Terreno, rua e calçada', '#b9a27a'] };
-// a cobertura num sistema só (usuário, Mercado, 19/10: "não foi criado o grupo com as telhas, calhas e rufos" — as telhas
-// caíam em Outros e as calhas e os rufos, de chapa galvanizada, em Metálica): a camada no grupo da cobertura (o que o
-// lançamento de telhas faz) ou com o nome de telha, calha, rufo ou cumeeira — antes do material
-const COBERTURA_GRUPO = /cobertura/i;
-const COBERTURA_CAMADA = /^\s*(telhas?|calhas?|rufos?|cumeeiras?)\b/i;
-// o terreno, a rua e a calçada num sistema só (usuário, 16/10: "terreno, rua e calçada como uma camada única; parede
-// pode deixar junto com o pré-moldado"): pelo nome da peça, antes do material (no IFC do Mercado são lajes de concreto)
-const TERRENO = /^\s*(terreno|ruas?|cal[çc]adas?|passeios?)\b/i;
-const CONCRETO = /concret|fck|cimento|\bc\s?[1-9]\d\b/i;
-const ACO = /steel|a[çc]o\b|astm|\ba36\b|a5\d\d|a32[05]|a307|s2\d\d|s3\d\d|ar\s?3\d\d|zar|galv|shore|neopren|elast/i;
-const NEOPRENE = /shore|neopren|elast/i;
+// o sistema de cada peça: as regras em sistemas.js (as mesmas do celular)
 let _sistemas = null;
 function gruposDeSistema() {
-  if (_sistemas) return _sistemas;
-  const fichas = visor.fichas || [], n = Math.min(fichas.length, visor.nPecas);
-  const porCamada = new Map();                                           // camada → [peças, de concreto]
-  for (let i = 0; i < n; i++) {
-    const q = porCamada.get(fichas[i].c) || [0, 0];
-    q[0]++; if (CONCRETO.test(fichas[i].m || '')) q[1]++;
-    porCamada.set(fichas[i].c, q);
-  }
-  const cams = (visor.cabecalho && visor.cabecalho.camadas) || [];
-  const daCobertura = cams.map(c => COBERTURA_GRUPO.test(c.grupo || '') || COBERTURA_CAMADA.test(c.nome || ''));
-  const ids = { metalica: [], cobertura: [], outros: [], premoldado: [], terreno: [] };
-  for (let i = 0; i < n; i++) {
-    const m = fichas[i].m || '', q = porCamada.get(fichas[i].c);
-    let s = 'outros';
-    if (daCobertura[fichas[i].c]) s = 'cobertura';
-    else if (TERRENO.test(fichas[i].p || '') || TERRENO.test(fichas[i].n || '')) s = 'terreno';
-    else if (CONCRETO.test(m)) s = 'premoldado';
-    else if (!m || ACO.test(m)) s = q[1] * 2 >= q[0] ? 'premoldado' : NEOPRENE.test(m) ? 'outros' : 'metalica';
-    ids[s].push(i);
-  }
-  _sistemas = Object.entries(ids).filter(([, l]) => l.length)
-    .map(([chave, l]) => ({ chave, nome: SISTEMAS[chave][0], cor: SISTEMAS[chave][1], n: l.length, ids: l }));
-  return _sistemas;
+  return _sistemas || (_sistemas = _gruposDeSistema(visor));
 }
 function alternarSistema(chave, mostrar) {
   const g = gruposDeSistema().find(x => x.chave === chave);

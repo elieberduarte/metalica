@@ -22,7 +22,7 @@ import urllib.parse
 import urllib.request
 from typing import Callable, List, Optional, Tuple
 
-from celular.servidor import WEB, TELAS, LIB_LIBERADA
+from celular.servidor import WEB, TELAS, LIB_LIBERADA, VISOR_LIBERADO
 
 SERVICO = "https://metalica-celular.elieber-lucas.workers.dev"
 INTERVALO = 60.0                         # s entre as conferências do fio
@@ -53,7 +53,8 @@ def telas() -> List[Tuple[str, str]]:
     for nome in sorted(os.listdir(lib)):
         if os.path.isfile(os.path.join(lib, nome)) and not nome.startswith("LICENSE"):
             out.append(("/celular/lib/" + nome, os.path.join(lib, nome)))
-    out.append(("/visor3d/visor3d.js", os.path.join(WEB, "visor3d", "visor3d.js")))
+    for nome in sorted(VISOR_LIBERADO):
+        out.append(("/visor3d/" + nome, os.path.join(WEB, "visor3d", nome)))
     for nome in sorted(LIB_LIBERADA):
         out.append(("/lib/" + nome, os.path.join(WEB, "lib", nome)))
     return out

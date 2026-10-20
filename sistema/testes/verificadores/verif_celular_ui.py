@@ -161,6 +161,10 @@ try:
     t0 = time.time()
     ok(esperar(ap, "window.visor && window.visor.fichas && !document.querySelector('.carregando')", 120),
        "o pacote é preparado no computador e o 3D abre (%.0f s)" % (time.time() - t0))
+    # o nome inteiro da obra no alto (20/10: "MERCADO C…" escondia qual das obras de nome parecido estava aberta)
+    ok(ap.avaliar("(() => { const t = document.getElementById('titulo'); return t.textContent === 'Obra do celular' && t.scrollHeight <= t.clientHeight + 1 && t.scrollWidth <= t.clientWidth + 1; })()"),
+       "o nome da obra aparece inteiro no alto do 3D")
+    ok(ap.avaliar("document.getElementById('conexao').getBoundingClientRect().width < 120"), "o selo da conexão é curto (o nome da obra tem o espaço)")
     # a apresentação (20/10): sol e sombra ligados de saída; o botão (toque de verdade) desliga e a escolha fica no aparelho
     ok(esperar(ap, "visor.apresentacao === true && !!visor._recorteDesenhado && document.querySelector('[data-f=apresentacao]').classList.contains('ligado')", 10),
        "apresentação ligada de saída: o sol e a sombra desenhada")

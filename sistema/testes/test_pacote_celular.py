@@ -168,3 +168,19 @@ def test_pacote_lista_fechada_sem_comercial(tmp_path):
     antes = os.path.getmtime(dest / "modelo3d.mcel")
     gerar_pacote(str(proj), str(dest), "obra")
     assert os.path.getmtime(dest / "modelo3d.mcel") == antes
+
+
+def test_pacote_leva_o_desenho_do_piso(tmp_path):
+    """As camadas "No piso" do celular (20/10): com o desenho do piso, o pacote leva o referencia.json e o manifesto o
+    aponta; sem ele (a planta apagada), o arquivo sai do pacote."""
+    proj = tmp_path / "obra"
+    proj.mkdir()
+    (proj / "projeto.json").write_text(json.dumps({"nome": "Obra Teste"}), encoding="utf-8")
+    (proj / "modelo.json").write_text(json.dumps(_modelo()), encoding="utf-8")
+    dest = tmp_path / "pacote"
+    ref = {"segmentos": [[0, 0, 0, 1000, 0, 0]], "eixos": [{"nome": "1", "tipo": "x", "a": [0, 0, 0], "b": [0, 5000, 0]}], "niveis": []}
+    m = gerar_pacote(str(proj), str(dest), "obra", referencia=ref)
+    assert m["referencia"] == "referencia.json" and "referencia.json" in {a["nome"] for a in m["arquivos"]}
+    assert json.loads((dest / "referencia.json").read_text(encoding="utf-8"))["eixos"][0]["nome"] == "1"
+    m = gerar_pacote(str(proj), str(dest), "obra", referencia={"segmentos": [], "eixos": []})
+    assert "referencia" not in m and not (dest / "referencia.json").exists()

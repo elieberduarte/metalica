@@ -6,6 +6,10 @@
 
 import * as THREE from 'three';
 
+/** As partes do desenho do piso, com o nome e a cor de cada uma nas listas de camadas (o modo ver do PC e o celular). */
+export const PARTES_PISO = { arquitetonico: ['Desenho do piso (arquitetônico)', '#9aa3ae'], eixos: ['Eixos', '#7c3aed'],
+  niveis: ['Níveis', '#1f5fbf'] };
+
 const COR_ARQ = { claro: '#9aa3ae', escuro: '#5b6573' };
 // os eixos em roxo: o vermelho é o da malha no 2D ao lado, e o 3D com a mesma cor se confundia com ele (06/10)
 const TEMA = {

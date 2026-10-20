@@ -13,7 +13,7 @@
 
 const TELAS = 'metalica-telas-1';
 const DADOS = 'metalica-dados-1';
-const BASE_TELAS = ['./', 'index.html', 'celular.css', 'celular.js', '../visor3d/visor3d.js', 'lib/pdf.min.mjs', 'lib/pdf.worker.min.mjs',
+const BASE_TELAS = ['./', 'index.html', 'celular.css', 'celular.js', '../visor3d/visor3d.js', '../visor3d/referencia.js', '../visor3d/sistemas.js', 'lib/pdf.min.mjs', 'lib/pdf.worker.min.mjs',
                     'manifest.webmanifest', 'lib/icone-180.png', 'lib/icone-192.png', 'lib/icone-512.png',
                     '../lib/three.module.js', '../lib/OrbitControls.js'];
 const ESPERA_REDE = 4000;
@@ -83,7 +83,7 @@ self.addEventListener('fetch', ev => {
     return;
   }
   if (url.pathname.startsWith('/celular/') || url.pathname === '/lib/three.module.js' || url.pathname === '/lib/OrbitControls.js'
-      || url.pathname === '/visor3d/visor3d.js') {
+      || url.pathname.startsWith('/visor3d/')) {             // o visor, o desenho do piso e os sistemas (20/10)
     ev.respondWith(redePrimeiro(pedido, TELAS, ESPERA_REDE));
   }
 });

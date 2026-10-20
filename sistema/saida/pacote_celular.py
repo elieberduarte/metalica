@@ -700,8 +700,9 @@ def ler_cabecalho_arquivo(caminho: str) -> dict:
 # comercial/, orçamento, proposta, contrato) não vai para o celular.
 
 #: O que o pacote leva. Subiu para 2 com a cobertura retrátil nas duas situações (19/10): os pacotes de antes
-#: não a tinham e, sem o projeto mudar, não eram refeitos — o celular não mostrava aberta/retraída.
-FORMATO_PACOTE = 2
+#: não a tinham e, sem o projeto mudar, não eram refeitos — o celular não mostrava aberta/retraída. 3 (20/10): o desenho
+#: do piso (referencia.json) para as camadas "No piso" do celular.
+FORMATO_PACOTE = 3
 
 #: Resumos prontos do detalhamento: (arquivo, título na tela).
 RESUMOS = (("resumo-da-obra.pdf", "Resumo da obra"), ("resumo-de-materiais.pdf", "Resumo de materiais"),
@@ -853,8 +854,9 @@ def _cobertura_movel(modelo: str, projeto: dict, destino: str) -> Optional[dict]
                                                "pecas": "pecas-%s.json" % cobertura["outra"]}}}
 
 
-def gerar_pacote(pasta_projeto: str, destino: str, slug: str = "", progresso=None) -> dict:
-    """Gera (ou refaz o que ficou velho) o pacote do projeto em `destino` e devolve o manifesto."""
+def gerar_pacote(pasta_projeto: str, destino: str, slug: str = "", progresso=None, referencia: Optional[dict] = None) -> dict:
+    """Gera (ou refaz o que ficou velho) o pacote do projeto em `destino` e devolve o manifesto. `referencia`: o desenho
+    do piso (arquitetônico, eixos e níveis — o mesmo do modo ver do PC, app.referencia_do_lancamento), quando há."""
     import datetime
     import os
     import shutil
@@ -907,6 +909,15 @@ def gerar_pacote(pasta_projeto: str, destino: str, slug: str = "", progresso=Non
             shutil.copy2(os.path.join(det, arq), os.path.join(destino, arq))
             resumos.append({"titulo": titulo, "arquivo": arq})
 
+    # o desenho do piso (20/10): as camadas "No piso" do celular, como no modo ver do PC
+    ref = os.path.join(destino, "referencia.json")
+    tem_ref = bool(referencia and (referencia.get("segmentos") or referencia.get("eixos") or referencia.get("niveis")))
+    if tem_ref:
+        with open(ref, "w", encoding="utf-8") as f:
+            json.dump(referencia, f, ensure_ascii=False, separators=(",", ":"))
+    elif os.path.exists(ref):
+        os.remove(ref)
+
     # pranchas
     pranchas = _pranchas(pasta_projeto, destino)
     numeros["pranchas"] = len(pranchas)
@@ -931,6 +942,7 @@ def gerar_pacote(pasta_projeto: str, destino: str, slug: str = "", progresso=Non
                    "pranchas": _quando(os.path.join(pasta_projeto, "desenhos-2d", "pranchas.desenho.json"))},
         "numeros": numeros, "resumos": resumos, "pranchas": pranchas, "arquivos": arquivos,
         **({"cobertura_movel": cobertura} if cobertura else {}),
+        **({"referencia": "referencia.json"} if tem_ref else {}),
         "bytes": sum(a["bytes"] for a in arquivos),
     }
     with open(os.path.join(destino, "manifesto.json"), "w", encoding="utf-8") as f:

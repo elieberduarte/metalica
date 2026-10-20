@@ -45,7 +45,9 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
   background: #0b3d91; color: #eaf0fb;
 }
 #topo .titulos { flex: 1; min-width: 0; }
-#titulo { font-weight: 650; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* o nome inteiro, em até duas linhas (20/10: "MERCADO C…" escondia qual das três obras do Mercado estava aberta) */
+#titulo { font-weight: 650; font-size: 15px; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow-wrap: anywhere; }
 #subtitulo { font-size: 12px; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .icone { border: 0; background: none; padding: 8px; margin-left: -6px; border-radius: 50%; display: grid; place-items: center; }
 .icone:active { background: rgba(255, 255, 255, .15); }

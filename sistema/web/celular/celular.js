@@ -167,8 +167,8 @@ function conexao(manifestoGerado) {
     c.textContent = 'Sem rede · cópia ' + (copiaDe ? dataHora(copiaDe).slice(0, 5) : manifestoGerado ? dataHora(manifestoGerado).slice(0, 5) : '');
   } else {
     c.className = 'chip';
-    c.textContent = NUVEM ? 'Nuvem' + (estadoPC && estadoPC.enviado ? ' · ' + dataHora(estadoPC.enviado).replace(/\/\d{4}/, '') : '')
-      : pc ? 'No PC · ' + pc : 'No PC · Wi-Fi';
+    // curto (20/10): o nome da obra precisa do espaço do cabeçalho; o computador e a hora do envio vão no toque
+    c.textContent = NUVEM ? 'Nuvem' : 'No PC';
   }
   c.onclick = () => {
     abrirFolha(`<div class="ficha"><div class="nome">${OFFLINE ? 'Sem rede' : NUVEM ? 'Pela nuvem' : 'Ligado ao computador' + (pc ? ' ' + esc(pc) : '')}</div>
@@ -376,6 +376,15 @@ async function telaModelo(slug, m, medir, camera) {
   // apresentação (20/10, para mostrar ao cliente): sol e sombras, ligada de saída; a escolha fica guardada no aparelho
   v.ligarApresentacao(lerPreferencia('apresentacao', '1') === '1', 2048);
   v.definirFichas(await json(`${slug}/${arqs.pecas}`, versaoDe(m, arqs.pecas)));
+  // como no modo ver do PC (20/10): os sistemas (metálica, pré-moldado…) e o desenho do piso (planta, eixos, níveis)
+  const { gruposDeSistema } = await import('../visor3d/sistemas.js');
+  v.sistemas = gruposDeSistema(v);
+  PISO_NOMES = (await import('../visor3d/referencia.js')).PARTES_PISO;
+  if (m.referencia) {
+    try { await v.definirReferencia(await json(`${slug}/${m.referencia}`, versaoDe(m, m.referencia))); }
+    catch (e) { /* sem o desenho do piso, o resto abre igual */ }
+  }
+  if (v !== visor) return;
   aplicarCamadas(v, slug);          // as camadas que a pessoa desligou neste projeto continuam desligadas
   if (camera) {                     // trocou a situação da cobertura: a vista fica onde estava
     v.camera.position.copy(camera.posicao);
@@ -509,18 +518,39 @@ function aplicarCamadas(v, slug) {
   v.cabecalho.camadas.forEach((cam, i) => {
     if (typeof c[cam.nome] === 'boolean' && (v.visivelCamada[i] !== false) !== c[cam.nome]) v.mostrarCamada(i, c[cam.nome]);
   });
+  for (const n of v.partesReferencia()) if (c['piso:' + n] === false) v.mostrarParteReferencia(n, false);
+  for (const g of v.sistemas || []) if (c['sistema:' + g.chave] === false) v.ocultarSistema(g.ids, true);
 }
 
+let PISO_NOMES = {};                 // os nomes das partes do piso: os do modo ver do PC (referencia.js, lido ao abrir o 3D)
+
+/** As camadas como no painel do modo ver do PC (20/10, "na tela do mobile não aparecem as mesmas camadas que aparecem no
+ *  sistema"): No piso (planta, eixos, níveis), Sistema (metálica, pré-moldado…, quando há mais de um) e as do Modelo. */
 function folhaCamadas(v) {
   const cams = v.cabecalho.camadas;
-  abrirFolha(`<div class="nome">Camadas</div><div style="margin-top:6px">${cams.map((c, i) => c.pecas ? `
-    <div class="camada" data-i="${i}"><i style="background:${esc(c.cor)}"></i><span>${esc(c.nome)}<br><span class="mais-fraco">${nf(c.pecas)} peças</span></span>
-      <div class="chave ${v.visivelCamada[i] !== false ? 'ligada' : ''}"></div></div>` : '').join('')}</div>`);
+  const linha = (tipo, k, cor, nome, n, ligada) => `<div class="camada" data-tipo="${tipo}" data-k="${esc(k)}"><i style="background:${esc(cor)}"></i>
+    <span>${esc(nome)}${n != null ? `<br><span class="mais-fraco">${nf(n)} peças</span>` : ''}</span><div class="chave ${ligada ? 'ligada' : ''}"></div></div>`;
+  const ocultasPiso = (v._partesOcultas || new Set());
+  const piso = v.partesReferencia();
+  const sistemas = (v.sistemas || []).length >= 2 ? v.sistemas : [];
+  const secoes = [];
+  if (piso.length) secoes.push('<div class="titulo-secao">No piso</div>' + piso.map(n => { const [nome, cor] = PISO_NOMES[n] || [n, '#999'];
+    return linha('piso', n, cor, nome, null, !ocultasPiso.has(n)); }).join(''));
+  if (sistemas.length) secoes.push('<div class="titulo-secao">Sistema</div>' + sistemas.map(g =>
+    linha('sistema', g.chave, g.cor, g.nome, g.n, !g.ids.some(i => v.ocultasSistema.has(i)))).join(''));
+  const modelo = cams.map((c, i) => c.pecas ? linha('camada', i, c.cor, c.nome, c.pecas, v.visivelCamada[i] !== false) : '').join('');
+  secoes.push((secoes.length ? '<div class="titulo-secao">Modelo</div>' : '') + modelo);
+  abrirFolha(`<div class="nome">Camadas</div><div style="margin-top:6px">${secoes.join('')}</div>`);
   folha.querySelectorAll('.camada').forEach(el => el.onclick = () => {
-    const i = +el.dataset.i, ch = el.querySelector('.chave');
+    const k = el.dataset.k, ch = el.querySelector('.chave');
     ch.classList.toggle('ligada');
-    v.mostrarCamada(i, ch.classList.contains('ligada'));
-    lembrarCamada(visorSlug, cams[i].nome, ch.classList.contains('ligada'));
+    const sim = ch.classList.contains('ligada');
+    if (el.dataset.tipo === 'piso') { v.mostrarParteReferencia(k, sim); lembrarCamada(visorSlug, 'piso:' + k, sim); }
+    else if (el.dataset.tipo === 'sistema') {
+      const g = v.sistemas.find(x => x.chave === k);
+      if (g) v.ocultarSistema(g.ids, !sim);
+      lembrarCamada(visorSlug, 'sistema:' + k, sim);
+    } else { v.mostrarCamada(+k, sim); lembrarCamada(visorSlug, cams[+k].nome, sim); }
   });
 }
 

@@ -45,6 +45,8 @@ def celular() -> Celular:
             app = _app()
             teste = "--dados" in sys.argv or bool(os.environ.get("METALICA_DADOS"))
             _UNICO = Celular(app.PROJETOS, pasta_de_trabalho(app.PROJETOS, teste))
+            # o desenho do piso vai no pacote (as camadas "No piso" do celular), pela mesma conta do modo ver do PC
+            _UNICO.referencia = lambda s: app.referencia_do_lancamento(s)
         return _UNICO
 
 
