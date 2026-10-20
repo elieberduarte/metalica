@@ -21,12 +21,14 @@ import os
 import ssl
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Callable, Optional
 
 LETS_ENCRYPT = "https://acme-v02.api.letsencrypt.org/directory"
 LETS_ENCRYPT_TESTE = "https://acme-staging-v02.api.letsencrypt.org/directory"
 CLOUDFLARE = "https://api.cloudflare.com/client/v4"
+DUCKDNS = "https://www.duckdns.org"
 RENOVAR_COM_DIAS = 30
 
 
@@ -280,6 +282,51 @@ class Cloudflare:
                 self._api("PUT", "/zones/%s/dns_records/%s" % (z, atuais[0]["id"]), corpo)
         else:
             self._api("POST", "/zones/%s/dns_records" % z, corpo)
+
+
+class DuckDNS:
+    """O subdomínio grátis do DuckDNS (<nome>.duckdns.org), pelo token da conta de lá.
+
+    Para quem não tem domínio próprio (19/10). Mesma interface do Cloudflare: o nome aponta para o
+    IP interno do PC e o TXT do desafio entra e sai pela mesma rota de atualização. O DuckDNS guarda
+    UM registro TXT por subdomínio e o responde também em _acme-challenge.<nome> — é o que o
+    Let's Encrypt consulta."""
+
+    def __init__(self, token: str, base: str = DUCKDNS):
+        self.token = token
+        self.base = base
+
+    @staticmethod
+    def subdominio(nome: str) -> str:
+        """metalica-joao.duckdns.org (ou _acme-challenge.metalica-joao.duckdns.org) → metalica-joao."""
+        partes = nome.lower().rstrip(".").split(".")
+        if len(partes) < 3 or partes[-2:] != ["duckdns", "org"]:
+            raise ErroCertificado("%s não é um subdomínio do DuckDNS (ex.: metalica-suaempresa.duckdns.org)" % nome)
+        return partes[-3]
+
+    def _api(self, nome: str, **campos):
+        params = {"domains": self.subdominio(nome), "token": self.token, **campos}
+        st, _h, resp = _pedir(self.base + "/update?" + urllib.parse.urlencode(params))
+        if st >= 400 or resp.strip()[:2] != b"OK":
+            raise ErroCertificado("DuckDNS recusou a atualização de %s: confira o subdomínio (criado na conta de lá) "
+                                  "e o token" % nome)
+
+    def por_txt(self, nome, valor):
+        self._api(nome, txt=valor)
+
+    def tirar_txt(self, nome):
+        self._api(nome, txt="removido", clear="true")
+
+    def apontar(self, nome, ip):
+        """O subdomínio para o IP interno do computador (o celular fala direto com o PC na rede)."""
+        self._api(nome, ip=ip)
+
+
+def provedor_dns(nome: str, token: str):
+    """Quem cuida do DNS do nome: o DuckDNS para <x>.duckdns.org, o Cloudflare para domínio próprio."""
+    if (nome or "").lower().rstrip(".").endswith(".duckdns.org"):
+        return DuckDNS(token)
+    return Cloudflare(token)
 
 
 def esperar_dns_publico(nome: str, valor: str, prazo: float = 180.0):

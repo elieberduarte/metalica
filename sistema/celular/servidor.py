@@ -442,7 +442,7 @@ class Celular:
         nome = (nome or "").strip().lower().rstrip(".")
         token = (token or "").strip() or self._config_https().get("token", "")
         if not nome or not token:
-            raise ValueError("informe o nome (ex.: metalica.seudominio.com.br) e o token do Cloudflare")
+            raise ValueError("informe o nome (ex.: metalica-suaempresa.duckdns.org ou metalica.seudominio.com.br) e o token")
         os.makedirs(self.tls, exist_ok=True)
         with open(os.path.join(self.tls, "cloudflare.json"), "w", encoding="utf-8") as f:
             json.dump({"nome": nome, "token": token}, f)
@@ -463,7 +463,7 @@ class Celular:
             self._https_situacao = {"situacao": "trabalhando", "mensagem": t}
         try:
             ip = enderecos_da_rede()[0]
-            dns = C.Cloudflare(cfg["token"])
+            dns = C.provedor_dns(cfg["nome"], cfg["token"])
             r = C.obter(self.tls, cfg["nome"], ip, dns, diretorio=os.environ.get("METALICA_ACME_DIR") or C.LETS_ENCRYPT,
                         avisar=avisar)
             cfg["ip"] = ip
@@ -485,7 +485,7 @@ class Celular:
             if C.precisa_renovar(self.tls):
                 threading.Thread(target=self._obter_certificado, name="celular-certificado", daemon=True).start()
             elif ip != cfg.get("ip"):
-                C.Cloudflare(cfg["token"]).apontar(cfg["nome"], ip)
+                C.provedor_dns(cfg["nome"], cfg["token"]).apontar(cfg["nome"], ip)
                 cfg["ip"] = ip
                 with open(os.path.join(self.tls, "cloudflare.json"), "w", encoding="utf-8") as f:
                     json.dump(cfg, f)

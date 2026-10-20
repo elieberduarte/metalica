@@ -81,20 +81,22 @@
     <div id="aparelhos"><p>Carregando…</p></div>
 
     <h2 style="margin-top:18px">Conexão segura (HTTPS) — para a cópia da obra</h2>
-    <p>Para o celular guardar os projetos e abrir na obra <b>sem rede</b>, a conexão precisa ser segura. Um nome do seu
-      domínio no Cloudflare (ex.: <i>metalica.seudominio.com.br</i>) passa a apontar para este computador <b>dentro da rede</b>,
-      e o certificado sai do Let's Encrypt e é renovado sozinho. Nada fica aberto na internet.</p>
+    <p>Para o celular <b>instalar o app</b> e guardar os projetos para abrir na obra <b>sem rede</b>, a conexão precisa ser
+      segura. Um nome — grátis no DuckDNS (ex.: <i>metalica-suaempresa.duckdns.org</i>) ou do seu domínio no Cloudflare
+      (ex.: <i>metalica.seudominio.com.br</i>) — passa a apontar para este computador <b>dentro da rede</b>, e o certificado
+      sai do Let's Encrypt e é renovado sozinho. Nada fica aberto na internet.</p>
     <div id="https-estado"></div>
     <div class="https-campos" style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;margin-top:6px">
-      <label style="font-size:12.5px;color:var(--texto2)">Nome<br><input id="https-nome" placeholder="metalica.seudominio.com.br"
+      <label style="font-size:12.5px;color:var(--texto2)">Nome<br><input id="https-nome" placeholder="metalica-suaempresa.duckdns.org"
         style="width:100%;font:inherit;padding:6px 8px;border:1px solid var(--borda-forte);border-radius:var(--raio-p);background:var(--painel);color:var(--texto)"></label>
-      <label style="font-size:12.5px;color:var(--texto2)">Token da API do Cloudflare<br><input id="https-token" type="password" autocomplete="off"
+      <label style="font-size:12.5px;color:var(--texto2)">Token (DuckDNS ou Cloudflare)<br><input id="https-token" type="password" autocomplete="off"
         placeholder="(guardado neste computador)"
         style="width:100%;font:inherit;padding:6px 8px;border:1px solid var(--borda-forte);border-radius:var(--raio-p);background:var(--painel);color:var(--texto)"></label>
       <button type="button" class="botao" id="btn-https">Configurar</button>
     </div>
-    <p style="font-size:12px;margin-top:6px">O token: Cloudflare → Meu perfil → Tokens de API → Criar token → modelo <i>Editar DNS da zona</i>,
-      só para o seu domínio. Ele fica guardado só neste computador.</p>
+    <p style="font-size:12px;margin-top:6px"><b>Grátis, DuckDNS:</b> entre em duckdns.org (com a conta Google), crie o subdomínio
+      (ex.: <i>metalica-suaempresa</i>) e copie o <i>token</i> do topo da página. <b>Domínio próprio, Cloudflare:</b> Meu perfil →
+      Tokens de API → Criar token → modelo <i>Editar DNS da zona</i>, só para o seu domínio. O token fica guardado só neste computador.</p>
   </section>
 
   <section class="caixa">
