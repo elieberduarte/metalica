@@ -345,7 +345,8 @@ def escolher_arquivo(aba, seletor, caminho):
 
 def p19_resultado_do_recebido(aba):
     """P19: o resultado do Projeto recebido da Portaria era um paredão — 15 vistas, 8 "sem título" repetindo "escala não
-    encontrada… usei mm" e o aviso que importava (a planta sem eixos: as vistas não montam) no fim."""
+    encontrada… usei mm" e o aviso que importava (a planta sem eixos: as vistas não montam) no fim. Desde 20/10 a
+    importação só lê (o Original) e o resultado é o que foi lido, com a Identificação para modelagem como próximo passo."""
     print("P19 — resultado do Projeto recebido (DXF da Portaria)")
     if not os.path.exists(PORTARIA):
         ok(False, "sem o DXF da Portaria em Projeto/OBRAS/Portaria-Hermes"); return
@@ -355,15 +356,13 @@ def p19_resultado_do_recebido(aba):
     escolher_arquivo(aba, "#arquivo-projeto-2d", PORTARIA)
     esperar(aba, "document.querySelector('#dialogo').open && document.querySelector('#dialogo-ok').textContent === 'Ler o projeto'", 30)
     clicar(aba, "#dialogo-ok")
-    esperar(aba, "document.querySelector('#dialogo').open && document.querySelector('#dialogo-titulo').textContent === 'Projeto recebido'", 240)
+    # desde 20/10 a importação só lê (o Original, sem 3D): o resultado é curto — o que foi lido e a Identificação
+    esperar(aba, "document.querySelector('#dialogo').open && document.querySelector('#dialogo-titulo').textContent.includes('o que o programa leu')", 240)
     blocos = aba.avaliar("[...document.querySelectorAll('#dialogo-corpo .resultado-recebido > *')].map(e => (e.querySelector('h4, summary') || e).textContent.trim().slice(0, 60))") or []
-    ok(blocos and blocos[0].startswith("Não deu"), f"o primeiro bloco é o que não deu: {blocos[:5]}")
-    primeiro = aba.avaliar("(document.querySelector('#dialogo-corpo .bloco-resultado.erro') || {}).textContent || ''") or ""
-    ok("eixos" in primeiro, f"o aviso de posicionamento está no bloco Não deu: «{primeiro[:120]}»")
+    ok(any(b.startswith("O Original está no projeto") for b in blocos), f"o resultado diz que o Original está no projeto: {blocos[:5]}")
     corpo = aba.avaliar("document.querySelector('#dialogo-corpo').textContent") or ""
-    n = corpo.count("escala não encontrada") + corpo.count("sem escala pelas cotas")
-    ok(n == 1 and "8 vistas sem escala" in corpo, f"a escala não encontrada aparece uma vez, com a contagem ({n})")
-    ok("Próximos passos" in corpo, "tem Próximos passos")
+    ok("Próximo passo" in corpo and "Identificação para modelagem" in corpo, "tem o próximo passo: a Identificação para modelagem")
+    ok(len(corpo) < 3000, f"o resultado é curto ({len(corpo)} letras)")
     aba.avaliar("document.querySelector('#dialogo').close(); 1")
 
 

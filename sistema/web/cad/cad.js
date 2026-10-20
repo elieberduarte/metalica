@@ -1153,6 +1153,7 @@ class CAD {
       'gravar-eixos': () => this.gravarEixos(),
       'lancar-3d': () => this.lancarNo3D(),
       'projeto-2d': () => this.introProjetoRecebido(),
+      identificacao: () => this.identificacaoParaModelagem(),
       reconhecer: () => this.reconhecerPecas(),
       'montar-planta': () => this.dialogoMontarPelaPlanta(),
       'folhas-recebidas': () => this.lerFolhasRecebidas(),
@@ -1440,13 +1441,87 @@ class CAD {
   async introProjetoRecebido() {
     if (!this.projeto) { this.aviso('Abra ou crie um projeto antes (o modelo 3D e o IFC ficam nele).', 'atencao'); return; }
     const corpo = el('div', {},
-      el('div', { class: 'explica', texto: 'Projeto estrutural recebido (do escritório de cálculo), em DXF ou PDF. O sistema lê as vistas (planta, tesouras, pórticos, fachadas), a escala de cada uma pelas cotas, os eixos e os perfis escritos junto das barras, e monta o modelo 3D. O desenho fica gravado no projeto, com as peças reconhecidas numa camada própria, para conferir e corrigir.' }),
+      el('div', { class: 'explica', texto: 'Projeto estrutural recebido (do escritório de cálculo), em DXF ou PDF. Ele entra como o ORIGINAL do projeto: só leitura, as camadas do projetista travadas, sem modelo 3D ainda. É a base de todas as conferências e não é mexido.' }),
+      el('div', { class: 'explica', texto: 'Depois, na Identificação para modelagem, o programa procura a planta de locação (eixos e níveis), as tesouras e as terças e você confirma cada etapa; só então o modelo 3D é montado.' }),
       el('div', { class: 'explica', texto: 'É a planta do cliente (arquitetônico, sem estrutura)? Use Lançamento → Arquitetônico do cliente.' }));
-    if (await this.dialogo({ titulo: 'Projeto recebido → modelo 3D', corpo, ok: 'Escolher o arquivo (DXF ou PDF)…' }) === 'ok') $('#arquivo-projeto-2d').click();
+    if (await this.dialogo({ titulo: 'Projeto recebido', corpo, ok: 'Escolher o arquivo (DXF ou PDF)…' }) === 'ok') $('#arquivo-projeto-2d').click();
   }
 
-  /** Projeto recebido: DXF/PDF → desenho + peças + modelo 3D + IFC, numa ida ao servidor. */
+  /**
+   * Projeto recebido (20/10/2026, o usuário: "a primeira importação poderia ser somente a leitura … deixar esse projeto
+   * importado como original que não é mexido"): o DXF/PDF vira o Original (a planta de lançamento, camadas do projetista
+   * travadas), o arquivo fica em documentos/ e nada de 3D. A tela mostra o que foi lido (as folhas, a unidade, o tamanho)
+   * e leva à Identificação para modelagem. O caminho antigo (ler e já montar o 3D) ficou em projetoRecebidoDeUmaVez, fora
+   * do menu — no Hangar Almayer ele enfileirou 30 desenhos de fabricação sem eixos.
+   */
   async projetoRecebido(arquivo) {
+    if (!arquivo) return;
+    if (!this.projeto) { this.aviso('Abra ou crie um projeto antes (o Original e o modelo ficam nele).', 'atencao'); return; }
+    const pdf = /\.pdf$/i.test(arquivo.name);
+    if (!pdf && /\.dwg$/i.test(arquivo.name)) { this.aviso('DWG não é lido: no CAD de origem, salve como DXF.', 'atencao', 0); return; }
+    const unidade = el('select', {}, ...[['auto', 'pelo arquivo ($INSUNITS), senão mm'], ['1', 'milímetro'], ['10', 'centímetro'], ['1000', 'metro']]
+      .map(([v, t]) => el('option', { value: v, texto: t })));
+    const escala = el('input', { type: 'text', value: '', placeholder: 'pelas cotas (ex.: 50)' });
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: `"${arquivo.name}" (${numero(arquivo.size / 1024, 0)} kB) entra como o Original do projeto, em tamanho real: só leitura, sem modelo 3D. O arquivo fica guardado na aba Arquivos.` }),
+      pdf ? el('label', {}, 'Escala do PDF, 1:', escala) : el('label', {}, 'Unidade do arquivo', unidade));
+    if (await this.dialogo({ titulo: 'Projeto recebido', corpo, ok: 'Ler o projeto' }) !== 'ok') return;
+    const parar = this._acompanharProgresso('Projeto recebido: ');
+    let r;
+    try {
+      const n = parseFloat(String(escala.value).replace(',', '.'));
+      r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/arquitetonico`, {
+        arquivo: arquivo.name, tipo: pdf ? 'pdf' : 'dxf', conteudo_b64: await base64DoArquivo(arquivo), recebido: true,
+        fator: !pdf && unidade.value !== 'auto' ? parseFloat(unidade.value) : null, escala: pdf && isFinite(n) && n > 0 ? n : null,
+      });
+    } catch (e) { parar(); this.dica(''); this.aviso(`Não foi possível ler o projeto: ${e.message}`, 'erro', 0); return; }
+    parar();
+    this.dica('');
+    this.nomeDesenho = null;                  // o Original foi gravado pelo servidor: abre o novo
+    await this.abrirDesenho(r.desenho);
+    this.tela.enquadrar();
+    if (window.montagem && typeof window.montagem.aoTrocar === 'function') { try { await window.montagem.aoTrocar(); } catch { /* as abas se acertam na próxima troca */ } }
+    await this._dialogoLeituraRecebido(r.resumo || {});
+  }
+
+  /** "O que o programa leu": as folhas, a unidade e o tamanho, antes de qualquer modelagem; o botão leva à Identificação. */
+  async _dialogoLeituraRecebido(s) {
+    const le = s.leitura || {};
+    const fo = le.folhas || {};
+    const maior = Math.max(Number(s.largura_m) || 0, Number(s.altura_m) || 0);
+    const linhas = [
+      `${numero(s.entidades || 0)} objetos em ${(s.camadas || []).length} camada(s), ocupando ${numero(s.largura_m || 0, 2)} × ${numero(s.altura_m || 0, 2)} m (unidade: ${s.escala}, ${s.fonte_escala}).`,
+    ];
+    const cotas = le.cotas;
+    if (cotas && cotas.exemplo) linhas.push(`As cotas estão escritas em ${cotas.nome}: "${cotas.exemplo.texto}" mede ${numero(cotas.exemplo.mede_mm / 1000, 2)} m no desenho (${cotas.amostras} cota(s) conferidas).`);
+    const graves = [...(s.avisos || [])];
+    if (maior > 0 && maior < 15) graves.push(`O desenho tem só ${numero(maior, 2)} m no lado maior: a unidade deve estar errada (centímetro ou metro). Importe de novo escolhendo a unidade.`);
+    const bloco = (titulo, classe, itens) => el('div', { class: 'bloco-resultado ' + classe },
+      el('h4', { texto: titulo }), ...itens.map(l => (l.nodeType ? l : el('div', { class: 'explica', texto: l }))));
+    const itens = [];
+    if (graves.length) itens.push(bloco(`Confira antes (${graves.length})`, 'atencao', graves));
+    itens.push(bloco('O Original está no projeto', 'ok', linhas));
+    if (fo.achadas) {
+      const lista = el('ol', { class: 'lista-avisos' }, ...fo.lista.map(f => el('li', { value: String(f.folha), texto: f.titulo || '(sem título)' })));
+      itens.push(el('details', { open: fo.achadas <= 40 ? true : undefined }, el('summary', { texto: `${fo.achadas} folha(s)${fo.total && fo.total !== fo.achadas ? ` de ${fo.total}` : ''} pelos carimbos` }), lista));
+    }
+    itens.push(el('h4', { texto: 'Próximo passo' }), el('div', { class: 'explica', texto: 'Identificação para modelagem: o programa procura a planta de locação (eixos e níveis), as tesouras e as terças; você confere e acerta cada etapa, e só no fim monta o modelo 3D. O Original continua como chegou.' }));
+    const acao = await this.dialogo({ titulo: 'Projeto recebido — o que o programa leu', corpo: el('div', { class: 'resultado-recebido' }, ...itens), ok: 'Identificação para modelagem →' });
+    if (acao === 'ok') await this.identificacaoParaModelagem();
+  }
+
+  /** Abre a Montagem com o painel da Identificação para modelagem (o Original fica como está). */
+  async identificacaoParaModelagem() {
+    const m = window.montagem;
+    if (!m) { this.aviso('A Montagem não carregou nesta tela: recarregue (F5).', 'erro', 0); return; }
+    await m.ir('montagem');
+    if (typeof m.abrirIdentificacao === 'function') await m.abrirIdentificacao();
+  }
+
+  /** O caminho antigo do projeto recebido (fora do menu desde 20/10): DXF/PDF → desenho + peças + modelo 3D + IFC, numa
+   *  ida ao servidor. Fica para os verificadores do reconhecimento (verif_projeto_2d) e para o projeto de montagem com a
+   *  malha completa, chamado pelo console. */
+  async projetoRecebidoDeUmaVez(arquivo) {
     if (!arquivo) return;
     if (!this.projeto) { this.aviso('Abra ou crie um projeto antes (o modelo 3D e o IFC ficam nele).', 'atencao'); return; }
     const modo = el('select');
@@ -1500,7 +1575,7 @@ class CAD {
     const passos = [];
     if (graves.some(a => /eixos|origens/.test(a))) passos.push('Posicionar as vistas: Vistas do modelo → Gerar modelo 3D do desenho… (a origem de cada vista na planta). Até lá, o 3D mostra as vistas lado a lado, não montadas.');
     if (r.modelo) passos.push('Abrir o modelo 3D e conferir as peças em rosa (PEÇAS A CONFERIR).');
-    passos.push('Ler as folhas e as considerações de cálculo: Modelo › Montar pelo projeto recebido › 2 (o DXF já ficou no projeto).');
+    passos.push('Ler as folhas e as considerações de cálculo: Modelo › Montar pelo projeto recebido › 3 (o DXF já ficou no projeto).');
     itens.push(el('h4', { texto: 'Próximos passos' }), el('ol', { class: 'lista-avisos' }, ...passos.map(p => el('li', { texto: p }))));
     const acao = await this.dialogo({ titulo: 'Projeto recebido', corpo: el('div', { class: 'resultado-recebido' }, ...itens), ok: r.modelo ? 'Abrir o modelo 3D' : 'OK' });
     if (acao === 'ok' && r.modelo) (window.metalicaNavegar || ((u) => { location.href = u; }))(this.urlDoEditor());

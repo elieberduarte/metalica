@@ -3954,9 +3954,14 @@ def projeto_2d_para_modelo(s: str, corpo: dict) -> dict:
 # ----------------------------------------------------------- lançamento sobre o arquitetônico
 
 def importar_arquitetonico(s: str, corpo: dict) -> dict:
-    """POST /api/projetos/<s>/arquitetonico {arquivo, conteudo_b64, tipo, fator, escala}: o
+    """POST /api/projetos/<s>/arquitetonico {arquivo, conteudo_b64, tipo, fator, escala, recebido}: o
     arquitetônico do cliente (DXF ou PDF vetorial) vira a referência travada da Planta de
-    lançamento, em milímetro real. Os eixos e as notas que já estavam na planta ficam."""
+    lançamento, em milímetro real. Os eixos e as notas que já estavam na planta ficam.
+
+    `recebido` (20/10/2026, o usuário: "a primeira importação poderia ser somente a leitura … deixar esse projeto
+    importado como original que não é mexido"): o projeto estrutural recebido entra do mesmo jeito, como o Original da
+    Montagem — o DXF fica em documentos/, o projeto passa a "recebido" e nada de 3D; a Identificação para modelagem
+    parte dele."""
     import base64
     from nucleo3d import lancamento
     g = _gerente()
@@ -3965,9 +3970,11 @@ def importar_arquitetonico(s: str, corpo: dict) -> dict:
     if not corpo.get("conteudo_b64"):
         raise ErroDeDados("mande o arquivo em base64.")
     _progresso(s, "lendo %s…" % arquivo)
+    dados = base64.b64decode(corpo["conteudo_b64"])
+    recebido = bool(corpo.get("recebido"))
     try:
         ref, resumo = lancamento.ler_arquitetonico(
-            base64.b64decode(corpo["conteudo_b64"]), tipo,
+            dados, tipo,
             fator=float(corpo["fator"]) if corpo.get("fator") else None,
             escala_pdf=float(corpo["escala"]) if corpo.get("escala") else None)
         ref.metadados["arquitetonico"]["arquivo"] = arquivo
@@ -3980,7 +3987,14 @@ def importar_arquitetonico(s: str, corpo: dict) -> dict:
         _progresso(s, "gravando a planta de lançamento…")
         r = g.salvar_desenho(s, lancamento.DESENHO_LANCAMENTO, des.dict())
         g._atualizar(s, arquitetonico={"arquivo": arquivo, "tipo": tipo, "escala": resumo["escala"],
-                                        "quando": time.strftime("%Y-%m-%d %H:%M:%S")})
+                                        "quando": time.strftime("%Y-%m-%d %H:%M:%S"), **({"recebido": True} if recebido else {})})
+        if recebido:
+            from nucleo3d import identificacao
+            if tipo == "dxf":
+                _guardar_dxf_recebido(s, arquivo, dados)
+            if g.ler(s).get("tipo") in ("lancamento", "desenho"):
+                g._atualizar(s, tipo="recebido")
+            resumo["leitura"] = identificacao.resumo_da_leitura(des)
         return {"desenho": r["nome"], "resumo": resumo}
     finally:
         _fim_progresso(s)

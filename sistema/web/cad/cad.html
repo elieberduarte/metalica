@@ -40,7 +40,8 @@
         <button type="button" data-acao="abrir">Abrir desenho do projeto…</button>
         <div class="desenhos-salvos" id="desenhos-salvos"></div>
         <button type="button" data-acao="novo">Novo desenho em branco…</button>
-        <button type="button" data-acao="projeto-2d" title="O projeto estrutural recebido em DXF ou PDF vira, de uma vez: um desenho com as peças reconhecidas pelos perfis escritos, o modelo 3D (tesouras nos eixos, terças na cobertura) e o IFC">Projeto recebido (DXF/PDF) → modelo 3D e IFC…</button>
+        <button type="button" data-acao="projeto-2d" title="O projeto estrutural recebido em DXF ou PDF entra como o Original do projeto: só leitura, sem modelo 3D; depois, a Identificação para modelagem">Projeto recebido (DXF/PDF)…</button>
+        <button type="button" data-acao="identificacao" title="Na Montagem: o programa procura a planta de locação (eixos e níveis), as tesouras e as terças no Original; você confere cada etapa e monta o 3D no fim">Identificação para modelagem</button>
         <button type="button" data-acao="importar-dxf" title="Pergunta o que é o arquivo: a planta do cliente (fundo da planta de lançamento), o projeto estrutural pronto (Montagem) ou só acrescentar a este desenho">Importar DXF ou PDF…</button>
         <button type="button" data-acao="excluir-desenhos" title="Manda desenhos do projeto (detalhamentos, cortes, pranchas) para a lixeira, para gerar de novo">Excluir desenhos…</button>
         <input type="file" id="arquivo-dxf" accept=".dxf,.pdf" hidden>

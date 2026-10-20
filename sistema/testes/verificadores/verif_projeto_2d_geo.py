@@ -72,7 +72,7 @@ try:
     # ---- 1. projeto recebido de uma vez: perfis padrão
     aba.avaliar("window.__b64 = %s; 1" % json.dumps(base64.b64encode(open(dxf, "rb").read()).decode()))
     aba.avaliar("(() => { const b = atob(window.__b64); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);"
-                " window.cad.projetoRecebido(new File([u], 'galpao_sem_texto.dxf')); return 1; })()")
+                " window.cad.projetoRecebidoDeUmaVez(new File([u], 'galpao_sem_texto.dxf')); return 1; })()")
     ok(esperar_dialogo(aba, "Projeto recebido → modelo 3D", 10), "diálogo do projeto recebido abriu")
     aba.avaliar("document.querySelector('#dialogo-ok').click(); 1")
     ok(esperar_dialogo(aba, "Projeto recebido", 120), "resultado do projeto recebido")
