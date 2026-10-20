@@ -15,8 +15,14 @@
 // barras: identificacao.tesoura_da_folha), cola na elevação do primeiro eixo sugerido em tamanho real — centrado entre os
 // eixos com letra, o apoio no nível de apoio, sem esticar — e abre o "Tesoura…" da elevação com a marca e os eixos
 // sugeridos marcados; o usuário confere os perfis e lança.
+//
+// Fase 4 (terças): "Lançar as terças" lê a planta de terças (identificacao.tercas_da_planta: a malha dela casada com a da
+// locação, a cota de cada terça pelo corte dela na vista da tesoura, a marca e o perfil pela tabela das folhas de
+// terças) e lança cada peça na Implantação como viga de aço com papel "terça", apoiada pela face de baixo; o 3D vem junto
+// pela planta. Lançar de novo troca as terças lançadas antes.
 
 import { criar } from './nucleo/desenho2d.js';
+import { ComandoAdicionar, ComandoComposto, ComandoRemover } from './nucleo/comandos.js';
 
 function el(tag, attrs = {}, ...filhos) {
   const e = document.createElement(tag);
@@ -168,8 +174,18 @@ export class MetodosIdentificacao {
 
     // 3 e 4. terças, contraventos e o resto: as folhas achadas
     const folhas = (lst) => (lst || []).map(f => el('div', { class: 'ident-linha' }, el('span', { texto: `Folha ${f.folha} — ${f.titulo}` }), ver(f.caixa)));
+    const planta = this._plantaDeTercas(v);
+    const livre3 = this._liberada('tercas');
+    const nTercas = this.ativa ? [...this.cad.doc.entidades.values()].filter(e => (e.atributos || {}).identificacao === 'terca').length : (id.tercas || {}).n || 0;
+    const resT = id.tercas || {};
     const sec3 = etapa('tercas', ETAPAS[2][1], ...folhas(v.tercas),
-      el('div', { class: 'explica', texto: 'A leitura das terças sobre os eixos gravados vem na próxima etapa do sistema.' }));
+      planta ? el('div', { class: 'ident-sub', texto: `a planta: folha ${planta.folha}; perfil, marca e comprimento pela tabela das folhas de terças` }) : el('div', { class: 'ident-linha atencao', texto: 'Nenhuma folha com PLANTA DE TERÇAS no título.' }),
+      nTercas ? el('div', { class: 'ident-linha ok', texto: `${nTercas} terça(s) lançada(s) na Implantação` + (resT.resumo ? ` (${resT.resumo})` : '') + '.' }) : null,
+      avisos(resT.avisos),
+      livre3 && planta ? el('div', { class: 'ident-botoes' },
+        botao(nTercas ? 'Lançar de novo' : 'Lançar as terças nos eixos', () => this._lancarTercasIdent(), { class: nTercas ? '' : 'primario',
+          title: 'Lê a planta de terças, põe cada peça nos eixos gravados, na cota do corte dela na vista da tesoura, e lança na Implantação' }),
+        botao('Confirmar as terças ✓', () => this._confirmarIdent('tercas'), { class: 'ident-confirmar', disabled: nTercas ? undefined : true })) : null);
     const sec4 = etapa('contraventos', ETAPAS[3][1], ...folhas(v.contraventos), ...folhas(v.outras));
     const montar = el('section', { class: 'ident-etapa ident-montar' },
       el('h4', {}, 'Montar o modelo 3D'),
@@ -290,6 +306,48 @@ export class MetodosIdentificacao {
     this.cad.aviso(`${t.tipo} da folha ${t.vista.folha} colada na Elevação ${eixo}: ${r.barras} barras, ${metros(r.largura)} m × ${metros(r.altura)} m${casa}. Confira no Tesoura… e lance.`, sobra && Math.abs(sobra) > 5 ? 'atencao' : 'info', 16000);
     const lancou = await this.tesouraDaElevacao(q, { marca: t.tipo, eixos: t.eixos.length ? t.eixos : [eixo] });
     if (lancou) this._tiposCache = this.m.tipos || {};
+    this._desenharIdent();
+  }
+
+  /** A folha da planta de terças: a com PLANTA no título (as outras de terças são detalhes de peça). */
+  _plantaDeTercas(v) {
+    const fs = (v.tercas || []).filter(f => f.caixa);
+    return fs.find(f => /PLANTA/i.test(f.titulo)) || null;
+  }
+
+  /** Fase 4: as terças da planta de terças lançadas na Implantação, nos eixos gravados. */
+  async _lancarTercasIdent() {
+    if (!this.ativa) await this.ir('montagem');
+    if (!this.ativa) return;
+    const id = this._ident(), v = id.varredura, planta = this._plantaDeTercas(v);
+    const qi = this._quadroImplantacao();
+    if (!planta || !qi || !qi.mapa) { this.cad.aviso('Falta a planta de terças ou a Implantação com os eixos.', 'atencao'); return; }
+    const apoio = await this._apoioIdent();
+    if (apoio == null) return;
+    let r;
+    try {
+      r = await pedir(`/api/projetos/${encodeURIComponent(this.cad.projeto)}/identificacao/tercas`, {
+        original: this.m.original || this.original, caixa: planta.caixa, locacao: v.locacao, folhas: v.folhas, apoio,
+        tesouras: (v.tesouras || []).filter(t => t.vista && t.eixos.length).map(t => ({ tipo: t.tipo, eixos: t.eixos, caixa: t.vista.caixa })) });
+    } catch (e) { this.cad.aviso('Não consegui ler a planta de terças: ' + e.message, 'erro', 0); return; }
+    const pecas = (r.pecas || []).filter(pc => pc.g_a != null && pc.g_b != null);
+    if (!pecas.length) { this.cad.aviso('Nenhuma terça lida na planta: ' + (r.avisos || []).join(' '), 'atencao', 0); return; }
+    const novas = pecas.map(pc => criar({ tipo: 'linha', camada: 'ESTRUTURA', a: this._paraPapel(qi, [pc.g_a, pc.p]), b: this._paraPapel(qi, [pc.g_b, pc.p]),
+      atributos: { elemento: 'viga', material: 'aco', papel: 'terça', identificacao: 'terca', marca: pc.marca || 'T.C', quadro: qi.id,
+        secao: { perfil: pc.perfil || 'U 127×50×2,25 (FF)', aco: 'ASTM A36' }, nivel_topo: pc.z_pe != null ? pc.z_pe : apoio, alinhamento: 'base',
+        eixos: [pc.eixo_a, pc.eixo_b], u: pc.u } }));
+    const antes = [...this.cad.doc.entidades.values()].filter(e => (e.atributos || {}).identificacao === 'terca').map(e => e.id);
+    const cmds = [];
+    if (antes.length) cmds.push(new ComandoRemover(antes, 'Terças lançadas antes'));
+    cmds.push(new ComandoAdicionar(novas, `Terças (${novas.length})`));
+    if (!this.cad.doc.camadas.has('ESTRUTURA') && this.cad._garantirCamadaEstrutura) this.cad._garantirCamadaEstrutura();
+    this.cad.executar(cmds.length > 1 ? new ComandoComposto(cmds, `Terças (${novas.length})`) : cmds[0]);
+    const cont = {};
+    for (const pc of pecas) cont[pc.marca || '?'] = (cont[pc.marca || '?'] || 0) + 1;
+    const resumo = Object.entries(cont).sort((a, b) => a[0].localeCompare(b[0], 'pt-BR', { numeric: true })).map(([m, n]) => `${n} ${m}`).join(', ');
+    this._guardarIdent({ ...this._ident(), tercas: { n: novas.length, resumo, avisos: r.avisos || [] } });
+    await this.cad.salvar({ avisar: false });
+    this.cad.aviso(`${novas.length} terça(s) lançada(s) na Implantação: ${resumo}. O 3D acompanha a planta; Ctrl+Z desfaz.`, (r.avisos || []).length ? 'atencao' : 'info', 14000);
     this._desenharIdent();
   }
 

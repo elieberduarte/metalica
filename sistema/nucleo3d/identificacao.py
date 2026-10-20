@@ -639,3 +639,199 @@ def _alma_nas_faces(ents: List[dict]) -> List[dict]:
                 n["id"] = "%s-%d" % (e.get("id") or "l", i)
             saida.append(n)
     return saida
+
+
+# ---------------------------------------------------------------------------------------------------- Fase 4: terças
+
+_LINHA_TERCA = re.compile(r"^\s*(T\.?\s*[CL]\.?\s*\d+(?:\s*-\s*[A-Z])?)\s*-\s*(\d+)\s*P[ÇC]\.?\s*-\s*L\s*=\s*([\d.,]+)\s*\(([^)]+)\)", re.I)
+
+
+def _marca_terca(t: str) -> str:
+    """"T.C. 2 - A" → "T.C.2-A" (a marca como o projeto escreve, sem espaços)"""
+    return re.sub(r"\s+", "", t.upper())
+
+
+def tabela_de_tercas(des: Desenho, folhas_: List[dict]) -> Dict[str, dict]:
+    """As terças das folhas de detalhe ("T.C.1 - 14 PÇ - L = 546 (U127x50#2,25)"): {marca: {qtd, L (o número escrito),
+    perfil (o nome do catálogo), texto}}."""
+    from nucleo2d.reconhecer import perfil_do_texto
+    caixas = [f["caixa"] for f in folhas_ if f["caixa"] and re.search(r"TER[CÇ]A", f["titulo"], re.I)]
+    tab: Dict[str, dict] = {}
+    for e in des.entidades.values():
+        if not isinstance(e, Texto) or (caixas and not any(_dentro(e, c) for c in caixas)):
+            continue
+        m = _LINHA_TERCA.match(e.texto or "")
+        if not m:
+            continue
+        p = perfil_do_texto(m.group(4))
+        tab[_marca_terca(m.group(1))] = {"qtd": int(m.group(2)), "L": _valor(m.group(3)), "perfil": p["perfil"] if p else None,
+                                          "escrito": m.group(4).strip(), "texto": e.texto.strip()}
+    return tab
+
+
+def _grade_da_folha(des: Desenho, caixa) -> Optional[dict]:
+    """As linhas de eixo de uma folha nas duas direções, em ordem: {"h": [pos y…], "v": [pos x…]} (as horizontais pela
+    altura, as verticais pela abscissa) — para casar a malha de uma planta com a da locação pela ordem das linhas."""
+    hs, vs = [], []
+    for l in _linhas_de_eixo(des, caixa):
+        (ax, ay), (bx, by) = l["a"], l["b"]
+        if abs(by - ay) <= 0.02 * l["L"]:
+            hs.append((ay + by) / 2)
+        elif abs(bx - ax) <= 0.02 * l["L"]:
+            vs.append((ax + bx) / 2)
+
+    def unicos(xs):
+        out = []
+        for x in sorted(xs):
+            if not out or x - out[-1] > 50.0:
+                out.append(x)
+        return out
+    return {"h": unicos(hs), "v": unicos(vs)}
+
+
+def _secoes_de_terca(des: Desenho, caixa_folha, caixa_tesoura) -> List[tuple]:
+    """As terças desenhadas em corte em cima do banzo, na vista da tesoura: [(s, pé)] — s do canto de baixo à esquerda
+    da tesoura até o meio da seção, pé a face de baixo dela acima da base da tesoura (a camada da terça, não a do
+    suporte)."""
+    (x0, y0), (x1, y1) = caixa_tesoura
+    out = []
+    for e in des.entidades.values():
+        if not isinstance(e, Polilinha) or not re.search(r"TER[CÇ]A", e.camada or "", re.I) or re.search(r"SUPORTE", e.camada or "", re.I):
+            continue
+        if not _dentro(e, caixa_folha):
+            continue
+        xs, ys = [v[0] for v in e.vertices], [v[1] for v in e.vertices]
+        if max(xs) - min(xs) > 400 or max(ys) - min(ys) > 400:
+            continue
+        cx = (min(xs) + max(xs)) / 2
+        if x0 - 200 <= cx <= x1 + 200 and y0 - 200 <= min(ys) <= y1 + 400:
+            out.append((round(cx - x0, 1), round(min(ys) - y0, 1)))
+    return sorted(out)
+
+
+def tercas_da_planta(des: Desenho, caixa_planta, locacao: dict, gravados: dict, tesouras_: List[dict], apoio: float,
+                     folhas_: List[dict]) -> dict:
+    """As terças da planta de terças, nos eixos gravados (20/10/2026, Fase 4 da Identificação para modelagem):
+
+    · a malha da planta casa com a da locação pela ordem das linhas (a mesma folha-modelo do projetista: as horizontais
+      com as horizontais, as verticais com as verticais) — cada peça de terça vai para o sistema dos eixos gravados;
+    · as pontas da peça caem nos eixos numerados mais perto (a T.C.1 do Hangar vai do 1 ao 3, passando pelo 2);
+    · a cota: o pé da terça desenhada em corte na vista geral da tesoura daquele eixo, com a tesoura posta como foi
+      colada (centrada entre os eixos com letra, a base no apoio); sem corte perto, a peça sai sem cota (aviso);
+    · a marca é o texto junto da peça (T.C.1…), o perfil e o comprimento vêm da tabela das folhas de terças; o
+      comprimento medido que não casa com o escrito vira aviso — nada é esticado (seguir o projeto).
+
+    Devolve {pecas: [{marca, perfil, eixo_a, eixo_b, g_a, g_b, p, z_pe, L, u}], tabela, avisos}."""
+    avisos: List[str] = []
+    tab = tabela_de_tercas(des, folhas_)
+    gp = _grade_da_folha(des, caixa_planta)
+    gl = _grade_da_folha(des, locacao["caixa"])
+    nums = sorted(gravados.get("numeros") or [], key=lambda e: e["pos"])
+    lets = sorted(gravados.get("letras") or [], key=lambda e: e["pos"])
+    if not gp or len(gp["h"]) != len(gl["h"]) or len(gp["v"]) != len(gl["v"]):
+        return {"pecas": [], "tabela": tab, "avisos": ["a malha de eixos da planta de terças (%d × %d linhas) não é a da locação (%d × %d): "
+                                                       "as terças não têm como ir para os eixos." % (len(gp["h"]), len(gp["v"]), len(gl["h"]), len(gl["v"]))]}
+    # a planta → a locação: a mesma posição relativa às linhas (média das diferenças, nas duas direções)
+    dx = sum(b - a for a, b in zip(gp["v"], gl["v"])) / len(gl["v"])
+    dy = sum(b - a for a, b in zip(gp["h"], gl["h"])) / len(gl["h"])
+    ex = locacao["eixos"]
+    g, p = ex["eixo_g"], ex["perp_g"]
+    # as linhas da locação, em ordem de posição, ↔ os eixos gravados em ordem de posição
+    lnums = sorted(ex.get("numeros") or [], key=lambda v: v["pos"])
+    llets = sorted(ex.get("letras") or [], key=lambda v: v["pos"])
+    if len(lnums) != len(nums) or len(llets) != len(lets):
+        avisos.append("os eixos gravados não são os da varredura (%d e %d contra %d e %d): confira as terças." % (len(nums), len(lets), len(lnums), len(llets)))
+    nome_num = {round(v["pos"], 1): (nums[i]["nome"] if i < len(nums) else v["nome"]) for i, v in enumerate(lnums)}
+    pos_num = {nums[i]["nome"]: nums[i]["pos"] for i in range(len(nums))}
+    letras_nome = sorted(lets, key=lambda e: str(e["nome"]))
+    pA = letras_nome[0]["pos"] if letras_nome else 0.0
+    sentido = -1.0 if len(letras_nome) > 1 and letras_nome[-1]["pos"] < pA else 1.0
+    uB = abs(letras_nome[-1]["pos"] - pA) if len(letras_nome) > 1 else 0.0
+    # o tipo de tesoura de cada eixo e as terças em corte na vista dele (s, pé), com a tesoura posta centrada
+    secao_do_eixo: Dict[str, tuple] = {}
+    for t in tesouras_:
+        if not t.get("caixa"):
+            continue
+        r = tesoura_da_folha(des, t["caixa"])
+        if not r.get("entidades"):
+            continue
+        cortes = _secoes_de_terca(des, t["caixa"], r["caixa"])
+        u_esq = uB / 2.0 - r["largura"] / 2.0
+        for n in t.get("eixos") or []:
+            secao_do_eixo[n] = (t["tipo"], u_esq, cortes)
+    textos = [e for e in des.entidades.values() if isinstance(e, Texto) and _dentro(e, caixa_planta)
+              and re.match(r"^\s*T\.?\s*[CL]\.?\s*\d", e.texto or "")]
+    pecas, sem_cota, sem_tabela = [], 0, set()
+    medidas_ruins = collections.Counter()
+    for e in des.entidades.values():
+        if not _dentro(e, caixa_planta) or not re.search(r"TER[CÇ]A", e.camada or "", re.I) or re.search(r"SUPORTE", e.camada or "", re.I):
+            continue
+        if isinstance(e, Polilinha):
+            xs, ys = [v[0] for v in e.vertices], [v[1] for v in e.vertices]
+        elif isinstance(e, Linha):
+            xs, ys = [e.a[0], e.b[0]], [e.a[1], e.b[1]]
+        else:
+            continue
+        w, h = max(xs) - min(xs), max(ys) - min(ys)
+        if max(w, h) < 1000 or min(w, h) > 400:
+            continue
+        if h >= w:
+            P = ((min(xs) + max(xs)) / 2, min(ys))
+            Q = ((min(xs) + max(xs)) / 2, max(ys))
+        else:
+            P = (min(xs), (min(ys) + max(ys)) / 2)
+            Q = (max(xs), (min(ys) + max(ys)) / 2)
+        # na locação (a mesma folha-modelo, deslocada)
+        Pl, Ql = (P[0] + dx, P[1] + dy), (Q[0] + dx, Q[1] + dy)
+        ga, gb = Pl[0] * g[0] + Pl[1] * g[1], Ql[0] * g[0] + Ql[1] * g[1]
+        pp = (Pl[0] * p[0] + Pl[1] * p[1] + Ql[0] * p[0] + Ql[1] * p[1]) / 2
+        perto = lambda gv: min(lnums, key=lambda v: abs(v["pos"] - gv)) if lnums else None   # noqa: E731
+        na, nb = perto(min(ga, gb)), perto(max(ga, gb))
+        if not na or not nb or na is nb:
+            continue
+        ea, eb = nome_num[round(na["pos"], 1)], nome_num[round(nb["pos"], 1)]
+        # a marca: entre os textos ao lado da peça, o que tem na tabela o comprimento dela; senão o mais perto (no Hangar,
+        # o "T.L.1" da terça lateral ficava mais perto da terça da borda, T.C.1 — 5,46 m contra os 4,84 m do T.L.1)
+        mx, my = (P[0] + Q[0]) / 2, (P[1] + Q[1]) / 2
+        L = math.dist(P, Q)
+        raio = 0.6 * max(w, h)
+        perto_ = [t for t in textos if math.hypot(t.posicao[0] - mx, t.posicao[1] - my) < raio]
+
+        def casa(t):
+            i = tab.get(_marca_terca(t.texto)) or {}
+            return bool(i.get("L")) and (abs(L - i["L"] * 10.0) <= 20.0 or abs(L - i["L"]) <= 20.0)
+        txt = min(perto_, key=lambda t: (0 if casa(t) else 1, math.hypot(t.posicao[0] - mx, t.posicao[1] - my)), default=None)
+        marca = _marca_terca(txt.texto) if txt else ""
+        info = tab.get(marca) or {}
+        if marca and not info:
+            sem_tabela.add(marca)
+        if info.get("L") and abs(L - info["L"] * 10.0) > 20.0 and abs(L - info["L"]) > 20.0:
+            medidas_ruins[marca] += 1
+        u = (pp - pA) * sentido
+        z = None
+        sec = secao_do_eixo.get(ea) or secao_do_eixo.get(eb)
+        if sec:
+            _tipo, u_esq, cortes = sec
+            if cortes:
+                s_, pe = min(cortes, key=lambda c: abs(u_esq + c[0] - u))
+                if abs(u_esq + s_ - u) <= 150.0:
+                    z = round(apoio + pe, 1)
+        if z is None:
+            sem_cota += 1
+        pecas.append({"marca": marca, "perfil": info.get("perfil"), "eixo_a": ea, "eixo_b": eb, "g_a": pos_num.get(ea), "g_b": pos_num.get(eb),
+                      "p": round(pp, 1), "u": round(u, 1), "z_pe": z, "L": round(L, 1)})
+    if sem_cota:
+        avisos.append("%d terça(s) sem corte na vista da tesoura do eixo delas: ficaram sem cota (no apoio) — confira." % sem_cota)
+    if sem_tabela:
+        avisos.append("marca(s) sem linha na tabela das folhas de terças (perfil padrão): %s." % ", ".join(sorted(sem_tabela)))
+    for m, n in sorted(medidas_ruins.items()):
+        avisos.append("%s: %d peça(s) com o comprimento desenhado diferente do escrito na tabela (L = %s) — confira o projeto." % (m, n, tab[m]["L"]))
+    contagem = collections.Counter(pc["marca"] for pc in pecas)
+    laterais = sorted(m for m in tab if m.startswith("T.L") and not contagem.get(m))
+    if laterais:
+        avisos.append("terças laterais da tabela fora da planta de terças (são do fechamento): %s — %d peça(s)."
+                      % (", ".join(laterais), sum(tab[m]["qtd"] for m in laterais)))
+    for m, info in sorted(tab.items()):
+        if m.startswith("T.C") and contagem.get(m, 0) != info["qtd"]:
+            avisos.append("%s: %d na planta, %d na tabela." % (m, contagem.get(m, 0), info["qtd"]))
+    return {"pecas": sorted(pecas, key=lambda pc: (pc["u"], pc["g_a"] or 0)), "tabela": tab, "avisos": avisos}

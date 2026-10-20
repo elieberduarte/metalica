@@ -4025,6 +4025,26 @@ def varrer_para_identificacao(s: str, corpo: dict) -> dict:
         _fim_progresso(s)
 
 
+def tercas_para_identificacao(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/identificacao/tercas {original?, caixa, locacao, folhas, tesouras, apoio}: as terças da
+    planta de terças do Original nos eixos gravados do projeto (nucleo3d/identificacao.tercas_da_planta): cada peça com
+    os eixos das pontas, a posição ao longo das tesouras, a cota do pé (do corte na vista da tesoura), a marca e o perfil
+    da tabela das folhas de terças. Não grava: a Montagem lança na Implantação (20/10/2026)."""
+    from nucleo2d.desenho import Desenho
+    from nucleo3d import identificacao, lancamento
+    if not corpo.get("caixa") or not corpo.get("locacao"):
+        raise ErroDeDados("mande a caixa da planta de terças e a locação da varredura.")
+    g = _gerente()
+    nome = str(corpo.get("original") or lancamento.DESENHO_LANCAMENTO)
+    _progresso(s, "lendo a planta de terças…")
+    try:
+        des = Desenho.de_dict(g.abrir_desenho(s, nome))
+        return identificacao.tercas_da_planta(des, corpo["caixa"], corpo["locacao"], g.ler(s).get("eixos") or {},
+                                              corpo.get("tesouras") or [], float(corpo.get("apoio") or 0.0), corpo.get("folhas") or [])
+    finally:
+        _fim_progresso(s)
+
+
 def tesoura_para_identificacao(s: str, corpo: dict) -> dict:
     """POST /api/projetos/<s>/identificacao/tesoura {original?, caixa}: o desenho da tesoura na folha da vista geral do
     Original (nucleo3d/identificacao.tesoura_da_folha) — o maior grupo de barras ligadas, os textos em volta e o ponto
@@ -5804,6 +5824,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(pdf_do_memorial(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "arquitetonico":
                     return self._json(importar_arquitetonico(partes[0], corpo))
+                if len(partes) == 3 and partes[1] == "identificacao" and partes[2] == "tercas":
+                    return self._json(tercas_para_identificacao(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "identificacao" and partes[2] == "tesoura":
                     return self._json(tesoura_para_identificacao(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "identificacao" and partes[2] == "varrer":

@@ -916,8 +916,15 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
                 if L < 1:
                     raise ErroDeDados("a viga tem comprimento nulo")
                 if material == "aco":
-                    bar = Barra(inicio=A, fim=B, perfil=s.get("perfil", "W 310×38,7"), papel="viga", aco=s.get("aco", "ASTM A572 Gr.50"),
-                                camada=camada, nome="Viga %s" % marca, atributos=base)
+                    # a terça lançada pela Identificação para modelagem (20/10): a viga de aço com papel "terça" (o
+                    # detalhamento e os resumos separam pelo papel), na camada das terças
+                    papel = a.get("papel") or "viga"
+                    terca = papel in ("terça", "terca")
+                    cam_b = "Terças" if terca else camada
+                    if cam_b not in doc.camadas:
+                        doc.camadas[cam_b] = Camada(nome=cam_b, cor="#0f766e")
+                    bar = Barra(inicio=A, fim=B, perfil=s.get("perfil", "W 310×38,7"), papel=papel, aco=s.get("aco", "ASTM A572 Gr.50"),
+                                rotacao=float(a.get("rotacao") or 0.0), camada=cam_b, nome="%s %s" % ("Terça" if terca else "Viga", marca), atributos=base)
                     doc.add(bar)
                     n_aco += 1
                 else:

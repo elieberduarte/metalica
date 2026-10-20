@@ -11,6 +11,9 @@
   · Fase 3: "Colar nos eixos 3, 4, 5…" da T2 pergunta o nível do apoio (o Hangar não escreve), cola a tesoura da folha 17
     na Elevação 3 em tamanho real (20 m, centrada entre A e B: 0,30 m para fora de cada lado, avisado) e abre o Tesoura…
     com a marca T2 e os eixos 3, 4, 5 marcados; Lançar põe a T2 nos três eixos da implantação;
+  · Fase 4: "Lançar as terças nos eixos" lê a planta de terças (folha 13): 56 peças com as marcas da tabela (T.C.1 ×14,
+    T.C.2 ×12, T.C.2-A ×8, T.C.2-B ×8, T.C.3 ×14), o pé de +6,45 a +7,30 pelo corte na vista da tesoura; no 3D, 56 barras
+    com papel terça (U127, o eixo meio perfil acima do pé);
   · "Ver" leva ao Original com o painel junto; recarregar a página guarda as etapas confirmadas;
   · o Original não é mexido (as mesmas entidades antes e depois)."""
 import base64, json, os, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request
@@ -142,6 +145,34 @@ try:
     ok(esperar("(document.querySelector('[data-tipo=T2]') || {}).classList && document.querySelector('[data-tipo=T2]').classList.contains('lancada')", 30), "a T2 aparece como lançada no painel")
     trels = aba.avaliar("[...window.cad.doc.entidades.values()].filter(e => (e.atributos || {}).elemento === 'trelica').map(e => e.atributos.marca + '@' + e.atributos.eixo).sort()") or []
     ok(trels == ["T2@3", "T2@4", "T2@5"], f"a implantação tem a T2 nos eixos 3, 4 e 5: {trels}")
+
+    # ---- Fase 4: as terças da planta de terças (folha 13), nos eixos, na cota do corte na vista da tesoura
+    clicar_em(botao("Confirmar as tesouras"))
+    ok(esperar("!document.querySelector('[data-etapa=tercas]').classList.contains('bloqueada')", 10), "confirmadas as tesouras, as terças se liberam")
+    clicar_em(botao("Lançar as terças nos eixos"))
+    ok(esperar("[...window.cad.doc.entidades.values()].filter(e => (e.atributos || {}).identificacao === 'terca').length === 56", 60), "56 terças lançadas na Implantação")
+    marcas = aba.avaliar("(() => { const c = {}; for (const e of window.cad.doc.entidades.values()) { const a = e.atributos || {}; if (a.identificacao === 'terca') c[a.marca] = (c[a.marca] || 0) + 1; } return c; })()") or {}
+    ok(marcas == {"T.C.1": 14, "T.C.2": 12, "T.C.2-A": 8, "T.C.2-B": 8, "T.C.3": 14}, f"as marcas batem com a tabela das folhas 1 e 2: {marcas}")
+    zs = aba.avaliar("[...new Set([...window.cad.doc.entidades.values()].filter(e => (e.atributos || {}).identificacao === 'terca').map(e => e.atributos.nivel_topo))].sort((a, b) => a - b)") or []
+    ok(zs and abs(zs[0] - 6454.5) < 1 and abs(zs[-1] - 7303.1) < 1, f"o pé das terças sobe de +6,45 (borda) a +7,30 (cumeeira): {zs[:3]}…{zs[-2:]}")
+    t = painel()
+    ok("56 terça(s) lançada(s)" in t and "T.L.1" in t, "o painel mostra as terças lançadas e o aviso das laterais (fechamento)")
+    # o 3D acompanha a planta (a gravação sincroniza): as terças e as tesouras no modelo do projeto
+    def modelo3d():
+        try:
+            m = json.load(open(os.path.join(pasta, "modelo.json"), encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        ents = m.get("entidades") or []
+        return list(ents.values()) if isinstance(ents, dict) else ents
+    t0 = time.time()
+    while time.time() - t0 < 60 and sum(1 for e in modelo3d() if e.get("papel") == "terça") < 56:
+        aba.drenar(1.0)
+    m3 = modelo3d()
+    tercas3d = [e for e in m3 if e.get("papel") == "terça"]
+    ok(len(tercas3d) == 56 and all(e.get("camada") == "Terças" for e in tercas3d), f"no 3D: 56 barras com papel terça na camada Terças ({len(tercas3d)})")
+    borda = min(tercas3d, key=lambda e: e["inicio"][2]) if tercas3d else None
+    ok(borda and abs(borda["inicio"][2] - (6454.5 + 63.5)) < 2 and borda["perfil"].startswith("U 127"), f"a terça da borda: U127 com o eixo em +6,52 ({borda and borda['inicio'][2]}, {borda and borda['perfil']})")
 
     clicar_em("[...document.querySelectorAll('.ident-tesoura')].find(d => d.textContent.includes('T3')).querySelector('.ident-ver')")
     ok(esperar("window.cad.nomeDesenho === 'planta-de-lançamento' && !document.querySelector('#painel-ident').hidden", 30), "Ver leva ao Original com o painel junto")
