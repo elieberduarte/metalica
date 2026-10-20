@@ -3980,8 +3980,6 @@ def importar_arquitetonico(s: str, corpo: dict) -> dict:
             escala_pdf=float(corpo["escala"]) if corpo.get("escala") else None)
         ref.metadados["arquitetonico"]["arquivo"] = arquivo
         anterior = None
-        if recebido:
-            ref.metadados["arquitetonico"]["recebido"] = True       # o Original: o CAD não sugere mudar a escala dele
         try:
             anterior = g.abrir_desenho(s, lancamento.DESENHO_LANCAMENTO)
         except ErroDeDados:
@@ -4023,21 +4021,6 @@ def varrer_para_identificacao(s: str, corpo: dict) -> dict:
         return identificacao.varrer(des, avisar=lambda t: _progresso(s, t))
     finally:
         _fim_progresso(s)
-
-
-def tesoura_para_identificacao(s: str, corpo: dict) -> dict:
-    """POST /api/projetos/<s>/identificacao/tesoura {original?, caixa}: o desenho da tesoura na folha da vista geral do
-    Original (nucleo3d/identificacao.tesoura_da_folha) — o maior grupo de barras ligadas, os textos em volta e o ponto
-    de referência (o meio de baixo) para a Montagem colar na elevação do eixo, em tamanho real (20/10/2026)."""
-    from nucleo2d.desenho import Desenho
-    from nucleo3d import identificacao, lancamento
-    if not corpo.get("caixa"):
-        raise ErroDeDados("mande a caixa da folha.")
-    nome = str(corpo.get("original") or lancamento.DESENHO_LANCAMENTO)
-    des = Desenho.de_dict(_gerente().abrir_desenho(s, nome))
-    r = identificacao.tesoura_da_folha(des, corpo["caixa"])
-    r["escala_original"] = des.escala
-    return r
 
 
 def malha_de_eixos_projeto(s: str, corpo: dict) -> dict:
@@ -5691,7 +5674,8 @@ class Handler(BaseHTTPRequestHandler):
                 m = re.match(r"^/api/dev/aparelhos/(\d+)/liberar$", rota)          # os celulares da nuvem (20/10)
                 if m:
                     return self._licencas_dev(lambda L: L.liberar_aparelho(int(m.group(1))))
-            for ext in EXTENSOES_DEV:
+            # as extensões do desenvolvimento ficam fora do git (app.py de trabalho): na cópia limpa não há EXTENSOES_DEV
+            for ext in globals().get("EXTENSOES_DEV", ()):
                 if ext.rota_post(self, rota, corpo):
                     return
             if rota == "/api/ligacoes/montar":
@@ -5803,8 +5787,6 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(pdf_do_memorial(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "arquitetonico":
                     return self._json(importar_arquitetonico(partes[0], corpo))
-                if len(partes) == 3 and partes[1] == "identificacao" and partes[2] == "tesoura":
-                    return self._json(tesoura_para_identificacao(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "identificacao" and partes[2] == "varrer":
                     return self._json(varrer_para_identificacao(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "lancamento" and partes[2] == "malha":
