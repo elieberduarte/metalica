@@ -201,3 +201,11 @@ details > summary::-webkit-details-marker { display: none; }
   .segmentos { margin: 0 0 12px; padding: 0; }
 }
 @media (min-width: 1100px) { .lista-cartoes { grid-template-columns: repeat(3, 1fr); } }
+
+/* o sol da apresentação, no menu Vistas (20/10) */
+.sol-controles { margin-top: 10px; }
+.sol-controles label { display: block; font-size: 14px; margin: 4px 0 10px; }
+.sol-controles output { float: right; color: var(--texto2); font-variant-numeric: tabular-nums; }
+.sol-controles input[type=range] { display: block; width: 100%; margin-top: 8px; accent-color: var(--azul, #2563eb); }
+.sol-controles button { font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--borda);
+  background: var(--painel2, transparent); color: inherit; }

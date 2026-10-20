@@ -174,6 +174,20 @@ try:
     tocar(ap, bot[0], bot[1])
     ok(esperar(ap, "visor.apresentacao === true && localStorage.getItem('pref.apresentacao') === '1'", 5), "tocar de novo liga")
     foto(ap, "celular_apresentacao.png")
+    # o sol (20/10): em Vistas, arrastar a altura (dedo de verdade) muda o sol e guarda para a obra
+    ap.avaliar("document.querySelector('[data-f=vistas]').click()")
+    ok(esperar(ap, "!!document.querySelector('[data-sol=altura]')", 5), "Vistas tem os controles do sol")
+    sol0 = ap.avaliar("visor._luz.uSol.value.toArray()")
+    r = ap.avaliar("(() => { const b = document.querySelector('[data-sol=altura]').getBoundingClientRect(); return [b.x, b.y + b.height / 2, b.width]; })()")
+    ap.cmd("Input.dispatchTouchEvent", type="touchStart", touchPoints=[{"x": r[0] + r[2] * 0.6, "y": r[1]}])
+    for k in range(1, 6):
+        ap.cmd("Input.dispatchTouchEvent", type="touchMove", touchPoints=[{"x": r[0] + r[2] * (0.6 - 0.09 * k), "y": r[1]}])
+    ap.cmd("Input.dispatchTouchEvent", type="touchEnd", touchPoints=[])
+    sol1 = ap.avaliar("visor._luz.uSol.value.toArray()") or [0, 0, 1]
+    ok(sol1[2] < sol0[2] - 0.05, f"arrastar a altura baixa o sol: z {sol0[2]:.2f} → {sol1[2]:.2f}")
+    ok(ap.avaliar("(() => { try { return JSON.parse(localStorage.getItem('sol:obra-celular')).altura < 57; } catch (e) { return false; } })()"),
+       "o sol fica guardado para a obra")
+    ap.avaliar("document.getElementById('folha').hidden = true")
     # a cor das camadas (20/10): o quadradinho mostra a cor das peças no 3D ("a layer está com a bolinha de uma cor e no
     # modelo está outra" — era a cor da camada no arquivo, e o 3D pinta pelo material); tocar nele troca a cor, só no aparelho
     ap.avaliar("document.getElementById('folha').hidden = true")

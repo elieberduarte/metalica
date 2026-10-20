@@ -66,3 +66,9 @@ html, body.ver3d { height: 100%; margin: 0; overflow: hidden; background: var(--
 /* o 3D sem a placa de vídeo (ver3d.js, vigiarPlacaDeVideo): o aviso por cima do quadro vazio */
 #placa-perdida { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; background: var(--painel, #f3f5f8); color: var(--texto, #1d232b); z-index: 5; }
 #placa-perdida > div { max-width: 360px; }
+
+/* o sol da apresentação (20/10) */
+.sol-controles label { display: block; font-size: 12.5px; margin: 4px 0 10px; }
+.sol-controles output { float: right; color: var(--texto2); font-variant-numeric: tabular-nums; }
+.sol-controles input[type=range] { display: block; width: 100%; margin-top: 4px; accent-color: var(--azul); }
+.sol-controles button { font: inherit; font-size: 12px; }

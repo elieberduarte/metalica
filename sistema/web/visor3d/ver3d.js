@@ -14,6 +14,7 @@
 import { Visor3D } from './visor3d.js';
 import { gruposDeSistema as _gruposDeSistema } from './sistemas.js';
 import { PARTES_PISO } from './referencia.js';
+import { SOL_PADRAO, definirSol, controlesDoSol, ligarControlesDoSol } from './sol.js';
 import { acompanhar } from '../progresso.js';
 
 const $ = s => document.querySelector(s);
@@ -158,8 +159,27 @@ function aplicarCor(modo, chave, hex) {
   if (painelAtual === 'legenda') painelLegenda(modo);
 }
 
+/** A apresentação no PC (20/10, como no celular): sol e sombras, e a posição do sol — guardadas por projeto (doVer). */
+function apresentacaoDoVer() { return { ligada: false, ...SOL_PADRAO, ...(doVer.apresentacao || {}) }; }
+function aplicarApresentacao(a) {
+  visor.ligarApresentacao(!!a.ligada, 4096);
+  definirSol(visor, a);
+  $('#btn-apresentacao').classList.toggle('ligado', !!a.ligada);
+}
+function painelApresentacao() {
+  const a = apresentacaoDoVer();
+  abrirPainel('apresentacao', 'Apresentação', `<label class="linha-lista"><input type="checkbox" id="apres-ligada" ${a.ligada ? 'checked' : ''}>
+      <span>Sol e sombras</span></label><p class="titulo-secao">Sol</p>${controlesDoSol(a)}
+    <p class="dica">A direção gira o sol em volta da obra; a altura vai do nascer (baixo, sombras compridas) ao meio-dia (alto).
+      Mexer no sol liga a apresentação. Guardado neste projeto.</p>`);
+  const guardar = (mud) => { doVer.apresentacao = { ...apresentacaoDoVer(), ...mud }; gravarDoVer(); aplicarApresentacao(doVer.apresentacao); };
+  $('#apres-ligada').onchange = (ev) => guardar({ ligada: ev.target.checked });
+  ligarControlesDoSol($('#painel-corpo'), a, s => { $('#apres-ligada').checked = true; guardar({ ...s, ligada: true }); });
+}
+
 /** Depois de abrir: o que se ocultou aqui no modo ver da outra vez (camadas e o Pintar com os grupos ocultos). */
 function aplicarDoVer() {
+  if (doVer.apresentacao && doVer.apresentacao.ligada) aplicarApresentacao(apresentacaoDoVer());
   for (const g of gruposDeSistema()) if ((doVer.sistemas || {})[g.chave] === false) visor.ocultarSistema(g.ids, true);
   const opcao = $('#pintar option[value=sistema]');
   if (opcao && gruposDeSistema().length < 2) opcao.remove();             // só aço (ou só concreto): não há o que separar
@@ -760,6 +780,7 @@ function ligar() {
     try { localStorage.setItem('ver3d.planta', sim ? '1' : '0'); } catch (e) { /* sem armazenamento */ }
   };
   $('#btn-arestas').onclick = () => { const b = $('#btn-arestas'); b.classList.toggle('ligado'); visor.ligarArestas(b.classList.contains('ligado')); };
+  $('#btn-apresentacao').onclick = () => { if (painelAtual === 'apresentacao') fecharPainel(); else painelApresentacao(); };
   document.querySelectorAll('[data-vista]').forEach(b => b.onclick = () => visor.enquadrar(b.dataset.vista));
   $('#pintar').onchange = () => {
     const modo = $('#pintar').value;

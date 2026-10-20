@@ -146,6 +146,9 @@ try:
 
     # o desenho do piso como camada (usuário, 16/10: "transformar esse desenho do piso em uma camada que possa ser
     # oculta"): arquitetônico, eixos e níveis um a um no alto de Camadas e de Pintar; continua oculto com o tema trocado
+    # antes, a planta do próprio projeto chega (carregarReferencia, ao abrir): com o programa ocupado, a resposta "sem planta"
+    # vinha depois da de teste e a apagava — as 7 falhas da planta que apareciam e sumiam (20/10)
+    esperar(aba, F3 + ".visor._dadosReferencia !== undefined", 30)
     aba.avaliar(F3 + ".visor.definirReferencia({segmentos: [[0, 0, 6000, 0], [0, 0, 0, 3000]], "
                 "eixos: [{nome: 'A', a: [0, 0, 0], b: [0, 6000, 0]}], niveis: [{nome: 'N1', z: 3000}]}); 1")
     ok(esperar(aba, F3 + ".visor.partesReferencia().join() === 'arquitetonico,eixos,niveis'", 10),
@@ -289,6 +292,31 @@ try:
     dif = max(abs(a - b) for a, b in zip(cv.get("posicao", [1e9] * 3) + cv.get("alvo", [1e9] * 3), camEd))
     ok(dif < 1.0, f"e com a mesma vista do editor (diferença {dif:.2f} mm)")
     ok("/visor3d/ver3d.html" in (aba.avaliar("document.getElementById('f3d').getAttribute('src')") or ""), "o quadro voltou a ser o visor")
+
+    # a apresentação no PC (20/10): o botão abre o painel do sol; arrastar a direção (mouse de verdade) liga sol e sombras e
+    # gira o sol; reaberto o modo ver, volta como ficou (guardado no projeto)
+    def ponto(sel):
+        return aba.avaliar(f"(() => {{ const f = document.getElementById('f3d').getBoundingClientRect(), r = {F3}.document.querySelector({json.dumps(sel)}).getBoundingClientRect(); return [f.x + r.x + r.width / 2, f.y + r.y + r.height / 2, f.x + r.x, r.width]; }})()")
+    p = ponto('#btn-apresentacao'); clicar(aba, p[0], p[1])
+    ok(esperar(aba, F3 + ".document.querySelector('[data-sol=direcao]') && " + F3 + ".visor.apresentacao !== true", 5),
+       "PC: o botão Apresentação abre o painel do sol (desligada de saída)")
+    sol0 = aba.avaliar(F3 + ".visor._luz.uSol.value.toArray()")
+    p = ponto('[data-sol=direcao]')
+    x0, x1 = p[2] + 3, p[2] + p[3] * 0.3
+    aba.cmd("Input.dispatchMouseEvent", type="mousePressed", x=x0, y=p[1], button="left", clickCount=1)
+    for k in range(1, 6):
+        aba.cmd("Input.dispatchMouseEvent", type="mouseMoved", x=x0 + (x1 - x0) * k / 5, y=p[1], button="left", buttons=1)
+    aba.cmd("Input.dispatchMouseEvent", type="mouseReleased", x=x1, y=p[1], button="left", clickCount=1)
+    ok(esperar(aba, F3 + ".visor.apresentacao === true && " + F3 + ".document.getElementById('apres-ligada').checked && "
+               + F3 + ".document.getElementById('btn-apresentacao').classList.contains('ligado')", 5), "arrastar a direção do sol liga a apresentação")
+    sol1 = aba.avaliar(F3 + ".visor._luz.uSol.value.toArray()") or [0, 0, 0]
+    ok(max(abs(a - b) for a, b in zip(sol0, sol1)) > 0.2 and abs(math.hypot(*sol1) - 1) < 1e-3, f"e o sol gira: {sol0} → {sol1}")
+    ok(esperar(aba, "!!" + F3 + ".visor._recorteDesenhado", 5), "a sombra é desenhada")
+    aba.navegar(base + "/dividida?projeto=obra&vista=3d", limite=60)
+    ok(esperar(aba, F3 + ".ver3dPronto && " + F3 + ".visor.apresentacao === true", 60), "reaberto, a apresentação continua ligada")
+    sol2 = aba.avaliar(F3 + ".visor._luz.uSol.value.toArray()") or [0, 0, 0]
+    ok(max(abs(a - b) for a, b in zip(sol1, sol2)) < 1e-6, "e com o sol onde ficou")
+    foto(aba, "ver3d_6_apresentacao.png")
 
     # um comando de edição da barra, com o 3D no modo ver, também leva ao editor
     aba.navegar(base + "/dividida?projeto=obra&vista=3d", limite=60)

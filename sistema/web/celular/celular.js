@@ -375,6 +375,9 @@ async function telaModelo(slug, m, medir, camera) {
   v.definirTema(escuro());          // depois de carregar: o piso se acomoda à caixa do modelo
   // apresentação (20/10, para mostrar ao cliente): sol e sombras, ligada de saída; a escolha fica guardada no aparelho
   v.ligarApresentacao(lerPreferencia('apresentacao', '1') === '1', 2048);
+  // a posição do sol, escolhida em Vistas e guardada por obra (20/10)
+  const SOL = await import('../visor3d/sol.js');
+  SOL.definirSol(v, SOL.lerSol('sol:' + slug));
   v.definirFichas(await json(`${slug}/${arqs.pecas}`, versaoDe(m, arqs.pecas)));
   // como no modo ver do PC (20/10): os sistemas (metálica, pré-moldado…) e o desenho do piso (planta, eixos, níveis)
   const { gruposDeSistema } = await import('../visor3d/sistemas.js');
@@ -440,7 +443,18 @@ async function telaModelo(slug, m, medir, camera) {
         abrirFolha(`<div class="nome">Vistas</div><div class="etiquetas" style="margin-top:12px">
           ${['iso:Perspectiva', 'topo:Planta', 'frente:Frente', 'lado:Lateral'].map(x => { const [k, t] = x.split(':'); return `<button class="botao" data-v="${k}">${t}</button>`; }).join('')}</div>
           ${cm ? `<div class="nome" style="margin-top:16px">Cobertura retrátil</div><div class="etiquetas cobertura" style="margin-top:12px">
-            ${[['aberta', 'Aberta'], ['retraida', 'Retraída']].map(([k, t]) => `<button class="botao${k === situacao ? ' forte' : ''}" data-s="${k}">${t}</button>`).join('')}</div>` : ''}`);
+            ${[['aberta', 'Aberta'], ['retraida', 'Retraída']].map(([k, t]) => `<button class="botao${k === situacao ? ' forte' : ''}" data-s="${k}">${t}</button>`).join('')}</div>` : ''}
+          <div class="nome" style="margin-top:16px">Sol</div>${SOL.controlesDoSol(SOL.lerSol('sol:' + slug))}`);
+        // mexer no sol liga a apresentação (o sol só aparece nela) e guarda a escolha para esta obra
+        SOL.ligarControlesDoSol(folha, SOL.lerSol('sol:' + slug), s => {
+          if (!v.apresentacao) {
+            v.ligarApresentacao(true, 2048);
+            gravarPreferencia('apresentacao', '1');
+            $('[data-f="apresentacao"]').classList.add('ligado');
+          }
+          SOL.definirSol(v, s);
+          SOL.gravarSol('sol:' + slug, s);
+        });
         folha.querySelectorAll('[data-v]').forEach(x => x.onclick = () => { v.enquadrar(x.dataset.v); fecharFolha(); });
         folha.querySelectorAll('[data-s]').forEach(x => x.onclick = () => {
           fecharFolha();
