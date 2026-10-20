@@ -182,7 +182,27 @@ posição ganha `saia`, que entra na compra, na célula, na lista e na paginaç�
 cada telha sai **inteira** (retângulo até o ponto mais alto) e o corte do modelo — a empena
 inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois de instalada.
 
-**0.8.65.** (versão da noite, 11/10/2026) Conferência: ritmo calmo/cheio, trocável no meio pelo botão da barrinha e da tela inicial do dev; Montagem por eixos: Implantação, elevação por eixo e tesoura colada por dois pontos; Montagem por eixos: Copiar pelo desenho aberto, apoio pela tesoura quando a referência é o piso, legenda só das camadas da tesoura; Tesoura pelo desenho: o U do banzo abre para o miolo também em linha de centro, e o miolo é o lado das barras ligadas; Tesoura pelo desenho: separada nas emendas e montante em U no meio da tesoura para o meio do vão; Tesoura pelo desenho: o perfil de cada barra pela legenda de cores do projeto, seções duplas e separar no meio; Tesoura pelo desenho: banzo composto e alma em U como o croqui da legenda do projeto; CAD 2D mais leve no pan e no zoom: lotes por estilo, arrasto por faixas, seleção por cima do cache; Perfis da tesoura: o projetista configura os perfis de cada barra na elevação, sem o Claude; Montagem pela planta (Posto CB): encaixe de fábrica da alma e a boca do U do banzo para o miolo pelas barras ligadas.
+**0.9.0.** (20/10/2026) Frente grande entregue: a **Identificação para modelagem**. São 316 mudanças desde a 0.8.64 (a 0.8.65, de 11/10, não chegou a sair e entra aqui).
+
+**Identificação para modelagem.** O projeto recebido (DXF/PDF) entra só para leitura, como o Original. Na Montagem, um painel de etapas leva do desenho ao 3D: locação, tesouras coladas nos eixos, terças, contraventos, correntes e vigas VC/VT, e montar o modelo. O 2D e o 3D ficam vinculados (a volta do 3D entende a Montagem).
+
+**Montagem por eixos e tesoura pelo desenho.** Implantação, elevação por eixo e tesoura colada por dois pontos. O perfil de cada barra vem da legenda de cores do projeto (banzo composto, seções duplas, cantoneira dupla com presilhas) e os nós da alma ficam no eixo do banzo (NBR 8800:2024, 6.5.2). As regras de montagem da tesoura aprovadas em 16/10 viraram regra do sistema, com Corrigir pelas regras, Reanalisar estrutura (modelo antigo pelas regras de hoje, com prévia) e Trocar perfis por grupo.
+
+**Cobertura.** Telhas lançadas sobre as terças do 3D, calha em todo encontro das águas, fechamento lateral nos painéis, platibandas e degraus, rufos e contra-rufos que acompanham a telha, e a conferência da cobertura no Verificar apoios ("a telha manda"). Estender/recuar telha (Shift+T) e grupos de camadas.
+
+**Editor 3D.** Revisão das ferramentas de detalhe e de modelagem, no jeito do SketchUp e do Revit: modelagem pela seleção (pilares nos eixos, vigas, treliças, terças, longarinas, correntes, mãos-francesas, tirante em V, bases), prévia fantasma no Mover/Girar/Espelhar/Copiar, snap alinhado com pontos lembrados, menu do botão direito, caixa de corte, Tab, alças nas pontas, Espelhar, Editar chapa, Enrijecedor, plano de trabalho, cota presa à peça, recortes (cope e chanfro), Estender/Dividir/Unir, ligações da biblioteca aplicadas no modelo, detalhe do usuário salvo como modelo e Conferir antes de detalhar. Lado BIM: ficha ao passar o mouse, cor por propriedade, tabela de peças ao vivo, vistas salvas, propriedades do usuário, árvore do modelo e Sequência de montagem (4D). Guia rápido (F1) com os atalhos configuráveis. Obra grande mais rápida: snap ~3×, Numerar 12×, Aplicar ligação 17×, Editar chapa ~5×.
+
+**CAD 2D.** Pan e zoom mais leves em planta grande; Aparar, Offset e Polilinha refeitos, Mover com dx;dy, Ctrl+Z no meio da ferramenta e zoom pela força da rolagem.
+
+**Configurador de galpões** (galpão sem projeto): a conta e o 3D gerado concordam; terça-escora, oitão solto ou apoiado, mãos-francesas, longarinas, X vertical em painéis e escora de beiral.
+
+**Cálculo e análise.** Onda 1 da análise completa de 14/10 (Ct pela ligação, tesoura do IFC com pino e rolete, U deitado no eixo fraco…), tirante só à tração na 2ª ordem, 2U boca com boca como tubo, cobertura retrátil com a lona.
+
+**Lista de materiais, resumos e detalhamento.** Dobrado comprado em barra de 6 m (terça e peça maior que 6 m sob medida) e peso dos dobrados pela regra da fábrica; aba Arquivos lida do disco; aba Conferência com as pendências e as incompatibilidades; resumos da obra com fotos, elevações, cor por linha e kg/m ou kg/m² em todas as tabelas; o nome do projeto recebido fica na peça (A7, CH1…); cantoneira furada CT.n e meia-tesoura MT.n; consistência das saídas; o detalhe mostra o que entra em cada furo e a folga; viga caixote como prancha de produção.
+
+**Modo ver.** Busca pela sigla do projeto (TC3, TESOURA 16), camadas do piso (arquitetônico, eixos, níveis), Pintar por sistema, ocultos que ficam ao atualizar, barra de andamento enquanto o 3D se atualiza, Aberta/Retraída da cobertura retrátil, IFC exportado sem abrir o editor e com as cores do Pintar.
+
+**Geral.** Barra de andamento padrão em toda tarefa demorada; OCR interno para PDF escaneado; eixos e níveis automáticos no modelo importado sem eles (Tekla); neoprene fora do aço. Continuam só no desenvolvimento: celular, pré-moldado, comercial, a obra no terreno e o Painel DEV.
 
 **0.8.64.** (versão da noite, 11/10/2026) Leitor de DXF (D7): a fração do MTEXT não cola no número — 2\S1/2; Detalhamento: solda de fábrica chapa × perfil nos conjuntos — nota geral, símbolo TÍP.
 
