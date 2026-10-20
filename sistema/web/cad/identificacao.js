@@ -20,6 +20,11 @@
 // locação, a cota de cada terça pelo corte dela na vista da tesoura, a marca e o perfil pela tabela das folhas de
 // terças) e lança cada peça na Implantação como viga de aço com papel "terça", apoiada pela face de baixo; o 3D vem junto
 // pela planta. Lançar de novo troca as terças lançadas antes.
+//
+// Fase 5 (montar): a Implantação já leva o 3D junto a cada gravação (só as peças dela). "Montar o modelo 3D" fecha:
+// o que está no modelo e não veio da identificação (o 3D desmontado do caminho antigo, peças à mão) vai para o histórico
+// — com a pergunta, dizendo quantas —, o modelo passa a ser o identificado (/estrutura/3d sem sincronia, marco no
+// histórico) e o 3D abre.
 
 import { criar } from './nucleo/desenho2d.js';
 import { ComandoAdicionar, ComandoComposto, ComandoRemover } from './nucleo/comandos.js';
@@ -187,10 +192,15 @@ export class MetodosIdentificacao {
           title: 'Lê a planta de terças, põe cada peça nos eixos gravados, na cota do corte dela na vista da tesoura, e lança na Implantação' }),
         botao('Confirmar as terças ✓', () => this._confirmarIdent('tercas'), { class: 'ident-confirmar', disabled: nTercas ? undefined : true })) : null);
     const sec4 = etapa('contraventos', ETAPAS[3][1], ...folhas(v.contraventos), ...folhas(v.outras));
-    const montar = el('section', { class: 'ident-etapa ident-montar' },
-      el('h4', {}, 'Montar o modelo 3D'),
-      el('div', { class: 'explica', texto: 'Com as etapas confirmadas, o modelo 3D sai do que foi identificado; o Original fica para as conferências.' }),
-      el('div', { class: 'ident-botoes' }, botao('Montar o modelo 3D', () => {}, { class: 'primario', disabled: true, title: 'Vem na próxima etapa do sistema' })));
+    const podeMontar = et.locacao === 'confirmada' && et.tesouras === 'confirmada';
+    const faltamEt = ETAPAS.filter(([k]) => et[k] !== 'confirmada').map(([, r]) => r.toLowerCase());
+    const montado = id.montado;
+    const montar = el('section', { class: 'ident-etapa ident-montar' + (montado ? ' confirmada' : '') },
+      el('h4', {}, 'Montar o modelo 3D', montado ? el('span', { class: 'ident-estado', texto: `montado ✓ (${montado.pecas} peças)` }) : null),
+      el('div', { class: 'explica', texto: 'O 3D acompanha a Implantação a cada gravação. Montar deixa o modelo só com o que foi identificado (o resto vai para o histórico) e abre o 3D; o Original fica para as conferências.' }),
+      podeMontar && faltamEt.length ? el('div', { class: 'ident-sub', texto: `ainda não confirmadas: ${faltamEt.join(', ')} (dá para montar assim e voltar depois)` }) : null,
+      el('div', { class: 'ident-botoes' }, botao(montado ? 'Montar de novo e abrir o 3D' : 'Montar o modelo 3D', () => this._montarIdent(),
+        { class: 'primario', disabled: podeMontar ? undefined : true, title: podeMontar ? 'O modelo do projeto passa a ser o identificado' : 'Confirme a locação e as tesouras primeiro' })));
     corpo.replaceChildren(sec1, sec2, sec3, sec4, montar);
   }
 
@@ -349,6 +359,38 @@ export class MetodosIdentificacao {
     await this.cad.salvar({ avisar: false });
     this.cad.aviso(`${novas.length} terça(s) lançada(s) na Implantação: ${resumo}. O 3D acompanha a planta; Ctrl+Z desfaz.`, (r.avisos || []).length ? 'atencao' : 'info', 14000);
     this._desenharIdent();
+  }
+
+  /** Fase 5: o modelo 3D só com o identificado (o resto vai para o histórico, com a pergunta) e o 3D aberto. */
+  async _montarIdent() {
+    if (!this.ativa) await this.ir('montagem');
+    if (!this.ativa) return;
+    clearTimeout(this._timer); this._timer = null;
+    await this.cad.salvar({ avisar: false });
+    const p = encodeURIComponent(this.cad.projeto);
+    let ents = [];
+    try {
+      const d = await pedir(`/api/projetos/${p}/modelo`);
+      const doc = (d && d.documento) || d || {};
+      ents = Array.isArray(doc.entidades) ? doc.entidades : Object.values(doc.entidades || {});
+    } catch { ents = []; }
+    const daqui = (e) => ((e.atributos || {}).planta === this.cad.nomeDesenho);
+    const outras = ents.filter(e => !daqui(e));
+    if (outras.length) {
+      const corpo = el('div', {},
+        el('div', { class: 'explica', texto: `O modelo 3D do projeto tem ${outras.length.toLocaleString('pt-BR')} peça(s) que não vieram da identificação (do caminho antigo, de outra planta ou feitas à mão no 3D). Montar deixa o modelo só com o identificado (${ents.length - outras.length} peça(s) agora); as outras ficam no histórico do projeto e voltam por Arquivo › Versões anteriores do modelo…` }));
+      if (await this.cad.dialogo({ titulo: 'Montar o modelo 3D', corpo, ok: 'Montar' }) !== 'ok') return;
+    }
+    let r;
+    try {
+      r = await pedir(`/api/projetos/${p}/estrutura/3d`, { desenho: this.cad.nomeDesenho, sincronizar: false });
+    } catch (e) { this.cad.aviso('Não foi possível montar o 3D: ' + e.message, 'erro', 0); return; }
+    const n = (r && (r.entrou || (r.estatisticas || {}).entidades || r.pecas)) || (ents.length - outras.length);
+    this._guardarIdent({ ...this._ident(), montado: { quando: new Date().toISOString(), pecas: n, tirou: outras.length } });
+    await this.cad.salvar({ avisar: false });
+    this._desenharIdent();
+    this.cad.aviso(`Modelo 3D montado pelo identificado: ${n} peça(s)${outras.length ? `; ${outras.length} antiga(s) foram para o histórico` : ''}.`, 'info', 12000);
+    (window.metalicaNavegar || ((u) => { location.href = u; }))(this.cad.urlDoEditor());
   }
 
   _confirmarIdent(nome) {

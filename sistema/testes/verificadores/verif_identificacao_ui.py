@@ -14,6 +14,8 @@
   · Fase 4: "Lançar as terças nos eixos" lê a planta de terças (folha 13): 56 peças com as marcas da tabela (T.C.1 ×14,
     T.C.2 ×12, T.C.2-A ×8, T.C.2-B ×8, T.C.3 ×14), o pé de +6,45 a +7,30 pelo corte na vista da tesoura; no 3D, 56 barras
     com papel terça (U127, o eixo meio perfil acima do pé);
+  · Fase 5: com 5 barras antigas no modelo (o 3D desmontado do caminho antigo), "Montar o modelo 3D" avisa delas, deixa o
+    modelo só com o identificado (as 141 barras das T2 e as 56 terças), guarda o anterior no histórico e abre o 3D;
   · "Ver" leva ao Original com o painel junto; recarregar a página guarda as etapas confirmadas;
   · o Original não é mexido (as mesmas entidades antes e depois)."""
 import base64, json, os, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request
@@ -55,6 +57,12 @@ try:
     post(f"/api/projetos/{s}/arquitetonico", {"arquivo": os.path.basename(HANGAR), "tipo": "dxf", "recebido": True,
                                               "conteudo_b64": base64.b64encode(open(HANGAR, "rb").read()).decode()})
     pasta = os.path.join(DADOS, slug)
+    # o 3D desmontado do caminho antigo (o Hangar tinha 417 barras enfileiradas): 5 barras soltas, sem vir da planta
+    from nucleo3d.modelo import Barra as _Barra, Documento as _Doc
+    _velho = _Doc(nome="antigo")
+    for i in range(5):
+        _velho.add(_Barra(nome="solta %d" % i, inicio=(i * 4000.0, 0.0, 0.0), fim=(i * 4000.0 + 2000.0, 0.0, 0.0), perfil="W 250×32,7", papel="viga"))
+    json.dump(_velho.dict(), open(os.path.join(pasta, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
     arq_original = [os.path.join(pasta, "desenhos-2d", f) for f in os.listdir(os.path.join(pasta, "desenhos-2d")) if "lan" in f][0]
     ents_antes = json.load(open(arq_original, encoding="utf-8"))["entidades"]
 
@@ -189,6 +197,29 @@ try:
     clicar('[data-acao="identificacao"]')
     ok(esperar("document.querySelector('[data-etapa=locacao]') && document.querySelector('[data-etapa=locacao]').classList.contains('confirmada')", 60),
        "recarregada a página, a locação continua confirmada (sem varrer de novo)")
+
+    # ---- Fase 5: Montar o modelo 3D — o que não veio da identificação vai para o histórico, o 3D abre
+    def modelo3d_():
+        m = json.load(open(os.path.join(pasta, "modelo.json"), encoding="utf-8"))
+        e = m.get("entidades") or []
+        return list(e.values()) if isinstance(e, dict) else e
+    soltas_antes = sum(1 for e in modelo3d_() if str(e.get("nome", "")).startswith("solta"))
+    ok(soltas_antes == 5, f"antes de montar, o modelo tem as 5 barras antigas junto do identificado ({soltas_antes})")
+    hist_antes = len(os.listdir(os.path.join(pasta, "historico"))) if os.path.isdir(os.path.join(pasta, "historico")) else 0
+    clicar_em(botao("Montar o modelo 3D"))
+    ok(esperar("document.querySelector('#dialogo').open && document.querySelector('#dialogo-titulo').textContent === 'Montar o modelo 3D'", 30)
+       and "5 peça(s) que não vieram da identificação" in (aba.avaliar("document.querySelector('#dialogo-corpo').textContent") or ""),
+       "Montar avisa das 5 peças que não vieram da identificação")
+    clicar("#dialogo-ok")
+    ok(esperar("location.pathname.indexOf('/editor') >= 0 || location.pathname.indexOf('/dividida') >= 0", 60), f"depois de montar, o 3D abre ({aba.avaliar('location.pathname')})")
+    m3 = modelo3d_()
+    soltas = sum(1 for e in m3 if str(e.get("nome", "")).startswith("solta"))
+    papeis = {}
+    for e in m3:
+        papeis[e.get("papel")] = papeis.get(e.get("papel"), 0) + 1
+    ok(soltas == 0 and papeis.get("terça") == 56 and len(m3) == 56 + 141, f"o modelo ficou só com o identificado: {len(m3)} peças, {papeis.get('terça')} terças, {soltas} antigas")
+    hist = len(os.listdir(os.path.join(pasta, "historico"))) if os.path.isdir(os.path.join(pasta, "historico")) else 0
+    ok(hist > hist_antes, f"o modelo de antes foi para o histórico ({hist_antes} → {hist})")
 
     ents_depois = json.load(open(arq_original, encoding="utf-8"))["entidades"]
     ok(ents_depois == ents_antes, f"o Original não foi mexido ({len(ents_antes)} entidades)")
