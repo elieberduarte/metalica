@@ -359,6 +359,11 @@ async function telaModelo(slug, m, medir, camera) {
       <button data-f="arestas" class="ligado" aria-label="Arestas"><svg viewBox="0 0 24 24"><path d="M4 7l8-4 8 4v10l-8 4-8-4z"/></svg></button>
       <button data-f="enquadrar" aria-label="Enquadrar"><svg viewBox="0 0 24 24"><path d="M4 9V4h5 M15 4h5v5 M20 15v5h-5 M9 20H4v-5"/></svg></button>
     </div></div>`;
+  // o nome debaixo de cada ícone da barra (usuário, 20/10: "não entendi o que são esses botões")
+  const ROTULOS = { camadas: 'Camadas', vistas: 'Vistas', maquete: 'Maquete', buscar: 'Buscar', apresentacao: 'Sol', arestas: 'Arestas', enquadrar: 'Enquadrar' };
+  for (const b of tela.querySelectorAll('.ferramentas button')) {
+    if (ROTULOS[b.dataset.f]) b.insertAdjacentHTML('beforeend', `<span class="rotulo">${ROTULOS[b.dataset.f]}</span>`);
+  }
   const { Visor3D } = await import('../visor3d/visor3d.js');
   liberar3D();
   const canvas = $('.palco canvas');

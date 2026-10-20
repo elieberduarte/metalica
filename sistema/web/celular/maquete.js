@@ -584,7 +584,11 @@ export async function cenaDaMesa(renderer, { situacoes, piso = null, cotas = nul
     renderer.shadowMap.needsUpdate = true;
   };
   refazerSombra(1);
-  return { cena, maquete, luz, chao, ambiente, refazerSombra };
+  const solDaObra = d.clone();
+  /** A luz vinda da direção `dir` (no espaço da maquete, y para cima) — a câmera, no modo "acompanha a câmera". */
+  const apontarLuz = (dir) => { luz.position.copy(dir).normalize().multiplyScalar(R * 3); };
+  const ligarSombra = (sim) => { luz.castShadow = !!sim; chao.visible = !!sim; renderer.shadowMap.needsUpdate = true; };
+  return { cena, maquete, luz, chao, ambiente, refazerSombra, apontarLuz, ligarSombra, solDaObra };
 }
 
 /** Como a tela está, pela gravidade (a câmera do Android trava a página em pé): 0 em pé, 90 ou -90 deitado (o quanto
@@ -618,7 +622,13 @@ export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.xr.enabled = true;
   const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 50);
-  const { cena, maquete, ambiente, refazerSombra } = await cenaDaMesa(renderer, { situacoes, piso, cotas, sol });
+  const { cena, maquete, ambiente, refazerSombra, apontarLuz, ligarSombra, solDaObra } = await cenaDaMesa(renderer, { situacoes, piso, cotas, sol });
+  // a sombra (usuário, 20/10: "a sombra acompanhar a câmera como se a câmera fosse o sol; e poder desabilitar"):
+  // 'camera' — a luz sai do celular e a sombra cai para trás da maquete, mudando ao andar em volta; 'sol' — o sol da
+  // obra (o de Vistas); 'nenhuma'
+  let modoSombra = 'camera';
+  const ultimaLuz = new THREE.Vector3(), pCam = new THREE.Vector3();
+  let quandoLuz = 0;
   maquete.visible = false;
   const desligadas = new Set(camadas ? camadas.desligadas : []);
   let tamanho = 1, atual = 0;
@@ -649,8 +659,11 @@ export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas
   const fechar = () => { if (sessao) sessao.end().catch(() => {}); };
   const linha = (chave, nome, cor, ligada) => `<label class="ra-linha"><input type="checkbox" data-chave="${_esc(chave)}" ${ligada ? 'checked' : ''}>
     ${cor ? `<i style="background:${_esc(cor)}"></i>` : ''}<span>${_esc(nome)}</span></label>`;
+  const opcaoSombra = (k, nome) => `<label class="ra-linha"><input type="radio" name="ra-sombra" data-sombra="${k}" ${modoSombra === k ? 'checked' : ''}>
+    <span>${nome}</span></label>`;
   const abrirPainel = () => {
-    const secoes = [];
+    const secoes = ['<div class="ra-titulo">Sombra</div>' + opcaoSombra('camera', 'Acompanha a câmera') + opcaoSombra('sol', 'Sol da obra')
+      + opcaoSombra('nenhuma', 'Sem sombra')];
     if (camadas.partes.length) secoes.push('<div class="ra-titulo">Desenho</div>' + camadas.partes.map(([k, nome, cor]) =>
       linha('piso:' + k, nome, cor, !desligadas.has('piso:' + k))).join(''));
     if (camadas.sistemas.length > 1) secoes.push('<div class="ra-titulo">Sistema</div>' + camadas.sistemas.map(s =>
@@ -658,6 +671,13 @@ export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas
     secoes.push('<div class="ra-titulo">Camadas</div>' + camadas.camadas.map(c => linha('camada:' + c.nome, c.nome, null, !desligadas.has('camada:' + c.nome))).join(''));
     painel.innerHTML = secoes.join('') + '<button data-ra="fechar-painel">Pronto</button>';
     painel.hidden = false;
+    painel.querySelectorAll('input[data-sombra]').forEach(c => c.onchange = () => {
+      modoSombra = c.dataset.sombra;
+      ligarSombra(modoSombra !== 'nenhuma');
+      if (modoSombra === 'sol') apontarLuz(solDaObra);
+      ultimaLuz.set(0, 0, 0);                         // a câmera aponta a luz no próximo quadro
+      mudou();
+    });
     painel.querySelectorAll('input[data-chave]').forEach(c => c.onchange = () => {
       if (c.checked) desligadas.delete(c.dataset.chave); else desligadas.add(c.dataset.chave);
       aplicar();
@@ -729,6 +749,14 @@ export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas
       const achou = quadro.getHitTestResults(fonteMira);
       mira.visible = achou.length > 0;
       if (mira.visible) mira.matrix.fromArray(achou[0].getPose(renderer.xr.getReferenceSpace()).transform.matrix);
+    }
+    // a luz no celular: refeita quando a direção muda mais de 2° (no máximo 8 vezes por segundo: a sombra pesa)
+    if (modoSombra === 'camera' && maquete.visible && t - quandoLuz > 120) {
+      pCam.setFromMatrixPosition(renderer.xr.getCamera().matrixWorld);
+      maquete.worldToLocal(pCam);
+      pCam.y = Math.max(pCam.y, 0.25 * Math.hypot(pCam.x, pCam.z));                 // de baixo da mesa não: no máximo rente
+      pCam.normalize();
+      if (ultimaLuz.lengthSq() === 0 || pCam.angleTo(ultimaLuz) > 0.035) { apontarLuz(pCam); ultimaLuz.copy(pCam); quandoLuz = t; mudou(); }
     }
     renderer.render(cena, camera);
   });

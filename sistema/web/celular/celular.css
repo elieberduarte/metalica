@@ -129,7 +129,10 @@ details > summary::-webkit-details-marker { display: none; }
 .palco .progresso { width: 180px; height: 4px; background: var(--azul-linha); border-radius: 2px; margin: 10px auto 0; overflow: hidden; }
 .palco .progresso i { display: block; height: 100%; width: 0; background: #1f5fbf; transition: width .1s; }
 .ferramentas { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 8px; }
-.ferramentas button { width: 44px; height: 44px; border-radius: 12px; border: 0; background: var(--flutuante); color: var(--texto); box-shadow: var(--sombra); display: grid; place-items: center; }
+.ferramentas button { width: 52px; height: 50px; border-radius: 12px; border: 0; background: var(--flutuante); color: var(--texto); box-shadow: var(--sombra);
+  display: grid; place-items: center; align-content: center; gap: 2px; padding: 0; }
+/* o nome debaixo do ícone (usuário, 20/10: não ficava claro o que cada botão faz) */
+.ferramentas button .rotulo { font-size: 9.5px; line-height: 1; font-weight: 600; letter-spacing: .01em; }
 .ferramentas button.ligado { background: #1f5fbf; color: #fff; }
 /* no alto, à esquerda: a contagem */
 .palco-topo { position: absolute; left: 10px; top: 10px; right: 64px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; pointer-events: none; }
@@ -214,7 +217,9 @@ details > summary::-webkit-details-marker { display: none; }
    a dica em cima e os botões grandes embaixo, por cima da imagem da câmera */
 a.ra-abrir { display: inline-flex; align-items: center; text-decoration: none; }
 a.ra-abrir img { width: 1px; height: 1px; opacity: 0; }
-#ra-sobre { position: fixed; inset: 0; z-index: 100; color: #fff; font-family: inherit; pointer-events: auto; }
+#ra-sobre { position: fixed; inset: 0; z-index: 100; color: #fff; font-family: inherit; pointer-events: auto;
+  /* segurar o dedo num texto não abre o menu do Android (copiar, "digitalizar texto"…) */
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 #ra-sobre .ra-dica { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 16px); left: 16px; right: 16px; text-align: center;
   background: rgba(10, 20, 40, .62); border-radius: 12px; padding: 10px 14px; font-size: 15px; }
 #ra-sobre .ra-barra { position: absolute; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); left: 12px; right: 12px; display: flex;
@@ -225,14 +230,16 @@ a.ra-abrir img { width: 1px; height: 1px; opacity: 0; }
 /* na câmera: Camadas e Aberta/Retraída logo abaixo da dica; o painel das camadas por cima da imagem, com rolagem */
 #ra-sobre .ra-barra-cima { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 84px); }
 #ra-sobre .ra-barra-cima:empty { display: none; }
-#ra-sobre .ra-painel { position: absolute; left: 12px; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 148px); bottom: 96px;
-  overflow: auto; background: rgba(10, 20, 40, .82); border-radius: 14px; padding: 8px 14px 14px; }
+/* o painel das camadas: um cartão do tamanho do que tem dentro, à direita (usuário, 20/10: "a telinha das camadas ficou
+   muito grande") */
+#ra-sobre .ra-painel { position: absolute; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 148px); width: min(270px, calc(100% - 24px));
+  max-height: 50%; overflow: auto; background: rgba(10, 20, 40, .82); border-radius: 14px; padding: 2px 12px 10px; }
 #ra-sobre .ra-painel[hidden] { display: none; }
-#ra-sobre .ra-titulo { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; opacity: .7; margin: 12px 0 4px; }
-#ra-sobre .ra-linha { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid rgba(255, 255, 255, .12); font-size: 15px; }
-#ra-sobre .ra-linha input { width: 22px; height: 22px; accent-color: #2f6fd6; flex: none; }
+#ra-sobre .ra-titulo { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; opacity: .7; margin: 10px 0 2px; }
+#ra-sobre .ra-linha { display: flex; align-items: center; gap: 9px; padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, .12); font-size: 14px; }
+#ra-sobre .ra-linha input { width: 20px; height: 20px; accent-color: #2f6fd6; flex: none; margin: 0; }
 #ra-sobre .ra-linha i { width: 14px; height: 14px; border-radius: 4px; flex: none; }
-#ra-sobre .ra-painel button { margin-top: 12px; width: 100%; background: #1f5fbf; position: sticky; bottom: 0; box-shadow: 0 -8px 12px rgba(10, 20, 40, .82); }   /* o Pronto sempre à vista, a lista rola por trás */
+#ra-sobre .ra-painel button { margin-top: 10px; width: 100%; height: 38px; min-width: 0; font-size: 15px; background: #1f5fbf; position: sticky; bottom: 0; box-shadow: 0 -8px 12px rgba(10, 20, 40, .82); }   /* o Pronto sempre à vista, a lista rola por trás */
 /* na câmera, os botões num quadro que gira com o celular deitado (a página da câmera fica travada em pé) */
 #ra-sobre .ra-giro { position: absolute; left: 50%; top: 50%; width: 100vw; height: 100vh; transform: translate(-50%, -50%);
   transition: transform .25s ease; }
@@ -242,5 +249,5 @@ a.ra-abrir img { width: 1px; height: 1px; opacity: 0; }
 /* deitado, a altura é pouca: a dica numa linha e o painel das camadas do lado direito */
 #ra-sobre .ra-giro[data-giro="90"] .ra-dica, #ra-sobre .ra-giro[data-giro="-90"] .ra-dica { right: 40%; font-size: 13px; padding: 6px 10px; top: 10px; }
 #ra-sobre .ra-giro[data-giro="90"] .ra-barra-cima, #ra-sobre .ra-giro[data-giro="-90"] .ra-barra-cima { top: 10px; left: auto; right: 12px; }
-#ra-sobre .ra-giro[data-giro="90"] .ra-painel, #ra-sobre .ra-giro[data-giro="-90"] .ra-painel { top: 76px; bottom: 84px; left: auto; width: 46%; }
+#ra-sobre .ra-giro[data-giro="90"] .ra-painel, #ra-sobre .ra-giro[data-giro="-90"] .ra-painel { top: 72px; max-height: calc(100% - 156px); width: 250px; }
 #ra-sobre .ra-giro[data-giro="90"] .ra-barra:not(.ra-barra-cima), #ra-sobre .ra-giro[data-giro="-90"] .ra-barra:not(.ra-barra-cima) { bottom: 12px; }

@@ -164,6 +164,8 @@ try:
     # o atalho logo abaixo do olho (Vistas) — usuário, 20/10: "um botão abaixo do olho para facilitar o acesso"
     ok(ap.avaliar("(() => { const b = [...document.querySelectorAll('.ferramentas button')].map(x => x.dataset.f); return b.indexOf('maquete') === b.indexOf('vistas') + 1; })()"),
        "o botão da maquete fica logo abaixo do olho")
+    rot = json.loads(ap.avaliar("JSON.stringify([...document.querySelectorAll('.ferramentas button')].map(b => (b.querySelector('.rotulo') || {}).textContent || ''))") or "[]")
+    ok(rot == ["Camadas", "Vistas", "Maquete", "Buscar", "Sol", "Arestas", "Enquadrar"], f"cada botão da barra com o nome debaixo do ícone ({rot})")
     ap.avaliar("window.ultimaMaquete = null")
     tocar(ap, "[data-f=maquete]")
     ok(esperar(ap, "!!window.ultimaMaquete && !!document.getElementById('ra-acoes')", 30), "tocar nele monta a maquete da obra")
@@ -266,6 +268,20 @@ try:
       return JSON.stringify([g(9.8, 0.4, 0), g(-9.8, 0.3, 0), g(0.4, 9.8, 90), g(5, 5, 90), g(1, 2, -90), g(0.5, 9.7, 0)]); })()"""
     ok(json.loads(ap.avaliar(GIRO) or "[]") == [90, -90, 0, 90, -90, 0],
        f"os menus giram com o celular deitado, para um lado ou para o outro, com folga no meio do caminho ({ap.avaliar(GIRO)})")
+    # os modos da sombra na cena da mesa: a luz vira para a direção pedida; sem sombra, o chão e a sombra somem
+    LUZ = """(async () => { const T = await import('three'), M = await import('./maquete.js');
+      const c = document.createElement('canvas'), r = new T.WebGLRenderer({ canvas: c }); r.setSize(200, 200, false);
+      const m = await M.cenaDaMesa(r, { situacoes: [{ grupo: new T.Group() }], sol: [0, 0, 1] });
+      const antes = m.luz.position.clone().normalize().toArray().map(x => Math.round(x * 1000) / 1000);
+      m.apontarLuz(new T.Vector3(1, 1, 0));
+      const camera = m.luz.position.clone().normalize().toArray().map(x => Math.round(x * 1000) / 1000);
+      m.ligarSombra(false); const sem = [m.luz.castShadow, m.chao.visible];
+      m.ligarSombra(true); const com = [m.luz.castShadow, m.chao.visible];
+      m.ambiente.dispose(); r.dispose();
+      return JSON.stringify({ antes, camera, sem, com }); })()"""
+    lz = json.loads(ap.avaliar(LUZ) or "{}")
+    ok(lz.get("antes") == [0, 1, 0] and lz.get("camera") == [0.707, 0.707, 0] and lz.get("sem") == [False, False] and lz.get("com") == [True, True],
+       f"a sombra: o sol da obra (de cima), a luz virada para a câmera, desligar e ligar ({lz})")
     # o desenho do piso na maquete: eixos e níveis no quadro dela, ligáveis
     PISO = """(async () => { const M = await import('./maquete.js'), T = await import('three');
       const dados = { segmentos: [[0, 0, 10000, 0]], eixos: [{ nome: 'A', a: [0, 0, 0], b: [0, 8000, 0] }, { nome: '1', a: [0, 0, 0], b: [10000, 0, 0] }],
@@ -385,6 +401,12 @@ try:
       const r = b.getBoundingClientRect(); if (r.left < -1 || r.top < -1 || r.right > innerWidth + 1 || r.bottom > innerHeight + 1) fora.push(b.dataset.ra || b.className); }
       return JSON.stringify(fora); })()"""
     ok(json.loads(ap.avaliar(DENTRO) or '["?"]') == [], "em pé, tudo dentro da tela")
+    # a sombra no painel: acompanha a câmera (de saída), o sol da obra ou nenhuma; e o painel é um cartão pequeno
+    som = json.loads(ap.avaliar("JSON.stringify([...document.querySelectorAll('#ra-sobre input[data-sombra]')].map(i => [i.dataset.sombra, i.checked]))") or "[]")
+    ok(som == [["camera", True], ["sol", False], ["nenhuma", False]], f"o painel tem a Sombra: acompanha a câmera, sol da obra, sem sombra ({som})")
+    tam = json.loads(ap.avaliar("(() => { const r = document.querySelector('#ra-sobre .ra-painel').getBoundingClientRect(); return JSON.stringify([r.width, r.height, innerWidth, innerHeight]); })()") or "[0,0,1,1]")
+    ok(tam[0] <= 280 and tam[1] <= tam[3] * 0.5 + 1, f"o painel é um cartão pequeno ({tam[0]:.0f} × {tam[1]:.0f} px numa tela de {tam[2]} × {tam[3]})")
+    ok(ap.avaliar("getComputedStyle(document.getElementById('ra-sobre')).userSelect") == "none", "segurar o dedo num texto não abre o menu do Android")
     foto(ap, "celular_maquete_camera_em_pe.png")
     for x, giro in ((9.8, "90"), (-9.8, "-90")):
         ap.avaliar(f"window.dispatchEvent(new DeviceMotionEvent('devicemotion', {{ accelerationIncludingGravity: {{ x: {x}, y: 0.3, z: 0.5 }} }})); 1")
