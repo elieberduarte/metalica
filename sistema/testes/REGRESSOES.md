@@ -246,3 +246,9 @@ Achados dos testes de primeiro uso (`Projeto/BRIEFINGS/Briefing-primeiro-uso*.md
 | 20/10 | Galpão gerado de alma cheia: a viga sob sucção era verificada com mãos-francesas que não existiam no 3D nem na lista | 3f7c424 | test_tesouras::test_maos_francesas_da_viga_de_alma_cheia |
 | 20/10 | Hangar Almayer montado pela Identificação: o 3D desenhava no chão o Original do projeto recebido (36 folhas, 226 m) num sistema que não é o da obra, espalhado longe do hangar | e952cd0 | test_identificacao test_original_do_projeto_recebido_nao_vai_ao_chao_do_3d |
 | 20/10 | Kaefer, modo ver no PC: Aberta/Retraída da cobertura retrátil demorava e pedia dois cliques (gravava o modelo inteiro e refazia o 3D leve; a página voltava ainda na situação anterior) — agora só para ver, como no celular | 10fb564 | test_modelo_leve::test_cobertura_retratil_a_outra_situacao_so_para_ver, ::test_cobertura_retratil_pedida_antes_de_pronta_e_obra_comum; verif_cobertura_barra (um clique, < 8 s, modelo intocado) |
+
+## A obra no terreno (modo ver, imagem de satélite)
+
+| Data | O que se viu | Commit | Teste |
+|---|---|---|---|
+| 20/10 | Obra em Cascavel (centro): a imagem da Esri vinha cinza, "Map data not yet available" — a fonte não tem o nível 19 ali; agora o bloco vazio é reconhecido e o nível desce até ter imagem (o 18) | a508301 | test_local_obra::test_fonte_sem_o_nivel_desce_ate_ter_imagem |
