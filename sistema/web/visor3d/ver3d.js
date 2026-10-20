@@ -799,6 +799,49 @@ function vigiarPlacaDeVideo(tela) {
   tela.addEventListener('webglcontextrestored', () => location.reload());
 }
 
+// ------------------------------------------------------------------ cobertura retrátil
+
+/** Aberta / Retraída na barra — só no projeto com cobertura retrátil: a análise estrutural a declara, ou ela já foi
+ *  vista numa das situações. Antes eram dois itens do menu Modelo, em todo projeto, e a cobertura é coisa de um
+ *  projeto (Kaefer, 19/10). Como antes, a escolha grava o modelo nessa situação (POST cobertura-movel) e o 3D recarrega;
+ *  a planta ao lado também, se as linhas das tesouras mudaram. */
+async function coberturaRetratil() {
+  let pj;
+  try {
+    const j = await (await fetch(`/api/projetos/${encodeURIComponent(PROJETO)}`, { cache: 'no-store' })).json();
+    pj = j.projeto || j;
+  } catch (e) { return; }
+  if (!((pj.analise_parametros || {}).cobertura_movel || pj.cobertura_movel_vista)) return;
+  const atual = pj.cobertura_movel_vista || null;
+  const caixa = $('#cobertura');
+  const botoes = caixa.querySelectorAll('button');
+  caixa.hidden = false;
+  document.querySelector('[data-cobertura]').hidden = false;
+  botoes.forEach(b => {
+    b.classList.toggle('ligado', b.dataset.situacao === atual);
+    b.onclick = async () => {
+      if (b.dataset.situacao === atual) return;
+      botoes.forEach(x => { x.disabled = true; });
+      try {
+        const r = await fetch(`/api/projetos/${encodeURIComponent(PROJETO)}/cobertura-movel`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+          body: JSON.stringify({ situacao: b.dataset.situacao }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.erro) throw new Error(j.erro || 'erro no servidor');
+        if (j.planta_mudou && NA_DIVIDIDA) {
+          try { window.parent.postMessage({ metalica: 'planta-mudou', desenho: j.planta_mudou }, location.origin); } catch (e) { /* sem a tela de fora */ }
+        }
+        location.reload();
+      } catch (e) {
+        window.alert('Cobertura retrátil: ' + e.message);
+        botoes.forEach(x => { x.disabled = false; });
+      }
+    };
+  });
+}
+if (PROJETO) coberturaRetratil();
+
 abrir().catch(e => {
   console.error(e);
   const c = $('#carregando');

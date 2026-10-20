@@ -157,8 +157,6 @@
       ]),
       HR, T('cálculo'),
       { texto: 'Análise estrutural…', link: '/analise-estrutural?projeto={projeto}', dica: 'o unifilar com as cargas, os diagramas de esforços, o mapa de tensões e as reações nas bases (o modelo inteiro em 3D)' },
-      I('Cobertura retrátil: ver aberta', '3d', 'cobertura-aberta', { dica: 'as tesouras e a sanfona da análise no 3D, abertas ao longo do comprimento todo' }),
-      I('Cobertura retrátil: ver retraída', '3d', 'cobertura-retraida', { dica: 'as mesmas tesouras empilhadas na ponta' }),
       I('Calcular a estrutura', '3d', 'mapa-esforcos', { kbd: 'F9', antes: 'Cálculo › Calcular estrutura' }),
       I('Dimensionar: o perfil mais leve que passa…', '3d', 'dimensionar', { antes: 'Cálculo › Dimensionar: o perfil mais leve que passa…' }),
       { texto: 'Resultado da análise…', link: '/analise?projeto={projeto}', antes: 'Cálculo › Resultado da análise…' },
@@ -521,11 +519,8 @@
     // o IFC do modelo no modo "ver": o servidor exporta o modelo gravado, sem carregar o editor — antes o comando abria
     // o editor e esperava 60 s por ele; no PRATI CD (27 mil peças) não dava tempo e nada acontecia (14/10)
     if (it.lado === '3d' && it.acao === 'exportar-ifc' && !docPronto('3d')) { exportarIfcGravado(); return; }
-    // a cobertura retrátil aberta/retraída também no modo "ver" (Kaefer, 19/10): o servidor troca as tesouras (e a lona)
-    // no modelo gravado e o 3D leve recarrega — antes o comando abria o editor completo só para isso
-    if (it.lado === '3d' && /^cobertura-(aberta|retraida)$/.test(it.acao || '') && !docPronto('3d')) {
-      coberturaNoVer(it.acao === 'cobertura-aberta' ? 'aberta' : 'retraida'); return;
-    }
+    // a cobertura retrátil aberta/retraída saiu do menu Modelo (Kaefer, 19/10): era de um projeto só e aparecia em
+    // todos — agora são dois botões na barra do 3D, só no projeto com cobertura retrátil (web/visor3d/ver3d.js)
     if (!visivel(it.lado) && window.mostrarVista) window.mostrarVista(it.lado);
     // o 3D no modo "ver" (web/visor3d) não edita: o comando carrega o editor no quadro, com a mesma vista, e roda nele.
     // Pedido dentro da espera: com o 2D à mostra o quadro do 3D ainda nem tinha o modo ver quando o comando rodava, e o
@@ -614,25 +609,6 @@
 
   /** Arquivo › Exportar › IFC do modelo, com o 3D no modo "ver": o modelo gravado do projeto vira IFC no servidor
    *  (POST /api/modelo/ifc/exportar com o projeto e sem o documento) e o aviso traz o link para baixar. */
-  /** a cobertura retrátil no modo ver: POST /api/projetos/<s>/cobertura-movel; o 3D leve recarrega e a planta ao lado
-   * também, se as linhas das tesouras mudaram (o mesmo que o editor faz) */
-  function coberturaNoVer(situacao) {
-    var proj = new URLSearchParams(location.search).get('projeto') || '';
-    if (!proj) return;
-    fetch('/api/projetos/' + encodeURIComponent(proj) + '/cobertura-movel', {
-      method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify({ situacao: situacao }),
-    })
-      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-      .then(function (r) {
-        if (!r.ok || r.j.erro) throw new Error(r.j.erro || 'erro no servidor');
-        if (r.j.planta_mudou) {
-          try { janela('2d').postMessage({ metalica: 'recarregar2d', desenho: r.j.planta_mudou }, location.origin); } catch (e) { /* sem o 2D */ }
-        }
-        try { janela('3d').location.reload(); } catch (e) { /* sem o 3D */ }
-      })
-      .catch(function (e) { window.alert('Cobertura retrátil: ' + e.message); });
-  }
-
   function exportarIfcGravado() {
     var proj = new URLSearchParams(location.search).get('projeto') || '';
     var caixa = document.getElementById('aviso-ifc-gravado');

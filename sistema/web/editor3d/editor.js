@@ -345,6 +345,7 @@ export class Editor {
     this._atualizarMenuEditar();
     document.body.dataset.pronto = '1';
     if (this.projeto) this._cartaoDaImportacao();
+    this._menuDaCobertura();
     this._publicarErros();
   }
 
@@ -1921,6 +1922,17 @@ export class Editor {
       const abrir = j.desenhos.find(d => d.grupo === 'completo') || j.desenhos[0];
       if (abrir) this._abrirCAD(abrir.nome);
     } catch (e) { parar(); this.aviso(`Não foi possível detalhar: ${e.message}`, 'erro', 0); this.dica(''); }
+  }
+
+  /** Cobertura retrátil: ver aberta / retraída só no projeto que tem uma (a análise a declara, ou já foi vista numa
+   *  situação). Aparecia em todo projeto; na tela principal virou dois botões na barra do 3D (Kaefer, 19/10). */
+  async _menuDaCobertura() {
+    let pj = null;
+    if (this.projeto) {
+      try { pj = (await (await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}`)).json()).projeto; } catch { /* sem o projeto: some */ }
+    }
+    const tem = !!(pj && ((pj.analise_parametros || {}).cobertura_movel || pj.cobertura_movel_vista));
+    document.querySelectorAll('[data-acao="cobertura-aberta"], [data-acao="cobertura-retraida"]').forEach((b) => { b.hidden = !tem; });
   }
 
   /** O cartão "Importado" (Q21, primeiro uso 16/10: o 3D abria sem dizer o que o IFC trouxe): as contagens por tipo, os

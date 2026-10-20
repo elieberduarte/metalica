@@ -23,6 +23,8 @@ html, body.ver3d { height: 100%; margin: 0; overflow: hidden; background: var(--
 :root[data-tema="escuro"] { color-scheme: dark; }
 :root[data-tema="claro"] { color-scheme: light; }
 #ferramentas .sep { width: 6px; }
+#ferramentas [hidden] { display: none; }
+#cobertura { display: inline-flex; gap: 4px; }
 #busca { font: 13px var(--sans); width: 240px; padding: 5px 10px; border: 1px solid var(--borda); border-radius: var(--raio-p);
   background: var(--painel); color: var(--texto); box-shadow: var(--sombra); }
 
