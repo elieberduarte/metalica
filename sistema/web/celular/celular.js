@@ -49,6 +49,9 @@ document.getElementById('tema').onclick = () => {
 const INSTALADO = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const IPHONE = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const DISPENSA = 'metalica-instalar-dispensado';
+// escolhas pequenas guardadas no aparelho (a apresentação do 3D, 20/10); sem armazenamento, vale o padrão
+const lerPreferencia = (k, padrao) => { try { return localStorage.getItem('pref.' + k) ?? padrao; } catch (e) { return padrao; } };
+const gravarPreferencia = (k, v) => { try { localStorage.setItem('pref.' + k, v); } catch (e) { /* sem armazenamento: vale até fechar */ } };
 const dispensado = () => { try { return localStorage.getItem(DISPENSA) === '1'; } catch (e) { return false; } };
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); pedidoInstalar = e; mostrarInstalar(); });
 window.addEventListener('appinstalled', () => { pedidoInstalar = null; mostrarInstalar(); });
@@ -351,6 +354,7 @@ async function telaModelo(slug, m, medir, camera) {
       <button data-f="camadas" aria-label="Camadas"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z M3 13l9 5 9-5 M3 17.5l9 5 9-5"/></svg></button>
       <button data-f="vistas" aria-label="Vistas"><svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
       <button data-f="buscar" aria-label="Buscar peça"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></button>
+      <button data-f="apresentacao" aria-label="Apresentação (sol e sombras)"><svg viewBox="0 0 24 24"><path d="M5 9l5-3 5 3v5l-5 3-5-3z"/><path d="M10 17l9 2.5-4-5.5" opacity=".55"/><circle cx="19" cy="5" r="2"/></svg></button>
       <button data-f="arestas" class="ligado" aria-label="Arestas"><svg viewBox="0 0 24 24"><path d="M4 7l8-4 8 4v10l-8 4-8-4z"/></svg></button>
       <button data-f="enquadrar" aria-label="Enquadrar"><svg viewBox="0 0 24 24"><path d="M4 9V4h5 M15 4h5v5 M20 15v5h-5 M9 20H4v-5"/></svg></button>
     </div></div>`;
@@ -369,6 +373,8 @@ async function telaModelo(slug, m, medir, camera) {
   });
   if (v !== visor) return;          // trocou de tela no meio
   v.definirTema(escuro());          // depois de carregar: o piso se acomoda à caixa do modelo
+  // apresentação (20/10, para mostrar ao cliente): sol e sombras, ligada de saída; a escolha fica guardada no aparelho
+  v.ligarApresentacao(lerPreferencia('apresentacao', '1') === '1', 2048);
   v.definirFichas(await json(`${slug}/${arqs.pecas}`, versaoDe(m, arqs.pecas)));
   aplicarCamadas(v, slug);          // as camadas que a pessoa desligou neste projeto continuam desligadas
   if (camera) {                     // trocou a situação da cobertura: a vista fica onde estava
@@ -382,6 +388,7 @@ async function telaModelo(slug, m, medir, camera) {
                      mb: Math.round(((m.arquivos.find(a => a.nome === arqs.modelo) || {}).bytes || 0) / 104857.6) / 10 });
   $('.carregando').remove();
   $('.ferramentas').hidden = false;
+  $('[data-f="apresentacao"]').classList.toggle('ligado', !!v.apresentacao);
   const contagem = $('.contagem');
   contagem.hidden = false;
   contagem.textContent = `${nf(v.nPecas)} peças`;
@@ -409,6 +416,12 @@ async function telaModelo(slug, m, medir, camera) {
     b.onclick = () => {
       const f = b.dataset.f;
       if (f === 'arestas') { b.classList.toggle('ligado'); v.ligarArestas(b.classList.contains('ligado')); }
+      else if (f === 'apresentacao') {
+        b.classList.toggle('ligado');
+        const sim = b.classList.contains('ligado');
+        gravarPreferencia('apresentacao', sim ? '1' : '0');
+        v.ligarApresentacao(sim, 2048);
+      }
       else if (f === 'enquadrar') v.enquadrar('iso');
       else if (f === 'camadas') folhaCamadas(v);
       else if (f === 'vistas') {

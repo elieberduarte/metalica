@@ -62,6 +62,28 @@ function texturaDaSeta() {
   return _texturaDaSeta;
 }
 
+// A sombra do sol (modo apresentação): a profundidade vista do sol, desenhada uma vez (a obra não se mexe) e refeita só
+// quando o que está à vista muda; 3 × 3 amostras para a borda sair macia. O piso usa a mesma.
+const SOMBRA_GLSL = /* glsl */`
+uniform sampler2D tSombra;
+uniform mat4 uMatSombra;
+uniform float uTexel;
+uniform float uDesloc;
+uniform float uTemSombra;
+float luzDoSol(vec3 p, vec3 n) {
+  if (uTemSombra < 0.5) return 1.0;
+  vec4 q = uMatSombra * vec4(p + n * uDesloc, 1.0);
+  vec3 s = q.xyz / q.w * 0.5 + 0.5;
+  if (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0 || s.z > 1.0) return 1.0;
+  float soma = 0.0;
+  for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++)
+    soma += step(s.z - 0.0015, texture2D(tSombra, s.xy + vec2(float(i), float(j)) * uTexel).r);
+  return soma / 9.0;
+}`;
+// de onde vem o sol: alto (57°), da esquerda e um pouco da frente da vista inicial (a perspectiva do enquadrar), para
+// as faces que se veem saírem em tons diferentes e a sombra cair para trás do modelo, no chão à vista
+const SOL = [-0.19, -0.71, 1.15];
+
 const VERT = /* glsl */`
 uniform sampler2D tPecas;
 uniform float uIdBase;
@@ -74,11 +96,9 @@ attribute float iid;
 #endif
 varying vec3 vVista;
 varying vec3 vCor;
+varying vec3 vMundo;
 #ifdef ESCOLHA
 flat varying float vId;
-#endif
-#ifdef PONTO
-varying vec3 vMundo;
 #endif
 void main() {
 #ifdef INSTANCIA
@@ -95,9 +115,7 @@ void main() {
 #ifdef ESCOLHA
   vId = id + 1.0;
 #endif
-#ifdef PONTO
   vMundo = mundo;
-#endif
   vec4 vista = viewMatrix * vec4(mundo, 1.0);
   vVista = vista.xyz;
   gl_Position = projectionMatrix * vista;
@@ -107,17 +125,20 @@ void main() {
 const FRAG = /* glsl */`
 varying vec3 vVista;
 varying vec3 vCor;
+varying vec3 vMundo;
 #ifdef ESCOLHA
 flat varying float vId;
-#endif
-#ifdef PONTO
-varying vec3 vMundo;
 #endif
 uniform float uAresta;
 uniform float uLonge;
 uniform float uEscuro;
+uniform float uApresenta;
+uniform vec3 uSol;
+${SOMBRA_GLSL}
 void main() {
-#if defined(PONTO)
+#if defined(SOMBRA)
+  gl_FragColor = vec4(1.0);
+#elif defined(PONTO)
   gl_FragColor = vec4(vMundo, 1.0);
 #elif defined(ESCOLHA)
   float r = mod(vId, 256.0), g = mod(floor(vId / 256.0), 256.0), b = floor(vId / 65536.0);
@@ -132,13 +153,26 @@ void main() {
     vec3 ca = uEscuro > 0.5 ? mix(vCor, vec3(0.94, 0.96, 1.0), 0.55) : vCor * 0.62;   // claro: a paleta mais clara (06/10)
     gl_FragColor = vec4(ca, uEscuro > 0.5 ? a + 0.15 : a); return;
   }
+  // no escuro a peça sobe um pouco para o claro (o azul-marinho das vigas sumia no fundo)
+  vec3 base = uEscuro > 0.5 ? mix(vCor, vec3(1.0), 0.18) : vCor;
+  if (uApresenta > 0.5) {
+    // apresentação (20/10): o sol parado no mundo, com sombra; o céu azulado por cima e o chão quente por baixo;
+    // um brilho de aço nas faces viradas para o sol
+    vec3 nm = normalize(cross(dFdx(vMundo), dFdy(vMundo)));
+    vec3 olho = normalize(cameraPosition - vMundo);
+    if (dot(nm, olho) < 0.0) nm = -nm;
+    float sol = max(dot(nm, uSol), 0.0) * luzDoSol(vMundo, nm);
+    vec3 amb = mix(vec3(0.58, 0.56, 0.54), vec3(0.76, 0.81, 0.90), 0.5 + 0.5 * nm.z);
+    float brilho = pow(max(dot(nm, normalize(uSol + olho)), 0.0), 48.0) * 0.2 * sol;
+    vec3 b = uEscuro > 0.5 ? base : base * 0.86;            // no claro a paleta vem clareada: tira um pouco
+    gl_FragColor = vec4(min(b * (0.7 * amb + 0.66 * vec3(1.0, 0.97, 0.92) * sol) + brilho, 1.0), 1.0);
+    return;
+  }
   vec3 n = normalize(cross(dFdx(vVista), dFdy(vVista)));
   if (n.z < 0.0) n = -n;
   vec3 luz = normalize(vec3(0.35, 0.55, 0.75));
   float d = max(dot(n, luz), 0.0);
   float ceu = 0.5 + 0.5 * n.y;
-  // no escuro a peça sobe um pouco para o claro (o azul-marinho das vigas sumia no fundo)
-  vec3 base = uEscuro > 0.5 ? mix(vCor, vec3(1.0), 0.18) : vCor;
   gl_FragColor = vec4(min(base * (0.5 + 0.18 * ceu + 0.5 * d), 1.0), 1.0);
 #endif
 }`;
@@ -263,13 +297,17 @@ export class Visor3D {
 
   _materiais() {
     const comum = { vertexShader: VERT, fragmentShader: FRAG };
+    this._luz = this._luz || {
+      uApresenta: { value: 0 }, uSol: { value: new THREE.Vector3(...SOL).normalize() }, tSombra: { value: null },
+      uMatSombra: { value: new THREE.Matrix4() }, uTexel: { value: 1 / 2048 }, uDesloc: { value: 0 }, uTemSombra: { value: 0 } };
     this._uLonge = { value: 10000 };
     this._uEscuro = { value: 0 };
     const un = () => ({ tPecas: { value: this.textura }, uIdBase: { value: 0 }, uAresta: { value: 0 }, uLonge: this._uLonge,
-                        uEscuro: this._uEscuro });
+                        uEscuro: this._uEscuro, ...this._luz });
     this._mat = (defs, aresta) => {
+      const sombra = 'SOMBRA' in defs;              // vista do sol: empurrada para trás (sem "acne" nas faces de frente para ele)
       const m = new THREE.ShaderMaterial({ ...comum, uniforms: un(), defines: defs,
-        side: THREE.DoubleSide, polygonOffset: !aresta, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+        side: THREE.DoubleSide, polygonOffset: !aresta, polygonOffsetFactor: sombra ? 2 : 1, polygonOffsetUnits: sombra ? 4 : 1,
         transparent: !!aresta, depthWrite: !aresta });
       m.uniforms.uAresta.value = aresta ? 1 : 0;
       return m;
@@ -303,9 +341,11 @@ export class Visor3D {
     const malha = new THREE.Mesh(g, this._mat({}, false));
     const escolha = this._mat({ ESCOLHA: '' }, false);
     const ponto = this._mat({ PONTO: '' }, false);
+    const sombra = this._mat({ SOMBRA: '' }, false);
     malha.material.uniforms.uIdBase.value = b.id0;
     escolha.uniforms.uIdBase.value = b.id0;
     ponto.uniforms.uIdBase.value = b.id0;
+    sombra.uniforms.uIdBase.value = b.id0;
     malha.matrixAutoUpdate = false;
     malha.matrix.copy(matriz);
     let arestas = null;
@@ -323,7 +363,7 @@ export class Visor3D {
       this.raiz.add(arestas);
     }
     this.raiz.add(malha);
-    this.malhas.push({ malha, arestas, escolha, ponto, id0: b.id0, n: b.n });
+    this.malhas.push({ malha, arestas, escolha, ponto, sombra, id0: b.id0, n: b.n });
   }
 
   _forma(buf, f) {
@@ -351,6 +391,7 @@ export class Visor3D {
     malha.frustumCulled = false;
     const escolha = this._mat({ INSTANCIA: '', ESCOLHA: '' }, false);
     const ponto = this._mat({ INSTANCIA: '', PONTO: '' }, false);
+    const sombra = this._mat({ INSTANCIA: '', SOMBRA: '' }, false);
     let arestas = null;
     if (f.arestas.n) {
       arestas = new THREE.LineSegments(geo(this._indice(buf, f.arestas)), this._mat({ INSTANCIA: '' }, true));
@@ -359,7 +400,7 @@ export class Visor3D {
       this.raiz.add(arestas);
     }
     this.raiz.add(malha);
-    this.malhas.push({ malha, arestas, escolha, ponto, ids });
+    this.malhas.push({ malha, arestas, escolha, ponto, sombra, ids });
   }
 
   // ---------------------------------------------------------------- fichas, camadas, cor
@@ -619,6 +660,7 @@ export class Visor3D {
       m.malha.visible = algum;
       if (m.arestas) m.arestas.visible = algum && this.arestasLigadas;
     }
+    this._sombraSuja = true;
     this.pedirQuadro();
   }
 
@@ -686,10 +728,12 @@ export class Visor3D {
   _criarPiso() {
     const material = new THREE.ShaderMaterial({
       uniforms: { uFundo: { value: new THREE.Color() }, uLinha: { value: new THREE.Color() }, uAlfa: { value: 0 },
-                  uCentro: { value: new THREE.Vector2() }, uRaio: { value: 1e9 } },
-      vertexShader: `varying vec2 vXY;
-        void main() { vec4 w = modelMatrix * vec4(position, 1.0); vXY = w.xy; gl_Position = projectionMatrix * viewMatrix * w; }`,
-      fragmentShader: `uniform vec3 uFundo, uLinha; uniform float uAlfa, uRaio; uniform vec2 uCentro; varying vec2 vXY;
+                  uCentro: { value: new THREE.Vector2() }, uRaio: { value: 1e9 }, uEscuro: this._uEscuro || { value: 0 },
+                  ...(this._luz || {}) },
+      vertexShader: `varying vec2 vXY; varying vec3 vMundo;
+        void main() { vec4 w = modelMatrix * vec4(position, 1.0); vXY = w.xy; vMundo = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: `uniform vec3 uFundo, uLinha; uniform float uAlfa, uRaio, uEscuro; uniform vec2 uCentro; varying vec2 vXY; varying vec3 vMundo;
+        ${this._luz ? 'uniform float uApresenta; ' + SOMBRA_GLSL : 'float uApresenta = 0.0; float luzDoSol(vec3 p, vec3 n) { return 1.0; }'}
         float grade(float passo) {
           vec2 q = vXY / passo, w = fwidth(q);
           vec2 d = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-6));
@@ -697,7 +741,9 @@ export class Visor3D {
         }
         void main() {
           float a = grade(10000.0) * uAlfa * (1.0 - smoothstep(uRaio * 0.55, uRaio, distance(vXY, uCentro)));
-          gl_FragColor = vec4(mix(uFundo, uLinha, a), 1.0);
+          vec3 cor = mix(uFundo, uLinha, a);
+          if (uApresenta > 0.5) cor *= 1.0 - (uEscuro > 0.5 ? 0.75 : 0.3) * (1.0 - luzDoSol(vMundo, vec3(0.0, 0.0, 1.0)));
+          gl_FragColor = vec4(cor, 1.0);
         }`,
       depthWrite: false, side: THREE.FrontSide });
     this.piso = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
@@ -716,7 +762,84 @@ export class Visor3D {
     this.piso.position.set(c.x, c.y, cx.min.z - 10);
     this.piso.material.uniforms.uCentro.value.set(c.x, c.y);
     this.piso.material.uniforms.uRaio.value = Math.max(s.x, s.y) * 0.85 + 15000;
+    this._sombraSuja = true;
     this.pedirQuadro();
+  }
+
+  // ---------------------------------------------------------------- apresentação: sol e sombra
+
+  /** Liga ou desliga o modo apresentação (20/10, para mostrar ao cliente no celular): o sol parado no mundo, a sombra
+   *  das peças nelas mesmas e no chão, o céu e o brilho do aço. `resolucao` é o lado da imagem da sombra (o celular usa
+   *  2048; mais que isso pesa na memória dele). */
+  ligarApresentacao(sim, resolucao) {
+    if (!this._luz) return;
+    this.apresentacao = !!sim;
+    this._luz.uApresenta.value = sim ? 1 : 0;
+    if (sim && !this._alvoSombra) {
+      const lado = Math.min(resolucao || 2048, this.renderer.capabilities.maxTextureSize);
+      this._alvoSombra = new THREE.WebGLRenderTarget(lado, lado, { depthBuffer: true });
+      this._alvoSombra.depthTexture = new THREE.DepthTexture(lado, lado);
+      this._luz.uTexel.value = 1 / lado;
+      this._camSombra = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 2);
+      this._camSombra.up.set(0, 0, 1);
+    }
+    this._luz.tSombra.value = sim ? this._alvoSombra.depthTexture : null;
+    this._luz.uTemSombra.value = 0;
+    this._sombraSuja = true;
+    this.pedirQuadro();
+  }
+
+  /** A profundidade vista do sol, numa câmera paralela. De longe pega a obra inteira (e a sombra que cai no chão); de
+   *  perto, só a volta do que está na tela — a imagem da sombra cobrindo 200 m deixava cada pixel com 10 cm de obra e a
+   *  sombra de uma terça na outra sumia. Refeita ao soltar o dedo (_movendo), não durante o gesto. */
+  _recorteSombra() {
+    const cx = this.caixaVisivel();
+    const raioObra = Math.max(cx.getSize(new THREE.Vector3()).length() / 2, 1000) * 1.15;
+    const perto = this.camera.position.distanceTo(this.controles.target) * 1.6;
+    const c = perto < raioObra ? this.controles.target.clone() : cx.getCenter(new THREE.Vector3());
+    return { c, raio: Math.min(perto, raioObra), raioObra };
+  }
+
+  /** O recorte da sombra mudou o bastante (zoom, arrastar, enquadrar, vistas) para refazê-la? */
+  _vistaMudou() {
+    const a = this._recorteDesenhado;
+    if (!a) return true;
+    const b = this._recorteSombra();
+    return Math.abs(b.raio - a.raio) > 0.15 * a.raio || b.c.distanceTo(a.c) > 0.25 * a.raio;
+  }
+
+  _desenharSombra() {
+    this._sombraSuja = false;
+    const { c, raio, raioObra } = this._recorteDesenhado = this._recorteSombra();
+    const cam = this._camSombra, sol = this._luz.uSol.value;
+    cam.left = -raio; cam.right = raio; cam.top = raio; cam.bottom = -raio;
+    // o sol fica fora da obra inteira, mesmo com o recorte pequeno: a coluna alta fora da tela ainda faz sombra nela
+    cam.near = 1; cam.far = raioObra * 4 + raio;
+    cam.position.copy(c).addScaledVector(sol, raioObra * 2);
+    cam.lookAt(c);
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    this._luz.uMatSombra.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    this._luz.uDesloc.value = 1.5 * (2 * raio) * this._luz.uTexel.value;     // 1,5 pixel da sombra, ao longo da normal
+    const fundo = this.cena.background;
+    this.cena.background = null;
+    const trocas = [];
+    for (const o of this.cena.children) if (o !== this.raiz && o.visible) { trocas.push([o, true, true]); o.visible = false; }
+    for (const m of this.malhas) {
+      trocas.push([m.malha, m.malha.material]);
+      m.malha.material = m.sombra;
+      if (m.arestas) { trocas.push([m.arestas, m.arestas.visible, true]); m.arestas.visible = false; }
+    }
+    this._luz.uTemSombra.value = 0;
+    this._luz.tSombra.value = null;                   // a imagem que se desenha não fica ligada como textura ao mesmo tempo
+    this.renderer.setRenderTarget(this._alvoSombra);
+    this.renderer.clear();
+    this.renderer.render(this.cena, cam);
+    this.renderer.setRenderTarget(null);
+    for (const t of trocas) { if (t[2]) t[0].visible = t[1]; else t[0].material = t[1]; }
+    this.cena.background = fundo;
+    this._luz.tSombra.value = this._alvoSombra.depthTexture;
+    this._luz.uTemSombra.value = 1;
   }
 
   // ---------------------------------------------------------------- câmera
@@ -1025,6 +1148,8 @@ export class Visor3D {
     this._pedido = true;
     requestAnimationFrame(() => {
       this._pedido = false;
+      // a sombra é refeita quando o que está à vista muda, ou quando a vista muda o bastante — nunca no meio do gesto
+      if (this.apresentacao && this.cabecalho && (this._sombraSuja || (!this._emMovimento && this._vistaMudou()))) this._desenharSombra();
       this.renderer.render(this.cena, this.camera);
       this.quadros++;
     });

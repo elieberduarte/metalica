@@ -161,6 +161,15 @@ try:
     t0 = time.time()
     ok(esperar(ap, "window.visor && window.visor.fichas && !document.querySelector('.carregando')", 120),
        "o pacote é preparado no computador e o 3D abre (%.0f s)" % (time.time() - t0))
+    # a apresentação (20/10): sol e sombra ligados de saída; o botão (toque de verdade) desliga e a escolha fica no aparelho
+    ok(esperar(ap, "visor.apresentacao === true && !!visor._recorteDesenhado && document.querySelector('[data-f=apresentacao]').classList.contains('ligado')", 10),
+       "apresentação ligada de saída: o sol e a sombra desenhada")
+    bot = ap.avaliar("(() => { const r = document.querySelector('[data-f=apresentacao]').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()")
+    tocar(ap, bot[0], bot[1])
+    ok(esperar(ap, "visor.apresentacao === false && localStorage.getItem('pref.apresentacao') === '0'", 5), "tocar o botão desliga a apresentação e guarda a escolha")
+    tocar(ap, bot[0], bot[1])
+    ok(esperar(ap, "visor.apresentacao === true && localStorage.getItem('pref.apresentacao') === '1'", 5), "tocar de novo liga")
+    foto(ap, "celular_apresentacao.png")
     alvo = ap.avaliar("""(() => { const v = window.visor; let m = -1, k = 0; v.fichas.forEach((f, i) => { if (v.visivelCamada[f.c] !== false && (f.kg || 0) > k) { k = f.kg; m = i; } });
         const [x, y] = v.paraTela(m); const r = v.tela.getBoundingClientRect(); return [x + r.left, y + r.top, m]; })()""")
     tocar(ap, alvo[0], alvo[1])
