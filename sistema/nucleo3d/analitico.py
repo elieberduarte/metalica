@@ -37,7 +37,7 @@ APOIA_EM = {
     # o perfil ao lado da treliça que recebe as terças (o U da TRANSIÇÃO 1 do Posto CB): preso nela
     "apoio_terca": ("montante", "banzo", "diagonal", "pilar", "viga"),
     # e a corrente do fechamento lateral, de fiada em fiada da longarina (galpão gerado, 20/10)
-    "corrente": ("terça", "longarina", "viga", "banzo"),
+    "corrente": ("terça", "longarina", "viga", "banzo", "pilar"),
     "viga": ("pilar", "viga", "banzo"),
     # a longarina (a travessa do fechamento) presa no pilar por onde passa — sem isso ela só ficava presa onde um
     # contraventamento criava o nó (a Kaefer do engenheiro, 15/10: os pilares sem X ficavam sem a travessa)

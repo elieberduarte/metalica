@@ -562,12 +562,18 @@ class _Construtor:
         zs = list(dsn._fiadas_longarina(self.g)[0])
         el = self._nome_elemento("Longarina", "Longarina de fechamento")
         off = self.pilar.d / 2 + self.longarina.d / 2      # face externa do pilar
+        # nos vãos das pontas, a longarina que leva a reação do pilar de canto (L2), quando o cálculo pediu
+        l2 = self._elemento("Longarina dos vãos das pontas")
+        perf_l2 = geo.registrar_perfil(geo.resolver_perfil(l2.perfil)) if l2 is not None else None
+        pontas = {0, len(self.xs) - 2}
         for lado, yw, ang in (("esquerdo", -off, 90.0), ("direito", self.V + off, -90.0)):
             for j, z in enumerate(zs):
                 for iv in range(len(self.xs) - 1):
+                    na_ponta = perf_l2 is not None and iv in pontas
                     self._barra("longarina", (self.xs[iv], yw, z),
-                                (self.xs[iv + 1], yw, z), self.longarina, "longarina",
-                                "Terças", "Aço galvanizado", self.dg.aco_tercas, el,
+                                (self.xs[iv + 1], yw, z), perf_l2 if na_ponta else self.longarina, "longarina",
+                                "Terças", "Aço galvanizado", self.dg.aco_tercas, l2.nome if na_ponta else el,
+                                marca="L2" if na_ponta else None,
                                 rotacao=ang, lado=lado, fiada=j + 1, vao=iv + 1)
         self._correntes_longarinas(zs, off)
 
@@ -682,21 +688,31 @@ class _Construtor:
             apoios = [0.0] + ys + [self.V]
             for jf, z in enumerate(zs):
                 for a, b in zip(apoios, apoios[1:]):
+                    # furo oblongo ao longo da longarina nas ligações: ela não vira tirante entre os montantes
+                    # (cantos e pilaretes) quando o pórtico da ponta abre e fecha com o vento — na análise 3D,
+                    # até 26 kN e 227 %; o cálculo a verifica só à flexão
                     self._barra("longarina_oitao", (xl, a, z), (xl, b, z), perf_l, "longarina", "Terças",
                                 "Aço galvanizado", self.dg.aco_tercas, lo.nome, rotacao=90.0 * s,
-                                oitao=k_o, fiada=jf + 1)
-            # as correntes da longarina de oitão, no meio de cada painel, de fiada em fiada e até o que
-            # está em cima (a viga de oitão ou a viga/banzo da ponta), que leva o peso
+                                oitao=k_o, fiada=jf + 1, folga_axial=True)
+            # as correntes da longarina de oitão, no meio de cada painel, de fiada em fiada; da de cima, dois
+            # tirantes inclinados até os montantes vizinhos (pilarete ou pilar de canto), que levam o peso ao
+            # chão — presos na viga da ponta, eram puxados quando o vento levanta o telhado (na análise 3D a
+            # longarina de cima dobrava no eixo fraco)
             n_corr = int((lo.geometria or {}).get("n_correntes") or 0)
             if n_corr and zs:
                 barra = geo.registrar_perfil(geo.barra_redonda(DIAM_CORRENTE, "Barra ø 16 mm"))
+                ztop = max(zs)
                 for a, b in zip(apoios, apoios[1:]):
                     for kc in range(1, n_corr + 1):
                         yc = a + (b - a) * kc / (n_corr + 1.0)
-                        pts = [(xl, yc, z) for z in sorted(zs)] + [(x0, yc, self._z_baixo_oitao(yc))]
+                        pts = [(xl, yc, z) for z in sorted(zs)]
                         for p0, p1 in zip(pts, pts[1:]):
                             self._barra("corrente_longarina", p0, p1, barra, "corrente", "Terças", "Aço",
                                         self.dg.aco_chapas, "Corrente de longarina de oitão", oitao=k_o)
+                        for yv in (a, b):
+                            zv = min(ztop + 600.0, self._z_baixo_oitao(yv) - 100.0)
+                            self._barra("corrente_longarina", pts[-1], (x0, yv, zv), barra, "corrente", "Terças",
+                                        "Aço", self.dg.aco_chapas, "Tirante da corrente de oitão", oitao=k_o)
 
     # ------------------------------------------------------------------ contraventamento
     def _perfil_contraventamento(self, nome: str) -> Perfil:

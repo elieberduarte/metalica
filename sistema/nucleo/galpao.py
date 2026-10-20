@@ -62,6 +62,7 @@ def dimensionar(dados: DadosGalpao) -> ProjetoGalpao:
         _contraventamentos(p)
         _tercas_escora(p)
         _oitao(p)
+        _longarinas_das_pontas(p)
         _ligacoes(p)
         _base(p)
         _lista_de_material(p)
@@ -371,7 +372,9 @@ def _forca_de_escora(p: ProjetoGalpao) -> float:
 
 
 def _flexo_compressao_terca(p: ProjetoGalpao, perfil_nome: str, n_corr: int, N: float,
-                            res_flexao=None) -> Verificacao:
+                            res_flexao=None, titulo: str = "terça como escora do contraventamento de cobertura",
+                            origem: Tuple[str, str] = ("Força de escora (montante da treliça de cobertura)",
+                                                       "N = F/2 − F/n")) -> Verificacao:
     """NBR 14762:2010, item 9.9: N/N_Rd + M_Sd/M_Rd ≤ 1, com o momento da sucção (o mesmo vento)
     amplificado por 1/(1 − N/N_ex). `res_flexao`: o Resultado da terça com esse perfil."""
     d = p.dados
@@ -385,10 +388,9 @@ def _flexo_compressao_terca(p: ProjetoGalpao, perfil_nome: str, n_corr: int, N: 
     N_ex = math.pi ** 2 * nbr14762.E * sec.Ix / L ** 2
     amp = 1.0 / max(1e-6, 1.0 - N / N_ex)
     soma = N / vc.Rd + amp * M_sd / M_rd if vc.Rd > 0 else float("inf")
-    v = Verificacao("Flexo-compressão — terça como escora do contraventamento de cobertura",
+    v = Verificacao("Flexo-compressão — " + titulo,
                     norma="NBR 14762:2010, item 9.9", Sd=round(soma, 4), Rd=1.0, unidade="—")
-    v.passo("Força de escora (montante da treliça de cobertura)", "N = F/2 − F/n", "",
-            fmt(N, 1, "kN"))
+    v.passo(origem[0], origem[1], "", fmt(N, 1, "kN"))
     v.passo("Compressão resistente", "N_c,Rd (9.8.2), KxLx = L, KyLy = KtLt = L/(correntes+1)",
             "L = %s; L/(n+1) = %s" % (fmt(L, 0, "cm"), fmt(Lc, 0, "cm")), fmt(vc.Rd, 1, "kN"))
     v.passo("Momento de sucção amplificado", "M_Sd/(1 − N/N_ex)",
@@ -447,6 +449,93 @@ def _maos_francesas_viga(p: ProjetoGalpao, Lb_cm: float, esf_viga: dict, viga: P
         esforcos={"N_kN": round(N, 2), "criterio": "2 % da força na mesa ÷ cos 45° (NBR 8800, item 4.11)"},
         geometria={"linhas_de_terca": [j + 1 for j in linhas], "a_cada": m, "Lb_m": round(Lb_cm / 100.0, 2),
                    "comprimento_m": round(L / 100.0, 3), "quantidade": 2 * len(linhas) * lados}))
+
+
+#: Peso do fechamento lateral em telha metálica, por m² de fachada, já com a longarina (cargas.PESOS).
+PESO_FECHAMENTO = 0.125
+
+
+def _obliqua_com_peso(p: ProjetoGalpao, res, vao_m: float, n_corr: int, faixa_m: float) -> Verificacao:
+    """Flexão oblíqua da longarina (NBR 14762, 9.8.2.5): o momento do vento no eixo forte com o peso do
+    fechamento no eixo fraco, que vence de corrente a corrente. A verificação da terça reaproveitada para
+    a parede não tinha o peso (inclinação 0): na análise 3D a longarina de oitão ia a 145 % por ele."""
+    sec = nbr14762.secao_do_perfil(achar_perfil(res.perfil))
+    Lw = vao_m / (int(n_corr) + 1)
+    My = 1.25 * PESO_FECHAMENTO * faixa_m * Lw ** 2 / 8.0 * 100.0           # kN·cm
+    vy = nbr14762.flexao_em_y_mrd(sec, p.dados.aco_tercas, M_Sd=My)
+    mx = [v for v in res.verificacoes if v.titulo.startswith("Flexão Mx") and v.Rd]
+    pior = max(mx, key=lambda v: v.razao) if mx else None
+    vi = nbr14762.interacao_flexao_obliqua(pior.Sd if pior else 0.0, pior.Rd if pior else 1.0, My, vy.Rd)
+    vi.titulo = "Flexão oblíqua — vento no eixo forte + peso do fechamento entre correntes"
+    vi.passo("Peso no eixo fraco", "M_y = 1,25 · g · faixa · (L/(correntes+1))²/8",
+             "g = %s kN/m²; faixa = %s; L/(n+1) = %s" % (fmt(PESO_FECHAMENTO, 3), fmt(faixa_m, 2, "m"),
+                                                       fmt(Lw, 2, "m")), fmt(My, 1, "kN·cm"))
+    return vi
+
+
+def _com_peso_do_fechamento(p: ProjetoGalpao, opcoes, vao_m: float, faixa_m: float):
+    """A primeira das `opcoes` (a mais leve) que passa também na flexão oblíqua com o peso; nenhuma: a
+    primeira, com a verificação reprovada à vista."""
+    for r in opcoes:
+        v = _obliqua_com_peso(p, r, vao_m, int(r.dados.get("n_correntes") or 0), faixa_m)
+        if v.ok and r.ok:
+            r.add(v)
+            return r
+    r = opcoes[0]
+    r.add(_obliqua_com_peso(p, r, vao_m, int(r.dados.get("n_correntes") or 0), faixa_m))
+    return r
+
+
+def _longarinas_das_pontas(p: ProjetoGalpao):
+    """A longarina lateral dos vãos das pontas leva, além do vento da parede, a reação do pilar de canto,
+    que dobra no eixo fraco sob o vento do oitão (meio painel de fachada) e se apoia nas fiadas: ela a
+    leva comprimida até o pórtico seguinte. Na análise 3D do 20×40, 8,6 kN e 113 % — o cálculo só
+    a verificava à flexão. N = 1,25 · 1,4 · w · (painel/2) · faixa da fiada (o apoio interno de uma
+    viga contínua sobre as fiadas). Quando a comum não passa, só essas (L2) ganham perfil próprio."""
+    d = p.dados
+    lg, po = p.elemento("Longarina"), p.elemento("Pilar de oitão")
+    if lg is None or po is None:
+        return
+    cotas = lg.geometria.get("cotas_fiadas_m") or []
+    if not cotas:
+        return
+    pres, suc = _vento_oitao(p)
+    w = max(pres, abs(suc))
+    faixa = float(lg.geometria.get("espacamento_m") or (cotas[1] - cotas[0] if len(cotas) > 1 else cotas[0]))
+    N = 1.25 * 1.4 * w * float(po.geometria.get("largura_m") or 0.0) / 2.0 * faixa
+    if N < N_ESCORA_MIN:
+        return
+    n_corr = int(lg.geometria.get("n_correntes") or 0)
+    titulo = "longarina do vão da ponta (reação do pilar de canto sob o vento do oitão)"
+    origem = ("Reação do pilar de canto na fiada", "N = 1,25 · 1,4 · w · (painel/2) · faixa")
+    v = _flexo_compressao_terca(p, lg.perfil, n_corr, N, lg.resultado, titulo, origem)
+    lg.esforcos["N_ponta_kN"] = round(N, 2)
+    if v.ok:
+        lg.resultado.add(v)
+        return
+    e = lg.esforcos
+    base = dict(aco=d.aco_tercas, vao=d.espacamento_porticos, carga_gravidade=e["q_pressao_kN_m"],
+                carga_succao=e["q_succao_kN_m"], inclinacao=0.0,
+                carga_servico_gravidade=max(e["pressao_kN_m2"], 0.0) * faixa,
+                carga_servico_succao=abs(min(e["succao_kN_m2"], 0.0)) * faixa)
+    for r in nbr14762.dimensionar_terca(correntes=(max(1, n_corr),), apenas_aprovados=True, **base):
+        ve = _flexo_compressao_terca(p, r.perfil, n_corr, N, r, titulo, origem)
+        if ve.ok and _obliqua_com_peso(p, r, d.espacamento_porticos, n_corr, faixa).ok:
+            r.add(_obliqua_com_peso(p, r, d.espacamento_porticos, n_corr, faixa))
+            r.add(ve)
+            r.elemento = "Longarina dos vãos das pontas"
+            for vv in r.verificacoes:
+                vv.titulo = vv.titulo.replace("gravidade", "pressão do vento")
+            p.elementos.append(ElementoDimensionado(
+                nome="Longarina dos vãos das pontas", perfil=r.perfil, material=d.aco_tercas, resultado=r,
+                esforcos={"N_kN": round(N, 2)},
+                geometria={"vaos": [1, max(1, d.n_porticos - 1)], "quantidade": 2 * 2 * len(cotas)}))
+            p.avisos.append("As longarinas laterais dos vãos das pontas levam a reação do pilar de canto (N = %s): "
+                            "%s no lugar de %s." % (fmt(N, 1, "kN"), r.perfil, lg.perfil))
+            return
+    lg.resultado.add(v)
+    p.avisos.append("A longarina do vão da ponta não passa com a reação do pilar de canto (N = %s): trave o "
+                    "pilar de canto no eixo fraco ou use longarina mais pesada." % fmt(N, 1, "kN"))
 
 
 def _vento_oitao(p: ProjetoGalpao) -> Tuple[float, float]:
@@ -548,7 +637,7 @@ def _oitao(p: ProjetoGalpao):
     opcoes = nbr14762.dimensionar_terca(correntes=(0, 1), apenas_aprovados=True, **base) or         nbr14762.dimensionar_terca(correntes=(1, 2), apenas_aprovados=False, **base)
     if not opcoes:
         return
-    melhor = sorted(opcoes, key=lambda r_: (not r_.ok, 0))[0]
+    melhor = _com_peso_do_fechamento(p, sorted(opcoes, key=lambda r_: (not r_.ok, 0)), larg, esp)
     melhor.elemento = "Longarina de oitão L = %s m" % fmt(larg, 2)
     for v in melhor.verificacoes:
         v.titulo = v.titulo.replace("gravidade", "pressão do vento")
@@ -707,7 +796,8 @@ def _longarinas(p: ProjetoGalpao):
     if not opcoes:
         raise ErroDeDados("não foi possível dimensionar as longarinas de fechamento.")
 
-    melhor = opcoes[0]
+    # a primeira (a mais leve) que passa também na flexão oblíqua com o peso do fechamento entre correntes
+    melhor = _com_peso_do_fechamento(p, opcoes, d.espacamento_porticos, esp)
     melhor.elemento = "Longarina L = %g m" % d.espacamento_porticos
     for v in melhor.verificacoes:
         # a verificação é a da terça: na parede, "gravidade" é a pressão do vento
@@ -2566,8 +2656,13 @@ def _lista_de_material(p: ProjetoGalpao):
     n_long = n_long or max(2, int(d.altura_beiral / 2))
     perfil_long = longarina.perfil if longarina else (terca.perfil if terca else "")
     if perfil_long:
-        add("L1", "Longarina de fechamento", perfil_long, n_long * 2 * (n_port - 1),
+        l2 = p.elemento("Longarina dos vãos das pontas")
+        n_l2 = int(l2.geometria.get("quantidade") or 0) if l2 else 0
+        add("L1", "Longarina de fechamento", perfil_long, n_long * 2 * (n_port - 1) - n_l2,
             d.espacamento_porticos, material=d.aco_tercas, pintada=False)
+        if n_l2:
+            add("L2", "Longarina dos vãos das pontas", l2.perfil, n_l2, d.espacamento_porticos,
+                material=d.aco_tercas, pintada=False)
     # correntes do fechamento: a longarina foi verificada com elas (_longarinas), da fiada de baixo
     # até a terça do beiral, que leva o peso — antes ficavam fora do 3D e da lista
     n_corr_l = int(longarina.geometria.get("n_correntes") or 0) if longarina else 0

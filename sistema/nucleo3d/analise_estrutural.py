@@ -197,7 +197,8 @@ def _folga_no_topo(nos: np.ndarray, barras: List[dict]) -> None:
         j = topo.get(br["ids"][0])
         if j is None or z > max(float(nos[barras[j]["a"]][2]), float(nos[barras[j]["b"]][2])):
             topo[br["ids"][0]] = i
-    for i in topo.values():
+    # e a peça inteira com furo oblongo ao longo dela (a longarina de oitão no pilar de canto)
+    for i in list(topo.values()) + [i for i, br in enumerate(barras) if br.get("folga_axial")]:
         barras[i]["sec"] = dict(barras[i]["sec"], A=barras[i]["sec"]["A"] * 1e-4)
 
 
@@ -521,7 +522,7 @@ def montar(doc, par: Optional[dict] = None) -> dict:
             "elemento": "trelica" if at.get("papel_trelica") in ("banzo_sup", "banzo_inf", "diagonal", "montante") and
             at.get("origem_2d") else at.get("elemento"), "grupo": at.get("origem_2d") or br.get("grupo"),
             "viga_cobertura": bool(at.get("viga_de_cobertura")), "misula": at.get("misula"),
-            "topo_oblongo": bool(at.get("topo_oblongo")),
+            "topo_oblongo": bool(at.get("topo_oblongo")), "folga_axial": bool(at.get("folga_axial")),
             "marca": at.get("marca") or at.get("peca"), "perfil": perfil, "ids": list(br.get("ids") or []),
             **({"perfil_modelo": br.get("perfil")} if at.get("perfil_calculo") else {}),
             "aco": (getattr(ent, "aco", "") or "") if ent is not None else "",
