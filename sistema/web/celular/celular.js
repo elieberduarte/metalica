@@ -353,6 +353,7 @@ async function telaModelo(slug, m, medir, camera) {
     <div class="ferramentas" hidden>
       <button data-f="camadas" aria-label="Camadas"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z M3 13l9 5 9-5 M3 17.5l9 5 9-5"/></svg></button>
       <button data-f="vistas" aria-label="Vistas"><svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      <button data-f="maquete" aria-label="Maquete na mesa (realidade aumentada)"><svg viewBox="0 0 24 24"><path d="M3 8V3h5 M16 3h5v5 M21 16v5h-5 M8 21H3v-5"/><path d="M12 6.5l4.5 2.5v5.5L12 17l-4.5-2.5V9z M7.5 9L12 11.5 16.5 9 M12 11.5V17"/></svg></button>
       <button data-f="buscar" aria-label="Buscar peça"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></button>
       <button data-f="apresentacao" aria-label="Apresentação (sol e sombras)"><svg viewBox="0 0 24 24"><path d="M5 9l5-3 5 3v5l-5 3-5-3z"/><path d="M10 17l9 2.5-4-5.5" opacity=".55"/><circle cx="19" cy="5" r="2"/></svg></button>
       <button data-f="arestas" class="ligado" aria-label="Arestas"><svg viewBox="0 0 24 24"><path d="M4 7l8-4 8 4v10l-8 4-8-4z"/></svg></button>
@@ -444,6 +445,7 @@ async function telaModelo(slug, m, medir, camera) {
       }
       else if (f === 'enquadrar') v.enquadrar('iso');
       else if (f === 'camadas') folhaCamadas(v);
+      else if (f === 'maquete') abrirMaquete(v, null, m.projeto.nome);      // o atalho da realidade aumentada (usuário, 20/10)
       else if (f === 'vistas') {
         /* A cobertura retrátil mora aqui, junto das vistas (pedido do usuário, 19/10: "para não precisar criar um
          * menu novo só para isso") — e só no projeto que tem uma. */
@@ -559,16 +561,18 @@ async function abrirMaquete(v, ids, nome) {
     }
     // os eixos, os níveis e o arquitetônico, na câmera do Android (o .usdz não leva linhas)
     const piso = android && !ids ? await M.pisoDaMaquete(v._dadosReferencia, r.quadro, v.cabecalho.origem, v._caixaModelo) : null;
-    maqueteAnterior = situacoes.map(s => s.r.grupo).concat(piso ? [piso] : []);
+    // as cotas principais (comprimento, largura e altura totais) — também no conjunto (a tesoura)
+    const cotas = android ? M.cotasDaMaquete(r) : null;
+    maqueteAnterior = situacoes.map(s => s.r.grupo).concat(piso ? [piso] : [], cotas ? [cotas] : []);
     window.ultimaMaquete = { pecas: r.pecas, triangulos: r.triangulos, arestas: r.arestas, deFora: r.deFora, simplificadas: r.simplificadas,
                              escala: r.escala, medidas: r.medidas, como, situacoes: situacoes.map(s => s.rotulo), camadas: r.camadas.length,
-                             piso: piso ? piso.userData.partes : [] };
+                             piso: piso ? piso.userData.partes : [], cotas: cotas ? cotas.userData.textos : [] };
     const m = r.medidas.map(x => x.toFixed(1).replace('.', ',')).join(' × ');
     abrirFolha(`<div class="ficha">${titulo}<p class="fraco">${nf(r.pecas)} peças · escala 1:${nf(r.escala)} · ${m} m na obra${r.deFora
         ? `<br>${nf(r.deFora)} peças pequenas ficaram de fora (parafusos, porcas, arruelas…)` : ''}${r.simplificadas
         ? `<br>${nf(r.simplificadas)} peças pesadas vão só com a forma de fora (lajes alveolares, blocos…), para a maquete abrir leve` : ''}${
         situacoes.length > 1 && android ? `<br>${situacoes.map(s => s.rotulo).join(' e ')}: troque na câmera` : ''}${
-        android && !ids ? '<br>Na câmera, o botão Camadas liga e desliga as camadas, os eixos e os níveis' : ''}</p>
+        android ? `<br>Na câmera, o botão Camadas liga e desliga as camadas${ids ? '' : ', os eixos, os níveis'} e as cotas` : ''}</p>
       <div class="acoes" id="ra-acoes"></div>
       <p class="mais-fraco dica-cor">${como ? 'Aponte a câmera para uma mesa ou o chão, com boa luz, e mova o celular devagar até ela achar a superfície.'
         : 'Este aparelho ou navegador não abre realidade aumentada. No iPhone, use o Safari; no Android, o Chrome (com o "Google Play Services para RA") pela nuvem ou por conexão segura.'}</p></div>`);
@@ -596,11 +600,13 @@ async function abrirMaquete(v, ids, nome) {
         ...(piso ? piso.userData.partes.filter(k => v._partesOcultas && v._partesOcultas.has(k)).map(k => 'piso:' + k) : []),
       ];
       const camadas = { camadas: r.camadas, sistemas: r.sistemas, desligadas,
-                        partes: piso ? piso.userData.partes.map(k => [k, ...(PISO_NOMES[k] || [k, '#999'])]) : [] };
+                        partes: (piso ? piso.userData.partes.map(k => [k, ...(PISO_NOMES[k] || [k, '#999'])]) : [])
+                          .concat(cotas ? [['cotas', 'Cotas principais', '#1f5fbf']] : []) };
       abrir.onclick = async () => {
         fecharFolha();
         try {
-          await M.abrirWebXR({ situacoes: situacoes.map(s => ({ rotulo: s.rotulo, grupo: s.r.grupo })), piso, camadas, escala: r.escala,
+          await M.abrirWebXR({ situacoes: situacoes.map(s => ({ rotulo: s.rotulo, grupo: s.r.grupo })), piso, cotas, camadas, escala: r.escala,
+                               sol: v._luz ? v._luz.uSol.value.toArray() : null,         // o sol da obra (Vistas): a sombra cai como no 3D
                                aoSair: () => { maqueteAnterior.forEach(g => M.descartar(g)); maqueteAnterior = []; } });
         } catch (e) { abrirFolha(`<div class="ficha">${titulo}<p class="fraco">A câmera não abriu: ${esc(e.message || e)}</p></div>`); }
       };

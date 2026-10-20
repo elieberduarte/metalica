@@ -220,7 +220,17 @@ export async function montarMaquete(v, buf, opcoes = {}) {
       sisUsados.set(sistemas[s].chave, { chave: sistemas[s].chave, nome: sistemas[s].nome, cor: sistemas[s].cor, ligado: !v.ocultasSistema.has(id) });
     }
   }
-  return { grupo: raiz, pecas: pecas.size, triangulos, arestas: nArestas, deFora, simplificadas, escala: Math.round(1 / (q.s * 1000)),
+  // a caixa da estrutura, para as cotas principais: sem o terreno, a rua e a calçada
+  const emin = [Infinity, Infinity, Infinity], emax = [-Infinity, -Infinity, -Infinity];
+  for (const g of grupos.values()) {
+    const si = g.chave % 256;
+    if (si < 255 && sistemas[si] && sistemas[si].chave === 'terreno') continue;
+    for (let k = 0; k < g.pos.length; k += 3) for (let r = 0; r < 3; r++) {
+      const x = g.pos[k + r]; if (x < emin[r]) emin[r] = x; if (x > emax[r]) emax[r] = x;
+    }
+  }
+  const cotas = Number.isFinite(emin[0]) ? { min: emin, max: emax } : null;
+  return { grupo: raiz, pecas: pecas.size, triangulos, arestas: nArestas, deFora, simplificadas, escala: Math.round(1 / (q.s * 1000)), cotas,
            medidas: [(max[0] - min[0]) / 1000, (max[1] - min[1]) / 1000, (max[2] - min[2]) / 1000], quadro: q,
            camadas: [...camadas].map(([nome, ligada]) => ({ nome, ligada })), sistemas: [...sisUsados.values()] };
 }
@@ -274,12 +284,13 @@ export async function pisoDaMaquete(dados, quadro, origem, caixa = null) {
 }
 
 /** Liga e desliga, na maquete, o que a pessoa escolheu: `desligadas` tem 'camada:<nome>', 'sistema:<chave>' e
- *  'piso:<parte>' (arquitetonico, eixos, niveis). */
+ *  'piso:<parte>' (arquitetonico, eixos, niveis, e as cotas: 'piso:cotas'). */
 export function aplicarVisiveis(raiz, desligadas) {
   raiz.traverse(o => {
     const u = o.userData || {};
     if (u.camada !== undefined) o.visible = !desligadas.has('camada:' + u.camada) && !(u.sistema && desligadas.has('sistema:' + u.sistema));
     if (u.ref) for (const g of u.ref.children) g.visible = !desligadas.has('piso:' + g.name);
+    if (u.cotas) o.visible = !desligadas.has('piso:cotas');
   });
 }
 
@@ -452,60 +463,180 @@ export function linkQuickLook(blob, rotulo) {
   return a;
 }
 
-/** A realidade aumentada do Android (WebXR): aponta para a mesa, toca para pôr; dois dedos aumentam e giram; os botões
- *  de baixo fazem o mesmo, e Sair volta ao 3D. `situacoes` = [{rotulo, grupo}] (a cobertura retrátil aberta e
- *  retraída, no mesmo quadro: o botão troca uma pela outra na mesa); `piso` = o desenho do piso (pisoDaMaquete) ou null;
- *  `camadas` = {camadas, sistemas, partes, desligadas} para o botão Camadas (usuário, 20/10: "habilitar os eixos e
- *  níveis, por exemplo"); `escala` é o 1:N da maquete, para o rótulo acompanhar o tamanho. */
-export async function abrirWebXR({ situacoes, piso = null, camadas = null, escala, aoSair }) {
-  const sobre = document.createElement('div');
-  sobre.id = 'ra-sobre';
-  sobre.innerHTML = `<div class="ra-dica">Aponte para a mesa ou o chão e toque para pôr a maquete</div>
-    <div class="ra-painel" hidden></div>
-    <div class="ra-barra ra-barra-cima">${camadas ? '<button data-ra="camadas">Camadas</button>' : ''}${situacoes.length > 1
-      ? `<button data-ra="situacao">${situacoes[0].rotulo}</button>` : ''}</div>
-    <div class="ra-barra"><button data-ra="menor" aria-label="Menor">−</button><span class="ra-escala"></span>
-      <button data-ra="maior" aria-label="Maior">+</button><button data-ra="girar">Girar</button><button data-ra="sair">Sair</button></div>`;
-  document.body.appendChild(sobre);
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.xr.enabled = true;
-  const cena = new THREE.Scene(), camera = new THREE.PerspectiveCamera(60, 1, 0.01, 50);
+/** As cotas principais da maquete (usuário, 20/10: "não todas, somente as principais — comprimento total, largura total;
+ *  as mais completas ficam no 3D"): o comprimento, a largura e a altura da estrutura (sem o terreno, a rua e a
+ *  calçada), na frente, ao lado e num canto, com o valor em metros. Grupo 'Cotas', ligado e desligado como 'piso:cotas'. */
+export function cotasDaMaquete(r) {
+  if (!r || !r.cotas || !r.quadro) return null;
+  const q = r.quadro, [x0, y0, z0] = r.cotas.min, [x1, y1, z1] = r.cotas.max;
+  const mesa = (x, y, z) => [(x - q.cx) * q.s, (z - q.z0) * q.s, -(y - q.cy) * q.s];
+  const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0, afasta = 0.07 * Math.max(dx, dy), ponta = 0.25 * afasta;
+  const pos = [], seg = (a, b) => pos.push(...mesa(...a), ...mesa(...b));
+  const grupo = new THREE.Group();
+  grupo.name = 'Cotas';
+  grupo.userData.cotas = true;
+  const textos = [];
+  const rotulo = (texto, p) => {
+    const s = _placa(texto);
+    s.position.set(...mesa(...p));
+    grupo.add(s);
+    textos.push(texto);
+  };
+  const metros = (mm) => (mm / 1000).toFixed(2).replace('.', ',') + ' m';
+  // o comprimento (x) na frente, no chão: as linhas de chamada, a linha da cota e os traços das pontas
+  const yf = y0 - afasta;
+  seg([x0, y0, z0], [x0, yf - ponta, z0]); seg([x1, y0, z0], [x1, yf - ponta, z0]); seg([x0, yf, z0], [x1, yf, z0]);
+  seg([x0 - ponta, yf - ponta, z0], [x0 + ponta, yf + ponta, z0]); seg([x1 - ponta, yf - ponta, z0], [x1 + ponta, yf + ponta, z0]);
+  rotulo('Comprimento ' + metros(dx), [(x0 + x1) / 2, yf - 2.2 * ponta, z0]);
+  // a largura (y) do lado direito
+  const xl = x1 + afasta;
+  seg([x1, y0, z0], [xl + ponta, y0, z0]); seg([x1, y1, z0], [xl + ponta, y1, z0]); seg([xl, y0, z0], [xl, y1, z0]);
+  seg([xl - ponta, y0 - ponta, z0], [xl + ponta, y0 + ponta, z0]); seg([xl - ponta, y1 - ponta, z0], [xl + ponta, y1 + ponta, z0]);
+  rotulo('Largura ' + metros(dy), [xl + 2.2 * ponta, (y0 + y1) / 2, z0]);
+  // a altura (z) no canto da frente à direita
+  seg([xl, yf, z0], [xl, yf, z1]); seg([x1, y0, z1], [xl, yf, z1]);
+  seg([xl - ponta, yf, z0], [xl + ponta, yf, z0]); seg([xl - ponta, yf, z1], [xl + ponta, yf, z1]);
+  rotulo('Altura ' + metros(dz), [xl, yf, (z0 + z1) / 2]);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  grupo.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x1f5fbf })));
+  grupo.userData.textos = textos;
+  return grupo;
+}
+
+/** A placa do valor da cota: o texto escuro num fundo branco, sempre à frente, de 2 cm de altura na maquete. */
+function _placa(texto) {
+  const c = document.createElement('canvas'), x = c.getContext('2d'), px = 64;
+  x.font = `600 ${px}px system-ui, sans-serif`;
+  const w = Math.ceil(x.measureText(texto).width) + px;
+  c.width = w; c.height = Math.round(px * 1.6);
+  x.font = `600 ${px}px system-ui, sans-serif`;
+  x.fillStyle = 'rgba(255, 255, 255, 0.92)';
+  x.beginPath(); x.roundRect(0, 0, c.width, c.height, px * 0.35); x.fill();
+  x.fillStyle = '#12398a'; x.textBaseline = 'middle'; x.textAlign = 'center';
+  x.fillText(texto, c.width / 2, c.height / 2 + px * 0.05);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }));
+  const alt = 0.02;
+  s.scale.set(alt * c.width / c.height, alt, 1);
+  s.renderOrder = 10;
+  return s;
+}
+
+/** A cena da maquete na mesa — a mesma na câmera do Android e na foto do teste: a luz de sala, o sol da obra (o
+ *  escolhido em Vistas) com sombra nas peças e na mesa, e o chão que só mostra a sombra. `sol` é o vetor do sol na
+ *  obra (x, y, z para cima). `refazerSombra(tamanho)` depois de pôr, aumentar, girar ou trocar o que aparece: a imagem
+ *  da sombra é desenhada uma vez por mudança, não a cada quadro. */
+export async function cenaDaMesa(renderer, { situacoes, piso = null, cotas = null, sol = null }) {
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate = false;
+  const cena = new THREE.Scene();
   // a luz de uma sala clara em volta (o reflexo do aço) mais o sol: só com as duas luzes diretas a maquete saía escura
   const { RoomEnvironment } = await import('./lib/RoomEnvironment.js');
   const pmrem = new THREE.PMREMGenerator(renderer), ambiente = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
   pmrem.dispose();
   cena.environment = ambiente;
-  cena.add(new THREE.HemisphereLight(0xffffff, 0x77736b, 0.9));
-  const sol = new THREE.DirectionalLight(0xffffff, 1.4);
-  sol.position.set(1, 2, 0.8);
-  cena.add(sol);
+  cena.add(new THREE.HemisphereLight(0xffffff, 0x77736b, 0.8));
   const maquete = new THREE.Group();
   situacoes.forEach((s, k) => { s.grupo.visible = k === 0; maquete.add(s.grupo); });
   if (piso) maquete.add(piso);
-  maquete.visible = false;
+  if (cotas) maquete.add(cotas);
+  for (const s of situacoes) s.grupo.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  // o sol anda com a maquete (gira e cresce com ela): a sombra cai do lado em que cai na obra
+  const R = LADO_MESA * 0.8;
+  const d = sol ? new THREE.Vector3(sol[0], sol[2], -sol[1]) : new THREE.Vector3(0.45, 0.8, 0.4);
+  d.normalize();
+  const luz = new THREE.DirectionalLight(0xffffff, 1.6);
+  luz.position.copy(d).multiplyScalar(R * 3);
+  luz.castShadow = true;
+  luz.shadow.mapSize.set(2048, 2048);
+  luz.shadow.bias = -0.0005;
+  maquete.add(luz);
+  maquete.add(luz.target);
+  const chao = new THREE.Mesh(new THREE.PlaneGeometry(R * 4, R * 4).rotateX(-Math.PI / 2), new THREE.ShadowMaterial({ opacity: 0.3 }));
+  chao.position.y = 0.0005;
+  chao.receiveShadow = true;
+  chao.name = 'Chao';
+  maquete.add(chao);
   cena.add(maquete);
+  const refazerSombra = (tamanho = 1) => {
+    const c = luz.shadow.camera, r = R * 1.6 * tamanho;
+    c.left = -r; c.right = r; c.top = r; c.bottom = -r; c.near = 0.01 * tamanho; c.far = R * 6 * tamanho;
+    c.updateProjectionMatrix();
+    luz.shadow.normalBias = 0.0012 * tamanho;
+    renderer.shadowMap.needsUpdate = true;
+  };
+  refazerSombra(1);
+  return { cena, maquete, luz, chao, ambiente, refazerSombra };
+}
+
+/** Como a tela está, pela gravidade (a câmera do Android trava a página em pé): 0 em pé, 90 ou -90 deitado (o quanto
+ *  girar os botões para ficarem de pé para a pessoa). Com folga para não ficar trocando no meio do caminho. */
+export function giroPelaGravidade(x, y, atual = 0) {
+  const ax = Math.abs(x), ay = Math.abs(y);
+  if (ax > 6 && ax > ay + 2) return x > 0 ? 90 : -90;
+  if (ay > 6 && ay > ax + 2) return 0;
+  return atual;
+}
+
+/** A realidade aumentada do Android (WebXR): aponta para a mesa, toca para pôr; dois dedos aumentam e giram; os botões
+ *  de baixo fazem o mesmo, e Sair volta ao 3D. `situacoes` = [{rotulo, grupo}] (a cobertura retrátil aberta e
+ *  retraída, no mesmo quadro: o botão troca uma pela outra na mesa); `piso` = o desenho do piso (pisoDaMaquete) e
+ *  `cotas` = as cotas principais (cotasDaMaquete), ou null; `camadas` = {camadas, sistemas, partes, desligadas} para o
+ *  botão Camadas (usuário, 20/10: "habilitar os eixos e níveis, por exemplo"); `sol` = o sol da obra (a sombra);
+ *  `escala` é o 1:N da maquete, para o rótulo acompanhar o tamanho. */
+export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas = null, sol = null, escala, aoSair }) {
+  const sobre = document.createElement('div');
+  sobre.id = 'ra-sobre';
+  // os botões num quadro que gira com o celular deitado (usuário, 20/10: "os menus poderiam reagir à inclinação")
+  sobre.innerHTML = `<div class="ra-giro"><div class="ra-dica">Aponte para a mesa ou o chão e toque para pôr a maquete</div>
+    <div class="ra-painel" hidden></div>
+    <div class="ra-barra ra-barra-cima">${camadas ? '<button data-ra="camadas">Camadas</button>' : ''}${situacoes.length > 1
+      ? `<button data-ra="situacao">${situacoes[0].rotulo}</button>` : ''}</div>
+    <div class="ra-barra"><button data-ra="menor" aria-label="Menor">−</button><span class="ra-escala"></span>
+      <button data-ra="maior" aria-label="Maior">+</button><button data-ra="girar">Girar</button><button data-ra="sair">Sair</button></div></div>`;
+  document.body.appendChild(sobre);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 50);
+  const { cena, maquete, ambiente, refazerSombra } = await cenaDaMesa(renderer, { situacoes, piso, cotas, sol });
+  maquete.visible = false;
   const desligadas = new Set(camadas ? camadas.desligadas : []);
-  const aplicar = () => aplicarVisiveis(maquete, desligadas);
+  let tamanho = 1, atual = 0;
+  const mudou = () => refazerSombra(tamanho);
+  const aplicar = () => { aplicarVisiveis(maquete, desligadas); mudou(); };
   aplicar();
   const mira = new THREE.Mesh(new THREE.RingGeometry(0.05, 0.065, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff }));
   mira.matrixAutoUpdate = false;
   mira.visible = false;
   cena.add(mira);
   const dica = sobre.querySelector('.ra-dica'), rotEscala = sobre.querySelector('.ra-escala'), painel = sobre.querySelector('.ra-painel');
-  let tamanho = 1, atual = 0;
   const mostrarEscala = () => { rotEscala.textContent = '1:' + Math.round(escala / tamanho); };
   mostrarEscala();
   // tocar num botão ou no painel não muda a maquete de lugar
   for (const el of sobre.querySelectorAll('.ra-barra, .ra-painel')) el.addEventListener('beforexrselect', e => e.preventDefault());
+  // deitado: os botões giram para ficar de pé (pela gravidade; a página da câmera fica travada em pé)
+  const giro = sobre.querySelector('.ra-giro');
+  let angulo = 0;
+  const aoMover = (e) => {
+    const g = e.accelerationIncludingGravity;
+    if (!g || g.x == null) return;
+    if (screen.orientation && screen.orientation.angle) { if (angulo) { angulo = 0; giro.dataset.giro = '0'; } return; }   // a página já girou
+    const novo = giroPelaGravidade(g.x, g.y, angulo);
+    if (novo !== angulo) { angulo = novo; giro.dataset.giro = String(novo); }
+  };
+  window.addEventListener('devicemotion', aoMover);
   let sessao = null;
   const fechar = () => { if (sessao) sessao.end().catch(() => {}); };
   const linha = (chave, nome, cor, ligada) => `<label class="ra-linha"><input type="checkbox" data-chave="${_esc(chave)}" ${ligada ? 'checked' : ''}>
     ${cor ? `<i style="background:${_esc(cor)}"></i>` : ''}<span>${_esc(nome)}</span></label>`;
   const abrirPainel = () => {
     const secoes = [];
-    if (camadas.partes.length) secoes.push('<div class="ra-titulo">No piso</div>' + camadas.partes.map(([k, nome, cor]) =>
+    if (camadas.partes.length) secoes.push('<div class="ra-titulo">Desenho</div>' + camadas.partes.map(([k, nome, cor]) =>
       linha('piso:' + k, nome, cor, !desligadas.has('piso:' + k))).join(''));
     if (camadas.sistemas.length > 1) secoes.push('<div class="ra-titulo">Sistema</div>' + camadas.sistemas.map(s =>
       linha('sistema:' + s.chave, s.nome, s.cor, !desligadas.has('sistema:' + s.chave))).join(''));
@@ -519,8 +650,8 @@ export async function abrirWebXR({ situacoes, piso = null, camadas = null, escal
   };
   sobre.addEventListener('click', (e) => {
     const k = e.target.dataset && e.target.dataset.ra;
-    if (k === 'maior' || k === 'menor') { tamanho *= k === 'maior' ? 1.25 : 0.8; maquete.scale.setScalar(tamanho); mostrarEscala(); }
-    else if (k === 'girar') maquete.rotation.y += Math.PI / 12;
+    if (k === 'maior' || k === 'menor') { tamanho *= k === 'maior' ? 1.25 : 0.8; maquete.scale.setScalar(tamanho); mostrarEscala(); mudou(); }
+    else if (k === 'girar') { maquete.rotation.y += Math.PI / 12; mudou(); }
     else if (k === 'sair') fechar();
     else if (k === 'camadas') { if (painel.hidden) abrirPainel(); else painel.hidden = true; }
     else if (k === 'fechar-painel') painel.hidden = true;
@@ -546,11 +677,16 @@ export async function abrirWebXR({ situacoes, piso = null, camadas = null, escal
     maquete.rotation.y = gesto.rot - (a - gesto.a);
     mostrarEscala();
   });
-  sobre.addEventListener('touchend', (e) => { if (e.touches.length < 2) gesto = null; if (!e.touches.length) setTimeout(() => { pinca = false; }, 350); });
+  sobre.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2 && gesto) { gesto = null; mudou(); }                   // a sombra é refeita ao soltar os dedos
+    if (!e.touches.length) setTimeout(() => { pinca = false; }, 350);
+  });
 
   const limpar = () => {
+    window.removeEventListener('devicemotion', aoMover);
     for (const s of situacoes) maquete.remove(s.grupo);
     if (piso) maquete.remove(piso);
+    if (cotas) maquete.remove(cotas);
     ambiente.dispose();
     renderer.dispose();
     sobre.remove();
@@ -570,6 +706,7 @@ export async function abrirWebXR({ situacoes, piso = null, camadas = null, escal
     if (pinca || !mira.visible || !painel.hidden) return;
     maquete.position.setFromMatrixPosition(mira.matrix);
     maquete.visible = true;
+    mudou();
     dica.textContent = 'Dois dedos: aumentar e girar · toque em outro ponto para mudar de lugar';
   });
   renderer.setAnimationLoop((t, quadro) => {
@@ -592,5 +729,5 @@ const _esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt
 
 /** Solta a memória da maquete. */
 export function descartar(grupo) {
-  grupo.traverse(o => { if (o.geometry) { o.geometry.dispose(); o.material.dispose(); } });     // as malhas e as arestas
+  grupo.traverse(o => { if (o.geometry) { if (o.material.map) o.material.map.dispose(); o.geometry.dispose(); o.material.dispose(); } });   // malhas, arestas, placas
 }

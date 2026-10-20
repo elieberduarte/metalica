@@ -124,13 +124,20 @@ CAIXA = """(async () => { const M = await import('./maquete.js'), T = await impo
   return JSON.stringify({ lado: Math.max(s.x, s.y, s.z), chao: c.min.y, cx: m.x, cz: m.z, malhas: r.grupo.children.length, pontos,
     altura: s.y, normais: r.grupo.children.every(o => o.geometry.attributes.normal && o.geometry.attributes.normal.count === o.geometry.attributes.position.count) }); })()"""
 # a maquete desenhada como a câmera vai mostrar (luz do dia, de cima e de lado), por cima da tela, para a foto
-DESENHAR = """(async () => { const T = await import('three'); const g = window._maq.grupo;
+DESENHAR = """(async () => { const T = await import('three'), M = await import('./maquete.js');
   const c = document.createElement('canvas'); c.id = 'foto-maquete'; c.style.cssText = 'position:fixed;inset:0;z-index:999;width:100vw;height:100vh';
   document.body.appendChild(c); const r = new T.WebGLRenderer({ canvas: c, antialias: true }); r.setSize(innerWidth, innerHeight, false);
-  r.setClearColor(0xd9d4cb); const cena = new T.Scene(); cena.add(new T.HemisphereLight(0xffffff, 0x77736b, 2.0));
-  const sol = new T.DirectionalLight(0xffffff, 1.8); sol.position.set(1, 2, 0.8); cena.add(sol); cena.add(g);
+  r.setClearColor(0xd9d4cb);
+  const cotas = M.cotasDaMaquete(window._maq);
+  const { cena, chao, refazerSombra } = await M.cenaDaMesa(r, { situacoes: [{ grupo: window._maq.grupo }], cotas,
+    sol: window.visor._luz ? window.visor._luz.uSol.value.toArray() : null });
+  refazerSombra(1);
   const cam = new T.PerspectiveCamera(40, innerWidth / innerHeight, 0.01, 20); cam.position.set(0.55, 0.5, 0.75); cam.lookAt(0, 0.04, 0);
-  r.render(cena, cam); cena.remove(g); return 1; })()"""
+  const g = r.getContext(), w = g.drawingBufferWidth, h = g.drawingBufferHeight, px = new Uint8Array(w * h * 4);
+  const soma = () => { g.readPixels(0, 0, w, h, g.RGBA, g.UNSIGNED_BYTE, px); let t = 0; for (let k = 0; k < px.length; k += 4) t += px[k] + px[k + 1] + px[k + 2]; return t / (w * h * 3); };
+  chao.visible = false; r.shadowMap.needsUpdate = true; r.render(cena, cam); const sem = soma();
+  chao.visible = true; r.shadowMap.needsUpdate = true; r.render(cena, cam); const com = soma();
+  return JSON.stringify({ sombra: sem - com, cotas: cotas ? cotas.userData.textos : [] }); })()"""
 USDZ = """(async () => { const M = await import('./maquete.js'); const b = await M.usdz(window._maq.grupo);
   const u = new Uint8Array(await b.arrayBuffer()); let s = ''; for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768));
   return btoa(s); })()"""
@@ -154,6 +161,12 @@ try:
     # com a obra real na pasta, o PC prepara o pacote dela também, e a fila demora
     ok(esperar(ap, ABERTO, 600 if REAL else 120), "o 3D da obra abre no celular (%.0f s)" % (time.time() - t0))
 
+    # o atalho logo abaixo do olho (Vistas) — usuário, 20/10: "um botão abaixo do olho para facilitar o acesso"
+    ok(ap.avaliar("(() => { const b = [...document.querySelectorAll('.ferramentas button')].map(x => x.dataset.f); return b.indexOf('maquete') === b.indexOf('vistas') + 1; })()"),
+       "o botão da maquete fica logo abaixo do olho")
+    ap.avaliar("window.ultimaMaquete = null")
+    tocar(ap, "[data-f=maquete]")
+    ok(esperar(ap, "!!window.ultimaMaquete && !!document.getElementById('ra-acoes')", 30), "tocar nele monta a maquete da obra")
     # 1. Vistas → Maquete na mesa (o Chrome sem janela não tem realidade aumentada: o aviso)
     ap.avaliar("document.querySelector('[data-f=vistas]').click()")
     ok(esperar(ap, "!!document.getElementById('ra-obra')", 5), "Vistas tem a Maquete na mesa")
@@ -196,7 +209,8 @@ try:
     # a caixa girada de uma peça pode passar uns décimos da caixa dela alinhada à obra
     ok(all(abs(sp.get(k, 0) - cheia[j]) < 0.003 for j, k in enumerate("xyz")), f"e a caixa da obra é a mesma ({sp.get('x')}, {sp.get('y')}, {sp.get('z')} × {cheia[:3]})")
 
-    ap.avaliar(DESENHAR); foto(ap, "celular_maquete_desenho.png"); ap.avaliar("document.getElementById('foto-maquete').remove()")
+    dz = json.loads(ap.avaliar(DESENHAR) or "{}"); foto(ap, "celular_maquete_desenho.png"); ap.avaliar("document.getElementById('foto-maquete').remove()")
+    ok(dz.get("sombra", 0) > 0.3, f"a maquete faz sombra na mesa (a imagem escurece {dz.get('sombra', 0):.2f} com o chão de sombra)")
     # as arestas do 3D da tela (o caminho do Android)
     # e todas as camadas, cada uma na sua malha, ligadas como na tela (os parafusos desligados): ligar e desligar na câmera
     AR = """(async () => { const M = await import('./maquete.js'); const v = window.visor;
@@ -217,6 +231,24 @@ try:
     d = ar.get("desl", {})
     ok(d.get("vigas") and not any(d["vigas"]) and d.get("chapas") and all(d["chapas"]) and all(ar.get("ligadas", [False])),
        f"desligar Vigas esconde só as malhas dela, e ligar traz de volta ({d})")
+    COTAS = """(async () => { const M = await import('./maquete.js'); const v = window.visor;
+      const r = await M.montarMaquete(v, await (await fetch(v.urlModelo)).arrayBuffer(), { limite: M.LIMITES.webxr, todas: true });
+      const mn = [1e12, 1e12, 1e12], mx = [-1e12, -1e12, -1e12];
+      v.fichas.forEach((f, i) => { const b = f.b; if (i >= v.nPecas || !b || Math.max(b[3] - b[0], b[4] - b[1], b[5] - b[2]) < 80) return;
+        for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], b[k]); mx[k] = Math.max(mx[k], b[k + 3]); } });
+      const c = M.cotasDaMaquete(r);
+      M.aplicarVisiveis(c, new Set(['piso:cotas']));
+      return JSON.stringify({ textos: c.userData.textos, min: r.cotas.min, max: r.cotas.max, mn, mx, some: c.visible }); })()"""
+    ct = json.loads(ap.avaliar(COTAS) or "{}")
+    perto = all(abs(a - b) <= 2 for a, b in zip(ct.get("min", []) + ct.get("max", []), ct.get("mn", []) + ct.get("mx", [])))
+    m = lambda k: f"{(ct['mx'][k] - ct['mn'][k]) / 1000:.2f}".replace(".", ",") + " m"
+    esperado = [f"Comprimento {m(0)}", f"Largura {m(1)}", f"Altura {m(2)}"] if ct.get("mx") else []
+    ok(perto and ct.get("textos") == esperado, f"as cotas principais: {ct.get('textos')} (a caixa das peças: {esperado})")
+    ok(ct.get("some") is False, "desligar as cotas esconde as cotas")
+    GIRO = """(async () => { const M = await import('./maquete.js'); const g = M.giroPelaGravidade;
+      return JSON.stringify([g(9.8, 0.4, 0), g(-9.8, 0.3, 0), g(0.4, 9.8, 90), g(5, 5, 90), g(1, 2, -90), g(0.5, 9.7, 0)]); })()"""
+    ok(json.loads(ap.avaliar(GIRO) or "[]") == [90, -90, 0, 90, -90, 0],
+       f"os menus giram com o celular deitado, para um lado ou para o outro, com folga no meio do caminho ({ap.avaliar(GIRO)})")
     # o desenho do piso na maquete: eixos e níveis no quadro dela, ligáveis
     PISO = """(async () => { const M = await import('./maquete.js'), T = await import('three');
       const dados = { segmentos: [[0, 0, 10000, 0]], eixos: [{ nome: 'A', a: [0, 0, 0], b: [0, 8000, 0] }, { nome: '1', a: [0, 0, 0], b: [10000, 0, 0] }],
@@ -320,6 +352,34 @@ try:
     ok(esperar(ap, "(document.getElementById('folha').innerText || '').includes('sem câmera no teste')", 10)
        and not ap.avaliar("!!document.getElementById('ra-sobre')"), "a câmera recusada: o aviso, e nada fica por cima da tela")
 
+    # a câmera aberta (uma sessão que não termina): os botões e o painel de camadas, e o celular deitado (o sensor) gira tudo
+    ap.avaliar("""(() => { Object.defineProperty(navigator, 'xr', { configurable: true, value: { isSessionSupported: async m => m === 'immersive-ar',
+      requestSession: () => new Promise(() => {}) } }); return 1; })()""")
+    ap.avaliar("window.ultimaMaquete = null")
+    tocar(ap, "[data-f=maquete]")
+    # a folha da maquete nova (a de antes ainda pode estar na tela enquanto esta monta)
+    esperar(ap, "!!window.ultimaMaquete && window.ultimaMaquete.como === 'webxr' && !!document.querySelector('#ra-acoes button.forte')", 60)
+    tocar(ap, "#ra-acoes button.forte")
+    ok(esperar(ap, "!!document.querySelector('#ra-sobre [data-ra=camadas]')", 10), "na câmera: os botões por cima da imagem")
+    ap.avaliar("document.querySelector('#ra-sobre [data-ra=camadas]').click()")
+    ok(esperar(ap, "!document.querySelector('#ra-sobre .ra-painel').hidden && [...document.querySelectorAll('#ra-sobre .ra-linha')].some(l => l.textContent.includes('Cotas principais'))", 5),
+       "o painel Camadas tem as cotas principais")
+    DENTRO = """(() => { const fora = []; for (const b of document.querySelectorAll('#ra-sobre button, #ra-sobre .ra-painel, #ra-sobre .ra-dica')) {
+      const r = b.getBoundingClientRect(); if (r.left < -1 || r.top < -1 || r.right > innerWidth + 1 || r.bottom > innerHeight + 1) fora.push(b.dataset.ra || b.className); }
+      return JSON.stringify(fora); })()"""
+    ok(json.loads(ap.avaliar(DENTRO) or '["?"]') == [], "em pé, tudo dentro da tela")
+    foto(ap, "celular_maquete_camera_em_pe.png")
+    for x, giro in ((9.8, "90"), (-9.8, "-90")):
+        ap.avaliar(f"window.dispatchEvent(new DeviceMotionEvent('devicemotion', {{ accelerationIncludingGravity: {{ x: {x}, y: 0.3, z: 0.5 }} }})); 1")
+        ok(esperar(ap, f"document.querySelector('#ra-sobre .ra-giro').dataset.giro === '{giro}'", 3), f"deitado para o lado {giro}°: os botões giram")
+        ap.drenar(0.5)
+        fora = json.loads(ap.avaliar(DENTRO) or '["?"]')
+        ok(fora == [], f"deitado ({giro}°), tudo dentro da tela ({fora})")
+        foto(ap, f"celular_maquete_camera_deitado_{giro.replace('-', 'menos')}.png")
+    ap.avaliar("window.dispatchEvent(new DeviceMotionEvent('devicemotion', { accelerationIncludingGravity: { x: 0.2, y: 9.8, z: 0.5 } })); 1")
+    ok(esperar(ap, "document.querySelector('#ra-sobre .ra-giro').dataset.giro === '0'", 3), "em pé de novo: os botões voltam")
+    ap.avaliar("document.getElementById('ra-sobre').remove(); 1")
+
     # a cobertura retrátil: as duas situações no mesmo quadro — a parte fixa no mesmo lugar, a parte móvel não
     ap.navegar(cel + "/celular/#/p/cobertura/modelo", limite=30)
     ok(esperar(ap, "document.getElementById('titulo') && document.getElementById('titulo').textContent === 'Cobertura retrátil' && " + ABERTO, 120),
@@ -395,7 +455,8 @@ try:
         print(f"        Android: {andr.get('pecas')} peças, {andr.get('simplificadas')} simplificadas, {andr.get('triangulos')} triângulos, "
               f"{andr.get('arestas')} arestas, em {time.time() - t0:.1f} s")
         ok(andr.get("triangulos", 0) <= 1000000 and andr.get("arestas", 0) > 0, "Android: no limite, com as arestas")
-        ap.avaliar(DESENHAR); foto(ap, "celular_maquete_obra_real_android.png"); ap.avaliar("document.getElementById('foto-maquete').remove()")
+        dz = json.loads(ap.avaliar(DESENHAR) or "{}"); foto(ap, "celular_maquete_obra_real_android.png"); ap.avaliar("document.getElementById('foto-maquete').remove()")
+        print(f"        cotas da obra real: {dz.get('cotas')}")
 
     for nome, a in (("computador", pc), ("celular", ap)):
         erros = [m for m in a.console if m[0] in ("error", "excecao") and "401" not in str(m) and "405" not in str(m)]

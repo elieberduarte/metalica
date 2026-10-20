@@ -232,4 +232,15 @@ a.ra-abrir img { width: 1px; height: 1px; opacity: 0; }
 #ra-sobre .ra-linha { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid rgba(255, 255, 255, .12); font-size: 15px; }
 #ra-sobre .ra-linha input { width: 22px; height: 22px; accent-color: #2f6fd6; flex: none; }
 #ra-sobre .ra-linha i { width: 14px; height: 14px; border-radius: 4px; flex: none; }
-#ra-sobre .ra-painel button { margin-top: 12px; width: 100%; background: #1f5fbf; }
+#ra-sobre .ra-painel button { margin-top: 12px; width: 100%; background: #1f5fbf; position: sticky; bottom: 0; box-shadow: 0 -8px 12px rgba(10, 20, 40, .82); }   /* o Pronto sempre à vista, a lista rola por trás */
+/* na câmera, os botões num quadro que gira com o celular deitado (a página da câmera fica travada em pé) */
+#ra-sobre .ra-giro { position: absolute; left: 50%; top: 50%; width: 100vw; height: 100vh; transform: translate(-50%, -50%);
+  transition: transform .25s ease; }
+#ra-sobre .ra-giro[data-giro="90"], #ra-sobre .ra-giro[data-giro="-90"] { width: 100vh; height: 100vw; }
+#ra-sobre .ra-giro[data-giro="90"] { transform: translate(-50%, -50%) rotate(90deg); }
+#ra-sobre .ra-giro[data-giro="-90"] { transform: translate(-50%, -50%) rotate(-90deg); }
+/* deitado, a altura é pouca: a dica numa linha e o painel das camadas do lado direito */
+#ra-sobre .ra-giro[data-giro="90"] .ra-dica, #ra-sobre .ra-giro[data-giro="-90"] .ra-dica { right: 40%; font-size: 13px; padding: 6px 10px; top: 10px; }
+#ra-sobre .ra-giro[data-giro="90"] .ra-barra-cima, #ra-sobre .ra-giro[data-giro="-90"] .ra-barra-cima { top: 10px; left: auto; right: 12px; }
+#ra-sobre .ra-giro[data-giro="90"] .ra-painel, #ra-sobre .ra-giro[data-giro="-90"] .ra-painel { top: 76px; bottom: 84px; left: auto; width: 46%; }
+#ra-sobre .ra-giro[data-giro="90"] .ra-barra:not(.ra-barra-cima), #ra-sobre .ra-giro[data-giro="-90"] .ra-barra:not(.ra-barra-cima) { bottom: 12px; }
