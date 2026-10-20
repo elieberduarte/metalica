@@ -788,6 +788,67 @@ def _pranchas(pasta_projeto: str, destino: str) -> List[dict]:
     return saida
 
 
+#: os arquivos da outra situação da cobertura retrátil (a do modelo gravado é o modelo3d.mcel de sempre)
+_COBERTURA_EXTRAS = ("modelo3d-aberta.mcel", "modelo3d-retraida.mcel", "pecas-aberta.json", "pecas-retraida.json",
+                     "cobertura-movel.json")
+
+
+def _cobertura_movel(modelo: str, projeto: dict, destino: str) -> Optional[dict]:
+    """A cobertura retrátil nas duas situações, para o celular trocar sem gravar nada (19/10).
+
+    O celular só lê: ver aberta/retraída no computador grava o modelo (app.py, cobertura-movel), e lá não. Então o
+    pacote leva as duas — o modelo3d.mcel de sempre na situação gravada e a outra, montada aqui numa cópia do modelo
+    pela mesma conta (nucleo3d/cobertura_movel.aplicar), com as fichas dela (as tesouras mudam de lugar). A situação
+    gravada sai das próprias peças geradas (atributos["cobertura_movel"]["situacao"]). Sem cobertura retrátil no
+    modelo, ou se a conta não fecha, nada a mais — e os extras de antes saem."""
+    import os
+    sumir = lambda *nomes: [os.remove(os.path.join(destino, n)) for n in nomes if os.path.exists(os.path.join(destino, n))]
+    meta_arq = os.path.join(destino, "cobertura-movel.json")
+    meta = _ler(meta_arq)
+    if meta and os.path.exists(os.path.join(destino, "modelo3d-%s.mcel" % meta.get("outra")))             and os.path.getmtime(meta_arq) >= os.path.getmtime(modelo):
+        cobertura = meta
+    else:
+        cobertura = None
+        try:
+            with open(modelo, encoding="utf-8") as f:
+                m = json.load(f)
+            atual = next(((r.get("atributos") or {}).get("cobertura_movel") or {}).get("situacao")
+                         for r in m.get("entidades") or [] if ((r.get("atributos") or {}).get("cobertura_movel") or {}).get("situacao"))
+        except StopIteration:
+            atual = None
+        except (OSError, ValueError):
+            atual = None
+        if atual in ("aberta", "retraida"):
+            from nucleo3d import cobertura_movel as CM
+            from nucleo3d.modelo import Documento
+            outra = "retraida" if atual == "aberta" else "aberta"
+            try:
+                doc = Documento.de_dict(m)
+                del m
+                CM.aplicar(doc, projeto.get("analise_parametros") or {}, outra)
+                binario, fichas, _num = gerar_3d(doc.dict())
+            except Exception:                          # noqa: BLE001 — sem a outra situação, o pacote segue como sempre
+                binario = None
+            if binario:
+                with open(os.path.join(destino, "pecas-%s.json" % outra), "w", encoding="utf-8") as f:
+                    json.dump(fichas, f, ensure_ascii=False, separators=(",", ":"))
+                mc = os.path.join(destino, "modelo3d-%s.mcel" % outra)
+                with open(mc + ".tmp", "wb") as f:
+                    f.write(binario)
+                os.replace(mc + ".tmp", mc)
+                cobertura = {"atual": atual, "outra": outra}
+                with open(meta_arq, "w", encoding="utf-8") as f:
+                    json.dump(cobertura, f)
+    if not cobertura:
+        sumir(*_COBERTURA_EXTRAS)
+        return None
+    sumir("modelo3d-%s.mcel" % cobertura["atual"], "pecas-%s.json" % cobertura["atual"])     # a situação mudou no PC
+    return {"atual": cobertura["atual"],
+            "situacoes": {cobertura["atual"]: {"modelo": "modelo3d.mcel", "pecas": "pecas.json"},
+                          cobertura["outra"]: {"modelo": "modelo3d-%s.mcel" % cobertura["outra"],
+                                               "pecas": "pecas-%s.json" % cobertura["outra"]}}}
+
+
 def gerar_pacote(pasta_projeto: str, destino: str, slug: str = "", progresso=None) -> dict:
     """Gera (ou refaz o que ficou velho) o pacote do projeto em `destino` e devolve o manifesto."""
     import datetime
@@ -819,6 +880,7 @@ def gerar_pacote(pasta_projeto: str, destino: str, slug: str = "", progresso=Non
                 f.write(binario)
             os.replace(mcel + ".tmp", mcel)
         numeros["pecas"] = ler_cabecalho_arquivo(mcel).get("numeros", {}).get("pecas")
+    cobertura = _cobertura_movel(modelo, projeto, destino) if os.path.exists(modelo) else None
 
     # quantitativos
     det = os.path.join(pasta_projeto, "detalhamento")
@@ -864,6 +926,7 @@ def gerar_pacote(pasta_projeto: str, destino: str, slug: str = "", progresso=Non
         "fontes": {"modelo": _quando(modelo), "lista": _quando(os.path.join(det, "lista-de-materiais.json")),
                    "pranchas": _quando(os.path.join(pasta_projeto, "desenhos-2d", "pranchas.desenho.json"))},
         "numeros": numeros, "resumos": resumos, "pranchas": pranchas, "arquivos": arquivos,
+        **({"cobertura_movel": cobertura} if cobertura else {}),
         "bytes": sum(a["bytes"] for a in arquivos),
     }
     with open(os.path.join(destino, "manifesto.json"), "w", encoding="utf-8") as f:

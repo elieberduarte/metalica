@@ -318,15 +318,25 @@ function liberar3D() {
   if (visor) { visor.descartar(); visor = null; visorSlug = null; }
 }
 
-async function telaModelo(slug, m, medir) {
+/** A situação da cobertura retrátil escolhida no celular, por projeto (sem escolha: a gravada no PC). */
+const coberturaVista = {};
+
+async function telaModelo(slug, m, medir, camera) {
   document.body.classList.add('tela-cheia');
+  /* A cobertura retrátil (19/10): o pacote leva as duas situações prontas (saida/pacote_celular.py) — no PC "ver
+   * aberta/retraída" grava o modelo, aqui só se troca o arquivo que o 3D lê. */
+  const cm = m.cobertura_movel;
+  const situacao = cm ? (cm.situacoes[coberturaVista[slug]] ? coberturaVista[slug] : cm.atual) : null;
+  const arqs = cm ? cm.situacoes[situacao] : { modelo: 'modelo3d.mcel', pecas: 'pecas.json' };
   if (!m.arquivos.some(a => a.nome === 'modelo3d.mcel')) {
     tela.innerHTML = '<div class="vazio" style="padding-top:120px"><b>Sem modelo 3D</b>Este projeto ainda não tem modelo.</div>';
     return;
   }
   tela.innerHTML = `<div class="palco"><canvas></canvas>
     <div class="carregando"><div>Abrindo o 3D…<div class="progresso"><i></i></div><div class="mais-fraco" id="baixado"></div></div></div>
-    <div class="contagem" hidden></div>
+    <div class="palco-topo"><div class="contagem" hidden></div>${cm ? `<div class="situacao" hidden>
+      <button data-s="aberta" class="${situacao === 'aberta' ? 'ativa' : ''}">Aberta</button>
+      <button data-s="retraida" class="${situacao === 'retraida' ? 'ativa' : ''}">Retraída</button></div>` : ''}</div>
     <div class="ferramentas" hidden>
       <button data-f="camadas" aria-label="Camadas"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z M3 13l9 5 9-5 M3 17.5l9 5 9-5"/></svg></button>
       <button data-f="vistas" aria-label="Vistas"><svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
@@ -343,22 +353,38 @@ async function telaModelo(slug, m, medir) {
   visorSlug = slug;
   const v = visor;
   const t0 = performance.now();
-  const tempos = await v.carregar(arquivo(m, 'modelo3d.mcel'), (f, txt) => {
+  const tempos = await v.carregar(arquivo(m, arqs.modelo), (f, txt) => {
     $('.progresso i').style.width = Math.round(f * 100) + '%';
     $('#baixado').textContent = txt;
   });
   if (v !== visor) return;          // trocou de tela no meio
   v.definirTema(escuro());          // depois de carregar: o piso se acomoda à caixa do modelo
-  v.definirFichas(await json(`${slug}/pecas.json`, versaoDe(m, 'pecas.json')));
+  v.definirFichas(await json(`${slug}/${arqs.pecas}`, versaoDe(m, arqs.pecas)));
+  if (camera) {                     // trocou a situação da cobertura: a vista fica onde estava
+    v.camera.position.copy(camera.posicao);
+    v.controles.target.copy(camera.alvo);
+    v.controles.update();
+    v.pedirQuadro();
+  }
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));     // os números do quadro já com as camadas
   diag('ultimo3d', { slug, nome: m.projeto.nome, ms: Math.round(performance.now() - t0), ...tempos, ...v.numeros(),
-                     mb: Math.round(((m.arquivos.find(a => a.nome === 'modelo3d.mcel') || {}).bytes || 0) / 104857.6) / 10 });
+                     mb: Math.round(((m.arquivos.find(a => a.nome === arqs.modelo) || {}).bytes || 0) / 104857.6) / 10 });
   $('.carregando').remove();
   $('.ferramentas').hidden = false;
   const contagem = $('.contagem');
   contagem.hidden = false;
   contagem.textContent = `${nf(v.nPecas)} peças`;
   window.visor = v;
+  const sit = $('.situacao');
+  if (sit) {
+    sit.hidden = false;
+    sit.querySelectorAll('button').forEach(b => b.onclick = () => {
+      if (b.dataset.s === situacao) return;
+      coberturaVista[slug] = b.dataset.s;
+      fecharFolha();
+      telaModelo(slug, m, false, { posicao: v.camera.position.clone(), alvo: v.controles.target.clone() });
+    });
+  }
   if (medir) setTimeout(() => medirFluidez(v), 300);
 
   // toque: um toque escolhe a peça, dois toques giram em volta dela
