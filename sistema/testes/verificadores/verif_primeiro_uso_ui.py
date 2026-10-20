@@ -282,7 +282,7 @@ def p07_menu_antes_do_editor(aba):
     print("P07 — comando do menu com o 3D no modo ver")
     s = projeto("Portaria menu")
     for texto, conferir, rotulo in (("Detalhar peças e conjuntos…", "(() => { try { const d = document.querySelector('#f3d').contentWindow.document.querySelector('dialog[open]'); return !!d && d.textContent.includes('Tesouras (com as barras'); } catch (e) { return false; } })()", "o diálogo Detalhar peças e conjuntos abre"),
-                                    ("5. Conferir as treliças lidas…", "location.pathname === '/trelicas'", "Conferir as treliças lidas vai para /trelicas")):
+                                    ("Conferir as treliças lidas…", "location.pathname === '/trelicas'", "Conferir as treliças lidas vai para /trelicas")):
         aba.navegar(f"{base}/dividida?projeto={s}&vista=3d", limite=60)
         esperar(aba, "window.barraUnica && (() => { try { return !!document.querySelector('#f3d').contentWindow.visorLeve; } catch (e) { return false; } })()")
         ok(aba.avaliar(f"!!{_item_da_barra(texto)}"), f"o item «{texto}» existe no menu")
