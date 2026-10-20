@@ -822,6 +822,26 @@ def _mapa_do_quadro(q: dict):
     return f, s
 
 
+def _mapa_inverso_do_quadro(q: dict):
+    """do real (g, p) ao papel do quadro: o contrário de _mapa_do_quadro"""
+    mp = q.get("mapa") if isinstance(q, dict) else None
+    try:
+        s = float(q.get("escala") or 0.0)
+        X0, Y0, ox, oy = (float(mp[k]) for k in ("X0", "Y0", "ox", "oy"))
+        qx, qy = float(q.get("x") or 0.0), float(q.get("y") or 0.0)
+        giro = math.radians(float(mp.get("giro") or 0.0))
+    except (TypeError, ValueError, KeyError, AttributeError):
+        return None
+    if s <= 0:
+        return None
+    co, se = math.cos(giro), math.sin(giro)
+
+    def f(p):
+        g, q_ = float(p[0]) * co + float(p[1]) * se, -float(p[0]) * se + float(p[1]) * co
+        return ((g - X0) / s + qx + ox, (q_ - Y0) / s + qy + oy)
+    return f, s
+
+
 def planta_real(des: Desenho) -> Desenho:
     """A Montagem é uma folha em mm de papel: cada quadro tem a sua escala. Os elementos lançados dentro do quadro da
     Implantação voltam à medida real pelo mapa dele (`metadados.montagem.quadros[].mapa`); o resto da folha (o desenho
@@ -1229,6 +1249,12 @@ def planta_do_modelo(des: Desenho, doc: Documento, niveis: Optional[Sequence[dic
                 for r in rotulos.get(e.id, []):
                     _mover_2d(r, dx, dy)
                 e.a, e.b = na, nb
+            if tipo == "viga" and isinstance(p3, Barra) and a.get("material") == "aco":
+                # o nível gravado é o do eixo, o da face de cima ou o da de baixo (alinhamento): a barra está no eixo — sem
+                # descontar meio perfil, a terça apoiada pela face de baixo "subia" 63,5 mm a cada volta do 3D (20/10)
+                alin = a.get("alinhamento") or "eixo"
+                h = _altura_do_perfil((a.get("secao") or {}).get("perfil", "W 310×38,7"))
+                zt -= {"topo": -h / 2.0, "base": h / 2.0}.get(alin, 0.0)
             if tipo == "viga" and abs(_nivel(a.get("nivel_topo"), tab, zt) - zt) > tol:
                 mud.append("topo %s → %s" % (a.get("nivel_topo"), round(zt)))
                 a["nivel_topo"] = round(zt)
@@ -1332,3 +1358,40 @@ def planta_do_modelo(des: Desenho, doc: Documento, niveis: Optional[Sequence[dic
         out["modelo_mudou"].append(p3.id)
         out["alteracoes"].append("%s %s: novo, lançado no 3D" % (tipo, marca))
     return out
+
+
+def montagem_do_modelo(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]] = None, tol: float = 1.0) -> Dict[str, list]:
+    """A volta do 3D para a Montagem (20/10/2026, Fase 6 da Identificação para modelagem: "depois se precisar fazer algum
+    ajuste o usuário pode fazer tanto pela planta 2D quanto pelo 3D, pois ambos ficarão vinculados"). Os elementos da
+    Implantação vão à medida real (planta_real), a volta de sempre (planta_do_modelo) acerta o que mudou no 3D — peça
+    movida, comprimento, cota — e o que mudou volta ao papel do quadro pelo mapa inverso. A tesoura segue refeita pela
+    planta (a volta não a toca) e a peça nova feita no 3D não entra na Montagem (fica no 3D). Mexe em `des`."""
+    m = (des.metadados or {}).get("montagem") if isinstance(des.metadados, dict) else None
+    if not isinstance(m, dict):
+        return planta_do_modelo(des, doc, niveis, tol)
+    inversos = {}
+    for q in m.get("quadros") or []:
+        if isinstance(q, dict) and q.get("tipo") in QUADROS_DA_OBRA:
+            r = _mapa_inverso_do_quadro(q)
+            if r:
+                inversos[q.get("id")] = r
+    real = planta_real(des)
+    r = planta_do_modelo(real, doc, niveis, tol)
+    for k, e in real.entidades.items():
+        orig = des.entidades.get(k)
+        inv = orig is not None and inversos.get((orig.atributos or {}).get("quadro"))
+        if not inv:
+            continue
+        f, s = inv
+        if isinstance(e, Linha) and isinstance(orig, Linha):
+            orig.a, orig.b = f(e.a), f(e.b)
+        elif isinstance(e, Polilinha) and isinstance(orig, Polilinha):
+            orig.vertices = [f(v) for v in e.vertices]
+        elif isinstance(e, Circulo) and isinstance(orig, Circulo):
+            orig.centro = f(e.centro)
+        at = dict(e.atributos or {})
+        if isinstance(at.get("centro"), (list, tuple)) and len(at["centro"]) >= 2:
+            at["centro"] = list(f(at["centro"]))
+        orig.atributos = at
+    r["novos"], r["modelo_mudou"] = [], []
+    return r

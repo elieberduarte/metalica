@@ -4137,13 +4137,13 @@ def estrutura_do_3d_na_planta(s: str, corpo: dict) -> dict:
     nome = corpo.get("desenho") or "planta-de-lançamento"
     pj = g.ler(s)
     des = Desenho.de_dict(g.abrir_desenho(s, nome))
-    if isinstance((des.metadados or {}).get("montagem"), dict):
-        raise ErroDeDados("na Montagem, a planta acompanha o 3D pela Implantação; a volta do 3D para os quadros ainda não existe")
+    # na Montagem (20/10, Fase 6 da Identificação para modelagem): a Implantação vai ao real, a volta acerta e o que mudou
+    # volta ao papel do quadro (de_planta_estrutura.montagem_do_modelo); fora dela, a volta de sempre
     m = g.abrir_modelo(s)
     if not m:
         raise ErroDeDados("o projeto não tem modelo 3D: use Estrutura → Gerar 3D da planta")
     doc = Documento.de_dict(m)
-    r = DPE.planta_do_modelo(des, doc, pj.get("niveis") or [])
+    r = DPE.montagem_do_modelo(des, doc, pj.get("niveis") or [])
     if r["alteracoes"]:
         g.salvar_desenho(s, nome, des.dict())
     if r["modelo_mudou"]:

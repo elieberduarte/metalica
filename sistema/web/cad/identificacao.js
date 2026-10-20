@@ -25,6 +25,10 @@
 // o que está no modelo e não veio da identificação (o 3D desmontado do caminho antigo, peças à mão) vai para o histórico
 // — com a pergunta, dizendo quantas —, o modelo passa a ser o identificado (/estrutura/3d sem sincronia, marco no
 // histórico) e o 3D abre.
+//
+// Fase 6 (vínculo): a ida já existia (a gravação da Implantação leva o 3D); a volta "Trazer do 3D o que mudou" usa a do
+// menu Estrutura, que agora entende a Montagem (de_planta_estrutura.montagem_do_modelo: ao real, a volta, de volta ao
+// papel do quadro).
 
 import { criar } from './nucleo/desenho2d.js';
 import { ComandoAdicionar, ComandoComposto, ComandoRemover } from './nucleo/comandos.js';
@@ -200,7 +204,10 @@ export class MetodosIdentificacao {
       el('div', { class: 'explica', texto: 'O 3D acompanha a Implantação a cada gravação. Montar deixa o modelo só com o que foi identificado (o resto vai para o histórico) e abre o 3D; o Original fica para as conferências.' }),
       podeMontar && faltamEt.length ? el('div', { class: 'ident-sub', texto: `ainda não confirmadas: ${faltamEt.join(', ')} (dá para montar assim e voltar depois)` }) : null,
       el('div', { class: 'ident-botoes' }, botao(montado ? 'Montar de novo e abrir o 3D' : 'Montar o modelo 3D', () => this._montarIdent(),
-        { class: 'primario', disabled: podeMontar ? undefined : true, title: podeMontar ? 'O modelo do projeto passa a ser o identificado' : 'Confirme a locação e as tesouras primeiro' })));
+        { class: 'primario', disabled: podeMontar ? undefined : true, title: podeMontar ? 'O modelo do projeto passa a ser o identificado' : 'Confirme a locação e as tesouras primeiro' }),
+        montado ? botao('Trazer do 3D o que mudou', () => this.cad.atualizarPlantaPelo3D(),
+          { title: 'O que foi mudado no 3D (peça movida, comprimento, cota) volta para a Implantação; a peça apagada lá vira aviso' }) : null),
+      montado ? el('div', { class: 'ident-sub', texto: 'Vinculados: o que muda na Implantação vai para o 3D a cada gravação; o que muda no 3D volta por "Trazer do 3D o que mudou".' }) : null);
     corpo.replaceChildren(sec1, sec2, sec3, sec4, montar);
   }
 

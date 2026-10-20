@@ -16,6 +16,8 @@
     com papel terça (U127, o eixo meio perfil acima do pé);
   · Fase 5: com 5 barras antigas no modelo (o 3D desmontado do caminho antigo), "Montar o modelo 3D" avisa delas, deixa o
     modelo só com o identificado (as 141 barras das T2 e as 56 terças), guarda o anterior no histórico e abre o 3D;
+  · Fase 6: uma terça andou 300 mm no 3D; "Trazer do 3D o que mudou" leva o movimento à Implantação (no papel do quadro)
+    sem mexer na cota do pé;
   · "Ver" leva ao Original com o painel junto; recarregar a página guarda as etapas confirmadas;
   · o Original não é mexido (as mesmas entidades antes e depois)."""
 import base64, json, os, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request
@@ -220,6 +222,33 @@ try:
     ok(soltas == 0 and papeis.get("terça") == 56 and len(m3) == 56 + 141, f"o modelo ficou só com o identificado: {len(m3)} peças, {papeis.get('terça')} terças, {soltas} antigas")
     hist = len(os.listdir(os.path.join(pasta, "historico"))) if os.path.isdir(os.path.join(pasta, "historico")) else 0
     ok(hist > hist_antes, f"o modelo de antes foi para o histórico ({hist_antes} → {hist})")
+
+    # ---- Fase 6: a volta do 3D — uma terça andou 300 mm ao longo dela no 3D; "Trazer do 3D o que mudou" leva à Implantação
+    mod = json.load(open(os.path.join(pasta, "modelo.json"), encoding="utf-8"))
+    lista = mod["entidades"] if isinstance(mod["entidades"], list) else list(mod["entidades"].values())
+    tb = next(e for e in lista if e.get("papel") == "terça")
+    import math as _m
+    L_ = _m.dist(tb["inicio"], tb["fim"])
+    d_ = [(tb["fim"][i] - tb["inicio"][i]) / L_ for i in range(3)]
+    tb["inicio"] = [tb["inicio"][i] + 300 * d_[i] for i in range(3)]
+    tb["fim"] = [tb["fim"][i] + 300 * d_[i] for i in range(3)]
+    origem = tb["atributos"]["origem_2d"]
+    json.dump(mod, open(os.path.join(pasta, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
+    aba.navegar(f"{base}/cad?projeto={s}", limite=60)
+    esperar("window.cad && window.montagem && document.body.dataset.pronto === '1'")
+    clicar('.menu[data-menu="desenho"] > button')
+    clicar('[data-acao="identificacao"]')
+    ok(esperar(f"!!({botao('Trazer do 3D o que mudou')})", 60), "montado, o painel tem Trazer do 3D o que mudou")
+    antes_a = aba.avaliar(f"window.cad.doc.get('{origem}').a")
+    clicar_em(botao("Trazer do 3D o que mudou"))
+    ok(esperar("[...document.querySelectorAll('#avisos .aviso')].some(a => a.textContent.includes('Planta atualizada pelo 3D') && a.textContent.includes('movida 300 mm'))", 30),
+       "a volta diz o que mudou: a terça movida 300 mm")
+    depois_a = aba.avaliar(f"window.cad.doc.get('{origem}').a")
+    esc = aba.avaliar("window.montagem.m.quadros.find(q => q.tipo === 'implantacao').escala")
+    anda = _m.dist(antes_a, depois_a) * esc if antes_a and depois_a else 0
+    ok(abs(anda - 300) < 2, f"a terça andou 300 mm na Implantação (no papel, 300 ÷ {esc}): {round(anda, 1)} mm")
+    zt = aba.avaliar(f"window.cad.doc.get('{origem}').atributos.nivel_topo")
+    ok(zt is not None and abs(zt - 6454.5) < 1, f"a cota do pé não mudou na volta (apoiada pela base): {zt}")
 
     ents_depois = json.load(open(arq_original, encoding="utf-8"))["entidades"]
     ok(ents_depois == ents_antes, f"o Original não foi mexido ({len(ents_antes)} entidades)")
