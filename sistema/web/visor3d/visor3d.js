@@ -1268,10 +1268,11 @@ export class Visor3D {
   }
 
   pedirQuadro() {
-    if (this._pedido) return;
+    if (this._pedido || this._descartado) return;
     this._pedido = true;
     requestAnimationFrame(() => {
       this._pedido = false;
+      if (this._descartado) return;
       // a sombra é refeita quando o que está à vista muda, ou quando a vista muda o bastante — nunca no meio do gesto
       if (this.apresentacao && this.cabecalho && (this._sombraSuja || (!this._emMovimento && this._vistaMudou()))) this._desenharSombra();
       this.renderer.render(this.cena, this.camera);
@@ -1354,12 +1355,19 @@ export class Visor3D {
   }
 
   descartar() {
+    // o quadro pedido e o fim do gesto ainda por vir não desenham mais (20/10, celular: sair do 3D e voltar — o visor
+    // descartado redesenhava a sombra da apresentação com as malhas já fora da placa e os arrays soltos: TypeError em
+    // createBuffer, e a ficha não abria ao tocar a peça no 3D novo)
+    this._descartado = true;
+    clearTimeout(this._fimMovimento);
     window.removeEventListener('resize', this._redimensionar);
     this.controles.dispose();
     for (const m of this.malhas) {
       m.malha.geometry.dispose(); m.malha.material.dispose(); m.escolha.dispose(); m.ponto.dispose();
+      if (m.sombra) m.sombra.dispose();
       if (m.arestas) { m.arestas.geometry.dispose(); m.arestas.material.dispose(); }
     }
+    if (this._alvoSombra) { this._alvoSombra.depthTexture.dispose(); this._alvoSombra.dispose(); }
     this.textura.dispose();
     if (this._alvo) this._alvo.dispose();
     if (this._alvoPonto) this._alvoPonto.dispose();

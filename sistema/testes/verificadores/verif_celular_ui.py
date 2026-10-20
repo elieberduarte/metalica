@@ -224,8 +224,10 @@ try:
     ap.avaliar("location.hash = %s" % json.dumps(rota3d))
     ok(esperar(ap, "window.visor && window.visor.fichas && !document.querySelector('.carregando') && (%s)[0] === 255" % VIGA, 60),
        "aberta de novo, a viga continua vermelha")
-    ap.avaliar("document.querySelector('[data-f=camadas]').click()")
-    esperar(ap, "!!document.getElementById('cores-originais')", 5)
+    # a folha de antes de sair fica escondida com o botão do 3D descartado: espera a folha nova (os botões do 3D novo
+    # se ligam um instante depois de ele abrir), tocando Camadas até ela aparecer
+    ok(esperar(ap, "(document.getElementById('folha').hidden && document.querySelector('[data-f=camadas]').click(), "
+                   "!document.getElementById('folha').hidden && !!document.getElementById('cores-originais'))", 10), "Camadas abre de novo")
     ap.avaliar("document.getElementById('cores-originais').click()")
     ok(esperar(ap, "(%s)[0] !== 255 && !localStorage.getItem('metalica-cores:obra-celular')" % VIGA, 5)
        and json.loads(ap.avaliar(CONFERE) or '["?"]') == [], "Voltar às cores do modelo: a viga e o quadradinho voltam à cor do material")
