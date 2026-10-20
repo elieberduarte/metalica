@@ -167,6 +167,32 @@ def test_pasta_antiga_e_adotada():
         assert g.ler("galpao-antigo")["tipo"] == "galpao"
 
 
+def test_pasta_da_fabrica_nao_vira_projeto():
+    """A pasta "fabrica" guarda os dados da empresa (empresa.json, logo, tabela de preços).
+    Ela virou o projeto "Fabrica" (03/10) e o cartão oferecia Excluir/Renomear — que levariam
+    os dados da empresa junto. Nem com um projeto.json dentro ela aparece ou se lê."""
+    with tempfile.TemporaryDirectory() as raiz:
+        fab = os.path.join(raiz, "fabrica")
+        os.makedirs(os.path.join(fab, "precos"))
+        with open(os.path.join(fab, "empresa.json"), "w", encoding="utf-8") as f:
+            f.write("{}")
+        with open(os.path.join(fab, ARQUIVO), "w", encoding="utf-8") as f:
+            f.write('{"formato": 1, "nome": "Fabrica", "tipo": "galpao", "dados": null}')
+        g = Projetos(raiz)
+        assert g.listar() == []
+        for operacao in (g.ler, g.excluir):
+            try:
+                operacao("fabrica")
+            except ErroDeDados:
+                pass
+            else:
+                raise AssertionError("%s leu a pasta da fábrica" % operacao.__name__)
+        assert os.path.exists(os.path.join(fab, "empresa.json"))
+        s = g.criar("Fabrica")["slug"]
+        assert s != "fabrica" and os.path.exists(os.path.join(raiz, s, ARQUIVO))
+        assert g.renomear(s, "Fabrica")["slug"] != "fabrica"
+
+
 def test_rotas_do_servidor():
     """As rotas de app.py com uma pasta de dados temporária."""
     import importlib

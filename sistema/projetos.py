@@ -51,8 +51,9 @@ PACOTE_MANIFESTO = "pacote.json"
 
 MODELO = "modelo.json"
 LIXEIRA = ".lixeira"
-#: Pastas da pasta de dados que não são projetos.
-RESERVADAS = {"modelos", LIXEIRA, "_conferencia", "_desenhos"}
+#: Pastas da pasta de dados que não são projetos. "fabrica" é a da empresa (empresa.json,
+#: logo, tabela de preços, numeração das propostas — fabrica.py, saida/comercial.py).
+RESERVADAS = {"modelos", LIXEIRA, "_conferencia", "_desenhos", "fabrica"}
 #: O que o gerenciador mostra como conteúdo do projeto: pasta -> rótulo.
 ENTREGAS = [("memorial", "Memorial"), ("desenhos", "Desenhos DXF"), ("pranchas", "Pranchas"),
             ("lista", "Lista de material"), ("detalhamento", "Detalhamento"),
