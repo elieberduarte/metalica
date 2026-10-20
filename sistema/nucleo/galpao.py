@@ -49,7 +49,10 @@ PESO_TELHA = {"trapezoidal 0,43 mm": 0.045, "trapezoidal 0,50 mm": 0.055,
 def dimensionar(dados: DadosGalpao) -> ProjetoGalpao:
     """Ponto de entrada: recebe os dados da interface e devolve o projeto completo."""
     dados.validar()
-    p = ProjetoGalpao(dados=dados)
+    ajustados, aviso_vaos = _vaos_iguais(dados)
+    p = ProjetoGalpao(dados=ajustados, dados_entrada=dados if aviso_vaos else None)
+    if aviso_vaos:
+        p.avisos.append(aviso_vaos)
     try:
         _cargas_permanentes(p)
         _vento(p)
@@ -67,11 +70,34 @@ def dimensionar(dados: DadosGalpao) -> ProjetoGalpao:
     return p
 
 
+def _vaos_iguais(d: DadosGalpao):
+    """O comprimento dividido em vãos iguais, nunca maiores que o espaçamento pedido.
+
+    Com 42 m e 5 m, o 3D punha 8 vãos de 5 m e empurrava o último pórtico para os 42 m: o
+    último vão ficava com 7 m e terças, longarinas e pórtico tinham sido verificados para 5 m.
+    Devolve (dados, aviso), com o aviso só quando o espaçamento mudou."""
+    if not d.vaos_iguais:
+        return d, None
+    n = max(1, math.ceil(d.comprimento / d.espacamento_porticos - 1e-6))
+    esp = round(d.comprimento / n, 4)
+    if abs(esp - d.espacamento_porticos) < 0.005:
+        return d, None
+    sobra = d.comprimento - (round(d.comprimento / d.espacamento_porticos) - 1) * d.espacamento_porticos
+    return replace(d, espacamento_porticos=esp), (
+        "Espaçamento entre pórticos ajustado de %s para %s m: os %s m de comprimento divididos em %d vãos "
+        "iguais (com %s m, o último vão ficaria com %s m)."
+        % (fmt(d.espacamento_porticos, 2), fmt(esp, 2), fmt(d.comprimento, 2), n,
+           fmt(d.espacamento_porticos, 2), fmt(sobra, 2)))
+
+
 # --------------------------------------------------------------- 1. cargas
 
 def _cargas_permanentes(p: ProjetoGalpao):
     d = p.dados
-    telha_nome = TELHAS.get(d.telha, "telha metálica simples")
+    # nomes antigos da tela ("trapezoidal 0,50 mm") pela tabela; os de hoje ("telha sanduíche",
+    # "telha cerâmica", da lista da NBR 6120) direto — antes qualquer outro nome virava telha
+    # metálica de 0,05 kN/m², e a cerâmica (0,70) era calculada como metálica
+    telha_nome = TELHAS.get(d.telha, d.telha or "telha metálica simples")
     valor_telha = PESO_TELHA.get(d.telha)
     comp = cargas.peso_proprio_cobertura(
         telha=telha_nome, com_forro=d.carga_forro > 0, com_tercas=True,
@@ -261,7 +287,8 @@ def _tercas(p: ProjetoGalpao):
     comuns = dict(inclinacao=d.angulo_telhado, carga_servico_gravidade=q_serv_grav,
                   carga_servico_succao=q_serv_suc,
                   carga_concentrada=1.5 * cargas.CARGA_CONCENTRADA_COBERTURA,
-                  carga_permanente=1.25 * g * esp)
+                  carga_permanente=1.25 * g * esp,
+                  limite_flecha_gravidade=float(d.flecha_terca))
 
     def busca(correntes, apenas_aprovados, perfis=None):
         return nbr14762.dimensionar_terca(
@@ -691,18 +718,22 @@ def _diagnostico_deslocamento(p: ProjetoGalpao, viga: Perfil, pilar: Perfil, des
             modelo, _, _ = _rodar_analise(p2, pilar, viga)
             u_eng = _deslocamento_horizontal(p2, modelo).get("u_cm")
             if u_eng:
-                saidas.append("engastar a base do pilar levaria o deslocamento a "
-                              "%.1f cm" % u_eng)
+                saidas.append("engastar a base do pilar levaria o deslocamento a %s" % fmt(u_eng, 1, "cm"))
         except Exception:
             pass
-    saidas.append("aproximar os pórticos (hoje a %.1f m) reduz a carga de vento por "
-                  "pórtico" % d.espacamento_porticos)
-    saidas.append("para galpão sem ponte rolante nem alvenaria encostada é usual adotar "
-                  "H/150 a H/200 em vez de H/%d" % d.desloc_horizontal)
+    saidas.append("aproximar os pórticos (hoje a %s) reduz a carga de vento por "
+                  "pórtico" % fmt(d.espacamento_porticos, 2, "m"))
+    if fechamento_fissura(d):
+        saidas.append("fechar em telha ou painel em vez de alvenaria (o deslocamento passa a ser "
+                      "verificado na combinação frequente, NBR 8800:2024, B.2.4)")
+    else:
+        saidas.append("para galpão sem ponte rolante nem alvenaria encostada é usual adotar "
+                      "H/150 a H/200 em vez de H/%d" % d.desloc_horizontal)
     p.avisos.append(
-        "Deslocamento horizontal do topo do pilar de %.1f cm acima do limite %s = %.1f cm, "
-        "mesmo com o maior perfil que ainda compensa. Saídas: %s."
-        % (desloc["u_cm"], desloc["criterio"], desloc["limite_cm"], "; ".join(saidas)))
+        "Deslocamento horizontal do topo do pilar de %s acima do limite %s = %s (combinação %s), "
+        "mesmo com o maior perfil que ainda compensa — o galpão não passa. Saídas: %s."
+        % (fmt(desloc["u_cm"], 1, "cm"), desloc["criterio"], fmt(desloc["limite_cm"], 1, "cm"),
+           desloc.get("combinacao", ""), "; ".join(saidas)))
 
 
 def _combinacoes_documentadas(p: ProjetoGalpao) -> list:
@@ -983,19 +1014,44 @@ def _alternativas_W(verificar, adotado: str, limite: int = 12) -> list:
     return saida[:limite]
 
 
+def fechamento_fissura(d: DadosGalpao) -> bool:
+    """Fechamento sujeito à fissuração (alvenaria): o deslocamento excessivo é irreversível."""
+    return "alvenaria" in str(d.fechamento_lateral or "").lower()
+
+
+def psi_deslocamento(d: DadosGalpao) -> float:
+    """Fator do vento na combinação de serviço do deslocamento horizontal — NBR 8800:2024,
+    Anexo B, B.2.3 e B.2.4: fechamento que não fissura (telha, painel) é estado-limite
+    reversível, combinação frequente (ψ1 = 0,3); alvenaria fissura, combinação rara (1,0)."""
+    return 1.0 if fechamento_fissura(d) else 0.3
+
+
 def _deslocamento_horizontal(p: ProjetoGalpao, modelo) -> dict:
-    """Deslocamento do topo do pilar na combinacao de servico com vento."""
+    """Maior deslocamento do topo dos dois pilares, em todas as combinações de serviço com
+    vento (um caso por C_pi). Antes lia só o joelho esquerdo de um caso: no galpão padrão o
+    direito passava do limite com o esquerdo aprovado."""
     d = p.dados
+    casos = [c for c in modelo.casos if c.startswith("S vento")]
+    u, onde = 0.0, ""
     try:
-        r = analise.resolver(modelo, "S vento")
-        i = modelo.indice_no((modelo.dados or {}).get("no_joelho") or "B")
-        u = abs(r.deslocamento(i)[0])
+        for caso in casos:
+            r = analise.resolver(modelo, caso)
+            for no in _topos_dos_pilares(modelo):
+                ui = abs(r.deslocamento(modelo.indice_no(no))[0])
+                if ui > u:
+                    u, onde = ui, "%s, %s" % (caso, "pilar esquerdo" if no == _topos_dos_pilares(modelo)[0]
+                                              else "pilar direito")
     except Exception:
         return {}
+    if not casos:
+        return {}
     limite = d.pe_direito * 100 / d.desloc_horizontal
+    rara = fechamento_fissura(d)
     return {"u_cm": u, "limite_cm": limite,
             "razao": u / limite if limite else 0.0,
-            "criterio": "H/%d" % d.desloc_horizontal}
+            "criterio": "H/%d" % d.desloc_horizontal,
+            "combinacao": "rara (fechamento em alvenaria)" if rara else "frequente (ψ1 = 0,3)",
+            "onde": onde}
 
 
 def combinacoes_com_vento(caso_vento: str):
@@ -1052,11 +1108,13 @@ def _combinar(modelo, p: ProjetoGalpao, acoes) -> dict:
     modelo.caso("S rara gravidade")
     _somar(modelo, "S rara gravidade", {"PP": 1.0, "SC": 1.0})
     combos["S rara gravidade"] = "PP + SC (serviço)"
-    if rots:
-        rot_s = "cpi-" if "cpi-" in rots else rots[0]
-        modelo.caso("S vento")
-        _somar(modelo, "S vento", {"PP": 1.0, f"V{rot_s}": 0.3})
-        combos["S vento"] = "PP + 0,3·Vento (frequente)"
+    psi = psi_deslocamento(d)
+    for rot in rots:
+        nome = f"S vento ({rot})"
+        modelo.caso(nome)
+        _somar(modelo, nome, {"PP": 1.0, f"V{rot}": psi})
+        combos[nome] = (f"PP + 1,0·Vento ({rot}) (rara)" if psi == 1.0
+                        else f"PP + 0,3·Vento ({rot}) (frequente)")
     _forcas_nocionais(modelo, [c for c in combos if c.startswith("C")])
     return combos
 

@@ -379,3 +379,85 @@ def test_recusa_o_que_nao_calcula():
                     base_rotulada=False).validar()
     DadosGalpao().validar()
     DadosGalpao(tipo_portico="treliçado", base_rotulada=False).validar()
+
+
+# ------------------------------------------- configurador rápido (análise de 20/10)
+
+def test_comprimento_que_nao_divide_vira_vaos_iguais():
+    """42 m com pórticos a 5 m: o 3D punha 8 vãos de 5 m e o último de 7 m, verificado
+    como se fosse de 5 m. Agora 9 vãos iguais de 4,67 m, com aviso; o 3D guarda o que foi
+    digitado (o editor compara com o formulário) e o lançamento pelos eixos não ajusta."""
+    from nucleo3d import de_projeto
+    from nucleo3d.lancamento import dados_do_galpao
+    p = dimensionar(_cap16(comprimento=42.0))
+    assert abs(p.dados.espacamento_porticos - 42.0 / 9) < 1e-3
+    assert any("ajustado" in a and "7,00" in a for a in p.avisos)
+    doc = de_projeto.modelo_do_galpao(p)
+    xs = doc.metadados["porticos_x_mm"]
+    vaos = [b - a for a, b in zip(xs, xs[1:])]
+    assert len(vaos) == 9 and max(vaos) <= 5000.0 and max(vaos) - min(vaos) < 1.0
+    assert doc.projeto["espacamento_porticos"] == 5.0
+    assert not any("ajustado" in a for a in dimensionar(_cap16()).avisos)
+    # lançamento com vãos 6/6/6/1: calcula com o maior (6 m), sem dividir em vãos iguais
+    eixos = {"numeros": [{"nome": str(i + 1), "pos": x} for i, x in enumerate((0, 6000, 12000, 18000, 19000))],
+             "letras": [{"nome": n, "pos": y} for n, y in (("A", 0), ("B", 15000))]}
+    dg = dados_do_galpao(eixos)[0]
+    assert dg.vaos_iguais is False
+    assert not any("ajustado" in a for a in dimensionar(dg).avisos)
+
+
+def test_deslocamento_nos_dois_pilares_e_em_todos_os_cpi():
+    """O deslocamento lia só o joelho esquerdo de um caso de C_pi: no galpão padrão o
+    direito ficava em 2,25 cm com limite de 2,0 cm e o galpão passava."""
+    from nucleo import analise
+    from nucleo.galpao import _topos_dos_pilares
+    p = dimensionar(_cap16())
+    modelo = p.esforcos["modelo"]
+    casos = [c for c in modelo.casos if c.startswith("S vento")]
+    assert len(casos) >= 2
+    u = max(abs(analise.resolver(modelo, c).deslocamento(modelo.indice_no(no))[0])
+            for c in casos for no in _topos_dos_pilares(modelo))
+    dl = p.esforcos["deslocamento"]
+    assert abs(dl["u_cm"] - u) < 1e-9
+    assert u <= dl["limite_cm"] + 1e-9 and p.ok
+
+
+def test_deslocamento_reprova_e_alvenaria_usa_a_rara():
+    """NBR 8800:2024, B.2.4: alvenaria fissura, a combinação do deslocamento é a rara; e o
+    deslocamento acima do limite reprova o galpão (antes era só aviso: pé-direito 12 m com
+    7,2 cm contra 4,0 cm saía aprovado)."""
+    p = dimensionar(_cap16(fechamento_lateral="alvenaria cerâmica 14 cm"))
+    assert all("rara" in t for c, t in p.esforcos["casos_modelo"].items() if c.startswith("S vento"))
+    assert p.esforcos["deslocamento"]["razao"] > 1.0 and not p.ok
+    assert any("não passa" in a and "B.2.4" in a for a in p.avisos)
+    q = dimensionar(_cap16())
+    assert all("frequente" in t for c, t in q.esforcos["casos_modelo"].items() if c.startswith("S vento"))
+
+
+def test_flecha_da_terca_da_tela_chega_a_verificacao():
+    """O campo flecha_terca não era repassado: a terça ficava sempre em L/180."""
+    p = dimensionar(_cap16(flecha_terca=300))
+    titulos = [v.titulo for v in p.elemento("Terça").resultado.verificacoes]
+    assert any("L/300" in t for t in titulos), titulos
+
+
+def test_telha_da_lista_da_tela_entra_com_o_peso_dela():
+    """A tela oferece os nomes da NBR 6120 ("telha cerâmica" 0,70); o motor só conhecia os
+    antigos e calculava qualquer outro como telha metálica de 0,05 kN/m²."""
+    assert dimensionar(_cap16(telha="telha cerâmica")).cargas["g_cobertura"] >= 0.70
+    assert dimensionar(_cap16(telha="telha sanduíche")).cargas["g_cobertura"] >= 0.15 + 0.10 - 1e-9
+    assert abs(dimensionar(_cap16()).cargas["g_cobertura"] - 0.155) < 1e-6
+    assert dimensionar(_cap16(telha="telha de vidro inventada")).erros
+
+
+def test_validar_recusa_antes_de_calcular():
+    """Comprimento menor que o vão, inclinação de 100 % e critérios zerados passavam no
+    validar e só quebravam no meio da conta (ou dividiam por zero)."""
+    import pytest
+    for kw, texto in ((dict(vao=30.0, comprimento=20.0), "menor que o vão"),
+                      (dict(inclinacao=100.0), "Inclinação"),
+                      (dict(desloc_horizontal=0), "Deslocamento"),
+                      (dict(flecha_terca=0), "Flecha da terça"),
+                      (dict(flecha_viga=0), "Flecha da viga")):
+        with pytest.raises(ErroDeDados, match=texto):
+            _cap16(**kw).validar()

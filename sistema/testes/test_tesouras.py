@@ -305,3 +305,26 @@ def test_banzos_duplos_contam_duas_pecas():
     for nome in ("Banzo superior", "Banzo inferior", "Diagonal", "Montante"):
         alt = p.elemento(nome).alternativas
         assert alt and alt[0]["ok"] and "massa" in alt[0]
+
+
+def test_analise_3d_carrega_o_galpao_gerado():
+    """A análise 3D só põe telha, sobrecarga e vento no banzo de cima marcado (papel_trelica) e só
+    prende na terça a barra de papel "corrente": o galpão gerado não tinha nenhum dos dois — a
+    análise acusava mecanismo, ou, pelo Lançar estrutura, calculava sem carga e dava 22 % de uso
+    (verde falso). Análise de 20/10, caso do projeto "Fabrica" (20×40, Pratt, V0 45)."""
+    from nucleo3d import analise_estrutural as AE
+    from nucleo3d import de_projeto
+    d = _dados(comprimento=20.0, diagonais_tesoura="Pratt", v0=45.0)
+    p = galpao.dimensionar(d)
+    doc = de_projeto.modelo_do_galpao(p)
+    correntes = [b for b in doc.barras if (b.atributos or {}).get("marca") == "TC"]
+    assert correntes and all(b.papel == "corrente" for b in correntes)
+    sup = [b for b in doc.barras if (b.atributos or {}).get("papel_trelica") == "banzo_sup"]
+    assert len({b.atributos["origem_2d"] for b in sup}) == p.dados.n_porticos
+    r = AE.calcular(doc, {"base": "engastada", "telha": 0.105, "sobrecarga": p.cargas["sobrecarga"],
+                          "v0": d.v0, "categoria": "II", "classe": "B", "modelo_vento": "fechado"})
+    assert not r["instavel"]
+    assert not any("não tem banzo superior" in a for a in r["avisos"])
+    # carregado de verdade: o banzo de cima trabalha (o cálculo do galpão dá ~98 %; sem carga dava ~0)
+    uso_sup = max(pc["uso"] for pc in r["verificacao"]["pecas"] if pc.get("papel") == "banzo_sup")
+    assert uso_sup > 0.5, uso_sup

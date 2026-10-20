@@ -499,7 +499,11 @@ def montar(doc, par: Optional[dict] = None) -> dict:
             continue
         barras.append({
             "a": int(br["a"]), "b": int(br["b"]), "L": L, "papel": br.get("papel") or "barra",
-            "papel_trelica": at.get("papel_trelica"), "elemento": at.get("elemento"), "grupo": at.get("origem_2d") or br.get("grupo"),
+            "papel_trelica": at.get("papel_trelica"),
+            # a tesoura do galpão gerado (de_projeto) guarda o nome do elemento do cálculo ("Banzo superior da tesoura",
+            # que o editor pinta) e marca a treliça pelo papel_trelica
+            "elemento": "trelica" if at.get("papel_trelica") in ("banzo_sup", "banzo_inf", "diagonal", "montante") and
+            at.get("origem_2d") else at.get("elemento"), "grupo": at.get("origem_2d") or br.get("grupo"),
             "marca": at.get("marca") or at.get("peca"), "perfil": perfil, "ids": list(br.get("ids") or []),
             **({"perfil_modelo": br.get("perfil")} if at.get("perfil_calculo") else {}),
             "aco": (getattr(ent, "aco", "") or "") if ent is not None else "",

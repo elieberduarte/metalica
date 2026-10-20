@@ -605,7 +605,7 @@ def dados_do_galpao(eixos: dict, par: Optional[dict] = None, nome: str = "Galpã
     trelicado = str(p.get("sistema", "")).lower().startswith("tre")
     d = {k: v for k, v in p.items() if k in campos}
     d.update(nome=nome or "Galpão", vao=round(geo["vao"] / 1000.0, 4), comprimento=round(geo["comprimento"] / 1000.0, 4),
-             espacamento_porticos=round(geo["esp_max"] / 1000.0, 4),
+             espacamento_porticos=round(geo["esp_max"] / 1000.0, 4), vaos_iguais=False,
              tipo_portico="treliçado (tesoura)" if trelicado else "alma cheia")
     for k in ("pe_direito", "inclinacao", "espacamento_tercas", "v0", "sobrecarga_cobertura", "carga_extra", "altura_tesoura"):
         if k in d:

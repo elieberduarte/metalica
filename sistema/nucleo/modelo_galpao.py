@@ -66,6 +66,9 @@ class DadosGalpao:
     espacamento_porticos: float = 5.0    # distância entre pórticos
     inclinacao: float = 10.0             # inclinação do telhado, em %
     balanco_lateral: float = 0.0         # beiral além do pilar, cada lado
+    # o configurador divide o comprimento em vãos iguais, nunca maiores que o espaçamento
+    # pedido; o lançamento pelos eixos (vãos desiguais, o maior no espaçamento) desliga
+    vaos_iguais: bool = True
 
     # sistema
     tipo_portico: str = "alma cheia"     # "alma cheia" ou "treliçado (tesoura)"
@@ -144,7 +147,7 @@ class DadosGalpao:
         faixa("Comprimento", self.comprimento, 5, 300, "m")
         faixa("Pé-direito", self.pe_direito, 2.5, 20, "m")
         faixa("Espaçamento entre pórticos", self.espacamento_porticos, 3, 12, "m")
-        faixa("Inclinação do telhado", self.inclinacao, 2, 100, "%")
+        faixa("Inclinação do telhado", self.inclinacao, 2, 99, "%")
         faixa("Espaçamento de terças", self.espacamento_tercas, 0.8, 3.0, "m")
         faixa("Velocidade básica do vento", self.v0, 25, 55, "m/s")
         faixa("Sobrecarga de cobertura", self.sobrecarga_cobertura, 0, 5, "kN/m²")
@@ -154,8 +157,15 @@ class DadosGalpao:
             raise ErroDeDados("Categoria de rugosidade deve ser I, II, III, IV ou V.")
         if self.classe not in ("A", "B", "C"):
             raise ErroDeDados("Classe da edificação deve ser A, B ou C.")
+        faixa("Flecha da terça (L/…)", self.flecha_terca, 100, 1000, "")
+        faixa("Flecha da viga (L/…)", self.flecha_viga, 100, 1000, "")
+        faixa("Deslocamento horizontal (H/…)", self.desloc_horizontal, 50, 1000, "")
         if self.comprimento < self.espacamento_porticos:
             raise ErroDeDados("O comprimento do galpão é menor que o espaçamento entre pórticos.")
+        if self.comprimento < self.vao:
+            raise ErroDeDados("Comprimento menor que o vão ainda não é calculado: o vento da NBR 6123 "
+                              "(Tabelas 6 e 7) é montado com o comprimento como a maior dimensão. "
+                              "Troque vão e comprimento ou aumente o comprimento.")
         if self.eh_trelicado:
             from .tesouras import DIAGONAIS, FORMATOS
             if self.formato_tesoura not in FORMATOS:
@@ -312,6 +322,9 @@ class ElementoDimensionado:
 class ProjetoGalpao:
     """Resultado completo do dimensionamento. É o que memorial, desenhos e lista leem."""
     dados: DadosGalpao = field(default_factory=DadosGalpao)
+    # o que o usuário digitou, quando o cálculo ajustou algo (vãos iguais): é o que o 3D
+    # guarda para saber se o formulário mudou depois
+    dados_entrada: Optional[DadosGalpao] = None
 
     # etapas de cálculo, cada uma com sua memória
     cargas: Dict[str, object] = field(default_factory=dict)      # composição de cargas
@@ -364,10 +377,12 @@ class ProjetoGalpao:
         aprovado sem ter base nenhuma verificada.
         """
         base_ok = self.base.ok if self.base else (self.elemento("Pilar") is None)
+        # o deslocamento horizontal é estado-limite de serviço da NBR 8800 (Anexo B), não aviso
+        desloc_ok = (self.esforcos.get("deslocamento") or {}).get("razao", 0.0) <= 1.0 + 1e-6
         return (not self.erros
                 and all(e.ok for e in self.elementos)
                 and all(r.ok for r in self.ligacoes.values())
-                and base_ok)
+                and base_ok and desloc_ok)
 
     def resumo(self) -> List[str]:
         linhas = [e.resultado.resumo() if e.resultado else f"{e.nome}: —"
@@ -413,6 +428,7 @@ class ProjetoGalpao:
             "peso_total_kg": round(self.peso_total_kg, 1),
             "consumo_kg_m2": round(self.consumo_kg_m2, 2),
             "area_pintura_m2": round(self.area_pintura_m2, 1),
+            "deslocamento": {k: v for k, v in (self.esforcos.get("deslocamento") or {}).items() if _simples(v)},
             "avisos": self.avisos,
             "erros": self.erros,
         }

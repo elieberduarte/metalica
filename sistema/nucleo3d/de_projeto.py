@@ -110,6 +110,10 @@ MARCAS = {"pilar": "P1", "viga": "V1", "misula_alma": "M1", "misula_mesa": "M2",
           "chapa_joelho": "CH1", "chapa_cumeeira": "CH2", "placa_base": "CH3",
           "pedestal": "PD", "telha": "TL", "fechamento": "FC"}
 
+#: Papel de cada barra da tesoura na treliça, como a análise 3D e as regras da tesoura leem.
+PAPEL_TRELICA = {"banzo superior": "banzo_sup", "banzo inferior": "banzo_inf",
+                 "diagonal": "diagonal", "montante": "montante"}
+
 
 # =====================================================================================
 # Pontos de entrada
@@ -340,9 +344,13 @@ class _Construtor:
                 comp = round(t.comprimento(b) / 100.0, 2)
                 marca = marca_de.get((b.papel, comp), MARCAS[b.papel])
                 papel3d = "banzo" if b.papel.startswith("banzo") else b.papel
+                # papel_trelica e origem_2d (a tesoura de cada pórtico): é por eles que a análise 3D acha o
+                # banzo de cima e põe telha, sobrecarga e vento — sem eles o galpão gerado era calculado sem
+                # carga nenhuma (análise de 20/10)
                 feitas.append(self._barra(b.papel, ini, fim, perfis[b.papel], papel3d, "Estrutura",
                                           "Aço", self.dg.aco_perfis, nomes[b.papel], marca=marca,
-                                          portico=k + 1, barra=b.rotulo, familia=b.papel))
+                                          portico=k + 1, barra=b.rotulo, familia=b.papel,
+                                          papel_trelica=PAPEL_TRELICA[b.papel], origem_2d="T%d" % (k + 1)))
         # as regras de posição das peças da treliça (regras_trelica, 16/10): banzo em U com a boca para o miolo, montante
         # para o meio do vão, cantoneira sempre do mesmo lado — antes tudo saía com o giro 0
         from nucleo3d import regras_trelica
@@ -463,12 +471,12 @@ class _Construtor:
                     ys = meia if agua == 1 else [self.V - y for y in meia]
                     pts = [self._centro_terca(xc, y) for y in ys]
                     for j in range(len(pts) - 1):
-                        self._barra("corrente", pts[j], pts[j + 1], barra, "barra",
+                        self._barra("corrente", pts[j], pts[j + 1], barra, "corrente",
                                     "Terças", "Aço", self.dg.aco_chapas,
                                     "Corrente de terça", agua=agua, vao=iv + 1,
                                     linha_corrente=k)
                     cume = self._centro_terca(xc + (x2 - x1) * 0.06, self.V / 2)
-                    self._barra("corrente", pts[-1], cume, barra, "barra", "Terças",
+                    self._barra("corrente", pts[-1], cume, barra, "corrente", "Terças",
                                 "Aço", self.dg.aco_chapas, "Tirante de cumeeira",
                                 agua=agua, vao=iv + 1, linha_corrente=k)
 
@@ -712,7 +720,10 @@ class _Construtor:
     # ------------------------------------------------------------------ metadados
     def _metadados(self):
         dg = self.dg
-        self.doc.projeto = {k: v for k, v in dg.dict().items()
+        # o que o usuário digitou (o editor compara com o formulário para avisar que mudou);
+        # o espaçamento ajustado pelo cálculo fica nos pórticos dos metadados
+        entrada = getattr(self.projeto, "dados_entrada", None) or dg
+        self.doc.projeto = {k: v for k, v in entrada.dict().items()
                             if isinstance(v, (int, float, str, bool))}
         p = pesos(self.doc)
         self.doc.metadados = {
