@@ -5483,6 +5483,7 @@ class Handler(BaseHTTPRequestHandler):
                                    "dados": PROJETOS, "instalado": versao.CONGELADO,
                                    "janela": JANELA_PROPRIA, "maquina": MAQUINA, "usuario": USUARIO,
                                    "dev": DEV, "codigo": _carimbo_do_codigo() if DEV else None, "licencas_dev": LICENCAS_DEV,
+                                   "git": versao.descricao_dev() if DEV else None,
                                    "conferencia": _conferencia_dev() if DEV else None,
                                    "ritmo": ritmo_da_conferencia()["modo"] if DEV else None})
             if rota == "/api/atualizacao":

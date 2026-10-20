@@ -47,8 +47,13 @@
       e.onclick = function () { location.reload(); };
       return true;
     }
-    e.textContent = 'v' + minha + ' dev';
-    e.title = 'DESENVOLVIMENTO: rodando do código (porta ' + location.port + ')';
+    // de onde o código saiu (20/10): a última versão criada + os commits depois dela, o commit atual e a data; * = com
+    // alteração ainda sem commit no disco. O número só sobe quando a conferência da noite cria a versão.
+    var g = v.git;
+    e.textContent = g && g.commits != null ? 'v' + minha + ' + ' + g.commits + ' dev · ' + g.commit + (g.alterado ? '*' : '') + ' (' + g.data + ')' : 'v' + minha + ' dev';
+    e.title = 'DESENVOLVIMENTO: rodando do código (porta ' + location.port + ')' + (g && g.commits != null
+      ? '. ' + g.commits + ' commit(s) depois da v' + minha + ' (a última versão criada pela conferência da noite); commit atual ' + g.commit + ' de ' + g.data +
+        (g.alterado ? '; * = há alterações ainda sem commit no disco' : '') : '');
     e.style.color = '#f0a050';
     e.style.cursor = '';
     e.onclick = null;

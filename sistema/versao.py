@@ -56,3 +56,39 @@ def impressao_do_nucleo() -> str:
 def identificacao() -> str:
     """Linha que vai no memorial: 'Metálica 0.1.0 · núcleo 3f9a1c0b7e2d'."""
     return f"{NOME} {VERSAO} · núcleo {impressao_do_nucleo()[:12]}"
+
+
+_GIT_CACHE: dict = {}
+
+
+def descricao_dev(pasta: str = None, validade: float = 30.0):
+    """No desenvolvimento, de onde o código que está rodando saiu (20/10/2026, o usuário: o rodapé dizia "v0.8.65 dev"
+    havia nove dias e ~318 commits — o número só sobe quando a conferência da noite cria a versão): a última versão
+    criada (o commit que mudou a linha VERSAO), quantos commits depois dela, o commit atual e a data dele, e se há
+    alteração ainda sem commit nos arquivos do git. Como o `git describe` (v0.8.65-318-g5229cff). None fora de um
+    repositório git (o programa instalado) ou sem o git."""
+    import subprocess
+    import time
+    pasta = pasta or _AQUI
+    agora = time.time()
+    c = _GIT_CACHE.get(pasta)
+    if c and agora - c[0] < validade:
+        return c[1]
+
+    def git(*args):
+        r = subprocess.run(["git", *args], cwd=pasta, capture_output=True, text=True, timeout=10,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        if r.returncode != 0:
+            raise OSError(r.stderr.strip())
+        return r.stdout.strip()
+    try:
+        # o commit que mudou a LINHA do número (não qualquer mudança neste arquivo, como a desta função)
+        base = git("log", "-1", "--format=%H", "-G", r"^VERSAO = ", "--", os.path.join(_AQUI, "versao.py"))
+        info = {"base": VERSAO, "commits": int(git("rev-list", "--count", "%s..HEAD" % base)) if base else None,
+                "commit": git("rev-parse", "--short", "HEAD"),
+                "data": git("log", "-1", "--format=%cd", "--date=format:%d/%m %H:%M"),
+                "alterado": bool(git("status", "--porcelain", "--untracked-files=no", "--", ".").strip())}
+    except (OSError, ValueError, subprocess.SubprocessError):
+        info = None
+    _GIT_CACHE[pasta] = (agora, info)
+    return info
