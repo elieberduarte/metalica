@@ -15,7 +15,9 @@ const TELAS = 'metalica-telas-1';
 const DADOS = 'metalica-dados-1';
 const BASE_TELAS = ['./', 'index.html', 'celular.css', 'celular.js', '../visor3d/visor3d.js', '../visor3d/referencia.js', '../visor3d/sistemas.js', 'lib/pdf.min.mjs', 'lib/pdf.worker.min.mjs',
                     'manifest.webmanifest', 'lib/icone-180.png', 'lib/icone-192.png', 'lib/icone-512.png',
-                    '../lib/three.module.js', '../lib/OrbitControls.js'];
+                    '../lib/three.module.js', '../lib/OrbitControls.js',
+                    // a maquete na mesa (realidade aumentada, 20/10) e o exportador do .usdz do iPhone
+                    'maquete.js', 'lib/USDZExporter.js', 'lib/fflate.module.js', 'lib/TextureUtils.js'];
 const ESPERA_REDE = 4000;
 
 self.addEventListener('install', ev => {

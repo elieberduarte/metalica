@@ -367,7 +367,8 @@ async function telaModelo(slug, m, medir, camera) {
   visorSlug = slug;
   const v = visor;
   const t0 = performance.now();
-  const tempos = await v.carregar(arquivo(m, arqs.modelo), (f, txt) => {
+  v.urlModelo = arquivo(m, arqs.modelo);          // a maquete da realidade aumentada relê o mesmo arquivo
+  const tempos = await v.carregar(v.urlModelo, (f, txt) => {
     $('.progresso i').style.width = Math.round(f * 100) + '%';
     $('#baixado').textContent = txt;
   });
@@ -444,7 +445,11 @@ async function telaModelo(slug, m, medir, camera) {
           ${['iso:Perspectiva', 'topo:Planta', 'frente:Frente', 'lado:Lateral'].map(x => { const [k, t] = x.split(':'); return `<button class="botao" data-v="${k}">${t}</button>`; }).join('')}</div>
           ${cm ? `<div class="nome" style="margin-top:16px">Cobertura retrátil</div><div class="etiquetas cobertura" style="margin-top:12px">
             ${[['aberta', 'Aberta'], ['retraida', 'Retraída']].map(([k, t]) => `<button class="botao${k === situacao ? ' forte' : ''}" data-s="${k}">${t}</button>`).join('')}</div>` : ''}
-          <div class="nome" style="margin-top:16px">Sol</div>${SOL.controlesDoSol(SOL.lerSol('sol:' + slug))}`);
+          <div class="nome" style="margin-top:16px">Sol</div>${SOL.controlesDoSol(SOL.lerSol('sol:' + slug))}
+          <div class="nome" style="margin-top:16px">Realidade aumentada</div>
+          <p class="mais-fraco dica-cor">A obra como está na tela (camadas e cores), em maquete na mesa, pela câmera.</p>
+          <button class="botao forte" id="ra-obra">Maquete na mesa</button>`);
+        $('#ra-obra').onclick = () => abrirMaquete(v, null, m.projeto.nome);
         // mexer no sol liga a apresentação (o sol só aparece nela) e guarda a escolha para esta obra
         SOL.ligarControlesDoSol(folha, SOL.lerSol('sol:' + slug), s => {
           if (!v.apresentacao) {
@@ -507,9 +512,63 @@ function mostrarFicha(v, i) {
   ].filter(x => x[1]);
   abrirFolha(`<div class="ficha"><div class="nome">${esc(f.n || 'Peça sem nome')}</div>
     <dl>${linhas.map(([k, val]) => `<dt>${k}</dt><dd>${esc(val)}</dd>`).join('')}</dl>
-    <div class="acoes"><button class="botao forte" id="centrar">Girar em volta</button><button class="botao" id="soltar">Fechar</button></div></div>`);
+    <div class="acoes"><button class="botao forte" id="centrar">Girar em volta</button><button class="botao" id="na-mesa">Na mesa</button>
+      <button class="botao" id="soltar">Fechar</button></div></div>`);
   $('#centrar').onclick = () => v.centrarEm(i);
+  $('#na-mesa').onclick = async () => {
+    const { conjuntoDa } = await import('./maquete.js');
+    const c = conjuntoDa(v, i);
+    abrirMaquete(v, c.ids, c.nome);
+  };
   $('#soltar').onclick = () => { v.selecionar(-1); fecharFolha(); };
+}
+
+/** A maquete na mesa (realidade aumentada, 20/10: "mostrar com a câmera a peça no mundo real... tipo uma maquete"):
+ *  montada no aparelho a partir do 3D aberto — `ids` (o conjunto da ficha) ou o que está à vista — e aberta na câmera
+ *  pelo AR Quick Look no iPhone e pela realidade aumentada do Chrome no Android (maquete.js). */
+let maqueteAnterior = null;
+async function abrirMaquete(v, ids, nome) {
+  const titulo = `<div class="nome">Maquete: ${esc(nome || 'obra')}</div>`;
+  abrirFolha(`<div class="ficha">${titulo}<p class="fraco">Montando a maquete…</p><div class="progresso"><i id="ra-barra"></i></div></div>`);
+  try {
+    const M = await import('./maquete.js');
+    if (maqueteAnterior) { M.descartar(maqueteAnterior); maqueteAnterior = null; }
+    const como = await M.comoAbrir();
+    const buf = await (await fetch(v.urlModelo)).arrayBuffer();
+    const r = await M.montarMaquete(v, buf, ids, f => { const b = $('#ra-barra'); if (b) b.style.width = Math.round(f * 100) + '%'; });
+    window.ultimaMaquete = { pecas: r.pecas, triangulos: r.triangulos, deFora: r.deFora, simplificadas: r.simplificadas, escala: r.escala, medidas: r.medidas, como };
+    if (!r.pecas) { abrirFolha(`<div class="ficha">${titulo}<p class="fraco">Não há peças à vista para a maquete: ligue as camadas em Camadas.</p></div>`); return; }
+    maqueteAnterior = r.grupo;
+    const m = r.medidas.map(x => x.toFixed(1).replace('.', ',')).join(' × ');
+    abrirFolha(`<div class="ficha">${titulo}<p class="fraco">${nf(r.pecas)} peças · escala 1:${nf(r.escala)} · ${m} m na obra${r.deFora
+        ? `<br>${nf(r.deFora)} peças pequenas ficaram de fora (parafusos, porcas, arruelas…)` : ''}${r.simplificadas
+        ? `<br>${nf(r.simplificadas)} peças pesadas vão só com a forma de fora (lajes alveolares, blocos…), para a maquete abrir leve` : ''}</p>
+      <div class="acoes" id="ra-acoes"></div>
+      <p class="mais-fraco dica-cor">${como ? 'Aponte a câmera para uma mesa ou o chão, com boa luz, e mova o celular devagar até ela achar a superfície.'
+        : 'Este aparelho ou navegador não abre realidade aumentada. No iPhone, use o Safari; no Android, o Chrome (com o "Google Play Services para RA") pela nuvem ou por conexão segura.'}</p></div>`);
+    const acoes = $('#ra-acoes'), fechar = document.createElement('button');
+    fechar.className = 'botao'; fechar.textContent = 'Fechar'; fechar.onclick = fecharFolha;
+    if (como === 'quicklook') {
+      acoes.textContent = 'Preparando o arquivo…';
+      const blob = await M.usdz(r.grupo);
+      window.ultimaMaquete.bytes = blob.size;
+      M.descartar(r.grupo); maqueteAnterior = null;           // o Quick Look abre o arquivo; a malha não é mais usada
+      acoes.textContent = '';
+      acoes.append(M.linkQuickLook(blob, 'Abrir na câmera'));
+    } else if (como === 'webxr') {
+      const abrir = document.createElement('button');
+      abrir.className = 'botao forte'; abrir.textContent = 'Abrir na câmera';
+      abrir.onclick = async () => {
+        fecharFolha();
+        try { await M.abrirWebXR(r.grupo, r.escala, () => { M.descartar(r.grupo); maqueteAnterior = null; }); }
+        catch (e) { abrirFolha(`<div class="ficha">${titulo}<p class="fraco">A câmera não abriu: ${esc(e.message || e)}</p></div>`); }
+      };
+      acoes.append(abrir);
+    }
+    acoes.append(fechar);
+  } catch (e) {
+    abrirFolha(`<div class="ficha">${titulo}<p class="fraco">Não deu para montar a maquete: ${esc(e.message || e)}</p></div>`);
+  }
 }
 
 // As camadas ligadas e desligadas, por projeto e pelo NOME da camada (19/10): ficavam só no 3D aberto, e trocar

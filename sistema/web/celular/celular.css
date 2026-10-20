@@ -209,3 +209,16 @@ details > summary::-webkit-details-marker { display: none; }
 .sol-controles input[type=range] { display: block; width: 100%; margin-top: 8px; accent-color: var(--azul, #2563eb); }
 .sol-controles button { font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--borda);
   background: var(--painel2, transparent); color: inherit; }
+
+/* a maquete na mesa (realidade aumentada, 20/10): o link do Quick Look tem a cara de botão; na câmera do Android,
+   a dica em cima e os botões grandes embaixo, por cima da imagem da câmera */
+a.ra-abrir { display: inline-flex; align-items: center; text-decoration: none; }
+a.ra-abrir img { width: 1px; height: 1px; opacity: 0; }
+#ra-sobre { position: fixed; inset: 0; z-index: 100; color: #fff; font-family: inherit; pointer-events: auto; }
+#ra-sobre .ra-dica { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 16px); left: 16px; right: 16px; text-align: center;
+  background: rgba(10, 20, 40, .62); border-radius: 12px; padding: 10px 14px; font-size: 15px; }
+#ra-sobre .ra-barra { position: absolute; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); left: 12px; right: 12px; display: flex;
+  gap: 8px; align-items: center; justify-content: center; }
+#ra-sobre button { min-width: 52px; height: 52px; border-radius: 14px; border: 0; background: rgba(10, 20, 40, .7); color: #fff; font: inherit; font-size: 17px; padding: 0 14px; }
+#ra-sobre button[data-ra=sair] { background: #1f5fbf; }
+#ra-sobre .ra-escala { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; background: rgba(10, 20, 40, .62); border-radius: 10px; padding: 6px 8px; }
