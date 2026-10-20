@@ -13,8 +13,9 @@
   --palco: #f4f6fa; --flutuante: rgba(255, 255, 255, .94);
   --seg-b: env(safe-area-inset-bottom, 0px);
 }
+/* O escuro: o do aparelho, salvo quando a pessoa escolheu no botão do topo (data-tema, guardado no aparelho). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-tema="claro"]) {
     --azul: #7aa7f0; --azul2: #8ab4f5; --azul-fraco: #1a2436; --azul-linha: #2f3d52;
     --fundo: #0e131a; --painel: #161d27; --painel2: #1b2330; --borda: #2a3444;
     --texto: #e6ebf3; --texto2: #a9b4c6; --texto3: #7f8ba0;
@@ -22,6 +23,14 @@
     --sombra: 0 1px 2px rgba(0, 0, 0, .4);
     --palco: #0e131a; --flutuante: rgba(27, 35, 48, .94);
   }
+}
+:root[data-tema="escuro"] {
+  --azul: #7aa7f0; --azul2: #8ab4f5; --azul-fraco: #1a2436; --azul-linha: #2f3d52;
+  --fundo: #0e131a; --painel: #161d27; --painel2: #1b2330; --borda: #2a3444;
+  --texto: #e6ebf3; --texto2: #a9b4c6; --texto3: #7f8ba0;
+  --verde: #5cc98a; --verde-fundo: #15291e; --amarelo: #e3b54a; --amarelo-fundo: #2c2414;
+  --sombra: 0 1px 2px rgba(0, 0, 0, .4);
+  --palco: #0e131a; --flutuante: rgba(27, 35, 48, .94);
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; height: 100%; background: var(--fundo); color: var(--texto); font: 15px/1.4 var(--sans); }
@@ -41,6 +50,11 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .icone { border: 0; background: none; padding: 8px; margin-left: -6px; border-radius: 50%; display: grid; place-items: center; }
 .icone:active { background: rgba(255, 255, 255, .15); }
 .icone[hidden] { display: none; }
+#tema { margin-left: 0; color: inherit; }
+#tema .sol { display: none; }
+/* o botão mostra para onde vai: no escuro, o sol (passar ao claro); no claro, a lua */
+:root[data-escuro] #tema .sol { display: block; }
+:root[data-escuro] #tema .lua { display: none; }
 .chip {
   border: 1px solid rgba(255, 255, 255, .35); background: rgba(255, 255, 255, .1); color: inherit;
   border-radius: 999px; padding: 4px 10px; font-size: 12px; display: flex; align-items: center; gap: 6px; white-space: nowrap;

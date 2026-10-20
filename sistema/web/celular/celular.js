@@ -25,9 +25,27 @@ const dataHora = iso => { if (!iso) return '—'; const d = new Date(iso); retur
 // O Chrome só oferece a instalação em conexão segura (HTTPS); fora dela o cartão explica o que
 // falta e ensina o atalho, que já sai com o logo (o manifesto e os ícones saem sem a chave).
 let pedidoInstalar = null;
-/** O tema escuro do aparelho; o 3D aberto acompanha a troca sem recarregar. */
+// ------------------------------------------------------------------ tema
+// O do aparelho, até a pessoa escolher no botão do topo — aí vale a escolha, guardada no aparelho
+// (o CSS lê data-tema no <html>). O 3D aberto acompanha as duas trocas sem recarregar.
 const ESCURO = window.matchMedia('(prefers-color-scheme: dark)');
-ESCURO.addEventListener('change', () => { if (visor && visor.piso) visor.definirTema(ESCURO.matches); });
+const TEMA = 'metalica-tema';
+let temaEscolhido = (() => { try { return localStorage.getItem(TEMA); } catch (e) { return null; } })();
+const escuro = () => (temaEscolhido === 'claro' || temaEscolhido === 'escuro' ? temaEscolhido === 'escuro' : ESCURO.matches);
+/** Chamado no fim do arquivo (o 3D, `visor`, só existe depois daqui) e a cada troca. */
+function aplicarTema() {
+  const raiz = document.documentElement;
+  if (temaEscolhido === 'claro' || temaEscolhido === 'escuro') raiz.dataset.tema = temaEscolhido;
+  else delete raiz.dataset.tema;
+  raiz.toggleAttribute('data-escuro', escuro());          // o ícone do botão
+  if (visor && visor.piso) visor.definirTema(escuro());
+}
+ESCURO.addEventListener('change', aplicarTema);
+document.getElementById('tema').onclick = () => {
+  temaEscolhido = escuro() ? 'claro' : 'escuro';
+  try { localStorage.setItem(TEMA, temaEscolhido); } catch (e) { /* sem armazenamento: vale até fechar */ }
+  aplicarTema();
+};
 const INSTALADO = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const IPHONE = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const DISPENSA = 'metalica-instalar-dispensado';
@@ -321,7 +339,7 @@ async function telaModelo(slug, m, medir) {
   const canvas = $('.palco canvas');
   /* O tema do APARELHO, como o resto das telas (o CSS segue prefers-color-scheme). O visor nascia com o
    * fundo claro de fábrica e nunca ouvia o tema: o 3D ficava claro no celular escuro (19/10). */
-  visor = new Visor3D(canvas, { maxPixelRatio: 2, fundo: ESCURO.matches ? '#0e131a' : '#f4f6fa' });
+  visor = new Visor3D(canvas, { maxPixelRatio: 2, fundo: escuro() ? '#0e131a' : '#f4f6fa' });
   visorSlug = slug;
   const v = visor;
   const t0 = performance.now();
@@ -330,7 +348,7 @@ async function telaModelo(slug, m, medir) {
     $('#baixado').textContent = txt;
   });
   if (v !== visor) return;          // trocou de tela no meio
-  v.definirTema(ESCURO.matches);    // depois de carregar: o piso se acomoda à caixa do modelo
+  v.definirTema(escuro());          // depois de carregar: o piso se acomoda à caixa do modelo
   v.definirFichas(await json(`${slug}/pecas.json`, versaoDe(m, 'pecas.json')));
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));     // os números do quadro já com as camadas
   diag('ultimo3d', { slug, nome: m.projeto.nome, ms: Math.round(performance.now() - t0), ...tempos, ...v.numeros(),
@@ -815,4 +833,5 @@ async function telaDiagnostico() {
   if (b) b.onclick = () => { location.hash = `#/p/${encodeURIComponent(u.slug)}/modelo/medir`; };
 }
 
+aplicarTema();
 rota();

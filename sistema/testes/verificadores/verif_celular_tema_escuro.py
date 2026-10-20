@@ -92,6 +92,24 @@ try:
     tema(ap, "light")
     fundo_claro = brilho(ap, x, y)
     ok(fundo_claro > 200, f"o aparelho passa para o claro com o 3D aberto: o fundo acompanha (brilho {fundo_claro:.0f})")
+
+    # ------------------------------------------------------------ o botão do topo (pedido do usuário, 19/10)
+    tema(ap, "dark")
+    ap.drenar(0.5)
+    ap.avaliar("document.getElementById('tema').click()")
+    b = brilho(ap, x, y)
+    ok(b > 200, f"no aparelho escuro, o botão do topo passa o 3D para o claro (brilho {b:.0f})")
+    topo = ap.avaliar("getComputedStyle(document.body).backgroundColor")
+    ok(topo == "rgb(238, 241, 246)", f"e as telas também ({topo})")
+    ap.avaliar("location.reload()")
+    ok(esperar(ap, "window.visor && window.visor.fichas && !document.querySelector('.carregando')", 120), "recarregado, o 3D abre de novo")
+    b = brilho(ap, x, y)
+    ok(b > 200, f"a escolha fica guardada no aparelho e vence o tema dele (brilho {b:.0f})")
+    ap.avaliar("document.getElementById('tema').click()")
+    b = brilho(ap, x, y)
+    ok(b < 60, f"tocar de novo volta ao escuro (brilho {b:.0f})")
+    ok(ap.avaliar("getComputedStyle(document.querySelector('#tema .sol')).display") == "block",
+       "no escuro o botão mostra o sol (passar ao claro)")
 finally:
     try: nav.kill()
     except Exception: pass
