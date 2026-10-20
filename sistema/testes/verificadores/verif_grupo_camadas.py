@@ -31,6 +31,9 @@ doc.camadas["Pilares"] = Camada(nome="Pilares", cor="#495057")
 for i, cam in enumerate(("Telhas", "Calhas", "Pilares") * 4):
     doc.add(Barra(nome=cam, inicio=(i * 1000.0, 0, 0), fim=(i * 1000.0, 0, 3000), perfil="U 100×50×3,00 (FF)",
                   papel="pilar", camada=cam))
+for i in range(4):                                       # a estrutura fora do grupo (o sistema Metálica)
+    doc.add(Barra(nome="Viga", inicio=(i * 1000.0, 5000, 3000), fim=(i * 1000.0, 9000, 3000), perfil="U 100×50×3,00 (FF)",
+                  papel="viga", camada="Vigas", aco="ASTM A36"))
 json.dump(doc.dict(), open(os.path.join(PASTA, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
 
 srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
@@ -75,7 +78,7 @@ try:
 
     aba.navegar(f"http://localhost:{PORTA}/editor?projeto=grcam", limite=90)
     t0 = time.time()
-    while time.time() - t0 < 60 and not aba.avaliar("!!(window.editor && editor.documento && editor.documento.entidades.size >= 12)"):
+    while time.time() - t0 < 60 and not aba.avaliar("!!(window.editor && editor.documento && editor.documento.entidades.size >= 16)"):
         aba.drenar(0.5)
     aba.drenar(1.5)
     aba.console.clear()
@@ -134,6 +137,15 @@ try:
     vv = json.loads(aba.avaliar("JSON.stringify(visor.cabecalho.camadas.map((c, i) => [c.nome, visor.visivelCamada[i] !== false]))"))
     dele = {n: v for n, v in vv if n in ("Telhas", "Calhas", "Pilares")}
     ok(dele and not any(dele.values()), f"a caixinha do grupo desliga todas as camadas dele ({dele})")
+    # 19/10 (usuário, no modo ver do Mercado: "não foi criado o grupo com as telhas, calhas e rufos"): no Pintar por
+    # sistema a cobertura é um sistema só — as telhas caíam em Outros e as calhas/rufos de chapa galvanizada em Metálica
+    clicar(caixa, "a caixinha do grupo no modo ver")                       # liga de novo
+    aba.avaliar("(() => { const s = document.getElementById('pintar'); s.value = 'sistema';"
+                " s.dispatchEvent(new Event('change')); return 1; })()")
+    aba.drenar(1.0)
+    leg = aba.avaliar("(document.getElementById('painel-corpo') || {}).textContent || ''")
+    ok("Cobertura — telhas, calhas e rufos" in leg, "no Pintar por sistema a cobertura é um sistema só")
+    ok("Outros" not in leg, "as telhas e as calhas não caem mais em Outros")
     e = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not e, "sem erros no console" + (f" — {[x[1][:200] for x in e[:2]]}" if e else ""))
 finally:

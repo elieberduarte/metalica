@@ -431,8 +431,13 @@ function secaoPiso(comSistema = true) {
  *  apresentação ao cliente"): pelo material — concreto é pré-moldado; aço (e a barra sem material) é metálica. O aço e o
  *  neoprene que vêm no modelo do pré-moldado (a camada dele é quase toda de concreto: as porcas, arruelas e cantoneiras
  *  das ligações dele) ficam com o pré-moldado. O resto (o PVC das descidas…) é Outros. */
-const SISTEMAS = { metalica: ['Metálica', '#2f6fd6'], outros: ['Outros', '#e08a1e'], premoldado: ['Pré-moldado (concreto)', '#8f969e'],
-  terreno: ['Terreno, rua e calçada', '#b9a27a'] };
+const SISTEMAS = { metalica: ['Metálica', '#2f6fd6'], cobertura: ['Cobertura — telhas, calhas e rufos', '#3aa69b'],
+  outros: ['Outros', '#e08a1e'], premoldado: ['Pré-moldado (concreto)', '#8f969e'], terreno: ['Terreno, rua e calçada', '#b9a27a'] };
+// a cobertura num sistema só (usuário, Mercado, 19/10: "não foi criado o grupo com as telhas, calhas e rufos" — as telhas
+// caíam em Outros e as calhas e os rufos, de chapa galvanizada, em Metálica): a camada no grupo da cobertura (o que o
+// lançamento de telhas faz) ou com o nome de telha, calha, rufo ou cumeeira — antes do material
+const COBERTURA_GRUPO = /cobertura/i;
+const COBERTURA_CAMADA = /^\s*(telhas?|calhas?|rufos?|cumeeiras?)\b/i;
 // o terreno, a rua e a calçada num sistema só (usuário, 16/10: "terreno, rua e calçada como uma camada única; parede
 // pode deixar junto com o pré-moldado"): pelo nome da peça, antes do material (no IFC do Mercado são lajes de concreto)
 const TERRENO = /^\s*(terreno|ruas?|cal[çc]adas?|passeios?)\b/i;
@@ -449,11 +454,14 @@ function gruposDeSistema() {
     q[0]++; if (CONCRETO.test(fichas[i].m || '')) q[1]++;
     porCamada.set(fichas[i].c, q);
   }
-  const ids = { metalica: [], outros: [], premoldado: [], terreno: [] };
+  const cams = (visor.cabecalho && visor.cabecalho.camadas) || [];
+  const daCobertura = cams.map(c => COBERTURA_GRUPO.test(c.grupo || '') || COBERTURA_CAMADA.test(c.nome || ''));
+  const ids = { metalica: [], cobertura: [], outros: [], premoldado: [], terreno: [] };
   for (let i = 0; i < n; i++) {
     const m = fichas[i].m || '', q = porCamada.get(fichas[i].c);
     let s = 'outros';
-    if (TERRENO.test(fichas[i].p || '') || TERRENO.test(fichas[i].n || '')) s = 'terreno';
+    if (daCobertura[fichas[i].c]) s = 'cobertura';
+    else if (TERRENO.test(fichas[i].p || '') || TERRENO.test(fichas[i].n || '')) s = 'terreno';
     else if (CONCRETO.test(m)) s = 'premoldado';
     else if (!m || ACO.test(m)) s = q[1] * 2 >= q[0] ? 'premoldado' : NEOPRENE.test(m) ? 'outros' : 'metalica';
     ids[s].push(i);
