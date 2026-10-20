@@ -9,6 +9,8 @@
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
   --topo-h: 56px; --abas-h: 60px;
+  /* o 3D: o fundo do palco é o do visor (TEMA_CLARO/ESCURO em visor3d.js) e os botões flutuam sobre ele */
+  --palco: #f4f6fa; --flutuante: rgba(255, 255, 255, .94);
   --seg-b: env(safe-area-inset-bottom, 0px);
 }
 @media (prefers-color-scheme: dark) {
@@ -18,6 +20,7 @@
     --texto: #e6ebf3; --texto2: #a9b4c6; --texto3: #7f8ba0;
     --verde: #5cc98a; --verde-fundo: #15291e; --amarelo: #e3b54a; --amarelo-fundo: #2c2414;
     --sombra: 0 1px 2px rgba(0, 0, 0, .4);
+    --palco: #0e131a; --flutuante: rgba(27, 35, 48, .94);
   }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -104,15 +107,15 @@ details > summary::-webkit-details-marker { display: none; }
 .projeto .numeros b { color: var(--texto); font-variant-numeric: tabular-nums; }
 
 /* ---------------------------------------------------------------- 3D */
-.palco { position: fixed; inset: calc(var(--topo-h) + env(safe-area-inset-top, 0px)) 0 calc(var(--abas-h) + var(--seg-b)) 0; background: #e9edf2; }
+.palco { position: fixed; inset: calc(var(--topo-h) + env(safe-area-inset-top, 0px)) 0 calc(var(--abas-h) + var(--seg-b)) 0; background: var(--palco); }
 .palco canvas { width: 100%; height: 100%; display: block; touch-action: none; }
-.palco .carregando { position: absolute; inset: 0; display: grid; place-items: center; color: #3a475c; font-size: 14px; text-align: center; padding: 20px; }
-.palco .progresso { width: 180px; height: 4px; background: #c9d3e6; border-radius: 2px; margin: 10px auto 0; overflow: hidden; }
+.palco .carregando { position: absolute; inset: 0; display: grid; place-items: center; color: var(--texto2); font-size: 14px; text-align: center; padding: 20px; }
+.palco .progresso { width: 180px; height: 4px; background: var(--azul-linha); border-radius: 2px; margin: 10px auto 0; overflow: hidden; }
 .palco .progresso i { display: block; height: 100%; width: 0; background: #1f5fbf; transition: width .1s; }
 .ferramentas { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 8px; }
-.ferramentas button { width: 44px; height: 44px; border-radius: 12px; border: 0; background: rgba(255, 255, 255, .94); color: #16202e; box-shadow: var(--sombra); display: grid; place-items: center; }
+.ferramentas button { width: 44px; height: 44px; border-radius: 12px; border: 0; background: var(--flutuante); color: var(--texto); box-shadow: var(--sombra); display: grid; place-items: center; }
 .ferramentas button.ligado { background: #1f5fbf; color: #fff; }
-.contagem { position: absolute; left: 10px; top: 10px; background: rgba(255, 255, 255, .9); color: #3a475c; border-radius: 8px; padding: 4px 8px; font-size: 12px; }
+.contagem { position: absolute; left: 10px; top: 10px; background: var(--flutuante); color: var(--texto2); border-radius: 8px; padding: 4px 8px; font-size: 12px; }
 
 /* ---------------------------------------------------------------- folha que sobe de baixo */
 #folha {
