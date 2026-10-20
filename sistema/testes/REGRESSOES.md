@@ -112,6 +112,12 @@ pelo caminho da câmera — link vindo de fora do site — fica em `verif_celula
 | 19/10 | no Android, "Instalar" dizia que não era possível e o atalho saía com um "1" cinza no lugar do logo — o manifesto e os ícones davam 401, porque o navegador os busca sem o cookie do aparelho | 8ae8e40 | verif_celular_instalar |
 | 19/10 | Android no tema escuro: a lista e as abas escuras, mas o Modelo 3D abria claro (fundo, botões flutuantes, contagem de peças) | 0faa2c6 | verif_celular_tema_escuro |
 
+## Cobertura retrátil (Kaefer)
+
+| Data | O que o usuário via | Correção | Teste |
+|---|---|---|---|
+| 19/10 | "Cobertura retrátil: ver aberta / ver retraída" no menu Modelo de todos os projetos — a cobertura é de um projeto só | aef5650 | verif_cobertura_barra |
+
 ## Primeiro uso (agentes engenheiro-primeiro-uso e detalhista-primeiro-uso-ifc)
 
 Achados dos testes de primeiro uso (`Projeto/BRIEFINGS/Briefing-primeiro-uso*.md`), feitos pelas telas com `testes/navegar.py`.
