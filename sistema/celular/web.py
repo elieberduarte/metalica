@@ -11,6 +11,8 @@ Rotas, todas no servidor do programa (só o próprio computador, com a proteçã
 * POST /api/celular/codigo        um código novo para o QR (5 minutos, uso único)
 * POST /api/celular/remover       {"id": ...}  o aparelho deixa de entrar na hora
 * POST /api/celular/renomear      {"id": ..., "nome": ...}
+* GET  /api/celular/obras         as obras que podem ir para o celular e se cada uma está ligada (o botão do cartão)
+* POST /api/celular/obra          {"slug": ..., "celular": true|false}  liga ou desliga a obra no celular
 * POST /api/celular/https         {"nome": "metalica.dominio.com.br", "token": "..."}  HTTPS (cópia para a obra)
 * POST /api/celular/https/remover volta ao http
 * GET  /api/dev/extensoes.js      o script da tela inicial: o do pré-moldado (se houver) e o botão do celular
@@ -60,6 +62,9 @@ def rota_get(h, rota: str) -> bool:
         return True
     if rota == "/api/celular/estado":
         h._json(celular().estado())
+        return True
+    if rota == "/api/celular/obras":
+        h._json({"obras": celular().obras()})
         return True
     if rota == "/api/dev/extensoes.js":
         partes = []
@@ -115,6 +120,12 @@ def rota_post(h, rota: str, corpo: dict) -> bool:
         return True
     if acao == "https/remover":
         h._json(c.remover_https())
+        return True
+    if acao == "obra":
+        try:
+            h._json(c.mostrar(str(corpo.get("slug") or ""), bool(corpo.get("celular"))))
+        except ValueError as e:
+            raise _erro_de_dados(str(e))
         return True
     if acao == "renomear":
         h._json(c.renomear(str(corpo.get("id") or ""), str(corpo.get("nome") or "")))

@@ -170,7 +170,7 @@ function cartao(p) {
   const icone = el('div', { class: 'cartao-icone ' + p.tipo });
   icone.innerHTML = ICONES[p.tipo] || ICONES.galpao;
 
-  const c = el('article', { class: 'cartao', tabindex: '0', role: 'button',
+  const c = el('article', { class: 'cartao', tabindex: '0', role: 'button', 'data-slug': p.slug,
                             'aria-label': `Abrir o projeto ${p.nome}`,
                             onclick: () => { location.href = urlDoProjeto(p); },
                             // só o próprio cartão: Enter num botão dele (Excluir, Renomear…) é do botão

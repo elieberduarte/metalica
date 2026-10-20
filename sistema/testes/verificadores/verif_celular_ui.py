@@ -99,6 +99,12 @@ def tocar(aba, x, y):
     aba.cmd("Input.dispatchTouchEvent", type="touchEnd", touchPoints=[])
 
 
+def clicar(aba, seletor):
+    r = aba.avaliar("(() => { const b = document.querySelector(%s).getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; })()" % json.dumps(seletor))
+    for tipo in ("mouseMoved", "mousePressed", "mouseReleased"):
+        aba.cmd("Input.dispatchMouseEvent", type=tipo, x=r[0], y=r[1], button="left", clickCount=1)
+
+
 navs = []
 try:
     for _ in range(40):
@@ -112,6 +118,18 @@ try:
     ok(esperar(pc, "!!document.getElementById('btn-celular')", 20), "a tela inicial do dev ganha o botão Celular")
     if os.path.isfile(os.path.join(BASE, "web", "premoldado", "dev_inicio.js")):      # o script da tela inicial junta os dois
         ok(esperar(pc, "!!document.querySelector('.topo .marca.trocavel')", 10), "a troca de área do pré-moldado continua na tela inicial")
+    # a chave "Celular" do cartão (20/10): tira a obra da lista do celular e põe de volta, sem abrir o projeto
+    chave = ".cartao[data-slug='obra-celular'] .cel-chave"
+    ok(esperar(pc, "(document.querySelector(\"%s\") || {}).getAttribute && document.querySelector(\"%s\").getAttribute('aria-checked') === 'true'" % (chave, chave), 20),
+       "o cartão ganha a chave Celular, ligada")
+    clicar(pc, chave)
+    ok(esperar(pc, "location.pathname === '/' && document.querySelector(\"%s\").getAttribute('aria-checked') === 'false'" % chave, 10),
+       "clicar desliga a obra e não abre o projeto")
+    ok(_json(base + "/api/celular/obras")["obras"] == [{"slug": "obra-celular", "celular": False}], "o programa guarda a obra desligada")
+    pc.navegar(base + "/", limite=60)
+    ok(esperar(pc, "(document.querySelector(\"%s\") || {}).getAttribute && document.querySelector(\"%s\").getAttribute('aria-checked') === 'false'" % (chave, chave), 20),
+       "recarregada a tela, a chave continua desligada")
+    foto(pc, "celular_0_chave.png")
     pc.avaliar("document.getElementById('btn-celular').click()")
     ok(esperar(pc, "location.pathname === '/acesso-celular' && document.getElementById('estado-texto').textContent === 'Desligado'", 20),
        "a tela Acesso pelo celular abre desligada")
@@ -131,6 +149,11 @@ try:
     ap.navegar(cel + "/celular/", limite=30)
     ok(esperar(ap, "document.body && document.body.innerText.indexOf('ainda não está ligado') >= 0", 15), "sem par: o celular só vê o aviso")
     ap.navegar(cel + "/celular/parear?c=" + codigo, limite=30)
+    ok(esperar(ap, "document.body && document.body.innerText.length > 20 && document.querySelectorAll('.projeto').length === 0", 20),
+       "pareado: a obra desligada no PC não aparece")
+    pc.avaliar("fetch('/api/celular/obra', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({slug: 'obra-celular', celular: true})})")
+    ok(esperar(pc, "true", 1) and _json(base + "/api/celular/obras")["obras"][0]["celular"] is True, "ligada de novo no PC")
+    ap.navegar(cel + "/celular/", limite=30)
     ok(esperar(ap, "document.querySelectorAll('.projeto').length === 1", 20), "pareado: a lista mostra o projeto")
     ok(esperar(ap, "document.getElementById('conexao').textContent.indexOf('No PC') === 0", 5), "o selo diz que está ligado ao PC")
     foto(ap, "celular_2_lista.png")

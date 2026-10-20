@@ -262,10 +262,35 @@ class Celular:
 
     # ------------------------------------------------------------------ projetos e pacotes
 
-    def projetos(self) -> List[dict]:
-        """Os projetos da pasta de dados (sem os arquivados e sem os do pré-moldado), com o que já
-        se sabe do pacote de cada um."""
+    def ocultos(self) -> List[str]:
+        """As obras desligadas do celular pelo botão do cartão na tela de projetos (ocultos.json da pasta
+        do celular, não o projeto.json: gravar o projeto deixaria o pacote velho)."""
+        v = self._ler("ocultos.json", [])
+        return [str(s) for s in v] if isinstance(v, list) else []
+
+    def obras(self) -> List[dict]:
+        """As obras que podem ir para o celular (as mesmas da lista dele, mais as desligadas), para o botão
+        de cada cartão: [{"slug", "celular": ligada}]."""
+        ocultos = set(self.ocultos())
+        return [{"slug": p["slug"], "celular": p["slug"] not in ocultos} for p in self.projetos(com_ocultos=True)]
+
+    def mostrar(self, slug: str, ligado: bool) -> dict:
+        """Liga ou desliga uma obra no celular; desligada, some da lista e não abre nem pelo endereço."""
+        s = os.path.basename(str(slug or "").replace("\\", "/"))
+        if not s or s.startswith((".", "_")) or not os.path.isfile(os.path.join(self.pasta_projetos, s, "projeto.json")):
+            raise ValueError("projeto não encontrado: %s" % slug)
+        with self._trava:
+            ocultos = [o for o in self.ocultos() if o != s]
+            if not ligado:
+                ocultos.append(s)
+            self._gravar("ocultos.json", sorted(ocultos))
+        return {"slug": s, "celular": bool(ligado)}
+
+    def projetos(self, com_ocultos: bool = False) -> List[dict]:
+        """Os projetos da pasta de dados (sem os arquivados, sem os do pré-moldado e sem os desligados do
+        celular), com o que já se sabe do pacote de cada um."""
         out = []
+        ocultos = set() if com_ocultos else set(self.ocultos())
         try:
             nomes = os.listdir(self.pasta_projetos)
         except OSError:
@@ -279,7 +304,7 @@ class Celular:
                     p = json.load(f)
             except (OSError, ValueError):
                 continue
-            if self._fora_da_lista(p):
+            if self._fora_da_lista(p) or slug in ocultos:
                 continue
             item = {"slug": slug, "nome": p.get("nome") or slug, "cliente": p.get("cliente") or "",
                     "alterado": p.get("alterado"), "revisao": (p.get("dados_resumo") or {}).get("revisao") or "",
@@ -303,7 +328,7 @@ class Celular:
                 dados = json.load(f)
         except (OSError, ValueError):
             return None
-        if self._fora_da_lista(dados):                  # o que a lista não mostra também não se abre pelo nome
+        if self._fora_da_lista(dados) or s in self.ocultos():   # o que a lista não mostra também não se abre pelo nome
             return None
         return p
 

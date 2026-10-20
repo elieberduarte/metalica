@@ -128,6 +128,29 @@ def test_pacote_preparado_e_so_o_listado(cel):
     assert cel.velho("obra")
 
 
+def test_obra_desligada_some_do_celular(cel):
+    """A chave "Celular" do cartão (20/10): desligada, a obra sai da lista e não abre nem pelo endereço; o
+    projeto.json não é tocado (gravá-lo deixaria o pacote velho); religada, volta."""
+    k = _parear(cel)
+    pj = os.path.join(cel.pasta_projetos, "obra", "projeto.json")
+    antes = os.stat(pj).st_mtime_ns
+    assert cel.obras() == [{"slug": "obra", "celular": True}]          # a arquivada nem entra
+    cel.mostrar("obra", False)
+    assert cel.obras() == [{"slug": "obra", "celular": False}]
+    st, _c, corpo = _pedir(cel, "/celular/dados/projetos.json", cookie=k)
+    assert st == 200 and json.loads(corpo)["projetos"] == []
+    assert _pedir(cel, "/celular/dados/obra/manifesto.json", cookie=k)[0] == 404
+    assert os.stat(pj).st_mtime_ns == antes
+    cel.mostrar("obra", True)
+    st, _c, corpo = _pedir(cel, "/celular/dados/projetos.json", cookie=k)
+    assert [p["slug"] for p in json.loads(corpo)["projetos"]] == ["obra"]
+    assert _pedir(cel, "/celular/dados/obra/manifesto.json", cookie=k)[0] in (200, 202)
+    for ruim in ("", "..", ".celular", "nao-existe"):
+        with pytest.raises(ValueError):
+            cel.mostrar(ruim, False)
+    assert cel.ocultos() == []
+
+
 def test_codigo_uma_vez_e_com_prazo(cel, monkeypatch):
     cod = cel.novo_codigo()["codigo"]
     assert _pedir(cel, "/celular/parear?c=" + cod)[0] == 302
