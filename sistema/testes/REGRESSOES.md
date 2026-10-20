@@ -252,3 +252,4 @@ Achados dos testes de primeiro uso (`Projeto/BRIEFINGS/Briefing-primeiro-uso*.md
 | Data | O que se viu | Commit | Teste |
 |---|---|---|---|
 | 20/10 | Obra em Cascavel (centro): a imagem da Esri vinha cinza, "Map data not yet available" — a fonte não tem o nível 19 ali; agora o bloco vazio é reconhecido e o nível desce até ter imagem (o 18) | a508301 | test_local_obra::test_fonte_sem_o_nivel_desce_ate_ter_imagem |
+| 20/10 | Galpão gerado: longarinas que no 3D viram escora (a lateral do vão da ponta, 113 %) ou tirante (a de oitão, 227 %), e sem o peso do fechamento no eixo fraco | 4f1bf57 | test_tesouras::test_longarina_da_ponta_leva_a_reacao_do_pilar_de_canto, ::test_longarinas_com_o_peso_do_fechamento, ::test_longarina_de_oitao_com_folga_e_correntes_aos_montantes |
