@@ -1997,7 +1997,8 @@ def _contraventamentos(p: ProjetoGalpao):
 
     # vertical: o X de cada parede lateral, no vão contraventado, leva a reação do
     # beiral até a fundação
-    comp_v = math.hypot(esp, d.pe_direito)
+    # até o nível do X da cobertura (o beiral; na tesoura apoiada, acima do topo do pilar)
+    comp_v = math.hypot(esp, d.altura_beiral)
     N_v = cortante * comp_v / esp
     rv = _dimensionar_tirante(N_v, comp_v * 100, a, "Contraventamento vertical")
     if not rv.ok:

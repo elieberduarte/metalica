@@ -385,3 +385,23 @@ def test_terca_assentada_no_banzo_de_cima():
         # distância ao eixo da água (z = hb + i·y), perpendicular a ele
         dist = (z - g.hb - g.i * y) / math.sqrt(1 + g.i ** 2)
         assert abs(dist - (d_bs / 2 + d_t / 2)) < 2.0, (dist, d_bs, d_t)
+
+
+def test_x_vertical_sobe_ate_o_beiral_na_tesoura_apoiada():
+    """Na tesoura apoiada o X da cobertura fica no banzo de cima (o beiral, 0,8 m acima do pilar),
+    mas o X das paredes acabava no topo do pilar: a força longitudinal descia dobrando o montante de
+    apoio no eixo fraco — na análise 3D do 20×40, deslocabilidade grande (Δ2/Δ1 = 1,44). O X
+    vertical vai até o beiral, no cálculo (comprimento) e no 3D."""
+    import math
+    from nucleo3d import analise_estrutural as AE
+    from nucleo3d import de_projeto
+    d = _dados(diagonais_tesoura="Pratt", v0=45.0)
+    p = galpao.dimensionar(d)
+    cv = p.elemento("Contraventamento vertical")
+    assert abs(cv.geometria["comprimento_m"] - math.hypot(p.dados.espacamento_porticos, p.dados.altura_beiral)) < 0.01
+    doc = de_projeto.modelo_do_galpao(p)
+    topo = max(max(b.inicio[2], b.fim[2]) for b in doc.barras if b.atributos.get("marca") == "CV")
+    assert abs(topo - p.dados.altura_beiral * 1000.0) < 1.0
+    r = AE.calcular(doc, {"base": "engastada", "telha": 0.105, "sobrecarga": p.cargas["sobrecarga"],
+                          "v0": d.v0, "categoria": "II", "classe": "B", "modelo_vento": "fechado"})
+    assert r["segunda_ordem"]["resumo"]["razao_max"] < 1.4

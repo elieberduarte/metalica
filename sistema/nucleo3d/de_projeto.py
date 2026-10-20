@@ -627,8 +627,12 @@ class _Construtor:
         self.vaos_vertical = self._vaos_de(self._geometria_contrav("Contraventamento vertical"))
         for iv in self.vaos_vertical:
             x1, x2 = self.xs[iv] + bfp / 2, self.xs[iv + 1] - bfp / 2
+            # até o nível do X da cobertura: na tesoura apoiada, o beiral (banzo de cima no apoio), não o
+            # topo do pilar — senão a força longitudinal descia dobrando o montante de apoio no eixo fraco
+            # (na análise 3D do 20×40: deslocabilidade grande, Δ2/Δ1 = 1,44, análise de 20/10)
+            zt = self.hb if (self.dg.eh_trelicado and self.dg.ligacao_tesoura == "apoiada") else self.H
             for lado, y in (("esquerdo", 0.0), ("direito", self.V)):
-                for diag, (za, zb) in enumerate(((0.0, self.H), (self.H, 0.0)), start=1):
+                for diag, (za, zb) in enumerate(((0.0, zt), (zt, 0.0)), start=1):
                     self._barra("contrav_vertical", (x1, y, za), (x2, y, zb), perf,
                                 "contraventamento", "Contraventamento", "Aço",
                                 self.dg.aco_chapas, el, vao=iv + 1, lado=lado,
