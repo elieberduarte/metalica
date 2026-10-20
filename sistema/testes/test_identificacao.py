@@ -158,3 +158,15 @@ def test_hangar_contraventos_e_vigas(hangar):
     assert all(len(t["desenho"]["barras"]) >= 15 for t in r["trelicas"])
     assert sum(1 for b in r["barras"] if b["marca"] == "VT") == 6
     assert any("A DEFINIR" in a and "L 25×25" in a for a in r["avisos"])
+
+
+def test_original_do_projeto_recebido_nao_vai_ao_chao_do_3d():
+    """o Original do projeto recebido é o conjunto das folhas (no Hangar, 36 folhas e 226 m de largura) num sistema que não
+    é o da obra: ia para o chão do 3D, espalhado longe do hangar (20/10). O arquitetônico do lançamento continua indo."""
+    from nucleo3d import lancamento
+    recebido = Desenho(nome="planta-de-lançamento", escala=100.0)
+    recebido.metadados = {"lancamento": True, "arquitetonico": {"tipo": "dxf", "recebido": True}}
+    arq = Desenho(nome="planta-de-lançamento", escala=100.0)
+    arq.metadados = {"lancamento": True, "arquitetonico": {"tipo": "dxf"}}
+    assert lancamento.fundo_no_3d(recebido) is False
+    assert lancamento.fundo_no_3d(arq) is True

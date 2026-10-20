@@ -277,6 +277,14 @@ def desenho_de_lancamento(referencia: Desenho, anterior: Optional[dict] = None) 
     return des
 
 
+def fundo_no_3d(des: Desenho) -> bool:
+    """A planta de lançamento vai para o chão do modelo 3D (as linhas e a malha dela)? Não quando ela é o Original de um
+    projeto recebido (20/10/2026, o Hangar Almayer): ali ela é o conjunto das folhas do projetista (36 folhas, 226 m de
+    largura), num sistema que não é o da obra — a estrutura vem da Montagem, pelos eixos gravados — e as folhas
+    apareciam espalhadas pelo chão, longe do hangar."""
+    return not ((des.metadados or {}).get("arquitetonico") or {}).get("recebido")
+
+
 def segmentos_da_referencia(des: Desenho, limite: int = 120_000) -> List[List[int]]:
     """As linhas do arquitetônico como segmentos [x1, y1, x2, y2] em mm inteiros, para o
     modelo 3D desenhar no chão. Acima de `limite`, ficam os mais compridos (paredes antes

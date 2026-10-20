@@ -4251,6 +4251,8 @@ def referencia_do_lancamento(s: str) -> dict:
         else:
             des = Desenho.de_dict(g.abrir_desenho(s, lancamento.DESENHO_LANCAMENTO))
             segs, malha = lancamento.segmentos_da_referencia(des), lancamento.eixos_da_malha(des)
+            if not lancamento.fundo_no_3d(des):
+                segs, malha = [], []            # o Original do projeto recebido: as folhas não são a planta da obra (20/10)
             _CACHE_REFERENCIA[s] = (chave, segs, malha)
             saida["segmentos"] = segs
     else:
