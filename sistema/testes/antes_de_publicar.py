@@ -43,12 +43,15 @@ def etapa(titulo, cmd):
 
 def _paralelo_pytest() -> list:
     """`-n N` quando o pytest-xdist está instalado: metade dos núcleos no ritmo cheio (medido: 200 s → 93 s
-    com 6), 3 no calmo (testes/ritmo.py). Sem ele, roda como sempre."""
+    com 6), 3 no calmo (testes/ritmo.py). Sem ele, roda como sempre. Cada arquivo inteiro num processo só (loadfile):
+    espalhado, o setUpModule pesado (o Detalhar da ME-Sooro, 3,5 min) rodava em cada processo ao mesmo tempo, com o
+    mesmo projeto, e o test_regressoes_primeiro_uso_ifc achava o romaneio sem pranchas (conferência da 0.9.0, 20/10;
+    o arquivo sozinho e em série passa)."""
     import importlib.util
     import ritmo
     if importlib.util.find_spec("xdist") is None:
         return []
-    return ["-n", str(ritmo.pytest_n())]
+    return ["-n", str(ritmo.pytest_n()), "--dist", "loadfile"]
 
 
 def main(argv):

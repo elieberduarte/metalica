@@ -107,14 +107,18 @@ try:
     # o clique na borda de uma folha pega a folha inteira (moldura e carimbo levam `folha`)
     ok(aba.avaliar("(() => { const e = [...window.cad.doc.entidades.values()].find(o => (o.atributos || {}).folha && (o.atributos || {}).prancha_numero === 2); return e ? window.cad.pecaDe(e.id).length > 20 : false; })()"),
        "a moldura da folha 2 é um grupo (o clique pega a folha inteira)")
-    # R6 (02/10): as terças T.O.3/5/6 deste modelo têm o par a 60 mm na altura, ligadas sem chapa — o 3D não corrige
-    # sozinho e as pranchas não saem; acertada a ligação (aqui: o carimbo sem a pendência), saem
+    # R6 (02/10): terça com o par de furos fora do passo da máquina, ligada sem chapa — o 3D não corrige sozinho e as
+    # pranchas não saem; acertada a ligação (aqui: o carimbo sem a pendência), saem. Desde 16/10 (Q02: o padrão da máquina
+    # vence o projeto) o Detalhar já leva as terças T.O.3/5/6 deste modelo ao passo, e a pendência é plantada no carimbo
+    arq_car = os.path.join(DADOS, "compressores", "detalhamento", "carimbo.json")
+    car = json.load(open(arq_car, encoding="utf-8"))
+    car["fora_da_maquina"] = ["T.O.3 (par a 60 mm, ligada à tesoura sem chapa)"]
+    json.dump(car, open(arq_car, "w", encoding="utf-8"))
     aba.avaliar("window.__aberto = null; window.open = (u) => { window.__aberto = u; return null; }; window.cad.pdfDasPranchas(); 1")
     t0 = time.time()
     while time.time() - t0 < 60 and "não podem ser emitidas" not in (aba.avaliar("document.body.innerText") or ""): aba.drenar(1.0)
     ok("passo da máquina" in (aba.avaliar("document.body.innerText") or "") and not aba.avaliar("window.__aberto"),
        "PDF recusado com a terça fora do passo da máquina (R6)")
-    arq_car = os.path.join(DADOS, "compressores", "detalhamento", "carimbo.json")
     car = json.load(open(arq_car, encoding="utf-8")); car["fora_da_maquina"] = []
     json.dump(car, open(arq_car, "w", encoding="utf-8"))
     aba.console.clear()

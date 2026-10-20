@@ -61,7 +61,8 @@ try:
     aba.navegar(base + "/editor?projeto=compressores&destacar=posicao:P77", limite=90)
     esperar(aba, "window.editor && window.editor.selecao && window.editor.selecao.ids.size > 0")
     aba.avaliar("(() => { const ed = window.editor; const id = [...ed.selecao.ids][0]; ed.selecao.definir([id]); ed._agendarPaineis('props'); return 1; })()")
-    aba.drenar(1.5)
+    # o painel se monta depois de um quadro; sob carga (conferência no ritmo calmo, 20/10) 1,5 s fixos não bastavam
+    esperar(aba, "document.querySelectorAll('.acoes-painel.editar-chapa button').length > 0", limite=30)
     botoes = aba.avaliar("[...document.querySelectorAll('.acoes-painel.editar-chapa button')].map(b => b.textContent)")
     ok(botoes == ["Editar isolada", "Editar no local"], f"3D: a chapa selecionada mostra os botões de edição ({botoes})")
     # 2) no local: o servidor gera o ambiente com as referências; o CAD abre com a faixa
