@@ -63,6 +63,12 @@ body.tela-cheia #tela { padding: 0; }
 .busca input { width: 100%; border: 1px solid var(--borda); background: var(--painel); color: var(--texto); border-radius: 10px; padding: 10px 12px; font-size: 16px; }
 .cartao { background: var(--painel); border-radius: var(--raio); box-shadow: var(--sombra); padding: 14px; margin-bottom: 10px; }
 .cartao.toque:active { background: var(--painel2); }
+/* O cartão de instalar: o logo, o que se ganha e o botão. */
+.instalar { border: 1px solid var(--azul-linha); }
+.instalar-cab { display: flex; gap: 12px; align-items: center; }
+.instalar-cab img { width: 48px; height: 48px; border-radius: 12px; flex-shrink: 0; }
+.instalar-passos { margin: 10px 0 0; font-size: 13.5px; color: var(--texto2); }
+.instalar-botoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .linha { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
 .nome { font-weight: 650; font-size: 16px; }
 .fraco { color: var(--texto2); font-size: 13px; }

@@ -44,6 +44,11 @@ MAX_FALHAS = 60
 JANELA_FALHAS = 600.0
 #: Arquivos do Three.js que as telas do celular importam (mais nada de web/lib).
 LIB_LIBERADA = {"three.module.js", "OrbitControls.js"}
+#: O que sai SEM a chave do aparelho: o manifesto e o logo. O navegador busca o manifesto sem o
+#: cookie (é o padrão dele) e, com 401, o Chrome não achava nome nem ícone — o "instalar" virava um
+#: atalho com uma letra cinza (19/10). Nenhum dos dois diz nada de projeto.
+PUBLICAS = {"/celular/manifest.webmanifest", "/celular/lib/icone-180.png", "/celular/lib/icone-192.png",
+            "/celular/lib/icone-512.png"}
 TIPOS = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
          ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".png": "image/png",
          ".pdf": "application/pdf", ".mcel": "application/octet-stream", ".svg": "image/svg+xml", ".txt": "text/plain; charset=utf-8",
@@ -702,6 +707,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 COOKIE, valor, "; Secure" if cel.https else "")
             return self._enviar(302, b"", "text/plain", {"Location": "/celular/", "Set-Cookie": cookie,
                                                           "Cache-Control": "no-store"}, cabeca)
+        if rota in PUBLICAS:
+            return self._estatico(rota[len("/celular/"):], cabeca)
         aparelho = cel.autenticar(self._cookie(), ip)
         if not aparelho:
             cel.falhou(ip)

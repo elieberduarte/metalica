@@ -20,6 +20,63 @@ const kg = v => (v >= 10000 ? nf(v / 1000, 1) + ' t' : nf(v, v < 10 ? 2 : 1) + '
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const dataHora = iso => { if (!iso) return '—'; const d = new Date(iso); return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); };
 
+// ------------------------------------------------------------------ instalar
+// O "Instalar" do próprio app, com o logo e o nome — e não o atalho genérico do menu do Chrome.
+// O Chrome só oferece a instalação em conexão segura (HTTPS); fora dela o cartão explica o que
+// falta e ensina o atalho, que já sai com o logo (o manifesto e os ícones saem sem a chave).
+let pedidoInstalar = null;
+const INSTALADO = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const IPHONE = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const DISPENSA = 'metalica-instalar-dispensado';
+const dispensado = () => { try { return localStorage.getItem(DISPENSA) === '1'; } catch (e) { return false; } };
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); pedidoInstalar = e; mostrarInstalar(); });
+window.addEventListener('appinstalled', () => { pedidoInstalar = null; mostrarInstalar(); });
+
+function cartaoInstalar() {
+  if (INSTALADO() || dispensado()) return '';
+  const APP = 'Abre como aplicativo, com o logo na tela inicial e sem a barra do navegador.';
+  const cab = (titulo, sub = APP) => `<div class="instalar-cab"><img src="lib/icone-192.png" alt=""><div><b>${titulo}</b>
+    <div class="mais-fraco">${sub}</div></div></div>`;
+  if (pedidoInstalar) {
+    return `<div class="cartao instalar">${cab('Instalar o Metálica')}
+      <div class="instalar-botoes"><button class="botao" data-instalar="nao">Agora não</button>
+      <button class="botao forte" data-instalar="sim">Instalar</button></div></div>`;
+  }
+  if (IPHONE) {
+    return `<div class="cartao instalar">${cab('Pôr o Metálica na tela inicial')}
+      <p class="instalar-passos">Toque em <b>Compartilhar</b> (o quadrado com a seta, embaixo) e depois em <b>Adicionar à Tela de Início</b>.</p>
+      <div class="instalar-botoes"><button class="botao" data-instalar="nao">Entendi</button></div></div>`;
+  }
+  if (!window.isSecureContext) {
+    /* Sem HTTPS o atalho abre no Chrome, com a barra — prometer "aplicativo" aqui seria mentira. */
+    return `<div class="cartao instalar">${cab('Pôr o Metálica na tela inicial', 'Um toque no logo abre a lista de projetos.')}
+      <p class="instalar-passos">No menu <b>⋮</b> do Chrome, <b>Adicionar à tela inicial</b> → <b>Criar atalho</b>: o atalho sai com o logo.
+      Para instalar como aplicativo de verdade — e guardar os projetos para abrir na obra sem rede —, ligue a
+      <b>Conexão segura (HTTPS)</b> no computador, em <i>Acesso pelo celular</i>.</p>
+      <div class="instalar-botoes"><button class="botao" data-instalar="nao">Entendi</button></div></div>`;
+  }
+  return '';
+}
+
+function mostrarInstalar() {
+  const el = $('#instalar');
+  if (!el) return;
+  el.innerHTML = cartaoInstalar();
+  el.querySelectorAll('[data-instalar]').forEach(b => {
+    b.onclick = async () => {
+      if (b.dataset.instalar === 'sim' && pedidoInstalar) {
+        const pedido = pedidoInstalar;
+        pedidoInstalar = null;
+        await pedido.prompt();
+        await pedido.userChoice.catch(() => null);
+      } else {
+        try { localStorage.setItem(DISPENSA, '1'); } catch (e) { /* sem armazenamento: some só nesta visita */ }
+      }
+      el.innerHTML = '';
+    };
+  });
+}
+
 class SemPar extends Error {}
 class Preparando extends Error { constructor(info) { super('preparando'); this.info = info || {}; } }
 
@@ -173,7 +230,7 @@ async function telaLista() {
   const guardados = lerGuardados();
   if (!OFFLINE) sincronizar(idx.projetos.filter(p => guardados[p.slug]).map(p => p.slug));
   const projetos = idx.projetos.slice().sort((a, b) => String(b.alterado).localeCompare(String(a.alterado)));
-  tela.innerHTML = `<div class="busca"><input type="search" placeholder="Buscar projeto" aria-label="Buscar projeto"></div>
+  tela.innerHTML = `<div id="instalar"></div><div class="busca"><input type="search" placeholder="Buscar projeto" aria-label="Buscar projeto"></div>
     ${OFFLINE ? '<div class="aviso-topo">Sem rede: estes são os projetos guardados no aparelho.</div>' : ''}
     <div class="lista-cartoes"></div>`;
   const lista = $('.lista-cartoes');
@@ -195,6 +252,7 @@ async function telaLista() {
   };
   desenhar('');
   $('.busca input').oninput = e => desenhar(e.target.value);
+  mostrarInstalar();
 }
 
 // ------------------------------------------------------------------ projeto
