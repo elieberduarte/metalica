@@ -101,6 +101,15 @@ treliçado, pela planta do Posto e pelos quadros; a lista de fora da regra tem d
 | 16/10 | Mercado Hermes: a ponta da tesoura da ala entrando no painel da fachada oeste — "quando existe uma platibanda o final da tesoura nunca pode invadir a platibanda, deve sempre parar na face interna" (regra 4.8: a peça que chega para na face interna da que passa; recua pelos nós, nunca prolonga) | 6dffa53 | test_regras_trelica::test_4_8_* |
 | 16/10 | Mercado Hermes: "algumas diagonais não passaram a regra dos recortes, ainda estão com a ponta furando o banzo" — o script da obra nunca chamava o encaixe (1.390 almas de eixo a eixo) e o encaixe não corta o trecho curto (montante partido no nó; o degrau de 50 mm entre o topo do painel de ponta e o banzo inclinado). 3.1a: o encaixe entra em `aplicar` e a conferência acusa a ponta que fura (pelas quinas da seção); 3.1b: o trecho todo dentro do banzo não é peça (junta com o vizinho ou sai) | 6dffa53 | test_regras_trelica::test_3_1a_*, test_3_1b_* (o degrau do corte CC) |
 
+## Acesso pelo celular
+
+Teste principal: `verificadores/verif_celular_ui.py` (de ponta a ponta, com o app.py). O pareamento
+pelo caminho da câmera — link vindo de fora do site — fica em `verif_celular_qr_outro_app.py`.
+
+| Data | O que o usuário via | Correção | Teste |
+|---|---|---|---|
+| 19/10 | leu o QR com a câmera do Android: o computador listou o aparelho como pareado, e o celular abriu "Este aparelho ainda não está ligado ao computador" — o cookie em SameSite=Strict não ia no redirecionamento depois de uma navegação vinda de outro app | b1211db | verif_celular_qr_outro_app, test_celular_servidor `_parear` |
+
 ## Primeiro uso (agentes engenheiro-primeiro-uso e detalhista-primeiro-uso-ifc)
 
 Achados dos testes de primeiro uso (`Projeto/BRIEFINGS/Briefing-primeiro-uso*.md`), feitos pelas telas com `testes/navegar.py`.
