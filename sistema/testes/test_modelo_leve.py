@@ -148,3 +148,70 @@ def test_o_estado_traz_a_fracao_e_a_etapa_para_a_barra(tmp_path, monkeypatch):
     assert meio and all(isinstance(s.get("fracao"), float) and 0.0 <= s["fracao"] <= 1.0 for s in meio)
     assert all("montando as peças" in s.get("etapa", "") for s in meio)
     assert L.situacao(pasta)["situacao"] == "pronto"
+
+
+def _projeto_cobertura(raiz, nome="cobertura"):
+    """a cobertura retrátil pequena de test_cobertura_movel, gravada aberta"""
+    from nucleo3d import cobertura_movel as CM
+    from test_cobertura_movel import PAR, _modelo as _modelo_cobertura
+    doc = _modelo_cobertura()
+    CM.aplicar(doc, PAR, "aberta")
+    p = raiz / nome
+    p.mkdir(parents=True)
+    (p / "projeto.json").write_text(json.dumps({"nome": nome, "analise_parametros": dict(PAR, cobertura_movel=True),
+                                                "cobertura_movel_vista": "aberta"}), encoding="utf-8")
+    (p / "modelo.json").write_text(json.dumps(doc.dict()), encoding="utf-8")
+    return str(p)
+
+
+def _esperar_situacao(pasta, sit, prazo=60):
+    t0 = time.time()
+    while time.time() - t0 < prazo:
+        s = L.pedir_situacao(pasta, sit, iniciar=False)
+        if s["situacao"] == "pronto":
+            return L.pedir_situacao(pasta, sit)
+        assert s["situacao"] != "erro", s
+        time.sleep(0.1)
+    raise AssertionError("a situação não ficou pronta")
+
+
+def _ys_das_pecas(caminho_pecas):
+    return sorted(round(f["x"][1]) for f in json.load(open(caminho_pecas, encoding="utf-8"))["pecas"])
+
+
+def test_cobertura_retratil_a_outra_situacao_so_para_ver(tmp_path):
+    """usuário, Kaefer, 20/10: "a visualização da cobertura aberta e retraída está bem demorada de mudar na versão do
+    computador, preciso clicar duas vezes… é apenas para demonstração". O botão do modo ver gravava o modelo inteiro na
+    situação e o 3D leve era refeito. Agora a outra situação sai pronta junto com o 3D leve (numa cópia do modelo) e o
+    modelo gravado não muda."""
+    pasta = _projeto_cobertura(tmp_path)
+    caminho = os.path.join(pasta, "modelo.json")
+    antes = open(caminho, encoding="utf-8").read()
+    L.gerar(pasta)
+    assert L.situacao_gravada(pasta) == "aberta"
+    aberta = L.pedir_situacao(pasta, "aberta")
+    assert aberta["situacao"] == "pronto" and aberta["mcel"] == L.arquivos(pasta)["mcel"]     # a gravada é o 3D de sempre
+    retraida = _esperar_situacao(pasta, "retraida")                    # feita sozinha, em segundo plano, depois do principal
+    assert retraida["mcel"] != aberta["mcel"] and open(retraida["mcel"], "rb").read(4) == b"MCEL"
+    assert _ys_das_pecas(retraida["pecas"]) != _ys_das_pecas(aberta["pecas"])               # as tesouras mudaram de lugar
+    assert open(caminho, encoding="utf-8").read() == antes                                  # e o modelo gravado não
+    assert retraida["versao"] != aberta["versao"]
+
+
+def test_cobertura_retratil_pedida_antes_de_pronta_e_obra_comum(tmp_path):
+    """o 3D leve feito antes (sem a situação guardada) descobre a gravada pelo modelo; pedida e ainda por fazer, a
+    situação vem com o andamento para a barra; numa obra comum, a situação pedida é o 3D de sempre"""
+    pasta = _projeto_cobertura(tmp_path)
+    L.gerar(pasta)
+    c = os.path.join(str(tmp_path), ".3d-leve", "cobertura")
+    os.remove(os.path.join(c, "cobertura.json"))
+    _esperar_situacao(pasta, "retraida")
+    for n in ("modelo3d-retraida.mcel", "pecas-retraida.json", "fonte-retraida.txt"):
+        os.remove(os.path.join(c, n))
+    assert L.situacao_gravada(pasta) == "aberta"
+    r = L.pedir_situacao(pasta, "retraida")
+    assert r["situacao"] in ("na fila", "preparando") and "fracao" in r
+    _esperar_situacao(pasta, "retraida")
+    comum = _projeto(tmp_path)
+    L.gerar(comum)
+    assert L.pedir_situacao(comum, "retraida")["mcel"] == L.arquivos(comum)["mcel"]

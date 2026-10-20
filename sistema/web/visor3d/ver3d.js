@@ -47,6 +47,9 @@ function lerDoVer() {
 }
 let doVer = { pintar: null, grupos: {}, camadas: {}, ...lerDoVer() };
 const PINTAR_DO_VER = doVer.pintar;            // lido antes: o "como no editor" da abertura grava por cima
+// a situação da cobertura retrátil escolhida aqui (só para ver: o 3D leve dela, sem gravar o modelo — coberturaRetratil)
+const SIT_COBERTURA = ['aberta', 'retraida'].includes(doVer.cobertura) ? doVer.cobertura : null;
+const API_3D = SIT_COBERTURA ? `${API}/${SIT_COBERTURA}` : API;
 function gravarDoVer() {
   try { localStorage.setItem(CHAVE_DO_VER, JSON.stringify(doVer)); } catch (e) { /* sem armazenamento */ }
 }
@@ -357,7 +360,7 @@ async function abrir() {
   if (!PROJETO) { situacao('Nenhum projeto na URL.'); return; }
   let r;
   for (;;) {
-    r = await fetch(API, { cache: 'no-cache' });
+    r = await fetch(API_3D, { cache: 'no-cache' });
     if (r.status !== 202) break;
     const s = await r.json().catch(() => ({}));
     $('#carregando-titulo').textContent = 'Preparando o modelo para ver…';
@@ -378,7 +381,7 @@ async function abrir() {
   vigiarPlacaDeVideo($('#tela'));
   visor.leveAoGirar = false;                                           // no PC sobra placa: a imagem fica inteira ao girar
   await visor.carregar(buf);
-  const rf = await fetch(`${API}/pecas?v=${encodeURIComponent(versao)}`);
+  const rf = await fetch(`${API_3D}/pecas?v=${encodeURIComponent(versao)}`);
   // o modelo mudou entre as duas leituras (a planta tirou a última peça, 06/10): abre de novo, já na versão nova
   if (!rf.ok) { setTimeout(() => location.reload(), 400); return; }
   visor.definirFichas(await rf.json());
@@ -398,7 +401,7 @@ async function abrir() {
     situacao(`Modo ver · ${nf(visor.nPecas)} peças · o modelo mudou: atualizando o 3D, troca sozinho em instantes…`);
     // a barra de andamento padrão ao lado (usuário, 19/10: "uma barrinha de carregamento quando a estrutura está
     // atualizando o modelo"): o servidor conta a etapa e a fração no /estado
-    const parar = acompanhar({ url: `${API}/estado`, tarefa: '3d-leve', rotulo: 'Atualizando o 3D', onde: $('#situacao') });
+    const parar = acompanhar({ url: `${API_3D}/estado`, tarefa: '3d-leve', rotulo: 'Atualizando o 3D', onde: $('#situacao') });
     esperarVersaoNova(versao, parar);
   }
   aplicarDoEditor();
@@ -503,7 +506,7 @@ window.addEventListener('pagehide', guardarVista);
 function esperarVersaoNova(versao, parar = () => {}) {
   const t = setInterval(async () => {
     try {
-      const s = await (await fetch(`${API}/estado`, { cache: 'no-store' })).json();
+      const s = await (await fetch(`${API_3D}/estado`, { cache: 'no-store' })).json();
       if ((s.situacao === 'pronto' && s.versao !== versao) || s.situacao === 'sem modelo') { clearInterval(t); parar(true); guardarVista(); location.reload(); }
       else if (s.situacao === 'erro') { clearInterval(t); parar(false); situacao('Não foi possível atualizar o 3D leve: ' + (s.erro || '')); }
     } catch (e) { /* tenta de novo */ }
@@ -825,8 +828,10 @@ function vigiarPlacaDeVideo(tela) {
 
 /** Aberta / Retraída na barra — só no projeto com cobertura retrátil: a análise estrutural a declara, ou ela já foi
  *  vista numa das situações. Antes eram dois itens do menu Modelo, em todo projeto, e a cobertura é coisa de um
- *  projeto (Kaefer, 19/10). Como antes, a escolha grava o modelo nessa situação (POST cobertura-movel) e o 3D recarrega;
- *  a planta ao lado também, se as linhas das tesouras mudaram. */
+ *  projeto (Kaefer, 19/10). A troca é só para ver, como no celular (usuário, 20/10: "está bem demorada de mudar… preciso
+ *  clicar duas vezes… é apenas para demonstração"): antes ela gravava o modelo inteiro na situação e o 3D leve era
+ *  refeito; agora o servidor deixa o 3D leve da outra situação pronto (saida/modelo_leve.pedir_situacao), a escolha fica
+ *  neste navegador e o 3D abre de novo nela, na mesma vista. Gravar o modelo numa situação continua no editor. */
 async function coberturaRetratil() {
   let pj;
   try {
@@ -834,7 +839,7 @@ async function coberturaRetratil() {
     pj = j.projeto || j;
   } catch (e) { return; }
   if (!((pj.analise_parametros || {}).cobertura_movel || pj.cobertura_movel_vista)) return;
-  const atual = pj.cobertura_movel_vista || null;
+  const atual = SIT_COBERTURA || pj.cobertura_movel_vista || null;
   const caixa = $('#cobertura');
   const botoes = caixa.querySelectorAll('button');
   caixa.hidden = false;
@@ -842,22 +847,35 @@ async function coberturaRetratil() {
   botoes.forEach(b => {
     b.classList.toggle('ligado', b.dataset.situacao === atual);
     b.onclick = async () => {
-      if (b.dataset.situacao === atual) return;
-      botoes.forEach(x => { x.disabled = true; });
+      const sit = b.dataset.situacao;
+      if (sit === atual) return;
+      botoes.forEach(x => { x.disabled = true; x.classList.toggle('ligado', x === b); });
+      const url = `${API}/${sit}`;
+      let parar = () => {};
       try {
-        const r = await fetch(`/api/projetos/${encodeURIComponent(PROJETO)}/cobertura-movel`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
-          body: JSON.stringify({ situacao: b.dataset.situacao }),
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok || j.erro) throw new Error(j.erro || 'erro no servidor');
-        if (j.planta_mudou && NA_DIVIDIDA) {
-          try { window.parent.postMessage({ metalica: 'planta-mudou', desenho: j.planta_mudou }, location.origin); } catch (e) { /* sem a tela de fora */ }
+        // quase sempre já pronta (feita junto com o 3D leve); senão a barra de andamento até ficar
+        let r = await fetch(url, { cache: 'no-cache' });
+        if (r.status === 202) {
+          parar = acompanhar({ url: `${url}/estado`, tarefa: '3d-leve-cobertura', rotulo: 'Preparando a cobertura ' + b.textContent.toLowerCase(), onde: $('#situacao') });
+          for (;;) {
+            await new Promise(res => setTimeout(res, 600));
+            const s = await (await fetch(`${url}/estado`, { cache: 'no-store' })).json();
+            if (s.situacao === 'pronto') break;
+            if (s.situacao === 'erro' || s.situacao === 'sem modelo') throw new Error(s.erro || s.situacao);
+          }
+          parar(true);
+        } else if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j.erro || 'erro no servidor');
         }
+        doVer.cobertura = sit;
+        gravarDoVer();
+        guardarVista();
         location.reload();
       } catch (e) {
+        parar(false);
         window.alert('Cobertura retrátil: ' + e.message);
-        botoes.forEach(x => { x.disabled = false; });
+        botoes.forEach(x => { x.disabled = false; x.classList.toggle('ligado', x.dataset.situacao === atual); });
       }
     };
   });

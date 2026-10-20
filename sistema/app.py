@@ -5326,12 +5326,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def _modelo_leve(self, s: str, resto: list):
         """GET /api/projetos/<s>/3d-leve[/pecas]: o 3D leve do modo "ver" (saida/modelo_leve.py). Pronto, vai
-        o arquivo; senão 202 com o progresso (o modo ver espera) ou 404 sem modelo."""
+        o arquivo; senão 202 com o progresso (o modo ver espera) ou 404 sem modelo.
+        GET /api/projetos/<s>/3d-leve/<aberta|retraida>[/pecas|/estado]: o mesmo, na situação da cobertura retrátil
+        (só para ver: o modelo gravado não muda)."""
         from saida import modelo_leve
         pasta = _gerente()._existente(s)
+        sit = resto[0] if resto[:1] in (["aberta"], ["retraida"]) else None
+        if sit:
+            resto = resto[1:]
         if resto[:1] == ["estado"]:                       # o modo ver pergunta se a versão nova ficou pronta
-            return self._json(modelo_leve.situacao(pasta))
-        r = modelo_leve.pedir(pasta)
+            return self._json(modelo_leve.pedir_situacao(pasta, sit, iniciar=False) if sit else modelo_leve.situacao(pasta))
+        r = modelo_leve.pedir_situacao(pasta, sit) if sit else modelo_leve.pedir(pasta)
         if "mcel" not in r:
             return self._json(r, 404 if r.get("situacao") == "sem modelo" else 500 if r.get("situacao") == "erro" else 202)
         caminho = r["pecas"] if resto[:1] == ["pecas"] else r["mcel"]

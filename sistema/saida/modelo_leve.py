@@ -179,6 +179,7 @@ def gerar(pasta_projeto: str) -> dict:
                     f.write(ass)
                 _situacao.pop(c, None)
                 return {}
+            _gravar_cobertura(c, ass, modelo)
             del modelo
             try:
                 os.remove(os.path.join(c, "vazio.txt"))
@@ -197,6 +198,9 @@ def gerar(pasta_projeto: str) -> dict:
             raise
         finally:
             gc.collect()
+    # a cobertura retrátil: a outra situação já fica pronta para o botão da barra trocar na hora
+    for sit in _situacoes_a_preparar(pasta_projeto):
+        threading.Thread(target=_gerar_situacao_calado, args=(pasta_projeto, sit), name="3d-leve-" + sit, daemon=True).start()
     return arquivos(pasta_projeto) or {}
 
 
@@ -228,6 +232,160 @@ def _gerar_calado(pasta_projeto: str):
         gerar(pasta_projeto)
     except Exception:                                                   # noqa: BLE001 — já ficou em _situacao
         pass
+
+
+# ------------------------------------------------------------------ cobertura retrátil (aberta / retraída)
+#
+# Ver aberta ou retraída no modo ver é só para mostrar (usuário, Kaefer, 20/10: "é apenas para demonstração"): antes o
+# botão gravava o modelo inteiro na situação, o 3D leve ficava velho e era refeito, e a troca levava vários segundos e
+# dois cliques. Agora é como no celular (pacote_celular._cobertura_movel): o 3D leve da outra situação é montado numa
+# cópia do modelo, pela mesma conta (nucleo3d/cobertura_movel.aplicar), logo depois do principal — o modelo gravado não
+# muda e o botão só troca o arquivo que o modo ver lê.
+
+def _projeto(pasta_projeto: str) -> dict:
+    try:
+        with open(os.path.join(pasta_projeto, "projeto.json"), encoding="utf-8") as f:
+            return json.load(f) or {}
+    except (OSError, ValueError):
+        return {}
+
+
+def tem_cobertura(pasta_projeto: str) -> bool:
+    pj = _projeto(pasta_projeto)
+    return bool((pj.get("analise_parametros") or {}).get("cobertura_movel") or pj.get("cobertura_movel_vista"))
+
+
+def _gravar_cobertura(c: str, ass: str, modelo: dict):
+    """a situação em que as peças da cobertura estão gravadas no modelo (atributos["cobertura_movel"]["situacao"])"""
+    atual = next((((r.get("atributos") or {}).get("cobertura_movel") or {}).get("situacao")
+                  for r in modelo.get("entidades") or [] if ((r.get("atributos") or {}).get("cobertura_movel") or {}).get("situacao")),
+                 None)
+    with open(os.path.join(c, "cobertura.json"), "w", encoding="utf-8") as f:
+        json.dump({"fonte": ass, "atual": atual}, f)
+
+
+def situacao_gravada(pasta_projeto: str) -> Optional[str]:
+    """a situação do modelo gravado, guardada quando o 3D leve principal foi feito (None: sem peças da cobertura); o 3D
+    leve feito antes de ela ser guardada lê o modelo uma vez"""
+    c, ass = _cache(pasta_projeto), _assinatura(pasta_projeto)
+    try:
+        with open(os.path.join(c, "cobertura.json"), encoding="utf-8") as f:
+            d = json.load(f)
+        if d.get("fonte") == ass:
+            return d.get("atual")
+    except (OSError, ValueError):
+        pass
+    try:
+        with open(os.path.join(pasta_projeto, "modelo.json"), encoding="utf-8") as f:
+            modelo = json.load(f)
+        os.makedirs(c, exist_ok=True)
+        _gravar_cobertura(c, ass, modelo)
+        return situacao_gravada(pasta_projeto) if ass else None
+    except (OSError, ValueError):
+        return None
+
+
+def _situacoes_a_preparar(pasta_projeto: str) -> list:
+    if not tem_cobertura(pasta_projeto):
+        return []
+    from nucleo3d.cobertura_movel import SITUACOES
+    atual = situacao_gravada(pasta_projeto)
+    return [s for s in SITUACOES if s != atual and not _arquivos_situacao(pasta_projeto, s)]
+
+
+def _nomes(sit: str):
+    return "modelo3d-%s.mcel" % sit, "pecas-%s.json" % sit, "fonte-%s.txt" % sit
+
+
+def _arquivos_situacao(pasta_projeto: str, sit: str, velhos: bool = False) -> Optional[dict]:
+    c = _cache(pasta_projeto)
+    mcel, pecas, fonte = (os.path.join(c, n) for n in _nomes(sit))
+    if not (os.path.isfile(mcel) and os.path.isfile(pecas)):
+        return None
+    try:
+        with open(fonte, encoding="utf-8") as f:
+            ass = f.read().strip()
+    except OSError:
+        ass = ""
+    if not velhos and (not ass or ass != _assinatura(pasta_projeto)):
+        return None
+    return {"mcel": mcel, "pecas": pecas, "versao": (ass[:12] or "velho") + "-" + sit}
+
+
+def gerar_situacao(pasta_projeto: str, sit: str) -> dict:
+    """O 3D leve na situação `sit`, numa cópia do modelo (o gravado não muda). Uma geração por vez, como o principal."""
+    from saida.pacote_celular import gerar_3d
+    from nucleo3d import cobertura_movel as CM
+    from nucleo3d.modelo import Documento
+    c = _cache(pasta_projeto)
+    chave = c + "#" + sit
+    with _fila_trava:
+        if _arquivos_situacao(pasta_projeto, sit):
+            return _arquivos_situacao(pasta_projeto, sit)
+        ass = _assinatura(pasta_projeto)
+        os.makedirs(c, exist_ok=True)
+        rotulo = "retraída" if sit == "retraida" else sit
+        _situacao[chave] = {"situacao": "preparando", "progresso": 0.05, "fracao": 0.05, "etapa": "lendo o modelo gravado"}
+
+        def progresso(k, n):
+            f = round(0.3 + 0.65 * k / max(n, 1), 2)
+            _situacao[chave] = {"situacao": "preparando", "progresso": f, "fracao": f,
+                                "etapa": "cobertura %s: montando as peças (%d de %d)" % (rotulo, k, n)}
+        try:
+            with open(os.path.join(pasta_projeto, "modelo.json"), encoding="utf-8") as f:
+                doc = Documento.de_dict(json.load(f))
+            _situacao[chave] = {"situacao": "preparando", "progresso": 0.2, "fracao": 0.2, "etapa": "cobertura %s: posições" % rotulo}
+            CM.aplicar(doc, (_projeto(pasta_projeto).get("analise_parametros") or {}), sit)
+            binario, fichas, _num = gerar_3d(doc.dict(), progresso)
+            del doc
+            mcel, pecas, fonte = _nomes(sit)
+            for nome, dados in ((mcel, binario),
+                                (pecas, json.dumps(fichas, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))):
+                with open(os.path.join(c, nome + ".novo"), "wb") as f:
+                    f.write(dados)
+                _trocar(os.path.join(c, nome + ".novo"), os.path.join(c, nome))
+            with open(os.path.join(c, fonte), "w", encoding="utf-8") as f:
+                f.write(ass)
+            _situacao.pop(chave, None)
+        except Exception as e:                                          # noqa: BLE001 — a tela mostra
+            _situacao[chave] = {"situacao": "erro", "erro": str(e)[:300]}
+            raise
+        finally:
+            gc.collect()
+    return _arquivos_situacao(pasta_projeto, sit) or {}
+
+
+def _gerar_situacao_calado(pasta_projeto: str, sit: str):
+    try:
+        gerar_situacao(pasta_projeto, sit)
+    except Exception:                                                   # noqa: BLE001 — já ficou em _situacao
+        pass
+
+
+def pedir_situacao(pasta_projeto: str, sit: str, iniciar: bool = True) -> dict:
+    """Como `pedir`, na situação `sit` da cobertura retrátil. A situação gravada no modelo (ou um projeto sem cobertura)
+    é o 3D leve de sempre; a outra, o arquivo dela — pronta, velha (a de antes, "atualizando", e a nova em segundo
+    plano) ou ainda por fazer (a situação de andamento). `iniciar=False`: só pergunta (o /estado)."""
+    if not tem_cobertura(pasta_projeto):
+        return pedir(pasta_projeto) if iniciar else situacao(pasta_projeto)
+    principal = pedir(pasta_projeto) if iniciar else situacao(pasta_projeto)
+    if principal.get("situacao") != "pronto":
+        return principal                     # o principal primeiro: é ele que diz em que situação o modelo está gravado
+    if situacao_gravada(pasta_projeto) == sit:
+        return principal
+    a = _arquivos_situacao(pasta_projeto, sit)
+    if a:
+        return {"situacao": "pronto", **a}
+    chave = _cache(pasta_projeto) + "#" + sit
+    with _trava:
+        s = _situacao.get(chave)
+        if iniciar and not (s and s.get("situacao") in ("na fila", "preparando")):
+            s = _situacao[chave] = {"situacao": "na fila", "progresso": 0.0, "fracao": 0.0, "etapa": "na fila"}
+            threading.Thread(target=_gerar_situacao_calado, args=(pasta_projeto, sit), name="3d-leve-" + sit, daemon=True).start()
+    velhos = _arquivos_situacao(pasta_projeto, sit, velhos=True)
+    if velhos and iniciar:
+        return {"situacao": "atualizando", **velhos}
+    return dict(s or {"situacao": "velho", "etapa": "na fila"})
 
 
 def gravado(pasta_projeto: str):

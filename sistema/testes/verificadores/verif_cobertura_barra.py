@@ -4,7 +4,11 @@
 "Tirar desse menu, pois essa cobertura retrátil é particular desse projeto, e esse modelo está aparecendo em todos os
 projetos agora": os dois itens saíram do menu Modelo e viraram dois botões na barra do 3D (modo ver), que só aparecem
 quando a análise declara a cobertura retrátil (ou ela já foi vista numa situação). No editor 3D sozinho, os mesmos
-itens do menu dele somem nos outros projetos. Trocar continua gravando o modelo na situação, como antes.
+itens do menu dele somem nos outros projetos.
+
+20/10 (usuário: "está bem demorada de mudar na versão do computador, preciso clicar duas vezes… é apenas para
+demonstração"): trocar no modo ver não grava mais o modelo — o 3D leve da outra situação já está pronto no servidor
+(saida/modelo_leve.pedir_situacao) e um clique só abre o 3D nela, na mesma vista; o modelo gravado fica como estava.
 
 Com o app.py --dev numa porta livre e dois projetos: a cobertura pequena de test_cobertura_movel e uma obra comum."""
 import json, os, shutil, subprocess, sys, tempfile, time
@@ -95,11 +99,27 @@ try:
     pc.drenar(0.5)
     open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "cobertura_barra.png"), "wb").write(
         __import__("base64").b64decode(pc.cmd("Page.captureScreenshot", format="png")["data"]))
+    CENTROS = "JSON.stringify(window.visor.fichas.map(f => Math.round(f.x[1])).sort((a, b) => a - b))"
+    ok(esperar(pc, "fetch('/api/projetos/cobertura/3d-leve/retraida/estado').then(r => r.json()).then(s => s.situacao === 'pronto')", 60),
+       "a situação retraída fica pronta sozinha no servidor, logo depois do 3D leve")
+    aberta = pc.avaliar(CENTROS)
+    modelo_antes = open(os.path.join(DADOS, "cobertura", "modelo.json"), encoding="utf-8").read()
+    pc.avaliar("window.__mesmaPagina = 1")
+    pc.avaliar("window.visor.camera.position.set(31234, -20987, 15432); window.visor.controles.update()")
+    t0 = time.time()
     pc.avaliar("document.querySelector('#cobertura [data-situacao=retraida]').click()")
-    time.sleep(1.0)
-    ok(esperar(pc, PRONTO + " && !!document.querySelector('#cobertura [data-situacao=retraida].ligado')", 60),
-       "Retraída: o 3D recarrega com Retraída marcada")
-    ok(situacao_gravada("cobertura") == {"retraida"}, f"e o modelo foi gravado retraído, como antes ({situacao_gravada('cobertura')})")
+    ok(esperar(pc, "!window.__mesmaPagina && " + PRONTO + " && !!document.querySelector('#cobertura [data-situacao=retraida].ligado')", 30),
+       "Retraída com UM clique: o 3D abre de novo com Retraída marcada")
+    dt = time.time() - t0
+    ok(dt < 8, f"e rápido ({dt:.1f} s; antes gravava o modelo e refazia o 3D leve)")
+    ok(pc.avaliar(CENTROS) != aberta, "as tesouras estão na posição retraída")
+    ok(abs(pc.avaliar("window.visor.camera.position.x") - 31234) < 1, "a vista ficou onde estava")
+    ok(open(os.path.join(DADOS, "cobertura", "modelo.json"), encoding="utf-8").read() == modelo_antes
+       and situacao_gravada("cobertura") == {"aberta"}, f"o modelo gravado não mudou (só para ver; {situacao_gravada('cobertura')})")
+    pc.avaliar("window.__mesmaPagina = 1")
+    pc.avaliar("document.querySelector('#cobertura [data-situacao=aberta]').click()")
+    ok(esperar(pc, "!window.__mesmaPagina && " + PRONTO + " && !!document.querySelector('#cobertura [data-situacao=aberta].ligado')", 30)
+       and pc.avaliar(CENTROS) == aberta, "e Aberta volta, também com um clique")
 
     # ------------------------------------------------------------ o editor 3D sozinho
     for slug, deve in (("comum", True), ("cobertura", False)):
