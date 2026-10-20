@@ -111,6 +111,7 @@ pelo caminho da câmera — link vindo de fora do site — fica em `verif_celula
 | 19/10 | leu o QR com a câmera do Android: o computador listou o aparelho como pareado, e o celular abriu "Este aparelho ainda não está ligado ao computador" — o cookie em SameSite=Strict não ia no redirecionamento depois de uma navegação vinda de outro app | b1211db | verif_celular_qr_outro_app, test_celular_servidor `_parear` |
 | 19/10 | no Android, "Instalar" dizia que não era possível e o atalho saía com um "1" cinza no lugar do logo — o manifesto e os ícones davam 401, porque o navegador os busca sem o cookie do aparelho | 8ae8e40 | verif_celular_instalar |
 | 19/10 | Android no tema escuro: a lista e as abas escuras, mas o Modelo 3D abria claro (fundo, botões flutuantes, contagem de peças) | 0faa2c6 | verif_celular_tema_escuro |
+| 20/10 | ME SOORO no 3D do celular: dois dedos não giravam "com o eixo no meio dos dois pontos"; de perto, o giro de um dedo "se movimenta muito" (mesma velocidade perto e longe, em volta do alvo da câmera) e "os eixos se confundem" | visor3d.js `_toque…`, `_doisDedos`, `_giroDePerto` (commit dos gestos) | verif_celular_gestos (as 6 formas do verif_camera_modelos, toques de verdade) |
 
 ## Cobertura retrátil (Kaefer)
 
@@ -224,3 +225,4 @@ Achados dos testes de primeiro uso (`Projeto/BRIEFINGS/Briefing-primeiro-uso*.md
 | 20/10 | Mercado, editor 3D: as telhas (sólidos em seções, sem tampa nas pontas; o fechamento em pedaços de 0,8 m) não esticavam nem recuavam — o Empurrar/Puxar e o Estender não pegavam nelas | 013f9d0 | verif_estender_telha (fiada de 3 com Shift+clique, +300, corrige 500, Ctrl+Z, até a ponta do pilar, recuo de 2000 passando a terça) |
 | 19/10 | Mercado, modo ver: no Pintar por sistema não havia o grupo da cobertura — as telhas caíam em Outros e as calhas/rufos em Metálica | 1e665ea | verif_grupo_camadas (Pintar por sistema) |
 | 20/10 | Mercado, modo ver: o muro e os contornos das vagas do estacionamento ficavam no Pré-moldado, fora do grupo Terreno, rua e calçada; e não havia como mandar uma peça à mão para o terreno | 60d3138 | verif_ver3d_sistema (muro, vaga e peça na camada Terreno) |
+| 20/10 | Celular, folha Camadas: o quadradinho de cor da camada não era a cor das peças no 3D (a cor da camada no arquivo, cinza; o 3D pinta pelo material) | 45fcec6 | verif_celular_ui (o quadradinho de cada camada × a cor na tela; trocar a cor, reabrir, voltar às cores do modelo) |
