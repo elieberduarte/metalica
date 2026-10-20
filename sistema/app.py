@@ -5624,14 +5624,22 @@ class Handler(BaseHTTPRequestHandler):
             binario = (self.headers.get("Content-Type") or "").startswith("application/octet-stream")
             corpo = self._corpo_binario() if binario else self._corpo()
             if LICENCAS_DEV and rota.startswith("/api/dev/"):
-                m = re.match(r"^/api/dev/licencas/([A-Z0-9-]+)/(bloquear|desbloquear)$", rota)
+                m = re.match(r"^/api/dev/licencas/([A-Z0-9-]+)/(bloquear|desbloquear|envia-obras|nao-envia-obras)$", rota)
                 if rota == "/api/dev/licencas":
                     return self._licencas_dev(lambda L: L.criar(corpo))
+                if m and m.group(2).endswith("envia-obras"):
+                    return self._licencas_dev(lambda L: L.envia_obras(m.group(1), m.group(2) == "envia-obras"))
                 if m:
                     return self._licencas_dev(lambda L: L.bloquear(m.group(1), m.group(2) == "desbloquear"))
                 m = re.match(r"^/api/dev/maquinas/(\d+)/liberar$", rota)
                 if m:
                     return self._licencas_dev(lambda L: L.liberar(int(m.group(1))))
+                m = re.match(r"^/api/dev/aparelhos/(\d+)/liberar$", rota)          # os celulares da nuvem (20/10)
+                if m:
+                    return self._licencas_dev(lambda L: L.liberar_aparelho(int(m.group(1))))
+            for ext in EXTENSOES_DEV:
+                if ext.rota_post(self, rota, corpo):
+                    return
             if rota == "/api/ligacoes/montar":
                 return self._json(ligacoes_montar(corpo))
             if rota in ("/api/banco-detalhes", "/api/banco-detalhes/excluir"):

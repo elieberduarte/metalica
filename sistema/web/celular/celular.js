@@ -99,12 +99,15 @@ function mostrarInstalar() {
 }
 
 class SemPar extends Error {}
+// Na nuvem (servicos/celular, 20/10) o celular não fala com o PC: o selo, a falta de rede e o "não liberado" dizem isso
+let NUVEM = false;
 class Preparando extends Error { constructor(info) { super('preparando'); this.info = info || {}; } }
 
 async function buscar(url) {
   let r;
   try { r = await fetch(url, { credentials: 'same-origin' }); }
   catch (e) { throw new Error('sem conexão com o computador'); }
+  if (r.headers.get('X-Metalica-Nuvem')) NUVEM = true;
   if (r.status === 401) throw new SemPar('aparelho não pareado');
   const copia = r.headers.get('X-Metalica-Copia');
   if (copia) { OFFLINE = true; if (copia !== '1') copiaDe = copia; }
@@ -134,6 +137,7 @@ let estadoPC = null;
 async function lerEstadoPC() {
   if (estadoPC !== null) return estadoPC;
   try { estadoPC = await (await buscar('api/estado')).json(); } catch (e) { if (e instanceof SemPar) throw e; estadoPC = false; }
+  if (estadoPC && estadoPC.nuvem) NUVEM = true;
   return estadoPC;
 }
 
@@ -160,12 +164,15 @@ function conexao(manifestoGerado) {
     c.textContent = 'Sem rede · cópia ' + (copiaDe ? dataHora(copiaDe).slice(0, 5) : manifestoGerado ? dataHora(manifestoGerado).slice(0, 5) : '');
   } else {
     c.className = 'chip';
-    c.textContent = pc ? 'No PC · ' + pc : 'No PC · Wi-Fi';
+    c.textContent = NUVEM ? 'Nuvem' + (estadoPC && estadoPC.enviado ? ' · ' + dataHora(estadoPC.enviado).replace(/\/\d{4}/, '') : '')
+      : pc ? 'No PC · ' + pc : 'No PC · Wi-Fi';
   }
   c.onclick = () => {
-    abrirFolha(`<div class="ficha"><div class="nome">${OFFLINE ? 'Sem rede' : 'Ligado ao computador' + (pc ? ' ' + esc(pc) : '')}</div>
+    abrirFolha(`<div class="ficha"><div class="nome">${OFFLINE ? 'Sem rede' : NUVEM ? 'Pela nuvem' : 'Ligado ao computador' + (pc ? ' ' + esc(pc) : '')}</div>
       <p class="fraco">${OFFLINE
-        ? 'Você está vendo a cópia guardada no aparelho. Quando voltar à rede do escritório, o celular baixa sozinho só os projetos que mudaram.'
+        ? (NUVEM ? 'Você está vendo a cópia guardada no aparelho. Com internet de novo, o celular baixa sozinho só os projetos que mudaram.'
+                 : 'Você está vendo a cópia guardada no aparelho. Quando voltar à rede do escritório, o celular baixa sozinho só os projetos que mudaram.')
+        : NUVEM ? `O computador do escritório${pc ? ' (' + esc(pc) + ')' : ''} envia as obras para a nuvem quando elas mudam${estadoPC && estadoPC.enviado ? ' — último envio em ' + esc(dataHora(estadoPC.enviado)) : ''}. Funciona de qualquer lugar com internet, com o computador ligado ou não.`
         : 'O celular lê os projetos direto do programa no computador, pela rede Wi-Fi. Projeto importado ou corrigido no PC aparece aqui ao atualizar.'}</p>
       ${estadoPC ? `<p class="mais-fraco">Este aparelho: ${esc(estadoPC.aparelho)} · programa ${esc(estadoPC.programa)}</p>` : ''}
       <p class="mais-fraco">Só consulta: nada do que você faz aqui altera o projeto.</p>
@@ -210,7 +217,9 @@ async function rota() {
     if (e instanceof SemPar) return telaSemPar();
     if (e instanceof Preparando) return telaPreparando(partes[1], e.info);
     abas(null);
-    tela.innerHTML = `<div class="vazio"><b>Não foi possível abrir</b>${esc(e.message || e)}<br><br>
+    tela.innerHTML = NUVEM ? `<div class="vazio"><b>Não foi possível abrir</b>${esc(e.message || e)}<br><br>
+      Confira a internet deste aparelho. Sem internet, abrem só os projetos já guardados nele.<br><br>
+      <button class="botao forte" onclick="location.reload()">Tentar de novo</button></div>` : `<div class="vazio"><b>Não foi possível abrir</b>${esc(e.message || e)}<br><br>
       Confira se o computador está ligado, com o <i>Acesso pelo celular</i> ligado, e na mesma rede Wi-Fi deste
       aparelho (a rede de visitantes costuma separar os aparelhos). Computador em suspensão também some da rede.<br><br>
       <button class="botao forte" onclick="location.reload()">Tentar de novo</button></div>`;
@@ -222,7 +231,10 @@ function telaSemPar() {
   liberar3D();
   topo('Metálica', '', null);
   abas(null);
-  tela.innerHTML = `<div class="vazio"><b>Este aparelho não está ligado ao computador</b>
+  tela.innerHTML = NUVEM ? `<div class="vazio"><b>Este aparelho não está liberado</b>
+    Entre de novo com a chave da sua licença (ou leia o QR code no computador). Se a vaga deste celular foi liberada
+    na tela de licenças, ele precisa entrar de novo.<br><br><button class="botao forte" onclick="location.replace('/celular/')">Entrar</button></div>`
+    : `<div class="vazio"><b>Este aparelho não está ligado ao computador</b>
     No computador, abra <i>Projetos → Celular</i> (Acesso pelo celular) e leia o QR code com a câmera deste aparelho.</div>`;
 }
 

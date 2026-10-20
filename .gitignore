@@ -50,3 +50,4 @@ Tabela de pre*os/
 
 # o cache local do wrangler (serviço de licenças)
 servicos/licencas/.wrangler/
+servicos/celular/.wrangler/

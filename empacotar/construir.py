@@ -52,7 +52,7 @@ INSTALADOR = os.path.join(RAIZ, "Metalica-instalador.exe")
 #: 05/10): o programa instalado não leva o código nem as telas dela, e o app.py desliga as rotas (COMERCIAL).
 MODULOS_SO_DEV = ["saida.orcamento", "saida.comercial", "saida.comercial_servico", "saida.contrato_docs",
                   "saida.proposta_html", "saida.imagens3d", "saida.docx_simples",
-                  "celular", "celular.servidor", "celular.web", "celular.certificado",  # celular: só no dev até a Fase 1 fechar
+                  "celular", "celular.servidor", "celular.web", "celular.certificado", "celular.nuvem",  # celular: só no dev até a Fase 1 fechar
                   "licencas_dev",                       # a tela das licenças (11/10): só no desenvolvimento
                   # o pré-moldado vive fora do git (.git/info/exclude) e entra pelo _extensoes_dev: a conferência
                   # da noite constrói da cópia limpa, mas o construir.py rodado da pasta de trabalho o levaria junto

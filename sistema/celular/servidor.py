@@ -125,6 +125,7 @@ class Celular:
         self.tls = os.path.join(pasta_trabalho, "tls")
         self.https = self._tem_certificado() if https is None else https
         self._trava = threading.RLock()
+        self._gerando = threading.Lock()                # um pacote por vez: o operário daqui e o envio para a nuvem
         self._codigos: Dict[str, float] = {}
         self._falhas: Dict[str, List[float]] = {}
         self._servidor = None
@@ -405,6 +406,14 @@ class Celular:
             self._situacao.pop(slug, None)
         return m
 
+    def gerar_se_velho(self, slug: str) -> bool:
+        """Refaz o pacote se ele ficou velho; quem chega enquanto outro gera espera e não refaz de novo."""
+        with self._gerando:
+            if not self.velho(slug):
+                return False
+            self.gerar_agora(slug)
+            return True
+
     def _garantir_operario(self):
         with self._trava:
             if self._operario and self._operario.is_alive():
@@ -419,9 +428,7 @@ class Celular:
             except queue.Empty:
                 continue
             try:
-                if self.velho(slug):
-                    self.gerar_agora(slug)
-                else:
+                if not self.gerar_se_velho(slug):
                     with self._trava:
                         self._situacao.pop(slug, None)
             except Exception as e:                      # noqa: BLE001 — o erro vai para a tela do celular

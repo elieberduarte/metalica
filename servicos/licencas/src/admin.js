@@ -38,7 +38,10 @@ async function painel(env) {
   const lics = (await env.DB.prepare('SELECT * FROM licencas ORDER BY ativa DESC, pessoa').all()).results || [];
   const maqs = (await env.DB.prepare('SELECT * FROM maquinas ORDER BY ultima_vez DESC').all()).results || [];
   const evs = (await env.DB.prepare('SELECT * FROM eventos ORDER BY id DESC LIMIT 150').all()).results || [];
-  for (const l of lics) l.maquinas = maqs.filter(m => m.chave === l.chave);
+  // os celulares (servicos/celular, 20/10): a tabela vem com a migração do celular
+  const aps = (await env.DB.prepare('SELECT id, chave, nome, via, criado, ultima_vez, liberado FROM aparelhos ORDER BY ultima_vez DESC').all()
+    .catch(() => ({ results: [] }))).results || [];
+  for (const l of lics) { l.maquinas = maqs.filter(m => m.chave === l.chave); l.aparelhos = aps.filter(a => a.chave === l.chave); }
   return { licencas: lics, eventos: evs, agora: agora() };
 }
 
@@ -58,7 +61,23 @@ async function api(req, env, url, email) {
     await evento(env, req, { chave, tipo: 'criada', detalhe: `${pessoa} · por ${email}` });
     return json({ chave });
   }
-  let m = /^\/api\/licencas\/([A-Z0-9-]+)\/(bloquear|desbloquear|editar)$/.exec(url.pathname);
+  let m = /^\/api\/licencas\/([A-Z0-9-]+)\/(envia-obras|nao-envia-obras)$/.exec(url.pathname);
+  if (req.method === 'POST' && m) {
+    const chave = normalizarChave(m[1]), sim = m[2] === 'envia-obras';
+    const r = await env.DB.prepare('UPDATE licencas SET envia_obras = ? WHERE chave = ?').bind(sim ? 1 : 0, chave).run();
+    if (!r.meta.changes) return json({ erro: 'licença não encontrada' }, 404);
+    await evento(env, req, { chave, tipo: sim ? 'envia obras' : 'não envia obras', detalhe: `por ${email}` });
+    return json({ ok: true });
+  }
+  m = /^\/api\/aparelhos\/(\d+)\/liberar$/.exec(url.pathname);
+  if (req.method === 'POST' && m) {
+    const ap = await env.DB.prepare('SELECT * FROM aparelhos WHERE id = ?').bind(parseInt(m[1], 10)).first();
+    if (!ap) return json({ erro: 'celular não encontrado' }, 404);
+    await env.DB.prepare('UPDATE aparelhos SET liberado = 1 WHERE id = ?').bind(ap.id).run();
+    await evento(env, req, { chave: ap.chave, tipo: 'liberada', detalhe: `celular ${ap.nome} · por ${email}` });
+    return json({ ok: true });
+  }
+  m = /^\/api\/licencas\/([A-Z0-9-]+)\/(bloquear|desbloquear|editar)$/.exec(url.pathname);
   if (req.method === 'POST' && m) {
     const chave = normalizarChave(m[1]);
     const lic = await env.DB.prepare('SELECT * FROM licencas WHERE chave = ?').bind(chave).first();
@@ -190,11 +209,19 @@ async function carregar() {
     const ativos = l.maquinas.filter(m => !m.liberada);
     const linhas = l.maquinas.map(m => '<tr><td>' + (m.liberada ? '<s>' : '') + '<b>' + esc(m.nome_pc || 'computador') + '</b> · ' + esc(m.usuario) + (m.liberada ? '</s> <span class="sub">(vaga liberada)</span>' : '') +
       '</td><td class="n">versão ' + esc(m.versao || '—') + '</td><td class="n">último contato ' + dataBR(m.ultima_vez) + '<br>' + (m.liberada ? '' : contato(m.ultima_vez)) +
-      '</td><td class="n">' + (m.liberada ? '' : '<button data-liberar="' + m.id + '" title="Desliga este computador da licença e libera a vaga">Liberar vaga</button>') + '</td></tr>').join('');
+      '</td><td class="n">' + (m.liberada ? '' : '<button data-liberar="' + m.id + '" title="Desliga este computador da licença e libera a vaga">Liberar vaga</button>') + '</td></tr>').join('') +
+      (l.aparelhos || []).filter(a => !a.liberado).map(a => '<tr><td>📱 <b>' + esc(a.nome || 'celular') + '</b> · <span class="sub">' + (a.via === 'qr' ? 'pelo QR code' : 'pela chave') + '</span></td>' +
+        '<td class="n">desde ' + dataBR(a.criado) + '</td><td class="n">último acesso ' + dataBR(a.ultima_vez) + '<br>' + contato(a.ultima_vez) + '</td>' +
+        '<td class="n"><button data-liberar-celular="' + a.id + '" title="Desliga este celular da licença e libera a vaga">Liberar vaga</button></td></tr>').join('');
     return '<div class="lic"><div class="linha"><span class="nome">' + esc(l.pessoa) + '</span><span class="chave">' + esc(l.chave) + '</span>' +
       '<span class="estado ' + (l.ativa ? 'ok' : 'ruim') + '">' + (l.ativa ? 'ativa' : 'bloqueada') + '</span>' +
-      '<span class="sub">' + ativos.length + ' de ' + l.maquinas_max + ' computador(es)' + (l.email ? ' · ' + esc(l.email) : '') + (l.obs ? ' · ' + esc(l.obs) : '') + '</span>' +
-      '<span style="flex:1"></span><button data-copiar="' + esc(l.chave) + '">Copiar chave</button>' +
+      '<span class="sub">' + ativos.length + ' de ' + l.maquinas_max + ' computador(es)' +
+      (l.aparelhos ? ' · ' + l.aparelhos.filter(a => !a.liberado).length + ' de ' + (l.celulares_max || 3) + ' celular(es)' : '') +
+      (l.email ? ' · ' + esc(l.email) : '') + (l.obs ? ' · ' + esc(l.obs) : '') + '</span>' +
+      '<span style="flex:1"></span>' +
+      ('envia_obras' in l ? '<button data-envia="' + esc(l.chave) + '" data-sim="' + (l.envia_obras ? '' : '1') + '" title="Os computadores desta licença enviam as obras ligadas para a nuvem do celular">' +
+        (l.envia_obras ? '☁ Envia obras ✓' : '☁ Não envia obras') + '</button>' : '') +
+      '<button data-copiar="' + esc(l.chave) + '">Copiar chave</button>' +
       (l.ativa ? '<button class="perigo" data-bloquear="' + esc(l.chave) + '">Bloquear</button>' : '<button data-desbloquear="' + esc(l.chave) + '">Desbloquear</button>') +
       '</div>' + (linhas ? '<table class="maqs">' + linhas + '</table>' : '<div class="sub" style="margin-top:4px">ainda não ativada em nenhum computador</div>') + '</div>';
   }).join('') : '<div class="sub">Nenhuma licença ainda. Crie a primeira acima.</div>';
@@ -208,6 +235,8 @@ document.addEventListener('click', async (ev) => {
     if (b.dataset.bloquear && confirm('Bloquear esta licença? O Metálica para nos computadores dela na próxima conferência (até 30 dias sem internet).')) await chamar('/api/licencas/' + b.dataset.bloquear + '/bloquear', {});
     else if (b.dataset.desbloquear) await chamar('/api/licencas/' + b.dataset.desbloquear + '/desbloquear', {});
     else if (b.dataset.liberar && confirm('Liberar a vaga deste computador? Ele precisa ativar de novo para voltar a usar.')) await chamar('/api/maquinas/' + b.dataset.liberar + '/liberar', {});
+    else if (b.dataset.liberarCelular && confirm('Liberar a vaga deste celular? Ele perde o acesso às obras em até 1 minuto e precisa entrar de novo.')) await chamar('/api/aparelhos/' + b.dataset.liberarCelular + '/liberar', {});
+    else if (b.dataset.envia) await chamar('/api/licencas/' + b.dataset.envia + '/' + (b.dataset.sim ? 'envia-obras' : 'nao-envia-obras'), {});
     else return;
     await carregar();
   } catch (e) { alert(e.message); }

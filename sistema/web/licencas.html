@@ -112,11 +112,20 @@ async function carregar() {
       const ativos = l.maquinas.filter(m => !m.liberada);
       const linhas = l.maquinas.map(m => '<tr><td>' + (m.liberada ? '<s>' : '') + '<b>' + esc(m.nome_pc || 'computador') + '</b> · ' + esc(m.usuario) + (m.liberada ? '</s> <span class="sub">(vaga liberada)</span>' : '') +
         '</td><td class="n">versão ' + esc(m.versao || '—') + '</td><td class="n">último contato ' + dataBR(m.ultima_vez) + '<br>' + (m.liberada ? '' : contato(m.ultima_vez)) +
-        '</td><td class="n">' + (m.liberada ? '' : '<button type="button" data-liberar="' + m.id + '" title="Desliga este computador da licença e libera a vaga">Liberar vaga</button>') + '</td></tr>').join('');
+        '</td><td class="n">' + (m.liberada ? '' : '<button type="button" data-liberar="' + m.id + '" title="Desliga este computador da licença e libera a vaga">Liberar vaga</button>') + '</td></tr>').join('') +
+        // os celulares da nuvem (servicos/celular, 20/10): entram pela chave digitada ou pelo QR de um PC desta licença
+        (l.aparelhos || []).filter(a => !a.liberado).map(a => '<tr><td>📱 <b>' + esc(a.nome || 'celular') + '</b> · <span class="sub">' + (a.via === 'qr' ? 'pelo QR code' : 'pela chave') + '</span></td>' +
+          '<td class="n">desde ' + dataBR(a.criado) + '</td><td class="n">último acesso ' + dataBR(a.ultima_vez) + '<br>' + contato(a.ultima_vez) + '</td>' +
+          '<td class="n"><button type="button" data-liberar-celular="' + a.id + '" title="Desliga este celular da licença e libera a vaga">Liberar vaga</button></td></tr>').join('');
       return '<div class="lic"><div class="lic-linha"><span class="lic-nome">' + esc(l.pessoa) + '</span><span class="lic-chave">' + esc(l.chave) + '</span>' +
         '<span class="lic-estado ' + (l.ativa ? 'ok' : 'ruim') + '">' + (l.ativa ? 'ativa' : 'bloqueada') + '</span>' +
-        '<span class="sub">' + ativos.length + ' de ' + l.maquinas_max + ' computador(es)' + (l.email ? ' · ' + esc(l.email) : '') + (l.obs ? ' · ' + esc(l.obs) : '') + '</span>' +
-        '<span style="flex:1"></span><button type="button" data-copiar="' + esc(l.chave) + '">Copiar chave</button>' +
+        '<span class="sub">' + ativos.length + ' de ' + l.maquinas_max + ' computador(es)' +
+        (l.aparelhos ? ' · ' + l.aparelhos.filter(a => !a.liberado).length + ' de ' + (l.celulares_max || 3) + ' celular(es)' : '') +
+        (l.email ? ' · ' + esc(l.email) : '') + (l.obs ? ' · ' + esc(l.obs) : '') + '</span>' +
+        '<span style="flex:1"></span>' +
+        ('envia_obras' in l ? '<button type="button" data-envia="' + esc(l.chave) + '" data-sim="' + (l.envia_obras ? '' : '1') + '" title="Os computadores desta licença enviam as obras ligadas para a nuvem do celular">' +
+          (l.envia_obras ? '☁ Envia obras ✓' : '☁ Não envia obras') + '</button>' : '') +
+        '<button type="button" data-copiar="' + esc(l.chave) + '">Copiar chave</button>' +
         (l.ativa ? '<button type="button" class="ruim" data-bloquear="' + esc(l.chave) + '">Bloquear</button>' : '<button type="button" data-desbloquear="' + esc(l.chave) + '">Desbloquear</button>') +
         '</div>' + (linhas ? '<table class="lic-maqs">' + linhas + '</table>' : '<div class="sub" style="margin-top:4px">ainda não ativada em nenhum computador</div>') + '</div>';
     }).join('') : '<div class="sub">Nenhuma licença ainda.</div>';
@@ -133,6 +142,8 @@ document.addEventListener('click', async (ev) => {
     if (b.dataset.bloquear && confirm('Bloquear esta licença? O Metálica para nos computadores dela na próxima conferência (até 30 dias sem internet).')) await chamar('/api/dev/licencas/' + b.dataset.bloquear + '/bloquear', {});
     else if (b.dataset.desbloquear) await chamar('/api/dev/licencas/' + b.dataset.desbloquear + '/desbloquear', {});
     else if (b.dataset.liberar && confirm('Liberar a vaga deste computador? Ele precisa ativar de novo para voltar a usar.')) await chamar('/api/dev/maquinas/' + b.dataset.liberar + '/liberar', {});
+    else if (b.dataset.liberarCelular && confirm('Liberar a vaga deste celular? Ele perde o acesso às obras em até 1 minuto e precisa entrar de novo.')) await chamar('/api/dev/aparelhos/' + b.dataset.liberarCelular + '/liberar', {});
+    else if (b.dataset.envia) await chamar('/api/dev/licencas/' + b.dataset.envia + '/' + (b.dataset.sim ? 'envia-obras' : 'nao-envia-obras'), {});
     else return;
     await carregar();
   } catch (e) { alert(e.message); }

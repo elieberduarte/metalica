@@ -28,6 +28,12 @@
   .interruptor::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
   .interruptor.ligado { background: var(--verde-barra); }
   .interruptor.ligado::after { left: 23px; }
+  .nuvem { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; }
+  @media (max-width: 900px) { .nuvem { grid-template-columns: 1fr; } }
+  #nuvem-qr { display: grid; place-items: center; min-height: 200px; background: #fff; border-radius: var(--raio); border: 1px solid var(--borda); }
+  #nuvem-qr svg { width: 200px; height: 200px; }
+  #nuvem-qr .vazio { color: #56637a; font-size: 13px; text-align: center; padding: 20px; }
+  .nuvem-estado { font-size: 13px; margin: 4px 0 10px; }
   #qr { display: grid; place-items: center; min-height: 260px; background: #fff; border-radius: var(--raio); border: 1px solid var(--borda); }
   #qr svg { width: 240px; height: 240px; }
   #qr .vazio { color: #56637a; font-size: 13px; text-align: center; padding: 20px; }
@@ -49,7 +55,7 @@
       <rect x="10" y="4" width="12" height="24" rx="2.5" fill="none" stroke="currentColor" stroke-width="2.2"/>
       <path d="M14 24h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
     </svg>
-    <h1>Acesso pelo celular<span>Consulta dos projetos pela rede Wi-Fi · desenvolvimento</span></h1>
+    <h1>Acesso pelo celular<span>Consulta dos projetos de qualquer lugar ou pela rede Wi-Fi · desenvolvimento</span></h1>
   </div>
   <div class="acoes">
     <button type="button" id="btn-tema" title="Alternar tema claro/escuro">Tema</button>
@@ -58,8 +64,40 @@
 </header>
 
 <main class="acesso">
+  <section class="caixa nuvem" id="secao-nuvem">
+    <div>
+      <h2>De qualquer lugar (pela nuvem)</h2>
+      <div class="chave-linha">
+        <button type="button" class="interruptor" id="nuvem-interruptor" aria-label="Enviar as obras para a nuvem"></button>
+        <b id="nuvem-texto">…</b>
+        <button type="button" class="botao" id="nuvem-enviar" style="margin-left:auto" title="Envia já o que mudou, sem esperar o minuto">Enviar agora</button>
+      </div>
+      <p>Ligado, este computador envia para a nuvem do Metálica (Cloudflare) as obras com a chave <b>Celular</b> ligada, só o
+        que mudou, conferindo a cada minuto. Os celulares liberados abrem as obras <b>de qualquer lugar com internet</b>, com
+        este computador ligado ou não. Só consulta; a parte comercial nunca sobe.</p>
+      <div class="nuvem-estado" id="nuvem-estado"></div>
+      <h2 style="margin-top:12px">Como liberar um celular</h2>
+      <ul class="passos">
+        <li><b>No escritório:</b> leia o QR code da nuvem ao lado com a câmera; o celular fica na licença deste computador.</li>
+        <li><b>Longe daqui:</b> abra <span class="endereco" id="nuvem-endereco" style="display:inline;word-break:normal;overflow-wrap:anywhere"></span> no celular e digite a
+          chave da licença da pessoa (MTL-…).</li>
+        <li>Até 3 celulares por chave. Bloquear a chave, ou liberar a vaga de um celular, na tela de <a href="/licencas">Licenças</a>.</li>
+        <li>No iPhone, depois de abrir, use <i>Compartilhar → Adicionar à Tela de Início</i>; no Android, o menu ⋮ → <i>Adicionar à tela inicial</i>.</li>
+      </ul>
+      <h2 style="margin-top:12px">Celulares nesta licença <a href="#" id="nuvem-ver" style="font-size:12px;font-weight:400">atualizar</a></h2>
+      <div id="nuvem-aparelhos"><p>…</p></div>
+    </div>
+    <div>
+      <h2>QR code da nuvem</h2>
+      <div id="nuvem-qr"><div class="vazio">Gere o QR code para liberar um celular.</div></div>
+      <div class="endereco" id="nuvem-qr-endereco"></div>
+      <div class="validade" id="nuvem-validade"></div>
+      <button type="button" class="botao" id="nuvem-codigo" style="margin-top:10px;width:100%">Gerar QR code da nuvem</button>
+    </div>
+  </section>
+
   <section class="caixa">
-    <h2>Ligar</h2>
+    <h2>Pela rede Wi-Fi do escritório</h2>
     <div class="chave-linha">
       <button type="button" class="interruptor" id="interruptor" aria-label="Acesso pelo celular"></button>
       <b id="estado-texto">…</b>
@@ -193,6 +231,55 @@
     }).catch(function (e) { mensagem(e.message, 'erro'); });
   };
   $('#btn-codigo').onclick = novoCodigo;
+
+  // ---------------------------------------------------------------- de qualquer lugar (celular/nuvem.py)
+  var nuvem = null, nuvemVence = 0, nuvemRelogio = null;
+  function desenharNuvem(n) {
+    nuvem = n;
+    $('#nuvem-interruptor').classList.toggle('ligado', !!n.ligada);
+    $('#nuvem-texto').textContent = n.ligada ? 'Enviando para a nuvem' : 'Desligado';
+    $('#nuvem-enviar').disabled = !n.ligada || n.enviando;
+    $('#nuvem-endereco').textContent = n.servico + '/celular/';
+    var linhas = [];
+    if (n.enviando) linhas.push('⏳ ' + esc(n.etapa || 'Enviando…'));
+    if (n.enviado) linhas.push('Último envio: <b>' + quando(n.enviado) + '</b> · ' + n.obras + ' obra(s) · ' +
+                               String(Math.round((n.bytes || 0) / 1048576 * 10) / 10).replace('.', ',') + ' MB');
+    else if (n.ligada && !n.enviando && !n.erro) linhas.push('Ainda não enviado: o primeiro envio começa em instantes.');
+    if (n.erro) linhas.push('<span style="color:var(--verm)">Não deu certo: ' + esc(n.erro) + '</span> — tenta de novo sozinho em alguns minutos.');
+    $('#nuvem-estado').innerHTML = linhas.join('<br>');
+  }
+  function lerNuvem() { return api('/api/celular/nuvem').then(desenharNuvem); }
+  function aparelhosNuvem() {
+    $('#nuvem-aparelhos').innerHTML = '<p>Consultando a nuvem…</p>';
+    api('/api/celular/nuvem/aparelhos').then(function (r) {
+      var ap = r.aparelhos || [];
+      $('#nuvem-aparelhos').innerHTML = (r.pessoa ? '<p style="font-size:12.5px">Licença de <b>' + esc(r.pessoa) + '</b>' +
+        (r.envia_obras ? '' : ' · <span style="color:var(--amarelo)">esta licença não envia obras: ligue "Envia obras" nela na tela de Licenças</span>') + '</p>' : '') +
+        (ap.length ? '<table class="aparelhos"><tr><th>Celular</th><th>Entrou</th><th>Último acesso</th></tr>' + ap.map(function (a) {
+          return '<tr><td>' + esc(a.nome) + ' <span style="color:var(--texto3)">(' + (a.via === 'qr' ? 'QR code' : 'chave digitada') + ')</span></td><td>' +
+            quando(a.criado) + '</td><td>' + quando(a.ultima_vez) + '</td></tr>';
+        }).join('') + '</table>' : '<p>Nenhum celular nesta licença ainda.</p>');
+    }).catch(function (e) { $('#nuvem-aparelhos').innerHTML = '<p style="color:var(--verm)">' + esc(e.message) + '</p>'; });
+  }
+  $('#nuvem-interruptor').onclick = function () {
+    api('/api/celular/nuvem/ligar', { ligada: !(nuvem && nuvem.ligada) }).then(function (n) { desenharNuvem(n); if (n.ligada) aparelhosNuvem(); }).catch(function (e) { mensagem(e.message, 'erro'); });
+  };
+  $('#nuvem-enviar').onclick = function () { api('/api/celular/nuvem/enviar', {}).then(desenharNuvem); };
+  $('#nuvem-ver').onclick = function (ev) { ev.preventDefault(); aparelhosNuvem(); };
+  $('#nuvem-codigo').onclick = function () {
+    api('/api/celular/nuvem/codigo', {}).then(function (d) {
+      var q = qrcode(0, 'M'); q.addData(d.url); q.make();
+      $('#nuvem-qr').innerHTML = q.createSvgTag({ cellSize: 5, margin: 2, scalable: true });
+      $('#nuvem-qr-endereco').textContent = d.url;
+      nuvemVence = Date.now() + d.validade_s * 1000;
+      clearInterval(nuvemRelogio);
+      nuvemRelogio = setInterval(function () {
+        var s = Math.max(0, Math.round((nuvemVence - Date.now()) / 1000));
+        $('#nuvem-validade').textContent = s ? 'Este código vale por mais ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + ' e serve uma vez.' : 'Código vencido: gere outro.';
+        if (!s) { clearInterval(nuvemRelogio); aparelhosNuvem(); }
+      }, 1000);
+    }).catch(function (e) { $('#nuvem-qr').innerHTML = '<div class="vazio" style="color:#b42318">' + esc(e.message) + '</div>'; });
+  };
   $('#btn-https').onclick = function () {
     mensagem('');
     api('/api/celular/https', { nome: $('#https-nome').value, token: $('#https-token').value })
@@ -219,6 +306,12 @@
 
   api('/api/celular/estado').then(function (e) { desenhar(e); if (e.ligado) novoCodigo(); }).catch(function (e) { mensagem(e.message, 'erro'); });
   setInterval(function () { api('/api/celular/estado').then(desenhar).catch(function () {}); }, 5000);
+  // os celulares vêm da nuvem: só com o envio ligado (ou pelo "atualizar"), para a tela não ir à internet à toa
+  lerNuvem().then(function () {
+    if (nuvem && nuvem.ligada) aparelhosNuvem();
+    else $('#nuvem-aparelhos').innerHTML = '<p>Ligue o envio (ou clique em atualizar) para ver os celulares desta licença.</p>';
+  }).catch(function (e) { mensagem(e.message, 'erro'); });
+  setInterval(function () { lerNuvem().catch(function () {}); }, 3000);
 })();
 </script>
 <script src="/vivo.js"></script>

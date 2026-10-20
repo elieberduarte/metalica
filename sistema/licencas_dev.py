@@ -109,8 +109,13 @@ def painel() -> dict:
     lics = _sql("SELECT * FROM licencas ORDER BY ativa DESC, pessoa")
     maqs = _sql("SELECT * FROM maquinas ORDER BY ultima_vez DESC")
     evs = _sql("SELECT * FROM eventos ORDER BY id DESC LIMIT 150")
+    try:                                    # os celulares (servicos/celular, 20/10): a tabela vem com a migração do celular
+        aps = _sql("SELECT id, chave, nome, via, criado, ultima_vez, liberado FROM aparelhos ORDER BY ultima_vez DESC")
+    except ErroLicencas:
+        aps = []
     for l in lics:
         l["maquinas"] = [m for m in maqs if m["chave"] == l["chave"]]
+        l["aparelhos"] = [a for a in aps if a["chave"] == l["chave"]]
     return {"licencas": lics, "eventos": evs, "agora": _agora(), "tela": TELA}
 
 
@@ -141,6 +146,25 @@ def bloquear(chave: str, ativa: bool) -> dict:
         raise ErroLicencas("licença não encontrada")
     _sql("UPDATE licencas SET ativa = ?, bloqueada_em = ? WHERE chave = ?", [1 if ativa else 0, None if ativa else _agora(), chave])
     _evento(chave, "desbloqueada" if ativa else "bloqueada", "por " + _quem())
+    return {"ok": True}
+
+
+def envia_obras(chave: str, sim: bool) -> dict:
+    """Os PCs desta licença enviam (ou não) as obras para a nuvem do celular (servicos/celular)."""
+    if not _sql("SELECT 1 AS x FROM licencas WHERE chave = ?", [chave]):
+        raise ErroLicencas("licença não encontrada")
+    _sql("UPDATE licencas SET envia_obras = ? WHERE chave = ?", [1 if sim else 0, chave])
+    _evento(chave, "envia obras" if sim else "não envia obras", "por " + _quem())
+    return {"ok": True}
+
+
+def liberar_aparelho(aparelho_id: int) -> dict:
+    """Desliga um celular da licença: ele perde o acesso em até 1 minuto e precisa entrar de novo."""
+    a = _sql("SELECT * FROM aparelhos WHERE id = ?", [int(aparelho_id)])
+    if not a:
+        raise ErroLicencas("celular não encontrado")
+    _sql("UPDATE aparelhos SET liberado = 1 WHERE id = ?", [int(aparelho_id)])
+    _evento(a[0]["chave"], "liberada", "celular %s · por %s" % (a[0].get("nome", ""), _quem()))
     return {"ok": True}
 
 

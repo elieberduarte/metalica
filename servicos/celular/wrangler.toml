@@ -1,0 +1,19 @@
+# O celular de qualquer lugar (20/10/2026): as telas do celular e os pacotes das obras, guardados no R2, para os
+# celulares liberados pelas licenças. Mesmo banco D1 das licenças. Sem segredos: a chave PÚBLICA das licenças basta
+# (o PC prova quem é com a licença assinada dele). Publicar: wrangler deploy -c wrangler.toml
+name = "metalica-celular"
+main = "src/celular.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+LICENCA_CHAVE_PUBLICA = "2aOrHl8gPxh6lYZMGrXTT1Y+XAoX7en9+lAIYDDZoNg="
+
+[[d1_databases]]
+binding = "DB"
+database_name = "metalica-licencas"
+database_id = "cb870249-814d-4c2a-a610-490539a21e65"
+
+[[r2_buckets]]
+binding = "OBRAS"
+bucket_name = "metalica-obras"

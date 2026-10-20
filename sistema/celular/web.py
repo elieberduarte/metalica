@@ -15,6 +15,11 @@ Rotas, todas no servidor do programa (só o próprio computador, com a proteçã
 * POST /api/celular/obra          {"slug": ..., "celular": true|false}  liga ou desliga a obra no celular
 * POST /api/celular/https         {"nome": "metalica.dominio.com.br", "token": "..."}  HTTPS (cópia para a obra)
 * POST /api/celular/https/remover volta ao http
+* GET  /api/celular/nuvem         de qualquer lugar: o envio para a nuvem (celular/nuvem.py) — ligado, último envio, andamento
+* GET  /api/celular/nuvem/aparelhos  os celulares da licença deste PC, lidos da nuvem
+* POST /api/celular/nuvem/ligar   {"ligada": true|false}
+* POST /api/celular/nuvem/enviar  envia agora (em segundo plano)
+* POST /api/celular/nuvem/codigo  o QR code da nuvem (o celular fica na licença deste PC)
 * GET  /api/dev/extensoes.js      o script da tela inicial: o do pré-moldado (se houver) e o botão do celular
 """
 import os
@@ -22,8 +27,10 @@ import sys
 import threading
 
 from celular.servidor import Celular, pasta_de_trabalho, WEB
+from celular.nuvem import Nuvem, ErroNuvem
 
 _UNICO = None
+_NUVEM = None
 _TRAVA = threading.Lock()
 
 
@@ -41,13 +48,27 @@ def celular() -> Celular:
         return _UNICO
 
 
+def nuvem() -> Nuvem:
+    global _NUVEM
+    c = celular()
+    with _TRAVA:
+        if _NUVEM is None:
+            _NUVEM = Nuvem(c)
+        return _NUVEM
+
+
 def iniciar():
-    """Na subida do programa: se o acesso ficou ligado da última vez, liga de novo."""
+    """Na subida do programa: se o acesso ficou ligado da última vez, liga de novo; o envio para a nuvem também."""
     try:
         c = celular()
         if c.configuracao().get("ligado"):
             c.ligar()
     except Exception:                    # noqa: BLE001 — porta ocupada etc.: a tela mostra ao abrir
+        pass
+    try:
+        if nuvem().ligada:
+            nuvem().iniciar()
+    except Exception:                    # noqa: BLE001
         pass
 
 
@@ -62,6 +83,15 @@ def rota_get(h, rota: str) -> bool:
         return True
     if rota == "/api/celular/estado":
         h._json(celular().estado())
+        return True
+    if rota == "/api/celular/nuvem":
+        h._json(nuvem().estado())
+        return True
+    if rota == "/api/celular/nuvem/aparelhos":
+        try:
+            h._json(nuvem().na_nuvem())
+        except ErroNuvem as e:
+            raise _erro_de_dados(str(e))
         return True
     if rota == "/api/celular/obras":
         h._json({"obras": celular().obras()})
@@ -120,6 +150,20 @@ def rota_post(h, rota: str, corpo: dict) -> bool:
         return True
     if acao == "https/remover":
         h._json(c.remover_https())
+        return True
+    if acao.startswith("nuvem/"):
+        n = nuvem()
+        if acao == "nuvem/ligar":
+            h._json(n.ligar(bool(corpo.get("ligada"))))
+        elif acao == "nuvem/enviar":
+            h._json(n.enviar_ja())
+        elif acao == "nuvem/codigo":
+            try:
+                h._json(n.novo_codigo())
+            except ErroNuvem as e:
+                raise _erro_de_dados(str(e))
+        else:
+            return False
         return True
     if acao == "obra":
         try:
