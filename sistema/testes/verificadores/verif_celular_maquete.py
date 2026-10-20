@@ -237,13 +237,30 @@ try:
       v.fichas.forEach((f, i) => { const b = f.b; if (i >= v.nPecas || !b || Math.max(b[3] - b[0], b[4] - b[1], b[5] - b[2]) < 80) return;
         for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], b[k]); mx[k] = Math.max(mx[k], b[k + 3]); } });
       const c = M.cotasDaMaquete(r);
+      // cada valor em cima da linha da sua cota: o de x no meio da linha da frente, deitado; o da altura em pé
+      const T = await import('three'); c.updateMatrixWorld(true);
+      const normal = (nome) => new T.Vector3(0, 0, 1).applyQuaternion(c.getObjectByName(nome).getWorldQuaternion(new T.Quaternion())).toArray().map(x => Math.round(x * 1000) / 1000);
+      const cx = c.getObjectByName('Cota_x').position, q = r.quadro;
+      const meioX = [((mn[0] + mx[0]) / 2 - q.cx) * q.s, 0, null];
+      const dir = (nome) => new T.Vector3(1, 0, 0).applyQuaternion(c.getObjectByName(nome).quaternion).toArray().map(x => Math.round(x * 1000) / 1000);
+      const sobre = { nx: normal('Cota_x'), ny: normal('Cota_y'), nz: normal('Cota_z'), dx: dir('Cota_x'), dy: dir('Cota_y'), dz: dir('Cota_z'),
+                      xNoMeio: Math.abs(cx.x - meioX[0]) < 0.002 && Math.abs(cx.y - 0.001) < 1e-4 };
       M.aplicarVisiveis(c, new Set(['piso:cotas']));
-      return JSON.stringify({ textos: c.userData.textos, min: r.cotas.min, max: r.cotas.max, mn, mx, some: c.visible }); })()"""
+      return JSON.stringify({ textos: c.userData.textos, min: r.cotas.min, max: r.cotas.max, mn, mx, some: c.visible, sobre }); })()"""
     ct = json.loads(ap.avaliar(COTAS) or "{}")
     perto = all(abs(a - b) <= 2 for a, b in zip(ct.get("min", []) + ct.get("max", []), ct.get("mn", []) + ct.get("mx", [])))
     m = lambda k: f"{(ct['mx'][k] - ct['mn'][k]) / 1000:.2f}".replace(".", ",") + " m"
-    esperado = [f"Comprimento {m(0)}", f"Largura {m(1)}", f"Altura {m(2)}"] if ct.get("mx") else []
+    # o lado maior é o comprimento (na Kaefer, o y: 38,65 m), e ele vem primeiro
+    if ct.get("mx"):
+        lx, ly = ct["mx"][0] - ct["mn"][0], ct["mx"][1] - ct["mn"][1]
+        esperado = ([f"Comprimento {m(0)}", f"Largura {m(1)}"] if lx >= ly else [f"Comprimento {m(1)}", f"Largura {m(0)}"]) + [f"Altura {m(2)}"]
+    else:
+        esperado = []
     ok(perto and ct.get("textos") == esperado, f"as cotas principais: {ct.get('textos')} (a caixa das peças: {esperado})")
+    so = ct.get("sobre", {})
+    ok(so.get("nx") in ([0, 1, 0], [-0.0, 1, 0]) and so.get("ny") in ([0, 1, 0], [-0.0, 1, 0]) and so.get("dx") == [1, 0, 0] and so.get("dy") == [0, 0, -1]
+       and abs(so.get("nz", [0, 0, 0])[1]) < 1e-3 and so.get("dz") == [0, 1, 0] and so.get("xNoMeio"),
+       f"cada valor em cima da linha da cota, na direção dela: deitados no chão ao longo do comprimento e da largura, a altura em pé ({so})")
     ok(ct.get("some") is False, "desligar as cotas esconde as cotas")
     GIRO = """(async () => { const M = await import('./maquete.js'); const g = M.giroPelaGravidade;
       return JSON.stringify([g(9.8, 0.4, 0), g(-9.8, 0.3, 0), g(0.4, 9.8, 90), g(5, 5, 90), g(1, 2, -90), g(0.5, 9.7, 0)]); })()"""

@@ -476,27 +476,40 @@ export function cotasDaMaquete(r) {
   grupo.name = 'Cotas';
   grupo.userData.cotas = true;
   const textos = [];
-  const rotulo = (texto, p) => {
-    const s = _placa(texto);
-    s.position.set(...mesa(...p));
-    grupo.add(s);
+  // o valor em cima da linha da cota, na direção dela (usuário, 20/10: "o texto do comprimento deveria estar no eixo do
+  // barracão"): deitado no chão para o comprimento e a largura, em pé para a altura, lido de fora da obra
+  const rotulo = (texto, p, direcao, nome) => {
+    const t = _placa(texto);
+    t.position.set(...mesa(...p));
+    const deitar = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+    if (direcao === 'x') { t.quaternion.copy(deitar); t.position.y += 0.001; }
+    else if (direcao === 'y') { t.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2).multiply(deitar); t.position.y += 0.001; }
+    else { t.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2); t.position.z += 0.001; }
+    t.name = nome;
+    grupo.add(t);
     textos.push(texto);
   };
   const metros = (mm) => (mm / 1000).toFixed(2).replace('.', ',') + ' m';
-  // o comprimento (x) na frente, no chão: as linhas de chamada, a linha da cota e os traços das pontas
+  // o lado maior é o comprimento e o menor a largura, qualquer que seja a direção da obra
+  const [nx, ny] = dx >= dy ? ['Comprimento', 'Largura'] : ['Largura', 'Comprimento'];
+  // a cota de x na frente, no chão: as linhas de chamada, a linha da cota e os traços das pontas
   const yf = y0 - afasta;
   seg([x0, y0, z0], [x0, yf - ponta, z0]); seg([x1, y0, z0], [x1, yf - ponta, z0]); seg([x0, yf, z0], [x1, yf, z0]);
   seg([x0 - ponta, yf - ponta, z0], [x0 + ponta, yf + ponta, z0]); seg([x1 - ponta, yf - ponta, z0], [x1 + ponta, yf + ponta, z0]);
-  rotulo('Comprimento ' + metros(dx), [(x0 + x1) / 2, yf - 2.2 * ponta, z0]);
-  // a largura (y) do lado direito
+  // a de y do lado direito
   const xl = x1 + afasta;
   seg([x1, y0, z0], [xl + ponta, y0, z0]); seg([x1, y1, z0], [xl + ponta, y1, z0]); seg([xl, y0, z0], [xl, y1, z0]);
   seg([xl - ponta, y0 - ponta, z0], [xl + ponta, y0 + ponta, z0]); seg([xl - ponta, y1 - ponta, z0], [xl + ponta, y1 + ponta, z0]);
-  rotulo('Largura ' + metros(dy), [xl + 2.2 * ponta, (y0 + y1) / 2, z0]);
   // a altura (z) no canto da frente à direita
   seg([xl, yf, z0], [xl, yf, z1]); seg([x1, y0, z1], [xl, yf, z1]);
   seg([xl - ponta, yf, z0], [xl + ponta, yf, z0]); seg([xl - ponta, yf, z1], [xl + ponta, yf, z1]);
-  rotulo('Altura ' + metros(dz), [xl, yf, (z0 + z1) / 2]);
+  const textoX = nx + ' ' + metros(dx), textoY = ny + ' ' + metros(dy);
+  const [primeiro, segundo] = dx >= dy ? [[textoX, 'x'], [textoY, 'y']] : [[textoY, 'y'], [textoX, 'x']];
+  for (const [texto, d] of [primeiro, segundo]) {
+    if (d === 'x') rotulo(texto, [(x0 + x1) / 2, yf, z0], 'x', 'Cota_x');
+    else rotulo(texto, [xl, (y0 + y1) / 2, z0], 'y', 'Cota_y');
+  }
+  rotulo('Altura ' + metros(dz), [xl, yf, (z0 + z1) / 2], 'z', 'Cota_z');
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
   grupo.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x1f5fbf })));
@@ -504,24 +517,26 @@ export function cotasDaMaquete(r) {
   return grupo;
 }
 
-/** A placa do valor da cota: o texto escuro num fundo branco, sempre à frente, de 2 cm de altura na maquete. */
+/** A placa do valor da cota: o texto escuro num fundo branco (que cobre a linha embaixo dele), uma placa no plano,
+ *  de 2 cm de altura na maquete. */
 function _placa(texto) {
   const c = document.createElement('canvas'), x = c.getContext('2d'), px = 64;
   x.font = `600 ${px}px system-ui, sans-serif`;
   const w = Math.ceil(x.measureText(texto).width) + px;
   c.width = w; c.height = Math.round(px * 1.6);
   x.font = `600 ${px}px system-ui, sans-serif`;
-  x.fillStyle = 'rgba(255, 255, 255, 0.92)';
+  x.fillStyle = 'rgba(255, 255, 255, 0.95)';
   x.beginPath(); x.roundRect(0, 0, c.width, c.height, px * 0.35); x.fill();
   x.fillStyle = '#12398a'; x.textBaseline = 'middle'; x.textAlign = 'center';
   x.fillText(texto, c.width / 2, c.height / 2 + px * 0.05);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }));
+  t.anisotropy = 4;
   const alt = 0.02;
-  s.scale.set(alt * c.width / c.height, alt, 1);
-  s.renderOrder = 10;
-  return s;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(alt * c.width / c.height, alt),
+    new THREE.MeshBasicMaterial({ map: t, transparent: true, side: THREE.DoubleSide, depthWrite: false, toneMapped: false }));
+  m.renderOrder = 5;
+  return m;
 }
 
 /** A cena da maquete na mesa — a mesma na câmera do Android e na foto do teste: a luz de sala, o sol da obra (o
