@@ -111,7 +111,7 @@ pelo caminho da câmera — link vindo de fora do site — fica em `verif_celula
 | 19/10 | leu o QR com a câmera do Android: o computador listou o aparelho como pareado, e o celular abriu "Este aparelho ainda não está ligado ao computador" — o cookie em SameSite=Strict não ia no redirecionamento depois de uma navegação vinda de outro app | b1211db | verif_celular_qr_outro_app, test_celular_servidor `_parear` |
 | 19/10 | no Android, "Instalar" dizia que não era possível e o atalho saía com um "1" cinza no lugar do logo — o manifesto e os ícones davam 401, porque o navegador os busca sem o cookie do aparelho | 8ae8e40 | verif_celular_instalar |
 | 19/10 | Android no tema escuro: a lista e as abas escuras, mas o Modelo 3D abria claro (fundo, botões flutuantes, contagem de peças) | 0faa2c6 | verif_celular_tema_escuro |
-| 20/10 | ME SOORO no 3D do celular: dois dedos não giravam "com o eixo no meio dos dois pontos"; de perto, o giro de um dedo "se movimenta muito" (mesma velocidade perto e longe, em volta do alvo da câmera) e "os eixos se confundem" | visor3d.js `_toque…`, `_doisDedos`, `_giroDePerto` (commit dos gestos) | verif_celular_gestos (as 6 formas do verif_camera_modelos, toques de verdade) |
+| 20/10 | ME SOORO no 3D do celular: dois dedos não giravam "com o eixo no meio dos dois pontos"; de perto, o giro de um dedo "se movimenta muito" (mesma velocidade perto e longe, em volta do alvo da câmera) e "os eixos se confundem" | visor3d.js `_toque…`, `_doisDedos`, `_giroDePerto` (7a3ee70) | verif_celular_gestos (as 6 formas do verif_camera_modelos, toques de verdade) |
 
 ## Cobertura retrátil (Kaefer)
 
