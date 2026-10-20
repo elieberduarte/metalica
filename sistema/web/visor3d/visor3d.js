@@ -201,7 +201,15 @@ export class Visor3D {
     this.camera.up.set(0, 0, 1);
     this.controles = new OrbitControls(this.camera, tela);
     this.controles.enableDamping = false;
-    this.controles.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+    // o toque é tratado aqui (_toque…), não pelo OrbitControls: um dedo gira em volta da peça tocada, dois dedos
+    // aproximam, giram e arrastam em volta do ponto entre eles (celular, 20/10)
+    this.controles.touches = { ONE: null, TWO: null };
+    this._dedos = new Map();
+    this._gesto = null;
+    tela.addEventListener('pointerdown', (ev) => this._toqueDesce(ev));
+    tela.addEventListener('pointermove', (ev) => this._toqueMove(ev));
+    tela.addEventListener('pointerup', (ev) => this._toqueSobe(ev));
+    tela.addEventListener('pointercancel', (ev) => this._toqueSobe(ev));
     if (opcoes.mouse) {
       this.controles.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN };
       this.controles.zoomToCursor = true;
@@ -1118,6 +1126,122 @@ export class Visor3D {
     for (const v of [cam.position, alvo]) v.sub(pivo).applyQuaternion(q).add(pivo);
     cam.lookAt(alvo);
     cam.updateMatrixWorld();
+    this.controles.update();
+    this.controles.dispatchEvent({ type: 'change' });
+  }
+
+  // ---------------------------------------------------------------- toque (celular)
+  // Pedido do usuário (20/10, ME SOORO no celular): dois dedos giram "como se o eixo estivesse no meio dos dois
+  // pontos"; de perto, o giro de um dedo andava demais e os eixos se misturavam. O OrbitControls girava sempre em volta
+  // do alvo da câmera, na mesma velocidade perto ou longe, e a pinça mirava o alvo, não os dedos.
+
+  /** Um dedo desce: o giro espera o dedo andar (um toque parado escolhe a peça, celular.js); com dois, o gesto de dois
+   *  dedos começa de onde eles estão. */
+  _toqueDesce(ev) {
+    if (ev.pointerType !== 'touch' || !this.fichas) return;
+    this._dedos.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    this._recomecarGesto();
+  }
+
+  _toqueSobe(ev) {
+    if (!this._dedos.delete(ev.pointerId)) return;
+    if (this._dedos.size) { this._recomecarGesto(); return; }
+    if (this._gesto && this._gesto.mexeu) this._movendo(false);
+    this._gesto = null;
+  }
+
+  /** O gesto recomeça a cada dedo que desce ou sobe, dos lugares de agora (nada pula na troca de um para dois). */
+  _recomecarGesto() {
+    const mexeu = !!(this._gesto && this._gesto.mexeu);
+    const [a, b] = [...this._dedos.values()];
+    if (!b) { this._gesto = { dedos: 1, x0: a.x, y0: a.y, pivo: null, mexeu, media: { x: 0, y: 0 } }; return; }
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const r = this.tela.getBoundingClientRect();
+    this._gesto = { dedos: 2, mexeu, pivo: this._pivoDoToque(mx - r.left, my - r.top),
+                    dist: Math.max(Math.hypot(b.x - a.x, b.y - a.y), 1), ang: Math.atan2(b.y - a.y, b.x - a.x),
+                    torcao: 0, girando: false };
+  }
+
+  /** O ponto em volta do qual o gesto gira e aproxima: a peça sob o dedo (ou entre os dedos); num vão, a peça mais
+   *  perto em volta; no vazio, o chão do prédio ou o alvo — como o mouse do modo ver. */
+  _pivoDoToque(x, y) {
+    return this._focoSeguro(x, y) || this._focoPerto(x, y) || this._focoNoVazio(x, y);
+  }
+
+  _toqueMove(ev) {
+    const dedo = this._dedos.get(ev.pointerId), g = this._gesto;
+    if (!dedo || !g) return;
+    let ax = dedo.x, ay = dedo.y;
+    dedo.x = ev.clientX; dedo.y = ev.clientY;
+    if (g.dedos === 2) { this._doisDedos(g); return; }
+    if (!g.pivo) {
+      if (Math.hypot(dedo.x - g.x0, dedo.y - g.y0) <= 8) return;          // ainda pode ser um toque
+      const r = this.tela.getBoundingClientRect();
+      g.pivo = this._pivoDoToque(g.x0 - r.left, g.y0 - r.top);
+      if (!g.pivo) return;
+      ax = g.x0; ay = g.y0;
+    }
+    let dx = dedo.x - ax, dy = dedo.y - ay;
+    if (!dx && !dy) return;
+    if (!g.mexeu) { g.mexeu = true; this._movendo(true); }
+    // os eixos não se misturam: arrastando de lado, o tremor do dedo para cima/baixo não inclina a vista (e vice-versa);
+    // na diagonal, gira nos dois
+    g.media.x = 0.7 * g.media.x + 0.3 * dx;
+    g.media.y = 0.7 * g.media.y + 0.3 * dy;
+    if (Math.abs(g.media.x) > 2.5 * Math.abs(g.media.y)) dy = 0;
+    else if (Math.abs(g.media.y) > 2.5 * Math.abs(g.media.x)) dx = 0;
+    const f = this._giroDePerto(g.pivo);
+    this._girarEmVolta(g.pivo, dx * f, dy * f);
+  }
+
+  /** De perto, o giro anda mais devagar: com o modelo inteiro na tela, a velocidade de sempre; a uma fração do tamanho
+   *  do modelo de distância (olhando uma ligação), até 30 % dela. */
+  _giroDePerto(pivo) {
+    const raio = Math.max(this._esferaModelo.radius, 1);
+    return Math.min(1, Math.max(0.3, Math.sqrt(this.camera.position.distanceTo(pivo) / (1.5 * raio))));
+  }
+
+  /** Dois dedos: abrir/fechar aproxima do ponto entre eles, torcer gira em volta da vertical que passa por ele, arrastar
+   *  leva o ponto junto — ele fica sempre no meio dos dedos. */
+  _doisDedos(g) {
+    if (!g.pivo) return;
+    const [a, b] = [...this._dedos.values()];
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const dist = Math.max(Math.hypot(b.x - a.x, b.y - a.y), 1), ang = Math.atan2(b.y - a.y, b.x - a.x);
+    let da = ang - g.ang;
+    if (da > Math.PI) da -= 2 * Math.PI; else if (da < -Math.PI) da += 2 * Math.PI;
+    const k = g.dist / dist;                                  // < 1 aproxima, > 1 afasta
+    g.ang = ang; g.dist = dist;
+    // a torção só conta depois de ~6°: na pinça os dedos sempre torcem um pouco
+    if (!g.girando) {
+      g.torcao += da;
+      if (Math.abs(g.torcao) < 0.1) da = 0;
+      else { g.girando = true; da = g.torcao - Math.sign(g.torcao) * 0.1; }
+    }
+    if (!g.mexeu) { g.mexeu = true; this._movendo(true); }
+    const cam = this.camera, alvo = this.controles.target, P = g.pivo;
+    // torcer no sentido do relógio (na tela) gira o modelo no mesmo sentido: a câmera vai no sentido contrário
+    if (da) {
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), da);
+      for (const v of [cam.position, alvo]) v.sub(P).applyQuaternion(q).add(P);
+    }
+    // a pinça: como a rodinha (_zoomNaPeca), chega a 30 mm do ponto e não passa
+    const d = Math.max(cam.position.distanceTo(P), 1e-6);
+    const fator = Math.min(Math.max(d * k, 30), cam.far / 4) / d;
+    cam.position.sub(P).multiplyScalar(fator).add(P);
+    alvo.sub(P).multiplyScalar(fator).add(P);
+    const perto = Math.max(1, Math.min(cam.near, d * fator / 20));
+    if (perto !== cam.near) { cam.near = perto; cam.updateProjectionMatrix(); }
+    cam.lookAt(alvo);
+    cam.updateMatrixWorld();
+    // o ponto volta para o meio dos dedos
+    const r = this.tela.getBoundingClientRect();
+    const ndc = new THREE.Vector2((mx - r.left) / Math.max(this.tela.clientWidth, 1) * 2 - 1, -((my - r.top) / Math.max(this.tela.clientHeight, 1)) * 2 + 1);
+    const raio = new THREE.Raycaster();
+    raio.setFromCamera(ndc, cam);
+    const plano = new THREE.Plane().setFromNormalAndCoplanarPoint(cam.getWorldDirection(new THREE.Vector3()), P);
+    const Q = raio.ray.intersectPlane(plano, new THREE.Vector3());
+    if (Q) { const desl = P.clone().sub(Q); cam.position.add(desl); alvo.add(desl); }
     this.controles.update();
     this.controles.dispatchEvent({ type: 'change' });
   }

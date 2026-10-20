@@ -49,7 +49,7 @@ TELAS = [("web/cad/", {"cad"}), ("web/editor3d/", {"editor"}), ("web/dividida", 
 COMUNS = ("web/estilo.css", "web/versao.js", "web/vivo.js", "web/progresso.js", "web/atualizacao.js", "web/tema-janela.js",
           "web/lentidao.js", "web/lib/", "web/etapas.js")
 #: Arquivos de tela com verificador próprio fora do mapa de telas.
-PROPRIOS = [("web/faixa_ferramentas", ["verif_faixa_ui"]), ("web/visor3d/", ["verif_ver3d_ui", "verif_camera_modelos"]),
+PROPRIOS = [("web/faixa_ferramentas", ["verif_faixa_ui"]), ("web/visor3d/", ["verif_ver3d_ui", "verif_camera_modelos", "verif_celular_gestos"]),
             ("web/celular/", ["verif_celular_ui"]), ("web/acesso-celular", ["verif_celular_ui"])]
 #: A montagem 3D mudou: as telas que mostram o que ela monta (além da bateria do Posto CB).
 DA_MONTAGEM = ["verif_apoios_ui", "verif_esqueleto_ui", "verif_trelicas_ui", "verif_dividida_ui"]
