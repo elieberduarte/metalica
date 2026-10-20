@@ -109,6 +109,7 @@ pelo caminho da câmera — link vindo de fora do site — fica em `verif_celula
 | Data | O que o usuário via | Correção | Teste |
 |---|---|---|---|
 | 19/10 | leu o QR com a câmera do Android: o computador listou o aparelho como pareado, e o celular abriu "Este aparelho ainda não está ligado ao computador" — o cookie em SameSite=Strict não ia no redirecionamento depois de uma navegação vinda de outro app | b1211db | verif_celular_qr_outro_app, test_celular_servidor `_parear` |
+| 19/10 | no Android, "Instalar" dizia que não era possível e o atalho saía com um "1" cinza no lugar do logo — o manifesto e os ícones davam 401, porque o navegador os busca sem o cookie do aparelho | 8ae8e40 | verif_celular_instalar |
 
 ## Primeiro uso (agentes engenheiro-primeiro-uso e detalhista-primeiro-uso-ifc)
 
