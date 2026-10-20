@@ -187,7 +187,6 @@ try:
     ok(sol1[2] < sol0[2] - 0.05, f"arrastar a altura baixa o sol: z {sol0[2]:.2f} → {sol1[2]:.2f}")
     ok(ap.avaliar("(() => { try { return JSON.parse(localStorage.getItem('sol:obra-celular')).altura < 57; } catch (e) { return false; } })()"),
        "o sol fica guardado para a obra")
-    ap.avaliar("document.getElementById('folha').hidden = true")
     # a cor das camadas (20/10): o quadradinho mostra a cor das peças no 3D ("a layer está com a bolinha de uma cor e no
     # modelo está outra" — era a cor da camada no arquivo, e o 3D pinta pelo material); tocar nele troca a cor, só no aparelho
     ap.avaliar("document.getElementById('folha').hidden = true")
