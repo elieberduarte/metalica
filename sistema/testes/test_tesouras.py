@@ -452,10 +452,8 @@ def test_oitao_solto_e_o_padrao_do_alma_cheia():
     pos = [b for b in doc.barras if b.atributos.get("marca") == "PO"]
     assert pos and all(b.atributos.get("topo_oblongo") for b in pos)
     assert sum(1 for b in doc.barras if b.papel == "viga") == 2 * p.dados.n_porticos
-    # deslocabilidade média vai até 1,40; aqui dá ~1,42 com o vento longitudinal (12 mm): o X vertical ainda é
-    # dimensionado só pela resistência, sem critério de rigidez (aberto em 20/10). Com a ligação curta que se
-    # tentou antes, ia a 9
-    assert r["segunda_ordem"]["resumo"]["razao_max"] < 1.5
+    # com a escora de beiral, 1,20 (sem ela, 1,42; com a ligação curta que se tentou antes, 9)
+    assert r["segunda_ordem"]["resumo"]["razao_max"] < 1.4
     assert usos["PO"] < 1.1, usos
 
 
@@ -532,3 +530,34 @@ def test_longarina_de_oitao_com_folga_e_correntes_aos_montantes():
     assert lo and all(b.atributos.get("folga_axial") for b in lo)
     assert any(b.atributos.get("elemento") == "Tirante da corrente de oitão" for b in doc.barras)
     assert usos["LO"] < 1.1 and usos["L1"] < 1.1 and usos.get("L2", 0) < 1.1, usos
+
+
+def test_x_vertical_em_paineis_no_galpao_alto():
+    """Com pé-direito de 10–12 m o tirante do X vertical não cabia nem com ø32 e o galpão saía reprovado
+    (achado 18 da análise de 20/10). Agora o X vai em painéis na altura, com escora em tubo nos nós."""
+    from nucleo.modelo_galpao import DadosGalpao
+    from nucleo3d import de_projeto
+    p = galpao.dimensionar(DadosGalpao(vao=30.0, pe_direito=10.0))
+    cv, ev = p.elemento("Contraventamento vertical"), p.elemento("Escora do contraventamento vertical")
+    assert cv.ok and cv.geometria["paineis_verticais"] >= 2
+    assert ev is not None and ev.ok
+    lista = {x.marca: x.quantidade for x in p.lista_material}
+    doc = de_projeto.modelo_do_galpao(p)
+    assert sum(1 for b in doc.barras if b.atributos.get("marca") == "CV") == lista["CV"]
+    assert sum(1 for b in doc.barras if b.atributos.get("marca") == "EV") == lista["EV"]
+    assert galpao.dimensionar(DadosGalpao()).elemento("Contraventamento vertical").geometria["paineis_verticais"] == 1
+
+
+def test_escora_de_beiral():
+    """Sem escora de beiral a força longitudinal de cada pórtico ia ao X pelas terças e longarinas, flexíveis
+    nessa direção: na análise 3D do 20×40 de alma cheia, Δ2/Δ1 = 1,42 (com ela, 1,20)."""
+    from nucleo.modelo_galpao import DadosGalpao
+    d = DadosGalpao(comprimento=40.0)
+    p = galpao.dimensionar(d)
+    eb = p.elemento("Escora de beiral")
+    assert eb is not None and eb.ok
+    lista = {x.marca: x.quantidade for x in p.lista_material}
+    doc, r, usos = _analise_3d(p, d, "articulada")
+    assert sum(1 for b in doc.barras if b.atributos.get("marca") == "EB") == lista["EB"] == 2 * (p.dados.n_porticos - 1)
+    assert r["segunda_ordem"]["resumo"]["razao_max"] < 1.3 and not r["segunda_ordem"]["resumo"]["instaveis"]
+    assert max(usos.values()) < 1.0, usos

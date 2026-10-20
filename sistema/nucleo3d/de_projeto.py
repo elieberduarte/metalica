@@ -107,6 +107,7 @@ MARCAS = {"pilar": "P1", "viga": "V1", "misula_alma": "M1", "misula_mesa": "M2",
           "diagonal": "D", "montante": "M", "travamento": "TV",
           "terca": "T1", "corrente": "TC", "longarina": "L1", "corrente_longarina": "CL",
           "pilar_oitao": "PO", "longarina_oitao": "LO", "viga_oitao": "VO", "mao_francesa": "MF",
+          "escora_vertical": "EV", "escora_beiral": "EB",
           "contrav_cobertura": "CC", "contrav_vertical": "CV",
           "chapa_joelho": "CH1", "chapa_cumeeira": "CH2", "placa_base": "CH3",
           "pedestal": "PD", "telha": "TL", "fechamento": "FC"}
@@ -283,6 +284,7 @@ class _Construtor:
         self._oitao()
         self._contraventamento_cobertura()
         self._contraventamento_vertical()
+        self._escora_de_beiral()
         self._travamento_banzo_inferior()
         if not self.dg.eh_trelicado:
             # as chapas de topo do joelho e da cumeeira são do pórtico de alma cheia;
@@ -780,12 +782,37 @@ class _Construtor:
             # topo do pilar — senão a força longitudinal descia dobrando o montante de apoio no eixo fraco
             # (na análise 3D do 20×40: deslocabilidade grande, Δ2/Δ1 = 1,44, análise de 20/10)
             zt = self.hb if (self.dg.eh_trelicado and self.dg.ligacao_tesoura == "apoiada") else self.H
+            # painéis na altura (galpão alto) e a escora em tubo em cada nó entre eles
+            g_cv = self._elemento("Contraventamento vertical")
+            n_v = max(1, int((g_cv.geometria or {}).get("paineis_verticais") or 1)) if g_cv else 1
+            esc = self._elemento("Escora do contraventamento vertical")
+            perf_e = geo.registrar_perfil(geo.resolver_perfil(esc.perfil)) if esc is not None else None
+            zs_v = [zt * k / n_v for k in range(n_v + 1)]
             for lado, y in (("esquerdo", 0.0), ("direito", self.V)):
-                for diag, (za, zb) in enumerate(((0.0, zt), (zt, 0.0)), start=1):
-                    self._barra("contrav_vertical", (x1, y, za), (x2, y, zb), perf,
-                                "contraventamento", "Contraventamento", "Aço",
-                                self.dg.aco_chapas, el, vao=iv + 1, lado=lado,
-                                diagonal=diag)
+                for kp in range(n_v):
+                    z0, z1 = zs_v[kp], zs_v[kp + 1]
+                    for diag, (za, zb) in enumerate(((z0, z1), (z1, z0)), start=1):
+                        self._barra("contrav_vertical", (x1, y, za), (x2, y, zb), perf,
+                                    "contraventamento", "Contraventamento", "Aço",
+                                    self.dg.aco_chapas, el, vao=iv + 1, lado=lado,
+                                    diagonal=diag, painel=kp + 1)
+                    if perf_e is not None and kp > 0:
+                        self._barra("escora_vertical", (x1, y, z0), (x2, y, z0), perf_e, "contraventamento",
+                                    "Contraventamento", "Aço", self.dg.aco_perfis, esc.nome, vao=iv + 1,
+                                    lado=lado, painel=kp + 1)
+
+    def _escora_de_beiral(self):
+        """A escora de beiral, de pórtico a pórtico nos dois beirais, no nível do topo do X vertical."""
+        eb = self._elemento("Escora de beiral")
+        if eb is None:
+            return
+        perf = geo.registrar_perfil(geo.resolver_perfil(eb.perfil))
+        zt = self.hb if (self.dg.eh_trelicado and self.dg.ligacao_tesoura == "apoiada") else self.H
+        for lado, y in (("esquerdo", 0.0), ("direito", self.V)):
+            for iv in range(len(self.xs) - 1):
+                self._barra("escora_beiral", (self.xs[iv], y, zt), (self.xs[iv + 1], y, zt), perf,
+                            "contraventamento", "Contraventamento", "Aço", self.dg.aco_perfis, eb.nome,
+                            vao=iv + 1, lado=lado)
 
     # ------------------------------------------------------------------ ligações
     def _chapas_de_topo(self):

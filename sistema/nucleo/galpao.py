@@ -60,6 +60,7 @@ def dimensionar(dados: DadosGalpao) -> ProjetoGalpao:
         _longarinas(p)
         _analise_portico(p)
         _contraventamentos(p)
+        _escora_de_beiral(p)
         _tercas_escora(p)
         _oitao(p)
         _longarinas_das_pontas(p)
@@ -2292,21 +2293,109 @@ def _contraventamentos(p: ProjetoGalpao):
                    "vaos_contraventados": [v + 1 for v in vaos],
                    "quantidade": len(vaos) * n_pain * 2}))
 
-    # vertical: o X de cada parede lateral, no vão contraventado, leva a reação do
-    # beiral até a fundação
-    # até o nível do X da cobertura (o beiral; na tesoura apoiada, acima do topo do pilar)
-    comp_v = math.hypot(esp, d.altura_beiral)
-    N_v = cortante * comp_v / esp
-    rv = _dimensionar_tirante(N_v, comp_v * 100, a, "Contraventamento vertical")
+    # vertical: o X de cada parede lateral, no vão contraventado, leva a reação do beiral até a fundação.
+    # Painéis empilhados na altura quando o tirante não cabe ou a parede fica flexível demais na direção
+    # longitudinal (galpão alto: com pé-direito 10–12 m o ø32 não passava e o galpão saía reprovado; na
+    # análise 3D, Δ2/Δ1 ~1,4 com o vento longitudinal) — com uma escora em tubo em cada nó entre painéis
+    h_cv = d.altura_beiral                       # até o nível do X da cobertura
+    escolha = None
+    for n_v in range(1, 5):
+        comp_v = math.hypot(esp, h_cv / n_v)
+        N_v = cortante * comp_v / esp
+        rv = _dimensionar_tirante(N_v, comp_v * 100, a, "Contraventamento vertical")
+        razao_long = _deslocabilidade_longitudinal(p, rv.perfil, n_v, comp_v, len(vaos), cortante, h_cv)
+        escolha = (n_v, comp_v, N_v, rv, razao_long)
+        if rv.ok and razao_long <= DESLOCABILIDADE_ALVO:
+            break
+    n_v, comp_v, N_v, rv, razao_long = escolha
     if not rv.ok:
         p.avisos.append("O tirante de contraventamento vertical não atende nem com o "
-                        "maior diâmetro; adote cantoneiras ou contraventamento em K.")
+                        "maior diâmetro e %d painéis na altura; adote cantoneiras ou contraventamento em K."
+                        % n_v)
+    elif razao_long > DESLOCABILIDADE_ALVO:
+        p.avisos.append("A direção longitudinal fica flexível (Δ2/Δ1 estimado %s com o X vertical de %d painéis): "
+                        "contravente mais vãos." % (fmt(razao_long, 2), n_v))
+    elif n_v > 1:
+        p.avisos.append("O X vertical das paredes tem %d painéis na altura, com escora em tubo nos nós." % n_v)
+    rv.dados["deslocabilidade_longitudinal"] = round(razao_long, 3)
     p.elementos.append(ElementoDimensionado(
         nome="Contraventamento vertical", perfil=rv.perfil, material=d.aco_chapas,
         resultado=rv, esforcos={"N_kN": round(N_v, 1), "cortante_kN": round(cortante, 1)},
-        geometria={"comprimento_m": round(comp_v, 2),
+        geometria={"comprimento_m": round(comp_v, 2), "paineis_verticais": n_v,
                    "vaos_contraventados": [v + 1 for v in vaos],
-                   "quantidade": len(vaos) * 2 * 2}))
+                   "deslocabilidade_longitudinal": round(razao_long, 3),
+                   "quantidade": len(vaos) * 2 * 2 * n_v}))
+    if n_v > 1:
+        re_ = _escora_tubo(p, cortante, esp * 100.0, "Escora do contraventamento vertical")
+        if re_ is not None:
+            if not re_.ok:
+                p.avisos.append("Nenhum tubo do catálogo atende a escora do X vertical (N = %s)." % fmt(cortante, 1, "kN"))
+            p.elementos.append(ElementoDimensionado(
+                nome="Escora do contraventamento vertical", perfil=re_.perfil, material=d.aco_chapas,
+                resultado=re_, esforcos={"N_kN": round(cortante, 1)},
+                geometria={"comprimento_m": round(esp, 3), "quantidade": len(vaos) * 2 * (n_v - 1)}))
+
+
+def _escora_de_beiral(p: ProjetoGalpao):
+    """A escora de beiral: ao longo de cada beiral, de pórtico a pórtico, liga o topo dos pilares aos vãos
+    contraventados — é por ela que a força longitudinal de cada pórtico (a imperfeição, o vento nas
+    paredes) chega ao X. Sem ela o caminho era pelas terças e longarinas, flexíveis nessa direção: na
+    análise 3D do 20×40 a deslocabilidade longitudinal ia a 1,42 (com ela, 1,20). N = 1 % da carga
+    vertical de meio galpão, nunca menos de 2 kN; tubo com λ ≤ 200."""
+    d = p.dados
+    P = (1.25 * (p.cargas["g_cobertura"] + 0.25) + 1.05 * p.cargas["sobrecarga"]) * d.area_coberta
+    N = max(0.01 * P / 2.0, 2.0)
+    r = _escora_tubo(p, N, d.espacamento_porticos * 100.0, "Escora de beiral")
+    if r is None:
+        return
+    p.elementos.append(ElementoDimensionado(
+        nome="Escora de beiral", perfil=r.perfil, material=d.aco_perfis, resultado=r,
+        esforcos={"N_kN": round(N, 2), "criterio": "1 % da carga vertical de meio galpão"},
+        geometria={"comprimento_m": round(d.espacamento_porticos, 3),
+                   "quantidade": 2 * max(1, d.n_porticos - 1)}))
+
+
+#: Δ2/Δ1 que o X vertical tem de garantir na direção longitudinal (a média vai até 1,40, NBR 8800:2024,
+#: 4.10.4; folga para o que a estimativa pelos tirantes não vê — terças, contravento da cobertura)
+DESLOCABILIDADE_ALVO = 1.30
+
+
+def _deslocabilidade_longitudinal(p: ProjetoGalpao, perfil_tirante: str, n_v: int, Ld_m: float,
+                                  n_vaos: int, cortante: float, h_m: float) -> float:
+    """Δ2/Δ1 estimado na direção longitudinal: a rigidez são as diagonais tracionadas dos X verticais
+    (2 paredes × vãos contraventados, painéis em série), a força é o vento do oitão (2 × cortante) e a
+    carga vertical a do galpão inteiro (1,25·(g + 0,25 de estrutura) + 1,05·sc, por m²)."""
+    d = p.dados
+    try:
+        A = float(_perfil_sintetico(perfil_tirante).A)
+    except Exception:
+        return 1.0
+    esp = d.espacamento_porticos * 100.0
+    Ld = Ld_m * 100.0
+    k_x = nbr8800.E * A * (esp / Ld) ** 2 / Ld / n_v              # kN/cm, um X (a diagonal tracionada)
+    k = k_x * 2 * max(1, n_vaos)
+    H = 2.0 * cortante
+    if k <= 0 or H <= 0:
+        return 1.0
+    delta1 = H / k
+    P = (1.25 * (p.cargas["g_cobertura"] + 0.25) + 1.05 * p.cargas["sobrecarga"]) * d.area_coberta
+    fator = P * delta1 / (H * h_m * 100.0)
+    return 1.0 / (1.0 - fator) if fator < 0.99 else 99.0
+
+
+def _escora_tubo(p: ProjetoGalpao, N: float, L_cm: float, elemento: str) -> Optional[Resultado]:
+    """O tubo mais leve que leva N (kN) à compressão no comprimento L (cm)."""
+    aco = nbr8800._aco(p.dados.aco_perfis)
+    ultimo = None
+    for perf in banco().candidatos(tipo="tubo"):
+        try:
+            r = nbr8800.compressao(perf, aco, Lx=L_cm, Ly=L_cm, N_Sd=N, elemento=elemento)
+        except ErroDeDados:
+            continue
+        ultimo = r
+        if r.ok:
+            return r
+    return ultimo
 
 
 # ----------------------------------------------------------- 8. ligações
@@ -2696,6 +2785,14 @@ def _lista_de_material(p: ProjetoGalpao):
         add("CV", "Diagonal de contraventamento vertical", vert.perfil,
             int(vert.geometria.get("quantidade", 8)),
             vert.geometria.get("comprimento_m", 5.0))
+    eb = p.elemento("Escora de beiral")
+    if eb:
+        add("EB", "Escora de beiral (tubo, de pórtico a pórtico)", eb.perfil, int(eb.geometria["quantidade"]),
+            eb.geometria["comprimento_m"])
+    ev = p.elemento("Escora do contraventamento vertical")
+    if ev:
+        add("EV", "Escora do contraventamento vertical (tubo)", ev.perfil, int(ev.geometria["quantidade"]),
+            ev.geometria["comprimento_m"])
 
     peso_perfis = sum(x.peso_total_kg for x in pecas)
     # chapas de ligação e base, e parafusos, por percentual usual
