@@ -709,6 +709,8 @@ def marcar_modelo(doc) -> dict:
         k = a.get("portico")
         if isinstance(e, Barra) and e.papel in ("banzo", "diagonal", "montante"):
             inst[("tesoura", k)].append(e)
+        elif isinstance(e, Barra) and e.papel == "pilar" and a.get("oitao"):
+            inst[("pilar_oitao", a.get("oitao"), a.get("posicao"))].append(e)
         elif isinstance(e, Barra) and e.papel == "pilar":
             inst[("pilar", k, a.get("lado"))].append(e)
         elif isinstance(e, Chapa) and a.get("marca") in ("CH3", "CH5"):          # placa de base, chapa de topo
@@ -914,7 +916,9 @@ def _gerar_ligacoes(c, doc, par: dict) -> dict:
         el = c._elemento(NOME_DA_BARRA["banzo inferior"])
         dbi = (dsn._perfil(el.perfil).d if el and el.perfil else 150.0)
         furos = [{"x": sx * gB / 2.0, "y": sy * gL / 2.0, "diametro": fd} for sx in (-1, 1) for sy in (-1, 1)]
-        pilares = [b for b in doc.entidades.values() if isinstance(b, Barra) and b.papel == "pilar"]
+        # os do pórtico: o pilar de oitão (`oitao`) não leva a tesoura
+        pilares = [b for b in doc.entidades.values() if isinstance(b, Barra) and b.papel == "pilar"
+                   and not (b.atributos or {}).get("oitao")]
         Lpar = A.comprimento_parafuso(2 * tq, dpar)
         for b in pilares:
             a = b.atributos or {}

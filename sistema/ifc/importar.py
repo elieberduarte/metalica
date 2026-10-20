@@ -97,7 +97,8 @@ PAPEL_POR_PREDEFINIDO = {"PURLIN": "terça", "BRACE": "contraventamento",
 
 #: Papéis de `Barra` aceitos como estão quando vêm no ObjectType do elemento.
 PAPEIS_CONHECIDOS = {"pilar", "viga", "terça", "terca", "contraventamento", "longarina",
-                     "barra", "tirante", "montante", "diagonal", "banzo", "corrente"}
+                     "barra", "tirante", "montante", "diagonal", "banzo", "corrente",
+                     "mão-francesa", "mao-francesa"}
 
 #: Maior diâmetro de seção redonda cheia e maior espessura de seção retangular cheia
 #: aceitos como barra de aço (tirante, corrente, barra chata). Acima disso a seção
@@ -1896,7 +1897,20 @@ class Importador:
         # da posição da extrusão, sem a do perfil.
         posicao_perfil = info.pop("posicao", None)                  # matriz: não vai para os atributos
         secao = m_multiplicar(total, posicao_perfil) if posicao_perfil else total
+        # o eixo da barra é o centroide da seção (é por ele que `geometria` desenha); o IFC4 posiciona o
+        # L, o U, o C, o T e o Z pelo centro da caixa envolvente — sem isto a cantoneira voltava uns 10 mm
+        # fora do lugar (a mão-francesa do galpão gerado, 20/10); I, tubo e barra são simétricos
+        # O inverso da exportação: a origem da posição é o centro da caixa, e a seção do catálogo fica com a
+        # caixa dela ali (o U laminado tem aba inclinada: o centroide do contorno simplificado erraria uns mm)
         inicio = m_ponto(secao, (0.0, 0.0, 0.0))
+        if familia in ("L", "U", "Ue", "T", "Z") and len(ext) >= 3:
+            caixa = _centro_da_caixa_do_catalogo(nome_perfil)
+            if caixa is not None:
+                inicio = m_ponto(secao, (-caixa[0], -caixa[1], 0.0))
+            else:
+                # (o contorno `ext` já vem com a posição do perfil: o centroide dele está no sistema da extrusão)
+                cx, cy = _centroide_area(ext)
+                inicio = m_ponto(total, (cx, cy, 0.0))
         passo = m_direcao(total, (direcao[0] * prof, direcao[1] * prof, direcao[2] * prof))
         fim = (inicio[0] + passo[0], inicio[1] + passo[1], inicio[2] + passo[2])
         if prof < 0:
@@ -2616,6 +2630,35 @@ def _quase_igual2(a, b, tol=1e-6):
 
 def _quase_igual3(a, b, tol=1e-6):
     return abs(a[0] - b[0]) < tol and abs(a[1] - b[1]) < tol and abs(a[2] - b[2]) < tol
+
+
+def _centro_da_caixa_do_catalogo(nome_perfil: str) -> Optional[Tuple[float, float]]:
+    """Centro da caixa envolvente da seção do catálogo, no sistema dela (o centroide na origem) — o mesmo
+    `Position` que a exportação grava em L e U; None quando o perfil não se resolve."""
+    try:
+        from ifc.exportar import _centro_da_caixa, _resolver_perfil
+        p = _resolver_perfil(nome_perfil)
+        return _centro_da_caixa(p) if p is not None else None
+    except Exception:
+        return None
+
+
+def _centroide_area(pts) -> Tuple[float, float]:
+    """Centroide da área do polígono (fórmula do laço); polígono degenerado: (0, 0)."""
+    n = len(pts)
+    if n < 3:
+        return 0.0, 0.0
+    a = cx = cy = 0.0
+    for i in range(n):
+        x0, y0 = pts[i][0], pts[i][1]
+        x1, y1 = pts[(i + 1) % n][0], pts[(i + 1) % n][1]
+        c = x0 * y1 - x1 * y0
+        a += c
+        cx += (x0 + x1) * c
+        cy += (y0 + y1) * c
+    if abs(a) < 1e-9:
+        return 0.0, 0.0
+    return cx / (3.0 * a), cy / (3.0 * a)
 
 
 def _fechar(pts):

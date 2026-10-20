@@ -132,7 +132,9 @@ def test_ligacoes_geradas_no_lancamento(lancado):
     assert len(ch7.furos) == 4 and (ys[1] - ys[0], xs[1] - xs[0]) in ((50, 60), (100, 60))
     # suportes e apoio da tesoura no conjunto da tesoura; chapa de topo no do pilar
     conj_tes = {b.atributos["marcas"]["conjunto"] for b in doc.barras if b.papel == "banzo"}
-    conj_pil = {b.atributos["marcas"]["conjunto"] for b in doc.barras if b.papel == "pilar"}
+    # os do pórtico (o pilar de oitão, desde 20/10, é conjunto próprio e não leva a tesoura)
+    conj_pil = {b.atributos["marcas"]["conjunto"] for b in doc.barras
+                if b.papel == "pilar" and not b.atributos.get("oitao")}
     assert {c.atributos["marcas"]["conjunto"] for c in doc.chapas if c.atributos.get("marca") in ("CH6", "CH7", "CH8")} == conj_tes
     assert {c.atributos["marcas"]["conjunto"] for c in doc.chapas if c.atributos.get("marca") == "CH5"} == conj_pil
     # o pilar termina na chapa de topo

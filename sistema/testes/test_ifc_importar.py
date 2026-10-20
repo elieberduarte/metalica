@@ -452,11 +452,20 @@ class TestReconhecimentoEstrutural(Asserts):
         self.assertPonto(t1.fim, (6000, 3000, 6000), 1e-6)
 
     def test_contraventamento_por_item_mapeado(self):
+        # o IFC4 posiciona a cantoneira pelo centro da caixa (aqui, no ponto do item); o eixo da barra é o
+        # centroide da seção, por onde `geometria` a desenha — assim a peça cai onde o arquivo a desenhou
+        # (antes o eixo ficava no centro da caixa e a cantoneira ia ~12 mm para o lado; na ida e volta do
+        # nosso próprio IFC voltava fora do lugar: a mão-francesa do galpão gerado, 20/10)
+        from ifc.importar import _centroide_area, _poligono_l
         for nome, x in (("C1", 2000.0), ("C2", 4000.0)):
             c = self.e[nome]
             self.assertEqual((c.perfil, c.papel), (L40, "contraventamento"))
-            self.assertPonto(c.inicio, (x, 0, 0), 1e-6)
-            self.assertPonto(c.fim, (x, 0, 3000), 1e-6)
+            pf = c.atributos["perfil_ifc"]
+            cx, cy = _centroide_area(_poligono_l(pf["bf"], pf["d"], pf["tw"]))
+            self.assertGreater(math.hypot(cx, cy), 5.0)
+            self.assertAlmostEqual(math.dist(c.inicio[:2], (x, 0.0)), math.hypot(cx, cy), places=3)
+            self.assertAlmostEqual(c.inicio[2], 0.0, places=6)
+            self.assertPonto(tuple(c.fim[i] - c.inicio[i] for i in range(3)), (0, 0, 3000), 1e-6)
 
     def test_perfil_fora_do_catalogo_vira_solido_e_fica_no_relatorio(self):
         self.assertIsInstance(self.e["VS1"], Solido)
@@ -1403,3 +1412,25 @@ def test_eixo_em_arco_da_viga_do_revit():
     s = importar_texto(eixo).solidos[0]
     e = s.atributos.get("eixo_ifc")
     assert e and abs(e["raio"] - 100.0) < 0.01 and abs(e["comprimento"] - math.pi / 2 * 100) < 0.5 and abs(e["angulo"] - 90) < 0.01, e
+
+
+class TestPerfilAssimetricoVoltaNoLugar(unittest.TestCase):
+    """Cantoneira e U, na ida e volta do nosso IFC, voltam com o eixo no mesmo lugar e o mesmo giro. O IFC4
+    posiciona L e U pelo centro da caixa; a importação punha ali o eixo da barra, que o sistema desenha pelo
+    centroide: a cantoneira voltava ~8 mm fora (a mão-francesa do galpão gerado, 20/10)."""
+
+    def test_cantoneira_e_u_em_varios_giros(self):
+        from ifc.exportar import para_texto
+        from nucleo3d.modelo import Barra, Documento
+        from nucleo.perfis import banco
+        u = banco().candidatos(tipo="U")[0].nome
+        for perfil in ('L 1½"×1/8"', 'L 3"×1/4"', u):
+            for rot in (0.0, 45.0, 90.0, 180.0):
+                doc = Documento(nome="t")
+                doc.add(Barra(nome="X", inicio=(100.0, 200.0, 0.0), fim=(1100.0, 200.0, 300.0), perfil=perfil,
+                              rotacao=rot, papel="mão-francesa"))
+                b = importar_texto(para_texto(doc)).barras[0]
+                self.assertLess(math.dist(b.inicio, (100.0, 200.0, 0.0)), 0.5, (perfil, rot, b.inicio))
+                self.assertLess(math.dist(b.fim, (1100.0, 200.0, 300.0)), 0.5, (perfil, rot, b.fim))
+                self.assertEqual(b.papel, "mão-francesa")
+
