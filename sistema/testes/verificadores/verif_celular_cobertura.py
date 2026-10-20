@@ -5,6 +5,9 @@ No computador, "ver aberta/retraída" grava o modelo; o celular só lê. O pacot
 (test_pacote_cobertura_movel) e a tela troca o arquivo que o 3D lê: dois botões no alto, a vista fica onde
 estava, as mesmas peças em outro lugar. Projeto sem cobertura retrátil não mostra os botões.
 
+A troca mora no menu Vistas (pedido do usuário, 19/10: "para não precisar criar um menu novo só para isso").
+O pacote velho (de antes da cobertura no celular) é refeito: o formato do pacote entra na assinatura dele.
+
 O servidor do celular sobe sozinho no 127.0.0.1 com dois projetos: a cobertura pequena de
 test_cobertura_movel (aberta, como o PC gravou) e uma obra comum."""
 import base64, hashlib, json, os, shutil, subprocess, sys, tempfile, time
@@ -79,27 +82,39 @@ try:
     # ------------------------------------------------------------ a obra comum: sem os botões
     ap.navegar(base + "/celular/#/p/comum/modelo", limite=30)
     ok(esperar(ap, ABERTO, 120), "a obra comum abre o 3D")
-    ok(ap.avaliar("!document.querySelector('.situacao')"), "sem cobertura retrátil, sem aberta/retraída")
+    ap.avaliar("document.querySelector('.ferramentas [data-f=vistas]').click()")
+    ok(esperar(ap, "!document.getElementById('folha').hidden && !!document.querySelector('#folha [data-v=iso]')", 5), "o menu Vistas abre")
+    ok(ap.avaliar("!document.querySelector('#folha [data-s]')"), "sem cobertura retrátil, o menu Vistas não tem aberta/retraída")
 
     # ------------------------------------------------------------ a cobertura retrátil
     ap.navegar(base + "/celular/#/p/cobertura/modelo", limite=30)
     ok(esperar(ap, ABERTO + " && window.visor.nPecas > 50", 120), "a cobertura abre o 3D")
-    ok(esperar(ap, "!!document.querySelector('.situacao:not([hidden]) [data-s=aberta].ativa')", 10),
-       "os botões aparecem, com Aberta marcada (a situação gravada no PC)")
+    ap.avaliar("document.querySelector('.ferramentas [data-f=vistas]').click()")
+    ok(esperar(ap, "!!document.querySelector('#folha .cobertura [data-s=aberta].forte')", 10),
+       "no menu Vistas, a cobertura retrátil com Aberta marcada (a situação gravada no PC)")
+    imagem(ap, "celular_8_vistas_cobertura.png")
+    ap.avaliar("document.querySelector('#folha [data-v=iso]').click()")
     pecas = ap.avaliar("window.visor.nPecas")
     ap.avaliar("window.__visorAntes = window.visor; window.visor.camera.position.set(9000, -14000, 12000); "
                "window.visor.controles.update(); window.visor.pedirQuadro()")
     vista = imagem(ap, "celular_8_cobertura_aberta.png")
     camera = ap.avaliar("window.visor.camera.position.toArray().map(Math.round)")
-    ap.avaliar("document.querySelector('.situacao [data-s=retraida]').click()")
+    ap.avaliar("document.querySelector('.ferramentas [data-f=vistas]').click()")
+    esperar(ap, "!!document.querySelector('#folha [data-s=retraida]')", 5)
+    ap.avaliar("document.querySelector('#folha [data-s=retraida]').click()")
     ok(esperar(ap, "window.visor !== window.__visorAntes && " + ABERTO, 60), "Retraída: o 3D recarrega com a outra situação")
-    ok(ap.avaliar("!!document.querySelector('.situacao [data-s=retraida].ativa')"), "com Retraída marcada")
+    ap.avaliar("document.querySelector('.ferramentas [data-f=vistas]').click()")
+    ok(esperar(ap, "!!document.querySelector('#folha [data-s=retraida].forte')", 5), "e no menu Vistas, Retraída marcada")
+    ap.avaliar("document.querySelector('#folha [data-s=retraida]').click()")      # a marcada: só fecha
     ok(ap.avaliar("window.visor.nPecas") == pecas, f"as mesmas peças ({pecas}), só a posição muda")
     ok(ap.avaliar("window.visor.camera.position.toArray().map(Math.round)") == camera, "a vista fica onde estava")
     retraida = imagem(ap, "celular_9_cobertura_retraida.png")
     ok(retraida != vista, "a imagem muda: as tesouras empilhadas na ponta")
-    ap.avaliar("document.querySelector('.situacao [data-s=aberta]').click()")
-    ok(esperar(ap, "!!document.querySelector('.situacao [data-s=aberta].ativa') && " + ABERTO, 60), "e volta à aberta")
+    ok(esperar(ap, "document.getElementById('folha').hidden"), "tocar na situação marcada só fecha o menu")
+    ap.avaliar("window.__visorAntes = window.visor; document.querySelector('.ferramentas [data-f=vistas]').click()")
+    esperar(ap, "!!document.querySelector('#folha [data-s=aberta]')", 5)
+    ap.avaliar("document.querySelector('#folha [data-s=aberta]').click()")
+    ok(esperar(ap, "window.visor !== window.__visorAntes && " + ABERTO, 60), "e volta à aberta")
     ok(imagem(ap) == vista, "a mesma imagem de antes da troca")
     st = ap.avaliar("fetch('/celular/dados/cobertura/manifesto.json').then(r => r.json()).then(j => j.cobertura_movel.atual)")
     ok(st == "aberta", f"nada gravado: o projeto continua na situação do PC ({st})")

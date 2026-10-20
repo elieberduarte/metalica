@@ -69,3 +69,18 @@ def test_sem_cobertura_retratil_nada_a_mais(tmp_path):
     m = gerar_pacote(str(proj), str(dest), "obra")
     assert "cobertura_movel" not in m
     assert not (dest / "modelo3d-retraida.mcel").exists()
+
+
+def test_pacote_de_antes_e_refeito_quando_o_formato_muda(tmp_path, monkeypatch):
+    """O usuário não viu aberta/retraída no celular (19/10): o pacote da Kaefer era de antes e, sem o projeto mudar,
+    não era refeito. O formato do pacote entra na assinatura dele — subiu, o pacote velho volta à fila."""
+    from celular import servidor as S
+    from saida import pacote_celular as P
+    dados = tmp_path / "dados"
+    dados.mkdir()
+    _projeto(dados, "aberta")
+    c = S.Celular(str(dados), str(tmp_path / "trabalho"), porta=0, host="127.0.0.1")
+    antes = c._assinatura("obra")
+    assert antes and antes == c._assinatura("obra")
+    monkeypatch.setattr(P, "FORMATO_PACOTE", P.FORMATO_PACOTE + 1)
+    assert c._assinatura("obra") != antes

@@ -334,8 +334,9 @@ class Celular:
                 partes.append("%s:%d:%d" % (rel, int(st.st_mtime), st.st_size))
             except OSError:
                 partes.append(rel + ":-")
-        from saida.pacote_celular import VERSAO_3D, VERSAO_FICHAS, GERACAO_MALHAS
-        partes.append("formato:%d:%d:%d" % (VERSAO_3D, VERSAO_FICHAS, GERACAO_MALHAS))      # gerador novo: o pacote é refeito
+        from saida.pacote_celular import FORMATO_PACOTE, VERSAO_3D, VERSAO_FICHAS, GERACAO_MALHAS
+        # gerador novo ou pacote com coisa nova: o pacote é refeito (o FORMATO_PACOTE entrou com a cobertura retrátil, 19/10)
+        partes.append("formato:%d:%d:%d:%d" % (VERSAO_3D, VERSAO_FICHAS, GERACAO_MALHAS, FORMATO_PACOTE))
         return hashlib.sha1("|".join(partes).encode()).hexdigest()
 
     def velho(self, slug: str) -> bool:

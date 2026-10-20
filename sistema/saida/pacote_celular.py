@@ -697,7 +697,9 @@ def ler_cabecalho_arquivo(caminho: str) -> dict:
 # Entra só o que está na lista abaixo, nunca uma pasta inteira: a parte comercial (pasta
 # comercial/, orçamento, proposta, contrato) não vai para o celular.
 
-FORMATO_PACOTE = 1
+#: O que o pacote leva. Subiu para 2 com a cobertura retrátil nas duas situações (19/10): os pacotes de antes
+#: não a tinham e, sem o projeto mudar, não eram refeitos — o celular não mostrava aberta/retraída.
+FORMATO_PACOTE = 2
 
 #: Resumos prontos do detalhamento: (arquivo, título na tela).
 RESUMOS = (("resumo-da-obra.pdf", "Resumo da obra"), ("resumo-de-materiais.pdf", "Resumo de materiais"),

@@ -13,7 +13,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from saida.pacote_celular import gerar_3d, gerar_pacote, ler_cabecalho, MAX_VERTS_BLOCO   # noqa: E402
+from saida.pacote_celular import FORMATO_PACOTE, gerar_3d, gerar_pacote, ler_cabecalho, MAX_VERTS_BLOCO   # noqa: E402
 
 
 def _caixa_solido(id_, x, y, z, a=100.0, b=50.0, c=8.0, camada="Chapas", girar=0.0):
@@ -161,7 +161,7 @@ def test_pacote_lista_fechada_sem_comercial(tmp_path):
     nomes = sorted(a["nome"] for a in m["arquivos"])
     assert nomes == ["modelo3d.mcel", "pecas.json", "quantitativos.json", "resumo-da-obra.pdf"]
     assert not any("ropost" in n or "comercial" in n for n in os.listdir(dest))
-    assert m["formato"] == 1 and m["projeto"]["revisao"] == "R02" and m["numeros"]["pecas"] == 67
+    assert m["formato"] == FORMATO_PACOTE and m["projeto"]["revisao"] == "R02" and m["numeros"]["pecas"] == 67
     q = json.loads((dest / "quantitativos.json").read_text(encoding="utf-8"))
     assert "custo" not in q["posicoes"][0]           # só os campos da lista fechada
     # refazer sem mudar o modelo não regrava o 3D (o pacote acompanha o modelo, não o relógio)

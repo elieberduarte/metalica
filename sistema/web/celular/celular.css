@@ -129,14 +129,11 @@ details > summary::-webkit-details-marker { display: none; }
 .ferramentas { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 8px; }
 .ferramentas button { width: 44px; height: 44px; border-radius: 12px; border: 0; background: var(--flutuante); color: var(--texto); box-shadow: var(--sombra); display: grid; place-items: center; }
 .ferramentas button.ligado { background: #1f5fbf; color: #fff; }
-/* no alto, à esquerda: a contagem e, na cobertura retrátil, aberta / retraída */
+/* no alto, à esquerda: a contagem */
 .palco-topo { position: absolute; left: 10px; top: 10px; right: 64px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; pointer-events: none; }
 .palco-topo > * { pointer-events: auto; }
 .contagem { background: var(--flutuante); color: var(--texto2); border-radius: 8px; padding: 4px 8px; font-size: 12px; }
-.contagem[hidden], .situacao[hidden] { display: none; }
-.situacao { display: flex; background: var(--flutuante); border-radius: 10px; padding: 3px; box-shadow: var(--sombra); }
-.situacao button { border: 0; background: none; border-radius: 8px; padding: 6px 12px; font-size: 13px; color: var(--texto2); }
-.situacao button.ativa { background: #1f5fbf; color: #fff; font-weight: 600; }   /* o azul do botão ligado ao lado, nos dois temas */
+.contagem[hidden] { display: none; }
 
 /* ---------------------------------------------------------------- folha que sobe de baixo */
 #folha {
@@ -149,7 +146,7 @@ details > summary::-webkit-details-marker { display: none; }
 .ficha dd { margin: 0; font-variant-numeric: tabular-nums; word-break: break-word; }
 .ficha .acoes { display: flex; gap: 8px; margin-top: 14px; }
 .botao { border: 1px solid var(--borda); background: var(--painel2); color: var(--texto); border-radius: 10px; padding: 9px 14px; font-size: 14px; }
-.botao.forte { background: var(--azul2); border-color: var(--azul2); color: #fff; }
+.botao.forte { background: #1f5fbf; border-color: #1f5fbf; color: #fff; }   /* o azul do claro também no escuro: lá o --azul2 é claro e o branco sumia */
 .camada { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--borda); }
 .camada:last-child { border-bottom: 0; }
 .camada i { width: 14px; height: 14px; border-radius: 4px; flex: none; }
