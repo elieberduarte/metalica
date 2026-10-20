@@ -36,10 +36,13 @@ ents += [_peca("pvc0", 8000.0, "Descida Pluvial", "MISCELLANEOUS/PVC", "400 Desc
 # o terreno, a rua e a calçada (lajes de concreto no IFC do Mercado) num sistema só; a parede fica no pré-moldado
 ents += [_peca("ter0", 0.0, "Terreno", "CONCRETE/Fck-40", PRE, z=-500), _peca("rua0", 2000.0, "Rua ", "CONCRETE/Fck-40", PRE, z=-500),
          _peca("cal0", 4000.0, "Calçada", "CONCRETE/Fck-40", PRE, z=-500), _peca("par0", 9000.0, "Parede", "CONCRETE/Fck-40", "3 Arquitetura")]
+# o muro e as vagas também (Mercado, 20/10), e a peça que o usuário mandou à mão para a camada Terreno, pelo nome da camada
+ents += [_peca("mur0", 10000.0, "Muro ", "CONCRETE/Fck-40", PRE, z=-500), _peca("vag0", 11000.0, "Vaga", "CONCRETE/Fck-40", PRE, z=-500),
+         _peca("blo9", 12000.0, "Bloco", "CONCRETE/Fck-40", "Terreno", z=-500)]
 for i, perfil in enumerate(["U 150×60×3,00 (FF)", "L 2\"×3/16\"", "Ue 250×85×25×2,65", "L 1½\"×3/16\""]):
     ents.append({"id": "bar%d" % i, "tipo": "barra", "nome": "banzo", "camada": "Tesouras", "material": "",
                  "inicio": [0, 1000.0 * i, 6000], "fim": [6000, 1000.0 * i, 6000], "perfil": perfil, "rotacao": 0.0})
-camadas = {n: {"nome": n, "cor": "#888888", "visivel": True} for n in (PRE, "3 Arquitetura", "400 Descidas pluviais", "Tesouras")}
+camadas = {n: {"nome": n, "cor": "#888888", "visivel": True} for n in (PRE, "3 Arquitetura", "400 Descidas pluviais", "Tesouras", "Terreno")}
 for nome, modelo in (("obra", {"nome": "obra", "unidade": "mm", "entidades": ents, "camadas": camadas, "materiais": {}}), ("aco", _modelo())):
     os.makedirs(os.path.join(DADOS, nome))
     json.dump({"nome": nome, "tipo": "ifc", "alterado": "2026-10-16T09:00:00"}, open(os.path.join(DADOS, nome, "projeto.json"), "w", encoding="utf-8"))
@@ -93,9 +96,9 @@ try:
     ok(aba.avaliar("!!document.querySelector('#pintar option[value=sistema]')"), "o Pintar tem \"por sistema\"")
     aba.avaliar(PINTAR % "sistema")
     leg = json.loads(aba.avaliar(LEGENDA) or "[]")
-    ok([x[:2] for x in leg] == [["Metálica", 4], ["Outros", 1], ["Pré-moldado (concreto)", 10], ["Terreno, rua e calçada", 3]],
+    ok([x[:2] for x in leg] == [["Metálica", 4], ["Outros", 1], ["Pré-moldado (concreto)", 10], ["Terreno, rua e calçada", 6]],
        f"por sistema: a metálica (as barras), o PVC em Outros, o concreto (e a parede) com as porcas e o neoprene dele no pré-moldado, "
-       f"o terreno, a rua e a calçada juntos ({leg})")
+       f"o terreno, a rua, a calçada, o muro, a vaga e a camada Terreno juntos ({leg})")
     ok(aba.avaliar("document.getElementById('painel-titulo').textContent") == "Pintado por sistema", "o título da legenda")
     ok(aba.avaliar("document.querySelectorAll('#painel-corpo input[data-sistema]').length") == 0,
        "por sistema, a legenda já é o Sistema (sem a seção repetida)")
@@ -124,12 +127,12 @@ try:
     # 3. a legenda por perfil em ordem alfabética (antes: da que tinha mais peças para a que tinha menos)
     aba.avaliar(PINTAR % "perfil")
     nomes = [x[0] for x in json.loads(aba.avaliar(LEGENDA) or "[]")]
-    esperado = ["Calçada", "Descida Pluvial", "Estaca", "L 1½\"×3/16\"", "L 2\"×3/16\"", "Laje Alveolar", "Neoprene", "Parede", "Pilar",
-                "PORCA 3/4", "Rua ", "Terreno", "U 150×60×3,00 (FF)", "Ue 250×85×25×2,65"]
+    esperado = ["Bloco", "Calçada", "Descida Pluvial", "Estaca", "L 1½\"×3/16\"", "L 2\"×3/16\"", "Laje Alveolar", "Muro ", "Neoprene",
+                "Parede", "Pilar", "PORCA 3/4", "Rua ", "Terreno", "U 150×60×3,00 (FF)", "Ue 250×85×25×2,65", "Vaga"]
     ok(nomes == esperado, f"por perfil, em ordem alfabética ({nomes})")
     aba.avaliar(PINTAR % "camada")
     nomes = [x[0] for x in json.loads(aba.avaliar(LEGENDA) or "[]")]
-    ok(nomes == ["3 Arquitetura", "200 Pré-Fabricado", "400 Descidas pluviais", "Tesouras"], f"por camada também, com os números em ordem ({nomes})")
+    ok(nomes == ["3 Arquitetura", "200 Pré-Fabricado", "400 Descidas pluviais", "Terreno", "Tesouras"], f"por camada também, com os números em ordem ({nomes})")
 
     # 5. trocar a cor (usuário, 16/10: "não consigo alterar a cor das camadas?"): o quadradinho abre o seletor de cor
     COR = "(() => { const i = visor.fichas.findIndex(f => f.id === '%s'); return [visor.corBase[i * 3], visor.corBase[i * 3 + 1], visor.corBase[i * 3 + 2]]; })()"
