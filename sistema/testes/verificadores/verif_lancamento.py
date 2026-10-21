@@ -196,7 +196,9 @@ try:
     ok("chumbador" in nomes["tipos"].values() and "suporte_terca" in nomes["tipos"].values(),
        "ligações geradas no modelo chegam ao detalhamento (suportes de terça e chumbadores)")
     L2 = json.load(open(os.path.join(DADOS, s, "detalhamento", "lista-de-materiais.json"), encoding="utf-8"))
-    ok(any("BOLT" in a["nome"] for a in L2.get("acessorios") or []), "parafusos na lista de materiais: %s" % L2.get("acessorios"))
+    # desde 16/10 (Q08) o nome vem por extenso ("Parafuso sextavado M12 x 25 – ASTM A307 …") e o do IFC fica na origem
+    ok(any("BOLT" in (a.get("origem") or "") and a["nome"].startswith("Parafuso") for a in L2.get("acessorios") or []),
+       "parafusos na lista de materiais: %s" % L2.get("acessorios"))
 
     # 8) biblioteca de ligações
     aba.navegar(base + "/ligacoes?tipo=suporte_terca_cadeirinha", limite=30)

@@ -57,6 +57,8 @@ try:
     # painel: posição, comprimento, massa de um U150
     ids = json.loads(aba.avaliar("JSON.stringify(window.editor.pesquisarPecas('M14').ids.slice(0, 1))"))
     aba.avaliar(f"window.editor.selecao.definir({json.dumps(ids)}); 1"); aba.drenar(0.8)
+    t0 = time.time()                    # sob a carga da conferência o painel leva mais que 0,8 s (20/10)
+    while time.time() - t0 < 20 and "Comprimento" not in (aba.avaliar("document.body.textContent") or ""): aba.drenar(0.5)
     painel = aba.avaliar("document.querySelector('#painel-propriedades, .painel-propriedades, [data-painel=\"propriedades\"]')?.textContent || document.body.textContent")
     ok("Posição" in painel and "Comprimento" in painel and "5.105" in painel.replace("5105", "5.105") and "Massa" in painel, "painel mostra posição, comprimento (5105 mm) e massa")
     foto(aba, "busca_2_painel.png")

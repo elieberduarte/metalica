@@ -48,6 +48,25 @@ def test_app_le_e_grava_o_mesmo_arquivo(tmp_path):
         app.ritmo_da_conferencia("", arquivo=arq)
 
 
+def _prioridade(pid: int) -> int:
+    import ctypes
+    k = ctypes.windll.kernel32
+    h = k.OpenProcess(0x1000, False, pid)                               # PROCESS_QUERY_LIMITED_INFORMATION
+    try:
+        return k.GetPriorityClass(h)
+    finally:
+        k.CloseHandle(h)
+
+
+def _aplicado(m: str, filho: int, neto: int) -> int:
+    for _ in range(3):
+        assert ritmo.aplicar(m, [filho, neto]) == 2
+        p = _prioridade(neto)
+        if p == {"calmo": 0x40, "cheio": 0x4000}[m]:
+            break
+    return p
+
+
 @pytest.mark.skipif(os.name != "nt", reason="prioridade e processadores pelo Windows")
 def test_arvore_segue_o_modo():
     filho = subprocess.Popen([sys.executable, "-c",
@@ -63,15 +82,11 @@ def test_arvore_segue_o_modo():
             time.sleep(0.25)
         assert neto, "o neto não apareceu na árvore"
         assert filho.pid in ritmo.descendentes(os.getpid())
-        assert ritmo.aplicar("calmo", [filho.pid, neto]) == 2
-        out = subprocess.run(["powershell", "-NoProfile", "-Command",
-                              "(Get-Process -Id %d).PriorityClass; (Get-Process -Id %d).ProcessorAffinity" % (neto, neto)],
-                             capture_output=True, text=True).stdout.split()
-        assert out[0] == "Idle"
-        assert ritmo.aplicar("cheio", [filho.pid, neto]) == 2
-        out = subprocess.run(["powershell", "-NoProfile", "-Command", "(Get-Process -Id %d).PriorityClass" % neto],
-                             capture_output=True, text=True).stdout.split()
-        assert out[0] == "BelowNormal"
+        # a prioridade lida logo depois de aplicar (e de novo, se preciso): dentro da conferência o vigia dela reaplica
+        # o ritmo dela à árvore toda — este teste incluído — a cada 3 s; pelo PowerShell (~1 s) a leitura caía no meio
+        # (conferência da 0.9.0 no cheio, 20/10: 'BelowNormal' == 'Idle')
+        assert _aplicado("calmo", filho.pid, neto) == 0x40              # IDLE_PRIORITY_CLASS
+        assert _aplicado("cheio", filho.pid, neto) == 0x4000            # BELOW_NORMAL_PRIORITY_CLASS
     finally:
         subprocess.run(["taskkill", "/T", "/F", "/PID", str(filho.pid)], capture_output=True)
 

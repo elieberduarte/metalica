@@ -44,7 +44,8 @@ try:
     ok(aba.avaliar("!!document.getElementById('faixa-dev')"), "a faixa laranja de desenvolvimento aparece na tela inicial")
     ok(aba.avaliar("document.title.indexOf('[DEV]') === 0"), f"o título começa com [DEV]: {aba.avaliar('document.title')}")
     rot = aba.avaliar("(document.getElementById('versao-programa') || {}).textContent || ''") or ""
-    ok(rot.endswith(" dev") and "recarregar" not in rot, f"o rótulo da versão diz dev: {rot!r}")
+    # desde b860b39 (20/10) o rótulo diz de onde o código saiu: "v0.9.0 + 6 dev · faeeaf1 (20/10 20:57)"
+    ok((rot.endswith(" dev") or " dev · " in rot) and "recarregar" not in rot, f"o rótulo da versão diz dev: {rot!r}")
     ok(not aba.avaliar("!!document.getElementById('btn-atualizar')"), "sem botão Atualizar")
     # um arquivo de tela muda no disco: o rótulo pede para recarregar
     time.sleep(2.5)                                            # o carimbo do servidor é guardado por 2 s
