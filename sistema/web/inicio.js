@@ -715,28 +715,55 @@ async function iniciar() {
 }
 
 /** Avisa quando há versão mais nova publicada; sem internet, nada aparece. */
+// A versão nova em destaque (21/10, o usuário: "colocar essa mensagem de atualização disponível mais destacada na tela
+// para os outros usuários" — antes era uma linha no pé da lista): a faixa no alto da tela inicial, com as novidades da
+// versão e o Atualizar agora grande; "Depois" esconde por 4 horas (neste computador), e ela volta.
+const DEPOIS_ATUALIZAR = 'metalica.atualizacao.depois';
+
+function novidades(notas, n = 3) {
+  // as primeiras linhas de tópico das notas da versão (o LEIAME: "- Terreno: …"), sem o markdown
+  return String(notas || '').split(/\r?\n/).map(l => l.trim()).filter(l => /^[-*•]\s+/.test(l))
+    .map(l => l.replace(/^[-*•]\s+/, '').replace(/\*\*|`/g, '').replace(/\s*\([0-9a-f]{7,}\)\s*$/, '')).slice(0, n);
+}
+
 async function verificarAtualizacao() {
   try {
     const a = await api('/api/atualizacao');
     if (!a || !a.nova) return;
-    const aviso = el('div', { class: 'atualizacao', role: 'status' },
-      el('span', { texto: `Versão ${a.ultima} disponível (esta é a ${a.atual}). ` }),
-      a.arquivo
-        ? el('a', { href: a.arquivo, texto: `Baixar o instalador${a.tamanho_mb ? ` (${String(a.tamanho_mb).replace('.', ',')} MB)` : ''}`, target: '_blank', rel: 'noopener' })
-        : el('a', { href: a.url, texto: 'Ver no GitHub', target: '_blank', rel: 'noopener' }),
-      el('span', { texto: ' — os projetos ficam onde estão.' }),
-      janelaPropria && a.arquivo
-        ? el('button', { type: 'button', class: 'principal', texto: 'Atualizar agora', title: 'Baixa o instalador e o executa; o programa fecha e reabre na versão nova',
-                         onclick: async (ev) => {
-                           const b = ev.currentTarget; b.disabled = true; b.textContent = 'Baixando…';
-                           try {
-                             const r = await postar('/api/atualizacao/instalar');
-                             aviso.replaceChildren(el('span', { texto: `${r.mensagem} (${String(r.tamanho_mb).replace('.', ',')} MB baixados) — se a janela não voltar em um minuto, abra o Metálica pelo atalho.` }));
-                           } catch (e) { b.disabled = false; b.textContent = 'Atualizar agora'; recado('Não foi possível atualizar', e.message, 'erro'); }
-                         } })
-        : null,
-      el('button', { type: 'button', class: 'discreto', texto: '×', title: 'fechar', onclick: () => aviso.remove() }));
-    $('#pe').before(aviso);
+    let depois = 0;
+    try { depois = +(JSON.parse(localStorage.getItem(DEPOIS_ATUALIZAR) || '{}')[a.ultima] || 0); } catch (e) { depois = 0; }
+    if (Date.now() < depois) return;
+    document.querySelectorAll('.atualizacao').forEach(x => x.remove());
+    const mb = a.tamanho_mb ? ` (${String(a.tamanho_mb).replace('.', ',')} MB)` : '';
+    const lista = novidades(a.notas);
+    const acoes = el('div', { class: 'atualizacao-acoes' });
+    const aviso = el('section', { class: 'atualizacao', role: 'alert', 'aria-label': `Versão ${a.ultima} disponível` },
+      el('div', { class: 'atualizacao-icone', 'aria-hidden': 'true', texto: '⬆' }),
+      el('div', { class: 'atualizacao-texto' },
+        el('div', { class: 'atualizacao-titulo', texto: `Nova versão ${a.ultima} disponível` }),
+        el('div', { class: 'atualizacao-sub', texto: `Você está na ${a.atual}. A atualização leva menos de um minuto e os projetos ficam onde estão.` }),
+        lista.length ? el('ul', { class: 'atualizacao-novidades' }, ...lista.map(t => el('li', { texto: t }))) : null),
+      acoes);
+    if (janelaPropria && a.arquivo) {
+      acoes.append(el('button', { type: 'button', class: 'principal grande', texto: 'Atualizar agora', title: 'Baixa o instalador e o executa; o programa fecha e reabre na versão nova',
+        onclick: async (ev) => {
+          const b = ev.currentTarget; b.disabled = true; b.textContent = 'Baixando…';
+          try {
+            const r = await postar('/api/atualizacao/instalar');
+            aviso.replaceChildren(el('div', { class: 'atualizacao-texto' }, el('div', { class: 'atualizacao-titulo', texto: 'Atualizando…' }),
+              el('div', { class: 'atualizacao-sub', texto: `${r.mensagem} (${String(r.tamanho_mb).replace('.', ',')} MB baixados) — se a janela não voltar em um minuto, abra o Metálica pelo atalho.` })));
+          } catch (e) { b.disabled = false; b.textContent = 'Atualizar agora'; recado('Não foi possível atualizar', e.message, 'erro'); }
+        } }));
+    } else {
+      acoes.append(el('a', { class: 'botao principal grande', href: a.arquivo || a.url, target: '_blank', rel: 'noopener',
+                             texto: a.arquivo ? `Baixar o instalador${mb}` : 'Ver a versão nova' }));
+    }
+    acoes.append(el('button', { type: 'button', class: 'discreto', texto: 'Depois', title: 'Esconde o aviso por 4 horas',
+      onclick: () => {
+        try { localStorage.setItem(DEPOIS_ATUALIZAR, JSON.stringify({ [a.ultima]: Date.now() + 4 * 3600 * 1000 })); } catch (e) { /* sem armazenamento */ }
+        aviso.remove();
+      } }));
+    $('main.gerenciador').prepend(aviso);
   } catch (e) { /* sem rede */ }
 }
 

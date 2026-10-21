@@ -3489,6 +3489,7 @@ def verificar_atualizacao() -> dict:
             if d.get("ultima"):
                 ultima = str(d["ultima"])
                 fora.update({"ultima": ultima, "disponivel": True, "publicada": d.get("publicada") or "",
+                             "notas": str(d.get("notas") or "")[:4000],   # as novidades na faixa da tela inicial (21/10)
                              "nova": _versao_tupla(ultima) > _versao_tupla(versao.VERSAO), "tamanho_mb": d.get("tamanho_mb"),
                              "url": "https://github.com/%s/releases/tag/v%s" % (REPOSITORIO, ultima), "pelo_servico": True})
                 if d.get("arquivo"):
@@ -3509,7 +3510,7 @@ def verificar_atualizacao() -> dict:
     ultima = str(dados.get("tag_name") or dados.get("name") or "").lstrip("vV")
     fora.update({"ultima": ultima, "url": dados.get("html_url"), "disponivel": True,
                  "nova": _versao_tupla(ultima) > _versao_tupla(versao.VERSAO),
-                 "publicada": (dados.get("published_at") or "")[:10]})
+                 "publicada": (dados.get("published_at") or "")[:10], "notas": str(dados.get("body") or "")[:4000]})
     for a in dados.get("assets") or []:
         if str(a.get("name", "")).lower().endswith(".exe"):
             fora["arquivo"] = a.get("browser_download_url")

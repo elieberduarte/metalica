@@ -931,10 +931,26 @@ a.voltar-projetos:hover { background: var(--azul-fraco); }
 }
 
 /* aviso de versão nova no gerenciador */
-.atualizacao { margin: 14px 0 0; padding: 9px 12px; border: 1px solid color-mix(in srgb, var(--azul) 40%, var(--borda));
-  background: var(--azul-fraco, var(--painel2)); border-radius: var(--raio); font-size: 13px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.atualizacao a { color: var(--azul); font-weight: 600; }
-.atualizacao button { margin-left: auto; }
+/* 21/10: a faixa no alto da tela inicial, em destaque (antes uma linha no pé da lista, que ninguém via) */
+.atualizacao { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 0 0 18px; padding: 16px 18px;
+  border-radius: var(--raio); border: 1px solid #e6bb52; color: var(--texto);
+  background: linear-gradient(100deg, color-mix(in srgb, #e6bb52 26%, var(--painel)), color-mix(in srgb, var(--azul) 12%, var(--painel)));
+  box-shadow: 0 4px 18px color-mix(in srgb, #e6bb52 30%, transparent); }
+.atualizacao-icone { flex: none; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 22px; font-weight: 700; color: #3d2c00; background: #e6bb52; animation: atualizacao-pulso 2.2s ease-in-out infinite; }
+@keyframes atualizacao-pulso { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, #e6bb52 60%, transparent); }
+  50% { box-shadow: 0 0 0 9px transparent; } }
+.atualizacao-texto { flex: 1; min-width: 240px; }
+.atualizacao-titulo { font-size: 18px; font-weight: 700; color: var(--texto); }
+.atualizacao-sub { font-size: 13px; color: var(--texto2); margin-top: 2px; }
+.atualizacao-novidades { margin: 6px 0 0; padding-left: 18px; font-size: 13px; color: var(--texto); }
+.atualizacao-novidades li { margin: 2px 0; }
+.atualizacao-acoes { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.atualizacao .grande { font-size: 15px; padding: 10px 20px; font-weight: 700; }
+.atualizacao a.botao { text-decoration: none; display: inline-block; border-radius: var(--raio-p, 6px); background: var(--azul);
+  border: 1px solid var(--azul); color: #fff; }
+.atualizacao a.botao:hover { background: var(--azul2); }
+@media (prefers-reduced-motion: reduce) { .atualizacao-icone { animation: none; } }
 
 /* a obra recebida de outro usuário (21/10, inicio.js verificarRecebidos): um aviso por obra no alto da lista — não
    ".recebido", que é o tipo do projeto recebido de outro projetista (o ícone do cartão) */

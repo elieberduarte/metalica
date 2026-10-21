@@ -88,7 +88,18 @@
     const botao = el('button', { type: 'button', id: 'btn-atualizar', class: tema.className || 'botao',
                                  title: `Versão ${a.ultima} disponível (esta é a ${a.atual}). Salva o trabalho, instala e reabre nesta mesma tela.`,
                                  texto: `Atualizar → ${a.ultima}` });
-    botao.style.cssText = 'border-color:#e6bb52;color:#e6bb52;font-weight:600';
+    // em destaque (21/10, "mais destacada na tela"): o fundo amarelo e o ponto que pulsa, não só o contorno
+    botao.style.cssText = 'border-color:#e6bb52;background:#e6bb52;color:#2b2000;font-weight:700;position:relative';
+    const ponto = el('span', { 'aria-hidden': 'true' });
+    ponto.style.cssText = 'position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;background:#d93025;' +
+      'box-shadow:0 0 0 0 rgba(217,48,37,.6);animation:metalica-pulso-atualizar 1.8s ease-in-out infinite';
+    if (!document.getElementById('estilo-pulso-atualizar')) {
+      const st = document.createElement('style');
+      st.id = 'estilo-pulso-atualizar';
+      st.textContent = '@keyframes metalica-pulso-atualizar{0%,100%{box-shadow:0 0 0 0 rgba(217,48,37,.6)}50%{box-shadow:0 0 0 7px rgba(217,48,37,0)}}';
+      document.head.append(st);
+    }
+    botao.append(ponto);
     botao.addEventListener('click', async () => {
       if (!window.confirm(`Instalar a versão ${a.ultima} agora?\n\nO trabalho aberto é gravado antes; o programa fecha e reabre nesta mesma tela (leva uns 20 segundos).`)) return;
       botao.disabled = true; botao.textContent = 'Gravando…';
