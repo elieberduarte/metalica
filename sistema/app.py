@@ -3086,6 +3086,11 @@ def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] =
     pasta = os.path.join(g._existente(s), "detalhamento")
     caminho = os.path.join(pasta, lista_producao.ARQUIVO_JSON)
     corpo = corpo or {}
+    if not recalcular and not os.path.exists(caminho):
+        estudo = _lista_do_estudo_galpao(s)          # o galpão do configurador antes do detalhamento (20/10)
+        if estudo is not None:
+            estudo["arquivos"] = {}
+            return estudo
     if not recalcular and os.path.exists(caminho):
         with open(caminho, encoding="utf-8") as f:
             lista = json.load(f)
@@ -3145,13 +3150,38 @@ def pdf_da_lista_de_materiais(s: str) -> dict:
     return {"pdf": _descrever_arquivo(pdf, pasta)}
 
 
+def _lista_do_estudo_galpao(s: str) -> Optional[dict]:
+    """No galpão do configurador ainda não detalhado (sem a lista gravada), a lista do estudo — o dimensionamento
+    direto ao orçamento (usuário, 20/10), saida/estudo_galpao.py; senão None."""
+    from saida import lista_producao
+    pasta = _gerente()._existente(s)
+    if os.path.exists(os.path.join(pasta, "detalhamento", lista_producao.ARQUIVO_JSON)):
+        return None
+    p = _gerente().ler(s)
+    if p.get("tipo") != "galpao" or not p.get("dados"):
+        return None
+    from nucleo.galpao import dimensionar as calcular
+    from saida import estudo_galpao
+    _progresso(s, "dimensionando o galpão para o estudo…")
+    return estudo_galpao.lista_do_estudo(calcular(_dados_de(p["dados"])))
+
+
+def _lista_do_orcamento(s: str) -> dict:
+    """A lista que o orçamento e a proposta usam: a do detalhamento; no galpão do configurador ainda não detalhado,
+    a do estudo."""
+    return _lista_do_estudo_galpao(s) or lista_de_materiais(s)
+
+
 def _orcamento_montado(s: str, edicoes: Optional[dict] = None) -> dict:
     """O resumo de orçamento do projeto (saida/orcamento.py): a lista de materiais gravada com a
     tabela de preços vigente (<dados>/fabrica/precos/) e as edições do dono."""
     from saida import lista_producao, orcamento as O
     pasta = _gerente()._existente(s)
-    lista = lista_de_materiais(s)
+    lista = _lista_do_orcamento(s)
     avisos_ = []
+    if lista.get("estudo"):
+        from saida import estudo_galpao
+        avisos_.append(estudo_galpao.aviso_do_estudo(lista))
     cam = os.path.join(pasta, "detalhamento", lista_producao.ARQUIVO_JSON)
     mt = _mtime_do_modelo(s)
     if mt and os.path.exists(cam) and os.stat(cam).st_mtime_ns < mt:
@@ -3214,7 +3244,7 @@ def rota_comercial(s: str, acao: str = "", corpo: Optional[dict] = None, porta: 
     from saida import comercial_servico as CS
     g = _gerente()
     pasta = g._existente(s)
-    ctx = CS.Contexto(s, pasta, PROJETOS, g.ler(s), lambda: lista_de_materiais(s), lambda: _orcamento_montado(s),
+    ctx = CS.Contexto(s, pasta, PROJETOS, g.ler(s), lambda: _lista_do_orcamento(s), lambda: _orcamento_montado(s),
                       lambda cam: _descrever_arquivo(cam, pasta), porta)
     try:
         return CS.tratar(ctx, acao, corpo, avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))

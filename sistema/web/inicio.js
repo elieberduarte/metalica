@@ -114,7 +114,8 @@ const expandidos = new Set();   // projetos com todos os desenhos à mostra
  * abre a primeira em andamento (ou a primeira que falta). */
 function etapasDoCartao(p) {
   const et = p.etapas || [];
-  if (!et.length || p.tipo === 'galpao' && !p.tem_modelo) return null;
+  // o galpão do configurador com dados já tem as etapas (vai direto ao orçamento, 20/10)
+  if (!et.length || p.tipo === 'galpao' && !p.tem_modelo && !p.tem_dados) return null;
   const alvo = et.find(e => e.situacao === 'andamento') || et.find(e => !e.situacao) || et[et.length - 1];
   return el('div', { class: 'cartao-etapas', onclick: (ev) => ev.stopPropagation() },
     et.map((e, i) => el('button', { type: 'button', class: 'ce-etapa ' + (e.situacao || ''), title: `${e.nome}${e.situacao === 'feita' ? ' — feita' : e.situacao === 'andamento' ? ' — em andamento' : ''}`,

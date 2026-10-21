@@ -2013,3 +2013,25 @@ function abrirEditor3D() {
   window.location.href = url;
 }
 window.abrirEditor3D = abrirEditor3D;
+
+/* ------------------------------------------------------------------ orçamento (estudo)
+ * O dimensionamento vai direto ao orçamento (usuário, 20/10): a aba Orçamento usa a lista do cálculo enquanto o
+ * galpão não é detalhado. Só onde a parte comercial existe (o programa instalado não a leva). */
+async function abrirOrcamento() {
+  if (!PROJETO) return;
+  clearTimeout(temporizadorProjeto);
+  await gravarNoProjeto();                       // o orçamento recalcula pelos dados gravados
+  window.location.href = '/comercial?projeto=' + encodeURIComponent(PROJETO) + '#orcamento';
+}
+window.abrirOrcamento = abrirOrcamento;
+
+async function mostrarBotaoOrcamento() {
+  const b = document.getElementById('btn-orcamento');
+  if (!b || !PROJETO) return;
+  try {
+    const r = await fetch('/api/projetos/' + encodeURIComponent(PROJETO) + '/etapas');
+    const j = r.ok ? await r.json() : null;
+    b.hidden = !((j && j.etapas) || []).some(e => e.chave === 'comercial');
+  } catch { b.hidden = true; }
+}
+document.addEventListener('DOMContentLoaded', mostrarBotaoOrcamento);

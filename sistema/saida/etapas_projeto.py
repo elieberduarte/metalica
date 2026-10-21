@@ -52,7 +52,9 @@ def etapas(slug: str, pasta: str, projeto: dict, comercial_ligado: bool = True) 
     def marcada(k: str) -> str:
         return str((marcadas.get(k) or {}).get("situacao") or "")
 
-    entrada = bool(projeto.get("origem_ifc") or projeto.get("projeto_recebido") or tem_modelo or desenhos)
+    # o galpão do configurador com os dados preenchidos já está na engenharia (e vai direto ao orçamento, 20/10)
+    entrada = bool(projeto.get("origem_ifc") or projeto.get("projeto_recebido") or tem_modelo or desenhos
+                   or (galpao and projeto.get("dados")))
     modelo_feito = tem_modelo and (_tem(pasta, "esforcos.json") or bool(proposta) or "lista-de-materiais.json" in detalh)
     pranchas = any("prancha" in n.lower() for n in desenhos + detalh)
     engenharia = sit(pranchas or marcada("projeto") == "concluida", entrada or modelo_feito or "nomes.json" in detalh)
