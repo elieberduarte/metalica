@@ -161,7 +161,7 @@ export class Terreno {
     const wms = t && typeof t.fonte === 'object' ? t.fonte : { url: '', camada: '' };
     let html = `<p class="titulo-secao">Local da obra</p>
       <form id="terreno-busca" class="terreno-busca"><input id="terreno-q" type="search" autocomplete="off"
-        placeholder="Endereço ou coordenada (cole do Google Maps)"><button type="submit">Buscar</button></form>
+        placeholder="Endereço ou coordenada (Google Maps ou geoportal)"><button type="submit">Buscar</button></form>
       <div id="terreno-resultados"></div>`;
     if (t) {
       html += `<dl class="terreno-dl"><dt>Lugar</dt><dd>${esc(t.endereco || 'coordenada')}</dd>
@@ -184,8 +184,9 @@ export class Terreno {
         <button type="button" id="terreno-baixar" class="forte">${im ? 'Baixar a imagem de novo' : 'Baixar a imagem do terreno'}</button>
         <button type="button" id="terreno-esquecer">Tirar o local</button>`;
     } else {
-      html += `<p class="dica">Ache o terreno pelo endereço, ou cole a coordenada do Google Maps (botão direito no lote → a
-        primeira linha). A obra entra com o meio no ponto achado; depois o Ajustar acerta a posição e o giro.</p>`;
+      html += `<p class="dica">Ache o terreno pelo endereço, ou cole a coordenada: do Google Maps (botão direito no lote → a
+        primeira linha) ou do geoportal da prefeitura (a latitude e a longitude do lote, em graus/minutos/segundos, ou a UTM
+        SIRGAS 2000). A obra entra com o meio no ponto achado; depois o Ajustar acerta a posição e o giro.</p>`;
     }
     this.ui.abrirPainel('terreno', 'Terreno', `<div class="painel-terreno">${html}</div>`);
     this._ligarPainel();

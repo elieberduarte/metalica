@@ -203,3 +203,45 @@ def test_fonte_sem_o_nivel_desce_ate_ter_imagem(tmp_path, monkeypatch):
     L.gravar(g, s, {"lat": CASCAVEL[0], "lon": CASCAVEL[1], "ponto": [0, 0], "norte": 0, "fonte": "teste"})
     im = L.baixar_imagem(g, s, {"caixa": [-30_000, -20_000, 30_000, 20_000]})["imagem"]
     assert im["zoom"] == 17
+
+
+# o geoportal de Cascavel (IPC, 20/10): o "Lote selecionado" dá a latitude e a longitude em graus/minutos/segundos e o
+# canto da tela a UTM SIRGAS 2000 — colados como estão, viram o lugar (antes só os graus decimais do Google Maps)
+@pytest.mark.parametrize("texto", [
+    'Latitude: 24° 57\' 29.66" S\nLongitude: 53° 29\' 5.18" O',
+    "24°57'29.66\"S 53°29'5.18\"W",
+    "Latitude: 24º 57’ 29.66” S Longitude: 53º 29’ 5.18” O",
+])
+def test_coordenada_em_graus_minutos_segundos(texto):
+    assert L.coordenada_do_texto(texto) == pytest.approx((-24.958239, -53.484772), abs=1e-6)
+
+
+def _geo_para_utm(lat, lon, fuso):
+    """a conta de ida (Snyder), para conferir a volta do local_obra pela ida e volta"""
+    a, f, k0 = 6378137.0, 1 / 298.257222101, 0.9996
+    e2 = f * (2 - f); ep2 = e2 / (1 - e2)
+    fi, la = math.radians(lat), math.radians(lon - ((fuso - 1) * 6 - 180 + 3))
+    n = a / math.sqrt(1 - e2 * math.sin(fi) ** 2); t = math.tan(fi) ** 2; c = ep2 * math.cos(fi) ** 2; A = math.cos(fi) * la
+    m = a * ((1 - e2 / 4 - 3 * e2 ** 2 / 64 - 5 * e2 ** 3 / 256) * fi - (3 * e2 / 8 + 3 * e2 ** 2 / 32 + 45 * e2 ** 3 / 1024) * math.sin(2 * fi)
+             + (15 * e2 ** 2 / 256 + 45 * e2 ** 3 / 1024) * math.sin(4 * fi) - (35 * e2 ** 3 / 3072) * math.sin(6 * fi))
+    x = k0 * n * (A + (1 - t + c) * A ** 3 / 6 + (5 - 18 * t + t ** 2 + 72 * c - 58 * ep2) * A ** 5 / 120) + 500_000
+    y = k0 * (m + n * math.tan(fi) * (A ** 2 / 2 + (5 - t + 9 * c + 4 * c ** 2) * A ** 4 / 24
+                                       + (61 - 58 * t + t ** 2 + 600 * c - 330 * ep2) * A ** 6 / 720))
+    return x, y + (10_000_000 if lat < 0 else 0)
+
+
+@pytest.mark.parametrize("lat,lon,fuso", [(-24.958239, -53.484772, 22), (-25.4284, -49.2733, 22), (-23.5505, -46.6333, 23),
+                                          (-3.7319, -38.5267, 24)])
+def test_utm_ida_e_volta(lat, lon, fuso):
+    x, y = _geo_para_utm(lat, lon, fuso)
+    la, lo = L.utm_para_geo(x, y, fuso)
+    assert _dist_m((lat, lon), (la, lo)) < 0.01                       # menos de 1 cm
+
+
+@pytest.mark.parametrize("texto,fuso", [("X: %.4f, Y: %.4f", 22), ("%.4f %.4f 22S", 22), ("E %.0f N %.0f fuso 22", 22)])
+def test_coordenada_utm_do_geoportal(texto, fuso):
+    x, y = _geo_para_utm(-24.958239, -53.484772, fuso)
+    c = L.coordenada_do_texto(texto % (x, y))
+    assert _dist_m(c, (-24.958239, -53.484772)) < 1.0                 # o arredondamento do texto
+    assert L.coordenada_do_texto("677000 7184000 23K")[1] == pytest.approx(-43.24, abs=0.01)   # o fuso escrito vale
+    assert L.coordenada_do_texto("Rua Maranhão 3411, Cascavel") is None

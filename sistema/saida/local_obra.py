@@ -174,8 +174,12 @@ _VIRGULA = r"[-+]?\d{1,3},\d+"
 
 def coordenada_do_texto(texto: str) -> Optional[tuple]:
     """A coordenada colada: "-24.95, -53.45" (o botão direito do Google Maps), "-24,95 -53,45" (vírgula decimal) ou o
-    link do Google Maps (…/@-24.95,-53.45,17z ou !3d-24.95!4d-53.45). None se o texto não é coordenada."""
+    link do Google Maps (…/@-24.95,-53.45,17z ou !3d-24.95!4d-53.45), e as do geoportal da prefeitura: graus/minutos/
+    segundos (24° 57' 29.66" S, 53° 29' 5.18" O) ou UTM SIRGAS 2000 (X 249306, Y 7237399). None se não é coordenada."""
     t = str(texto or "").strip()
+    c = _gms_do_texto(t) or _utm_do_texto(t)
+    if c:
+        return c
     m = (re.search(r"!3d(%s)!4d(%s)" % (_PONTO, _PONTO), t) or re.search(r"@(%s),(%s)" % (_PONTO, _PONTO), t)
          or re.fullmatch(r"(%s)\s*[,;\s]\s*(%s)" % (_PONTO, _PONTO), t)
          or re.fullmatch(r"(%s)\s*[;\s]\s*(%s)" % (_VIRGULA, _VIRGULA), t))
@@ -183,6 +187,69 @@ def coordenada_do_texto(texto: str) -> Optional[tuple]:
         return None
     lat, lon = (float(v.replace(",", ".")) for v in (m.group(1), m.group(2)))
     return (lat, lon) if -90 <= lat <= 90 and -180 <= lon <= 180 else None
+
+
+# graus, minutos e segundos com o hemisfério: 24° 57' 29.66" S (o "Lote selecionado" do geoportal de Cascavel, 20/10)
+_GMS = r"(\d{1,3})\s*[°º]\s*(\d{1,2})\s*['′’]\s*(\d{1,2}(?:[.,]\d+)?)\s*(?:\"|″|''|”)?\s*([NSLOWE])(?![A-Za-z])"
+
+
+def _gms_do_texto(t: str) -> Optional[tuple]:
+    """Latitude e longitude em graus/minutos/segundos ("24° 57' 29.66" S … 53° 29' 5.18" O"; O/W = oeste, L/E = leste)."""
+    achados = re.findall(_GMS, t, flags=re.I)
+    if len(achados) != 2:
+        return None
+    lat = lon = None
+    for g, mi, se, h in achados:
+        v = int(g) + int(mi) / 60 + float(se.replace(",", ".")) / 3600
+        h = h.upper()
+        if h in "NS":
+            lat = -v if h == "S" else v
+        else:
+            lon = -v if h in "OW" else v
+    if lat is None or lon is None or not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return None
+    return (lat, lon)
+
+
+def _utm_do_texto(t: str) -> Optional[tuple]:
+    """UTM SIRGAS 2000 ("X: 249306.0253, Y: 7237399.2034"): o leste (6 dígitos) e o norte (7 dígitos), com o fuso se vier
+    escrito ("22S", "fuso 22", "zona 22J"); sem ele, o 22 sul (o oeste e o centro do Paraná, SC e o oeste do RS)."""
+    nums = re.findall(r"(?<![\d.,])(\d{6,7}(?:[.,]\d+)?)(?![\d])", t)
+    if len(nums) != 2:
+        return None
+    a, b = (float(v.replace(",", ".")) for v in nums)
+    leste, norte = (a, b) if a < b else (b, a)
+    if not (100_000 <= leste <= 900_000 and 1_000_000 <= norte <= 10_000_000):
+        return None
+    m = re.search(r"(?:fuso|zona|zone)\s*(\d{1,2})|(?<![\d.,])(\d{2})\s*([C-X])(?![A-Za-z])", t, flags=re.I)
+    fuso = int(m.group(1) or m.group(2)) if m else 22
+    letra = (m.group(3) or "").upper() if m else ""
+    # no Brasil "22S" é o fuso 22 sul (não a faixa S do MGRS); as outras letras são as faixas (C–M sul, N–X norte)
+    norte_hem = letra == "N" or (letra not in ("", "S") and letra > "N")
+    return utm_para_geo(leste, norte, fuso, sul=not norte_hem)
+
+
+def utm_para_geo(leste: float, norte: float, fuso: int, sul: bool = True) -> tuple:
+    """UTM → (lat, lon) no elipsoide GRS80 (SIRGAS 2000; o WGS 84 difere em décimos de milímetro)."""
+    a, f, k0 = 6378137.0, 1 / 298.257222101, 0.9996
+    e2 = f * (2 - f)
+    ep2 = e2 / (1 - e2)
+    x = leste - 500_000.0
+    y = norte - (10_000_000.0 if sul else 0.0)
+    m = y / k0
+    mu = m / (a * (1 - e2 / 4 - 3 * e2 ** 2 / 64 - 5 * e2 ** 3 / 256))
+    e1 = (1 - math.sqrt(1 - e2)) / (1 + math.sqrt(1 - e2))
+    f1 = (mu + (3 * e1 / 2 - 27 * e1 ** 3 / 32) * math.sin(2 * mu) + (21 * e1 ** 2 / 16 - 55 * e1 ** 4 / 32) * math.sin(4 * mu)
+          + (151 * e1 ** 3 / 96) * math.sin(6 * mu) + (1097 * e1 ** 4 / 512) * math.sin(8 * mu))
+    c1 = ep2 * math.cos(f1) ** 2
+    t1 = math.tan(f1) ** 2
+    n1 = a / math.sqrt(1 - e2 * math.sin(f1) ** 2)
+    r1 = a * (1 - e2) / (1 - e2 * math.sin(f1) ** 2) ** 1.5
+    d = x / (n1 * k0)
+    lat = f1 - (n1 * math.tan(f1) / r1) * (d ** 2 / 2 - (5 + 3 * t1 + 10 * c1 - 4 * c1 ** 2 - 9 * ep2) * d ** 4 / 24
+                                          + (61 + 90 * t1 + 298 * c1 + 45 * t1 ** 2 - 252 * ep2 - 3 * c1 ** 2) * d ** 6 / 720)
+    lon = (d - (1 + 2 * t1 + c1) * d ** 3 / 6 + (5 - 2 * c1 + 28 * t1 - 3 * c1 ** 2 + 8 * ep2 + 24 * t1 ** 2) * d ** 5 / 120) / math.cos(f1)
+    return (math.degrees(lat), (fuso - 1) * 6 - 180 + 3 + math.degrees(lon))
 
 
 def _baixar(url: str, tempo: float = 20.0) -> bytes:
