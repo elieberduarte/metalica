@@ -243,8 +243,8 @@ def _xg_bf(perfil):
 
 
 def _composto_a_mao(peca="TT"):
-    """tesoura 2U composto no plano x = 0: os dois U a ±60 (as almas no plano, cada boca para o seu lado), uma
-    cantoneira do par dentro de cada boca, encostada na alma (a ±(60 − xg + t + xl) ≈ ±57)"""
+    """tesoura 2U composto no plano x = 0: os dois U a ±60 (as almas no plano, cada boca para o seu lado), o par de
+    cantoneiras por dentro dos perfis, no vão entre as almas (a face de dentro de cada alma a ±(60 − xg) ≈ ±49): ±40"""
     at = {"origem": {"peca": peca}}
     bs = []
     for z, pt in ((1000, "banzo_sup"), (0, "banzo_inf")):
@@ -257,8 +257,8 @@ def _composto_a_mao(peca="TT"):
                         atributos=dict(at)))
     for k, (y0, y1) in enumerate(((0, 1500), (3000, 1500), (3000, 4500), (6000, 4500))):
         for lado in (-1.0, 1.0):
-            bs.append(Barra(nome="D%d%s" % (k, "a" if lado < 0 else "b"), inicio=(lado * 57.0, y0, 1000),
-                            fim=(lado * 57.0, y1, 0), perfil=L_AL, papel="diagonal", rotacao=0.0,
+            bs.append(Barra(nome="D%d%s" % (k, "a" if lado < 0 else "b"), inicio=(lado * 40.0, y0, 1000),
+                            fim=(lado * 40.0, y1, 0), perfil=L_AL, papel="diagonal", rotacao=0.0,
                             atributos=dict(at, cantoneira_dupla="a" if lado < 0 else "b")))
     return bs
 
@@ -276,8 +276,8 @@ def test_2_9_composto_cada_u_abre_para_o_seu_lado():
     assert [e["nome"] for e in R.conferir(bs) if e["regra"] == "2.9"] == ["Bsup+60"]
     R.aplicar(bs)
     assert _boca_x(b) == pytest.approx(1.0, abs=1e-6) and b.inicio[0] == pytest.approx(60.0)   # girou, não andou
-    for d in (x for x in bs if x.perfil == L_AL):     # cada cantoneira com a aba para longe da alma do seu U
-        assert R.lado_da_aba(d, N) == (1 if d.inicio[0] > 0 else -1), d.nome
+    for d in (x for x in bs if x.perfil == L_AL):     # cada cantoneira com a aba para o centro (longe da alma)
+        assert R.lado_da_aba(d, N) == (-1 if d.inicio[0] > 0 else 1), d.nome
     assert R.aplicar(bs)[1] == 0                      # idempotente
 
 
@@ -352,25 +352,25 @@ def _modelo_composto_ponta(dupla=False, sentido=1.0, ponta=0.0):
 
 
 @pytest.mark.parametrize("sentido", [1.0, -1.0])
-def test_2_9a_par_dentro_das_bocas_nao_vira_o_banzo(sentido):
-    """o composto com as diagonais em 2L, uma dentro de cada boca (a T2 do Hangar): os dois lados de cantoneiras não se
-    ligam (a ~150 mm) e cada lado era uma treliça com o centro deslocado — o U do outro lado, a 1,6 mm desse centro,
-    era tomado como ponta e girado com a boca para baixo (21/10, os U (b) da T2-A). Cada U com a boca para o seu lado,
-    cada cantoneira com a aba para longe da alma, a regra limpa; na linha desenhada nos dois sentidos"""
+def test_2_9_par_por_dentro_dos_perfis_e_o_banzo_nao_vira(sentido):
+    """o composto com as diagonais em 2L (a T2 do Hangar): todas por dentro dos perfis, no vão entre as almas, a aba
+    que atravessa o plano para o centro (usuário, 21/10: "essas cantoneiras precisam seguir o mesmo modelo das que
+    ajustei manualmente, por dentro dos perfis" — antes uma ia dentro de cada boca). E quando estavam nas bocas os dois
+    lados não se ligavam e cada lado era uma treliça com o centro deslocado — o U do outro lado era tomado como ponta e
+    girado com a boca para baixo (os U (b) da T2-A). Na linha desenhada nos dois sentidos"""
     bs = _modelo_composto_ponta(dupla=True, sentido=sentido)
     banzos = [b for b in bs if b.perfil == U_BZ and not (b.atributos or {}).get("ponta_composto")]
     assert banzos
     for b in banzos:
         assert _boca_x(b) == pytest.approx(1.0 if b.inicio[0] > 0 else -1.0, abs=1e-6), (b.nome, b.rotacao)
-    from nucleo3d.geometria import resolver_perfil
+    from nucleo3d.geometria import resolver_perfil, secao
     meio_vao = float(resolver_perfil(U_BZ).d) / 2.0   # a face de dentro de cada alma
     ls = [b for b in bs if b.perfil == L_AL and (b.atributos or {}).get("cantoneira_dupla")]
     assert len(ls) == 2 * 4                           # as 4 diagonais em par (os montantes do teste vão em L simples)
-    entre = [b for b in ls if abs(b.inicio[0]) < meio_vao]
-    assert len(entre) == 2 * 2                        # as duas que chegam no 45°: entre as almas (21/10)
-    for b in ls:
-        para_fora = 1 if b.inicio[0] > 0 else -1      # dentro da boca: a aba para longe da alma; entre: para o centro
-        assert R.lado_da_aba(b, N) == (-para_fora if b in entre else para_fora), b.nome
+    xl = -min(q[0] for q in secao(resolver_perfil(L_AL)))
+    for b in ls:                                      # as costas na face de dentro da alma, a aba para o centro
+        assert abs(b.inicio[0]) == pytest.approx(meio_vao - xl, abs=0.5), b.nome
+        assert R.lado_da_aba(b, N) == (-1 if b.inicio[0] > 0 else 1), b.nome
     _sem_erros(bs)
 
 
@@ -380,14 +380,14 @@ def test_2_9_par_que_so_encosta_no_u_entra_na_regra():
     bs = _composto_a_mao()
     at = {"origem": {"peca": "TT"}}
     for nome, lado in (("DPa", -1.0), ("DPb", 1.0)):     # rotação 0 nas duas: uma com a aba para o lado da alma
-        bs.append(Barra(nome=nome, inicio=(lado * 57.0, 5200, 1000), fim=(lado * 57.0, 5700, 0), perfil=L_AL,
+        bs.append(Barra(nome=nome, inicio=(lado * 40.0, 5200, 1000), fim=(lado * 40.0, 5700, 0), perfil=L_AL,
                         papel="diagonal", rotacao=0.0, atributos=dict(at, cantoneira_dupla="a" if lado < 0 else "b")))
     por = _por_nome(bs)
-    errado = [n for n in ("DPa", "DPb") if R.lado_da_aba(por[n], N) != (1 if por[n].inicio[0] > 0 else -1)]
+    errado = [n for n in ("DPa", "DPb") if R.lado_da_aba(por[n], N) != (-1 if por[n].inicio[0] > 0 else 1)]
     assert errado and set(errado) <= {e["nome"] for e in R.conferir(bs)}
     R.aplicar(bs)
     for n in ("DPa", "DPb"):
-        assert R.lado_da_aba(por[n], N) == (1 if por[n].inicio[0] > 0 else -1), n
+        assert R.lado_da_aba(por[n], N) == (-1 if por[n].inicio[0] > 0 else 1), n
 
 
 @pytest.mark.parametrize("sentido", [1.0, -1.0])
@@ -462,6 +462,64 @@ def test_2_9a_u_simples_quadro_da_ponta_sentado_na_chapa(sentido):
     assert len(chanfros) == 2 and all(c.cortes_inicio and c.cortes_fim for c in chanfros)
     assert all(b.cortes_inicio or b.cortes_fim for b in sup)                          # o banzo de cima no 45°
     _sem_erros(bs)
+
+
+def _confere_presilha(p, a, b):
+    """a presilha p do par a/b: uma aba ao longo da barra, de uma aba deitada à outra (sem entrar nelas), a costa da aba
+    ao longo da barra na face das abas de dentro (as que atravessam o plano)"""
+    w = R._unit(R._sub(a.fim, a.inicio))
+    u, v, _w = R._eixos(p)
+    assert max(abs(R._dot(u, w)), abs(R._dot(v, w))) > math.cos(math.radians(1.0)), p.nome      # segue a inclinação
+    fa, fb = R._faixa(a, N), R._faixa(b, N)
+    pres = sorted((R._dot(p.inicio, N), R._dot(p.fim, N)))
+    lo_par, hi_par = min(fa[0], fb[0]), max(fa[1], fb[1])
+    ta = R._espessura(a.perfil)
+    assert pres[0] == pytest.approx(lo_par + ta, abs=0.2) and pres[1] == pytest.approx(hi_par - ta, abs=0.2), p.nome  # não fura
+    ua, va, _ = R._eixos(a)
+    deit = va if abs(R._dot(ua, N)) > abs(R._dot(va, N)) else ua
+    pdir = R._unit(R._sub(deit, R._mul(w, R._dot(deit, w))))
+    assert R._faixa(p, pdir)[0] == pytest.approx(R._faixa(a, pdir)[0] + ta, abs=0.2), p.nome    # nas abas de dentro
+
+
+def test_3_3_presilha_segue_a_inclinacao_e_nao_fura_a_cantoneira():
+    """usuário, 21/10 (o Hangar): "esses espaçadores precisam seguir a inclinação da treliça, percebi esse mesmo erro no
+    projeto do posto" e "furando a cantoneira" — o gerador punha a presilha com giro 0 e de fora a fora do par; no
+    Posto, 680 de 7 mil atravessavam as abas e 51 estavam tortas. A regra 3.3 põe toda presilha no lugar"""
+    bs, _d = _modelo_simples_ponta()
+    pres = [b for b in bs if b.papel == "presilha"]
+    assert pres and "3.3" not in _regras(bs)
+    grade = R._grade_de_pares(R.trelicas(bs))
+    diag = 0
+    for p in pres:
+        a, b, _n = R._par_da_presilha(p, grade)
+        _confere_presilha(p, a, b)
+        diag += abs(R._unit(R._sub(a.fim, a.inicio))[2]) < 0.95
+    assert diag                                      # também as das diagonais (as inclinadas)
+    # torta (giro 0, de fora a fora, como o gerador fazia) e deslocada para cima das abas (como no Posto): acusada e corrigida
+    p0, p1 = pres[0], pres[-1]
+    p0.rotacao = (p0.rotacao + 37.0) % 360.0
+    n_ = R._unit(R._sub(p1.fim, p1.inicio))
+    p1.inicio, p1.fim = R._add(p1.inicio, R._mul(n_, -9.0)), R._add(p1.fim, R._mul(n_, 9.0))
+    assert {e["nome"] for e in R.conferir(bs) if e["regra"] == "3.3"} == {p0.nome, p1.nome}
+    assert R.presilhas_no_lugar(bs) == 2 and "3.3" not in _regras(bs)
+
+
+def test_3_3_presilha_acompanha_a_cantoneira_que_a_regra_moveu():
+    """a cantoneira que a regra move (o nó no eixo, o recuo) ou gira leva a presilha junto — no Posto as presilhas
+    ficavam onde estavam e saíam tortas e fora do par"""
+    bs, _d = _modelo_simples_ponta()
+    grade = R._grade_de_pares(R.trelicas(bs))
+    a = b = p = None
+    for pr in (x for x in bs if x.papel == "presilha"):
+        a, b, _n = R._par_da_presilha(pr, grade)
+        if abs(R._unit(R._sub(a.fim, a.inicio))[2]) < 0.95:          # a de uma diagonal (inclinada)
+            p = pr
+            break
+    assert p is not None
+    for L in (a, b):                                  # o par gira um pouco no plano (o nó foi para o eixo do banzo)
+        L.fim = (L.fim[0], L.fim[1] + 60.0, L.fim[2])
+    R.aplicar(bs)
+    _confere_presilha(p, a, b)
 
 
 def test_2_9a_composto_45_sobe_ate_o_topo_do_banzo_superior():

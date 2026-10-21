@@ -545,21 +545,6 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             if 20.0 <= ang <= 70.0 and any(min(math.dist(tp, (s[0], s[1])), math.dist(tp, (s[2], s[3]))) < 2.0 for tp in topos):
                 chanfros.add(j)
         _ponta_no_final(segs, papeis, chanfros, internas, perfil_banzo, composto=sec_banzo == "composto")
-    # a diagonal que chega na ponta do composto (encosta no montante de extremidade ou no 45°): o par vai para o vão
-    # entre as almas, não para dentro das bocas — dentro da boca ela não alcança o U central (usuário, 21/10)
-    na_ponta = set()
-    if sec_banzo == "composto":
-        try:
-            from nucleo3d.geometria import resolver_perfil
-            d_bz = float(resolver_perfil(perfil_banzo).d or 0.0)
-        except Exception:                              # noqa: BLE001
-            d_bz = 0.0
-        pecas_ponta = [segs[j] for j in range(len(segs)) if papeis[j] == "extremidade" or j in chanfros]
-        for j, s in enumerate(segs):
-            if papeis[j].startswith("banzo") or papeis[j] == "extremidade" or j in internas:
-                continue
-            if any(_dist_seg_2d(p, (q[0], q[1]), (q[2], q[3])) <= d_bz for p in ((s[0], s[1]), (s[2], s[3])) for q in pecas_ponta):
-                na_ponta.add(j)
     sup = [segs[i] for i in pares if papeis[i] == "banzo_sup"]
     # a alma em linha simples: as barras que dizem de que lado fica o miolo de cada banzo (a regra da boca do U)
     alma = [segs[i] for i in range(len(segs)) if i not in pares and i not in internas
@@ -765,18 +750,19 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             pu = resolver_perfil(perfis_b_banzo or perfis.get("banzo_sup") or perfis.get("banzo_inf"))
             pl = resolver_perfil(perfil)
             if abraca:
-                # 2.9: uma cantoneira dentro da boca de cada U do composto, a aba em pé encostada na face de dentro da
-                # alma (cada alma a vão/2 do plano): o centro dela a vão/2 + a espessura da alma + da aba ao centroide
+                # 2.9: o par por dentro dos perfis — no vão entre as almas dos dois U, as costas da aba deitada na face
+                # de dentro de cada alma (cada uma a vão/2 do plano), a aba que atravessa o plano para o centro (usuário,
+                # 21/10: "essas cantoneiras precisam seguir o mesmo modelo das que ajustei manualmente, por dentro dos
+                # perfis" — antes ia uma dentro de cada boca)
                 xl = -min(q[0] for q in secao(pl))
-                t_u = float(pu.tw or pu.tf or 0.0)
                 vao_u = (vaos_b_banzo if vaos_b_banzo is not None else max(vao_da_alma, float(pu.d or 0.0)))
-                # a que chega na ponta: no vão entre as almas, as costas da aba deitada na face de dentro de cada alma
-                afast = (vao_u / 2.0 - xl) if i in na_ponta else (vao_u / 2.0 + t_u + xl)
+                afast = vao_u / 2.0 - xl
             else:
                 # 2.5: o U simples com a boca para dentro do vão — uma em cada aba do U, encostada na face de dentro da aba
                 afast = max(float(pu.d or 0.0) / 2.0 - float(pu.tf or pu.tw or 0.0) - float(pl.bf or 0.0) / 2.0, 0.0)
         except Exception:                              # noqa: BLE001 — sem as medidas, encostadas no plano
             afast = 0.0
+        par_ids = []
         for lado, g in ((-1.0, giro), (1.0, giro + 90.0)):
             dl = tuple(lado * afast * c for c in fora_do_plano)
             bl = Barra(inicio=tuple(A[c] + dl[c] for c in range(3)), fim=tuple(B[c] + dl[c] for c in range(3)), perfil=perfil,
@@ -784,6 +770,7 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
                        atributos=dict(atr, cantoneira_dupla="a" if lado < 0 else "b"))
             doc.add(bl)
             feitas.append(bl)
+            par_ids.append(bl.id)
             n += 1
         # as presilhas que ligam as duas cantoneiras (NBR 8800:2024, 5.3.6.1 — usuário, 12/10): igualmente espaçadas entre
         # os nós, atravessando o par; a quantidade da nota do projeto (`presilhas` do tipo: {qtd, perfil}), nunca abaixo
@@ -798,10 +785,15 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
         for k_p in range(1, n_p + 1):
             f = k_p / (n_p + 1.0)
             cq = tuple(A[c] + (B[c] - A[c]) * f for c in range(3))
-            doc.add(Barra(inicio=tuple(cq[c] - fora_do_plano[c] * larg / 2.0 for c in range(3)),
-                          fim=tuple(cq[c] + fora_do_plano[c] * larg / 2.0 for c in range(3)), perfil=nota_p.get("perfil") or perfil,
-                          papel="presilha", aco=aco, camada=camada, nome="%s presilha %d.%d" % (marca, i + 1, k_p), rotacao=0.0,
-                          atributos=dict(atr, presilha_de=perfil, papel_trelica="presilha")))
+            # a estação é daqui; o lugar e o giro são da regra 3.3 (regras_trelica.aplicar, logo abaixo): a aba nas abas
+            # de dentro do par, ao longo da barra, de uma aba deitada à outra — antes ia de fora a fora, com giro 0
+            # (atravessava as cantoneiras e não seguia a inclinação da diagonal: o Hangar, 21/10)
+            pres = Barra(inicio=tuple(cq[c] - fora_do_plano[c] * larg / 2.0 for c in range(3)),
+                         fim=tuple(cq[c] + fora_do_plano[c] * larg / 2.0 for c in range(3)), perfil=nota_p.get("perfil") or perfil,
+                         papel="presilha", aco=aco, camada=camada, nome="%s presilha %d.%d" % (marca, i + 1, k_p), rotacao=0.0,
+                         atributos=dict(atr, presilha_de=perfil, papel_trelica="presilha", presilha_par=list(par_ids)))
+            doc.add(pres)
+            feitas.append(pres)
             n += 1
     # as regras de posição das peças da treliça (nucleo3d/regras_trelica, 16/10 — uma regra só para todo gerador): o que
     # o desenho deixou em outra posição é girado aqui, antes dos cantos e do encaixe (que dependem do giro)

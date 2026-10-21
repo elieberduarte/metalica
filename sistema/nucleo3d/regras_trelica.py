@@ -33,9 +33,12 @@ v = a altura do perfil (a 2ª aba).
        (`secao_dupla: "caixa"`, pelo croqui da legenda).
   2.9  Banzo em 2U composto (`secao_dupla: "composto"`, a T2 do Hangar) — usuário, 21/10: os dois U de costas, a alma
        de cada um no plano da tesoura (a altura em pé, a boca perpendicular ao plano), afastados pela peça da alma que
-       passa entre as almas, a boca de cada um para o seu lado; a alma em cantoneira dupla (2L) com uma cantoneira dentro
-       de cada boca, a aba em pé soldada na alma do U — a maior superfície de contato de solda — e a outra aba para fora,
-       afastando-se da alma. A conferência acusa "2.9" o U do composto com a boca no plano ou para o lado errado; a
+       passa entre as almas, a boca de cada um para o seu lado; a alma em cantoneira dupla (2L) POR DENTRO DOS PERFIS: o
+       par no vão entre as almas, a aba deitada com as costas soldadas na face de dentro de cada alma — a maior
+       superfície de contato de solda — e a aba que atravessa o plano para o centro, afastando-se da alma (usuário,
+       21/10, depois de ajustar a diagonal da ponta à mão: "essas cantoneiras precisam seguir o mesmo modelo das que
+       ajustei manualmente, por dentro dos perfis"; antes ia uma dentro de cada boca). A conferência acusa "2.9" o U do
+       composto com a boca no plano ou para o lado errado; a
        reanálise gira. Antes a peça com `secao_dupla` era pulada e a reanálise do Hangar passava "nada a corrigir" com o
        banzo virado.
        O U SIMPLES com a alma em 2L (a T1 e a T3 do Hangar) NÃO é 2.9: vale a 2.2 (a boca para dentro do vão da
@@ -52,10 +55,7 @@ v = a altura do perfil (a 2ª aba).
        a ponta fica ALINHADA COM O FINAL DA TESOURA (a face de fora da alma no fim do banzo inferior — usuário, 21/10;
        o desenho põe o eixo da ponta a meia altura do perfil da face, e a ponta ficava 51 mm para dentro): o 45° anda
        junto e o banzo superior vai até o encontro com ele; o 45° sobe pelo próprio eixo, entre as almas, até a face de
-       fora dele encostar na face de cima do banzo superior. A diagonal que chega na ponta (encosta no montante de
-       extremidade ou no 45°) tem o par no vão entre as almas, as costas nas faces de dentro delas e a aba que atravessa
-       o plano para o centro — dentro da boca ela não alcança o U central (as outras diagonais seguem uma em cada boca).
-       A conferência acusa "2.9a" a ponta em par (um U de cada lado, como o gerador fazia) e "2.9" a ponta no plano
+       fora dele encostar na face de cima do banzo superior. A conferência acusa "2.9a" a ponta em par (um U de cada lado, como o gerador fazia) e "2.9" a ponta no plano
        com a boca fora do plano.
        No U SIMPLES a ponta é um quadro (usuário, 21/10, a T1 do Hangar montada à mão): o montante de extremidade com a
        face de fora da alma no final, o banzo inferior terminando no eixo dele, e os três cantos — banzo inferior ×
@@ -80,6 +80,13 @@ v = a altura do perfil (a 2ª aba).
        dois trechos do banzo superior que se encontram na mesma estação com um desnível menor que as seções (o material
        de um dentro do outro) — o montante do degrau sobe até o nó de cima (o encaixe o corta na face do banzo de cima) e
        o banzo de baixo nasce na face do montante (recortado). Sem montante no degrau, a conferência acusa.
+  3.3  A presilha segue o par (usuário, 12/10 croqui "Γ" no montante e "^" na diagonal; 21/10 no Hangar: "esses
+       espaçadores precisam seguir a inclinação da treliça, percebi esse mesmo erro no projeto do posto" e "furando a
+       cantoneira"): uma cantoneira atravessando o par, com uma aba assentada nas abas de dentro do par (as que
+       atravessam o plano) e ao longo da barra, a outra subindo para dentro do par, de uma aba paralela à outra (sem
+       entrar nelas). Vale para todo gerador e para os modelos antigos: `aplicar` leva ao lugar a presilha que o
+       gerador fez torta (giro 0, de fora a fora do par) e a que ficou para trás quando a regra moveu ou girou a
+       cantoneira (o nó no eixo, o recuo da platibanda); a conferência acusa "3.3". O par costas com costas fica de fora.
   3.2  Nós no eixo do banzo (NBR 8800:2024, 6.5.2): a ponta de montante/diagonal a menos de 100 mm do eixo de um banzo,
        na mesma estação e sem banzo no ponto dela, vai para o eixo (a emenda de montante partido é da 3.1b). No Mercado a
        alma do painel da ponta da meia-tesoura parava 50 mm abaixo do banzo plano.
@@ -1191,6 +1198,181 @@ def girar_tercas(entidades: Iterable) -> int:
 ULTIMO_APLICAR: Dict[str, int] = {}
 
 
+# ------------------------------------------------------------------ 3.3: a presilha segue o par
+TOL_PRESILHA = 1.0       # mm: a presilha fora do lugar dela mais que isso (no comprimento ou nas abas de dentro) é acusada
+
+
+def _no_eixo_de(b, m) -> Ponto:
+    """o ponto da linha da barra b (sem limite nas pontas) mais perto de m"""
+    w = _unit(_sub(b.fim, b.inicio))
+    return _add(b.inicio, _mul(w, _dot(_sub(m, b.inicio), w)))
+
+
+def _faixa(b, e) -> Optional[Tuple[float, float]]:
+    """(menor, maior) da seção da barra b na direção e, medidos a partir da origem"""
+    pts = _pontos_da_secao(b.perfil)
+    if not pts:
+        return None
+    u, v, _w = _eixos(b)
+    pu, pv = _dot(u, e), _dot(v, e)
+    base = _dot(b.inicio, e)
+    vals = [base + x * pu + y * pv for x, y in pts]
+    return min(vals), max(vals)
+
+
+def _espessura(perfil) -> float:
+    try:
+        from nucleo3d.geometria import resolver_perfil
+        p = resolver_perfil(perfil)
+        return float(p.tw or p.tf or 3.0)
+    except Exception:                                    # noqa: BLE001
+        return 3.0
+
+
+def _presilha_certa(p, a, b, n) -> Optional[Tuple[Ponto, Ponto, float]]:
+    """3.3 (usuário, 12/10 croqui e 21/10 Hangar: "esses espaçadores precisam seguir a inclinação da treliça", "furando a
+    cantoneira"): (inicio, fim, giro) da presilha `p` do par a/b — uma cantoneira atravessando o par, com uma aba
+    assentada nas abas de dentro do par (as que atravessam o plano) e AO LONGO DA BARRA, a outra subindo para dentro do
+    par, de uma aba paralela à outra (sem entrar nelas), na estação em que ela está. None: o par não é desse jeito (as
+    abas que atravessam não se olham — costas com costas — ou as abas deitadas não vão para o mesmo lado)"""
+    eixos = []
+    for L in (a, b):
+        u, v, _w = _eixos(L)
+        cruza, deitada = (u, v) if abs(_dot(u, n)) > abs(_dot(v, n)) else (v, u)
+        if abs(_dot(cruza, n)) < 0.9:
+            return None
+        eixos.append((cruza, deitada))
+    (ca, da), (cb, db) = eixos
+    if _dot(da, db) < 0.9:
+        return None                                       # as abas deitadas para lados diferentes
+    if _dot(ca, _sub(_mid(b), _mid(a))) <= 0 or _dot(cb, _sub(_mid(a), _mid(b))) <= 0:
+        return None                                       # costas com costas: a presilha é outra (a chapa entre as costas)
+    w = _unit(_sub(a.fim, a.inicio))
+    pdir = _unit(_sub(da, _mul(w, _dot(da, w))))          # para dentro do par: para onde vai a aba deitada
+    m = _mid(p)
+    pa_, pb_ = _no_eixo_de(a, m), _no_eixo_de(b, m)
+    c = _mul(_add(pa_, pb_), 0.5)
+    La = math.dist(a.inicio, a.fim)
+    s = _dot(_sub(c, a.inicio), w)
+    if s < 0.0 or s > La:
+        return None                                       # a presilha fora do trecho do par: fica como está
+    # o par ao longo da normal: a aba deitada de cada uma (a de fora); a presilha vai de uma face de dentro à outra
+    fa, fb = _faixa(a, n), _faixa(b, n)
+    fpa, fpb = _faixa(a, pdir), _faixa(b, pdir)
+    if not (fa and fb and fpa and fpb):
+        return None
+    ta, tb = _espessura(a.perfil), _espessura(b.perfil)
+    if _dot(_mid(a), n) < _dot(_mid(b), n):
+        lo, hi = fa[0] + ta, fb[1] - tb
+    else:
+        lo, hi = fb[0] + tb, fa[1] - ta
+    if hi - lo < 5.0:
+        return None
+    # as abas de dentro (as que atravessam) começam na quina: a face delas do lado de dentro do par
+    face = (fpa[0] + ta + fpb[0] + tb) / 2.0
+    pts = _pontos_da_secao(p.perfil)
+    if not pts:
+        return None
+    from nucleo3d.geometria import base_local
+    u0, v0, _ = base_local(n, 0.0)
+    giro = math.degrees(math.atan2(-_dot(pdir, u0), _dot(pdir, v0))) % 360.0   # o eixo v da presilha para dentro do par
+    ymin = min(q[1] for q in pts)                         # a costa da aba ao longo da barra (no eixo v da presilha)
+    alvo_p = face - ymin
+    C = _add(c, _mul(pdir, alvo_p - _dot(c, pdir)))
+    ini = _add(C, _mul(n, lo - _dot(C, n)))
+    fim = _add(C, _mul(n, hi - _dot(C, n)))
+    return ini, fim, round(giro, 3)
+
+
+_CEL_PAR = 1000.0        # mm: a grade em que os pares são procurados (no Posto, 7 mil presilhas × o modelo inteiro)
+
+
+def _grade_de_pares(ts) -> Dict[tuple, list]:
+    """{célula: [(a, b, n)]}: os pares de cantoneiras (a 2.5) de todas as treliças, pela caixa de cada um"""
+    grade = collections.defaultdict(list)
+    for t in ts:
+        por_id = {id(b): b for b, _p in t["barras"]}
+        lados = collections.defaultdict(list)
+        for i, lado in t["par"].items():
+            if por_id.get(i) is not None:
+                lados[lado].append(por_id[i])
+        for a in lados.get(-1, []):
+            wa = _unit(_sub(a.fim, a.inicio))
+            for b in lados.get(1, []):
+                if abs(_dot(wa, _unit(_sub(b.fim, b.inicio)))) < 0.995 or math.dist(_mid(a), _mid(b)) > 400.0:
+                    continue
+                pts = (a.inicio, a.fim, b.inicio, b.fim)
+                lo = [int(math.floor(min(q[k] for q in pts) / _CEL_PAR)) for k in range(3)]
+                hi = [int(math.floor(max(q[k] for q in pts) / _CEL_PAR)) for k in range(3)]
+                for gx in range(lo[0], hi[0] + 1):
+                    for gy in range(lo[1], hi[1] + 1):
+                        for gz in range(lo[2], hi[2] + 1):
+                            grade[(gx, gy, gz)].append((a, b, t["n"]))
+    return grade
+
+
+def _par_da_presilha(p, grade) -> Optional[Tuple[object, object, Ponto]]:
+    """(a, b, n): o par de cantoneiras que a presilha atravessa — o que o gerador gravou nela (`presilha_par`, os ids);
+    sem isso, o de trecho mais perto do meio dela, e None no empate (duas diagonais em X se cruzando bem na presilha)"""
+    m = _mid(p)
+    wp = _unit(_sub(p.fim, p.inicio))
+    ids = set((getattr(p, "atributos", None) or {}).get("presilha_par") or [])
+    cands = []
+    for a, b, n in grade.get(tuple(int(math.floor(m[k] / _CEL_PAR)) for k in range(3)), []):
+        if abs(_dot(wp, n)) < 0.9:
+            continue
+        if ids and {getattr(a, "id", None), getattr(b, "id", None)} == ids:
+            return a, b, n
+        # pelo trecho de cada cantoneira (não a linha sem fim): perto do nó a linha da diagonal vizinha passa mais perto
+        # do meio da presilha do montante que o próprio par dela
+        dd = max(_dist_pt_seg(m, a.inicio, a.fim), _dist_pt_seg(m, b.inicio, b.fim))
+        if dd < 200.0:
+            cands.append((dd, id(a), (a, b, n)))
+    cands.sort(key=lambda x: x[0])
+    if not cands or (len(cands) > 1 and cands[1][0] - cands[0][0] < 2.0 and cands[1][1] != cands[0][1]):
+        return None
+    return cands[0][2]
+
+
+def _presilhas(entidades: Iterable, por_grupo: bool = True) -> List[tuple]:
+    """[(presilha, (inicio, fim, giro) certos, erro em mm ou graus)] — as fora do lugar (3.3)"""
+    lista = list(entidades)
+    pres = [e for e in lista if str(getattr(e, "papel", "")) == "presilha"
+            or str((getattr(e, "atributos", None) or {}).get("papel_trelica") or "") == "presilha"]
+    if not pres:
+        return []
+    grade = _grade_de_pares(trelicas(lista, por_grupo))
+    out = []
+    for p in pres:
+        if getattr(p, "bloqueada", False):
+            continue
+        par = _par_da_presilha(p, grade)
+        if par is None:
+            continue
+        certo = _presilha_certa(p, *par)
+        if certo is None:
+            continue
+        ini, fim, giro = certo
+        desvio = min(math.dist(p.inicio, ini) + math.dist(p.fim, fim), math.dist(p.inicio, fim) + math.dist(p.fim, ini)) / 2.0
+        # o giro: a seção da presilha com uma aba ao longo da barra e a quina na face das abas de dentro — compara a
+        # geometria (outra presilha igual, com as abas trocadas pelo gerador do Posto, está certa)
+        w = _unit(_sub(par[0].fim, par[0].inicio))
+        u, v, _w = _eixos(p)
+        ang = math.degrees(math.acos(min(1.0, max(abs(_dot(u, w)), abs(_dot(v, w))))))
+        if desvio > TOL_PRESILHA or ang > 5.0:
+            out.append((p, certo, max(desvio, ang)))
+    return out
+
+
+def presilhas_no_lugar(entidades: Iterable, por_grupo: bool = True) -> int:
+    """3.3: leva cada presilha fora do lugar ao lugar dela (devolve quantas)"""
+    n = 0
+    for p, (ini, fim, giro), _e in _presilhas(entidades, por_grupo):
+        p.inicio, p.fim, p.rotacao = ini, fim, giro
+        n += 1
+    return n
+
+
 def aplicar(entidades: Iterable, por_grupo: bool = True) -> Tuple[int, int, int, int]:
     """o que todo gerador e todo script de obra chamam: (peças reclassificadas, peças giradas, peças recuadas da
     platibanda, pontas encaixadas no banzo). Depois do recuo as peças são orientadas de novo (a direção mudou um pouco e
@@ -1205,13 +1387,14 @@ def aplicar(entidades: Iterable, por_grupo: bool = True) -> Tuple[int, int, int,
     n_nos = nos_no_eixo(lista, por_grupo)                  # 3.2, antes do degrau (o montante passa a chegar no nó)
     n_deg = subir_montantes(lista, por_grupo)              # 3.1c, antes do encaixe (o montante novo é cortado nele)
     n_ter = girar_tercas(lista)                            # 4.9 (só quando as terças vieram junto: o modelo inteiro)
+    n_pres = presilhas_no_lugar(lista, por_grupo)          # 3.3, depois de tudo que move ou gira as cantoneiras
     antes = {id(b): (repr(getattr(b, "cortes_inicio", None)), repr(getattr(b, "cortes_fim", None)))
              for b in lista if hasattr(b, "cortes_inicio")}
     alma_na_face.encaixar(lista)
     n_enc = sum(1 for b in lista if hasattr(b, "cortes_inicio")
                 and antes.get(id(b)) != (repr(b.cortes_inicio), repr(b.cortes_fim)))
     ULTIMO_APLICAR.clear()
-    ULTIMO_APLICAR.update(nos=n_nos, degraus=n_deg, tercas=n_ter)
+    ULTIMO_APLICAR.update(nos=n_nos, degraus=n_deg, tercas=n_ter, presilhas=n_pres)
     return n_class, n_giro, n_rec, n_enc
 
 
@@ -1278,6 +1461,9 @@ def conferir(entidades: Iterable, tol_graus: float = 5.0, por_grupo: bool = True
     for tc, _n, desvio in tercas_torcidas(list(entidades)):
         out.append({"id": tc.id, "nome": tc.nome, "perfil": tc.perfil, "papel": "terça", "regra": "4.9",
                     "erro_graus": desvio, "ponto": [round(x) for x in tc.inicio]})
+    for p, _certo, erro in _presilhas(list(entidades), por_grupo):
+        out.append({"id": p.id, "nome": p.nome, "perfil": p.perfil, "papel": "presilha", "regra": "3.3",
+                    "erro_graus": round(erro, 1), "ponto": [round(x) for x in p.inicio]})
     return out
 
 

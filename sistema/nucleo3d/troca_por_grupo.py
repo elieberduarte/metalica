@@ -259,7 +259,7 @@ def _afastamento(perfil_banzo: Optional[str], perfil_l: str) -> Tuple[float, flo
 def _atributos_novos(a: dict, perfil: str, **extra) -> dict:
     """os atributos da peça nova a partir da que sai: o bloco, a tesoura e o conjunto ficam; a posição sai (o Numerar dá)"""
     at = copy.deepcopy(a or {})
-    for k in ("cantoneira_dupla", "presilha_de", "marca_a_conferir", "peso_kg"):
+    for k in ("cantoneira_dupla", "presilha_de", "presilha_par", "marca_a_conferir", "peso_kg"):
         at.pop(k, None)
     m = at.get("marcas")
     if isinstance(m, dict):
@@ -284,13 +284,16 @@ def _fazer_par(A, B, perfil: str, n, perfil_banzo, modelo) -> list:
                          rotacao=0.0, grupo=modelo.grupo,
                          atributos=_atributos_novos(modelo.atributos, perfil, cantoneira_dupla="a" if lado < 0 else "b")))
     n_p = _presilhas_pela_norma(perfil)
+    par_ids = [out[0].id, out[1].id]
     for k in range(1, n_p + 1):
         f = k / (n_p + 1.0)
         c = tuple(A[i] + (B[i] - A[i]) * f for i in range(3))
+        # a estação é daqui; o lugar e o giro, da regra 3.3 (regras_trelica.aplicar, que a troca chama depois)
         out.append(Barra(inicio=_r(_add(c, _mul(n, -larg / 2.0))), fim=_r(_add(c, _mul(n, larg / 2.0))), perfil=perfil,
                          papel="presilha", aco=modelo.aco, camada=modelo.camada, material=modelo.material,
                          nome="%s presilha %d" % (nome0, k), rotacao=0.0, grupo=modelo.grupo,
-                         atributos=_atributos_novos(modelo.atributos, perfil, presilha_de=perfil, papel_trelica="presilha")))
+                         atributos=_atributos_novos(modelo.atributos, perfil, presilha_de=perfil, papel_trelica="presilha",
+                                                    presilha_par=par_ids)))
     return out
 
 
