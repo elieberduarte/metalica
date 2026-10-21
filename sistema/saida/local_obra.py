@@ -64,22 +64,31 @@ class ErroTerreno(ErroDeDados):
 
 # ------------------------------------------------------------------ as contas (as mesmas do terreno.js)
 
+def _raios(lat: float) -> tuple:
+    """Os raios de curvatura do elipsoide (GRS80 = WGS 84 aqui) na latitude: o do meridiano (norte–sul) e o da primeira
+    vertical (leste–oeste). Com a Terra esfera de 6.378 km a distância norte–sul errava 0,5 % no Paraná — meio metro a cada
+    100 m (21/10, o IFC georreferenciado da PRATI CD)."""
+    e2 = (1 / 298.257222101) * (2 - 1 / 298.257222101)
+    s2 = math.sin(math.radians(lat)) ** 2
+    return (R_TERRA * (1 - e2) / (1 - e2 * s2) ** 1.5, R_TERRA / math.sqrt(1 - e2 * s2))
+
+
 def modelo_para_geo(t: dict, x: float, y: float) -> tuple:
     """O ponto do modelo (mm) em (lat, lon) pela amarração `t`. A obra é pequena perto da Terra: o plano tangente no
-    ponto de amarração basta (menos de 1 mm de erro em 1 km)."""
+    ponto de amarração, com os raios do elipsoide, basta (milímetros em centenas de metros)."""
     a = math.radians(float(t.get("norte") or 0.0))
     dx, dy = (x - t["ponto"][0]) / 1000.0, (y - t["ponto"][1]) / 1000.0
     leste = dx * math.cos(a) + dy * math.sin(a)
     norte = -dx * math.sin(a) + dy * math.cos(a)
-    lat0 = math.radians(t["lat"])
-    return (t["lat"] + math.degrees(norte / R_TERRA), t["lon"] + math.degrees(leste / (R_TERRA * math.cos(lat0))))
+    m, n = _raios(t["lat"])
+    return (t["lat"] + math.degrees(norte / m), t["lon"] + math.degrees(leste / (n * math.cos(math.radians(t["lat"])))))
 
 
 def geo_para_modelo(t: dict, lat: float, lon: float) -> tuple:
     a = math.radians(float(t.get("norte") or 0.0))
-    lat0 = math.radians(t["lat"])
-    norte = math.radians(lat - t["lat"]) * R_TERRA
-    leste = math.radians(lon - t["lon"]) * R_TERRA * math.cos(lat0)
+    m, n = _raios(t["lat"])
+    norte = math.radians(lat - t["lat"]) * m
+    leste = math.radians(lon - t["lon"]) * n * math.cos(math.radians(t["lat"]))
     dx = leste * math.cos(a) - norte * math.sin(a)
     dy = leste * math.sin(a) + norte * math.cos(a)
     return (t["ponto"][0] + dx * 1000.0, t["ponto"][1] + dy * 1000.0)
@@ -508,6 +517,90 @@ def baixar_imagem(g, s: str, corpo: Optional[dict] = None, progresso: Callable =
     with open(os.path.join(pasta, "imagem.json"), "w", encoding="utf-8", newline="") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1)
     return estado(g, s)
+
+
+# ------------------------------------------------------------------ o terreno no IFC
+
+def geo_para_utm(lat: float, lon: float, fuso: Optional[int] = None) -> tuple:
+    """(lat, lon) → (leste, norte, fuso, sul) na UTM do GRS80 (SIRGAS 2000); a ida da utm_para_geo."""
+    if fuso is None:
+        fuso = int((lon + 180) // 6) + 1
+    a, f, k0 = 6378137.0, 1 / 298.257222101, 0.9996
+    e2 = f * (2 - f)
+    ep2 = e2 / (1 - e2)
+    fi, la = math.radians(lat), math.radians(lon - ((fuso - 1) * 6 - 180 + 3))
+    n = a / math.sqrt(1 - e2 * math.sin(fi) ** 2)
+    t = math.tan(fi) ** 2
+    c = ep2 * math.cos(fi) ** 2
+    A = math.cos(fi) * la
+    m = a * ((1 - e2 / 4 - 3 * e2 ** 2 / 64 - 5 * e2 ** 3 / 256) * fi
+             - (3 * e2 / 8 + 3 * e2 ** 2 / 32 + 45 * e2 ** 3 / 1024) * math.sin(2 * fi)
+             + (15 * e2 ** 2 / 256 + 45 * e2 ** 3 / 1024) * math.sin(4 * fi) - (35 * e2 ** 3 / 3072) * math.sin(6 * fi))
+    x = k0 * n * (A + (1 - t + c) * A ** 3 / 6 + (5 - 18 * t + t ** 2 + 72 * c - 58 * ep2) * A ** 5 / 120) + 500_000.0
+    y = k0 * (m + n * math.tan(fi) * (A ** 2 / 2 + (5 - t + 9 * c + 4 * c ** 2) * A ** 4 / 24
+                                       + (61 - 58 * t + t ** 2 + 600 * c - 330 * ep2) * A ** 6 / 720))
+    return (x, y + (10_000_000.0 if lat < 0 else 0.0), fuso, lat < 0)
+
+
+def crs_utm(fuso: int, sul: bool) -> dict:
+    """O sistema de coordenadas do mapa: SIRGAS 2000 / UTM (o oficial do Brasil, fusos 18 a 25) ou o WGS 84 / UTM fora dele."""
+    if (sul and 18 <= fuso <= 25) or (not sul and 17 <= fuso <= 22):
+        codigo = (31960 if sul else 31955) + fuso            # 31978 = 18S … 31985 = 25S; 31972 = 17N … 31977 = 22N
+        return {"nome": "EPSG:%d" % codigo, "descricao": "SIRGAS 2000 / UTM zone %d%s" % (fuso, "S" if sul else "N"),
+                "datum": "SIRGAS2000", "zona": "%d%s" % (fuso, "S" if sul else "N")}
+    codigo = (32700 if sul else 32600) + fuso
+    return {"nome": "EPSG:%d" % codigo, "descricao": "WGS 84 / UTM zone %d%s" % (fuso, "S" if sul else "N"),
+            "datum": "WGS84", "zona": "%d%s" % (fuso, "S" if sul else "N")}
+
+
+def para_ifc(t: dict, meta: dict, caminho_jpg: str, deslocamento=(0.0, 0.0, 0.0), z_padrao: float = 0.0) -> dict:
+    """O terreno para o IFC (usuário, 21/10: "montar um IFC com a imagem do terreno da Prati CD para mandar para o
+    cliente"): a georreferência (o sítio em latitude e longitude, o norte verdadeiro e a conversão para a UTM do mapa — o
+    IfcMapConversion do IFC4) e a placa com a imagem (os quatro cantos dela em mm do modelo, na altura da imagem).
+
+    O IFC põe as peças em `deslocamento` + as coordenadas do modelo (o sítio do modelo importado volta ao lugar da obra):
+    a origem do mundo do IFC é o ponto −deslocamento do modelo."""
+    dx, dy, _dz = (float(v) for v in (list(deslocamento or ()) + [0.0, 0.0, 0.0])[:3])
+    # tudo no ponto de amarração (na obra) e levado até a origem do mundo do IFC pela própria conversão: no modelo
+    # importado o mundo começa a milhares de km (o IFC do Revit em UTM, mm) e o plano tangente lá não vale
+    px, py = float(t["ponto"][0]), float(t["ponto"][1])
+    leste_a, norte_a, fuso, sul = geo_para_utm(t["lat"], t["lon"])
+    # o eixo X do IFC no mapa: 100 m dele na UTM — já com a convergência dos meridianos e o fator de escala da UTM
+    leste1, norte1, _f, _s = geo_para_utm(*modelo_para_geo(t, px + 100_000.0, py), fuso)
+    ax, ay = leste1 - leste_a, norte1 - norte_a
+    na = math.hypot(ax, ay) or 1.0
+    ca, sa, escala = ax / na, ay / na, 0.001 * na / 100.0
+    wx, wy = dx + px, dy + py                                 # a amarração no mundo do IFC (mm)
+    leste0 = leste_a - escala * (wx * ca - wy * sa)
+    norte0 = norte_a - escala * (wx * sa + wy * ca)
+    a = math.radians(float(t.get("norte") or 0.0))
+    lat_s, lon_s = modelo_para_geo(t, 0.0, 0.0)              # o sítio: a origem do modelo
+    z = float(t["cota"]) if t.get("cota") is not None else float(z_padrao)
+    cantos = []
+    for mx, my in ((meta["x0"], meta["y0"]), (meta["x1"], meta["y0"]), (meta["x1"], meta["y1"]), (meta["x0"], meta["y1"])):
+        x, y = geo_para_modelo(t, *de_mercator(mx, my))
+        cantos.append((round(x, 1), round(y, 1), round(z, 1)))
+    with open(caminho_jpg, "rb") as f:
+        jpg = f.read()
+    return {"lat_sitio": lat_s, "lon_sitio": lon_s, "norte": (-math.sin(a), math.cos(a)),
+            "mapa": dict(crs_utm(fuso, sul), leste=leste0, norte=norte0, abscissa=ca, ordenada=sa, escala=escala),
+            "cantos": cantos, "jpg": jpg, "fonte": meta.get("fonte") or "", "atribuicao": meta.get("atribuicao") or "",
+            "baixada_em": meta.get("baixada_em") or "", "lado_m": meta.get("lado_m")}
+
+
+def terreno_para_ifc(g, s: str, doc) -> Optional[dict]:
+    """O terreno do projeto para o exportador (None sem o local ou sem a imagem baixada)."""
+    p = g.ler(s)
+    t = p.get("terreno")
+    meta = _meta_imagem(g.pasta(s))
+    if not isinstance(t, dict) or not meta:
+        return None
+    try:
+        z_padrao = float(doc.caixa()[0][2])                   # sem a altura escolhida: no pé da obra, como na tela
+    except Exception:
+        z_padrao = 0.0
+    return para_ifc(t, meta, os.path.join(g.pasta(s), PASTA, "imagem.jpg"),
+                    (doc.metadados or {}).get("deslocamento_mm") or (0.0, 0.0, 0.0), z_padrao)
 
 
 # ------------------------------------------------------------------ as rotas (app.py)

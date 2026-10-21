@@ -476,8 +476,11 @@ class _Exportador:
     def __init__(self, documento: Documento, projeto_nome=None, autor=None,
                  organizacao=None, incluir_propriedades=True, incluir_quantidades=True,
                  solidos_como="brep", sitio_nome=None, predio_nome=None,
-                 pavimento_nome=None, descricao=None, data=None, pintura=None):
+                 pavimento_nome=None, descricao=None, data=None, pintura=None, terreno=None):
         self.doc = documento
+        # a obra no terreno (21/10 — usuário: "montar um IFC com a imagem do terreno para mandar para o cliente"): o
+        # dicionário de saida/local_obra.para_ifc — a georreferência e a placa com a imagem, na camada "Terreno"
+        self.terreno = terreno
         # a pintura da tela (o modo ver, 19/10 — usuário: "exportar com a estrutura de uma cor e a cobertura de outra, igual
         # temos no modo ver"): {grupos: [{nome, cor, ids}]} — cada peça do grupo sai com a cor dele e na camada (layer) com o
         # nome dele, que é o que o visualizador agrupa ("Group by Layer" do Trimble Connect); a peça fora dos grupos fica
@@ -545,7 +548,7 @@ class _Exportador:
         e_m3 = a.add(f"IFCDERIVEDUNITELEMENT({metro},-3)")
         dens = a.add(f"IFCDERIVEDUNIT(({e_kg},{e_m3}),.MASSDENSITYUNIT.,$)")
         self.unidades = {"mm": mm, "m2": m2, "m3": m3, "kg": kg, "N": n,
-                         "grau": grau, "MPa": mpa, "densidade": dens}
+                         "grau": grau, "MPa": mpa, "densidade": dens, "m": metro}
         return a.add("IFCUNITASSIGNMENT("
                      + _lista([mm, m2, m3, kg, n, s, grau]) + ")")
 
@@ -566,7 +569,8 @@ class _Exportador:
     def _contextos(self):
         a = self.arq
         wcs = a.eixo3()
-        norte = a.direcao(0.0, 1.0)
+        # o norte verdadeiro no plano XY do modelo: o do terreno, quando a obra está no mapa
+        norte = a.direcao(*self.terreno["norte"]) if self.terreno else a.direcao(0.0, 1.0)
         self.contexto = a.add(f"IFCGEOMETRICREPRESENTATIONCONTEXT($,{_texto('Model')},3,"
                               f"{_real(PRECISAO)},{wcs},{norte})")
         self.corpo = a.add(f"IFCGEOMETRICREPRESENTATIONSUBCONTEXT({_texto('Body')},"
@@ -587,8 +591,11 @@ class _Exportador:
         except (TypeError, ValueError):
             origem_sitio = (0.0, 0.0, 0.0)
         pl_sitio = a.add(f"IFCLOCALPLACEMENT($,{a.eixo3(origem_sitio)})")
+        self.sitio_placement = pl_sitio
+        lat = _angulo_composto(self.terreno["lat_sitio"]) if self.terreno else "$"
+        lon = _angulo_composto(self.terreno["lon_sitio"]) if self.terreno else "$"
         sitio = self.raiz("IFCSITE", _texto(self.sitio_nome), "$", "$", pl_sitio, "$",
-                          "$", ".ELEMENT.", "$", "$", _real(0.0), "$", "$")
+                          "$", ".ELEMENT.", lat, lon, _real(0.0), "$", "$")
         pl_predio = a.add(f"IFCLOCALPLACEMENT({pl_sitio},{a.eixo3()})")
         predio = self.raiz("IFCBUILDING", _texto(self.predio_nome), "$", "$", pl_predio,
                            "$", "$", ".ELEMENT.", _real(0.0), "$", "$")
@@ -1088,6 +1095,8 @@ class _Exportador:
         unidades = self._unidades()
         self._contextos()
         self._hierarquia(unidades)
+        if self.terreno:
+            self._georreferencia()
 
         memo: Dict[str, Ponto] = {}
         grupos = [e for e in self.doc.entidades.values() if isinstance(e, Grupo)]
@@ -1141,6 +1150,8 @@ class _Exportador:
         if self._no_pavimento:
             self.raiz("IFCRELCONTAINEDINSPATIALSTRUCTURE", _texto("Elementos"), "$",
                       _lista(self._no_pavimento), self.pavimento)
+        if self.terreno:
+            self._placa_terreno()
         self._camadas()
         for material, objetos in self._por_material.items():
             self.raiz("IFCRELASSOCIATESMATERIAL", _texto("Material"), "$",
@@ -1149,6 +1160,48 @@ class _Exportador:
             self.raiz("IFCRELDEFINESBYPROPERTIES", "$", "$", _lista(objetos), pset)
 
         return self._montar()
+
+    # ------------------------------------------------------------ o terreno (21/10)
+    def _georreferencia(self):
+        """A obra no mapa: a conversão do sistema do modelo para a UTM (IfcMapConversion + IfcProjectedCRS, IFC4) — os
+        programas com mapa (Trimble Connect, ArcGIS, Cesium, InfraWorks) põem a obra no lugar sozinhos."""
+        m = self.terreno["mapa"]
+        crs = self.add(f"IFCPROJECTEDCRS({_texto(m['nome'])},{_texto(m['descricao'])},{_texto(m['datum'])},$,"
+                       f"{_texto('UTM')},{_texto(m['zona'])},{self.unidades['m']})")
+        self.add(f"IFCMAPCONVERSION({self.contexto},{crs},{_real(m['leste'])},{_real(m['norte'])},{_real(0.0)},"
+                 f"{_real(m['abscissa'])},{_real(m['ordenada'])},{_real(m['escala'])})")
+
+    def _placa_terreno(self):
+        """A imagem do terreno numa placa (IfcGeographicElement TERRAIN) na camada "Terreno", com a imagem dentro do
+        arquivo (IfcBlobTexture) e o nome do arquivo ao lado (IfcImageTexture, terreno.jpg) para quem lê a textura por
+        arquivo; quem não mostra textura vê a placa na cor de grama."""
+        tr, a = self.terreno, self.arq
+        pts = a.add("IFCCARTESIANPOINTLIST3D((" + ",".join(
+            "(" + ",".join(_real(v) for v in c) + ")" for c in tr["cantos"]) + "))")
+        face = a.add(f"IFCTRIANGULATEDFACESET({pts},$,.F.,((1,2,3),(1,3,4)),$)")
+        uv = a.add("IFCTEXTUREVERTEXLIST(((0.,0.),(1.,0.),(1.,1.),(0.,1.)))")
+        blob = a.add('IFCBLOBTEXTURE(.F.,.F.,' + _texto("TEXTURE") + ',$,$,' + _texto("JPG") + ',"0'
+                     + tr["jpg"].hex().upper() + '")')
+        arquivo = a.add(f"IFCIMAGETEXTURE(.F.,.F.,{_texto('TEXTURE')},$,$,{_texto('terreno.jpg')})")
+        a.add(f"IFCINDEXEDTRIANGLETEXTUREMAP(({blob},{arquivo}),{face},{uv},((1,2,3),(1,3,4)))")
+        rgb = a.add(f"IFCCOLOURRGB($,{_real(0.42)},{_real(0.56)},{_real(0.31)})")
+        sombra = a.add(f"IFCSURFACESTYLESHADING({rgb},{_real(0.0)})")
+        texturas = a.add(f"IFCSURFACESTYLEWITHTEXTURES(({blob},{arquivo}))")
+        estilo = a.add(f"IFCSURFACESTYLE({_texto('Terreno')},.BOTH.,({sombra},{texturas}))")
+        a.add(f"IFCSTYLEDITEM({face},({estilo}),$)")
+        rep = a.add(f"IFCSHAPEREPRESENTATION({self.corpo},{_texto('Body')},{_texto('Tessellation')},({face}))")
+        forma = a.add(f"IFCPRODUCTDEFINITIONSHAPE($,$,({rep}))")
+        pl = self._placement(self.sitio_placement, (0.0, 0.0, 0.0))
+        ref = self.raiz("IFCGEOGRAPHICELEMENT", _texto("Terreno"),
+                        _texto("Imagem do terreno: " + (tr.get("fonte") or "")), "$", pl, forma, "$", ".TERRAIN.")
+        self._por_camada.setdefault("Terreno", []).append(rep)
+        self._cor_da_camada["Terreno"] = "#6b8f4e"
+        props = [self._prop_valor(n, "IFCLABEL", str(v)) for n, v in (
+            ("Fonte", tr.get("fonte")), ("Atribuicao", tr.get("atribuicao")), ("Baixada", tr.get("baixada_em")),
+            ("SistemaDoMapa", tr["mapa"]["descricao"])) if v]
+        if props:
+            self._pset("Pset_Terreno_Imagem", props, ref)
+        self.raiz("IFCRELCONTAINEDINSPATIALSTRUCTURE", _texto("Terreno"), "$", f"({ref})", self.sitio)
 
     # ------------------------------------------------------------ arquivo
     def _montar(self) -> str:
@@ -1171,6 +1224,16 @@ class _Exportador:
 
 
 # =========================================================== auxiliares
+
+def _angulo_composto(graus: float) -> str:
+    """IfcCompoundPlaneAngleMeasure: graus, minutos, segundos e milionésimos de segundo, todos com o mesmo sinal."""
+    sinal = -1 if graus < 0 else 1
+    total = round(abs(graus) * 3600 * 1_000_000)
+    g, resto = divmod(total, 3600 * 1_000_000)
+    mi, resto = divmod(resto, 60 * 1_000_000)
+    se, mic = divmod(resto, 1_000_000)
+    return "(" + ",".join(str(sinal * v) for v in (g, mi, se, mic)) + ")"
+
 
 _PSET_COMUM = {"IFCBEAM": "Pset_BeamCommon", "IFCCOLUMN": "Pset_ColumnCommon",
                "IFCMEMBER": "Pset_MemberCommon"}

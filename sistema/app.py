@@ -5166,13 +5166,24 @@ def exportar_ifc(corpo: dict) -> dict:
     nome = _slug(corpo.get("nome") or doc.nome or "modelo")
     do_projeto, base = _pasta_do_projeto(corpo, nome)
     pasta = os.path.join(base, "ifc")
+    terreno = None
+    if corpo.get("terreno") and TERRENO and corpo.get("projeto"):
+        # a obra no terreno (21/10, "montar um IFC com a imagem do terreno para mandar para o cliente"): a georreferência
+        # e a placa com a imagem na camada "Terreno" (saida/local_obra.py) — como está no modo ver
+        from saida import local_obra
+        terreno = local_obra.terreno_para_ifc(_gerente(), str(corpo["projeto"]), doc)
     caminho = exp.exportar(doc, os.path.join(pasta, nome + ".ifc"),
                            projeto_nome=doc.nome,
                            autor=corpo.get("autor") or "",
                            organizacao=corpo.get("organizacao") or "",
-                           pintura=corpo.get("pintura") or None)   # as cores do modo ver (19/10)
+                           pintura=corpo.get("pintura") or None,   # as cores do modo ver (19/10)
+                           terreno=terreno)
+    if terreno:
+        # a imagem também ao lado do IFC: o IfcImageTexture a acha pelo nome (a IfcBlobTexture já a leva dentro)
+        with open(os.path.join(pasta, "terreno.jpg"), "wb") as f:
+            f.write(terreno["jpg"])
     return {"arquivo": _descrever_arquivo(caminho, pasta),
-            "entidades": len(doc.entidades)}
+            "entidades": len(doc.entidades), "terreno": bool(terreno)}
 
 
 def _gravar_ifc_recebido(corpo: dict, nome_padrao: str) -> str:

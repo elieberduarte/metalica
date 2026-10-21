@@ -13,15 +13,23 @@ const nf = (v, c = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigi
 const cotaTxt = mm => (mm > 0 ? '+' : mm < 0 ? '−' : '') + nf(Math.abs(mm) / 1000, 2);    // +4,00 / 0,00 / −3,50 (m)
 
 /** O ponto do modelo (mm do projeto) em [lat, lon] pela amarração `t` ({lat, lon, ponto, norte}). */
+/** Os raios do elipsoide (do meridiano e da primeira vertical) na latitude — a Terra esfera errava 0,5 % no norte–sul
+ *  (21/10); as mesmas contas de saida/local_obra.py. */
+function raios(lat) {
+  const e2 = (1 / 298.257222101) * (2 - 1 / 298.257222101), s2 = Math.sin(rad(lat)) ** 2;
+  return [R * (1 - e2) / (1 - e2 * s2) ** 1.5, R / Math.sqrt(1 - e2 * s2)];
+}
+
 export function modeloParaGeo(t, x, y) {
   const a = rad(t.norte || 0), dx = (x - t.ponto[0]) / 1000, dy = (y - t.ponto[1]) / 1000;
   const leste = dx * Math.cos(a) + dy * Math.sin(a), norte = -dx * Math.sin(a) + dy * Math.cos(a);
-  return [t.lat + grau(norte / R), t.lon + grau(leste / (R * Math.cos(rad(t.lat))))];
+  const [m, n] = raios(t.lat);
+  return [t.lat + grau(norte / m), t.lon + grau(leste / (n * Math.cos(rad(t.lat))))];
 }
 
 export function geoParaModelo(t, lat, lon) {
-  const a = rad(t.norte || 0);
-  const norte = rad(lat - t.lat) * R, leste = rad(lon - t.lon) * R * Math.cos(rad(t.lat));
+  const a = rad(t.norte || 0), [m, n] = raios(t.lat);
+  const norte = rad(lat - t.lat) * m, leste = rad(lon - t.lon) * n * Math.cos(rad(t.lat));
   return [t.ponto[0] + (leste * Math.cos(a) - norte * Math.sin(a)) * 1000, t.ponto[1] + (leste * Math.sin(a) + norte * Math.cos(a)) * 1000];
 }
 
@@ -29,9 +37,12 @@ const deMercator = (mx, my) => [grau(2 * Math.atan(Math.exp(my / R)) - Math.PI /
 
 /** O plano da imagem no modelo: o meio (mm do projeto), o lado no chão (mm) e o giro em Z (o norte da imagem para cima). */
 export function planoDaImagem(t, im) {
-  const [lat, lon] = deMercator((im.x0 + im.x1) / 2, (im.y0 + im.y1) / 2);
-  const k = Math.cos(rad(lat));                           // o Mercator estica o chão por 1/cos(lat)
-  return { meio: geoParaModelo(t, lat, lon), largura: (im.x1 - im.x0) * k * 1000, altura: (im.y1 - im.y0) * k * 1000,
+  // pelos cantos (os mesmos do IFC, local_obra.para_ifc): o lado leste–oeste e o norte–sul no chão, cada um com o raio
+  // do elipsoide dele
+  const c = (mx, my) => geoParaModelo(t, ...deMercator(mx, my));
+  const a = c(im.x0, im.y0), b = c(im.x1, im.y0), d = c(im.x0, im.y1), e = c(im.x1, im.y1);
+  return { meio: [(a[0] + b[0] + d[0] + e[0]) / 4, (a[1] + b[1] + d[1] + e[1]) / 4],
+           largura: Math.hypot(b[0] - a[0], b[1] - a[1]), altura: Math.hypot(d[0] - a[0], d[1] - a[1]),
            giro: rad(t.norte || 0) };
 }
 

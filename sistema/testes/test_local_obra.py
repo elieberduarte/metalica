@@ -25,6 +25,14 @@ def _dist_m(a, b):
     return 2 * L.R_TERRA * math.asin(math.sqrt(h))
 
 
+def _dist_elipsoide(a, b):
+    """a distância no elipsoide pela UTM (a do fuso de `a`) dividida pelo fator de escala da UTM ali"""
+    e1, n1, fuso, _s = L.geo_para_utm(*a)
+    e2, n2, _f, _s = L.geo_para_utm(*b, fuso)
+    k = 0.9996 * (1 + ((e1 + e2) / 2 - 500_000) ** 2 / (2 * 6_371_000 ** 2))
+    return math.hypot(e2 - e1, n2 - n1) / k
+
+
 # o modelo perto da origem, o importado de outro programa (coordenadas de milhões de mm) e o muito pequeno
 SITUACOES = [
     {"ponto": [0.0, 0.0], "norte": 0.0},
@@ -42,8 +50,8 @@ def test_ida_e_volta(sit):
         lat, lon = L.modelo_para_geo(t, x, y)
         x2, y2 = L.geo_para_modelo(t, lat, lon)
         assert abs(x2 - x) < 1 and abs(y2 - y) < 1                     # menos de 1 mm
-        # a distância no mundo é a do modelo (o plano tangente basta na obra)
-        assert abs(_dist_m(CASCAVEL, (lat, lon)) - math.hypot(dx, dy) / 1000) < 0.05
+        # a distância no mundo é a do modelo (o plano tangente com os raios do elipsoide basta na obra) — medida na UTM
+        assert abs(_dist_elipsoide(CASCAVEL, (lat, lon)) - math.hypot(dx, dy) / 1000) < 0.02
 
 
 def test_o_norte_gira_o_modelo():
@@ -324,3 +332,71 @@ def test_transparencia_da_imagem():
     assert L.validar(dict(base, transparencia=0.4))["transparencia"] == 0.4
     assert L.validar(dict(base, transparencia=2))["transparencia"] == 0.9            # nunca some de todo
     assert "transparencia" not in L.validar(dict(base, transparencia="x"))
+
+
+# ------------------------------------------------------------------ o terreno no IFC (21/10, a PRATI CD para o cliente)
+
+PRATI = {"lat": -24.6224047, "lon": -53.71357133, "ponto": [72587.4, 44714.1], "norte": 86.0}
+
+
+@pytest.mark.parametrize("desloc", [(0, 0, 0), (7_250_000_000.0, 245_000_000.0, 0)])   # o sítio de um IFC importado
+def test_conversao_do_mapa_do_ifc(desloc):
+    """Um ponto do modelo pela IfcMapConversion (o que o outro programa faz) cai na UTM do mesmo ponto pela amarração —
+    a menos de 2 cm até 150 m da obra; o sítio em graus e o norte verdadeiro também."""
+    import tempfile
+    from PIL import Image
+    d = tempfile.mkdtemp()
+    Image.new("RGB", (8, 8), (90, 130, 78)).save(d + "/i.jpg")
+    t = dict(PRATI, cota=0)
+    reg = L.regiao(t, [0, 0, 146000, 91000])
+    tr = L.para_ifc(t, {k: reg[k] for k in ("x0", "y0", "x1", "y1")}, d + "/i.jpg", desloc, 0)
+    m = tr["mapa"]
+    assert m["nome"] == "EPSG:31982" and m["zona"] == "22S"
+    assert abs(m["escala"] / 0.001 - 1.0005) < 0.0003                     # o fator de escala da UTM a 275 km do meridiano
+    for x, y in ((0, 0), (146000, 0), (146000, 91000), (72000, 45000), (-20000, 130000)):
+        # o mundo do IFC: deslocamento + modelo; a conversão do IFC4 (giro pelo eixo X no mapa e a escala)
+        wx, wy = desloc[0] + x, desloc[1] + y
+        e = m["leste"] + m["escala"] * (wx * m["abscissa"] - wy * m["ordenada"])
+        n = m["norte"] + m["escala"] * (wx * m["ordenada"] + wy * m["abscissa"])
+        e2, n2, _f, _s = L.geo_para_utm(*L.modelo_para_geo(t, x, y), 22)
+        assert math.hypot(e - e2, n - n2) < 0.02, (x, y, e - e2, n - n2)
+    assert tr["lat_sitio"] == pytest.approx(L.modelo_para_geo(t, 0, 0)[0])
+    assert tr["norte"] == pytest.approx((-math.sin(math.radians(86)), math.cos(math.radians(86))))
+    # a placa: os cantos da imagem, quadrada no chão e na altura escolhida
+    c = tr["cantos"]
+    assert all(p[2] == 0 for p in c)
+    lado1, lado2 = math.dist(c[0][:2], c[1][:2]), math.dist(c[0][:2], c[3][:2])
+    m_, n_ = L._raios(t["lat"])
+    assert abs(lado2 / lado1 - m_ / n_) < 0.001       # o quadrado do Mercator no chão: o norte–sul encurta M/N (−0,55 %)
+
+
+def test_ifc_com_o_terreno_e_valido(tmp_path):
+    """O IFC com o terreno: o sítio em latitude e longitude, o norte verdadeiro no contexto, a IfcMapConversion para a UTM
+    SIRGAS 2000, a placa (IfcGeographicElement TERRAIN) na camada "Terreno" com a imagem dentro (IfcBlobTexture) e o nome
+    do arquivo (IfcImageTexture) — válido pelo ifcopenshell quando ele está instalado."""
+    from PIL import Image
+    from ifc import exportar as E
+    from nucleo3d.modelo import Documento
+    from test_pacote_celular import _modelo
+    Image.effect_noise((64, 64), 60).convert("RGB").save(tmp_path / "i.jpg")
+    t = dict(PRATI, ponto=[5000, 3000], cota=0)
+    reg = L.regiao(t, [0, 0, 10000, 6000])
+    tr = L.para_ifc(t, {k: reg[k] for k in ("x0", "y0", "x1", "y1")} | {"fonte": "Esri", "atribuicao": "Imagem: Esri"},
+                    str(tmp_path / "i.jpg"))
+    caminho = E.exportar(Documento.de_dict(_modelo()), str(tmp_path / "t.ifc"), terreno=tr)
+    texto = open(caminho, encoding="ascii").read()
+    for ent in ("IFCMAPCONVERSION(", "IFCPROJECTEDCRS('EPSG:31982'", "IFCGEOGRAPHICELEMENT(", ".TERRAIN.", "IFCBLOBTEXTURE(",
+                "IFCIMAGETEXTURE(", "IFCINDEXEDTRIANGLETEXTUREMAP(", "IFCPRESENTATIONLAYERWITHSTYLE('Terreno'"):
+        assert ent in texto, ent
+    assert (tmp_path / "i.jpg").read_bytes().hex().upper() in texto        # a imagem inteira dentro do arquivo
+    sem = open(E.exportar(Documento.de_dict(_modelo()), str(tmp_path / "s.ifc")), encoding="ascii").read()
+    assert "IFCMAPCONVERSION" not in sem and "IFCGEOGRAPHICELEMENT" not in sem   # sem o terreno, como sempre foi
+    ifcopenshell = pytest.importorskip("ifcopenshell")
+    import ifcopenshell.validate
+    f = ifcopenshell.open(caminho)
+    log = ifcopenshell.validate.json_logger()
+    ifcopenshell.validate.validate(f, log)
+    assert not log.statements, log.statements[:3]
+    site = f.by_type("IfcSite")[0]
+    assert site.RefLatitude[0] == -24 and site.RefLongitude[0] == -53
+    assert f.by_type("IfcMapConversion")[0].TargetCRS.Name == "EPSG:31982"

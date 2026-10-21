@@ -633,18 +633,26 @@
     };
     if (!proj) { mostrar('Abra um projeto para exportar o IFC do modelo.', true); return; }
     // as cores do Pintar do modo ver (metálica de uma cor, pré-moldado de outra…) vão junto: o IFC sai como está na tela
-    var pintura = null;
+    var pintura = null, terreno = false;
     try { var v3 = janela('3d'); pintura = v3 && v3.pinturaParaIfc ? v3.pinturaParaIfc() : null; } catch (e) { pintura = null; }
+    // o terreno à vista no 3D vai junto (21/10, "montar um IFC com a imagem do terreno para mandar para o cliente"): a obra
+    // georreferenciada e a placa com a imagem, na camada Terreno
+    try { var t3 = janela('3d') && janela('3d').terreno; terreno = !!(t3 && t3.malha && t3.ligado); } catch (e) { terreno = false; }
     mostrar('Exportando o IFC do modelo gravado' + (pintura ? ', com as cores do Pintar da tela' : '')
+      + (terreno ? ', com o terreno (a imagem e a localização)' : '')
       + '… (num modelo grande como o do PRATI, cerca de um minuto)');
+    var corpo = { projeto: proj };
+    if (pintura) corpo.pintura = pintura;
+    if (terreno) corpo.terreno = true;
     fetch('/api/modelo/ifc/exportar', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify(pintura ? { projeto: proj, pintura: pintura } : { projeto: proj }) })
+                                        body: JSON.stringify(corpo) })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (r) {
         if (!r.ok || r.j.erro) { mostrar('Não foi possível exportar o IFC: ' + (r.j.erro || r.j.mensagem || 'erro no servidor'), true); return; }
         var a = r.j.arquivo || {};
         var esc = function (s) { return String(s || '').replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
-        mostrar('IFC exportado (' + (r.j.entidades || 0).toLocaleString('pt-BR') + ' objetos, do modelo gravado): '
+        mostrar('IFC exportado (' + (r.j.entidades || 0).toLocaleString('pt-BR') + ' objetos, do modelo gravado'
+          + (r.j.terreno ? ', com o terreno na camada Terreno e a obra no mapa' : '') + '): '
           + '<a href="' + esc(a.url) + '" download="' + esc(a.nome) + '">' + esc(a.nome || 'baixar') + '</a>'
           + (a.tamanho_kb ? ' · ' + (a.tamanho_kb / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' MB' : ''));
       })
