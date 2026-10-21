@@ -1654,3 +1654,115 @@ def suportes_das_tercas(des: Desenho, folhas_: List[dict]) -> dict:
         if not sp["furos"]:
             avisos.append("%s: a vista com os furos não foi achada — o suporte vai sem furos" % sp["marca"])
     return {"suportes": sup, "avisos": avisos}
+
+
+# ------------------------------------------- as chapas da emenda e das ligações das tesouras (Hangar, 21/10/2026)
+
+_EMENDA_TXT = re.compile(r"\b(C[EL]\d+)\s*-\s*(\d+)\s*x\s*-\s*#\s*(\d+(?:[.,]\d+)?)(?:\s+(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?))?"
+                         r"(?:\s*-\s*(T\d+[\w-]*))?", re.I)
+_MEDIDA_TES = re.compile(r"^\s*(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?)\s*(?:-\s*(T\d+[\w-]*))?\s*$", re.I)
+_PARAF_TXT = re.compile(r"PARAF\.?\s*Ø\s*(\d+(?:/\d+)?)\s*\"?\s*-\s*(\d+)\s*x", re.I)
+
+
+def chapas_das_emendas(des: Desenho, folhas_: List[dict]) -> dict:
+    """As chapas da emenda da cumeeira e das ligações das tesouras pelo projeto (21/10/2026, o Hangar, folhas 30 e
+    32/33): cada chapa ("CE1 - 8x - #9,50 60x133" e a tesoura na linha de baixo, "T2"; ou "CE3 - 2x - #9,50" com
+    "22x133 - T3" embaixo) — a marca, a quantidade, a espessura, a largura e a altura (cm), a tesoura; o contorno (o
+    recorte para os banzos da CL1) e os furos pela vista dela, a partir do canto de baixo à esquerda. A chapa que a vista
+    geral da tesoura chama de "EMENDA - CE1" é a da emenda (`papel` "emenda", uma em cada meia-tesoura, encostadas);
+    as outras são de ligação (as vigas VC/VT aparafusadas na aba). Os parafusos da emenda pela elevação dela ("PARAF.
+    Ø5/8\" - 8x" e os parafusos desenhados: as alturas, a partir do pé da chapa). {chapas: {marca: {...}},
+    parafusos_emenda: {diametro, texto, n, alturas}, avisos}"""
+    avisos: List[str] = []
+    textos = [e for e in des.entidades.values() if isinstance(e, Texto)]
+    pols = [e for e in des.entidades.values() if isinstance(e, Polilinha) and re.search(r"CHAPA", e.camada or "", re.I)
+            and len(e.vertices) >= 4]
+    circ = [c for c in des.entidades.values() if isinstance(c, Circulo) and re.search(r"FURO", c.camada or "", re.I)]
+    emendas = {m.group(1).upper() for t in textos for m in [re.search(r"EMENDA\s*-\s*(C[EL]\d+)", t.texto or "", re.I)] if m}
+    chapas: Dict[str, dict] = {}
+    for t in textos:
+        s = re.sub(r"\s+", " ", t.texto or "").strip()
+        m = _EMENDA_TXT.search(s)
+        if not m or m.group(1).upper() in chapas:
+            continue
+        larg, alt, tes = m.group(4), m.group(5), m.group(6)
+        abaixo = sorted((u for u in textos if u is not t and abs(u.posicao[0] - t.posicao[0]) < 20
+                         and 0 < t.posicao[1] - u.posicao[1] < 80), key=lambda u: -u.posicao[1])
+        for u in abaixo:
+            su = re.sub(r"\s+", " ", u.texto or "").strip()
+            m2 = _MEDIDA_TES.match(su)
+            if larg is None and m2:
+                larg, alt, tes = m2.group(1), m2.group(2), tes or m2.group(3)
+            elif tes is None and re.match(r"^T\d+[\w-]*$", su, re.I):
+                tes = su
+        if larg is None:
+            continue
+        marca = m.group(1).upper()
+        B, H = _num(larg) * 10.0, _num(alt) * 10.0
+        # a vista: o contorno do tamanho da chapa mais perto do texto (o texto fica embaixo dela)
+        cand = []
+        for p in pols:
+            c = _caixa_pol(p)
+            if c and abs(c[2] - c[0] - B) < 2 and abs(c[3] - c[1] - H) < 2:
+                cand.append((math.hypot(c[0] - t.posicao[0], c[1] - t.posicao[1]), id(p), p, c))
+        ch = {"marca": marca, "quantidade": int(m.group(2)), "espessura": _num(m.group(3)), "largura": B, "altura": H,
+              "tesoura": (tes or "").upper() or None, "papel": "emenda" if marca in emendas else "ligacao",
+              "texto": s, "contorno": [[0.0, 0.0], [B, 0.0], [B, H], [0.0, H]], "furos": []}
+        if cand:
+            _d, _i, p, c = min(cand)
+            ch["contorno"] = [[round(v[0] - c[0], 1), round(v[1] - c[1], 1)] for v in p.vertices]
+            ch["furos"] = [{"x": round(f.centro[0] - c[0], 1), "y": round(f.centro[1] - c[1], 1), "d": round(2 * f.raio, 1)}
+                           for f in sorted(circ, key=lambda f: (f.centro[0], f.centro[1]))
+                           if c[0] < f.centro[0] < c[2] and c[1] < f.centro[1] < c[3]]
+        else:
+            avisos.append("%s: a vista da chapa (%g × %g) não foi achada — vai sem furos" % (marca, B, H))
+        chapas[marca] = ch
+    if not chapas:
+        raise ErroDeDados("o projeto não escreve as chapas da emenda (\"CE1 - 8x - #9,50 60x133\")")
+    # os parafusos da emenda: o texto e, na elevação dela, os parafusos desenhados (linhas na camada de parafuso)
+    par = None
+    for t in textos:
+        m = _PARAF_TXT.search(t.texto or "")
+        if not m:
+            continue
+        caixa = next((f["caixa"] for f in folhas_ if _dentro_caixa(t.posicao, f["caixa"]) and re.search(r"EMENDA", f.get("titulo") or "", re.I)), None)
+        if caixa is None:
+            continue
+        par = {"diametro": round(_diam_pol(m.group(1)), 3), "texto": 'Ø%s"' % m.group(1), "n": int(m.group(2)), "alturas": []}
+        ce = [c for c in (_caixa_pol(p) for p in pols) if c and _dentro_caixa((c[0], c[1]), caixa) and _dentro_caixa((c[2], c[3]), caixa)]
+        alta = max(ce, key=lambda c: c[3] - c[1], default=None)          # a chapa de emenda na elevação (a mais alta)
+        lin = [e for e in des.entidades.values() if isinstance(e, Linha) and re.search(r"PARAF", e.camada or "", re.I)
+               and _dentro_caixa(e.a, caixa) and abs(e.a[1] - e.b[1]) < 0.5]
+        if alta and lin:
+            par["alturas"] = sorted({round(e.a[1] - alta[1], 1) for e in lin})
+            par["comprimento_desenhado"] = round(max(abs(e.b[0] - e.a[0]) for e in lin), 1)
+        break
+    if par is None and any(c["papel"] == "emenda" for c in chapas.values()):
+        avisos.append("a emenda não diz os parafusos (\"PARAF. Ø5/8\\\" - 8x\") — as chapas vão só com os furos")
+    # a aba (os furos das vigas que chegam: os que não são da emenda) de um lado só ou dos dois; a de um lado só (a da
+    # tesoura do oitão) fica com a ponta da aba onde a chapa simétrica do mesmo papel tem a dela — os furos das VC, a
+    # 110/170 mm da ponta delas, caem no mesmo lugar nas duas (Hangar: a CE2/CL2 a 300 mm do eixo, como a CE1/CL1)
+    alt = [float(y) for y in (par or {}).get("alturas") or []]
+    for ch in chapas.values():
+        B = ch["largura"]
+        aba = [f for f in ch["furos"] if not (ch["papel"] == "emenda" and any(abs(f["y"] - y) < 3.0 for y in alt))]
+        if not aba or (min(f["x"] for f in aba) < B / 2.0 < max(f["x"] for f in aba)):
+            ch["aba"] = "duas" if aba else "nenhuma"
+        else:
+            ch["aba"] = "esquerda" if max(f["x"] for f in aba) < B / 2.0 else "direita"
+    for ch in chapas.values():
+        if ch["aba"] in ("esquerda", "direita"):
+            ref = max((c["largura"] for c in chapas.values() if c["papel"] == ch["papel"] and c["aba"] == "duas"), default=None)
+            if ref is None:
+                avisos.append("%s: a aba é de um lado só e não há chapa simétrica para dar a posição — ela fica pela "
+                              "ponta da aba no eixo da tesoura" % ch["marca"])
+                ref = 0.0
+            ch["eixo_x"] = ref / 2.0 if ch["aba"] == "esquerda" else ch["largura"] - ref / 2.0
+        else:
+            ch["eixo_x"] = ch["largura"] / 2.0
+    return {"chapas": chapas, "parafusos_emenda": par, "avisos": avisos}
+
+
+def _dentro_caixa(p, caixa) -> bool:
+    (x0, y0), (x1, y1) = caixa
+    return x0 <= p[0] <= x1 and y0 <= p[1] <= y1

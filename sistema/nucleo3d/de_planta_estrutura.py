@@ -1330,6 +1330,378 @@ def _suportes_das_tercas(doc: Documento, avisos: List[str]) -> int:
     return n
 
 
+def _faixa_da_secao(b: Barra, eixo) -> Tuple[float, float]:
+    """quanto a seção da barra vai, a partir do eixo dela, na direção `eixo` (min, max)"""
+    from nucleo3d.geometria import base_local, resolver_perfil, secao
+    u, v, _ = base_local(b.direcao, float(b.rotacao or 0.0))
+    pu, pv = sum(u[k] * eixo[k] for k in range(3)), sum(v[k] * eixo[k] for k in range(3))
+    vals = [q[0] * pu + q[1] * pv for q in secao(resolver_perfil(b.perfil))]
+    return min(vals), max(vals)
+
+
+def _chapas_das_tesouras(doc: Documento, pedidas: List[Tuple[str, dict]], avisos: List[str]) -> int:
+    """As chapas da emenda e das ligações das tesouras pelo projeto (Hangar, folhas 30 e 32/33 — 21/10/2026;
+    identificacao.chapas_das_emendas). `pedidas`: [(id da tesoura na planta, {emenda, ligacao, parafusos_emenda})].
+
+    Emenda (a CE): onde o banzo de baixo se interrompe (as meias-tesouras da cumeeira), uma chapa em cada metade, as
+    duas encostadas no meio da junta e os banzos morrendo nelas (o banzo de cima com o corte em pé na face da chapa);
+    os parafusos da emenda nos furos das alturas da elevação (`parafusos_emenda.alturas`), atravessando as duas. Cada
+    metade tem o seu montante (o M11 do Hangar): o montante único que a linha do desenho dá na junta vira dois, um
+    encostado em cada chapa (o U com a costa da alma nela); a diagonal que chega na junta para na face do montante.
+
+    Ligação (a CL): em cada montante onde chega uma viga de fora do plano (a VC ou a VT), encostada nele (o U pela
+    costa da alma). Os furos da aba (os que não são da emenda) furam a viga que está na frente deles; a viga longe da
+    chapa ou sem viga na frente vira aviso. A chapa com aba de um lado só (a CE2/CL2 da T1, no oitão) põe a aba para o
+    lado de onde as vigas chegam, na distância do eixo que o projeto dá (`eixo_x`).
+
+    O pé de toda chapa no pé do banzo de baixo; a altura do projeto que não fecha com o topo do banzo de cima vira aviso.
+    Devolve quantas peças entraram (chapas, montantes e parafusos)."""
+    from nucleo3d.geometria import base_local, resolver_perfil, secao
+    from nucleo3d.ligacoes3d import _parafuso
+    if not pedidas:
+        return 0
+    if "Chapas" not in doc.camadas:
+        doc.camadas["Chapas"] = Camada(nome="Chapas", cor="#c9a227")
+    barras = [b for b in doc.entidades.values() if isinstance(b, Barra)]
+    Z = (0.0, 0.0, 1.0)
+    n = 0
+    nao_pega = collections.Counter()                     # (chapa, viga) → furos com a viga ali que não a pegam
+    afastada = {}                                        # (chapa, viga) → maior folga entre a chapa e a viga
+    for tid, ped in pedidas:
+        proprias = [b for b in barras if (b.atributos or {}).get("origem_2d") == tid]
+        pt = lambda b: str((b.atributos or {}).get("papel_trelica") or "")
+        inf = [b for b in proprias if b.papel == "banzo" and pt(b) == "banzo_inf"]
+        sup = [b for b in proprias if b.papel == "banzo" and pt(b) == "banzo_sup" and not (b.atributos or {}).get("ponta_composto")]
+        if not inf:
+            continue
+        marca = str((inf[0].atributos or {}).get("marca") or "")
+        d0 = inf[0].direcao
+        w = _unit3((d0[0], d0[1], 0.0))
+        nr = _unit3(_cruz3(w, Z))
+        O = inf[0].inicio
+        s_ = lambda P: sum((P[k] - O[k]) * w[k] for k in range(2))
+        x_ = lambda P: sum((P[k] - O[k]) * nr[k] for k in range(2))
+        x_eixo = sum(x_(b.meio) for b in inf) / len(inf)
+        z0 = min(b.meio[2] + _faixa_da_secao(b, Z)[0] for b in inf)
+        P_ = lambda s, x, z: (O[0] + w[0] * s + nr[0] * x, O[1] + w[1] * s + nr[1] * x, z)
+
+        def banzo_de_cima_em(s):
+            for b in sup:
+                sa, sb = s_(b.inicio), s_(b.fim)
+                if min(sa, sb) - 30 <= s <= max(sa, sb) + 30 and abs(sb - sa) > 1:
+                    return b, b.inicio[2] + (b.fim[2] - b.inicio[2]) * (s - sa) / (sb - sa)
+            return None, None
+
+        def topo_de_cima(s):
+            b, z = banzo_de_cima_em(s)
+            return None if b is None else z + _faixa_da_secao(b, Z)[1]
+
+        # a junta: onde o banzo de baixo se interrompe (as metades da cumeeira)
+        ints = sorted((min(s_(b.inicio), s_(b.fim)), max(s_(b.inicio), s_(b.fim))) for b in inf)
+        corr = []
+        for a_, b_ in ints:
+            if corr and a_ <= corr[-1][1] + 1.0:
+                corr[-1][1] = max(corr[-1][1], b_)
+            else:
+                corr.append([a_, b_])
+        juntas = [(corr[i][1] + corr[i + 1][0]) / 2.0 for i in range(len(corr) - 1) if 3.0 < corr[i + 1][0] - corr[i][1] < 80.0]
+        smin, smax = corr[0][0], corr[-1][1]
+        # as vigas que chegam de fora do plano (VC, VT): a ponta perto do plano da tesoura, a barra quase normal a ele
+        chegam = []
+        for b in barras:
+            if b in proprias or b.papel in ("terça", "terca", "suporte", "chumbador", "pilar"):
+                continue
+            db = b.direcao
+            if abs(sum(db[k] * nr[k] for k in range(3))) < 0.95:
+                continue
+            for P, Q in ((b.inicio, b.fim), (b.fim, b.inicio)):
+                if abs(x_(P) - x_eixo) < 250.0 and smin - 50 <= s_(P) <= smax + 50:
+                    chegam.append((b, s_(P), 1.0 if x_(Q) > x_eixo else -1.0))
+        lados = {l for _b, _s, l in chegam}
+
+        def por_chapa(ch, s_meio, esp, lados_aqui, nome, extra):
+            """a chapa (centrada no plano s_meio), com o contorno do projeto; devolve (Chapa, [(furo, ponto)])"""
+            B = float(ch["largura"])
+            cont = [tuple(v) for v in ch["contorno"]]
+            furos = [dict(f) for f in ch.get("furos") or []]
+            aba = ch.get("aba") or "duas"
+            um_lado = aba in ("esquerda", "direita")
+            ex = float(ch.get("eixo_x") or B / 2.0)
+            if aba == "direita":                         # a aba sempre à esquerda (X = 0)
+                cont = [(B - x, y) for x, y in reversed(cont)]
+                for f in furos:
+                    f["x"] = B - float(f["x"])
+                ex = B - ex
+            lado = 1.0
+            if um_lado:
+                if len(lados_aqui) == 1:
+                    lado = next(iter(lados_aqui))
+                else:
+                    avisos.append("%s da %s: a chapa tem aba de um lado só e as vigas chegam %s — a aba foi para o lado +"
+                                  % (ch["marca"], marca, "dos dois lados" if lados_aqui else "de nenhum lado"))
+            if um_lado:
+                exd = tuple(-lado * c for c in nr)
+                borda = x_eixo + lado * ex                # o X = 0 da chapa: a ponta da aba
+            else:
+                exd = nr
+                borda = x_eixo - ex
+            org = P_(s_meio, borda, z0)
+            c = Chapa(origem=org, eixo_x=exd, eixo_y=Z, contorno=cont, espessura=esp, centrada=True,
+                      furos=[{"x": round(float(f["x"]), 2), "y": round(float(f["y"]), 2), "diametro": float(f["d"])} for f in furos],
+                      aco="ASTM A36", camada="Chapas", nome=nome, material="Aço",
+                      atributos=dict({"tipo_ifc": "IfcPlate", "elemento": "chapa", "marca": ch["marca"], "sigla": ch["marca"],
+                                      "espessura": esp, "tesoura": marca, "origem_2d": tid}, **extra))
+            pontos = [(f, tuple(org[k] + exd[k] * float(f["x"]) + Z[k] * float(f["y"]) for k in range(3))) for f in furos]
+            topo = topo_de_cima(s_meio)
+            if topo is not None and abs(z0 + float(ch["altura"]) - topo) > 10.0:
+                avisos.append("%s da %s: a chapa tem %g mm e a tesoura ali %g (pé do banzo de baixo ao topo do de cima)"
+                              % (ch["marca"], marca, ch["altura"], round(topo - z0)))
+            return c, pontos
+
+        def furar_vigas(ch, pontos, esp, lados_aqui, bolt_y=()):
+            """os furos da aba furam a viga que está na frente deles (a mais perto, até 250 mm da chapa); o furo da aba do
+            lado em que não chega viga fica só na chapa. Devolve quantos acharam viga"""
+            achou = 0
+            for f, H in pontos:
+                if any(abs(float(f["y"]) - y) < 3.0 for y in bolt_y):
+                    continue
+                if (1.0 if x_(H) > x_eixo else -1.0) not in lados_aqui:
+                    continue
+                alvo = None
+                for b, _s, _l in chegam:
+                    dirb = b.direcao
+                    tpar = sum((H[k] - b.inicio[k]) * dirb[k] for k in range(3))
+                    if tpar < -5.0 or tpar > b.comprimento + 5.0:
+                        continue
+                    Pb = tuple(b.inicio[k] + dirb[k] * tpar for k in range(3))
+                    u, v, _ = base_local(dirb, float(b.rotacao or 0.0))
+                    du, dv = sum((H[k] - Pb[k]) * u[k] for k in range(3)), sum((H[k] - Pb[k]) * v[k] for k in range(3))
+                    wu, wv = sum(w[k] * u[k] for k in range(3)), sum(w[k] * v[k] for k in range(3))
+                    pts = secao(resolver_perfil(b.perfil))
+                    t0, t1, ok = -1e9, 1e9, True
+                    for p0, dp, lo, hi in ((du, wu, min(q[0] for q in pts), max(q[0] for q in pts)),
+                                           (dv, wv, min(q[1] for q in pts), max(q[1] for q in pts))):
+                        if abs(dp) < 1e-9:
+                            ok = ok and lo <= p0 <= hi
+                        else:
+                            ta, tb = (lo - p0) / dp, (hi - p0) / dp
+                            t0, t1 = max(t0, min(ta, tb)), min(t1, max(ta, tb))
+                    dist = 0.0 if t0 <= 0 <= t1 else min(abs(t0), abs(t1))
+                    if ok and t0 <= t1 and dist < 250.0 and (alvo is None or dist < alvo[3]):
+                        alvo = (b, t0, t1, dist)
+                if alvo is None:
+                    # o furo que sobra (a VT usa só os de baixo da aba) não é falta; a viga que está ali e não é pega é
+                    perto = next((b for b, _s, l in chegam if (1.0 if x_(H) > x_eixo else -1.0) == l
+                                  and -5.0 <= sum((H[k] - b.inicio[k]) * b.direcao[k] for k in range(3)) <= b.comprimento + 5.0
+                                  and abs(s_(b.meio) - s_(H)) < 250.0 and abs(b.meio[2] - H[2]) < 100.0), None)
+                    if perto is not None:
+                        nao_pega[(ch["marca"], (perto.atributos or {}).get("marca") or perto.nome)] += 1
+                    continue
+                b, t0, t1, _d = alvo
+                achou += 1
+                if t0 >= 0:
+                    folga, face, eixo = t0 - esp / 2.0, tuple(H[k] + w[k] * t0 for k in range(3)), w
+                elif t1 <= 0:
+                    folga, face, eixo = -t1 - esp / 2.0, tuple(H[k] + w[k] * t1 for k in range(3)), tuple(-c for c in w)
+                else:
+                    folga, face, eixo = -1.0, tuple(H[k] + w[k] * t0 for k in range(3)), w
+                if abs(folga) > 2.0:
+                    k_ = (ch["marca"], (b.atributos or {}).get("marca") or b.nome)
+                    afastada[k_] = max(afastada.get(k_, 0.0), folga, key=abs)
+                tw = float(resolver_perfil(b.perfil).tw or 3.0)
+                doc.add(_furo_marcador(face, eixo, float(f["d"]), min(t1 - t0, tw + 1.0), b.id))
+            return achou
+
+        # ---- a emenda
+        ce = ped.get("emenda")
+        par = ped.get("parafusos_emenda") or {}
+        if ce and not juntas:
+            avisos.append("%s da %s: a tesoura não se interrompe (sem meias-tesouras) — a chapa da emenda ficou de fora" % (ce["marca"], marca))
+        for sj in (juntas if ce else []):
+            t = float(ce["espessura"])
+            alt_par = [float(y) for y in par.get("alturas") or []]
+            pontos_lado = {}
+            for sg in (1.0, -1.0):
+                c, pontos = por_chapa(ce, sj + sg * t / 2.0, t, lados, "%s %s" % (ce["marca"], marca), {"papel_chapa": "emenda"})
+                doc.add(c)
+                n += 1
+                pontos_lado[sg] = pontos
+                furar_vigas(ce, pontos, t, lados, alt_par)
+            # os parafusos da emenda: um em cada furo das alturas da elevação, no meio da junta
+            if par.get("diametro"):
+                for f, H in pontos_lado[1.0]:
+                    if any(abs(float(f["y"]) - y) < 3.0 for y in alt_par):
+                        Hc = tuple(H[k] - w[k] * t / 2.0 for k in range(3))
+                        pz = _parafuso(Hc, w, float(par["diametro"]), 2.0 * t, "ASTM A307")
+                        pz.atributos.update(marca="PAR %s" % ce["marca"], tesoura=marca, origem_2d=tid)
+                        doc.add(pz)
+                        n += 1
+            # cada metade com o seu montante, encostado na chapa; a diagonal que chega na junta para nele
+            na_junta = [b for b in proprias if b.papel == "montante" and b.id in doc.entidades and abs(s_(b.meio) - sj) < 30.0]
+            face_mont = {1.0: sj + t, -1.0: sj - t}
+            novas_m = []
+            troca = {}                                       # o id do montante de antes → {lado: o id do novo}
+            for m in na_junta:
+                doc.entidades.pop(m.id, None)
+                for sg in (1.0, -1.0):
+                    dx = sj + sg * (t + 25.0) - s_(m.meio)          # provisório: a regra vira, depois encosta
+                    nova = Barra(inicio=(m.inicio[0] + w[0] * dx, m.inicio[1] + w[1] * dx, m.inicio[2]),
+                                 fim=(m.fim[0] + w[0] * dx, m.fim[1] + w[1] * dx, m.fim[2]), perfil=m.perfil,
+                                 rotacao=float(m.rotacao or 0.0), papel=m.papel, aco=m.aco, camada=m.camada,
+                                 nome="%s (%s)" % (m.nome, "lado +" if sg > 0 else "lado −"), material=m.material,
+                                 atributos=dict(m.atributos or {}, junto_da_emenda=ce["marca"]),
+                                 recorte_inicio=m.recorte_inicio, recorte_fim=m.recorte_fim,
+                                 cortes_inicio=[dict(c) for c in m.cortes_inicio or []], cortes_fim=[dict(c) for c in m.cortes_fim or []])
+                    doc.add(nova)
+                    novas_m.append((sg, nova))
+                    troca.setdefault(m.id, {})[sg] = nova.id
+                    n += 1
+            # as presilhas do par de cantoneiras de antes (a T1 e a T3: o montante em 2L): uma para cada metade
+            for pz in [b for b in proprias if b.papel == "presilha" and b.id in doc.entidades
+                       and set((b.atributos or {}).get("presilha_par") or []) & set(troca)]:
+                doc.entidades.pop(pz.id, None)
+                for sg in (1.0, -1.0):
+                    dx = sg * (t + 25.0)
+                    novo_par = [troca.get(i, {}).get(sg, i) for i in (pz.atributos or {}).get("presilha_par") or []]
+                    doc.add(Barra(inicio=(pz.inicio[0] + w[0] * dx, pz.inicio[1] + w[1] * dx, pz.inicio[2]),
+                                  fim=(pz.fim[0] + w[0] * dx, pz.fim[1] + w[1] * dx, pz.fim[2]), perfil=pz.perfil,
+                                  rotacao=float(pz.rotacao or 0.0), papel=pz.papel, aco=pz.aco, camada=pz.camada,
+                                  nome="%s (%s)" % (pz.nome, "lado +" if sg > 0 else "lado −"), material=pz.material,
+                                  atributos=dict(pz.atributos or {}, presilha_par=novo_par, junto_da_emenda=ce["marca"])))
+                    n += 1
+                n -= 1
+            if novas_m:
+                # a boca pela regra (2.3: as peças da alma abrem para o meio do vão — o M11 de cada metade para a junta)
+                from nucleo3d import regras_trelica as _rt
+                _rt.orientar([b for b in doc.entidades.values() if isinstance(b, Barra) and (b.atributos or {}).get("origem_2d") == tid])
+            for sg, nova in novas_m:
+                lo, hi = _faixa_da_secao(nova, w)
+                sc = sj + sg * t - (lo if sg > 0 else hi)              # a face dele na face da chapa
+                dx = sc - s_(nova.meio)
+                ini = (nova.inicio[0] + w[0] * dx, nova.inicio[1] + w[1] * dx, nova.inicio[2])
+                fim = (nova.fim[0] + w[0] * dx, nova.fim[1] + w[1] * dx, nova.fim[2])
+                b_sup, zc = banzo_de_cima_em(sc)
+                if b_sup is not None:                        # o topo no eixo do banzo de cima naquele ponto
+                    if ini[2] > fim[2]:
+                        ini = ini[:2] + (zc,)
+                    else:
+                        fim = fim[:2] + (zc,)
+                nova.inicio, nova.fim = ini, fim
+                face_mont[sg] = sc + (hi if sg > 0 else lo)
+            if troca:
+                from nucleo3d import regras_trelica as _rt
+                _rt.presilhas_no_lugar([b for b in doc.entidades.values() if isinstance(b, Barra) and (b.atributos or {}).get("origem_2d") == tid])
+            for b in proprias:
+                if b.papel == "montante" or b.id not in doc.entidades:
+                    continue
+                for ponta in ("inicio", "fim"):
+                    P = getattr(b, ponta)
+                    outra = b.fim if ponta == "inicio" else b.inicio
+                    if abs(s_(P) - sj) > 12.0:
+                        continue
+                    sg = 1.0 if s_(outra) > sj else -1.0
+                    cosw = abs(sum(b.direcao[k] * w[k] for k in range(3)))
+                    if b.papel == "banzo":
+                        # o banzo de cima: o corte em pé na face da chapa (o de baixo já para nela pelo comprimento)
+                        if pt(b) == "banzo_sup":
+                            pl = P_(sj + sg * t, x_(P), P[2])
+                            setattr(b, "cortes_" + ponta, [{"normal": [round(c, 9) for c in w],
+                                                            "ponto": [round(pl[k] - P[k], 4) for k in range(3)]}])
+                    elif cosw > 0.1 and abs(s_(P) - sj) < 2.0:
+                        rec = abs(face_mont[sg] - sj) / cosw
+                        setattr(b, "recorte_" + ponta, max(float(getattr(b, "recorte_" + ponta) or 0.0), round(rec, 1)))
+        # ---- a ligação: nos montantes onde as vigas chegam (fora da junta)
+        cl = ped.get("ligacao")
+        if cl:
+            pos = sorted(s for _b, s, _l in chegam if all(abs(s - sj) > 150.0 for sj in juntas))
+            grupos = []
+            for s in pos:
+                if grupos and s - grupos[-1][-1] < 120.0:
+                    grupos[-1].append(s)
+                else:
+                    grupos.append([s])
+            monts = [b for b in proprias if b.papel == "montante" and b.id in doc.entidades]
+            t = float(cl["espessura"])
+            for gs in grupos:
+                sc = sum(gs) / len(gs)
+                perto = sorted(monts, key=lambda m: abs(s_(m.meio) - sc))
+                if not perto or abs(s_(perto[0].meio) - sc) > 150.0:
+                    avisos.append("%s da %s: a viga chega a %s mm do início da tesoura sem montante ali — a chapa ficou de fora"
+                                  % (cl["marca"], marca, round(sc)))
+                    continue
+                m = perto[0]
+                sm = s_(m.meio)
+                gm = [mm for mm in monts if abs(s_(mm.meio) - sm) < 5.0]
+                faixas = [_faixa_da_secao(mm, w) for mm in gm]
+                # o lado: o U pela costa da alma; as duas cantoneiras, para o lado de fora da junta
+                u, _v, _ = base_local(m.direcao, float(m.rotacao or 0.0))
+                uw = sum(u[k] * w[k] for k in range(3))
+                if str(m.perfil).upper().startswith("U") and abs(uw) > 0.5:
+                    xmin = min(q[0] for q in secao(resolver_perfil(m.perfil)))
+                    sg = 1.0 if uw * xmin > 0 else -1.0
+                else:
+                    sg = 1.0 if not juntas or sm >= juntas[0] else -1.0
+                face = sm + (max(f[1] for f in faixas) if sg > 0 else min(f[0] for f in faixas))
+                lados_aqui = {l for _b, s, l in chegam if abs(s - sc) < 150.0}
+                c, pontos = por_chapa(cl, face + sg * t / 2.0, t, lados_aqui, "%s %s" % (cl["marca"], marca), {"papel_chapa": "ligacao"})
+                doc.add(c)
+                n += 1
+                furar_vigas(cl, pontos, t, lados_aqui)
+                # a chapa que cruza um banzo da tesoura (a CL2 da T1, sem recorte: o U de boca para dentro)
+                xs = [x_(tuple(c.origem[k] + c.eixo_x[k] * X for k in range(3))) for X, _Y in c.contorno]
+                ys = [Y for _X, Y in c.contorno]
+                for b in inf + sup:
+                    sa, sb = sorted((s_(b.inicio), s_(b.fim)))
+                    if not sa - 1 <= face <= sb + 1:
+                        continue
+                    lo, hi = _faixa_da_secao(b, nr)
+                    zlo, zhi = _faixa_da_secao(b, Z)
+                    zb = b.inicio[2] + (b.fim[2] - b.inicio[2]) * ((face - s_(b.inicio)) / ((s_(b.fim) - s_(b.inicio)) or 1.0))
+                    # o recorte do contorno (a CL1): o banzo passa se a chapa não tem material naquela altura e largura
+                    xb0, xb1 = x_(b.meio) + lo, x_(b.meio) + hi
+                    cruza = _contorno_cruza(c, x_, xb0, xb1, zb + zlo - z0, zb + zhi - z0)
+                    if cruza:
+                        msg = ("%s da %s: a chapa cruza o banzo %s (%s mm de largura) — o detalhe do projeto não tem "
+                               "recorte para ele: apontamento ao projetista"
+                               % (cl["marca"], marca, "de baixo" if b in inf else "de cima", round(cruza, 1)))
+                        if msg not in avisos:
+                            avisos.append(msg)
+                        break
+    for (chm, vm), q in sorted(nao_pega.items()):
+        avisos.append("%s: %d furo(s) da aba caem fora da seção da %s que chega ali (a viga virada ou em outra altura que a "
+                      "do detalhe dela) — os furos ficam só na chapa; confira a %s" % (chm, q, vm, vm))
+    for (chm, vm), folga in sorted(afastada.items()):
+        avisos.append("%s: a %s %s da chapa (%s mm) — os furos estão nela; a posição pede conferência"
+                      % (chm, vm, "afastada" if folga > 0 else "entrando", round(abs(folga), 1)))
+    return n
+
+
+def _contorno_cruza(c: Chapa, x_, xb0: float, xb1: float, yb0: float, yb1: float) -> float:
+    """quanto o contorno da chapa (em pé, eixo_x na horizontal) entra no retângulo do banzo (x da obra, y a partir do
+    pé da chapa): amostra o retângulo e conta os pontos dentro do contorno; devolve a largura invadida (0: não cruza)"""
+    cont = c.contorno
+    ox = x_(c.origem)
+    sx = x_(tuple(c.origem[k] + c.eixo_x[k] for k in range(3))) - ox      # +1 ou −1
+    def dentro(X, Y):
+        r = False
+        j = len(cont) - 1
+        for i in range(len(cont)):
+            xi, yi = cont[i]
+            xj, yj = cont[j]
+            if (yi > Y) != (yj > Y) and X < (xj - xi) * (Y - yi) / ((yj - yi) or 1e-12) + xi:
+                r = not r
+            j = i
+        return r
+    larg = []
+    for i in range(1, 20):
+        xo = xb0 + (xb1 - xb0) * i / 20.0
+        X = (xo - ox) / (sx or 1.0)
+        if any(dentro(X, yb0 + (yb1 - yb0) * k / 6.0) for k in range(1, 6)):
+            larg.append(xo)
+    return (max(larg) - min(larg) + (xb1 - xb0) / 20.0) if larg else 0.0
+
+
+
 def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome: str = "Estrutura lançada") -> Tuple[Documento, List[str]]:
     """o Documento 3D da planta; devolve (documento, avisos). A Montagem vai pela Implantação, na medida real."""
     des = planta_real(des)
@@ -1337,6 +1709,7 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
     doc = Documento(nome=nome)
     avisos: List[str] = []
     n_aco = 0
+    pedidas: List[Tuple[str, dict]] = []
     for it in elementos(des):
         a, e, tipo = it["atributos"], it["entidade"], it["elemento"]
         marca = str(a.get("marca") or "")
@@ -1369,6 +1742,10 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
                     doc.add(_marcar(sol, camada, dict(base, secao=a.get("secao"), nivel_base=z0, nivel_topo=z1)))
             elif tipo == "trelica":
                 n_aco += _trelica(doc, e, a, tab, camada, base)
+                # as chapas da emenda e das ligações pelo projeto (a etapa da Identificação, 21/10): no fim, com as vigas
+                # que chegam já no 3D (_chapas_das_tesouras)
+                if isinstance(a.get("chapas"), dict):
+                    pedidas.append((e.id, a["chapas"]))
             elif tipo == "viga":
                 if not isinstance(e, Linha):
                     raise ErroDeDados("a viga precisa de uma linha")
@@ -1499,6 +1876,7 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
         except ErroDeDados as err:
             avisos.append("%s %s: %s" % (tipo, marca, err))
     n_aco += _suportes_das_tercas(doc, avisos)
+    n_aco += _chapas_das_tesouras(doc, pedidas, avisos)
     # os furos: na chapa em que caem (as coordenadas da chapa são as da planta)
     chapas = [c for c in doc.entidades.values() if isinstance(c, Chapa) and (c.atributos or {}).get("elemento") == "chapa"]
     for it in elementos(des):

@@ -22,7 +22,7 @@
     sem mexer na cota do pé;
   · "Ver" leva ao Original com o painel junto; recarregar a página guarda as etapas confirmadas;
   · o Original não é mexido (as mesmas entidades antes e depois)."""
-import base64, json, os, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request
+import base64, collections, json, os, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
@@ -248,6 +248,31 @@ try:
     ok(len(chb) == 60 and all(abs(abs(e["inicio"][2] - e["fim"][2]) - 550) < 1 for e in chb), f"no 3D: 60 chumbadores de 550 mm ({len(chb)})")
     ok(len(chs) == 21 and all(len(e.get("furos") or []) == 4 for e in chs if e["atributos"]["marca"] == "PB1"),
        f"no 3D: 21 chapas, a PB1 com os 4 furos ({len(chs)})")
+
+    # ---- Etapa 6: o suporte das terças (21/10) — o ST1 das folhas 4 e 33 em cada terça; o 3D põe um por cruzamento
+    clicar_em(botao("Confirmar ✓", "[data-etapa=apoios]"))
+    ok(esperar("!document.querySelector('[data-etapa=suportes]').classList.contains('bloqueada')", 10), "confirmados os apoios, os suportes se liberam")
+    clicar_em(botao("Pôr os suportes nas terças"))
+    ok(esperar("[...window.cad.doc.entidades.values()].filter(e => (e.atributos || {}).identificacao === 'terca' && (e.atributos || {}).suporte).length === 56", 30),
+       "o ST1 nas 56 terças da Implantação")
+    ok("ST1 em 56 terça(s)" in painel() and "SL1" in painel(), "o painel: ST1 nas terças e o SL1 que fica para as laterais")
+
+    # ---- Etapa 7: as chapas da emenda e das ligações (21/10) — CE1/CL1 da T2 pelas folhas 30 e 32; o 3D faz a emenda
+    # na cumeeira (as duas CE e os 8 parafusos) e a CL1 nos montantes onde as VC e as VT chegam
+    clicar_em(botao("Confirmar ✓", "[data-etapa=suportes]"))
+    ok(esperar("!document.querySelector('[data-etapa=chapas]').classList.contains('bloqueada')", 10), "confirmados os suportes, as chapas se liberam")
+    clicar_em(botao("Pôr as chapas nas tesouras"))
+    ok(esperar("[...window.cad.doc.entidades.values()].filter(e => (e.atributos || {}).elemento === 'trelica' && (e.atributos || {}).chapas).length === 3", 30),
+       "as chapas nas 3 T2 da Implantação")
+    t = painel()
+    ok("CE1 (T2" in t and "CL1 (T2" in t and "8 parafusos" in t, f"o painel: CE1 e CL1 da T2 e os parafusos da emenda: «{t[-400:]}»")
+    t0 = time.time()
+    while time.time() - t0 < 60 and sum(1 for e in modelo3d() if (e.get("atributos") or {}).get("marca") == "CE1") < 6:
+        aba.drenar(1.0)
+    m3 = modelo3d()
+    pl = collections.Counter((e.get("atributos") or {}).get("marca") for e in m3 if e.get("tipo") == "chapa" and (e.get("atributos") or {}).get("papel_chapa"))
+    pz = [e for e in m3 if ((e.get("atributos") or {}).get("parafuso") or {}) and str((e.get("atributos") or {}).get("marca", "")) == "PAR CE1"]
+    ok(pl.get("CE1") == 6 and pl.get("CL1") == 6 and len(pz) == 24, f"no 3D: 6 CE1, 6 CL1 e 24 parafusos da emenda ({dict(pl)}, {len(pz)})")
 
     clicar_em("[...document.querySelectorAll('.ident-tesoura')].find(d => d.textContent.includes('T3')).querySelector('.ident-ver')")
     ok(esperar("window.cad.nomeDesenho === 'planta-de-lançamento' && !document.querySelector('#painel-ident').hidden", 30), "Ver leva ao Original com o painel junto")

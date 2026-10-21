@@ -11,7 +11,7 @@ import pytest
 
 from nucleo2d.desenho import Desenho, Linha
 from nucleo3d import de_planta_estrutura as DPE
-from nucleo3d.modelo import Barra
+from nucleo3d.modelo import Barra, Chapa
 
 HANGAR = os.path.join(os.path.dirname(__file__), "..", "..", "Projeto", "OBRAS", "Hangar-Almayer",
                       "Hangar-Allmayer_Projeto de fabricacao_V5.dxf")
@@ -274,6 +274,101 @@ def test_suporte_das_tercas_no_3d():
     xs = sorted(round(f.atributos["furo"]["ponto"][0] - 5000) for f in furos if doc.entidades[f.atributos["furo"]["peca"]].papel == "terça"
                 and abs(f.atributos["furo"]["ponto"][0] - 5000) < 100)
     assert xs == [-30, -30, 30, 30]                  # 25 mm da ponta de cada terça (que recuou 5)
+
+
+def test_hangar_chapas_da_emenda_e_das_ligacoes_pelo_projeto(hangar):
+    """a etapa 7 (21/10): as chapas das folhas 30 e 32/33 — CE1 600×1330 (T2, 8 pç), CL1 600×890 com o recorte dos
+    banzos (T2), CE2 450×1330 e CL2 300×890 (T1, aba de um lado só, a 300 mm do eixo como as da T2: os furos das VC a
+    110/170 da ponta delas), CE3 220×1330 (T3, "CE3 - 2x - #9,50" com "22x133 - T3" embaixo); furos Ø17; a CE da vista
+    geral ("EMENDA - CE1") é a da emenda; os 8 parafusos Ø5/8" da emenda nas alturas 200/500/830/1130 da elevação"""
+    from nucleo3d import identificacao as I
+    des, _v = hangar
+    r = I.chapas_das_emendas(des, I.folhas_com_moldura(des))
+    ch = r["chapas"]
+    resumo = {m: (c["tesoura"], c["papel"], c["quantidade"], c["espessura"], c["largura"], c["altura"], c["aba"], c["eixo_x"], len(c["furos"]))
+              for m, c in ch.items()}
+    assert resumo == {"CE1": ("T2", "emenda", 8, 9.5, 600.0, 1330.0, "duas", 300.0, 24),
+                      "CL1": ("T2", "ligacao", 8, 9.5, 600.0, 890.0, "duas", 300.0, 16),
+                      "CE2": ("T1", "emenda", 2, 9.5, 450.0, 1330.0, "esquerda", 300.0, 16),
+                      "CL2": ("T1", "ligacao", 2, 9.5, 300.0, 890.0, "esquerda", 300.0, 8),
+                      "CE3": ("T3", "emenda", 2, 9.5, 220.0, 1330.0, "nenhuma", 110.0, 8)}
+    assert len(ch["CL1"]["contorno"]) == 12 and {f["d"] for c in ch.values() for f in c["furos"]} == {17.0}
+    assert sorted({f["x"] for f in ch["CE1"]["furos"]}) == [30.0, 90.0, 160.0, 440.0, 510.0, 570.0]
+    p = r["parafusos_emenda"]
+    assert (round(p["diametro"], 2), p["n"], p["alturas"]) == (15.88, 8, [200.0, 500.0, 830.0, 1130.0])
+
+
+def _tesoura_com_emenda(ce_altura=1030.0):
+    """uma tesoura de 6 m partida no meio (o banzo de baixo para a 9,5 mm da junta, como o B1 do Hangar), o montante da
+    junta, montantes a 1,5 m das pontas e uma VT chegando no de 1,5 m"""
+    from nucleo2d.desenho import Linha as L_
+    ce = {"marca": "CE1", "papel": "emenda", "espessura": 9.5, "largura": 300.0, "altura": ce_altura, "aba": "nenhuma",
+          "eixo_x": 150.0, "contorno": [[0, 0], [300, 0], [300, ce_altura], [0, ce_altura]],
+          "furos": [{"x": x, "y": y, "d": 17.0} for x in (60.0, 240.0) for y in (200.0, 500.0)]}
+    cl = {"marca": "CL1", "papel": "ligacao", "espessura": 9.5, "largura": 600.0, "altura": 880.0, "aba": "duas", "eixo_x": 300.0,
+          "contorno": [[0, 0], [600, 0], [600, 880], [0, 880]],
+          "furos": [{"x": x, "y": y, "d": 17.0} for x in (30.0, 90.0, 510.0, 570.0) for y in (38.5, 88.5)]}
+    barras = [[0, 0, 2990.5, 0, "banzo_inf"], [3009.5, 0, 6000, 0, "banzo_inf"], [0, 600, 3000, 900, "banzo_sup"],
+              [3000, 900, 6000, 600, "banzo_sup"], [0, 0, 0, 600, "extremidade"], [6000, 0, 6000, 600, "extremidade"],
+              [3000, 0, 3000, 900, "montante"], [1500, 0, 1500, 750, "montante"], [4500, 0, 4500, 750, "montante"],
+              [0, 600, 1500, 0, "diagonal"], [1500, 750, 3000, 0, "diagonal"], [3000, 0, 4500, 750, "diagonal"],
+              [4500, 0, 6000, 600, "diagonal"]]
+    des = Desenho(nome="planta", escala=1.0)
+    des.add(L_(camada="E", a=(0.0, 0.0), b=(0.0, 6000.0), atributos={"elemento": "trelica", "material": "aco", "marca": "T2",
+               "perfis": {"banzo_sup": "U 127×50×3,00 (FF)", "banzo_inf": "U 127×50×3,00 (FF)", "montante": "U 100×50×3,00 (FF)",
+                          "diagonal": "U 100×50×3,00 (FF)"},
+               "nivel_base": 5000, "desenho": {"barras": barras, "vao": 6000, "altura": 900},
+               "chapas": {"emenda": ce, "ligacao": cl, "parafusos_emenda": {"diametro": 15.875, "n": 4, "alturas": [200.0, 500.0]}}}))
+    des.add(L_(camada="E", a=(100.0, 1500.0), b=(4000.0, 1500.0), atributos={"elemento": "viga", "material": "aco", "papel": "travamento",
+               "marca": "VT", "secao": {"perfil": "U 100×50×2,65 (FF)"}, "nivel_topo": 5000, "alinhamento": "base"}))
+    return _modelo(des)
+
+
+def test_emenda_da_tesoura_no_3d():
+    """a emenda no 3D (21/10): uma CE em cada metade, as duas encostadas no meio da junta (9,5 + 9,5), os parafusos da
+    emenda nos furos das alturas da elevação atravessando as duas; o montante único da junta vira um em cada metade
+    (o M11 do Hangar), com a face na chapa e a boca para o meio do vão (2.3); a diagonal que chega na junta para na face
+    do montante; o banzo de cima com o corte em pé na face da chapa; as regras das tesouras sem achado"""
+    from nucleo3d.modelo import Solido
+    from nucleo3d import regras_trelica as rt
+    from nucleo3d.de_planta_estrutura import _faixa_da_secao
+    doc = _tesoura_com_emenda()
+    ents = list(doc.entidades.values())
+    ce = sorted((c for c in ents if isinstance(c, Chapa) and (c.atributos or {}).get("marca") == "CE1"), key=lambda c: c.origem[1])
+    assert [round(c.origem[1], 2) for c in ce] == [2995.25, 3004.75] and all(len(c.furos) == 4 for c in ce)
+    par = [s for s in ents if isinstance(s, Solido) and (s.atributos or {}).get("parafuso")]
+    assert len(par) == 4 and all(abs(s.atributos["parafuso"]["ponto"][1] - 3000.0) < 0.01 for s in par)
+    assert {round(s.atributos["parafuso"]["ponto"][2] - min(p.atributos["parafuso"]["ponto"][2] for p in par)) for s in par} == {0, 300}
+    mont = [b for b in ents if isinstance(b, Barra) and b.papel == "montante" and (b.atributos or {}).get("junto_da_emenda")]
+    assert len(mont) == 2
+    faces = sorted(round(b.meio[1] + (_faixa_da_secao(b, (0, 1, 0))[1] if b.meio[1] < 3000 else _faixa_da_secao(b, (0, 1, 0))[0]), 1) for b in mont)
+    assert faces == [2990.5, 3009.5]                     # cada um encostado na sua chapa
+    assert not any(isinstance(b, Barra) and b.papel == "montante" and abs(b.meio[1] - 3000.0) < 1.0 for b in ents)
+    diag = [b for b in ents if isinstance(b, Barra) and b.papel == "diagonal" and any(abs(p[1] - 3000.0) < 1 for p in (b.inicio, b.fim))]
+    assert len(diag) == 2 and all(max(b.recorte_inicio, b.recorte_fim) > 50 for b in diag)
+    sup = [b for b in ents if isinstance(b, Barra) and b.papel == "banzo" and abs(max(b.inicio[2], b.fim[2]) - 5900.0) < 1]
+    assert len(sup) == 2 and all(b.cortes_inicio or b.cortes_fim for b in sup)
+    assert rt.conferir(ents) == []
+
+
+def test_ligacao_da_tesoura_no_3d():
+    """a ligação no 3D (21/10): a CL no montante onde a VT chega (encostada nele), os furos da aba furando a VT que está
+    na frente (os de baixo; os de cima e os do lado sem viga ficam só na chapa); a CL sem recorte que cruza o banzo vira
+    apontamento, e a CE de altura errada também"""
+    from nucleo3d.modelo import Solido
+    from nucleo3d import de_planta_estrutura as DPE
+    from nucleo2d.desenho import Linha as L_
+    doc = _tesoura_com_emenda()
+    ents = list(doc.entidades.values())
+    cl = [c for c in ents if isinstance(c, Chapa) and (c.atributos or {}).get("marca") == "CL1"]
+    assert len(cl) == 1 and abs(cl[0].origem[1] - 1500.0) < 60 and len(cl[0].furos) == 8
+    vt = next(b for b in ents if isinstance(b, Barra) and b.papel == "travamento")
+    fur = [s for s in ents if isinstance(s, Solido) and (s.atributos or {}).get("furo", {}).get("peca") == vt.id]
+    assert len(fur) == 4 and sorted({round(s.atributos["furo"]["ponto"][0]) for s in fur}) == [210, 270]
+    assert sorted({round(s.atributos["furo"]["ponto"][2] - cl[0].origem[2], 1) for s in fur}) == [38.5, 88.5]
+    av = doc.metadados["de_planta_estrutura"]["avisos"]
+    assert any("CL1 da T2: a chapa cruza o banzo de baixo" in a for a in av)
+    assert any("CE1 da T2: a chapa tem 1030 mm" in a for a in av)
 
 
 def test_hangar_tercas_na_planta(hangar):

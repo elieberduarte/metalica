@@ -69,6 +69,7 @@ export const ETAPAS = [
   ['contraventos', 'Contraventos e outras peças'],
   ['apoios', 'Apoios: chapas e chumbadores'],
   ['suportes', 'Suportes das terças'],
+  ['chapas', 'Emendas e ligações das tesouras'],
 ];
 
 export class MetodosIdentificacao {
@@ -235,6 +236,18 @@ export class MetodosIdentificacao {
         botao(nSup ? 'Pôr de novo' : 'Pôr os suportes nas terças', () => this._suportesIdent(), { class: nSup ? '' : 'primario',
           title: 'Lê o suporte das terças nas folhas do projeto e põe nas terças da Implantação' }),
         botao('Confirmar ✓', () => this._confirmarIdent('suportes'), { class: 'ident-confirmar', disabled: nSup ? undefined : true })) : null);
+    const livre7 = this._liberada('chapas');
+    const tesTrel = this.ativa ? [...this.cad.doc.entidades.values()].filter(e => (e.atributos || {}).elemento === 'trelica' && !(e.atributos || {}).identificacao) : [];
+    const nCh = this.ativa ? tesTrel.filter(e => (e.atributos || {}).chapas).length : (id.chapas || {}).n || 0;
+    const resC = id.chapas || {};
+    const sec7 = etapa('chapas', ETAPAS[6][1],
+      el('div', { class: 'explica', texto: 'As chapas da emenda da cumeeira (uma em cada meia-tesoura, aparafusadas) e as de ligação (nos montantes onde as vigas VC e VT chegam) pelo detalhe do projeto, em cada tesoura pelo tipo dela; o 3D faz as chapas, os parafusos da emenda, o montante de cada metade e os furos nas vigas.' }),
+      nCh ? el('div', { class: 'ident-linha ok', texto: `Chapas em ${nCh} tesoura(s)` + (resC.resumo ? ` — ${resC.resumo}` : '') + '.' }) : null,
+      avisos(resC.avisos),
+      livre7 ? el('div', { class: 'ident-botoes' },
+        botao(nCh ? 'Pôr de novo' : 'Pôr as chapas nas tesouras', () => this._chapasIdent(), { class: nCh ? '' : 'primario',
+          title: 'Lê as chapas da emenda e das ligações nas folhas do projeto e põe em cada tesoura da Implantação pelo tipo' }),
+        botao('Confirmar ✓', () => this._confirmarIdent('chapas'), { class: 'ident-confirmar', disabled: nCh ? undefined : true })) : null);
     const podeMontar = et.locacao === 'confirmada' && et.tesouras === 'confirmada';
     const faltamEt = ETAPAS.filter(([k]) => et[k] !== 'confirmada').map(([, r]) => r.toLowerCase());
     const montado = id.montado;
@@ -247,7 +260,7 @@ export class MetodosIdentificacao {
         montado ? botao('Trazer do 3D o que mudou', () => this.cad.atualizarPlantaPelo3D(),
           { title: 'O que foi mudado no 3D (peça movida, comprimento, cota) volta para a Implantação; a peça apagada lá vira aviso' }) : null),
       montado ? el('div', { class: 'ident-sub', texto: 'Vinculados: o que muda na Implantação vai para o 3D a cada gravação; o que muda no 3D volta por "Trazer do 3D o que mudou".' }) : null);
-    corpo.replaceChildren(sec1, sec2, sec3, sec4, sec5, sec6, montar);
+    corpo.replaceChildren(sec1, sec2, sec3, sec4, sec5, sec6, sec7, montar);
   }
 
   async _verNoOriginal(caixa) {
@@ -575,6 +588,45 @@ export class MetodosIdentificacao {
     this._guardarIdent({ ...this._ident(), suportes: { n: tercas.length, marca: st.marca, resumo, avisos: avs } });
     await this.cad.salvar({ avisar: false });
     this.cad.aviso(`${st.marca} nas ${tercas.length} terças (${resumo}). O 3D põe um em cada cruzamento com o banzo de cima; Ctrl+Z desfaz.`, avs.length ? 'atencao' : 'info', 16000);
+    this._desenharIdent();
+  }
+
+  /** Etapa 7: as chapas da emenda da cumeeira e das ligações (CE/CL no Hangar) em cada tesoura pelo tipo dela (a T2-A
+   *  leva as da T2); o 3D faz as chapas na junta e nos montantes onde as vigas chegam (21/10/2026). */
+  async _chapasIdent() {
+    if (!this.ativa) await this.ir('montagem');
+    if (!this.ativa) return;
+    let r;
+    try {
+      r = await pedir(`/api/projetos/${encodeURIComponent(this.cad.projeto)}/identificacao/chapas-tesouras`, { original: this.m.original || this.original });
+    } catch (e) { this.cad.aviso('Não consegui ler as chapas das tesouras: ' + e.message, 'erro', 0); return; }
+    const chs = Object.values(r.chapas || {});
+    const tes = [...this.cad.doc.entidades.values()].filter(e => (e.atributos || {}).elemento === 'trelica' && !(e.atributos || {}).identificacao);
+    if (!tes.length) { this.cad.aviso('Ponha as tesouras nos eixos primeiro (etapa 2).', 'atencao'); return; }
+    const tipo = (marca) => ((String(marca || '').match(/^T\d+/i) || [''])[0]).toUpperCase();
+    const doTipo = (marca, papel) => chs.find(c => c.papel === papel && c.tesoura && tipo(c.tesoura) === tipo(marca)) || null;
+    const mud = {};
+    const sem = new Set();
+    const usadas = new Set();
+    for (const e of tes) {
+      const a = e.atributos || {};
+      const emenda = doTipo(a.marca, 'emenda');
+      const ligacao = doTipo(a.marca, 'ligacao');
+      if (!emenda && !ligacao) { sem.add(a.marca); continue; }
+      if (emenda) usadas.add(emenda.marca);
+      if (ligacao) usadas.add(ligacao.marca);
+      mud[e.id] = { atributos: { ...a, chapas: { emenda, ligacao, parafusos_emenda: r.parafusos_emenda || null } } };
+    }
+    if (!Object.keys(mud).length) { this.cad.aviso('Nenhuma chapa do projeto é das tesouras lançadas.', 'atencao', 0); return; }
+    this.cad.executar(new ComandoAlterar(mud, 'Chapas das tesouras'));
+    const resumo = chs.filter(c => usadas.has(c.marca)).map(c => `${c.marca} (${c.tesoura}, #${c.espessura} ${c.largura}×${c.altura})`).join(', ')
+      + (r.parafusos_emenda ? `; emenda com ${r.parafusos_emenda.n} parafusos ${r.parafusos_emenda.texto}` : '');
+    const avs = [...(r.avisos || []), ...[...sem].map(m => `${m}: o projeto não tem chapa de emenda nem de ligação para este tipo`),
+      ...chs.filter(c => !usadas.has(c.marca)).map(c => `${c.marca} (${c.tesoura || 'sem tesoura'}) não casou com nenhuma tesoura lançada`)];
+    this._guardarIdent({ ...this._ident(), chapas: { n: Object.keys(mud).length, resumo, avisos: avs } });
+    await this.cad.salvar({ avisar: false });
+    this.cad.aviso(`Chapas em ${Object.keys(mud).length} tesoura(s): ${resumo}. O 3D põe a emenda na junta e as ligações onde as vigas chegam; Ctrl+Z desfaz.`,
+      avs.length ? 'atencao' : 'info', 16000);
     this._desenharIdent();
   }
 
