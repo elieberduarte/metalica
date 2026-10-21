@@ -1339,6 +1339,98 @@ def _faixa_da_secao(b: Barra, eixo) -> Tuple[float, float]:
     return min(vals), max(vals)
 
 
+def _emenda_por_perfil(doc: Documento, ev: dict, sj: float, proprias: List[Barra], w, nr, s_, x_, x_eixo: float, z0: float,
+                       P_, pt, marca: str, tid: str, avisos: List[str]) -> int:
+    """A emenda da cumeeira por um perfil em pé em cada meia-tesoura, alma com alma (a T1 e a T3 da V12 do Hangar,
+    21/10/2026: "U127x50#3,00 L=133 - 2x — 1 EM CADA MEIA TESOURA - ALMA COM ALMA — 8 PARAF. 1/2\""): o U de cada metade
+    com a costa da alma no meio da junta e as abas para dentro da metade dele, do pé do banzo de baixo até o comprimento
+    do projeto; os furos da vista furam as duas almas e os parafusos atravessam as duas. O montante que o desenho dá na
+    junta (e as presilhas dele) sai — o U é ele; os banzos chegam na alma do U (o de baixo vai até ela, o de cima é
+    cortado em pé na face dela) e a diagonal que chega na junta para na ponta das abas. Devolve quantas peças."""
+    from nucleo3d.geometria import base_local, resolver_perfil, secao
+    from nucleo3d.ligacoes3d import _parafuso
+    Z = (0.0, 0.0, 1.0)
+    perfil = str(ev["perfil"])
+    try:
+        pf = resolver_perfil(perfil)
+        pts = secao(pf)
+    except Exception:                                    # noqa: BLE001
+        avisos.append("emenda da %s: o perfil %s não está no catálogo" % (marca, perfil))
+        return 0
+    tw = float(pf.tw or 3.0)
+    L = float(ev.get("comprimento") or 1330.0)
+    xmin = min(q[0] for q in pts)
+    n = 0
+    # o que o desenho dá na junta: o montante (ou o par de cantoneiras) e as presilhas dele
+    na_junta = [b for b in proprias if b.papel == "montante" and b.id in doc.entidades and abs(s_(b.meio) - sj) < 30.0]
+    ids = {b.id for b in na_junta}
+    for b in na_junta:
+        doc.entidades.pop(b.id, None)
+    for b in proprias:
+        if b.papel == "presilha" and b.id in doc.entidades and set((b.atributos or {}).get("presilha_par") or []) & ids:
+            doc.entidades.pop(b.id, None)
+    ext = {}
+    us = {}
+    for sg in (1.0, -1.0):
+        # o giro: a costa da alma na junta (as abas para o lado da metade), a altura da alma atravessando o plano
+        rot = 0.0
+        for r in (0.0, 90.0, 180.0, 270.0):
+            u, v, _ = base_local(Z, r)
+            if sum(u[k] * w[k] for k in range(3)) * sg > 0.9:
+                rot = r
+                break
+        u, v, _ = base_local(Z, rot)
+        uw = sum(u[k] * w[k] for k in range(3))
+        sc = sj - uw * xmin                               # a costa da alma (u·xmin) no meio da junta
+        p0 = P_(sc, x_eixo, z0)
+        b = Barra(inicio=p0, fim=(p0[0], p0[1], z0 + L), perfil=perfil, rotacao=rot, papel="montante", aco="ASTM A36",
+                  camada="Estrutura", nome="%s emenda (%s)" % (marca, "lado +" if sg > 0 else "lado −"), material="Aço",
+                  atributos={"tipo_ifc": "IfcMember", "origem_2d": tid, "marca": marca, "peca": marca, "papel_trelica": "emenda",
+                             "emenda": True, "um_lado_so": True, "junto_da_emenda": perfil})
+        doc.add(b)
+        n += 1
+        us[sg] = b
+        lo, hi = _faixa_da_secao(b, w)
+        ext[sg] = sc + (hi if sg > 0 else lo)             # a ponta das abas
+    # os furos (nas duas almas) e os parafusos (atravessando as duas)
+    d_alma = max(q[1] for q in pts) - min(q[1] for q in pts)
+    par = ev.get("parafusos") or {}
+    for f in ev.get("furos") or []:
+        P = P_(sj, x_eixo - d_alma / 2.0 + float(f["x"]), z0 + float(f["y"]))
+        for sg, b in us.items():
+            doc.add(_furo_marcador(P, tuple(c * sg for c in w), float(f["d"]), tw + 1.0, b.id))
+        if par.get("diametro"):
+            pz = _parafuso(P, w, float(par["diametro"]), 2.0 * tw, "ASTM A307")
+            pz.atributos.update(marca="PAR emenda %s" % marca, tesoura=marca, origem_2d=tid)
+            doc.add(pz)
+            n += 1
+    if par.get("n") and len(ev.get("furos") or []) != int(par["n"]):
+        avisos.append("emenda da %s: o projeto escreve %d parafusos e desenha %d furos" % (marca, int(par["n"]), len(ev.get("furos") or [])))
+    # os banzos chegam na alma do U; a diagonal que chega na junta para na ponta das abas
+    for b in proprias:
+        if b.id not in doc.entidades or b.papel not in ("banzo", "diagonal"):
+            continue
+        for ponta in ("inicio", "fim"):
+            P = getattr(b, ponta)
+            outra = b.fim if ponta == "inicio" else b.inicio
+            if abs(s_(P) - sj) > 15.0:
+                continue
+            sg = 1.0 if s_(outra) > sj else -1.0
+            face = sj + sg * tw
+            if b.papel == "banzo" and pt(b) == "banzo_inf":
+                d_ = (face - s_(P))
+                setattr(b, ponta, (P[0] + w[0] * d_, P[1] + w[1] * d_, P[2]))
+            elif b.papel == "banzo":
+                pl = P_(face, x_(P), P[2])
+                setattr(b, "cortes_" + ponta, [{"normal": [round(c, 9) for c in w], "ponto": [round(pl[k] - P[k], 4) for k in range(3)]}])
+            else:
+                cosw = abs(sum(b.direcao[k] * w[k] for k in range(3)))
+                if cosw > 0.1:
+                    rec = abs(ext[sg] - sj) / cosw
+                    setattr(b, "recorte_" + ponta, max(float(getattr(b, "recorte_" + ponta) or 0.0), round(rec, 1)))
+    return n
+
+
 def _chapas_das_tesouras(doc: Documento, pedidas: List[Tuple[str, dict]], avisos: List[str]) -> int:
     """As chapas da emenda e das ligações das tesouras pelo projeto (Hangar, folhas 30 e 32/33 — 21/10/2026;
     identificacao.chapas_das_emendas). `pedidas`: [(id da tesoura na planta, {emenda, ligacao, parafusos_emenda})].
@@ -1512,23 +1604,69 @@ def _chapas_das_tesouras(doc: Documento, pedidas: List[Tuple[str, dict]], avisos
                 doc.add(_furo_marcador(face, eixo, float(f["d"]), min(t1 - t0, tw + 1.0), b.id))
             return achou
 
+        # ---- a emenda pela V12 do Hangar (identificacao.emendas_das_tesouras): a chapa em cada banzo (a T2) ou o U em pé
+        # em cada meia-tesoura, alma com alma (a T1 e a T3)
+        ev = ped.get("emenda_v12") or {}
+        if ev and not juntas:
+            avisos.append("emenda da %s: a tesoura não se interrompe (sem meias-tesouras) — a emenda ficou de fora" % marca)
+        for sj in (juntas if ev else []):
+            if ev.get("tipo_emenda") == "perfil_vertical":
+                n += _emenda_por_perfil(doc, ev, sj, proprias, w, nr, s_, x_, x_eixo, z0, P_, pt, marca, tid, avisos)
+                continue
+            t = float(ev["espessura"])
+            B, H = float(ev["largura"]), float(ev["altura"])
+            for sg in (1.0, -1.0):
+                sm = sj + sg * t / 2.0
+                for qual in ("inf", "sup"):
+                    vista = (ev.get("vistas") or {}).get(qual) or {}
+                    fora = float(vista.get("fora") or (H - 127.0) / 2.0)
+                    if qual == "inf":
+                        ali = [b for b in inf if min(s_(b.inicio), s_(b.fim)) - 30 <= sj + sg * 30 <= max(s_(b.inicio), s_(b.fim)) + 30]
+                        if not ali:
+                            continue
+                        zb = min(b.meio[2] + _faixa_da_secao(b, Z)[0] for b in ali)
+                        z_pe = zb - fora
+                    else:
+                        b_sup, zc = banzo_de_cima_em(sj + sg * 20.0)
+                        if b_sup is None:
+                            continue
+                        z_pe = zc + _faixa_da_secao(b_sup, Z)[1] + fora - H
+                    org = P_(sm, x_eixo - B / 2.0, z_pe)
+                    c = Chapa(origem=org, eixo_x=nr, eixo_y=Z, contorno=[(0.0, 0.0), (B, 0.0), (B, H), (0.0, H)], espessura=t, centrada=True,
+                              furos=[{"x": float(f["x"]), "y": float(f["y"]), "diametro": float(f["d"])} for f in vista.get("furos") or []],
+                              aco=str(ev.get("aco") or "ASTM A36"), camada="Chapas", nome="%s %s" % (ev["marca"], marca), material="Aço",
+                              atributos={"tipo_ifc": "IfcPlate", "elemento": "chapa", "marca": ev["marca"], "sigla": ev["marca"],
+                                         "espessura": t, "tesoura": marca, "origem_2d": tid, "papel_chapa": "emenda",
+                                         "banzo": qual})
+                    doc.add(c)
+                    n += 1
+                    par_v = ev.get("parafusos") or {}
+                    if sg > 0 and par_v.get("diametro"):
+                        for f in vista.get("furos") or []:
+                            Hc = tuple(org[k] + nr[k] * float(f["x"]) + Z[k] * float(f["y"]) - w[k] * t / 2.0 for k in range(3))
+                            pz = _parafuso(Hc, w, float(par_v["diametro"]), 2.0 * t, "ASTM A307")
+                            pz.atributos.update(marca="PAR %s" % ev["marca"], tesoura=marca, origem_2d=tid)
+                            doc.add(pz)
+                            n += 1
+            # o montante de cada metade, encostado na chapa, e os cortes do banzo de cima e das diagonais: o da V5
+            ped = dict(ped, emenda={"marca": ev["marca"], "espessura": t, "_so_montantes": True})
         # ---- a emenda
         ce = ped.get("emenda")
         par = ped.get("parafusos_emenda") or {}
-        if ce and not juntas:
+        if ce and not juntas and not ce.get("_so_montantes"):
             avisos.append("%s da %s: a tesoura não se interrompe (sem meias-tesouras) — a chapa da emenda ficou de fora" % (ce["marca"], marca))
         for sj in (juntas if ce else []):
             t = float(ce["espessura"])
             alt_par = [float(y) for y in par.get("alturas") or []]
             pontos_lado = {}
-            for sg in (1.0, -1.0):
+            for sg in ((1.0, -1.0) if not ce.get("_so_montantes") else ()):
                 c, pontos = por_chapa(ce, sj + sg * t / 2.0, t, lados, "%s %s" % (ce["marca"], marca), {"papel_chapa": "emenda"})
                 doc.add(c)
                 n += 1
                 pontos_lado[sg] = pontos
                 furar_vigas(ce, pontos, t, lados, alt_par)
             # os parafusos da emenda: um em cada furo das alturas da elevação, no meio da junta
-            if par.get("diametro"):
+            if par.get("diametro") and not ce.get("_so_montantes"):
                 for f, H in pontos_lado[1.0]:
                     if any(abs(float(f["y"]) - y) < 3.0 for y in alt_par):
                         Hc = tuple(H[k] - w[k] * t / 2.0 for k in range(3))
@@ -1864,6 +2002,245 @@ def _aletas_das_tesouras(doc: Documento, pedidas: List[Tuple[str, dict]], avisos
     return n
 
 
+def _plano_da_tesoura(proprias: List[Barra]) -> Optional[dict]:
+    """o plano da tesoura pelas barras dela: w (ao longo, na horizontal), nr (normal), a origem, o eixo e os banzos"""
+    Z = (0.0, 0.0, 1.0)
+    pt = lambda b: str((b.atributos or {}).get("papel_trelica") or "")
+    inf = [b for b in proprias if b.papel == "banzo" and pt(b) == "banzo_inf"]
+    sup = [b for b in proprias if b.papel == "banzo" and pt(b) == "banzo_sup" and not (b.atributos or {}).get("ponta_composto")]
+    if not inf:
+        return None
+    d0 = inf[0].direcao
+    w = _unit3((d0[0], d0[1], 0.0))
+    nr = _unit3(_cruz3(w, Z))
+    O = inf[0].inicio
+    s_ = lambda P: sum((P[k] - O[k]) * w[k] for k in range(2))
+    x_ = lambda P: sum((P[k] - O[k]) * nr[k] for k in range(2))
+    return {"w": w, "nr": nr, "O": O, "s_": s_, "x_": x_, "x_eixo": sum(x_(b.meio) for b in inf) / len(inf),
+            "inf": inf, "sup": sup, "marca": str((inf[0].atributos or {}).get("marca") or "")}
+
+
+def _banzo_em(pl: dict, lista: List[Barra], s: float, lado: Optional[float] = None):
+    """o banzo da lista que passa em s (no composto, o U do lado pedido) e o eixo dele ali: (barra, z) ou (None, None)"""
+    s_, x_ = pl["s_"], pl["x_"]
+    cand = []
+    for b in lista:
+        sa, sb = s_(b.inicio), s_(b.fim)
+        if min(sa, sb) - 30 <= s <= max(sa, sb) + 30 and abs(sb - sa) > 1:
+            z = b.inicio[2] + (b.fim[2] - b.inicio[2]) * (s - sa) / (sb - sa)
+            outro = lado is not None and lado * (x_(b.meio) - pl["x_eixo"]) < -1.0
+            cand.append((outro, b, z))
+    if not cand:
+        return None, None
+    _o, b, z = min(cand, key=lambda q: q[0])
+    return b, z
+
+
+def _ligacoes_das_vcs(doc: Documento, pedidas: List[Tuple[str, dict]], avisos: List[str]) -> int:
+    """A chapa da ponta da VC na tesoura (a CV1 da V12 do Hangar, 21/10/2026: "#9,50 15x12,7, SEM FUROS - SOLDADA", a VC —
+    o U127 deitado — de topo, soldada nela): em cada ponta de banzo de VC que chega na tesoura, uma chapa em pé, paralela
+    ao plano da tesoura, encostada na face de fora do banzo dela do lado da VC, centrada na VC ao longo da tesoura e no
+    banzo na altura. A VC que não encosta na chapa vira aviso (a folga). Devolve quantas."""
+    Z = (0.0, 0.0, 1.0)
+    barras = [b for b in doc.entidades.values() if isinstance(b, Barra)]
+    vcs = [b for b in barras if b.papel == "banzo" and str((b.atributos or {}).get("marca") or "").upper().startswith("VC")]
+    n = 0
+    folgas = collections.defaultdict(list)
+    for tid, ped in pedidas:
+        lv = ped.get("ligacao_vc")
+        if not lv:
+            continue
+        proprias = [b for b in barras if (b.atributos or {}).get("origem_2d") == tid]
+        pl = _plano_da_tesoura(proprias)
+        if pl is None:
+            continue
+        w, nr, s_, x_, x_eixo = pl["w"], pl["nr"], pl["s_"], pl["x_"], pl["x_eixo"]
+        t, B, H = float(lv["espessura"]), float(lv["largura"]), float(lv["altura"])
+        for v in vcs:
+            if v in proprias or abs(sum(v.direcao[k] * nr[k] for k in range(3))) < 0.95:
+                continue
+            for P, Q in ((v.inicio, v.fim), (v.fim, v.inicio)):
+                lado = 1.0 if x_(Q) > x_eixo else -1.0
+                if not abs(x_(P) - x_eixo) < 250.0:
+                    continue
+                s = s_(P)
+                bz_inf, z_inf = _banzo_em(pl, pl["inf"], s, lado)
+                bz_sup, z_sup = _banzo_em(pl, pl["sup"], s, lado)
+                op = [(abs(z - P[2]), b, z) for b, z in ((bz_inf, z_inf), (bz_sup, z_sup)) if b is not None]
+                if not op:
+                    continue
+                _d, b, zb = min(op, key=lambda q: q[0])
+                lo, hi = _faixa_da_secao(b, nr)
+                face = x_(b.meio) - x_eixo + (hi if lado > 0 else lo)          # a face de fora do banzo, do lado da VC
+                zlo, zhi = _faixa_da_secao(b, Z)
+                zc = zb + (zlo + zhi) / 2.0
+                xm = x_eixo + face + lado * t / 2.0
+                org = (pl["O"][0] + w[0] * (s - B / 2.0) + nr[0] * xm, pl["O"][1] + w[1] * (s - B / 2.0) + nr[1] * xm, zc - H / 2.0)
+                c = Chapa(origem=org, eixo_x=w, eixo_y=Z, contorno=[(0.0, 0.0), (B, 0.0), (B, H), (0.0, H)], espessura=t, centrada=True,
+                          furos=[], aco="ASTM A36", camada="Chapas", nome="%s %s" % (lv["marca"], pl["marca"]), material="Aço",
+                          atributos={"tipo_ifc": "IfcPlate", "elemento": "chapa", "marca": lv["marca"], "sigla": lv["marca"],
+                                     "espessura": t, "tesoura": pl["marca"], "origem_2d": tid, "papel_chapa": "ligacao_vc",
+                                     "viga": (v.atributos or {}).get("marca"), "soldada": bool(lv.get("soldada")),
+                                     **({"a_definir": lv["a_definir"]} if lv.get("a_definir") else {})})
+                doc.add(c)
+                n += 1
+                # a ponta da VC na face da chapa (de topo)
+                folga = lado * (x_(P) - x_eixo) - (abs(face) + t)
+                if abs(folga) > 2.0:
+                    folgas[(lv["marca"], pl["marca"], (v.atributos or {}).get("marca"))].append(folga)
+    for (cm, tm, vm), fs in sorted(folgas.items()):
+        f = max(fs, key=abs)
+        avisos.append("%s da %s: a %s %s da chapa em %d ponta(s) (até %s mm) — confira o comprimento da VC"
+                      % (cm, tm, vm, "não chega" if f > 0 else "entra", len(fs), round(abs(f), 1)))
+    if n and pedidas:
+        lv0 = next((p.get("ligacao_vc") for _t, p in pedidas if p.get("ligacao_vc")), {}) or {}
+        if lv0.get("a_definir"):
+            avisos.append("%s: %s — apontamento ao projetista" % (lv0["marca"], lv0["a_definir"].lower()))
+    return n
+
+
+def _castanhas_das_tesouras(doc: Documento, pedidas: List[Tuple[str, dict]], avisos: List[str]) -> int:
+    """A castanha do contravento (a CA1 da V12 do Hangar, folha CASTANHAS DOS CONTRAVENTOS, 21/10/2026): em cada ponta de
+    contravento que chega no banzo de baixo de uma tesoura, a cantoneira (`peca`, L50 de 150 mm) deitada embaixo do
+    banzo, ao longo do contravento, presa por um parafuso (`parafuso`, 1/2") na face de baixo do banzo a 30 mm da borda de
+    fora (no 2U composto, na aba do U de fora); na ponta de fora dela, a cantoneira pequena (`aba`, L50 de 50 mm) em pé,
+    furada (`furo`, Ø14) — a barra passa por ela, 25 mm abaixo do banzo (a ponta do contravento desce até lá). A barra
+    fica no comprimento de corte do projeto. Banzo sem castanha definida (o de cima: "A DEFINIR") vira aviso. Devolve
+    quantas peças."""
+    from nucleo3d.geometria import base_local, resolver_perfil, secao
+    from nucleo3d.ligacoes3d import _parafuso
+    Z = (0.0, 0.0, 1.0)
+    barras = [b for b in doc.entidades.values() if isinstance(b, Barra)]
+    rods = [b for b in barras if b.papel == "contraventamento"]
+    n = 0
+    pontas = collections.defaultdict(list)
+    sem = collections.Counter()
+    total = collections.Counter()
+    longe = collections.Counter()
+
+    def giro_deitada(direcao, lado_h):
+        """o giro da cantoneira com uma aba deitada em cima e a outra descendo do lado `lado_h`"""
+        for r in (0.0, 90.0, 180.0, 270.0):
+            u, v, _ = base_local(direcao, r)
+            if v[2] < -0.9 and sum(u[k] * lado_h[k] for k in range(3)) > 0.9:
+                return r
+            if u[2] < -0.9 and sum(v[k] * lado_h[k] for k in range(3)) > 0.9:
+                return r
+        return 0.0
+    for tid, ped in pedidas:
+        ca = ped.get("castanha")
+        if not ca:
+            continue
+        proprias = [b for b in barras if (b.atributos or {}).get("origem_2d") == tid]
+        pl = _plano_da_tesoura(proprias)
+        if pl is None:
+            continue
+        w, nr, s_, x_, x_eixo = pl["w"], pl["nr"], pl["s_"], pl["x_"], pl["x_eixo"]
+        perfil, Lc = ca["peca"]["perfil"], float(ca["peca"]["comprimento"])
+        perfil_a, La = ca["aba"]["perfil"], float(ca["aba"]["comprimento"])
+        d_furo = float(ca.get("furo") or 14.0)
+        for r in rods:
+            for ponta in ("inicio", "fim"):
+                E = getattr(r, ponta)
+                Q = r.fim if ponta == "inicio" else r.inicio
+                lado = 1.0 if x_(E) > x_eixo else -1.0
+                if not 20.0 < abs(x_(E) - x_eixo) < 300.0 or lado * (x_(Q) - x_eixo) < 0:
+                    continue
+                s = s_(E)
+                bi, zi = _banzo_em(pl, pl["inf"], s, lado)
+                bs, zs = _banzo_em(pl, pl["sup"], s, lado)
+                if bi is None and bs is None:
+                    continue
+                qual = "inf" if bs is None or (bi is not None and abs(zi - E[2]) <= abs(zs - E[2])) else "sup"
+                if qual not in (ca.get("banzos") or ["inf"]):
+                    sem[(ca["marca"], pl["marca"], qual)] += 1
+                    continue
+                b, zb = (bi, zi) if qual == "inf" else (bs, zs)
+                total[(ca["marca"], pl["marca"])] += 1
+                zlo, _zhi = _faixa_da_secao(b, Z)
+                z_pe = zb + zlo                                             # a face de baixo do banzo
+                # a borda de fora da face de baixo do banzo (do lado do contravento)
+                u_, v_, _ = base_local(b.direcao, float(b.rotacao or 0.0))
+                pxz = [(q[0] * sum(u_[k] * nr[k] for k in range(3)) + q[1] * sum(v_[k] * nr[k] for k in range(3)), q[0] * u_[2] + q[1] * v_[2])
+                       for q in secao(resolver_perfil(b.perfil))]
+                base_ = [px for px, pz in pxz if pz <= zlo + 6.0]
+                borda = (max(base_) if lado > 0 else min(base_)) + x_(b.meio) - x_eixo
+                x_par = borda - lado * 30.0                                 # o parafuso a 30 mm da borda de fora
+                dh = _unit3((E[0] - Q[0], E[1] - Q[1], 0.0))                 # o contravento, para a tesoura
+                dxn = sum(dh[k] * nr[k] for k in range(3))
+                if abs(dxn) < 0.2:
+                    continue
+                # o ponto do contravento (na planta) na linha do parafuso
+                tpar = ((x_eixo + x_par) - x_(E)) / dxn
+                Bp = (E[0] + dh[0] * tpar, E[1] + dh[1] * tpar, z_pe)
+                S0 = tuple(Bp[k] + dh[k] * 25.0 for k in range(2)) + (z_pe,)
+                S1 = tuple(S0[k] - dh[k] * Lc for k in range(2)) + (z_pe,)
+                lado_h = _unit3(_cruz3(Z, dh))
+                g = giro_deitada(tuple(-c for c in dh), lado_h)
+                cast = Barra(inicio=S0, fim=S1, perfil=perfil, rotacao=g, papel="castanha", aco="ASTM A36", camada="Chapas",
+                             nome="%s %s" % (ca["marca"], pl["marca"]), material="Aço",
+                             atributos={"tipo_ifc": "IfcMember", "elemento": "Castanha", "marca": ca["marca"], "sigla": ca["marca"],
+                                        "tesoura": pl["marca"], "origem_2d": tid, "contravento": (r.atributos or {}).get("marca")})
+                lo, hi = _faixa_da_secao(cast, Z)
+                dz = z_pe - hi
+                cast.inicio, cast.fim = (S0[0], S0[1], S0[2] + dz), (S1[0], S1[1], S1[2] + dz)
+                doc.add(cast)
+                # a pequena, em pé na ponta de fora, atravessada pela barra
+                ga = giro_deitada(lado_h, tuple(-c for c in dh))
+                aba = Barra(inicio=tuple(S1[k] - lado_h[k] * La / 2.0 for k in range(2)) + (z_pe,),
+                            fim=tuple(S1[k] + lado_h[k] * La / 2.0 for k in range(2)) + (z_pe,), perfil=perfil_a, rotacao=ga,
+                            papel="castanha", aco="ASTM A36", camada="Chapas", nome="%s %s (aba)" % (ca["marca"], pl["marca"]),
+                            material="Aço", atributos=dict(cast.atributos, elemento="Castanha (aba)"))
+                lo, hi = _faixa_da_secao(aba, Z)
+                dz = z_pe - hi
+                aba.inicio, aba.fim = tuple(aba.inicio[:2]) + (aba.inicio[2] + dz,), tuple(aba.fim[:2]) + (aba.fim[2] + dz,)
+                doc.add(aba)
+                n += 2
+                # a ponta do contravento no furo da aba (25 mm abaixo do banzo) e os furos; o parafuso no banzo
+                H_ = (S1[0], S1[1], z_pe - 25.0)
+                setattr(r, ponta, H_)
+                pf_c = resolver_perfil(perfil)
+                doc.add(_furo_marcador((Bp[0], Bp[1], z_pe), (0.0, 0.0, -1.0), d_furo, float(pf_c.tw or pf_c.tf or 5.0) + 1.0, cast.id))
+                doc.add(_furo_marcador((Bp[0], Bp[1], z_pe), (0.0, 0.0, 1.0), d_furo, 8.0, b.id))
+                doc.add(_furo_marcador(H_, tuple(c for c in dh), d_furo, float(pf_c.tw or 5.0) + 2.0, aba.id))
+                par = ca.get("parafuso") or {}
+                if par.get("diametro"):
+                    pz = _parafuso((Bp[0], Bp[1], z_pe), Z, float(par["diametro"]), float(pf_c.tw or 5.0) + 4.0, "ASTM A307")
+                    pz.atributos.update(marca="PAR %s" % ca["marca"], tesoura=pl["marca"], origem_2d=tid)
+                    doc.add(pz)
+                    n += 1
+                if abs(lado * (x_(E) - x_eixo) - lado * (x_(H_) - x_eixo)) > 80.0:
+                    longe[(ca["marca"], pl["marca"])] += 1
+                L_proj = ((ped.get("contraventos") or {}).get(str((r.atributos or {}).get("marca") or "")) or {}).get("comprimento")
+                pontas[r.id].append((ponta, L_proj))
+    # a barra no comprimento de corte do projeto (a ponta passa a aba até as porcas)
+    for rid, lista in pontas.items():
+        r = doc.entidades.get(rid)
+        L_proj = next((L for _p, L in lista if L), None)
+        if r is None or not L_proj:
+            continue
+        falta = float(L_proj) - r.comprimento
+        if not -300.0 < falta < 300.0:
+            avisos.append("%s: o comprimento de corte do projeto (%g) e o da barra entre as castanhas (%g) não fecham"
+                          % ((r.atributos or {}).get("marca"), L_proj, round(r.comprimento)))
+            continue
+        dd = r.direcao
+        cada = falta / len(lista)
+        for ponta, _L in lista:
+            if ponta == "inicio":
+                r.inicio = tuple(r.inicio[k] - dd[k] * cada for k in range(3))
+            else:
+                r.fim = tuple(r.fim[k] + dd[k] * cada for k in range(3))
+    for (cm, tm, q), k in sorted(sem.items()):
+        ca0 = next((p.get("castanha") for _t, p in pedidas if p.get("castanha")), {}) or {}
+        avisos.append("%s da %s: %d ponta(s) de contravento no banzo de %s sem castanha — %s; apontamento ao projetista"
+                      % (cm, tm, k, "cima" if q == "sup" else "baixo", ca0.get("a_definir") or "o projeto não define"))
+    for (cm, tm), k in sorted(longe.items()):
+        avisos.append("%s da %s: em %d de %d castanhas a ponta do contravento andou mais de 80 mm até o furo — confira"
+                      % (cm, tm, k, total[(cm, tm)]))
+    return n
+
+
 def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome: str = "Estrutura lançada") -> Tuple[Documento, List[str]]:
     """o Documento 3D da planta; devolve (documento, avisos). A Montagem vai pela Implantação, na medida real."""
     des = planta_real(des)
@@ -2043,6 +2420,8 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
     n_aco += _suportes_das_tercas(doc, avisos)
     n_aco += _chapas_das_tesouras(doc, pedidas, avisos)
     n_aco += _aletas_das_tesouras(doc, pedidas_aletas, avisos)
+    n_aco += _ligacoes_das_vcs(doc, pedidas, avisos)
+    n_aco += _castanhas_das_tesouras(doc, pedidas_aletas, avisos)
     # os furos: na chapa em que caem (as coordenadas da chapa são as da planta)
     chapas = [c for c in doc.entidades.values() if isinstance(c, Chapa) and (c.atributos or {}).get("elemento") == "chapa"]
     for it in elementos(des):

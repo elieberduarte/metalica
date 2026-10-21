@@ -4068,6 +4068,15 @@ def importar_arquitetonico(s: str, corpo: dict) -> dict:
             anterior = g.abrir_desenho(s, lancamento.DESENHO_LANCAMENTO)
         except ErroDeDados:
             pass
+        # a revisão do projeto recebido (o Hangar V5 → V12, 21/10/2026): entra no lugar da anterior, alinhada pelos eixos
+        # de mesmo nome das plantas de locação — as leituras da Identificação continuam caindo nos eixos gravados
+        if recebido and anterior and ((anterior.get("metadados") or {}).get("arquitetonico") or {}).get("recebido"):
+            from nucleo2d.desenho import Desenho
+            from nucleo3d import identificacao as _ident
+            try:
+                resumo["alinhamento"] = _ident.alinhar_revisao(ref, Desenho.de_dict(anterior))
+            except ErroDeDados as e:
+                resumo.setdefault("avisos", []).append("revisão não alinhada à anterior: %s" % e)
         des = lancamento.desenho_de_lancamento(ref, anterior)
         _progresso(s, "gravando a planta de lançamento…")
         r = g.salvar_desenho(s, lancamento.DESENHO_LANCAMENTO, des.dict())

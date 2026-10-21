@@ -70,7 +70,7 @@ export const ETAPAS = [
   ['apoios', 'Apoios: chapas e chumbadores'],
   ['suportes', 'Suportes das terças'],
   ['chapas', 'Emendas e ligações das tesouras'],
-  ['aletas', 'Aletas dos contraventos'],
+  ['aletas', 'Aletas e castanhas dos contraventos'],
 ];
 
 export class MetodosIdentificacao {
@@ -536,7 +536,8 @@ export class MetodosIdentificacao {
       const [cx, cy] = a.centro, pb = a.pb, cb = a.cb;
       const base = { identificacao: 'apoio', apoio: a.marca, pilar: a.pilar, quadro: qi.id };
       // a PB embutida rente ao topo do pilar: debaixo da CB onde a tesoura apoia, senão no topo do próprio pilar
-      const topoPB = cb ? apoio - cb.espessura : a.nivel_topo_pilar;
+      // o topo da PB pelo projeto (a V12 do Hangar: a PB sobre o pilar e a CB numa folga acima dela); antes, embutida rente
+      const topoPB = a.topo_pb != null ? a.topo_pb : (cb ? apoio - cb.espessura : a.nivel_topo_pilar);
       novas.push(criar({ tipo: 'polilinha', camada: 'ESTRUTURA', fechada: true, vertices: quadrado(cx, cy, pb.largura, pb.altura),
         atributos: { ...base, elemento: 'chapa', material: 'aco', marca: pb.marca, espessura: pb.espessura, nivel_topo: topoPB, aco: 'ASTM A36' } }));
       if (cb) {
@@ -616,6 +617,29 @@ export class MetodosIdentificacao {
     const tes = [...this.cad.doc.entidades.values()].filter(e => (e.atributos || {}).elemento === 'trelica' && !(e.atributos || {}).identificacao);
     if (!tes.length) { this.cad.aviso('Ponha as tesouras nos eixos primeiro (etapa 2).', 'atencao'); return; }
     const tipo = (marca) => ((String(marca || '').match(/^T\d+/i) || [''])[0]).toUpperCase();
+    if (r.emendas) {
+      // a emenda por tipo de tesoura (a V12 do Hangar: a chapa em cada banzo da T2, o U em pé da T1 e da T3) e a chapa da
+      // ponta da VC (CV1)
+      const mud = {};
+      const sem = new Set();
+      for (const e of tes) {
+        const a = e.atributos || {};
+        const em = r.emendas[tipo(a.marca)] || null;
+        if (!em && !r.ligacao_vc) { sem.add(a.marca); continue; }
+        mud[e.id] = { atributos: { ...a, chapas: { emenda_v12: em, ligacao_vc: r.ligacao_vc || null } } };
+      }
+      if (!Object.keys(mud).length) { this.cad.aviso('Nenhuma emenda do projeto é das tesouras lançadas.', 'atencao', 0); return; }
+      this.cad.executar(new ComandoAlterar(mud, 'Emendas das tesouras'));
+      const resumo = Object.entries(r.emendas).sort().map(([k, x]) => `${k}: ${String(x.texto || '').split(' / ')[0]}`).join('; ')
+        + (r.ligacao_vc ? `; ${r.ligacao_vc.texto}` : '');
+      const avs = [...(r.avisos || []), ...[...sem].map(m => `${m}: o projeto não tem emenda para este tipo`)];
+      this._guardarIdent({ ...this._ident(), chapas: { n: Object.keys(mud).length, resumo, avisos: avs } });
+      await this.cad.salvar({ avisar: false });
+      this.cad.aviso(`Emendas em ${Object.keys(mud).length} tesoura(s): ${resumo}. O 3D faz a emenda na junta e a chapa onde a VC chega; Ctrl+Z desfaz.`,
+        avs.length ? 'atencao' : 'info', 16000);
+      this._desenharIdent();
+      return;
+    }
     const doTipo = (marca, papel) => chs.find(c => c.papel === papel && c.tesoura && tipo(c.tesoura) === tipo(marca)) || null;
     const mud = {};
     const sem = new Set();
@@ -655,6 +679,22 @@ export class MetodosIdentificacao {
     const tes = [...this.cad.doc.entidades.values()].filter(e => (e.atributos || {}).elemento === 'trelica' && !(e.atributos || {}).identificacao);
     if (!tes.length) { this.cad.aviso('Ponha as tesouras nos eixos primeiro (etapa 2).', 'atencao'); return; }
     const tipo = (marca) => ((String(marca || '').match(/^T\d+/i) || [''])[0]).toUpperCase();
+    if (r.castanha) {
+      // a castanha no lugar da aleta (a V12 do Hangar): a mesma em todas as tesouras; o 3D a põe em cada ponta de contravento
+      // do banzo em que ela está definida
+      const ca = r.castanha;
+      const mud = {};
+      for (const e of tes) mud[e.id] = { atributos: { ...(e.atributos || {}), aletas: { castanha: ca, contraventos: r.contraventos || {} } } };
+      this.cad.executar(new ComandoAlterar(mud, 'Castanhas dos contraventos'));
+      const resumo = `${ca.marca} - ${ca.quantidade} pç (castanha: ${ca.peca.perfil} L=${ca.peca.comprimento} + ${ca.aba.perfil} L=${ca.aba.comprimento}`
+        + `${ca.parafuso ? `, parafuso ${ca.parafuso.texto} no banzo` : ''})`;
+      const avs = [...(r.avisos || [])];
+      this._guardarIdent({ ...this._ident(), aletas: { n: tes.length, resumo, avisos: avs } });
+      await this.cad.salvar({ avisar: false });
+      this.cad.aviso(`Castanhas em ${tes.length} tesoura(s): ${resumo}. Ctrl+Z desfaz.`, avs.length ? 'atencao' : 'info', 16000);
+      this._desenharIdent();
+      return;
+    }
     const mud = {};
     const usadas = new Set();
     for (const e of tes) {

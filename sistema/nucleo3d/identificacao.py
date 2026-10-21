@@ -27,7 +27,7 @@ import re
 from typing import Dict, List, Optional
 
 from nucleo.base import ErroDeDados
-from nucleo2d.desenho import Arco, Circulo, Cota, Desenho, Linha, Polilinha, Texto
+from nucleo2d.desenho import Arco, Circulo, Cota, Desenho, Linha, Polilinha, Texto, transladar
 
 _FOLHA = re.compile(r"FOLHA\s*(\d+)\s*/\s*(\d+)", re.I)
 _NUMERO = re.compile(r"^\s*[\d.,]+\s*$")
@@ -327,8 +327,17 @@ def tesouras(des: Desenho, folhas_: List[dict], locacao: Optional[dict]) -> List
         if not achados:
             continue
         mostra = _o_que_mostra(f["titulo"])
+        # a folha da tesoura com as vistas numeradas dentro (a V12 do Hangar, 21/10: "T2 - 4 PÇ" com "1 - GABARITO E
+        # TRELIÇAMENTO", "2 - SUPORTES DE TERÇA", "3 - CHAPAS"): cada vista entra como uma folha, com a caixa dela — a
+        # folha inteira tem a mesma tesoura três vezes
+        subs = subvistas(des, f["caixa"]) if not mostra else []
         for t in dict.fromkeys(achados):
-            tipo(t)["folhas"].append({"folha": f["folha"], "titulo": f["titulo"], "caixa": f["caixa"], "mostra": mostra})
+            if subs:
+                for sv in subs:
+                    tipo(t)["folhas"].append({"folha": f["folha"], "titulo": "%s › %s" % (f["titulo"], sv["titulo"]),
+                                              "caixa": sv["caixa"], "mostra": _o_que_mostra(sv["titulo"])})
+            else:
+                tipo(t)["folhas"].append({"folha": f["folha"], "titulo": f["titulo"], "caixa": f["caixa"], "mostra": mostra})
     nums = ((locacao or {}).get("eixos") or {}).get("numeros") or []
     if locacao and locacao.get("caixa") and nums:
         g = locacao["eixos"]["eixo_g"]
@@ -345,11 +354,43 @@ def tesouras(des: Desenho, folhas_: List[dict], locacao: Optional[dict]) -> List
                 if perto["nome"] not in lst:
                     lst.append(perto["nome"])
     nomes = [v["nome"] for v in nums]
+    # a variante sem folha própria (a T2-A da V12 do Hangar: a locação a marca, a folha é a "T2 - 4 PÇ") usa as do tipo
+    for t in tipos.values():
+        if not t["folhas"]:
+            base = tipos.get(re.sub(r"-[A-Z]$", "", t["tipo"]))
+            if base is not None and base is not t and base["folhas"]:
+                t["folhas"] = [dict(f) for f in base["folhas"]]
+                t["pela_folha_de"] = base["tipo"]
     for t in tipos.values():
         t["folhas"].sort(key=lambda f: (ordem.index(f["mostra"]) if f["mostra"] in ordem else len(ordem), f["folha"]))
         t["vista"] = t["folhas"][0] if t["folhas"] else None
         t["eixos"].sort(key=lambda n: nomes.index(n) if n in nomes else 99)
     return sorted(tipos.values(), key=lambda t: [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", t["tipo"])])
+
+
+_SUBVISTA = re.compile(r"^\s*(\d{1,2})\s*-\s*(\S.*)$")
+
+
+def subvistas(des: Desenho, caixa) -> List[dict]:
+    """As vistas numeradas de uma folha ("1 - GABARITO E TRELIÇAMENTO", "2 - SUPORTES DE TERÇA"…, o título no canto de
+    cima à esquerda de cada uma): [{numero, titulo, caixa}] — a caixa da vista vai do título dela até o título da de
+    baixo (a da última até o pé da folha). Só quando a folha tem duas ou mais vistas uma embaixo da outra (os títulos
+    alinhados à esquerda); senão []."""
+    (x0, y0), (x1, y1) = caixa
+    tit = [e for e in des.entidades.values() if isinstance(e, Texto) and _dentro(e, caixa) and _SUBVISTA.match(e.texto or "")
+           and not re.match(r"^\s*\d+\s*-\s*\d", e.texto or "")]
+    if len(tit) < 2:
+        return []
+    xm = min(e.posicao[0] for e in tit)
+    tit = sorted((e for e in tit if abs(e.posicao[0] - xm) < 0.02 * (x1 - x0)), key=lambda e: -e.posicao[1])
+    if len(tit) < 2:
+        return []
+    out = []
+    for i, e in enumerate(tit):
+        m = _SUBVISTA.match(e.texto)
+        yb = tit[i + 1].posicao[1] + 1.0 if i + 1 < len(tit) else y0
+        out.append({"numero": int(m.group(1)), "titulo": e.texto.strip(), "caixa": [[x0, yb], [x1, e.posicao[1] - 1.0]]})
+    return out
 
 
 def _locacao(des: Desenho, folhas_: List[dict]) -> dict:
@@ -858,7 +899,7 @@ def _papel_da_legenda(texto: str) -> Optional[str]:
     t = texto.upper()
     if re.search(r"CONTRAVENT", t):
         return "contraventamento"
-    if re.search(r"AGULHAMENT|CORRENTE", t):
+    if re.search(r"AGULH|CORRENTE", t):          # "agulh. diagonal" na V12 do Hangar
         return "corrente"
     if re.search(r"A\s+DEFINIR", t):
         return "a definir"
@@ -870,9 +911,17 @@ def _legenda_de_cores(des: Desenho, caixa, fora_de) -> Dict[str, dict]:
     ("Ø1/2 - contraventos") → {camada: {texto, perfil, papel}}."""
     from nucleo2d.reconhecer import perfil_do_texto
     textos = [e for e in des.entidades.values() if isinstance(e, Texto) and _dentro(e, caixa)]
+    # o título "LEGENDA DE CORES" diz onde ela está (a V12 do Hangar a pôs no alto à esquerda da folha, 21/10); sem
+    # título, a legenda é a que fica à direita da planta
+    tit = next((t for t in textos if re.search(r"LEGENDA", t.texto or "", re.I)), None)
+
+    def na_legenda(e):
+        if tit is None:
+            return min(e.a[0], e.b[0]) >= fora_de
+        return tit.posicao[0] - 300 <= min(e.a[0], e.b[0]) <= tit.posicao[0] + 1500 and tit.posicao[1] - 6000 <= e.a[1] <= tit.posicao[1]
     out: Dict[str, dict] = {}
     for e in des.entidades.values():
-        if not isinstance(e, Linha) or not _dentro(e, caixa) or min(e.a[0], e.b[0]) < fora_de:
+        if not isinstance(e, Linha) or not _dentro(e, caixa) or not na_legenda(e):
             continue
         if abs(e.a[1] - e.b[1]) > 1 or not 300 <= abs(e.b[0] - e.a[0]) <= 3000:
             continue
@@ -882,7 +931,7 @@ def _legenda_de_cores(des: Desenho, caixa, fora_de) -> Dict[str, dict]:
             continue
         t = min(ao_lado, key=lambda t: abs(t.posicao[1] - y)).texto.strip()
         p = perfil_do_texto(t.split(" - ")[0])
-        out[e.camada] = {"texto": t, "perfil": p["perfil"] if p else None, "papel": _papel_da_legenda(t)}
+        out[e.camada] = {"texto": t, "perfil": p["perfil"] if p else None, "papel": _papel_da_legenda(t), "linha": e.id}
     return out
 
 
@@ -904,7 +953,11 @@ class _Tesouras:
             polis = [[(v[0] - x0, v[1] - y0) for v in e["vertices"]] for e in r["entidades"]
                      if e.get("tipo") == "polilinha" and e.get("fechada") and len(e.get("vertices") or []) >= 3
                      and max(v[0] for v in e["vertices"]) - min(v[0] for v in e["vertices"]) > 1000]
-            info = {"tipo": t["tipo"], "u_esq": uB / 2.0 - r["largura"] / 2.0, "polis": polis,
+            # o banzo desenhado com linhas soltas (a T1 da V12 do Hangar, 21/10): as faces, de par em par
+            linhas = [((e["a"][0] - x0, e["a"][1] - y0), (e["b"][0] - x0, e["b"][1] - y0)) for e in r["entidades"]
+                      if e.get("tipo") == "linha" and re.search(r"TESOURA", e.get("camada") or "", re.I)
+                      and abs(e["b"][0] - e["a"][0]) > 1000]
+            info = {"tipo": t["tipo"], "u_esq": uB / 2.0 - r["largura"] / 2.0, "polis": polis, "linhas": linhas,
                     "cortes": _secoes_de_terca(des, t["caixa"], r["caixa"])}
             for n in t.get("eixos") or []:
                 self.por_eixo[n] = info
@@ -919,13 +972,31 @@ class _Tesouras:
                     ys.append(ay + (by - ay) * (s - ax) / (bx - ax))
             if len(ys) >= 2:
                 out.append((min(ys), max(ys)))
+        if not out and info.get("linhas"):
+            ys = sorted(ay + (by - ay) * (s - ax) / (bx - ax) for (ax, ay), (bx, by) in info["linhas"]
+                        if (ax - s) * (bx - s) <= 0 and abs(bx - ax) > 1e-9)
+            ys = [y for i, y in enumerate(ys) if i == 0 or y - ys[i - 1] > 1.0]
+            out = [(ys[i], ys[i + 1]) for i in range(0, len(ys) - 1, 2)]
         return sorted(out)
 
     def banzo(self, eixo: str, u: float, qual: str) -> Optional[float]:
         info = self.por_eixo.get(eixo)
         if not info:
             return None
-        fx = self._faixas(info, u - info["u_esq"])
+        fx = []
+        # o ponto na junta das meias-tesouras (a VT da cumeeira do Hangar caía na folga de 20 mm e ia para o apoio):
+        # o banzo logo ao lado
+        for d in (0.0, 30.0, -30.0, 60.0, -60.0):
+            fx = self._faixas(info, u - info["u_esq"] + d)
+            if fx:
+                break
+        # o banzo de cima pedido onde ele ainda não começou (a ponta do contravento junto do apoio): um pouco para dentro
+        if qual == "sup" and len(fx) < 2:
+            for d in (100.0, -100.0, 200.0, -200.0, 300.0, -300.0):
+                f2 = self._faixas(info, u - info["u_esq"] + d)
+                if len(f2) >= 2:
+                    fx = f2
+                    break
         if not fx:
             return None
         lo, hi = fx[-1] if qual == "sup" else fx[0]
@@ -1065,10 +1136,11 @@ def outras_pecas(des: Desenho, folhas_: List[dict], locacao: dict, gravados: dic
         dy = sum(b - a for a, b in zip(gp["h"], gl["h"])) / len(gl["h"])
         xmax = max(gp["v"]) if gp["v"] else f["caixa"][1][0]
         leg = _legenda_de_cores(des, f["caixa"], xmax + 1500)
+        amostras = {v.get("linha") for v in leg.values()}          # a linha da legenda não é peça (a V12: dentro da folha)
         corrente = next((v["perfil"] for v in leg.values() if v["papel"] == "corrente" and v["perfil"] and "Ø" not in v["texto"]), None)
         textos = [e for e in des.entidades.values() if isinstance(e, Texto) and _dentro(e, f["caixa"]) and _MARCA_PECA.match(e.texto or "")]
         for e in des.entidades.values():
-            if not isinstance(e, Linha) or not _dentro(e, f["caixa"]) or max(e.a[0], e.b[0]) > xmax + 500:
+            if not isinstance(e, Linha) or not _dentro(e, f["caixa"]) or max(e.a[0], e.b[0]) > xmax + 500 or e.id in amostras:
                 continue
             info = leg.get(e.camada)
             if not info or not info["papel"]:
@@ -1110,6 +1182,14 @@ def outras_pecas(des: Desenho, folhas_: List[dict], locacao: dict, gravados: dic
                 pf = perfil_do_texto(e.texto or "") if m else None
                 if m and pf:
                     marca_do_perfil.setdefault(pf["perfil"], m.group(1).upper())
+    # e pela linha da tabela da planta ("AG3 - Ø3/8\" L=275 - 16 pç", a V12 do Hangar: o título da folha de peças não
+    # diz mais a marca)
+    for e in des.entidades.values():
+        if isinstance(e, Texto):
+            m = re.match(r"^\s*((?:AG|CR)\d+)\s*-\s*(Ø\s*[\d/]+\"?)\s*L\s*=", e.texto or "")
+            pf = perfil_do_texto(m.group(2)) if m else None
+            if pf:
+                marca_do_perfil.setdefault(pf["perfil"], m.group(1).upper())
 
     def forma(b):
         dg, dp = abs(b["g_b"] - b["g_a"]), abs(b["p_b"] - b["p_a"])
@@ -1177,6 +1257,13 @@ def outras_pecas(des: Desenho, folhas_: List[dict], locacao: dict, gravados: dic
             ea, eb = eixo_perto(min(ga, gb)), eixo_perto(max(ga, gb))
             usadas[sig] += 1
             if v["trelica"]:
+                # a viga treliçada no comprimento da folha dela, centrada na linha da locação (a V12 do Hangar: a linha vai
+                # até a ponta das abas das tesouras, a VC — "VB L=463,1" — entre as chapas CV1 de 9,5 de cada lado)
+                ga_, gb_ = min(ga, gb), max(ga, gb)
+                vao_d = float((v["trelica"] or {}).get("vao") or 0.0)
+                if vao_d and 1.0 < (gb_ - ga_) - vao_d < 80.0:
+                    meio_ = (ga_ + gb_) / 2.0
+                    ga, gb = meio_ - vao_d / 2.0, meio_ + vao_d / 2.0
                 trelicas.append({"marca": sig, "g_a": round(min(ga, gb), 1), "g_b": round(max(ga, gb), 1), "p": round(pp, 1), "u": round(u, 1),
                                  "perfil_alma": ALMA_PADRAO,
                                  # a base da viga na base das tesouras: o eixo do banzo de baixo meio perfil acima do apoio
@@ -1242,6 +1329,31 @@ def perfis_da_tesoura(des: Desenho, tipo: str, folhas_: List[dict]) -> Dict[str,
                 pega("banzo", t)
             elif p["perfil"].startswith("L") and p["perfil"] != (out.get("montante") or {}).get("perfil"):
                 pega("diagonal", t)
+    # a legenda com a função de cada perfil (a V12 do Hangar, 21/10: a folha "T2 - 4 PÇ" sem lista de marcas —
+    # "2U127x50#3,75 (BANZOS)", "U100x50#3,00 (TRELIÇA, PERNA E CHANFRO)", "2L25x25#3,00 (2L INTERNO)",
+    # "U75x38#3,00 (EMENDA)"): a treliça é montante e diagonal; a perna e o chanfro são a ponta; o 2L interno é a
+    # subtreliça dos painéis grandes
+    for f in folhas_:
+        if not f["caixa"] or not rx_tipo.search(f["titulo"]) or re.search(r"MARCAS|M[ÃA]OS?-?FRANCESAS|POSI[CÇ][AÃ]O", f["titulo"], re.I):
+            continue
+        for e in des.entidades.values():
+            if not isinstance(e, Texto) or not _dentro(e, f["caixa"]):
+                continue
+            m = re.match(r"^\s*(.+?)\s*\(([^)]+)\)\s*$", e.texto or "")
+            if not m or not perfil_do_texto(m.group(1)):
+                continue
+            funcoes = m.group(2).upper()
+            if "BANZO" in funcoes:
+                pega("banzo", m.group(1))
+            if "TRELI" in funcoes:
+                pega("montante", m.group(1))
+                pega("diagonal", m.group(1))
+            if "INTERNO" in funcoes:
+                pega("interno", m.group(1))
+            if "EMENDA" in funcoes:
+                pega("emenda", m.group(1))
+            if "PERNA" in funcoes or "CHANFRO" in funcoes:
+                pega("ponta", m.group(1))
     if "montante" not in out and "diagonal" in out:
         out["montante"] = dict(out["diagonal"])
     return out
@@ -1369,7 +1481,7 @@ _CHAPA_TXT = re.compile(r"\b([A-Z]{1,3}\d+)\s*#\s*(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,
 _FUROS_TXT = re.compile(r"(\d+)\s*FUROS?\s*Ø\s*(\d+(?:[.,]\d+)?)", re.I)
 _CHUMB_TXT = re.compile(r"CHUMBADOR\s*Ø\s*(\d+(?:/\d+)?)\s*\"?\s*C\s*=\s*(\d+(?:[.,]\d+)?)", re.I)
 _CQ_TXT = re.compile(r"\b(CQ\d+)\s*Ø\s*(\d+(?:/\d+)?)\s*\"?\s*L\s*=\s*(\d+(?:[.,]\d+)?)", re.I)
-_MARCA_APOIO = re.compile(r"^\s*([A-Z]\d?)\s*-\s*([A-Z]{1,3}\d+)\s*\+\s*(\d+)\s*Ø\s*(\d+(?:/\d+)?)\"?"
+_MARCA_APOIO = re.compile(r"^\s*(?:([A-Z]\d?)\s*-\s*)?([A-Z]{1,3}\d+)\s*\+\s*(\d+)\s*(?:CH\.?\s*)?Ø\s*(\d+(?:/\d+)?)\"?"
                           r"(?:\s*\+\s*(\d+)\s*([A-Z]{1,3}\d+))?", re.I)
 
 
@@ -1427,7 +1539,9 @@ def apoios_das_tesouras(des: Desenho, folhas_: List[dict], planta: Desenho, apoi
     def folha(*rx):
         return next((f for f in folhas_ if f.get("caixa") and all(re.search(r, f["titulo"], re.I) for r in rx)), None)
     f_loc = folha(r"CHUMBADOR", r"LOCA")
-    f_det = folha(r"CHUMBADOR", r"DETALHE")
+    f_det = folha(r"CHUMBADOR", r"DETALHE") or next((f for f in folhas_ if f.get("caixa") and re.search(r"CHUMBADOR", f["titulo"], re.I)
+                                                     and not re.search(r"LOCA", f["titulo"], re.I)), None)
+    f_apoio = folha(r"APOIO", r"TESOURA")
     if not f_loc:
         raise ErroDeDados("não achei a folha de locação dos chumbadores (título com CHUMBADORES e LOCAÇÃO)")
     # as chapas e os chumbadores escritos no projeto (em qualquer folha): a medida em cm, a espessura em mm
@@ -1464,7 +1578,9 @@ def apoios_das_tesouras(des: Desenho, folhas_: List[dict], planta: Desenho, apoi
         if _dentro(t, cx):
             m = _MARCA_APOIO.match(re.sub(r"\s+", " ", t.texto or ""))
             if m:
-                marcas_t.append({"pos": tuple(t.posicao), "marca": m.group(1).upper(), "chapa": m.group(2).upper(),
+                # sem a letra do apoio ("PB1 + 4 CH. Ø5/8\"", a V12): a marca é a da chapa, com o que vai junto
+                marca = (m.group(1) or (m.group(2) + ("+%s%s" % (m.group(5), m.group(6)) if m.group(5) else ""))).upper()
+                marcas_t.append({"pos": tuple(t.posicao), "marca": marca, "chapa": m.group(2).upper(),
                                  "chumbadores": int(m.group(3)), "bitola": m.group(4) + '"',
                                  "extra_n": int(m.group(5)) if m.group(5) else 0, "extra": (m.group(6) or "").upper()})
     for e in ents_loc:
@@ -1531,6 +1647,27 @@ def apoios_das_tesouras(des: Desenho, folhas_: List[dict], planta: Desenho, apoi
                 return [{"dx": round(f.centro[0] - cc[0], 1), "dy": round(f.centro[1] - cc[1], 1), "diametro": round(2 * f.raio, 1)}
                         for f in fur]
         return []
+    # a CB sobre a PB: embutida rente ao topo do pilar pela folha APOIO DAS TESOURAS (a V5 do Hangar); sem ela, como o
+    # detalhe dos chumbadores desenha (a V12): a PB sobre o concreto e a CB numa folga acima (o graute) — a folga medida
+    # entre as duas na elevação do detalhe
+    folga_cb = None
+    if not f_apoio and f_det:
+        cbm = next((k for k in chapas if k.startswith("CB")), None)
+        pbm = next((k for k in chapas if k.startswith("PB")), None)
+        if cbm and pbm:
+            def faixas(ch):
+                out_ = []
+                for e in des.entidades.values():
+                    if isinstance(e, Polilinha) and _dentro(e, f_det["caixa"]):
+                        c_ = _caixa_pol(e)
+                        if c_ and abs((c_[2] - c_[0]) - ch["largura"]) < 3 and (c_[3] - c_[1]) < 20:
+                            out_.append(c_)
+                return out_
+            # a CB é a do tamanho dela logo acima da PB, na mesma vertical (o CQ1 também tem 200 mm)
+            pares = [(cc[1] - cp[3], cc, cp) for cp in faixas(chapas[pbm]) for cc in faixas(chapas[cbm])
+                     if 0 < cc[1] - cp[3] < 200 and cc[0] < cp[2] and cp[0] < cc[2]]
+            if pares:
+                folga_cb = round(min(pares)[0] * 2) / 2.0
     usados, out = set(), []
     for q in quadrados:
         c = T(q["centro"])
@@ -1562,9 +1699,16 @@ def apoios_das_tesouras(des: Desenho, folhas_: List[dict], planta: Desenho, apoi
                 cb.pop("a_definir_em", None)
                 cb["furos"] = []
         extra = cqs.get(mt.get("extra") or "") if mt.get("extra_n") else None
+        topo_pb = topo_pil = None
+        if sob and cb:
+            if folga_cb is not None:
+                topo_pb = apoio - float(cb["espessura"]) - folga_cb
+                topo_pil = topo_pb - float(pb["espessura"])
+            else:
+                topo_pb = topo_pil = apoio - float(cb["espessura"])
         out.append({"pilar": pl["marca"], "pilar_id": pl["id"], "marca": mt.get("marca"),
                     "centro": [round(c[0], 1), round(c[1], 1)], "pb": pb, "cb": cb, "sob_tesoura": sob,
-                    "topo_pilar": (apoio - float(cb["espessura"])) if (sob and cb) else None,
+                    "topo_pilar": topo_pil, "topo_pb": topo_pb, "folga_cb": folga_cb if (sob and cb) else None,
                     "nivel_topo_pilar": pl["nivel_topo"],
                     "chumbadores": dict(chumb or {}, n=mt.get("chumbadores") or len(pb["furos"])),
                     "cq": dict(extra, n=mt.get("extra_n")) if extra else None})
@@ -1575,7 +1719,11 @@ def apoios_das_tesouras(des: Desenho, folhas_: List[dict], planta: Desenho, apoi
     for ch in chapas.values():
         for s in ch.get("a_definir_em", []):
             avisos.append("o projeto marca \"%s\" — foi usada a medida escrita na outra folha; confirme com o projetista" % s)
-    if f_det and any(a_["cb"] for a_ in out):
+    if folga_cb is not None and any(a_["cb"] for a_ in out):
+        avisos.append("a folha %d (%s) põe a PB sobre o pilar e a CB %g mm acima dela (o graute): o topo do pilar sob a "
+                      "tesoura fica em %g — confirme o graute com o projetista" % (f_det["folha"], f_det["titulo"], folga_cb,
+                                                                                  next(a_["topo_pilar"] for a_ in out if a_["cb"])))
+    elif f_det and f_apoio and any(a_["cb"] for a_ in out):
         avisos.append("a folha %d (%s) desenha a CB 40 mm acima da PB e a PB sobre o concreto; a folha APOIO DAS TESOURAS "
                       "põe a CB direto sobre a PB, embutida rente ao topo do pilar — foi seguida esta" % (f_det["folha"], f_det["titulo"]))
     if chumb is None:
@@ -1620,7 +1768,8 @@ def suportes_das_tercas(des: Desenho, folhas_: List[dict]) -> dict:
         m = re.search(r"folga\s*(\d+(?:[.,]\d+)?)\s*mm\s*entre\s*as\s*pontas", s, re.I)
         if m and folga is None:
             folga = _num(m.group(1))
-        if re.search(r"perna.*apoio.*banzo.*DEFINIR", s, re.I):
+        # "perna de 50 (apoio no banzo): furação A DEFINIR" (V5), "perna de 50: furação A DEFINIR" (V12)
+        if re.search(r"perna\s*de\s*\d+.*DEFINIR", s, re.I):
             a_definir.append(s.strip())
     # a vista de cada cantoneira: o retângulo (comprimento × perna maior) com os furos dentro
     from nucleo3d.geometria import resolver_perfil
@@ -1718,7 +1867,13 @@ def chapas_das_emendas(des: Desenho, folhas_: List[dict]) -> dict:
             avisos.append("%s: a vista da chapa (%g × %g) não foi achada — vai sem furos" % (marca, B, H))
         chapas[marca] = ch
     if not chapas:
-        raise ErroDeDados("o projeto não escreve as chapas da emenda (\"CE1 - 8x - #9,50 60x133\")")
+        # a V12 do Hangar: a emenda por tipo de tesoura (a chapa em cada banzo, o U em pé) e a chapa da VC (CV1)
+        try:
+            em = emendas_das_tesouras(des, folhas_)
+        except ErroDeDados:
+            raise ErroDeDados("o projeto não escreve as chapas da emenda (\"CE1 - 8x - #9,50 60x133\")")
+        return {"formato": "v12", "chapas": {}, "emendas": em["emendas"], "ligacao_vc": ligacao_das_vcs(des, folhas_),
+                "parafusos_emenda": None, "avisos": avisos + em["avisos"]}
     # os parafusos da emenda: o texto e, na elevação dela, os parafusos desenhados (linhas na camada de parafuso)
     par = None
     for t in textos:
@@ -1820,8 +1975,14 @@ def aletas_dos_contraventos(des: Desenho, folhas_: List[dict]) -> dict:
         if not al["tesoura"]:
             avisos.append("%s: não achei o corte da tesoura dela" % marca)
         aletas[marca] = al
+    castanha = None
     if not aletas:
-        raise ErroDeDados("o projeto não escreve as aletas dos contraventos (\"AC1 - 48x - #6,30 - 14x11,9\")")
+        # a V12 do Hangar trocou as aletas pela castanha (folha CASTANHAS DOS CONTRAVENTOS)
+        castanha = castanhas_dos_contraventos(des, folhas_)
+        if castanha is None:
+            raise ErroDeDados("o projeto não escreve as aletas dos contraventos (\"AC1 - 48x - #6,30 - 14x11,9\")")
+        if castanha.get("a_definir"):
+            avisos.append("%s: %s" % (castanha["marca"], castanha["a_definir"]))
     cvs: Dict[str, dict] = {}
     rosca = None
     for t in textos:
@@ -1832,4 +1993,200 @@ def aletas_dos_contraventos(des: Desenho, folhas_: List[dict]) -> dict:
         mr = _ROSCA_TXT.search(s)
         if mr and rosca is None:
             rosca = {"comprimento": _num(mr.group(1)) * 10.0, "porcas": int(mr.group(2)), "arruelas": int(mr.group(3)), "texto": s}
-    return {"aletas": aletas, "contraventos": cvs, "rosca": rosca, "avisos": avisos}
+    return {"aletas": aletas, "castanha": castanha, "contraventos": cvs, "rosca": rosca, "avisos": avisos}
+
+
+# ------------------------------------------- a revisão do projeto recebido (Hangar V5 → V12, 21/10/2026)
+
+def alinhar_revisao(novo: Desenho, anterior: Desenho) -> dict:
+    """A revisão do projeto recebido entra no lugar da anterior (o Hangar, V5 → V12, 21/10/2026: o projetista
+    reorganizou as folhas e a locação ficou noutro ponto do desenho). Os eixos de mesmo nome das duas plantas de
+    locação dão o deslocamento — o mais comum em cada família (os numerados e os com letra), para o eixo que o projeto
+    mudou de lugar não puxar o resto — e o desenho novo é deslocado dele, em lugar: as leituras da Identificação caem
+    nos eixos gravados como antes. Devolve {dx, dy, mudaram: [{nome, antes, depois}] (os eixos que não ficaram no lugar
+    depois do deslocamento: o projeto os mudou), avisos}."""
+    fs_n, fs_a = folhas_com_moldura(novo), folhas_com_moldura(anterior)
+    ln, la = _locacao(novo, fs_n), _locacao(anterior, fs_a)
+    if not ln.get("caixa") or not la.get("caixa"):
+        raise ErroDeDados("não achei a planta de locação nas duas versões: alinhe a revisão à mão")
+    en, ea = eixos_da_area(novo, ln["caixa"]), eixos_da_area(anterior, la["caixa"])
+    g = en.get("eixo_g") or [1.0, 0.0]
+    pg = en.get("perp_g") or [-g[1], g[0]]
+
+    def delta(fam):
+        a = {e["nome"]: e["pos"] for e in ea.get(fam) or []}
+        pares = [(a[e["nome"]] - e["pos"], e["nome"]) for e in en.get(fam) or [] if e["nome"] in a]
+        if not pares:
+            return None, []
+        votos = collections.Counter(round(d, 0) for d, _n in pares)
+        d0 = votos.most_common(1)[0][0]
+        ds = [d for d, _n in pares if abs(d - d0) <= 1.0]
+        return sum(ds) / len(ds), pares
+    dn, pn = delta("numeros")
+    dl, pl = delta("letras")
+    if dn is None or dl is None:
+        raise ErroDeDados("as duas locações não têm eixos de mesmo nome nas duas direções: alinhe a revisão à mão")
+    dx, dy = dn * g[0] + dl * pg[0], dn * g[1] + dl * pg[1]
+    for k in list(novo.entidades):
+        novo.entidades[k] = transladar(novo.entidades[k], dx, dy)
+    arq = (novo.metadados or {}).get("arquitetonico")
+    if isinstance(arq, dict) and arq.get("deslocamento"):
+        arq["deslocamento"] = [round(arq["deslocamento"][0] + dx, 3), round(arq["deslocamento"][1] + dy, 3)]
+    mudaram = [{"nome": n, "familia": fam, "antes": round(a_pos, 1), "depois": round(a_pos - d + dd, 1)}
+               for fam, pares, dd in (("numeros", pn, dn), ("letras", pl, dl))
+               for d, n in pares for a_pos in [next(e["pos"] for e in ea[fam] if e["nome"] == n)] if abs(d - dd) > 1.0]
+    avisos = ["o eixo %s mudou de lugar na revisão: %+.1f mm (%s → %s)" % (m["nome"], m["depois"] - m["antes"], m["antes"], m["depois"])
+              for m in mudaram]
+    return {"dx": round(dx, 3), "dy": round(dy, 3), "mudaram": mudaram, "avisos": avisos}
+
+
+# ------------------------------------------- a V12 do Hangar: a emenda por tesoura, a CV1 da VC e a castanha (21/10/2026)
+
+_EMENDA_CHAPA_V12 = re.compile(r"^\s*(C[EL]\d+)\s*-\s*(\d+)\s*x\s*$", re.I)
+_EMENDA_PERFIL_V12 = re.compile(r"^\s*([UL]\s*\d+(?:[.,]\d+)?\s*[xX×]\s*\d+(?:[.,]\d+)?\s*#\s*\d+(?:[.,]\d+)?)\s*L\s*=\s*(\d+(?:[.,]\d+)?)\s*-\s*(\d+)\s*x\s*$", re.I)
+
+
+def emendas_das_tesouras(des: Desenho, folhas_: List[dict]) -> dict:
+    """A emenda da cumeeira de cada tipo de tesoura pela folha de ligação (a V12 do Hangar, 21/10/2026: "LIGAÇÃO
+    TESOURAS T1 E T2 (EMENDA)", uma vista por tipo, o título dela em cima — "T2 - CHAPA CE1 EM CADA BANZO", "T1 - PERFIL
+    U VERTICAL (EMENDA)" — e os textos embaixo):
+
+    - chapa em cada banzo ("CE1 - 16x", "#9,50 - 30x24 cm - CIVIL 300", "FUROS: 7x Ø22 mm"): a chapa de cada banzo de
+      cada meia-tesoura, com o quanto ela passa do banzo para fora e para dentro (pela vista: o banzo desenhado dentro
+      dela) e os furos da de baixo e da de cima (espelhadas);
+    - perfil vertical ("U127x50#3,00 L=133 - 2x", "1 EM CADA MEIA TESOURA - ALMA COM ALMA", "FUROS: 8x Ø15 mm - 8 PARAF.
+      1/2\""): um U em pé em cada meia-tesoura, as almas encostadas e aparafusadas, com os furos pela vista (a partir da
+      borda da alma e do pé).
+
+    {emendas: {tipo: {tipo_emenda: "chapa_por_banzo"|"perfil_vertical", …}}, avisos}"""
+    from nucleo2d.reconhecer import perfil_do_texto
+    avisos: List[str] = []
+    folha = next((f for f in folhas_ if f.get("caixa") and re.search(r"EMENDA", f["titulo"], re.I) and re.search(r"LIGA", f["titulo"], re.I)), None)
+    if folha is None:
+        raise ErroDeDados("não achei a folha da ligação das tesouras (título com LIGAÇÃO e EMENDA)")
+    cx = folha["caixa"]
+    textos = [e for e in des.entidades.values() if isinstance(e, Texto) and _dentro(e, cx)]
+    pols = [e for e in des.entidades.values() if isinstance(e, Polilinha) and _dentro(e, cx) and not re.search(r"FOLHA|COTA", e.camada or "", re.I)]
+    circ = [c for c in des.entidades.values() if isinstance(c, Circulo) and _dentro(c, cx) and re.search(r"FURO", c.camada or "", re.I)]
+    titulos = [t for t in textos if re.match(r"^\s*(T\d+[\w-]*)\s*-\s*\S", t.texto or "") and not re.search(r"LIGA", t.texto or "", re.I)]
+
+    def abaixo(t0, n=4):
+        return [u.texto.strip() for u in sorted((u for u in textos if u is not t0 and abs(u.posicao[0] - t0.posicao[0]) < 30 and 0 <= t0.posicao[1] - u.posicao[1] < 200),
+                                                key=lambda u: -u.posicao[1])][:n]
+    out: Dict[str, dict] = {}
+    for t in textos:
+        s = (t.texto or "").strip()
+        mc, mp = _EMENDA_CHAPA_V12.match(s), _EMENDA_PERFIL_V12.match(s)
+        if not mc and not mp:
+            continue
+        linhas = abaixo(t)
+        tit = min((u for u in titulos if u.posicao[0] <= t.posicao[0] + 50), key=lambda u: t.posicao[0] - u.posicao[0], default=None)
+        tipo = re.match(r"^\s*(T\d+[\w-]*)", tit.texto).group(1).upper() if tit else None
+        if not tipo:
+            avisos.append("%s: não achei de que tesoura é" % s)
+            continue
+        # as peças desenhadas em cima do texto (a vista dela)
+        perto = [p for p in pols if abs(_caixa_pol(p)[0] - t.posicao[0]) < 120 and _caixa_pol(p)[1] > t.posicao[1]]
+        furos_txt = next((re.search(r"(\d+)\s*x\s*Ø\s*(\d+(?:[.,]\d+)?)", l_, re.I) for l_ in linhas if "FURO" in l_.upper()), None)
+        par_txt = next((re.search(r"(\d+)\s*PARAF\.?\s*Ø?\s*(\d+(?:/\d+)?)\s*\"?", l_, re.I) for l_ in linhas if "PARAF" in l_.upper()), None)
+        if mc:
+            dim = next((re.search(r"#\s*(\d+(?:[.,]\d+)?)\s*-\s*(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?)\s*cm(?:\s*-\s*(.+))?", l_, re.I) for l_ in linhas if "#" in l_), None)
+            if not dim:
+                avisos.append("%s: a chapa sem medida (\"#9,50 - 30x24 cm\")" % s)
+                continue
+            esp, B, H = _num(dim.group(1)), _num(dim.group(2)) * 10.0, _num(dim.group(3)) * 10.0
+            chapas_v = sorted([p for p in perto if abs((_caixa_pol(p)[2] - _caixa_pol(p)[0]) - B) < 2 and abs((_caixa_pol(p)[3] - _caixa_pol(p)[1]) - H) < 2],
+                              key=lambda p: _caixa_pol(p)[1])
+            if not chapas_v:
+                avisos.append("%s: a vista da chapa (%g × %g) não foi achada" % (s, B, H))
+                continue
+            vistas = {}
+            for nome, p in (("inf", chapas_v[0]), ("sup", chapas_v[-1])):
+                c = _caixa_pol(p)
+                bz = [q for q in pols if q is not p and re.search(r"TESOURA", q.camada or "", re.I) and c[0] <= _caixa_pol(q)[0] and _caixa_pol(q)[2] <= c[2]
+                      and c[1] <= _caixa_pol(q)[1] and _caixa_pol(q)[3] <= c[3]]
+                yb0 = min(_caixa_pol(q)[1] for q in bz) if bz else c[1] + (H - 127.0) / 2.0
+                yb1 = max(_caixa_pol(q)[3] for q in bz) if bz else c[3] - (H - 127.0) / 2.0
+                vistas[nome] = {"furos": [{"x": round(f.centro[0] - c[0], 1), "y": round(f.centro[1] - c[1], 1), "d": round(2 * f.raio, 1)}
+                                          for f in circ if c[0] < f.centro[0] < c[2] and c[1] < f.centro[1] < c[3]],
+                                # quanto a chapa passa do banzo: para fora da tesoura (embaixo do de baixo, em cima do de cima) e para dentro
+                                "fora": round((yb0 - c[1]) if nome == "inf" else (c[3] - yb1), 1),
+                                "dentro": round((c[3] - yb1) if nome == "inf" else (yb0 - c[1]), 1)}
+            out[tipo] = {"tipo_emenda": "chapa_por_banzo", "marca": mc.group(1).upper(), "quantidade": int(mc.group(2)),
+                         "espessura": esp, "largura": B, "altura": H, "aco": (dim.group(4) or "").strip() or None,
+                         "vistas": vistas, "texto": " / ".join([s] + linhas),
+                         "parafusos": ({"n": int(par_txt.group(1)), "texto": par_txt.group(2) + '"', "diametro": round(_diam_pol(par_txt.group(2)), 3)}
+                                       if par_txt else None),
+                         "furo": _num(furos_txt.group(2)) if furos_txt else None}
+            if not par_txt:
+                avisos.append("%s (%s): %d furos Ø%g sem o parafuso escrito no projeto — apontamento ao projetista"
+                              % (mc.group(1).upper(), tipo, int(furos_txt.group(1)) if furos_txt else 0, _num(furos_txt.group(2)) if furos_txt else 0))
+        else:
+            pf = perfil_do_texto(mp.group(1).replace(" ", ""))
+            L = _num(mp.group(2)) * 10.0
+            corpo = max((p for p in perto if abs((_caixa_pol(p)[3] - _caixa_pol(p)[1]) - L) < 3), key=lambda p: _caixa_pol(p)[2] - _caixa_pol(p)[0], default=None)
+            furos = []
+            if corpo is not None:
+                c = _caixa_pol(corpo)
+                furos = [{"x": round(f.centro[0] - c[0], 1), "y": round(f.centro[1] - c[1], 1), "d": round(2 * f.raio, 1)}
+                         for f in circ if c[0] < f.centro[0] < c[2] and c[1] < f.centro[1] < c[3]]
+                furos = [dict(t_) for t_ in {(f_["x"], f_["y"], f_["d"]): f_ for f_ in furos}.values()]   # o desenho repete furos
+            else:
+                avisos.append("%s: a vista do perfil (L=%g) não foi achada" % (s, L))
+            out[tipo] = {"tipo_emenda": "perfil_vertical", "perfil": pf["perfil"] if pf else mp.group(1), "comprimento": L,
+                         "quantidade": int(mp.group(3)), "furos": sorted(furos, key=lambda f_: (f_["y"], f_["x"])),
+                         "alma_com_alma": any("ALMA COM ALMA" in l_.upper() for l_ in linhas), "texto": " / ".join([s] + linhas),
+                         "parafusos": ({"n": int(par_txt.group(1)), "texto": par_txt.group(2) + '"', "diametro": round(_diam_pol(par_txt.group(2)), 3)}
+                                       if par_txt else None)}
+    if not out:
+        raise ErroDeDados("a folha %d não escreve a emenda de nenhuma tesoura" % folha["folha"])
+    return {"emendas": out, "folha": folha["folha"], "avisos": avisos}
+
+
+def ligacao_das_vcs(des: Desenho, folhas_: List[dict]) -> Optional[dict]:
+    """A chapa da ponta da VC na tesoura (a V12 do Hangar: "CV1 - 24x - #9,50 15x12,7 (ESPESSURA A DEFINIR)", "SEM FUROS -
+    SOLDADA", a VC de topo soldada nela): {marca, quantidade, espessura, largura (ao longo da tesoura), altura, soldada,
+    a_definir}; None sem a folha."""
+    folha = next((f for f in folhas_ if f.get("caixa") and re.search(r"LIGA", f["titulo"], re.I) and re.search(r"\bVC\b", f["titulo"], re.I)), None)
+    if folha is None:
+        return None
+    for t in des.entidades.values():
+        if not isinstance(t, Texto) or not _dentro(t, folha["caixa"]):
+            continue
+        m = re.match(r"^\s*([A-Z]{1,3}\d+)\s*-\s*(\d+)\s*x\s*-\s*#\s*(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?)(.*)$", t.texto or "")
+        if m:
+            resto = " ".join(e.texto for e in des.entidades.values() if isinstance(e, Texto) and _dentro(e, folha["caixa"]))
+            return {"marca": m.group(1).upper(), "quantidade": int(m.group(2)), "espessura": _num(m.group(3)),
+                    "largura": _num(m.group(4)) * 10.0, "altura": _num(m.group(5)) * 10.0,
+                    "soldada": bool(re.search(r"SOLDAD", resto, re.I)), "sem_furos": bool(re.search(r"SEM\s+FUROS", resto, re.I)),
+                    "a_definir": (m.group(6) or "").strip(" ()") if "DEFINIR" in (m.group(6) or "").upper() else None,
+                    "texto": t.texto.strip()}
+    return None
+
+
+def castanhas_dos_contraventos(des: Desenho, folhas_: List[dict]) -> Optional[dict]:
+    """A castanha do contravento (a V12 do Hangar, folha "CASTANHAS DOS CONTRAVENTOS": "CA1 - 64x - L50x50#4,75 L=15 +
+    L50x50#4,75 L=5 SOLDADO", "FUROS Ø14", "PARAF. 1/2\" NO BANZO - 64x"; a do banzo superior "A DEFINIR"): {marca,
+    quantidade, peca (a cantoneira deitada sob o banzo), aba (a pequena em pé, por onde o contravento passa), furo,
+    parafuso, banzos (os definidos), a_definir}; None sem a folha."""
+    from nucleo2d.reconhecer import perfil_do_texto
+    folha = next((f for f in folhas_ if f.get("caixa") and re.search(r"CASTANHA", f["titulo"], re.I)), None)
+    if folha is None:
+        return None
+    textos = [e for e in des.entidades.values() if isinstance(e, Texto) and _dentro(e, folha["caixa"])]
+    tudo = " | ".join(t.texto for t in textos)
+    m = next((re.match(r"^\s*([A-Z]{1,3}\d+)\s*-\s*(\d+)\s*x\s*-\s*(L\S+)\s*L\s*=\s*(\d+(?:[.,]\d+)?)\s*\+\s*(L\S+)\s*L\s*=\s*(\d+(?:[.,]\d+)?)", t.texto or "", re.I)
+              for t in textos if re.match(r"^\s*[A-Z]{1,3}\d+\s*-\s*\d+\s*x\s*-\s*L", t.texto or "", re.I)), None)
+    if not m:
+        return None
+    p1, p2 = perfil_do_texto(m.group(3)), perfil_do_texto(m.group(5))
+    mf = re.search(r"FUROS?\s*Ø\s*(\d+(?:[.,]\d+)?)", tudo, re.I)
+    mp = re.search(r"PARAF\.?\s*(\d+(?:/\d+)?)\s*\"?\s*NO\s*BANZO\s*-\s*(\d+)\s*x", tudo, re.I)
+    sup_a_definir = bool(re.search(r"BANZO\s+SUPERIOR[^|]*A\s+DEFINIR", tudo, re.I))
+    return {"marca": m.group(1).upper(), "quantidade": int(m.group(2)),
+            "peca": {"perfil": p1["perfil"] if p1 else m.group(3), "comprimento": _num(m.group(4)) * 10.0},
+            "aba": {"perfil": p2["perfil"] if p2 else m.group(5), "comprimento": _num(m.group(6)) * 10.0},
+            "furo": _num(mf.group(1)) if mf else None,
+            "parafuso": {"texto": mp.group(1) + '"', "diametro": round(_diam_pol(mp.group(1)), 3), "quantidade": int(mp.group(2))} if mp else None,
+            "banzos": ["inf"] if sup_a_definir else ["inf", "sup"],
+            "a_definir": "banzo superior: posição da castanha A DEFINIR (conflito com o suporte de terça)" if sup_a_definir else None}
