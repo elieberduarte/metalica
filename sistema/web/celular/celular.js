@@ -400,6 +400,16 @@ async function telaModelo(slug, m, medir, camera) {
     try { await v.definirReferencia(await json(`${slug}/${m.referencia}`, versaoDe(m, m.referencia))); }
     catch (e) { /* sem o desenho do piso, o resto abre igual */ }
   }
+  // a obra no terreno (20/10, "levar essa visualização do terreno para o mobile"): a imagem do chão que o PC baixou (a
+  // ortofoto da prefeitura, a Esri), na mesma amarração, altura e transparência do modo ver; liga e desliga em Camadas
+  v.terreno = null;
+  if (m.terreno && m.terreno_imagem) {
+    try {
+      const { Terreno } = await import('../visor3d/terreno.js');
+      const t = new Terreno(v, '', { palco: $('.palco'), situacao: () => {}, chaveLigado: null, maxLado: 2048 });
+      if (await t.usar(await json(`${slug}/${m.terreno}`, versaoDe(m, m.terreno)), arquivo(m, m.terreno_imagem))) v.terreno = t;
+    } catch (e) { /* sem o terreno, o resto abre igual */ }
+  }
   if (v !== visor) return;
   aplicarCamadas(v, slug);          // as camadas que a pessoa desligou neste projeto continuam desligadas
   if (Object.keys(coresEscolhidas(slug)).length) aplicarCores(v, slug);    // e as cores que ela escolheu
@@ -645,6 +655,7 @@ function aplicarCamadas(v, slug) {
     if (typeof c[cam.nome] === 'boolean' && (v.visivelCamada[i] !== false) !== c[cam.nome]) v.mostrarCamada(i, c[cam.nome]);
   });
   for (const n of v.partesReferencia()) if (c['piso:' + n] === false) v.mostrarParteReferencia(n, false);
+  if (v.terreno && c['piso:terreno'] === false) v.terreno.mostrar(false);
   for (const g of v.sistemas || []) if (c['sistema:' + g.chave] === false) v.ocultarSistema(g.ids, true);
 }
 
@@ -744,7 +755,8 @@ function folhaCamadas(v) {
   const piso = v.partesReferencia();
   const sistemas = (v.sistemas || []).length >= 2 ? v.sistemas : [];
   const secoes = [];
-  if (piso.length) secoes.push('<div class="titulo-secao">No piso</div>' + piso.map(n => { const [nome, cor] = PISO_NOMES[n] || [n, '#999'];
+  const terreno = v.terreno ? linha('terreno', 'terreno', '#5b8a3a', 'Imagem do terreno', null, v.terreno.ligado) : '';
+  if (piso.length || terreno) secoes.push('<div class="titulo-secao">No piso</div>' + terreno + piso.map(n => { const [nome, cor] = PISO_NOMES[n] || [n, '#999'];
     return linha('piso', n, cor, nome, null, !ocultasPiso.has(n)); }).join(''));
   if (sistemas.length) secoes.push('<div class="titulo-secao">Sistema</div>' + sistemas.map(g =>
     linha('sistema', g.chave, g.cor, g.nome, g.n, !g.ids.some(i => v.ocultasSistema.has(i)), 'sistema:' + g.chave)).join(''));
@@ -761,6 +773,7 @@ function folhaCamadas(v) {
     ch.classList.toggle('ligada');
     const sim = ch.classList.contains('ligada');
     if (el.dataset.tipo === 'piso') { v.mostrarParteReferencia(k, sim); lembrarCamada(visorSlug, 'piso:' + k, sim); }
+    else if (el.dataset.tipo === 'terreno') { if (v.terreno) v.terreno.mostrar(sim); lembrarCamada(visorSlug, 'piso:terreno', sim); }
     else if (el.dataset.tipo === 'sistema') {
       const g = v.sistemas.find(x => x.chave === k);
       if (g) v.ocultarSistema(g.ids, !sim);

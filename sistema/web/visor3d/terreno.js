@@ -36,11 +36,13 @@ export function planoDaImagem(t, im) {
 }
 
 /** A imagem com as bordas esmaecendo no fundo (sem o recorte quadrado no meio do chão). */
-function comBordaSuave(img) {
+function comBordaSuave(img, maxLado = 8192) {
   const c = document.createElement('canvas');
-  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  // no celular o lado tem teto (o Safari recusa canvas acima de ~16 milhões de pixels e a memória é curta)
+  const k = Math.min(1, maxLado / Math.max(img.naturalWidth, img.naturalHeight));
+  c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
   const g = c.getContext('2d');
-  g.drawImage(img, 0, 0);
+  g.drawImage(img, 0, 0, c.width, c.height);
   const n = 64, m = document.createElement('canvas');
   m.width = m.height = n;
   const gm = m.getContext('2d'), dados = gm.createImageData(n, n);
@@ -70,7 +72,9 @@ export class Terreno {
     this.ajustando = false;
     this.arrasto = null;
     this.ligado = true;
-    try { this.ligado = localStorage.getItem('ver3d.terreno') !== '0'; } catch (e) { /* sem armazenamento */ }
+    // o liga/desliga lembrado neste navegador (o modo ver do PC); o celular guarda o dele por obra (ui.chaveLigado = null)
+    this.chaveLigado = ui.chaveLigado === undefined ? 'ver3d.terreno' : ui.chaveLigado;
+    if (this.chaveLigado) { try { this.ligado = localStorage.getItem(this.chaveLigado) !== '0'; } catch (e) { /* sem armazenamento */ } }
   }
 
   /** false: o servidor não tem o terreno (o programa instalado, por enquanto só no dev). */
@@ -80,6 +84,15 @@ export class Terreno {
     this.estado = await r.json();
     await this.montar();
     return true;
+  }
+
+  /** O celular (20/10, "levar essa visualização do terreno para o mobile"): a amarração e a imagem do pacote da obra
+   *  (terreno.json + terreno.jpg, saida/pacote_celular.py), sem o servidor do PC; só ver, sem o painel. */
+  async usar(estado, urlImagem) {
+    this.estado = estado;
+    this._urlImagem = urlImagem;
+    await this.montar();
+    return !!this.malha;
   }
 
   get t() { return this.estado && this.estado.terreno; }
@@ -96,9 +109,9 @@ export class Terreno {
     const t = this.t, im = this.imagem;
     if (!t || !im) { this._atribuicao(); return; }
     const img = new Image();
-    img.src = `${this.api}/imagem.jpg?v=${im.versao || 0}`;
-    try { await img.decode(); } catch (e) { this.ui.situacao('A imagem do terreno não abriu: baixe de novo no painel Terreno.'); return; }
-    const tex = new THREE.CanvasTexture(comBordaSuave(img));
+    img.src = this._urlImagem || `${this.api}/imagem.jpg?v=${im.versao || 0}`;
+    try { await img.decode(); } catch (e) { (this.ui.situacao || (() => {}))('A imagem do terreno não abriu: baixe de novo no painel Terreno.'); return; }
+    const tex = new THREE.CanvasTexture(comBordaSuave(img, this.ui.maxLado));
     // a saída do visor é linear (sem a volta para sRGB): a foto vai como está, senão sai escura
     tex.colorSpace = THREE.NoColorSpace;
     tex.anisotropy = this.visor.renderer.capabilities.getMaxAnisotropy();
@@ -173,7 +186,7 @@ export class Terreno {
 
   mostrar(sim) {
     this.ligado = !!sim;
-    try { localStorage.setItem('ver3d.terreno', sim ? '1' : '0'); } catch (e) { /* sem armazenamento */ }
+    if (this.chaveLigado) { try { localStorage.setItem(this.chaveLigado, sim ? '1' : '0'); } catch (e) { /* sem armazenamento */ } }
     if (this.grupo) this.grupo.visible = this.ligado;
     this._atribuicao();
     this.visor.pedirQuadro();

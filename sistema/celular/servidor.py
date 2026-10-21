@@ -45,7 +45,7 @@ JANELA_FALHAS = 600.0
 #: Arquivos do Three.js que as telas do celular importam (mais nada de web/lib).
 LIB_LIBERADA = {"three.module.js", "OrbitControls.js"}
 #: Do visor do modo ver do PC: o 3D leve, o desenho do piso e os sistemas (metálica, pré-moldado…) — 20/10.
-VISOR_LIBERADO = {"visor3d.js", "referencia.js", "sistemas.js", "sol.js"}
+VISOR_LIBERADO = {"visor3d.js", "referencia.js", "sistemas.js", "sol.js", "terreno.js"}
 #: O que sai SEM a chave do aparelho: o manifesto e o logo. O navegador busca o manifesto sem o
 #: cookie (é o padrão dele) e, com 401, o Chrome não achava nome nem ícone — o "instalar" virava um
 #: atalho com uma letra cinza (19/10). Nenhum dos dois diz nada de projeto.
@@ -356,7 +356,8 @@ class Celular:
             return ""
         from saida.pacote_celular import RESUMOS
         fontes = ["projeto.json", "modelo.json", "detalhamento/lista-de-materiais.json", "detalhamento/resumo-numeros.json",
-                  "desenhos-2d/pranchas.desenho.json", "desenhos-2d/planta-de-lançamento.desenho.json"] + \
+                  "desenhos-2d/pranchas.desenho.json", "desenhos-2d/planta-de-lançamento.desenho.json",
+                  "terreno/imagem.jpg"] + \
             ["detalhamento/" + a for a, _t in RESUMOS]
         partes = []
         for rel in fontes:

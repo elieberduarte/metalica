@@ -918,6 +918,24 @@ def gerar_pacote(pasta_projeto: str, destino: str, slug: str = "", progresso=Non
     elif os.path.exists(ref):
         os.remove(ref)
 
+    # a obra no terreno (20/10, "levar essa visualização do terreno para o mobile"): a imagem do chão e a amarração, as
+    # mesmas do modo ver do PC (saida/local_obra.py) — só a imagem já baixada no PC; o celular não busca imagem
+    terreno = projeto.get("terreno") if isinstance(projeto.get("terreno"), dict) else None
+    img = os.path.join(pasta_projeto, "terreno", "imagem.jpg")
+    meta_img = _ler(os.path.join(pasta_projeto, "terreno", "imagem.json"))
+    tjson, tjpg = os.path.join(destino, "terreno.json"), os.path.join(destino, "terreno.jpg")
+    tem_terreno = bool(terreno and meta_img and os.path.exists(img))
+    if tem_terreno:
+        with open(tjson, "w", encoding="utf-8") as f:
+            json.dump({"terreno": terreno, "imagem": meta_img}, f, ensure_ascii=False, separators=(",", ":"))
+        if (not os.path.exists(tjpg) or os.path.getsize(tjpg) != os.path.getsize(img)
+                or os.path.getmtime(tjpg) < os.path.getmtime(img)):
+            shutil.copy2(img, tjpg)
+    else:
+        for c in (tjson, tjpg):
+            if os.path.exists(c):
+                os.remove(c)
+
     # pranchas
     pranchas = _pranchas(pasta_projeto, destino)
     numeros["pranchas"] = len(pranchas)
@@ -943,6 +961,7 @@ def gerar_pacote(pasta_projeto: str, destino: str, slug: str = "", progresso=Non
         "numeros": numeros, "resumos": resumos, "pranchas": pranchas, "arquivos": arquivos,
         **({"cobertura_movel": cobertura} if cobertura else {}),
         **({"referencia": "referencia.json"} if tem_ref else {}),
+        **({"terreno": "terreno.json", "terreno_imagem": "terreno.jpg"} if tem_terreno else {}),
         "bytes": sum(a["bytes"] for a in arquivos),
     }
     with open(os.path.join(destino, "manifesto.json"), "w", encoding="utf-8") as f:

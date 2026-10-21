@@ -7,7 +7,7 @@ o aparelho aparece e, removido, perde o acesso; desligado, a porta fecha.
 
 O servidor do celular sobe só no 127.0.0.1 de uma porta livre (no programa de verdade ele escuta na
 rede). Porta livre para o programa também: nunca a 8765/8766."""
-import base64, json, os, shutil, socket, subprocess, sys, tempfile, time
+import base64, math, json, os, shutil, socket, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
@@ -30,6 +30,18 @@ os.makedirs(os.path.join(proj, "detalhamento"))
 json.dump({"nome": "Obra do celular", "alterado": "2026-10-06T01:00:00", "dados_resumo": {"revisao": "R01"}},
           open(os.path.join(proj, "projeto.json"), "w", encoding="utf-8"))
 json.dump(_modelo(), open(os.path.join(proj, "modelo.json"), "w", encoding="utf-8"))
+# a obra no terreno (20/10, "levar essa visualização do terreno para o mobile"): a imagem que o PC baixou e a amarração
+from saida import local_obra as _L
+from PIL import Image as _Img
+_TERRENO = {"lat": -24.958, "lon": -53.484, "ponto": [0, 0], "norte": 12.5, "fonte": "esri", "cota": 0, "transparencia": 0.4}
+_proj_json = json.load(open(os.path.join(proj, "projeto.json"), encoding="utf-8"))
+json.dump(dict(_proj_json, terreno=_TERRENO), open(os.path.join(proj, "projeto.json"), "w", encoding="utf-8"))
+os.makedirs(os.path.join(proj, "terreno"))
+_reg = _L.regiao(_TERRENO, [0, 0, 10000, 6000])
+_Img.effect_noise((256, 256), 60).convert("RGB").save(os.path.join(proj, "terreno", "imagem.jpg"))
+json.dump({k: _reg[k] for k in ("x0", "y0", "x1", "y1")} | {"largura": 256, "altura": 256, "zoom": 18, "lado_m": round(_reg["lado_m"], 1),
+          "fonte": "Esri World Imagery (gratuita)", "atribuicao": "Imagem: Esri (teste)", "versao": 1},
+          open(os.path.join(proj, "terreno", "imagem.json"), "w", encoding="utf-8"))
 json.dump({"gerado": "2026-10-06 01:00", "totais": {"peso": 1520.4, "pecas": 67, "posicoes": 2, "conjuntos": 0,
                                                     "categorias": [{"categoria": "BARRAS", "titulo": "Barras", "peso": 1200, "pct": 79}]},
            "posicoes": [{"marca": "P1", "nome": "V1", "categoria": "BARRAS", "perfil": "W 200×22,5", "quantidade": 1, "comprimento": 6000,
@@ -231,6 +243,21 @@ try:
     ap.avaliar("document.getElementById('cores-originais').click()")
     ok(esperar(ap, "(%s)[0] !== 255 && !localStorage.getItem('metalica-cores:obra-celular')" % VIGA, 5)
        and json.loads(ap.avaliar(CONFERE) or '["?"]') == [], "Voltar às cores do modelo: a viga e o quadradinho voltam à cor do material")
+    # o terreno no celular (20/10): a imagem do PC no chão, na amarração, no 0,00 e com a transparência do modo ver
+    ok(esperar(ap, "!!(window.visor.terreno && window.visor.terreno.malha)", 15), "a imagem do terreno no chão do 3D do celular")
+    t3 = ap.avaliar("""(() => { const tr = window.visor.terreno; return { giro: tr.malha.rotation.z, z: tr.malha.position.z,
+        op: tr.vazada.material.opacity, fonte: (document.getElementById('terreno-fonte') || {}).textContent }; })()""")
+    ok(abs(t3["giro"] - math.radians(12.5)) < 1e-6 and abs(t3["z"] + 3) < 1 and abs(t3["op"] - 0.6) < 1e-6,
+       f"no giro, na altura (0,00) e na transparência do PC ({t3})")
+    ok(t3["fonte"] == "Imagem: Esri (teste)", f"a fonte da imagem no canto ({t3['fonte']!r})")
+    lin = "[...document.querySelectorAll('#folha .camada')].find(el => el.dataset.tipo === 'terreno')"
+    ok(ap.avaliar("!!" + lin), "Camadas: a Imagem do terreno em No piso")
+    ap.avaliar(lin + ".click()")
+    ok(ap.avaliar("window.visor.terreno.grupo.visible === false") and
+       json.loads(ap.avaliar("localStorage.getItem('metalica-camadas:obra-celular') || '{}'") or "{}").get("piso:terreno") is False,
+       "desligar a imagem a esconde e fica guardado no aparelho")
+    ap.avaliar(lin + ".click()")
+    ok(ap.avaliar("window.visor.terreno.grupo.visible === true"), "ligar de novo")
     ap.avaliar("document.getElementById('folha').hidden = true")
     alvo = ap.avaliar("""(() => { const v = window.visor; let m = -1, k = 0; v.fichas.forEach((f, i) => { if (v.visivelCamada[f.c] !== false && (f.kg || 0) > k) { k = f.kg; m = i; } });
         const [x, y] = v.paraTela(m); const r = v.tela.getBoundingClientRect(); return [x + r.left, y + r.top, m]; })()""")

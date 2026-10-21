@@ -184,3 +184,31 @@ def test_pacote_leva_o_desenho_do_piso(tmp_path):
     assert json.loads((dest / "referencia.json").read_text(encoding="utf-8"))["eixos"][0]["nome"] == "1"
     m = gerar_pacote(str(proj), str(dest), "obra", referencia={"segmentos": [], "eixos": []})
     assert "referencia" not in m and not (dest / "referencia.json").exists()
+
+
+def test_pacote_leva_o_terreno(tmp_path):
+    """A obra no terreno no celular (20/10, "levar essa visualização do terreno para o mobile"): com a imagem baixada no PC
+    (saida/local_obra.py), o pacote leva terreno.json (a amarração, a altura, a transparência e os limites da imagem) e
+    terreno.jpg; sem o local (Tirar o local), os dois saem do pacote."""
+    from PIL import Image
+    proj = tmp_path / "obra"
+    (proj / "terreno").mkdir(parents=True)
+    t = {"lat": -24.958, "lon": -53.484, "ponto": [0, 0], "norte": -78.5, "fonte": "cascavel", "cota": 0, "transparencia": 0.4}
+    (proj / "projeto.json").write_text(json.dumps({"nome": "Obra Teste", "terreno": t}), encoding="utf-8")
+    (proj / "modelo.json").write_text(json.dumps(_modelo()), encoding="utf-8")
+    Image.new("RGB", (64, 64), (90, 130, 78)).save(proj / "terreno" / "imagem.jpg")
+    meta = {"x0": -5954000.0, "y0": -2870500.0, "x1": -5953600.0, "y1": -2870100.0, "largura": 64, "altura": 64, "zoom": 20,
+            "lado_m": 372.1, "fonte": "Ortofoto 2021", "atribuicao": "Ortofoto 2021: Prefeitura de Cascavel — IPC", "versao": 1}
+    (proj / "terreno" / "imagem.json").write_text(json.dumps(meta), encoding="utf-8")
+    dest = tmp_path / "pacote"
+    m = gerar_pacote(str(proj), str(dest), "obra")
+    nomes = {a["nome"] for a in m["arquivos"]}
+    assert m["terreno"] == "terreno.json" and m["terreno_imagem"] == "terreno.jpg" and {"terreno.json", "terreno.jpg"} <= nomes
+    tj = json.loads((dest / "terreno.json").read_text(encoding="utf-8"))
+    assert tj["terreno"]["norte"] == -78.5 and tj["terreno"]["cota"] == 0 and tj["terreno"]["transparencia"] == 0.4
+    assert tj["imagem"]["atribuicao"].startswith("Ortofoto 2021")
+    assert (dest / "terreno.jpg").read_bytes() == (proj / "terreno" / "imagem.jpg").read_bytes()
+    # tirado o local: os arquivos saem
+    (proj / "projeto.json").write_text(json.dumps({"nome": "Obra Teste", "terreno": None}), encoding="utf-8")
+    m = gerar_pacote(str(proj), str(dest), "obra")
+    assert "terreno" not in m and not (dest / "terreno.json").exists() and not (dest / "terreno.jpg").exists()
