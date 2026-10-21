@@ -455,7 +455,13 @@ async function comportamento(ferramentas, conferir, tentar) {
     conferir('juntar', 'meia-esquadria a 45° nas duas pontas, normal para dentro de cada uma', cA && cB && cA.length === 1 && cB.length === 1 &&
              pertoV(cA[0].normal, [-Math.SQRT1_2, Math.SQRT1_2, 0], 1e-3) && pertoV(cB[0].normal, [Math.SQRT1_2, -Math.SQRT1_2, 0], 1e-3) && pertoV(cA[0].ponto, [0, 0, 0]),
              JSON.stringify([cA, cB]));
-    conferir('juntar', 'cortar: false só junta', mod.juncao(a0, b0, { cortar: false }).barras.every(x => !x.campos.cortes_fim.length));
+    conferir('juntar', "modo 'junta' só junta", mod.juncao(a0, b0, { modo: 'junta' }).barras.every(x => !x.campos.cortes_fim.length));
+    // o encaixe com uma seção quadrada de 100: B passa 50 além do encontro, A para 50 antes da face de B, cortada rente
+    const je = mod.juncao(a0, b0, { modo: 'encaixe', secao: () => [[-50, -50], [50, -50], [50, 50], [-50, 50]] });
+    conferir('juntar', 'encaixe: a 2ª passa reta até a face de fora da 1ª (+50) e a 1ª para na face da 2ª (−50), rente a ela',
+             je && je.encaixe && pertoV(je.barras[1].novo, [6000, 50, 0]) && pertoV(je.barras[0].novo, [5950, 0, 0]) && !je.barras[1].campos.cortes_fim.length
+             && je.barras[0].campos.cortes_fim.length === 1 && pertoV(je.barras[0].campos.cortes_fim[0].normal, [-1, 0, 0], 1e-3),
+             JSON.stringify(je && je.barras.map(x => [x.novo, x.campos])));
     conferir('juntar', 'chegando do mesmo lado a 5° (a meia-esquadria ficaria comprida demais): junta sem o corte', (() => { const q = mod.juncao(a0, { id: 'q', inicio: [0, 525, 0], fim: [5000, 87.5, 0] }); return q && q.normal === null && q.barras.every(x => !x.campos.cortes_fim.length); })());
     const jd = mod.juncao(a0, { id: 'c', inicio: [6000, -3000, 100], fim: [6000, -500, 100] });
     conferir('juntar', 'eixos desencontrados: o meio (z = 50) e o afastamento 100', jd && pertoV(jd.ponto, [6000, 0, 50]) && perto(jd.afastamento, 100));

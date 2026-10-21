@@ -128,6 +128,28 @@ try:
        f"com as duas selecionadas, Ctrl+Enter junta sem cortar: a diagonal a 45° estica até o pilar e o pilar sobe até ela: {r and r['depois']}")
     ok(r and r["paralelas"]["p1"] == [4000, 12000, 0] and r["paralelas"]["p2"] == [4000, 12500, 0] and r["paralelas"]["presa"],
        f"paralelas: recusa e fica na primeira barra, sem mexer: {r and r['paralelas']}")
+    # Shift: o encaixe — o banzo (1º) para na face do montante (2º), cortado rente; o montante passa reto até a face de fora do banzo
+    r = jsj("""const ed = editor, doc = ed.documento;
+      const B = (nome, i, f) => doc.add({ tipo: 'barra', nome, perfil: 'U 127×50×3,75', inicio: i, fim: f, rotacao: 0, papel: 'banzo', camada: 'Treliças', atributos: {} });
+      const a = B('banzo3', [0, 15000, 0], [5000, 15000, 0]);
+      const b = B('montante3', [6000, 15000, -3000], [6000, 15000, -500]);
+      ed.selecao.limpar(); ed.ativarFerramenta('juntar'); const f = ed.ativa;
+      f.onPonto({ ponto: [4800, 15000, 0], entidade: a.id }, {});
+      f.onMover({ ponto: [6000, 15000, -600], entidade: b.id }, { shiftKey: true });
+      const medida = ed._textoMedida || '';
+      f.onPonto({ ponto: [6000, 15000, -600], entidade: b.id }, { shiftKey: true });
+      const A = doc.get(a.id), Bb = doc.get(b.id);
+      // as bordas da seção do U (no sistema dela): a face em que o banzo para e a de fora do banzo são uma dessas quatro
+      const pts = ed.cena._secaoDoPerfil('U 127×50×3,75').getPoints(24);
+      const xs = pts.map(q => q.x), ys = pts.map(q => q.y);
+      const bordas = [Math.max(...xs), -Math.min(...xs), Math.max(...ys), -Math.min(...ys)].map(v => Math.round(v * 100) / 100);
+      return { medida, aFim: A.fim, bFim: Bb.fim, cortesA: A.cortes_fim || [], cortesB: (Bb.cortes_fim || []).length, bordas };""")
+    print("     ", r)
+    borda = lambda v: r and any(abs(v - b) < 0.05 for b in r["bordas"]) and v > 5
+    ok(r and borda(6000 - r["aFim"][0]) and r["aFim"][1:] == [15000, 0] and r["bFim"][0] == 6000 and borda(r["bFim"][2]) and r["cortesB"] == 0,
+       f"Shift: o banzo para na face do montante (uma borda da seção do U antes do eixo) e o montante passa reto até a face de fora do banzo, sem corte: {r and (r['aFim'], r['bFim'], r['cortesB'], r['bordas'])}")
+    ok(r and len(r["cortesA"]) == 1 and [round(x, 2) for x in r["cortesA"][0]["normal"]] == [-1, 0, 0] and "face" in r["medida"],
+       f"o banzo cortado rente à face do montante (plano x, normal para dentro); a caixa de medidas avisa: {r and (r['cortesA'], r['medida'])}")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:2]]}")
 finally:

@@ -8,8 +8,11 @@
 //    quando os eixos não se cruzam de verdade (o banzo e o montante com os eixos em planos diferentes), o meio do
 //    segmento mais curto entre os dois eixos. Cada barra estica ou apara o que precisar, e as duas pontas são cortadas
 //    no plano que divide o ângulo entre elas (a meia-esquadria do canto de um quadro: o U contra o U, o tubo contra o
-//    tubo), numa entrada só do desfazer. Com Ctrl no segundo clique, só junta, sem cortar.
-// Com duas barras já selecionadas ao abrir a ferramenta, Enter junta as duas (Ctrl+Enter sem o corte).
+//    tubo), numa entrada só do desfazer. Com Ctrl no segundo clique, só junta, sem cortar. Com Shift, o encaixe: a
+//    primeira barra chega na face da segunda, cortada rente a ela, e a segunda passa reta até a face de fora da
+//    primeira (o montante que sobe inteiro e o banzo que para na alma dele).
+// Com duas barras já selecionadas ao abrir a ferramenta, Enter junta as duas (Ctrl+Enter sem o corte; Shift+Enter o
+// encaixe, com a primeira selecionada chegando na segunda).
 // O corte vai em `cortes_inicio`/`cortes_fim`, o mesmo formato do Encaixar (o 3D, o IFC, o peso e a lista de corte já
 // contam com ele); os cortes que a ponta tinha saem (eram relativos ao nó antigo). Barras quase em linha (menos de ~12°
 // entre elas) só juntam: a meia-esquadria ficaria comprida demais. A peça com marca fica com a marca a conferir (o
@@ -17,6 +20,8 @@
 
 import { Ferramenta, formatar } from './base.js';
 import * as C from './_comum.js';
+import { pontaEstendida } from './estender.js';
+import { baseDaBarra } from '../nucleo/documento.js';
 // o corteValido vem do Encaixar (que puxa a cena e o three): carregado de lado, para o módulo valer sozinho nos testes
 let _corteValido = null;
 import('./encaixar.js').then(m => { _corteValido = m.corteValido; }).catch(() => {});
@@ -49,12 +54,15 @@ export function pontoDeJuncao(a, b) {
 }
 
 /**
- * O que cada barra ganha para a ponta mais perto do encontro ir até ele, cortada em meia-esquadria (`cortar`):
- * {ponto, afastamento, normal, barras: [{id, ponta, fixo, antes, novo, dL, campos}, …]}; `normal` é a do plano da
- * meia-esquadria (null sem corte). null quando as barras são paralelas ou uma delas viraria do avesso (o encontro fica
- * atrás da ponta que não anda). `valido(barraCortada)` recusa o corte que a cena não consegue desenhar.
+ * O que cada barra ganha para a ponta mais perto do encontro ir até ele: {ponto, afastamento, normal, encaixe,
+ * barras: [{id, ponta, fixo, antes, novo, dL, campos}, …]}. `modo`: 'esquadria' (as duas cortadas no plano que divide o
+ * ângulo; `normal` é a desse plano, null quando não deu para cortar), 'junta' (só as pontas no encontro) ou 'encaixe'
+ * (`a` chega na face de `b`, cortada rente a ela, e `b` passa reta até a face de fora de `a`; `encaixe` = true quando
+ * deu; precisa de `secao(perfil)` → [[x, y]]). null quando as barras são paralelas ou uma delas viraria do avesso (o
+ * encontro fica atrás da ponta que não anda). `valido(barraCortada)` recusa o corte que a cena não consegue desenhar.
  */
-export function juncao(a, b, { cortar = true, valido = null } = {}) {
+export function juncao(a, b, { modo = 'esquadria', secao = null, valido = null } = {}) {
+  const cortar = modo === 'esquadria';
   const j = pontoDeJuncao(a, b);
   if (!j) return null;
   const barras = [];
@@ -87,7 +95,43 @@ export function juncao(a, b, { cortar = true, valido = null } = {}) {
       if (!normal) for (const r of barras) { r.campos = { [r.ponta]: r.novo, [`cortes_${r.ponta}`]: [], [`recorte_${r.ponta}`]: 0 }; delete r.cortada; }
     }
   }
-  return { ...j, normal, barras };
+  // o encaixe: B passa reta até a face de fora de A; A para na face de B, cortada rente a ela
+  let encaixe = false;
+  if (modo === 'encaixe' && secao) {
+    const [A, B] = barras;
+    const mover = (r) => ({ ...r.original, [r.ponta]: r.novo, cortes_inicio: [], cortes_fim: [], recorte_inicio: 0, recorte_fim: 0 });
+    const movA = mover(A), movB = mover(B);
+    const dA = C.normalizar(C.sub(j.ponto, A.fixo)), dB = C.normalizar(C.sub(j.ponto, B.fixo));
+    const eA = C.normalizar(C.sub(movA.fim, movA.inicio));
+    // quanto B anda além do encontro para chegar à face de fora de A: a seção de A na direção de B
+    const dq = C.sub(dB, C.mul(eA, C.dot(dB, eA))), k = C.comp(dq);
+    let h = 0;
+    if (k > 1e-6) {
+      const dqn = C.mul(dq, 1 / k), { u, v } = baseDaBarra(movA.inicio, movA.fim, movA.rotacao || 0);
+      for (const [x, y] of secao(movA.perfil) || []) h = Math.max(h, C.dot(C.add(C.mul(u, x), C.mul(v, y)), dqn));
+      h /= k;
+    }
+    const novoB = C.add(j.ponto, C.mul(dB, h)).map(r2);
+    movB[B.ponta] = novoB;
+    const r = pontaEstendida(movA, A.ponta, movB, secao, { ateEixo: false });
+    if (r) {
+      const eB = C.normalizar(C.sub(movB.fim, movB.inicio));
+      const dp = C.sub(dA, C.mul(eB, C.dot(dA, eB))), kp = C.comp(dp);
+      const novoA = r.ponto.map(r2);
+      movA[A.ponta] = novoA;
+      const plano = kp > 1e-6 ? planoNaPonta(movA, A.ponta, r.ponto, C.mul(dp, 1 / kp)) : null;
+      const camposA = { [A.ponta]: novoA, [`cortes_${A.ponta}`]: plano ? [plano] : [], [`recorte_${A.ponta}`]: 0 };
+      const cortadaA = { ...movA, ...camposA };
+      if (!valido || !plano || valido(cortadaA)) {
+        Object.assign(A, { novo: novoA, dL: C.dist(A.fixo, novoA) - C.dist(A.fixo, A.antes), campos: camposA, cortada: cortadaA,
+                           face: plano ? { ponto: r.ponto, normal: C.mul(dp, 1 / kp) } : null });
+        Object.assign(B, { novo: novoB, dL: C.dist(B.fixo, novoB) - C.dist(B.fixo, B.antes),
+                           campos: { [B.ponta]: novoB, [`cortes_${B.ponta}`]: [], [`recorte_${B.ponta}`]: 0 } });
+        encaixe = true;
+      }
+    }
+  }
+  return { ...j, normal, encaixe, barras };
 }
 
 export class FerramentaJuntar extends Ferramenta {
@@ -95,7 +139,7 @@ export class FerramentaJuntar extends Ferramenta {
   static nome = 'Juntar pontas';
   static atalho = 'J';
   static grupo = 'estrutura';
-  static dica = 'Clique na primeira barra e na segunda: as pontas se encontram no cruzamento dos eixos, cortadas em meia-esquadria (Ctrl: sem o corte) — o Fillet do AutoCAD, no 3D';
+  static dica = 'Clique na primeira barra e na segunda: as pontas se encontram no cruzamento dos eixos, cortadas em meia-esquadria (Ctrl: sem o corte; Shift: a 1ª chega na face da 2ª, que passa reta) — o Fillet do AutoCAD, no 3D';
   static icone = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
 <path d="M3 20h9"/><path d="M12 20V7"/><path d="M12 4v3" stroke-dasharray="1.5 1.5"/><path d="M15 20h4" stroke-dasharray="1.5 1.5"/><circle cx="12" cy="20" r="1.4"/><path d="M20 3l-6 6"/><path d="M15.5 9H14V7.5"/></svg>`;
 
@@ -106,7 +150,7 @@ export class FerramentaJuntar extends Ferramenta {
     if (sel.length === 2 && C.editavel(this.editor, sel[0]) && C.editavel(this.editor, sel[1]) && this._juncao(sel[0], sel[1])) {
       this.par = [sel[0].id, sel[1].id];
       this._previa(this._juncao(sel[0], sel[1]));
-      this.dica('Enter junta as duas barras selecionadas no encontro dos eixos, em meia-esquadria (Ctrl+Enter: sem o corte) · ou clique na primeira barra');
+      this.dica('Enter junta as duas barras selecionadas no encontro dos eixos, em meia-esquadria (Ctrl+Enter: sem o corte; Shift+Enter: a 1ª selecionada chega na face da 2ª, que passa reta) · ou clique na primeira barra');
       return;
     }
     this.dica(FerramentaJuntar.dica);
@@ -132,7 +176,9 @@ export class FerramentaJuntar extends Ferramenta {
   _juncao(a, b, ev) {
     const cena = this.editor && this.editor.cena;
     const valido = cena && typeof cena._secaoDoPerfil === 'function' && _corteValido ? (bar) => _corteValido(cena, bar) : null;
-    return juncao(a, b, { cortar: !(ev && ev.ctrlKey), valido });
+    const secao = (perfil) => { try { return C.secaoDoPerfil(null, cena, perfil); } catch (e) { return []; } };
+    const modo = ev && ev.ctrlKey ? 'junta' : ev && ev.shiftKey ? 'encaixe' : 'esquadria';
+    return juncao(a, b, { modo, secao, valido });
   }
 
   _previa(j) {
@@ -143,14 +189,17 @@ export class FerramentaJuntar extends Ferramenta {
       g.add(C.gLinha([b.fixo, b.novo], '#0a8f3c', { tracejada: true }));
       g.add(C.gRotulo(`${b.dL >= 0 ? 'estica' : 'apara'} ${formatar(Math.abs(b.dL))}`, C.mul(C.add(b.antes, b.novo), 0.5), '#0a8f3c'));
     }
-    if (j.normal) {
-      // o plano da meia-esquadria, no encontro
-      const u = C.perpendicular(j.normal), v = C.cross(j.normal, u), s = 150;
-      const q = (x, y) => C.add(j.ponto, C.add(C.mul(u, x), C.mul(v, y)));
+    const face = j.barras[0].face;
+    const plano = j.normal ? { ponto: j.ponto, normal: j.normal } : (j.encaixe && face ? face : null);
+    if (plano) {
+      // o plano do corte: a meia-esquadria no encontro, ou a face da 2ª barra em que a 1ª para
+      const u = C.perpendicular(plano.normal), v = C.cross(plano.normal, u), s = 150;
+      const q = (x, y) => C.add(plano.ponto, C.add(C.mul(u, x), C.mul(v, y)));
       g.add(C.gPoligono([q(-s, -s), q(s, -s), q(s, s), q(-s, s)], C.CORES.face, 0.25));
     }
     const desenc = j.afastamento > 1 ? ` · eixos a ${formatar(j.afastamento)} um do outro: encontro no meio` : '';
-    this.medida(`${j.barras.map(b => `${b.dL >= 0 ? '+' : '−'}${formatar(Math.abs(b.dL))}`).join('  ·  ')}${j.normal ? ' · meia-esquadria' : ' · sem corte'}${desenc}`);
+    const tipo = j.normal ? ' · meia-esquadria' : j.encaixe ? ' · a 1ª para na face da 2ª, que passa' : ' · sem corte';
+    this.medida(`${j.barras.map(b => `${b.dL >= 0 ? '+' : '−'}${formatar(Math.abs(b.dL))}`).join('  ·  ')}${tipo}${desenc}`);
     this.previa(g);
   }
 
@@ -172,7 +221,7 @@ export class FerramentaJuntar extends Ferramenta {
       this.par = null;
       this.primeira = b.id;
       this.selecao.definir([b.id]);
-      this.dica('Agora clique na segunda barra: as pontas mais perto do encontro vão até ele, em meia-esquadria (Ctrl: sem o corte) · Esc volta');
+      this.dica('Agora clique na segunda barra: as pontas mais perto do encontro vão até ele, em meia-esquadria (Ctrl: sem o corte; Shift: esta chega na face da segunda, que passa reta) · Esc volta');
       return;
     }
     if (!b || b.id === this.primeira) { this.dica('Clique na OUTRA barra'); return; }
@@ -201,7 +250,7 @@ export class FerramentaJuntar extends Ferramenta {
     this.selecao.limpar();
     this.medida('');
     const desenc = j.afastamento > 1 ? ` (os eixos estavam a ${formatar(j.afastamento)} um do outro: encontro no meio)` : '';
-    const corte = j.normal ? ', em meia-esquadria' : (ev && ev.ctrlKey ? ', sem corte' : ', sem corte (quase em linha)');
+    const corte = j.normal ? ', em meia-esquadria' : j.encaixe ? ': a primeira para na face da segunda, que passa reta' : (ev && ev.ctrlKey ? ', sem corte' : ', sem corte (quase em linha)');
     this.dica(`Juntadas${corte}${desenc}. Clique na próxima barra (Ctrl+Z desfaz as duas; Delete no Encaixar tira o corte)`);
   }
 }
