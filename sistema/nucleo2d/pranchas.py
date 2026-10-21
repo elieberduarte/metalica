@@ -2978,14 +2978,18 @@ def _preencher_solidas(d: Desenho, ax):
             ax.add_patch(PathPatch(Path(verts, codes), facecolor=cor, edgecolor="none", zorder=5))
 
 
-def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: float = 10.0) -> str:
+def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: float = 10.0,
+                     so: Optional[Sequence[int]] = None) -> str:
     """PDF vetorial, uma página por desenho, no tamanho real do papel.
 
     Prancha (escala 1, `metadados.prancha`) sai na folha do seu formato; qualquer outro
     desenho sai numa página do tamanho do desenho na sua escala mais a margem, e o texto
     com a altura de papel que o CAD mostra. É o `para_dxf` de cada desenho renderizado
     pelo `saida.dxf_render`, o mesmo do memorial, num eixo cujo intervalo de dados é o
-    tamanho da página vezes a escala — 1 mm no papel é 1 mm impresso."""
+    tamanho da página vezes a escala — 1 mm no papel é 1 mm impresso.
+
+    `so`: só essas páginas, contadas de 0 em todos os desenhos, na ordem de `paginas_de` (a impressão
+    das folhas marcadas, saida/impressao.py) — a folha que fica de fora nem é desenhada."""
     import os
     import tempfile
     import matplotlib
@@ -2995,10 +2999,15 @@ def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: floa
     from saida import dxf_render
     os.makedirs(os.path.dirname(os.path.abspath(caminho_pdf)), exist_ok=True)
     from nucleo2d.detalhe.base import CAMADAS_PECAS
+    escolhidas = None if so is None else set(int(n) for n in so)
+    contadas = 0
     with PdfPages(caminho_pdf) as pdf, tempfile.TemporaryDirectory() as tmp:
         for i, d in enumerate(desenhos):
             paginas = paginas_de(d, margem)
             if not paginas:
+                continue
+            primeira, contadas = contadas, contadas + len(paginas)
+            if escolhidas is not None and not any(primeira <= n < contadas for n in escolhidas):
                 continue
             # as camadas por tipo de peça (banzos, diagonais…) saem na cor delas, como no CAD
             cores = {n: (d.camadas[n].cor if n in d.camadas else c) for n, (c, _e) in CAMADAS_PECAS.items()}
@@ -3011,6 +3020,8 @@ def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: floa
             # é dela (as 12 folhas da Sala inteiras, 12 vezes, levavam 5 min)
             partes = _por_folha(d) if d.metadados.get("pranchas") else [d]
             for j, ((larg, alt, k, x0, y0), parte) in enumerate(zip(paginas, partes)):
+                if escolhidas is not None and primeira + j not in escolhidas:
+                    continue
                 # texto como está no desenho: o PDF não passa pelo ASCII do DXF R12 ("dobra 12,5°",
                 # "TERÇAS" e "…" saíam "dobra 12,5 ", "TERCAS" e "?")
                 arq = parte.para_dxf(k, texto_unicode=True).gravar(os.path.join(tmp, "p%d_%d.dxf" % (i, j)))
