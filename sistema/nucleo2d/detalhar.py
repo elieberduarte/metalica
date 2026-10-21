@@ -1353,7 +1353,22 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         base[chave] = d
 
     localizacao = None
-    if "localizacao" in pedidos or "completo" in pedidos:
+    # o prédio (o aço preso em três ou mais lajes, como o Vicente): a fachada com as lajes e uma planta e uma chumbação
+    # por tipo de pavimento; a planta única do galpão punha os andares uns sobre os outros (21/10)
+    predio_pav = None
+    if any(k in pedidos for k in ("localizacao", "chumbacao", "completo")):
+        try:
+            from nucleo2d.detalhe.predio import pavimentos
+            predio_pav = pavimentos(doc, [e for e in pecas if str(_marcas(e).get("posicao") or e.nome)
+                                          not in {p.marca for p in posicoes if p.classe == "telha"}], nomeacao)
+        except Exception as exc:                             # noqa: BLE001 — sem isso, as plantas do galpão
+            avisos.append("pavimentos do prédio não separados: %s" % exc)
+    if predio_pav and ("localizacao" in pedidos or "completo" in pedidos):
+        from nucleo2d.detalhe.predio import desenho_de_localizacao_predio
+        avisar("localização por pavimento…")
+        localizacao = desenho_de_localizacao_predio(doc, predio_pav, GRUPOS["localizacao"]["titulo"],
+                                                    nomes=nomeacao["ifc"], camadas_pecas=camadas_ifc)
+    elif "localizacao" in pedidos or "completo" in pedidos:
         avisar("planta de localização…")
         try:
             localizacao = desenho_de_localizacao(doc, pecas, GRUPOS["localizacao"]["titulo"],
@@ -1376,8 +1391,13 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
     if "chumbacao" in pedidos or "completo" in pedidos:
         avisar("planta de chumbação…")
         try:
-            chumbacao = desenho_de_chumbacao(doc, pecas, nomeacao, GRUPOS["chumbacao"]["titulo"], eixos=eixos,
-                                             nomes=nomeacao["ifc"])
+            if predio_pav:
+                from nucleo2d.detalhe.predio import desenho_de_chumbacao_predio
+                chumbacao = desenho_de_chumbacao_predio(doc, predio_pav, GRUPOS["chumbacao"]["titulo"],
+                                                        nomes=nomeacao["ifc"])
+            else:
+                chumbacao = desenho_de_chumbacao(doc, pecas, nomeacao, GRUPOS["chumbacao"]["titulo"], eixos=eixos,
+                                                 nomes=nomeacao["ifc"])
         except ErroDeDados as e:
             avisos.append("planta de chumbação não gerada: %s" % e)
 
