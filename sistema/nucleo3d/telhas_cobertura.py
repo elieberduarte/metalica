@@ -939,6 +939,53 @@ def _partir(secoes, comp_max: float):
     return [pt_ for pt_ in partes if len(pt_) >= 2]
 
 
+#: mm: as terças a menos que isto uma da outra (na direção da caída) são a mesma linha (as peças emendadas nas tesouras)
+MESMA_LINHA = 15.0
+
+
+def _cadeias_da_faixa(ps):
+    """as águas de um trecho da faixa: [(terças na ordem da caída, beiral do começo, beiral do fim)] — os panos ligados pela
+    linha da terça (a de cima de um é a de baixo do outro, a mesma linha mesmo em outra peça); a terça só com beiral
+    também é uma água (a telha por cima dela, até a parede)"""
+    comuns = [p for p in ps if not p.get("beiral")]
+    beirais = [p for p in ps if p.get("beiral")]
+    mesma = lambda t1, t2: abs(t1["t"] - t2["t"]) < MESMA_LINHA
+    out = []
+    usados = set()
+    for ini in comuns:
+        if any(o is not ini and mesma(o["r"], ini["q"]) for o in comuns):
+            continue
+        seq = [ini["q"]]
+        p_ = ini
+        while p_ is not None and len(seq) < 200:
+            usados.add(id(p_))
+            seq.append(p_["r"])
+            p_ = next((o for o in comuns if id(o) not in usados and mesma(o["q"], p_["r"])), None)
+        out.append(seq)
+    for bb in beirais:
+        if not any(mesma(bb["q"], t_) for seq in out for t_ in seq):
+            out.append([bb["q"]])
+    cads = []
+    for seq in out:
+        fim = next((bb for bb in beirais if bb["lado"] > 0 and mesma(bb["q"], seq[-1])), None)
+        ini = next((bb for bb in beirais if bb["lado"] < 0 and mesma(bb["q"], seq[0])), None)
+        cads.append((seq, ini, fim))
+    return cads
+
+
+def _mesma_cadeia(c1, c2) -> bool:
+    """as duas águas de trechos vizinhos da faixa são a mesma chapa: as mesmas linhas de terça e os mesmos beirais"""
+    (s1, i1, f1), (s2, i2, f2) = c1, c2
+    if len(s1) != len(s2) or any(abs(a_["t"] - b_["t"]) >= MESMA_LINHA for a_, b_ in zip(s1, s2)):
+        return False
+    for x_, y_ in ((i1, i2), (f1, f2)):
+        if (x_ is None) != (y_ is None):
+            return False
+        if x_ is not None and abs(x_["L"] - y_["L"]) > 30.0:
+            return False
+    return True
+
+
 def _chapas(panos, telha, vales=()):
     """As chapas de telha no sentido da caída: a cobertura de cada direção cortada em faixas da largura útil da telha
     (ao longo das terças, contadas do começo da água) e, em cada faixa, os panos seguidos (a terça de cima de um é a de
@@ -971,64 +1018,68 @@ def _chapas(panos, telha, vales=()):
         while origem + k * W < fim - 1:
             a, b = origem + k * W, origem + (k + 1) * W
             k += 1
-            pedacos: Dict[tuple, list] = collections.defaultdict(list)   # (a', b') → [pano]
-            curtos: Dict[tuple, list] = collections.defaultdict(list)
+            # a faixa [a, b] é UMA telha (a largura útil) em cada água: os panos e os beirais que entram nela, cortados nela;
+            # os trechos entre as pontas deles e, em cada trecho, as águas (as linhas de terça na caída, ligadas pela
+            # posição da linha — a terça emendada numa tesoura é outra peça da mesma linha); os trechos seguidos com as
+            # mesmas linhas e os mesmos beirais são a mesma chapa (21/10/2026, a paginação do Posto V2: as terças emendadas
+            # em estações diferentes e o beiral que começava noutra estação partiam a faixa em 2–3 chapas e deixavam a tira
+            # de 150 mm do beiral sozinha em cima da calha)
+            cortes = []
             for p in lst:
                 a2, b2 = max(a, p["s0"]), min(b, p["s1"])
-                if b2 - a2 >= 30.0:
-                    pedacos[(round(a2), round(b2))].append(p)
-                elif b2 - a2 > 0.5:
-                    curtos[(round(a2), round(b2))].append(p)
-            # o pedaço curto da faixa (o pano que entra menos de 30 mm nela — a terça cortada pela treliça de baixo, 90 mm
-            # sem terça, 21/10/2026): vai junto do pedaço vizinho da mesma faixa; antes saía, e ficava a fresta
-            for (ca, cb) in sorted(curtos):
-                viz = next((k_ for k_ in pedacos if k_[1] == ca), None) or next((k_ for k_ in pedacos if k_[0] == cb), None)
-                if viz is None:
+                if b2 - a2 > 0.5:
+                    cortes.append((a2, b2, p))
+            pts = sorted({round(x_, 1) for a2, b2, _p in cortes for x_ in (a2, b2)})
+            abertas: list = []                   # [u, v, cadeia do 1º trecho, cadeia do último]
+            feitas: list = []
+            pendente = None                      # o trecho curto antes da primeira chapa: ela começa nele
+            for u, v in zip(pts, pts[1:]):
+                if v - u < 0.5:
                     continue
-                novo = (viz[0], cb) if viz[1] == ca else (ca, viz[1])
-                # junta com o que já está nessa chave (outros panos da mesma faixa até o mesmo ponto): a troca simples
-                # apagava a faixa inteira deles (21/10/2026, a fila de buracos de 1 m em y 42,6 do Posto V2)
-                mover = pedacos.pop(viz)
-                pedacos[novo] = pedacos.get(novo, []) + [p for p in mover if p not in pedacos.get(novo, [])]
-            for (a2, b2), ps in pedacos.items():
-                # as ligações: terça de baixo → pano (pela ordem na caída, t crescente); o beiral é uma ponta
-                comuns = [p for p in ps if not p.get("beiral")]
-                beirais = [p for p in ps if p.get("beiral")]
-                de = {id(p["q"]["b"]): p for p in comuns}
-                chega = {id(p["r"]["b"]) for p in comuns}
-                for ini in [p for p in comuns if id(p["q"]["b"]) not in chega]:
-                    seq_t = [ini["q"]]
-                    p_ = ini
-                    while p_ is not None and len(seq_t) < 200:
-                        seq_t.append(p_["r"])
-                        p_ = de.get(id(p_["r"]["b"]))
-                    secoes = [(_pt(t_, a2, d, n), _pt(t_, b2, d, n)) for t_ in seq_t]
-                    terca_da = {id(sec): t_ for sec, t_ in zip(secoes, seq_t)}
-                    # o beiral nas pontas (até a face da parede)
-                    for bb in beirais:
-                        ext = lambda P, bb=bb: (P[0] + n[0] * bb["L"] * bb["lado"], P[1] + n[1] * bb["L"] * bb["lado"], P[2] + bb["m"] * bb["L"] * bb["lado"])
-                        if bb["q"] is seq_t[-1] and bb["lado"] > 0:
-                            secoes.append((ext(secoes[-1][0]), ext(secoes[-1][1])))
-                        elif bb["q"] is seq_t[0] and bb["lado"] < 0:
-                            secoes.insert(0, (ext(secoes[0][0]), ext(secoes[0][1])))
-                    # uma chapa por água (a cumeeira e o vale separam), até o comprimento da telha (12 m na TP 40)
-                    for parte in _partir(secoes, float(telha.get("comprimento_max") or 12000.0)):
-                        parte = list(parte)
-                        for k_ponta, k_viz in ((0, 1), (len(parte) - 1, len(parte) - 2)):
-                            t_ = terca_da.get(id(parte[k_ponta]))
-                            if t_ is not None and any(x0 < b2 - 1 and x1 > a2 + 1 for x0, x1 in em_v.get(id(t_["b"]), ())):
-                                recua(parte, k_ponta, k_viz)
-                        chapas.append({"secoes": parte, "a": a2, "b": b2, "origem": origem, "d": d, "n": n})
-                # o beiral sozinho (a água de uma terça só até a parede)
-                usados = {id(x) for x in comuns}
-                for bb in beirais:
-                    if any(bb["q"] is p["q"] or bb["q"] is p["r"] for p in comuns):
+                ps = [p for a2, b2, p in cortes if a2 <= u + 0.05 and b2 >= v - 0.05]
+                cads = _cadeias_da_faixa(ps)
+                if v - u < 30.0 and cads:
+                    # o trecho curto (o pano que entra menos de 30 mm — a terça cortada pela treliça de baixo, as pontas
+                    # quase coincidentes): vai junto da chapa de antes; sem ela, da de depois
+                    if abertas:
+                        for ab in abertas:
+                            ab[1] = v
+                    elif pendente is None:
+                        pendente = u
+                    continue
+                seguem = []
+                for c in cads:
+                    ab = next((ab for ab in abertas if abs(ab[1] - u) < 1.0 and _mesma_cadeia(ab[3], c)), None)
+                    if ab is not None:
+                        ab[1], ab[3] = v, c
+                        seguem.append(ab)
+                    else:
+                        seguem.append([u if pendente is None else pendente, v, c, c])
+                feitas += [ab for ab in abertas if not any(ab is x_ for x_ in seguem)]
+                abertas = seguem
+                pendente = None
+            feitas += abertas
+            for a2, b2, c0, c1 in feitas:
+                (seq0, ini0, fim0), (seq1, _i1, _f1) = c0, c1
+                secoes = [(_pt(t0, a2, d, n), _pt(t1, b2, d, n)) for t0, t1 in zip(seq0, seq1)]
+                tercas_da = {id(sec): (t0, t1) for sec, t0, t1 in zip(secoes, seq0, seq1)}
+                # o beiral nas pontas (até a face da parede)
+                for bb, no_fim in ((fim0, True), (ini0, False)):
+                    if bb is None:
                         continue
-                    t_ = bb["q"]
-                    P0, P1 = _pt(t_, a2, d, n), _pt(t_, b2, d, n)
                     ext = lambda P, bb=bb: (P[0] + n[0] * bb["L"] * bb["lado"], P[1] + n[1] * bb["L"] * bb["lado"], P[2] + bb["m"] * bb["L"] * bb["lado"])
-                    sec = [(P0, P1), (ext(P0), ext(P1))]
-                    chapas.append({"secoes": sec if bb["lado"] > 0 else sec[::-1], "a": a2, "b": b2, "origem": origem, "d": d, "n": n})
+                    if no_fim:
+                        secoes.append((ext(secoes[-1][0]), ext(secoes[-1][1])))
+                    else:
+                        secoes.insert(0, (ext(secoes[0][0]), ext(secoes[0][1])))
+                # uma chapa por água (a cumeeira e o vale separam), até o comprimento da telha (12 m na TP 40)
+                for parte in _partir(secoes, float(telha.get("comprimento_max") or 12000.0)):
+                    parte = list(parte)
+                    for k_ponta, k_viz in ((0, 1), (len(parte) - 1, len(parte) - 2)):
+                        ts_ = tercas_da.get(id(parte[k_ponta])) or ()
+                        if len(parte) > 1 and any(x0 < b2 - 1 and x1 > a2 + 1 for t_ in ts_ for x0, x1 in em_v.get(id(t_["b"]), ())):
+                            recua(parte, k_ponta, k_viz)
+                    chapas.append({"secoes": parte, "a": a2, "b": b2, "origem": origem, "d": d, "n": n})
     # a borda escalonada: a chapa recortada na diagonal — da terça longa até a linha da borda (da ponta da curta à da
     # longa), nas mesmas faixas e ondas da água (são as telhas que vão precisar de recorte)
     for p in panos:
@@ -1054,7 +1105,56 @@ def _chapas(panos, telha, vales=()):
                 continue
             chapas.append({"secoes": [(_pt_linha(linha, a2, d, n), _pt_linha(linha, b2, d, n)), (borda_em(a2), borda_em(b2))],
                            "a": a2, "b": b2, "origem": orig, "d": d, "n": n, "recorte": True})
-    return chapas
+    return _juntar_recortes(chapas)
+
+
+def _juntar_recortes(chapas):
+    """o recorte da faixa inteira na ponta de uma chapa da mesma faixa é a mesma telha, cortada na obra: a chapa vai até a
+    borda, com a ponta na diagonal (21/10/2026, a paginação do Posto V2, folha 12: a fileira da borda é uma telha só até a
+    parede; o recorte saía uma peça à parte). O recorte de parte da faixa (os pedaços da platibanda curva) fica como está."""
+    def meio(sec):
+        return ((sec[0][0] + sec[1][0]) / 2.0, (sec[0][1] + sec[1][1]) / 2.0)
+    pela_faixa: Dict[tuple, list] = collections.defaultdict(list)
+    for c in chapas:
+        if not c.get("recorte") and len(c["secoes"]) >= 2:
+            pela_faixa[(round(c["d"][0], 4), round(c["d"][1], 4), round(c["a"] / 1000.0))].append(c)
+    usadas = set()
+    fora = set()
+    for r in chapas:
+        if not r.get("recorte") or len(r["secoes"]) != 2:
+            continue
+        (A, B), longe = r["secoes"]
+        ida = (meio(longe)[0] - meio((A, B))[0], meio(longe)[1] - meio((A, B))[1])
+        cands = [c for k_ in (-1, 0, 1) for c in pela_faixa.get((round(r["d"][0], 4), round(r["d"][1], 4), round(r["a"] / 1000.0) + k_), ())]
+        for c in cands:
+            # o recorte vem cortado na borda: até 5 mm mais estreito que a faixa (a ponta da linha) ainda é a faixa toda
+            if abs(c["a"] - r["a"]) > 5.0 or abs(c["b"] - r["b"]) > 5.0:
+                continue
+            for k, k_viz in ((-1, -2), (0, 1)):
+                if (id(c), k) in usadas:
+                    continue
+                P, Q = c["secoes"][k]
+                if math.dist(P[:2], A[:2]) > 6.0 or math.dist(Q[:2], B[:2]) > 6.0:
+                    continue
+                m1, m0 = meio(c["secoes"][k]), meio(c["secoes"][k_viz])
+                if (m1[0] - m0[0]) * ida[0] + (m1[1] - m0[1]) * ida[1] <= 0.0:
+                    continue                                    # o recorte volta por cima da chapa
+                # a ponta na diagonal na largura da chapa (a reta da borda prolongada até a e b dela)
+                L0, L1 = longe
+                larg = (r["b"] - r["a"]) or 1.0
+                em = lambda s_: tuple(L0[j] + (L1[j] - L0[j]) * (s_ - r["a"]) / larg for j in range(3))
+                longe = (em(c["a"]), em(c["b"]))
+                if k == -1:
+                    c["secoes"].append(longe)
+                else:
+                    c["secoes"].insert(0, longe)
+                c["recortada"] = True
+                usadas.add((id(c), k))
+                fora.add(id(r))
+                break
+            if id(r) in fora:
+                break
+    return [c for c in chapas if id(c) not in fora]
 
 
 def _dentro_poli(pt, poli) -> bool:
@@ -1769,8 +1869,13 @@ def _calha_em_u(cs, topo):
 def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano: float = 10.0,
            camada: str = "Telhas") -> dict:
     """Lança os panos de telha em cima das terças de `doc` (tira os panos lançados antes por aqui). Devolve o resumo,
-    as águas e os apontamentos."""
+    as águas e os apontamentos. A telha fica no modelo (metadados): o lançamento seguinte sem `telha` usa a mesma (a do
+    projeto — a TR40 0,50 do Posto V2 —, não volta para a TP40 de teste)."""
+    if telha is None:
+        telha = (getattr(doc, "metadados", None) or {}).get("telha_cobertura")
     telha = dict(TELHA_PADRAO, **(telha or {}))
+    if isinstance(getattr(doc, "metadados", None), dict):
+        doc.metadados["telha_cobertura"] = dict(telha)
     # tira os panos de uma rodada anterior
     for i in [e.id for e in doc.solidos if (e.atributos or {}).get("telha_lancada") or (e.atributos or {}).get("calha_lancada")
               or (e.atributos or {}).get("rufo_lancado")]:
@@ -1786,7 +1891,8 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
     for ch in chapas:
         so = _solido_da_chapa(ch, telha, camada)
         so.atributos = {"tipo_ifc": "IfcCovering", "telha_lancada": True, "telha": telha["modelo"],
-                        **({"recorte": True} if ch.get("recorte") else {}),
+                        **({"recorte": True} if ch.get("recorte") or ch.get("recortada") else {}),
+                        "largura": round(ch["b"] - ch["a"]), "massa_m2": telha["massa_m2"],
                         "comprimento": round(sum(math.dist(((a1[0] + b1[0]) / 2, (a1[1] + b1[1]) / 2, a1[2]), ((a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2, a2[2]))
                                                  for (a1, b1), (a2, b2) in zip(ch["secoes"], ch["secoes"][1:])))}
         doc.add(so)
@@ -1882,7 +1988,8 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
     return {
         "telha": telha["nome"], "panos": len(feitos), "chapas": len(chapas), "area_m2": round(area, 1), "peso_kg": round(area * telha["massa_m2"], 1),
         "beirais": sum(1 for p in feitos if p.get("beiral")), "bordas": sum(1 for p in feitos if p.get("borda")),
-        "recortes": sum(1 for c in chapas if c.get("recorte")),
+        "recortes": sum(1 for c in chapas if c.get("recorte") or c.get("recortada")),
+        "recortadas": sum(1 for c in chapas if c.get("recortada")),
         "calhas": len(an["calhas"]), "calha_ml": round(ml_calha / 1000.0, 1),
         "calhas_vale": sum(1 for c in an["calhas"] if c.get("eixo")), "calhas_parede": sum(1 for c in an["calhas"] if c.get("parede")),
         "fechamentos": len(fech), "fechamento_ml": round(fech_ml / 1000.0, 1), "fechamento_m2": round(fech_area / 1e6, 1),

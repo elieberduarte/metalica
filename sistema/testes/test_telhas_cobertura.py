@@ -838,3 +838,60 @@ def test_telha_ate_a_telha_vizinha_de_outra_direcao():
     from shapely.geometry import box
     falta = box(100.0, 100.0, 2850.0, 2700.0).difference(_cobertura_em_planta(doc))
     assert falta.area < 1.0, "o vão entre as duas telhas ficou sem telha (%.0f mm²)" % falta.area
+
+
+def test_uma_chapa_por_faixa_com_as_tercas_emendadas_em_estacoes_diferentes():
+    """A telha do projeto vai inteira da calha até a cumeeira (a paginação do Posto V2, folha 12: 341 telhas). As linhas de
+    terça emendadas em tesouras diferentes (a estação de uma a 2,5 m, da outra a 3,3 m) e o beiral que começa noutra
+    estação partiam a faixa em duas ou três chapas, e o beiral sobre a calha virava uma tira de 150 mm sozinha (350 no
+    Posto V2: 174 das telhas do projetista saíam partidas)."""
+    doc = Documento()
+    for i in range(4):
+        x, z = i * 1400.0, 7210.0 - i * 1400.0 * 0.05
+        if i == 1:
+            _terca(doc, x, z, "TC1", 0.0, 3300.0)
+            _terca(doc, x, z, "TC1", 3300.0, 6000.0)
+        elif i == 3:
+            _terca(doc, x, z, "TC1", 0.0, 2500.0)
+            _terca(doc, x, z, "TC1", 2500.0, 6000.0)
+        else:
+            _terca(doc, x, z, "TC1")
+    _banzo(doc, (5000.0, -500.0, 8000.0), (5000.0, 6500.0, 8000.0), "TRANSIÇÃO 3 (tesoura de cima)")
+    for i in range(3):
+        _terca(doc, 5800.0 + i * 1400.0, 7000.0 + i * 1400.0 * 0.05, "TC2")
+    T.lancar(doc)
+    chapas = [s for s in _telhado(doc) if max(v[0] for v in s.vertices) < 5000.0]
+    assert len(chapas) == 6, "a água de 6 m em %d chapas (6 faixas de 1.020 mm)" % len(chapas)
+    for s in chapas:
+        xs = [v[0] for v in s.vertices]
+        assert min(xs) < 1.0 and max(xs) > 4700.0, "a chapa de x %.0f a %.0f: não vai da primeira terça até o beiral" % (min(xs), max(xs))
+
+
+def test_recorte_na_ponta_da_chapa_e_a_mesma_telha():
+    """A telha que chega na parede diagonal é uma telha só, cortada na diagonal (a paginação do Posto V2, folha 12: a
+    fileira da borda é uma telha do comprimento até a parede). O recorte saía como peça à parte na ponta da chapa — duas
+    telhas na lista para cada fileira da borda."""
+    doc = Documento()
+    _agua(doc, 0.0, 3, 7000.0, 0.05)
+    _banzo(doc, (2900.0, 0.0, 8000.0), (4400.0, 6000.0, 8000.0), "TRANSIÇÃO 9")
+    r = T.lancar(doc)
+    chapas = _telhado(doc)
+    assert len(chapas) == 6, "6 faixas em %d peças" % len(chapas)
+    for s in chapas:
+        assert min(v[0] for v in s.vertices) < 1.0                       # da primeira terça
+        assert max(v[0] for v in s.vertices) > 2900.0                    # até a parede, cortada na diagonal
+        assert (s.atributos or {}).get("recorte")
+    assert r["recortes"] == 6
+
+
+def test_a_telha_do_projeto_fica_no_modelo():
+    """A telha do projeto (a TR40 0,50 Galvalume do Posto V2, largura útil 1.000 mm pela paginação) fica no modelo: o
+    relançamento sem telha usa a mesma, e cada chapa leva a largura e a massa por m² (a lista tira a área e o peso)."""
+    tr40 = {"nome": "TR40 0,50 mm Galvalume", "modelo": "TR40", "largura_util": 1000.0, "massa_m2": 4.71}
+    doc = Documento()
+    _agua(doc, 0.0, 3, 7000.0, 0.05)
+    T.lancar(doc, tr40)
+    T.lancar(doc)
+    chapas = _telhado(doc)
+    assert len(chapas) == 6 and all(s.nome == "TR40 0,50 mm Galvalume" for s in chapas)
+    assert all(s.atributos["largura"] == 1000 and s.atributos["massa_m2"] == 4.71 for s in chapas)
