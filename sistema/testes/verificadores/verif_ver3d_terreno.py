@@ -15,7 +15,13 @@ DADOS = tempfile.mkdtemp(prefix="metalica_terreno_")
 proj = os.path.join(DADOS, "obra")
 os.makedirs(proj)
 json.dump({"nome": "Obra no terreno", "tipo": "ifc", "alterado": "2026-10-20T09:00:00"}, open(os.path.join(proj, "projeto.json"), "w", encoding="utf-8"))
-json.dump(_modelo(), open(os.path.join(proj, "modelo.json"), "w", encoding="utf-8"))
+# com um subsolo (o Mercado Conceito, 20/10: a imagem no fundo do subsolo deixava a fundação "voando"): uma laje a −3,50 m
+MODELO = _modelo()
+MODELO["entidades"].append({"id": "sub", "tipo": "solido", "nome": "laje do subsolo", "camada": "Subsolo", "material": "Concreto",
+    "vertices": [[0, 0, -3500], [6000, 0, -3500], [6000, 4000, -3500], [0, 4000, -3500],
+                 [0, 0, -3300], [6000, 0, -3300], [6000, 4000, -3300], [0, 4000, -3300]],
+    "faces": [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]})
+json.dump(MODELO, open(os.path.join(proj, "modelo.json"), "w", encoding="utf-8"))
 amb = dict(os.environ, METALICA_TERRENO="1", METALICA_TERRENO_FALSO="1")
 srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=amb)
@@ -89,11 +95,11 @@ try:
     # o meio da imagem é o meio da obra (a amarração de saída), na escala da imagem
     m = aba.avaliar("""(() => { const v = window.visor, tr = window.terreno, o = v.cabecalho.origem, c = v._caixaModelo.getCenter(new v.camera.position.constructor());
       return { dx: tr.malha.position.x - (c.x + o[0]), dy: tr.malha.position.y - (c.y + o[1]), lado: tr.malha.scale.x,
-               ladoM: tr.imagem.lado_m, giro: tr.malha.rotation.z, zMalha: tr.malha.position.z - o[2], zMin: v._caixaModelo.min.z,
+               ladoM: tr.imagem.lado_m, giro: tr.malha.rotation.z, zMalha: tr.malha.position.z, zMin: v._caixaModelo.min.z + o[2],
                fonte: (document.getElementById('terreno-fonte') || {}).textContent }; })()""")
     ok(math.hypot(m["dx"], m["dy"]) < 600, f"o meio da imagem no meio da obra ({m['dx']:.0f}, {m['dy']:.0f} mm)")
     ok(abs(m["lado"] / 1000 - m["ladoM"]) / m["ladoM"] < 0.02, f"a imagem na escala ({m['lado'] / 1000:.1f} m × {m['ladoM']} m)")
-    ok(abs(m["zMalha"] - m["zMin"]) < 20, "a imagem logo abaixo da obra")
+    ok(abs(m["zMalha"] - m["zMin"]) < 20 and m["zMin"] < -3400, f"no automático, a imagem no pé da obra (o fundo do subsolo, {m['zMalha']:.0f} mm)")
     ok(m["fonte"] == "Imagem de teste", f"a fonte da imagem no canto ({m['fonte']!r})")
     ok(aba.avaliar("document.getElementById('btn-terreno').classList.contains('ligado')"), "o botão Terreno fica aceso")
     foto(aba, "ver3d_terreno_1.png")
@@ -141,6 +147,30 @@ try:
     ok(abs(aba.avaliar("window.terreno.malha.rotation.z") - math.radians(30)) < 1e-6, "com o norte gravado")
     aba.avaliar("document.getElementById('btn-terreno').click()")
     esperar(aba, "!!document.getElementById('terreno-ligado')", 5)
+    # a altura da imagem: no 0,00 o subsolo fica embaixo do chão; outra cota digitada; gravada no projeto
+    zM = "window.terreno.malha.position.z"
+    ok(aba.avaliar("[...document.querySelectorAll('#terreno-cota-sel option')].some(o => o.value === '0')"), "o 0,00 entre as alturas da imagem")
+    aba.avaliar("(() => { const s = document.getElementById('terreno-cota-sel'); s.value = '0'; s.dispatchEvent(new Event('change')); return 1; })()")
+    ok(abs(aba.avaliar(zM) - (-3)) < 1, f"no nível 0,00 a imagem vai para o 0 ({aba.avaliar(zM):.0f} mm)")
+    time.sleep(1.2)
+    ok(_json(API)["terreno"].get("cota") == 0, "a altura gravada no projeto (0)")
+    aba.avaliar("""(() => { const s = document.getElementById('terreno-cota-sel'); s.value = 'outra'; s.dispatchEvent(new Event('change'));
+      const i = document.getElementById('terreno-cota'); i.value = '1,5'; i.dispatchEvent(new Event('input')); return 1; })()""")
+    ok(abs(aba.avaliar(zM) - 1497) < 1, f"outra cota digitada (1,5 m → {aba.avaliar(zM):.0f} mm)")
+    time.sleep(1.2)
+    ok(_json(API)["terreno"].get("cota") == 1500, "a cota digitada gravada (1500)")
+    foto(aba, "ver3d_terreno_3_cota.png")
+    aba.navegar(base + "/visor3d/ver3d.html?projeto=obra", limite=60)
+    ok(esperar(aba, "!!(window.ver3dPronto && window.terreno && window.terreno.malha)", 60) and abs(aba.avaliar(zM) - 1497) < 1,
+       "depois do F5 a imagem continua na cota escolhida")
+    aba.avaliar("document.getElementById('btn-terreno').click()")
+    esperar(aba, "!!document.getElementById('terreno-cota-sel')", 5)
+    ok(aba.avaliar("document.getElementById('terreno-cota-sel').value") == "outra" and not aba.avaliar("document.getElementById('terreno-cota-outra').hidden"),
+       "o painel volta mostrando a cota digitada")
+    aba.avaliar("(() => { const s = document.getElementById('terreno-cota-sel'); s.value = 'auto'; s.dispatchEvent(new Event('change')); return 1; })()")
+    ok(aba.avaliar(zM) < -3400, f"voltar ao automático põe a imagem no pé da obra de novo ({aba.avaliar(zM):.0f} mm)")
+    time.sleep(1.2)
+    ok("cota" not in _json(API)["terreno"], "o automático tira a cota do projeto")
     aba.avaliar("document.getElementById('terreno-ligado').click()")
     ok(aba.avaliar("window.terreno.grupo.visible === false && !document.getElementById('terreno-fonte')"),
        "desligar a imagem a esconde (e a fonte do canto)")

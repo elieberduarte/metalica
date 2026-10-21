@@ -90,3 +90,7 @@ html, body.ver3d { height: 100%; margin: 0; overflow: hidden; background: var(--
 .terreno-fonte-sel { display: flex; align-items: center; gap: 6px; font-size: 12.5px; margin: 4px 0; }
 .terreno-fonte-sel select { flex: 1; font: inherit; }
 #terreno-resultados .linha-lista span { white-space: normal; }
+.terreno-cota { display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 12.5px; }
+.terreno-cota select { flex: 1; min-width: 0; font: inherit; }
+.terreno-cota input { width: 76px; font: inherit; padding: 3px 6px; border: 1px solid var(--borda); border-radius: var(--raio-p);
+  background: var(--painel); color: var(--texto); }

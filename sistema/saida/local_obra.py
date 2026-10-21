@@ -136,6 +136,16 @@ def validar(t: dict) -> dict:
     for k in ("endereco",):
         if t.get(k):
             saida[k] = str(t[k])[:300]
+    # a altura da imagem (mm do projeto); sem ela, no pé da obra. O usuário, 20/10, no Mercado (subsolo): "preciso deixar a
+    # imagem no nível 0 para a fundação não ficar voando"
+    if t.get("cota") is not None and str(t.get("cota")).strip() != "":
+        try:
+            cota = float(t["cota"])
+        except (TypeError, ValueError):
+            raise ErroTerreno("a altura da imagem precisa ser um número (mm).")
+        if not math.isfinite(cota):
+            raise ErroTerreno("a altura da imagem precisa ser um número (mm).")
+        saida["cota"] = round(cota, 1)
     fonte = t.get("fonte") or "esri"
     if isinstance(fonte, dict):
         saida["fonte"] = fonte_do_endereco(str(fonte.get("url") or ""), str(fonte.get("camada") or ""),

@@ -305,3 +305,14 @@ def test_coordenada_utm_do_geoportal(texto, fuso):
     assert _dist_m(c, (-24.958239, -53.484772)) < 1.0                 # o arredondamento do texto
     assert L.coordenada_do_texto("677000 7184000 23K")[1] == pytest.approx(-43.24, abs=0.01)   # o fuso escrito vale
     assert L.coordenada_do_texto("Rua Maranhão 3411, Cascavel") is None
+
+
+def test_altura_da_imagem():
+    """A cota da imagem (o Mercado Conceito com subsolo, 20/10: a imagem no fundo do subsolo deixava a fundação voando)."""
+    base = {"lat": -24.9, "lon": -53.4, "ponto": [0, 0]}
+    assert "cota" not in L.validar(base)                                   # sem ela: no pé da obra
+    assert L.validar(dict(base, cota=0))["cota"] == 0                      # o 0,00 vale (não é "sem cota")
+    assert L.validar(dict(base, cota="1500"))["cota"] == 1500
+    assert "cota" not in L.validar(dict(base, cota=None)) and "cota" not in L.validar(dict(base, cota=""))
+    with pytest.raises(L.ErroTerreno, match="altura"):
+        L.validar(dict(base, cota="abc"))

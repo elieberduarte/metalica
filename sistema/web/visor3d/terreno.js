@@ -10,6 +10,7 @@ const R = 6378137;
 const rad = g => g * Math.PI / 180, grau = r => r * 180 / Math.PI;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const nf = (v, c = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const cotaTxt = mm => (mm > 0 ? '+' : mm < 0 ? '−' : '') + nf(Math.abs(mm) / 1000, 2);    // +4,00 / 0,00 / −3,50 (m)
 
 /** O ponto do modelo (mm do projeto) em [lat, lon] pela amarração `t` ({lat, lon, ponto, norte}). */
 export function modeloParaGeo(t, x, y) {
@@ -128,7 +129,10 @@ export class Terreno {
     const o = (this.visor.cabecalho && this.visor.cabecalho.origem) || [0, 0, 0];
     const d = this.arrasto ? this.arrasto.d : [0, 0];
     this.grupo.position.set(-o[0], -o[1], -o[2]);
-    this.zChao = this.visor._caixaModelo.min.z + o[2] - 6;          // logo acima do piso liso (min.z − 10)
+    // na cota escolhida (o nível 0,00 da obra com subsolo: o subsolo fica embaixo do chão, a fundação não voa) ou no pé
+    // da obra, logo acima do piso liso (min.z − 10)
+    const cota = this.t && Number.isFinite(this.t.cota) ? this.t.cota : null;
+    this.zChao = cota !== null ? cota - 3 : this.visor._caixaModelo.min.z + o[2] - 6;
     this.malha.position.set(p.meio[0] + d[0], p.meio[1] + d[1], this.zChao);
     this.malha.scale.set(p.largura, p.altura, 1);
     this.malha.rotation.set(0, 0, p.giro);
@@ -175,6 +179,19 @@ export class Terreno {
           <input type="range" id="terreno-norte" min="-180" max="180" step="0.5" value="${t.norte}" aria-label="Giro do norte"></label></div>
         <p class="dica">No Ajustar, arraste a imagem por baixo da obra (de cima, na vista Topo, fica mais fácil) e gire o norte até
           as divisas e as ruas encaixarem. Grava sozinho.</p>`;
+      if (im) {
+        const niv = this._niveis(), temCota = Number.isFinite(t.cota);
+        const naLista = temCota && niv.some(n => n.z === Math.round(t.cota));
+        html += `<p class="titulo-secao">Altura da imagem</p>
+          <div class="terreno-cota"><select id="terreno-cota-sel" aria-label="Altura da imagem">
+            <option value="auto" ${temCota ? '' : 'selected'}>No pé da obra (automático)</option>
+            ${niv.map(n => `<option value="${n.z}" ${naLista && Math.round(t.cota) === n.z ? 'selected' : ''}>${esc(n.nome)} (${cotaTxt(n.z)})</option>`).join('')}
+            <option value="outra" ${temCota && !naLista ? 'selected' : ''}>Outra cota…</option></select>
+            <span id="terreno-cota-outra" ${temCota && !naLista ? '' : 'hidden'}><input id="terreno-cota" type="text" inputmode="decimal"
+              value="${temCota ? nf(t.cota / 1000, 2) : '0,00'}" aria-label="Cota da imagem (m)"> m</span></div>
+          <p class="dica">Obra com subsolo: a imagem no nível do terreno (o 0,00) deixa o subsolo embaixo do chão e a fundação
+            no lugar.</p>`;
+      }
       html += `<p class="titulo-secao">Imagem</p>
         <label class="terreno-fonte-sel">Fonte <select id="terreno-fonte-sel">${fontes.map(f => `<option value="${esc(f.chave)}" ${f.chave === fonteAtual ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}
           <option value="wms" ${fonteAtual === 'wms' ? 'selected' : ''}>Outro geoportal (link)…</option></select></label>
@@ -209,6 +226,23 @@ export class Terreno {
       this.posicionar();
       this._gravarLogo();
     };
+    const cs = $('#terreno-cota-sel'), ci = $('#terreno-cota');
+    if (cs) {
+      const aplicar = (mm) => {
+        if (mm === null) delete this.t.cota; else this.t.cota = mm;
+        this.posicionar();
+        this._gravarLogo();
+      };
+      const digitada = () => { const v = parseFloat(String(ci.value).replace(',', '.')); return Number.isFinite(v) ? Math.round(v * 1000) : null; };
+      cs.onchange = () => {
+        const outra = cs.value === 'outra';
+        $('#terreno-cota-outra').hidden = !outra;
+        if (cs.value === 'auto') aplicar(null);
+        else if (outra) { ci.focus(); aplicar(digitada() ?? 0); }
+        else aplicar(+cs.value);
+      };
+      ci.oninput = () => { const mm = digitada(); if (mm !== null) aplicar(mm); };
+    }
     const sel = $('#terreno-fonte-sel');
     if (sel) sel.onchange = () => { $('#terreno-wms').hidden = sel.value !== 'wms'; };
     const bx = $('#terreno-baixar');
@@ -220,6 +254,19 @@ export class Terreno {
       this.estado = await this._pedir('/esquecer', {});
       await this.montar(); this.ui.aoMudar(); this.painel();
     };
+  }
+
+  /** Os níveis do projeto (os da planta no chão, Planta e níveis), um por cota, com o 0,00 sempre. */
+  _niveis() {
+    const r = this.visor._dadosReferencia, lista = [], vistos = new Set();
+    for (const n of ((r && r.niveis) || [])) {
+      const z = Math.round(+n.z);
+      if (!Number.isFinite(z) || vistos.has(z)) continue;
+      vistos.add(z);
+      lista.push({ nome: n.nome || 'nível', z });
+    }
+    if (!vistos.has(0)) lista.push({ nome: 'Nível 0,00', z: 0 });
+    return lista.sort((a, b) => a.z - b.z);
   }
 
   _fonteDoPainel() {
