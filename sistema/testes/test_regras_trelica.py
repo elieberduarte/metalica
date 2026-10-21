@@ -362,10 +362,15 @@ def test_2_9a_par_dentro_das_bocas_nao_vira_o_banzo(sentido):
     assert banzos
     for b in banzos:
         assert _boca_x(b) == pytest.approx(1.0 if b.inicio[0] > 0 else -1.0, abs=1e-6), (b.nome, b.rotacao)
+    from nucleo3d.geometria import resolver_perfil
+    meio_vao = float(resolver_perfil(U_BZ).d) / 2.0   # a face de dentro de cada alma
     ls = [b for b in bs if b.perfil == L_AL and (b.atributos or {}).get("cantoneira_dupla")]
     assert len(ls) == 2 * 4                           # as 4 diagonais em par (os montantes do teste vão em L simples)
+    entre = [b for b in ls if abs(b.inicio[0]) < meio_vao]
+    assert len(entre) == 2 * 2                        # as duas que chegam no 45°: entre as almas (21/10)
     for b in ls:
-        assert R.lado_da_aba(b, N) == (1 if b.inicio[0] > 0 else -1), b.nome
+        para_fora = 1 if b.inicio[0] > 0 else -1      # dentro da boca: a aba para longe da alma; entre: para o centro
+        assert R.lado_da_aba(b, N) == (-para_fora if b in entre else para_fora), b.nome
     _sem_erros(bs)
 
 
@@ -403,6 +408,101 @@ def test_2_9a_ponta_alinhada_com_o_final_da_tesoura(sentido):
         v = min(verticais, key=lambda v: abs(v.inicio[1] - baixo[1]))
         assert baixo[1] == pytest.approx(v.inicio[1], abs=0.5) and baixo[2] == pytest.approx(max(v.inicio[2], v.fim[2]), abs=0.5)
     _sem_erros(bs)
+
+
+def _modelo_simples_ponta(sentido=1.0):
+    """o U simples da legenda num desenho como o do Hangar (T1/T3): a faixa do banzo desenhada com a altura toda (o fundo
+    no apoio: acima_do_nivel = d/2) e a ponta a meia altura da face (u = d/2), com o 45°"""
+    from nucleo2d.desenho import Desenho, Linha
+    from nucleo3d import de_planta_estrutura as P
+    from nucleo3d.geometria import resolver_perfil
+    d_u = float(resolver_perfil(U_BZ).d)
+    barras = []
+    for b in _barras_composto_ponta(d_u / 2.0):
+        banzo = b[4] in ("banzo_sup", "banzo_inf", "extremidade")
+        barras.append(list(b) + [U_BZ if banzo else L_AL, "", None, False, b[4] == "diagonal"])
+    des = Desenho(nome="planta")
+    des.add(Linha(a=(0.0, 0.0), b=(0.0, 6000.0 * sentido), camada="ESTRUTURA",
+                  atributos={"elemento": "trelica", "material": "aco", "marca": "T1", "perfis": {}, "cantoneira": "simples",
+                             "nivel_base": 5000, "acima_do_nivel": d_u / 2.0,
+                             "desenho": {"barras": barras, "vao": 6000, "altura": 1000}}))
+    doc, _avisos = P.modelo_da_planta(des, [])
+    return [e for e in doc.entidades.values() if e.tipo == "barra"], d_u
+
+
+def _z_ext(b):
+    from nucleo3d.geometria import resolver_perfil, secao
+    u, v, _w = base_local(b.direcao, b.rotacao)
+    zs = [b.inicio[2] + p[0] * u[2] + p[1] * v[2] for p in secao(resolver_perfil(b.perfil))]
+    return min(zs), max(zs)
+
+
+@pytest.mark.parametrize("sentido", [1.0, -1.0])
+def test_2_9a_u_simples_quadro_da_ponta_sentado_na_chapa(sentido):
+    """o U simples deitado (T1/T3 do Hangar, 21/10, montada à mão pelo usuário): o fundo do banzo inferior no apoio e o
+    topo do superior onde o desenho tem a face de cima (as terças apoiam nele); o montante de extremidade com a face de
+    fora da alma no fim da tesoura; o banzo inferior termina no eixo dele; os três cantos do quadro (banzo inferior ×
+    montante, montante × 45°, 45° × banzo superior) em meia-esquadria"""
+    xg, _bf = _xg_bf(U_BZ)
+    bs, d_u = _modelo_simples_ponta(sentido)
+    us = [b for b in bs if b.perfil == U_BZ]
+    inf = [b for b in us if b.atributos.get("papel_trelica") == "banzo_inf"]
+    sup = [b for b in us if b.atributos.get("papel_trelica") == "banzo_sup" and abs(b.inicio[2] - b.fim[2]) < 1.0]
+    assert min(_z_ext(b)[0] for b in inf) == pytest.approx(5000.0, abs=0.5)           # sentado na chapa
+    assert max(_z_ext(b)[1] for b in sup) == pytest.approx(5000.0 + 1000.0 + d_u, abs=0.5)   # o topo do desenho
+    ext = sorted((b for b in us if b.atributos.get("papel_trelica") == "extremidade"), key=lambda b: abs(b.inicio[1]))
+    assert len(ext) == 2
+    for v, fim_y in zip(ext, (0.0, 6000.0 * sentido)):
+        assert v.inicio[1] - _boca(v)[1] * xg == pytest.approx(fim_y, abs=0.5)        # a face de fora no fim
+        assert v.cortes_inicio and v.cortes_fim                                       # os dois cantos
+    for b in inf:                                     # o banzo inferior termina no eixo do montante, cortado
+        ponta = [p for p in (b.inicio, b.fim) if any(math.dist(p, q) < 1.0 for v in ext for q in (v.inicio, v.fim))]
+        assert ponta, b.nome
+    chanfros = [b for b in us if b.atributos.get("papel_trelica") == "banzo_sup" and abs(b.inicio[2] - b.fim[2]) > 1.0]
+    assert len(chanfros) == 2 and all(c.cortes_inicio and c.cortes_fim for c in chanfros)
+    assert all(b.cortes_inicio or b.cortes_fim for b in sup)                          # o banzo de cima no 45°
+    _sem_erros(bs)
+
+
+def test_2_9a_composto_45_sobe_ate_o_topo_do_banzo_superior():
+    """o 45° do composto (o U central) sobe pelo próprio eixo, entre as almas, até a face de fora dele encostar na face de
+    cima do banzo superior (usuário, 21/10, a T2 do Hangar)"""
+    from nucleo3d.geometria import resolver_perfil
+    xg, _bf = _xg_bf(U_BZ)
+    d_u = float(resolver_perfil(U_BZ).d)
+    bs = _modelo_composto_ponta(ponta=d_u / 2.0)
+    chanfros = [b for b in bs if (b.atributos or {}).get("ponta_composto") and abs(b.inicio[2] - b.fim[2]) > 1.0
+                and abs(b.inicio[1] - b.fim[1]) > 1.0]
+    assert len(chanfros) == 2
+    topo_banzo = 5000.0 + 1000.0 + d_u / 2.0          # o banzo superior horizontal no desenho (v = 1000)
+    for c in chanfros:
+        alto = c.inicio if c.inicio[2] > c.fim[2] else c.fim
+        w = _unit3(_sub3(alto, c.fim if alto is c.inicio else c.inicio))
+        n_up = (0.0, -w[2], w[1]) if w[1] >= 0 else (0.0, w[2], -w[1])   # a perpendicular para cima, no plano
+        assert alto[2] + xg * n_up[2] == pytest.approx(topo_banzo, abs=0.5), c.nome
+    _sem_erros(bs)
+
+
+def test_4_9_terca_junto_da_ponta_do_composto_nao_toma_o_45_como_agua():
+    """o 45° do composto sobe até o topo do banzo superior (2.9a): a terça logo acima dele (a T.C.2-A do Hangar) tomava o
+    45° como a água e era acusada de torcida, e a reanálise a giraria (21/10)"""
+    from nucleo3d.geometria import resolver_perfil
+    d_u = float(resolver_perfil(U_BZ).d)
+    bs = _modelo_composto_ponta(ponta=d_u / 2.0)
+    topo = 5000.0 + 1000.0 + d_u / 2.0
+    bs.append(Barra(nome="TC", inicio=(-600.0, 200.0, topo + 75.0), fim=(600.0, 200.0, topo + 75.0),
+                    perfil="Ue 150×60×20×2,00", papel="terça", rotacao=0.0))
+    assert "4.9" not in _regras(bs)
+    assert R.girar_tercas(bs) == 0
+
+
+def _sub3(a, b):
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _unit3(a):
+    n = math.sqrt(sum(x * x for x in a)) or 1.0
+    return tuple(x / n for x in a)
 
 
 def test_2_9a_ponta_do_composto_e_um_u_so_entre_as_almas():

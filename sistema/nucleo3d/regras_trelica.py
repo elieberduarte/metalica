@@ -51,8 +51,17 @@ v = a altura do perfil (a 2ª aba).
        no nível de apoio (sentado na chapa, como o fundo dos banzos) e encontra o 45° em meia-esquadria (a bissetriz);
        a ponta fica ALINHADA COM O FINAL DA TESOURA (a face de fora da alma no fim do banzo inferior — usuário, 21/10;
        o desenho põe o eixo da ponta a meia altura do perfil da face, e a ponta ficava 51 mm para dentro): o 45° anda
-       junto e o banzo superior vai até o encontro com ele. A conferência acusa "2.9a" a ponta em par (um U de cada
-       lado, como o gerador fazia) e "2.9" a ponta no plano com a boca fora do plano.
+       junto e o banzo superior vai até o encontro com ele; o 45° sobe pelo próprio eixo, entre as almas, até a face de
+       fora dele encostar na face de cima do banzo superior. A diagonal que chega na ponta (encosta no montante de
+       extremidade ou no 45°) tem o par no vão entre as almas, as costas nas faces de dentro delas e a aba que atravessa
+       o plano para o centro — dentro da boca ela não alcança o U central (as outras diagonais seguem uma em cada boca).
+       A conferência acusa "2.9a" a ponta em par (um U de cada lado, como o gerador fazia) e "2.9" a ponta no plano
+       com a boca fora do plano.
+       No U SIMPLES a ponta é um quadro (usuário, 21/10, a T1 do Hangar montada à mão): o montante de extremidade com a
+       face de fora da alma no final, o banzo inferior terminando no eixo dele, e os três cantos — banzo inferior ×
+       montante, montante × 45°, 45° × banzo superior — em meia-esquadria. O U simples deitado senta na chapa de apoio e
+       o topo do banzo superior fica onde o desenho tem a face de cima (as terças apoiam nele): quando o projetista
+       desenhou a faixa do banzo com a altura toda do perfil, os dois banzos se afastam (d/2 − xg) cada um.
 
 3. FÁBRICA
   3.1  Nada atravessa o banzo: a ponta da alma (montante, diagonal) para na face do banzo, cortada no plano dela
@@ -565,10 +574,9 @@ def _alma_do_u(b, t: dict) -> Optional[float]:
     for o in t["abraca"]:
         if (getattr(o, "atributos", None) or {}).get("ponta_composto"):
             continue
-        ow = _unit(_sub(o.fim, o.inicio))
-        # a distância no plano (sem a normal): da ponta de b à linha do U
-        p = _sub(m, _mul(t["n"], _dot(_sub(m, o.inicio), t["n"])))
-        dd = _dist_pt_seg(p, o.inicio, o.fim)
+        # a distância de verdade (também na normal): o par entre as almas, na ponta, fica no meio entre os dois U e a
+        # medida só no plano escolhia o U do outro lado (21/10)
+        dd = _dist_pt_seg(m, o.inicio, o.fim)
         if dd < dist:
             dist, melhor = dd, o
     if melhor is None:
@@ -1113,6 +1121,9 @@ def _agua_da_terca(tc, barras) -> Optional[Ponto]:
     for b in barras:
         if b is tc or getattr(b, "papel", "") != "banzo":
             continue
+        if (getattr(b, "atributos", None) or {}).get("papel_trelica") == "extremidade" or \
+                (getattr(b, "atributos", None) or {}).get("ponta_composto"):
+            continue                                      # a ponta não é a água: o 45° do composto sobe até o topo (2.9a)
         wb = _unit(_sub(b.fim, b.inicio))
         if abs(_dot(w, wb)) > 0.7:
             continue

@@ -519,6 +519,47 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             sg = (sg[0] + nx_ * dist_ / 2, sg[1] + ny_ * dist_ / 2, sg[2] + nx_ * dist_ / 2, sg[3] + ny_ * dist_ / 2)
         eixos_bz[i] = (sg[0], sg[1], sg[2], sg[3], _meia_no_plano(i))
     segs, _movidas, _unidos = _nos_no_eixo_do_banzo(segs, papeis, eixos_bz)
+    # a seção e o perfil do banzo desta tesoura (2.9: o par de cantoneiras se posiciona pela alma do U)
+    i_bz = [j for j in range(len(segs)) if papeis[j].startswith("banzo") and j not in internas]
+    sec_banzo = next((secoes_b[j] for j in i_bz if secoes_b[j]), "")
+    perfis_b_banzo = next((perfis_b[j] for j in i_bz if perfis_b[j]), "")
+    vaos_b_banzo = next((vaos_b[j] for j in i_bz if vaos_b[j] is not None), None)
+    perfil_banzo = perfis_b_banzo or perfis.get("banzo_sup") or perfis.get("banzo_inf")
+    # o U simples deitado (2.2) num desenho com a faixa do banzo na altura toda (a T1/T3 do Hangar, 21/10): senta na chapa
+    # e o topo fica onde o projetista desenhou (as terças apoiam nele) — os banzos se afastam (d/2 − xg) cada um
+    if not sec_banzo and perfis_b_banzo:
+        _sentar_u_simples(segs, papeis, internas, perfil_banzo, float(a.get("acima_do_nivel") or 0.0))
+    # 2.9a: o trecho a 45° do painel de ponta — o trecho de banzo curto e inclinado que nasce no topo do montante de
+    # extremidade (a T2-B4 do Hangar, 283 mm a 45°); o banzo de verdade é comprido
+    chanfros = set()
+    if sec_banzo == "composto" or (not sec_banzo and perfis_b_banzo):
+        alt_d = float(d.get("altura") or 0.0) or max((max(s[1], s[3]) for s in segs), default=0.0)
+        topos = [(s[0], s[1]) if s[1] > s[3] else (s[2], s[3]) for j, s in enumerate(segs) if papeis[j] == "extremidade"]
+        for j, s in enumerate(segs):
+            if not papeis[j].startswith("banzo") or j in internas:
+                continue
+            L_s = math.hypot(s[2] - s[0], s[3] - s[1])
+            if L_s < 1.0 or L_s > 1.2 * alt_d:
+                continue
+            ang = math.degrees(math.atan2(abs(s[3] - s[1]), abs(s[2] - s[0])))
+            if 20.0 <= ang <= 70.0 and any(min(math.dist(tp, (s[0], s[1])), math.dist(tp, (s[2], s[3]))) < 2.0 for tp in topos):
+                chanfros.add(j)
+        _ponta_no_final(segs, papeis, chanfros, internas, perfil_banzo, composto=sec_banzo == "composto")
+    # a diagonal que chega na ponta do composto (encosta no montante de extremidade ou no 45°): o par vai para o vão
+    # entre as almas, não para dentro das bocas — dentro da boca ela não alcança o U central (usuário, 21/10)
+    na_ponta = set()
+    if sec_banzo == "composto":
+        try:
+            from nucleo3d.geometria import resolver_perfil
+            d_bz = float(resolver_perfil(perfil_banzo).d or 0.0)
+        except Exception:                              # noqa: BLE001
+            d_bz = 0.0
+        pecas_ponta = [segs[j] for j in range(len(segs)) if papeis[j] == "extremidade" or j in chanfros]
+        for j, s in enumerate(segs):
+            if papeis[j].startswith("banzo") or papeis[j] == "extremidade" or j in internas:
+                continue
+            if any(_dist_seg_2d(p, (q[0], q[1]), (q[2], q[3])) <= d_bz for p in ((s[0], s[1]), (s[2], s[3])) for q in pecas_ponta):
+                na_ponta.add(j)
     sup = [segs[i] for i in pares if papeis[i] == "banzo_sup"]
     # a alma em linha simples: as barras que dizem de que lado fica o miolo de cada banzo (a regra da boca do U)
     alma = [segs[i] for i in range(len(segs)) if i not in pares and i not in internas
@@ -534,28 +575,8 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
         vao_da_alma = float(resolver_perfil(alma_p[0][0]).d or CHAPA_COMPOSTO) if alma_p and alma_p[0][0] else CHAPA_COMPOSTO
     except Exception:                                  # noqa: BLE001
         vao_da_alma = CHAPA_COMPOSTO
-    # a seção e o perfil do banzo desta tesoura (2.9: o par de cantoneiras se posiciona pela alma do U)
-    i_bz = [j for j in range(len(segs)) if papeis[j].startswith("banzo") and j not in internas]
-    sec_banzo = next((secoes_b[j] for j in i_bz if secoes_b[j]), "")
-    perfis_b_banzo = next((perfis_b[j] for j in i_bz if perfis_b[j]), "")
-    vaos_b_banzo = next((vaos_b[j] for j in i_bz if vaos_b[j] is not None), None)
-    # 2.9a: o trecho a 45° do painel de ponta no banzo composto — o trecho de banzo curto e inclinado que nasce no topo
-    # do montante de extremidade (a T2-B4 do Hangar, 283 mm a 45°); o banzo de verdade é comprido
-    chanfros = set()
-    if sec_banzo == "composto":
-        alt_d = float(d.get("altura") or 0.0) or max((max(s[1], s[3]) for s in segs), default=0.0)
-        topos = [(s[0], s[1]) if s[1] > s[3] else (s[2], s[3]) for j, s in enumerate(segs) if papeis[j] == "extremidade"]
-        for j, s in enumerate(segs):
-            if not papeis[j].startswith("banzo") or j in internas:
-                continue
-            L_s = math.hypot(s[2] - s[0], s[3] - s[1])
-            if L_s < 1.0 or L_s > 1.2 * alt_d:
-                continue
-            ang = math.degrees(math.atan2(abs(s[3] - s[1]), abs(s[2] - s[0])))
-            if 20.0 <= ang <= 70.0 and any(min(math.dist(tp, (s[0], s[1])), math.dist(tp, (s[2], s[3]))) < 2.0 for tp in topos):
-                chanfros.add(j)
-        _ponta_no_final(segs, papeis, chanfros, internas, perfis_b_banzo or perfis.get("banzo_sup") or perfis.get("banzo_inf"))
     pontas_u: List[Tuple[int, Barra]] = []            # as peças da ponta em U só (2.9a): a meia-esquadria entre elas
+    quadro_u: List[Tuple[int, Barra]] = []            # o U simples da legenda: o quadro da ponta em meia-esquadria
     n = 0
     feitas: List[Barra] = []                           # as barras desta tesoura (o encaixe é por tesoura)
     secundarias: List[Tuple[Barra, tuple]] = []        # as de um lado só, por fora do U: cortadas na face do banzo
@@ -694,6 +715,8 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             feitas.append(bu)
             if i in pares:                             # o canto em meia-esquadria é o das faces desenhadas
                 perfis_u[i] = bu
+            elif chanfros and not sec_banzo:           # o U simples da legenda: o quadro da ponta (2.9a)
+                quadro_u.append((i, bu))
             n += 1
             continue
         # cantoneira: a aba deitada sempre do mesmo lado do plano (giro pela normal do plano, não pelo sentido da linha)
@@ -747,7 +770,8 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
                 xl = -min(q[0] for q in secao(pl))
                 t_u = float(pu.tw or pu.tf or 0.0)
                 vao_u = (vaos_b_banzo if vaos_b_banzo is not None else max(vao_da_alma, float(pu.d or 0.0)))
-                afast = vao_u / 2.0 + t_u + xl
+                # a que chega na ponta: no vão entre as almas, as costas da aba deitada na face de dentro de cada alma
+                afast = (vao_u / 2.0 - xl) if i in na_ponta else (vao_u / 2.0 + t_u + xl)
             else:
                 # 2.5: o U simples com a boca para dentro do vão — uma em cada aba do U, encostada na face de dentro da aba
                 afast = max(float(pu.d or 0.0) / 2.0 - float(pu.tf or pu.tw or 0.0) - float(pl.bf or 0.0) / 2.0, 0.0)
@@ -785,6 +809,7 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
     regras_trelica.aplicar(feitas, por_grupo=False)
     _cantos_em_meia_esquadria(segs, pares, perfis_u, P, fora_do_plano)
     _meia_esquadria_da_ponta(pontas_u)
+    _meia_esquadria_da_ponta(quadro_u, so_com={id(b) for i_, b in quadro_u if papeis[i_] == "extremidade" or i_ in chanfros})
     # o encaixe de fábrica (nucleo3d/alma_na_face, o mesmo do 3D pelos quadros): a cantoneira entra na boca do U e para
     # na alma dele, cortada no ângulo; o bico no montante e a bissetriz entre diagonais. Antes a ponta da cantoneira
     # ficava na linha de fora do banzo e atravessava o perfil (o usuário, 08/10: "peças cortando os banzos")
@@ -818,12 +843,62 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
     return n
 
 
-def _ponta_no_final(segs: list, papeis: List[str], chanfros: set, internas: set, perfil_banzo: Optional[str]) -> int:
-    """2.9a: a ponta do composto (o U só no plano, a alma para fora) alinhada com o final da tesoura — a face de fora da
-    alma no fim do banzo inferior (usuário, 21/10: "alinhar com o final da tesoura"). O desenho do projeto põe o eixo da
-    ponta a meia altura do perfil da face (63,5 no U 127 do Hangar) e a ponta ficava 51 mm para dentro. O montante de
-    extremidade, o trecho a 45° preso nele e o que chega nos nós deles andam juntos ao longo do vão; o banzo superior
-    vai até o 45° pela própria linha. Muda `segs` (no lugar); devolve quantas pontas andaram."""
+def _dist_seg_2d(p, a, b) -> float:
+    ab = (b[0] - a[0], b[1] - a[1])
+    L2 = ab[0] * ab[0] + ab[1] * ab[1]
+    t = 0.0 if L2 < 1e-9 else max(0.0, min(1.0, ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1]) / L2))
+    return math.dist(p, (a[0] + ab[0] * t, a[1] + ab[1] * t))
+
+
+def _sentar_u_simples(segs: list, papeis: List[str], internas: set, perfil_banzo: Optional[str], acima: float) -> float:
+    """O U simples deitado (2.2, a boca para dentro do vão) num desenho em que o projetista desenhou a faixa do banzo com
+    a altura toda do perfil (a T1/T3 do Hangar: 127, o fundo da faixa no apoio — `acima_do_nivel` = d/2): no 3D o U
+    deitado tem só a aba no plano, e a tesoura ficava 51 mm acima do apoio e com o topo 51 mm abaixo das terças (21/10,
+    o usuário: "sentar na chapa" e "aumentar a altura da tesoura"). O banzo inferior desce e o superior (com o 45°) sobe
+    (d/2 − xg): o fundo do U de baixo no apoio e o topo do U de cima onde o desenho tem a face de cima. Os nós da alma
+    em cada banzo andam com ele. Muda `segs` no lugar; devolve o quanto cada banzo andou (0 = desenho não é desse jeito)."""
+    try:
+        from nucleo3d.geometria import resolver_perfil, secao
+        pb = resolver_perfil(perfil_banzo)
+        xg = -min(q[0] for q in secao(pb))
+        d_b = float(pb.d or 0.0)
+    except Exception:                                    # noqa: BLE001
+        return 0.0
+    if not d_b or abs(acima - d_b / 2.0) > 2.0:
+        return 0.0                                       # o fundo da faixa desenhada não está no apoio: fica como está
+    delta = d_b / 2.0 - xg
+    if delta < 0.5:
+        return 0.0
+    linhas = {"banzo_inf": [], "banzo_sup": []}
+    for j, s in enumerate(segs):
+        if j in internas:
+            continue
+        for k in linhas:
+            if papeis[j].startswith(k):
+                linhas[k].append(((s[0], s[1]), (s[2], s[3])))
+
+    def novo(p):
+        if any(_dist_seg_2d(p, a_, b_) < 1.0 for a_, b_ in linhas["banzo_inf"]):
+            return (p[0], p[1] - delta)
+        if any(_dist_seg_2d(p, a_, b_) < 1.0 for a_, b_ in linhas["banzo_sup"]):
+            return (p[0], p[1] + delta)
+        return p
+    for j, s in enumerate(segs):
+        a_, b_ = novo((s[0], s[1])), novo((s[2], s[3]))
+        segs[j] = (a_[0], a_[1], b_[0], b_[1])
+    return delta
+
+
+def _ponta_no_final(segs: list, papeis: List[str], chanfros: set, internas: set, perfil_banzo: Optional[str],
+                    composto: bool = True) -> int:
+    """2.9a: a ponta alinhada com o final da tesoura — a face de fora da alma do montante de extremidade no fim do banzo
+    inferior (usuário, 21/10: "alinhar com o final da tesoura"). O desenho do projeto põe o eixo da ponta a meia altura
+    do perfil da face (63,5 no U 127 do Hangar) e a ponta ficava 51 mm para dentro. O montante de extremidade, o trecho
+    a 45° preso nele e o que chega nos nós deles andam juntos ao longo do vão; o banzo superior vai até o 45° pela
+    própria linha. No composto o 45° (o U central, entre as almas) sobe pelo próprio eixo até a face de fora dele encostar
+    na face de cima do banzo superior; no U simples (o quadro da ponta, a T1 do Hangar montada à mão em 21/10) o banzo
+    inferior termina no eixo do montante — os cantos são em meia-esquadria (_meia_esquadria_da_ponta). Muda `segs` (no
+    lugar); devolve quantas pontas andaram."""
     try:
         from nucleo3d.geometria import resolver_perfil, secao
         pb = resolver_perfil(perfil_banzo)
@@ -864,23 +939,82 @@ def _ponta_no_final(segs: list, papeis: List[str], chanfros: set, internas: set,
                         return (p[0] + delta, p[1] + delta * incl)
             return (p[0] + delta, p[1])
         mapa = {p: novo(p) for p in nos}
+        if not composto:
+            # o U simples: o banzo inferior termina no eixo do montante (o canto em meia-esquadria)
+            u_fim = lo if u - lo <= d_b else hi
+            for k, sk in enumerate(segs):
+                if papeis[k] == "banzo_inf" and k not in internas:
+                    for p in ((sk[0], sk[1]), (sk[2], sk[3])):
+                        if abs(p[0] - u_fim) < 1.0:
+                            mapa[p] = (u + delta, p[1])
         for k, sk in enumerate(segs):
             pa, pb_ = (sk[0], sk[1]), (sk[2], sk[3])
             na = next((mapa[q] for q in mapa if math.dist(q, pa) < 2.0), pa)
             nb = next((mapa[q] for q in mapa if math.dist(q, pb_) < 2.0), pb_)
             if na != pa or nb != pb_:
                 segs[k] = (na[0], na[1], nb[0], nb[1])
+        if composto:
+            topo = (s[0] + delta, max(s[1], s[3]))
+            for c in chanfros:
+                _chanfro_ate_o_topo(segs, c, topo, papeis, chanfros, internas, xg, d_b)
         andou += 1
     return andou
 
 
-def _meia_esquadria_da_ponta(pontas_u: List[Tuple[int, Barra]]) -> int:
-    """2.9a: as peças da ponta em U só (o montante de extremidade e o trecho a 45°) que se encontram num nó se cortam
-    na bissetriz — o plano do canto, como o usuário montou à mão na T2 do Hangar (21/10): a normal de cada corte é a
-    bissetriz das duas direções (saindo do nó), apontando para dentro da própria peça. Devolve quantos cortes."""
+def _chanfro_ate_o_topo(segs: list, c: int, canto: Tuple[float, float], papeis: List[str], chanfros: set, internas: set,
+                        xg: float, d_b: float) -> None:
+    """2.9a, composto: o 45° preso no canto `canto` sobe pelo próprio eixo até a face de fora dele (a alma, do lado de
+    cima) encostar na face de cima do banzo superior — passa entre as almas dos dois U (usuário, 21/10, a T2 do Hangar)"""
+    sc = segs[c]
+    pa, pb_ = (sc[0], sc[1]), (sc[2], sc[3])
+    if math.dist(pa, canto) < 2.0:
+        p0, p1, fim_e_b = pa, pb_, True
+    elif math.dist(pb_, canto) < 2.0:
+        p0, p1, fim_e_b = pb_, pa, False
+    else:
+        return
+    L = math.dist(p0, p1)
+    if L < 1.0:
+        return
+    dr = ((p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L)
+    nc = (-dr[1], dr[0]) if dr[0] >= 0 else (dr[1], -dr[0])       # a perpendicular para cima (o lado da alma)
+    if nc[1] < 0:
+        nc = (-nc[0], -nc[1])
+    # o banzo superior que nasce no topo do 45°
+    for k, sb in enumerate(segs):
+        if not papeis[k].startswith("banzo_sup") or k in chanfros or k in internas:
+            continue
+        for b0, b1 in (((sb[0], sb[1]), (sb[2], sb[3])), ((sb[2], sb[3]), (sb[0], sb[1]))):
+            if math.dist(b0, p1) >= 2.0:
+                continue
+            Lb = math.dist(b0, b1)
+            if Lb < 1.0:
+                continue
+            bd = ((b1[0] - b0[0]) / Lb, (b1[1] - b0[1]) / Lb)
+            nb = (-bd[1], bd[0]) if bd[0] >= 0 else (bd[1], -bd[0])
+            if nb[1] < 0:
+                nb = (-nb[0], -nb[1])
+            den = dr[0] * nb[0] + dr[1] * nb[1]
+            if abs(den) < 1e-6:
+                return
+            q = (p1[0] + xg * nc[0] - b0[0], p1[1] + xg * nc[1] - b0[1])
+            t = (d_b / 2.0 - (q[0] * nb[0] + q[1] * nb[1])) / den
+            novo = (p1[0] + t * dr[0], p1[1] + t * dr[1])
+            segs[c] = (p0[0], p0[1], novo[0], novo[1]) if fim_e_b else (novo[0], novo[1], p0[0], p0[1])
+            return
+
+
+def _meia_esquadria_da_ponta(pontas_u: List[Tuple[int, Barra]], so_com: Optional[set] = None) -> int:
+    """2.9a: as peças da ponta que se encontram num nó se cortam na bissetriz — o plano do canto, como o usuário montou
+    à mão no Hangar (21/10): no composto o montante de extremidade e o 45° (o U central); no U simples o quadro da ponta
+    — banzo inferior × montante, montante × 45°, 45° × banzo superior. A normal de cada corte é a bissetriz das duas
+    direções (saindo do nó), apontando para dentro da própria peça. `so_com`: só os encontros em que uma das peças é
+    destas (ids) — o banzo com o banzo na cumeeira não. Devolve quantos cortes."""
     n = 0
     for a_, (_i, pa) in enumerate(pontas_u):
         for _j, pb in pontas_u[a_ + 1:]:
+            if so_com is not None and id(pa) not in so_com and id(pb) not in so_com:
+                continue
             for ka, qa in ((0, pa.inicio), (1, pa.fim)):
                 for kb, qb in ((0, pb.inicio), (1, pb.fim)):
                     if math.dist(qa, qb) > 2.0:
