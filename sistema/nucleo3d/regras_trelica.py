@@ -36,7 +36,9 @@ v = a altura do perfil (a 2ª aba).
        em cada face, a aba em pé soldada na alma — a maior superfície de contato de solda (127 mm, não a aba de 50) — e
        a outra aba para fora do plano, afastando-se da alma. No U simples (`secao_dupla: "alma_no_plano"`, T1/T3 do
        Hangar) a boca abre para fora do prédio (o corte T1: o U centrado no eixo, encostado na face externa do pilar;
-       as duas tesouras de oitão espelhadas); sem prédio de um lado só (tesoura do meio), para +n. No 2U composto
+       as duas tesouras de oitão espelhadas); sem prédio de um lado só (tesoura do meio), qualquer lado fora do plano
+       (o gerador, que vê a planta inteira, decide: para +n). Cada cantoneira do par fica com a aba que sai do plano
+       apontando para longe da alma do U mais perto. No 2U composto
        (`"composto"`, T2) os dois U de costas, afastados pela peça da alma que passa entre as almas, a boca de cada um
        para o seu lado, e uma cantoneira do par dentro de cada boca. A 2.1/2.2 continua valendo para o U com alma em U
        ou em L simples. A conferência acusa "2.9": o U com a boca no plano ou para o lado errado; a reanálise gira (e
@@ -309,6 +311,7 @@ def trelicas(entidades: Iterable, por_grupo: bool = True) -> List[dict]:
     bloco/conjunto, só pelas ligações"""
     from nucleo3d.modelo import Barra
     por_chave = collections.defaultdict(list)
+    liga = collections.defaultdict(list)               # os U de alma no plano (2.9): ligam as peças, não são giradas aqui
     vultos = collections.defaultdict(list)             # todas as barras da treliça, também as de regra própria (o
     for e in entidades:                                # banzo composto): o que está acima de uma peça (1.2)
         if not isinstance(e, Barra):
@@ -318,7 +321,14 @@ def trelicas(entidades: Iterable, por_grupo: bool = True) -> List[dict]:
                 ("banzo", "montante", "diagonal", "extremidade")):
             vultos[_chave_grupo(e) if por_grupo else ("todas",)].append(e)
         pap = _papel(e)
-        if pap is None or math.dist(e.inicio, e.fim) < 1.0:
+        if math.dist(e.inicio, e.fim) < 1.0:
+            continue
+        if pap is None:
+            # o U de alma no plano (2.9) não entra nas peças que a regra gira como alma, mas liga a treliça: a diagonal
+            # que só encosta nele (a da ponta, ou o par dentro da boca do composto) ficava num grupo de 1–2 peças, fora
+            # de toda treliça, sem regra (Hangar, 21/10: 24 cantoneiras da T2-A com a aba para o lado da alma)
+            if forma(getattr(e, "perfil", "")) == "U" and str(a_.get("secao_dupla") or "") in SECOES_2_9:
+                liga[_chave_grupo(e) if por_grupo else ("todas",)].append(e)
             continue
         por_chave[_chave_grupo(e) if por_grupo else ("todas",)].append(e)
     # o prédio (2.9): o centro de todas as treliças do modelo — a tesoura de oitão tem o resto da obra de um lado só
@@ -326,10 +336,12 @@ def trelicas(entidades: Iterable, por_grupo: bool = True) -> List[dict]:
     predio = tuple(sum(p[k] for p in todos) / len(todos) for k in range(3)) if todos else None
     out = []
     for _k, lista in por_chave.items():
-        for comp in _componentes(lista):
+        for comp_todo in _componentes(lista + liga.get(_k, [])):
+            ids_liga = {id(o) for o in liga.get(_k, [])}
+            comp = [b for b in comp_todo if id(b) not in ids_liga]
             if len(comp) < 3:
                 continue
-            pl = _normal(comp)
+            pl = _normal(comp_todo)
             if pl is None:
                 continue
             n, c = pl
@@ -361,9 +373,15 @@ def trelicas(entidades: Iterable, por_grupo: bool = True) -> List[dict]:
             # 2.9: os banzos em U de alma no plano desta treliça (ficam fora de `barras`: a regra deles é só o giro)
             abraca = [o for o in dentro if forma(getattr(o, "perfil", "")) == "U"
                       and str((getattr(o, "atributos", None) or {}).get("secao_dupla") or "") in SECOES_2_9]
+            # o plano do composto: o meio entre os dois U (não o centro das peças da alma — na T2 do Hangar os pares de
+            # cantoneira a ±75 não se ligam e cada lado era uma "treliça" com o centro deslocado: o U do outro lado, a
+            # 1,6 mm desse centro, virava "ponta" e era girado para o plano)
+            ks = [_dot(_mid(o), n) for o in abraca
+                  if str((getattr(o, "atributos", None) or {}).get("secao_dupla")) == "composto"]
+            plano_2_9 = (min(ks) + max(ks)) / 2.0 if ks else _dot(c, n)
             out.append({"n": n, "centro": c, "eixo": eixo, "meio": meio, "vao": hi_p - lo_p, "alta": alta,
                         "barras": [(b, _papel(b)) for b in comp], "par": _pares(comp, n, c), "vultos": dentro,
-                        "fora": fora, "abraca": abraca})
+                        "fora": fora, "abraca": abraca, "plano_2_9": plano_2_9})
     return out
 
 
@@ -516,15 +534,49 @@ def _alvo_fora_do_plano(b, t: dict) -> Ponto:
     """2.4/2.5: para que lado sai a aba da cantoneira que atravessa o plano: +n (o lado fixo da obra); no par, para o
     centro (a cantoneira de cada aba do banzo aponta para a outra). Na treliça da 2.9 o par abraça a alma do U: cada
     cantoneira com a aba para fora, afastando-se da alma (o contrário do par dentro da boca)"""
+    if t.get("abraca"):
+        k = _alma_do_u(b, t)
+        if k is not None:                                 # a aba para fora, afastando-se da alma do U mais perto
+            return t["n"] if _dot(_mid(b), t["n"]) >= k else _mul(t["n"], -1.0)
     lado = t["par"].get(id(b))
     if lado and t.get("abraca"):
         return _mul(t["n"], float(lado))
     return _mul(t["n"], -float(lado)) if lado else t["n"]
 
 
+def _alma_do_u(b, t: dict) -> Optional[float]:
+    """2.9: onde fica (na normal do plano) a alma do U de alma no plano mais perto da peça b — o meio da espessura da
+    alma: o eixo da barra − (da alma ao centroide − t/2) no sentido da boca"""
+    m = _mid(b)
+    w = _unit(_sub(b.fim, b.inicio))
+    melhor, dist = None, 1e18
+    for o in t["abraca"]:
+        if (getattr(o, "atributos", None) or {}).get("ponta_composto"):
+            continue
+        ow = _unit(_sub(o.fim, o.inicio))
+        # a distância no plano (sem a normal): da ponta de b à linha do U
+        p = _sub(m, _mul(t["n"], _dot(_sub(m, o.inicio), t["n"])))
+        dd = _dist_pt_seg(p, o.inicio, o.fim)
+        if dd < dist:
+            dist, melhor = dd, o
+    if melhor is None:
+        return None
+    pts = _pontos_da_secao(melhor.perfil)
+    if not pts:
+        return None
+    xg = -min(q[0] for q in pts)
+    try:
+        from nucleo3d.geometria import resolver_perfil
+        tw = float(resolver_perfil(melhor.perfil).tw or 0.0)
+    except Exception:                                    # noqa: BLE001
+        tw = 0.0
+    u = _eixos(melhor)[0]
+    return _dot(_mid(melhor), t["n"]) - _dot(u, t["n"]) * (xg - tw / 2.0)
+
+
 def _ponta_do_composto(b, t: dict) -> bool:
     """2.9a: na treliça de 2U de costas, a peça em U do banzo que fica no plano (entre as almas) é a ponta em U só"""
-    return abs(_dot(_sub(_mid(b), t["centro"]), t["n"])) < PONTA_NO_PLANO
+    return abs(_dot(_mid(b), t["n"]) - t["plano_2_9"]) < PONTA_NO_PLANO
 
 
 def _na_ponta_do_vao(b, t: dict) -> bool:
@@ -551,9 +603,13 @@ def alvo_2_9(b, t: dict) -> Ponto:
                 return lado if _dot(lado, up) < 0 else _mul(lado, -1.0)
             d = _dot(_sub(t["meio"], _mid(b)), t["eixo"])
             return lado if d * _dot(lado, t["eixo"]) >= 0 else _mul(lado, -1.0)
-        d = _dot(_sub(_mid(b), t["centro"]), t["n"])
+        d = _dot(_mid(b), t["n"]) - t["plano_2_9"]
         return t["n"] if d >= 0 else _mul(t["n"], -1.0)
-    return t["fora"] or t["n"]
+    if t["fora"] is not None:
+        return t["fora"]
+    # sem prédio de um lado só (a tesoura do meio, ou montada sozinha pelo gerador, que já pôs o lado): a boca só
+    # precisa estar fora do plano — o lado que ela já tem
+    return t["n"] if _dot(_eixos(b)[0], t["n"]) >= 0 else _mul(t["n"], -1.0)
 
 
 def alvo_u(b, papel: str, t: dict) -> Optional[Ponto]:
@@ -639,21 +695,9 @@ def orientar(entidades: Iterable, por_grupo: bool = True) -> int:
     lista = list(entidades)
     mudou = 0
     vistas_2_9 = set()
-    for t in trelicas(lista, por_grupo):
-        for b, papel in t["barras"]:
-            alvo = alvo_u(b, papel, t)
-            if alvo is None:
-                continue
-            w = _unit(_sub(b.fim, b.inicio))
-            vira = -1.0 if _virada(b) else 1.0            # 2.7: virada de propósito = a boca ao contrário da regra
-            if forma(b.perfil) == "L":
-                g = _giro_da_cantoneira(w, alvo, _mul(_alvo_no_plano(b, papel, t), vira))
-            else:
-                g = round(_giro_para(w, _mul(alvo, vira)), 3)
-            atual = float(getattr(b, "rotacao", 0.0) or 0.0) % 360.0
-            if abs(((g - atual) + 180.0) % 360.0 - 180.0) > 0.5:
-                b.rotacao = g
-                mudou += 1
+    ts = trelicas(lista, por_grupo)
+    # 2.9 primeiro: o U de alma no plano pode virar (e andar), e o lado das cantoneiras do par se mede pela alma dele
+    for t in ts:
         for b in t["abraca"]:                             # 2.9: a boca para fora do plano
             if getattr(b, "bloqueada", False) or id(b) in vistas_2_9:
                 continue                                  # a treliça em dois componentes vê o mesmo banzo duas vezes
@@ -676,6 +720,21 @@ def orientar(entidades: Iterable, por_grupo: bool = True) -> int:
                 b.inicio, b.fim = _add(b.inicio, desl), _add(b.fim, desl)
             b.rotacao = g
             mudou += 1
+    for t in ts:
+        for b, papel in t["barras"]:
+            alvo = alvo_u(b, papel, t)
+            if alvo is None:
+                continue
+            w = _unit(_sub(b.fim, b.inicio))
+            vira = -1.0 if _virada(b) else 1.0            # 2.7: virada de propósito = a boca ao contrário da regra
+            if forma(b.perfil) == "L":
+                g = _giro_da_cantoneira(w, alvo, _mul(_alvo_no_plano(b, papel, t), vira))
+            else:
+                g = round(_giro_para(w, _mul(alvo, vira)), 3)
+            atual = float(getattr(b, "rotacao", 0.0) or 0.0) % 360.0
+            if abs(((g - atual) + 180.0) % 360.0 - 180.0) > 0.5:
+                b.rotacao = g
+                mudou += 1
     return mudou
 
 

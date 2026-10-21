@@ -279,7 +279,16 @@ def _boca_x(b):
     return _boca(b)[0]
 
 
-@pytest.mark.parametrize("predio, certo", [(-6000.0, 1.0), (6000.0, -1.0), (None, 1.0)])
+@pytest.mark.parametrize("boca", [1.0, -1.0])
+def test_2_9_sem_predio_de_um_lado_qualquer_lado_fora_do_plano(boca):
+    """a tesoura sozinha (o gerador monta uma a uma e já decidiu o lado pela planta): a regra não a vira de volta"""
+    bs = _tesoura_2_9(boca=boca)
+    assert "2.9" not in _regras(bs)
+    R.aplicar(bs, por_grupo=False)
+    assert all(_boca_x(b) == pytest.approx(boca, abs=1e-6) for b in bs if b.perfil == U_BZ)
+
+
+@pytest.mark.parametrize("predio, certo", [(-6000.0, 1.0), (6000.0, -1.0)])
 def test_2_9_u_simples_abre_para_fora_do_predio(predio, certo):
     """o U simples de alma no plano: boca para fora do prédio (sem prédio de um lado só, +n); virado, a conferência
     acusa 2.9 e o aplicar espelha o U para o outro lado do eixo e gira. Antes a peça com secao_dupla era pulada"""
@@ -354,19 +363,83 @@ BARRAS_COMPOSTO_PONTA = [
 ]
 
 
-def _modelo_composto_ponta():
+def _modelo_composto_ponta(dupla=False, sentido=1.0):
     from nucleo2d.desenho import Desenho, Linha
     from nucleo3d import de_planta_estrutura as P
     barras = []
     for b in BARRAS_COMPOSTO_PONTA:
         banzo = b[4] in ("banzo_sup", "banzo_inf", "extremidade")
-        barras.append(list(b) + [U_BZ if banzo else L_AL, "composto" if banzo else "", None, False, False])
+        barras.append(list(b) + [U_BZ if banzo else L_AL, "composto" if banzo else "", None, False,
+                                 dupla and b[4] == "diagonal"])
     des = Desenho(nome="planta")
-    des.add(Linha(a=(0.0, 0.0), b=(0.0, 6000.0), camada="ESTRUTURA",
+    des.add(Linha(a=(0.0, 0.0), b=(0.0, 6000.0 * sentido), camada="ESTRUTURA",
                   atributos={"elemento": "trelica", "material": "aco", "marca": "T2", "perfis": {}, "cantoneira": "simples",
                              "nivel_base": 5000, "desenho": {"barras": barras, "vao": 6000, "altura": 1000}}))
     doc, _avisos = P.modelo_da_planta(des, [])
     return [e for e in doc.entidades.values() if e.tipo == "barra"]
+
+
+@pytest.mark.parametrize("sentido", [1.0, -1.0])
+def test_2_9a_par_dentro_das_bocas_nao_vira_o_banzo(sentido):
+    """o composto com as diagonais em 2L, uma dentro de cada boca (a T2 do Hangar): os dois lados de cantoneiras não se
+    ligam (a ~150 mm) e cada lado era uma treliça com o centro deslocado — o U do outro lado, a 1,6 mm desse centro,
+    era tomado como ponta e girado com a boca para baixo (21/10, os U (b) da T2-A). Cada U com a boca para o seu lado,
+    cada cantoneira com a aba para longe da alma, a regra limpa; na linha desenhada nos dois sentidos"""
+    bs = _modelo_composto_ponta(dupla=True, sentido=sentido)
+    banzos = [b for b in bs if b.perfil == U_BZ and not (b.atributos or {}).get("ponta_composto")]
+    assert banzos
+    for b in banzos:
+        assert _boca_x(b) == pytest.approx(1.0 if b.inicio[0] > 0 else -1.0, abs=1e-6), (b.nome, b.rotacao)
+    ls = [b for b in bs if b.perfil == L_AL and (b.atributos or {}).get("cantoneira_dupla")]
+    assert len(ls) == 2 * 4                           # as 4 diagonais em par (os montantes do teste vão em L simples)
+    for b in ls:
+        assert R.lado_da_aba(b, N) == (1 if b.inicio[0] > 0 else -1), b.nome
+    _sem_erros(bs)
+
+
+def test_2_9_par_que_so_encosta_no_u_entra_na_regra():
+    """o par de diagonais que só encosta nos U de alma no plano (a diagonal da ponta da T1, as da T2-A no Hangar): sem
+    o U ligando a treliça ficava num grupo de 2 peças, fora de toda treliça — nem acusado nem girado (21/10)"""
+    xg, bf = _xg_bf(U_BZ)
+    bs = _tesoura_2_9(boca=1.0, predio=-6000.0)
+    alma = -bf / 2.0
+    at = {"origem": {"peca": "TT"}}
+    for nome, lado in (("DPa", -1.0), ("DPb", 1.0)):     # rotação 0 nas duas: uma com a aba para o lado da alma
+        x = alma + lado * 12.0
+        bs.append(Barra(nome=nome, inicio=(x, 5200, 1000), fim=(x, 5700, 0), perfil=L_AL, papel="diagonal",
+                        rotacao=0.0, atributos=dict(at, cantoneira_dupla="a" if lado < 0 else "b")))
+    por = _por_nome(bs)
+    errado = [n for n in ("DPa", "DPb") if R.lado_da_aba(por[n], N) != (1 if por[n].inicio[0] > alma else -1)]
+    assert errado and set(errado) <= {e["nome"] for e in R.conferir(bs)}
+    R.aplicar(bs)
+    for n in ("DPa", "DPb"):
+        assert R.lado_da_aba(por[n], N) == (1 if por[n].inicio[0] > alma else -1), n
+
+
+def test_2_9_gerador_poe_a_boca_da_tesoura_de_oitao_para_fora_do_predio():
+    """a planta com duas tesouras de U simples de alma no plano (a T3 e a T1 do Hangar, uma em cada oitão, e uma do meio):
+    o gerador monta uma a uma, mas o lado da boca é o de fora do prédio — a T3 saía para dentro (21/10)"""
+    from nucleo2d.desenho import Desenho, Linha
+    from nucleo3d import de_planta_estrutura as P
+    barras = []
+    for b in BARRAS_LC:
+        banzo = b[4] in ("banzo_sup", "banzo_inf", "extremidade")
+        barras.append(list(b) + [U_BZ if banzo else L_AL, "alma_no_plano" if banzo else "", None, False, not banzo])
+    des = Desenho(nome="planta")
+    for marca, x in (("T3", 0.0), ("TM", 5000.0), ("T1", 10000.0)):
+        des.add(Linha(a=(x, 0.0), b=(x, -6000.0), camada="ESTRUTURA",
+                      atributos={"elemento": "trelica", "material": "aco", "marca": marca, "perfis": {}, "cantoneira": "simples",
+                                 "nivel_base": 5000, "desenho": {"barras": barras, "vao": 6000, "altura": 1000}}))
+    doc, _avisos = P.modelo_da_planta(des, [])
+    bs = [e for e in doc.entidades.values() if e.tipo == "barra"]
+    for marca, sinal in (("T3", -1.0), ("T1", 1.0)):
+        us = [b for b in bs if b.atributos.get("peca") == marca and b.perfil == U_BZ]
+        assert us and all(_boca_x(b) == pytest.approx(sinal, abs=1e-6) for b in us), marca
+        ls = [b for b in bs if b.atributos.get("peca") == marca and b.perfil == L_AL]
+        # o par abraça a alma, que fica do lado de dentro (contrário à boca)
+        x0 = 0.0 if marca == "T3" else 10000.0
+        assert all((b.inicio[0] - x0) * sinal < 0 for b in ls), marca
+    _sem_erros(bs)
 
 
 def test_2_9a_ponta_do_composto_e_um_u_so_entre_as_almas():

@@ -424,7 +424,8 @@ def _giro_para(w: Tuple[float, float, float], alvo: Tuple[float, float, float]) 
     return math.degrees(math.atan2(sum(a * b for a, b in zip(alvo, v0)), sum(a * b for a, b in zip(alvo, u0)))) % 360.0
 
 
-def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, base: dict) -> int:
+def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, base: dict,
+             predio: Optional[Tuple[float, float]] = None) -> int:
     """A tesoura de aço pelo desenho (web/cad/estrutura.js, tesouraPeloDesenho — pedido do usuário, 06/10): o elemento
     da planta é a linha do apoio ao apoio (de um eixo ao outro); `desenho.barras` são as barras do desenho da tesoura em
     linhas — [u0, v0, u1, v1, papel] em mm, u ao longo do vão (0 no apoio do começo) e v na altura (0 no apoio, o ponto mais baixo
@@ -449,6 +450,16 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
     k = L / vao
     ux, uy = (e.b[0] - e.a[0]) / L, (e.b[1] - e.a[1]) / L
     fora_do_plano = (-uy, ux, 0.0)                       # a normal horizontal do plano da tesoura
+    # 2.9: o lado para onde o U simples de alma no plano abre (±fora_do_plano): para fora do prédio; sem prédio de um
+    # lado só, para +n (o sinal fixo da regra) — o mesmo que regras_trelica.alvo_2_9 confere
+    from nucleo3d import regras_trelica as _rt
+    n_fixo = _rt._sinal_fixo(fora_do_plano)
+    lado_fora = 1.0 if sum(x * y for x, y in zip(n_fixo, fora_do_plano)) > 0 else -1.0
+    if predio is not None:
+        meio_l = ((e.a[0] + e.b[0]) / 2.0, (e.a[1] + e.b[1]) / 2.0)
+        dp = (predio[0] - meio_l[0]) * n_fixo[0] + (predio[1] - meio_l[1]) * n_fixo[1]
+        if dp > _rt.PREDIO_MIN:
+            lado_fora = -lado_fora
     # o apoio no nível, ou acima dele (sobre a viga: o topo da viga — `acima_do_nivel` mm, 06/10)
     z0 = _nivel(a.get("nivel_base"), tab, 3000.0) + float(a.get("acima_do_nivel") or 0.0)
     perfis = a.get("perfis") or {}
@@ -581,7 +592,7 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             # o U simples com a alma em pé no plano da tesoura e a boca para fora dele (regras_trelica 2.9 — o corte T1 do
             # Hangar Almayer, folha 29, e o croqui do usuário de 21/10: a alma dupla abraça a alma do U). O U fica
             # centrado no eixo (a locação: faixa de 50 mm de −25 a +25), a alma de um lado e as pontas das abas do outro;
-            # o lado da boca (para fora do prédio) é da regra 2.9, no aplicar — aqui vai para +n
+            # o lado da boca: para fora do prédio (lado_fora, regra 2.9)
             try:
                 from nucleo3d.geometria import resolver_perfil, secao
                 pu_ = resolver_perfil(perfil)
@@ -589,7 +600,7 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
                 bf_u = float(pu_.bf or 2.0 * xg)
             except Exception:                                  # noqa: BLE001
                 xg, bf_u = 15.0, 50.0
-            abre = tuple((-1.0 if virar_b[i] else 1.0) * c for c in fora_do_plano)
+            abre = tuple((-1.0 if virar_b[i] else 1.0) * lado_fora * c for c in fora_do_plano)
             dl = tuple((xg - bf_u / 2.0) * c for c in abre)
             bd = Barra(inicio=tuple(A[c] + dl[c] for c in range(3)), fim=tuple(B[c] + dl[c] for c in range(3)), perfil=perfil,
                        papel=papel_3d, aco=aco, camada=camada, nome=nome, rotacao=_giro_para(w, abre), atributos=dict(atr, secao_dupla="alma_no_plano"))
@@ -759,7 +770,11 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
                     vao_u = (vaos_b_banzo if vaos_b_banzo is not None else max(vao_da_alma, float(pu.d or 0.0)))
                     centro_alma, afast = 0.0, vao_u / 2.0 + t_u + xl
                 else:
-                    centro_alma, afast = -float(pu.bf or 0.0) / 2.0, t_u / 2.0 + xl
+                    # a alma do U fica a bf/2 do eixo, do lado contrário à boca (a boca para lado_fora; o "virar" do
+                    # banzo vira junto)
+                    virou = next((virar_b[j] for j in i_bz if secoes_b[j]), False)
+                    centro_alma = -float(pu.bf or 0.0) / 2.0 * lado_fora * (-1.0 if virou else 1.0)
+                    afast = t_u / 2.0 + xl
             else:
                 centro_alma = 0.0
                 afast = max(float(pu.d or 0.0) / 2.0 - float(pu.tf or pu.tw or 0.0) - float(pl.bf or 0.0) / 2.0, 0.0)
@@ -1005,6 +1020,11 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
     doc = Documento(nome=nome)
     avisos: List[str] = []
     n_aco = 0
+    # o prédio (regras_trelica 2.9): o meio das tesouras da planta — a de oitão tem o resto da obra de um lado só e o U de
+    # alma no plano abre para o outro (a T3 do Hangar saía com a boca para dentro: cada tesoura montada sozinha não sabe)
+    meios = [((it["entidade"].a[0] + it["entidade"].b[0]) / 2.0, (it["entidade"].a[1] + it["entidade"].b[1]) / 2.0)
+             for it in elementos(des) if it["elemento"] == "trelica" and isinstance(it["entidade"], Linha)]
+    predio = (sum(p[0] for p in meios) / len(meios), sum(p[1] for p in meios) / len(meios)) if meios else None
     for it in elementos(des):
         a, e, tipo = it["atributos"], it["entidade"], it["elemento"]
         marca = str(a.get("marca") or "")
@@ -1036,7 +1056,7 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
                     sol = extrudar(_contorno_z(e.vertices), (0.0, 0.0, 1.0), z1 - z0, origem=(0.0, 0.0, z0), nome="Pilar %s" % marca)
                     doc.add(_marcar(sol, camada, dict(base, secao=a.get("secao"), nivel_base=z0, nivel_topo=z1)))
             elif tipo == "trelica":
-                n_aco += _trelica(doc, e, a, tab, camada, base)
+                n_aco += _trelica(doc, e, a, tab, camada, base, predio)
             elif tipo == "viga":
                 if not isinstance(e, Linha):
                     raise ErroDeDados("a viga precisa de uma linha")
