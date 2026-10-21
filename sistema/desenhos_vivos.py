@@ -49,6 +49,10 @@ _travas = {}           # projeto → Lock: o botão Detalhar e a atualização a
 _editores = {}         # projeto → hora do último sinal de um editor 3D aberto nele
 #: sem sinal do editor há mais que isso (s), ele não está aberto
 EDITOR_AUSENTE = 30.0
+#: O aviso do programa novo ("Atualizar agora" no CAD) só no programa instalado, a cada versão: no desenvolvimento o
+#: código muda a cada minuto (vários chats gravando), o aviso aparecia em toda abertura e o usuário clicou sem querer
+#: (21/10); lá fica o Desenho › Atualizar desenhos.
+AVISAR_PROGRAMA_NOVO = bool(getattr(sys, "frozen", False))
 
 
 def editor_sinal(s: str):
@@ -219,7 +223,7 @@ def por_que_velho(s: str) -> str:
 def programa_novo(s: str) -> bool:
     """Os desenhos são de um programa anterior ao de agora (a impressão dos fontes no desenvolvimento, a versão no
     instalado) e nada da obra mudou: não se refazem sozinhos (ver o início do módulo); o CAD oferece atualizar."""
-    if not tem_detalhamento(s):
+    if not AVISAR_PROGRAMA_NOVO or not tem_detalhamento(s):
         return False
     antes = ler_carimbo(s)
     if not antes.get("codigo") or antes.get("desfeito"):

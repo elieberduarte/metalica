@@ -127,6 +127,7 @@ def test_programa_novo_nao_refaz_os_desenhos(tmp_path, monkeypatch):
     pedidos = []
     dv.configurar(gerente=lambda: g, detalhar=lambda s: pedidos.append(s))
     g.desenhos = [{"nome": "detalhamento-tesouras"}]
+    monkeypatch.setattr(dv, "AVISAR_PROGRAMA_NOVO", True)        # o instalado (no dev o aviso não aparece)
     monkeypatch.setattr(dv, "_impressao", "programa-de-ontem")
     dv.gravar_carimbo("p", {"detalhamento-tesouras": "g1"})
     monkeypatch.setattr(dv, "_impressao", "programa-de-hoje")
@@ -171,3 +172,18 @@ def test_cancelar_a_atualizacao(tmp_path):
     assert dv.por_que_velho("p") == "o modelo 3D mudou"       # mudou de novo: atualiza
     dv.gravar_carimbo("p", {"detalhamento-tesouras": "g2"})
     assert dv.estado("p", conferir=False)["cancelada"] is False
+
+
+def test_no_dev_o_programa_novo_nao_avisa(tmp_path, monkeypatch):
+    """No desenvolvimento o código muda a cada minuto: o aviso aparecia em toda abertura e o usuário clicou "Atualizar
+    agora" sem querer (21/10). Só o instalado avisa, a cada versão."""
+    g = _Gerente(str(tmp_path))
+    os.makedirs(tmp_path / "p" / "detalhamento")
+    (tmp_path / "p" / "modelo.json").write_text("{}", encoding="utf-8")
+    dv.configurar(gerente=lambda: g)
+    g.desenhos = [{"nome": "detalhamento-tesouras"}]
+    monkeypatch.setattr(dv, "_impressao", "programa-de-ontem")
+    dv.gravar_carimbo("p", {"detalhamento-tesouras": "g1"})
+    monkeypatch.setattr(dv, "_impressao", "programa-de-hoje")
+    monkeypatch.setattr(dv, "AVISAR_PROGRAMA_NOVO", False)
+    assert dv.programa_novo("p") is False and dv.estado("p", conferir=False)["programa_novo"] is False
