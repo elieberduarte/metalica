@@ -1336,6 +1336,19 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
                 if dia <= 0 or L <= 0:
                     raise ErroDeDados("o parafuso precisa de diâmetro e comprimento")
                 z1 = _nivel(a.get("nivel_topo"), tab, 0.0)
+                if a.get("papel") == "chumbador":
+                    # o chumbador do apoio (identificacao.apoios_das_tesouras, 21/10): a barra redonda da produção, como a
+                    # das placas de base (ligacoes3d._chumbadores) — do topo (a face de baixo da placa) para baixo
+                    from nucleo3d import geometria as geo
+                    bitola = str(a.get("bitola") or "")
+                    perfil = "FE RED %s" % bitola.replace('"', "''") if bitola else "FE RED Ø%g" % round(dia, 1)
+                    geo.registrar_perfil(geo.barra_redonda(dia, perfil))
+                    doc.add(Barra(inicio=(c[0], c[1], z1), fim=(c[0], c[1], z1 - L), perfil=perfil, papel="chumbador",
+                                  aco=str(a.get("aco") or "SAE 1020"), camada="Chumbadores", nome="Chumbador %s" % marca,
+                                  material="Aço", atributos=dict(base, pre_moldado=False, elemento="Chumbador",
+                                                                  tipo_ifc="IfcMember", comprimento_mm=round(L))))
+                    n_aco += 1
+                    continue
                 pts = [(dia / 2 * math.cos(2 * math.pi * k / 16), dia / 2 * math.sin(2 * math.pi * k / 16)) for k in range(16)]
                 sol = extrudar(pts, (0.0, 0.0, 1.0), L, origem=(c[0], c[1], z1 - L), nome="Parafuso %s ø%s" % (marca, round(dia)))
                 doc.add(_marcar(sol, camada, dict(base, pre_moldado=False, diametro=dia, comprimento=L, nivel_topo=z1), material="Aço"))
@@ -1349,7 +1362,10 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
             continue
         a, e = it["atributos"], it["entidade"]
         c = tuple(a.get("centro") or getattr(e, "centro", (0.0, 0.0)))[:2]
-        alvo = next((ch for ch in chapas if _dentro(c, ch.contorno)), None)
+        # o furo que diz a chapa (`chapa`: a marca dela) vai nela — a CB1 por cima da PB1 cobre os furos dos chumbadores
+        dentro = [ch for ch in chapas if _dentro(c, ch.contorno)]
+        alvo = next((ch for ch in dentro if a.get("chapa") and (ch.atributos or {}).get("marca") == a.get("chapa")), None) \
+            or (dentro[0] if dentro else None)
         if alvo is None:
             avisos.append("furo %s: fora de todas as chapas (o 3D não tem onde furar)" % (a.get("marca") or e.id))
             continue

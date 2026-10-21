@@ -37,7 +37,7 @@
 // papel do quadro).
 
 import { criar } from './nucleo/desenho2d.js';
-import { ComandoAdicionar, ComandoComposto, ComandoRemover } from './nucleo/comandos.js';
+import { ComandoAdicionar, ComandoAlterar, ComandoComposto, ComandoRemover } from './nucleo/comandos.js';
 
 function el(tag, attrs = {}, ...filhos) {
   const e = document.createElement(tag);
@@ -67,6 +67,7 @@ export const ETAPAS = [
   ['tesouras', 'Tesouras nos eixos'],
   ['tercas', 'Terças'],
   ['contraventos', 'Contraventos e outras peças'],
+  ['apoios', 'Apoios: chapas e chumbadores'],
 ];
 
 export class MetodosIdentificacao {
@@ -211,6 +212,17 @@ export class MetodosIdentificacao {
         botao(nOutras ? 'Lançar de novo' : 'Lançar contraventos e vigas', () => this._lancarOutrasIdent(), { class: nOutras ? '' : 'primario',
           title: 'Contraventos e correntes das plantas de contraventamento e as vigas (VC, VT) onde a locação marca, nos eixos gravados' }),
         botao('Confirmar ✓', () => this._confirmarIdent('contraventos'), { class: 'ident-confirmar', disabled: nOutras ? undefined : true })) : null);
+    const livre5 = this._liberada('apoios');
+    const nApoios = this.ativa ? [...this.cad.doc.entidades.values()].filter(e => (e.atributos || {}).identificacao === 'apoio' && (e.atributos || {}).elemento === 'chapa').length : (id.apoios || {}).n || 0;
+    const resA = id.apoios || {};
+    const sec5 = etapa('apoios', ETAPAS[4][1],
+      el('div', { class: 'explica', texto: 'As chapas de apoio (PB, CB) e os chumbadores pela locação dos chumbadores e o detalhe do projeto, nos pilares da Implantação; o topo do pilar que recebe tesoura desce a espessura da CB (a PB embutida rente a ele).' }),
+      nApoios ? el('div', { class: 'ident-linha ok', texto: `${nApoios} chapa(s) lançada(s)` + (resA.resumo ? ` — apoios ${resA.resumo}` : '') + '.' }) : null,
+      avisos(resA.avisos),
+      livre5 ? el('div', { class: 'ident-botoes' },
+        botao(nApoios ? 'Lançar de novo' : 'Lançar os apoios', () => this._lancarApoiosIdent(), { class: nApoios ? '' : 'primario',
+          title: 'Lê a locação dos chumbadores, as chapas e o detalhe e lança nos pilares da Implantação' }),
+        botao('Confirmar ✓', () => this._confirmarIdent('apoios'), { class: 'ident-confirmar', disabled: nApoios ? undefined : true })) : null);
     const podeMontar = et.locacao === 'confirmada' && et.tesouras === 'confirmada';
     const faltamEt = ETAPAS.filter(([k]) => et[k] !== 'confirmada').map(([, r]) => r.toLowerCase());
     const montado = id.montado;
@@ -223,7 +235,7 @@ export class MetodosIdentificacao {
         montado ? botao('Trazer do 3D o que mudou', () => this.cad.atualizarPlantaPelo3D(),
           { title: 'O que foi mudado no 3D (peça movida, comprimento, cota) volta para a Implantação; a peça apagada lá vira aviso' }) : null),
       montado ? el('div', { class: 'ident-sub', texto: 'Vinculados: o que muda na Implantação vai para o 3D a cada gravação; o que muda no 3D volta por "Trazer do 3D o que mudou".' }) : null);
-    corpo.replaceChildren(sec1, sec2, sec3, sec4, montar);
+    corpo.replaceChildren(sec1, sec2, sec3, sec4, sec5, montar);
   }
 
   async _verNoOriginal(caixa) {
@@ -459,6 +471,71 @@ export class MetodosIdentificacao {
     this._guardarIdent({ ...this._ident(), outras: { n: novas.length, resumo, avisos: r.avisos || [] } });
     await this.cad.salvar({ avisar: false });
     this.cad.aviso(`${novas.length} peça(s) lançada(s) na Implantação: ${resumo}. O 3D acompanha a planta; Ctrl+Z desfaz.`, (r.avisos || []).length ? 'atencao' : 'info', 14000);
+    this._desenharIdent();
+  }
+
+  /** Etapa 5: as chapas de apoio (PB embutida no topo do pilar, CB por cima onde a tesoura apoia), os furos e os
+   *  chumbadores lançados na Implantação; o topo do pilar que recebe tesoura desce a espessura da CB (21/10/2026). */
+  async _lancarApoiosIdent() {
+    if (!this.ativa) await this.ir('montagem');
+    if (!this.ativa) return;
+    const qi = this._quadroImplantacao();
+    if (!qi || !qi.mapa) { this.cad.aviso('Falta a Implantação com os eixos.', 'atencao'); return; }
+    const apoio = await this._apoioIdent();
+    if (apoio == null) return;
+    await this.cad.salvar({ avisar: false });
+    let r;
+    try {
+      r = await pedir(`/api/projetos/${encodeURIComponent(this.cad.projeto)}/identificacao/apoios-tesouras`, {
+        original: this.m.original || this.original, apoio, montagem: this.cad.nomeDesenho });
+    } catch (e) { this.cad.aviso('Não consegui ler os apoios: ' + e.message, 'erro', 0); return; }
+    const aps = r.apoios || [];
+    if (!aps.length) { this.cad.aviso('Nenhum apoio lido: ' + (r.avisos || []).join(' '), 'atencao', 0); return; }
+    const P = (x, y) => this._paraPapel(qi, [x, y]);
+    const s = qi.escala || 1;
+    const quadrado = (cx, cy, B, H) => [P(cx - B / 2, cy - H / 2), P(cx + B / 2, cy - H / 2), P(cx + B / 2, cy + H / 2), P(cx - B / 2, cy + H / 2)];
+    const novas = [], pilares = {};
+    for (const a of aps) {
+      const [cx, cy] = a.centro, pb = a.pb, cb = a.cb;
+      const base = { identificacao: 'apoio', apoio: a.marca, pilar: a.pilar, quadro: qi.id };
+      // a PB embutida rente ao topo do pilar: debaixo da CB onde a tesoura apoia, senão no topo do próprio pilar
+      const topoPB = cb ? apoio - cb.espessura : a.nivel_topo_pilar;
+      novas.push(criar({ tipo: 'polilinha', camada: 'ESTRUTURA', fechada: true, vertices: quadrado(cx, cy, pb.largura, pb.altura),
+        atributos: { ...base, elemento: 'chapa', material: 'aco', marca: pb.marca, espessura: pb.espessura, nivel_topo: topoPB, aco: 'ASTM A36' } }));
+      if (cb) {
+        novas.push(criar({ tipo: 'polilinha', camada: 'ESTRUTURA', fechada: true, vertices: quadrado(cx, cy, cb.largura, cb.altura),
+          atributos: { ...base, elemento: 'chapa', material: 'aco', marca: cb.marca, espessura: cb.espessura, nivel_topo: apoio, aco: 'ASTM A36' } }));
+        pilares[a.pilar_id] = a.topo_pilar;
+      }
+      const ch = a.chumbadores || {};
+      for (const f of pb.furos || []) {
+        const c = P(cx + f.dx, cy + f.dy);
+        novas.push(criar({ tipo: 'circulo', camada: 'ESTRUTURA', centro: c, raio: f.diametro / 2 / s,
+          atributos: { ...base, elemento: 'furo', diametro: f.diametro, chapa: pb.marca, marca: `${pb.marca}-F` } }));
+        if (ch.diametro && ch.comprimento) {
+          novas.push(criar({ tipo: 'circulo', camada: 'ESTRUTURA', centro: c, raio: ch.diametro / 2 / s,
+            atributos: { ...base, elemento: 'parafuso', papel: 'chumbador', diametro: ch.diametro, comprimento: ch.comprimento,
+              bitola: ch.texto, marca: `CH ${a.marca}`, nivel_topo: typeof topoPB === 'number' ? topoPB - pb.espessura : topoPB } }));
+        }
+      }
+    }
+    const antes = [...this.cad.doc.entidades.values()].filter(e => (e.atributos || {}).identificacao === 'apoio').map(e => e.id);
+    const cmds = [];
+    if (antes.length) cmds.push(new ComandoRemover(antes, 'Apoios lançados antes'));
+    cmds.push(new ComandoAdicionar(novas, `Apoios (${aps.length})`));
+    const mud = {};
+    for (const [id, topo] of Object.entries(pilares)) {
+      const e = this.cad.doc.get(id);
+      if (e && topo != null && (e.atributos || {}).nivel_topo !== topo) mud[id] = { atributos: { ...(e.atributos || {}), nivel_topo: topo } };
+    }
+    if (Object.keys(mud).length) cmds.push(new ComandoAlterar(mud, 'Topo dos pilares sob as tesouras'));
+    if (!this.cad.doc.camadas.has('ESTRUTURA') && this.cad._garantirCamadaEstrutura) this.cad._garantirCamadaEstrutura();
+    this.cad.executar(new ComandoComposto(cmds, `Apoios (${aps.length})`));
+    const resumo = Object.entries(r.resumo || {}).map(([m, n]) => `${n} ${m}`).join(', ');
+    this._guardarIdent({ ...this._ident(), apoios: { n: novas.filter(e => (e.atributos || {}).elemento === 'chapa').length, resumo, avisos: r.avisos || [] } });
+    await this.cad.salvar({ avisar: false });
+    this.cad.aviso(`${aps.length} apoio(s) lançado(s) na Implantação (${resumo}); ${Object.keys(mud).length} pilar(es) com o topo na face de baixo da CB. O 3D acompanha a planta; Ctrl+Z desfaz.`,
+      (r.avisos || []).length ? 'atencao' : 'info', 16000);
     this._desenharIdent();
   }
 

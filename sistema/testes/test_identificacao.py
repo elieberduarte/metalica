@@ -4,6 +4,7 @@ apoiada pela face de baixo na volta do 3D, e a varredura do Hangar Almayer (o pr
 enfileirou no 3D): a locação, a tesoura e as terças."""
 import collections
 import copy
+import math
 import os
 
 import pytest
@@ -150,6 +151,71 @@ def test_hangar_t1_banzo_simples_com_a_alma_em_2l(hangar):
     for b in ls:                                       # 2.5: a aba que sai do plano aponta para o centro (o par se olha)
         assert R.lado_da_aba(b, (1.0, 0.0, 0.0)) == (-1 if b.inicio[0] > 102220.0 else 1), b.nome
     assert not [e for e in R.conferir(bs) if e["regra"] in ("2.1", "2.2", "2.3", "2.4", "2.5", "2.9")]
+
+
+#: os pilares do Hangar no real (o centro de PM1…PM16, 300 × 400; o PM14 é o P07, "A DEFINIR" no projeto)
+PILARES_HANGAR = {"PM1": (82895, -4900), "PM2": (82895, -24300), "PM3": (87695, -4900), "PM4": (87695, -24300),
+                  "PM5": (92495, -4900), "PM6": (92495, -24300), "PM7": (97295, -4900), "PM8": (97295, -24300),
+                  "PM9": (102095, -4900), "PM10": (102095, -24300), "PM11": (102095, -9750), "PM12": (102095, -14600),
+                  "PM13": (102095, -19450), "PM14": (102120, -6250), "PM15": (82895, -1300), "PM16": (82895, -27650)}
+
+
+def _planta_do_hangar():
+    from nucleo2d.desenho import Polilinha
+    des = Desenho(nome="montagem", escala=1.0)
+    for m, (x, y) in PILARES_HANGAR.items():
+        des.add(Polilinha(camada="ESTRUTURA", fechada=True, vertices=[(x - 150, y - 200), (x + 150, y - 200), (x + 150, y + 200), (x - 150, y + 200)],
+                          atributos={"elemento": "pilar", "material": "concreto", "marca": m, "nivel_base": -1000, "nivel_topo": 5000,
+                                     "secao": {"tipo": "retangular", "b": 30, "h": 40}}))
+    for x, m in ((82845, "T2-A"), (87695, "T2"), (92495, "T2"), (97295, "T2"), (102220, "T1")):
+        des.add(Linha(camada="ESTRUTURA", a=(x, -4900), b=(x, -24300), atributos={"elemento": "trelica", "material": "aco", "marca": m}))
+    return des
+
+
+def test_hangar_apoios_das_tesouras_pela_locacao_dos_chumbadores(hangar):
+    """a etapa 5 (21/10): a locação dos chumbadores (folha 35) casada com os pilares, as medidas pelos textos (PB1 #9,50
+    25x25, CB1 #8,00 20x20, CHUMBADOR Ø5/8" C=55) e a furação pelo detalhe (folha 36: 4 furos Ø18 a ±95); a CB só onde a
+    tesoura apoia, e então o topo do pilar desce a espessura dela; o P07 sem chapa vira apontamento"""
+    from nucleo3d import identificacao as I
+    des, _v = hangar
+    r = I.apoios_das_tesouras(des, I.folhas_com_moldura(des), _planta_do_hangar(), 5000.0)
+    assert r["resumo"] == {"A1": 2, "A2": 6, "A3": 2, "C": 2, "D": 1, "E1": 1, "E2": 1}
+    por_pilar = {a["pilar"]: a for a in r["apoios"]}
+    assert set(por_pilar) == set(PILARES_HANGAR) - {"PM14"}
+    for a in r["apoios"]:
+        pb = a["pb"]
+        assert (pb["marca"], pb["espessura"], pb["largura"], pb["altura"]) == ("PB1", 9.5, 250.0, 250.0)
+        assert sorted((f["dx"], f["dy"], f["diametro"]) for f in pb["furos"]) == [(-95, -95, 18), (-95, 95, 18), (95, -95, 18), (95, 95, 18)]
+        assert a["chumbadores"]["n"] == 4 and a["chumbadores"]["comprimento"] == 550.0
+        assert a["chumbadores"]["diametro"] == pytest.approx(15.875)
+        assert math.dist(a["centro"], PILARES_HANGAR[a["pilar"]]) < 1.0
+    com_cb = {a["pilar"] for a in r["apoios"] if a["cb"]}
+    assert com_cb == {"PM%d" % i for i in range(1, 14)}
+    assert all(a["topo_pilar"] == 4992.0 for a in r["apoios"] if a["cb"])
+    assert por_pilar["PM15"]["marca"] == "E1" and por_pilar["PM15"]["cq"]["n"] == 2
+    assert any("PM14" in av for av in r["avisos"])
+
+
+def test_apoio_na_planta_vira_chapas_furos_e_chumbadores():
+    """o que a etapa 5 lança: a PB e a CB (elemento chapa), os furos da PB (o furo diz a chapa: a CB por cima cobre os
+    furos) e o chumbador (parafuso com papel chumbador) — o 3D com a barra redonda de produção, do pé da PB para baixo"""
+    from nucleo2d.desenho import Circulo, Polilinha
+    from nucleo3d.modelo import Chapa
+    des = Desenho(nome="planta", escala=1.0)
+    q = lambda c, B: [(c[0] - B / 2, c[1] - B / 2), (c[0] + B / 2, c[1] - B / 2), (c[0] + B / 2, c[1] + B / 2), (c[0] - B / 2, c[1] + B / 2)]
+    des.add(Polilinha(camada="E", fechada=True, vertices=q((0, 0), 250), atributos={"elemento": "chapa", "marca": "PB1", "espessura": 9.5, "nivel_topo": 4992}))
+    des.add(Polilinha(camada="E", fechada=True, vertices=q((0, 0), 200), atributos={"elemento": "chapa", "marca": "CB1", "espessura": 8, "nivel_topo": 5000}))
+    for dx, dy in ((-95, -95), (95, -95), (95, 95), (-95, 95)):
+        des.add(Circulo(camada="E", centro=(dx, dy), raio=9, atributos={"elemento": "furo", "diametro": 18, "chapa": "PB1", "marca": "F"}))
+        des.add(Circulo(camada="E", centro=(dx, dy), raio=8, atributos={"elemento": "parafuso", "papel": "chumbador", "diametro": 15.875,
+                                                                       "comprimento": 550, "bitola": '5/8"', "nivel_topo": 4982.5, "marca": "CH"}))
+    doc = _modelo(des)
+    chs = {c.atributos["marca"]: c for c in doc.entidades.values() if isinstance(c, Chapa)}
+    assert len(chs["PB1"].furos) == 4 and not chs["CB1"].furos
+    chumb = [b for b in doc.entidades.values() if isinstance(b, Barra) and b.papel == "chumbador"]
+    assert len(chumb) == 4
+    for b in chumb:
+        assert b.inicio[2] == pytest.approx(4982.5) and b.fim[2] == pytest.approx(4432.5) and "5/8" in b.perfil
 
 
 def test_hangar_tercas_na_planta(hangar):

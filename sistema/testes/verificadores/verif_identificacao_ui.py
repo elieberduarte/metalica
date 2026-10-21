@@ -208,6 +208,47 @@ try:
     vc = [e for e in m3 if str((e.get("atributos") or {}).get("marca", "")).startswith("VC")]
     ok(len(vc) >= 6 * 10, f"as VC viraram treliças no 3D ({len(vc)} barras)")
 
+    # ---- Etapa 5: os apoios (21/10) — as chapas PB/CB e os chumbadores pela locação dos chumbadores (folha 35) e o
+    # detalhe (folha 36). Os pilares pré-moldados entram antes na Implantação, como no Hangar (16, 30 × 40)
+    PIL = {"PM1": (82895, -4900), "PM2": (82895, -24300), "PM3": (87695, -4900), "PM4": (87695, -24300),
+           "PM5": (92495, -4900), "PM6": (92495, -24300), "PM7": (97295, -4900), "PM8": (97295, -24300),
+           "PM9": (102095, -4900), "PM10": (102095, -24300), "PM11": (102095, -9750), "PM12": (102095, -14600),
+           "PM13": (102095, -19450), "PM14": (102120, -6250), "PM15": (82895, -1300), "PM16": (82895, -27650)}
+    aba.avaliar("""(() => { const M = window.montagem, qi = M._quadroImplantacao(), P = (x, y) => M._paraPapel(qi, [x, y]);
+      const pil = %s; const novas = [];
+      for (const [m, [x, y]] of Object.entries(pil)) novas.push({ tipo: 'polilinha', camada: 'ESTRUTURA', fechada: true,
+        vertices: [P(x - 150, y - 200), P(x + 150, y - 200), P(x + 150, y + 200), P(x - 150, y + 200)],
+        atributos: { elemento: 'pilar', material: 'concreto', marca: m, quadro: qi.id, nivel_base: -1000, nivel_topo: 6000,
+                     secao: { tipo: 'retangular', b: 30, h: 40 } } });
+      window.verifPilares = novas; })()""" % json.dumps(PIL))
+    aba.avaliar("""import('/cad/nucleo/desenho2d.js').then(d => import('/cad/nucleo/comandos.js').then(c => {
+      window.cad.executar(new c.ComandoAdicionar(window.verifPilares.map(e => d.criar(e)), 'Pilares')); window.verifPilaresOk = 1; }))""")
+    ok(esperar("window.verifPilaresOk === 1", 20), "os 16 pilares entraram na Implantação")
+    clicar_em(botao("Confirmar ✓"))
+    ok(esperar("!document.querySelector('[data-etapa=apoios]').classList.contains('bloqueada')", 10), "confirmados os contraventos, os apoios se liberam")
+    clicar_em(botao("Lançar os apoios"))
+    ok(esperar("[...window.cad.doc.entidades.values()].some(e => (e.atributos || {}).identificacao === 'apoio')", 60), "os apoios entraram na Implantação")
+    ap = aba.avaliar("""(() => { const c = {}; for (const e of window.cad.doc.entidades.values()) { const a = e.atributos || {};
+      if (a.identificacao !== 'apoio') continue; const k = a.elemento + ':' + (a.marca || ''); c[k] = (c[k] || 0) + 1; } return c; })()""") or {}
+    ok(ap.get("chapa:PB1") == 15 and ap.get("chapa:CB1") == 6, f"15 PB1 (o P07 sem) e a CB1 só nos 6 pilares sob a T2 lançada: {ap}")
+    ok(sum(v for k, v in ap.items() if k.startswith("furo")) == 60 and sum(v for k, v in ap.items() if k.startswith("parafuso")) == 60,
+       f"60 furos Ø18 e 60 chumbadores: {ap}")
+    topos = aba.avaliar("""[...window.cad.doc.entidades.values()].filter(e => (e.atributos || {}).elemento === 'pilar')
+      .map(e => [e.atributos.marca, e.atributos.nivel_topo])""") or []
+    baixos = sorted(m for m, z in topos if z == 5992)
+    ok(baixos == sorted(["PM3", "PM4", "PM5", "PM6", "PM7", "PM8"]), f"os pilares sob a T2 com o topo na face de baixo da CB (+5,992): {baixos}")
+    t = painel()
+    ok("PM14" in t and "A DEFINIR" in t, "os avisos: o P07 sem apoio e a CB1 A DEFINIR da folha 36")
+    t0 = time.time()
+    while time.time() - t0 < 60 and sum(1 for e in modelo3d() if e.get("papel") == "chumbador") < 60:
+        aba.drenar(1.0)
+    m3 = modelo3d()
+    chb = [e for e in m3 if e.get("papel") == "chumbador"]
+    chs = [e for e in m3 if e.get("tipo") == "chapa" and str((e.get("atributos") or {}).get("marca", "")) in ("PB1", "CB1")]
+    ok(len(chb) == 60 and all(abs(abs(e["inicio"][2] - e["fim"][2]) - 550) < 1 for e in chb), f"no 3D: 60 chumbadores de 550 mm ({len(chb)})")
+    ok(len(chs) == 21 and all(len(e.get("furos") or []) == 4 for e in chs if e["atributos"]["marca"] == "PB1"),
+       f"no 3D: 21 chapas, a PB1 com os 4 furos ({len(chs)})")
+
     clicar_em("[...document.querySelectorAll('.ident-tesoura')].find(d => d.textContent.includes('T3')).querySelector('.ident-ver')")
     ok(esperar("window.cad.nomeDesenho === 'planta-de-lançamento' && !document.querySelector('#painel-ident').hidden", 30), "Ver leva ao Original com o painel junto")
     aba.drenar(1.0)

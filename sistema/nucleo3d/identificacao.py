@@ -26,6 +26,7 @@ import math
 import re
 from typing import Dict, List, Optional
 
+from nucleo.base import ErroDeDados
 from nucleo2d.desenho import Arco, Circulo, Cota, Desenho, Linha, Polilinha, Texto
 
 _FOLHA = re.compile(r"FOLHA\s*(\d+)\s*/\s*(\d+)", re.I)
@@ -1360,3 +1361,225 @@ def desenho_da_tesoura(des: Desenho, caixa, perfis: Optional[Dict[str, dict]] = 
     cont = collections.Counter(b[4] for b in out)
     return {"barras": out, "vao": round(max(max(b[0], b[2]) for b in out), 1), "altura": round(max(max(b[1], b[3]) for b in out), 1),
             "origem": [round(xe + s0, 1), round(yb + h0, 1)], "contagem": dict(cont), "pontas": sum(1 for x in extras if x.get("ponta"))}
+
+
+# ------------------------------------------- os apoios das tesouras: chapas e chumbadores (Hangar Almayer, 21/10/2026)
+
+_CHAPA_TXT = re.compile(r"\b([A-Z]{1,3}\d+)\s*#\s*(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?)")
+_FUROS_TXT = re.compile(r"(\d+)\s*FUROS?\s*Ø\s*(\d+(?:[.,]\d+)?)", re.I)
+_CHUMB_TXT = re.compile(r"CHUMBADOR\s*Ø\s*(\d+(?:/\d+)?)\s*\"?\s*C\s*=\s*(\d+(?:[.,]\d+)?)", re.I)
+_CQ_TXT = re.compile(r"\b(CQ\d+)\s*Ø\s*(\d+(?:/\d+)?)\s*\"?\s*L\s*=\s*(\d+(?:[.,]\d+)?)", re.I)
+_MARCA_APOIO = re.compile(r"^\s*([A-Z]\d?)\s*-\s*([A-Z]{1,3}\d+)\s*\+\s*(\d+)\s*Ø\s*(\d+(?:/\d+)?)\"?"
+                          r"(?:\s*\+\s*(\d+)\s*([A-Z]{1,3}\d+))?", re.I)
+
+
+def _num(s: str) -> float:
+    return float(str(s).replace(",", "."))
+
+
+def _diam_pol(txt: str) -> float:
+    """5/8 → 15,875 mm (as bitolas da barra redonda); sem fração = mm"""
+    from nucleo.acessorios import DIAMETROS_BARRA
+    d = DIAMETROS_BARRA.get(txt + '"')
+    if d:
+        return d
+    if "/" in txt:
+        a, b = txt.split("/")
+        return 25.4 * float(a) / float(b)
+    return float(txt)
+
+
+def _caixa_pol(e) -> Optional[tuple]:
+    ps = e.pontos() if hasattr(e, "pontos") else []
+    if not ps:
+        return None
+    xs, ys = [p[0] for p in ps], [p[1] for p in ps]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _giros_90():
+    """as 8 posições da folha em relação à obra: giro de 90° em 90° e espelho"""
+    out = []
+    for k in range(4):
+        for esp in (1, -1):
+            def T(p, k=k, esp=esp):
+                x, y = p[0] * esp, p[1]
+                for _ in range(k):
+                    x, y = -y, x
+                return (x, y)
+            out.append(T)
+    return out
+
+
+def apoios_das_tesouras(des: Desenho, folhas_: List[dict], planta: Desenho, apoio: float) -> dict:
+    """Os apoios das tesouras nos pilares pré-moldados pelo projeto (21/10/2026, o Hangar: "agora vamos para os detalhes,
+    chapas, ligações, isso tem no projeto original"): a folha de LOCAÇÃO DOS CHUMBADORES diz onde vai cada chapa e a
+    marca do apoio ("A1 - PB1 + 4 Ø5/8"", "E1 - … + 2 CQ1", pela linha de chamada); as medidas vêm dos textos das folhas
+    ("PB1 #9,50 25x25", "CB1 #8,00 20x20", "CHUMBADOR Ø5/8" C=55") e a furação da planta da folha de DETALHE (os furos
+    dentro da chapa do tamanho da PB). A folha é casada com os pilares da planta (`planta`, já no real) por giro/espelho
+    e deslocamento. A CB vai por cima da PB onde uma tesoura apoia no pilar (a folha APOIO DAS TESOURAS: a PB embutida
+    rente ao topo do pilar, a CB por cima, a tesoura nela) — então o topo do pilar fica em `apoio` − espessura da CB.
+    {apoios: [{pilar, pilar_id, marca, centro, pb, cb, sob_tesoura, topo_pilar, chumbadores, cq}], chapas, avisos}"""
+    from nucleo3d import de_planta_estrutura as DPE
+    avisos: List[str] = []
+    textos = [e for e in des.entidades.values() if isinstance(e, Texto)]
+
+    def folha(*rx):
+        return next((f for f in folhas_ if f.get("caixa") and all(re.search(r, f["titulo"], re.I) for r in rx)), None)
+    f_loc = folha(r"CHUMBADOR", r"LOCA")
+    f_det = folha(r"CHUMBADOR", r"DETALHE")
+    if not f_loc:
+        raise ErroDeDados("não achei a folha de locação dos chumbadores (título com CHUMBADORES e LOCAÇÃO)")
+    # as chapas e os chumbadores escritos no projeto (em qualquer folha): a medida em cm, a espessura em mm
+    chapas: Dict[str, dict] = {}
+    chumb = None
+    cqs: Dict[str, dict] = {}
+    for t in textos:
+        s = re.sub(r"\s+", " ", t.texto or "")
+        for m in _CHAPA_TXT.finditer(s):
+            ch = chapas.setdefault(m.group(1).upper(), {"marca": m.group(1).upper(), "espessura": _num(m.group(2)),
+                                                        "largura": _num(m.group(3)) * 10.0, "altura": _num(m.group(4)) * 10.0})
+            if "DEFINIR" in s.upper():
+                ch.setdefault("a_definir_em", []).append(s)
+        mc = _CHUMB_TXT.search(s)
+        if mc and chumb is None:
+            chumb = {"texto": mc.group(1) + '"', "diametro": _diam_pol(mc.group(1)), "comprimento": _num(mc.group(2)) * 10.0}
+        for mq in _CQ_TXT.finditer(s):
+            cqs.setdefault(mq.group(1).upper(), {"marca": mq.group(1).upper(), "texto": mq.group(2) + '"',
+                                                 "diametro": _diam_pol(mq.group(2)), "comprimento": _num(mq.group(3)) * 10.0})
+    # a locação: as chapas desenhadas e a marca de cada uma pela linha de chamada (a ponta na quina da chapa; a outra
+    # perto do texto — na mesma altura, o mais perto na horizontal: o texto da direita é alinhado pelo fim)
+    cx = f_loc["caixa"]
+    ents_loc = [e for e in des.entidades.values() if _dentro(e, cx)]
+    quadrados = []
+    for e in ents_loc:
+        if isinstance(e, Polilinha) and re.search(r"CHAPA", e.camada or "", re.I):
+            c = _caixa_pol(e)
+            if c and abs((c[2] - c[0]) - (c[3] - c[1])) < 5 and c[2] - c[0] > 50:
+                quadrados.append({"centro": ((c[0] + c[2]) / 2, (c[1] + c[3]) / 2), "lado": c[2] - c[0], "caixa": c})
+    if not quadrados:
+        raise ErroDeDados("a folha %d não tem chapas desenhadas" % f_loc["folha"])
+    marcas_t = []
+    for t in textos:
+        if _dentro(t, cx):
+            m = _MARCA_APOIO.match(re.sub(r"\s+", " ", t.texto or ""))
+            if m:
+                marcas_t.append({"pos": tuple(t.posicao), "marca": m.group(1).upper(), "chapa": m.group(2).upper(),
+                                 "chumbadores": int(m.group(3)), "bitola": m.group(4) + '"',
+                                 "extra_n": int(m.group(5)) if m.group(5) else 0, "extra": (m.group(6) or "").upper()})
+    for e in ents_loc:
+        if not (isinstance(e, Linha) and re.search(r"MARCA", e.camada or "", re.I)):
+            continue
+        for q in quadrados:
+            x0, y0, x1, y1 = q["caixa"]
+            for pa, pb in ((e.a, e.b), (e.b, e.a)):
+                if x0 - 5 <= pa[0] <= x1 + 5 and y0 - 5 <= pa[1] <= y1 + 5:
+                    cand = [mt for mt in marcas_t if abs(mt["pos"][1] - pb[1]) < 400]
+                    if cand:
+                        q["texto"] = min(cand, key=lambda mt: abs(mt["pos"][0] - pb[0]))
+    for q in quadrados:
+        if "texto" not in q and marcas_t:
+            q["texto"] = min(marcas_t, key=lambda mt: math.dist(mt["pos"], q["centro"]))
+            avisos.append("a chapa em (%.0f; %.0f) da folha %d não tem linha de chamada: a marca é a do texto mais perto (%s)"
+                          % (q["centro"][0], q["centro"][1], f_loc["folha"], q["texto"]["marca"]))
+    # os pilares da planta (no real) e as tesouras (a linha de apoio a apoio)
+    pilares, tesouras = [], []
+    for it in DPE.elementos(planta):
+        a, e = it["atributos"], it["entidade"]
+        if it["elemento"] == "pilar" and isinstance(e, Polilinha):
+            c = _caixa_pol(e)
+            pilares.append({"id": it["id"], "marca": str(a.get("marca") or ""), "centro": ((c[0] + c[2]) / 2, (c[1] + c[3]) / 2),
+                            "caixa": c, "nivel_topo": a.get("nivel_topo")})
+        elif it["elemento"] == "trelica" and isinstance(e, Linha) and a.get("identificacao") != "outra":
+            tesouras.append((tuple(e.a), tuple(e.b)))
+    if not pilares:
+        raise ErroDeDados("a planta não tem pilares para receber as chapas")
+    # a folha casada com os pilares (ela é desenhada em mm, como a obra)
+    melhor = None
+    for T in _giros_90():
+        cs = [T(q["centro"]) for q in quadrados]
+        for c0 in cs[:4]:
+            for pl in pilares:
+                d = (pl["centro"][0] - c0[0], pl["centro"][1] - c0[1])
+                casados, erro = 0, 0.0
+                for c in cs:
+                    dd = min(math.dist((c[0] + d[0], c[1] + d[1]), p["centro"]) for p in pilares)
+                    if dd < 120.0:
+                        casados, erro = casados + 1, erro + dd
+                if melhor is None or (casados, -erro) > melhor[0]:
+                    melhor = ((casados, -erro), T, d)
+    (casados, _e), T, d = melhor
+    if casados < len(quadrados):
+        avisos.append("%d de %d chapas da folha %d casaram com os pilares da planta — confira a locação"
+                      % (casados, len(quadrados), f_loc["folha"]))
+
+    def furacao(ch: dict) -> List[dict]:
+        """os furos da chapa pela planta do detalhe (relativos ao centro dela)"""
+        if not f_det:
+            return []
+        circ = [f for f in des.entidades.values() if isinstance(f, Circulo) and re.search(r"FURO", f.camada or "", re.I)
+                and _dentro(f, f_det["caixa"])]
+        for e in des.entidades.values():
+            if not (isinstance(e, Polilinha) and re.search(r"CHAPA", e.camada or "", re.I) and _dentro(e, f_det["caixa"])):
+                continue
+            c = _caixa_pol(e)
+            if not c or abs((c[2] - c[0]) - ch["largura"]) > 3 or abs((c[3] - c[1]) - ch["altura"]) > 3:
+                continue
+            cc = ((c[0] + c[2]) / 2, (c[1] + c[3]) / 2)
+            fur = [f for f in circ if c[0] < f.centro[0] < c[2] and c[1] < f.centro[1] < c[3]]
+            if fur:
+                return [{"dx": round(f.centro[0] - cc[0], 1), "dy": round(f.centro[1] - cc[1], 1), "diametro": round(2 * f.raio, 1)}
+                        for f in fur]
+        return []
+    usados, out = set(), []
+    for q in quadrados:
+        c = T(q["centro"])
+        c = (c[0] + d[0], c[1] + d[1])
+        pl = min(pilares, key=lambda p: math.dist(c, p["centro"]))
+        if math.dist(c, pl["centro"]) > 120.0 or pl["id"] in usados:
+            continue
+        usados.add(pl["id"])
+        mt = q.get("texto") or {}
+        pb = dict(chapas.get(mt.get("chapa") or "", {}))
+        if not pb:
+            avisos.append("apoio %s: a chapa %s não tem medida escrita no projeto" % (mt.get("marca"), mt.get("chapa")))
+            continue
+        pb.pop("a_definir_em", None)
+        pb["furos"] = furacao(pb)
+        if not pb["furos"]:
+            avisos.append("apoio %s: a furação da %s não está desenhada na folha de detalhe — sem furos" % (mt.get("marca"), pb["marca"]))
+        # a tesoura apoia neste pilar? (a linha dela passa por dentro do contorno dele)
+        x0, y0, x1, y1 = pl["caixa"]
+        sob = any(_dist_seg(pl["centro"], a_, b_) < min(x1 - x0, y1 - y0) / 2.0 for a_, b_ in tesouras)
+        cb = None
+        if sob:
+            cb_marca = next((k for k in chapas if k.startswith("CB")), None)
+            cb = dict(chapas[cb_marca]) if cb_marca else None
+            if cb is None:
+                avisos.append("apoio %s: a tesoura apoia no pilar %s, mas o projeto não escreve a chapa de apoio (CB)"
+                              % (mt.get("marca"), pl["marca"]))
+            else:
+                cb.pop("a_definir_em", None)
+                cb["furos"] = []
+        extra = cqs.get(mt.get("extra") or "") if mt.get("extra_n") else None
+        out.append({"pilar": pl["marca"], "pilar_id": pl["id"], "marca": mt.get("marca"),
+                    "centro": [round(c[0], 1), round(c[1], 1)], "pb": pb, "cb": cb, "sob_tesoura": sob,
+                    "topo_pilar": (apoio - float(cb["espessura"])) if (sob and cb) else None,
+                    "nivel_topo_pilar": pl["nivel_topo"],
+                    "chumbadores": dict(chumb or {}, n=mt.get("chumbadores") or len(pb["furos"])),
+                    "cq": dict(extra, n=mt.get("extra_n")) if extra else None})
+    for p in pilares:
+        if p["id"] not in usados:
+            avisos.append("pilar %s: sem chapa na locação dos chumbadores (o projeto não define o apoio dele) — apontamento ao "
+                          "projetista" % p["marca"])
+    for ch in chapas.values():
+        for s in ch.get("a_definir_em", []):
+            avisos.append("o projeto marca \"%s\" — foi usada a medida escrita na outra folha; confirme com o projetista" % s)
+    if f_det and any(a_["cb"] for a_ in out):
+        avisos.append("a folha %d (%s) desenha a CB 40 mm acima da PB e a PB sobre o concreto; a folha APOIO DAS TESOURAS "
+                      "põe a CB direto sobre a PB, embutida rente ao topo do pilar — foi seguida esta" % (f_det["folha"], f_det["titulo"]))
+    if chumb is None:
+        avisos.append("o projeto não escreve o chumbador (\"CHUMBADOR Ø… C=…\")")
+    cont = collections.Counter(a_["marca"] for a_ in out)
+    return {"apoios": out, "chapas": chapas, "chumbador": chumb, "cq": cqs, "avisos": avisos,
+            "resumo": dict(sorted(cont.items())), "folha": f_loc["folha"]}
