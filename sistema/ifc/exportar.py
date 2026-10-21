@@ -570,7 +570,8 @@ class _Exportador:
         a = self.arq
         wcs = a.eixo3()
         # o norte verdadeiro no plano XY do modelo: o do terreno, quando a obra está no mapa
-        norte = a.direcao(*self.terreno["norte"]) if self.terreno else a.direcao(0.0, 1.0)
+        geo = self.terreno and self.terreno.get("georreferenciar", True)
+        norte = a.direcao(*self.terreno["norte"]) if geo else a.direcao(0.0, 1.0)
         self.contexto = a.add(f"IFCGEOMETRICREPRESENTATIONCONTEXT($,{_texto('Model')},3,"
                               f"{_real(PRECISAO)},{wcs},{norte})")
         self.corpo = a.add(f"IFCGEOMETRICREPRESENTATIONSUBCONTEXT({_texto('Body')},"
@@ -592,8 +593,9 @@ class _Exportador:
             origem_sitio = (0.0, 0.0, 0.0)
         pl_sitio = a.add(f"IFCLOCALPLACEMENT($,{a.eixo3(origem_sitio)})")
         self.sitio_placement = pl_sitio
-        lat = _angulo_composto(self.terreno["lat_sitio"]) if self.terreno else "$"
-        lon = _angulo_composto(self.terreno["lon_sitio"]) if self.terreno else "$"
+        geo = self.terreno and self.terreno.get("georreferenciar", True)
+        lat = _angulo_composto(self.terreno["lat_sitio"]) if geo else "$"
+        lon = _angulo_composto(self.terreno["lon_sitio"]) if geo else "$"
         sitio = self.raiz("IFCSITE", _texto(self.sitio_nome), "$", "$", pl_sitio, "$",
                           "$", ".ELEMENT.", lat, lon, _real(0.0), "$", "$")
         pl_predio = a.add(f"IFCLOCALPLACEMENT({pl_sitio},{a.eixo3()})")
@@ -1095,7 +1097,7 @@ class _Exportador:
         unidades = self._unidades()
         self._contextos()
         self._hierarquia(unidades)
-        if self.terreno:
+        if self.terreno and self.terreno.get("georreferenciar", True):
             self._georreferencia()
 
         memo: Dict[str, Ponto] = {}
@@ -1150,7 +1152,7 @@ class _Exportador:
         if self._no_pavimento:
             self.raiz("IFCRELCONTAINEDINSPATIALSTRUCTURE", _texto("Elementos"), "$",
                       _lista(self._no_pavimento), self.pavimento)
-        if self.terreno:
+        if self.terreno and self.terreno.get("placa", True):
             self._placa_terreno()
         self._camadas()
         for material, objetos in self._por_material.items():
@@ -1181,21 +1183,29 @@ class _Exportador:
                                     "grupos": [{"cor": (107, 143, 78), "triangulos": [(1, 2, 3), (1, 3, 4)]}]}
         pts = a.add("IFCCARTESIANPOINTLIST3D((" + ",".join(
             "(" + ",".join(_real(v) for v in c) + ")" for c in mos["pontos"]) + "))")
-        uv = a.add("IFCTEXTUREVERTEXLIST((" + ",".join("(" + _real(u) + "," + _real(v) + ")" for u, v in mos["uv"]) + "))")
-        blob = a.add('IFCBLOBTEXTURE(.F.,.F.,' + _texto("TEXTURE") + ',$,$,' + _texto("JPG") + ',"0'
-                     + tr["jpg"].hex().upper() + '")')
-        arquivo = a.add(f"IFCIMAGETEXTURE(.F.,.F.,{_texto('TEXTURE')},$,$,{_texto('terreno.jpg')})")
-        texturas = a.add(f"IFCSURFACESTYLEWITHTEXTURES(({blob},{arquivo}))")
+        uv = a.add("IFCTEXTUREVERTEXLIST((" + ",".join("(" + _real(u) + "," + _real(v) + ")" for u, v in mos["uv"]) + "))")             if tr.get("textura", "dentro") else None
+        # a textura é opcional (21/10: o Trimble Connect não abria o IFC com ela) — "textura": "dentro" (a imagem no
+        # arquivo + o nome do arquivo ao lado), "arquivo" (só o nome: terreno.jpg ao lado) ou False (só o mosaico)
+        modo = tr.get("textura", "dentro")
+        mapas = []
+        if modo == "dentro":
+            mapas.append(a.add('IFCBLOBTEXTURE(.F.,.F.,' + _texto("TEXTURE") + ',$,$,' + _texto("JPG") + ',"0'
+                               + tr["jpg"].hex().upper() + '")'))
+        if modo in ("dentro", "arquivo"):
+            mapas.append(a.add(f"IFCIMAGETEXTURE(.F.,.F.,{_texto('TEXTURE')},$,$,{_texto('terreno.jpg')})"))
+        texturas = a.add(f"IFCSURFACESTYLEWITHTEXTURES(({','.join(mapas)}))") if mapas else None
         faces = []
         for i, g in enumerate(mos["grupos"]):
             face = a.add(f"IFCTRIANGULATEDFACESET({pts},$,.F.,(" + ",".join(
                 "(%d,%d,%d)" % t for t in g["triangulos"]) + "),$)")
             # o (u, v) de cada ponto da grade: sem TexCoordIndex, o índice da textura é o do ponto
-            a.add(f"IFCINDEXEDTRIANGLETEXTUREMAP(({blob},{arquivo}),{face},{uv},$)")
+            if mapas:
+                a.add(f"IFCINDEXEDTRIANGLETEXTUREMAP(({','.join(mapas)}),{face},{uv},$)")
             r, gg, b = (c / 255.0 for c in g["cor"])
             rgb = a.add(f"IFCCOLOURRGB($,{_real(r)},{_real(gg)},{_real(b)})")
             render = a.add(f"IFCSURFACESTYLERENDERING({rgb},{_real(0.0)},$,$,$,$,$,$,.NOTDEFINED.)")
-            estilo = a.add(f"IFCSURFACESTYLE({_texto('Terreno %d' % (i + 1))},.BOTH.,({render},{texturas}))")
+            estilo = a.add(f"IFCSURFACESTYLE({_texto('Terreno %d' % (i + 1))},.BOTH.,({render}"
+                           + (f",{texturas}" if texturas else "") + "))")
             a.add(f"IFCSTYLEDITEM({face},({estilo}),$)")
             faces.append(face)
         face = ",".join(faces)
