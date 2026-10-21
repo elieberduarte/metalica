@@ -261,6 +261,17 @@ def test_ortofoto_do_drone_de_cascavel_e_a_reserva(tmp_path):
     assert 0.3 < vermelho[0] / sum(vermelho) < 0.7                     # metade drone, metade reserva
 
 
+def test_coordenada_web_mercator_do_geoportal_nacidade():
+    """O canto do mapa do geoportal de Toledo (nacidade) mostra o Web Mercator em metros (21/10, o Hangar no aeroporto de
+    Toledo: "-5977431.88, -2836763.37" colado na busca não era aceito); a UTM e os graus continuam como eram."""
+    for texto in ("-5977431.88, -2836763.37", "-5977431.88 -2836763.37", "X: -5977431.88 Y: -2836763.37"):
+        lat, lon = L.coordenada_do_texto(texto)
+        assert abs(lat - -24.682225) < 1e-6 and abs(lon - -53.696184) < 1e-6, texto
+    assert L.coordenada_do_texto("X 249306, Y 7237399")[0] == pytest.approx(-24.958097, abs=1e-5)   # a UTM
+    assert L.coordenada_do_texto("-24.95, -53.45") == (-24.95, -53.45)
+    assert L.coordenada_do_texto("1234567, 2345678") is None          # positivos: nem UTM nem o Mercator do Brasil
+
+
 def test_drone_so_no_dev():
     """O drone de Cascavel só no desenvolvimento (21/10, o usuário: "deixe o drone de Cascavel apenas para a versão dev"):
     no instalado ele sai da lista de fontes, o GetMap da camada dele vira a ortofoto 2021, e a obra que já o escolheu

@@ -350,9 +350,10 @@ _VIRGULA = r"[-+]?\d{1,3},\d+"
 def coordenada_do_texto(texto: str) -> Optional[tuple]:
     """A coordenada colada: "-24.95, -53.45" (o botão direito do Google Maps), "-24,95 -53,45" (vírgula decimal) ou o
     link do Google Maps (…/@-24.95,-53.45,17z ou !3d-24.95!4d-53.45), e as do geoportal da prefeitura: graus/minutos/
-    segundos (24° 57' 29.66" S, 53° 29' 5.18" O) ou UTM SIRGAS 2000 (X 249306, Y 7237399). None se não é coordenada."""
+    segundos (24° 57' 29.66" S, 53° 29' 5.18" O), UTM SIRGAS 2000 (X 249306, Y 7237399) ou o Web Mercator em metros do
+    canto do mapa do geoportal nacidade (Toledo: "-5977431.88, -2836763.37"). None se não é coordenada."""
     t = str(texto or "").strip()
-    c = _gms_do_texto(t) or _utm_do_texto(t)
+    c = _gms_do_texto(t) or _utm_do_texto(t) or _mercator_do_texto(t)
     if c:
         return c
     m = (re.search(r"!3d(%s)!4d(%s)" % (_PONTO, _PONTO), t) or re.search(r"@(%s),(%s)" % (_PONTO, _PONTO), t)
@@ -402,6 +403,21 @@ def _utm_do_texto(t: str) -> Optional[tuple]:
     # no Brasil "22S" é o fuso 22 sul (não a faixa S do MGRS); as outras letras são as faixas (C–M sul, N–X norte)
     norte_hem = letra == "N" or (letra not in ("", "S") and letra > "N")
     return utm_para_geo(leste, norte, fuso, sul=not norte_hem)
+
+
+def _mercator_do_texto(t: str) -> Optional[tuple]:
+    """O Web Mercator (EPSG:3857, metros) que o geoportal nacidade mostra no canto do mapa, X e Y nessa ordem (21/10, o
+    Hangar em Toledo: "-5977431.88, -2836763.37" não era aceito): os dois com mais de 100 km e um negativo, o que nenhuma
+    UTM tem (a UTM é tentada antes)."""
+    m = re.fullmatch(r"(?:x\s*[:=]?\s*)?(-?\d{6,8}(?:\.\d+)?)\s*[,;\s]\s*(?:y\s*[:=]?\s*)?(-?\d{6,8}(?:\.\d+)?)", t.strip(), flags=re.I)
+    if not m:
+        return None
+    x, y = float(m.group(1)), float(m.group(2))
+    lim = math.pi * R_TERRA
+    if min(x, y) >= 0 or not (100_000 <= abs(x) <= lim and 100_000 <= abs(y) <= lim):
+        return None
+    lat, lon = de_mercator(x, y)
+    return (lat, lon) if -85 < lat < 85 else None
 
 
 def utm_para_geo(leste: float, norte: float, fuso: int, sul: bool = True) -> tuple:
