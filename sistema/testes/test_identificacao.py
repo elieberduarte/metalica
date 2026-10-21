@@ -117,13 +117,15 @@ def test_hangar_tesoura_com_a_alma_nas_faces(hangar):
     assert sum(lt["contagem"].values()) >= 45, lt["contagem"]
 
 
-def test_hangar_t1_banzo_de_alma_no_plano_com_a_alma_em_2l(hangar):
-    """o T1 do Hangar (U127 só, alma 2L32/2L25): o desenho sai com a seção 'alma_no_plano' nos banzos e a cantoneira dupla
-    (10º campo) na alma; o 3D monta o U centrado no eixo com a boca fora do plano, duas cantoneiras por peça da alma e a
-    regra 2.9 limpa. Antes (20/10) a alma saía em L simples dentro da alma do U e a reanálise passava "nada a corrigir"
-    com o banzo virado (a peça era pulada pela etiqueta secao_dupla)"""
+def test_hangar_t1_banzo_simples_com_a_alma_em_2l(hangar):
+    """o T1 do Hangar (U127 só, alma 2L32/2L25): o desenho sai sem seção dupla nos banzos e com a cantoneira dupla (10º
+    campo) na alma; o 3D monta o U com a boca para dentro do vão (2.2) e o par dentro da boca, uma em cada aba (2.5),
+    com presilhas, e a regra limpa. 20/10 a alma saía em L simples dentro do U; 21/10 cedo a leitura "alma no plano"
+    do corte T1 virava o U com a boca para fora — desfeita pelo usuário ("quando o perfil é simples os banzos devem
+    ficar com a boca virada para dentro do vão da tesoura e as cantoneiras duplas soldadas nas laterais internas")"""
     from nucleo2d.desenho import Linha as L_
     from nucleo3d import identificacao as I, regras_trelica as R
+    from nucleo3d.geometria import base_local
     des, v = hangar
     t1 = next(t for t in v["tesouras"] if t["tipo"] == "T1")
     perfis = I.perfis_da_tesoura(des, "T1", I.folhas_com_moldura(des))
@@ -131,7 +133,7 @@ def test_hangar_t1_banzo_de_alma_no_plano_com_a_alma_em_2l(hangar):
     r = I.desenho_da_tesoura(des, t1["vista"]["caixa"], perfis)
     banzos = [b for b in r["barras"] if b[4] in ("banzo_sup", "banzo_inf", "extremidade")]
     alma = [b for b in r["barras"] if b not in banzos]
-    assert banzos and all(b[6] == "alma_no_plano" and not b[9] for b in banzos)
+    assert banzos and all(b[6] == "" and not b[9] for b in banzos)
     assert alma and all(b[9] for b in alma)
     des3 = Desenho(nome="planta", escala=100.0)
     des3.add(L_(a=(102220.0, -4900.0), b=(102220.0, -24300.0), camada="ESTRUTURA",
@@ -140,10 +142,14 @@ def test_hangar_t1_banzo_de_alma_no_plano_com_a_alma_em_2l(hangar):
     doc = _modelo(des3)
     bs = [e for e in doc.entidades.values() if isinstance(e, Barra)]
     us = [b for b in bs if b.perfil.startswith("U")]
-    ls = [b for b in bs if b.perfil.startswith("L")]
-    assert len(us) == len(banzos) and len(ls) == 2 * len(alma) and not [b for b in bs if b.papel == "presilha"]
-    assert all(abs(abs(u.inicio[0] - 102220.0) - 12.6) < 0.5 for u in us), sorted(round(u.inicio[0] - 102220.0, 1) for u in us)
-    assert not [e for e in R.conferir(bs) if e["regra"] in ("2.9", "2.2", "2.1")]
+    ls = [b for b in bs if b.perfil.startswith("L") and b.papel != "presilha"]
+    assert len(us) == len(banzos) and len(ls) == 2 * len(alma) and [b for b in bs if b.papel == "presilha"]
+    for u in us:
+        assert abs(u.inicio[0] - 102220.0) < 0.5                                   # no plano da tesoura
+        assert abs(base_local(u.direcao, u.rotacao)[0][0]) < 1e-6                 # a boca no plano, para dentro
+    for b in ls:                                       # 2.5: a aba que sai do plano aponta para o centro (o par se olha)
+        assert R.lado_da_aba(b, (1.0, 0.0, 0.0)) == (-1 if b.inicio[0] > 102220.0 else 1), b.nome
+    assert not [e for e in R.conferir(bs) if e["regra"] in ("2.1", "2.2", "2.3", "2.4", "2.5", "2.9")]
 
 
 def test_hangar_tercas_na_planta(hangar):

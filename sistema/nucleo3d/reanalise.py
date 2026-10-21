@@ -33,7 +33,8 @@ from typing import Callable, Dict, Iterable, List, Optional, Sequence
 from nucleo3d.conferencia_3d import CRUZAM_POR_PROJETO, _dist_seg, _seg_seg, repetidas as _pares_repetidos
 
 #: a versão das regras: sobe quando entra regra nova aqui (o modelo grava a que passou — metadados.reanalise.versao)
-VERSAO_REGRAS = 2        # 2 (21/10): a 2.9 — o banzo em U de alma no plano (Hangar), que a versão 1 pulava
+VERSAO_REGRAS = 3        # 2 (21/10): a 2.9 — o banzo 2U composto (Hangar), que a versão 1 pulava; 3 (21/10): o U simples
+                         # com alma 2L volta à 2.2 + 2.5 (a leitura "alma no plano" desfeita) e a ponta do composto no final
 
 #: (chave, título, "corrige" | "aponta", explicação)
 REGRAS = [
@@ -44,7 +45,7 @@ REGRAS = [
     ("pontas_soltas", "Alma com a ponta solta", "corrige",
      "a diagonal que passa do banzo é cortada no eixo dele; a sobra pendurada dentro do painel sai"),
     ("tesouras", "Regras de montagem das tesouras", "corrige",
-     "boca do U (também o U de alma no plano com a alma em 2L, 2.9), lado da cantoneira, encaixe no banzo, nó no eixo do banzo, "
+     "boca do U (também o 2U composto, 2.9), lado da cantoneira, encaixe no banzo, nó no eixo do banzo, "
      "degrau, terça torcida, perfil da ponta"),
     ("peso", "Peso das barras pela regra de hoje", "corrige",
      "o peso gravado em cada barra refeito pelo catálogo (peso dos dobrados de 14/10)"),
@@ -381,13 +382,9 @@ def _tesouras(doc, achados: list) -> dict:
         if d1.get("perfil") != d0.get("perfil"):
             o_que.append("perfil %s → %s (1.2/1.4: o topo do painel e a ponta com o perfil do banzo)"
                          % (d0.get("perfil"), d1.get("perfil")))
-        mexeu_ponta = d1.get("inicio") != d0.get("inicio") or d1.get("fim") != d0.get("fim")
-        if d1.get("rotacao") != d0.get("rotacao") and mexeu_ponta and (d1.get("atributos") or {}).get("secao_dupla") == "alma_no_plano":
-            o_que.append("virada no lugar: a boca do U de alma no plano para fora do prédio (2.9)")
-            mexeu_ponta = False
-        elif d1.get("rotacao") != d0.get("rotacao"):
+        if d1.get("rotacao") != d0.get("rotacao"):
             o_que.append("girada (boca do U / lado da cantoneira / terça torcida)")
-        if mexeu_ponta:
+        if d1.get("inicio") != d0.get("inicio") or d1.get("fim") != d0.get("fim"):
             o_que.append("ponta levada ao nó (eixo do banzo, degrau, face da platibanda)")
         if d1.get("cortes_inicio") != d0.get("cortes_inicio") or d1.get("cortes_fim") != d0.get("cortes_fim"):
             o_que.append("encaixada no banzo (3.1)")

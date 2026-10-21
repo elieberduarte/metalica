@@ -1343,28 +1343,16 @@ def desenho_da_tesoura(des: Desenho, caixa, perfis: Optional[Dict[str, dict]] = 
         barras.append([x["lo"][0], x["lo"][1], x["hi"][0], x["hi"][1], "extremidade" if x.get("ponta") else "banzo_sup"])
     # os perfis do projeto em cada barra (o banzo de dois U = composto; a ponta e o trecho a 45° com o do banzo)
     perfis = perfis or {}
-    # a seção do banzo: dois perfis = composto; um U desenhado com a altura toda em pé (a faixa do banzo com a altura do
-    # perfil — o corte T1 do Hangar, folha 29) = a alma no plano da tesoura, como o projeto
-    sec_banzo = ""
+    # a seção do banzo: dois perfis = composto (regras_trelica 2.9); um U só é o banzo simples (2.2: a boca para dentro
+    # do vão — a leitura "alma no plano" do corte T1 foi desfeita pelo usuário, 21/10)
     pb_ = perfis.get("banzo")
-    if pb_:
-        if pb_["mult"] >= 2:
-            sec_banzo = "composto"
-        else:
-            try:
-                from nucleo3d.geometria import resolver_perfil
-                d_ = float(resolver_perfil(pb_["perfil"]).d or 0.0)
-            except Exception:                                    # noqa: BLE001
-                d_ = 0.0
-            faixas = [m.get("dupla") or 0.0 for m in bz if m.get("dupla")]
-            if d_ and faixas and abs(sorted(faixas)[len(faixas) // 2] - d_) <= 0.12 * d_:
-                sec_banzo = "alma_no_plano"
+    sec_banzo = "composto" if pb_ and pb_["mult"] >= 2 else ""
     for b in barras:
         chave = "banzo" if b[4] in ("banzo_sup", "banzo_inf", "extremidade") else ("montante" if b[4] == "montante" else "diagonal")
         p = perfis.get(chave)
         if p:
             # [perfil, seção do banzo, vão entre os perfis, virar, cantoneira dupla] — o "2L32x32" da lista de marcas vira o
-            # par que abraça a alma do U (regras_trelica 2.9, de_planta_estrutura)
+            # par (2.5 no U simples: dentro da boca, nas abas; 2.9 no composto: uma dentro de cada boca)
             b += [p["perfil"], sec_banzo if chave == "banzo" else "", None, False, chave != "banzo" and p["mult"] >= 2]
     s0 = min(min(b[0], b[2]) for b in barras)
     h0 = min(min(b[1], b[3]) for b in barras)

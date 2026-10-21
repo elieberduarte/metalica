@@ -424,8 +424,7 @@ def _giro_para(w: Tuple[float, float, float], alvo: Tuple[float, float, float]) 
     return math.degrees(math.atan2(sum(a * b for a, b in zip(alvo, v0)), sum(a * b for a, b in zip(alvo, u0)))) % 360.0
 
 
-def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, base: dict,
-             predio: Optional[Tuple[float, float]] = None) -> int:
+def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, base: dict) -> int:
     """A tesoura de aço pelo desenho (web/cad/estrutura.js, tesouraPeloDesenho — pedido do usuário, 06/10): o elemento
     da planta é a linha do apoio ao apoio (de um eixo ao outro); `desenho.barras` são as barras do desenho da tesoura em
     linhas — [u0, v0, u1, v1, papel] em mm, u ao longo do vão (0 no apoio do começo) e v na altura (0 no apoio, o ponto mais baixo
@@ -450,16 +449,6 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
     k = L / vao
     ux, uy = (e.b[0] - e.a[0]) / L, (e.b[1] - e.a[1]) / L
     fora_do_plano = (-uy, ux, 0.0)                       # a normal horizontal do plano da tesoura
-    # 2.9: o lado para onde o U simples de alma no plano abre (±fora_do_plano): para fora do prédio; sem prédio de um
-    # lado só, para +n (o sinal fixo da regra) — o mesmo que regras_trelica.alvo_2_9 confere
-    from nucleo3d import regras_trelica as _rt
-    n_fixo = _rt._sinal_fixo(fora_do_plano)
-    lado_fora = 1.0 if sum(x * y for x, y in zip(n_fixo, fora_do_plano)) > 0 else -1.0
-    if predio is not None:
-        meio_l = ((e.a[0] + e.b[0]) / 2.0, (e.a[1] + e.b[1]) / 2.0)
-        dp = (predio[0] - meio_l[0]) * n_fixo[0] + (predio[1] - meio_l[1]) * n_fixo[1]
-        if dp > _rt.PREDIO_MIN:
-            lado_fora = -lado_fora
     # o apoio no nível, ou acima dele (sobre a viga: o topo da viga — `acima_do_nivel` mm, 06/10)
     z0 = _nivel(a.get("nivel_base"), tab, 3000.0) + float(a.get("acima_do_nivel") or 0.0)
     perfis = a.get("perfis") or {}
@@ -483,7 +472,9 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
         papeis.append(str(b[4]) if len(b) > 4 else "diagonal")
         # o perfil da própria barra (a legenda de cores da folha de perfis do projeto, 11/10) e a seção dupla dela
         perfis_b.append(str(b[5]) if len(b) > 5 and b[5] else "")
-        secoes_b.append(str(b[6]) if len(b) > 6 and b[6] else "")
+        # "alma_no_plano" (a leitura do corte T1 do Hangar, 20–21/10) foi desfeita pelo usuário: o U simples segue a 2.2
+        # e a 2.5 — a Montagem gravada com ela monta como banzo simples
+        secoes_b.append(str(b[6]) if len(b) > 6 and b[6] and b[6] != "alma_no_plano" else "")
         # o painel "Perfis da tesoura" (11/10): o vão entre os dois perfis (mm; vazio = a altura da alma) e "virar" a boca
         try:
             vaos_b.append(float(b[7]) if len(b) > 7 and b[7] not in (None, "") else None)
@@ -506,7 +497,17 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
         try:
             from nucleo3d.geometria import resolver_perfil
             pb = resolver_perfil(perfis_b[i] or perfis.get(papeis[i]) or perfis.get("banzo_sup") or perfis.get("banzo_inf"))
-            return float(pb.d or 0.0) / 2.0 if secoes_b[i] in ("composto", "alma_no_plano") else float(pb.bf or 0.0) * (1.0 if secoes_b[i] == "caixa" else 0.5)
+            if secoes_b[i] == "composto":
+                return float(pb.d or 0.0) / 2.0
+            if secoes_b[i] == "caixa":
+                return float(pb.bf or 0.0)
+            # o perfil da legenda do projeto em linha de centro: o projetista pode ter desenhado a faixa do banzo com a
+            # altura toda (a T1 do Hangar: 127, a alma da alma parando a 63,5 do eixo) — a ponta a até meia altura também
+            # é do banzo (3.2: < 100 mm vai ao eixo). Sem isso o par de cantoneiras a ±48 não chegava no banzo e a
+            # treliça se partia em pedaços (21/10, a 2.5 sem os pares)
+            if perfis_b[i]:
+                return max(float(pb.d or 0.0), float(pb.bf or 0.0)) / 2.0
+            return float(pb.bf or 0.0) * 0.5
         except Exception:                              # noqa: BLE001
             return 25.0
     eixos_bz = {}
@@ -553,6 +554,7 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             ang = math.degrees(math.atan2(abs(s[3] - s[1]), abs(s[2] - s[0])))
             if 20.0 <= ang <= 70.0 and any(min(math.dist(tp, (s[0], s[1])), math.dist(tp, (s[2], s[3]))) < 2.0 for tp in topos):
                 chanfros.add(j)
+        _ponta_no_final(segs, papeis, chanfros, internas, perfis_b_banzo or perfis.get("banzo_sup") or perfis.get("banzo_inf"))
     pontas_u: List[Tuple[int, Barra]] = []            # as peças da ponta em U só (2.9a): a meia-esquadria entre elas
     n = 0
     feitas: List[Barra] = []                           # as barras desta tesoura (o encaixe é por tesoura)
@@ -588,26 +590,6 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
         # a ponta em U conta como banzo: as cantoneiras encaixam nela, e ela não é recortada como alma
         papel_3d = "banzo" if (papel.startswith("banzo") or papel == "extremidade") else ("diagonal" if papel == "secundaria" else papel)
         nome = "%s %s %d" % (marca, nome_papel.get(papel, papel), i + 1)
-        if secoes_b[i] == "alma_no_plano":
-            # o U simples com a alma em pé no plano da tesoura e a boca para fora dele (regras_trelica 2.9 — o corte T1 do
-            # Hangar Almayer, folha 29, e o croqui do usuário de 21/10: a alma dupla abraça a alma do U). O U fica
-            # centrado no eixo (a locação: faixa de 50 mm de −25 a +25), a alma de um lado e as pontas das abas do outro;
-            # o lado da boca: para fora do prédio (lado_fora, regra 2.9)
-            try:
-                from nucleo3d.geometria import resolver_perfil, secao
-                pu_ = resolver_perfil(perfil)
-                xg = -min(q[0] for q in secao(pu_))             # da alma ao centroide (a boca abre para +u)
-                bf_u = float(pu_.bf or 2.0 * xg)
-            except Exception:                                  # noqa: BLE001
-                xg, bf_u = 15.0, 50.0
-            abre = tuple((-1.0 if virar_b[i] else 1.0) * lado_fora * c for c in fora_do_plano)
-            dl = tuple((xg - bf_u / 2.0) * c for c in abre)
-            bd = Barra(inicio=tuple(A[c] + dl[c] for c in range(3)), fim=tuple(B[c] + dl[c] for c in range(3)), perfil=perfil,
-                       papel=papel_3d, aco=aco, camada=camada, nome=nome, rotacao=_giro_para(w, abre), atributos=dict(atr, secao_dupla="alma_no_plano"))
-            doc.add(bd)
-            feitas.append(bd)
-            n += 1
-            continue
         if secoes_b[i] in ("caixa", "composto"):
             # a seção dupla da legenda do projeto (CD Bom Dia, croqui ao lado de "BANZOS", 11/10):
             # "COMPOSTO" = dois U de costas, a boca de cada um para fora do plano, afastados pela altura do perfil da alma
@@ -754,34 +736,25 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             continue
         # dupla: uma em cada aba do U, encostada na face de dentro da aba; a segunda é a primeira espelhada no plano
         # (na cantoneira de abas iguais, espelhar é girar 90°)
-        abraca = sec_banzo in ("alma_no_plano", "composto")
+        abraca = sec_banzo == "composto"
         try:
             from nucleo3d.geometria import resolver_perfil, secao
             pu = resolver_perfil(perfis_b_banzo or perfis.get("banzo_sup") or perfis.get("banzo_inf"))
             pl = resolver_perfil(perfil)
             if abraca:
-                # 2.9: o par abraça a alma do U — uma cantoneira em cada face da alma, a aba em pé encostada nela.
-                # U simples: a alma a bf/2 do eixo (o U centrado), do lado contrário à boca; composto: cada alma a
-                # vão/2 do plano, a cantoneira dentro da boca (face de dentro da alma). O centro da cantoneira fica
-                # a meia espessura do U + a distância da aba ao centroide dela
+                # 2.9: uma cantoneira dentro da boca de cada U do composto, a aba em pé encostada na face de dentro da
+                # alma (cada alma a vão/2 do plano): o centro dela a vão/2 + a espessura da alma + da aba ao centroide
                 xl = -min(q[0] for q in secao(pl))
                 t_u = float(pu.tw or pu.tf or 0.0)
-                if sec_banzo == "composto":
-                    vao_u = (vaos_b_banzo if vaos_b_banzo is not None else max(vao_da_alma, float(pu.d or 0.0)))
-                    centro_alma, afast = 0.0, vao_u / 2.0 + t_u + xl
-                else:
-                    # a alma do U fica a bf/2 do eixo, do lado contrário à boca (a boca para lado_fora; o "virar" do
-                    # banzo vira junto)
-                    virou = next((virar_b[j] for j in i_bz if secoes_b[j]), False)
-                    centro_alma = -float(pu.bf or 0.0) / 2.0 * lado_fora * (-1.0 if virou else 1.0)
-                    afast = t_u / 2.0 + xl
+                vao_u = (vaos_b_banzo if vaos_b_banzo is not None else max(vao_da_alma, float(pu.d or 0.0)))
+                afast = vao_u / 2.0 + t_u + xl
             else:
-                centro_alma = 0.0
+                # 2.5: o U simples com a boca para dentro do vão — uma em cada aba do U, encostada na face de dentro da aba
                 afast = max(float(pu.d or 0.0) / 2.0 - float(pu.tf or pu.tw or 0.0) - float(pl.bf or 0.0) / 2.0, 0.0)
         except Exception:                              # noqa: BLE001 — sem as medidas, encostadas no plano
-            centro_alma, afast = 0.0, 0.0
+            afast = 0.0
         for lado, g in ((-1.0, giro), (1.0, giro + 90.0)):
-            dl = tuple((centro_alma + lado * afast) * c for c in fora_do_plano)
+            dl = tuple(lado * afast * c for c in fora_do_plano)
             bl = Barra(inicio=tuple(A[c] + dl[c] for c in range(3)), fim=tuple(B[c] + dl[c] for c in range(3)), perfil=perfil,
                        papel=papel_3d, aco=aco, camada=camada, nome=nome + (" (a)" if lado < 0 else " (b)"), rotacao=g % 360.0,
                        atributos=dict(atr, cantoneira_dupla="a" if lado < 0 else "b"))
@@ -843,6 +816,62 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             elif planos:
                 bl.cortes_fim = planos
     return n
+
+
+def _ponta_no_final(segs: list, papeis: List[str], chanfros: set, internas: set, perfil_banzo: Optional[str]) -> int:
+    """2.9a: a ponta do composto (o U só no plano, a alma para fora) alinhada com o final da tesoura — a face de fora da
+    alma no fim do banzo inferior (usuário, 21/10: "alinhar com o final da tesoura"). O desenho do projeto põe o eixo da
+    ponta a meia altura do perfil da face (63,5 no U 127 do Hangar) e a ponta ficava 51 mm para dentro. O montante de
+    extremidade, o trecho a 45° preso nele e o que chega nos nós deles andam juntos ao longo do vão; o banzo superior
+    vai até o 45° pela própria linha. Muda `segs` (no lugar); devolve quantas pontas andaram."""
+    try:
+        from nucleo3d.geometria import resolver_perfil, secao
+        pb = resolver_perfil(perfil_banzo)
+        xg = -min(q[0] for q in secao(pb))
+        d_b = float(pb.d or 0.0)
+    except Exception:                                    # noqa: BLE001 — sem o perfil, a ponta fica onde o desenho pôs
+        return 0
+    us_bi = [u for j, s in enumerate(segs) if papeis[j] == "banzo_inf" and j not in internas for u in (s[0], s[2])]
+    if not us_bi:
+        return 0
+    lo, hi = min(us_bi), max(us_bi)
+    andou = 0
+    for j, s in enumerate(list(segs)):
+        if papeis[j] != "extremidade" or j in internas or abs(s[2] - s[0]) > 1.0:
+            continue
+        u = s[0]
+        if 0.0 < u - lo <= d_b:
+            delta = (lo + xg) - u
+        elif 0.0 < hi - u <= d_b:
+            delta = (hi - xg) - u
+        else:
+            continue
+        if abs(delta) < 0.5:
+            continue
+        nos = {(s[0], s[1]), (s[2], s[3])}             # os nós que andam: os da ponta e o de cima do 45° preso nela
+        for c in chanfros:
+            sc = segs[c]
+            if any(math.dist(p, q) < 2.0 for p in nos for q in ((sc[0], sc[1]), (sc[2], sc[3]))):
+                nos |= {(sc[0], sc[1]), (sc[2], sc[3])}
+        # o nó de cima do 45° fica na linha do banzo superior: anda ao longo dela (o banzo vai até ele)
+        def novo(p):
+            for k, sb in enumerate(segs):
+                if not papeis[k].startswith("banzo_sup") or k in chanfros or k in internas:
+                    continue
+                for a_, b_ in (((sb[0], sb[1]), (sb[2], sb[3])), ((sb[2], sb[3]), (sb[0], sb[1]))):
+                    if math.dist(a_, p) < 2.0 and abs(b_[0] - a_[0]) > 1.0:
+                        incl = (b_[1] - a_[1]) / (b_[0] - a_[0])
+                        return (p[0] + delta, p[1] + delta * incl)
+            return (p[0] + delta, p[1])
+        mapa = {p: novo(p) for p in nos}
+        for k, sk in enumerate(segs):
+            pa, pb_ = (sk[0], sk[1]), (sk[2], sk[3])
+            na = next((mapa[q] for q in mapa if math.dist(q, pa) < 2.0), pa)
+            nb = next((mapa[q] for q in mapa if math.dist(q, pb_) < 2.0), pb_)
+            if na != pa or nb != pb_:
+                segs[k] = (na[0], na[1], nb[0], nb[1])
+        andou += 1
+    return andou
 
 
 def _meia_esquadria_da_ponta(pontas_u: List[Tuple[int, Barra]]) -> int:
@@ -1020,11 +1049,6 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
     doc = Documento(nome=nome)
     avisos: List[str] = []
     n_aco = 0
-    # o prédio (regras_trelica 2.9): o meio das tesouras da planta — a de oitão tem o resto da obra de um lado só e o U de
-    # alma no plano abre para o outro (a T3 do Hangar saía com a boca para dentro: cada tesoura montada sozinha não sabe)
-    meios = [((it["entidade"].a[0] + it["entidade"].b[0]) / 2.0, (it["entidade"].a[1] + it["entidade"].b[1]) / 2.0)
-             for it in elementos(des) if it["elemento"] == "trelica" and isinstance(it["entidade"], Linha)]
-    predio = (sum(p[0] for p in meios) / len(meios), sum(p[1] for p in meios) / len(meios)) if meios else None
     for it in elementos(des):
         a, e, tipo = it["atributos"], it["entidade"], it["elemento"]
         marca = str(a.get("marca") or "")
@@ -1056,7 +1080,7 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
                     sol = extrudar(_contorno_z(e.vertices), (0.0, 0.0, 1.0), z1 - z0, origem=(0.0, 0.0, z0), nome="Pilar %s" % marca)
                     doc.add(_marcar(sol, camada, dict(base, secao=a.get("secao"), nivel_base=z0, nivel_topo=z1)))
             elif tipo == "trelica":
-                n_aco += _trelica(doc, e, a, tab, camada, base, predio)
+                n_aco += _trelica(doc, e, a, tab, camada, base)
             elif tipo == "viga":
                 if not isinstance(e, Linha):
                     raise ErroDeDados("a viga precisa de uma linha")
