@@ -224,6 +224,23 @@ try:
     aba.avaliar("document.getElementById('terreno-ligado').click()")
     ok(aba.avaliar("window.terreno.grupo.visible === false && !document.getElementById('terreno-fonte')"),
        "desligar a imagem a esconde (e a fonte do canto)")
+    # o editor 3D (21/10, o usuário no PRATI CD: "no modo editar não consegui encontrar a camada do terreno"): a mesma imagem
+    # no chão, na escala do editor (metros), e a linha "Terreno (imagem)" no alto das Camadas, com o olho
+    aba.avaliar("localStorage.removeItem('editor3d.terreno'); 1")
+    aba.navegar(base + "/editor?projeto=obra", limite=60)
+    ok(esperar(aba, "!!(window.editor && window.editor._terreno && window.editor._terreno.malha)", 90), "o editor abre com a imagem do terreno no chão")
+    ed = aba.avaliar("""(() => { const t = window.editor._terreno, w = new t.malha.position.constructor();
+        t.malha.getWorldPosition(w); return { escala: t.grupo.scale.x, z: t.malha.position.z, wz: w.z, op: t.vazada.material.opacity }; })()""")
+    ok(abs(ed["escala"] - 0.001) < 1e-12 and abs(ed["wz"] - ed["z"] * 0.001) < 1e-6, f"na escala do editor (mm → m): {ed}")
+    ok(esperar(aba, "!!document.querySelector('.linha-terreno')", 10), "Camadas: a linha Terreno (imagem) no alto")
+    ok(aba.avaliar("document.querySelector('.linha-terreno').parentElement.firstElementChild.classList.contains('linha-terreno')"),
+       "é a primeira da lista")
+    aba.avaliar("document.querySelector('.linha-terreno button').click()")
+    ok(esperar(aba, "window.editor._terreno.grupo.visible === false && document.querySelector('.linha-terreno').hasAttribute('data-oculta')", 5),
+       "o olho esconde a imagem no editor")
+    aba.avaliar("document.querySelector('.linha-terreno button').click()")
+    ok(esperar(aba, "window.editor._terreno.grupo.visible === true", 5), "e mostra de novo")
+    foto(aba, "ver3d_terreno_5_editor.png")
     erros = [x for x in aba.console if x[0] in ("error", "excecao") and "favicon" not in str(x)]   # o 3D aberto direto, sem a área
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:

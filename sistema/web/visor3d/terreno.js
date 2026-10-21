@@ -85,6 +85,7 @@ export class Terreno {
     this.ligado = true;
     // o liga/desliga lembrado neste navegador (o modo ver do PC); o celular guarda o dele por obra (ui.chaveLigado = null)
     this.chaveLigado = ui.chaveLigado === undefined ? 'ver3d.terreno' : ui.chaveLigado;
+    this.escala = ui.escala || 1;                         // mm do projeto → unidade da cena (o editor: 0,001)
     if (this.chaveLigado) { try { this.ligado = localStorage.getItem(this.chaveLigado) !== '0'; } catch (e) { /* sem armazenamento */ } }
   }
 
@@ -183,7 +184,10 @@ export class Terreno {
     const p = planoDaImagem(this.t, this.imagem);
     const o = (this.visor.cabecalho && this.visor.cabecalho.origem) || [0, 0, 0];
     const d = this.arrasto ? this.arrasto.d : [0, 0];
-    this.grupo.position.set(-o[0], -o[1], -o[2]);
+    // o editor 3D desenha em metros (ESCALA 0,001, o modelo no grupo escalado); o modo ver e o celular, em mm
+    const k = this.escala;
+    this.grupo.scale.setScalar(k);
+    this.grupo.position.set(-o[0] * k, -o[1] * k, -o[2] * k);
     // na cota escolhida (o nível 0,00 da obra com subsolo: o subsolo fica embaixo do chão, a fundação não voa) ou no pé
     // da obra, logo acima do piso liso (min.z − 10)
     const cota = this.t && Number.isFinite(this.t.cota) ? this.t.cota : null;
@@ -443,10 +447,10 @@ export class Terreno {
     const ndc = new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, this.visor.camera);
-    const o = (this.visor.cabecalho && this.visor.cabecalho.origem) || [0, 0, 0];
-    const plano = new THREE.Plane(new THREE.Vector3(0, 0, 1), -(this.zChao - o[2]));
+    const o = (this.visor.cabecalho && this.visor.cabecalho.origem) || [0, 0, 0], k = this.escala;
+    const plano = new THREE.Plane(new THREE.Vector3(0, 0, 1), -(this.zChao - o[2]) * k);
     const p = ray.ray.intersectPlane(plano, new THREE.Vector3());
-    return p ? [p.x + o[0], p.y + o[1]] : null;
+    return p ? [p.x / k + o[0], p.y / k + o[1]] : null;
   }
 
   _inicio(ev) {

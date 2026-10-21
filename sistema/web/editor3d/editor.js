@@ -19,6 +19,7 @@ import { Documento, criar, clonar, comprimentoDaBarra, direcaoDaBarra, areaDaCha
 import { Pilha, Comando, ComandoAdicionar, ComandoRemover, ComandoAlterar }
   from './nucleo/comandos.js';
 import { Cena, MODOS, ESCALA, PESADOS, medir } from './nucleo/cena.js';
+import { carregarTerrenoNoEditor } from './modulos/terreno.js';
 import { lerPerfil, nomeDoPerfil, trocarSecao, BITOLAS } from './nucleo/trocar_perfil.js';
 import { Camera, VISTAS } from './nucleo/camera.js';
 import { acompanhar as acompanharTarefa } from '../progresso.js';
@@ -318,6 +319,7 @@ export class Editor {
     else if (this.parametros.get('exemplo')) this.carregarExemplo();
     else if (this.parametros.get('abrir')) await this.abrirModelo(this.parametros.get('abrir'));
     if (this.projeto) this._carregarReferencia();
+    if (this.projeto) carregarTerrenoNoEditor(this);        // a obra no terreno (21/10): a imagem do modo ver no chão
     if (this.projeto && !this.parametros.get('destacar')) this._vistaDoVisor();
     if (this.projeto) this._botaoVer();
     if (this.projeto && this.parametros.get('lancar') === '1') {

@@ -722,6 +722,20 @@ export class MetodosPaineis {
       lista.append(cab);
       if (!recolhido) for (const k of nomes) lista.append(linhaCamada(k, this.documento.camadas.get(k), true));
     }
+    // a imagem do terreno (21/10, o usuário no PRATI CD: "no modo editar não consegui encontrar a camada do terreno"): no
+    // alto, com o olho — só tela (não é peça, não vai à lista); a posição e a altura se ajustam no modo ver (botão Terreno)
+    if (this._terreno) {
+      const t = this._terreno;
+      const linha = el('div', { class: 'linha linha-terreno', title: 'A imagem do terreno no chão (ajuste no modo ver › Terreno)' });
+      if (!t.ligado) linha.dataset.oculta = '';
+      const vis = el('button', { type: 'button', class: 'alternador', 'aria-pressed': String(!!t.ligado),
+        title: t.ligado ? 'Ocultar a imagem do terreno' : 'Mostrar a imagem do terreno',
+        onclick: () => { t.mostrar(!t.ligado); this._agendarPaineis('camadas'); } });
+      vis.innerHTML = olho(!!t.ligado);
+      linha.append(vis, el('span', { class: 'amostra-terreno' }), el('span', { class: 'nome', texto: 'Terreno (imagem)' }),
+                   el('span', { class: 'contagem', texto: ((t.imagem && t.imagem.fonte) || '').split(' ')[0] }));
+      lista.prepend(linha);
+    }
     raiz.append(lista);
     const acoes = el('div', { class: 'acoes-painel' });
     acoes.append(el('button', { type: 'button', texto: '+ Nova camada', onclick: () => this._novaCamada() }));
