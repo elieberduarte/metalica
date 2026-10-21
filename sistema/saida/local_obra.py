@@ -50,6 +50,12 @@ FONTES = {
                  "url": "https://geoserver.cascavel.pr.gov.br:8181/geoserver/wms", "camada": "ctmgeo_22s:CASCAVEL",
                  "srs": "EPSG:900913", "formato": "image/png", "tiled": True,
                  "atribuicao": "Ortofoto 2021: Prefeitura de Cascavel — IPC"},
+    # a ortofoto recente de Toledo (21/10, o usuário: "encontrei um geoportal da cidade de Toledo" — o da plataforma
+    # nacidade, CTM, plataforma.nacidade.com.br/ctm-3/sig-web): pública, até ~7 cm por pixel (nível 21), 0,4 s o bloco
+    "toledo": {"nome": "Ortofoto recente — Prefeitura de Toledo", "tipo": "wms", "zoom_max": 21,
+               "url": "https://plataforma.nacidade.com.br/geoserver/wms", "camada": "toledo-ctm-3:imagem_recente",
+               "srs": "EPSG:3857", "formato": "image/png",
+               "atribuicao": "Ortofoto: Prefeitura de Toledo — Maptriz Smart City / DRZ"},
 }
 # a fonte falsa dos testes (sem internet): quadriculado com o número de cada bloco
 if os.environ.get("METALICA_TERRENO_FALSO") == "1":
@@ -189,6 +195,12 @@ def fonte_do_endereco(url: str, camada: str = "", nome: str = "") -> dict:
     host = urllib.parse.urlsplit(url).netloc
     if host.split(":")[0].endswith("cascavel.pr.gov.br") and not camada.strip():
         return "cascavel"                                     # qualquer link do geoportal (a página, o lote, o GetMap)
+    if host.split(":")[0] == "plataforma.nacidade.com.br" and "geoserver" not in url:
+        # o geoportal "nacidade" (CTM) de várias cidades (Toledo, Palotina, Guaíra, Cianorte…): o link da página vira o
+        # GeoServer dele; a camada (a ortofoto da cidade da obra) se acha pelo lugar ao baixar
+        return {"tipo": "wms", "url": "https://plataforma.nacidade.com.br/geoserver/wms", "camada": camada.strip(),
+                "srs": "EPSG:3857", "formato": "image/png", "nome": (nome or "Geoportal nacidade")[:80],
+                "atribuicao": "Ortofoto: prefeitura — plataforma nacidade (Maptriz / DRZ)"}
     if all(k in url for k in ("{z}", "{x}", "{y}")):
         return {"tipo": "xyz", "url": url, "zoom_max": 21, "nome": (nome or host)[:80], "atribuicao": "Imagem: " + host}
     q = {k.lower(): v for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).items()}
@@ -198,7 +210,7 @@ def fonte_do_endereco(url: str, camada: str = "", nome: str = "") -> dict:
 
 
 def camadas_do_wms(url: str, baixar: Callable[[str], bytes]) -> list:
-    """[(nome, título)] das camadas do GetCapabilities."""
+    """[(nome, título, caixa)] das camadas do GetCapabilities; caixa = (oeste, leste, sul, norte) em graus, ou None."""
     import xml.etree.ElementTree as ET
     dados = baixar(url + "?" + urllib.parse.urlencode({"SERVICE": "WMS", "REQUEST": "GetCapabilities", "VERSION": "1.3.0"}))
     try:
@@ -212,17 +224,68 @@ def camadas_do_wms(url: str, baixar: Callable[[str], bytes]) -> list:
             continue
         filhos = {tira(c.tag): (c.text or "").strip() for c in el}
         if filhos.get("Name"):
-            saida.append((filhos["Name"], filhos.get("Title", "")))
+            caixa = None
+            for c in el:
+                if tira(c.tag) == "EX_GeographicBoundingBox":
+                    v = {tira(k.tag): k.text for k in c}
+                    try:
+                        caixa = tuple(float(v[k]) for k in ("westBoundLongitude", "eastBoundLongitude",
+                                                            "southBoundLatitude", "northBoundLatitude"))
+                    except (KeyError, TypeError, ValueError):
+                        caixa = None
+            saida.append((filhos["Name"], filhos.get("Title", ""), caixa))
     return saida
 
 
-def camada_da_ortofoto(camadas: list) -> Optional[str]:
-    """A ortofoto entre as camadas: a de "orto" no nome ou no título (a do ano mais novo); com uma camada só, ela."""
-    ortos = [(n, t) for n, t in camadas if re.search(r"orto|ortho|imagem|aerofoto", n + " " + t, re.I)]
-    if ortos:
-        ano = lambda c: max([int(a) for a in re.findall(r"(?:19|20)\d\d", c[0] + " " + c[1])] or [0])
-        return max(ortos, key=ano)[0]
-    return camadas[0][0] if len(camadas) == 1 else None
+def ortofotos_candidatas(camadas: list, lugar: Optional[tuple] = None) -> list:
+    """As ortofotos entre as camadas (orto/imagem/mosaico no nome ou no título), da mais provável à menos: as que cobrem o
+    `lugar` (lat, lon) pela caixa declarada (quando ela diz algo), a "recente" antes da "anterior", o ano mais novo e a
+    menor caixa; com uma camada só, ela."""
+    camadas = [c if len(c) > 2 else (c[0], c[1], None) for c in camadas]
+    if lugar:
+        lat, lon = lugar
+        cobre = [c for c in camadas if c[2] and c[2][0] <= lon <= c[2][1] and c[2][2] <= lat <= c[2][3]]
+        if cobre:
+            camadas = cobre
+    ortos = [c for c in camadas if re.search(r"orto|ortho|imagem|aerofoto|mosaic", c[0] + " " + c[1], re.I)]
+    if not ortos:
+        return [camadas[0][0]] if len(camadas) == 1 else []
+    area = lambda c: (c[2][1] - c[2][0]) * (c[2][3] - c[2][2]) if c[2] else float("inf")
+
+    def nota(c):
+        texto = c[0] + " " + c[1]
+        ano = max([int(a) for a in re.findall(r"(?:19|20)\d\d", texto)] or [0])
+        # as de demonstração do servidor (apresentação, treinamento, prova de conceito) por último: em Toledo a camada
+        # "publicatreinamentos" também cobre a cidade
+        demo = -1 if re.search(r"apresenta|treinamento|teste|demo|(^|[^a-z])poc[^a-z]", c[0], re.I) else 0
+        return (demo, 1 if re.search(r"recente", texto, re.I) else 0, -1 if re.search(r"anterior", texto, re.I) else 0, ano, -area(c))
+    return [c[0] for c in sorted(ortos, key=nota, reverse=True)]
+
+
+def camada_da_ortofoto(camadas: list, lugar: Optional[tuple] = None) -> Optional[str]:
+    """A ortofoto mais provável (ortofotos_candidatas), ou None."""
+    lista = ortofotos_candidatas(camadas, lugar)
+    return lista[0] if lista else None
+
+
+def _a_que_tem_imagem(cfg: dict, candidatas: list, reg: dict, baixar, limite: int = 120) -> Optional[str]:
+    """A primeira candidata (na ordem) que devolve imagem no meio da região: o servidor "nacidade" serve dezenas de cidades
+    com a mesma caixa declarada (o Brasil inteiro) — só o pedido mostra qual ortofoto cobre a obra (21/10, Toledo)."""
+    mundo = 2 * math.pi * R_TERRA
+    z = 17
+    por_px = mundo / (256 * 2 ** z)
+    x = int(((reg["x0"] + reg["x1"]) / 2 + mundo / 2) / por_px // 256)
+    y = int((mundo / 2 - (reg["y0"] + reg["y1"]) / 2) / por_px // 256)
+
+    def tem(nome):
+        try:
+            return _bloco(dict(cfg, camada=nome), z, x, y, baixar) is not None
+        except Exception:
+            return False
+    lista = candidatas[:limite]
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        resultado = list(ex.map(tem, lista))
+    return next((n for n, ok in zip(lista, resultado) if ok), None)
 
 
 def _meta_imagem(pasta: str) -> Optional[dict]:
@@ -445,11 +508,16 @@ def _imagem_xyz(fonte: dict, reg: dict, z: int, baixar, progresso) -> "Image.Ima
 
     def um(b):
         bx, by = b
-        try:
-            im = _bloco(fonte, z, bx, by, baixar)            # o vazio da fonte fica cinza, como o que falha
-        except Exception as e:                               # um bloco que falha fica cinza; a imagem sai
-            falhas.append(str(e))
-            im = None
+        im = None
+        for tentativa in range(3):                           # o servidor da prefeitura às vezes não entrega na hora (a
+            try:                                             # PRATI em Toledo, 21/10: um quadrado cinza na imagem)
+                im = _bloco(fonte, z, bx, by, baixar)        # o vazio da fonte fica cinza, como o que falha
+                break
+            except Exception as e:                           # três falhas: o bloco fica cinza e a imagem sai
+                if tentativa == 2:
+                    falhas.append(str(e))
+                else:
+                    time.sleep(0.5 * (tentativa + 1))
         feitos[0] += 1
         progresso("baixando a imagem do terreno (%d de %d blocos)" % (feitos[0], len(blocos)), 0.05 + 0.85 * feitos[0] / len(blocos))
         return b, im
@@ -485,10 +553,18 @@ def baixar_imagem(g, s: str, corpo: Optional[dict] = None, progresso: Callable =
     if cfg["tipo"] == "wms" and not cfg.get("camada"):
         progresso("procurando a camada da ortofoto no servidor…", 0.03)
         camadas = camadas_do_wms(cfg["url"], baixar)
-        achada = camada_da_ortofoto(camadas)
+        candidatas = ortofotos_candidatas(camadas, (t["lat"], t["lon"]))
+        if len(candidatas) > 1:
+            progresso("procurando a ortofoto que cobre a obra (%d candidatas)…" % len(candidatas), 0.035)
+            achada = _a_que_tem_imagem(cfg, candidatas, regiao(t, caixa), baixar)
+            if not achada:
+                raise ErroTerreno("nenhuma das %d ortofotos do servidor tem imagem no lugar da obra. Escolha outra fonte (a "
+                                  "Esri cobre o mundo todo)." % len(candidatas))
+        else:
+            achada = candidatas[0] if candidatas else None
         if not achada:
             raise ErroTerreno("o servidor tem %d camadas e nenhuma parece a ortofoto: %s. Escreva o nome da camada, ou "
-                              "%s" % (len(camadas), ", ".join(n for n, _ in camadas[:12]) or "nenhuma",
+                              "%s" % (len(camadas), ", ".join(c[0] for c in camadas[:12]) or "nenhuma",
                                       COMO_COPIAR[0].lower() + COMO_COPIAR[1:]))
         cfg = dict(cfg, camada=achada)
         t["fonte"] = cfg

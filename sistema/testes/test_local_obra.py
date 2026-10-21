@@ -463,3 +463,29 @@ def test_mosaico_fino_na_obra_e_grosso_em_volta():
     assert lados[False] == {4000}                               # em volta: 4 × maior
     tris = sum(len(g["triangulos"]) for g in m["grupos"])
     assert tris < 2 * 64 * 64 / 2                               # bem menos que a imagem inteira na resolução fina
+
+
+def test_bloco_que_falha_e_pedido_de_novo(tmp_path, monkeypatch):
+    """O servidor da prefeitura às vezes não entrega um bloco na hora (Toledo, 21/10: um quadrado cinza na imagem da
+    PRATI): o bloco é pedido de novo, até três vezes, antes de ficar cinza."""
+    import io as _io
+    from PIL import Image
+    monkeypatch.setattr(L.time, "sleep", lambda s: None)
+    b = _io.BytesIO()
+    Image.effect_noise((256, 256), 60).convert("RGB").save(b, "PNG")
+    png = b.getvalue()
+    pedidos = {}
+
+    def instavel(url):                                       # cada bloco falha na primeira vez
+        pedidos[url] = pedidos.get(url, 0) + 1
+        if pedidos[url] == 1:
+            raise OSError("tempo esgotado")
+        return png
+    g, s = _gerente(tmp_path)
+    L.gravar(g, s, {"lat": CASCAVEL[0], "lon": CASCAVEL[1], "ponto": [0, 0], "norte": 0, "fonte": "cascavel"})
+    L.baixar_imagem(g, s, {"caixa": [-10000, -10000, 10000, 10000]}, baixar=instavel)
+    from PIL import ImageStat
+    im = Image.open(L.os.path.join(g.pasta(s), "terreno", "imagem.jpg")).convert("RGB")
+    cinza = sum(1 for x in range(0, im.size[0], 64) for y in range(0, im.size[1], 64)
+                if max(ImageStat.Stat(im.crop((x, y, x + 32, y + 32))).stddev) < 3)
+    assert cinza == 0 and all(n == 2 for n in pedidos.values())
