@@ -315,7 +315,7 @@ export class MetodosIdentificacao {
     const original = this.m.original || this.original;
     let r;
     try {
-      r = await pedir(`/api/projetos/${encodeURIComponent(this.cad.projeto)}/identificacao/tesoura`, { original, caixa: t.vista.caixa });
+      r = await pedir(`/api/projetos/${encodeURIComponent(this.cad.projeto)}/identificacao/tesoura`, { original, caixa: t.vista.caixa, tipo: t.tipo });
     } catch (e) { this.cad.aviso(`Não consegui pegar a ${t.tipo} da folha ${t.vista.folha}: ${e.message}`, 'erro', 0); return; }
     if (!(r.entidades || []).length) { this.cad.aviso(`A folha ${t.vista.folha} não tem o desenho da ${t.tipo}: ${(r.avisos || []).join(' ')}`, 'atencao', 0); return; }
     // a elevação do primeiro eixo sugerido (sem eixo na locação: o primeiro numerado — o usuário marca os eixos no Tesoura…)
@@ -336,7 +336,12 @@ export class MetodosIdentificacao {
     const casa = sobra == null ? '' : Math.abs(sobra) < 5 ? `, o mesmo vão dos eixos ${cruz[0].nome}–${cruz[cruz.length - 1].nome}`
       : `; entre ${cruz[0].nome} e ${cruz[cruz.length - 1].nome} há ${metros(vao)} m — centrada, ${metros(Math.abs(sobra))} m ${sobra > 0 ? 'para fora' : 'para dentro'} de cada lado (confira no projeto)`;
     this.cad.aviso(`${t.tipo} da folha ${t.vista.folha} colada na Elevação ${eixo}: ${r.barras} barras, ${metros(r.largura)} m × ${metros(r.altura)} m${casa}. Confira no Tesoura… e lance.`, sobra && Math.abs(sobra) > 5 ? 'atencao' : 'info', 16000);
-    const lancou = await this.tesouraDaElevacao(q, { marca: t.tipo, eixos: t.eixos.length ? t.eixos : [eixo] });
+    // o desenho já lido no servidor (as pontas como o projeto) e os perfis da folha de marcas: a origem dele, do Original
+    // para a elevação pelo mesmo ponto de referência da colagem (o Original em mm)
+    const d = r.desenho;
+    const desenho = d && d.barras && d.barras.length >= 3
+      ? { ...d, n: d.barras.length, raio: null, origem: [uMeio + (d.origem[0] - r.ref[0]), z + (d.origem[1] - r.ref[1])] } : null;
+    const lancou = await this.tesouraDaElevacao(q, { marca: t.tipo, eixos: t.eixos.length ? t.eixos : [eixo], desenho, perfis: r.perfis || null });
     if (lancou) this._tiposCache = this.m.tipos || {};
     this._desenharIdent();
   }

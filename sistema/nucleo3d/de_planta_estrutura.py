@@ -461,12 +461,14 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
     def P(u, v):
         return (e.a[0] + ux * u * k, e.a[1] + uy * u * k, z0 + v)
 
-    segs, papeis, perfis_b, secoes_b, vaos_b, virar_b = [], [], [], [], [], []
+    segs, papeis, perfis_b, secoes_b, vaos_b, virar_b, duplas_b = [], [], [], [], [], [], []
     for b in barras:
         try:
             segs.append(tuple(float(x) for x in b[:4]))
         except (TypeError, ValueError):
             continue
+        # a cantoneira dupla desta barra pelo projeto (o "2L32x32" da lista de marcas, identificacao.desenho_da_tesoura)
+        duplas_b.append(bool(len(b) > 9 and b[9]))
         papeis.append(str(b[4]) if len(b) > 4 else "diagonal")
         # o perfil da própria barra (a legenda de cores da folha de perfis do projeto, 11/10) e a seção dupla dela
         perfis_b.append(str(b[5]) if len(b) > 5 and b[5] else "")
@@ -493,7 +495,7 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
         try:
             from nucleo3d.geometria import resolver_perfil
             pb = resolver_perfil(perfis_b[i] or perfis.get(papeis[i]) or perfis.get("banzo_sup") or perfis.get("banzo_inf"))
-            return float(pb.d or 0.0) / 2.0 if secoes_b[i] == "composto" else float(pb.bf or 0.0) * (1.0 if secoes_b[i] == "caixa" else 0.5)
+            return float(pb.d or 0.0) / 2.0 if secoes_b[i] in ("composto", "alma_no_plano") else float(pb.bf or 0.0) * (1.0 if secoes_b[i] == "caixa" else 0.5)
         except Exception:                              # noqa: BLE001
             return 25.0
     eixos_bz = {}
@@ -520,6 +522,11 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
         vao_da_alma = float(resolver_perfil(alma_p[0][0]).d or CHAPA_COMPOSTO) if alma_p and alma_p[0][0] else CHAPA_COMPOSTO
     except Exception:                                  # noqa: BLE001
         vao_da_alma = CHAPA_COMPOSTO
+    # a seção e o perfil do banzo desta tesoura (2.9: o par de cantoneiras se posiciona pela alma do U)
+    i_bz = [j for j in range(len(segs)) if papeis[j].startswith("banzo") and j not in internas]
+    sec_banzo = next((secoes_b[j] for j in i_bz if secoes_b[j]), "")
+    perfis_b_banzo = next((perfis_b[j] for j in i_bz if perfis_b[j]), "")
+    vaos_b_banzo = next((vaos_b[j] for j in i_bz if vaos_b[j] is not None), None)
     n = 0
     feitas: List[Barra] = []                           # as barras desta tesoura (o encaixe é por tesoura)
     secundarias: List[Tuple[Barra, tuple]] = []        # as de um lado só, por fora do U: cortadas na face do banzo
@@ -554,6 +561,26 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
         # a ponta em U conta como banzo: as cantoneiras encaixam nela, e ela não é recortada como alma
         papel_3d = "banzo" if (papel.startswith("banzo") or papel == "extremidade") else ("diagonal" if papel == "secundaria" else papel)
         nome = "%s %s %d" % (marca, nome_papel.get(papel, papel), i + 1)
+        if secoes_b[i] == "alma_no_plano":
+            # o U simples com a alma em pé no plano da tesoura e a boca para fora dele (regras_trelica 2.9 — o corte T1 do
+            # Hangar Almayer, folha 29, e o croqui do usuário de 21/10: a alma dupla abraça a alma do U). O U fica
+            # centrado no eixo (a locação: faixa de 50 mm de −25 a +25), a alma de um lado e as pontas das abas do outro;
+            # o lado da boca (para fora do prédio) é da regra 2.9, no aplicar — aqui vai para +n
+            try:
+                from nucleo3d.geometria import resolver_perfil, secao
+                pu_ = resolver_perfil(perfil)
+                xg = -min(q[0] for q in secao(pu_))             # da alma ao centroide (a boca abre para +u)
+                bf_u = float(pu_.bf or 2.0 * xg)
+            except Exception:                                  # noqa: BLE001
+                xg, bf_u = 15.0, 50.0
+            abre = tuple((-1.0 if virar_b[i] else 1.0) * c for c in fora_do_plano)
+            dl = tuple((xg - bf_u / 2.0) * c for c in abre)
+            bd = Barra(inicio=tuple(A[c] + dl[c] for c in range(3)), fim=tuple(B[c] + dl[c] for c in range(3)), perfil=perfil,
+                       papel=papel_3d, aco=aco, camada=camada, nome=nome, rotacao=_giro_para(w, abre), atributos=dict(atr, secao_dupla="alma_no_plano"))
+            doc.add(bd)
+            feitas.append(bd)
+            n += 1
+            continue
         if secoes_b[i] in ("caixa", "composto"):
             # a seção dupla da legenda do projeto (CD Bom Dia, croqui ao lado de "BANZOS", 11/10):
             # "COMPOSTO" = dois U de costas, a boca de cada um para fora do plano, afastados pela altura do perfil da alma
@@ -662,7 +689,7 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             secundarias.append((bl, s))
             n += 1
             continue
-        if not dupla:
+        if not (dupla or duplas_b[i]):
             bl = Barra(inicio=A, fim=B, perfil=perfil, papel=papel_3d, aco=aco, camada=camada, nome=nome,
                        rotacao=giro, atributos=atr)
             doc.add(bl)
@@ -671,15 +698,30 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             continue
         # dupla: uma em cada aba do U, encostada na face de dentro da aba; a segunda é a primeira espelhada no plano
         # (na cantoneira de abas iguais, espelhar é girar 90°)
+        abraca = sec_banzo in ("alma_no_plano", "composto")
         try:
-            from nucleo3d.geometria import resolver_perfil
-            pu = resolver_perfil(perfis.get("banzo_sup") or perfis.get("banzo_inf"))
+            from nucleo3d.geometria import resolver_perfil, secao
+            pu = resolver_perfil(perfis_b_banzo or perfis.get("banzo_sup") or perfis.get("banzo_inf"))
             pl = resolver_perfil(perfil)
-            afast = max(float(pu.d or 0.0) / 2.0 - float(pu.tf or pu.tw or 0.0) - float(pl.bf or 0.0) / 2.0, 0.0)
+            if abraca:
+                # 2.9: o par abraça a alma do U — uma cantoneira em cada face da alma, a aba em pé encostada nela.
+                # U simples: a alma a bf/2 do eixo (o U centrado), do lado contrário à boca; composto: cada alma a
+                # vão/2 do plano, a cantoneira dentro da boca (face de dentro da alma). O centro da cantoneira fica
+                # a meia espessura do U + a distância da aba ao centroide dela
+                xl = -min(q[0] for q in secao(pl))
+                t_u = float(pu.tw or pu.tf or 0.0)
+                if sec_banzo == "composto":
+                    vao_u = (vaos_b_banzo if vaos_b_banzo is not None else vao_da_alma)
+                    centro_alma, afast = 0.0, vao_u / 2.0 + t_u + xl
+                else:
+                    centro_alma, afast = -float(pu.bf or 0.0) / 2.0, t_u / 2.0 + xl
+            else:
+                centro_alma = 0.0
+                afast = max(float(pu.d or 0.0) / 2.0 - float(pu.tf or pu.tw or 0.0) - float(pl.bf or 0.0) / 2.0, 0.0)
         except Exception:                              # noqa: BLE001 — sem as medidas, encostadas no plano
-            afast = 0.0
+            centro_alma, afast = 0.0, 0.0
         for lado, g in ((-1.0, giro), (1.0, giro + 90.0)):
-            dl = tuple(lado * afast * c for c in fora_do_plano)
+            dl = tuple((centro_alma + lado * afast) * c for c in fora_do_plano)
             bl = Barra(inicio=tuple(A[c] + dl[c] for c in range(3)), fim=tuple(B[c] + dl[c] for c in range(3)), perfil=perfil,
                        papel=papel_3d, aco=aco, camada=camada, nome=nome + (" (a)" if lado < 0 else " (b)"), rotacao=g % 360.0,
                        atributos=dict(atr, cantoneira_dupla="a" if lado < 0 else "b"))
@@ -691,7 +733,7 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
         # do mínimo da norma (de_planta._presilhas_pela_norma, a mesma conta do Posto)
         from nucleo3d.de_planta import _presilhas_pela_norma
         nota_p = a.get("presilhas") or {}
-        n_p = max(int(nota_p.get("qtd") or 0), _presilhas_pela_norma(perfil))
+        n_p = 0 if abraca else max(int(nota_p.get("qtd") or 0), _presilhas_pela_norma(perfil))   # 2.9: a alma do U liga o par
         try:
             larg = 2.0 * afast + float(pl.bf or 0.0)
         except Exception:                              # noqa: BLE001

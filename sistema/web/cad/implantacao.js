@@ -916,6 +916,10 @@ export class MetodosImplantacao {
       if (sel.length < 3) return false;
       const reais = sel.map(real);
       reaisSel = reais;
+      if (opcoes.desenho) {                  // lido pela Identificação no Original (as pontas e os perfis do projeto)
+        des = opcoes.desenho; [u0, z0] = des.origem;
+        return true;
+      }
       try {
         // a legenda só das camadas da tesoura: o texto do pilar ao lado (o "W250x32.7" do PM2, CD Bom Dia) virava o banzo
         const r = await pedir(`/api/projetos/${encodeURIComponent(this.cad.projeto)}/montagem/ler-tesoura`,
@@ -953,6 +957,11 @@ export class MetodosImplantacao {
     const daLegenda = (k) => { const r = leitura && leitura.leitura && leitura.leitura[k]; const n = r && r.perfil; return n && todos.includes(n) ? n : null; };
     if (daLegenda('banzo')) { M.trelica.banzo_sup = daLegenda('banzo'); M.trelica.banzo_inf = daLegenda('banzo'); }
     if (daLegenda('alma')) M.trelica.diagonal = daLegenda('alma');
+    // os perfis da folha de marcas do projeto (a Identificação): banzo, diagonal e montante; dois perfis na alma = dupla
+    const pp = opcoes.perfis || {}, doProjeto = (k) => (pp[k] && todos.includes(pp[k].perfil) ? pp[k].perfil : null);
+    if (doProjeto('banzo')) { M.trelica.banzo_sup = doProjeto('banzo'); M.trelica.banzo_inf = doProjeto('banzo'); }
+    if (doProjeto('diagonal')) { M.trelica.diagonal = doProjeto('diagonal'); M.trelica.cantoneira = pp.diagonal.mult >= 2 ? 'dupla' : 'simples'; }
+    const pMont = doProjeto('montante');
     const pSup = perfilSel('banzo_sup', umU), pInf = perfilSel('banzo_inf', umU), pDia = perfilSel('diagonal', umL);
     const cantSel = el('select', {}, el('option', { value: 'simples', texto: 'simples — uma cantoneira, numa aba do U' }), el('option', { value: 'dupla', texto: 'dupla — uma em cada aba do U' }));
     cantSel.value = M.trelica.cantoneira || 'simples';
@@ -979,7 +988,10 @@ export class MetodosImplantacao {
       const za = zApoio();
       const entre = cruz.filter(c => c.u >= u0 - 300 && c.u <= u0 + des.vao + 300).map(c => c.nome);
       const c = (leitura && leitura.leitura && leitura.leitura.contagem) || null;
-      const modo = c ? `Lida como desenho detalhado: ${c.banzo || 0} trecho(s) de banzo, ${c.diagonal || 0} diagonal(is), ${c.montante || 0} montante(s) — ` : 'Lida como linhas de eixo: ';
+      const cp = opcoes.desenho && opcoes.desenho.contagem;
+      const modo = cp ? `Lida no Original com as pontas do projeto: ${(cp.banzo_sup || 0) + (cp.banzo_inf || 0)} trecho(s) de banzo, ${cp.extremidade || 0} ponta(s), ${cp.diagonal || 0} diagonal(is), ${cp.montante || 0} montante(s)` +
+        (pMont ? ` — perfis pela folha de marcas (montante ${pMont})` : '') + ' — '
+        : c ? `Lida como desenho detalhado: ${c.banzo || 0} trecho(s) de banzo, ${c.diagonal || 0} diagonal(is), ${c.montante || 0} montante(s) — ` : 'Lida como linhas de eixo: ';
       const aps = ((leitura && leitura.apontamentos) || []).filter(a => !/legenda|quantidade/.test(a.msg)).map(a => a.msg);
       info.textContent = modo + `${des.n} barras, ${numero(des.vao / 1000, 3)} m de comprimento e ${numero(des.altura / 1000, 3)} m de altura` +
         (entre.length ? ` (entre os eixos ${entre[0]} e ${entre[entre.length - 1]})` : '') +
@@ -1081,7 +1093,7 @@ export class MetodosImplantacao {
     const atribDe = (parte, nomeP) => {
       const zP = z0 + parte.v0Rel;
       return { elemento: 'trelica', material: 'aco', marca: nomeP, quadro: qi.id, familia_eixo: q.familia,
-        perfis: { banzo_sup: pSup.value, banzo_inf: pInf.value, diagonal: pDia.value }, cantoneira: cantSel.value, aco: acoSel.value,
+        perfis: { banzo_sup: pSup.value, banzo_inf: pInf.value, diagonal: pDia.value, ...(pMont ? { montante: pMont } : {}) }, cantoneira: cantSel.value, aco: acoSel.value,
         nivel_base: nivSel.value ? nivSel.value : Math.round(zP), acima_do_nivel: nv ? Math.round((zP - nv.z) * 10) / 10 : 0,
         desenho: { barras: parte.barras, vao: parte.vao, altura: parte.altura, raio_banzo_sup: parte.raio || null, fonte: sel.map(x => x.id), elevacao: q.id,
           ...(partes.length > 1 ? { parte: partes.indexOf(parte) + 1, partes: partes.length } : {}) } };
@@ -1130,7 +1142,7 @@ export class MetodosImplantacao {
     if (!this.cad.doc.camadas.has('ESTRUTURA') && this.cad._garantirCamadaEstrutura) this.cad._garantirCamadaEstrutura();
     this.cad.executar(cmds.length > 1 ? new ComandoComposto(cmds, `Tesoura ${marcasP.join(', ')}`) : cmds[0]);
     const tipos = { ...(this.m.tipos || {}) };
-    partes.forEach((parte, i) => { tipos[marcasP[i]] = { desenho: atribDe(parte, marcasP[i]).desenho, perfis: { banzo_sup: pSup.value, banzo_inf: pInf.value, diagonal: pDia.value },
+    partes.forEach((parte, i) => { tipos[marcasP[i]] = { desenho: atribDe(parte, marcasP[i]).desenho, perfis: atribDe(parte, marcasP[i]).perfis,
       cantoneira: cantSel.value, aco: acoSel.value, elevacao: q.id, eixo: q.eixo }; });
     this.m.tipos = tipos;
     await this.refazerQuadrosDaObra(this._elevacoes());

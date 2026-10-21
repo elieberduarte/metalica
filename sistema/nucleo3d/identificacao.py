@@ -1052,7 +1052,6 @@ def outras_pecas(des: Desenho, folhas_: List[dict], locacao: dict, gravados: dic
         return nome_num[round(v["pos"], 1)] if v else None
 
     barras, a_definir, sem_cota = [], 0, 0
-    perfis_a_definir = set()
     for f in folhas_:
         if not f["caixa"] or not re.search(r"CONTRAVENT", f["titulo"], re.I) or not re.search(r"PLANTA", f["titulo"], re.I):
             continue                                     # só as plantas (as folhas de peças e de aletas são detalhe)
@@ -1074,10 +1073,10 @@ def outras_pecas(des: Desenho, folhas_: List[dict], locacao: dict, gravados: dic
             if not info or not info["papel"]:
                 continue
             papel, perfil = info["papel"], info["perfil"]
-            if papel == "a definir":
+            e_a_definir = papel == "a definir"
+            if e_a_definir:
                 a_definir += 1
                 papel, perfil = "corrente", corrente
-                perfis_a_definir.add(corrente or "o padrão")
             ga, pa = no_sistema(e.a, dx, dy)
             gb, pb = no_sistema(e.b, dx, dy)
             ua, ub = (pa - pA) * sentido, (pb - pA) * sentido
@@ -1096,10 +1095,45 @@ def outras_pecas(des: Desenho, folhas_: List[dict], locacao: dict, gravados: dic
             if papel == "corrente" and not marca.startswith(("AG", "CR")):
                 marca = "AG" if "AGULH" in (e.camada or "").upper() and "Ø" in (info["texto"] or "") else "CR"
             barras.append({"marca": marca, "papel": papel, "perfil": perfil, "plano": plano if papel == "contraventamento" else "terças",
-                           "g_a": round(ga, 1), "p_a": round(pa, 1), "z_a": za, "g_b": round(gb, 1), "p_b": round(pb, 1), "z_b": zb})
+                           "g_a": round(ga, 1), "p_a": round(pa, 1), "z_a": za, "g_b": round(gb, 1), "p_b": round(pb, 1), "z_b": zb,
+                           **({"a_definir": True} if e_a_definir else {})})
+    # as marcas das correntes pela tabela de peças ("AGULHAMENTOS DIAGONAIS - BARRA REDONDA Ø3/8" (AG3)"): perfil → marca
+    from nucleo2d.reconhecer import perfil_do_texto
+    marca_do_perfil: Dict[str, str] = {}
+    for f in folhas_:
+        if not f["caixa"] or not re.search(r"PE[CÇ]AS", f["titulo"], re.I):
+            continue
+        for e in des.entidades.values():
+            if isinstance(e, Texto) and _dentro(e, f["caixa"]):
+                m = re.search(r"\(((?:AG|CR)\d+)\)\s*$", e.texto or "")
+                pf = perfil_do_texto(e.texto or "") if m else None
+                if m and pf:
+                    marca_do_perfil.setdefault(pf["perfil"], m.group(1).upper())
+
+    def forma(b):
+        dg, dp = abs(b["g_b"] - b["g_a"]), abs(b["p_b"] - b["p_a"])
+        L = math.hypot(dg, dp)
+        return ("diag" if min(dg, dp) > 0.2 * L else "reta"), L
+    definidas = [b for b in barras if b["papel"] == "corrente" and not b.get("a_definir")]
+    perfis_a_definir = collections.Counter()
+    for b in barras:
+        if b["papel"] != "corrente":
+            continue
+        if b.get("a_definir"):
+            # a peça "A DEFINIR" do projetista vai com o perfil da definida de mesma forma (a diagonal com a diagonal, a reta
+            # com a reta, comprimento parecido): no Hangar, 16 diagonais A DEFINIR iguais às AG3 Ø3/8" saíam em L 25×25
+            # como corrente (o usuário, 20/10: "alguns contraventamentos de barra viraram cantoneiras")
+            fb, Lb = forma(b)
+            cand = [d for d in definidas if forma(d)[0] == fb and abs(forma(d)[1] - Lb) <= 0.3 * Lb]
+            if cand:
+                d = min(cand, key=lambda d: abs(forma(d)[1] - Lb))
+                b["perfil"] = d["perfil"]
+            perfis_a_definir[b["perfil"] or "o padrão"] += 1
+        if not re.match(r"^(AG|CR)\d", b["marca"] or "") and b["perfil"] in marca_do_perfil:
+            b["marca"] = marca_do_perfil[b["perfil"]] + ("?" if b.get("a_definir") else "")
     if a_definir:
-        avisos.append("%d corrente(s) na camada \"A DEFINIR\" do projetista: foram com o perfil das correntes (%s) — confirme com o projetista."
-                      % (a_definir, ", ".join(sorted(perfis_a_definir))))
+        avisos.append("%d peça(s) na camada \"A DEFINIR\" do projetista foram com o perfil da peça definida de mesma forma (%s) — "
+                      "confirme com o projetista." % (a_definir, ", ".join("%d com %s" % (n, p) for p, n in sorted(perfis_a_definir.items()))))
     if sem_cota:
         avisos.append("%d peça(s) sem a tesoura do eixo delas lida: ficaram na cota do apoio — confira." % sem_cota)
 
@@ -1162,3 +1196,179 @@ def outras_pecas(des: Desenho, folhas_: List[dict], locacao: dict, gravados: dic
                 avisos.append("%s: a alma não tem perfil escrito na folha %d — foi com %s; confirme com o projetista." % (sig, v["folha"], ALMA_PADRAO))
     return {"barras": barras, "trelicas": trelicas, "avisos": avisos,
             "resumo": dict(collections.Counter(b["marca"] or b["papel"] for b in barras) + collections.Counter(t["marca"] for t in trelicas))}
+
+
+# ------------------------------------------- a tesoura como o projeto: as pontas e os perfis (Hangar Almayer, 20/10/2026)
+
+_MARCA_DA_PECA = re.compile(r"^\s*T\d+-([BML])\d+\s+(\S+)\s+L\s*=", re.I)
+
+
+def perfis_da_tesoura(des: Desenho, tipo: str, folhas_: List[dict]) -> Dict[str, dict]:
+    """Os perfis da tesoura `tipo` pelo projeto (20/10/2026, o usuário: no Hangar o modelo saiu com o U 150 e a L 50 do
+    diálogo): a folha de marcas ("T2-B1 2U127x50#3,75 L=999,0 16 PÇ": B = banzo, M = montante, L = diagonal) e a legenda
+    da vista geral (a diagonal que a tabela não lista: a cantoneira que sobra, fora a do suporte "(ST1)").
+    {banzo|montante|diagonal: {perfil (catálogo), mult (2 = dois perfis: banzo composto, cantoneira dupla), texto}}."""
+    from nucleo2d.reconhecer import perfil_do_texto
+    base = tipo.split("-")[0]
+    rx_tipo = re.compile(r"\b%s\b" % re.escape(base))
+    out: Dict[str, dict] = {}
+
+    def pega(chave, texto):
+        p = perfil_do_texto(texto)
+        if p and chave not in out:
+            out[chave] = {"perfil": p["perfil"], "mult": int(p.get("mult") or 1), "texto": texto.strip()}
+    nome = {"B": "banzo", "M": "montante", "L": "diagonal"}
+    for f in folhas_:
+        if not f["caixa"] or not rx_tipo.search(f["titulo"]) or not re.search(r"MARCAS", f["titulo"], re.I):
+            continue
+        for e in des.entidades.values():
+            if isinstance(e, Texto) and _dentro(e, f["caixa"]):
+                m = _MARCA_DA_PECA.match(e.texto or "")
+                if m:
+                    pega(nome[m.group(1).upper()], m.group(2))
+    for f in folhas_:
+        if not f["caixa"] or not rx_tipo.search(f["titulo"]) or not re.search(r"VISTA\s+GERAL", f["titulo"], re.I):
+            continue
+        textos = sorted((e for e in des.entidades.values() if isinstance(e, Texto) and _dentro(e, f["caixa"])), key=lambda e: -e.posicao[1])
+        for e in textos:
+            t = (e.texto or "").strip()
+            if "(ST" in t.upper() or re.search(r"CHAPA|#\s*\d+[,.]?\d*\s*$", t, re.I) and not re.search(r"[UL]\s*\d", t):
+                continue
+            p = perfil_do_texto(t)
+            if not p:
+                continue
+            if "banzo" not in out and p["perfil"].startswith(("U", "W", "TQ", "TR")):
+                pega("banzo", t)
+            elif p["perfil"].startswith("L") and p["perfil"] != (out.get("montante") or {}).get("perfil"):
+                pega("diagonal", t)
+    if "montante" not in out and "diagonal" in out:
+        out["montante"] = dict(out["diagonal"])
+    return out
+
+
+def _pares_de_linhas(ents: List[dict], camada_rx=r"TESOURA") -> List[tuple]:
+    """os pares de linhas paralelas da mesma camada a 60–320 mm (o perfil desenhado pelas duas faces): [(a, b, dist)]"""
+    L = [e for e in ents if e.get("tipo") == "linha" and re.search(camada_rx, e.get("camada") or "", re.I)]
+    out, usados = [], set()
+    for i, a in enumerate(L):
+        for j in range(i + 1, len(L)):
+            b = L[j]
+            if i in usados or j in usados:
+                continue
+            ua = (a["b"][0] - a["a"][0], a["b"][1] - a["a"][1])
+            ub = (b["b"][0] - b["a"][0], b["b"][1] - b["a"][1])
+            la, lb = math.hypot(*ua), math.hypot(*ub)
+            if la < 1 or lb < 1 or abs(ua[0] * ub[1] - ua[1] * ub[0]) / (la * lb) > 0.02:
+                continue
+            n = (-ua[1] / la, ua[0] / la)
+            dist = abs((b["a"][0] - a["a"][0]) * n[0] + (b["a"][1] - a["a"][1]) * n[1])
+            if 60 <= dist <= 320:
+                out.append((a, b, dist))
+                usados |= {i, j}
+    return out
+
+
+def desenho_da_tesoura(des: Desenho, caixa, perfis: Optional[Dict[str, dict]] = None) -> Optional[dict]:
+    """O desenho da tesoura da folha no formato da treliça da planta ([u0, v0, u1, v1, papel, perfil, seção]), já com
+    as pontas como o projeto: o trecho a 45° em linha dupla é banzo (regra 1.2: o topo do painel de ponta) ligado ao
+    início do banzo de cima, e a peça em pé (o contorno pequeno no apoio, "T2-B3 L=12,3") é a ponta com o perfil do
+    banzo (regra 1.4), do eixo do banzo de baixo até o trecho a 45°. Sem isso o leitor deixava o trecho a 45° como
+    diagonal solta e perdia a ponta (as pontas do Hangar sem ligação, 20/10). `origem` é o ponto do desenho do cliente
+    que vira o (0, 0) das barras."""
+    from nucleo3d import leitura_quadros as LQ
+    r = tesoura_da_folha(des, caixa)
+    ents = r.get("entidades") or []
+    if not ents:
+        return None
+    lt, _ap, el = LQ.ler_tesoura({"id": "t", "tipo": "tesoura", "nome": "T", "escala": 1, "x": 0.0, "y": 0.0}, ents)
+    if el is None or not lt.get("membros"):
+        return None
+    xe, yb = float(el.x_esq), float(el.y_base)
+    ms = [dict(m) for m in lt["membros"] if not m.get("moldura")]
+    bz = [m for m in ms if m["papel"] == "banzo"]
+
+    def h_em(m, s):
+        return min(m["h0"], m["h1"]) if abs(m["s1"] - m["s0"]) < 1e-6 else m["h0"] + (m["h1"] - m["h0"]) * (s - m["s0"]) / (m["s1"] - m["s0"])
+
+    def perto_seg(p, a, b):
+        return _dist_seg(p, a, b)
+    extras = []
+    for a, b, _d in _pares_de_linhas(ents):
+        # a linha de centro do par, no sistema da leitura (s ao longo, h para cima)
+        pa = ((a["a"][0] + (b["a"] if math.dist(a["a"], b["a"]) < math.dist(a["a"], b["b"]) else b["b"])[0]) / 2,
+              (a["a"][1] + (b["a"] if math.dist(a["a"], b["a"]) < math.dist(a["a"], b["b"]) else b["b"])[1]) / 2)
+        pb = ((a["b"][0] + (b["b"] if math.dist(a["b"], b["b"]) < math.dist(a["b"], b["a"]) else b["a"])[0]) / 2,
+              (a["b"][1] + (b["b"] if math.dist(a["b"], b["b"]) < math.dist(a["b"], b["a"]) else b["a"])[1]) / 2)
+        lo, hi = sorted([(pa[0] - xe, pa[1] - yb), (pb[0] - xe, pb[1] - yb)], key=lambda q: q[1])
+        # sai o que o leitor fez desse par (a "diagonal" deslocada)
+        ms = [m for m in ms if not (m["papel"] != "banzo" and perto_seg((m["s0"], m["h0"]), lo, hi) < 90 and perto_seg((m["s1"], m["h1"]), lo, hi) < 90)]
+        # a ponta de cima no começo do banzo de cima mais perto
+        cand = [(math.dist(hi, (m[k0], m[k1])), (m[k0], m[k1])) for m in bz for k0, k1 in (("s0", "h0"), ("s1", "h1"))]
+        d_, q_ = min(cand, default=(1e9, hi))
+        if d_ <= 150:
+            hi = q_
+        extras.append({"lo": lo, "hi": hi})
+    # as peças em pé: os contornos pequenos da camada da tesoura junto do apoio
+    for e in ents:
+        if e.get("tipo") != "polilinha" or not e.get("fechada") or not re.search(r"TESOURA", e.get("camada") or "", re.I):
+            continue
+        xs, ys = [v[0] for v in e["vertices"]], [v[1] for v in e["vertices"]]
+        if max(xs) - min(xs) > 400 or max(ys) - min(ys) > 400:
+            continue
+        cx = (min(xs) + max(xs)) / 2 - xe
+        de_baixo = [m for m in bz if min(m["s0"], m["s1"]) - 50 <= cx <= max(m["s0"], m["s1"]) + 50]
+        if not de_baixo:
+            continue
+        hb = min(h_em(m, min(max(cx, min(m["s0"], m["s1"])), max(m["s0"], m["s1"]))) for m in de_baixo)
+        topo = max(ys) - yb
+        par = min(extras, key=lambda x: abs(x["lo"][0] - cx), default=None)
+        if par and abs(par["lo"][0] - cx) <= 150:
+            topo = par["lo"][1]
+            par["lo"] = (cx, topo)                        # o trecho a 45° nasce no topo da ponta
+        if topo - hb > 20:
+            extras.append({"ponta": True, "lo": (cx, hb), "hi": (cx, topo)})
+            # o que o leitor achou em pé no mesmo lugar (a T3: um "montante" sobre a ponta) sai — a ponta é ela
+            ms = [m for m in ms if not (m["papel"] != "banzo" and abs(m["s0"] - cx) < 40 and abs(m["s1"] - cx) < 40)]
+    barras = []
+    for m in ms:
+        papel = m["papel"] if m["papel"] in ("montante", "diagonal") else "diagonal"
+        if m["papel"] == "banzo":
+            s = (m["s0"] + m["s1"]) / 2
+            h = h_em(m, s)
+            outros = [h_em(o, s) for o in bz if o is not m and min(o["s0"], o["s1"]) - 1 <= s <= max(o["s0"], o["s1"]) + 1]
+            abaixo, acima = any(x < h - 50 for x in outros), any(x > h + 50 for x in outros)
+            papel = "diagonal" if abaixo and acima else "banzo_sup" if abaixo else "banzo_inf"
+        barras.append([m["s0"], m["h0"], m["s1"], m["h1"], papel])
+    for x in extras:
+        barras.append([x["lo"][0], x["lo"][1], x["hi"][0], x["hi"][1], "extremidade" if x.get("ponta") else "banzo_sup"])
+    # os perfis do projeto em cada barra (o banzo de dois U = composto; a ponta e o trecho a 45° com o do banzo)
+    perfis = perfis or {}
+    # a seção do banzo: dois perfis = composto; um U desenhado com a altura toda em pé (a faixa do banzo com a altura do
+    # perfil — o corte T1 do Hangar, folha 29) = a alma no plano da tesoura, como o projeto
+    sec_banzo = ""
+    pb_ = perfis.get("banzo")
+    if pb_:
+        if pb_["mult"] >= 2:
+            sec_banzo = "composto"
+        else:
+            try:
+                from nucleo3d.geometria import resolver_perfil
+                d_ = float(resolver_perfil(pb_["perfil"]).d or 0.0)
+            except Exception:                                    # noqa: BLE001
+                d_ = 0.0
+            faixas = [m.get("dupla") or 0.0 for m in bz if m.get("dupla")]
+            if d_ and faixas and abs(sorted(faixas)[len(faixas) // 2] - d_) <= 0.12 * d_:
+                sec_banzo = "alma_no_plano"
+    for b in barras:
+        chave = "banzo" if b[4] in ("banzo_sup", "banzo_inf", "extremidade") else ("montante" if b[4] == "montante" else "diagonal")
+        p = perfis.get(chave)
+        if p:
+            # [perfil, seção do banzo, vão entre os perfis, virar, cantoneira dupla] — o "2L32x32" da lista de marcas vira o
+            # par que abraça a alma do U (regras_trelica 2.9, de_planta_estrutura)
+            b += [p["perfil"], sec_banzo if chave == "banzo" else "", None, False, chave != "banzo" and p["mult"] >= 2]
+    s0 = min(min(b[0], b[2]) for b in barras)
+    h0 = min(min(b[1], b[3]) for b in barras)
+    out = [[round(b[0] - s0, 1), round(b[1] - h0, 1), round(b[2] - s0, 1), round(b[3] - h0, 1)] + b[4:] for b in barras]
+    cont = collections.Counter(b[4] for b in out)
+    return {"barras": out, "vao": round(max(max(b[0], b[2]) for b in out), 1), "altura": round(max(max(b[1], b[3]) for b in out), 1),
+            "origem": [round(xe + s0, 1), round(yb + h0, 1)], "contagem": dict(cont), "pontas": sum(1 for x in extras if x.get("ponta"))}
