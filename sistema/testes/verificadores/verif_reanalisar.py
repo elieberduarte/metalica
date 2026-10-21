@@ -9,6 +9,7 @@ BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
 from test_reanalise import _tesoura
+from nucleo3d.reanalise import VERSAO_REGRAS    # o carimbo é a versão de hoje (sobe a cada regra nova: 4 em 21/10)
 try: sys.stdout.reconfigure(errors="replace")
 except Exception: pass
 
@@ -82,8 +83,20 @@ try:
     # 0) a barra única (área de trabalho): Modelo › Reanalisar estrutura… em destaque, no alto
     aba.navegar(f"http://localhost:{PORTA}/dividida?projeto=antigo", limite=60)
     ok(esperar("!!document.querySelector('.menu[data-nome=\"Modelo\"] .menu-botao')", 30), "a área de trabalho abriu com a barra única")
-    clicar('.menu[data-nome="Modelo"] .menu-botao')
-    ok(esperar("!!document.querySelector('.menu[data-nome=\"Modelo\"] .menu-lista button')", 10), "o menu Modelo abriu")
+    # os dois lados (2D e 3D) carregando pegam o foco, e a barra fecha o menu quando a janela perde o foco (barra_unica.js,
+    # o blur): com a máquina cheia (a conferência de 21/10) o clique caía nessa hora e o menu fechava sozinho — espera
+    # os lados prontos e o 3D aberto, e clica de novo se ainda fechar
+    esperar("['f2d', 'f3d'].every(id => { const f = document.getElementById(id); const d = f && f.contentDocument; "
+            "return d && d.readyState === 'complete' && d.location.href !== 'about:blank'; })", 60)
+    esperar("(() => { const w = document.getElementById('f3d').contentWindow; return !!(w && (w.ver3dPronto || w.editor)); })()", 60)
+    aba.drenar(1.0)
+    aberto = False
+    for _ in range(10):
+        clicar('.menu[data-nome="Modelo"] .menu-botao')
+        if esperar("!!document.querySelector('.menu[data-nome=\"Modelo\"] .menu-lista button')", 1):
+            aberto = True
+            break
+    ok(aberto, "o menu Modelo abriu")
     primeiro = js("(document.querySelector('.menu[data-nome=\"Modelo\"] .menu-lista > button, .menu[data-nome=\"Modelo\"] .menu-lista > .item-sub') || {}).textContent || ''")
     ok(str(primeiro).startswith("Reanalisar estrutura"), f"o primeiro item do menu Modelo é o Reanalisar estrutura: {primeiro[:60]!r}")
     ok(js("!!document.querySelector('.menu[data-nome=\"Modelo\"] .menu-lista > button.destaque')"), "e está em destaque")
@@ -122,7 +135,8 @@ try:
     ok(not jsj(f"return editor.documento.entidades.has({json.dumps(D['toco'].id)});"), "o toco saiu")
     ok(jsj(f"return editor.documento.entidades.has({json.dumps(D['bloqueada'].id)});"), "o toco bloqueado ficou")
     ok(jsj(f"return editor.documento.entidades.has({json.dumps(D['ponta'].id)});"), "o montante da ponta ficou")
-    ok(jsj("return (editor.documento.metadados.reanalise || {}).versao;") == 1, "o carimbo da versão das regras no modelo")
+    carimbo = jsj("return (editor.documento.metadados.reanalise || {}).versao;")
+    ok(carimbo == VERSAO_REGRAS, f"o carimbo da versão das regras no modelo ({carimbo}, as regras estão na {VERSAO_REGRAS})")
     ok(esperar("!document.querySelector('.painel-reanalise .aplicar-reanalise') && !!document.querySelector('.painel-reanalise')", 10),
        "o painel fica só com o que é para conferir")
     erros("Aplicar")
