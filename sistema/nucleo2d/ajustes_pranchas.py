@@ -158,6 +158,108 @@ def _tamanhos(junto: Desenho) -> Dict[str, List[float]]:
 ANCORA_FOLGA = 15.0
 
 
+# ------------------------------------------------------------------ as folhas
+# A célula movida é aprendida pela folha em que ficou, não pelo lugar no desenho: o usuário apagou uma folha no CAD e
+# encostou as seguintes à mão (Vicente, 21/10) — medido no desenho, cada célula das folhas encostadas "andava" uma folha
+# para a esquerda, e a próxima montagem (as molduras de volta nos lugares de sempre) punha o conteúdo de cada folha na
+# moldura da anterior. A folha cuja moldura foi apagada fica guardada (`folhas_apagadas`) e sai da montagem seguinte se
+# ficar sem célula nenhuma (o que estava nela foi levado para outras).
+def _chave_folha(info: dict, k: int) -> str:
+    """a identidade da folha entre gerações: a primeira célula dela (a numeração muda quando uma folha sai)"""
+    cels = [c.get("id") for c in info.get("celulas") or [] if c.get("id")]
+    return ("cel:" + str(cels[0])) if cels else "folha:%s:%d" % (info.get("titulo") or "", k)
+
+
+def _folhas(d: Desenho) -> List[dict]:
+    """as folhas do desenho das pranchas: {chave, info, gerada (a origem montada), atual (a da moldura no desenho, None
+    se ela foi apagada), tam, celulas (ids)}"""
+    from nucleo2d.pranchas import FOLHAS
+    pts: Dict[str, list] = {}
+    for e in d.entidades.values():
+        a = e.atributos or {}
+        if a.get("prancha") == "moldura" and a.get("folha"):
+            q = e.pontos()
+            if q:
+                pts.setdefault(str(a["folha"]), []).extend(q)
+    out = []
+    for k, info in enumerate(d.metadados.get("pranchas") or []):
+        if info.get("formato") not in FOLHAS:
+            continue
+        ger = info.get("origem_gerada") or info.get("origem") or [0.0, 0.0]
+        q = pts.get(str(info.get("folha") or ""))
+        if info.get("folha") and pts:
+            atual = (min(p[0] for p in q), min(p[1] for p in q)) if q else None
+        else:
+            o_ = info.get("origem") or ger
+            atual = (float(o_[0]), float(o_[1]))          # sem molduras identificadas: como montada
+        out.append({"chave": _chave_folha(info, k), "info": info, "gerada": (float(ger[0]), float(ger[1])),
+                    "atual": atual, "tam": FOLHAS[info["formato"]],
+                    "celulas": {c.get("id") for c in info.get("celulas") or [] if c.get("id")}})
+    return out
+
+
+def _folha_em(folhas: Sequence[dict], p: Tuple[float, float]) -> Optional[dict]:
+    for f in folhas:
+        a = f["atual"]
+        if a is not None and a[0] - 1e-6 <= p[0] <= a[0] + f["tam"][0] + 1e-6 and a[1] - 1e-6 <= p[1] <= a[1] + f["tam"][1] + 1e-6:
+            return f
+    return None
+
+
+def _tirar_folhas_apagadas(junto: Desenho, chaves: Sequence[str]) -> List[str]:
+    """As folhas apagadas pelo usuário que ficaram sem célula (o que ia nelas foi levado para outras): saem da montagem
+    nova — a moldura, o quadro e a legenda delas — e as seguintes encostam, como ele fez à mão. Devolve os títulos."""
+    from nucleo2d.pranchas import FOLGA_ENTRE_FOLHAS, sincronizar_folhas
+    chaves = set(chaves or ())
+    tiradas = []
+    for f in [f for f in _folhas(junto) if f["chave"] in chaves]:
+        info = f["info"]
+        x0, y0 = (float(v) for v in (info.get("origem") or [0.0, 0.0])[:2])
+        larg, alt = f["tam"]
+        dentro, tem_celula = [], False
+        for k, e in junto.entidades.items():
+            q = e.pontos()
+            if not q:
+                continue
+            cx = sum(p[0] for p in q) / len(q)
+            cy = sum(p[1] for p in q) / len(q)
+            if x0 <= cx <= x0 + larg and y0 <= cy <= y0 + alt:
+                a = e.atributos or {}
+                if a.get("cel") or a.get("a_mao"):
+                    tem_celula = True
+                    break
+                dentro.append(k)
+        if tem_celula:
+            continue
+        for k in dentro:
+            junto.entidades.pop(k, None)
+        passo = larg + FOLGA_ENTRE_FOLHAS
+
+        def mover(p_, passo=passo):
+            return (round(p_[0] - passo, 3), p_[1])
+        for e in junto.entidades.values():
+            q = e.pontos()
+            if q and sum(p[0] for p in q) / len(q) > x0 + larg and y0 <= sum(p[1] for p in q) / len(q) <= y0 + alt:
+                _transformar(e, mover, 1.0)
+        for outra in junto.metadados.get("pranchas") or []:
+            o = outra.get("origem") or [0.0, 0.0]
+            if outra is info or not (float(o[0]) > x0 and abs(float(o[1]) - y0) < 1.0):
+                continue
+            outra.setdefault("origem_gerada", list(o))
+            outra["origem"] = [round(float(o[0]) - passo, 2), float(o[1])]
+            for chave in ("quadro", "carimbo"):
+                if outra.get(chave):
+                    outra[chave] = [round(v - (passo if i % 2 == 0 else 0.0), 2) for i, v in enumerate(outra[chave])]
+            for c in outra.get("celulas") or []:
+                if c.get("caixa"):
+                    c["caixa"] = [round(v - (passo if i % 2 == 0 else 0.0), 2) for i, v in enumerate(c["caixa"])]
+        junto.metadados["pranchas"] = [i for i in junto.metadados.get("pranchas") or [] if i is not info]
+        tiradas.append(str(info.get("titulo") or f["chave"]))
+    if tiradas:
+        sincronizar_folhas(junto)                     # a numeração e o "PRANCHA nn/tt" dos carimbos
+    return tiradas
+
+
 def marcar(junto: Desenho) -> dict:
     """A impressão do gerado em cada entidade das células (`g`). Nos metadados do desenho fica só a origem de
     cada célula (`ajustaveis`); a lista de assinaturas por célula — grande (560 KB no depósito), e no desenho
@@ -224,6 +326,18 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
     if not ajv:
         return ajustes
     cx_antigo = _tamanhos(antigo)
+    folhas = _folhas(antigo)
+    folha_ger = {cel: f for f in folhas for cel in f["celulas"]}
+    desloc = {}                                       # o deslocamento de verdade de cada célula no desenho gravado
+    apagadas_f = set(ajustes.get("folhas_apagadas") or [])
+    for f in folhas:
+        if f["atual"] is None:
+            if f["chave"] not in apagadas_f:
+                diario.append({"quando": quando, "celula": "", "ajuste": "folha apagada: %s" % (f["info"].get("titulo") or f["chave"])})
+            apagadas_f.add(f["chave"])
+        else:
+            apagadas_f.discard(f["chave"])
+    ajustes["folhas_apagadas"] = sorted(apagadas_f)
     por_cel: Dict[str, list] = collections.defaultdict(list)
     a_mao = []
     for e in antigo.entidades.values():
@@ -277,11 +391,30 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
                 dx = 0.0
             if abs(dy) < TOLERANCIA:
                 dy = 0.0
-            if s != 1.0 or dx or dy:
-                novo["d"] = [round(dx, 3), round(dy, 3)]
+            desloc[cel] = (dx, dy)
+            # pela folha: a folha inteira movida não é a célula movida; a célula levada para outra folha vai para ela
+            gd, em, outra_folha = (dx, dy), None, False
+            S = folha_ger.get(cel)
+            cx_c = info.get("cx") or cx_antigo.get(cel) or [0.0, 0.0]
+            if S is not None and (dx or dy):
+                o_atual = (o[0] + dx, o[1] + dy)
+                T = _folha_em(folhas, (o_atual[0] + float(cx_c[0]) * s / 2.0, o_atual[1] + float(cx_c[1]) * s / 2.0))
+                if T is not None:
+                    rel_atual = (o_atual[0] - T["atual"][0], o_atual[1] - T["atual"][1])
+                    rel_ger = (o[0] - S["gerada"][0], o[1] - S["gerada"][1])
+                    outra_folha = T is not S
+                    if not outra_folha and math.dist(rel_atual, rel_ger) <= TOLERANCIA:
+                        gd = (0.0, 0.0)                   # só a folha andou
+                    elif outra_folha or (S["atual"] is not None and S["atual"] != S["gerada"]):
+                        em = {"folha": T["chave"], "rel": [round(rel_atual[0], 3), round(rel_atual[1], 3)]}
+            if s != 1.0 or gd != (0.0, 0.0) or em:
+                novo["d"] = [round(gd[0], 3), round(gd[1], 3)]
                 novo["s"] = round(s, 5)
+                if em:
+                    novo["em"] = em
                 diario.append({"quando": quando, "celula": cel,
-                               "ajuste": "célula movida %.1f, %.1f mm%s" % (dx, dy, "" if s == 1.0 else ", escala × %.3f" % s)})
+                               "ajuste": ("célula levada para a folha de %s" % em["folha"].split("|")[-1] if outra_folha
+                                          else "célula movida %.1f, %.1f mm" % gd) + ("" if s == 1.0 else ", escala × %.3f" % s)})
 
             def leva(p):
                 return (o[0] + s * (p[0] - o[0]) + dx, o[1] + s * (p[1] - o[1]) + dy)
@@ -344,7 +477,7 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
         if not o_ or not cx_:
             continue
         aj_ = celulas.get(cel) or {}
-        d_, s_ = aj_.get("d") or [0.0, 0.0], float(aj_.get("s") or 1.0)
+        d_, s_ = desloc.get(cel) or aj_.get("d") or [0.0, 0.0], float(aj_.get("s") or 1.0)
         x0, y0 = float(o_[0]) + d_[0], float(o_[1]) + d_[1]
         caixas[cel] = (x0, y0, x0 + float(cx_[0]) * s_, y0 + float(cx_[1]) * s_)
 
@@ -394,6 +527,7 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
     # o gerador mudou a célula desde que o ajuste foi aprendido: ele sai (e vai para o diário), em vez de deslocar
     # de novo o que a regra nova já arrumou
     tam = _tamanhos(junto)
+    na_folha = {f["chave"]: f["gerada"] for f in _folhas(junto)}     # a montagem nova: onde cada folha ficou
     descartar = [cel for cel in celulas if por_cel.get(cel) and cel in origens
                  and _gerador_mudou(cel, celulas[cel], ajustes, por_cel[cel], tam.get(cel))]
     if descartar:
@@ -410,7 +544,7 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
     for cel in list(celulas):
         aj = celulas[cel]
         o_velho = _origem_base(cel, aj, ajustes)
-        if not aj.get("d") or cel not in origens or o_velho is None:
+        if not aj.get("d") or cel not in origens or o_velho is None or (aj.get("em") or {}).get("folha") in na_folha:
             continue
         if math.dist(o_velho, origens[cel]) <= TOLERANCIA_CAIXA:
             continue
@@ -441,6 +575,11 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
         o = origens[cel]
         s = float(aj.get("s") or 1.0)
         dx, dy = (aj.get("d") or [0.0, 0.0])
+        em = aj.get("em") or {}
+        if em.get("folha") in na_folha and em.get("rel"):
+            # na folha em que o usuário a deixou, no mesmo lugar dentro dela
+            fo = na_folha[em["folha"]]
+            dx, dy = fo[0] + float(em["rel"][0]) - o[0], fo[1] + float(em["rel"][1]) - o[1]
         apagadas = set(aj.get("apagadas") or [])
         ents_aj = aj.get("ents") or {}
         achadas = set()
@@ -492,6 +631,9 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
                     rel["a_mao_movidas"] = rel.get("a_mao_movidas", 0) + 1
             junto.add(e)
             rel["a_mao"] += 1
+    tiradas = _tirar_folhas_apagadas(junto, (ajustes or {}).get("folhas_apagadas") or [])
+    if tiradas:
+        rel["folhas_tiradas"] = tiradas
     return rel
 
 
