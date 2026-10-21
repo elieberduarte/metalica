@@ -326,7 +326,8 @@ export class Editor {
       const url = new URL(location.href); url.searchParams.delete('lancar'); history.replaceState(null, '', url);
       setTimeout(() => this.dialogoLancar(), 300);
     }
-    // o botão Reanalisar estrutura do modo ver (web/visor3d) abre o editor já com a prévia
+    // ?reanalisar=1: o editor abre já com a prévia do Reanalisar estrutura (o botão do modo ver saiu em 21/10; o comando
+    // fica no menu Modelo)
     if (this.projeto && this.parametros.get('reanalisar') === '1') {
       const url = new URL(location.href); url.searchParams.delete('reanalisar'); history.replaceState(null, '', url);
       setTimeout(() => this.reanalisarEstrutura(), 300);

@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Reanalisar estrutura (19/10/2026), no navegador de verdade: o modelo antigo (a tesoura do test_reanalise longe da origem,
 nas coordenadas do CD Bom Dia, com um toco solto, uma diagonal pendurada, uma passando do banzo, uma repetida…) abre no
-modo ver; o botão ⟳ Reanalisar estrutura carrega o editor já com a prévia; clicar num achado seleciona a peça; Aplicar
+modo ver, sem o botão na barra (usuário, 21/10: "retire esse botão de reanalisar estrutura da tela principal, deixe dentro do
+menu do modelo"); Modelo › Reanalisar estrutura… carrega o editor já com a prévia; clicar num achado seleciona a peça; Aplicar
 tira as sobras numa entrada só de desfazer e grava o carimbo da versão das regras; o Ctrl+Z volta tudo; o menu Modelo da
 barra única tem o item em destaque; nenhum erro no console."""
 import json, os, subprocess, sys, tempfile, time
@@ -100,16 +101,22 @@ try:
     primeiro = js("(document.querySelector('.menu[data-nome=\"Modelo\"] .menu-lista > button, .menu[data-nome=\"Modelo\"] .menu-lista > .item-sub') || {}).textContent || ''")
     ok(str(primeiro).startswith("Reanalisar estrutura"), f"o primeiro item do menu Modelo é o Reanalisar estrutura: {primeiro[:60]!r}")
     ok(js("!!document.querySelector('.menu[data-nome=\"Modelo\"] .menu-lista > button.destaque')"), "e está em destaque")
+    # o item, com o 3D no modo ver: carrega o editor no quadro e abre a prévia
+    clicar('.menu[data-nome="Modelo"] .menu-lista > button.destaque')
+    ok(esperar("(() => { const d = document.getElementById('f3d').contentDocument; "
+               "return !!(d && d.querySelector('.painel-reanalise .aplicar-reanalise')); })()", 120),
+       "Modelo › Reanalisar estrutura… abre o editor no quadro do 3D com a prévia")
     erros("Barra única")
 
-    # 1) o modo ver: o botão em destaque ao lado do Editar abre o editor já com a prévia
+    # 1) o modo ver não tem mais o botão na barra (fica no menu Modelo); o editor pedido com a reanálise abre com a prévia
     aba.navegar(f"http://localhost:{PORTA}/visor3d/ver3d.html?projeto=antigo", limite=60)
     ok(esperar("!!window.ver3dPronto", 60), "o modo ver abriu")
-    ok(js("!!document.querySelector('#btn-reanalisar.forte')"), "o modo ver tem o botão ⟳ Reanalisar estrutura em destaque")
+    ok(js("!document.querySelector('#btn-reanalisar') && ![...document.querySelectorAll('#ferramentas button')].some(b => /Reanalisar/.test(b.textContent))"),
+       "a barra do modo ver não tem o botão Reanalisar estrutura")
     aba.console.clear()
-    clicar("#btn-reanalisar")
+    aba.navegar(f"http://localhost:{PORTA}/editor?projeto=antigo&reanalisar=1", limite=60)
     ok(esperar(f"location.pathname === '/editor' && !!(window.editor && editor.documento && editor.documento.entidades.size >= {N0})", 60),
-       "o botão carregou o editor com o modelo")
+       "o editor abriu com o modelo")
     ok(esperar("!!document.querySelector('.painel-reanalise .aplicar-reanalise')", 90), "a prévia abriu sozinha, com o botão Aplicar")
     ok(js("!new URL(location.href).searchParams.has('reanalisar')"), "o pedido sai da URL (F5 não reabre a prévia)")
     ok(n_pecas() == N0, "a prévia não mudou o modelo")

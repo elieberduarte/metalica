@@ -779,7 +779,6 @@ function ligar() {
   visor.controles.addEventListener('change', () => { if (medida.length === 2) posicionarRotulo(); });
 
   $('#btn-editar').onclick = irParaEditor;
-  $('#btn-reanalisar').onclick = () => irParaEditor({ reanalisar: '1' });       // o editor abre já com a prévia
   $('#painel-fechar').onclick = fecharPainel;
   $('#painel-corpo').addEventListener('click', ev => {
     const el = ev.target.closest && ev.target.closest('i.cor');
