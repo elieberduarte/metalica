@@ -102,12 +102,28 @@ export class Terreno {
     // a saída do visor é linear (sem a volta para sRGB): a foto vai como está, senão sai escura
     tex.colorSpace = THREE.NoColorSpace;
     tex.anisotropy = this.visor.renderer.capabilities.getMaxAnisotropy();
-    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false,
+    // a transparência só onde há obra por trás do chão (usuário, 20/10: no tema claro "a imagem com transparência ficou
+    // muito lavada" — misturava a foto inteira com o fundo claro): as peças marcam 1 no estêncil onde aparecem; a foto sai
+    // inteira fora delas (opaca) e transparente sobre elas (vazada) — o subsolo à vista, o resto da foto com a cor dela
+    const opaca = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
+    const vazada = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false,
       opacity: 1 - ((this.t && this.t.transparencia) || 0) });
-    this.malha = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+    for (const [m, f] of [[opaca, THREE.NotEqualStencilFunc], [vazada, THREE.EqualStencilFunc]]) {
+      m.stencilWrite = true;                              // liga o teste (as operações só mantêm)
+      m.stencilRef = 1; m.stencilFunc = f;
+      m.stencilFail = m.stencilZFail = m.stencilZPass = THREE.KeepStencilOp;
+    }
+    const geo = new THREE.PlaneGeometry(1, 1);
+    this.malha = new THREE.Mesh(geo, opaca);
+    this.vazada = new THREE.Mesh(geo, vazada);
+    this.malha.add(this.vazada);
     this.malha.name = 'terreno';
-    this.malha.renderOrder = -0.5;                        // depois do piso liso, antes das peças
-    this.malha.raycast = () => {};                        // não se escolhe nem mede no chão de foto
+    for (const m of [this.malha, this.vazada]) {
+      m.renderOrder = -0.5;                               // depois do piso liso, antes das peças transparentes
+      m.raycast = () => {};                               // não se escolhe nem mede no chão de foto
+    }
+    this.malha.onBeforeRender = () => { if (this._marcarObra()) this.visor.pedirQuadro(); };   // peças novas (outra situação)
+    this._marcarObra();
     this.grupo = new THREE.Group();
     this.grupo.add(this.malha);
     this.visor.cena.add(this.grupo);
@@ -115,11 +131,25 @@ export class Terreno {
     this.mostrar(this.ligado);
   }
 
+  /** As peças da obra marcam 1 no estêncil onde aparecem (a imagem fica transparente só ali). true = marcou alguma nova. */
+  _marcarObra() {
+    let novas = false;
+    for (const m of this.visor.malhas || []) {
+      const mat = m.malha && m.malha.material;
+      if (!mat || mat.userData.marcaTerreno) continue;
+      mat.stencilWrite = true; mat.stencilRef = 1;
+      mat.stencilFunc = THREE.AlwaysStencilFunc; mat.stencilZPass = THREE.ReplaceStencilOp;
+      mat.userData.marcaTerreno = true;
+      novas = true;
+    }
+    return novas;
+  }
+
   _tirar() {
     if (!this.grupo) return;
     this.visor.cena.remove(this.grupo);
-    this.malha.geometry.dispose(); this.malha.material.map.dispose(); this.malha.material.dispose();
-    this.grupo = this.malha = null;
+    this.malha.geometry.dispose(); this.malha.material.map.dispose(); this.malha.material.dispose(); this.vazada.material.dispose();
+    this.grupo = this.malha = this.vazada = null;
     this.visor.pedirQuadro();
   }
 
@@ -272,7 +302,7 @@ export class Terreno {
       const v = Math.min(Math.max(+tr.value, 0), 90) / 100;
       if (v > 0) this.t.transparencia = v; else delete this.t.transparencia;
       $('#terreno-transp-saida').textContent = Math.round(v * 100) + ' %';
-      if (this.malha) { this.malha.material.opacity = 1 - v; this.visor.pedirQuadro(); }
+      if (this.vazada) { this.vazada.material.opacity = 1 - v; this.visor.pedirQuadro(); }
       this._gravarLogo();
     };
     const sel = $('#terreno-fonte-sel');

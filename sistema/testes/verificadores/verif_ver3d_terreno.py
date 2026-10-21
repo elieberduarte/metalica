@@ -182,12 +182,39 @@ try:
        "o painel volta mostrando a cota digitada")
     # a transparência (usuário, 20/10: "colocar a imagem com uma certa transparência para ver o subsolo")
     aba.avaliar("(() => { const r = document.getElementById('terreno-transp'); r.value = 40; r.dispatchEvent(new Event('input')); return 1; })()")
-    ok(abs(aba.avaliar("window.terreno.malha.material.opacity") - 0.6) < 1e-9, "transparência 40 %: a imagem a 60 %")
+    ok(abs(aba.avaliar("window.terreno.vazada.material.opacity") - 0.6) < 1e-9 and aba.avaliar("window.terreno.malha.material.opacity") == 1,
+       "transparência 40 %: a imagem a 60 % sobre a obra, inteira no resto")
+    # o tema claro (usuário, 20/10: "no tema claro a imagem com transparência ficou muito lavada"): fora da obra a foto sai
+    # com a cor dela — o pixel do canto da tela (só chão) igual com e sem transparência
+    # um ponto da tela só de chão (nenhuma peça nele, nem por baixo da imagem)
+    livre = aba.avaliar("""(() => { const v = window.visor, w = v.tela.clientWidth, h = v.tela.clientHeight;
+      for (const [x, y] of [[20, h - 20], [w - 20, h - 20], [20, 120], [w / 2, h - 20], [w - 400, 120]])
+        if (v.escolher(x, y) < 0) return [x, y];
+      return null; })()""")
+    ok(bool(livre), f"um ponto só de chão na tela ({livre})")
+    def pixel_do_canto(xy=None):
+        x, y = xy or livre or (20, 20)
+        return aba.avaliar(f"""(() => {{ const v = window.visor; v.renderer.render(v.cena, v.camera);
+          const gl = v.renderer.getContext(), px = new Uint8Array(4), d = v.renderer.getPixelRatio();
+          gl.readPixels(Math.round({x} * d), Math.round((v.tela.clientHeight - {y}) * d), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          return [...px]; }})()""")
+    # e a obra (o subsolo embaixo da imagem): ali a transparência vale
+    obra = aba.avaliar("""(() => { const v = window.visor, i = v.fichas.findIndex(f => f.id === 'sub'); return i >= 0 ? v.paraTela(i).slice(0, 2) : null; })()""")
+    aba.avaliar("document.documentElement.setAttribute('data-tema', 'claro'); window.visor.definirTema && window.visor.definirTema(false); 1")
+    aba.avaliar("document.querySelector('[data-vista=topo]').click()")
+    aba.drenar(0.5)
+    com, com_obra = pixel_do_canto(), pixel_do_canto(obra)
+    aba.avaliar("window.terreno.vazada.material.opacity = 1; window.terreno.malha.material.opacity = 1; 1")
+    sem, sem_obra = pixel_do_canto(), pixel_do_canto(obra)
+    aba.avaliar("window.terreno.vazada.material.opacity = 0.6; 1")
+    ok(obra and max(abs(a - b) for a, b in zip(com_obra, sem_obra)) > 8, f"sobre a obra a transparência mostra o subsolo ({com_obra} × {sem_obra})")
+    ok(max(abs(a - b) for a, b in zip(com, sem)) <= 2, f"fora da obra a foto não lava com a transparência ({com} × {sem})")
+    foto(aba, "ver3d_terreno_4_transparencia_claro.png")
     time.sleep(1.2)
     ok(_json(API)["terreno"].get("transparencia") == 0.4, "a transparência gravada no projeto")
     aba.navegar(base + "/visor3d/ver3d.html?projeto=obra", limite=60)
     ok(esperar(aba, "!!(window.ver3dPronto && window.terreno && window.terreno.malha)", 60)
-       and abs(aba.avaliar("window.terreno.malha.material.opacity") - 0.6) < 1e-9, "depois do F5 a transparência continua")
+       and abs(aba.avaliar("window.terreno.vazada.material.opacity") - 0.6) < 1e-9, "depois do F5 a transparência continua")
     aba.avaliar("document.getElementById('btn-terreno').click()")
     esperar(aba, "!!document.getElementById('terreno-cota-sel')", 5)
     aba.avaliar("(() => { const s = document.getElementById('terreno-cota-sel'); s.value = 'auto'; s.dispatchEvent(new Event('change')); return 1; })()")
