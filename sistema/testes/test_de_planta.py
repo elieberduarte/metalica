@@ -896,3 +896,66 @@ def test_titulo_da_planta_com_apostrofo():
     assert _achar_titulo(textos, "COBERTURA DA CX DAGUA NIVEL 11,00")["texto"].startswith("COBERTURA")
     assert _achar_titulo(textos, "COBERTURA DA CX D’AGUA")["texto"].startswith("COBERTURA")
     assert _achar_titulo(textos, "PLANTA NO NÍVEL 6,00") is None
+
+
+# ------------------------------------------------------------------ Posto V2 (21/10/2026): os prints do usuário
+def test_alma_desenhada_fora_dos_banzos_sai():
+    """A ponta da TESOURA 12 do Posto: a elevação desenha junto a diagonal do painel em que ela chega, 365 mm acima do
+    banzo de cima — entrava como diagonal da tesoura e ficava voando no 3D. A alma com o meio fora dos banzos sai; a de
+    dentro fica (inclusive a que só encosta no banzo)."""
+    M = de_planta.Membro
+    ms = [M(0, 0, 1541, 0, "banzo"), M(141, 860, 1542, 930, "banzo"), M(20, 0, 20, 780, "montante"),
+          M(140, 880, 1541, 0, "diagonal"), M(841, 430, 1541, 950, "diagonal"),
+          M(1431, 996, 1596, 1293, "diagonal")]                     # a do painel vizinho, acima do banzo
+    fica, fora = de_planta._alma_fora_dos_banzos(ms)
+    assert fora == 1 and all(m.h1 != 1293 for m in fica) and len(fica) == 5
+    # a tesoura de cima das peças em duas partes (um banzo só): nada sai
+    fica, fora = de_planta._alma_fora_dos_banzos([M(0, 700, 6000, 1300, "banzo"), M(1000, 700, 1000, 800, "montante")])
+    assert fora == 0
+
+
+def test_meia_diagonal_fica_presa_na_diagonal_que_trava():
+    """TESOURA 21/32 do Posto: a meia diagonal vai do nó de cima até o meio da diagonal do painel. É achada no desenho,
+    antes de os nós irem ao eixo do banzo (o nó unido ao do montante move a ponta da diagonal longa e a meia diagonal
+    sai da linha dela); a ponta presa leva o t da diagonal. A ponta num banzo ou na ponta de outra peça não conta."""
+    M = de_planta.Membro
+    ms = [M(1, 1119, 2601, 1249, "banzo"), M(0, 0, 2600, 0, "banzo"), M(1250, -20, 1250, 1201, "montante"),
+          M(0, -20, 1250, 1201, "diagonal"), M(0, 1138, 625, 591, "diagonal"), M(1250, -20, 2600, 1269, "diagonal")]
+    presas = de_planta._meias_diagonais(ms)
+    assert set(presas) == {4} and presas[4][0][0] == 1 and presas[4][0][1] == 3 and abs(presas[4][0][2] - 0.5) < 1e-3
+    # depois dos nós no eixo a ponta da diagonal longa mudou: achar ali já não acha (por isso a ordem importa)
+    movidos, _n, _u = de_planta._nos_no_eixo_do_banzo(ms)
+    assert de_planta._meias_diagonais(movidos) == {}
+
+
+def _barra_pt(doc, pecas, a, b, perfil, papel, conj):
+    e = doc.add(Barra(nome=perfil, camada="Treliças", perfil=perfil, papel=papel, inicio=a, fim=b))
+    pecas.append({"ent": e, "perfil": perfil, "papel": papel, "conjunto": conj})
+    return e
+
+
+def test_ponta_da_trelica_que_chega_vista_de_lado_sai():
+    """TRANSIÇÃO 9 do Posto V2: onde cada tesoura chega, a elevação da transição desenha o montante de ponta (U) dela
+    visto de lado, e a leitura o punha DENTRO da transição, a 11 cm do montante de cantoneira dupla — um "pilar com
+    chapinhas" no meio da transição (print do usuário, 21/10). Sai o U do meio da que passa quando a ponta da que chega
+    está ali; o U de ponta da própria transição e o montante 2L ficam."""
+    doc, pecas = Documento(), []
+    # a transição (TR) ao longo de y, de 0 a 10 m, em x = 0
+    _barra_pt(doc, pecas, (0, 0, 6000), (0, 10000, 6000), "U 150×70×4,75 (FF)", "banzo", "TR#1")
+    _barra_pt(doc, pecas, (0, 0, 6720), (0, 10000, 6720), "U 150×70×4,75 (FF)", "banzo", "TR#1")
+    ponta_tr = _barra_pt(doc, pecas, (0, 20, 6000), (0, 20, 6720), "U 150×70×4,75 (FF)", "montante", "TR#1")
+    l2 = _barra_pt(doc, pecas, (0, 5000, 6000), (0, 5000, 6720), 'L 31,75×3,17 (FF)', "montante", "TR#1")
+    vista = _barra_pt(doc, pecas, (0, 5112, 6000), (0, 5112, 6720), "U 150×70×4,75 (FF)", "montante", "TR#1")
+    # a tesoura (T) chega perpendicular, de x = 6 m até a face da transição, com o montante de ponta em x = 110
+    _barra_pt(doc, pecas, (110, 5100, 6000), (6000, 5100, 6000), "U 150×70×4,75 (FF)", "banzo", "T#2")
+    _barra_pt(doc, pecas, (110, 5100, 6800), (6000, 5100, 6800), "U 150×70×4,75 (FF)", "banzo", "T#2")
+    _barra_pt(doc, pecas, (110, 5100, 6000), (110, 5100, 6800), "U 150×70×4,75 (FF)", "montante", "T#2")
+    _barra_pt(doc, pecas, (3000, 5100, 6000), (3000, 5100, 6800), "U 150×70×4,75 (FF)", "montante", "T#2")
+    tirados = de_planta._pontas_vistas_de_lado(pecas, doc)
+    assert [p["ent"] for p in tirados] == [vista]
+    assert ponta_tr.id in doc.entidades and l2.id in doc.entidades and vista.id not in doc.entidades
+    # sem treliça chegando ali, o U do meio fica
+    doc2, pecas2 = Documento(), []
+    _barra_pt(doc2, pecas2, (0, 0, 6000), (0, 10000, 6000), "U 150×70×4,75 (FF)", "banzo", "TR#1")
+    u = _barra_pt(doc2, pecas2, (0, 5112, 6000), (0, 5112, 6720), "U 150×70×4,75 (FF)", "montante", "TR#1")
+    assert de_planta._pontas_vistas_de_lado(pecas2, doc2) == [] and u.id in doc2.entidades

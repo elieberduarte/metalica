@@ -1336,6 +1336,92 @@ def _nos_no_eixo_do_banzo(membros: List["Membro"], unir: float = 100.0) -> Tuple
     return out, movidas, unidos
 
 
+#: mm: a alma com o meio além disto fora dos banzos não é da treliça; a ponta a menos disto de outra alma está nela
+ALMA_FORA = 60.0
+PRESA_NA_ALMA = 6.0
+
+
+def _faixa_dos_banzos(banzos: List["Membro"], s: float) -> Optional[Tuple[float, float]]:
+    """(baixo, cima) dos eixos dos banzos que passam em `s`, ou None (nenhum, ou um só: a tesoura de cima das peças em
+    duas partes tem só o banzo inclinado)"""
+    hs = []
+    for b in banzos:
+        lo, hi = min(b.s0, b.s1), max(b.s0, b.s1)
+        if hi - lo > 1.0 and lo - 1.0 <= s <= hi + 1.0:
+            hs.append(b.h0 + (b.h1 - b.h0) * (s - b.s0) / (b.s1 - b.s0))
+    if len(hs) < 2 or max(hs) - min(hs) < 100.0:
+        return None
+    return min(hs), max(hs)
+
+
+def _alma_fora_dos_banzos(membros: List["Membro"]) -> Tuple[List["Membro"], int]:
+    """A alma desenhada FORA da treliça: o meio dela acima do banzo de cima, abaixo do de baixo ou além das pontas dos
+    banzos, por mais de ALMA_FORA. É a peça vizinha que a elevação desenha junto — na ponta da TESOURA 12 do Posto
+    (21/10/2026, print do usuário: "peças voando") a diagonal do painel em que ela chega, 365 mm acima do banzo, entrava
+    como diagonal da tesoura e ficava solta no ar. Devolve (os membros que ficam, quantos saíram)."""
+    banzos = [m for m in membros if m.papel == "banzo" and math.hypot(m.s1 - m.s0, m.h1 - m.h0) > 1.0]
+    if len(banzos) < 2:
+        return membros, 0
+    s_lo = min(min(b.s0, b.s1) for b in banzos)
+    s_hi = max(max(b.s0, b.s1) for b in banzos)
+    fica, fora = [], 0
+    for m in membros:
+        if m.papel not in ("montante", "diagonal"):
+            fica.append(m)
+            continue
+        sm, hm = (m.s0 + m.s1) / 2.0, (m.h0 + m.h1) / 2.0
+        if sm < s_lo - ALMA_FORA or sm > s_hi + ALMA_FORA:
+            fora += 1
+            continue
+        faixa = _faixa_dos_banzos(banzos, sm)
+        if faixa is not None and (hm > faixa[1] + ALMA_FORA or hm < faixa[0] - ALMA_FORA):
+            fora += 1
+            continue
+        fica.append(m)
+    return fica, fora
+
+
+def _meias_diagonais(membros: List["Membro"]) -> Dict[int, List[Tuple[int, int, float]]]:
+    """A meia diagonal que trava a diagonal longa no meio do painel (a TESOURA 21 e a 32 do Posto: do nó de cima até o
+    meio da diagonal do painel): a ponta dela está NO MEIO de outra alma, não num banzo nem na ponta de outra peça.
+    Devolve {índice da meia diagonal: [(ponta 0|1, índice da alma em que ela chega, t ao longo dessa alma)]} — no 3D a
+    ponta vai para o mesmo t da alma depois de ela ir ao lugar (o recuo da ponta da treliça na face da outra move a
+    diagonal longa; a meia diagonal ficava no lugar antigo, solta a ~9 cm dela)."""
+    banzos = [m for m in membros if m.papel == "banzo"]
+    out: Dict[int, List[Tuple[int, int, float]]] = {}
+    for i, b in enumerate(membros):
+        if b.papel not in ("montante", "diagonal"):
+            continue
+        for k in (0, 1):
+            ps, ph = (b.s0, b.h0) if k == 0 else (b.s1, b.h1)
+            # a ponta num banzo ou na ponta de outra peça é um nó de verdade
+            if any(_dist_pt_seg2((ps, ph), (o.s0, o.h0), (o.s1, o.h1)) < 40.0 for o in banzos):
+                continue
+            if any(j != i and min(math.hypot(ps - o.s0, ph - o.h0), math.hypot(ps - o.s1, ph - o.h1)) < PRESA_NA_ALMA
+                   for j, o in enumerate(membros)):
+                continue
+            for j, a in enumerate(membros):
+                if j == i or a.papel not in ("montante", "diagonal"):
+                    continue
+                la2 = (a.s1 - a.s0) ** 2 + (a.h1 - a.h0) ** 2
+                if la2 < 1.0:
+                    continue
+                t = ((ps - a.s0) * (a.s1 - a.s0) + (ph - a.h0) * (a.h1 - a.h0)) / la2
+                if not 0.04 < t < 0.96:
+                    continue
+                if math.hypot(ps - (a.s0 + t * (a.s1 - a.s0)), ph - (a.h0 + t * (a.h1 - a.h0))) < PRESA_NA_ALMA:
+                    out.setdefault(i, []).append((k, j, t))
+                    break
+    return out
+
+
+def _dist_pt_seg2(p, a, b) -> float:
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    l2 = dx * dx + dy * dy
+    t = 0.0 if l2 < 1e-9 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2))
+    return math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)
+
+
 def _partes_da_elevacao(el: "Elevacao", dividir: bool) -> List[Tuple[str, List["Membro"]]]:
     """A elevação que o projeto confirma como duas peças — a viga de transição embaixo e a tesoura
     em cima dela (TRANSIÇÕES 2 e 5 do Posto CB): o que fica abaixo do banzo reto do meio é a viga,
@@ -2206,6 +2292,81 @@ def _tirar_repetidas(pecas: List[dict], doc) -> List[dict]:
                 tirar.append(p_)
                 continue
             pres_conj[p_["conjunto"]].append(cen)
+    for p_ in tirar:
+        doc.remover(p_["ent"].id)
+        pecas.remove(p_)
+    return tirar
+
+
+#: mm: o montante U a menos disto (em planta) do montante de ponta da treliça que chega é a ponta dela, vista de lado
+PONTA_EM_VISTA = 250.0
+
+
+def _pontas_vistas_de_lado(pecas: List[dict], doc) -> List[dict]:
+    """O montante em U no MEIO de uma treliça, onde chega a PONTA de outra treliça perpendicular: é a ponta da que chega
+    (o montante de extremidade dela, em U, visto de lado) que a elevação da que passa desenha — a leitura o tomava como
+    montante desta. No Posto V2 (21/10/2026, prints do usuário: um "pilar" com chapinhas no meio da transição) a
+    TRANSIÇÃO 9 tinha 12 U 150×70 a 11 cm do montante de cantoneira dupla, um em cada tesoura que chega; as TRANSIÇÕES
+    4, 5, 6, 7 e 2, as TRELIÇAS 12, 13 e 15 e as TESOURAS 6, 7, 12 também. A treliça que chega tem o próprio montante
+    de ponta, no mesmo lugar: o da que passa sai (nunca o de ponta dela). Tira do `doc` e de `pecas`; devolve os
+    tirados."""
+    por_conj: Dict[str, list] = collections.defaultdict(list)
+    for p_ in pecas:
+        e_ = p_["ent"]
+        if e_.tipo == "barra" and p_.get("conjunto"):
+            por_conj[p_["conjunto"]].append(p_)
+    info = {}
+    for cj, lst in por_conj.items():
+        bz = [p_["ent"] for p_ in lst if p_["ent"].papel == "banzo"]
+        if not bz:
+            continue
+        b0 = max(bz, key=lambda b: math.hypot(b.fim[0] - b.inicio[0], b.fim[1] - b.inicio[1]))
+        dx, dy = b0.fim[0] - b0.inicio[0], b0.fim[1] - b0.inicio[1]
+        n = math.hypot(dx, dy)
+        if n < 500.0:
+            continue
+        u = (dx / n, dy / n)
+        sts = [e_.inicio[0] * u[0] + e_.inicio[1] * u[1] for e_ in (p_["ent"] for p_ in lst)] + \
+              [e_.fim[0] * u[0] + e_.fim[1] * u[1] for e_ in (p_["ent"] for p_ in lst)]
+        info[cj] = (u, min(sts), max(sts))
+
+    def _vertical(e_):
+        return abs(e_.fim[2] - e_.inicio[2]) > 3.0 * math.hypot(e_.fim[0] - e_.inicio[0], e_.fim[1] - e_.inicio[1])
+
+    # os montantes de ponta: na estação extrema da própria treliça
+    pontas = []
+    for cj, lst in por_conj.items():
+        if cj not in info:
+            continue
+        u, s_lo, s_hi = info[cj]
+        for p_ in lst:
+            e_ = p_["ent"]
+            if e_.papel != "montante" or not _vertical(e_):
+                continue
+            st = (e_.inicio[0] + e_.fim[0]) / 2 * u[0] + (e_.inicio[1] + e_.fim[1]) / 2 * u[1]
+            if min(st - s_lo, s_hi - st) < 150.0:
+                pontas.append((cj, u, ((e_.inicio[0] + e_.fim[0]) / 2, (e_.inicio[1] + e_.fim[1]) / 2),
+                               min(e_.inicio[2], e_.fim[2]), max(e_.inicio[2], e_.fim[2])))
+    tirar = []
+    for cj, lst in por_conj.items():
+        if cj not in info:
+            continue
+        u, s_lo, s_hi = info[cj]
+        for p_ in lst:
+            e_ = p_["ent"]
+            if e_.papel != "montante" or not str(e_.perfil).startswith(("U ", "Ue ")) or not _vertical(e_):
+                continue
+            mx, my = (e_.inicio[0] + e_.fim[0]) / 2, (e_.inicio[1] + e_.fim[1]) / 2
+            st = mx * u[0] + my * u[1]
+            if min(st - s_lo, s_hi - st) < 300.0:
+                continue                                  # o de ponta desta: fica
+            z0, z1 = min(e_.inicio[2], e_.fim[2]), max(e_.inicio[2], e_.fim[2])
+            for cj2, u2, (px, py), w0, w1 in pontas:
+                if cj2 == cj or abs(u[0] * u2[0] + u[1] * u2[1]) > 0.5:
+                    continue                              # a mesma treliça, ou outra quase paralela (em fila)
+                if math.hypot(px - mx, py - my) < PONTA_EM_VISTA and min(z1, w1) - max(z0, w0) > 0.5 * (z1 - z0):
+                    tirar.append(p_)
+                    break
     for p_ in tirar:
         doc.remover(p_["ent"].id)
         pecas.remove(p_)
@@ -3605,6 +3766,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     contagem = collections.Counter()
     bocas_viradas: List[str] = []          # banzos em U que a regra do miolo virou (antes: a meia altura)
     nos_no_eixo = {"pontas": 0, "unidos": 0}   # a alma levada ao eixo do banzo (NBR 8800, 6.5.2)
+    # a alma desenhada fora dos banzos (a peça vizinha na elevação) que saiu; as meias diagonais presas na diagonal
+    alma_extra = {"fora": 0, "presas": 0}
     presilhas_postas = {"pecas": 0, "pela_nota": 0, "pela_norma": 0}
     # os pilares com a metade da seção: a viga que para antes deles vai até a face
     pilares_meia = []
@@ -3752,9 +3915,16 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             conj_base = conj
             caixao_el = any(m.papel == "banzo" and m.caixa > 0.0 for m in el.membros)
             for sufixo, membros in _partes_da_elevacao(el, _sem_acento(t.nome).upper() in duas_pecas):
+                membros, n_fora = _alma_fora_dos_banzos(membros)
+                alma_extra["fora"] += n_fora
+                # a meia diagonal é achada no desenho (antes dos nós irem ao eixo: o nó unido ao do montante move a ponta
+                # da diagonal longa e a meia diagonal deixa de estar na linha dela); a lista sai na mesma ordem
+                presas = _meias_diagonais(membros)
                 membros, n_mov, n_uni = _nos_no_eixo_do_banzo(membros)
                 nos_no_eixo["pontas"] += n_mov
                 nos_no_eixo["unidos"] += n_uni
+                alma_extra["presas"] += sum(len(v) for v in presas.values())
+                idx_membro = {id(m_): i_ for i_, m_ in enumerate(membros)}
                 conj = conj_base if not sufixo else "%s%s#%d" % (t.nome, sufixo, k_t)
                 alturas = [h for m in membros for h in (m.h0, m.h1)]
                 meio_h = (min(alturas) + max(alturas)) / 2.0 if alturas else 0.0
@@ -3766,6 +3936,16 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         else (p_alma or p_banzo)
                     papel = m.papel
                     (q0, s0p), (q1, s1p) = P(m.s0, m.h0), P(m.s1, m.h1)
+                    for k_pr, j_pr, t_pr in presas.get(idx_membro[id(m)], ()):
+                        # a meia diagonal: a ponta no mesmo t da alma que ela trava, onde essa alma ficou no 3D
+                        a_pr = membros[j_pr]
+                        qa0, _sa0 = P(a_pr.s0, a_pr.h0)
+                        qa1, _sa1 = P(a_pr.s1, a_pr.h1)
+                        q_pr = tuple(qa0[i_] + (qa1[i_] - qa0[i_]) * t_pr for i_ in range(3))
+                        if k_pr == 0:
+                            q0 = q_pr
+                        else:
+                            q1 = q_pr
                     if m.papel == "banzo" and c.curvo and abs(s1p - s0p) > 300.0:
                         # banzo calandrado: varre o perfil pelo arco, com a altura variando junto
                         # um anel a cada ~3° no arco (ou 120 mm, no caminho composto)
@@ -4206,10 +4386,22 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     if tirar:
         avisos.append("Barras repetidas na mesma peça (a linha dobrada na elevação, a presilha encostada noutra): %d tirada(s)."
                       % len(tirar))
+    vistas_de_lado = _pontas_vistas_de_lado(pecas, doc)
+    if vistas_de_lado:
+        conj_v = collections.Counter(_bonito(str(p_.get("conjunto") or "").split("#")[0]) for p_ in vistas_de_lado)
+        avisos.append("Ponta de treliça vista de lado na elevação da que passa (o montante U dela no meio desta, ao lado do "
+                      "montante de ponta da que chega): %d tirado(s) — %s." % (
+                          len(vistas_de_lado), ", ".join("%s (%d)" % kv for kv in sorted(conj_v.items()))))
     # as regras de posição das peças da treliça (regras_trelica, 16/10): o mesmo giro em todo gerador, antes do encaixe
     from nucleo3d import regras_trelica
     regras_trelica.aplicar([p["ent"] for p in pecas])
     na_face = alma_na_face.encaixar([p["ent"] for p in pecas])
+    if alma_extra["fora"]:
+        avisos.append("Alma desenhada fora dos banzos (a peça vizinha que a elevação desenha junto, na ponta): %d barra(s) "
+                      "não entraram na treliça." % alma_extra["fora"])
+    if alma_extra["presas"]:
+        avisos.append("Meias diagonais (do nó até o meio da diagonal do painel, que ela trava): %d ponta(s) presas na "
+                      "diagonal, no mesmo ponto dela depois do recuo da ponta da treliça." % alma_extra["presas"])
     if nos_no_eixo["pontas"]:
         avisos.append("Nós no eixo do banzo (NBR 8800:2024, 6.5.2): %d ponta(s) de montante e diagonal levadas da linha "
                       "desenhada ao eixo do banzo e %d nó(s) com as barras chegando em pontos diferentes unidos num ponto só."
@@ -4849,7 +5041,9 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         "vigas": st.get("vigas", 0), "pilares": pilares, "pilares_com_corte": res_pm["n"], "tercas": tercas, "correntes": correntes,
         "esticadores": esticadores, "agulhas": agulhas, "contraventamentos": contravs,
         "barras": len(doc.barras), "calandradas": sum(1 for p in pecas if p["ent"].tipo == "solido"),
-        "alma_na_face": na_face, "bocas_viradas": len(bocas_viradas), "nos_no_eixo": dict(nos_no_eixo), "presilhas": dict(presilhas_postas),
+        "alma_na_face": na_face, "bocas_viradas": len(bocas_viradas), "nos_no_eixo": dict(nos_no_eixo),
+        "alma_fora_dos_banzos": alma_extra["fora"], "meias_diagonais_presas": alma_extra["presas"],
+        "pontas_vistas_de_lado": len(vistas_de_lado), "presilhas": dict(presilhas_postas),
         "posicoes": len(posicao_de and set(posicao_de.values())), "conjuntos": n_conj, "peso_kg": round(peso, 1),
         "orientacao": ori, "planta_sem_nome": st.get("sem_rotulo", 0), "outras_plantas": outras_feitas,
         "nomes_sem_elevacao": {_bonito(k): v for k, v in (st.get("sem_elevacao") or {}).items()},
