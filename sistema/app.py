@@ -5609,6 +5609,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(ligacoes_exemplos(parse_qs(urlparse(self.path).query)))
             if rota == "/api/projetos":
                 return self._json(_gerente().listar())
+            if rota in ("/api/compartilhar/pessoas", "/api/compartilhar/recebidos"):
+                # a obra para outro usuário (21/10, compartilhar.py): quem pode receber / o que chegou para esta licença
+                import compartilhar
+                if rota.endswith("pessoas"):
+                    return self._json({"pessoas": compartilhar.pessoas()})
+                return self._json({"recebidos": compartilhar.recebidos()})
             if rota.startswith("/api/projetos/"):
                 partes = rota.split("/api/projetos/", 1)[1].strip("/").split("/")
                 if len(partes) == 2 and partes[1] == "modelo":
@@ -5868,6 +5874,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(instalar_atualizacao(corpo if isinstance(corpo, dict) else None))
             if rota == "/api/projetos":
                 return self._json(criar_projeto(corpo))
+            m_env = re.match(r"^/api/compartilhar/recebidos/(\d+)/(abrir|recusar)$", rota)
+            if m_env:                                       # a obra recebida de outro usuário (21/10, compartilhar.py)
+                import compartilhar
+                if m_env.group(2) == "recusar":
+                    return self._json(compartilhar.recusar(int(m_env.group(1))))
+                return self._json(compartilhar.abrir(_gerente(), int(m_env.group(1))))
             if rota == "/api/projetos/importar-pacote":
                 return self._json(importar_pacote_de_projeto(corpo))
             if rota == "/api/conferencia/cancelar":
@@ -5880,6 +5892,12 @@ class Handler(BaseHTTPRequestHandler):
                 partes = rota.split("/api/projetos/", 1)[1].strip("/").split("/")
                 if len(partes) == 2 and partes[1] == "vista2d":
                     return self._json(gerar_vista_2d(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "enviar":
+                    # a obra para outro usuário pela nuvem (21/10, compartilhar.py), com a barra de andamento
+                    import compartilhar
+                    s_e = partes[0]
+                    return self._json(compartilhar.enviar(_gerente(), s_e, str((corpo or {}).get("para") or ""),
+                                                          lambda etapa, fracao=None: _progresso(s_e, etapa, fracao)))
                 if len(partes) >= 2 and partes[1] == "terreno" and TERRENO:
                     from saida import local_obra
                     s_t = partes[0]

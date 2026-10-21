@@ -22,7 +22,14 @@
 //   PUT  /pc/indice, PUT /pc/telas       a lista do celular / o mapa das telas
 //   POST /pc/limpar                      apaga os arquivos que nada mais usa
 //
-// R2: arquivos/<sha1> (o conteúdo, uma vez só), obras/<obra>/manifesto.json, indice.json, telas.json.
+// — uma obra para outro usuário (21/10, qualquer licença ativa) —
+//   GET  /pc/pessoas                     as licenças ativas (id opaco + nome) para escolher a quem enviar
+//   POST /pc/envio/faltam {sha1s}        PUT /pc/envio/parte/<sha1>   as partes do pacote da obra
+//   POST /pc/envios {para, nome, slug, partes, sha1}                  registra o envio para a pessoa
+//   GET  /pc/recebidos                   os pendentes para esta licença (menos os que saíram deste PC)
+//   GET  /pc/recebidos/<id>/parte/<sha1>   POST /pc/recebidos/<id>/recebido|recusar
+//
+// R2: arquivos/<sha1> (o conteúdo, uma vez só), obras/<obra>/manifesto.json, indice.json, telas.json, envios/partes/<sha1>.
 import { agora, b64url, deB64url, normalizarChave, evento, json } from '../../licencas/src/comum.js';
 
 const COOKIE = 'mcel';
@@ -269,9 +276,118 @@ async function celular(env, req, url, rota) {
   return tela(env, req, rota === '/celular/' ? '/celular/index.html' : rota, cabeca);
 }
 
+// ------------------------------------------------------------------ uma obra para outro usuário (21/10/2026)
+// O usuário: "ter uma opção de enviar o projeto para outro usuário por dentro do sistema sem precisar exportar o pacote
+// da obra e enviar para ele abrir". O PC sobe o pacote da obra (projetos.exportar) em partes (até 40 MB cada: o corpo de
+// um pedido ao Worker tem limite) e registra o envio para a pessoa; o PC dela vê em "recebidos", baixa as partes, importa
+// e marca recebido (as partes saem do R2). Qualquer licença ativa envia e recebe (não depende de "envia obras"); a
+// pessoa é escolhida por um identificador opaco (o SHA-256 da chave), nunca pela chave. Pendente há mais de 30 dias: sai.
+// R2: envios/partes/<sha1> — fora de arquivos/, que a limpeza do celular apaga.
+
+const PARTE_MAX = 45 * 1024 * 1024;
+const DIAS_ENVIO = 30;
+
+async function idDaPessoa(chave) { return (await resumo('SHA-256', 'metalica-envio:' + chave)).slice(0, 20); }
+
+async function pessoas(env) {
+  const r = (await env.DB.prepare('SELECT chave, pessoa FROM licencas WHERE ativa = 1 ORDER BY pessoa').all()).results || [];
+  return Promise.all(r.map(async l => ({ id: await idDaPessoa(l.chave), chave: l.chave, pessoa: l.pessoa })));
+}
+
+/** apaga do R2 as partes que nenhum envio pendente usa */
+async function soltarPartes(env, partes) {
+  const pend = (await env.DB.prepare("SELECT partes FROM envios WHERE estado = 'pendente'").all()).results || [];
+  const usadas = new Set(pend.flatMap(e => { try { return JSON.parse(e.partes).map(p => p.sha1); } catch (x) { return []; } }));
+  const apagar = partes.map(p => p.sha1).filter(s => !usadas.has(s)).map(s => 'envios/partes/' + s);
+  if (apagar.length) await env.OBRAS.delete(apagar);
+}
+
+async function vencidos(env) {
+  const limite = new Date(Date.now() - DIAS_ENVIO * 864e5).toISOString();
+  const r = (await env.DB.prepare("SELECT id, partes FROM envios WHERE estado = 'pendente' AND criado < ?").bind(limite).all()).results || [];
+  for (const e of r) {
+    await env.DB.prepare("UPDATE envios SET estado = 'vencido', fim = ? WHERE id = ?").bind(agora(), e.id).run();
+    await soltarPartes(env, JSON.parse(e.partes || '[]'));
+  }
+}
+
+async function envios(env, req, rota, quem, url) {
+  const eu = quem.p.chave;
+  if (rota === '/pc/pessoas' && req.method === 'GET') {
+    return json({ pessoas: (await pessoas(env)).map(x => ({ id: x.id, pessoa: x.pessoa, eu: x.chave === eu })) });
+  }
+  if (rota === '/pc/envio/faltam' && req.method === 'POST') {
+    const c = await req.json().catch(() => ({}));
+    const pedidos = [...new Set((c.sha1s || []).filter(s => SHA1.test(s)))].slice(0, 500);
+    const tem = await Promise.all(pedidos.map(s => env.OBRAS.head('envios/partes/' + s)));
+    return json({ faltam: pedidos.filter((s, i) => !tem[i]) });
+  }
+  let m = /^\/pc\/envio\/parte\/([0-9a-f]{40})$/.exec(rota);
+  if (m && req.method === 'PUT') {
+    const corpo = await req.arrayBuffer();
+    if (corpo.byteLength > PARTE_MAX + 1024) return json({ erro: 'parte grande demais' }, 413);
+    if (await resumo('SHA-1', corpo) !== m[1]) return json({ erro: 'a parte chegou diferente do SHA-1 dela' }, 400);
+    await env.OBRAS.put('envios/partes/' + m[1], corpo);
+    return json({ ok: true, bytes: corpo.byteLength });
+  }
+  if (rota === '/pc/envios' && req.method === 'POST') {
+    await vencidos(env);
+    const c = await req.json().catch(() => ({}));
+    const alvo = (await pessoas(env)).find(x => x.id === c.para);
+    if (!alvo) return json({ erro: 'pessoa não encontrada (a licença dela pode ter sido bloqueada)' }, 404);
+    const partes = Array.isArray(c.partes) ? c.partes.filter(p => SHA1.test(p.sha1 || '')).map(p => ({ sha1: p.sha1, bytes: +p.bytes || 0 })) : [];
+    if (!partes.length || partes.length !== (c.partes || []).length) return json({ erro: 'partes inválidas' }, 400);
+    const faltam = (await Promise.all(partes.map(p => env.OBRAS.head('envios/partes/' + p.sha1)))).filter(x => !x).length;
+    if (faltam) return json({ erro: `faltam ${faltam} parte(s) do pacote na nuvem` }, 409);
+    const r = await env.DB.prepare(`INSERT INTO envios (de_chave, de_pessoa, de_maquina, de_pc, para_chave, nome, slug, bytes, sha1, partes, criado, estado)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendente')`)
+      .bind(eu, quem.lic.pessoa, quem.p.maquina, quem.maq.nome_pc || '', alvo.chave, txt(c.nome, 150), txt(c.slug, 150),
+            partes.reduce((t, p) => t + p.bytes, 0), SHA1.test(c.sha1 || '') ? c.sha1 : '', JSON.stringify(partes), agora()).run();
+    await evento(env, req, { chave: eu, maquina: quem.p.maquina, tipo: 'enviou obra', detalhe: `${txt(c.nome, 80)} → ${alvo.pessoa}` });
+    return json({ id: r.meta.last_row_id, para: alvo.pessoa, eu: alvo.chave === eu });
+  }
+  if (rota === '/pc/recebidos' && req.method === 'GET') {
+    // os enviados para esta licença, menos os que saíram deste mesmo computador (para si mesmo: só os outros PCs veem)
+    // ?incluir_deste=1: também os deste PC (o teste de ponta a ponta numa máquina só)
+    const deste = url.searchParams.get('incluir_deste') === '1' ? '' : quem.p.maquina;
+    const r = (await env.DB.prepare(`SELECT id, de_pessoa, de_pc, de_chave, nome, slug, bytes, sha1, partes, criado FROM envios
+        WHERE para_chave = ? AND estado = 'pendente' AND NOT (de_chave = ? AND de_maquina = ?) ORDER BY id`)
+      .bind(eu, eu, deste).all()).results || [];
+    return json({ recebidos: r.map(e => ({ id: e.id, de: e.de_pessoa, de_pc: e.de_pc, de_mim: e.de_chave === eu, nome: e.nome,
+                                            slug: e.slug, bytes: e.bytes, sha1: e.sha1, criado: e.criado, partes: JSON.parse(e.partes || '[]') })) });
+  }
+  m = /^\/pc\/recebidos\/(\d+)(?:\/(parte)\/([0-9a-f]{40})|\/(recebido|recusar))$/.exec(rota);
+  if (m) {
+    const e = await env.DB.prepare("SELECT * FROM envios WHERE id = ? AND para_chave = ? AND estado = 'pendente'").bind(+m[1], eu).first();
+    if (!e) return json({ erro: 'envio não encontrado (já recebido, recusado ou vencido)' }, 404);
+    const partes = JSON.parse(e.partes || '[]');
+    if (m[2] && req.method === 'GET') {
+      if (!partes.some(p => p.sha1 === m[3])) return json({ erro: 'parte de outro envio' }, 404);
+      const o = await env.OBRAS.get('envios/partes/' + m[3]);
+      if (!o) return json({ erro: 'a parte não está mais na nuvem' }, 410);
+      return new Response(o.body, { headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(o.size), 'Cache-Control': 'no-store' } });
+    }
+    if (m[4] && req.method === 'POST') {
+      await env.DB.prepare('UPDATE envios SET estado = ?, fim = ?, recebido_pc = ? WHERE id = ?')
+        .bind(m[4] === 'recebido' ? 'recebido' : 'recusado', agora(), quem.maq.nome_pc || '', e.id).run();
+      await soltarPartes(env, partes);
+      await evento(env, req, { chave: eu, maquina: quem.p.maquina, tipo: m[4] === 'recebido' ? 'recebeu obra' : 'recusou obra',
+                               detalhe: `${e.nome} de ${e.de_pessoa}` });
+      return json({ ok: true });
+    }
+  }
+  return null;
+}
+
 // ------------------------------------------------------------------ o PC envia
 
 async function pc(env, req, url, rota) {
+  // a obra para outro usuário: qualquer licença ativa (não depende de "envia obras")
+  if (rota === '/pc/pessoas' || rota === '/pc/envios' || rota.startsWith('/pc/envio/') || rota.startsWith('/pc/recebidos')) {
+    const quem = await doPC(env, req, false);
+    if (quem.recusa) return quem.recusa;
+    return (await envios(env, req, rota, quem, url)) || json({ erro: 'rota desconhecida' }, 404);
+  }
   const escrever = !['/pc/codigo', '/pc/estado'].includes(rota);
   const quem = await doPC(env, req, escrever);
   if (quem.recusa) return quem.recusa;

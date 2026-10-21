@@ -935,3 +935,9 @@ a.voltar-projetos:hover { background: var(--azul-fraco); }
   background: var(--azul-fraco, var(--painel2)); border-radius: var(--raio); font-size: 13px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .atualizacao a { color: var(--azul); font-weight: 600; }
 .atualizacao button { margin-left: auto; }
+
+/* a obra recebida de outro usuário (21/10, inicio.js verificarRecebidos): um aviso por obra no alto da lista */
+.recebido { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 10px 12px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--azul) 45%, var(--borda)); background: color-mix(in srgb, var(--azul) 9%, var(--painel)); }
+.recebido-icone { font-size: 20px; }
+.recebido-texto { flex: 1; min-width: 0; }

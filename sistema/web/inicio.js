@@ -163,6 +163,9 @@ function cartao(p) {
     el('button', { type: 'button', class: 'discreto', onclick: (ev) => { ev.stopPropagation(); duplicar(p); } }, 'Duplicar'),
     el('button', { type: 'button', class: 'discreto', title: 'Baixa o projeto inteiro num arquivo (.metalica.zip) para outro usuário abrir com "Importar pacote…"',
                    onclick: (ev) => { ev.stopPropagation(); exportar(p); } }, 'Exportar'),
+    el('button', { type: 'button', class: 'discreto', 'data-acao': 'enviar',
+                   title: 'Manda a obra para o Metálica de outra pessoa (pela nuvem): ela recebe um aviso na tela inicial e abre como um projeto novo',
+                   onclick: (ev) => { ev.stopPropagation(); enviarObra(p); } }, 'Enviar para…'),
     el('button', { type: 'button', class: 'discreto', 'data-acao': 'arquivar',
                    title: p.arquivado ? 'Volta para a lista principal' : 'Tira da lista principal sem apagar nada (fica em "Arquivados", no fim da lista)',
                    onclick: (ev) => { ev.stopPropagation(); arquivar(p, !p.arquivado); } }, p.arquivado ? 'Desarquivar' : 'Arquivar'),
@@ -539,6 +542,65 @@ async function exportar(p) {
   recado('Preparando o pacote…', 'O download começa quando o arquivo estiver pronto.');
 }
 
+/* ------------------------------------------------------------------ a obra para outro usuário (21/10)
+ * O usuário: "ter uma opção de enviar o projeto para outro usuário por dentro do sistema sem precisar exportar o pacote
+ * da obra e enviar para ele abrir". O cartão › Enviar para… escolhe a pessoa (as licenças ativas) e sobe a obra pela nuvem
+ * (sistema/compartilhar.py); quem recebe vê o aviso no alto da lista e abre como um projeto novo. */
+const mbDe = (b) => (Math.round((b || 0) / 104857.6) / 10).toLocaleString('pt-BR');
+
+async function enviarObra(p) {
+  let lista;
+  try { lista = (await api('/api/compartilhar/pessoas')).pessoas || []; }
+  catch (e) { recado('Não foi possível listar as pessoas', e.message, 'erro'); return; }
+  if (!lista.length) { recado('Ninguém para receber', 'Não há outras licenças ativas do Metálica.', 'erro'); return; }
+  const v = await perguntar({ titulo: `Enviar "${p.nome}"`, ok: 'Enviar',
+    texto: 'A obra vai inteira (modelo 3D, desenhos, pranchas, detalhamento) para o Metálica da pessoa, pela internet: ela ' +
+           'recebe um aviso na tela inicial e abre como um projeto novo. É uma cópia — cada um segue com a sua.' +
+           (p.modelo_mb ? ` Modelo de ${String(p.modelo_mb).replace('.', ',')} MB: o envio leva de alguns segundos a poucos minutos.` : ''),
+    campos: [{ id: 'para', rotulo: 'Para quem', obrigatorio: true, valor: '',
+               opcoes: lista.map(x => ({ valor: x.id, titulo: x.eu ? `${x.pessoa} (você — os seus outros computadores)` : x.pessoa })) }] });
+  if (!v || !v.para) return;
+  recado('Enviando a obra…', `"${p.nome}" está subindo para a nuvem; a barra no rodapé mostra o andamento.`);
+  try {
+    const r = await postar(`/api/projetos/${encodeURIComponent(p.slug)}/enviar`, { para: v.para });
+    recado('Obra enviada', `"${p.nome}" foi para ${r.eu ? 'os seus outros computadores' : r.para} (${String(r.mb).replace('.', ',')} MB). ` +
+           'Aparece na tela inicial do Metálica dela.');
+  } catch (e) { recado('A obra não foi enviada', e.message, 'erro'); }
+}
+
+/** As obras que outras pessoas enviaram para esta licença: um aviso por obra, no alto da lista, com Abrir e Recusar. */
+async function verificarRecebidos() {
+  let lista;
+  try { lista = (await api('/api/compartilhar/recebidos')).recebidos || []; } catch (e) { return; }   // sem internet: nada
+  document.querySelectorAll('.recebido').forEach(x => x.remove());
+  for (const e of lista) {
+    const quando = e.criado ? new Date(e.criado).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+    const aviso = el('div', { class: 'recebido', role: 'status', 'data-envio': e.id },
+      el('span', { class: 'recebido-icone', 'aria-hidden': 'true', texto: '📥' }),
+      el('span', { class: 'recebido-texto' }, el('b', { texto: e.de_mim ? 'Do seu outro computador' + (e.de_pc ? ` (${e.de_pc})` : '') : `${e.de} te enviou` }),
+        ` "${e.nome}" · ${mbDe(e.bytes)} MB${quando ? ' · ' + quando : ''}`),
+      el('button', { type: 'button', class: 'primario', onclick: () => abrirRecebido(e) }, 'Abrir'),
+      el('button', { type: 'button', class: 'discreto', onclick: () => recusarRecebido(e) }, 'Recusar'));
+    $('#lista').before(aviso);
+  }
+}
+
+async function abrirRecebido(e) {
+  carregando(true, `Baixando "${e.nome}"…`);
+  try {
+    const r = await postar(`/api/compartilhar/recebidos/${e.id}/abrir`, {});
+    recado('Obra recebida', `"${r.nome}" de ${e.de} já está na sua lista de projetos.`);
+    await carregar();
+  } catch (err) { recado('Não foi possível abrir a obra', err.message, 'erro'); }
+  finally { carregando(false); verificarRecebidos(); }
+}
+
+async function recusarRecebido(e) {
+  if (!confirm(`Recusar "${e.nome}" de ${e.de}? A obra sai da nuvem e não aparece mais.`)) return;
+  try { await postar(`/api/compartilhar/recebidos/${e.id}/recusar`, {}); } catch (err) { recado('Não foi possível recusar', err.message, 'erro'); }
+  verificarRecebidos();
+}
+
 /** O pacote de outro usuário vira um projeto novo desta pasta de dados. */
 function importarPacote() {
   const entrada = $('#arquivo-pacote');
@@ -645,6 +707,8 @@ async function iniciar() {
       'cada projeto é uma pasta com arquivos comuns (JSON, PDF, DXF, CSV, IFC): copie a pasta para fazer backup.';
   } catch (e) { /* sem versão: a tela funciona igual */ }
   verificarAtualizacao();
+  verificarRecebidos();                                    // as obras que outras pessoas enviaram (21/10)
+  setInterval(() => { if (!document.hidden) verificarRecebidos(); }, 5 * 60 * 1000);
 }
 
 /** Avisa quando há versão mais nova publicada; sem internet, nada aparece. */
