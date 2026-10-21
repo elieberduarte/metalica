@@ -371,6 +371,65 @@ def test_ligacao_da_tesoura_no_3d():
     assert any("CE1 da T2: a chapa tem 1030 mm" in a for a in av)
 
 
+def test_hangar_aletas_dos_contraventos_pelo_projeto(hangar):
+    """a etapa 8 (21/10): as aletas da folha 34 — AC1 #6,3 140×119 (corte da T2, 48 pç) e AC2 #6,3 135×127 (corte da
+    T1, 16 pç), furo Ø15 a 30 mm da borda de fora e a meia altura; o comprimento de corte de cada contravento (CV1
+    L=667 cm …) e a rosca (8 cm, 2 porcas + 2 arruelas por ponta) da folha 5"""
+    from nucleo3d import identificacao as I
+    des, _v = hangar
+    r = I.aletas_dos_contraventos(des, I.folhas_com_moldura(des))
+    al = {m: (a["tesoura"], a["quantidade"], a["espessura"], a["largura"], a["altura"], a["furos"]) for m, a in r["aletas"].items()}
+    assert al == {"AC1": ("T2", 48, 6.3, 140.0, 119.0, [{"x": 30.0, "y": 59.5, "d": 15.0}]),
+                  "AC2": ("T1", 16, 6.3, 135.0, 127.0, [{"x": 30.0, "y": 63.5, "d": 15.0}])}
+    assert {k: v["comprimento"] for k, v in r["contraventos"].items()} == {
+        "CV1": 6670.0, "CV2": 6630.0, "CV3": 6720.0, "CV4": 6690.0, "CV5": 6660.0, "CV6": 6620.0, "CV7": 6710.0, "CV8": 6680.0}
+    assert (r["rosca"]["comprimento"], r["rosca"]["porcas"], r["rosca"]["arruelas"]) == (80.0, 2, 2)
+
+
+def test_aletas_dos_contraventos_no_3d():
+    """as aletas no 3D (21/10): em cada ponta de contravento que chega no banzo, a aleta em pé perpendicular à barra na
+    planta, com o furo na ponta dela, a meia altura do banzo (a ponta desce até lá); a barra cresce até o comprimento de
+    corte do projeto (passa a aleta até as porcas). A aleta que não encosta no banzo e a mais alta que a face onde
+    encosta (o U de boca para dentro, como a T1 do Hangar) viram apontamento: 1 das 2 ali não encosta"""
+    from nucleo2d.desenho import Linha as L_
+    from nucleo3d import regras_trelica as rt
+    aleta = {"marca": "AC1", "espessura": 6.3, "largura": 140.0, "altura": 119.0, "furos": [{"x": 30.0, "y": 59.5, "d": 15.0}]}
+    barras = [[0, 0, 6000, 0, "banzo_inf"], [0, 600, 3000, 900, "banzo_sup"], [3000, 900, 6000, 600, "banzo_sup"],
+              [0, 0, 0, 600, "extremidade"], [6000, 0, 6000, 600, "extremidade"], [3000, 0, 3000, 900, "montante"],
+              [0, 600, 3000, 0, "diagonal"], [3000, 0, 6000, 600, "diagonal"]]
+    des = Desenho(nome="planta", escala=1.0)
+    des.add(L_(camada="E", a=(0.0, 0.0), b=(0.0, 6000.0), atributos={"elemento": "trelica", "material": "aco", "marca": "T1",
+               "perfis": {"banzo_sup": "U 127×50×3,00 (FF)", "banzo_inf": "U 127×50×3,00 (FF)", "diagonal": "L 32×3 (FF)", "montante": "L 32×3 (FF)"},
+               "nivel_base": 5000, "desenho": {"barras": barras, "vao": 6000, "altura": 900},
+               "aletas": {"aleta": aleta, "contraventos": {"CV1": {"comprimento": 4140.0}, "CV2": {"comprimento": 4140.0}}}}))
+    for marca, x0, y0 in (("CV1", 130.0, 1000.0), ("CV2", 141.3, 5000.0)):       # o CV2 encosta (63,5 + 110·cos 45°)
+        des.add(L_(camada="E", a=(x0, y0), b=(x0 + 2900.0, y0 + 2900.0 * (1 if y0 < 3000 else -1)),
+                   atributos={"elemento": "viga", "material": "aco", "papel": "contraventamento", "marca": marca,
+                              "secao": {"perfil": "Barra redonda ø 1/2\""}, "nivel_topo": 5080.0, "alinhamento": "eixo"}))
+    doc, av = DPE.modelo_da_planta(des, [])
+    ents = list(doc.entidades.values())
+    al = [c for c in ents if isinstance(c, Chapa) and (c.atributos or {}).get("papel_chapa") == "aleta"]
+    assert len(al) == 2
+    banzo = next(b for b in ents if isinstance(b, Barra) and (b.atributos or {}).get("papel_trelica") == "banzo_inf")
+    from nucleo3d.de_planta_estrutura import _faixa_da_secao
+    zlo, zhi = _faixa_da_secao(banzo, (0, 0, 1))
+    zc = banzo.inicio[2] + (zlo + zhi) / 2.0
+    for c in al:
+        cv = next(b for b in ents if isinstance(b, Barra) and (b.atributos or {}).get("marca") == c.atributos["contravento"])
+        d = cv.direcao
+        assert abs(c.eixo_x[0] * d[0] + c.eixo_x[1] * d[1]) < 1e-6          # em pé, perpendicular à barra na planta
+        furo = tuple(c.origem[k] + c.eixo_x[k] * 30.0 + (0, 0, 1)[k] * 59.5 for k in range(3))
+        assert abs(furo[2] - zc) < 0.5                                       # a meia altura do banzo
+        ponta = cv.inicio if abs(cv.inicio[0]) < 500 else cv.fim
+        perp = [furo[k] - ponta[k] for k in range(3)]
+        dot = sum(perp[k] * d[k] for k in range(3))
+        assert math.dist([perp[k] - dot * d[k] for k in range(3)], [0, 0, 0]) < 0.5   # a barra passa no furo
+        assert abs(cv.comprimento - 4140.0) < 0.5                            # até as porcas
+    assert any("AC1 da T1: 1 de 2 aletas não encostam no banzo" in a for a in av)
+    assert any("AC1 da T1: a aleta tem 119 mm e a face do banzo onde ela encosta" in a for a in av)
+    assert rt.conferir(ents) == []
+
+
 def test_hangar_tercas_na_planta(hangar):
     from nucleo3d import identificacao as I
     des, v = hangar

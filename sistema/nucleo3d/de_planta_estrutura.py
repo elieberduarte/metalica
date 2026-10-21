@@ -1702,6 +1702,168 @@ def _contorno_cruza(c: Chapa, x_, xb0: float, xb1: float, yb0: float, yb1: float
 
 
 
+def _encosto_na_secao(pts_xz: List[Tuple[float, float]], lado: float, z_lo: float, z_hi: float) -> Optional[Tuple[float, float]]:
+    """o ponto mais para o `lado` (+1/−1 em x) do contorno da seção entre as alturas z_lo e z_hi, e quanto da altura
+    a face que está ali cobre: (x do encosto, altura coberta); None se a seção não passa nessa faixa"""
+    ps = list(pts_xz)
+    cand = []
+    for i in range(len(ps)):
+        (x0, z0), (x1, z1) = ps[i], ps[(i + 1) % len(ps)]
+        for x, z in ((x0, z0), (x1, z1)):
+            if z_lo <= z <= z_hi:
+                cand.append((x, z))
+        for zc in (z_lo, z_hi):
+            if (z0 - zc) * (z1 - zc) < 0:
+                cand.append((x0 + (x1 - x0) * (zc - z0) / (z1 - z0), zc))
+    if not cand:
+        return None
+    xm = max(lado * x for x, _z in cand)
+    zs = [z for x, z in cand if lado * x >= xm - 1.0]
+    return lado * xm, max(zs) - min(zs)
+
+
+def _aletas_das_tesouras(doc: Documento, pedidas: List[Tuple[str, dict]], avisos: List[str]) -> int:
+    """As aletas dos contraventos pelo projeto (Hangar, folha 34 — 21/10/2026; identificacao.aletas_dos_contraventos).
+    `pedidas`: [(id da tesoura na planta, {aleta, contraventos: {marca: {comprimento}}})].
+
+    Em cada ponta de contravento (barra redonda) que chega num banzo da tesoura: a aleta em pé, perpendicular à barra na
+    planta, com o furo do projeto na ponta dela (a ponta que o lançamento põe a 130 mm do eixo, no eixo do banzo); a
+    borda do furo (a de fora) longe da tesoura, a outra encostada no banzo — no 2U composto dentro da boca do U de fora,
+    na alma dele (o corte T2 da folha 34). A aleta que não encosta no banzo (folga) ou é mais alta que a face onde
+    encosta (a T1 com o U de boca para dentro: a aba tem 50 mm, a aleta 127) vira apontamento. A barra passa a aleta
+    até as porcas: as pontas com aleta crescem o que falta para o comprimento de corte do projeto. Devolve quantas."""
+    from nucleo3d.geometria import base_local, resolver_perfil, secao
+    if not pedidas:
+        return 0
+    if "Chapas" not in doc.camadas:
+        doc.camadas["Chapas"] = Camada(nome="Chapas", cor="#c9a227")
+    barras = [b for b in doc.entidades.values() if isinstance(b, Barra)]
+    rods = [b for b in barras if b.papel == "contraventamento"]
+    Z = (0.0, 0.0, 1.0)
+    n = 0
+    pontas = collections.defaultdict(list)              # id do contravento → [(ponta, comprimento de corte)]
+    folga_ap, alta_ap, sem_banzo = {}, {}, collections.Counter()
+    total = collections.Counter()
+    descidas = []                                        # quanto cada ponta de contravento andou até o meio do banzo
+    for tid, ped in pedidas:
+        al = ped.get("aleta")
+        if not al:
+            continue
+        proprias = [b for b in barras if (b.atributos or {}).get("origem_2d") == tid]
+        pt = lambda b: str((b.atributos or {}).get("papel_trelica") or "")
+        bz = [b for b in proprias if b.papel == "banzo" and pt(b) in ("banzo_inf", "banzo_sup") and not (b.atributos or {}).get("ponta_composto")]
+        inf = [b for b in bz if pt(b) == "banzo_inf"]
+        if not inf:
+            continue
+        marca = str((inf[0].atributos or {}).get("marca") or "")
+        d0 = inf[0].direcao
+        w = _unit3((d0[0], d0[1], 0.0))
+        nr = _unit3(_cruz3(w, Z))
+        O = inf[0].inicio
+        s_ = lambda P: sum((P[k] - O[k]) * w[k] for k in range(2))
+        x_ = lambda P: sum((P[k] - O[k]) * nr[k] for k in range(2))
+        x_eixo = sum(x_(b.meio) for b in inf) / len(inf)
+        smin = min(min(s_(b.inicio), s_(b.fim)) for b in bz)
+        smax = max(max(s_(b.inicio), s_(b.fim)) for b in bz)
+        f0 = (al.get("furos") or [{}])[0]
+        xh, yh = float(f0.get("x") or 30.0), float(f0.get("y") or al["altura"] / 2.0)
+        B, H, t = float(al["largura"]), float(al["altura"]), float(al["espessura"])
+        for r in rods:
+            for ponta in ("inicio", "fim"):
+                E = getattr(r, ponta)
+                Q = r.fim if ponta == "inicio" else r.inicio
+                lado = 1.0 if x_(E) > x_eixo else -1.0
+                if not 20.0 < abs(x_(E) - x_eixo) < 250.0 or not smin - 50 <= s_(E) <= smax + 50 or lado * (x_(Q) - x_eixo) < 0:
+                    continue
+                # o banzo em que ela chega: o que passa ali na altura da ponta (no composto, o U do lado dela)
+                ali = []
+                for b in bz:
+                    sa, sb = s_(b.inicio), s_(b.fim)
+                    if not (min(sa, sb) - 5 <= s_(E) <= max(sa, sb) + 5) or abs(sb - sa) < 1:
+                        continue
+                    zb = b.inicio[2] + (b.fim[2] - b.inicio[2]) * (s_(E) - sa) / (sb - sa)
+                    if abs(zb - E[2]) < 150.0:
+                        ali.append((lado * (x_(b.meio) - x_eixo) < -1.0, abs(zb - E[2]), b, zb))
+                if not ali:
+                    sem_banzo[(al["marca"], marca)] += 1
+                    continue
+                _outro, _dz, b, zb = min(ali, key=lambda q: (q[0], q[1]))
+                # o furo no meio da altura do banzo (o corte da folha 34: a aleta dentro da boca, o furo a meia altura):
+                # a ponta do contravento vai para lá
+                zlo_b, zhi_b = _faixa_da_secao(b, Z)
+                zc = zb + (zlo_b + zhi_b) / 2.0
+                if abs(E[2] - zc) > 0.5:
+                    descidas.append(abs(E[2] - zc))
+                    E = (E[0], E[1], zc)
+                    setattr(r, ponta, E)
+                d = _unit3(tuple(E[k] - Q[k] for k in range(3)))                 # para fora, na ponta
+                dh = _unit3((d[0], d[1], 0.0))
+                a = _unit3(_cruz3(Z, dh))
+                if sum(a[k] * nr[k] for k in range(3)) * lado > 0:
+                    a = tuple(-c for c in a)                                     # a: da borda de fora para a tesoura
+                org = tuple(E[k] - a[k] * xh - Z[k] * yh for k in range(3))
+                ch = Chapa(origem=org, eixo_x=a, eixo_y=Z, contorno=[(0.0, 0.0), (B, 0.0), (B, H), (0.0, H)], espessura=t,
+                           centrada=True, furos=[{"x": xh, "y": yh, "diametro": float(f0.get("d") or 15.0)}] if f0 else [],
+                           aco="ASTM A36", camada="Chapas", nome="%s %s" % (al["marca"], marca), material="Aço",
+                           atributos={"tipo_ifc": "IfcPlate", "elemento": "chapa", "marca": al["marca"], "sigla": al["marca"],
+                                      "espessura": t, "tesoura": marca, "origem_2d": tid, "papel_chapa": "aleta",
+                                      "contravento": (r.atributos or {}).get("marca")})
+                doc.add(ch)
+                n += 1
+                # o encosto: a borda de dentro contra o banzo (a face mais de fora dele na altura da aleta)
+                borda = tuple(org[k] + a[k] * B for k in range(3))
+                u, v, _ = base_local(b.direcao, float(b.rotacao or 0.0))
+                pxz = [(q[0] * sum(u[k] * nr[k] for k in range(3)) + q[1] * sum(v[k] * nr[k] for k in range(3)) + x_(b.meio) - x_eixo,
+                        q[0] * u[2] + q[1] * v[2] + zb) for q in secao(resolver_perfil(b.perfil))]
+                enc = _encosto_na_secao(pxz, lado, org[2] + 2.0, org[2] + H - 2.0)   # 2 mm: a aba do banzo inclinado rente
+                chave = (al["marca"], marca)
+                total[chave] += 1
+                if enc is None:
+                    sem_banzo[chave] += 1
+                else:
+                    xc, cobre = enc
+                    folga = lado * (x_(borda) - x_eixo) - lado * xc
+                    if abs(folga) > 5.0:
+                        folga_ap.setdefault(chave, []).append(folga)
+                    if cobre < H - 14.0:
+                        alta_ap.setdefault(chave, []).append(cobre)
+                L_proj = ((ped.get("contraventos") or {}).get(str((r.atributos or {}).get("marca") or "")) or {}).get("comprimento")
+                pontas[r.id].append((ponta, L_proj))
+    # a barra passa a aleta até as porcas: as pontas com aleta crescem o que falta para o comprimento de corte
+    for rid, lista in pontas.items():
+        r = doc.entidades.get(rid)
+        L_proj = next((L for _p, L in lista if L), None)
+        if r is None or not L_proj:
+            continue
+        falta = float(L_proj) - r.comprimento
+        if not 0.0 < falta < 300.0:
+            if abs(falta) > 5.0:
+                avisos.append("%s: o comprimento de corte do projeto (%g) e o da barra entre as aletas (%g) não fecham"
+                              % ((r.atributos or {}).get("marca"), L_proj, round(r.comprimento)))
+            continue
+        dd = r.direcao
+        cada = falta / len(lista)
+        for ponta, _L in lista:
+            if ponta == "inicio":
+                r.inicio = tuple(r.inicio[k] - dd[k] * cada for k in range(3))
+            else:
+                r.fim = tuple(r.fim[k] + dd[k] * cada for k in range(3))
+    for (am, tm), q in sorted(sem_banzo.items()):
+        avisos.append("%s da %s: %d ponta(s) de contravento sem banzo da tesoura ali — a aleta ficou de fora ou solta" % (am, tm, q))
+    for (am, tm), fs in sorted(folga_ap.items()):
+        f = max(fs, key=abs)
+        avisos.append("%s da %s: %d de %d aletas não encostam no banzo (até %s mm %s) — confira a ponta do contravento"
+                      % (am, tm, len(fs), total[(am, tm)], round(abs(f), 1), "afastada" if f > 0 else "para dentro dele"))
+    for (am, tm), cs in sorted(alta_ap.items()):
+        h = next(float(p["aleta"]["altura"]) for _t, p in pedidas if (p.get("aleta") or {}).get("marca") == am)
+        avisos.append("%s da %s: a aleta tem %g mm e a face do banzo onde ela encosta só %g mm em %d de %d (o corte do projeto "
+                      "tem o U com a alma em pé) — apontamento ao projetista" % (am, tm, h, round(min(cs), 1), len(cs), total[(am, tm)]))
+    if descidas:
+        avisos.append("contraventos: %d ponta(s) levada(s) ao meio da altura do banzo, no furo da aleta (até %s mm)"
+                      % (len(descidas), round(max(descidas), 1)))
+    return n
+
+
 def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome: str = "Estrutura lançada") -> Tuple[Documento, List[str]]:
     """o Documento 3D da planta; devolve (documento, avisos). A Montagem vai pela Implantação, na medida real."""
     des = planta_real(des)
@@ -1710,6 +1872,7 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
     avisos: List[str] = []
     n_aco = 0
     pedidas: List[Tuple[str, dict]] = []
+    pedidas_aletas: List[Tuple[str, dict]] = []
     for it in elementos(des):
         a, e, tipo = it["atributos"], it["entidade"], it["elemento"]
         marca = str(a.get("marca") or "")
@@ -1746,6 +1909,8 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
                 # que chegam já no 3D (_chapas_das_tesouras)
                 if isinstance(a.get("chapas"), dict):
                     pedidas.append((e.id, a["chapas"]))
+                if isinstance(a.get("aletas"), dict):
+                    pedidas_aletas.append((e.id, a["aletas"]))
             elif tipo == "viga":
                 if not isinstance(e, Linha):
                     raise ErroDeDados("a viga precisa de uma linha")
@@ -1877,6 +2042,7 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
             avisos.append("%s %s: %s" % (tipo, marca, err))
     n_aco += _suportes_das_tercas(doc, avisos)
     n_aco += _chapas_das_tesouras(doc, pedidas, avisos)
+    n_aco += _aletas_das_tesouras(doc, pedidas_aletas, avisos)
     # os furos: na chapa em que caem (as coordenadas da chapa são as da planta)
     chapas = [c for c in doc.entidades.values() if isinstance(c, Chapa) and (c.atributos or {}).get("elemento") == "chapa"]
     for it in elementos(des):

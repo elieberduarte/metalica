@@ -1766,3 +1766,70 @@ def chapas_das_emendas(des: Desenho, folhas_: List[dict]) -> dict:
 def _dentro_caixa(p, caixa) -> bool:
     (x0, y0), (x1, y1) = caixa
     return x0 <= p[0] <= x1 and y0 <= p[1] <= y1
+
+
+# ------------------------------------------- as aletas dos contraventos (Hangar, folha 34 — 21/10/2026)
+
+_ALETA_TXT = re.compile(r"\b(AC\d+)\s*-\s*(\d+)\s*x\s*-\s*#\s*(\d+(?:[.,]\d+)?)\s*-\s*(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?)", re.I)
+_CORTE_TES = re.compile(r"CORTE\s*:\s*(T\d+[\w-]*)", re.I)
+_ROSCA_TXT = re.compile(r"ROSCA\s*(\d+(?:[.,]\d+)?)\s*CM\s*,\s*(\d+)\s*PORCAS?\s*\+\s*(\d+)\s*ARRUELAS?", re.I)
+
+
+def aletas_dos_contraventos(des: Desenho, folhas_: List[dict]) -> dict:
+    """As aletas dos contraventos pelo projeto (21/10/2026, o Hangar, folha 34): cada chapa ("AC1 - 48x - #6,30 -
+    14x11,9" e "FURO Ø15" embaixo) — a marca, a quantidade, a espessura, a largura e a altura (cm), o furo pela vista
+    dela (a partir do canto de baixo à esquerda: a borda de fora, a que fica longe da tesoura no corte) e a tesoura
+    pelo corte mais perto ("2 - CORTE: T2 (2U127)"); e, da folha das peças, o comprimento de corte de cada contravento
+    ("CV1 - Ø1/2\" L=667 - 4 pç", cm: a barra passa a aleta até as porcas) e a rosca ("ROSCA 8 CM, 2 PORCAS + 2
+    ARRUELAS POR PONTA"). {aletas: {marca: {...}}, contraventos: {marca: {comprimento}}, rosca, avisos}"""
+    avisos: List[str] = []
+    textos = [e for e in des.entidades.values() if isinstance(e, Texto)]
+    pols = [e for e in des.entidades.values() if isinstance(e, Polilinha) and len(e.vertices) >= 4]
+    circ = [c for c in des.entidades.values() if isinstance(c, Circulo) and re.search(r"FURO", c.camada or "", re.I)]
+    aletas: Dict[str, dict] = {}
+    for t in textos:
+        s = re.sub(r"\s+", " ", t.texto or "").strip()
+        m = _ALETA_TXT.search(s)
+        if not m or m.group(1).upper() in aletas:
+            continue
+        marca = m.group(1).upper()
+        B, H = _num(m.group(4)) * 10.0, _num(m.group(5)) * 10.0
+        d_txt = None
+        for u in textos:
+            if u is not t and abs(u.posicao[0] - t.posicao[0]) < 20 and 0 < t.posicao[1] - u.posicao[1] < 80:
+                mf = re.search(r"FURO\s*Ø\s*(\d+(?:[.,]\d+)?)", u.texto or "", re.I)
+                if mf:
+                    d_txt = _num(mf.group(1))
+        folha = next((f for f in folhas_ if _dentro_caixa(t.posicao, f["caixa"])), None)
+        cortes = [(abs(u.posicao[0] - t.posicao[0]), _CORTE_TES.search(u.texto or "").group(1).upper()) for u in textos
+                  if _CORTE_TES.search(u.texto or "") and u.posicao[1] > t.posicao[1]
+                  and (folha is None or _dentro_caixa(u.posicao, folha["caixa"]))]
+        al = {"marca": marca, "quantidade": int(m.group(2)), "espessura": _num(m.group(3)), "largura": B, "altura": H,
+              "tesoura": min(cortes)[1] if cortes else None, "texto": s, "furos": []}
+        cand = []
+        for p in pols:
+            c = _caixa_pol(p)
+            if c and abs(c[2] - c[0] - B) < 2 and abs(c[3] - c[1] - H) < 2 and c[1] >= t.posicao[1]:
+                cand.append((math.hypot(c[0] - t.posicao[0], c[1] - t.posicao[1]), id(p), c))
+        if cand:
+            _d, _i, c = min(cand)
+            al["furos"] = [{"x": round(f.centro[0] - c[0], 1), "y": round(f.centro[1] - c[1], 1), "d": d_txt or round(2 * f.raio, 1)}
+                           for f in circ if c[0] < f.centro[0] < c[2] and c[1] < f.centro[1] < c[3]]
+        if not al["furos"]:
+            avisos.append("%s: a vista da aleta (%g × %g) com o furo não foi achada — vai sem furo" % (marca, B, H))
+        if not al["tesoura"]:
+            avisos.append("%s: não achei o corte da tesoura dela" % marca)
+        aletas[marca] = al
+    if not aletas:
+        raise ErroDeDados("o projeto não escreve as aletas dos contraventos (\"AC1 - 48x - #6,30 - 14x11,9\")")
+    cvs: Dict[str, dict] = {}
+    rosca = None
+    for t in textos:
+        s = re.sub(r"\s+", " ", t.texto or "").strip()
+        m = _TAB_PECA.match(s)
+        if m and m.group(1).upper().startswith("CV"):
+            cvs.setdefault(re.sub(r"\s+", "", m.group(1).upper()), {"comprimento": _num(m.group(3)) * 10.0, "texto": s})
+        mr = _ROSCA_TXT.search(s)
+        if mr and rosca is None:
+            rosca = {"comprimento": _num(mr.group(1)) * 10.0, "porcas": int(mr.group(2)), "arruelas": int(mr.group(3)), "texto": s}
+    return {"aletas": aletas, "contraventos": cvs, "rosca": rosca, "avisos": avisos}

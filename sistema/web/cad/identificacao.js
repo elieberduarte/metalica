@@ -70,6 +70,7 @@ export const ETAPAS = [
   ['apoios', 'Apoios: chapas e chumbadores'],
   ['suportes', 'Suportes das terças'],
   ['chapas', 'Emendas e ligações das tesouras'],
+  ['aletas', 'Aletas dos contraventos'],
 ];
 
 export class MetodosIdentificacao {
@@ -248,6 +249,17 @@ export class MetodosIdentificacao {
         botao(nCh ? 'Pôr de novo' : 'Pôr as chapas nas tesouras', () => this._chapasIdent(), { class: nCh ? '' : 'primario',
           title: 'Lê as chapas da emenda e das ligações nas folhas do projeto e põe em cada tesoura da Implantação pelo tipo' }),
         botao('Confirmar ✓', () => this._confirmarIdent('chapas'), { class: 'ident-confirmar', disabled: nCh ? undefined : true })) : null);
+    const livre8 = this._liberada('aletas');
+    const nAl = this.ativa ? tesTrel.filter(e => (e.atributos || {}).aletas).length : (id.aletas || {}).n || 0;
+    const resAl = id.aletas || {};
+    const sec8 = etapa('aletas', ETAPAS[7][1],
+      el('div', { class: 'explica', texto: 'As aletas dos contraventos pelo detalhe do projeto, em cada tesoura pelo tipo dela: o 3D põe uma em cada ponta de contravento que chega no banzo (em pé, perpendicular à barra, o furo na ponta dela) e a barra passa a aleta até as porcas, no comprimento de corte do projeto.' }),
+      nAl ? el('div', { class: 'ident-linha ok', texto: `Aletas em ${nAl} tesoura(s)` + (resAl.resumo ? ` — ${resAl.resumo}` : '') + '.' }) : null,
+      avisos(resAl.avisos),
+      livre8 ? el('div', { class: 'ident-botoes' },
+        botao(nAl ? 'Pôr de novo' : 'Pôr as aletas nas tesouras', () => this._aletasIdent(), { class: nAl ? '' : 'primario',
+          title: 'Lê as aletas dos contraventos na folha do projeto e põe em cada tesoura da Implantação pelo tipo' }),
+        botao('Confirmar ✓', () => this._confirmarIdent('aletas'), { class: 'ident-confirmar', disabled: nAl ? undefined : true })) : null);
     const podeMontar = et.locacao === 'confirmada' && et.tesouras === 'confirmada';
     const faltamEt = ETAPAS.filter(([k]) => et[k] !== 'confirmada').map(([, r]) => r.toLowerCase());
     const montado = id.montado;
@@ -260,7 +272,7 @@ export class MetodosIdentificacao {
         montado ? botao('Trazer do 3D o que mudou', () => this.cad.atualizarPlantaPelo3D(),
           { title: 'O que foi mudado no 3D (peça movida, comprimento, cota) volta para a Implantação; a peça apagada lá vira aviso' }) : null),
       montado ? el('div', { class: 'ident-sub', texto: 'Vinculados: o que muda na Implantação vai para o 3D a cada gravação; o que muda no 3D volta por "Trazer do 3D o que mudou".' }) : null);
-    corpo.replaceChildren(sec1, sec2, sec3, sec4, sec5, sec6, sec7, montar);
+    corpo.replaceChildren(sec1, sec2, sec3, sec4, sec5, sec6, sec7, sec8, montar);
   }
 
   async _verNoOriginal(caixa) {
@@ -627,6 +639,39 @@ export class MetodosIdentificacao {
     await this.cad.salvar({ avisar: false });
     this.cad.aviso(`Chapas em ${Object.keys(mud).length} tesoura(s): ${resumo}. O 3D põe a emenda na junta e as ligações onde as vigas chegam; Ctrl+Z desfaz.`,
       avs.length ? 'atencao' : 'info', 16000);
+    this._desenharIdent();
+  }
+
+  /** Etapa 8: as aletas dos contraventos (AC no Hangar) em cada tesoura pelo tipo dela; o 3D põe uma em cada ponta de
+   *  contravento que chega no banzo e a barra fica com o comprimento de corte do projeto (21/10/2026). */
+  async _aletasIdent() {
+    if (!this.ativa) await this.ir('montagem');
+    if (!this.ativa) return;
+    let r;
+    try {
+      r = await pedir(`/api/projetos/${encodeURIComponent(this.cad.projeto)}/identificacao/aletas-contraventos`, { original: this.m.original || this.original });
+    } catch (e) { this.cad.aviso('Não consegui ler as aletas dos contraventos: ' + e.message, 'erro', 0); return; }
+    const als = Object.values(r.aletas || {});
+    const tes = [...this.cad.doc.entidades.values()].filter(e => (e.atributos || {}).elemento === 'trelica' && !(e.atributos || {}).identificacao);
+    if (!tes.length) { this.cad.aviso('Ponha as tesouras nos eixos primeiro (etapa 2).', 'atencao'); return; }
+    const tipo = (marca) => ((String(marca || '').match(/^T\d+/i) || [''])[0]).toUpperCase();
+    const mud = {};
+    const usadas = new Set();
+    for (const e of tes) {
+      const a = e.atributos || {};
+      const aleta = als.find(x => x.tesoura && tipo(x.tesoura) === tipo(a.marca));
+      if (!aleta) continue;
+      usadas.add(aleta.marca);
+      mud[e.id] = { atributos: { ...a, aletas: { aleta, contraventos: r.contraventos || {} } } };
+    }
+    if (!Object.keys(mud).length) { this.cad.aviso('Nenhuma aleta do projeto é das tesouras lançadas.', 'atencao', 0); return; }
+    this.cad.executar(new ComandoAlterar(mud, 'Aletas dos contraventos'));
+    const resumo = als.filter(x => usadas.has(x.marca)).map(x => `${x.marca} (${x.tesoura}, #${x.espessura} ${x.largura}×${x.altura})`).join(', ')
+      + (r.rosca ? `; ${r.rosca.texto.toLowerCase()}` : '');
+    const avs = [...(r.avisos || []), ...als.filter(x => !usadas.has(x.marca)).map(x => `${x.marca} (${x.tesoura || 'sem tesoura'}) não casou com nenhuma tesoura lançada`)];
+    this._guardarIdent({ ...this._ident(), aletas: { n: Object.keys(mud).length, resumo, avisos: avs } });
+    await this.cad.salvar({ avisar: false });
+    this.cad.aviso(`Aletas em ${Object.keys(mud).length} tesoura(s): ${resumo}. O 3D põe uma em cada ponta de contravento; Ctrl+Z desfaz.`, avs.length ? 'atencao' : 'info', 16000);
     this._desenharIdent();
   }
 

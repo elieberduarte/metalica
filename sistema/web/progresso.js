@@ -166,7 +166,7 @@ const ROTULOS = {
   'planta-cargas': 'Planta de cargas', 'comparacao-pdf': 'Quadro de comparação', 'pecas-pdf': 'PDF das peças',
   'baixar-imagem': 'Baixando a imagem do terreno', 'buscar-endereco': 'Procurando o endereço',
   'importar-imagem': 'Enviando a imagem do terreno', 'posicionar-imagem': 'Pondo a imagem do terreno no lugar',
-  'enviar': 'Enviando a obra', 'apoios-tesouras': 'Lendo os apoios e os chumbadores', 'suportes-tercas': 'Lendo o suporte das terças', 'chapas-tesouras': 'Lendo as chapas das tesouras',
+  'enviar': 'Enviando a obra', 'apoios-tesouras': 'Lendo os apoios e os chumbadores', 'suportes-tercas': 'Lendo o suporte das terças', 'chapas-tesouras': 'Lendo as chapas das tesouras', 'aletas-contraventos': 'Lendo as aletas dos contraventos',
 };
 
 function _caminho(url) {

@@ -274,6 +274,20 @@ try:
     pz = [e for e in m3 if ((e.get("atributos") or {}).get("parafuso") or {}) and str((e.get("atributos") or {}).get("marca", "")) == "PAR CE1"]
     ok(pl.get("CE1") == 6 and pl.get("CL1") == 6 and len(pz) == 24, f"no 3D: 6 CE1, 6 CL1 e 24 parafusos da emenda ({dict(pl)}, {len(pz)})")
 
+    # ---- Etapa 8: as aletas dos contraventos (21/10) — a AC1 da folha 34 em cada ponta de contravento que chega numa T2
+    clicar_em(botao("Confirmar ✓", "[data-etapa=chapas]"))
+    ok(esperar("!document.querySelector('[data-etapa=aletas]').classList.contains('bloqueada')", 10), "confirmadas as chapas, as aletas se liberam")
+    clicar_em(botao("Pôr as aletas nas tesouras"))
+    ok(esperar("[...window.cad.doc.entidades.values()].filter(e => (e.atributos || {}).elemento === 'trelica' && (e.atributos || {}).aletas).length === 3", 30),
+       "as aletas nas 3 T2 da Implantação")
+    ok("AC1 (T2" in painel(), "o painel: a AC1 da T2")
+    t0 = time.time()
+    while time.time() - t0 < 60 and sum(1 for e in modelo3d() if (e.get("atributos") or {}).get("papel_chapa") == "aleta") < 32:
+        aba.drenar(1.0)
+    m3 = modelo3d()
+    acs = [e for e in m3 if (e.get("atributos") or {}).get("papel_chapa") == "aleta"]
+    ok(len(acs) == 32 and all(e["atributos"]["marca"] == "AC1" for e in acs), f"no 3D: 32 AC1, uma em cada ponta de contravento nos eixos 3 e 5 ({len(acs)})")
+
     clicar_em("[...document.querySelectorAll('.ident-tesoura')].find(d => d.textContent.includes('T3')).querySelector('.ident-ver')")
     ok(esperar("window.cad.nomeDesenho === 'planta-de-lançamento' && !document.querySelector('#painel-ident').hidden", 30), "Ver leva ao Original com o painel junto")
     aba.drenar(1.0)
