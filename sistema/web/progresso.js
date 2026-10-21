@@ -154,7 +154,7 @@ const ROTULOS = {
   'detalhar': 'Detalhando', 'detalhar-premoldado': 'Pré-moldado', 'detalhar-posicao': 'Detalhe da peça',
   'importar-ifc': 'Importando o modelo', 'importar-pacote': 'Importando o projeto', 'importar-dxf': 'Lendo o DXF',
   'importar-pdf': 'Lendo o PDF', 'resumos': 'Resumos da obra', 'materiais': 'Lista de materiais', 'pdf': 'Gerando o PDF',
-  'dxf': 'Gerando o DXF', 'pranchas': 'Montando as pranchas', 'pranchas-das-folhas': 'Pranchas das folhas',
+  'dxf': 'Gerando o DXF', 'imprimir': 'Imprimindo as pranchas', 'pranchas': 'Montando as pranchas', 'pranchas-das-folhas': 'Pranchas das folhas',
   'analise-estrutural': 'Análise estrutural', 'esforcos': 'Esforços e verificação', 'calcular': 'Calculando',
   'dimensionar': 'Dimensionando', 'memorial': 'Memorial', 'conferencia': 'Conferindo', 'aplicar-pecas': 'Aplicando no 3D',
   'aplicar-furos': 'Aplicando os furos', 'aplicar-3d': 'Aplicando no 3D', 'aplicar-trocas': 'Aplicando as trocas', 'trocar-grupos': 'Trocando os perfis por grupo', 'regras-trelica': 'Corrigindo pelas regras das tesouras', 'reanalisar': 'Reanalisando a estrutura',

@@ -4732,6 +4732,92 @@ def exportar_desenho_pdf(s: str, nome: str, corpo: dict) -> dict:
             "avisos": avisos}
 
 
+def _folhas_para_imprimir(s: str, nomes) -> list:
+    """As folhas dos desenhos de pranchas, na ordem das páginas do PDF (`paginas_de`): {indice, desenho, numero,
+    titulo, formato, largura, altura} — a lista do Imprimir pranchas… O desenho das pranchas lado a lado passa pela
+    mesma `sincronizar_folhas` do PDF (a folha apagada ou movida no CAD): sem ela os índices marcados apontariam para
+    outra página."""
+    from nucleo2d.desenho import Desenho
+    from nucleo2d.pranchas import FOLHAS, paginas_de, sincronizar_folhas
+    g = _gerente()
+    out = []
+    for n in nomes:
+        bruto = g.abrir_desenho(s, n)
+        m = bruto.get("metadados") or {}
+        if m.get("pranchas"):
+            d = Desenho.de_dict(bruto)
+            sincronizar_folhas(d)
+            itens = [f for f in d.metadados.get("pranchas") or [] if f.get("formato") in FOLHAS]
+        elif (m.get("prancha") or {}).get("formato") in FOLHAS:
+            itens = [m["prancha"]]
+        else:                                            # desenho comum: uma página do tamanho dele
+            itens = [{"titulo": bruto.get("nome") or n, "tamanho": [p[0], p[1]]} for p in paginas_de(Desenho.de_dict(bruto))]
+        for f in itens:
+            larg, alt = FOLHAS.get(f.get("formato")) or tuple(f.get("tamanho") or (0.0, 0.0))
+            out.append({"indice": len(out), "desenho": n, "numero": f.get("numero"), "formato": f.get("formato") or "",
+                        "titulo": f.get("titulo") or f.get("nome") or n, "largura": larg, "altura": alt})
+    return out
+
+
+def rota_impressao(s: str, acao: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/impressao/{folhas|impressoras|papeis|imprimir}: o Imprimir pranchas… do CAD (pedido do
+    usuário, 21/10). Imprimir: o PDF das folhas marcadas (o mesmo do PDF de todas as pranchas, com a regra R6 de
+    emissão) mandado direto à impressora do Windows (saida/impressao.py). A impressora que pergunta onde gravar (a
+    "Microsoft Print to PDF") grava em pranchas/ do projeto, sem a janela do Windows atrás do programa."""
+    import tempfile
+    from saida import impressao
+    nomes = [str(n) for n in corpo.get("desenhos") or []]
+    try:
+        if acao == "folhas":
+            return {"folhas": _folhas_para_imprimir(s, nomes)}
+        if acao == "impressoras":
+            return impressao.impressoras()
+        if acao == "papeis":
+            return impressao.papeis(str(corpo.get("impressora") or ""))
+        if acao != "imprimir":
+            raise ErroDeDados("rota de impressão inválida: " + acao)
+        from nucleo2d.desenho import Desenho
+        from nucleo2d.pranchas import pdf_dos_desenhos
+        if not nomes:
+            raise ErroDeDados("o projeto não tem pranchas para imprimir.")
+        nome_imp = str(corpo.get("impressora") or "")
+        lista = impressao.impressoras()["impressoras"]
+        imp = next((p for p in lista if p["nome"] == nome_imp), None)
+        if imp is None:
+            raise ErroDeDados("a impressora \"%s\" não está instalada neste computador." % nome_imp)
+        so = corpo.get("folhas")
+        so = None if so is None else [int(i) for i in so]
+        if so is not None and not so:
+            raise ErroDeDados("marque ao menos uma folha para imprimir.")
+        g = _gerente()
+        _progresso(s, "lendo as pranchas…", 0.02)
+        desenhos = [Desenho.de_dict(g.abrir_desenho(s, n)) for n in nomes]
+        _conferir_para_emitir(s, desenhos)
+        n_folhas = len(so) if so is not None else len(_folhas_para_imprimir(s, nomes))
+        _progresso(s, "desenhando %d folha(s)…" % n_folhas, 0.05)
+        try:
+            obra = (g.ler(s) or {}).get("nome") or s
+        except Exception:                                # noqa: BLE001 — o título do trabalho na fila só
+            obra = s
+        arquivo = None
+        if imp["porta"].upper().startswith("PORTPROMPT") or corpo.get("para_arquivo"):
+            pasta = os.path.join(g._existente(s), "pranchas")
+            os.makedirs(pasta, exist_ok=True)
+            arquivo = os.path.join(pasta, "impressao-" + (_slug(nome_imp) or "impressora") + ".pdf")
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf = pdf_dos_desenhos(desenhos, os.path.join(tmp, "pranchas.pdf"), so=so)
+            r = impressao.imprimir_pdf(
+                pdf, nome_imp, papel=None if corpo.get("papel") in (None, "", "auto") else int(corpo["papel"]), ajuste=str(corpo.get("ajuste") or "real"),
+                cor=str(corpo.get("cor") or "preto"), copias=int(corpo.get("copias") or 1),
+                titulo="Metálica — %s — pranchas" % obra, arquivo=arquivo,
+                progresso=lambda etapa, f: _progresso(s, etapa + "…", 0.4 + 0.6 * f))
+        if arquivo:
+            r["arquivo"] = _descrever_arquivo(arquivo, os.path.dirname(arquivo))
+        return r
+    except impressao.ErroDeImpressao as e:
+        raise ErroDeDados(str(e))
+
+
 def exportar_desenho_dxf(s: str, nome: str, corpo: dict) -> dict:
     """DXF do desenho aberto; com `desenhos: [...]` (todas as pranchas), o DXF completo com as
     pranchas lado a lado num arquivo só e um DXF por prancha (papel 1:1, a folha na origem)
@@ -6052,6 +6138,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(exportar_desenho_dxf(partes[0], partes[2], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "pdf":
                     return self._json(exportar_desenho_pdf(partes[0], partes[2], corpo))
+                if len(partes) == 3 and partes[1] == "impressao":
+                    return self._json(rota_impressao(partes[0], partes[2], corpo if isinstance(corpo, dict) else {}))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "excluir":
                     return self._json(_gerente().excluir_desenho(partes[0], partes[2]))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "folha":

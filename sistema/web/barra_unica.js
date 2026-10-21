@@ -55,6 +55,8 @@
         HR,
         I('Só inspecionar um IFC (sem importar)…', '3d', 'inspecionar-ifc', { antes: 'Arquivo › Inspecionar um IFC…' }),
       ]),
+      // direto na impressora do Windows (21/10): as folhas marcadas, no papel de cada uma ou ajustadas a um só
+      I('Imprimir pranchas…', '2d', 'imprimir', { kbd: 'Ctrl+P', dica: 'as folhas marcadas na impressora: a A1 na plotter, ou ajustadas a uma A3' }),
       S('Exportar', [
         I('IFC do modelo', '3d', 'exportar-ifc', { antes: 'Arquivo › IFC do modelo' }),
         F('Pacote do projeto (.metalica.zip)', 'exportar-pacote', { dica: 'tudo do projeto num arquivo: outro computador abre em "Importar pacote…", na tela inicial' }),
@@ -847,6 +849,13 @@
         w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
         w.focus();
       } catch (e) { /* lado recarregando */ }
+    });
+    // Ctrl+P com o foco aqui em cima: as pranchas na impressora (o imprimir do navegador sairia a tela da área de trabalho)
+    document.addEventListener('keydown', function (ev) {
+      if (!(ev.ctrlKey || ev.metaKey) || String(ev.key).toLowerCase() !== 'p') return;
+      ev.preventDefault();
+      fechar();
+      executar({ lado: '2d', acao: 'imprimir' });
     });
     // o clique dentro de um dos lados: fecha o menu e marca o lado das setas de desfazer
     window.addEventListener('blur', function () {

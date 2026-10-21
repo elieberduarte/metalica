@@ -15,6 +15,7 @@ import { MetodosMontarPlantaCAD } from './montar_planta.js';
 import { MetodosEstruturaCAD } from './estrutura.js';
 import { MetodosEdicaoChapaCAD } from './edicao_chapa.js';
 import { MetodosTravaPecasCAD } from './trava_pecas.js';
+import { MetodosImpressaoCAD } from './impressao.js';
 
 const CHAVE_TEMA = 'galpao.tema';
 const ATRASO_AUTOSAVE = 3000;
@@ -1083,6 +1084,8 @@ class CAD {
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); ev.shiftKey ? this.refazer() : this.desfazer(); return; }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'y') { ev.preventDefault(); this.refazer(); return; }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); this.salvar(); return; }
+      // Ctrl+P: as pranchas na impressora (o imprimir do navegador sairia a tela do CAD)
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'p') { ev.preventDefault(); this.dialogoImprimir(); return; }
       // Esc fecha primeiro o menu aberto, como em qualquer programa (P12, primeiro uso 16/10: o menu ficava por cima do desenho)
       if (ev.key === 'Escape' && document.querySelector('.menu.aberto')) { this._fecharMenus(); return; }
       if (ev.key === 'Escape') { if (this.ferramenta) { this.ferramenta.cancelar(); } this.selecionar([]); if (this.ferramenta.constructor.id !== 'selecionar') this.ativarFerramenta('selecionar'); return; }
@@ -1126,6 +1129,7 @@ class CAD {
       'exportar-dxf': () => this.exportarDXF(),
       'exportar-pdf': () => this.exportarPDF(),
       'pdf-pranchas': () => this.pdfDasPranchas(),
+      imprimir: () => this.dialogoImprimir(),
       'dxf-pranchas': () => this.dxfDasPranchas(),
       'abrir-pasta': () => this.projeto && postar(`/api/projetos/${encodeURIComponent(this.projeto)}/abrir-pasta`, { sub: 'desenhos-2d' }).catch(e => this.aviso(e.message, 'erro')),
       corte: () => this.dialogoCorte(),
@@ -2825,7 +2829,7 @@ function lerTema() { try { return localStorage.getItem(CHAVE_TEMA); } catch { re
 
 // os métodos da planta de lançamento (menu Lançamento) moram em lancamento.js; os do
 // projeto recebido montado pela planta, em montar_planta.js
-for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEstruturaCAD, MetodosEdicaoChapaCAD, MetodosTravaPecasCAD]) {
+for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEstruturaCAD, MetodosEdicaoChapaCAD, MetodosTravaPecasCAD, MetodosImpressaoCAD]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) {
     if (k === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(CAD.prototype, k)) throw new Error(`método repetido no CAD: ${k}`);
