@@ -7,6 +7,7 @@ Cada gerador chama `regras_trelica.aplicar` antes do encaixe de fábrica; aqui c
 tem de voltar vazio. Os caminhos: a tesoura pelo desenho (de_planta_estrutura), a treliça entre banzos do editor 3D
 (modelagem.trelica), o galpão treliçado (de_projeto), o projeto recebido pela planta (de_planta, o Posto) e o 3D pelos
 quadros (de_quadros). Os testes unitários cobrem cada regra numerada (1.2, 1.4, 2.2–2.5) e as decisões do usuário."""
+import math
 import os
 import sys
 
@@ -340,6 +341,80 @@ def test_2_9_tesoura_pelo_desenho_u_centrado_e_par_abracando():
         assert abs(u.inicio[0]) == pytest.approx(bf / 2.0 - xg, abs=0.01)      # centrado no eixo
         assert abs(_boca_x(u)) == pytest.approx(1.0, abs=1e-6)                 # a boca fora do plano
     _sem_erros(bs)
+
+
+# a tesoura de 2U composto com o painel de ponta: montante de extremidade + trecho a 45° (a T2 do Hangar)
+BARRAS_COMPOSTO_PONTA = [
+    [0, 0, 6000, 0, "banzo_inf"], [300, 1000, 5700, 1000, "banzo_sup"],
+    [0, 0, 0, 700, "extremidade"], [0, 700, 300, 1000, "banzo_sup"],
+    [6000, 0, 6000, 700, "extremidade"], [6000, 700, 5700, 1000, "banzo_sup"],
+    [3000, 0, 3000, 1000, "montante"], [1500, 0, 1500, 1000, "montante"], [4500, 0, 4500, 1000, "montante"],
+    [300, 1000, 1500, 0, "diagonal"], [1500, 0, 3000, 1000, "diagonal"],
+    [3000, 1000, 4500, 0, "diagonal"], [4500, 0, 5700, 1000, "diagonal"],
+]
+
+
+def _modelo_composto_ponta():
+    from nucleo2d.desenho import Desenho, Linha
+    from nucleo3d import de_planta_estrutura as P
+    barras = []
+    for b in BARRAS_COMPOSTO_PONTA:
+        banzo = b[4] in ("banzo_sup", "banzo_inf", "extremidade")
+        barras.append(list(b) + [U_BZ if banzo else L_AL, "composto" if banzo else "", None, False, False])
+    des = Desenho(nome="planta")
+    des.add(Linha(a=(0.0, 0.0), b=(0.0, 6000.0), camada="ESTRUTURA",
+                  atributos={"elemento": "trelica", "material": "aco", "marca": "T2", "perfis": {}, "cantoneira": "simples",
+                             "nivel_base": 5000, "desenho": {"barras": barras, "vao": 6000, "altura": 1000}}))
+    doc, _avisos = P.modelo_da_planta(des, [])
+    return [e for e in doc.entidades.values() if e.tipo == "barra"]
+
+
+def test_2_9a_ponta_do_composto_e_um_u_so_entre_as_almas():
+    """o gerador: os banzos 2U a ±(xg + d/2) (o vão = a altura do U do banzo); a ponta (montante de extremidade e o
+    45°) um U só no plano, altura atravessando o plano, boca no plano, o montante nascendo no apoio (−d/2), os dois
+    cortados na bissetriz; a conferência limpa"""
+    from nucleo3d.geometria import resolver_perfil
+    xg, _bf = _xg_bf(U_BZ)
+    d_u = float(resolver_perfil(U_BZ).d)
+    bs = _modelo_composto_ponta()
+    pontas = [b for b in bs if (b.atributos or {}).get("ponta_composto")]
+    verticais = [b for b in pontas if abs(b.inicio[1] - b.fim[1]) < 1.0]
+    chanfros = [b for b in pontas if b not in verticais]
+    assert len(verticais) == 2 and len(chanfros) == 2
+    banzos = [b for b in bs if b.perfil == U_BZ and b not in pontas]
+    assert sorted(round(abs(b.inicio[0]), 1) for b in banzos) == [round(xg + d_u / 2.0, 1)] * len(banzos)
+    for v in verticais:
+        assert abs(v.inicio[0]) < 0.01 and min(v.inicio[2], v.fim[2]) == pytest.approx(5000.0 - d_u / 2.0)
+        assert abs(_boca_x(v)) < 1e-6                              # a boca no plano, para o meio do vão
+        assert _boca(v)[1] * (3000.0 - v.inicio[1]) > 0
+        assert v.cortes_fim and not v.cortes_inicio
+    for c in chanfros:
+        assert abs(c.inicio[0]) < 0.01 and _boca(c)[2] < -0.5         # o 45° abre para baixo
+        assert c.cortes_inicio or c.cortes_fim
+    v0 = next(v for v in verticais if v.inicio[1] < 100)
+    nrm = v0.cortes_fim[0]["normal"]
+    assert nrm[1] == pytest.approx(-math.sin(math.radians(22.5)), abs=1e-3) and nrm[2] == pytest.approx(-math.cos(math.radians(22.5)), abs=1e-3)
+    assert not [b for b in bs if b.papel == "presilha"]
+    _sem_erros(bs)
+
+
+def test_2_9a_ponta_em_par_e_acusada():
+    """a ponta montada como par (um U de cada lado, o gerador antigo) é acusada; a ponta no plano com a boca para fora
+    do plano é acusada pela 2.9 (a reanálise não pode girar a ponta certa: a boca dela é no plano)"""
+    bs = _modelo_composto_ponta()
+    pontas = [b for b in bs if (b.atributos or {}).get("ponta_composto")]
+    assert "2.9a" not in _regras(bs) and "2.9" not in _regras(bs)
+    v0 = next(b for b in pontas if abs(b.inicio[1] - b.fim[1]) < 1.0 and b.inicio[1] < 100)
+    giro = v0.rotacao
+    v0.rotacao = (giro + 90.0) % 360.0                 # a boca para fora do plano: errada
+    assert [e["nome"] for e in R.conferir(bs) if e["regra"] == "2.9"] == [v0.nome]
+    R.aplicar(bs)
+    assert v0.rotacao == pytest.approx(giro) and R.conferir(bs) == []
+    par = Barra(nome="ponta (a)", inicio=(60.0, v0.inicio[1], v0.inicio[2]), fim=(60.0, v0.fim[1], v0.fim[2]), perfil=U_BZ,
+                papel="banzo", rotacao=0.0, atributos=dict(v0.atributos, ponta_composto=False))
+    v0.inicio, v0.fim = (-60.0, v0.inicio[1], v0.inicio[2]), (-60.0, v0.fim[1], v0.fim[2])
+    bs.append(par)
+    assert {e["nome"] for e in R.conferir(bs) if e["regra"] == "2.9a"} == {v0.nome, par.nome}
 
 
 # ------------------------------------------------------------------ cada gerador

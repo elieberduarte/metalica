@@ -527,6 +527,22 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
     sec_banzo = next((secoes_b[j] for j in i_bz if secoes_b[j]), "")
     perfis_b_banzo = next((perfis_b[j] for j in i_bz if perfis_b[j]), "")
     vaos_b_banzo = next((vaos_b[j] for j in i_bz if vaos_b[j] is not None), None)
+    # 2.9a: o trecho a 45° do painel de ponta no banzo composto — o trecho de banzo curto e inclinado que nasce no topo
+    # do montante de extremidade (a T2-B4 do Hangar, 283 mm a 45°); o banzo de verdade é comprido
+    chanfros = set()
+    if sec_banzo == "composto":
+        alt_d = float(d.get("altura") or 0.0) or max((max(s[1], s[3]) for s in segs), default=0.0)
+        topos = [(s[0], s[1]) if s[1] > s[3] else (s[2], s[3]) for j, s in enumerate(segs) if papeis[j] == "extremidade"]
+        for j, s in enumerate(segs):
+            if not papeis[j].startswith("banzo") or j in internas:
+                continue
+            L_s = math.hypot(s[2] - s[0], s[3] - s[1])
+            if L_s < 1.0 or L_s > 1.2 * alt_d:
+                continue
+            ang = math.degrees(math.atan2(abs(s[3] - s[1]), abs(s[2] - s[0])))
+            if 20.0 <= ang <= 70.0 and any(min(math.dist(tp, (s[0], s[1])), math.dist(tp, (s[2], s[3]))) < 2.0 for tp in topos):
+                chanfros.add(j)
+    pontas_u: List[Tuple[int, Barra]] = []            # as peças da ponta em U só (2.9a): a meia-esquadria entre elas
     n = 0
     feitas: List[Barra] = []                           # as barras desta tesoura (o encaixe é por tesoura)
     secundarias: List[Tuple[Barra, tuple]] = []        # as de um lado só, por fora do U: cortadas na face do banzo
@@ -592,8 +608,9 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
                 pd_ = resolver_perfil(perfil)
                 xg = -min(q[0] for q in secao(pd_))            # da alma ao centroide (a boca abre para +u)
                 bf = float(pd_.bf or 0.0)
+                d_u = float(pd_.d or 0.0)
             except Exception:                                  # noqa: BLE001
-                xg, bf = 15.0, 50.0
+                xg, bf, d_u = 15.0, 50.0, 0.0
             caixa = secoes_b[i] == "caixa"
             ls_ = math.hypot(u1 - u0, v1 - v0) or 1.0
             n_pl = (ux * (-(v1 - v0) / ls_) * k, uy * (-(v1 - v0) / ls_) * k, (u1 - u0) / ls_)     # a normal no plano
@@ -601,8 +618,36 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             n_pl = tuple(a_ - dw_ * b_ for a_, b_ in zip(n_pl, w))
             nn_ = math.sqrt(sum(a_ * a_ for a_ in n_pl)) or 1.0
             n_pl = tuple(a_ / nn_ for a_ in n_pl)
+            if not caixa and (papel == "extremidade" or i in chanfros):
+                # 2.9a (regras_trelica; usuário, 21/10, a T2 do Hangar montada à mão): a ponta do composto é UM U só do
+                # perfil do banzo, no plano, encaixado entre as almas dos dois U — a altura atravessa o plano (as abas
+                # soldam nas almas), a alma para fora, a boca no plano para o vão (o montante para o meio, o 45° para
+                # baixo); o montante nasce no nível de apoio (sentado na chapa, como o fundo dos banzos)
+                nx2, ny2 = -(v1 - v0) / ls_, (u1 - u0) / ls_              # a perpendicular no plano, em 2D
+                if papel == "extremidade":
+                    if (vao / 2.0 - (u0 + u1) / 2.0) * nx2 < 0:
+                        nx2, ny2 = -nx2, -ny2
+                    if v0 < v1:
+                        A = P(u0, v0 - d_u / 2.0)
+                    else:
+                        B = P(u1, v1 - d_u / 2.0)
+                    w = tuple((B[c] - A[c]) / math.dist(A, B) for c in range(3))
+                elif ny2 > 0:
+                    nx2, ny2 = -nx2, -ny2
+                boca = (ux * nx2 * k, uy * nx2 * k, ny2)
+                dwb = sum(a_ * b_ for a_, b_ in zip(boca, w))
+                boca = tuple(a_ - dwb * b_ for a_, b_ in zip(boca, w))
+                bp = Barra(inicio=A, fim=B, perfil=perfil, papel=papel_3d, aco=aco, camada=camada, nome=nome,
+                           rotacao=_giro_para(w, boca), atributos=dict(atr, secao_dupla="composto", ponta_composto=True))
+                doc.add(bp)
+                feitas.append(bp)
+                pontas_u.append((i, bp))
+                n += 1
+                continue
             direcao = n_pl if caixa else fora_do_plano
-            off = (bf - xg) if caixa else (xg + (vaos_b[i] if vaos_b[i] is not None else vao_da_alma) / 2.0)
+            # o vão entre as almas: o dado no painel; senão a altura do U do banzo (a ponta em U só encaixa entre as
+            # almas, 2.9a), nunca menor que a altura da alma (CD Bom Dia: alma Ue 127 em banzo Ue 100)
+            off = (bf - xg) if caixa else (xg + (vaos_b[i] if vaos_b[i] is not None else max(vao_da_alma, d_u)) / 2.0)
             for lado in (1.0, -1.0):
                 dl = tuple(lado * off * c for c in direcao)
                 abre = tuple((-lado if caixa else lado) * (-1.0 if virar_b[i] else 1.0) * c for c in direcao)
@@ -711,7 +756,7 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
                 xl = -min(q[0] for q in secao(pl))
                 t_u = float(pu.tw or pu.tf or 0.0)
                 if sec_banzo == "composto":
-                    vao_u = (vaos_b_banzo if vaos_b_banzo is not None else vao_da_alma)
+                    vao_u = (vaos_b_banzo if vaos_b_banzo is not None else max(vao_da_alma, float(pu.d or 0.0)))
                     centro_alma, afast = 0.0, vao_u / 2.0 + t_u + xl
                 else:
                     centro_alma, afast = -float(pu.bf or 0.0) / 2.0, t_u / 2.0 + xl
@@ -751,6 +796,7 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
     from nucleo3d import regras_trelica
     regras_trelica.aplicar(feitas, por_grupo=False)
     _cantos_em_meia_esquadria(segs, pares, perfis_u, P, fora_do_plano)
+    _meia_esquadria_da_ponta(pontas_u)
     # o encaixe de fábrica (nucleo3d/alma_na_face, o mesmo do 3D pelos quadros): a cantoneira entra na boca do U e para
     # na alma dele, cortada no ângulo; o bico no montante e a bissetriz entre diagonais. Antes a ponta da cantoneira
     # ficava na linha de fora do banzo e atravessava o perfil (o usuário, 08/10: "peças cortando os banzos")
@@ -781,6 +827,38 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
                 bl.cortes_inicio = planos
             elif planos:
                 bl.cortes_fim = planos
+    return n
+
+
+def _meia_esquadria_da_ponta(pontas_u: List[Tuple[int, Barra]]) -> int:
+    """2.9a: as peças da ponta em U só (o montante de extremidade e o trecho a 45°) que se encontram num nó se cortam
+    na bissetriz — o plano do canto, como o usuário montou à mão na T2 do Hangar (21/10): a normal de cada corte é a
+    bissetriz das duas direções (saindo do nó), apontando para dentro da própria peça. Devolve quantos cortes."""
+    n = 0
+    for a_, (_i, pa) in enumerate(pontas_u):
+        for _j, pb in pontas_u[a_ + 1:]:
+            for ka, qa in ((0, pa.inicio), (1, pa.fim)):
+                for kb, qb in ((0, pb.inicio), (1, pb.fim)):
+                    if math.dist(qa, qb) > 2.0:
+                        continue
+                    # as direções saindo do nó
+                    da = tuple((pa.fim[c] - pa.inicio[c]) if ka == 0 else (pa.inicio[c] - pa.fim[c]) for c in range(3))
+                    db = tuple((pb.fim[c] - pb.inicio[c]) if kb == 0 else (pb.inicio[c] - pb.fim[c]) for c in range(3))
+                    la, lb = math.dist((0, 0, 0), da) or 1.0, math.dist((0, 0, 0), db) or 1.0
+                    da, db = tuple(x / la for x in da), tuple(x / lb for x in db)
+                    nb = tuple(db[c] - da[c] for c in range(3))
+                    ln = math.dist((0, 0, 0), nb)
+                    if ln < 1e-6:
+                        continue
+                    nb = tuple(x / ln for x in nb)
+                    for peca, k, dd in ((pa, ka, da), (pb, kb, db)):
+                        nrm = nb if sum(x * y for x, y in zip(nb, dd)) > 0 else tuple(-x for x in nb)
+                        corte = [{"normal": [round(c, 9) for c in nrm], "ponto": [0.0, 0.0, 0.0]}]
+                        if k == 0:
+                            peca.cortes_inicio = corte
+                        else:
+                            peca.cortes_fim = corte
+                        n += 1
     return n
 
 

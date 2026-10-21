@@ -42,6 +42,14 @@ v = a altura do perfil (a 2ª aba).
        ou em L simples. A conferência acusa "2.9": o U com a boca no plano ou para o lado errado; a reanálise gira (e
        espelha o U simples para o outro lado do eixo). Antes a peça com `secao_dupla` era pulada e a reanálise do Hangar
        passava "nada a corrigir" com o banzo virado.
+  2.9a A PONTA do banzo composto (usuário, 21/10, montada à mão na T2 do Hangar): o vão entre as almas dos dois U é a
+       altura do U do banzo (127 no Hangar; nunca menor que a altura da alma — CD Bom Dia: alma Ue 127 em banzo Ue 100),
+       e a ponta — o montante de extremidade e o trecho a 45° do painel de ponta — é UM U SÓ do perfil do banzo, no
+       plano, encaixado entre as almas: a altura atravessa o plano (as abas encostam e soldam nas almas dos banzos), a
+       alma para fora fechando a ponta, a boca para o vão (o montante para o meio; o 45° para baixo). O montante nasce
+       no nível de apoio (sentado na chapa, como o fundo dos banzos) e encontra o 45° em meia-esquadria (a bissetriz);
+       o banzo inferior vai até a face da ponta, o superior até o encontro com o 45°. A conferência acusa "2.9a" a ponta
+       em par (um U de cada lado, como o gerador fazia) e "2.9" a ponta no plano com a boca fora do plano.
 
 3. FÁBRICA
   3.1  Nada atravessa o banzo: a ponta da alma (montante, diagonal) para na face do banzo, cortada no plano dela
@@ -92,6 +100,8 @@ PAPEIS_TRELICA = {"banzo", "montante", "diagonal", "extremidade"}
 _FORA = {"presilha", "secundaria"}
 SECOES_2_9 = ("alma_no_plano", "composto")   # o banzo em U de alma no plano (2.9): o U simples e os dois U de costas
 PREDIO_MIN = 500.0       # mm: o resto da obra a menos que isso do plano não diz de que lado é o prédio (2.9)
+PONTA_NO_PLANO = 25.0    # mm: na treliça de 2U, a peça em U a menos que isso do plano é a ponta em U só (2.9a)
+PONTA_CURTA = 1000.0     # mm: a peça da ponta (montante de extremidade, trecho a 45°) é curta; o banzo não
 TOL_LIGA = 60.0          # mm: a ponta de uma barra a até isso de outra barra está ligada nela (nó da treliça)
 TOL_PLANO = 0.02         # a 3ª dimensão do grupo (desvio padrão / tamanho) acima disso: não é uma treliça plana
 EM_PE = 60.0             # graus: barra a mais que isso do banzo é peça em pé (montante)
@@ -512,11 +522,35 @@ def _alvo_fora_do_plano(b, t: dict) -> Ponto:
     return _mul(t["n"], -float(lado)) if lado else t["n"]
 
 
+def _ponta_do_composto(b, t: dict) -> bool:
+    """2.9a: na treliça de 2U de costas, a peça em U do banzo que fica no plano (entre as almas) é a ponta em U só"""
+    return abs(_dot(_sub(_mid(b), t["centro"]), t["n"])) < PONTA_NO_PLANO
+
+
+def _na_ponta_do_vao(b, t: dict) -> bool:
+    """a peça curta no fim do vão (o montante de extremidade, o trecho a 45° do painel de ponta)"""
+    if math.dist(b.inicio, b.fim) > PONTA_CURTA:
+        return False
+    return abs(_dot(_sub(_mid(b), t["meio"]), t["eixo"])) > t["vao"] / 2.0 - PONTA_CURTA / 2.0
+
+
 def alvo_2_9(b, t: dict) -> Ponto:
     """2.9: para onde a boca do U de alma no plano aponta — fora do plano; o U simples para fora do prédio (+n sem
-    prédio de um lado só), cada U do composto para o seu lado do plano"""
+    prédio de um lado só), cada U do composto para o seu lado do plano. 2.9a: a ponta do composto (o U só no plano)
+    abre no plano — o montante para o meio do vão, o trecho a 45° para baixo"""
     sec = str((getattr(b, "atributos", None) or {}).get("secao_dupla") or "")
     if sec == "composto":
+        if _ponta_do_composto(b, t):
+            w = _unit(_sub(b.fim, b.inicio))
+            lado = _unit(_cross(t["n"], w))               # perpendicular à peça, no plano
+            if _em_pe(b, t):
+                d = _dot(_sub(t["meio"], _mid(b)), t["eixo"])
+                return lado if d * _dot(lado, t["eixo"]) >= 0 else _mul(lado, -1.0)
+            up = _cima(t)
+            if up is not None and abs(_dot(lado, up)) > 0.3:
+                return lado if _dot(lado, up) < 0 else _mul(lado, -1.0)
+            d = _dot(_sub(t["meio"], _mid(b)), t["eixo"])
+            return lado if d * _dot(lado, t["eixo"]) >= 0 else _mul(lado, -1.0)
         d = _dot(_sub(_mid(b), t["centro"]), t["n"])
         return t["n"] if d >= 0 else _mul(t["n"], -1.0)
     return t["fora"] or t["n"]
@@ -1156,6 +1190,10 @@ def conferir(entidades: Iterable, tol_graus: float = 5.0, por_grupo: bool = True
             if id(b) in vistas_2_9:
                 continue
             vistas_2_9.add(id(b))
+            a_ = getattr(b, "atributos", None) or {}
+            if str(a_.get("secao_dupla")) == "composto" and _na_ponta_do_vao(b, t) and not _ponta_do_composto(b, t):
+                acusa(b, "banzo", "2.9a", 0.0)            # a ponta em par: devia ser um U só entre as almas
+                continue
             c = _dot(_eixos(b)[0], _mul(alvo_2_9(b, t), -1.0 if _virada(b) else 1.0))
             if c < cos_tol:
                 acusa(b, "banzo", "2.9", round(math.degrees(math.acos(max(-1.0, min(1.0, c)))), 1))
