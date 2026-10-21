@@ -218,6 +218,64 @@ def test_apoio_na_planta_vira_chapas_furos_e_chumbadores():
         assert b.inicio[2] == pytest.approx(4982.5) and b.fim[2] == pytest.approx(4432.5) and "5/8" in b.perfil
 
 
+def test_hangar_suporte_das_tercas_pelo_projeto(hangar):
+    """a etapa 6 (21/10): o ST1 das folhas 4 e 33 — L127×50#3,75 com 150 mm, 84 peças, 4 furos Ø14 (o par a 25 mm da
+    ponta de cada terça: ±30 do meio; 38,5 e 88,5 do pé), folga de 10 mm entre as pontas, a perna de 50 A DEFINIR; o SL1
+    (L100×50) das terças laterais também é lido"""
+    from nucleo3d import identificacao as I
+    des, _v = hangar
+    r = I.suportes_das_tercas(des, I.folhas_com_moldura(des))
+    st = r["suportes"]["ST1"]
+    assert (st["perfil"], st["comprimento"], st["quantidade"], st["folga"]) == ("L 127×50×3,75 (FF)", 150.0, 84, 10.0)
+    assert sorted((f["ao_longo"], f["altura"], f["d"]) for f in st["furos"]) == [(-30, 38.5, 14), (-30, 88.5, 14), (30, 38.5, 14), (30, 88.5, 14)]
+    assert "DEFINIR" in st["a_definir"]
+    assert r["suportes"]["SL1"]["perfil"] == "L 100×50×3,75 (FF)"
+
+
+def test_suporte_das_tercas_no_3d():
+    """o 3D com o suporte nas terças: um em cada cruzamento com o banzo de cima (no meio do composto: o U de fora passa
+    da ponta da terça), a cantoneira encostada na costa da alma da terça, a perna baixa no pé dela; na emenda as duas
+    terças recuam 5 mm (10 mm entre as pontas) e cada uma leva o par de furos a 25 mm da ponta; no fim da linha (o
+    oitão) a terça não recua"""
+    from nucleo2d.desenho import Linha as L_
+    from nucleo3d.modelo import Solido
+    from nucleo3d.geometria import base_local, resolver_perfil, secao
+    st = {"marca": "ST1", "perfil": "L 127×50×3,75 (FF)", "comprimento": 150.0, "folga": 10.0,
+          "furos": [{"ao_longo": a, "altura": h, "d": 14.0} for a in (-30.0, 30.0) for h in (38.5, 88.5)]}
+    des = Desenho(nome="planta", escala=1.0)
+    barras = [[0, 0, 6000, 0, "banzo_inf"], [0, 600, 6000, 600, "banzo_sup"], [0, 0, 0, 600, "extremidade"],
+              [6000, 0, 6000, 600, "extremidade"], [3000, 0, 3000, 600, "montante"], [0, 600, 3000, 0, "diagonal"],
+              [3000, 0, 6000, 600, "diagonal"]]
+    for x in (0.0, 5000.0, 10000.0):
+        des.add(L_(camada="E", a=(x, 0.0), b=(x, 6000.0), atributos={"elemento": "trelica", "material": "aco", "marca": "T",
+                    "perfis": {"banzo_sup": "U 127×50×3,00 (FF)", "banzo_inf": "U 127×50×3,00 (FF)", "diagonal": "L 25×3 (FF)"},
+                    "nivel_base": 5000, "desenho": {"barras": barras, "vao": 6000, "altura": 600}}))
+    z_pe = 5000 + 600 + 63.5 + 1.5                   # sobre o banzo de cima (o eixo dele em +5,600)
+    for x0, x1 in ((0.0, 5000.0), (5000.0, 10000.0)):
+        des.add(L_(camada="E", a=(x0, 3000.0), b=(x1, 3000.0), atributos={"elemento": "viga", "material": "aco", "papel": "terça",
+                    "marca": "TC", "secao": {"perfil": "U 127×50×2,25 (FF)"}, "nivel_topo": z_pe, "alinhamento": "base", "suporte": st}))
+    doc = _modelo(des)
+    sups = [b for b in doc.entidades.values() if isinstance(b, Barra) and b.papel == "suporte"]
+    assert sorted(round((b.inicio[0] + b.fim[0]) / 2) for b in sups) == [0, 5000, 10000]
+    tc = sorted((b for b in doc.entidades.values() if isinstance(b, Barra) and b.papel == "terça"), key=lambda b: b.inicio[0])
+    assert (tc[0].recorte_inicio, tc[0].recorte_fim, tc[1].recorte_inicio, tc[1].recorte_fim) == (0.0, 5.0, 5.0, 0.0)
+    # a cantoneira encostada na costa da alma da terça, do pé dela 127 mm para cima
+    def faixa(b, eixo):
+        u, v, _ = base_local(b.direcao, b.rotacao)
+        m = [(b.inicio[k] + b.fim[k]) / 2 for k in range(3)]
+        return [m[eixo] + p[0] * u[eixo] + p[1] * v[eixo] for p in secao(resolver_perfil(b.perfil))]
+    s5 = next(b for b in sups if abs((b.inicio[0] + b.fim[0]) / 2 - 5000) < 1)
+    yt, ys = faixa(tc[0], 1), faixa(s5, 1)
+    assert max(ys) == pytest.approx(min(yt), abs=0.5) or min(ys) == pytest.approx(max(yt), abs=0.5)
+    assert min(faixa(s5, 2)) == pytest.approx(min(faixa(tc[0], 2)), abs=0.5) and max(faixa(s5, 2)) - min(faixa(s5, 2)) == pytest.approx(127.0, abs=0.5)
+    furos = [s for s in doc.entidades.values() if isinstance(s, Solido) and (s.atributos or {}).get("furo")]
+    da = collections.Counter(doc.entidades[f.atributos["furo"]["peca"]].papel for f in furos)
+    assert da == {"suporte": 12, "terça": 2 + 2 + 2 + 2}   # 4 em cada suporte; na emenda 2 + 2, em cada oitão 2
+    xs = sorted(round(f.atributos["furo"]["ponto"][0] - 5000) for f in furos if doc.entidades[f.atributos["furo"]["peca"]].papel == "terça"
+                and abs(f.atributos["furo"]["ponto"][0] - 5000) < 100)
+    assert xs == [-30, -30, 30, 30]                  # 25 mm da ponta de cada terça (que recuou 5)
+
+
 def test_hangar_tercas_na_planta(hangar):
     from nucleo3d import identificacao as I
     des, v = hangar

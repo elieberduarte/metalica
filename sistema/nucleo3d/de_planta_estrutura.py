@@ -1191,6 +1191,145 @@ def planta_real(des: Desenho) -> Desenho:
     return out
 
 
+def _furo_marcador(face, eixo, d: float, prof: float, peca_id: str) -> Solido:
+    """o marcador de furo (o da ferramenta Furo, que o 3D abre na barra e o detalhamento lê): um prisma de 8 lados do
+    diâmetro do furo, da face `face` pelo `eixo` na profundidade dada"""
+    from nucleo3d import geometria as G
+    ex = _unit3(eixo)
+    a = _unit3(_cruz3(ex, (0.0, 0.0, 1.0) if abs(ex[2]) < 0.9 else (1.0, 0.0, 0.0)))
+    b = _cruz3(ex, a)
+    lados = [tuple(face[k] + (a[k] * math.cos(t) + b[k] * math.sin(t)) * d / 2.0 for k in range(3))
+             for t in (2 * math.pi * j / 8 for j in range(8))]
+    f = G.prisma(lados, tuple(c * prof for c in ex), nome="Furo Ø%g" % d, camada="Furos", material="Cor #1f2430")
+    f.atributos = {"tipo_ifc": "IfcOpeningElement", "exportar": False,
+                   "furo": {"d": d, "ponto": [round(float(c), 2) for c in face], "eixo": [round(float(c), 6) for c in ex],
+                            "profundidade": prof, "peca": peca_id}}
+    return f
+
+
+def _unit3(v):
+    n = math.sqrt(sum(c * c for c in v)) or 1.0
+    return tuple(c / n for c in v)
+
+
+def _cruz3(a, b):
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def _suportes_das_tercas(doc: Documento, avisos: List[str]) -> int:
+    """O suporte de terça pelo projeto (Hangar, folhas 4 e 33 — 21/10/2026): a cantoneira (`suporte.perfil`, o ST1
+    L127×50#3,75 com 150 mm) em cada cruzamento da terça com o banzo de cima de uma tesoura (no 2U composto, no plano
+    da tesoura, entre os dois U) — a perna alta em pé, encostada na costa da alma da terça; a perna baixa deitada no
+    banzo, para o lado de fora da terça. Onde duas terças emendam, cada uma recua a metade da folga (`folga`, 10 mm
+    entre as pontas); os furos (`furos`: {ao_longo, altura, d}, a partir do meio do suporte e do pé da terça) furam a
+    perna e a alma das terças — o par a 25 mm da ponta de cada terça; a terça que passa inteira leva os quatro. Uma
+    peça por cruzamento. Devolve quantas."""
+    from nucleo3d.geometria import base_local, resolver_perfil, secao
+    tercas = [b for b in doc.entidades.values() if isinstance(b, Barra) and b.papel in ("terça", "terca")
+              and isinstance((b.atributos or {}).get("suporte"), dict)]
+    if not tercas:
+        return 0
+    banzos = [b for b in doc.entidades.values() if isinstance(b, Barra) and b.papel == "banzo"
+              and str((b.atributos or {}).get("papel_trelica") or "") == "banzo_sup"
+              and not (b.atributos or {}).get("ponta_composto")]
+    # os cruzamentos: {(tesoura, terça): [pontos sobre cada banzo de cima dela]} — o composto tem dois
+    cruz = collections.defaultdict(list)
+    for t in tercas:
+        w = _unit3(tuple(t.fim[k] - t.inicio[k] for k in range(3)))
+        Lt = math.dist(t.inicio, t.fim)
+        for bz in banzos:
+            wb = _unit3(tuple(bz.fim[k] - bz.inicio[k] for k in range(3)))
+            nb = _cruz3(wb, (0.0, 0.0, 1.0))
+            if math.hypot(nb[0], nb[1]) < 0.5:
+                continue
+            nb = _unit3(nb)
+            den = sum(w[k] * nb[k] for k in range(3))
+            if abs(den) < 0.5:
+                continue                                 # a terça paralela ao banzo não cruza
+            s = sum((bz.inicio[k] - t.inicio[k]) * nb[k] for k in range(3)) / den
+            if s < -200.0 or s > Lt + 200.0:
+                continue                                 # (o U de fora do composto passa da ponta da terça: o meio decide)
+            P = tuple(t.inicio[k] + w[k] * s for k in range(3))
+            proj = sum((P[k] - bz.inicio[k]) * wb[k] for k in range(2)) / max(1e-9, math.hypot(wb[0], wb[1]))
+            Lb = math.hypot(bz.fim[0] - bz.inicio[0], bz.fim[1] - bz.inicio[1])
+            if proj < -50.0 or proj > Lb + 50.0:
+                continue
+            chave = (str((bz.atributos or {}).get("origem_2d") or (bz.atributos or {}).get("peca") or bz.id), t.id)
+            cruz[chave].append(s)
+    # cada cruzamento no meio dos banzos de cima da tesoura (o plano dela) e quem termina/começa ali
+    pontos = []                                          # (P, terça, s)
+    for (tes, tid), ss in cruz.items():
+        t = doc.entidades[tid]
+        s = sum(ss) / len(ss)
+        if -1.0 <= s <= math.dist(t.inicio, t.fim) + 1.0:
+            pontos.append((tes, t, min(max(s, 0.0), math.dist(t.inicio, t.fim))))
+    juntas = collections.defaultdict(list)               # o ponto da obra → as terças que passam, terminam ou começam
+    for tes, t, s in pontos:
+        w = _unit3(tuple(t.fim[k] - t.inicio[k] for k in range(3)))
+        P = tuple(t.inicio[k] + w[k] * s for k in range(3))
+        juntas[(tes, round(P[1] / 20.0), round(P[2] / 20.0))].append((t, s, P, w))
+    n = 0
+    for (_tes, _y, _z), lista in juntas.items():
+        t0, s0, P0, w0 = lista[0]
+        sp = t0.atributos["suporte"]
+        try:
+            pl = resolver_perfil(sp["perfil"])
+            pts_l = secao(pl)
+            pts_t = secao(resolver_perfil(t0.perfil))
+        except Exception:                                # noqa: BLE001
+            avisos.append("suporte de terça: perfil %s fora do catálogo" % sp.get("perfil"))
+            continue
+        ut, vt, _ = base_local(w0, float(t0.rotacao or 0.0))
+        costa = tuple(P0[k] + ut[k] * min(q[0] for q in pts_t) for k in range(3))   # a costa da alma da terça
+        pe = P0[2] + vt[2] * min(q[1] for q in pts_t) if abs(vt[2]) > 0.5 else P0[2]
+        xl0, yl0 = min(q[0] for q in pts_l), min(q[1] for q in pts_l)               # a quina da cantoneira
+        tl = float(pl.tw or pl.tf or 3.0)
+        L = float(sp.get("comprimento") or 150.0)
+        folga = float(sp.get("folga") or 0.0)
+        fora = tuple(-c for c in ut)
+        # a perna baixa (u da seção) para fora da terça, a alta (v) para cima: o sentido da barra escolhe a mão
+        for sentido in (1.0, -1.0):
+            wl = tuple(c * sentido for c in w0)
+            g = _giro_para(wl, fora)
+            ul, vl, _ = base_local(wl, g)
+            if vl[2] > 0.5:
+                break
+        ax = tuple(costa[k] - ul[k] * xl0 for k in range(3))
+        ax = (ax[0], ax[1], pe - yl0 * vl[2])
+        sup = Barra(inicio=tuple(ax[k] - wl[k] * L / 2.0 for k in range(3)), fim=tuple(ax[k] + wl[k] * L / 2.0 for k in range(3)),
+                    perfil=sp["perfil"], rotacao=round(g, 3), papel="suporte", aco=str(sp.get("aco") or "ASTM A36"),
+                    camada="Suportes", nome=str(sp.get("marca") or "Suporte de terça"), material="Aço",
+                    atributos={"tipo_ifc": "IfcMember", "elemento": "Suporte de terça", "marca": sp.get("marca"),
+                               "sigla": sp.get("marca"), **({"a_definir": sp["a_definir"]} if sp.get("a_definir") else {})})
+        if "Suportes" not in doc.camadas:
+            doc.camadas["Suportes"] = Camada(nome="Suportes", cor="#a16207")
+        doc.add(sup)
+        n += 1
+        for f in sp.get("furos") or []:                  # os furos da perna alta, atravessando a perna
+            face = tuple(costa[k] + w0[k] * float(f["ao_longo"]) for k in range(3))
+            doc.add(_furo_marcador((face[0], face[1], pe + float(f["altura"])), fora, float(f["d"]), tl + 1.0, sup.id))
+        emenda = sum(1 for t, s, _P, _w in lista if s < 1.0 or s > math.dist(t.inicio, t.fim) - 1.0) >= 2
+        for t, s, P, w in lista:
+            Lt = math.dist(t.inicio, t.fim)
+            if emenda and folga and s < 1.0:
+                t.recorte_inicio = max(float(t.recorte_inicio or 0.0), folga / 2.0)
+            elif emenda and folga and s > Lt - 1.0:
+                t.recorte_fim = max(float(t.recorte_fim or 0.0), folga / 2.0)
+            ta = float(resolver_perfil(t.perfil).tw or 2.0)
+            utt, _v, _ = base_local(w, float(t.rotacao or 0.0))
+            for f in sp.get("furos") or []:
+                lado = float(f["ao_longo"]) * sum(w0[k] * w[k] for k in range(3))   # no sentido desta terça
+                if (s < 1.0 and lado < 0) or (s > Lt - 1.0 and lado > 0):
+                    continue                             # só os furos do lado em que esta terça está
+                face = tuple(costa[k] + w[k] * lado for k in range(3))
+                doc.add(_furo_marcador((face[0], face[1], pe + float(f["altura"])), utt, float(f["d"]), ta + 1.0, t.id))
+    if n:
+        sp0 = tercas[0].atributos["suporte"]
+        if sp0.get("a_definir"):
+            avisos.append("suporte de terça %s: %s — apontamento ao projetista" % (sp0.get("marca") or "", sp0["a_definir"]))
+    return n
+
+
 def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome: str = "Estrutura lançada") -> Tuple[Documento, List[str]]:
     """o Documento 3D da planta; devolve (documento, avisos). A Montagem vai pela Implantação, na medida real."""
     des = planta_real(des)
@@ -1261,8 +1400,12 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
                                             "travamento": ("Travamentos", "#0891b2", "Travamento")}.get(papel, (camada, None, "Viga"))
                     if cam_b not in doc.camadas:
                         doc.camadas[cam_b] = Camada(nome=cam_b, cor=cor_b or "#4b5563")
+                    # o suporte da terça pelo projeto (a etapa da Identificação, 21/10): o 3D põe um em cada cruzamento
+                    # com o banzo de cima (_suportes_das_tercas, no fim)
+                    extra_b = {"suporte": dict(a["suporte"])} if papel in ("terça", "terca") and isinstance(a.get("suporte"), dict) else {}
                     bar = Barra(inicio=A, fim=B, perfil=s.get("perfil", "W 310×38,7"), papel=papel, aco=s.get("aco", "ASTM A572 Gr.50"),
-                                rotacao=float(a.get("rotacao") or 0.0), camada=cam_b, nome="%s %s" % (nome_b, marca), atributos=base)
+                                rotacao=float(a.get("rotacao") or 0.0), camada=cam_b, nome="%s %s" % (nome_b, marca),
+                                atributos=dict(base, **extra_b))
                     doc.add(bar)
                     n_aco += 1
                 else:
@@ -1355,6 +1498,7 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
                 n_aco += 1
         except ErroDeDados as err:
             avisos.append("%s %s: %s" % (tipo, marca, err))
+    n_aco += _suportes_das_tercas(doc, avisos)
     # os furos: na chapa em que caem (as coordenadas da chapa são as da planta)
     chapas = [c for c in doc.entidades.values() if isinstance(c, Chapa) and (c.atributos or {}).get("elemento") == "chapa"]
     for it in elementos(des):

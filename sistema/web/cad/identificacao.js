@@ -68,6 +68,7 @@ export const ETAPAS = [
   ['tercas', 'Terças'],
   ['contraventos', 'Contraventos e outras peças'],
   ['apoios', 'Apoios: chapas e chumbadores'],
+  ['suportes', 'Suportes das terças'],
 ];
 
 export class MetodosIdentificacao {
@@ -223,6 +224,17 @@ export class MetodosIdentificacao {
         botao(nApoios ? 'Lançar de novo' : 'Lançar os apoios', () => this._lancarApoiosIdent(), { class: nApoios ? '' : 'primario',
           title: 'Lê a locação dos chumbadores, as chapas e o detalhe e lança nos pilares da Implantação' }),
         botao('Confirmar ✓', () => this._confirmarIdent('apoios'), { class: 'ident-confirmar', disabled: nApoios ? undefined : true })) : null);
+    const livre6 = this._liberada('suportes');
+    const nSup = this.ativa ? [...this.cad.doc.entidades.values()].filter(e => (e.atributos || {}).identificacao === 'terca' && (e.atributos || {}).suporte).length : (id.suportes || {}).n || 0;
+    const resS = id.suportes || {};
+    const sec6 = etapa('suportes', ETAPAS[5][1],
+      el('div', { class: 'explica', texto: 'O suporte das terças do projeto (a cantoneira, os furos, a folga entre as pontas) em cada terça lançada: o 3D põe um em cada cruzamento com o banzo de cima e fura a terça e o suporte.' }),
+      nSup ? el('div', { class: 'ident-linha ok', texto: `${resS.marca || 'Suporte'} em ${nSup} terça(s)` + (resS.resumo ? ` — ${resS.resumo}` : '') + '.' }) : null,
+      avisos(resS.avisos),
+      livre6 ? el('div', { class: 'ident-botoes' },
+        botao(nSup ? 'Pôr de novo' : 'Pôr os suportes nas terças', () => this._suportesIdent(), { class: nSup ? '' : 'primario',
+          title: 'Lê o suporte das terças nas folhas do projeto e põe nas terças da Implantação' }),
+        botao('Confirmar ✓', () => this._confirmarIdent('suportes'), { class: 'ident-confirmar', disabled: nSup ? undefined : true })) : null);
     const podeMontar = et.locacao === 'confirmada' && et.tesouras === 'confirmada';
     const faltamEt = ETAPAS.filter(([k]) => et[k] !== 'confirmada').map(([, r]) => r.toLowerCase());
     const montado = id.montado;
@@ -235,7 +247,7 @@ export class MetodosIdentificacao {
         montado ? botao('Trazer do 3D o que mudou', () => this.cad.atualizarPlantaPelo3D(),
           { title: 'O que foi mudado no 3D (peça movida, comprimento, cota) volta para a Implantação; a peça apagada lá vira aviso' }) : null),
       montado ? el('div', { class: 'ident-sub', texto: 'Vinculados: o que muda na Implantação vai para o 3D a cada gravação; o que muda no 3D volta por "Trazer do 3D o que mudou".' }) : null);
-    corpo.replaceChildren(sec1, sec2, sec3, sec4, sec5, montar);
+    corpo.replaceChildren(sec1, sec2, sec3, sec4, sec5, sec6, montar);
   }
 
   async _verNoOriginal(caixa) {
@@ -536,6 +548,33 @@ export class MetodosIdentificacao {
     await this.cad.salvar({ avisar: false });
     this.cad.aviso(`${aps.length} apoio(s) lançado(s) na Implantação (${resumo}); ${Object.keys(mud).length} pilar(es) com o topo na face de baixo da CB. O 3D acompanha a planta; Ctrl+Z desfaz.`,
       (r.avisos || []).length ? 'atencao' : 'info', 16000);
+    this._desenharIdent();
+  }
+
+  /** Etapa 6: o suporte das terças do projeto (ST1 no Hangar) em cada terça lançada; o 3D faz um em cada cruzamento
+   *  com o banzo de cima, fura a terça e o suporte e deixa a folga entre as pontas (21/10/2026). */
+  async _suportesIdent() {
+    if (!this.ativa) await this.ir('montagem');
+    if (!this.ativa) return;
+    let r;
+    try {
+      r = await pedir(`/api/projetos/${encodeURIComponent(this.cad.projeto)}/identificacao/suportes-tercas`, { original: this.m.original || this.original });
+    } catch (e) { this.cad.aviso('Não consegui ler o suporte das terças: ' + e.message, 'erro', 0); return; }
+    const sups = Object.values(r.suportes || {});
+    const st = sups.find(s => /^ST/i.test(s.marca)) || sups[0];
+    if (!st) { this.cad.aviso('O projeto não escreve o suporte das terças.', 'atencao', 0); return; }
+    const tercas = [...this.cad.doc.entidades.values()].filter(e => (e.atributos || {}).identificacao === 'terca');
+    if (!tercas.length) { this.cad.aviso('Lance as terças primeiro (etapa 3).', 'atencao'); return; }
+    const mud = {};
+    for (const e of tercas) mud[e.id] = { atributos: { ...(e.atributos || {}), suporte: st } };
+    this.cad.executar(new ComandoAlterar(mud, `Suporte ${st.marca} nas terças`));
+    const outros = sups.filter(s => s !== st).map(s => `${s.marca} (${s.quantidade} pç, ${s.texto}) fica para as terças laterais, ainda não lançadas`);
+    const fur = st.furos || [];
+    const resumo = `${st.texto}, ${fur.length} furo(s)${fur.length ? ` Ø${fur[0].d}` : ''}` + (st.folga ? `, folga de ${st.folga} mm entre as pontas` : '');
+    const avs = [...(r.avisos || []), ...outros, ...(st.a_definir ? [`${st.marca}: ${st.a_definir} — apontamento ao projetista`] : [])];
+    this._guardarIdent({ ...this._ident(), suportes: { n: tercas.length, marca: st.marca, resumo, avisos: avs } });
+    await this.cad.salvar({ avisar: false });
+    this.cad.aviso(`${st.marca} nas ${tercas.length} terças (${resumo}). O 3D põe um em cada cruzamento com o banzo de cima; Ctrl+Z desfaz.`, avs.length ? 'atencao' : 'info', 16000);
     this._desenharIdent();
   }
 

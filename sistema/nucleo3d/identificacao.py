@@ -1583,3 +1583,74 @@ def apoios_das_tesouras(des: Desenho, folhas_: List[dict], planta: Desenho, apoi
     cont = collections.Counter(a_["marca"] for a_ in out)
     return {"apoios": out, "chapas": chapas, "chumbador": chumb, "cq": cqs, "avisos": avisos,
             "resumo": dict(sorted(cont.items())), "folha": f_loc["folha"]}
+
+
+# ------------------------------------------- o suporte das terças (Hangar Almayer, 21/10/2026)
+
+_SUPORTE_TXT = re.compile(r"\b(S[TL]\d+)\s*-\s*(\d+)\s*x\s*-\s*(L\s*\d+(?:[.,]\d+)?\s*[xX×]\s*\d+(?:[.,]\d+)?\s*#\s*\d+(?:[.,]\d+)?)"
+                          r"\s*L\s*=\s*(\d+(?:[.,]\d+)?)", re.I)
+
+
+def suportes_das_tercas(des: Desenho, folhas_: List[dict]) -> dict:
+    """O suporte das terças pelo projeto (21/10/2026, o Hangar, folhas 4 e 33): a peça ("ST1 - 84x - L127x50#3,75 L=15":
+    a marca, a quantidade, a cantoneira e o comprimento em cm), os furos pela vista dela (a cantoneira do tamanho dela,
+    na camada de suporte, com os furos dentro: a posição ao longo, a partir do meio, e a altura, a partir do pé — a costa
+    da perna deitada), a folga entre as pontas das terças ("folga 10 mm entre as pontas") e o que o projeto deixa "A
+    DEFINIR" (a furação da perna que apoia no banzo). {suportes: {marca: {perfil, comprimento, quantidade, furos, folga,
+    a_definir}}, avisos}"""
+    from nucleo2d.reconhecer import perfil_do_texto
+    avisos: List[str] = []
+    textos = [e for e in des.entidades.values() if isinstance(e, Texto)]
+    sup: Dict[str, dict] = {}
+    for t in textos:
+        s = re.sub(r"\s+", " ", t.texto or "")
+        for m in _SUPORTE_TXT.finditer(s):
+            p = perfil_do_texto(m.group(3).replace(" ", ""))
+            if not p:
+                continue
+            sup.setdefault(m.group(1).upper(), {"marca": m.group(1).upper(), "quantidade": int(m.group(2)),
+                                                "perfil": p["perfil"], "comprimento": _num(m.group(4)) * 10.0,
+                                                "texto": s.strip(), "furos": []})
+    if not sup:
+        raise ErroDeDados("o projeto não escreve o suporte das terças (\"ST1 - 84x - L127x50#3,75 L=15\")")
+    folga = None
+    a_definir = []
+    for t in textos:
+        s = re.sub(r"\s+", " ", t.texto or "")
+        m = re.search(r"folga\s*(\d+(?:[.,]\d+)?)\s*mm\s*entre\s*as\s*pontas", s, re.I)
+        if m and folga is None:
+            folga = _num(m.group(1))
+        if re.search(r"perna.*apoio.*banzo.*DEFINIR", s, re.I):
+            a_definir.append(s.strip())
+    # a vista de cada cantoneira: o retângulo (comprimento × perna maior) com os furos dentro
+    from nucleo3d.geometria import resolver_perfil
+    circ = [c for c in des.entidades.values() if isinstance(c, Circulo) and re.search(r"FURO", c.camada or "", re.I)]
+    for e in des.entidades.values():
+        if not isinstance(e, Polilinha) or len(e.vertices) not in (4, 5):
+            continue
+        c = _caixa_pol(e)
+        if not c:
+            continue
+        lx, ly = c[2] - c[0], c[3] - c[1]
+        for sp in sup.values():
+            if sp["furos"]:
+                continue
+            try:
+                d = float(resolver_perfil(sp["perfil"]).d or 0.0)
+            except Exception:                            # noqa: BLE001
+                continue
+            if abs(lx - sp["comprimento"]) > 2 or abs(ly - d) > 2:
+                continue
+            dentro = [f for f in circ if c[0] < f.centro[0] < c[2] and c[1] < f.centro[1] < c[3]]
+            if dentro:
+                meio = (c[0] + c[2]) / 2.0
+                sp["furos"] = [{"ao_longo": round(f.centro[0] - meio, 1), "altura": round(f.centro[1] - c[1], 1),
+                                "d": round(2 * f.raio, 1)} for f in sorted(dentro, key=lambda f: (f.centro[0], f.centro[1]))]
+    for sp in sup.values():
+        if folga is not None:
+            sp["folga"] = folga
+        if a_definir:
+            sp["a_definir"] = a_definir[0]
+        if not sp["furos"]:
+            avisos.append("%s: a vista com os furos não foi achada — o suporte vai sem furos" % sp["marca"])
+    return {"suportes": sup, "avisos": avisos}

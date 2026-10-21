@@ -4144,6 +4144,23 @@ def apoios_para_identificacao(s: str, corpo: dict) -> dict:
         _fim_progresso(s)
 
 
+def suportes_para_identificacao(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/identificacao/suportes-tercas {original?}: a etapa 6 da Identificação para modelagem — o
+    suporte das terças pelo projeto (a peça, os furos pela vista dela, a folga entre as pontas e o que fica A DEFINIR:
+    nucleo3d/identificacao.suportes_das_tercas, 21/10/2026). Não grava: a Montagem põe nas terças da Implantação e o 3D
+    faz um em cada cruzamento com o banzo de cima."""
+    from nucleo2d.desenho import Desenho
+    from nucleo3d import identificacao, lancamento
+    g = _gerente()
+    nome = str(corpo.get("original") or lancamento.DESENHO_LANCAMENTO)
+    _progresso(s, "lendo o suporte das terças…")
+    try:
+        des = Desenho.de_dict(g.abrir_desenho(s, nome))
+        return identificacao.suportes_das_tercas(des, identificacao.folhas_com_moldura(des))
+    finally:
+        _fim_progresso(s)
+
+
 def tercas_para_identificacao(s: str, corpo: dict) -> dict:
     """POST /api/projetos/<s>/identificacao/tercas {original?, caixa, locacao, folhas, tesouras, apoio}: as terças da
     planta de terças do Original nos eixos gravados do projeto (nucleo3d/identificacao.tercas_da_planta): cada peça com
@@ -6097,6 +6114,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(tercas_para_identificacao(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "identificacao" and partes[2] == "apoios-tesouras":
                     return self._json(apoios_para_identificacao(partes[0], corpo))
+                if len(partes) == 3 and partes[1] == "identificacao" and partes[2] == "suportes-tercas":
+                    return self._json(suportes_para_identificacao(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "identificacao" and partes[2] == "tesoura":
                     return self._json(tesoura_para_identificacao(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "identificacao" and partes[2] == "varrer":
