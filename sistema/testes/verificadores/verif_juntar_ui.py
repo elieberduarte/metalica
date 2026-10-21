@@ -73,7 +73,9 @@ try:
       const medida = ed._textoMedida || '';
       f.onPonto({ ponto: [6000, -600, 0], entidade: b.id, normal: [0, 0, 1], tipoSnap: 'sobre_face' }, {});
       const A = doc.get(a.id), Bb = doc.get(b.id);
-      const depois = { aFim: A.fim.map(Math.round), aIni: A.inicio.map(Math.round), bFim: Bb.fim.map(Math.round), bIni: Bb.inicio.map(Math.round), cortes: (A.cortes_fim || []).length };
+      const n2 = (c) => c && c.normal ? c.normal.map(x => Math.round(x * 100) / 100) : null;
+      const depois = { aFim: A.fim.map(Math.round), aIni: A.inicio.map(Math.round), bFim: Bb.fim.map(Math.round), bIni: Bb.inicio.map(Math.round), cortes: (A.cortes_fim || []).length,
+                       nA: n2((A.cortes_fim || [])[0]), nB: n2((Bb.cortes_fim || [])[0]), pA: ((A.cortes_fim || [])[0] || {}).ponto, pB: ((Bb.cortes_fim || [])[0] || {}).ponto };
       ed.desfazer();
       const volta = { aFim: doc.get(a.id).fim.map(Math.round), bFim: doc.get(b.id).fim.map(Math.round), cortes: (doc.get(a.id).cortes_fim || []).length };
       return { primeira, medida, depois, volta };""")
@@ -81,8 +83,10 @@ try:
     ok(r and r["primeira"] and r["depois"]["aFim"] == [6000, 0, 0] and r["depois"]["bFim"] == [6000, 0, 0]
        and r["depois"]["aIni"] == [0, 0, 0] and r["depois"]["bIni"] == [6000, -3000, 0],
        f"o banzo estica 1000 e o montante 500 até o cruzamento dos eixos (6000, 0, 0): {r and r['depois']}")
-    ok(r and r["depois"]["cortes"] == 0, f"o corte no ângulo da ponta que andou sai: {r and r['depois']['cortes']}")
-    ok(r and "+1,00 m" in r["medida"] and "+500 mm" in r["medida"], f"a caixa de medidas mostra quanto cada uma estica: {r and r['medida']!r}")
+    ok(r and r["depois"]["cortes"] == 1 and r["depois"]["nA"] == [-0.71, 0.71, 0] and r["depois"]["nB"] == [0.71, -0.71, 0]
+       and r["depois"]["pA"] == [0, 0, 0] and r["depois"]["pB"] == [0, 0, 0],
+       f"as duas pontas cortadas em meia-esquadria (45°, normal para dentro de cada uma), no lugar do corte antigo: {r and (r['depois']['cortes'], r['depois']['nA'], r['depois']['nB'])}")
+    ok(r and "+1,00 m" in r["medida"] and "+500 mm" in r["medida"] and "meia-esquadria" in r["medida"], f"a caixa de medidas mostra quanto cada uma estica: {r and r['medida']!r}")
     ok(r and r["volta"] == {"aFim": [5000, 0, 0], "bFim": [6000, -500, 0], "cortes": 1}, f"um Ctrl+Z devolve as duas: {r and r['volta']}")
 
     # aparar: o banzo passa do montante; eixos desencontrados (o montante 100 acima): encontro no meio (z = 50)
@@ -110,8 +114,9 @@ try:
       ed.selecao.definir([a.id, b.id]);
       ed.ativarFerramenta('juntar'); const f = ed.ativa;
       const par = f.par ? f.par.length : 0;
-      const tomou = f.onTecla({ type: 'keydown', key: 'Enter' });
-      const depois = { aFim: doc.get(a.id).fim.map(Math.round), bFim: doc.get(b.id).fim.map(Math.round), bIni: doc.get(b.id).inicio.map(Math.round) };
+      const tomou = f.onTecla({ type: 'keydown', key: 'Enter', ctrlKey: true });
+      const depois = { aFim: doc.get(a.id).fim.map(Math.round), bFim: doc.get(b.id).fim.map(Math.round), bIni: doc.get(b.id).inicio.map(Math.round),
+                       cortes: (doc.get(a.id).cortes_fim || []).length + (doc.get(b.id).cortes_fim || []).length };
       const p1 = B('par1', [0, 12000, 0], [4000, 12000, 0]), p2 = B('par2', [0, 12500, 0], [4000, 12500, 0]);
       ed.selecao.limpar(); ed.ativarFerramenta('juntar'); const g = ed.ativa;
       g.onPonto({ ponto: [3800, 12000, 0], entidade: p1.id }, {}); g.onPonto({ ponto: [3800, 12500, 0], entidade: p2.id }, {});
@@ -119,8 +124,8 @@ try:
       return { par, tomou, depois, paralelas };""")
     print("     ", r)
     ok(r and r["par"] == 2 and r["tomou"] and r["depois"]["aFim"] == [5000, 9000, 5000] and r["depois"]["bFim"] == [5000, 9000, 5000]
-       and r["depois"]["bIni"] == [5000, 9000, 0],
-       f"com as duas selecionadas, Enter junta: a diagonal a 45° estica até o pilar e o pilar sobe até ela: {r and r['depois']}")
+       and r["depois"]["bIni"] == [5000, 9000, 0] and r["depois"]["cortes"] == 0,
+       f"com as duas selecionadas, Ctrl+Enter junta sem cortar: a diagonal a 45° estica até o pilar e o pilar sobe até ela: {r and r['depois']}")
     ok(r and r["paralelas"]["p1"] == [4000, 12000, 0] and r["paralelas"]["p2"] == [4000, 12500, 0] and r["paralelas"]["presa"],
        f"paralelas: recusa e fica na primeira barra, sem mexer: {r and r['paralelas']}")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]

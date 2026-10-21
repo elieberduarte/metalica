@@ -451,6 +451,12 @@ async function comportamento(ferramentas, conferir, tentar) {
     const j = mod.juncao(a0, b0);
     conferir('juntar', 'juncao(): o cruzamento dos eixos, as duas pontas do fim', j && pertoV(j.ponto, [6000, 0, 0]) && j.barras.map(x => x.ponta).join() === 'fim,fim', JSON.stringify(j && j.ponto));
     conferir('juntar', 'juncao(): o banzo estica 1000 e o montante 500', j && perto(j.barras[0].dL, 1000) && perto(j.barras[1].dL, 500));
+    const cA = j && j.barras[0].campos.cortes_fim, cB = j && j.barras[1].campos.cortes_fim;
+    conferir('juntar', 'meia-esquadria a 45° nas duas pontas, normal para dentro de cada uma', cA && cB && cA.length === 1 && cB.length === 1 &&
+             pertoV(cA[0].normal, [-Math.SQRT1_2, Math.SQRT1_2, 0], 1e-3) && pertoV(cB[0].normal, [Math.SQRT1_2, -Math.SQRT1_2, 0], 1e-3) && pertoV(cA[0].ponto, [0, 0, 0]),
+             JSON.stringify([cA, cB]));
+    conferir('juntar', 'cortar: false só junta', mod.juncao(a0, b0, { cortar: false }).barras.every(x => !x.campos.cortes_fim.length));
+    conferir('juntar', 'chegando do mesmo lado a 5° (a meia-esquadria ficaria comprida demais): junta sem o corte', (() => { const q = mod.juncao(a0, { id: 'q', inicio: [0, 525, 0], fim: [5000, 87.5, 0] }); return q && q.normal === null && q.barras.every(x => !x.campos.cortes_fim.length); })());
     const jd = mod.juncao(a0, { id: 'c', inicio: [6000, -3000, 100], fim: [6000, -500, 100] });
     conferir('juntar', 'eixos desencontrados: o meio (z = 50) e o afastamento 100', jd && pertoV(jd.ponto, [6000, 0, 50]) && perto(jd.afastamento, 100));
     conferir('juntar', 'paralelas: null', mod.juncao(a0, { id: 'd', inicio: [0, 500, 0], fim: [5000, 500, 0] }) === null);
