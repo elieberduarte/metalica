@@ -4100,7 +4100,7 @@ def tercas_para_identificacao(s: str, corpo: dict) -> dict:
 
 
 def tesoura_para_identificacao(s: str, corpo: dict) -> dict:
-    """POST /api/projetos/<s>/identificacao/tesoura {original?, caixa}: o desenho da tesoura na folha da vista geral do
+    """POST /api/projetos/<s>/identificacao/tesoura {original?, caixa, tipo?}: o desenho da tesoura na folha da vista geral do
     Original (nucleo3d/identificacao.tesoura_da_folha) — o maior grupo de barras ligadas, os textos em volta e o ponto
     de referência (o meio de baixo) para a Montagem colar na elevação do eixo, em tamanho real (20/10/2026)."""
     from nucleo2d.desenho import Desenho
@@ -4111,6 +4111,9 @@ def tesoura_para_identificacao(s: str, corpo: dict) -> dict:
     des = Desenho.de_dict(_gerente().abrir_desenho(s, nome))
     r = identificacao.tesoura_da_folha(des, corpo["caixa"])
     r["escala_original"] = des.escala
+    # os perfis da folha de marcas e o desenho com as pontas como o projeto (o Hangar, 20/10: pontas soltas, U 150 do diálogo)
+    r["perfis"] = identificacao.perfis_da_tesoura(des, str(corpo.get("tipo") or ""), identificacao.folhas_com_moldura(des)) if corpo.get("tipo") else {}
+    r["desenho"] = identificacao.desenho_da_tesoura(des, corpo["caixa"], r["perfis"])
     return r
 
 
