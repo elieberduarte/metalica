@@ -88,9 +88,17 @@ html, body.ver3d { height: 100%; margin: 0; overflow: hidden; background: var(--
 .painel-terreno button:disabled { opacity: .6; cursor: default; }
 .terreno-dl { margin: 6px 0 8px !important; }
 .terreno-fonte-sel { display: flex; align-items: center; gap: 6px; font-size: 12.5px; margin: 4px 0; }
-.terreno-fonte-sel select { flex: 1; font: inherit; }
+.terreno-fonte-sel select { flex: 1; min-width: 0; max-width: 100%; font: inherit; }
 #terreno-resultados .linha-lista span { white-space: normal; }
 .terreno-cota { display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 12.5px; }
 .terreno-cota select { flex: 1; min-width: 0; font: inherit; }
 .terreno-cota input { width: 76px; font: inherit; padding: 3px 6px; border: 1px solid var(--borda); border-radius: var(--raio-p);
   background: var(--painel); color: var(--texto); }
+.painel-terreno { overflow-x: hidden; }
+.terreno-norte { display: flex; align-items: center; gap: 3px; font-size: 12.5px; margin: 6px 0 2px; }
+.terreno-norte > span:first-child { margin-right: auto; }
+.painel-terreno .terreno-norte button { padding: 3px 6px; margin: 0; font-size: 11.5px; }
+.terreno-norte input { width: 62px; text-align: right; font: inherit; padding: 3px 5px; border: 1px solid var(--borda);
+  border-radius: var(--raio-p); background: var(--painel); color: var(--texto); font-variant-numeric: tabular-nums; }
+.terreno-norte-barra { display: block; width: 100%; margin: 4px 0 6px; accent-color: var(--azul); }
+.painel-terreno input[type=range] { box-sizing: border-box; margin-left: 0; margin-right: 0; max-width: 100%; }

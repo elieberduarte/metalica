@@ -134,7 +134,20 @@ try:
     # o giro do norte
     aba.avaliar("""(() => { const r = document.getElementById('terreno-norte'); r.value = 30; r.dispatchEvent(new Event('input')); return 1; })()""")
     ok(abs(aba.avaliar("window.terreno.malha.rotation.z") - math.radians(30)) < 1e-6, "o Norte gira a imagem (30°)")
-    ok(aba.avaliar("document.getElementById('terreno-norte-dd').textContent").startswith("30,0°"), "a ficha mostra o norte novo")
+    ok(aba.avaliar("document.getElementById('terreno-norte-dd').textContent").startswith("30,00°"), "a ficha mostra o norte novo")
+    # o norte fino (usuário, 20/10: "só vai de 0,5 em 0,5"): o número digitado com vírgula e os botões de 0,1°
+    aba.avaliar("""(() => { const i = document.getElementById('terreno-norte-num'); i.value = '29,37'; i.dispatchEvent(new Event('input')); return 1; })()""")
+    ok(abs(aba.avaliar("window.terreno.malha.rotation.z") - math.radians(29.37)) < 1e-6, "o norte digitado com duas casas (29,37°)")
+    aba.avaliar("document.querySelector('[data-passo=\"0.1\"]').click()")
+    aba.avaliar("document.querySelector('[data-passo=\"0.1\"]').click()")
+    ok(abs(aba.avaliar("window.terreno.t.norte") - 29.57) < 1e-9 and aba.avaliar("document.getElementById('terreno-norte-num').value") == "29,57",
+       "+0,1° duas vezes: 29,57°")
+    ok(abs(float(aba.avaliar("document.getElementById('terreno-norte').value")) - 29.57) < 1e-9, "a barra acompanha o número")
+    aba.avaliar("""(() => { const i = document.getElementById('terreno-norte-num'); i.value = '30'; i.dispatchEvent(new Event('input')); return 1; })()""")
+    largos = aba.avaliar("""(() => { const p = document.querySelector('.painel-terreno'), r = p.getBoundingClientRect();
+      return [...p.querySelectorAll('*')].filter(e => e.getBoundingClientRect().right > r.right + 1 && e.offsetParent)
+        .map(e => (e.id || e.tagName) + ':' + Math.round(e.getBoundingClientRect().right - r.right)); })()""")
+    ok(not largos, f"o painel sem nada passando da borda: {largos}")
     time.sleep(1.2)
     ok(abs(_json(API)["terreno"]["norte"] - 30) < 1e-6, "o norte gravado no projeto")
     foto(aba, "ver3d_terreno_2_ajustado.png")
@@ -167,6 +180,16 @@ try:
     esperar(aba, "!!document.getElementById('terreno-cota-sel')", 5)
     ok(aba.avaliar("document.getElementById('terreno-cota-sel').value") == "outra" and not aba.avaliar("document.getElementById('terreno-cota-outra').hidden"),
        "o painel volta mostrando a cota digitada")
+    # a transparência (usuário, 20/10: "colocar a imagem com uma certa transparência para ver o subsolo")
+    aba.avaliar("(() => { const r = document.getElementById('terreno-transp'); r.value = 40; r.dispatchEvent(new Event('input')); return 1; })()")
+    ok(abs(aba.avaliar("window.terreno.malha.material.opacity") - 0.6) < 1e-9, "transparência 40 %: a imagem a 60 %")
+    time.sleep(1.2)
+    ok(_json(API)["terreno"].get("transparencia") == 0.4, "a transparência gravada no projeto")
+    aba.navegar(base + "/visor3d/ver3d.html?projeto=obra", limite=60)
+    ok(esperar(aba, "!!(window.ver3dPronto && window.terreno && window.terreno.malha)", 60)
+       and abs(aba.avaliar("window.terreno.malha.material.opacity") - 0.6) < 1e-9, "depois do F5 a transparência continua")
+    aba.avaliar("document.getElementById('btn-terreno').click()")
+    esperar(aba, "!!document.getElementById('terreno-cota-sel')", 5)
     aba.avaliar("(() => { const s = document.getElementById('terreno-cota-sel'); s.value = 'auto'; s.dispatchEvent(new Event('change')); return 1; })()")
     ok(aba.avaliar(zM) < -3400, f"voltar ao automático põe a imagem no pé da obra de novo ({aba.avaliar(zM):.0f} mm)")
     time.sleep(1.2)

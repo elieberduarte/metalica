@@ -102,7 +102,8 @@ export class Terreno {
     // a saída do visor é linear (sem a volta para sRGB): a foto vai como está, senão sai escura
     tex.colorSpace = THREE.NoColorSpace;
     tex.anisotropy = this.visor.renderer.capabilities.getMaxAnisotropy();
-    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false,
+      opacity: 1 - ((this.t && this.t.transparencia) || 0) });
     this.malha = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
     this.malha.name = 'terreno';
     this.malha.renderOrder = -0.5;                        // depois do piso liso, antes das peças
@@ -170,13 +171,16 @@ export class Terreno {
     if (t) {
       html += `<dl class="terreno-dl"><dt>Lugar</dt><dd>${esc(t.endereco || 'coordenada')}</dd>
         <dt>Coordenada</dt><dd id="terreno-coord">${nf(t.lat, 6)}, ${nf(t.lon, 6)}</dd>
-        <dt>Norte</dt><dd id="terreno-norte-dd">${nf(t.norte, 1)}° do eixo Y</dd>
+        <dt>Norte</dt><dd id="terreno-norte-dd">${nf(t.norte, 2)}° do eixo Y</dd>
         ${im ? `<dt>Imagem</dt><dd>${esc(im.fonte)} · ${nf(im.lado_m)} m de lado · ${esc(im.baixada_em)}</dd>` : ''}</dl>`;
       if (im) html += `<label class="linha-lista"><input type="checkbox" id="terreno-ligado" ${this.ligado ? 'checked' : ''}><span>Mostrar a imagem no chão</span></label>
         <p class="titulo-secao">Ajustar a posição</p>
         <button type="button" id="terreno-ajustar" class="${this.ajustando ? 'ligado' : ''}">${this.ajustando ? '✓ Terminar o ajuste' : '✥ Ajustar (arrastar a imagem)'}</button>
-        <div class="sol-controles"><label>Norte <output id="terreno-norte-saida">${nf(t.norte, 1)}°</output>
-          <input type="range" id="terreno-norte" min="-180" max="180" step="0.5" value="${t.norte}" aria-label="Giro do norte"></label></div>
+        <div class="terreno-norte"><span>Norte</span>
+          <button type="button" data-passo="-1" title="Girar 1° no sentido horário">−1°</button><button type="button" data-passo="-0.1">−0,1°</button>
+          <input id="terreno-norte-num" type="text" inputmode="decimal" value="${nf(t.norte, 2)}" aria-label="Norte (graus)"><span>°</span>
+          <button type="button" data-passo="0.1">+0,1°</button><button type="button" data-passo="1" title="Girar 1° no sentido anti-horário">+1°</button></div>
+        <input type="range" id="terreno-norte" class="terreno-norte-barra" min="-180" max="180" step="0.01" value="${t.norte}" aria-label="Giro do norte">
         <p class="dica">No Ajustar, arraste a imagem por baixo da obra (de cima, na vista Topo, fica mais fácil) e gire o norte até
           as divisas e as ruas encaixarem. Grava sozinho.</p>`;
       if (im) {
@@ -190,7 +194,10 @@ export class Terreno {
             <span id="terreno-cota-outra" ${temCota && !naLista ? '' : 'hidden'}><input id="terreno-cota" type="text" inputmode="decimal"
               value="${temCota ? nf(t.cota / 1000, 2) : '0,00'}" aria-label="Cota da imagem (m)"> m</span></div>
           <p class="dica">Obra com subsolo: a imagem no nível do terreno (o 0,00) deixa o subsolo embaixo do chão e a fundação
-            no lugar.</p>`;
+            no lugar.</p>
+          <div class="sol-controles"><label>Transparência <output id="terreno-transp-saida">${Math.round((t.transparencia || 0) * 100)} %</output>
+            <input type="range" id="terreno-transp" min="0" max="90" step="5" value="${Math.round((t.transparencia || 0) * 100)}"
+              aria-label="Transparência da imagem"></label></div>`;
       }
       html += `<p class="titulo-secao">Imagem</p>
         <label class="terreno-fonte-sel">Fonte <select id="terreno-fonte-sel">${fontes.map(f => `<option value="${esc(f.chave)}" ${f.chave === fonteAtual ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}
@@ -218,14 +225,30 @@ export class Terreno {
     if (cb) cb.onchange = () => { this.mostrar(cb.checked); this.ui.aoMudar(); };
     const aj = $('#terreno-ajustar');
     if (aj) aj.onclick = () => { this.ajustar(!this.ajustando); this.painel(); };
-    const nor = $('#terreno-norte');
-    if (nor) nor.oninput = () => {
-      this.t.norte = +nor.value;
-      $('#terreno-norte-saida').textContent = nf(this.t.norte, 1) + '°';
-      $('#terreno-norte-dd').textContent = nf(this.t.norte, 1) + '° do eixo Y';
+    // o norte fino (usuário, 20/10: "só vai de 0,5 em 0,5, poderia ser mais fino"): a barra de 0,01°, o número digitado
+    // (vírgula ou ponto) e os botões de 0,1° e 1°
+    const nor = $('#terreno-norte'), num = $('#terreno-norte-num');
+    const definirNorte = (v, deOnde) => {
+      if (!Number.isFinite(v)) return;
+      v = Math.round((((v + 180) % 360 + 360) % 360 - 180) * 100) / 100;
+      this.t.norte = v;
+      if (deOnde !== 'barra') nor.value = v;
+      if (deOnde !== 'numero') num.value = nf(v, 2);
+      $('#terreno-norte-dd').textContent = nf(v, 2) + '° do eixo Y';
       this.posicionar();
       this._gravarLogo();
     };
+    if (nor) {
+      nor.oninput = () => definirNorte(+nor.value, 'barra');
+      num.oninput = () => definirNorte(parseFloat(String(num.value).replace(',', '.')), 'numero');
+      num.onblur = () => { num.value = nf(this.t.norte, 2); };
+      num.onkeydown = (ev) => {
+        if (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown') return;
+        ev.preventDefault();
+        definirNorte(this.t.norte + (ev.key === 'ArrowUp' ? 1 : -1) * (ev.shiftKey ? 1 : 0.1));
+      };
+      raiz.querySelectorAll('[data-passo]').forEach(b => { b.onclick = () => definirNorte(this.t.norte + +b.dataset.passo); });
+    }
     const cs = $('#terreno-cota-sel'), ci = $('#terreno-cota');
     if (cs) {
       const aplicar = (mm) => {
@@ -243,6 +266,15 @@ export class Terreno {
       };
       ci.oninput = () => { const mm = digitada(); if (mm !== null) aplicar(mm); };
     }
+    // a transparência (o subsolo à vista através do chão)
+    const tr = $('#terreno-transp');
+    if (tr) tr.oninput = () => {
+      const v = Math.min(Math.max(+tr.value, 0), 90) / 100;
+      if (v > 0) this.t.transparencia = v; else delete this.t.transparencia;
+      $('#terreno-transp-saida').textContent = Math.round(v * 100) + ' %';
+      if (this.malha) { this.malha.material.opacity = 1 - v; this.visor.pedirQuadro(); }
+      this._gravarLogo();
+    };
     const sel = $('#terreno-fonte-sel');
     if (sel) sel.onchange = () => { $('#terreno-wms').hidden = sel.value !== 'wms'; };
     const bx = $('#terreno-baixar');

@@ -316,3 +316,11 @@ def test_altura_da_imagem():
     assert "cota" not in L.validar(dict(base, cota=None)) and "cota" not in L.validar(dict(base, cota=""))
     with pytest.raises(L.ErroTerreno, match="altura"):
         L.validar(dict(base, cota="abc"))
+
+
+def test_transparencia_da_imagem():
+    base = {"lat": -24.9, "lon": -53.4, "ponto": [0, 0]}
+    assert "transparencia" not in L.validar(base) and "transparencia" not in L.validar(dict(base, transparencia=0))
+    assert L.validar(dict(base, transparencia=0.4))["transparencia"] == 0.4
+    assert L.validar(dict(base, transparencia=2))["transparencia"] == 0.9            # nunca some de todo
+    assert "transparencia" not in L.validar(dict(base, transparencia="x"))

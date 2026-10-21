@@ -146,6 +146,13 @@ def validar(t: dict) -> dict:
         if not math.isfinite(cota):
             raise ErroTerreno("a altura da imagem precisa ser um número (mm).")
         saida["cota"] = round(cota, 1)
+    # a transparência da imagem, 0 a 0,9 (usuário, 20/10: "colocar a imagem com uma certa transparência para ver o subsolo")
+    try:
+        transp = float(t.get("transparencia") or 0.0)
+    except (TypeError, ValueError):
+        transp = 0.0
+    if math.isfinite(transp) and transp > 0:
+        saida["transparencia"] = round(min(transp, 0.9), 2)
     fonte = t.get("fonte") or "esri"
     if isinstance(fonte, dict):
         saida["fonte"] = fonte_do_endereco(str(fonte.get("url") or ""), str(fonte.get("camada") or ""),
