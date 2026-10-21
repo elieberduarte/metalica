@@ -241,6 +241,12 @@ try:
     aba.avaliar("document.querySelector('.linha-terreno button').click()")
     ok(esperar(aba, "window.editor._terreno.grupo.visible === true", 5), "e mostra de novo")
     foto(aba, "ver3d_terreno_5_editor.png")
+    # o IFC exportado do editor leva o terreno ligado (21/10: o do PRATI exportado do editor saía sem ele)
+    aba.avaliar("window.editor.exportarIFC(); 1")
+    ok(esperar(aba, "document.body.innerText.includes('com o terreno na camada Terreno')", 60), "o IFC do editor sai com o terreno")
+    ifc = os.path.join(proj, "ifc")
+    nomes = [n for n in os.listdir(ifc) if n.endswith(".ifc")] if os.path.isdir(ifc) else []
+    ok(nomes and "IFCGEOGRAPHICELEMENT" in open(os.path.join(ifc, nomes[0]), encoding="ascii").read(), f"e o arquivo tem a placa ({nomes})")
     erros = [x for x in aba.console if x[0] in ("error", "excecao") and "favicon" not in str(x)]   # o 3D aberto direto, sem a área
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:

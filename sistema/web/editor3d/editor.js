@@ -1341,11 +1341,14 @@ export class Editor {
     if (!this.documento.tamanho) { this.dica('O modelo está vazio.'); return; }
     this.dica('Exportando IFC…');
     try {
+      // o terreno ligado nas Camadas vai junto (21/10, o usuário no Trimble Connect: o IFC exportado do editor saía sem
+      // ele): a obra georreferenciada e a placa com a imagem na camada Terreno
+      const terreno = !!(this.projeto && this._terreno && this._terreno.ligado);
       const r = await this.api.exportarIFC(this.documento.paraJSON(),
                                            this.el.nome.value || this.documento.nome,
-                                           this.projeto ? { projeto: this.projeto } : {});
+                                           this.projeto ? { projeto: this.projeto, ...(terreno ? { terreno: true } : {}) } : {});
       const a = r.arquivo || {};
-      const conteudo = el('span', {}, `IFC exportado (${r.entidades} objetos): `,
+      const conteudo = el('span', {}, `IFC exportado (${r.entidades} objetos${r.terreno ? ', com o terreno na camada Terreno e a obra no mapa' : ''}): `,
         el('a', { href: a.url, download: a.nome || true, texto: a.nome || 'baixar' }),
         a.tamanho_kb ? ` · ${numero(a.tamanho_kb, 1)} kB` : '');
       this.aviso(conteudo, 'info', 0);

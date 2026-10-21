@@ -1172,23 +1172,33 @@ class _Exportador:
                  f"{_real(m['abscissa'])},{_real(m['ordenada'])},{_real(m['escala'])})")
 
     def _placa_terreno(self):
-        """A imagem do terreno numa placa (IfcGeographicElement TERRAIN) na camada "Terreno", com a imagem dentro do
-        arquivo (IfcBlobTexture) e o nome do arquivo ao lado (IfcImageTexture, terreno.jpg) para quem lê a textura por
-        arquivo; quem não mostra textura vê a placa na cor de grama."""
+        """A imagem do terreno numa placa (IfcGeographicElement TERRAIN) na camada "Terreno". A placa é um mosaico de
+        quadrados com as cores da imagem (um IfcTriangulatedFaceSet por cor) — o que todo programa mostra (o Trimble
+        Connect não mostra textura de IFC, 21/10) — e leva a própria imagem como textura (IfcBlobTexture dentro do arquivo
+        e IfcImageTexture terreno.jpg ao lado): quem lê textura vê a foto inteira."""
         tr, a = self.terreno, self.arq
+        mos = tr.get("mosaico") or {"pontos": tr["cantos"], "uv": [(0, 0), (1, 0), (1, 1), (0, 1)],
+                                    "grupos": [{"cor": (107, 143, 78), "triangulos": [(1, 2, 3), (1, 3, 4)]}]}
         pts = a.add("IFCCARTESIANPOINTLIST3D((" + ",".join(
-            "(" + ",".join(_real(v) for v in c) + ")" for c in tr["cantos"]) + "))")
-        face = a.add(f"IFCTRIANGULATEDFACESET({pts},$,.F.,((1,2,3),(1,3,4)),$)")
-        uv = a.add("IFCTEXTUREVERTEXLIST(((0.,0.),(1.,0.),(1.,1.),(0.,1.)))")
+            "(" + ",".join(_real(v) for v in c) + ")" for c in mos["pontos"]) + "))")
+        uv = a.add("IFCTEXTUREVERTEXLIST((" + ",".join("(" + _real(u) + "," + _real(v) + ")" for u, v in mos["uv"]) + "))")
         blob = a.add('IFCBLOBTEXTURE(.F.,.F.,' + _texto("TEXTURE") + ',$,$,' + _texto("JPG") + ',"0'
                      + tr["jpg"].hex().upper() + '")')
         arquivo = a.add(f"IFCIMAGETEXTURE(.F.,.F.,{_texto('TEXTURE')},$,$,{_texto('terreno.jpg')})")
-        a.add(f"IFCINDEXEDTRIANGLETEXTUREMAP(({blob},{arquivo}),{face},{uv},((1,2,3),(1,3,4)))")
-        rgb = a.add(f"IFCCOLOURRGB($,{_real(0.42)},{_real(0.56)},{_real(0.31)})")
-        sombra = a.add(f"IFCSURFACESTYLESHADING({rgb},{_real(0.0)})")
         texturas = a.add(f"IFCSURFACESTYLEWITHTEXTURES(({blob},{arquivo}))")
-        estilo = a.add(f"IFCSURFACESTYLE({_texto('Terreno')},.BOTH.,({sombra},{texturas}))")
-        a.add(f"IFCSTYLEDITEM({face},({estilo}),$)")
+        faces = []
+        for i, g in enumerate(mos["grupos"]):
+            face = a.add(f"IFCTRIANGULATEDFACESET({pts},$,.F.,(" + ",".join(
+                "(%d,%d,%d)" % t for t in g["triangulos"]) + "),$)")
+            # o (u, v) de cada ponto da grade: sem TexCoordIndex, o índice da textura é o do ponto
+            a.add(f"IFCINDEXEDTRIANGLETEXTUREMAP(({blob},{arquivo}),{face},{uv},$)")
+            r, gg, b = (c / 255.0 for c in g["cor"])
+            rgb = a.add(f"IFCCOLOURRGB($,{_real(r)},{_real(gg)},{_real(b)})")
+            render = a.add(f"IFCSURFACESTYLERENDERING({rgb},{_real(0.0)},$,$,$,$,$,$,.NOTDEFINED.)")
+            estilo = a.add(f"IFCSURFACESTYLE({_texto('Terreno %d' % (i + 1))},.BOTH.,({render},{texturas}))")
+            a.add(f"IFCSTYLEDITEM({face},({estilo}),$)")
+            faces.append(face)
+        face = ",".join(faces)
         rep = a.add(f"IFCSHAPEREPRESENTATION({self.corpo},{_texto('Body')},{_texto('Tessellation')},({face}))")
         forma = a.add(f"IFCPRODUCTDEFINITIONSHAPE($,$,({rep}))")
         pl = self._placement(self.sitio_placement, (0.0, 0.0, 0.0))

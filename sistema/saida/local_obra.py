@@ -27,7 +27,7 @@ import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Optional
+from typing import Callable, Dict, Optional
 
 from nucleo.base import ErroDeDados
 
@@ -582,10 +582,46 @@ def para_ifc(t: dict, meta: dict, caminho_jpg: str, deslocamento=(0.0, 0.0, 0.0)
         cantos.append((round(x, 1), round(y, 1), round(z, 1)))
     with open(caminho_jpg, "rb") as f:
         jpg = f.read()
-    return {"lat_sitio": lat_s, "lon_sitio": lon_s, "norte": (-math.sin(a), math.cos(a)),
+    return {"mosaico": _mosaico(jpg, cantos),
+            "lat_sitio": lat_s, "lon_sitio": lon_s, "norte": (-math.sin(a), math.cos(a)),
             "mapa": dict(crs_utm(fuso, sul), leste=leste0, norte=norte0, abscissa=ca, ordenada=sa, escala=escala),
             "cantos": cantos, "jpg": jpg, "fonte": meta.get("fonte") or "", "atribuicao": meta.get("atribuicao") or "",
             "baixada_em": meta.get("baixada_em") or "", "lado_m": meta.get("lado_m")}
+
+
+MOSAICO_LADO = 400            # quadrados por lado da placa (a PRATI: 473 m → 1,2 m cada)
+MOSAICO_CORES = 64
+
+
+def _mosaico(jpg: bytes, cantos: list, lado: int = MOSAICO_LADO, cores: int = MOSAICO_CORES) -> dict:
+    """A imagem como um mosaico de quadrados coloridos (21/10, o usuário no Trimble Connect: "não aparece" — a textura
+    de IFC quase nenhum programa mostra; a cor da superfície, todos): a grade de (n+1)² pontos sobre a placa, o (u, v) de
+    cada ponto para quem lê a textura, e os triângulos agrupados pela cor (a imagem reduzida a `cores` cores) — um
+    IfcTriangulatedFaceSet com a cor dele por grupo."""
+    from PIL import Image
+    im = Image.open(io.BytesIO(jpg)).convert("RGB")
+    n = max(2, min(lado, im.size[0], im.size[1]))
+    pequena = im.resize((n, n), Image.BOX)
+    q = pequena.quantize(colors=cores, method=Image.Quantize.MEDIANCUT)
+    paleta = q.getpalette()[:3 * cores]
+    indices = list(q.getdata())                               # linha 0 = em cima (o norte)
+    (x0, y0, z), (x1, y1, _z1), _c2, (x3, y3, _z3) = cantos   # 0 = sudoeste, 1 = sudeste, 3 = noroeste
+    pontos, uv = [], []
+    for j in range(n + 1):
+        v = j / n
+        for i in range(n + 1):
+            u = i / n
+            pontos.append((round(x0 + u * (x1 - x0) + v * (x3 - x0), 1), round(y0 + u * (y1 - y0) + v * (y3 - y0), 1), z))
+            uv.append((round(u, 5), round(v, 5)))
+    grupos: Dict[int, list] = {}
+    for j in range(n):                                        # de baixo (sul) para cima
+        linha = n - 1 - j
+        for i in range(n):
+            a = j * (n + 1) + i + 1                           # índices do IFC começam em 1
+            b, c, d = a + 1, a + n + 2, a + n + 1
+            grupos.setdefault(indices[linha * n + i], []).extend(((a, b, c), (a, c, d)))
+    return {"n": n, "pontos": pontos, "uv": uv,
+            "grupos": [{"cor": tuple(paleta[3 * k:3 * k + 3]), "triangulos": tri} for k, tri in sorted(grupos.items())]}
 
 
 def terreno_para_ifc(g, s: str, doc) -> Optional[dict]:

@@ -385,6 +385,7 @@ def test_ifc_com_o_terreno_e_valido(tmp_path):
                     str(tmp_path / "i.jpg"))
     caminho = E.exportar(Documento.de_dict(_modelo()), str(tmp_path / "t.ifc"), terreno=tr)
     texto = open(caminho, encoding="ascii").read()
+    assert texto.count("IFCTRIANGULATEDFACESET(") >= 2                 # o mosaico: um por cor (o Trimble não mostra textura)
     for ent in ("IFCMAPCONVERSION(", "IFCPROJECTEDCRS('EPSG:31982'", "IFCGEOGRAPHICELEMENT(", ".TERRAIN.", "IFCBLOBTEXTURE(",
                 "IFCIMAGETEXTURE(", "IFCINDEXEDTRIANGLETEXTUREMAP(", "IFCPRESENTATIONLAYERWITHSTYLE('Terreno'"):
         assert ent in texto, ent
@@ -400,3 +401,27 @@ def test_ifc_com_o_terreno_e_valido(tmp_path):
     site = f.by_type("IfcSite")[0]
     assert site.RefLatitude[0] == -24 and site.RefLongitude[0] == -53
     assert f.by_type("IfcMapConversion")[0].TargetCRS.Name == "EPSG:31982"
+
+
+def test_mosaico_de_cores_do_terreno():
+    """O Trimble Connect não mostra textura de IFC (21/10: "estou testando o IFC exportado com o terreno no trimble e não
+    aparece"): a placa vira um mosaico de quadrados com as cores da imagem, um IfcTriangulatedFaceSet por cor — a metade
+    de cima da imagem vermelha e a de baixo azul saem no norte e no sul da placa, nessas cores."""
+    import io
+    from PIL import Image
+    im = Image.new("RGB", (64, 64), (0, 0, 220))
+    im.paste((220, 0, 0), (0, 0, 64, 32))                       # em cima (o norte) vermelho
+    b = io.BytesIO()
+    im.save(b, "PNG")
+    cantos = [(0, 0, 0), (64000, 0, 0), (64000, 64000, 0), (0, 64000, 0)]
+    m = L._mosaico(b.getvalue(), cantos, lado=16, cores=8)
+    assert m["n"] == 16 and len(m["pontos"]) == 17 * 17 and len(m["uv"]) == 17 * 17
+    assert sum(len(g["triangulos"]) for g in m["grupos"]) == 16 * 16 * 2
+    pontos = m["pontos"]
+    for g in m["grupos"]:
+        ys = [pontos[i - 1][1] for t in g["triangulos"] for i in t]
+        r, _g, bl = g["cor"]
+        if r > 150:
+            assert min(ys) >= 32000 - 1                         # o vermelho só na metade norte
+        if bl > 150:
+            assert max(ys) <= 32000 + 1                         # o azul só na metade sul
