@@ -1183,10 +1183,10 @@ class _Exportador:
                                     "grupos": [{"cor": (107, 143, 78), "triangulos": [(1, 2, 3), (1, 3, 4)]}]}
         pts = a.add("IFCCARTESIANPOINTLIST3D((" + ",".join(
             "(" + ",".join(_real(v) for v in c) + ")" for c in mos["pontos"]) + "))")
-        uv = a.add("IFCTEXTUREVERTEXLIST((" + ",".join("(" + _real(u) + "," + _real(v) + ")" for u, v in mos["uv"]) + "))")             if tr.get("textura", "dentro") else None
-        # a textura é opcional (21/10: o Trimble Connect não abria o IFC com ela) — "textura": "dentro" (a imagem no
-        # arquivo + o nome do arquivo ao lado), "arquivo" (só o nome: terreno.jpg ao lado) ou False (só o mosaico)
-        modo = tr.get("textura", "dentro")
+        uv = a.add("IFCTEXTUREVERTEXLIST((" + ",".join("(" + _real(u) + "," + _real(v) + ")" for u, v in mos["uv"]) + "))")             if tr.get("textura", False) else None
+        # a textura é opcional e sai desligada (21/10: o Trimble Connect não abria o IFC com ela; com o mosaico sem textura,
+        # abriu) — "textura": "dentro" (a imagem no arquivo + terreno.jpg ao lado), "arquivo" (só o terreno.jpg ao lado)
+        modo = tr.get("textura", False)
         mapas = []
         if modo == "dentro":
             mapas.append(a.add('IFCBLOBTEXTURE(.F.,.F.,' + _texto("TEXTURE") + ',$,$,' + _texto("JPG") + ',"0'

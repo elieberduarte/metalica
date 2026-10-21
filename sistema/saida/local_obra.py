@@ -553,7 +553,8 @@ def crs_utm(fuso: int, sul: bool) -> dict:
             "datum": "WGS84", "zona": "%d%s" % (fuso, "S" if sul else "N")}
 
 
-def para_ifc(t: dict, meta: dict, caminho_jpg: str, deslocamento=(0.0, 0.0, 0.0), z_padrao: float = 0.0) -> dict:
+def para_ifc(t: dict, meta: dict, caminho_jpg: str, deslocamento=(0.0, 0.0, 0.0), z_padrao: float = 0.0,
+             foco: Optional[tuple] = None) -> dict:
     """O terreno para o IFC (usuário, 21/10: "montar um IFC com a imagem do terreno da Prati CD para mandar para o
     cliente"): a georreferência (o sítio em latitude e longitude, o norte verdadeiro e a conversão para a UTM do mapa — o
     IfcMapConversion do IFC4) e a placa com a imagem (os quatro cantos dela em mm do modelo, na altura da imagem).
@@ -582,44 +583,99 @@ def para_ifc(t: dict, meta: dict, caminho_jpg: str, deslocamento=(0.0, 0.0, 0.0)
         cantos.append((round(x, 1), round(y, 1), round(z, 1)))
     with open(caminho_jpg, "rb") as f:
         jpg = f.read()
-    return {"mosaico": _mosaico(jpg, cantos),
+    return {"mosaico": _mosaico(jpg, cantos, foco),
             "lat_sitio": lat_s, "lon_sitio": lon_s, "norte": (-math.sin(a), math.cos(a)),
             "mapa": dict(crs_utm(fuso, sul), leste=leste0, norte=norte0, abscissa=ca, ordenada=sa, escala=escala),
             "cantos": cantos, "jpg": jpg, "fonte": meta.get("fonte") or "", "atribuicao": meta.get("atribuicao") or "",
             "baixada_em": meta.get("baixada_em") or "", "lado_m": meta.get("lado_m")}
 
 
-MOSAICO_LADO = 400            # quadrados por lado da placa (a PRATI: 473 m → 1,2 m cada)
-MOSAICO_CORES = 64
+MOSAICO_LADO = 1024           # quadrados por lado na resolução fina (até a da imagem: a PRATI, 871 px → 0,54 m)
+MOSAICO_CORES = 256
+MOSAICO_GROSSO = 4            # fora da obra, quadrados 4 × maiores (a vizinhança: a PRATI, 2,2 m)
+MOSAICO_MARGEM_MM = 30_000    # a resolução fina vai até 30 m em volta da obra
 
 
-def _mosaico(jpg: bytes, cantos: list, lado: int = MOSAICO_LADO, cores: int = MOSAICO_CORES) -> dict:
-    """A imagem como um mosaico de quadrados coloridos (21/10, o usuário no Trimble Connect: "não aparece" — a textura
-    de IFC quase nenhum programa mostra; a cor da superfície, todos): a grade de (n+1)² pontos sobre a placa, o (u, v) de
-    cada ponto para quem lê a textura, e os triângulos agrupados pela cor (a imagem reduzida a `cores` cores) — um
-    IfcTriangulatedFaceSet com a cor dele por grupo."""
+def _uv_do_ponto(cantos: list, x: float, y: float) -> tuple:
+    """(u, v) do ponto do modelo na placa (0 = sudoeste, 1 = sudeste, 3 = noroeste)."""
+    (x0, y0, _z), (x1, y1, _z1), _c2, (x3, y3, _z3) = cantos
+    ax, ay, bx, by = x1 - x0, y1 - y0, x3 - x0, y3 - y0
+    det = ax * by - ay * bx
+    dx, dy = x - x0, y - y0
+    return ((dx * by - dy * bx) / det, (ax * dy - ay * dx) / det)
+
+
+def _mosaico(jpg: bytes, cantos: list, foco: Optional[tuple] = None, lado: int = MOSAICO_LADO,
+             cores: int = MOSAICO_CORES, grosso: int = MOSAICO_GROSSO) -> dict:
+    """A imagem como um mosaico de quadrados coloridos (21/10, o usuário no Trimble Connect: "não aparece" — o Trimble não
+    lê textura de IFC; a cor da superfície, todo programa mostra): faixas de quadrados vizinhos da mesma cor viram um
+    retângulo só, e os triângulos se agrupam pela cor (a imagem reduzida a `cores` cores) — um IfcTriangulatedFaceSet com
+    a cor dele por grupo. Na obra (`foco` = [x0, y0, x1, y1] mm do modelo, com a margem) a resolução da imagem; fora dela,
+    quadrados `grosso` vezes maiores ("abriu, porém a resolução do terreno ficou muito baixa" — o arquivo da PRATI com a
+    imagem toda em resolução cheia passava de 900 mil triângulos). Sem `foco`, tudo na resolução fina."""
     from PIL import Image
     im = Image.open(io.BytesIO(jpg)).convert("RGB")
-    n = max(2, min(lado, im.size[0], im.size[1]))
-    pequena = im.resize((n, n), Image.BOX)
-    q = pequena.quantize(colors=cores, method=Image.Quantize.MEDIANCUT)
-    paleta = q.getpalette()[:3 * cores]
-    indices = list(q.getdata())                               # linha 0 = em cima (o norte)
-    (x0, y0, z), (x1, y1, _z1), _c2, (x3, y3, _z3) = cantos   # 0 = sudoeste, 1 = sudeste, 3 = noroeste
-    pontos, uv = [], []
-    for j in range(n + 1):
-        v = j / n
-        for i in range(n + 1):
-            u = i / n
+    n = max(grosso, min(lado, im.size[0], im.size[1]))
+    n -= n % grosso
+    nc = n // grosso
+    fina = im.resize((n, n), Image.BOX).quantize(colors=cores, method=Image.Quantize.MEDIANCUT)
+    grossa = im.resize((nc, nc), Image.BOX).quantize(palette=fina)
+    paleta = fina.getpalette()[:3 * cores]
+    df, dg = fina.tobytes(), grossa.tobytes()                 # linha 0 = em cima (o norte)
+    if foco:
+        uvs = [_uv_do_ponto(cantos, x, y) for x, y in ((foco[0], foco[1]), (foco[2], foco[1]), (foco[2], foco[3]), (foco[0], foco[3]))]
+        u0, u1 = max(0.0, min(u for u, _ in uvs)), min(1.0, max(u for u, _ in uvs))
+        v0, v1 = max(0.0, min(v for _, v in uvs)), min(1.0, max(v for _, v in uvs))
+    else:
+        u0, v0, u1, v1 = 0.0, 0.0, 1.0, 1.0
+
+    def no_foco(i_g: int, j_g: int) -> bool:                  # a célula grossa (coluna, linha de baixo para cima) toca a obra?
+        return (i_g + 1) / nc > u0 and i_g / nc < u1 and (j_g + 1) / nc > v0 and j_g / nc < v1
+
+    (x0, y0, z), (x1, y1, _z1), _c2, (x3, y3, _z3) = cantos
+    pontos, uv, indice = [], [], {}
+
+    def p(i: int, j: int) -> int:                             # o ponto (i, j) da grade fina, 1… (o IFC conta de 1)
+        k = indice.get((i, j))
+        if k is None:
+            u, v = i / n, j / n
             pontos.append((round(x0 + u * (x1 - x0) + v * (x3 - x0), 1), round(y0 + u * (y1 - y0) + v * (y3 - y0), 1), z))
             uv.append((round(u, 5), round(v, 5)))
+            k = indice[(i, j)] = len(pontos)
+        return k
+
     grupos: Dict[int, list] = {}
-    for j in range(n):                                        # de baixo (sul) para cima
+
+    def retangulo(cor: int, i0: int, j0: int, i1: int, j1: int):
+        a, b, c, d = p(i0, j0), p(i1, j0), p(i1, j1), p(i0, j1)
+        grupos.setdefault(cor, []).extend(((a, b, c), (a, c, d)))
+
+    for jg in range(nc):                                      # a vizinhança, em quadrados grossos
+        linha = nc - 1 - jg
+        ig = 0
+        while ig < nc:
+            if no_foco(ig, jg):
+                ig += 1
+                continue
+            cor, fim = dg[linha * nc + ig], ig + 1
+            while fim < nc and not no_foco(fim, jg) and dg[linha * nc + fim] == cor:
+                fim += 1
+            retangulo(cor, ig * grosso, jg * grosso, fim * grosso, (jg + 1) * grosso)
+            ig = fim
+    for j in range(n):                                        # a obra, na resolução da imagem
+        if not any(no_foco(ig, j // grosso) for ig in range(nc)):
+            continue
         linha = n - 1 - j
-        for i in range(n):
-            a = j * (n + 1) + i + 1                           # índices do IFC começam em 1
-            b, c, d = a + 1, a + n + 2, a + n + 1
-            grupos.setdefault(indices[linha * n + i], []).extend(((a, b, c), (a, c, d)))
+        i = 0
+        while i < n:
+            if not no_foco(i // grosso, j // grosso):
+                i += 1
+                continue
+            cor, fim = df[linha * n + i], i + 1
+            while fim < n and no_foco(fim // grosso, j // grosso) and df[linha * n + fim] == cor:
+                fim += 1
+            retangulo(cor, i, j, fim, j + 1)
+            i = fim
     return {"n": n, "pontos": pontos, "uv": uv,
             "grupos": [{"cor": tuple(paleta[3 * k:3 * k + 3]), "triangulos": tri} for k, tri in sorted(grupos.items())]}
 
@@ -632,11 +688,14 @@ def terreno_para_ifc(g, s: str, doc) -> Optional[dict]:
     if not isinstance(t, dict) or not meta:
         return None
     try:
-        z_padrao = float(doc.caixa()[0][2])                   # sem a altura escolhida: no pé da obra, como na tela
+        cx = doc.caixa()
+        z_padrao = float(cx[0][2])                            # sem a altura escolhida: no pé da obra, como na tela
+        m = MOSAICO_MARGEM_MM                                 # a resolução fina do mosaico: a obra e 30 m em volta
+        foco = (cx[0][0] - m, cx[0][1] - m, cx[1][0] + m, cx[1][1] + m)
     except Exception:
-        z_padrao = 0.0
+        z_padrao, foco = 0.0, None
     return para_ifc(t, meta, os.path.join(g.pasta(s), PASTA, "imagem.jpg"),
-                    (doc.metadados or {}).get("deslocamento_mm") or (0.0, 0.0, 0.0), z_padrao)
+                    (doc.metadados or {}).get("deslocamento_mm") or (0.0, 0.0, 0.0), z_padrao, foco)
 
 
 # ------------------------------------------------------------------ as rotas (app.py)

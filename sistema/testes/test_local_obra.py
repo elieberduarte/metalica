@@ -383,7 +383,9 @@ def test_ifc_com_o_terreno_e_valido(tmp_path):
     reg = L.regiao(t, [0, 0, 10000, 6000])
     tr = L.para_ifc(t, {k: reg[k] for k in ("x0", "y0", "x1", "y1")} | {"fonte": "Esri", "atribuicao": "Imagem: Esri"},
                     str(tmp_path / "i.jpg"))
-    caminho = E.exportar(Documento.de_dict(_modelo()), str(tmp_path / "t.ifc"), terreno=tr)
+    padrao = open(E.exportar(Documento.de_dict(_modelo()), str(tmp_path / "p.ifc"), terreno=tr), encoding="ascii").read()
+    assert "IFCBLOBTEXTURE" not in padrao and "IFCIMAGETEXTURE" not in padrao   # o Trimble não abria com textura (21/10)
+    caminho = E.exportar(Documento.de_dict(_modelo()), str(tmp_path / "t.ifc"), terreno=dict(tr, textura="dentro"))
     texto = open(caminho, encoding="ascii").read()
     assert texto.count("IFCTRIANGULATEDFACESET(") >= 2                 # o mosaico: um por cor (o Trimble não mostra textura)
     for ent in ("IFCMAPCONVERSION(", "IFCPROJECTEDCRS('EPSG:31982'", "IFCGEOGRAPHICELEMENT(", ".TERRAIN.", "IFCBLOBTEXTURE(",
@@ -414,10 +416,17 @@ def test_mosaico_de_cores_do_terreno():
     b = io.BytesIO()
     im.save(b, "PNG")
     cantos = [(0, 0, 0), (64000, 0, 0), (64000, 64000, 0), (0, 64000, 0)]
-    m = L._mosaico(b.getvalue(), cantos, lado=16, cores=8)
-    assert m["n"] == 16 and len(m["pontos"]) == 17 * 17 and len(m["uv"]) == 17 * 17
-    assert sum(len(g["triangulos"]) for g in m["grupos"]) == 16 * 16 * 2
+    m = L._mosaico(b.getvalue(), cantos, lado=16, cores=8, grosso=4)
+    assert m["n"] == 16 and len(m["uv"]) == len(m["pontos"])
     pontos = m["pontos"]
+
+    def area(t):
+        (ax, ay, _), (bx, by, _), (cx, cy, _) = (pontos[i - 1] for i in t)
+        return ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) / 2
+    tris = [t for g in m["grupos"] for t in g["triangulos"]]
+    assert all(area(t) > 0 for t in tris)                      # todos virados para cima
+    assert abs(sum(area(t) for t in tris) - 64000 ** 2) < 1    # a placa inteira coberta, sem sobrar nem faltar
+    assert len(tris) == 2 * 16                                  # cada linha de uma cor só vira uma faixa (16 linhas)
     for g in m["grupos"]:
         ys = [pontos[i - 1][1] for t in g["triangulos"] for i in t]
         r, _g, bl = g["cor"]
@@ -425,3 +434,32 @@ def test_mosaico_de_cores_do_terreno():
             assert min(ys) >= 32000 - 1                         # o vermelho só na metade norte
         if bl > 150:
             assert max(ys) <= 32000 + 1                         # o azul só na metade sul
+
+
+def test_mosaico_fino_na_obra_e_grosso_em_volta():
+    """"Abriu, porém a resolução do terreno ficou muito baixa" (21/10, a PRATI no Trimble): na obra (e 30 m em volta) o
+    mosaico tem a resolução da imagem; fora, quadrados 4 × maiores — a foto nítida onde importa sem passar de algumas
+    centenas de milhares de triângulos."""
+    import io
+    import random
+    from PIL import Image
+    r = random.Random(3)
+    im = Image.new("RGB", (64, 64))
+    im.putdata([(r.randrange(256), r.randrange(256), r.randrange(256)) for _ in range(64 * 64)])   # ruído: nada se junta
+    b = io.BytesIO()
+    im.save(b, "PNG")
+    cantos = [(0, 0, 0), (64000, 0, 0), (64000, 64000, 0), (0, 64000, 0)]
+    m = L._mosaico(b.getvalue(), cantos, foco=(16000, 16000, 32000, 32000), lado=64, cores=256, grosso=4)
+    pontos = m["pontos"]
+    lados = {}
+    for g in m["grupos"]:
+        for t in g["triangulos"]:
+            xs = [pontos[i - 1][0] for i in t]
+            ys = [pontos[i - 1][1] for i in t]
+            meio = (sum(xs) / 3, sum(ys) / 3)
+            dentro = 16000 <= meio[0] <= 32000 and 16000 <= meio[1] <= 32000
+            lados.setdefault(dentro, set()).add(round(max(ys) - min(ys)))
+    assert lados[True] == {1000}                                # na obra: a célula da imagem (1 m)
+    assert lados[False] == {4000}                               # em volta: 4 × maior
+    tris = sum(len(g["triangulos"]) for g in m["grupos"])
+    assert tris < 2 * 64 * 64 / 2                               # bem menos que a imagem inteira na resolução fina
