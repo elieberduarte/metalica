@@ -36,7 +36,9 @@ try:
     r = post("/api/projetos/compressores/detalhar", {})
     # as 162 marcas do IFC viram ~125 posições (as peças iguais de marcas diferentes se fundem)
     dt = time.time() - t0
-    ok(100 <= r["posicoes"] <= 162 and r["pecas"] == 2705 and dt < 120,
+    # o tempo é só um alarme de lentidão grosseira: a obra leva ~100–115 s nesta máquina sem carga (medido 21/10 na 0.9.0
+    # e no c4a0dca, mesmos números), e com outros chats ou a conferência rodando passava dos 120 s de antes
+    ok(100 <= r["posicoes"] <= 162 and r["pecas"] == 2705 and dt < 240,
        "rota detalhou em %.1f s: %s peças, %s posições, %s conjuntos, %s kg" % (dt, r["pecas"], r["posicoes"], r["conjuntos"], r["peso_total"]))
     grupos = [d["grupo"] for d in r["desenhos"]]
     ok({"tesouras", "chaparias", "localizacao", "completo"} <= set(grupos),
@@ -78,13 +80,21 @@ try:
     ok(aba.avaliar("!!document.querySelector('[data-acao=\"detalhar-pecas\"]')"), "item de menu 'Detalhar peças e conjuntos…' presente")
     # o editor abre o CAD na mesma janela (location.href), não numa janela nova
     aba.avaliar("window.editor.dialogoDetalharPecas(); 1")
-    aba.drenar(1.0)
-    aba.avaliar("document.querySelector('dialog[open] .botao-ok, dialog[open] button[value=ok], dialog[open] form button:last-child').click(); 1")
+    # o diálogo só abre depois de ler as opções do projeto, e logo depois de um Detalhar o servidor ainda refaz os desenhos
+    # e responde devagar: o clique 1 s depois caía antes do diálogo existir e nada acontecia (conferência da 0.9.1, 21/10)
+    titulo = "(document.querySelector('dialog[open]') ? window.editor.el.dialogoTitulo.textContent : '')"
+    t0 = time.time()
+    while time.time() - t0 < 60 and aba.avaliar(titulo) != "Detalhar peças e conjuntos":
+        aba.drenar(0.5)
+    aba.avaliar("window.editor.el.dialogoOk.click(); 1")
     t0 = time.time()
     u = ""
-    while time.time() - t0 < 180:
+    while time.time() - t0 < 360:                         # o diálogo faz o Detalhar inteiro (~100–160 s) antes de abrir o CAD
         try:
             u = aba.avaliar("location.pathname + location.search") or ""
+            # o que o padrão de fábrica mudou no 3D (Q02): segue por "Abrir os desenhos"
+            if aba.avaliar(titulo) == "O que o detalhamento mudou no 3D":
+                aba.avaliar("window.editor.el.dialogoOk.click(); 1")
         except Exception:                                  # noqa: BLE001 — a página trocando
             u = ""
         if u.startswith("/cad?projeto=compressores&desenho="):
