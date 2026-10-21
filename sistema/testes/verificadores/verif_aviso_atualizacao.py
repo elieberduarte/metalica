@@ -18,7 +18,12 @@ srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--sem-nav
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 base = f"http://localhost:{PORTA}"
 falhas = []
-NOTAS = "## 0.9.1\n- **Enviar a obra** para outro usuário pelo Metálica (abc1234)\n- Terreno: a obra na imagem de satélite\n- Link de instalação com a chave\n- Uma quarta novidade"
+# as notas como a release as leva (empacotar/publicar_noite.notas_da_versao: os parágrafos do LEIAME, sem o negrito)
+NOTAS = ("(21/10/2026) Obras entre usuários, link de instalação e a obra no terreno do cliente.\n\n"
+         "Enviar a obra para outro usuário. No cartão do projeto, Enviar para manda a obra.\n\n"
+         "Link de instalação. Na tela das licenças, cada licença tem um link.\n\n"
+         "A obra no terreno. O botão Terreno do modo ver põe a imagem.\n\n"
+         "IFC com o terreno. Com o terreno à vista, o IFC leva a obra georreferenciada.")
 SIMULA = """(() => {
   const original = window.fetch.bind(window);
   window.fetch = (u, o) => {
@@ -75,8 +80,8 @@ try:
     ok(aba.avaliar("document.querySelector('main.gerenciador').firstElementChild.classList.contains('atualizacao')"), "no alto da tela (antes dos projetos)")
     ok("Nova versão 0.9.1 disponível" in (aba.avaliar("document.querySelector('.atualizacao-titulo').textContent") or ""), "o título com a versão")
     nov = aba.avaliar("[...document.querySelectorAll('.atualizacao-novidades li')].map(l => l.textContent)") or []
-    ok(nov == ["Enviar a obra para outro usuário pelo Metálica", "Terreno: a obra na imagem de satélite", "Link de instalação com a chave"],
-       f"as 3 primeiras novidades das notas, sem o markdown ({nov})")
+    ok(nov == ["Enviar a obra para outro usuário", "Link de instalação", "A obra no terreno"],
+       f"as 3 primeiras novidades das notas — o título de cada parágrafo, depois do resumo ({nov})")
     ok(aba.avaliar("[...document.querySelectorAll('.atualizacao button')].some(b => b.textContent === 'Atualizar agora')"), "o Atualizar agora")
     alto = aba.avaliar("document.querySelector('.atualizacao').getBoundingClientRect().height")
     ok(alto >= 80, f"a faixa tem destaque ({alto:.0f} px de altura)")

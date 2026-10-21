@@ -182,6 +182,20 @@ posição ganha `saia`, que entra na compra, na célula, na lista e na paginaç�
 cada telha sai **inteira** (retângulo até o ponto mais alto) e o corte do modelo — a empena
 inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois de instalada.
 
+**0.9.1.** (21/10/2026) Obras entre usuários, link de instalação e a obra no terreno do cliente. São 37 mudanças desde a 0.9.0.
+
+**Enviar a obra para outro usuário.** No cartão do projeto, "Enviar para…" manda a obra inteira para o Metálica de outra pessoa pela internet (ou para os seus outros computadores); ela vê "Fulano te enviou…" no alto da tela inicial e abre como um projeto novo. É uma cópia: cada um segue com a sua.
+
+**Link de instalação.** Na tela das licenças, cada licença tem um link para a pessoa baixar o Metálica; o instalador vem com a chave e o programa se ativa sozinho na primeira abertura.
+
+**A obra no terreno.** O botão Terreno do modo ver põe a imagem de satélite do lote no chão do 3D (e no editor): busca pelo endereço ou pela coordenada do Google Maps ou do geoportal, as ortofotos das prefeituras de Cascavel e de Toledo (e de outras cidades do geoportal "nacidade"), ajuste da posição e do norte, a altura da imagem (o 0,00 da obra com subsolo) e a transparência sobre a obra.
+
+**IFC com o terreno.** Com o terreno à vista, o IFC exportado leva a obra georreferenciada (SIRGAS 2000 / UTM) e a placa do terreno com as cores da imagem, numa camada "Terreno" — aparece no Trimble Connect e nos outros programas.
+
+**Tela inicial.** O aviso de versão nova em destaque no alto, com as novidades; "Atualizando…" no cartão do projeto que o sistema está atualizando; Importar pacote também com a lista vazia.
+
+**Editor 3D e montagem.** Juntar pontas (J, a meia-esquadria e o encaixe), Empurrar/Puxar com várias barras, as regras 2.9 e 2.9a da tesoura (banzo em U de alma no plano, a ponta do banzo composto), três leituras da montagem pela planta corrigidas e a localização e a chumbação de prédio por pavimento.
+
 **0.9.0.** (20/10/2026) Frente grande entregue: a **Identificação para modelagem**. São 316 mudanças desde a 0.8.64 (a 0.8.65, de 11/10, não chegou a sair e entra aqui).
 
 **Identificação para modelagem.** O projeto recebido (DXF/PDF) entra só para leitura, como o Original. Na Montagem, um painel de etapas leva do desenho ao 3D: locação, tesouras coladas nos eixos, terças, contraventos, correntes e vigas VC/VT, e montar o modelo. O 2D e o 3D ficam vinculados (a volta do 3D entende a Montagem).

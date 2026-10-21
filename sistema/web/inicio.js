@@ -721,9 +721,14 @@ async function iniciar() {
 const DEPOIS_ATUALIZAR = 'metalica.atualizacao.depois';
 
 function novidades(notas, n = 3) {
-  // as primeiras linhas de tópico das notas da versão (o LEIAME: "- Terreno: …"), sem o markdown
-  return String(notas || '').split(/\r?\n/).map(l => l.trim()).filter(l => /^[-*•]\s+/.test(l))
-    .map(l => l.replace(/^[-*•]\s+/, '').replace(/\*\*|`/g, '').replace(/\s*\([0-9a-f]{7,}\)\s*$/, '')).slice(0, n);
+  // as notas da release são parágrafos ("Frente. O que mudou…", o LEIAME sem o negrito): o título de cada um, depois do
+  // primeiro (o resumo da versão); linhas de tópico ("- …") também valem
+  const texto = String(notas || '').replace(/\*\*|`/g, '');
+  const topicos = texto.split(/\r?\n/).map(l => l.trim()).filter(l => /^[-*•]\s+/.test(l))
+    .map(l => l.replace(/^[-*•]\s+/, '').replace(/\s*\([0-9a-f]{7,}\)\s*$/, ''));
+  if (topicos.length) return topicos.slice(0, n);
+  return texto.split(/\r?\n\s*\r?\n/).map(p => p.trim()).filter(Boolean).slice(1)
+    .map(p => p.split(/(?<=\.)\s/)[0].replace(/\.$/, '')).filter(t => t.length > 3 && t.length < 90).slice(0, n);
 }
 
 async function verificarAtualizacao() {

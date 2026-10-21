@@ -160,9 +160,9 @@ PORTA_DEV = 8766
 COMERCIAL = os.environ.get("METALICA_COMERCIAL", "0" if versao.CONGELADO else "1") == "1"
 #: a tela das licenças dentro do programa (licencas_dev.py, 11/10): só no desenvolvimento — o instalado não leva o módulo
 LICENCAS_DEV = not versao.CONGELADO
-#: a obra no terreno do cliente (saida/local_obra.py, 20/10): só no desenvolvimento enquanto é teste — a imagem vem da
-#: Esri gratuita; METALICA_TERRENO=0/1 força um ou outro
-TERRENO = os.environ.get("METALICA_TERRENO", "0" if versao.CONGELADO else "1") == "1"
+#: a obra no terreno do cliente (saida/local_obra.py, 20/10): no instalado desde a 0.9.1 (21/10, a publicação levou o
+#: terreno, o IFC com ele e as ortofotos de Cascavel e Toledo); METALICA_TERRENO=0 desliga
+TERRENO = os.environ.get("METALICA_TERRENO", "1") == "1"
 SO_NO_DEV = "a parte comercial (orçamento, proposta, contrato e obra) fica só na versão de desenvolvimento."
 
 
