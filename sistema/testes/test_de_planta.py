@@ -882,3 +882,17 @@ def test_desenho_noutra_escala_le_igual():
         return sorted((round(b.inicio[0]), round(b.inicio[1]), round(b.inicio[2])) for b in r["doc"].barras if b.camada == "Mezanino")
     assert len(mezanino(r20)) == 2 and mezanino(r50) == mezanino(r20)
     assert len(r50["doc"].barras) == len(r20["doc"].barras)
+
+
+def test_titulo_da_planta_com_apostrofo():
+    """Posto CB V2 (21/10/2026): o desenho escreve "PLANTA DA BASE DA CX DÁGUA NIVEL 8,20" e o parâmetro veio com
+    apóstrofo ("CX D'ÁGUA") — a planta não era achada e a caixa d'água ficava fora do modelo, só com um aviso.
+    Apóstrofo, acento e espaço não contam no casamento do título."""
+    from nucleo3d.de_planta import _achar_titulo
+    textos = [{"texto": "PLANTA DA BASE DA CX DÁGUA NIVEL 8,20", "altura": 10.0, "posicao": [0.0, 0.0]},
+              {"texto": "COBERTURA DA CX D'ÁGUA NIVEL 11,00", "altura": 10.0, "posicao": [0.0, 0.0]}]
+    assert _achar_titulo(textos, "PLANTA DA BASE DA CX D'ÁGUA NIVEL 8,20")["texto"].startswith("PLANTA DA BASE")
+    assert _achar_titulo(textos, "PLANTA DA BASE DA CX DÁGUA NIVEL 8,20")["texto"].startswith("PLANTA DA BASE")
+    assert _achar_titulo(textos, "COBERTURA DA CX DAGUA NIVEL 11,00")["texto"].startswith("COBERTURA")
+    assert _achar_titulo(textos, "COBERTURA DA CX D’AGUA")["texto"].startswith("COBERTURA")
+    assert _achar_titulo(textos, "PLANTA NO NÍVEL 6,00") is None

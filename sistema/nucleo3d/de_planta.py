@@ -541,9 +541,15 @@ def _componentes(segs, celula: float) -> List[dict]:
     return out
 
 
+def _chave_de_titulo(s: str) -> str:
+    """o título sem acento, espaço nem apóstrofo: "CX D'ÁGUA", "CX DÁGUA" e "CX D´AGUA" são o mesmo título (Posto CB V2,
+    21/10/2026: o parâmetro com apóstrofo não casava com o desenho e a caixa d'água ficava fora, só com um aviso)"""
+    return re.sub(r"[\s'’‘`´\"]+", "", _sem_acento(s))
+
+
 def _achar_titulo(textos, comeco: str) -> Optional[dict]:
-    alvo = _sem_acento(comeco).replace(" ", "")
-    cands = [t for t in textos if _sem_acento(t["texto"]).replace(" ", "").startswith(alvo)]
+    alvo = _chave_de_titulo(comeco)
+    cands = [t for t in textos if _chave_de_titulo(t["texto"]).startswith(alvo)]
     if not cands:
         return None
     return max(cands, key=lambda t: t.get("altura") or 0)
