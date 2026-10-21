@@ -20,6 +20,7 @@ import urllib.request
 CONTA = "97e42554f601fee34702ba83e8b2dd7d"
 BANCO = "cb870249-814d-4c2a-a610-490539a21e65"
 TELA = "https://metalica-licencas-admin.elieber-lucas.workers.dev"
+SERVICO = "https://metalica-licencas.elieber-lucas.workers.dev"   # o serviço do programa: a página do convite
 ALFABETO = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
@@ -156,6 +157,31 @@ def envia_obras(chave: str, sim: bool) -> dict:
     _sql("UPDATE licencas SET envia_obras = ? WHERE chave = ?", [1 if sim else 0, chave])
     _evento(chave, "envia obras" if sim else "não envia obras", "por " + _quem())
     return {"ok": True}
+
+
+def _coluna_convite():
+    """a coluna do convite (servicos/licencas/migracao-convite.sql), criada na primeira vez se o banco ainda não a tem"""
+    try:
+        _sql("SELECT convite FROM licencas LIMIT 1")
+    except ErroLicencas:
+        _sql("ALTER TABLE licencas ADD COLUMN convite TEXT")
+        _sql("CREATE UNIQUE INDEX IF NOT EXISTS licencas_convite ON licencas (convite)")
+
+
+def convite(chave: str) -> dict:
+    """O link de instalação da licença (21/10, o usuário: "um link direto para enviar para o usuário baixar o sistema já
+    com a chave ativada"): a página do serviço com o botão de baixar e o instalador com a chave no nome. O mesmo link a
+    cada vez (o código fica na licença); bloquear a licença o desliga."""
+    _coluna_convite()
+    lic = _sql("SELECT chave, pessoa, convite FROM licencas WHERE chave = ?", [chave])
+    if not lic:
+        raise ErroLicencas("licença não encontrada")
+    codigo = lic[0].get("convite")
+    if not codigo:
+        codigo = secrets.token_urlsafe(12)
+        _sql("UPDATE licencas SET convite = ? WHERE chave = ?", [codigo, chave])
+        _evento(chave, "convite", "link de instalação criado · por " + _quem())
+    return {"link": "%s/convite/%s" % (SERVICO, codigo), "pessoa": lic[0].get("pessoa", "")}
 
 
 def liberar_aparelho(aparelho_id: int) -> dict:

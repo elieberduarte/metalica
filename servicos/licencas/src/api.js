@@ -4,6 +4,8 @@
 //   POST /api/renovar     {licenca, versao, nome_pc, usuario}         → {licenca, validade} | 403 {bloqueada, motivo}
 //   GET  /api/atualizacao  Authorization: Licenca <licenca>           → a última versão publicada
 //   GET  /api/baixar/<id>?licenca=…                                    → o instalador (do repositório privado)
+//   GET  /convite/<código>                                              → a página para a pessoa baixar o Metálica
+//   GET  /convite/<código>/instalador                                   → o instalador com a chave no nome do arquivo
 //
 // Cada chave ativa até `maquinas_max` máquinas; a mesma máquina ativando de novo não ocupa outra vaga. O GitHub é lido
 // com o segredo GITHUB_TOKEN (só leitura): o programa nunca vê o token.
@@ -120,6 +122,78 @@ async function baixar(req, env, id) {
   return new Response(corpo.body, { status: 200, headers: h });
 }
 
+// ------------------------------------------------------------------ o convite (21/10/2026)
+// O usuário: "um link direto para enviar para o usuário baixar o sistema já com a chave ativada". O código do convite fica
+// na licença (coluna `convite`, criado na tela das licenças); a página mostra o botão de baixar e a chave, e o instalador
+// sai com a chave no nome ("Metalica-instalador MTL-XXXX-XXXX-XXXX.exe"): o instalador a lê do próprio nome e o Metálica
+// se ativa sozinho na primeira abertura (a partir da 0.9.1; antes, a chave é colada na tela de ativação).
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function licencaDoConvite(env, codigo) {
+  if (!/^[A-Za-z0-9_-]{8,40}$/.test(codigo)) return null;
+  return env.DB.prepare('SELECT * FROM licencas WHERE convite = ?').bind(codigo).first();
+}
+
+function paginaConvite({ titulo, corpo, status = 200 }) {
+  return new Response(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
+<title>${esc(titulo)}</title><style>
+:root { color-scheme: light dark; --fundo: #f4f6fa; --painel: #fff; --texto: #1d232b; --fraco: #5b6573; --borda: #d9dee6; --azul: #1f5fbf; }
+@media (prefers-color-scheme: dark) { :root { --fundo: #0e131a; --painel: #161d27; --texto: #e6eaf0; --fraco: #9aa3ae; --borda: #2a3442; --azul: #4d8ef0; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--fundo); color: var(--texto); font: 16px/1.5 system-ui, "Segoe UI", sans-serif; }
+main { max-width: 560px; margin: 48px auto; padding: 0 16px; } .cartao { background: var(--painel); border: 1px solid var(--borda); border-radius: 12px; padding: 28px; }
+h1 { font-size: 22px; margin: 0 0 6px; } p { margin: 8px 0; } .fraco { color: var(--fraco); font-size: 14px; }
+.botao { display: block; text-align: center; background: var(--azul); color: #fff; text-decoration: none; font-weight: 600; padding: 14px; border-radius: 8px; margin: 20px 0 8px; }
+ol { padding-left: 20px; } li { margin: 8px 0; } code { font: 600 17px Consolas, monospace; letter-spacing: .05em; background: var(--fundo); border: 1px solid var(--borda); border-radius: 6px; padding: 4px 8px; }
+button { font: inherit; font-size: 13px; margin-left: 6px; padding: 4px 10px; border: 1px solid var(--borda); background: var(--painel); color: var(--texto); border-radius: 6px; cursor: pointer; }
+</style></head><body><main><div class="cartao">${corpo}</div></main></body></html>`,
+    { status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' } });
+}
+
+async function convitePagina(req, env, codigo) {
+  const lic = await licencaDoConvite(env, codigo);
+  if (!lic || !lic.ativa) {
+    return paginaConvite({ titulo: 'Metálica — convite', status: 404, corpo: `<h1>Convite não encontrado</h1>
+      <p>Este link não vale mais (a licença foi bloqueada ou o link foi trocado). Peça um link novo ao responsável pelo Metálica.</p>` });
+  }
+  let v = null;
+  try { v = await ultimaVersao(env); } catch (e) { v = null; }
+  const primeiro = String(lic.pessoa || '').split(' ')[0];
+  return paginaConvite({ titulo: 'Metálica — instalar', corpo: `
+    <h1>Olá, ${esc(primeiro)}!</h1>
+    <p>Este é o seu acesso ao <b>Metálica</b>, o programa de estruturas metálicas da Hermes.</p>
+    <a class="botao" href="/convite/${esc(codigo)}/instalador">Baixar o Metálica${v && v.ultima ? ' ' + esc(v.ultima) : ''}</a>
+    <p class="fraco" style="text-align:center">${v && v.tamanho_mb ? esc(String(v.tamanho_mb).replace('.', ',')) + ' MB · ' : ''}Windows 10 ou 11 (64 bits)</p>
+    <ol>
+      <li>Abra o arquivo baixado. Se o Windows avisar "O Windows protegeu o computador", clique em <b>Mais informações</b> e
+        depois em <b>Executar assim mesmo</b>.</li>
+      <li>Siga o instalador (não pede senha de administrador) e deixe marcado "Abrir o Metálica agora".</li>
+      <li>Com internet, o Metálica abre já ativado com a sua licença. Se ele pedir a chave, é esta:
+        <p><code id="chave">${esc(lic.chave)}</code><button type="button" onclick="navigator.clipboard.writeText(document.getElementById('chave').textContent).then(()=>this.textContent='Copiada')">Copiar</button></p></li>
+    </ol>
+    <p class="fraco">A licença vale para até ${esc(lic.maquinas_max)} computador(es). Não repasse este link: ele é seu.</p>` });
+}
+
+async function conviteBaixar(req, env, codigo) {
+  const lic = await licencaDoConvite(env, codigo);
+  if (!lic || !lic.ativa) return json({ erro: 'convite inválido ou licença bloqueada' }, 403);
+  let v;
+  try { v = await ultimaVersao(env); } catch (e) { return json({ erro: 'não foi possível consultar a última versão: ' + e.message }, 502); }
+  if (!v.asset) return json({ erro: 'o instalador da última versão ainda não está disponível' }, 503);
+  const a = await github(env, `/releases/assets/${encodeURIComponent(v.asset)}`, { Accept: 'application/octet-stream' });
+  let corpo = a;
+  if (a.status >= 300 && a.status < 400 && a.headers.get('Location')) corpo = await fetch(a.headers.get('Location'));
+  if (!corpo.ok) return json({ erro: `o instalador não veio do GitHub (${corpo.status})` }, 502);
+  await evento(env, req, { chave: lic.chave, maquina: 'convite', tipo: 'baixou', detalhe: `instalador ${v.ultima} pelo convite` });
+  // a chave no nome do arquivo: o instalador a lê dele (empacotar/instalador.iss) e deixa para o Metálica se ativar
+  const nome = `Metalica-instalador ${lic.chave}.exe`;
+  const h = new Headers({ 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store',
+                          'Content-Disposition': `attachment; filename="${nome}"` });
+  if (corpo.headers.get('Content-Length')) h.set('Content-Length', corpo.headers.get('Content-Length'));
+  return new Response(corpo.body, { status: 200, headers: h });
+}
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
@@ -127,6 +201,8 @@ export default {
       if (req.method === 'POST' && url.pathname === '/api/ativar') return await ativar(req, env);
       if (req.method === 'POST' && url.pathname === '/api/renovar') return await renovar(req, env);
       if (req.method === 'GET' && url.pathname === '/api/atualizacao') return await atualizacao(req, env);
+      const cv = /^\/convite\/([A-Za-z0-9_-]+)(\/instalador)?\/?$/.exec(url.pathname);
+      if (req.method === 'GET' && cv) return cv[2] ? await conviteBaixar(req, env, cv[1]) : await convitePagina(req, env, cv[1]);
       const m = /^\/api\/baixar\/(\d+)$/.exec(url.pathname);
       if (req.method === 'GET' && m) return await baixar(req, env, m[1]);
       if (url.pathname === '/api/saude') {

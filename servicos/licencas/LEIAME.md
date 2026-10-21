@@ -44,3 +44,16 @@ Criar uma chave sem a tela (emergência):
 ```
 wrangler d1 execute metalica-licencas --remote -c wrangler.toml --command "INSERT INTO licencas (chave, pessoa, email, obs, maquinas_max, ativa, criada) VALUES ('MTL-XXXX-XXXX-XXXX', 'Nome', '', '', 2, 1, '2026-10-11T00:00:00Z')"
 ```
+
+## Link de instalação (21/10/2026)
+
+Na tela das licenças (dev): **🔗 Link de instalação** em cada licença ativa. O link
+(`https://metalica-licencas.elieber-lucas.workers.dev/convite/<código>`) abre uma página com o botão de baixar e a chave;
+o instalador sai com a chave no nome (`Metalica-instalador MTL-XXXX-XXXX-XXXX.exe`). O instalador (`empacotar/instalador.iss`,
+`[Code]`) lê a chave do próprio nome e a grava em `%LOCALAPPDATA%\Metálica\convite.txt`; o Metálica (`sistema/licenca.py`,
+`ativar_pelo_convite`, e a tela `/ativar`) se ativa sozinho com ela na primeira abertura — a partir da versão que levar
+essas mudanças (0.9.1); antes, a pessoa cola a chave mostrada na página.
+
+- O código fica na coluna `licencas.convite` (`migracao-convite.sql`; a tela cria a coluna sozinha se faltar).
+- O mesmo link a cada clique; bloquear a licença desliga o link (a página diz "convite não encontrado", 404).
+- Cada download pelo convite vira o evento `baixou` com a máquina `convite`.

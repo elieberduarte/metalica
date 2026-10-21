@@ -50,6 +50,12 @@ const mostrar = (texto, tipo) => { $('#msg').innerHTML = ''; const d = document.
 fetch('/api/licenca', { cache: 'no-store' }).then(r => r.json()).then(e => {
   if (e.ok) { location.replace('/'); return; }
   if (e.chave) $('#chave').value = e.chave;
+  // instalado pelo link de instalação (21/10): a chave veio no instalador — ativa sozinho, sem precisar digitar
+  if (e.convite && !e.ok) {
+    $('#motivo').textContent = 'Ativando o Metálica com a chave do seu convite…';
+    setTimeout(() => { const f = document.querySelector('form'); if (f) f.requestSubmit(); }, 300);
+    return;
+  }
   if (e.motivo) $('#motivo').textContent = e.motivo.charAt(0).toUpperCase() + e.motivo.slice(1) + '. Digite a chave da licença para continuar.';
 }).catch(() => {});
 $('#chave').addEventListener('input', (ev) => {

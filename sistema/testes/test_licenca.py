@@ -75,3 +75,33 @@ def test_fora_do_instalado_nao_exige(monkeypatch):
 def test_impressao_da_maquina_e_estavel():
     a = licenca.impressao_da_maquina()
     assert a == licenca.impressao_da_maquina() and len(a) == 32
+
+
+def test_convite_ativa_sozinho_e_some(chaves, monkeypatch, tmp_path):
+    """O link de instalação (21/10, "um link direto para o usuário baixar o sistema já com a chave ativada"): o instalador
+    deixa a chave em convite.txt; a tela de ativação a recebe já preenchida (convite=True: ativa sozinha) e, ativado, o
+    arquivo some."""
+    emitir, _gravar = chaves
+    conv = tmp_path / "convite.txt"
+    conv.write_text("Metalica-instalador mtl-qrst-uvwx-yz23 (1)", encoding="utf-8")   # o nome do instalador, como veio
+    assert licenca.chave_do_convite() == "MTL-QRST-UVWX-YZ23"
+    e = licenca.estado(forcar=True)
+    assert not e["ok"] and e["chave"] == "MTL-QRST-UVWX-YZ23" and e.get("convite") is True
+    pedidos = []
+
+    def servico(rota, corpo, timeout=15.0):
+        pedidos.append((rota, corpo["chave"]))
+        return {"licenca": emitir(chave=corpo["chave"]), "pessoa": "Fulano"}
+    monkeypatch.setattr(licenca, "_postar", servico)
+    e = licenca.ativar_pelo_convite()
+    assert e["ok"] and e["chave"] == "MTL-QRST-UVWX-YZ23" and pedidos == [("/api/ativar", "MTL-QRST-UVWX-YZ23")]
+    assert not conv.exists()                                    # ativado: o convite cumpriu o papel
+    assert licenca.ativar_pelo_convite() is None                # sem o arquivo, nada
+
+
+def test_convite_recusado_fica_para_a_tela(chaves, monkeypatch, tmp_path):
+    (tmp_path / "convite.txt").write_text("MTL-QRST-UVWX-YZ23", encoding="utf-8")
+    monkeypatch.setattr(licenca, "_postar", lambda rota, corpo, timeout=15.0: {"erro": "esta licença está bloqueada"})
+    e = licenca.ativar_pelo_convite()
+    assert not e["ok"] and "bloqueada" in e["erro"]
+    assert (tmp_path / "convite.txt").exists()                 # a tela de ativação mostra a chave e o erro

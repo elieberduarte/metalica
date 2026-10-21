@@ -125,6 +125,7 @@ async function carregar() {
         '<span style="flex:1"></span>' +
         ('envia_obras' in l ? '<button type="button" data-envia="' + esc(l.chave) + '" data-sim="' + (l.envia_obras ? '' : '1') + '" title="Os computadores desta licença enviam as obras ligadas para a nuvem do celular">' +
           (l.envia_obras ? '☁ Envia obras ✓' : '☁ Não envia obras') + '</button>' : '') +
+        (l.ativa ? '<button type="button" data-convite="' + esc(l.chave) + '" title="O link para a pessoa baixar o Metálica já com esta chave (o instalador sai com a chave e o programa se ativa sozinho)">🔗 Link de instalação</button>' : '') +
         '<button type="button" data-copiar="' + esc(l.chave) + '">Copiar chave</button>' +
         (l.ativa ? '<button type="button" class="ruim" data-bloquear="' + esc(l.chave) + '">Bloquear</button>' : '<button type="button" data-desbloquear="' + esc(l.chave) + '">Desbloquear</button>') +
         '</div>' + (linhas ? '<table class="lic-maqs">' + linhas + '</table>' : '<div class="sub" style="margin-top:4px">ainda não ativada em nenhum computador</div>') + '</div>';
@@ -139,6 +140,17 @@ document.addEventListener('click', async (ev) => {
   const b = ev.target.closest('button'); if (!b || !b.closest('.lic-pagina')) return;
   try {
     if (b.dataset.copiar) { await navigator.clipboard.writeText(b.dataset.copiar); b.textContent = 'Copiada'; setTimeout(() => { b.textContent = 'Copiar chave'; }, 1500); return; }
+    // o link de instalação (21/10): copiado e mostrado, para colar no WhatsApp ou no e-mail da pessoa
+    if (b.dataset.convite) {
+      b.disabled = true;
+      try {
+        const r = await chamar('/api/dev/licencas/' + b.dataset.convite + '/convite', {});
+        try { await navigator.clipboard.writeText(r.link); } catch (e) { /* sem área de transferência: fica o aviso */ }
+        b.textContent = 'Link copiado'; setTimeout(() => { b.textContent = '🔗 Link de instalação'; }, 2500);
+        window.prompt('Link de instalação de ' + (r.pessoa || 'esta licença') + ' (já copiado):', r.link);
+      } finally { b.disabled = false; }
+      return;
+    }
     if (b.dataset.bloquear && confirm('Bloquear esta licença? O Metálica para nos computadores dela na próxima conferência (até 30 dias sem internet).')) await chamar('/api/dev/licencas/' + b.dataset.bloquear + '/bloquear', {});
     else if (b.dataset.desbloquear) await chamar('/api/dev/licencas/' + b.dataset.desbloquear + '/desbloquear', {});
     else if (b.dataset.liberar && confirm('Liberar a vaga deste computador? Ele precisa ativar de novo para voltar a usar.')) await chamar('/api/dev/maquinas/' + b.dataset.liberar + '/liberar', {});

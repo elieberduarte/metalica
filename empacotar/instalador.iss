@@ -58,3 +58,56 @@ Name: "{autodesktop}\Metálica"; Filename: "{app}\Metalica.exe"; Tasks: atalho
 Filename: "{app}\Metalica.exe"; Description: "Abrir o Metálica agora"; Flags: nowait postinstall skipifsilent
 ; instalação silenciosa (atualização de dentro do programa): reabre o programa sozinho
 Filename: "{app}\Metalica.exe"; Flags: nowait; Check: WizardSilent
+
+[Code]
+// O link de instalação (21/10/2026, o usuário: "um link direto para enviar para o usuário baixar o sistema já com a
+// chave ativada"): o instalador baixado pelo convite vem com a chave no nome ("Metalica-instalador MTL-XXXX-XXXX-XXXX.exe",
+// servicos/licencas/src/api.js); ele a grava em %LOCALAPPDATA%\Metálica\convite.txt e o Metálica se ativa sozinho na
+// primeira abertura (sistema/licenca.py, ativar_pelo_convite). Sem a chave no nome (a atualização de dentro do
+// programa), nada muda.
+function ChaveDoNome(Nome: String): String;
+var
+  I, J: Integer;
+  C: Char;
+  S: String;
+begin
+  Result := '';
+  S := Uppercase(Nome);
+  I := Pos('MTL-', S);
+  if I = 0 then Exit;
+  S := Copy(S, I, 18);
+  if Length(S) <> 18 then Exit;
+  for J := 1 to 18 do begin
+    C := S[J];
+    if (J = 4) or (J = 9) or (J = 14) then begin
+      if C <> '-' then Exit;
+    end else if J > 4 then begin
+      if not (((C >= 'A') and (C <= 'Z')) or ((C >= '0') and (C <= '9'))) then Exit;
+    end;
+  end;
+  Result := S;
+end;
+
+function PastaDoConvite(): String;
+begin
+  #ifdef PastaConvite
+  Result := '{#PastaConvite}';
+  #else
+  // a pasta do Metálica em %LOCALAPPDATA% (a mesma da licença); o "á" por código, sem depender da codificação do .iss
+  Result := ExpandConstant('{localappdata}') + '\Met' + Chr(225) + 'lica';
+  #endif
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Chave, Pasta: String;
+begin
+  if CurStep = ssPostInstall then begin
+    Chave := ChaveDoNome(ExtractFileName(ExpandConstant('{srcexe}')));
+    if Chave <> '' then begin
+      Pasta := PastaDoConvite();
+      ForceDirectories(Pasta);
+      SaveStringToFile(Pasta + '\convite.txt', Chave, False);
+    end;
+  end;
+end;

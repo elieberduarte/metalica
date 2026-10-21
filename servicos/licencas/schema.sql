@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS licencas (
   maquinas_max  INTEGER NOT NULL DEFAULT 2,
   ativa         INTEGER NOT NULL DEFAULT 1,    -- 0 = bloqueada
   criada        TEXT NOT NULL,
-  bloqueada_em  TEXT
+  bloqueada_em  TEXT,
+  convite       TEXT                           -- o código do link de instalação (21/10; migracao-convite.sql)
 );
 
 CREATE TABLE IF NOT EXISTS maquinas (

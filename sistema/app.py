@@ -5830,9 +5830,11 @@ class Handler(BaseHTTPRequestHandler):
             binario = (self.headers.get("Content-Type") or "").startswith("application/octet-stream")
             corpo = self._corpo_binario() if binario else self._corpo()
             if LICENCAS_DEV and rota.startswith("/api/dev/"):
-                m = re.match(r"^/api/dev/licencas/([A-Z0-9-]+)/(bloquear|desbloquear|envia-obras|nao-envia-obras)$", rota)
+                m = re.match(r"^/api/dev/licencas/([A-Z0-9-]+)/(bloquear|desbloquear|envia-obras|nao-envia-obras|convite)$", rota)
                 if rota == "/api/dev/licencas":
                     return self._licencas_dev(lambda L: L.criar(corpo))
+                if m and m.group(2) == "convite":                     # o link de instalação com a chave (21/10)
+                    return self._licencas_dev(lambda L: L.convite(m.group(1)))
                 if m and m.group(2).endswith("envia-obras"):
                     return self._licencas_dev(lambda L: L.envia_obras(m.group(1), m.group(2) == "envia-obras"))
                 if m:

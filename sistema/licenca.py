@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import threading
 import time
 import urllib.error
@@ -147,6 +148,31 @@ def arquivo() -> str:
         else os.path.join(_pasta(), "licenca.json")
 
 
+def arquivo_convite() -> str:
+    """a chave que o instalador do link de instalação deixa (empacotar/instalador.iss, 21/10): o instalador baixado pelo
+    convite tem a chave no nome ("Metalica-instalador MTL-XXXX-XXXX-XXXX.exe") e a grava aqui, ao lado da licença"""
+    return os.path.join(os.path.dirname(arquivo()), "convite.txt")
+
+
+_CHAVE = re.compile(r"MTL-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}")
+
+
+def chave_do_convite() -> str:
+    try:
+        with open(arquivo_convite(), encoding="utf-8-sig") as f:
+            m = _CHAVE.search(f.read(200).upper())
+    except OSError:
+        return ""
+    return m.group(0) if m else ""
+
+
+def _esquecer_convite():
+    try:
+        os.remove(arquivo_convite())
+    except OSError:
+        pass
+
+
 def _ler() -> dict:
     try:
         with open(arquivo(), encoding="utf-8") as f:
@@ -197,6 +223,10 @@ def estado(forcar: bool = False) -> dict:
              "chave": g.get("chave", ""), "servico": SERVICO}
         if not g.get("licenca"):
             e["motivo"] = g.get("motivo_bloqueio") or "este computador ainda não tem licença do Metálica"
+            convite = chave_do_convite()
+            if convite and not e["chave"]:
+                # instalado pelo link de instalação: a tela de ativação ativa sozinha com esta chave (21/10)
+                e.update(chave=convite, convite=True)
         else:
             p = ler_licenca(g["licenca"])
             fim = _data(p.get("validade")) if p else None
@@ -254,7 +284,19 @@ def ativar(chave: str) -> dict:
     if not p:
         return dict(estado(), erro="a licença recebida não confere com a assinatura do Metálica")
     _gravar({"licenca": r["licenca"], "chave": p.get("chave", ""), "ativada": time.strftime("%Y-%m-%d %H:%M")})
+    _esquecer_convite()                                # ativado: a chave do instalador já cumpriu o papel
     return estado(forcar=True)
+
+
+def ativar_pelo_convite() -> Optional[dict]:
+    """instalado pelo link de instalação e ainda sem licença: ativa com a chave que o instalador deixou (None sem ela)"""
+    chave = chave_do_convite()
+    if not chave:
+        return None
+    if exigida() and estado(forcar=True)["ok"]:
+        _esquecer_convite()
+        return None
+    return ativar(chave)
 
 
 def renovar() -> dict:
@@ -280,6 +322,10 @@ def renovar_sempre():
     """a linha que renova a licença ao abrir e a cada RENOVAR_A_CADA, enquanto o programa está aberto"""
     def laco():
         time.sleep(5)
+        try:
+            ativar_pelo_convite()                       # sem a tela aberta: o convite ativa do mesmo jeito (21/10)
+        except Exception:                            # noqa: BLE001 — sem rede: a tela de ativação tenta de novo
+            pass
         while True:
             try:
                 renovar()
