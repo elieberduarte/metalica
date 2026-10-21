@@ -79,6 +79,10 @@ proj = os.path.join(DADOS, "prati-cd")
 os.makedirs(proj)
 json.dump({"nome": "PRATI CD", "tipo": "ifc", "alterado": "2026-10-21T09:00:00"}, open(os.path.join(proj, "projeto.json"), "w", encoding="utf-8"))
 json.dump(_modelo(), open(os.path.join(proj, "modelo.json"), "w", encoding="utf-8"))
+# um projeto do TIPO "recebido" (o Hangar Almayer, 21/10): o aviso das obras recebidas não pode levar o ícone dele junto
+os.makedirs(os.path.join(DADOS, "hangar"))
+json.dump({"nome": "HANGAR ALMAYER", "tipo": "recebido", "alterado": "2026-10-20T09:00:00"},
+          open(os.path.join(DADOS, "hangar", "projeto.json"), "w", encoding="utf-8"))
 lic = os.path.join(DADOS, "..", "licenca-teste-%d.json" % PORTA)
 json.dump({"licenca": "teste.teste", "chave": "MTL-TEST-TEST-TEST"}, open(lic, "w", encoding="utf-8"))
 amb = dict(os.environ, METALICA_COMPARTILHAR="http://127.0.0.1:%d" % porta_nuvem, METALICA_LICENCA_ARQUIVO=os.path.abspath(lic))
@@ -124,8 +128,8 @@ try:
     for dm in ("Page", "Runtime", "Log"): aba.cmd(f"{dm}.enable")
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1300, height=860, deviceScaleFactor=1, mobile=False)
     aba.navegar(base + "/", limite=60)
-    ok(esperar(aba, "document.querySelectorAll('[data-acao=enviar]').length === 1", 30), "o cartão tem Enviar para…")
-    aba.avaliar("document.querySelector('[data-acao=enviar]').click(); 1")
+    ok(esperar(aba, "document.querySelectorAll('[data-acao=enviar]').length === 2", 30), "o cartão tem Enviar para…")
+    aba.avaliar("document.querySelector('.cartao[data-slug=prati-cd] [data-acao=enviar]').click(); 1")
     ok(esperar(aba, "document.getElementById('dlg').open && document.querySelectorAll('#dlg-campos input[type=radio]').length === 2", 15),
        "o diálogo lista as pessoas (2)")
     ok("você" in (aba.avaliar("document.getElementById('dlg-campos').textContent") or ""), "a própria licença aparece como os outros computadores")
@@ -137,28 +141,33 @@ try:
     # do lado do Andrey: o aviso no alto da lista
     NUVEM["eu"] = "B"
     aba.navegar(base + "/", limite=60)
-    ok(esperar(aba, "document.querySelectorAll('.recebido').length === 1", 30), "o aviso da obra recebida aparece")
-    ok("Elieber te enviou" in (aba.avaliar("document.querySelector('.recebido').textContent") or ""), "diz quem enviou")
+    ok(esperar(aba, "document.querySelectorAll('.obra-recebida').length === 1", 30), "o aviso da obra recebida aparece")
+    ICONE = "!!document.querySelector('.cartao[data-slug=hangar] > .cartao-icone')"
+    ok(aba.avaliar(ICONE), "o cartão do projeto tipo recebido continua com o ícone (o Hangar desalinhava)")
+    ok("Elieber te enviou" in (aba.avaliar("document.querySelector('.obra-recebida').textContent") or ""), "diz quem enviou")
     foto(aba, "compartilhar_2_recebido.png")
-    aba.avaliar("[...document.querySelectorAll('.recebido button')].find(b => b.textContent === 'Abrir').click(); 1")
-    ok(esperar(aba, "document.querySelectorAll('.recebido').length === 0 && document.querySelectorAll('[data-acao=enviar]').length === 2", 40),
+    aba.avaliar("[...document.querySelectorAll('.obra-recebida button')].find(b => b.textContent === 'Abrir').click(); 1")
+    ok(esperar(aba, "document.querySelectorAll('.obra-recebida').length === 0 && document.querySelectorAll('[data-acao=enviar]').length === 3", 40),
        "Abrir: a obra entra na lista como projeto novo e o aviso some")
     ok(NUVEM["envios"][0]["estado"] == "recebido", "e a nuvem marca recebido")
     pastas = [n for n in os.listdir(DADOS) if os.path.isfile(os.path.join(DADOS, n, "projeto.json"))]
-    ok(len(pastas) == 2, f"duas pastas de projeto, nunca por cima ({pastas})")
+    ok(len(pastas) == 3, f"a obra recebida é uma pasta nova, nunca por cima ({pastas})")
+    ok(aba.avaliar(ICONE) and aba.avaliar("getComputedStyle(document.querySelector('.cartao[data-slug=hangar]')).gridTemplateColumns.split(' ').length === 3 && "
+                                          "document.querySelector('.cartao[data-slug=hangar] .cartao-corpo').getBoundingClientRect().width > 300"),
+       "depois de abrir, o cartão tipo recebido continua inteiro (ícone, corpo largo)")
     # recusar
     NUVEM["eu"] = "A"
     aba.navegar(base + "/", limite=60)
     esperar(aba, "document.querySelectorAll('[data-acao=enviar]').length >= 1", 20)
-    aba.avaliar("document.querySelector('[data-acao=enviar]').click(); 1")
+    aba.avaliar("document.querySelector('.cartao[data-slug=prati-cd] [data-acao=enviar]').click(); 1")
     esperar(aba, "document.getElementById('dlg').open", 10)
     aba.avaliar("document.querySelector('#dlg-campos input[value=pb]').click(); document.getElementById('dlg-ok').click(); 1")
     esperar(aba, "document.getElementById('bandeja').textContent.includes('Obra enviada')", 30)
     NUVEM["eu"] = "B"
     aba.navegar(base + "/", limite=60)
-    esperar(aba, "document.querySelectorAll('.recebido').length === 1", 30)
-    aba.avaliar("window.confirm = () => true; [...document.querySelectorAll('.recebido button')].find(b => b.textContent === 'Recusar').click(); 1")
-    ok(esperar(aba, "document.querySelectorAll('.recebido').length === 0", 20) and NUVEM["envios"][1]["estado"] == "recusar",
+    esperar(aba, "document.querySelectorAll('.obra-recebida').length === 1", 30)
+    aba.avaliar("window.confirm = () => true; [...document.querySelectorAll('.obra-recebida button')].find(b => b.textContent === 'Recusar').click(); 1")
+    ok(esperar(aba, "document.querySelectorAll('.obra-recebida').length === 0", 20) and NUVEM["envios"][1]["estado"] == "recusar",
        "Recusar tira o aviso e a obra da nuvem")
     erros = [x for x in aba.console if x[0] in ("error", "excecao") and "favicon" not in str(x)]
     ok(not erros, f"sem erros no console: {erros[:3]}")

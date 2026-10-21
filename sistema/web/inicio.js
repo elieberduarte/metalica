@@ -568,16 +568,18 @@ async function enviarObra(p) {
   } catch (e) { recado('A obra não foi enviada', e.message, 'erro'); }
 }
 
-/** As obras que outras pessoas enviaram para esta licença: um aviso por obra, no alto da lista, com Abrir e Recusar. */
+/** As obras que outras pessoas enviaram para esta licença: um aviso por obra, no alto da lista, com Abrir e Recusar. A
+ *  classe não pode ser "recebido": é o tipo dos projetos recebidos de outro projetista (o ícone e a etiqueta do cartão) —
+ *  o remove() dos avisos levava o ícone junto e o cartão desalinhava (Hangar Almayer, 21/10). */
 async function verificarRecebidos() {
   let lista;
   try { lista = (await api('/api/compartilhar/recebidos')).recebidos || []; } catch (e) { return; }   // sem internet: nada
-  document.querySelectorAll('.recebido').forEach(x => x.remove());
+  document.querySelectorAll('.obra-recebida').forEach(x => x.remove());
   for (const e of lista) {
     const quando = e.criado ? new Date(e.criado).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
-    const aviso = el('div', { class: 'recebido', role: 'status', 'data-envio': e.id },
-      el('span', { class: 'recebido-icone', 'aria-hidden': 'true', texto: '📥' }),
-      el('span', { class: 'recebido-texto' }, el('b', { texto: e.de_mim ? 'Do seu outro computador' + (e.de_pc ? ` (${e.de_pc})` : '') : `${e.de} te enviou` }),
+    const aviso = el('div', { class: 'obra-recebida', role: 'status', 'data-envio': e.id },
+      el('span', { class: 'obra-recebida-icone', 'aria-hidden': 'true', texto: '📥' }),
+      el('span', { class: 'obra-recebida-texto' }, el('b', { texto: e.de_mim ? 'Do seu outro computador' + (e.de_pc ? ` (${e.de_pc})` : '') : `${e.de} te enviou` }),
         ` "${e.nome}" · ${mbDe(e.bytes)} MB${quando ? ' · ' + quando : ''}`),
       el('button', { type: 'button', class: 'primario', onclick: () => abrirRecebido(e) }, 'Abrir'),
       el('button', { type: 'button', class: 'discreto', onclick: () => recusarRecebido(e) }, 'Recusar'));
