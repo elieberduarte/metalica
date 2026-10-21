@@ -328,7 +328,7 @@ async function carregar() {
       const s = Math.round((Date.now() - t0) / 1000);
       if (s >= 2) $('#lista').replaceChildren(el('p', { class: 'nota', texto: `Carregando os projetos… ${s} s — o programa está ocupado (provavelmente atualizando os desenhos de um projeto em segundo plano).` }));
     }, 1000);
-    try { projetos = await api('/api/projetos'); listaChegou = true; clearInterval(espera); break; } catch (e) {
+    try { projetos = await api('/api/projetos'); listaChegou = true; clearInterval(espera); levarDosNomesAntigos(projetos); break; } catch (e) {
       clearInterval(espera);
       $('#vazio').hidden = true;
       if (i >= 40) {
@@ -501,10 +501,50 @@ async function renomear(p) {
     campos: [{ id: 'nome', rotulo: 'Nome do projeto', valor: p.nome, obrigatorio: true }] });
   if (!v || v.nome === p.nome) return;
   try {
-    await postar(`/api/projetos/${encodeURIComponent(p.slug)}/renomear`, v);
+    const r = await postar(`/api/projetos/${encodeURIComponent(p.slug)}/renomear`, v);
+    if (r && r.slug && r.slug !== p.slug) levarPreferencias(p.slug, r.slug);
     recado('Projeto renomeado', v.nome);
   } catch (e) { recado('Não foi possível renomear', e.message, 'erro'); }
   carregar();
+}
+
+/** Os projetos renomeados (noutro navegador, pelo celular, antes desta correção): o que este navegador guardou pelo nome
+ *  antigo da pasta vai para o atual — menos quando o nome antigo é hoje de outro projeto. */
+function levarDosNomesAntigos(lista) {
+  const atuais = new Set((lista || []).map(p => p.slug));
+  for (const p of lista || []) {
+    for (const velho of p.slugs_anteriores || []) if (velho && !atuais.has(velho)) levarPreferencias(velho, p.slug);
+  }
+}
+
+/** O projeto renomeado troca de pasta, e o que a tela guarda dele neste navegador vai pelo nome da pasta: as camadas
+ *  e peças ocultas do modo ver (ver3d:), as cores e a vista do editor (vista3d:), os grupos recolhidos, a disciplina
+ *  do CAD, a duração das tarefas para a barra (metalica.duracao.<projeto>|…). Tudo passa para o nome novo (usuário,
+ *  21/10, Mercado Conceito → Mercado Super Maria Luiza: "perde a ref. de todas as layers que estavam ocultas"). */
+function levarPreferencias(velho, novo, armazens = null) {
+  const esc = String(velho).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(^|[:.])${esc}($|\\|)`);
+  let n = 0;
+  let lista = armazens;
+  if (!lista) {
+    lista = [];
+    try { lista.push(localStorage); } catch (e) { /* sem armazenamento */ }
+    try { lista.push(sessionStorage); } catch (e) { /* sem armazenamento */ }
+  }
+  for (const arm of lista) {
+    try {
+      const chaves = [];
+      for (let i = 0; i < arm.length; i++) chaves.push(arm.key(i));
+      for (const k of chaves) {
+        if (!k || !re.test(k)) continue;
+        const nova = k.replace(re, (_m, a, b) => `${a}${novo}${b}`);
+        if (arm.getItem(nova) === null) arm.setItem(nova, arm.getItem(k));
+        arm.removeItem(k);
+        n++;
+      }
+    } catch (e) { /* armazenamento cheio ou bloqueado: fica como estava */ }
+  }
+  return n;
 }
 
 async function duplicar(p) {

@@ -227,6 +227,25 @@ def pedir(pasta_projeto: str) -> dict:
     return dict(s)
 
 
+def mudou_de_pasta(antiga: str, nova: str) -> bool:
+    """O projeto renomeado (a pasta trocou de nome): o 3D leve vai junto. Ele vale pelo conteúdo do modelo, que não
+    mudou — sem isto, abrir depois de renomear refazia o 3D inteiro (usuário, 21/10, o Mercado Conceito que virou
+    Mercado Super Maria Luiza: "a única coisa que mudou foi o nome da obra"). False quando não havia o que levar ou a
+    pasta nova já tem um."""
+    c0, c1 = _cache(antiga), _cache(nova)
+    if os.path.normcase(c0) == os.path.normcase(c1) or not os.path.isdir(c0) or os.path.exists(c1):
+        return False
+    with _trava:
+        try:
+            os.rename(c0, c1)
+        except OSError:
+            return False                         # um arquivo aberto: o 3D é refeito na próxima abertura, como antes
+        s = _situacao.pop(c0, None)
+        if s is not None:
+            _situacao[c1] = s
+    return True
+
+
 def _gerar_calado(pasta_projeto: str):
     try:
         gerar(pasta_projeto)

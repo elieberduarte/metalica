@@ -432,6 +432,7 @@ class Projetos:
                 "tem_comercial": os.path.exists(os.path.join(pasta, "comercial", "comercial.json")),
                 "etapas": self._etapas(s, pasta, p),
                 "aberto_por": self.aberto_por(s), "atualizando": self.atualizando(s), "arquivado": bool(p.get("arquivado")),
+                "slugs_anteriores": [str(x) for x in (p.get("slugs_anteriores") or [])],
                 "desenhos": [{"nome": d["nome"], "titulo": d.get("titulo") or d["nome"], "vistas": d.get("vistas") or []}
                              for d in self.listar_desenhos(s, contar=False)]}
 
@@ -553,10 +554,22 @@ class Projetos:
         novo = slug(nome)
         if novo != s and novo not in RESERVADAS and not os.path.exists(os.path.join(self.raiz, novo)):
             try:
-                os.rename(self._existente(s), os.path.join(self.raiz, novo))
+                antiga = self._existente(s)
+                os.rename(antiga, os.path.join(self.raiz, novo))
                 s = novo
             except OSError:
                 pass                                  # arquivo aberto em outro programa: fica o nome antigo
+            else:
+                # os nomes de pasta de antes: a tela leva para o novo o que guardou pelo antigo (as camadas ocultas…),
+                # também quando o renomear não foi pela tela inicial deste navegador
+                antigos = [x for x in (p.get("slugs_anteriores") or []) if x != novo]
+                self._atualizar(s, slugs_anteriores=(antigos + [os.path.basename(antiga)])[-10:])
+                # o 3D leve do modo ver (fora da pasta, pelo nome dela) vai junto: o modelo é o mesmo
+                try:
+                    from saida import modelo_leve
+                    modelo_leve.mudou_de_pasta(antiga, os.path.join(self.raiz, novo))
+                except Exception:                     # noqa: BLE001 — sem ele, o 3D é refeito ao abrir
+                    pass
         return self.resumo(s)
 
     def duplicar(self, s: str, nome: Optional[str] = None) -> dict:

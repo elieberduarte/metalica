@@ -215,3 +215,21 @@ def test_cobertura_retratil_pedida_antes_de_pronta_e_obra_comum(tmp_path):
     comum = _projeto(tmp_path)
     L.gerar(comum)
     assert L.pedir_situacao(comum, "retraida")["mcel"] == L.arquivos(comum)["mcel"]
+
+
+def test_renomear_o_projeto_leva_o_3d_leve(tmp_path):
+    """Renomear troca o nome da pasta, e o 3D leve fica fora dela, pelo nome: sem levá-lo junto, abrir depois de renomear
+    refazia o 3D inteiro (usuário, 21/10, Mercado Conceito → Mercado Super Maria Luiza: "a única coisa que mudou foi o
+    nome da obra")."""
+    from projetos import Projetos
+    pasta = _projeto(tmp_path, "mercado-conceito")
+    L.gerar(pasta)
+    v1 = L.arquivos(pasta)["versao"]
+    r = Projetos(str(tmp_path)).renomear("mercado-conceito", "Mercado Super Maria Luiza")
+    assert r["slug"] == "mercado-super-maria-luiza"
+    assert r["slugs_anteriores"] == ["mercado-conceito"]       # a tela leva o que guardou pelo nome antigo
+    nova = os.path.join(str(tmp_path), "mercado-super-maria-luiza")
+    a = L.arquivos(nova)                                 # pronto na hora, o mesmo de antes: nada refeito
+    assert a is not None and a["versao"] == v1
+    assert L.pedir(nova)["situacao"] == "pronto"
+    assert not os.path.isdir(os.path.join(str(tmp_path), ".3d-leve", "mercado-conceito"))
