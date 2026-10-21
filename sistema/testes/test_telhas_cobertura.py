@@ -699,3 +699,101 @@ def test_capas_em_meia_esquadria_no_canto():
     # a capa da P.1 (ao longo de y): do lado de dentro (x > −150) não passa da face de dentro da P.2 (y −150)
     assert all(v[1] >= -150.0 - 1.0 for v in capas["P.1"].vertices if v[0] > -150.0)
     assert all(v[0] >= -150.0 - 1.0 for v in capas["P.2"].vertices if v[1] > -150.0)
+
+
+
+# ------------------------------------------------------------------ Posto V2 (21/10/2026): o telhamento redondo
+def _cobertura_em_planta(doc):
+    """a união das chapas de telha em planta (shapely)"""
+    from shapely.geometry import MultiPoint
+    from shapely.ops import unary_union
+    return unary_union([MultiPoint([v[:2] for v in s.vertices]).convex_hull for s in _telhado(doc)])
+
+
+def test_sem_fresta_onde_as_pontas_das_tercas_quase_coincidem():
+    """As pontas das terças vizinhas emendadas na mesma tesoura caem a poucos cm umas das outras (Posto V2: y 33,20, 39,03,
+    48,41…): o trecho curto entre elas era pulado e ficava a fresta na água inteira ("frestas entre telhas")."""
+    doc = Documento()
+    for i, x in enumerate((0.0, 1400.0, 2800.0)):
+        dy = (0.0, 25.0, -20.0)[i]                         # a emenda de cada linha 2–2,5 cm deslocada
+        _terca(doc, x, 7000.0 + 0.05 * x, "TC1", 0.0, 3000.0 + dy)
+        _terca(doc, x, 7000.0 + 0.05 * x, "TC2", 3000.0 + dy, 6000.0)
+    T.lancar(doc)
+    from shapely.geometry import box
+    falta = box(100.0, 50.0, 2700.0, 5950.0).difference(_cobertura_em_planta(doc))
+    assert falta.area < 1.0, "fresta de %.0f mm² entre as chapas" % falta.area
+
+
+def test_telha_passa_por_cima_da_terca_cortada_pela_trelica_de_baixo():
+    """A treliça que passa por baixo da telha corta a linha de terça (a PAINEL 12 do Posto em x 19,87: 90 mm sem terça):
+    a telha continua por cima do vão; antes, a faixa sem telha de uma ponta à outra da água."""
+    doc = Documento()
+    for x in (0.0, 1400.0, 2800.0):
+        z = 7000.0 + 0.05 * x
+        if x == 1400.0:
+            _terca(doc, x, z, "TC1", 0.0, 2955.0)
+            _terca(doc, x, z, "TC1", 3045.0, 6000.0)        # 90 mm sem terça
+        else:
+            _terca(doc, x, z, "TC1")
+    T.lancar(doc)
+    from shapely.geometry import box
+    falta = box(100.0, 50.0, 2700.0, 5950.0).difference(_cobertura_em_planta(doc))
+    assert falta.area < 1.0, "a faixa sem telha sobre o vão da terça (%.0f mm²)" % falta.area
+
+
+def test_telha_ate_a_platibanda_quase_paralela_com_terca_junto():
+    """A platibanda reta 9,6° fora da direção das terças (a PAINEL 12 da abertura oval do Posto) era tomada por paralela e a
+    telha parava na última terça; e onde ela fica a mais de 1,6 m da última terça, a terça inclinada que corre junto dela
+    apoia a ponta — a telha vai até 100 mm da face. Sem a terça junto, além de 1,6 m não vai (a faixa sem terça fica de
+    apontamento)."""
+    import math
+    def montar(com_terca_junto):
+        doc = Documento()
+        _agua(doc, 0.0, 3, 7000.0, 0.05)                                      # terças em x 0, 1400, 2800 (y 0–6000)
+        ang = math.radians(9.6)
+        a, b = (3000.0, 0.0), (3000.0 + 6000.0 * math.tan(ang), 6000.0)      # a face vai de 0,2 a 1,2 m da última terça
+        _banzo(doc, (a[0], a[1], 7600.0), (b[0], b[1], 7600.0), "PAINEL 12")
+        if com_terca_junto:
+            t = Barra(inicio=(a[0] - 250.0, 0.0, 7150.0), fim=(b[0] - 250.0, 6000.0, 7150.0), perfil=PERFIL, papel="terça", camada="Terças")
+            t.atributos = {"origem": {"sigla": "TC13"}}
+            doc.add(t)
+        T.lancar(doc)
+        return doc, a, b
+    doc, a, b = montar(False)
+    face = lambda y: a[0] + (b[0] - a[0]) * y / 6000.0
+    assert max(v[0] for s in _telhado(doc) for v in s.vertices) > 3300.0, "a telha parou na última terça"
+    for s_ in _telhado(doc):
+        for v in s_.vertices:
+            assert v[0] <= face(v[1]) + 1.0                                   # nada passa da face
+    # mais longe (a 1,9–2,4 m): só com a terça junto da platibanda
+    def longe(com):
+        doc = Documento()
+        _agua(doc, 0.0, 3, 7000.0, 0.05)
+        _banzo(doc, (4700.0, 0.0, 7600.0), (5200.0, 6000.0, 7600.0), "PAINEL 12")
+        if com:
+            t = Barra(inicio=(4450.0, 0.0, 7150.0), fim=(4950.0, 6000.0, 7150.0), perfil=PERFIL, papel="terça", camada="Terças")
+            t.atributos = {"origem": {"sigla": "TC13"}}
+            doc.add(t)
+        T.lancar(doc)
+        return max(v[0] for s in _telhado(doc) for v in s.vertices)
+    assert longe(True) > 4300.0 and longe(False) < 2900.0
+
+
+def test_chapa_reta_por_cima_da_terca_fora_da_reta():
+    """A terça 80 mm abaixo da reta no meio da água partia a chapa (a dobra de mais de 4 %) e a telha descia até ela —
+    o "trecho caído" do Posto V2. A telha é reta: passa na reta da água, inteira, e a terça fica apontada (fora do plano;
+    a conferência da telha ao lado continua acusando a dobra, pela telha assentada nas terças)."""
+    doc = Documento()
+    _agua(doc, 0.0, 7, 7000.0, 0.05)
+    baixa = [b for b in doc.barras if abs(b.inicio[0] - 4200.0) < 1][0]
+    baixa.inicio = (baixa.inicio[0], baixa.inicio[1], baixa.inicio[2] - 80.0)
+    baixa.fim = (baixa.fim[0], baixa.fim[1], baixa.fim[2] - 80.0)
+    r = T.lancar(doc)
+    assert len(r["fora_do_plano"]) == 1 and r["endireitadas"] >= 1
+    assert any(a["tipo"] == "dobra" for a in r["ao_lado"])
+    for s_ in _telhado(doc):
+        xs = [v[0] for v in s_.vertices]
+        assert min(xs) < 1.0 and max(xs) > 8399.0                           # a chapa inteira, sem partir na terça baixa
+        for v in s_.vertices:
+            reta = 7000.0 + 0.05 * v[0] + T._topo_da_terca(baixa)
+            assert v[2] >= reta - 5.0                                         # nada desce da reta
