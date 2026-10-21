@@ -427,6 +427,23 @@ async function comportamento(ferramentas, conferir, tentar) {
              Math.max(...s.vertices.map(v => v[2])) === 4500, s.faces.length);
   });
 
+  // ---- push/pull com barras selecionadas (usuário, 21/10: "ela deveria puxar ou empurrar as duas juntas")
+  await tentar('pushpull', 'barras selecionadas esticam juntas', () => {
+    const ed = novoEditor(nuc);
+    const a = adicionar(ed, { tipo: 'barra', inicio: [0, 0, 0], fim: [6000, 0, 0], perfil: 'W 310×38,7' });
+    const b = adicionar(ed, { tipo: 'barra', inicio: [0, 50, 0], fim: [6000, 50, 0], perfil: 'W 310×38,7' });
+    const c = adicionar(ed, { tipo: 'barra', inicio: [0, 500, 0], fim: [6000, 500, 0], perfil: 'W 310×38,7' });
+    ed.selecao.ids.add(a.id); ed.selecao.ids.add(b.id);
+    const f = usar(ed, G('pushpull'));
+    const fx = () => [a, b, c].map(e => ed.documento.get(e.id).fim[0]);
+    f.onPonto(P(5900, 0, 0, { entidade: a.id })); f.onValor('500');
+    conferir('pushpull', 'as 2 selecionadas esticam 500 juntas; a de fora fica', pertoV(fx(), [6500, 6500, 6000]), JSON.stringify(fx()));
+    ed.desfazer();
+    conferir('pushpull', 'um desfazer devolve as duas', pertoV(fx(), [6000, 6000, 6000]), JSON.stringify(fx()));
+    f.onPonto(P(5900, 500, 0, { entidade: c.id })); f.onValor('300');
+    conferir('pushpull', 'a barra clicada fora da seleção estica sozinha', pertoV(fx(), [6000, 6000, 6300]), JSON.stringify(fx()));
+  });
+
   // ---- offset
   await tentar('offset', 'para fora e para dentro', () => {
     const ed = novoEditor(nuc);

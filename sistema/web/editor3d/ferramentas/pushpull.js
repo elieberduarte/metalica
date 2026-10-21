@@ -6,7 +6,9 @@
 //   · com Ctrl                     → sempre inicia uma face nova, mesmo no sólido;
 //   · duplo clique                 → repete a última distância na face apontada;
 //   · barra (perfil)               → a ponta apontada anda no eixo dela: estica ou encurta, a outra
-//                                    ponta parada (os cortes no ângulo da ponta vão junto).
+//                                    ponta parada (os cortes no ângulo da ponta vão junto);
+//   · barras selecionadas          → o clique numa delas estica todas juntas (cada uma na própria ponta do
+//                                    mesmo lado, a mesma distância, no próprio eixo), num desfazer só.
 // A distância pode ser digitada a qualquer momento — e logo depois de terminar, corrige o último (como no SketchUp).
 
 import { Ferramenta, paraMilimetros, formatar } from './base.js';
@@ -181,15 +183,43 @@ export class FerramentaPushPull extends Ferramenta {
     const ponta = t > L / 2 ? 'fim' : 'inicio';
     const normal = ponta === 'fim' ? d : C.mul(d, -1);
     const no = ponta === 'fim' ? b.fim : b.inicio;
-    this.alvo = { id: b.id, barra: ponta, base: C.copiar(ponto), normal, original: { no: C.copiar(no), outro: C.copiar(ponta === 'fim' ? b.inicio : b.fim), L } };
+    this.alvo = { id: b.id, barra: ponta, base: C.copiar(ponto), normal, original: { no: C.copiar(no), outro: C.copiar(ponta === 'fim' ? b.inicio : b.fim), L },
+                  juntas: this._barrasJuntas(b, normal, ponto) };
     this.novaFace = false;
     this.distancia = 0;
     C.ancorar(this.editor, ponto);
     return true;
   }
 
-  resultadoBarra(d) {
-    const A = this.alvo;
+  /**
+   * As outras barras selecionadas, quando a barra clicada está entre elas (usuário, 21/10: "quando estão duas peças
+   * selecionadas, ela deveria puxar ou empurrar as duas juntas; ela puxa apenas uma" — os dois U do banzo, a terça
+   * dupla): cada uma anda na ponta do mesmo lado do puxão, no próprio eixo. Barra atravessada (de lado para o puxão):
+   * a ponta mais perto do clique. A barra clicada fora da seleção estica sozinha, como no SketchUp.
+   */
+  _barrasJuntas(b, normal, ponto) {
+    const ids = C.idsSelecionados(this.editor);
+    if (!ids.includes(b.id)) return [];
+    const juntas = [];
+    for (const id of ids) {
+      if (id === b.id) continue;
+      const o = this.documento.get(id);
+      if (!o || o.tipo !== 'barra' || !C.editavel(this.editor, o)) continue;
+      const L = C.dist(o.inicio, o.fim);
+      if (L < 1) continue;
+      const pi = C.dot(o.inicio, normal), pf = C.dot(o.fim, normal);
+      const ponta = Math.abs(pf - pi) > 1 ? (pf > pi ? 'fim' : 'inicio')
+                  : (C.dist(o.fim, ponto) < C.dist(o.inicio, ponto) ? 'fim' : 'inicio');
+      const no = ponta === 'fim' ? o.fim : o.inicio, outro = ponta === 'fim' ? o.inicio : o.fim;
+      juntas.push({ id, barra: ponta, normal: C.normalizar(C.sub(no, outro)), original: { no: C.copiar(no), outro: C.copiar(outro), L } });
+    }
+    return juntas;
+  }
+
+  /** A barra clicada e as que vão junto. */
+  _barrasDoAlvo() { return this.alvo ? [this.alvo, ...(this.alvo.juntas || [])] : []; }
+
+  resultadoBarra(d, A = this.alvo) {
     const L = Math.max(1, A.original.L + d);                 // não inverte a barra
     const novo = C.add(A.original.outro, C.mul(A.normal, L));
     return { [A.barra]: novo.map(x => Math.round(x * 100) / 100) };
@@ -247,11 +277,13 @@ export class FerramentaPushPull extends Ferramenta {
   aplicar(d) {
     if (!this.alvo || !isFinite(d) || Math.abs(d) < 1e-6) { this.reiniciar(); return; }
     if (this.alvo.barra) {
-      const eb = this.documento.get(this.alvo.id);
-      this._executarLembrando(C.cmdAlterar(this.alvo.id, C.marcarParaConferir(eb, this.resultadoBarra(d)), d > 0 ? 'Esticar barra' : 'Encurtar barra'), d);
+      const barras = this._barrasDoAlvo();
+      const rotulo = (d > 0 ? 'Esticar' : 'Encurtar') + (barras.length > 1 ? ` ${barras.length} barras` : ' barra');
+      const cmds = barras.map(A => { const eb = this.documento.get(A.id); return eb && C.cmdAlterar(A.id, C.marcarParaConferir(eb, this.resultadoBarra(d, A)), rotulo); });
+      this._executarLembrando(C.cmdComposto(cmds, rotulo), d);
       this.constructor.ultimaDistancia = d;
       this.reiniciar();
-      this.dica(`Última distância: ${formatar(Math.abs(d))} (duplo clique repete)`);
+      this.dica(`Última distância: ${formatar(Math.abs(d))}${barras.length > 1 ? ` nas ${barras.length} barras` : ''} (duplo clique repete)`);
       return;
     }
     if (this.alvo.chapa) {
@@ -310,7 +342,9 @@ export class FerramentaPushPull extends Ferramenta {
       const d = C.normalizar(C.sub(b.fim, b.inicio));
       const no = C.dot(C.sub(barra.ponto, b.inicio), d) > L / 2 ? b.fim : b.inicio;
       this.previa(C.grupo(C.gPonto(no, '#ff5a1f')));
-      this.medida(`${b.perfil}: a ponta marcada estica no eixo (${formatar(L)})`);
+      const sel = C.idsSelecionados(this.editor);
+      const juntas = sel.includes(b.id) ? sel.filter(id => id !== b.id && (this.documento.get(id) || {}).tipo === 'barra').length : 0;
+      this.medida(`${b.perfil}: a ponta marcada estica no eixo (${formatar(L)})${juntas ? ` · as ${juntas + 1} barras selecionadas esticam juntas` : ''}`);
       return;
     }
     const achado = this.faceApontada(p);
@@ -325,11 +359,18 @@ export class FerramentaPushPull extends Ferramenta {
   desenhar() {
     this.limparPrevia();
     if (this.alvo && this.alvo.barra) {
+      const barras = this._barrasDoAlvo();
       const novo = this.resultadoBarra(this.distancia || 0)[this.alvo.barra];
       const L = C.dist(novo, this.alvo.original.outro);
-      const texto = `${this.distancia >= 0 ? '+' : '−'}${formatar(Math.abs(this.distancia))}  ·  barra com ${formatar(L)}`;
+      const texto = `${this.distancia >= 0 ? '+' : '−'}${formatar(Math.abs(this.distancia))}  ·  barra com ${formatar(L)}` +
+                    (barras.length > 1 ? `  ·  ${barras.length} barras juntas` : '');
       this.medida(texto);
-      this.previa(C.grupo(C.gLinha([this.alvo.original.outro, novo], C.CORES.face), C.gPonto(novo, '#ff5a1f'), C.gRotulo(texto, novo)));
+      const g = C.grupo(C.gRotulo(texto, novo));
+      for (const A of barras) {
+        const q = this.resultadoBarra(this.distancia || 0, A)[A.barra];
+        g.add(C.gLinha([A.original.outro, q], C.CORES.face)); g.add(C.gPonto(q, '#ff5a1f'));
+      }
+      this.previa(g);
       return;
     }
     if (this.alvo && this.alvo.chapa) {
