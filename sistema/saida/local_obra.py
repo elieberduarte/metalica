@@ -328,7 +328,11 @@ def _meta_imagem(pasta: str) -> Optional[dict]:
 def estado(g, s: str) -> dict:
     p = g.ler(s)
     fontes = [{"chave": k, "nome": v["nome"]} for k, v in FONTES.items()]
-    return {"terreno": p.get("terreno"), "imagem": _meta_imagem(g.pasta(s)), "fontes": fontes}
+    propria = _ler_json(os.path.join(g.pasta(s), PASTA, "propria.json"))
+    if propria:                                               # a imagem própria importada (o painel mostra e ajusta)
+        propria = dict({k: propria.get(k) for k in ("nome", "px", "colocada", "modo", "crs", "largura_m")},
+                       georreferenciada=bool(propria.get("georef")))
+    return {"terreno": p.get("terreno"), "imagem": _meta_imagem(g.pasta(s)), "fontes": fontes, "propria": propria}
 
 
 def gravar(g, s: str, corpo: dict) -> dict:
@@ -649,16 +653,371 @@ def baixar_imagem(g, s: str, corpo: Optional[dict] = None, progresso: Callable =
     progresso("gravando a imagem…", 0.95)
     pasta = os.path.join(g.pasta(s), PASTA)
     os.makedirs(pasta, exist_ok=True)
-    tmp = os.path.join(pasta, "imagem.jpg.tmp")
-    im.save(tmp, "JPEG", quality=86)
-    os.replace(tmp, os.path.join(pasta, "imagem.jpg"))
     meta = {"x0": reg["x0"], "y0": reg["y0"], "x1": reg["x1"], "y1": reg["y1"], "largura": im.size[0],
             "altura": im.size[1], "zoom": z, "lado_m": round(reg["lado_m"], 1),
             "fonte": cfg.get("nome") or fonte, "atribuicao": cfg.get("atribuicao") or cfg.get("nome") or "",
             "baixada_em": time.strftime("%Y-%m-%d %H:%M"), "versao": int(time.time())}
-    with open(os.path.join(pasta, "imagem.json"), "w", encoding="utf-8", newline="") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=1)
+    # a do portal é a base: a imagem própria importada (o drone do cliente) vai por cima dela (_compor)
+    _gravar_jpg(pasta, "base", im, meta)
+    _compor(pasta, progresso)
     return estado(g, s)
+
+
+# ------------------------------------------------------------------ a imagem própria (o drone do cliente)
+# (21/10, o usuário: "criar uma opção para importar uma imagem do terreno… talvez o usuário tenha uma imagem própria de
+# drone do local que não esteja nos portais"). O ortomosaico georreferenciado (GeoTIFF do Pix4D/DroneDeploy/Agisoft/
+# Metashape/WebODM, ou JPG/PNG com o arquivo de mundo .jgw/.pgw/.tfw e o .prj) vai sozinho para o lugar, por cima da
+# imagem do portal (que fica cobrindo a vizinhança); a imagem sem coordenadas entra no meio da obra, com a largura em
+# metros que o usuário diz, e se acerta pelo Ajustar e pelo norte, como a do portal.
+
+PROPRIA_EXT = (".tif", ".tiff", ".jpg", ".jpeg", ".png")
+PROPRIA_PIXELS_MAX = 400_000_000          # 20 mil × 20 mil: acima, pedir a exportação com menos resolução
+LADO_COMPOSTO_MAX = 8192                  # o lado da imagem composta (a placa de vídeo do computador; o celular reduz)
+
+
+def _gravar_jpg(pasta: str, nome: str, im, meta: dict) -> None:
+    tmp = os.path.join(pasta, nome + ".jpg.tmp")
+    im.convert("RGB").save(tmp, "JPEG", quality=86)
+    os.replace(tmp, os.path.join(pasta, nome + ".jpg"))
+    with open(os.path.join(pasta, nome + ".json"), "w", encoding="utf-8", newline="") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=1)
+
+
+def _ler_json(caminho: str) -> Optional[dict]:
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def _crs_do_epsg(n: int) -> dict:
+    """O sistema de coordenadas pelo código EPSG: as UTM do SIRGAS 2000 e do WGS 84 (iguais na prática), as geográficas
+    e o Web Mercator. O SAD 69 e o Córrego Alegre ficam 60–70 m fora: pedir a exportação em SIRGAS 2000."""
+    if 31978 <= n <= 31985:
+        return {"tipo": "utm", "fuso": n - 31960, "sul": True, "nome": "SIRGAS 2000 / UTM %dS" % (n - 31960)}
+    if 31972 <= n <= 31977:
+        return {"tipo": "utm", "fuso": n - 31955, "sul": False, "nome": "SIRGAS 2000 / UTM %dN" % (n - 31955)}
+    if 32701 <= n <= 32760:
+        return {"tipo": "utm", "fuso": n - 32700, "sul": True, "nome": "WGS 84 / UTM %dS" % (n - 32700)}
+    if 32601 <= n <= 32660:
+        return {"tipo": "utm", "fuso": n - 32600, "sul": False, "nome": "WGS 84 / UTM %dN" % (n - 32600)}
+    if n in (4326, 4674, 4989):
+        return {"tipo": "geo", "nome": "latitude e longitude (EPSG:%d)" % n}
+    if n in (3857, 900913, 102100, 102113, 3785):
+        return {"tipo": "mercator", "nome": "Web Mercator"}
+    if 29168 <= n <= 29195 or 22521 <= n <= 22525 or n in (4618, 4225):
+        raise ErroTerreno("a imagem está em SAD 69 ou Córrego Alegre (EPSG:%d), que ficam 60–70 m fora do SIRGAS 2000. "
+                          "Exporte o ortomosaico em SIRGAS 2000 / UTM (no Pix4D/Metashape/QGIS: o sistema de saída)." % n)
+    raise ErroTerreno("o sistema de coordenadas da imagem (EPSG:%d) não é conhecido aqui. Exporte o ortomosaico em "
+                      "SIRGAS 2000 / UTM (EPSG:31978 a 31985) ou em latitude e longitude." % n)
+
+
+def _crs_do_prj(texto: str) -> Optional[dict]:
+    """O .prj (WKT) do arquivo de mundo: a UTM pelo fuso escrito, o Web Mercator, ou só geográfico."""
+    t = (texto or "").upper()
+    if not t.strip():
+        return None
+    if "SAD" in t and "69" in t or "CORREGO" in t or "CÓRREGO" in t:
+        raise ErroTerreno("a imagem está em SAD 69 ou Córrego Alegre, que ficam 60–70 m fora do SIRGAS 2000. Exporte em "
+                          "SIRGAS 2000 / UTM.")
+    m = re.search(r'AUTHORITY\["EPSG","(\d+)"\]\]\s*$', t.strip())
+    if m and "PROJCS" in t:
+        return _crs_do_epsg(int(m.group(1)))
+    m = re.search(r"UTM[ _]ZONE[ _](\d{1,2})\s*([NS])", t)
+    if m:
+        fuso, sul = int(m.group(1)), m.group(2) == "S"
+        return {"tipo": "utm", "fuso": fuso, "sul": sul, "nome": "UTM %d%s" % (fuso, m.group(2))}
+    if "MERCATOR_AUXILIARY_SPHERE" in t or "PSEUDO-MERCATOR" in t or "PSEUDO_MERCATOR" in t:
+        return {"tipo": "mercator", "nome": "Web Mercator"}
+    if "PROJCS" not in t and "GEOGCS" in t:
+        return {"tipo": "geo", "nome": "latitude e longitude"}
+    raise ErroTerreno("o .prj da imagem não diz um sistema conhecido aqui. Exporte em SIRGAS 2000 / UTM.")
+
+
+def _crs_pelos_numeros(x: float, y: float, lugar: Optional[tuple]) -> dict:
+    """Sem o .prj: pelos números (graus; o Web Mercator negativo no Brasil; ou a UTM, no fuso do lugar da obra)."""
+    if abs(x) <= 180 and abs(y) <= 90:
+        return {"tipo": "geo", "nome": "latitude e longitude (pelos números)"}
+    if x < 0 or abs(x) > 1_000_000:
+        return {"tipo": "mercator", "nome": "Web Mercator (pelos números)"}
+    if not lugar:
+        raise ErroTerreno("a imagem tem coordenadas UTM sem o .prj: busque o endereço da obra antes (para saber o fuso) "
+                          "ou importe junto o arquivo .prj.")
+    fuso = int((lugar[1] + 180) // 6) + 1
+    sul = lugar[0] < 0
+    return {"tipo": "utm", "fuso": fuso, "sul": sul, "nome": "UTM %d%s (o fuso da obra; sem o .prj)" % (fuso, "S" if sul else "N")}
+
+
+def _para_geo(crs: dict) -> Callable[[float, float], tuple]:
+    if crs["tipo"] == "utm":
+        return lambda x, y: utm_para_geo(x, y, crs["fuso"], crs["sul"])
+    if crs["tipo"] == "geo":
+        return lambda x, y: (y, x)
+    return lambda x, y: de_mercator(x, y)
+
+
+def _georef_tiff(im) -> Optional[tuple]:
+    """(transformação do pixel (canto) ao mundo [a, b, c, d, e, f], EPSG ou None) das marcas GeoTIFF; None sem elas."""
+    tags = getattr(im, "tag_v2", None)
+    if not tags:
+        return None
+    raster_ponto = False
+    epsg = None
+    chaves = tags.get(34735)
+    if chaves:
+        chaves = list(chaves)
+        for i in range(4, 4 + 4 * int(chaves[3]), 4):
+            k, local, _n, v = chaves[i:i + 4]
+            if local != 0:
+                continue
+            if k == 1025:
+                raster_ponto = v == 2
+            elif k == 3072 and v not in (0, 32767):
+                epsg = v
+            elif k == 2048 and v not in (0, 32767) and epsg is None:
+                epsg = v
+    if 34264 in tags:
+        m = list(tags[34264])
+        a, b, c, d, e, f = m[0], m[1], m[3], m[4], m[5], m[7]
+    elif 33922 in tags and 33550 in tags:
+        tp, sc = list(tags[33922]), list(tags[33550])
+        i, j, x, y = tp[0], tp[1], tp[3], tp[4]
+        a, b, c, d, e, f = sc[0], 0.0, x - i * sc[0], 0.0, -sc[1], y + j * sc[1]
+    else:
+        return None
+    if raster_ponto:                                         # o tiepoint no meio do pixel: o canto meio pixel antes
+        c, f = c - (a + b) / 2, f - (d + e) / 2
+    return [a, b, c, d, e, f], epsg
+
+
+def _georef_mundo(texto: str) -> list:
+    """O arquivo de mundo (.jgw/.pgw/.tfw/.wld): A, D, B, E, C, F — C e F no meio do pixel de cima à esquerda."""
+    try:
+        A, D, B, E, C, F = (float(v.replace(",", ".")) for v in texto.split()[:6])
+    except ValueError:
+        raise ErroTerreno("o arquivo de mundo (.jgw/.tfw) não tem os seis números.")
+    return [A, B, C - (A + B) / 2, D, E, F - (D + E) / 2]
+
+
+def _cantos_geo(transf: list, tam: tuple, crs: dict) -> list:
+    """Os quatro cantos da imagem em (lat, lon): noroeste, nordeste, sudeste, sudoeste (do pixel)."""
+    a, b, c, d, e, f = transf
+    w, h = tam
+    para = _para_geo(crs)
+    return [list(para(a * u + b * v + c, d * u + e * v + f)) for u, v in ((0, 0), (w, 0), (w, h), (0, h))]
+
+
+def _abrir_propria(caminho: str):
+    from PIL import Image
+    Image.MAX_IMAGE_PIXELS = None                            # o ortomosaico é grande de propósito; o teto é o nosso
+    try:
+        im = Image.open(caminho)
+    except Exception as e:
+        raise ErroTerreno("não deu para abrir a imagem (%s). Use GeoTIFF, JPG ou PNG." % e)
+    if im.size[0] * im.size[1] > PROPRIA_PIXELS_MAX:
+        raise ErroTerreno("a imagem tem %d × %d pixels — grande demais para abrir aqui. Exporte o ortomosaico com menos "
+                          "resolução (5 cm por pixel basta para a apresentação)." % im.size)
+    return im
+
+
+def importar_imagem(g, s: str, corpo: dict, progresso: Callable = lambda *a: None) -> dict:
+    """Recebe o arquivo da imagem própria (o envio binário: {"arquivo_local", "nome"}) e lê as coordenadas dela, se
+    tiver (GeoTIFF). Fica em terreno/propria.<ext>; a colocação vem em posicionar_propria."""
+    origem, nome = corpo.get("arquivo_local"), os.path.basename(str(corpo.get("nome") or "imagem"))
+    if not origem or not os.path.isfile(origem):
+        raise ErroTerreno("nenhuma imagem recebida.")
+    ext = os.path.splitext(nome)[1].lower()
+    if ext not in PROPRIA_EXT:
+        os.remove(origem)
+        raise ErroTerreno("a imagem precisa ser GeoTIFF (.tif), JPG ou PNG (veio %s)." % (ext or nome))
+    progresso("lendo a imagem…", 0.2)
+    im = _abrir_propria(origem)
+    geo = _georef_tiff(im) if ext in (".tif", ".tiff") else None
+    tam = im.size
+    im.close()
+    pasta = os.path.join(g.pasta(s), PASTA)
+    os.makedirs(pasta, exist_ok=True)
+    _base_das_antigas(pasta)
+    for velho in os.listdir(pasta):
+        if velho.startswith("propria.") and velho != "propria.json":
+            os.remove(os.path.join(pasta, velho))
+    os.replace(origem, os.path.join(pasta, "propria" + ext))
+    info = {"nome": nome, "arquivo": "propria" + ext, "px": list(tam),
+            "georef": {"transf": geo[0], "epsg": geo[1]} if geo else None, "colocada": False}
+    with open(os.path.join(pasta, "propria.json"), "w", encoding="utf-8", newline="") as f:
+        json.dump(info, f, ensure_ascii=False, indent=1)
+    return {**estado(g, s), "georreferenciada": bool(geo)}
+
+
+def _base_das_antigas(pasta: str) -> None:
+    """O projeto de antes da imagem própria: a imagem baixada do portal só como imagem.jpg — vira a base."""
+    base, img = os.path.join(pasta, "base.jpg"), os.path.join(pasta, "imagem.jpg")
+    meta = _ler_json(os.path.join(pasta, "imagem.json"))
+    if not os.path.isfile(base) and os.path.isfile(img) and meta and not meta.get("propria"):
+        import shutil
+        shutil.copyfile(img, base)
+        shutil.copyfile(os.path.join(pasta, "imagem.json"), os.path.join(pasta, "base.json"))
+
+
+def posicionar_propria(g, s: str, corpo: dict, progresso: Callable = lambda *a: None) -> dict:
+    """Põe a imagem própria no lugar: pelas coordenadas dela (GeoTIFF, ou o arquivo de mundo + .prj do corpo) ou, sem
+    elas, no meio da obra com `largura_m`. Compõe a imagem do terreno (por cima da do portal, quando georreferenciada)."""
+    pasta = os.path.join(g.pasta(s), PASTA)
+    info = _ler_json(os.path.join(pasta, "propria.json"))
+    if not info or not os.path.isfile(os.path.join(pasta, info.get("arquivo") or "-")):
+        raise ErroTerreno("importe a imagem antes de posicioná-la.")
+    p = g.ler(s)
+    t = p.get("terreno")
+    caixa = corpo.get("caixa") if isinstance(corpo.get("caixa"), list) and len(corpo["caixa"]) == 4 else None
+    lugar = (t["lat"], t["lon"]) if t else None
+    transf, crs = None, None
+    if corpo.get("mundo"):
+        transf = _georef_mundo(str(corpo["mundo"]))
+        crs = _crs_do_prj(str(corpo.get("prj") or ""))
+    elif info.get("georef"):
+        transf = info["georef"]["transf"]
+        crs = _crs_do_epsg(int(info["georef"]["epsg"])) if info["georef"].get("epsg") else None
+    if transf:
+        if crs is None:
+            crs = _crs_pelos_numeros(transf[2], transf[5], lugar)
+        cantos = _cantos_geo(transf, tuple(info["px"]), crs)
+        if not all(-85 < c[0] < 85 and -180 <= c[1] <= 180 for c in cantos):
+            raise ErroTerreno("as coordenadas da imagem não caem no mundo (%s): confira o .prj e o arquivo de mundo."
+                              % crs["nome"])
+        info.update(colocada=True, modo="coordenadas", crs=crs["nome"], cantos=cantos,
+                    largura_m=round(_dist_geo(cantos[0], cantos[1]), 1))
+        if not t:
+            # sem o lugar da obra: o meio da obra no meio da imagem, o norte para cima (depois o Ajustar)
+            lat = sum(c[0] for c in cantos) / 4
+            lon = sum(c[1] for c in cantos) / 4
+            meio = [(caixa[0] + caixa[2]) / 2, (caixa[1] + caixa[3]) / 2] if caixa else [0.0, 0.0]
+            t = validar({"lat": lat, "lon": lon, "ponto": meio, "norte": 0, "caixa": caixa})
+            g.tocar(s, terreno=t)
+        elif lugar and _dist_geo(lugar, cantos[0]) > 20_000:
+            raise ErroTerreno("a imagem fica a %.0f km da obra (%s): confira o sistema de coordenadas ou o lugar da obra."
+                              % (_dist_geo(lugar, cantos[0]) / 1000, crs["nome"]))
+    else:
+        if not t:
+            raise ErroTerreno("a imagem não tem coordenadas: busque o endereço da obra antes, para ela entrar no lugar.")
+        try:
+            largura = float(corpo.get("largura_m") or info.get("largura_m") or 0)
+        except (TypeError, ValueError):
+            raise ErroTerreno("a largura da imagem precisa ser um número (m).")
+        if not largura:
+            cx = caixa or t.get("caixa") or [t["ponto"][0] - 20000, t["ponto"][1] - 20000, t["ponto"][0] + 20000, t["ponto"][1] + 20000]
+            largura = round(max(abs(cx[2] - cx[0]), abs(cx[3] - cx[1])) / 1000 * 1.5, 1)
+        if not 5 <= largura <= 20_000:
+            raise ErroTerreno("a largura da imagem vai de 5 m a 20 km.")
+        if info.get("modo") == "sem coordenadas" and info.get("centro"):
+            centro = info["centro"]
+        else:
+            cx = caixa or t.get("caixa")
+            centro = list(modelo_para_geo(t, (cx[0] + cx[2]) / 2, (cx[1] + cx[3]) / 2)) if cx else [t["lat"], t["lon"]]
+        w, h = info["px"]
+        altura = largura * h / w
+        cantos = [_deslocar_geo(centro, dl * largura / 2, dn * altura / 2) for dl, dn in ((-1, 1), (1, 1), (1, -1), (-1, -1))]
+        info.update(colocada=True, modo="sem coordenadas", crs=None, cantos=cantos, centro=centro,
+                    largura_m=round(largura, 1))
+    with open(os.path.join(pasta, "propria.json"), "w", encoding="utf-8", newline="") as f:
+        json.dump(info, f, ensure_ascii=False, indent=1)
+    _compor(pasta, progresso)
+    return estado(g, s)
+
+
+def tirar_propria(g, s: str) -> dict:
+    pasta = os.path.join(g.pasta(s), PASTA)
+    if os.path.isdir(pasta):
+        for velho in os.listdir(pasta):
+            if velho.startswith("propria."):
+                os.remove(os.path.join(pasta, velho))
+        _compor(pasta)
+    return estado(g, s)
+
+
+def _dist_geo(a, b) -> float:
+    """metros entre dois (lat, lon) pelo plano tangente do elipsoide (curto: até alguns km)"""
+    m, n = _raios((a[0] + b[0]) / 2)
+    return math.hypot(math.radians(b[0] - a[0]) * m, math.radians(b[1] - a[1]) * n * math.cos(math.radians(a[0])))
+
+
+def _deslocar_geo(p, leste: float, norte: float) -> list:
+    m, n = _raios(p[0])
+    return [p[0] + math.degrees(norte / m), p[1] + math.degrees(leste / (n * math.cos(math.radians(p[0]))))]
+
+
+def _compor(pasta: str, progresso: Callable = lambda *a: None) -> None:
+    """A imagem do terreno (imagem.jpg/json) = a base do portal, com a imagem própria colocada por cima (a com
+    coordenadas) ou só a própria (a sem coordenadas). Sem a própria, a base como veio."""
+    import shutil
+    from PIL import Image
+    base_meta = _ler_json(os.path.join(pasta, "base.json"))
+    if base_meta and not os.path.isfile(os.path.join(pasta, "base.jpg")):
+        base_meta = None
+    info = _ler_json(os.path.join(pasta, "propria.json"))
+    if not (info and info.get("colocada") and os.path.isfile(os.path.join(pasta, info.get("arquivo") or "-"))):
+        if base_meta:
+            shutil.copyfile(os.path.join(pasta, "base.jpg"), os.path.join(pasta, "imagem.jpg.tmp"))
+            os.replace(os.path.join(pasta, "imagem.jpg.tmp"), os.path.join(pasta, "imagem.jpg"))
+            with open(os.path.join(pasta, "imagem.json"), "w", encoding="utf-8", newline="") as f:
+                json.dump(dict(base_meta, versao=int(time.time())), f, ensure_ascii=False, indent=1)
+        else:
+            for velho in ("imagem.jpg", "imagem.json"):
+                if os.path.isfile(os.path.join(pasta, velho)):
+                    os.remove(os.path.join(pasta, velho))
+        return
+    import numpy as np
+    progresso("abrindo a imagem própria…", 0.3)
+    src = _abrir_propria(os.path.join(pasta, info["arquivo"]))
+    src.load()
+    if src.mode not in ("RGB", "RGBA"):
+        src = src.convert("RGBA" if "A" in src.getbands() or src.mode == "P" else "RGB")
+    pm = [mercator(*c) for c in info["cantos"]]              # noroeste, nordeste, sudeste, sudoeste
+    x0, x1 = min(p[0] for p in pm), max(p[0] for p in pm)
+    y0, y1 = min(p[1] for p in pm), max(p[1] for p in pm)
+    por_baixo = base_meta if info.get("modo") == "coordenadas" else None
+    if por_baixo:
+        x0, x1 = min(x0, base_meta["x0"]), max(x1, base_meta["x1"])
+        y0, y1 = min(y0, base_meta["y0"]), max(y1, base_meta["y1"])
+    # o pixel: o da imagem própria, até a composta caber em LADO_COMPOSTO_MAX
+    px_src = math.hypot(pm[1][0] - pm[0][0], pm[1][1] - pm[0][1]) / src.size[0]
+    r = max(px_src, (x1 - x0) / LADO_COMPOSTO_MAX, (y1 - y0) / LADO_COMPOSTO_MAX)
+    W, H = max(1, int(math.ceil((x1 - x0) / r))), max(1, int(math.ceil((y1 - y0) / r)))
+    x1, y0 = x0 + W * r, y1 - H * r
+    reducao = int(r / px_src) if r > px_src * 1.5 else 1
+    if reducao > 1:                                           # menos pixels para a conta (o ortomosaico de 2 cm)
+        progresso("reduzindo a imagem própria…", 0.45)
+        src = src.reduce(reducao)
+    sw, sh = src.size
+    progresso("pondo a imagem própria no lugar…", 0.6)
+    # do pixel da composta ao pixel da própria: o afim pelo meio de cada canto (bilinear nos cantos, que o recorte de
+    # algumas centenas de metros deixa reto a menos de um pixel)
+    u = np.array([[(p[0] - x0) / r, (y1 - p[1]) / r, 1.0] for p in pm])
+    alvo = np.array([[0, 0], [sw, 0], [sw, sh], [0, sh]], dtype=float)
+    coef, *_ = np.linalg.lstsq(u, alvo, rcond=None)
+    dados = (coef[0, 0], coef[1, 0], coef[2, 0], coef[0, 1], coef[1, 1], coef[2, 1])
+    tela = Image.new("RGB", (W, H), (128, 128, 128))
+    if por_baixo:
+        progresso("juntando com a imagem do portal…", 0.7)
+        with Image.open(os.path.join(pasta, "base.jpg")) as b:
+            bw = max(1, int(round((base_meta["x1"] - base_meta["x0"]) / r)))
+            bh = max(1, int(round((base_meta["y1"] - base_meta["y0"]) / r)))
+            tela.paste(b.convert("RGB").resize((bw, bh), Image.LANCZOS),
+                       (int(round((base_meta["x0"] - x0) / r)), int(round((y1 - base_meta["y1"]) / r))))
+    mascara_src = src.getchannel("A") if src.mode == "RGBA" else Image.new("L", src.size, 255)
+    progresso("pondo a imagem própria no lugar…", 0.8)
+    sobre = src.convert("RGB").transform((W, H), Image.AFFINE, dados, resample=Image.BICUBIC)
+    mascara = mascara_src.transform((W, H), Image.AFFINE, dados, resample=Image.BILINEAR, fillcolor=0)
+    tela.paste(sobre, (0, 0), mascara)
+    lado_m = max(x1 - x0, y1 - y0) * math.cos(math.radians(de_mercator((x0 + x1) / 2, (y0 + y1) / 2)[0]))
+    nome = "Imagem própria (%s)" % info.get("nome", "")
+    meta = {"x0": x0, "y0": y0, "x1": x1, "y1": y1, "largura": W, "altura": H, "lado_m": round(lado_m, 1),
+            "fonte": nome + (" sobre " + base_meta["fonte"] if por_baixo else ""),
+            "atribuicao": "Imagem própria" + ("; " + base_meta.get("atribuicao", "") if por_baixo else ""),
+            "baixada_em": time.strftime("%Y-%m-%d %H:%M"), "versao": int(time.time()), "propria": True,
+            "pixel_cm": round(r * math.cos(math.radians(de_mercator((x0 + x1) / 2, (y0 + y1) / 2)[0])) * 100, 1)}
+    progresso("gravando a imagem…", 0.95)
+    _gravar_jpg(pasta, "imagem", tela, meta)
 
 
 # ------------------------------------------------------------------ o terreno no IFC
@@ -862,4 +1221,10 @@ def rota_post(g, s: str, resto: list, corpo: dict, progresso: Callable) -> dict:
     if resto == ["esquecer"]:
         g.tocar(s, terreno=None)
         return estado(g, s)
+    if resto == ["importar-imagem"]:                          # a imagem própria (o drone do cliente, 21/10)
+        return importar_imagem(g, s, corpo, progresso)
+    if resto == ["posicionar-imagem"]:
+        return posicionar_propria(g, s, corpo, progresso)
+    if resto == ["tirar-imagem-propria"]:
+        return tirar_propria(g, s)
     raise ErroTerreno("rota do terreno desconhecida: %s" % "/".join(resto))

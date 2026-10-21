@@ -275,11 +275,13 @@ export class Terreno {
           <p class="dica">Cole o link do serviço de imagem (WMS) ou o endereço de um pedido GetMap: no geoportal, F12 → aba
             Rede, escreva GetMap no filtro, mexa no mapa e copie o endereço de uma linha. A camada vem junto.</p></div>
         <button type="button" id="terreno-baixar" class="forte">${im ? 'Baixar a imagem de novo' : 'Baixar a imagem do terreno'}</button>
-        <button type="button" id="terreno-esquecer">Tirar o local</button>`;
+        <button type="button" id="terreno-esquecer">Tirar o local</button>
+        ${this._painelPropria()}`;
     } else {
       html += `<p class="dica">Ache o terreno pelo endereço, ou cole a coordenada: do Google Maps (botão direito no lote → a
         primeira linha) ou do geoportal da prefeitura (a latitude e a longitude do lote, em graus/minutos/segundos, ou a UTM
-        SIRGAS 2000). A obra entra com o meio no ponto achado; depois o Ajustar acerta a posição e o giro.</p>`;
+        SIRGAS 2000). A obra entra com o meio no ponto achado; depois o Ajustar acerta a posição e o giro.</p>
+        ${this._painelPropria()}`;
     }
     this.ui.abrirPainel('terreno', 'Terreno', `<div class="painel-terreno">${html}</div>`);
     this._ligarPainel();
@@ -368,6 +370,7 @@ export class Terreno {
     if (sel) sel.onchange = () => { $('#terreno-wms').hidden = sel.value !== 'wms'; };
     const bx = $('#terreno-baixar');
     if (bx) bx.onclick = () => this._baixar();
+    this._ligarPropria(raiz);
     const sq = $('#terreno-esquecer');
     if (sq) sq.onclick = async () => {
       if (!confirm('Tirar o local da obra deste projeto? A imagem baixada fica na pasta, mas some do 3D.')) return;
@@ -375,6 +378,102 @@ export class Terreno {
       this.estado = await this._pedir('/esquecer', {});
       await this.montar(); this.ui.aoMudar(); this.painel();
     };
+  }
+
+  // ---------------------------------------------------------------- a imagem própria (o drone do cliente)
+  // (21/10, o usuário: "criar uma opção para importar uma imagem do terreno… talvez o usuário tenha uma imagem própria de
+  // drone do local que não esteja nos portais"): o ortomosaico com coordenadas vai sozinho para o lugar, por cima da
+  // imagem do portal; a sem coordenadas entra no meio da obra, com a largura em metros
+
+  _painelPropria() {
+    const p = this.estado && this.estado.propria;
+    let html = `<p class="titulo-secao">Imagem própria (drone)</p>`;
+    if (p && p.colocada) {
+      html += `<dl class="terreno-dl"><dt>Arquivo</dt><dd>${esc(p.nome)}</dd>
+        <dt>Lugar</dt><dd>${p.modo === 'coordenadas' ? `pelas coordenadas da imagem (${esc(p.crs)})` : 'sem coordenadas: no meio da obra'}</dd>
+        ${this.imagem && this.imagem.pixel_cm ? `<dt>Resolução</dt><dd>${nf(this.imagem.pixel_cm, 1)} cm por pixel</dd>` : ''}</dl>`;
+      if (p.modo === 'sem coordenadas') html += `<div class="terreno-norte terreno-largura"><span>Largura</span>
+          <button type="button" data-largura="-10">−10 m</button><button type="button" data-largura="-1">−1 m</button>
+          <input id="terreno-largura" type="text" inputmode="decimal" value="${nf(p.largura_m, 1)}" aria-label="Largura da imagem (m)"><span>m</span>
+          <button type="button" data-largura="1">+1 m</button><button type="button" data-largura="10">+10 m</button></div>
+        <p class="dica">Sem coordenadas, a imagem entra com o norte para cima: acerte a largura até as medidas da obra baterem e use o
+          Ajustar e o Norte (acima) para encaixar.</p>`;
+      html += `<button type="button" id="terreno-tirar-propria">Tirar a imagem própria</button>`;
+    } else {
+      html += `<p class="dica">O ortomosaico do drone do local (GeoTIFF do Pix4D, DroneDeploy, Metashape ou WebODM, ou JPG/PNG com o
+        .jgw e o .prj): vai sozinho para o lugar, por cima da imagem do portal. Uma imagem sem coordenadas entra no meio da
+        obra e você acerta a largura.</p>`;
+    }
+    html += `<button type="button" id="terreno-importar">${p && p.colocada ? 'Importar outra imagem…' : 'Importar imagem própria…'}</button>
+      <input type="file" id="terreno-arquivo" hidden multiple accept=".tif,.tiff,.jpg,.jpeg,.png,.jgw,.pgw,.tfw,.wld,.prj">`;
+    return html;
+  }
+
+  _ligarPropria(raiz) {
+    const $ = s => raiz.querySelector(s);
+    const bt = $('#terreno-importar'), arq = $('#terreno-arquivo');
+    if (bt) bt.onclick = () => arq.click();
+    if (arq) arq.onchange = () => { const l = [...arq.files]; arq.value = ''; if (l.length) this.importarPropria(l); };
+    const tp = $('#terreno-tirar-propria');
+    if (tp) tp.onclick = async () => {
+      if (!confirm('Tirar a imagem própria? Volta a imagem do portal (se houver).')) return;
+      try { this.estado = await this._pedir('/tirar-imagem-propria', {}); await this.montar(); this.ui.aoMudar(); }
+      catch (e) { this.ui.situacao('Terreno: ' + e.message); }
+      this.painel();
+    };
+    const li = $('#terreno-largura');
+    if (li) {
+      const p = this.estado.propria;
+      const definir = (m) => {
+        if (!Number.isFinite(m)) return;
+        m = Math.round(Math.max(5, Math.min(20000, m)) * 10) / 10;
+        li.value = nf(m, 1);
+        p.largura_m = m;
+        clearTimeout(this._esperaLargura);
+        this._esperaLargura = setTimeout(() => this._posicionarPropria({ largura_m: m }).catch(e => this.ui.situacao('Terreno: ' + e.message)), 400);
+      };
+      li.onchange = () => definir(parseFloat(String(li.value).replace(',', '.')));
+      raiz.querySelectorAll('[data-largura]').forEach(b => { b.onclick = () => definir(p.largura_m + +b.dataset.largura); });
+    }
+  }
+
+  /** Os arquivos escolhidos: a imagem (GeoTIFF, JPG ou PNG) e, se vierem, o arquivo de mundo (.jgw…) e o .prj. */
+  async importarPropria(arquivos) {
+    const img = arquivos.find(f => /\.(tiff?|jpe?g|png)$/i.test(f.name));
+    if (!img) { alert('Escolha a imagem (GeoTIFF, JPG ou PNG) — o .jgw e o .prj vão junto, se tiver.'); return; }
+    const mundoArq = arquivos.find(f => /\.(jgw|pgw|tfw|wld)$/i.test(f.name));
+    const prjArq = arquivos.find(f => /\.prj$/i.test(f.name));
+    this.ui.situacao(`Terreno: enviando ${img.name} (${nf(img.size / 1048576, 1)} MB)…`);
+    try {
+      const r = await fetch(this.api + '/importar-imagem', { method: 'POST', body: img,
+        headers: { 'Content-Type': 'application/octet-stream', 'X-Nome-Arquivo': encodeURIComponent(img.name) } });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.erro) throw new Error(j.erro || `erro ${r.status}`);
+      this.estado = j;
+      const extra = {};
+      if (mundoArq) extra.mundo = await mundoArq.text();
+      if (prjArq) extra.prj = await prjArq.text();
+      if (!j.georreferenciada && !mundoArq && !this.t) {
+        throw new Error('a imagem não tem coordenadas: busque o endereço da obra antes (ou importe junto o .jgw e o .prj).');
+      }
+      await this._posicionarPropria(extra);
+    } catch (e) {
+      this.ui.situacao('Terreno: ' + e.message);
+      alert('A imagem não entrou: ' + e.message);
+      if (this.ui.painelAtual() === 'terreno') this.painel();
+    }
+  }
+
+  async _posicionarPropria(extra) {
+    this.estado = await this._pedir('/posicionar-imagem', { caixa: this.caixaDoModelo(), ...extra });
+    await this.montar();
+    this.mostrar(true);
+    this.ui.aoMudar();
+    const p = this.estado.propria || {};
+    this.ui.situacao(p.modo === 'coordenadas'
+      ? `Terreno: ${p.nome} no lugar pelas coordenadas (${p.crs}), ${nf((this.imagem && this.imagem.pixel_cm) || 0, 1)} cm por pixel.`
+      : `Terreno: ${p.nome} no meio da obra, ${nf(p.largura_m, 1)} m de largura — acerte a largura e use o Ajustar.`);
+    if (this.ui.painelAtual() === 'terreno') this.painel();
   }
 
   /** "Imagem em −1,40 (Doca −1,20 − 20 cm)": a altura em que a imagem ficou, pelo nível de referência e o ajuste. */

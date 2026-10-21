@@ -248,6 +248,54 @@ try:
     ok(aba.avaliar(zM) < -3400, f"voltar ao automático põe a imagem no pé da obra de novo ({aba.avaliar(zM):.0f} mm)")
     time.sleep(1.2)
     ok("cota" not in _json(API)["terreno"], "o automático tira a cota do projeto")
+    # a imagem própria (21/10, o usuário: "criar uma opção para importar uma imagem do terreno… talvez o usuário tenha uma
+    # imagem própria de drone do local que não esteja nos portais"): o GeoTIFF escolhido no seletor de arquivos vai para
+    # o lugar por cima da do portal; a sem coordenadas entra no meio da obra e a largura se acerta pelos botões
+    import test_local_obra as TL
+    from saida import local_obra as LO
+    t_ = _json(API)["terreno"]
+    leste, norte, _fuso, _sul = LO.geo_para_utm(t_["lat"], t_["lon"], 22)
+    TL.E0, TL.N0 = leste - 80, norte + 60                       # o ortomosaico de 160 × 120 m em volta da obra
+    tif = TL._ortomosaico(os.path.join(DADOS, "Ortomosaico do lote.tif"))
+    aba.avaliar("window.confirm = () => true; 1")
+
+    def escolher(*caminhos):
+        oid = aba.cmd("Runtime.evaluate", expression="document.getElementById('terreno-arquivo')")["result"]["objectId"]
+        aba.cmd("DOM.setFileInputFiles", files=list(caminhos), objectId=oid)
+    ok(aba.avaliar("!!document.getElementById('terreno-importar')"), "o painel tem o Importar imagem própria")
+    escolher(tif)
+    ok(esperar(aba, "!!(window.terreno.estado.propria && window.terreno.estado.propria.colocada && window.terreno.imagem.propria)", 60),
+       "o GeoTIFF entrou")
+    e_ = _json(API)
+    ok(e_["propria"]["crs"] == "SIRGAS 2000 / UTM 22S" and "sobre Teste" in e_["imagem"]["fonte"],
+       f"pelas coordenadas, por cima da do portal ({e_['propria']['crs']}; {e_['imagem']['fonte']})")
+    ok("pelas coordenadas da imagem" in (aba.avaliar("document.querySelector('.painel-terreno').textContent") or ""),
+       "o painel diz que a imagem está pelas coordenadas")
+    # o alvo vermelho do ortomosaico no 3D: o pixel da textura no ponto do modelo onde ele está na UTM
+    alvo = LO.geo_para_modelo(e_["terreno"], *LO.utm_para_geo(TL.E0 + 100.02, TL.N0 - 60.02, 22, True))
+    cor = aba.avaliar(f"""(() => {{ const t = window.terreno, m = t.malha; m.updateMatrixWorld();
+        const p = new m.position.constructor({alvo[0]}, {alvo[1]}, m.position.z); m.worldToLocal(t.grupo.localToWorld(p));
+        const c = m.material.map.image, g = c.getContext('2d');
+        const d = g.getImageData(Math.floor((p.x + 0.5) * c.width), Math.floor((0.5 - p.y) * c.height), 1, 1).data;
+        return [d[0], d[1], d[2]]; }})()""")
+    ok(cor and cor[0] > 200 and cor[1] < 80, f"o alvo do drone cai no ponto certo do modelo (a cor lá: {cor})")
+    foto(aba, "ver3d_terreno_5_imagem_propria.png")
+    # a sem coordenadas: no meio da obra, a largura pelos botões
+    from PIL import Image
+    png = os.path.join(DADOS, "foto do lote.png")
+    Image.new("RGB", (1200, 800), (90, 90, 200)).save(png)
+    escolher(png)
+    ok(esperar(aba, "!!(window.terreno.estado.propria && window.terreno.estado.propria.modo === 'sem coordenadas' && document.getElementById('terreno-largura'))", 60),
+       "a imagem sem coordenadas entrou, com a largura no painel")
+    l0 = _json(API)["propria"]["largura_m"]
+    sx0 = aba.avaliar("window.terreno.malha.scale.x")
+    aba.avaliar("document.querySelector('[data-largura=\"10\"]').click()")
+    ok(esperar(aba, f"window.terreno.estado.propria.largura_m === {l0 + 10} && Math.abs(window.terreno.malha.scale.x - {sx0} * {(l0 + 10) / l0}) < 50", 30),
+       f"+10 m: a imagem de {l0} para {l0 + 10} m ({aba.avaliar('window.terreno.malha.scale.x'):.0f} mm na tela)")
+    ok(_json(API)["propria"]["largura_m"] == l0 + 10, "a largura gravada no projeto")
+    aba.avaliar("document.getElementById('terreno-tirar-propria').click()")
+    ok(esperar(aba, "!window.terreno.estado.propria && !window.terreno.imagem.propria", 30)
+       and _json(API)["imagem"]["fonte"].startswith("Teste"), "Tirar a imagem própria volta a do portal")
     aba.avaliar("document.getElementById('terreno-ligado').click()")
     ok(aba.avaliar("window.terreno.grupo.visible === false && !document.getElementById('terreno-fonte')"),
        "desligar a imagem a esconde (e a fonte do canto)")

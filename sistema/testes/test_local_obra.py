@@ -595,3 +595,160 @@ def test_bloco_que_falha_e_pedido_de_novo(tmp_path, monkeypatch):
     cinza = sum(1 for x in range(0, im.size[0], 64) for y in range(0, im.size[1], 64)
                 if max(ImageStat.Stat(im.crop((x, y, x + 32, y + 32))).stddev) < 3)
     assert cinza == 0 and all(n == 2 for n in pedidos.values())
+
+
+
+# ------------------------------------------------------------------ a imagem própria (o drone do cliente, 21/10)
+# (o usuário: "criar uma opção para importar uma imagem do terreno… talvez o usuário tenha uma imagem própria de drone do
+# local que não esteja nos portais")
+
+E0, N0, PX = 254000.0, 7240350.0, 0.04          # o canto noroeste do ortomosaico (UTM 22S, Cascavel) e o pixel (4 cm)
+
+
+def _ortomosaico(caminho, formato="tif", w=4000, h=3000):
+    """O ortomosaico de 160 × 120 m com o alvo vermelho (1 m) em E0+100, N0−60 e o canto sem voo (transparente)."""
+    from PIL import Image, TiffImagePlugin
+    im = Image.new("RGBA", (w, h), (60, 140, 60, 255))
+    cx, cy = int(100 / PX), int(60 / PX)
+    im.paste((255, 0, 0, 255), (cx - 12, cy - 12, cx + 13, cy + 13))
+    im.paste((0, 0, 0, 0), (0, 0, 600, 600))
+    if formato == "tif":
+        ifd = TiffImagePlugin.ImageFileDirectory_v2()
+        ifd[33550] = (PX, PX, 0.0)
+        ifd.tagtype[33550] = 12
+        ifd[33922] = (0.0, 0.0, 0.0, E0, N0, 0.0)
+        ifd.tagtype[33922] = 12
+        ifd[34735] = (1, 1, 0, 3, 1024, 0, 1, 1, 1025, 0, 1, 1, 3072, 0, 1, 31982)
+        ifd.tagtype[34735] = 3
+        im.save(caminho, tiffinfo=ifd, compression="tiff_lzw")
+    else:
+        im.convert("RGB").save(caminho, quality=92)
+    return caminho
+
+
+def _onde_esta(e, pasta, leste, norte):
+    """(o pixel esperado do ponto UTM na imagem composta, o centro do vermelho achado nela, a imagem)"""
+    import numpy as np
+    from PIL import Image
+    m = e["imagem"]
+    mx, my = L.mercator(*L.utm_para_geo(leste, norte, 22, True))
+    u = (mx - m["x0"]) / (m["x1"] - m["x0"]) * m["largura"]
+    v = (m["y1"] - my) / (m["y1"] - m["y0"]) * m["altura"]
+    a = np.asarray(Image.open(os.path.join(pasta, "terreno", "imagem.jpg")).convert("RGB")).astype(int)
+    ys, xs = np.nonzero((a[..., 0] > 200) & (a[..., 1] < 80))
+    return (u, v), (xs.mean(), ys.mean()), a
+
+
+def test_ortomosaico_geotiff_por_cima_da_imagem_do_portal(tmp_path, monkeypatch):
+    """O GeoTIFF (SIRGAS 2000 / UTM 22S, como o Pix4D exporta) vai sozinho para o lugar, por cima da imagem do portal (a
+    vizinhança continua): o alvo cai a menos de 2 pixels (8 cm) de onde está na UTM, o canto sem voo mostra o portal, e
+    baixar a do portal de novo mantém a própria por cima; tirar a própria volta à do portal."""
+    monkeypatch.setitem(L.FONTES, "teste", {"nome": "Teste", "tipo": "teste", "zoom_max": 19, "atribuicao": "Teste"})
+    g, s = _gerente(tmp_path)
+    lat, lon = L.utm_para_geo(E0 + 80, N0 - 60, 22, True)
+    L.gravar(g, s, {"lat": lat, "lon": lon, "ponto": [0, 0], "norte": 0, "fonte": "teste"})
+    L.baixar_imagem(g, s, {"caixa": [-30_000, -20_000, 30_000, 20_000]})
+    portal = L.estado(g, s)["imagem"]
+    e = L.rota_post(g, s, ["importar-imagem"], {"arquivo_local": _ortomosaico(str(tmp_path / "orto.tif")),
+                                                "nome": "Ortomosaico Lote 12.tif"}, lambda *a: None)
+    assert e["georreferenciada"] and e["propria"]["px"] == [4000, 3000] and not e["propria"]["colocada"]
+    etapas = []
+    e = L.rota_post(g, s, ["posicionar-imagem"], {"caixa": [-30_000, -20_000, 30_000, 20_000]},
+                    lambda et, fr=None: etapas.append(et))
+    assert e["propria"]["crs"] == "SIRGAS 2000 / UTM 22S" and e["propria"]["modo"] == "coordenadas"
+    assert abs(e["propria"]["largura_m"] - 160) < 0.5 and etapas                     # a barra de andamento
+    m = e["imagem"]
+    assert m["propria"] and "Ortomosaico Lote 12.tif" in m["fonte"] and "sobre Teste" in m["fonte"]
+    assert m["x0"] <= portal["x0"] and m["x1"] >= portal["x1"]                       # a vizinhança do portal continua
+    assert 4 <= m["pixel_cm"] <= 5            # a do drone (4 cm), até o teto de 8192 px nos ~370 m da do portal
+    esperado, achado, a = _onde_esta(e, g.pasta(s), E0 + 100.02, N0 - 60.02)
+    assert math.dist(esperado, achado) < 2, (esperado, achado)
+    # o canto sem voo (transparente) mostra a imagem do portal, não preto nem o verde do drone
+    mx, my = L.mercator(*L.utm_para_geo(E0 + 10, N0 - 10, 22, True))
+    u = int((mx - m["x0"]) / (m["x1"] - m["x0"]) * m["largura"])
+    v = int((m["y1"] - my) / (m["y1"] - m["y0"]) * m["altura"])
+    assert tuple(a[v, u]) != (0, 0, 0) and math.dist([int(c) for c in a[v, u]], (60, 140, 60)) > 25
+    # baixar a do portal de novo: a própria continua por cima
+    e = L.baixar_imagem(g, s, {})
+    assert e["imagem"]["propria"] and math.dist(*_onde_esta(e, g.pasta(s), E0 + 100.02, N0 - 60.02)[:2]) < 2
+    # tirar a própria: a do portal de volta
+    e = L.rota_post(g, s, ["tirar-imagem-propria"], {}, lambda *a: None)
+    assert e["propria"] is None and not e["imagem"].get("propria") and e["imagem"]["fonte"] == "Teste"
+
+
+def test_imagem_com_arquivo_de_mundo_e_sem_lugar(tmp_path):
+    """JPG + .jgw + .prj (o DroneDeploy, o QGIS): no lugar pelos dois; e sem o local da obra gravado, o lugar vem da
+    imagem (o meio da obra no meio dela)."""
+    g, s = _gerente(tmp_path)
+    jpg = _ortomosaico(str(tmp_path / "orto.jpg"), "jpg")
+    jgw = "%r\n0\n0\n%r\n%r\n%r\n" % (PX, -PX, E0 + PX / 2, N0 - PX / 2)          # o meio do primeiro pixel
+    prj = ('PROJCS["SIRGAS 2000 / UTM zone 22S",GEOGCS["SIRGAS 2000",DATUM["Sistema_de_Referencia_Geocentrico_para_las_'
+           'AmericaS_2000",SPHEROID["GRS 1980",6378137,298.257222101]]],PROJECTION["Transverse_Mercator"],'
+           'AUTHORITY["EPSG","31982"]]')
+    e = L.importar_imagem(g, s, {"arquivo_local": jpg, "nome": "orto.jpg"})
+    assert not e["georreferenciada"]
+    e = L.posicionar_propria(g, s, {"caixa": [0, 0, 40_000, 20_000], "mundo": jgw, "prj": prj})
+    assert e["propria"]["crs"] == "SIRGAS 2000 / UTM 22S"
+    t = e["terreno"]
+    assert t["ponto"] == [20_000, 10_000]                                           # o meio da obra…
+    lat, lon = L.utm_para_geo(E0 + 80, N0 - 60, 22, True)
+    assert abs(t["lat"] - lat) < 1e-5 and abs(t["lon"] - lon) < 1e-5               # …no meio da imagem
+    esperado, achado, _a = _onde_esta(e, g.pasta(s), E0 + 100.02, N0 - 60.02)
+    assert math.dist(esperado, achado) < 2, (esperado, achado)
+    # o .prj em SAD 69: avisa (60–70 m fora)
+    with pytest.raises(L.ErroTerreno, match="SAD 69"):
+        L.posicionar_propria(g, s, {"mundo": jgw, "prj": 'PROJCS["SAD69 / UTM zone 22S"]'})
+    # sem o .prj: pelos números, no fuso da obra
+    e = L.posicionar_propria(g, s, {"mundo": jgw})
+    assert "22S" in e["propria"]["crs"] and math.dist(*_onde_esta(e, g.pasta(s), E0 + 100.02, N0 - 60.02)[:2]) < 2
+
+
+def test_imagem_sem_coordenadas(tmp_path):
+    """A imagem sem coordenadas (um PNG qualquer): precisa do local da obra; entra no meio da obra com a largura dita
+    (ou 1,5 × a obra), sozinha, o norte para cima; mudar a largura mantém o meio."""
+    from PIL import Image
+    g, s = _gerente(tmp_path)
+    png = str(tmp_path / "foto.png")
+    Image.new("RGB", (1200, 800), (90, 90, 200)).save(png)
+    L.importar_imagem(g, s, {"arquivo_local": png, "nome": "foto.png"})
+    with pytest.raises(L.ErroTerreno, match="endereço"):
+        L.posicionar_propria(g, s, {})
+    L.gravar(g, s, {"lat": CASCAVEL[0], "lon": CASCAVEL[1], "ponto": [0, 0], "norte": 0, "caixa": [0, 0, 60_000, 40_000]})
+    e = L.posicionar_propria(g, s, {"caixa": [0, 0, 60_000, 40_000]})
+    assert e["propria"]["modo"] == "sem coordenadas" and e["propria"]["largura_m"] == 90       # 1,5 × 60 m
+    m = e["imagem"]
+    assert m["fonte"] == "Imagem própria (foto.png)" and abs(m["largura"] / m["altura"] - 1.5) < 0.01
+    meio = L.geo_para_modelo(e["terreno"], *L.de_mercator((m["x0"] + m["x1"]) / 2, (m["y0"] + m["y1"]) / 2))
+    assert math.dist(meio, (30_000, 20_000)) < 100                                 # no meio da obra
+    lado = (m["x1"] - m["x0"]) * math.cos(math.radians(CASCAVEL[0]))
+    assert abs(lado - 90) < 0.5
+    e = L.posicionar_propria(g, s, {"largura_m": 120})
+    m = e["imagem"]
+    assert abs((m["x1"] - m["x0"]) * math.cos(math.radians(CASCAVEL[0])) - 120) < 0.5
+    meio2 = L.geo_para_modelo(e["terreno"], *L.de_mercator((m["x0"] + m["x1"]) / 2, (m["y0"] + m["y1"]) / 2))
+    assert math.dist(meio, meio2) < 10                                              # o mesmo meio
+    with pytest.raises(L.ErroTerreno, match="largura"):
+        L.posicionar_propria(g, s, {"largura_m": 2})
+    # o arquivo que não é imagem
+    ruim = tmp_path / "planta.dxf"
+    ruim.write_text("0\nSECTION\n")
+    with pytest.raises(L.ErroTerreno, match="GeoTIFF"):
+        L.importar_imagem(g, s, {"arquivo_local": str(ruim), "nome": "planta.dxf"})
+
+
+def test_projeto_antigo_vira_base(tmp_path, monkeypatch):
+    """O projeto de antes (a imagem do portal só como imagem.jpg, sem base.jpg): ao importar a própria, a antiga vira a
+    base e fica por baixo; o IFC sai com a composta."""
+    monkeypatch.setitem(L.FONTES, "teste", {"nome": "Teste", "tipo": "teste", "zoom_max": 19, "atribuicao": "Teste"})
+    g, s = _gerente(tmp_path)
+    lat, lon = L.utm_para_geo(E0 + 80, N0 - 60, 22, True)
+    L.gravar(g, s, {"lat": lat, "lon": lon, "ponto": [0, 0], "norte": 0, "fonte": "teste"})
+    L.baixar_imagem(g, s, {"caixa": [-30_000, -20_000, 30_000, 20_000]})
+    pasta = os.path.join(g.pasta(s), "terreno")
+    for n in ("base.jpg", "base.json"):
+        os.remove(os.path.join(pasta, n))                                  # como era antes da imagem própria
+    L.importar_imagem(g, s, {"arquivo_local": _ortomosaico(str(tmp_path / "o.tif")), "nome": "o.tif"})
+    e = L.posicionar_propria(g, s, {})
+    assert "sobre Teste" in e["imagem"]["fonte"] and os.path.isfile(os.path.join(pasta, "base.jpg"))
+    tr = L.para_ifc(e["terreno"], e["imagem"], os.path.join(pasta, "imagem.jpg"))
+    assert len(tr["cantos"]) == 4 and tr["mosaico"]
