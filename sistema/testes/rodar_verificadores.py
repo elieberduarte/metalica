@@ -123,14 +123,20 @@ def rodar(caminho):
         if servidor is None:
             return False, time.time() - t0, ["não consegui subir o servidor próprio do verificador"], 0
         cmd += ["--porta", str(servidor[1])]
+    proc = subprocess.Popen(cmd, cwd=RAIZ, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, encoding="utf-8", errors="replace")
     try:
-        r = subprocess.run(cmd, cwd=RAIZ, env=env, capture_output=True,
-                           text=True, encoding="utf-8", errors="replace",
-                           timeout=LIMITES.get(os.path.splitext(os.path.basename(caminho))[0], LIMITE))
-        saida = (r.stdout or "") + (r.stderr or "")
-        codigo = r.returncode
-    except subprocess.TimeoutExpired as e:
-        saida = ((e.stdout or b"").decode("utf-8", "replace") if isinstance(e.stdout, bytes) else (e.stdout or "")) + "\n[tempo esgotado]"
+        out, err = proc.communicate(timeout=LIMITES.get(os.path.splitext(os.path.basename(caminho))[0], LIMITE))
+        saida = (out or "") + (err or "")
+        codigo = proc.returncode
+    except subprocess.TimeoutExpired:
+        # a árvore inteira: o servidor e o Chrome que o verificador subiu ficavam vivos, presos à pasta da cópia limpa,
+        # e a rodada seguinte da noite não conseguia recriá-la (20/10: dois app.py do verif_camera_modelos)
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
+        proc.kill()
+        out, err = proc.communicate()
+        saida = (out or "") + (err or "") + "\n[tempo esgotado]"
         codigo = -1
     finally:
         if servidor:
