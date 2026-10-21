@@ -141,3 +141,33 @@ def test_programa_novo_nao_refaz_os_desenhos(tmp_path, monkeypatch):
     assert pedidos == ["o modelo 3D mudou"]
     dv.gravar_carimbo("p", {"detalhamento-tesouras": "g2"})        # detalhado de novo: com o programa de hoje
     assert dv.programa_novo("p") is False
+
+
+def test_cancelar_a_atualizacao(tmp_path):
+    """Usuário, 21/10: "cliquei para atualizar sem querer, tem como criar um botão para cancelar". A atualização para no
+    próximo passo do cálculo, sem gravar desenho; não recomeça sozinha no mesmo estado da obra; o 3D mudado de novo
+    atualiza como sempre."""
+    g = _Gerente(str(tmp_path))
+    os.makedirs(tmp_path / "p" / "detalhamento")
+    (tmp_path / "p" / "modelo.json").write_text("{}", encoding="utf-8")
+    g.desenhos = [{"nome": "detalhamento-tesouras"}]
+    gravados = []
+
+    def detalhar(s):
+        dv.cancelar(s)                    # o usuário clica no meio do cálculo
+        dv.conferir_cancelamento(s)       # o próximo passo do detalhamento
+        gravados.append(s)                # não chega aqui
+    dv.configurar(gerente=lambda: g, detalhar=detalhar)
+    dv.gravar_carimbo("p", {"detalhamento-tesouras": "g1"})
+    os.utime(tmp_path / "p" / "modelo.json", (1, 1))
+    assert dv.por_que_velho("p") == "o modelo 3D mudou"
+    dv._estado["p"] = {"atualizando": True}
+    dv._rodar("p", "o modelo 3D mudou", False)
+    e = dv.estado("p", conferir=False)
+    assert gravados == [] and e["atualizando"] is False and e["cancelada"] is True and not e.get("erro")
+    assert dv.por_que_velho("p") == ""                        # não recomeça na próxima pergunta da tela
+    assert dv.cancelar("p") is False                          # nada rodando: nada a cancelar
+    os.utime(tmp_path / "p" / "modelo.json", (2, 2))
+    assert dv.por_que_velho("p") == "o modelo 3D mudou"       # mudou de novo: atualiza
+    dv.gravar_carimbo("p", {"detalhamento-tesouras": "g2"})
+    assert dv.estado("p", conferir=False)["cancelada"] is False

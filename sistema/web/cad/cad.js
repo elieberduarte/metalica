@@ -274,7 +274,15 @@ class CAD {
       try { e = await pedir(url); } catch { return; }
       if (e.atualizando && !avisouAtualizando) {
         avisouAtualizando = true;
-        this.aviso(`Atualizando os desenhos de detalhamento${e.motivo ? ` (${e.motivo})` : ''}… a tela recarrega sozinha quando terminar.`, 'info', 12000);
+        // com o Cancelar: para no próximo passo, sem gravar nada (usuário, 21/10: "cliquei para atualizar sem querer")
+        const cancelar = el('button', { type: 'button', texto: 'Cancelar', onclick: async () => {
+          cancelar.disabled = true;
+          try {
+            const r = await postar(`${url}/cancelar`, {});
+            this.aviso(r.cancelando ? 'Cancelando a atualização: os desenhos ficam como estavam.' : 'A atualização já tinha terminado.', 'info', 8000);
+          } catch (err) { cancelar.disabled = false; this.aviso(`Não foi possível cancelar: ${err.message}`, 'erro', 0); }
+        } });
+        this.aviso(el('span', {}, `Atualizando os desenhos de detalhamento${e.motivo ? ` (${e.motivo})` : ''}… a tela recarrega sozinha quando terminar. `, cancelar), 'info', 30000);
         // a atualização roda em segundo plano, sem chamada desta tela: a barra padrão acompanha pelo andamento do projeto
         if (!this._pararVivos) this._pararVivos = this._acompanharProgresso('Atualizando os desenhos: ', 'cad.atualizacao-automatica');
       }

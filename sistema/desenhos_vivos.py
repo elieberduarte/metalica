@@ -158,6 +158,7 @@ def gravar_carimbo(s: str, geracoes: dict = None, completo: bool = True, extra: 
             c.update(carimbo(s))
             c["quando"] = time.strftime("%Y-%m-%d %H:%M:%S")
             c.pop("erro", None)
+            c.pop("cancelada", None)
         c.setdefault("desenhos", {}).update(geracoes or {})
         c.update(extra or {})
         _gravar(s, c)
@@ -204,6 +205,9 @@ def por_que_velho(s: str) -> str:
         # tudo logo depois do Detalhar (P24, primeiro uso 16/10); o carimbo completo chega no fim
         return ""
     agora = carimbo(s)
+    canc = antes.get("cancelada")
+    if canc and all(canc.get(k) == agora.get(k) for k in ("modelo", "ajustes", "eixos")):
+        return ""          # cancelada pelo usuário neste mesmo estado da obra: não recomeça sozinha
     # o código do programa não entra (programa_novo): só o que é da obra
     for chave, motivo in (("modelo", "o modelo 3D mudou"), ("ajustes", "a furação ajustada mudou"),
                           ("eixos", "os eixos mudaram")):
@@ -245,6 +249,7 @@ def estado(s: str, conferir: bool = True) -> dict:
     e["fora_da_maquina_pecas"] = c.get("fora_da_maquina_pecas") or []      # o "Ver no 3D" de cada terça (Q01)
     e["desfeito"] = c.get("desfeito") or None        # o CAD avisa: os desenhos não são do 3D atual (Q02)
     e["pranchas_descartadas"] = c.get("pranchas_descartadas") or []
+    e["cancelada"] = bool(c.get("cancelada")) and not e.get("atualizando")
     try:
         e["programa_novo"] = not e.get("atualizando") and programa_novo(s)
     except Exception:                                           # noqa: BLE001 — conferir nunca derruba a tela
@@ -268,11 +273,39 @@ def atualizar(s: str, motivo: str = "pedido", so_pranchas: bool = False) -> bool
     return True
 
 
+class Cancelada(BaseException):
+    """A atualização em segundo plano cancelada pelo usuário (o Cancelar do aviso no CAD; usuário, 21/10: "cliquei para
+    atualizar sem querer, tem como criar um botão para cancelar"). BaseException: os `except Exception` do detalhamento
+    (o que segue sem uma parte) não a engolem."""
+
+
+def cancelar(s: str) -> bool:
+    """Pede o fim da atualização do projeto: ela para no próximo passo do cálculo, antes de gravar desenho algum (a
+    gravação não confere — nada fica pela metade). Devolve se havia o que cancelar."""
+    with _trava:
+        e = _estado.get(s)
+        if not e or not e.get("atualizando"):
+            return False
+        e["cancelar"] = True
+        e["de_novo"] = False
+        e["etapa"] = "cancelando…"
+    return True
+
+
+def conferir_cancelamento(s: str):
+    """o detalhamento automático chama a cada passo (o avisar do progresso): cancelada, sai com Cancelada"""
+    with _trava:
+        if (_estado.get(s) or {}).get("cancelar"):
+            raise Cancelada("atualização cancelada")
+
+
 def _rodar(s: str, motivo: str, so_pranchas: bool):
     erro = ""
     try:
+        conferir_cancelamento(s)
         if not so_pranchas:
             _funcoes["detalhar"](s)          # grava o carimbo, com a geração dos desenhos
+        conferir_cancelamento(s)
         if _funcoes.get("pranchas"):
             _funcoes["pranchas"](s)          # refaz o desenho das pranchas, se houver, e registra a geração
         if not so_pranchas and _funcoes.get("resumos"):
@@ -285,6 +318,17 @@ def _rodar(s: str, motivo: str, so_pranchas: bool):
                 _funcoes["resumos"](s)
             except Exception:                                   # noqa: BLE001
                 traceback.print_exc()
+    except Cancelada:
+        # os desenhos ficam os de antes; o carimbo guarda o estado da obra em que foi cancelada, para a próxima
+        # pergunta da tela não recomeçar na hora (por_que_velho) — uma mudança nova da obra atualiza como sempre
+        try:
+            agora = carimbo(s)
+            gravar_carimbo(s, completo=False, extra={"cancelada": {k: agora.get(k) for k in ("modelo", "ajustes", "eixos")}})
+        except Exception:                                       # noqa: BLE001
+            pass
+        with _trava:
+            _estado[s] = {"atualizando": False, "motivo": motivo, "fim": time.time(), "erro": "", "cancelada": True}
+        return
     except Exception as exc:                                    # noqa: BLE001 — fica no estado para a tela
         erro = str(exc) or exc.__class__.__name__
         traceback.print_exc()

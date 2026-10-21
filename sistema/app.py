@@ -1323,7 +1323,9 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
                  rotular=bool(corpo.get("rotular", False)),
                  converter=False, ajustes=_ajustes_furos(s),
                  nomes=_nomes_producao(s), eixos=g.ler(s).get("eixos"),
-                 avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
+                 # a atualização em segundo plano para no próximo passo quando o usuário cancela (o Cancelar do CAD)
+                 avisar=lambda *a: (automatico and _vivos().conferir_cancelamento(s),
+                                    _progresso(s, " ".join(str(x) for x in a))))
     r["convertidas"] = padr3d["convertidas"]
     # o que a regra de fábrica fez: agora no 3D (o desenho não tem regra própria) — a tela e o relatório mostram
     r["regra_tercas"] = {m: ("padrão de fábrica gravado no 3D" if gravar else "padrão de fábrica pendente no 3D")
@@ -6153,6 +6155,8 @@ class Handler(BaseHTTPRequestHandler):
                 if len(partes) == 3 and partes[1] == "desenhos-vivos" and partes[2] == "atualizar":
                     _vivos().atualizar(partes[0], "pedido na tela")
                     return self._json(_vivos().estado(partes[0], conferir=False))
+                if len(partes) == 3 and partes[1] == "desenhos-vivos" and partes[2] == "cancelar":
+                    return self._json(dict(_vivos().estado(partes[0], conferir=False), cancelando=_vivos().cancelar(partes[0])))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "dxf":
                     return self._json(exportar_desenho_dxf(partes[0], partes[2], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "pdf":
