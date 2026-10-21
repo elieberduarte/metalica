@@ -673,6 +673,7 @@ async function iniciar() {
   $('#btn-novo').addEventListener('click', novoProjeto);
   $('#btn-novo-ifc').addEventListener('click', novoDeIFC);
   $('#btn-importar-pacote').addEventListener('click', importarPacote);
+  $('#btn-importar-pacote-vazio').addEventListener('click', importarPacote);   // a lista vazia também importa (21/10)
   $('#btn-novo-cad').addEventListener('click', novoProjetoPeloCad);
   $('#btn-pasta').addEventListener('click', () => abrirPasta(null));
   $('#busca').addEventListener('input', desenhar);

@@ -169,6 +169,31 @@ try:
     aba.avaliar("window.confirm = () => true; [...document.querySelectorAll('.obra-recebida button')].find(b => b.textContent === 'Recusar').click(); 1")
     ok(esperar(aba, "document.querySelectorAll('.obra-recebida').length === 0", 20) and NUVEM["envios"][1]["estado"] == "recusar",
        "Recusar tira o aviso e a obra da nuvem")
+    # sem nenhum projeto (o Andrey, 21/10: "aparece essa tela para ele, e não tem também a opção de importar pacote"): o
+    # aviso da obra recebida aparece na tela vazia, Abrir funciona, e a tela vazia tem o Importar pacote…
+    vazio = tempfile.mkdtemp(prefix="metalica_compartilhar_vazio_")
+    porta2 = _porta_livre()
+    srv2 = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--sem-navegador", "--porta", str(porta2), "--dados", vazio],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=amb)
+    try:
+        for _ in range(60):
+            try: _json(f"http://localhost:{porta2}/api/versao"); break
+            except Exception: time.sleep(0.5)
+        NUVEM["eu"] = "A"
+        NUVEM["envios"].append(dict(NUVEM["envios"][0], id=len(NUVEM["envios"]) + 1, estado="pendente"))
+        NUVEM["eu"] = "B"
+        aba.navegar(f"http://localhost:{porta2}/", limite=60)
+        ok(esperar(aba, "!document.getElementById('vazio').hidden", 20), "a tela vazia (nenhum projeto)")
+        ok(aba.avaliar("(() => { const b = document.getElementById('btn-importar-pacote-vazio'); return !!b && b.offsetParent !== null; })()"),
+           "a tela vazia tem o Importar pacote…")
+        ok(esperar(aba, "(() => { const a = document.querySelector('.obra-recebida'); return !!a && a.offsetParent !== null; })()", 20),
+           "o aviso da obra recebida aparece na tela vazia")
+        foto(aba, "compartilhar_3_vazio.png")
+        aba.avaliar("[...document.querySelectorAll('.obra-recebida button')].find(b => b.textContent === 'Abrir').click(); 1")
+        ok(esperar(aba, "document.querySelectorAll('.cartao').length === 1 && document.getElementById('vazio').hidden", 40),
+           "Abrir na tela vazia: a obra vira o primeiro projeto")
+    finally:
+        srv2.kill(); time.sleep(0.5); shutil.rmtree(vazio, ignore_errors=True)
     erros = [x for x in aba.console if x[0] in ("error", "excecao") and "favicon" not in str(x)]
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:
