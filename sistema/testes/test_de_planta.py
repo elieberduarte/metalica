@@ -959,3 +959,17 @@ def test_ponta_da_trelica_que_chega_vista_de_lado_sai():
     _barra_pt(doc2, pecas2, (0, 0, 6000), (0, 10000, 6000), "U 150×70×4,75 (FF)", "banzo", "TR#1")
     u = _barra_pt(doc2, pecas2, (0, 5112, 6000), (0, 5112, 6720), "U 150×70×4,75 (FF)", "montante", "TR#1")
     assert de_planta._pontas_vistas_de_lado(pecas2, doc2) == [] and u.id in doc2.entidades
+
+
+def test_deslocar_leva_o_eixo_do_banzo_calandrado_junto():
+    """Posto V2 (21/10/2026): o banzo calandrado do PAINEL 10 tinha os vértices perto da origem e o eixo guardado
+    (`banzo.eixo`, o que o encaixe e as regras usam) a 373 m, nas coordenadas do desenho do cliente."""
+    from nucleo3d.modelo import Solido
+    sol = Solido(vertices=[(385942.0, 79226.0, 7530.0), (392048.0, 81998.0, 7570.0)], faces=[],
+                 atributos={"eixo": [[1.0, 2.0, 3.0]], "banzo": {"perfil": "U 100×40×2,25 (FF)", "eixo": [[385942.0, 79226.0, 7550.0], [392048.0, 81998.0, 7550.0]]}})
+    b = Barra(inicio=(385000.0, 79000.0, 6000.0), fim=(386000.0, 79000.0, 6000.0), perfil="U 100×40×2,25 (FF)")
+    de_planta._deslocar_pecas([sol, b], [], (-373000.0, -46000.0))
+    assert sol.vertices[0][:2] == (12942.0, 33226.0)
+    assert sol.atributos["banzo"]["eixo"][0][:2] == [12942.0, 33226.0] and sol.atributos["banzo"]["eixo"][1][2] == 7550.0
+    assert sol.atributos["eixo"][0][:2] == [-372999.0, -45998.0]
+    assert b.inicio[:2] == (12000.0, 33000.0)

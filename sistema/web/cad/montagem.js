@@ -544,6 +544,7 @@ class Montagem {
     ctx.restore();
     this._desenharSombras();
     this._desenharSelecaoPerfis();
+    if (this._desenharLigacao3d) this._desenharLigacao3d();
     this._controles(ret);
   }
 

@@ -2298,6 +2298,29 @@ def _tirar_repetidas(pecas: List[dict], doc) -> List[dict]:
     return tirar
 
 
+def _deslocar_pecas(ents, chapas, desl) -> None:
+    """Leva as peças para perto da origem (o canto da planta no zero): a barra pelas pontas, o sólido pelos vértices e
+    pelos eixos que ele guarda — o da viga calandrada (`eixo`) e o do banzo calandrado da treliça (`banzo.eixo`, o que o
+    encaixe da alma e as regras usam). Até 21/10/2026 o do banzo ficava nas coordenadas do desenho do cliente (a 373 m
+    no Posto CB): no modelo gravado, o "Corrigir pelas regras" e a reanálise não achavam o banzo curvo dos painéis."""
+    def mover(pts):
+        return [[round(v[0] + desl[0], 1), round(v[1] + desl[1], 1), v[2]] for v in pts]
+    for e in ents:
+        if e.tipo == "barra":
+            e.inicio = (e.inicio[0] + desl[0], e.inicio[1] + desl[1], e.inicio[2])
+            e.fim = (e.fim[0] + desl[0], e.fim[1] + desl[1], e.fim[2])
+            continue
+        e.vertices = [(v[0] + desl[0], v[1] + desl[1], v[2]) for v in e.vertices]
+        at = e.atributos or {}
+        if at.get("eixo"):
+            at["eixo"] = mover(at["eixo"])
+        bz = at.get("banzo")
+        if isinstance(bz, dict) and bz.get("eixo"):
+            bz["eixo"] = mover(bz["eixo"])
+    for ch in chapas:
+        ch.origem = (ch.origem[0] + desl[0], ch.origem[1] + desl[1], ch.origem[2])
+
+
 #: mm: o montante U a menos disto (em planta) do montante de ponta da treliça que chega é a ponta dela, vista de lado
 PONTA_EM_VISTA = 250.0
 
@@ -4971,17 +4994,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     desl = (0.0, 0.0)
     if xs and par.get("origem", True):
         desl = (-math.floor(min(xs) / 1000.0) * 1000.0, -math.floor(min(ys) / 1000.0) * 1000.0)
-        for p in pecas:
-            e = p["ent"]
-            if e.tipo == "barra":
-                e.inicio = (e.inicio[0] + desl[0], e.inicio[1] + desl[1], e.inicio[2])
-                e.fim = (e.fim[0] + desl[0], e.fim[1] + desl[1], e.fim[2])
-            else:
-                e.vertices = [(v[0] + desl[0], v[1] + desl[1], v[2]) for v in e.vertices]
-                if (e.atributos or {}).get("eixo"):
-                    e.atributos["eixo"] = [[round(v[0] + desl[0], 1), round(v[1] + desl[1], 1), v[2]] for v in e.atributos["eixo"]]
-        for ch in chapas_postas:
-            ch.origem = (ch.origem[0] + desl[0], ch.origem[1] + desl[1], ch.origem[2])
+        _deslocar_pecas([p["ent"] for p in pecas], chapas_postas, desl)
 
     # ---------------------------------------------------------------- marcas
     grupos: Dict[tuple, List[dict]] = collections.defaultdict(list)

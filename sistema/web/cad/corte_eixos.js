@@ -68,13 +68,24 @@ export class MetodosCorteEixos {
     const doc = (d && d.documento) || d || {};             // a rota entrega {documento, …}
     const ents = Array.isArray(doc.entidades) ? doc.entidades : Object.values(doc.entidades || {});
     const barras = [];
+    // a planta de cada peça (a ligação com o 3D desenha a escolhida no quadro da Implantação): a barra pelas pontas, o
+    // sólido calandrado pelo eixo que ele guarda (o banzo curvo dos painéis, a viga curva)
+    const planta = new Map();
+    for (const e of ents) {
+      if (e.tipo === 'barra' && e.inicio && e.fim) planta.set(e.id, [e.inicio, e.fim]);
+      else if (e.tipo === 'solido') {
+        const a = e.atributos || {};
+        const eixo = (a.banzo && a.banzo.eixo) || a.eixo;
+        if (Array.isArray(eixo) && eixo.length > 1) planta.set(e.id, eixo);
+      }
+    }
     for (const e of ents) {
       if (e.tipo !== 'barra' || !e.inicio || !e.fim || FORA_DO_CORTE.has(e.papel)) continue;
       const o = (e.atributos || {}).origem || {};
       barras.push({ id: e.id, a: e.inicio, b: e.fim, papel: e.papel || '', perfil: e.perfil || '',
         nome: String(o.planta || o.peca || '').split('#')[0], peca: o.peca || '', sigla: o.sigla || (e.atributos || {}).sigla || '' });
     }
-    this._modelo3d = { projeto: p, barras };
+    this._modelo3d = { projeto: p, barras, planta };
     return this._modelo3d;
   }
 
@@ -448,7 +459,9 @@ export class MetodosCorteEixos {
       trecho = [[Math.min(a[0], b[0]), Math.min(a[1], b[1])], [Math.max(a[0], b[0]), Math.max(a[1], b[1])]];
     }
     const nome = (msg.nomes || []).length === 1 ? msg.nomes[0] : `${msg.n} peça(s)`;
-    this._ligacao3d = { nome, trecho, cortes: cortes.map(c => ({ id: c.q.id, nome: c.q.linha ? `Linha ${c.q.eixo}` : `Elevação ${c.q.eixo}`, ents: c.ents })) };
+    // as peças, para desenhar em planta na Implantação (o modelo é lido uma vez; até lá, só a caixa)
+    if (!this._modelo3d) this._carregarModelo3d().then(() => this.cad.tela.pedirQuadro());
+    this._ligacao3d = { nome, trecho, ids: [...ids], cortes: cortes.map(c => ({ id: c.q.id, nome: c.q.linha ? `Linha ${c.q.eixo}` : `Elevação ${c.q.eixo}`, ents: c.ents })) };
     if (!trecho && !cortes.length) {
       this.limparLigacao3d();
       this.cad.dica(`${nome}: não aparece nos quadros da Montagem (sem implantação e sem corte com essas peças).`);
@@ -490,6 +503,27 @@ export class MetodosCorteEixos {
     tela.pedirQuadro();
   }
 
+  /** As peças escolhidas no 3D, em planta, no quadro da Implantação (laranja, por cima): o trecho mostra a peça e não só
+   *  a caixa — o perfil curvo do PAINEL 10 caía num trecho da implantação sem nada desenhado (usuário, 21/10/2026). */
+  _desenharLigacao3d() {
+    const L = this._ligacao3d, mod = this._modelo3d, qi = this._quadroImplantacao();
+    if (!L || !mod || !mod.planta || !qi || !qi.mapa || !(L.ids || []).length) return;
+    const tela = this.cad.tela, ctx = tela.ctx;
+    ctx.save();
+    ctx.setLineDash([]); ctx.lineWidth = 2.5; ctx.strokeStyle = '#ea580c'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    let n = 0;
+    for (const id of L.ids) {
+      const pts = mod.planta.get(id);
+      if (!pts) continue;
+      pts.forEach((r, i) => { const [x, y] = tela.paraTela(this._paraPapel(qi, r)); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+      n++;
+    }
+    if (n) ctx.stroke();
+    ctx.restore();
+    L.desenhadas = n;
+  }
+
   /** O quadrinho no alto do 2D: o nome do que se escolheu no 3D, o trecho e os cortes (o atual marcado). */
   _chipLigacao3d() {
     const L = this._ligacao3d;
@@ -503,7 +537,8 @@ export class MetodosCorteEixos {
       onclick: (ev) => { ev.stopPropagation(); this._mostrarLigacao3d(qual); } }, rot);
     chip.replaceChildren(
       el('b', { title: 'O que está escolhido no 3D ao lado' }, L.nome),
-      L.trecho ? botao('Trecho na implantação', 'trecho', 'A caixa em planta do que se escolheu no 3D, no quadro da Implantação') : null,
+      L.trecho ? botao('Trecho na implantação', 'trecho', 'O que se escolheu no 3D, em planta (laranja), no quadro da Implantação') : null,
+      L.cortes.length ? null : el('span', { class: 'sem-corte', title: 'A peça não está no plano de nenhuma elevação nem atravessa uma (a peça curva, a deitada)' }, 'sem corte nas elevações'),
       ...L.cortes.map((c, i) => botao(`Corte: ${c.nome}`, i, `As peças no corte do 3D da ${c.nome} (marcadas)`)),
       el('button', { type: 'button', class: 'fechar', title: 'Fechar (a seleção do 3D continua)', onclick: (ev) => { ev.stopPropagation(); this.limparLigacao3d(); } }, '×'));
   }

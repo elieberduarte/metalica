@@ -136,6 +136,9 @@ try:
         const dentro = meio[0] >= qi.x && meio[0] <= qi.x + qi.w && meio[1] <= qi.y && meio[1] >= qi.y - qi.h;
         return [dentro, Math.round(real[0]), Math.round(real[1])]; }})()""")
     ok(r and r[0] and abs(r[1] - 6000) < 300 and abs(r[2] - 5000) < 800, f"o trecho na Implantação, em x = 6 m ({r})")
+    # a peça desenhada em planta no trecho (não só a caixa vazia): as barras da TESOURA 1, em laranja
+    des = esperar(aba, f"(() => {{ const w = {F2}; w.cad.tela.desenhar(); return (w.montagem._ligacao3d || {{}}).desenhadas || 0; }})()", 10)
+    ok(des and des >= 5, f"a TESOURA 1 desenhada em planta no trecho da Implantação ({des} peça(s))")
 
     # 5. do 2D para o 3D: uma linha do corte da TESOURA 2 seleciona a peça dela no 3D
     aba.avaliar(f"""(() => {{ const w = {F2}; const e = [...w.cad.doc.entidades.values()].find(x => (x.atributos||{{}}).peca === 'TESOURA 2' && (x.atributos||{{}}).id3d && x.tipo === 'linha');
@@ -158,9 +161,10 @@ try:
         w.cad.tela.enquadrar([[q.x, q.y - q.h * 0.3], [q.x + q.w * 0.3, q.y]]); w.cad.tela.desenhar();
         const W = w.cad.tela.largura, H = w.cad.tela.altura; let fora = 0, mostrando = 0;
         for (const x of M.m.quadros) {{ const a = w.cad.tela.paraTela([x.x, x.y]), b = w.cad.tela.paraTela([x.x + x.w, x.y - x.h]);
-          if (a[0] > W + 40 || a[1] > H + 40 || b[0] < -40 || b[1] < -40) {{ fora++; const c = M.camada.querySelector(`[data-quadro="${{x.id}}"]`); if (c && !c.hidden) mostrando++; }} }}
+          if (a[0] > W + 40 || a[1] > H + 40 || b[0] < -40 || b[1] < -40) {{ fora++; const c = M.camada.querySelector(`[data-quadro="${{x.id}}"]`);
+            if (c && w.getComputedStyle(c).display !== 'none') mostrando++; }} }}
         return [fora, mostrando]; }})()""")
-    ok(r and r[0] >= 3 and r[1] == 0, f"com zoom, os títulos dos quadros fora da vista escondidos ({r})")
+    ok(r and r[0] >= 3 and r[1] == 0, f"com zoom, os títulos dos quadros fora da vista somem da tela (display none: o display do título vencia o hidden e eles ficavam parados na frente do desenho) ({r})")
 
     erros = [c for c in aba.console if c[0] in ("excecao", "error")]
     ok(not erros, f"sem erro no console ({erros[:3]})")

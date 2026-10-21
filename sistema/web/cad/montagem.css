@@ -3,6 +3,9 @@
 
 .montagem-quadros { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 3; }
 .montagem-quadros[hidden] { display: none; }
+/* o que a montagem esconde (o título do quadro fora da vista, pequeno demais…) some de verdade: o display de cada um
+   (flex, block) vencia o [hidden] e os títulos ficavam parados na frente do desenho (21/10/2026) */
+.montagem-quadros [hidden] { display: none !important; }
 
 .quadro-titulo {
   position: absolute; pointer-events: auto; display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;
@@ -226,4 +229,5 @@ body.arrastando-quadro, body.arrastando-quadro * { cursor: nwse-resize !importan
   color: var(--texto); background: var(--campo-fundo); border: 1px solid var(--campo-borda);
 }
 .ligacao-3d button.on { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+.ligacao-3d .sem-corte { font-size: 11px; color: var(--texto2, #64748b); padding: 0 4px; }
 .ligacao-3d button.fechar { border: 0; background: transparent; font-size: 14px; line-height: 1; padding: 0 4px; }
