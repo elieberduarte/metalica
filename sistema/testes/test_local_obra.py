@@ -261,6 +261,45 @@ def test_ortofoto_do_drone_de_cascavel_e_a_reserva(tmp_path):
     assert 0.3 < vermelho[0] / sum(vermelho) < 0.7                     # metade drone, metade reserva
 
 
+def test_drone_so_no_dev():
+    """O drone de Cascavel só no desenvolvimento (21/10, o usuário: "deixe o drone de Cascavel apenas para a versão dev"):
+    no instalado ele sai da lista de fontes, o GetMap da camada dele vira a ortofoto 2021, e a obra que já o escolheu
+    (enviada de quem tem o dev) abre e baixa pela 2021, sem erro."""
+    import subprocess
+    codigo = """
+import json, sys, tempfile
+sys.path.insert(0, %r)
+from saida import local_obra as L
+from projetos import Projetos
+base = {"lat": -24.93, "lon": -53.43, "ponto": [0, 0]}
+g = Projetos(tempfile.mkdtemp()); r = g.criar("T"); s = r.get("slug") or r.get("id")
+g.tocar(s, terreno=dict(base, norte=0, fonte="cascavel-drone"))      # gravada no dev, aberta no instalado
+pedidos = []
+def baixar(u):
+    pedidos.append(u)
+    return open(%r, "rb").read()
+e = L.baixar_imagem(g, s, {"caixa": [-5000, -5000, 5000, 5000]}, baixar=baixar)
+print(json.dumps({"fontes": sorted(L.FONTES), "validar": L.validar(dict(base, fonte="cascavel-drone"))["fonte"],
+                  "colado": L.validar(dict(base, fonte={"tipo": "wms", "url": "https://geoserver.cascavel.pr.gov.br:8181/geoserver/wms?LAYERS=ctmgeo_22s:ortofoto_bairros_2018"}))["fonte"],
+                  "camadas": sorted({u.split("LAYERS=")[1].split("&")[0] for u in pedidos}), "imagem": e["imagem"]["fonte"]}))
+"""
+    import tempfile as _t
+    png = os.path.join(_t.mkdtemp(), "b.png")
+    open(png, "wb").write(_png_ruido())
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for dev, drone in (("0", False), ("1", True)):
+        r = subprocess.run([sys.executable, "-c", codigo % (raiz, png)], capture_output=True, text=True,
+                           env=dict(os.environ, METALICA_TERRENO_DEV=dev), timeout=120)
+        assert r.returncode == 0, r.stderr[-2000:]
+        o = json.loads(r.stdout.strip().splitlines()[-1])
+        assert ("cascavel-drone" in o["fontes"]) is drone and "cascavel" in o["fontes"]
+        if drone:
+            assert o["validar"] == o["colado"] == "cascavel-drone" and o["camadas"] == ["ctmgeo_22s%3Aortofoto_bairros_2018"]
+        else:
+            assert o["validar"] == o["colado"] == "cascavel" and o["camadas"] == ["ctmgeo_22s%3ACASCAVEL"]
+            assert o["imagem"].startswith("Ortofoto 2021")
+
+
 @pytest.mark.parametrize("colado,esperado", [
     # o usuário colou o link da página do geoportal de Cascavel e a camada ficou em branco (20/10): a fonte pronta
     ("https://geocascavel.cascavel.pr.gov.br/geo-view/selecionar/empresa-1.ctm?redirect=https://geocascavel.cascavel.pr.gov"

@@ -23,6 +23,7 @@ import json
 import math
 import os
 import re
+import sys
 import time
 import urllib.parse
 import urllib.request
@@ -64,6 +65,12 @@ FONTES = {
                "srs": "EPSG:3857", "formato": "image/png",
                "atribuicao": "Ortofoto: Prefeitura de Toledo — Maptriz Smart City / DRZ"},
 }
+# só no desenvolvimento (21/10, o usuário: "deixe o drone de Cascavel apenas para a versão dev"): no instalado sai da lista,
+# e a obra que já o escolheu (enviada a outro usuário, por exemplo) usa a reserva; METALICA_TERRENO_DEV=0/1 força
+SO_DEV = {"cascavel-drone": "cascavel"}
+if os.environ.get("METALICA_TERRENO_DEV", "0" if getattr(sys, "frozen", False) else "1") != "1":
+    for _k in SO_DEV:
+        FONTES.pop(_k, None)
 # a fonte falsa dos testes (sem internet): quadriculado com o número de cada bloco
 if os.environ.get("METALICA_TERRENO_FALSO") == "1":
     FONTES["teste"] = {"nome": "Teste (sem internet)", "tipo": "teste", "zoom_max": 19, "atribuicao": "Imagem de teste"}
@@ -191,6 +198,8 @@ def validar(t: dict) -> dict:
                                            str(fonte.get("nome") or ""))
     elif fonte in FONTES:
         saida["fonte"] = fonte
+    elif SO_DEV.get(fonte) in FONTES:
+        saida["fonte"] = SO_DEV[fonte]                     # a fonte do dev no instalado: a reserva dela
     else:
         raise ErroTerreno("fonte de imagem desconhecida: %s" % fonte)
     if isinstance(t.get("caixa"), list) and len(t["caixa"]) == 4:
@@ -212,7 +221,8 @@ def fonte_do_endereco(url: str, camada: str = "", nome: str = "") -> dict:
     host = urllib.parse.urlsplit(url).netloc
     if host.split(":")[0].endswith("cascavel.pr.gov.br") and not camada.strip():
         # qualquer link do geoportal (a página, o lote, o GetMap); o GetMap da camada do drone, a fonte do drone
-        return "cascavel-drone" if "ortofoto_bairros" in urllib.parse.unquote(url).lower() else "cascavel"
+        drone = "ortofoto_bairros" in urllib.parse.unquote(url).lower() and "cascavel-drone" in FONTES
+        return "cascavel-drone" if drone else "cascavel"
     if host.split(":")[0] == "plataforma.nacidade.com.br" and "geoserver" not in url:
         # o geoportal "nacidade" (CTM) de várias cidades (Toledo, Palotina, Guaíra, Cianorte…): o link da página vira o
         # GeoServer dele; a camada (a ortofoto da cidade da obra) se acha pelo lugar ao baixar
@@ -595,7 +605,7 @@ def baixar_imagem(g, s: str, corpo: Optional[dict] = None, progresso: Callable =
         g.tocar(s, terreno=t)
     caixa = t.get("caixa") or [t["ponto"][0] - 20000, t["ponto"][1] - 20000, t["ponto"][0] + 20000, t["ponto"][1] + 20000]
     fonte = t.get("fonte") or "esri"
-    cfg = fonte if isinstance(fonte, dict) else FONTES.get(fonte)
+    cfg = fonte if isinstance(fonte, dict) else (FONTES.get(fonte) or FONTES.get(SO_DEV.get(fonte, "")))
     if not cfg:
         raise ErroTerreno("fonte de imagem desconhecida: %s" % fonte)
     reg = regiao(t, caixa)
