@@ -1831,10 +1831,78 @@ def paginas_de(d: Desenho, margem: float = 10.0) -> List[tuple]:
     return [((bx1 - bx0) / k + 2 * margem, (by1 - by0) / k + 2 * margem, k, bx0 - margem * k, by0 - margem * k)]
 
 
+def sincronizar_folhas(d: Desenho) -> dict:
+    """As folhas do desenho das pranchas pelo que está nele, não pelo que a montagem gravou: a folha apagada no CAD (a
+    moldura dela sumiu) sai de `metadados.pranchas`, a folha movida fica com a origem da moldura, a numeração e o
+    "PRANCHA nn/tt" do carimbo seguem a ordem da esquerda para a direita, e cada entidade fica com o `prancha_numero` da
+    folha em que está desenhada. Vicente Residence, 21/10 (usuário: "está saindo várias folhas em branco"): a folha 4
+    foi apagada e as seguintes encostadas à mão, e o PDF recortava as páginas nos lugares de antes — a 4 com o fundo da
+    outra, da 5 à 10 em branco.
+
+    Devolve {"removidas": [títulos], "fora": [o que ficou fora de toda folha — o título da célula ou a quantidade]}.
+    Desenho sem as molduras identificadas (de antes da `folha` na moldura) fica como está."""
+    infos = d.metadados.get("pranchas")
+    out = {"removidas": [], "fora": []}
+    if not infos:
+        return out
+    pontos: Dict[str, list] = {}
+    for e in d.entidades.values():
+        a = e.atributos or {}
+        if a.get("prancha") == "moldura" and a.get("folha"):
+            pts = e.pontos()
+            if pts:
+                pontos.setdefault(str(a["folha"]), []).extend(pts)
+    if not pontos:
+        return out
+    novas = []
+    for f in infos:
+        pts = pontos.get(str(f.get("folha") or ""))
+        if f.get("folha") and pts is None:
+            out["removidas"].append(str(f.get("titulo") or f.get("numero") or ""))
+            continue
+        if pts and f.get("formato") in FOLHAS:
+            f["origem"] = [round(min(q[0] for q in pts), 2), round(min(q[1] for q in pts), 2)]
+        novas.append(f)
+    novas.sort(key=lambda f: (round(-float((f.get("origem") or [0, 0])[1]) / 100.0), float((f.get("origem") or [0, 0])[0])))
+    antigo = {}
+    for k, f in enumerate(novas, 1):
+        antigo[int(f.get("numero") or 0)] = k
+        f["numero"], f["total"] = k, len(novas)
+    d.metadados["pranchas"] = novas
+    caixas = []
+    for f in novas:
+        o = f.get("origem") or [0.0, 0.0]
+        larg, alt = FOLHAS.get(f.get("formato"), (0.0, 0.0))
+        caixas.append((float(o[0]), float(o[1]), float(o[0]) + larg, float(o[1]) + alt, f))
+    por_folha = {str(f.get("folha")): f for f in novas if f.get("folha")}
+    fora_titulos, n_fora = [], 0
+    for e in d.entidades.values():
+        a = e.atributos or {}
+        f = por_folha.get(str(a.get("folha") or "")) if a.get("prancha") == "moldura" else None
+        if f is None:
+            pts = e.pontos()
+            if not pts:
+                continue
+            cx = sum(q[0] for q in pts) / len(pts)
+            cy = sum(q[1] for q in pts) / len(pts)
+            f = next((c[4] for c in caixas if c[0] - 1e-6 <= cx <= c[2] + 1e-6 and c[1] - 1e-6 <= cy <= c[3] + 1e-6), None)
+        if f is None:
+            n_fora += 1
+            if isinstance(e, Texto) and a.get("cabecalho") == 0 and e.texto:
+                fora_titulos.append(str(e.texto))
+            continue
+        e.atributos = dict(a, prancha_numero=f["numero"])
+        if isinstance(e, Texto) and a.get("prancha") == "moldura" and a.get("campo") == "prancha":
+            e.texto = re.sub(r"PRANCHA \d+/\d+", "PRANCHA %02d/%02d" % (f["numero"], f["total"]), str(e.texto or ""))
+    if n_fora:
+        out["fora"] = fora_titulos or ["%d objeto(s)" % n_fora]
+    return out
+
+
 def _por_folha(d: Desenho) -> List[Desenho]:
-    """O desenho das pranchas lado a lado repartido por folha, na ordem de `metadados.pranchas`:
-    pelo `prancha_numero` das entidades; o que não tem (acrescentado à mão no CAD) vai pela folha
-    em que o centro dele cai."""
+    """O desenho das pranchas lado a lado repartido por folha, na ordem de `metadados.pranchas`: pela folha em que o
+    centro da entidade cai (a folha movida no CAD leva o que está nela); o que cai fora de todas (o texto que passa da
+    borda) vai pelo `prancha_numero`."""
     folhas = [f for f in d.metadados.get("pranchas") or [] if f.get("formato") in FOLHAS]
     partes, caixas = [], []
     for f in folhas:
@@ -1846,16 +1914,16 @@ def _por_folha(d: Desenho) -> List[Desenho]:
         caixas.append((float(o[0]), float(o[1]), float(o[0]) + larg, float(o[1]) + alt))
     por_num = {int(f.get("numero") or 0): i for i, f in enumerate(folhas)}
     for e in d.entidades.values():
-        n = (e.atributos or {}).get("prancha_numero")
-        i = por_num.get(int(n)) if n is not None else None
-        if i is None:
-            pts = e.pontos()
-            if not pts:
-                continue
+        pts = e.pontos()
+        i = None
+        if pts:
             cx = sum(q[0] for q in pts) / len(pts)
             cy = sum(q[1] for q in pts) / len(pts)
             i = next((j for j, (x0, y0, x1, y1) in enumerate(caixas)
                       if x0 - 1e-6 <= cx <= x1 + 1e-6 and y0 - 1e-6 <= cy <= y1 + 1e-6), None)
+        if i is None:
+            n = (e.atributos or {}).get("prancha_numero")
+            i = por_num.get(int(n)) if n is not None else None
             if i is None:
                 continue
         partes[i].add(e)
@@ -2979,7 +3047,7 @@ def _preencher_solidas(d: Desenho, ax):
 
 
 def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: float = 10.0,
-                     so: Optional[Sequence[int]] = None) -> str:
+                     so: Optional[Sequence[int]] = None, avisos: Optional[List[str]] = None) -> str:
     """PDF vetorial, uma página por desenho, no tamanho real do papel.
 
     Prancha (escala 1, `metadados.prancha`) sai na folha do seu formato; qualquer outro
@@ -2989,7 +3057,10 @@ def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: floa
     tamanho da página vezes a escala — 1 mm no papel é 1 mm impresso.
 
     `so`: só essas páginas, contadas de 0 em todos os desenhos, na ordem de `paginas_de` (a impressão
-    das folhas marcadas, saida/impressao.py) — a folha que fica de fora nem é desenhada."""
+    das folhas marcadas, saida/impressao.py) — a folha que fica de fora nem é desenhada.
+
+    O desenho das pranchas sai pelas folhas que estão nele (`sincronizar_folhas`: a apagada no CAD sai, a movida leva o
+    que está nela); `avisos` recebe o que mudou e o que ficou fora de toda folha (não sai no PDF)."""
     import os
     import tempfile
     import matplotlib
@@ -3001,6 +3072,16 @@ def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: floa
     from nucleo2d.detalhe.base import CAMADAS_PECAS
     escolhidas = None if so is None else set(int(n) for n in so)
     contadas = 0
+    for d in desenhos:
+        sinc = sincronizar_folhas(d)
+        if avisos is not None:
+            if sinc["removidas"]:
+                avisos.append("%d folha(s) apagada(s) no desenho das pranchas não saem (%s); as outras foram renumeradas — o "
+                              "índice da primeira prancha ainda lista as de antes: monte as pranchas de novo para refazê-lo"
+                              % (len(sinc["removidas"]), ", ".join(sinc["removidas"][:5])))
+            if sinc["fora"]:
+                avisos.append("fora de todas as folhas, não sai no PDF: %s — ponha dentro de uma folha (ou monte as pranchas "
+                              "de novo)" % ", ".join(sinc["fora"][:10]))
     with PdfPages(caminho_pdf) as pdf, tempfile.TemporaryDirectory() as tmp:
         for i, d in enumerate(desenhos):
             paginas = paginas_de(d, margem)

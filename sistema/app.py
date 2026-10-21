@@ -4723,9 +4723,13 @@ def exportar_desenho_pdf(s: str, nome: str, corpo: dict) -> dict:
     base = corpo.get("arquivo") or (_slug(nome) if len(nomes) == 1 else _slug(corpo.get("titulo") or "pranchas"))
     # o nome vem da tela: sem pasta nem caracteres de caminho, e com a extensão só uma vez
     base = _slug(re.sub(r"\.pdf$", "", os.path.basename(str(base).replace("\\", "/")), flags=re.I)) or "desenho"
-    caminho = pdf_dos_desenhos(desenhos, os.path.join(pasta, base + ".pdf"))
+    # as folhas pelo que está no desenho (a apagada no CAD sai, a movida leva o que está nela): o que mudou e o que ficou fora
+    # de toda folha vão para a tela (Vicente, 21/10: "está saindo várias folhas em branco")
+    avisos = []
+    caminho = pdf_dos_desenhos(desenhos, os.path.join(pasta, base + ".pdf"), avisos=avisos)
     g.tocar(s)
-    return {"arquivo": _descrever_arquivo(caminho, pasta), "paginas": sum(len(paginas_de(d)) for d in desenhos)}
+    return {"arquivo": _descrever_arquivo(caminho, pasta), "paginas": sum(len(paginas_de(d)) for d in desenhos),
+            "avisos": avisos}
 
 
 def exportar_desenho_dxf(s: str, nome: str, corpo: dict) -> dict:

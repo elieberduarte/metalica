@@ -492,7 +492,9 @@ class CAD {
     try {
       const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(lista[0].nome)}/pdf`, { desenhos: lista.map(d => d.nome), titulo: 'pranchas' });
       const a = r.arquivo || {};
-      this.aviso(el('span', {}, `PDF com ${r.paginas} página(s): `, el('a', { href: a.url, target: '_blank', rel: 'noopener', texto: a.nome || 'abrir' }), a.tamanho_kb ? ` · ${numero(a.tamanho_kb, 0)} kB` : ''), 'info', 0);
+      // a folha apagada no CAD, o que ficou fora de toda folha (não sai no PDF): o servidor diz (Vicente, 21/10)
+      const avisos = (r.avisos || []).map(t => el('div', { texto: '⚠ ' + t }));
+      this.aviso(el('span', {}, `PDF com ${r.paginas} página(s): `, el('a', { href: a.url, target: '_blank', rel: 'noopener', texto: a.nome || 'abrir' }), a.tamanho_kb ? ` · ${numero(a.tamanho_kb, 0)} kB` : '', ...avisos), avisos.length ? 'atencao' : 'info', 0);
       this.dica('PDF das pranchas exportado (pasta pranchas/ do projeto).');
       window.open(a.url, '_blank');
     } catch (e) { this.dica(''); this._avisoDeEmissao(e, 'Não foi possível gerar o PDF'); }

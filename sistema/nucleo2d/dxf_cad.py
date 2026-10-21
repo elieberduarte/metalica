@@ -268,6 +268,9 @@ def exportar_pranchas(desenhos, pasta: str, base: str = "pranchas", corte: Optio
     folhas = []                                   # (numero, titulo, Desenho na origem, largura da folha)
     for d in desenhos:
         if d.metadados.get("pranchas"):
+            # as folhas pelo que está no desenho, como no PDF (a apagada no CAD sai, a movida leva o que está nela)
+            from nucleo2d.pranchas import sincronizar_folhas
+            sincronizar_folhas(d)
             infos = [f for f in d.metadados["pranchas"] if f.get("formato") in FOLHAS]
             for info, parte in zip(infos, _por_folha(d)):
                 ox, oy = (info.get("origem") or [0.0, 0.0])[:2]
