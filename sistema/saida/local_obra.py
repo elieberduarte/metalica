@@ -43,6 +43,13 @@ FONTES = {
     "esri": {"nome": "Esri World Imagery (gratuita)", "tipo": "xyz", "zoom_max": 19,
              "url": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
              "atribuicao": "Imagem: Esri, Maxar, Earthstar Geographics e comunidade GIS"},
+    # a ortofoto 2021 da sede de Cascavel (IPC), a do geoportal da prefeitura (geocascavel.cascavel.pr.gov.br/geo-view,
+    # "ORTOFOTO 2021 - SEDE"): pública, ~20 cm por pixel; em blocos de 256 px no EPSG:900913, como o geoportal pede
+    # (os blocos vêm prontos do cache dele, ~0,3 s cada; um GetMap de 1024 px levava 40 s)
+    "cascavel": {"nome": "Ortofoto 2021 — Prefeitura de Cascavel (sede)", "tipo": "wms", "zoom_max": 20,
+                 "url": "https://geoserver.cascavel.pr.gov.br:8181/geoserver/wms", "camada": "ctmgeo_22s:CASCAVEL",
+                 "srs": "EPSG:900913", "formato": "image/png", "tiled": True,
+                 "atribuicao": "Ortofoto 2021: Prefeitura de Cascavel — IPC"},
 }
 # a fonte falsa dos testes (sem internet): quadriculado com o número de cada bloco
 if os.environ.get("METALICA_TERRENO_FALSO") == "1":
@@ -131,11 +138,8 @@ def validar(t: dict) -> dict:
             saida[k] = str(t[k])[:300]
     fonte = t.get("fonte") or "esri"
     if isinstance(fonte, dict):
-        url, camada = str(fonte.get("url") or "").strip(), str(fonte.get("camada") or "").strip()
-        if not re.match(r"^https?://", url) or not camada:
-            raise ErroTerreno("a fonte WMS precisa do endereço (http…) e do nome da camada.")
-        saida["fonte"] = {"tipo": "wms", "url": url.split("?")[0], "camada": camada,
-                          "nome": str(fonte.get("nome") or "WMS")[:80]}
+        saida["fonte"] = fonte_do_endereco(str(fonte.get("url") or ""), str(fonte.get("camada") or ""),
+                                           str(fonte.get("nome") or ""))
     elif fonte in FONTES:
         saida["fonte"] = fonte
     else:
@@ -143,6 +147,56 @@ def validar(t: dict) -> dict:
     if isinstance(t.get("caixa"), list) and len(t["caixa"]) == 4:
         saida["caixa"] = [round(float(v), 1) for v in t["caixa"]]
     return saida
+
+
+COMO_COPIAR = ("No geoportal, aperte F12 → aba Rede (Network), escreva GetMap no filtro, mexa no mapa e copie o endereço de "
+               "uma das linhas (botão direito → Copiar → Copiar URL); cole aqui — a camada vem junto.")
+
+
+def fonte_do_endereco(url: str, camada: str = "", nome: str = "") -> dict:
+    """A fonte de outro servidor pelo que se consegue copiar do navegador (20/10, o geoportal de Cascavel: o usuário colou o
+    endereço da página e a camada ficou em branco): o pedido GetMap inteiro (a camada sai do LAYERS=), só o endereço do
+    WMS (a camada se acha no GetCapabilities ao baixar) ou o modelo de blocos com {z}/{x}/{y}."""
+    url = url.strip()
+    if not re.match(r"^https?://", url):
+        raise ErroTerreno("cole o endereço do serviço de imagem (começa com http…). " + COMO_COPIAR)
+    host = urllib.parse.urlsplit(url).netloc
+    if host.split(":")[0].endswith("cascavel.pr.gov.br") and not camada.strip():
+        return "cascavel"                                     # qualquer link do geoportal (a página, o lote, o GetMap)
+    if all(k in url for k in ("{z}", "{x}", "{y}")):
+        return {"tipo": "xyz", "url": url, "zoom_max": 21, "nome": (nome or host)[:80], "atribuicao": "Imagem: " + host}
+    q = {k.lower(): v for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).items()}
+    camada = camada.strip() or (q.get("layers") or [""])[0].strip()
+    return {"tipo": "wms", "url": url.split("?")[0], "camada": camada, "nome": (nome or "WMS " + host)[:80],
+            "atribuicao": "Imagem: " + host}
+
+
+def camadas_do_wms(url: str, baixar: Callable[[str], bytes]) -> list:
+    """[(nome, título)] das camadas do GetCapabilities."""
+    import xml.etree.ElementTree as ET
+    dados = baixar(url + "?" + urllib.parse.urlencode({"SERVICE": "WMS", "REQUEST": "GetCapabilities", "VERSION": "1.3.0"}))
+    try:
+        raiz = ET.fromstring(dados)
+    except ET.ParseError:
+        raise ErroTerreno("o endereço não é de um serviço WMS (a resposta não é a lista de camadas). " + COMO_COPIAR)
+    tira = lambda tag: tag.rsplit("}", 1)[-1]
+    saida = []
+    for el in raiz.iter():
+        if tira(el.tag) != "Layer":
+            continue
+        filhos = {tira(c.tag): (c.text or "").strip() for c in el}
+        if filhos.get("Name"):
+            saida.append((filhos["Name"], filhos.get("Title", "")))
+    return saida
+
+
+def camada_da_ortofoto(camadas: list) -> Optional[str]:
+    """A ortofoto entre as camadas: a de "orto" no nome ou no título (a do ano mais novo); com uma camada só, ela."""
+    ortos = [(n, t) for n, t in camadas if re.search(r"orto|ortho|imagem|aerofoto", n + " " + t, re.I)]
+    if ortos:
+        ano = lambda c: max([int(a) for a in re.findall(r"(?:19|20)\d\d", c[0] + " " + c[1])] or [0])
+        return max(ortos, key=ano)[0]
+    return camadas[0][0] if len(camadas) == 1 else None
 
 
 def _meta_imagem(pasta: str) -> Optional[dict]:
@@ -290,7 +344,13 @@ def _bloco_teste(z: int, x: int, y: int):
 def _vazio(im) -> bool:
     """O bloco "Map data not yet available" da Esri: cinza claro liso (o desvio de cada canal pequeno, os três iguais)."""
     from PIL import ImageStat
+    if im.mode in ("RGBA", "LA", "P"):
+        a = im.convert("RGBA").getchannel("A")
+        if a.getextrema()[1] == 0:
+            return True                                       # o WMS fora da ortofoto: transparente
     st = ImageStat.Stat(im.convert("RGB"))
+    if max(st.stddev) < 1.5:
+        return True                                           # de uma cor só (o fundo branco ou preto do WMS)
     return (max(st.stddev) < 12 and all(185 < m < 225 for m in st.mean) and max(st.mean) - min(st.mean) < 4)
 
 
@@ -298,8 +358,26 @@ def _bloco(fonte: dict, z: int, x: int, y: int, baixar):
     from PIL import Image
     if fonte["tipo"] == "teste":
         return None if z > fonte.get("zoom_real", 99) else _bloco_teste(z, x, y)
-    im = Image.open(io.BytesIO(baixar(fonte["url"].format(z=z, x=x, y=y)))).convert("RGB")
-    return None if _vazio(im) else im
+    url = _url_bloco_wms(fonte, z, x, y) if fonte["tipo"] == "wms" else fonte["url"].format(z=z, x=x, y=y)
+    dados = baixar(url)
+    try:
+        im = Image.open(io.BytesIO(dados))
+        im.load()
+    except Exception:
+        raise ErroTerreno("o servidor não devolveu imagem: %s" % dados[:300].decode("utf-8", "replace"))
+    return None if _vazio(im) else im.convert("RGB")
+
+
+def _url_bloco_wms(fonte: dict, z: int, x: int, y: int) -> str:
+    """O GetMap do bloco (x, y) do nível z, no quadriculado do Web Mercator — o mesmo dos blocos XYZ."""
+    lado = 2 * math.pi * R_TERRA / 2 ** z
+    x0, y1 = -math.pi * R_TERRA + x * lado, math.pi * R_TERRA - y * lado
+    q = {"SERVICE": "WMS", "VERSION": "1.1.1", "REQUEST": "GetMap", "LAYERS": fonte["camada"], "STYLES": "",
+         "SRS": fonte.get("srs") or "EPSG:3857", "BBOX": "%.6f,%.6f,%.6f,%.6f" % (x0, y1 - lado, x0 + lado, y1),
+         "WIDTH": 256, "HEIGHT": 256, "FORMAT": fonte.get("formato") or "image/png"}
+    if fonte.get("tiled"):
+        q["TILED"] = "true"
+    return fonte["url"] + "?" + urllib.parse.urlencode(q)
 
 
 def _nivel_com_imagem(fonte: dict, reg: dict, z: int, baixar, minimo: int = 12) -> int:
@@ -313,10 +391,12 @@ def _nivel_com_imagem(fonte: dict, reg: dict, z: int, baixar, minimo: int = 12) 
         try:
             if _bloco(fonte, z, x, y, baixar) is not None:
                 return z
+        except ErroTerreno:
+            raise
         except Exception:
             return z                                          # sem resposta: o download conta a falha
         z -= 1
-    return z
+    return None
 
 
 def _imagem_xyz(fonte: dict, reg: dict, z: int, baixar, progresso) -> "Image.Image":
@@ -357,31 +437,6 @@ def _imagem_xyz(fonte: dict, reg: dict, z: int, baixar, progresso) -> "Image.Ima
     return tela.crop((px0 - bx0 * 256, py0 - by0 * 256, px1 - bx0 * 256, py1 - by0 * 256))
 
 
-def _imagem_wms(fonte: dict, reg: dict, lado_px: int, baixar, progresso) -> "Image.Image":
-    """O GetMap em EPSG:3857 (o GeoServer reprojeta), em pedaços de até 1024 px — muito servidor limita o tamanho."""
-    from PIL import Image
-    n = max(1, math.ceil(lado_px / 1024))
-    passo_px = math.ceil(lado_px / n)
-    tela = Image.new("RGB", (passo_px * n, passo_px * n), (128, 128, 128))
-    passo_m = (reg["x1"] - reg["x0"]) / n
-    k = 0
-    for j in range(n):
-        for i in range(n):
-            x0, y1 = reg["x0"] + i * passo_m, reg["y1"] - j * passo_m
-            q = {"SERVICE": "WMS", "VERSION": "1.3.0", "REQUEST": "GetMap", "LAYERS": fonte["camada"], "STYLES": "",
-                 "CRS": "EPSG:3857", "BBOX": "%.3f,%.3f,%.3f,%.3f" % (x0, y1 - passo_m, x0 + passo_m, y1),
-                 "WIDTH": passo_px, "HEIGHT": passo_px, "FORMAT": "image/jpeg"}
-            dados = baixar(fonte["url"] + "?" + urllib.parse.urlencode(q))
-            try:
-                im = Image.open(io.BytesIO(dados)).convert("RGB")
-            except Exception:
-                raise ErroTerreno("o WMS não devolveu imagem: %s" % dados[:300].decode("utf-8", "replace"))
-            tela.paste(im, (i * passo_px, j * passo_px))
-            k += 1
-            progresso("baixando a imagem do terreno (%d de %d partes)" % (k, n * n), 0.05 + 0.85 * k / (n * n))
-    return tela
-
-
 def baixar_imagem(g, s: str, corpo: Optional[dict] = None, progresso: Callable = lambda *a: None,
                   baixar: Callable[[str], bytes] = _baixar) -> dict:
     """Baixa a imagem em volta da obra pela amarração gravada (com a `caixa` do modelo do corpo, em mm do projeto) e a
@@ -401,16 +456,28 @@ def baixar_imagem(g, s: str, corpo: Optional[dict] = None, progresso: Callable =
         raise ErroTerreno("fonte de imagem desconhecida: %s" % fonte)
     reg = regiao(t, caixa)
     progresso("preparando a imagem do terreno…", 0.02)
-    if cfg["tipo"] == "wms":
-        z = None
-        lado_px = min(PIXELS_MAX, int(reg["lado_m"] / 0.1))   # ortofoto de prefeitura: até 10 cm por pixel
-        lado_px = max(lado_px, 512)
-        im = _imagem_wms(cfg, reg, lado_px, baixar, progresso)
-    else:
-        z = zoom_para(reg["lado_m"], reg["lat"], cfg.get("zoom_max", ZOOM_MAX))
-        progresso("procurando o nível da imagem…", 0.04)
-        z = _nivel_com_imagem(cfg, reg, z, baixar)
-        im = _imagem_xyz(cfg, reg, z, baixar, progresso)
+    if cfg["tipo"] == "wms" and not cfg.get("camada"):
+        progresso("procurando a camada da ortofoto no servidor…", 0.03)
+        camadas = camadas_do_wms(cfg["url"], baixar)
+        achada = camada_da_ortofoto(camadas)
+        if not achada:
+            raise ErroTerreno("o servidor tem %d camadas e nenhuma parece a ortofoto: %s. Escreva o nome da camada, ou "
+                              "%s" % (len(camadas), ", ".join(n for n, _ in camadas[:12]) or "nenhuma",
+                                      COMO_COPIAR[0].lower() + COMO_COPIAR[1:]))
+        cfg = dict(cfg, camada=achada)
+        t["fonte"] = cfg
+        g.tocar(s, terreno=t)                              # a camada achada fica gravada: a próxima vez não pergunta
+    # o WMS também em blocos de 256 px no quadriculado do Web Mercator (o geoportal de Cascavel: 0,3 s o bloco, que vem
+    # pronto do cache dele, × 40 s um GetMap de 1024 px)
+    z0 = zoom_para(reg["lado_m"], reg["lat"], cfg.get("zoom_max", ZOOM_MAX))
+    progresso("procurando o nível da imagem…", 0.04)
+    z = _nivel_com_imagem(cfg, reg, z0, baixar)
+    if z is None:
+        if cfg["tipo"] == "wms":
+            raise ErroTerreno("a imagem de %s não cobre este lugar (os blocos vêm vazios). Escolha outra fonte — a Esri "
+                              "cobre o mundo todo." % (cfg.get("nome") or "WMS"))
+        z = z0
+    im = _imagem_xyz(cfg, reg, z, baixar, progresso)
     progresso("gravando a imagem…", 0.95)
     pasta = os.path.join(g.pasta(s), PASTA)
     os.makedirs(pasta, exist_ok=True)

@@ -124,7 +124,7 @@ def test_validar():
         L.validar({"lat": -24.9, "lon": -53.4})
     with pytest.raises(L.ErroTerreno):
         L.validar({"lat": 120, "lon": -53.4, "ponto": [0, 0]})
-    with pytest.raises(L.ErroTerreno, match="WMS"):
+    with pytest.raises(L.ErroTerreno, match="http"):
         L.validar({"lat": -24.9, "lon": -53.4, "ponto": [0, 0], "fonte": {"tipo": "wms", "url": "ftp://x"}})
     w = L.validar({"lat": -24.9, "lon": -53.4, "ponto": [0, 0],
                    "fonte": {"tipo": "wms", "url": "https://geo.x.gov.br/geoserver/wms?service=WMS", "camada": "orto"}})
@@ -163,26 +163,86 @@ def test_gravar_e_baixar_a_imagem_de_teste(tmp_path, monkeypatch):
     assert L.rota_post(g, s, ["esquecer"], {}, lambda *a: None)["terreno"] is None
 
 
-def test_imagem_pelo_wms(tmp_path):
+def _png_ruido(lado=256):
+    import random
     from PIL import Image
+    im = Image.new("RGB", (lado, lado))
+    r = random.Random(1)
+    im.putdata([(r.randrange(256), r.randrange(256), r.randrange(256)) for _ in range(lado * lado)])
+    b = io.BytesIO()
+    im.save(b, "PNG")
+    return b.getvalue()
+
+
+def test_imagem_pelo_wms_em_blocos(tmp_path):
+    """O WMS em blocos de 256 px no quadriculado do Web Mercator (o geoportal de Cascavel, 20/10: o bloco vem do cache em
+    0,3 s; um GetMap de 1024 px levava 40 s)."""
     g, s = _gerente(tmp_path)
     L.gravar(g, s, {"lat": CASCAVEL[0], "lon": CASCAVEL[1], "ponto": [0, 0], "norte": 0,
                     "fonte": {"tipo": "wms", "url": "https://geo.exemplo.gov.br/geoserver/wms", "camada": "ortofoto2023"}})
     pedidos = []
+    png = _png_ruido()
 
     def falso(url):
         pedidos.append(url)
-        b = io.BytesIO()
-        Image.new("RGB", (64, 64), (10, 120, 30)).save(b, "JPEG")
-        return b.getvalue()
+        return png
     e = L.baixar_imagem(g, s, {"caixa": [-30_000, -20_000, 30_000, 20_000]}, baixar=falso)
-    assert pedidos and all("CRS=EPSG%3A3857" in u and "LAYERS=ortofoto2023" in u and "REQUEST=GetMap" in u for u in pedidos)
-    assert e["imagem"]["fonte"] == "WMS"
+    assert pedidos and all("LAYERS=ortofoto2023" in u and "REQUEST=GetMap" in u and "WIDTH=256" in u
+                           and "SRS=EPSG%3A3857" in u for u in pedidos)
+    assert e["imagem"]["fonte"] == "WMS geo.exemplo.gov.br" and e["imagem"]["zoom"] == 19
 
     def erro(url):
         return b"<ServiceExceptionReport>camada desconhecida</ServiceExceptionReport>"
     with pytest.raises(L.ErroTerreno, match="camada desconhecida"):
         L.baixar_imagem(g, s, {}, baixar=erro)
+
+
+def test_wms_que_nao_cobre_o_lugar_avisa(tmp_path):
+    from PIL import Image
+    g, s = _gerente(tmp_path)
+    L.gravar(g, s, {"lat": CASCAVEL[0], "lon": CASCAVEL[1], "ponto": [0, 0], "norte": 0, "fonte": "cascavel"})
+
+    def transparente(url):
+        b = io.BytesIO()
+        Image.new("RGBA", (256, 256), (0, 0, 0, 0)).save(b, "PNG")
+        return b.getvalue()
+    with pytest.raises(L.ErroTerreno, match="não cobre"):
+        L.baixar_imagem(g, s, {}, baixar=transparente)
+
+
+@pytest.mark.parametrize("colado,esperado", [
+    # o usuário colou o link da página do geoportal de Cascavel e a camada ficou em branco (20/10): a fonte pronta
+    ("https://geocascavel.cascavel.pr.gov.br/geo-view/selecionar/empresa-1.ctm?redirect=https://geocascavel.cascavel.pr.gov"
+     ".br/geo-view/index.ctm?mslinkLote=4229086", "cascavel"),
+    ("https://geocascavel.cascavel.pr.gov.br/geo-view/index.ctm", "cascavel"),
+    # o GetMap copiado do F12 de outro geoportal: a camada vem do LAYERS=
+    ("https://sig.outra.pr.gov.br/geoserver/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=base%3Aorto2022&SRS=EPSG"
+     "%3A900913&BBOX=1,2,3,4&WIDTH=256&HEIGHT=256", {"tipo": "wms", "url": "https://sig.outra.pr.gov.br/geoserver/wms",
+                                                     "camada": "base:orto2022"}),
+    # o modelo de blocos
+    ("https://tiles.exemplo.com/orto/{z}/{x}/{y}.jpg", {"tipo": "xyz", "url": "https://tiles.exemplo.com/orto/{z}/{x}/{y}.jpg"}),
+])
+def test_fonte_pelo_que_se_cola(colado, esperado):
+    f = L.validar({"lat": -24.9, "lon": -53.4, "ponto": [0, 0], "fonte": {"tipo": "wms", "url": colado}})["fonte"]
+    if isinstance(esperado, str):
+        assert f == esperado
+    else:
+        assert {k: f.get(k) for k in esperado} == esperado
+
+
+def test_camada_achada_no_getcapabilities(tmp_path):
+    caps = b"""<?xml version="1.0"?><WMS_Capabilities xmlns="http://www.opengis.net/wms"><Capability><Layer><Title>raiz</Title>
+      <Layer><Name>cad:lotes</Name><Title>Lotes</Title></Layer>
+      <Layer><Name>img:orto2012</Name><Title>Ortofoto 2012</Title></Layer>
+      <Layer><Name>img:orto2021</Name><Title>Ortofoto 2021</Title></Layer></Layer></Capability></WMS_Capabilities>"""
+    assert L.camada_da_ortofoto(L.camadas_do_wms("https://x/wms", lambda u: caps)) == "img:orto2021"
+    g, s = _gerente(tmp_path)
+    L.gravar(g, s, {"lat": CASCAVEL[0], "lon": CASCAVEL[1], "ponto": [0, 0], "norte": 0,
+                    "fonte": {"tipo": "wms", "url": "https://x.gov.br/geoserver/wms"}})
+    png = _png_ruido()
+    e = L.baixar_imagem(g, s, {}, baixar=lambda u: caps if "GetCapabilities" in u else png)
+    assert e["terreno"]["fonte"]["camada"] == "img:orto2021"                # gravada: a próxima vez não pergunta
+    assert L.camada_da_ortofoto([("a", "Lotes"), ("b", "Ruas")]) is None      # sem adivinhar: pede o nome
 
 
 def test_sem_local_nao_baixa(tmp_path):

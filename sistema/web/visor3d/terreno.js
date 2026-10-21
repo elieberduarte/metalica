@@ -177,10 +177,12 @@ export class Terreno {
           as divisas e as ruas encaixarem. Grava sozinho.</p>`;
       html += `<p class="titulo-secao">Imagem</p>
         <label class="terreno-fonte-sel">Fonte <select id="terreno-fonte-sel">${fontes.map(f => `<option value="${esc(f.chave)}" ${f.chave === fonteAtual ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}
-          <option value="wms" ${fonteAtual === 'wms' ? 'selected' : ''}>Geoportal (WMS)…</option></select></label>
+          <option value="wms" ${fonteAtual === 'wms' ? 'selected' : ''}>Outro geoportal (link)…</option></select></label>
         <div id="terreno-wms" ${fonteAtual === 'wms' ? '' : 'hidden'}>
-          <input id="terreno-wms-url" placeholder="Endereço do WMS (https://…/wms)" value="${esc(wms.url)}">
-          <input id="terreno-wms-camada" placeholder="Camada (ex.: ortofoto)" value="${esc(wms.camada)}"></div>
+          <input id="terreno-wms-url" placeholder="Link do geoportal ou do serviço (https://…)" value="${esc(wms.url)}">
+          <input id="terreno-wms-camada" placeholder="Camada (se não vier no link)" value="${esc(wms.camada)}">
+          <p class="dica">Cole o link do serviço de imagem (WMS) ou o endereço de um pedido GetMap: no geoportal, F12 → aba
+            Rede, escreva GetMap no filtro, mexa no mapa e copie o endereço de uma linha. A camada vem junto.</p></div>
         <button type="button" id="terreno-baixar" class="forte">${im ? 'Baixar a imagem de novo' : 'Baixar a imagem do terreno'}</button>
         <button type="button" id="terreno-esquecer">Tirar o local</button>`;
     } else {
