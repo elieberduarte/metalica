@@ -38,6 +38,8 @@ AFASTAMENTO_PAREDE = 100.0       # mm da ponta da telha até a face da parede em
 FUNDO_CALHA = 150.0              # mm de fundo da calha, abaixo da ponta das telhas
 #: mm: o vão entre dois pedaços da mesma linha de terça que a telha passa por cima (a terça cortada pela treliça de baixo)
 PONTE_TERCA = 400.0
+#: mm: o pedaço da telha até a platibanda curva (a reta entre as pontas acompanha a curva)
+PASSO_CURVA = 500.0
 #: graus: a parede até isto fora da direção da terça é paralela a ela (a borda comum); mais, é a parede diagonal
 PAREDE_PARALELA = 3.0
 #: mm: as pontas de terça mais perto que isto ao longo da linha são a mesma estação (a emenda na tesoura)
@@ -69,7 +71,26 @@ def _e_barreira(b) -> bool:
     return b.papel == "banzo" and (nome.startswith("PAINEL") or nome.startswith("TRANSI"))
 
 
-def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -> dict:
+def _paredes_curvas(solidos) -> list:
+    """Os trechos retos do eixo do banzo calandrado (a platibanda curva — os PAINÉIS 8, 9 e 10 do Posto, as pontas da
+    abertura oval e o perímetro curvo), como barras de banzo para a busca da parede: a telha vai até a face deles também
+    (21/10/2026, o usuário no Posto V2: as falhas nas bordas curvas; antes a parede curva ficava de fora)."""
+    from types import SimpleNamespace
+    out = []
+    for so in solidos or ():
+        bz = (so.atributos or {}).get("banzo")
+        if not isinstance(bz, dict) or not bz.get("eixo"):
+            continue
+        eixo = bz["eixo"]
+        for q0, q1 in zip(eixo, eixo[1:]):
+            if math.hypot(q1[0] - q0[0], q1[1] - q0[1]) < 1.0:
+                continue
+            out.append(SimpleNamespace(inicio=tuple(q0), fim=tuple(q1), perfil=bz.get("perfil"), rotacao=bz.get("rotacao") or 0.0,
+                                       papel="banzo", atributos=so.atributos, id=so.id, curva=True))
+    return out
+
+
+def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0, solidos=()) -> dict:
     """A cobertura pelas terças: os panos (os cantos no topo das terças vizinhas), a terça fora do plano da água, as
     águas, os vãos grandes e, por terça, as amostras do desvio ao plano ao longo dela ({id: [(s, desvio, borda)]}, com a
     direção da terça em planta) — o que o lançamento das telhas e o alinhamento das terças usam."""
@@ -83,7 +104,7 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
             barreiras_b.append(b)
     # para a borda contra a parede diagonal: todo banzo conta (a TRELIÇA 6 do Posto, 0,5 m acima da telha, é a borda do
     # telhado ao lado da TRANSIÇÃO 16 — a telha não passa dela)
-    paredes_todas = [b for b in barras if b.papel == "banzo"]
+    paredes_todas = [b for b in barras if b.papel == "banzo"] + _paredes_curvas(solidos)
     # as treliças de fechamento (os nomes da regra 7): a telha pode passar por cima delas (o beiral sobre o fechamento)
     fech_b = [b for b in barras if b.papel == "banzo"
               and re.match(r"^(P|VT|VL)\.\d", str(origem_de(b).get("peca") or "").upper())]
@@ -127,6 +148,7 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
         ang = math.degrees(math.atan2(dy, dx)) % 180.0
         grupos[int(round(ang)) % 180].append(b)
     panos: List[dict] = []
+    grupos_feitos = []                           # (terças, d, n) de cada direção: o encontro com a telha vizinha no fim
     fora: Dict[str, dict] = {}
     aguas: Dict[tuple, dict] = {}
     vaos_grandes: Dict[tuple, dict] = {}
@@ -558,6 +580,17 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
             p["cantos"] = [ponto(q, p["s0"]), ponto(q, p["s1"]), ponto(r, p["s1"]), ponto(r, p["s0"])]
             p["area"] = (p["s1"] - p["s0"]) * math.dist(ponto(q, (p["s0"] + p["s1"]) / 2), ponto(r, (p["s0"] + p["s1"]) / 2))
         panos += _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, paredes_todas, vao_max, tercas)
+        grupos_feitos.append((reg, d, n))
+    # o encontro com a telha vizinha, depois de todas as direções: a telha que chega pelo outro lado pode ser de outra
+    # direção (as terças inclinadas junto da PAINEL 12 do Posto)
+    encontros = []
+    for reg_g, d_g, n_g in grupos_feitos:
+        def ponto_g(r_, s_, d_g=d_g, n_g=n_g):
+            return (d_g[0] * s_ + n_g[0] * r_["t"], d_g[1] * s_ + n_g[1] * r_["t"], _z_na_terca(r_, s_))
+        outros_g = [[v[:2] for v in p_["cantos"]] for p_ in panos + encontros if "cantos" in p_ and p_.get("d") != d_g]
+        encontros += _ate_a_parede_diagonal(reg_g, panos + encontros, d_g, n_g, ponto_g, _z_na_terca, paredes_todas, vao_max,
+                                            tercas, outros=outros_g, encontro=True)
+    panos += encontros
     calhas = [p for p in panos if p.get("calha")]
     cumeeiras = [p for p in panos if p.get("cumeeira")]
     panos = [p for p in panos if not p.get("calha") and not p.get("cumeeira")]
@@ -565,7 +598,7 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
             "sem_telha": [dict(v, comp=round(v["comp"])) for v in sem_telha.values()]}
 
 
-def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, tercas=()) -> List[dict]:
+def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, tercas=(), outros=(), encontro=False) -> List[dict]:
     """A borda contra a parede em diagonal (a TRANSIÇÃO 16 do Posto, 17/10/2026 — o usuário marcou a borda dela no 3D):
     a última terça antes da parede, sem outra terça do lado dela, fica sem telha até a face — o beiral entre duas terças
     (as `paredes` de _analise) precisa de uma terça do outro lado. Aqui, o lado da terça que nenhum pano cobre e que bate
@@ -617,7 +650,7 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
     def coberto(P):
         return any(_dentro_poli(P, polis[k]) for k in grade_p.get((int(P[0] // 2000.0), int(P[1] // 2000.0)), ()))
 
-    def parede(P, lado, z_telha):
+    def parede(P, lado, z_telha, qualquer=False):
         """a distância de P até a parede, andando para o lado (n·lado), e se ela corre em diagonal à terça (além de
         ALCANCE, só com a terça junto dela apoiando a ponta)"""
         v = (n[0] * lado * ALCANCE_APOIADO, n[1] * lado * ALCANCE_APOIADO)
@@ -646,10 +679,11 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
                     Ls = math.hypot(*s_) or 1.0
                     # diagonal: mais de PAREDE_PARALELA graus fora da terça (21/10/2026: a PAINEL 12 da abertura oval do Posto, a
                     # 9,6°, contava como paralela com os 10° de antes e a telha parava na última terça — a cunha sem telha até ela)
-                    diagonal = abs(s_[0] * d[0] + s_[1] * d[1]) / Ls < math.cos(math.radians(PAREDE_PARALELA))
+                    # o trecho da platibanda curva vale sempre (o pedaço quase paralelo dela é a ponta da curva)
+                    diagonal = getattr(bb, "curva", False) or abs(s_[0] * d[0] + s_[1] * d[1]) / Ls < math.cos(math.radians(PAREDE_PARALELA))
                     if melhor is None or t * ALCANCE_APOIADO < melhor[0]:
-                        melhor = (t * ALCANCE_APOIADO, diagonal, (P[0] + v[0] * t, P[1] + v[1] * t), s_)
-        if melhor is not None and melhor[0] > ALCANCE and not apoiada(melhor[2], melhor[3]):
+                        melhor = (t * ALCANCE_APOIADO, diagonal, (P[0] + v[0] * t, P[1] + v[1] * t), s_, getattr(bb, "curva", False))
+        if not qualquer and melhor is not None and melhor[0] > ALCANCE and not apoiada(melhor[2], melhor[3]):
             return None
         return melhor
 
@@ -662,7 +696,7 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
         return (z_em(r, s_) - z_em(x, s_)) / (r["t"] - x["t"])
 
     novos = []
-    for r in reg:
+    for r in ([] if encontro else reg):
         L_ter = r["s1"] - r["s0"]
         if L_ter < 300.0:
             continue
@@ -675,8 +709,10 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
                     livres.append(None)
                     continue
                 pa = parede(P[:2], lado, P[2])
-                livres.append((s_, pa[0]) if pa is not None and pa[1] else None)
-            # os trechos seguidos de terça descoberta com a parede diagonal perto
+                livres.append((s_, pa[0], pa[4]) if pa is not None and pa[1] else None)
+            # os trechos seguidos de terça descoberta com a parede diagonal perto; ao longo da platibanda curva, em pedaços de
+            # até PASSO_CURVA (a telha acompanha a curva — a reta entre as pontas de um trecho comprido cortava a curva)
+            trechos = []
             k = 0
             while k < len(livres):
                 if livres[k] is None:
@@ -685,11 +721,20 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
                 j = k
                 while j + 1 < len(livres) and livres[j + 1] is not None:
                     j += 1
-                sa, La = livres[k]
-                sb, Lb = livres[j]
+                if any(x[2] for x in livres[k:j + 1]):
+                    passo_i = max(1, int(PASSO_CURVA // PASSO))
+                    for a_i in range(k, j, passo_i):
+                        trechos.append((livres[a_i], livres[min(j, a_i + passo_i)], True))
+                else:
+                    trechos.append((livres[k], livres[j], False))
                 k = j + 1
-                # (a ponta fina do triângulo da borda escalonada, ao lado da terça, não conta: até 300 mm)
-                if sb - sa < 300.0 or max(La, Lb) - FOLGA < 200.0 or min(La, Lb) > ALCANCE_APOIADO - 100.0 or abs(La - Lb) < 100.0:
+            for (sa, La, _c), (sb, Lb, _c2), curva in trechos:
+                # (a ponta fina do triângulo da borda escalonada, ao lado da terça, não conta: até 300 mm); a distância quase
+                # igual nas duas pontas é parede paralela (o beiral comum) — menos na curva, que não tem outro
+                if curva:
+                    if sb - sa < 50.0 or max(La, Lb) - FOLGA < 50.0 or min(La, Lb) > ALCANCE_APOIADO - 100.0:
+                        continue
+                elif sb - sa < 300.0 or max(La, Lb) - FOLGA < 200.0 or min(La, Lb) > ALCANCE_APOIADO - 100.0 or abs(La - Lb) < 100.0:
                     continue
                 m = inclinacao(r, lado, (sa + sb) / 2)
 
@@ -702,8 +747,72 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
                 larg = (max(0.0, La - FOLGA) + max(0.0, Lb - FOLGA)) / 2.0
                 novos.append({"q": r, "r": r, "s0": sa, "s1": sb, "borda": True, "parede_diagonal": True, "d": d, "n": n,
                               "linha": [r], "E": (Fa, sa, Fb, sb), "cantos": [Ma, Mb, Fb, Fa],
-                              "area": (sb - sa) * larg * math.sqrt(1.0 + m * m)})
-    return novos
+                              "area": (sb - sa) * larg * math.sqrt(1.0 + m * m), **({"curva": True} if curva else {})})
+    if not encontro:
+        return novos
+    # o encontro com a telha vizinha (21/10/2026, Posto V2 — o norte da abertura oval, onde a PAINEL 12 desce abaixo da
+    # telha: entre a última terça reta e a telha que já chega pelo outro lado, de outra direção ou da curva, ficava o
+    # triângulo sem telha). O lado da terça sem pano, sem parede nenhuma no caminho (nem a paralela), e com telha a até
+    # ALCANCE_APOIADO: a telha vai até ela, passando ENCONTRO por baixo
+    if outros:
+        for poli in outros:
+            k_ = len(polis)
+            polis.append(poli)
+            xs_, ys_ = [v[0] for v in poli], [v[1] for v in poli]
+            for gx in range(int(min(xs_) // 2000.0), int(max(xs_) // 2000.0) + 1):
+                for gy in range(int(min(ys_) // 2000.0), int(max(ys_) // 2000.0) + 1):
+                    grade_p[(gx, gy)].append(k_)
+    ENCONTRO = 100.0
+
+    def ate_a_telha(P, lado):
+        """a distância de P até a telha que já existe, andando para o lado, sem parede antes; ou None"""
+        for k_ in range(4, int(ALCANCE_APOIADO // 50.0) + 1):
+            x_ = 50.0 * k_
+            if coberto((P[0] + n[0] * lado * x_, P[1] + n[1] * lado * x_)):
+                return x_
+        return None
+    extra = []
+    for r in reg:
+        L_ter = r["s1"] - r["s0"]
+        if L_ter < 300.0:
+            continue
+        ss = [r["s0"] + 1.0] + [r["s0"] + PASSO * k for k in range(1, int(L_ter // PASSO))] + [r["s1"] - 1.0]
+        for lado in (+1, -1):
+            livres = []
+            for s_ in ss:
+                P = ponto(r, s_)
+                if coberto((P[0] + n[0] * lado * 150.0, P[1] + n[1] * lado * 150.0)):
+                    livres.append(None)
+                    continue
+                D = ate_a_telha(P[:2], lado)
+                pa = parede(P[:2], lado, P[2], qualquer=True) if D is not None else None
+                livres.append((s_, D) if D is not None and (pa is None or pa[0] > D) else None)
+            k = 0
+            while k < len(livres):
+                if livres[k] is None:
+                    k += 1
+                    continue
+                j = k
+                while j + 1 < len(livres) and livres[j + 1] is not None:
+                    j += 1
+                passo_i = max(1, int(PASSO_CURVA // PASSO))
+                for a_i in range(k, max(k + 1, j), passo_i):
+                    (sa, Da), (sb, Db) = livres[a_i], livres[min(j, a_i + passo_i)]
+                    if sb - sa < 50.0:
+                        continue
+                    m = inclinacao(r, lado, (sa + sb) / 2)
+
+                    def ate(s_, D_):
+                        P = ponto(r, s_)
+                        x_ = D_ + ENCONTRO
+                        return (P[0] + n[0] * lado * x_, P[1] + n[1] * lado * x_, P[2] + m * lado * x_)
+                    Fa, Fb = ate(sa, Da), ate(sb, Db)
+                    Ma, Mb = ponto(r, sa), ponto(r, sb)
+                    extra.append({"q": r, "r": r, "s0": sa, "s1": sb, "borda": True, "parede_diagonal": True, "encontro": True,
+                                  "d": d, "n": n, "linha": [r], "E": (Fa, sa, Fb, sb), "cantos": [Ma, Mb, Fb, Fa],
+                                  "area": (sb - sa) * ((Da + Db) / 2 + ENCONTRO) * math.sqrt(1.0 + m * m)})
+                k = j + 1
+    return extra
 
 
 # ---------------------------------------------------------------------------------------------- as chapas de telha
@@ -877,7 +986,10 @@ def _chapas(panos, telha, vales=()):
                 if viz is None:
                     continue
                 novo = (viz[0], cb) if viz[1] == ca else (ca, viz[1])
-                pedacos[novo] = pedacos.pop(viz)
+                # junta com o que já está nessa chave (outros panos da mesma faixa até o mesmo ponto): a troca simples
+                # apagava a faixa inteira deles (21/10/2026, a fila de buracos de 1 m em y 42,6 do Posto V2)
+                mover = pedacos.pop(viz)
+                pedacos[novo] = pedacos.get(novo, []) + [p for p in mover if p not in pedacos.get(novo, [])]
             for (a2, b2), ps in pedacos.items():
                 # as ligações: terça de baixo → pano (pela ordem na caída, t crescente); o beiral é uma ponta
                 comuns = [p for p in ps if not p.get("beiral")]
@@ -936,7 +1048,9 @@ def _chapas(panos, telha, vales=()):
         while orig + k0 * W < hi - 1:
             a2, b2 = max(lo, orig + k0 * W), min(hi, orig + (k0 + 1) * W)
             k0 += 1
-            if b2 - a2 < 30.0:
+            # o retalho fino da borda também entra (a borda vem em pedaços de PASSO_CURVA na curva e no encontro: a junta
+            # de dois pedaços a 20 mm da faixa deixava a fresta de 20 mm — 21/10/2026)
+            if b2 - a2 < 1.0:
                 continue
             chapas.append({"secoes": [(_pt_linha(linha, a2, d, n), _pt_linha(linha, b2, d, n)), (borda_em(a2), borda_em(b2))],
                            "a": a2, "b": b2, "origem": orig, "d": d, "n": n, "recorte": True})
@@ -1662,7 +1776,7 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
               or (e.atributos or {}).get("rufo_lancado")]:
         doc.remover(i)
     tercas = [b for b in doc.barras if b.papel in ("terça", "terca")]
-    an = _analise(tercas, doc.barras, vao_max, tol_plano)
+    an = _analise(tercas, doc.barras, vao_max, tol_plano, solidos=doc.solidos)
     feitos = an["panos"]
     chapas = _chapas(feitos, telha, an["calhas"])
     # a conferência da estrutura pela telha assentada nas terças (degrau, dobra) antes de endireitar as chapas; a telha do

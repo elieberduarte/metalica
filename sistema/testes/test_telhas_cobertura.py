@@ -797,3 +797,44 @@ def test_chapa_reta_por_cima_da_terca_fora_da_reta():
         for v in s_.vertices:
             reta = 7000.0 + 0.05 * v[0] + T._topo_da_terca(baixa)
             assert v[2] >= reta - 5.0                                         # nada desce da reta
+
+
+
+def test_telha_ate_a_platibanda_curva():
+    """A platibanda curva (o banzo calandrado dos PAINÉIS 8, 9, 10, 20 e 21 do Posto, um sólido com o eixo guardado) não
+    contava como parede: a telha parava na última terça e ficavam as falhas nas bordas curvas (usuário, 21/10, vista de
+    cima). Agora a telha vai até 100 mm da face, em pedaços que acompanham a curva."""
+    import math
+    from nucleo3d.modelo import Solido
+    doc = Documento()
+    _agua(doc, 0.0, 3, 7000.0, 0.05)                                         # x 0, 1400, 2800 (y 0–6000)
+    R, cx, cy = 6000.0, -2000.0, 3000.0                                        # o arco: x = cx + √(R² − (y − cy)²)
+    eixo = [[cx + R * math.cos(a), cy + R * math.sin(a), 7600.0] for a in [math.radians(-40 + 2 * k) for k in range(41)]]
+    sol = Solido(nome="U 100×40×2,25 (FF)", camada="Treliças", vertices=[tuple(v) for v in eixo], faces=[])
+    sol.atributos = {"banzo": {"perfil": "U 100×40×2,25 (FF)", "rotacao": 270.0, "eixo": eixo},
+                     "origem": {"planta": "PAINEL 20", "peca": "PAINEL 20#1"}, "calandrada": {"raio": R}}
+    doc.add(sol)
+    T.lancar(doc)
+    curva = lambda y: cx + math.sqrt(max(0.0, R * R - (y - cy) ** 2))
+    tel = _telhado(doc)
+    assert max(v[0] for s_ in tel for v in s_.vertices) > curva(3000.0) - 400.0, "a telha não chegou na platibanda curva"
+    for s_ in tel:
+        for v in s_.vertices:
+            assert v[0] <= curva(v[1]) + 1.0                                  # nada passa da curva
+
+
+def test_telha_ate_a_telha_vizinha_de_outra_direcao():
+    """Sem parede no caminho (a PAINEL 12 do Posto desce abaixo da telha no norte da abertura oval), entre a última terça e
+    a telha que já chega pelo outro lado — de outra direção de terças — ficava o triângulo sem telha. Agora a telha vai até
+    ela, passando 100 mm por baixo."""
+    doc = Documento()
+    for x in (0.0, 1400.0):                                                    # a água A: terças em y, x 0 e 1400
+        _terca(doc, x, 7000.0 + 0.05 * x, "TC1", 0.0, 3000.0)
+    for y in (0.0, 1400.0, 2800.0):                                            # a água B: terças em x, de 2900 a 6000
+        b = Barra(inicio=(2900.0, y, 7070.0), fim=(6000.0, y, 7070.0), perfil=PERFIL, papel="terça", camada="Terças")
+        b.atributos = {"origem": {"sigla": "TC2"}}
+        doc.add(b)
+    T.lancar(doc)
+    from shapely.geometry import box
+    falta = box(100.0, 100.0, 2850.0, 2700.0).difference(_cobertura_em_planta(doc))
+    assert falta.area < 1.0, "o vão entre as duas telhas ficou sem telha (%.0f mm²)" % falta.area

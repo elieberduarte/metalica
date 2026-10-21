@@ -172,7 +172,7 @@ def telha_ao_lado(doc, limite: float = 20.0) -> List[dict]:
     tercas = [b for b in doc.barras if b.papel in ("terça", "terca")]
     if len(tercas) < 2:
         return []
-    an = tc._analise(tercas, doc.barras)
+    an = tc._analise(tercas, doc.barras, solidos=doc.solidos)
     chapas = tc._chapas(an["panos"], dict(tc.TELHA_PADRAO))
     g = _grade(tercas, 2000.0)
     out = []
