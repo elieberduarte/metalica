@@ -4,10 +4,16 @@ atualizar elas sem precisar gerar todas as vezes").
 
 O detalhamento grava um **carimbo** do que ele usou (`detalhamento/carimbo.json`): o modelo 3D (data e
 tamanho do arquivo), o código do detalhamento (a impressão dos fontes; no programa instalado, a versão),
-a furação ajustada à mão e os eixos. Quando o carimbo não bate mais — o 3D foi gravado, saiu uma versão
-nova do detalhamento, a furação mudou —, os desenhos estão velhos e são refeitos em segundo plano, pelo
-mesmo caminho do botão Detalhar (que mantém a montagem das folhas). O CAD pergunta o estado
+a furação ajustada à mão e os eixos. Quando o que é da obra muda — o 3D foi gravado, a furação ou os eixos
+mudaram —, os desenhos estão velhos e são refeitos em segundo plano, pelo mesmo caminho do botão Detalhar
+(que mantém a montagem das folhas). O CAD pergunta o estado
 (`estado`) e recarrega o desenho aberto quando a geração dele muda.
+
+O programa novo, sozinho, não refaz nada (usuário, 21/10, Vicente: "todas as vezes que abro o projeto ele está em
+atualização… o que mexemos foi em outra estrutura… essa está em teoria fechada"): a impressão é de todos os fontes, e
+no desenvolvimento qualquer arquivo gravado — o telhamento do Posto — refazia o detalhamento e as pranchas de toda obra
+aberta; no instalado, toda versão nova. Os desenhos ficam como foram conferidos, o estado diz `programa_novo` e o CAD
+oferece "Atualizar agora"; a próxima mudança do 3D já detalha com o programa de hoje.
 
 As **pranchas** vêm junto: depois de cada atualização, e quando um desenho de trabalho com folhas é
 gravado, o desenho "Pranchas" é refeito — das folhas (`pranchas_das_folhas`) ou pela montagem automática
@@ -198,11 +204,23 @@ def por_que_velho(s: str) -> str:
         # tudo logo depois do Detalhar (P24, primeiro uso 16/10); o carimbo completo chega no fim
         return ""
     agora = carimbo(s)
-    for chave, motivo in (("codigo", "o detalhamento do programa mudou"), ("modelo", "o modelo 3D mudou"),
-                          ("ajustes", "a furação ajustada mudou"), ("eixos", "os eixos mudaram")):
+    # o código do programa não entra (programa_novo): só o que é da obra
+    for chave, motivo in (("modelo", "o modelo 3D mudou"), ("ajustes", "a furação ajustada mudou"),
+                          ("eixos", "os eixos mudaram")):
         if antes.get(chave) != agora.get(chave):
             return motivo
     return ""
+
+
+def programa_novo(s: str) -> bool:
+    """Os desenhos são de um programa anterior ao de agora (a impressão dos fontes no desenvolvimento, a versão no
+    instalado) e nada da obra mudou: não se refazem sozinhos (ver o início do módulo); o CAD oferece atualizar."""
+    if not tem_detalhamento(s):
+        return False
+    antes = ler_carimbo(s)
+    if not antes.get("codigo") or antes.get("desfeito"):
+        return False
+    return antes.get("codigo") != impressao_do_codigo()
 
 
 # ------------------------------------------------------------------ o trabalho em segundo plano
@@ -227,6 +245,10 @@ def estado(s: str, conferir: bool = True) -> dict:
     e["fora_da_maquina_pecas"] = c.get("fora_da_maquina_pecas") or []      # o "Ver no 3D" de cada terça (Q01)
     e["desfeito"] = c.get("desfeito") or None        # o CAD avisa: os desenhos não são do 3D atual (Q02)
     e["pranchas_descartadas"] = c.get("pranchas_descartadas") or []
+    try:
+        e["programa_novo"] = not e.get("atualizando") and programa_novo(s)
+    except Exception:                                           # noqa: BLE001 — conferir nunca derruba a tela
+        e["programa_novo"] = False
     if c.get("erro") and not e.get("erro"):
         e["erro"] = c["erro"]
     return e

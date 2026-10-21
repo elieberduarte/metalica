@@ -283,6 +283,14 @@ class CAD {
         if (this._pararVivos) { this._pararVivos(!e.erro); this._pararVivos = null; }
       }
       this._avisarPendencias(e);                    // 3D fora do padrão, terça fora da máquina, arrumação descartada
+      // o programa mudou e nada da obra (desenhos_vivos.programa_novo): os desenhos ficam como foram conferidos — refazer
+      // é escolha do usuário (Vicente, 21/10: "todas as vezes que abro o projeto ele está em atualização")
+      if (e.programa_novo && !this._avisouProgramaNovo) {
+        this._avisouProgramaNovo = true;
+        this.aviso(el('span', {}, 'Estes desenhos são de uma versão anterior do programa; nada da obra mudou desde então, e eles ficam como estão. ',
+          el('button', { type: 'button', texto: 'Atualizar agora', onclick: () => this.atualizarDesenhosAgora() }),
+          ' refaz com o programa de hoje.'), 'info', 15000);
+      }
       if (e.erro && e.erro !== avisouErro) { avisouErro = e.erro; this.aviso(`A atualização automática dos desenhos não terminou: ${e.erro}`, 'atencao', 0); }
       const nova = (e.desenhos || {})[this.nomeDesenho];
       const minha = (this.doc.metadados || {}).geracao;

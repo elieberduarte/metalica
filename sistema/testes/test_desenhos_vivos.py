@@ -115,3 +115,29 @@ def test_editor_aberto_pelo_sinal(monkeypatch):
     agora = _t.time()
     monkeypatch.setattr(dv.time, "time", lambda: agora + dv.EDITOR_AUSENTE + 1)
     assert not dv.editor_aberto("q")
+
+
+def test_programa_novo_nao_refaz_os_desenhos(tmp_path, monkeypatch):
+    """Vicente, 21/10 (usuário: "todas as vezes que abro o projeto ele está em atualização… o que mexemos foi em outra
+    estrutura… essa está em teoria fechada"): o programa mudou (no dev, qualquer arquivo; no instalado, a versão) e nada
+    da obra mudou — os desenhos ficam como estão, o estado diz programa_novo; o 3D gravado refaz como sempre."""
+    g = _Gerente(str(tmp_path))
+    os.makedirs(tmp_path / "p" / "detalhamento")
+    (tmp_path / "p" / "modelo.json").write_text("{}", encoding="utf-8")
+    pedidos = []
+    dv.configurar(gerente=lambda: g, detalhar=lambda s: pedidos.append(s))
+    g.desenhos = [{"nome": "detalhamento-tesouras"}]
+    monkeypatch.setattr(dv, "_impressao", "programa-de-ontem")
+    dv.gravar_carimbo("p", {"detalhamento-tesouras": "g1"})
+    monkeypatch.setattr(dv, "_impressao", "programa-de-hoje")
+    assert dv.por_que_velho("p") == ""
+    assert dv.programa_novo("p") is True
+    monkeypatch.setattr(dv, "atualizar", lambda s, motivo="", so_pranchas=False: pedidos.append(motivo) or True)
+    e = dv.estado("p")
+    assert e["programa_novo"] is True and not e.get("atualizando") and pedidos == []
+    os.utime(tmp_path / "p" / "modelo.json", (1, 1))
+    assert dv.por_que_velho("p") == "o modelo 3D mudou"
+    dv.estado("p")
+    assert pedidos == ["o modelo 3D mudou"]
+    dv.gravar_carimbo("p", {"detalhamento-tesouras": "g2"})        # detalhado de novo: com o programa de hoje
+    assert dv.programa_novo("p") is False
