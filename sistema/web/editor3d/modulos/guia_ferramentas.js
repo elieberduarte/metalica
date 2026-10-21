@@ -35,6 +35,7 @@ const COMO = {
   virar: 'Clique no perfil: gira 90° no próprio eixo (pelo meio da seção); Shift ao contrário, Ctrl 180°. Digite o passo (45).',
   encaixar: 'Clique na barra e na face em que a ponta deve encostar: corta em ângulo ou estica até ela. Shift soma o plano (bico); Delete tira os cortes.',
   estender: 'Clique na barra (perto da ponta) e na outra barra: a ponta vai até a face dela (Shift: até o eixo). Digite a folga antes do 2º clique.',
+  juntar: 'Clique na primeira barra e na segunda: a ponta de cada uma mais perto do encontro vai até o cruzamento dos eixos (eixos desencontrados: o meio entre eles) — o Fillet do AutoCAD no 3D. Com duas barras selecionadas, Enter junta as duas.',
   estender_telha: 'Clique na telha perto da ponta que vai andar (com a fiada selecionada, andam todas) e mova, ou digite quanto (negativo recua). No ponto de outra peça, as pontas vão até ele: a altura dele no fechamento, a linha dele em planta na cobertura.',
   dividir: 'Passe o mouse e clique para dividir ali; ou digite a distância da ponta ("3000") ou "/3" para partes iguais.',
   recortar: 'Clique na barra perto da ponta e na peça em que ela encaixa: sai o recorte da mesa. Ou digite "comprimento;altura"; "ch10" faz o chanfro.',

@@ -444,6 +444,30 @@ async function comportamento(ferramentas, conferir, tentar) {
     conferir('pushpull', 'a barra clicada fora da seleção estica sozinha', pertoV(fx(), [6000, 6000, 6300]), JSON.stringify(fx()));
   });
 
+  // ---- juntar pontas (usuário, 21/10: o Fillet do AutoCAD no 3D)
+  await tentar('juntar', 'cruzamento, eixos desencontrados, paralelas, desfazer', async () => {
+    const mod = await import(new URL('juntar.js', BASE).href);
+    const a0 = { id: 'a', inicio: [0, 0, 0], fim: [5000, 0, 0] }, b0 = { id: 'b', inicio: [6000, -3000, 0], fim: [6000, -500, 0] };
+    const j = mod.juncao(a0, b0);
+    conferir('juntar', 'juncao(): o cruzamento dos eixos, as duas pontas do fim', j && pertoV(j.ponto, [6000, 0, 0]) && j.barras.map(x => x.ponta).join() === 'fim,fim', JSON.stringify(j && j.ponto));
+    conferir('juntar', 'juncao(): o banzo estica 1000 e o montante 500', j && perto(j.barras[0].dL, 1000) && perto(j.barras[1].dL, 500));
+    const jd = mod.juncao(a0, { id: 'c', inicio: [6000, -3000, 100], fim: [6000, -500, 100] });
+    conferir('juntar', 'eixos desencontrados: o meio (z = 50) e o afastamento 100', jd && pertoV(jd.ponto, [6000, 0, 50]) && perto(jd.afastamento, 100));
+    conferir('juntar', 'paralelas: null', mod.juncao(a0, { id: 'd', inicio: [0, 500, 0], fim: [5000, 500, 0] }) === null);
+    const jt = mod.juncao(a0, { id: 'e', inicio: [-1000, -3000, 0], fim: [-1000, -500, 0] });
+    conferir('juntar', 'o encontro atrás do início: o início anda para trás (−1000)', jt && jt.barras[0].ponta === 'inicio' && pertoV(jt.barras[0].novo, [-1000, 0, 0]));
+    const ed = novoEditor(nuc, { selecao: { ids: new Set(), definir(ids) { this.ids = new Set(ids); }, limpar() { this.ids.clear(); } } });
+    const a = adicionar(ed, { tipo: 'barra', inicio: [0, 0, 0], fim: [5000, 0, 0], perfil: 'W 310×38,7' });
+    const b = adicionar(ed, { tipo: 'barra', inicio: [6000, -3000, 0], fim: [6000, -500, 0], perfil: 'W 310×38,7' });
+    const f = usar(ed, G('juntar'));
+    f.onPonto(P(4800, 0, 0, { entidade: a.id })); f.onPonto(P(6000, -600, 0, { entidade: b.id }));
+    conferir('juntar', 'dois cliques: as duas pontas no cruzamento', pertoV(ed.documento.get(a.id).fim, [6000, 0, 0]) && pertoV(ed.documento.get(b.id).fim, [6000, 0, 0]));
+    ed.desfazer();
+    conferir('juntar', 'um desfazer devolve as duas', pertoV(ed.documento.get(a.id).fim, [5000, 0, 0]) && pertoV(ed.documento.get(b.id).fim, [6000, -500, 0]));
+    ed.selecao.definir([a.id, b.id]); const f2 = usar(ed, G('juntar'));
+    conferir('juntar', 'com as duas selecionadas, Enter junta', f2.onTecla({ type: 'keydown', key: 'Enter' }) === true && pertoV(ed.documento.get(b.id).fim, [6000, 0, 0]));
+  });
+
   // ---- offset
   await tentar('offset', 'para fora e para dentro', () => {
     const ed = novoEditor(nuc);
