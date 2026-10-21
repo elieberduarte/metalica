@@ -50,6 +50,13 @@ FONTES = {
                  "url": "https://geoserver.cascavel.pr.gov.br:8181/geoserver/wms", "camada": "ctmgeo_22s:CASCAVEL",
                  "srs": "EPSG:900913", "formato": "image/png", "tiled": True,
                  "atribuicao": "Ortofoto 2021: Prefeitura de Cascavel — IPC"},
+    # a ortofoto do drone dos bairros de Cascavel (21/10, o usuário: "conseguimos pegar a imagem do ortofoto drone do portal
+    # de Cascavel?" — "Ortofoto DRONE" no geoportal): pública, ~3–7 cm por pixel, mas só onde o drone passou (2018); o
+    # cache dele não tem os blocos prontos (~0,9 s cada). Fora dela, a ortofoto 2021 da sede (a "reserva")
+    "cascavel-drone": {"nome": "Ortofoto DRONE — Prefeitura de Cascavel (bairros, 2018)", "tipo": "wms", "zoom_max": 21,
+                       "url": "https://geoserver.cascavel.pr.gov.br:8181/geoserver/wms",
+                       "camada": "ctmgeo_22s:ortofoto_bairros_2018", "srs": "EPSG:900913", "formato": "image/png",
+                       "reserva": "cascavel", "atribuicao": "Ortofoto DRONE 2018: Prefeitura de Cascavel — IPC"},
     # a ortofoto recente de Toledo (21/10, o usuário: "encontrei um geoportal da cidade de Toledo" — o da plataforma
     # nacidade, CTM, plataforma.nacidade.com.br/ctm-3/sig-web): pública, até ~7 cm por pixel (nível 21), 0,4 s o bloco
     "toledo": {"nome": "Ortofoto recente — Prefeitura de Toledo", "tipo": "wms", "zoom_max": 21,
@@ -161,6 +168,16 @@ def validar(t: dict) -> dict:
         if not math.isfinite(cota):
             raise ErroTerreno("a altura da imagem precisa ser um número (mm).")
         saida["cota"] = round(cota, 1)
+    # o ajuste fino em cima do nível de referência (mm; usuário, 21/10: "ajuste fino igual tem da rotação… de 5 em 5 cm com
+    # base em um nível de referência, tipo nível doca (−20 cm)"); a imagem fica na cota (ou no pé da obra) + o ajuste
+    try:
+        ajuste = float(t.get("ajuste") or 0.0)
+    except (TypeError, ValueError):
+        raise ErroTerreno("o ajuste da altura da imagem precisa ser um número (mm).")
+    if not math.isfinite(ajuste) or abs(ajuste) > 100_000:
+        raise ErroTerreno("o ajuste da altura da imagem vai até 100 m para cima ou para baixo.")
+    if round(ajuste, 1):
+        saida["ajuste"] = round(ajuste, 1)
     # a transparência da imagem, 0 a 0,9 (usuário, 20/10: "colocar a imagem com uma certa transparência para ver o subsolo")
     try:
         transp = float(t.get("transparencia") or 0.0)
@@ -194,7 +211,8 @@ def fonte_do_endereco(url: str, camada: str = "", nome: str = "") -> dict:
         raise ErroTerreno("cole o endereço do serviço de imagem (começa com http…). " + COMO_COPIAR)
     host = urllib.parse.urlsplit(url).netloc
     if host.split(":")[0].endswith("cascavel.pr.gov.br") and not camada.strip():
-        return "cascavel"                                     # qualquer link do geoportal (a página, o lote, o GetMap)
+        # qualquer link do geoportal (a página, o lote, o GetMap); o GetMap da camada do drone, a fonte do drone
+        return "cascavel-drone" if "ortofoto_bairros" in urllib.parse.unquote(url).lower() else "cascavel"
     if host.split(":")[0] == "plataforma.nacidade.com.br" and "geoserver" not in url:
         # o geoportal "nacidade" (CTM) de várias cidades (Toledo, Palotina, Guaíra, Cianorte…): o link da página vira o
         # GeoServer dele; a camada (a ortofoto da cidade da obra) se acha pelo lugar ao baixar
@@ -440,7 +458,25 @@ def _vazio(im) -> bool:
     st = ImageStat.Stat(im.convert("RGB"))
     if max(st.stddev) < 1.5:
         return True                                           # de uma cor só (o fundo branco ou preto do WMS)
+    if _fracao_branca(im) >= 0.97:
+        return True                                           # o branco com os nomes das ruas (o drone de Cascavel)
     return (max(st.stddev) < 12 and all(185 < m < 225 for m in st.mean) and max(st.mean) - min(st.mean) < 4)
+
+
+BRANCO_MIN = 249                          # o "sem imagem" do drone de Cascavel: 250–255 (o quase branco na beira)
+
+
+def _branco(im):
+    """A máscara (L, 255 = sim) dos pixels quase brancos: o "sem imagem" da ortofoto do drone de Cascavel (21/10), branco
+    com os nomes das ruas gravados por cima — na beira do drone, salpicado de 250–254 (só o 255 deixava a beira pintada)."""
+    from PIL import ImageChops
+    r, g, b = (c.point(lambda v: 255 if v >= BRANCO_MIN else 0) for c in im.convert("RGB").split())
+    return ImageChops.multiply(ImageChops.multiply(r, g), b)
+
+
+def _fracao_branca(im) -> float:
+    h = _branco(im).histogram()
+    return h[255] / max(1, sum(h))
 
 
 def _bloco(fonte: dict, z: int, x: int, y: int, baixar):
@@ -506,18 +542,32 @@ def _imagem_xyz(fonte: dict, reg: dict, z: int, baixar, progresso) -> "Image.Ima
     feitos = [0]
     falhas = []
 
-    def um(b):
-        bx, by = b
-        im = None
+    reserva = FONTES.get(fonte.get("reserva") or "")
+
+    def com_retentativa(f, bx, by, anotar=True):
         for tentativa in range(3):                           # o servidor da prefeitura às vezes não entrega na hora (a
             try:                                             # PRATI em Toledo, 21/10: um quadrado cinza na imagem)
-                im = _bloco(fonte, z, bx, by, baixar)        # o vazio da fonte fica cinza, como o que falha
-                break
+                return _bloco(f, z, bx, by, baixar)          # o vazio da fonte fica cinza, como o que falha
             except Exception as e:                           # três falhas: o bloco fica cinza e a imagem sai
                 if tentativa == 2:
-                    falhas.append(str(e))
+                    if anotar:
+                        falhas.append(str(e))
                 else:
                     time.sleep(0.5 * (tentativa + 1))
+        return None
+
+    def um(b):
+        bx, by = b
+        im = com_retentativa(fonte, bx, by)
+        if reserva:
+            # onde o drone não passou (o bloco vazio ou parte dele em branco puro), a imagem da reserva (a ortofoto 2021
+            # da sede): o bloco inteiro quando falta mais da metade (some o nome da rua no branco), senão pixel a pixel
+            fr = 1.0 if im is None else _fracao_branca(im)
+            if fr > 0.002:
+                outra = com_retentativa(reserva, bx, by, anotar=False)
+                if outra is not None:
+                    from PIL import ImageFilter                 # a máscara 2 px mais larga: sem a costura na beira
+                    im = outra if fr > 0.5 else Image.composite(outra, im, _branco(im).filter(ImageFilter.MaxFilter(5)))
         feitos[0] += 1
         progresso("baixando a imagem do terreno (%d de %d blocos)" % (feitos[0], len(blocos)), 0.05 + 0.85 * feitos[0] / len(blocos))
         return b, im
@@ -573,7 +623,13 @@ def baixar_imagem(g, s: str, corpo: Optional[dict] = None, progresso: Callable =
     # pronto do cache dele, × 40 s um GetMap de 1024 px)
     z0 = zoom_para(reg["lado_m"], reg["lat"], cfg.get("zoom_max", ZOOM_MAX))
     progresso("procurando o nível da imagem…", 0.04)
-    z = _nivel_com_imagem(cfg, reg, z0, baixar)
+    # a fonte com reserva (o drone) só no nível certo: abaixo dele a reserva é melhor que o drone borrado
+    z = _nivel_com_imagem(cfg, reg, z0, baixar, minimo=z0 - 1 if cfg.get("reserva") in FONTES else 12)
+    if z is None and cfg.get("reserva") in FONTES:
+        # o drone não passou aqui: a imagem da reserva (a ortofoto 2021 da sede), dita no nome da fonte da imagem
+        progresso("a %s não cobre a obra; usando a %s…" % (cfg["nome"], FONTES[cfg["reserva"]]["nome"]), 0.04)
+        cfg = dict(FONTES[cfg["reserva"]], nome="%s (o drone não cobre a obra)" % FONTES[cfg["reserva"]]["nome"])
+        z = _nivel_com_imagem(cfg, reg, zoom_para(reg["lado_m"], reg["lat"], cfg.get("zoom_max", ZOOM_MAX)), baixar)
     if z is None:
         if cfg["tipo"] == "wms":
             raise ErroTerreno("a imagem de %s não cobre este lugar (os blocos vêm vazios). Escolha outra fonte — a Esri "
@@ -652,7 +708,7 @@ def para_ifc(t: dict, meta: dict, caminho_jpg: str, deslocamento=(0.0, 0.0, 0.0)
     norte0 = norte_a - escala * (wx * sa + wy * ca)
     a = math.radians(float(t.get("norte") or 0.0))
     lat_s, lon_s = modelo_para_geo(t, 0.0, 0.0)              # o sítio: a origem do modelo
-    z = float(t["cota"]) if t.get("cota") is not None else float(z_padrao)
+    z = (float(t["cota"]) if t.get("cota") is not None else float(z_padrao)) + float(t.get("ajuste") or 0.0)
     cantos = []
     for mx, my in ((meta["x0"], meta["y0"]), (meta["x1"], meta["y0"]), (meta["x1"], meta["y1"]), (meta["x0"], meta["y1"])):
         x, y = geo_para_modelo(t, *de_mercator(mx, my))

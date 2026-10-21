@@ -11,6 +11,7 @@ const rad = g => g * Math.PI / 180, grau = r => r * 180 / Math.PI;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const nf = (v, c = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
 const cotaTxt = mm => (mm > 0 ? '+' : mm < 0 ? '−' : '') + nf(Math.abs(mm) / 1000, 2);    // +4,00 / 0,00 / −3,50 (m)
+const cmTxt = mm => nf(mm / 10, Math.round(mm) % 10 ? 1 : 0);                            // o ajuste fino: 5 / −20 / 2,5 (cm)
 
 /** O ponto do modelo (mm do projeto) em [lat, lon] pela amarração `t` ({lat, lon, ponto, norte}). */
 /** Os raios do elipsoide (do meridiano e da primeira vertical) na latitude — a Terra esfera errava 0,5 % no norte–sul
@@ -190,8 +191,10 @@ export class Terreno {
     this.grupo.position.set(-o[0] * k, -o[1] * k, -o[2] * k);
     // na cota escolhida (o nível 0,00 da obra com subsolo: o subsolo fica embaixo do chão, a fundação não voa) ou no pé
     // da obra, logo acima do piso liso (min.z − 10)
+    // + o ajuste fino (usuário, 21/10: "de 5 em 5 cm com base em um nível de referência, tipo nível doca (−20 cm)")
     const cota = this.t && Number.isFinite(this.t.cota) ? this.t.cota : null;
-    this.zChao = cota !== null ? cota - 3 : this.visor._caixaModelo.min.z + o[2] - 6;
+    const ajuste = this.t && Number.isFinite(this.t.ajuste) ? this.t.ajuste : 0;
+    this.zChao = (cota !== null ? cota - 3 : this.visor._caixaModelo.min.z + o[2] - 6) + ajuste;
     this.malha.position.set(p.meio[0] + d[0], p.meio[1] + d[1], this.zChao);
     this.malha.scale.set(p.largura, p.altura, 1);
     this.malha.rotation.set(0, 0, p.giro);
@@ -251,6 +254,12 @@ export class Terreno {
             <option value="outra" ${temCota && !naLista ? 'selected' : ''}>Outra cota…</option></select>
             <span id="terreno-cota-outra" ${temCota && !naLista ? '' : 'hidden'}><input id="terreno-cota" type="text" inputmode="decimal"
               value="${temCota ? nf(t.cota / 1000, 2) : '0,00'}" aria-label="Cota da imagem (m)"> m</span></div>
+          <div class="terreno-norte terreno-ajuste"><span>Ajuste</span>
+            <button type="button" data-ajuste="-50" title="Descer a imagem 5 cm">−5 cm</button>
+            <input id="terreno-ajuste" type="text" inputmode="decimal" value="${cmTxt(t.ajuste || 0)}"
+              aria-label="Ajuste fino da altura da imagem (cm)"><span>cm</span>
+            <button type="button" data-ajuste="50" title="Subir a imagem 5 cm">+5 cm</button></div>
+          <p class="dica" id="terreno-cota-final">${esc(this._cotaFinal())}</p>
           <p class="dica">Obra com subsolo: a imagem no nível do terreno (o 0,00) deixa o subsolo embaixo do chão e a fundação
             no lugar.</p>
           <div class="sol-controles"><label>Transparência <output id="terreno-transp-saida">${Math.round((t.transparencia || 0) * 100)} %</output>
@@ -323,6 +332,28 @@ export class Terreno {
         else aplicar(+cs.value);
       };
       ci.oninput = () => { const mm = digitada(); if (mm !== null) aplicar(mm); };
+      // o ajuste fino em cima do nível escolhido: os botões de 5 cm, as setas do teclado (5 cm) e o número digitado (cm)
+      const ca = $('#terreno-ajuste');
+      const ajustar = (mm, deOnde) => {
+        if (!Number.isFinite(mm)) return;
+        mm = Math.max(-100000, Math.min(100000, Math.round(mm)));
+        if (mm) this.t.ajuste = mm; else delete this.t.ajuste;
+        if (deOnde !== 'numero') ca.value = cmTxt(mm);
+        $('#terreno-cota-final').textContent = this._cotaFinal();
+        this.posicionar();
+        this._gravarLogo();
+      };
+      ca.oninput = () => ajustar(parseFloat(String(ca.value).replace(',', '.')) * 10, 'numero');
+      ca.onblur = () => { ca.value = cmTxt(this.t.ajuste || 0); };
+      ca.onkeydown = (ev) => {
+        if (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown') return;
+        ev.preventDefault();
+        ajustar((this.t.ajuste || 0) + (ev.key === 'ArrowUp' ? 50 : -50));
+      };
+      raiz.querySelectorAll('[data-ajuste]').forEach(b => { b.onclick = () => ajustar((this.t.ajuste || 0) + +b.dataset.ajuste); });
+      const cotaFinal = () => { $('#terreno-cota-final').textContent = this._cotaFinal(); };
+      cs.addEventListener('change', cotaFinal);
+      ci.addEventListener('input', cotaFinal);
     }
     // a transparência (o subsolo à vista através do chão)
     const tr = $('#terreno-transp');
@@ -344,6 +375,16 @@ export class Terreno {
       this.estado = await this._pedir('/esquecer', {});
       await this.montar(); this.ui.aoMudar(); this.painel();
     };
+  }
+
+  /** "Imagem em −1,40 (Doca −1,20 − 20 cm)": a altura em que a imagem ficou, pelo nível de referência e o ajuste. */
+  _cotaFinal() {
+    const t = this.t || {}, aj = Number.isFinite(t.ajuste) ? t.ajuste : 0;
+    const ajTxt = aj ? ` ${aj > 0 ? '+' : '−'} ${cmTxt(Math.abs(aj))} cm` : '';
+    if (!Number.isFinite(t.cota)) return aj ? `Imagem no pé da obra${ajTxt}.` : 'Imagem no pé da obra.';
+    const n = this._niveis().find(v => v.z === Math.round(t.cota));
+    const ref = n ? `${n.nome}${/[0-9]/.test(n.nome) ? '' : ' ' + cotaTxt(n.z)}` : `cota ${cotaTxt(t.cota)}`;
+    return aj ? `Imagem em ${cotaTxt(t.cota + aj)} (${ref}${ajTxt}).` : `Imagem em ${cotaTxt(t.cota)} (${ref}).`;
   }
 
   /** Os níveis do projeto (os da planta no chão, Planta e níveis), um por cota, com o 0,00 sempre. */

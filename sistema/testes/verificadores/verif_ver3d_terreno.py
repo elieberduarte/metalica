@@ -180,6 +180,33 @@ try:
     esperar(aba, "!!document.getElementById('terreno-cota-sel')", 5)
     ok(aba.avaliar("document.getElementById('terreno-cota-sel').value") == "outra" and not aba.avaliar("document.getElementById('terreno-cota-outra').hidden"),
        "o painel volta mostrando a cota digitada")
+    # o ajuste fino em cima do nível (usuário, 21/10: "ajuste fino igual tem da rotação… de 5 em 5 cm com base em um nível de
+    # referência, tipo nível doca (−20 cm)"): −5 cm quatro vezes no 0,00 → a imagem em −0,20, o nível continua escolhido
+    aba.avaliar("(() => { const s = document.getElementById('terreno-cota-sel'); s.value = '0'; s.dispatchEvent(new Event('change')); return 1; })()")
+    for _ in range(4):
+        aba.avaliar("document.querySelector('[data-ajuste=\"-50\"]').click()")
+    ok(abs(aba.avaliar(zM) - (-203)) < 1, f"−5 cm × 4 no 0,00: a imagem em −0,20 ({aba.avaliar(zM):.0f} mm)")
+    txt = aba.avaliar("document.getElementById('terreno-cota-final').textContent")
+    ok(txt == "Imagem em −0,20 (Nível 0,00 − 20 cm).", f"o painel diz a altura final e a referência ({txt})")
+    ok(aba.avaliar("document.getElementById('terreno-ajuste').value") == "-20", "o campo do ajuste em cm (−20)")
+    time.sleep(1.2)
+    t_ = _json(API)["terreno"]
+    ok(t_.get("cota") == 0 and t_.get("ajuste") == -200, f"gravados o nível (0) e o ajuste (−200 mm): {t_.get('cota')}, {t_.get('ajuste')}")
+    aba.avaliar("(() => { const i = document.getElementById('terreno-ajuste'); i.value = '2,5'; i.dispatchEvent(new Event('input')); return 1; })()")
+    ok(abs(aba.avaliar(zM) - 22) < 1, f"o ajuste digitado (2,5 cm → {aba.avaliar(zM):.0f} mm)")
+    aba.avaliar("document.getElementById('terreno-ajuste').dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowUp', bubbles: true}))")
+    ok(abs(aba.avaliar(zM) - 72) < 1, f"a seta para cima sobe 5 cm ({aba.avaliar(zM):.0f} mm)")
+    time.sleep(1.2)
+    aba.navegar(base + "/visor3d/ver3d.html?projeto=obra", limite=60)
+    ok(esperar(aba, "!!(window.ver3dPronto && window.terreno && window.terreno.malha)", 60) and abs(aba.avaliar(zM) - 72) < 1,
+       "depois do F5 a imagem continua no nível + ajuste")
+    aba.avaliar("document.getElementById('btn-terreno').click()")
+    esperar(aba, "!!document.getElementById('terreno-ajuste')", 5)
+    ok(aba.avaliar("document.getElementById('terreno-ajuste').value") == "7,5", "o painel volta com o ajuste (7,5 cm)")
+    foto(aba, "ver3d_terreno_3b_ajuste.png")
+    aba.avaliar("(() => { const i = document.getElementById('terreno-ajuste'); i.value = '0'; i.dispatchEvent(new Event('input')); return 1; })()")
+    time.sleep(1.2)
+    ok("ajuste" not in _json(API)["terreno"], "ajuste zero sai do projeto")
     # a transparência (usuário, 20/10: "colocar a imagem com uma certa transparência para ver o subsolo")
     aba.avaliar("(() => { const r = document.getElementById('terreno-transp'); r.value = 40; r.dispatchEvent(new Event('input')); return 1; })()")
     ok(abs(aba.avaliar("window.terreno.vazada.material.opacity") - 0.6) < 1e-9 and aba.avaliar("window.terreno.malha.material.opacity") == 1,

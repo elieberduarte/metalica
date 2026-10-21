@@ -218,11 +218,57 @@ def test_wms_que_nao_cobre_o_lugar_avisa(tmp_path):
         L.baixar_imagem(g, s, {}, baixar=transparente)
 
 
+def test_ortofoto_do_drone_de_cascavel_e_a_reserva(tmp_path):
+    """A Ortofoto DRONE do geoportal de Cascavel (21/10, "conseguimos pegar a imagem do ortofoto drone?"): a camada dos
+    bairros (2018) no nível 21; onde o drone não passou (os blocos dela vêm vazios), a ortofoto 2021 da sede, e o nome da
+    imagem diz isso."""
+    from PIL import Image
+    f = L.FONTES["cascavel-drone"]
+    assert f["camada"] == "ctmgeo_22s:ortofoto_bairros_2018" and f["zoom_max"] == 21 and f["reserva"] == "cascavel"
+    g, s = _gerente(tmp_path)
+    L.gravar(g, s, {"lat": CASCAVEL[0], "lon": CASCAVEL[1], "ponto": [0, 0], "norte": 0, "fonte": "cascavel-drone"})
+    pedidos, png = [], _png_ruido()
+    e = L.baixar_imagem(g, s, {"caixa": [-30_000, -20_000, 30_000, 20_000]}, baixar=lambda u: pedidos.append(u) or png)
+    assert all("ortofoto_bairros_2018" in u for u in pedidos)
+    assert e["imagem"]["zoom"] == 20 and e["imagem"]["fonte"].startswith("Ortofoto DRONE")   # 4096 px em ~370 m
+
+    # fora do drone o servidor manda o branco puro com o nome da rua por cima (não transparente): conta como vazio
+    branco = Image.new("RGB", (256, 256), (255, 255, 255))
+    branco.paste((17, 17, 17), (90, 120, 170, 132))                   # "RUA RIO DA PRATA"
+    vazio = io.BytesIO()
+    branco.save(vazio, "PNG")
+    pedidos.clear()
+    e = L.baixar_imagem(g, s, {}, baixar=lambda u: pedidos.append(u) or (vazio.getvalue() if "bairros" in u else png))
+    assert any("LAYERS=ctmgeo_22s%3ACASCAVEL" in u for u in pedidos)
+    assert sum("bairros" in u for u in pedidos) == 1                 # só o bloco do meio, sem descer ao drone borrado
+    assert e["imagem"]["zoom"] == 20 and "o drone não cobre a obra" in e["imagem"]["fonte"]
+    assert g.ler(s)["terreno"]["fonte"] == "cascavel-drone"          # a escolha fica: outra obra pode estar no drone
+
+    # a obra na beira do drone: o bloco meio em branco é completado pixel a pixel com a reserva (sem branco puro no fim)
+    import random
+    r = random.Random(2)
+    meio = Image.new("RGB", (256, 256), (255, 255, 255))
+    meio.paste(Image.frombytes("RGB", (128, 256), bytes(r.randrange(1, 255) for _ in range(128 * 256 * 3))), (128, 0))
+    reserva = Image.frombytes("RGB", (256, 256), bytes(v for _ in range(256 * 256) for v in (0, r.randrange(256), r.randrange(256))))
+    bm, br = io.BytesIO(), io.BytesIO()
+    meio.save(bm, "PNG")
+    reserva.save(br, "PNG")
+    reg = L.regiao({"lat": CASCAVEL[0], "lon": CASCAVEL[1], "ponto": [0, 0], "norte": 0}, [-5000, -5000, 5000, 5000])
+    im = L._imagem_xyz(L.FONTES["cascavel-drone"], reg, 19, lambda u: bm.getvalue() if "bairros" in u else br.getvalue(),
+                       lambda *a: None)
+    assert L._fracao_branca(im) == 0
+    vermelho = im.getchannel("R").histogram()
+    assert 0.3 < vermelho[0] / sum(vermelho) < 0.7                     # metade drone, metade reserva
+
+
 @pytest.mark.parametrize("colado,esperado", [
     # o usuário colou o link da página do geoportal de Cascavel e a camada ficou em branco (20/10): a fonte pronta
     ("https://geocascavel.cascavel.pr.gov.br/geo-view/selecionar/empresa-1.ctm?redirect=https://geocascavel.cascavel.pr.gov"
      ".br/geo-view/index.ctm?mslinkLote=4229086", "cascavel"),
     ("https://geocascavel.cascavel.pr.gov.br/geo-view/index.ctm", "cascavel"),
+    # o GetMap da camada do drone copiado do F12 do geoportal: a fonte do drone
+    ("https://geoserver.cascavel.pr.gov.br:8181/geoserver/wms?SERVICE=WMS&REQUEST=GetMap&LAYERS=ctmgeo_22s%3Aortofoto_"
+     "bairros_2018&SRS=EPSG%3A900913&BBOX=1,2,3,4&WIDTH=256&HEIGHT=256", "cascavel-drone"),
     # o GetMap copiado do F12 de outro geoportal: a camada vem do LAYERS=
     ("https://sig.outra.pr.gov.br/geoserver/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=base%3Aorto2022&SRS=EPSG"
      "%3A900913&BBOX=1,2,3,4&WIDTH=256&HEIGHT=256", {"tipo": "wms", "url": "https://sig.outra.pr.gov.br/geoserver/wms",
@@ -324,6 +370,27 @@ def test_altura_da_imagem():
     assert "cota" not in L.validar(dict(base, cota=None)) and "cota" not in L.validar(dict(base, cota=""))
     with pytest.raises(L.ErroTerreno, match="altura"):
         L.validar(dict(base, cota="abc"))
+
+
+def test_ajuste_fino_da_altura_da_imagem(tmp_path):
+    """O ajuste fino em cima do nível de referência (usuário, 21/10: "de 5 em 5 cm com base em um nível de referência, tipo
+    nível doca (−20 cm)"): gravado à parte do nível, e a placa do IFC na cota + ajuste (com nível e no pé da obra)."""
+    base = {"lat": -24.9, "lon": -53.4, "ponto": [0, 0]}
+    assert "ajuste" not in L.validar(base) and "ajuste" not in L.validar(dict(base, ajuste=0))
+    t = L.validar(dict(base, cota=-1200, ajuste=-200))
+    assert t["cota"] == -1200 and t["ajuste"] == -200
+    assert L.validar(dict(base, ajuste="25"))["ajuste"] == 25
+    for ruim in ("x", float("nan"), 200_000):
+        with pytest.raises(L.ErroTerreno, match="ajuste"):
+            L.validar(dict(base, ajuste=ruim))
+    from PIL import Image
+    Image.new("RGB", (8, 8), (90, 130, 78)).save(tmp_path / "i.jpg")
+    reg = L.regiao(dict(PRATI), [0, 0, 10000, 6000])
+    caixa = {k: reg[k] for k in ("x0", "y0", "x1", "y1")}
+    tr = L.para_ifc(dict(PRATI, cota=-1200, ajuste=-200), caixa, str(tmp_path / "i.jpg"))
+    assert all(p[2] == -1400 for p in tr["cantos"])                          # a doca −1,20 − 20 cm
+    tr = L.para_ifc(dict(PRATI, ajuste=50), caixa, str(tmp_path / "i.jpg"), z_padrao=-800)
+    assert all(p[2] == -750 for p in tr["cantos"])                           # no pé da obra + 5 cm
 
 
 def test_transparencia_da_imagem():
