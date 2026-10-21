@@ -32,8 +32,9 @@ v = a altura do perfil (a 2ª aba).
   2.8  Fora destas regras: tubos, barras redondas, I/W, a barra secundária "um lado só", a presilha, o banzo em caixa
        (`secao_dupla: "caixa"`, pelo croqui da legenda).
   2.9  Banzo em 2U composto (`secao_dupla: "composto"`, a T2 do Hangar) — usuário, 21/10: os dois U de costas, a alma
-       de cada um no plano da tesoura (a altura em pé, a boca perpendicular ao plano), afastados pela peça da alma que
-       passa entre as almas, a boca de cada um para o seu lado; a alma em cantoneira dupla (2L) POR DENTRO DOS PERFIS: o
+       de cada um no plano da tesoura (a altura em pé, a boca perpendicular ao plano), ENCOSTADOS no U que passa entre
+       as almas (o vão é a altura do montante — U100 na T2 do Hangar —, os banzos soldados nele: "os perfis dos banzos
+       ficaram afastados dos montantes"), a boca de cada um para o seu lado; a alma em cantoneira dupla (2L) POR DENTRO DOS PERFIS: o
        par no vão entre as almas, a aba deitada com as costas soldadas na face de dentro de cada alma — a maior
        superfície de contato de solda — e a aba que atravessa o plano para o centro, afastando-se da alma (usuário,
        21/10, depois de ajustar a diagonal da ponta à mão: "essas cantoneiras precisam seguir o mesmo modelo das que
@@ -46,10 +47,9 @@ v = a altura do perfil (a 2ª aba).
        perfil é simples os banzos devem ficar com a boca virada para dentro do vão da tesoura e as cantoneiras duplas
        soldadas nas laterais internas, isso já tem nas regras". A leitura "alma no plano" do corte T1 (20–21/10) foi
        desfeita: o U marcado `secao_dupla: "alma_no_plano"` num modelo antigo entra na 2.2 (é acusado e girado).
-  2.9a A PONTA do banzo composto (usuário, 21/10, montada à mão na T2 do Hangar): o vão entre as almas dos dois U é a
-       altura do U do banzo (127 no Hangar; nunca menor que a altura da alma — CD Bom Dia: alma Ue 127 em banzo Ue 100),
-       e a ponta — o montante de extremidade e o trecho a 45° do painel de ponta — é UM U SÓ do perfil do banzo, no
-       plano, encaixado entre as almas: a altura atravessa o plano (as abas encostam e soldam nas almas dos banzos), a
+  2.9a A PONTA do banzo composto (usuário, 21/10, montada à mão na T2 do Hangar): o montante de extremidade e o trecho
+       a 45° do painel de ponta são UM U SÓ do perfil que passa entre as almas (o do montante — "ponta em U100 entre
+       as almas"; sem U na alma, o do banzo, e então o vão é a altura dele), no plano, encaixado entre as almas: a altura atravessa o plano (as abas encostam e soldam nas almas dos banzos), a
        alma para fora fechando a ponta, a boca para o vão (o montante para o meio; o 45° para baixo). O montante nasce
        no nível de apoio (sentado na chapa, como o fundo dos banzos) e encontra o 45° em meia-esquadria (a bissetriz);
        a ponta fica ALINHADA COM O FINAL DA TESOURA (a face de fora da alma no fim do banzo inferior — usuário, 21/10;

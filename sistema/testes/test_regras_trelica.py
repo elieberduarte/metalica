@@ -335,14 +335,14 @@ def _barras_composto_ponta(ponta=0.0):
     ]
 
 
-def _modelo_composto_ponta(dupla=False, sentido=1.0, ponta=0.0):
+def _modelo_composto_ponta(dupla=False, sentido=1.0, ponta=0.0, montante_u=False):
     from nucleo2d.desenho import Desenho, Linha
     from nucleo3d import de_planta_estrutura as P
     barras = []
     for b in _barras_composto_ponta(ponta):
         banzo = b[4] in ("banzo_sup", "banzo_inf", "extremidade")
-        barras.append(list(b) + [U_BZ if banzo else L_AL, "composto" if banzo else "", None, False,
-                                 dupla and b[4] == "diagonal"])
+        perfil = U_BZ if banzo else (U_AL if montante_u and b[4] == "montante" else L_AL)
+        barras.append(list(b) + [perfil, "composto" if banzo else "", None, False, dupla and b[4] == "diagonal"])
     des = Desenho(nome="planta")
     des.add(Linha(a=(0.0, 0.0), b=(0.0, 6000.0 * sentido), camada="ESTRUTURA",
                   atributos={"elemento": "trelica", "material": "aco", "marca": "T2", "perfis": {}, "cantoneira": "simples",
@@ -561,6 +561,29 @@ def _sub3(a, b):
 def _unit3(a):
     n = math.sqrt(sum(x * x for x in a)) or 1.0
     return tuple(x / n for x in a)
+
+
+@pytest.mark.parametrize("sentido", [1.0, -1.0])
+def test_2_9_banzos_encostados_no_montante_e_ponta_do_perfil_dele(sentido):
+    """o composto com os montantes em U (a T2 do Hangar: U100 em 2U127): o vão entre as almas é a altura do montante —
+    os banzos encostados e soldados nele (usuário, 21/10: "os perfis dos banzos ficaram afastados dos montantes", eram
+    127 entre as almas, 13,5 mm de folga de cada lado) — e a ponta em U só é do perfil do montante, entre as almas
+    ("ponta em U100 entre as almas"), alinhada com o final da tesoura"""
+    from nucleo3d.geometria import resolver_perfil
+    xg_bz, _ = _xg_bf(U_BZ)
+    xg_al, _ = _xg_bf(U_AL)
+    d_al = float(resolver_perfil(U_AL).d)
+    bs = _modelo_composto_ponta(sentido=sentido, ponta=float(resolver_perfil(U_BZ).d) / 2.0, montante_u=True, dupla=True)
+    pontas = [b for b in bs if (b.atributos or {}).get("ponta_composto")]
+    banzos = [b for b in bs if b.perfil == U_BZ]
+    assert banzos and all(abs(b.inicio[0]) == pytest.approx(xg_bz + d_al / 2.0, abs=0.01) for b in banzos)
+    for b in banzos:                                  # a costa da alma do banzo na face do montante (d/2 do plano)
+        assert abs(b.inicio[0]) - xg_bz == pytest.approx(d_al / 2.0, abs=0.01)
+    assert len(pontas) == 4 and all(b.perfil == U_AL for b in pontas)
+    verticais = sorted((b for b in pontas if abs(b.inicio[1] - b.fim[1]) < 1.0), key=lambda b: abs(b.inicio[1]))
+    for v, fim_y in zip(verticais, (0.0, 6000.0 * sentido)):
+        assert v.inicio[1] - _boca(v)[1] * xg_al == pytest.approx(fim_y, abs=0.5)
+    _sem_erros(bs)
 
 
 def test_2_9a_ponta_do_composto_e_um_u_so_entre_as_almas():
