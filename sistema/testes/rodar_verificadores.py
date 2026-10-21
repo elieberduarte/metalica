@@ -40,6 +40,9 @@ PASTAS = [os.path.join(RAIZ, "testes", "verificadores"), os.path.join(RAIZ, "tes
 DURACOES = os.path.join(RAIZ, "testes", "verificadores", "_duracoes.json")
 #: Tempo máximo de um verificador (s): o da lista de materiais gera os resumos em PDF.
 LIMITE = 900
+#: Os que passam disso sozinhos (20/10, conferência da 0.9.0): a câmera em 6 formas de modelo × 2 telas leva 28 min,
+#: os gestos do celular ~15 min — com 900 s eram cortados no meio e davam falha
+LIMITES = {"verif_camera_modelos": 3600, "verif_celular_gestos": 1800}
 _PEDE_ARGUMENTOS = re.compile(r"len\(sys\.argv\)\s*<\s*[23]")
 _PORTA_FIXA = re.compile(r"^(?:PORTA|porta)\s*=\s*(\d{4})\s*$", re.M)
 
@@ -122,7 +125,8 @@ def rodar(caminho):
         cmd += ["--porta", str(servidor[1])]
     try:
         r = subprocess.run(cmd, cwd=RAIZ, env=env, capture_output=True,
-                           text=True, encoding="utf-8", errors="replace", timeout=LIMITE)
+                           text=True, encoding="utf-8", errors="replace",
+                           timeout=LIMITES.get(os.path.splitext(os.path.basename(caminho))[0], LIMITE))
         saida = (r.stdout or "") + (r.stderr or "")
         codigo = r.returncode
     except subprocess.TimeoutExpired as e:

@@ -193,6 +193,15 @@ class Tela:
             self.aba.drenar(0.04)
         self.aba.cmd("Input.dispatchMouseEvent", type="mouseReleased", x=x + dx, y=y + dy, button=botao, buttons=0, clickCount=1)
         self.aba.drenar(1.0)            # o amortecimento do OrbitControls (editor) assenta
+        # … e, com a máquina carregada (a conferência, 20/10: erro do pan 12–14 px; sozinho 3–4 px), o desenho por
+        # software leva mais que 1 s para assentar: espera a câmera parar de andar (até 6 s a mais)
+        antes, t0 = self.estado()["pos"], time.time()
+        while time.time() - t0 < 6:
+            self.aba.drenar(0.3)
+            agora = self.estado()["pos"]
+            if _dist(antes, agora) <= 1e-9 * max(1.0, max(abs(v) for v in agora)):
+                break
+            antes = agora
 
     def pixel_na_peca(self):
         """Um pixel com peça direto sob ele, o mais perto do meio da tela."""
