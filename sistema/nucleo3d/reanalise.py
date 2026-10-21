@@ -376,7 +376,9 @@ def _tesouras(doc, achados: list) -> dict:
             continue
         e = doc.entidades.get(i)
         if e is None:
-            achados.append(_achado_d(d0, "trecho de alma todo dentro do banzo — sai (regra 3.1b)"))
+            achados.append(_achado_d(d0, "presilha dobrada sobre outra do mesmo par — sai (regra 3.3)"
+                                     if d0.get("papel") == "presilha" else
+                                     "trecho de alma todo dentro do banzo — sai (regra 3.1b)"))
             continue
         d1 = e.dict()
         o_que = []

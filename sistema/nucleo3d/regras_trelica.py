@@ -1364,6 +1364,26 @@ def _presilhas(entidades: Iterable, por_grupo: bool = True) -> List[tuple]:
     return out
 
 
+def presilhas_repetidas(entidades: Iterable, perto: float = 40.0) -> List:
+    """3.3: a presilha a menos de `perto` mm de outra (o meio delas), as duas atravessando o mesmo par — a segunda é a
+    mesma peça duas vezes (no Posto CB, o montante lido em duas tesouras: uma das presilhas ficava 6,4 mm fora, furando a
+    aba, e não parecia repetida; no lugar certo as duas caem juntas). Devolve as que sobram; quem tira é quem monta"""
+    pres = [e for e in entidades if str(getattr(e, "papel", "")) == "presilha"]
+    grade = collections.defaultdict(list)
+    sobra = []
+    for p in pres:
+        m = _mid(p)
+        cel = tuple(int(math.floor(m[k] / perto)) for k in range(3))
+        vizinhas = [q for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)
+                    for q in grade.get((cel[0] + dx, cel[1] + dy, cel[2] + dz), [])]
+        w = _unit(_sub(p.fim, p.inicio))
+        if any(math.dist(m, _mid(q)) < perto and abs(_dot(w, _unit(_sub(q.fim, q.inicio)))) > 0.99 for q in vizinhas):
+            sobra.append(p)
+            continue
+        grade[cel].append(p)
+    return sobra
+
+
 def presilhas_no_lugar(entidades: Iterable, por_grupo: bool = True) -> int:
     """3.3: leva cada presilha fora do lugar ao lugar dela (devolve quantas)"""
     n = 0
@@ -1478,6 +1498,8 @@ def corrigir_modelo(doc) -> dict:
     antes = {e.id: e.dict() for e in barras}
     n1 = aplicar(list(doc.entidades.values()))
     tirados = juntar_trechos(list(doc.entidades.values()))
+    # 3.3: a presilha que, no lugar, cai sobre outra do mesmo par (a dobrada) sai também
+    tirados += [p for p in presilhas_repetidas(list(doc.entidades.values())) if not getattr(p, "bloqueada", False)]
     for a in tirados:
         doc.entidades.pop(a.id, None)
     n2 = aplicar(list(doc.entidades.values())) if tirados else (0, 0, 0, 0)

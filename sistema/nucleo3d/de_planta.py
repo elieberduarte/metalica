@@ -4418,6 +4418,15 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     # as regras de posição das peças da treliça (regras_trelica, 16/10): o mesmo giro em todo gerador, antes do encaixe
     from nucleo3d import regras_trelica
     regras_trelica.aplicar([p["ent"] for p in pecas])
+    # a presilha que a regra 3.3 pôs sobre outra do mesmo par (o montante lido em duas tesouras: de conjuntos diferentes,
+    # o _tirar_repetidas não as compara; antes uma delas ficava 6,4 mm fora, furando a aba — 21/10): fica uma
+    dobradas = {id(e_) for e_ in regras_trelica.presilhas_repetidas([p["ent"] for p in pecas])}
+    if dobradas:
+        for p_ in [p_ for p_ in pecas if id(p_["ent"]) in dobradas]:
+            doc.remover(p_["ent"].id)
+            pecas.remove(p_)
+        presilhas_postas["pecas"] -= len(dobradas)
+        avisos.append("Presilhas dobradas (o mesmo montante lido em duas tesouras): %d tirada(s)." % len(dobradas))
     na_face = alma_na_face.encaixar([p["ent"] for p in pecas])
     if alma_extra["fora"]:
         avisos.append("Alma desenhada fora dos banzos (a peça vizinha que a elevação desenha junto, na ponta): %d barra(s) "

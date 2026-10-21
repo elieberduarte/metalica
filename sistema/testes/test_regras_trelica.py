@@ -504,6 +504,28 @@ def test_3_3_presilha_segue_a_inclinacao_e_nao_fura_a_cantoneira():
     assert R.presilhas_no_lugar(bs) == 2 and "3.3" not in _regras(bs)
 
 
+def test_3_3_presilha_dobrada_aparece_e_sai():
+    """no Posto CB o mesmo montante lido em duas tesouras tinha duas presilhas na mesma altura, uma 6,4 mm fora (furando
+    a aba) — não parecia repetida; com a 3.3 as duas caem juntas: a dobrada é devolvida para sair (o gerador do Posto e o
+    corrigir_modelo do Reanalisar tiram), e a única de cada lugar fica"""
+    from nucleo3d.modelo import Documento
+    bs, _d = _modelo_simples_ponta()
+    p = next(b for b in bs if b.papel == "presilha")
+    assert R.presilhas_repetidas(bs) == []
+    lado = (0.0, 6.4, 0.0)                            # 6,4 mm de lado e torta, como a do Posto
+    copia = Barra(nome="dobrada", inicio=R._add(p.inicio, lado), fim=R._add(p.fim, lado), perfil=p.perfil, papel="presilha",
+                  rotacao=(p.rotacao + 90.0) % 360.0, atributos=dict(p.atributos or {}))
+    bs.append(copia)
+    R.presilhas_no_lugar(bs)
+    assert math.dist(R._mid(copia), R._mid(p)) < 10.0                # no lugar, as duas juntas
+    assert [x.nome for x in R.presilhas_repetidas(bs)] == ["dobrada"]
+    doc = Documento()
+    for b in bs:
+        doc.add(b)
+    r = R.corrigir_modelo(doc)
+    assert copia.id in r["remover"] and p.id in doc.entidades and copia.id not in doc.entidades
+
+
 def test_3_3_presilha_acompanha_a_cantoneira_que_a_regra_moveu():
     """a cantoneira que a regra move (o nó no eixo, o recuo) ou gira leva a presilha junto — no Posto as presilhas
     ficavam onde estavam e saíam tortas e fora do par"""
