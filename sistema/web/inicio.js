@@ -119,8 +119,8 @@ function etapasDoCartao(p) {
   const alvo = et.find(e => e.situacao === 'andamento') || et.find(e => !e.situacao) || et[et.length - 1];
   return el('div', { class: 'cartao-etapas', onclick: (ev) => ev.stopPropagation() },
     et.map((e, i) => el('button', { type: 'button', class: 'ce-etapa ' + (e.situacao || ''), title: `${e.nome}${e.situacao === 'feita' ? ' — feita' : e.situacao === 'andamento' ? ' — em andamento' : ''}`,
-      onclick: () => { location.href = e.url; } }, el('i', { texto: e.situacao === 'feita' ? '✓' : String(i + 1) }), e.nome)),
-    el('button', { type: 'button', class: 'ce-continuar', title: `Abre ${alvo.nome}`, onclick: () => { location.href = alvo.url; } }, `Continuar: ${alvo.nome} →`));
+      onclick: () => { irPara(p, e.url); } }, el('i', { texto: e.situacao === 'feita' ? '✓' : String(i + 1) }), e.nome)),
+    el('button', { type: 'button', class: 'ce-continuar', title: `Abre ${alvo.nome}`, onclick: () => { irPara(p, alvo.url); } }, `Continuar: ${alvo.nome} →`));
 }
 
 function cartao(p) {
@@ -171,11 +171,11 @@ function cartao(p) {
   const icone = el('div', { class: 'cartao-icone ' + p.tipo });
   icone.innerHTML = ICONES[p.tipo] || ICONES.galpao;
 
-  const c = el('article', { class: 'cartao', tabindex: '0', role: 'button', 'data-slug': p.slug,
+  const c = el('article', { class: 'cartao' + (p.atualizando ? ' atualizando' : ''), tabindex: '0', role: 'button', 'data-slug': p.slug,
                             'aria-label': `Abrir o projeto ${p.nome}`,
-                            onclick: () => { location.href = urlDoProjeto(p); },
+                            onclick: () => { irPara(p, urlDoProjeto(p)); },
                             // só o próprio cartão: Enter num botão dele (Excluir, Renomear…) é do botão
-                            onkeydown: (ev) => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) location.href = urlDoProjeto(p); } },
+                            onkeydown: (ev) => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) irPara(p, urlDoProjeto(p)); } },
     icone,
     el('div', { class: 'cartao-corpo' },
       el('div', { class: 'cartao-linha1' },
@@ -183,26 +183,105 @@ function cartao(p) {
         el('span', { class: 'etiqueta ' + p.tipo, texto: p.tipo_rotulo })),
       el('div', { class: 'cartao-sub' },
         [onde, medidas, p.origem_ifc].filter(Boolean).join('  ·  ') || 'sem cliente nem local informados'),
+      p.atualizando ? blocoAtualizando(p) : null,
       etapasDoCartao(p),
       el('div', { class: 'cartao-conteudo' }, conteudo.map(([rot, cls, pasta, url, dica]) =>
         el(pasta || url ? 'button' : 'span', {
           class: 'pilula ' + cls, type: pasta || url ? 'button' : undefined,
           title: dica || (pasta ? `Abrir a pasta ${pasta}` : undefined),
           onclick: url === 'expandir' ? (ev) => { ev.stopPropagation(); expandidos.add(p.slug); desenhar(); }
-            : url ? (ev) => { ev.stopPropagation(); location.href = url; }
+            : url ? (ev) => { ev.stopPropagation(); irPara(p, url); }
             : pasta ? (ev) => { ev.stopPropagation(); abrirPasta(p, pasta); } : undefined,
         }, rot)))),
     el('div', { class: 'cartao-lado' },
       el('div', { class: 'cartao-quando', title: p.alterado || '' }, 'alterado ' + quando(p.alterado)),
       el('div', { class: 'cartao-botoes' },
         p.tipo === 'galpao'
-          ? el('button', { type: 'button', onclick: (ev) => { ev.stopPropagation(); location.href = urlDoProjeto(p, 'editor'); },
+          ? el('button', { type: 'button', disabled: !!p.atualizando, onclick: (ev) => { ev.stopPropagation(); irPara(p, urlDoProjeto(p, 'editor')); },
                            title: 'Abrir o modelo 3D deste projeto' }, 'Editor 3D')
           : null,
-        el('button', { type: 'button', class: 'principal',
-                       onclick: (ev) => { ev.stopPropagation(); location.href = urlDoProjeto(p); } }, 'Abrir')),
+        el('button', { type: 'button', class: 'principal', disabled: !!p.atualizando,
+                       title: p.atualizando ? 'O projeto está sendo atualizado; espere terminar' : undefined,
+                       onclick: (ev) => { ev.stopPropagation(); irPara(p, urlDoProjeto(p)); } }, p.atualizando ? 'Atualizando…' : 'Abrir')),
       menu));
   return c;
+}
+
+/* ------------------------------------------------ projeto sendo atualizado (21/10/2026) */
+// atualizando.json na pasta do projeto (app._progresso grava nas tarefas demoradas; um script ou outra janela do programa
+// gravam o mesmo): o cartão mostra "Atualizando…" com a etapa e a barra, não abre (clique, Enter, Abrir, etapas, desenhos)
+// e volta ao normal sozinho quando a tarefa acaba — abrir no meio interrompia a atualização e deixava o projeto pela metade.
+const VIGIAS = new Map();
+
+function irPara(p, url) {
+  if (p && p.atualizando) {
+    recado('Projeto sendo atualizado', (p.atualizando.etapa || 'trabalhando…') + ' — espere terminar para abrir.', 'erro');
+    return;
+  }
+  location.href = url;
+}
+
+function estiloAtualizando() {
+  if (document.getElementById('estilo-atualizando')) return;
+  const st = el('style', { id: 'estilo-atualizando' });
+  st.textContent = `
+.cartao.atualizando { cursor: not-allowed; outline: 2px dashed var(--acento, #1f6feb); outline-offset: -2px; }
+.cartao-atualizando { margin-top: 6px; font-size: 12.5px; color: var(--texto2); display: flex; flex-direction: column; gap: 4px; max-width: 520px; }
+.cartao-atualizando b { color: var(--acento, #1f6feb); }
+.cartao-atualizando .trilho { position: relative; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--acento, #1f6feb) 18%, transparent); overflow: hidden; }
+.cartao-atualizando .cheio { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--acento, #1f6feb); border-radius: 3px; transition: width .4s; }
+.cartao-atualizando .cheio.corre { width: 30%; animation: cartao-corre 1.4s linear infinite; }
+@keyframes cartao-corre { from { left: -30%; } to { left: 100%; } }`;
+  document.head.append(st);
+}
+
+function tempoCurto(s) { s = Math.round(s || 0); return s >= 60 ? `${Math.floor(s / 60)} min ${s % 60} s` : `${s} s`; }
+
+function blocoAtualizando(p) {
+  estiloAtualizando();
+  const a = p.atualizando || {};
+  const cheio = el('span', { class: 'cheio' + (typeof a.fracao === 'number' ? '' : ' corre') });
+  if (typeof a.fracao === 'number') cheio.style.width = Math.round(a.fracao * 100) + '%';
+  return el('div', { class: 'cartao-atualizando', 'data-slug': p.slug, role: 'progressbar', 'aria-label': 'Atualizando o projeto' },
+    el('span', {}, el('b', { texto: 'Atualizando…' }), ' ', el('span', { class: 'etapa', texto: a.etapa || '' }),
+      el('span', { class: 'tempo', texto: a.desde_s >= 5 ? ` · ${tempoCurto(a.desde_s)}` : '' })),
+    el('span', { class: 'trilho' }, cheio));
+}
+
+/** Cada projeto em atualização: a etapa e a barra seguem o servidor a cada 1,5 s; quando acaba, a lista volta e o cartão abre. */
+function vigiarAtualizando() {
+  for (const parar of VIGIAS.values()) parar();
+  VIGIAS.clear();
+  for (const p of projetos) {
+    if (!p.atualizando) continue;
+    let vivo = true;
+    VIGIAS.set(p.slug, () => { vivo = false; });
+    (async () => {
+      while (vivo) {
+        await new Promise(r => setTimeout(r, 1500));
+        if (!vivo) return;
+        let prog = null;
+        try {
+          const r = await fetch(`/api/projetos/${encodeURIComponent(p.slug)}/progresso`, { cache: 'no-store' });
+          if (r.ok) prog = await r.json();
+        } catch (e) { continue; }
+        if (!vivo || !prog) continue;
+        if (prog.etapa) {
+          p.atualizando = { ...p.atualizando, etapa: prog.etapa, fracao: prog.fracao, desde_s: prog.desde_s };
+          const bloco = document.querySelector(`.cartao-atualizando[data-slug="${CSS.escape(p.slug)}"]`);
+          if (!bloco) continue;
+          bloco.querySelector('.etapa').textContent = prog.etapa;
+          bloco.querySelector('.tempo').textContent = prog.desde_s >= 5 ? ` · ${tempoCurto(prog.desde_s)}` : '';
+          const cheio = bloco.querySelector('.cheio');
+          if (typeof prog.fracao === 'number') { cheio.classList.remove('corre'); cheio.style.width = Math.round(prog.fracao * 100) + '%'; }
+        } else {
+          vivo = false; VIGIAS.delete(p.slug);
+          try { projetos = await api('/api/projetos'); desenhar(); } catch (e) { /* a próxima lista acerta */ }
+          recado('Projeto atualizado', `${p.nome}: a atualização terminou; pode abrir.`, 'ok');
+        }
+      }
+    })();
+  }
 }
 
 function desenhar() {
@@ -232,6 +311,7 @@ function desenhar() {
     : termo ? `${visiveis.length} de ${projetos.length} projeto(s)`
     : `${nAtivos} projeto(s), do mais recente ao mais antigo` + (nArq ? ` · ${nArq} arquivado(s) no fim` : '');
   if (termo && !visiveis.length) lista.append(el('p', { class: 'nota', texto: 'Nenhum projeto com esse termo.' }));
+  vigiarAtualizando();
 }
 
 async function carregar() {

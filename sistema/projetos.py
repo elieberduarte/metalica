@@ -27,6 +27,7 @@ import datetime
 import itertools
 import json
 import os
+import platform
 import re
 import shutil
 import tempfile
@@ -45,6 +46,8 @@ MAX_HISTORICO = 20
 INTERVALO_HISTORICO = 600.0
 
 ABERTO = "aberto.json"
+#: o projeto está sendo atualizado por uma tarefa demorada (deste ou de outro processo); a tela inicial não deixa abrir
+ATUALIZANDO = "atualizando.json"
 #: o pacote do projeto (exportar/importar): sufixo do arquivo e o manifesto dentro dele
 PACOTE_SUFIXO = ".metalica.zip"
 PACOTE_MANIFESTO = "pacote.json"
@@ -313,6 +316,32 @@ def _ler_cabecalho_do_desenho(caminho: str, contar: bool = True) -> dict:
     return fora
 
 
+def _pid_vivo(pid: int) -> bool:
+    """O processo ainda existe nesta máquina. No Windows, os.kill(pid, 0) MATA o processo: a consulta é pelo kernel32."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            k = ctypes.WinDLL("kernel32", use_last_error=True)
+            h = k.OpenProcess(0x1000, False, int(pid))              # PROCESS_QUERY_LIMITED_INFORMATION
+            if not h:
+                return ctypes.get_last_error() == 5                 # acesso negado: existe, é de outro usuário
+            try:
+                codigo = ctypes.c_ulong()
+                if k.GetExitCodeProcess(h, ctypes.byref(codigo)):
+                    return codigo.value == 259                      # STILL_ACTIVE
+                return True
+            finally:
+                k.CloseHandle(h)
+        os.kill(int(pid), 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except Exception:                                               # noqa: BLE001 — na dúvida, está vivo
+        return True
+
+
 class Projetos:
     """Operações sobre os projetos de uma pasta de dados."""
 
@@ -402,7 +431,7 @@ class Projetos:
                 "tem_materiais": os.path.exists(os.path.join(pasta, "detalhamento", "lista-de-materiais.json")),
                 "tem_comercial": os.path.exists(os.path.join(pasta, "comercial", "comercial.json")),
                 "etapas": self._etapas(s, pasta, p),
-                "aberto_por": self.aberto_por(s), "arquivado": bool(p.get("arquivado")),
+                "aberto_por": self.aberto_por(s), "atualizando": self.atualizando(s), "arquivado": bool(p.get("arquivado")),
                 "desenhos": [{"nome": d["nome"], "titulo": d.get("titulo") or d["nome"], "vistas": d.get("vistas") or []}
                              for d in self.listar_desenhos(s, contar=False)]}
 
@@ -870,6 +899,52 @@ class Projetos:
         except (OSError, ValueError, TypeError):
             pass
         return None
+
+    # ------------------------------------------------------------- "atualizando" (21/10/2026)
+    def marcar_atualizando(self, s: str, etapa: str, fracao=None, quem: str = "", inicio=None) -> None:
+        """Grava atualizando.json: o projeto está sendo atualizado por uma tarefa demorada — deste processo ou de outro (um
+        script, outra janela do programa). A tela inicial mostra "Atualizando…" com a etapa e a barra e não deixa abrir;
+        todo POST de outro processo é recusado até o fim (pedido do usuário, 21/10/2026, na remontagem do Posto V2 por
+        fora do programa). O arquivo é pequeno e regravado só a cada etapa."""
+        try:
+            caminho = os.path.join(self._existente(s), ATUALIZANDO)
+            with open(caminho, "w", encoding="utf-8") as f:
+                json.dump({"etapa": str(etapa or ""), "fracao": fracao, "quando": time.time(),
+                           "inicio": float(inicio or time.time()), "quem": str(quem or ""),
+                           "pid": os.getpid(), "maquina": platform.node()}, f)
+        except (OSError, ValueError, ErroDeDados):
+            pass
+
+    def desmarcar_atualizando(self, s: str) -> None:
+        try:
+            caminho = os.path.join(self.pasta(s), ATUALIZANDO)
+            if os.path.exists(caminho):
+                os.remove(caminho)
+        except (OSError, ErroDeDados):
+            pass
+
+    def atualizando(self, s: str, limite: float = 900.0) -> Optional[dict]:
+        """{etapa, fracao, ha_s, desde_s, quem, pid, maquina, mesma_maquina, este_processo} enquanto atualizando.json vale:
+        gravado há menos de `limite` s e, se é desta máquina, com o processo que gravou ainda vivo (a tarefa que morreu
+        no meio não prende o projeto). Senão None."""
+        try:
+            caminho = os.path.join(self.pasta(s), ATUALIZANDO)
+            with open(caminho, encoding="utf-8") as f:
+                a = json.load(f)
+            agora = time.time()
+            ha = agora - float(a.get("quando") or 0)
+            if not (0 <= ha < limite):
+                return None
+            mesma = str(a.get("maquina") or "") == platform.node()
+            pid = int(a.get("pid") or 0)
+            if mesma and pid and not _pid_vivo(pid):
+                return None
+            return {"etapa": str(a.get("etapa") or ""), "fracao": a.get("fracao"), "ha_s": round(ha),
+                    "desde_s": round(agora - float(a.get("inicio") or a.get("quando") or agora)),
+                    "quem": str(a.get("quem") or ""), "pid": pid, "maquina": str(a.get("maquina") or ""),
+                    "mesma_maquina": mesma, "este_processo": mesma and pid == os.getpid()}
+        except (OSError, ValueError, TypeError, ErroDeDados):
+            return None
 
     def abrir_modelo(self, s: str) -> Optional[dict]:
         caminho = self.caminho_modelo(s)

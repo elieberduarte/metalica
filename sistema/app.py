@@ -1669,8 +1669,22 @@ def _tarefa_padrao(rota: str):
     s = partes[0]
     if s in PROGRESSO:
         return None
+    _recusar_se_atualizando(s)
     _progresso(s, "começando…")
     return (s, PROGRESSO[s]["inicio"])
+
+
+def _recusar_se_atualizando(s: str) -> None:
+    """Outro processo (um script, outra janela do programa, outra máquina) está atualizando o projeto (atualizando.json):
+    nenhum POST mexe nele até o fim — a tela inicial já não deixa abrir (pedido do usuário, 21/10/2026)."""
+    try:
+        a = _gerente().atualizando(s)
+    except Exception:                                             # noqa: BLE001 — projeto que não existe: a rota decide
+        return
+    if a and not a.get("este_processo"):
+        onde = (" em " + a["maquina"]) if a.get("maquina") and not a.get("mesma_maquina") else ""
+        raise ErroDeDados("o projeto está sendo atualizado%s — %s (há %d s): espere terminar antes de mexer nele."
+                          % (onde, a.get("etapa") or "trabalhando…", a.get("ha_s") or 0))
 
 
 def _fim_tarefa_padrao(tarefa) -> None:
@@ -1682,6 +1696,8 @@ def _fim_tarefa_padrao(tarefa) -> None:
     p = PROGRESSO.get(s)
     if p and p.get("inicio") == inicio:
         PROGRESSO.pop(s, None)
+        if p.get("gravado"):
+            _desmarcar_atualizando(s)
 
 
 def _progresso(s: str, etapa: str, fracao: Optional[float] = None):
@@ -1692,7 +1708,16 @@ def _progresso(s: str, etapa: str, fracao: Optional[float] = None):
     m = _I_DE_N.search(str(etapa))
     PROGRESSO[s] = {"etapa": str(etapa), "quando": agora, "inicio": antes["inicio"] if antes else agora,
                     "fracao": None if fracao is None else max(0.0, min(1.0, float(fracao))),
-                    "fracao_etapa": _fracao_do_texto(m)}
+                    "fracao_etapa": _fracao_do_texto(m), "gravado": antes.get("gravado") if antes else None}
+    # atualizando.json no projeto (21/10/2026): a tela inicial mostra "Atualizando…" com a barra e não deixa abrir; outro
+    # processo é recusado nos POST. Só a tarefa que passa de 1 s (ou diz a fração), e no máximo uma gravação por segundo
+    p = PROGRESSO[s]
+    if (fracao is not None or agora - p["inicio"] >= 1.0) and agora - (p["gravado"] or 0.0) >= 1.0:
+        try:
+            _gerente().marcar_atualizando(s, etapa, p["fracao"], quem=USUARIO, inicio=p["inicio"])
+            p["gravado"] = agora
+        except Exception:                                         # noqa: BLE001 — sem pasta de projeto (tarefa sem projeto)
+            pass
 
 
 def _fracao_do_texto(m) -> Optional[float]:
@@ -1703,13 +1728,33 @@ def _fracao_do_texto(m) -> Optional[float]:
 
 
 def _fim_progresso(s: str):
-    PROGRESSO.pop(s, None)
+    p = PROGRESSO.pop(s, None)
+    if p and p.get("gravado"):
+        _desmarcar_atualizando(s)
+
+
+def _desmarcar_atualizando(s: str) -> None:
+    try:
+        _gerente().desmarcar_atualizando(s)
+    except Exception:                                             # noqa: BLE001
+        pass
 
 
 def progresso_do_projeto(s: str) -> dict:
     """{etapa, ha_s (desde a etapa), desde_s (desde o começo da tarefa), fracao?, fracao_etapa?}"""
     p = PROGRESSO.get(s)
     if not p:
+        # outro processo (um script, outra janela do programa) atualizando o projeto: a barra mostra a etapa dele
+        try:
+            a = _gerente().atualizando(s)
+        except Exception:                                         # noqa: BLE001
+            a = None
+        if a and not a.get("este_processo"):
+            out = {"etapa": a["etapa"] or "trabalhando…", "ha_s": a["ha_s"], "desde_s": a["desde_s"], "externo": True,
+                   "quem": a.get("quem") or ""}
+            if a.get("fracao") is not None:
+                out["fracao"] = round(float(a["fracao"]), 4)
+            return out
         return {"etapa": "", "ha_s": 0}
     agora = time.time()
     out = {"etapa": p["etapa"], "ha_s": round(agora - p["quando"], 1), "desde_s": round(agora - p.get("inicio", p["quando"]), 1)}
@@ -5753,7 +5798,13 @@ class Handler(BaseHTTPRequestHandler):
         _em_curso(+1)
         with _TRAVA_JANELAS:
             _ROTAS_EM_CURSO[id(self)] = (rota, time.time())
-        tarefa = _tarefa_padrao(rota)
+        try:
+            tarefa = _tarefa_padrao(rota)
+        except ErroDeDados as e:                                  # o projeto está sendo atualizado por outro processo
+            _em_curso(-1)
+            with _TRAVA_JANELAS:
+                _ROTAS_EM_CURSO.pop(id(self), None)
+            return self._erro(e, 409)
         try:
             return self._do_post(rota)
         finally:
