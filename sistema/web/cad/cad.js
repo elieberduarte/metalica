@@ -578,7 +578,11 @@ class CAD {
     // caixa não achava nada — pedido do usuário, 29/09)
     const ents = [...this.tela.selecao].map(id => this.doc.get(id)).filter(Boolean);
     const alvo = ents.length ? this._alvoNo3D(ents, true) : null;
-    try { window.parent.postMessage({ metalica: 'sel2d', caixa: c, n: this.tela.selecao.size, desenho: this.nomeDesenho, alvo }, location.origin); }
+    // na Montagem (21/10/2026): a escolha na Implantação vai ao 3D como a caixa em planta, em mm do modelo
+    const mt = window.montagem;
+    const naMontagem = !!(mt && mt.ativa);
+    const caixa_modelo = naMontagem && !alvo && c && typeof mt.caixaNoModelo === 'function' ? mt.caixaNoModelo(c) : null;
+    try { window.parent.postMessage({ metalica: 'sel2d', caixa: c, n: this.tela.selecao.size, desenho: this.nomeDesenho, alvo, montagem: naMontagem, caixa_modelo }, location.origin); }
     catch (e) { /* sem a tela de fora */ }
   }
 
@@ -589,6 +593,9 @@ class CAD {
    */
   _alvoNo3D(ents, soPecas = false) {
     const separar = (v) => String(v).split(/\s*\/\s*/).filter(Boolean);
+    // o corte do 3D nas elevações da Montagem (corte_eixos.js): cada linha guarda o id da peça do modelo (21/10/2026)
+    const doCorte = [...new Set(ents.map(e => (e.atributos || {}).id3d).filter(Boolean))];
+    if (doCorte.length) return 'ids:' + doCorte.slice(0, 200).join(',');
     // a estrutura lançada (menu Estrutura) e as plantas do pré-moldado: a peça 3D leva o id do elemento da
     // planta (origem_2d); sem ele, a peça do galpão pela marca e o eixo ("P-C@1/A") — a ida e volta, R5
     const daPlanta = [...new Set(ents.flatMap(e => { const a = e.atributos || {}; return a.elemento ? [e.id] : a.origem_2d ? [a.origem_2d] : []; }))];
@@ -618,7 +625,12 @@ class CAD {
       if (ev.origin !== location.origin || !ev.data) return;
       if (ev.data.metalica === 'localizar2d') { this._localizarPelaMarca(ev.data); return; }
       if (ev.data.metalica === 'recarregar2d') { this._recarregarPeloServidor(ev.data.desenho); return; }
+      // a Montagem aberta (21/10/2026): o que o 3D escolheu vai ao trecho na Implantação e ao corte nas elevações; a caixa
+      // na planta do cliente (o enquadrar2d) não é deste desenho — enquadrava um lugar vazio
+      const mt = window.montagem;
+      if (ev.data.metalica === 'do3d') { if (mt && mt.ativa && typeof mt.doTresD === 'function') mt.doTresD(ev.data); return; }
       if (ev.data.metalica !== 'enquadrar2d') return;
+      if (mt && mt.ativa) { if (!ev.data.caixa && typeof mt.limparLigacao3d === 'function') mt.limparLigacao3d(); return; }
       const c = ev.data.caixa;
       this.tela.regiao = c || null;
       if (c) this.tela.enquadrar(c, ev.data.margem ?? 0.25);

@@ -5,7 +5,8 @@
  * mostrado. As telas pedem para ir ao outro lado por postMessage ("navegar", web/area.js): o
  * "Abrir o modelo 3D" depois de montar pela planta recarrega o 3D (o modelo mudou) e troca a vista.
  *
- * Na vista 2D + 3D, a seleção passa de um lado para o outro:
+ * Na vista 2D + 3D, a seleção passa de um lado para o outro (com a Montagem aberta no 2D, pelo trecho na Implantação e
+ * pelo corte do 3D nas elevações — web/cad/corte_eixos.js, doTresD):
  *   3D → 2D  a caixa em planta do que se escolheu vira a região no desenho (o modelo é o desenho
  *            + o deslocamento que a montagem pela planta gravou), ou, no modo "a elevação", a
  *            moldura da elevação da treliça escolhida (da tela Treliças lidas);
@@ -146,6 +147,8 @@ function dentro(c, p) { return p[0] >= c[0][0] && p[0] <= c[1][0] && p[1] >= c[0
 
 function doTresD(m) {
   if (!pref.seguir) return;
+  // a Montagem, se estiver aberta no 2D, acha o trecho na implantação e o corte nas elevações pelos ids das peças (21/10)
+  para2d({ metalica: 'do3d', n: m.n || 0, ids: (m.marcas || {}).ids || [], caixa: m.caixa || null, nomes: m.nomes || [] });
   if (!m.n) { para2d({ metalica: 'enquadrar2d', caixa: null }); return; }
   if (pref.modo === 'elevacao') {
     const t = m.nomes && m.nomes.length === 1 ? trelicas.find(x => x.nome === m.nomes[0]) : null;
@@ -176,6 +179,12 @@ function doDoisD(m) {
   if (!pref.seguir) return;
   // clicou fora no 2D (nada selecionado): o 3D larga a seleção também (06/10)
   if (!m.n) { para3d({ metalica: 'selecionar3d', limpar: true }); return; }
+  // a Montagem (21/10): a peça do corte pelo id dela; a escolha na Implantação pela caixa em planta, já em mm do modelo
+  if (m.montagem) {
+    if (m.alvo) para3d({ metalica: 'selecionar3d', destacar: m.alvo });
+    else if (m.caixa_modelo) para3d({ metalica: 'selecionar3d', caixa: m.caixa_modelo });
+    return;
+  }
   if (!m.caixa) return;
   const meio = [(m.caixa[0][0] + m.caixa[1][0]) / 2, (m.caixa[0][1] + m.caixa[1][1]) / 2];
   const t = trelicas.find(x => x.caixa_desenho && dentro(x.caixa_desenho, meio));

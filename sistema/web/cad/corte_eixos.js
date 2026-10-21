@@ -414,4 +414,113 @@ export class MetodosCorteEixos {
       this.cad.tela.enquadrar([[x - r, y - r * 0.6], [x + r, y + r * 0.6]]);
     }
   }
+
+
+  // ------------------------------------------------------------------ a ligação com o 3D (tela 2D + 3D)
+  /**
+   * A seleção do 3D ao lado, na Montagem (21/10/2026, pedido do usuário no Posto V2: "aparecer o trecho e também o corte"):
+   * o TRECHO na Implantação (a caixa em planta do que se escolheu, pelo mapa do quadro) e o CORTE em cada elevação onde
+   * as peças aparecem (as linhas do corte do 3D guardam o id da peça, `id3d`). Um quadrinho no alto do 2D leva de um ao
+   * outro; abre no corte com mais peças. Antes a caixa vinha nas coordenadas da planta do cliente e a Montagem
+   * enquadrava um lugar vazio. `msg`: {ids (do 3D), caixa (em planta, mm do modelo), nomes, n}. Devolve true quando tratou.
+   */
+  doTresD(msg) {
+    if (!this.ativa || !this.m) return false;
+    if (!msg || !msg.n) { this.limparLigacao3d(); return true; }
+    const ids = new Set((msg.ids || []).map(String));
+    const porQuadro = new Map();
+    if (ids.size) {
+      for (const e of this.cad.doc.entidades.values()) {
+        const a = e.atributos || {};
+        if (!a.id3d || !a.quadro || !ids.has(String(a.id3d))) continue;
+        let g = porQuadro.get(a.quadro);
+        if (!g) porQuadro.set(a.quadro, g = { pontos: 0, ents: [] });
+        g.pontos += e.camada === CAMADA_3D ? 3 : 1;           // no plano do eixo vale mais que a marca de corte ou o "ao lado"
+        g.ents.push(e.id);
+      }
+    }
+    const cortes = [...porQuadro.entries()].map(([id, g]) => ({ q: this.m.quadros.find(x => x.id === id), ...g }))
+      .filter(c => c.q).sort((a, b) => b.pontos - a.pontos || natural(a.q.eixo, b.q.eixo)).slice(0, 8);
+    let trecho = null;
+    const qi = this._quadroImplantacao();
+    if (qi && qi.mapa && Array.isArray(msg.caixa)) {
+      const a = this._paraPapel(qi, msg.caixa[0]), b = this._paraPapel(qi, msg.caixa[1]);
+      trecho = [[Math.min(a[0], b[0]), Math.min(a[1], b[1])], [Math.max(a[0], b[0]), Math.max(a[1], b[1])]];
+    }
+    const nome = (msg.nomes || []).length === 1 ? msg.nomes[0] : `${msg.n} peça(s)`;
+    this._ligacao3d = { nome, trecho, cortes: cortes.map(c => ({ id: c.q.id, nome: c.q.linha ? `Linha ${c.q.eixo}` : `Elevação ${c.q.eixo}`, ents: c.ents })) };
+    if (!trecho && !cortes.length) {
+      this.limparLigacao3d();
+      this.cad.dica(`${nome}: não aparece nos quadros da Montagem (sem implantação e sem corte com essas peças).`);
+      return true;
+    }
+    this._mostrarLigacao3d(cortes.length ? 0 : 'trecho');
+    return true;
+  }
+
+  /** Enquadra o trecho na implantação ('trecho') ou o corte `i`, marca as peças e atualiza o quadrinho. */
+  _mostrarLigacao3d(qual) {
+    const L = this._ligacao3d;
+    if (!L) return;
+    const tela = this.cad.tela;
+    const caixaMin = (c, w0, h0, f = 1.6) => {
+      const cx = (c[0][0] + c[1][0]) / 2, cy = (c[0][1] + c[1][1]) / 2;
+      const w = Math.max((c[1][0] - c[0][0]) * f, w0), h = Math.max((c[1][1] - c[0][1]) * f, h0);
+      return [[cx - w / 2, cy - h / 2], [cx + w / 2, cy + h / 2]];
+    };
+    if (qual === 'trecho' && L.trecho) {
+      tela.selecao = new Set();
+      tela.regiao = caixaMin(L.trecho, 6, 6, 1);
+      tela.enquadrar(caixaMin(L.trecho, 90, 60), 0.05);
+    } else if (L.cortes[qual]) {
+      const c = L.cortes[qual];
+      const q = this.m.quadros.find(x => x.id === c.id);
+      const cx = this.cad.doc.caixa(new Set(c.ents));
+      tela.selecao = new Set(c.ents);
+      tela.regiao = cx;
+      if (cx && q) {
+        // o corte com a altura do quadro (os níveis à vista) e a peça no meio
+        const larg = Math.max((cx[1][0] - cx[0][0]) * 1.4, 140);
+        const mx = (cx[0][0] + cx[1][0]) / 2;
+        tela.enquadrar([[mx - larg / 2, q.y - q.h], [mx + larg / 2, q.y]], 0.04);
+      } else if (cx) tela.enquadrar(caixaMin(cx, 120, 70), 0.05);
+    }
+    L.atual = qual;
+    this._chipLigacao3d();
+    tela.pedirQuadro();
+  }
+
+  /** O quadrinho no alto do 2D: o nome do que se escolheu no 3D, o trecho e os cortes (o atual marcado). */
+  _chipLigacao3d() {
+    const L = this._ligacao3d;
+    let chip = document.getElementById('ligacao-3d');
+    if (!L) { if (chip) chip.remove(); return; }
+    if (!chip) {
+      chip = el('div', { id: 'ligacao-3d', class: 'ligacao-3d', role: 'toolbar', 'aria-label': 'O que o 3D escolheu, na Montagem' });
+      this.camada.parentNode.append(chip);
+    }
+    const botao = (rot, qual, dica) => el('button', { type: 'button', class: L.atual === qual ? 'on' : '', title: dica,
+      onclick: (ev) => { ev.stopPropagation(); this._mostrarLigacao3d(qual); } }, rot);
+    chip.replaceChildren(
+      el('b', { title: 'O que está escolhido no 3D ao lado' }, L.nome),
+      L.trecho ? botao('Trecho na implantação', 'trecho', 'A caixa em planta do que se escolheu no 3D, no quadro da Implantação') : null,
+      ...L.cortes.map((c, i) => botao(`Corte: ${c.nome}`, i, `As peças no corte do 3D da ${c.nome} (marcadas)`)),
+      el('button', { type: 'button', class: 'fechar', title: 'Fechar (a seleção do 3D continua)', onclick: (ev) => { ev.stopPropagation(); this.limparLigacao3d(); } }, '×'));
+  }
+
+  limparLigacao3d() {
+    this._ligacao3d = null;
+    this._chipLigacao3d();
+    if (this.cad.tela.regiao) { this.cad.tela.regiao = null; this.cad.tela.pedirQuadro(); }
+  }
+
+  /** A caixa de uma seleção na Implantação em planta (mm do modelo), para o 3D ao lado; null fora dela. */
+  caixaNoModelo(c) {
+    const qi = this._quadroImplantacao();
+    if (!this.ativa || !qi || !qi.mapa || !c) return null;
+    const dentro = (p) => p[0] >= qi.x - 1 && p[0] <= qi.x + qi.w + 1 && p[1] <= qi.y + 1 && p[1] >= qi.y - qi.h - 1;
+    if (!dentro(c[0]) || !dentro(c[1])) return null;
+    const a = this._paraReal(qi, c[0]), b = this._paraReal(qi, c[1]);
+    return [[Math.min(a[0], b[0]), Math.min(a[1], b[1])], [Math.max(a[0], b[0]), Math.max(a[1], b[1])]];
+  }
 }

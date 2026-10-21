@@ -568,16 +568,37 @@ class Montagem {
   }
 
   /** Título (tipo, escala, nome), alça de tamanho e o "+ corte tesoura", por cima do canvas. */
+  /** Os quadros com desenho mandado da Original (o que o programa desenha sozinho não conta), guardados até o desenho
+   *  mudar: varrer as 16 mil entidades da Montagem do Posto a cada quadro de tela pesava. */
+  _quadrosCheios() {
+    const doc = this.cad.doc;
+    if (this._docCheios !== doc) { this._docCheios = doc; this._cheios = null; doc.aoMudar(() => { this._cheios = null; }); }
+    if (!this._cheios) {
+      this._cheios = new Set();
+      for (const e of doc.entidades.values()) { const a = e.atributos || {}; if (a.quadro && !a.gerado) this._cheios.add(a.quadro); }
+    }
+    return this._cheios;
+  }
+
+  /** Os controles por cima dos quadros (título, escala, alça, tamanho, níveis, escolhas, "vazio"). Só os quadros à vista
+   *  são atualizados, e só no que mudou; os de fora ficam escondidos (21/10/2026: com 74 quadros no Posto V2, mexer no
+   *  estilo de 225 elementos a cada quadro de tela levava 56–75 ms com zoom — a Montagem travava na tela 2D + 3D). */
   _controles(ret) {
     const m = this.m;
     const vivos = new Set();
-    // os quadros com desenho mandado da Original (o que o programa desenha sozinho não conta)
-    const cheios = new Set();
-    for (const e of this.cad.doc.entidades.values()) { const a = e.atributos || {}; if (a.quadro && !a.gerado) cheios.add(a.quadro); }
+    const cheios = this._quadrosCheios();
+    const W = this.cad.tela.largura || 0, H = this.cad.tela.altura || 0;
+    const nos = this._nosQuadro || (this._nosQuadro = new Map());
+    const por = (no, campo, v) => { if (no[campo] !== v) no[campo] = v; };
+    const est = (no, campo, v) => { if (no.style[campo] !== v) no.style[campo] = v; };
+    const fora = new Set();
     for (const q of m.quadros) {
       const t = TIPOS[q.tipo] || TIPOS.tesoura;
       const [x, y, w, h] = ret(q);
-      let c = this.camada.querySelector(`[data-quadro="${q.id}"]`);
+      vivos.add(q.id);
+      let reg = nos.get(q.id);
+      if (reg && !reg.c.isConnected) { nos.delete(q.id); reg = null; }
+      let c = reg ? reg.c : this.camada.querySelector(`[data-quadro="${q.id}"]`);
       if (!c) {
         const daObra = q.tipo === 'implantacao' || q.tipo === 'elevacao';
         const escala = el('select', { class: 'quadro-escala', title: daObra ? 'A escala em que o programa desenha este quadro (escolhida para caber; escolher outra fixa esta)' : 'A escala do desenho dentro deste quadro: o programa lê em milímetros reais por ela',
@@ -601,25 +622,42 @@ class Montagem {
           onpointerdown: (ev) => this._pegar(ev, q) });
         this.camada.append(c, alca);
       }
-      const sel = c.querySelector('select');
-      if (document.activeElement !== sel) sel.value = String(q.escala);
-      c.style.left = (x + 4) + 'px'; c.style.top = (y + 4) + 'px';
-      c.style.maxWidth = Math.max(60, w - 8) + 'px';
-      c.hidden = w < 60 || h < 24;
-      const alca = this.camada.querySelector(`[data-alca="${q.id}"]`);
-      alca.style.left = (x + w - 9) + 'px'; alca.style.top = (y + h - 9) + 'px';
-      const tam = this.camada.querySelector(`[data-tamanho="${q.id}"]`) || this.camada.appendChild(el('div', { class: 'quadro-tamanho', 'data-tamanho': q.id }));
-      tam.textContent = `${Math.round(q.w)} × ${Math.round(q.h)}`;
-      tam.style.left = (x + w - 4) + 'px'; tam.style.top = (y + h - 4) + 'px';
-      tam.hidden = w < 120 || h < 50;
+      if (!reg) {
+        reg = { c, sel: c.querySelector('select'), alca: this.camada.querySelector(`[data-alca="${q.id}"]`),
+                tam: this.camada.querySelector(`[data-tamanho="${q.id}"]`) || this.camada.appendChild(el('div', { class: 'quadro-tamanho', 'data-tamanho': q.id })) };
+        nos.set(q.id, reg);
+      }
+      const { sel, alca, tam } = reg;
+      if (x > W + 40 || y > H + 40 || x + w < -40 || y + h < -40) {
+        // fora da vista: tudo dele escondido, sem mexer em mais nada (o título existe: quem procura o quadro o acha)
+        fora.add(q.id);
+        por(c, 'hidden', true); por(alca, 'hidden', true); por(tam, 'hidden', true);
+        continue;
+      }
+      if (document.activeElement !== sel) por(sel, 'value', String(q.escala));
+      est(c, 'left', (x + 4) + 'px'); est(c, 'top', (y + 4) + 'px');
+      est(c, 'maxWidth', Math.max(60, w - 8) + 'px');
+      por(c, 'hidden', w < 60 || h < 24);
+      est(alca, 'left', (x + w - 9) + 'px'); est(alca, 'top', (y + h - 9) + 'px');
+      por(alca, 'hidden', false);
+      por(tam, 'textContent', `${Math.round(q.w)} × ${Math.round(q.h)}`);
+      est(tam, 'left', (x + w - 4) + 'px'); est(tam, 'top', (y + h - 4) + 'px');
+      por(tam, 'hidden', w < 120 || h < 50);
       if (q.tipo === 'ligacoes') this._escolhas(q, x, y, w, h);
       if (q.tipo === 'implantacao') this._caixaNiveis(q, x, y, w, h);
       this._seVazio(q, !cheios.has(q.id) && !q.fonte && !(q.envios || []).length, t, x, y, w, h);
-      vivos.add(q.id);
     }
-    for (const n of [...this.camada.querySelectorAll('[data-quadro],[data-alca],[data-tamanho],[data-escolhas],[data-niveis],[data-vazio]')]) {
-      const id = n.dataset.quadro || n.dataset.alca || n.dataset.tamanho || n.dataset.escolhas || n.dataset.niveis || n.dataset.vazio;
-      if (!vivos.has(id)) n.remove();
+    // o que é de quadro que saiu da montagem, fora; o dos quadros fora da vista, escondido (só os poucos elementos extras:
+    // título, alça e tamanho já foram acima). A varredura só quando o número de elementos ou de quadros mudou
+    const chave = `${this.camada.childElementCount}|${m.quadros.length}|${[...fora].join(',')}`;
+    if (chave !== this._chaveVarredura) {
+      this._chaveVarredura = chave;
+      for (const n of [...this.camada.querySelectorAll('[data-quadro],[data-alca],[data-tamanho],[data-escolhas],[data-niveis],[data-vazio]')]) {
+        const id = n.dataset.quadro || n.dataset.alca || n.dataset.tamanho || n.dataset.escolhas || n.dataset.niveis || n.dataset.vazio;
+        if (!vivos.has(id)) { n.remove(); nos.delete(id); }
+        else if (fora.has(id) && !n.hidden) n.hidden = true;
+      }
+      this._chaveVarredura = `${this.camada.childElementCount}|${m.quadros.length}|${[...fora].join(',')}`;
     }
     let mais = this.camada.querySelector('.quadro-mais');
     if (!mais) mais = this.camada.appendChild(el('button', { type: 'button', class: 'quadro-mais', title: 'Mais um quadro de tesoura: um para cada tipo de tesoura do projeto', onclick: () => this.maisTesoura() }, '+ corte tesoura'));
