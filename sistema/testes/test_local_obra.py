@@ -323,6 +323,13 @@ print(json.dumps({"fontes": sorted(L.FONTES), "validar": L.validar(dict(base, fo
     ("https://sig.outra.pr.gov.br/geoserver/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=base%3Aorto2022&SRS=EPSG"
      "%3A900913&BBOX=1,2,3,4&WIDTH=256&HEIGHT=256", {"tipo": "wms", "url": "https://sig.outra.pr.gov.br/geoserver/wms",
                                                      "camada": "base:orto2022"}),
+    # o geoportal de Chapecó (21/10, o SESI): o endereço do GeoServer sem a camada não pode cair na de 2009 (os nomes
+    # ortofoto_1/2/3 não têm o ano) — vira a fonte pronta, a de 2023; o GetMap de outra das três segue a camada colada
+    ("http://geo.chapeco.sc.gov.br/geoserver/wms", "chapeco"),
+    ("https://geo.chapeco.sc.gov.br/geoserver/wms?SERVICE=WMS&REQUEST=GetMap&LAYERS=gm_chapeco%3Aortofoto_1&BBOX=1,2,3,4",
+     "chapeco"),
+    ("https://geo.chapeco.sc.gov.br/geoserver/wms?SERVICE=WMS&REQUEST=GetMap&LAYERS=gm_chapeco%3Aortofoto_2&BBOX=1,2,3,4",
+     {"tipo": "wms", "url": "https://geo.chapeco.sc.gov.br/geoserver/wms", "camada": "gm_chapeco:ortofoto_2"}),
     # o modelo de blocos
     ("https://tiles.exemplo.com/orto/{z}/{x}/{y}.jpg", {"tipo": "xyz", "url": "https://tiles.exemplo.com/orto/{z}/{x}/{y}.jpg"}),
 ])

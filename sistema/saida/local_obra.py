@@ -64,6 +64,13 @@ FONTES = {
                "url": "https://plataforma.nacidade.com.br/geoserver/wms", "camada": "toledo-ctm-3:imagem_recente",
                "srs": "EPSG:3857", "formato": "image/png",
                "atribuicao": "Ortofoto: Prefeitura de Toledo — Maptriz Smart City / DRZ"},
+    # a ortofoto de 20/11/2023 de Chapecó (21/10, o usuário: "verifique se a cidade de Chapecó SC tem ortofoto" — o SESI):
+    # o GeoServer do Geomais da prefeitura (geo.chapeco.sc.gov.br), público; o município inteiro, ~13 cm por pixel (o 21
+    # só amplia), 0,2–0,4 s o bloco. As outras do servidor são as de 2009 (ortofoto_2) e 2011 (ortofoto_3), sem o ano no nome
+    "chapeco": {"nome": "Ortofoto 2023 — Prefeitura de Chapecó", "tipo": "wms", "zoom_max": 20,
+                "url": "https://geo.chapeco.sc.gov.br/geoserver/wms", "camada": "gm_chapeco:ortofoto_1",
+                "srs": "EPSG:3857", "formato": "image/png",
+                "atribuicao": "Ortofoto 2023: Prefeitura de Chapecó — Geomais"},
 }
 # só no desenvolvimento (21/10, o usuário: "deixe o drone de Cascavel apenas para a versão dev"): no instalado sai da lista,
 # e a obra que já o escolheu (enviada a outro usuário, por exemplo) usa a reserva; METALICA_TERRENO_DEV=0/1 força
@@ -223,6 +230,10 @@ def fonte_do_endereco(url: str, camada: str = "", nome: str = "") -> dict:
         # qualquer link do geoportal (a página, o lote, o GetMap); o GetMap da camada do drone, a fonte do drone
         drone = "ortofoto_bairros" in urllib.parse.unquote(url).lower() and "cascavel-drone" in FONTES
         return "cascavel-drone" if drone else "cascavel"
+    if host.split(":")[0].endswith("chapeco.sc.gov.br") and not camada.strip():
+        q = urllib.parse.unquote(url).lower()
+        if "layers=" not in q or "ortofoto_1" in q:       # a página, o GetCapabilities ou o GetMap da de 2023
+            return "chapeco"
     if host.split(":")[0] == "plataforma.nacidade.com.br" and "geoserver" not in url:
         # o geoportal "nacidade" (CTM) de várias cidades (Toledo, Palotina, Guaíra, Cianorte…): o link da página vira o
         # GeoServer dele; a camada (a ortofoto da cidade da obra) se acha pelo lugar ao baixar
