@@ -31,6 +31,9 @@ const REGRAS = [
   ['cobertura_borda_aberta', 'Cobertura: borda de telhado aberta (sem calha, rufo nem fechamento)'],
   ['cobertura_sem_rufo', 'Cobertura: telha encostada na parede sem rufo'],
   ['cobertura_choque', 'Cobertura: calha ou rufo atravessando peça'],
+  // a cobertura sem fresta nem buraco (COB-01 do catálogo sistema/testes/REGRAS.md, 21/10/2026)
+  ['cobertura_buraco', 'Cobertura: buraco (telhado sem telha, calha nem rufo)'],
+  ['cobertura_fresta', 'Cobertura: fresta entre chapas'],
 ];
 
 export class MetodosApoios {

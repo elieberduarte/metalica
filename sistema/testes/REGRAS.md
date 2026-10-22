@@ -26,13 +26,12 @@ Situação da conferência: **sim** (pega no modelo inteiro), **parcial** (pega 
 **Teste por propriedade** (Hypothesis, só no desenvolvimento): o teste sorteia a forma do caso (ângulo da parede, curva,
 terça emendada, inclinação, vão) num modelo mínimo e confere a regra em todas, para achar a "próxima forma" do erro antes
 do usuário. Sorteio fixo no antes_de_publicar; `METALICA_HIPOTESE=aleatorio` sorteia casos novos. Arquivo:
-`testes/test_propriedades_cobertura.py`, hoje ainda `rascunho_propriedades_cobertura.py`, fora da coleta do pytest
-até o OBRA · POSTO DE COMBUSTÍVEL commitar o `telhas_cobertura.py`.
+`testes/test_propriedades_cobertura.py`.
 
 | Regra | Teste por propriedade | Situação |
 |---|---|---|
-| COB-03 | parede reta de 3° a 12° para os dois lados, face de 150 a 1600 mm, 2–5 terças, inclinação 2–30 %, vão 0,9–1,8 m, última terça emendada ou não | **rascunho — acha defeito** (ver COB-03) |
-| COB-01 | — | a fazer (com a conferência COB-01) |
+| COB-03 | parede reta de 3° a 12° para os dois lados, face de 150 a 1600 mm, 2–5 terças, inclinação 2–30 %, vão 0,9–1,8 m, última terça emendada ou não | verde (40 fixos em 3,6 s; 400 aleatórios em 21/10). Na 1ª rodada achou a fresta na emenda (corrigida em c8f1e1f) |
+| COB-01 | — | a fazer (sortear telhados mínimos e conferir com `cobertura_continua`) |
 
 ## Placar de reincidências
 
@@ -41,13 +40,13 @@ Triagem inicial de 21/10 (REGRESSOES.md + git log desde 12/10).
 
 | Regra | Reincidências | Conferência | Última |
 |---|---|---|---|
-| COB-03 telha até a parede | 3 (+ a 1ª correção) | parcial | 21/10 3391273 |
-| COB-01 sem fresta nem buraco | 2 + 1 aberta | **não** | 21/10 Posto V2 (52 buracos, 43 frestas) — aberta |
+| COB-03 telha até a parede | 4 (+ a 1ª correção) | parcial | 21/10 c8f1e1f |
+| COB-01 sem fresta nem buraco | 3 | sim | 21/10 c8f1e1f (Posto V2, 53 buracos e 43 frestas) |
 | TES-3.1 nada atravessa o banzo | 2 | sim | 19/10 22c229a |
 | GER-01 cada barra uma vez só | 2 | parcial | 21/10 ad76db2 |
 | TES-2.2 banzos abrem para dentro | 2 | sim | 21/10 8421ab5 |
 | TES-2.9 banzo 2U composto | 1 | sim | 21/10 1188b4c |
-| COB-02 nada atravessa telha, calha e rufo | 1 aberta | parcial | 21/10 Posto V2 (calhas cortadas na treliça) — aberta |
+| COB-02 nada atravessa telha, calha e rufo | 1 | parcial | 21/10 c8f1e1f (calhas cortadas na treliça) |
 | COB-04 cada água é um plano | 1 | sim | 21/10 8bedaa1 |
 | COB-12 o rufo segue a telha | 1 | **não** | 19/10 b886cb9 |
 | COB-13 peças inteiriças | 1 | **não** | 19/10 b886cb9 |
@@ -70,15 +69,26 @@ a pergunta de toda correção de telha é: foi no `telhas_cobertura.py` ou só n
 - **Aprovada:** **PROPOSTA** — nomeada no plano aprovado em 21/10; o enunciado espera o "aprovada" do usuário.
 - **Aplica-se a:** toda obra com telha lançada.
 - **Código:** `telhas_cobertura._analise` (faixas, panos, `PONTE_TERCA`, `JUNTA_ESTACAO`).
-- **Conferência:** **não** — nenhuma conta olha a área coberta. A do Posto (21/10 à noite) foi feita na hora pelo chat
-  da obra. A FAZER: COB-01 em `conferencia_3d`, achando os 52 buracos e as 43 frestas numa cópia do Posto V2 de antes da
-  correção (espera o OBRA · POSTO DE COMBUSTÍVEL commitar a rodada das telhas).
+- **Conferência:** **sim** (21/10 noite) — `conferencia_3d.cobertura_continua`, no `conferir`, no fim da montagem e no
+  Verificar apoios ("Cobertura: buraco" e "Cobertura: fresta"). É a conta do chat do Posto, levada ao sistema.
+  - Primeiro a união em planta das faces de cima dos sólidos das camadas Telhas/Calhas/Cumeeiras/Rufos. O fechamento
+    em pé entra como uma faixa de 30 mm.
+  - **Fresta:** o que fechar a união por 2 × 60 mm tapa (≥ 0,003 m²).
+  - **Buraco:** o anel de dentro (≥ 0,005 m²) que a fresta não fecha.
+  - **Vão de projeto, não acusado:** ≥ 1 m² com 95 % do contorno a até 300 mm de parede ou platibanda.
+  - Leva ~2,5 s no Posto V2 (3.573 sólidos).
+  - Posto V2 de antes: 23 buracos e 43 frestas (a conta original dava 53 buracos: 30 eram as mesmas frestas e 1 era a
+    oval). Depois do c8f1e1f: 7 buracos e 17 frestas, que a obra ainda vai classificar.
+  - **Achado no telhado de exemplo do gerador:** no canto da calha com o encosto lateral sobra um vão de 197 × 104 mm sem
+    nada (o encosto começa em x 293, a calha acaba em x 96). Pedido ao FERRAMENTA · LEITURA DXF/IFC → 3D.
 - **Testes:** test_sem_fresta_onde_as_pontas_das_tercas_quase_coincidem, test_telha_passa_por_cima_da_terca_cortada_pela_trelica_de_baixo,
-  test_telha_ate_a_telha_vizinha_de_outra_direcao.
+  test_telha_ate_a_telha_vizinha_de_outra_direcao; test_conferencia_cobertura::test_cob01_* (chapa que falta, fresta
+  entre chapas, abertura cercada × aberta, o Posto V2 de antes e de depois congelado em
+  `Projeto/bateria/entradas/posto-v2-cobertura/`, o canto calha × encosto em xfail estrito).
 - **Histórico:**
   - 21/10 Posto V2 — frestas na água inteira (o trecho curto entre as pontas das terças emendadas era pulado; o pedaço < 30 mm saía) — 8bedaa1.
   - 21/10 Posto V2 — o triângulo sem telha no norte da oval e a fila de buracos de 1 m (a faixa juntada apagava outros panos) — 8e9ac8c. **Reincidência.**
-  - 21/10 Posto V2 (noite) — 52 buracos e 43 frestas no modelo gravado — **aberta** (REGRAS-entrada.md). **Reincidência.**
+  - 21/10 Posto V2 (noite) — 53 buracos e 43 frestas no modelo gravado — c8f1e1f (gerador). **Reincidência.**
 
 ### COB-02 — Nada atravessa a telha, a calha ou o rufo
 - **Enunciado:** nenhuma peça passa por dentro da telha, da calha ou do rufo, e nenhuma chapa da cobertura passa por
@@ -96,7 +106,8 @@ a pergunta de toda correção de telha é: foi no `telhas_cobertura.py` ou só n
 - **Histórico:**
   - 17/10 Posto CB — a TRANSIÇÃO 1 e as tesouras de cima atravessando a telha sem revestimento nem rufo — a2d716a.
   - 19/10 Mercado — capas atravessando a outra treliça nas quinas; pontas de calha entrando nas treliças — 984fbd8.
-  - 21/10 Posto V2 — calhas cortadas onde cruzam uma treliça — **aberta**. **Reincidência.**
+  - 21/10 Posto V2 — calhas cortadas onde cruzam uma treliça — c8f1e1f (gerador). **Reincidência.** A conta do Posto
+    para a conferência que falta está em `Projeto/OBRAS/Posto-CB/leitura-3d/furam_telha.py` (barras que atravessam a telha).
 
 ### COB-03 — A telha vai até a parede
 - **Enunciado:** a telha chega até a face da parede, platibanda ou treliça que fecha o telhado, seja qual for a forma da
@@ -115,10 +126,12 @@ a pergunta de toda correção de telha é: foi no `telhas_cobertura.py` ou só n
   - 21/10 Posto V2 — não chegava na platibanda da oval (a PAINEL 12, 9,6° fora das terças, contada como paralela) — 8bedaa1. **Reincidência.**
   - 21/10 Posto V2 — falhas nas bordas curvas (a platibanda calandrada não contava como parede) — 8e9ac8c. **Reincidência.**
   - 21/10 Posto V2 — a telha que chega na parede diagonal saía em duas peças (chapa + recorte) — 3391273. **Reincidência.**
-- **Achados do teste por propriedade (21/10 noite, sobre o `telhas_cobertura.py` do Posto ainda sem commit):**
-  - **Terça emendada:** 38 de 55 casos falham, todos na estação da emenda da última terça ou no pedaço curto. O
-    recorte até a parede sai em duas peças com **fresta de 2 mm** (y 1999 → 2001) e uma tira de 39 mm. Sem emenda, todos
-    os casos passam. É também COB-01 (fresta) e COB-14 (duas peças). Passado ao OBRA · POSTO DE COMBUSTÍVEL.
+  - 21/10 Posto V2 (noite) — borda até a beira do pano, linha de terça inteira — c8f1e1f. **Reincidência.**
+- **Achados do teste por propriedade (21/10 noite):**
+  - **Terça emendada:** antes do c8f1e1f, 38 de 55 casos falhavam, todos na estação da emenda da última terça ou no
+    pedaço curto. O recorte até a parede saía em duas peças com **fresta de 2 mm** (y 1999 → 2001) e uma tira de 39 mm.
+    O código de antes já fazia isso. Corrigido pelo Posto no c8f1e1f (`_linhas_inteiras`), com
+    test_recorte_ate_a_parede_inteiro_na_emenda_da_ultima_terca. **Achado antes do usuário.**
   - **Parede paralela (< 3°, `PAREDE_PARALELA`):** a telha para na última terça, qualquer que seja a distância (com a
     face a 1,4 m ficam 1,3 m abertos; a "borda_aberta" só acusa a partir de 0,35 m). O gerador chama isso de "borda
     comum". **Decisão do usuário**, que vai com os exemplos da COB-03.

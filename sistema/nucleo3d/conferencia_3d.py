@@ -342,6 +342,129 @@ def cobertura(doc) -> List[dict]:
     return out
 
 
+CAMADAS_COBRE = ("Telhas", "Calhas", "Cumeeiras", "Rufos")
+BURACO_MIN = 5000.0              # mm²: o anel de dentro da cobertura a partir disto é buraco (0,005 m²)
+FRESTA_R = 60.0                  # mm: o que fechar a cobertura em até 2R é fresta (a conta do Posto V2, 21/10)
+FRESTA_MIN = 3000.0              # mm²: a fresta a partir disto vira apontamento
+ABERTURA_MIN = 1.0e6             # mm²: o vão a partir disto, todo cercado de parede, é abertura de projeto (a oval do Posto)
+ABERTURA_CERCADA = 0.95          # a fração do contorno do vão a até ABERTURA_JUNTO de parede/platibanda
+ABERTURA_JUNTO = 300.0           # mm
+
+
+def _cobre_em_planta(sol):
+    """a cobertura em planta: a união das faces de cima (normal com |nz| > 0,2) de todos os sólidos, com 2 mm de junta; o
+    sólido sem face de cima (o pano em pé, o fechamento) entra como a faixa de 30 mm em volta dos vértices. Montada de uma
+    vez (94 mil faces no Posto V2)."""
+    import numpy as np
+    import shapely
+    coords, ring, pe, pe_idx = [], [], [], []
+    k = 0
+    for s in sol:
+        V = s.vertices
+        cima, baixo = [], []
+        for f in s.faces:
+            idx = f.get("indices") if isinstance(f, dict) else f
+            if not idx or len(idx) < 3:
+                continue
+            P = [V[i] for i in idx]
+            nx = ny = nz = 0.0
+            for i in range(len(P)):
+                a, b = P[i], P[(i + 1) % len(P)]
+                nx += (a[1] - b[1]) * (a[2] + b[2])
+                ny += (a[2] - b[2]) * (a[0] + b[0])
+                nz += (a[0] - b[0]) * (a[1] + b[1])
+            n = math.sqrt(nx * nx + ny * ny + nz * nz) or 1.0
+            if abs(nz / n) <= 0.2 or abs(nz) < 2.0:          # em pé, ou área em planta < 1 mm²
+                continue
+            (cima if nz > 0 else baixo).append(P)
+        # a de cima basta (a de baixo é a mesma pegada); a face invertida do sólido importado fica com a de baixo
+        faces = cima or baixo
+        if not faces:
+            pe.extend((v[0], v[1]) for v in V)
+            pe_idx.extend([pe_idx[-1] + 1 if pe_idx else 0] * len(V))
+            continue
+        for P in faces:
+            coords.extend((p[0], p[1]) for p in P)
+            coords.append((P[0][0], P[0][1]))
+            ring.extend([k] * (len(P) + 1))
+            k += 1
+    partes = []
+    if pe:
+        mp = shapely.multipoints(np.asarray(pe), indices=np.asarray(pe_idx))
+        partes.extend(shapely.buffer(shapely.convex_hull(mp), 30))
+    if k:
+        pg = shapely.polygons(shapely.linearrings(np.asarray(coords), indices=np.asarray(ring)))
+        ruim = ~shapely.is_valid(pg)
+        if ruim.any():
+            pg[ruim] = shapely.make_valid(pg[ruim])
+        partes.append(shapely.union_all(pg).buffer(2))
+    return shapely.union_all(np.asarray(partes, dtype=object))
+
+
+def cobertura_continua(doc) -> List[dict]:
+    """COB-01 (catálogo sistema/testes/REGRAS.md) — a cobertura não tem fresta nem buraco: a união em planta das faces de
+    cima de telhas, calhas, cumeeiras e rufos (a conta do OBRA · POSTO DE COMBUSTÍVEL, 21/10, que achou 53 buracos e 43
+    frestas no Posto V2 com toda conferência passando).
+
+    * fresta: o que fechar a união por 2·FRESTA_R tapa e ela não cobre (≥ FRESTA_MIN) — a fenda entre chapas vizinhas;
+    * buraco: o anel de dentro da união (≥ BURACO_MIN) que a fresta não fecha (o estreito já sai como fresta) — o pedaço
+      de telhado sem telha;
+    * o vão grande (≥ ABERTURA_MIN) com o contorno todo junto de parede ou platibanda é abertura de projeto (a abertura
+      oval do Posto) e não é acusado. O resto é acusado: se for vão de projeto, quem diz é a obra.
+    """
+    sol = [s for s in doc.solidos if s.vertices and str(s.camada or "") in CAMADAS_COBRE]
+    if not sol:
+        return []
+    import shapely
+    from shapely.geometry import LineString, MultiPoint, Polygon
+    U = _cobre_em_planta(sol)
+    fecha = U.buffer(FRESTA_R, join_style=2).buffer(-FRESTA_R, join_style=2).difference(U)
+    caixas = [(min(v[0] for v in s.vertices), min(v[1] for v in s.vertices), max(v[0] for v in s.vertices),
+               max(v[1] for v in s.vertices), max(v[2] for v in s.vertices)) for s in sol]
+
+    def z_em(x, y, folga=500.0):
+        zs = [c[4] for c in caixas if c[0] - folga <= x <= c[2] + folga and c[1] - folga <= y <= c[3] + folga]
+        return round(max(zs)) if zs else 0
+    paredes = None
+    out: List[dict] = []
+    for g in getattr(U, "geoms", [U]):
+        for anel in g.interiors:
+            h = Polygon(anel)
+            if h.area < BURACO_MIN or fecha.intersection(h).area >= 0.9 * h.area:
+                continue
+            if h.area >= ABERTURA_MIN:
+                if paredes is None:
+                    from nucleo3d.telhas_cobertura import _paredes_curvas
+                    linhas = [LineString([(b.inicio[0], b.inicio[1]), (b.fim[0], b.fim[1])]) for b in doc.barras
+                              if b.papel == "banzo"]
+                    linhas += [LineString([(c.inicio[0], c.inicio[1]), (c.fim[0], c.fim[1])]) for c in _paredes_curvas(doc.solidos)]
+                    linhas += [MultiPoint([(v[0], v[1]) for v in s.vertices]).convex_hull.boundary for s in doc.solidos
+                               if s.vertices and str(s.camada or "") not in CAMADAS_COBRE
+                               and not str(s.camada or "").startswith("Passarela")]
+                    paredes = (linhas, shapely.STRtree(linhas))
+                perto = [paredes[0][i] for i in paredes[1].query(h.buffer(ABERTURA_JUNTO))]
+                junto = shapely.union_all(shapely.buffer(perto, ABERTURA_JUNTO)) if perto else Polygon()
+                if h.exterior.intersection(junto).length >= ABERTURA_CERCADA * h.exterior.length:
+                    continue
+            x0, y0, x1, y1 = h.bounds
+            c = h.representative_point()
+            out.append({"tipo": "buraco", "ids": [], "mm": round(max(x1 - x0, y1 - y0)), "area_m2": round(h.area / 1e6, 3),
+                        "ponto": [round(c.x), round(c.y), z_em(c.x, c.y)],
+                        "texto": "buraco na cobertura: %.2f m² (%.2f × %.2f m) sem telha, calha nem rufo"
+                                 % (h.area / 1e6, (x1 - x0) / 1000.0, (y1 - y0) / 1000.0)})
+    for g in getattr(fecha, "geoms", [fecha]):
+        if g.area < FRESTA_MIN:
+            continue
+        r = g.minimum_rotated_rectangle
+        xs, ys = r.exterior.coords.xy
+        lados = sorted(math.dist((xs[i], ys[i]), (xs[i + 1], ys[i + 1])) for i in range(4))
+        c = g.representative_point()
+        out.append({"tipo": "fresta", "ids": [], "mm": round(lados[-1]), "area_m2": round(g.area / 1e6, 4),
+                    "ponto": [round(c.x), round(c.y), z_em(c.x, c.y)],
+                    "texto": "fresta na cobertura: %.2f m de comprimento, até %d mm de largura" % (lados[-1] / 1000.0, round(lados[0]))})
+    return out
+
+
 def _cobertura_choques(doc, cobre) -> List[dict]:
     """as chapas de calha e rufo por dentro das barras (pontos a cada 60 mm nas faces das chapas × a caixa da barra no
     eixo dela, pela malha): um apontamento por par chapa × peça, a partir de 3 pontos"""
@@ -421,8 +544,9 @@ def conferir(doc, telha: bool = True, soltas: bool = True, posicao: bool = True,
     ch = choques(barras)
     tl = telha_ao_lado(doc) if telha else []
     pos = posicao_na_trelica(barras) if posicao else []
-    cob = cobertura(doc) if cobertura_ else []
-    ordem = {"repetida": 0, "choque": 1, "rufo_choque": 2, "borda_aberta": 3, "sem_rufo": 4, "posicao": 5, "degrau": 6,
+    cob = (cobertura(doc) + cobertura_continua(doc)) if cobertura_ else []
+    ordem = {"repetida": 0, "choque": 1, "rufo_choque": 2, "buraco": 3, "fresta": 3, "borda_aberta": 3, "sem_rufo": 4,
+             "posicao": 5, "degrau": 6,
              "dobra": 7, "ponta_solta": 8}
     aps = sorted(rep + ch + cob + pos + tl + soltas, key=lambda a: (ordem.get(a["tipo"], 9), -abs(a.get("mm") or 0)))
     return {"apontamentos": aps,
@@ -434,7 +558,9 @@ def conferir(doc, telha: bool = True, soltas: bool = True, posicao: bool = True,
                           "telha_acima_de_5cm": sum(1 for a in tl if abs(a["mm"]) >= 50),
                           "cobertura_bordas_abertas": sum(1 for a in cob if a["tipo"] == "borda_aberta"),
                           "cobertura_sem_rufo": sum(1 for a in cob if a["tipo"] == "sem_rufo"),
-                          "cobertura_choques": sum(1 for a in cob if a["tipo"] == "rufo_choque")}}
+                          "cobertura_choques": sum(1 for a in cob if a["tipo"] == "rufo_choque"),
+                          "cobertura_buracos": sum(1 for a in cob if a["tipo"] == "buraco"),
+                          "cobertura_frestas": sum(1 for a in cob if a["tipo"] == "fresta")}}
 
 
 def avisos(conf: dict, desl: Sequence[float] = (0.0, 0.0), telha_min: float = 50.0) -> List[str]:
@@ -443,10 +569,12 @@ def avisos(conf: dict, desl: Sequence[float] = (0.0, 0.0), telha_min: float = 50
     c = conf["contagens"]
     out = ["Conferência do 3D: %d peça(s) repetida(s), %d choque(s) entre peças, %d peça(s) da treliça fora da posição "
            "da regra, %d ponta(s) solta(s) (%d terça(s) em balanço), telha ao lado: %d degrau(s) e %d dobra(s) acima de "
-           "20 mm (%d acima de 5 cm); cobertura: %d borda(s) aberta(s), %d sem rufo na parede, %d calha/rufo batendo em peça."
+           "20 mm (%d acima de 5 cm); cobertura: %d borda(s) aberta(s), %d sem rufo na parede, %d calha/rufo batendo em peça, "
+           "%d buraco(s) e %d fresta(s)."
            % (c["repetidas"], c["choques"], c.get("fora_da_posicao", 0), c["pontas_soltas"], c["tercas_em_balanco"],
               c["telha_degraus"], c["telha_dobras"], c["telha_acima_de_5cm"], c.get("cobertura_bordas_abertas", 0),
-              c.get("cobertura_sem_rufo", 0), c.get("cobertura_choques", 0))]
+              c.get("cobertura_sem_rufo", 0), c.get("cobertura_choques", 0), c.get("cobertura_buracos", 0),
+              c.get("cobertura_frestas", 0))]
     for a in conf["apontamentos"]:
         if a["tipo"] in ("degrau", "dobra") and abs(a.get("mm") or 0) < telha_min:
             continue

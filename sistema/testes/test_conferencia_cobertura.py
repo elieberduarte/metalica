@@ -70,3 +70,115 @@ def test_rufo_atravessando_peca():
                   camada="Teste"))
     aps = C.cobertura(doc)
     assert any(a["tipo"] == "rufo_choque" and "capa da P.2" in a["texto"] for a in aps)
+
+
+# ------------------------------------------------------------------ COB-01: a cobertura não tem fresta nem buraco
+# (catálogo sistema/testes/REGRAS.md; usuário, 21/10: "o sistema fica andando em círculos" — no Posto V2 a conta do chat
+# da obra achou 53 buracos e 43 frestas com toda a conferência passando)
+import json
+import os
+
+import pytest
+
+POSTO_V2 = os.path.join(os.path.dirname(__file__), "..", "..", "Projeto", "bateria", "entradas", "posto-v2-cobertura")
+
+
+def _placa(doc, x0, y0, x1, y1, z=7000.0, camada="Telhas"):
+    """uma chapa plana de 6 mm (a telha em planta)"""
+    vs = [(x0, y0, z), (x1, y0, z), (x1, y1, z), (x0, y1, z), (x0, y0, z + 6), (x1, y0, z + 6), (x1, y1, z + 6), (x0, y1, z + 6)]
+    fs = [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]
+    doc.add(Solido(nome="Telha", camada=camada, vertices=vs, faces=fs))
+
+
+def _telhado_com_vao(doc, vao=(3000.0, 3000.0, 5000.0, 5000.0)):
+    """um telhado de 8 × 8 m em quatro chapas em volta de um vão (x0, y0, x1, y1)"""
+    x0, y0, x1, y1 = vao
+    _placa(doc, 0.0, 0.0, 8000.0, y0)
+    _placa(doc, 0.0, y1, 8000.0, 8000.0)
+    _placa(doc, 0.0, y0, x0, y1)
+    _placa(doc, x1, y0, 8000.0, y1)
+
+
+@pytest.mark.xfail(strict=True, reason="achado aberto 21/10 (COB-01): no canto da calha com o encosto lateral sobra "
+                   "197 × 104 mm sem nada (o encosto começa em x 293, a calha acaba em x 96) — pedido ao dono do gerador")
+def test_cob01_telhado_lancado_integro_sem_fresta_nem_buraco():
+    doc = _caixa_fechada()
+    assert C.cobertura_continua(doc) == []
+
+
+def test_cob01_canto_da_calha_com_o_encosto_e_o_unico_achado_do_telhado_lancado():
+    """enquanto o canto não é fechado no gerador: só as duas frestas dele (nada mais aparece no telhado de exemplo)"""
+    doc = _caixa_fechada()
+    aps = C.cobertura_continua(doc)
+    assert [a["tipo"] for a in aps] == ["fresta", "fresta"]
+    assert all(abs(a["ponto"][0] - 195) < 100 and (abs(a["ponto"][1] - 6038) < 100 or abs(a["ponto"][1] + 38) < 100) for a in aps)
+
+
+def test_cob01_chapa_que_falta_e_buraco():
+    """tirar uma chapa do meio do telhado lançado: buraco (o pedaço de telhado sem telha)"""
+    doc = _caixa_fechada()
+    tel = [s for s in doc.solidos if (s.atributos or {}).get("telha_lancada") and not s.atributos.get("fechamento")]
+    meio = min(tel, key=lambda s: abs(sum(v[0] for v in s.vertices) / len(s.vertices) - 3500.0)
+               + abs(sum(v[1] for v in s.vertices) / len(s.vertices) - 3000.0))
+    doc.remover(meio.id)
+    buracos = [a for a in C.cobertura_continua(doc) if a["tipo"] == "buraco"]
+    assert len(buracos) == 1 and buracos[0]["area_m2"] > 0.5
+
+
+def test_cob01_fresta_entre_chapas_vizinhas():
+    """duas chapas com 30 mm entre elas: fresta (e não buraco — o estreito é fresta)"""
+    doc = Documento()
+    _placa(doc, 0.0, 0.0, 3000.0, 6000.0)
+    _placa(doc, 3030.0, 0.0, 6000.0, 6000.0)
+    _placa(doc, -500.0, -500.0, 6500.0, 0.0, camada="Calhas")          # as bordas fechadas: a fresta fica de dentro
+    _placa(doc, -500.0, 6000.0, 6500.0, 6500.0, camada="Calhas")
+    aps = C.cobertura_continua(doc)
+    assert [a["tipo"] for a in aps] == ["fresta"]
+    assert 5900 <= aps[0]["mm"] <= 6100
+    # encostadas, nada
+    doc2 = Documento()
+    _placa(doc2, 0.0, 0.0, 3000.0, 6000.0)
+    _placa(doc2, 3000.0, 0.0, 6000.0, 6000.0)
+    assert C.cobertura_continua(doc2) == []
+
+
+def test_cob01_abertura_cercada_de_platibanda_e_de_projeto():
+    """o vão de 2 × 2 m com platibanda em volta (a abertura oval do Posto) é de projeto; sem a platibanda, é buraco"""
+    doc = Documento()
+    _telhado_com_vao(doc)
+    aps = C.cobertura_continua(doc)
+    assert [a["tipo"] for a in aps] == ["buraco"]
+    for peca, a, b in (("P.1", (3000.0, 3000.0), (5000.0, 3000.0)), ("P.2", (5000.0, 3000.0), (5000.0, 5000.0)),
+                       ("P.3", (5000.0, 5000.0), (3000.0, 5000.0)), ("P.4", (3000.0, 5000.0), (3000.0, 3000.0))):
+        _platibanda(doc, peca, a, b)
+    assert C.cobertura_continua(doc) == []
+
+
+def test_cob01_entra_na_conferencia_e_no_verificar_apoios():
+    from nucleo3d import apoios
+    doc = Documento()
+    _placa(doc, 0.0, 0.0, 3000.0, 6000.0)
+    _placa(doc, 3030.0, 0.0, 6000.0, 6000.0)
+    _placa(doc, -500.0, -500.0, 6500.0, 0.0, camada="Calhas")
+    _placa(doc, -500.0, 6000.0, 6500.0, 6500.0, camada="Calhas")
+    conf = C.conferir(doc)
+    assert conf["contagens"]["cobertura_frestas"] == 1
+    assert "1 fresta(s)" in C.avisos(conf)[0]
+    import inspect
+    assert '"fresta": "cobertura_fresta"' in inspect.getsource(apoios)
+
+
+@pytest.mark.skipif(not os.path.isdir(POSTO_V2), reason="sem as entradas congeladas do Posto V2 (Projeto/bateria)")
+def test_cob01_posto_v2_antes_e_depois_da_rodada_das_telhas():
+    """a forma em que o defeito apareceu: o modelo gravado do Posto V2 antes da rodada das telhas (a conta do chat da
+    obra: 53 buracos, 43 frestas — 30 buracos estreitos são as mesmas frestas, e a abertura oval é de projeto) e depois
+    do c8f1e1f"""
+    from nucleo3d.modelo import Documento as D
+
+    def conta(nome):
+        doc = D.de_dict(json.load(open(os.path.join(POSTO_V2, nome), encoding="utf-8")))
+        c = C.conferir(doc, telha=False, soltas=False, posicao=False)["contagens"]
+        return c["cobertura_buracos"], c["cobertura_frestas"]
+    assert conta("antes-c8f1e1f.json") == (23, 43)
+    b, f = conta("depois-c8f1e1f.json")
+    assert (b, f) == (7, 17)             # o que ficou: a classificar pela obra (defeito ou vão de projeto)
