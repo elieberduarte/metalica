@@ -574,6 +574,26 @@ def test_chegada_quase_tangente_nao_conta_para_ancorar():
     r = de_planta.ancorar_pelas_chegadas([painel] + comps)
     assert r and r[0][0] == "PAINEL 1", r
 
+
+def test_pilarete_embaixo_do_patamar_para_nele():
+    """os PM5 da ESCADA 1 do Posto V2 são pilaretes do patamar (~1,70) e subiam até 6,00, 3,17 e a caixa d'água
+    (22/10/2026); o pilar fora da caixa do patamar não muda"""
+    patamar = [((0.0, 0.0, 1700.0), (1100.0, 0.0, 1700.0)), ((0.0, 1060.0, 1700.0), (1100.0, 1060.0, 1700.0))]
+    sob = Barra(inicio=(100.0, 50.0, 0.0), fim=(100.0, 50.0, 6000.0), perfil="Ue 100×50×17×2,65", papel="pilar")
+    longe = Barra(inicio=(5000.0, 50.0, 0.0), fim=(5000.0, 50.0, 6000.0), perfil="Ue 100×50×17×2,65", papel="pilar")
+    sob.atributos, longe.atributos = {"origem": {}}, {"origem": {}}
+    outro = Barra(inicio=(900.0, 1000.0, 0.0), fim=(900.0, 1000.0, 6000.0), perfil="Ue 150×70×20×2,65", papel="pilar")
+    outro.atributos = {"origem": {}}                     # embaixo do patamar, mas a planta da escada não o desenha
+    assert de_planta._pilaretes_no_patamar([sob, longe, outro], patamar, 1650.0, [(100.0, 50.0)]) == 1
+    assert sob.fim[2] == 1650.0 and longe.fim[2] == 6000.0 and outro.fim[2] == 6000.0
+    # o que chega na estrutura principal (6,00) sem nada a conferir fica; o que foi até lá sem planta que o desenhe, não
+    firme = Barra(inicio=(100.0, 50.0, 0.0), fim=(100.0, 50.0, 6000.0), perfil="Ue 150×70×20×2,65", papel="pilar")
+    solto = Barra(inicio=(100.0, 50.0, 0.0), fim=(100.0, 50.0, 6000.0), perfil="Ue 100×50×17×2,65", papel="pilar")
+    firme.atributos = {"origem": {}}
+    solto.atributos = {"origem": {"a_conferir": "altura: as peças em cima são de plantas que não desenham este pilar"}}
+    assert de_planta._pilaretes_no_patamar([firme, solto], patamar, 1650.0, [(100.0, 50.0)], nivel_firme=6000.0) == 1
+    assert firme.fim[2] == 6000.0 and solto.fim[2] == 1650.0
+
 def test_pilar_vai_para_a_secao_da_planta():
     """a planta estrutural desenha a seção do pilar (os dois U de 400 × 200, costas com costas) a
     0,72 m de onde a locação o põe: vale a planta (os três PM6 do Posto CB), com aviso"""

@@ -87,9 +87,13 @@ def _eixos_das_longarinas(linhas) -> List[dict]:
         d, j = melhor
         usadas.update((i, j))
         b = linhas[j]
-        s = [(p[0] - a["a"][0]) * ux + (p[1] - a["a"][1]) * uy for p in (a["a"], a["b"], b["a"], b["b"])]
+        sa = sorted((p[0] - a["a"][0]) * ux + (p[1] - a["a"][1]) * uy for p in (a["a"], a["b"]))
+        sb = sorted((p[0] - a["a"][0]) * ux + (p[1] - a["a"][1]) * uy for p in (b["a"], b["b"]))
         base = (a["a"][0] + n[0] * d / 2.0, a["a"][1] + n[1] * d / 2.0)
-        eixos.append({"u": (ux, uy), "n": n, "base": base, "s0": min(s), "s1": max(s),
+        # a ponta do eixo é o meio das pontas das duas linhas (a face de fora mais comprida que a de dentro, o corte da
+        # longarina no chão): é onde fica o centro da placa (a CH8 da ESCADA 1 do Posto V2 entre 293.032 e 292.832 —
+        # com a ponta da mais comprida, a escada saía 100 mm deslocada e o patamar não apoiava nos PM5, 22/10/2026)
+        eixos.append({"u": (ux, uy), "n": n, "base": base, "s0": (sa[0] + sb[0]) / 2.0, "s1": (sa[1] + sb[1]) / 2.0,
                       "lat": base[0] * n[0] + base[1] * n[1]})
     return eixos
 
@@ -258,8 +262,16 @@ def ler(ents, textos, referencia: Dict[str, List[Ponto2]], pes_esc: Sequence[Pon
             l = p0["l"]
             s_pe = p0["s0"] if p0["sobe"] else p0["s1"]
             lb = l["base"][0] * l["n"][0] + l["base"][1] * l["n"][1]
-            pes = [(l["base"][0] + l["u"][0] * s_pe + l["n"][0] * (lat - lb),
-                    l["base"][1] + l["u"][1] * s_pe + l["n"][1] * (lat - lb) + dy) for lat in l["lats"]]
+            # o pé de cada longarina na ponta dela (não na ponta mais comprida do lance)
+            pes = []
+            for e_ in l.get("eixos") or ():
+                pts_e = [(e_["base"][0] + e_["u"][0] * s_e, e_["base"][1] + e_["u"][1] * s_e) for s_e in (e_["s0"], e_["s1"])]
+                ss_e = [(q[0] - l["base"][0]) * l["u"][0] + (q[1] - l["base"][1]) * l["u"][1] for q in pts_e]
+                q_e = pts_e[ss_e.index(min(ss_e))] if p0["sobe"] else pts_e[ss_e.index(max(ss_e))]
+                pes.append((q_e[0], q_e[1] + dy))
+            if not pes:
+                pes = [(l["base"][0] + l["u"][0] * s_pe + l["n"][0] * (lat - lb),
+                        l["base"][1] + l["u"][1] * s_pe + l["n"][1] * (lat - lb) + dy) for lat in l["lats"]]
             cand = [(abs(q[1] - p[1]), q[0] - p[0]) for p in pes for q in pes_esc if abs(q[1] - p[1]) < 250.0]
             if cand:
                 dx = sorted(c[1] for c in cand)[len(cand) // 2]
@@ -410,8 +422,18 @@ def ler(ents, textos, referencia: Dict[str, List[Ponto2]], pes_esc: Sequence[Pon
                 pisantes.append({"k": k_ini + i - 1, "origem": mover(o_, z0 + (z1 - z0) * i / float(n_p + 1)),
                                  "u": (ux, uy), "n": (nx, ny), "piso": g, "largura": c1 - c0, "aba": ABA_DEGRAU,
                                  "espessura": esp_d})
+        # as seções de pilar que a planta da escada desenha (o retângulo fechado de 40 a 300 mm: os pilaretes do patamar,
+        # os PM5 da ESCADA 1 do Posto V2), já no lugar
+        secoes = []
+        for e in ents:
+            vs = e.get("vertices") or []
+            if e.get("tipo") == "polilinha" and 4 <= len(vs) <= 8 and all(_dentro(v, reg) for v in vs):
+                xs_, ys_ = [v[0] for v in vs], [v[1] for v in vs]
+                if 40.0 <= max(xs_) - min(xs_) <= 300.0 and 40.0 <= max(ys_) - min(ys_) <= 300.0:
+                    c_ = mover(((min(xs_) + max(xs_)) / 2.0, (min(ys_) + max(ys_)) / 2.0), 0.0)
+                    secoes.append((c_[0], c_[1]))
         out.append({"nome": nome, "perfil": p_long, "perfil_patamar": p_pat, "lances": segs, "patamar": pat_segs,
-                    "vigas": vigas, "pisos": pisos, "pisantes": pisantes,
+                    "secoes_de_pilar": secoes, "vigas": vigas, "pisos": pisos, "pisantes": pisantes,
                     "degraus": N, "altura": altura, "patamar_z": z_pat, "alinhada_por": por,
                     "patamar_por": patamar_por})
     # a planta que não escreve o perfil da longarina: o das outras escadas

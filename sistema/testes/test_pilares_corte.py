@@ -144,6 +144,30 @@ def test_monta_copa_em_cruz_e_inclinado():
     assert {b[6] for b in barras} == {"Pilares"}                  # a copa e as mãos-francesas vão com o pilar
 
 
+
+def test_pe_do_inclinado_na_secao_da_perna_e_nao_no_toco():
+    """o PM8 do Posto: na placa (900 de lado) estão a seção da perna inclinada — esticada no sentido da inclinação,
+    250 × 2·125/sen 50° — e a do toco em pé, 250 × 250; o nome casava com o toco e o pé saía 476 mm fora (22/10/2026)"""
+    ents = desenho_pm8()
+    textos = [e for e in ents if e["tipo"] == "texto"]
+    cortes = pc.ler_cortes_de_pilar(ents, textos)
+    barras = []
+
+    def barra(p0, p1, perfil, papel, camada, conjunto=None, rot=0.0, origem=None):
+        barras.append((p0, p1, papel))
+        return True
+    def ret(cx, cy, w, h, id_, camada="metalica4"):
+        return {"id": id_, "tipo": "polilinha", "camada": camada, "fechada": True,
+                "vertices": [[cx - w / 2, cy - h / 2], [cx + w / 2, cy - h / 2], [cx + w / 2, cy + h / 2], [cx - w / 2, cy + h / 2]]}
+    w_perna = 250.0 / math.sin(math.radians(50.0))
+    loc = [ret(10000.0, 0.0, 900.0, 400.0, "ch", "Chapas"),               # a placa, lado comprido ao longo de x
+           ret(10000.0 - 189.0, 0.0, w_perna, 250.0, "perna"),            # a seção da perna inclinada
+           ret(10000.0 + 225.0, 0.0, 250.0, 250.0, "toco")]               # o toco em pé
+    locados = [{"x": 10225.0, "y": 0.0, "rot": 0.0, "nome": "PM8(250X125X25X4,75)", "perfil": "Ue 250×125×25×4,75"}]
+    pc.montar(cortes, locados, barra, 6000.0, 0.0, lambda p: abs(p[0] - 14000.0) + abs(p[1]), loc, lambda p: p, [])
+    pes = [b[0] for b in barras if b[2] == "pilar"]
+    assert pes and all(abs((p[0] + q[0]) / 2 - (10000.0 - 189.0)) < 2.0 for p, q in zip(pes[::2], pes[1::2])), pes
+
 def test_quadro_de_duas_pernas_na_vista_frontal_e_a_outra_placa():
     """o PM8 do Posto CB: a vista frontal desenha duas pernas de 250 com 1100 entre elas (1350 de
     eixo a eixo) e três travessas; na locação, a placa da outra perna fica a 1350 ao lado"""

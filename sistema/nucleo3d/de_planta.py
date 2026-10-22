@@ -3595,6 +3595,37 @@ def _encostar_tercas_na_face(tercas, barreiras, nivel: float) -> List[Tuple[str,
     return feitas
 
 
+def _pilaretes_no_patamar(pilares, patamar, z_topo: float, secoes=(), folga: float = 300.0,
+                          nivel_firme: Optional[float] = None) -> int:
+    """os pilares em pé embaixo do patamar de uma escada (na caixa dele, com folga), desenhados na planta da escada
+    (`secoes`: a seção a até 200 mm) e mais altos que ele param nele: os PM5 da ESCADA 1 do Posto V2 são pilaretes do
+    patamar (~1,70 m pelos cortes CC/DD) e subiam até 6,00, 3,17 e a caixa d'água (22/10/2026). O pilar que a planta da
+    escada não desenha não muda, nem o que chega na estrutura principal (`nivel_firme`) sem nada a conferir — os PM4 da
+    ESCADA 2, desenhados na planta dela mas embaixo de uma treliça da cobertura. Muda o topo; devolve quantos."""
+    xs = [p[0] for a_, b_ in patamar for p in (a_, b_)]
+    ys = [p[1] for a_, b_ in patamar for p in (a_, b_)]
+    x0, x1, y0, y1 = min(xs) - folga, max(xs) + folga, min(ys) - folga, max(ys) + folga
+    n = 0
+    for b in pilares:
+        a, c = b.inicio, b.fim
+        if math.hypot(c[0] - a[0], c[1] - a[1]) > 50.0 or not (x0 <= a[0] <= x1 and y0 <= a[1] <= y1):
+            continue
+        if not any(math.dist((a[0], a[1]), q) <= 200.0 for q in secoes):
+            continue
+        o_ = (b.atributos or {}).get("origem") or {}
+        if nivel_firme is not None and abs(max(a[2], c[2]) - nivel_firme) < 1.0 and not str(o_.get("a_conferir") or "").startswith("altura"):
+            continue                                       # chega na estrutura principal: não é pilarete
+        if max(a[2], c[2]) > z_topo + 50.0 and min(a[2], c[2]) < z_topo:
+            if c[2] >= a[2]:
+                b.fim = (c[0], c[1], round(z_topo, 1))
+            else:
+                b.inicio = (a[0], a[1], round(z_topo, 1))
+            o = (b.atributos or {}).setdefault("origem", {})
+            o["a_conferir"] = "pilarete do patamar da escada: até o patamar (%.2f m)" % (z_topo / 1000.0)
+            n += 1
+    return n
+
+
 def _pilares_pela_planta(ents, caixa_p, locados: List[dict], avisos: List[str], raio: float = 1200.0) -> int:
     """O pilar que a planta estrutural desenha (a seção dele — o retângulo com as medidas do perfil,
     onde as treliças se cruzam) perto do lugar da locação, mas fora dele: vale o da planta, que é
@@ -4649,6 +4680,14 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             for a_, b_ in esc["patamar"]:
                 if barra((a_[0], a_[1], a_[2] + base), (b_[0], b_[1], b_[2] + base), p_p, "viga", "Escadas", None, 0.0, dict(orig_e)):
                     n_e += 1
+            if esc["patamar"]:
+                pa_p = _perfil(p_p)
+                z_pat = min(min(a_[2], b_[2]) for a_, b_ in esc["patamar"]) + base - (float(pa_p.d or 100.0) / 2.0 if pa_p else 50.0)
+                cortados = _pilaretes_no_patamar([b for b in doc.barras if b.papel == "pilar"], esc["patamar"], z_pat,
+                                                 esc.get("secoes_de_pilar") or [], nivel_firme=nivel)
+                if cortados:
+                    avisos.append("%s: %d pilar(es) embaixo do patamar foram até ele (%.2f m) — os pilaretes da escada."
+                                  % (esc["nome"], cortados, z_pat / 1000.0))
             # os perfis do patamar e a chegada no piso de cima (sem repetir as bordas do patamar)
             ja = list(esc["patamar"]) + list(esc["lances"])
             for a_, b_ in esc.get("vigas") or []:

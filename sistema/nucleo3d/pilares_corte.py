@@ -420,6 +420,32 @@ def sentido_da_placa(ents_loc, mover, ponto: Ponto2, raio=900.0) -> Optional[Pon
     return melhor[1] if melhor else None
 
 
+def secao_da_perna(ents_loc, mover, ponto: Ponto2, d: float, largura: float, ang: float, tol: float = 30.0,
+                   raio: float = 700.0) -> Optional[Ponto2]:
+    """o centro da seção da perna inclinada desenhada na placa: o perfil (d × largura) visto de cima fica esticado no
+    sentido da inclinação (largura / sen ângulo) — no PM8 do Posto, 250 × 322 (125/sen 50,9° de cada lado do eixo),
+    ao lado do toco em pé de 250 × 250. O pé do pilar era o do nome casado (o toco, ou o centro da placa): 476 mm fora
+    (22/10/2026). None sem seção assim perto."""
+    from nucleo3d.de_planta import _medidas_nos_lados
+    alvo = sorted((d, largura / max(math.sin(math.radians(ang)), 0.2)))
+    melhor = None
+    for e in ents_loc:
+        contornos = [e.get("vertices")] if e.get("tipo") == "polilinha" else (e.get("contornos") or []) if e.get("tipo") == "hachura" else []
+        for c_ in contornos:
+            if not c_ or not (4 <= len(c_) <= 8):
+                continue
+            pts = [mover((q[0], q[1])) for q in c_]
+            cx, cy = sum(q[0] for q in pts) / len(pts), sum(q[1] for q in pts) / len(pts)
+            if math.dist((cx, cy), ponto) > raio:
+                continue
+            med = sorted(_medidas_nos_lados(pts))
+            if abs(med[0] - alvo[0]) <= tol and abs(med[1] - alvo[1]) <= tol:
+                dd = math.dist((cx, cy), ponto)
+                if melhor is None or dd < melhor[0]:
+                    melhor = (dd, (cx, cy))
+    return melhor[1] if melhor else None
+
+
 def outra_placa(ents_loc, mover, ponto: Ponto2, u: Ponto2, entre: float, tol: float = 250.0) -> Optional[Ponto2]:
     """a placa de base da outra perna do quadro: a placa (camada Chapas, fechada) com o lado
     comprido no sentido u, a `entre` da placa deste ponto na perpendicular a u (e no mesmo lugar
@@ -484,6 +510,12 @@ def montar(cortes: Dict[str, dict], locados: Sequence[dict], barra, nivel: float
             inclinados.add(pl["nome"])
             ang = lido["pilar"]["ang"]
             L = lido["pilar"]["L"]
+            # o pé: a seção da perna desenhada na placa (esticada no sentido da inclinação), não o toco em pé ao lado
+            mult_s = int((lido["perfis"].get("pilar") or {}).get("mult") or 1)
+            if pa is not None and pa.d and pa.bf:
+                pe_s = secao_da_perna(ents_loc, mover_loc, (x, y), float(pa.d), float(pa.bf) * mult_s, ang)
+                if pe_s is not None:
+                    x, y = pe_s
             # o lado: o que leva o topo (no nível de chegada) para perto da estrutura
             run = (nivel - base) / math.tan(math.radians(ang)) if abs(ang) > 1e-6 else 0.0
             cands = []

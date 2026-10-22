@@ -68,6 +68,24 @@ def test_escada_em_L_no_lugar_com_o_patamar_do_corte():
     assert ps[1]["aba"] == escadas.ABA_DEGRAU
 
 
+
+def test_pe_no_meio_das_pontas_da_longarina():
+    """a ESCADA 1 do Posto V2: a face de fora da longarina vai mais longe que a de dentro no pé (293.032 × 292.832) e a
+    placa CH8 fica no meio; com a ponta da linha mais comprida a escada saía 100 mm deslocada e o patamar não apoiava
+    nos PM5 (22/10/2026). Aqui a face de cima da longarina de y 1000 vai até x 4000 (a outra até 3800)"""
+    ents, textos = _planta()
+    for e in ents:
+        if e["a"] == (3800.0, 1040.0):
+            e["a"] = (4000.0, 1040.0)
+    referencia = {"E": [(100.0, 33000.0)], "F": [(100.0, 32000.0)]}
+    baloes = {"E": (-1500.0, 1000.0), "F": (-1500.0, 0.0)}
+    # as placas no meio das pontas de cada longarina: 3900 e 3800 do desenho + 900
+    pes = [(4800.0, 33020.0), (4700.0, 32020.0)]
+    r = escadas.ler(ents, textos, referencia, pes, 3170.0, [], baloes_de=lambda reg: baloes)
+    assert len(r) == 1
+    xs2 = sorted({round(p[0]) for seg in r[0]["lances"] for p in seg if p[2] > 1800.0})
+    assert xs2 and all(min(abs(x - 920.0), abs(x - 1980.0)) <= 5 for x in xs2), xs2
+
 def test_sem_como_por_no_lugar_fica_de_fora_com_aviso():
     ents, textos = _planta()
     avisos = []
