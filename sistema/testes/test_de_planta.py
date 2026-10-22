@@ -180,6 +180,42 @@ def test_pilares_no_lugar_da_planta(resultado):
     assert all(b.fim[2] == 6000.0 for b in doc.barras if b.papel == "pilar")
 
 
+def _ue_aberto(x, y, d, bf, lb, lado, camada="metalica4"):
+    """a seção de um Ue desenhada como a locação do Posto CB: a alma (d) paralela a x, a lado·bf da junta (y), as
+    abas até a junta e os lábios para dentro"""
+    ya = y + lado * bf
+    return {"tipo": "polilinha", "camada": camada, "fechada": False,
+            "vertices": [[x - d / 2 + lb, y], [x - d / 2, y], [x - d / 2, ya], [x + d / 2, ya], [x + d / 2, y], [x + d / 2 - lb, y]]}
+
+
+def test_pilar_reto_em_caixao_quando_a_locacao_desenha_dois_ue():
+    """A locação do Posto CB desenha em cada placa os DOIS Ue de boca (PM1 250×140, PM3 200×140…) e o nome só diz
+    "PM1(250X70X25X3,0)": o pilar reto saía com um Ue só — o caixão ficava só no pilar inclinado (22/10/2026, o usuário:
+    "esse pilar está detalhado com tubo 2U formando um tubo e no modelo está apenas 1 U"; ~4,6 t a menos no Posto V2)"""
+    from nucleo3d.geometria import secao, base_local
+    loc = locacao()
+    for x, y in ((0.0, 0.0), (L_TES, 0.0)):                 # dois pilares com os dois Ue; os outros dois com um só
+        loc += [_ue_aberto(x + DX_LOC, y, 250.0, 70.0, 25.0, 1), _ue_aberto(x + DX_LOC, y, 250.0, 70.0, 25.0, -1)]
+    for x, y in ((0.0, 6000.0), (L_TES, 6000.0)):
+        loc += [_ue_aberto(x + DX_LOC, y, 250.0, 70.0, 25.0, 1)]
+    ents = planta() + loc + plantas_das_tercas() + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
+    ents += elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
+    r = de_planta.montar(ents, {"nivel": 6000.0, "origem": False})
+    pil = [b for b in r["doc"].barras if b.papel == "pilar"]
+    for x, y, n in ((0.0, 0.0, 2), (L_TES, 0.0, 2), (0.0, 6000.0, 1), (L_TES, 6000.0, 1)):
+        aqui = [b for b in pil if math.dist(b.inicio[:2], (x, y)) < 200.0]
+        assert len(aqui) == n, "pilar em (%.0f; %.0f): %d perfis (o desenho tem %d)" % (x, y, len(aqui), n)
+        if n == 2:
+            xs, ys = [], []
+            for b in aqui:
+                u, v, _w = base_local((0.0, 0.0, 1.0), b.rotacao or 0.0)
+                for px, py in secao(de_planta._perfil(b.perfil)):
+                    xs.append(b.inicio[0] + u[0] * px + v[0] * py)
+                    ys.append(b.inicio[1] + u[1] * px + v[1] * py)
+            larg = sorted((max(xs) - min(xs), max(ys) - min(ys)))
+            assert abs(larg[0] - 140.0) < 2.0 and abs(larg[1] - 250.0) < 2.0, "caixão de %.0f × %.0f" % tuple(larg)
+
+
 def test_modelo_vem_para_perto_da_origem():
     ents = planta() + locacao() + plantas_das_tercas() + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
     ents += elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
@@ -263,6 +299,20 @@ def test_viga_vm_escrita_duas_vezes_da_uma_viga():
     r = de_planta.montar(ents, {"nivel": 6000.0, "origem": False})
     vigas = [b for b in r["doc"].barras if b.papel == "viga"]
     assert len(vigas) == 2                                # 2Ue: os dois perfis, uma vez só
+
+
+def test_viga_2ue_em_caixao_sem_os_perfis_entrarem_um_no_outro(resultado):
+    """VM-2Ue200×70: os dois Ue de boca, formando o caixão de 140 mm (a cota "140" das VM na folha 02 do Posto CB). O
+    afastamento era meia aba + 1 mm a partir do eixo de cada Ue — mas o Ue é desenhado pelo centroide: os dois entravam
+    22–34 mm um no outro e a viga ficava com 106–118 mm (22/10/2026, conferência projeto × modelo do Posto V2)"""
+    from nucleo3d.geometria import secao
+    vigas = [b for b in resultado["doc"].barras if b.papel == "viga"]
+    assert len(vigas) == 2
+    xs = sorted(b.inicio[0] for b in vigas)
+    pa = de_planta._perfil("Ue 200×70×20×2,65")
+    xg = -min(q[0] for q in secao(pa))
+    assert abs((xs[1] - xs[0]) - 2.0 * (70.0 - xg)) < 1.0, "eixos a %.1f mm" % (xs[1] - xs[0])
+    assert abs((xs[1] - xs[0]) + 2.0 * xg - 140.0) < 1.5      # de fora a fora: 2 × 70
 
 
 def test_barras_da_trelica_sabem_de_qual_trelica_sao(resultado):
@@ -592,6 +642,34 @@ def test_agulha_de_terca_a_terca_em_barra_redonda():
     tercas = [t for t in r["doc"].barras if t.papel == "terça"]
     z_t = {round(t.inicio[0]): t.inicio[2] for t in tercas}
     assert b[0].inicio[2] == pytest.approx(z_t[round(b[0].inicio[0])], abs=60)
+
+
+
+def test_corrente_e_agulha_pelo_rotulo_e_nao_pela_camada():
+    """O rótulo ao lado da linha diz a peça: no Posto CB 64 linhas "AG…" estavam na camada de corrente e saíam em
+    L 1"×1/8", e 33 "CR…" na de agulha saíam em Ø10 — a lista de material segue o rótulo (22/10/2026, conferência
+    projeto × modelo). A sigla vai para a peça."""
+    xa, xb, xc = L_TES - S_TERCAS[1], L_TES - S_TERCAS[2], L_TES - S_TERCAS[3]
+    tr = [linha((xa, 3000.0 + DY_TER), (xb, 3000.0 + DY_TER), "1-Corrente"),         # rotulada AG3: é agulha
+          texto(((xa + xb) / 2, 3076.0 + DY_TER), "AG3", camada="1-Corrente"),
+          linha((xb, 2000.0 + DY_TER), (xc, 2000.0 + DY_TER), "1-Agulha"),           # rotulada CR5: é corrente rígida
+          texto(((xb + xc) / 2, 2076.0 + DY_TER), "CR5", camada="1-Agulha")]
+    ents = planta() + locacao() + plantas_das_tercas() + tr + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
+    ents += elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
+    r = de_planta.montar(ents, {"nivel": 6000.0, "origem": False})
+    tr_m = {(b.atributos or {}).get("origem", {}).get("sigla"): b.perfil for b in r["doc"].barras if b.papel == "corrente"}
+    assert tr_m == {"AG3": "Barra redonda 10", "CR5": 'L 1"×1/8"'}, tr_m
+
+
+
+def test_eixo_de_terca_coberto_por_outros_na_mesma_linha_sai():
+    """O DXF do Posto CB tem, na linha da TC10, um eixo de 6,6 m por cima dos dois trechos (TC10 3962 + TC8 2634): a
+    terça saía em dobro (22/10/2026, conferência projeto × modelo). Sai o eixo coberto inteiro; os que só se encostam
+    ou se cruzam em parte ficam"""
+    segs = [((0.0, 0.0), (0.0, 6596.0)), ((0.0, 0.0), (0.0, 3962.0)), ((0.0, 3962.0), (0.0, 6596.0)),
+            ((1400.0, 0.0), (1400.0, 4000.0)), ((1400.0, 3000.0), (1400.0, 6000.0)),       # sobrepostos em parte
+            ((2800.0, 0.0), (2800.0, 6000.0)), ((2800.0, 0.0), (2800.0, 6000.0))]          # o mesmo eixo duas vezes
+    assert de_planta._eixos_nao_cobertos(segs) == [1, 2, 3, 4, 6]
 
 
 # ------------------------------------------------------------------ vigas VM do Posto CB (28/09)

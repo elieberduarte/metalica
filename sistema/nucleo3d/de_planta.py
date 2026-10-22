@@ -3257,6 +3257,36 @@ def _giro_abas_para(q0, q1, f) -> float:
                                          f[0] * u[0] + f[1] * u[1] + f[2] * u[2])) % 360.0, 1)
 
 
+def _eixos_nao_cobertos(segs: Sequence[Tuple[Ponto2, Ponto2]], tol: float = 5.0) -> List[int]:
+    """os índices dos eixos que ficam: sai o eixo coberto inteiro por outros na mesma linha (o DXF do Posto CB tem, na
+    linha da TC10, um eixo de 6,6 m por cima dos dois trechos TC10 + TC8 — a terça saía em dobro, 22/10/2026)"""
+    fora = set()
+    for i, (a, b) in enumerate(segs):
+        (ux, uy), L = _unit(a, b)
+        if L < 1.0:
+            continue
+        cob = []
+        for j, (c, d) in enumerate(segs):
+            if j == i or j in fora:
+                continue
+            if any(abs(-(q[0] - a[0]) * uy + (q[1] - a[1]) * ux) > tol for q in (c, d)):
+                continue
+            s0, s1 = sorted(((q[0] - a[0]) * ux + (q[1] - a[1]) * uy for q in (c, d)))
+            cob.append((s0, s1))
+        alcance = 0.0
+        for s0, s1 in sorted(cob):
+            if s0 > alcance + 20.0:
+                break
+            alcance = max(alcance, s1)
+        if cob and alcance >= L - 20.0:
+            fora.add(i)
+    return [i for i in range(len(segs)) if i not in fora]
+
+
+#: o rótulo de uma linha de travamento na planta das terças: CR1A, AG3, CV12, EST14, ESTAB1
+_ROTULO_TRAVAMENTO = re.compile(r"^(CR|AG|CV|EST|ESTAB)\d+[A-Z]?$")
+
+
 def _meio_caixao(nome: Optional[str]) -> float:
     """do eixo do caixão (a junta das bocas) ao eixo de cada U: a aba menos a distância da alma ao
     centroide (Ue 250×70: 70 − 19 = 51 mm)"""
@@ -3484,8 +3514,13 @@ def _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados_loc: set, avisos: 
                 lados = [(math.dist(vs[i], vs[(i + 1) % len(vs)]), vs[i], vs[(i + 1) % len(vs)]) for i in range(len(vs))]
                 L, a, b = max(lados)
                 secoes_ids.append(e.get("id"))
+                # as medidas da seção ao longo do lado comprido (a alma) e na perpendicular (a aba)
+                ux_, uy_ = (b[0] - a[0]) / (L or 1.0), (b[1] - a[1]) / (L or 1.0)
+                ao_longo = [v[0] * ux_ + v[1] * uy_ for v in vs]
+                atraves = [-v[0] * uy_ + v[1] * ux_ for v in vs]
                 secoes.append((((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2),
-                               math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) % 180))
+                               math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) % 180,
+                               max(ao_longo) - min(ao_longo), max(atraves) - min(atraves)))
     out: List[dict] = []
     nomes_p = []
     for t in textos:
@@ -3539,10 +3574,20 @@ def _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados_loc: set, avisos: 
         sc = [s for s in secoes if math.dist(s[0], q) < 300]
         if sc:
             rot = min(sc, key=lambda s: math.dist(s[0], q))[1]
+        # o caixão: a placa com os DOIS Ue do perfil desenhados (de boca, a seção 250 × 140 do PM1 do Posto CB) — o nome
+        # só diz "PM1(250X70X25X3,0)" (22/10/2026: o pilar reto saía com um Ue só)
+        mult = 1
+        pa_t = _perfil(r["perfil"])
+        if pa_t is not None and pa_t.d and pa_t.bf:
+            iguais = [s for s in sc if abs(s[2] - float(pa_t.d)) <= 25.0 and abs(s[3] - float(pa_t.bf)) <= 25.0]
+            if len(iguais) >= 2:
+                mult = 2
+                rot = iguais[0][1]
         x, y = q[0] + desl_l[0], q[1] + desl_l[1]
         usados_loc.add(t.get("id"))
         usados_loc.update(secoes_ids[i_s] for i_s, s_ in enumerate(secoes) if math.dist(s_[0], q) < 300)
-        out.append({"x": x, "y": y, "rot": rot, "nome": t["texto"].strip(), "perfil": r["perfil"], "_texto": t.get("id")})
+        out.append({"x": x, "y": y, "rot": rot, "nome": t["texto"].strip(), "perfil": r["perfil"], "_texto": t.get("id"),
+                    **({"mult": mult} if mult > 1 else {})})
     if cargas is not None:
         # onde pode estar o pilar do bloco sem nome: a placa que nenhum nome tomou, ou a seção de
         # perfil desenhada longe dos pilares achados (a placa girada passa do tamanho das placas)
@@ -3750,6 +3795,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         def _mv(p):
             return (p[0] + desl_t[0], p[1] + desl_t[1])
         segs_t = _segmentos(reg_t, re.compile(r"(?i)ter[çc]a\s*eixo"))
+        segs_t = [segs_t[i] for i in _eixos_nao_cobertos([(a, b) for a, b, _c in segs_t])]
         eixos_t = [(_mv(a), _mv(b)) for a, b, _c in segs_t]
         eixos_t_ids = [getattr(sg, "id", None) for sg in segs_t]
         if not eixos_t:
@@ -3807,7 +3853,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         calandrado (o perfil em pé varrido pelo arco); o perfil duplo (2Ue) com um U de cada lado
         da linha de centro, virados como na viga reta"""
         mult = int(t.perfil.get("mult") or 1)
-        af = (float(pa.bf or 50.0) if pa else 50.0) / 2 + 1.0
+        af = _meio_caixao(pf)                    # boca com boca: o caixão de 2 × aba (era meia aba: os dois entravam um no outro)
         lados = ((1, True, 180.0), (-1, False, 0.0)) if mult > 1 else ((0, False, 0.0),)
         partes = c.partes if c.tipo == "composto" else [(c, False)]
         # o arco quase reto (flecha abaixo de 10 mm: no Posto, o trecho de 2,3 m com raio de 105 m
@@ -3912,7 +3958,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 # a peça de um perfil só (a viga inclinada "PERFIL 1" da cobertura da caixa d'água):
                 # cada trecho desenhado vira uma viga no perfil da nota, a dupla lado a lado
                 pa_p = _perfil(p_banzo)
-                af = (float(pa_p.bf or 40.0) if pa_p else 40.0) / 2 + 1.0
+                af = _meio_caixao(p_banzo)
                 mult_p = int((el.banzo or {}).get("mult") or 1)
                 trechos_p = sorted([[m.s0, m.h0, m.s1, m.h1] for m in el.membros if m.papel == "banzo"],
                                    key=lambda q: min(q[0], q[2]))
@@ -4127,7 +4173,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 continue                # a mesma viga, lida de novo (o nome em duas linhas da mesma peça)
             vigas_feitas.append((pts, z, pf))
             if int(t.perfil.get("mult") or 1) > 1:
-                af = (float(pa.bf or 50.0) if pa else 50.0) / 2 + 1.0
+                af = _meio_caixao(pf)
                 tx, ty = c.tangente(0.0)
                 nx, ny = -ty, tx
                 for sinal, rot in ((1, 180.0), (-1, 0.0)):
@@ -4314,7 +4360,22 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             orig["a_conferir"] = "altura: nenhuma peça da planta estrutural em cima (%.1f m)" % (longe / 1000.0)
             avisos.append("pilar %s em (%.0f; %.0f) sem peça da cobertura em cima (a %.1f m): foi até o nível "
                           "do banzo; confira a altura dele." % (pl["nome"], x, y, longe / 1000.0))
-        barra((x, y, base), (x, y, topo_p), pl["perfil"], "pilar", "Pilares", None, pl["rot"], orig)
+        # o caixão (2Ue): pela seção da locação (os dois Ue desenhados) ou pelo corte do pilar ("PM6 2Ue 400x200…")
+        mult = int(pl.get("mult") or 1)
+        m_nome = re.match(r"\s*([A-Z]+\s*\d+[A-Z]?)", pl["nome"])
+        lido_pm = (res_pm.get("lidos") or {}).get(m_nome.group(1).replace(" ", "") if m_nome else None) or {}
+        mult = max(mult, int(((lido_pm.get("perfis") or {}).get("pilar") or {}).get("mult") or 1))
+        if mult > 1:
+            af = _meio_caixao(pl["perfil"])
+            a_ = math.radians(pl["rot"])
+            nx, ny = -math.sin(a_), math.cos(a_)                # a perpendicular à alma: as abas
+            for sinal in (1.0, -1.0):
+                p0 = (x + nx * af * sinal, y + ny * af * sinal, base)
+                p1 = (x + nx * af * sinal, y + ny * af * sinal, topo_p)
+                barra(p0, p1, pl["perfil"], "pilar", "Pilares", None, _giro_abas_para(p0, p1, (-nx * sinal, -ny * sinal, 0.0)),
+                      dict(orig, caixao=True))
+        else:
+            barra((x, y, base), (x, y, topo_p), pl["perfil"], "pilar", "Pilares", None, pl["rot"], orig)
         pilares += 1
 
     # ---------------------------------------------------------------- escadas
@@ -4797,10 +4858,30 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                     melhor = (d, ta[2] + (tb[2] - ta[2]) * t)
             return melhor[1] if melhor else None
 
+        # o rótulo de cada linha de travamento (CR5, AG3, CV12, EST14…: a ~76 mm da linha, um por linha): é ele que diz a
+        # peça — o projetista do Posto CB desenhou 64 agulhas na camada de corrente e 33 correntes na de agulha, e a lista
+        # de material segue o rótulo (22/10/2026); a sigla vai para a peça (a lista do modelo por marca)
+        rotulos_tr = [((t["posicao"][0], t["posicao"][1]), t["texto"].strip().upper().replace(" ", "")) for t in reg
+                      if t["tipo"] == "texto" and _ROTULO_TRAVAMENTO.match(t["texto"].strip().upper().replace(" ", ""))]
+        PERFIL_DO_ROTULO = {"CR": 'L 1"×1/8"', "AG": "Barra redonda 10"}
+
+        def rotulo_da_linha(a, b):
+            melhor = None
+            for p_r, txt in rotulos_tr:
+                (ux_, uy_), L_ = _unit(a, b)
+                s_ = (p_r[0] - a[0]) * ux_ + (p_r[1] - a[1]) * uy_
+                if not (-50.0 <= s_ <= L_ + 50.0):
+                    continue
+                d_ = abs(-(p_r[0] - a[0]) * uy_ + (p_r[1] - a[1]) * ux_)
+                if d_ <= 300.0 and (melhor is None or d_ < melhor[0]):
+                    melhor = (d_, txt)
+            return melhor[1] if melhor else None
+
         def acessorio(camada_rx, perfil, papel, camada, acima, na_terca=False):
             n = 0
             for sg in _segmentos(reg, re.compile(camada_rx)):
                 a, b, _c = sg
+                rot_tr = rotulo_da_linha(a, b)
                 a, b = mover(a), mover(b)
                 if math.dist(a, b) < 300.0:
                     continue
@@ -4811,7 +4892,9 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 if na_terca:
                     z0 = z_na_terca(a) or z0
                     z1 = z_na_terca(b) or z1
-                if barra((a[0], a[1], z0), (b[0], b[1], z1), perfil, papel, camada):
+                pf_tr = PERFIL_DO_ROTULO.get(re.match(r"[A-Z]+", rot_tr).group(0), perfil) if rot_tr and papel == "corrente" else perfil
+                if barra((a[0], a[1], z0), (b[0], b[1], z1), pf_tr, papel, camada, None, 0.0,
+                         {"sigla": rot_tr} if rot_tr else None):
                     usados["tercas"].add(getattr(sg, "id", None))
                     n += 1
             return n
@@ -4904,7 +4987,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 pf_v = perf_d["perfil"]
                 pa_v = _perfil(pf_v)
                 z_v = nivel_o - (float(pa_v.d or 150.0) if pa_v else 150.0) / 2.0
-                af_v = (float(pa_v.bf or 50.0) if pa_v else 50.0) / 2 + 1.0
+                af_v = _meio_caixao(pf_v)
                 pec_l = [(p0, p1) for p0, p1 in rets_o
                          if all(abs((q[0] - a[0]) * -uy + (q[1] - a[1]) * ux) < 40.0 for q in (p0, p1))
                          and abs(abs(_unit(p0, p1)[0][0] * ux + _unit(p0, p1)[0][1] * uy) - 1.0) < 0.01]
