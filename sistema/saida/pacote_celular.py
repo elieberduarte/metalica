@@ -37,7 +37,8 @@ from typing import Dict, List, Optional, Tuple
 VERSAO_3D = 1
 #: A geração das malhas (não muda o formato do arquivo, só o conteúdo): entra na assinatura do cache para o pacote
 #: velho ser refeito. 2 (13/10): as barras saem com os furos dos marcadores abertos de verdade.
-GERACAO_MALHAS = 2
+#: 3 (22/10): as faces costuradas do IFC (furo ligado ao contorno por ponte) com os furos abertos — ME Sooro.
+GERACAO_MALHAS = 3
 #: Versão das fichas (pecas.json): mudou o que elas levam, os 3D leves guardados são refeitos.
 #: 2 (06/10): o vínculo com o 2D — peça e planta de origem, elemento da planta, marca do pré-moldado e caixa.
 #: 3 (12/10): a sigla da terça (TC3, TC46…) para a busca do modo ver achar a peça pelo nome do projeto.
@@ -142,6 +143,16 @@ def _triangulos(vs, f) -> List[Tuple[int, int, int]]:
     else:
         i, j = 1, 2
     pts = [(vs[k][i], vs[k][j]) for k in f]
+    if len(set(f)) < n:
+        # face costurada do IFC (o furo ligado ao contorno por uma ponte): desmontada em contorno e furos, para o furo
+        # sair aberto (usuário, 22/10, ME Sooro Depósito Químico: furos das terças tampados no modo ver)
+        from nucleo3d.geometria import triangular_face_costurada
+        try:
+            tris = triangular_face_costurada(pts, f)
+        except Exception:
+            tris = None
+        if tris:
+            return [(f[a], f[b], f[c]) for a, b, c in tris]
     sinal = 0
     convexa = True
     for k in range(n):

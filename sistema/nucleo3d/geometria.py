@@ -493,6 +493,132 @@ def triangular_com_furos(externo: Sequence[Ponto2],
         _chave_contorno(externo), tuple(_chave_contorno(f) for f in furos)))
 
 
+def lacos_da_face(ids: Sequence[int]) -> List[List[int]]:
+    """Os laços de uma face costurada (o furo ligado ao contorno por uma ponte, como o IFC do
+    TecnoMETAL/ST-DEVELOPER grava a alma furada da terça): posições na lista `ids` dos vértices de
+    cada laço simples, na ordem da face.
+
+    A ponte é a aresta percorrida nos dois sentidos (a→b e b→a): sai. O que sobra se fecha em laços,
+    cortados onde o caminho volta a um vértice já visitado — assim o furo que encosta no contorno
+    (a ponte "aberta", 74→75→80…80→79→74 da U 200 do ME Sooro) também vira laço próprio.
+    Devolve [] quando as arestas que sobram não se fecham (face malformada).
+    """
+    n = len(ids)
+    pos_de: Dict[int, int] = {}
+    for k, i in enumerate(ids):
+        pos_de.setdefault(i, k)
+    arestas = [(ids[k], ids[(k + 1) % n]) for k in range(n) if ids[k] != ids[(k + 1) % n]]
+    conta: Dict[Tuple[int, int], int] = {}
+    for a in arestas:
+        conta[a] = conta.get(a, 0) + 1
+    sobra: Dict[Tuple[int, int], int] = {}
+    for (a, b), c in conta.items():
+        r = c - conta.get((b, a), 0)
+        if r > 0:
+            sobra[(a, b)] = r
+    saem: Dict[int, List[int]] = {}
+    for a, b in arestas:                               # na ordem da face
+        if sobra.get((a, b), 0) > 0:
+            sobra[(a, b)] -= 1
+            saem.setdefault(a, []).append(b)
+    lacos: List[List[int]] = []
+    for inicio in [a for a, _ in arestas]:
+        while saem.get(inicio):
+            caminho, onde, atual = [inicio], {inicio: 0}, inicio
+            while True:
+                prox = saem.get(atual)
+                if not prox:
+                    return []                          # aberto: não fecha
+                b = prox.pop(0)
+                if b in onde:
+                    k = onde[b]
+                    laco = caminho[k:]
+                    for v in laco[1:]:
+                        del onde[v]
+                    caminho = caminho[:k + 1]
+                    if len(laco) >= 3:
+                        lacos.append([pos_de[v] for v in laco])
+                    atual = b
+                    if len(caminho) == 1 and b == inicio:
+                        break
+                else:
+                    onde[b] = len(caminho)
+                    caminho.append(b)
+                    atual = b
+    return lacos
+
+
+def _simples(q: Sequence[Ponto2]) -> bool:
+    """O laço não cruza nem encosta em si mesmo (arestas não vizinhas sem toque)."""
+    m = len(q)
+    for i in range(m):
+        a, b = q[i], q[(i + 1) % m]
+        for j in range(i + 2, m):
+            if i == 0 and j == m - 1:
+                continue
+            if _cruzam(a, b, q[j], q[(j + 1) % m]):
+                return False
+    return True
+
+
+def triangular_face_costurada(pontos: Sequence[Ponto2],
+                              ids: Sequence[int]) -> Optional[List[Tuple[int, int, int]]]:
+    """Triângulos (posições na face) de uma face costurada — índices de vértice repetidos na lista
+    `ids`, os furos ligados ao contorno por pontes — com os furos abertos de verdade.
+
+    O *ear clipping* direto sobre a face costurada se perde quando as pontes são colineares com os
+    furos ou não voltam pelo mesmo caminho, e tampava furos (usuário, 22/10, ME Sooro Depósito
+    Químico: furos das terças tampados no modo ver). Aqui a face é desmontada em laços
+    (`lacos_da_face`): o de área com o sinal da face é material, o de sinal contrário é furo do
+    material que o contém; cada material é triangulado com os seus furos por `costurar_furos`, que
+    faz pontes conferidas. Os triângulos saem no sentido da face. None quando a face não se
+    desmonta (o chamador fica com a triangulação de antes).
+    """
+    lacos = lacos_da_face(ids)
+    if len(lacos) < 2:
+        return None
+    pts = [(float(p[0]), float(p[1])) for p in pontos]
+    limpos = []
+    for laco in lacos:                                 # sem pontos coincidentes seguidos
+        lp: List[int] = []
+        for k in laco:
+            if not lp or math.dist(pts[lp[-1]], pts[k]) > 1e-9:
+                lp.append(k)
+        while len(lp) > 1 and math.dist(pts[lp[0]], pts[lp[-1]]) <= 1e-9:
+            lp.pop()
+        if len(lp) >= 3:
+            limpos.append((area_assinada([pts[k] for k in lp]), lp))
+    total = sum(a for a, _ in limpos)
+    if abs(total) < 1e-9:
+        return None
+    sinal = 1.0 if total > 0 else -1.0
+    materiais = sorted([(abs(a), lp) for a, lp in limpos if a * sinal > 1e-9], key=lambda x: x[0])
+    furos_de: Dict[int, List[List[int]]] = {id(lp): [] for _, lp in materiais}
+    for a, lp in limpos:
+        if a * sinal >= -1e-9:
+            continue
+        q = [pts[k] for k in lp]
+        if not _simples(q):
+            continue          # a ponte torta que volta por cima de si (a lasca da U 200): fica material
+        meio = (sum(p[0] for p in q) / len(q), sum(p[1] for p in q) / len(q))
+        for _, mat in materiais:                       # o menor material que o contém
+            if _dentro_do_poligono(meio, [pts[k] for k in mat]):
+                furos_de[id(mat)].append(lp)
+                break
+    tris: List[Tuple[int, int, int]] = []
+    for _, mat in materiais:
+        externo = mat if area_assinada([pts[k] for k in mat]) > 0 else mat[::-1]
+        furos = [f if area_assinada([pts[k] for k in f]) < 0 else f[::-1] for f in furos_de[id(mat)]]
+        lista = externo + [k for f in furos for k in f]
+        poligono, mapa = costurar_furos([pts[k] for k in externo], [[pts[k] for k in f] for f in furos])
+        for a, b, c in triangular(poligono):
+            t = (lista[mapa[a]], lista[mapa[b]], lista[mapa[c]])
+            if _cruz(pts[t[0]], pts[t[1]], pts[t[2]]) * sinal < 0:
+                t = (t[0], t[2], t[1])
+            tris.append(t)
+    return tris or None
+
+
 # =====================================================================================
 # 3. Seções transversais do catálogo
 # =====================================================================================
