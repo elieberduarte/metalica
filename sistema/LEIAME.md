@@ -182,7 +182,7 @@ posição ganha `saia`, que entra na compra, na célula, na lista e na paginaç�
 cada telha sai **inteira** (retângulo até o ponto mais alto) e o corte do modelo — a empena
 inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois de instalada.
 
-**0.9.1.** (22/10/2026) Obras entre usuários, link de instalação, a obra no terreno do cliente, impressão das pranchas e os detalhes do projeto recebido na Montagem. São 95 mudanças desde a 0.9.0.
+**0.9.1.** (22/10/2026) Obras entre usuários, link de instalação, a obra no terreno do cliente, impressão das pranchas e os detalhes do projeto recebido na Montagem. São 101 mudanças desde a 0.9.0.
 
 **Enviar a obra para outro usuário.** No cartão do projeto, "Enviar para…" manda a obra inteira para o Metálica de outra pessoa pela internet (ou para os seus outros computadores); ela vê "Fulano te enviou…" no alto da tela inicial e abre como um projeto novo. É uma cópia: cada um segue com a sua.
 
@@ -206,7 +206,7 @@ inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois 
 
 **Pranchas.** Imprimir pranchas direto na impressora do Windows (Arquivo › Imprimir pranchas…, só as folhas marcadas); o PDF sai pelas folhas que estão no desenho (folha apagada no CAD não deixa páginas em branco) e a remontagem guarda os ajustes feitos à mão em cada folha; programa novo não refaz sozinho os desenhos de uma obra fechada, e a atualização dos desenhos tem Cancelar.
 
-**Modo ver.** Renomear a obra não refaz o 3D nem perde as camadas ocultas; Reanalisar estrutura passou para o menu Modelo; o aviso "Atualizando o 3D" numa linha só; e a seção Sistema separa a Cobertura pelas telhas.
+**Modo ver.** Renomear a obra não refaz o 3D nem perde as camadas ocultas; Reanalisar estrutura passou para o menu Modelo; o aviso "Atualizando o 3D" numa linha só; a seção Sistema separa a Cobertura pelas telhas e pelo nome da peça (as telhas, calhas e rufos do arquitetônico e a platibanda em ACM saem junto com ela); e o vidro transparente como no editor (também no celular).
 
 **0.9.0.** (20/10/2026) Frente grande entregue: a **Identificação para modelagem**. São 316 mudanças desde a 0.8.64 (a 0.8.65, de 11/10, não chegou a sair e entra aqui).
 
