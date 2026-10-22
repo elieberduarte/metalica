@@ -136,8 +136,8 @@ try:
     ok(aba.avaliar("!!document.querySelector('#pintar option[value=sistema]')"), "o Pintar tem \"por sistema\"")
     aba.avaliar(PINTAR % "sistema")
     leg = json.loads(aba.avaliar(LEGENDA) or "[]")
-    ok([x[:2] for x in leg] == [["Metálica", 4], ["Outros", 1], ["Pré-moldado (concreto)", 10], ["Terreno, rua e calçada", 6]],
-       f"por sistema: a metálica (as barras), o PVC em Outros, o concreto (e a parede) com as porcas e o neoprene dele no pré-moldado, "
+    ok([x[:2] for x in leg] == [["Metálica", 4], ["Outros — PVC", 1], ["Pré-moldado (concreto)", 10], ["Terreno, rua e calçada", 6]],
+       f"por sistema: a metálica (as barras), o PVC em 'Outros — PVC' (TEL-02: Outros só com o motivo no nome), o concreto (e a parede) com as porcas e o neoprene dele no pré-moldado, "
        f"o terreno, a rua, a calçada, o muro, a vaga e a camada Terreno juntos ({leg})")
     ok(aba.avaliar("document.getElementById('painel-titulo').textContent") == "Pintado por sistema", "o título da legenda")
     ok(aba.avaliar("document.querySelectorAll('#painel-corpo input[data-sistema]').length") == 0,
