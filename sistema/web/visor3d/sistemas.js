@@ -6,7 +6,8 @@
  *  neoprene que vêm no modelo do pré-moldado (a camada dele é quase toda de concreto: as porcas, arruelas e cantoneiras
  *  das ligações dele) ficam com o pré-moldado. O resto (o PVC das descidas…) é Outros. */
 export const SISTEMAS = { metalica: ['Metálica', '#2f6fd6'], cobertura: ['Cobertura — telhas, calhas e rufos', '#3aa69b'],
-  outros: ['Outros', '#e08a1e'], premoldado: ['Pré-moldado (concreto)', '#8f969e'], terreno: ['Terreno, rua e calçada', '#b9a27a'] };
+  outros: ['Outros', '#e08a1e'], premoldado: ['Pré-moldado (concreto)', '#8f969e'], arquitetonico: ['Arquitetônico (referência)', '#a58fc9'],
+  terreno: ['Terreno, rua e calçada', '#b9a27a'] };
 // a cobertura num sistema só (usuário, Mercado, 19/10: "não foi criado o grupo com as telhas, calhas e rufos" — as telhas
 // caíam em Outros e as calhas e os rufos, de chapa galvanizada, em Metálica): a camada no grupo da cobertura (o que o
 // lançamento de telhas faz) ou com o nome de telha, calha, rufo ou cumeeira — antes do material.
@@ -30,6 +31,13 @@ const PECA_COBERTURA = /^\s*(telhas?|calhas?|rufos?|cumeeiras?)\b/i;
 // o muro e as vagas do estacionamento também (usuário, Mercado, 20/10: "colocar esses itens junto com a layer do
 // terreno"), e a camada com esses nomes — para mandar à mão uma peça para o terreno: Editar → Camada "Terreno"
 const TERRENO = /^\s*(terrenos?|ruas?|cal[çc]adas?|passeios?|muros?|vagas?|estacionamentos?)\b/i;
+// o arquitetônico de referência num sistema só (TEL-02, 4ª vez — VER-10 da verificação do SESI Chapecó, 22/10: "o que são
+// esses 'outros'?" — os forros, venezianas, brises e guarda-corpos do arquitetônico, de Vidro, caíam em Outros e as lajes,
+// paredes e pilares dele, de Concreto, no Pré-moldado de uma obra metálica): a camada "ARQ — …" ou do grupo ARQUITETÔNICO,
+// depois da Cobertura (as telhas, calhas, rufos e o ACM da platibanda do arquitetônico continuam saindo com ela) e do
+// Terreno; a camada "3 Arquitetura" do IFC do pré-moldado não entra (a parede fica com o pré-moldado, 16/10)
+const ARQ_CAMADA = /^\s*ARQ\s*[—–-]/i;
+const ARQ_GRUPO = /^\s*arquitet[ôo]nico\b/i;
 const CONCRETO = /concret|fck|cimento|\bc\s?[1-9]\d\b/i;
 const ACO = /steel|a[çc]o\b|astm|\ba36\b|a5\d\d|a32[05]|a307|s2\d\d|s3\d\d|ar\s?3\d\d|zar|galv|shore|neopren|elast/i;
 const NEOPRENE = /shore|neopren|elast/i;
@@ -45,13 +53,15 @@ export function gruposDeSistema(visor) {
   const daCobertura = cams.map(c => COBERTURA_GRUPO.test(c.grupo || '') || COBERTURA_CAMADA.test(c.nome || ''));
   const daPlatibanda = cams.map(c => PLATIBANDA.test(c.nome || ''));
   const doTerreno = cams.map(c => TERRENO.test(c.nome || ''));
-  const ids = { metalica: [], cobertura: [], outros: [], premoldado: [], terreno: [] };
+  const doArq = cams.map(c => ARQ_CAMADA.test(c.nome || '') || ARQ_GRUPO.test(c.grupo || ''));
+  const ids = { metalica: [], cobertura: [], outros: [], premoldado: [], arquitetonico: [], terreno: [] };
   for (let i = 0; i < n; i++) {
     const m = fichas[i].m || '', q = porCamada.get(fichas[i].c);
     let s = 'outros';
     if (daCobertura[fichas[i].c] || TELHA.test(m) || PECA_COBERTURA.test(fichas[i].n || '')
         || (daPlatibanda[fichas[i].c] && m && !ACO.test(m))) s = 'cobertura';
     else if (doTerreno[fichas[i].c] || TERRENO.test(fichas[i].p || '') || TERRENO.test(fichas[i].n || '')) s = 'terreno';
+    else if (doArq[fichas[i].c]) s = 'arquitetonico';
     else if (CONCRETO.test(m)) s = 'premoldado';
     else if (!m || ACO.test(m)) s = q[1] * 2 >= q[0] ? 'premoldado' : NEOPRENE.test(m) ? 'outros' : 'metalica';
     ids[s].push(i);
