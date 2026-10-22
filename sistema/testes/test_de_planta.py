@@ -897,6 +897,25 @@ def test_trelica_para_na_face_da_que_passa():
     assert tes.caminho.ponto(de_planta._s_na_planta(tes, 1950.0))[0] == pytest.approx(no_antes[0], abs=1.0)
 
 
+
+def test_encontro_quase_tangente_segue_a_planta():
+    """A curva do PAINEL 9 da abertura oval do Posto encontra o PAINEL 12 quase tangente (~10°) e a planta a leva até o
+    eixo dele, dentro da parte alta. Parar na face (a regra de 12/10) custava 0,55 m de curva e abria um vão de 0,42 m
+    entre as duas (22/10/2026, o usuário: "vamos fazer seguindo a planta, para manter a concepção original do
+    projetista"). No encontro quase tangente a ponta fica onde a planta a desenha; no de esquina, continua na face."""
+    painel12 = _tr("PAINEL 12", "PAINEL", (20056.5, 30793.0), (16697.5, 50712.0), largura=100.0)
+    C = de_planta.Caminho("arco", centro=(15018.0, 47353.0), raio=2229.0, ini=16.02, fim=160.0, largura=100.0)
+    M = de_planta.Membro
+    el = de_planta.Elevacao(nome="PAINEL 9", familia="PAINEL", qtd=1, comprimento=C.comprimento)
+    el.membros = [M(0, 0, el.comprimento, 0, "banzo"), M(0, 1500.0, el.comprimento, 1500.0, "banzo")]
+    painel9 = de_planta.Trecho(caminho=C, nome="PAINEL 9", familia="PAINEL", elevacao=el)
+    L0 = C.comprimento
+    r = de_planta.aparar_nas_faces([painel12, painel9])
+    assert all(x[0] != "PAINEL 9" for x in r), r
+    assert painel9.caminho.comprimento == pytest.approx(L0, abs=1.0)
+    p = painel9.caminho.ponto(0.0)
+    assert math.dist(p, (17160.0, 47968.0)) < 15.0, p              # a ponta no eixo do PAINEL 12, como a planta
+
 def test_trelicas_em_fila_ficam_costas_com_costas():
     """as TESOURAS 1 e 12 no vale do Posto entravam 125 mm uma na outra; os painéis em fila tinham os montantes das
     pontas no mesmo eixo: param no meio do encontro, 25 mm para cada lado"""

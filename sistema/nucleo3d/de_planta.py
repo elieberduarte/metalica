@@ -2465,12 +2465,16 @@ def _s_na_elevacao(t: Trecho, s: float) -> float:
     return sp - _folga_da_elevacao(t)
 
 
+#: graus: o encontro de uma treliça com outra mais fechado que isto é quase tangente — a ponta fica onde a planta a desenha
+TANGENTE_ATE = 30.0
+
+
 def aparar_nas_faces(trechos: List[Trecho], folga: float = 30.0, alcance: float = 1500.0,
                      meia_aba: float = 25.0) -> List[Tuple[str, str, float]]:
     """A treliça que termina numa outra que passa (o painel reto, a transição, a tesoura) vai até a FACE de cá dela, não
     até o eixo (12/10, o 3D: a TESOURA 8 entrava 8 cm além do eixo do PAINEL 12 — a linha da planta ia até a face de lá
-    e a elevação, 3,90 m, é a distância até a face de cá; os PAINÉIS curvos 9 e 10 da abertura oval terminavam no eixo
-    dos PAINÉIS 11 e 12, quase tangentes, com as diagonais por dentro deles). A ponta anda para dentro até o eixo dela
+    e a elevação, 3,90 m, é a distância até a face de cá). O encontro quase tangente (os PAINÉIS curvos 9 e 10 da
+    abertura oval nos PAINÉIS 11 e 12) fica como a planta desenha, no eixo da outra (22/10/2026). A ponta anda para dentro até o eixo dela
     ficar a meia largura da outra + a meia largura dela no ângulo + `folga` (a meia aba do montante da ponta e a
     sobra). Duas em fila que se encontram pelas pontas (os painéis da borda, as TESOURAS 1 e 12 no vale de x 10,0, que
     passavam 12 cm uma dentro da outra) param no meio do encontro, costas com costas (`meia_aba` cada uma) — antes os
@@ -2512,6 +2516,12 @@ def aparar_nas_faces(trechos: List[Trecho], folga: float = 30.0, alcance: float 
                 if _altura_no_ponto(o, o.caminho.ponto(so), meia_o + 200.0) is None:
                     continue
                 to = o.caminho.tangente(so)
+                # o encontro quase tangente (menos de TANGENTE_ATE graus): a ponta fica onde a planta a desenha, no eixo da
+                # outra — a curva do PAINEL 9 da abertura oval do Posto, parada na face do PAINEL 12 a ~10°, perdia 0,55 m
+                # e abria um vão de 0,42 m; o usuário (22/10/2026): "vamos fazer seguindo a planta, para manter a
+                # concepção original do projetista" (a execução do encontro vem depois)
+                if abs(tp[0] * to[0] + tp[1] * to[1]) > math.cos(math.radians(TANGENTE_ATE)):
+                    continue
                 # anda para dentro: o ponto mais perto do eixo dela e, dali, até sair da faixa
                 passos = [k * 5.0 for k in range(int(min(alcance, L / 3.0) / 5.0))]
                 ds = [o.caminho.projetar(t.caminho.ponto(s_p + sinal * s_))[1] for s_ in passos]
