@@ -3267,6 +3267,68 @@ def _giro_abas_para(q0, q1, f) -> float:
                                          f[0] * u[0] + f[1] * u[1] + f[2] * u[2])) % 360.0, 1)
 
 
+def _sigla_pelas_vizinhas(tercas_feitas: List[tuple]) -> int:
+    """o pedaço de terça sem nome dentro dele leva o nome das terças vizinhas no mesmo vão (paralelas, a até 2,5 m, cobrindo
+    a metade dele) — o nome mais perto ao longo da linha podia ser o do vão do outro lado de uma tesoura (no Posto V2,
+    P469 e P1111 saíam TC44 e uma P834 TC55, entre vizinhas TC46, 22/10/2026). `tercas_feitas`: [(barra, de onde veio a
+    sigla: "rotulo" | "linha" | "perto")]. Devolve quantas mudaram."""
+    com_nome = [(b_, _unit(b_.inicio[:2], b_.fim[:2])) for b_, de_ in tercas_feitas if de_ == "rotulo"]
+    n = 0
+    for b_, de_ in tercas_feitas:
+        if de_ == "rotulo":
+            continue
+        (ux, uy), L_b = _unit(b_.inicio[:2], b_.fim[:2])
+        votos = collections.Counter()
+        for o_, ((vx, vy), L_o) in com_nome:
+            if abs(ux * vx + uy * vy) < math.cos(math.radians(3.0)):
+                continue
+            if abs(-(o_.inicio[0] - b_.inicio[0]) * uy + (o_.inicio[1] - b_.inicio[1]) * ux) > 2500.0:
+                continue
+            s_o = sorted(((q[0] - b_.inicio[0]) * ux + (q[1] - b_.inicio[1]) * uy) for q in (o_.inicio, o_.fim))
+            if min(s_o[1], L_b) - max(s_o[0], 0.0) >= 0.5 * min(L_b, L_o):
+                votos[(o_.atributos.get("origem") or {}).get("sigla")] += 1
+        if votos:
+            sg_v = votos.most_common(1)[0][0]
+            if sg_v and sg_v != (b_.atributos.get("origem") or {}).get("sigla"):
+                b_.atributos.setdefault("origem", {})["sigla"] = sg_v
+                b_.atributos["origem"]["sigla_pelas_vizinhas"] = True
+                n += 1
+    return n
+
+
+def _juntar_eixos_colineares(segs: list, tol: float = 5.0, folga: float = 20.0) -> Tuple[list, list]:
+    """os eixos da mesma linha emendados pela ponta (até `folga`) viram um só: o eixo da TC6 do Posto (x 384437) vinha em
+    dois segmentos no DXF, e o pedaço sem rótulo pegava o nome mais perto em toda a planta (22/10/2026). Devolve (os
+    eixos, as ids das entidades que entraram nos juntados além da primeira)"""
+    segs = list(segs)
+    extras: list = []
+    mudou = True
+    while mudou:
+        mudou = False
+        for i in range(len(segs)):
+            a, b = segs[i][0], segs[i][1]
+            (ux, uy), L = _unit(a, b)
+            if L < 1.0:
+                continue
+            for j in range(i + 1, len(segs)):
+                c, d = segs[j][0], segs[j][1]
+                if any(abs(-(q[0] - a[0]) * uy + (q[1] - a[1]) * ux) > tol for q in (c, d)):
+                    continue
+                s_c, s_d = sorted(((q[0] - a[0]) * ux + (q[1] - a[1]) * uy for q in (c, d)))
+                if s_c > L + folga or s_d < -folga:
+                    continue
+                lo, hi = min(0.0, s_c), max(L, s_d)
+                novo = _Seg((a[0] + ux * lo, a[1] + uy * lo), (a[0] + ux * hi, a[1] + uy * hi), segs[i][2], getattr(segs[i], "id", None))
+                extras.append(getattr(segs[j], "id", None))
+                segs[i] = novo
+                del segs[j]
+                mudou = True
+                break
+            if mudou:
+                break
+    return segs, extras
+
+
 def _eixos_nao_cobertos(segs: Sequence[Tuple[Ponto2, Ponto2]], tol: float = 5.0) -> List[int]:
     """os índices dos eixos que ficam: sai o eixo coberto inteiro por outros na mesma linha (o DXF do Posto CB tem, na
     linha da TC10, um eixo de 6,6 m por cima dos dois trechos TC10 + TC8 — a terça saía em dobro, 22/10/2026)"""
@@ -3294,7 +3356,7 @@ def _eixos_nao_cobertos(segs: Sequence[Tuple[Ponto2, Ponto2]], tol: float = 5.0)
 
 
 #: o rótulo de uma linha de travamento na planta das terças: CR1A, AG3, CV12, EST14, ESTAB1
-_ROTULO_TRAVAMENTO = re.compile(r"^(CR|AG|CV|EST|ESTAB)\d+[A-Z]?$")
+_ROTULO_TRAVAMENTO = re.compile(r"^(CR|AG|CV|ESTAB|EST)(\d+[A-Z]?)(?![A-Z0-9])")   # "CV6 Ø12,5" também (22/10)
 
 
 def _meio_caixao(nome: Optional[str]) -> float:
@@ -3806,6 +3868,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             return (p[0] + desl_t[0], p[1] + desl_t[1])
         segs_t = _segmentos(reg_t, re.compile(r"(?i)ter[çc]a\s*eixo"))
         segs_t = [segs_t[i] for i in _eixos_nao_cobertos([(a, b) for a, b, _c in segs_t])]
+        segs_t, ids_juntados = _juntar_eixos_colineares(segs_t)
+        usados["tercas"].update(i_ for i_ in ids_juntados if i_)
         eixos_t = [(_mv(a), _mv(b)) for a, b, _c in segs_t]
         eixos_t_ids = [getattr(sg, "id", None) for sg in segs_t]
         if not eixos_t:
@@ -4580,6 +4644,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         return sum(a * b for a, b in w) / sum(a for a, _ in w)
 
     tercas = correntes = contravs = esticadores = agulhas = 0
+    tercas_feitas: List[tuple] = []        # (barra, de onde veio a sigla: rotulo | linha | perto)
     no_plano = {"calha": 0, "tortas": 0, "suportes": 0}
     tab_tc: Dict[str, dict] = _tabela_de_siglas(textos, r"TC\s?\d+[A-Z]?")
     if caixa_t:
@@ -4594,21 +4659,38 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         rot_tc = [(mover(_centro_do_texto(t, esc_txt)), t["texto"].strip().upper().replace(" ", ""), t.get("id")) for t in reg
                   if t["tipo"] == "texto" and re.match(r"^TC\s?\d+[A-Z]?$", t["texto"].strip().upper())]
         pa_bz = 40.0
-        # cada nome TC vale para a linha de terça mais perto dele (e só para ela)
+        # cada nome TC vale para a linha de terça mais perto dele (e só para ela). O nome escrito ENTRE duas linhas (a menos
+        # de 150 mm de diferença entre elas) vai para a que ainda não tem nome naquele trecho (±1,5 m): o TC20 do par da
+        # TRANSIÇÃO 6 do Posto, escrito entre as linhas porque a diagonal EST15 ocupava o lado de fora, ia para a linha
+        # que já era TC20 e a outra virava TC19 de ponta a ponta (22/10/2026)
         nomes_da_linha: Dict[int, List[Tuple[float, tuple]]] = collections.defaultdict(list)
+        candidatos_tc = []
         for pr, sg, id_tc in rot_tc:
-            melhor = None
+            cands = []
             for i_l, (a, b) in enumerate(eixos_t):
                 if math.dist(a, b) < 500.0:
                     continue
                 (ux, uy), L = _unit(a, b)
                 s = (pr[0] - a[0]) * ux + (pr[1] - a[1]) * uy
                 d = abs((pr[0] - a[0]) * -uy + (pr[1] - a[1]) * ux)
-                if -300 <= s <= L + 300 and d < 700 and (melhor is None or d < melhor[0]):
-                    melhor = (d, i_l, s)
-            if melhor:
-                nomes_da_linha[melhor[1]].append((melhor[2], (pr, sg, id_tc)))
-                usados["tercas"].add(id_tc)
+                if -300 <= s <= L + 300 and d < 700:
+                    cands.append((d, i_l, s))
+            cands.sort()
+            if cands:
+                candidatos_tc.append((cands, (pr, sg, id_tc)))
+        ambiguos = []
+        for cands, rot in candidatos_tc:
+            if len(cands) > 1 and cands[1][0] - cands[0][0] < 150.0:
+                ambiguos.append((cands, rot))
+                continue
+            nomes_da_linha[cands[0][1]].append((cands[0][2], rot))
+            usados["tercas"].add(rot[2])
+        for cands, rot in ambiguos:
+            perto = [c_ for c_ in cands if c_[0] - cands[0][0] < 150.0]
+            livres = [c_ for c_ in perto if not any(abs(s_o - c_[2]) < 1500.0 for s_o, _r in nomes_da_linha.get(c_[1], []))]
+            d_, i_l, s_ = (livres or perto)[0]
+            nomes_da_linha[i_l].append((s_, rot))
+            usados["tercas"].add(rot[2])
         polis_tr = [(t, _polilinha(t.caminho)) for t in trechos if t.elevacao is not None]
         caixas_tr = [_caixa_pts(pl, 300.0) for _t, pl in polis_tr]
         for i_l, (a, b) in enumerate(eixos_t):
@@ -4803,10 +4885,13 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 da_linha = bool(nomes_rot)
                 if dentro_p:
                     sig = dentro_p[0][1]
+                    sig_de = "rotulo"
                 elif nomes_rot:
                     sig = min(nomes_rot, key=lambda r: abs(r[0] - (s0 + s1) / 2))[1]
+                    sig_de = "linha"
                 else:
                     sig = min(rot_tc, key=lambda r: math.dist(r[0], mid)) if rot_tc else None
+                    sig_de = "perto"
                 perf = None
                 if sig and (da_linha or math.dist(sig[0], mid) < 3000) and sig[1] in tab_tc:
                     perf = tab_tc[sig[1]].get("perfil")
@@ -4820,10 +4905,14 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                     return nivel + _altura_pelos_apoios(apoios, s) + dz
                 p0 = (a[0] + ux * s0, a[1] + uy * s0, zem(s0))
                 p1 = (a[0] + ux * s1, a[1] + uy * s1, zem(s1))
-                if barra(p0, p1, perf, "terça", "Terças", None, 0.0, {"sigla": sig[1] if sig else ""}):
+                b_t = barra(p0, p1, perf, "terça", "Terças", None, 0.0, {"sigla": sig[1] if sig else ""})
+                if b_t:
                     if i_l < len(eixos_t_ids):
                         usados["tercas"].add(eixos_t_ids[i_l])
                     tercas += 1
+                    tercas_feitas.append((b_t, sig_de))
+
+        _sigla_pelas_vizinhas(tercas_feitas)
 
         # a terça que corre AO LONGO de um painel ou transição, dentro da largura dele, onde ele sobe acima da terça: vai
         # para a face, do lado das outras terças (12/10, o 3D: a TC14 corria 5 m dentro do PAINEL 11, a 5 cm do eixo, onde
@@ -4887,13 +4976,20 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         # o rótulo de cada linha de travamento (CR5, AG3, CV12, EST14…: a ~76 mm da linha, um por linha): é ele que diz a
         # peça — o projetista do Posto CB desenhou 64 agulhas na camada de corrente e 33 correntes na de agulha, e a lista
         # de material segue o rótulo (22/10/2026); a sigla vai para a peça (a lista do modelo por marca)
-        rotulos_tr = [((t["posicao"][0], t["posicao"][1]), t["texto"].strip().upper().replace(" ", "")) for t in reg
-                      if t["tipo"] == "texto" and _ROTULO_TRAVAMENTO.match(t["texto"].strip().upper().replace(" ", ""))]
+        rotulos_tr = []
+        for t in reg:
+            m_r = _ROTULO_TRAVAMENTO.match(t["texto"].strip().upper().replace(" ", "")) if t["tipo"] == "texto" else None
+            if m_r:
+                rotulos_tr.append(((t["posicao"][0], t["posicao"][1]), m_r.group(1) + m_r.group(2), m_r.group(1)))
         PERFIL_DO_ROTULO = {"CR": 'L 1"×1/8"', "AG": "Barra redonda 10"}
 
-        def rotulo_da_linha(a, b):
+        def rotulo_da_linha(a, b, familias):
+            """o rótulo da linha, só das famílias da camada dela (o contravento não toma o AG ou o EST vizinho: no Posto
+            V2 o "CV6 Ø12,5" não era lido e 49 contraventos ficaram com a sigla da agulha ou do esticador, 22/10)"""
             melhor = None
-            for p_r, txt in rotulos_tr:
+            for p_r, txt, fam in rotulos_tr:
+                if fam not in familias:
+                    continue
                 (ux_, uy_), L_ = _unit(a, b)
                 s_ = (p_r[0] - a[0]) * ux_ + (p_r[1] - a[1]) * uy_
                 if not (-50.0 <= s_ <= L_ + 50.0):
@@ -4905,9 +5001,10 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
 
         def acessorio(camada_rx, perfil, papel, camada, acima, na_terca=False):
             n = 0
+            familias = ("CV",) if papel == "contraventamento" else ("CR", "AG", "EST", "ESTAB")
             for sg in _segmentos(reg, re.compile(camada_rx)):
                 a, b, _c = sg
-                rot_tr = rotulo_da_linha(a, b)
+                rot_tr = rotulo_da_linha(a, b, familias)
                 a, b = mover(a), mover(b)
                 if math.dist(a, b) < 300.0:
                     continue

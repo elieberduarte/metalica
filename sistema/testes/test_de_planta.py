@@ -682,12 +682,18 @@ def test_corrente_e_agulha_pelo_rotulo_e_nao_pela_camada():
     tr = [linha((xa, 3000.0 + DY_TER), (xb, 3000.0 + DY_TER), "1-Corrente"),         # rotulada AG3: é agulha
           texto(((xa + xb) / 2, 3076.0 + DY_TER), "AG3", camada="1-Corrente"),
           linha((xb, 2000.0 + DY_TER), (xc, 2000.0 + DY_TER), "1-Agulha"),           # rotulada CR5: é corrente rígida
-          texto(((xb + xc) / 2, 2076.0 + DY_TER), "CR5", camada="1-Agulha")]
+          texto(((xb + xc) / 2, 2076.0 + DY_TER), "CR5", camada="1-Agulha"),
+          # o contravento com o rótulo "CV6 Ø12,5" (não era lido: pegava o AG ou o EST vizinho, 22/10) e a agulha ao lado
+          linha((xa, 800.0 + DY_TER), (xc, 5200.0 + DY_TER), "1-Contravento"),
+          texto((xa + 0.25 * (xc - xa) + 60.0, 1900.0 + DY_TER + 40.0), "CV6 Ø12,5", camada="1-Contravento"),
+          texto((xa + 0.25 * (xc - xa) - 90.0, 1900.0 + DY_TER - 60.0), "AG7", camada="1-Agulha")]
     ents = planta() + locacao() + plantas_das_tercas() + tr + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
     ents += elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
     r = de_planta.montar(ents, {"nivel": 6000.0, "origem": False})
     tr_m = {(b.atributos or {}).get("origem", {}).get("sigla"): b.perfil for b in r["doc"].barras if b.papel == "corrente"}
     assert tr_m == {"AG3": "Barra redonda 10", "CR5": 'L 1"×1/8"'}, tr_m
+    cv = [(b.atributos or {}).get("origem", {}).get("sigla") for b in r["doc"].barras if b.papel == "contraventamento"]
+    assert cv == ["CV6"], cv
 
 
 
@@ -699,6 +705,48 @@ def test_eixo_de_terca_coberto_por_outros_na_mesma_linha_sai():
             ((1400.0, 0.0), (1400.0, 4000.0)), ((1400.0, 3000.0), (1400.0, 6000.0)),       # sobrepostos em parte
             ((2800.0, 0.0), (2800.0, 6000.0)), ((2800.0, 0.0), (2800.0, 6000.0))]          # o mesmo eixo duas vezes
     assert de_planta._eixos_nao_cobertos(segs) == [1, 2, 3, 4, 6]
+
+
+
+def test_eixo_de_terca_partido_em_dois_vira_um_so():
+    """o eixo da TC6 do Posto (x 384437) vinha em dois segmentos colineares no DXF (22/10/2026): viram um só; os que só
+    estão na mesma direção, longe um do outro, ficam separados"""
+    S = de_planta._Seg
+    segs = [S((0.0, 0.0), (0.0, 2000.0), "1-Terça Eixo", "a"), S((0.0, 2005.0), (0.0, 4119.0), "1-Terça Eixo", "b"),
+            S((0.0, 6000.0), (0.0, 8000.0), "1-Terça Eixo", "c"), S((1400.0, 0.0), (1400.0, 4000.0), "1-Terça Eixo", "d")]
+    out, extras = de_planta._juntar_eixos_colineares(segs)
+    comps = sorted(round(math.dist(q[0], q[1])) for q in out)
+    assert comps == [2000, 4000, 4119] and extras == ["b"]
+
+
+def test_rotulo_entre_duas_linhas_vai_para_a_que_nao_tem_nome():
+    """o TC20 do par da TRANSIÇÃO 6 do Posto estava escrito ENTRE as duas linhas (a EST15 ocupava o lado de fora) e ia
+    para a linha que já tinha o seu TC20 — a outra virava TC19 de ponta a ponta (22/10/2026)"""
+    ents = planta() + locacao() + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
+    ents += elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
+    for x in (5100.0, 5450.0):                               # o par de terças, 350 mm
+        ents.append(linha((x, -300.0 + DY_TER), (x, 6300.0 + DY_TER), "1-Terça Eixo"))
+    ents += [texto((5160.0, 3000.0 + DY_TER), "TC1", angulo=90.0, camada="1-Terça"),     # o da linha A, ao lado dela
+             texto((5300.0, 3200.0 + DY_TER), "TC2", angulo=90.0, camada="1-Terça"),     # entre as duas
+             texto((2000.0, -4000.0 + DY_TER), "PLANTA NO NÍVEL DAS TERÇAS", altura=5.0)]
+    r = de_planta.montar(ents, {"nivel": 6000.0, "origem": False})
+    sig = {round(b.inicio[0]): (b.atributos or {}).get("origem", {}).get("sigla") for b in r["doc"].barras if b.papel == "terça"}
+    assert sig == {5100: "TC1", 5450: "TC2"}, sig
+
+
+def test_pedaco_sem_nome_leva_o_nome_das_vizinhas_do_mesmo_vao():
+    """o pedaço de terça sem rótulo dentro dele pegava o nome mais perto ao longo da linha, do vão do outro lado da
+    tesoura (Posto V2: P469 TC44, P834 TC55 entre vizinhas TC46, 22/10/2026): leva o das vizinhas do mesmo vão"""
+    def t(x, y0, y1, sg):
+        b = Barra(inicio=(x, y0, 7000.0), fim=(x, y1, 7000.0), perfil="U 100×40×2,65 (FF)", papel="terça")
+        b.atributos = {"origem": {"sigla": sg}}
+        return b
+    viz1, viz2 = t(0.0, 6000.0, 9000.0, "TC46"), t(2552.0, 6000.0, 9000.0, "TC46")
+    sem = t(1276.0, 6000.0, 9000.0, "TC44")                  # o nome do vão de lá (0–6000) na mesma linha
+    outro_vao = t(1276.0, 0.0, 6000.0, "TC44")
+    feitas = [(viz1, "rotulo"), (viz2, "rotulo"), (sem, "linha"), (outro_vao, "rotulo")]
+    assert de_planta._sigla_pelas_vizinhas(feitas) == 1
+    assert sem.atributos["origem"]["sigla"] == "TC46" and outro_vao.atributos["origem"]["sigla"] == "TC44"
 
 
 # ------------------------------------------------------------------ vigas VM do Posto CB (28/09)
