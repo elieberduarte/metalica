@@ -9,9 +9,14 @@ export const SISTEMAS = { metalica: ['Metálica', '#2f6fd6'], cobertura: ['Cober
   outros: ['Outros', '#e08a1e'], premoldado: ['Pré-moldado (concreto)', '#8f969e'], terreno: ['Terreno, rua e calçada', '#b9a27a'] };
 // a cobertura num sistema só (usuário, Mercado, 19/10: "não foi criado o grupo com as telhas, calhas e rufos" — as telhas
 // caíam em Outros e as calhas e os rufos, de chapa galvanizada, em Metálica): a camada no grupo da cobertura (o que o
-// lançamento de telhas faz) ou com o nome de telha, calha, rufo ou cumeeira — antes do material
-const COBERTURA_GRUPO = /cobertura/i;
-const COBERTURA_CAMADA = /^\s*(telhas?|calhas?|rufos?|cumeeiras?)\b/i;
+// lançamento de telhas faz) ou com o nome de telha, calha, rufo ou cumeeira — antes do material.
+// O grupo vale pelas telhas, não pela palavra "cobertura" (usuário, SESI Chapecó, 22/10: as telhas do arquitetônico "não
+// somem quando oculto essa camada" — o grupo "Cobertura frontal e eixo 1", de tesouras e pilares, caía na Cobertura e a
+// camada "ARQ — Telhas", de material Concreto, no Pré-moldado); a camada pode ter prefixo ("ARQ — Telhas") e o material
+// Telha também conta
+const COBERTURA_GRUPO = /\b(telhas?|calhas?|rufos?|cumeeiras?)\b/i;
+const COBERTURA_CAMADA = /(^|[—–-])\s*(telhas?|calhas?|rufos?|cumeeiras?)\b/i;
+const TELHA = /^\s*telha/i;
 // o terreno, a rua e a calçada num sistema só (usuário, 16/10: "terreno, rua e calçada como uma camada única; parede
 // pode deixar junto com o pré-moldado"): pelo nome da peça, antes do material (no IFC do Mercado são lajes de concreto);
 // o muro e as vagas do estacionamento também (usuário, Mercado, 20/10: "colocar esses itens junto com a layer do
@@ -35,7 +40,7 @@ export function gruposDeSistema(visor) {
   for (let i = 0; i < n; i++) {
     const m = fichas[i].m || '', q = porCamada.get(fichas[i].c);
     let s = 'outros';
-    if (daCobertura[fichas[i].c]) s = 'cobertura';
+    if (daCobertura[fichas[i].c] || TELHA.test(m)) s = 'cobertura';
     else if (doTerreno[fichas[i].c] || TERRENO.test(fichas[i].p || '') || TERRENO.test(fichas[i].n || '')) s = 'terreno';
     else if (CONCRETO.test(m)) s = 'premoldado';
     else if (!m || ACO.test(m)) s = q[1] * 2 >= q[0] ? 'premoldado' : NEOPRENE.test(m) ? 'outros' : 'metalica';

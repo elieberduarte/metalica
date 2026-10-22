@@ -8,7 +8,9 @@ descida de PVC:
   2. a seção Sistema no alto de Camadas e do Pintar: desligar a Metálica a esconde em qualquer modo do Pintar e
      continua escondida depois de recarregar (o projeto atualizado);
   3. a legenda por perfil em ordem alfabética;
-  4. num projeto só de aço não há "por sistema" nem a seção.
+  4. num projeto só de aço não há "por sistema" nem a seção;
+  6. SESI Chapecó (22/10): a Cobertura é a das telhas (o grupo "Cobertura frontal…" de tesouras é Metálica; a camada
+     "ARQ — Telhas", de Concreto, e o material Telha são Cobertura) — desligá-la esconde as telhas do arquitetônico.
 Porta livre, nunca a 8765/8766."""
 import json, os, shutil, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -43,7 +45,27 @@ for i, perfil in enumerate(["U 150×60×3,00 (FF)", "L 2\"×3/16\"", "Ue 250×85
     ents.append({"id": "bar%d" % i, "tipo": "barra", "nome": "banzo", "camada": "Tesouras", "material": "",
                  "inicio": [0, 1000.0 * i, 6000], "fim": [6000, 1000.0 * i, 6000], "perfil": perfil, "rotacao": 0.0})
 camadas = {n: {"nome": n, "cor": "#888888", "visivel": True} for n in (PRE, "3 Arquitetura", "400 Descidas pluviais", "Tesouras", "Terreno")}
-for nome, modelo in (("obra", {"nome": "obra", "unidade": "mm", "entidades": ents, "camadas": camadas, "materiais": {}}), ("aco", _modelo())):
+# o SESI Chapecó (22/10): o grupo "Cobertura frontal e eixo 1" é de tesouras e pilares (metálica, não telha), e as telhas
+# do arquitetônico são sólidos de Concreto na camada "ARQ — Telhas" (cobertura, não pré-moldado); o material Telha conta;
+# o lançamento de telhas (camadas Telhas/Calhas no grupo dele) continua na cobertura; o suporte da calha é metálica
+TES, ARQT, ARQP = "Cobertura frontal e eixo 1 — Tesouras", "ARQ — Telhas", "ARQ — Pilares de concreto"
+GLANC = "Cobertura — telhas, calhas e rufos"
+sesi = [{"id": "tes%d" % i, "tipo": "barra", "nome": "banzo", "camada": TES, "material": "", "perfil": "L 2\"×3/16\"", "rotacao": 0.0,
+         "inicio": [0, 1000.0 * i, 15000], "fim": [6000, 1000.0 * i, 15000]} for i in range(3)]
+sesi += [{"id": "sup0", "tipo": "barra", "nome": "suporte", "camada": "Fachadas — Suporte da calha", "material": "", "perfil": "L 2\"×3/16\"",
+          "rotacao": 0.0, "inicio": [0, 5000.0, 15000], "fim": [600, 5000.0, 15000]}]
+sesi += [_peca("arqt%d" % i, 1000.0 * i, "Cobertura do ginásio", "Concreto", ARQT, z=17000) for i in range(2)]
+sesi += [_peca("arqp0", 0.0, "Pilar", "Concreto", ARQP), _peca("tel0", 3000.0, "Telha avulsa", "Telha", "Fechamento", z=17000),
+         _peca("lt0", 4000.0, "TP40", "Aço galvanizado", "Telhas", z=17000), _peca("lc0", 5000.0, "Calha", "Aço galvanizado", "Calhas", z=17000)]
+cam_sesi = {TES: {"nome": TES, "cor": "#888888", "visivel": True, "grupo": "Cobertura frontal e eixo 1"},
+            "Fachadas — Suporte da calha": {"nome": "Fachadas — Suporte da calha", "cor": "#888888", "visivel": True},
+            ARQT: {"nome": ARQT, "cor": "#cfd6e0", "visivel": True, "grupo": "ARQUITETÔNICO"},
+            ARQP: {"nome": ARQP, "cor": "#9aa3ad", "visivel": True, "grupo": "ARQUITETÔNICO"},
+            "Fechamento": {"nome": "Fechamento", "cor": "#888888", "visivel": True},
+            "Telhas": {"nome": "Telhas", "cor": "#888888", "visivel": True, "grupo": GLANC},
+            "Calhas": {"nome": "Calhas", "cor": "#888888", "visivel": True, "grupo": GLANC}}
+for nome, modelo in (("obra", {"nome": "obra", "unidade": "mm", "entidades": ents, "camadas": camadas, "materiais": {}}), ("aco", _modelo()),
+                     ("sesi", {"nome": "sesi", "unidade": "mm", "entidades": sesi, "camadas": cam_sesi, "materiais": {}})):
     os.makedirs(os.path.join(DADOS, nome))
     json.dump({"nome": nome, "tipo": "ifc", "alterado": "2026-10-16T09:00:00"}, open(os.path.join(DADOS, nome, "projeto.json"), "w", encoding="utf-8"))
     json.dump(modelo, open(os.path.join(DADOS, nome, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
@@ -174,6 +196,22 @@ try:
     ok(not aba.avaliar("!!document.querySelector('#pintar option[value=sistema]')"), "só aço: sem \"por sistema\" no Pintar")
     aba.avaliar("document.querySelector('[data-painel=camadas]').click()")
     ok(aba.avaliar("document.querySelectorAll('#painel-corpo input[data-sistema]').length") == 0, "só aço: sem a seção Sistema")
+
+    # 6. SESI Chapecó (22/10): desligar a Cobertura esconde as telhas (as do arquitetônico também) e não as tesouras
+    aba.navegar(base + "/visor3d/ver3d.html?projeto=sesi", limite=60)
+    ok(esperar(aba, PRONTO, 90), "o projeto do SESI abriu")
+    aba.avaliar(PINTAR % "sistema")
+    leg = json.loads(aba.avaliar(LEGENDA) or "[]")
+    ok([x[:2] for x in leg] == [["Cobertura — telhas, calhas e rufos", 5], ["Metálica", 4], ["Pré-moldado (concreto)", 1]],
+       f"SESI por sistema: as 2 telhas do arquitetônico, a de material Telha e a telha e a calha lançadas na Cobertura; as 3 "
+       f"barras do grupo 'Cobertura frontal' e o suporte da calha na Metálica; o pilar de concreto no Pré-moldado ({leg})")
+    aba.avaliar("document.querySelector('[data-painel=camadas]').click()")
+    aba.avaliar("document.querySelector('#painel-corpo input[data-sistema=cobertura]').click()")
+    ID = "visor.fichas.findIndex(f => f.id === '%s')"
+    ok(aba.avaliar("[%s].every(i => visor.ocultasSistema.has(i))" % ",".join(ID % k for k in ("arqt0", "arqt1", "tel0", "lt0", "lc0"))),
+       "desligar a Cobertura esconde as telhas do arquitetônico (camada 'ARQ — Telhas', de Concreto)")
+    ok(aba.avaliar("[%s].every(i => !visor.ocultasSistema.has(i))" % ",".join(ID % k for k in ("tes0", "tes1", "tes2", "sup0", "arqp0"))),
+       "e não as tesouras do grupo 'Cobertura frontal e eixo 1', o suporte da calha e o pilar")
 
     erros = [x for x in aba.console if x[0] in ("error", "excecao") and "favicon" not in str(x)]
     ok(not erros, f"sem erros no console: {erros[:3]}")
