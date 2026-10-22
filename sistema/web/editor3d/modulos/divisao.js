@@ -38,6 +38,7 @@ export class MetodosDivisao {
     // a planta do desenho de onde cada peça veio (origem.fonte_2d) ou, no modelo montado antes de 22/10, o papel e a
     // camada dela — a tela de fora acha o deslocamento daquela planta (a terça vai à planta das terças)
     const fontes = new Map();
+    const eixos = [];                 // [[x, y], [x, y], fonte] das barras: o 2D acende a linha da peça
     for (const id of lista) {
       const e = this.documento.get(id);
       if (!e) continue;
@@ -55,13 +56,14 @@ export class MetodosDivisao {
       const o = (e.atributos && e.atributos.origem) || {};
       const kf = o.fonte_2d ? String(o.fonte_2d) : `?${e.papel || ''}|${e.camada || ''}`;
       fontes.set(kf, (fontes.get(kf) || 0) + 1);
+      if (e.tipo === 'barra' && e.inicio && e.fim && eixos.length < 60) eixos.push([e.inicio.slice(0, 2), e.fim.slice(0, 2), kf]);
       const pc = pecaDe(e);
       if (pc) { pecas.add(pc); nomes.add(String(o.planta || pc.split('#')[0]).replace(/ \(tesoura de cima\)$/, '')); }
     }
     const caixa = isFinite(x0) ? [[x0, y0], [x1, y1]] : null;
     try {
       window.parent.postMessage({ metalica: 'sel3d', n: lista.length, caixa, nomes: [...nomes], pecas: [...pecas],
-        fontes: [...fontes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20).map(x => x[0]),
+        fontes: [...fontes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20).map(x => x[0]), eixos,
         marcas: { posicoes: [...posicoes].slice(0, 50), conjuntos: [...conjuntos].slice(0, 50), ids: idsSel,
                   origem2d: [...origem2d].slice(0, 200), pm: [...pm].slice(0, 200) } }, location.origin);
     } catch (e) { /* idem */ }

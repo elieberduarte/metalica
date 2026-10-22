@@ -19,7 +19,7 @@ json.dump({"formato": 1, "nome": "Posto dividido", "tipo": "desenho", "cliente":
            "criado": "2026-09-27T00:00:00", "alterado": "2026-09-27T00:00:00", "dados": None,
            "planta_modelo": {"desenho": "desenho", "deslocamento": [DX, DY],
                              # cada planta lida com o seu deslocamento (22/10): a das terças e a do mezanino
-                             "fontes": {"planta": [0.0, 0.0], "tercas": [0.0, 30000.0], "PLANTA NO NÍVEL 3,17m": [-40000.0, 0.0]},
+                             "fontes": {"planta": [0.0, 0.0], "tercas": [0.0, 40000.0], "PLANTA NO NÍVEL 3,17m": [-40000.0, 0.0]},
                              "camadas": {"Mezanino": "PLANTA NO NÍVEL 3,17m"}}},
           open(os.path.join(PASTA, "projeto.json"), "w", encoding="utf-8"))
 ents = []
@@ -37,6 +37,9 @@ for x in range(0, 8001, 2000):                # a elevação: banzos, montantes,
     k += 1; linha(k, (100000.0 + x, 20000.0), (100000.0 + x, 21000.0))
 for h in (20000.0, 21000.0):
     k += 1; linha(k, (100000.0, h), (108000.0, h))
+# a planta das terças (modelo − (DX, DY) − (0; 40000)): o eixo da terça TC1 em x 104000 e o da vizinha 300 mm ao lado
+linha(901, (104000.0, 10000.0), (104000.0, 16000.0), "1-Terça Eixo")
+linha(902, (104300.0, 10000.0), (104300.0, 16000.0), "1-Terça Eixo")
 ents.append({"id": "t1", "tipo": "texto", "camada": "REG", "posicao": [100000.0, 19500.0], "texto": "TESOURA 1 - 2X",
              "altura": 10.0, "angulo": 0, "alinhamento": "esquerda", "vertical": "base"})
 json.dump({"nome": "desenho", "unidade": "mm", "escala": 20, "camadas": {}, "entidades": ents, "vistas": [], "metadados": {}},
@@ -170,13 +173,17 @@ try:
     foto(aba, "_dividida.png")
     # 3D → 2D na planta de cada peça (22/10, Posto V2: a terça caía na planta estrutural): a terça (pelo papel) na planta
     # das terças — modelo − geral − (0; 30000) —, a viga do mezanino (pela fonte gravada) na planta dele
-    for id_, x_d, y_d, nome_ in ((ID_TERCA, 4000.0 - DX, 3000.0 - DY - 30000.0, "a terça, na planta das terças"),
+    for id_, x_d, y_d, nome_ in ((ID_TERCA, 4000.0 - DX, 3000.0 - DY - 40000.0, "a terça, na planta das terças"),
                                  (ID_VIGA_MEZ, 4000.0 - DX + 40000.0, 3000.0 - DY, "a viga do mezanino, na planta de 3,17")):
         aba.avaliar(f"(() => {{ const e = {F3}.editor; e.selecao.definir([]); e.selecao.definir(['{id_}']); return 1; }})()")
         aba.drenar(1.0)
         reg = aba.avaliar(f"{F2}.cad.tela.regiao") or []
         ok(bool(reg) and reg[0][0] <= x_d <= reg[1][0] and reg[0][1] <= y_d <= reg[1][1],
            f"3D → 2D: {nome_} ({x_d:.0f}; {y_d:.0f}) dentro da região {reg}")
+        if id_ == ID_TERCA:
+            # e a linha da própria terça acesa, não a vizinha a 300 mm (22/10: "está vinculado a qual terça?")
+            sel2 = sorted(aba.avaliar(f"[...{F2}.cad.tela.selecao]") or [])
+            ok(sel2 == ["l901"], f"3D → 2D: a linha do eixo da terça selecionada no desenho, só ela ({sel2})")
     aba.avaliar(f"""(() => {{ const e = {F3}.editor; const ids = [...e.documento.entidades.values()].filter(x => x.atributos.origem.peca === 'TESOURA 1#2').map(x => x.id);
         e.selecao.definir([]); e.selecao.definir(ids); return ids.length; }})()""")
     aba.drenar(1.0)

@@ -654,7 +654,8 @@ class CAD {
       this.tela.regiao = c || null;
       if (c) this.tela.enquadrar(c, ev.data.margem ?? 0.25);
       else this.tela.pedirQuadro();
-      if (ev.data.dica) this.dica(ev.data.dica);
+      const n = c ? this._marcarEixos(ev.data.linhas) : 0;
+      if (ev.data.dica) this.dica(ev.data.dica + (n ? ` ${n} traço(s) do desenho sobre a peça, selecionados.` : ''));
     });
     try { window.parent.postMessage({ metalica: 'pronto2d', desenho: this.nomeDesenho }, location.origin); } catch (e) { /* idem */ }
   }
@@ -727,6 +728,44 @@ class CAD {
     this.tela.regiao = c;
     this.tela.enquadrar(c, 0.35);
     this.dica(`${escolhidas.length} traço(s) da peça do 3D neste desenho${grupos.size > 1 ? ` (${grupos.size} lugares; mostrando o detalhe)` : ''}.`);
+  }
+
+  /**
+   * As linhas do desenho que caem sobre o eixo das peças escolhidas no 3D (já em coordenadas deste desenho): a terça
+   * escolhida acende o eixo dela na planta das terças, e não só a região de 3 m com várias linhas (22/10/2026, Posto
+   * V2: "está vinculado a qual terça?"). Na mesma direção (até 3°), a até 80 mm do eixo e cobrindo parte dele.
+   * Seleciona sem avisar o 3D (não volta). Devolve quantas.
+   */
+  _marcarEixos(linhas) {
+    if (!Array.isArray(linhas) || !linhas.length) return 0;
+    const eixos = linhas.slice(0, 60).map(([a, b]) => {
+      const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+      return L < 1 ? null : { a, ux: dx / L, uy: dy / L, L };
+    }).filter(Boolean);
+    if (!eixos.length) return 0;
+    const sobre = (p, q) => eixos.some(e => {
+      const L = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      if (L < 1) return false;
+      if (Math.abs(((q[0] - p[0]) * e.ux + (q[1] - p[1]) * e.uy) / L) < Math.cos(3 * Math.PI / 180)) return false;
+      const fora = (r) => Math.abs(-(r[0] - e.a[0]) * e.uy + (r[1] - e.a[1]) * e.ux);
+      if (fora(p) > 80 || fora(q) > 80) return false;
+      const s = (r) => (r[0] - e.a[0]) * e.ux + (r[1] - e.a[1]) * e.uy;
+      const s0 = Math.min(s(p), s(q)), s1 = Math.max(s(p), s(q));
+      return Math.min(s1, e.L) - Math.max(s0, 0) > Math.min(0.3 * e.L, 0.3 * L, 300);
+    });
+    const ids = [];
+    for (const ent of this.doc.entidades.values()) {
+      if (ids.length >= 200) break;
+      if (ent.tipo === 'linha' && ent.a && ent.b) { if (sobre(ent.a, ent.b)) ids.push(ent.id); continue; }
+      if (ent.tipo === 'polilinha' && Array.isArray(ent.vertices)) {
+        const v = ent.vertices;
+        for (let i = 0; i + 1 < v.length; i++) if (sobre(v[i], v[i + 1])) { ids.push(ent.id); break; }
+      }
+    }
+    this.tela.selecao = new Set(ids);
+    this._agendarPaineis('props');
+    this.tela.pedirQuadro();
+    return ids.length;
   }
 
   alternarSelecao(id) { const s = new Set(this.tela.selecao); s.has(id) ? s.delete(id) : s.add(id); this.selecionar([...s]); }

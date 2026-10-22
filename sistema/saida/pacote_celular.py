@@ -45,7 +45,8 @@ GERACAO_MALHAS = 3
 #: 4 (15/10): o comprimento da peça (L, mm) para a ficha rápida do modo ver.
 #: 5 (15/10): a largura da chapa (W, mm) — as medidas espessura × largura × comprimento.
 #: 6 (22/10): a planta de origem (f2) e o papel (pp) — a peça vai à planta dela no 2D (a terça à planta das terças).
-VERSAO_FICHAS = 6
+#: 7 (22/10): o eixo da barra (e) — o 2D acende a linha da peça, não só a região.
+VERSAO_FICHAS = 7
 MAGICA = b"MCEL"
 
 #: Vértices por bloco (índice de 16 bits).
@@ -427,7 +428,7 @@ def _comprimento(reg: dict, vs, fs) -> float:
     return math.sqrt(maior)
 
 
-def _ficha(reg: dict, camadas_idx: Dict[str, int], centro, volume_mm3: float, vs=None, fs=None) -> dict:
+def _ficha(reg: dict, camadas_idx: Dict[str, int], centro, volume_mm3: float, vs=None, fs=None, origem_xyz=None) -> dict:
     atrib = reg.get("atributos") or {}
     marcas = atrib.get("marcas") or {}
     material = str(reg.get("material") or "")
@@ -452,6 +453,11 @@ def _ficha(reg: dict, camadas_idx: Dict[str, int], centro, volume_mm3: float, vs
         f["f2"] = str(origem["fonte_2d"])
     if reg.get("papel"):
         f["pp"] = str(reg["papel"])
+    # o eixo da barra (relativo à origem, como o centro): o 2D acende a linha da peça na planta (22/10)
+    if reg.get("tipo") == "barra" and reg.get("inicio") and reg.get("fim") and origem_xyz is not None:
+        a, b = reg["inicio"], reg["fim"]
+        f["e"] = [round(a[0] - origem_xyz[0]), round(a[1] - origem_xyz[1]), round(a[2] - origem_xyz[2]),
+                  round(b[0] - origem_xyz[0]), round(b[1] - origem_xyz[1]), round(b[2] - origem_xyz[2])]
     if atrib.get("origem_2d"):
         f["o2"] = str(atrib["origem_2d"])
     if atrib.get("pre_moldado") and atrib.get("peca") and atrib.get("eixo"):
@@ -572,7 +578,7 @@ def gerar_3d(modelo: dict, progresso=None) -> Tuple[bytes, dict, dict]:
             for a, b in _arestas(vs, p["fs"], cos_lim):
                 ar.append(a + base)
                 ar.append(b + base)
-            fichas.append(_ficha(p["reg"], camadas_idx, p["centro"], _volume(vs, tris), vs, p["fs"]))
+            fichas.append(_ficha(p["reg"], camadas_idx, p["centro"], _volume(vs, tris), vs, p["fs"], origem))
             base += len(vs)
             n_tri += len(tris)
         n_vert += nv
@@ -620,7 +626,7 @@ def gerar_3d(modelo: dict, progresso=None) -> Tuple[bytes, dict, dict]:
                          x[1] * esc[0], y[1] * esc[1], z[1] * esc[2], ty,
                          x[2] * esc[0], y[2] * esc[1], z[2] * esc[2], tz,
                          float(len(fichas))))
-            fichas.append(_ficha(p["reg"], camadas_idx, p["centro"], vol, p["vs"], p["fs"]))
+            fichas.append(_ficha(p["reg"], camadas_idx, p["centro"], vol, p["vs"], p["fs"], origem))
         n_copias += len(g["itens"])
         n_tri += len(tris) * len(g["itens"])
         formas_cab.append({

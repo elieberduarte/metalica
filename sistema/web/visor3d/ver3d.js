@@ -242,6 +242,7 @@ function avisarDivisao() {
   const nomes = new Set(), pecas = new Set(), posicoes = new Set(), conjuntos = new Set(), origem2d = new Set(), pm = new Set(), ids = [];
   const fontes = new Map();          // a planta de origem de cada peça (f2) ou papel|camada (o modelo de antes de 22/10)
   const camadas = (visor.cabecalho && visor.cabecalho.camadas) || [];
+  const eixos = [];                  // o eixo das barras (e da ficha): o 2D acende a linha da peça
   for (const i of lista) {
     const f = visor.fichas[i];
     if (!f) continue;
@@ -254,12 +255,13 @@ function avisarDivisao() {
     const cam = camadas[f.c];
     const kf = f.f2 ? String(f.f2) : `?${f.pp || ''}|${(cam && (cam.nome || cam)) || ''}`;
     fontes.set(kf, (fontes.get(kf) || 0) + 1);
+    if (f.e && eixos.length < 60) eixos.push([[f.e[0] + o[0], f.e[1] + o[1]], [f.e[3] + o[0], f.e[4] + o[1]], kf]);
     const b = f.b || [f.x[0], f.x[1], f.x[2], f.x[0], f.x[1], f.x[2]];
     x0 = Math.min(x0, b[0] + o[0]); y0 = Math.min(y0, b[1] + o[1]); x1 = Math.max(x1, b[3] + o[0]); y1 = Math.max(y1, b[4] + o[1]);
   }
   try {
     window.parent.postMessage({ metalica: 'sel3d', n: lista.length, caixa: isFinite(x0) ? [[x0, y0], [x1, y1]] : null,
-      nomes: [...nomes], pecas: [...pecas], fontes: [...fontes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20).map(x => x[0]),
+      nomes: [...nomes], pecas: [...pecas], fontes: [...fontes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20).map(x => x[0]), eixos,
       marcas: { posicoes: [...posicoes].slice(0, 50), conjuntos: [...conjuntos].slice(0, 50), ids,
       origem2d: [...origem2d].slice(0, 200), pm: [...pm].slice(0, 200) } }, location.origin);
   } catch (e) { /* sem a tela de fora */ }

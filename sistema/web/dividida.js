@@ -177,7 +177,12 @@ function doTresD(m) {
   // uma peça pequena não pode virar um zoom de milímetros: a região tem ao menos 3 m
   const cx = (c[0][0] + c[1][0]) / 2, cy = (c[0][1] + c[1][1]) / 2;
   const w = Math.max(c[1][0] - c[0][0], 3000), h = Math.max(c[1][1] - c[0][1], 3000);
-  para2d({ metalica: 'enquadrar2d', caixa: [[cx - w / 2, cy - h / 2], [cx + w / 2, cy + h / 2]], margem: 0.35,
+  // o eixo de cada barra escolhida, neste desenho: o 2D acende as linhas que caem sobre ele (a terça, não a região)
+  const linhas = (m.eixos || []).map(([a, b, k]) => {
+    const fk = deslDaFonte([k]), ex = desl[0] + fk[0], ey = desl[1] + fk[1];
+    return [[a[0] - ex, a[1] - ey], [b[0] - ex, b[1] - ey]];
+  });
+  para2d({ metalica: 'enquadrar2d', caixa: [[cx - w / 2, cy - h / 2], [cx + w / 2, cy + h / 2]], margem: 0.35, linhas,
            dica: (m.nomes || []).length === 1 ? `${m.nomes[0]} na planta.` : `${m.n} peça(s) do 3D na planta.` });
 }
 
