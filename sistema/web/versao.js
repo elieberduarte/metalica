@@ -64,6 +64,7 @@
   // telas, bateria das obras) numa caixinha embaixo à direita, com a barra, a etapa e quanto
   // falta. Só na janela de cima (a área de trabalho tem o 2D e o 3D em quadros: não repete).
   var caixaConf = null;
+  var confFechada = null;           // o início da rodada cujo resultado o usuário fechou no ×
   function minutos(s) {
     if (s < 60) return 'menos de 1 min';
     return '~' + Math.round(s / 60) + ' min';
@@ -88,6 +89,7 @@
   window.metalicaTrocarRitmo = trocarRitmo;
   function mostrarConferencia(c, ritmo) {
     try { if (window.top !== window) return; } catch (err) { return; }
+    if (c && c.fim && confFechada !== null && String(c.inicio) === confFechada) c = null;
     if (!c) { if (caixaConf) { caixaConf.remove(); caixaConf = null; } return; }
     if (!caixaConf) {
       caixaConf = document.createElement('div');
@@ -105,6 +107,10 @@
         '<button data-cancelar type="button" title="Para a conferência agora: os testes, os verificadores e a bateria são encerrados; nada é publicado. A rodada recomeça do zero quando for pedida de novo." ' +
         'style="position:absolute;right:7px;top:5px;pointer-events:auto;cursor:pointer;font:11px system-ui,Segoe UI,sans-serif;' +
         'color:#e4eaf3;background:rgba(217,83,79,.85);border:0;border-radius:4px;padding:1px 7px">Cancelar</button>' +
+        // terminada, o resultado fica um tempo na tela; o × fecha já (22/10: o cartão da cancelada ficou parado)
+        '<button data-fechar type="button" title="Fechar este aviso" hidden ' +
+        'style="position:absolute;right:5px;top:3px;pointer-events:auto;cursor:pointer;font:14px/1 system-ui,Segoe UI,sans-serif;' +
+        'color:var(--texto3,#8a94a6);background:transparent;border:0;padding:1px 4px">×</button>' +
         // o ritmo (pedido do usuário, 11/10): calmo com o computador em uso, cheio com ele parado — vale na hora
         '<div data-ritmo style="margin-top:6px;display:flex;align-items:center;gap:4px;pointer-events:auto">' +
         '<span style="color:var(--texto3,#8a94a6)">Ritmo:</span>' +
@@ -126,10 +132,19 @@
           .then(function () { perguntar(); })
           .catch(function () { b.disabled = false; b.textContent = 'Cancelar'; });
       };
+      caixaConf.querySelector('[data-fechar]').onclick = function () {
+        confFechada = caixaConf.dataset.inicio || null;
+        caixaConf.remove();
+        caixaConf = null;
+      };
       document.body.appendChild(caixaConf);
     }
+    caixaConf.dataset.inicio = c.inicio;
     var botao = caixaConf.querySelector('[data-cancelar]');
     botao.hidden = !!c.fim;
+    caixaConf.querySelector('[data-fechar]').hidden = !c.fim;
+    // o resultado inteiro (a cancelada cortava em "após 1…"); andando, uma linha só
+    caixaConf.querySelector('[data-l2]').style.whiteSpace = c.fim ? 'normal' : 'nowrap';
     caixaConf.querySelector('[data-ritmo]').style.display = c.fim ? 'none' : 'flex';
     pintarRitmo(ritmo);
     if (!c.fim && !botao.disabled) botao.textContent = 'Cancelar';
@@ -137,7 +152,8 @@
     var l1, l2;
     if (c.fim && c.cancelada) {
       l1 = 'Conferência cancelada';
-      l2 = 'nada publicado · parada em ' + c.etapa + ' após ' + minutos(c.decorrido_s).replace('~', '');
+      l2 = 'nada publicado · parou em ' + c.etapa + (c.total ? ' (' + c.feito + ' de ' + c.total + ')' : '') +
+        ' após ' + minutos(c.decorrido_s).replace('~', '');
     } else if (c.fim) {
       l1 = c.ok ? 'Conferência concluída: tudo ok' : 'Conferência terminou com falha';
       l2 = (c.falhas && c.falhas.length ? 'falhou: ' + c.falhas.join(', ') + ' · ' : '') + 'em ' + minutos(c.decorrido_s).replace('~', '');

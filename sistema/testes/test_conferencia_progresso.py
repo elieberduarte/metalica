@@ -65,6 +65,29 @@ def test_cancelar_derruba_o_processo_e_marca_o_arquivo(tmp_path):
     assert not app.cancelar_conferencia(matar=lambda pid: None, arquivo=str(tmp_path / "nao-existe.json"))["cancelada"]
 
 
+def test_cancelada_diz_onde_parou_e_some_logo(tmp_path):
+    """22/10, conferência da 0.9.1 cancelada nos verificadores (30 de 141): o cartão dizia "parada em bateria das
+    obras" (a etapa que nem tinha começado) e ficou 10 min na tela. Cancelada: a etapa em que ela estava, com a
+    contagem, e o cartão sai em CONFERENCIA_MOSTRA_CANCELADA (quem cancelou já sabe)."""
+    import json
+    arq = tmp_path / "_conferencia.json"
+    agora = 10000.0
+    d = dict(_arquivo(agora), pid=4321)
+    arq.write_text(json.dumps(d), encoding="utf-8")
+    app.cancelar_conferencia(matar=lambda pid: "ok", arquivo=str(arq))
+    d2 = json.loads(arq.read_text(encoding="utf-8"))
+    c = app.estado_da_conferencia(d2, d2["fim"] + 1)
+    assert (c["etapa"], c["feito"], c["total"]) == ("verificadores das telas", 20, 40)
+    assert c["inicio"] == d["inicio"]
+    assert app.estado_da_conferencia(d2, d2["fim"] + app.CONFERENCIA_MOSTRA_CANCELADA + 1) is None
+    # a que terminou sozinha continua o tempo inteiro, com o resultado
+    d3 = _arquivo(agora)
+    for e in d3["etapas"]:
+        e.update(ini=e["ini"] or agora - 60, fim=agora - 10, ok=True)
+    d3.update(fim=agora - 10, ok=True)
+    assert app.estado_da_conferencia(d3, agora + app.CONFERENCIA_MOSTRA_CANCELADA + 1)["ok"] is True
+
+
 def test_progresso_grava_as_etapas(tmp_path, monkeypatch):
     import progresso
     importlib.reload(progresso)

@@ -3350,6 +3350,8 @@ def _carimbo_do_codigo() -> int:
 
 #: depois do fim, a barrinha da conferência fica na tela este tempo (s), com o resultado
 CONFERENCIA_MOSTRA = 600.0
+#: cancelada pelo usuário: ele já sabe o resultado; o cartão sai logo (22/10, o cartão da 0.9.1 ficou parado na tela)
+CONFERENCIA_MOSTRA_CANCELADA = 30.0
 #: sem notícia da conferência há este tempo (s), sem ter terminado: ela parou no meio
 CONFERENCIA_PARADA = 1200.0
 
@@ -3362,7 +3364,7 @@ def estado_da_conferencia(d: Optional[dict], agora: float) -> Optional[dict]:
     if not d or not d.get("etapas"):
         return None
     fim = d.get("fim")
-    if fim and agora - fim > CONFERENCIA_MOSTRA:
+    if fim and agora - fim > (CONFERENCIA_MOSTRA_CANCELADA if d.get("cancelada") else CONFERENCIA_MOSTRA):
         return None
     parada = not fim and agora - float(d.get("atualizado") or d.get("inicio") or agora) > CONFERENCIA_PARADA
     total_est = sum(max(1.0, float(e.get("est") or 1.0)) for e in d["etapas"]) or 1.0
@@ -3385,7 +3387,10 @@ def estado_da_conferencia(d: Optional[dict], agora: float) -> Optional[dict]:
             resta += est
         feito_est += est * fr
     etapa = atual or next((e for e in d["etapas"] if not e.get("fim")), d["etapas"][-1])
-    return {"pct": 100.0 if fim else round(100.0 * feito_est / total_est, 1),
+    if d.get("cancelada"):
+        # o cancelar fecha a etapa aberta: a parada é a última que começou, não a seguinte que nem começou
+        etapa = next((e for e in reversed(d["etapas"]) if e.get("ini")), etapa)
+    return {"inicio": d.get("inicio"), "pct": 100.0 if fim else round(100.0 * feito_est / total_est, 1),
             "etapa": etapa["nome"], "n_etapa": d["etapas"].index(etapa) + 1, "etapas": len(d["etapas"]),
             "feito": etapa.get("feito"), "total": etapa.get("total"), "texto": d.get("texto") or "",
             "resta_s": 0 if fim else round(resta), "decorrido_s": round((fim or agora) - float(d.get("inicio") or agora)),
