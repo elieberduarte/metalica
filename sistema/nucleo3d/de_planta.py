@@ -2503,10 +2503,15 @@ def ancorar_pelas_chegadas(trechos: List[Trecho], folga_ponta: float = 300.0) ->
         for o in trechos:
             if o is t or o.caminho.comprimento < 300.0:
                 continue
-            for P in (o.caminho.ponto(0.0), o.caminho.ponto(o.caminho.comprimento)):
+            for s_o in (0.0, o.caminho.comprimento):
+                P = o.caminho.ponto(s_o)
                 so, d = t.caminho.projetar(P)
                 if d <= meia_t + o.caminho.largura / 2.0 + 200.0 and folga_ponta < so < L - folga_ponta:
-                    chegadas.append(so)
+                    # só a que chega de través (mais de 45°): a curva que encosta quase tangente (os PAINÉIS 9 e 10 no
+                    # PAINEL 12 do Posto) não chega num montante
+                    to, tt = o.caminho.tangente(s_o), t.caminho.tangente(so)
+                    if abs(to[0] * tt[0] + to[1] * tt[1]) < math.cos(math.radians(45.0)):
+                        chegadas.append(so)
         if len(chegadas) < 2:
             continue
         base = (L - Le) / 2.0 if 0.9 < L / Le < 1.1 else 0.0
@@ -3630,12 +3635,28 @@ def _pilares_pela_planta(ents, caixa_p, locados: List[dict], avisos: List[str], 
         if dd < 40.0:
             continue
         pl["x"], pl["y"] = c
+        if dd < 150.0:
+            mudou += 1                   # até 15 cm é o desenho da seção (a hachura do PM6 × os dois Ue da planta), não aviso
+            continue
         pl["pela_planta"] = "posição: a locação e a planta estrutural diferem em %.2f m; ficou a da planta" % (dd / 1000.0)
         avisos.append("pilar %s em (%.0f; %.0f): a locação o põe a %.2f m da seção que a planta estrutural desenha; "
                       "ficou no lugar da planta, onde as treliças apoiam — confira com o projetista." % (
                           pl["nome"], c[0], c[1], dd / 1000.0))
         mudou += 1
     return mudou
+
+
+def _medidas_nos_lados(vs: Sequence[Ponto2]) -> Tuple[float, float]:
+    """as medidas de um contorno nos lados dele (ao longo do lado mais comprido e na perpendicular), não na caixa
+    alinhada aos eixos — a placa girada"""
+    if len(vs) < 3:
+        return 0.0, 0.0
+    lados = [(math.dist(vs[i], vs[(i + 1) % len(vs)]), vs[i], vs[(i + 1) % len(vs)]) for i in range(len(vs))]
+    L, a, b = max(lados)
+    ux, uy = (b[0] - a[0]) / (L or 1.0), (b[1] - a[1]) / (L or 1.0)
+    al = [v[0] * ux + v[1] * uy for v in vs]
+    at = [-v[0] * uy + v[1] * ux for v in vs]
+    return max(al) - min(al), max(at) - min(at)
 
 
 def _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados_loc: set, avisos: List[str],
@@ -3652,27 +3673,41 @@ def _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados_loc: set, avisos: 
                 and _dentro(e["vertices"][0], folga):
             xs = [v[0] for v in e["vertices"]]
             ys = [v[1] for v in e["vertices"]]
-            w, h = max(xs) - min(xs), max(ys) - min(ys)
+            # as medidas da placa nos lados dela, não na caixa: a CH7 girada do PM8 do Posto (caixa 832 × 971) passava
+            # de 900 e era descartada — o pé do pilar inclinado caía no toco ao lado, 476 mm fora (22/10/2026)
+            w, h = _medidas_nos_lados([(v[0], v[1]) for v in e["vertices"]])
             if 120 <= w <= 900 and 120 <= h <= 900:
                 placas.append(((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2))
                 placas_ids.append(e.get("id"))
     secoes = []
     secoes_ids = []
+    # a seção do pilar: polilinha ou hachura (o PM6 do Posto tem só a hachura 250 × 250 no lugar); a fina (menos de 40 mm
+    # de um lado) não é seção — o símbolo do chumbador em gancho (TETER, 300 × 6) tomava o PM6 e o aviso de 0,72 m era
+    # falso (22/10/2026)
+    contornos_s = []
     for e in ents:
         if e["tipo"] == "polilinha" and not _ANOT.search(e.get("camada", "")) and _dentro(e["vertices"][0], folga):
-            vs = [(v[0], v[1]) for v in e["vertices"]]
-            xs, ys = [v[0] for v in vs], [v[1] for v in vs]
-            if max(xs) - min(xs) < 520 and max(ys) - min(ys) < 520 and len(vs) >= 4:
-                lados = [(math.dist(vs[i], vs[(i + 1) % len(vs)]), vs[i], vs[(i + 1) % len(vs)]) for i in range(len(vs))]
-                L, a, b = max(lados)
-                secoes_ids.append(e.get("id"))
-                # as medidas da seção ao longo do lado comprido (a alma) e na perpendicular (a aba)
-                ux_, uy_ = (b[0] - a[0]) / (L or 1.0), (b[1] - a[1]) / (L or 1.0)
-                ao_longo = [v[0] * ux_ + v[1] * uy_ for v in vs]
-                atraves = [-v[0] * uy_ + v[1] * ux_ for v in vs]
-                secoes.append((((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2),
-                               math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) % 180,
-                               max(ao_longo) - min(ao_longo), max(atraves) - min(atraves)))
+            contornos_s.append(([(v[0], v[1]) for v in e["vertices"]], e.get("id")))
+        elif e["tipo"] == "hachura" and not _ANOT.search(e.get("camada", "")):
+            for c_h in e.get("contornos") or []:
+                if c_h and _dentro(c_h[0], folga):
+                    contornos_s.append(([(v[0], v[1]) for v in c_h], e.get("id")))
+    for vs, id_s in contornos_s:
+        xs, ys = [v[0] for v in vs], [v[1] for v in vs]
+        if max(xs) - min(xs) < 520 and max(ys) - min(ys) < 520 and len(vs) >= 4:
+            lados = [(math.dist(vs[i], vs[(i + 1) % len(vs)]), vs[i], vs[(i + 1) % len(vs)]) for i in range(len(vs))]
+            L, a, b = max(lados)
+            # as medidas da seção ao longo do lado comprido (a alma) e na perpendicular (a aba)
+            ux_, uy_ = (b[0] - a[0]) / (L or 1.0), (b[1] - a[1]) / (L or 1.0)
+            ao_longo = [v[0] * ux_ + v[1] * uy_ for v in vs]
+            atraves = [-v[0] * uy_ + v[1] * ux_ for v in vs]
+            w_s, h_s = max(ao_longo) - min(ao_longo), max(atraves) - min(atraves)
+            if min(w_s, h_s) < 40.0:
+                continue
+            secoes_ids.append(id_s)
+            # a seção quadrada (a hachura 250 × 250 do PM6) não diz para onde vai a alma: sem giro (None)
+            ang_s = math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) % 180 if abs(w_s - h_s) > 0.1 * max(w_s, h_s) else None
+            secoes.append((((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2), ang_s, w_s, h_s))
     out: List[dict] = []
     nomes_p = []
     for t in textos:
@@ -3724,8 +3759,9 @@ def _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados_loc: set, avisos: 
             continue
         rot = 0.0
         sc = [s for s in secoes if math.dist(s[0], q) < 300]
-        if sc:
-            rot = min(sc, key=lambda s: math.dist(s[0], q))[1]
+        sc_giro = [s for s in sc if s[1] is not None]
+        if sc_giro:
+            rot = min(sc_giro, key=lambda s: math.dist(s[0], q))[1]
         # o caixão: a placa com os DOIS Ue do perfil desenhados (de boca, a seção 250 × 140 do PM1 do Posto CB) — o nome
         # só diz "PM1(250X70X25X3,0)" (22/10/2026: o pilar reto saía com um Ue só)
         mult = 1
@@ -3734,7 +3770,7 @@ def _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados_loc: set, avisos: 
             iguais = [s for s in sc if abs(s[2] - float(pa_t.d)) <= 25.0 and abs(s[3] - float(pa_t.bf)) <= 25.0]
             if len(iguais) >= 2:
                 mult = 2
-                rot = iguais[0][1]
+                rot = iguais[0][1] if iguais[0][1] is not None else rot
         x, y = q[0] + desl_l[0], q[1] + desl_l[1]
         usados_loc.add(t.get("id"))
         usados_loc.update(secoes_ids[i_s] for i_s, s_ in enumerate(secoes) if math.dist(s_[0], q) < 300)

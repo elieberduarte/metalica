@@ -538,6 +538,42 @@ def test_sentido_pelo_cruzamento_na_emenda():
     assert abs(t2.caminho.ponto(de_planta._s_na_planta(t2, 0.0))[1] - 9708.0) < 1.0
 
 
+
+def test_placa_girada_pelas_medidas_dos_lados():
+    """a CH7 girada do PM8 do Posto tem caixa 832 × 971 (passava de 900 e era descartada) e lados ~600 × 700 (22/10/2026)"""
+    a = math.radians(40.0)
+    def g(x, y):
+        return (x * math.cos(a) - y * math.sin(a), x * math.sin(a) + y * math.cos(a))
+    vs = [g(0.0, 0.0), g(700.0, 0.0), g(700.0, 600.0), g(0.0, 600.0)]
+    xs, ys = [v[0] for v in vs], [v[1] for v in vs]
+    assert max(max(xs) - min(xs), max(ys) - min(ys)) > 900.0
+    w, h = de_planta._medidas_nos_lados(vs)
+    assert (round(w), round(h)) == (700, 600)
+
+
+def test_pilar_casa_com_a_hachura_e_nao_com_o_simbolo_do_chumbador():
+    """o PM6 do Posto: sem placa desenhada, o nome casava com a polilinha fina (300 × 6) do chumbador em gancho (TETER),
+    a 0,72 m do pilar — a seção é a hachura 250 × 250; quadrada, ela não diz o giro (22/10/2026)"""
+    ents = [{"tipo": "polilinha", "camada": "1-Metalica2", "fechada": True, "id": "teter",
+             "vertices": [[150.0, -3.0], [450.0, -3.0], [450.0, 3.0], [150.0, 3.0]]},
+            {"tipo": "hachura", "camada": "metalica2", "id": "hach",
+             "contornos": [[[575.0, -125.0], [825.0, -125.0], [825.0, 125.0], [575.0, 125.0]]]}]
+    textos = [{"tipo": "texto", "id": "nome", "texto": "PM6(400X200X50X3,75)", "posicao": [0.0, 0.0], "altura": 10.0}]
+    avisos = []
+    out = de_planta._pilares_da_locacao(ents, textos, (-3000.0, -3000.0, 3000.0, 3000.0), (0.0, 0.0), set(), avisos)
+    assert len(out) == 1 and (round(out[0]["x"]), round(out[0]["y"])) == (700, 0), out
+    assert out[0]["rot"] == 0.0
+
+
+def test_chegada_quase_tangente_nao_conta_para_ancorar():
+    """no PAINEL 12 do Posto as curvas dos PAINÉIS 9 e 10 encostam quase tangentes, fora dos montantes: contadas como
+    chegadas, a elevação não ancorava pelas 4 tesouras (22/10/2026)"""
+    painel = _com_montantes(_tr("PAINEL 1", "PAINEL", (0.0, 0.0), (10290.0, 0.0), comp_el=10501.0), [4398.0, 9045.0, 2000.0])
+    comps = [_tr("COMP 2", "COMP", (4397.0, 50.0), (4397.0, 3000.0)), _tr("COMP 4", "COMP", (9044.0, 50.0), (9044.0, 3000.0)),
+             _tr("PAINEL 9", "PAINEL", (6500.0, 60.0), (6500.0 + 3000.0 * math.cos(math.radians(10.0)), 60.0 + 3000.0 * math.sin(math.radians(10.0))))]
+    r = de_planta.ancorar_pelas_chegadas([painel] + comps)
+    assert r and r[0][0] == "PAINEL 1", r
+
 def test_pilar_vai_para_a_secao_da_planta():
     """a planta estrutural desenha a seção do pilar (os dois U de 400 × 200, costas com costas) a
     0,72 m de onde a locação o põe: vale a planta (os três PM6 do Posto CB), com aviso"""
