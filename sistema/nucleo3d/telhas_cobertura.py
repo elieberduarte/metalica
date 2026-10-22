@@ -621,13 +621,14 @@ def _linhas_inteiras(reg) -> List[dict]:
     return out
 
 
-def _pedacos(k, j, passo, ini=False, fim=False):
+def _pedacos(k, j, passo, ini=False, fim=False, cortes=()):
     """os pares de índices (a, b) de k a j em pedaços de `passo` amostras, com a primeira e a última amostra num pedaço só
     delas (a ponta levada à beira do pano vizinho, na_beira: na reta de um pedaço de 0,5 m ela cortava a telha na
-    diagonal — o buraco junto da tesoura de y 50,76 do Posto V2, 21/10/2026)"""
+    diagonal — o buraco junto da tesoura de y 50,76 do Posto V2, 21/10/2026). `cortes`: os índices em que um pedaço tem de
+    acabar (onde a ponta passa da parede para a terça de outra direção: a reta de 0,5 m atravessava a terça, 22/10/2026)"""
     if j <= k:
         return []
-    idx = set(range(k, j, passo)) | {j} | ({k + 1} if ini else set()) | ({j - 1} if fim else set())
+    idx = set(range(k, j, passo)) | {j} | ({k + 1} if ini else set()) | ({j - 1} if fim else set()) | set(cortes)
     idx = sorted(i for i in idx if k <= i <= j)
     return list(zip(idx, idx[1:]))
 
@@ -731,6 +732,16 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
         return (z_em(r, s_) - z_em(x, s_)) / (r["t"] - x["t"])
 
     beiras = set()                               # as amostras levadas à beira (id): o pedaço só delas (_pedacos)
+    na_terca = set()                             # as amostras que param na terça de outra direção (id)
+    vivas = []                                   # (e elas mesmas: o id de uma tupla descartada volta noutra)
+
+    def cortes(livres, k, j):
+        """as amostras de k a j em volta de onde a ponta passa a parar (ou deixa de parar) na terça de outra direção"""
+        out = set()
+        for i in range(k + 1, j + 1):
+            if (id(livres[i]) in na_terca) != (id(livres[i - 1]) in na_terca):
+                out |= {i - 1, i}
+        return out
 
     def na_beira(r, lado, ss, livres, calc):
         """as amostras (de PASSO em PASSO) com a ponta de cada trecho livre levada até a beira do pano vizinho (21/10/2026,
@@ -752,12 +763,14 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
                 if e is not None:
                     out.append(e)
                     beiras.add(id(e))
+                    vivas.append(e)
             out.append(liv)
             if liv is not None and k + 1 < len(livres) and livres[k + 1] is None:
                 e = calc(beira(ss[k + 1], ss[k]))
                 if e is not None:
                     out.append(e)
                     beiras.add(id(e))
+                    vivas.append(e)
         return out
 
     def pela_linha(r, lado, ss, livres):
@@ -781,6 +794,51 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
                     break
         return ss, livres
 
+    # a telha para na terça de outra direção que cruza o caminho, ENCONTRO_TERCA além do eixo: do outro lado é a telha
+    # daquela terça (22/10/2026, Posto V2, a ponta norte da abertura oval: a telha das terças retas passava por cima da terça
+    # inclinada da PAINEL 12 até o triângulo da TC12 e cruzava as chapas inclinadas — as chapas quebradas no canto)
+    ENCONTRO_TERCA = 50.0
+    cruzam = []
+    grade_t: Dict[tuple, list] = collections.defaultdict(list)
+    for b in tercas:
+        v_ = (b.fim[0] - b.inicio[0], b.fim[1] - b.inicio[1])
+        Lv = math.hypot(*v_)
+        if Lv < 300.0 or abs(v_[0] * d[0] + v_[1] * d[1]) / Lv >= math.cos(math.radians(PAREDE_PARALELA)):
+            continue
+        k_ = len(cruzam)
+        cruzam.append((b.inicio, b.fim))
+        for gx in range(int(min(b.inicio[0], b.fim[0]) // CEL), int(max(b.inicio[0], b.fim[0]) // CEL) + 1):
+            for gy in range(int(min(b.inicio[1], b.fim[1]) // CEL), int(max(b.inicio[1], b.fim[1]) // CEL) + 1):
+                grade_t[(gx, gy)].append(k_)
+
+    def ate_a_terca(P, lado, ate):
+        """a distância de P até a primeira terça de outra direção (não paralela a esta), na altura da telha, que o caminho
+        cruza antes de `ate`, e a direção dela em planta; ou None"""
+        v = (n[0] * lado * ate, n[1] * lado * ate)
+        Q = (P[0] + v[0], P[1] + v[1])
+        melhor = None
+        vistos = set()
+        for gx in range(int(min(P[0], Q[0]) // CEL), int(max(P[0], Q[0]) // CEL) + 1):
+            for gy in range(int(min(P[1], Q[1]) // CEL), int(max(P[1], Q[1]) // CEL) + 1):
+                for k_ in grade_t.get((gx, gy), ()):
+                    if k_ in vistos:
+                        continue
+                    vistos.add(k_)
+                    a, c = cruzam[k_]
+                    s_ = (c[0] - a[0], c[1] - a[1])
+                    den = v[0] * s_[1] - v[1] * s_[0]
+                    if abs(den) < 1e-9:
+                        continue
+                    t = ((a[0] - P[0]) * s_[1] - (a[1] - P[1]) * s_[0]) / den
+                    u = ((a[0] - P[0]) * v[1] - (a[1] - P[1]) * v[0]) / den
+                    if not (0.0 < t <= 1.0 and 0.0 <= u <= 1.0) or t * ate < 100.0:
+                        continue
+                    if abs(a[2] + (c[2] - a[2]) * u - P[2]) > 400.0:
+                        continue                         # a terça de outro andar
+                    if melhor is None or t * ate < melhor[0]:
+                        melhor = (t * ate, s_)
+        return melhor
+
     novos = []
     for r in ([] if encontro else _linhas_inteiras(reg)):
         L_ter = r["s1"] - r["s0"]
@@ -794,7 +852,21 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
             def calc(s_, r=r, lado=lado):
                 P = ponto(r, s_)
                 pa = parede(P[:2], lado, P[2])
-                return (s_, pa[0], pa[4]) if pa is not None and pa[1] else None
+                if pa is None or not pa[1]:
+                    return None
+                # a terça de outra direção no caminho: a telha para nela (do outro lado é a telha dela) — menos a terça que
+                # corre junto da parede, paralela a ela, até 450 mm: é o apoio da ponta, e a telha vai até a parede (a parede
+                # reta da abertura oval do Posto, com a terça inclinada ao lado)
+                tc = ate_a_terca(P, lado, pa[0])
+                if tc is not None and tc[0] + ENCONTRO_TERCA + FOLGA < pa[0]:
+                    w_, v_ = pa[3], tc[1]
+                    cos_ = abs(w_[0] * v_[0] + w_[1] * v_[1]) / ((math.hypot(*w_) * math.hypot(*v_)) or 1.0)
+                    if not (pa[0] - tc[0] <= 450.0 and cos_ >= math.cos(math.radians(15.0))):
+                        t_ = (s_, tc[0] + ENCONTRO_TERCA + FOLGA, pa[4])
+                        na_terca.add(id(t_))
+                        vivas.append(t_)
+                        return t_
+                return (s_, pa[0], pa[4])
             livres, cob_ = [], []
             for s_ in ss:
                 P = ponto(r, s_)
@@ -833,7 +905,7 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
                     j += 1
                 if any(x[2] for x in livres[k:j + 1]):
                     passo_i = max(1, int(PASSO_CURVA // PASSO))
-                    for a_i, b_i in _pedacos(k, j, passo_i, id(livres[k]) in beiras, id(livres[j]) in beiras):
+                    for a_i, b_i in _pedacos(k, j, passo_i, id(livres[k]) in beiras, id(livres[j]) in beiras, cortes(livres, k, j)):
                         trechos.append((livres[a_i], livres[b_i], True, id(livres[a_i]) in beiras or id(livres[b_i]) in beiras))
                 else:
                     trechos.append((livres[k], livres[j], False, False))
@@ -894,8 +966,20 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
             def calc_e(s_, r=r, lado=lado):
                 P = ponto(r, s_)
                 D = ate_a_telha(P[:2], lado)
-                pa = parede(P[:2], lado, P[2], qualquer=True) if D is not None else None
-                return (s_, D) if D is not None and (pa is None or pa[0] > D) else None
+                pa = parede(P[:2], lado, P[2], qualquer=True)
+                # a terça de outra direção antes da telha e da parede: a telha vai até ela (é o apoio; do outro lado é a
+                # telha dela) — entre o fim da parede reta da oval e o fim da curva, a telha das terças retas não chegava
+                # na terça inclinada e o vão saía em tiras da outra direção, com buracos
+                ate = min([x for x in (D, pa[0] if pa is not None else None) if x is not None] or [ALCANCE_APOIADO])
+                tc = ate_a_terca(P, lado, ate)
+                if tc is not None:
+                    t_ = (s_, tc[0] + ENCONTRO_TERCA - ENCONTRO)
+                    na_terca.add(id(t_))
+                    vivas.append(t_)
+                    return t_
+                if D is None or (pa is not None and pa[0] <= D):
+                    return None
+                return (s_, D)
             livres = []
             for s_ in ss:
                 P = ponto(r, s_)
@@ -914,7 +998,7 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
                 while j + 1 < len(livres) and livres[j + 1] is not None:
                     j += 1
                 passo_i = max(1, int(PASSO_CURVA // PASSO))
-                for a_i, b_i in _pedacos(k, j, passo_i, id(livres[k]) in beiras, id(livres[j]) in beiras):
+                for a_i, b_i in _pedacos(k, j, passo_i, id(livres[k]) in beiras, id(livres[j]) in beiras, cortes(livres, k, j)):
                     (sa, Da), (sb, Db) = livres[a_i], livres[b_i]
                     if sb - sa < (1.0 if id(livres[a_i]) in beiras or id(livres[b_i]) in beiras else 50.0):
                         continue

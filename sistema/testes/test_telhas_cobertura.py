@@ -840,6 +840,53 @@ def test_telha_ate_a_telha_vizinha_de_outra_direcao():
     assert falta.area < 1.0, "o vão entre as duas telhas ficou sem telha (%.0f mm²)" % falta.area
 
 
+def test_encontro_para_na_terca_de_outra_direcao():
+    """A telha que vai até a telha vizinha de outra direção para na terça de outra direção que cruza o caminho: do outro
+    lado é a telha daquela terça (22/10/2026, Posto V2, a ponta norte da abertura oval: a telha das terças retas passava
+    por cima da terça inclinada da PAINEL 12 até o triângulo da TC12, cruzando as chapas inclinadas — "a telha ficou dessa
+    forma", as chapas quebradas em direções diferentes no canto da curva com a parede)."""
+    doc = Documento()
+    for x in (0.0, 1400.0):                                                    # a água A: terças em y, x 0 e 1400
+        _terca(doc, x, 7000.0 + 0.05 * x, "TC1", 0.0, 3000.0)
+    b = Barra(inicio=(2000.0, 0.0, 7100.0), fim=(2300.0, 3000.0, 7100.0), perfil=PERFIL, papel="terça", camada="Terças")
+    b.atributos = {"origem": {"sigla": "TC3"}}                                 # a terça inclinada (5,7°) no meio do vão
+    doc.add(b)
+    for y in (0.0, 1400.0, 2800.0):                                            # a água B: terças em x, de 2900 a 6000
+        b = Barra(inicio=(2900.0, y, 7070.0), fim=(6000.0, y, 7070.0), perfil=PERFIL, papel="terça", camada="Terças")
+        b.atributos = {"origem": {"sigla": "TC2"}}
+        doc.add(b)
+    T.lancar(doc)
+    from shapely.geometry import box
+    falta = box(100.0, 100.0, 2850.0, 2700.0).difference(_cobertura_em_planta(doc))
+    assert falta.area < 1.0, "o vão entre as duas telhas ficou sem telha (%.0f mm²)" % falta.area
+    for s in _telhado(doc):
+        if min(v[0] for v in s.vertices) < 1450.0:                             # a chapa que vem da água A
+            alem = max(v[0] - (2000.0 + 0.1 * v[1]) for v in s.vertices)
+            assert alem <= 120.0, "a telha da água A passa %.0f mm além da terça inclinada" % alem
+
+
+def test_borda_ate_a_parede_para_na_terca_de_outra_direcao():
+    """A telha que vai até a parede diagonal para na terça de outra direção no caminho; dali até a parede é a telha da
+    terça inclinada (22/10/2026, Posto V2, a ponta sul da abertura oval em x 19,2 y 35,5: as tiras das terças retas iam
+    até a curva por cima das tiras da terça inclinada — 0,26 m² de chapa sobre chapa)."""
+    doc = Documento()
+    for x in (0.0, 1400.0):
+        _terca(doc, x, 7000.0 + 0.05 * x, "TC1", 0.0, 3000.0)
+    b = Barra(inicio=(1900.0, 0.0, 7100.0), fim=(2200.0, 3000.0, 7100.0), perfil=PERFIL, papel="terça", camada="Terças")
+    b.atributos = {"origem": {"sigla": "TC3"}}
+    doc.add(b)
+    _banzo(doc, (3000.0, -500.0, 8000.0), (2300.0, 3500.0, 8000.0), "TRANSIÇÃO 9")   # a parede diagonal (−10°)
+    T.lancar(doc)
+    for s in _telhado(doc):
+        if min(v[0] for v in s.vertices) < 1450.0:
+            alem = max(v[0] - (1900.0 + 0.1 * v[1]) for v in s.vertices)
+            assert alem <= 170.0, "a telha da água A passa %.0f mm além da terça inclinada" % alem
+    from shapely.geometry import Polygon
+    face = Polygon([(100.0, 100.0), (2930.0 - 150.0, 100.0), (2405.0 - 150.0, 2900.0), (100.0, 2900.0)])
+    falta = face.difference(_cobertura_em_planta(doc))
+    assert falta.area < 1000.0, "ficou sem telha até a parede (%.0f mm²)" % falta.area
+
+
 def test_uma_chapa_por_faixa_com_as_tercas_emendadas_em_estacoes_diferentes():
     """A telha do projeto vai inteira da calha até a cumeeira (a paginação do Posto V2, folha 12: 341 telhas). As linhas de
     terça emendadas em tesouras diferentes (a estação de uma a 2,5 m, da outra a 3,3 m) e o beiral que começa noutra
