@@ -20,6 +20,17 @@ Defeito corrigido não pode voltar. Ao corrigir qualquer erro:
 A correção sem o teste não está pronta. Os testes entram sozinhos no `antes_de_publicar.py` e na
 conferência da noite.
 
+## Agentes de verificação no momento da obra (21/10)
+
+Os agentes de `.claude/agents/` rodam em momentos fixos, chamados pelo chat dono:
+- `montador-de-obra` e `auditor-de-numeros`: antes de entregar pranchas, listas ou resumos de uma obra (chat da obra);
+- `calculista-que-assina`: antes de um memorial sair;
+- `usuario-desastrado`: antes de cada versão, só no servidor de teste;
+- `engenheiro-primeiro-uso` e `detalhista-primeiro-uso-ifc`: quando muda a leitura DXF/IFC ou a tela de importação.
+
+O briefing vai para `Projeto/BRIEFINGS/`, as correções são do chat que chamou, e cada defeito corrigido segue as
+regras acima. A tabela completa está em `Projeto/BRIEFINGS/CHATS/LEIA-ME.md`.
+
 ## Regra nova: combinar com exemplos antes de programar
 
 Quando o pedido muda **como o sistema monta, desenha ou calcula** (regra nova, mudança de regra, um jeito novo de
