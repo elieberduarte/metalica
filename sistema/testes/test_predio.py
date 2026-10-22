@@ -78,6 +78,15 @@ def test_galpao_nao_e_predio():
     assert predio.pavimentos(doc, det._pecas(doc)[0]) is None
 
 
+def test_aco_sem_chumbador_nas_lajes_nao_e_predio():
+    """Obra Capitão (bateria da 0.9.1, 22/10): o pré-moldado com lajes, patamares e degraus de concreto em muitos níveis
+    e o aço solto por eles, sem chumbador, virava 17 "pavimentos" de 01x no lugar da planta de localização de sempre."""
+    doc = _predio()
+    for e in [e for e in doc.entidades.values() if (e.atributos or {}).get("chumbador_quimico")]:
+        doc.remover(e.id)
+    assert predio.pavimentos(doc, det._pecas(doc)[0]) is None
+
+
 def _textos(d, vista_contem):
     return [e.texto for e in d.entidades.values() if isinstance(e, Texto)
             and vista_contem in str((e.atributos or {}).get("vista") or "")]

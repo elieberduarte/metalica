@@ -240,6 +240,10 @@ def pavimentos(doc: Documento, pecas: Sequence[Solido], nomes_producao: Optional
             zc = _centro(c)[2]
             i = min(range(len(lista)), key=lambda k: abs(lista[k]["z"] - zc))
         lista[i]["chumbadores"].append(c)
+    # prédio é o aço PRESO nas lajes: sem chumbador em três ou mais pavimentos não é (o Capitão, pré-moldado com
+    # 1.173 lajes, patamares e degraus de concreto e o aço só nos guarda-corpos, saía em 17 "pavimentos" de 01x, 22/10)
+    if sum(1 for n in lista if n["chumbadores"]) < MINIMO_PAVIMENTOS:
+        return None
     ids_cb = {c.id for n in lista for c in n["chumbadores"]}
     for n in lista:
         n["assinatura"] = _assinatura(n["pecas"], [c for c in n["chumbadores"] if c.id not in ids_aco], n["z"])
