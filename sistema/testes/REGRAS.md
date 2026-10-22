@@ -16,9 +16,23 @@ Cuidado por: chat REGRAS · SISTEMA (`Projeto/BRIEFINGS/CHATS/REGRAS-sistema.md`
   linha no histórico da regra e +1 no placar.
 - **Regra nova** só entra com o "aprovada" do usuário. Até lá fica em "Propostas" (no fim).
 
+- **Regra nova ou mudança de regra** se combina com exemplos antes do código (CLAUDE.md, 21/10): 2–3 casos com imagem e
+  medidas para o usuário aprovar. Os casos aprovados viram o teste e o **exemplo** da regra aqui.
+
 Cada regra tem: **código**, enunciado (com as palavras do usuário), **aprovada** (data e onde), **aplica-se a**, onde está
 no **código**, a **conferência** que a verifica no modelo inteiro, os **testes** e o **histórico** de reincidências.
 Situação da conferência: **sim** (pega no modelo inteiro), **parcial** (pega parte das formas), **não** (só o teste do caso).
+
+**Teste por propriedade** (Hypothesis, só no desenvolvimento): o teste sorteia a forma do caso (ângulo da parede, curva,
+terça emendada, inclinação, vão) num modelo mínimo e confere a regra em todas, para achar a "próxima forma" do erro antes
+do usuário. Sorteio fixo no antes_de_publicar; `METALICA_HIPOTESE=aleatorio` sorteia casos novos. Arquivo:
+`testes/test_propriedades_cobertura.py`, hoje ainda `rascunho_propriedades_cobertura.py`, fora da coleta do pytest
+até o OBRA · POSTO DE COMBUSTÍVEL commitar o `telhas_cobertura.py`.
+
+| Regra | Teste por propriedade | Situação |
+|---|---|---|
+| COB-03 | parede reta de 3° a 12° para os dois lados, face de 150 a 1600 mm, 2–5 terças, inclinação 2–30 %, vão 0,9–1,8 m, última terça emendada ou não | **rascunho — acha defeito** (ver COB-03) |
+| COB-01 | — | a fazer (com a conferência COB-01) |
 
 ## Placar de reincidências
 
@@ -101,6 +115,13 @@ a pergunta de toda correção de telha é: foi no `telhas_cobertura.py` ou só n
   - 21/10 Posto V2 — não chegava na platibanda da oval (a PAINEL 12, 9,6° fora das terças, contada como paralela) — 8bedaa1. **Reincidência.**
   - 21/10 Posto V2 — falhas nas bordas curvas (a platibanda calandrada não contava como parede) — 8e9ac8c. **Reincidência.**
   - 21/10 Posto V2 — a telha que chega na parede diagonal saía em duas peças (chapa + recorte) — 3391273. **Reincidência.**
+- **Achados do teste por propriedade (21/10 noite, sobre o `telhas_cobertura.py` do Posto ainda sem commit):**
+  - **Terça emendada:** 38 de 55 casos falham, todos na estação da emenda da última terça ou no pedaço curto. O
+    recorte até a parede sai em duas peças com **fresta de 2 mm** (y 1999 → 2001) e uma tira de 39 mm. Sem emenda, todos
+    os casos passam. É também COB-01 (fresta) e COB-14 (duas peças). Passado ao OBRA · POSTO DE COMBUSTÍVEL.
+  - **Parede paralela (< 3°, `PAREDE_PARALELA`):** a telha para na última terça, qualquer que seja a distância (com a
+    face a 1,4 m ficam 1,3 m abertos; a "borda_aberta" só acusa a partir de 0,35 m). O gerador chama isso de "borda
+    comum". **Decisão do usuário**, que vai com os exemplos da COB-03.
 
 ### COB-04 — Cada água é um plano
 - **Enunciado (G1, 12/10):** "a telha passa reta de uma terça à outra (sem dobra) e de uma chapa à vizinha (sem degrau),
