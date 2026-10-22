@@ -270,7 +270,10 @@ def test_suporte_das_tercas_no_3d():
     assert min(faixa(s5, 2)) == pytest.approx(min(faixa(tc[0], 2)), abs=0.5) and max(faixa(s5, 2)) - min(faixa(s5, 2)) == pytest.approx(127.0, abs=0.5)
     furos = [s for s in doc.entidades.values() if isinstance(s, Solido) and (s.atributos or {}).get("furo")]
     da = collections.Counter(doc.entidades[f.atributos["furo"]["peca"]].papel for f in furos)
-    assert da == {"suporte": 12, "terça": 2 + 2 + 2 + 2}   # 4 em cada suporte; na emenda 2 + 2, em cada oitão 2
+    # 4 no ST1 da emenda; nos oitões (só uma terça chega) o ST2 de uma fila só, 2 (usuário, 22/10, a T3 do Hangar);
+    # nas terças: na emenda 2 + 2, em cada oitão 2
+    assert da == {"suporte": 4 + 2 + 2, "terça": 2 + 2 + 2 + 2}
+    assert sorted(b.atributos["marca"] for b in sups) == ["ST1", "ST2", "ST2"]
     xs = sorted(round(f.atributos["furo"]["ponto"][0] - 5000) for f in furos if doc.entidades[f.atributos["furo"]["peca"]].papel == "terça"
                 and abs(f.atributos["furo"]["ponto"][0] - 5000) < 100)
     assert xs == [-30, -30, 30, 30]                  # 25 mm da ponta de cada terça (que recuou 5)

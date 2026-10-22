@@ -156,6 +156,26 @@ def test_2_3_montante_no_meio_abre_para_a_ponta_alta(alta, sinal):
     assert _boca(_por_nome(bs)["M3000"])[1] * sinal > 0.99
 
 
+def test_2_3_montantes_da_junta_com_as_costas_na_junta():
+    """usuário, 22/10 (cumeeira da T2 do Hangar, "VIRAR"): na junta das meias-tesouras cada uma tem o seu montante, um de
+    cada lado do meio (a 23 e a 46 mm); cada um abre para a sua metade, as costas na junta — antes o que caía a menos de
+    25 mm do meio virava "montante do meio" e abria para a ponta alta, igual ao outro"""
+    bs = [b for b in _tesoura_a_mao() if b.nome != "M3000"]
+    at = {"origem": {"peca": "TT"}}
+    for nome, y in (("MJ-", 2977.0), ("MJ+", 3046.0)):
+        bs.append(Barra(nome=nome, inicio=(0, y, 0), fim=(0, y, 1000), perfil=U_AL, papel="montante", rotacao=0.0,
+                        atributos=dict(at)))
+    R.aplicar(bs)
+    por = _por_nome(bs)
+    assert _boca(por["MJ-"])[1] < -0.99                              # a metade de y < 3000: abre para lá
+    assert _boca(por["MJ+"])[1] > 0.99                               # a de y > 3000: para cá
+    assert R.conferir(bs) == []
+    # o montante do meio sozinho continua abrindo para a ponta alta
+    bs = _tesoura_a_mao(ponta_alta="y0")
+    R.aplicar(bs)
+    assert _boca(_por_nome(bs)["M3000"])[1] < -0.99
+
+
 def test_2_4_cantoneira_simples_e_um_u_cortado_ao_meio():
     """decisão 5: a aba de pé sempre para +n (o mesmo lado em toda a obra); a aba deitada para onde a boca do U iria"""
     bs = _tesoura_a_mao()

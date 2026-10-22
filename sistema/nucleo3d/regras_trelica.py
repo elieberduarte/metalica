@@ -535,6 +535,21 @@ def perfil_do_banzo(t) -> Optional[str]:
     return None
 
 
+def _montante_da_junta(b, t: dict, d: float) -> bool:
+    """2.3 na junta da cumeeira (usuário, 22/10/2026, T2 do Hangar: "VIRAR" — os dois U100 da junta abriam para o mesmo
+    lado): o montante a até 150 mm do meio com outro montante em pé do outro lado do meio, também a até 150 mm, é o
+    montante de ponta de uma meia-tesoura — abre para a metade dele, as costas na junta, como a ponta da tesoura"""
+    if abs(d) >= 150.0:
+        return False
+    for o, p in t["barras"]:
+        if o is b or p not in ("montante", "extremidade") or not _em_pe(o, t):
+            continue
+        do = _dot(_sub(t["meio"], _mid(o)), t["eixo"])
+        if do * d < 0 and abs(do) < 150.0:
+            return True
+    return False
+
+
 def _alvo_no_plano(b, papel: str, t: dict) -> Ponto:
     """2.2/2.3: para onde a boca do U aponta (no plano); na cantoneira, para onde aponta a aba deitada"""
     w = _unit(_sub(b.fim, b.inicio))
@@ -549,7 +564,9 @@ def _alvo_no_plano(b, papel: str, t: dict) -> Ponto:
         return _miolo_do_banzo(b, t)                      # 2.2
     if _em_pe(b, t) or papel in ("montante", "extremidade"):
         d = _dot(_sub(t["meio"], _mid(b)), t["eixo"])    # 2.3: a peça em pé abre para o meio do vão
-        if abs(d) < 25.0:
+        if _montante_da_junta(b, t, d):
+            d = -d                                        # na junta das meias-tesouras: costas na junta
+        elif abs(d) < 25.0:
             d = _dot(t["alta"], t["eixo"])                # no meio exato: para a ponta alta
         return lado if d * _dot(lado, t["eixo"]) >= 0 else _mul(lado, -1.0)
     if up is not None and abs(_dot(lado, up)) > 0.3:     # 2.3: a diagonal nunca para cima

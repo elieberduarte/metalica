@@ -33,9 +33,10 @@ from typing import Callable, Dict, Iterable, List, Optional, Sequence
 from nucleo3d.conferencia_3d import CRUZAM_POR_PROJETO, _dist_seg, _seg_seg, repetidas as _pares_repetidos
 
 #: a versão das regras: sobe quando entra regra nova aqui (o modelo grava a que passou — metadados.reanalise.versao)
-VERSAO_REGRAS = 4        # 2 (21/10): a 2.9 — o banzo 2U composto (Hangar), que a versão 1 pulava; 3 (21/10): o U simples
+VERSAO_REGRAS = 5        # 2 (21/10): a 2.9 — o banzo 2U composto (Hangar), que a versão 1 pulava; 3 (21/10): o U simples
                          # com alma 2L volta à 2.2 + 2.5 (a leitura "alma no plano" desfeita) e a ponta do composto no final;
-                         # 4 (21/10): a presilha segue o par (3.3 — no Posto, 731 de 7 mil tortas ou furando as abas)
+                         # 4 (21/10): a presilha segue o par (3.3 — no Posto, 731 de 7 mil tortas ou furando as abas);
+                         # 5 (22/10): a 2.3 na junta das meias-tesouras — os dois montantes de costas na junta (Hangar)
 
 #: (chave, título, "corrige" | "aponta", explicação)
 REGRAS = [

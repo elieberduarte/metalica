@@ -131,8 +131,9 @@ def test_emenda_cv1_e_castanha_pelo_projeto(v12):
 
 # ------------------------------------------- o 3D das peças novas, numa tesoura pequena
 
-def _tesoura(emenda=None, aletas=None, extras=()):
-    """uma tesoura de 6 m em U127 simples partida no meio (o banzo de baixo para a 10 mm da junta, como a T1 da V5)"""
+def _tesoura(emenda=None, aletas=None, extras=(), composto=False, ajuste_z=None):
+    """uma tesoura de 6 m em U127 simples partida no meio (o banzo de baixo para a 10 mm da junta, como a T1 da V5);
+    `composto`: a T2 — banzos 2U127×50#3,75 de alma no plano (2.9) com a alma em U100"""
     barras = [[0, 0, 2990, 0, "banzo_inf"], [3010, 0, 6000, 0, "banzo_inf"], [0, 600, 3000, 900, "banzo_sup"],
               [3000, 900, 6000, 600, "banzo_sup"], [0, 0, 0, 600, "extremidade"], [6000, 0, 6000, 600, "extremidade"],
               [3000, 0, 3000, 900, "montante"], [1500, 0, 1500, 750, "montante"], [4500, 0, 4500, 750, "montante"],
@@ -142,6 +143,13 @@ def _tesoura(emenda=None, aletas=None, extras=()):
     at = {"elemento": "trelica", "material": "aco", "marca": "T1",
           "perfis": {"banzo_sup": "U 127×50×3,00 (FF)", "banzo_inf": "U 127×50×3,00 (FF)", "montante": "L 32×3 (FF)", "diagonal": "L 32×3 (FF)"},
           "nivel_base": 5000, "desenho": {"barras": barras, "vao": 6000, "altura": 900}}
+    if composto:
+        U2, U1 = "U 127×50×3,75 (FF)", "U 100×50×3,00 (FF)"
+        at["marca"] = "T2"
+        at["perfis"] = {"banzo_sup": U2, "banzo_inf": U2, "montante": U1, "diagonal": U1}
+        at["desenho"]["barras"] = [b + [U2, "composto"] if b[4].startswith("banzo") else b + [U1, ""] for b in barras]
+    if ajuste_z is not None:
+        at["ajuste_z"] = ajuste_z
     if emenda is not None:
         at["chapas"] = emenda
     if aletas is not None:
@@ -235,3 +243,81 @@ def test_chapa_da_vc_e_castanha_no_3d():
         assert abs(b.meio[2] + _faixa_da_secao(b, (0, 0, 1))[1] - pe) < 0.5, b.nome
     from nucleo3d import conferencia_3d
     assert conferencia_3d.pecas_voando(list(doc.barras), list(doc.solidos), list(doc.chapas)) == []
+
+
+CA1 = {"marca": "CA1", "quantidade": 64, "peca": {"perfil": "L 2\"×3/16\"", "comprimento": 150.0},
+       "aba": {"perfil": "L 2\"×3/16\"", "comprimento": 50.0}, "furo": 14.0,
+       "parafuso": {"texto": '1/2"', "diametro": 12.7, "quantidade": 64}, "banzos": ["inf"]}
+
+
+def _apoio_e_contravento(topo=5000.0):
+    """a CB1 sob a ponta da tesoura (o topo em `topo`: a face de baixo do banzo) e um contravento do banzo de baixo
+    chegando no nó do apoio"""
+    from nucleo2d.desenho import Polilinha
+    cb = Polilinha(camada="E", vertices=[(-150.0, -100.0), (150.0, -100.0), (150.0, 300.0), (-150.0, 300.0)], fechada=True,
+                   atributos={"elemento": "chapa", "material": "aco", "marca": "CB1", "espessura": 8.0, "nivel_topo": topo})
+    rod = Linha(camada="E", a=(150.0, 100.0), b=(3000.0, 2950.0), atributos={"elemento": "viga", "material": "aco",
+                "papel": "contraventamento", "marca": "CV7", "secao": {"perfil": "Barra redonda ø 1/2\""}, "nivel_topo": 5000.0,
+                "alinhamento": "eixo"})
+    return cb, rod
+
+
+def test_castanha_no_no_sobre_o_apoio_vai_para_cima_do_banzo():
+    """usuário, 22/10 ("ERRADO", o nó da T2 em cima do pilar): a castanha pendurada embaixo do banzo de baixo entrava
+    na CB1/PB1; no nó sobre o apoio ela vai para a face de cima do banzo (o U de fora do 2U composto), espelhada, e o
+    contravento chega 25 mm acima dele"""
+    from nucleo3d.de_planta_estrutura import _faixa_da_secao
+    doc, av = _tesoura(aletas={"castanha": CA1, "contraventos": {}}, extras=_apoio_e_contravento(5000.0 - 63.5),
+                       composto=True)                     # o 2U127 tem o eixo no apoio: a face de baixo 63,5 abaixo
+    ents = list(doc.entidades.values())
+    cast = [b for b in ents if isinstance(b, Barra) and b.papel == "castanha"]
+    assert len(cast) == 2 and all((b.atributos or {}).get("em_cima_do_banzo") for b in cast)
+    bi = [b for b in ents if isinstance(b, Barra) and (b.atributos or {}).get("papel_trelica") == "banzo_inf"]
+    topo = max(b.meio[2] + _faixa_da_secao(b, (0, 0, 1))[1] for b in bi)
+    for b in cast:
+        assert abs(b.meio[2] + _faixa_da_secao(b, (0, 0, 1))[0] - topo) < 0.5, b.nome      # deitada na face de cima
+    rod = next(b for b in ents if isinstance(b, Barra) and (b.atributos or {}).get("marca") == "CV7")
+    ponta = min((rod.inicio, rod.fim), key=lambda p: abs(p[0]))
+    assert abs(ponta[2] - (topo + 25.0)) < 0.5
+    assert any("foram para a face de cima do banzo de baixo" in a for a in av)
+
+
+def test_castanha_sobre_o_apoio_no_u_de_boca_para_cima_vira_apontamento():
+    """a T1 (U simples, banzo de baixo de boca para cima): em cima, no lugar do parafuso, só há a boca do U — a castanha
+    não entra (nem embaixo, na CB1, nem em cima) e a ponta vira apontamento"""
+    doc, av = _tesoura(aletas={"castanha": CA1, "contraventos": {}}, extras=_apoio_e_contravento())
+    assert not [b for b in doc.entidades.values() if isinstance(b, Barra) and b.papel == "castanha"]
+    assert any("CA1 da T1: 1 ponta(s) de contravento no nó sobre o apoio sem castanha" in a for a in av)
+
+
+def test_suporte_da_tesoura_da_ponta_com_a_largura_dela():
+    """usuário, 22/10 (a T3 do Hangar): na tesoura da ponta só chega uma terça — o suporte tem a largura da tesoura
+    (o U127 deitado: 127), centrado nela, com UMA fila de furos no meio (não é encontro de terças); a terça vai até a
+    face de fora da tesoura. A tesoura do meio continua com o ST1 de 150 e as duas filas"""
+    from nucleo3d.de_planta_estrutura import _faixa_da_secao
+    sup = {"marca": "ST1", "quantidade": 84, "perfil": "L 127×50×3,75 (FF)", "comprimento": 150.0, "folga": 10.0,
+           "furos": [{"ao_longo": a, "altura": h, "d": 14.0} for a in (-30.0, 30.0) for h in (38.5, 88.5)]}
+    terca = Linha(camada="E", a=(0.0, 1500.0), b=(4000.0, 1500.0), atributos={"elemento": "viga", "material": "aco",
+                  "papel": "terça", "identificacao": "terca", "marca": "T.C.3", "secao": {"perfil": "U 127×50×2,25 (FF)"},
+                  "nivel_topo": 5800.0, "alinhamento": "base", "suporte": sup})
+    doc, av = _tesoura(extras=(terca,))
+    ents = list(doc.entidades.values())
+    st = [b for b in ents if isinstance(b, Barra) and b.papel == "suporte"]
+    assert len(st) == 1 and st[0].atributos["marca"] == "ST2" and abs(st[0].comprimento - 127.0) < 0.5
+    assert abs(st[0].meio[0]) < 0.5                                      # centrado na tesoura
+    furos = [s for s in ents if isinstance(s, Solido) and ((s.atributos or {}).get("furo") or {}).get("peca") == st[0].id]
+    assert len(furos) == 2 and all(abs(f.atributos["furo"]["ponto"][0]) < 0.5 for f in furos)   # uma fila, no eixo
+    t = next(b for b in ents if isinstance(b, Barra) and b.papel == "terça")
+    bs = next(b for b in ents if isinstance(b, Barra) and (b.atributos or {}).get("papel_trelica") == "banzo_sup")
+    assert abs(min(t.inicio[0], t.fim[0]) - _faixa_da_secao(bs, (1, 0, 0))[0]) < 0.5           # até a face de fora
+    assert any("1 ST2" in a for a in av)
+
+
+def test_ajuste_z_desce_a_tesoura_sem_desfazer_o_assento_do_u_simples():
+    """a T3 desce 6,6 mm (22/10) pelo ajuste_z; o acima_do_nivel = d/2 segue dizendo "U simples sentado no apoio" —
+    mexer nele fazia a T3 cair 33 mm"""
+    a, _ = _tesoura()
+    b, _ = _tesoura(ajuste_z=-6.6)
+    za = sorted(round(e.meio[2], 2) for e in a.entidades.values() if isinstance(e, Barra))
+    zb = sorted(round(e.meio[2], 2) for e in b.entidades.values() if isinstance(e, Barra))
+    assert len(za) == len(zb) and all(abs(x - y - 6.6) < 0.01 for x, y in zip(za, zb))

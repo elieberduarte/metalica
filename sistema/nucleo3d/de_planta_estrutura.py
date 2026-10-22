@@ -451,6 +451,9 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
     fora_do_plano = (-uy, ux, 0.0)                       # a normal horizontal do plano da tesoura
     # o apoio no nível, ou acima dele (sobre a viga: o topo da viga — `acima_do_nivel` mm, 06/10)
     z0 = _nivel(a.get("nivel_base"), tab, 3000.0) + float(a.get("acima_do_nivel") or 0.0)
+    # o acerto fino da altura da tesoura que não apoia em pilar (a T3 do Hangar, pendurada nas mãos-francesas: desce até
+    # a terça assentar — 22/10). Separado do `acima_do_nivel`, que também diz como o desenho foi feito (_sentar_u_simples)
+    z0 += float(a.get("ajuste_z") or 0.0)
     perfis = a.get("perfis") or {}
     aco = str(a.get("aco") or "ASTM A572 Gr.50")
     marca = str(a.get("marca") or "")
@@ -1268,7 +1271,28 @@ def _suportes_das_tercas(doc: Documento, avisos: List[str]) -> int:
         w = _unit3(tuple(t.fim[k] - t.inicio[k] for k in range(3)))
         P = tuple(t.inicio[k] + w[k] * s for k in range(3))
         juntas[(tes, round(P[1] / 20.0), round(P[2] / 20.0))].append((t, s, P, w))
+    def chave_bz(bz):
+        return str((bz.atributos or {}).get("origem_2d") or (bz.atributos or {}).get("peca") or bz.id)
+
+    def faixa_da_tesoura(tes, P, w):
+        """até onde os banzos de cima da tesoura vão, ao longo da terça, a partir do ponto P: (de, até) ou None"""
+        ext = []
+        for bz in banzos:
+            if chave_bz(bz) != tes:
+                continue
+            a_, b_ = bz.inicio, bz.fim
+            ab = (b_[0] - a_[0], b_[1] - a_[1])
+            L2 = ab[0] ** 2 + ab[1] ** 2 or 1e-9
+            tt = max(0.0, min(1.0, ((P[0] - a_[0]) * ab[0] + (P[1] - a_[1]) * ab[1]) / L2))
+            if math.hypot(a_[0] + ab[0] * tt - P[0], a_[1] + ab[1] * tt - P[1]) > 300.0:
+                continue
+            lo_, hi_ = _faixa_da_secao(bz, w)
+            off = sum((bz.meio[k] - P[k]) * w[k] for k in range(2))
+            ext += [off + lo_, off + hi_]
+        return (min(ext), max(ext)) if ext else None
     n = 0
+    n_ponta = 0
+    estender = []
     for (_tes, _y, _z), lista in juntas.items():
         t0, s0, P0, w0 = lista[0]
         sp = t0.atributos["suporte"]
@@ -1279,12 +1303,34 @@ def _suportes_das_tercas(doc: Documento, avisos: List[str]) -> int:
         except Exception:                                # noqa: BLE001
             avisos.append("suporte de terça: perfil %s fora do catálogo" % sp.get("perfil"))
             continue
+        # a tesoura da ponta (usuário, 22/10, Hangar: "criar um suporte de uma linha de furos com a mesma largura da
+        # tesoura, não precisa de duas linhas pois não é encontro de terças"): uma terça só, terminando ali — a terça
+        # vai até a face de fora da tesoura e o suporte tem a largura dela, centrado, com uma fila de furos no meio
+        furos_sp = list(sp.get("furos") or [])
+        marca_sp = sp.get("marca")
+        meio_sp = 0.0
+        Lt0 = math.dist(t0.inicio, t0.fim)
+        ponta = len(lista) == 1 and (s0 < 1.0 or s0 > Lt0 - 1.0)
+        if ponta:
+            ext = faixa_da_tesoura(_tes, P0, w0)
+            if ext is None:
+                ponta = False
+            else:
+                de_, ate_ = ext
+                meio_sp = (de_ + ate_) / 2.0
+                d_f = float(furos_sp[0]["d"]) if furos_sp else 14.0
+                furos_sp = [{"ao_longo": meio_sp, "altura": h, "d": d_f} for h in sorted({float(f["altura"]) for f in furos_sp})]
+                marca_sp = sp.get("marca_ponta") or "ST2"
+                # (depois do laço: as outras juntas desta terça medem o `s` do começo dela)
+                estender.append((t0, "fim", tuple(P0[k] + w0[k] * ate_ for k in range(3))) if s0 > Lt0 - 1.0 else
+                                (t0, "inicio", tuple(P0[k] + w0[k] * de_ for k in range(3))))
+                n_ponta += 1
         ut, vt, _ = base_local(w0, float(t0.rotacao or 0.0))
         costa = tuple(P0[k] + ut[k] * min(q[0] for q in pts_t) for k in range(3))   # a costa da alma da terça
         pe = P0[2] + vt[2] * min(q[1] for q in pts_t) if abs(vt[2]) > 0.5 else P0[2]
         xl0, yl0 = min(q[0] for q in pts_l), min(q[1] for q in pts_l)               # a quina da cantoneira
         tl = float(pl.tw or pl.tf or 3.0)
-        L = float(sp.get("comprimento") or 150.0)
+        L = (ext[1] - ext[0]) if ponta else float(sp.get("comprimento") or 150.0)
         folga = float(sp.get("folga") or 0.0)
         fora = tuple(-c for c in ut)
         # a perna baixa (u da seção) para fora da terça, a alta (v) para cima: o sentido da barra escolhe a mão
@@ -1294,18 +1340,19 @@ def _suportes_das_tercas(doc: Documento, avisos: List[str]) -> int:
             ul, vl, _ = base_local(wl, g)
             if vl[2] > 0.5:
                 break
-        ax = tuple(costa[k] - ul[k] * xl0 for k in range(3))
+        ax = tuple(costa[k] - ul[k] * xl0 + w0[k] * meio_sp for k in range(3))
         ax = (ax[0], ax[1], pe - yl0 * vl[2])
         sup = Barra(inicio=tuple(ax[k] - wl[k] * L / 2.0 for k in range(3)), fim=tuple(ax[k] + wl[k] * L / 2.0 for k in range(3)),
                     perfil=sp["perfil"], rotacao=round(g, 3), papel="suporte", aco=str(sp.get("aco") or "ASTM A36"),
-                    camada="Suportes", nome=str(sp.get("marca") or "Suporte de terça"), material="Aço",
-                    atributos={"tipo_ifc": "IfcMember", "elemento": "Suporte de terça", "marca": sp.get("marca"),
-                               "sigla": sp.get("marca"), **({"a_definir": sp["a_definir"]} if sp.get("a_definir") else {})})
+                    camada="Suportes", nome=str(marca_sp or "Suporte de terça"), material="Aço",
+                    atributos={"tipo_ifc": "IfcMember", "elemento": "Suporte de terça", "marca": marca_sp,
+                               "sigla": marca_sp, **({"suporte_de_ponta": True} if ponta else {}),
+                               **({"a_definir": sp["a_definir"]} if sp.get("a_definir") and not ponta else {})})
         if "Suportes" not in doc.camadas:
             doc.camadas["Suportes"] = Camada(nome="Suportes", cor="#a16207")
         doc.add(sup)
         n += 1
-        for f in sp.get("furos") or []:                  # os furos da perna alta, atravessando a perna
+        for f in furos_sp:                               # os furos da perna alta, atravessando a perna
             face = tuple(costa[k] + w0[k] * float(f["ao_longo"]) for k in range(3))
             doc.add(_furo_marcador((face[0], face[1], pe + float(f["altura"])), fora, float(f["d"]), tl + 1.0, sup.id))
         emenda = sum(1 for t, s, _P, _w in lista if s < 1.0 or s > math.dist(t.inicio, t.fim) - 1.0) >= 2
@@ -1317,9 +1364,9 @@ def _suportes_das_tercas(doc: Documento, avisos: List[str]) -> int:
                 t.recorte_fim = max(float(t.recorte_fim or 0.0), folga / 2.0)
             ta = float(resolver_perfil(t.perfil).tw or 2.0)
             utt, _v, _ = base_local(w, float(t.rotacao or 0.0))
-            for f in sp.get("furos") or []:
+            for f in furos_sp:
                 lado = float(f["ao_longo"]) * sum(w0[k] * w[k] for k in range(3))   # no sentido desta terça
-                if (s < 1.0 and lado < 0) or (s > Lt - 1.0 and lado > 0):
+                if not ponta and ((s < 1.0 and lado < 0) or (s > Lt - 1.0 and lado > 0)):
                     continue                             # só os furos do lado em que esta terça está
                 face = tuple(costa[k] + w[k] * lado for k in range(3))
                 doc.add(_furo_marcador((face[0], face[1], pe + float(f["altura"])), utt, float(f["d"]), ta + 1.0, t.id))
@@ -1327,6 +1374,13 @@ def _suportes_das_tercas(doc: Documento, avisos: List[str]) -> int:
         sp0 = tercas[0].atributos["suporte"]
         if sp0.get("a_definir"):
             avisos.append("suporte de terça %s: %s — apontamento ao projetista" % (sp0.get("marca") or "", sp0["a_definir"]))
+    for t, qual, P in estender:
+        setattr(t, qual, P)
+    if n_ponta:
+        sp0 = tercas[0].atributos["suporte"]
+        avisos.append("suporte de terça na tesoura da ponta: %d %s (%s com a largura da tesoura, uma fila de furos; a terça vai "
+                      "até a face de fora da tesoura) — peça nova, fora do projeto: apontamento ao projetista"
+                      % (n_ponta, sp0.get("marca_ponta") or "ST2", sp0.get("perfil")))
     return n
 
 
@@ -1478,10 +1532,13 @@ def _chapas_das_tesouras(doc: Documento, pedidas: List[Tuple[str, dict]], avisos
         P_ = lambda s, x, z: (O[0] + w[0] * s + nr[0] * x, O[1] + w[1] * s + nr[1] * x, z)
 
         def banzo_de_cima_em(s):
-            for b in sup:
-                sa, sb = s_(b.inicio), s_(b.fim)
-                if min(sa, sb) - 30 <= s <= max(sa, sb) + 30 and abs(sb - sa) > 1:
-                    return b, b.inicio[2] + (b.fim[2] - b.inicio[2]) * (s - sa) / (sb - sa)
+            # o banzo que passa no ponto antes do que só chega perto (na junta a 23 mm, o da outra metade, a 30 mm de
+            # folga, dava a altura da metade errada ao montante virado de costas — 22/10)
+            for folga in (0.0, 30.0):
+                for b in sup:
+                    sa, sb = s_(b.inicio), s_(b.fim)
+                    if min(sa, sb) - folga <= s <= max(sa, sb) + folga and abs(sb - sa) > 1:
+                        return b, b.inicio[2] + (b.fim[2] - b.inicio[2]) * (s - sa) / (sb - sa)
             return None, None
 
         def topo_de_cima(s):
@@ -2118,15 +2175,34 @@ def _castanhas_das_tesouras(doc: Documento, pedidas: List[Tuple[str, dict]], avi
     total = collections.Counter()
     longe = collections.Counter()
 
-    def giro_deitada(direcao, lado_h):
-        """o giro da cantoneira com uma aba deitada em cima e a outra descendo do lado `lado_h`"""
+    def giro_deitada(direcao, lado_h, sobe=False):
+        """o giro da cantoneira com uma aba deitada e a outra descendo (`sobe`: subindo) do lado `lado_h`"""
+        sz = 1.0 if sobe else -1.0
         for r in (0.0, 90.0, 180.0, 270.0):
             u, v, _ = base_local(direcao, r)
-            if v[2] < -0.9 and sum(u[k] * lado_h[k] for k in range(3)) > 0.9:
+            if v[2] * sz > 0.9 and sum(u[k] * lado_h[k] for k in range(3)) > 0.9:
                 return r
-            if u[2] < -0.9 and sum(v[k] * lado_h[k] for k in range(3)) > 0.9:
+            if u[2] * sz > 0.9 and sum(v[k] * lado_h[k] for k in range(3)) > 0.9:
                 return r
         return 0.0
+
+    # o que está logo abaixo do banzo de baixo no apoio: a chapa deitada (CB1/PB1) e o topo do pilar — em planta e o topo
+    apoios_ = []
+    for c in doc.entidades.values():
+        if isinstance(c, Chapa) and abs(c.eixo_x[2]) < 0.05 and abs(c.eixo_y[2]) < 0.05 and c.contorno:
+            pts = [tuple(c.origem[k] + c.eixo_x[k] * x + c.eixo_y[k] * y for k in range(3)) for x, y in c.contorno]
+            zt = max(p[2] for p in pts) + (float(c.espessura or 0.0) / 2.0 if c.centrada else float(c.espessura or 0.0))
+            apoios_.append(([(p[0], p[1]) for p in pts], zt))
+        elif isinstance(c, Solido) and (c.atributos or {}).get("elemento") == "pilar" and c.vertices:
+            xs, ys = [v[0] for v in c.vertices], [v[1] for v in c.vertices]
+            apoios_.append(([(min(xs), min(ys)), (max(xs), min(ys)), (max(xs), max(ys)), (min(xs), max(ys))],
+                            max(v[2] for v in c.vertices)))
+
+    def sobre_apoio(pts_xy, z_pe):
+        """a castanha pendurada embaixo do banzo cairia dentro da chapa ou do pilar do apoio"""
+        return any(z_pe - 80.0 <= zt <= z_pe + 30.0 and any(_dentro(p, poly) for p in pts_xy) for poly, zt in apoios_)
+    sem_lugar = collections.Counter()
+    em_cima = collections.Counter()
     for tid, ped in pedidas:
         ca = ped.get("castanha")
         if not ca:
@@ -2157,55 +2233,80 @@ def _castanhas_das_tesouras(doc: Documento, pedidas: List[Tuple[str, dict]], avi
                     continue
                 b, zb = (bi, zi) if qual == "inf" else (bs, zs)
                 total[(ca["marca"], pl["marca"])] += 1
-                zlo, _zhi = _faixa_da_secao(b, Z)
-                z_pe = zb + zlo                                             # a face de baixo do banzo
-                # a borda de fora da face de baixo do banzo (do lado do contravento)
+                zlo, zhi = _faixa_da_secao(b, Z)
                 u_, v_, _ = base_local(b.direcao, float(b.rotacao or 0.0))
-                pxz = [(q[0] * sum(u_[k] * nr[k] for k in range(3)) + q[1] * sum(v_[k] * nr[k] for k in range(3)), q[0] * u_[2] + q[1] * v_[2])
-                       for q in secao(resolver_perfil(b.perfil))]
-                base_ = [px for px, pz in pxz if pz <= zlo + 6.0]
-                borda = (max(base_) if lado > 0 else min(base_)) + x_(b.meio) - x_eixo
-                x_par = borda - lado * 30.0                                 # o parafuso a 30 mm da borda de fora
+                pxz = [(q[0] * sum(u_[k] * nr[k] for k in range(3)) + q[1] * sum(v_[k] * nr[k] for k in range(3)) + x_(b.meio) - x_eixo,
+                        q[0] * u_[2] + q[1] * v_[2]) for q in secao(resolver_perfil(b.perfil))]
                 dh = _unit3((E[0] - Q[0], E[1] - Q[1], 0.0))                 # o contravento, para a tesoura
                 dxn = sum(dh[k] * nr[k] for k in range(3))
                 if abs(dxn) < 0.2:
                     continue
-                # o ponto do contravento (na planta) na linha do parafuso
-                tpar = ((x_eixo + x_par) - x_(E)) / dxn
-                Bp = (E[0] + dh[0] * tpar, E[1] + dh[1] * tpar, z_pe)
-                S0 = tuple(Bp[k] + dh[k] * 25.0 for k in range(2)) + (z_pe,)
-                S1 = tuple(S0[k] - dh[k] * Lc for k in range(2)) + (z_pe,)
+
+                def lugar(face_z, nivel_face):
+                    """o parafuso a 30 mm da borda de fora da face (de baixo ou de cima) do banzo, do lado do contravento,
+                    e a castanha ao longo dele: (Bp, S0, S1) ou None se a face não tem chapa ali"""
+                    face = [px for px, pz in pxz if abs(pz - nivel_face) <= 6.0]
+                    borda = max(face) if lado > 0 else min(face)
+                    x_par = borda - lado * 30.0
+                    if not min(face) - 1.0 <= x_par <= max(face) + 1.0:
+                        return None
+                    if nivel_face > zlo + 6.0 and not _dentro((x_par, nivel_face - 1.0), pxz):
+                        return None          # na face de cima o parafuso cai no vazio (o U de boca para cima: só as abas)
+                    tpar = ((x_eixo + x_par) - x_(E)) / dxn              # o ponto do contravento na linha do parafuso
+                    Bp = (E[0] + dh[0] * tpar, E[1] + dh[1] * tpar, face_z)
+                    S0 = tuple(Bp[k] + dh[k] * 25.0 for k in range(2)) + (face_z,)
+                    return Bp, S0, tuple(S0[k] - dh[k] * Lc for k in range(2)) + (face_z,)
+                z_pe = zb + zlo                                             # a face de baixo do banzo
+                cima = False
+                lug = lugar(z_pe, zlo)
+                if lug is not None and qual == "inf" and sobre_apoio([lug[0][:2], lug[1][:2], lug[2][:2]], z_pe):
+                    # no nó sobre o apoio a castanha pendurada entraria na CB1/PB1 (usuário, 22/10: "ERRADO" — a castanha
+                    # vai para a face de cima do banzo de baixo, espelhada; o contravento chega 25 mm acima dele)
+                    lug = lugar(zb + zhi, zhi)
+                    cima = True
+                    if lug is None:
+                        sem_lugar[(ca["marca"], pl["marca"])] += 1
+                        continue
+                    em_cima[(ca["marca"], pl["marca"])] += 1
+                if lug is None:
+                    continue
+                Bp, S0, S1 = lug
+                zf = Bp[2]                                                  # a face em que a castanha deita
+                sz = 1.0 if cima else -1.0                                  # para onde a outra aba vai (e a barra)
                 lado_h = _unit3(_cruz3(Z, dh))
-                g = giro_deitada(tuple(-c for c in dh), lado_h)
+                g = giro_deitada(tuple(-c for c in dh), lado_h, sobe=cima)
                 cast = Barra(inicio=S0, fim=S1, perfil=perfil, rotacao=g, papel="castanha", aco="ASTM A36", camada="Chapas",
                              nome="%s %s" % (ca["marca"], pl["marca"]), material="Aço",
                              atributos={"tipo_ifc": "IfcMember", "elemento": "Castanha", "marca": ca["marca"], "sigla": ca["marca"],
-                                        "tesoura": pl["marca"], "origem_2d": tid, "contravento": (r.atributos or {}).get("marca")})
-                # o eixo da cantoneira com o topo da seção na face de baixo do banzo (a faixa é medida a partir do eixo:
-                # somada a S0[2], que já é z_pe, o banzo entrava duas vezes e a castanha ia 5 m para cima — 22/10)
+                                        "tesoura": pl["marca"], "origem_2d": tid, "contravento": (r.atributos or {}).get("marca"),
+                                        **({"em_cima_do_banzo": True} if cima else {})})
+                # o eixo da cantoneira com a seção encostada na face (a faixa é medida a partir do eixo: somada a S0[2],
+                # que já é a face, o banzo entrava duas vezes e a castanha ia 5 m para cima — 22/10)
                 lo, hi = _faixa_da_secao(cast, Z)
-                cast.inicio, cast.fim = (S0[0], S0[1], z_pe - hi), (S1[0], S1[1], z_pe - hi)
+                zc = zf - lo if cima else zf - hi
+                cast.inicio, cast.fim = (S0[0], S0[1], zc), (S1[0], S1[1], zc)
                 doc.add(cast)
                 # a pequena, em pé na ponta de fora, atravessada pela barra
-                ga = giro_deitada(lado_h, tuple(-c for c in dh))
-                aba = Barra(inicio=tuple(S1[k] - lado_h[k] * La / 2.0 for k in range(2)) + (z_pe,),
-                            fim=tuple(S1[k] + lado_h[k] * La / 2.0 for k in range(2)) + (z_pe,), perfil=perfil_a, rotacao=ga,
+                ga = giro_deitada(lado_h, tuple(-c for c in dh), sobe=cima)
+                aba = Barra(inicio=tuple(S1[k] - lado_h[k] * La / 2.0 for k in range(2)) + (zf,),
+                            fim=tuple(S1[k] + lado_h[k] * La / 2.0 for k in range(2)) + (zf,), perfil=perfil_a, rotacao=ga,
                             papel="castanha", aco="ASTM A36", camada="Chapas", nome="%s %s (aba)" % (ca["marca"], pl["marca"]),
                             material="Aço", atributos=dict(cast.atributos, elemento="Castanha (aba)"))
                 lo, hi = _faixa_da_secao(aba, Z)
-                aba.inicio, aba.fim = tuple(aba.inicio[:2]) + (z_pe - hi,), tuple(aba.fim[:2]) + (z_pe - hi,)
+                za = zf - lo if cima else zf - hi
+                aba.inicio, aba.fim = tuple(aba.inicio[:2]) + (za,), tuple(aba.fim[:2]) + (za,)
                 doc.add(aba)
                 n += 2
-                # a ponta do contravento no furo da aba (25 mm abaixo do banzo) e os furos; o parafuso no banzo
-                H_ = (S1[0], S1[1], z_pe - 25.0)
+                # a ponta do contravento no furo da aba (25 mm do banzo) e os furos; o parafuso no banzo
+                H_ = (S1[0], S1[1], zf + sz * 25.0)
                 setattr(r, ponta, H_)
                 pf_c = resolver_perfil(perfil)
-                doc.add(_furo_marcador((Bp[0], Bp[1], z_pe), (0.0, 0.0, -1.0), d_furo, float(pf_c.tw or pf_c.tf or 5.0) + 1.0, cast.id))
-                doc.add(_furo_marcador((Bp[0], Bp[1], z_pe), (0.0, 0.0, 1.0), d_furo, 8.0, b.id))
+                doc.add(_furo_marcador((Bp[0], Bp[1], zf), (0.0, 0.0, sz), d_furo, float(pf_c.tw or pf_c.tf or 5.0) + 1.0, cast.id))
+                doc.add(_furo_marcador((Bp[0], Bp[1], zf), (0.0, 0.0, -sz), d_furo, 8.0, b.id))
                 doc.add(_furo_marcador(H_, tuple(c for c in dh), d_furo, float(pf_c.tw or 5.0) + 2.0, aba.id))
                 par = ca.get("parafuso") or {}
                 if par.get("diametro"):
-                    pz = _parafuso((Bp[0], Bp[1], z_pe), Z, float(par["diametro"]), float(pf_c.tw or 5.0) + 4.0, "ASTM A307")
+                    pz = _parafuso((Bp[0], Bp[1], zf), (0.0, 0.0, -sz), float(par["diametro"]), float(pf_c.tw or 5.0) + 4.0, "ASTM A307")
                     pz.atributos.update(marca="PAR %s" % ca["marca"], tesoura=pl["marca"], origem_2d=tid)
                     doc.add(pz)
                     n += 1
@@ -2238,6 +2339,13 @@ def _castanhas_das_tesouras(doc: Documento, pedidas: List[Tuple[str, dict]], avi
     for (cm, tm), k in sorted(longe.items()):
         avisos.append("%s da %s: em %d de %d castanhas a ponta do contravento andou mais de 80 mm até o furo — confira"
                       % (cm, tm, k, total[(cm, tm)]))
+    for (cm, tm), k in sorted(em_cima.items()):
+        avisos.append("%s da %s: %d castanha(s) no nó sobre o apoio foram para a face de cima do banzo de baixo (embaixo "
+                      "entrariam na chapa do apoio) — apontamento ao projetista" % (cm, tm, k))
+    for (cm, tm), k in sorted(sem_lugar.items()):
+        avisos.append("%s da %s: %d ponta(s) de contravento no nó sobre o apoio sem castanha — embaixo do banzo entra na "
+                      "chapa do apoio e em cima o banzo não tem chapa no lugar do parafuso (U de boca para cima): A DEFINIR, "
+                      "apontamento ao projetista" % (cm, tm, k))
     return n
 
 
