@@ -969,7 +969,10 @@ def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
     # plantas de localização e chumbação os desenham. Eixos que o usuário gravou ficam.
     campos = {"niveis": r.get("niveis") or [],
               # a tela dividida leva o 3D ao desenho: o modelo é o desenho + este deslocamento
-              "planta_modelo": {"desenho": nome, "deslocamento": list(r["resumo"].get("deslocamento_mm") or [0.0, 0.0])}}
+              "planta_modelo": {"desenho": nome, "deslocamento": list(r["resumo"].get("deslocamento_mm") or [0.0, 0.0]),
+                                # e o de cada planta lida (terças, locação, mezanino…): a peça vai à planta dela
+                                "fontes": r["resumo"].get("deslocamentos_2d") or {},
+                                "camadas": r["resumo"].get("camadas_2d") or {}}}
     novas = {k: list(par[k]) for k in ("deitadas", "duas_pecas") if isinstance(par.get(k), (list, tuple))}
     if novas:
         decisoes.update(novas)

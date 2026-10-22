@@ -44,7 +44,8 @@ GERACAO_MALHAS = 3
 #: 3 (12/10): a sigla da terça (TC3, TC46…) para a busca do modo ver achar a peça pelo nome do projeto.
 #: 4 (15/10): o comprimento da peça (L, mm) para a ficha rápida do modo ver.
 #: 5 (15/10): a largura da chapa (W, mm) — as medidas espessura × largura × comprimento.
-VERSAO_FICHAS = 5
+#: 6 (22/10): a planta de origem (f2) e o papel (pp) — a peça vai à planta dela no 2D (a terça à planta das terças).
+VERSAO_FICHAS = 6
 MAGICA = b"MCEL"
 
 #: Vértices por bloco (índice de 16 bits).
@@ -445,6 +446,12 @@ def _ficha(reg: dict, camadas_idx: Dict[str, int], centro, volume_mm3: float, vs
         f["pl"] = str(origem.get("planta") or str(origem["peca"]).split("#")[0]).replace(" (tesoura de cima)", "")
     if isinstance(origem, dict) and origem.get("sigla"):
         f["sg"] = str(origem["sigla"])
+    # a planta do desenho de onde a peça veio (a terça → a planta das terças) e o papel dela (o modelo montado antes
+    # de 22/10, sem fonte_2d: a tela 2D + 3D acha a planta pelo papel e pela camada)
+    if isinstance(origem, dict) and origem.get("fonte_2d"):
+        f["f2"] = str(origem["fonte_2d"])
+    if reg.get("papel"):
+        f["pp"] = str(reg["papel"])
     if atrib.get("origem_2d"):
         f["o2"] = str(atrib["origem_2d"])
     if atrib.get("pre_moldado") and atrib.get("peca") and atrib.get("eixo"):

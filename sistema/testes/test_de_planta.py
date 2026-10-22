@@ -251,6 +251,35 @@ def test_outra_planta_no_seu_nivel():
     assert any(n["nome"] == "NÍVEL 3,17" for n in r["niveis"])
 
 
+
+def test_cada_peca_sabe_de_qual_planta_veio_e_o_deslocamento_dela():
+    """A tela 2D + 3D leva a peça escolhida no 3D ao lugar dela no desenho: com um deslocamento só (o da planta
+    estrutural), a terça do Posto V2 caía na planta de 6,00 e não na planta das terças (22/10/2026, print do usuário).
+    Cada peça leva a planta de onde veio (origem.fonte_2d) e o resumo, o deslocamento de cada planta."""
+    DX = 100000.0
+    mez = [linha((0.0 + DX, 2950.0), (L_TES + DX, 2950.0), "metalica4"), linha((0.0 + DX, 3050.0), (L_TES + DX, 3050.0), "metalica4"),
+           texto((3000.0 + DX, 3150.0), "VM-2Ue150X70X20X2,65"), texto((2000.0 + DX, -4000.0), "PLANTA NO NÍVEL 3,17m", altura=25.0)]
+    ents = planta() + locacao() + plantas_das_tercas() + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
+    ents += baloes(DX, 0) + mez + elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
+    r = de_planta.montar(ents, {"nivel": 6000.0, "origem": False,
+                                "outras": [{"planta": "PLANTA NO NÍVEL 3,17m", "nivel": 3170.0}]})
+    d2 = r["resumo"]["deslocamentos_2d"]
+    fonte = lambda b: (b.atributos or {}).get("origem", {}).get("fonte_2d")
+    barras = r["doc"].barras
+    assert {fonte(b) for b in barras if b.papel == "terça"} == {"tercas"}
+    assert {fonte(b) for b in barras if b.papel == "pilar"} == {"locacao"}
+    assert {fonte(b) for b in barras if b.papel == "banzo"} == {"planta"}
+    vm_mez = [b for b in barras if b.papel == "viga" and abs(b.inicio[1] - 3000.0) < 200.0]
+    assert vm_mez and {fonte(b) for b in vm_mez} == {"PLANTA NO NÍVEL 3,17m"}
+    # de volta ao desenho: a terça cai na linha dela da planta das terças, o pilar na placa da locação
+    t = next(b for b in barras if b.papel == "terça")
+    x_d, y_d = t.inicio[0] - d2["tercas"][0], t.inicio[1] - d2["tercas"][1]
+    assert any(abs(x_d - (L_TES - s_)) < 5.0 for s_ in S_TERCAS) and DY_TER - 400.0 < y_d < DY_TER + 6400.0
+    p = next(b for b in barras if b.papel == "pilar")
+    assert abs(p.inicio[0] - d2["locacao"][0] - DX_LOC) < 400.0
+    assert abs(vm_mez[0].inicio[0] - d2["PLANTA NO NÍVEL 3,17m"][0] - DX) < 200.0
+
+
 # ------------------------------------------------------------------ leitura mais firme (0.8.36)
 
 def test_trecho_de_cada_nome_entre_dois_nos():

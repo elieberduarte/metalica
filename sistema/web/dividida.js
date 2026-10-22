@@ -27,6 +27,10 @@ try { pref = { ...pref, ...JSON.parse(localStorage.getItem(CHAVE) || '{}') }; } 
 const guardar = () => { try { localStorage.setItem(CHAVE, JSON.stringify(pref)); } catch (e) { /* idem */ } };
 
 let desl = null;             // [dx, dy]: modelo = desenho + desl
+// a planta de cada peça (22/10, a terça do Posto V2 caía na planta de 6,00): o deslocamento de cada planta lida, além do
+// geral (modelo = desenho + desl + fontes[planta]), e a camada das peças de cada outra planta (mezanino, caixa d'água)
+let fontesPlanta = {};
+let camadasPlanta = {};
 let desenhoDaPlanta = '';    // o desenho de onde a montagem leu a planta
 let trelicas = [];           // [{nome, caixa_desenho}] da tela Treliças lidas
 let avisoTimer = null;
@@ -167,12 +171,34 @@ function doTresD(m) {
     return;
   }
   if (!m.caixa) return;
-  const c = [[m.caixa[0][0] - desl[0], m.caixa[0][1] - desl[1]], [m.caixa[1][0] - desl[0], m.caixa[1][1] - desl[1]]];
+  const f = deslDaFonte(m.fontes);
+  const dx = desl[0] + f[0], dy = desl[1] + f[1];
+  const c = [[m.caixa[0][0] - dx, m.caixa[0][1] - dy], [m.caixa[1][0] - dx, m.caixa[1][1] - dy]];
   // uma peça pequena não pode virar um zoom de milímetros: a região tem ao menos 3 m
   const cx = (c[0][0] + c[1][0]) / 2, cy = (c[0][1] + c[1][1]) / 2;
   const w = Math.max(c[1][0] - c[0][0], 3000), h = Math.max(c[1][1] - c[0][1], 3000);
   para2d({ metalica: 'enquadrar2d', caixa: [[cx - w / 2, cy - h / 2], [cx + w / 2, cy + h / 2]], margem: 0.35,
            dica: (m.nomes || []).length === 1 ? `${m.nomes[0]} na planta.` : `${m.n} peça(s) do 3D na planta.` });
+}
+
+/** o deslocamento da planta de onde vieram as peças escolhidas (a mais frequente): a marcada na peça (fonte_2d) ou, no
+ *  modelo de antes, pelo papel e pela camada — a terça, a corrente e o contravento na planta das terças, o pilar na
+ *  locação, a peça da camada do mezanino na planta dele; o resto na planta estrutural */
+function fonteDaChave(k) {
+  if (!k) return 'planta';
+  if (!k.startsWith('?')) return k;
+  const [papel, camada] = k.slice(1).split('|');
+  if (camada && camadasPlanta[camada]) return camadasPlanta[camada];
+  if (['terça', 'terca', 'corrente', 'contraventamento', 'apoio_terca'].includes(papel)) return 'tercas';
+  if (papel === 'pilar') return 'locacao';
+  return 'planta';
+}
+function deslDaFonte(chaves) {
+  for (const k of chaves || []) {
+    const d = fontesPlanta[fonteDaChave(k)];
+    if (Array.isArray(d) && d.length === 2) return d.map(Number);
+  }
+  return [0, 0];
 }
 
 function doDoisD(m) {
@@ -330,6 +356,8 @@ async function iniciar() {
   } catch (e) { avisar(`Projeto não encontrado: ${e.message}`, 0); return; }
   const pm = projeto.planta_modelo || {};
   if (Array.isArray(pm.deslocamento) && pm.deslocamento.length === 2) desl = pm.deslocamento.map(Number);
+  fontesPlanta = (pm.fontes && typeof pm.fontes === 'object') ? pm.fontes : {};
+  camadasPlanta = (pm.camadas && typeof pm.camadas === 'object') ? pm.camadas : {};
   desenhoDaPlanta = pm.desenho || '';
   // o detalhamento completo (tudo num desenho só) primeiro na lista, e é nele que o 2D abre quando o
   // endereço não pede outro desenho

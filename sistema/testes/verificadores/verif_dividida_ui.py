@@ -17,7 +17,10 @@ os.makedirs(os.path.join(PASTA, "desenhos-2d"))
 DX, DY = -100000.0, -50000.0                  # modelo = desenho + (DX, DY)
 json.dump({"formato": 1, "nome": "Posto dividido", "tipo": "desenho", "cliente": "", "local": "", "responsavel": "",
            "criado": "2026-09-27T00:00:00", "alterado": "2026-09-27T00:00:00", "dados": None,
-           "planta_modelo": {"desenho": "desenho", "deslocamento": [DX, DY]}},
+           "planta_modelo": {"desenho": "desenho", "deslocamento": [DX, DY],
+                             # cada planta lida com o seu deslocamento (22/10): a das terças e a do mezanino
+                             "fontes": {"planta": [0.0, 0.0], "tercas": [0.0, 30000.0], "PLANTA NO NÍVEL 3,17m": [-40000.0, 0.0]},
+                             "camadas": {"Mezanino": "PLANTA NO NÍVEL 3,17m"}}},
           open(os.path.join(PASTA, "projeto.json"), "w", encoding="utf-8"))
 ents = []
 
@@ -53,6 +56,16 @@ for conj, y in (("TESOURA 1#1", 0.0), ("TESOURA 1#2", 6000.0)):
         b.atributos = {"origem": {"peca": conj, "planta": "TESOURA 1"}, "marcas": {"posicao": "P%d" % (1 if z < 6500 else 2)}}
         doc.add(b)
         ids_barras.append(b.id)
+# a terça (sem fonte_2d: o modelo montado antes de 22/10, achada pelo papel) e a viga do mezanino (com fonte_2d)
+t_ = Barra(nome="U 100×40×2,65 (FF)", inicio=(4000.0, 0.0, 7100.0), fim=(4000.0, 6000.0, 7100.0), perfil="U 100×40×2,65 (FF)", papel="terça",
+           camada="Terças")
+t_.atributos = {"origem": {"sigla": "TC1"}}
+doc.add(t_)
+v_ = Barra(nome="Ue 150×70×20×2,65", inicio=(1000.0, 3000.0, 3100.0), fim=(7000.0, 3000.0, 3100.0), perfil="Ue 150×70×20×2,65", papel="viga",
+           camada="Mezanino")
+v_.atributos = {"origem": {"planta": "VM-2Ue150X70X20X2,65", "fonte_2d": "PLANTA NO NÍVEL 3,17m"}}
+doc.add(v_)
+ID_TERCA, ID_VIGA_MEZ = t_.id, v_.id
 json.dump(doc.dict(), open(os.path.join(PASTA, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
 # o detalhamento do projeto do IFC (sem ligação pela planta): a célula da posição P2 e a peça no lugar,
 # na localização, com a origem dela no 3D — longe da planta e da elevação
@@ -96,10 +109,10 @@ try:
     aba.navegar(base + "/"); aba.console.clear()
     aba.navegar(base + "/dividida?projeto=posto&editar=1", limite=60)      # o editor (sem &editar=1 o 3D abre no modo ver)
     t0 = time.time()
-    while time.time() - t0 < 90 and not aba.avaliar(f"!!({F2}.cad && {F3}.editor && {F3}.editor.documento && {F3}.editor.documento.entidades.size === 4)"):
+    while time.time() - t0 < 90 and not aba.avaliar(f"!!({F2}.cad && {F3}.editor && {F3}.editor.documento && {F3}.editor.documento.entidades.size === 6)"):
         aba.drenar(0.5)
     aba.drenar(1.5)
-    ok(aba.avaliar(f"!!{F2}.cad") and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 4, "os dois lados abrem: o desenho e o modelo do projeto")
+    ok(aba.avaliar(f"!!{F2}.cad") and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 6, "os dois lados abrem: o desenho e o modelo do projeto")
     ok("Posto dividido" in (aba.avaliar("document.title") or ""), "o nome do projeto no título da janela")
     t0 = time.time()
     while time.time() - t0 < 10 and not aba.avaliar(f"!!{F3}.document.querySelector('.seletor-vista a.ativo')"): aba.drenar(0.3)
@@ -155,6 +168,18 @@ try:
     ok(bool(reg) and reg[0][0] <= 104000 <= reg[1][0] and reg[0][1] <= 56000 <= reg[1][1] and not (reg[0][1] <= 50000 <= reg[1][1] and reg[1][1] - reg[0][1] < 5000),
        f"3D → 2D: a cópia escolhida vira a região na planta do desenho {reg}")
     foto(aba, "_dividida.png")
+    # 3D → 2D na planta de cada peça (22/10, Posto V2: a terça caía na planta estrutural): a terça (pelo papel) na planta
+    # das terças — modelo − geral − (0; 30000) —, a viga do mezanino (pela fonte gravada) na planta dele
+    for id_, x_d, y_d, nome_ in ((ID_TERCA, 4000.0 - DX, 3000.0 - DY - 30000.0, "a terça, na planta das terças"),
+                                 (ID_VIGA_MEZ, 4000.0 - DX + 40000.0, 3000.0 - DY, "a viga do mezanino, na planta de 3,17")):
+        aba.avaliar(f"(() => {{ const e = {F3}.editor; e.selecao.definir([]); e.selecao.definir(['{id_}']); return 1; }})()")
+        aba.drenar(1.0)
+        reg = aba.avaliar(f"{F2}.cad.tela.regiao") or []
+        ok(bool(reg) and reg[0][0] <= x_d <= reg[1][0] and reg[0][1] <= y_d <= reg[1][1],
+           f"3D → 2D: {nome_} ({x_d:.0f}; {y_d:.0f}) dentro da região {reg}")
+    aba.avaliar(f"""(() => {{ const e = {F3}.editor; const ids = [...e.documento.entidades.values()].filter(x => x.atributos.origem.peca === 'TESOURA 1#2').map(x => x.id);
+        e.selecao.definir([]); e.selecao.definir(ids); return ids.length; }})()""")
+    aba.drenar(1.0)
     # 3D → 2D, elevação
     aba.avaliar(f"{F2}.document.querySelector('.ligacao-vistas [data-c=elevacao]').click(); 1"); aba.drenar(0.3)
     aba.avaliar(f"(() => {{ const e = {F3}.editor; const ids = [...e.selecao.ids]; e.selecao.definir([]); e.selecao.definir(ids); return 1; }})()")
@@ -205,7 +230,7 @@ try:
        and aba.avaliar("getComputedStyle(document.querySelector('#lado-2d')).display") != "none"
        and "vista=2d" in (aba.avaliar("location.search") or ""), "a vista 2D mostra só o desenho (e a URL diz a vista)")
     aba.avaliar(f"{F2}.document.querySelector('.seletor-vista a[data-vista-area=\"3d\"]').click(); 1"); aba.drenar(0.5)
-    ok(aba.avaliar(f"{F3}.__marca") == "mesmo" and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 4,
+    ok(aba.avaliar(f"{F3}.__marca") == "mesmo" and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 6,
        "voltar ao 3D não recarrega o modelo (o mesmo 3D, montado uma vez)")
     ok(aba.avaliar(f"{F2}.document.querySelector('.ligacao-vistas').hidden") is True,
        "fora do 2D + 3D, os controles da seleção somem")

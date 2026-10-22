@@ -3821,12 +3821,18 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     pecas: List[dict] = []          # {ent, perfil, papel, L, conjunto}
     chapas_postas: list = []        # as chapas (pisos dos patamares), deslocadas junto no fim
 
+    # a planta do desenho de onde a peça veio (a tela 2D + 3D leva a peça à planta dela — a terça à planta das terças, o
+    # pilar à locação, o mezanino à planta de 3,17 —, cada uma com o seu deslocamento: `deslocamentos_2d` no resumo)
+    fonte_2d = ["planta"]
+    deslocamentos_2d: Dict[str, list] = {"planta": [0.0, 0.0]}
+    camadas_2d: Dict[str, str] = {}        # a camada das peças de cada outra planta → o título dela (o modelo sem fonte_2d)
+
     def barra(p0, p1, perfil, papel, camada, conjunto=None, rot=0.0, origem=None):
         if math.dist(p0, p1) < 5.0:
             return None
         b = Barra(nome=perfil, inicio=tuple(round(c, 1) for c in p0), fim=tuple(round(c, 1) for c in p1),
                   perfil=perfil, rotacao=rot, papel=papel, aco=aco, camada=camada)
-        b.atributos = {"tipo_ifc": b.tipo_ifc(), "origem": origem or {}}
+        b.atributos = {"tipo_ifc": b.tipo_ifc(), "origem": dict(origem or {}, **({"fonte_2d": fonte_2d[0]} if fonte_2d[0] else {}))}
         doc.add(b)
         pecas.append({"ent": b, "perfil": perfil, "papel": papel, "L": math.dist(p0, p1), "conjunto": conjunto})
         return b
@@ -4284,6 +4290,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         avisos += ["%s: %s" % (t_o["texto"].strip(), a_) for a_ in _st_o.get("avisos") or []]
         orientar(tr_o, [])
         n_antes = len(pecas)
+        fonte_2d[0] = t_o["texto"].strip()
+        deslocamentos_2d[fonte_2d[0]] = [round(d_o[0], 1), round(d_o[1], 1)]
         # a planta de piso com VMs em cima de treliças (a base da caixa d'água): o nível é o do piso
         montar_trechos(tr_o, nivel_o, piso=nivel_o > nivel)
         montar_deitadas(_st_o.get("deitadas") or [], nivel_o)
@@ -4306,6 +4314,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                                  nivel_o, nome_c))
         outras_feitas.append({"planta": t_o["texto"].strip(), "nivel": nivel_o, "pecas": len(tr_o), "camada": nome_c,
                               "baloes": d_o[2]})
+        camadas_2d[nome_c] = t_o["texto"].strip()
         # as caixas d'água desenhadas nesta planta ("CX.5.000 l"): o volume e o lugar, para a carga
         # da água no cálculo de esforços
         # o lugar é o centro do círculo da caixa mais perto do texto (o texto fica ao lado dela)
@@ -4328,6 +4337,9 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                                  "planta": t_o["texto"].strip()})
 
     # ---------------------------------------------------------------- pilares
+    fonte_2d[0] = "locacao" if caixa_l else "planta"
+    if caixa_l:
+        deslocamentos_2d["locacao"] = [round(desl_l[0], 1), round(desl_l[1], 1)]
     # primeiro os que têm corte: a copa e as mãos-francesas por cima do pilar reto, e o
     # inclinado inteiro (esse não vira pilar reto abaixo)
     res_pm = {"inclinados": set(), "n": 0, "lidos": {}}
@@ -4379,6 +4391,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         pilares += 1
 
     # ---------------------------------------------------------------- escadas
+    fonte_2d[0] = None                     # a planta de cada escada (sem deslocamento guardado)
     # a planta baixa de cada escada, no lugar pelos balões (os da planta estrutural, da locação e
     # das outras plantas) e pelos pés dela na locação; do chão ao piso de cima (o mezanino)
     from nucleo3d import escadas as _escadas
@@ -4509,6 +4522,9 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             p["L"] = comprimentos_da_barra(e)[0]
 
     # ---------------------------------------------------------------- terças e acessórios
+    fonte_2d[0] = "tercas" if caixa_t else "planta"
+    if caixa_t:
+        deslocamentos_2d["tercas"] = [round(desl_t[0], 1), round(desl_t[1], 1)]
     avisar("terças e acessórios…")
     # a terça apoia nas treliças da cobertura; o painel da borda (a testeira) sobe acima do
     # telhado e não é apoio dela
@@ -4911,6 +4927,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     # lado; cada uma senta nas peças daquela planta que ela cruza (o PERFIL 1 das faces e a
     # TESOURA 38 do meio), no topo delas, e a emenda entre dois nomes fica no apoio do meio
     for f_o, d_o, ents_o, titulo_o, nivel_o, camada_o in pecas_das_outras:
+        fonte_2d[0] = titulo_o
         reg_o = [e for e in ents if _dentro(_pt(e), f_o)]
 
         def mv(p, d_o=d_o):
@@ -5158,6 +5175,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                     "agulhas": sum(v["qtd"] for v in tab_ag.values()), "pilares": pm_total},
     }
     resumo["deslocamento_mm"] = [desl[0], desl[1]]
+    resumo["deslocamentos_2d"] = deslocamentos_2d
+    resumo["camadas_2d"] = camadas_2d
     resumo["tercas_no_plano"] = no_plano
     resumo["escadas"] = escadas_feitas
     doc.metadados["de_planta"] = {"parametros": {k: v for k, v in par.items()}, "resumo": resumo,
