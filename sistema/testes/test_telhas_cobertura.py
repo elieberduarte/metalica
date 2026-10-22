@@ -895,3 +895,173 @@ def test_a_telha_do_projeto_fica_no_modelo():
     chapas = _telhado(doc)
     assert len(chapas) == 6 and all(s.nome == "TR40 0,50 mm Galvalume" for s in chapas)
     assert all(s.atributos["largura"] == 1000 and s.atributos["massa_m2"] == 4.71 for s in chapas)
+
+
+# ------------------------------------------------------------------ Posto V2 (21/10/2026): "fechar a cobertura", os prints
+def test_calha_passa_por_cima_da_tesoura_de_baixo():
+    """A calha do vale parava 120 mm antes de cada tesoura que passa por baixo dela (o encontro de topo tomava toda treliça
+    atravessada por parede): o buraco de 0,24 m na calha de x 21,45 do Posto V2 a cada tesoura. As terças do vale emendadas
+    na tesoura, a metade de lá 40 mm mais baixa (as calhas em duas peças)."""
+    doc = Documento()
+    for i, x in enumerate((0.0, 1400.0, 2800.0, 4200.0)):                    # a água da esquerda desce até x 4200
+        for y0, y1, dz in ((0.0, 2940.0, 0.0), (3060.0, 6000.0, -40.0)):
+            _terca(doc, x, 7210.0 - i * 1400.0 * 0.05 + dz, "TC1", y0, y1)
+    for i, x in enumerate((4650.0, 6050.0, 7450.0)):                           # a da direita sobe a partir de x 4650
+        for y0, y1, dz in ((0.0, 2940.0, 0.0), (3060.0, 6000.0, -40.0)):
+            _terca(doc, x, 7000.0 + i * 1400.0 * 0.05 + dz, "TC2", y0, y1)
+    _banzo(doc, (-500.0, 3000.0, 6900.0), (8000.0, 3000.0, 6900.0), "TESOURA 2", perfil="U 100×40×2,25 (FF)")
+    _banzo(doc, (-500.0, 3000.0, 5900.0), (8000.0, 3000.0, 5900.0), "TESOURA 2", perfil="U 100×40×2,25 (FF)")
+    T.lancar(doc)
+    calhas = [s for s in doc.solidos if s.camada == "Calhas"]
+    assert len(calhas) == 2
+    ys = sorted((min(v[1] for v in c.vertices), max(v[1] for v in c.vertices)) for c in calhas)
+    assert ys[1][0] - ys[0][1] < 1.0, "a calha cortada na tesoura de baixo (%.0f mm sem calha)" % (ys[1][0] - ys[0][1])
+
+
+def test_revestimento_ate_a_tesoura_atravessada():
+    """A TRANSIÇÃO revestida acaba ~110 mm antes da tesoura de y 26,41 do Posto V2 (a ponta dela na face da tesoura): o
+    revestimento e o rufo moldura paravam na ponta e entre ela e a tesoura ficava o buraco no telhado. Agora vão até o eixo
+    da tesoura que passa por baixo da telha."""
+    doc = Documento()
+    for i in range(5):
+        _terca(doc, i * 1400.0, 7000.0 + i * 1400.0 * 0.05, "TC1", y0=-3000.0, y1=3000.0)
+    _banzo(doc, (-500.0, 0.0, 6000.0), (2800.0, 0.0, 6000.0), "TRANSIÇÃO 1")
+    _banzo(doc, (-500.0, 0.0, 7800.0), (2800.0, 0.0, 7800.0), "TRANSIÇÃO 1")
+    _banzo(doc, (2910.0, -3000.0, 6990.0), (2910.0, 3000.0, 7000.0), "TESOURA 2", perfil="U 100×40×2,25 (FF)")
+    T.lancar(doc)
+    moldura = [s for s in doc.solidos if (s.atributos or {}).get("rufo") == "moldura"]
+    assert moldura and max(v[0] for s in moldura for v in s.vertices) >= 2910.0 - 1.0
+
+
+def test_fechamento_e_rufo_passam_pela_emenda_dos_paineis_no_pilar():
+    """O painel da borda em pedaços emendados no pilar (o PAINEL 3#172 acaba em y 7,929 e o #173 começa em 7,979 no Posto
+    V2): 50 mm sem fechamento e sem rufo em cada pilar. Agora as pontas vão até o meio do vão."""
+    doc = Documento()
+    _agua(doc, 0.0, 6, 7000.0, 0.05)
+    for peca, y0, y1 in (("PAINEL 1#1", 0.0, 2975.0), ("PAINEL 1#2", 3025.0, 6000.0)):
+        for z in (6000.0, 7600.0):
+            b = Barra(inicio=(-200.0, y0, z), fim=(-200.0, y1, z), perfil="U 100×40×2,25 (FF)", papel="banzo", camada="Treliças")
+            b.atributos = {"origem": {"planta": "PAINEL 1", "peca": peca}}
+            doc.add(b)
+    T.lancar(doc)
+    fora = [s for s in doc.solidos if (s.atributos or {}).get("face") == "fora"]
+    ys = sorted((min(v[1] for v in s.vertices), max(v[1] for v in s.vertices)) for s in fora)
+    assert all(b_[0] - a_[1] < 1.0 for a_, b_ in zip(ys, ys[1:])), "o fechamento aberto na emenda dos painéis"
+    capas = [s for s in doc.solidos if (s.atributos or {}).get("rufo") == "capa"]
+    assert len(capas) == 1, "o rufo capa partido na emenda"
+
+
+def _platibanda_curva(doc, cx, R=6000.0, cy=3000.0, z=7600.0):
+    import math
+    from nucleo3d.modelo import Solido
+    eixo = [[cx + R * math.cos(a), cy + R * math.sin(a), z] for a in [math.radians(-40 + 2 * k) for k in range(41)]]
+    sol = Solido(nome="U 100×40×2,25 (FF)", camada="Treliças", vertices=[tuple(v) for v in eixo], faces=[])
+    sol.atributos = {"banzo": {"perfil": "U 100×40×2,25 (FF)", "rotacao": 270.0, "eixo": eixo},
+                     "origem": {"planta": "PAINEL 20", "peca": "PAINEL 20#1"}, "calandrada": {"raio": R}}
+    doc.add(sol)
+
+
+def test_borda_da_curva_comeca_na_beira_da_telha():
+    """A borda até a platibanda curva começava na primeira amostra livre ao longo da terça (de 100 em 100 mm): a telha
+    acabava em y 54,058 e a borda começava em 54,101 — a fenda de 44 mm (Posto V2, junto do PAINEL 8)."""
+    doc = Documento()
+    for x in (0.0, 700.0, 1400.0):
+        _terca(doc, x, 7000.0 + 0.05 * x, "TC1")
+    # a terça curta: a telha acaba em 2550, entre as amostras 2500 e 2600 (e a mais longa segue mais de 3 m: sem o
+    # triângulo da borda escalonada)
+    _terca(doc, 2100.0, 7000.0 + 0.05 * 2100.0, "TC1", 0.0, 2550.0)
+    _platibanda_curva(doc, -3200.0)
+    T.lancar(doc)
+    from shapely.geometry import box
+    falta = box(1500.0, 2450.0, 2000.0, 2700.0).difference(_cobertura_em_planta(doc))
+    assert falta.area < 1.0, "a fenda entre a telha e a borda da curva (%.0f mm²)" % falta.area
+
+
+def test_trecho_curto_com_uma_agua_a_mais_no_fim_da_faixa():
+    """A terça que começa 20 mm antes do fim da faixa (a TC47 do Posto V2 em y 39,702, a faixa acabando em 39,731): o trecho
+    curto ia junto da chapa de antes, que não tem a água dela — a fenda de 29 mm por 1,3 m."""
+    doc = Documento()
+    for x in (0.0, 1400.0, 2800.0):
+        _terca(doc, x, 7000.0 + 0.05 * x, "TC1")
+    _terca(doc, 4200.0, 7000.0 + 0.05 * 4200.0, "TC2", 3040.0, 6000.0)
+    T.lancar(doc)
+    from shapely.geometry import box
+    falta = box(2850.0, 3042.0, 4150.0, 3100.0).difference(_cobertura_em_planta(doc))
+    assert falta.area < 1.0, "a fenda do trecho curto (%.0f mm²)" % falta.area
+
+
+def test_borda_segue_pela_linha_ate_a_telha():
+    """A linha de terça em dois pedaços encostados (a TC33 acaba em y 11,448 onde a TC21 começa, no Posto V2) e a telha do
+    lado só começando 18 mm adiante: a borda até a curva parava na ponta do primeiro pedaço — a fenda de 18 mm."""
+    doc = Documento()
+    for x in (0.0, 700.0, 1400.0):
+        _terca(doc, x, 7000.0 + 0.05 * x, "TC1")
+    _terca(doc, 2100.0, 7000.0 + 0.05 * 2100.0, "TC33", 0.0, 3000.0)
+    _terca(doc, 2100.0, 7000.0 + 0.05 * 2100.0, "TC21", 3000.0, 6000.0)
+    _terca(doc, 2800.0, 7000.0 + 0.05 * 2800.0, "TC30", 3018.0, 4500.0)
+    _platibanda_curva(doc, -2700.0)
+    T.lancar(doc)
+    from shapely.geometry import box
+    falta = box(2200.0, 2950.0, 2700.0, 3050.0).difference(_cobertura_em_planta(doc))
+    assert falta.area < 1.0, "a fenda na emenda da linha (%.0f mm²)" % falta.area
+
+
+@pytest.mark.parametrize("emenda", [800.0, 2000.0, 3000.0, 5200.0])
+def test_recorte_ate_a_parede_inteiro_na_emenda_da_ultima_terca(emenda):
+    """A conferência COB-03 (21/10/2026, o chat REGRAS · SISTEMA): a última terça emendada e a parede a 6° — o recorte até
+    a parede saía em duas peças na faixa da emenda (y 1020–1999 e 2001–2040), com a fresta de 2 mm e a tira de 39 mm."""
+    from shapely.geometry import Polygon
+    doc = Documento()
+    _terca(doc, 0.0, 7000.0, "TC1")
+    _terca(doc, 1400.0, 7070.0, "TC1")
+    _terca(doc, 2800.0, 7140.0, "TC1", 0.0, emenda)
+    _terca(doc, 2800.0, 7140.0, "TC1", emenda, 6000.0)
+    for z in (6000.0, 7800.0):
+        _banzo(doc, (3450.0, 0.0, z), (4081.0, 6000.0, z), "PAINEL 1", perfil="U 100×40×2,25 (FF)")
+    T.lancar(doc)
+    face = lambda y: 3400.0 + 631.0 * y / 6000.0 - 100.0
+    zona = Polygon([(100.0, 50.0), (face(50.0), 50.0), (face(5950.0), 5950.0), (100.0, 5950.0)])
+    falta = zona.difference(_cobertura_em_planta(doc))
+    assert falta.area < 1.0, "fresta junto da parede na emenda (%.0f mm²)" % falta.area
+    assert sum(1 for s in _telhado(doc) if max(v[0] for v in s.vertices) > 2850.0) == 6     # uma chapa por faixa
+
+
+def test_emenda_da_curva_e_encontro_em_t_dos_paineis():
+    """Os fechamentos e rufos paravam na ponta de cada pedaço de painel (Posto V2, as frestas em pé dos prints): os dois
+    pedaços da platibanda curva com 200 mm entre eles (6° de giro — os PAINÉIS 8 em y 55,91–56,11) e a curva acabando
+    0,13 m antes da parede reta (o PAINEL 10 contra o PAINEL 11 em x 12,81). As pontas se encontram / vão até a parede."""
+    import math
+    from types import SimpleNamespace as NS
+    a6 = math.radians(6.0)
+    paineis = {
+        "PAINEL 8#1": [NS(segs=[((0.0, 0.0, 7561.0), (1000.0, 0.0, 7561.0))])],
+        "PAINEL 8#2": [NS(segs=[((1200.0, 0.0, 7561.0), (1200.0 + 1000.0 * math.cos(a6), 1000.0 * math.sin(a6), 7561.0))])],
+        "PAINEL 11#1": [NS(segs=[((5000.0, -3000.0, 7530.0), (5000.0, 3000.0, 7530.0))])],
+        "PAINEL 10#1": [NS(segs=[((3000.0, 500.0, 7561.0), (4870.0, 500.0, 7561.0))])],
+    }
+    j = T._juntas_no_pilar(paineis)
+    a, b = j[T._chave_ponta((1000.0, 0.0, 7561.0))], j[T._chave_ponta((1200.0, 0.0, 7561.0))]
+    assert math.dist(a[:2], b[:2]) < 5.0                               # os dois pedaços da curva se encontram
+    t = j[T._chave_ponta((4870.0, 500.0, 7561.0))]
+    assert t[0] == pytest.approx(5000.0, abs=1.0)                      # a ponta vai até o eixo da parede reta
+
+
+def test_borda_atravessa_o_vao_da_platibanda_curva():
+    """A platibanda curva em dois pedaços com 200 mm entre eles (os PAINÉIS 8 do Posto V2 em y 55,91–56,11): no vão a borda
+    da telha não achava parede e parava — o buraco de 0,06 m² entre a telha e a curva."""
+    import math
+    from nucleo3d.modelo import Solido
+    doc = Documento()
+    for x in (0.0, 700.0, 1400.0):
+        _terca(doc, x, 7000.0 + 0.05 * x, "TC1")
+    R, cx, cy = 6000.0, -3200.0, 3000.0
+    for k_, angs in ((1, range(-40, 0)), (2, range(2, 41))):
+        eixo = [[cx + R * math.cos(math.radians(a)), cy + R * math.sin(math.radians(a)), 7600.0] for a in angs]
+        sol = Solido(nome="U 100×40×2,25 (FF)", camada="Treliças", vertices=[tuple(v) for v in eixo], faces=[])
+        sol.atributos = {"banzo": {"perfil": "U 100×40×2,25 (FF)", "rotacao": 270.0, "eixo": eixo},
+                         "origem": {"planta": "PAINEL 8", "peca": "PAINEL 8#%d" % k_}, "calandrada": {"raio": R}}
+        doc.add(sol)
+    T.lancar(doc)
+    from shapely.geometry import box
+    falta = box(1500.0, 2700.0, 2400.0, 3400.0).difference(_cobertura_em_planta(doc))
+    assert falta.area < 1.0, "o buraco no vão da curva (%.0f mm²)" % falta.area

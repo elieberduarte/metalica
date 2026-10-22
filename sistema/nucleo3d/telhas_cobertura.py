@@ -177,8 +177,11 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0, s
             r["s0x"], r["s1x"] = r["s0"], r["s1"]
         por_linha = sorted(reg, key=lambda r: (round(r["t"] / 30.0), r["s0"]))
         for a_, b_ in zip(por_linha, por_linha[1:]):
-            if abs(a_["t"] - b_["t"]) < 30.0 and 0.0 < b_["s0"] - a_["s1"] <= PONTE_TERCA                     and abs(_z_na_terca(a_, a_["s1"]) - _z_na_terca(b_, b_["s0"])) < 60.0:
-                a_["s1x"], b_["s0x"] = b_["s0"], a_["s1"]
+            if abs(a_["t"] - b_["t"]) < 30.0 and -JUNTA_ESTACAO <= b_["s0"] - a_["s1"] <= PONTE_TERCA \
+                    and abs(_z_na_terca(a_, a_["s1"]) - _z_na_terca(b_, b_["s0"])) < 60.0:
+                a_["segue"] = b_["vem"] = True           # a linha continua no pedaço seguinte (a borda segue até a telha)
+                if b_["s0"] - a_["s1"] > 0.0:
+                    a_["s1x"], b_["s0x"] = b_["s0"], a_["s1"]
 
         def z_em(r, s):
             return r["z0"] if r["s1"] - r["s0"] < 1 else r["z0"] + (r["z1"] - r["z0"]) * (s - r["s0"]) / (r["s1"] - r["s0"])
@@ -598,6 +601,37 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0, s
             "sem_telha": [dict(v, comp=round(v["comp"])) for v in sem_telha.values()]}
 
 
+def _linhas_inteiras(reg) -> List[dict]:
+    """as linhas de terça com os pedaços emendados (encostados ou até PONTE_TERCA um do outro, na mesma altura) como uma
+    terça só, para a borda até a parede (21/10/2026, a conferência COB-03: a última terça emendada em y 2000 dava o recorte
+    em duas peças, com a fresta de 2 mm na emenda e a tira de 39 mm; no Posto V2 a TC33/TC21 em y 11,448)"""
+    out = []
+    por_linha = sorted(reg, key=lambda r: (round(r["t"] / 30.0), r["s0"]))
+    atual = None
+    for r in por_linha:
+        if (atual is not None and abs(r["t"] - atual["t"]) < 30.0
+                and -JUNTA_ESTACAO <= r["s0"] - atual["s1"] <= PONTE_TERCA
+                and abs(_z_na_terca(atual, atual["s1"]) - _z_na_terca(r, r["s0"])) < 60.0):
+            if r["s1"] > atual["s1"]:
+                atual = dict(atual, s1=r["s1"], z1=r["z1"], s1x=r.get("s1x", r["s1"]), segue=r.get("segue", False))
+                out[-1] = atual
+            continue
+        atual = dict(r)
+        out.append(atual)
+    return out
+
+
+def _pedacos(k, j, passo, ini=False, fim=False):
+    """os pares de índices (a, b) de k a j em pedaços de `passo` amostras, com a primeira e a última amostra num pedaço só
+    delas (a ponta levada à beira do pano vizinho, na_beira: na reta de um pedaço de 0,5 m ela cortava a telha na
+    diagonal — o buraco junto da tesoura de y 50,76 do Posto V2, 21/10/2026)"""
+    if j <= k:
+        return []
+    idx = set(range(k, j, passo)) | {j} | ({k + 1} if ini else set()) | ({j - 1} if fim else set())
+    idx = sorted(i for i in idx if k <= i <= j)
+    return list(zip(idx, idx[1:]))
+
+
 def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, tercas=(), outros=(), encontro=False) -> List[dict]:
     """A borda contra a parede em diagonal (a TRANSIÇÃO 16 do Posto, 17/10/2026 — o usuário marcou a borda dela no 3D):
     a última terça antes da parede, sem outra terça do lado dela, fica sem telha até a face — o beiral entre duas terças
@@ -689,27 +723,103 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
 
     def inclinacao(r, lado, s_):
         """a inclinação da água chegando em r pelo outro lado (dz por dt), para seguir até a parede"""
-        viz = [x for x in reg if x is not r and x["s0"] <= s_ <= x["s1"] and 0.0 < (r["t"] - x["t"]) * lado <= vao_max]
+        # (a mesma linha — os pedaços emendados de _linhas_inteiras — não é vizinha: até 30 mm)
+        viz = [x for x in reg if x is not r and x["s0"] <= s_ <= x["s1"] and 30.0 <= (r["t"] - x["t"]) * lado <= vao_max]
         if not viz:
             return 0.0
         x = min(viz, key=lambda x: abs(r["t"] - x["t"]))
         return (z_em(r, s_) - z_em(x, s_)) / (r["t"] - x["t"])
 
+    beiras = set()                               # as amostras levadas à beira (id): o pedaço só delas (_pedacos)
+
+    def na_beira(r, lado, ss, livres, calc):
+        """as amostras (de PASSO em PASSO) com a ponta de cada trecho livre levada até a beira do pano vizinho (21/10/2026,
+        Posto V2: o pano acabava em y 54,058 e a primeira amostra livre era 54,101 — a fenda de 44 mm entre a telha e a
+        borda da curva, "pontos com falha"). calc(s) → a amostra em s, ou None"""
+        def beira(s_cob, s_liv):
+            for _ in range(14):
+                m_ = (s_cob + s_liv) / 2.0
+                P = ponto(r, m_)
+                if coberto((P[0] + n[0] * lado * 150.0, P[1] + n[1] * lado * 150.0)):
+                    s_cob = m_
+                else:
+                    s_liv = m_
+            return s_cob
+        out = []
+        for k, liv in enumerate(livres):
+            if liv is not None and k > 0 and livres[k - 1] is None:
+                e = calc(beira(ss[k - 1], ss[k]))
+                if e is not None:
+                    out.append(e)
+                    beiras.add(id(e))
+            out.append(liv)
+            if liv is not None and k + 1 < len(livres) and livres[k + 1] is None:
+                e = calc(beira(ss[k + 1], ss[k]))
+                if e is not None:
+                    out.append(e)
+                    beiras.add(id(e))
+        return out
+
+    def pela_linha(r, lado, ss, livres):
+        """a linha de terça que continua no pedaço seguinte: a borda livre na ponta do pedaço segue por ela (de 20 em 20 mm,
+        até PONTE_TERCA) até a telha que começa adiante (21/10/2026, Posto V2: a TC33 acaba em y 11,448 onde a TC21 começa,
+        e a telha do lado só começa em 11,466 — a fenda de 18 mm entre a borda e ela). Devolve (ss, livres)"""
+        def cob(s_):
+            P = ponto(r, s_)
+            return coberto((P[0] + n[0] * lado * 150.0, P[1] + n[1] * lado * 150.0))
+        if r.get("segue") and livres and livres[-1] is not None:
+            for k in range(1, int(PONTE_TERCA // 20.0) + 1):
+                if cob(ss[-1] + 20.0 * k):
+                    ss.append(ss[-1] + 20.0 * k)
+                    livres.append(None)
+                    break
+        if r.get("vem") and livres and livres[0] is not None:
+            for k in range(1, int(PONTE_TERCA // 20.0) + 1):
+                if cob(ss[0] - 20.0 * k):
+                    ss.insert(0, ss[0] - 20.0 * k)
+                    livres.insert(0, None)
+                    break
+        return ss, livres
+
     novos = []
-    for r in ([] if encontro else reg):
+    for r in ([] if encontro else _linhas_inteiras(reg)):
         L_ter = r["s1"] - r["s0"]
         if L_ter < 300.0:
             continue
-        ss = [r["s0"] + 1.0] + [r["s0"] + PASSO * k for k in range(1, int(L_ter // PASSO))] + [r["s1"] - 1.0]
+        # até a ponta da ponte (s0x/s1x: o pedaço seguinte da mesma linha começa logo adiante — a TC33 do Posto V2 acaba em
+        # y 11,447 e a TC21 começa em 11,466: a fenda de 19 mm entre a borda e a telha, 21/10/2026)
+        ss = ([r.get("s0x", r["s0"]) + 1.0] + [r["s0"] + PASSO * k for k in range(1, int(L_ter // PASSO))]
+              + [r.get("s1x", r["s1"]) - 1.0])
         for lado in (+1, -1):
-            livres = []
+            def calc(s_, r=r, lado=lado):
+                P = ponto(r, s_)
+                pa = parede(P[:2], lado, P[2])
+                return (s_, pa[0], pa[4]) if pa is not None and pa[1] else None
+            livres, cob_ = [], []
             for s_ in ss:
                 P = ponto(r, s_)
-                if coberto((P[0] + n[0] * lado * 150.0, P[1] + n[1] * lado * 150.0)):
-                    livres.append(None)
+                cob_.append(coberto((P[0] + n[0] * lado * 150.0, P[1] + n[1] * lado * 150.0)))
+                livres.append(None if cob_[-1] else calc(s_))
+            # o vão curto da platibanda curva (a emenda de dois pedaços dela, até 4 amostras seguidas sem parede): a borda
+            # atravessa, com a distância entre as das pontas (21/10/2026, Posto V2: os 200 mm entre os PAINÉIS 8 em y
+            # 55,91–56,11)
+            i_ = 1
+            while i_ < len(livres) - 1:
+                if livres[i_] is not None or cob_[i_]:
+                    i_ += 1
                     continue
-                pa = parede(P[:2], lado, P[2])
-                livres.append((s_, pa[0], pa[4]) if pa is not None and pa[1] else None)
+                j_ = i_
+                while j_ + 1 < len(livres) and livres[j_ + 1] is None and not cob_[j_ + 1]:
+                    j_ += 1
+                a_i, b_i = i_ - 1, j_ + 1
+                if (j_ - i_ < 4 and b_i < len(livres) and livres[a_i] is not None and livres[b_i] is not None
+                        and livres[a_i][2] and livres[b_i][2]):
+                    for k_ in range(i_, j_ + 1):
+                        f_ = (ss[k_] - ss[a_i]) / ((ss[b_i] - ss[a_i]) or 1.0)
+                        livres[k_] = (ss[k_], livres[a_i][1] + (livres[b_i][1] - livres[a_i][1]) * f_, True)
+                i_ = j_ + 1
+            ss_l, livres = pela_linha(r, lado, list(ss), livres)
+            livres = na_beira(r, lado, ss_l, livres, calc)
             # os trechos seguidos de terça descoberta com a parede diagonal perto; ao longo da platibanda curva, em pedaços de
             # até PASSO_CURVA (a telha acompanha a curva — a reta entre as pontas de um trecho comprido cortava a curva)
             trechos = []
@@ -723,16 +833,16 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
                     j += 1
                 if any(x[2] for x in livres[k:j + 1]):
                     passo_i = max(1, int(PASSO_CURVA // PASSO))
-                    for a_i in range(k, j, passo_i):
-                        trechos.append((livres[a_i], livres[min(j, a_i + passo_i)], True))
+                    for a_i, b_i in _pedacos(k, j, passo_i, id(livres[k]) in beiras, id(livres[j]) in beiras):
+                        trechos.append((livres[a_i], livres[b_i], True, id(livres[a_i]) in beiras or id(livres[b_i]) in beiras))
                 else:
-                    trechos.append((livres[k], livres[j], False))
+                    trechos.append((livres[k], livres[j], False, False))
                 k = j + 1
-            for (sa, La, _c), (sb, Lb, _c2), curva in trechos:
+            for (sa, La, _c), (sb, Lb, _c2), curva, beira_ in trechos:
                 # (a ponta fina do triângulo da borda escalonada, ao lado da terça, não conta: até 300 mm); a distância quase
                 # igual nas duas pontas é parede paralela (o beiral comum) — menos na curva, que não tem outro
                 if curva:
-                    if sb - sa < 50.0 or max(La, Lb) - FOLGA < 50.0 or min(La, Lb) > ALCANCE_APOIADO - 100.0:
+                    if sb - sa < (1.0 if beira_ else 50.0) or max(La, Lb) - FOLGA < 50.0 or min(La, Lb) > ALCANCE_APOIADO - 100.0:
                         continue
                 elif sb - sa < 300.0 or max(La, Lb) - FOLGA < 200.0 or min(La, Lb) > ALCANCE_APOIADO - 100.0 or abs(La - Lb) < 100.0:
                     continue
@@ -776,17 +886,25 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
         L_ter = r["s1"] - r["s0"]
         if L_ter < 300.0:
             continue
-        ss = [r["s0"] + 1.0] + [r["s0"] + PASSO * k for k in range(1, int(L_ter // PASSO))] + [r["s1"] - 1.0]
+        # até a ponta da ponte (s0x/s1x: o pedaço seguinte da mesma linha começa logo adiante — a TC33 do Posto V2 acaba em
+        # y 11,447 e a TC21 começa em 11,466: a fenda de 19 mm entre a borda e a telha, 21/10/2026)
+        ss = ([r.get("s0x", r["s0"]) + 1.0] + [r["s0"] + PASSO * k for k in range(1, int(L_ter // PASSO))]
+              + [r.get("s1x", r["s1"]) - 1.0])
         for lado in (+1, -1):
+            def calc_e(s_, r=r, lado=lado):
+                P = ponto(r, s_)
+                D = ate_a_telha(P[:2], lado)
+                pa = parede(P[:2], lado, P[2], qualquer=True) if D is not None else None
+                return (s_, D) if D is not None and (pa is None or pa[0] > D) else None
             livres = []
             for s_ in ss:
                 P = ponto(r, s_)
                 if coberto((P[0] + n[0] * lado * 150.0, P[1] + n[1] * lado * 150.0)):
                     livres.append(None)
                     continue
-                D = ate_a_telha(P[:2], lado)
-                pa = parede(P[:2], lado, P[2], qualquer=True) if D is not None else None
-                livres.append((s_, D) if D is not None and (pa is None or pa[0] > D) else None)
+                livres.append(calc_e(s_))
+            ss_l, livres = pela_linha(r, lado, list(ss), livres)
+            livres = na_beira(r, lado, ss_l, livres, calc_e)
             k = 0
             while k < len(livres):
                 if livres[k] is None:
@@ -796,9 +914,9 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
                 while j + 1 < len(livres) and livres[j + 1] is not None:
                     j += 1
                 passo_i = max(1, int(PASSO_CURVA // PASSO))
-                for a_i in range(k, max(k + 1, j), passo_i):
-                    (sa, Da), (sb, Db) = livres[a_i], livres[min(j, a_i + passo_i)]
-                    if sb - sa < 50.0:
+                for a_i, b_i in _pedacos(k, j, passo_i, id(livres[k]) in beiras, id(livres[j]) in beiras):
+                    (sa, Da), (sb, Db) = livres[a_i], livres[b_i]
+                    if sb - sa < (1.0 if id(livres[a_i]) in beiras or id(livres[b_i]) in beiras else 50.0):
                         continue
                     m = inclinacao(r, lado, (sa + sb) / 2)
 
@@ -986,6 +1104,12 @@ def _mesma_cadeia(c1, c2) -> bool:
     return True
 
 
+def _cobre(c1, c2) -> bool:
+    """a água c1 passa por todas as linhas de terça da água c2 (c2 é um pedaço dela, ou ela mesma)"""
+    t1, t2 = [r["t"] for r in c1[0]], [r["t"] for r in c2[0]]
+    return min(t1) - MESMA_LINHA <= min(t2) and max(t2) <= max(t1) + MESMA_LINHA
+
+
 def _chapas(panos, telha, vales=()):
     """As chapas de telha no sentido da caída: a cobertura de cada direção cortada em faixas da largura útil da telha
     (ao longo das terças, contadas do começo da água) e, em cada faixa, os panos seguidos (a terça de cima de um é a de
@@ -1032,7 +1156,9 @@ def _chapas(panos, telha, vales=()):
             pts = sorted({round(x_, 1) for a2, b2, _p in cortes for x_ in (a2, b2)})
             abertas: list = []                   # [u, v, cadeia do 1º trecho, cadeia do último]
             feitas: list = []
-            pendente = None                      # o trecho curto antes da primeira chapa: ela começa nele
+            # os trechos curtos que nenhuma chapa de antes cobre: [u, v, cadeia, sem chapa antes] — a chapa seguinte da mesma
+            # água começa neles; sem ela, ficam como chapa estreita (_juntar_estreitas a encosta na faixa vizinha)
+            sobras: list = []
             for u, v in zip(pts, pts[1:]):
                 if v - u < 0.5:
                     continue
@@ -1040,25 +1166,42 @@ def _chapas(panos, telha, vales=()):
                 cads = _cadeias_da_faixa(ps)
                 if v - u < 30.0 and cads:
                     # o trecho curto (o pano que entra menos de 30 mm — a terça cortada pela treliça de baixo, as pontas
-                    # quase coincidentes): vai junto da chapa de antes; sem ela, da de depois
-                    if abertas:
-                        for ab in abertas:
-                            ab[1] = v
-                    elif pendente is None:
-                        pendente = u
+                    # quase coincidentes): vai junto da chapa de antes; sem ela, da de depois. A água que a chapa de antes não
+                    # cobre (a terça a mais que começa nele — a TC47 do Posto V2 em y 39,702, com a faixa acabando em 39,731:
+                    # a fenda de 29 mm por 1,3 m, 21/10/2026) fica para a chapa seguinte dela
+                    for ab in abertas:
+                        ab[1] = v
+                    for c in cads:
+                        if any(_cobre(ab[3], c) for ab in abertas):
+                            continue
+                        so = next((so for so in sobras if abs(so[1] - u) < 1.0 and _mesma_cadeia(so[2], c)), None)
+                        if so is not None:
+                            so[1] = v
+                        else:
+                            sobras.append([u, v, c, not abertas])
                     continue
                 seguem = []
+                usadas = []
                 for c in cads:
                     ab = next((ab for ab in abertas if abs(ab[1] - u) < 1.0 and _mesma_cadeia(ab[3], c)), None)
                     if ab is not None:
                         ab[1], ab[3] = v, c
                         seguem.append(ab)
-                    else:
-                        seguem.append([u if pendente is None else pendente, v, c, c])
+                        continue
+                    so = next((so for so in sobras if abs(so[1] - u) < 1.0 and _mesma_cadeia(so[2], c)), None)
+                    if so is None:
+                        # o trecho curto antes da primeira chapa da faixa: ela começa nele, qualquer que seja a água
+                        so = next((so for so in sobras if abs(so[1] - u) < 1.0 and so[3] and _cobre(c, so[2])), None)
+                    if so is not None:
+                        usadas += [x_ for x_ in sobras if x_ is so or (so[3] and x_[3] and _cobre(c, x_[2]))]
+                    seguem.append([u if so is None else so[0], v, c, c])
                 feitas += [ab for ab in abertas if not any(ab is x_ for x_ in seguem)]
+                feitas += [[so[0], so[1], so[2], so[2]] for so in sobras if not any(so is x_ for x_ in usadas)]
                 abertas = seguem
-                pendente = None
+                sobras = []
             feitas += abertas
+            # o trecho curto no fim da faixa, sem chapa depois dele nela: a chapa estreita dele mesmo
+            feitas += [[so[0], so[1], so[2], so[2]] for so in sobras]
             for a2, b2, c0, c1 in feitas:
                 (seq0, ini0, fim0), (seq1, _i1, _f1) = c0, c1
                 secoes = [(_pt(t0, a2, d, n), _pt(t1, b2, d, n)) for t0, t1 in zip(seq0, seq1)]
@@ -1080,6 +1223,7 @@ def _chapas(panos, telha, vales=()):
                         if len(parte) > 1 and any(x0 < b2 - 1 and x1 > a2 + 1 for t_ in ts_ for x0, x1 in em_v.get(id(t_["b"]), ())):
                             recua(parte, k_ponta, k_viz)
                     chapas.append({"secoes": parte, "a": a2, "b": b2, "origem": origem, "d": d, "n": n})
+    chapas = _juntar_estreitas(chapas)
     # a borda escalonada: a chapa recortada na diagonal — da terça longa até a linha da borda (da ponta da curta à da
     # longa), nas mesmas faixas e ondas da água (são as telhas que vão precisar de recorte)
     for p in panos:
@@ -1106,6 +1250,29 @@ def _chapas(panos, telha, vales=()):
             chapas.append({"secoes": [(_pt_linha(linha, a2, d, n), _pt_linha(linha, b2, d, n)), (borda_em(a2), borda_em(b2))],
                            "a": a2, "b": b2, "origem": orig, "d": d, "n": n, "recorte": True})
     return _juntar_recortes(chapas)
+
+
+def _juntar_estreitas(chapas, ate: float = 30.0):
+    """a chapa estreita (até `ate` mm: o trecho curto no fim da faixa) ao lado de uma chapa das mesmas terças na faixa
+    vizinha é a mesma telha: a vizinha cresce até cobrir ela (a telha encosta na de antes; não é uma peça a mais)"""
+    fora = set()
+    for c in chapas:
+        if c["b"] - c["a"] > ate or len(c["secoes"]) < 2:
+            continue
+        for c2 in chapas:
+            if c2 is c or id(c2) in fora or len(c2["secoes"]) != len(c["secoes"]) or c2["d"] != c["d"]:
+                continue
+            if abs(c2["a"] - c["b"]) < 1.0 and all(math.dist(s[1][:2], s2[0][:2]) < 2.0 for s, s2 in zip(c["secoes"], c2["secoes"])):
+                c2["secoes"] = [(s[0], s2[1]) for s, s2 in zip(c["secoes"], c2["secoes"])]
+                c2["a"] = c["a"]
+            elif abs(c2["b"] - c["a"]) < 1.0 and all(math.dist(s[0][:2], s2[1][:2]) < 2.0 for s, s2 in zip(c["secoes"], c2["secoes"])):
+                c2["secoes"] = [(s2[0], s[1]) for s, s2 in zip(c["secoes"], c2["secoes"])]
+                c2["b"] = c["b"]
+            else:
+                continue
+            fora.add(id(c))
+            break
+    return [c for c in chapas if id(c) not in fora]
 
 
 def _juntar_recortes(chapas):
@@ -1201,6 +1368,82 @@ def _afastamento_das_faces(doc):
     return afastamento
 
 
+#: mm: o vão entre as pontas de dois painéis em linha (emendados no pilar) que o fechamento e o rufo passam por cima
+JUNTA_PILAR = 300.0
+#: mm: a ponta solta do painel até a parede atravessada à frente (o encontro em T)
+JUNTA_QUINA = 400.0
+
+
+def _chave_ponta(p):
+    return (round(p[0], 1), round(p[1], 1), round(p[2], 1))
+
+
+def _juntas_no_pilar(paineis) -> Dict[tuple, tuple]:
+    """As pontas dos painéis em linha emendados no pilar (21/10/2026, Posto V2: o PAINEL 3#172 acaba em y 7,929 e o #173
+    começa em 7,979 — 50 mm sem fechamento nem rufo em cada pilar da borda, "pontos com falha"): as duas pontas vão até o
+    meio do vão, a telha e o rufo passam direto. {ponta: ponta nova}"""
+    segs = []
+    vistos = set()
+    for peca, lst in paineis.items():
+        for e in lst:
+            for a, b in e.segs:
+                L = math.hypot(b[0] - a[0], b[1] - a[1])
+                k_ = frozenset((_chave_ponta(a), _chave_ponta(b)))
+                if L >= 30.0 and k_ not in vistos:       # (o mesmo trecho duas vezes: o banzo duplo da curva)
+                    vistos.add(k_)
+                    segs.append((peca, a, b, ((b[0] - a[0]) / L, (b[1] - a[1]) / L)))
+    CEL = 1000.0
+    grade: Dict[tuple, list] = collections.defaultdict(list)
+    for k, (_p, a, b, _u) in enumerate(segs):
+        for q in (a, b):
+            grade[(int(q[0] // CEL), int(q[1] // CEL))].append(k)
+    out: Dict[tuple, tuple] = {}
+    for i, (pi, a, b, u) in enumerate(segs):
+        for P, sai in ((b, u), (a, (-u[0], -u[1]))):
+            gx, gy = int(P[0] // CEL), int(P[1] // CEL)
+            perto = [k for k in {k for dx in (-1, 0, 1) for dy in (-1, 0, 1) for k in grade.get((gx + dx, gy + dy), ())} if k != i]
+            if any(math.dist(P[:2], Q[:2]) < 2.0 and abs(Q[2] - P[2]) < 30.0 for k in perto for Q in segs[k][1:3]):
+                continue                                      # a ponta já encosta noutro trecho (o meio da curva, a quina)
+            melhor = None
+            for k in perto:
+                pj, c, d, w = segs[k]
+                # (a platibanda curva em pedaços: o trecho seguinte até 15° de giro — o vão de 200 mm entre os PAINÉIS 8 do
+                # Posto V2 em y 55,91–56,11, sem fechamento, sem rufo e sem a borda da telha)
+                if pj == pi or abs(u[0] * w[1] - u[1] * w[0]) > 0.26:
+                    continue                                  # a mesma peça, ou outra direção
+                for Q in (c, d):
+                    vao = (Q[0] - P[0]) * sai[0] + (Q[1] - P[1]) * sai[1]
+                    lat = abs((Q[0] - P[0]) * sai[1] - (Q[1] - P[1]) * sai[0])
+                    if 1.0 < vao <= JUNTA_PILAR and lat < 5.0 + 0.3 * vao and abs(Q[2] - P[2]) < 30.0 and (melhor is None or vao < melhor[0]):
+                        melhor = (vao, Q)
+            if melhor is not None:
+                vao, Q = melhor                               # as duas pontas no meio delas (a curva: se encontram)
+                out[_chave_ponta(P)] = ((P[0] + Q[0]) / 2.0, (P[1] + Q[1]) / 2.0, P[2])
+                continue
+            # o encontro em T (21/10/2026, Posto V2 — as frestas em pé dos prints: a curva do PAINEL 10 acabando 0,13 m
+            # antes da parede do PAINEL 11 em x 12,81, os PAINÉIS 9 e 12 no norte da abertura oval): a
+            # ponta vai até o eixo da parede atravessada à frente
+            tee = None
+            for k in range(len(segs)):                        # (a parede comprida: as pontas dela longe daqui)
+                pj, c, d, w = segs[k]
+                if min(c[0], d[0]) > P[0] + JUNTA_QUINA or max(c[0], d[0]) < P[0] - JUNTA_QUINA \
+                        or min(c[1], d[1]) > P[1] + JUNTA_QUINA or max(c[1], d[1]) < P[1] - JUNTA_QUINA:
+                    continue
+                if pj == pi:
+                    continue
+                den = sai[0] * w[1] - sai[1] * w[0]
+                if abs(den) > 0.26:
+                    Lw = math.hypot(d[0] - c[0], d[1] - c[1])
+                    tt = ((c[0] - P[0]) * w[1] - (c[1] - P[1]) * w[0]) / den
+                    tw = ((P[0] + sai[0] * tt - c[0]) * w[0] + (P[1] + sai[1] * tt - c[1]) * w[1])
+                    zc = c[2] + (d[2] - c[2]) * max(0.0, min(1.0, tw / (Lw or 1.0)))
+                    if 1.0 < tt <= JUNTA_QUINA and 20.0 < tw < Lw - 20.0 and abs(zc - P[2]) < 100.0 and (tee is None or tt < tee[0]):
+                        tee = (tt, (P[0] + sai[0] * tt, P[1] + sai[1] * tt, P[2]))
+            if tee is not None:
+                out[_chave_ponta(P)] = tee[1]
+    return out
+
+
 def _fechamentos(doc, panos, telha, camada, paredes_out=None):
     """Os fechamentos laterais (12/10/2026, "lançar as telhas dos fechamentos laterais ... vai ficar mais claro como
     ficaram as telhas que precisam de recortes"): em cada painel (a testeira), a TP 40 em pé na face de FORA — o lado sem
@@ -1264,8 +1507,9 @@ def _fechamentos(doc, panos, telha, camada, paredes_out=None):
     solidos, ml, area = [], 0.0, 0.0
     rufos = []                                           # os trechos de rufo (emendados no fim)
     paredes_f = []                                       # os banzos de cima de toda treliça de fechamento (o encontro de topo)
+    juntas = _juntas_no_pilar(paineis)
     for peca, lst in paineis.items():
-        segs = [sg for e in lst for sg in e.segs]
+        segs = [(juntas.get(_chave_ponta(a), a), juntas.get(_chave_ponta(b), b)) for e in lst for a, b in e.segs]
         zmin = min(min(a[2], b[2]) for a, b in segs)
         cima = [(a, b) for a, b in segs if min(a[2], b[2]) > zmin + 300.0]
 
@@ -1280,7 +1524,8 @@ def _fechamentos(doc, panos, telha, camada, paredes_out=None):
                 if Lc < 1:
                     continue
                 t_ = ((mx - c[0]) * (d_[0] - c[0]) + (my - c[1]) * (d_[1] - c[1])) / (Lc * Lc)
-                if -0.01 <= t_ <= 1.01 and math.hypot(c[0] + (d_[0] - c[0]) * t_ - mx, c[1] + (d_[1] - c[1]) * t_ - my) < 150.0                         and c[2] + (d_[2] - c[2]) * t_ > mz + 100.0:
+                if -0.01 <= t_ <= 1.01 and math.hypot(c[0] + (d_[0] - c[0]) * t_ - mx, c[1] + (d_[1] - c[1]) * t_ - my) < 150.0 \
+                        and c[2] + (d_[2] - c[2]) * t_ > mz + 100.0:
                     return True
             return False
         cima_todos = list(cima)
@@ -1515,6 +1760,11 @@ def _ponta_na_parede(P, fora_u, zs, painel, paredes):
         sen = abs(fora_u[0] * w[1] - fora_u[1] * w[0])
         if sen < 0.7 or min(zs) > z1 + 100.0 or max(zs) < z0 - 100.0:
             continue
+        if z1 < max(zs):
+            # a treliça que passa por baixo (o banzo de cima abaixo do topo da peça): a calha e o rufo passam por cima
+            # dela (21/10/2026, Posto V2 — a calha de x 21,45 parava 120 mm antes de cada tesoura do vale e ficava o
+            # buraco de 0,24 m: "pontos com falha")
+            continue
         den = fora_u[0] * w[1] - fora_u[1] * w[0]
         tt = ((A[0] - P[0]) * w[1] - (A[1] - P[1]) * w[0]) / den             # de P até a linha da parede, para fora
         C = (P[0] + fora_u[0] * tt, P[1] + fora_u[1] * tt)
@@ -1701,6 +1951,35 @@ def _revestimentos(doc, panos, telha, camada):
     for b in doc.barras:
         if b.papel == "banzo" and b.camada == "Treliças" and origem_de(b).get("peca"):
             pecas[origem_de(b)["peca"]].append(b)
+    banzos = [b for b in doc.barras if b.papel == "banzo"]
+
+    def ate_a_trelica(b, P0, uo, z_topo):
+        """a ponta do banzo (P0, saindo na direção uo) até o eixo da treliça atravessada logo adiante, por baixo da telha
+        (21/10/2026, Posto V2: as TRANSIÇÕES revestidas acabam ~110 mm antes da tesoura de y 26,41, e entre a ponta
+        delas e a tesoura ficava o buraco aberto no telhado): quanto anda (0 = nenhuma treliça até 250 mm)"""
+        peca_b = origem_de(b).get("peca")
+        melhor = 0.0
+        for c in banzos:
+            if c is b or origem_de(c).get("peca") == peca_b:
+                continue
+            Lc = math.hypot(c.fim[0] - c.inicio[0], c.fim[1] - c.inicio[1])
+            if Lc < 300.0:
+                continue
+            w = ((c.fim[0] - c.inicio[0]) / Lc, (c.fim[1] - c.inicio[1]) / Lc)
+            den = uo[0] * w[1] - uo[1] * w[0]
+            if abs(den) < 0.7:
+                continue                                  # quase paralela: não é a atravessada
+            tt = ((c.inicio[0] - P0[0]) * w[1] - (c.inicio[1] - P0[1]) * w[0]) / den
+            if not (0.0 < tt <= 250.0) or (melhor and tt >= melhor):
+                continue
+            C = (P0[0] + uo[0] * tt, P0[1] + uo[1] * tt)
+            tw = (C[0] - c.inicio[0]) * w[0] + (C[1] - c.inicio[1]) * w[1]
+            if not (-50.0 <= tw <= Lc + 50.0):
+                continue
+            if c.inicio[2] + (c.fim[2] - c.inicio[2]) * max(0.0, min(1.0, tw / Lc)) + _ext_z(c)[1] > z_topo:
+                continue                                  # a que sobe acima do revestimento é parede, não passa
+            melhor = tt
+        return melhor
     W = float(telha.get("largura_util") or 1020.0)
     solidos, ml_rufo, area = [], 0.0, 0.0
     for peca, lst in pecas.items():
@@ -1734,9 +2013,11 @@ def _revestimentos(doc, panos, telha, camada):
                         return True                       # o outro banzo com o topo mais alto ali (o par do caixão)
                 return False
             rufo = []                                     # os trechos com revestimento (para o rufo do topo)
-            a_ = 0.0
-            while a_ < L - 1.0:
-                b_ = min(L, a_ + W)
+            s_ini = -ate_a_trelica(b, A, (-u[0], -u[1]), zt(0.0))
+            s_fim = L + ate_a_trelica(b, B, u, zt(L))
+            a_ = s_ini
+            while a_ < s_fim - 1.0:
+                b_ = min(s_fim, a_ + W)
                 sm = (a_ + b_) / 2.0
                 M = (A[0] + u[0] * sm, A[1] + u[1] * sm)
                 lados = [telha_ao_lado(M, nh, k_) for k_ in (+1, -1)]
