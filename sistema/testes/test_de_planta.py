@@ -708,6 +708,10 @@ def test_terca_nao_senta_no_frontao_da_elevacao_em_duas_pecas():
         M(2500, 0, 2500, 1100, "montante"), M(2500, 1100, 2500, 1700, "montante")])
     partes = de_planta._partes_da_elevacao(el, True)
     assert [s for s, _ in partes] == ["", " (tesoura de cima)"]
+    # a TRANSIÇÃO 3 do Posto V2: o projetista (22/10/2026) — "erro na digitação do trecho 3, só fica a viga de transição
+    # em baixo sem a tesoura em cima"
+    so_viga = de_planta._partes_da_elevacao(el, True, sem_cima=True)
+    assert [s for s, _ in so_viga] == [""] and all(max(m.h0, m.h1) <= 1100.0 + 1.0 for m in so_viga[0][1])
     t = de_planta.Trecho(de_planta.Caminho("reta", a=(0.0, 0.0), b=(10000.0, 0.0)), "TRANSIÇÃO 2", "TRANSICAO", elevacao=el)
     assert de_planta._altura_no_ponto(t, (5000.0, 0.0)) == pytest.approx(1100.0)
     # a elevação de uma peça só continua dando o topo dela

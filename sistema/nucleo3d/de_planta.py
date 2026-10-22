@@ -51,6 +51,7 @@ PADRAO = {
     "outras": [],                               # [{planta, nivel}]: mezanino, caixa d'água…
     "deitadas": False,                          # faixa de treliça vista de cima vira treliça deitada (senão, a conferir)
     "duas_pecas": [],                           # elevações que são duas peças: a viga de transição e a tesoura em cima
+    "sem_tesoura_de_cima": [],                  # dessas, as que o projeto confirma sem a tesoura de cima (só a viga)
 }
 
 #: camadas de anotação: não têm peça
@@ -1422,12 +1423,13 @@ def _dist_pt_seg2(p, a, b) -> float:
     return math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)
 
 
-def _partes_da_elevacao(el: "Elevacao", dividir: bool) -> List[Tuple[str, List["Membro"]]]:
+def _partes_da_elevacao(el: "Elevacao", dividir: bool, sem_cima: bool = False) -> List[Tuple[str, List["Membro"]]]:
     """A elevação que o projeto confirma como duas peças — a viga de transição embaixo e a tesoura
     em cima dela (TRANSIÇÕES 2 e 5 do Posto CB): o que fica abaixo do banzo reto do meio é a viga,
     o que fica acima é a tesoura; a barra que atravessa é cortada nele (onde a tesoura apoia).
     Sem a confirmação, ou sem esse desenho (banzos retos embaixo e no meio, inclinados acima),
-    uma peça só."""
+    uma peça só. `sem_cima`: o projetista confirmou que a tesoura de cima não existe — fica só a viga de transição (a
+    TRANSIÇÃO 3 do Posto V2, "erro na digitação do trecho 3", 22/10/2026)."""
     if not dividir:
         return [("", el.membros)]
     L = el.comprimento
@@ -1460,6 +1462,9 @@ def _partes_da_elevacao(el: "Elevacao", dividir: bool) -> List[Tuple[str, List["
     # a tesoura de cima é o frontão acima do telhado ("REVESTIR TRANSIÇÃO 2/3 COM TELHA OU RUFO" no
     # corte BB do Posto CB): a telha passa reta embaixo dele, e a terça senta na viga de transição
     el.topo_telhado = hm
+    if sem_cima:
+        el.avisos.append("%s: só a viga de transição — a tesoura de cima saiu (decisão do projeto)." % _bonito(el.nome))
+        return [("", baixo)]
     return [("", baixo), (" (tesoura de cima)", cima)]
 
 
@@ -3994,6 +3999,9 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         dp_ = [_sem_acento(str(n)).upper().strip() for n in (par.get("duas_pecas") or [])]
         if pai in dp_ and novo not in dp_:
             par["duas_pecas"] = list(par.get("duas_pecas") or []) + [novo]
+        sc_ = [_sem_acento(str(n)).upper().strip() for n in (par.get("sem_tesoura_de_cima") or [])]
+        if pai in sc_ and novo not in sc_:
+            par["sem_tesoura_de_cima"] = list(par.get("sem_tesoura_de_cima") or []) + [novo]
     # os pilares da locação vêm antes das treliças: a treliça termina em cima deles
     avisar("pilares da locação…")
     caixa_l, desl_l = outra_planta(par.get("locacao"))
@@ -4088,6 +4096,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
 
     vigas_feitas: List[tuple] = []
     duas_pecas = {_sem_acento(str(n)).upper().strip() for n in (par.get("duas_pecas") or [])}
+    # a elevação em duas peças de que o projeto tirou a tesoura de cima (a TRANSIÇÃO 3 do Posto V2, 22/10/2026)
+    sem_tesoura_de_cima = {_sem_acento(str(n)).upper().strip() for n in (par.get("sem_tesoura_de_cima") or [])}
 
     def viga_curva(t, c, pf, pa, z):
         """a viga VM de borda curva como a planta desenha: cada trecho reto uma barra e cada arco
@@ -4224,7 +4234,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 continue
             conj_base = conj
             caixao_el = any(m.papel == "banzo" and m.caixa > 0.0 for m in el.membros)
-            for sufixo, membros in _partes_da_elevacao(el, _sem_acento(t.nome).upper() in duas_pecas):
+            for sufixo, membros in _partes_da_elevacao(el, _sem_acento(t.nome).upper() in duas_pecas,
+                                                       _sem_acento(t.nome).upper() in sem_tesoura_de_cima):
                 membros, n_fora = _alma_fora_dos_banzos(membros)
                 alma_extra["fora"] += n_fora
                 # a meia diagonal é achada no desenho (antes dos nós irem ao eixo: o nó unido ao do montante move a ponta

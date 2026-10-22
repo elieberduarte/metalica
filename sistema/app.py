@@ -939,7 +939,7 @@ def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
     # as decisões do usuário sobre o projeto (treliça deitada, elevação que é duas peças) ficam
     # gravadas no projeto: montar de novo, do zero, as mantém
     decisoes = dict(g.ler(s).get("decisoes_planta") or {})
-    for k in ("deitadas", "duas_pecas"):
+    for k in ("deitadas", "duas_pecas", "sem_tesoura_de_cima"):
         if k not in par and decisoes.get(k):
             par[k] = decisoes[k]
     # a escala é a do desenho como está agora: a altura dos textos é de papel nessa escala (17/10, o Posto CB passou de 1:20
@@ -973,7 +973,7 @@ def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
                                 # e o de cada planta lida (terças, locação, mezanino…): a peça vai à planta dela
                                 "fontes": r["resumo"].get("deslocamentos_2d") or {},
                                 "camadas": r["resumo"].get("camadas_2d") or {}}}
-    novas = {k: list(par[k]) for k in ("deitadas", "duas_pecas") if isinstance(par.get(k), (list, tuple))}
+    novas = {k: list(par[k]) for k in ("deitadas", "duas_pecas", "sem_tesoura_de_cima") if isinstance(par.get(k), (list, tuple))}
     if novas:
         decisoes.update(novas)
         campos["decisoes_planta"] = decisoes
