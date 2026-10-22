@@ -73,25 +73,42 @@ try:
     json.dump(modelo(5000), open(os.path.join(PASTA, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
     aba.console.clear()
     aba.navegar(URL, limite=120)
-    ok(esperar("!!window.ver3dPronto && /atualizando o 3D/.test(document.getElementById('situacao').textContent)", 60, 0.1),
-       "abriu o anterior com \"o modelo mudou: atualizando o 3D\"")
+    ok(esperar("!!window.ver3dPronto && /atualizando o 3D/i.test(document.getElementById('situacao').textContent)", 60, 0.1),
+       "abriu o anterior com \"Atualizando o 3D\" no aviso do rodapé")
     viu_barra = esperar("!!document.querySelector('.barra-andamento[data-tarefa=\"3d-leve\"]')", 10, 0.1)
     ok(viu_barra, "a barra de andamento aparece ao lado do aviso")
     if viu_barra:
         txt = aba.avaliar("document.querySelector('.barra-andamento').title || ''")
         print("       barra:", txt)
         ok("Atualizando o 3D" in txt, "a barra diz o que está fazendo")
+        # 21/10 (usuário, print do Sesi: "corrigir essas mensagens em duas linhas para ficarem em uma linha apenas e
+        # retirar esses textos duplicados"): o aviso dizia "o modelo mudou: atualizando o 3D, troca sozinho…" e a barra,
+        # na linha de cima, "Atualizando o 3D: lendo o modelo gravado". Agora uma linha: o trilho e o % e, ao lado, o
+        # aviso com a etapa, dita uma vez só
+        esperar("/ · \\d+ s$/.test(document.getElementById('situacao').textContent)", 15, 0.2)
+        aviso = aba.avaliar("document.getElementById('situacao').textContent")
+        print("       aviso:", aviso)
+        ok(aviso.lower().count("atualizando") == 1 and "troca sozinho" not in aviso and aviso.startswith("Modo ver · "),
+           "o aviso diz a etapa uma vez só (sem o texto repetido)")
+        barras = aba.avaliar("[...document.querySelectorAll('.barra-andamento')].map(b => b.dataset.tarefa + ' | ' + b.textContent)")
+        print("       barras:", barras)
+        ok(aba.avaliar("!document.querySelector('.barra-andamento[data-tarefa=\"3d-leve\"] .barra-andamento-texto')"),
+           "a barra não repete o texto (só o trilho e o %)")
         # 19/10 (o usuário: "é esse que ficou escondido atrás do reanalisar estrutura?"): a barra entrava no fluxo da
         # página depois do #situacao (que é fixo no rodapé) e subia para o canto de cima, atrás dos botões. Ela fica no
-        # rodapé, logo acima do aviso, e não cobre nenhum botão
+        # rodapé, na linha do aviso, e não cobre nenhum botão
         pos = aba.avaliar("""(() => { const b = document.querySelector('.barra-andamento').getBoundingClientRect();
             const s = document.getElementById('situacao').getBoundingClientRect();
             const bot = [...document.querySelectorAll('button')].filter(x => x.offsetParent).map(x => x.getBoundingClientRect());
             const cobre = bot.some(r => b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top);
-            return {topo: b.top, base: b.bottom, esq: b.left, alt: innerHeight, sit: s.top, cobre}; })()""")
+            return {topo: b.top, base: b.bottom, esq: b.left, dir: b.right, alt: innerHeight,
+                    sit_topo: s.top, sit_base: s.bottom, sit_esq: s.left, sit_alt: s.height, cobre}; })()""")
         print("       posição:", pos)
-        ok(pos["topo"] > pos["alt"] - 80 and pos["base"] <= pos["sit"] + 2 and pos["esq"] < 40,
-           "a barra fica no rodapé, logo acima do aviso (não no alto da tela)")
+        ok(pos["topo"] > pos["alt"] - 60 and pos["esq"] < 40, "a barra fica no rodapé (não no alto da tela)")
+        meio_b, meio_s = (pos["topo"] + pos["base"]) / 2, (pos["sit_topo"] + pos["sit_base"]) / 2
+        ok(abs(meio_b - meio_s) <= 4 and pos["sit_alt"] <= 20,
+           "a barra e o aviso numa linha só (o aviso não quebra)")
+        ok(pos["dir"] <= pos["sit_esq"], "o aviso começa depois da barra (sem um por cima do outro)")
         ok(not pos["cobre"], "a barra não fica por trás de nenhum botão")
     # a versão nova fica pronta: a página troca sozinha (recarrega) com as peças novas, sem a barra
     ok(esperar("!!window.ver3dPronto && window.visor && window.visor.nPecas === 5000 && !document.querySelector('.barra-andamento')", 120),

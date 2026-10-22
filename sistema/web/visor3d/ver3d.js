@@ -400,10 +400,9 @@ async function abrir() {
     if (sel.length) visor.selecionarVarias(sel, false);
   }
   if (r.headers.get('X-Atualizando')) {
-    situacao(`Modo ver · ${nf(visor.nPecas)} peças · o modelo mudou: atualizando o 3D, troca sozinho em instantes…`);
     // a barra de andamento padrão ao lado (usuário, 19/10: "uma barrinha de carregamento quando a estrutura está
     // atualizando o modelo"): o servidor conta a etapa e a fração no /estado
-    const parar = acompanhar({ url: `${API_3D}/estado`, tarefa: '3d-leve', rotulo: 'Atualizando o 3D', onde: $('#situacao') });
+    const parar = acompanharNoRodape({ url: `${API_3D}/estado`, tarefa: '3d-leve', rotulo: 'Atualizando o 3D' });
     esperarVersaoNova(versao, parar);
   }
   aplicarDoEditor();
@@ -497,6 +496,15 @@ function ligarSecaoPiso() {
 
 let situacaoBase = '';
 function situacao(t) { $('#situacao').textContent = t; }
+
+/** A barra de andamento na mesma linha do aviso do rodapé (usuário, 21/10: as mensagens "em duas linhas" com o texto
+ *  repetido — "atualizando o 3D" no aviso e na barra): o trilho e o % no começo da linha, a etapa no próprio aviso. */
+function acompanharNoRodape(opcoes) {
+  const base = visor ? `Modo ver · ${nf(visor.nPecas)} peças` : 'Modo ver';
+  $('#situacao').classList.add('com-barra');
+  const parar = acompanhar({ ...opcoes, onde: $('#situacao'), dica: linha => situacao(`${base} · ${linha}`) });
+  return (ok = true) => { parar(ok); $('#situacao').classList.remove('com-barra'); situacao(situacaoBase); };
+}
 
 const CHAVE_VISTA = 'metalica.vistaVer3d';
 function guardarVista() {
@@ -870,7 +878,7 @@ async function coberturaRetratil() {
         // quase sempre já pronta (feita junto com o 3D leve); senão a barra de andamento até ficar
         let r = await fetch(url, { cache: 'no-cache' });
         if (r.status === 202) {
-          parar = acompanhar({ url: `${url}/estado`, tarefa: '3d-leve-cobertura', rotulo: 'Preparando a cobertura ' + b.textContent.toLowerCase(), onde: $('#situacao') });
+          parar = acompanharNoRodape({ url: `${url}/estado`, tarefa: '3d-leve-cobertura', rotulo: 'Preparando a cobertura ' + b.textContent.toLowerCase() });
           for (;;) {
             await new Promise(res => setTimeout(res, 600));
             const s = await (await fetch(`${url}/estado`, { cache: 'no-store' })).json();

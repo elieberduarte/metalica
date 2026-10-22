@@ -58,10 +58,13 @@ html, body.ver3d { height: 100%; margin: 0; overflow: hidden; background: var(--
   padding: 2px 7px; border-radius: 4px; pointer-events: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
 #situacao { position: fixed; left: 10px; bottom: 8px; font-size: 12px; color: var(--texto2); pointer-events: none;
   text-shadow: 0 0 3px var(--fundo); }
-/* a barra de andamento do "atualizando o 3D" (progresso.js entra logo depois do #situacao): fixa no rodapé, logo acima
-   do aviso — no fluxo da página ela subia para o canto de cima, atrás dos botões (19/10) */
-#situacao + .barra-andamento { position: fixed; left: 10px; bottom: 28px; z-index: 5; max-width: calc(100vw - 20px);
-  pointer-events: none; color: var(--texto2); }
+/* a barra de andamento do "atualizando o 3D" (progresso.js entra logo depois do #situacao): fixa no rodapé — no fluxo da
+   página ela subia para o canto de cima, atrás dos botões (19/10) —, na mesma linha do aviso: o trilho e o % no começo
+   e o texto da etapa no próprio aviso, que anda para a direita (21/10: eram duas linhas com o texto repetido) */
+#situacao + .barra-andamento { position: fixed; left: 10px; bottom: 8px; height: 16px; z-index: 5; pointer-events: none;
+  color: var(--texto2); }
+#situacao.com-barra { left: 252px; line-height: 16px; max-width: calc(100vw - 262px); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
 
 /* o 3D sem a placa de vídeo (ver3d.js, vigiarPlacaDeVideo): o aviso por cima do quadro vazio */
 #placa-perdida { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; background: var(--painel, #f3f5f8); color: var(--texto, #1d232b); z-index: 5; }
