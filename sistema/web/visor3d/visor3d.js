@@ -28,6 +28,9 @@ const CLAREAR_NO_CLARO = 0.45;
 const FRACAO_ANEL = 0.07, FRACAO_SETA = 0.06, MAIS_PECAS_COM_ANEL = 20000, MAIS_ANEIS = 40;
 /** Peças a menos disto (mm) dividem o anel; a barra comprida e fina (tirante, contravento) ganha uma seta. */
 const JUNTAR_ANEIS = 600, BARRA_FINA = 8;
+/** O material translúcido sem a opacidade no arquivo (o pacote de antes de 22/10): o Vidro do editor
+ *  (web/editor3d/nucleo/documento.js), 0,35. */
+const VIDRO = /^\s*vidro/i, OPACIDADE_VIDRO = 0.35;
 let _texturaDoAnel = null, _texturaDaSeta = null;
 /** Vermelho de linha fina com borda branca, para ler no fundo claro e no escuro (06/10: "um círculo com a linha
  *  fina"). Sem conversão: a saída é linear, a cor vai como está. */
@@ -87,6 +90,8 @@ const SOL = [-0.19, -0.71, 1.15];
 const VERT = /* glsl */`
 uniform sampler2D tPecas;
 uniform float uIdBase;
+uniform float uAresta;
+uniform float uPasse;
 attribute float pid;
 #ifdef INSTANCIA
 attribute vec4 i0;
@@ -97,6 +102,7 @@ attribute float iid;
 varying vec3 vVista;
 varying vec3 vCor;
 varying vec3 vMundo;
+varying float vAlfa;
 #ifdef ESCOLHA
 flat varying float vId;
 #endif
@@ -119,13 +125,23 @@ void main() {
   vec4 vista = viewMatrix * vec4(mundo, 1.0);
   vVista = vista.xyz;
   gl_Position = projectionMatrix * vista;
-  if (c.a < 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);     // peça escondida: fora da tela
+  // o alfa da célula: 0 = peça escondida, 1 = opaca, entre os dois = translúcida (o vidro), com a opacidade dela
+  vAlfa = c.a;
+  bool vidro = c.a < 0.99;
+#if defined(SOMBRA)
+  if (vidro) c.a = 0.0;                                    // o vidro não faz sombra
+#elif !defined(ESCOLHA) && !defined(PONTO)
+  // a peça desenhada (não a aresta) sai numa passada só: a opaca na primeira, o vidro na segunda, por cima e transparente
+  if (uAresta < 0.5 && vidro != (uPasse > 0.5)) c.a = 0.0;
+#endif
+  if (c.a < 0.002) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);   // peça escondida: fora da tela
 }`;
 
 const FRAG = /* glsl */`
 varying vec3 vVista;
 varying vec3 vCor;
 varying vec3 vMundo;
+varying float vAlfa;
 #ifdef ESCOLHA
 flat varying float vId;
 #endif
@@ -165,7 +181,7 @@ void main() {
     vec3 amb = mix(vec3(0.58, 0.56, 0.54), vec3(0.76, 0.81, 0.90), 0.5 + 0.5 * nm.z);
     float brilho = pow(max(dot(nm, normalize(uSol + olho)), 0.0), 48.0) * 0.2 * sol;
     vec3 b = uEscuro > 0.5 ? base : base * 0.86;            // no claro a paleta vem clareada: tira um pouco
-    gl_FragColor = vec4(min(b * (0.7 * amb + 0.66 * vec3(1.0, 0.97, 0.92) * sol) + brilho, 1.0), 1.0);
+    gl_FragColor = vec4(min(b * (0.7 * amb + 0.66 * vec3(1.0, 0.97, 0.92) * sol) + brilho, 1.0), min(vAlfa, 1.0));
     return;
   }
   vec3 n = normalize(cross(dFdx(vVista), dFdy(vVista)));
@@ -173,7 +189,7 @@ void main() {
   vec3 luz = normalize(vec3(0.35, 0.55, 0.75));
   float d = max(dot(n, luz), 0.0);
   float ceu = 0.5 + 0.5 * n.y;
-  gl_FragColor = vec4(min(base * (0.5 + 0.18 * ceu + 0.5 * d), 1.0), 1.0);
+  gl_FragColor = vec4(min(base * (0.5 + 0.18 * ceu + 0.5 * d), 1.0), min(vAlfa, 1.0));
 #endif
 }`;
 
@@ -310,7 +326,8 @@ export class Visor3D {
       uMatSombra: { value: new THREE.Matrix4() }, uTexel: { value: 1 / 2048 }, uDesloc: { value: 0 }, uTemSombra: { value: 0 } };
     this._uLonge = { value: 10000 };
     this._uEscuro = { value: 0 };
-    const un = () => ({ tPecas: { value: this.textura }, uIdBase: { value: 0 }, uAresta: { value: 0 }, uLonge: this._uLonge,
+    const un = () => ({ tPecas: { value: this.textura }, uIdBase: { value: 0 }, uAresta: { value: 0 }, uPasse: { value: 0 },
+                        uLonge: this._uLonge,
                         uEscuro: this._uEscuro, ...this._luz });
     this._mat = (defs, aresta) => {
       const sombra = 'SOMBRA' in defs;              // vista do sol: empurrada para trás (sem "acne" nas faces de frente para ele)
@@ -431,9 +448,43 @@ export class Visor3D {
       this.corBase[i * 3 + 1] = Math.round(c.g * 255);
       this.corBase[i * 3 + 2] = Math.round(c.b * 255);
     }
+    this._vidros(dados.pecas);
     this.corMaterial = this.corBase.slice();
     this.modoPintura = 'material';
     this._repintar();
+  }
+
+  /** O vidro transparente como no editor (22/10, SESI: as fachadas de vidro do arquitetônico escondiam os brises no modo
+   *  ver — tudo saía opaco). A opacidade de cada peça vai no alfa da célula dela (255 = opaca); o bloco com vidro ganha
+   *  uma segunda malha, a mesma geometria, desenhada depois das opacas, transparente e sem gravar a profundidade. */
+  _vidros(pecas) {
+    const ops = (this.cabecalho && this.cabecalho.opacidades) || {};
+    const alfa = new Uint8Array(this.nPecas).fill(255);
+    let algum = false;
+    for (let i = 0; i < pecas.length && i < this.nPecas; i++) {
+      const m = pecas[i].m;
+      if (!m) continue;
+      const op = ops[m] != null ? +ops[m] : VIDRO.test(m) ? OPACIDADE_VIDRO : 1;
+      if (op < 0.99) { alfa[i] = Math.max(1, Math.round(op * 255)); algum = true; }
+    }
+    this.alfa = algum ? alfa : null;
+    if (!algum) return;
+    for (const m of this.malhas) {
+      if (m.vidro) continue;
+      let tem = false;
+      if (m.ids) { for (const id of m.ids) if (alfa[id] < 255) { tem = true; break; } }
+      else { for (let i = m.id0; i < m.id0 + m.n; i++) if (alfa[i] < 255) { tem = true; break; } }
+      if (!tem) continue;
+      const mat = m.malha.material.clone();
+      mat.uniforms = { ...m.malha.material.uniforms, uPasse: { value: 1 } };
+      mat.transparent = true; mat.depthWrite = false;
+      m.vidro = new THREE.Mesh(m.malha.geometry, mat);
+      m.vidro.matrixAutoUpdate = false;
+      m.vidro.matrix.copy(m.malha.matrix);
+      m.vidro.frustumCulled = m.malha.frustumCulled;
+      m.vidro.renderOrder = 1;                    // depois das opacas: o que está atrás do vidro já foi desenhado
+      this.raiz.add(m.vidro);
+    }
   }
 
   /**
@@ -657,15 +708,17 @@ export class Visor3D {
       if (sel.has(i)) { d[k] = 31; d[k + 1] = 122; d[k + 2] = 224; }
       else if (fant) { d[k] = fant[0]; d[k + 1] = fant[1]; d[k + 2] = fant[2]; }
       else for (let j = 0; j < 3; j++) d[k + j] = cb[i * 3 + j] + (255 - cb[i * 3 + j]) * k0;
-      d[k + 3] = vis ? 255 : 0;
+      d[k + 3] = vis ? (this.alfa ? this.alfa[i] : 255) : 0;
     }
     this.textura.needsUpdate = true;
-    // bloco ou forma sem nenhuma peça à vista nem é desenhado
+    // bloco ou forma sem nenhuma peça à vista nem é desenhado; a malha do vidro, só com vidro à vista
     for (const m of this.malhas) {
-      let algum = false;
-      if (m.ids) { for (const id of m.ids) if (d[id * 4 + 3]) { algum = true; break; } }
-      else { for (let i = m.id0; i < m.id0 + m.n; i++) if (d[i * 4 + 3]) { algum = true; break; } }
+      let algum = false, vidro = false;
+      const ve = (i) => { const a = d[i * 4 + 3]; if (a) { algum = true; if (a < 255) vidro = true; } };
+      if (m.ids) { for (const id of m.ids) { ve(id); if (algum && (vidro || !m.vidro)) break; } }
+      else { for (let i = m.id0; i < m.id0 + m.n; i++) { ve(i); if (algum && (vidro || !m.vidro)) break; } }
       m.malha.visible = algum;
+      if (m.vidro) m.vidro.visible = vidro;
       if (m.arestas) m.arestas.visible = algum && this.arestasLigadas;
     }
     this._sombraSuja = true;
@@ -837,6 +890,7 @@ export class Visor3D {
       trocas.push([m.malha, m.malha.material]);
       m.malha.material = m.sombra;
       if (m.arestas) { trocas.push([m.arestas, m.arestas.visible, true]); m.arestas.visible = false; }
+      if (m.vidro) { trocas.push([m.vidro, m.vidro.visible, true]); m.vidro.visible = false; }
     }
     this._luz.uTemSombra.value = 0;
     this._luz.tSombra.value = null;                   // a imagem que se desenha não fica ligada como textura ao mesmo tempo
@@ -1296,6 +1350,7 @@ export class Visor3D {
       trocas.push([m.malha, m.malha.material]);
       m.malha.material = m[qual];
       if (m.arestas) { trocas.push([m.arestas, m.arestas.visible, true]); m.arestas.visible = false; }
+      if (m.vidro) { trocas.push([m.vidro, m.vidro.visible, true]); m.vidro.visible = false; }   // a escolha vê o vidro pela malha
     }
     const dpr = this.renderer.getPixelRatio();
     const lado = meio ? Math.round(2 * meio * dpr) : 1;
@@ -1365,6 +1420,7 @@ export class Visor3D {
     for (const m of this.malhas) {
       m.malha.geometry.dispose(); m.malha.material.dispose(); m.escolha.dispose(); m.ponto.dispose();
       if (m.sombra) m.sombra.dispose();
+      if (m.vidro) m.vidro.material.dispose();
       if (m.arestas) { m.arestas.geometry.dispose(); m.arestas.material.dispose(); }
     }
     if (this._alvoSombra) { this._alvoSombra.depthTexture.dispose(); this._alvoSombra.dispose(); }

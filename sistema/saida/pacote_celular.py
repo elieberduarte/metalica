@@ -637,6 +637,16 @@ def gerar_3d(modelo: dict, progresso=None) -> Tuple[bytes, dict, dict]:
             cam["caixa"] = [[round(v, 1) for v in caixas[ci][0]], [round(v, 1) for v in caixas[ci][1]]]
         cab_camadas.append(cam)
     cab_materiais = {n: (m.get("cor") or "") for n, m in materiais.items() if isinstance(m, dict)}
+    # a opacidade do material translúcido (o Vidro do editor, 0,35): o visor o desenha por cima, transparente (22/10, SESI:
+    # as fachadas de vidro do arquitetônico escondiam os brises no modo ver)
+    cab_opacidades = {}
+    for n, m in materiais.items():
+        try:
+            op = float(m.get("opacidade", 1)) if isinstance(m, dict) else 1.0
+        except (TypeError, ValueError):
+            op = 1.0
+        if 0 < op < 0.99:
+            cab_opacidades[n] = round(op, 2)
     numeros = {
         "pecas": len(fichas), "blocos": len(blocos_cab), "formas": len(formas_cab), "copias": n_copias,
         "vertices_blocos": n_vert, "triangulos": n_tri, "arestas": n_ar,
@@ -646,7 +656,7 @@ def gerar_3d(modelo: dict, progresso=None) -> Tuple[bytes, dict, dict]:
     cab = {
         "versao": VERSAO_3D, "unidade": "mm", "origem": origem,
         "caixa": [[mn_g[i] - origem[i] for i in range(3)], [mx_g[i] - origem[i] for i in range(3)]],
-        "camadas": cab_camadas, "materiais": cab_materiais,
+        "camadas": cab_camadas, "materiais": cab_materiais, "opacidades": cab_opacidades,
         "blocos": blocos_cab, "formas": formas_cab, "numeros": numeros,
     }
     texto = json.dumps(cab, ensure_ascii=False, separators=(",", ":")).encode("utf-8")

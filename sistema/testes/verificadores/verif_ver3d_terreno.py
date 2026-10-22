@@ -269,15 +269,21 @@ try:
     e_ = _json(API)
     ok(e_["propria"]["crs"] == "SIRGAS 2000 / UTM 22S" and "sobre Teste" in e_["imagem"]["fonte"],
        f"pelas coordenadas, por cima da do portal ({e_['propria']['crs']}; {e_['imagem']['fonte']})")
-    ok("pelas coordenadas da imagem" in (aba.avaliar("document.querySelector('.painel-terreno').textContent") or ""),
-       "o painel diz que a imagem está pelas coordenadas")
+    # o painel e a textura se refazem depois do estado chegar (22/10: lidos no mesmo instante, às vezes o painel ainda era só
+    # o título "Local da obra" e a textura a do portal): espera, como o resto do verificador
+    PELAS = "(document.querySelector('.painel-terreno') || {}).textContent || ''"
+    ok(esperar(aba, f"({PELAS}).includes('pelas coordenadas da imagem')", 20),
+       f"o painel diz que a imagem está pelas coordenadas ({(aba.avaliar(PELAS) or '')[:120]})")
     # o alvo vermelho do ortomosaico no 3D: o pixel da textura no ponto do modelo onde ele está na UTM
     alvo = LO.geo_para_modelo(e_["terreno"], *LO.utm_para_geo(TL.E0 + 100.02, TL.N0 - 60.02, 22, True))
-    cor = aba.avaliar(f"""(() => {{ const t = window.terreno, m = t.malha; m.updateMatrixWorld();
+    COR = f"""(() => {{ const t = window.terreno, m = t.malha; m.updateMatrixWorld();
         const p = new m.position.constructor({alvo[0]}, {alvo[1]}, m.position.z); m.worldToLocal(t.grupo.localToWorld(p));
         const c = m.material.map.image, g = c.getContext('2d');
         const d = g.getImageData(Math.floor((p.x + 0.5) * c.width), Math.floor((0.5 - p.y) * c.height), 1, 1).data;
-        return [d[0], d[1], d[2]]; }})()""")
+        return [d[0], d[1], d[2]]; }})()"""
+    esperar(aba, f"(() => {{ try {{ const c = {COR}; return c[0] > 200 && c[1] < 80; }} catch (e) {{ return false; }} }})()", 20)
+    try: cor = aba.avaliar(COR)
+    except Exception: cor = None
     ok(cor and cor[0] > 200 and cor[1] < 80, f"o alvo do drone cai no ponto certo do modelo (a cor lá: {cor})")
     foto(aba, "ver3d_terreno_5_imagem_propria.png")
     # a sem coordenadas: no meio da obra, a largura pelos botões
