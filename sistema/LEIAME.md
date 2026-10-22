@@ -182,19 +182,31 @@ posição ganha `saia`, que entra na compra, na célula, na lista e na paginaç�
 cada telha sai **inteira** (retângulo até o ponto mais alto) e o corte do modelo — a empena
 inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois de instalada.
 
-**0.9.1.** (21/10/2026) Obras entre usuários, link de instalação e a obra no terreno do cliente. São 37 mudanças desde a 0.9.0.
+**0.9.1.** (22/10/2026) Obras entre usuários, link de instalação, a obra no terreno do cliente, impressão das pranchas e os detalhes do projeto recebido na Montagem. São 93 mudanças desde a 0.9.0.
 
 **Enviar a obra para outro usuário.** No cartão do projeto, "Enviar para…" manda a obra inteira para o Metálica de outra pessoa pela internet (ou para os seus outros computadores); ela vê "Fulano te enviou…" no alto da tela inicial e abre como um projeto novo. É uma cópia: cada um segue com a sua.
 
 **Link de instalação.** Na tela das licenças, cada licença tem um link para a pessoa baixar o Metálica; o instalador vem com a chave e o programa se ativa sozinho na primeira abertura.
 
-**A obra no terreno.** O botão Terreno do modo ver põe a imagem de satélite do lote no chão do 3D (e no editor): busca pelo endereço ou pela coordenada do Google Maps ou do geoportal, as ortofotos das prefeituras de Cascavel e de Toledo (e de outras cidades do geoportal "nacidade"), ajuste da posição e do norte, a altura da imagem (o 0,00 da obra com subsolo) e a transparência sobre a obra.
+**A obra no terreno.** O botão Terreno do modo ver põe a imagem de satélite do lote no chão do 3D (e no editor): busca pelo endereço ou pela coordenada do Google Maps ou do geoportal (também a coordenada do canto do mapa do "nacidade"), as ortofotos das prefeituras de Cascavel, de Toledo e de Chapecó (2023) e de outras cidades do geoportal "nacidade", a imagem própria do cliente (o ortomosaico do drone), ajuste da posição e do norte, a altura da imagem em passos finos (o 0,00 da obra com subsolo) e a transparência sobre a obra.
 
 **IFC com o terreno.** Com o terreno à vista, o IFC exportado leva a obra georreferenciada (SIRGAS 2000 / UTM) e a placa do terreno com as cores da imagem, numa camada "Terreno" — aparece no Trimble Connect e nos outros programas.
 
 **Tela inicial.** O aviso de versão nova em destaque no alto, com as novidades; "Atualizando…" no cartão do projeto que o sistema está atualizando; Importar pacote também com a lista vazia.
 
 **Editor 3D e montagem.** Juntar pontas (J, a meia-esquadria e o encaixe), Empurrar/Puxar com várias barras, as regras 2.9 e 2.9a da tesoura (banzo em U de alma no plano, a ponta do banzo composto), três leituras da montagem pela planta corrigidas e a localização e a chumbação de prédio por pavimento.
+
+**Seleção por janela no CAD e no 3D.** A janela de seleção funciona como no AutoCAD: clique e clique (sem segurar), pan no meio dela, a borda da tela e o Alt+Tab não a perdem.
+
+**Detalhes do projeto recebido na Montagem.** Novas etapas da Identificação: os apoios das tesouras (chapas e chumbadores), o suporte das terças, a emenda da cumeeira e as chapas de ligação das tesouras e as aletas dos contraventos, tudo lido do projeto. A revisão nova do projeto recebido entra no lugar da anterior alinhada pelos eixos de mesmo nome. Na tela 2D + 3D, a Montagem fica ligada ao 3D (o trecho e o corte), sem travar e sem botões parados na frente do desenho.
+
+**Tesouras.** As pontas como montadas à mão (o quadro da ponta do U simples), o par de cantoneiras do banzo composto por dentro dos perfis, a presilha seguindo o par (sem presilha dobrada) e os banzos do composto encostados no montante.
+
+**Cobertura.** Telhamento sem frestas, sem trecho caído ou levantado e chegando até a platibanda; a telha do projeto com uma chapa por faixa e o recorte junto; painéis solares sobre a telha; e a conferência do modelo inteiro de que a cobertura não tem fresta nem buraco.
+
+**Pranchas.** Imprimir pranchas direto na impressora do Windows (Arquivo › Imprimir pranchas…, só as folhas marcadas); o PDF sai pelas folhas que estão no desenho (folha apagada no CAD não deixa páginas em branco) e a remontagem guarda os ajustes feitos à mão em cada folha; programa novo não refaz sozinho os desenhos de uma obra fechada, e a atualização dos desenhos tem Cancelar.
+
+**Modo ver.** Renomear a obra não refaz o 3D nem perde as camadas ocultas; Reanalisar estrutura passou para o menu Modelo; o aviso "Atualizando o 3D" numa linha só; e a seção Sistema separa a Cobertura pelas telhas.
 
 **0.9.0.** (20/10/2026) Frente grande entregue: a **Identificação para modelagem**. São 316 mudanças desde a 0.8.64 (a 0.8.65, de 11/10, não chegou a sair e entra aqui).
 
