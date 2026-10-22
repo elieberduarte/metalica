@@ -397,6 +397,15 @@ Regras aprovadas; a conferência de cada uma ainda está por levantar (etapa seg
 | PRI-03 | A telha manda: conferir de cima para baixo (telha → terças → treliças); o que a estrutura não deixa acertar vai ao projetista (G2) | 12/10 |
 | PRI-04 | Corrigir a regra, não a obra: todo gerador e todo script de obra passa pela regra (`regras_trelica.aplicar`, `telhas_cobertura`) | 12/10, 16/10, 21/10 |
 
+## TEL — Telas (o comportamento da interface)
+
+Regras de tela aprovadas. A conferência é o verificador (Chrome sem janela, eventos de verdade). Uma correção no código
+comum (progresso.js, cad.js, editor.js, sistemas.js) vale para todas as telas que o usam.
+
+| Código | Regra | Aprovada | Onde | Conferência / teste |
+|---|---|---|---|---|
+| TEL-01 | Toda tarefa demorada mostra a barra de andamento, com a etapa e a estimativa, **numa linha só e sem repetir o texto do aviso** | 16/10 (CLAUDE.md); a linha só, 21/10 | web/progresso.js (instalado pelo vivo.js), `_progresso` no servidor | **parcial**: verif_ver3d_atualizando (só o modo ver). Histórico: 21/10 Sesi Chapecó, a barra do "Atualizando o 3D" e o aviso em duas linhas, com o texto repetido — 4d633bc (1ª correção) |
+
 ---
 
 ## Propostas — esperando o "aprovada" do usuário
@@ -408,6 +417,9 @@ Regras aprovadas; a conferência de cada uma ainda está por levantar (etapa seg
 | COB-03 | A telha vai até a parede, seja qual for a forma da borda | plano de 21/10; 4 correções (a2d716a, 8bedaa1, 8e9ac8c, 3391273) |
 | COB-14 | A telha é uma chapa por faixa, com o recorte junto | 3391273 (paginação da folha 12 do Posto V2) |
 | COB-16 | Treliça acima da telha no meio do telhado é revestida e rufada | a2d716a (corte BB do Posto) |
+| TEL-02 | No modo ver (e no celular), cada peça cai no sistema pelo que ela é (telha, tesoura, concreto…), não pelo nome do grupo: desligar um sistema esconde tudo dele e nada de outro | e156c93 (Sesi Chapecó, 22/10: as telhas do arquitetônico não sumiam com a Cobertura; a Cobertura escondia as tesouras dos grupos "Cobertura…"); c39a8b1 (22/10, 2ª correção em poucas horas: a platibanda em ACM do arquitetônico não saía com a Cobertura); verif_ver3d_sistema |
+| TEL-03 | A janela de seleção do CAD 2D e do 3D funciona como no AutoCAD: o pan funciona durante o arrasto, a tela anda com o cursor na borda e o Alt+Tab no meio solta a janela | 00fd082 (Vicente Residence, 22/10); verif_cad_janela, verif_selecao_janela_3d |
+| DET-01 | Planta de localização e chumbação por pavimento (o modo prédio) só em prédio de aço: chumbador em 3 pavimentos ou mais. Senão, a planta do galpão | 1725e84 (bateria da 0.9.1, 22/10: o modo prédio da Vicente entrou no Capitão pré-moldado, 17 plantas "IFCBEAM"); test_predio |
 
 ## Pendências de gerador (correção que mora só no script da obra)
 
