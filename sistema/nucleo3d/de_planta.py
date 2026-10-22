@@ -1726,6 +1726,12 @@ def _chamadas(textos, ents, caminhos: List[Caminho], caixa, tol: float = 60.0) -
             (sa, oa), (sb, _ob) = rel(a), rel(b)
             sa, sb = min(sa, sb), max(sa, sb)
             if -400.0 <= oa <= 50.0 and sa <= 400.0 and sb >= 300.0:
+                # a linha que é da própria peça (o eixo desenhado dentro da viga, uma das faces) não é sublinhado: no
+                # Posto V2 o eixo da VM-2Ue100 do meio das TESOURAS 16 virava sublinhado, a diagonal do contravento a
+                # "chamada", e o nome ia para a VM vizinha — a do meio sumia do 3D (22/10/2026)
+                if any(c.projetar(a)[1] <= c.largura / 2.0 + 20.0 and c.projetar(b)[1] <= c.largura / 2.0 + 20.0
+                       for c in caminhos):
+                    continue
                 sub = ln                                     # o sublinhado, logo abaixo do texto
                 break
         if sub is None:
@@ -2469,6 +2475,71 @@ def _s_na_elevacao(t: Trecho, s: float) -> float:
 TANGENTE_ATE = 30.0
 
 
+#: o sentido que as treliças que chegam podem trocar: o lido sem prova (o costume do desenho, o encontro dos banzos)
+SENTIDO_FRACO = ("costume do desenho", "encontro dos banzos")
+
+
+def ancorar_pelas_chegadas(trechos: List[Trecho], folga_ponta: float = 300.0) -> List[Tuple[str, str]]:
+    """A elevação no lugar em que as treliças que chegam no meio dela caem nos montantes dela: a ancoragem (a sobra de
+    comprimento numa ponta, na outra ou meio a meio) e, quando o sentido foi lido sem prova (SENTIDO_FRACO), o sentido.
+    No Posto V2 (22/10/2026, auditoria das referências): o PAINEL 12 centrado deixava as 4 tesouras 140–149 mm fora dos
+    montantes, o PAINEL 1 as COMPs a 105 mm, a TESOURA 15 a 75 mm; o PAINEL 11 no costume do desenho e a TESOURA 3A
+    virada pelos 10 mm de altura das pontas deixavam as chegadas 140–524 mm fora — ancoradas/viradas, a 0–9 mm. Só muda
+    com duas chegadas ou mais, todas a até 30 mm de um montante, e melhorando a média em 30 mm. Devolve [(peça, o que
+    mudou)]."""
+    feitos = []
+    verticais = [t for t in trechos if t.elevacao is not None and t.deitada is None and t.familia not in ("VIGA", "PERFIL")]
+    for t in verticais:
+        el = t.elevacao
+        L, Le = t.caminho.comprimento, el.comprimento
+        if L < 1000.0 or not Le:
+            continue
+        mont = sorted({round((m.s0 + m.s1) / 2.0, 1) for m in el.membros if m.papel == "montante"})
+        mont = [m_ for m_ in mont if 1.0 < m_ < Le - 1.0]
+        if len(mont) < 2:
+            continue
+        meia_t = t.caminho.largura / 2.0
+        chegadas = []
+        for o in trechos:
+            if o is t or o.caminho.comprimento < 300.0:
+                continue
+            for P in (o.caminho.ponto(0.0), o.caminho.ponto(o.caminho.comprimento)):
+                so, d = t.caminho.projetar(P)
+                if d <= meia_t + o.caminho.largura / 2.0 + 200.0 and folga_ponta < so < L - folga_ponta:
+                    chegadas.append(so)
+        if len(chegadas) < 2:
+            continue
+        base = (L - Le) / 2.0 if 0.9 < L / Le < 1.1 else 0.0
+        lo, hi = min(0.0, L - Le) - 30.0, max(0.0, L - Le) + 30.0
+        estado = (t.invertida, t.ajuste)
+
+        def erros(inv, f):
+            t.invertida, t.ajuste = inv, f - base
+            pos = [_s_na_planta(t, m_) for m_ in mont]
+            return [min(abs(p_ - c_) for p_ in pos) for c_ in chegadas]
+        atual = erros(*estado[:1], estado[1] + base)
+        opcoes = [(estado[0], estado[1] + base)]
+        invs = (False, True) if t.sentido_por in SENTIDO_FRACO else (estado[0],)
+        for inv in invs:
+            for c_ in chegadas:
+                for m_ in mont:
+                    f = (L - c_ - m_) if inv else (c_ - m_)
+                    if lo <= f <= hi:
+                        opcoes.append((inv, f))
+        melhor = min(opcoes, key=lambda o_: (sum(erros(*o_)), abs(o_[1] - base)))
+        e_m = erros(*melhor)
+        t.invertida, t.ajuste = estado
+        if max(e_m) <= 30.0 and sum(atual) / len(atual) - sum(e_m) / len(e_m) >= 30.0:
+            mudou = []
+            if melhor[0] != estado[0]:
+                mudou.append("virada")
+                t.sentido_por = "as treliças que chegam (era: %s)" % t.sentido_por
+            t.invertida, t.ajuste = melhor[0], melhor[1] - base
+            mudou.append("ancorada (%+.0f mm)" % (melhor[1] - (estado[1] + base)))
+            feitos.append((_bonito(t.nome), ", ".join(mudou)))
+    return feitos
+
+
 def aparar_nas_faces(trechos: List[Trecho], folga: float = 30.0, alcance: float = 1500.0,
                      meia_aba: float = 25.0) -> List[Tuple[str, str, float]]:
     """A treliça que termina numa outra que passa (o painel reto, a transição, a tesoura) vai até a FACE de cá dela, não
@@ -2490,6 +2561,8 @@ def aparar_nas_faces(trechos: List[Trecho], folga: float = 30.0, alcance: float 
         meia_t = t.caminho.largura / 2.0
         corte = [0.0, 0.0]                            # o que sai de cada ponta (começo, fim)
         quem = [None, None]
+        canto = [False, False]                        # a ponta fecha um canto em L com a ponta de outra peça
+        de_fila = [False, False]
         for k_p, (s_p, sinal) in enumerate(((0.0, 1.0), (L, -1.0))):
             P = t.caminho.ponto(s_p)
             tp = t.caminho.tangente(s_p)
@@ -2507,11 +2580,14 @@ def aparar_nas_faces(trechos: List[Trecho], folga: float = 30.0, alcance: float 
                     Q = o.caminho.ponto(s_q)
                     tq = o.caminho.tangente(s_q)
                     if abs(tp[0] * tq[0] + tp[1] * tq[1]) < 0.95 or math.dist(P, Q) > 400.0:
-                        continue                      # de canto (a quina), não em fila
+                        if math.dist(P, Q) <= 400.0 or d <= meia_o + 40.0:
+                            canto[k_p] = True         # de canto (a quina): a ponta já está onde a planta a fecha
+                        continue
                     dentro = ((Q[0] - P[0]) * tp[0] + (Q[1] - P[1]) * tp[1]) * sinal    # + : a outra entra nesta
                     c_ = dentro / 2.0 + meia_aba
                     if c_ > corte[k_p]:
                         corte[k_p], quem[k_p] = c_, o.nome
+                        de_fila[k_p] = True
                     continue
                 if _altura_no_ponto(o, o.caminho.ponto(so), meia_o + 200.0) is None:
                     continue
@@ -2536,6 +2612,10 @@ def aparar_nas_faces(trechos: List[Trecho], folga: float = 30.0, alcance: float 
                         if s_ > corte[k_p]:
                             corte[k_p], quem[k_p] = s_, o.nome
                         break
+        # a ponta que fecha um canto em L com a ponta de outra fica no canto: a que passa raspando a quina não a recorta
+        # (a TRANSIÇÃO 8 do Posto, no canto com a TESOURA 19, perdia 320 mm para a TRANSIÇÃO 16 que passa na diagonal
+        # pela quina — a TESOURA 19 ficava sem nada na frente, 22/10/2026)
+        corte = [0.0 if canto[k_] and not de_fila[k_] else c_ for k_, c_ in enumerate(corte)]
         corte = [c_ if c_ >= 15.0 else 0.0 for c_ in corte]      # já está na face
         if max(corte) < 15.0 or L - corte[0] - corte[1] < 400.0:
             continue
@@ -3886,6 +3966,10 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                       % (nome_t, meio_t[0], meio_t[1], dif))
     ori["ajustadas_aos_nos"] = ajustar_aos_nos(trechos, eixos_t)
     aparadas = aparar_nas_faces(trechos)
+    ancoradas = ancorar_pelas_chegadas(trechos)
+    if ancoradas:
+        avisos.append("Elevação no lugar das treliças que chegam nela: %s."
+                      % "; ".join("%s %s" % a_ for a_ in ancoradas))
     if aparadas:
         avisos.append("Treliça até a face da outra (não até o eixo): %d ponta(s) recuada(s) — %s."
                       % (len(aparadas), "; ".join("%s na %s, %d mm" % a_ for a_ in aparadas)))

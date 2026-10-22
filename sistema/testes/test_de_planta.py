@@ -790,6 +790,20 @@ def test_nome_da_viga_marca_o_pedaco_pelo_comeco_do_texto():
     assert f[id(ts[2])] == (6810.0, 10400.0)
 
 
+
+def test_eixo_da_propria_viga_nao_e_sublinhado_de_chamada():
+    """o nome da VM-2Ue100 do meio das TESOURAS 16 do Posto, ao lado da viga: o eixo desenhado dentro dela virava o
+    "sublinhado" e a diagonal do contravento que sai do canto, a "chamada" — o nome ia para a VM vizinha e a do meio
+    sumia do 3D (22/10/2026)"""
+    C = de_planta.Caminho
+    vm_meio = C("reta", a=(0.0, 0.0), b=(0.0, 4000.0), largura=100.0)
+    vm_viz = C("reta", a=(2650.0, 0.0), b=(2650.0, 8000.0), largura=100.0)
+    t = texto((-160.0, 300.0), "VM-2Ue100X50X17X2,65", angulo=90.0)
+    ents = [linha((0.0, 0.0), (0.0, 4000.0), "Eixo"),                     # o eixo da VM do meio
+            linha((0.0, 4000.0), (2650.0, 7300.0), "1-Contravento")]       # a diagonal que sai do canto dela
+    out = de_planta._chamadas([t], ents, [vm_meio, vm_viz], (-10000.0, -10000.0, 10000.0, 10000.0))
+    assert out == {}, out
+
 def test_nome_de_chamada_nao_toma_o_pedaco_da_tesoura():
     """o "VM-…" escrito sobre a linha de chamada das curvas do canto, 0,53 m ao lado da TESOURA 33,
     não é viga da linha da tesoura (virava uma VM em cima da treliça)"""
@@ -987,6 +1001,51 @@ def test_encontro_quase_tangente_segue_a_planta():
     assert painel9.caminho.comprimento == pytest.approx(L0, abs=1.0)
     p = painel9.caminho.ponto(0.0)
     assert math.dist(p, (17160.0, 47968.0)) < 15.0, p              # a ponta no eixo do PAINEL 12, como a planta
+
+
+def _com_montantes(t, montantes):
+    M = de_planta.Membro
+    t.elevacao.membros += [M(m_, 0.0, m_, 1000.0, "montante") for m_ in montantes]
+    return t
+
+
+def test_elevacao_ancorada_onde_as_trelicas_chegam():
+    """o PAINEL 1 do Posto: elevação de 10.501 num vão de 10.290 — centrada, as COMPs que chegam ficavam 105 mm fora dos
+    montantes; ancorada no começo, a 0 (22/10/2026, auditoria das referências do Posto V2)"""
+    painel = _com_montantes(_tr("PAINEL 1", "PAINEL", (0.0, 0.0), (10290.0, 0.0), comp_el=10501.0), [4398.0, 9045.0, 2000.0])
+    comps = [_tr("COMP 2", "COMP", (4397.0, 50.0), (4397.0, 3000.0)), _tr("COMP 4", "COMP", (9044.0, 50.0), (9044.0, 3000.0))]
+    r = de_planta.ancorar_pelas_chegadas([painel] + comps)
+    assert r and r[0][0] == "PAINEL 1"
+    pos = [painel.caminho.ponto(de_planta._s_na_planta(painel, m_))[0] for m_ in (4398.0, 9045.0)]
+    assert pos == [pytest.approx(4397.0, abs=2.0), pytest.approx(9044.0, abs=2.0)]
+
+
+def test_sentido_sem_prova_vira_pelas_trelicas_que_chegam():
+    """o PAINEL 11 do Posto (no costume do desenho) deixava as 4 TESOURAS 7 187–524 mm fora dos montantes; virado, a 0.
+    O sentido pelas marcas ST não vira"""
+    def caso(sentido):
+        p11 = _com_montantes(_tr("PAINEL 11", "PAINEL", (0.0, 0.0), (0.0, 19969.0)), [3734.0, 7518.0, 11302.0, 15636.0])
+        p11.sentido_por = sentido
+        tes = [_tr("TESOURA 7", "TESOURA", (50.0, s_), (5000.0, s_)) for s_ in (4333.0, 8667.0, 12451.0, 16235.0)]
+        de_planta.ancorar_pelas_chegadas([p11] + tes)
+        return p11
+    p = caso("costume do desenho")
+    assert p.invertida and p.sentido_por.startswith("as treliças que chegam")
+    ys = sorted(p.caminho.ponto(de_planta._s_na_planta(p, m_))[1] for m_ in (3734.0, 7518.0, 11302.0, 15636.0))
+    assert ys == [pytest.approx(v, abs=2.0) for v in (4333.0, 8667.0, 12451.0, 16235.0)]
+    assert not caso("marcas ST").invertida
+
+
+def test_ponta_no_canto_em_l_nao_e_recortada_pela_que_raspa_a_quina():
+    """a TRANSIÇÃO 8 do Posto começa no canto em L com a TESOURA 19; a TRANSIÇÃO 16 passa na diagonal pela quina e a
+    recortava 320 mm — a TESOURA 19 ficava sem nada na frente (22/10/2026)"""
+    t8 = _tr("TRANSIÇÃO 8", "TRANSICAO", (0.0, 100.0), (0.0, 4100.0), largura=150.0)
+    t19 = _tr("TESOURA 19", "TESOURA", (-4000.0, 0.0), (-75.0, 0.0), largura=100.0)
+    t16 = _tr("TRANSIÇÃO 16", "TRANSICAO", (-3000.0, -2600.0), (2500.0, 2900.0), largura=150.0)
+    L0 = t8.caminho.comprimento
+    de_planta.aparar_nas_faces([t8, t19, t16])
+    assert t8.caminho.a[1] == pytest.approx(100.0, abs=1.0), t8.caminho.a
+    assert t8.caminho.comprimento == pytest.approx(L0, abs=1.0)
 
 def test_trelicas_em_fila_ficam_costas_com_costas():
     """as TESOURAS 1 e 12 no vale do Posto entravam 125 mm uma na outra; os painéis em fila tinham os montantes das
