@@ -1006,9 +1006,21 @@ def _tr(nome, familia, a, b, largura=100.0, comp_el=None, h=(0.0, 1000.0)):
     return de_planta.Trecho(caminho=de_planta.Caminho("reta", a=a, b=b, largura=largura), nome=nome, familia=familia, elevacao=el)
 
 
-def test_trelica_para_na_face_da_que_passa():
-    """a TESOURA 8 do Posto: a linha da planta ia até a face de lá do PAINEL 12 (8 cm além do eixo); a ponta vai para a
-    face de cá — meia largura do painel + a meia aba do montante (30 mm) —, e o nó do meio fica onde estava"""
+def test_na_concepcao_a_ponta_fica_onde_a_planta_desenha():
+    """as regras de fábrica nos encontros estão desligadas (o usuário, 22/10/2026: "seguindo a planta, para manter a
+    concepção original do projetista" — a execução vem depois): a TESOURA 8 fica até onde a planta a desenha"""
+    assert de_planta.REGRAS_DE_FABRICA is False
+    painel = _tr("PAINEL 12", "PAINEL", (0.0, -3000.0), (0.0, 3000.0), largura=100.0)
+    tes = _tr("TESOURA 8", "TESOURA", (4000.0, 0.0), (-80.0, 0.0), comp_el=3900.0)
+    assert de_planta.aparar_nas_faces([painel, tes]) == []
+    assert tes.caminho.b[0] == pytest.approx(-80.0, abs=1.0)
+
+
+def test_trelica_para_na_face_da_que_passa(monkeypatch):
+    """(a regra de fábrica, para a etapa de execução) a TESOURA 8 do Posto: a linha da planta ia até a face de lá do
+    PAINEL 12 (8 cm além do eixo); a ponta vai para a face de cá — meia largura do painel + a meia aba do montante
+    (30 mm) —, e o nó do meio fica onde estava"""
+    monkeypatch.setattr(de_planta, "REGRAS_DE_FABRICA", True)
     painel = _tr("PAINEL 12", "PAINEL", (0.0, -3000.0), (0.0, 3000.0), largura=100.0)
     tes = _tr("TESOURA 8", "TESOURA", (4000.0, 0.0), (-80.0, 0.0), comp_el=3900.0)
     no_antes = tes.caminho.ponto(de_planta._s_na_planta(tes, 1950.0))
@@ -1020,11 +1032,12 @@ def test_trelica_para_na_face_da_que_passa():
 
 
 
-def test_encontro_quase_tangente_segue_a_planta():
+def test_encontro_quase_tangente_segue_a_planta(monkeypatch):
     """A curva do PAINEL 9 da abertura oval do Posto encontra o PAINEL 12 quase tangente (~10°) e a planta a leva até o
     eixo dele, dentro da parte alta. Parar na face (a regra de 12/10) custava 0,55 m de curva e abria um vão de 0,42 m
     entre as duas (22/10/2026, o usuário: "vamos fazer seguindo a planta, para manter a concepção original do
     projetista"). No encontro quase tangente a ponta fica onde a planta a desenha; no de esquina, continua na face."""
+    monkeypatch.setattr(de_planta, "REGRAS_DE_FABRICA", True)
     painel12 = _tr("PAINEL 12", "PAINEL", (20056.5, 30793.0), (16697.5, 50712.0), largura=100.0)
     C = de_planta.Caminho("arco", centro=(15018.0, 47353.0), raio=2229.0, ini=16.02, fim=160.0, largura=100.0)
     M = de_planta.Membro
@@ -1072,9 +1085,10 @@ def test_sentido_sem_prova_vira_pelas_trelicas_que_chegam():
     assert not caso("marcas ST").invertida
 
 
-def test_ponta_no_canto_em_l_nao_e_recortada_pela_que_raspa_a_quina():
+def test_ponta_no_canto_em_l_nao_e_recortada_pela_que_raspa_a_quina(monkeypatch):
     """a TRANSIÇÃO 8 do Posto começa no canto em L com a TESOURA 19; a TRANSIÇÃO 16 passa na diagonal pela quina e a
     recortava 320 mm — a TESOURA 19 ficava sem nada na frente (22/10/2026)"""
+    monkeypatch.setattr(de_planta, "REGRAS_DE_FABRICA", True)
     t8 = _tr("TRANSIÇÃO 8", "TRANSICAO", (0.0, 100.0), (0.0, 4100.0), largura=150.0)
     t19 = _tr("TESOURA 19", "TESOURA", (-4000.0, 0.0), (-75.0, 0.0), largura=100.0)
     t16 = _tr("TRANSIÇÃO 16", "TRANSICAO", (-3000.0, -2600.0), (2500.0, 2900.0), largura=150.0)

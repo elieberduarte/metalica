@@ -2473,6 +2473,12 @@ def _s_na_elevacao(t: Trecho, s: float) -> float:
 
 #: graus: o encontro de uma treliça com outra mais fechado que isto é quase tangente — a ponta fica onde a planta a desenha
 TANGENTE_ATE = 30.0
+#: as regras de fábrica nos encontros — a treliça parada na FACE da que passa (aparar_nas_faces) e a terça que corre ao
+#: longo de um painel levada para a face dele (_encostar_tercas_na_face). Desligadas: o modelo segue a concepção do
+#: projetista, com a peça onde a planta a desenha; a execução do encontro vem depois do modelo fechado (o usuário,
+#: 22/10/2026, Posto V2: "seguindo a planta, para manter a concepção original do projetista" e "pode aplicar"; a TC14
+#: tirada da linha do projeto deslocava a calha junto). As duas pontas em fila continuam parando no meio do encontro.
+REGRAS_DE_FABRICA = False
 
 
 #: o sentido que as treliças que chegam podem trocar: o lido sem prova (o costume do desenho, o encontro dos banzos)
@@ -2594,6 +2600,8 @@ def aparar_nas_faces(trechos: List[Trecho], folga: float = 30.0, alcance: float 
                         corte[k_p], quem[k_p] = c_, o.nome
                         de_fila[k_p] = True
                     continue
+                if not REGRAS_DE_FABRICA:
+                    continue                          # a ponta fica onde a planta a desenha (a concepção primeiro)
                 if _altura_no_ponto(o, o.caminho.ponto(so), meia_o + 200.0) is None:
                     continue
                 to = o.caminho.tangente(so)
@@ -5063,7 +5071,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         # o resto da mesma linha o projeto já desenhou na face, 24,5 cm ao lado)
         encostadas = _encostar_tercas_na_face([p_["ent"] for p_ in pecas if p_["papel"] == "terça"],
                                               [t for t in trechos if t.elevacao is not None and t.familia in ("PAINEL", "TRANSICAO")],
-                                              nivel)
+                                              nivel) if REGRAS_DE_FABRICA else []
         if encostadas:
             avisos.append("Terça ao longo de painel/transição: %d terça(s) desenhada(s) dentro da largura dele, onde ele sobe "
                           "acima do telhado, foram para a face (%s) — confira no projeto."
