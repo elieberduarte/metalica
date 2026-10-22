@@ -17,6 +17,10 @@ export const SISTEMAS = { metalica: ['Metálica', '#2f6fd6'], cobertura: ['Cober
 const COBERTURA_GRUPO = /\b(telhas?|calhas?|rufos?|cumeeiras?)\b/i;
 const COBERTURA_CAMADA = /(^|[—–-])\s*(telhas?|calhas?|rufos?|cumeeiras?)\b/i;
 const TELHA = /^\s*telha/i;
+// a pele da platibanda (o ACM) também é da cobertura (usuário, SESI Chapecó, 22/10: "a platibanda em acm ficou certa mas
+// ela não está vinculada a camada da cobertura no sistema"): a camada de platibanda com peça que não é de aço — a
+// estrutura metálica da platibanda (barra sem material ou de aço) continua na Metálica
+const PLATIBANDA = /(^|[—–-])\s*platibandas?\b/i;
 // o terreno, a rua e a calçada num sistema só (usuário, 16/10: "terreno, rua e calçada como uma camada única; parede
 // pode deixar junto com o pré-moldado"): pelo nome da peça, antes do material (no IFC do Mercado são lajes de concreto);
 // o muro e as vagas do estacionamento também (usuário, Mercado, 20/10: "colocar esses itens junto com a layer do
@@ -35,12 +39,13 @@ export function gruposDeSistema(visor) {
   }
   const cams = (visor.cabecalho && visor.cabecalho.camadas) || [];
   const daCobertura = cams.map(c => COBERTURA_GRUPO.test(c.grupo || '') || COBERTURA_CAMADA.test(c.nome || ''));
+  const daPlatibanda = cams.map(c => PLATIBANDA.test(c.nome || ''));
   const doTerreno = cams.map(c => TERRENO.test(c.nome || ''));
   const ids = { metalica: [], cobertura: [], outros: [], premoldado: [], terreno: [] };
   for (let i = 0; i < n; i++) {
     const m = fichas[i].m || '', q = porCamada.get(fichas[i].c);
     let s = 'outros';
-    if (daCobertura[fichas[i].c] || TELHA.test(m)) s = 'cobertura';
+    if (daCobertura[fichas[i].c] || TELHA.test(m) || (daPlatibanda[fichas[i].c] && m && !ACO.test(m))) s = 'cobertura';
     else if (doTerreno[fichas[i].c] || TERRENO.test(fichas[i].p || '') || TERRENO.test(fichas[i].n || '')) s = 'terreno';
     else if (CONCRETO.test(m)) s = 'premoldado';
     else if (!m || ACO.test(m)) s = q[1] * 2 >= q[0] ? 'premoldado' : NEOPRENE.test(m) ? 'outros' : 'metalica';
