@@ -182,7 +182,7 @@ posição ganha `saia`, que entra na compra, na célula, na lista e na paginaç�
 cada telha sai **inteira** (retângulo até o ponto mais alto) e o corte do modelo — a empena
 inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois de instalada.
 
-**0.9.1.** (22/10/2026) Obras entre usuários, link de instalação, a obra no terreno do cliente, impressão das pranchas e os detalhes do projeto recebido na Montagem. São 101 mudanças desde a 0.9.0.
+**0.9.1.** (22/10/2026) Obras entre usuários, link de instalação, a obra no terreno do cliente, impressão das pranchas e os detalhes do projeto recebido na Montagem. São 127 mudanças desde a 0.9.0.
 
 **Enviar a obra para outro usuário.** No cartão do projeto, "Enviar para…" manda a obra inteira para o Metálica de outra pessoa pela internet (ou para os seus outros computadores); ela vê "Fulano te enviou…" no alto da tela inicial e abre como um projeto novo. É uma cópia: cada um segue com a sua.
 
@@ -198,15 +198,19 @@ inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois 
 
 **Seleção por janela no CAD e no 3D.** A janela de seleção funciona como no AutoCAD: clique e clique (sem segurar), pan no meio dela, a borda da tela e o Alt+Tab não a perdem.
 
-**Detalhes do projeto recebido na Montagem.** Novas etapas da Identificação: os apoios das tesouras (chapas e chumbadores), o suporte das terças, a emenda da cumeeira e as chapas de ligação das tesouras e as aletas dos contraventos, tudo lido do projeto. A revisão nova do projeto recebido entra no lugar da anterior alinhada pelos eixos de mesmo nome. Na tela 2D + 3D, a Montagem fica ligada ao 3D (o trecho e o corte), sem travar e sem botões parados na frente do desenho.
+**Detalhes do projeto recebido na Montagem.** Novas etapas da Identificação: os apoios das tesouras (chapas e chumbadores), o suporte das terças, a emenda da cumeeira e as chapas de ligação das tesouras e as aletas dos contraventos, tudo lido do projeto. A revisão nova do projeto recebido entra no lugar da anterior alinhada pelos eixos de mesmo nome. Na tela 2D + 3D, a Montagem fica ligada ao 3D (o trecho e o corte), sem travar e sem botões parados na frente do desenho; a peça escolhida no 3D vai à planta de onde veio e a linha dela acende no 2D.
 
-**Tesouras.** As pontas como montadas à mão (o quadro da ponta do U simples), o par de cantoneiras do banzo composto por dentro dos perfis, a presilha seguindo o par (sem presilha dobrada) e os banzos do composto encostados no montante.
+**Tesouras.** As pontas como montadas à mão (o quadro da ponta do U simples), o par de cantoneiras do banzo composto por dentro dos perfis, a presilha seguindo o par (sem presilha dobrada) e os banzos do composto encostados no montante; a castanha no banzo (não mais acima dele) e a conferência do 3D acusa peça voando, longe de tudo.
 
 **Cobertura.** Telhamento sem frestas, sem trecho caído ou levantado e chegando até a platibanda; a telha do projeto com uma chapa por faixa e o recorte junto; painéis solares sobre a telha; e a conferência do modelo inteiro de que a cobertura não tem fresta nem buraco.
 
+**Montagem pela planta.** A concepção do projetista primeiro: os encontros seguem a planta (as regras de fábrica nos encontros ficam para a execução, o encontro quase tangente também); o perfil composto como o projeto desenha (o pilar de 2U forma o tubo); o pilar pela seção certa e só até a planta que o desenha; as siglas das terças e dos contraventos pelo rótulo certo; a elevação da treliça ancorada pelas que chegam; a peça lida do desenho posta pela seção real (as correntes até a alma da terça, também na emenda de duas terças).
+
 **Pranchas.** Imprimir pranchas direto na impressora do Windows (Arquivo › Imprimir pranchas…, só as folhas marcadas); o PDF sai pelas folhas que estão no desenho (folha apagada no CAD não deixa páginas em branco) e a remontagem guarda os ajustes feitos à mão em cada folha; programa novo não refaz sozinho os desenhos de uma obra fechada, e a atualização dos desenhos tem Cancelar.
 
-**Modo ver.** Renomear a obra não refaz o 3D nem perde as camadas ocultas; Reanalisar estrutura passou para o menu Modelo; o aviso "Atualizando o 3D" numa linha só; a seção Sistema separa a Cobertura pelas telhas e pelo nome da peça (as telhas, calhas e rufos do arquitetônico e a platibanda em ACM saem junto com ela); e o vidro transparente como no editor (também no celular).
+**CAD 2D.** A continuação da linha, a cota pelo canto, a marca MA pelo número, a folga do número da cota como no AutoCAD e a Cota contínua.
+
+**Modo ver.** Renomear a obra não refaz o 3D nem perde as camadas ocultas; Reanalisar estrutura passou para o menu Modelo; o aviso "Atualizando o 3D" numa linha só; a seção Sistema separa a Cobertura pelas telhas e pelo nome da peça (as telhas, calhas e rufos do arquitetônico e a platibanda em ACM saem junto com ela); o vidro transparente como no editor (também no celular); os furos das terças do IFC abertos de novo; o arquitetônico de referência num sistema só; e cada peça cai no sistema que diz o que ela é (Outros com o motivo no nome e o sistema "Sem material — a definir").
 
 **0.9.0.** (20/10/2026) Frente grande entregue: a **Identificação para modelagem**. São 316 mudanças desde a 0.8.64 (a 0.8.65, de 11/10, não chegou a sair e entra aqui).
 
