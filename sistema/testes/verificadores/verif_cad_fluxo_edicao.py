@@ -215,8 +215,13 @@ try:
     ok(sel() == ["l1", "l2"], f"Shift+clique soma: {sel()}")
     clicar_em(pt("l1"), CTRL)
     ok(sel() == ["l2"], f"Ctrl+clique alterna (tira a l1): {sel()}")
+    # o clique no vazio abre a janela, como no AutoCAD (usuário, 21/10); o Esc cancela a janela, o segundo limpa a seleção
     clicar_em([1500, 1200])
-    ok(sel() == [], f"clique no vazio limpa a seleção: {sel()}")
+    ok(js("return !!c._janela;") and sel() == ["l2"], f"clique no vazio abre a janela e a seleção fica: {sel()}")
+    tecla("Escape")
+    ok(not js("return !!c._janela;") and sel() == ["l2"], f"Esc cancela a janela: {sel()}")
+    tecla("Escape")
+    ok(sel() == [], f"o segundo Esc limpa a seleção: {sel()}")
     # janela da esquerda para a direita: só o que está inteiro dentro
     arrastar(tela([-100, -100]), tela([1100, 300]))
     ok(sel() == ["l1"], f"janela da esquerda para a direita pega só o que está inteiro dentro (l1): {sel()}")
@@ -228,7 +233,7 @@ try:
     ok(sel() == [], f"janela cruzando inteira DENTRO do círculo, sem tocar o traço, não pega o círculo: {sel()}")
     clicar_em(pt("lk"))
     ok(sel() == [], f"clique numa linha de camada travada não a seleciona: {sel()}")
-    clicar_em([1500, 1200])
+    tecla("Escape")
     tecla("a", CTRL)
     todos = sel()
     ok(len(todos) >= 9, f"Ctrl+A seleciona tudo ({len(todos)})")

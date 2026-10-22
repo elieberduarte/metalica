@@ -4,6 +4,11 @@
 // esquerda para a direita pega só o que está inteiramente dentro; da direita para a
 // esquerda pega também o que apenas toca, como em qualquer CAD. Duplo clique amplia a
 // seleção para os objetos semelhantes (mesmo tipo e mesmo perfil).
+// A janela como no AutoCAD (pedido do usuário, 21/10): um clique no vazio abre a janela, que acompanha o cursor sem
+// segurar o botão, e o clique seguinte a fecha e seleciona. Com ela aberta (ou no meio do arrasto) o botão direito
+// desloca e o do meio orbita, a roda dá zoom — o primeiro canto fica preso ao ponto do modelo —, a vista anda sozinha
+// quando o cursor chega na borda, e Esc ou o direito sem arrastar a cancelam. O Alt+Tab no meio do arrasto deixa a
+// janela aberta (antes ela ficava presa ao cursor para sempre).
 // Tab, com o mouse parado, passa o destaque para a peça de trás (Shift+Tab volta), como no Revit; o clique no mesmo
 // lugar seleciona a destacada — a peça escondida atrás da outra sem girar a vista.
 // Alças (14/10): a barra selecionada mostra um quadradinho em cada ponta; arrastar a alça leva a ponta com o snap (o
@@ -32,6 +37,7 @@ export class Selecionar extends Ferramenta {
 
   ativar() {
     this.arrastando = null;
+    this._janela = null;
     this.dica(Selecionar.dica);
     this.editor.cursor('default');
     this.editor.inferencia.ativa = false;   // selecionar não precisa de snap
@@ -39,6 +45,7 @@ export class Selecionar extends Ferramenta {
 
   desativar() {
     this._alca = null;
+    this._janela = null;
     this._comAlcas = false;
     this.limparPrevia();
     this._fecharJanela();
@@ -47,6 +54,11 @@ export class Selecionar extends Ferramenta {
   }
 
   onMover(p, ev) {
+    // a janela aberta pelo clique: o primeiro canto no ponto do modelo, o outro no cursor (com ou sem botão)
+    if (this._janela) {
+      this._desenharJanela(this._cantoDaJanela(), p.tela.slice(0, 2));
+      return;
+    }
     // arrastando uma alça: a ponta da barra vai junto
     if (ev && ev.arrasto && (this._alca || (!this.arrastando && (this._alca = this._alcaEm(ev.arrasto.de))))) {
       this._arrastarAlca(ev.arrasto.para, ev);
@@ -55,10 +67,7 @@ export class Selecionar extends Ferramenta {
     if (ev && ev.arrasto) {
       // Enquanto o botão está pressionado, desenha a janela.
       this.arrastando = ev.arrasto;
-      const modo = ev.arrasto.para[0] >= ev.arrasto.de[0] ? 'dentro' : 'toca';
-      this.editor.retanguloSelecao(ev.arrasto.de, ev.arrasto.para, modo);
-      this.editor.medida(modo === 'dentro' ? 'janela: inteiramente dentro'
-                                           : 'janela: o que tocar');
+      this._desenharJanela(ev.arrasto.de, ev.arrasto.para);
       return;
     }
     this._tela = p.tela.slice(0, 2);
@@ -89,18 +98,31 @@ export class Selecionar extends Ferramenta {
   }
 
   onPonto(p, ev) {
+    if (this._janela) { this._fecharJanelaDoClique(p, ev); return; }
     const c = this._noCiclo(p.tela);
     if (c) { this.editor.selecao.clicar(c.ids[c.i], ev); this._ciclo = null; this._desenharAlcas(); return; }
     const alvo = this.editor.selecao.sobOuRotulo(p.tela[0], p.tela[1]);
+    if (!alvo && !(ev && (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey))) {
+      // clique no vazio: abre a janela (como no AutoCAD); a seleção fica até o segundo clique
+      this._abrirJanela(p.tela.slice(0, 2));
+      return;
+    }
     this.editor.selecao.clicar(alvo ? alvo.id : null, ev);
     this._desenharAlcas();
   }
 
   onSoltar(p, ev) {
+    if (this._janela) { this._fecharJanelaDoClique(p, ev); return; }
     if (this._alca) { this._soltarAlca(); return; }
     const arr = (ev && ev.arrasto) || this.arrastando;
     this._fecharJanela();
     if (!arr) return;
+    this._selecionarNaJanela(arr.de, arr.para, ev);
+  }
+
+  /** Seleciona o que está na janela de `de` a `para` (pixels): para a direita o que está inteiro dentro, para a esquerda o que toca. */
+  _selecionarNaJanela(de, para, ev) {
+    const arr = { de, para };
     const modo = arr.para[0] >= arr.de[0] ? 'dentro' : 'toca';
     const achados = this.editor.selecao.porJanela(arr.de, arr.para, modo, ev);
     this.editor.dica(achados.length
@@ -132,6 +154,8 @@ export class Selecionar extends Ferramenta {
 
   onTecla(ev) {
     if (ev.type !== 'keydown') return false;
+    // Esc com a janela aberta: cancela só a janela (a seleção fica)
+    if (ev.key === 'Escape' && this.cancelarJanela()) return true;
     const sel = this.editor.selecao;
     if (ev.key === 'Tab' && !ev.ctrlKey && !ev.altKey) return this._tab(ev.shiftKey ? -1 : 1);
     // Alt + clique de tipo: atalhos de seleção por critério.
@@ -251,8 +275,64 @@ export class Selecionar extends Ferramenta {
     this._desenharAlcas();
   }
 
+  // ------------------------------------------------------------- janela do clique
+
+  /** O clique no vazio: o primeiro canto preso ao ponto do modelo sob o cursor. */
+  _abrirJanela(tela) {
+    this._janela = { mundo: this.editor.camera.deTela(tela[0], tela[1]) };
+    this.editor.selecao.realcarSobre(null);
+    this._desenharJanela(tela, tela);
+    this.dica('Janela: clique o outro canto (para a direita, o que está inteiro dentro; para a esquerda, o que tocar) · ' +
+              'direito desloca, meio orbita, roda dá zoom · Esc cancela');
+  }
+
+  /** O primeiro canto da janela aberta, na tela de agora. */
+  _cantoDaJanela() {
+    const t = this.editor.camera.paraTela(this._janela.mundo);
+    return [t[0], t[1]];
+  }
+
+  _fecharJanelaDoClique(p, ev) {
+    const de = this._cantoDaJanela();
+    this._janela = null;
+    this._fecharJanela();
+    this.dica(Selecionar.dica);
+    this._selecionarNaJanela(de, p.tela.slice(0, 2), ev);
+  }
+
+  _desenharJanela(de, para) {
+    const modo = para[0] >= de[0] ? 'dentro' : 'toca';
+    this.editor.retanguloSelecao(de, para, modo);
+    this.editor.medida(modo === 'dentro' ? 'janela: inteiramente dentro' : 'janela: o que tocar');
+  }
+
+  /** Cancela a janela aberta pelo clique; devolve se havia uma (Esc, o botão direito sem arrastar). */
+  cancelarJanela() {
+    if (!this._janela) return false;
+    this._janela = null;
+    this._fecharJanela();
+    this.dica(Selecionar.dica);
+    return true;
+  }
+
+  /** A vista anda sozinha com o cursor na borda enquanto há janela (a do clique ou a do arrasto). */
+  querAutoPan() { return !!(this._janela || (this.arrastando && !this._alca)); }
+
+  /** Alt+Tab no meio de um arrasto (editor: o soltar se perdeu): a janela do arrasto vira a janela aberta. */
+  perdeuFoco(arrasto) {
+    if (this._alca) { this._alca = null; this.editor.inferencia.limpar(); this.editor.inferencia.limparAncora(); this.editor.cursor('default'); this._desenharAlcas(); return; }
+    if (arrasto && this.arrastando) {
+      this.arrastando = null;
+      this._janela = { mundo: arrasto.mundo };
+      this.dica('Janela aberta: clique o outro canto · Esc cancela');
+      return;
+    }
+    this._fecharJanela();
+  }
+
   cancelar() {
     this._ciclo = null;
+    this._janela = null;
     if (this._alca) { this._alca = null; this.editor.inferencia.limpar(); this.editor.inferencia.limparAncora(); }
     this._fecharJanela();
     this.editor.selecao.limpar();
@@ -260,6 +340,7 @@ export class Selecionar extends Ferramenta {
 
   _fecharJanela() {
     this.arrastando = null;
+    this.editor._pararAutoPan && this.editor._pararAutoPan();
     this.editor.retanguloSelecao(null);
     this.editor.medida('');
   }

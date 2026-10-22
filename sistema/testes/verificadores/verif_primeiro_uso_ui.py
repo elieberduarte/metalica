@@ -573,7 +573,6 @@ def q12_busca_pelo_nome_de_producao(aba):
     ok(achou and rot == "T.O.6 (M92)", f"a busca acha as 2 cópias da T.O.6 pelo nome de produção ({rot})")
 
 
-
 def q11_detalhar_ifc_avulso(aba):
     """Q11: "Detalhar as peças de um IFC…" não fazia nada — pelo menu da tela do projeto o editor carregava e clicava no
     campo de arquivo sem o gesto do usuário (o navegador bloqueava calado). Agora um diálogo explica e tem o botão."""

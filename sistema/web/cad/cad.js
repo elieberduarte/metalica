@@ -938,6 +938,7 @@ class CAD {
     // ao voltar para "selecionar" (Esc), a ferramenta que estava em uso fica guardada:
     // espaço a chama de novo, sem procurar o botão
     if (this.ferramenta && this.ferramenta.constructor.id !== 'selecionar' && id === 'selecionar') this.ferramentaAnterior = this.ferramenta.constructor.id;
+    if (this._cancelarJanela) this._cancelarJanela();       // a janela aberta é da ferramenta que sai
     if (this.ferramenta) this.ferramenta.desativar();
     this.ferramenta = f;
     this.previa([]);
@@ -968,8 +969,62 @@ class CAD {
   // ------------------------------------------------------------- mouse
   _ligarMouse() {
     const c = this.el.canvas;
-    let arrastoVista = null, pressao = null, direito = null;
+    let arrastoVista = null, pressao = null, direito = null, panNoArrasto = null, ultimoPx = null, autoPan = null;
     const px = (ev) => { const r = c.getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; };
+    // A janela de seleção como no AutoCAD (pedido do usuário, 21/10): um clique num ponto vazio abre a janela, que
+    // acompanha o cursor sem segurar o botão, e o clique seguinte a fecha e seleciona; com ela aberta o botão do meio
+    // arrasta a vista, a roda dá zoom, o desenho anda sozinho quando o cursor chega na borda, e Esc cancela. Arrastar
+    // com o botão apertado continua abrindo a janela — e agora o botão do meio também arrasta a vista no meio dele, e
+    // o Alt+Tab no meio do arrasto (o soltar se perdia e a janela ficava presa ao cursor) a deixa aberta, como a do clique.
+    const usaJanela = () => !!this.ferramenta && this.ferramenta.onSoltar !== Ferramenta.prototype.onSoltar
+      && (typeof this.ferramenta.querJanela !== 'function' || this.ferramenta.querJanela());
+    // o ponto do desenho do primeiro canto: o da janela aberta pelo clique ou o do arrasto em curso
+    const cantoDaJanela = () => (this._janela ? this._janela.mundo
+      : (pressao && pressao.movido && !pressao.capturado && this.tela.retangulo ? pressao.mundo : null));
+    const dentroDoCanvas = (p) => { const r = c.getBoundingClientRect(); return [Math.min(Math.max(p[0], 0), r.width), Math.min(Math.max(p[1], 0), r.height)]; };
+    const redesenharJanela = (p) => {
+      const m = cantoDaJanela();
+      if (!m) return;
+      this.tela.retangulo = [this.tela.paraTela(m), dentroDoCanvas(p || (this.tela.retangulo || [])[1] || this.tela.paraTela(m))];
+      this.tela.pedirQuadro();
+    };
+    const MARGEM_AUTO_PAN = 28, VELOCIDADE_AUTO_PAN = 16;          // px da borda; px por quadro no fundo da margem
+    const passoAutoPan = () => {
+      autoPan = null;
+      if (!cantoDaJanela() || !ultimoPx) return;
+      const r = c.getBoundingClientRect(), [x, y] = ultimoPx;
+      const forca = (d) => (d < MARGEM_AUTO_PAN ? Math.min(2, (MARGEM_AUTO_PAN - d) / MARGEM_AUTO_PAN) : 0);
+      const dx = (forca(x) - forca(r.width - x)) * VELOCIDADE_AUTO_PAN, dy = (forca(y) - forca(r.height - y)) * VELOCIDADE_AUTO_PAN;
+      if (!dx && !dy) return;
+      this.tela.arrastar([dx, dy]);                 // perto da borda direita a vista vai para a direita (o desenho para a esquerda)
+      redesenharJanela(ultimoPx);
+      autoPan = requestAnimationFrame(passoAutoPan);
+    };
+    const talvezAutoPan = () => { if (!autoPan && cantoDaJanela()) autoPan = requestAnimationFrame(passoAutoPan); };
+    const pararAutoPan = () => { if (autoPan) cancelAnimationFrame(autoPan); autoPan = null; };
+    this._cancelarJanela = () => {
+      const tinha = !!this._janela;
+      this._janela = null; pararAutoPan();
+      if (!pressao) this.tela.retangulo = null;
+      this.tela.pedirQuadro();
+      if (tinha && this.ferramenta) this.dica(this.ferramenta.constructor.dica);
+      return tinha;
+    };
+    // fora da janela do programa (Alt+Tab) os botões soltos não chegam: o arrasto da janela vira a janela aberta
+    // (o próximo clique a fecha, Esc cancela) e o arrasto da vista termina
+    window.addEventListener('blur', () => {
+      if (arrastoVista) { arrastoVista = null; delete this.el.palco.dataset.arrastando; direito = null; }
+      panNoArrasto = null;
+      if (pressao) {
+        if (pressao.movido && !pressao.capturado && this.tela.retangulo) {
+          this._janela = { mundo: pressao.mundo };
+          this.dica('Janela aberta: clique o outro canto (para a direita, o que está inteiro dentro; para a esquerda, o que tocar) · Esc cancela');
+        }
+        pressao = null;
+      }
+      pararAutoPan();
+      this.tela.pedirQuadro();
+    });
     c.addEventListener('contextmenu', (ev) => ev.preventDefault());
     c.addEventListener('pointerdown', (ev) => {
       try { c.setPointerCapture(ev.pointerId); } catch (e) { /* ponteiro sintético (verificador) */ }
@@ -978,6 +1033,7 @@ class CAD {
         direito = ev.button === 2 ? { px: px(ev), movido: false } : null;
         return;
       }
+      if (ev.button === 0 && this._janela) return;     // a janela aberta pelo clique fecha no soltar deste
       if (ev.button === 0) {
         // o ponto do desenho onde a janela começou: o zoom e o pan no meio do arrasto não o tiram do lugar
         // (antes ficava o pixel da tela, que depois do zoom apontava para outro ponto — pedido do usuário, 29/09)
@@ -991,10 +1047,20 @@ class CAD {
     });
     c.addEventListener('pointermove', (ev) => {
       const p = px(ev);
+      ultimoPx = p;
+      // o botão do meio (ou o direito) apertado no meio do arrasto da janela: o navegador não manda o pointerdown do
+      // segundo botão do mesmo ponteiro — o que chega é o movimento com `buttons`; ele arrasta a vista
+      if (!arrastoVista && pressao && (ev.buttons & 6)) {
+        if (panNoArrasto) this.tela.arrastar([p[0] - panNoArrasto[0], p[1] - panNoArrasto[1]]);
+        panNoArrasto = p;
+        redesenharJanela(this.tela.retangulo ? this.tela.retangulo[1] : null);
+        return;
+      }
+      panNoArrasto = null;
       if (arrastoVista) {
         if (direito && !direito.movido && Math.hypot(p[0] - direito.px[0], p[1] - direito.px[1]) > ARRASTO_MIN) direito.movido = true;
         this.tela.arrastar([p[0] - arrastoVista[0], p[1] - arrastoVista[1]]); arrastoVista = p;
-        if (pressao && this.tela.retangulo) this.tela.retangulo = [this.tela.paraTela(pressao.mundo), this.tela.retangulo[1]];
+        redesenharJanela(this._janela ? p : null);
         return;
       }
       const s = this.snap.resolver(p, { orto: ev.shiftKey });
@@ -1007,9 +1073,14 @@ class CAD {
         return;
       }
       // a janela só aparece na ferramenta que a usa (o Mover sem seleção a usa; com a seleção feita, o arrasto é o movimento)
-      if (pressao && pressao.movido && this.ferramenta && this.ferramenta.onSoltar !== Ferramenta.prototype.onSoltar
-          && (typeof this.ferramenta.querJanela !== 'function' || this.ferramenta.querJanela())) {
+      if (pressao && pressao.movido && !pressao.capturado && usaJanela()) {
         this.tela.retangulo = [this.tela.paraTela(pressao.mundo), p];
+        talvezAutoPan();
+      }
+      if (this._janela && !pressao) {
+        this.tela.retangulo = [this.tela.paraTela(this._janela.mundo), p];
+        this.medida(p[0] >= this.tela.retangulo[0][0] ? 'janela: o que está inteiro dentro' : 'janela: o que tocar');
+        talvezAutoPan();
       }
       if (!pressao || !pressao.movido) {
         this.tela.realce = this.ferramenta && this.ferramenta.constructor.id === 'selecionar' ? (this.tela.sob(p) || {}).id || null : null;
@@ -1021,12 +1092,23 @@ class CAD {
       const p = px(ev);
       if (arrastoVista) {
         arrastoVista = null; delete this.el.palco.dataset.arrastando;
-        // o botão direito sem arrastar: o menu de contexto ali (pedido do usuário, 07/10)
-        if (direito && !direito.movido && ev.button === 2) this.menuDeContexto(p, ev);
+        // o botão direito sem arrastar: o menu de contexto ali (pedido do usuário, 07/10); com a janela aberta, ele a cancela
+        if (direito && !direito.movido && ev.button === 2) { if (!this._cancelarJanela()) this.menuDeContexto(p, ev); }
         direito = null;
         return;
       }
+      // o segundo clique fecha a janela aberta pelo primeiro e seleciona o que está nela
+      if (this._janela && ev.button === 0 && !pressao) {
+        const de = this.tela.paraTela(this._janela.mundo);
+        this._janela = null; pararAutoPan();
+        this.tela.retangulo = null;
+        const s = this.snap.resolver(p, { orto: ev.shiftKey });
+        if (this.ferramenta) this.ferramenta.onSoltar(s.ponto, { ...evInfo(ev), px: p, arrasto: { de, para: p } });
+        this.tela.pedirQuadro();
+        return;
+      }
       if (!pressao) return;
+      pararAutoPan();
       const s = this.snap.resolver(p, { orto: ev.shiftKey });
       if (pressao.capturado) {
         // arrastou a alça: solta onde está; só clicou: a alça fica presa ao cursor até o próximo clique
@@ -1034,6 +1116,12 @@ class CAD {
       } else if (pressao.movido && this.tela.retangulo) {
         this.tela.retangulo = null;
         if (this.ferramenta) this.ferramenta.onSoltar(s.ponto, { ...evInfo(ev), px: p, arrasto: { de: this.tela.paraTela(pressao.mundo), para: p } });
+      } else if (ev.button === 0 && !pressao.movido && usaJanela() && this.ferramenta.constructor.id === 'selecionar' && !this.tela.sob(p)) {
+        // clique num ponto vazio na Seleção: abre a janela, que acompanha o cursor até o próximo clique (como no
+        // AutoCAD); nas outras ferramentas que aceitam caixa o clique no vazio continua sendo delas (só o arrasto abre)
+        this._janela = { mundo: pressao.mundo };
+        this.tela.retangulo = [p, p];
+        this.dica('Janela: clique o outro canto (para a direita, o que está inteiro dentro; para a esquerda, o que tocar) · botão do meio arrasta, roda dá zoom · Esc cancela');
       } else if (this.ferramenta) {
         this.ferramenta.onPonto(s.ponto, { ...evInfo(ev), px: p });
       }
@@ -1050,7 +1138,7 @@ class CAD {
       const m = this.tela.paraMundo(px(ev));
       this.el.coord.textContent = `x ${formatarMm(m[0])}  y ${formatarMm(m[1])}`;
       // a janela de seleção em curso acompanha o zoom: o primeiro canto fica no ponto do desenho clicado
-      if (pressao && this.tela.retangulo) { this.tela.retangulo = [this.tela.paraTela(pressao.mundo), px(ev)]; this.tela.pedirQuadro(); }
+      redesenharJanela(px(ev));
     }, { passive: false });
     // duplo clique com o botão do meio enquadra: o Chrome não manda dblclick para ele, só auxclick com detail 2
     c.addEventListener('auxclick', (ev) => { if (ev.button === 1 && ev.detail === 2) this.tela.enquadrar(); });
@@ -1064,7 +1152,11 @@ class CAD {
         if (e && (e.tipo === 'texto' || e.tipo === 'chamada' || e.tipo === 'cota')) { ev.preventDefault(); this.editarTextoNoLugar(e); }
       }
     });
-    c.addEventListener('pointerleave', () => { this.tela.cursor = null; this.tela.snap = null; this.tela.pedirQuadro(); });
+    c.addEventListener('pointerleave', () => {
+      this.tela.cursor = null; this.tela.snap = null; this.tela.pedirQuadro();
+      // a janela aberta pelo clique com o cursor fora do desenho (no painel do lado): a vista não anda sozinha
+      if (!pressao) { ultimoPx = null; pararAutoPan(); }
+    });
   }
 
   // ----------------------------------------------------------- teclado
@@ -1104,6 +1196,8 @@ class CAD {
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'p') { ev.preventDefault(); this.dialogoImprimir(); return; }
       // Esc fecha primeiro o menu aberto, como em qualquer programa (P12, primeiro uso 16/10: o menu ficava por cima do desenho)
       if (ev.key === 'Escape' && document.querySelector('.menu.aberto')) { this._fecharMenus(); return; }
+      // Esc com a janela de seleção aberta: cancela só a janela (a seleção fica)
+      if (ev.key === 'Escape' && this._cancelarJanela && this._cancelarJanela()) return;
       if (ev.key === 'Escape') { if (this.ferramenta) { this.ferramenta.cancelar(); } this.selecionar([]); if (this.ferramenta.constructor.id !== 'selecionar') this.ativarFerramenta('selecionar'); return; }
       if (ev.key === 'F8') { ev.preventDefault(); this.definirOrto(!this.snap.orto); return; }
       // os atalhos de duas letras, como no AutoCAD: MA (o MATCHPROP) abre Copiar propriedades e TR (o TRIM) o Aparar

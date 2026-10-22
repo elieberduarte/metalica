@@ -76,6 +76,7 @@ const CHAVE_ULTIMO = 'galpao.editor.ultimo';    // nome do último modelo salvo 
 const ATRASO_AUTOSAVE = 4000;                   // ms de sossego antes de gravar no servidor
 const TECLAS_VISTA = ['topo', 'frente', 'tras', 'esquerda', 'direita', 'inferior', 'isometrica'];
 const ARRASTO_MIN = 4;                          // pixels até um clique virar arrasto
+const MARGEM_AUTO_PAN = 28, VELOCIDADE_AUTO_PAN = 16;   // a janela de seleção na borda: px da borda; px por quadro
 const ABREVIACOES = { navegacao: 'Nav', desenho: 'Des', edicao: 'Edi', medicao: 'Med', estrutura: 'Estr' };
 
 // Rota da análise de esforços. Mora aqui, e não em nucleo/api.js, porque é o editor que
@@ -623,7 +624,8 @@ export class Editor {
       this._fecharMenus();
       try { c.setPointerCapture(ev.pointerId); } catch { /* sem captura */ }
       const [x, y] = this._local(ev);
-      this._baixo = { x, y, arrastou: false };
+      // o ponto do modelo sob o clique: o canto da janela anda com a vista quando ela se mexe no meio do arrasto
+      this._baixo = { x, y, arrastou: false, mundo: this.camera.deTela(x, y) };
       if (!this._trataArrasto()) {
         const p = this._resolver(x, y, ev);
         this._confirmarPonto(p, this._evento(ev));
@@ -631,6 +633,21 @@ export class Editor {
     });
 
     c.addEventListener('pointermove', (ev) => {
+      // o direito (pan) ou o do meio (órbita) apertado no meio do arrasto do esquerdo — a janela de seleção: o
+      // navegador não manda o pointerdown do segundo botão do mesmo ponteiro, só o movimento com `buttons`
+      if (this._baixo && (ev.buttons & 1) && (ev.buttons & 6)) {
+        const [x, y] = this._local(ev);
+        const u = this._navNoArrasto;
+        if (u) {
+          const dx = x - u[0], dy = y - u[1];
+          const pan = (ev.buttons & 2) ? !ev.shiftKey : !!ev.shiftKey;
+          if (pan) this.camera.deslocarVista(-dx, -dy);
+          else this.camera.girarEmVolta(this.camera.alvo.clone(), dx, dy);
+        }
+        this._navNoArrasto = [x, y];
+        return;
+      }
+      this._navNoArrasto = null;
       this._movPendente = ev;
       if (this._rafMov) return;
       this._rafMov = requestAnimationFrame(() => {
@@ -647,8 +664,10 @@ export class Editor {
       const [x, y] = this._local(ev);
       const b = this._baixo;
       this._baixo = null;
+      this._navNoArrasto = null;
+      this._pararAutoPan();
       if (Math.hypot(x - b.x, y - b.y) > ARRASTO_MIN) b.arrastou = true;
-      const arrasto = b.arrastou ? { de: [b.x, b.y], para: [x, y] } : null;
+      const arrasto = b.arrastou ? { de: this._inicioDoArrasto(b), para: [x, y] } : null;
       const p = this._resolver(x, y, ev);
       const e = this._evento(ev, { arrasto });
       if (this._trataArrasto()) {
@@ -670,7 +689,52 @@ export class Editor {
       this._ultimoMouse = null;          // fora do canvas não há o que reinferir
       this.inferencia.limpar();
       this.selecao.realcarSobre(null);
+      if (!this._baixo) this._pararAutoPan();   // a janela aberta pelo clique, o cursor no painel: a vista não anda
     });
+
+    // Alt+Tab no meio do arrasto: o soltar do botão não chega e a janela ficava presa ao cursor. A ferramenta decide
+    // (a Seleção deixa a janela aberta, como a do clique: o próximo clique a fecha, Esc cancela)
+    window.addEventListener('blur', () => {
+      const b = this._baixo;
+      this._baixo = null;
+      this._navNoArrasto = null;
+      this._pararAutoPan();
+      if (b) this._chamar('perdeuFoco', b.arrastou ? { de: this._inicioDoArrasto(b), mundo: b.mundo } : null);
+    });
+  }
+
+  /** O canto onde o arrasto começou, na tela de agora (a vista pode ter andado no meio dele). */
+  _inicioDoArrasto(b) {
+    if (!b.mundo) return [b.x, b.y];
+    const t = this.camera.paraTela(b.mundo);
+    return isFinite(t[0]) && isFinite(t[1]) ? [t[0], t[1]] : [b.x, b.y];
+  }
+
+  /**
+   * A janela de seleção com o cursor perto da borda do canvas: a vista anda sozinha para aquele lado, como o desenho
+   * que corre no CAD — a janela maior que a tela sem soltar o botão (pedido do usuário, 21/10).
+   */
+  _talvezAutoPan() {
+    if (this._autoPan || !this._chamar('querAutoPan')) return;
+    const passo = () => {
+      this._autoPan = null;
+      const u = this._posAutoPan;
+      if (!u || !this._chamar('querAutoPan')) return;
+      const r = this.el.canvas.getBoundingClientRect();
+      const forca = (d) => (d < MARGEM_AUTO_PAN ? Math.min(2, (MARGEM_AUTO_PAN - d) / MARGEM_AUTO_PAN) : 0);
+      const dx = (forca(r.width - u[0]) - forca(u[0])) * VELOCIDADE_AUTO_PAN;
+      const dy = (forca(r.height - u[1]) - forca(u[1])) * VELOCIDADE_AUTO_PAN;
+      if (!dx && !dy) return;
+      this.camera.deslocarVista(dx, dy);
+      this._autoPan = requestAnimationFrame(passo);
+    };
+    this._autoPan = requestAnimationFrame(passo);
+  }
+
+  _pararAutoPan() {
+    if (this._autoPan) cancelAnimationFrame(this._autoPan);
+    this._autoPan = null;
+    this._posAutoPan = null;
   }
 
   _confirmarPonto(p, ev) {
@@ -689,19 +753,22 @@ export class Editor {
     };
     if (ev.buttons & 6) { this.inferencia.limpar(); return; }   // navegando
     let arrasto = null;
-    if (this._baixo && (ev.buttons & 1)) {
+    // o botão apertado — ou o movimento refeito porque a vista andou no meio do arrasto (o arrasto continua)
+    if (this._baixo && ((ev.buttons & 1) || ev.refeito)) {
       if (Math.hypot(x - this._baixo.x, y - this._baixo.y) > ARRASTO_MIN) this._baixo.arrastou = true;
-      if (this._baixo.arrastou) arrasto = { de: [this._baixo.x, this._baixo.y], para: [x, y] };
+      if (this._baixo.arrastou) arrasto = { de: this._inicioDoArrasto(this._baixo), para: [x, y] };
     }
     const p = this._resolver(x, y, ev);
     if (this.idAtiva !== 'selecionar' && this.inferencia.ativa) this.inferencia.desenhar(p);
     else this.inferencia.limpar();
     this._chamar('onMover', p, this._evento(ev, { arrasto, arrastando: !!arrasto }));
+    this._posAutoPan = [x, y];
+    this._talvezAutoPan();
   }
 
   /** Refaz o último movimento — depois de uma tecla mudar trava ou estado. */
   _reprocessarMouse() {
-    if (this._ultimoMouse) this._processarMovimento({ ...this._ultimoMouse, buttons: 0 });
+    if (this._ultimoMouse) this._processarMovimento({ ...this._ultimoMouse, buttons: 0, refeito: true });
   }
 
   _atualizarTrava() {

@@ -617,6 +617,36 @@ export class Camera {
     return [x, y, v.z];
   }
 
+  /**
+   * O ponto do documento (mm) sob o pixel (x, y) do canvas, no plano da tela que passa pelo alvo. É o canto da janela
+   * de seleção preso ao modelo: com o pan, a roda ou a órbita, ele anda junto com o desenho.
+   */
+  deTela(x, y) {
+    const ndc = new THREE.Vector2((x / Math.max(this.largura, 1)) * 2 - 1, -(y / Math.max(this.altura, 1)) * 2 + 1);
+    const raio = this._raio || (this._raio = new THREE.Raycaster());
+    raio.setFromCamera(ndc, this.ativa);
+    const dir = new THREE.Vector3();
+    this.ativa.getWorldDirection(dir);
+    const plano = new THREE.Plane().setFromNormalAndCoplanarPoint(dir, this.controles.target);
+    const p = raio.ray.intersectPlane(plano, new THREE.Vector3()) || this.controles.target.clone();
+    return [p.x / ESCALA, p.y / ESCALA, p.z / ESCALA];
+  }
+
+  /** Leva a vista `dx` pixels para a direita e `dy` para baixo (o desenho vai para o outro lado), como o pan. */
+  deslocarVista(dx, dy) {
+    if (!dx && !dy) return;
+    this.concluirAnimacao();
+    const s = this.mmPorPixel() * ESCALA;
+    const m = this.ativa.matrixWorld.elements;
+    const d = new THREE.Vector3(m[0], m[1], m[2]).multiplyScalar(dx * s)
+      .addScaledVector(new THREE.Vector3(m[4], m[5], m[6]), -dy * s);
+    this.ativa.position.add(d);
+    this.controles.target.add(d);
+    this.ativa.updateMatrixWorld();
+    this.controles.update();
+    this.controles.dispatchEvent({ type: 'change' });
+  }
+
   /** Quantos milímetros do documento cabem num pixel, à distância do alvo. */
   mmPorPixel(pontoMM = null) {
     let d;

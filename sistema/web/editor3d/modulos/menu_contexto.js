@@ -20,6 +20,11 @@ export function ligarMenuDeContexto(editor) {
     desce = null;
     if (d && Math.hypot(ev.clientX - d[0], ev.clientY - d[1]) > ARRASTO) return;
     ev.preventDefault();
+    // o direito apertado no meio do arrasto do esquerdo (a janela de seleção) é o pan, não o menu
+    if (editor._baixo) return;
+    // com a janela de seleção aberta pelo clique, o direito sem arrastar a cancela (como o Esc)
+    const f = editor.ativa;
+    if (f && typeof f.cancelarJanela === 'function' && f.cancelarJanela()) return;
     abrirMenuDeContexto(editor, ev.clientX, ev.clientY);
   });
 }
