@@ -62,6 +62,9 @@ sesi += [_peca("arqp0", 0.0, "Pilar", "Concreto", ARQP), _peca("tel0", 3000.0, "
 sesi += [_peca("acm0", 6000.0, "Platibanda fachada A — ACM e estrutura", "Concreto", "ARQ — Platibandas", z=16000),
          {"id": "plm0", "tipo": "barra", "nome": "montante", "camada": "Fachadas — Platibanda", "material": "", "perfil": "L 2\"×3/16\"",
           "rotacao": 0.0, "inicio": [0, 7000.0, 15000], "fim": [0, 7000.0, 18000]}]
+# a peça pelo nome (TEL-02, 3ª vez, 22/10): a calha e o rufo do arquitetônico na camada "ARQ — Outros", de Concreto
+sesi += [_peca("cal1", 8000.0, "Calha da borda sul do ginásio", "Concreto", "ARQ — Outros", z=17000),
+         _peca("ruf1", 9000.0, "Rufo da platibanda sul", "Concreto", "ARQ — Outros", z=17000)]
 cam_sesi = {TES: {"nome": TES, "cor": "#888888", "visivel": True, "grupo": "Cobertura frontal e eixo 1"},
             "Fachadas — Suporte da calha": {"nome": "Fachadas — Suporte da calha", "cor": "#888888", "visivel": True},
             ARQT: {"nome": ARQT, "cor": "#cfd6e0", "visivel": True, "grupo": "ARQUITETÔNICO"},
@@ -70,7 +73,8 @@ cam_sesi = {TES: {"nome": TES, "cor": "#888888", "visivel": True, "grupo": "Cobe
             "Telhas": {"nome": "Telhas", "cor": "#888888", "visivel": True, "grupo": GLANC},
             "Calhas": {"nome": "Calhas", "cor": "#888888", "visivel": True, "grupo": GLANC},
             "ARQ — Platibandas": {"nome": "ARQ — Platibandas", "cor": "#bfbfbf", "visivel": True, "grupo": "ARQUITETÔNICO"},
-            "Fachadas — Platibanda": {"nome": "Fachadas — Platibanda", "cor": "#888888", "visivel": True}}
+            "Fachadas — Platibanda": {"nome": "Fachadas — Platibanda", "cor": "#888888", "visivel": True},
+            "ARQ — Outros": {"nome": "ARQ — Outros", "cor": "#c9c0b0", "visivel": True, "grupo": "ARQUITETÔNICO"}}
 for nome, modelo in (("obra", {"nome": "obra", "unidade": "mm", "entidades": ents, "camadas": camadas, "materiais": {}}), ("aco", _modelo()),
                      ("sesi", {"nome": "sesi", "unidade": "mm", "entidades": sesi, "camadas": cam_sesi, "materiais": {}})):
     os.makedirs(os.path.join(DADOS, nome))
@@ -209,14 +213,14 @@ try:
     ok(esperar(aba, PRONTO, 90), "o projeto do SESI abriu")
     aba.avaliar(PINTAR % "sistema")
     leg = json.loads(aba.avaliar(LEGENDA) or "[]")
-    ok([x[:2] for x in leg] == [["Cobertura — telhas, calhas e rufos", 6], ["Metálica", 5], ["Pré-moldado (concreto)", 1]],
-       f"SESI por sistema: as 2 telhas do arquitetônico, a de material Telha, a telha e a calha lançadas e o ACM da platibanda na "
+    ok([x[:2] for x in leg] == [["Cobertura — telhas, calhas e rufos", 8], ["Metálica", 5], ["Pré-moldado (concreto)", 1]],
+       f"SESI por sistema: as 2 telhas do arquitetônico, a de material Telha, a telha e a calha lançadas, o ACM da platibanda e a calha e o rufo do arq em 'ARQ — Outros' (pelo nome) na "
        f"Cobertura; as 3 barras do grupo 'Cobertura frontal', o suporte da calha e o montante da platibanda na Metálica; o pilar de concreto no Pré-moldado ({leg})")
     aba.avaliar("document.querySelector('[data-painel=camadas]').click()")
     aba.avaliar("document.querySelector('#painel-corpo input[data-sistema=cobertura]').click()")
     ID = "visor.fichas.findIndex(f => f.id === '%s')"
-    ok(aba.avaliar("[%s].every(i => visor.ocultasSistema.has(i))" % ",".join(ID % k for k in ("arqt0", "arqt1", "tel0", "lt0", "lc0", "acm0"))),
-       "desligar a Cobertura esconde as telhas do arquitetônico (camada 'ARQ — Telhas', de Concreto) e o ACM da platibanda")
+    ok(aba.avaliar("[%s].every(i => visor.ocultasSistema.has(i))" % ",".join(ID % k for k in ("arqt0", "arqt1", "tel0", "lt0", "lc0", "acm0", "cal1", "ruf1"))),
+       "desligar a Cobertura esconde as telhas do arquitetônico (camada 'ARQ — Telhas', de Concreto) o ACM da platibanda e a calha e o rufo de 'ARQ — Outros'")
     ok(aba.avaliar("[%s].every(i => !visor.ocultasSistema.has(i))" % ",".join(ID % k for k in ("tes0", "tes1", "tes2", "sup0", "arqp0", "plm0"))),
        "e não as tesouras do grupo 'Cobertura frontal e eixo 1', o suporte da calha, o montante da platibanda e o pilar")
 

@@ -21,6 +21,10 @@ const TELHA = /^\s*telha/i;
 // ela não está vinculada a camada da cobertura no sistema"): a camada de platibanda com peça que não é de aço — a
 // estrutura metálica da platibanda (barra sem material ou de aço) continua na Metálica
 const PLATIBANDA = /(^|[—–-])\s*platibandas?\b/i;
+// e pelo nome da PEÇA, em qualquer camada (TEL-02, 3ª vez em 22/10, a verificação do SESI: 7 calhas e 3 rufos do
+// arquitetônico na camada "ARQ — Outros", de Concreto, ficavam à vista com a Cobertura desligada) — como o Terreno já
+// faz; "Suporte da calha" continua na Metálica (o nome começa pela peça)
+const PECA_COBERTURA = /^\s*(telhas?|calhas?|rufos?|cumeeiras?)\b/i;
 // o terreno, a rua e a calçada num sistema só (usuário, 16/10: "terreno, rua e calçada como uma camada única; parede
 // pode deixar junto com o pré-moldado"): pelo nome da peça, antes do material (no IFC do Mercado são lajes de concreto);
 // o muro e as vagas do estacionamento também (usuário, Mercado, 20/10: "colocar esses itens junto com a layer do
@@ -45,7 +49,8 @@ export function gruposDeSistema(visor) {
   for (let i = 0; i < n; i++) {
     const m = fichas[i].m || '', q = porCamada.get(fichas[i].c);
     let s = 'outros';
-    if (daCobertura[fichas[i].c] || TELHA.test(m) || (daPlatibanda[fichas[i].c] && m && !ACO.test(m))) s = 'cobertura';
+    if (daCobertura[fichas[i].c] || TELHA.test(m) || PECA_COBERTURA.test(fichas[i].n || '')
+        || (daPlatibanda[fichas[i].c] && m && !ACO.test(m))) s = 'cobertura';
     else if (doTerreno[fichas[i].c] || TERRENO.test(fichas[i].p || '') || TERRENO.test(fichas[i].n || '')) s = 'terreno';
     else if (CONCRETO.test(m)) s = 'premoldado';
     else if (!m || ACO.test(m)) s = q[1] * 2 >= q[0] ? 'premoldado' : NEOPRENE.test(m) ? 'outros' : 'metalica';
