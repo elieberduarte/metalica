@@ -2181,9 +2181,10 @@ def _castanhas_das_tesouras(doc: Documento, pedidas: List[Tuple[str, dict]], avi
                              nome="%s %s" % (ca["marca"], pl["marca"]), material="Aço",
                              atributos={"tipo_ifc": "IfcMember", "elemento": "Castanha", "marca": ca["marca"], "sigla": ca["marca"],
                                         "tesoura": pl["marca"], "origem_2d": tid, "contravento": (r.atributos or {}).get("marca")})
+                # o eixo da cantoneira com o topo da seção na face de baixo do banzo (a faixa é medida a partir do eixo:
+                # somada a S0[2], que já é z_pe, o banzo entrava duas vezes e a castanha ia 5 m para cima — 22/10)
                 lo, hi = _faixa_da_secao(cast, Z)
-                dz = z_pe - hi
-                cast.inicio, cast.fim = (S0[0], S0[1], S0[2] + dz), (S1[0], S1[1], S1[2] + dz)
+                cast.inicio, cast.fim = (S0[0], S0[1], z_pe - hi), (S1[0], S1[1], z_pe - hi)
                 doc.add(cast)
                 # a pequena, em pé na ponta de fora, atravessada pela barra
                 ga = giro_deitada(lado_h, tuple(-c for c in dh))
@@ -2192,8 +2193,7 @@ def _castanhas_das_tesouras(doc: Documento, pedidas: List[Tuple[str, dict]], avi
                             papel="castanha", aco="ASTM A36", camada="Chapas", nome="%s %s (aba)" % (ca["marca"], pl["marca"]),
                             material="Aço", atributos=dict(cast.atributos, elemento="Castanha (aba)"))
                 lo, hi = _faixa_da_secao(aba, Z)
-                dz = z_pe - hi
-                aba.inicio, aba.fim = tuple(aba.inicio[:2]) + (aba.inicio[2] + dz,), tuple(aba.fim[:2]) + (aba.fim[2] + dz,)
+                aba.inicio, aba.fim = tuple(aba.inicio[:2]) + (z_pe - hi,), tuple(aba.fim[:2]) + (z_pe - hi,)
                 doc.add(aba)
                 n += 2
                 # a ponta do contravento no furo da aba (25 mm abaixo do banzo) e os furos; o parafuso no banzo
@@ -2530,6 +2530,13 @@ def gerar_no_projeto(g, s: str, nome: str, sincronia: bool = False) -> dict:
         e.atributos = dict(e.atributos or {}, planta=nome)          # de que planta a peça veio (a sincronia)
     if sincronia:
         return sincronizar(g, s, nome, doc, avisos)
+    # a conferência do 3D no modelo inteiro, como a de_planta.montar (GER-03, 22/10: a castanha CA1 do Hangar montada 5 m
+    # acima do banzo passou calada por este caminho — "o que são esses elementos voando")
+    from nucleo3d import conferencia_3d
+    conf_3d = conferencia_3d.conferir(doc, telha=False, posicao=False, cobertura_=False)
+    doc.metadados.setdefault("de_planta_estrutura", {})["conferencia_3d"] = {
+        "contagens": conf_3d["contagens"], "apontamentos": conf_3d["apontamentos"][:400]}
+    avisos = list(avisos) + conferencia_3d.avisos(conf_3d)
     g.salvar_modelo(s, doc.dict(), marco=True)
     return {"ok": True, "url": "/editor3d?projeto=%s" % s, "avisos": avisos, "estatisticas": doc.estatisticas(),
             "resumo": doc.metadados.get("de_planta_estrutura")}

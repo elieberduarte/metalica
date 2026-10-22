@@ -129,6 +129,118 @@ def pontas_soltas(barras, solidos=(), tol: float = 250.0, tol_solido: float = 15
     return out
 
 
+def _cantos_das_chapas(chapas) -> List[tuple]:
+    out = []
+    for c in chapas:
+        o, ex, ey = c.origem, c.eixo_x, c.eixo_y
+        for x, y in c.contorno or ():
+            out.append(tuple(o[i] + ex[i] * x + ey[i] * y for i in range(3)))
+    return out
+
+
+def pecas_voando(barras, solidos=(), chapas=(), tol: float = 250.0, tol_solido: float = 150.0) -> List[dict]:
+    """o grupo de barras que só encosta nele mesmo, longe de todo o resto (GER-03, reincidência de 22/10 no Hangar: a
+    castanha CA1 e a aba dela montadas 5 m acima do banzo — uma encostava na outra, e `pontas_soltas`, que olha barra
+    por barra, não as via). Os grupos: as barras ligadas pelas pontas (a ponta a `tol` da outra barra); fora o maior
+    grupo e o que chega no chão, o grupo sem barra de fora a `tol` (eixo com eixo, em qualquer ponto) nem sólido ou
+    chapa a `tol_solido` das pontas (o vértice; a caixa, no sólido simples) é peça voando. Um apontamento por grupo"""
+    n = len(barras)
+    if n < 2:
+        return []
+    pai = list(range(n))
+
+    def raiz(i):
+        while pai[i] != i:
+            pai[i] = pai[pai[i]]
+            i = pai[i]
+        return i
+    # a grade em 3D (no prédio os pavimentos se empilham na mesma célula da planta): a célula maior que `tol`
+    CEL = max(1000.0, tol, tol_solido)
+    cel3 = lambda p: (int(p[0] // CEL), int(p[1] // CEL), int(p[2] // CEL))
+    g: Dict[tuple, list] = collections.defaultdict(list)
+    caixas = []
+    for k, e in enumerate(barras):
+        c0, c1 = cel3([min(e.inicio[i], e.fim[i]) for i in range(3)]), cel3([max(e.inicio[i], e.fim[i]) for i in range(3)])
+        caixas.append((c0, c1))
+        for gx in range(c0[0], c1[0] + 1):
+            for gy in range(c0[1], c1[1] + 1):
+                for gz in range(c0[2], c1[2] + 1):
+                    g[(gx, gy, gz)].append(k)
+
+    def nas_celulas(c0, c1):
+        return {j for gx in range(c0[0] - 1, c1[0] + 2) for gy in range(c0[1] - 1, c1[1] + 2)
+                for gz in range(c0[2] - 1, c1[2] + 2) for j in g.get((gx, gy, gz), ())}
+
+    def vizinhas(p):
+        c = cel3(p)
+        return nas_celulas(c, c)
+    lo = [[min(e.inicio[i], e.fim[i]) - tol for i in range(3)] for e in barras]
+    hi = [[max(e.inicio[i], e.fim[i]) + tol for i in range(3)] for e in barras]
+    for k, e in enumerate(barras):
+        for p in (e.inicio, e.fim):
+            for j in vizinhas(p):
+                lj, hj = lo[j], hi[j]
+                if not (lj[0] <= p[0] <= hj[0] and lj[1] <= p[1] <= hj[1] and lj[2] <= p[2] <= hj[2]):
+                    continue
+                rj, rk = raiz(j), raiz(k)
+                if rj != rk and _dist_seg(p, barras[j].inicio, barras[j].fim) <= tol:
+                    pai[rj] = rk
+    grupos: Dict[int, list] = collections.defaultdict(list)
+    for k in range(n):
+        grupos[raiz(k)].append(k)
+    if len(grupos) < 2:
+        return []
+    maior = max(grupos.values(), key=len)
+    zmin = min(min(e.inicio[2], e.fim[2]) for e in barras)
+    soltos = [ks for ks in grupos.values() if ks is not maior
+              and not any(min(barras[k].inicio[2], barras[k].fim[2]) <= zmin + 5.0 for k in ks)]   # fora o do chão (o pilar)
+    if not soltos:
+        return []
+    # os vértices dos sólidos e os cantos das chapas, só nas células dos grupos soltos
+    quer = {(c[0] + dx, c[1] + dy, c[2] + dz) for ks in soltos for k in ks for p in (barras[k].inicio, barras[k].fim)
+            for c in (cel3(p),) for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)}
+    gs: Dict[tuple, list] = collections.defaultdict(list)
+    for v in [v for s in solidos for v in (s.vertices or ())] + _cantos_das_chapas(chapas):
+        c = cel3(v)
+        if c in quer:
+            gs[c].append(v)
+    # o sólido simples (a extrusão: laje, parede, pilar de concreto — até 64 vértices) vale pela caixa: o brise e a viga
+    # presos no meio da laje do SESI ficam longe dos vértices. O de forma livre (a telha) só pelos vértices, para não
+    # esconder o que voa debaixo dele
+    caixas_s = []
+    for s in solidos:
+        vs = s.vertices or ()
+        if 0 < len(vs) <= 64:
+            caixas_s.append(([min(v[i] for v in vs) - tol_solido for i in range(3)], [max(v[i] for v in vs) + tol_solido for i in range(3)]))
+
+    def na_caixa(p):
+        return any(all(lo_[i] <= p[i] <= hi_[i] for i in range(3)) for lo_, hi_ in caixas_s)
+    out = []
+    for ks in soltos:
+        dentro = set(ks)
+        perto = False
+        for k in ks:
+            e = barras[k]
+            for p in (e.inicio, e.fim):
+                c = cel3(p)
+                if any(math.dist(p, v) <= tol_solido for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)
+                       for v in gs.get((c[0] + dx, c[1] + dy, c[2] + dz), ())) or na_caixa(p):
+                    perto = True
+                    break
+            if perto or any(j not in dentro and _seg_seg(e.inicio, e.fim, barras[j].inicio, barras[j].fim)[0] <= tol
+                            for j in nas_celulas(*caixas[k])):
+                perto = True
+                break
+        if perto:
+            continue
+        e0 = barras[ks[0]]
+        zs = [p[2] for k in ks for p in (barras[k].inicio, barras[k].fim)]
+        out.append({"tipo": "peca_voando", "ids": [barras[k].id for k in ks], "ponto": [round(v) for v in e0.inicio],
+                    "texto": "%s (%s): %d barra(s) voando, longe de qualquer peça (z %.0f a %.0f)"
+                             % (e0.nome or _nome(e0), e0.papel or "barra", len(ks), min(zs), max(zs))})
+    return out
+
+
 def choques(barras, tol: float = 40.0, longe_da_ponta: float = 150.0) -> List[dict]:
     """barras de peças diferentes que se atravessam por dentro: os eixos a menos de `tol` mm, longe das pontas das duas.
     Um apontamento por par de peças (com quantos cruzamentos)"""
@@ -540,17 +652,18 @@ def conferir(doc, telha: bool = True, soltas: bool = True, posicao: bool = True,
     as pontas soltas ficam de fora (a tela Verificar apoios já as diz pelas regras dela)"""
     barras = list(doc.barras)
     rep = repetidas(barras)
+    voando = pecas_voando(barras, list(doc.solidos), list(doc.chapas)) if soltas else []
     soltas = pontas_soltas(barras, list(doc.solidos)) if soltas else []
     ch = choques(barras)
     tl = telha_ao_lado(doc) if telha else []
     pos = posicao_na_trelica(barras) if posicao else []
     cob = (cobertura(doc) + cobertura_continua(doc)) if cobertura_ else []
-    ordem = {"repetida": 0, "choque": 1, "rufo_choque": 2, "buraco": 3, "fresta": 3, "borda_aberta": 3, "sem_rufo": 4,
-             "posicao": 5, "degrau": 6,
+    ordem = {"peca_voando": 0, "repetida": 0, "choque": 1, "rufo_choque": 2, "buraco": 3, "fresta": 3, "borda_aberta": 3,
+             "sem_rufo": 4, "posicao": 5, "degrau": 6,
              "dobra": 7, "ponta_solta": 8}
-    aps = sorted(rep + ch + cob + pos + tl + soltas, key=lambda a: (ordem.get(a["tipo"], 9), -abs(a.get("mm") or 0)))
+    aps = sorted(voando + rep + ch + cob + pos + tl + soltas, key=lambda a: (ordem.get(a["tipo"], 9), -abs(a.get("mm") or 0)))
     return {"apontamentos": aps,
-            "contagens": {"repetidas": len(rep), "choques": len(ch), "pontas_soltas": len(soltas),
+            "contagens": {"pecas_voando": len(voando), "repetidas": len(rep), "choques": len(ch), "pontas_soltas": len(soltas),
                           "fora_da_posicao": len(pos),
                           "tercas_em_balanco": sum(1 for a in soltas if "balanço" in a["texto"]),
                           "telha_degraus": sum(1 for a in tl if a["tipo"] == "degrau"),
@@ -567,11 +680,11 @@ def avisos(conf: dict, desl: Sequence[float] = (0.0, 0.0), telha_min: float = 50
     """os apontamentos em texto de aviso, com o ponto em mm do DESENHO (o modelo − `desl`), como os outros avisos da
     montagem (a montagem troca o ponto pelos eixos). A telha abaixo de `telha_min` fica só na contagem"""
     c = conf["contagens"]
-    out = ["Conferência do 3D: %d peça(s) repetida(s), %d choque(s) entre peças, %d peça(s) da treliça fora da posição "
-           "da regra, %d ponta(s) solta(s) (%d terça(s) em balanço), telha ao lado: %d degrau(s) e %d dobra(s) acima de "
-           "20 mm (%d acima de 5 cm); cobertura: %d borda(s) aberta(s), %d sem rufo na parede, %d calha/rufo batendo em peça, "
-           "%d buraco(s) e %d fresta(s)."
-           % (c["repetidas"], c["choques"], c.get("fora_da_posicao", 0), c["pontas_soltas"], c["tercas_em_balanco"],
+    out = ["Conferência do 3D: %d peça(s) voando, %d peça(s) repetida(s), %d choque(s) entre peças, %d peça(s) da treliça "
+           "fora da posição da regra, %d ponta(s) solta(s) (%d terça(s) em balanço), telha ao lado: %d degrau(s) e %d dobra(s) "
+           "acima de 20 mm (%d acima de 5 cm); cobertura: %d borda(s) aberta(s), %d sem rufo na parede, %d calha/rufo batendo "
+           "em peça, %d buraco(s) e %d fresta(s)."
+           % (c.get("pecas_voando", 0), c["repetidas"], c["choques"], c.get("fora_da_posicao", 0), c["pontas_soltas"], c["tercas_em_balanco"],
               c["telha_degraus"], c["telha_dobras"], c["telha_acima_de_5cm"], c.get("cobertura_bordas_abertas", 0),
               c.get("cobertura_sem_rufo", 0), c.get("cobertura_choques", 0), c.get("cobertura_buracos", 0),
               c.get("cobertura_frestas", 0))]

@@ -40,6 +40,36 @@ def test_ponta_solta_mas_nao_a_que_encosta_no_banzo_curvo():
     assert any("TC1 em balanço" in a["texto"] for a in C.pontas_soltas(list(t.barras)))
 
 
+def test_peca_voando_pega_o_grupo_que_so_encosta_nele_mesmo():
+    """GER-03, reincidência de 22/10 (Hangar: a castanha CA1 e a aba dela 5 m acima do banzo, uma encostada na outra —
+    as pontas_soltas, barra por barra, não viam): o grupo longe de tudo é peça voando; o grupo preso na estrutura pelo
+    meio da barra, o do chão e o que encosta no meio de uma laje (o brise do SESI) não"""
+    doc = Documento()
+    _b(doc, (0, 0, 0), (0, 0, 5000), papel="pilar", peca="P1")
+    _b(doc, (6000, 0, 0), (6000, 0, 5000), papel="pilar", peca="P2")
+    _b(doc, (0, 0, 5000), (6000, 0, 5000), papel="banzo")
+    # a castanha e a aba, encostadas uma na outra, 5 m acima do banzo
+    ca = _b(doc, (3000, 0, 9985), (3150, 0, 9985), papel="castanha", peca="CA1 T1")
+    aba = _b(doc, (3150, -25, 9985), (3150, 25, 9985), papel="castanha", peca="CA1 T1")
+    # a que está no lugar: embaixo do banzo
+    _b(doc, (1000, 0, 4960), (1150, 0, 4960), papel="castanha", peca="CA1 T1")
+    _b(doc, (1150, -25, 4960), (1150, 25, 4960), papel="castanha", peca="CA1 T1")
+    # a terça apoiada no banzo pelo meio dela (as pontas longe dele)
+    _b(doc, (2000, -3000, 5100), (2000, 3000, 5100), papel="terça", sigla="TC1")
+    # o brise preso no meio da face de uma laje (longe dos vértices dela)
+    laje = Solido(nome="laje", camada="ARQ — Lajes", vertices=[(x, y, z) for z in (8000, 8200) for x, y in
+                                                               ((20000, 0), (40000, 0), (40000, 20000), (20000, 20000))],
+                  faces=[[0, 1, 2, 3], [4, 5, 6, 7]])
+    doc.add(laje)
+    _b(doc, (30000, 10000, 7900), (30000, 10000, 7000), papel="barra", peca="ARB1")
+    r = C.pecas_voando(list(doc.barras), list(doc.solidos), list(doc.chapas))
+    assert len(r) == 1 and set(r[0]["ids"]) == {ca.id, aba.id}
+    assert "voando" in r[0]["texto"]
+    conf = C.conferir(doc, telha=False, posicao=False, cobertura_=False)
+    assert conf["contagens"]["pecas_voando"] == 1 and conf["apontamentos"][0]["tipo"] == "peca_voando"
+    assert "1 peça(s) voando" in C.avisos(conf)[0]
+
+
 def test_choque_entre_pecas_mas_nao_o_cruzamento_normal():
     doc = Documento()
     _b(doc, (0, 0, 7000), (0, 6000, 7000), papel="terça", sigla="TC14")

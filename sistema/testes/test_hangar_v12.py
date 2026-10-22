@@ -229,3 +229,9 @@ def test_chapa_da_vc_e_castanha_no_3d():
     assert any("CA1 da T1: 1 ponta(s) de contravento no banzo de cima sem castanha" in a for a in av)
     assert any("CV1: espessura a definir" in a for a in av)
     assert ponta[2] < pe                                      # a ponta abaixo do banzo, no furo da aba
+    # 22/10 (usuário: "o que são esses elementos voando"): a castanha e a aba com o topo na face de baixo do banzo —
+    # antes a altura do banzo entrava duas vezes e as 64 da V12 ficavam 5 m acima dele
+    for b in cast:
+        assert abs(b.meio[2] + _faixa_da_secao(b, (0, 0, 1))[1] - pe) < 0.5, b.nome
+    from nucleo3d import conferencia_3d
+    assert conferencia_3d.pecas_voando(list(doc.barras), list(doc.solidos), list(doc.chapas)) == []
