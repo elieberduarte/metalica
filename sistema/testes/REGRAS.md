@@ -43,7 +43,7 @@ Triagem inicial de 21/10 (REGRESSOES.md + git log desde 12/10).
 | COB-03 telha até a parede | 4 (+ a 1ª correção) | parcial | 21/10 c8f1e1f |
 | COB-01 sem fresta nem buraco | 3 | sim | 21/10 c8f1e1f (Posto V2, 53 buracos e 43 frestas) |
 | TES-3.1 nada atravessa o banzo | 2 | sim | 19/10 22c229a |
-| GER-01 cada barra uma vez só | 2 | parcial | 21/10 ad76db2 |
+| GER-01 cada barra uma vez só | 3, aberta | parcial | 22/10 SESI (montantes repetidos a 30–120 mm nos cantos; ainda sem correção) |
 | TES-2.2 banzos abrem para dentro | 2 | sim | 21/10 8421ab5 |
 | TES-2.9 banzo 2U composto | 1 | sim | 21/10 1188b4c |
 | COB-02 nada atravessa telha, calha e rufo | 1 | parcial | 21/10 c8f1e1f (calhas cortadas na treliça) |
@@ -51,6 +51,7 @@ Triagem inicial de 21/10 (REGRESSOES.md + git log desde 12/10).
 | COB-12 o rufo segue a telha | 1 | **não** | 19/10 b886cb9 |
 | COB-13 peças inteiriças | 1 | **não** | 19/10 b886cb9 |
 | GER-03 nenhuma ponta solta | 1 | parcial | 21/10 ad76db2 |
+| GER-02 nada atravessa outra peça | 1, aberta | parcial | 22/10 6b22115 (SESI, VM caixa com os 2 Ue 22–30 mm um dentro do outro; degraus, steel deck e postes ainda abertos) |
 
 ---
 
@@ -345,21 +346,33 @@ Testes: `test_conferencia_3d.py`, `test_reanalise.py`.
 - **Enunciado (B10 e C8, 12/10):** a linha repetida na elevação não dobra o montante nem a presilha; um suporte de terça por apoio.
 - **Aprovada:** 12/10. **Aplica-se a:** todo modelo.
 - **Conferência:** **parcial** — `repetidas` (as mesmas pontas a 15 mm). Não pega a peça dobrada deslocada (o montante
-  visto de lado a 11 cm do verdadeiro, no Posto V2).
+  visto de lado a 11 cm do verdadeiro, no Posto V2; os montantes a 30–120 mm no SESI). **Reforço pendente:** conferir
+  pela seção real (duas barras paralelas cujas seções se sobrepõem são a mesma peça), como no item da GER-02.
 - **Testes:** test_repetida_pega_as_mesmas_pontas_em_qualquer_sentido, test_3_3_presilha_dobrada_aparece_e_sai.
 - **Histórico:**
   - 19/10 CD Bom Dia — montantes repetidos (modelo antigo) — 934dbd0 (Reanalisar).
   - 21/10 Posto CB — duas presilhas na mesma altura (uma 6,4 mm fora) — 0af6b75. **Reincidência.**
   - 21/10 Posto V2 — o montante da tesoura que chega, visto de lado, entrava como montante da transição a 11 cm do
     montante 2L (21 peças duplicadas) — ad76db2. **Reincidência** (a conferência não pegou: 11 cm > 15 mm).
+  - 22/10 SESI Chapecó — montantes repetidos a 30–120 mm nos cantos (VF9/41/43/47), achados pelo agente de verificação
+    (`Projeto/OBRAS/Sesi-Chapecó/verificacao-22-10/metalica.md`). **Reincidência, aberta:** espera o usuário; a
+    conferência não pegou.
 
 ### GER-02 — Nada atravessa outra peça
 - **Enunciado (B4, B9, C6, 12/10):** uma treliça não passa por dentro da outra (barra a barra); a terça não corre dentro
   de painel ou transição; a treliça deitada termina na face da outra.
 - **Aprovada:** 12/10. **Aplica-se a:** todo modelo.
-- **Conferência:** **sim** — `choques` (fora os cruzamentos normais: X do contraventamento, corrente, nó no pilar).
-- **Testes:** test_choque_entre_pecas_mas_nao_o_cruzamento_normal.
-- **Histórico:** (nenhuma reincidência registrada)
+- **Conferência:** **parcial** (rebaixada em 22/10) — `choques` olha o eixo (40 mm) e pula as barras paralelas (fora os
+  cruzamentos normais: X do contraventamento, corrente, nó no pilar). Por isso não pegou os 2 Ue da VM caixa um dentro
+  do outro, nem degraus, steel deck e postes sobrepostos no SESI. **Reforço pendente:** conferir pela seção real do
+  catálogo, girada como a barra. O SESI já tem a conta (`Projeto/OBRAS/Sesi-Chapecó/leitura-3d/conferir_met.py`, 12 s
+  para 577 mil pares) e ela vai para `conferencia_3d`.
+- **Código:** `nucleo3d/encaixe_pela_secao.py` (eixo_pelo_contorno, correntes_ate_a_alma), `de_planta._assentar_tercas`.
+- **Testes:** test_choque_entre_pecas_mas_nao_o_cruzamento_normal, test_encaixe_pela_secao.
+- **Histórico:**
+  - 22/10 SESI Chapecó — a leitura dava o eixo no meio do contorno e o 3D punha o centroide no eixo: a VM caixa com os 2 Ue
+    22–30 mm um dentro do outro (93 pares), terças no ar, correntes antes da terça — 6b22115 (código comum). **Reincidência**
+    (a regra B4/C6 é de 12/10; a conferência não pegou). Degraus, steel deck e postes sobrepostos: **abertos**, esperam o usuário.
 
 ### GER-03 — Nenhuma ponta solta
 - **Enunciado (12/10):** nenhuma ponta de barra longe de qualquer peça (a terça em balanço, a treliça que não chega, a alma pendurada).
@@ -417,8 +430,10 @@ comum (progresso.js, cad.js, editor.js, sistemas.js) vale para todas as telas qu
 | COB-03 | A telha vai até a parede, seja qual for a forma da borda | plano de 21/10; 4 correções (a2d716a, 8bedaa1, 8e9ac8c, 3391273) |
 | COB-14 | A telha é uma chapa por faixa, com o recorte junto | 3391273 (paginação da folha 12 do Posto V2) |
 | COB-16 | Treliça acima da telha no meio do telhado é revestida e rufada | a2d716a (corte BB do Posto) |
-| TEL-02 | No modo ver (e no celular), cada peça cai no sistema pelo que ela é (telha, tesoura, concreto…), não pelo nome do grupo: desligar um sistema esconde tudo dele e nada de outro | e156c93 (Sesi Chapecó, 22/10: as telhas do arquitetônico não sumiam com a Cobertura; a Cobertura escondia as tesouras dos grupos "Cobertura…"); c39a8b1 (22/10, 2ª correção em poucas horas: a platibanda em ACM do arquitetônico não saía com a Cobertura); verif_ver3d_sistema |
+| TEL-02 | No modo ver (e no celular), cada peça cai no sistema pelo que ela é (telha, tesoura, concreto…), não pelo nome do grupo: desligar um sistema esconde tudo dele e nada de outro | e156c93 (Sesi Chapecó, 22/10: as telhas do arquitetônico não sumiam com a Cobertura; a Cobertura escondia as tesouras dos grupos "Cobertura…"); c39a8b1 (2ª: a platibanda em ACM do arquitetônico não saía com a Cobertura); e014461 (3ª no mesmo dia: 7 calhas e 3 rufos do arquitetônico em "ARQ — Outros" à vista com a Cobertura desligada, achados pelos agentes). Proposta de conferência do modelo inteiro: no projeto real, toda peça com nome, camada ou material de cobertura cai na Cobertura, e nenhuma peça fica à vista com todos os sistemas desligados; verif_ver3d_sistema |
 | TEL-03 | A janela de seleção do CAD 2D e do 3D funciona como no AutoCAD: o pan funciona durante o arrasto, a tela anda com o cursor na borda e o Alt+Tab no meio solta a janela | 00fd082 (Vicente Residence, 22/10); verif_cad_janela, verif_selecao_janela_3d |
+| TEL-04 | O modo ver e o celular mostram a peça como ela é: o furo aberto (o editor também) e o vidro transparente, como no editor | e369076 (Sesi, 22/10: o vidro opaco do arquitetônico escondia os brises); 37623de (ME Sooro, 22/10: 10 furos das terças do IFC tampados no modo ver e no celular; o editor, cena.js, tampa os mesmos e ficou com o EDITOR 3D). Proposta de conferência do modelo inteiro: nenhum furo de face costurada coberto por triângulo no .mcel (a conta de test_face_costurada._cobre); verif_ver3d_vidro, test_face_costurada |
+| COB-01 (ampliação) | …nem chapa sobre chapa: duas telhas de direções diferentes não se cobrem além do cobrimento na terça | 7cf6e1d (Posto V2, 22/10: no canto da oval com a parede reta, chapas de duas direções uma sobre a outra — efeito das correções de encontro de 21/10). Conferência proposta: `Projeto/OBRAS/Posto-CB/leitura-3d/sobreposicao.py` (pares de direções diferentes que se cobrem > 0,005 m² em planta; Posto V2 0,77 → 0,31 m², 24 pares que sobram, quase todos o cobrimento de 50–100 mm) |
 | DET-01 | Planta de localização e chumbação por pavimento (o modo prédio) só em prédio de aço: chumbador em 3 pavimentos ou mais. Senão, a planta do galpão | 1725e84 (bateria da 0.9.1, 22/10: o modo prédio da Vicente entrou no Capitão pré-moldado, 17 plantas "IFCBEAM"); test_predio |
 
 ## Pendências de gerador (correção que mora só no script da obra)
