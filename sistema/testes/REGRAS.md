@@ -50,7 +50,7 @@ Triagem inicial de 21/10 (REGRESSOES.md + git log desde 12/10).
 | COB-04 cada água é um plano | 1 | sim | 21/10 8bedaa1 |
 | COB-12 o rufo segue a telha | 1 | **não** | 19/10 b886cb9 |
 | COB-13 peças inteiriças | 1 | **não** | 19/10 b886cb9 |
-| GER-03 nenhuma ponta solta | 1 | parcial | 21/10 ad76db2 |
+| GER-03 nenhuma ponta solta | 2 | parcial | 22/10 9f2c42c (Hangar, 64 castanhas CA1 5 m acima do banzo) |
 | GER-02 nada atravessa outra peça | 1, aberta | parcial | 22/10 6b22115 (SESI, VM caixa com os 2 Ue 22–30 mm um dentro do outro; degraus, steel deck e postes ainda abertos) |
 
 ---
@@ -377,13 +377,19 @@ Testes: `test_conferencia_3d.py`, `test_reanalise.py`.
 ### GER-03 — Nenhuma ponta solta
 - **Enunciado (12/10):** nenhuma ponta de barra longe de qualquer peça (a terça em balanço, a treliça que não chega, a alma pendurada).
 - **Aprovada:** 12/10. **Aplica-se a:** todo modelo.
-- **Conferência:** **parcial** — `pontas_soltas` (250 mm; 150 mm de sólido). Não pega a ponta a 9 cm da peça em que
-  devia estar presa.
-- **Testes:** test_ponta_solta_mas_nao_a_que_encosta_no_banzo_curvo, test_reanalise.
+- **Conferência:** **parcial** — `pontas_soltas` (250 mm; 150 mm de sólido), barra por barra, e desde 22/10
+  `pecas_voando` (9f2c42c, pelo Hangar): o grupo de barras ligadas só entre si, longe de tudo (fora o maior e o que chega
+  no chão), com grade 3D e sólido simples pela caixa (Hangar 0,8 s, Posto V2 7,8 s, SESI 4,2 s). Roda também no Montar pela
+  Montagem (gerar_no_projeto). Ainda não pega a ponta a 9 cm da peça em que devia estar presa.
+- **Testes:** test_ponta_solta_mas_nao_a_que_encosta_no_banzo_curvo, test_reanalise,
+  test_conferencia_3d::test_peca_voando_pega_o_grupo_que_so_encosta_nele_mesmo, test_hangar_v12::test_chapa_da_vc_e_castanha_no_3d.
 - **Histórico:**
   - 19/10 CD Bom Dia — tocos soltos e diagonais penduradas — 934dbd0.
   - 21/10 Posto V2 — "peças voando": a diagonal do painel vizinho entrando como alma; a meia diagonal solta a ~9 cm da
     diagonal que trava — ad76db2. **Reincidência.**
+  - 22/10 Hangar Almayer V12 — 64 castanhas CA1 a z 9.985, 5 m acima do banzo (a altura da seção somada duas vezes); a
+    castanha e a aba encostavam uma na outra e as `pontas_soltas` não viam — 9f2c42c (gerador + conferência reforçada).
+    **Reincidência.**
 
 ---
 
