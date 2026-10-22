@@ -56,9 +56,10 @@ def test_cota_do_dxf_igual_a_da_tela():
         traco = next(iter(b.query("INSERT")))
         meio = next(iter(b.query("MTEXT"))).dxf.insert
         r[x.dxf.text] = (traco.dxf.name, round(traco.dxf.xscale * math.sqrt(2), 2), round(meio.x, 2), round(meio.y, 2))
-    assert r["2500"] == ("_OBLIQUE", 2.5, 50.0, 12.62)        # no meio, acima da linha
-    assert r["64"] == ("_OBLIQUE", 1.0, 5.68, 42.62)          # curta: traço de 1 mm e o número ao lado
-    assert r["225"][1:] == (2.25, 4.5, 117.38)                # o número não cabe: um degrau para fora
+    # o meio do número: a linha + a folga de 0,625 mm (a DIMGAP do AutoCAD, 22/10; antes 0,55 × 2,5) + meia altura
+    assert r["2500"] == ("_OBLIQUE", 2.5, 50.0, 11.88)        # no meio, acima da linha
+    assert r["64"] == ("_OBLIQUE", 1.0, 5.68, 41.88)          # curta: traço de 1 mm e o número ao lado
+    assert r["225"][1:3] == (2.25, 4.5) and abs(r["225"][3] - 116.625) < 0.006   # o número não cabe: um degrau para fora
 
 
 def test_escala_da_cota():

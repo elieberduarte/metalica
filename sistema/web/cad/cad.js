@@ -4,7 +4,7 @@
 // Mouse: botão esquerdo é da ferramenta; do meio ou direito arrasta a vista; roda dá
 // zoom no cursor. Shift trava orto. Esc cancela; Enter e espaço confirmam/repetem.
 
-import { Desenho2D, clonar, valorCota, pontosDe, criar, segmentosDe, dist, maisProximoSeg } from './nucleo/desenho2d.js';
+import { Desenho2D, clonar, valorCota, pontosDe, criar, segmentosDe, dist, maisProximoSeg, folgaDaCota, FOLGA_TEXTO_COTA } from './nucleo/desenho2d.js';
 import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia, ComandoAdicionar, ComandoComposto, ComandoEscala } from './nucleo/comandos.js';
 import { Tela, formatarMm } from './nucleo/tela.js';
 import { acompanhar as acompanharTarefa } from '../progresso.js';
@@ -875,6 +875,7 @@ class CAD {
       if (sel.some(e => e.tipo === 'polilinha' || e.tipo === 'retangulo')) itens.push({ texto: 'Explodir em linhas', tecla: 'B', acao: F('explodir') });
       if (linhas >= 2) itens.push({ texto: 'Juntar', tecla: 'W', acao: F('juntar') });
       if (sel.some(e => e.tipo === 'cota')) itens.push({ texto: 'Ajustar cotas ao desenho', acao: F('ajustar_cota') }, { texto: 'Mover linha de cota', tecla: 'J', acao: F('mover_cota') });
+      if (sel.length === 1 && sel[0].tipo === 'cota') itens.push({ texto: 'Cota contínua (desta cota)', tecla: 'DC', acao: F('cota_continua') });
       itens.push('---');
       const camadas = [...new Set(sel.map(e => e.camada))];
       itens.push({ texto: camadas.length === 1 ? `Selecionar tudo da camada ${camadas[0]}` : 'Selecionar tudo das mesmas camadas',
@@ -1925,7 +1926,17 @@ class CAD {
           el('option', { value: v, texto: t, selected: String(e.casas ?? '') === v ? 'selected' : undefined })));
         casas.addEventListener('change', () => this.executar(new ComandoAlterar({ [e.id]: { casas: casas.value === '' ? null : +casas.value } }, 'Casas decimais da cota')));
         g.append(el('label', { texto: 'Casas decimais' }), casas);
-        const modo = el('select', {}, ...['alinhada', 'h', 'v'].map(m => el('option', { value: m, texto: m, selected: e.modo === m ? 'selected' : undefined })));
+        // a folga do número à linha de cota (mm no papel), a DIMGAP do AutoCAD (22/10); vazio = a do desenho
+        const folgaDesenho = folgaDaCota({}, (this.doc.metadados || {}).estilo);
+        const folga = el('input', { type: 'number', step: '0.125', min: '0', value: e.folga == null ? '' : String(e.folga),
+          placeholder: `${formatarMm(folgaDesenho, 3)} (do desenho)`, title: 'Distância da linha de cota à base do número, em mm no papel (vazio: a do desenho, em Estilos)' });
+        folga.addEventListener('change', () => {
+          const v = String(folga.value).trim() === '' ? null : parseFloat(String(folga.value).replace(',', '.'));
+          if (v !== null && !(v >= 0)) return;
+          this.executar(new ComandoAlterar({ [e.id]: { folga: v } }, 'Folga do número da cota'));
+        });
+        g.append(el('label', { texto: 'Folga do número (mm)' }), folga);
+        const modo =el('select', {}, ...['alinhada', 'h', 'v'].map(m => el('option', { value: m, texto: m, selected: e.modo === m ? 'selected' : undefined })));
         modo.addEventListener('change', () => this.executar(new ComandoAlterar({ [e.id]: { modo: modo.value } }, 'Modo da cota')));
         g.append(el('label', { texto: 'Modo' }), modo);
       }
@@ -2509,6 +2520,8 @@ class CAD {
       if (alt && (e.tipo === 'texto' || e.tipo === 'cota' || e.tipo === 'chamada')) m.altura = alt;
       if (opcoes.terminador && e.tipo === 'cota') m.terminador = opcoes.terminador === 'padrao' ? null : opcoes.terminador;
       if (opcoes.casas != null && e.tipo === 'cota') m.casas = opcoes.casas === 'auto' ? null : opcoes.casas;
+      // a folga do número: na seleção, a da cota; no desenho todo, a do estilo — as cotas voltam a seguir a dele
+      if (opcoes.folga != null && e.tipo === 'cota') { const v = ids ? opcoes.folga : null; if ((e.folga ?? null) !== v) m.folga = v; }
       if (e.tipo === 'hachura') {
         if (opcoes.padrao) m.padrao = opcoes.padrao;
         if (opcoes.espacamento != null && isFinite(opcoes.espacamento) && opcoes.espacamento > 0) m.espacamento = +opcoes.espacamento;
@@ -2522,7 +2535,9 @@ class CAD {
       if (opcoes.terminador && opcoes.terminador !== 'padrao') estilo.terminador = opcoes.terminador;
       if (opcoes.padrao) estilo.hachura = opcoes.padrao;
       if (opcoes.casas != null) { if (opcoes.casas === 'auto') delete estilo.casas; else estilo.casas = opcoes.casas; }
+      if (opcoes.folga != null) estilo.folga_texto = opcoes.folga;
       this.doc.metadados = { ...(this.doc.metadados || {}), estilo };
+      if (opcoes.folga != null) this.doc._grade = null;        // a caixa do número das cotas (o índice) mudou
     }
     const n = Object.keys(mud).length;
     if (n) this.executar(new ComandoAlterar(mud, 'Estilos do desenho'));
@@ -2542,14 +2557,17 @@ class CAD {
       angulo: el('input', { type: 'number', step: '15', placeholder: 'manter (graus)' }),
       mudarAltura: el('input', { type: 'checkbox' }),
       casas: el('select', {}, ...[['', 'manter'], ['auto', 'automático (inteiro, ou 1 casa)'], ['0', '0 (ao mm)'], ['1', '1'], ['2', '2'], ['3', '3']].map(([v, t]) => el('option', { value: v, texto: t }))),
+      // a DIMGAP do AutoCAD: da linha de cota à base do número, em mm no papel (22/10)
+      folga: el('input', { type: 'number', step: '0.125', min: '0', placeholder: `manter (hoje ${formatarMm(folgaDaCota({}, estilo), 3)}; AutoCAD ${formatarMm(FOLGA_TEXTO_COTA, 3)})` }),
     };
     campos.terminador.value = '';
     const corpo = el('div', {},
-      el('div', { class: 'explica', texto: 'Como os estilos do AutoCAD: a altura vale para textos, cotas e chamadas; o terminador para as cotas; padrão, espaçamento e ângulo para as hachuras. Com "todo o desenho", a altura vira a altura padrão dos textos novos e o terminador o das cotas novas.' }),
+      el('div', { class: 'explica', texto: 'Como os estilos do AutoCAD: a altura vale para textos, cotas e chamadas; o terminador, as casas e a folga do número para as cotas; padrão, espaçamento e ângulo para as hachuras. Com "todo o desenho", a altura vira a altura padrão dos textos novos e o terminador o das cotas novas.' }),
       el('label', {}, 'Aplicar a', campos.escopo),
       el('label', {}, el('span', {}, campos.mudarAltura, ' Altura de texto e cota (mm)'), campos.altura),
       el('label', {}, 'Terminador das cotas', campos.terminador),
       el('label', {}, 'Casas decimais das cotas', campos.casas),
+      el('label', {}, 'Folga do número à linha de cota (mm)', campos.folga),
       el('label', {}, 'Padrão das hachuras', campos.padrao),
       el('label', {}, 'Espaçamento da hachura (mm)', campos.espacamento),
       el('label', {}, 'Ângulo da hachura (°)', campos.angulo));
@@ -2561,6 +2579,7 @@ class CAD {
       espacamento: campos.espacamento.value ? parseFloat(campos.espacamento.value) : null,
       angulo: campos.angulo.value ? parseFloat(campos.angulo.value) : null,
       casas: campos.casas.value === '' ? null : campos.casas.value === 'auto' ? 'auto' : +campos.casas.value,
+      folga: String(campos.folga.value).trim() !== '' && parseFloat(String(campos.folga.value).replace(',', '.')) >= 0 ? parseFloat(String(campos.folga.value).replace(',', '.')) : null,
     };
     const ids = campos.escopo.value === 'selecao' ? sel : null;
     const n = this.aplicarEstilos(opcoes, ids);

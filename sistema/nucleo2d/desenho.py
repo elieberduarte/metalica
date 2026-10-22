@@ -159,6 +159,9 @@ class Cota(Entidade2D):
     # o fator de tamanho: texto, ponta e afastamentos juntos × fator — a cota feita sobre um desenho importado acompanha o
     # tamanho das cotas dele (07/10, web/cad/ferramentas.js Cota.fatorLocal); None = 1
     fator: Optional[float] = None
+    # a folga do número à linha de cota, em mm de papel (a DIMGAP do AutoCAD); None = a do desenho (metadados.estilo
+    # .folga_texto) ou FOLGA_TEXTO_COTA — 22/10, web/cad/nucleo/desenho2d.js folgaDaCota
+    folga: Optional[float] = None
 
     def pontos(self):
         return [self.p1, self.p2]
@@ -335,7 +338,8 @@ class Desenho:
             elif isinstance(e, Cota):
                 # o número da cota na camada do texto (preto no papel), a linha na da cota (28/09)
                 _cota_dxf(d, e, k, camada, terminador=(e.terminador or (self.metadados.get("estilo") or {}).get("terminador") or TERMINADOR_PADRAO),
-                          camada_texto=nome_cam("TEXTO") if "TEXTO" in self.camadas else None)
+                          camada_texto=nome_cam("TEXTO") if "TEXTO" in self.camadas else None,
+                          estilo=self.metadados.get("estilo") or {})
             elif isinstance(e, Hachura):
                 for contorno in e.contornos[:1]:      # o primeiro é o externo; os outros ficam vazios
                     if e.padrao == "solido" and len(contorno) >= 3:
@@ -377,10 +381,29 @@ def _terminador_dxf(d, x: float, y: float, ang: float, tam: float, camada: str, 
 #: usuário, 28/09)
 TERMINADOR_PADRAO = "traco"
 
+#: da linha de cota à base do número, em mm de papel (× o fator da cota): a DIMGAP do AutoCAD no estilo ISO-25 (pedido
+#: do usuário, 22/10, ME Sooro: "melhorar o magnetismo do número com a cota … igual ao autocad"). Antes, 0,55 × a altura
+#: do texto. Espelho de web/cad/nucleo/desenho2d.js FOLGA_TEXTO_COTA.
+FOLGA_TEXTO_COTA = 0.625
 
-def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = TERMINADOR_PADRAO, camada_texto: str = None):
+
+def folga_da_cota(c, estilo: Optional[dict] = None) -> float:
+    """A folga do número (mm de papel): a da cota, a do estilo do desenho ou a padrão."""
+    for v in (getattr(c, "folga", None), (estilo or {}).get("folga_texto")):
+        try:
+            if v is not None and v != "" and float(v) >= 0:
+                return float(v)
+        except (TypeError, ValueError):
+            pass
+    return FOLGA_TEXTO_COTA
+
+
+def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = TERMINADOR_PADRAO, camada_texto: str = None,
+              estilo: Optional[dict] = None):
     """Cota com setas (ou bolas, ou traços) e texto proporcionais à escala (o que
-    `saida/desenhos._cota` faz para o galpão, aqui sobre o documento 2D)."""
+    `saida/desenhos._cota` faz para o galpão, aqui sobre o documento 2D). O número no mesmo lugar que a tela o põe
+    (web/cad/nucleo/desenho2d.js textoDaCota): a `folga` acima da linha e, quando não cabe entre as chamadas, um degrau
+    para fora."""
     x1, y1 = c.p1
     x2, y2 = c.p2
     if c.modo == "h":
@@ -420,10 +443,14 @@ def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = TERMINADOR_PA
     mx, my = (a1[0] + a2[0]) / 2, (a1[1] + a2[1]) / 2
     ang_txt = ang if -90 < ang <= 90 else ang + 180
     lado = 1.0 if -90 < ang <= 90 else -1.0
-    off = h * 0.55 * lado
+    off = folga_da_cota(c, estilo) * k * f * lado
     if fora:
         mx += ux * (2.4 * tam + 0.4 * h * len(txt))
         my += uy * (2.4 * tam + 0.4 * h * len(txt))
+    elif 0.62 * h * len(txt) + 2 * tam > comp:
+        # não cabe entre as chamadas: um degrau para fora, como na tela (no PDF ele ficava em cima das chamadas)
+        mx += nx * sg * 1.9 * h
+        my += ny * sg * 1.9 * h
     d.texto(mx + nx * off, my + ny * off, txt, h, camada_texto or camada, angulo=ang_txt, alinhamento="centro")
 
 

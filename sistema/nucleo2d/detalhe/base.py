@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import fabrica
 from nucleo3d.modelo import Barra, Chapa, Documento, Solido
 from nucleo3d import geometria as _geo
-from nucleo2d.desenho import Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota, Chamada
+from nucleo2d.desenho import Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota, Chamada, FOLGA_TEXTO_COTA
 from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desenhar_furos, RHO_ACO, _area_2d,
                                 _arestas_dos_furos, _ordem_natural, _autovetores, _lacos_2d, polegada_de, mm_da_bitola)
 from saida.desenhos import _mm
@@ -382,11 +382,11 @@ class _Papel:
             tw = 0.62 * h * len(txt)
             pos = None
             if onde == "antes":
-                pos = (xs[i] - tw / 2 - 1.5 * esc + self.dx, y_linha + 0.55 * h + self.dy)
+                pos = (xs[i] - tw / 2 - 1.5 * esc + self.dx, y_linha + FOLGA_TEXTO_COTA * esc + self.dy)
             elif onde == "depois":
-                pos = (xs[i + 1] + tw / 2 + 1.5 * esc + self.dx, y_linha + 0.55 * h + self.dy)
+                pos = (xs[i + 1] + tw / 2 + 1.5 * esc + self.dx, y_linha + FOLGA_TEXTO_COTA * esc + self.dy)
             elif onde == "fora":
-                pos = ((xs[i] + xs[i + 1]) / 2 + self.dx, y_linha + 0.55 * h + sg * 1.9 * h + self.dy)
+                pos = ((xs[i] + xs[i + 1]) / 2 + self.dx, y_linha + FOLGA_TEXTO_COTA * esc + sg * 1.9 * h + self.dy)
             if pos:
                 self._p(pos[0] - self.dx - tw / 2, pos[1] - self.dy - h)
                 self._p(pos[0] - self.dx + tw / 2, pos[1] - self.dy + h)
@@ -418,11 +418,11 @@ class _Papel:
             pos = None
             # o número da vertical fica girado 90°, com a base à esquerda da linha
             if onde == "antes":
-                pos = (x_linha - 0.55 * h + self.dx, ys[i] - tw / 2 - 1.5 * esc + self.dy)
+                pos = (x_linha - FOLGA_TEXTO_COTA * esc + self.dx, ys[i] - tw / 2 - 1.5 * esc + self.dy)
             elif onde == "depois":
-                pos = (x_linha - 0.55 * h + self.dx, ys[i + 1] + tw / 2 + 1.5 * esc + self.dy)
+                pos = (x_linha - FOLGA_TEXTO_COTA * esc + self.dx, ys[i + 1] + tw / 2 + 1.5 * esc + self.dy)
             elif onde == "fora":
-                pos = (x_linha - 0.55 * h + sg * 1.9 * h + self.dx, (ys[i] + ys[i + 1]) / 2 + self.dy)
+                pos = (x_linha - FOLGA_TEXTO_COTA * esc + sg * 1.9 * h + self.dx, (ys[i] + ys[i + 1]) / 2 + self.dy)
             if pos:
                 self._p(pos[0] - self.dx - h, pos[1] - self.dy - tw / 2)
                 self._p(pos[0] - self.dx + h, pos[1] - self.dy + tw / 2)

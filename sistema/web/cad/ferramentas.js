@@ -377,23 +377,37 @@ export class Selecionar extends Ferramenta {
  * desenhado (para continuar reto) e, no primeiro ponto, a da linha existente de onde a
  * nova parte. É o "tracking" dos CADs: o cursor gruda na continuação (e na perpendicular)
  * quando passa perto dela, sem travar como o orto.
+ *
+ * As linhas que passam pelo ponto valem no primeiro ponto e nos seguintes. A tolerância é de dois pixels (no máximo
+ * 0,5 mm): o ponto vem do snap, em cima da linha. Com 0,5 mm fixo, na prancha (em mm de papel, onde 0,5 mm é um
+ * perfil inteiro) entravam dezenas de linhas de chapa em volta, e das quatro primeiras ficava de fora justo o banzo de
+ * onde a linha nova saía (usuário, 22/10, ME Sooro: "não está fazendo a continuação do ângulo da linha existente").
+ * As mais compridas primeiro (a peça antes do detalhe), sem repetir direção.
  */
 function direcoesEm(editor, p, anterior) {
   const dirs = [];
-  const add = (a, b) => { const d = dist(a, b); if (d > 1e-6) dirs.push([(b[0] - a[0]) / d, (b[1] - a[1]) / d]); };
-  if (anterior) add(anterior, p);
-  else {
-    for (const e of editor.doc.naRegiao([[p[0] - 0.5, p[1] - 0.5], [p[0] + 0.5, p[1] + 0.5]])) {
-      if (!editor.doc.visivel(e)) continue;
-      for (const [s, t] of segmentosDe(e)) {
-        if (dist(p, s) < 0.5) add(t, s); else if (dist(p, t) < 0.5) add(s, t);
-        // o ponto no meio de uma linha também dá a guia: ao longo dela e, com a perpendicular, o "subir reto" dela até
-        // outra linha ou um arco (06/10: do banzo de baixo ao arco de cima)
-        else if (e.tipo === 'linha' && dist(p, maisProximoSeg(p, s, t)) < 0.5) add(s, t);
-      }
+  const add = (a, b, peso) => { const d = dist(a, b); if (d > 1e-6) dirs.push([(b[0] - a[0]) / d, (b[1] - a[1]) / d, peso]); };
+  if (anterior) add(anterior, p, Infinity);
+  const tol = Math.min(0.5, 2 * (editor.tela ? editor.tela.mmPorPixel : 0.25));
+  for (const e of editor.doc.naRegiao([[p[0] - tol, p[1] - tol], [p[0] + tol, p[1] + tol]])) {
+    if (!editor.doc.visivel(e) || e.tipo === 'texto' || e.tipo === 'hachura') continue;
+    for (const [s, t] of segmentosDe(e)) {
+      const L = dist(s, t);
+      if (dist(p, s) < tol) add(t, s, L); else if (dist(p, t) < tol) add(s, t, L);
+      // o ponto no meio de uma linha também dá a guia: ao longo dela e, com a perpendicular, o "subir reto" dela até
+      // outra linha ou um arco (06/10: do banzo de baixo ao arco de cima)
+      else if ((e.tipo === 'linha' || e.tipo === 'polilinha') && dist(p, maisProximoSeg(p, s, t)) < tol) add(s, t, L);
     }
   }
-  return dirs.slice(0, 4);
+  dirs.sort((x, y) => y[2] - x[2]);
+  const unicas = [];
+  for (const d of dirs) {
+    // a mesma reta (dos dois sentidos): a guia já cobre os dois lados
+    if (unicas.some(u => Math.abs(u[0] * d[1] - u[1] * d[0]) < 1e-3)) continue;
+    unicas.push([d[0], d[1]]);
+    if (unicas.length === 4) break;
+  }
+  return unicas;
 }
 
 export class Linha extends Ferramenta {
@@ -683,7 +697,9 @@ export class Cota extends Ferramenta {
       this.dica(`Posição da linha de cota · entre os pontos: alinhada · acima ou abaixo: horizontal · ao lado: vertical (A/H/V fixa) · tamanho ${this._f ? `× ${String(this._f).replace('.', ',')} (pelo desenho em volta; P fixa o padrão)` : 'padrão'}`);
       return;
     }
-    this.editor.executar(new ComandoAdicionar([this._cota(this.p1, this.p2, p)], 'Cota'));
+    const nova = this._cota(this.p1, this.p2, p);
+    this.editor.executar(new ComandoAdicionar([nova], 'Cota'));
+    this.editor.ultimaCota = nova.id;           // a Cota contínua sai dela
     this.reiniciar();
   }
   onMover(p) {
@@ -782,6 +798,93 @@ export class MoverCota extends Ferramenta {
   }
   onMover(p) { if (this.ids.length) this.editor.previa(this._novas(p)); }
 }
+
+/**
+ * Cota contínua — o DIMCONTINUE do AutoCAD (pedido do usuário, 22/10, ME Sooro: "Criar dimcontinue"). Sai da última
+ * cota feita (ou da selecionada, ou da que se clica): cada clique faz a próxima cota da corrente, do fim da anterior
+ * até o ponto, na mesma linha de cota e no mesmo estilo (modo, tamanho, fator, terminador, casas, folga, escala — na
+ * cota do detalhamento, com o número escrito, a escala que o número dela tem). Clicando numa cota, a corrente sai da
+ * chamada mais perto do clique. Enter escolhe outra cota de onde continuar; Esc termina; Ctrl+Z desfaz a última e a
+ * corrente volta para a anterior (até a cota de onde saiu, que o Ctrl+Z seguinte tira, se foi a última feita).
+ */
+export class CotaContinua extends Ferramenta {
+  static id = 'cota_continua'; static nome = 'Cota contínua (DCO)'; static atalho = 'dc';
+  static dica = 'Clique na cota de onde a corrente continua';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 16V8M11 16V8M21 16V8M3 12h18"/><path d="M5 10.5 3.5 12 5 13.5M9 10.5l1.5 1.5L9 13.5M13 10.5 11.5 12l1.5 1.5M19 10.5l1.5 1.5-1.5 1.5"/></svg>';
+  reiniciar() {
+    super.reiniciar();
+    this.cadeia = [];                         // [{base, inicio}] — a de cima é a de onde sai a próxima
+    const sel = [...this.editor.tela.selecao].map(id => this.doc.get(id)).filter(e => e && e.tipo === 'cota');
+    const ultima = this.editor.ultimaCota ? this.doc.get(this.editor.ultimaCota) : null;
+    const base = sel.length === 1 ? sel[0] : (!sel.length && ultima && ultima.tipo === 'cota' ? ultima : null);
+    if (base) this._partirDe(base, base.p2);
+    else this.dica(this.constructor.dica);
+  }
+  get _atual() { return this.cadeia[this.cadeia.length - 1] || null; }
+  _partirDe(base, inicio) {
+    this.cadeia.push({ base, inicio });
+    this.editor.snap.ultimo = inicio;
+    this.editor.selecionar([base.id]);
+    this.dica(`Próximo ponto da corrente (sai do fim da cota ${formatarCota(base)}) · Enter escolhe outra cota · Esc termina`);
+  }
+  /** A cota da corrente até `p`: do início, na linha de cota da base, no estilo dela. */
+  _nova(p) {
+    const { base: b, inicio } = this._atual;
+    if (dist(inicio, p) < 1e-6) return null;
+    const k = this.doc.escala;
+    const fc = fatorDaCota(b);
+    const escala = b.escala || (Math.abs(fc - 1) > 1e-9 ? fc : null);
+    const c = criar({ tipo: 'cota', camada: b.camada, modo: b.modo, p1: [inicio[0], inicio[1]], p2: [p[0], p[1]], deslocamento: b.deslocamento,
+      altura: b.altura, fator: b.fator, terminador: b.terminador, casas: b.casas, folga: b.folga, escala });
+    if (valorDaCota(c) < 1e-6) return null;
+    // a linha de cota nova passa pela ponta da linha da base que fica no início: a mesma linha
+    const pc = pontosCota(b, k);
+    const naLinha = pc.length === 4 ? (dist(inicio, b.p1) <= dist(inicio, b.p2) ? pc[2] : pc[3]) : null;
+    if (naLinha) c.deslocamento = deslocamentoPara(c, naLinha, k);
+    return c;
+  }
+  onPonto(p, ev) {
+    if (!this._atual) {
+      const e = ev && ev.px ? this.editor.tela.sob(ev.px) : null;
+      if (!e || e.tipo !== 'cota') { this.dica('Clique numa cota (a corrente sai da chamada mais perto do clique) · Esc termina'); return; }
+      this._partirDe(e, dist(p, e.p1) < dist(p, e.p2) ? e.p1 : e.p2);
+      return;
+    }
+    const c = this._nova(p);
+    if (!c) return;
+    this.editor.previa([]);
+    this.editor.executar(new ComandoAdicionar([c], 'Cota contínua'));
+    this.editor.ultimaCota = c.id;
+    this._partirDe(c, c.p2);
+  }
+  onMover(p) {
+    if (!this._atual) return;
+    const c = this._nova(p);
+    this.editor.previa(c ? [c] : []);
+    if (c) this.editor.medida(`${fmt(valorDaCota(c) * (c.escala || 1))} mm`);
+  }
+  onTecla(ev) {
+    if (ev.key === 'Enter' || ev.key === ' ') {
+      this.cadeia = []; this.editor.previa([]); this.editor.snap.ultimo = null; this.editor.selecionar([]);
+      this.dica('Clique na cota de onde a nova corrente continua · Esc termina');
+      return true;
+    }
+    return false;
+  }
+  /** O Ctrl+Z tirou a última cota da corrente: a próxima sai da anterior. */
+  aposDesfazer(c) {
+    const e = (c && c.entidades || [])[0];
+    const a = this._atual;
+    if (!a || !e || e.id !== a.base.id) return;
+    this.cadeia.pop();
+    const ant = this._atual;
+    if (!ant) { this.editor.previa([]); this.dica(this.constructor.dica); return; }
+    this.editor.snap.ultimo = ant.inicio;
+    this.editor.ultimaCota = ant.base.id;
+    this.onMover(this.editor.tela.cursor || ant.inicio);
+  }
+}
+const formatarCota = (c) => fmt(valorDaCota(c) * fatorDaCota(c));
 
 /**
  * Esticar — o "empurrar/puxar" do SketchUp no 2D. Dois jeitos:
@@ -1318,7 +1421,9 @@ export class CopiarPropriedades extends Ferramenta {
   static id = 'copiar_propriedades'; static nome = 'Copiar propriedades (MA)'; static atalho = ''; static grupo = 'edicao';
   static dica = 'Clique no objeto de origem (o que tem as propriedades certas)';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 4l6 6-8 8H6v-6z"/><path d="M4 20h6"/></svg>';
-  static CAMPOS = { cota: ['altura', 'terminador', 'casas'], texto: ['altura'], chamada: ['altura'], hachura: ['padrao', 'espacamento', 'angulo'] };
+  // na cota, o estilo dela inteiro: o tamanho (altura e fator, que leva a ponta e os afastamentos), o terminador, as
+  // casas e a folga do número (22/10); a escala não, que muda o número medido
+  static CAMPOS = { cota: ['altura', 'fator', 'terminador', 'casas', 'folga'], texto: ['altura'], chamada: ['altura'], hachura: ['padrao', 'espacamento', 'angulo'] };
   reiniciar() {
     super.reiniciar();
     const sel = [...this.editor.tela.selecao];
@@ -2008,6 +2113,6 @@ export class Corte extends Ferramenta {
   }
 }
 
-export const FERRAMENTAS = [Selecionar, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, AjustarCota, Chamada, Corte, Hachura,
+export const FERRAMENTAS = [Selecionar, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, CotaContinua, AjustarCota, Chamada, Corte, Hachura,
   Mover, Copiar, Girar, Espelhar, Escalar, Esticar, Offset, Aparar, Estender, Concordar, Explodir, Juntar, MoverCota, CopiarPropriedades, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['edicao', 'Edi'], ['medicao', 'Med']];

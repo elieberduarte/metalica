@@ -25,7 +25,7 @@ import math
 import re
 from typing import Optional
 
-from nucleo2d.desenho import (Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota, Hachura, Chamada)
+from nucleo2d.desenho import (Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota, Hachura, Chamada, folga_da_cota)
 
 FONTE = "segoeui.ttf"
 ESTILO = "METALICA"
@@ -78,7 +78,7 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
 
     ds = doc.dimstyles.new(ESTILO)
     for chave, valor in {"dimscale": k, "dimtxt": 2.5, "dimasz": 2.5, "dimexe": 2.0, "dimexo": 1.5,
-                         "dimgap": 1.0, "dimtad": 1, "dimtih": 0, "dimtoh": 0, "dimdec": 1, "dimzin": 8,
+                         "dimgap": folga_da_cota(None, desenho.metadados.get("estilo")), "dimtad": 1, "dimtih": 0, "dimtoh": 0, "dimdec": 1, "dimzin": 8,
                          # linhas e chamadas na cor da camada; o número na ACI 7 (branco no fundo preto),
                          # como os textos — com 0 (PorBloco) ele herdava a cor da camada da cota
                          "dimdsep": ord(","), "dimlunit": 2, "dimclrd": 0, "dimclre": 0, "dimclrt": 7,
@@ -108,6 +108,7 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
 
     msp = doc.modelspace()
     terminador = (desenho.metadados.get("estilo") or {}).get("terminador") or "traco"
+    estilo = desenho.metadados.get("estilo") or {}
     alinhar = {("esquerda", "base"): TextEntityAlignment.LEFT, ("centro", "base"): TextEntityAlignment.CENTER,
                ("direita", "base"): TextEntityAlignment.RIGHT, ("esquerda", "meio"): TextEntityAlignment.MIDDLE_LEFT,
                ("centro", "meio"): TextEntityAlignment.MIDDLE_CENTER, ("direita", "meio"): TextEntityAlignment.MIDDLE_RIGHT,
@@ -144,7 +145,7 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
                 t.set_placement(e.posicao, align=alinhar.get((e.alinhamento, e.vertical), TextEntityAlignment.LEFT))
                 feitas.append(t)
         elif isinstance(e, Cota):
-            d = _dimensao(msp, e, k, at, e.terminador or terminador)
+            d = _dimensao(msp, e, k, at, e.terminador or terminador, estilo=estilo)
             if d is not None:
                 feitas.append(d)
         elif isinstance(e, Hachura):
@@ -326,7 +327,7 @@ def exportar_pranchas(desenhos, pasta: str, base: str = "pranchas", corte: Optio
 FATOR_TRACO = 1.0 / (2.0 * math.sqrt(2.0))
 
 
-def _dimensao(msp, c: Cota, k: float, at: dict, terminador: str = "traco"):
+def _dimensao(msp, c: Cota, k: float, at: dict, terminador: str = "traco", estilo: dict = None):
     """DIMENSION linear (h, v) ou rotacionada na direção p1→p2 (alinhada), com a linha de
     cota onde o CAD a desenha: deslocamento de papel × escala, à esquerda de p1→p2.
 
@@ -357,9 +358,10 @@ def _dimensao(msp, c: Cota, k: float, at: dict, terminador: str = "traco"):
     altura = float(c.altura or 2.5) * f
     h = altura * k
     seta = min(2.5 * k * f, max(1.0 * k * f, comp / 4))    # mm do desenho
+    folga = folga_da_cota(c, estilo) * f                   # mm de papel (a DIMGAP), como na tela (22/10)
     override = {"dimtxt": altura, "dimasz": seta / k,
-                # o número a 0,55 da altura acima da linha, como na tela
-                "dimgap": 0.55 * altura}
+                # o número a `folga` acima da linha, como na tela
+                "dimgap": folga}
     if f != 1.0:
         override.update(dimexe=2.0 * f, dimexo=1.5 * f)
     if c.escala and float(c.escala) != 1.0:
@@ -374,7 +376,7 @@ def _dimensao(msp, c: Cota, k: float, at: dict, terminador: str = "traco"):
     # aponta para trás (o texto gira 180° para não ficar de cabeça para baixo)
     ang_g = math.degrees(math.atan2(uy, ux))
     lado = 1.0 if -90.0 < ang_g <= 90.0 else -1.0
-    sobe = 1.05 * h * lado                                  # da linha ao meio do número (base a 0,55 h)
+    sobe = (folga * k + 0.5 * h) * lado                     # da linha ao meio do número (a base a `folga`)
     fora = comp < 3 * seta
     local = None
     if c.texto_pos:

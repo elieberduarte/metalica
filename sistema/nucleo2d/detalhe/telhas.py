@@ -514,7 +514,7 @@ def _rotulo_telha(perfil: str) -> str:
 def _cotas_dos_apoios(md, p, T, r1, r2, centro, atr, amp: float = 1.0):
     """Cadeia de cotas em cada reta: da ponta livre ao centro de cada apoio e entre apoios,
     do lado de fora da dobra (entre a cota da reta e a da corda)."""
-    from nucleo2d.desenho import Cota
+    from nucleo2d.desenho import Cota, FOLGA_TEXTO_COTA
     for reta, (u, v) in (("reta1", r1), ("reta2", r2)):
         # ponta livre → tangência (reta 1: r1[0] → r1[1]; reta 2: r2[1] → r2[0])
         ini, fim = (u, v) if reta == "reta1" else (v, u)
@@ -550,7 +550,7 @@ def _cotas_dos_apoios(md, p, T, r1, r2, centro, atr, amp: float = 1.0):
             elif onde == "fora":
                 q = (q0 + q1) / 2 * amp
             if onde:
-                extra = off + sinal * (0.55 * h + (1.9 * h if onde == "fora" else 0.0))
+                extra = off + sinal * (FOLGA_TEXTO_COTA * esc + (1.9 * h if onde == "fora" else 0.0))
                 pos = p._p(pa[0] + dx_ * q + nx * extra, pa[1] + dy_ * q + ny * extra)
             p.d.add(Cota(modo="alinhada", p1=p._p(*a_), p2=p._p(*b_), deslocamento=21.0 * sinal,
                          texto=txt, texto_pos=pos, atributos=dict(atr)))

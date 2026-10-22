@@ -41,7 +41,8 @@ export function criar(reg) {
       altura: reg.altura ?? 2.5, angulo: reg.angulo || 0, alinhamento: reg.alinhamento || 'esquerda', vertical: reg.vertical || 'base' };
     case 'cota': return { ...base, camada: base.camada || 'COTA', modo: reg.modo || 'alinhada', p1: reg.p1, p2: reg.p2,
       deslocamento: reg.deslocamento ?? 10, texto: reg.texto ?? null, altura: reg.altura ?? 2.5, texto_pos: reg.texto_pos ?? null,
-      terminador: reg.terminador ?? null, casas: reg.casas ?? null, escala: reg.escala ?? null, fator: reg.fator ?? null };
+      terminador: reg.terminador ?? null, casas: reg.casas ?? null, escala: reg.escala ?? null, fator: reg.fator ?? null,
+      folga: reg.folga ?? null };
     case 'hachura': return { ...base, camada: base.camada || 'HACHURA', contornos: reg.contornos || [], padrao: reg.padrao || 'aco',
       angulo: reg.angulo ?? 45, espacamento: reg.espacamento ?? 2.5 };
     case 'chamada': return { ...base, camada: base.camada || 'TEXTO', alvo: reg.alvo, posicao: reg.posicao, texto: reg.texto || '', altura: reg.altura ?? 2.5 };
@@ -88,6 +89,76 @@ export function pontosCota(c, escala = 1) {
   if (comp < 1e-9) return [c.p1, c.p2];
   const nx = -dy / comp, ny = dx / comp, desl = (c.deslocamento || 0) * escala;
   return [c.p1, c.p2, [x1 + nx * desl, y1 + ny * desl], [x2 + nx * desl, y2 + ny * desl]];
+}
+
+/** Folga entre a linha de cota e a base do número, em mm de papel (× o fator da cota): a DIMGAP do AutoCAD no estilo
+ *  ISO-25 (pedido do usuário, 22/10, ME Sooro: "melhorar o magnetismo do número com a cota … igual ao autocad" — o 875
+ *  que ele aproximou à mão ficou a 0,68 mm). Antes era 0,55 × a altura do texto (1,4 mm no texto de 2,5; 2,7 mm no de
+ *  4,9). A cota pode ter a dela (`folga`) e o desenho a dele (metadados.estilo.folga_texto). Espelho de
+ *  nucleo2d/desenho.py FOLGA_TEXTO_COTA. */
+export const FOLGA_TEXTO_COTA = 0.625;
+
+/** A folga da cota (mm de papel): a dela, a do estilo do desenho ou a padrão. */
+export function folgaDaCota(c, estilo = null) {
+  for (const v of [c && c.folga, estilo && estilo.folga_texto]) if (v != null && v !== '' && isFinite(v) && +v >= 0) return +v;
+  return FOLGA_TEXTO_COTA;
+}
+
+/** Número de cota: inteiro quando é, senão uma casa; com `casas` (0 a 3), sempre esse número de
+ *  casas depois da vírgula (pedido do usuário, 28/09). */
+export function formatarMm(v, casas = null) {
+  if (casas != null && casas !== '' && isFinite(casas) && +casas >= 0) return v.toFixed(+casas).replace('.', ',');
+  if (Math.abs(v - Math.round(v)) < 0.05) return String(Math.round(v));
+  return v.toFixed(1).replace('.', ',');
+}
+
+/** Geometria da cota em coordenadas do modelo: as pontas da linha de cota (a1, a2), a direção e a normal. */
+export function geometriaCota(c, k) {
+  let [x1, y1] = c.p1, [x2, y2] = c.p2;
+  if (c.modo === 'h') y2 = y1; else if (c.modo === 'v') x2 = x1;
+  const dx = x2 - x1, dy = y2 - y1, comp = Math.hypot(dx, dy);
+  if (comp < 1e-9) return null;
+  const ux = dx / comp, uy = dy / comp, nx = -uy, ny = ux;
+  const desl = c.deslocamento * k;
+  const a1 = [x1 + nx * desl, y1 + ny * desl], a2 = [x2 + nx * desl, y2 + ny * desl];
+  return { a1, a2, ux, uy, nx, ny, comp, desl, x1, y1, x2, y2 };
+}
+
+/**
+ * Onde vai o número da cota (base do texto, centrado) e o ângulo dele. `texto_pos`
+ * (arrastado pela alça do texto) manda; sem ela, o número fica no meio da linha, a `folga` acima dela — e,
+ * quando não cabe entre as chamadas, sai para fora (um degrau mais longe da peça), para
+ * não encavalar no da cota vizinha. `estilo` é o metadados.estilo do desenho (a folga padrão dele).
+ */
+export function textoDaCota(c, k, estilo = null) {
+  const g = geometriaCota(c, k);
+  if (!g) return null;
+  // o fator de tamanho da cota (texto, ponta e afastamentos juntos): a cota feita sobre um desenho importado acompanha
+  // o tamanho das cotas dele (07/10); vazio = 1
+  const f = c.fator || 1;
+  const sg = g.desl >= 0 ? 1 : -1, seta = Math.min(2.5 * k * f, Math.max(1 * k * f, g.comp / 4));
+  // sem texto escrito, a medida × a escala da cota (a cota feita na célula em 1:25 da prancha mostra a da peça)
+  const txt = c.texto != null && c.texto !== '' ? String(c.texto) : formatarMm(valorCota(c) * (c.escala || 1), c.casas);
+  const ang = Math.atan2(g.uy, g.ux);
+  let angG = ang * 180 / Math.PI;
+  const lado = (angG > -90 && angG <= 90) ? 1 : -1;
+  if (lado < 0) angG += 180;
+  const h = c.altura * k * f, off = folgaDaCota(c, estilo) * k * f * lado;
+  const fora = g.comp < 3 * seta;
+  if (c.texto_pos) return { pos: c.texto_pos, txt, h, angG, g, seta, fora, ang };
+  let mx = (g.a1[0] + g.a2[0]) / 2, my = (g.a1[1] + g.a2[1]) / 2;
+  if (fora) { mx += g.ux * (2.4 * seta + 0.4 * h * txt.length); my += g.uy * (2.4 * seta + 0.4 * h * txt.length); }
+  else if (0.62 * h * txt.length + 2 * seta > g.comp) { mx += g.nx * sg * 1.9 * h; my += g.ny * sg * 1.9 * h; }
+  return { pos: [mx + g.nx * off, my + g.ny * off], txt, h, angG, g, seta, fora, ang };
+}
+
+/** Os quatro cantos da caixa do número da cota (girada com ele): é por ela que o clique no número pega a cota. */
+export function cantosDoTextoDaCota(c, k, estilo = null) {
+  const t = textoDaCota(c, k, estilo);
+  if (!t) return [];
+  const w = Math.max(t.h, String(t.txt).length * t.h * 0.65);
+  const a = t.angG * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+  return [[-w / 2, 0], [w / 2, 0], [w / 2, t.h], [-w / 2, t.h]].map(([u, v]) => [t.pos[0] + u * ca - v * sa, t.pos[1] + u * sa + v * ca]);
 }
 
 /** Os pontos que dão a caixa do arco: os do desenho e os extremos da curva (0°, 90°, 180°, 270°) dentro do trecho —
@@ -424,9 +495,11 @@ export class Desenho2D {
     return this._grade;
   }
 
-  /** Caixa da entidade no índice: a cota com a linha deslocada, o texto com a largura dele. */
+  /** Caixa da entidade no índice: a cota com a linha deslocada e o número (que pode ficar longe da linha: o que não
+   *  cabe sobe um degrau — o 275 da ME Sooro, 22/10, ficava fora da caixa e o clique nele não achava a cota), o texto
+   *  com a largura dele. */
   _caixaDoIndice(e) {
-    if (e.tipo === 'cota') return caixaDe(pontosCota(e, this.escala));
+    if (e.tipo === 'cota') return caixaDe([...pontosCota(e, this.escala), ...cantosDoTextoDaCota(e, this.escala, (this.metadados || {}).estilo)]);
     if (e.tipo === 'texto') return caixaDe(cantosDoTexto(e, this.escala));
     if (e.tipo === 'chamada') return caixaDe([e.alvo, e.posicao, ...cantosDoTextoDaChamada(e, this.escala)]);
     if (e.tipo === 'arco') return caixaDe(pontosDaCaixaDoArco(e));

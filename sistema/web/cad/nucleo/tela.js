@@ -12,20 +12,14 @@
 // a cada quadro. Um desenho do modelo inteiro passa de cem mil objetos e leva quase um
 // segundo para ser refeito; sem o cache, cada movimento do mouse custaria isso.
 
-import { pontosArco, valorCota, dentroDe, segmentosDe, caixaDe, pontosDe, distanciaEntidade, pontosCota, textoDaChamada, cantosDoTextoDaChamada } from './desenho2d.js';
+import { pontosArco, dentroDe, segmentosDe, caixaDe, pontosDe, distanciaEntidade, pontosCota, textoDaChamada, cantosDoTextoDaChamada,
+  formatarMm, geometriaCota, textoDaCota } from './desenho2d.js';
+export { formatarMm };
 
 const TRACOS = { CONTINUOUS: [], HIDDEN: [6, 4], CENTER: [16, 4, 4, 4], DASHED: [8, 6], DOT: [2, 3] };
 const PX_GRADE_ALVO = 60;
 /** Até quantos objetos selecionados são pintados por cima do cache, a cada quadro. */
 const SELECAO_POR_CIMA = 3000;
-
-/** Número de cota: inteiro quando é, senão uma casa; com `casas` (0 a 3), sempre esse número de
- *  casas depois da vírgula (pedido do usuário, 28/09). */
-export function formatarMm(v, casas = null) {
-  if (casas != null && casas !== '' && isFinite(casas) && +casas >= 0) return v.toFixed(+casas).replace('.', ',');
-  if (Math.abs(v - Math.round(v)) < 0.05) return String(Math.round(v));
-  return v.toFixed(1).replace('.', ',');
-}
 
 /** Cor quase preta (luminância abaixo de 6%) — no tema escuro some no fundo: a do traço do
  *  desenho (#16202e, #2b3646) e a da folha e do carimbo (#111827) viram claras. */
@@ -103,8 +97,11 @@ export class Tela {
       if (e.tipo !== 'cota') continue;
       const pc = pontosCota(e, k);
       fora.push({ id, parte: 'p1', ponto: e.p1 }, { id, parte: 'p2', ponto: e.p2 });
-      if (pc.length === 4) fora.push({ id, parte: 'linha', ponto: [(pc[2][0] + pc[3][0]) / 2, (pc[2][1] + pc[3][1]) / 2] });
-      const t = Tela.textoCota(e, k);
+      // a linha de cota pelo meio e pelos dois cantos (onde a chamada encontra a linha), como as alças do AutoCAD — pelo
+      // canto ela não andava (pedido do usuário, 22/10, ME Sooro: "não consigo movimentar uma cota pegando pelo cantinho")
+      if (pc.length === 4) fora.push({ id, parte: 'linha', ponto: [(pc[2][0] + pc[3][0]) / 2, (pc[2][1] + pc[3][1]) / 2] },
+                                     { id, parte: 'linha', ponto: pc[2] }, { id, parte: 'linha', ponto: pc[3] });
+      const t = Tela.textoCota(e, k, this.estiloDoDesenho);
       if (t) fora.push({ id, parte: 'texto', ponto: t.pos });
     }
     // muitas pontas (uma janela sobre o desenho todo) viram poluição: só as cotas
@@ -593,45 +590,11 @@ export class Tela {
     }
   }
 
-  /** Geometria da cota em coordenadas do modelo (compartilhada com o acerto). */
-  static geometriaCota(c, k) {
-    let [x1, y1] = c.p1, [x2, y2] = c.p2;
-    if (c.modo === 'h') y2 = y1; else if (c.modo === 'v') x2 = x1;
-    const dx = x2 - x1, dy = y2 - y1, comp = Math.hypot(dx, dy);
-    if (comp < 1e-9) return null;
-    const ux = dx / comp, uy = dy / comp, nx = -uy, ny = ux;
-    const desl = c.deslocamento * k;
-    const a1 = [x1 + nx * desl, y1 + ny * desl], a2 = [x2 + nx * desl, y2 + ny * desl];
-    return { a1, a2, ux, uy, nx, ny, comp, desl, x1, y1, x2, y2 };
-  }
-
-  /**
-   * Onde vai o número da cota (base do texto, centrado) e o ângulo dele. `texto_pos`
-   * (arrastado pela alça do texto) manda; sem ela, o número fica no meio da linha — e,
-   * quando não cabe entre as chamadas, sai para fora (um degrau mais longe da peça), para
-   * não encavalar no da cota vizinha.
-   */
-  static textoCota(c, k) {
-    const g = Tela.geometriaCota(c, k);
-    if (!g) return null;
-    // o fator de tamanho da cota (texto, ponta e afastamentos juntos): a cota feita sobre um desenho importado acompanha
-    // o tamanho das cotas dele (07/10); vazio = 1
-    const f = c.fator || 1;
-    const sg = g.desl >= 0 ? 1 : -1, seta = Math.min(2.5 * k * f, Math.max(1 * k * f, g.comp / 4));
-    // sem texto escrito, a medida × a escala da cota (a cota feita na célula em 1:25 da prancha mostra a da peça)
-    const txt = c.texto != null && c.texto !== '' ? String(c.texto) : formatarMm(valorCota(c) * (c.escala || 1), c.casas);
-    const ang = Math.atan2(g.uy, g.ux);
-    let angG = ang * 180 / Math.PI;
-    const lado = (angG > -90 && angG <= 90) ? 1 : -1;
-    if (lado < 0) angG += 180;
-    const h = c.altura * k * f, off = h * 0.55 * lado;
-    const fora = g.comp < 3 * seta;
-    if (c.texto_pos) return { pos: c.texto_pos, txt, h, angG, g, seta, fora, ang };
-    let mx = (g.a1[0] + g.a2[0]) / 2, my = (g.a1[1] + g.a2[1]) / 2;
-    if (fora) { mx += g.ux * (2.4 * seta + 0.4 * h * txt.length); my += g.uy * (2.4 * seta + 0.4 * h * txt.length); }
-    else if (0.62 * h * txt.length + 2 * seta > g.comp) { mx += g.nx * sg * 1.9 * h; my += g.ny * sg * 1.9 * h; }
-    return { pos: [mx + g.nx * off, my + g.ny * off], txt, h, angG, g, seta, fora, ang };
-  }
+  /** Geometria da cota e o lugar do número: as de desenho2d.js (o índice espacial usa a mesma caixa do número). */
+  static geometriaCota(c, k) { return geometriaCota(c, k); }
+  static textoCota(c, k, estilo = null) { return textoDaCota(c, k, estilo); }
+  /** O estilo do desenho (a folga padrão do número das cotas). */
+  get estiloDoDesenho() { return (this.doc.metadados || {}).estilo || null; }
 
   _cota(ctx, c, k, cor) {
     const g = Tela.geometriaCota(c, k);
@@ -652,7 +615,7 @@ export class Tela {
     const term = c.terminador || ((this.doc.metadados || {}).estilo || {}).terminador || 'traco';   // padrão: o traço oblíquo da produção
     this._terminador(ctx, A1, fora ? ang : ang + Math.PI, seta * z, term);
     this._terminador(ctx, A2, fora ? ang + Math.PI : ang, seta * z, term);
-    const t = Tela.textoCota(c, k);
+    const t = Tela.textoCota(c, k, this.estiloDoDesenho);
     // o número na cor do texto (branco no tema escuro, preto no claro), como o texto da cota do AutoCAD
     // — na cor da linha (verde) ele sumia no fundo (pedido do usuário, 28/09); selecionada/realce, na cor dela
     const cs = this._coresDoTema();
@@ -754,7 +717,7 @@ export class Tela {
   /** Distância ao número da cota (a caixa do texto, girada com ele): clicar no número pega a cota
    *  (pedido do usuário, 28/09 — só a linha e os pontos contavam). */
   _distTextoCota(p, c) {
-    const t = Tela.textoCota(c, this.doc.escala);
+    const t = Tela.textoCota(c, this.doc.escala, this.estiloDoDesenho);
     if (!t) return Infinity;
     const a = -t.angG * Math.PI / 180, dx = p[0] - t.pos[0], dy = p[1] - t.pos[1];
     const lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
