@@ -280,6 +280,30 @@ def test_cada_peca_sabe_de_qual_planta_veio_e_o_deslocamento_dela():
     assert abs(vm_mez[0].inicio[0] - d2["PLANTA NO NÍVEL 3,17m"][0] - DX) < 200.0
 
 
+
+def test_pilar_so_sobe_ate_a_outra_planta_que_o_desenha():
+    """a viga da outra planta (a base da caixa d'água, 8,20) passando por cima de um pilar não o leva até ela: só se a
+    planta desenha o pilar ali (a seção ou o nome). No Posto V2 os PM5 da escada e os PM3 da fila F subiam até 8,20 e
+    11,00 pelas vigas da caixa d'água (22/10/2026)"""
+    DX = 100000.0
+
+    def caso(com_pilar):
+        cx = [linha((-50.0 + DX, 400.0), (-50.0 + DX, 5600.0), "metalica4"),      # a VM passa a 400 mm dos pilares de x 0
+              linha((50.0 + DX, 400.0), (50.0 + DX, 5600.0), "metalica4"),
+              texto((-150.0 + DX, 1500.0), "VM-2Ue150X70X20X2,65", angulo=90.0),
+              texto((2000.0 + DX, -4000.0), "PLANTA DA BASE DA CX DAGUA NIVEL 8,20", altura=25.0)]
+        if com_pilar:                                   # a planta desenha o pilar de (0; 0) — o nome dele ali
+            cx.append(texto((DX + 120.0, -300.0), "PM1"))
+        ents = planta() + locacao() + plantas_das_tercas() + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
+        ents += baloes(DX, 0) + cx + elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
+        r = de_planta.montar(ents, {"nivel": 6000.0, "origem": False,
+                                    "outras": [{"planta": "PLANTA DA BASE DA CX DAGUA NIVEL 8,20", "nivel": 8200.0}]})
+        return {(round(b.inicio[0]), round(b.inicio[1])): b.fim[2] for b in r["doc"].barras if b.papel == "pilar"}
+    sem, com = caso(False), caso(True)
+    assert sem[(0, 0)] == 6000.0 and sem[(0, 6000)] == 6000.0, sem
+    assert com[(0, 0)] == 8200.0 and com[(0, 6000)] == 6000.0, com
+
+
 # ------------------------------------------------------------------ leitura mais firme (0.8.36)
 
 def test_trecho_de_cada_nome_entre_dois_nos():

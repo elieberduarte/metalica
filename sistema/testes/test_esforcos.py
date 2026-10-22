@@ -89,6 +89,15 @@ def test_cargas_da_locacao_embaixo_do_nome_e_na_placa_livre():
     assert por[9.0]["Fx"] == 4.0
 
 
+def test_carga_um_pouco_ao_lado_do_nome_e_do_pilar():
+    """no Posto V2 o texto da carga do PM7 (24 tf), de um PM2 girado e de 2 PM4 ficava 63–152 mm ao lado do nome, e eles
+    saíam sem carga (o limite era 6 alturas, 60 mm, 22/10/2026)"""
+    textos = [_texto("PM7(250X125X25X4,75)", 1000, 1289, 1), _texto("Fz: 24,00 tf", 1150, 1000, 2)]
+    locados = [{"nome": "PM7(250X125X25X4,75)", "x": 1000.0, "y": 1000.0, "_texto": "t1"}]
+    out = de_planta._cargas_da_locacao(textos, (-1e5, -1e5, 1e5, 1e5), [], (0.0, 289.0), (0.0, 0.0), locados)
+    assert out and out[0]["pilar"] == "PM7(250X125X25X4,75)" and locados[0]["cargas"] == {"Fz": 24.0}
+
+
 def test_s2_e_s3_da_6123_2023():
     # Tabela 3: categoria II, classe C — 0,89 até 5 m e 0,95 a 10 m; no meio, interpolado
     assert esforcos.s2_2023(4.0, "II", "C") == pytest.approx(0.89)

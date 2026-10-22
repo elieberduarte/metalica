@@ -3754,7 +3754,9 @@ def _cargas_da_locacao(textos, folga, livres, off, desl_l, locados: List[dict]) 
                 break
             bloco[ch] = vv
             ult = c["posicao"][1]
-        nome = min((n for n in nomes if abs(n["posicao"][0] - x) < 6 * alt and 0 < n["posicao"][1] - y < 60 * alt),
+        # o nome em cima do bloco, na mesma coluna — até 16 alturas para o lado: no Posto V2 o texto da carga do PM7, de um
+        # PM2 girado e de 2 PM4 ficava 63–152 mm ao lado do nome (com 6 alturas, 60 mm, saíam sem carga, 22/10/2026)
+        nome = min((n for n in nomes if abs(n["posicao"][0] - x) < 16 * alt and 0 < n["posicao"][1] - y < 60 * alt),
                    key=lambda n: n["posicao"][1] - y, default=None)
         if nome is not None:
             dy_nome.append(nome["posicao"][1] - y)
@@ -4338,6 +4340,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     # mezanino, base e cobertura da caixa d'água…: cada uma no seu nível, alinhada à planta
     # estrutural pelos balões dos eixos
     pecas_das_outras: List[tuple] = []     # (região, deslocamento, peças montadas, título): as terças delas depois
+    pilar_desenhado: Dict[float, list] = collections.defaultdict(list)   # nível da outra planta → onde ela desenha pilar
     for k_o, outra in enumerate(par.get("outras") or []):
         titulo_o = str((outra or {}).get("planta") or "").strip()
         t_o = _achar_titulo(textos, titulo_o) if titulo_o else None
@@ -4376,6 +4379,15 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             pc["ent"].camada = nome_c
         tr_o = tr_o + list(_st_o.get("deitadas") or [])
         todos_trechos += [(t, nivel_o) for t in tr_o]
+        # onde esta planta desenha um pilar (a seção, até 520 mm, ou o nome PMn): o pilar só sobe até ela ali
+        for e_m in movidas:
+            if e_m["tipo"] == "polilinha" and 4 <= len(e_m["vertices"]) <= 8 and not _ANOT.search(str(e_m.get("camada", ""))):
+                xs_m = [v[0] for v in e_m["vertices"]]
+                ys_m = [v[1] for v in e_m["vertices"]]
+                if 40.0 <= max(xs_m) - min(xs_m) <= 520.0 and 40.0 <= max(ys_m) - min(ys_m) <= 520.0:
+                    pilar_desenhado[nivel_o].append(((min(xs_m) + max(xs_m)) / 2, (min(ys_m) + max(ys_m)) / 2))
+            elif e_m["tipo"] == "texto" and re.match(r"(?i)^\s*PM\s*\d", str(e_m.get("texto") or "")):
+                pilar_desenhado[nivel_o].append((e_m["posicao"][0], e_m["posicao"][1]))
         ids_o = set()
         for t in tr_o:
             if t.familia == "VIGA" and not t.perfil:
@@ -4433,6 +4445,16 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         if pl["nome"] in res_pm["inclinados"]:
             continue                                   # montado inclinado pelo corte
         em_cima = [nv for u, nv in todos_trechos if u.caminho.projetar((x, y))[1] < 600.0]
+        # a outra planta (mezanino, caixa d'água) só conta se desenha o pilar ali: a viga dela passando perto não o leva
+        # até ela (Posto V2, 22/10/2026: os PM5 da escada e os PM3 da fila F subiam até 8,20/11,00 pelas vigas da caixa
+        # d'água, o PM2 do eixo G até 11,00)
+        com_pilar = [nv for nv in em_cima if nv == nivel or any(math.dist(q_, (x, y)) < 400.0 for q_ in pilar_desenhado.get(nv, ()))]
+        if em_cima and not com_pilar:
+            orig_topo = "altura: as peças em cima são de plantas que não desenham este pilar (%s m); ficou no nível %.2f m" % (
+                ", ".join("%.2f" % (nv / 1000.0) for nv in sorted(set(em_cima))), nivel / 1000.0)
+        else:
+            orig_topo = None
+        em_cima = com_pilar
         longe = 0.0 if em_cima else min((u.caminho.projetar((x, y))[1] for u, _nv in todos_trechos), default=0.0)
         orig = {"locacao": pl["nome"]}
         if pl.get("cargas"):
@@ -4440,6 +4462,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         if pl.get("pela_planta"):
             orig["a_conferir"] = pl["pela_planta"]
         topo_p = max(em_cima) if em_cima else nivel
+        if orig_topo:
+            orig["a_conferir"] = orig_topo
         if longe > 600.0:
             # não há treliça nem viga da planta estrutural em cima dele: é de outra
             # estrutura (mezanino, torre); a altura fica a conferir
