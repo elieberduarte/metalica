@@ -182,7 +182,7 @@ posição ganha `saia`, que entra na compra, na célula, na lista e na paginaç�
 cada telha sai **inteira** (retângulo até o ponto mais alto) e o corte do modelo — a empena
 inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois de instalada.
 
-**0.9.1.** (22/10/2026) Obras entre usuários, link de instalação, a obra no terreno do cliente, impressão das pranchas e os detalhes do projeto recebido na Montagem. São 93 mudanças desde a 0.9.0.
+**0.9.1.** (22/10/2026) Obras entre usuários, link de instalação, a obra no terreno do cliente, impressão das pranchas e os detalhes do projeto recebido na Montagem. São 95 mudanças desde a 0.9.0.
 
 **Enviar a obra para outro usuário.** No cartão do projeto, "Enviar para…" manda a obra inteira para o Metálica de outra pessoa pela internet (ou para os seus outros computadores); ela vê "Fulano te enviou…" no alto da tela inicial e abre como um projeto novo. É uma cópia: cada um segue com a sua.
 
