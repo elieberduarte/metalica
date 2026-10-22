@@ -115,8 +115,10 @@ def correntes_ate_a_alma(correntes: Iterable, tercas: Iterable, alcance: float =
                 zt = a[2] + (t.fim[2] - a[2]) * max(0.0, min(1.0, s / L))
                 if dist > alcance or abs(e[2] - zt) > folga_z:
                     continue
-                if melhor is None or dist < melhor[0]:
-                    melhor = (dist, t, al, u, (px, py))
+                # na emenda de duas terças, a que passa sob a ponta vence a que só chega pelo alcance (SESI, CF34)
+                chave = (0 if 0.0 <= s <= L else 1, dist)
+                if melhor is None or chave < melhor[0]:
+                    melhor = (chave, t, al, u, (px, py))
             if melhor is None:
                 out["sem_terca"] += 1
                 continue

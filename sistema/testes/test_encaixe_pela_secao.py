@@ -53,3 +53,19 @@ def test_corrente_vai_ate_a_alma_pela_boca_e_pelas_costas():
     assert c_costas.fim[0] == pytest.approx(fora, abs=0.5), "do lado das costas, na face de fora da alma"
     assert fora < c_boca.inicio[0] < fora + 4.0, "do lado da boca, na face de dentro da alma (a espessura dela)"
     assert c_boca.fim == (1500.0, 3000.0, 17000.0), "a outra ponta (longe de terça) fica"
+
+
+def test_corrente_na_emenda_vai_para_a_terca_que_passa_sob_a_ponta():
+    # o caso do SESI (CF34, cobertura do ginásio): duas TM9 em linha, emenda de 10 mm e 5 mm de desvio entre elas; a ponta
+    # da diagonal 130 mm depois do fim da 1ª, sobre a 2ª, mas mais perto (em planta) do eixo prolongado da 1ª
+    t1 = Barra(inicio=(0.0, 0.0, 17600.0), fim=(5000.0, 0.0, 17600.0), perfil=UE150, rotacao=0.0)        # boca para +y
+    t2 = Barra(inicio=(5010.0, 5.0, 17600.0), fim=(10000.0, 5.0, 17600.0), perfil=UE150, rotacao=0.0)
+    assert base_local((5000.0, 0.0, 0.0), 0.0)[0][1] == pytest.approx(1.0)
+    dentro = min(q[0] for q in secao(resolver_perfil(UE150))) + 2.25
+    c = Barra(inicio=(6544.0, 1409.0, 17600.0), fim=(5130.0, -12.0, 17600.0), perfil="Barra redonda Ø 1/2\"")
+    r = correntes_ate_a_alma([c], [t1, t2])
+    assert r["pontas"] == 1
+    assert c.fim[1] == pytest.approx(5.0 + dentro, abs=0.5), "na alma da terça de baixo da ponta (a 2ª), não na da 1ª"
+    antes = c.fim
+    correntes_ate_a_alma([c], [t1, t2])
+    assert c.fim == pytest.approx(antes, abs=0.01), "rodar de novo não move a ponta"
