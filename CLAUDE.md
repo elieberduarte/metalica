@@ -12,6 +12,11 @@ Defeito corrigido não pode voltar. Ao corrigir qualquer erro:
    Situação nova → mais uma entrada no teste (ex.: `SITUACOES` em `verif_camera_modelos.py`).
 3. Acrescentar uma linha em `sistema/testes/REGRESSOES.md`: data, o que o usuário viu, commit, teste.
 
+4. **Ponto de não retorno (21/10):** antes de corrigir, procurar no catálogo `sistema/testes/REGRAS.md` se já existe
+   regra para aquilo. Se existe, é **reincidência**: dizer ao usuário, e a correção começa reforçando a conferência
+   da regra até ela pegar o caso. Corrigir no gerador (código comum), não no script da obra. Depois, uma linha em
+   `Projeto/BRIEFINGS/CHATS/REGRAS-entrada.md` para o chat REGRAS · SISTEMA (formato no topo de lá).
+
 A correção sem o teste não está pronta. Os testes entram sozinhos no `antes_de_publicar.py` e na
 conferência da noite.
 
