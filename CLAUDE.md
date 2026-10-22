@@ -20,6 +20,14 @@ Defeito corrigido não pode voltar. Ao corrigir qualquer erro:
 A correção sem o teste não está pronta. Os testes entram sozinhos no `antes_de_publicar.py` e na
 conferência da noite.
 
+## Regra nova: combinar com exemplos antes de programar
+
+Quando o pedido muda **como o sistema monta, desenha ou calcula** (regra nova, mudança de regra, um jeito novo de
+ligar peças) e dá margem a mais de uma leitura, o chat entrega **antes de programar** 2–3 casos com a imagem do
+ponto no 3D (ou o desenho) e as medidas, e pergunta "é assim?". Os casos aprovados viram o teste e o exemplo da regra
+no catálogo `sistema/testes/REGRAS.md`. Correção clara de defeito segue direto, sem perguntar (memória "alterar-direto").
+Motivo (usuário, 21/10): as telhas "foram interpretadas errado" e várias rodadas foram corrigir a correção.
+
 ## Toda tarefa demorada mostra a barra de andamento
 
 Padrão do sistema (16/10): `sistema/web/progresso.js`, instalado em toda página pelo `vivo.js`.
