@@ -447,6 +447,7 @@ def _cantoneira_no_canto(perfil, a, heel, d1, d2, comp):
     """a Barra de cantoneira de eixo `a`, comprimento `comp` centrada no `heel`, com as abas para d1 e para d2 (a
     rotação achada pela malha, como no suporte da Montagem)"""
     from nucleo3d.modelo import Barra
+    from nucleo3d.geometria import base_local
     melhor = None
     for rot in (0.0, 90.0, 180.0, 270.0):
         b = Barra(inicio=(0.0, 0.0, 0.0), fim=_mul(a, comp), perfil=perfil, rotacao=rot)
@@ -457,12 +458,19 @@ def _cantoneira_no_canto(perfil, a, heel, d1, d2, comp):
         canto_cheio = any(abs(p_[0] - x0) < tol and abs(p_[1] - y0) < tol for p_ in pts)
         canto_vazio = not any(abs(p_[0] - x1) < tol and abs(p_[1] - y1) < tol for p_ in pts)
         if canto_cheio and canto_vazio:
-            melhor = (rot, x0, y0)
-            break
+            # na cantoneira de abas iguais duas rotações dão a mesma peça; o detalhamento chama de "mesa" a aba do eixo v
+            # da seção: sempre a mesma (o v para d2), senão a castanha do outro lado da viga, igual, saía com outra marca
+            # (o furo na "mesa" numa, na "alma" na outra — 23/10)
+            nota = _dot(base_local(a, rot)[1], d2)
+            if melhor is None or nota > melhor[3] + 1e-6:
+                melhor = (rot, x0, y0, nota)
+    if melhor is not None:
+        melhor = melhor[:3]
     if melhor is None:
         raise ErroDeDados("não consegui virar a cantoneira %s no canto da ligação" % perfil)
     rot, x0, y0 = melhor
     base = _add(_add(heel, _mul(d1, -x0)), _mul(d2, -y0))
+
     return Barra(nome="Cantoneira de ligação", inicio=_add(base, _mul(a, -comp / 2.0)), fim=_add(base, _mul(a, comp / 2.0)),
                  perfil=perfil, rotacao=rot, papel="suporte", camada="Chapas", material="Aço",
                  atributos={"tipo_ifc": "IfcMember"})
@@ -1123,7 +1131,7 @@ def _castanha_contravento(barras, p):
     """A castanha (a CA1 do Hangar, folha CASTANHAS DOS CONTRAVENTOS): a cantoneira deitada na mesa da viga, ao longo do
     tirante, presa por um parafuso na mesa a 30 mm da borda; na ponta de fora dela a cantoneira pequena em pé, furada —
     o tirante passa nela a 25 mm da mesa e sobra `passa` para as porcas. Na mesa de cima a aba sobe; na de baixo, desce."""
-    from nucleo.acessorios import d_parafuso_mm
+    from nucleo.acessorios import d_parafuso_mm, furo_mm
     from nucleo3d.de_planta_estrutura import _furo_marcador
     *tirantes, ap = barras
     pa = _perfil(ap.perfil)
@@ -1134,7 +1142,7 @@ def _castanha_contravento(barras, p):
     La = float(p.get("comprimento_aba") or 50.0)
     nome_par = str(p.get("parafuso") or '1/2"')
     d = d_parafuso_mm(nome_par)
-    fd = float(p.get("furo") or 14.0)
+    fd = float(p.get("furo") or furo_mm(nome_par))         # sem cota: d + 1,5 (FAB-02; o Ø14 do Hangar era cotado)
     classe = str(p.get("classe") or "ASTM A307")
     borda = float(p.get("borda") or 30.0)
     h_furo = float(p.get("altura_furo") or 25.0)
@@ -1207,7 +1215,7 @@ def _duas_chapas_contravento(barras, p):
     sz = 1.0 if face == "cima" else -1.0
     zf = pontas[0]["z_cima"] if face == "cima" else pontas[0]["z_baixo"]
     z0 = zf + sz * tb                                      # a face da chapa deitada, onde os tocos deitam
-    pecas, alterar, ajustes, conjuntos, soldas_entre = [], {}, {}, [], []
+    pecas, alterar, ajustes, conjuntos, soldas_entre, soldas_tirante = [], {}, {}, [], [], []
     furos_base, tocos_parafusados = [], []
     perfil_r = "FE RED %s" % rosca.replace('"', "''")
     geo.registrar_perfil(geo.barra_redonda(dr, perfil_r))
@@ -1254,9 +1262,11 @@ def _duas_chapas_contravento(barras, p):
         # o tirante: encostado na aba em pé do toco 2, até depois da sobra da barra roscada
         H = em(s2b + sobra + 5.0, 0.0, zr)
         pecas += [toco1, par, ch1, ch2, toco2, barra_r]
-        conjuntos += [(toco1, [ch1]), (toco2, [ch2])]
+        # o toco 2 e a chapa dele soldados no tirante, na fábrica: saem no conjunto do tirante
+        conjuntos += [(toco1, [ch1]), (t, [toco2, ch2])]
         for x, y in ((toco1, ch1), (toco2, ch2)):
             soldas_entre.append((x, y, {"tipo": "filete", "perna": 5.0, "lados": 1, "local": "fabrica", "forma": "contorno"}))
+        soldas_tirante.append((t.id, toco2, {"tipo": "filete", "perna": 5.0, "lados": 2, "local": "fabrica", "forma": "sobreposição"}))
         tocos_parafusados.append(toco1)
         a, b = _ponta_alterada(info, H)
         _juntar(alterar, a)
@@ -1287,7 +1297,7 @@ def _duas_chapas_contravento(barras, p):
                   base_largura=Bb, base_comprimento=Lb, rosca=rosca, sobra_rosca=sobra, parafuso=nome_par, classe=classe,
                   face=face)
     soldas = [(ap.id, base, {"tipo": "filete", "perna": _perna(float(_perfil(ap.perfil).tf or 8.0), tb), "lados": 1,
-                             "local": "fabrica", "forma": "contorno"})]
+                             "local": "fabrica", "forma": "contorno"})] + soldas_tirante
     return {"pecas": pecas, "alterar": alterar, "ajustes": ajustes, "conjuntos": [(ap, [base])] + conjuntos,
             "soldas": soldas, "soldas_entre": soldas_entre, "parametros": params, "avisos": []}
 
@@ -1318,15 +1328,312 @@ def _cantoneira_contravento(barras, p):
             "parametros": params, "avisos": []}
 
 
+def _chapa_de_no_contravento(barras, p, esticador=False):
+    """A chapa de nó (a "Windbrace connection" da Tekla, para 1 a 3 tirantes no mesmo ponto): chapa deitada soldada na
+    mesa da viga, saindo para o lado dos tirantes; cada tirante com uma lingueta (chapa) soldada na ponta, parafusada na
+    chapa de nó. Com `esticador`, entre a ponta do tirante e a lingueta vai um esticador (tensor comercial) e um toco de
+    barra roscada soldado na lingueta."""
+    from nucleo.acessorios import d_parafuso_mm, furo_mm, DIAMETROS_BARRA
+    from nucleo3d.modelo import Barra
+    from nucleo3d import geometria as geo
+    from nucleo2d.detalhe.soldas import _perna
+    *tirantes, ap = barras
+    tg = float(p.get("t") or 8.0)
+    tl, Bl, Ll = float(p.get("lingueta_t") or 8.0), float(p.get("lingueta_largura") or 60.0), float(p.get("lingueta_comprimento") or 110.0)
+    fora_mesa = float(p.get("fora_da_mesa") or 45.0)          # o parafuso além da borda da mesa
+    borda = float(p.get("borda") or 35.0)
+    nome_par = str(p.get("parafuso") or "M16")
+    d, fd = d_parafuso_mm(nome_par), furo_mm(nome_par)
+    classe = str(p.get("classe") or "ASTM A325")
+    solda_l = float(p.get("solda_tirante") or 60.0)           # o tirante deitado e soldado na lingueta
+    L_est = float(p.get("esticador_comprimento") or 150.0)
+    pecas, alterar, ajustes, conjuntos, soldas, soldas_entre = [], {}, {}, [], [], []
+    pontas = _tirantes_do_no(tirantes, ap, p, 0.0)
+    face = _face(pontas[0], p)
+    sz = 1.0 if face == "cima" else -1.0
+    zf = pontas[0]["z_cima"] if face == "cima" else pontas[0]["z_baixo"]
+    zg = zf + sz * tg                                         # a face da chapa de nó onde as linguetas deitam
+    pts_casco, furos_mundo = [], []
+    wa = pontas[0]["wa"]
+    for info in pontas:
+        dh, lado, n, P = info["dh"], info["lado"], info["n"], info["P"]
+        t = info["tirante"]
+        r_t = float(_perfil(t.perfil).d or 12.7) / 2.0
+        fora = _mul(dh, -1.0)
+        Ph = (P[0], P[1], zg)
+        # o parafuso: na linha do tirante, `fora_mesa` além da borda da mesa (do lado de onde o tirante vem)
+        alvo = info["borda"] - fora_mesa
+        s_b = max(40.0, (_dot(Ph, n) - alvo) / _dot(dh, n))
+
+        def em(s, lat=0.0, z=0.0, _Ph=Ph, _fora=fora, _lado=lado):
+            return _add(_add(_add(_Ph, _mul(_fora, s)), _mul(_lado, lat)), _mul(Z_, z))
+        B = em(s_b)
+        furos_mundo.append(B)
+        # o casco da chapa de nó: a volta do parafuso e o trecho da mesa até o eixo da viga
+        for k in range(12):
+            ang = 2 * math.pi * k / 12
+            pts_casco.append(_add(B, _add(_mul(fora, math.cos(ang) * borda), _mul(lado, math.sin(ang) * borda))))
+        # a lingueta: deitada na chapa de nó, ao longo do tirante, o furo a 35 da ponta de dentro
+        s0 = s_b - 35.0
+        ex, ey = fora, lado
+        if _dot(_cruz(ex, ey), Z_) * sz < 0:
+            ey = _mul(lado, -1.0)
+        o = _add(em(s0, 0.0), _mul(ey, -Bl / 2.0))
+        if sz < 0:
+            o = _sub(o, _mul(Z_, tl))
+        lg = _chapa("Lingueta", o, ex, ey, Ll, Bl, tl, [(35.0, Bl / 2.0, fd)], aco=str(p.get("aco") or "ASTM A36"))
+        par = _parafuso(_add(B, _mul(Z_, sz * (tl - tg) / 2.0)), _mul(Z_, sz), d, tl + tg, classe)
+        pecas += [lg, par]
+        z_t = sz * (tl + r_t)                                 # o eixo do tirante deitado na lingueta
+        if esticador:
+            # o toco de barra roscada soldado na lingueta, o esticador e a ponta do tirante (roscada) dentro dele
+            dr = DIAMETROS_BARRA.get(str(p.get("rosca") or '1/2"'), 12.7)
+            nome_r = "FE RED %s" % str(p.get("rosca") or '1/2"').replace('"', "''")
+            geo.registrar_perfil(geo.barra_redonda(dr, nome_r))
+            s_tc0, s_tc1 = s_b + 20.0, s_b + 20.0 + solda_l + 60.0
+            toco = Barra(nome="Ponta roscada", inicio=em(s_tc0, 0.0, z_t), fim=em(s_tc1, 0.0, z_t), perfil=nome_r,
+                         papel="barra_roscada", camada="Chapas", material="Aço",
+                         atributos={"tipo_ifc": "IfcMember", "elemento": "Barra roscada"})
+            # o toco e a ponta do tirante encostam nas faces do corpo (a rosca que entra nele é do item comprado: no
+            # modelo, nada atravessa — GER-02)
+            corpo = Barra(nome="Esticador", inicio=em(s_tc1, 0.0, z_t), fim=em(s_tc1 + L_est, 0.0, z_t),
+                          perfil=nome_r, papel="esticador", camada="Parafusos", material="Aço",
+                          atributos={"tipo_ifc": "IfcDiscreteAccessory", "elemento": "Esticador",
+                                     "comprado": {"item": "Esticador (tensor) %s" % str(p.get("rosca") or '1/2"'), "qtd": 1}})
+            pecas += [toco, corpo]
+            conjuntos.append((toco, [lg]))
+            soldas_entre.append((toco, lg, {"tipo": "filete", "perna": 4.0, "lados": 2, "local": "fabrica", "forma": "sobreposição"}))
+            H = em(s_tc1 + L_est, 0.0, z_t)
+        else:
+            conjuntos.append((t, [lg]))
+            soldas.append((t.id, lg, {"tipo": "filete", "perna": 4.0, "lados": 2, "local": "fabrica", "forma": "sobreposição"}))
+            H = em(s_b + 20.0, 0.0, z_t)                      # o tirante começa depois da cabeça do parafuso
+        a_, b_ = _ponta_alterada(info, H)
+        _juntar(alterar, a_)
+        _juntar(ajustes, b_)
+    # a chapa de nó: o casco dos parafusos e da faixa da mesa entre eles, no plano da mesa
+    q = _add(ap.inicio, _mul(wa, _dot(_sub(_mul(_add(furos_mundo[0], furos_mundo[-1]), 0.5), ap.inicio), wa)))
+    ny = pontas[0]["n"]
+    us = [_dot(_sub(f, q), wa) for f in furos_mundo]
+    for u_ in (min(us) - borda, max(us) + borda):
+        pts_casco.append(_add(q, _mul(wa, u_)))
+    exg = wa
+    eyg = _mul(ny, -1.0)                                      # da viga para o lado dos tirantes
+    if _dot(_cruz(exg, eyg), Z_) * sz < 0:
+        exg = _mul(wa, -1.0)
+    org = (q[0], q[1], zf if sz > 0 else zf - tg)
+    loc = [(_dot(_sub(c, org), exg), _dot(_sub(c, org), eyg)) for c in pts_casco]
+    casco = _casco2(loc)
+    x0, y0 = min(c[0] for c in casco), min(c[1] for c in casco)
+    cont = [(round(x - x0, 1), round(y - y0, 1)) for x, y in casco]
+    o_g = _add(_add(org, _mul(exg, x0)), _mul(eyg, y0))
+    furos = [{"x": round(_dot(_sub(f, org), exg) - x0, 2), "y": round(_dot(_sub(f, org), eyg) - y0, 2), "diametro": round(fd, 2)}
+             for f in furos_mundo]
+    from nucleo3d.modelo import Chapa
+    gus = Chapa(nome="Chapa de nó", origem=tuple(o_g), eixo_x=tuple(exg), eixo_y=tuple(eyg), contorno=cont, espessura=tg,
+                centrada=False, furos=furos, camada="Chapas", material="Aço", aco=str(p.get("aco") or "ASTM A36"),
+                atributos={"tipo_ifc": "IfcPlate"})
+    pecas.insert(0, gus)
+    conjuntos.insert(0, (ap, [gus]))
+    soldas.append((ap.id, gus, {"tipo": "filete", "perna": _perna(float(_perfil(ap.perfil).tf or 8.0), tg), "lados": 1,
+                                "local": "fabrica", "forma": "contorno"}))
+    params = dict(p, t=tg, lingueta_t=tl, lingueta_largura=Bl, lingueta_comprimento=Ll, fora_da_mesa=fora_mesa, borda=borda,
+                  parafuso=nome_par, classe=classe, face=face)
+    if esticador:
+        params.update(esticador_comprimento=L_est, rosca=str(p.get("rosca") or '1/2"'))
+    return {"pecas": pecas, "alterar": alterar, "ajustes": ajustes, "conjuntos": conjuntos, "soldas": soldas,
+            "soldas_entre": soldas_entre, "parametros": params, "avisos": []}
+
+
+LOCAIS["chapa_de_no_contravento"] = {
+    "nome": "Contravento: chapa de nó (1 a 3 tirantes)", "categoria": "contraventamento",
+    "descricao": "Chapa deitada soldada na mesa da viga, saindo para o lado dos tirantes; cada tirante com uma lingueta "
+                 "soldada na ponta, parafusada (M16) na chapa de nó.",
+    "parametros": [{"chave": "t", "rotulo": "Chapa de nó: espessura", "unidade": "mm", "padrao": 8},
+                   {"chave": "lingueta_comprimento", "rotulo": "Lingueta: comprimento", "unidade": "mm", "padrao": 110},
+                   {"chave": "lingueta_largura", "rotulo": "Lingueta: largura", "unidade": "mm", "padrao": 60},
+                   {"chave": "lingueta_t", "rotulo": "Lingueta: espessura", "unidade": "mm", "padrao": 8},
+                   {"chave": "fora_da_mesa", "rotulo": "Parafuso além da borda da mesa", "unidade": "mm", "padrao": 45},
+                   {"chave": "parafuso", "rotulo": "Parafuso", "unidade": "", "padrao": "M16"}],
+    "esforcos": [],
+}
+LOCAIS["esticador_contravento"] = {
+    "nome": "Contravento: chapa de nó com esticador", "categoria": "contraventamento",
+    "descricao": "A chapa de nó com um esticador (tensor comercial) na ponta do tirante: lingueta parafusada na chapa de "
+                 "nó, toco de barra roscada soldado nela, o esticador e a ponta roscada do tirante.",
+    "parametros": LOCAIS["chapa_de_no_contravento"]["parametros"] + [
+        {"chave": "esticador_comprimento", "rotulo": "Esticador: comprimento do corpo", "unidade": "mm", "padrao": 150},
+        {"chave": "rosca", "rotulo": "Rosca", "unidade": "", "padrao": '1/2"'}],
+    "esforcos": [],
+}
+
+
+# ------------------------------------------------------------------ agulhamento: a corrente entre as terças
+#
+# Pedido do usuário (23/10, depois da pesquisa): a família do agulhamento, com variantes que se trocam. A ligação é por
+# corrente (a barra de terça a terça): as duas pontas dela, nas almas das terças em que chega.
+
+def _pontas_da_corrente(corr, tercas):
+    """cada ponta da corrente com a terça em que ela chega: [(ponta, terça, w (de dentro para a terça), plano da alma
+    mais perto (coordenada ao longo de w), espessura da alma)]"""
+    w = _norm(_sub(corr.fim, corr.inicio))
+    fora = []
+    for ponta, E, sinal in (("inicio", corr.inicio, -1.0), ("fim", corr.fim, 1.0)):
+        wp = _mul(w, sinal)                                   # para fora da corrente, rumo à terça
+        melhor = None
+        for t in tercas:
+            wt = _norm(_sub(t.fim, t.inicio))
+            if abs(_dot(wt, w)) > 0.5:
+                continue
+            r = _sub(E, t.inicio)
+            r = _sub(r, _mul(wt, _dot(r, wt)))
+            dist = math.sqrt(_dot(r, r))
+            if dist < 400.0 and (melhor is None or dist < melhor[0]):
+                melhor = (dist, t)
+        if melhor is None:
+            raise ErroDeDados("a ponta (%s) da corrente %s não chega numa terça selecionada" % (ponta, corr.nome or corr.id))
+        t = melhor[1]
+        lado, f = _lado_da_alma(t, wp)
+        if lado == 0:
+            raise ErroDeDados("a terça %s não tem alma de um lado só (perfil %s)" % (t.nome or t.id, t.perfil))
+        tw = float(_perfil(t.perfil).tw or 2.25)
+        alma_ext = f                                          # a face de fora da alma (do lado da alma)
+        alma_int = f - lado * tw
+        fora.append({"ponta": ponta, "E": E, "terca": t, "wp": wp, "lado": lado, "f_ext": alma_ext, "f_int": alma_int, "tw": tw})
+    return w, fora
+
+
+def _agulhamento_roscado(barras, p):
+    """A corrente de barra roscada: atravessa a alma das duas terças, com arruela e porca dos dois lados de cada alma
+    (`sobra` além da face de fora); o furo na alma no eixo da corrente."""
+    from nucleo.acessorios import DIAMETROS_BARRA
+    from nucleo3d.de_planta_estrutura import _furo_marcador
+    from nucleo3d import geometria as geo
+    corr, *tercas = barras
+    nome_b = str(p.get("barra") or '3/8"')
+    d = DIAMETROS_BARRA[nome_b]
+    fd = float(p.get("furo") or round(d + 1.5, 1))
+    sobra = float(p.get("sobra") or 30.0)
+    perfil = "FE RED %s" % nome_b.replace('"', "''")
+    geo.registrar_perfil(geo.barra_redonda(d, perfil))
+    w, pontas = _pontas_da_corrente(corr, tercas)
+    pecas, novo = [], {}
+    for pt in pontas:
+        wp, E = pt["wp"], pt["E"]
+        faces = [pt["f_ext"], pt["f_int"]]
+        proj_E = _dot(E, wp)
+        # `f_ext`/`f_int` vêm medidos ao longo de wp (o _lado_da_alma recebe wp): a face mais longe de E é a de fora
+        f_fora = max(faces, key=lambda v_: v_ - proj_E)
+        f_dentro = min(faces, key=lambda v_: v_ - proj_E)
+        ponta_nova = _add(E, _mul(wp, (f_fora - proj_E) + sobra))
+        novo[pt["ponta"]] = ponta_nova
+        furo_ponto = _add(E, _mul(wp, f_dentro - proj_E - 0.5))
+        pecas.append(_furo_marcador(furo_ponto, wp, fd, pt["tw"] + 1.0, pt["terca"].id))
+    ajustes = {corr.id: {"inicio": tuple(corr.inicio), "fim": tuple(corr.fim), "perfil": corr.perfil}}
+    alterar = {corr.id: {"inicio": tuple(round(c, 2) for c in novo["inicio"]), "fim": tuple(round(c, 2) for c in novo["fim"]),
+                         "perfil": perfil}}
+    params = dict(p, barra=nome_b, furo=fd, sobra=sobra,
+                  porcas="2 porcas + 2 arruelas em cada terça (uma de cada lado da alma)")
+    return {"pecas": pecas, "alterar": alterar, "ajustes": ajustes, "conjuntos": [], "soldas": [], "parametros": params,
+            "avisos": []}
+
+
+def _agulhamento_cantoneira(barras, p):
+    """O agulhamento rígido da Sooro (A.C.): a cantoneira entre as terças com uma chapinha soldada em cada ponta,
+    encostada na alma da terça e parafusada nela (2 parafusos, oblongo horizontal na chapinha)."""
+    from nucleo.acessorios import d_parafuso_mm, furo_mm
+    corr, *tercas = barras
+    perfil = str(p.get("cantoneira") or "L1.1/4''X1/8''")
+    Bc, Hc, tc = float(p.get("chapa_l") or 130.0), float(p.get("chapa_b") or 50.0), float(p.get("chapa_t") or 3.0)
+    gab = float(p.get("gabarito") or 60.0)
+    nome_par = str(p.get("parafuso") or "M12")
+    d, fd = d_parafuso_mm(nome_par), furo_mm(nome_par)
+    classe = str(p.get("classe") or "ASTM A307")
+    comp_obl = float(p.get("oblongo") or 25.0)
+    pl = _perfil(perfil)
+    aba = float(pl.bf or 31.75)
+    w, pontas = _pontas_da_corrente(corr, tercas)
+    pecas, chapinhas, extremos = [], [], {}
+    for pt in pontas:
+        wp, E = pt["wp"], pt["E"]
+        proj_E = _dot(E, wp)
+        faces = [pt["f_ext"], pt["f_int"]]
+        f_dentro = min(faces, key=lambda v_: v_ - proj_E)        # a face da alma do lado da corrente
+        face = _add(E, _mul(wp, f_dentro - proj_E))
+        wt = _norm(_sub(pt["terca"].fim, pt["terca"].inicio))
+        ex = wt
+        ey = Z_
+        # a chapinha encostada na alma, do lado da corrente: cresce para dentro (−wp)
+        if _dot(_cruz(ex, ey), _mul(wp, -1.0)) < 0:
+            ex = _mul(wt, -1.0)
+        o = _add(_add(face, _mul(ex, -Bc / 2.0)), _mul(ey, -Hc / 2.0))
+        furos = [{"x": round(Bc / 2.0 + sx * gab / 2.0, 2), "y": round(Hc / 2.0, 2), "largura": comp_obl, "altura": fd}
+                 for sx in (-1, 1)]
+        from nucleo3d.modelo import Chapa
+        ch = Chapa(nome="Chapinha do agulhamento", origem=tuple(o), eixo_x=tuple(ex), eixo_y=tuple(ey),
+                   contorno=[(0.0, 0.0), (Bc, 0.0), (Bc, Hc), (0.0, Hc)], espessura=tc, centrada=False, furos=furos,
+                   camada="Chapas", material="Aço", aco=str(p.get("aco") or "ASTM A36"), atributos={"tipo_ifc": "IfcPlate"})
+        chapinhas.append(ch)
+        pecas.append(ch)
+        for sx in (-1, 1):
+            c = _add(face, _mul(ex, sx * gab / 2.0))
+            pecas.append(_parafuso(_add(c, _mul(wp, (pt["tw"] - tc) / 2.0)), wp, d, tc + pt["tw"], classe))
+        extremos[pt["ponta"]] = _sub(face, _mul(wp, tc))         # a ponta da cantoneira na face da chapinha
+    # a cantoneira: de chapinha a chapinha, as abas para cima e para o lado, centrada na chapinha
+    a_ = _norm(_sub(extremos["fim"], extremos["inicio"]))
+    lado = _norm(_cruz(Z_, a_))
+    meio = _mul(_add(extremos["inicio"], extremos["fim"]), 0.5)
+    comp = math.dist(extremos["inicio"], extremos["fim"])
+    heel = _sub(_sub(meio, _mul(lado, aba / 2.0)), _mul(Z_, aba / 2.0))
+    ag = _cantoneira_no_canto(perfil, a_, heel, lado, Z_, comp)
+    ag.nome, ag.papel = "Agulha", "corrente"
+    ag.atributos = {"tipo_ifc": "IfcMember", "elemento": "Agulhamento"}
+    # a corrente que estava ali vira a cantoneira (a barra do modelo passa a ser a agulha, com o perfil e as pontas dela)
+    ajustes = {corr.id: {"inicio": tuple(corr.inicio), "fim": tuple(corr.fim), "perfil": corr.perfil,
+                         "rotacao": float(corr.rotacao or 0.0)}}
+    alterar = {corr.id: {"inicio": tuple(round(c, 2) for c in ag.inicio), "fim": tuple(round(c, 2) for c in ag.fim),
+                         "perfil": ag.perfil, "rotacao": ag.rotacao}}
+    soldas = [(corr.id, ch, {"tipo": "filete", "perna": 3.0, "lados": 1, "local": "fabrica", "forma": "contorno"})
+              for ch in chapinhas]
+    params = dict(p, cantoneira=perfil, chapa_l=Bc, chapa_b=Hc, chapa_t=tc, gabarito=gab, parafuso=nome_par, classe=classe,
+                  oblongo=comp_obl)
+    return {"pecas": pecas, "alterar": alterar, "ajustes": ajustes, "conjuntos": [(corr, chapinhas)], "soldas": soldas,
+            "parametros": params, "avisos": []}
+
+
+LOCAIS["agulhamento_roscado"] = {
+    "nome": "Agulhamento: barra roscada com porcas", "categoria": "correntes",
+    "descricao": "A corrente de barra redonda roscada atravessa a alma das duas terças, com arruela e porca dos dois lados "
+                 "de cada alma.",
+    "parametros": [{"chave": "barra", "rotulo": "Barra", "unidade": "", "padrao": '3/8"'},
+                   {"chave": "sobra", "rotulo": "Sobra além da alma (porca + arruela)", "unidade": "mm", "padrao": 30}],
+    "esforcos": [],
+}
+LOCAIS["agulhamento_cantoneira"] = {
+    "nome": "Agulhamento: cantoneira com chapinhas (Sooro)", "categoria": "correntes",
+    "descricao": "O agulhamento rígido da Sooro: L 1¼\"×⅛\" entre as terças, chapinha 130×50×3 soldada em cada ponta, "
+                 "parafusada na alma da terça com 2 M12 em oblongo.",
+    "parametros": [{"chave": "cantoneira", "rotulo": "Cantoneira", "unidade": "", "padrao": "L1.1/4''X1/8''"},
+                   {"chave": "chapa_l", "rotulo": "Chapinha: comprimento", "unidade": "mm", "padrao": 130},
+                   {"chave": "chapa_b", "rotulo": "Chapinha: altura", "unidade": "mm", "padrao": 50},
+                   {"chave": "chapa_t", "rotulo": "Chapinha: espessura", "unidade": "mm", "padrao": 3},
+                   {"chave": "gabarito", "rotulo": "Passo dos furos", "unidade": "mm", "padrao": 60},
+                   {"chave": "parafuso", "rotulo": "Parafuso", "unidade": "", "padrao": "M12"}],
+    "esforcos": [],
+}
+for _t in ("agulhamento_roscado", "agulhamento_cantoneira"):
+    TIPOS_3D[_t] = {"pede": "a corrente (de terça a terça) e as terças em que ela chega", "barras": ("corrente", "tercas")}
+
+
 LOCAIS["castanha_contravento"] = {
     "nome": "Contravento: castanha (cantoneira deitada + aba furada)", "categoria": "contraventamento",
     "descricao": "A CA1 do Hangar: L50 de 150 deitada na mesa da viga ao longo do tirante, um parafuso 1/2\" na mesa a 30 "
-                 "mm da borda; na ponta, L50 de 50 em pé furada Ø14 — o tirante passa nela a 25 mm da mesa.",
+                 "mm da borda; na ponta, L50 de 50 em pé furada (d + 1,5) — o tirante passa nela a 25 mm da mesa.",
     "parametros": [{"chave": "cantoneira", "rotulo": "Castanha (perfil)", "unidade": "", "padrao": "L 50X50X4.75"},
                    {"chave": "comprimento", "rotulo": "Comprimento da castanha", "unidade": "mm", "padrao": 150},
                    {"chave": "comprimento_aba", "rotulo": "Comprimento da aba furada", "unidade": "mm", "padrao": 50},
                    {"chave": "parafuso", "rotulo": "Parafuso na mesa", "unidade": "", "padrao": '1/2"'},
-                   {"chave": "furo", "rotulo": "Furo", "unidade": "mm", "padrao": 14},
+                   {"chave": "furo", "rotulo": "Furo (vazio = d + 1,5)", "unidade": "mm", "padrao": ""},
                    {"chave": "separa", "rotulo": "Dois tirantes no nó: afastar", "unidade": "mm", "padrao": 250},
                    {"chave": "face", "rotulo": "Mesa (vazio = a mais perto do tirante)", "unidade": "", "padrao": "",
                     "opcoes": ["", "cima", "baixo"]}],
@@ -1353,13 +1660,16 @@ LOCAIS["cantoneira_contravento"] = {
         {"chave": "separa", "rotulo": "Dois tirantes no nó: afastar", "unidade": "mm", "padrao": 150}],
     "esforcos": [],
 }
-for _t in ("castanha_contravento", "duas_chapas_contravento", "cantoneira_contravento"):
+for _t in ("castanha_contravento", "duas_chapas_contravento", "cantoneira_contravento", "chapa_de_no_contravento",
+           "esticador_contravento"):
     TIPOS_3D[_t] = {"pede": "a viga e o(s) tirante(s) que chegam nela — uma ligação por nó", "barras": ("tirantes", "apoio")}
 
 #: as famílias: os tipos de uma família ligam as mesmas barras e se trocam um pelo outro
 FAMILIAS = {
     "contravento": {"nome": "Contravento × viga", "tipos": ["castanha_contravento", "duas_chapas_contravento",
-                                                            "cantoneira_contravento"]},
+                                                            "cantoneira_contravento", "chapa_de_no_contravento",
+                                                            "esticador_contravento"]},
+    "agulhamento": {"nome": "Agulhamento entre terças", "tipos": ["agulhamento_roscado", "agulhamento_cantoneira"]},
 }
 
 
@@ -1387,6 +1697,16 @@ def _barras_para(doc, tipo, ids):
         return _pares_terca_apoio(barras)
     if pede == ("tirantes", "apoio"):
         return _nos_de_contravento(barras, TIPOS_3D[tipo]["pede"])
+    if pede == ("corrente", "tercas"):
+        tercas = [b for b in barras if str(b.papel).lower() in ("terça", "terca", "longarina")]
+        corr = [b for b in barras if b not in tercas]
+        if not corr or len(tercas) < 2:
+            raise ErroDeDados("selecione %s" % TIPOS_3D[tipo]["pede"])
+        grupos = []
+        for c in corr:
+            _w, pts = _pontas_da_corrente(c, tercas)
+            grupos.append([c] + list({id(pt["terca"]): pt["terca"] for pt in pts}.values()))
+        return grupos
     if pede == ("tirante", "apoio"):
         redondo = lambda b: bool(re.search(r"RED|Ø|TIRANTE|REDOND", str(b.perfil), re.I))      # noqa: E731
         tir = [b for b in barras if str(b.papel).lower().startswith("contravent") or redondo(b)]
@@ -1506,6 +1826,14 @@ def _gerar(tipo, barras, p):
         return _duas_chapas_contravento(barras, p)
     if tipo == "cantoneira_contravento":
         return _cantoneira_contravento(barras, p)
+    if tipo == "agulhamento_roscado":
+        return _agulhamento_roscado(barras, p)
+    if tipo == "agulhamento_cantoneira":
+        return _agulhamento_cantoneira(barras, p)
+    if tipo == "chapa_de_no_contravento":
+        return _chapa_de_no_contravento(barras, p)
+    if tipo == "esticador_contravento":
+        return _chapa_de_no_contravento(barras, p, esticador=True)
     raise ErroDeDados("a ligação %s ainda não sabe se pôr no 3D" % tipo)
 
 
@@ -1683,7 +2011,9 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
             mb = dict((barra.atributos or {}).get("marcas") or {})
             inst = mb.get("instancia")
             if not inst and not mb.get("conjunto"):
-                inst = "c" + lid[1:]
+                # um conjunto por barra: a ligação por nó tem dois tirantes (e o topo do pilar, o pilar e a viga) —
+                # com a instância da ligação, os dois saíam num conjunto só na prancha (23/10)
+                inst = "c%s-%s" % (lid[1:], barra.id[-6:])
                 mb.update(instancia=inst, conjunto="")
                 mb.setdefault("principal", True)
                 barra.atributos = dict(barra.atributos or {}, marcas=mb)

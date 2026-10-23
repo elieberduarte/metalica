@@ -1188,8 +1188,10 @@ def inferir_furos_de_barra(pos: Posicao, ent: Solido, fixadores: Sequence[Solido
         # só os parafusos colocados no editor: os do IFC vêm com o furo da barra modelado,
         # e nos poucos em que a análise não o casa (furo movido pela regra, oblongo) um furo
         # a mais mudaria o desenho já conferido (a barra que veio sem o furo da ligação acha
-        # o furo pela chapa encostada nela: inferir_furos_das_chapas)
-        if not (f.atributos or {}).get("criado_no_editor"):
+        # o furo pela chapa encostada nela: inferir_furos_das_chapas). O marcador de furo nunca vem do IFC: o dos
+        # geradores (a SC1 e a castanha do contravento, 23/10 — a cantoneira saía "sem furo" na prancha) vale como o
+        # da ferramenta Furo
+        if not (f.atributos or {}).get("criado_no_editor") and not _eh_furo(f):
             continue
         cf = centros.get(f.id)
         if cf is None or not all(caixa[i][0] - folga <= cf[i] <= caixa[i][1] + folga for i in range(3)):

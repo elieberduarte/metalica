@@ -18,7 +18,8 @@ from nucleo3d import ligacoes3d  # noqa: E402
 
 VIGA = "W 310 X 32,7"            # d 313, bf 102, tf 10,8: a mesa de cima em z = 156,5
 TOPO = 156.5
-VARIANTES = ["castanha_contravento", "duas_chapas_contravento", "cantoneira_contravento"]
+VARIANTES = ["castanha_contravento", "duas_chapas_contravento", "cantoneira_contravento", "chapa_de_no_contravento",
+             "esticador_contravento"]
 
 
 def _no():
@@ -162,7 +163,7 @@ def test_aprovado_a_castanha():
     assert len(cast) == 2 and len(abas) == 2 and len(pars) == 2 and len(furos) == 6
     assert all(abs(math.dist(c.inicio, c.fim) - 150) < 0.5 and c.perfil == "L 50X50X4.75" for c in cast)
     assert all(abs(math.dist(a.inicio, a.fim) - 50) < 0.5 for a in abas)
-    assert {f.atributos["furo"]["d"] for f in furos} == {14.0}
+    assert {f.atributos["furo"]["d"] for f in furos} == {14.2}          # 1/2" + 1,5 (FAB-02: sem cota, folga ≥ 1,5)
     assert all(abs(p.atributos["parafuso"]["d"] - 12.7) < 0.1 for p in pars)
     # o parafuso a 30 mm da borda da mesa (bf 102: a 21 do eixo da viga) e o tirante a 25 mm da mesa de cima
     for p in pars:
@@ -208,3 +209,91 @@ def test_aprovado_c_cantoneira_cortada():
         assert abs(min(sc.inicio[2], sc.fim[2]) - TOPO) < 0.01 and abs(abs(sc.fim[2] - sc.inicio[2]) - 90.0) < 0.01
     assert {f.atributos["furo"]["d"] for f in furos} == {16.0}
     assert abs(t1.fim[2] - (TOPO + 45.0)) < 0.5 and abs(t2.fim[2] - (TOPO + 45.0)) < 0.5
+
+
+# ------------------------------------------------------------------ agulhamento (exemplos F1/F2, esperando o "é assim?")
+
+def _agulha():
+    t1 = Barra(nome="T1", inicio=(-1500, 0, 0), fim=(1500, 0, 0), perfil="Ue 200X75X25X2,25", papel="terça")
+    t2 = Barra(nome="T2", inicio=(-1500, 1500, 0), fim=(1500, 1500, 0), perfil="Ue 200X75X25X2,25", papel="terça")
+    cr = Barra(nome="CR", inicio=(0, 0, 0), fim=(0, 1500, 0), perfil="FE RED 3/8''", papel="corrente")
+    doc = Documento()
+    for e in (t1, t2, cr):
+        doc.add(e)
+    return doc, t1, t2, cr
+
+
+def test_agulhamento_roscado_atravessa_as_duas_almas():
+    doc, t1, t2, cr = _agulha()
+    r = ligacoes3d.aplicar(doc, "agulhamento_roscado", [cr.id, t1.id, t2.id])
+    _aplicar(doc, r)
+    furos = [e for e in doc.entidades.values() if "furo" in (e.atributos or {})]
+    assert {f.atributos["furo"]["peca"] for f in furos} == {t1.id, t2.id}
+    # a barra passa as duas almas e sobra 30 de cada lado
+    assert cr.inicio[1] < -30 + 1 or cr.inicio[1] < 0
+    assert math.dist(cr.inicio, cr.fim) > 1500
+    _aplicar(doc, ligacoes3d.remover(doc, r["ligacoes"][0]["id"]))
+    assert tuple(cr.inicio) == (0, 0, 0) and tuple(cr.fim) == (0, 1500, 0) and cr.perfil == "FE RED 3/8''"
+
+
+def test_agulhamento_troca_para_cantoneira_com_chapinhas():
+    from nucleo3d import conferencia_producao as CP
+    from nucleo3d.producao import _proxy
+    doc, t1, t2, cr = _agulha()
+    r = ligacoes3d.aplicar(doc, "agulhamento_roscado", [cr.id, t1.id, t2.id])
+    _aplicar(doc, r)
+    lid = r["ligacoes"][0]["id"]
+    _aplicar(doc, ligacoes3d.aplicar(doc, "agulhamento_cantoneira", [], ligacao=lid))
+    pecas = _da_ligacao(doc, lid)
+    chapinhas = [e for e in pecas if e.tipo == "chapa"]
+    pars = [e for e in pecas if "parafuso" in (e.atributos or {})]
+    assert len(chapinhas) == 2 and len(pars) == 4
+    assert cr.perfil == "L1.1/4''X1/8''"
+    assert not [e for e in doc.entidades.values() if "furo" in (e.atributos or {})]       # os furos da roscada saíram
+    col = CP.colisoes([_proxy(e) for e in (t1, t2, cr, *chapinhas)])["achados"]
+    assert col == [], col
+
+
+# ------------------------------------------------------------------ regressões das pranchas (23/10, o modelo de
+# Projeto/LIGACOES/pranchas_do_no.py: o que o metalúrgico recebe)
+
+def _numerado(tipo):
+    from nucleo3d import producao
+    doc, viga, t1, t2 = _no()
+    _aplicar(doc, ligacoes3d.aplicar(doc, tipo, [t1.id, t2.id, viga.id]))
+    for i, patch in producao.numerar(doc)["mudancas"].items():
+        doc.entidades[i].atributos = dict(doc.entidades[i].atributos or {}, **{k: v for k, v in patch.items() if v is not None})
+    return doc, viga, t1, t2
+
+
+def test_regressao_furo_do_marcador_do_gerador_chega_na_peca():
+    """a cantoneira da SC1 e a aba da castanha saíam "sem furo" na prancha: o detalhamento só lia o marcador de furo
+    marcado como feito no editor"""
+    from nucleo2d.detalhar import levantar
+    for tipo, nome in (("cantoneira_contravento", "SC1"), ("castanha_contravento", "Castanha (aba)")):
+        doc, *_ = _numerado(tipo)
+        lev = levantar(doc, regra_tercas=False)
+        marcas = {e.atributos["marcas"]["posicao"] for e in doc.entidades.values() if e.nome == nome}
+        pos = [p for p in lev["posicoes"] if p.marca in marcas or set(getattr(p, "marcas", None) or []) & marcas]
+        assert pos and all(p.furos for p in pos), (tipo, [(p.marca, p.furos) for p in pos])
+
+
+def test_regressao_um_conjunto_por_barra_na_ligacao_por_no():
+    """os dois tirantes do mesmo nó (e as duas castanhas) saíam num conjunto só: a instância era a da ligação"""
+    doc, viga, t1, t2 = _numerado("duas_chapas_contravento")
+    assert t1.atributos["marcas"]["instancia"] != t2.atributos["marcas"]["instancia"]
+    doc, *_ = _numerado("castanha_contravento")
+    insts = {e.atributos["marcas"]["instancia"] for e in doc.entidades.values() if e.nome == "Castanha"}
+    assert len(insts) == 2
+
+
+def test_regressao_castanha_nao_vira_agulhamento_nem_tesoura():
+    """o toco da Sooro (cantoneira com papel castanha + chapa 80×80) saía "Agulhamento de cobertura" e o tirante com os
+    tocos, "Viga caixote"""
+    from nucleo2d.detalhar import detalhar
+    doc, *_ = _numerado("duas_chapas_contravento")
+    r = detalhar(doc, regra_tercas=False, converter=False)
+    textos = " ".join(getattr(e, "texto", "") for d in r["desenhos"].values() for e in d.entidades.values()
+                      if getattr(e, "texto", None))
+    assert "A.C." not in textos and "Agulhamento de cobertura" not in textos
+    assert "Vigas caixote" not in textos and "VIGAS CAIXOTE" not in textos

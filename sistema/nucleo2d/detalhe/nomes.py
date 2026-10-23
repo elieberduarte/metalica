@@ -318,6 +318,8 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
         # X de Ø8 "agulhamento diagonal" (pelo diâmetro)
         elif pap in ("chumbador", "contraventamento") and (cls == "barra_redonda" or (cls == "barra_conformada" and _eh_redonda_perfil(p.perfil))):
             t = pap                                  # o X de Ø8 do projetista é contravento, não agulhamento diagonal
+        elif pap == "castanha" and cls in ("barra", "barra_conformada"):
+            t = "castanha"                           # a cantoneira da castanha do contravento (23/10: saía agulhamento)
         elif pap == "longarina" and cls in ("barra", "barra_conformada"):
             t = "terca_oitao" if de_parede(p) == "oitao" else "terca_lateral"   # a longarina é sempre de fechamento
         elif cls in ("chapa", "chapa_dobrada"):
