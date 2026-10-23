@@ -594,6 +594,19 @@ def test_pilarete_embaixo_do_patamar_para_nele():
     assert de_planta._pilaretes_no_patamar([firme, solto], patamar, 1650.0, [(100.0, 50.0)], nivel_firme=6000.0) == 1
     assert firme.fim[2] == 6000.0 and solto.fim[2] == 1650.0
 
+
+def test_pilar_que_carrega_o_mezanino_nao_e_pilarete():
+    """o PM5 da ESCADA 2 do Posto (x 22,66; y 27,73) fica embaixo do patamar, mas carrega no topo o canto do mezanino 3,17
+    (as duas VM-2Ue150): parava no patamar (1,37) e as 4 pontas das VM ficavam sem apoio (0.9.1, bateria do Posto CB,
+    22/10/2026: viga sem apoio 12 → 14). O pilarete da ESCADA 1, sem nada em cima, continua parando no patamar"""
+    patamar = [((0.0, 0.0, 1700.0), (1100.0, 0.0, 1700.0)), ((0.0, 1060.0, 1700.0), (1100.0, 1060.0, 1700.0))]
+    mez = Barra(inicio=(100.0, 50.0, 0.0), fim=(100.0, 50.0, 3170.0), perfil="Ue 100×50×17×2,65", papel="pilar")
+    solto = Barra(inicio=(1000.0, 50.0, 0.0), fim=(1000.0, 50.0, 3170.0), perfil="Ue 100×50×17×2,65", papel="pilar")
+    mez.atributos, solto.atributos = {"origem": {}}, {"origem": {}}
+    vm = [(50.0, 133.0, 3095.0), (2356.0, 136.0, 3095.0)]           # a VM do mezanino: a ponta no topo do PM5
+    assert de_planta._pilaretes_no_patamar([mez, solto], patamar, 1650.0, [(100.0, 50.0), (1000.0, 50.0)], apoiadas=vm) == 1
+    assert mez.fim[2] == 3170.0 and solto.fim[2] == 1650.0
+
 def test_pilar_vai_para_a_secao_da_planta():
     """a planta estrutural desenha a seção do pilar (os dois U de 400 × 200, costas com costas) a
     0,72 m de onde a locação o põe: vale a planta (os três PM6 do Posto CB), com aviso"""

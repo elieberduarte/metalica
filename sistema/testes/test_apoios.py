@@ -156,3 +156,44 @@ def test_pilar_fora_do_eixo_e_da_linha():
     p.inicio, p.fim = (6000.0, 5200.0, 0.0), (6000.0, 5200.0, 6000.0)
     linha = [a for a in apoios.verificar(doc)["achados"] if a["regra"] == "pilar_fora_da_linha"]
     assert len(linha) == 1 and linha[0]["dist_mm"] == 200, linha
+
+
+def _caixao(doc, x, y, dx, nome="PM6(400X200X50X3,75)", perfil="Ue 400×200×50×3,75", caixao=True):
+    """o pilar em caixão como o de_planta monta (22/10/2026): os dois Ue boca com boca, cada um a `dx` do centro"""
+    for p in [b for b in doc.barras if b.papel == "pilar" and b.inicio[0] == x and b.inicio[1] == y]:
+        doc.remover(p.id)
+    for s in (1.0, -1.0):
+        b = barra((x + s * dx, y, 0.0), (x + s * dx, y, 6000.0), "pilar", perfil=perfil)
+        b.atributos["origem"] = dict({"locacao": nome}, **({"caixao": True} if caixao else {}))
+        doc.add(b)
+
+
+def test_pilar_em_caixao_conta_pelo_centro_do_par():
+    """o pilar de 2Ue em caixão é UM pilar: a régua do eixo e da linha vai no centro do par, não em cada U (0.9.1, 22/10/2026:
+    o Posto CB da bateria — PM6 2Ue 400×200 no eixo com cada Ue "a 0,13 m do eixo 11", e cada pilar fora do eixo contado
+    duas vezes: 14 → 33)"""
+    from nucleo3d import eixos as E
+    ex = E.de_dict({"eixo_g": [1, 0], "numeros": [{"nome": "1", "pos": 0.0}, {"nome": "2", "pos": 6000.0}],
+                    "letras": [{"nome": "A", "pos": 0.0}, {"nome": "B", "pos": 5000.0}]})
+    segs = E.segmentos(ex)
+    # o caixão no eixo: os Ue a 134 mm de cada lado do eixo 2, a treliça T#2 passa no centro
+    doc = modelo_certo()
+    _caixao(doc, 6000.0, 5000.0, 134.0)
+    achs = apoios.verificar(doc, eixos=segs)["achados"]
+    assert not [a for a in achs if a["regra"] in ("pilar_fora_do_eixo", "pilar_fora_da_linha")], achs
+    # o caixão deslocado 35 cm do eixo 2: UM achado, a 0,35 m (o centro), com os dois Ue
+    doc = modelo_certo()
+    _caixao(doc, 6000.0 - 350.0, 5000.0, 134.0)
+    achs = apoios.verificar(doc, eixos=segs)["achados"]
+    fora = [a for a in achs if a["regra"] == "pilar_fora_do_eixo"]
+    assert len(fora) == 1 and fora[0]["dist_mm"] == 350 and len(fora[0]["ids"]) == 2, fora
+    # o caixão 20 cm para o lado da treliça: UM achado fora da linha, a 0,20 m
+    doc = modelo_certo()
+    _caixao(doc, 6000.0, 5200.0, 134.0)
+    linha = [a for a in apoios.verificar(doc)["achados"] if a["regra"] == "pilar_fora_da_linha"]
+    assert len(linha) == 1 and linha[0]["dist_mm"] == 200 and len(linha[0]["ids"]) == 3, linha    # os dois Ue + a treliça
+    # dois pilares simples lado a lado (sem a marca do caixão) não são um caixão: cada um responde por si
+    doc = modelo_certo()
+    _caixao(doc, 6000.0 - 350.0, 5000.0, 134.0, caixao=False)
+    fora = [a for a in apoios.verificar(doc, eixos=segs)["achados"] if a["regra"] == "pilar_fora_do_eixo"]
+    assert len(fora) == 2, fora

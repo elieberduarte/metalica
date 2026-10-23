@@ -3601,12 +3601,14 @@ def _encostar_tercas_na_face(tercas, barreiras, nivel: float) -> List[Tuple[str,
 
 
 def _pilaretes_no_patamar(pilares, patamar, z_topo: float, secoes=(), folga: float = 300.0,
-                          nivel_firme: Optional[float] = None) -> int:
+                          nivel_firme: Optional[float] = None, apoiadas=()) -> int:
     """os pilares em pé embaixo do patamar de uma escada (na caixa dele, com folga), desenhados na planta da escada
     (`secoes`: a seção a até 200 mm) e mais altos que ele param nele: os PM5 da ESCADA 1 do Posto V2 são pilaretes do
     patamar (~1,70 m pelos cortes CC/DD) e subiam até 6,00, 3,17 e a caixa d'água (22/10/2026). O pilar que a planta da
     escada não desenha não muda, nem o que chega na estrutura principal (`nivel_firme`) sem nada a conferir — os PM4 da
-    ESCADA 2, desenhados na planta dela mas embaixo de uma treliça da cobertura. Muda o topo; devolve quantos."""
+    ESCADA 2, desenhados na planta dela mas embaixo de uma treliça da cobertura. Nem o que carrega no topo uma peça da
+    estrutura (`apoiadas`: as pontas das vigas e treliças, fora a escada) — o PM5 da ESCADA 2, no canto do mezanino 3,17
+    (0.9.1, 22/10/2026: as 4 pontas das VM-2Ue150 ficavam sem apoio). Muda o topo; devolve quantos."""
     xs = [p[0] for a_, b_ in patamar for p in (a_, b_)]
     ys = [p[1] for a_, b_ in patamar for p in (a_, b_)]
     x0, x1, y0, y1 = min(xs) - folga, max(xs) + folga, min(ys) - folga, max(ys) + folga
@@ -3620,6 +3622,10 @@ def _pilaretes_no_patamar(pilares, patamar, z_topo: float, secoes=(), folga: flo
         o_ = (b.atributos or {}).get("origem") or {}
         if nivel_firme is not None and abs(max(a[2], c[2]) - nivel_firme) < 1.0 and not str(o_.get("a_conferir") or "").startswith("altura"):
             continue                                       # chega na estrutura principal: não é pilarete
+        topo = max(a[2], c[2])
+        if not str(o_.get("a_conferir") or "").startswith("altura") and any(
+                math.hypot(q[0] - a[0], q[1] - a[1]) < 300.0 and abs(q[2] - topo) < 400.0 for q in apoiadas):
+            continue                                       # carrega uma peça no topo (o mezanino): não é pilarete
         if max(a[2], c[2]) > z_topo + 50.0 and min(a[2], c[2]) < z_topo:
             if c[2] >= a[2]:
                 b.fim = (c[0], c[1], round(z_topo, 1))
@@ -4694,8 +4700,10 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             if esc["patamar"]:
                 pa_p = _perfil(p_p)
                 z_pat = min(min(a_[2], b_[2]) for a_, b_ in esc["patamar"]) + base - (float(pa_p.d or 100.0) / 2.0 if pa_p else 50.0)
+                apoiadas = [q for b in doc.barras if b.papel not in ("pilar", "presilha") and b.camada != "Escadas"
+                            for q in (b.inicio, b.fim)]
                 cortados = _pilaretes_no_patamar([b for b in doc.barras if b.papel == "pilar"], esc["patamar"], z_pat,
-                                                 esc.get("secoes_de_pilar") or [], nivel_firme=nivel)
+                                                 esc.get("secoes_de_pilar") or [], nivel_firme=nivel, apoiadas=apoiadas)
                 if cortados:
                     avisos.append("%s: %d pilar(es) embaixo do patamar foram até ele (%.2f m) — os pilaretes da escada."
                                   % (esc["nome"], cortados, z_pat / 1000.0))

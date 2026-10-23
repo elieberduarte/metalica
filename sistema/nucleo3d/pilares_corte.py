@@ -548,6 +548,8 @@ def montar(cortes: Dict[str, dict], locados: Sequence[dict], barra, nivel: float
                 af = _meio_caixao(perfil_pl)
             for k_pe, (bx, by) in enumerate(pes):
                 o_pe = dict(orig, perna=k_pe + 1) if len(pes) > 1 else orig
+                if mult > 1:
+                    o_pe = dict(o_pe, caixao=True)          # o par conta como um pilar (apoios._pilares_um_a_um)
                 for sinal in ((1.0, -1.0) if mult > 1 else (0.0,)):
                     p0 = (bx + nx * af * sinal, by + ny * af * sinal, base)
                     p1 = (bx + ux * dxy + nx * af * sinal, by + uy * dxy + ny * af * sinal, base + dz)

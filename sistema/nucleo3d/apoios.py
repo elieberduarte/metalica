@@ -32,6 +32,7 @@ BALANCO_MAX = 300.0      # mm: terça além do último apoio
 FORA_DO_NO = 200.0       # mm: cruzamento da terça até o nó mais perto do banzo (o par da cumeeira fica a ~150)
 FORA_DA_LINHA = 150.0    # mm: eixo do pilar até a linha da peça que ele carrega (o perfil duplo fica a ~60)
 FORA_DO_EIXO_MIN = 100.0  # mm: pilar a mais disso de um eixo (e a menos de 60 cm) está fora dele
+CAIXAO_MAX = 500.0       # mm: os dois Ue de um pilar em caixão, base a base (2Ue 400×200: 268)
 DENTRO = 150.0           # mm: o banzo de uma treliça entre os banzos da outra, com essa folga de cada lado
 ALMA = ("montante", "diagonal")
 ACESSORIOS = ("terça", "corrente", "contraventamento")
@@ -188,6 +189,40 @@ def _elementos(doc) -> List[_Elem]:
         e = _Elem(s, segs, "banzo" if orig.get("peca") else _papel_do_solido(s), orig.get("peca"))
         e.raio = raio if not k else 0.0
         out.append(e)
+    return out
+
+
+def _pilares_um_a_um(els: List[_Elem], pil: List[int], viz) -> list:
+    """os pilares como a obra os conta: o caixão (os dois Ue boca com boca, marcados `caixao` na origem) é UM pilar, com o
+    eixo no centro do par — cada Ue fica a meia seção do eixo e a régua do eixo e da linha media o Ue (0.9.1, 22/10/2026: o
+    PM6 2Ue 400×200 do Posto CB no eixo, "a 0,13 m do eixo 11", e cada pilar contado duas vezes). [(i, seg, ids, vizinhos)]"""
+    par: Dict[int, int] = {}
+    cx = [i for i in pil if origem_de(els[i].ent).get("caixao")]
+    for i in cx:
+        if i in par:
+            continue
+        ai, bi = sorted(els[i].segs[0], key=lambda q: q[2])
+        melhor = None
+        for j in cx:
+            if j == i or j in par or els[j].nome != els[i].nome \
+                    or getattr(els[j].ent, "perfil", None) != getattr(els[i].ent, "perfil", None):
+                continue
+            aj, bj = sorted(els[j].segs[0], key=lambda q: q[2])
+            d = math.dist(ai, aj)
+            if d <= CAIXAO_MAX and math.dist(bi, bj) <= CAIXAO_MAX and (melhor is None or d < melhor[0]):
+                melhor = (d, j)
+        if melhor:
+            par[i], par[melhor[1]] = melhor[1], i
+    out = []
+    for i in pil:
+        j = par.get(i)
+        if j is None:
+            out.append((i, els[i].segs[0], [els[i].id], viz.get(i, {})))
+        elif i < j:
+            ai, bi = sorted(els[i].segs[0], key=lambda q: q[2])
+            aj, bj = sorted(els[j].segs[0], key=lambda q: q[2])
+            seg = (tuple((ai[k] + aj[k]) / 2 for k in range(3)), tuple((bi[k] + bj[k]) / 2 for k in range(3)))
+            out.append((i, seg, [els[i].id, els[j].id], {**viz.get(j, {}), **viz.get(i, {})}))
     return out
 
 
@@ -409,19 +444,20 @@ def verificar(doc, tol: float = TOL_ENCOSTO, eixos=None, posicao: bool = True) -
         tercas_ok += ok
 
     # ------------------------------------------------------------- pilares e vigas
-    for i in pil:
+    pilares = _pilares_um_a_um(els, pil, viz)
+    for i, seg, ids, vz in pilares:
         e = els[i]
-        a, b = e.segs[0]
+        a, b = seg
         topo = a if a[2] > b[2] else b
         carregadas = []
-        for j in viz.get(i, {}):
+        for j in vz:
             ej = els[j]
             if ej.papel in ("pilar",) or ej.papel in ("corrente", "contraventamento"):
                 continue
             if min(_dist_pt_seg(topo, c, d)[0] for c, d in ej.segs) < tol + 150.0:
                 carregadas.append(j)
         if not carregadas:
-            achados.append(_achado("pilar_sem_carga", "pilar %s sem peça em cima" % (e.nome or ""), topo, [e.id],
+            achados.append(_achado("pilar_sem_carga", "pilar %s sem peça em cima" % (e.nome or ""), topo, ids,
                                    peca=e.nome))
             continue
         # D3: o pilar fica na linha de alguma peça que ele carrega (a treliça pelo plano dela,
@@ -435,7 +471,7 @@ def verificar(doc, tol: float = TOL_ENCOSTO, eixos=None, posicao: bool = True) -
             d_lin, sg, ej = min(((_dist_linha_xy(topo, sg), sg, ej) for sg, ej in linhas), key=lambda r: r[0])
             if d_lin > FORA_DA_LINHA:
                 achados.append(_achado("pilar_fora_da_linha", "pilar %s a %s da linha de %s" % (
-                    e.nome or "", _m(d_lin), ej.nome or ej.papel), topo, [e.id, ej.id], peca=e.nome,
+                    e.nome or "", _m(d_lin), ej.nome or ej.papel), topo, ids + [ej.id], peca=e.nome,
                     dist_mm=round(d_lin)))
     vigas = [i for i, e in enumerate(els) if e.papel == "viga"]
 
@@ -590,13 +626,13 @@ def verificar(doc, tol: float = TOL_ENCOSTO, eixos=None, posicao: bool = True) -
         from nucleo3d.eixos import onde, fora_do_eixo
         # D3 pela malha: o pilar perto de um eixo e fora dele (a locação desloca o pilar e a
         # planta estrutural não diz por quê) — a extra (eixo inclinado) só vale em cima dela
-        for i in pil:
+        for i, seg, ids, _vz in pilares:
             e = els[i]
-            base = min(e.segs[0], key=lambda q: q[2])
+            base = min(seg, key=lambda q: q[2])
             for nome, d in fora_do_eixo(base, [s for s in eixos if s.get("tipo") != "extra"]):
                 if FORA_DO_EIXO_MIN < d:
                     achados.append(_achado("pilar_fora_do_eixo", "pilar %s a %s do eixo %s" % (
-                        e.nome or "", _m(d), nome), base, [e.id], peca=e.nome, dist_mm=round(d)))
+                        e.nome or "", _m(d), nome), base, ids, peca=e.nome, dist_mm=round(d)))
         for a in achados:
             # o pilar fora do eixo já diz o eixo: o resto da posição, com a régua fina
             o = onde(a["ponto"], eixos, perto=FORA_DO_EIXO_MIN if a["regra"] == "pilar_fora_do_eixo" else 600.0)
