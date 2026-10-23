@@ -12,6 +12,7 @@ def _detalhe(tx, nome, qtd, H):
     direita na vista lateral, a espessura nas notas"""
     e = [{"tipo": "texto", "texto": "SUPORTE DE TERÇA %s - %dX" % (nome, qtd), "posicao": [tx, 0, 0]},
          {"tipo": "texto", "texto": "CHAPAS # 3,0mm", "posicao": [tx + 2, 143, 0]},
+         {"tipo": "texto", "texto": 'PARAFUSOS Ø 3/8"X1,0"', "posicao": [tx + 2, 77, 0]},
          {"tipo": "polilinha", "fechada": True, "vertices": [[tx + 41, 390, 0], [tx + 191, 390, 0], [tx + 191, 390 + H, 0], [tx + 41, 390 + H, 0]]}]
     for x in (76, 156):
         for y in (420, 390 + H - 20):
@@ -27,6 +28,7 @@ def test_detalhe_do_suporte():
     assert sorted((f["x"], f["y"]) for f in d["ST1"]["furos"]) == [(35.0, 30.0), (35.0, 70.0), (115.0, 30.0), (115.0, 70.0)]
     assert all(f["largura"] == 24.7 and f["altura"] == 12.7 for f in d["ST1"]["furos"])        # o oblongo 12,7 × 25
     assert d["ST1"]["nervura"][1] == (0.0, 85.0) and d["ST2"]["H"] == 120.0
+    assert d["ST1"]["parafuso"] == {"bitola": '3/8"', "d": 9.525, "L": 25.4}
 
 
 def test_um_suporte_por_apoio_e_a_emenda_leva_um_so():
@@ -59,6 +61,13 @@ def test_um_suporte_por_apoio_e_a_emenda_leva_um_so():
     for c in sup:
         meio = (c.origem[0] + c.eixo_x[0] * 75.0, c.origem[1] + c.eixo_x[1] * 75.0)
         assert abs(((meio[0] - 5000.0) * u[0] + (meio[1] - 0.0) * u[1]) - (xmin - 1.5)) < 0.01
+    # os parafusos: 4 por suporte, no eixo do oblongo, atravessando a chapa (3,0) e a alma da terça (2,25)
+    par = [e for e in doc.entidades.values() if (getattr(e, "atributos", None) or {}).get("parafuso")]
+    assert len(par) == 12 and all(p.atributos["parafuso"]["pega"] == 5.2 for p in par)
+    for p in par:
+        pt = p.atributos["parafuso"]["ponto"]
+        assert abs((pt[0] - 5000.0) * u[0] - (xmin + (2.25 - 3.0) / 2.0)) < 0.05          # o meio da pega
+        assert round(pt[2] - 6000.0) in (30, 70)
     # a U 127 leva o ST2
     t2 = Barra(nome="t", inicio=(8000.0, -200.0, 6063.5), fim=(8000.0, 6000.0, 6063.5), perfil="U 127×50×3,04 (FF)", papel="terça")
     doc.add(t2)

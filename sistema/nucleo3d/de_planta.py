@@ -2406,6 +2406,19 @@ def _deslocar_pecas(ents, chapas, desl) -> None:
         if isinstance(bz, dict) and bz.get("eixo"):
             bz["eixo"] = mover(bz["eixo"])
     for ch in chapas:
+        if getattr(ch, "tipo", "") == "barra":
+            # a barra posta junto das chapas (o SC1 do contravento)
+            ch.inicio = (ch.inicio[0] + desl[0], ch.inicio[1] + desl[1], ch.inicio[2])
+            ch.fim = (ch.fim[0] + desl[0], ch.fim[1] + desl[1], ch.fim[2])
+            continue
+        if getattr(ch, "tipo", "") == "solido":
+            # o sólido posto junto das chapas (o parafuso do suporte de terça): pelos vértices e pelo ponto que ele guarda
+            ch.vertices = [(v[0] + desl[0], v[1] + desl[1], v[2]) for v in ch.vertices]
+            for chave in ("parafuso", "furo"):                   # o ponto que o detalhamento lê (parafuso, furo do SC1)
+                pf = (ch.atributos or {}).get(chave) or {}
+                if pf.get("ponto"):
+                    pf["ponto"] = [round(pf["ponto"][0] + desl[0], 2), round(pf["ponto"][1] + desl[1], 2), pf["ponto"][2]]
+            continue
         ch.origem = (ch.origem[0] + desl[0], ch.origem[1] + desl[1], ch.origem[2])
 
 
@@ -5561,6 +5574,59 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         if sem_nome_o:
             avisos.append("%s: %d linha(s) de terça sem nome TC nem VM ao lado; ficaram de fora — confira." % (titulo_o, sem_nome_o))
 
+    # ---------------------------------------------------------------- suporte dos contraventos (SC1)
+    # o projeto que detalha o "SUPORTE SC1" (Posto CB, folha 04: L 2"×3/16" de 90 em pé no banzo de cima, furo Ø16 —
+    # o SC1 do banco de detalhes da casa): um em cada ponta do contravento, no banzo de cima da tesoura que ele trava, e
+    # o tirante esticado de furo a furo (ligacoes3d._suporte_contravento, o mesmo do 3D); 23/10/2026
+    sc1_feitos = None
+    if par.get("suportes_do_projeto") and any(e["tipo"] == "texto" and re.search(r"(?i)SUPORTE\s+SC1", e["texto"]) for e in ents):
+        from nucleo3d import ligacoes3d as _lg
+        bz_sc = [p_["ent"] for p_ in pecas if p_["ent"].tipo == "barra" and p_["ent"].camada == "Treliças"
+                 and p_["papel"] == "banzo"]
+        sc1_feitos = {"suportes": 0, "sem_banzo": 0}
+        for p_ in [p_ for p_ in pecas if p_["papel"] == "contraventamento"]:
+            tir = p_["ent"]
+            cand = {0: [], 1: []}
+            for k_q, q in enumerate((tir.inicio, tir.fim)):
+                for b in bz_sc:
+                    a_, f_ = b.inicio, b.fim
+                    ux, uy = f_[0] - a_[0], f_[1] - a_[1]
+                    L2 = ux * ux + uy * uy
+                    if L2 < 1.0:
+                        continue
+                    t_ = max(0.0, min(1.0, ((q[0] - a_[0]) * ux + (q[1] - a_[1]) * uy) / L2))
+                    if math.hypot(q[0] - a_[0] - ux * t_, q[1] - a_[1] - uy * t_) > 600.0:
+                        continue
+                    z_ = a_[2] + (f_[2] - a_[2]) * t_
+                    cand[k_q].append((abs(z_ - q[2]), -z_, b))
+            # em cada ponta, o banzo mais alto perto dela (o de cima da tesoura, não o de baixo na mesma linha em planta)
+            apo = []
+            for k_q in (0, 1):
+                perto = [c_ for c_ in cand[k_q] if c_[0] < 1500.0]
+                if perto:
+                    alto = min(perto, key=lambda c_: (c_[1], c_[0]))[2]
+                    if alto not in apo:
+                        apo.append(alto)
+            if not apo:
+                sc1_feitos["sem_banzo"] += 1
+                continue
+            try:
+                r_sc = _lg._suporte_contravento(tir, apo, {"variante": "SC1"})
+            except Exception:                                     # noqa: BLE001
+                sc1_feitos["sem_banzo"] += 1
+                continue
+            for ent_ in r_sc["pecas"]:
+                ent_.atributos = dict(ent_.atributos or {})
+                if ent_.tipo == "barra":
+                    ent_.atributos["origem"] = {"locacao": "SC1", "suporte": "SC1"}
+                    sc1_feitos["suportes"] += 1
+                doc.add(ent_)
+                chapas_postas.append(ent_)
+            for campo, valor in (r_sc["alterar"].get(tir.id) or {}).items():
+                setattr(tir, campo, valor)
+        if sc1_feitos["sem_banzo"]:
+            avisos.append("Suporte SC1: %d contravento(s) sem banzo de tesoura perto da ponta — ficaram sem o SC1." % sc1_feitos["sem_banzo"])
+
     # ---------------------------------------------------------------- perto da origem
     # a planta do projetista fica onde ele desenhou (no posto, a 400 m do zero do DXF): o
     # modelo vem para perto da origem, com o canto da planta no zero (em metros redondos),
@@ -5650,6 +5716,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     resumo["escadas"] = escadas_feitas
     if suportes_feitos is not None:
         resumo["suportes_terca"] = suportes_feitos
+    if sc1_feitos is not None:
+        resumo["suportes_contravento"] = sc1_feitos
     if gussets_postas:
         resumo["gussets"] = dict(gussets_postas)
     if bases_feitas is not None:

@@ -16,6 +16,9 @@ from typing import Dict, List, Optional, Sequence
 
 _TITULO = re.compile(r"(?i)^\s*SUPORTE\s+DE\s+TER[ÇC]A\s+(ST\s*\d+[A-Z]?)\s*-\s*(\d+)\s*X")
 _ESPESSURA = re.compile(r"(?i)CHAPAS?\s*#\s*([\d,.]+)\s*mm")
+#: o parafuso da nota do detalhe: "PARAFUSOS Ø 3/8\"X1,0\""
+_PARAFUSO = re.compile(r"(?i)PARAFUSOS?\s*[ØϕΦ]?\s*([\d/]+)\s*\"?\s*X\s*([\d,.]+)\s*\"?")
+_POL = {"1/4": 6.35, "5/16": 7.94, "3/8": 9.525, "1/2": 12.7, "5/8": 15.875, "3/4": 19.05, "7/8": 22.225, "1": 25.4}
 #: mm: a folga entre a terça e o banzo que ainda é o apoio dela (acima disso, a terça erguida ao plano da água)
 FOLGA_APOIO = 15.0
 
@@ -85,8 +88,20 @@ def detalhes(ents: Sequence[dict]) -> Dict[str, dict]:
         esp = [(math.dist((x0, y0), e["posicao"][:2]), _ESPESSURA.search(e["texto"])) for e in textos
                if abs(e["posicao"][0] - tx) < 600.0 and abs(e["posicao"][1] - ty) < 700.0 and _ESPESSURA.search(e["texto"])]
         t_mm = float(min(esp, key=lambda q: q[0])[1].group(1).replace(",", ".")) if esp else None
+        pa = [(math.dist((x0, y0), e["posicao"][:2]), _PARAFUSO.search(e["texto"])) for e in textos
+              if abs(e["posicao"][0] - tx) < 600.0 and abs(e["posicao"][1] - ty) < 700.0 and _PARAFUSO.search(e["texto"])]
+        parafuso = None
+        if pa:
+            mp = min(pa, key=lambda q: q[0])[1]
+            d_p = _POL.get(mp.group(1))
+            try:
+                L_p = float(mp.group(2).replace(",", ".")) * 25.4          # o comprimento em polegadas ("X1,0\"")
+            except ValueError:
+                L_p = None
+            if d_p and L_p:
+                parafuso = {"bitola": mp.group(1) + '"', "d": d_p, "L": round(L_p, 1)}
         out[re.sub(r"\s+", "", m.group(1)).upper()] = {"qtd": int(m.group(2)), "B": round(B, 1), "H": round(H, 1), "t": t_mm,
-                                                        "furos": furos, "nervura": nerv}
+                                                        "furos": furos, "nervura": nerv, "parafuso": parafuso}
     return out
 
 
@@ -128,7 +143,7 @@ def lancar(doc, tercas: Sequence, apoios: Sequence, dets: Dict[str, dict], aco: 
         zs = [u[2] * x + v[2] * y for x, y in sec]
         return u, v, min(zs), max(zs), min(x for x, _y in sec), p
 
-    n = 0
+    n = n_par = 0
     postos: List[tuple] = []                           # (x, y, z) de cada suporte: a emenda de duas terças leva um só
     por_nome: Dict[str, int] = {}
     erguidos = 0
@@ -207,6 +222,26 @@ def lancar(doc, tercas: Sequence, apoios: Sequence, dets: Dict[str, dict], aco: 
                 nv.atributos = {"tipo_ifc": "IfcPlate", "origem": dict(o, nervura=True)}
                 doc.add(nv)
                 chapas_postas.append(nv)
+            if dt.get("parafuso") and pt is not None:
+                # um parafuso em cada oblongo, atravessando a chapa e a alma da terça (a pega), a cabeça do lado da chapa
+                from nucleo3d.lancamento import _parafuso_solido
+                tw = float(pt.tw or 2.0)
+                meio_pega = xmin_t + (tw - tch) / 2.0                 # do eixo da terça ao meio da pega, ao longo de u
+                for f in ch.furos:
+                    cx = org[0] + exh[0] * f["x"]
+                    cy = org[1] + exh[1] * f["x"]
+                    cz = org[2] + f["y"]
+                    cx += uh[0] * (meio_pega - off)
+                    cy += uh[1] * (meio_pega - off)
+                    pf = dt["parafuso"]
+                    sol = _parafuso_solido((cx, cy, cz), uh, pf["d"], pf["L"], "ASTM A307")
+                    sol.atributos["parafuso"].update(ponto=[round(cx, 2), round(cy, 2), round(cz, 2)],
+                                                    eixo=[round(uh[0], 6), round(uh[1], 6), 0.0], pega=round(tch + tw, 1),
+                                                    bitola=pf["bitola"])
+                    sol.atributos["origem"] = dict(o, parafuso=True)
+                    doc.add(sol)
+                    chapas_postas.append(sol)
+                    n_par += 1
             n += 1
             por_nome[nome] = por_nome.get(nome, 0) + 1
     for k, q in sorted(por_nome.items()):
@@ -214,4 +249,4 @@ def lancar(doc, tercas: Sequence, apoios: Sequence, dets: Dict[str, dict], aco: 
             avisos.append("Suportes de terça: %d %s no modelo e o detalhe diz %dX — confira." % (q, k, dets[k]["qtd"]))
     if erguidos:
         avisos.append("Suportes de terça: %d mais altos que o detalhe, onde a terça sobe ao plano da água." % erguidos)
-    return {"suportes": n, "por_nome": por_nome, "erguidos": erguidos}
+    return {"suportes": n, "por_nome": por_nome, "erguidos": erguidos, "parafusos": n_par}
