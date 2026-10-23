@@ -141,3 +141,70 @@ def test_familia_na_lista_dos_tipos():
     for t in VARIANTES:
         assert tipos[t]["familia"] == "contravento"
     assert tipos["chapa_simples"]["familia"] is None
+
+
+# ------------------------------------------------------------------ os casos aprovados (usuário, 23/10: "1. Sim 2. Pode ser
+# 3. Sim" — as imagens em Projeto/LIGACOES/exemplos/contravento_{A,B,C}_*.png, o nó do print)
+
+def _aplicado(tipo):
+    doc, viga, t1, t2 = _no()
+    r = ligacoes3d.aplicar(doc, tipo, [t1.id, t2.id, viga.id])
+    _aplicar(doc, r)
+    return doc, viga, t1, t2, _da_ligacao(doc, r["ligacoes"][0]["id"])
+
+
+def test_aprovado_a_castanha():
+    doc, viga, t1, t2, pecas = _aplicado("castanha_contravento")
+    cast = [e for e in pecas if e.nome == "Castanha"]
+    abas = [e for e in pecas if e.nome == "Castanha (aba)"]
+    furos = [e for e in pecas if "furo" in (e.atributos or {})]
+    pars = [e for e in pecas if "parafuso" in (e.atributos or {})]
+    assert len(cast) == 2 and len(abas) == 2 and len(pars) == 2 and len(furos) == 6
+    assert all(abs(math.dist(c.inicio, c.fim) - 150) < 0.5 and c.perfil == "L 50X50X4.75" for c in cast)
+    assert all(abs(math.dist(a.inicio, a.fim) - 50) < 0.5 for a in abas)
+    assert {f.atributos["furo"]["d"] for f in furos} == {14.0}
+    assert all(abs(p.atributos["parafuso"]["d"] - 12.7) < 0.1 for p in pars)
+    # o parafuso a 30 mm da borda da mesa (bf 102: a 21 do eixo da viga) e o tirante a 25 mm da mesa de cima
+    for p in pars:
+        assert abs(abs(p.atributos["parafuso"]["ponto"][1]) - 21.0) < 0.5
+    assert abs(t1.fim[2] - (TOPO + 25.0)) < 0.01 and abs(t2.fim[2] - (TOPO + 25.0)) < 0.01
+    # dois tirantes no nó: os parafusos afastados 250 ao longo da viga
+    xs = sorted(p.atributos["parafuso"]["ponto"][0] for p in pars)
+    assert xs[1] - xs[0] > 250
+
+
+def test_aprovado_b_duas_chapas_sooro():
+    doc, viga, t1, t2, pecas = _aplicado("duas_chapas_contravento")
+    base = [e for e in pecas if e.nome == "Chapa da castanha"]
+    ch80 = [e for e in pecas if e.nome == "Chapa 80×80"]
+    rosc = [e for e in pecas if e.nome == "Barra roscada"]
+    tocos = [e for e in pecas if e.nome in ("Toco da castanha", "Toco do tirante")]
+    pars = [e for e in pecas if "parafuso" in (e.atributos or {})]
+    assert len(base) == 1 and len(ch80) == 4 and len(rosc) == 2 and len(tocos) == 4 and len(pars) == 2
+    b = base[0]
+    xs, ys = [q[0] for q in b.contorno], [q[1] for q in b.contorno]
+    assert (max(xs) - min(xs), max(ys) - min(ys)) == (270.0, 120.0) and abs(b.espessura - 6.35) < 0.01
+    assert all(abs(c.espessura - 8) < 0.01 and max(q[0] for q in c.contorno) == 80 for c in ch80)
+    assert all(t.perfil == "L 2 1/2'' X 1/4''" and abs(math.dist(t.inicio, t.fim) - 150) < 0.5 for t in tocos)
+    assert all(r.perfil == "FE RED 5/8''" for r in rosc)
+    assert all(abs(p.atributos["parafuso"]["d"] - 16) < 0.1 for p in pars)
+    # o vão de 100 entre as duas chapas 80×80 de cada tirante (centro a centro: 100 + 8)
+    for t in (t1, t2):
+        perto = sorted(ch80, key=lambda c: math.dist(c.origem, t.fim))[:2]
+        cs = []
+        for c in perto:
+            ex, ey = c.eixo_x, c.eixo_y
+            n = (ex[1] * ey[2] - ex[2] * ey[1], ex[2] * ey[0] - ex[0] * ey[2], ex[0] * ey[1] - ex[1] * ey[0])
+            cs.append(sum(c.origem[k] * n[k] for k in range(3)))
+        assert abs(abs(cs[0] - cs[1]) - 108.0) < 0.5
+
+
+def test_aprovado_c_cantoneira_cortada():
+    doc, viga, t1, t2, pecas = _aplicado("cantoneira_contravento")
+    scs = [e for e in pecas if e.tipo == "barra"]
+    furos = [e for e in pecas if "furo" in (e.atributos or {})]
+    assert len(scs) == 2 and len(furos) == 2
+    for sc in scs:
+        assert abs(min(sc.inicio[2], sc.fim[2]) - TOPO) < 0.01 and abs(abs(sc.fim[2] - sc.inicio[2]) - 90.0) < 0.01
+    assert {f.atributos["furo"]["d"] for f in furos} == {16.0}
+    assert abs(t1.fim[2] - (TOPO + 45.0)) < 0.5 and abs(t2.fim[2] - (TOPO + 45.0)) < 0.5

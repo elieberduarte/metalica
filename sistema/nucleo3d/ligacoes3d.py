@@ -1261,13 +1261,14 @@ def _duas_chapas_contravento(barras, p):
         a, b = _ponta_alterada(info, H)
         _juntar(alterar, a)
         _juntar(ajustes, b)
-    # a chapa deitada: no eixo da viga, do primeiro ao último parafuso + 35 de borda (mín. 150)
+    # a chapa deitada: no eixo da viga, do primeiro ao último parafuso + a borda (mín. 150)
     wa = pontas[0]["wa"]
     c_ = _mul(_add(furos_base[0], furos_base[-1]), 0.5)
     q = _add(ap.inicio, _mul(wa, _dot(_sub(c_, ap.inicio), wa)))
     q = (q[0], q[1], zf)
     us = [_dot(_sub(f, q), wa) for f in furos_base]
-    Lb = max(float(p.get("base_comprimento") or 0.0), 150.0, _acima(max(us) - min(us) + 2 * 35.0 + 0.0))
+    # borda de 25 (≥ 22 do furo de M16): a chapa de 270 da Sooro com os dois tocos afastados 200
+    Lb = max(float(p.get("base_comprimento") or 0.0), 150.0, _acima(max(us) - min(us) + 2 * 25.0))
     if len(pontas) > 1:
         Lb = max(Lb, 270.0)
     eyb = _norm(_cruz(Z_, wa))
