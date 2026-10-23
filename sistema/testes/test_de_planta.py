@@ -672,7 +672,9 @@ def test_perfil_de_apoio_das_tercas_dos_dois_lados():
              {"texto": "BANZO 2UE250X70X25X4,75", "posicao": [4000.0, -300.0]}]
     assert de_planta._apoio_das_tercas(el, notas) == 1
     assert el.apoio_terca["perfil"].startswith("U 100") and [m.papel for m in el.membros].count("apoio_terca") == 1
-    assert len(el.fundo) == 1 and "um de cada lado" in el.avisos[-1]
+    # "NO EIXO DA TRELIÇA" (na linha de baixo da nota): um U só, no plano dela — a SEÇÃO DA TRANSIÇÃO 1 desenha o U no
+    # vão de 100 mm entre as duas faces da alma (23/10/2026; antes, um de cada lado, fora do caixão)
+    assert len(el.fundo) == 1 and "no eixo dela" in el.avisos[-1] and el.apoio_terca["no_eixo"]
     # dos lados: a alma do U encosta na face do banzo (a meia altura do Ue 250 mais o centroide do U)
     assert 125.0 + 5.0 < de_planta._lado_do_apoio("Ue 250×70×25×4,75", "U 100×40×2,25 (FF)") < 125.0 + 20.0
     # sem a nota, fica de fundo
@@ -970,12 +972,31 @@ def test_presilhas_da_cantoneira_dupla_pela_norma():
 
 def test_cantoneira_dupla_nas_abas_do_u():
     """A cantoneira dupla vai uma em cada aba do U do banzo, soldada na face de dentro dela (usuário, 07/10 e 12/10): o eixo
-    fica a d/2 − t − xg do plano. Sem U que receba o par (caixão, U estreito demais), costas com costas a bf/2 + 3."""
+    fica a d/2 − t − xg do plano. Sem U que receba o par (U estreito demais), costas com costas a bf/2 + 3. O caixão de
+    dois U empilhados também tem as abas nas laterais (a SEÇÃO DA TRANSIÇÃO 1 do Posto, 23/10/2026)."""
     af, nas_abas, xg = de_planta._cantoneira_na_aba_do_u('L 2"×1/8"', "U 200×100×6,35 (FF)", False)
     assert nas_abas and abs((af + xg) - (100.0 - 6.35)) < 0.01             # a face de fora encosta na aba do U
     af, nas_abas, _xg = de_planta._cantoneira_na_aba_do_u('L 2"×1/8"', "U 100×40×2,25 (FF)", False)
     assert not nas_abas and abs(af - (50.8 / 2 + 3.0)) < 0.01              # as abas de dentro se encontrariam
-    assert not de_planta._cantoneira_na_aba_do_u('L 2"×1/8"', "U 200×100×6,35 (FF)", True)[1]   # caixão
+    # o caixão 2Ue 250 da TRANSIÇÃO 1: uma L em cada face, sobre a gusset #3/16" (a costa a 125 − 4,75 − 4,76 do eixo)
+    af, nas_abas, xg = de_planta._cantoneira_na_aba_do_u('L 2½"×3/16"', "Ue 250×70×25×4,75", True, 4.76)
+    assert nas_abas and abs((af + xg) - (125.0 - 4.75 - 4.76)) < 0.01
+
+
+def test_gussets_da_elevacao_e_o_detalhe():
+    """As chapas de nó da TRANSIÇÃO 1 do Posto: o retângulo 300 × 100 na elevação com "G1" ao lado e o detalhe "CHAPA
+    GOUSSET G1 106X" (o retângulo em tamanho real acima do título, "# 3/16\"" ao lado) — 23/10/2026"""
+    el = _el([de_planta.Membro(0, 0, 8600, 0, "banzo"), de_planta.Membro(0, 1460, 8600, 1460, "banzo")])
+    el.x_esq, el.y_base, el.caixa = 1000.0, 5000.0, (1000.0, 4900.0, 9600.0, 6600.0)
+    ret = lambda x0, y0, w, h: {"tipo": "polilinha", "fechada": True, "camada": "1-Metalica1",           # noqa: E731
+                                "vertices": [[x0, y0, 0], [x0 + w, y0, 0], [x0 + w, y0 + h, 0], [x0, y0 + h, 0]]}
+    regiao = [ret(2000, 6230, 300, 100), ret(4000, 5070, 300, 100), ret(7000, 6300, 40, 40)]
+    textos = [{"tipo": "texto", "texto": "G1", "posicao": [1800, 6350, 0]}, {"texto": "G2", "tipo": "texto", "posicao": [3800, 5180, 0]}]
+    g = de_planta._gussets_da_elevacao(el, regiao, textos)
+    assert g == [(1000.0, 1300.0, 1230.0, 1330.0, "G1"), (3000.0, 3300.0, 70.0, 170.0, "G2")]
+    ents = [{"tipo": "texto", "texto": "CHAPA GOUSSET G1 106X", "posicao": [0, 0, 0]}, dict(ret(93, 99, 300, 100)),
+            {"tipo": "texto", "texto": '# 3/16"', "posicao": [183, 141, 0]}]
+    assert de_planta._detalhes_de_gusset(ents) == {"G1": {"qtd": 106, "t": 4.76, "B": 300.0, "H": 100.0}}
 
 
 def test_centro_do_texto_girado():

@@ -702,6 +702,7 @@ class Elevacao:
     apoio_terca: Optional[dict] = None                          # o perfil de apoio das terças, dos dois lados
     parte_de: Optional[str] = None                              # a elevação desenhada junto (a TRANSIÇÃO 3 na da 2)
     topo_telhado: Optional[float] = None                        # em duas peças: o topo da viga (o telhado passa ali)
+    gussets: list = field(default_factory=list)                 # [(s0, s1, h0, h1, "G1")]: a chapa de nó desenhada
 
     def topo(self, s: float) -> Optional[float]:
         """altura do eixo do banzo superior em `s` (o mais alto que passa por ali)"""
@@ -839,10 +840,73 @@ def ler_elevacoes(ents, familias: Sequence[str]) -> Dict[str, Elevacao]:
             marcas.append((x_apoio if x_apoio is not None else n["posicao"][0]) - el.x_esq)
             notas_ids.add(n.get("id"))
         el.marcas_terca = sorted(marcas)
+        el.gussets = _gussets_da_elevacao(el, regiao, textos)
         _apoio_das_tercas(el, [n for n in textos if x0 - 500 <= n["posicao"][0] <= x1 + 500 and y0 - 200 <= n["posicao"][1] <= y1 + 200])
         el.fontes = ({getattr(sg, "id", None) for sg in c["segs"]} | notas_ids | {t.get("id")}) - {None}
         if el.membros:
             out[nome] = el
+    return out
+
+
+#: a marca da chapa de nó na elevação ("G1") e o título do detalhe dela ("CHAPA GOUSSET G1 106X")
+_MARCA_GUSSET = re.compile(r"^\s*(G\s*\d+[A-Z]?)\s*$")
+_TITULO_GUSSET = re.compile(r"(?i)^\s*CHAPA\s+GOUSSET\s+(G\s*\d+[A-Z]?)\s*-?\s*(\d+)\s*X")
+
+
+def _gussets_da_elevacao(el: "Elevacao", regiao, textos) -> list:
+    """As chapas de nó que a elevação desenha: o retângulo em tamanho real com a marca "G1" ao lado (a TRANSIÇÃO 1 do
+    Posto CB: 53 G1 e 4 G2, 300 × 100 penduradas no banzo — 23/10/2026). [(s0, s1, h0, h1, "G1")]"""
+    x0, y0, x1, y1 = el.caixa
+    marcas = [n for n in textos if _MARCA_GUSSET.match(n["texto"]) and x0 - 500 <= n["posicao"][0] <= x1 + 500
+              and y0 - 500 <= n["posicao"][1] <= y1 + 500]
+    if not marcas:
+        return []
+    out = []
+    for e in regiao:
+        if e["tipo"] != "polilinha" or not e.get("fechada") or len(e["vertices"]) not in (4, 5):
+            continue
+        xs, ys = [v[0] for v in e["vertices"]], [v[1] for v in e["vertices"]]
+        w, h = max(xs) - min(xs), max(ys) - min(ys)
+        if not (50.0 <= w <= 1000.0 and 50.0 <= h <= 600.0) or not (x0 - 100 <= min(xs) and max(xs) <= x1 + 100):
+            continue
+        c = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+        d, i = min((math.dist(c, (m["posicao"][0], m["posicao"][1])), i) for i, m in enumerate(marcas))
+        if d > 450.0:
+            continue
+        out.append((min(xs) - el.x_esq, max(xs) - el.x_esq, min(ys) - el.y_base, max(ys) - el.y_base,
+                    re.sub(r"\s+", "", _MARCA_GUSSET.match(marcas[i]["texto"]).group(1)).upper()))
+    return sorted(out)
+
+
+def _detalhes_de_gusset(ents) -> Dict[str, dict]:
+    """{"G1": {qtd, t, B, H}}: o detalhe "CHAPA GOUSSET G1 106X" — o retângulo em tamanho real logo acima do título e a
+    espessura ("# 3/16\"") ao lado"""
+    from nucleo3d.bases_locacao import _POL
+    out: Dict[str, dict] = {}
+    tits = [(e, _TITULO_GUSSET.match(str(e.get("texto") or ""))) for e in ents if e.get("tipo") == "texto"]
+    tits = [(e, m) for e, m in tits if m]
+    if not tits:
+        return out
+    rets = [e for e in ents if e.get("tipo") == "polilinha" and e.get("fechada") and len(e.get("vertices") or []) in (4, 5)]
+    esp_txt = [e for e in ents if e.get("tipo") == "texto" and re.match(r"^\s*#\s*[\d/,.]+", str(e.get("texto") or ""))]
+    for t, m in tits:
+        tx, ty = t["posicao"][0], t["posicao"][1]
+        cand = []
+        for e in rets:
+            xs, ys = [v[0] for v in e["vertices"]], [v[1] for v in e["vertices"]]
+            if -100.0 <= min(xs) - tx <= 300.0 and 50.0 <= min(ys) - ty <= 400.0:
+                cand.append((min(ys) - ty, max(xs) - min(xs), max(ys) - min(ys), (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2))
+        if not cand:
+            continue
+        _dy, B, H, cx, cy = min(cand)
+        t_mm = None
+        if esp_txt:
+            d, i = min((math.dist((cx, cy), (e["posicao"][0], e["posicao"][1])), i) for i, e in enumerate(esp_txt))
+            txt = esp_txt[i]["texto"]
+            v = re.match(r"^\s*#\s*([\d/,.]+)", txt).group(1).replace(",", ".")
+            if d < 400.0:
+                t_mm = _POL.get(v) if "/" in v else float(v)
+        out[re.sub(r"\s+", "", m.group(1)).upper()] = {"qtd": int(m.group(2)), "t": t_mm, "B": round(B, 1), "H": round(H, 1)}
     return out
 
 
@@ -987,7 +1051,11 @@ def _apoio_das_tercas(el: Elevacao, notas: list) -> int:
         r = perfil_do_texto(n["texto"])
         if not r or not re.match(r"(?i)^U", str(r.get("perfil") or "")):
             continue
-        marcadas.append(((n["posicao"][0] - el.x_esq, n["posicao"][1] - el.y_base), r))
+        # "NO EIXO DA TRELIÇA" na mesma linha ou na de baixo (a nota do Posto vem em dois textos)
+        no_eixo = "NO EIXO" in txt or any(
+            "NO EIXO" in _sem_acento(o["texto"]).upper() and abs(o["posicao"][0] - n["posicao"][0]) < 400.0
+            and 0.0 <= n["posicao"][1] - o["posicao"][1] <= 250.0 for o in notas)
+        marcadas.append(((n["posicao"][0] - el.x_esq, n["posicao"][1] - el.y_base), dict(r, no_eixo=no_eixo)))
     if not marcadas:
         return 0
     volta = []
@@ -1010,9 +1078,12 @@ def _apoio_das_tercas(el: Elevacao, notas: list) -> int:
     ids = {id(m) for m in volta}
     el.fundo = [m for m in el.fundo if id(m) not in ids]
     el.membros += volta
-    el.apoio_terca = {"perfil": perfil["perfil"], "trecho": perfil.get("trecho")}
+    # "NO EIXO DA TRELIÇA": um U só, no plano dela (a TRANSIÇÃO 1 do Posto: entre as duas faces da alma, a seção dela
+    # desenha "U100X40X2,25 NO EIXO" no vão de 100 mm — 23/10/2026; antes, um de cada lado, fora do caixão)
+    el.apoio_terca = {"perfil": perfil["perfil"], "trecho": perfil.get("trecho"), "no_eixo": bool(perfil.get("no_eixo"))}
     el.avisos.append("%s: o perfil %s ao lado da treliça, no caimento do telhado (%d trechos), recebe as terças — "
-                     "um de cada lado." % (_bonito(el.nome), perfil["perfil"], len(volta)))
+                     "%s." % (_bonito(el.nome), perfil["perfil"], len(volta),
+                              "no eixo dela, como a nota" if perfil.get("no_eixo") else "um de cada lado"))
     return len(volta)
 
 
@@ -1225,11 +1296,15 @@ def _giro_v_para(w, alvo) -> float:
     return round(math.degrees(math.atan2(-sum(x * y for x, y in zip(a, u)), sum(x * y for x, y in zip(a, v)))) % 360.0, 3)
 
 
-def _cantoneira_na_aba_do_u(perfil_l: Optional[str], perfil_banzo: Optional[str], caixao: bool) -> Tuple[float, bool, float]:
+def _cantoneira_na_aba_do_u(perfil_l: Optional[str], perfil_banzo: Optional[str], caixao: bool,
+                            gusset: float = 0.0) -> Tuple[float, bool, float]:
     """(afastamento do eixo de cada cantoneira ao plano, nas abas do U?, do eixo da cantoneira à face da aba dela).
     Nas abas: a face de dentro da aba do U deitado fica a d/2 − t do plano e a cantoneira encosta nela pela aba
-    paralela ao plano (o centro de gravidade fica xg para dentro). Sem U que a receba (banzo em caixão, outro perfil, ou
-    um U estreito demais para o par), costas com costas, a 3 mm do plano."""
+    paralela ao plano (o centro de gravidade fica xg para dentro). O caixão de dois U empilhados (boca com boca, a junta
+    no eixo) tem as abas dos dois nas laterais, como o U deitado: a cantoneira vai nelas (a SEÇÃO DA TRANSIÇÃO 1 do
+    Posto, 23/10/2026: uma L em cada face, sobre a gusset, 100 mm entre as abas — antes, costas com costas no meio).
+    `gusset`: a espessura da chapa de nó entre a aba e a cantoneira. Sem U que a receba (outro perfil, ou um U
+    estreito demais para o par), costas com costas, a 3 mm do plano."""
     pl, pb = _perfil(perfil_l), _perfil(perfil_banzo)
     bf_l = float(pl.bf or 25.0) if pl is not None else 25.0
     costas = bf_l / 2.0 + 3.0
@@ -1239,9 +1314,9 @@ def _cantoneira_na_aba_do_u(perfil_l: Optional[str], perfil_banzo: Optional[str]
         xg = -min(q[0] for q in secao(pl)) if pl is not None else 0.0
     except Exception:                        # noqa: BLE001
         xg = 0.3 * bf_l
-    if caixao or pb is None or str(getattr(pb, "tipo", "")) not in ("U", "Ue") or not pb.d:
+    if pb is None or str(getattr(pb, "tipo", "")) not in ("U", "Ue") or not pb.d:
         return costas, False, xg
-    dentro = float(pb.d) / 2.0 - float(pb.tw or 0.0)
+    dentro = float(pb.d) / 2.0 - float(pb.tw or 0.0) - float(gusset or 0.0)
     af = dentro - xg
     if dentro - bf_l < 3.0:                  # as abas de dentro das duas cantoneiras se encontrariam no meio
         return costas, False, xg
@@ -3110,12 +3185,14 @@ def _dividir(el: "Elevacao", partes, k: int, nome_novo: str, qtd: int, elevacoes
     nova = Elevacao(nome=nome_novo, familia=el.familia, qtd=qtd, comprimento=b_n - a_n, membros=pedaco(a_n, b_n),
                     banzo=el.banzo, alma=el.alma, titulo_em=el.titulo_em, x_esq=el.x_esq + a_n, y_base=el.y_base,
                     caixa=el.caixa, marcas_terca=[m_ - a_n for m_ in el.marcas_terca if a_n - 60.0 <= m_ <= b_n + 60.0],
-                    fontes=set(el.fontes))
+                    fontes=set(el.fontes),
+                    gussets=[(g[0] - a_n, g[1] - a_n) + tuple(g[2:]) for g in el.gussets if a_n - 60.0 <= (g[0] + g[1]) / 2 <= b_n + 60.0])
     nova.emenda = "inicio" if k == 1 else "fim"
     nova.parte_de = el.nome
     fica = pedaco(a_v, b_v)
     el.membros = fica
     el.marcas_terca = [m_ - a_v for m_ in el.marcas_terca if a_v - 60.0 <= m_ <= b_v + 60.0]
+    el.gussets = [(g[0] - a_v, g[1] - a_v) + tuple(g[2:]) for g in el.gussets if a_v - 60.0 <= (g[0] + g[1]) / 2 <= b_v + 60.0]
     el.x_esq += a_v
     el.comprimento = b_v - a_v
     el.emenda = "fim" if k == 1 else "inicio"
@@ -4089,6 +4166,9 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
 
     # ---------------------------------------------------------------- treliças e vigas
     contagem = collections.Counter()
+    from nucleo3d.modelo import Chapa as _ChapaG
+    gussets_det = _detalhes_de_gusset(ents)            # "CHAPA GOUSSET G1 106X": a espessura de cada marca
+    gussets_postas: collections.Counter = collections.Counter()
     bocas_viradas: List[str] = []          # banzos em U que a regra do miolo virou (antes: a meia altura)
     nos_no_eixo = {"pontas": 0, "unidos": 0}   # a alma levada ao eixo do banzo (NBR 8800, 6.5.2)
     # a alma desenhada fora dos banzos (a peça vizinha na elevação) que saiu; as meias diagonais presas na diagonal
@@ -4241,6 +4321,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 continue
             conj_base = conj
             caixao_el = any(m.papel == "banzo" and m.caixa > 0.0 for m in el.membros)
+            # a chapa de nó entre a aba do banzo e a cantoneira (a gusset desenhada na elevação)
+            t_gusset_el = max(((gussets_det.get(g[4]) or {}).get("t") or 4.76 for g in el.gussets), default=0.0)
             for sufixo, membros in _partes_da_elevacao(el, _sem_acento(t.nome).upper() in duas_pecas,
                                                        _sem_acento(t.nome).upper() in sem_tesoura_de_cima):
                 membros, n_fora = _alma_fora_dos_banzos(membros)
@@ -4309,7 +4391,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         smid = (s0p + s1p) / 2
                         tx, ty = c.tangente(smid)
                         nx, ny = -ty, tx
-                        af, nas_abas, xg_l = _cantoneira_na_aba_do_u(perfil, p_banzo, caixao_el)
+                        af, nas_abas, xg_l = _cantoneira_na_aba_do_u(perfil, p_banzo, caixao_el, t_gusset_el)
                         # a seção da L: o eixo u (para onde a aba "de baixo" aponta) na normal ao plano, pelo giro calculado
                         # para a direção — o u da barra sem giro só cai na normal quando a barra não é vertical: nos montantes
                         # (verticais) da TRANSIÇÃO 16, inclinada em planta, as L saíam tortas (12/10)
@@ -4363,10 +4445,10 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         presilhas_postas["pela_nota" if int(nota_p.get("qtd") or 0) >= n_norma else "pela_norma"] += 1
                     elif m.papel == "apoio_terca" and el.apoio_terca:
                         pu = el.apoio_terca["perfil"]
-                        off = _lado_do_apoio(p_banzo, pu)
+                        off = 0.0 if el.apoio_terca.get("no_eixo") else _lado_do_apoio(p_banzo, pu)
                         tx, ty = c.tangente((s0p + s1p) / 2.0)
                         nx, ny = -ty, tx
-                        for sinal in (1.0, -1.0):
+                        for sinal in ((1.0,) if el.apoio_terca.get("no_eixo") else (1.0, -1.0)):
                             d_ = (nx * off * sinal, ny * off * sinal)
                             qa = (q0[0] + d_[0], q0[1] + d_[1], q0[2])
                             qb = (q1[0] + d_[0], q1[1] + d_[1], q1[2])
@@ -4410,6 +4492,45 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                             (qm, _) = P(el.comprimento / 2.0, (m.h0 + m.h1) / 2.0)
                             rot = _giro_da_alma_em_u(q0, q1, qm, c.tangente((s0p + s1p) / 2.0), m.altura_linha, perfil)
                         barra(q0, q1, perfil, papel, "Treliças", conj, rot, {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj, "encaixe": enc_o})
+                # as chapas de nó (gussets) desenhadas na elevação: no plano da alma — uma em cada face quando a alma
+                # dupla vai nas abas do banzo (entre a aba e a cantoneira), uma no meio quando ela é costas com costas
+                if el.gussets and alturas:
+                    _af_g, nas_abas_g, _xg_g = _cantoneira_na_aba_do_u(p_alma, p_banzo, caixao_el, t_gusset_el)
+                    pb_g = _perfil(p_banzo)
+                    for gs0, gs1, gh0, gh1, gnome in el.gussets:
+                        if not (min(alturas) - 300.0 <= (gh0 + gh1) / 2.0 <= max(alturas) + 300.0):
+                            continue
+                        det_g = gussets_det.get(gnome) or {}
+                        tg = det_g.get("t") or 4.76
+                        (ga, gsp), (gb, _) = P(gs0, gh0), P(gs1, gh0)
+                        (gc, _) = P(gs0, gh1)
+                        Lg, Hg = math.dist(ga, gb), math.dist(ga, gc)
+                        if Lg < 1.0 or Hg < 1.0:
+                            continue
+                        ex_g = tuple((gb[i] - ga[i]) / Lg for i in range(3))
+                        ey_g = tuple((gc[i] - ga[i]) / Hg for i in range(3))
+                        tx, ty = c.tangente(gsp)
+                        nx, ny = -ty, tx
+                        if int((el.alma or {}).get("mult") or 1) > 1 and nas_abas_g and pb_g is not None and pb_g.d:
+                            off_g = float(pb_g.d) / 2.0 - float(pb_g.tw or 0.0) - tg / 2.0
+                            lados_g = (off_g, -off_g)
+                        else:
+                            lados_g = (0.0,)
+                        o_g = {"planta": _bonito(t.nome) + sufixo, "peca": conj, "gusset": gnome}
+                        if not det_g:
+                            o_g["a_conferir"] = "%s sem o detalhe \"CHAPA GOUSSET %s\": #3/16\" até confirmar" % (gnome, gnome)
+                        elif abs(max(Lg, Hg) - max(det_g["B"], det_g["H"])) > 15.0 or abs(min(Lg, Hg) - min(det_g["B"], det_g["H"])) > 15.0:
+                            o_g["a_conferir"] = "a elevação desenha %.0f × %.0f e o detalhe da %s, %.0f × %.0f" % (
+                                Lg, Hg, gnome, det_g["B"], det_g["H"])
+                        for off_g in lados_g:
+                            ch_g = _ChapaG(nome="Gusset %s" % gnome, origem=(ga[0] + nx * off_g, ga[1] + ny * off_g, ga[2]),
+                                           eixo_x=ex_g, eixo_y=ey_g, contorno=[(0.0, 0.0), (Lg, 0.0), (Lg, Hg), (0.0, Hg)],
+                                           espessura=tg, centrada=True, aco=aco)
+                            ch_g.camada = "Chapas"
+                            ch_g.atributos = {"tipo_ifc": "IfcPlate", "origem": dict(o_g)}
+                            doc.add(ch_g)
+                            chapas_postas.append(ch_g)
+                            gussets_postas[gnome] += 1
 
         # vigas
         for t in trechos_lista:
@@ -5511,6 +5632,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     resumo["camadas_2d"] = camadas_2d
     resumo["tercas_no_plano"] = no_plano
     resumo["escadas"] = escadas_feitas
+    if gussets_postas:
+        resumo["gussets"] = dict(gussets_postas)
     if bases_feitas is not None:
         resumo["bases"] = bases_feitas
     doc.metadados["de_planta"] = {"parametros": {k: v for k, v in par.items()}, "resumo": resumo,
