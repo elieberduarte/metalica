@@ -109,6 +109,33 @@ def ler(ents: Sequence[dict], caixa: Tuple[float, float, float, float]) -> Optio
     return {"piso": contorno, "travessas": travessas, "pilaretes": ps, "porticos": pos}
 
 
+def _retangulos(cont: Sequence[Tuple[float, float]]) -> List[Tuple[float, float, float, float]]:
+    """o contorno ortogonal do piso em retângulos (x0, y0, x1, y1): faixas entre os y dos vértices, juntadas na vertical
+    quando o trecho em x é o mesmo — o piso em U do Posto saía uma chapa só do tamanho da caixa (9 × 57 m, 25,5 t na
+    lista de materiais, que conta a chapa pelo retângulo de corte; 23/10/2026)"""
+    ys = sorted({round(p[1], 1) for p in cont})
+    n = len(cont)
+    faixas = []
+    for ya, yb in zip(ys, ys[1:]):
+        ym = (ya + yb) / 2.0
+        xs = []
+        for i in range(n):
+            (x1, y1), (x2, y2) = cont[i], cont[(i + 1) % n]
+            if (y1 > ym) != (y2 > ym):
+                xs.append(x1 + (ym - y1) * (x2 - x1) / (y2 - y1))
+        xs.sort()
+        for k in range(0, len(xs) - 1, 2):
+            faixas.append([xs[k], ya, xs[k + 1], yb])
+    # junta as faixas de cima com o mesmo trecho em x
+    out: List[list] = []
+    for f in sorted(faixas, key=lambda f: (round(f[0]), round(f[2]), f[1])):
+        if out and abs(out[-1][0] - f[0]) < 1.0 and abs(out[-1][2] - f[2]) < 1.0 and abs(out[-1][3] - f[1]) < 1.0:
+            out[-1][3] = f[3]
+        else:
+            out.append(list(f))
+    return [tuple(r) for r in out]
+
+
 def _no_segmento(p, a, b) -> Tuple[float, float]:
     ux, uy = b[0] - a[0], b[1] - a[1]
     L2 = ux * ux + uy * uy or 1.0
@@ -153,16 +180,19 @@ def lancar(doc, lido: dict, mover, nivel: float, estrutura: Sequence, tercas: Se
     o = {"locacao": "PASSARELA", "planta": "PLANTA DA PASSARELA"}
     cont = [mover(p) for p in lido["piso"]]
     n = {"longarinas": 0, "travessas": 0, "pilaretes": 0, "ch9": 0, "montantes": 0, "tubos": 0, "porticos": 0}
-    # o piso (a chapa expandida), por cima das longarinas
-    xs, ys = [p[0] for p in cont], [p[1] for p in cont]
-    org = (min(xs), min(ys), z_topo_u)
-    piso = Chapa(nome="Piso da passarela (chapa expandida #1/4\")", origem=org, eixo_x=(1.0, 0.0, 0.0), eixo_y=(0.0, 1.0, 0.0),
-                 contorno=[(p[0] - org[0], p[1] - org[1]) for p in cont], espessura=ESPESSURA_PISO, centrada=False, aco=aco)
-    piso.camada = "Passarela"
-    piso.atributos = {"tipo_ifc": "IfcPlate", "origem": dict(o, piso="chapa expandida #1/4\"",
-                                                             a_conferir="chapa expandida: o peso é o da tabela do fabricante, não o da chapa cheia")}
-    doc.add(piso)
-    chapas_postas.append(piso)
+    # o piso (a chapa expandida), por cima das longarinas: um painel por retângulo do contorno
+    n["paineis_piso"] = 0
+    for x0_, y0_, x1_, y1_ in _retangulos(cont):
+        piso = Chapa(nome="Piso da passarela (chapa expandida #1/4\")", origem=(x0_, y0_, z_topo_u), eixo_x=(1.0, 0.0, 0.0),
+                     eixo_y=(0.0, 1.0, 0.0), contorno=[(0.0, 0.0), (x1_ - x0_, 0.0), (x1_ - x0_, y1_ - y0_), (0.0, y1_ - y0_)],
+                     espessura=ESPESSURA_PISO, centrada=False, aco=aco)
+        piso.camada = "Passarela"
+        piso.atributos = {"tipo_ifc": "IfcPlate", "origem": dict(o, piso="chapa expandida #1/4\"",
+                                                                 a_conferir="chapa expandida: o peso é o da tabela do fabricante "
+                                                                            "(~11 kg/m²), não o da chapa cheia")}
+        doc.add(piso)
+        chapas_postas.append(piso)
+        n["paineis_piso"] += 1
     # as bordas: a longarina em cada lado do contorno, 20 mm para dentro (a aba de 40); guarda-corpo onde a borda está solta
     area2 = sum(cont[i][0] * cont[(i + 1) % len(cont)][1] - cont[(i + 1) % len(cont)][0] * cont[i][1] for i in range(len(cont)))
     sentido = 1.0 if area2 > 0 else -1.0                   # o lado de dentro do contorno

@@ -60,3 +60,13 @@ def test_monta_a_passarela():
     tubos = [b for b in postas if b.papel == "corrimao"]
     assert len(tubos) == 3 * 3 and not any(abs(b.inicio[0] - 20.0) < 1.0 and abs(b.fim[0] - 20.0) < 1.0 for b in tubos)
     assert {round(b.inicio[2] - 7600.0) for b in tubos} == {504, 804, 1104}
+
+
+def test_piso_em_paineis_retangulares():
+    """o piso em U do Posto (a faixa do eixo 1 e o anel em volta da caixa d'água) em painéis: a lista de materiais conta a
+    chapa pelo retângulo de corte, e a chapa única do contorno saía com 9 × 57 m (25,5 t; 23/10/2026)"""
+    cont = [(0, 56946), (1200, 56946), (1200, 33905), (8994, 33905), (8994, 23265), (1200, 23265), (1200, 0), (0, 0),
+            (0, 24465), (7794, 24465), (7794, 32705), (0, 32705)]
+    r = PS._retangulos(cont)
+    assert len(r) == 5 and all(q[2] - q[0] <= 9000 and q[3] - q[1] <= 24000 for q in r)
+    assert abs(sum((q[2] - q[0]) * (q[3] - q[1]) for q in r) / 1e6 - 87.04) < 0.01          # o projeto: 87,00 m²
