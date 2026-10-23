@@ -365,7 +365,7 @@ export class Selecionar extends Ferramenta {
   }
   onTecla(ev) {
     if (ev.key === 'Delete' || ev.key === 'Backspace') { this.editor.apagarSelecao(); return true; }
-    if (ev.key.toLowerCase() === 'a' && (ev.ctrlKey || ev.metaKey)) { this.editor.selecionar([...this.doc.entidades.keys()].filter(id => this.doc.visivel(this.doc.get(id)))); return true; }
+    if (ev.key.toLowerCase() === 'a' && (ev.ctrlKey || ev.metaKey)) { this.editor.selecionarTudo(); return true; }
     return false;
   }
 }
@@ -624,10 +624,21 @@ export class Chamada extends Ferramenta {
  * horizontal; ao lado deles, a vertical (pedido do usuário, 28/09). H e V fixam uma delas, A faz a
  * alinhada (a distância em linha reta) e L volta ao linear.
  */
+/** As setas do teclado travam a medida num eixo (pedido do usuário, 23/10: "as [cotas] quando são diagonais às vezes
+ *  apresentam uma dificuldade para medir no plano … se ele não bloquear automaticamente eu uso a seta do teclado e travo
+ *  em um eixo"): ← → horizontal, ↑ ↓ vertical; a mesma seta de novo solta (volta ao automático). Devolve o modo novo
+ *  ('h', 'v' ou null) ou undefined quando a tecla não é seta. */
+function travaPelaSeta(ev, atual) {
+  const eixo = { ArrowLeft: 'h', ArrowRight: 'h', ArrowUp: 'v', ArrowDown: 'v' }[ev.key];
+  if (!eixo || ev.ctrlKey || ev.metaKey || ev.altKey) return undefined;
+  return atual === eixo ? null : eixo;
+}
+const NOME_DA_TRAVA = { h: 'horizontal (← →)', v: 'vertical (↑ ↓)' };
+
 export class Cota extends Ferramenta {
   static id = 'cota'; static nome = 'Cota'; static atalho = 'd'; static dica = 'Primeiro ponto da cota · o mouse escolhe: acima/abaixo horizontal, ao lado vertical, entre os pontos alinhada · H/V/A fixa · L volta ao automático';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16V8M20 16V8M4 12h16"/><path d="M7 10l-3 2 3 2M17 10l3 2-3 2"/></svg>';
-  reiniciar() { super.reiniciar(); this.p1 = null; this.p2 = null; this._f = undefined; this.modo = this.modo || 'linear'; this.dica(`Primeiro ponto da cota · modo: ${Cota.NOMES[this.modo]} (L/H/V/A troca) · tamanho: ${this.padrao ? 'padrão (P volta ao automático)' : 'pelo desenho em volta (P fixa o padrão)'}`); }
+  reiniciar() { super.reiniciar(); this.p1 = null; this.p2 = null; this._f = undefined; this.modo = this.modo || 'linear'; this.dica(`Primeiro ponto da cota · modo: ${Cota.NOMES[this.modo]} (setas ← → / ↑ ↓ travam no eixo; L/H/V/A troca) · tamanho: ${this.padrao ? 'padrão (P volta ao automático)' : 'pelo desenho em volta (P fixa o padrão)'}`); }
   static NOMES = { linear: 'linear', h: 'horizontal', v: 'vertical', alinhada: 'alinhada' };
   desfazerPasso() {
     if (this.p2) { this.p2 = null; this._f = undefined; this.editor.snap.ultimo = this.p1; this.editor.previa([]); this.dica('Segundo ponto'); return true; }
@@ -707,6 +718,13 @@ export class Cota extends Ferramenta {
     else if (this.p2) this.editor.previa([this._cota(this.p1, this.p2, p)]);
   }
   onTecla(ev) {
+    const trava = travaPelaSeta(ev, this.modo === 'h' || this.modo === 'v' ? this.modo : null);
+    if (trava !== undefined) {
+      this.modo = trava || 'linear';
+      this.dica(trava ? `Cota travada na ${NOME_DA_TRAVA[trava]} · a mesma seta solta` : 'Cota no automático: o mouse escolhe (horizontal, vertical ou alinhada)');
+      if (this.p2) this.onMover(this.editor.tela.cursor || this.p2);
+      return true;
+    }
     const k = ev.key.toLowerCase();
     if (k === 'h' || k === 'v' || k === 'a' || k === 'l') {
       this.modo = k === 'a' ? 'alinhada' : k === 'l' ? 'linear' : k;
@@ -814,6 +832,7 @@ export class CotaContinua extends Ferramenta {
   reiniciar() {
     super.reiniciar();
     this.cadeia = [];                         // [{base, inicio}] — a de cima é a de onde sai a próxima
+    this.trava = null;                        // 'h' / 'v' pelas setas: as próximas nesse eixo
     const sel = [...this.editor.tela.selecao].map(id => this.doc.get(id)).filter(e => e && e.tipo === 'cota');
     const ultima = this.editor.ultimaCota ? this.doc.get(this.editor.ultimaCota) : null;
     const base = sel.length === 1 ? sel[0] : (!sel.length && ultima && ultima.tipo === 'cota' ? ultima : null);
@@ -834,7 +853,7 @@ export class CotaContinua extends Ferramenta {
     const k = this.doc.escala;
     const fc = fatorDaCota(b);
     const escala = b.escala || (Math.abs(fc - 1) > 1e-9 ? fc : null);
-    const c = criar({ tipo: 'cota', camada: b.camada, modo: b.modo, p1: [inicio[0], inicio[1]], p2: [p[0], p[1]], deslocamento: b.deslocamento,
+    const c = criar({ tipo: 'cota', camada: b.camada, modo: this.trava || b.modo, p1: [inicio[0], inicio[1]], p2: [p[0], p[1]], deslocamento: b.deslocamento,
       altura: b.altura, fator: b.fator, terminador: b.terminador, casas: b.casas, folga: b.folga, escala });
     if (valorDaCota(c) < 1e-6) return null;
     // a linha de cota nova passa pela ponta da linha da base que fica no início: a mesma linha
@@ -864,6 +883,13 @@ export class CotaContinua extends Ferramenta {
     if (c) this.editor.medida(`${fmt(valorDaCota(c) * (c.escala || 1))} mm`);
   }
   onTecla(ev) {
+    const trava = travaPelaSeta(ev, this.trava);
+    if (trava !== undefined) {
+      this.trava = trava;
+      this.dica(trava ? `Corrente travada na ${NOME_DA_TRAVA[trava]} · a mesma seta solta` : 'Corrente no modo da cota de onde sai');
+      if (this._atual) this.onMover(this.editor.tela.cursor || this._atual.inicio);
+      return true;
+    }
     if (ev.key === 'Enter' || ev.key === ' ') {
       this.cadeia = []; this.editor.previa([]); this.editor.snap.ultimo = null; this.editor.selecionar([]);
       this.dica('Clique na cota de onde a nova corrente continua · Esc termina');
@@ -2000,9 +2026,24 @@ const distSegP = (p, a, b) => dist(p, maisProximoSeg(p, a, b));
 export class Medir extends Ferramenta {
   static id = 'medir'; static nome = 'Medir'; static atalho = 'u'; static grupo = 'medicao'; static dica = 'Primeiro ponto';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 17L17 3l4 4L7 21z"/><path d="M8 12l2 2M11 9l2 2M14 6l2 2"/></svg>';
-  reiniciar() { super.reiniciar(); this.a = null; }
-  onPonto(p) { if (!this.a) { this.a = p; this.editor.snap.ultimo = p; this.dica('Segundo ponto'); return; } this.editor.aviso(`Distância: ${medidaComUnidade(dist(this.a, p))}  ·  Δx ${numeroNaUnidade(p[0] - this.a[0])}  Δy ${numeroNaUnidade(p[1] - this.a[1])}  ·  ∠ ${fmt(ang(this.a, p) * 180 / Math.PI)}°`); this.reiniciar(); }
-  onMover(p) { if (this.a) { this.editor.previa([criar({ tipo: 'linha', camada: 'AUXILIAR', a: this.a, b: p })]); this.editor.medida(`${fmt(dist(this.a, p))} mm`); } }
+  reiniciar() { super.reiniciar(); this.a = null; this.dica(`Primeiro ponto${this.trava ? ` · travado na ${NOME_DA_TRAVA[this.trava]}` : ' · as setas travam num eixo'}`); }
+  /** O segundo ponto no eixo travado pelas setas (a medida só na horizontal ou só na vertical). */
+  _travado(p) { return !this.a || !this.trava ? p : this.trava === 'h' ? [p[0], this.a[1]] : [this.a[0], p[1]]; }
+  onPonto(p) {
+    if (!this.a) { this.a = p; this.editor.snap.ultimo = p; this.dica(`Segundo ponto${this.trava ? ` · travado na ${NOME_DA_TRAVA[this.trava]}` : ' · as setas travam num eixo'}`); return; }
+    p = this._travado(p);
+    this.editor.aviso(`Distância: ${medidaComUnidade(dist(this.a, p))}  ·  Δx ${numeroNaUnidade(p[0] - this.a[0])}  Δy ${numeroNaUnidade(p[1] - this.a[1])}  ·  ∠ ${fmt(ang(this.a, p) * 180 / Math.PI)}°`);
+    this.reiniciar();
+  }
+  onMover(p) { if (this.a) { p = this._travado(p); this.editor.previa([criar({ tipo: 'linha', camada: 'AUXILIAR', a: this.a, b: p })]); this.editor.medida(`${fmt(dist(this.a, p))} mm`); } }
+  onTecla(ev) {
+    const trava = travaPelaSeta(ev, this.trava);
+    if (trava === undefined) return false;
+    this.trava = trava;
+    this.dica(trava ? `Medida travada na ${NOME_DA_TRAVA[trava]} · a mesma seta solta` : 'Medida livre');
+    if (this.a) this.onMover(this.editor.tela.cursor || this.a);
+    return true;
+  }
 }
 
 

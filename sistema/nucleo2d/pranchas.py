@@ -3090,32 +3090,85 @@ def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: floa
             primeira, contadas = contadas, contadas + len(paginas)
             if escolhidas is not None and not any(primeira <= n < contadas for n in escolhidas):
                 continue
-            # as camadas por tipo de peça (banzos, diagonais…) saem na cor delas, como no CAD
-            cores = {n: (d.camadas[n].cor if n in d.camadas else c) for n, (c, _e) in CAMADAS_PECAS.items()}
-            # e as camadas do desenho que não são as da tabela do DXF — um perfil por camada ("BANZOS
-            # U100X50X#9", 28/09), as telhas por tipo —, na cor do CAD
-            from saida.dxf import CAMADAS as _CAMADAS_DXF
-            fixas = {n for n, _c, _t in _CAMADAS_DXF}
-            cores.update({n: cam.cor for n, cam in d.camadas.items() if n not in fixas and n not in cores and getattr(cam, "cor", None)})
+            cores = _cores_do_pdf(d)
             # o desenho das pranchas lado a lado: uma página por folha, cada uma renderizando só o que
             # é dela (as 12 folhas da Sala inteiras, 12 vezes, levavam 5 min)
             partes = _por_folha(d) if d.metadados.get("pranchas") else [d]
             for j, ((larg, alt, k, x0, y0), parte) in enumerate(zip(paginas, partes)):
                 if escolhidas is not None and primeira + j not in escolhidas:
                     continue
-                # texto como está no desenho: o PDF não passa pelo ASCII do DXF R12 ("dobra 12,5°",
-                # "TERÇAS" e "…" saíam "dobra 12,5 ", "TERCAS" e "?")
-                arq = parte.para_dxf(k, texto_unicode=True).gravar(os.path.join(tmp, "p%d_%d.dxf" % (i, j)))
-                fig = plt.figure(figsize=(larg / 25.4, alt / 25.4))
-                ax = fig.add_axes((0, 0, 1, 1))
-                dxf_render.desenhar(arq, ax, escala_texto=_FATOR_TEXTO / k, cores=cores)
-                _preencher_solidas(parte, ax)
-                ax.set_xlim(x0, x0 + larg * k)
-                ax.set_ylim(y0, y0 + alt * k)
-                ax.set_aspect("equal")
-                ax.axis("off")
-                pdf.savefig(fig)
-                plt.close(fig)
+                _pagina_do_pdf(pdf, parte, os.path.join(tmp, "p%d_%d.dxf" % (i, j)), larg, alt, k, k, x0, y0, cores)
+    return caminho_pdf
+
+
+def _cores_do_pdf(d: Desenho) -> dict:
+    """camada → cor no PDF: as camadas por tipo de peça (banzos, diagonais…) na cor delas, como no CAD, e as camadas do
+    desenho que não são as da tabela do DXF — um perfil por camada ("BANZOS U100X50X#9", 28/09), as telhas por tipo —
+    na cor do CAD"""
+    from nucleo2d.detalhe.base import CAMADAS_PECAS
+    from saida.dxf import CAMADAS as _CAMADAS_DXF
+    cores = {n: (d.camadas[n].cor if n in d.camadas else c) for n, (c, _e) in CAMADAS_PECAS.items()}
+    fixas = {n for n, _c, _t in _CAMADAS_DXF}
+    cores.update({n: cam.cor for n, cam in d.camadas.items() if n not in fixas and n not in cores and getattr(cam, "cor", None)})
+    return cores
+
+
+def _pagina_do_pdf(pdf, parte: Desenho, arquivo_dxf: str, larg: float, alt: float, k_desenho: float, k_pagina: float,
+                   x0: float, y0: float, cores: dict):
+    """Uma página de `larg` × `alt` mm com o trecho do desenho que começa em (x0, y0) e mede larg × k_pagina: o que é de
+    papel (texto, cota) no tamanho do desenho (`k_desenho`, a escala dele), a página na escala de impressão."""
+    import matplotlib.pyplot as plt
+    from saida import dxf_render
+    # texto como está no desenho: o PDF não passa pelo ASCII do DXF R12 ("dobra 12,5°", "TERÇAS" e "…" saíam
+    # "dobra 12,5 ", "TERCAS" e "?")
+    arq = parte.para_dxf(k_desenho, texto_unicode=True).gravar(arquivo_dxf)
+    fig = plt.figure(figsize=(larg / 25.4, alt / 25.4))
+    ax = fig.add_axes((0, 0, 1, 1))
+    dxf_render.desenhar(arq, ax, escala_texto=_FATOR_TEXTO / k_pagina, cores=cores)
+    _preencher_solidas(parte, ax)
+    ax.set_xlim(x0, x0 + larg * k_pagina)
+    ax.set_ylim(y0, y0 + alt * k_pagina)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
+def pdf_da_area(d: Desenho, caminho_pdf: str, caixa, escala: Optional[float] = None) -> str:
+    """PDF de uma página com o trecho `caixa` ((x0, y0), (x1, y1), mm do desenho) na escala `escala` (1:n; vazio = a
+    do desenho): a página mede o trecho ÷ n. É o Ctrl+P de um desenho que não é das pranchas — o Original do projeto
+    recebido, um detalhamento — pela vista da tela ou pelo desenho inteiro (usuário, 23/10: "se dou um ctrl + p nessa
+    tela original ele não deixa imprimir"). Só o que toca o trecho vai para o desenho da página."""
+    import os
+    import tempfile
+    import matplotlib
+    matplotlib.use("Agg")
+    from matplotlib.backends.backend_pdf import PdfPages
+    (x0, y0), (x1, y1) = caixa
+    x0, x1 = min(x0, x1), max(x0, x1)
+    y0, y1 = min(y0, y1), max(y0, y1)
+    n = float(escala or d.escala or 1.0)
+    if n <= 0 or x1 - x0 <= 0 or y1 - y0 <= 0:
+        raise ErroDeDados("o trecho a imprimir está vazio.")
+    larg, alt = (x1 - x0) / n, (y1 - y0) / n
+    if max(larg, alt) > 5000.0:
+        raise ErroDeDados("na escala 1:%g a folha sairia com %.0f × %.0f mm: escolha uma escala maior (1:%d, por exemplo)"
+                          % (n, larg, alt, int(math.ceil(n * max(larg, alt) / 1189.0))))
+    # o que toca o trecho (com folga para os textos que passam dos pontos que os definem)
+    folga = 30.0 * float(d.escala or 1.0)
+    parte = Desenho(nome=d.nome, unidade=d.unidade, escala=d.escala, camadas=d.camadas, vistas=d.vistas, metadados=d.metadados)
+    for e in d.entidades.values():
+        pts = e.pontos()
+        if not pts:
+            continue
+        ex0, ex1 = min(p[0] for p in pts), max(p[0] for p in pts)
+        ey0, ey1 = min(p[1] for p in pts), max(p[1] for p in pts)
+        r = float(getattr(e, "raio", 0.0) or 0.0)
+        if ex1 + r + folga >= x0 and ex0 - r - folga <= x1 and ey1 + r + folga >= y0 and ey0 - r - folga <= y1:
+            parte.add(e)
+    os.makedirs(os.path.dirname(os.path.abspath(caminho_pdf)), exist_ok=True)
+    with PdfPages(caminho_pdf) as pdf, tempfile.TemporaryDirectory() as tmp:
+        _pagina_do_pdf(pdf, parte, os.path.join(tmp, "area.dxf"), larg, alt, float(d.escala or 1.0), n, x0, y0, _cores_do_pdf(d))
     return caminho_pdf
 
 

@@ -771,6 +771,22 @@ class CAD {
   alternarSelecao(id) { const s = new Set(this.tela.selecao); s.has(id) ? s.delete(id) : s.add(id); this.selecionar([...s]); }
   _podarSelecao() { const antes = this.tela.selecao.size; this.tela.selecao = new Set([...this.tela.selecao].filter(id => this.doc.get(id))); if (this.tela.selecao.size !== antes) this._agendarPaineis('props'); }
   apagarSelecao() { if (this.tela.selecao.size) this.executar(new ComandoRemover([...this.tela.selecao])); }
+  /** Ctrl+A em qualquer ferramenta (pedido do usuário, 23/10: "selecionar todos os desenhos do 2D com ctrl + a"): a
+   *  ferramenta em uso é cancelada e ficam selecionados todos os objetos visíveis — como no AutoCAD, menos os das
+   *  camadas travadas, que não se editam. */
+  selecionarTudo() {
+    if (this.ferramenta && this.ferramenta.constructor.id !== 'selecionar') { this.ferramenta.cancelar(); this.ativarFerramenta('selecionar'); }
+    const ids = [];
+    let travados = 0;
+    for (const e of this.doc.entidades.values()) {
+      if (!this.doc.visivel(e)) continue;
+      if (this.doc.bloqueada(e)) { travados++; continue; }
+      ids.push(e.id);
+    }
+    this.selecionar(ids);
+    this.dica(`${numero(ids.length)} objeto(s) selecionado(s)${travados ? ` · ${numero(travados)} em camadas travadas ficaram de fora` : ''} · Esc limpa`);
+    return ids.length;
+  }
   /**
    * Abre o modelo 3D com as peças do que está selecionado em destaque: a posição
    * (P77 → as 18 chapas) ou, sem posição, o conjunto; sem seleção, a posição do
@@ -1231,6 +1247,7 @@ class CAD {
       }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); ev.shiftKey ? this.refazer() : this.desfazer(); return; }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'y') { ev.preventDefault(); this.refazer(); return; }
+      if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && ev.key.toLowerCase() === 'a') { ev.preventDefault(); this.selecionarTudo(); return; }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); this.salvar(); return; }
       // Ctrl+P: as pranchas na impressora (o imprimir do navegador sairia a tela do CAD)
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'p') { ev.preventDefault(); this.dialogoImprimir(); return; }

@@ -40,12 +40,19 @@ class ErroDeImpressao(Exception):
 
 # ============================================================ contas (sem impressora)
 
+def _da_serie_a(p: dict) -> bool:
+    """A0…A10 do driver ("A4", "ISOA1", "A3 (297 x 420 mm)")"""
+    return bool(re.match(r"^A\d+\b", re.sub(r"^ISO\s*", "", str(p.get("nome") or ""), flags=re.I), re.I))
+
+
 def papel_da_folha(folha: Tuple[float, float], papeis: Sequence[dict], papel: Optional[int] = None,
-                   ajuste: str = "real") -> Tuple[Optional[dict], str, str]:
+                   ajuste: str = "real", serie_a: bool = False) -> Tuple[Optional[dict], str, str]:
     """O papel da impressora para a folha (largura, altura em mm): (papel, ajuste, aviso).
 
     `papel` escolhido na tela: ele, com o ajuste pedido. Automático: o papel do tamanho da folha, em tamanho real;
-    senão o menor em que ela cabe inteira (em tamanho real, com sobra); senão o maior, com a folha reduzida."""
+    senão o menor em que ela cabe inteira (em tamanho real, com sobra); senão o maior, com a folha reduzida. Com
+    `serie_a` (a folha de um desenho, que tem o tamanho do trecho e não o de um formato — 23/10), o menor da série A em
+    que ela cabe vem antes dos outros: a de 200 × 160 ia no envelope C5."""
     a, b = sorted(folha)
     if papel is not None:
         p = next((p for p in papeis if p["id"] == papel), None)
@@ -59,7 +66,8 @@ def papel_da_folha(folha: Tuple[float, float], papeis: Sequence[dict], papel: Op
         return min(iguais, key=lambda p: abs(dims(p)[0] - a) + abs(dims(p)[1] - b)), ajuste, ""
     cabem = [p for p in papeis if dims(p)[0] >= a - FOLGA_PAPEL and dims(p)[1] >= b - FOLGA_PAPEL]
     if cabem:
-        p = min(cabem, key=lambda p: dims(p)[0] * dims(p)[1])
+        p = min([q for q in cabem if _da_serie_a(q)] if serie_a and any(_da_serie_a(q) for q in cabem) else cabem,
+                key=lambda p: dims(p)[0] * dims(p)[1])
         return p, ajuste, "a impressora não tem o papel do tamanho da folha: vai no %s" % p["nome"]
     if not papeis:
         raise ErroDeImpressao("a impressora não informou nenhum papel.")
@@ -317,7 +325,7 @@ def _desenhar_pagina(hdc, pagina, area: dict, ajuste: str, cor: str) -> dict:
 
 def imprimir_pdf(caminho_pdf: str, impressora: str, papel: Optional[int] = None, ajuste: str = "real",
                  cor: str = "preto", copias: int = 1, titulo: str = "Pranchas", arquivo: Optional[str] = None,
-                 progresso: Optional[Callable[[str, float], None]] = None) -> dict:
+                 progresso: Optional[Callable[[str, float], None]] = None, serie_a: bool = False) -> dict:
     """Manda as páginas do PDF para a impressora, num trabalho só. `papel` None: o de cada folha (ver
     `papel_da_folha`). `arquivo`: imprime nele em vez de no papel (a "Microsoft Print to PDF", os testes).
     Devolve {paginas, folhas: [{pagina, papel, escala, girada, fora_mm}], avisos}."""
@@ -335,7 +343,7 @@ def imprimir_pdf(caminho_pdf: str, impressora: str, papel: Optional[int] = None,
     planos = []
     for i, pg in enumerate(doc):
         fw, fh = pg.rect.width / 72.0 * 25.4, pg.rect.height / 72.0 * 25.4
-        p, aj, aviso = papel_da_folha((fw, fh), lista, papel, ajuste)
+        p, aj, aviso = papel_da_folha((fw, fh), lista, papel, ajuste, serie_a=serie_a)
         planos.append((i, p, aj, aviso, fw >= fh))
     avisos, folhas = [], []
     hdc = None

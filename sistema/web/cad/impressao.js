@@ -91,10 +91,13 @@ export class MetodosImpressaoCAD {
     return f ? f.indice : null;
   }
 
-  async dialogoImprimir() {
+  async dialogoImprimir(soPranchas = false) {
     if (!this.projeto) { this.aviso('Imprimir precisa de um projeto aberto.', 'atencao'); return; }
     const base = `/api/projetos/${encodeURIComponent(this.projeto)}/impressao`;
     const desenhos = await this._desenhosParaImprimir();
+    // o desenho aberto não é das pranchas (o Original do projeto recebido, um detalhamento): imprime ele — a vista da
+    // tela ou o desenho inteiro (usuário, 23/10: "se dou um ctrl + p nessa tela original ele não deixa imprimir")
+    if (!soPranchas && this.nomeDesenho && !desenhos.includes(this.nomeDesenho)) return this._imprimirEsteDesenho(base, desenhos);
     if (!desenhos.length) { this.aviso('O projeto não tem pranchas ainda: Desenho → Montar pranchas (automático)… ou Gerar pranchas das folhas.', 'atencao'); return; }
     if (this.nomeDesenho && desenhos.includes(this.nomeDesenho)) await this.salvar({ avisar: false });
     let folhas, imps;
@@ -206,6 +209,104 @@ export class MetodosImpressaoCAD {
       this.aviso(el('span', {}, texto, a ? ': ' : '.', a ? el('a', { href: a.url, target: '_blank', rel: 'noopener', texto: a.nome || 'abrir' }) : null,
         ...(r.avisos || []).length ? [el('br'), (r.avisos || []).join(' · ')] : []), (r.avisos || []).length ? 'atencao' : 'info', a || (r.avisos || []).length ? 0 : 12000);
       this.dica(r.arquivo ? 'Impressão gravada em PDF (pasta pranchas/ do projeto).' : 'Impressão enviada: acompanhe na fila da impressora do Windows.');
+    } catch (e) { this.dica(''); this._avisoDeEmissao(e, 'Não foi possível imprimir'); }
+  }
+
+  /** Imprimir o desenho aberto (que não é das pranchas): a vista da tela ou o desenho inteiro, numa escala 1:n — a
+   *  folha mede o trecho ÷ n — ou ajustado ao papel. Com pranchas no projeto, um botão leva ao Imprimir pranchas. */
+  async _imprimirEsteDesenho(base, desenhosPranchas) {
+    let imps;
+    try { imps = await postar(`${base}/impressoras`, {}); } catch (e) { this.aviso(`Não foi possível preparar a impressão: ${e.message}`, 'erro', 0); return; }
+    const lista = imps.impressoras || [];
+    if (!lista.length) { this.aviso('Nenhuma impressora instalada no Windows: use Arquivo › Exportar › PDF.', 'atencao', 0); return; }
+    const ultima = lerUltima();
+    const t = this.tela;
+    const caixaDaTela = () => { const a = t.paraMundo([0, t.altura]), b = t.paraMundo([t.largura, 0]); return [[a[0], a[1]], [b[0], b[1]]]; };
+    const selArea = el('select', { name: 'area' },
+      el('option', { value: 'tela', texto: 'A vista da tela (o que aparece agora)' }),
+      el('option', { value: 'tudo', texto: 'O desenho inteiro' }));
+    selArea.value = ultima.area === 'tudo' ? 'tudo' : 'tela';
+    const escala = el('input', { type: 'number', name: 'escala', min: '0.01', step: 'any', value: String(this.doc.escala || 1) });
+    const selImp = el('select', { name: 'impressora' }, lista.map(p => el('option', { value: p.nome, texto: p.nome + (p.padrao ? ' (padrão)' : '') })));
+    selImp.value = lista.some(p => p.nome === ultima.impressora) ? ultima.impressora : (imps.padrao || lista[0].nome);
+    const selPapel = el('select', { name: 'papel' });
+    const selAjuste = el('select', { name: 'ajuste' },
+      el('option', { value: 'real', texto: 'Na escala (1:n no papel)' }),
+      el('option', { value: 'ajustar', texto: 'Ajustar ao papel' }));
+    selAjuste.value = ultima.ajuste === 'ajustar' ? 'ajustar' : 'real';
+    const selCor = el('select', { name: 'cor' },
+      el('option', { value: 'preto', texto: 'Preto (as cores saem pretas; o cinza continua cinza)' }),
+      el('option', { value: 'cor', texto: 'Colorida (as cores das camadas)' }),
+      el('option', { value: 'cinza', texto: 'Tons de cinza' }));
+    selCor.value = ['preto', 'cor', 'cinza'].includes(ultima.cor) ? ultima.cor : 'preto';
+    const copias = el('input', { type: 'number', name: 'copias', min: 1, max: 99, step: 1, value: 1 });
+    const resumo = el('div', { class: 'resumo' });
+    let papeis = [];
+    const folha = () => {
+      const c = selArea.value === 'tudo' ? this.doc.caixa() : caixaDaTela();
+      const n = parseFloat(String(escala.value).replace(',', '.'));
+      if (!c || !(n > 0)) return null;
+      return { caixa: c, escala: n, largura: (c[1][0] - c[0][0]) / n, altura: (c[1][1] - c[0][1]) / n };
+    };
+    const atualizar = () => {
+      const f = folha();
+      if (!f) { resumo.textContent = selArea.value === 'tudo' ? 'O desenho está vazio.' : 'Escreva a escala (1:n).'; return; }
+      const p = papeis.find(x => String(x.id) === selPapel.value);
+      const tam = `Folha de ${mm(f.largura)} × ${mm(f.altura)} mm (1:${String(f.escala).replace('.', ',')})`;
+      if (!p) { resumo.textContent = `${tam}: no papel do tamanho dela, quando a impressora o tem; senão no menor em que ela cabe.`; return; }
+      const k = reducao(f, p);
+      resumo.textContent = selAjuste.value === 'ajustar'
+        ? `${tam}, no ${p.nome}: ${Math.abs(k - 1) < 0.02 ? 'no tamanho real' : `${k < 1 ? 'reduzida' : 'ampliada'} a cerca de ${porcento(k)} — a escala 1:${f.escala} não vale no papel`}.`
+        : k < 0.98 ? `${tam}: maior que o ${p.nome}, só o meio dela sai. Use "Ajustar ao papel" ou uma escala maior.` : `${tam}, no ${p.nome}, no meio do papel.`;
+    };
+    const carregarPapeis = async () => {
+      selPapel.replaceChildren(el('option', { value: 'auto', texto: 'carregando os papéis…' }));
+      selPapel.disabled = true;
+      try {
+        const r = await postar(`${base}/papeis`, { impressora: selImp.value });
+        papeis = (r.papeis || []).slice().sort((a, b) => ordemDoPapel(a) - ordemDoPapel(b));
+      } catch (e) { papeis = []; this.aviso(`A impressora não deu os papéis dela: ${e.message}`, 'atencao'); }
+      selPapel.replaceChildren(el('option', { value: 'auto', texto: 'Automático: o tamanho da folha' }),
+        ...papeis.map(p => el('option', { value: String(p.id), texto: `${p.nome} — ${mm(p.largura)} × ${mm(p.altura)} mm` })));
+      selPapel.disabled = false;
+      selPapel.value = selImp.value === ultima.impressora && papeis.some(p => String(p.id) === String(ultima.papel)) ? String(ultima.papel) : 'auto';
+      atualizar();
+    };
+    selImp.addEventListener('change', carregarPapeis);
+    for (const c of [selPapel, selAjuste, selArea]) c.addEventListener('change', atualizar);
+    escala.addEventListener('input', atualizar);
+    let irPranchas = false;
+    const corpo = el('div', { class: 'impressao' },
+      el('div', { class: 'explica', texto: `"${this.doc.nome || this.nomeDesenho}" não é um desenho das pranchas: sai uma folha com o trecho escolhido.` }),
+      el('div', { class: 'linha' }, el('label', {}, 'O que imprimir', selArea), el('label', { style: 'flex: 0 0 130px' }, 'Escala 1:', escala)),
+      el('label', {}, 'Impressora', selImp),
+      el('div', { class: 'linha' }, el('label', {}, 'Papel', selPapel), el('label', {}, 'Tamanho', selAjuste)),
+      el('div', { class: 'linha' }, el('label', {}, 'Cor', selCor), el('label', { style: 'flex: 0 0 90px' }, 'Cópias', copias)),
+      resumo,
+      desenhosPranchas.length ? el('div', { class: 'botoes-folhas' }, el('button', { type: 'button', texto: 'Imprimir as pranchas do projeto…',
+        onclick: () => { irPranchas = true; document.getElementById('dialogo-cancelar').click(); } })) : null);
+    atualizar();
+    carregarPapeis();
+    const r = await this.dialogo({ titulo: 'Imprimir este desenho', corpo, ok: 'Imprimir' });
+    if (irPranchas) return this.dialogoImprimir(true);
+    if (r !== 'ok') return;
+    const f = folha();
+    if (!f) { this.aviso('Nada para imprimir: o desenho está vazio ou a escala está em branco.', 'atencao'); return; }
+    const pedido = {
+      desenhos: [], area: { desenho: this.nomeDesenho, caixa: f.caixa, escala: f.escala }, desenho_atual: this.doc.paraJSON(),
+      impressora: selImp.value, papel: selPapel.value === 'auto' ? null : Number(selPapel.value), ajuste: selAjuste.value, cor: selCor.value,
+      copias: Math.max(1, Math.min(99, parseInt(copias.value, 10) || 1)),
+    };
+    gravarUltima({ ...lerUltima(), impressora: pedido.impressora, papel: pedido.papel, ajuste: pedido.ajuste, cor: pedido.cor, area: selArea.value });
+    this.dica(`Imprimindo "${this.doc.nome || this.nomeDesenho}" em ${pedido.impressora}…`);
+    try {
+      const res = await postar(`${base}/imprimir`, pedido);
+      const a = res.arquivo;
+      const papeisUsados = [...new Set((res.folhas || []).map(x => x.papel))].join(', ');
+      this.aviso(el('span', {}, `A folha ${a ? 'foi gravada em PDF pela' : 'foi enviada para'} ${res.impressora}${papeisUsados ? ` (${papeisUsados})` : ''}`,
+        a ? ': ' : '.', a ? el('a', { href: a.url, target: '_blank', rel: 'noopener', texto: a.nome || 'abrir' }) : null,
+        ...(res.avisos || []).length ? [el('br'), (res.avisos || []).join(' · ')] : []), (res.avisos || []).length ? 'atencao' : 'info', a || (res.avisos || []).length ? 0 : 12000);
+      this.dica(a ? 'Impressão gravada em PDF (pasta pranchas/ do projeto).' : 'Impressão enviada: acompanhe na fila da impressora do Windows.');
     } catch (e) { this.dica(''); this._avisoDeEmissao(e, 'Não foi possível imprimir'); }
   }
 }

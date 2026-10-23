@@ -20,6 +20,8 @@ const TRACOS = { CONTINUOUS: [], HIDDEN: [6, 4], CENTER: [16, 4, 4, 4], DASHED: 
 const PX_GRADE_ALVO = 60;
 /** Até quantos objetos selecionados são pintados por cima do cache, a cada quadro. */
 const SELECAO_POR_CIMA = 3000;
+/** O zoom mais perto, em pixels por mm do desenho. */
+export const ZOOM_MAXIMO = 2000;
 
 /** Cor quase preta (luminância abaixo de 6%) — no tema escuro some no fundo: a do traço do
  *  desenho (#16202e, #2b3646) e a da folha e do carimbo (#111827) viram claras. */
@@ -141,7 +143,9 @@ export class Tela {
 
   zoom(fator, pxFixo) {
     const antes = this.paraMundo(pxFixo);
-    this.vp.z = Math.min(200, Math.max(0.0005, this.vp.z * fator));
+    // até 2000 px por mm (23/10, o usuário: "aproxima bastante … mas precisava ir mais um pouco ainda, para fazer alguns
+    // ajustes bem finos" — eram 200)
+    this.vp.z = Math.min(ZOOM_MAXIMO, Math.max(0.0005, this.vp.z * fator));
     const depois = this.paraMundo(pxFixo);
     this.vp.x += antes[0] - depois[0];
     this.vp.y += antes[1] - depois[1];

@@ -4847,8 +4847,11 @@ def rota_impressao(s: str, acao: str, corpo: dict) -> dict:
         if acao != "imprimir":
             raise ErroDeDados("rota de impressão inválida: " + acao)
         from nucleo2d.desenho import Desenho
-        from nucleo2d.pranchas import pdf_dos_desenhos
-        if not nomes:
+        from nucleo2d.pranchas import pdf_dos_desenhos, pdf_da_area
+        # o desenho aberto, que não é das pranchas (o Original do projeto recebido, um detalhamento): a vista da tela ou
+        # o desenho inteiro, numa escala (usuário, 23/10: "se dou um ctrl + p nessa tela original ele não deixa imprimir")
+        area = corpo.get("area") if isinstance(corpo.get("area"), dict) else None
+        if not nomes and area is None:
             raise ErroDeDados("o projeto não tem pranchas para imprimir.")
         nome_imp = str(corpo.get("impressora") or "")
         lista = impressao.impressoras()["impressoras"]
@@ -4860,11 +4863,21 @@ def rota_impressao(s: str, acao: str, corpo: dict) -> dict:
         if so is not None and not so:
             raise ErroDeDados("marque ao menos uma folha para imprimir.")
         g = _gerente()
-        _progresso(s, "lendo as pranchas…", 0.02)
-        desenhos = [Desenho.de_dict(g.abrir_desenho(s, n)) for n in nomes]
-        _conferir_para_emitir(s, desenhos)
-        n_folhas = len(so) if so is not None else len(_folhas_para_imprimir(s, nomes))
-        _progresso(s, "desenhando %d folha(s)…" % n_folhas, 0.05)
+        if area is not None:
+            _progresso(s, "lendo o desenho…", 0.02)
+            fonte = corpo.get("desenho_atual") if isinstance(corpo.get("desenho_atual"), dict) else g.abrir_desenho(s, str(area.get("desenho") or ""))
+            desenho_area = Desenho.de_dict(fonte)
+            _conferir_para_emitir(s, [desenho_area])
+            caixa = area.get("caixa") or desenho_area.caixa()
+            if not caixa:
+                raise ErroDeDados("o desenho está vazio: nada para imprimir.")
+            _progresso(s, "desenhando a folha…", 0.05)
+        else:
+            _progresso(s, "lendo as pranchas…", 0.02)
+            desenhos = [Desenho.de_dict(g.abrir_desenho(s, n)) for n in nomes]
+            _conferir_para_emitir(s, desenhos)
+            n_folhas = len(so) if so is not None else len(_folhas_para_imprimir(s, nomes))
+            _progresso(s, "desenhando %d folha(s)…" % n_folhas, 0.05)
         try:
             obra = (g.ler(s) or {}).get("nome") or s
         except Exception:                                # noqa: BLE001 — o título do trabalho na fila só
@@ -4875,11 +4888,15 @@ def rota_impressao(s: str, acao: str, corpo: dict) -> dict:
             os.makedirs(pasta, exist_ok=True)
             arquivo = os.path.join(pasta, "impressao-" + (_slug(nome_imp) or "impressora") + ".pdf")
         with tempfile.TemporaryDirectory() as tmp:
-            pdf = pdf_dos_desenhos(desenhos, os.path.join(tmp, "pranchas.pdf"), so=so)
+            if area is not None:
+                pdf = pdf_da_area(desenho_area, os.path.join(tmp, "desenho.pdf"), caixa, area.get("escala"))
+            else:
+                pdf = pdf_dos_desenhos(desenhos, os.path.join(tmp, "pranchas.pdf"), so=so)
             r = impressao.imprimir_pdf(
                 pdf, nome_imp, papel=None if corpo.get("papel") in (None, "", "auto") else int(corpo["papel"]), ajuste=str(corpo.get("ajuste") or "real"),
                 cor=str(corpo.get("cor") or "preto"), copias=int(corpo.get("copias") or 1),
-                titulo="Metálica — %s — pranchas" % obra, arquivo=arquivo,
+                titulo="Metálica — %s — %s" % (obra, "pranchas" if area is None else (desenho_area.nome or "desenho")), arquivo=arquivo,
+                serie_a=area is not None,
                 progresso=lambda etapa, f: _progresso(s, etapa + "…", 0.4 + 0.6 * f))
         if arquivo:
             r["arquivo"] = _descrever_arquivo(arquivo, os.path.dirname(arquivo))

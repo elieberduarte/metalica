@@ -420,6 +420,10 @@ try:
     z_perto = js("return c.tela.vp.z;")
     sob = sob_px()
     ok(z_perto > 20 and math.dist(sob, mm0) < 1e-6 * 1000, f"roda para a frente aproxima (z {z_perto:.1f}) e o ponto sob o cursor fica ({mm0} → {sob})")
+    # a interseção no meio da tela: o cursor da roda foi arredondado ao pixel na vista normal, e esse meio pixel, no zoom
+    # de 2000 px/mm (23/10; eram 200), já põe a interseção fora da tela
+    js("const z = c.tela.vp.z; c.tela.vp.x = %r - c.tela.largura / 2 / z; c.tela.vp.y = -c.tela.altura / 2 / z; c.tela.pedirQuadro(); return 1;" % (X[10] + 300.0))
+    pausa(0.2)
     r = snap_em([X[10] + 300, 0], 3, 2)
     ok(r and r[0] == "interseccao" and r[1] == [X[10] + 300.0, 0.0], f"snap com o zoom bem perto (1 mm = {z_perto:.0f} px): interseção exata ({r})")
     r = snap_em([X[10] + 300, 0], 40, 0)
