@@ -2018,6 +2018,320 @@ export class Concordar extends Ferramenta {
   }
 }
 
+/** O lado de uma linha que fica num canto em P: a direção de P para o lado clicado e a ponta desse lado (do Concordar). */
+function ladoDoCanto(e, pc, P) {
+  const q = maisProximoSeg(pc, e.a, e.b);
+  let d = [q[0] - P[0], q[1] - P[1]], n = Math.hypot(d[0], d[1]);
+  if (n < 1e-6) { d = [e.b[0] - e.a[0], e.b[1] - e.a[1]]; n = Math.hypot(d[0], d[1]); }
+  d = [d[0] / n, d[1] / n];
+  const ponta = ((e.a[0] - P[0]) * d[0] + (e.a[1] - P[1]) * d[1]) >= ((e.b[0] - P[0]) * d[0] + (e.b[1] - P[1]) * d[1]) ? e.a : e.b;
+  return { d, ponta };
+}
+
+/** O canto da polilinha no vértice `i` trocado pelo chanfro (d1 no trecho de antes, d2 no de depois), ou null quando um
+ *  dos trechos é curto demais. Devolve os dois pontos novos. */
+function chanfroNoVertice(vs, i, fechada, d1, d2) {
+  const n = vs.length;
+  const ant = i > 0 ? vs[i - 1] : (fechada ? vs[n - 1] : null), dep = i < n - 1 ? vs[i + 1] : (fechada ? vs[0] : null);
+  if (!ant || !dep) return null;
+  const V = vs[i], L1 = dist(V, ant), L2 = dist(V, dep);
+  if (L1 < 1e-9 || L2 < 1e-9 || d1 > L1 + 1e-6 || d2 > L2 + 1e-6) return null;
+  const u1 = [(ant[0] - V[0]) / L1, (ant[1] - V[1]) / L1], u2 = [(dep[0] - V[0]) / L2, (dep[1] - V[1]) / L2];
+  if (Math.abs(u1[0] * u2[1] - u1[1] * u2[0]) < 1e-6) return null;               // trechos alinhados: não há canto
+  return [[V[0] + u1[0] * d1, V[1] + u1[1] * d1], [V[0] + u2[0] * d2, V[1] + u2[1] * d2]];
+}
+
+/**
+ * Chanfro (o CHAMFER do AutoCAD; pedido do usuário, 23/10, na rodada das ferramentas que faltam): o recorte de canto de
+ * enrijecedor e de chapa de ligação (a passagem de solda 20 × 20) e o chanfro de solda. Entre duas linhas — de cada uma
+ * fica o lado clicado e o canto vira a linha do chanfro — ou no canto de uma polilinha (o vértice mais perto do clique);
+ * com P, todos os cantos da polilinha clicada. Distâncias: "20" (as duas iguais) ou "20;30" (a primeira e a segunda).
+ */
+export class Chanfro extends Ferramenta {
+  static id = 'chanfro'; static nome = 'Chanfro (chamfer)'; static atalho = 'ch'; static grupo = 'edicao';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20V11l7-7h9"/></svg>';
+  reiniciar() {
+    super.reiniciar(); this.primeira = null;
+    if (this.d1 == null) { this.d1 = 20; this.d2 = 20; }
+    this.dica(`Chanfro ${fmt(this.d1)} × ${fmt(this.d2)}${this.todos ? ' em todos os cantos' : ''}: clique na primeira linha ou no canto da polilinha · digite "20" ou "20;30" · P: todos os cantos da polilinha (${this.todos ? 'ligado' : 'desligado'})`);
+  }
+  onValor(t) {
+    const m = String(t || '').split(';');
+    const a = paraMilimetros(m[0]), b = m.length > 1 ? paraMilimetros(m[1]) : a;
+    if (a == null || b == null || a < 0 || b < 0) return;
+    this.d1 = a; this.d2 = b; this.primeira = null; this.reiniciar();
+  }
+  onTecla(ev) {
+    if (ev.key.toLowerCase() === 'p' && !ev.ctrlKey && !ev.altKey && !ev.metaKey) { this.todos = !this.todos; this.reiniciar(); return true; }
+    return false;
+  }
+  onPonto(p, ev) {
+    const e = this.editor.tela.sob(ev.px);
+    p = ev && ev.px ? this.editor.tela.paraMundo(ev.px) : p;        // o lado que fica é o do mouse, não o do snap
+    if (!e || (e.tipo !== 'linha' && e.tipo !== 'polilinha')) { this.dica('O chanfro vai entre duas linhas ou no canto de uma polilinha'); return; }
+    if (this.doc.bloqueada(e)) { this.dica(`A camada ${e.camada} está travada`); return; }
+    if (e.tipo === 'polilinha' && !this.primeira) { this._naPolilinha(e, p); return; }
+    if (e.tipo !== 'linha') { this.dica('A segunda também tem de ser uma linha'); return; }
+    if (!this.primeira) { this.primeira = { e, p }; this.dica('Agora a segunda linha'); return; }
+    if (e.id === this.primeira.e.id) { this.dica('Clique numa segunda linha, diferente da primeira'); return; }
+    const res = this._entreLinhas(this.primeira.e, this.primeira.p, e, p);
+    this.primeira = null;
+    if (!res) { this.dica('As linhas são paralelas ou o chanfro não cabe nelas'); return; }
+    this.editor.executar(new ComandoComposto([new ComandoSubstituir(res.linhas, 'Chanfro'), ...(res.nova ? [new ComandoAdicionar([res.nova])] : [])], 'Chanfro'));
+    this.dica(`Feito · próximo chanfro ${fmt(this.d1)} × ${fmt(this.d2)} (Esc sai)`);
+  }
+  _entreLinhas(e1, p1, e2, p2) {
+    const P = intersecaoRetas(e1.a, e1.b, e2.a, e2.b);
+    if (!P) return null;
+    const l1 = ladoDoCanto(e1, p1, P), l2 = ladoDoCanto(e2, p2, P);
+    if (Math.abs(l1.d[0] * l2.d[1] - l1.d[1] * l2.d[0]) < 1e-6) return null;
+    if (this.d1 <= 1e-9 && this.d2 <= 1e-9) return { linhas: [criar({ ...e1, a: P, b: l1.ponta }), criar({ ...e2, a: P, b: l2.ponta })], nova: null };
+    const T1 = [P[0] + l1.d[0] * this.d1, P[1] + l1.d[1] * this.d1], T2 = [P[0] + l2.d[0] * this.d2, P[1] + l2.d[1] * this.d2];
+    if (dist(P, l1.ponta) < this.d1 - 1e-6 || dist(P, l2.ponta) < this.d2 - 1e-6) return null;
+    return { linhas: [criar({ ...e1, a: T1, b: l1.ponta }), criar({ ...e2, a: T2, b: l2.ponta })],
+             nova: criar({ tipo: 'linha', camada: e1.camada, a: T1, b: T2, ...(e1.tipo_linha ? { tipo_linha: e1.tipo_linha } : {}), ...(e1.espessura != null ? { espessura: e1.espessura } : {}) }) };
+  }
+  _naPolilinha(e, p) {
+    const vs = e.vertices, n = vs.length;
+    let quais;
+    if (this.todos) quais = vs.map((_, i) => i);
+    else {
+      let m = -1, dm = Infinity;
+      vs.forEach((v, i) => { const d = dist(v, p); if (d < dm && (e.fechada || (i > 0 && i < n - 1))) { dm = d; m = i; } });
+      quais = m >= 0 ? [m] : [];
+    }
+    const novos = [];
+    let feitos = 0;
+    vs.forEach((v, i) => {
+      const c = quais.includes(i) ? chanfroNoVertice(vs, i, e.fechada, this.d1, this.d2) : null;
+      if (c) { novos.push(...c); feitos++; } else novos.push(v);
+    });
+    if (!feitos) { this.dica('Nenhum canto da polilinha comporta esse chanfro'); return; }
+    this.editor.executar(new ComandoSubstituir([criar({ ...e, vertices: novos })], feitos > 1 ? `Chanfro em ${feitos} cantos` : 'Chanfro'));
+    this.dica(`${feitos} canto(s) chanfrado(s) ${fmt(this.d1)} × ${fmt(this.d2)} · Esc sai`);
+  }
+}
+
+/** Ponto de `e` mais perto de `p` e o parâmetro dele (linha: 0–1 de a a b; polilinha: o comprimento desde o 1º vértice;
+ *  arco/círculo: o ângulo em graus). */
+function ondeNa(e, p) {
+  if (e.tipo === 'linha') {
+    const dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1], l2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((p[0] - e.a[0]) * dx + (p[1] - e.a[1]) * dy) / l2));
+    return { t, q: [e.a[0] + dx * t, e.a[1] + dy * t] };
+  }
+  if (e.tipo === 'polilinha') {
+    const vs = e.fechada ? [...e.vertices, e.vertices[0]] : e.vertices;
+    let s = 0, melhor = null;
+    for (let i = 1; i < vs.length; i++) {
+      const a = vs[i - 1], b = vs[i], L = dist(a, b);
+      const q = maisProximoSeg(p, a, b), d = dist(q, p);
+      if (!melhor || d < melhor.d) melhor = { d, q, t: s + dist(a, q) };
+      s += L;
+    }
+    return melhor ? { t: melhor.t, q: melhor.q } : null;
+  }
+  if (e.tipo === 'arco' || e.tipo === 'circulo') {
+    const g = ((Math.atan2(p[1] - e.centro[1], p[0] - e.centro[0]) * 180 / Math.PI) + 360) % 360;
+    return { t: g, q: [e.centro[0] + e.raio * Math.cos(g * Math.PI / 180), e.centro[1] + e.raio * Math.sin(g * Math.PI / 180)] };
+  }
+  return null;
+}
+
+/** O trecho da polilinha (aberta) entre os comprimentos s0 e s1, desde o 1º vértice. */
+function trechoDaPolilinha(vs, s0, s1) {
+  const out = [];
+  let s = 0;
+  const em = (a, b, L, x) => [a[0] + (b[0] - a[0]) * (x - s) / L, a[1] + (b[1] - a[1]) * (x - s) / L];
+  for (let i = 1; i < vs.length; i++) {
+    const a = vs[i - 1], b = vs[i], L = dist(a, b);
+    if (L < 1e-12) continue;
+    if (s + L >= s0 && s <= s1) {
+      if (!out.length) out.push(s0 > s ? em(a, b, L, s0) : a);
+      if (s + L <= s1) out.push(b); else { out.push(em(a, b, L, s1)); break; }
+    }
+    s += L;
+  }
+  return out;
+}
+
+/**
+ * Quebrar (o BREAK do AutoCAD; atalho Q B): clique no objeto (o primeiro ponto da quebra) e depois no segundo ponto —
+ * o trecho entre eles sai; Enter depois do primeiro quebra ali (em duas). Linha, polilinha, arco e círculo (no
+ * círculo sai o trecho anti-horário do primeiro ao segundo ponto, e ele vira um arco).
+ */
+export class Quebrar extends Ferramenta {
+  static id = 'quebrar'; static nome = 'Quebrar (break)'; static atalho = 'qb'; static grupo = 'edicao';
+  static dica = 'Clique no objeto no primeiro ponto da quebra · depois o segundo ponto (Enter: quebra só no primeiro)';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12h7M14 12h7"/><path d="M10 9l2 6M12 9l2 6"/></svg>';
+  reiniciar() { super.reiniciar(); this.alvo = null; this.p1 = null; }
+  onPonto(p, ev) {
+    if (!this.alvo) {
+      const e = this.editor.tela.sob(ev.px);
+      if (!e || !['linha', 'polilinha', 'arco', 'circulo'].includes(e.tipo)) { this.dica('Clique numa linha, polilinha, arco ou círculo'); return; }
+      if (this.doc.bloqueada(e)) { this.dica(`A camada ${e.camada} está travada`); return; }
+      this.alvo = e; this.p1 = ondeNa(e, p);
+      this.editor.snap.ultimo = this.p1.q;
+      this.dica('Segundo ponto da quebra (Enter: quebra só neste ponto) · Esc cancela');
+      return;
+    }
+    this._quebrar(ondeNa(this.alvo, p));
+  }
+  onTecla(ev) { if (ev.key === 'Enter' && this.alvo) { this._quebrar(this.p1); return true; } return false; }
+  _quebrar(p2) {
+    const e = this.alvo, p1 = this.p1;
+    this.reiniciar();
+    if (!p2) return;
+    const so = Math.abs(p2.t - p1.t) < 1e-9;                           // a quebra num ponto só
+    let novas = [];
+    if (e.tipo === 'linha') {
+      const [t0, t1] = [Math.min(p1.t, p2.t), Math.max(p1.t, p2.t)];
+      const P = (t) => [e.a[0] + (e.b[0] - e.a[0]) * t, e.a[1] + (e.b[1] - e.a[1]) * t];
+      if (t0 > 1e-9) novas.push(criar({ ...e, id: undefined, a: e.a, b: P(t0) }));
+      if (t1 < 1 - 1e-9) novas.push(criar({ ...e, id: undefined, a: P(t1), b: e.b }));
+    } else if (e.tipo === 'polilinha') {
+      const vs = e.vertices;
+      const anel = e.fechada ? [...vs, vs[0]] : vs;
+      const L = anel.reduce((s, v, i) => s + (i ? dist(anel[i - 1], v) : 0), 0);
+      if (e.fechada) {
+        // a fechada vira uma aberta: do segundo ponto, dando a volta, até o primeiro (sai o trecho entre eles); quebrada
+        // num ponto só, abre ali e fica inteira
+        const [ini, fim] = so ? [p1.t, p1.t + L] : p2.t >= p1.t ? [p2.t, p1.t + L] : [p2.t, p1.t];
+        const dobro = [...anel, ...vs.slice(1), vs[0]];
+        const pts = trechoDaPolilinha(dobro, ini, fim);
+        if (pts.length >= 2) novas.push(criar({ ...e, id: undefined, vertices: pts, fechada: false }));
+      } else {
+        const [s0, s1] = [Math.min(p1.t, p2.t), Math.max(p1.t, p2.t)];
+        const a = trechoDaPolilinha(anel, 0, s0), b = trechoDaPolilinha(anel, s1, Infinity);
+        if (a.length >= 2 && s0 > 1e-9) novas.push(criar({ ...e, id: undefined, vertices: a, fechada: false }));
+        if (b.length >= 2 && s1 < L - 1e-9) novas.push(criar({ ...e, id: undefined, vertices: b, fechada: false }));
+      }
+    } else if (e.tipo === 'arco') {
+      const n = (g) => ((g % 360) + 360) % 360;
+      const rel = (g) => n(g - e.inicio), varre = n(e.fim - e.inicio) || 360;
+      const [r0, r1] = [Math.min(rel(p1.t), rel(p2.t)), Math.max(rel(p1.t), rel(p2.t))].map(x => Math.min(x, varre));
+      if (r0 > 1e-6) novas.push(criar({ ...e, id: undefined, inicio: e.inicio, fim: n(e.inicio + r0) }));
+      if (varre - r1 > 1e-6) novas.push(criar({ ...e, id: undefined, inicio: n(e.inicio + r1), fim: e.fim }));
+    } else if (e.tipo === 'circulo') {
+      if (so) { this.dica('O círculo precisa de dois pontos para quebrar (vira um arco)'); return; }
+      // sai o trecho anti-horário do primeiro ao segundo ponto: fica o arco do segundo ao primeiro
+      novas.push(criar({ tipo: 'arco', camada: e.camada, atributos: e.atributos, centro: e.centro, raio: e.raio, inicio: p2.t, fim: p1.t,
+        ...(e.tipo_linha ? { tipo_linha: e.tipo_linha } : {}), ...(e.espessura != null ? { espessura: e.espessura } : {}) }));
+    }
+    novas = novas.filter(Boolean);
+    this.editor.executar(new ComandoComposto([new ComandoRemover([e.id]), ...(novas.length ? [new ComandoAdicionar(novas)] : [])], 'Quebrar'));
+    this.dica(`Quebrado em ${novas.length} parte(s) · clique em outro objeto ou Esc`);
+  }
+}
+
+/**
+ * Alongar (o LENGTHEN do AutoCAD; atalho A L): digite quanto ("500" alonga, "-200" encurta) ou o comprimento total
+ * ("t3000") e clique perto da ponta que anda. Linha, arco (pelo comprimento do arco) e polilinha aberta (o trecho da
+ * ponta clicada).
+ */
+export class Alongar extends Ferramenta {
+  static id = 'alongar'; static nome = 'Alongar (lengthen)'; static atalho = 'al'; static grupo = 'edicao';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12h12"/><path d="M15 12h6" stroke-dasharray="2 2"/><path d="M18 9l3 3-3 3"/></svg>';
+  reiniciar() {
+    super.reiniciar();
+    if (this.delta == null && this.total == null) this.delta = 100;
+    this.dica(`${this.total != null ? `Comprimento total ${fmt(this.total)}` : `Alongar ${this.delta >= 0 ? '+' : ''}${fmt(this.delta)}`}: clique perto da ponta que anda · digite quanto alonga ("500", "-200") · T: o comprimento total`);
+  }
+  onValor(t) {
+    const s = String(t || '').trim().toLowerCase();
+    const total = s.startsWith('t') || (this.modoTotal && !s.startsWith('d'));
+    const v = paraMilimetros(s.replace(/^[td]/, ''));
+    if (v != null && total && v > 0) { this.total = v; this.delta = null; }
+    else if (v != null && !total) { this.delta = v; this.total = null; }
+    this.modoTotal = false;
+    this.reiniciar();
+  }
+  /** T: o próximo número é o comprimento total; D: o quanto alonga — como as opções do LENGTHEN (a letra digitada não
+   *  vai para a caixa MEDIDAS, que só aceita números: o "t" abriria o Texto). */
+  onTecla(ev) {
+    const k = ev.key.toLowerCase();
+    if (ev.ctrlKey || ev.altKey || ev.metaKey || (k !== 't' && k !== 'd')) return false;
+    this.modoTotal = k === 't';
+    this.dica(this.modoTotal ? 'Digite o comprimento total e Enter · depois clique perto da ponta que anda' : 'Digite quanto alonga ("500", ou "-200" para encurtar) e Enter');
+    return true;
+  }
+  onPonto(p, ev) {
+    const e = this.editor.tela.sob(ev.px);
+    p = ev && ev.px ? this.editor.tela.paraMundo(ev.px) : p;
+    if (!e || !['linha', 'arco', 'polilinha'].includes(e.tipo) || (e.tipo === 'polilinha' && (e.fechada || e.vertices.length < 2))) {
+      this.dica('Clique perto da ponta de uma linha, arco ou polilinha aberta'); return;
+    }
+    if (this.doc.bloqueada(e)) { this.dica(`A camada ${e.camada} está travada`); return; }
+    const nova = this._alongada(e, p);
+    if (!nova) { this.dica('Assim o objeto ficaria sem comprimento'); return; }
+    this.editor.executar(new ComandoSubstituir([nova], 'Alongar'));
+    this.reiniciar();
+  }
+  _alongada(e, p) {
+    if (e.tipo === 'linha') {
+      const L = dist(e.a, e.b), novoL = this.total != null ? this.total : L + this.delta;
+      if (!(novoL > 1e-6) || L < 1e-9) return null;
+      const daB = dist(p, e.b) < dist(p, e.a);
+      const fixo = daB ? e.a : e.b, anda = daB ? e.b : e.a;
+      const u = [(anda[0] - fixo[0]) / L, (anda[1] - fixo[1]) / L];
+      const q = [fixo[0] + u[0] * novoL, fixo[1] + u[1] * novoL];
+      return criar(daB ? { ...e, b: q } : { ...e, a: q });
+    }
+    if (e.tipo === 'arco') {
+      const n = (g) => ((g % 360) + 360) % 360, varre = n(e.fim - e.inicio) || 360;
+      const L = e.raio * varre * Math.PI / 180, novoL = this.total != null ? this.total : L + this.delta;
+      const novoVarre = novoL / e.raio * 180 / Math.PI;
+      if (!(novoVarre > 1e-6) || novoVarre >= 360) return null;
+      const pt = (g) => [e.centro[0] + e.raio * Math.cos(g * Math.PI / 180), e.centro[1] + e.raio * Math.sin(g * Math.PI / 180)];
+      const noFim = dist(p, pt(e.fim)) < dist(p, pt(e.inicio));
+      return criar(noFim ? { ...e, fim: n(e.inicio + novoVarre) } : { ...e, inicio: n(e.fim - novoVarre) });
+    }
+    const vs = e.vertices.map(v => [v[0], v[1]]), k = vs.length;
+    const noFim = dist(p, vs[k - 1]) < dist(p, vs[0]);
+    const [anda, fixo] = noFim ? [k - 1, k - 2] : [0, 1];
+    const Lt = vs.reduce((s, v, i) => s + (i ? dist(vs[i - 1], v) : 0), 0);
+    const delta = this.total != null ? this.total - Lt : this.delta;
+    const Ls = dist(vs[fixo], vs[anda]), novoLs = Ls + delta;
+    if (!(novoLs > 1e-6) || Ls < 1e-9) return null;
+    const u = [(vs[anda][0] - vs[fixo][0]) / Ls, (vs[anda][1] - vs[fixo][1]) / Ls];
+    vs[anda] = [vs[fixo][0] + u[0] * novoLs, vs[fixo][1] + u[1] * novoLs];
+    return criar({ ...e, vertices: vs });
+  }
+}
+
+/** Zoom janela (Z W no AutoCAD): dois cantos (ou um arrasto) e a vista vai para eles; volta à ferramenta de antes. */
+export class ZoomJanela extends Ferramenta {
+  static id = 'zoom_janela'; static nome = 'Zoom janela'; static atalho = 'zw'; static grupo = 'navegacao';
+  static dica = 'Zoom janela: o primeiro canto (ou arraste a janela) · Esc cancela';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L20 20"/><path d="M7.5 10h5M10 7.5v5"/></svg>';
+  reiniciar() { super.reiniciar(); this.c1 = null; }
+  _ir(a, b) {
+    this.editor.previa([]);
+    if (Math.abs(b[0] - a[0]) > 1e-9 && Math.abs(b[1] - a[1]) > 1e-9) this.editor.tela.enquadrar([[Math.min(a[0], b[0]), Math.min(a[1], b[1])], [Math.max(a[0], b[0]), Math.max(a[1], b[1])]], 0);
+    this.editor.ativarFerramenta('selecionar');
+    this.editor.dica('Zoom janela feito · Z P volta à vista de antes');
+  }
+  onPonto(p, ev) {
+    const m = ev && ev.px ? this.editor.tela.paraMundo(ev.px) : p;
+    if (!this.c1) { this.c1 = m; this.dica('O outro canto'); return; }
+    this._ir(this.c1, m);
+  }
+  onSoltar(p, ev) { if (ev && ev.arrasto) this._ir(this.editor.tela.paraMundo(ev.arrasto.de), this.editor.tela.paraMundo(ev.arrasto.para)); }
+  onMover(p, ev) {
+    if (!this.c1) return;
+    const m = ev && ev.px ? this.editor.tela.paraMundo(ev.px) : p, a = this.c1;
+    this.editor.previa([criar({ tipo: 'polilinha', camada: 'AUXILIAR', fechada: true, vertices: [a, [m[0], a[1]], m, [a[0], m[1]]] })]);
+  }
+}
+
+/** Copiar com ponto de base (Ctrl+Shift+C, o COPYBASE do AutoCAD): clique o ponto de base e a seleção vai para a área
+ *  de transferência do programa (o Ctrl+V cola presa ao cursor por esse ponto, neste ou em outro desenho). */
+export class CopiarBase extends Ferramenta {
+  static id = 'copiar_base'; static nome = 'Copiar com ponto de base'; static grupo = 'oculta';
+  static dica = 'Clique o ponto de base da cópia · Esc cancela';
+  onPonto(p) { this.editor.copiarSelecao(p); this.editor.ativarFerramenta('selecionar'); }
+}
+
 export class Offset extends Ferramenta {
   static id = 'offset'; static nome = 'Offset (paralela)'; static atalho = 'f'; static grupo = 'edicao'; static dica = 'Offset: clique na linha, arco, círculo ou polilinha; depois do lado desejado (ou digite a distância e clique o lado)';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 8h16M4 16h16" /></svg>';
@@ -2201,6 +2515,6 @@ export class Corte extends Ferramenta {
   }
 }
 
-export const FERRAMENTAS = [Selecionar, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, CotaContinua, AjustarCota, Chamada, Corte, Hachura,
-  Mover, Copiar, Girar, Espelhar, Escalar, Esticar, Offset, Aparar, Estender, Concordar, Explodir, Juntar, MoverCota, CopiarPropriedades, Apagar, Medir];
+export const FERRAMENTAS = [Selecionar, ZoomJanela, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, CotaContinua, AjustarCota, Chamada, Corte, Hachura,
+  Mover, Copiar, Girar, Espelhar, Escalar, Esticar, Offset, Aparar, Estender, Quebrar, Alongar, Concordar, Chanfro, Explodir, Juntar, MoverCota, CopiarPropriedades, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['edicao', 'Edi'], ['medicao', 'Med']];

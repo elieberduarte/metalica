@@ -129,19 +129,48 @@ export class Tela {
     this.pedirQuadro();
   }
 
+  /** Guarda a vista atual para o zoom anterior (Z P, como no AutoCAD; 23/10): no enquadrar, no zoom janela e no começo
+   *  de cada rolada da roda ou arrasto da vista (`parado`: só se a vista ficou parada por um instante antes). */
+  lembrarVista(parado = false) {
+    const agora = Date.now();
+    if (parado && agora - (this._ultimoMovimento || 0) < 700) { this._ultimoMovimento = agora; return; }
+    this._ultimoMovimento = agora;
+    const h = this._vistas || (this._vistas = []), v = { ...this.vp }, u = h[h.length - 1];
+    if (u && Math.abs(u.x - v.x) < 1e-9 && Math.abs(u.y - v.y) < 1e-9 && Math.abs(u.z - v.z) < 1e-12) return false;
+    h.push(v);
+    if (h.length > 50) h.shift();
+    return true;
+  }
+  /** A vista de antes (Z P); devolve false quando não há. */
+  vistaAnterior() {
+    const h = this._vistas || [];
+    while (h.length) {
+      const v = h.pop();
+      if (Math.abs(v.x - this.vp.x) > 1e-9 || Math.abs(v.y - this.vp.y) > 1e-9 || Math.abs(v.z - this.vp.z) > 1e-12) {
+        this.vp = v; this._ultimoMovimento = 0; this.pedirQuadro(); return true;
+      }
+    }
+    return false;
+  }
+
+  /** Devolve true quando guardou a vista de antes (o Z P desfaz o enquadrar do Z que virou Z W / Z P). */
   enquadrar(caixa = null, margem = 0.08) {
+    const guardou = this.lembrarVista();
     const c = caixa || this.doc.caixa();
     if (!c) { this.vp = { x: -200, y: -200, z: 0.5 }; this.pedirQuadro(); return; }
     const [[x0, y0], [x1, y1]] = c;
-    const w = Math.max(x1 - x0, 1), h = Math.max(y1 - y0, 1);
-    const z = Math.min(this.largura / (w * (1 + 2 * margem)), this.altura / (h * (1 + 2 * margem)));
+    // até um milésimo de mm (o zoom janela bem de perto); o zoom não passa do máximo
+    const w = Math.max(x1 - x0, 1e-3), h = Math.max(y1 - y0, 1e-3);
+    const z = Math.min(ZOOM_MAXIMO, this.largura / (w * (1 + 2 * margem)), this.altura / (h * (1 + 2 * margem)));
     this.vp.z = z;
     this.vp.x = (x0 + x1) / 2 - this.largura / 2 / z;
     this.vp.y = (y0 + y1) / 2 - this.altura / 2 / z;
     this.pedirQuadro();
+    return guardou;
   }
 
   zoom(fator, pxFixo) {
+    this.lembrarVista(true);
     const antes = this.paraMundo(pxFixo);
     // até 2000 px por mm (23/10, o usuário: "aproxima bastante … mas precisava ir mais um pouco ainda, para fazer alguns
     // ajustes bem finos" — eram 200)
@@ -153,6 +182,7 @@ export class Tela {
   }
 
   arrastar(dpx) {
+    this.lembrarVista(true);
     this.vp.x -= dpx[0] / this.vp.z;
     this.vp.y += dpx[1] / this.vp.z;
     this.pedirQuadro();

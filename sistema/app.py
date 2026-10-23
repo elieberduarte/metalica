@@ -4780,6 +4780,13 @@ def colar_do_autocad(s: str, corpo: dict) -> dict:
     from nucleo2d import do_autocad
     from nucleo2d.desenho import Desenho
     from nucleo2d.dxf_ler import para_desenho
+    # o Ctrl+C do próprio CAD guarda o número da área de transferência do Windows; no Ctrl+V, o mesmo número quer dizer que
+    # nada foi copiado noutro programa depois: cola a cópia do CAD (23/10)
+    seq = do_autocad.sequencia()
+    if corpo.get("so_sequencia"):
+        return {"sequencia": seq}
+    if corpo.get("sequencia") is not None and seq is not None and int(corpo["sequencia"]) == seq:
+        return {"interno": True, "sequencia": seq}
     _progresso(s, "lendo a área de transferência…", 0.05)
     o = do_autocad.o_que_colar()
     _progresso(s, "lendo os objetos de %s…" % o["origem"], 0.15)

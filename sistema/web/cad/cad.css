@@ -159,3 +159,6 @@ html.embutida #btn-voltar, html.embutida #link-editor, html.embutida #link-divid
 .linha .linha-da-camada { flex: 0 0 auto; background: none; border: 1px solid transparent; border-radius: 4px; padding: 0 4px;
   font: 11px var(--mono); color: var(--texto3); cursor: pointer; white-space: nowrap; }
 .linha .linha-da-camada:hover { border-color: var(--borda-forte); color: var(--texto); }
+/* o cadeado da camada (23/10): a travada fica apagada no nome */
+.linha[data-travada] .nome { opacity: .6; }
+.linha .cadeado[aria-pressed="true"] { color: var(--texto); }

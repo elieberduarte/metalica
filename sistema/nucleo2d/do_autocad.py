@@ -97,6 +97,17 @@ def conteudo() -> dict:
     return out
 
 
+def sequencia() -> Optional[int]:
+    """O número da área de transferência do Windows (GetClipboardSequenceNumber: muda a cada cópia em qualquer programa).
+    O Ctrl+C do CAD guarda o de agora; no Ctrl+V, se mudou, a cópia mais nova é a de outro programa (o AutoCAD)."""
+    if sys.platform != "win32":
+        return None
+    import ctypes
+    u = ctypes.WinDLL("user32")
+    u.GetClipboardSequenceNumber.restype = ctypes.c_uint32
+    return int(u.GetClipboardSequenceNumber())
+
+
 def ler_clipboard_info(dados: bytes) -> Tuple[Optional[str], Optional[Tuple[float, float]]]:
     """O ClipboardInfo do AutoCAD (ObjectARX): szTempFile[MAX_PATH] e szSourceFile[MAX_PATH] em UTF-16, szSignature[4],
     nFlags e dptInsert (o ponto de base, 3 doubles). Devolve (o DWG temporário, o ponto de base ou None). Se a estrutura

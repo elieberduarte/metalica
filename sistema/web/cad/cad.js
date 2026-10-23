@@ -9,7 +9,7 @@ import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia, ComandoAdicion
 import { Tela, formatarMm } from './nucleo/tela.js';
 import { acompanhar as acompanharTarefa } from '../progresso.js';
 import { Snap } from './nucleo/snap.js';
-import { FERRAMENTAS, GRUPOS, Ferramenta, textoNaUnidade, ColarObjetos } from './ferramentas.js';
+import { FERRAMENTAS, GRUPOS, Ferramenta, textoNaUnidade, ColarObjetos, CopiarBase } from './ferramentas.js';
 import { TIPOS_DE_LINHA, ESPESSURAS, rotuloDoTipo, escalaTracejado, ESCALA_TRACEJADO } from './nucleo/tipos_linha.js';
 import { MetodosLancamentoCAD, DESENHO_LANCAMENTO } from './lancamento.js';
 import { MetodosMontarPlantaCAD } from './montar_planta.js';
@@ -985,6 +985,7 @@ class CAD {
       }
     }
     this.ferramentas.set(ColarObjetos.id, new ColarObjetos(this));     // o Ctrl+V do que veio do AutoCAD (fora da barra)
+    this.ferramentas.set(CopiarBase.id, new CopiarBase(this));         // o Ctrl+Shift+C (copiar com ponto de base)
     this._registrarFerramentasDoLancamento();
     this._registrarFerramentasDaEstrutura();
     this._montarBarraDisciplina();          // a barra da direita: os elementos da disciplina (estrutura.js)
@@ -1250,9 +1251,21 @@ class CAD {
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); ev.shiftKey ? this.refazer() : this.desfazer(); return; }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'y') { ev.preventDefault(); this.refazer(); return; }
       if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && ev.key.toLowerCase() === 'a') { ev.preventDefault(); this.selecionarTudo(); return; }
-      // Ctrl+V: o que foi copiado no AutoCAD (23/10). Na Montagem o Ctrl+V é o da tesoura copiada da Original (implantacao.js)
+      // Ctrl+C e Ctrl+Shift+C (com ponto de base): a área de transferência do programa, que vale para os outros desenhos
+      // (23/10). Na Original com a Montagem, o Ctrl+C é o da tesoura para a elevação (implantacao.js): fica com ela.
+      if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && ev.key.toLowerCase() === 'c') {
+        const mt = window.montagem;
+        if (!ev.shiftKey && mt && mt.botaoCopiar && !mt.botaoCopiar.hidden) return;
+        ev.preventDefault(); ev.stopImmediatePropagation();
+        if (!ev.shiftKey) this.copiarSelecao(null);
+        else if (!this.tela.selecao.size) this.dica('Selecione o que vai copiar e depois Ctrl+Shift+C (o ponto de base)');
+        else this.ativarFerramenta(CopiarBase.id);
+        return;
+      }
+      // Ctrl+V: a cópia mais nova — a do programa ou a do AutoCAD (23/10). Na Montagem o Ctrl+V é o da tesoura copiada da
+      // Original (implantacao.js)
       if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === 'v' && !(window.montagem && window.montagem.ativa)) {
-        ev.preventDefault(); this.colarDoAutoCAD(); return;
+        ev.preventDefault(); this.colar(); return;
       }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); this.salvar(); return; }
       // Ctrl+P: as pranchas na impressora (o imprimir do navegador sairia a tela do CAD)
@@ -1270,7 +1283,11 @@ class CAD {
       if (!ev.ctrlKey && !ev.metaKey && !ev.altKey && this._teclaAnterior && agora_ - this._teclaAnterior.t < 1000) {
         const duplas = { ma: 'copiar_propriedades' };
         for (const F of FERRAMENTAS) if (F.atalho && F.atalho.length === 2) duplas[F.atalho] = F.id;
-        const alvo = duplas[this._teclaAnterior.k + k_];
+        // Z W e Z P: o Z sozinho já enquadrou — desfaz, para a janela sair da vista em que se estava e o Z P voltar à de antes
+        const par_ = this._teclaAnterior.k + k_;
+        if ((par_ === 'zp' || par_ === 'zw') && this._zEnquadrou) { this.tela.vistaAnterior(); this._zEnquadrou = false; }
+        if (par_ === 'zp') { ev.preventDefault(); this._teclaAnterior = null; this.zoomAnterior(); return; }
+        const alvo = duplas[par_];
         if (alvo) { ev.preventDefault(); this._teclaAnterior = null; this.ativarFerramenta(alvo); return; }
       }
       this._teclaAnterior = { k: k_, t: agora_ };
@@ -1279,7 +1296,7 @@ class CAD {
       if (ev.key === ' ' && this.ferramenta && this.ferramenta.constructor.id === 'selecionar' && this.ferramentaAnterior) {
         ev.preventDefault(); this.ativarFerramenta(this.ferramentaAnterior); return;
       }
-      if (ev.key.toLowerCase() === 'z') { this.tela.enquadrar(); return; }
+      if (ev.key.toLowerCase() === 'z') { this._zEnquadrou = this.tela.enquadrar(); return; }
       // número ou sinal digitado no canvas vai para a caixa de medidas
       if (/^[-0-9.,@<]$/.test(ev.key)) { this.el.medida.focus(); return; }
       // com o Caps Lock ligado chega 'K': o atalho vale igual (as duplas, TR e MA, já baixavam a letra)
@@ -1352,7 +1369,12 @@ class CAD {
       'montar-planta': () => this.dialogoMontarPelaPlanta(),
       'folhas-recebidas': () => this.lerFolhasRecebidas(),
       desfazer: () => this.desfazer(), refazer: () => this.refazer(),
-      'selecionar-tudo': () => this.selecionar([...this.doc.entidades.keys()].filter(id => this.doc.visivel(this.doc.get(id)))),
+      'selecionar-tudo': () => this.selecionarTudo(),
+      copiar: () => this.copiarSelecao(null),
+      'copiar-base': () => { if (this.tela.selecao.size) this.ativarFerramenta(CopiarBase.id); else this.dica('Selecione o que vai copiar'); },
+      colar: () => this.colar(),
+      'zoom-janela': () => this.ativarFerramenta('zoom_janela'),
+      'zoom-anterior': () => this.zoomAnterior(),
       apagar: () => this.apagarSelecao(),
       materiais: async () => {
         if (!this.projeto) { this.aviso('A lista de materiais precisa de um projeto aberto.', 'atencao'); return; }
@@ -1528,6 +1550,71 @@ class CAD {
     $(entrada).click();
   }
 
+  zoomAnterior() { if (!this.tela.vistaAnterior()) this.dica('Não há vista anterior'); else this.dica('Vista anterior (Z P de novo volta mais uma)'); }
+
+  /**
+   * Ctrl+C (pedido do usuário, 23/10, na rodada das ferramentas que faltam: copiar e colar entre desenhos): a seleção vai
+   * para a área de transferência do programa — no navegador (localStorage), para valer em outro desenho e em outra aba —
+   * com o ponto de base (`base`; vazio = o canto de baixo à esquerda, como o COPYCLIP). Guarda também o número da área de
+   * transferência do Windows naquele momento: no Ctrl+V, se ele mudou, a cópia mais nova é de outro programa (o AutoCAD).
+   */
+  copiarSelecao(base) {
+    const ents = [...this.tela.selecao].map(id => this.doc.get(id)).filter(e => e && this.doc.visivel(e));
+    if (!ents.length) { this.dica('Selecione o que vai copiar (Ctrl+C) — Ctrl+Shift+C pede o ponto de base'); return false; }
+    const caixa = this.doc.caixa(new Set(ents.map(e => e.id)));
+    const b = base ? [base[0], base[1]] : (caixa ? [caixa[0][0], caixa[0][1]] : [0, 0]);
+    const camadas = {};
+    for (const e of ents) { const c = this.doc.camadas.get(e.camada); if (c && !camadas[e.camada]) camadas[e.camada] = { ...c }; }
+    const copia = { versao: 1, projeto: this.projeto || '', desenho: this.nomeDesenho || '', nome: this.doc.nome || '', escala: this.doc.escala || 1,
+      base: b, entidades: ents.map(clonar), camadas, quando: Date.now(), sequencia: null };
+    this._copiaLocal = copia;
+    const gravar = () => { try { localStorage.setItem('cad.copia', JSON.stringify(copia)); return true; } catch { return false; } };
+    if (!gravar()) this.aviso(`A cópia de ${numero(ents.length)} objetos não coube na área de transferência do navegador: ela vale só neste desenho.`, 'atencao', 8000);
+    this.dica(`${numero(ents.length)} objeto(s) copiado(s)${base ? ' com o ponto de base' : ''} · Ctrl+V cola (também em outro desenho)`);
+    if (this.projeto) {
+      postar(`/api/projetos/${encodeURIComponent(this.projeto)}/colar-autocad`, { so_sequencia: true })
+        .then(r => { if (this._copiaLocal === copia) { copia.sequencia = r.sequencia ?? null; gravar(); } }).catch(() => {});
+    }
+    return true;
+  }
+
+  /** A cópia do programa guardada (a do Ctrl+C mais recente, de qualquer desenho), ou null. */
+  _copiaGuardada() {
+    try { const c = JSON.parse(localStorage.getItem('cad.copia') || 'null'); if (c && Array.isArray(c.entidades)) return c; } catch { /* sem armazenamento */ }
+    return this._copiaLocal || null;
+  }
+
+  /** Ctrl+V: a cópia mais nova — a do programa, se nada foi copiado noutro programa depois dela; senão a do AutoCAD. */
+  colar() {
+    const copia = this._copiaGuardada();
+    if (!this.projeto) { if (copia) this._colarCopia(copia); else this.dica('Nada copiado: selecione e Ctrl+C'); return; }
+    return this.colarDoAutoCAD(copia);
+  }
+
+  /** Cola a cópia do programa presa ao cursor pelo ponto de base. O que é de papel (texto, cota, hachura) vem do tamanho
+   *  que tinha no desenho de origem, mesmo com outra escala. */
+  _colarCopia(copia) {
+    const k = (copia.escala || 1) / (this.doc.escala || 1);
+    let novasCamadas = 0;
+    for (const [nome, c] of Object.entries(copia.camadas || {})) if (!this.doc.camadas.has(nome)) { this.doc.camadas.set(nome, { ...c, nome }); novasCamadas++; }
+    if (novasCamadas) this.doc.notificar([], 'aparencia');
+    const ents = copia.entidades.map(e => {
+      const n = { ...clonar(e), id: undefined };
+      if (Math.abs(k - 1) > 1e-9) {
+        if ((n.tipo === 'texto' || n.tipo === 'chamada' || n.tipo === 'cota') && n.altura) n.altura *= k;
+        if (n.tipo === 'cota') n.deslocamento = (n.deslocamento || 0) * k;
+        if (n.tipo === 'hachura' && n.espacamento) n.espacamento *= k;
+      }
+      return criar(n);
+    });
+    const f = this.ferramentas.get(ColarObjetos.id);
+    f.preparar(ents, copia.base || [0, 0], 'Colar');
+    this.ativarFerramenta(ColarObjetos.id);
+    const de = copia.desenho && copia.desenho !== this.nomeDesenho ? ` de "${copia.nome || copia.desenho}"` : '';
+    this.dica(`Colando ${numero(ents.length)} objeto(s)${de}${Math.abs(k - 1) > 1e-9 ? ` (de 1:${copia.escala} para 1:${this.doc.escala}: textos e cotas no mesmo tamanho)` : ''} · clique onde fica o ponto de base · Enter: no mesmo lugar · Esc cancela`);
+    if (this.tela.cursor) f.onMover(this.tela.cursor);
+  }
+
   /**
    * Colar o que foi copiado no AutoCAD (pedido do usuário, 23/10: "criar a funcionalidade de copiar elementos de dentro
    * do autocad e colar na nossa área 2D"): o servidor lê a área de transferência do Windows, converte o DWG temporário
@@ -1535,16 +1622,22 @@ class CAD {
    * eles ficam presos ao cursor pelo ponto de base do AutoCAD e o clique solta (nucleo2d/do_autocad.py). Também vale o
    * DWG ou DXF copiado no Explorer.
    */
-  async colarDoAutoCAD() {
+  async colarDoAutoCAD(copia = null) {
     if (!this.projeto) { this.aviso('Colar do AutoCAD precisa de um projeto aberto.', 'atencao'); return; }
     if (this._colando) return;
     this._colando = true;
-    this.dica('Lendo o que foi copiado no AutoCAD…');
+    this.dica(copia ? 'Colando…' : 'Lendo o que foi copiado no AutoCAD…');
     let r;
     try {
-      r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/colar-autocad`, { escala: this.doc.escala });
-    } catch (e) { this.aviso(`Não foi possível colar: ${e.message}`, 'atencao', 12000); this.dica(''); return; }
-    finally { this._colando = false; }
+      // com a cópia do programa: o servidor diz se a área de transferência do Windows mudou depois dela
+      r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/colar-autocad`,
+        { escala: this.doc.escala, ...(copia && copia.sequencia != null ? { sequencia: copia.sequencia } : {}) });
+    } catch (e) {
+      // nada do AutoCAD (a imagem de um print, um texto): fica a cópia do programa
+      if (copia) { this._colarCopia(copia); return; }
+      this.aviso(`Não foi possível colar: ${e.message}`, 'atencao', 12000); this.dica(''); return;
+    } finally { this._colando = false; }
+    if (r.interno && copia) { this._colarCopia(copia); return; }
     for (const [nome, c] of Object.entries(r.camadas || {})) if (!this.doc.camadas.has(nome)) this.doc.camadas.set(nome, { nome, cor: c.cor, visivel: true, bloqueada: false, tipo_linha: c.tipo_linha || 'CONTINUOUS', espessura: c.espessura ?? 0.25 });
     const ents = (r.entidades || []).map(e => criar({ ...e, id: undefined }));
     if (!ents.length) { this.aviso('O que foi copiado não trouxe nada que o CAD leia (blocos e objetos 3D ficam de fora).', 'atencao'); this.dica(''); return; }
@@ -1957,6 +2050,7 @@ class CAD {
           texto: grupo.length > 1 ? `o perfil ${nomeC.split(' ').slice(1).join(' ')} (${grupo.length} camadas)` : `a camada ${nomeC}` })));
     }
     this._linhaDaSelecao(g, ents);
+    this._areaDaSelecao(g, ents);
     this._carimboDaFolha(g, ents);
     this._tamanhoDoTexto(g, ents);
     this._propsEstrutura(g, ents);           // o elemento lançado na planta (estrutura.js)
@@ -2080,6 +2174,8 @@ class CAD {
       if (ORIGENS_DE_IMPORTACAO.has((e.atributos || {}).origem)) doArquivo.add(e.camada);
     }
     const lista = el('div', { class: 'lista-linhas' });
+    const cadeado = (t) => t ? '<svg width="13" height="13" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor"/><path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>'
+      : '<svg width="13" height="13" viewBox="0 0 16 16" opacity=".45"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 7V5a3 3 0 0 1 5.6-1.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
     const olho = (v) => v ? '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>'
       : '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".45"/><path d="M3 13L13 3" stroke="currentColor" stroke-width="1.3"/></svg>';
     const linhaDa = (nome, c) => {
@@ -2088,6 +2184,11 @@ class CAD {
       if (nome === this.camadaAtiva) linha.dataset.ativa = '';
       const vis = el('button', { type: 'button', class: 'alternador', html: olho(c.visivel !== false), title: c.visivel === false ? 'Mostrar' : 'Ocultar',
         onclick: () => this.executar(new ComandoAparencia(nome, { visivel: c.visivel === false })) });
+      // o cadeado (23/10): a camada travada não seleciona nem edita — o arquitetônico de fundo, o Original
+      const trava = el('button', { type: 'button', class: 'alternador cadeado', 'data-camada': nome, html: cadeado(!!c.bloqueada),
+        title: c.bloqueada ? 'Destravar a camada' : 'Travar a camada (não seleciona nem edita)', 'aria-pressed': c.bloqueada ? 'true' : 'false',
+        onclick: () => this.travarCamadas([nome], !c.bloqueada) });
+      if (c.bloqueada) linha.dataset.travada = '';
       const cor = el('input', { type: 'color', value: c.cor, title: 'Cor da camada' });
       cor.addEventListener('change', () => this.mudarCorDaCamada(nome, cor.value));
       const tl = String(c.tipo_linha || 'CONTINUOUS').toUpperCase();
@@ -2097,7 +2198,7 @@ class CAD {
         onclick: () => this.dialogoLinhaDaCamada(nome) });
       linha.addEventListener('click', (ev) => { if (ev.target.closest('button, input')) return; this.camadaAtiva = nome; this._agendarPaineis('camadas', 'props'); this.dica(`Camada ativa: ${nome}`); });
       linha.addEventListener('dblclick', (ev) => { if (ev.target.closest('button, input')) return; this.selecionar([...this.doc.entidades.values()].filter(e => e.camada === nome).map(e => e.id)); });
-      linha.append(vis, cor, el('span', { class: 'nome', texto: nome }), linhaCam, el('span', { class: 'contagem', texto: numero(cont.get(nome) || 0) }));
+      linha.append(vis, trava, cor, el('span', { class: 'nome', texto: nome }), linhaCam, el('span', { class: 'contagem', texto: numero(cont.get(nome) || 0) }));
       return linha;
     };
     if (!doArquivo.size) {
@@ -2127,7 +2228,21 @@ class CAD {
       this.camadaAtiva = nome; this.doc.notificar([], 'aparencia');
     } }));
     acoes.append(el('button', { type: 'button', texto: 'Mostrar todas', onclick: () => { for (const [n, c] of this.doc.camadas) if (c.visivel === false) this.executar(new ComandoAparencia(n, { visivel: true })); } }));
+    // travar e destravar de uma vez (o "Destravar / Travar o arquitetônico" pendente desde 15/10)
+    const travadas = [...this.doc.camadas].filter(([, c]) => c.bloqueada).map(([n]) => n);
+    if (travadas.length) acoes.append(el('button', { type: 'button', texto: `Destravar todas (${travadas.length})`, onclick: () => this.travarCamadas(travadas, false) }));
+    const soltasDoArquivo = [...doArquivo].filter(n => this.doc.camadas.has(n) && !this.doc.camadas.get(n).bloqueada);
+    if (soltasDoArquivo.length) acoes.append(el('button', { type: 'button', texto: `Travar as do arquivo (${soltasDoArquivo.length})`, onclick: () => this.travarCamadas(soltasDoArquivo, true) }));
     raiz.append(acoes);
+  }
+
+  /** Trava (ou destrava) as camadas num passo só do desfazer; o que estava selecionado nelas sai da seleção. */
+  travarCamadas(nomes, travar) {
+    const cmds = nomes.filter(n => this.doc.camadas.has(n)).map(n => new ComandoAparencia(n, { bloqueada: !!travar }));
+    if (!cmds.length) return;
+    this.executar(cmds.length === 1 ? cmds[0] : new ComandoComposto(cmds, `${travar ? 'Travar' : 'Destravar'} ${cmds.length} camadas`));
+    if (travar) this.selecionar([...this.tela.selecao].filter(id => { const e = this.doc.get(id); return e && !this.doc.bloqueada(e); }));
+    this.dica(`${cmds.length} camada(s) ${travar ? 'travada(s): não selecionam nem editam' : 'destravada(s)'}`);
   }
 
   _painelSnap() {
@@ -2522,6 +2637,49 @@ class CAD {
       this.executar(new ComandoAlterar(m, 'Espessura da linha'));
     });
     g.append(el('label', { texto: 'Tipo de linha' }), selTipo, el('label', { texto: 'Espessura' }), selEsp);
+  }
+
+  /**
+   * A área, o perímetro e o peso das chapas selecionadas (pedido do usuário, 23/10, na rodada das ferramentas que faltam):
+   * cada contorno fechado (polilinha fechada, círculo) é uma chapa; o que está dentro de outro contorno é furo ou recorte
+   * e sai da área dela. Na prancha, pela escala da célula (a chapa em 1:10 dá a área da peça). Peso: área × espessura ×
+   * 7.850 kg/m³.
+   */
+  _areaDaSelecao(g, ents) {
+    const contornos = [];
+    for (const e of ents) {
+      if (!e) continue;
+      if (e.tipo === 'circulo') {
+        const pts = []; for (let i = 0; i < 48; i++) { const a = i / 48 * 2 * Math.PI; pts.push([e.centro[0] + e.raio * Math.cos(a), e.centro[1] + e.raio * Math.sin(a)]); }
+        contornos.push({ e, pts, area: Math.PI * e.raio * e.raio, perim: 2 * Math.PI * e.raio, ref: e.centro });
+      } else if (e.tipo === 'polilinha' && e.fechada && e.vertices.length >= 3) {
+        const v = e.vertices;
+        const ar = Math.abs(v.reduce((s, p, i) => { const q = v[(i + 1) % v.length]; return s + (p[0] * q[1] - q[0] * p[1]); }, 0) / 2);
+        const pe = v.reduce((s, p, i) => s + dist(p, v[(i + 1) % v.length]), 0);
+        contornos.push({ e, pts: v, area: ar, perim: pe, ref: v[0] });
+      }
+    }
+    if (!contornos.length) return;
+    contornos.sort((a, b) => b.area - a.area);
+    const dentroDe = (p, pol) => { let d = false; for (let i = 0, j = pol.length - 1; i < pol.length; j = i++) { const [xi, yi] = pol[i], [xj, yj] = pol[j]; if (((yi > p[1]) !== (yj > p[1])) && (p[0] < (xj - xi) * (p[1] - yi) / (yj - yi) + xi)) d = !d; } return d; };
+    let area = 0, perim = 0, chapas = 0, furos = 0;
+    contornos.forEach((c, i) => {
+      const dono = contornos.slice(0, i).find(o => o.area > c.area && dentroDe(c.ref, o.pts) && !o.furo);
+      if (dono) { c.furo = true; area -= c.area; furos++; } else { area += c.area; perim += c.perim; chapas++; }
+    });
+    const fe = (this.escalaNoPonto && this.escalaNoPonto(contornos[0].ref)) || 1;      // na prancha: a escala da célula
+    const areaReal = area * fe * fe, perimReal = perim * fe;
+    const m2 = areaReal / 1e6;
+    g.append(el('label', { texto: chapas > 1 ? `Área (${chapas} chapas)` : 'Área' }),
+      el('div', { texto: `${formatarMm(m2, 4)} m² (${numero(Math.round(areaReal))} mm²)${furos ? ` sem ${furos} furo(s)/recorte(s)` : ''}${fe !== 1 ? ` · na escala 1:${fe}` : ''}` }),
+      el('label', { texto: 'Perímetro' }), el('div', { texto: `${numero(Math.round(perimReal))} mm` }));
+    let esp = 6.35;
+    try { esp = parseFloat(localStorage.getItem('cad.espessuraChapa')) || esp; } catch { /* sem armazenamento */ }
+    const inp = el('input', { type: 'number', step: '0.05', min: '0', value: String(esp), title: 'Espessura da chapa (mm) para o peso' });
+    const peso = el('div', {});
+    const conta = () => { const t = parseFloat(String(inp.value).replace(',', '.')) || 0; peso.textContent = `${formatarMm(m2 * t * 7.85, 2)} kg (#${formatarMm(t, 2)} mm, aço 7.850 kg/m³)`; try { localStorage.setItem('cad.espessuraChapa', String(t)); } catch { /* sem armazenamento */ } };
+    inp.addEventListener('input', conta); conta();
+    g.append(el('label', { texto: 'Espessura (mm)' }), inp, el('label', { texto: 'Peso' }), peso);
   }
 
   /** A linha da camada (tipo e espessura), como no gerenciador de camadas do AutoCAD — vale para tudo o que está nela

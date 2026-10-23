@@ -73,3 +73,17 @@ def test_colar_de_verdade_pelo_autocad_sem_janela(monkeypatch, tmp_path):
     assert r["base"] == [50000.0, 20000.0] and r["resumo"]["fator"] == 1.0
     texto = next(e for e in r["entidades"] if e["tipo"] == "texto")
     assert texto["texto"] == "CH1" and texto["altura"] == pytest.approx(2.5)          # 25 mm no desenho de 1:10
+
+
+def test_copia_do_programa_vale_enquanto_nada_foi_copiado_fora(monkeypatch):
+    """o Ctrl+C do CAD guarda o número da área de transferência do Windows; no Ctrl+V, o mesmo número = a cópia do CAD
+    (sem ler a área de transferência); outro número = a do AutoCAD (23/10, copiar e colar entre desenhos)"""
+    import app
+    monkeypatch.setattr(do_autocad, "sequencia", lambda: 41)
+    assert app.colar_do_autocad("teste-colar", {"so_sequencia": True}) == {"sequencia": 41}
+    assert app.colar_do_autocad("teste-colar", {"sequencia": 41}) == {"interno": True, "sequencia": 41}
+    lido = []
+    monkeypatch.setattr(do_autocad, "o_que_colar", lambda: lido.append(1) or (_ for _ in ()).throw(ErroDeDados("nada do AutoCAD")))
+    with pytest.raises(ErroDeDados):
+        app.colar_do_autocad("teste-colar", {"sequencia": 40})      # mudou: vai ler a do Windows
+    assert lido == [1]
