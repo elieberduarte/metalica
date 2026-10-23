@@ -53,6 +53,7 @@ PADRAO = {
     "duas_pecas": [],                           # elevações que são duas peças: a viga de transição e a tesoura em cima
     "sem_tesoura_de_cima": [],                  # dessas, as que o projeto confirma sem a tesoura de cima (só a viga)
     "bases_da_locacao": False,                  # as placas de base da locação com os detalhes "DET. DO CHn" (bases_locacao)
+    "suportes_do_projeto": False,               # os suportes de terça do detalhe ("SUPORTE DE TERÇA ST1"), não o L 3" padrão
 }
 
 #: camadas de anotação: não têm peça
@@ -4877,6 +4878,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                                            "pela cota do corte, que bate com os espelhos iguais" if esc.get("patamar_por") == "cortes"
                                            else "pelos espelhos iguais; o corte não confirmou"))
 
+    suportes_feitos = None
     # ---------------------------------------------------------------- placas de base
     # as placas da locação com os furos, a espessura e os chumbadores do detalhe "DET. DO CHn-nX" (Posto CB, 22/10/2026:
     # 82 placas, nenhuma no modelo); só no projeto que pede (`bases_da_locacao`), até o usuário aprovar o jeito
@@ -5292,8 +5294,19 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         from nucleo3d import telhas_cobertura as _tc
         al = _tc.alinhar_tercas([p_["ent"] for p_ in pecas if p_["papel"] == "terça"],
                                 [p_["ent"] for p_ in pecas if p_["ent"].tipo == "barra"])
-        for p0_, p1_, apoio_ in al["suportes"]:
-            barra(p0_, p1_, _tc.SUPORTE_PADRAO, "apoio_terca", "Terças", None, 0.0, {"planta": "SUPORTE DE TERÇA", "apoio": apoio_})
+        # os suportes de terça: os do projeto ("SUPORTE DE TERÇA ST1 - 400X", a chapa em pé parafusada na alma, em todo
+        # apoio — o Posto, decisão do usuário de 23/10/2026) ou o L 3" padrão onde a terça sobe ao plano da água
+        dets_st = {}
+        if par.get("suportes_do_projeto"):
+            from nucleo3d import suportes_terca as _st
+            dets_st = _st.detalhes(ents)
+        if not dets_st:
+            for p0_, p1_, apoio_ in al["suportes"]:
+                barra(p0_, p1_, _tc.SUPORTE_PADRAO, "apoio_terca", "Terças", None, 0.0, {"planta": "SUPORTE DE TERÇA", "apoio": apoio_})
+        else:
+            suportes_feitos = _st.lancar(doc, [p_["ent"] for p_ in pecas if p_["papel"] == "terça"],
+                                         [p_["ent"] for p_ in pecas if p_["ent"].tipo == "barra" and p_["ent"].camada == "Treliças"
+                                          and p_["papel"] in ("banzo", "apoio_terca")], dets_st, aco, chapas_postas, avisos)
         no_plano = {"calha": len(al["calha"]), "tortas": len(al["tortas"]), "suportes": len(al["suportes"])}
         if al["calha"] or al["tortas"]:
             avisos.append("Terças no plano da água (a telha reta): %d terça(s) da borda da água (junto da calha, sentadas na "
@@ -5632,6 +5645,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     resumo["camadas_2d"] = camadas_2d
     resumo["tercas_no_plano"] = no_plano
     resumo["escadas"] = escadas_feitas
+    if suportes_feitos is not None:
+        resumo["suportes_terca"] = suportes_feitos
     if gussets_postas:
         resumo["gussets"] = dict(gussets_postas)
     if bases_feitas is not None:
