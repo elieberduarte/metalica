@@ -370,3 +370,137 @@ def _dentro_poligono(p, poly) -> bool:
         if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
             dentro = not dentro
     return dentro
+
+
+#: o detalhe da chapa do pé do pilar inclinado: "DET. DA C1 - 4X"
+_TITULO_PE = re.compile(r"^\s*DET\.?\s*D[AO]\s+(C\s*\d+[A-Z]?)\s*-\s*(\d+)\s*X", re.I)
+
+
+def detalhes_do_pe(ents: Sequence[dict]) -> Dict[str, dict]:
+    """{"C1": {qtd, base, altura, t, angulo}}: o polígono em tamanho real acima do título — a base na placa, o lado em pé
+    na outra ponta e a hipotenusa na face de baixo da perna (o ângulo dela no detalhe)"""
+    out: Dict[str, dict] = {}
+    textos = [e for e in ents if e.get("tipo") == "texto"]
+    for t in textos:
+        m = _TITULO_PE.match(str(t.get("texto") or ""))
+        if not m:
+            continue
+        tx, ty = t["posicao"][0], t["posicao"][1]
+        melhor = None
+        for e in ents:
+            if e.get("tipo") != "polilinha" or len(e.get("vertices") or []) < 4:
+                continue
+            vs = []
+            for v in e["vertices"]:
+                if not vs or math.dist(vs[-1], (v[0], v[1])) > 0.5:
+                    vs.append((v[0], v[1]))
+            if len(vs) > 3 and math.dist(vs[0], vs[-1]) < 0.5:
+                vs.pop()
+            x0, y0, x1, y1 = _caixa(vs)
+            if not (-300.0 <= x0 - tx <= 1000.0 and 100.0 <= y0 - ty <= 1500.0 and x1 - x0 >= 200.0):
+                continue
+            if melhor is None or (x1 - x0) * (y1 - y0) > melhor[0]:
+                melhor = ((x1 - x0) * (y1 - y0), vs, (x0, y0, x1, y1))
+        if melhor is None:
+            continue
+        _a, vs, (x0, y0, x1, y1) = melhor
+        base = x1 - x0
+        # o lado em pé: os vértices na ponta (x1 ou x0) que tem mais de um; a altura dele
+        lado = [v for v in vs if abs(v[0] - x1) < 1.0]
+        lado = lado if len(lado) >= 2 else [v for v in vs if abs(v[0] - x0) < 1.0]
+        altura = max(v[1] for v in lado) - min(v[1] for v in lado) if len(lado) >= 2 else None
+        # a hipotenusa: a aresta mais comprida que não é horizontal nem vertical
+        ars = [(math.dist(vs[i], vs[(i + 1) % len(vs)]), vs[i], vs[(i + 1) % len(vs)]) for i in range(len(vs))]
+        incl = [q for q in ars if abs(q[1][0] - q[2][0]) > 1.0 and abs(q[1][1] - q[2][1]) > 1.0]
+        ang = None
+        if incl:
+            _l, p, q = max(incl)
+            ang = round(math.degrees(math.atan2(abs(q[1] - p[1]), abs(q[0] - p[0]))), 1)
+        esp = sorted((math.dist(e["posicao"][:2], ((x0 + x1) / 2, (y0 + y1) / 2)), e["texto"]) for e in textos
+                     if re.search(r"#\s*[\d/]+", str(e.get("texto") or "")) and abs(e["posicao"][0] - tx) < 1200.0
+                     and abs(e["posicao"][1] - ty) < 1500.0)
+        t_mm = None
+        if esp:
+            v = re.search(r"#\s*([\d/,.]+)", esp[0][1]).group(1).replace(",", ".")
+            t_mm = _POL.get(v) if "/" in v else float(v)
+        out[_nome(m.group(1))] = {"qtd": int(m.group(2)), "base": round(base, 1),
+                                  "altura": round(altura, 1) if altura else None, "t": t_mm, "angulo": ang}
+    return out
+
+
+def chapas_do_pe(doc, dets_pe: Dict[str, dict], aco: str, chapas_postas: list, avisos: List[str]) -> int:
+    """A chapa do pé do pilar inclinado (a C1 do PM8 do Posto, 4×: 2 pernas × 2 faces) pela perna do 3D (decisão do
+    usuário, 23/10/2026: o detalhe tem a hipotenusa a 50,9°, as cotas da perna dão ~52,5° — vale a perna como está):
+    no plano da perna, uma em cada face do caixão, assentada na placa. A hipotenusa continua a face de trás da perna até
+    a placa, a base e o lado em pé são os do detalhe e o topo, perpendicular à perna, é onde ela termina — a perna apoia
+    nas duas chapas (o topo tem a altura dela: 250 no PM8), e o pé dela é recortado até ali."""
+    from nucleo3d.modelo import Chapa, origem_de
+    from nucleo3d.de_planta import _perfil
+    if not dets_pe:
+        return 0
+    nome, det = sorted(dets_pe.items())[0]
+    if not det.get("altura") or not det.get("base"):
+        return 0
+    t = det["t"] or 4.76
+    # as pernas inclinadas (mais de 15° da vertical); o caixão pelo meio dos dois Ue
+    inclinadas = []
+    for b in doc.barras:
+        if b.papel != "pilar":
+            continue
+        pe, topo = (b.inicio, b.fim) if b.inicio[2] <= b.fim[2] else (b.fim, b.inicio)
+        dz, dh = topo[2] - pe[2], math.hypot(topo[0] - pe[0], topo[1] - pe[1])
+        if dz > 0 and dh > 0.27 * dz:
+            inclinadas.append((b, pe, topo))
+    usados, n = set(), 0
+    for i, (b, pe, topo) in enumerate(inclinadas):
+        if i in usados:
+            continue
+        par = next((j for j in range(i + 1, len(inclinadas)) if j not in usados and math.dist(inclinadas[j][1], pe) < 500.0
+                    and origem_de(inclinadas[j][0]).get("caixao") and origem_de(b).get("caixao")), None)
+        grupo = [i] + ([par] if par is not None else [])
+        usados.update(grupo)
+        pe_c = tuple(sum(inclinadas[k][1][q] for k in grupo) / len(grupo) for q in range(3))
+        topo_c = tuple(sum(inclinadas[k][2][q] for k in grupo) / len(grupo) for q in range(3))
+        dh = math.hypot(topo_c[0] - pe_c[0], topo_c[1] - pe_c[1])
+        h = ((topo_c[0] - pe_c[0]) / dh, (topo_c[1] - pe_c[1]) / dh, 0.0)
+        a = (-h[1], h[0], 0.0)
+        th = math.atan2(topo_c[2] - pe_c[2], dh)
+        pf = _perfil(b.perfil)
+        meia_d = float(pf.d or 250.0) / 2.0 if pf is not None else 125.0          # a face de baixo, no plano da perna
+        if pf is not None and pf.bf:
+            meia_l = float(pf.bf) if par is not None else float(pf.bf) / 2.0     # o caixão: as duas abas de largura
+        else:
+            meia_l = 125.0
+        rec = b.recorte_inicio if b.inicio[2] <= b.fim[2] else b.recorte_fim
+        z0 = pe_c[2] + float(rec or 0.0)                                          # o topo da placa
+        # no plano da perna (s ao longo de h a partir do pé do eixo, z acima da placa): o eixo cruza a placa em s0 e a
+        # face de trás dela, meia altura atrás, em s0 − meia_d / sen
+        s0 = (z0 - pe_c[2]) / math.tan(th)
+        cs, sn = math.cos(th), math.sin(th)
+        A = (s0 - meia_d / sn, 0.0)
+        B_ = (A[0] + det["base"], 0.0)
+        C = (B_[0], det["altura"])
+        tD = (C[0] - A[0]) * cs + C[1] * sn
+        D = (A[0] + tD * cs, tD * sn)
+        # a perna começa no meio do topo da chapa (no eixo dela): o recorte do pé até ali
+        M = ((C[0] + D[0]) / 2.0, (C[1] + D[1]) / 2.0)
+        corte = (M[0] - s0) * cs + M[1] * sn + (z0 - pe_c[2]) / sn
+        o = {"locacao": "%s de %s" % (nome, origem_de(b).get("locacao") or "pilar"), "chapa_do_pe": nome}
+        if det.get("angulo") and abs(det["angulo"] - math.degrees(th)) > 0.5:
+            o["a_conferir"] = "o detalhe da %s tem a perna a %.1f° e a do 3D está a %.1f°: segue a do 3D" % (
+                nome, det["angulo"], math.degrees(th))
+        for lado in (1.0, -1.0):
+            off = lado * (meia_l - t / 2.0)
+            ch = Chapa(nome="Chapa do pé %s" % nome, origem=(pe_c[0] + a[0] * off, pe_c[1] + a[1] * off, z0),
+                       eixo_x=h, eixo_y=(0.0, 0.0, 1.0), contorno=[A, B_, C, D], espessura=t, centrada=True, aco=aco)
+            ch.camada = "Chapas"
+            ch.atributos = {"tipo_ifc": "IfcPlate", "origem": dict(o)}
+            doc.add(ch)
+            chapas_postas.append(ch)
+            n += 1
+        for k in grupo:
+            bk = inclinadas[k][0]
+            setattr(bk, "recorte_inicio" if bk.inicio[2] <= bk.fim[2] else "recorte_fim", round(corte, 1))
+    if n and det["qtd"] and n != det["qtd"]:
+        avisos.append("Chapas do pé %s: %d no modelo e o detalhe diz %dX — confira." % (nome, n, det["qtd"]))
+    return n

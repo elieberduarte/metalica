@@ -105,3 +105,34 @@ def test_placas_e_chumbadores_no_modelo():
     assert all(max(q[1] for q in c.contorno) == 150.0 and abs(c.espessura - 6.35) < 1e-6 for c in nv)
     assert sorted(round(math.dist(c.origem[:2], (20000.0, 10000.0))) for c in nv) == [200, 200]
     assert "a_conferir" not in nv[0].atributos["origem"]          # 6X para 3 placas: as 2 desenhadas em cada
+
+
+def test_chapa_do_pe_do_pilar_inclinado():
+    """a C1 do PM8 do Posto (DET. DA C1 - 4X: base 700, lado em pé 465, a hipotenusa na face de trás da perna a 50,9°, o
+    topo perpendicular a ela com a altura da perna): uma em cada face do caixão, assentada na placa, e a perna começa no
+    topo dela (decisão do usuário, 23/10/2026: segue a perna do 3D)"""
+    ents = [{"tipo": "texto", "texto": "DET. DA C1 - 4X", "posicao": [0, 0, 0]},
+            {"tipo": "texto", "texto": '# 3/16"', "posicao": [385, 487, 0]},
+            {"tipo": "polilinha", "fechada": False,
+             "vertices": [[709, 305, 0], [9, 305, 0], [515, 927, 0], [709, 770, 0], [709, 305, 0]]}]
+    det = BL.detalhes_do_pe(ents)
+    assert det == {"C1": {"qtd": 4, "base": 700.0, "altura": 465.0, "t": 4.76, "angulo": 50.9}}, det
+    doc = Documento()
+    th = math.radians(50.9)
+    for lado in (1.0, -1.0):                                   # o caixão 2Ue 250×125: os dois Ue a ±85,5 do meio
+        b = Barra(nome="p", inicio=(0.0, 85.5 * lado, 0.0), fim=(8000.0 / math.tan(th), 85.5 * lado, 8000.0),
+                  perfil="Ue 250×125×25×4,75", papel="pilar")
+        b.atributos = {"origem": {"caixao": True, "locacao": "PM8"}}
+        b.recorte_inicio = 15.88                               # na placa CH7
+        doc.add(b)
+    chapas, avisos = [], []
+    assert BL.chapas_do_pe(doc, det, "ASTM A36", chapas, avisos) == 2
+    assert {round(c.origem[1], 1) for c in chapas} == {122.6, -122.6}                  # nas faces do caixão
+    assert all(abs(c.origem[2] - 15.88) < 1e-6 and c.eixo_x == (1.0, 0.0, 0.0) for c in chapas)
+    A, B, C, D = chapas[0].contorno
+    assert abs(B[0] - A[0] - 700.0) < 0.1 and abs(C[1] - 465.0) < 0.1
+    assert abs(math.dist(C, D) - 250.0) < 1.5                                          # o topo: a altura da perna
+    # a perna começa no topo da chapa
+    p = doc.barras[0]
+    L = math.dist(p.inicio, p.fim)
+    assert abs(p.inicio[2] + (p.fim[2] - p.inicio[2]) * p.recorte_inicio / L - (15.88 + (C[1] + D[1]) / 2)) < 1.0

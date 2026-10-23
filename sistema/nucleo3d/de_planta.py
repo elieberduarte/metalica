@@ -4892,6 +4892,9 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         placas_b += bases_locacao.placas_sem_contorno(placas_b, bases_locacao.rotulos(ents, folga_b), dets_b, doc, mover_b)
         bases_feitas = bases_locacao.lancar(doc, placas_b, dets_b, mover_b, base, aco, barra, chapas_postas, avisos,
                                             bases_locacao.nervuras(ents))
+        # a chapa do pé do pilar inclinado ("DET. DA C1 - 4X", o PM8), pela perna do 3D
+        bases_feitas["chapas_do_pe"] = bases_locacao.chapas_do_pe(doc, bases_locacao.detalhes_do_pe(ents), aco,
+                                                                  chapas_postas, avisos)
 
     # ---------------------------------------------------------------- a alma na face do banzo
     # o encaixe de fábrica (alma_na_face.encaixar, o mesmo da tesoura pelo desenho e do 3D pelos quadros): montantes e
