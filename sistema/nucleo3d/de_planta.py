@@ -1231,14 +1231,17 @@ def _centro_do_texto(t: dict, escala: float = 20.0) -> Tuple[float, float]:
     return (x + dx * (ini + w / 2.0) + nx * sobe, y + dy * (ini + w / 2.0) + ny * sobe)
 
 
-def _assentar_tercas(tercas, banzos) -> dict:
+def _assentar_tercas(tercas, banzos, barreiras=()) -> dict:
     """Cada terça na reta que assenta no topo dos banzos que ela cruza em planta, sem furar nenhum: o topo de cada um pela
     seção e pelo giro (o U deitado de boca para baixo tem o topo nas costas, a xg do eixo — 9,9 mm no U 100×40, 28 no U
     200×100; antes valia um banzo de 40 mm para todos, e a terça ficava 10 mm acima nos U 100×40 e furava os maiores), e a
     inclinação a que melhor acompanha os apoios, erguida até tocar o mais alto: onde as treliças vizinhas não ficam numa
     reta, sobra folga (o calço), nunca a terça dentro do banzo. Quem chama passa só os apoios (o banzo das tesouras, treliças e COMP e
     o U de apoio das terças; painel e transição são barreira); o banzo mais de 400 mm acima ou 300 abaixo da terça
-    (outro nível) não conta. Muda inicio/fim das terças; devolve as contagens."""
+    (outro nível) não conta. A terça com um apoio só (a TC9 do Posto V2 entre a TESOURA 14 e o PAINEL 15 da borda: ia pela
+    inclinação desenhada, subia 300 mm até a platibanda e a telha fazia degrau — COB-04, 23/10/2026) apoia também num
+    banzo das `barreiras` (painel, transição) que ela cruza: o mais perto da altura do outro apoio (o banzo do telhado,
+    não a platibanda). Muda inicio/fim das terças; devolve as contagens."""
     from nucleo3d.geometria import base_local, secao
 
     def ext_z(e):
@@ -1251,11 +1254,13 @@ def _assentar_tercas(tercas, banzos) -> dict:
         return min(zs), max(zs)
 
     grade = collections.defaultdict(list)
-    for b in banzos:
-        (x0, y0), (x1, y1) = b.inicio[:2], b.fim[:2]
-        for gx in range(int(min(x0, x1) // 3000), int(max(x0, x1) // 3000) + 1):
-            for gy in range(int(min(y0, y1) // 3000), int(max(y0, y1) // 3000) + 1):
-                grade[(gx, gy)].append(b)
+    grade_bar = collections.defaultdict(list)
+    for lista, gr in ((banzos, grade), (barreiras, grade_bar)):
+        for b in lista:
+            (x0, y0), (x1, y1) = b.inicio[:2], b.fim[:2]
+            for gx in range(int(min(x0, x1) // 3000), int(max(x0, x1) // 3000) + 1):
+                for gy in range(int(min(y0, y1) // 3000), int(max(y0, y1) // 3000) + 1):
+                    gr[(gx, gy)].append(b)
     topo_b: Dict[int, float] = {}
     out = {"acertadas": 0, "calcos": 0, "maior_calco": 0}
     for t in tercas:
@@ -1264,6 +1269,32 @@ def _assentar_tercas(tercas, banzos) -> dict:
         if L < 1.0:
             continue
         abaixo_t, _acima = ext_z(t)
+        def cruzados(gr, janela=True):
+            """(s ao longo da terça, z do topo) de cada banzo da grade que a terça cruza — na altura dela (`janela`), ou
+            qualquer um (a barreira: quem escolhe é a altura do outro apoio)"""
+            out_c, vistos = [], set()
+            for gx in range(int(min(a[0], c[0]) // 3000), int(max(a[0], c[0]) // 3000) + 1):
+                for gy in range(int(min(a[1], c[1]) // 3000), int(max(a[1], c[1]) // 3000) + 1):
+                    for b in gr.get((gx, gy), []):
+                        if id(b) in vistos:
+                            continue
+                        vistos.add(id(b))
+                        r = (c[0] - a[0], c[1] - a[1])
+                        q = (b.fim[0] - b.inicio[0], b.fim[1] - b.inicio[1])
+                        den = r[0] * q[1] - r[1] * q[0]
+                        if abs(den) < 1e-6 * L * max(1.0, math.hypot(*q)):
+                            continue
+                        tt = ((b.inicio[0] - a[0]) * q[1] - (b.inicio[1] - a[1]) * q[0]) / den
+                        uu = ((b.inicio[0] - a[0]) * r[1] - (b.inicio[1] - a[1]) * r[0]) / den
+                        if not (-150.0 <= tt * L <= L + 150.0 and 0.0 <= uu <= 1.0):
+                            continue
+                        if id(b) not in topo_b:
+                            topo_b[id(b)] = ext_z(b)[1]
+                        zb = b.inicio[2] + (b.fim[2] - b.inicio[2]) * uu + topo_b[id(b)]
+                        zt_fundo = a[2] + (c[2] - a[2]) * tt + abaixo_t
+                        if not janela or -400.0 <= zt_fundo - zb <= 300.0:
+                            out_c.append((tt * L, zb))
+            return out_c
         vistos = set()
         req: Dict[tuple, Tuple[float, float]] = {}          # (banzo, posição) → (s, z do fundo da terça para assentar)
         for gx in range(int(min(a[0], c[0]) // 3000), int(max(a[0], c[0]) // 3000) + 1):
@@ -1294,6 +1325,14 @@ def _assentar_tercas(tercas, banzos) -> dict:
                         req[k] = (tt * L, zb)
         if not req:
             continue
+        if len(req) == 1 and barreiras:
+            # um apoio só: o banzo da barreira que a terça cruza longe dele, na altura mais perto da do apoio
+            s1, z1 = list(req.values())[0]
+            outros = [(abs(zb - z1), sb, zb) for sb, zb in cruzados(grade_bar, janela=False)
+                      if abs(sb - s1) > 500.0 and abs(zb - z1) <= 400.0]
+            if outros:
+                _d, sb, zb = min(outros)
+                req[round(sb / 50.0)] = (sb, zb)
         pts = sorted(req.values())
         if len(pts) >= 2:
             sm = sum(p_[0] for p_ in pts) / len(pts)
@@ -1529,6 +1568,23 @@ def _dist_pt_seg2(p, a, b) -> float:
     l2 = dx * dx + dy * dy
     t = 0.0 if l2 < 1e-9 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2))
     return math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)
+
+
+def _decisao_vale(entradas, t, raio: float = 1500.0) -> bool:
+    """a decisão do projeto vale para este trecho da planta? A entrada é o nome da elevação (todas as cópias dela) ou
+    {nome, ponto}: só a cópia que passa a menos de `raio` do ponto (coordenadas do desenho) — a TRANSIÇÃO 3 do Posto V2
+    sem a tesoura de cima só na cópia de x 34,0 (o usuário, 23/10/2026: na de x 21,4 "retirou esse lado de forma errada")"""
+    nome = _sem_acento(str(t.nome)).upper().strip()
+    for e in entradas or []:
+        if isinstance(e, dict):
+            if _sem_acento(str(e.get("nome") or "")).upper().strip() != nome:
+                continue
+            q = e.get("ponto")
+            if not q or t.caminho.projetar((float(q[0]), float(q[1])))[1] < raio:
+                return True
+        elif _sem_acento(str(e)).upper().strip() == nome:
+            return True
+    return False
 
 
 def _partes_da_elevacao(el: "Elevacao", dividir: bool, sem_cima: bool = False) -> List[Tuple[str, List["Membro"]]]:
@@ -4128,7 +4184,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         dp_ = [_sem_acento(str(n)).upper().strip() for n in (par.get("duas_pecas") or [])]
         if pai in dp_ and novo not in dp_:
             par["duas_pecas"] = list(par.get("duas_pecas") or []) + [novo]
-        sc_ = [_sem_acento(str(n)).upper().strip() for n in (par.get("sem_tesoura_de_cima") or [])]
+        sc_ = [_sem_acento(str(n)).upper().strip() for n in (par.get("sem_tesoura_de_cima") or []) if not isinstance(n, dict)]
         if pai in sc_ and novo not in sc_:
             par["sem_tesoura_de_cima"] = list(par.get("sem_tesoura_de_cima") or []) + [novo]
     # os pilares da locação vêm antes das treliças: a treliça termina em cima deles
@@ -4229,7 +4285,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     vigas_feitas: List[tuple] = []
     duas_pecas = {_sem_acento(str(n)).upper().strip() for n in (par.get("duas_pecas") or [])}
     # a elevação em duas peças de que o projeto tirou a tesoura de cima (a TRANSIÇÃO 3 do Posto V2, 22/10/2026)
-    sem_tesoura_de_cima = {_sem_acento(str(n)).upper().strip() for n in (par.get("sem_tesoura_de_cima") or [])}
+    sem_tesoura_de_cima = list(par.get("sem_tesoura_de_cima") or [])       # nomes, ou {nome, ponto} para uma cópia só
 
     def viga_curva(t, c, pf, pa, z):
         """a viga VM de borda curva como a planta desenha: cada trecho reto uma barra e cada arco
@@ -4369,7 +4425,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             # a chapa de nó entre a aba do banzo e a cantoneira (a gusset desenhada na elevação)
             t_gusset_el = max(((gussets_det.get(g[4]) or {}).get("t") or 4.76 for g in el.gussets), default=0.0)
             for sufixo, membros in _partes_da_elevacao(el, _sem_acento(t.nome).upper() in duas_pecas,
-                                                       _sem_acento(t.nome).upper() in sem_tesoura_de_cima):
+                                                       _decisao_vale(sem_tesoura_de_cima, t)):
                 membros, n_fora = _alma_fora_dos_banzos(membros)
                 alma_extra["fora"] += n_fora
                 # a meia diagonal é achada no desenho (antes dos nós irem ao eixo: o nó unido ao do montante move a ponta
@@ -5329,7 +5385,9 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         # passam por cima das terças do telhado e as erguiam até 23 cm (12/10)
         ass = _assentar_tercas([p_["ent"] for p_ in pecas if p_["papel"] == "terça"],
                                [p_["ent"] for p_ in pecas if p_["ent"].tipo == "barra" and p_["ent"].camada == "Treliças" and (
-                                   (p_["papel"] == "banzo" and not _barreira(p_["ent"])) or p_["papel"] == "apoio_terca")])
+                                   (p_["papel"] == "banzo" and not _barreira(p_["ent"])) or p_["papel"] == "apoio_terca")],
+                               barreiras=[p_["ent"] for p_ in pecas if p_["ent"].tipo == "barra" and p_["ent"].camada == "Treliças"
+                                          and p_["papel"] == "banzo" and _barreira(p_["ent"])])
         if ass["calcos"]:
             avisos.append("Terças assentadas no topo dos banzos (a seção e o giro de cada um): %d terça(s) acertada(s); em %d "
                           "apoio(s) os banzos não ficam numa reta e sobra folga de 15 a %d mm sob a terça (calço) — confira a altura "

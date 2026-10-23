@@ -1354,3 +1354,37 @@ def test_deslocamento_entre_plantas_pela_serie_de_cada_balao():
     # as duas plantas com a mesma margem (o caso de sempre): o mesmo resultado de antes
     ref2 = {k: (v[0] + 10.0, v[1] - 20.0) for k, v in outra.items()}
     assert de_planta.deslocamento_entre(ref2, outra) == (10.0, -20.0, 5)
+
+
+def test_decisao_por_copia_da_elevacao():
+    """a TRANSIÇÃO 3 do Posto V2 tem duas cópias (x 21,4, continuando a TRANSIÇÃO 2, e x 34,0); o projetista tirou a tesoura
+    de cima só da de x 34,0 — na outra, a crista da T2 acabava de repente e o telhado ficava com um triângulo aberto (o
+    usuário, 23/10/2026: "retirou esse lado de forma errada"). A decisão pelo nome vale para as duas; com o ponto, só para
+    a cópia que passa perto dele"""
+    C = de_planta.Caminho
+    t21 = de_planta.Trecho(caminho=C("reta", a=(394400.0, 65600.0), b=(394400.0, 72300.0)), nome="TRANSICAO 3", familia="TRANSICAO")
+    t34 = de_planta.Trecho(caminho=C("reta", a=(407000.0, 65600.0), b=(407000.0, 72300.0)), nome="TRANSICAO 3", familia="TRANSICAO")
+    so_34 = [{"nome": "TRANSICAO 3", "ponto": [407000.0, 68950.0]}]
+    assert de_planta._decisao_vale(so_34, t34) and not de_planta._decisao_vale(so_34, t21)
+    assert de_planta._decisao_vale(["TRANSIÇÃO 3"], t21) and de_planta._decisao_vale(["TRANSIÇÃO 3"], t34)
+    assert not de_planta._decisao_vale([{"nome": "TRANSICAO 6", "ponto": [407000.0, 68950.0]}], t34)
+
+
+def test_terca_com_um_apoio_vai_ao_banzo_do_painel_da_borda():
+    """o canto do Posto V2 (23/10/2026, o usuário: "verifique porque as telhas levantaram nesse canto"): a TC9 vai da
+    TESOURA 14 (topo 7,13) ao PAINEL 15 da borda, que tem a platibanda em cima (7,65) e o banzo do telhado no meio; o painel
+    é barreira (a terça não sobe na platibanda), a terça ficava com um apoio só e saía inclinada pela continuação da
+    vizinha (7,45 na borda, degrau de 293 mm na telha — COB-04). Agora o banzo da barreira na altura do outro apoio é o
+    segundo apoio"""
+    from nucleo3d.modelo import Barra
+    banzo = lambda y, z: Barra(inicio=(0.0, y, z), fim=(4000.0, y, z), perfil="U 100×40×2,25 (FF)", rotacao=270.0, papel="banzo")
+    tesoura = banzo(0.0, 7100.0)
+    platibanda, do_meio = banzo(2600.0, 7600.0), banzo(2600.0, 7050.0)
+    # a terça desenhada subindo para a borda (como a continuação da vizinha)
+    t = Barra(inicio=(2000.0, 0.0, 7160.0), fim=(2000.0, 2600.0, 7430.0), perfil="U 100×40×2,65 (FF)", rotacao=0.0, papel="terça")
+    de_planta._assentar_tercas([t], [tesoura], barreiras=[platibanda, do_meio])
+    assert abs((t.fim[2] - t.inicio[2]) - (7050.0 - 7100.0)) < 1.0, (t.inicio, t.fim)     # do topo da tesoura ao do banzo do meio
+    # sem barreira, como antes: um apoio só, a inclinação desenhada
+    t2 = Barra(inicio=(2000.0, 0.0, 7160.0), fim=(2000.0, 2600.0, 7430.0), perfil="U 100×40×2,65 (FF)", rotacao=0.0, papel="terça")
+    de_planta._assentar_tercas([t2], [tesoura])
+    assert abs((t2.fim[2] - t2.inicio[2]) - 270.0) < 1.0
