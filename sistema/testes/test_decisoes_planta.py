@@ -18,3 +18,10 @@ def test_as_chaves_das_chapas_ficam_gravadas_e_voltam():
     assert app._com_decisoes_planta({"suportes_do_projeto": False}, novas)["suportes_do_projeto"] is False
     # projeto sem a decisão: nada muda (o L 3" padrão, sem placas)
     assert "bases_da_locacao" not in app._com_decisoes_planta({}, {"deitadas": ["TRELICA 1"]})
+
+
+def test_a_passarela_fica_gravada():
+    """a passarela de manutenção (o quadro {planta, nivel}) também volta na montagem pela tela"""
+    novas = app._decisoes_planta_novas({"passarela": {"planta": "PLANTA DA PASSARELA", "nivel": 7600}})
+    assert novas == {"passarela": {"planta": "PLANTA DA PASSARELA", "nivel": 7600}}
+    assert app._com_decisoes_planta({}, novas)["passarela"]["nivel"] == 7600

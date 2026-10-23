@@ -54,6 +54,7 @@ PADRAO = {
     "sem_tesoura_de_cima": [],                  # dessas, as que o projeto confirma sem a tesoura de cima (só a viga)
     "bases_da_locacao": False,                  # as placas de base da locação com os detalhes "DET. DO CHn" (bases_locacao)
     "suportes_do_projeto": False,               # os suportes de terça do detalhe ("SUPORTE DE TERÇA ST1"), não o L 3" padrão
+    "passarela": None,                          # {planta, nivel}: a passarela de manutenção pela planta dela (passarela.py)
 }
 
 #: camadas de anotação: não têm peça
@@ -653,18 +654,48 @@ def baloes(ents, caixa, folga: float = 4000.0) -> Dict[str, Ponto2]:
     return {k: v[0] for k, v in out.items() if len(v) >= 1}
 
 
+def _serie_dos_baloes(bal: Dict[str, Ponto2]) -> Dict[str, Optional[str]]:
+    """{nome: "x" | "y" | None}: o que cada balão diz — a série (letras ou números) empilhada na margem marca as linhas
+    horizontais e só diz o y; a em fila, as verticais, só o x; a espalhada, os dois"""
+    out: Dict[str, Optional[str]] = {}
+    for letras in (True, False):
+        ks = [k for k in bal if bool(re.match(r"[A-Za-z]", k)) == letras]
+        if len(ks) < 2:
+            out.update({k: None for k in ks})
+            continue
+        xs, ys = [bal[k][0] for k in ks], [bal[k][1] for k in ks]
+        ex, ey = max(xs) - min(xs), max(ys) - min(ys)
+        so = "y" if ex < 0.1 * ey else ("x" if ey < 0.1 * ex else None)
+        out.update({k: so for k in ks})
+    return out
+
+
 def deslocamento_entre(ref: Dict[str, Ponto2], outra: Dict[str, Ponto2]) -> Optional[Tuple[float, float, int]]:
     """o quanto somar às coordenadas de `outra` para cair sobre `ref` (mediana dos balões
-    de mesmo nome), e quantos balões concordaram"""
-    ds = [(ref[k][0] - outra[k][0], ref[k][1] - outra[k][1]) for k in ref if k in outra]
-    if not ds:
+    de mesmo nome), e quantos balões concordaram. O balão da série empilhada na margem (as letras) só vale para o y, o da
+    série em fila (os números) só para o x: a margem onde o desenhista põe a fila muda de uma planta para outra (a planta
+    da passarela do Posto: as letras 1,24 m mais longe do eixo 1 que na de 6,00 — 23/10/2026)"""
+    comuns = [k for k in ref if k in outra]
+    if not comuns:
         return None
-    mx = sorted(d[0] for d in ds)[len(ds) // 2]
-    my = sorted(d[1] for d in ds)[len(ds) // 2]
-    ok = [d for d in ds if abs(d[0] - mx) < 50 and abs(d[1] - my) < 50]
-    if not ok:
+    s_r, s_o = _serie_dos_baloes(ref), _serie_dos_baloes(outra)
+
+    def diz(k, eixo):
+        return s_r.get(k) in (None, eixo) and s_o.get(k) in (None, eixo)
+    dxs = [(k, ref[k][0] - outra[k][0]) for k in comuns if diz(k, "x")]
+    dys = [(k, ref[k][1] - outra[k][1]) for k in comuns if diz(k, "y")]
+    if not dxs or not dys:
+        # uma das séries não está nas duas plantas: como antes, cada balão pelos dois
+        dxs = [(k, ref[k][0] - outra[k][0]) for k in comuns]
+        dys = [(k, ref[k][1] - outra[k][1]) for k in comuns]
+    mx = sorted(d for _k, d in dxs)[len(dxs) // 2]
+    my = sorted(d for _k, d in dys)[len(dys) // 2]
+    ok_x = [d for _k, d in dxs if abs(d - mx) < 50]
+    ok_y = [d for _k, d in dys if abs(d - my) < 50]
+    if not ok_x or not ok_y:
         return None
-    return (sum(d[0] for d in ok) / len(ok), sum(d[1] for d in ok) / len(ok), len(ok))
+    concordam = {k for k, d in dxs if abs(d - mx) < 50} | {k for k, d in dys if abs(d - my) < 50}
+    return (sum(ok_x) / len(ok_x), sum(ok_y) / len(ok_y), len(concordam))
 
 
 # =====================================================================================
@@ -5574,6 +5605,37 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         if sem_nome_o:
             avisos.append("%s: %d linha(s) de terça sem nome TC nem VM ao lado; ficaram de fora — confira." % (titulo_o, sem_nome_o))
 
+    # ---------------------------------------------------------------- passarela de manutenção
+    # a passarela pela planta dela (Posto CB, folha 14, 23/10/2026): encaixada pelos balões dos eixos como as outras
+    # plantas, no nível do piso que o corte dá; o pilarete sobre a telha (as terças já montadas)
+    passarela_feita = None
+    cfg_p = par.get("passarela") or None
+    if cfg_p and cfg_p.get("planta"):
+        from nucleo3d import passarela as _ps
+        t_p = _achar_titulo(textos, str(cfg_p["planta"]))
+        if t_p is None:
+            avisos.append("passarela: planta \"%s\" não achada no desenho." % cfg_p["planta"])
+        else:
+            caixa_ps = bloco_do_titulo(ents, t_p)
+            lido_p = _ps.ler(ents, caixa_ps)
+            d_p = None
+            if lido_p is not None:
+                # os balões em volta do piso (o bloco do título pega também os cortes, com balões de outros eixos)
+                xs_p, ys_p = [q[0] for q in lido_p["piso"]], [q[1] for q in lido_p["piso"]]
+                d_p = deslocamento_entre(b_planta, baloes(ents, (min(xs_p), min(ys_p), max(xs_p), max(ys_p)), folga=6000.0))
+            if d_p is None or d_p[2] < 2 or lido_p is None:
+                avisos.append("passarela: a planta \"%s\" não tem balões de eixo em comum com a estrutural (ou o piso "
+                              "não foi achado); ficou de fora." % t_p["texto"].strip())
+            else:
+                fonte_2d[0] = t_p["texto"].strip()
+                deslocamentos_2d[fonte_2d[0]] = [round(d_p[0], 1), round(d_p[1], 1)]
+                doc.camadas.setdefault("Passarela", Camada(nome="Passarela"))
+                estrutura_p = [p_["ent"] for p_ in pecas if p_["ent"].tipo == "barra" and p_["papel"] in ("banzo", "pilar", "viga")
+                               and p_["ent"].camada != "Passarela"]
+                passarela_feita = _ps.lancar(doc, lido_p, lambda q: (q[0] + d_p[0], q[1] + d_p[1]), float(cfg_p.get("nivel") or 7600.0),
+                                             estrutura_p, [p_["ent"] for p_ in pecas if p_["papel"] == "terça"], barra, aco,
+                                             chapas_postas, avisos)
+
     # ---------------------------------------------------------------- suporte dos contraventos (SC1)
     # o projeto que detalha o "SUPORTE SC1" (Posto CB, folha 04: L 2"×3/16" de 90 em pé no banzo de cima, furo Ø16 —
     # o SC1 do banco de detalhes da casa): um em cada ponta do contravento, no banzo de cima da tesoura que ele trava, e
@@ -5718,6 +5780,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         resumo["suportes_terca"] = suportes_feitos
     if sc1_feitos is not None:
         resumo["suportes_contravento"] = sc1_feitos
+    if passarela_feita is not None:
+        resumo["passarela"] = passarela_feita
     if gussets_postas:
         resumo["gussets"] = dict(gussets_postas)
     if bases_feitas is not None:

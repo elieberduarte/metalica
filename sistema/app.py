@@ -909,6 +909,8 @@ def _aco_das_folhas(recebido: dict):
 #: chapas, que só os scripts de remontagem pediam)
 DECISOES_PLANTA_LISTAS = ("deitadas", "duas_pecas", "sem_tesoura_de_cima")
 DECISOES_PLANTA_CHAVES = ("bases_da_locacao", "suportes_do_projeto")
+#: e as que são um quadro inteiro: a passarela de manutenção ({planta, nivel})
+DECISOES_PLANTA_QUADROS = ("passarela",)
 
 
 def _com_decisoes_planta(par: dict, decisoes: dict) -> dict:
@@ -919,6 +921,9 @@ def _com_decisoes_planta(par: dict, decisoes: dict) -> dict:
     for k in DECISOES_PLANTA_CHAVES:
         if k not in par and k in decisoes:
             par[k] = bool(decisoes[k])
+    for k in DECISOES_PLANTA_QUADROS:
+        if k not in par and isinstance(decisoes.get(k), dict):
+            par[k] = dict(decisoes[k])
     return par
 
 
@@ -926,6 +931,7 @@ def _decisoes_planta_novas(par: dict) -> dict:
     """as decisões que a montagem deixa gravadas no projeto"""
     novas = {k: list(par[k]) for k in DECISOES_PLANTA_LISTAS if isinstance(par.get(k), (list, tuple))}
     novas.update({k: bool(par[k]) for k in DECISOES_PLANTA_CHAVES if k in par})
+    novas.update({k: dict(par[k]) for k in DECISOES_PLANTA_QUADROS if isinstance(par.get(k), dict)})
     return novas
 
 

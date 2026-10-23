@@ -1338,3 +1338,19 @@ def test_deslocar_leva_o_eixo_do_banzo_calandrado_junto():
     assert sol.atributos["banzo"]["eixo"][0][:2] == [12942.0, 33226.0] and sol.atributos["banzo"]["eixo"][1][2] == 7550.0
     assert sol.atributos["eixo"][0][:2] == [-372999.0, -45998.0]
     assert b.inicio[:2] == (12000.0, 33000.0)
+
+
+def test_deslocamento_entre_plantas_pela_serie_de_cada_balao():
+    """os balões de letra (empilhados na margem: marcam as linhas horizontais) só dizem o y; os de número (em fila no
+    alto: as linhas verticais) só o x — a margem onde o desenhista põe a fila de letras muda de uma planta para outra.
+    A PLANTA DA PASSARELA do Posto (23/10/2026): as letras 1,24 m mais longe do eixo 1 que na planta de 6,00, e a
+    passarela inteira saía 1,24 m para dentro do telhado, longe do PAINEL em que ela encosta"""
+    ref = {"1": (373966.7, 108349.5), "3": (382960.9, 108349.5),
+           "A": (370943.9, 102361.2), "C": (370943.9, 90791.0), "L": (370943.9, 48205.6)}
+    outra = {"1": (804900.0, 66706.0), "3": (813894.0, 66706.0),
+             "A": (800637.1, 60717.4), "C": (800637.1, 49147.3), "L": (800637.1, 6561.8)}
+    dx, dy, n = de_planta.deslocamento_entre(ref, outra)
+    assert abs(dx - (373966.7 - 804900.0)) < 1.0 and abs(dy - (102361.2 - 60717.4)) < 1.0 and n == 5, (dx, dy, n)
+    # as duas plantas com a mesma margem (o caso de sempre): o mesmo resultado de antes
+    ref2 = {k: (v[0] + 10.0, v[1] - 20.0) for k, v in outra.items()}
+    assert de_planta.deslocamento_entre(ref2, outra) == (10.0, -20.0, 5)
