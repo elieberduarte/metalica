@@ -71,6 +71,13 @@ FONTES = {
                 "url": "https://geo.chapeco.sc.gov.br/geoserver/wms", "camada": "gm_chapeco:ortofoto_1",
                 "srs": "EPSG:3857", "formato": "image/png",
                 "atribuicao": "Ortofoto 2023: Prefeitura de Chapecó — Geomais"},
+    # a ortofoto 2021 de Maringá (23/10, o usuário: "procurar se a cidade de Maringá tem ortofoto" — a OrtoBio): o ArcGIS
+    # Server do geoprocessamento da prefeitura (geoproc.maringa.pr.gov.br, o do GeoMaringá), público; ~13 cm por pixel, o
+    # cache dele em UTM 22S — pelo export, que devolve o bloco no Web Mercator (~1 s cada). Há também a de 2017, 2014, 2010
+    # e 2005 (ORTOFOTO_2017, IMG_2014…)
+    "maringa": {"nome": "Ortofoto 2021 — Prefeitura de Maringá", "tipo": "arcgis", "zoom_max": 20,
+                "url": "https://geoproc.maringa.pr.gov.br/arcgis/rest/services/ortofoto_2021/MapServer",
+                "atribuicao": "Ortofoto 2021: Prefeitura de Maringá — Geoprocessamento"},
 }
 # só no desenvolvimento (21/10, o usuário: "deixe o drone de Cascavel apenas para a versão dev"): no instalado sai da lista,
 # e a obra que já o escolheu (enviada a outro usuário, por exemplo) usa a reserva; METALICA_TERRENO_DEV=0/1 força
@@ -240,6 +247,16 @@ def fonte_do_endereco(url: str, camada: str = "", nome: str = "") -> dict:
         return {"tipo": "wms", "url": "https://plataforma.nacidade.com.br/geoserver/wms", "camada": camada.strip(),
                 "srs": "EPSG:3857", "formato": "image/png", "nome": (nome or "Geoportal nacidade")[:80],
                 "atribuicao": "Ortofoto: prefeitura — plataforma nacidade (Maptriz / DRZ)"}
+    if host.split(":")[0].endswith("maringa.pr.gov.br") and not camada.strip():
+        q = urllib.parse.unquote(url).lower()
+        if "/services/" not in q or "ortofoto_2021" in q:   # a página do GeoMaringá ou o serviço da de 2021
+            return "maringa"
+    m = re.search(r"^(https?://[^?]+?/rest/services/[^?]+?/(?:MapServer|ImageServer))", url, re.I)
+    if m:
+        # o ArcGIS Server de outra prefeitura (o endereço do serviço, ou um export/tile dele copiado do F12): o export
+        # devolve o bloco no Web Mercator, qualquer que seja o sistema do cache
+        return {"tipo": "arcgis", "url": m.group(1), "zoom_max": 20, "nome": (nome or "ArcGIS " + host)[:80],
+                "atribuicao": "Imagem: " + host}
     if all(k in url for k in ("{z}", "{x}", "{y}")):
         return {"tipo": "xyz", "url": url, "zoom_max": 21, "nome": (nome or host)[:80], "atribuicao": "Imagem: " + host}
     q = {k.lower(): v for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).items()}
@@ -524,7 +541,8 @@ def _bloco(fonte: dict, z: int, x: int, y: int, baixar):
     from PIL import Image
     if fonte["tipo"] == "teste":
         return None if z > fonte.get("zoom_real", 99) else _bloco_teste(z, x, y)
-    url = _url_bloco_wms(fonte, z, x, y) if fonte["tipo"] == "wms" else fonte["url"].format(z=z, x=x, y=y)
+    url = (_url_bloco_wms(fonte, z, x, y) if fonte["tipo"] == "wms" else _url_bloco_arcgis(fonte, z, x, y)
+           if fonte["tipo"] == "arcgis" else fonte["url"].format(z=z, x=x, y=y))
     dados = baixar(url)
     try:
         im = Image.open(io.BytesIO(dados))
@@ -544,6 +562,16 @@ def _url_bloco_wms(fonte: dict, z: int, x: int, y: int) -> str:
     if fonte.get("tiled"):
         q["TILED"] = "true"
     return fonte["url"] + "?" + urllib.parse.urlencode(q)
+
+
+def _url_bloco_arcgis(fonte: dict, z: int, x: int, y: int) -> str:
+    """O export do ArcGIS Server para o bloco (x, y) do nível z no Web Mercator; fora da ortofoto vem transparente."""
+    lado = 2 * math.pi * R_TERRA / 2 ** z
+    x0, y1 = -math.pi * R_TERRA + x * lado, math.pi * R_TERRA - y * lado
+    q = {"bbox": "%.6f,%.6f,%.6f,%.6f" % (x0, y1 - lado, x0 + lado, y1), "bboxSR": 3857, "imageSR": 3857,
+         "size": "256,256", "format": "png32", "transparent": "true", "f": "image"}
+    url = fonte["url"].rstrip("/")
+    return url + ("/exportImage?" if url.lower().endswith("imageserver") else "/export?") + urllib.parse.urlencode(q)
 
 
 def _nivel_com_imagem(fonte: dict, reg: dict, z: int, baixar, minimo: int = 12) -> int:
@@ -672,7 +700,7 @@ def baixar_imagem(g, s: str, corpo: Optional[dict] = None, progresso: Callable =
         cfg = dict(FONTES[cfg["reserva"]], nome="%s (o drone não cobre a obra)" % FONTES[cfg["reserva"]]["nome"])
         z = _nivel_com_imagem(cfg, reg, zoom_para(reg["lado_m"], reg["lat"], cfg.get("zoom_max", ZOOM_MAX)), baixar)
     if z is None:
-        if cfg["tipo"] == "wms":
+        if cfg["tipo"] in ("wms", "arcgis"):
             raise ErroTerreno("a imagem de %s não cobre este lugar (os blocos vêm vazios). Escolha outra fonte — a Esri "
                               "cobre o mundo todo." % (cfg.get("nome") or "WMS"))
         z = z0

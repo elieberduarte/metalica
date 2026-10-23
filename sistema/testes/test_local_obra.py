@@ -205,6 +205,31 @@ def test_imagem_pelo_wms_em_blocos(tmp_path):
         L.baixar_imagem(g, s, {}, baixar=erro)
 
 
+def test_imagem_pelo_export_do_arcgis(tmp_path):
+    """O ArcGIS Server de prefeitura (Maringá, 23/10, a OrtoBio: o cache dele é em UTM 22S): o export devolve cada bloco de
+    256 px no Web Mercator; fora da ortofoto o bloco vem transparente e o aviso é o mesmo do WMS."""
+    from PIL import Image
+    g, s = _gerente(tmp_path)
+    L.gravar(g, s, {"lat": -23.42534, "lon": -51.91442, "ponto": [0, 0], "norte": 0, "fonte": "maringa"})
+    pedidos = []
+    png = _png_ruido()
+
+    def falso(url):
+        pedidos.append(url)
+        return png
+    e = L.baixar_imagem(g, s, {"caixa": [-30_000, -20_000, 30_000, 20_000]}, baixar=falso)
+    assert pedidos and all(u.startswith(L.FONTES["maringa"]["url"] + "/export?") and "bboxSR=3857" in u
+                           and "imageSR=3857" in u and "size=256%2C256" in u and "f=image" in u for u in pedidos)
+    assert e["imagem"]["fonte"] == "Ortofoto 2021 — Prefeitura de Maringá" and e["imagem"]["zoom"] == 20
+
+    def transparente(url):
+        b = io.BytesIO()
+        Image.new("RGBA", (256, 256), (0, 0, 0, 0)).save(b, "PNG")
+        return b.getvalue()
+    with pytest.raises(L.ErroTerreno, match="não cobre"):
+        L.baixar_imagem(g, s, {}, baixar=transparente)
+
+
 def test_wms_que_nao_cobre_o_lugar_avisa(tmp_path):
     from PIL import Image
     g, s = _gerente(tmp_path)
@@ -330,6 +355,13 @@ print(json.dumps({"fontes": sorted(L.FONTES), "validar": L.validar(dict(base, fo
      "chapeco"),
     ("https://geo.chapeco.sc.gov.br/geoserver/wms?SERVICE=WMS&REQUEST=GetMap&LAYERS=gm_chapeco%3Aortofoto_2&BBOX=1,2,3,4",
      {"tipo": "wms", "url": "https://geo.chapeco.sc.gov.br/geoserver/wms", "camada": "gm_chapeco:ortofoto_2"}),
+    # Maringá (23/10, a OrtoBio): o ArcGIS Server da prefeitura — o serviço da ortofoto 2021 ou a página do GeoMaringá
+    # viram a fonte pronta; outro serviço dele (a de 2017) e o ArcGIS de outra cidade, pelo export do serviço colado
+    ("https://geoproc.maringa.pr.gov.br/arcgis/rest/services/ortofoto_2021/MapServer", "maringa"),
+    ("https://geoproc.maringa.pr.gov.br/arcgis/rest/services/ORTOFOTO_2017/MapServer/export?bbox=1,2,3,4&f=image",
+     {"tipo": "arcgis", "url": "https://geoproc.maringa.pr.gov.br/arcgis/rest/services/ORTOFOTO_2017/MapServer"}),
+    ("https://sig.outra.pr.gov.br/server/rest/services/Imagens/Orto2020/ImageServer/exportImage?bbox=1,2,3,4",
+     {"tipo": "arcgis", "url": "https://sig.outra.pr.gov.br/server/rest/services/Imagens/Orto2020/ImageServer"}),
     # o modelo de blocos
     ("https://tiles.exemplo.com/orto/{z}/{x}/{y}.jpg", {"tipo": "xyz", "url": "https://tiles.exemplo.com/orto/{z}/{x}/{y}.jpg"}),
 ])
