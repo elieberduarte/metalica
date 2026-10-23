@@ -9,7 +9,7 @@ import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia, ComandoAdicion
 import { Tela, formatarMm } from './nucleo/tela.js';
 import { acompanhar as acompanharTarefa } from '../progresso.js';
 import { Snap } from './nucleo/snap.js';
-import { FERRAMENTAS, GRUPOS, Ferramenta, textoNaUnidade } from './ferramentas.js';
+import { FERRAMENTAS, GRUPOS, Ferramenta, textoNaUnidade, ColarObjetos } from './ferramentas.js';
 import { TIPOS_DE_LINHA, ESPESSURAS, rotuloDoTipo, escalaTracejado, ESCALA_TRACEJADO } from './nucleo/tipos_linha.js';
 import { MetodosLancamentoCAD, DESENHO_LANCAMENTO } from './lancamento.js';
 import { MetodosMontarPlantaCAD } from './montar_planta.js';
@@ -984,6 +984,7 @@ class CAD {
         barra.append(b);
       }
     }
+    this.ferramentas.set(ColarObjetos.id, new ColarObjetos(this));     // o Ctrl+V do que veio do AutoCAD (fora da barra)
     this._registrarFerramentasDoLancamento();
     this._registrarFerramentasDaEstrutura();
     this._montarBarraDisciplina();          // a barra da direita: os elementos da disciplina (estrutura.js)
@@ -1249,6 +1250,10 @@ class CAD {
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); ev.shiftKey ? this.refazer() : this.desfazer(); return; }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'y') { ev.preventDefault(); this.refazer(); return; }
       if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && ev.key.toLowerCase() === 'a') { ev.preventDefault(); this.selecionarTudo(); return; }
+      // Ctrl+V: o que foi copiado no AutoCAD (23/10). Na Montagem o Ctrl+V é o da tesoura copiada da Original (implantacao.js)
+      if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === 'v' && !(window.montagem && window.montagem.ativa)) {
+        ev.preventDefault(); this.colarDoAutoCAD(); return;
+      }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); this.salvar(); return; }
       // Ctrl+P: as pranchas na impressora (o imprimir do navegador sairia a tela do CAD)
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'p') { ev.preventDefault(); this.dialogoImprimir(); return; }
@@ -1312,6 +1317,7 @@ class CAD {
       'pranchas-das-folhas': () => this.pranchasDasFolhas(),
       'atualizar-desenhos': () => this.atualizarDesenhosAgora(),
       'importar-dxf': () => this.escolherImportacao(),
+      'colar-autocad': () => this.colarDoAutoCAD(),
       arquitetonico: () => $('#arquivo-arquitetonico').click(),
       'planta-lancamento': () => this.abrirPlantaDeLancamento(),
       calibrar: () => this.ativarFerramenta('calibrar'),
@@ -1520,6 +1526,40 @@ class CAD {
     if (await this.dialogo({ titulo: 'Importar DXF ou PDF', corpo, ok: 'Escolher o arquivo…' }) !== 'ok') return;
     const entrada = { planta: '#arquivo-arquitetonico', projeto: '#arquivo-projeto-2d', aqui: '#arquivo-dxf' }[escolha.valor];
     $(entrada).click();
+  }
+
+  /**
+   * Colar o que foi copiado no AutoCAD (pedido do usuário, 23/10: "criar a funcionalidade de copiar elementos de dentro
+   * do autocad e colar na nossa área 2D"): o servidor lê a área de transferência do Windows, converte o DWG temporário
+   * do Ctrl+C do AutoCAD pelo AutoCAD sem janela e devolve os objetos (camadas, cores e medidas, como o Importar DXF);
+   * eles ficam presos ao cursor pelo ponto de base do AutoCAD e o clique solta (nucleo2d/do_autocad.py). Também vale o
+   * DWG ou DXF copiado no Explorer.
+   */
+  async colarDoAutoCAD() {
+    if (!this.projeto) { this.aviso('Colar do AutoCAD precisa de um projeto aberto.', 'atencao'); return; }
+    if (this._colando) return;
+    this._colando = true;
+    this.dica('Lendo o que foi copiado no AutoCAD…');
+    let r;
+    try {
+      r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/colar-autocad`, { escala: this.doc.escala });
+    } catch (e) { this.aviso(`Não foi possível colar: ${e.message}`, 'atencao', 12000); this.dica(''); return; }
+    finally { this._colando = false; }
+    for (const [nome, c] of Object.entries(r.camadas || {})) if (!this.doc.camadas.has(nome)) this.doc.camadas.set(nome, { nome, cor: c.cor, visivel: true, bloqueada: false, tipo_linha: c.tipo_linha || 'CONTINUOUS', espessura: c.espessura ?? 0.25 });
+    const ents = (r.entidades || []).map(e => criar({ ...e, id: undefined }));
+    if (!ents.length) { this.aviso('O que foi copiado não trouxe nada que o CAD leia (blocos e objetos 3D ficam de fora).', 'atencao'); this.dica(''); return; }
+    if (Object.keys(r.camadas || {}).length) this.doc.notificar([], 'aparencia');
+    const f = this.ferramentas.get(ColarObjetos.id);
+    // o ponto de base do Ctrl+C do AutoCAD; sem ele, o canto de baixo à esquerda (o do COPYCLIP)
+    let base = Array.isArray(r.base) && r.base.length >= 2 && r.base.every(isFinite) ? r.base : null;
+    f.preparar(ents, [0, 0]);
+    if (!base) base = f.caixa ? [f.caixa[0][0], f.caixa[0][1]] : [0, 0];
+    f.preparar(ents, base);
+    this.ativarFerramenta(ColarObjetos.id);
+    const ig = Object.entries((r.resumo || {}).por_tipo || {}).filter(([k]) => k.startsWith('ignorado')).map(([k, v]) => `${k.slice(9)} ×${v}`);
+    this.aviso(`De ${r.origem}: ${numero(ents.length)} objeto(s), ${Object.keys(r.camadas || {}).length} camada(s) nova(s), ${String((r.resumo || {}).fator || 1).replace('.', ',')} mm por unidade.` +
+      (ig.length ? ` Fora: ${ig.join(', ')}.` : '') + ' Clique onde fica o ponto de base (Enter: nas coordenadas do AutoCAD).', 'info', 12000);
+    if (this.tela.cursor) f.onMover(this.tela.cursor);
   }
 
   async importarDXF(arquivo) {

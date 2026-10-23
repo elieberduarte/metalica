@@ -913,6 +913,53 @@ export class CotaContinua extends Ferramenta {
 const formatarCota = (c) => fmt(valorDaCota(c) * fatorDaCota(c));
 
 /**
+ * Colar o que veio de fora (o Ctrl+C do AutoCAD, 23/10): os objetos presos ao cursor pelo ponto de base; o clique solta.
+ * Enter cola nas coordenadas de origem (o PASTEORIG do AutoCAD); "x;y" digitado põe o ponto de base ali. Muitos objetos
+ * vão na prévia só pela caixa deles (mover milhares a cada movimento do mouse travaria a tela).
+ */
+export class ColarObjetos extends Ferramenta {
+  static id = 'colar_autocad'; static nome = 'Colar do AutoCAD'; static grupo = 'oculta';
+  static dica = 'Clique onde fica o ponto de base · Enter: nas coordenadas do AutoCAD · digite x;y · Esc cancela';
+  /** `ents`: as entidades a colar (já criadas, nas coordenadas de origem); `base`: o ponto que vai no cursor. */
+  preparar(ents, base, rotulo = 'Colar do AutoCAD') {
+    this.ents = ents; this.base = base; this.rotulo = rotulo;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const e of ents) for (const p of pontosDe(e)) { if (p[0] < x0) x0 = p[0]; if (p[1] < y0) y0 = p[1]; if (p[0] > x1) x1 = p[0]; if (p[1] > y1) y1 = p[1]; }
+    this.caixa = isFinite(x0) ? [[x0, y0], [x1, y1]] : null;
+  }
+  reiniciar() { super.reiniciar(); if (this.ents) this.dica(`${this.ents.length} objeto(s): ${this.constructor.dica}`); }
+  _deslocadas(d) { return this.ents.map(e => transladar(e, d)); }
+  onMover(p) {
+    if (!this.ents) return;
+    const d = [p[0] - this.base[0], p[1] - this.base[1]];
+    if (this.ents.length <= 1500 || !this.caixa) { this.editor.previa(this._deslocadas(d)); return; }
+    const [[x0, y0], [x1, y1]] = this.caixa;
+    this.editor.previa([criar({ tipo: 'polilinha', camada: 'AUXILIAR', fechada: true,
+      vertices: [[x0 + d[0], y0 + d[1]], [x1 + d[0], y0 + d[1]], [x1 + d[0], y1 + d[1]], [x0 + d[0], y1 + d[1]]] })]);
+  }
+  _colar(d) {
+    if (!this.ents) return;
+    const novas = this._deslocadas(d);
+    this.ents = null;
+    this.editor.previa([]);
+    this.editor.executar(new ComandoAdicionar(novas, `${this.rotulo} (${novas.length})`));
+    this.editor.ativarFerramenta('selecionar');
+    this.editor.selecionar(novas.map(e => e.id));
+    this.editor.dica(`${novas.length} objeto(s) colado(s) · Ctrl+Z desfaz`);
+  }
+  onPonto(p) { if (this.ents) this._colar([p[0] - this.base[0], p[1] - this.base[1]]); }
+  onValor(t) {
+    const m = String(t || '').replace(/^@/, '').split(/[;]/);
+    if (m.length !== 2) return;
+    const x = paraMilimetros(m[0]), y = paraMilimetros(m[1]);
+    if (x == null || y == null) return;
+    this._colar([x - this.base[0], y - this.base[1]]);
+  }
+  onTecla(ev) { if (ev.key === 'Enter' && this.ents) { this._colar([0, 0]); return true; } return false; }
+  cancelar() { this.ents = null; super.cancelar(); }
+}
+
+/**
  * Esticar — o "empurrar/puxar" do SketchUp no 2D. Dois jeitos:
  *  • clique numa aresta (a ponta de uma terça, o lado de uma chapa): ela anda na
  *    perpendicular a ela mesma, e tudo o que encosta nas duas pontas dela vai junto — as

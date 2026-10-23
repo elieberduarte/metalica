@@ -152,7 +152,7 @@ const NUNCA = /\/(progresso|vivo|fechou|versao|lento)(\?|$)|\/desenhos-vivos(\?|
 /** O nome da tarefa na barra, pelo último pedaço da rota. */
 const ROTULOS = {
   'detalhar': 'Detalhando', 'detalhar-premoldado': 'Pré-moldado', 'detalhar-posicao': 'Detalhe da peça',
-  'importar-ifc': 'Importando o modelo', 'importar-pacote': 'Importando o projeto', 'importar-dxf': 'Lendo o DXF',
+  'importar-ifc': 'Importando o modelo', 'importar-pacote': 'Importando o projeto', 'importar-dxf': 'Lendo o DXF', 'colar-autocad': 'Colando do AutoCAD',
   'importar-pdf': 'Lendo o PDF', 'resumos': 'Resumos da obra', 'materiais': 'Lista de materiais', 'pdf': 'Gerando o PDF',
   'dxf': 'Gerando o DXF', 'imprimir': 'Imprimindo as pranchas', 'pranchas': 'Montando as pranchas', 'pranchas-das-folhas': 'Pranchas das folhas',
   'analise-estrutural': 'Análise estrutural', 'esforcos': 'Esforços e verificação', 'calcular': 'Calculando',

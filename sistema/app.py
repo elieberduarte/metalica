@@ -4770,6 +4770,35 @@ def importar_dxf_no_desenho(s: str, corpo: dict) -> dict:
             "resumo": {k: v for k, v in resumo.items() if k != "ids"}}
 
 
+def colar_do_autocad(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/colar-autocad: o que foi copiado no AutoCAD (Ctrl+C) — ou o DWG/DXF copiado no Explorer —
+    em entidades do CAD, como o Importar DXF (usuário, 23/10: "criar a funcionalidade de copiar elementos de dentro do
+    autocad e colar na nossa área 2D"). nucleo2d/do_autocad.py lê a área de transferência do Windows e converte o DWG
+    temporário do AutoCAD pelo accoreconsole. Devolve também o ponto de base (mm), por onde a tela prende os objetos ao
+    cursor. corpo: {escala: a do desenho de destino, fator: mm por unidade (None = pelo $INSUNITS)}"""
+    from dataclasses import asdict
+    from nucleo2d import do_autocad
+    from nucleo2d.desenho import Desenho
+    from nucleo2d.dxf_ler import para_desenho
+    _progresso(s, "lendo a área de transferência…", 0.05)
+    o = do_autocad.o_que_colar()
+    _progresso(s, "lendo os objetos de %s…" % o["origem"], 0.15)
+    if o["tipo"] == "dxf":
+        texto = do_autocad.texto_para_colar()["dxf"]
+    else:
+        _progresso(s, "convertendo o DWG pelo AutoCAD (sem janela)…", 0.2)
+        texto = do_autocad.dwg_para_dxf(o["caminho"])
+    _progresso(s, "montando os objetos…", 0.8)
+    fator = corpo.get("fator")
+    d = Desenho(nome="colado", escala=float(corpo.get("escala") or 1.0))
+    _, resumo = para_desenho(texto, escala=d.escala, fator=float(fator) if fator else None, destino=d)
+    f = float(resumo.get("fator") or 1.0)
+    base = [o["base"][0] * f, o["base"][1] * f] if o.get("base") else None
+    return {"entidades": [asdict(e) for e in d.entidades.values()],
+            "camadas": {k: asdict(v) for k, v in d.camadas.items() if k in resumo["camadas_novas"]},
+            "resumo": {k: v for k, v in resumo.items() if k != "ids"}, "base": base, "origem": o["origem"]}
+
+
 def _conferir_para_emitir(s: str, desenhos) -> None:
     """Regra R6 (combinada com o usuário, 02/10): as pranchas só saem (PDF, DXF) com o desenho igual ao 3D e o 3D no
     padrão da máquina — senão a peça sai errada na fábrica. Recusa com a lista do que falta. Só para pranchas: o
@@ -6288,6 +6317,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(montar_pranchas_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "importar-dxf":
                     return self._json(importar_dxf_no_desenho(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "colar-autocad":
+                    return self._json(colar_do_autocad(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "importar-pdf":
                     return self._json(importar_pdf_no_desenho(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "projeto-2d":
