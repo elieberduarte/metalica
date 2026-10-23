@@ -903,6 +903,32 @@ def _aco_das_folhas(recebido: dict):
     return None
 
 
+#: as decisões da montagem pela planta que ficam gravadas no projeto (montar de novo, do zero, as mantém): as listas
+#: (treliça deitada, elevação em duas peças, sem a tesoura de cima) e as chaves liga/desliga das chapas do projeto
+#: (placas de base pelos detalhes, suportes de terça do detalhe — o Posto CB, 23/10/2026: remontar pela tela perdia as
+#: chapas, que só os scripts de remontagem pediam)
+DECISOES_PLANTA_LISTAS = ("deitadas", "duas_pecas", "sem_tesoura_de_cima")
+DECISOES_PLANTA_CHAVES = ("bases_da_locacao", "suportes_do_projeto")
+
+
+def _com_decisoes_planta(par: dict, decisoes: dict) -> dict:
+    """os parâmetros da montagem com as decisões gravadas que o pedido não traz"""
+    for k in DECISOES_PLANTA_LISTAS:
+        if k not in par and decisoes.get(k):
+            par[k] = decisoes[k]
+    for k in DECISOES_PLANTA_CHAVES:
+        if k not in par and k in decisoes:
+            par[k] = bool(decisoes[k])
+    return par
+
+
+def _decisoes_planta_novas(par: dict) -> dict:
+    """as decisões que a montagem deixa gravadas no projeto"""
+    novas = {k: list(par[k]) for k in DECISOES_PLANTA_LISTAS if isinstance(par.get(k), (list, tuple))}
+    novas.update({k: bool(par[k]) for k in DECISOES_PLANTA_CHAVES if k in par})
+    return novas
+
+
 def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
     """POST /api/projetos/<s>/desenhos/<nome>/montar-pela-planta: o projeto recebido em
     DXF, sem 3D, vira modelo pela planta estrutural (nucleo3d/de_planta.py): cada linha
@@ -939,9 +965,7 @@ def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
     # as decisões do usuário sobre o projeto (treliça deitada, elevação que é duas peças) ficam
     # gravadas no projeto: montar de novo, do zero, as mantém
     decisoes = dict(g.ler(s).get("decisoes_planta") or {})
-    for k in ("deitadas", "duas_pecas", "sem_tesoura_de_cima"):
-        if k not in par and decisoes.get(k):
-            par[k] = decisoes[k]
+    _com_decisoes_planta(par, decisoes)
     # a escala é a do desenho como está agora: a altura dos textos é de papel nessa escala (17/10, o Posto CB passou de 1:20
     # a 1:50 no CAD, e a escala 20 gravada na montagem anterior fazia a remontagem ler a caixa d'água errada)
     par.pop("escala_desenho", None)
@@ -973,7 +997,7 @@ def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
                                 # e o de cada planta lida (terças, locação, mezanino…): a peça vai à planta dela
                                 "fontes": r["resumo"].get("deslocamentos_2d") or {},
                                 "camadas": r["resumo"].get("camadas_2d") or {}}}
-    novas = {k: list(par[k]) for k in ("deitadas", "duas_pecas", "sem_tesoura_de_cima") if isinstance(par.get(k), (list, tuple))}
+    novas = _decisoes_planta_novas(par)
     if novas:
         decisoes.update(novas)
         campos["decisoes_planta"] = decisoes
