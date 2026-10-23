@@ -36,7 +36,7 @@ class Camada2D:
     cor: str = "#4b5563"
     visivel: bool = True
     bloqueada: bool = False
-    tipo_linha: str = "CONTINUOUS"     # CONTINUOUS, HIDDEN, CENTER, DASHED
+    tipo_linha: str = "CONTINUOUS"     # os do acadiso.lin (nucleo2d/tipos_linha.py): CONTINUOUS, DASHED, HIDDEN, DOT…
     espessura: float = 0.25            # mm no papel
 
 
@@ -65,6 +65,9 @@ class Entidade2D:
     tipo: str = "entidade"
     camada: str = "VISTA"
     atributos: Dict[str, object] = field(default_factory=dict)
+    # o tipo de linha e a espessura (mm) do objeto; None = os da camada (o "ByLayer" do AutoCAD) — 23/10
+    tipo_linha: Optional[str] = None
+    espessura: Optional[float] = None
 
     def pontos(self) -> List[Ponto2]:
         """Pontos que definem a caixa envolvente."""
@@ -279,7 +282,7 @@ class Desenho:
         return {
             "nome": self.nome, "unidade": self.unidade, "escala": self.escala,
             "camadas": {k: asdict(v) for k, v in self.camadas.items()},
-            "entidades": [asdict(e) for e in self.entidades.values()],
+            "entidades": [_sem_estilo_vazio(asdict(e)) for e in self.entidades.values()],
             "vistas": self.vistas, "metadados": self.metadados,
         }
 
@@ -313,11 +316,13 @@ class Desenho:
         from saida.dxf import Desenho as DXF
         k = float(escala or self.escala or 1.0)
         d = DXF(self.nome, texto_unicode=texto_unicode)
+        from nucleo2d.tipos_linha import escala_tracejado, estilo_da_linha
+        d.ltscale = k * escala_tracejado(self.metadados.get("estilo"))
         from saida.dxf import aci_mais_proxima, nome_de_camada_r12
         # no DXF para o AutoCAD, o nome da camada no que o R12 aceita ("BANZOS U100X50X#9" →
         # "BANZOS_U100X50X_9"); o do PDF (texto_unicode) fica como no CAD, que é por ele que sai a cor
         nome_cam = (lambda n: _camada_dxf(n)) if texto_unicode else (lambda n: nome_de_camada_r12(_camada_dxf(n)))
-        d.camadas_extras = [(nome_cam(n), aci_mais_proxima(c.cor), "CONTINUOUS")
+        d.camadas_extras = [(nome_cam(n), aci_mais_proxima(c.cor), str(c.tipo_linha or "CONTINUOUS").upper())
                             for n, c in self.camadas.items() if _camada_dxf(n) == n and getattr(c, "cor", None)]
         for e in self.entidades.values():
             cam = self.camadas.get(e.camada)
@@ -353,10 +358,24 @@ class Desenho:
             cor = (e.atributos or {}).get("cor") if isinstance(e, (Linha, Polilinha, Circulo, Arco, Texto)) else None
             if cor:
                 d.cor_da_ultima(aci_mais_proxima(cor))
+            # o tipo de linha e a espessura do objeto (os dele ou os da camada, 23/10) e, para a pena do PDF, a cor do CAD
+            if isinstance(e, (Linha, Polilinha, Circulo, Arco, Texto)):
+                tl, esp = estilo_da_linha(e, cam)
+                d.estilo_da_ultima(tl if isinstance(e, (Linha, Polilinha, Circulo, Arco)) else None, esp,
+                                   cor or (getattr(cam, "cor", None) if cam is not None else None))
         return d
 
 
 _MAPA_CAMADAS = {"CORTE": "ACO", "VISTA": "ACO", "VISTA-FINA": "ACO-FINO"}
+
+
+def _sem_estilo_vazio(d: dict) -> dict:
+    """o objeto "pela camada" não grava tipo_linha/espessura vazios (as pranchas têm dezenas de milhares de objetos)"""
+    if d.get("tipo_linha") is None:
+        d.pop("tipo_linha", None)
+    if d.get("espessura") is None:
+        d.pop("espessura", None)
+    return d
 
 
 def _camada_dxf(nome: str) -> str:

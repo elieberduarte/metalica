@@ -3047,7 +3047,8 @@ def _preencher_solidas(d: Desenho, ax):
 
 
 def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: float = 10.0,
-                     so: Optional[Sequence[int]] = None, avisos: Optional[List[str]] = None) -> str:
+                     so: Optional[Sequence[int]] = None, avisos: Optional[List[str]] = None,
+                     penas: Optional[dict] = None) -> str:
     """PDF vetorial, uma página por desenho, no tamanho real do papel.
 
     Prancha (escala 1, `metadados.prancha`) sai na folha do seu formato; qualquer outro
@@ -3058,6 +3059,9 @@ def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: floa
 
     `so`: só essas páginas, contadas de 0 em todos os desenhos, na ordem de `paginas_de` (a impressão
     das folhas marcadas, saida/impressao.py) — a folha que fica de fora nem é desenhada.
+
+    As linhas saem com a espessura e o tipo de linha do CAD (do objeto ou da camada, 23/10) e `penas` (#rrggbb do CAD
+    → {espessura, cor}, as penas de impressão) por cima, como o CTB do AutoCAD.
 
     O desenho das pranchas sai pelas folhas que estão nele (`sincronizar_folhas`: a apagada no CAD sai, a movida leva o
     que está nela); `avisos` recebe o que mudou e o que ficou fora de toda folha (não sai no PDF)."""
@@ -3097,7 +3101,7 @@ def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: floa
             for j, ((larg, alt, k, x0, y0), parte) in enumerate(zip(paginas, partes)):
                 if escolhidas is not None and primeira + j not in escolhidas:
                     continue
-                _pagina_do_pdf(pdf, parte, os.path.join(tmp, "p%d_%d.dxf" % (i, j)), larg, alt, k, k, x0, y0, cores)
+                _pagina_do_pdf(pdf, parte, os.path.join(tmp, "p%d_%d.dxf" % (i, j)), larg, alt, k, k, x0, y0, cores, penas)
     return caminho_pdf
 
 
@@ -3113,8 +3117,20 @@ def _cores_do_pdf(d: Desenho) -> dict:
     return cores
 
 
+def _estilos_do_pdf(d: Desenho) -> dict:
+    """camada do DXF → {espessura, tipo_linha, cor do CAD}: as camadas do CAD pelo nome que elas têm no DXF (CORTE e
+    VISTA no ACO: a primeira que chega; os objetos delas levam a própria espessura e cor no DXF do PDF)"""
+    from nucleo2d.desenho import _camada_dxf
+    out = {}
+    for n, cam in d.camadas.items():
+        out.setdefault(_camada_dxf(n), {"espessura": float(cam.espessura if cam.espessura is not None else 0.25),
+                                        "tipo_linha": str(cam.tipo_linha or "CONTINUOUS").upper(),
+                                        "cor": str(cam.cor or "").lower() or None})
+    return out
+
+
 def _pagina_do_pdf(pdf, parte: Desenho, arquivo_dxf: str, larg: float, alt: float, k_desenho: float, k_pagina: float,
-                   x0: float, y0: float, cores: dict):
+                   x0: float, y0: float, cores: dict, penas: Optional[dict] = None):
     """Uma página de `larg` × `alt` mm com o trecho do desenho que começa em (x0, y0) e mede larg × k_pagina: o que é de
     papel (texto, cota) no tamanho do desenho (`k_desenho`, a escala dele), a página na escala de impressão."""
     import matplotlib.pyplot as plt
@@ -3124,7 +3140,9 @@ def _pagina_do_pdf(pdf, parte: Desenho, arquivo_dxf: str, larg: float, alt: floa
     arq = parte.para_dxf(k_desenho, texto_unicode=True).gravar(arquivo_dxf)
     fig = plt.figure(figsize=(larg / 25.4, alt / 25.4))
     ax = fig.add_axes((0, 0, 1, 1))
-    dxf_render.desenhar(arq, ax, escala_texto=_FATOR_TEXTO / k_pagina, cores=cores)
+    from nucleo2d.tipos_linha import escala_tracejado
+    dxf_render.desenhar(arq, ax, escala_texto=_FATOR_TEXTO / k_pagina, cores=cores, estilos=_estilos_do_pdf(parte),
+                        fator_tracejado=escala_tracejado(parte.metadados.get("estilo")) * k_desenho / k_pagina, penas=penas)
     _preencher_solidas(parte, ax)
     ax.set_xlim(x0, x0 + larg * k_pagina)
     ax.set_ylim(y0, y0 + alt * k_pagina)
@@ -3134,7 +3152,7 @@ def _pagina_do_pdf(pdf, parte: Desenho, arquivo_dxf: str, larg: float, alt: floa
     plt.close(fig)
 
 
-def pdf_da_area(d: Desenho, caminho_pdf: str, caixa, escala: Optional[float] = None) -> str:
+def pdf_da_area(d: Desenho, caminho_pdf: str, caixa, escala: Optional[float] = None, penas: Optional[dict] = None) -> str:
     """PDF de uma página com o trecho `caixa` ((x0, y0), (x1, y1), mm do desenho) na escala `escala` (1:n; vazio = a
     do desenho): a página mede o trecho ÷ n. É o Ctrl+P de um desenho que não é das pranchas — o Original do projeto
     recebido, um detalhamento — pela vista da tela ou pelo desenho inteiro (usuário, 23/10: "se dou um ctrl + p nessa
@@ -3168,7 +3186,7 @@ def pdf_da_area(d: Desenho, caminho_pdf: str, caixa, escala: Optional[float] = N
             parte.add(e)
     os.makedirs(os.path.dirname(os.path.abspath(caminho_pdf)), exist_ok=True)
     with PdfPages(caminho_pdf) as pdf, tempfile.TemporaryDirectory() as tmp:
-        _pagina_do_pdf(pdf, parte, os.path.join(tmp, "area.dxf"), larg, alt, float(d.escala or 1.0), n, x0, y0, _cores_do_pdf(d))
+        _pagina_do_pdf(pdf, parte, os.path.join(tmp, "area.dxf"), larg, alt, float(d.escala or 1.0), n, x0, y0, _cores_do_pdf(d), penas)
     return caminho_pdf
 
 

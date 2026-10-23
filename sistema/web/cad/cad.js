@@ -10,6 +10,7 @@ import { Tela, formatarMm } from './nucleo/tela.js';
 import { acompanhar as acompanharTarefa } from '../progresso.js';
 import { Snap } from './nucleo/snap.js';
 import { FERRAMENTAS, GRUPOS, Ferramenta, textoNaUnidade } from './ferramentas.js';
+import { TIPOS_DE_LINHA, ESPESSURAS, rotuloDoTipo, escalaTracejado, ESCALA_TRACEJADO } from './nucleo/tipos_linha.js';
 import { MetodosLancamentoCAD, DESENHO_LANCAMENTO } from './lancamento.js';
 import { MetodosMontarPlantaCAD } from './montar_planta.js';
 import { MetodosEstruturaCAD } from './estrutura.js';
@@ -1209,7 +1210,7 @@ class CAD {
       }
     });
     c.addEventListener('pointerleave', () => {
-      this.tela.cursor = null; this.tela.snap = null; this.tela.pedirQuadro();
+      this.tela.cursor = null; this.tela.snap = null; this.tela.realce = null; this.tela.pedirQuadro();
       // a janela aberta pelo clique com o cursor fora do desenho (no painel do lado): a vista não anda sozinha
       if (!pressao) { ultimoPx = null; pararAutoPan(); }
     });
@@ -1297,6 +1298,7 @@ class CAD {
       'exportar-pdf': () => this.exportarPDF(),
       'pdf-pranchas': () => this.pdfDasPranchas(),
       imprimir: () => this.dialogoImprimir(),
+      penas: () => this.dialogoPenas(),
       'dxf-pranchas': () => this.dxfDasPranchas(),
       'abrir-pasta': () => this.projeto && postar(`/api/projetos/${encodeURIComponent(this.projeto)}/abrir-pasta`, { sub: 'desenhos-2d' }).catch(e => this.aviso(e.message, 'erro')),
       corte: () => this.dialogoCorte(),
@@ -1914,6 +1916,7 @@ class CAD {
         el('span', { class: 'nada', style: 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap',
           texto: grupo.length > 1 ? `o perfil ${nomeC.split(' ').slice(1).join(' ')} (${grupo.length} camadas)` : `a camada ${nomeC}` })));
     }
+    this._linhaDaSelecao(g, ents);
     this._carimboDaFolha(g, ents);
     this._tamanhoDoTexto(g, ents);
     this._propsEstrutura(g, ents);           // o elemento lançado na planta (estrutura.js)
@@ -2047,9 +2050,14 @@ class CAD {
         onclick: () => this.executar(new ComandoAparencia(nome, { visivel: c.visivel === false })) });
       const cor = el('input', { type: 'color', value: c.cor, title: 'Cor da camada' });
       cor.addEventListener('change', () => this.mudarCorDaCamada(nome, cor.value));
+      const tl = String(c.tipo_linha || 'CONTINUOUS').toUpperCase();
+      const linhaCam = el('button', { type: 'button', class: 'linha-da-camada', 'data-camada': nome,
+        texto: `${tl === 'CONTINUOUS' ? '━' : '╍'} ${formatarMm(+(c.espessura ?? 0.25), 2)}`,
+        title: `Linha da camada: ${rotuloDoTipo(tl)}, ${formatarMm(+(c.espessura ?? 0.25), 2)} mm — clique para trocar`,
+        onclick: () => this.dialogoLinhaDaCamada(nome) });
       linha.addEventListener('click', (ev) => { if (ev.target.closest('button, input')) return; this.camadaAtiva = nome; this._agendarPaineis('camadas', 'props'); this.dica(`Camada ativa: ${nome}`); });
       linha.addEventListener('dblclick', (ev) => { if (ev.target.closest('button, input')) return; this.selecionar([...this.doc.entidades.values()].filter(e => e.camada === nome).map(e => e.id)); });
-      linha.append(vis, cor, el('span', { class: 'nome', texto: nome }), el('span', { class: 'contagem', texto: numero(cont.get(nome) || 0) }));
+      linha.append(vis, cor, el('span', { class: 'nome', texto: nome }), linhaCam, el('span', { class: 'contagem', texto: numero(cont.get(nome) || 0) }));
       return linha;
     };
     if (!doArquivo.size) {
@@ -2444,6 +2452,55 @@ class CAD {
     g.append(el('div', { class: 'botoes' }, el('button', { type: 'button', texto: 'Aplicar no carimbo', onclick: aplicar })));
   }
 
+  /** O tipo de linha e a espessura dos traços selecionados (linhas, polilinhas, círculos, arcos), como no AutoCAD
+   *  (pedido do usuário, 23/10): "Pela camada" (o ByLayer) ou um próprio do objeto. */
+  _linhaDaSelecao(g, ents) {
+    const tracos = ents.filter(e => e && (e.tipo === 'linha' || e.tipo === 'polilinha' || e.tipo === 'circulo' || e.tipo === 'arco'));
+    if (!tracos.length) return;
+    const camadas = new Set(tracos.map(e => e.camada));
+    const cam = camadas.size === 1 ? this.doc.camadas.get([...camadas][0]) : null;
+    const unico = (f) => { const v = new Set(tracos.map(f)); return v.size === 1 ? [...v][0] : undefined; };
+    const fmtEsp = (v) => `${formatarMm(+v, 2)} mm`;
+    const selTipo = el('select', { name: 'tipo_linha', title: 'Tipo de linha do objeto (Pela camada: o da camada)' },
+      el('option', { value: '', texto: `Pela camada${cam ? ` (${rotuloDoTipo(cam.tipo_linha)})` : ''}` }),
+      ...TIPOS_DE_LINHA.map(([n, r]) => el('option', { value: n, texto: `${r} — ${n}` })));
+    const tipoAtual = unico(e => e.tipo_linha || '');
+    if (tipoAtual === undefined) selTipo.prepend(el('option', { value: '*', texto: 'vários', disabled: true }));
+    selTipo.value = tipoAtual === undefined ? '*' : tipoAtual;
+    selTipo.addEventListener('change', () => {
+      const m = {}; for (const e of tracos) m[e.id] = { tipo_linha: selTipo.value || null };
+      this.executar(new ComandoAlterar(m, 'Tipo de linha'));
+    });
+    const selEsp = el('select', { name: 'espessura', title: 'Espessura do objeto no papel (Pela camada: a da camada)' },
+      el('option', { value: '', texto: `Pela camada${cam ? ` (${fmtEsp(cam.espessura ?? 0.25)})` : ''}` }),
+      ...ESPESSURAS.map(v => el('option', { value: String(v), texto: fmtEsp(v) })));
+    const espAtual = unico(e => (e.espessura == null ? '' : String(+e.espessura)));
+    if (espAtual === undefined) selEsp.prepend(el('option', { value: '*', texto: 'várias', disabled: true }));
+    selEsp.value = espAtual === undefined ? '*' : espAtual;
+    selEsp.addEventListener('change', () => {
+      const m = {}; for (const e of tracos) m[e.id] = { espessura: selEsp.value === '' ? null : +selEsp.value };
+      this.executar(new ComandoAlterar(m, 'Espessura da linha'));
+    });
+    g.append(el('label', { texto: 'Tipo de linha' }), selTipo, el('label', { texto: 'Espessura' }), selEsp);
+  }
+
+  /** A linha da camada (tipo e espessura), como no gerenciador de camadas do AutoCAD — vale para tudo o que está nela
+   *  "pela camada" (23/10). */
+  async dialogoLinhaDaCamada(nome) {
+    const c = this.doc.camadas.get(nome);
+    if (!c) return;
+    const selTipo = el('select', { name: 'tipo_linha' }, ...TIPOS_DE_LINHA.map(([n, r]) => el('option', { value: n, texto: `${r} — ${n}` })));
+    selTipo.value = String(c.tipo_linha || 'CONTINUOUS').toUpperCase();
+    const selEsp = el('select', { name: 'espessura' }, ...ESPESSURAS.map(v => el('option', { value: String(v), texto: `${formatarMm(v, 2)} mm` })));
+    const esp = +(c.espessura ?? 0.25);
+    selEsp.value = String(ESPESSURAS.reduce((m, v) => (Math.abs(v - esp) < Math.abs(m - esp) ? v : m), ESPESSURAS[0]));
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: 'O tipo de linha e a espessura de tudo o que está nesta camada "pela camada". Um objeto pode ter os dele (Propriedades). A espessura é a do papel; as penas de impressão podem trocá-la pela cor.' }),
+      el('label', {}, 'Tipo de linha', selTipo), el('label', {}, 'Espessura', selEsp));
+    if (await this.dialogo({ titulo: `Camada ${nome}`, corpo, ok: 'Aplicar' }) !== 'ok') return;
+    this.executar(new ComandoAparencia(nome, { tipo_linha: selTipo.value, espessura: +selEsp.value }, `Linha da camada ${nome}`));
+  }
+
   /** O tamanho dos textos, cotas e chamadas da seleção (pedido do usuário, 28/09): o valor para
    *  todos, ou A− / A+ (20 / 25 %) mantendo a proporção entre eles; com um texto só, o botão que
    *  seleciona todos os textos da mesma camada — para aumentar todos de uma vez. */
@@ -2546,6 +2603,10 @@ class CAD {
       }
       if (Object.keys(m).length) mud[e.id] = m;
     }
+    // a escala dos tracejados é do desenho (o LTSCALE), também quando o escopo é a seleção
+    if (ids && opcoes.escala_tracejado != null) {
+      this.doc.metadados = { ...(this.doc.metadados || {}), estilo: { ...((this.doc.metadados || {}).estilo || {}), escala_tracejado: opcoes.escala_tracejado } };
+    }
     if (!ids) {
       const estilo = { ...((this.doc.metadados || {}).estilo || {}) };
       if (alt) { estilo.texto = alt; this.alturaTexto = alt; }
@@ -2553,6 +2614,7 @@ class CAD {
       if (opcoes.padrao) estilo.hachura = opcoes.padrao;
       if (opcoes.casas != null) { if (opcoes.casas === 'auto') delete estilo.casas; else estilo.casas = opcoes.casas; }
       if (opcoes.folga != null) estilo.folga_texto = opcoes.folga;
+      if (opcoes.escala_tracejado != null) estilo.escala_tracejado = opcoes.escala_tracejado;
       this.doc.metadados = { ...(this.doc.metadados || {}), estilo };
       if (opcoes.folga != null) this.doc._grade = null;        // a caixa do número das cotas (o índice) mudou
     }
@@ -2576,6 +2638,8 @@ class CAD {
       casas: el('select', {}, ...[['', 'manter'], ['auto', 'automático (inteiro, ou 1 casa)'], ['0', '0 (ao mm)'], ['1', '1'], ['2', '2'], ['3', '3']].map(([v, t]) => el('option', { value: v, texto: t }))),
       // a DIMGAP do AutoCAD: da linha de cota à base do número, em mm no papel (22/10)
       folga: el('input', { type: 'number', step: '0.125', min: '0', placeholder: `manter (hoje ${formatarMm(folgaDaCota({}, estilo), 3)}; AutoCAD ${formatarMm(FOLGA_TEXTO_COTA, 3)})` }),
+      // o LTSCALE do desenho em relação à escala: o tamanho dos traços das linhas tracejadas no papel (23/10)
+      escalaTracejado: el('input', { type: 'number', name: 'escala_tracejado', step: '0.05', min: '0.01', placeholder: `manter (hoje ${formatarMm(escalaTracejado(estilo), 2)}; padrão ${formatarMm(ESCALA_TRACEJADO, 2)})` }),
     };
     campos.terminador.value = '';
     const corpo = el('div', {},
@@ -2585,6 +2649,7 @@ class CAD {
       el('label', {}, 'Terminador das cotas', campos.terminador),
       el('label', {}, 'Casas decimais das cotas', campos.casas),
       el('label', {}, 'Folga do número à linha de cota (mm)', campos.folga),
+      el('label', {}, 'Escala dos tracejados (o LTSCALE do desenho)', campos.escalaTracejado),
       el('label', {}, 'Padrão das hachuras', campos.padrao),
       el('label', {}, 'Espaçamento da hachura (mm)', campos.espacamento),
       el('label', {}, 'Ângulo da hachura (°)', campos.angulo));
@@ -2597,6 +2662,7 @@ class CAD {
       angulo: campos.angulo.value ? parseFloat(campos.angulo.value) : null,
       casas: campos.casas.value === '' ? null : campos.casas.value === 'auto' ? 'auto' : +campos.casas.value,
       folga: String(campos.folga.value).trim() !== '' && parseFloat(String(campos.folga.value).replace(',', '.')) >= 0 ? parseFloat(String(campos.folga.value).replace(',', '.')) : null,
+      escala_tracejado: parseFloat(String(campos.escalaTracejado.value).replace(',', '.')) > 0 ? parseFloat(String(campos.escalaTracejado.value).replace(',', '.')) : null,
     };
     const ids = campos.escopo.value === 'selecao' ? sel : null;
     const n = this.aplicarEstilos(opcoes, ids);

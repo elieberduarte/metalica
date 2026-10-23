@@ -32,6 +32,9 @@ export const ESCALAS_USUAIS = [1, 2, 2.5, 5, 7.5, 10, 12.5, 15, 20, 25, 30, 40, 
 /** Cria uma entidade com os padrões do tipo. */
 export function criar(reg) {
   const base = { id: reg.id || novoId(), tipo: reg.tipo, camada: reg.camada, atributos: reg.atributos || {} };
+  // o tipo de linha e a espessura do objeto (23/10); sem eles, os da camada (o "ByLayer" do AutoCAD)
+  if (reg.tipo_linha) base.tipo_linha = String(reg.tipo_linha).toUpperCase();
+  if (reg.espessura != null && reg.espessura !== '' && isFinite(reg.espessura)) base.espessura = +reg.espessura;
   switch (reg.tipo) {
     case 'linha': return { ...base, camada: base.camada || 'VISTA', a: reg.a, b: reg.b };
     case 'polilinha': return { ...base, camada: base.camada || 'VISTA', vertices: reg.vertices || [], fechada: !!reg.fechada };
@@ -638,7 +641,7 @@ export class Desenho2D {
       doc.camadas = new Map();
       for (const [k, v] of Object.entries(d.camadas)) {
         doc.camadas.set(k, { nome: v.nome || k, cor: v.cor || '#4b5563', visivel: v.visivel !== false,
-                             bloqueada: !!v.bloqueada, tipo_linha: v.tipo_linha || 'CONTINUOUS', espessura: v.espessura || 0.25 });
+                             bloqueada: !!v.bloqueada, tipo_linha: v.tipo_linha || 'CONTINUOUS', espessura: v.espessura ?? 0.25 });
       }
     }
     for (const e of d.entidades || []) {

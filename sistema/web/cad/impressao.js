@@ -4,6 +4,8 @@
 // passar pelo PDF na tela. O servidor (rota_impressao no app.py, saida/impressao.py) gera o PDF das folhas marcadas —
 // o mesmo do "PDF de todas as pranchas", com a regra R6 de emissão — e imprime pelo Windows.
 
+import { ESPESSURAS } from './nucleo/tipos_linha.js';
+
 const CHAVE = 'impressao.ultima';
 
 function el(tag, attrs = {}, ...filhos) {
@@ -67,6 +69,16 @@ if (!document.getElementById('estilo-impressao')) {
     .impressao .botoes-folhas .conta { margin-left: auto; color: var(--texto2); font-size: 12px; }
     .impressao label.opcao { flex-direction: row; align-items: center; gap: 6px; color: var(--texto); }
     .impressao .resumo { color: var(--texto2); font-size: 12px; line-height: 1.45; min-height: 2.9em; }
+    .penas { min-width: min(640px, 92vw); }
+    .penas .tabela { max-height: 46vh; overflow: auto; border: 1px solid var(--campo-borda); border-radius: var(--raio-p); }
+    .penas .pena { display: grid; grid-template-columns: 18px 72px 1fr 120px 150px; gap: 8px; align-items: center; padding: 4px 8px; font-size: 12.5px; }
+    .penas .pena:nth-child(odd) { background: color-mix(in srgb, var(--campo-borda) 35%, transparent); }
+    .penas .pena .amostra { width: 16px; height: 16px; border-radius: 3px; border: 1px solid var(--borda-forte, #888); }
+    .penas .pena .hex { font: 11.5px var(--mono, monospace); }
+    .penas .pena .camadas { color: var(--texto2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .penas .pena .saida { display: flex; gap: 4px; align-items: center; }
+    .penas .pena .saida input[type=color] { width: 28px; height: 22px; padding: 0; border: 0; background: none; }
+    .penas .botoes-folhas { margin-bottom: 6px; }
   `));
 }
 
@@ -187,10 +199,15 @@ export class MetodosImpressaoCAD {
       el('label', {}, 'Impressora', selImp),
       el('div', { class: 'linha' }, el('label', {}, 'Papel', selPapel), el('label', {}, 'Tamanho', selAjuste)),
       el('div', { class: 'linha' }, el('label', {}, 'Cor', selCor), el('label', { style: 'flex: 0 0 90px' }, 'Cópias', copias)),
-      resumo);
+      resumo,
+      el('div', { class: 'botoes-folhas' }, el('button', { type: 'button', texto: 'Penas de impressão…', title: 'A espessura e a cor de cada cor do desenho no papel (o CTB do AutoCAD)',
+        onclick: () => { irPenas = true; document.getElementById('dialogo-cancelar').click(); } })));
+    let irPenas = false;
     atualizar();
     carregarPapeis();
-    if (await this.dialogo({ titulo: 'Imprimir pranchas', corpo, ok: 'Imprimir' }) !== 'ok') return;
+    const resposta = await this.dialogo({ titulo: 'Imprimir pranchas', corpo, ok: 'Imprimir' });
+    if (irPenas) { if (await this.dialogoPenas()) return this.dialogoImprimir(true); return; }
+    if (resposta !== 'ok') return;
 
     const escolhidas = marcadas();
     if (!escolhidas.length) { this.aviso('Nenhuma folha marcada: nada foi impresso.', 'atencao'); return; }
@@ -210,6 +227,74 @@ export class MetodosImpressaoCAD {
         ...(r.avisos || []).length ? [el('br'), (r.avisos || []).join(' · ')] : []), (r.avisos || []).length ? 'atencao' : 'info', a || (r.avisos || []).length ? 0 : 12000);
       this.dica(r.arquivo ? 'Impressão gravada em PDF (pasta pranchas/ do projeto).' : 'Impressão enviada: acompanhe na fila da impressora do Windows.');
     } catch (e) { this.dica(''); this._avisoDeEmissao(e, 'Não foi possível imprimir'); }
+  }
+
+  /**
+   * As penas de impressão, como o CTB do AutoCAD (pedido do usuário, 23/10: "criar as penas igual existe no autocad para
+   * configurar como vai para impressão"): para cada cor do desenho, a espessura com que ela sai no papel (ou a do objeto)
+   * e a cor de saída (a própria, preta, cinza ou outra). A tabela é do programa — vale para todas as obras, na impressão
+   * e no PDF. As cores da lista são as do desenho aberto (das camadas e as próprias dos objetos), as mais usadas
+   * primeiro, e as que já têm pena. Devolve true quando gravou.
+   */
+  async dialogoPenas() {
+    if (!this.projeto) { this.aviso('As penas precisam de um projeto aberto.', 'atencao'); return false; }
+    const base = `/api/projetos/${encodeURIComponent(this.projeto)}/impressao`;
+    let penas;
+    try { penas = (await postar(`${base}/penas`, {})).penas || {}; } catch (e) { this.aviso(`Não foi possível ler as penas: ${e.message}`, 'erro', 0); return false; }
+    // as cores do desenho: quantos objetos e quais camadas
+    const usos = new Map();
+    for (const e of this.doc.entidades.values()) {
+      const cam = this.doc.camadas.get(e.camada);
+      const cor = String((e.atributos && e.atributos.cor) || (cam && cam.cor) || '#4b5563').toLowerCase();
+      if (!/^#[0-9a-f]{6}$/.test(cor)) continue;
+      let u = usos.get(cor); if (!u) usos.set(cor, u = { n: 0, camadas: new Set() });
+      u.n++; u.camadas.add(e.camada);
+    }
+    for (const c of Object.keys(penas)) if (!usos.has(c)) usos.set(c, { n: 0, camadas: new Set() });
+    const cores = [...usos.entries()].sort((a, b) => b[1].n - a[1].n);
+    const fmtEsp = (v) => `${String(Math.round(v * 100) / 100).replace('.', ',')} mm`;
+    const linhas = cores.map(([cor, u]) => {
+      const p = penas[cor] || {};
+      const esp = el('select', { name: 'espessura', 'data-cor': cor },
+        el('option', { value: '', texto: 'a do objeto' }), ...ESPESSURAS.map(v => el('option', { value: String(v), texto: fmtEsp(v) })));
+      esp.value = p.espessura == null ? '' : String(ESPESSURAS.reduce((m, v) => (Math.abs(v - p.espessura) < Math.abs(m - p.espessura) ? v : m), ESPESSURAS[0]));
+      const outra = el('input', { type: 'color', value: p.cor || cor, title: 'a cor de saída' });
+      const saida = el('select', { name: 'cor', 'data-cor': cor },
+        el('option', { value: '', texto: 'a própria' }), el('option', { value: '#000000', texto: 'preta' }),
+        el('option', { value: '#808080', texto: 'cinza' }), el('option', { value: 'outra', texto: 'outra…' }));
+      saida.value = !p.cor ? '' : p.cor === '#000000' || p.cor === '#808080' ? p.cor : 'outra';
+      const mostrar = () => { outra.hidden = saida.value !== 'outra'; };
+      saida.addEventListener('change', mostrar); mostrar();
+      const nomes = [...u.camadas];
+      const linha = el('div', { class: 'pena', 'data-cor': cor },
+        el('span', { class: 'amostra', style: `background:${cor}` }), el('span', { class: 'hex', texto: cor }),
+        el('span', { class: 'camadas', title: nomes.join(', '), texto: u.n ? `${nomes.slice(0, 3).join(', ')}${nomes.length > 3 ? ` e mais ${nomes.length - 3}` : ''} · ${u.n.toLocaleString('pt-BR')} obj.` : 'não está neste desenho' }),
+        esp, el('span', { class: 'saida' }, saida, outra));
+      linha._ler = () => {
+        const v = { espessura: esp.value === '' ? null : +esp.value, cor: saida.value === '' ? null : saida.value === 'outra' ? outra.value : saida.value };
+        return v.espessura == null && !v.cor ? null : v;
+      };
+      linha._todas = (corSaida, espessura) => {
+        if (corSaida !== undefined) { saida.value = corSaida || ''; mostrar(); }
+        if (espessura !== undefined) esp.value = espessura == null ? '' : String(espessura);
+      };
+      return linha;
+    });
+    const corpo = el('div', { class: 'penas' },
+      el('div', { class: 'explica', texto: 'Como as penas (CTB) do AutoCAD: cada cor do desenho sai no papel com a espessura e a cor escolhidas aqui. "A do objeto" usa a espessura da camada ou do próprio objeto. Vale para todas as obras, na impressão e no PDF.' }),
+      el('div', { class: 'botoes-folhas' },
+        el('button', { type: 'button', texto: 'Todas pretas', onclick: () => linhas.forEach(l => l._todas('#000000')) }),
+        el('button', { type: 'button', texto: 'Tudo como no objeto', onclick: () => linhas.forEach(l => l._todas('', null)) })),
+      el('div', { class: 'tabela' }, linhas));
+    if (await this.dialogo({ titulo: 'Penas de impressão', corpo, ok: 'Gravar' }) !== 'ok') return false;
+    const novas = { ...penas };
+    for (const l of linhas) { const v = l._ler(); if (v) novas[l.dataset.cor] = v; else delete novas[l.dataset.cor]; }
+    try {
+      const r = await postar(`${base}/penas`, { penas: novas });
+      const n = Object.keys(r.penas || {}).length;
+      this.aviso(n ? `Penas gravadas: ${n} cor(es) com pena própria — valem na impressão e no PDF.` : 'Sem penas: tudo sai com a espessura e a cor dos objetos.', 'info');
+      return true;
+    } catch (e) { this.aviso(`Não foi possível gravar as penas: ${e.message}`, 'erro', 0); return false; }
   }
 
   /** Imprimir o desenho aberto (que não é das pranchas): a vista da tela ou o desenho inteiro, numa escala 1:n — a
@@ -283,12 +368,17 @@ export class MetodosImpressaoCAD {
       el('div', { class: 'linha' }, el('label', {}, 'Papel', selPapel), el('label', {}, 'Tamanho', selAjuste)),
       el('div', { class: 'linha' }, el('label', {}, 'Cor', selCor), el('label', { style: 'flex: 0 0 90px' }, 'Cópias', copias)),
       resumo,
-      desenhosPranchas.length ? el('div', { class: 'botoes-folhas' }, el('button', { type: 'button', texto: 'Imprimir as pranchas do projeto…',
-        onclick: () => { irPranchas = true; document.getElementById('dialogo-cancelar').click(); } })) : null);
+      el('div', { class: 'botoes-folhas' },
+        el('button', { type: 'button', texto: 'Penas de impressão…', title: 'A espessura e a cor de cada cor do desenho no papel (o CTB do AutoCAD)',
+          onclick: () => { irPenas = true; document.getElementById('dialogo-cancelar').click(); } }),
+        desenhosPranchas.length ? el('button', { type: 'button', texto: 'Imprimir as pranchas do projeto…',
+          onclick: () => { irPranchas = true; document.getElementById('dialogo-cancelar').click(); } }) : null));
+    let irPenas = false;
     atualizar();
     carregarPapeis();
     const r = await this.dialogo({ titulo: 'Imprimir este desenho', corpo, ok: 'Imprimir' });
     if (irPranchas) return this.dialogoImprimir(true);
+    if (irPenas) { if (await this.dialogoPenas()) return this._imprimirEsteDesenho(base, desenhosPranchas); return; }
     if (r !== 'ok') return;
     const f = folha();
     if (!f) { this.aviso('Nada para imprimir: o desenho está vazio ou a escala está em branco.', 'atencao'); return; }

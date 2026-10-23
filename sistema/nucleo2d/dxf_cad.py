@@ -72,7 +72,9 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
     doc.units = ezdxf.units.MM
     doc.header["$INSUNITS"] = 4
     doc.header["$MEASUREMENT"] = 1
-    doc.header["$LTSCALE"] = k               # tracejados com o tamanho do papel
+    from nucleo2d.tipos_linha import escala_tracejado
+    # os tracejados no papel: o padrão do acadiso × a escala dos tracejados do desenho (23/10)
+    doc.header["$LTSCALE"] = k * escala_tracejado(desenho.metadados.get("estilo"))
     doc.header["$DIMSCALE"] = k
     doc.styles.add(ESTILO, font=FONTE)
 
@@ -86,6 +88,15 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
         ds.dxf.set(chave, valor)
     ds.dxf.dimtxsty = ESTILO
 
+    # os tipos de linha do programa (os do acadiso.lin, em mm, nucleo2d/tipos_linha.py — 23/10): os da ezdxf vêm noutra
+    # medida e sem o HIDDEN e o BORDER; com o $LTSCALE acima, o tracejado sai no AutoCAD do tamanho do PDF
+    from nucleo2d.tipos_linha import TIPOS_DE_LINHA
+    for nome_t, (rotulo_t, padrao_t) in TIPOS_DE_LINHA.items():
+        if not padrao_t:
+            continue
+        if nome_t in doc.linetypes:
+            doc.linetypes.remove(nome_t)
+        doc.linetypes.add(nome_t, pattern=[sum(abs(v) for v in padrao_t)] + list(padrao_t), description=rotulo_t)
     # camadas com a cor, o tipo de linha e a espessura do CAD
     tipos = {lt.dxf.name.upper(): lt.dxf.name for lt in doc.linetypes}
     for nome, cam in desenho.camadas.items():
@@ -128,6 +139,14 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
         if cam is not None and not cam.visivel:
             continue
         at = {"layer": camada_de(e)}
+        # o tipo de linha e a espessura do objeto, quando não são os da camada (o "ByLayer", 23/10)
+        if isinstance(e, (Linha, Polilinha, Circulo, Arco)):
+            if e.tipo_linha:
+                tl_ = tipos.get(str(e.tipo_linha).upper())
+                if tl_:
+                    at["linetype"] = tl_
+            if e.espessura is not None:
+                at["lineweight"] = min(PESOS, key=lambda p: abs(p - float(e.espessura) * 100))
         feitas = []
         if isinstance(e, Linha):
             feitas.append(msp.add_line(e.a, e.b, dxfattribs=at))

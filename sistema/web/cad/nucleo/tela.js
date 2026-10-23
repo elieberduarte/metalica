@@ -14,9 +14,9 @@
 
 import { pontosArco, dentroDe, segmentosDe, caixaDe, pontosDe, distanciaEntidade, pontosCota, textoDaChamada, cantosDoTextoDaChamada,
   formatarMm, geometriaCota, textoDaCota } from './desenho2d.js';
+import { estiloDaLinha, larguraNaTela, tracosNaTela } from './tipos_linha.js';
 export { formatarMm };
 
-const TRACOS = { CONTINUOUS: [], HIDDEN: [6, 4], CENTER: [16, 4, 4, 4], DASHED: [8, 6], DOT: [2, 3] };
 const PX_GRADE_ALVO = 60;
 /** Até quantos objetos selecionados são pintados por cima do cache, a cada quadro. */
 const SELECAO_POR_CIMA = 3000;
@@ -273,6 +273,9 @@ export class Tela {
     if (!this._ocupado || this._ocupado.length !== Wi * Hi) this._ocupado = new Uint16Array(Wi * Hi); else this._ocupado.fill(0);
     const ocupado = this._ocupado, coresDosPontos = [], indiceDaCor = new Map();
     const tracos = new Map(), hachuras = [], porCima = [], selecionadas = [];
+    // o tracejado de cada tipo de linha neste zoom (no tamanho do papel, como no AutoCAD): um por tipo, não por objeto
+    const estiloDes = this.estiloDoDesenho, tracejados = new Map();
+    const tracejadoDe = (tl) => { let t = tracejados.get(tl); if (!t) tracejados.set(tl, t = tracosNaTela(tl, k, z, estiloDes)); return t; };
     let nPontos = 0, nDesenhadas = 0;
     for (let i = 0; i < ordem.length; i++) {
       const e = ordem[i], cam = camadas.get(e.camada);
@@ -296,11 +299,11 @@ export class Tela {
       if (tipo === 'hachura') { hachuras.push(e); continue; }
       if (tipo === 'texto' || tipo === 'cota' || tipo === 'chamada') { porCima.push(e); continue; }
       const cor = corDe(e, cam);
-      const esp = (cam && cam.espessura) || 0.25, larg = Math.max(1, Math.min(3, esp / 0.25));
-      const tl = (cam && cam.tipo_linha) || 'CONTINUOUS';
+      // o tipo de linha e a espessura do objeto, ou os da camada (23/10)
+      const est = estiloDaLinha(e, cam), larg = larguraNaTela(est.espessura), tl = est.tipo;
       const chave = cor + '|' + larg + '|' + tl;
       let lote = tracos.get(chave);
-      if (!lote) tracos.set(chave, lote = { cor, larg, tracos: TRACOS[tl] || [], p: new Path2D() });
+      if (!lote) tracos.set(chave, lote = { cor, larg, tracos: tracejadoDe(tl), p: new Path2D() });
       lote.ultimo = nDesenhadas;
       this._caminho(lote.p, e, H);
     }
@@ -513,18 +516,17 @@ export class Tela {
     this.passoGrade = passo;
   }
 
-  _estilo(ctx, cor, cam, selecionada, previa) {
+  _estilo(ctx, cor, cam, selecionada, previa, e = null) {
     ctx.strokeStyle = cor; ctx.fillStyle = cor;
-    const esp = (cam && cam.espessura) || 0.25;
-    ctx.lineWidth = selecionada ? 2.2 : Math.max(1, Math.min(3, esp / 0.25));
-    const tracos = TRACOS[(cam && cam.tipo_linha) || 'CONTINUOUS'] || [];
-    ctx.setLineDash(previa ? [5, 4] : tracos);
+    const est = estiloDaLinha(e, cam);
+    ctx.lineWidth = selecionada ? Math.max(2.2, larguraNaTela(est.espessura)) : larguraNaTela(est.espessura);
+    ctx.setLineDash(previa ? [5, 4] : tracosNaTela(est.tipo, this.doc.escala, this.vp.z, this.estiloDoDesenho));
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   }
 
   _entidade(ctx, e, cor, cam, k, selecionada, previa = false) {
     const T = (p) => this.paraTela(p);
-    this._estilo(ctx, cor, cam, selecionada, previa);
+    this._estilo(ctx, cor, cam, selecionada, previa, e.tipo === 'texto' || e.tipo === 'cota' || e.tipo === 'chamada' || e.tipo === 'hachura' ? null : e);
     switch (e.tipo) {
       case 'linha': { const a = T(e.a), b = T(e.b); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); break; }
       case 'polilinha': {

@@ -31,12 +31,16 @@ CAMADAS = [
     ("AUXILIAR",     8, "DASHED"),
 ]
 
-TIPOS_LINHA = [
-    ("CONTINUOUS", "Solida", []),
-    ("CENTER", "Linha de centro ____ _ ____ _ ____", [31.75, 0.5, -6.35, 3.175, -6.35]),
-    ("HIDDEN", "Tracejada __ __ __ __ __ __", [9.525, 0.5, -6.35, 3.175]),
-    ("DASHED", "Tracejada longa ___ ___ ___", [12.7, 0.5, -6.35, 6.35]),
-]
+def _tipos_linha():
+    """(nome, descrição, [comprimento total, elementos…]) — os do acadiso.lin, de nucleo2d/tipos_linha.py (23/10)"""
+    from nucleo2d.tipos_linha import TIPOS_DE_LINHA
+    out = []
+    for nome, (rotulo, padrao) in TIPOS_DE_LINHA.items():
+        out.append((nome, rotulo, [sum(abs(v) for v in padrao)] + list(padrao) if padrao else []))
+    return out
+
+
+TIPOS_LINHA = _tipos_linha()
 
 
 def _par(codigo, valor):
@@ -58,6 +62,8 @@ class Desenho:
         #: camadas além das padrão (nome, cor ACI, tipo de linha): as do desenho 2D — banzos, diagonais,
         #: um perfil por camada… — com a cor do CAD mais próxima na paleta do AutoCAD
         self.camadas_extras: List[Tuple[str, int, str]] = []
+        #: o $LTSCALE: o padrão dos tracejados (mm de papel) × a escala do desenho × a escala dos tracejados
+        self.ltscale = 1.0
 
     # ---------- controle ----------
     def _limites(self, *pontos):
@@ -74,6 +80,30 @@ class Desenho:
     @property
     def altura(self):
         return max(0.0, self.extremos[3] - self.extremos[1])
+
+    def estilo_da_ultima(self, tipo_linha=None, espessura=None, cor_cad=None):
+        """o tipo de linha da última entidade (o DXF R12 aceita o do objeto: grupo 6) e, no DXF do PDF do próprio programa
+        (`texto_unicode`), a espessura em mm (370, em centésimos) e a cor do CAD (999) — é por ela que a pena de
+        impressão do PDF pega o objeto (nucleo2d/pranchas.py, saida/dxf_render.py)"""
+        if not self.entidades:
+            return self
+        extra = []
+        if tipo_linha and str(tipo_linha).upper() != "CONTINUOUS":
+            extra += ["6", str(tipo_linha).upper()]
+        if self.texto_unicode:
+            if espessura is not None:
+                extra += ["370", str(int(round(float(espessura) * 100)))]
+            if cor_cad:
+                extra += ["999", "pena " + str(cor_cad).lower()]
+        if not extra:
+            return self
+        linhas = self.entidades[-1].split("\n")
+        for i in range(0, len(linhas) - 1, 2):
+            if linhas[i].strip() == "8":
+                linhas[i + 2:i + 2] = extra
+                self.entidades[-1] = "\n".join(linhas)
+                break
+        return self
 
     def cor_da_ultima(self, aci: int):
         """a cor própria (ACI) da última entidade acrescentada, por cima da camada — a cor do objeto no CAD"""
@@ -324,7 +354,7 @@ class Desenho:
         s += _par(9, "$INSUNITS") + _par(70, 4)          # 4 = milímetros
         s += _par(9, "$EXTMIN") + _par(10, f"{xmin-m:.4f}") + _par(20, f"{ymin-m:.4f}") + _par(30, "0.0")
         s += _par(9, "$EXTMAX") + _par(10, f"{xmax+m:.4f}") + _par(20, f"{ymax+m:.4f}") + _par(30, "0.0")
-        s += _par(9, "$LTSCALE") + _par(40, "1.0")
+        s += _par(9, "$LTSCALE") + _par(40, f"{float(self.ltscale or 1.0):.4f}")
         s += _par(9, "$TEXTSTYLE") + _par(7, "STANDARD")
         s += _par(0, "ENDSEC")
         # TABLES

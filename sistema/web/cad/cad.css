@@ -154,3 +154,8 @@ html.embutida #btn-voltar, html.embutida #link-editor, html.embutida #link-divid
 .lista-linhas .grupo-camadas { margin: 6px 0 2px; font-size: 11px; font-weight: 600; letter-spacing: .03em; color: var(--texto3); text-transform: uppercase; }
 .lista-linhas .grupo-camadas:first-child { margin-top: 0; }
 .lista-linhas details.camadas-vazias > summary { cursor: pointer; font-size: 11.5px; color: var(--texto3); padding: 2px 0; }
+
+/* a linha da camada (tipo e espessura) no painel Camadas: clique para trocar (23/10) */
+.linha .linha-da-camada { flex: 0 0 auto; background: none; border: 1px solid transparent; border-radius: 4px; padding: 0 4px;
+  font: 11px var(--mono); color: var(--texto3); cursor: pointer; white-space: nowrap; }
+.linha .linha-da-camada:hover { border-color: var(--borda-forte); color: var(--texto); }

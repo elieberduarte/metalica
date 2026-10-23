@@ -101,6 +101,15 @@ def ler_dxf(caminho: str) -> dict:
             atual["camada"] = val
         elif cod == 1:
             atual["texto"] = val
+        elif cod == 6:
+            atual["tipo_linha"] = val.strip().upper()
+        elif cod == 370:
+            try:
+                atual["espessura"] = int(val) / 100.0
+            except ValueError:
+                pass
+        elif cod == 999 and val.startswith("pena "):
+            atual["pena"] = val[5:].strip().lower()
         elif cod in (10, 11, 12, 13, 20, 21, 22, 23, 40, 41, 50, 51, 72, 73, 70):
             try:
                 atual[cod] = float(val)
@@ -119,6 +128,9 @@ def ler_dxf(caminho: str) -> dict:
             poli = {"tipo": "POLYLINE", "camada": e.get("camada", "0"),
                     "fechada": bool(int(e.get(70, 0))) and int(e.get(70, 0)) & 1,
                     "pontos": []}
+            for k in ("tipo_linha", "espessura", "pena"):
+                if k in e:
+                    poli[k] = e[k]
         elif e["tipo"] == "VERTEX" and poli is not None:
             poli["pontos"].append((e.get(10, 0.0), e.get(20, 0.0)))
         elif e["tipo"] == "SEQEND":
@@ -203,9 +215,42 @@ def _escala_texto_automatica(ents, ax) -> float:
     return max(1e-5, min(50.0, pt_por_mm / 2.4))
 
 
-def desenhar(caminho_dxf: str, ax=None, escala_texto=1.0, camadas_ocultas=(), cores=None):
+PT_POR_MM = 72.0 / 25.4
+
+
+def _estilo_impresso(e, cam, cams, cor, estilos, fator_tracejado, penas):
+    """(cor, largura em pontos, tracejado) do objeto no papel: a espessura e o tipo de linha dele (370 / 6, os do CAD —
+    23/10), senão os da camada do CAD (`estilos`: camada do DXF → {espessura, tipo_linha, cor}), senão os de antes; a
+    pena de impressão da cor do CAD (`penas`: #rrggbb → {espessura, cor}) por cima, como o CTB do AutoCAD."""
+    ec = (estilos or {}).get(cam) or {}
+    esp = e.get("espessura", ec.get("espessura"))
+    chave = e.get("pena") or ec.get("cor")
+    pena = (penas or {}).get(str(chave or "").lower()) or {}
+    if pena.get("espessura") is not None:
+        esp = float(pena["espessura"])
+    if pena.get("cor"):
+        cor = pena["cor"]
+    if esp is None:
+        lw = 1.4 if cam in ("ACO", "CONCRETO") else (0.5 if cam in ("HACHURA", "COTA", "EIXO") else 0.9)
+    else:
+        lw = max(0.1, float(esp) * PT_POR_MM)            # a espessura 0,00 do AutoCAD: o traço mais fino do aparelho
+    tl = e.get("tipo_linha") or ec.get("tipo_linha")
+    if tl and estilos is not None:
+        from nucleo2d.tipos_linha import padrao
+        p = padrao(tl)
+        # o matplotlib multiplica o tracejado pela largura do traço: a conta desfaz, para o padrão sair em mm de papel
+        ls = (0, tuple(max(abs(v) * fator_tracejado * PT_POR_MM, 0.01 if v == 0 else 0.3) / lw for v in p)) if p else (0, ())
+    else:
+        ls = _traco(cam, cams)
+    return cor, lw, ls
+
+
+def desenhar(caminho_dxf: str, ax=None, escala_texto=1.0, camadas_ocultas=(), cores=None, estilos=None,
+             fator_tracejado=0.5, penas=None):
     """`escala_texto=None` calcula o fator automaticamente (texto em escala real);
-    `cores`: camada → cor (#rrggbb) que prevalece sobre a da tabela do DXF."""
+    `cores`: camada → cor (#rrggbb) que prevalece sobre a da tabela do DXF; `estilos`: camada → {espessura (mm),
+    tipo_linha, cor do CAD} (a espessura e o tipo de linha do CAD, 23/10 — sem eles, as larguras fixas de antes);
+    `fator_tracejado`: mm de papel por mm do padrão (a escala dos tracejados); `penas`: #rrggbb → {espessura, cor}."""
     doc = ler_dxf(caminho_dxf)
     cams, ents = doc["camadas"], doc["entidades"]
     if ax is None:
@@ -217,14 +262,14 @@ def desenhar(caminho_dxf: str, ax=None, escala_texto=1.0, camadas_ocultas=(), co
         if cam in camadas_ocultas:
             continue
         cor = (cores or {}).get(cam) or _cor(cam, cams)
-        lw = 1.4 if cam in ("ACO", "CONCRETO") else (0.5 if cam in ("HACHURA", "COTA", "EIXO") else 0.9)
+        cor, lw, ls = _estilo_impresso(e, cam, cams, cor, estilos, fator_tracejado, penas)
         t = e["tipo"]
         if t == "LINE":
             ax.plot([e.get(10, 0), e.get(11, 0)], [e.get(20, 0), e.get(21, 0)],
-                    color=cor, lw=lw, ls=_traco(cam, cams), solid_capstyle="round")
+                    color=cor, lw=lw, ls=ls, solid_capstyle="round", dash_capstyle="round")
         elif t == "CIRCLE":
             ax.add_patch(plt.Circle((e.get(10, 0), e.get(20, 0)), e.get(40, 1),
-                                    fill=False, color=cor, lw=lw))
+                                    fill=False, color=cor, lw=lw, ls=ls))
         elif t == "ARC":
             a0, a1 = e.get(50, 0), e.get(51, 360)
             if a1 < a0:
@@ -232,7 +277,7 @@ def desenhar(caminho_dxf: str, ax=None, escala_texto=1.0, camadas_ocultas=(), co
             ang = [math.radians(a) for a in _linspace(a0, a1, 60)]
             xc, yc, r = e.get(10, 0), e.get(20, 0), e.get(40, 1)
             ax.plot([xc + r * math.cos(a) for a in ang], [yc + r * math.sin(a) for a in ang],
-                    color=cor, lw=lw)
+                    color=cor, lw=lw, ls=ls, dash_capstyle="round")
         elif t == "POLYLINE":
             pts = e["pontos"]
             if len(pts) >= 2:
@@ -241,7 +286,7 @@ def desenhar(caminho_dxf: str, ax=None, escala_texto=1.0, camadas_ocultas=(), co
                 if e.get("fechada"):
                     xs.append(pts[0][0])
                     ys.append(pts[0][1])
-                ax.plot(xs, ys, color=cor, lw=lw, ls=_traco(cam, cams))
+                ax.plot(xs, ys, color=cor, lw=lw, ls=ls, dash_capstyle="round")
         elif t == "SOLID":
             pts = [(e.get(10, 0), e.get(20, 0)), (e.get(11, 0), e.get(21, 0)),
                    (e.get(12, 0), e.get(22, 0)), (e.get(13, 0), e.get(23, 0))]

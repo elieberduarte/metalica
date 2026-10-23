@@ -4796,7 +4796,7 @@ def exportar_desenho_pdf(s: str, nome: str, corpo: dict) -> dict:
     # as folhas pelo que está no desenho (a apagada no CAD sai, a movida leva o que está nela): o que mudou e o que ficou fora
     # de toda folha vão para a tela (Vicente, 21/10: "está saindo várias folhas em branco")
     avisos = []
-    caminho = pdf_dos_desenhos(desenhos, os.path.join(pasta, base + ".pdf"), avisos=avisos)
+    caminho = pdf_dos_desenhos(desenhos, os.path.join(pasta, base + ".pdf"), avisos=avisos, penas=_ler_penas())
     g.tocar(s)
     return {"arquivo": _descrever_arquivo(caminho, pasta), "paginas": sum(len(paginas_de(d)) for d in desenhos),
             "avisos": avisos}
@@ -4829,6 +4829,49 @@ def _folhas_para_imprimir(s: str, nomes) -> list:
     return out
 
 
+#: as penas de impressão (o CTB do AutoCAD): a tabela do programa, para todas as obras — pedido do usuário, 23/10:
+#: "criar as penas igual existe no autocad para configurar como vai para impressão"
+ARQ_PENAS = os.path.join(PROJETOS, "penas-de-impressao.json")
+_COR_HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _penas_validas(penas) -> dict:
+    """#rrggbb (a cor do CAD) → {espessura: mm ou None (a do objeto), cor: #rrggbb ou None (a do objeto)}"""
+    from nucleo2d.tipos_linha import ESPESSURAS
+    out = {}
+    for chave, v in (penas or {}).items() if isinstance(penas, dict) else []:
+        if not isinstance(chave, str) or not _COR_HEX.match(chave) or not isinstance(v, dict):
+            continue
+        esp = v.get("espessura")
+        try:
+            esp = None if esp in (None, "") else float(esp)
+        except (TypeError, ValueError):
+            esp = None
+        if esp is not None and not 0.0 <= esp <= max(ESPESSURAS):
+            esp = None
+        cor = v.get("cor") if isinstance(v.get("cor"), str) and _COR_HEX.match(v.get("cor") or "") else None
+        if esp is not None or cor:
+            out[chave.lower()] = {"espessura": esp, "cor": cor.lower() if cor else None}
+    return out
+
+
+def _ler_penas() -> dict:
+    try:
+        with open(ARQ_PENAS, encoding="utf-8") as f:
+            return _penas_validas((json.load(f) or {}).get("penas"))
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def _gravar_penas(penas) -> dict:
+    p = _penas_validas(penas)
+    tmp = ARQ_PENAS + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"versao": 1, "penas": p}, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, ARQ_PENAS)
+    return p
+
+
 def rota_impressao(s: str, acao: str, corpo: dict) -> dict:
     """POST /api/projetos/<s>/impressao/{folhas|impressoras|papeis|imprimir}: o Imprimir pranchas… do CAD (pedido do
     usuário, 21/10). Imprimir: o PDF das folhas marcadas (o mesmo do PDF de todas as pranchas, com a regra R6 de
@@ -4844,6 +4887,9 @@ def rota_impressao(s: str, acao: str, corpo: dict) -> dict:
             return impressao.impressoras()
         if acao == "papeis":
             return impressao.papeis(str(corpo.get("impressora") or ""))
+        if acao == "penas":
+            # sem "penas" no pedido, lê; com, grava (a tabela inteira)
+            return {"penas": _gravar_penas(corpo["penas"]) if "penas" in corpo else _ler_penas()}
         if acao != "imprimir":
             raise ErroDeDados("rota de impressão inválida: " + acao)
         from nucleo2d.desenho import Desenho
@@ -4889,9 +4935,9 @@ def rota_impressao(s: str, acao: str, corpo: dict) -> dict:
             arquivo = os.path.join(pasta, "impressao-" + (_slug(nome_imp) or "impressora") + ".pdf")
         with tempfile.TemporaryDirectory() as tmp:
             if area is not None:
-                pdf = pdf_da_area(desenho_area, os.path.join(tmp, "desenho.pdf"), caixa, area.get("escala"))
+                pdf = pdf_da_area(desenho_area, os.path.join(tmp, "desenho.pdf"), caixa, area.get("escala"), penas=_ler_penas())
             else:
-                pdf = pdf_dos_desenhos(desenhos, os.path.join(tmp, "pranchas.pdf"), so=so)
+                pdf = pdf_dos_desenhos(desenhos, os.path.join(tmp, "pranchas.pdf"), so=so, penas=_ler_penas())
             r = impressao.imprimir_pdf(
                 pdf, nome_imp, papel=None if corpo.get("papel") in (None, "", "auto") else int(corpo["papel"]), ajuste=str(corpo.get("ajuste") or "real"),
                 cor=str(corpo.get("cor") or "preto"), copias=int(corpo.get("copias") or 1),
