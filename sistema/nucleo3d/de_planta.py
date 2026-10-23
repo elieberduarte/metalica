@@ -4767,7 +4767,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         dets_b = bases_locacao.detalhes(ents)
         placas_b = bases_locacao.placas(ents, folga_b)
         placas_b += bases_locacao.placas_sem_contorno(placas_b, bases_locacao.rotulos(ents, folga_b), dets_b, doc, mover_b)
-        bases_feitas = bases_locacao.lancar(doc, placas_b, dets_b, mover_b, base, aco, barra, chapas_postas, avisos)
+        bases_feitas = bases_locacao.lancar(doc, placas_b, dets_b, mover_b, base, aco, barra, chapas_postas, avisos,
+                                            bases_locacao.nervuras(ents))
 
     # ---------------------------------------------------------------- a alma na face do banzo
     # o encaixe de fábrica (alma_na_face.encaixar, o mesmo da tesoura pelo desenho e do 3D pelos quadros): montantes e

@@ -32,6 +32,12 @@ def _desenho():
     e += [_circ(3036 + x, 367 + y, 9) for x, y in ((35, 35), (275, 35), (515, 35), (35, 275), (515, 275), (35, 515), (275, 515), (515, 515))]
     e += [_txt('CHAPA # 5/8"', 3230, 935), _txt('3 Ø 3/4"', 3993, 460), _txt("500", 3904, 520, "1-Cota"),
           _txt("150", 3903, 845, "1-Cota")]
+    # duas nervuras na vista de cima da CH5 (de pé, da face do pilar à borda) e o detalhe delas: 70 × 150, chanfro de 15
+    e += [_ret(3036 + 5, 367 + 272, 70, 6.35, "1-Metalica1"), _ret(3036 + 475, 367 + 272, 70, 6.35, "1-Metalica1"),
+          _txt("NERVURA 1", 3679, 953)]
+    e += [_txt("NERVURA 1 - 6X", 6000, 0), _txt('CHAPA # 1/4"', 6151, 92),
+          {"tipo": "polilinha", "fechada": True, "camada": "1-Metalica2",
+           "vertices": [[6188, 233, 0], [6188, 368, 0], [6203, 368, 0], [6258, 233, 0], [6258, 218, 0], [6203, 218, 0]]}]
     # a locação: a CH1 em pé (290 ao longo de x), o texto que diz outra placa ao lado; a CH5 só pelo nome
     e += [_ret(10000 - 145, 10000 - 200, 290, 400, "Chapas"), _txt("CH2", 10000, 10350)]
     e += [_txt("CH5", 20400, 10300)]
@@ -71,8 +77,8 @@ def test_placas_e_chumbadores_no_modelo():
     pl = BL.placas(ents, folga)
     assert len(pl) == 1                                  # os retângulos dos detalhes não são placas da locação
     pl += BL.placas_sem_contorno(pl, BL.rotulos(ents, folga), dets, doc, lambda p: p)
-    r = BL.lancar(doc, pl, dets, lambda p: p, 0.0, "ASTM A36", barra, chapas, avisos)
-    assert r["placas"] == 2 and r["chumbadores"] == 12, r
+    r = BL.lancar(doc, pl, dets, lambda p: p, 0.0, "ASTM A36", barra, chapas, avisos, BL.nervuras(ents))
+    assert r["placas"] == 2 and r["chumbadores"] == 12 and r["nervuras"] == 2, r
     ch1 = next(c for c in chapas if c.nome.endswith("CH1"))
     # a medida manda no nome; o texto "CH2" ao lado vira pergunta
     assert "diz CH2" in ch1.atributos["origem"]["a_conferir"]
@@ -93,3 +99,9 @@ def test_placas_e_chumbadores_no_modelo():
     assert {f.get("diametro") for f in ch5.furos if f.get("diametro")} == {20.6}
     assert "só escreve CH5" in ch5.atributos["origem"]["a_conferir"]
     assert len([b for b in postas if b.atributos["origem"]["placa"] == "CH5"]) == 8
+    # as nervuras: de pé em cima da placa, a ponta alta na face do pilar (a 75 mm da borda), para fora
+    nv = [c for c in chapas if c.nome.startswith("Nervura")]
+    assert len(nv) == 2 and all(abs(c.origem[2] - 15.88) < 1e-6 and c.eixo_y == (0.0, 0.0, 1.0) for c in nv)
+    assert all(max(q[1] for q in c.contorno) == 150.0 and abs(c.espessura - 6.35) < 1e-6 for c in nv)
+    assert sorted(round(math.dist(c.origem[:2], (20000.0, 10000.0))) for c in nv) == [200, 200]
+    assert "a_conferir" not in nv[0].atributos["origem"]          # 6X para 3 placas: as 2 desenhadas em cada

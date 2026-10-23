@@ -17,6 +17,9 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 #: o título do detalhe: "DET. DO CH1-21X", "DET. DA C1 - 4X"
 _TITULO = re.compile(r"^\s*DET\.?\s*D[AO]\s+(CH\s*\d+[A-Z]?)\s*-\s*(\d+)\s*X", re.I)
+#: o título do detalhe da nervura: "NERVURA 1 - 48X"; o nome dela na vista de cima da placa: "NERVURA 1"
+_TITULO_NERVURA = re.compile(r"^\s*(NERVURA\s*\d+)\s*-\s*(\d+)\s*X", re.I)
+_NOME_NERVURA = re.compile(r"^\s*(NERVURA\s*\d+)\s*$", re.I)
 #: o nome da placa na locação
 _NOME = re.compile(r"^\s*(CH\s*\d+[A-Z]?)\s*$", re.I)
 _ESPESSURA = re.compile(r"CHAPA\s*#\s*([\d/,.]+)\s*(\"|MM)?", re.I)
@@ -92,8 +95,9 @@ def detalhes(ents: Sequence[dict]) -> Dict[str, dict]:
         dentro = [r for r in rets if r != (x0, y0, x1, y1) and r[0] > x0 - 1 and r[2] < x1 + 1 and r[1] > y0 - 1 and r[3] < y1 + 1]
         abertos = [(round((r[0] + r[2]) / 2 - x0, 1), round((r[1] + r[3]) / 2 - y0, 1), round(r[2] - r[0], 1), round(r[3] - r[1], 1))
                    for r in dentro if min(r[2] - r[0], r[3] - r[1]) >= 40.0]
-        nerv = sum(1 for r in dentro if min(r[2] - r[0], r[3] - r[1]) < 20.0)
+        nerv = [(r[0] - x0, r[1] - y0, r[2] - x0, r[3] - y0) for r in dentro if min(r[2] - r[0], r[3] - r[1]) < 20.0]
         meus = [e for e in textos if da_vista(e, k)]
+        n_nerv = [_nome(_NOME_NERVURA.match(str(e["texto"])).group(1)) for e in meus if _NOME_NERVURA.match(str(e["texto"]))]
         esp = sorted((dist_caixa(e["posicao"], (x0, y0, x1, y1)), _espessura(e["texto"])) for e in meus if _espessura(e["texto"]))
         ch = [(_CHUMBADOR.match(str(e["texto"])), e) for e in meus]
         ch = [(mm, e) for mm, e in ch if mm]
@@ -105,10 +109,42 @@ def detalhes(ents: Sequence[dict]) -> Dict[str, dict]:
         L = Ls[0][1] if Ls and Ls[0][0] <= 250.0 else None
         out[nome] = {
             "qtd": qtd, "B": round(B, 1), "H": round(H, 1), "t": esp[0][1] if esp else None,
-            "furos": furos, "abertos": abertos, "nervuras": nerv,
+            "furos": furos, "abertos": abertos, "nervuras": nerv, "nervura": n_nerv[0] if n_nerv else None,
             "chumbador": {"bitola": bitola, "d": _POL.get(bitola.rstrip('"')) if bitola else None,
                           "L": L, "n": sum(int(mm.group(1)) for mm, _e in ch) or None},
         }
+    return out
+
+
+def nervuras(ents: Sequence[dict]) -> Dict[str, dict]:
+    """{"NERVURA1": {qtd, t, contorno: [(x, y)]}} — o contorno com x a partir da face do pilar (o lado mais alto) e y a
+    partir da placa: a NERVURA 1-48X do Posto, 70 × 150 com o chanfro de 15 da solda"""
+    polis = [[(v[0], v[1]) for v in e["vertices"]] for e in ents
+             if e.get("tipo") == "polilinha" and e.get("fechada") and 5 <= len(e.get("vertices") or []) <= 12]
+    textos = [e for e in ents if e.get("tipo") == "texto"]
+    out: Dict[str, dict] = {}
+    for t in textos:
+        m = _TITULO_NERVURA.match(str(t.get("texto") or ""))
+        if not m:
+            continue
+        tx, ty = t["posicao"][0], t["posicao"][1]
+        cand = [vs for vs in polis if min(v[0] for v in vs) >= tx - 50.0 and 100.0 <= min(v[1] for v in vs) - ty <= 600.0
+                and max(v[0] for v in vs) - min(v[0] for v in vs) <= 400.0]
+        if not cand:
+            continue
+        vs = min(cand, key=lambda q: math.dist((min(v[0] for v in q), min(v[1] for v in q)), (tx, ty)))
+        x0, y0, x1, y1 = _caixa(vs)
+        # a face do pilar: o lado (esquerdo ou direito) onde a nervura é mais alta
+        alto_esq = max(v[1] for v in vs if v[0] - x0 < 1.0)
+        alto_dir = max(v[1] for v in vs if x1 - v[0] < 1.0)
+        if alto_esq >= alto_dir:
+            cont = [(round(v[0] - x0, 1), round(v[1] - y0, 1)) for v in vs]
+        else:
+            cont = [(round(x1 - v[0], 1), round(v[1] - y0, 1)) for v in reversed(vs)]
+        esp = sorted((min(math.dist(e["posicao"][:2], v) for v in vs), _espessura(e["texto"])) for e in textos
+                     if _espessura(e["texto"]) and abs(e["posicao"][0] - tx) < 800.0 and abs(e["posicao"][1] - ty) < 800.0)
+        out[_nome(m.group(1))] = {"qtd": int(m.group(2)), "t": esp[0][1] if esp else None, "contorno": cont,
+                                  "largura": round(x1 - x0, 1), "altura": round(y1 - y0, 1)}
     return out
 
 
@@ -208,13 +244,13 @@ def _quadro(vs, B: float, H: float):
 
 
 def lancar(doc, placas_l: Sequence[dict], dets: Dict[str, dict], mover, base: float, aco: str, barra,
-           chapas_postas: list, avisos: List[str]) -> dict:
+           chapas_postas: list, avisos: List[str], nervs: Optional[Dict[str, dict]] = None) -> dict:
     """põe as placas e os chumbadores no modelo e encurta o pé dos pilares que nascem nelas; `mover` leva o ponto da
     locação para a planta, `barra` é a do montar (o chumbador entra nas marcas e no deslocamento junto com as outras)"""
     from nucleo3d.modelo import Chapa
     from nucleo3d import geometria as geo
     pilares = [b for b in doc.barras if b.papel == "pilar"]
-    n_placas = n_chumb = 0
+    n_placas = n_chumb = n_nerv = 0
     sem_detalhe = set()
     for pl in placas_l:
         vs = list(pl["vertices"]) if pl.get("ja_na_planta") else [mover(p) for p in pl["vertices"]]
@@ -265,6 +301,38 @@ def lancar(doc, placas_l: Sequence[dict], dets: Dict[str, dict], mover, base: fl
         doc.add(ch)
         chapas_postas.append(ch)
         n_placas += 1
+        # as nervuras desenhadas na vista de cima (os retângulos finos): de pé na placa, da face do pilar para fora
+        nv = (nervs or {}).get((d or {}).get("nervura") or "") if d else None
+        if d and d.get("nervuras") and nv:
+            por_placa = nv["qtd"] / float(d["qtd"] or 1)
+            o_nv = {"locacao": "%s da %s" % (d["nervura"].replace("NERVURA", "NERVURA "), nome), "placa": nome}
+            if abs(por_placa - len(d["nervuras"])) > 0.01:
+                o_nv["a_conferir"] = ("o detalhe %s-%dX dá %g por placa e a vista de cima da %s desenha %d: modeladas as "
+                                      "desenhadas" % (d["nervura"].replace("NERVURA", "NERVURA "), nv["qtd"], por_placa, nome,
+                                                      len(d["nervuras"])))
+            for rx0, ry0, rx1, ry1 in d["nervuras"]:
+                ao_x = rx1 - rx0 >= ry1 - ry0
+                meio = ((rx0 + rx1) / 2 + dx, (ry0 + ry1) / 2 + dy)
+                if ao_x:
+                    pa, pb = (rx0 + dx, meio[1]), (rx1 + dx, meio[1])
+                else:
+                    pa, pb = (meio[0], ry0 + dy), (meio[0], ry1 + dy)
+                # a ponta de dentro (mais perto do meio da placa) encosta no pilar
+                cen = (Lu / 2.0, Lv / 2.0)
+                if math.dist(pa, cen) > math.dist(pb, cen):
+                    pa, pb = pb, pa
+                A = (canto[0] + u[0] * pa[0] + v[0] * pa[1], canto[1] + u[1] * pa[0] + v[1] * pa[1])
+                Bp = (canto[0] + u[0] * pb[0] + v[0] * pb[1], canto[1] + u[1] * pb[0] + v[1] * pb[1])
+                Ln = math.dist(A, Bp) or 1.0
+                ex = ((Bp[0] - A[0]) / Ln, (Bp[1] - A[1]) / Ln, 0.0)
+                nchapa = Chapa(nome="%s (%s)" % (d["nervura"].replace("NERVURA", "Nervura "), nome), origem=(A[0], A[1], base + t),
+                               eixo_x=ex, eixo_y=(0.0, 0.0, 1.0), contorno=[tuple(q) for q in nv["contorno"]],
+                               espessura=nv["t"] or 6.35, centrada=True, aco=aco)
+                nchapa.camada = "Chapas"
+                nchapa.atributos = {"tipo_ifc": "IfcPlate", "origem": dict(o_nv)}
+                doc.add(nchapa)
+                chapas_postas.append(nchapa)
+                n_nerv += 1
         # o pilar que nasce na placa começa em cima dela
         poly = vs
         for b in pilares:
@@ -291,7 +359,7 @@ def lancar(doc, placas_l: Sequence[dict], dets: Dict[str, dict], mover, base: fl
     if sem_detalhe:
         avisos.append("placas de base sem detalhe (só o contorno da locação, sem furos nem chumbadores): %s"
                       % ", ".join(sorted(sem_detalhe)))
-    return {"placas": n_placas, "chumbadores": n_chumb, "detalhes": sorted(dets)}
+    return {"placas": n_placas, "chumbadores": n_chumb, "nervuras": n_nerv, "detalhes": sorted(dets)}
 
 
 def _dentro_poligono(p, poly) -> bool:
