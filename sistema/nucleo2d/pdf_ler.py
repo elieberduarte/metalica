@@ -113,7 +113,14 @@ def para_desenho(dados: bytes, destino: Optional[Desenho] = None, paginas: Optio
 
         tracos_miudos = 0
         n_antes = len(ids)
+        folha = pg.rect
         for d in pg.get_drawings():
+            # o caminho todo fora da página não aparece no PDF (o que o CAD deixou fora da janela da folha): não entra —
+            # no SESI, 8.811 traços da EMT21 caíam em cima da EMT20 e 9.231 da EMT08 embaixo das folhas (23/10)
+            r_d = d.get("rect")
+            if r_d is not None and (r_d.x1 < folha.x0 or r_d.x0 > folha.x1 or r_d.y1 < folha.y0 or r_d.y0 > folha.y1):
+                contagem["ignorado:fora da página"] += 1
+                continue
             cor = d.get("color")
             if cor is None:
                 # só preenchimento: ponta de seta, hachura sólida — fica de fora

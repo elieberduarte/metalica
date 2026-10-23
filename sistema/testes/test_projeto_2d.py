@@ -187,6 +187,25 @@ class TestPDF(unittest.TestCase, _Galpao):
         des, lido = pdf_ler.para_desenho(pdf.tobytes())
         self.assertTrue(any("digitalizada" in a for a in lido["avisos"]))
 
+    def test_pdf_tracos_fora_da_pagina(self):
+        """O traço todo fora da página não aparece no PDF e não entra; o que cruza a borda (a moldura) entra. SESI,
+        23/10: o desenho que o CAD deixou fora da folha (8.811 traços à esquerda da EMT21, 9.231 embaixo da EMT08) caía
+        em cima das outras pranchas na planta ("vieram coisas fora das pranchas")."""
+        import pymupdf
+        pdf = pymupdf.open()
+        pg = pdf.new_page(width=600, height=400)
+        pg.draw_line((100, 100), (300, 100))                        # dentro
+        pg.draw_line((-20, 200), (50, 200))                         # cruza a borda da esquerda
+        pg.draw_rect(pymupdf.Rect(-900, 100, -500, 300))            # todo fora, à esquerda (a EMT21)
+        pg.draw_line((100, 450), (300, 700))                        # todo fora, embaixo (a EMT08)
+        des, lido = pdf_ler.para_desenho(pdf.tobytes())
+        self.assertEqual(lido["por_tipo"].get("ignorado:fora da página"), 2)
+        xs = [p[0] for e in des.entidades.values() for p in e.pontos()]
+        ys = [p[1] for e in des.entidades.values() for p in e.pontos()]
+        self.assertEqual(len(des.entidades), 2)
+        self.assertGreater(min(xs), -20 * pdf_ler.PT_MM - 0.01)        # nada do desenho de fora
+        self.assertGreaterEqual(min(ys), 0.0)                           # nada embaixo da folha
+
     def test_nao_e_pdf(self):
         from nucleo.base import ErroDeDados
         with self.assertRaises(ErroDeDados):
