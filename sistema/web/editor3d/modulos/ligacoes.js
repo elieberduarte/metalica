@@ -97,7 +97,8 @@ export class MetodosLigacoes {
     const diagonal = (b) => String(b.papel).toLowerCase().startsWith('contravent') || /^L\s|FE RED|TIRANTE/i.test(String(b.perfil));
     const tirante = (b) => /RED|Ø|TIRANTE|REDOND/i.test(String(b.perfil));
     if (!barras.length && chapas.length) escolha.value = 'chumbador_gancho';
-    else if (barras.length >= 2 && barras.filter(tirante).length === 1) escolha.value = 'suporte_contravento';
+    else if (barras.length >= 3 && barras.filter(tirante).length === 1) escolha.value = 'suporte_contravento';
+    else if (barras.some(tirante) && barras.some(b => !tirante(b))) escolha.value = 'castanha_contravento';
     else if (barras.length === 2 && barras.some(diagonal) && !barras.every(diagonal)) escolha.value = 'gusset_contravento';
     else if (barras.some(b => ['terça', 'terca', 'longarina'].includes(String(b.papel).toLowerCase()))) escolha.value = 'suporte_terca_cadeirinha';
     else if (barras.length === 2 && vert.length === 1) escolha.value = 'chapa_topo_joelho';
@@ -247,16 +248,60 @@ export class MetodosLigacoes {
 
   // ---------------------------------------------------------------- painel
 
-  /** O grupo "Ligação" no painel: o tipo, os parâmetros editáveis (refaz ao mudar) e os botões. */
+  /** Troca o tipo das ligações `lids` pela variante `tipo` da mesma família (as mesmas barras): um desfazer só. */
+  trocarTipoLigacoes(lids, tipo) {
+    const nome = (this._tiposLig || []).find(t => t.id === tipo)?.nome || tipo;
+    const rotulo = lids.length > 1 ? `Trocar ${lids.length} ligações para ${nome}` : `Trocar a ligação para ${nome}`;
+    return this._pedirLigacao({ tipo, ids: [], ligacao: lids.length === 1 ? lids[0] : lids }, rotulo);
+  }
+
+  /** As peças de todas as ligações do mesmo tipo da `reg` (para trocar todas iguais a esta). */
+  selecionarLigacoesIguais(tipo) {
+    const ids = [...this.documento.entidades.values()].filter(x => regDe(x)?.tipo === tipo).map(x => x.id);
+    if (ids.length) this.selecao.definir(ids);
+  }
+
+  /** A escolha do tipo dentro da família (vazio quando o tipo não tem família): troca ao mudar. */
+  _escolhaDaFamilia(tipoAtual, lids, sempre = false) {
+    const tipos = this._tiposLig || [];
+    const atual = tipos.find(t => t.id === tipoAtual);
+    if (!atual || !atual.familia) return null;
+    const s = el('select', { title: 'Troca a ligação por outra variante da mesma família, nas mesmas barras' });
+    for (const t of tipos.filter(x => x.familia === atual.familia)) s.append(el('option', { value: t.id, texto: t.nome, selected: t.id === tipoAtual }));
+    s.addEventListener('change', () => { if (s.value && (sempre || s.value !== tipoAtual)) this.trocarTipoLigacoes(lids, s.value); });
+    return s;
+  }
+
+  /** O grupo "Ligação" no painel: o tipo (a variante da família, que se troca), os parâmetros editáveis (refaz ao
+   *  mudar) e os botões. Com várias ligações da mesma família selecionadas: trocar o tipo de todas de uma vez. */
   _painelLigacao(raiz, ents) {
     const regs = new Map();
     for (const e of ents) { const r = regDe(e); if (r) regs.set(r.id, r); }
-    if (regs.size !== 1) return;
+    if (!regs.size) return;
+    if (!this._tiposLig) { this._tiposDeLigacao().then(() => this._agendarPaineis('props')).catch(() => {}); }
+    const tipos = this._tiposLig || [];
+    if (regs.size > 1) {
+      const lista = [...regs.values()];
+      const fam = new Set(lista.map(r => tipos.find(t => t.id === r.tipo)?.familia || `só:${r.tipo}`));
+      if (fam.size !== 1 || [...fam][0].startsWith('só:')) return;
+      const g = this._grupo(raiz, 'Ligações');
+      const porTipo = {};
+      for (const r of lista) porTipo[r.tipo] = (porTipo[r.tipo] || 0) + 1;
+      const resumo = Object.entries(porTipo).map(([t, n]) => `${n} × ${tipos.find(x => x.id === t)?.nome || t}`).join('; ');
+      g.append(el('label', { texto: 'Selecionadas' }), el('span', { class: 'valor', texto: resumo }));
+      const s = this._escolhaDaFamilia(lista[0].tipo, lista.map(r => r.id), true);
+      if (s) {
+        s.prepend(el('option', { value: '', texto: 'trocar todas para…', selected: true }));
+        s.querySelector(`option[value="${lista[0].tipo}"]`).selected = false;
+        g.append(el('label', { texto: 'Tipo' }), s);
+      }
+      return;
+    }
     const reg = [...regs.values()][0];
     const g = this._grupo(raiz, 'Ligação');
-    const tipos = this._tiposLig || [];
     const tipo = tipos.find(t => t.id === reg.tipo);
-    g.append(el('label', { texto: 'Tipo' }), el('span', { class: 'valor', texto: tipo ? tipo.nome : reg.tipo }));
+    const escolha = this._escolhaDaFamilia(reg.tipo, [reg.id]);
+    g.append(el('label', { texto: 'Tipo' }), escolha || el('span', { class: 'valor', texto: tipo ? tipo.nome : reg.tipo }));
     if (tipo) {
       const form = this._formParametros(tipo, reg.parametros || {});
       for (const i of form.corpo.querySelectorAll('input, select')) {
@@ -268,12 +313,11 @@ export class MetodosLigacoes {
         });
       }
       g.append(...form.corpo.childNodes);
-    } else {
-      this._tiposDeLigacao().then(() => this._agendarPaineis('props')).catch(() => {});
     }
     const botoes = el('div', { class: 'acoes-painel', style: 'grid-column:1/-1' });
     const botao = (texto, fn, titulo) => botoes.append(el('button', { type: 'button', class: 'mini', texto, title: titulo, onclick: fn }));
     botao('Selecionar a ligação', () => this.selecionarLigacao(reg.id), 'Todas as peças desta ligação');
+    if (tipo && tipo.familia) botao('Todas iguais a esta', () => this.selecionarLigacoesIguais(reg.tipo), 'Seleciona todas as ligações deste tipo no modelo, para trocar o tipo de todas de uma vez');
     botao('Refazer', () => this.refazerLigacao(reg.id), 'Refaz as peças nas barras como estão agora');
     botao('Apagar ligação', () => this.apagarLigacao(reg.id), 'Tira todas as peças da ligação e devolve as barras como eram');
     g.append(botoes);

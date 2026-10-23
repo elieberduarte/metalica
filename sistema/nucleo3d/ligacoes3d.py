@@ -1040,6 +1040,332 @@ def _suporte_contravento(tirante, apoios, p):
             "parametros": params, "avisos": avisos}
 
 
+# ------------------------------------------------------------------ contravento × viga: as variantes por nó
+#
+# Pedido do usuário (23/10, o detalhamento de um terceiro): o projeto marca onde o X de contravento chega na viga mas não
+# diz a ligação; "quero só clicar e mudar o tipo (castanha, duas chapas iguais à Sooro, cantoneira cortada…)". Cada
+# variante é uma ligação POR NÓ: a viga e o(s) tirante(s) que chegam no mesmo ponto dela (o V do print, dois tirantes
+# no mesmo ponto). Com dois, as pontas se afastam `separa` ao longo da viga, uma para o lado de onde cada tirante vem.
+# Só a ponta do nó muda (o campo `inicio` ou `fim`): a outra ponta do tirante tem a ligação dela.
+
+Z_ = (0.0, 0.0, 1.0)
+
+
+def _ponta_no_apoio(tir, ap, limite=600.0):
+    """a ponta do tirante que chega no eixo do apoio (em planta, até `limite`): {ponta, E, Q, w (o apoio), dist}"""
+    wa = _norm(_sub(ap.fim, ap.inicio))
+    wh = (wa[0], wa[1], 0.0)
+    if math.sqrt(_dot(wh, wh)) < 1e-6:
+        return None
+    wh = _norm(wh)
+    melhor = None
+    for ponta, E, Q in (("inicio", tir.inicio, tir.fim), ("fim", tir.fim, tir.inicio)):
+        r = _sub(E, ap.inicio)
+        r = (r[0], r[1], 0.0)
+        d = math.sqrt(max(0.0, _dot(r, r) - _dot(r, wh) ** 2))
+        if d <= limite and (melhor is None or d < melhor["dist"]):
+            melhor = {"ponta": ponta, "E": tuple(E), "Q": tuple(Q), "wa": wa, "wh": wh, "dist": d}
+    return melhor
+
+
+def _tirantes_do_no(tirantes, ap, p, separa_padrao=150.0):
+    """as pontas no nó, cada uma com o ponto de chegada já afastado (`separa`, quando são dois) e o referencial dela:
+    dh (em planta, de fora para o nó), lado (⟂ em planta), n (⟂ ao apoio, do lado do tirante para o eixo), o ponto no
+    eixo do apoio, as faces de cima e de baixo dele ali"""
+    pontas = []
+    for t in tirantes:
+        info = _ponta_no_apoio(t, ap)
+        if info is None:
+            raise ErroDeDados("o tirante %s não chega na viga %s (até 600 mm em planta)" % (t.nome or t.id, ap.nome or ap.id))
+        info["tirante"] = t
+        pontas.append(info)
+    separa = float(p.get("separa") or separa_padrao) if len(pontas) > 1 else 0.0
+    nb, _ = _eixo_secao_mais_perto(ap, Z_)
+    lo_b, hi_b = _extremos(ap, nb)
+    for info in pontas:
+        wa, wh, E, Q = info["wa"], info["wh"], info["E"], info["Q"]
+        de_fora = _norm((E[0] - Q[0], E[1] - Q[1], 0.0))
+        lado_vem = -1.0 if _dot(de_fora, wh) > 0 else 1.0       # o tirante vem deste lado (ao longo da viga)
+        P = _add(ap.inicio, _mul(wa, _dot(_sub(E, ap.inicio), wa)))   # a ponta levada ao eixo do apoio
+        P = _add(P, _mul(wa, lado_vem * separa / 2.0))
+        dh = _norm((P[0] - Q[0], P[1] - Q[1], 0.0))
+        n = _sub(dh, _mul(wh, _dot(dh, wh)))
+        if math.sqrt(_dot(n, n)) < 0.15:
+            raise ErroDeDados("o tirante %s corre junto da viga: não chega nela" % (info["tirante"].nome or info["tirante"].id))
+        n = _norm(n)
+        z_cima = _add(P, _mul(nb, hi_b - _dot(P, nb)))[2]
+        z_baixo = _add(P, _mul(nb, lo_b - _dot(P, nb)))[2]
+        info.update(P=P, dh=dh, n=n, lado=_norm(_cruz(Z_, dh)), z_cima=z_cima, z_baixo=z_baixo,
+                    borda=_extremos(ap, n)[0])            # a borda da mesa do lado de onde o tirante vem
+    return pontas
+
+
+def _face(info, p):
+    """'cima' ou 'baixo': a pedida, ou a face da viga mais perto da altura em que o tirante chega"""
+    f = str(p.get("face") or "").lower()
+    if f in ("cima", "baixo"):
+        return f
+    return "cima" if abs(info["E"][2] - info["z_cima"]) <= abs(info["E"][2] - info["z_baixo"]) else "baixo"
+
+
+def _ponta_alterada(info, ponto):
+    t = info["tirante"]
+    return ({t.id: {info["ponta"]: tuple(round(float(c), 2) for c in ponto)}},
+            {t.id: {info["ponta"]: tuple(getattr(t, info["ponta"]))}})
+
+
+def _juntar(dst, src):
+    for bid, campos in src.items():
+        dst.setdefault(bid, {}).update(campos)
+
+
+def _castanha_contravento(barras, p):
+    """A castanha (a CA1 do Hangar, folha CASTANHAS DOS CONTRAVENTOS): a cantoneira deitada na mesa da viga, ao longo do
+    tirante, presa por um parafuso na mesa a 30 mm da borda; na ponta de fora dela a cantoneira pequena em pé, furada —
+    o tirante passa nela a 25 mm da mesa e sobra `passa` para as porcas. Na mesa de cima a aba sobe; na de baixo, desce."""
+    from nucleo.acessorios import d_parafuso_mm
+    from nucleo3d.de_planta_estrutura import _furo_marcador
+    *tirantes, ap = barras
+    pa = _perfil(ap.perfil)
+    tf = float(pa.tf or pa.tw or 8.0)
+    perfil = str(p.get("cantoneira") or "L 50X50X4.75")
+    Lc = float(p.get("comprimento") or 150.0)
+    perfil_a = str(p.get("aba") or perfil)
+    La = float(p.get("comprimento_aba") or 50.0)
+    nome_par = str(p.get("parafuso") or '1/2"')
+    d = d_parafuso_mm(nome_par)
+    fd = float(p.get("furo") or 14.0)
+    classe = str(p.get("classe") or "ASTM A307")
+    borda = float(p.get("borda") or 30.0)
+    h_furo = float(p.get("altura_furo") or 25.0)
+    passa = float(p.get("passa") or 40.0)
+    pl = _perfil(perfil)
+    tL, aba_L = float(pl.tw or pl.tf or 4.76), float(pl.bf or 50.8)
+    pecas, alterar, ajustes, conjuntos, soldas_entre, soldas = [], {}, {}, [], [], []
+    faces = []
+    for info in _tirantes_do_no(tirantes, ap, p, 250.0):
+        face = _face(info, p)
+        faces.append(face)
+        sz = 1.0 if face == "cima" else -1.0
+        zf = info["z_cima"] if face == "cima" else info["z_baixo"]
+        dh, lado, n, P = info["dh"], info["lado"], info["n"], info["P"]
+        Ph = (P[0], P[1], zf)
+        # o parafuso na linha do tirante, a `borda` da borda da mesa do lado dele
+        alvo = info["borda"] + borda
+        Bp = _add(Ph, _mul(dh, (alvo - _dot(Ph, n)) / _dot(dh, n)))
+        Bp = (Bp[0], Bp[1], zf)
+        S0 = _add(Bp, _mul(dh, 25.0))
+        S1 = _sub(S0, _mul(dh, Lc))
+        M = _mul(_add(S0, S1), 0.5)
+        cast = _cantoneira_no_canto(perfil, _mul(dh, -1.0), _sub(M, _mul(lado, aba_L / 2.0)), lado, _mul(Z_, sz), Lc)
+        cast.nome, cast.papel = "Castanha", "castanha"
+        cast.atributos = {"tipo_ifc": "IfcMember", "elemento": "Castanha"}
+        aba = _cantoneira_no_canto(perfil_a, lado, S1, _mul(dh, -1.0), _mul(Z_, sz), La)
+        aba.nome, aba.papel = "Castanha (aba)", "castanha"
+        aba.atributos = {"tipo_ifc": "IfcMember", "elemento": "Castanha (aba)"}
+        H = _add(_add(S1, _mul(Z_, sz * h_furo)), _mul(dh, passa))      # a ponta do tirante: passa a aba
+        furos = [_furo_marcador(Bp, _mul(Z_, sz), fd, tL + 1.0, cast.id),
+                 _furo_marcador(Bp, _mul(Z_, -sz), fd, tf + 1.0, ap.id),
+                 _furo_marcador(_add(S1, _mul(Z_, sz * h_furo)), _mul(dh, -1.0), fd, tL + 1.0, aba.id)]
+        par = _parafuso(_add(Bp, _mul(Z_, sz * (tL - tf) / 2.0)), _mul(Z_, sz), d, tL + tf, classe)
+        pecas += [cast, aba, par] + furos
+        conjuntos.append((cast, [aba]))
+        soldas_entre.append((cast, aba, {"tipo": "filete", "perna": 4.0, "lados": 1, "local": "fabrica", "forma": "contorno"}))
+        a, b = _ponta_alterada(info, H)
+        _juntar(alterar, a)
+        _juntar(ajustes, b)
+    params = dict(p, cantoneira=perfil, comprimento=Lc, aba=perfil_a, comprimento_aba=La, parafuso=nome_par, furo=fd,
+                  classe=classe, borda=borda, altura_furo=h_furo, passa=passa, face="/".join(sorted(set(faces))))
+    return {"pecas": pecas, "alterar": alterar, "ajustes": ajustes, "conjuntos": conjuntos, "soldas": soldas,
+            "soldas_entre": soldas_entre, "parametros": params, "avisos": []}
+
+
+def _duas_chapas_contravento(barras, p):
+    """As duas chapas da Sooro (o CV da ME-Sooro no IFC: L 2½"×¼", chapas 80×80×8, barra roscada 5/8"): a chapa deitada
+    soldada na mesa da viga (uma só para o nó, 270 × 120 com dois tirantes); em cada tirante, um toco de cantoneira
+    parafusado nela e outro soldado no tirante, cada um com uma chapa 80×80 na ponta, e a barra roscada entre as duas
+    chapas — as porcas esticam o X. Medidas ao longo do tirante, do nó para fora."""
+    from nucleo.acessorios import d_parafuso_mm, furo_mm, DIAMETROS_BARRA
+    from nucleo3d.modelo import Barra
+    from nucleo3d import geometria as geo
+    *tirantes, ap = barras
+    perfil = str(p.get("cantoneira") or "L 2 1/2'' X 1/4''")
+    Lt = float(p.get("comprimento_toco") or 150.0)
+    B80, t80 = float(p.get("chapa") or 80.0), float(p.get("chapa_t") or 8.0)
+    vao = float(p.get("vao") or 100.0)                      # entre as duas chapas 80×80 (as porcas)
+    tb, Bb = float(p.get("base_t") or 6.35), float(p.get("base_largura") or 120.0)
+    rosca = str(p.get("rosca") or '5/8"')
+    dr = DIAMETROS_BARRA[rosca]
+    sobra = float(p.get("sobra_rosca") or 40.0)
+    nome_par = str(p.get("parafuso") or "M16")
+    d, fd = d_parafuso_mm(nome_par), furo_mm(nome_par)
+    classe = str(p.get("classe") or "ASTM A307")
+    pl = _perfil(perfil)
+    tL, abaL = float(pl.tw or pl.tf or 6.35), float(pl.bf or 63.5)
+    pontas = _tirantes_do_no(tirantes, ap, p, 200.0)
+    face = _face(pontas[0], p)
+    sz = 1.0 if face == "cima" else -1.0
+    zf = pontas[0]["z_cima"] if face == "cima" else pontas[0]["z_baixo"]
+    z0 = zf + sz * tb                                      # a face da chapa deitada, onde os tocos deitam
+    pecas, alterar, ajustes, conjuntos, soldas_entre = [], {}, {}, [], []
+    furos_base, tocos_parafusados = [], []
+    perfil_r = "FE RED %s" % rosca.replace('"', "''")
+    geo.registrar_perfil(geo.barra_redonda(dr, perfil_r))
+    for info in pontas:
+        dh, lado, P = info["dh"], info["lado"], info["P"]
+        t = info["tirante"]
+        r_t = float(_perfil(t.perfil).d or 12.7) / 2.0
+        fora = _mul(dh, -1.0)
+        Ph = (P[0], P[1], z0)
+        zr = sz * B80 / 2.0                                 # o eixo da barra roscada: no meio da chapa 80×80
+        def em(s, lat=0.0, z=0.0):
+            return _add(_add(_add(Ph, _mul(fora, s)), _mul(lado, lat)), _mul(Z_, z))
+        # toco 1 (o da viga): de s = -25 a Lt-25, a aba em pé encostada na barra roscada (a mais grossa)
+        heel = -(tL + max(r_t, dr / 2.0) + 0.5)
+        s1a, s1b = -25.0, Lt - 25.0
+        toco1 = _cantoneira_no_canto(perfil, fora, em((s1a + s1b) / 2.0, heel), lado, _mul(Z_, sz), Lt)
+        toco1.nome, toco1.papel = "Toco da castanha", "castanha"
+        toco1.atributos = {"tipo_ifc": "IfcMember", "elemento": "Castanha"}
+        s_par = 10.0
+        lat_par = heel + abaL / 2.0
+        Bp = em(s_par, lat_par)
+        par = _parafuso(_add(Bp, _mul(Z_, sz * (tL - tb) / 2.0)), _mul(Z_, sz), d, tL + tb, classe)
+        furos_base.append(Bp)
+        # as duas chapas 80×80 e o toco 2 (o do tirante)
+        ex = lado
+        ey = _mul(Z_, sz)
+        ch1 = _chapa("Chapa 80×80", _add(em(s1b, -B80 / 2.0), (0.0, 0.0, 0.0)), ex, ey, B80, B80, t80,
+                     [(B80 / 2.0, B80 / 2.0, round(dr + 1.5, 1))])
+        # a chapa cresce para fora (eixo x × eixo y = −fora quando sz=1): a origem na face de dentro dela
+        nrm = _cruz(ex, ey)
+        if _dot(nrm, fora) < 0:
+            ch1.origem = tuple(_add(ch1.origem, _mul(fora, t80)))
+        s2 = s1b + t80 + vao
+        ch2 = _chapa("Chapa 80×80", em(s2, -B80 / 2.0), ex, ey, B80, B80, t80, [(B80 / 2.0, B80 / 2.0, round(dr + 1.5, 1))])
+        if _dot(nrm, fora) < 0:
+            ch2.origem = tuple(_add(ch2.origem, _mul(fora, t80)))
+        s2b = s2 + t80
+        toco2 = _cantoneira_no_canto(perfil, fora, em(s2b + Lt / 2.0, heel), lado, _mul(Z_, sz), Lt)
+        toco2.nome, toco2.papel = "Toco do tirante", "castanha"
+        toco2.atributos = {"tipo_ifc": "IfcMember", "elemento": "Castanha"}
+        barra_r = Barra(nome="Barra roscada", inicio=em(s1b - sobra, 0.0, zr), fim=em(s2b + sobra, 0.0, zr), perfil=perfil_r,
+                        papel="barra_roscada", camada="Chapas", material="Aço",
+                        atributos={"tipo_ifc": "IfcMember", "elemento": "Barra roscada"})
+        # o tirante: encostado na aba em pé do toco 2, até depois da sobra da barra roscada
+        H = em(s2b + sobra + 5.0, 0.0, zr)
+        pecas += [toco1, par, ch1, ch2, toco2, barra_r]
+        conjuntos += [(toco1, [ch1]), (toco2, [ch2])]
+        for x, y in ((toco1, ch1), (toco2, ch2)):
+            soldas_entre.append((x, y, {"tipo": "filete", "perna": 5.0, "lados": 1, "local": "fabrica", "forma": "contorno"}))
+        tocos_parafusados.append(toco1)
+        a, b = _ponta_alterada(info, H)
+        _juntar(alterar, a)
+        _juntar(ajustes, b)
+    # a chapa deitada: no eixo da viga, do primeiro ao último parafuso + 35 de borda (mín. 150)
+    wa = pontas[0]["wa"]
+    c_ = _mul(_add(furos_base[0], furos_base[-1]), 0.5)
+    q = _add(ap.inicio, _mul(wa, _dot(_sub(c_, ap.inicio), wa)))
+    q = (q[0], q[1], zf)
+    us = [_dot(_sub(f, q), wa) for f in furos_base]
+    Lb = max(float(p.get("base_comprimento") or 0.0), 150.0, _acima(max(us) - min(us) + 2 * 35.0 + 0.0))
+    if len(pontas) > 1:
+        Lb = max(Lb, 270.0)
+    eyb = _norm(_cruz(Z_, wa))
+    exb = wa if _dot(_cruz(wa, eyb), Z_) * sz > 0 else _mul(wa, -1.0)
+    ob = _add(_add(q, _mul(exb, -Lb / 2.0)), _mul(eyb, -Bb / 2.0))
+    if sz < 0:
+        ob = _sub(ob, _mul(Z_, tb))
+    furos_loc = []
+    for f in furos_base:
+        r = _sub(f, ob)
+        furos_loc.append((_dot(r, exb), _dot(r, eyb), fd))
+    base = _chapa("Chapa da castanha", ob, exb, eyb, Lb, Bb, tb, furos_loc)
+    from nucleo2d.detalhe.soldas import _perna
+    pecas.insert(0, base)
+    params = dict(p, cantoneira=perfil, comprimento_toco=Lt, chapa=B80, chapa_t=t80, vao=vao, base_t=tb,
+                  base_largura=Bb, base_comprimento=Lb, rosca=rosca, sobra_rosca=sobra, parafuso=nome_par, classe=classe,
+                  face=face)
+    soldas = [(ap.id, base, {"tipo": "filete", "perna": _perna(float(_perfil(ap.perfil).tf or 8.0), tb), "lados": 1,
+                             "local": "fabrica", "forma": "contorno"})]
+    return {"pecas": pecas, "alterar": alterar, "ajustes": ajustes, "conjuntos": [(ap, [base])] + conjuntos,
+            "soldas": soldas, "soldas_entre": soldas_entre, "parametros": params, "avisos": []}
+
+
+def _cantoneira_contravento(barras, p):
+    """A cantoneira cortada em pé (a SC1 da portaria, banco de detalhes) no nó: a mesma colocação do
+    `_suporte_contravento`, uma por tirante, as pontas afastadas `separa` quando são dois."""
+    from nucleo3d.modelo import Barra
+    *tirantes, ap = barras
+    pecas, alterar, ajustes, conjuntos, soldas = [], {}, {}, [], []
+    params = dict(p)
+    for info in _tirantes_do_no(tirantes, ap, p):
+        t = info["tirante"]
+        # o tirante com a ponta já no ponto afastado (na altura dela): o SC1 acha a colocação a partir daí
+        alvo = (info["P"][0], info["P"][1], info["E"][2])
+        tmp = Barra(id=t.id, nome=t.nome, inicio=t.inicio, fim=t.fim, perfil=t.perfil, papel=t.papel)
+        setattr(tmp, info["ponta"], alvo)
+        g = _suporte_contravento(tmp, [ap], p)
+        pecas += g["pecas"]
+        conjuntos += g["conjuntos"]
+        soldas += g["soldas"]
+        params.update(g["parametros"])
+        novo = g["alterar"][t.id][info["ponta"]]
+        a, b = _ponta_alterada(info, novo)
+        _juntar(alterar, a)
+        _juntar(ajustes, b)
+    return {"pecas": pecas, "alterar": alterar, "ajustes": ajustes, "conjuntos": conjuntos, "soldas": soldas,
+            "parametros": params, "avisos": []}
+
+
+LOCAIS["castanha_contravento"] = {
+    "nome": "Contravento: castanha (cantoneira deitada + aba furada)", "categoria": "contraventamento",
+    "descricao": "A CA1 do Hangar: L50 de 150 deitada na mesa da viga ao longo do tirante, um parafuso 1/2\" na mesa a 30 "
+                 "mm da borda; na ponta, L50 de 50 em pé furada Ø14 — o tirante passa nela a 25 mm da mesa.",
+    "parametros": [{"chave": "cantoneira", "rotulo": "Castanha (perfil)", "unidade": "", "padrao": "L 50X50X4.75"},
+                   {"chave": "comprimento", "rotulo": "Comprimento da castanha", "unidade": "mm", "padrao": 150},
+                   {"chave": "comprimento_aba", "rotulo": "Comprimento da aba furada", "unidade": "mm", "padrao": 50},
+                   {"chave": "parafuso", "rotulo": "Parafuso na mesa", "unidade": "", "padrao": '1/2"'},
+                   {"chave": "furo", "rotulo": "Furo", "unidade": "mm", "padrao": 14},
+                   {"chave": "separa", "rotulo": "Dois tirantes no nó: afastar", "unidade": "mm", "padrao": 250},
+                   {"chave": "face", "rotulo": "Mesa (vazio = a mais perto do tirante)", "unidade": "", "padrao": "",
+                    "opcoes": ["", "cima", "baixo"]}],
+    "esforcos": [],
+}
+LOCAIS["duas_chapas_contravento"] = {
+    "nome": "Contravento: duas chapas (Sooro)", "categoria": "contraventamento",
+    "descricao": "O CV da Sooro: chapa deitada soldada na mesa (270×120×6,35 no nó de dois tirantes); em cada tirante um "
+                 "toco de L 2½\"×¼\" parafusado (M16) nela e outro soldado no tirante, cada um com uma chapa 80×80×8, e a "
+                 "barra roscada 5/8\" entre as duas chapas — as porcas esticam o X.",
+    "parametros": [{"chave": "cantoneira", "rotulo": "Tocos (perfil)", "unidade": "", "padrao": "L 2 1/2'' X 1/4''"},
+                   {"chave": "comprimento_toco", "rotulo": "Comprimento de cada toco", "unidade": "mm", "padrao": 150},
+                   {"chave": "chapa_t", "rotulo": "Chapas 80×80: espessura", "unidade": "mm", "padrao": 8},
+                   {"chave": "vao", "rotulo": "Vão entre as duas chapas", "unidade": "mm", "padrao": 100},
+                   {"chave": "rosca", "rotulo": "Barra roscada", "unidade": "", "padrao": '5/8"'},
+                   {"chave": "parafuso", "rotulo": "Parafuso do toco", "unidade": "", "padrao": "M16"},
+                   {"chave": "separa", "rotulo": "Dois tirantes no nó: afastar", "unidade": "mm", "padrao": 200}],
+    "esforcos": [],
+}
+LOCAIS["cantoneira_contravento"] = {
+    "nome": "Contravento: cantoneira cortada em pé (SC1)", "categoria": "contraventamento",
+    "descricao": LOCAIS["suporte_contravento"]["descricao"],
+    "parametros": LOCAIS["suporte_contravento"]["parametros"] + [
+        {"chave": "separa", "rotulo": "Dois tirantes no nó: afastar", "unidade": "mm", "padrao": 150}],
+    "esforcos": [],
+}
+for _t in ("castanha_contravento", "duas_chapas_contravento", "cantoneira_contravento"):
+    TIPOS_3D[_t] = {"pede": "a viga e o(s) tirante(s) que chegam nela — uma ligação por nó", "barras": ("tirantes", "apoio")}
+
+#: as famílias: os tipos de uma família ligam as mesmas barras e se trocam um pelo outro
+FAMILIAS = {
+    "contravento": {"nome": "Contravento × viga", "tipos": ["castanha_contravento", "duas_chapas_contravento",
+                                                            "cantoneira_contravento"]},
+}
+
+
+def familia_de(tipo: str) -> Optional[str]:
+    return next((f for f, v in FAMILIAS.items() if tipo in v["tipos"]), None)
+
+
 # ------------------------------------------------------------------ escolher as barras
 
 def _barras_para(doc, tipo, ids):
@@ -1058,6 +1384,8 @@ def _barras_para(doc, tipo, ids):
         return [[b] for b in barras]
     if pede == ("terca", "apoio"):
         return _pares_terca_apoio(barras)
+    if pede == ("tirantes", "apoio"):
+        return _nos_de_contravento(barras, TIPOS_3D[tipo]["pede"])
     if pede == ("tirante", "apoio"):
         redondo = lambda b: bool(re.search(r"RED|Ø|TIRANTE|REDOND", str(b.perfil), re.I))      # noqa: E731
         tir = [b for b in barras if str(b.papel).lower().startswith("contravent") or redondo(b)]
@@ -1090,6 +1418,39 @@ def _barras_para(doc, tipo, ids):
             a, b = b, a
         return [[a, b]]
     return [[a, b]]
+
+
+def _eh_tirante(b):
+    return str(b.papel).lower().startswith("contravent") or bool(re.search(r"RED|Ø|TIRANTE|REDOND", str(b.perfil), re.I))
+
+
+def _nos_de_contravento(barras, pede):
+    """os nós: cada viga selecionada com os tirantes que chegam nela no mesmo ponto (até 400 mm um do outro ao longo
+    dela) — [tirante(s)…, viga] por nó"""
+    tir = [b for b in barras if _eh_tirante(b)]
+    vigas = [b for b in barras if b not in tir]
+    if not tir or not vigas:
+        raise ErroDeDados("selecione %s" % pede)
+    nos = []
+    for v in vigas:
+        chegam = []
+        for t in tir:
+            info = _ponta_no_apoio(t, v)
+            if info is not None:
+                chegam.append((_dot(_sub(info["E"], v.inicio), info["wa"]), t))
+        chegam.sort(key=lambda x: x[0])
+        grupo, ultimo = [], None
+        for s, t in chegam:
+            if grupo and s - ultimo > 400.0:
+                nos.append(grupo + [v])
+                grupo = []
+            grupo.append(t)
+            ultimo = s
+        if grupo:
+            nos.append(grupo + [v])
+    if not nos:
+        raise ErroDeDados("nenhum tirante selecionado chega numa viga selecionada (até 600 mm em planta)")
+    return nos
 
 
 def _pares_terca_apoio(barras):
@@ -1138,6 +1499,12 @@ def _gerar(tipo, barras, p):
         return _presilhas(barras[0], barras[1], p)
     if tipo == "suporte_contravento":
         return _suporte_contravento(barras[0], barras[1:], p)
+    if tipo == "castanha_contravento":
+        return _castanha_contravento(barras, p)
+    if tipo == "duas_chapas_contravento":
+        return _duas_chapas_contravento(barras, p)
+    if tipo == "cantoneira_contravento":
+        return _cantoneira_contravento(barras, p)
     raise ErroDeDados("a ligação %s ainda não sabe se pôr no 3D" % tipo)
 
 
@@ -1207,6 +1574,7 @@ def tipos(doc=None, ids=()) -> List[dict]:
         else:
             d = A.REGISTRO[tid].dict()
         d["pede"] = info["pede"]
+        d["familia"] = familia_de(tid)
         fora.append(d)
     return fora
 
@@ -1258,6 +1626,8 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
     from nucleo import acessorios as A
     if tipo not in TIPOS_3D:
         raise ErroDeDados("ligação desconhecida para o 3D: %s" % tipo)
+    if isinstance(ligacao, (list, tuple)):
+        return _varias(doc, tipo, list(ligacao), parametros, esforcos, analise)
     trabalho = _copia_de_trabalho(doc, ids)                # o recebido não muda
     remover: List[str] = []
     restaurar: Dict[str, dict] = {}
@@ -1269,7 +1639,13 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
         reg = velhas[0].atributos["ligacao"]
         ids = list(reg.get("pecas") or [])
         _copiar_em(trabalho, ids)
-        base_parametros = dict(reg.get("parametros") or {}, **(parametros or {}))
+        if reg.get("tipo") == tipo:
+            base_parametros = dict(reg.get("parametros") or {}, **(parametros or {}))
+        else:
+            # trocar o tipo (a variante da mesma família): as mesmas barras, os parâmetros do tipo novo
+            if familia_de(tipo) is None or familia_de(tipo) != familia_de(str(reg.get("tipo"))):
+                raise ErroDeDados("a ligação %s não se troca por %s (outra família)" % (reg.get("tipo"), tipo))
+            base_parametros = dict(parametros or {})
         _limpar_soldas(trabalho, velhas, ids)
         for e in velhas:
             remover.append(e.id)
@@ -1375,6 +1751,34 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
         if "atributos" not in alterar[bid]:
             alterar[bid]["atributos"] = trabalho.entidades[bid].atributos
     return {"novas": [e.dict() for e in novas], "alterar": alterar, "remover": remover, "ligacoes": resultados}
+
+
+def _varias(doc, tipo, lids, parametros, esforcos, analise) -> dict:
+    """Trocar o tipo (ou refazer) de várias ligações numa resposta só — um desfazer no editor: cada uma refeita na
+    cópia de trabalho com as anteriores já feitas, e a resposta é o que mudou do documento recebido para o fim."""
+    from nucleo3d.modelo import Documento
+    trabalho = _copia_de_trabalho(doc, [])
+    removidas, novas, alterar, ligs = set(), [], {}, []
+    for lid in dict.fromkeys(lids):
+        r = aplicar(trabalho, tipo, [], parametros, ligacao=lid, esforcos=esforcos, analise=analise)
+        for i in r["remover"]:
+            removidas.add(i)
+            trabalho.entidades.pop(i, None)
+        for i, campos in r["alterar"].items():
+            if i not in trabalho.entidades:
+                continue
+            _copiar_em(trabalho, [i])
+            for k, v in campos.items():
+                setattr(trabalho.entidades[i], k, copy.deepcopy(v))
+            alterar.setdefault(i, {}).update(copy.deepcopy(campos))
+        for e in Documento.de_dict({"entidades": r["novas"]}).entidades.values():
+            trabalho.add(e)
+            trabalho._copiadas.add(e.id)
+            novas.append(e.id)
+        ligs += r["ligacoes"]
+    return {"novas": [trabalho.entidades[i].dict() for i in novas if i in trabalho.entidades],
+            "alterar": {i: c for i, c in alterar.items() if i in doc.entidades and i not in removidas},
+            "remover": [i for i in removidas if i in doc.entidades], "ligacoes": ligs}
 
 
 def _limpar_soldas(doc, velhas, ids_barras):
