@@ -52,6 +52,7 @@ PADRAO = {
     "deitadas": False,                          # faixa de treliça vista de cima vira treliça deitada (senão, a conferir)
     "duas_pecas": [],                           # elevações que são duas peças: a viga de transição e a tesoura em cima
     "sem_tesoura_de_cima": [],                  # dessas, as que o projeto confirma sem a tesoura de cima (só a viga)
+    "bases_da_locacao": False,                  # as placas de base da locação com os detalhes "DET. DO CHn" (bases_locacao)
 }
 
 #: camadas de anotação: não têm peça
@@ -4755,6 +4756,19 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                                            "pela cota do corte, que bate com os espelhos iguais" if esc.get("patamar_por") == "cortes"
                                            else "pelos espelhos iguais; o corte não confirmou"))
 
+    # ---------------------------------------------------------------- placas de base
+    # as placas da locação com os furos, a espessura e os chumbadores do detalhe "DET. DO CHn-nX" (Posto CB, 22/10/2026:
+    # 82 placas, nenhuma no modelo); só no projeto que pede (`bases_da_locacao`), até o usuário aprovar o jeito
+    bases_feitas = None
+    if par.get("bases_da_locacao") and caixa_l:
+        from nucleo3d import bases_locacao
+        folga_b = (caixa_l[0] - 2500, caixa_l[1] - 2500, caixa_l[2] + 2500, caixa_l[3] + 2500)
+        mover_b = lambda p: (p[0] + desl_l[0], p[1] + desl_l[1])      # noqa: E731
+        dets_b = bases_locacao.detalhes(ents)
+        placas_b = bases_locacao.placas(ents, folga_b)
+        placas_b += bases_locacao.placas_sem_contorno(placas_b, bases_locacao.rotulos(ents, folga_b), dets_b, doc, mover_b)
+        bases_feitas = bases_locacao.lancar(doc, placas_b, dets_b, mover_b, base, aco, barra, chapas_postas, avisos)
+
     # ---------------------------------------------------------------- a alma na face do banzo
     # o encaixe de fábrica (alma_na_face.encaixar, o mesmo da tesoura pelo desenho e do 3D pelos quadros): montantes e
     # diagonais cortados no ângulo, deitados na face do banzo que passa na faixa deles, com o bico no montante do mesmo
@@ -5496,6 +5510,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     resumo["camadas_2d"] = camadas_2d
     resumo["tercas_no_plano"] = no_plano
     resumo["escadas"] = escadas_feitas
+    if bases_feitas is not None:
+        resumo["bases"] = bases_feitas
     doc.metadados["de_planta"] = {"parametros": {k: v for k, v in par.items()}, "resumo": resumo,
                                   "deslocamento": {"x": desl[0], "y": desl[1],
                                                    "nota": "somado às coordenadas do desenho; subtraia para voltar a ele"}}
