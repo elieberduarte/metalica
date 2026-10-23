@@ -1434,3 +1434,94 @@ class TestPerfilAssimetricoVoltaNoLugar(unittest.TestCase):
                 self.assertLess(math.dist(b.fim, (1100.0, 200.0, 300.0)), 0.5, (perfil, rot, b.fim))
                 self.assertEqual(b.papel, "mão-francesa")
 
+
+
+# =================================================================== recorte sólido menos sólido
+
+_RECORTES_TEKLA = """
+/* G8: pilar do pré-moldado do Tekla: 1800x400x35800 menos o bloco 900x400 dos 7700 de cima */
+#140=IFCRECTANGLEPROFILEDEF(.AREA.,'180X40',#15,1800.,400.);
+#141=IFCEXTRUDEDAREASOLID(#140,#8,#6,35800.);
+#142=IFCCARTESIANPOINT((900.,0.));
+#143=IFCCARTESIANPOINT((900.,400.));
+#144=IFCCARTESIANPOINT((0.,400.));
+#145=IFCPOLYLINE((#14,#142,#143,#144,#14));
+#146=IFCARBITRARYCLOSEDPROFILEDEF(.AREA.,'BL770X40',#145);
+#147=IFCCARTESIANPOINT((-900.,-200.,28100.));
+#148=IFCAXIS2PLACEMENT3D(#147,#6,#7);
+#149=IFCEXTRUDEDAREASOLID(#146,#148,#6,7700.);
+#150=IFCBOOLEANRESULT(.DIFFERENCE.,#141,#149);
+#151=IFCSHAPEREPRESENTATION(#9,'Body','CSG',(#150));
+#152=IFCPRODUCTDEFINITIONSHAPE($,$,(#151));
+#153=IFCBUILDINGELEMENTPROXY('3Ehr0Mmq95GgL6yKXVCB12',$,'G8',$,$,#11,#152,$,$);
+
+/* G9: viga 200x500x9580 com os dois dentes (recortes encadeados, mais largos que a viga) */
+#160=IFCRECTANGLEPROFILEDEF(.AREA.,$,#15,200.,500.);
+#161=IFCEXTRUDEDAREASOLID(#160,#8,#6,9580.);
+#162=IFCRECTANGLEPROFILEDEF(.AREA.,$,#15,400.,250.);
+#163=IFCCARTESIANPOINT((0.,125.,0.));
+#164=IFCAXIS2PLACEMENT3D(#163,#6,#7);
+#165=IFCEXTRUDEDAREASOLID(#162,#164,#6,300.);
+#166=IFCBOOLEANRESULT(.DIFFERENCE.,#161,#165);
+#167=IFCCARTESIANPOINT((0.,125.,9280.));
+#168=IFCAXIS2PLACEMENT3D(#167,#6,#7);
+#169=IFCEXTRUDEDAREASOLID(#162,#168,#6,300.);
+#170=IFCBOOLEANRESULT(.DIFFERENCE.,#166,#169);
+#171=IFCSHAPEREPRESENTATION(#9,'Body','CSG',(#170));
+#172=IFCPRODUCTDEFINITIONSHAPE($,$,(#171));
+#173=IFCBUILDINGELEMENTPROXY('3Ehr0Mmq95GgL6yKXVCB13',$,'G9',$,$,#11,#172,$,$);
+
+/* G10 e G11: o pilar G8 cortado por meio-espaço — no degrau (z = 28100, vértices no plano) e acima dele */
+#180=IFCCARTESIANPOINT((0.,0.,28100.));
+#181=IFCAXIS2PLACEMENT3D(#180,#6,#7);
+#182=IFCPLANE(#181);
+#183=IFCHALFSPACESOLID(#182,.F.);
+#184=IFCBOOLEANCLIPPINGRESULT(.DIFFERENCE.,#150,#183);
+#185=IFCSHAPEREPRESENTATION(#9,'Body','Clipping',(#184));
+#186=IFCPRODUCTDEFINITIONSHAPE($,$,(#185));
+#187=IFCBUILDINGELEMENTPROXY('3Ehr0Mmq95GgL6yKXVCB14',$,'G10',$,$,#11,#186,$,$);
+#190=IFCCARTESIANPOINT((0.,0.,30000.));
+#191=IFCAXIS2PLACEMENT3D(#190,#6,#7);
+#192=IFCPLANE(#191);
+#193=IFCHALFSPACESOLID(#192,.F.);
+#194=IFCBOOLEANCLIPPINGRESULT(.DIFFERENCE.,#150,#193);
+#195=IFCSHAPEREPRESENTATION(#9,'Body','Clipping',(#194));
+#196=IFCPRODUCTDEFINITIONSHAPE($,$,(#195));
+#197=IFCBUILDINGELEMENTPROXY('3Ehr0Mmq95GgL6yKXVCB15',$,'G11',$,$,#11,#196,$,$);
+"""
+
+
+class TestRecorteSolidoMenosSolido(Asserts):
+    """O Tekla do pré-moldado recorta sólido com sólido (IfcBooleanResult de duas extrusões): o topo
+    estreito do pilar, os dentes das vigas, os nichos dos painéis. O leitor só resolvia recorte por
+    meio-espaço e ficava com a geometria base: no Moinho Globo (23/10) os 22 pilares vieram com 1800 mm
+    até o topo, onde o projeto tem 900, e as vigas sem os dentes (417 recortes sem resolver)."""
+
+    @classmethod
+    def setUpClass(cls):
+        texto = texto_de("geometrias_mm.ifc").replace(
+            "\n#130=IFCRELCONTAINEDINSPATIALSTRUCTURE", _RECORTES_TEKLA + "\n#130=IFCRELCONTAINEDINSPATIALSTRUCTURE"
+        ).replace("(#29,#36,#44,#60,#84,#102,#122),#12);", "(#29,#36,#44,#60,#84,#102,#122,#153,#173,#187,#197),#12);")
+        cls.doc = importar_texto(texto)
+        cls.g = por_nome(cls.doc)
+        cls.avisos = cls.doc.metadados["importacao"]["avisos"]
+
+    def test_pilar_com_o_topo_recortado(self):
+        g8 = self.g["G8"]
+        self.assertRelativo(g8.volume, 1800 * 400 * 35800 - 900 * 400 * 7700, 1e-9)
+        topo = [v for v in g8.vertices if v[2] > 28100 + 1]
+        self.assertAlmostEqual(min(v[0] for v in topo), 0.0, places=3)      # só a metade de +x sobe
+        self.assertAlmostEqual(max(v[0] for v in topo), 900.0, places=3)
+
+    def test_viga_com_dois_dentes_encadeados(self):
+        self.assertRelativo(self.g["G9"].volume, 200 * 500 * 9580 - 2 * 200 * 250 * 300, 1e-9)
+
+    def test_meio_espaco_sobre_o_recortado(self):
+        """O corte por plano depois do recorte: o plano passa pelos vértices do degrau (G10) e pelas faces
+        divididas em lugares diferentes (G11) — a boca do corte precisa fechar nos dois."""
+        self.assertRelativo(self.g["G10"].volume, 1800 * 400 * 28100, 1e-9)
+        self.assertRelativo(self.g["G11"].volume, 1800 * 400 * 30000 - 900 * 400 * 1900, 1e-9)
+        self.assertFalse([a for a in self.avisos if "malha aberta" in a], self.avisos)
+
+    def test_sem_aviso_de_recorte_nao_resolvido(self):
+        self.assertFalse([a for a in self.avisos if "não resolvido" in a], self.avisos)

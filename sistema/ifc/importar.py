@@ -175,6 +175,10 @@ def _dot(a, b):
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 
 
+def _sub(a, b):
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
 def m_de_eixos(origem, eixo_z, eixo_x) -> Matriz:
     """Matriz de um sistema local: Z é o eixo principal, X a direção de referência.
 
@@ -1261,6 +1265,12 @@ class Importador:
             return base
         plano = self._plano_de_meio_espaco(segundo)
         if plano is None:
+            # sólido menos sólido: o Tekla do pré-moldado recorta assim o topo do pilar, os dentes
+            # das vigas e os nichos dos painéis (Moinho Globo, 23/10: 417 recortes, pilar inteiro)
+            recorte = self.malha_do_item(segundo.id, profundidade + 1)
+            resultado = _subtrair(base, recorte) if recorte is not None else None
+            if resultado is not None:
+                return resultado
             self.avisar("recorte por %s não resolvido: usada a geometria base"
                         % nome_ifc(segundo.tipo))
             return base
@@ -2864,6 +2874,8 @@ def _cortar_por_plano(malha: Malha, origem, normal, manter_positivo=True):
             pa, pb = malha.vertices[a], malha.vertices[b]
             if da >= -tol:
                 saida.append(pa)
+            if abs(da) <= tol:
+                corte.append(pa)                 # vértice no plano também é ponta da boca
             if (da > tol and db < -tol) or (da < -tol and db > tol):
                 t = da / (da - db)
                 p = (pa[0] + (pb[0] - pa[0]) * t, pa[1] + (pb[1] - pa[1]) * t,
@@ -2872,11 +2884,13 @@ def _cortar_por_plano(malha: Malha, origem, normal, manter_positivo=True):
                 corte.append(p)
         if len(saida) >= 3:
             nova.face(saida)
-        if len(corte) == 2 and not _quase_igual3(corte[0], corte[1], 1e-6):
-            segmentos.append(tuple(corte))
+        # a boca é feita das faces que têm parte do lado que sai: a face que só encosta no plano pelo lado
+        # que fica não conta (a vizinha do outro lado dá a mesma aresta)
+        if len(corte) >= 2 and any(dist[i] < -tol for i in face):
+            segmentos.extend(_pares_no_plano(corte))
     if not segmentos:
         return (nova if not nova.vazia else None), True
-    tampas, completo = _encadear(segmentos)
+    tampas, completo = _encadear(_partir_nas_juncoes(segmentos))
     alvo = (-normal[0] * s, -normal[1] * s, -normal[2] * s)
     for laco in tampas:
         if len(laco) < 3:
@@ -2884,6 +2898,217 @@ def _cortar_por_plano(malha: Malha, origem, normal, manter_positivo=True):
         nrm = _normal_poligono(laco)
         nova.face(laco if _dot(nrm, alvo) >= 0 else list(reversed(laco)))
     return (nova if not nova.vazia else None), completo
+
+
+def _pares_no_plano(pontos, tol=1e-6):
+    """Os pontos em que uma face toca o plano, todos numa reta: ordenados ao longo dela e ligados dois a
+    dois (a face não convexa entra e sai do plano mais de uma vez)."""
+    unicos = []
+    for p in pontos:
+        if not any(_quase_igual3(p, q, tol) for q in unicos):
+            unicos.append(p)
+    if len(unicos) < 2:
+        return []
+    a = unicos[0]
+    d = max((_sub(p, a) for p in unicos[1:]), key=lambda v: _dot(v, v))
+    unicos.sort(key=lambda p: _dot(_sub(p, a), d))
+    if len(unicos) % 2:
+        return [(unicos[0], unicos[-1])]         # passou por um vértice: o trecho todo
+    return [(unicos[k], unicos[k + 1]) for k in range(0, len(unicos), 2)]
+
+
+def _partir_nas_juncoes(segmentos, tol=1e-4):
+    """Segmento partido onde a ponta de outro cai no meio dele (a junção em T das faces vizinhas
+    divididas em lugares diferentes): sem isso a boca não fecha o laço."""
+    pontas = []
+    for s in segmentos:
+        for p in s:
+            if not any(_quase_igual3(p, q, tol) for q in pontas):
+                pontas.append(p)
+    saida = []
+    for a, b in segmentos:
+        ab = _sub(b, a)
+        l2 = _dot(ab, ab)
+        if l2 < tol * tol:
+            continue
+        meio = []
+        for p in pontas:
+            t = _dot(_sub(p, a), ab) / l2
+            if t <= 1e-9 or t >= 1 - 1e-9:
+                continue
+            q = (a[0] + ab[0] * t, a[1] + ab[1] * t, a[2] + ab[2] * t)
+            if _quase_igual3(p, q, tol):
+                meio.append((t, p))
+        cadeia = [a] + [p for _, p in sorted(meio)] + [b]
+        saida.extend(zip(cadeia, cadeia[1:]))
+    return saida
+
+
+class _Plano:
+    """Plano da árvore BSP: normal e distância à origem."""
+    __slots__ = ("n", "w")
+    TOL = 1e-3          # mm: os IFC do Tekla trazem 399,999999999989 no lugar de 400
+
+    def __init__(self, n, w):
+        self.n, self.w = n, w
+
+    @staticmethod
+    def do_poligono(pts):
+        n = _normal_poligono(pts)
+        return _Plano(n, _dot(n, pts[0]))
+
+    def virado(self):
+        return _Plano((-self.n[0], -self.n[1], -self.n[2]), -self.w)
+
+    def dividir(self, pol, cop_frente, cop_tras, frente, tras):
+        """Põe o polígono (pontos, plano) na lista certa, partindo-o se atravessa."""
+        pts, pl = pol
+        tol = _Plano.TOL
+        lados = []
+        tipo = 0
+        for p in pts:
+            t = _dot(self.n, p) - self.w
+            k = 1 if t > tol else (2 if t < -tol else 0)
+            lados.append((k, t))
+            tipo |= k
+        if tipo == 0:
+            (cop_frente if _dot(self.n, pl.n) > 0 else cop_tras).append(pol)
+        elif tipo == 1:
+            frente.append(pol)
+        elif tipo == 2:
+            tras.append(pol)
+        else:
+            f, b = [], []
+            m = len(pts)
+            for i in range(m):
+                j = (i + 1) % m
+                (ki, ti), (kj, tj) = lados[i], lados[j]
+                vi, vj = pts[i], pts[j]
+                if ki != 2:
+                    f.append(vi)
+                if ki != 1:
+                    b.append(vi)
+                if (ki | kj) == 3:
+                    s = ti / (ti - tj)
+                    v = (vi[0] + (vj[0] - vi[0]) * s, vi[1] + (vj[1] - vi[1]) * s,
+                         vi[2] + (vj[2] - vi[2]) * s)
+                    f.append(v)
+                    b.append(v)
+            if len(f) >= 3:
+                frente.append((f, pl))
+            if len(b) >= 3:
+                tras.append((b, pl))
+
+
+class _NoBSP:
+    """Árvore de planos de um sólido fechado (o csg.js de Evan Wallace, em Python)."""
+    __slots__ = ("plano", "frente", "tras", "pols")
+
+    def __init__(self, pols=None):
+        self.plano = None
+        self.frente = None
+        self.tras = None
+        self.pols = []
+        if pols:
+            self.montar(pols)
+
+    def inverter(self):
+        pilha = [self]
+        while pilha:
+            no = pilha.pop()
+            no.pols = [(list(reversed(p)), pl.virado()) for p, pl in no.pols]
+            if no.plano is not None:
+                no.plano = no.plano.virado()
+            no.frente, no.tras = no.tras, no.frente
+            pilha.extend(x for x in (no.frente, no.tras) if x is not None)
+
+    def recortar(self, pols):
+        """Os polígonos sem a parte que fica dentro deste sólido."""
+        if self.plano is None:
+            return list(pols)
+        frente, tras = [], []
+        for p in pols:
+            self.plano.dividir(p, frente, tras, frente, tras)
+        if self.frente is not None:
+            frente = self.frente.recortar(frente)
+        tras = self.tras.recortar(tras) if self.tras is not None else []
+        return frente + tras
+
+    def recortar_por(self, outro):
+        pilha = [self]
+        while pilha:
+            no = pilha.pop()
+            no.pols = outro.recortar(no.pols)
+            pilha.extend(x for x in (no.frente, no.tras) if x is not None)
+
+    def todos(self):
+        saida, pilha = [], [self]
+        while pilha:
+            no = pilha.pop()
+            saida.extend(no.pols)
+            pilha.extend(x for x in (no.frente, no.tras) if x is not None)
+        return saida
+
+    def montar(self, pols):
+        pilha = [(self, pols)]
+        while pilha:
+            no, lista = pilha.pop()
+            if not lista:
+                continue
+            if no.plano is None:
+                no.plano = lista[0][1]
+            frente, tras = [], []
+            for p in lista:
+                no.plano.dividir(p, no.pols, no.pols, frente, tras)
+            if frente:
+                no.frente = no.frente or _NoBSP()
+                pilha.append((no.frente, frente))
+            if tras:
+                no.tras = no.tras or _NoBSP()
+                pilha.append((no.tras, tras))
+
+
+def _poligonos(malha: Malha):
+    """As faces como (pontos, plano), viradas para fora."""
+    sinal = 1 if malha.volume_assinado() >= 0 else -1
+    pols = []
+    for f in malha.faces:
+        pts = [malha.vertices[i] for i in f]
+        if sinal < 0:
+            pts.reverse()
+        pl = _Plano.do_poligono(pts)
+        if abs(_dot(pl.n, pl.n) - 1) < 1e-6:
+            pols.append((pts, pl))
+    return pols
+
+
+def _subtrair(base: Malha, recorte: Malha) -> Optional[Malha]:
+    """`base` menos `recorte`, os dois sólidos fechados (o Tekla do pré-moldado recorta assim o topo do
+    pilar, os dentes das vigas e os nichos dos painéis). Pela árvore de planos: as faces coplanares e as
+    junções em T das faces vizinhas não atrapalham, e o recorte pode ser côncavo. None se não deu."""
+    cb, cr = base.caixa(), recorte.caixa()
+    if cb is None or cr is None:
+        return None
+    if any(cr[1][i] <= cb[0][i] + 1e-6 or cr[0][i] >= cb[1][i] - 1e-6 for i in range(3)):
+        return base                                  # não encosta: nada a tirar
+    pa, pb = _poligonos(base), _poligonos(recorte)
+    if len(pa) < 4 or len(pb) < 4:
+        return None
+    a, b = _NoBSP(pa), _NoBSP(pb)
+    a.inverter()
+    a.recortar_por(b)
+    b.recortar_por(a)
+    b.inverter()
+    b.recortar_por(a)
+    b.inverter()
+    a.montar(b.todos())
+    a.inverter()
+    nova = Malha()
+    for pts, _ in a.todos():
+        nova.face(pts)
+    if nova.vazia or nova.volume_assinado() <= 1e-9 * abs(base.volume_assinado()):
+        return None                                  # o recorte engole a peça: fica a base, com aviso
+    return nova
 
 
 def _encadear(segmentos, tol=1e-4):

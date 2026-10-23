@@ -85,6 +85,7 @@ bloco no 2e3414c).
 | 16/10 | Mercado: "o projeto importado não está mostrando os níveis" (o Tekla manda um pavimento só) | 03563c7 | test_regressoes_mercado TestNiveisAutomaticos |
 | 16/10 | dev: tela inicial em branco por minutos (a lista de 0,06 s a 24 s com o detalhamento automático rodando) | 73a5df4 | test_regressoes_mercado TestTelaInicialComDetalhamentoRodando |
 | 16/10 | Mercado: "as elevações geradas pelo detalhamento do pré-moldado não ficaram legais" (a fachada pela peça mais de fora — só o muro da calçada —, contorno convexo, marcas amontoadas) | este pacote | test_regressoes_mercado TestElevacoesECortesDoPremoldado |
+| 23/10 | Moinho Globo (IFC da Rotesma, Tekla 2026): os 22 pilares vinham com 1.800 mm até o topo, onde o projeto tem 900 (de +25,00 a +32,70), as vigas sem os dentes e o neoprene sem o furo do pino — 417 recortes "sólido menos sólido" (IfcBooleanResult de duas extrusões) caíam em "recorte não resolvido: usada a geometria base". Agora o recorte por sólido sai pela árvore de planos (ifc/importar._subtrair), e o corte por meio-espaço fecha a boca com vértice no plano e com as faces divididas em lugares diferentes (junção em T) | (este commit) | test_ifc_importar::TestRecorteSolidoMenosSolido (4); Moinho: 0 recorte sem resolver, pilar 23,004 m³ |
 
 ## Tesoura de aço: posição das peças (boca do U, lado da cantoneira)
 
