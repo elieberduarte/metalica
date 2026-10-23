@@ -31,6 +31,7 @@ TIPOS_3D = {
     "suporte_terca_cadeirinha": {"pede": "as terças e os banzos (ou vigas) em que elas apoiam — uma cadeirinha em "
                                          "cada cruzamento", "barras": ("terca", "apoio")},
     "ligacao_flexivel": {"pede": "a viga apoiada e o pilar ou a viga em que ela chega", "barras": ("viga", "apoio")},
+    "chapa_simples": {"pede": "a viga apoiada e o pilar ou a viga em que ela chega", "barras": ("viga", "apoio")},
     "emenda_banzo": {"pede": "as duas metades do banzo, na mesma reta", "barras": ("barra", "barra")},
     "gusset_contravento": {"pede": "a diagonal do contravento e o pilar ou a viga em que ela chega", "barras": ("viga", "apoio")},
     "chumbador_gancho": {"pede": "a placa (chapa) com os furos — um chumbador em J em cada furo", "barras": ("chapa",)},
@@ -80,10 +81,10 @@ def _triedro(b):
     return base_local(b.direcao, b.rotacao or 0.0)
 
 
-def _parafuso(centro, eixo, d, pega, classe):
+def _parafuso(centro, eixo, d, pega, classe, comprimento=None):
     from nucleo3d.lancamento import _parafuso_solido
     from nucleo.acessorios import comprimento_parafuso
-    s = _parafuso_solido(centro, eixo, d, comprimento_parafuso(pega, d), classe)
+    s = _parafuso_solido(centro, eixo, d, float(comprimento or comprimento_parafuso(pega, d)), classe)
     s.atributos["parafuso"].update(ponto=_r(centro, 2), eixo=_r(eixo, 6), pega=round(pega, 1))
     s.atributos["criado_no_editor"] = True
     return s
@@ -524,6 +525,86 @@ def _flexivel(viga, apoio, p):
             "parametros": params, "avisos": avisos}
 
 
+# ------------------------------------------------------------------ chapa simples (uma chapa na alma)
+
+def _acima5(n):
+    return math.ceil(n / 5.0 - 1e-9) * 5.0
+
+
+def _chapa_simples(viga, apoio, p):
+    """Uma chapa só, soldada dos dois lados na face do apoio (a alma da viga principal, a mesa ou a alma do pilar), com
+    a alma da viga apoiada parafusada nela — o detalhe do projetista no heliponto v2 (23/10): chapa 8 × 90, 5 M16 a 45
+    da face, borda 29 em cima e embaixo, o passo pela altura da chapa. A viga fica 10 mm antes da face; na viga apoiada
+    em viga, a mesa que bate na mesa da principal sai recortada (cope, 10 mm de folga). A viga que chega inclinada em
+    planta leva a chapa no plano da alma dela, soldada em ângulo na face (a V14 na V2 do heliponto)."""
+    from nucleo.acessorios import d_parafuso_mm, furo_mm
+    from nucleo2d.detalhe.soldas import _perna
+    pv = _perfil(viga.perfil)
+    eixo_a = _norm(_sub(apoio.fim, apoio.inicio))
+    ponta, no, outro = _ponta_perto(viga, apoio.inicio, eixo_a)
+    dirv = _norm(_sub(outro, no))                          # da face para dentro da viga
+    nf, F, parede, face = _face_do_apoio(apoio, no, dirv)
+    cosf = _dot(dirv, nf)
+    if cosf < 0.3:
+        raise ErroDeDados("a viga chega muito inclinada na face do apoio")
+    folga = float(p.get("folga") or 10.0)
+    t = float(p.get("espessura") or 8.0)
+    B = float(p.get("largura") or 90.0)
+    gauge = float(p.get("gauge") or B / 2.0)              # o furo a partir da face
+    n = int(p.get("n_parafusos") or 5)
+    borda = float(p.get("borda") or 29.0)
+    nome_par = str(p.get("parafuso") or "M16")
+    classe = str(p.get("classe") or "ASTM A325")
+    d, fd = d_parafuso_mm(nome_par), furo_mm(nome_par)
+    dv, tfv, twv, bfv = float(pv.d or 300), float(pv.tf or 10), float(pv.tw or 6), float(pv.bf or 150)
+    _, vv, _ = _triedro(viga)                              # a altura da seção
+    X = _add(no, _mul(dirv, _dot(_sub(F, no), nf) / cosf))   # o eixo da viga na face
+    # recortes (cope): só na viga apoiada em viga, onde a mesa dela bate na mesa da principal
+    recortes, cope = [], {"cima": 0.0, "baixo": 0.0}
+    if abs(eixo_a[2]) < 0.7:
+        pa = _perfil(apoio.perfil)
+        da, tfa, twa, bfa = float(pa.d or 300), float(pa.tf or 10), float(pa.tw or 6), float(pa.bf or 150)
+        qa = _add(apoio.inicio, _mul(eixo_a, _dot(_sub(X, apoio.inicio), eixo_a)))
+        ha = _dot(_sub(qa, X), vv)                          # o eixo da principal na altura da apoiada
+        sen = math.sqrt(max(0.0, 1.0 - cosf * cosf))
+        comp = _acima5((_dot(_sub(F, no), nf) + bfa / 2.0 - twa / 2.0 + folga + bfv / 2.0 * sen) / cosf)
+        if dv / 2.0 > ha + da / 2.0 - tfa - 0.5:
+            cope["cima"] = _acima5(dv / 2.0 - (ha + da / 2.0 - tfa) + folga)
+        if -dv / 2.0 < ha - da / 2.0 + tfa + 0.5:
+            cope["baixo"] = _acima5((ha - da / 2.0 + tfa) + dv / 2.0 + folga)
+        recortes = [{"ponta": ponta, "lado": lado, "comprimento": comp, "altura": h} for lado, h in cope.items() if h > 0]
+    # a chapa: entre as mesas (ou os recortes), 10 mm de folga, de 10 em 10
+    topo = dv / 2.0 - (cope["cima"] or tfv)
+    pe = -dv / 2.0 + (cope["baixo"] or tfv)
+    H = float(p.get("altura") or math.floor((topo - pe - 10.0) / 10.0) * 10.0)
+    if H < 2 * borda + 30:
+        raise ErroDeDados("a alma da viga %s não cabe uma chapa de ligação" % viga.perfil)
+    pas = float(p.get("passo") or ((H - 2 * borda) / (n - 1) if n > 1 else 0.0))
+    meio = (topo + pe) / 2.0
+    nn = _norm(_cruz(dirv, vv))                            # a chapa fica deste lado da alma
+    Xc = _add(_add(X, _mul(nn, twv / 2.0 + t / 2.0)), _mul(vv, meio))
+    Xc = _sub(Xc, _mul(dirv, _dot(_sub(Xc, F), nf) / cosf))      # o meio da espessura encostado na face
+    origem = _add(_sub(Xc, _mul(nn, t / 2.0)), _mul(vv, -H / 2.0))
+    alturas = [H / 2.0 + (i - (n - 1) / 2.0) * pas for i in range(n)]
+    chapa = _chapa("Chapa de ligação", origem, dirv, vv, B, H, t, [(gauge, h, fd) for h in alturas],
+                   aco=str(p.get("aco") or "ASTM A36"))
+    pars = [_parafuso(_add(_add(_add(Xc, _mul(dirv, gauge)), _mul(vv, h - H / 2.0)), _mul(nn, -twv / 2.0)), nn, d,
+                      t + twv, classe, p.get("comprimento_parafuso")) for h in alturas]
+    chave = "cortes_inicio" if ponta == "inicio" else "cortes_fim"
+    rec = "recorte_inicio" if ponta == "inicio" else "recorte_fim"
+    antigos = [r for r in (getattr(viga, "recortes", None) or []) if r.get("ponta") != ponta]
+    ajustes = {viga.id: {chave: copy.deepcopy(getattr(viga, chave) or []), rec: float(getattr(viga, rec) or 0.0),
+                         "recortes": copy.deepcopy(getattr(viga, "recortes", None) or [])}}
+    alterar = {viga.id: {chave: [{"normal": _r(nf, 6), "ponto": _r(_sub(_add(F, _mul(nf, folga)), no), 3)}], rec: 0.0,
+                         "recortes": antigos + recortes}}
+    soldas = [(apoio.id, chapa, {"tipo": "filete", "perna": _perna(parede, t), "lados": 2, "local": "fabrica"})]
+    params = dict(p, viga=viga.perfil, espessura=t, largura=B, altura=H, n_parafusos=n, passo=round(pas, 1), borda=borda,
+                  parafuso=nome_par, classe=classe, folga=folga, recorte_cima=cope["cima"], recorte_baixo=cope["baixo"])
+    avisos = [] if cosf > 0.99 else ["viga inclinada em planta: a chapa vai soldada em ângulo na face do apoio"]
+    return {"pecas": [chapa] + pars, "alterar": alterar, "ajustes": ajustes, "conjuntos": [(apoio, [chapa])],
+            "soldas": soldas, "parametros": params, "avisos": avisos}
+
+
 # ------------------------------------------------------------------ emenda de banzo (talas)
 
 def _emenda_banzo(a, b, p):
@@ -757,6 +838,21 @@ LOCAIS = {
         "parametros": [{"chave": "n", "rotulo": "Quantidade (vazio = a da norma)", "unidade": "", "padrao": ""},
                        {"chave": "comprimento", "rotulo": "Comprimento da presilha (ao longo da barra)", "unidade": "mm",
                         "padrao": 60}],
+        "esforcos": [],
+    },
+    "chapa_simples": {
+        "nome": "Ligação flexível com chapa simples", "categoria": "tesoura",
+        "descricao": "Uma chapa soldada dos dois lados na face do apoio (alma da viga principal, mesa ou alma do pilar) e "
+                     "a alma da viga parafusada nela; a viga 10 mm antes da face, recortada onde a mesa bate na principal.",
+        "parametros": [{"chave": "espessura", "rotulo": "Espessura da chapa", "unidade": "mm", "padrao": 8},
+                       {"chave": "largura", "rotulo": "Largura da chapa", "unidade": "mm", "padrao": 90},
+                       {"chave": "altura", "rotulo": "Altura da chapa (vazio = a alma livre − 10)", "unidade": "mm", "padrao": ""},
+                       {"chave": "n_parafusos", "rotulo": "Parafusos", "unidade": "", "padrao": 5},
+                       {"chave": "borda", "rotulo": "Borda em cima e embaixo", "unidade": "mm", "padrao": 29},
+                       {"chave": "parafuso", "rotulo": "Diâmetro", "unidade": "", "padrao": "M16"},
+                       {"chave": "classe", "rotulo": "Classe", "unidade": "", "padrao": "ASTM A325"},
+                       {"chave": "comprimento_parafuso", "rotulo": "Comprimento do parafuso (vazio = pela pega)",
+                        "unidade": "mm", "padrao": ""}],
         "esforcos": [],
     },
 }
@@ -1030,6 +1126,8 @@ def _gerar(tipo, barras, p):
         return _cadeirinha(barras[0], barras[1], p)
     if tipo == "ligacao_flexivel":
         return _flexivel(barras[0], barras[1], p)
+    if tipo == "chapa_simples":
+        return _chapa_simples(barras[0], barras[1], p)
     if tipo == "emenda_banzo":
         return _emenda_banzo(barras[0], barras[1], p)
     if tipo == "gusset_contravento":

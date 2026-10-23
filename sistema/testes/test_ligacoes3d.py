@@ -414,3 +414,63 @@ def test_aplicar_e_refazer_nao_mudam_o_documento_recebido():
     lid = r["ligacoes"][0]["id"]
     ligacoes3d.aplicar(doc, "chapa_topo_joelho", [], {"t": 19}, ligacao=lid)
     assert json.dumps(doc.dict(), sort_keys=True, default=str) == depois
+
+
+# ------------------------------------------------------------------ chapa simples (heliponto v2, 23/10)
+# O padrão do projetista nas 11 ligações que ele detalhou: chapa 8 × 90 soldada na alma do apoio, 5 M16 a 45 da face,
+# borda 29, a viga 10 mm antes da face, a mesa recortada onde bate na principal. Os casos aprovados pelo usuário
+# (Projeto/OBRAS/Heliponto/ligacoes-v2/1-casos-viga-na-viga.png) são as medidas abaixo.
+
+def _chapa_simples(viga, apoio, **p):
+    doc = _doc(viga, apoio)
+    r = ligacoes3d.aplicar(doc, "chapa_simples", [viga.id, apoio.id], dict(p, comprimento_parafuso=50))
+    _aplicar(doc, r)
+    pecas = _da_ligacao(doc, r["ligacoes"][0]["id"])
+    chapa = next(e for e in pecas if e.tipo == "chapa")
+    from nucleo3d.geometria import malha_chapa
+    vs = malha_chapa(chapa)[0]
+    caixa = [min(v[k] for v in vs) for k in range(3)] + [max(v[k] for v in vs) for k in range(3)]
+    return doc, r["ligacoes"][0], chapa, caixa, [e for e in pecas if e.tipo == "solido"]
+
+
+def test_chapa_simples_como_o_projetista_w410_na_w460():
+    # a V12 do heliponto na V7: as duas com o topo em 3030,8; a chapa dele em x 254–344, y 2788,5–2796,5, z 2643–3013
+    apoio = Barra(inicio=(250, 300, 2803.3), fim=(250, 7800, 2803.3), perfil="W 460×60,0", papel="viga")
+    viga = Barra(inicio=(250, 2800, 2829.3), fim=(2583.3, 2800, 2829.3), perfil="W 410×46,1", papel="viga")
+    doc, info, chapa, cx, pars = _chapa_simples(viga, apoio, altura=370)
+    assert (round(cx[0], 1), round(cx[1], 1), round(cx[3], 1), round(cx[4], 1)) == (254.0, 2788.5, 344.0, 2796.5)
+    assert cx[5] - cx[2] == pytest.approx(370) and abs((cx[2] + cx[5]) / 2 - 2828.0) < 6.0
+    assert chapa.espessura == 8 and len(chapa.furos) == 5 and {f["x"] for f in chapa.furos} == {45.0}
+    assert [round(f["y"]) for f in chapa.furos] == [29, 107, 185, 263, 341]          # passo 78
+    assert len(pars) == 5 and all(p.atributos["parafuso"]["d"] == 16 and p.atributos["parafuso"]["L"] == 50 for p in pars)
+    assert viga.cortes_inicio[0]["ponto"][0] == pytest.approx(14.0)                   # 10 mm depois da alma (254)
+    assert [(r["lado"], r["altura"]) for r in viga.recortes] == [("cima", 25.0)]       # só a mesa de cima bate
+    assert chapa.atributos["marcas"]["instancia"] == apoio.atributos["marcas"]["instancia"]   # soldada no apoio
+    assert apoio.atributos["soldas"]
+
+
+def test_chapa_simples_w610_na_w610_caso_aprovado():
+    # caso 3 aprovado (23/10): W610X140 na W610X217, topo igual — recorte 40 em cima e 30 embaixo, chapa 530, 5 M16
+    # passo 118
+    apoio = Barra(inicio=(5250, 17550, 2716.8), fim=(5250, 27550, 2716.8), perfil="W 610×217,0", papel="viga")
+    viga = Barra(inicio=(5250, 22800, 2722.3), fim=(15250, 22800, 2722.3), perfil="W 610×140,0", papel="viga")
+    doc, info, chapa, cx, pars = _chapa_simples(viga, apoio)
+    par = info["parametros"]
+    assert (par["altura"], par["passo"], par["recorte_cima"], par["recorte_baixo"]) == (530.0, 118.0, 40.0, 30.0)
+    assert sorted((r["lado"], r["comprimento"]) for r in viga.recortes) == [("baixo", 175.0), ("cima", 175.0)]
+    assert cx[0] == pytest.approx(5250 + 16.5 / 2, abs=0.1)                           # encostada na alma
+    assert len(pars) == 5
+
+
+def test_chapa_simples_na_mesa_do_pilar_e_na_viga_inclinada():
+    pilar = Barra(inicio=(5250, 27550, 1030.8), fim=(5250, 27550, 7930.8), perfil="CS 500×500×19×12,5", rotacao=90,
+                  papel="pilar")
+    viga = Barra(inicio=(5250, 27550, 2716.8), fim=(5250, 37550, 2716.8), perfil="W 610×217,0", papel="viga")
+    doc, info, chapa, cx, pars = _chapa_simples(viga, pilar)
+    assert cx[1] == pytest.approx(27800.0, abs=0.1) and not viga.recortes              # na face da mesa, sem recorte
+    assert info["parametros"]["altura"] == 560.0
+    # a diagonal V11 do heliponto recebendo a V12: a chapa no plano da alma da V12, encostada em ângulo
+    diag = Barra(inicio=(250, 300, 2803.3), fim=(7250, 7800, 2803.3), perfil="W 460×60,0", papel="viga")
+    v12 = Barra(inicio=(250, 2800, 2829.3), fim=(2583.3, 2800, 2829.3), perfil="W 410×46,1", papel="viga")
+    doc, info, chapa, cx, pars = _chapa_simples(v12, diag, altura=370)
+    assert info["avisos"] and cx[3] == pytest.approx(2584.9, abs=1.0) and cx[3] - cx[0] == pytest.approx(90, abs=0.5)

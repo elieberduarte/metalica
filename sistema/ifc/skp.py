@@ -376,6 +376,20 @@ def _juntar_barras(pecas: List[dict], tol: float = 1.5) -> List[dict]:
     return juntas + resto
 
 
+def _nome_da_chapa(vs, faces, dims) -> str:
+    """PLATE comprimento × largura × espessura. A espessura é a menor medida da caixa — mas as chapas soldadas que se
+    tocam com a mesma etiqueta chegam juntas numa peça só (a cartela da base do heliponto v2, 23/10: a chapa 800 × 250
+    × 11 com as duas nervuras ficava "PLATE 800x250x150" e a lista pesava 235 kg em vez de 20). Quando a malha ocupa
+    menos da metade da caixa, a espessura é a equivalente pelo volume: o peso da lista fica o do aço que existe."""
+    from nucleo3d.geometria import volume_malha
+    a, b, c = dims
+    vol = abs(volume_malha(vs, faces))
+    t = a
+    if a * b * c > 0 and vol < 0.5 * a * b * c:
+        t = vol / (b * c)
+    return "PLATE %dx%dx%s" % (round(c), round(b), ("%.1f" % t).rstrip("0").rstrip(".") if t != a else "%d" % round(a))
+
+
 def importar(caminho: str, avisar=None) -> Documento:
     """O Documento do .skp: peças separadas, camada pela etiqueta, tipo IFC, perfil e marca."""
     avisar = avisar or (lambda *a: None)
@@ -420,7 +434,7 @@ def importar(caminho: str, avisar=None) -> Documento:
                             break
             perfil = perfil or "I %dx%d (a confirmar)" % (round(alt), round(larg))
         elif camada == "Chapas":
-            perfil = "PLATE %dx%dx%d" % (round(dims[2]), round(dims[1]), round(dims[0]))
+            perfil = _nome_da_chapa(vs, p["faces"], dims)
         elif camada in ("Parafusos", "Chumbadores"):
             perfil = "%s %dx%d" % (oque.upper(), round(dims[1]), round(dims[2]))
         else:
