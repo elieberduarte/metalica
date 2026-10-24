@@ -9,7 +9,7 @@ import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia, ComandoAdicion
 import { Tela, formatarMm } from './nucleo/tela.js';
 import { acompanhar as acompanharTarefa } from '../progresso.js';
 import { Snap } from './nucleo/snap.js';
-import { FERRAMENTAS, GRUPOS, Ferramenta, textoNaUnidade, ColarObjetos, CopiarBase } from './ferramentas.js';
+import { FERRAMENTAS, GRUPOS, Ferramenta, textoNaUnidade, ColarObjetos, CopiarBase, paraMilimetros } from './ferramentas.js';
 import { ATALHOS, tabelaDeComandos, comandoExato, instalarLista } from './linha_comando.js';
 import { TIPOS_DE_LINHA, ESPESSURAS, rotuloDoTipo, escalaTracejado, ESCALA_TRACEJADO } from './nucleo/tipos_linha.js';
 import { medidaDaCotaEspecial } from './nucleo/cota_especial.js';
@@ -103,6 +103,7 @@ class CAD {
     this.pilha = new Pilha(this.doc);
     this.tela = new Tela($('#canvas2d'), this.doc);
     this.snap = new Snap(this.tela);
+    this.tela.adquiridos = this.snap.adquiridos;
     this.camadaAtiva = 'VISTA';
     this.alturaTexto = 2.5;
     this.ferramentas = new Map();
@@ -175,6 +176,11 @@ class CAD {
     }
     if (pedirRecebido) setTimeout(() => this.introProjetoRecebido(), 200);
     try { if (localStorage.getItem('cad.orto') === '1') this.snap.orto = true; } catch { /* sem armazenamento */ }
+    // o polar e o rastreamento (F10, F11) e o incremento do polar ficam como a pessoa deixou
+    try {
+      const g = JSON.parse(localStorage.getItem('cad.rastreamento') || 'null');
+      if (g) { for (const k of ['polar', 'rastreamento', 'extensao', 'paralelo', 'tangente']) if (k in g) this.snap.ativos[k] = !!g[k]; if (g.incremento > 0) this.snap.incrementoPolar = +g.incremento; }
+    } catch { /* sem armazenamento */ }
     this._agendarPaineis('props', 'camadas', 'snap', 'vistas');
     this._atualizarCarimbo();
     document.body.dataset.pronto = '1';
@@ -1012,6 +1018,7 @@ class CAD {
     if (this._cancelarJanela) this._cancelarJanela();       // a janela aberta é da ferramenta que sai
     if (this.ferramenta) this.ferramenta.desativar();
     this.ferramenta = f;
+    this.snap.esquecer(); this._from = null;
     this.previa([]);
     for (const b of this.el.barra.querySelectorAll('.ferramenta')) b.setAttribute('aria-pressed', String(b.dataset.ferramenta === id));
     this._marcarBarraDisciplina(id);
@@ -1136,6 +1143,10 @@ class CAD {
       }
       const s = this.snap.resolver(p, { orto: ev.shiftKey });
       this.tela.cursor = s.ponto; this.tela.snap = s.tipo ? s : null;
+      clearTimeout(this._pausaAdquirir);
+      if (this.snap._sob && this.ferramenta && this.ferramenta.constructor.id !== 'selecionar') {
+        this._pausaAdquirir = setTimeout(() => { if (this.snap.adquirir()) this.tela.pedirQuadro(); }, 500);   // a pausa do AutoCAD
+      }
       this.el.coord.textContent = `x ${formatarMm(s.ponto[0])}  y ${formatarMm(s.ponto[1])}`;
       if (pressao && !pressao.movido && Math.hypot(p[0] - pressao.px[0], p[1] - pressao.px[1]) > ARRASTO_MIN) pressao.movido = true;
       if (pressao && pressao.capturado) {
@@ -1193,7 +1204,11 @@ class CAD {
         this._janela = { mundo: pressao.mundo };
         this.tela.retangulo = [p, p];
         this.dica('Janela: clique o outro canto (para a direita, o que está inteiro dentro; para a esquerda, o que tocar) · botão do meio arrasta, roda dá zoom · Esc cancela');
+      } else if (this._from && this._from.fase === 'base' && this.ferramenta) {
+        this._from = { fase: 'deslocamento', base: s.ponto };
+        this.dica(`FROM: base em x ${formatarMm(s.ponto[0])} y ${formatarMm(s.ponto[1])} · digite o deslocamento: "@100,50", "@100;50" ou "@500<30" · Esc cancela`);
       } else if (this.ferramenta) {
+        this._ultimoPonto = s.ponto;
         this.ferramenta.onPonto(s.ponto, { ...evInfo(ev), px: p });
       }
       pressao = null;
@@ -1289,8 +1304,11 @@ class CAD {
       if (ev.key === 'Escape' && document.querySelector('.menu.aberto')) { this._fecharMenus(); return; }
       // Esc com a janela de seleção aberta: cancela só a janela (a seleção fica)
       if (ev.key === 'Escape' && this._cancelarJanela && this._cancelarJanela()) return;
-      if (ev.key === 'Escape') { if (this.ferramenta) { this.ferramenta.cancelar(); } this.selecionar([]); if (this.ferramenta.constructor.id !== 'selecionar') this.ativarFerramenta('selecionar'); return; }
+      if (ev.key === 'Escape' && this._from) { this._from = null; this.dica('FROM cancelado'); return; }
+      if (ev.key === 'Escape') { this.snap.esquecer(); if (this.ferramenta) { this.ferramenta.cancelar(); } this.selecionar([]); if (this.ferramenta.constructor.id !== 'selecionar') this.ativarFerramenta('selecionar'); return; }
       if (ev.key === 'F8') { ev.preventDefault(); this.definirOrto(!this.snap.orto); return; }
+      if (ev.key === 'F10') { ev.preventDefault(); this.definirRastreamento({ polar: !this.snap.ativos.polar }); return; }
+      if (ev.key === 'F11') { ev.preventDefault(); this.definirRastreamento({ rastreamento: !this.snap.ativos.rastreamento }); return; }
       // as opções da ferramenta em uso (H/V/A da cota, L/F/O/B da solda…) vêm antes da linha de comando
       if (this.ferramenta && this.ferramenta.onTecla(ev)) { ev.preventDefault(); return; }
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
@@ -1317,10 +1335,55 @@ class CAD {
     caixa.value = ''; this._listaComandos.fechar(); caixa.blur();
     if (c) { this._rodarComando(c); return; }
     if (!v) { if (this.ultimoComando) this._rodarComando(this.ultimoComando); return; }
+    const pc = this.ferramenta && this.ferramenta.constructor.id !== 'selecionar' ? this._pontoDigitado(v) : null;
+    if (pc) { this._darPonto(pc); return; }
     if (this.ferramenta) this.ferramenta.onValor(v);
   }
 
+  /** A coordenada digitada, como no AutoCAD: "@dx,dy" (ou "@dx;dy", com a vírgula decimal) e "@d<ângulo", a partir do
+   *  último ponto (ou da base do FROM). Sem o "@" fica com a ferramenta ("1500", "4x3", "dx;dy" do Mover); no FROM,
+   *  "dx,dy" sem "@" também vale. null quando não é coordenada. */
+  _pontoDigitado(v) {
+    const t = String(v || '').trim().replace(/\s+/g, '');
+    const doFrom = this._from && this._from.fase === 'deslocamento';
+    if (!t.startsWith('@') && !doFrom) return null;
+    const corpo = t.replace(/^@/, '');
+    const base = doFrom ? this._from.base : (this.snap.ultimo || this._ultimoPonto);
+    if (!base) return null;
+    const polar = corpo.match(/^([^<]+)<(-?\d+(?:[.,]\d+)?)$/);
+    let dx, dy;
+    if (polar) {
+      const d = paraMilimetros(polar[1]), a = parseFloat(polar[2].replace(',', '.')) * Math.PI / 180;
+      if (d == null) return null;
+      dx = d * Math.cos(a); dy = d * Math.sin(a);
+    } else {
+      const partes = corpo.includes(';') ? corpo.split(';') : (corpo.match(/,/g) || []).length === 1 ? corpo.split(',') : null;
+      if (!partes || partes.length !== 2) return null;
+      dx = paraMilimetros(partes[0]); dy = paraMilimetros(partes[1]);
+      if (dx == null || dy == null) return null;
+    }
+    if (doFrom) this._from = null;
+    return [base[0] + dx, base[1] + dy];
+  }
+
+  /** O ponto digitado vai para a ferramenta como um clique. */
+  _darPonto(p) {
+    this._ultimoPonto = p;
+    this.tela.cursor = p;
+    this.ferramenta.onPonto(p, { px: this.tela.paraTela(p), shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, digitado: true });
+    this.tela.pedirQuadro();
+  }
+
+  /** FROM (o "a partir de" do AutoCAD), no meio de um comando: o próximo clique é a base, e o deslocamento digitado
+   *  ("@100,50") dá o ponto. */
+  comecarFrom() {
+    if (!this.ferramenta || this.ferramenta.constructor.id === 'selecionar') { this.aviso('FROM vale no meio de um comando: quando ele pede um ponto (a Linha, o Mover…).', 'atencao'); return; }
+    this._from = { fase: 'base' };
+    this.dica('FROM: clique o ponto de base (o snap vale) · depois digite o deslocamento "@dx,dy" · Esc cancela');
+  }
+
   _rodarComando(c) {
+    if (c.transparente) { c.fazer(this); return; }          // o FROM: no meio do comando, sem trocar a ferramenta
     this.ultimoComando = c;
     if (c.ferramenta) this.ativarFerramenta(c.ferramenta);
     else c.fazer(this);
@@ -2286,7 +2349,8 @@ class CAD {
   _painelSnap() {
     const raiz = this.el.snap; raiz.replaceChildren();
     const g = el('div', { class: 'snaps' });
-    const rot = { extremidade: 'Extremidade', meio: 'Meio', centro: 'Centro', interseccao: 'Interseção', perpendicular: 'Perpendicular', sobre: 'Sobre a linha', grade: 'Grade' };
+    const rot = { extremidade: 'Extremidade', meio: 'Meio', centro: 'Centro', interseccao: 'Interseção', perpendicular: 'Perpendicular', tangente: 'Tangente', sobre: 'Sobre a linha', grade: 'Grade',
+      extensao: 'Extensão', paralelo: 'Paralelo' };
     for (const [k, r] of Object.entries(rot)) {
       const c = el('input', { type: 'checkbox', checked: this.snap.ativos[k] ? 'checked' : undefined });
       c.addEventListener('change', () => { this.snap.ativos[k] = c.checked; });
@@ -2295,7 +2359,27 @@ class CAD {
     const orto = el('input', { type: 'checkbox', checked: this.snap.orto ? 'checked' : undefined });
     orto.addEventListener('change', () => this.definirOrto(orto.checked));
     g.append(el('label', { title: 'Só horizontal e vertical ao desenhar e mover (F8 alterna; Shift segurado liga na hora)' }, orto, 'Orto (F8)'));
+    // os rastreamentos do AutoCAD: o polar (F10) e o das guias dos pontos adquiridos (F11)
+    const polar = el('input', { type: 'checkbox', checked: this.snap.ativos.polar ? 'checked' : undefined });
+    polar.addEventListener('change', () => this.definirRastreamento({ polar: polar.checked }));
+    const inc = el('select', { title: 'O incremento do ângulo do polar' }, ...[15, 30, 45, 90].map(a => el('option', { value: a, selected: this.snap.incrementoPolar === a ? 'selected' : undefined }, `${a}°`)));
+    inc.addEventListener('change', () => this.definirRastreamento({ incremento: +inc.value }));
+    g.append(el('label', { title: 'Rastreamento polar: a partir do último ponto o cursor gruda nos ângulos múltiplos do incremento (F10 alterna)' }, polar, 'Polar (F10) ', inc));
+    const otr = el('input', { type: 'checkbox', checked: this.snap.ativos.rastreamento ? 'checked' : undefined });
+    otr.addEventListener('change', () => this.definirRastreamento({ rastreamento: otr.checked }));
+    g.append(el('label', { title: 'Rastreamento: pare o cursor num ponto (extremidade, meio, centro) e as guias horizontal e vertical saem dele — o ponto alinhado com ele, ou o cruzamento de duas guias (F11 alterna)' }, otr, 'Rastreamento (F11)'));
     raiz.append(g);
+  }
+
+  /** Liga ou desliga o polar, o rastreamento (e o incremento do polar); fica gravado para os próximos desenhos. */
+  definirRastreamento(mudanca) {
+    const a = this.snap.ativos;
+    if ('polar' in mudanca) a.polar = !!mudanca.polar;
+    if ('rastreamento' in mudanca) a.rastreamento = !!mudanca.rastreamento;
+    if (mudanca.incremento > 0) this.snap.incrementoPolar = mudanca.incremento;
+    try { localStorage.setItem('cad.rastreamento', JSON.stringify({ polar: a.polar, rastreamento: a.rastreamento, extensao: a.extensao, paralelo: a.paralelo, tangente: a.tangente, incremento: this.snap.incrementoPolar })); } catch { /* sem armazenamento */ }
+    this.dica(`Polar ${a.polar ? `ligado (${this.snap.incrementoPolar}°)` : 'desligado'} (F10) · rastreamento ${a.rastreamento ? 'ligado' : 'desligado'} (F11)`);
+    this._agendarPaineis('snap');
   }
 
   /** Orto fixo: linhas, movimentos e cópias só na horizontal/vertical. Fica gravado para os próximos desenhos. */

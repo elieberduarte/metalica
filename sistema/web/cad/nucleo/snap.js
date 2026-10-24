@@ -4,6 +4,11 @@
 // perpendicular (em relação ao último ponto da ferramenta), sobre a entidade, grade.
 // Tudo dentro de um raio em pixels; o resultado traz o tipo, que a tela desenha como
 // glifo. Orto (Shift) trava a direção a 0°/90° a partir do último ponto.
+//
+// Os do AutoCAD (24/10, a lista das ferramentas que faltam): tangente; e, fora dos objetos, os rastreamentos — o
+// cursor parado num ponto o adquire (`adquirir`, chamado pelo CAD depois de uma pausa); dele saem a extensão da linha
+// (EXT), as guias horizontal e vertical (OTRACK) e o paralelo à linha (PAR, a partir do último ponto); o polar trava o
+// ângulo do último ponto em múltiplos de `incrementoPolar`. O resultado traz as `guias` (os trechos tracejados).
 
 import { pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dist, pontosCota } from './desenho2d.js';
 
@@ -69,7 +74,11 @@ function maisProximoCurva(p, e) {
 export class Snap {
   constructor(tela) {
     this.tela = tela;
-    this.ativos = { extremidade: true, meio: true, centro: true, interseccao: true, perpendicular: true, sobre: true, grade: false };
+    this.ativos = { extremidade: true, meio: true, centro: true, interseccao: true, perpendicular: true, tangente: true, sobre: true, grade: false,
+                    extensao: true, paralelo: true, rastreamento: true, polar: true };
+    this.incrementoPolar = 45;           // graus (o POLARANG do AutoCAD)
+    this.adquiridos = [];                // pontos adquiridos: {ponto, dir (a direção da linha, ou null), soDirecao}
+    this._sob = null;                    // o snap de objeto do último resolver (o que a pausa adquire)
     this.raioPx = 9;
     this.ultimo = null;                  // último ponto fixado pela ferramenta (para orto/perpendicular)
     this.direcoes = [];                  // direções a seguir a partir de `ultimo` (continuação da linha anterior)
@@ -186,6 +195,19 @@ export class Snap {
         if (dist(q, s) > 1e-6 && dist(q, t) > 1e-6) considerar(q, 'perpendicular', 2);
       }
     }
+    // tangente: do último ponto ao círculo ou ao arco (os dois pontos em que a reta só encosta)
+    if (a.tangente && this.ultimo) {
+      for (const e of ents) {
+        if (!ehCurva(e)) continue;
+        const d = dist(this.ultimo, e.centro);
+        if (d <= e.raio + 1e-9) continue;
+        const base = Math.atan2(this.ultimo[1] - e.centro[1], this.ultimo[0] - e.centro[0]), al = Math.acos(e.raio / d);
+        for (const g of [base + al, base - al]) {
+          const q = [e.centro[0] + e.raio * Math.cos(g), e.centro[1] + e.raio * Math.sin(g)];
+          if (naCurva(e, q)) considerar(q, 'tangente', 2);
+        }
+      }
+    }
     // onde a linha-guia (a continuação ou a perpendicular a partir do último ponto) cruza uma linha ou uma curva perto
     // do cursor: o ponto exato (subir do banzo de baixo até o arco de cima — 06/10)
     if (a.interseccao && this.ultimo && this.direcoes.length) {
@@ -212,6 +234,39 @@ export class Snap {
         if (dist(q, p) <= raio) considerar(q, 'alinhamento', 2, rot);
       }
     }
+    // os rastreamentos (fora dos objetos): extensão, guias dos pontos adquiridos, paralelo e polar; dois deles se
+    // cruzando perto do cursor dão o ponto exato do cruzamento. Com uma linha embaixo do cursor vale o "sobre" (a guia
+    // de um ponto adquirido sem querer não tira o cursor da linha — verif_cad_fluxo_geometria)
+    let guias = [];
+    const naLinha = a.sobre && (ents.some(e => ehCurva(e) ? (() => { const q = maisProximoCurva(p, e); return q && dist(q, p) <= raio; })()
+      : segmentosSnap(e, tela.doc.escala).some(([s0, t0]) => distSegmento(p, s0, t0) <= raio))
+      || virt.some(v => v.segs.some(([s0, t0]) => distSegmento(p, s0, t0) <= raio)));
+    if (!melhor && !naLinha) {
+      const perto = [];
+      for (const L of this._linhasDeRastreamento()) {
+        const t = (p[0] - L.o[0]) * L.u[0] + (p[1] - L.o[1]) * L.u[1];
+        if (L.raio && t < 1e-6) continue;                                  // o polar e o paralelo só para a frente
+        const q = [L.o[0] + L.u[0] * t, L.o[1] + L.u[1] * t];
+        if (dist(q, p) <= raio) perto.push({ L, q, t, d: dist(q, p) });
+      }
+      for (let i = 0; i < perto.length; i++) for (let j = i + 1; j < perto.length; j++) {
+        const A = perto[i].L, B = perto[j].L;
+        const den = A.u[0] * B.u[1] - A.u[1] * B.u[0];
+        if (Math.abs(den) < 1e-9) continue;
+        const t = ((B.o[0] - A.o[0]) * B.u[1] - (B.o[1] - A.o[1]) * B.u[0]) / den;
+        const x = [A.o[0] + A.u[0] * t, A.o[1] + A.u[1] * t];
+        if (dist(x, p) <= raio) considerar(x, 'rastreamento', 1, `${A.rotulo} × ${B.rotulo}`);
+      }
+      if (melhor) {
+        const x = melhor.ponto;
+        guias = perto.filter(c => Math.abs((x[0] - c.L.o[0]) * c.L.u[1] - (x[1] - c.L.o[1]) * c.L.u[0]) < 1e-6).map(c => [c.L.o, x]);
+      } else if (perto.length) {
+        perto.sort((x, y) => x.L.ordem - y.L.ordem || x.d - y.d);
+        const c = perto[0];
+        considerar(c.q, c.L.tipo, 2, c.L.tipo === 'polar' ? `polar ${c.L.angulo}° · ${Math.round(c.t)}` : c.L.rotulo);
+        guias = [[c.L.o, c.q]];
+      }
+    }
     if (a.sobre && !melhor) {
       for (const e of ents) {
         if (ehCurva(e)) {
@@ -234,8 +289,60 @@ export class Snap {
       ponto = Math.abs(dx) >= Math.abs(dy) ? [ponto[0], this.ultimo[1]] : [this.ultimo[0], ponto[1]];
       tipo = tipo || 'orto';
     }
-    return { ponto, tipo, rotulo: melhor ? melhor.rotulo : '' };
+    this._sob = melhor && ['extremidade', 'meio', 'centro', 'interseccao', 'sobre'].includes(melhor.tipo) ? { ponto: melhor.ponto, tipo: melhor.tipo } : null;
+    return { ponto, tipo, rotulo: melhor ? melhor.rotulo : '', guias: tipo && melhor ? guias : [] };
   }
+
+  /** As linhas de rastreamento: {o (a origem), u (a direção), tipo, rotulo, ordem, raio (só para a frente)}. */
+  _linhasDeRastreamento() {
+    const a = this.ativos, out = [];
+    for (const q of this.adquiridos) {
+      if (a.extensao && q.dir && !q.soDirecao) out.push({ o: q.ponto, u: q.dir, tipo: 'extensao', rotulo: 'extensão', ordem: 0 });
+      if (a.rastreamento && !q.soDirecao) {
+        out.push({ o: q.ponto, u: [1, 0], tipo: 'rastreamento', rotulo: 'alinhado (horizontal)', ordem: 1 });
+        out.push({ o: q.ponto, u: [0, 1], tipo: 'rastreamento', rotulo: 'alinhado (vertical)', ordem: 1 });
+      }
+      if (a.paralelo && q.dir && this.ultimo && dist(q.ponto, this.ultimo) > 1e-6) {
+        for (const k of [1, -1]) out.push({ o: this.ultimo, u: [q.dir[0] * k, q.dir[1] * k], tipo: 'paralelo', rotulo: 'paralelo', ordem: 0, raio: true });
+      }
+    }
+    if (a.polar && !this.orto && this.ultimo && this.incrementoPolar > 0) {
+      const n = Math.round(360 / this.incrementoPolar);
+      for (let i = 0; i < n; i++) {
+        const g = i * this.incrementoPolar;
+        out.push({ o: this.ultimo, u: [Math.cos(g * RAD), Math.sin(g * RAD)], tipo: 'polar', angulo: g, rotulo: `polar ${g}°`, ordem: 2, raio: true });
+      }
+    }
+    return out;
+  }
+
+  /** Adquire o ponto do snap de objeto em que o cursor parou (a pausa do AutoCAD): dele saem as guias. Na ponta de uma
+   *  linha guarda também a direção dela (a extensão e o paralelo); a linha só passada pelo cursor ("sobre") serve só
+   *  para o paralelo. Até 4; o mais antigo sai. Devolve true se adquiriu um novo. */
+  adquirir() {
+    const s = this._sob;
+    if (!s) return false;
+    let dir = null, melhor = Infinity;
+    for (const e of this._candidatas(s.ponto, this.raioPx * this.tela.mmPorPixel)) {
+      if (ehCurva(e)) continue;
+      for (const [a, b] of segmentosSnap(e, this.tela.doc.escala)) {
+        const d = distSegmento(s.ponto, a, b), L = dist(a, b);
+        if (L > 1e-9 && d < melhor && d < 1e-6 * Math.max(1, L)) { melhor = d; dir = [(b[0] - a[0]) / L, (b[1] - a[1]) / L]; }
+      }
+    }
+    if (s.tipo === 'sobre') {
+      if (!dir || this.adquiridos.some(q => q.soDirecao && Math.abs(q.dir[0] * dir[1] - q.dir[1] * dir[0]) < 1e-9)) return false;
+      this.adquiridos.push({ ponto: s.ponto, dir, soDirecao: true });
+    } else {
+      if (this.adquiridos.some(q => !q.soDirecao && dist(q.ponto, s.ponto) < 1e-6)) return false;
+      this.adquiridos.push({ ponto: s.ponto, dir: s.tipo === 'extremidade' ? dir : null });
+    }
+    if (this.adquiridos.length > 4) this.adquiridos.shift();
+    return true;
+  }
+
+  /** Esquece os pontos adquiridos (fim do comando, Esc). */
+  esquecer() { this.adquiridos.length = 0; }        // a mesma lista (a tela a desenha)
 }
 
 function distSegmento(p, a, b) {

@@ -26,6 +26,7 @@ export const ATALHOS = {
 const EXTRAS = [
   { atalhos: ['Z', 'ZOOM', 'ZE'], nome: 'Zoom no desenho todo', fazer: (cad) => cad.tela.enquadrar() },
   { atalhos: ['ZP'], nome: 'Zoom anterior', fazer: (cad) => cad.zoomAnterior() },
+  { atalhos: ['FROM', 'FRO'], nome: 'A partir de (base + deslocamento)', transparente: true, fazer: (cad) => cad.comecarFrom() },
   { atalhos: ['U', 'UNDO'], nome: 'Desfazer (Ctrl+Z)', fazer: (cad) => cad.desfazer() },
   { atalhos: ['REDO'], nome: 'Refazer (Ctrl+Y)', fazer: (cad) => cad.refazer() },
   { atalhos: ['PLOT', 'PRINT'], nome: 'Imprimir (Ctrl+P)', fazer: (cad) => cad.dialogoImprimir() },

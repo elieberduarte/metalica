@@ -517,6 +517,13 @@ export class Tela {
       ctx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]));
       ctx.setLineDash([]);
     }
+    // os pontos adquiridos pelo rastreamento (nucleo/snap.js adquirir): uma cruzinha, como no AutoCAD
+    for (const q of this.adquiridos || []) {
+      if (q.soDirecao) continue;
+      const [x, y] = this.paraTela(q.ponto);
+      ctx.strokeStyle = cores.snap; ctx.lineWidth = 1.2; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(x - 4, y); ctx.lineTo(x + 4, y); ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4); ctx.stroke();
+    }
     if (this.snap) this._glifoSnap(ctx, this.snap, cores.snap);
     else if (this.cursor) {
       const [x, y] = this.paraTela(this.cursor);
@@ -725,6 +732,12 @@ export class Tela {
 
   _glifoSnap(ctx, snap, cor) {
     const [x, y] = this.paraTela(snap.ponto);
+    // as guias do rastreamento (extensão, alinhado, paralelo, polar): tracejadas até o ponto
+    for (const [o, q] of snap.guias || []) {
+      const a = this.paraTela(o), b = this.paraTela(q);
+      ctx.strokeStyle = cor; ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+    }
     ctx.strokeStyle = cor; ctx.fillStyle = cor; ctx.lineWidth = 1.5; ctx.setLineDash([]);
     ctx.beginPath();
     switch (snap.tipo) {
@@ -735,6 +748,10 @@ export class Tela {
       case 'perpendicular': ctx.moveTo(x - 5, y - 5); ctx.lineTo(x - 5, y + 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x - 5, y); ctx.lineTo(x, y); ctx.lineTo(x, y + 5); break;
       case 'sobre': ctx.moveTo(x, y - 6); ctx.lineTo(x + 6, y); ctx.lineTo(x, y + 6); ctx.lineTo(x - 6, y); ctx.closePath(); break;
       case 'grade': ctx.moveTo(x - 4, y); ctx.lineTo(x + 4, y); ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4); break;
+      case 'tangente': ctx.arc(x, y + 1.5, 4.5, 0, Math.PI * 2); ctx.moveTo(x - 6.5, y - 3); ctx.lineTo(x + 6.5, y - 3); break;
+      case 'extensao': for (const dx of [-6, 0, 6]) { ctx.moveTo(x + dx - 1, y); ctx.lineTo(x + dx + 1, y); } break;
+      case 'paralelo': ctx.moveTo(x - 6, y + 4); ctx.lineTo(x - 1, y - 5); ctx.moveTo(x + 1, y + 4); ctx.lineTo(x + 6, y - 5); break;
+      case 'rastreamento': case 'polar': ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x - 5, y + 5); ctx.lineTo(x + 5, y - 5); break;
       case 'alinhamento': ctx.moveTo(x - 7, y); ctx.lineTo(x + 7, y); ctx.moveTo(x - 3, y - 3); ctx.lineTo(x - 3, y + 3); ctx.moveTo(x + 3, y - 3); ctx.lineTo(x + 3, y + 3); break;
       default: ctx.arc(x, y, 3, 0, Math.PI * 2);
     }
