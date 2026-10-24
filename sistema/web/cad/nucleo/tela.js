@@ -13,7 +13,7 @@
 // segundo para ser refeito; sem o cache, cada movimento do mouse custaria isso.
 
 import { pontosArco, dentroDe, segmentosDe, caixaDe, pontosDe, distanciaEntidade, pontosCota, textoDaChamada, cantosDoTextoDaChamada,
-  formatarMm, geometriaCota, textoDaCota } from './desenho2d.js';
+  formatarMm, geometriaCota, textoDaCota, ENTRELINHA, linhasDoTexto } from './desenho2d.js';
 import { estiloDaLinha, larguraNaTela, tracosNaTela } from './tipos_linha.js';
 import { primitivasDaCotaEspecial } from './cota_especial.js';
 export { formatarMm };
@@ -591,6 +591,8 @@ export class Tela {
   }
 
   _texto(ctx, pos, texto, alturaMm, angulo, alinhamento = 'esquerda', vertical = 'base', cor) {
+    // o texto de várias linhas: cada linha 1,6 altura abaixo da anterior (nucleo/desenho2d.js ENTRELINHA)
+    if (String(texto ?? '').includes('\n')) { this._textoVariasLinhas(ctx, pos, texto, alturaMm, angulo, alinhamento, vertical, cor); return; }
     const px = alturaMm * this.vp.z;
     const [x, y] = this.paraTela(pos);
     if (px < 2.5) {                      // longe demais para ler: um traço do tamanho do texto
@@ -612,6 +614,17 @@ export class Tela {
     ctx.setTransform(c, s, -s, c, x * dpr, y * dpr);
     ctx.fillText(texto || '', 0, 0);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  /** Cada linha como um texto, descendo no referencial do texto (girado com ele); 'meio' centra o bloco no ponto. */
+  _textoVariasLinhas(ctx, pos, texto, alturaMm, angulo, alinhamento, vertical, cor) {
+    const ls = linhasDoTexto(texto), n = ls.length, passo = ENTRELINHA * alturaMm;
+    const desloc0 = vertical === 'meio' ? (n - 1) * passo / 2 : 0;
+    const a = (angulo || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+    ls.forEach((linha, i) => {
+      const d = desloc0 - i * passo;                         // mm, para cima no referencial do texto
+      this._texto(ctx, [pos[0] - s * d, pos[1] + c * d], linha, alturaMm, angulo, alinhamento, vertical, cor);
+    });
   }
 
   _seta(ctx, p, ang, tam) {

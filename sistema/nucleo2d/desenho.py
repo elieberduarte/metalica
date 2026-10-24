@@ -266,6 +266,22 @@ def transladar(e: "Entidade2D", dx: float, dy: float) -> "Entidade2D":
     return n
 
 
+
+#: O texto de várias linhas (24/10): as linhas no texto separadas por "\n", a 1,6 altura uma da outra — o mesmo da tela
+#: (web/cad/nucleo/desenho2d.js ENTRELINHA). A primeira linha fica no ponto; com `vertical == "meio"` o bloco é centrado.
+ENTRELINHA = 1.6
+
+
+def linhas_do_texto(e: "Texto", k: float = 1.0):
+    """[((x, y), linha)] do texto: uma só no texto comum; no de várias linhas, descendo no referencial do texto (girado)."""
+    ls = str(e.texto if e.texto is not None else "").split("\n")
+    if len(ls) == 1:
+        return [((e.posicao[0], e.posicao[1]), ls[0])]
+    passo = ENTRELINHA * float(e.altura) * k
+    d0 = (len(ls) - 1) * passo / 2.0 if e.vertical == "meio" else 0.0
+    a = math.radians(float(e.angulo or 0.0))
+    return [((e.posicao[0] - math.sin(a) * (d0 - i * passo), e.posicao[1] + math.cos(a) * (d0 - i * passo)), t) for i, t in enumerate(ls)]
+
 @dataclass
 class Desenho:
     nome: str = "Desenho"
@@ -367,8 +383,8 @@ class Desenho:
             elif isinstance(e, Arco):
                 d.arco(e.centro[0], e.centro[1], e.raio, e.inicio, e.fim, camada)
             elif isinstance(e, Texto):
-                d.texto(e.posicao[0], e.posicao[1], e.texto, e.altura * k, camada,
-                        angulo=e.angulo, alinhamento=e.alinhamento, vertical=e.vertical)
+                for (x, y), t in linhas_do_texto(e, k):
+                    d.texto(x, y, t, e.altura * k, camada, angulo=e.angulo, alinhamento=e.alinhamento, vertical=e.vertical)
             elif isinstance(e, Cota):
                 # o número da cota na camada do texto (preto no papel), a linha na da cota (28/09)
                 _cota_dxf(d, e, k, camada, terminador=(e.terminador or (self.metadados.get("estilo") or {}).get("terminador") or TERMINADOR_PADRAO),

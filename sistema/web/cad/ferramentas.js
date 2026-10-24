@@ -620,6 +620,28 @@ export class Texto extends Ferramenta {
   }
 }
 
+/** Texto de várias linhas (o MTEXT do AutoCAD, 24/10): o clique é o canto de cima à esquerda; o texto numa caixa de
+ *  várias linhas (Enter quebra a linha, Ctrl+Enter grava). As linhas ficam no mesmo texto, 1,6 altura uma da outra. */
+export class TextoVariasLinhas extends Ferramenta {
+  static id = 'texto_mt'; static nome = 'Texto de várias linhas'; static dica = 'Clique o canto de cima à esquerda do texto';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 5h12M10 5v6"/><path d="M4 14h16M4 18h12M4 22h14" stroke-width="1.2"/></svg>';
+  async onPonto(p) {
+    const caixa = document.createElement('textarea');
+    caixa.rows = 6; caixa.style.width = '100%'; caixa.style.minWidth = '420px'; caixa.spellcheck = false;
+    caixa.dataset.campo = 'mtext';
+    caixa.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' && ev.ctrlKey) { ev.preventDefault(); caixa.closest('form').requestSubmit(); }
+    });
+    const corpo = document.createElement('div');
+    const dica = document.createElement('div'); dica.className = 'explica'; dica.textContent = 'Enter quebra a linha · Ctrl+Enter grava';
+    corpo.append(caixa, dica);
+    if (await this.editor.dialogo({ titulo: 'Texto de várias linhas', corpo, ok: 'Gravar' }) !== 'ok') return;
+    const texto = caixa.value.replace(/\r/g, '').replace(/\s+$/, '');
+    if (!texto.trim()) return;
+    this.editor.executar(new ComandoAdicionar([this.novaEntidade({ tipo: 'texto', camada: 'TEXTO', posicao: p, texto, altura: this.editor.alturaTexto, vertical: 'topo' })], 'Texto de várias linhas'));
+  }
+}
+
 export class Chamada extends Ferramenta {
   static id = 'chamada'; static nome = 'Chamada'; static atalho = 'h'; static dica = 'Clique no ponto apontado';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 18l8-8h8"/><circle cx="4" cy="18" r="1.3"/></svg>';
@@ -3363,6 +3385,6 @@ export class Corte extends Ferramenta {
   }
 }
 
-export const FERRAMENTAS = [Selecionar, ZoomJanela, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, CotaContinua, CotaBase, CotaRapida, CotaAngular, CotaRaio, CotaDiametro, CotaOrdenada, AjustarCota, Chamada, Corte, Hachura,
+export const FERRAMENTAS = [Selecionar, ZoomJanela, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, TextoVariasLinhas, Cota, CotaContinua, CotaBase, CotaRapida, CotaAngular, CotaRaio, CotaDiametro, CotaOrdenada, AjustarCota, Chamada, Corte, Hachura,
   GradeFuros, SimboloSolda, BalaoMarca, SimboloNivel, ChamadaDetalhe, NuvemRevisao, Mover, Copiar, Girar, Espelhar, Escalar, Matriz, Esticar, Offset, Aparar, Estender, Quebrar, Alongar, Concordar, Chanfro, Explodir, Juntar, Dividir, MoverCota, CopiarPropriedades, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['simbolos', 'Sím'], ['edicao', 'Edi'], ['medicao', 'Med']];

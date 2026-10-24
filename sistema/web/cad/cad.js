@@ -20,6 +20,7 @@ import { MetodosEdicaoChapaCAD } from './edicao_chapa.js';
 import { MetodosTravaPecasCAD } from './trava_pecas.js';
 import { MetodosImpressaoCAD } from './impressao.js';
 import { MetodosRevisoesCAD } from './revisoes.js';
+import { MetodosLocalizarCAD } from './localizar.js';
 
 const CHAVE_TEMA = 'galpao.tema';
 const ATRASO_AUTOSAVE = 3000;
@@ -1298,6 +1299,8 @@ class CAD {
         ev.preventDefault(); this.colar(); return;
       }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); this.salvar(); return; }
+      // Ctrl+H: localizar e substituir (localizar.js)
+      if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && ev.key.toLowerCase() === 'h') { ev.preventDefault(); this.dialogoLocalizar(); return; }
       // Ctrl+P: as pranchas na impressora (o imprimir do navegador sairia a tela do CAD)
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'p') { ev.preventDefault(); this.dialogoImprimir(); return; }
       // Esc fecha primeiro o menu aberto, como em qualquer programa (P12, primeiro uso 16/10: o menu ficava por cima do desenho)
@@ -1406,6 +1409,7 @@ class CAD {
       imprimir: () => this.dialogoImprimir(),
       penas: () => this.dialogoPenas(),
       revisoes: () => this.dialogoRevisoes(),
+      localizar: () => this.dialogoLocalizar(),
       'dxf-pranchas': () => this.dxfDasPranchas(),
       'abrir-pasta': () => this.projeto && postar(`/api/projetos/${encodeURIComponent(this.projeto)}/abrir-pasta`, { sub: 'desenhos-2d' }).catch(e => this.aviso(e.message, 'erro')),
       corte: () => this.dialogoCorte(),
@@ -2142,7 +2146,10 @@ class CAD {
     if (ids.length === 1) {
       const e = ents[0];
       const campo = (rotulo, chave, tipo = 'text', extra = {}) => {
-        const i = el('input', { type: tipo, value: e[chave] ?? '', ...extra });
+        // o texto de várias linhas numa caixa de várias linhas (24/10)
+        const varias = chave === 'texto' && String(e.texto ?? '').includes('\n');
+        const i = varias ? el('textarea', { rows: Math.min(8, String(e.texto).split('\n').length + 1), ...extra }) : el('input', { type: tipo, value: e[chave] ?? '', ...extra });
+        if (varias) i.value = e.texto;
         i.addEventListener('change', () => { const v = tipo === 'number' ? parseFloat(i.value.replace(',', '.')) : i.value; if (tipo === 'number' && !isFinite(v)) return; this.executar(new ComandoAlterar({ [e.id]: { [chave]: v } }, `Alterar ${rotulo}`)); });
         g.append(el('label', { texto: rotulo }), i);
       };
@@ -2874,9 +2881,12 @@ class CAD {
     const [x, y] = tela.paraTela(onde);
     const alturaPx = Math.max(12, Math.min(48, (+e.altura || 2.5) * this.doc.escala * tela.vp.z));
     const antes = e.texto == null ? '' : String(e.texto);
-    const caixa = document.createElement('input');
+    // o texto de várias linhas (24/10) edita numa caixa de várias linhas: Enter quebra a linha, Ctrl+Enter confirma
+    const varias = e.tipo === 'texto' && antes.includes('\n');
+    const caixa = document.createElement(varias ? 'textarea' : 'input');
     caixa.className = 'editar-texto-no-lugar';
     caixa.value = antes;
+    if (varias) caixa.rows = Math.min(12, antes.split('\n').length + 1);
     caixa.spellcheck = false;
     Object.assign(caixa.style, { position: 'absolute', left: Math.round(x - 4) + 'px', top: Math.round(y - alturaPx * 1.15) + 'px',
       fontSize: Math.round(alturaPx) + 'px', minWidth: Math.max(80, antes.length * alturaPx * 0.62 + 24) + 'px', zIndex: 6,
@@ -2899,7 +2909,7 @@ class CAD {
     };
     caixa.addEventListener('keydown', (ev) => {
       ev.stopPropagation();
-      if (ev.key === 'Enter') { ev.preventDefault(); fechar(true); }
+      if (ev.key === 'Enter' && (!varias || ev.ctrlKey)) { ev.preventDefault(); fechar(true); }
       else if (ev.key === 'Escape') { ev.preventDefault(); fechar(false); }
     });
     caixa.addEventListener('blur', () => fechar(true));
@@ -3401,7 +3411,7 @@ function lerTema() { try { return localStorage.getItem(CHAVE_TEMA); } catch { re
 
 // os métodos da planta de lançamento (menu Lançamento) moram em lancamento.js; os do
 // projeto recebido montado pela planta, em montar_planta.js
-for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEstruturaCAD, MetodosEdicaoChapaCAD, MetodosTravaPecasCAD, MetodosImpressaoCAD, MetodosRevisoesCAD]) {
+for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEstruturaCAD, MetodosEdicaoChapaCAD, MetodosTravaPecasCAD, MetodosImpressaoCAD, MetodosRevisoesCAD, MetodosLocalizarCAD]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) {
     if (k === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(CAD.prototype, k)) throw new Error(`método repetido no CAD: ${k}`);

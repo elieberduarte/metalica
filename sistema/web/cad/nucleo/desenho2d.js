@@ -252,18 +252,27 @@ export function intersecaoSeg(a, b, c, d) {
 
 /** Caixa do texto no referencial dele: a largura estimada pelo número de letras, a partir do
  *  ponto de inserção conforme o alinhamento. */
+/** O texto de várias linhas (o MTEXT do AutoCAD, 24/10): as linhas no `texto` separadas por "\n", a 1,6 altura uma da
+ *  outra. A primeira linha fica no ponto (a base dela, o topo dela com `vertical: 'topo'`, ou o bloco centrado no ponto). */
+export const ENTRELINHA = 1.6;
+export const linhasDoTexto = (t) => String(t ?? '').split('\n');
+
+/** A caixa do texto no referencial dele: [x, largura, altura, v0] (de v0 a v0 + altura). */
 function caixaLocalDoTexto(e, escalaTexto) {
-  const h = (e.altura || 2.5) * escalaTexto, w = Math.max(h, (e.texto || '').length * h * 0.65);
+  const h = (e.altura || 2.5) * escalaTexto, ls = linhasDoTexto(e.texto), n = ls.length;
+  const w = Math.max(h, Math.max(...ls.map(l => l.length)) * h * 0.65);
   const x = e.alinhamento === 'centro' ? -w / 2 : e.alinhamento === 'direita' ? -w : 0;
-  return [x, w, h];
+  if (n === 1) return [x, w, h, 0];
+  const H = h + (n - 1) * ENTRELINHA * h;
+  return [x, w, H, e.vertical === 'topo' ? -H : e.vertical === 'meio' ? -H / 2 : -(n - 1) * ENTRELINHA * h];
 }
 
 /** Os quatro cantos do texto no desenho, girados pelo ângulo: é a caixa que o índice espacial
  *  guarda — só o ponto de inserção deixava um título comprido sem clique no meio (28/09). */
 export function cantosDoTexto(e, escalaTexto = 1) {
-  const [x, w, h] = caixaLocalDoTexto(e, escalaTexto);
+  const [x, w, h, v0] = caixaLocalDoTexto(e, escalaTexto);
   const a = (e.angulo || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
-  return [[x, 0], [x + w, 0], [x + w, h], [x, h]].map(([u, v]) => [e.posicao[0] + u * c - v * s, e.posicao[1] + u * s + v * c]);
+  return [[x, v0], [x + w, v0], [x + w, v0 + h], [x, v0 + h]].map(([u, v]) => [e.posicao[0] + u * c - v * s, e.posicao[1] + u * s + v * c]);
 }
 
 /** O texto da chamada: sai do fim do traço horizontal (8 mm de papel) para o lado de fora da seta. */
@@ -287,11 +296,11 @@ export function distanciaEntidade(p, e, escalaTexto = 1) {
     case 'circulo': return Math.abs(dist(p, e.centro) - e.raio);
     case 'texto': {
       // no referencial do texto (girado pelo ângulo dele)
-      const [x, w, h] = caixaLocalDoTexto(e, escalaTexto);
+      const [x, w, h, v0] = caixaLocalDoTexto(e, escalaTexto);
       const a = (e.angulo || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
       const qx = p[0] - e.posicao[0], qy = p[1] - e.posicao[1];
       const u = qx * c + qy * s, v = -qx * s + qy * c;
-      const dx = Math.max(x - u, 0, u - (x + w)), dy = Math.max(-v, 0, v - h);
+      const dx = Math.max(x - u, 0, u - (x + w)), dy = Math.max(v0 - v, 0, v - (v0 + h));
       return Math.hypot(dx, dy);
     }
     case 'hachura': {

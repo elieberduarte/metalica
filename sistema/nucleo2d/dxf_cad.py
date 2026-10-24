@@ -158,6 +158,20 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
             feitas.append(msp.add_circle(e.centro, e.raio, dxfattribs=at))
         elif isinstance(e, Arco):
             feitas.append(msp.add_arc(e.centro, e.raio, e.inicio, e.fim, dxfattribs=at))
+        elif isinstance(e, Texto) and "\n" in str(e.texto or ""):
+            # o texto de várias linhas (24/10): MTEXT, as linhas pelo \P, 1,6 altura entre elas (o fator 0,96 do AutoCAD)
+            h = float(e.altura) * k
+            mt = msp.add_mtext(str(e.texto).replace("\n", "\\P"), dxfattribs=dict(at, style=ESTILO, char_height=h, line_spacing_factor=0.96))
+            col = {"centro": 2, "direita": 3}.get(e.alinhamento, 1)
+            if e.vertical == "meio":
+                ponto, anexo = e.posicao, 3 + col
+            else:
+                # a base da primeira linha no ponto: o topo dela uma altura acima (no referencial girado)
+                a = math.radians(float(e.angulo or 0.0))
+                sobe = 0.0 if e.vertical == "topo" else h
+                ponto, anexo = (e.posicao[0] - math.sin(a) * sobe, e.posicao[1] + math.cos(a) * sobe), col
+            mt.set_location(ponto, rotation=float(e.angulo or 0.0), attachment_point=anexo)
+            feitas.append(mt)
         elif isinstance(e, Texto):
             if str(e.texto or "").strip():
                 t = msp.add_text(str(e.texto), height=float(e.altura) * k, rotation=float(e.angulo or 0.0),
