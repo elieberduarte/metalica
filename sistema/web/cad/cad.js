@@ -11,6 +11,7 @@ import { acompanhar as acompanharTarefa } from '../progresso.js';
 import { Snap } from './nucleo/snap.js';
 import { FERRAMENTAS, GRUPOS, Ferramenta, textoNaUnidade, ColarObjetos, CopiarBase } from './ferramentas.js';
 import { TIPOS_DE_LINHA, ESPESSURAS, rotuloDoTipo, escalaTracejado, ESCALA_TRACEJADO } from './nucleo/tipos_linha.js';
+import { medidaDaCotaEspecial } from './nucleo/cota_especial.js';
 import { MetodosLancamentoCAD, DESENHO_LANCAMENTO } from './lancamento.js';
 import { MetodosMontarPlantaCAD } from './montar_planta.js';
 import { MetodosEstruturaCAD } from './estrutura.js';
@@ -2063,6 +2064,22 @@ class CAD {
       };
       if (e.tipo === 'texto' || e.tipo === 'chamada') campo('Texto', 'texto');     // a altura: "Tamanho do texto", acima
       if (e.tipo === 'texto') campo('Ângulo', 'angulo', 'number', { step: '15' });
+      if (e.tipo === 'cota_especial') {
+        // a cota angular, de raio, de diâmetro ou ordenada (23/10)
+        const nomes = { angular: 'angular', raio: 'de raio', diametro: 'de diâmetro', ordenada: `ordenada (em ${e.eixo === 'y' ? 'y' : 'x'})` };
+        g.append(el('label', { texto: 'Cota' }), el('div', { texto: `${nomes[e.modo] || e.modo}: ${medidaDaCotaEspecial(e)}` }));
+        campo('Texto (vazio = medida)', 'texto');
+        const casas = el('select', {}, ...[['', 'automático'], ['0', '0'], ['1', '1'], ['2', '2'], ['3', '3']].map(([v, t]) =>
+          el('option', { value: v, texto: t, selected: String(e.casas ?? '') === v ? 'selected' : undefined })));
+        casas.addEventListener('change', () => this.executar(new ComandoAlterar({ [e.id]: { casas: casas.value === '' ? null : +casas.value } }, 'Casas decimais da cota')));
+        g.append(el('label', { texto: 'Casas decimais' }), casas);
+        if (e.modo === 'ordenada') {
+          g.append(el('label', { texto: 'Origem' }), el('div', { texto: `${formatarMm(e.centro[0], 1)}; ${formatarMm(e.centro[1], 1)}` }));
+          const eixo = el('select', {}, ...[['x', 'x (a chamada vertical)'], ['y', 'y (a chamada horizontal)']].map(([v, t]) => el('option', { value: v, texto: t, selected: (e.eixo || 'x') === v ? 'selected' : undefined })));
+          eixo.addEventListener('change', () => this.executar(new ComandoAlterar({ [e.id]: { eixo: eixo.value } }, 'Eixo da ordenada')));
+          g.append(el('label', { texto: 'Eixo medido' }), eixo);
+        }
+      }
       if (e.tipo === 'cota') {
         const esc_ = e.escala || 1;
         g.append(el('label', { texto: 'Valor' }), el('div', { texto: formatarMm(valorCota(e) * esc_, 2) + ' mm' + (esc_ !== 1 ? ` (${formatarMm(valorCota(e), 2)} desenhados × ${esc_})` : '') }));
@@ -2703,7 +2720,7 @@ class CAD {
    *  todos, ou A− / A+ (20 / 25 %) mantendo a proporção entre eles; com um texto só, o botão que
    *  seleciona todos os textos da mesma camada — para aumentar todos de uma vez. */
   _tamanhoDoTexto(g, ents) {
-    const comTexto = ents.filter(e => e && (e.tipo === 'texto' || e.tipo === 'cota' || e.tipo === 'chamada'));
+    const comTexto = ents.filter(e => e && (e.tipo === 'texto' || e.tipo === 'cota' || e.tipo === 'chamada' || e.tipo === 'cota_especial'));
     if (!comTexto.length) return;
     const alts = [...new Set(comTexto.map(e => +(e.altura || 2.5)))];
     const inp = el('input', { type: 'number', step: '0.5', min: '0.5', value: alts.length === 1 ? String(alts[0]) : '', placeholder: 'vários', title: 'Altura do texto em mm no papel' });
@@ -2789,11 +2806,12 @@ class CAD {
     const alt = opcoes.altura != null && isFinite(opcoes.altura) && opcoes.altura > 0 ? +opcoes.altura : null;
     for (const e of alvo) {
       const m = {};
-      if (alt && (e.tipo === 'texto' || e.tipo === 'cota' || e.tipo === 'chamada')) m.altura = alt;
-      if (opcoes.terminador && e.tipo === 'cota') m.terminador = opcoes.terminador === 'padrao' ? null : opcoes.terminador;
-      if (opcoes.casas != null && e.tipo === 'cota') m.casas = opcoes.casas === 'auto' ? null : opcoes.casas;
+      const ehCota = e.tipo === 'cota' || e.tipo === 'cota_especial';
+      if (alt && (e.tipo === 'texto' || ehCota || e.tipo === 'chamada')) m.altura = alt;
+      if (opcoes.terminador && ehCota) m.terminador = opcoes.terminador === 'padrao' ? null : opcoes.terminador;
+      if (opcoes.casas != null && ehCota) m.casas = opcoes.casas === 'auto' ? null : opcoes.casas;
       // a folga do número: na seleção, a da cota; no desenho todo, a do estilo — as cotas voltam a seguir a dele
-      if (opcoes.folga != null && e.tipo === 'cota') { const v = ids ? opcoes.folga : null; if ((e.folga ?? null) !== v) m.folga = v; }
+      if (opcoes.folga != null && ehCota) { const v = ids ? opcoes.folga : null; if ((e.folga ?? null) !== v) m.folga = v; }
       if (e.tipo === 'hachura') {
         if (opcoes.padrao) m.padrao = opcoes.padrao;
         if (opcoes.espacamento != null && isFinite(opcoes.espacamento) && opcoes.espacamento > 0) m.espacamento = +opcoes.espacamento;

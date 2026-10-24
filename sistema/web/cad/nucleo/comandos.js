@@ -118,6 +118,7 @@ export class ComandoEscala extends Comando {
           const m = {};
           if ((e.tipo === 'texto' || e.tipo === 'chamada') && e.altura) m.altura = e.altura * r;
           else if (e.tipo === 'cota') { m.altura = (e.altura || 2.5) * r; m.deslocamento = (e.deslocamento || 0) * r; }
+          else if (e.tipo === 'cota_especial') m.altura = (e.altura || 2.5) * r;
           else if (e.tipo === 'hachura' && e.espacamento) m.espacamento = e.espacamento * r;
           mudar(e, m);
         }

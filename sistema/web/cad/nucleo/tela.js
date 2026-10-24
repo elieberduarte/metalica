@@ -15,6 +15,7 @@
 import { pontosArco, dentroDe, segmentosDe, caixaDe, pontosDe, distanciaEntidade, pontosCota, textoDaChamada, cantosDoTextoDaChamada,
   formatarMm, geometriaCota, textoDaCota } from './desenho2d.js';
 import { estiloDaLinha, larguraNaTela, tracosNaTela } from './tipos_linha.js';
+import { primitivasDaCotaEspecial } from './cota_especial.js';
 export { formatarMm };
 
 const PX_GRADE_ALVO = 60;
@@ -96,6 +97,7 @@ export class Tela {
                   { id, parte: 'texto', ponto: [(c[0][0] + c[2][0]) / 2, (c[0][1] + c[2][1]) / 2] });
         continue;
       }
+      if (e.tipo === 'cota_especial') { fora.push({ id, parte: 'posicao', ponto: e.posicao }); continue; }
       if (e.tipo !== 'cota') continue;
       const pc = pontosCota(e, k);
       fora.push({ id, parte: 'p1', ponto: e.p1 }, { id, parte: 'p2', ponto: e.p2 });
@@ -327,7 +329,7 @@ export class Tela {
       }
       nDesenhadas++;
       if (tipo === 'hachura') { hachuras.push(e); continue; }
-      if (tipo === 'texto' || tipo === 'cota' || tipo === 'chamada') { porCima.push(e); continue; }
+      if (tipo === 'texto' || tipo === 'cota' || tipo === 'chamada' || tipo === 'cota_especial') { porCima.push(e); continue; }
       const cor = corDe(e, cam);
       // o tipo de linha e a espessura do objeto, ou os da camada (23/10)
       const est = estiloDaLinha(e, cam), larg = larguraNaTela(est.espessura), tl = est.tipo;
@@ -556,7 +558,7 @@ export class Tela {
 
   _entidade(ctx, e, cor, cam, k, selecionada, previa = false) {
     const T = (p) => this.paraTela(p);
-    this._estilo(ctx, cor, cam, selecionada, previa, e.tipo === 'texto' || e.tipo === 'cota' || e.tipo === 'chamada' || e.tipo === 'hachura' ? null : e);
+    this._estilo(ctx, cor, cam, selecionada, previa, e.tipo === 'texto' || e.tipo === 'cota' || e.tipo === 'chamada' || e.tipo === 'hachura' || e.tipo === 'cota_especial' ? null : e);
     switch (e.tipo) {
       case 'linha': { const a = T(e.a), b = T(e.b); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); break; }
       case 'polilinha': {
@@ -574,6 +576,7 @@ export class Tela {
       }
       case 'texto': this._texto(ctx, e.posicao, e.texto, e.altura * k, e.angulo || 0, e.alinhamento, e.vertical, cor); break;
       case 'cota': this._cota(ctx, e, k, cor); break;
+      case 'cota_especial': this._cotaEspecial(ctx, e, k, cor); break;
       case 'hachura': this._hachura(ctx, e, k, cor); break;
       case 'chamada': this._chamada(ctx, e, k, cor); break;
     }
@@ -631,6 +634,24 @@ export class Tela {
   static textoCota(c, k, estilo = null) { return textoDaCota(c, k, estilo); }
   /** O estilo do desenho (a folga padrão do número das cotas). */
   get estiloDoDesenho() { return (this.doc.metadados || {}).estilo || null; }
+
+  /** A cota angular, de raio, de diâmetro ou ordenada: o que nucleo/cota_especial.js calcula (o mesmo do PDF). */
+  _cotaEspecial(ctx, c, k, cor) {
+    const pr = primitivasDaCotaEspecial(c, k, this.estiloDoDesenho), T = (p) => this.paraTela(p), z = this.vp.z;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    for (const [a, b] of pr.linhas) { const A = T(a), B = T(b); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); }
+    ctx.stroke();
+    for (const ar of pr.arcos) {
+      const C = T(ar.centro);
+      ctx.beginPath(); ctx.arc(C[0], C[1], ar.raio * z, -ar.fim * Math.PI / 180, -ar.inicio * Math.PI / 180); ctx.stroke();
+    }
+    for (const pt of pr.pontas) this._terminador(ctx, T(pt.p), pt.ang * Math.PI / 180, pt.tam * z, pt.tipo);
+    const cs = this._coresDoTema();
+    const destacada = cor === cs.selecao || cor === cs.realce || cor === cs.previa;
+    const camTexto = this.doc.camadas.get('TEXTO');
+    for (const t of pr.textos) this._texto(ctx, t.pos, t.txt, t.h, t.ang, t.alinhamento, 'base', destacada ? cor : cs.textoInvertido((camTexto && camTexto.cor) || '#111827'));
+  }
 
   _cota(ctx, c, k, cor) {
     const g = Tela.geometriaCota(c, k);

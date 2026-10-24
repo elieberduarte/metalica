@@ -125,6 +125,11 @@ def _transformar(e, f, s: float = 1.0):
     elif isinstance(e, Chamada):
         e.alvo, e.posicao = f(e.alvo), f(e.posicao)
         e.altura = round(e.altura * s, 3)
+    elif getattr(e, "tipo", "") == "cota_especial":
+        e.centro, e.p1, e.posicao = f(e.centro), f(e.p1), f(e.posicao)
+        if e.p2:
+            e.p2 = f(e.p2)
+        e.altura = round(e.altura * s, 3)
 
 
 def _mediana(vs: List[float]) -> float:

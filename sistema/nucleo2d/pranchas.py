@@ -24,6 +24,7 @@ import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from nucleo.base import ErroDeDados
+from nucleo2d.desenho import CotaEspecial  # noqa: E402 — a cota angular, de raio, de diâmetro e ordenada (23/10)
 from nucleo2d.desenho import (Desenho, Entidade2D, Linha, Polilinha, Circulo, Arco, Texto,
                               Cota, Hachura, Chamada, Camada2D, formatar_mm, transladar, novo_id)
 
@@ -103,6 +104,14 @@ def _para_papel(e: Entidade2D, k: float, dx: float, dy: float, fonte: str) -> En
         n.contornos = [[mv(p) for p in c] for c in n.contornos]
     elif isinstance(n, Chamada):
         n.alvo, n.posicao = mv(n.alvo), mv(n.posicao)
+    elif isinstance(n, CotaEspecial):
+        # o número da peça fica escrito (na prancha os mm são de papel)
+        if n.texto is None or n.texto == "":
+            from nucleo2d.cota_especial import medida
+            n.texto = medida(n)
+        n.centro, n.p1, n.posicao = mv(n.centro), mv(n.p1), mv(n.posicao)
+        if n.p2:
+            n.p2 = mv(n.p2)
     n.atributos = dict(n.atributos or {}, fonte=fonte, escala=k)
     return n
 

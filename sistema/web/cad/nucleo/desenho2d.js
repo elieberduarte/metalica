@@ -7,7 +7,8 @@
 // O documento é a única fonte de verdade da tela. Ferramentas nunca mexem nele
 // diretamente: passam por um comando (comandos.js), que é o que dá desfazer.
 
-export const TIPOS = ['linha', 'polilinha', 'circulo', 'arco', 'texto', 'cota', 'hachura', 'chamada'];
+export const TIPOS = ['linha', 'polilinha', 'circulo', 'arco', 'texto', 'cota', 'hachura', 'chamada', 'cota_especial'];
+import { pontosDaCotaEspecial, distanciaCotaEspecial } from './cota_especial.js';
 
 export const CAMADAS_PADRAO = [
   ['CORTE', '#16202e', 'CONTINUOUS', 0.5], ['VISTA', '#2b3646', 'CONTINUOUS', 0.35],
@@ -49,6 +50,10 @@ export function criar(reg) {
     case 'hachura': return { ...base, camada: base.camada || 'HACHURA', contornos: reg.contornos || [], padrao: reg.padrao || 'aco',
       angulo: reg.angulo ?? 45, espacamento: reg.espacamento ?? 2.5 };
     case 'chamada': return { ...base, camada: base.camada || 'TEXTO', alvo: reg.alvo, posicao: reg.posicao, texto: reg.texto || '', altura: reg.altura ?? 2.5 };
+    // a cota angular, de raio, de diâmetro e ordenada (23/10; nucleo/cota_especial.js)
+    case 'cota_especial': return { ...base, camada: base.camada || 'COTA', modo: reg.modo || 'angular', centro: reg.centro, p1: reg.p1, p2: reg.p2 ?? null,
+      posicao: reg.posicao, eixo: reg.eixo ?? null, texto: reg.texto ?? null, altura: reg.altura ?? 2.5, casas: reg.casas ?? null, escala: reg.escala ?? null,
+      fator: reg.fator ?? null, terminador: reg.terminador ?? null, folga: reg.folga ?? null };
     default: throw new Error('tipo de entidade desconhecido: ' + reg.tipo);
   }
 }
@@ -186,6 +191,7 @@ export function pontosDe(e) {
     case 'cota': return [e.p1, e.p2];
     case 'hachura': return e.contornos.flat();
     case 'chamada': return [e.alvo, e.posicao];
+    case 'cota_especial': return [e.centro, e.p1, e.posicao, ...(e.p2 ? [e.p2] : [])];
     default: return [];
   }
 }
@@ -298,6 +304,7 @@ export function distanciaEntidade(p, e, escalaTexto = 1) {
       // a linha de cota está deslocada: aproxima pela distância aos pontos e ao segmento
       return Math.min(distSeg(p, e.p1, e.p2), dist(p, e.p1), dist(p, e.p2));
     }
+    case 'cota_especial': return distanciaCotaEspecial(p, e, escalaTexto);
     case 'chamada': {
       // a linha, o traço e o texto (clicar no texto pega a chamada — pedido do usuário, 28/09)
       const t = textoDaChamada(e, escalaTexto);
@@ -335,6 +342,7 @@ export function transladar(e, d) {
     case 'cota': n.p1 = mv(e.p1); n.p2 = mv(e.p2); if (e.texto_pos) n.texto_pos = mv(e.texto_pos); break;
     case 'hachura': n.contornos = e.contornos.map(c => c.map(mv)); break;
     case 'chamada': n.alvo = mv(e.alvo); n.posicao = mv(e.posicao); break;
+    case 'cota_especial': n.centro = mv(e.centro); n.p1 = mv(e.p1); n.posicao = mv(e.posicao); if (e.p2) n.p2 = mv(e.p2); break;
   }
   return n;
 }
@@ -374,6 +382,17 @@ export function transformar(e, f, fAng = (a) => a, k = 1, espelha = false) {
     }
     case 'hachura': n.contornos = e.contornos.map(c => c.map(f)); break;
     case 'chamada': n.alvo = f(e.alvo); n.posicao = f(e.posicao); break;
+    case 'cota_especial': {
+      n.centro = f(e.centro); n.p1 = f(e.p1); n.posicao = f(e.posicao); if (e.p2) n.p2 = f(e.p2);
+      // o espelho troca os lados do ângulo (o setor continua o da posição); a ordenada girada 90° troca de eixo
+      if (espelha && e.modo === 'angular') [n.p1, n.p2] = [n.p2, n.p1];
+      if (e.modo === 'ordenada') {
+        const o = f(e.centro), x = f([e.centro[0] + 1, e.centro[1]]);
+        const ax = Math.abs(x[0] - o[0]) >= Math.abs(x[1] - o[1]);
+        n.eixo = (e.eixo === 'y') === ax ? 'y' : 'x';
+      }
+      break;
+    }
   }
   return n;
 }
@@ -503,6 +522,7 @@ export class Desenho2D {
    *  com a largura dele. */
   _caixaDoIndice(e) {
     if (e.tipo === 'cota') return caixaDe([...pontosCota(e, this.escala), ...cantosDoTextoDaCota(e, this.escala, (this.metadados || {}).estilo)]);
+    if (e.tipo === 'cota_especial') return caixaDe(pontosDaCotaEspecial(e, this.escala, (this.metadados || {}).estilo));
     if (e.tipo === 'texto') return caixaDe(cantosDoTexto(e, this.escala));
     if (e.tipo === 'chamada') return caixaDe([e.alvo, e.posicao, ...cantosDoTextoDaChamada(e, this.escala)]);
     if (e.tipo === 'arco') return caixaDe(pontosDaCaixaDoArco(e));

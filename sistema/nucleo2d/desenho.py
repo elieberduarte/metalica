@@ -207,8 +207,33 @@ class Chamada(Entidade2D):
         return [self.alvo, self.posicao]
 
 
+@dataclass
+class CotaEspecial(Entidade2D):
+    """As cotas angular, de raio, de diâmetro e ordenada (23/10): modo, centro (o vértice / o centro / a origem), p1, p2
+    (o 2º lado do ângulo), posicao (por onde passa o arco / onde fica o número), eixo (x | y, da ordenada). O desenho
+    delas é o de nucleo2d/cota_especial.py, espelho de web/cad/nucleo/cota_especial.js."""
+    tipo: str = "cota_especial"
+    camada: str = "COTA"
+    modo: str = "angular"
+    centro: Ponto2 = (0.0, 0.0)
+    p1: Ponto2 = (0.0, 0.0)
+    p2: Optional[Ponto2] = None
+    posicao: Ponto2 = (0.0, 0.0)
+    eixo: Optional[str] = None
+    texto: Optional[str] = None
+    altura: float = 2.5
+    casas: Optional[int] = None
+    escala: Optional[float] = None
+    fator: Optional[float] = None
+    terminador: Optional[str] = None
+    folga: Optional[float] = None
+
+    def pontos(self):
+        return [self.centro, self.p1, self.posicao] + ([self.p2] if self.p2 else [])
+
+
 TIPOS = {"linha": Linha, "polilinha": Polilinha, "circulo": Circulo, "arco": Arco,
-         "texto": Texto, "cota": Cota, "hachura": Hachura, "chamada": Chamada}
+         "texto": Texto, "cota": Cota, "hachura": Hachura, "chamada": Chamada, "cota_especial": CotaEspecial}
 
 
 # ---------------------------------------------------------------- desenho
@@ -234,6 +259,10 @@ def transladar(e: "Entidade2D", dx: float, dy: float) -> "Entidade2D":
         n.contornos = [[mv(q) for q in c] for c in n.contornos]
     elif isinstance(n, Chamada):
         n.alvo, n.posicao = mv(n.alvo), mv(n.posicao)
+    elif isinstance(n, CotaEspecial):
+        n.centro, n.p1, n.posicao = mv(n.centro), mv(n.p1), mv(n.posicao)
+        if n.p2:
+            n.p2 = mv(n.p2)
     return n
 
 
@@ -299,7 +328,7 @@ class Desenho:
             if classe is None:
                 continue
             campos = {k: v for k, v in e.items() if k in classe.__dataclass_fields__}
-            for k in ("a", "b", "centro", "posicao", "p1", "p2", "alvo", "texto_pos"):
+            for k in ("a", "b", "centro", "posicao", "p1", "p2", "alvo", "texto_pos"):  # (a CotaEspecial usa os mesmos)
                 if k in campos and campos[k] is not None:
                     campos[k] = tuple(campos[k])
             if "vertices" in campos:
@@ -354,6 +383,9 @@ class Desenho:
                         d.hachura(contorno, espacamento=e.espacamento * k, angulo=e.angulo, camada=camada, furos=e.contornos[1:])
             elif isinstance(e, Chamada):
                 _chamada_dxf(d, e, k, camada)
+            elif isinstance(e, CotaEspecial):
+                _cota_especial_dxf(d, e, k, camada, camada_texto=nome_cam("TEXTO") if "TEXTO" in self.camadas else None,
+                                   estilo=self.metadados.get("estilo") or {})
             # a cor própria do objeto (o DXF importado com as cores, 08/10) volta no DXF
             cor = (e.atributos or {}).get("cor") if isinstance(e, (Linha, Polilinha, Circulo, Arco, Texto)) else None
             if cor:
@@ -471,6 +503,21 @@ def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = TERMINADOR_PA
         mx += nx * sg * 1.9 * h
         my += ny * sg * 1.9 * h
     d.texto(mx + nx * off, my + ny * off, txt, h, camada_texto or camada, angulo=ang_txt, alinhamento="centro")
+
+
+def _cota_especial_dxf(d, c, k: float, camada: str, camada_texto: Optional[str] = None, estilo: Optional[dict] = None):
+    """A cota angular, de raio, de diâmetro ou ordenada no DXF do PDF: as linhas, os arcos, as pontas e o número que
+    nucleo2d/cota_especial.primitivas dá — o mesmo que a tela desenha."""
+    from nucleo2d.cota_especial import primitivas
+    pr = primitivas(c, k, estilo)
+    for a, b in pr["linhas"]:
+        d.linha(a[0], a[1], b[0], b[1], camada)
+    for ar in pr["arcos"]:
+        d.arco(ar["centro"][0], ar["centro"][1], ar["raio"], ar["inicio"], ar["fim"], camada)
+    for p in pr["pontas"]:
+        _terminador_dxf(d, p["p"][0], p["p"][1], p["ang"], p["tam"], camada, p["tipo"])
+    for t in pr["textos"]:
+        d.texto(t["pos"][0], t["pos"][1], t["txt"], t["h"], camada_texto or camada, angulo=t["ang"], alinhamento=t["alinhamento"])
 
 
 def _chamada_dxf(d, c: Chamada, k: float, camada: str):

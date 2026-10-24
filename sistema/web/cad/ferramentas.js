@@ -5,9 +5,10 @@
 // Medida digitada (`onValor`): "1500", "1,5m", "150cm", "@30" (ângulo), e para
 // retângulo "2000;1000". Esc cancela, Enter/espaço confirma ou repete.
 
-import { criar, dist, meio, transladar, transformar, clonar, pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dentroDe, pontosCota } from './nucleo/desenho2d.js';
+import { criar, dist, meio, transladar, transformar, clonar, pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dentroDe, pontosCota, pontosArco } from './nucleo/desenho2d.js';
 import { ComandoAdicionar, ComandoRemover, ComandoSubstituir, ComandoComposto, ComandoAlterar } from './nucleo/comandos.js';
 import { acompanharMalha, eixosCopiados } from './nucleo/malha.js';
+import { medidaDaCotaEspecial } from './nucleo/cota_especial.js';
 
 // A unidade das medidas (07/10, o usuário: "ajustei a escala do desenho para cm para trabalhar com todas as medidas em
 // cm"). O desenho é sempre em milímetro e a "Escala 1:" é a de impressão; a unidade muda só o número digitado sem
@@ -139,6 +140,11 @@ export class Selecionar extends Ferramenta {
         : 'Leve a ponta da seta até o ponto apontado (extremidade, interseção…) · Esc cancela');
       return;
     }
+    if (e && e.tipo === 'cota_especial') {
+      this.dica(e.modo === 'angular' ? 'Leve o arco do ângulo para onde ele fica (o lado do ângulo segue o cursor) · Esc cancela'
+        : e.modo === 'ordenada' ? 'Leve o número da ordenada (a chamada acompanha) · Esc cancela' : 'Leve o número: a seta corre pelo círculo · Esc cancela');
+      return;
+    }
     if (a.parte === 'meio') {
       const eixo = this._eixoDaMalha(e);
       this.editor.snap.ultimo = a.ponto;
@@ -246,6 +252,15 @@ export class Selecionar extends Ferramenta {
       return criar({ ...e, vertices });
     }
     if (e.tipo === 'arco') return arcoPelaAlca(e, this.alca.parte, p);
+    if (e.tipo === 'cota_especial') {
+      // a posição do número (e do arco do ângulo); no raio e no diâmetro, a seta vai para o ponto do círculo na direção dela
+      const n = { ...e, posicao: [p[0], p[1]] };
+      if (e.modo === 'raio' || e.modo === 'diametro') {
+        const R = dist(e.centro, e.p1), d = dist(e.centro, p);
+        if (d > 1e-9) n.p1 = [e.centro[0] + (p[0] - e.centro[0]) / d * R, e.centro[1] + (p[1] - e.centro[1]) / d * R];
+      }
+      return criar(n);
+    }
     if (e.tipo === 'chamada') {
       if (this.alca.parte === 'alvo') return criar({ ...e, alvo: [p[0], p[1]] });
       // o meio do texto vai para o cursor: a posição (o joelho da linha) sai dele, do lado em que o
@@ -912,6 +927,303 @@ export class CotaContinua extends Ferramenta {
 }
 const formatarCota = (c) => fmt(valorDaCota(c) * fatorDaCota(c));
 
+/** O estilo de uma cota nova feita em `p` (as mesmas contas da ferramenta Cota): a altura do texto do desenho, as casas
+ *  do estilo, a escala da célula da prancha (o número em mm da peça) e o fator pelo desenho em volta. */
+function estiloDeCotaNova(editor, p1, p2) {
+  const doc = editor.doc;
+  const casas = ((doc.metadados || {}).estilo || {}).casas;
+  const escala = (editor.escalaNoPonto ? editor.escalaNoPonto(p1) : null) || (unidadeMedidas !== 'mm' ? 1 / UNIDADES[unidadeMedidas] : null);
+  const fator = Cota.fatorLocal(doc, p1, p2 || p1, editor.alturaTexto || 2.5);
+  return { altura: editor.alturaTexto, casas: casas ?? null, ...(escala ? { escala } : {}), ...(fator ? { fator } : {}) };
+}
+
+/** A base das cotas angular, de raio, de diâmetro e ordenada: cria a cota pela posição do cursor e a grava no clique. */
+class FerramentaCotaEspecial extends Ferramenta {
+  static grupo = 'edicao';
+  _nova(posicao) { return null; }
+  onMover(p) { const c = this._nova(p); this.editor.previa(c ? [c] : []); if (c) this.editor.medida(medidaDaCotaEspecial(c)); }
+  _gravar(p, rotulo) {
+    const c = this._nova(p);
+    if (!c) return false;
+    this.editor.previa([]);
+    this.editor.executar(new ComandoAdicionar([c], rotulo));
+    this.editor.ultimaCota = c.id;
+    return true;
+  }
+}
+
+/**
+ * Cota angular (D N, o DIMANGULAR): clique nas duas linhas (o lado de cada uma é o do clique) — ou, fora de uma linha, o
+ * vértice e um ponto em cada lado — e depois onde passa o arco: o ângulo é o do setor em que o cursor está.
+ */
+export class CotaAngular extends FerramentaCotaEspecial {
+  static id = 'cota_angular'; static nome = 'Cota angular'; static atalho = 'dn';
+  static dica = 'Cota angular: clique na primeira linha (ou fora dela: o vértice e um ponto em cada lado)';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20h16M4 20L16 6"/><path d="M12 20a8 8 0 0 0-2.6-5.9"/></svg>';
+  reiniciar() { super.reiniciar(); this.l1 = null; this.pts = []; this.geo = null; }
+  _nova(posicao) {
+    if (!this.geo) return null;
+    const g = this.geo;
+    return criar({ tipo: 'cota_especial', modo: 'angular', camada: 'COTA', centro: g.centro, p1: g.p1, p2: g.p2, posicao: [posicao[0], posicao[1]],
+      ...estiloDeCotaNova(this.editor, g.centro, g.p1) });
+  }
+  onPonto(p, ev) {
+    if (this.geo) { if (this._gravar(p, 'Cota angular')) this.reiniciar(); return; }
+    const m = ev && ev.px ? this.editor.tela.paraMundo(ev.px) : p;
+    if (!this.pts.length) {
+      const e = ev && ev.px ? this.editor.tela.sob(ev.px) : null;
+      if (e && e.tipo === 'linha') {
+        if (!this.l1) { this.l1 = { e, p: m }; this.dica('Agora a segunda linha'); return; }
+        if (e.id === this.l1.e.id) { this.dica('Clique numa segunda linha, diferente da primeira'); return; }
+        const V = intersecaoRetas(this.l1.e.a, this.l1.e.b, e.a, e.b);
+        if (!V) { this.dica('As linhas são paralelas: não há ângulo entre elas'); this.l1 = null; return; }
+        const r1 = ladoDoCanto(this.l1.e, this.l1.p, V), r2 = ladoDoCanto(e, m, V);
+        const ponto = (r) => (dist(r.ponta, V) > 1e-6 ? r.ponta : [V[0] + r.d[0], V[1] + r.d[1]]);
+        this.geo = { centro: V, p1: ponto(r1), p2: ponto(r2) };
+        this.dica('Onde passa o arco (o ângulo é o do setor do cursor) · Esc cancela');
+        return;
+      }
+      if (this.l1) { this.dica('Clique na segunda linha'); return; }
+    }
+    this.pts.push([p[0], p[1]]);
+    this.editor.snap.ultimo = this.pts[0];
+    if (this.pts.length === 3) { this.geo = { centro: this.pts[0], p1: this.pts[1], p2: this.pts[2] }; this.dica('Onde passa o arco · Esc cancela'); }
+    else this.dica(this.pts.length === 1 ? 'Um ponto no primeiro lado' : 'Um ponto no segundo lado');
+  }
+}
+
+/** Cota de raio (D R) e de diâmetro (D I): clique no círculo ou no arco e depois onde fica o número (dentro dele, sobre a
+ *  linha; fora, numa chamada). O raio de um furo dá o Ø do furo. */
+export class CotaRaio extends FerramentaCotaEspecial {
+  static id = 'cota_raio'; static nome = 'Cota de raio'; static atalho = 'dr'; static modo = 'raio';
+  static dica = 'Clique no círculo ou no arco';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="13" r="7"/><path d="M11 13l5-5"/><path d="M14 8h2v2"/></svg>';
+  reiniciar() { super.reiniciar(); this.alvo = null; }
+  _nova(posicao) {
+    if (!this.alvo) return null;
+    const C = this.alvo.centro, R = this.alvo.raio, d = dist(C, posicao);
+    const u = d > 1e-9 ? [(posicao[0] - C[0]) / d, (posicao[1] - C[1]) / d] : [1, 0];
+    return criar({ tipo: 'cota_especial', modo: this.constructor.modo, camada: 'COTA', centro: [C[0], C[1]], p1: [C[0] + u[0] * R, C[1] + u[1] * R],
+      posicao: [posicao[0], posicao[1]], ...estiloDeCotaNova(this.editor, C, C) });
+  }
+  onPonto(p, ev) {
+    if (this.alvo) { if (this._gravar(p, this.constructor.nome)) this.reiniciar(); return; }
+    const e = ev && ev.px ? this.editor.tela.sob(ev.px) : null;
+    if (!e || (e.tipo !== 'circulo' && e.tipo !== 'arco')) { this.dica('Clique num círculo ou num arco'); return; }
+    this.alvo = e;
+    this.dica('Onde fica o número (dentro: sobre a linha; fora: numa chamada) · Esc cancela');
+  }
+}
+export class CotaDiametro extends CotaRaio {
+  static id = 'cota_diametro'; static nome = 'Cota de diâmetro'; static atalho = 'di'; static modo = 'diametro';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="7"/><path d="M7 17L17 7"/></svg>';
+}
+
+/**
+ * Cota ordenada (D O, o DIMORDINATE): a distância do ponto à origem em x ou em y — a furação medida de uma borda.
+ * Clique no ponto medido e depois onde fica o número: a chamada que sobe ou desce mede o x, a que vai para o lado mede o
+ * y (X / Y fixam). O: clique a origem (fica gravada no desenho; sem ela, 0,0). Fica na ferramenta para o próximo ponto.
+ */
+export class CotaOrdenada extends FerramentaCotaEspecial {
+  static id = 'cota_ordenada'; static nome = 'Cota ordenada'; static atalho = 'do';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20h16M4 20V4"/><path d="M10 20v-9M15 20v-13"/></svg>';
+  get origem() { const o = (this.doc.metadados || {}).origem_ordenada; return Array.isArray(o) ? o : [0, 0]; }
+  reiniciar() {
+    super.reiniciar(); this.p1 = null; this.pedeOrigem = false;
+    this.dica(`Cota ordenada: clique no ponto medido · origem em ${fmt(this.origem[0])}; ${fmt(this.origem[1])} (O muda) · X / Y fixam o eixo${this.eixoFixo ? ` (fixo: ${this.eixoFixo})` : ''}`);
+  }
+  _nova(posicao) {
+    if (!this.p1) return null;
+    const dx = Math.abs(posicao[0] - this.p1[0]), dy = Math.abs(posicao[1] - this.p1[1]);
+    const eixo = this.eixoFixo || (dy >= dx ? 'x' : 'y');
+    return criar({ tipo: 'cota_especial', modo: 'ordenada', camada: 'COTA', centro: [...this.origem], p1: this.p1, posicao: [posicao[0], posicao[1]], eixo,
+      ...estiloDeCotaNova(this.editor, this.p1, this.p1) });
+  }
+  onPonto(p) {
+    if (this.pedeOrigem) {
+      this.doc.metadados = { ...(this.doc.metadados || {}), origem_ordenada: [p[0], p[1]] };
+      this.reiniciar(); this.dica(`Origem da ordenada em ${fmt(p[0])}; ${fmt(p[1])} · clique no ponto medido`); return;
+    }
+    if (!this.p1) { this.p1 = [p[0], p[1]]; this.editor.snap.ultimo = this.p1; this.dica('Onde fica o número (para cima/baixo: o x; para o lado: o y)'); return; }
+    if (this._gravar(p, 'Cota ordenada')) { const eixo = this.eixoFixo; this.reiniciar(); this.eixoFixo = eixo; }
+  }
+  onTecla(ev) {
+    const k = ev.key.toLowerCase();
+    if (ev.ctrlKey || ev.altKey || ev.metaKey) return false;
+    if (k === 'o') { this.pedeOrigem = true; this.p1 = null; this.editor.previa([]); this.dica('Clique a origem das ordenadas (a borda, o furo de referência)'); return true; }
+    if (k === 'x' || k === 'y') { this.eixoFixo = this.eixoFixo === k ? null : k; this.dica(this.eixoFixo ? `Eixo fixo: ${k}` : 'Eixo pelo cursor'); if (this.p1 && this.editor.tela.cursor) this.onMover(this.editor.tela.cursor); return true; }
+    return false;
+  }
+}
+
+/** O espaçamento entre as linhas de cota empilhadas (linha de base), em mm de papel × o fator: a DIMDLI do AutoCAD com a
+ *  folga para o número de 2,5. */
+const PASSO_LINHA_DE_BASE = 7;
+
+/** A linha de cota da cota `c` empurrada `passo` mm de papel para fora (para o lado contrário aos pontos medidos). */
+function linhaEmpurrada(c, k, passo) {
+  const pc = pontosCota(c, k);
+  if (pc.length < 4) return null;
+  let [x1, y1] = c.p1;
+  const dx = pc[2][0] - x1, dy = pc[2][1] - y1, L = Math.hypot(dx, dy) || 1;
+  return [pc[2][0] + dx / L * passo * k * (c.fator || 1), pc[2][1] + dy / L * passo * k * (c.fator || 1)];
+}
+
+/**
+ * Cota por linha de base (D B, o DIMBASELINE): todas as cotas saem do mesmo ponto — a primeira chamada da cota de onde se
+ * parte (a última feita, a selecionada ou a clicada) — e cada uma numa linha de cota mais para fora. É a furação medida de
+ * uma borda. Enter escolhe outra cota de partida; Esc termina; Ctrl+Z volta a anterior.
+ */
+export class CotaBase extends Ferramenta {
+  static id = 'cota_base'; static nome = 'Cota por linha de base'; static atalho = 'db'; static grupo = 'edicao';
+  static dica = 'Clique na cota de onde a linha de base sai';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20V6M10 20v-6M16 20V10M21 20V4"/><path d="M4 16h6M4 12h12M4 8h17"/></svg>';
+  reiniciar() {
+    super.reiniciar(); this.base = null; this.ultima = null; this.feitas = [];
+    const sel = [...this.editor.tela.selecao].map(id => this.doc.get(id)).filter(e => e && e.tipo === 'cota');
+    const u = this.editor.ultimaCota ? this.doc.get(this.editor.ultimaCota) : null;
+    const b = sel.length === 1 ? sel[0] : (!sel.length && u && u.tipo === 'cota' ? u : null);
+    if (b) this._partirDe(b, b.p1); else this.dica(this.constructor.dica);
+  }
+  _partirDe(c, ponto) {
+    this.base = c; this.ultima = c; this.ponto = ponto;
+    this.editor.snap.ultimo = ponto; this.editor.selecionar([c.id]);
+    this.dica('Próximo ponto medido a partir da base · Enter escolhe outra cota · Esc termina');
+  }
+  _nova(p) {
+    if (!this.base || dist(this.ponto, p) < 1e-6) return null;
+    const b = this.base, k = this.doc.escala;
+    const fc = fatorDaCota(b), escala = b.escala || (Math.abs(fc - 1) > 1e-9 ? fc : null);
+    const c = criar({ tipo: 'cota', camada: b.camada, modo: b.modo, p1: [this.ponto[0], this.ponto[1]], p2: [p[0], p[1]], deslocamento: b.deslocamento,
+      altura: b.altura, fator: b.fator, terminador: b.terminador, casas: b.casas, folga: b.folga, escala });
+    if (valorDaCota(c) < 1e-6) return null;
+    const q = linhaEmpurrada(this.ultima, k, PASSO_LINHA_DE_BASE);
+    if (q) c.deslocamento = deslocamentoPara(c, q, k);
+    return c;
+  }
+  onPonto(p, ev) {
+    if (!this.base) {
+      const e = ev && ev.px ? this.editor.tela.sob(ev.px) : null;
+      if (!e || e.tipo !== 'cota') { this.dica('Clique numa cota (a base é a chamada mais perto do clique)'); return; }
+      this._partirDe(e, dist(p, e.p1) <= dist(p, e.p2) ? e.p1 : e.p2);
+      return;
+    }
+    const c = this._nova(p);
+    if (!c) return;
+    this.editor.previa([]);
+    this.editor.executar(new ComandoAdicionar([c], 'Cota por linha de base'));
+    this.editor.ultimaCota = c.id;
+    this.feitas.push(this.ultima); this.ultima = c;
+    this.editor.selecionar([c.id]);
+  }
+  onMover(p) { const c = this._nova(p); this.editor.previa(c ? [c] : []); if (c) this.editor.medida(`${fmt(valorDaCota(c) * (c.escala || 1))} mm`); }
+  onTecla(ev) { if (ev.key === 'Enter' || ev.key === ' ') { this.base = null; this.editor.previa([]); this.editor.selecionar([]); this.dica('Clique na cota de onde a nova linha de base sai'); return true; } return false; }
+  aposDesfazer(c) {
+    const e = (c && c.entidades || [])[0];
+    if (this.ultima && e && e.id === this.ultima.id && this.feitas.length) this.ultima = this.feitas.pop();
+  }
+}
+
+/** Os pontos que a cota rápida mede de um objeto: as pontas e os vértices, o centro dos círculos (o furo), o centro e as
+ *  pontas do arco. */
+function pontosDeMedida(e) {
+  if (e.tipo === 'linha') return [e.a, e.b];
+  if (e.tipo === 'polilinha') return e.vertices;
+  if (e.tipo === 'circulo') return [e.centro];
+  if (e.tipo === 'arco') { const pa = pontosArco(e, 2); return [e.centro, pa[0], pa[pa.length - 1]]; }
+  return [];
+}
+
+/**
+ * Cota rápida (D Q, o QDIM): os objetos selecionados (ou os de uma janela) cotados de uma vez pelos pontos deles — as
+ * bordas e o centro de cada furo, sem repetir. O cursor escolhe a direção (acima ou abaixo: as medidas em x; ao lado: em
+ * y) e onde fica a linha. C: em cadeia (contínua, o padrão); B: da linha de base; O: ordenadas a partir do primeiro ponto.
+ */
+export class CotaRapida extends Ferramenta {
+  static id = 'cota_rapida'; static nome = 'Cota rápida (furação)'; static atalho = 'dq'; static grupo = 'edicao';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M3 4v4M9 4v4M15 4v4M21 4v4"/><circle cx="9" cy="15" r="2"/><circle cx="15" cy="15" r="2"/><rect x="3" y="11" width="18" height="9" rx="1"/></svg>';
+  reiniciar() {
+    super.reiniciar();
+    this.tipoCota = this.tipoCota || 'continua';
+    this.ents = [...this.editor.tela.selecao].map(id => this.doc.get(id)).filter(e => e && pontosDeMedida(e).length);
+    this.dica(this.ents.length ? this._dicaPronta() : 'Cota rápida: arraste uma janela em volta dos objetos (ou selecione antes)');
+  }
+  _dicaPronta() { return `${this.ents.length} objeto(s): leve o cursor para cima/baixo (medidas em x) ou para o lado (em y) e clique onde fica a linha · C cadeia · B linha de base · O ordenadas (agora: ${({ continua: 'cadeia', base: 'linha de base', ordenada: 'ordenadas' })[this.tipoCota]})`; }
+  onSoltar(p, ev) {
+    if (!ev.arrasto || this.ents.length) return;
+    const ids = this.editor.tela.naJanela(ev.arrasto.de, ev.arrasto.para);
+    this.ents = ids.map(id => this.doc.get(id)).filter(e => e && pontosDeMedida(e).length);
+    this.editor.selecionar(this.ents.map(e => e.id));
+    this.dica(this.ents.length ? this._dicaPronta() : 'Nada para cotar na janela');
+  }
+  _cotas(cursor) {
+    if (!this.ents.length) return [];
+    const pts = this.ents.flatMap(pontosDeMedida);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const q of pts) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); }
+    const fx = Math.max(x0 - cursor[0], cursor[0] - x1, 0), fy = Math.max(y0 - cursor[1], cursor[1] - y1, 0);
+    const emX = fy >= fx;                                              // acima/abaixo: as medidas em x
+    const i = emX ? 0 : 1, j = emX ? 1 : 0;
+    const doLado = cursor[j] >= (emX ? (y0 + y1) / 2 : (x0 + x1) / 2);   // a linha acima (ou à direita) dos pontos
+    // um ponto por coordenada: o mais perto da linha de cota (a chamada mais curta)
+    const tol = 1e-3 * Math.max(x1 - x0, y1 - y0, 1);
+    const porValor = [];
+    for (const q of [...pts].sort((a, b) => a[i] - b[i])) {
+      const u = porValor[porValor.length - 1];
+      if (u && Math.abs(q[i] - u[i]) <= tol) { if (doLado ? q[j] > u[j] : q[j] < u[j]) porValor[porValor.length - 1] = q; }
+      else porValor.push(q);
+    }
+    if (porValor.length < 2) return [];
+    const k = this.doc.escala, modo = emX ? 'h' : 'v';
+    const est = estiloDeCotaNova(this.editor, porValor[0], porValor[porValor.length - 1]);
+    const linear = (a, b) => criar({ tipo: 'cota', camada: 'COTA', modo, p1: [a[0], a[1]], p2: [b[0], b[1]], deslocamento: 10, ...est });
+    if (this.tipoCota === 'ordenada') {
+      const o = porValor[0];
+      return porValor.slice(1).map(q => criar({ tipo: 'cota_especial', modo: 'ordenada', camada: 'COTA', centro: [o[0], o[1]], p1: [q[0], q[1]],
+        posicao: emX ? [q[0], cursor[1]] : [cursor[0], q[1]], eixo: emX ? 'x' : 'y', ...est }));
+    }
+    const out = [];
+    if (this.tipoCota === 'base') {
+      let linha = emX ? [porValor[0][0], cursor[1]] : [cursor[0], porValor[0][1]];
+      porValor.slice(1).forEach((q, n) => {
+        const c = linear(porValor[0], q);
+        c.deslocamento = deslocamentoPara(c, linha, k);
+        if (n + 1 < porValor.length - 1) linha = linhaEmpurrada(c, k, PASSO_LINHA_DE_BASE) || linha;
+        out.push(c);
+      });
+      return out;
+    }
+    for (let n = 1; n < porValor.length; n++) {
+      const c = linear(porValor[n - 1], porValor[n]);
+      c.deslocamento = deslocamentoPara(c, emX ? [porValor[n][0], cursor[1]] : [cursor[0], porValor[n][1]], k);
+      out.push(c);
+    }
+    return out;
+  }
+  onMover(p) { const cs = this._cotas(p); this.editor.previa(cs); if (cs.length) this.editor.medida(`${cs.length} cota(s)`); }
+  onPonto(p, ev) {
+    if (!this.ents.length) { this.dica('Arraste uma janela em volta dos objetos a cotar'); return; }
+    const cs = this._cotas(p);
+    if (!cs.length) { this.dica('Os objetos não têm dois pontos diferentes nessa direção'); return; }
+    this.editor.previa([]);
+    this.editor.executar(new ComandoAdicionar(cs, `Cota rápida (${cs.length})`));
+    this.editor.ultimaCota = cs[cs.length - 1].id;
+    this.editor.selecionar([]);
+    this.ents = [];
+    this.dica(`${cs.length} cota(s) feita(s) · arraste outra janela ou Esc`);
+  }
+  onTecla(ev) {
+    const k = ev.key.toLowerCase();
+    if (ev.ctrlKey || ev.altKey || ev.metaKey) return false;
+    const t = { c: 'continua', b: 'base', o: 'ordenada' }[k];
+    if (!t) return false;
+    this.tipoCota = t;
+    this.dica(this.ents.length ? this._dicaPronta() : 'Cota rápida: arraste uma janela em volta dos objetos');
+    if (this.editor.tela.cursor) this.onMover(this.editor.tela.cursor);
+    return true;
+  }
+}
+
 /**
  * Colar o que veio de fora (o Ctrl+C do AutoCAD, 23/10): os objetos presos ao cursor pelo ponto de base; o clique solta.
  * Enter cola nas coordenadas de origem (o PASTEORIG do AutoCAD); "x;y" digitado põe o ponto de base ali. Muitos objetos
@@ -1496,7 +1808,7 @@ export class CopiarPropriedades extends Ferramenta {
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 4l6 6-8 8H6v-6z"/><path d="M4 20h6"/></svg>';
   // na cota, o estilo dela inteiro: o tamanho (altura e fator, que leva a ponta e os afastamentos), o terminador, as
   // casas e a folga do número (22/10); a escala não, que muda o número medido
-  static CAMPOS = { cota: ['altura', 'fator', 'terminador', 'casas', 'folga'], texto: ['altura'], chamada: ['altura'], hachura: ['padrao', 'espacamento', 'angulo'] };
+  static CAMPOS = { cota: ['altura', 'fator', 'terminador', 'casas', 'folga'], cota_especial: ['altura', 'fator', 'terminador', 'casas', 'folga'], texto: ['altura'], chamada: ['altura'], hachura: ['padrao', 'espacamento', 'angulo'] };
   reiniciar() {
     super.reiniciar();
     const sel = [...this.editor.tela.selecao];
@@ -2515,6 +2827,6 @@ export class Corte extends Ferramenta {
   }
 }
 
-export const FERRAMENTAS = [Selecionar, ZoomJanela, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, CotaContinua, AjustarCota, Chamada, Corte, Hachura,
+export const FERRAMENTAS = [Selecionar, ZoomJanela, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, CotaContinua, CotaBase, CotaRapida, CotaAngular, CotaRaio, CotaDiametro, CotaOrdenada, AjustarCota, Chamada, Corte, Hachura,
   Mover, Copiar, Girar, Espelhar, Escalar, Esticar, Offset, Aparar, Estender, Quebrar, Alongar, Concordar, Chanfro, Explodir, Juntar, MoverCota, CopiarPropriedades, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['edicao', 'Edi'], ['medicao', 'Med']];

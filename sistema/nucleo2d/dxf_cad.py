@@ -25,7 +25,8 @@ import math
 import re
 from typing import Optional
 
-from nucleo2d.desenho import (Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota, Hachura, Chamada, folga_da_cota)
+from nucleo2d.desenho import (Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota, Hachura, Chamada, folga_da_cota,
+                              CotaEspecial)
 
 FONTE = "segoeui.ttf"
 ESTILO = "METALICA"
@@ -167,6 +168,8 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
             d = _dimensao(msp, e, k, at, e.terminador or terminador, estilo=estilo)
             if d is not None:
                 feitas.append(d)
+        elif isinstance(e, CotaEspecial):
+            feitas += _dimensao_especial(msp, e, k, at, estilo)
         elif isinstance(e, Hachura):
             if e.contornos and len(e.contornos[0]) >= 3:
                 h = msp.add_hatch(dxfattribs=at)
@@ -344,6 +347,51 @@ def exportar_pranchas(desenhos, pasta: str, base: str = "pranchas", corte: Optio
 #: o traço oblíquo do DXF (o bloco _OBLIQUE, de -0,5 a +0,5 nos dois eixos, na escala de 2 × DIMTSZ) com o
 #: comprimento do da tela, que é o da seta
 FATOR_TRACO = 1.0 / (2.0 * math.sqrt(2.0))
+
+
+def _dimensao_especial(msp, c, k: float, at: dict, estilo: dict = None) -> list:
+    """A cota angular, de raio, de diâmetro ou ordenada como DIMENSION do AutoCAD (editável lá), no estilo METALICA com o
+    tamanho, a folga e a escala da cota; se a ezdxf recusar, as linhas, os arcos e o número que a tela desenha
+    (nucleo2d/cota_especial.primitivas)."""
+    f = float(getattr(c, "fator", None) or 1.0)
+    altura = float(c.altura or 2.5) * f
+    override = {"dimtxt": altura, "dimasz": 2.5 * f, "dimgap": folga_da_cota(c, estilo) * f, "dimtmove": 0}
+    if c.escala and float(c.escala) != 1.0:
+        override["dimlfac"] = float(c.escala)
+    texto = str(c.texto) if c.texto not in (None, "") else "<>"
+    C, P1, POS = tuple(c.centro), tuple(c.p1), tuple(c.posicao)
+    R = math.hypot(P1[0] - C[0], P1[1] - C[1])
+    ang = math.degrees(math.atan2(POS[1] - C[1], POS[0] - C[0]))       # o raio e o diâmetro vão na direção do número
+    dim = None
+    try:
+        if c.modo == "angular":
+            dim = msp.add_angular_dim_3p(base=POS, center=C, p1=P1, p2=tuple(c.p2), text=texto, dimstyle=ESTILO, override=override, dxfattribs=at)
+        elif c.modo == "raio":
+            dim = msp.add_radius_dim(center=C, radius=R, angle=ang, location=POS, text=texto, dimstyle=ESTILO, override=override, dxfattribs=at)
+        elif c.modo == "diametro":
+            dim = msp.add_diameter_dim(center=C, radius=R, angle=ang, location=POS, text=texto, dimstyle=ESTILO, override=override, dxfattribs=at)
+        else:
+            ofs = (POS[0] - P1[0], POS[1] - P1[1])
+            criar = msp.add_ordinate_y_dim if c.eixo == "y" else msp.add_ordinate_x_dim
+            dim = criar(feature_location=P1, offset=ofs, origin=C, text=texto, dimstyle=ESTILO, override=override, dxfattribs=at)
+        dim.render()
+        return [dim.dimension]
+    except Exception:                                   # noqa: BLE001 — sem a DIMENSION, o desenho dela
+        if dim is not None:
+            try:
+                msp.delete_entity(dim.dimension)        # a DIMENSION criada pela metade não fica no arquivo
+            except Exception:                           # noqa: BLE001
+                pass
+        from nucleo2d.cota_especial import primitivas
+        from ezdxf.enums import TextEntityAlignment
+        pr = primitivas(c, k, estilo)
+        out = [msp.add_line(a, b, dxfattribs=at) for a, b in pr["linhas"]]
+        out += [msp.add_arc(ar["centro"], ar["raio"], ar["inicio"], ar["fim"], dxfattribs=at) for ar in pr["arcos"]]
+        for t in pr["textos"]:
+            tx = msp.add_text(str(t["txt"]), height=t["h"], rotation=t["ang"], dxfattribs=dict(at, style=ESTILO))
+            tx.set_placement(t["pos"], align={"centro": TextEntityAlignment.CENTER, "direita": TextEntityAlignment.RIGHT}.get(t["alinhamento"], TextEntityAlignment.LEFT))
+            out.append(tx)
+        return out
 
 
 def _dimensao(msp, c: Cota, k: float, at: dict, terminador: str = "traco", estilo: dict = None):
