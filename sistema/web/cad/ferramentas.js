@@ -5,10 +5,11 @@
 // Medida digitada (`onValor`): "1500", "1,5m", "150cm", "@30" (ângulo), e para
 // retângulo "2000;1000". Esc cancela, Enter/espaço confirma ou repete.
 
-import { criar, dist, meio, transladar, transformar, clonar, pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dentroDe, pontosCota, pontosArco, caixaDe } from './nucleo/desenho2d.js';
+import { criar, dist, meio, transladar, transformar, clonar, pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dentroDe, pontosCota, pontosArco, caixaDe, CAMADAS_PADRAO } from './nucleo/desenho2d.js';
 import { ComandoAdicionar, ComandoRemover, ComandoSubstituir, ComandoComposto, ComandoAlterar } from './nucleo/comandos.js';
 import { acompanharMalha, eixosCopiados } from './nucleo/malha.js';
 import { medidaDaCotaEspecial } from './nucleo/cota_especial.js';
+import { simboloSolda, simboloBalao, simboloNivel, simboloDetalhe, textoDoNivel } from './nucleo/simbolos.js';
 
 // A unidade das medidas (07/10, o usuário: "ajustei a escala do desenho para cm para trabalhar com todas as medidas em
 // cm"). O desenho é sempre em milímetro e a "Escala 1:" é a de impressão; a unidade muda só o número digitado sem
@@ -2861,6 +2862,189 @@ export class GradeFuros extends Ferramenta {
   }
 }
 
+// ------------------------------------------------------------ símbolos à mão (nucleo/simbolos.js)
+
+/** A camada do símbolo, com a cor e a espessura padrão, quando o desenho ainda não a tem. */
+function garantirCamada(doc, nome) {
+  if (doc.camadas.has(nome)) return;
+  const p = CAMADAS_PADRAO.find(c => c[0] === nome) || [nome, '#16202e', 'CONTINUOUS', 0.25];
+  doc.camadas.set(nome, { nome, cor: p[1], visivel: true, bloqueada: false, tipo_linha: p[2], espessura: p[3] });
+}
+/** "6", "6-100", "6-50-150" (com - ; : / ou x entre os números) → os números. */
+const numerosDe = (t) => String(t || '').trim().split(/\s*[-;:/x×]\s*/i).map(s => parseFloat(s.replace(',', '.'))).filter(v => isFinite(v) && v > 0);
+/** O nível digitado em metros ("+5,00", "5", "-0,15", "±0,00") → mm; null se não é número. */
+function nivelDigitado(t) {
+  const v = parseFloat(String(t || '').trim().replace('±', '').replace('−', '-').replace(',', '.'));
+  return isFinite(v) ? Math.round(v * 1000) : null;
+}
+
+export class SimboloSolda extends Ferramenta {
+  static id = 'simbolo_solda'; static nome = 'Símbolo de solda (AWS)'; static atalho = 'sd'; static grupo = 'simbolos';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 20l6-8h12"/><path d="M13 12l3-4v4"/><path d="M3 20l.5-3M3 20l3-1.5"/></svg>';
+  static LADOS = { seta: 'lado da seta', outro: 'outro lado', ambos: 'os dois lados' };
+  reiniciar() {
+    super.reiniciar();
+    this.alvo = null;
+    if (!this.cfg) this.cfg = { perna: 6, comprimento: 0, intermitente: null, lado: 'seta', forma: 'filete', contorno: false, campo: false, cauda: '' };
+    this._dica();
+  }
+  _dica() {
+    const c = this.cfg;
+    const quanto = c.intermitente ? `${fmt(c.intermitente[0])}-${fmt(c.intermitente[1])} (intermitente)` : c.comprimento ? fmt(c.comprimento) : 'contínua';
+    const opcoes = `${c.forma === 'penetracao' ? 'penetração' : `filete ${fmt(c.perna)}`} · ${quanto} · ${SimboloSolda.LADOS[c.lado]}${c.contorno ? ' · todo o contorno' : ''}${c.campo ? ' · de campo' : ''}${c.cauda ? ` · cauda "${c.cauda}"` : ''}`;
+    this.dica(`Solda ${opcoes} · ${this.alvo ? 'clique onde começa a linha de referência' : 'clique no cordão (a ponta da seta)'} · digite "6", "6-100" ou "6-50-150" · L lado · F filete/penetração · O todo o contorno · B campo · T cauda`);
+  }
+  _regs(ref) { return simboloSolda({ alvo: this.alvo, ref, ...this.cfg }, this.doc.escala || 1, this.editor.alturaTexto).map(criar); }
+  onPonto(p) {
+    if (!this.alvo) { this.alvo = p; this.editor.snap.ultimo = p; this._dica(); return; }
+    const regs = this._regs(p);
+    garantirCamada(this.doc, 'SOLDA');
+    this.editor.executar(new ComandoAdicionar(regs, 'Símbolo de solda'));
+    this.alvo = null; this.editor.previa([]); this.editor.snap.ultimo = null;
+    this._dica();
+  }
+  onMover(p) { if (this.alvo) this.editor.previa(this._regs(p)); }
+  onValor(t) {
+    const n = numerosDe(t);
+    if (!n.length) return;
+    this.cfg.perna = n[0];
+    this.cfg.comprimento = n.length === 2 ? n[1] : 0;
+    this.cfg.intermitente = n.length >= 3 ? [n[1], n[2]] : null;
+    this._depoisDeMudar();
+  }
+  _depoisDeMudar() { this._dica(); if (this.alvo && this.editor.tela.cursor) this.onMover(this.editor.tela.cursor); }
+  onTecla(ev) {
+    if (ev.ctrlKey || ev.altKey || ev.metaKey) return false;
+    const k = ev.key.toLowerCase(), c = this.cfg;
+    if (k === 'l') c.lado = { seta: 'outro', outro: 'ambos', ambos: 'seta' }[c.lado];
+    else if (k === 'f') c.forma = c.forma === 'filete' ? 'penetracao' : 'filete';
+    else if (k === 'o') c.contorno = !c.contorno;
+    else if (k === 'b') c.campo = !c.campo;
+    else if (k === 't') {
+      this.editor.perguntar('Cauda da solda', 'Nota na cauda (ex.: TÍP., E70XX; vazio tira)', c.cauda).then(t => { if (t != null) { c.cauda = t.trim(); this._depoisDeMudar(); } });
+      return true;
+    } else return false;
+    this._depoisDeMudar();
+    return true;
+  }
+  desfazerPasso() { if (!this.alvo) return false; this.alvo = null; this.editor.previa([]); this._dica(); return true; }
+}
+
+export class BalaoMarca extends Ferramenta {
+  static id = 'balao_marca'; static nome = 'Balão de marca'; static atalho = 'bm'; static grupo = 'simbolos';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="15" cy="9" r="6"/><path d="M10.8 13.2L4 20"/><path d="M13 11V7h2.5a1.4 1.4 0 010 2.8H13"/></svg>';
+  reiniciar() { super.reiniciar(); this.alvo = null; this.sugestao = ''; this.dica('Balão de marca: clique na peça (a ponta da seta) · depois onde fica o balão · a marca vem da peça clicada; "4x V1" põe a quantidade'); }
+  /** A marca da peça do detalhamento clicada (atributos da linha). */
+  _marcaSob(ev) {
+    const e = ev && ev.px ? this.editor.tela.sob(ev.px) : null;
+    const a = (e && e.atributos) || {};
+    return String(a.marca || a.posicao || a.nome || '');
+  }
+  _regs(centro, marca, quantidade = '') { return simboloBalao({ alvo: this.alvo, centro, marca, quantidade }, this.doc.escala || 1, this.editor.alturaTexto).map(criar); }
+  async onPonto(p, ev) {
+    if (!this.alvo) {
+      this.alvo = p; this.sugestao = this._marcaSob(ev); this.editor.snap.ultimo = p;
+      this.dica(`Clique onde fica o balão${this.sugestao ? ` (marca ${this.sugestao}, da peça clicada)` : ''}`);
+      return;
+    }
+    const t = await this.editor.perguntar('Balão de marca', 'Marca (ex.: V1; "4x V1" com a quantidade)', this.sugestao || this.ultima || '');
+    if (t != null && t.trim()) {
+      const s = t.trim();
+      const m = s.match(/^(\d+)\s*[x×]\s*(.+)$/i) || s.match(/^(.+?)\s+(\d+)\s*[x×]$/i);
+      const [marca, qtd] = !m ? [s, ''] : /^\d+$/.test(m[1]) ? [m[2].trim(), m[1]] : [m[1].trim(), m[2]];
+      garantirCamada(this.doc, 'TEXTO');
+      this.editor.executar(new ComandoAdicionar(this._regs(p, marca, qtd), `Balão ${marca}`));
+      this.ultima = marca;
+    }
+    this.reiniciar();
+  }
+  onMover(p) { if (this.alvo) this.editor.previa(this._regs(p, this.sugestao || this.ultima || '?')); }
+  desfazerPasso() { if (!this.alvo) return false; this.reiniciar(); return true; }
+}
+
+export class SimboloNivel extends Ferramenta {
+  static id = 'simbolo_nivel'; static nome = 'Nível (▽ +5,00)'; static atalho = 'nv'; static grupo = 'simbolos';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16l3-5H1z" transform="translate(2 0)"/><path d="M2 16h20"/><path d="M12 11h7"/></svg>';
+  reiniciar() { super.reiniciar(); this._dica(); }
+  _dica() {
+    this.dica(this.pedindoRef ? 'Clique o ponto de referência (o piso, a cota 0,00…) e diga o nível dele'
+      : this.ref ? `Nível pela referência (${textoDoNivel(this.ref.valor)}): clique os pontos · digite um nível (m) para fixar · R outra referência`
+      : `Nível ${this.valor != null ? textoDoNivel(this.valor) : ''}: digite o nível em metros ("5", "+5,20", "-0,15") e clique · R: os níveis pela altura, a partir de um ponto de referência`);
+  }
+  /** O nível no ponto: pela referência (a diferença de altura, na escala da célula da prancha) ou o digitado. */
+  _valorEm(p) {
+    if (!this.ref) return this.valor;
+    const k = (this.editor.escalaNoPonto && this.editor.escalaNoPonto(p)) || 1;
+    return this.ref.valor + (p[1] - this.ref.y) * k;
+  }
+  _regs(p, v) { return simboloNivel({ ponto: p, valor: v }, this.doc.escala || 1, this.editor.alturaTexto).map(criar); }
+  async onPonto(p) {
+    let v;
+    if (this.pedindoRef) {
+      const t = await this.editor.perguntar('Nível de referência', 'Nível deste ponto, em metros', '+0,00');
+      v = nivelDigitado(t);
+      if (v == null) return;
+      this.ref = { y: p[1], valor: v }; this.pedindoRef = false;
+    } else {
+      v = this._valorEm(p);
+      if (v == null) { v = nivelDigitado(await this.editor.perguntar('Nível', 'Nível, em metros (ex.: +5,00)', '')); if (v == null) return; this.valor = v; }
+    }
+    garantirCamada(this.doc, 'TEXTO');
+    this.editor.executar(new ComandoAdicionar(this._regs(p, v), `Nível ${textoDoNivel(v)}`));
+    this._dica();
+  }
+  onMover(p) { const v = this.pedindoRef ? null : this._valorEm(p); this.editor.previa(v == null ? [] : this._regs(p, v)); }
+  onValor(t) { const v = nivelDigitado(t); if (v == null) return; this.valor = v; this.ref = null; this.pedindoRef = false; this._dica(); }
+  onTecla(ev) {
+    if (ev.ctrlKey || ev.altKey || ev.metaKey || ev.key.toLowerCase() !== 'r') return false;
+    this.pedindoRef = true; this.editor.previa([]); this._dica();
+    return true;
+  }
+  cancelar() { this.pedindoRef = false; super.cancelar(); }
+}
+
+export class ChamadaDetalhe extends Ferramenta {
+  static id = 'chamada_detalhe'; static nome = 'Chamada de detalhe'; static atalho = 'cd'; static grupo = 'simbolos';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="15" r="5" stroke-dasharray="2 1.6"/><path d="M12 12l3-3"/><circle cx="18" cy="6" r="4"/><path d="M14 6h8"/></svg>';
+  reiniciar() { super.reiniciar(); this.centro = null; this.raio = null; this.dica('Chamada de detalhe: clique no meio do trecho detalhado · depois o tamanho do círculo (ou digite o raio) · depois onde fica a bolha'); }
+  /** O número seguinte aos das chamadas de detalhe do desenho. */
+  _proximo() {
+    let n = 0;
+    for (const e of this.doc.entidades.values()) {
+      const a = e.atributos || {};
+      if (a.simbolo_tipo === 'detalhe') n = Math.max(n, parseInt((a.params || {}).numero, 10) || 0);
+    }
+    return String(n + 1);
+  }
+  _regs(bolha, numero, prancha) { return simboloDetalhe({ centro: this.centro, raio: this.raio, bolha, numero, prancha }, this.doc.escala || 1, this.editor.alturaTexto).map(criar); }
+  async onPonto(p) {
+    if (!this.centro) { this.centro = p; this.editor.snap.ultimo = p; this.dica('O tamanho do círculo: clique na borda ou digite o raio'); return; }
+    if (this.raio == null) { this.raio = Math.max(dist(this.centro, p), 1); this.dica('Clique onde fica a bolha'); return; }
+    const t = await this.editor.perguntar('Chamada de detalhe', 'Detalhe (ex.: 1; "1/03" com a prancha)', this._proximo());
+    if (t != null && t.trim()) {
+      const [numero, prancha = ''] = t.trim().split('/').map(s => s.trim());
+      garantirCamada(this.doc, 'TEXTO');
+      this.editor.executar(new ComandoAdicionar(this._regs(p, numero, prancha), `Chamada do detalhe ${numero}`));
+    }
+    this.reiniciar();
+  }
+  onMover(p) {
+    if (!this.centro) return;
+    if (this.raio == null) { this.editor.previa([criar({ tipo: 'circulo', camada: 'TEXTO', centro: this.centro, raio: Math.max(dist(this.centro, p), 1), tipo_linha: 'DASHED' })]); return; }
+    this.editor.previa(this._regs(p, this._proximo(), ''));
+  }
+  onValor(t) {
+    if (!this.centro || this.raio != null) return;
+    const r = paraMilimetros(t);
+    if (r > 0) { this.raio = r; this.dica('Clique onde fica a bolha'); }
+  }
+  desfazerPasso() {
+    if (this.raio != null) { this.raio = null; this.dica('O tamanho do círculo: clique na borda ou digite o raio'); return true; }
+    if (this.centro) { this.reiniciar(); return true; }
+    return false;
+  }
+}
+
 export class Offset extends Ferramenta {
   static id = 'offset'; static nome = 'Offset (paralela)'; static atalho = 'f'; static grupo = 'edicao'; static dica = 'Offset: clique na linha, arco, círculo ou polilinha; depois do lado desejado (ou digite a distância e clique o lado)';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 8h16M4 16h16" /></svg>';
@@ -3045,5 +3229,5 @@ export class Corte extends Ferramenta {
 }
 
 export const FERRAMENTAS = [Selecionar, ZoomJanela, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, CotaContinua, CotaBase, CotaRapida, CotaAngular, CotaRaio, CotaDiametro, CotaOrdenada, AjustarCota, Chamada, Corte, Hachura,
-  GradeFuros, Mover, Copiar, Girar, Espelhar, Escalar, Matriz, Esticar, Offset, Aparar, Estender, Quebrar, Alongar, Concordar, Chanfro, Explodir, Juntar, MoverCota, CopiarPropriedades, Apagar, Medir];
-export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['edicao', 'Edi'], ['medicao', 'Med']];
+  GradeFuros, SimboloSolda, BalaoMarca, SimboloNivel, ChamadaDetalhe, Mover, Copiar, Girar, Espelhar, Escalar, Matriz, Esticar, Offset, Aparar, Estender, Quebrar, Alongar, Concordar, Chanfro, Explodir, Juntar, MoverCota, CopiarPropriedades, Apagar, Medir];
+export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['simbolos', 'Sím'], ['edicao', 'Edi'], ['medicao', 'Med']];

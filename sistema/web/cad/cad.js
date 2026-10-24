@@ -825,6 +825,11 @@ class CAD {
       const g = a.grupo_copia || '';
       return [...this.doc.entidades.values()].filter(o => { const b = o.atributos || {}; return b.folha === a.folha && (b.grupo_copia || '') === g; }).map(o => o.id);
     }
+    if (e && a.simbolo) {
+      // o símbolo à mão (solda, balão, nível, chamada de detalhe: nucleo/simbolos.js): as linhas e os textos dele juntos
+      const g = a.grupo_copia || '';
+      return [...this.doc.entidades.values()].filter(o => { const b = o.atributos || {}; return b.simbolo === a.simbolo && (b.grupo_copia || '') === g; }).map(o => o.id);
+    }
     if (e && a.corte) {
       // a seção de uma peça cortada (a terça no corte da tesoura): as linhas dela, como um bloco
       const g = a.grupo_copia || '';
