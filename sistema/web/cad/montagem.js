@@ -125,6 +125,21 @@ export function arrumar(m) {
   return andou;
 }
 
+/** O lugar do "+ corte tesoura" de uma Montagem gravada sem `vaga` (a feita por script, como a da OrtoBio em 23/10: a
+ *  tela dava TypeError a cada quadro), sem mexer nos quadros: depois da última tesoura da linha de baixo, ou embaixo de
+ *  todos quando não há tesoura. */
+export function vagaDe(m) {
+  const tesTam = TIPOS.tesoura, qs = m.quadros || [];
+  const tes = qs.filter(q => (TIPOS[q.tipo] || tesTam).linha === tesTam.linha);
+  if (tes.length) {
+    const y = Math.min(...tes.map(q => q.y));
+    const x = Math.max(...tes.filter(q => Math.abs(q.y - y) < 1e-6).map(q => q.x + q.w)) + FOLGA;
+    return { x, y, w: tesTam.w, h: tesTam.h };
+  }
+  if (!qs.length) return { x: 0, y: 0, w: tesTam.w, h: tesTam.h };
+  return { x: Math.min(...qs.map(q => q.x)), y: Math.min(...qs.map(q => q.y - q.h)) - FOLGA, w: tesTam.w, h: tesTam.h };
+}
+
 /** Margens dentro do quadro (mm de papel): a faixa do título em cima. */
 export const MARGEM = { lado: 8, topo: 20, baixo: 10 };
 const teto5 = (v) => Math.ceil(v / 5) * 5;
@@ -516,6 +531,7 @@ class Montagem {
     this.camada.hidden = !this.ativa;
     if (!this.ativa) { this.camada.replaceChildren(); this._areasNaOriginal(); return; }
     const tela = this.cad.tela, ctx = tela.ctx, m = this.m;
+    if (!m.vaga) m.vaga = vagaDe(m);
     const ret = (q) => {
       const a = tela.paraTela([q.x, q.y]), b = tela.paraTela([q.x + q.w, q.y - q.h]);
       return [a[0], a[1], b[0] - a[0], b[1] - a[1]];
