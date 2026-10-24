@@ -10,6 +10,7 @@ import { Tela, formatarMm } from './nucleo/tela.js';
 import { acompanhar as acompanharTarefa } from '../progresso.js';
 import { Snap } from './nucleo/snap.js';
 import { FERRAMENTAS, GRUPOS, Ferramenta, textoNaUnidade, ColarObjetos, CopiarBase } from './ferramentas.js';
+import { ATALHOS, tabelaDeComandos, comandoExato, instalarLista } from './linha_comando.js';
 import { TIPOS_DE_LINHA, ESPESSURAS, rotuloDoTipo, escalaTracejado, ESCALA_TRACEJADO } from './nucleo/tipos_linha.js';
 import { medidaDaCotaEspecial } from './nucleo/cota_especial.js';
 import { MetodosLancamentoCAD, DESENHO_LANCAMENTO } from './lancamento.js';
@@ -980,6 +981,10 @@ class CAD {
   // ------------------------------------------------------- ferramentas
   _montarFerramentas() {
     const barra = this.el.barra;
+    // o atalho de cada ferramenta é o do AutoCAD (linha_comando.js), o que a dica do botão e a faixa mostram
+    for (const F of FERRAMENTAS) if (ATALHOS[F.id]) F.atalho = ATALHOS[F.id][0].toLowerCase();
+    this._tabelaComandos = tabelaDeComandos(FERRAMENTAS);
+    this._listaComandos = instalarLista(this, this._tabelaComandos);
     for (const [grupo, rotulo] of GRUPOS) {
       barra.append(el('div', { class: 'grupo-rotulo', texto: rotulo }));
       for (const F of FERRAMENTAS.filter(f => f.grupo === grupo)) {
@@ -1029,7 +1034,7 @@ class CAD {
     });
   }
 
-  medida(t) { if (document.activeElement !== this.el.medida) this.el.medida.placeholder = textoNaUnidade(t) || 'digite e Enter'; }   // na unidade das medidas
+  medida(t) { if (document.activeElement !== this.el.medida) this.el.medida.placeholder = textoNaUnidade(t) || 'comando ou medida'; }   // na unidade das medidas
 
   // ------------------------------------------------------------- mouse
   _ligarMouse() {
@@ -1246,13 +1251,16 @@ class CAD {
       if (alvo === this.el.medida) {
         // o canvas não recebe foco: o canvas.focus() deixava o foco no campo, e dali em diante o Ctrl+Z, o Del e os
         // atalhos ficavam presos nele (06/10, "Ctrl+Z não está desfazendo as linhas copiadas") — o campo solta o foco
-        if (ev.key === 'Enter') { ev.preventDefault(); const v = this.el.medida.value.trim(); this.el.medida.value = ''; this.el.medida.blur(); if (v && this.ferramenta) this.ferramenta.onValor(v); return; }
+        // a linha de comando (linha_comando.js): as setas andam na lista; Enter executa; o espaço também, como no AutoCAD,
+        // quando não há número no texto ("1,5 m" continua com o espaço)
+        if ((ev.key === 'ArrowDown' || ev.key === 'ArrowUp') && this._listaComandos.mover(ev.key === 'ArrowDown' ? 1 : -1)) { ev.preventDefault(); return; }
+        if (ev.key === 'Enter' || (ev.key === ' ' && !/\d/.test(this.el.medida.value))) { ev.preventDefault(); this.executarLinhaDeComando(); return; }
         // Ctrl+Z / Ctrl+Y com o campo vazio são do desenho; com texto, do campo
         const desfazer = (ev.ctrlKey || ev.metaKey) && /^[zy]$/i.test(ev.key) && !this.el.medida.value;
         // o Esc no campo das medidas também encerra o comando (a cópia em série, a linha…) — antes só limpava o campo,
         // e com o foco ali a ferramenta não soltava (06/10)
         if (ev.key !== 'Escape' && !desfazer) return;
-        this.el.medida.value = ''; this.el.medida.blur();
+        this.el.medida.value = ''; this._listaComandos.fechar(); this.el.medida.blur();
       }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); ev.shiftKey ? this.refazer() : this.desfazer(); return; }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'y') { ev.preventDefault(); this.refazer(); return; }
@@ -1282,33 +1290,39 @@ class CAD {
       if (ev.key === 'Escape' && this._cancelarJanela && this._cancelarJanela()) return;
       if (ev.key === 'Escape') { if (this.ferramenta) { this.ferramenta.cancelar(); } this.selecionar([]); if (this.ferramenta.constructor.id !== 'selecionar') this.ativarFerramenta('selecionar'); return; }
       if (ev.key === 'F8') { ev.preventDefault(); this.definirOrto(!this.snap.orto); return; }
-      // os atalhos de duas letras, como no AutoCAD: MA (o MATCHPROP) abre Copiar propriedades e TR (o TRIM) o Aparar
-      // — pedido do usuário, 06/10; a primeira letra sozinha continua sendo a dela (M Mover, T Texto) e a segunda
-      // logo depois troca a ferramenta. Os de duas letras vêm do `atalho` das ferramentas.
-      const k_ = ev.key.toLowerCase(), agora_ = Date.now();
-      if (!ev.ctrlKey && !ev.metaKey && !ev.altKey && this._teclaAnterior && agora_ - this._teclaAnterior.t < 1000) {
-        const duplas = { ma: 'copiar_propriedades' };
-        for (const F of FERRAMENTAS) if (F.atalho && F.atalho.length === 2) duplas[F.atalho] = F.id;
-        // Z W e Z P: o Z sozinho já enquadrou — desfaz, para a janela sair da vista em que se estava e o Z P voltar à de antes
-        const par_ = this._teclaAnterior.k + k_;
-        if ((par_ === 'zp' || par_ === 'zw') && this._zEnquadrou) { this.tela.vistaAnterior(); this._zEnquadrou = false; }
-        if (par_ === 'zp') { ev.preventDefault(); this._teclaAnterior = null; this.zoomAnterior(); return; }
-        const alvo = duplas[par_];
-        if (alvo) { ev.preventDefault(); this._teclaAnterior = null; this.ativarFerramenta(alvo); return; }
-      }
-      this._teclaAnterior = { k: k_, t: agora_ };
+      // as opções da ferramenta em uso (H/V/A da cota, L/F/O/B da solda…) vêm antes da linha de comando
       if (this.ferramenta && this.ferramenta.onTecla(ev)) { ev.preventDefault(); return; }
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
-      if (ev.key === ' ' && this.ferramenta && this.ferramenta.constructor.id === 'selecionar' && this.ferramentaAnterior) {
-        ev.preventDefault(); this.ativarFerramenta(this.ferramentaAnterior); return;
+      // espaço ou Enter sem comando: repete o último, como no AutoCAD
+      if ((ev.key === ' ' || ev.key === 'Enter') && this.ferramenta && this.ferramenta.constructor.id === 'selecionar' && (this.ultimoComando || this.ferramentaAnterior)) {
+        ev.preventDefault();
+        if (this.ultimoComando) this._rodarComando(this.ultimoComando); else this.ativarFerramenta(this.ferramentaAnterior);
+        return;
       }
-      if (ev.key.toLowerCase() === 'z') { this._zEnquadrou = this.tela.enquadrar(); return; }
-      // número ou sinal digitado no canvas vai para a caixa de medidas
-      if (/^[-0-9.,@<]$/.test(ev.key)) { this.el.medida.focus(); return; }
-      // com o Caps Lock ligado chega 'K': o atalho vale igual (as duplas, TR e MA, já baixavam a letra)
-      const kk = ev.key.toLowerCase();
-      for (const F of FERRAMENTAS) if (F.atalho && kk === F.atalho) { ev.preventDefault(); this.ativarFerramenta(F.id); return; }
+      // o espaço no meio de outra ferramenta volta para a Selecionar, como antes da linha de comando (no AutoCAD seria o
+      // Enter: decisão em aberto com o usuário)
+      if (ev.key === ' ' && this.ferramenta && this.ferramenta.constructor.id !== 'selecionar') { ev.preventDefault(); this.ativarFerramenta('selecionar'); return; }
+      // a letra, o número ou o sinal digitado no desenho vai para a linha de comando (usuário, 24/10: os atalhos do
+      // AutoCAD — "TR" e Enter apara, "M" e espaço move); antes a letra solta trocava a ferramenta na hora
+      if (/^[-0-9.,@<]$/.test(ev.key) || /^\p{L}$/u.test(ev.key)) { this.el.medida.focus(); return; }
     });
+  }
+
+  /** Enter (ou espaço) na linha de comando: o comando da lista ou o digitado; o que não é comando vai para a ferramenta
+   *  em uso (a medida, "4x3", "M16"…); vazio repete o último comando. */
+  executarLinhaDeComando() {
+    const caixa = this.el.medida, v = caixa.value.trim();
+    const c = (/^\p{L}+$/u.test(v) && this._listaComandos.escolhida()) || comandoExato(this._tabelaComandos, v);
+    caixa.value = ''; this._listaComandos.fechar(); caixa.blur();
+    if (c) { this._rodarComando(c); return; }
+    if (!v) { if (this.ultimoComando) this._rodarComando(this.ultimoComando); return; }
+    if (this.ferramenta) this.ferramenta.onValor(v);
+  }
+
+  _rodarComando(c) {
+    this.ultimoComando = c;
+    if (c.ferramenta) this.ativarFerramenta(c.ferramenta);
+    else c.fazer(this);
   }
 
   // ------------------------------------------------------------- menus

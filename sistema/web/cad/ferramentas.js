@@ -9,7 +9,7 @@ import { criar, dist, meio, transladar, transformar, clonar, pontosDe, segmentos
 import { ComandoAdicionar, ComandoRemover, ComandoSubstituir, ComandoComposto, ComandoAlterar } from './nucleo/comandos.js';
 import { acompanharMalha, eixosCopiados } from './nucleo/malha.js';
 import { medidaDaCotaEspecial } from './nucleo/cota_especial.js';
-import { simboloSolda, simboloBalao, simboloNivel, simboloDetalhe, textoDoNivel } from './nucleo/simbolos.js';
+import { simboloSolda, simboloBalao, simboloNivel, simboloDetalhe, textoDoNivel, simboloPonto, pontosDaDivisao } from './nucleo/simbolos.js';
 
 // A unidade das medidas (07/10, o usuário: "ajustei a escala do desenho para cm para trabalhar com todas as medidas em
 // cm"). O desenho é sempre em milímetro e a "Escala 1:" é a de impressão; a unidade muda só o número digitado sem
@@ -3045,6 +3045,51 @@ export class ChamadaDetalhe extends Ferramenta {
   }
 }
 
+/** Dividir (o DIVIDE do AutoCAD; usuário, 24/10: "marca de ponto"): a linha, o arco, o círculo ou a polilinha em N partes
+ *  iguais, com uma marca de ponto (cruz na AUXILIAR) em cada divisão — o snap pega o meio dela. */
+export class Dividir extends Ferramenta {
+  static id = 'dividir'; static nome = 'Dividir (divide)'; static grupo = 'edicao';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 14h18"/><path d="M8 11.5v5M12 11.5v5M16 11.5v5"/></svg>';
+  static TIPOS = new Set(['linha', 'arco', 'circulo', 'polilinha']);
+  ativar() {
+    super.ativar();
+    // com um objeto já selecionado, ele é o que se divide (como o "Select object" do AutoCAD)
+    const sel = [...this.editor.tela.selecao].map(id => this.doc.get(id)).filter(e => e && Dividir.TIPOS.has(e.tipo));
+    if (sel.length === 1) this._escolher(sel[0]);
+  }
+  reiniciar() { super.reiniciar(); this.alvo = null; this.dica('Dividir: clique na linha, arco, círculo ou polilinha a dividir'); }
+  _escolher(e) {
+    this.alvo = e;
+    this.editor.selecionar([e.id]);
+    this.dica(`Em quantas partes? Digite e Enter (ex.: 5)${this.n ? ` · a prévia mostra ${this.n}, a última` : ''}`);
+    if (this.n) this.editor.previa(this._marcas(this.n));
+  }
+  _marcas(n) {
+    const k = this.doc.escala || 1;
+    return pontosDaDivisao(this.alvo, n).flatMap(p => simboloPonto(p, k)).map(criar);
+  }
+  onPonto(p, ev) {
+    const e = this.editor.tela.sob(ev.px);
+    if (e && Dividir.TIPOS.has(e.tipo)) this._escolher(e);
+  }
+  onValor(t) {
+    const n = parseInt(String(t || '').trim(), 10);
+    if (!this.alvo || !(n >= 2)) return;
+    this.n = n;
+    const marcas = this._marcas(n);
+    if (!marcas.length) return;
+    if (!this.doc.camadas.has('AUXILIAR')) {
+      const c = CAMADAS_PADRAO.find(x => x[0] === 'AUXILIAR');
+      this.doc.camadas.set('AUXILIAR', { nome: 'AUXILIAR', cor: c[1], visivel: true, bloqueada: false, tipo_linha: c[2], espessura: c[3] });
+    }
+    this.editor.executar(new ComandoAdicionar(marcas, `Dividir em ${n}`));
+    this.reiniciar();
+    this.editor.selecionar([]);
+    this.dica(`Dividido em ${n} (${marcas.length / 2} marca(s)) · clique no próximo objeto ou Esc`);
+  }
+  desfazerPasso() { if (!this.alvo) return false; this.reiniciar(); return true; }
+}
+
 export class Offset extends Ferramenta {
   static id = 'offset'; static nome = 'Offset (paralela)'; static atalho = 'f'; static grupo = 'edicao'; static dica = 'Offset: clique na linha, arco, círculo ou polilinha; depois do lado desejado (ou digite a distância e clique o lado)';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 8h16M4 16h16" /></svg>';
@@ -3229,5 +3274,5 @@ export class Corte extends Ferramenta {
 }
 
 export const FERRAMENTAS = [Selecionar, ZoomJanela, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, CotaContinua, CotaBase, CotaRapida, CotaAngular, CotaRaio, CotaDiametro, CotaOrdenada, AjustarCota, Chamada, Corte, Hachura,
-  GradeFuros, SimboloSolda, BalaoMarca, SimboloNivel, ChamadaDetalhe, Mover, Copiar, Girar, Espelhar, Escalar, Matriz, Esticar, Offset, Aparar, Estender, Quebrar, Alongar, Concordar, Chanfro, Explodir, Juntar, MoverCota, CopiarPropriedades, Apagar, Medir];
+  GradeFuros, SimboloSolda, BalaoMarca, SimboloNivel, ChamadaDetalhe, Mover, Copiar, Girar, Espelhar, Escalar, Matriz, Esticar, Offset, Aparar, Estender, Quebrar, Alongar, Concordar, Chanfro, Explodir, Juntar, Dividir, MoverCota, CopiarPropriedades, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['simbolos', 'Sím'], ['edicao', 'Edi'], ['medicao', 'Med']];

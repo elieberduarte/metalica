@@ -16,6 +16,7 @@ import json, math, os, subprocess, sys, tempfile, time, urllib.parse, urllib.req
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
+from linha_comando_teste import atalho_na_linha
 PORTA = _porta_livre()
 DADOS = tempfile.mkdtemp(prefix="metalica_cadcotas_")
 srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
@@ -91,6 +92,7 @@ try:
         texto = k if len(k) == 1 and not (mods & CTRL) else ""
         aba.cmd("Input.dispatchKeyEvent", type="keyDown", key=k, code=nome, windowsVirtualKeyCode=code, text=texto, unmodifiedText=texto, modifiers=mods)
         aba.cmd("Input.dispatchKeyEvent", type="keyUp", key=k, code=nome, windowsVirtualKeyCode=code, modifiers=mods)
+        if not mods: atalho_na_linha(aba, k)      # a letra solta de antes, pela linha de comando (24/10)
         aba.drenar(0.12)
 
     def duas(k1, k2):
@@ -101,6 +103,9 @@ try:
             aba.cmd("Input.dispatchKeyEvent", type="keyDown", key=k, code="Key" + k.upper(), windowsVirtualKeyCode=ord(k.upper()), text=k, unmodifiedText=k)
         for k in (k1, k2):
             aba.cmd("Input.dispatchKeyEvent", type="keyUp", key=k, code="Key" + k.upper(), windowsVirtualKeyCode=ord(k.upper()))
+        # a linha de comando (24/10): as letras vão para ela e o espaço executa, como no AutoCAD
+        aba.cmd("Input.dispatchKeyEvent", type="keyDown", key=" ", code="Space", windowsVirtualKeyCode=32, text=" ", unmodifiedText=" ")
+        aba.cmd("Input.dispatchKeyEvent", type="keyUp", key=" ", code="Space", windowsVirtualKeyCode=32)
         aba.drenar(0.15)
 
     def esc():

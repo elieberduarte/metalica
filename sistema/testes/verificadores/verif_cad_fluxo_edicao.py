@@ -18,6 +18,7 @@ import json, os, shutil, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
+from linha_comando_teste import atalho_na_linha, comando
 
 PORTA = _porta_livre()
 DADOS = tempfile.mkdtemp(prefix="metalica_cadfluxo_")
@@ -146,6 +147,7 @@ try:
         texto = k if len(k) == 1 and not (mods & CTRL) else ""
         aba.cmd("Input.dispatchKeyEvent", type="keyDown", key=k, code=nome, windowsVirtualKeyCode=code, text=texto, unmodifiedText=texto, modifiers=mods)
         aba.cmd("Input.dispatchKeyEvent", type="keyUp", key=k, code=nome, windowsVirtualKeyCode=code, modifiers=mods)
+        if not mods: atalho_na_linha(aba, k)      # a letra solta de antes, pela linha de comando (24/10)
         aba.drenar(0.1)
 
     def digitar(t, enter=True):
@@ -489,7 +491,7 @@ try:
     # ---------------------------------------------------------------- 7. Copiar propriedades
     print("\n  -- Copiar propriedades (M, A)")
     clicar_em(pt("tx")); ok(sel() == ["tx"], f"selecionado o texto de origem: {sel()}")
-    tecla("m"); tecla("a")
+    comando(aba, "ma")
     ok(ferr() == "copiar_propriedades" and dica().startswith("Origem: texto na camada TEXTO"), f"M e logo depois A abrem o Copiar propriedades com a origem: {dica()!r}")
     n = feitos()
     clicar_em(pt("t2"))
@@ -501,7 +503,7 @@ try:
     ok(ent("t2")["altura"] == 2 and ent("t2")["camada"] == "NOTAS", "Ctrl+Z volta num passo")
     esc()
     ok(ferr() == "selecionar", "Esc termina")
-    tecla("m"); tecla("a")
+    comando(aba, "ma")
     ok(ferr() == "copiar_propriedades" and "origem" in dica().lower(), f"sem seleção pede a origem: {dica()!r}")
     clicar_em(pt("tx")); clicar_em(pt("t2"))
     ok(ent("t2")["altura"] == 5, "origem e destino clicados")

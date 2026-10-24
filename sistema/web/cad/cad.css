@@ -21,12 +21,21 @@ html.sem-paineis .area .aba-paineis { right: var(--larg-ferramentas); }
 
 .rodape .estado-salvo { margin-left: 12px; font-size: 11px; color: var(--texto3); white-space: nowrap; }
 /* a caixa de medidas do rodapé, como a do 3D: fundo e borda do tema (no escuro ficava branca) */
-.rodape .medidas { display: flex; align-items: center; gap: 6px; margin-left: 12px; font-size: 11px;
+.rodape .medidas { position: relative; display: flex; align-items: center; gap: 6px; margin-left: 12px; font-size: 11px;
   color: var(--texto3); letter-spacing: .05em; white-space: nowrap; }
-.rodape .medidas input { width: 150px; text-align: right; font-family: var(--mono); font-size: 12.5px;
+.rodape .medidas input { width: 220px; text-align: left; font-family: var(--mono); font-size: 12.5px;
   letter-spacing: 0; color: var(--texto); background: var(--campo-fundo); border: 1px solid var(--campo-borda);
   border-radius: var(--raio-p); padding: 2px 7px; }
 .rodape .medidas input::placeholder { color: var(--texto3); }
+/* a lista da linha de comando (linha_comando.js), em cima da caixa, como a do CADCraft: o atalho e o nome */
+.rodape .lista-comandos { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 30; margin: 0; padding: 3px 0;
+  list-style: none; min-width: 340px; background: var(--painel); border: 1px solid var(--borda-forte);
+  border-radius: var(--raio-p); box-shadow: 0 6px 20px rgb(0 0 0 / 25%); letter-spacing: 0; }
+.rodape .lista-comandos li { display: flex; justify-content: space-between; gap: 18px; padding: 3px 10px; cursor: pointer;
+  font-size: 12px; color: var(--texto); }
+.rodape .lista-comandos li b { font-family: var(--mono); font-weight: 600; }
+.rodape .lista-comandos li span { color: var(--texto3); }
+.rodape .lista-comandos li.on, .rodape .lista-comandos li:hover { background: color-mix(in srgb, var(--campo-foco) 22%, transparent); }
 .rodape .medidas input:focus { outline: 0; border-color: var(--campo-foco);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--campo-foco) 22%, transparent); }
 

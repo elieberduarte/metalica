@@ -96,11 +96,23 @@ try:
         aba.cmd("Input.dispatchKeyEvent", type="keyUp", key=k, code=nome, windowsVirtualKeyCode=code, modifiers=mods)
         aba.drenar(0.12)
 
+    def comando(letras):
+        """o comando digitado na linha de comando e o espaço (24/10, como no AutoCAD)"""
+        for k in letras:
+            aba.cmd("Input.dispatchKeyEvent", type="keyDown", key=k, code="Key" + k.upper(), windowsVirtualKeyCode=ord(k.upper()), text=k, unmodifiedText=k)
+            aba.cmd("Input.dispatchKeyEvent", type="keyUp", key=k, code="Key" + k.upper(), windowsVirtualKeyCode=ord(k.upper()))
+        aba.cmd("Input.dispatchKeyEvent", type="keyDown", key=" ", code="Space", windowsVirtualKeyCode=32, text=" ", unmodifiedText=" ")
+        aba.cmd("Input.dispatchKeyEvent", type="keyUp", key=" ", code="Space", windowsVirtualKeyCode=32)
+        aba.drenar(0.2)
+
     def duas(k1, k2):
         for k in (k1, k2):
             aba.cmd("Input.dispatchKeyEvent", type="keyDown", key=k, code="Key" + k.upper(), windowsVirtualKeyCode=ord(k.upper()), text=k, unmodifiedText=k)
         for k in (k1, k2):
             aba.cmd("Input.dispatchKeyEvent", type="keyUp", key=k, code="Key" + k.upper(), windowsVirtualKeyCode=ord(k.upper()))
+        # a linha de comando (24/10): as letras vão para ela e o espaço executa, como no AutoCAD
+        aba.cmd("Input.dispatchKeyEvent", type="keyDown", key=" ", code="Space", windowsVirtualKeyCode=32, text=" ", unmodifiedText=" ")
+        aba.cmd("Input.dispatchKeyEvent", type="keyUp", key=" ", code="Space", windowsVirtualKeyCode=32)
         aba.drenar(0.2)
 
     def esc():
@@ -141,7 +153,7 @@ try:
     clique([2050, 0]); clique([2150, 120])
     r = [e for e in novas(antes) if e and e["tipo"] == "cota_especial"]
     ok(len(r) == 1 and r[0]["modo"] == "raio" and medida(r[0]) == "R50", f"B. o raio do furo: {r and medida(r[0])}")
-    duas("d", "i")
+    comando("ddi")          # 24/10: o DI é o DIST do AutoCAD; a cota de diâmetro é DDI
     antes = ids()
     clique([1950, 0]); clique([2000, 20])
     di = [e for e in novas(antes) if e and e["tipo"] == "cota_especial"]

@@ -20,6 +20,7 @@ import json, math, os, shutil, subprocess, sys, tempfile, time, urllib.parse, ur
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
+from linha_comando_teste import atalho_na_linha, DIGITANDO
 
 PORTA = _porta_livre()
 DADOS = tempfile.mkdtemp(prefix="metalica_fluxo2d_")
@@ -139,11 +140,14 @@ try:
         aba.cmd("Input.dispatchKeyEvent", type="keyDown", key=k, code=("Key" + k.upper()) if len(k) == 1 and k.isalpha() else "",
                 windowsVirtualKeyCode=code, text=texto, modifiers=mods)
         aba.cmd("Input.dispatchKeyEvent", type="keyUp", key=k, windowsVirtualKeyCode=code, modifiers=mods)
+        if not mods: atalho_na_linha(aba, k)      # a letra solta de antes, pela linha de comando (24/10)
         aba.drenar(0.12)
 
     def digitar(t, enter=True):
         # o primeiro caractere vai do desenho para a caixa MEDIDAS (o CAD a foca); o resto entra nela; Enter manda
+        DIGITANDO[0] = len(t) > 1            # o "d" de "d500" é do valor, não atalho (24/10)
         tecla(t[0])
+        DIGITANDO[0] = False
         if len(t) > 1: aba.cmd("Input.insertText", text=t[1:])
         aba.drenar(0.05)
         if enter: tecla("Enter")

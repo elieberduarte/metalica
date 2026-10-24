@@ -27,6 +27,7 @@ import json, math, os, shutil, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
+from linha_comando_teste import atalho_na_linha, comando
 
 PORTA = _porta_livre()
 DADOS = tempfile.mkdtemp(prefix="metalica_cadgeo_")
@@ -151,6 +152,7 @@ try:
         aba.cmd("Input.dispatchKeyEvent", type="keyDown", key=k, code=("Key" + k.upper()) if k.isalpha() and len(k) == 1 else "",
                 windowsVirtualKeyCode=code, text=texto, unmodifiedText=texto, modifiers=mods)
         aba.cmd("Input.dispatchKeyEvent", type="keyUp", key=k, windowsVirtualKeyCode=code, modifiers=mods)
+        if not mods: atalho_na_linha(aba, k)      # a letra solta de antes, pela linha de comando (24/10)
         pausa(espera)
 
     def digitar(t, enter=True):
@@ -172,26 +174,27 @@ try:
     def limpar_avisos(): js("c.el.avisos.innerHTML = ''; return 1;")
     def total(): return js("return c.doc.tamanho;")
 
-    # ------------------------------------------------------------------ 0. atalhos
+    # ------------------------------------------------------------------ 0. atalhos (os do AutoCAD, pela linha de comando: 24/10)
     ver(0)
-    tecla("t")
-    ok(ferr() == "texto", f"T sozinho abre o Texto ({ferr()})")
-    tecla("r")
-    ok(ferr() == "aparar", f"T e logo depois R abrem o Aparar (TR) ({ferr()})")
+    comando(aba, "t")
+    ok(ferr() == "texto", f"T e espaço abrem o Texto ({ferr()})")
     esc()
-    tecla("t"); pausa(1.2); tecla("r")
-    ok(ferr() == "retangulo", f"T e R com mais de 1 s entre eles: o R é o Retângulo ({ferr()})")
+    comando(aba, "tr")
+    ok(ferr() == "aparar", f"TR e espaço abrem o Aparar ({ferr()})")
     esc()
-    for k, fid in (("n", "estender"), ("k", "concordar"), ("f", "offset"), ("u", "medir"), ("y", "corte")):
-        tecla(k); ok(ferr() == fid, f"atalho {k.upper()} abre {fid} ({ferr()})"); esc()
+    comando(aba, "rec", "Enter")
+    ok(ferr() == "retangulo", f"REC e Enter: o Retângulo ({ferr()})")
+    esc()
+    for k, fid in (("ex", "estender"), ("f", "concordar"), ("o", "offset"), ("di", "medir"), ("corte", "corte")):
+        comando(aba, k); ok(ferr() == fid, f"atalho {k.upper()} abre {fid} ({ferr()})"); esc()
     # Caps Lock ligado: a tecla chega maiúscula (sem Shift)
-    tecla("K")
-    ok(ferr() == "concordar", f"com o Caps Lock ligado, K também abre o Concordar ({ferr()})")
+    comando(aba, "F")
+    ok(ferr() == "concordar", f"com o Caps Lock ligado, F também abre o Concordar ({ferr()})")
     esc()
 
     # ------------------------------------------------------------------ 1. Aparar
     ver(0)
-    tecla("t"); tecla("r")
+    comando(aba, "tr")
     n0 = total()
     clicar_mm([450, 0])
     hs = sorted(seg(e) for e in (na_regiao(0, "linha") or []) if abs(e["a"][1]) < 1e-6 and abs(e["b"][1]) < 1e-6)

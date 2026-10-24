@@ -143,3 +143,45 @@ export function simboloDetalhe({ centro, raio, bolha, numero, prancha = '' }, k 
   }
   return marcar(out, 'detalhe', { numero, prancha, raio });
 }
+
+/** A marca de ponto (o POINT do AutoCAD, usuário 24/10: "marca de ponto" no Dividir): uma cruz de 3 mm de papel na camada
+ *  AUXILIAR, contínua; o snap pega o meio dela (interseção e meio das duas linhas). */
+export function simboloPonto(p, k = 1, tipo = 'ponto') {
+  const m = 1.5 * k;
+  return marcar([
+    { tipo: 'linha', camada: 'AUXILIAR', tipo_linha: 'CONTINUOUS', a: [p[0] - m, p[1]], b: [p[0] + m, p[1]] },
+    { tipo: 'linha', camada: 'AUXILIAR', tipo_linha: 'CONTINUOUS', a: [p[0], p[1] - m], b: [p[0], p[1] + m] },
+  ], tipo, {});
+}
+
+/** Os pontos que dividem `e` em `n` partes iguais (o DIVIDE do AutoCAD): na linha, no arco e na polilinha aberta, os n − 1
+ *  de dentro; no círculo e na polilinha fechada, n (o primeiro no começo). Outro tipo: []. */
+export function pontosDaDivisao(e, n) {
+  n = Math.floor(n);
+  if (!(n >= 2)) return [];
+  const rad = (g) => g * Math.PI / 180;
+  if (e.tipo === 'circulo') {
+    return Array.from({ length: n }, (_, i) => [e.centro[0] + e.raio * Math.cos(2 * Math.PI * i / n), e.centro[1] + e.raio * Math.sin(2 * Math.PI * i / n)]);
+  }
+  if (e.tipo === 'arco') {
+    let a0 = e.inicio, a1 = e.fim;
+    if (a1 < a0) a1 += 360;
+    return Array.from({ length: n - 1 }, (_, i) => { const a = rad(a0 + (a1 - a0) * (i + 1) / n); return [e.centro[0] + e.raio * Math.cos(a), e.centro[1] + e.raio * Math.sin(a)]; });
+  }
+  let v;
+  if (e.tipo === 'linha') v = [e.a, e.b];
+  else if (e.tipo === 'polilinha') v = e.fechada && e.vertices.length > 2 ? [...e.vertices, e.vertices[0]] : e.vertices;
+  else return [];
+  const fechada = e.tipo === 'polilinha' && e.fechada && e.vertices.length > 2;
+  const lens = v.slice(1).map((p, i) => Math.hypot(p[0] - v[i][0], p[1] - v[i][1]));
+  const total = lens.reduce((s, x) => s + x, 0);
+  if (!(total > 0)) return [];
+  const out = [];
+  for (let j = fechada ? 0 : 1; j < n; j++) {
+    let falta = total * j / n, i = 0;
+    while (i < lens.length - 1 && falta > lens[i]) { falta -= lens[i]; i++; }
+    const t = lens[i] > 0 ? falta / lens[i] : 0;
+    out.push([v[i][0] + (v[i + 1][0] - v[i][0]) * t, v[i][1] + (v[i + 1][1] - v[i][1]) * t]);
+  }
+  return out;
+}

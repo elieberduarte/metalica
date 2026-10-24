@@ -16,6 +16,7 @@ import json, os, shutil, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
+from linha_comando_teste import atalho_na_linha
 from nucleo2d.desenho import Desenho, Linha, Texto, Camada2D
 from saida import impressao
 
@@ -109,6 +110,7 @@ try:
         texto = k if len(k) == 1 and not (mods & 2) else ""
         aba.cmd("Input.dispatchKeyEvent", type="keyDown", key=k, code=nome, windowsVirtualKeyCode=code, text=texto, unmodifiedText=texto, modifiers=mods)
         aba.cmd("Input.dispatchKeyEvent", type="keyUp", key=k, code=nome, windowsVirtualKeyCode=code, modifiers=mods)
+        if not mods: atalho_na_linha(aba, k)      # a letra solta de antes, pela linha de comando (24/10)
         aba.drenar(0.12)
 
     def clicar(seletor_js):
