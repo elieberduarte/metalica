@@ -1370,21 +1370,23 @@ def test_decisao_por_copia_da_elevacao():
     assert not de_planta._decisao_vale([{"nome": "TRANSICAO 6", "ponto": [407000.0, 68950.0]}], t34)
 
 
-def test_terca_com_um_apoio_vai_ao_banzo_do_painel_da_borda():
-    """o canto do Posto V2 (23/10/2026, o usuário: "verifique porque as telhas levantaram nesse canto"): a TC9 vai da
-    TESOURA 14 (topo 7,13) ao PAINEL 15 da borda, que tem a platibanda em cima (7,65) e o banzo do telhado no meio; o painel
-    é barreira (a terça não sobe na platibanda), a terça ficava com um apoio só e saía inclinada pela continuação da
-    vizinha (7,45 na borda, degrau de 293 mm na telha — COB-04). Agora o banzo da barreira na altura do outro apoio é o
-    segundo apoio"""
-    from nucleo3d.modelo import Barra
-    banzo = lambda y, z: Barra(inicio=(0.0, y, z), fim=(4000.0, y, z), perfil="U 100×40×2,25 (FF)", rotacao=270.0, papel="banzo")
-    tesoura = banzo(0.0, 7100.0)
-    platibanda, do_meio = banzo(2600.0, 7600.0), banzo(2600.0, 7050.0)
-    # a terça desenhada subindo para a borda (como a continuação da vizinha)
-    t = Barra(inicio=(2000.0, 0.0, 7160.0), fim=(2000.0, 2600.0, 7430.0), perfil="U 100×40×2,65 (FF)", rotacao=0.0, papel="terça")
-    de_planta._assentar_tercas([t], [tesoura], barreiras=[platibanda, do_meio])
-    assert abs((t.fim[2] - t.inicio[2]) - (7050.0 - 7100.0)) < 1.0, (t.inicio, t.fim)     # do topo da tesoura ao do banzo do meio
-    # sem barreira, como antes: um apoio só, a inclinação desenhada
-    t2 = Barra(inicio=(2000.0, 0.0, 7160.0), fim=(2000.0, 2600.0, 7430.0), perfil="U 100×40×2,65 (FF)", rotacao=0.0, papel="terça")
-    de_planta._assentar_tercas([t2], [tesoura])
-    assert abs((t2.fim[2] - t2.inicio[2]) - 270.0) < 1.0
+def test_virada_pelas_chegadas_nao_desencontra_as_pontas():
+    """o canto do Posto V2 (23/10/2026, o usuário: "verifique porque as telhas levantaram nesse canto"): a TESOURA 14, de uma
+    água só (o banzo de cima de 800 a 1.196), vai da TRANSIÇÃO 4 (baixa) à TRANSIÇÃO 7 (alta); o sentido sem prova virava
+    pelos montantes e a ponta alta caía na transição baixa — as terças em cima dela saíam torcidas e a telha levantava no
+    canto. A virada que piora as alturas nas pontas não vale; sem treliça nas pontas, vira como antes"""
+    M = de_planta.Membro
+    def caso(com_transicoes):
+        t14 = _com_montantes(_tr("TESOURA 14", "TESOURA", (0.0, 0.0), (0.0, 19969.0), h=(0.0, 800.0)),
+                             [3734.0, 7518.0, 11302.0, 15636.0])
+        t14.elevacao.membros[1] = M(0.0, 800.0, t14.elevacao.comprimento, 1196.0, "banzo")
+        t14.sentido_por = "costume do desenho"
+        tes = [_tr("TESOURA 3", "TESOURA", (50.0, s_), (5000.0, s_)) for s_ in (4333.0, 8667.0, 12451.0, 16235.0)]
+        pontas = [_tr("TRANSICAO 4", "TRANSICAO", (-3000.0, 0.0), (3000.0, 0.0), h=(0.0, 800.0)),
+                  _tr("TRANSICAO 7", "TRANSICAO", (-3000.0, 19969.0), (3000.0, 19969.0), h=(0.0, 1196.0))]
+        de_planta.ancorar_pelas_chegadas([t14] + tes + (pontas if com_transicoes else []))
+        return t14
+    t = caso(True)
+    assert not t.invertida and t.sentido_por == "costume do desenho"
+    assert t.elevacao.topo(de_planta._s_na_elevacao(t, 0.0)) == pytest.approx(800.0, abs=30.0)
+    assert caso(False).invertida
