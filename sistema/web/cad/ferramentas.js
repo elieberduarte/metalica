@@ -5,7 +5,7 @@
 // Medida digitada (`onValor`): "1500", "1,5m", "150cm", "@30" (ângulo), e para
 // retângulo "2000;1000". Esc cancela, Enter/espaço confirma ou repete.
 
-import { criar, dist, meio, transladar, transformar, clonar, pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dentroDe, pontosCota, pontosArco } from './nucleo/desenho2d.js';
+import { criar, dist, meio, transladar, transformar, clonar, pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dentroDe, pontosCota, pontosArco, caixaDe } from './nucleo/desenho2d.js';
 import { ComandoAdicionar, ComandoRemover, ComandoSubstituir, ComandoComposto, ComandoAlterar } from './nucleo/comandos.js';
 import { acompanharMalha, eixosCopiados } from './nucleo/malha.js';
 import { medidaDaCotaEspecial } from './nucleo/cota_especial.js';
@@ -2644,6 +2644,223 @@ export class CopiarBase extends Ferramenta {
   onPonto(p) { this.editor.copiarSelecao(p); this.editor.ativarFerramenta('selecionar'); }
 }
 
+/** O ponto e a direção (graus) a `s` do começo de uma linha, polilinha ou arco; e o comprimento dela. */
+function caminhoDe(e) {
+  if (e.tipo === 'linha') {
+    const L = dist(e.a, e.b), g = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]) * 180 / Math.PI;
+    return { L, em: (s) => ({ p: [e.a[0] + (e.b[0] - e.a[0]) * s / L, e.a[1] + (e.b[1] - e.a[1]) * s / L], g }) };
+  }
+  if (e.tipo === 'arco') {
+    const n = (a) => ((a % 360) + 360) % 360, varre = n(e.fim - e.inicio) || 360, L = e.raio * varre * Math.PI / 180;
+    return { L, em: (s) => { const a = e.inicio + s / L * varre; return { p: [e.centro[0] + e.raio * Math.cos(a * Math.PI / 180), e.centro[1] + e.raio * Math.sin(a * Math.PI / 180)], g: a + 90 }; } };
+  }
+  const vs = e.fechada ? [...e.vertices, e.vertices[0]] : e.vertices;
+  const trechos = [];
+  let L = 0;
+  for (let i = 1; i < vs.length; i++) { const l = dist(vs[i - 1], vs[i]); if (l > 1e-9) { trechos.push([vs[i - 1], vs[i], L, l]); L += l; } }
+  return { L, em: (s) => {
+    const t = trechos.find(([, , s0, l]) => s <= s0 + l + 1e-9) || trechos[trechos.length - 1];
+    const [a, b, s0, l] = t, u = Math.max(0, Math.min(1, (s - s0) / l));
+    return { p: [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u], g: Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI };
+  } };
+}
+
+/**
+ * Matriz (A R, o ARRAY do AutoCAD; pedido do usuário, 23/10, na lista das ferramentas que faltam: "furação de chapa e
+ * barra, montantes, chumbadores"). Com a seleção:
+ *  - retangular (o padrão): "4x3" (colunas × linhas) e o cursor dá o espaçamento, do canto da seleção até ele — ou "500;300";
+ *  - polar (P): clique o centro; "6" cópias em volta (360°) ou "6;180" (o ângulo total); R gira (ou não) as cópias;
+ *  - por caminho (C): clique a linha, polilinha ou arco; "8" cópias de ponta a ponta ou "@500" de passo; A alinha ao caminho.
+ * O original fica; Enter ou o clique grava; cada cópia é uma peça (como as do Copiar).
+ */
+export class Matriz extends Transformadora {
+  static id = 'matriz'; static nome = 'Matriz (array)'; static atalho = 'ar';
+  static dica = 'Matriz retangular: digite colunas x linhas (ex.: 4x3) e leve o cursor ao lugar da segunda cópia · P polar · C caminho';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="5" height="5"/><rect x="10" y="3" width="5" height="5" stroke-dasharray="2 1"/><rect x="17" y="3" width="4" height="5" stroke-dasharray="2 1"/><rect x="3" y="10" width="5" height="5" stroke-dasharray="2 1"/><rect x="10" y="10" width="5" height="5" stroke-dasharray="2 1"/><circle cx="12" cy="19" r="2"/></svg>';
+  reiniciar() {
+    super.reiniciar();
+    this.modo = this.modo || 'retangular';
+    if (!this.nx) { this.nx = 3; this.ny = 1; this.n = 6; this.angTotal = 360; this.girar = true; this.alinhar = true; }
+    this.centro = null; this.caminho = null; this.passoFixo = null; this.esp = null;
+    if (this.ids.length) this._dicaDoModo();
+  }
+  _caixa() { return this.doc.caixa(new Set(this.ids)); }
+  _dicaDoModo() {
+    const d = {
+      retangular: `Matriz retangular ${this.nx} × ${this.ny}: leve o cursor ao lugar da segunda cópia e clique (ou "dx;dy" e Enter) · digite "4x3" para mudar · P polar · C caminho`,
+      polar: this.centro ? `Matriz polar: ${this.n} em ${fmt(this.angTotal)}° (digite "6" ou "6;180") · R ${this.girar ? 'gira' : 'não gira'} as cópias · Enter ou clique grava` : 'Matriz polar: clique o centro',
+      caminho: this.caminho ? `Matriz por caminho: ${this.passoFixo ? `passo ${fmt(this.passoFixo)}` : `${this.n} cópias de ponta a ponta`} (digite "8" ou "@500") · A ${this.alinhar ? 'alinha' : 'não alinha'} ao caminho · Enter ou clique grava` : 'Matriz por caminho: clique na linha, polilinha ou arco',
+    }[this.modo];
+    this.dica(d);
+  }
+  /** As cópias (sem o original): [entidades transformadas] por posição. */
+  _posicoes(cursor) {
+    const ents = this.selecionadas();
+    if (!ents.length) return [];
+    const cx = this._caixa();
+    const out = [];
+    if (this.modo === 'retangular') {
+      const base = cx ? cx[0] : [0, 0];
+      let dx, dy;
+      if (this.esp) [dx, dy] = this.esp;
+      else if (cursor) { dx = this.nx > 1 ? cursor[0] - base[0] : 0; dy = this.ny > 1 ? cursor[1] - base[1] : 0; if (this.nx > 1 && this.ny === 1) dy = 0; if (this.ny > 1 && this.nx === 1) dx = 0; }
+      else return [];
+      for (let j = 0; j < this.ny; j++) for (let i = 0; i < this.nx; i++) if (i || j) out.push(ents.map(e => transladar(e, [i * dx, j * dy])));
+      return out;
+    }
+    if (this.modo === 'polar') {
+      if (!this.centro) return [];
+      const c = this.centro, total = this.angTotal, n = Math.max(2, this.n);
+      const passo = Math.abs(total - 360) < 1e-9 ? 360 / n : total / (n - 1);
+      for (let i = 1; i < n; i++) {
+        const th = passo * i * Math.PI / 180, co = Math.cos(th), si = Math.sin(th);
+        const rot = (p) => [c[0] + (p[0] - c[0]) * co - (p[1] - c[1]) * si, c[1] + (p[0] - c[0]) * si + (p[1] - c[1]) * co];
+        if (this.girar) out.push(ents.map(e => transformar(e, rot, (a) => a + passo * i)));
+        else {
+          // sem girar: cada cópia só anda, o centro da seleção vai para o lugar girado
+          const m = cx ? [(cx[0][0] + cx[1][0]) / 2, (cx[0][1] + cx[1][1]) / 2] : c, q = rot(m);
+          out.push(ents.map(e => transladar(e, [q[0] - m[0], q[1] - m[1]])));
+        }
+      }
+      return out;
+    }
+    if (!this.caminho) return [];
+    const cam = caminhoDe(this.caminho);
+    if (!(cam.L > 1e-9)) return [];
+    const m = cx ? [(cx[0][0] + cx[1][0]) / 2, (cx[0][1] + cx[1][1]) / 2] : [0, 0];
+    const g0 = cam.em(0).g;
+    const ss = [];
+    if (this.passoFixo) for (let s = 0; s <= cam.L + 1e-6 && ss.length < 2000; s += this.passoFixo) ss.push(s);
+    else { const n = Math.max(2, this.n); for (let i = 0; i < n; i++) ss.push(cam.L * i / (n - 1)); }
+    for (const s of ss) {
+      const { p, g } = cam.em(s);
+      const th = (this.alinhar ? g - g0 : 0) * Math.PI / 180, co = Math.cos(th), si = Math.sin(th);
+      const f = (q) => [p[0] + (q[0] - m[0]) * co - (q[1] - m[1]) * si, p[1] + (q[0] - m[0]) * si + (q[1] - m[1]) * co];
+      out.push(ents.map(e => transformar(e, f, (a) => a + (this.alinhar ? g - g0 : 0))));
+    }
+    return out;
+  }
+  _previa(cursor) {
+    const pos = this._posicoes(cursor);
+    const n = pos.reduce((s, x) => s + x.length, 0);
+    // muitas: a prévia leva só as caixas de cada cópia
+    this.editor.previa(n <= 3000 ? pos.flat() : pos.slice(0, 400).map(x => { const c = caixaDe(x.flatMap(pontosDe)); return c ? criar({ tipo: 'polilinha', camada: 'AUXILIAR', fechada: true, vertices: [c[0], [c[1][0], c[0][1]], c[1], [c[0][0], c[1][1]]] }) : null; }).filter(Boolean));
+    this.editor.medida(`${pos.length} cópia(s)`);
+  }
+  _gravar(cursor) {
+    const pos = this._posicoes(cursor);
+    if (!pos.length) return;
+    const total = pos.reduce((s, x) => s + x.length, 0);
+    if (total > 20000) { this.dica(`São ${numeroBr(total)} objetos: diminua a matriz`); return; }
+    const originais = this.selecionadas();
+    const copias = [];
+    let trocas = [];
+    for (const novas of pos) { const c = criarCopias(this.editor, novas, novoGrupoCopia(), originais); copias.push(...c); if (c.trocas) trocas = trocas.concat(c.trocas); }
+    copias.trocas = trocas;
+    this.editor.previa([]);
+    this.editor.executar(comandoDasCopias(copias, `Matriz (${pos.length} cópias)`));
+    this.editor.ativarFerramenta('selecionar');
+    this.editor.dica(`Matriz ${this.modo}: ${pos.length} cópia(s) · Ctrl+Z desfaz`);
+  }
+  onMover(p) { if (this.ids.length && !(this.modo === 'caminho' && !this.caminho)) this._previa(p); }
+  passo(p, ev) {
+    if (this.modo === 'polar' && !this.centro) { this.centro = [p[0], p[1]]; this._dicaDoModo(); this._previa(p); return; }
+    if (this.modo === 'caminho' && !this.caminho) {
+      const e = ev && ev.px ? this.editor.tela.sob(ev.px) : null;
+      if (!e || !['linha', 'polilinha', 'arco'].includes(e.tipo)) { this.dica('Clique na linha, polilinha ou arco do caminho'); return; }
+      this.caminho = e; this._dicaDoModo(); this._previa(p); return;
+    }
+    this._gravar(p);
+  }
+  onValor(t) {
+    const s = String(t || '').trim().toLowerCase().replace(/\s+/g, '');
+    const m = s.match(/^(\d+)[x×*](\d+)$/);
+    if (m && this.modo === 'retangular') { this.nx = Math.max(1, +m[1]); this.ny = Math.max(1, +m[2]); this.esp = null; this._dicaDoModo(); return; }
+    if (this.modo === 'retangular') {
+      const pr = s.split(';');
+      if (pr.length === 2) { const a = paraMilimetros(pr[0]), b = paraMilimetros(pr[1]); if (a != null && b != null) { this.esp = [a, b]; this._gravar(null); } return; }
+      const n = parseInt(s, 10); if (n > 0 && String(n) === s) { this.nx = n; this.ny = 1; this.esp = null; this._dicaDoModo(); }
+      return;
+    }
+    if (this.modo === 'caminho' && s.startsWith('@')) { const v = paraMilimetros(s.slice(1)); if (v > 0) this.passoFixo = v; this._dicaDoModo(); this._previa(this.editor.tela.cursor); return; }
+    const pr = s.split(';'), n = parseInt(pr[0], 10);
+    if (n >= 2) { this.n = n; this.passoFixo = null; }
+    if (pr.length > 1) { const a = parseFloat(pr[1].replace(',', '.')); if (a > 0 && a <= 360) this.angTotal = a; }
+    this._dicaDoModo(); this._previa(this.editor.tela.cursor);
+  }
+  onTecla(ev) {
+    const k = ev.key.toLowerCase();
+    if (ev.ctrlKey || ev.altKey || ev.metaKey) return false;
+    if (ev.key === 'Enter') { if (this.modo !== 'retangular' || this.esp) this._gravar(this.editor.tela.cursor); else this._gravar(this.editor.tela.cursor); return true; }
+    const modo = { r: this.modo === 'polar' ? null : 'retangular', p: 'polar', c: 'caminho' }[k];
+    if (k === 'r' && this.modo === 'polar' && this.centro) { this.girar = !this.girar; this._dicaDoModo(); this._previa(this.editor.tela.cursor); return true; }
+    if (k === 'a' && this.modo === 'caminho') { this.alinhar = !this.alinhar; this._dicaDoModo(); this._previa(this.editor.tela.cursor); return true; }
+    if (modo) { this.modo = modo; this.centro = null; this.caminho = null; this.esp = null; this.editor.previa([]); this._dicaDoModo(); return true; }
+    return false;
+  }
+}
+const numeroBr = (n) => Number(n).toLocaleString('pt-BR');
+
+/** O diâmetro do furo pelo que se digita: "22" (o furo), "M16" (o parafuso métrico + 1,5 mm de folga — a regra dos furos
+ *  sem cota) ou "5/8" (polegada + 1,5). */
+function diametroDoFuro(t) {
+  const s = String(t || '').trim().toLowerCase().replace(',', '.').replace(/["”]/g, '');
+  let m = s.match(/^m(\d+(?:\.\d+)?)$/);
+  if (m) return +m[1] + 1.5;
+  m = s.match(/^(\d+)\/(\d+)$/);
+  if (m && +m[2]) return Math.round((+m[1] / +m[2]) * 25.4 * 1000) / 1000 + 1.5;
+  m = s.match(/^(?:d|ø)?(\d+(?:\.\d+)?)$/);
+  return m ? +m[1] : null;
+}
+
+/**
+ * Grade de furos (G F; pedido do usuário, 23/10: "hoje cada furo é um clique"): linhas × colunas de furos na camada
+ * FURO, com os passos. Digite o Ø ("22"), ou o parafuso ("M16", "5/8" — o furo sai com 1,5 mm de folga), a grade
+ * ("2x2", linhas × colunas) e os passos ("50;60": entre colunas; entre linhas). O cursor leva o primeiro furo (C: o
+ * centro da grade). Fica na ferramenta para a próxima grade.
+ */
+export class GradeFuros extends Ferramenta {
+  static id = 'grade_furos'; static nome = 'Grade de furos'; static atalho = 'gf'; static grupo = 'desenho';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="1"/><circle cx="8" cy="9" r="1.8"/><circle cx="16" cy="9" r="1.8"/><circle cx="8" cy="15" r="1.8"/><circle cx="16" cy="15" r="1.8"/></svg>';
+  reiniciar() {
+    super.reiniciar();
+    if (!this.d) { this.d = 17.5; this.linhas = 2; this.colunas = 2; this.px = 60; this.py = 50; this.pelo = 'primeiro'; }
+    this.dica(`Grade de furos Ø${fmt(this.d)} · ${this.linhas} × ${this.colunas} · passos ${fmt(this.px)} × ${fmt(this.py)} · clique onde fica o ${this.pelo === 'centro' ? 'centro da grade' : 'primeiro furo (embaixo à esquerda)'} · digite "M16", "22", "2x3" ou "60;50" · C: pelo ${this.pelo === 'centro' ? 'primeiro furo' : 'centro'}`);
+  }
+  _furos(p) {
+    const ox = this.pelo === 'centro' ? (this.colunas - 1) * this.px / 2 : 0, oy = this.pelo === 'centro' ? (this.linhas - 1) * this.py / 2 : 0;
+    const out = [];
+    for (let j = 0; j < this.linhas; j++) for (let i = 0; i < this.colunas; i++) {
+      out.push(criar({ tipo: 'circulo', camada: 'FURO', centro: [p[0] - ox + i * this.px, p[1] - oy + j * this.py], raio: this.d / 2 }));
+    }
+    return out;
+  }
+  onMover(p) { this.editor.previa(this._furos(p)); this.editor.medida(`${this.linhas * this.colunas} furo(s) Ø${fmt(this.d)}`); }
+  onPonto(p) {
+    const furos = this._furos(p);
+    if (!this.doc.camadas.has('FURO')) this.doc.camadas.set('FURO', { nome: 'FURO', cor: '#1f5fbf', visivel: true, bloqueada: false, tipo_linha: 'CONTINUOUS', espessura: 0.25 });
+    this.editor.executar(new ComandoAdicionar(furos, `Grade de furos (${furos.length})`));
+    this.dica(`${furos.length} furo(s) Ø${fmt(this.d)} · clique a próxima grade ou Esc`);
+  }
+  onValor(t) {
+    const s = String(t || '').trim().toLowerCase().replace(/\s+/g, '');
+    const g = s.match(/^(\d+)[x×*](\d+)$/);
+    if (g) { this.linhas = Math.max(1, +g[1]); this.colunas = Math.max(1, +g[2]); this.reiniciar(); return; }
+    const pr = s.split(';');
+    if (pr.length === 2) { const a = paraMilimetros(pr[0]), b = paraMilimetros(pr[1]); if (a > 0 && b > 0) { this.px = a; this.py = b; } this.reiniciar(); return; }
+    const d = diametroDoFuro(s);
+    if (d > 0) { this.d = d; this.reiniciar(); }
+  }
+  onTecla(ev) {
+    const k = ev.key.toLowerCase();
+    if (ev.ctrlKey || ev.altKey || ev.metaKey) return false;
+    // as letras do "M16" não chegam à caixa MEDIDAS (só números): o M começa o parafuso métrico
+    if (k === 'm') { this.editor.el && this.editor.el.medida && (this.editor.el.medida.value = 'M', this.editor.el.medida.focus()); return true; }
+    if (k === 'c') { this.pelo = this.pelo === 'centro' ? 'primeiro' : 'centro'; this.reiniciar(); if (this.editor.tela.cursor) this.onMover(this.editor.tela.cursor); return true; }
+    return false;
+  }
+}
+
 export class Offset extends Ferramenta {
   static id = 'offset'; static nome = 'Offset (paralela)'; static atalho = 'f'; static grupo = 'edicao'; static dica = 'Offset: clique na linha, arco, círculo ou polilinha; depois do lado desejado (ou digite a distância e clique o lado)';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 8h16M4 16h16" /></svg>';
@@ -2828,5 +3045,5 @@ export class Corte extends Ferramenta {
 }
 
 export const FERRAMENTAS = [Selecionar, ZoomJanela, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, CotaContinua, CotaBase, CotaRapida, CotaAngular, CotaRaio, CotaDiametro, CotaOrdenada, AjustarCota, Chamada, Corte, Hachura,
-  Mover, Copiar, Girar, Espelhar, Escalar, Esticar, Offset, Aparar, Estender, Quebrar, Alongar, Concordar, Chanfro, Explodir, Juntar, MoverCota, CopiarPropriedades, Apagar, Medir];
+  GradeFuros, Mover, Copiar, Girar, Espelhar, Escalar, Matriz, Esticar, Offset, Aparar, Estender, Quebrar, Alongar, Concordar, Chanfro, Explodir, Juntar, MoverCota, CopiarPropriedades, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['edicao', 'Edi'], ['medicao', 'Med']];
