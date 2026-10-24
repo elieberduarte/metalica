@@ -9,7 +9,7 @@ import { criar, dist, meio, transladar, transformar, clonar, pontosDe, segmentos
 import { ComandoAdicionar, ComandoRemover, ComandoSubstituir, ComandoComposto, ComandoAlterar } from './nucleo/comandos.js';
 import { acompanharMalha, eixosCopiados } from './nucleo/malha.js';
 import { medidaDaCotaEspecial } from './nucleo/cota_especial.js';
-import { simboloSolda, simboloBalao, simboloNivel, simboloDetalhe, textoDoNivel, simboloPonto, pontosDaDivisao } from './nucleo/simbolos.js';
+import { simboloSolda, simboloBalao, simboloNivel, simboloDetalhe, textoDoNivel, simboloPonto, pontosDaDivisao, simboloNuvem } from './nucleo/simbolos.js';
 
 // A unidade das medidas (07/10, o usuário: "ajustei a escala do desenho para cm para trabalhar com todas as medidas em
 // cm"). O desenho é sempre em milímetro e a "Escala 1:" é a de impressão; a unidade muda só o número digitado sem
@@ -3045,6 +3045,96 @@ export class ChamadaDetalhe extends Ferramenta {
   }
 }
 
+/** Nuvem de revisão (o REVCLOUD do AutoCAD; usuário, 24/10: "nuvem + triângulo"): o retângulo por dois cantos (P: o
+ *  contorno por pontos, Enter fecha), depois o clique do △ com o número da revisão — o da prancha clicada (o "REV." do
+ *  carimbo dela), ou o digitado; Enter ou espaço sem triângulo. O número digitado antes do contorno é o tamanho do arco
+ *  (mm de papel). */
+export class NuvemRevisao extends Ferramenta {
+  static id = 'nuvem_revisao'; static nome = 'Nuvem de revisão'; static grupo = 'simbolos';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M5 9a2 2 0 013-2 2 2 0 014 0 2 2 0 014 0 2 2 0 013 2 2 2 0 010 4 2 2 0 01-3 2 2 2 0 01-4 0 2 2 0 01-4 0 2 2 0 01-3-2 2 2 0 010-4z"/><path d="M18 21l2.5-4 2.5 4z"/></svg>';
+  reiniciar() {
+    super.reiniciar();
+    this.pts = []; this.contorno = null; this.rev = '';
+    if (!this.arco) { this.arco = 6; this.modo = 'retangulo'; }
+    this._dica();
+  }
+  _dica() {
+    if (this.contorno) { this.dica(`Clique onde fica o triângulo da revisão ${this.rev || '?'} · digite outro número · Enter ou espaço: sem triângulo`); return; }
+    this.dica(this.modo === 'poligono'
+      ? `Nuvem pelo contorno: clique os pontos · Enter fecha · R: por retângulo · arco ${fmt(this.arco)} mm (digite para trocar)`
+      : `Nuvem de revisão: ${this.pts.length ? 'o outro canto' : 'clique um canto do que mudou'} · P: pelo contorno · arco ${fmt(this.arco)} mm (digite para trocar)`);
+  }
+  /** A revisão da prancha no ponto: o "REV. 02" do número da prancha (o carimbo), na folha em que o ponto cai. */
+  _revisaoNoPonto(p) {
+    const m = this.doc.metadados || {};
+    let numero = null;
+    if (m.pranchas) {
+      const f = m.pranchas.find(f => f.origem && f.tamanho && p[0] >= f.origem[0] && p[0] <= f.origem[0] + f.tamanho[0] && p[1] >= f.origem[1] && p[1] <= f.origem[1] + f.tamanho[1]);
+      if (!f) return '';
+      numero = f.numero;
+    } else if (!m.prancha) return '';
+    for (const e of this.doc.entidades.values()) {
+      const a = e.atributos || {};
+      if (e.tipo !== 'texto' || a.campo !== 'prancha' || (numero != null && a.prancha_numero !== numero)) continue;
+      const r = String(e.texto || '').match(/REV\.\s*0*(\d+)/);
+      return r && r[1] !== '0' ? r[1] : '';          // na REV. 00 (a emissão) ainda não há o que nuvear: o △ começa no 1
+    }
+    return '';
+  }
+  _retangulo(a, b) { return [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]]]; }
+  _regs(vertices, delta) {
+    return simboloNuvem({ vertices, arco: this.arco, delta, revisao: this.rev || '1' }, this.doc.escala || 1, this.editor.alturaTexto).map(criar);
+  }
+  _fecharContorno(vertices, p) {
+    this.contorno = vertices; this.pts = [];
+    this.rev = this._revisaoNoPonto(p) || this.rev || '1';
+    this.editor.snap.ultimo = null;
+    this._dica();
+  }
+  _gravar(delta) {
+    garantirCamada(this.doc, 'TEXTO');
+    this.editor.executar(new ComandoAdicionar(this._regs(this.contorno, delta), `Nuvem de revisão${delta ? ` (△${this.rev})` : ''}`));
+    const modo = this.modo, arco = this.arco;
+    this.reiniciar(); this.modo = modo; this.arco = arco; this._dica();
+  }
+  onPonto(p) {
+    if (this.contorno) { this._gravar(p); return; }
+    if (this.modo === 'retangulo') {
+      if (!this.pts.length) { this.pts = [p]; this.editor.snap.ultimo = p; this._dica(); return; }
+      if (Math.abs(p[0] - this.pts[0][0]) < 1e-6 || Math.abs(p[1] - this.pts[0][1]) < 1e-6) return;
+      this._fecharContorno(this._retangulo(this.pts[0], p), p);
+      return;
+    }
+    // pelo contorno: o clique no primeiro ponto também fecha
+    if (this.pts.length >= 3 && dist(p, this.pts[0]) < 1e-6) { this._fecharContorno(this.pts, p); return; }
+    this.pts.push(p); this.editor.snap.ultimo = p;
+  }
+  onMover(p) {
+    if (this.contorno) { this.editor.previa(this._regs(this.contorno, p)); return; }
+    if (!this.pts.length) return;
+    const v = this.modo === 'retangulo' ? this._retangulo(this.pts[0], p) : [...this.pts, p];
+    if (v.length >= 3) this.editor.previa(this._regs(v, null));
+  }
+  onValor(t) {
+    if (this.contorno) { const r = String(t || '').trim(); if (r) { this.rev = r; this._dica(); } return; }
+    const v = parseFloat(String(t || '').replace(',', '.'));
+    if (v > 0) { this.arco = v; this._dica(); }
+  }
+  onTecla(ev) {
+    if (ev.ctrlKey || ev.altKey || ev.metaKey) return false;
+    const k = ev.key.toLowerCase();
+    if (this.contorno && (ev.key === 'Enter' || ev.key === ' ')) { this._gravar(null); return true; }
+    if (!this.contorno && this.modo === 'poligono' && ev.key === 'Enter' && this.pts.length >= 3) { this._fecharContorno(this.pts, this.pts[this.pts.length - 1]); return true; }
+    if (!this.contorno && !this.pts.length && (k === 'p' || k === 'r')) { this.modo = k === 'p' ? 'poligono' : 'retangulo'; this._dica(); return true; }
+    return false;
+  }
+  desfazerPasso() {
+    if (this.contorno) { this.contorno = null; this.editor.previa([]); this._dica(); return true; }
+    if (this.pts.length) { this.pts.pop(); this.editor.previa([]); this._dica(); return true; }
+    return false;
+  }
+}
+
 /** Dividir (o DIVIDE do AutoCAD; usuário, 24/10: "marca de ponto"): a linha, o arco, o círculo ou a polilinha em N partes
  *  iguais, com uma marca de ponto (cruz na AUXILIAR) em cada divisão — o snap pega o meio dela. */
 export class Dividir extends Ferramenta {
@@ -3274,5 +3364,5 @@ export class Corte extends Ferramenta {
 }
 
 export const FERRAMENTAS = [Selecionar, ZoomJanela, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, CotaContinua, CotaBase, CotaRapida, CotaAngular, CotaRaio, CotaDiametro, CotaOrdenada, AjustarCota, Chamada, Corte, Hachura,
-  GradeFuros, SimboloSolda, BalaoMarca, SimboloNivel, ChamadaDetalhe, Mover, Copiar, Girar, Espelhar, Escalar, Matriz, Esticar, Offset, Aparar, Estender, Quebrar, Alongar, Concordar, Chanfro, Explodir, Juntar, Dividir, MoverCota, CopiarPropriedades, Apagar, Medir];
+  GradeFuros, SimboloSolda, BalaoMarca, SimboloNivel, ChamadaDetalhe, NuvemRevisao, Mover, Copiar, Girar, Espelhar, Escalar, Matriz, Esticar, Offset, Aparar, Estender, Quebrar, Alongar, Concordar, Chanfro, Explodir, Juntar, Dividir, MoverCota, CopiarPropriedades, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['simbolos', 'Sím'], ['edicao', 'Edi'], ['medicao', 'Med']];

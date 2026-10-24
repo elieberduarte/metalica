@@ -3721,7 +3721,8 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     p = g.ler(s)
     cp = p.get("carimbo_pranchas") or {}
     carimbo = {"obra": cp.get("obra") or p.get("nome") or s, "cliente": p.get("cliente") or "",
-               "responsavel": p.get("responsavel") or "", "revisao": cp.get("revisao") or "00"}
+               "responsavel": p.get("responsavel") or "", "revisao": cp.get("revisao") or "00",
+               "revisoes": cp.get("revisoes") or {}}         # a tabela de revisões de cada prancha (nucleo2d/revisoes.py)
     carimbo.update({k: v for k, v in (corpo.get("carimbo") or {}).items() if v not in (None, "")})
     # o que foi digitado no diálogo fica no projeto: o diálogo abre com ele na próxima vez (Q20, primeiro uso 16/10: "tive
     # que redigitar o Projetista"); cliente e projetista são os do projeto, a obra e a revisão das pranchas à parte
@@ -3788,9 +3789,43 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
 def _carimbo_do_projeto(s: str, corpo: dict) -> dict:
     p = _gerente().ler(s)
     carimbo = {"obra": p.get("nome") or s, "cliente": p.get("cliente") or "",
-               "responsavel": p.get("responsavel") or "", "revisao": "00"}
+               "responsavel": p.get("responsavel") or "", "revisao": "00",
+               "revisoes": (p.get("carimbo_pranchas") or {}).get("revisoes") or {}}
     carimbo.update({k: v for k, v in (corpo.get("carimbo") or {}).items() if v not in (None, "")})
     return carimbo
+
+
+def revisoes_das_pranchas(s: str) -> dict:
+    """GET /api/projetos/<s>/revisoes-pranchas: as pranchas do projeto e as revisões de cada uma, para o diálogo
+    "Revisões das pranchas…" do CAD (usuário, 24/10: a tabela inteira em cima do carimbo)."""
+    from nucleo2d import revisoes
+    g = _gerente()
+    p = g.ler(s)
+    return {"pranchas": revisoes.pranchas_do_projeto(g, s),
+            "revisoes": (p.get("carimbo_pranchas") or {}).get("revisoes") or {},
+            "por": str(p.get("responsavel") or ""), "hoje": revisoes.hoje()}
+
+
+def gravar_revisoes_das_pranchas(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/revisoes-pranchas: {acao: "nova", numeros, descricao, por, data, data_emissao} lança a
+    revisão nas pranchas marcadas; {acao: "gravar", revisoes} grava a tabela editada. Põe as tabelas nos desenhos das
+    pranchas (sem remontar) e diz em quais a tabela encosta num detalhe."""
+    from nucleo2d import revisoes
+    g = _gerente()
+    # a base: as linhas como estão no diálogo (editadas junto), senão as gravadas
+    atuais = corpo.get("revisoes") if isinstance(corpo.get("revisoes"), dict) else ((g.ler(s).get("carimbo_pranchas") or {}).get("revisoes") or {})
+    if corpo.get("acao") == "nova":
+        numeros = [int(n) for n in corpo.get("numeros") or []]
+        if not numeros:
+            raise ErroDeDados("marque as pranchas que mudaram.")
+        try:
+            novas = revisoes.nova_revisao(atuais, numeros, corpo.get("descricao") or "", corpo.get("por") or "",
+                                          corpo.get("data") or "", corpo.get("data_emissao") or "")
+        except ValueError as exc:
+            raise ErroDeDados(str(exc))
+    else:
+        novas = corpo.get("revisoes") if isinstance(corpo.get("revisoes"), dict) else {}
+    return revisoes.gravar(g, s, novas)
 
 
 def folha_no_desenho(s: str, nome: str, corpo: dict) -> dict:
@@ -5984,6 +6019,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(dados_dos_resumos(partes[0]))
                 if len(partes) == 2 and partes[1] == "conferencias":
                     return self._json(conferencias_do_projeto(partes[0]))
+                if len(partes) == 2 and partes[1] == "revisoes-pranchas":
+                    return self._json(revisoes_das_pranchas(partes[0]))
                 if len(partes) == 2 and partes[1] == "arquivos":
                     return self._json(arquivos_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] in ("orcamento", "comercial") and not COMERCIAL:
@@ -6234,6 +6271,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(gerar_resumos_projeto(partes[0], corpo, self.server.server_address[1]))
                 if len(partes) == 2 and partes[1] == "conferencias":
                     return self._json(gravar_conferencia(partes[0], corpo if isinstance(corpo, dict) else {}))
+                if len(partes) == 2 and partes[1] == "revisoes-pranchas":
+                    return self._json(gravar_revisoes_das_pranchas(partes[0], corpo if isinstance(corpo, dict) else {}))
                 if len(partes) in (2, 3) and partes[1] in ("comercial", "orcamento") and not COMERCIAL:
                     return self._erro(SO_NO_DEV, 404)
                 if len(partes) in (2, 3) and partes[1] == "comercial":

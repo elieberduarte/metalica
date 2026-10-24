@@ -19,6 +19,7 @@ import { MetodosEstruturaCAD } from './estrutura.js';
 import { MetodosEdicaoChapaCAD } from './edicao_chapa.js';
 import { MetodosTravaPecasCAD } from './trava_pecas.js';
 import { MetodosImpressaoCAD } from './impressao.js';
+import { MetodosRevisoesCAD } from './revisoes.js';
 
 const CHAVE_TEMA = 'galpao.tema';
 const ATRASO_AUTOSAVE = 3000;
@@ -1341,6 +1342,7 @@ class CAD {
       'pdf-pranchas': () => this.pdfDasPranchas(),
       imprimir: () => this.dialogoImprimir(),
       penas: () => this.dialogoPenas(),
+      revisoes: () => this.dialogoRevisoes(),
       'dxf-pranchas': () => this.dxfDasPranchas(),
       'abrir-pasta': () => this.projeto && postar(`/api/projetos/${encodeURIComponent(this.projeto)}/abrir-pasta`, { sub: 'desenhos-2d' }).catch(e => this.aviso(e.message, 'erro')),
       corte: () => this.dialogoCorte(),
@@ -3315,7 +3317,7 @@ function lerTema() { try { return localStorage.getItem(CHAVE_TEMA); } catch { re
 
 // os métodos da planta de lançamento (menu Lançamento) moram em lancamento.js; os do
 // projeto recebido montado pela planta, em montar_planta.js
-for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEstruturaCAD, MetodosEdicaoChapaCAD, MetodosTravaPecasCAD, MetodosImpressaoCAD]) {
+for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEstruturaCAD, MetodosEdicaoChapaCAD, MetodosTravaPecasCAD, MetodosImpressaoCAD, MetodosRevisoesCAD]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) {
     if (k === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(CAD.prototype, k)) throw new Error(`método repetido no CAD: ${k}`);

@@ -12,7 +12,7 @@ from typing import List, Sequence, Tuple
 
 from nucleo2d.desenho import Desenho, Linha, Polilinha, Arco, Texto, Hachura, Camada2D
 
-__all__ = ["MARGENS", "carimbo_tamanho", "desenhar_folha", "mes_ano"]
+__all__ = ["MARGENS", "carimbo_tamanho", "desenhar_folha", "desenhar_revisoes", "mes_ano"]
 
 #: Margens do quadro (mm): as mesmas em todos os formatos do modelo.
 MARGENS = {"esquerda": 25.0, "direita": 7.0, "superior": 7.0, "inferior": 7.0}
@@ -195,6 +195,62 @@ def desenhar_folha(d: Desenho, formato: str, larg: float, alt: float, info: dict
     for i, ln in enumerate(linhas):
         T((vx, vy - i * passo), ln, h, "conteudo", vertical="meio")
     rev = str(info.get("revisao") or "").strip()
+    # as revisões da prancha (nucleo2d/revisoes.py): a tabela em cima do carimbo, e o REV. é o da última linha
+    revs = info.get("revisoes")
+    linhas = revs.get(str(numero)) if isinstance(revs, dict) else revs
+    linhas = [ln for ln in (linhas or []) if isinstance(ln, dict) and (ln.get("rev") or ln.get("descricao"))]
+    if linhas:
+        desenhar_revisoes(d, formato, larg, alt, linhas, atr)
+        rev = str(linhas[-1].get("rev") or rev).strip()
     T((CAIXAS["conteudo"][2] - 2.0, CAIXAS["conteudo"][1] + 2.0),
       "PRANCHA %02d/%02d%s" % (numero, total, ("   REV. %s" % rev) if rev else ""), 1.7, "prancha", al="direita")
     return (x0, y0, x1, y1), (cx0, cy0, x1, cy0 + ac)
+
+
+#: A tabela de revisões (usuário, 24/10, a opção A): em cima do carimbo, 2 mm acima dele, da borda da caixa do logo à
+#: dela; linhas de 6 mm, o cabeçalho embaixo e a revisão mais nova em cima; as colunas em mm de carimbo (de 178).
+REV_COLUNAS = (0.0, 14.0, 40.0, 158.0, 178.0)
+REV_CABECALHO = ("REV.", "DATA", "DESCRIÇÃO DA REVISÃO", "POR")
+REV_ALTURA = 6.0
+REV_MAXIMO = 12                  # mais que isso, as mais antigas saem (a 00 fica)
+
+
+def desenhar_revisoes(d: Desenho, formato: str, larg: float, alt: float, linhas: Sequence[dict], atr: dict):
+    """A tabela das revisões da prancha em cima do carimbo; tudo leva `campo="revisoes"` (a tabela é trocada inteira).
+    Devolve a caixa dela (x0, y0, x1, y1), em mm de papel."""
+    f = FATOR_CARIMBO.get(formato, 1.0)
+    x1 = larg - MARGENS["direita"]
+    cx0 = x1 - CARIMBO[0] * f
+    y = MARGENS["inferior"] + CARIMBO[1] * f + 2.0 * f
+    linhas = list(linhas)
+    if len(linhas) > REV_MAXIMO:
+        linhas = linhas[:1] + linhas[-(REV_MAXIMO - 1):]
+    xa, xb = cx0 + CAIXAS["logo"][0] * f, cx0 + CAIXAS["logo"][2] * f
+    xs = [xa + c / CARIMBO[0] * (xb - xa) for c in REV_COLUNAS]
+    h_l = REV_ALTURA * f
+    # o cabeçalho na fila de baixo e a revisão mais nova na de cima
+    filas = [REV_CABECALHO] + [(ln.get("rev", ""), ln.get("data", ""), ln.get("descricao", ""), ln.get("por", "")) for ln in linhas]
+    y_topo = y + h_l * len(filas)
+    a_t = dict(atr, campo="revisoes")
+    _caixa_arredondada(d, xa, y, xb, y_topo, RAIO * f, "CARIMBO", a_t)
+
+    def L(a, b):
+        d.add(Linha(camada="CARIMBO", a=(round(a[0], 3), round(a[1], 3)), b=(round(b[0], 3), round(b[1], 3)), atributos=dict(a_t)))
+    for i in range(1, len(filas)):
+        L((xa, y + h_l * i), (xb, y + h_l * i))
+    for x in xs[1:-1]:
+        L((x, y), (x, y_topo))
+    for i, fila in enumerate(filas):
+        yy = round(y + h_l * i + h_l / 2, 3)
+        for j, t in enumerate(fila):
+            t = str(t or "").upper()
+            h = (1.9 if i == 0 else 2.0) * f
+            util = xs[j + 1] - xs[j] - 3.0 * f
+            while h > 1.3 * f and _largura_texto(t, h) > util:      # a letra diminui até 1,3 mm; se nem assim, corta
+                h -= 0.1 * f
+            n_max = max(int(util / (0.74 * h)), 1)
+            if len(t) > n_max:
+                t = t[:max(n_max - 1, 1)] + "…"
+            d.add(Texto(camada="CARIMBO", posicao=(round(xs[j] + 1.5 * f, 3), yy), texto=t, altura=round(h, 3),
+                        vertical="meio", atributos=dict(a_t)))
+    return (xa, y, xb, y_topo)

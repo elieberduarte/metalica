@@ -185,3 +185,41 @@ export function pontosDaDivisao(e, n) {
   }
   return out;
 }
+
+/**
+ * A nuvem de revisão (o REVCLOUD do AutoCAD; usuário, 24/10: "nuvem + triângulo") em volta do contorno `vertices`
+ * (fechado): meios-círculos para fora, de corda perto de `arco` mm de papel; e o △ com o número da revisão em
+ * `delta` (o canto de baixo do texto no meio). Nuvem e triângulo são um símbolo só (movem juntos).
+ */
+export function simboloNuvem({ vertices, arco = 6, delta = null, revisao = '' }, k = 1, h = 2.2) {
+  const C = 'TEXTO', out = [];
+  let v = vertices.slice();
+  // no sentido anti-horário, o lado de fora é a direita de cada trecho
+  let area = 0;
+  for (let i = 0; i < v.length; i++) { const a = v[i], b = v[(i + 1) % v.length]; area += a[0] * b[1] - b[0] * a[1]; }
+  if (area < 0) v = v.reverse();
+  const norm = (g) => ((g % 360) + 360) % 360;
+  for (let i = 0; i < v.length; i++) {
+    const a = v[i], b = v[(i + 1) % v.length];
+    const comp = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (comp < 1e-9) continue;
+    const n = Math.max(1, Math.round(comp / (arco * k))), s = comp / n;
+    const ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI;
+    for (let j = 0; j < n; j++) {
+      const t = (j + 0.5) / n;
+      out.push({ tipo: 'arco', camada: C, centro: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], raio: s / 2,
+        inicio: norm(ang + 180), fim: norm(ang + 360) });
+    }
+  }
+  if (delta) out.push(...simboloDelta(delta, revisao, k, h));
+  return marcar(out, 'nuvem', { arco, revisao });
+}
+
+/** O △ da revisão: lado de 6 mm de papel, o número no meio. */
+export function simboloDelta(c, texto, k = 1, h = 2.2) {
+  const l = 6 * k;
+  return [
+    { tipo: 'polilinha', camada: 'TEXTO', fechada: true, vertices: [[c[0] - l / 2, c[1] - l * 0.29], [c[0] + l / 2, c[1] - l * 0.29], [c[0], c[1] + l * 0.58]] },
+    { tipo: 'texto', camada: 'TEXTO', posicao: [c[0], c[1] - 0.2 * k], texto: String(texto), altura: h, alinhamento: 'centro', vertical: 'meio' },
+  ];
+}
