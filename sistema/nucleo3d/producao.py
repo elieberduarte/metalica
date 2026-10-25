@@ -117,15 +117,16 @@ def analisar(ents: Sequence, fixadores: Sequence) -> Dict[str, object]:
 
 
 def mesma_peca(p, q) -> bool:
-    """O critério de `fundir_posicoes_iguais`: assinatura, comprimento a 1 mm, volume a 1 %, contorno da chapa."""
-    from nucleo2d.detalhe.base import TOLERANCIA_COMPRIMENTO, _assinatura_posicao, _contorno_igual, _volume_igual
+    """O critério de `fundir_posicoes_iguais`: assinatura, comprimento a 1 mm, volume a 1 %, contorno da chapa, furos."""
+    from nucleo2d.detalhe.base import TOLERANCIA_COMPRIMENTO, _assinatura_posicao, _contorno_igual, _furos_iguais, _volume_igual
     if p is None or q is None or p.classe == "indefinida" or q.classe == "indefinida":
         return False
     if _assinatura_posicao(p) != _assinatura_posicao(q):
         return False
     if abs(float(p.comprimento or 0) - float(q.comprimento or 0)) > TOLERANCIA_COMPRIMENTO:
         return False
-    return _volume_igual(p, q) and _contorno_igual(p, q)
+    # os furos no mesmo lugar, também com a peça girada sobre si mesma (a mesma cantoneira virada: FERRAMENTA · LIGAÇÕES, 23/10)
+    return _volume_igual(p, q) and _contorno_igual(p, q) and _furos_iguais(p, q)
 
 
 def _natural(s: str):

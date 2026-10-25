@@ -1461,8 +1461,10 @@ def marcas_de(pos: Posicao) -> List[str]:
 
 
 def _assinatura_posicao(p: Posicao) -> tuple:
-    furos = tuple(sorted((f.tipo, f.vista, round(f.x), round(f.y), round(f.d, 1), round(f.larg, 1), round(f.alt, 1),
-                          tuple((round(x), round(y)) for x, y in f.pontos)) for f in p.furos))
+    """O que precisa ser igual, exatamente, para duas posições serem a mesma peça. Dos furos, só quantos e de que
+    tamanho: onde eles ficam é `_furos_iguais`, que aceita a peça girada (FERRAMENTA · LIGAÇÕES, 23/10: a castanha da
+    viga de cima e a da de baixo, a mesma cantoneira virada, saíam P3 e P5 — o furo numa aba e na outra)."""
+    furos = tuple(sorted((f.tipo, round(f.d, 1), round(f.larg, 1), round(f.alt, 1), len(f.pontos)) for f in p.furos))
     dev = tuple(round(v) for v in p.desenvolvimento) if p.desenvolvimento else ()
     # barra redonda (tirante): a "altura" é o gancho da ponta e a "espessura" é o polígono
     # da malha, que variam décimos de peça para peça; reta ou com gancho, é o mesmo item
@@ -1473,6 +1475,109 @@ def _assinatura_posicao(p: Posicao) -> tuple:
     espessura = None if redonda else round(p.T, 1)
     return (classe, re.sub(r"\s+", "", p.perfil or "").upper(), re.sub(r"\s+", "", p.material or "").upper(),
             altura, espessura, furos, dev)
+
+
+#: mm — o mesmo furo medido por dois caminhos (a alma pelo plano dela, a aba pela borda: 26 × 25,4 na castanha) e a
+#: malha do IFC: até isto é o mesmo lugar (a mesma folga do contorno da chapa)
+TOLERANCIA_FURO = 1.5
+
+
+def _simetrias_da_secao(p: Posicao) -> List[str]:
+    """Os giros da barra que a levam sobre ela mesma (só giros: o espelho é a outra mão), pela seção (`secao`, os laços
+    em v, w): "eixo" (180° em volta do comprimento), "v" e "w" (180° em volta de v ou de w: a peça de ponta-cabeça),
+    "d0"/"d1" (a cantoneira de abas iguais em volta da diagonal: a aba de cima vira a do lado). Sem a seção, nenhum."""
+    pts = [(float(q[0]), float(q[1])) for laco in (p.secao or []) for q in laco]
+    if len(pts) < 3:
+        return []
+    vs, ws = [q[0] for q in pts], [q[1] for q in pts]
+    v0, v1, w0, w1 = min(vs), max(vs), min(ws), max(ws)
+    tol = max(1.0, 0.01 * max(v1 - v0, w1 - w0))
+    cand = {"eixo": lambda v, w: (v0 + v1 - v, w0 + w1 - w),
+            "v": lambda v, w: (v, w0 + w1 - w),
+            "w": lambda v, w: (v0 + v1 - v, w),
+            "d0": lambda v, w: (v0 + (w - w0), w0 + (v - v0)),         # o canto em (v0, w0)
+            "d1": lambda v, w: (v0 + (w1 - w), w1 - (v - v0))}         # o canto em (v0, w1)
+    out = []
+    for nome, f in cand.items():
+        if all(min(abs(a - x) + abs(b - y) for x, y in pts) <= tol for a, b in (f(v, w) for v, w in pts)):
+            out.append(nome)
+    return out
+
+
+def _furos_girados(p: Posicao) -> List[List[Furo]]:
+    """Os furos da posição como ficam em cada giro dela que a leva sobre ela mesma (o primeiro: como está). A barra
+    pela seção (`_simetrias_da_secao`); a chapa girada 180° no plano e, a plana, virada do avesso (como o contorno em
+    `_contorno_igual`; na dobrada a espelhada é a outra mão)."""
+    chave = tuple(id(f) for f in p.furos)                 # os furos ainda podem mudar (a inferência vem depois)
+    guardado = getattr(p, "_furos_girados", None)
+    if guardado is not None and guardado[0] == chave:
+        return guardado[1]
+    out = [list(p.furos)]
+    if p.furos and p.classe in ("chapa", "chapa_dobrada"):
+        xs = [q[0] for q in p.contorno] or [0.0, p.L]
+        ys = [q[1] for q in p.contorno] or [0.0, p.H]
+        sx_, sy_ = min(xs) + max(xs), min(ys) + max(ys)
+        trocas = [(True, True)] + ([(True, False), (False, True)] if p.classe == "chapa" else [])
+        for tx, ty in trocas:
+            out.append([Furo(f.tipo, sx_ - f.x if tx else f.x, sy_ - f.y if ty else f.y, f.d, f.larg, f.alt,
+                             [(sx_ - x if tx else x, sy_ - y if ty else y) for x, y in f.pontos], f.vista) for f in p.furos])
+    elif p.furos and p.classe.startswith("barra"):
+        pts = [q for laco in (p.secao or []) for q in laco]
+        if pts:
+            w0, w1 = min(float(q[1]) for q in pts), max(float(q[1]) for q in pts)
+            v0, v1 = min(float(q[0]) for q in pts), max(float(q[0]) for q in pts)
+            L, H = float(p.L), float(p.H)
+            outra = {"topo": "baixo", "baixo": "topo"}
+            for sim in _simetrias_da_secao(p):
+                novos = []
+                for f in p.furos:
+                    x, y, vista = f.x, f.y, f.vista
+                    if sim == "eixo":                       # o comprimento fica; a seção gira 180°
+                        y = H - y if vista == "frente" else w0 + w1 - y
+                        vista = outra.get(vista, vista)
+                    elif sim == "v":                        # de ponta-cabeça em volta de v: as pontas trocam, w espelha
+                        x = L - x
+                        y = y if vista == "frente" else w0 + w1 - y
+                    elif sim == "w":                        # em volta de w: as pontas trocam, v espelha
+                        x = L - x
+                        y = H - y if vista == "frente" else y
+                        vista = outra.get(vista, vista)
+                    elif sim in ("d0", "d1"):               # a cantoneira de abas iguais: a aba de cima vira a do lado
+                        x = L - x
+                        if vista == "frente":
+                            y, vista = (w0 + (y - v0)) if sim == "d0" else (w1 - (y - v0)), "topo"
+                        elif vista == "topo":
+                            y, vista = (v0 + (y - w0)) if sim == "d0" else (v0 + (w1 - y)), "frente"
+                        else:
+                            break
+                    novos.append(Furo(f.tipo, x, y, f.d, f.larg, f.alt, [], vista))
+                else:
+                    out.append(novos)
+    p._furos_girados = (chave, out)
+    return out
+
+
+def _furos_iguais(a: Posicao, b: Posicao) -> bool:
+    """Os furos de `a` e os de `b` no mesmo lugar (a TOLERANCIA_FURO), com `b` como está ou girado sobre si mesmo — a
+    mesma peça posta virada no modelo é a mesma marca (FERRAMENTA · LIGAÇÕES, 23/10)."""
+    fa = list(a.furos)
+    if len(fa) != len(b.furos):
+        return False
+    if not fa:
+        return True
+
+    def casa(fb) -> bool:
+        livres = list(fb)
+        for f in fa:
+            k = next((i for i, g in enumerate(livres)
+                      if g.tipo == f.tipo and g.vista == f.vista and abs(g.x - f.x) <= TOLERANCIA_FURO
+                      and abs(g.y - f.y) <= TOLERANCIA_FURO and abs(g.d - f.d) <= 0.6 and abs(g.larg - f.larg) <= 0.6
+                      and abs(g.alt - f.alt) <= 0.6 and len(g.pontos) == len(f.pontos)), None)
+            if k is None:
+                return False
+            livres.pop(k)
+        return True
+    return any(casa(fb) for fb in _furos_girados(b))
 
 
 #: Comprimentos até esta diferença (mm) são a mesma peça.
@@ -1571,7 +1676,7 @@ def fundir_posicoes_iguais(posicoes: Sequence[Posicao], camadas: Dict[str, str])
         for mesmo_comp in por_comprimento:
             sub: List[List[Posicao]] = []
             for q in mesmo_comp:
-                alvo = next((g for g in sub if _volume_igual(g[0], q) and _contorno_igual(g[0], q)), None)
+                alvo = next((g for g in sub if _volume_igual(g[0], q) and _contorno_igual(g[0], q) and _furos_iguais(g[0], q)), None)
                 if alvo is None:
                     sub.append([q])
                 else:
