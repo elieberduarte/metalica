@@ -171,3 +171,8 @@ html.embutida #btn-voltar, html.embutida #link-editor, html.embutida #link-divid
 /* o cadeado da camada (23/10): a travada fica apagada no nome */
 .linha[data-travada] .nome { opacity: .6; }
 .linha .cadeado[aria-pressed="true"] { color: var(--texto); }
+
+/* as barras de ferramentas do 2D rolam com a roda, sem a barra de rolagem aparecendo (usuário, 25/10: "retire essa barra de
+   rolagem, deve continuar rolando para baixo mas sem a barra") */
+#barra-ferramentas, #barra-disciplina { scrollbar-width: none; -ms-overflow-style: none; }
+#barra-ferramentas::-webkit-scrollbar, #barra-disciplina::-webkit-scrollbar { display: none; width: 0; height: 0; }
