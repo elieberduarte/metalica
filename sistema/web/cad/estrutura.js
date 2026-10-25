@@ -1436,6 +1436,8 @@ export class MetodosEstruturaCAD {
       b.addEventListener('click', () => this[metodo]());
       barra.append(b);
     }
+    // embaixo: Medir, Dividir e os blocos (web/cad/lugar_ferramentas.js, 25/10)
+    if (this._anexarNaDireita) this._anexarNaDireita(barra);
     this._marcarBarraDisciplina(this.ferramenta ? this.ferramenta.constructor.id : '');
     // quem mostra as ferramentas de fora (a faixa da área de trabalho) fica sabendo: na abertura (a disciplina sai
     // depois de ler o projeto) e a cada troca

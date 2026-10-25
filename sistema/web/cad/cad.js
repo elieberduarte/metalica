@@ -10,6 +10,7 @@ import { Tela, formatarMm } from './nucleo/tela.js';
 import { acompanhar as acompanharTarefa } from '../progresso.js';
 import { Snap } from './nucleo/snap.js';
 import { TIPOS_SNAP, instalarBarraSnap } from './barra_snap.js';
+import { gruposDaEsquerda, prepararDireita, instalarTopo, vigiarColunas } from './lugar_ferramentas.js';
 import { FERRAMENTAS, GRUPOS, Ferramenta, textoNaUnidade, ColarObjetos, CopiarBase, paraMilimetros } from './ferramentas.js';
 import { ATALHOS, tabelaDeComandos, comandoExato, instalarLista } from './linha_comando.js';
 import { TIPOS_DE_LINHA, ESPESSURAS, rotuloDoTipo, escalaTracejado, ESCALA_TRACEJADO } from './nucleo/tipos_linha.js';
@@ -1005,21 +1006,27 @@ class CAD {
     for (const F of FERRAMENTAS) if (ATALHOS[F.id]) F.atalho = ATALHOS[F.id][0].toLowerCase();
     this._tabelaComandos = tabelaDeComandos(FERRAMENTAS);
     this._listaComandos = instalarLista(this, this._tabelaComandos);
-    for (const [grupo, rotulo] of GRUPOS) {
-      barra.append(el('div', { class: 'grupo-rotulo', texto: rotulo }));
-      for (const F of FERRAMENTAS.filter(f => f.grupo === grupo)) {
-        this.ferramentas.set(F.id, new F(this));
-        const b = el('button', { type: 'button', class: 'ferramenta', 'data-ferramenta': F.id, 'aria-pressed': 'false',
-          title: `${F.nome}${F.atalho ? ` (${F.atalho === ' ' ? 'espaço · depois de Esc, espaço volta à ferramenta anterior' : F.atalho.toUpperCase()})` : ''}`, html: F.icone || '' });
-        b.addEventListener('click', () => this.ativarFerramenta(F.id));
-        barra.append(b);
-      }
+    const botao = (F) => {
+      const b = el('button', { type: 'button', class: 'ferramenta', 'data-ferramenta': F.id, 'aria-pressed': 'false',
+        title: `${F.nome}${F.atalho ? ` (${F.atalho === ' ' ? 'espaço · depois de Esc, espaço volta à ferramenta anterior' : F.atalho.toUpperCase()})` : ''}`, html: F.icone || '' });
+      b.addEventListener('click', () => this.ativarFerramenta(F.id));
+      return b;
+    };
+    for (const F of FERRAMENTAS) this.ferramentas.set(F.id, new F(this));
+    // as cotas e os símbolos vão para cima e Medir, Dividir e os blocos para a direita (lugar_ferramentas.js, 25/10)
+    for (const [grupo, rotulo, lista] of gruposDaEsquerda(FERRAMENTAS, GRUPOS)) {
+      barra.append(el('div', { class: 'grupo-rotulo', 'data-grupo': grupo, texto: rotulo }));
+      for (const F of lista) barra.append(botao(F));
     }
+    const porId = new Map(FERRAMENTAS.map(F => [F.id, F]));
+    prepararDireita(this, (id) => porId.has(id) ? botao(porId.get(id)) : null);
     this.ferramentas.set(ColarObjetos.id, new ColarObjetos(this));     // o Ctrl+V do que veio do AutoCAD (fora da barra)
     this.ferramentas.set(CopiarBase.id, new CopiarBase(this));         // o Ctrl+Shift+C (copiar com ponto de base)
     this._registrarFerramentasDoLancamento();
     this._registrarFerramentasDaEstrutura();
     this._montarBarraDisciplina();          // a barra da direita: os elementos da disciplina (estrutura.js)
+    instalarTopo(this);
+    vigiarColunas(this);
   }
 
   ativarFerramenta(id) {
@@ -1035,6 +1042,7 @@ class CAD {
     this.previa([]);
     for (const b of this.el.barra.querySelectorAll('.ferramenta')) b.setAttribute('aria-pressed', String(b.dataset.ferramenta === id));
     this._marcarBarraDisciplina(id);
+    if (this._marcarTopo) this._marcarTopo(id);
     f.ativar();
   }
 

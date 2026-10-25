@@ -176,3 +176,15 @@ html.embutida #btn-voltar, html.embutida #link-editor, html.embutida #link-divid
    rolagem, deve continuar rolando para baixo mas sem a barra") */
 #barra-ferramentas, #barra-disciplina { scrollbar-width: none; -ms-overflow-style: none; }
 #barra-ferramentas::-webkit-scrollbar, #barra-disciplina::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+/* o lugar das ferramentas (lugar_ferramentas.js, 25/10): o botão que está em cima some da coluna; a coluna que não cabe
+   na altura baixa os botões (compacta) e, se ainda não couber, vira duas colunas */
+.ferramentas .ferramenta[hidden], .ferramentas .grupo-rotulo[hidden] { display: none !important; }
+.ferramentas.compacta { padding: 3px 0; gap: 0; }
+.ferramentas.compacta .ferramenta { height: 24px; }
+.ferramentas.compacta .ferramenta svg { width: 18px; height: 18px; }
+.ferramentas.compacta .grupo-rotulo { padding: 3px 0 1px; margin-top: 2px; }
+#barra-ferramentas.duas-colunas { width: 78px; flex-basis: 78px; flex-direction: row; flex-wrap: wrap; align-content: flex-start; justify-content: center; gap: 1px 2px; }
+#barra-ferramentas.duas-colunas .grupo-rotulo { flex: 0 0 100%; }
+#barra-ferramentas.duas-colunas .ferramenta { width: 34px; margin: 0; }
+#barra-ferramentas.duas-colunas.compacta .grupo-rotulo { font-size: 0; height: 0; padding: 0; margin: 3px 6px 2px; }
