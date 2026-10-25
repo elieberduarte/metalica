@@ -26,7 +26,7 @@ import re
 from typing import Optional
 
 from nucleo2d.desenho import (Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota, Hachura, Chamada, folga_da_cota,
-                              CotaEspecial)
+                              CotaEspecial, Bloco, entidade_de_dict)
 
 FONTE = "segoeui.ttf"
 ESTILO = "METALICA"
@@ -135,10 +135,11 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
             doc.layers.add(nome)
         return nome
 
-    for e in desenho.entidades.values():
-        cam = desenho.camadas.get(e.camada)
-        if cam is not None and not cam.visivel:
-            continue
+    blocos_def = desenho.metadados.get("blocos") or {}
+    nomes_blocos = {}
+
+    def escrever(alvo, e):
+        """a entidade no modelo ou no BLOCK (`alvo`): as entidades DXF feitas"""
         at = {"layer": camada_de(e)}
         # o tipo de linha e a espessura do objeto, quando não são os da camada (o "ByLayer", 23/10)
         if isinstance(e, (Linha, Polilinha, Circulo, Arco)):
@@ -150,18 +151,18 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
                 at["lineweight"] = min(PESOS, key=lambda p: abs(p - float(e.espessura) * 100))
         feitas = []
         if isinstance(e, Linha):
-            feitas.append(msp.add_line(e.a, e.b, dxfattribs=at))
+            feitas.append(alvo.add_line(e.a, e.b, dxfattribs=at))
         elif isinstance(e, Polilinha):
             if len(e.vertices) >= 2:
-                feitas.append(msp.add_lwpolyline(e.vertices, close=bool(e.fechada), dxfattribs=at))
+                feitas.append(alvo.add_lwpolyline(e.vertices, close=bool(e.fechada), dxfattribs=at))
         elif isinstance(e, Circulo):
-            feitas.append(msp.add_circle(e.centro, e.raio, dxfattribs=at))
+            feitas.append(alvo.add_circle(e.centro, e.raio, dxfattribs=at))
         elif isinstance(e, Arco):
-            feitas.append(msp.add_arc(e.centro, e.raio, e.inicio, e.fim, dxfattribs=at))
+            feitas.append(alvo.add_arc(e.centro, e.raio, e.inicio, e.fim, dxfattribs=at))
         elif isinstance(e, Texto) and "\n" in str(e.texto or ""):
             # o texto de várias linhas (24/10): MTEXT, as linhas pelo \P, 1,6 altura entre elas (o fator 0,96 do AutoCAD)
             h = float(e.altura) * k
-            mt = msp.add_mtext(str(e.texto).replace("\n", "\\P"), dxfattribs=dict(at, style=ESTILO, char_height=h, line_spacing_factor=0.96))
+            mt = alvo.add_mtext(str(e.texto).replace("\n", "\\P"), dxfattribs=dict(at, style=ESTILO, char_height=h, line_spacing_factor=0.96))
             col = {"centro": 2, "direita": 3}.get(e.alinhamento, 1)
             if e.vertical == "meio":
                 ponto, anexo = e.posicao, 3 + col
@@ -174,19 +175,19 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
             feitas.append(mt)
         elif isinstance(e, Texto):
             if str(e.texto or "").strip():
-                t = msp.add_text(str(e.texto), height=float(e.altura) * k, rotation=float(e.angulo or 0.0),
+                t = alvo.add_text(str(e.texto), height=float(e.altura) * k, rotation=float(e.angulo or 0.0),
                                  dxfattribs=dict(at, style=ESTILO))
                 t.set_placement(e.posicao, align=alinhar.get((e.alinhamento, e.vertical), TextEntityAlignment.LEFT))
                 feitas.append(t)
         elif isinstance(e, Cota):
-            d = _dimensao(msp, e, k, at, e.terminador or terminador, estilo=estilo)
+            d = _dimensao(alvo, e, k, at, e.terminador or terminador, estilo=estilo)
             if d is not None:
                 feitas.append(d)
         elif isinstance(e, CotaEspecial):
-            feitas += _dimensao_especial(msp, e, k, at, estilo)
+            feitas += _dimensao_especial(alvo, e, k, at, estilo)
         elif isinstance(e, Hachura):
             if e.contornos and len(e.contornos[0]) >= 3:
-                h = msp.add_hatch(dxfattribs=at)
+                h = alvo.add_hatch(dxfattribs=at)
                 if e.padrao == "solido":
                     h.set_solid_fill()
                 else:
@@ -196,11 +197,42 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
                     if len(contorno) >= 3:
                         h.paths.add_polyline_path(contorno, is_closed=True)
                 feitas.append(h)
+        elif isinstance(e, Bloco):
+            # a inserção do bloco (24/10): o INSERT, com a definição no BLOCK (o AutoCAD abre como bloco)
+            if e.nome in blocos_def:
+                sx, sy = (float(v) for v in (e.escala or (1.0, 1.0)))
+                feitas.append(alvo.add_blockref(bloco_dxf(e.nome), e.posicao, dxfattribs=dict(at, xscale=sx, yscale=sy, rotation=float(e.angulo or 0.0))))
         elif isinstance(e, Chamada):
-            ld = msp.add_leader([e.posicao, e.alvo][::-1], dimstyle=ESTILO, dxfattribs=at)
-            t = msp.add_text(str(e.texto or ""), height=float(e.altura) * k, dxfattribs=dict(at, style=ESTILO))
+            ld = alvo.add_leader([e.posicao, e.alvo][::-1], dimstyle=ESTILO, dxfattribs=at)
+            t = alvo.add_text(str(e.texto or ""), height=float(e.altura) * k, dxfattribs=dict(at, style=ESTILO))
             t.set_placement((e.posicao[0], e.posicao[1] + 0.8 * k), align=TextEntityAlignment.LEFT)
             feitas += [ld, t]
+        return feitas
+
+    def bloco_dxf(nome):
+        """o BLOCK da definição (uma vez só; o bloco dentro do bloco também): o nome dele no DXF"""
+        if nome in nomes_blocos:
+            return nomes_blocos[nome]
+        base = re.sub(r'[<>/\\":;?*|=`\']', '_', str(nome)).strip()[:200] or "BLOCO"
+        nm, n = base, 1
+        while nm in doc.blocks:
+            n += 1
+            nm = "%s_%d" % (base, n)
+        nomes_blocos[nome] = nm
+        blk = doc.blocks.new(nm)
+        for reg in (blocos_def.get(nome) or {}).get("entidades") or []:
+            f_ = entidade_de_dict(reg)
+            if f_ is not None:
+                if f_.camada in ("", None):
+                    f_.camada = "0"
+                escrever(blk, f_)
+        return nm
+
+    for e in desenho.entidades.values():
+        cam = desenho.camadas.get(e.camada)
+        if cam is not None and not cam.visivel:
+            continue
+        feitas = escrever(msp, e)
         a = e.atributos or {}
         # a mesma peça em duas pranchas (o desenho das pranchas lado a lado) são dois grupos
         chave = (("posicao", a["posicao"], a.get("prancha_numero")) if a.get("posicao") and a.get("detalhe") == "posicao"

@@ -6021,6 +6021,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(conferencias_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "revisoes-pranchas":
                     return self._json(revisoes_das_pranchas(partes[0]))
+                if len(partes) == 2 and partes[1] == "blocos":
+                    from nucleo2d import blocos as _blocos      # a biblioteca de blocos da empresa (24/10)
+                    return self._json(_blocos.rota(os.path.join(PROJETOS, _blocos.ARQUIVO), None))
                 if len(partes) == 2 and partes[1] == "arquivos":
                     return self._json(arquivos_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] in ("orcamento", "comercial") and not COMERCIAL:
@@ -6273,6 +6276,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(gravar_conferencia(partes[0], corpo if isinstance(corpo, dict) else {}))
                 if len(partes) == 2 and partes[1] == "revisoes-pranchas":
                     return self._json(gravar_revisoes_das_pranchas(partes[0], corpo if isinstance(corpo, dict) else {}))
+                if len(partes) == 2 and partes[1] == "blocos":
+                    from nucleo2d import blocos as _blocos
+                    return self._json(_blocos.rota(os.path.join(PROJETOS, _blocos.ARQUIVO), corpo if isinstance(corpo, dict) else {}))
                 if len(partes) in (2, 3) and partes[1] in ("comercial", "orcamento") and not COMERCIAL:
                     return self._erro(SO_NO_DEV, 404)
                 if len(partes) in (2, 3) and partes[1] == "comercial":

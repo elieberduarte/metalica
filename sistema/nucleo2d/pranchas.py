@@ -3085,6 +3085,7 @@ def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: floa
     from nucleo2d.detalhe.base import CAMADAS_PECAS
     escolhidas = None if so is None else set(int(n) for n in so)
     contadas = 0
+    desenhos = [d.blocos_explodidos() for d in desenhos]     # os blocos pelo desenho deles (24/10)
     for d in desenhos:
         sinc = sincronizar_folhas(d)
         if avisos is not None:
@@ -3181,7 +3182,8 @@ def pdf_da_area(d: Desenho, caminho_pdf: str, caixa, escala: Optional[float] = N
     if max(larg, alt) > 5000.0:
         raise ErroDeDados("na escala 1:%g a folha sairia com %.0f × %.0f mm: escolha uma escala maior (1:%d, por exemplo)"
                           % (n, larg, alt, int(math.ceil(n * max(larg, alt) / 1189.0))))
-    # o que toca o trecho (com folga para os textos que passam dos pontos que os definem)
+    # o que toca o trecho (com folga para os textos que passam dos pontos que os definem); os blocos pelo desenho deles
+    d = d.blocos_explodidos()
     folga = 30.0 * float(d.escala or 1.0)
     parte = Desenho(nome=d.nome, unidade=d.unidade, escala=d.escala, camadas=d.camadas, vistas=d.vistas, metadados=d.metadados)
     for e in d.entidades.values():
@@ -3281,6 +3283,7 @@ def pranchas_das_folhas(desenho: Desenho, fonte: str, carimbo: Optional[dict] = 
                         primeira: int = 1, total: Optional[int] = None) -> List[Desenho]:
     """Cada folha posicionada no desenho vira uma prancha em papel 1:1: a folha redesenhada (o número
     e o total da vez) e tudo o que está inteiro dentro da borda dela, reduzido pela escala."""
+    desenho = desenho.blocos_explodidos()                 # os blocos pelo desenho deles (24/10)
     folhas = _folhas_do(desenho)
     if not folhas:
         raise ErroDeDados("o desenho não tem folhas: use Desenho → Inserir folha (prancha)… e ponha os detalhes dentro dela.")

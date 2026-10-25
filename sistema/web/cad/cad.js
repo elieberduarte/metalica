@@ -4,7 +4,7 @@
 // Mouse: botão esquerdo é da ferramenta; do meio ou direito arrasta a vista; roda dá
 // zoom no cursor. Shift trava orto. Esc cancela; Enter e espaço confirmam/repetem.
 
-import { Desenho2D, clonar, valorCota, pontosDe, criar, segmentosDe, dist, maisProximoSeg, folgaDaCota, FOLGA_TEXTO_COTA } from './nucleo/desenho2d.js';
+import { Desenho2D, clonar, valorCota, pontosDe, criar, segmentosDe, dist, maisProximoSeg, folgaDaCota, FOLGA_TEXTO_COTA, usarBlocosDe } from './nucleo/desenho2d.js';
 import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia, ComandoAdicionar, ComandoComposto, ComandoEscala } from './nucleo/comandos.js';
 import { Tela, formatarMm } from './nucleo/tela.js';
 import { acompanhar as acompanharTarefa } from '../progresso.js';
@@ -21,6 +21,7 @@ import { MetodosTravaPecasCAD } from './trava_pecas.js';
 import { MetodosImpressaoCAD } from './impressao.js';
 import { MetodosRevisoesCAD } from './revisoes.js';
 import { MetodosLocalizarCAD } from './localizar.js';
+import { MetodosBlocosCAD, blocosUsados } from './blocos.js';
 
 const CHAVE_TEMA = 'galpao.tema';
 const ATRASO_AUTOSAVE = 3000;
@@ -101,6 +102,7 @@ class CAD {
     this.projeto = this.parametros.get('projeto') || null;
     this.nomeDesenho = this.parametros.get('desenho') || null;
     this.doc = new Desenho2D();
+    usarBlocosDe(this.doc);                 // as inserções de bloco usam as definições deste desenho (24/10)
     this.pilha = new Pilha(this.doc);
     this.tela = new Tela($('#canvas2d'), this.doc);
     this.snap = new Snap(this.tela);
@@ -1237,6 +1239,7 @@ class CAD {
       if (ev.button === 0 && this.ferramenta && this.ferramenta.constructor.id === 'selecionar') {
         const e = this.tela.sob(px(ev));
         if (e && (e.tipo === 'texto' || e.tipo === 'chamada' || e.tipo === 'cota')) { ev.preventDefault(); this.editarTextoNoLugar(e); }
+        else if (e && e.tipo === 'bloco') { ev.preventDefault(); this.editarBloco(e); }       // o BEDIT (blocos.js)
       }
     });
     c.addEventListener('pointerleave', () => {
@@ -1410,6 +1413,9 @@ class CAD {
       penas: () => this.dialogoPenas(),
       revisoes: () => this.dialogoRevisoes(),
       localizar: () => this.dialogoLocalizar(),
+      'criar-bloco': () => this.ativarFerramenta('criar_bloco'),
+      'inserir-bloco': () => this.ativarFerramenta('inserir_bloco'),
+      'editar-bloco': () => this.editarBlocoSelecionado(),
       'dxf-pranchas': () => this.dxfDasPranchas(),
       'abrir-pasta': () => this.projeto && postar(`/api/projetos/${encodeURIComponent(this.projeto)}/abrir-pasta`, { sub: 'desenhos-2d' }).catch(e => this.aviso(e.message, 'erro')),
       corte: () => this.dialogoCorte(),
@@ -1654,8 +1660,11 @@ class CAD {
     const b = base ? [base[0], base[1]] : (caixa ? [caixa[0][0], caixa[0][1]] : [0, 0]);
     const camadas = {};
     for (const e of ents) { const c = this.doc.camadas.get(e.camada); if (c && !camadas[e.camada]) camadas[e.camada] = { ...c }; }
+    // as definições dos blocos copiados vão junto (o outro desenho pode não tê-los)
+    const defs = (this.doc.metadados || {}).blocos || {}, blocos = {};
+    for (const n of blocosUsados(ents, defs)) if (defs[n]) blocos[n] = defs[n];
     const copia = { versao: 1, projeto: this.projeto || '', desenho: this.nomeDesenho || '', nome: this.doc.nome || '', escala: this.doc.escala || 1,
-      base: b, entidades: ents.map(clonar), camadas, quando: Date.now(), sequencia: null };
+      base: b, entidades: ents.map(clonar), camadas, blocos, quando: Date.now(), sequencia: null };
     this._copiaLocal = copia;
     const gravar = () => { try { localStorage.setItem('cad.copia', JSON.stringify(copia)); return true; } catch { return false; } };
     if (!gravar()) this.aviso(`A cópia de ${numero(ents.length)} objetos não coube na área de transferência do navegador: ela vale só neste desenho.`, 'atencao', 8000);
@@ -1687,6 +1696,9 @@ class CAD {
     let novasCamadas = 0;
     for (const [nome, c] of Object.entries(copia.camadas || {})) if (!this.doc.camadas.has(nome)) { this.doc.camadas.set(nome, { ...c, nome }); novasCamadas++; }
     if (novasCamadas) this.doc.notificar([], 'aparencia');
+    // os blocos que este desenho ainda não tem (o que já tem fica com a definição dele)
+    const defs = this._blocos();
+    for (const [n, d] of Object.entries(copia.blocos || {})) if (!defs[n]) defs[n] = clonar(d);
     const ents = copia.entidades.map(e => {
       const n = { ...clonar(e), id: undefined };
       if (Math.abs(k - 1) > 1e-9) {
@@ -2155,6 +2167,17 @@ class CAD {
       };
       if (e.tipo === 'texto' || e.tipo === 'chamada') campo('Texto', 'texto');     // a altura: "Tamanho do texto", acima
       if (e.tipo === 'texto') campo('Ângulo', 'angulo', 'number', { step: '15' });
+      if (e.tipo === 'bloco') {
+        // a inserção do bloco (24/10): o nome, o ângulo, a escala e o BEDIT
+        g.append(el('label', { texto: 'Bloco' }), el('div', {}, el('b', { texto: e.nome }), ' ',
+          el('button', { type: 'button', onclick: () => this.editarBloco(this.doc.get(e.id)) }, 'Editar bloco')));
+        campo('Ângulo', 'angulo', 'number', { step: '15' });
+        for (const [i, rot] of [[0, 'Escala X'], [1, 'Escala Y']]) {
+          const inp = el('input', { type: 'number', step: '0.1', value: (e.escala || [1, 1])[i] });
+          inp.addEventListener('change', () => { const v = parseFloat(String(inp.value).replace(',', '.')); if (!isFinite(v) || !v) return; const esc = [...(e.escala || [1, 1])]; esc[i] = v; this.executar(new ComandoAlterar({ [e.id]: { escala: esc } }, `Alterar ${rot}`)); });
+          g.append(el('label', { texto: rot }), inp);
+        }
+      }
       if (e.tipo === 'cota_especial') {
         // a cota angular, de raio, de diâmetro ou ordenada (23/10)
         const nomes = { angular: 'angular', raio: 'de raio', diametro: 'de diâmetro', ordenada: `ordenada (em ${e.eixo === 'y' ? 'y' : 'x'})` };
@@ -3411,7 +3434,7 @@ function lerTema() { try { return localStorage.getItem(CHAVE_TEMA); } catch { re
 
 // os métodos da planta de lançamento (menu Lançamento) moram em lancamento.js; os do
 // projeto recebido montado pela planta, em montar_planta.js
-for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEstruturaCAD, MetodosEdicaoChapaCAD, MetodosTravaPecasCAD, MetodosImpressaoCAD, MetodosRevisoesCAD, MetodosLocalizarCAD]) {
+for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEstruturaCAD, MetodosEdicaoChapaCAD, MetodosTravaPecasCAD, MetodosImpressaoCAD, MetodosRevisoesCAD, MetodosLocalizarCAD, MetodosBlocosCAD]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) {
     if (k === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(CAD.prototype, k)) throw new Error(`método repetido no CAD: ${k}`);

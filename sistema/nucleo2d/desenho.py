@@ -232,8 +232,124 @@ class CotaEspecial(Entidade2D):
         return [self.centro, self.p1, self.posicao] + ([self.p2] if self.p2 else [])
 
 
+@dataclass
+class Bloco(Entidade2D):
+    """A inserção de um bloco (24/10, como no AutoCAD): a definição fica em `Desenho.metadados["blocos"][nome]`
+    ({"entidades": [...]}, no referencial dela, com o ponto de base na origem) e na biblioteca da empresa
+    (nucleo2d/blocos.py); a inserção a põe em `posicao`, girada de `angulo` (graus), com a `escala` (sx, sy; a negativa
+    espelha). O que está na camada "0" da definição vai para a camada da inserção. `filhos_do_bloco` dá as entidades."""
+    tipo: str = "bloco"
+    nome: str = ""
+    posicao: Ponto2 = (0.0, 0.0)
+    escala: Tuple[float, float] = (1.0, 1.0)
+    angulo: float = 0.0
+
+    def pontos(self):
+        return [self.posicao]
+
+
 TIPOS = {"linha": Linha, "polilinha": Polilinha, "circulo": Circulo, "arco": Arco,
-         "texto": Texto, "cota": Cota, "hachura": Hachura, "chamada": Chamada, "cota_especial": CotaEspecial}
+         "texto": Texto, "cota": Cota, "hachura": Hachura, "chamada": Chamada, "cota_especial": CotaEspecial,
+         "bloco": Bloco}
+
+
+def entidade_de_dict(e: dict) -> Optional["Entidade2D"]:
+    """A entidade do dicionário gravado (o do CAD); None para o tipo desconhecido."""
+    classe = TIPOS.get((e or {}).get("tipo"))
+    if classe is None:
+        return None
+    campos = {k: v for k, v in e.items() if k in classe.__dataclass_fields__}
+    for k in ("a", "b", "centro", "posicao", "p1", "p2", "alvo", "texto_pos", "escala"):  # (a CotaEspecial usa os mesmos)
+        if k in campos and isinstance(campos[k], (list, tuple)):
+            campos[k] = tuple(campos[k])
+    if "vertices" in campos:
+        campos["vertices"] = [tuple(q) for q in campos["vertices"]]
+    if "contornos" in campos:
+        campos["contornos"] = [[tuple(q) for q in c] for c in campos["contornos"]]
+    return classe(**campos)
+
+
+def filhos_do_bloco(b: "Bloco", blocos: dict, prof: int = 0) -> List["Entidade2D"]:
+    """As entidades da inserção `b`, no desenho: as da definição transformadas (a mesma conta de
+    web/cad/nucleo/desenho2d.js filhosDoBloco). O bloco dentro do bloco também (até 8 níveis)."""
+    d = (blocos or {}).get(b.nome)
+    if not isinstance(d, dict) or prof > 8:
+        return []
+    sx, sy = (float(v) for v in (b.escala or (1.0, 1.0)))
+    t = math.radians(float(b.angulo or 0.0))
+    c, s_ = math.cos(t), math.sin(t)
+    ox, oy = b.posicao
+
+    def f(q):
+        x, y = q[0] * sx, q[1] * sy
+        return (ox + x * c - y * s_, oy + x * s_ + y * c)
+
+    def fang(a):
+        r = math.radians(float(a or 0.0))
+        return (math.degrees(math.atan2(sy * math.sin(r), sx * math.cos(r))) + float(b.angulo or 0.0)) % 360.0
+    k = math.sqrt(abs(sx * sy)) or 1.0
+    espelha = sx * sy < 0
+    out: List[Entidade2D] = []
+    for i, reg in enumerate(d.get("entidades") or []):
+        e = entidade_de_dict(reg)
+        if e is None:
+            continue
+        e.id = "%s:%d" % (b.id, i)
+        if e.camada in ("0", "", None):
+            e.camada = b.camada
+        if isinstance(e, Bloco):
+            e.posicao = f(e.posicao)
+            e.angulo = fang(e.angulo)
+            e.escala = (e.escala[0] * k * (-1.0 if espelha else 1.0), e.escala[1] * k)
+            out += filhos_do_bloco(e, blocos, prof + 1)
+            continue
+        if isinstance(e, Linha):
+            e.a, e.b = f(e.a), f(e.b)
+        elif isinstance(e, Polilinha):
+            e.vertices = [f(q) for q in e.vertices]
+        elif isinstance(e, Circulo):
+            e.centro, e.raio = f(e.centro), e.raio * k
+        elif isinstance(e, Arco):
+            e.centro, e.raio = f(e.centro), e.raio * k
+            a0, a1 = fang(e.inicio), fang(e.fim)
+            e.inicio, e.fim = (a1, a0) if espelha else (a0, a1)
+        elif isinstance(e, Texto):
+            e.posicao = f(e.posicao)
+            # espelhado, o texto continua legível (o MIRRTEXT 0 do AutoCAD): só gira com o bloco
+            e.angulo = (float(e.angulo or 0.0) + float(b.angulo or 0.0)) % 360.0 if espelha else fang(e.angulo)
+            e.altura = e.altura * k
+        elif isinstance(e, Cota):
+            p1, p2 = e.p1, e.p2
+            e.p1, e.p2 = f(p1), f(p2)
+            if e.modo in ("h", "v"):
+                q2 = f((p2[0], p1[1]) if e.modo == "h" else (p1[0], p2[1]))
+                dx, dy = q2[0] - e.p1[0], q2[1] - e.p1[1]
+                tol = 1e-6 * (abs(dx) + abs(dy) + 1.0)
+                if abs(dy) <= tol:
+                    e.modo = "h"
+                elif abs(dx) <= tol:
+                    e.modo = "v"
+                else:
+                    e.modo, e.p2 = "alinhada", q2
+            if e.texto_pos:
+                e.texto_pos = f(e.texto_pos)
+            if espelha:
+                e.deslocamento = -e.deslocamento
+            e.altura = e.altura * k
+        elif isinstance(e, Hachura):
+            e.contornos = [[f(q) for q in cont] for cont in e.contornos]
+            e.angulo = (float(e.angulo or 0.0) + float(b.angulo or 0.0)) % 360.0
+        elif isinstance(e, Chamada):
+            e.alvo, e.posicao, e.altura = f(e.alvo), f(e.posicao), e.altura * k
+        elif isinstance(e, CotaEspecial):
+            e.centro, e.p1, e.posicao = f(e.centro), f(e.p1), f(e.posicao)
+            if e.p2:
+                e.p2 = f(e.p2)
+            if espelha and e.modo == "angular":
+                e.p1, e.p2 = e.p2, e.p1
+            e.altura = e.altura * k
+        out.append(e)
+    return out
 
 
 # ---------------------------------------------------------------- desenho
@@ -282,6 +398,7 @@ def linhas_do_texto(e: "Texto", k: float = 1.0):
     a = math.radians(float(e.angulo or 0.0))
     return [((e.posicao[0] - math.sin(a) * (d0 - i * passo), e.posicao[1] + math.cos(a) * (d0 - i * passo)), t) for i, t in enumerate(ls)]
 
+
 @dataclass
 class Desenho:
     nome: str = "Desenho"
@@ -315,7 +432,7 @@ class Desenho:
         return len(self.entidades)
 
     def caixa(self) -> Optional[Tuple[Ponto2, Ponto2]]:
-        pts = [p for e in self.entidades.values() for p in e.pontos()]
+        pts = [p for e in self.blocos_explodidos().entidades.values() for p in e.pontos()]
         if not pts:
             return None
         xs = [p[0] for p in pts]
@@ -340,19 +457,26 @@ class Desenho:
                   camadas={k: Camada2D(**{**{"nome": k}, **v}) for k, v in (d.get("camadas") or {}).items()},
                   vistas=list(d.get("vistas") or []), metadados=dict(d.get("metadados") or {}))
         for e in d.get("entidades") or []:
-            classe = TIPOS.get(e.get("tipo"))
-            if classe is None:
-                continue
-            campos = {k: v for k, v in e.items() if k in classe.__dataclass_fields__}
-            for k in ("a", "b", "centro", "posicao", "p1", "p2", "alvo", "texto_pos"):  # (a CotaEspecial usa os mesmos)
-                if k in campos and campos[k] is not None:
-                    campos[k] = tuple(campos[k])
-            if "vertices" in campos:
-                campos["vertices"] = [tuple(p) for p in campos["vertices"]]
-            if "contornos" in campos:
-                campos["contornos"] = [[tuple(p) for p in c] for c in campos["contornos"]]
-            des.add(classe(**campos))
+            ent = entidade_de_dict(e)
+            if ent is not None:
+                des.add(ent)
         return des
+
+    def blocos_explodidos(self) -> "Desenho":
+        """Uma cópia rasa do desenho com cada inserção de bloco trocada pelas entidades dela (o PDF, as folhas). Sem
+        bloco, o próprio desenho."""
+        if not any(isinstance(e, Bloco) for e in self.entidades.values()):
+            return self
+        out = Desenho(nome=self.nome, unidade=self.unidade, escala=self.escala, camadas=self.camadas, vistas=self.vistas,
+                      metadados=self.metadados)
+        defs = self.metadados.get("blocos") or {}
+        for e in self.entidades.values():
+            if isinstance(e, Bloco):
+                for f_ in filhos_do_bloco(e, defs):
+                    out.add(f_)
+            else:
+                out.entidades[e.id] = e
+        return out
 
     # ---- saída ----
     def para_dxf(self, escala: Optional[float] = None, texto_unicode: bool = False):
@@ -369,7 +493,7 @@ class Desenho:
         nome_cam = (lambda n: _camada_dxf(n)) if texto_unicode else (lambda n: nome_de_camada_r12(_camada_dxf(n)))
         d.camadas_extras = [(nome_cam(n), aci_mais_proxima(c.cor), str(c.tipo_linha or "CONTINUOUS").upper())
                             for n, c in self.camadas.items() if _camada_dxf(n) == n and getattr(c, "cor", None)]
-        for e in self.entidades.values():
+        for e in self.blocos_explodidos().entidades.values():
             cam = self.camadas.get(e.camada)
             if cam is not None and not cam.visivel:
                 continue

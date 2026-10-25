@@ -13,7 +13,7 @@
 // segundo para ser refeito; sem o cache, cada movimento do mouse custaria isso.
 
 import { pontosArco, dentroDe, segmentosDe, caixaDe, pontosDe, distanciaEntidade, pontosCota, textoDaChamada, cantosDoTextoDaChamada,
-  formatarMm, geometriaCota, textoDaCota, ENTRELINHA, linhasDoTexto } from './desenho2d.js';
+  formatarMm, geometriaCota, textoDaCota, ENTRELINHA, linhasDoTexto, filhosDoBloco } from './desenho2d.js';
 import { estiloDaLinha, larguraNaTela, tracosNaTela } from './tipos_linha.js';
 import { primitivasDaCotaEspecial } from './cota_especial.js';
 export { formatarMm };
@@ -309,27 +309,24 @@ export class Tela {
     const estiloDes = this.estiloDoDesenho, tracejados = new Map();
     const tracejadoDe = (tl) => { let t = tracejados.get(tl); if (!t) tracejados.set(tl, t = tracosNaTela(tl, k, z, estiloDes)); return t; };
     let nPontos = 0, nDesenhadas = 0;
-    for (let i = 0; i < ordem.length; i++) {
-      const e = ordem[i], cam = camadas.get(e.camada);
-      if (cam && cam.visivel === false) continue;
-      if (sel && sel.has(e.id)) { selecionadas.push(e); continue; }
+    // cada entidade nos lotes (`c`: a caixa dela)
+    const pintar = (e, cam, c) => {
       const tipo = e.tipo;
       if (tipo !== 'texto') {
-        const c = caixas[i];
         if (c[1][0] - c[0][0] < minimo && c[1][1] - c[0][1] < minimo) {
           const ix = Math.floor((c[0][0] - vx) * z), iy = Math.floor(H - (c[0][1] - vy) * z) - 1;
-          if (ix < 0 || iy < 0 || ix >= Wi || iy >= Hi) continue;
+          if (ix < 0 || iy < 0 || ix >= Wi || iy >= Hi) return;
           const cor = corDe(e, cam);
           let ic = indiceDaCor.get(cor);
           if (ic === undefined && coresDosPontos.length < 65535) { coresDosPontos.push(cor); indiceDaCor.set(cor, ic = coresDosPontos.length); }
           if (ic !== undefined) ocupado[iy * Wi + ix] = ic;
           nPontos++;
-          continue;
+          return;
         }
       }
       nDesenhadas++;
-      if (tipo === 'hachura') { hachuras.push(e); continue; }
-      if (tipo === 'texto' || tipo === 'cota' || tipo === 'chamada' || tipo === 'cota_especial') { porCima.push(e); continue; }
+      if (tipo === 'hachura') { hachuras.push(e); return; }
+      if (tipo === 'texto' || tipo === 'cota' || tipo === 'chamada' || tipo === 'cota_especial') { porCima.push(e); return; }
       const cor = corDe(e, cam);
       // o tipo de linha e a espessura do objeto, ou os da camada (23/10)
       const est = estiloDaLinha(e, cam), larg = larguraNaTela(est.espessura), tl = est.tipo;
@@ -338,6 +335,20 @@ export class Tela {
       if (!lote) tracos.set(chave, lote = { cor, larg, tracos: tracejadoDe(tl), p: new Path2D() });
       lote.ultimo = nDesenhadas;
       this._caminho(lote.p, e, H);
+    };
+    for (let i = 0; i < ordem.length; i++) {
+      const e = ordem[i], cam = camadas.get(e.camada);
+      if (cam && cam.visivel === false) continue;
+      if (sel && sel.has(e.id)) { selecionadas.push(e); continue; }
+      if (e.tipo === 'bloco') {
+        // a inserção do bloco (24/10): as entidades dela nos mesmos lotes, cada uma com a camada dela
+        for (const f of filhosDoBloco(e)) {
+          const cf = camadas.get(f.camada);
+          if (!(cf && cf.visivel === false)) pintar(f, cf, this.doc._caixaDoIndice(f));
+        }
+        continue;
+      }
+      pintar(e, cam, caixas[i]);
     }
     for (const e of hachuras) { const cam = camadas.get(e.camada); this._entidade(ctx, e, corDe(e, cam), cam, k, false); }
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -586,6 +597,7 @@ export class Tela {
       case 'cota_especial': this._cotaEspecial(ctx, e, k, cor); break;
       case 'hachura': this._hachura(ctx, e, k, cor); break;
       case 'chamada': this._chamada(ctx, e, k, cor); break;
+      case 'bloco': for (const f of filhosDoBloco(e)) this._entidade(ctx, f, cor, this.doc.camadas.get(f.camada) || cam, k, selecionada, previa); break;
     }
     ctx.setLineDash([]);
   }

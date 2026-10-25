@@ -7,7 +7,7 @@
 // O documento é a única fonte de verdade da tela. Ferramentas nunca mexem nele
 // diretamente: passam por um comando (comandos.js), que é o que dá desfazer.
 
-export const TIPOS = ['linha', 'polilinha', 'circulo', 'arco', 'texto', 'cota', 'hachura', 'chamada', 'cota_especial'];
+export const TIPOS = ['linha', 'polilinha', 'circulo', 'arco', 'texto', 'cota', 'hachura', 'chamada', 'cota_especial', 'bloco'];
 import { pontosDaCotaEspecial, distanciaCotaEspecial } from './cota_especial.js';
 
 export const CAMADAS_PADRAO = [
@@ -54,8 +54,67 @@ export function criar(reg) {
     case 'cota_especial': return { ...base, camada: base.camada || 'COTA', modo: reg.modo || 'angular', centro: reg.centro, p1: reg.p1, p2: reg.p2 ?? null,
       posicao: reg.posicao, eixo: reg.eixo ?? null, texto: reg.texto ?? null, altura: reg.altura ?? 2.5, casas: reg.casas ?? null, escala: reg.escala ?? null,
       fator: reg.fator ?? null, terminador: reg.terminador ?? null, folga: reg.folga ?? null };
+    // a inserção de um bloco (24/10): a definição em metadados.blocos[nome] (e na biblioteca da empresa)
+    case 'bloco': return { ...base, camada: base.camada || 'VISTA', nome: reg.nome || '', posicao: reg.posicao,
+      escala: Array.isArray(reg.escala) ? [+reg.escala[0] || 1, +reg.escala[1] || 1] : [1, 1], angulo: +reg.angulo || 0 };
     default: throw new Error('tipo de entidade desconhecido: ' + reg.tipo);
   }
+}
+
+// ---- blocos (24/10; usuário: "Como no AutoCAD" e "Biblioteca da empresa") ----
+// A inserção é uma entidade só (`bloco`: nome, posicao, escala [sx, sy] — a negativa espelha —, angulo); as entidades
+// dela são as da definição (no referencial do bloco, o ponto de base na origem) transformadas — a mesma conta de
+// nucleo2d/desenho.py filhos_do_bloco. O que está na camada "0" da definição fica na camada da inserção.
+let docDosBlocos = null;
+/** O documento cujas definições (`metadados.blocos`) as inserções usam (o do CAD). */
+export function usarBlocosDe(doc) { docDosBlocos = doc; }
+export const definicaoDoBloco = (nome) => ((docDosBlocos && docDosBlocos.metadados && docDosBlocos.metadados.blocos) || {})[nome] || null;
+const cacheDosBlocos = new WeakMap();
+
+/** A transformação da inserção: {f (ponto), fAng (graus), k (comprimento), espelha}. */
+export function transformacaoDoBloco(e) {
+  const [sx, sy] = e.escala || [1, 1], t = (e.angulo || 0) * Math.PI / 180, c = Math.cos(t), s = Math.sin(t), [ox, oy] = e.posicao;
+  const f = (q) => { const x = q[0] * sx, y = q[1] * sy; return [ox + x * c - y * s, oy + x * s + y * c]; };
+  const fAng = (a) => { const r = (a || 0) * Math.PI / 180; return ((Math.atan2(sy * Math.sin(r), sx * Math.cos(r)) * 180 / Math.PI + (e.angulo || 0)) % 360 + 360) % 360; };
+  return { f, fAng, k: Math.sqrt(Math.abs(sx * sy)) || 1, espelha: sx * sy < 0 };
+}
+
+/** As entidades da inserção, no desenho (guardadas até a definição ou a inserção mudar). */
+export function filhosDoBloco(e, prof = 0) {
+  const def = definicaoDoBloco(e.nome);
+  if (!def || prof > 8) return [];
+  const c = cacheDosBlocos.get(e);
+  if (c && c.def === def) return c.filhos;
+  const { f, fAng, k, espelha } = transformacaoDoBloco(e);
+  const filhos = [];
+  (def.entidades || []).forEach((reg, i) => {
+    let g;
+    try { g = criar({ ...reg, id: `${e.id}:${i}` }); } catch { return; }
+    if (!g.camada || g.camada === '0') g.camada = e.camada;
+    if (g.tipo === 'bloco') {
+      const [cx, cy] = g.escala;
+      filhos.push(...filhosDoBloco({ ...g, posicao: f(g.posicao), angulo: fAng(g.angulo), escala: [cx * k * (espelha ? -1 : 1), cy * k] }, prof + 1));
+      return;
+    }
+    const n = transformar(g, f, fAng, k, espelha);
+    if (n.tipo === 'texto') { n.altura = g.altura * k; n.angulo = espelha ? (((g.angulo || 0) + (e.angulo || 0)) % 360 + 360) % 360 : fAng(g.angulo); }
+    if (n.tipo === 'chamada' || n.tipo === 'cota' || n.tipo === 'cota_especial') n.altura = g.altura * k;
+    if (n.tipo === 'hachura') n.angulo = ((g.angulo || 0) + (e.angulo || 0)) % 360;
+    filhos.push(n);
+  });
+  cacheDosBlocos.set(e, { def, filhos });
+  return filhos;
+}
+
+/** A nova escala e o novo ângulo da inserção depois de uma transformação do desenho (girar, espelhar, escalar). */
+function transformarInsercao(e, f) {
+  const t = (e.angulo || 0) * Math.PI / 180, P = e.posicao, Q = f(P);
+  const fu = f([P[0] + Math.cos(t), P[1] + Math.sin(t)]), fv = f([P[0] - Math.sin(t), P[1] + Math.cos(t)]);
+  const u = [fu[0] - Q[0], fu[1] - Q[1]], v = [fv[0] - Q[0], fv[1] - Q[1]];
+  const det = u[0] * v[1] - u[1] * v[0];
+  const [sx, sy] = e.escala || [1, 1];
+  return { posicao: Q, angulo: ((Math.atan2(u[1], u[0]) * 180 / Math.PI) % 360 + 360) % 360,
+    escala: [sx * Math.hypot(u[0], u[1]), sy * Math.hypot(v[0], v[1]) * (det < 0 ? -1 : 1)] };
 }
 
 // ------------------------------------------------------------- geometria
@@ -192,6 +251,7 @@ export function pontosDe(e) {
     case 'hachura': return e.contornos.flat();
     case 'chamada': return [e.alvo, e.posicao];
     case 'cota_especial': return [e.centro, e.p1, e.posicao, ...(e.p2 ? [e.p2] : [])];
+    case 'bloco': return [e.posicao, ...filhosDoBloco(e).flatMap(pontosDe)];
     default: return [];
   }
 }
@@ -210,6 +270,7 @@ export function segmentosDe(e) {
     case 'cota': return [[e.p1, e.p2]];
     case 'chamada': return [[e.alvo, e.posicao]];
     case 'hachura': return e.contornos.flatMap(c => c.map((p, i) => [p, c[(i + 1) % c.length]]));
+    case 'bloco': return filhosDoBloco(e).flatMap(segmentosDe);
     default: return [];
   }
 }
@@ -294,6 +355,7 @@ export function cantosDoTextoDaChamada(e, k = 1) {
 export function distanciaEntidade(p, e, escalaTexto = 1) {
   switch (e.tipo) {
     case 'circulo': return Math.abs(dist(p, e.centro) - e.raio);
+    case 'bloco': { let m = dist(p, e.posicao); for (const f of filhosDoBloco(e)) m = Math.min(m, distanciaEntidade(p, f, escalaTexto)); return m; }
     case 'texto': {
       // no referencial do texto (girado pelo ângulo dele)
       const [x, w, h, v0] = caixaLocalDoTexto(e, escalaTexto);
@@ -352,6 +414,7 @@ export function transladar(e, d) {
     case 'hachura': n.contornos = e.contornos.map(c => c.map(mv)); break;
     case 'chamada': n.alvo = mv(e.alvo); n.posicao = mv(e.posicao); break;
     case 'cota_especial': n.centro = mv(e.centro); n.p1 = mv(e.p1); n.posicao = mv(e.posicao); if (e.p2) n.p2 = mv(e.p2); break;
+    case 'bloco': n.posicao = mv(e.posicao); break;
   }
   return n;
 }
@@ -361,6 +424,7 @@ export function transladar(e, d) {
 export function transformar(e, f, fAng = (a) => a, k = 1, espelha = false) {
   const n = clonar(e);
   switch (e.tipo) {
+    case 'bloco': Object.assign(n, transformarInsercao(e, f)); break;
     case 'linha': n.a = f(e.a); n.b = f(e.b); break;
     case 'polilinha': n.vertices = e.vertices.map(f); break;
     case 'circulo': n.centro = f(e.centro); n.raio = e.raio * k; break;
@@ -535,6 +599,11 @@ export class Desenho2D {
     if (e.tipo === 'texto') return caixaDe(cantosDoTexto(e, this.escala));
     if (e.tipo === 'chamada') return caixaDe([e.alvo, e.posicao, ...cantosDoTextoDaChamada(e, this.escala)]);
     if (e.tipo === 'arco') return caixaDe(pontosDaCaixaDoArco(e));
+    if (e.tipo === 'bloco') {
+      // a caixa do desenho do bloco (os textos e as cotas dele com a largura deles)
+      const cs = filhosDoBloco(e).map(f => this._caixaDoIndice(f)).filter(Boolean);
+      return caixaDe([e.posicao, ...cs.flatMap(c => [c[0], c[1]])]);
+    }
     return caixaDe(pontosDe(e));
   }
 

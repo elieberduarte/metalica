@@ -19,7 +19,7 @@ export const ATALHOS = {
   concordar: ['F', 'FILLET'], chanfro: ['CHA', 'CH', 'CHAMFER'], quebrar: ['BR', 'QB', 'BREAK'], alongar: ['LEN', 'AL', 'LENGTHEN'],
   matriz: ['AR', 'ARRAY'], offset: ['O', 'OFFSET'], dividir: ['DIV', 'DIVIDE'], medir: ['DI', 'DIST', 'MEA', 'MEASUREGEOM'],
   zoom_janela: ['ZW'], grade_furos: ['GF'], simbolo_solda: ['SD'], balao_marca: ['BM'], simbolo_nivel: ['NV'],
-  chamada_detalhe: ['CD'], nuvem_revisao: ['REVCLOUD', 'NR'], corte: ['CORTE'],
+  chamada_detalhe: ['CD'], nuvem_revisao: ['REVCLOUD', 'NR'], corte: ['CORTE'], criar_bloco: ['B', 'BLOCK'], inserir_bloco: ['I', 'INSERT'],
 };
 
 /** Os comandos que não são ferramenta: o que fazem no CAD. */
@@ -31,6 +31,8 @@ const EXTRAS = [
   { atalhos: ['REDO'], nome: 'Refazer (Ctrl+Y)', fazer: (cad) => cad.refazer() },
   { atalhos: ['PLOT', 'PRINT'], nome: 'Imprimir (Ctrl+P)', fazer: (cad) => cad.dialogoImprimir() },
   { atalhos: ['QSAVE', 'SAVE'], nome: 'Salvar (Ctrl+S)', fazer: (cad) => cad.salvar() },
+  { atalhos: ['BEDIT', 'BE'], nome: 'Editar bloco (a inserção selecionada)', fazer: (cad) => cad.editarBlocoSelecionado() },
+  { atalhos: ['BCLOSE', 'BSAVE'], nome: 'Concluir a edição do bloco', fazer: (cad) => cad.concluirEdicaoDoBloco(true) },
   { atalhos: ['FIND', 'LOCALIZAR'], nome: 'Localizar e substituir (Ctrl+H)', fazer: (cad) => cad.dialogoLocalizar() },
   { atalhos: ['REVISOES', 'REV'], nome: 'Revisões das pranchas…', fazer: (cad) => cad.dialogoRevisoes() },
   { atalhos: ['LA', 'LAYER'], nome: 'Camadas (o painel)', fazer: () => {

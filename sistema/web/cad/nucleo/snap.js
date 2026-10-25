@@ -10,7 +10,7 @@
 // (EXT), as guias horizontal e vertical (OTRACK) e o paralelo à linha (PAR, a partir do último ponto); o polar trava o
 // ângulo do último ponto em múltiplos de `incrementoPolar`. O resultado traz as `guias` (os trechos tracejados).
 
-import { pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dist, pontosCota } from './desenho2d.js';
+import { pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dist, pontosCota, filhosDoBloco } from './desenho2d.js';
 
 /** Segmentos que o snap enxerga: na cota, a linha de cota também (é o que se alinha) e as duas
  *  pernas, do ponto medido até um pouco além da linha de cota, como são desenhadas — a interseção
@@ -93,8 +93,11 @@ export class Snap {
   /** Candidatos das entidades perto do cursor (em mm), pelo índice espacial do documento. */
   _candidatas(p, raioMm) {
     const doc = this.tela.doc, r = raioMm * 3;
-    return doc.naRegiao([[p[0] - r, p[1] - r], [p[0] + r, p[1] + r]])
-      .filter(e => doc.visivel(e) && e.tipo !== 'hachura' && e.tipo !== 'texto' && !this.ignorar.has(e.id));
+    const ents = doc.naRegiao([[p[0] - r, p[1] - r], [p[0] + r, p[1] + r]]).filter(e => doc.visivel(e) && !this.ignorar.has(e.id));
+    // o bloco (24/10): o snap vê as entidades de dentro dele; o ponto de inserção à parte
+    this._insercoes = ents.filter(e => e.tipo === 'bloco').map(e => e.posicao);
+    return ents.flatMap(e => e.tipo === 'bloco' ? filhosDoBloco(e).filter(f => doc.visivel(f)) : [e])
+      .filter(e => e.tipo !== 'hachura' && e.tipo !== 'texto');
   }
 
   resolver(px, opcoes = {}) {
@@ -115,6 +118,7 @@ export class Snap {
       if (a.extremidade) { considerar(s, 'extremidade', 0); considerar(t, 'extremidade', 0); }
       if (a.meio) considerar([(s[0] + t[0]) / 2, (s[1] + t[1]) / 2], 'meio', 1);
     }
+    if (a.extremidade) for (const q of this._insercoes || []) considerar(q, 'extremidade', 0, 'inserção');
     for (const e of ents) {
       if (a.extremidade) {
         if (e.tipo === 'linha') { considerar(e.a, 'extremidade', 0); considerar(e.b, 'extremidade', 0); }

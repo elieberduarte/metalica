@@ -5,7 +5,7 @@
 // Medida digitada (`onValor`): "1500", "1,5m", "150cm", "@30" (ângulo), e para
 // retângulo "2000;1000". Esc cancela, Enter/espaço confirma ou repete.
 
-import { criar, dist, meio, transladar, transformar, clonar, pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dentroDe, pontosCota, pontosArco, caixaDe, CAMADAS_PADRAO } from './nucleo/desenho2d.js';
+import { criar, dist, meio, transladar, transformar, clonar, pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dentroDe, pontosCota, pontosArco, caixaDe, CAMADAS_PADRAO, filhosDoBloco } from './nucleo/desenho2d.js';
 import { ComandoAdicionar, ComandoRemover, ComandoSubstituir, ComandoComposto, ComandoAlterar } from './nucleo/comandos.js';
 import { acompanharMalha, eixosCopiados } from './nucleo/malha.js';
 import { medidaDaCotaEspecial } from './nucleo/cota_especial.js';
@@ -1939,9 +1939,13 @@ export class Explodir extends SobreSelecao {
       } else if (e.tipo === 'linha' && (e.atributos || {}).origem) {
         novas.push(criar({ ...clonar(e), id: undefined, atributos: soltaDePeca(e.atributos) }));
         remover.push(id);
+      } else if (e.tipo === 'bloco') {
+        // a inserção do bloco (24/10): as entidades dela, soltas (o bloco de dentro continua bloco, como no AutoCAD)
+        for (const f of filhosDoBloco(e)) novas.push(criar({ ...clonar(f), id: undefined }));
+        remover.push(id);
       }
     }
-    if (!remover.length) { this.dica('Nada para explodir: só polilinhas e linhas de peça viram linhas soltas'); return; }
+    if (!remover.length) { this.dica('Nada para explodir: só blocos, polilinhas e linhas de peça viram objetos soltos'); return; }
     this.editor.executar(new ComandoComposto([new ComandoRemover(remover), new ComandoAdicionar(novas)], `Explodir ${remover.length} objeto(s)`));
     this.editor.selecionar(novas.map(e => e.id));
     this.dica(`${novas.length} linha(s) soltas · Juntar (W) volta a juntar`);
@@ -3157,6 +3161,75 @@ export class NuvemRevisao extends Ferramenta {
   }
 }
 
+// ------------------------------------------------------------ blocos (web/cad/blocos.js; usuário, 24/10)
+
+const ICONE_BLOCO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 8l8-4 8 4-8 4z"/><path d="M4 8v8l8 4 8-4V8M12 12v8"/></svg>';
+
+/** Criar bloco (B / BLOCK): com a seleção feita, o clique é o ponto de base; o nome e as opções no diálogo. */
+export class CriarBloco extends Ferramenta {
+  static id = 'criar_bloco'; static nome = 'Criar bloco'; static grupo = 'edicao';
+  static icone = ICONE_BLOCO.replace('</svg>', '<path d="M18 2v4M16 4h4"/></svg>');
+  ativar() {
+    super.ativar();
+    this.ids = [...this.editor.tela.selecao];
+    if (!this.ids.length) {
+      this.editor.aviso('Criar bloco: selecione antes o que vai nele (clique ou janela) e B de novo.', 'atencao', 6000);
+      queueMicrotask(() => this.editor.ativarFerramenta('selecionar'));
+      return;
+    }
+    this.dica(`Criar bloco com ${this.ids.length} objeto(s): clique o ponto de base (o snap vale)`);
+  }
+  async onPonto(p) {
+    if (!this.ids || !this.ids.length) return;
+    const ids = this.ids; this.ids = [];
+    await this.editor.criarBloco(ids, p);
+    this.editor.ativarFerramenta('selecionar');
+  }
+}
+
+/** Inserir bloco (I / INSERT): a escolha na lista (os do desenho e os da biblioteca) e o bloco preso ao cursor; R gira
+ *  90°, E espelha, um número digitado é o ângulo e "x2" a escala. Fica para a próxima inserção até Esc. */
+export class InserirBloco extends Ferramenta {
+  static id = 'inserir_bloco'; static nome = 'Inserir bloco'; static grupo = 'edicao'; static icone = ICONE_BLOCO;
+  ativar() { super.ativar(); this.nome = null; this.angulo = 0; this.escala = [1, 1]; this._escolher(); }
+  async _escolher() {
+    const nome = await this.editor.escolherBloco();
+    if (this.editor.ferramenta !== this) return;
+    if (!nome) { this.editor.ativarFerramenta('selecionar'); return; }
+    this.nome = nome; this._dica();
+    if (this.editor.tela.cursor) this.onMover(this.editor.tela.cursor);
+  }
+  _dica() {
+    this.dica(`Bloco "${this.nome}" · ângulo ${fmt(this.angulo)}° · escala ${fmt(Math.abs(this.escala[0]))}${this.escala[0] < 0 ? ' espelhado' : ''} · clique onde fica o ponto de base · R gira 90° · E espelha · digite o ângulo ou "x2" (escala) · Esc sai`);
+  }
+  _insercao(p) { return criar({ tipo: 'bloco', nome: this.nome, posicao: [p[0], p[1]], escala: [...this.escala], angulo: this.angulo, camada: this.camada }); }
+  onMover(p) { if (this.nome) this.editor.previa([this._insercao(p)]); }
+  onPonto(p) {
+    if (!this.nome) return;
+    const e = this._insercao(p);
+    this.editor.executar(new ComandoAdicionar([e], `Inserir o bloco ${this.nome}`));
+  }
+  onValor(t) {
+    const s = String(t || '').trim().replace(',', '.');
+    const m = s.match(/^[x*×]\s*(\d+(?:\.\d+)?)$/i);
+    if (m && +m[1] > 0) { const v = +m[1]; this.escala = [Math.sign(this.escala[0]) * v, v]; }
+    else if (isFinite(parseFloat(s))) this.angulo = ((parseFloat(s) % 360) + 360) % 360;
+    else return;
+    this._dica();
+    if (this.editor.tela.cursor) this.onMover(this.editor.tela.cursor);
+  }
+  onTecla(ev) {
+    if (ev.ctrlKey || ev.altKey || ev.metaKey || !this.nome) return false;
+    const k = ev.key.toLowerCase();
+    if (k === 'r') this.angulo = (this.angulo + 90) % 360;
+    else if (k === 'e') this.escala = [-this.escala[0], this.escala[1]];
+    else return false;
+    this._dica();
+    if (this.editor.tela.cursor) this.onMover(this.editor.tela.cursor);
+    return true;
+  }
+}
+
 /** Dividir (o DIVIDE do AutoCAD; usuário, 24/10: "marca de ponto"): a linha, o arco, o círculo ou a polilinha em N partes
  *  iguais, com uma marca de ponto (cruz na AUXILIAR) em cada divisão — o snap pega o meio dela. */
 export class Dividir extends Ferramenta {
@@ -3386,5 +3459,5 @@ export class Corte extends Ferramenta {
 }
 
 export const FERRAMENTAS = [Selecionar, ZoomJanela, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, TextoVariasLinhas, Cota, CotaContinua, CotaBase, CotaRapida, CotaAngular, CotaRaio, CotaDiametro, CotaOrdenada, AjustarCota, Chamada, Corte, Hachura,
-  GradeFuros, SimboloSolda, BalaoMarca, SimboloNivel, ChamadaDetalhe, NuvemRevisao, Mover, Copiar, Girar, Espelhar, Escalar, Matriz, Esticar, Offset, Aparar, Estender, Quebrar, Alongar, Concordar, Chanfro, Explodir, Juntar, Dividir, MoverCota, CopiarPropriedades, Apagar, Medir];
+  GradeFuros, SimboloSolda, BalaoMarca, SimboloNivel, ChamadaDetalhe, NuvemRevisao, CriarBloco, InserirBloco, Mover, Copiar, Girar, Espelhar, Escalar, Matriz, Esticar, Offset, Aparar, Estender, Quebrar, Alongar, Concordar, Chanfro, Explodir, Juntar, Dividir, MoverCota, CopiarPropriedades, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['simbolos', 'Sím'], ['edicao', 'Edi'], ['medicao', 'Med']];
