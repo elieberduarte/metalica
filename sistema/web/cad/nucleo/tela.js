@@ -771,7 +771,12 @@ export class Tela {
       case 'centro': ctx.arc(x, y, 5.5, 0, Math.PI * 2); break;
       case 'interseccao': ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x - 5, y + 5); ctx.lineTo(x + 5, y - 5); break;
       case 'perpendicular': ctx.moveTo(x - 5, y - 5); ctx.lineTo(x - 5, y + 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x - 5, y); ctx.lineTo(x, y); ctx.lineTo(x, y + 5); break;
-      case 'sobre': ctx.moveTo(x, y - 6); ctx.lineTo(x + 6, y); ctx.lineTo(x, y + 6); ctx.lineTo(x - 6, y); ctx.closePath(); break;
+      // os do AutoCAD (25/10): o "sobre" é a ampulheta do NEArest; o losango ficou para o quadrante
+      case 'sobre': ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y - 5); ctx.lineTo(x - 5, y + 5); ctx.lineTo(x + 5, y + 5); ctx.closePath(); break;
+      case 'quadrante': ctx.moveTo(x, y - 6); ctx.lineTo(x + 6, y); ctx.lineTo(x, y + 6); ctx.lineTo(x - 6, y); ctx.closePath(); break;
+      case 'centro_geometrico': ctx.arc(x, y, 5.5, 0, Math.PI * 2); ctx.moveTo(x - 3, y); ctx.lineTo(x + 3, y); ctx.moveTo(x, y - 3); ctx.lineTo(x, y + 3); break;
+      case 'no': ctx.arc(x, y, 5.5, 0, Math.PI * 2); ctx.moveTo(x - 4, y - 4); ctx.lineTo(x + 4, y + 4); ctx.moveTo(x - 4, y + 4); ctx.lineTo(x + 4, y - 4); break;
+      case 'insercao': ctx.rect(x - 6, y - 6, 7, 7); ctx.rect(x - 1, y - 1, 7, 7); break;
       case 'grade': ctx.moveTo(x - 4, y); ctx.lineTo(x + 4, y); ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4); break;
       case 'tangente': ctx.arc(x, y + 1.5, 4.5, 0, Math.PI * 2); ctx.moveTo(x - 6.5, y - 3); ctx.lineTo(x + 6.5, y - 3); break;
       case 'extensao': for (const dx of [-6, 0, 6]) { ctx.moveTo(x + dx - 1, y); ctx.lineTo(x + dx + 1, y); } break;

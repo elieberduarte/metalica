@@ -9,6 +9,11 @@
 // cursor parado num ponto o adquire (`adquirir`, chamado pelo CAD depois de uma pausa); dele saem a extensão da linha
 // (EXT), as guias horizontal e vertical (OTRACK) e o paralelo à linha (PAR, a partir do último ponto); o polar trava o
 // ângulo do último ponto em múltiplos de `incrementoPolar`. O resultado traz as `guias` (os trechos tracejados).
+//
+// 25/10 (usuário, desenhando uma polilinha no SESI: "ela não reconhece os nós para se ligar"): o objeto que está sendo
+// desenhado também é snap — `emAndamento` dá os trechos já fixados (os vértices da polilinha, sem o trecho que segue o
+// cursor); `objeto` é o OSNAP inteiro (F3); e os tipos que faltavam da lista do AutoCAD: quadrante, centro geométrico,
+// nó (a marca de ponto do Dividir) e inserção (bloco e texto).
 
 import { pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dist, pontosCota, filhosDoBloco } from './desenho2d.js';
 
@@ -74,8 +79,11 @@ function maisProximoCurva(p, e) {
 export class Snap {
   constructor(tela) {
     this.tela = tela;
-    this.ativos = { extremidade: true, meio: true, centro: true, interseccao: true, perpendicular: true, tangente: true, sobre: true, grade: false,
-                    extensao: true, paralelo: true, rastreamento: true, polar: true };
+    this.ativos = { extremidade: true, meio: true, centro: true, centro_geometrico: true, no: true, quadrante: true, interseccao: true,
+                    extensao: true, insercao: true, perpendicular: true, tangente: true, sobre: true, paralelo: true, grade: false,
+                    rastreamento: true, polar: true };
+    this.objeto = true;                  // o snap de objeto inteiro (o OSNAP, F3); desligado ficam só a grade, o orto e o polar
+    this.emAndamento = null;             // () → [[a, b], …]: os trechos já fixados do objeto que a ferramenta está desenhando
     this.incrementoPolar = 45;           // graus (o POLARANG do AutoCAD)
     this.adquiridos = [];                // pontos adquiridos: {ponto, dir (a direção da linha, ou null), soDirecao}
     this._sob = null;                    // o snap de objeto do último resolver (o que a pausa adquire)
@@ -94,8 +102,8 @@ export class Snap {
   _candidatas(p, raioMm) {
     const doc = this.tela.doc, r = raioMm * 3;
     const ents = doc.naRegiao([[p[0] - r, p[1] - r], [p[0] + r, p[1] + r]]).filter(e => doc.visivel(e) && !this.ignorar.has(e.id));
-    // o bloco (24/10): o snap vê as entidades de dentro dele; o ponto de inserção à parte
-    this._insercoes = ents.filter(e => e.tipo === 'bloco').map(e => e.posicao);
+    // o bloco (24/10): o snap vê as entidades de dentro dele; o ponto de inserção à parte (o do texto também, 25/10)
+    this._insercoes = ents.filter(e => e.tipo === 'bloco' || e.tipo === 'texto').map(e => [e.posicao, e.tipo === 'bloco' ? 'inserção do bloco' : 'inserção do texto']);
     return ents.flatMap(e => e.tipo === 'bloco' ? filhosDoBloco(e).filter(f => doc.visivel(f)) : [e])
       .filter(e => e.tipo !== 'hachura' && e.tipo !== 'texto');
   }
@@ -110,15 +118,27 @@ export class Snap {
       const chave = prioridade * 1e6 + d;
       if (!melhor || chave < melhor.chave) melhor = { ponto, tipo, chave, rotulo };
     };
-    const ents = this._candidatas(p, raio);
+    // F3 desligado: nenhum snap de objeto (nem os pontos adquiridos, que saem deles) — a grade, o orto e o polar seguem
+    let ents = this.objeto ? this._candidatas(p, raio) : [];
+    if (!this.objeto) this._insercoes = [];
     const a = this.ativos;
     let virt = [];
-    try { virt = this.virtuais ? (this.virtuais(p, raio * 3) || []).filter(v => !this.ignorar.has(v.id)) : []; } catch (e) { virt = []; }
+    try { virt = this.virtuais && this.objeto ? (this.virtuais(p, raio * 3) || []).filter(v => !this.ignorar.has(v.id)) : []; } catch (e) { virt = []; }
+    // o objeto em andamento: cada trecho como uma linha à parte (a polilinha que cruza a si mesma dá a interseção)
+    let andamento = [];
+    try { andamento = this.emAndamento && this.objeto ? (this.emAndamento() || []) : []; } catch (e) { andamento = []; }
+    andamento.forEach((s, i) => { if (dist(s[0], s[1]) > 1e-9) virt.push({ id: `andamento:${i}`, segs: [s] }); });
     for (const v of virt) for (const [s, t] of v.segs) {
       if (a.extremidade) { considerar(s, 'extremidade', 0); considerar(t, 'extremidade', 0); }
       if (a.meio) considerar([(s[0] + t[0]) / 2, (s[1] + t[1]) / 2], 'meio', 1);
     }
-    if (a.extremidade) for (const q of this._insercoes || []) considerar(q, 'extremidade', 0, 'inserção');
+    if (a.insercao) for (const [q, rot] of this._insercoes || []) considerar(q, 'insercao', 0, rot);
+    // a marca de ponto (Dividir, 24/10) é um nó: só o centro da cruz (as linhas dela não dão ponta, meio nem interseção)
+    const ehNo = (e) => e.atributos && e.atributos.simbolo_tipo === 'ponto';
+    if (ents.some(ehNo)) {
+      if (a.no) for (const e of ents) if (ehNo(e) && e.tipo === 'linha') considerar([(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2], 'no', 0, 'nó');
+      ents = ents.filter(e => !ehNo(e));
+    }
     for (const e of ents) {
       if (a.extremidade) {
         if (e.tipo === 'linha') { considerar(e.a, 'extremidade', 0); considerar(e.b, 'extremidade', 0); }
@@ -136,14 +156,17 @@ export class Snap {
         for (const [s, t] of (e.tipo === 'linha' || e.tipo === 'polilinha' ? segmentosDe(e) : [])) considerar([(s[0] + t[0]) / 2, (s[1] + t[1]) / 2], 'meio', 1);
       }
       if (a.centro && (e.tipo === 'circulo' || e.tipo === 'arco')) considerar(e.centro, 'centro', 1);
-      // polilinha fechada pequena (furo oblongo, recorte): o centro da caixa é o centro do furo
-      if (a.centro && e.tipo === 'polilinha' && e.fechada && e.vertices.length >= 3 && e.vertices.length <= 64) {
-        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-        for (const q of e.vertices) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; }
-        considerar([(x0 + x1) / 2, (y0 + y1) / 2], 'centro', 1);
+      // polilinha fechada (furo oblongo, recorte, chapa): o centro geométrico (o GCEN do AutoCAD, pela área; no furo
+      // simétrico é o centro da caixa, como antes)
+      if (a.centro_geometrico && e.tipo === 'polilinha' && e.fechada && e.vertices.length >= 3 && e.vertices.length <= 256) {
+        const g = centroGeometrico(e.vertices);
+        if (g) considerar(g, 'centro_geometrico', 1, 'centro geométrico');
       }
-      if (a.centro && e.tipo === 'circulo') {
-        for (const q of [[e.centro[0] + e.raio, e.centro[1]], [e.centro[0] - e.raio, e.centro[1]], [e.centro[0], e.centro[1] + e.raio], [e.centro[0], e.centro[1] - e.raio]]) considerar(q, 'extremidade', 1, 'quadrante');
+      // os quadrantes (0°, 90°, 180°, 270°) do círculo e os do arco que caem no trecho dele
+      if (a.quadrante && ehCurva(e)) {
+        for (const q of [[e.centro[0] + e.raio, e.centro[1]], [e.centro[0], e.centro[1] + e.raio], [e.centro[0] - e.raio, e.centro[1]], [e.centro[0], e.centro[1] - e.raio]]) {
+          if (naCurva(e, q)) considerar(q, 'quadrante', 1, 'quadrante');
+        }
       }
     }
     if (a.interseccao && ents.length + virt.length > 1) {
@@ -293,7 +316,8 @@ export class Snap {
       ponto = Math.abs(dx) >= Math.abs(dy) ? [ponto[0], this.ultimo[1]] : [this.ultimo[0], ponto[1]];
       tipo = tipo || 'orto';
     }
-    this._sob = melhor && ['extremidade', 'meio', 'centro', 'interseccao', 'sobre'].includes(melhor.tipo) ? { ponto: melhor.ponto, tipo: melhor.tipo } : null;
+    this._sob = melhor && ['extremidade', 'meio', 'centro', 'centro_geometrico', 'quadrante', 'no', 'insercao', 'interseccao', 'sobre'].includes(melhor.tipo)
+      ? { ponto: melhor.ponto, tipo: melhor.tipo } : null;
     return { ponto, tipo, rotulo: melhor ? melhor.rotulo : '', guias: tipo && melhor ? guias : [] };
   }
 
@@ -347,6 +371,19 @@ export class Snap {
 
   /** Esquece os pontos adquiridos (fim do comando, Esc). */
   esquecer() { this.adquiridos.length = 0; }        // a mesma lista (a tela a desenha)
+}
+
+/** O centroide da área do contorno fechado (null quando a área é nula: os vértices alinhados). */
+export function centroGeometrico(v) {
+  let A = 0, cx = 0, cy = 0;
+  const [ox, oy] = v[0];                            // a origem no 1º vértice: nas coordenadas grandes (UTM) a conta não perde casas
+  for (let i = 0; i < v.length; i++) {
+    const [x0, y0] = [v[i][0] - ox, v[i][1] - oy], [x1, y1] = [v[(i + 1) % v.length][0] - ox, v[(i + 1) % v.length][1] - oy];
+    const c = x0 * y1 - x1 * y0;
+    A += c; cx += (x0 + x1) * c; cy += (y0 + y1) * c;
+  }
+  if (Math.abs(A) < 1e-9) return null;
+  return [ox + cx / (3 * A), oy + cy / (3 * A)];
 }
 
 function distSegmento(p, a, b) {

@@ -94,9 +94,15 @@ export class Ferramenta {
   desfazerPasso() { return false; }
   /** Depois de um Ctrl+Z que desfez um comando do desenho (`c`), a ferramenta acerta o estado dela. */
   aposDesfazer(c) {}
+  /** Os trechos já fixados do objeto que está sendo desenhado ([[a, b], …]): o snap os enxerga como linhas (os vértices
+   *  da polilinha em andamento — usuário, 25/10: "ela não reconhece os nós para se ligar"). */
+  trechosEmAndamento() { return []; }
   dica(t) { this.editor.dica(t); }
   novaEntidade(reg) { return criar({ ...reg, camada: reg.camada || this.camada }); }
 }
+
+/** Os trechos entre pontos seguidos. */
+const trechosDe = (pts) => pts.slice(1).map((q, i) => [pts[i], q]);
 
 // ------------------------------------------------------------ selecionar
 
@@ -469,6 +475,7 @@ export class Polilinha extends Linha {
   static id = 'polilinha'; static nome = 'Polilinha'; static atalho = 'p'; static dica = 'Clique nos vértices · Enter termina · C fecha';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 18l6-10 5 7 7-9"/></svg>';
   reiniciar() { super.reiniciar(); this.pontos = []; }
+  trechosEmAndamento() { return trechosDe(this.pontos || []); }
   onPonto(p) {
     if (this.pontos.length && dist(p, this.pontos[this.pontos.length - 1]) < 1e-6) return;
     this.editor.snap.direcoes = direcoesEm(this.editor, p, this.ultimo);
@@ -3108,6 +3115,7 @@ export class NuvemRevisao extends Ferramenta {
     return '';
   }
   _retangulo(a, b) { return [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]]]; }
+  trechosEmAndamento() { return this.modo === 'poligono' && !this.contorno ? trechosDe(this.pts || []) : []; }
   _regs(vertices, delta) {
     return simboloNuvem({ vertices, arco: this.arco, delta, revisao: this.rev || '1' }, this.doc.escala || 1, this.editor.alturaTexto).map(criar);
   }

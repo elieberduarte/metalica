@@ -9,6 +9,7 @@ import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia, ComandoAdicion
 import { Tela, formatarMm } from './nucleo/tela.js';
 import { acompanhar as acompanharTarefa } from '../progresso.js';
 import { Snap } from './nucleo/snap.js';
+import { TIPOS_SNAP, instalarBarraSnap } from './barra_snap.js';
 import { FERRAMENTAS, GRUPOS, Ferramenta, textoNaUnidade, ColarObjetos, CopiarBase, paraMilimetros } from './ferramentas.js';
 import { ATALHOS, tabelaDeComandos, comandoExato, instalarLista } from './linha_comando.js';
 import { TIPOS_DE_LINHA, ESPESSURAS, rotuloDoTipo, escalaTracejado, ESCALA_TRACEJADO } from './nucleo/tipos_linha.js';
@@ -107,6 +108,8 @@ class CAD {
     this.tela = new Tela($('#canvas2d'), this.doc);
     this.snap = new Snap(this.tela);
     this.tela.adquiridos = this.snap.adquiridos;
+    // o snap enxerga o que a ferramenta já marcou (os vértices da polilinha em andamento, 25/10)
+    this.snap.emAndamento = () => (this.ferramenta && this.ferramenta.trechosEmAndamento ? this.ferramenta.trechosEmAndamento() : []);
     this.camadaAtiva = 'VISTA';
     this.alturaTexto = 2.5;
     this.ferramentas = new Map();
@@ -179,11 +182,18 @@ class CAD {
     }
     if (pedirRecebido) setTimeout(() => this.introProjetoRecebido(), 200);
     try { if (localStorage.getItem('cad.orto') === '1') this.snap.orto = true; } catch { /* sem armazenamento */ }
-    // o polar e o rastreamento (F10, F11) e o incremento do polar ficam como a pessoa deixou
+    // os snaps ligados, o F3, o polar e o rastreamento (F10, F11) e o incremento do polar ficam como a pessoa deixou
+    // (até 24/10 só os do rastreamento, no nível de cima do registro; de 25/10 todos, em `ativos`)
     try {
       const g = JSON.parse(localStorage.getItem('cad.rastreamento') || 'null');
-      if (g) { for (const k of ['polar', 'rastreamento', 'extensao', 'paralelo', 'tangente']) if (k in g) this.snap.ativos[k] = !!g[k]; if (g.incremento > 0) this.snap.incrementoPolar = +g.incremento; }
+      if (g) {
+        for (const k of ['polar', 'rastreamento', 'extensao', 'paralelo', 'tangente']) if (k in g) this.snap.ativos[k] = !!g[k];
+        for (const [k, v] of Object.entries(g.ativos || {})) if (k in this.snap.ativos) this.snap.ativos[k] = !!v;
+        if ('objeto' in g) this.snap.objeto = !!g.objeto;
+        if (g.incremento > 0) this.snap.incrementoPolar = +g.incremento;
+      }
     } catch { /* sem armazenamento */ }
+    instalarBarraSnap(this);
     this._agendarPaineis('props', 'camadas', 'snap', 'vistas');
     this._atualizarCarimbo();
     document.body.dataset.pronto = '1';
@@ -1312,6 +1322,8 @@ class CAD {
       if (ev.key === 'Escape' && this._cancelarJanela && this._cancelarJanela()) return;
       if (ev.key === 'Escape' && this._from) { this._from = null; this.dica('FROM cancelado'); return; }
       if (ev.key === 'Escape') { this.snap.esquecer(); if (this.ferramenta) { this.ferramenta.cancelar(); } this.selecionar([]); if (this.ferramenta.constructor.id !== 'selecionar') this.ativarFerramenta('selecionar'); return; }
+      if (ev.key === 'F3') { ev.preventDefault(); this.definirSnap({ objeto: !this.snap.objeto }); return; }
+      if (ev.key === 'F9') { ev.preventDefault(); this.definirSnap({ ativos: { grade: !this.snap.ativos.grade } }); return; }
       if (ev.key === 'F8') { ev.preventDefault(); this.definirOrto(!this.snap.orto); return; }
       if (ev.key === 'F10') { ev.preventDefault(); this.definirRastreamento({ polar: !this.snap.ativos.polar }); return; }
       if (ev.key === 'F11') { ev.preventDefault(); this.definirRastreamento({ rastreamento: !this.snap.ativos.rastreamento }); return; }
@@ -2379,12 +2391,14 @@ class CAD {
   _painelSnap() {
     const raiz = this.el.snap; raiz.replaceChildren();
     const g = el('div', { class: 'snaps' });
-    const rot = { extremidade: 'Extremidade', meio: 'Meio', centro: 'Centro', interseccao: 'Interseção', perpendicular: 'Perpendicular', tangente: 'Tangente', sobre: 'Sobre a linha', grade: 'Grade',
-      extensao: 'Extensão', paralelo: 'Paralelo' };
-    for (const [k, r] of Object.entries(rot)) {
+    // o F3 (o OSNAP do AutoCAD): desligado, nenhum dos de baixo vale
+    const obj = el('input', { type: 'checkbox', checked: this.snap.objeto ? 'checked' : undefined });
+    obj.addEventListener('change', () => this.definirSnap({ objeto: obj.checked }));
+    g.append(el('label', { class: 'snap-objeto', title: 'Liga e desliga o snap nos objetos de uma vez, como o F3 do AutoCAD (a grade, o orto e o polar seguem à parte)' }, obj, 'Snap de objeto (F3)'));
+    for (const [k, r, dica] of TIPOS_SNAP) {
       const c = el('input', { type: 'checkbox', checked: this.snap.ativos[k] ? 'checked' : undefined });
-      c.addEventListener('change', () => { this.snap.ativos[k] = c.checked; });
-      g.append(el('label', {}, c, r));
+      c.addEventListener('change', () => this.definirSnap({ ativos: { [k]: c.checked } }));
+      g.append(el('label', { title: dica, class: k !== 'grade' && !this.snap.objeto ? 'apagado' : undefined }, c, r));
     }
     const orto = el('input', { type: 'checkbox', checked: this.snap.orto ? 'checked' : undefined });
     orto.addEventListener('change', () => this.definirOrto(orto.checked));
@@ -2399,6 +2413,32 @@ class CAD {
     otr.addEventListener('change', () => this.definirRastreamento({ rastreamento: otr.checked }));
     g.append(el('label', { title: 'Rastreamento: pare o cursor num ponto (extremidade, meio, centro) e as guias horizontal e vertical saem dele — o ponto alinhado com ele, ou o cruzamento de duas guias (F11 alterna)' }, otr, 'Rastreamento (F11)'));
     raiz.append(g);
+    if (this._barraSnap) this._barraSnap();
+  }
+
+  /** Grava os snaps para os próximos desenhos (o mesmo registro do rastreamento, de antes de 25/10). */
+  _gravarSnap() {
+    const a = this.snap.ativos;
+    try {
+      localStorage.setItem('cad.rastreamento', JSON.stringify({ polar: a.polar, rastreamento: a.rastreamento, extensao: a.extensao, paralelo: a.paralelo, tangente: a.tangente,
+        ativos: { ...a }, objeto: this.snap.objeto, incremento: this.snap.incrementoPolar }));
+    } catch { /* sem armazenamento */ }
+  }
+
+  /** O snap de objeto inteiro (F3, `objeto`) e cada tipo (`ativos`); fica gravado para os próximos desenhos. */
+  definirSnap(mudanca) {
+    if ('objeto' in mudanca) {
+      this.snap.objeto = !!mudanca.objeto;
+      if (!this.snap.objeto) this.snap.esquecer();              // os pontos adquiridos saem dos objetos
+      this.dica(`Snap de objeto ${this.snap.objeto ? 'ligado' : 'desligado: o cursor não gruda nos objetos'} (F3)`);
+    }
+    for (const [k, v] of Object.entries(mudanca.ativos || {})) {
+      if (!(k in this.snap.ativos)) continue;
+      this.snap.ativos[k] = !!v;
+      if (k === 'grade') this.dica(`Snap na grade ${v ? 'ligado' : 'desligado'} (F9)`);
+    }
+    this._gravarSnap();
+    this._agendarPaineis('snap');
   }
 
   /** Liga ou desliga o polar, o rastreamento (e o incremento do polar); fica gravado para os próximos desenhos. */
@@ -2407,7 +2447,7 @@ class CAD {
     if ('polar' in mudanca) a.polar = !!mudanca.polar;
     if ('rastreamento' in mudanca) a.rastreamento = !!mudanca.rastreamento;
     if (mudanca.incremento > 0) this.snap.incrementoPolar = mudanca.incremento;
-    try { localStorage.setItem('cad.rastreamento', JSON.stringify({ polar: a.polar, rastreamento: a.rastreamento, extensao: a.extensao, paralelo: a.paralelo, tangente: a.tangente, incremento: this.snap.incrementoPolar })); } catch { /* sem armazenamento */ }
+    this._gravarSnap();
     this.dica(`Polar ${a.polar ? `ligado (${this.snap.incrementoPolar}°)` : 'desligado'} (F10) · rastreamento ${a.rastreamento ? 'ligado' : 'desligado'} (F11)`);
     this._agendarPaineis('snap');
   }
