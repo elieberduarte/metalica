@@ -305,6 +305,27 @@ def descricao_hardbolt(d: float, L) -> Tuple[str, str]:
             "solta nem químico" % (float(d), L))
 
 
+def _eh_parabolt(nome: str, atributos: Optional[dict] = None) -> bool:
+    """O Parabolt (chumbador mecânico de expansão, com a porca e a arruela no kit, sem químico): saía como "Chumbador
+    químico HIT-V … com químico HIT-RE 500" e entrava na conta dos cartuchos (SESI Chapecó, 22/10: os ~570 "PARABOLT
+    12.7x102" / "PARABOLT 15.875x152" das chapas dos brises)."""
+    return bool(re.search(r"PARABOLT", str(nome or ""), re.I)) or bool((atributos or {}).get("parabolt"))
+
+
+def descricao_parabolt(d: float, L) -> Tuple[str, str]:
+    """O Parabolt pelo diâmetro e comprimento (mm): ("Parabolt Ø1/2\" x 102", "Chumbador mecânico de expansão Parabolt
+    Ø1/2\" x 102 mm (4\"), com porca e arruela — sem químico")."""
+    pol = _pol_mais_perto(d) or "Ø%g mm" % float(d)
+    try:
+        em_pol = float(L) / 25.4
+        meio = round(em_pol * 2) / 2
+        pol_L = (' (%s")' % (("%g" % meio).replace(".5", " 1/2") if meio % 1 else "%d" % meio)) if abs(em_pol - meio) <= 0.1 else ""
+    except (TypeError, ValueError):
+        pol_L = ""
+    return ("Parabolt Ø%s x %s" % (pol, L),
+            "Chumbador mecânico de expansão Parabolt Ø%s x %s mm%s, com porca e arruela — sem químico" % (pol, L, pol_L))
+
+
 def descricao_chumbador(d: float, L) -> Tuple[str, str]:
     """O chumbador químico pelo diâmetro e comprimento (mm): ("Chumbador químico HIT-V Ø5/8\" x 250",
     "Barra roscada HIT-V ASTM A36 Ø5/8\" x 250 mm + porca e arruela, com químico HIT-RE 500")."""
@@ -1028,6 +1049,8 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
             mc = re.search(r"\((A\d{3}[^)]*)\)", f.nome or "")
             if _eh_hardbolt(f.nome, (f.atributos or {})):
                 chave = "HARDBOLT %g x %s" % (d, m.group(2))       # o mecânico: não é o químico HIT-V (PRATI, 14/10)
+            elif _eh_parabolt(f.nome, (f.atributos or {})):
+                chave = "PARABOLT %g x %s" % (d, m.group(2))       # o mecânico de expansão (SESI, 22/10): nem químico
             else:
                 chave = ("CHUMBADOR %g x %s" % (d, m.group(2))) if _eh_chumbador(f.nome) else (
                     "M%g x %s" % (d, m.group(2)) + (" (%s)" % mc.group(1).strip() if mc else ""))
@@ -1085,7 +1108,7 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
         # o chumbador químico do modelo: o embutimento (para o químico) e se a arruela é uma chapa do projeto (a CH2 do
         # Vicente, 09/10: a arruela solta contava em dobro)
         cq = (f.atributos or {}).get("chumbador_quimico") or {}
-        if cq:
+        if cq and not chave.startswith("PARABOLT"):
             r["embutimento"] = float(cq.get("embutimento") or EMBUTIMENTO_QUIMICO)
             r["quimico"] = str(cq.get("quimico") or "HIT-RE 500")
             if cq.get("arruela") is False:
@@ -1112,6 +1135,8 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
     for chave, r in contagem.items():
         if r["parafuso"] and chave.startswith("HARDBOLT"):
             nome, desc = descricao_hardbolt(r["d"], chave.rsplit(" ", 1)[-1])
+        elif r["parafuso"] and chave.startswith("PARABOLT"):
+            nome, desc = descricao_parabolt(r["d"], chave.rsplit(" ", 1)[-1])
         elif r["parafuso"] and chave.startswith("CHUMBADOR"):
             nome, desc = descricao_chumbador(r["d"], chave.rsplit(" ", 1)[-1])
         elif r["parafuso"]:
@@ -1124,7 +1149,8 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
         if r.get("sem_arruela") and r["sem_arruela"] >= r["qtd"]:
             desc = desc.replace(" + porca e arruela", " + porca (a arruela é chapa do projeto)")
         saida.append({"nome": nome, "descricao": desc, "qtd": r["qtd"], "parafuso": r["parafuso"], "d": r["d"],
-                      "sem_porca": chave.startswith("HARDBOLT"),
+                      # o Hardbolt (cabeça com arruela flangeada) e o Parabolt (porca e arruela no kit): sem porca solta
+                      "sem_porca": chave.startswith(("HARDBOLT", "PARABOLT")),
                       "sem_arruela": int(r.get("sem_arruela") or 0), "embutimento": r.get("embutimento"), "quimico": r.get("quimico"),
                       "locais": [{"local": k, "qtd": v["qtd"], "pecas": sorted(v["pecas"], key=_ordem_natural), "ids": v.get("ids") or []}
                                  for k, v in locais]})
@@ -1393,7 +1419,7 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
             pf.append({"nome": it["nome"], "descricao": it["descricao"], "qtd": it["qtd"],
                        "ids": [i for lc in it.get("locais") or [] for i in lc.get("ids") or []]})
             if it.get("sem_porca"):
-                continue                                     # o Hardbolt: a cabeça e a arruela flangeada são dele, sem químico
+                continue                                     # o Hardbolt e o Parabolt: a porca e a arruela são deles, sem químico
             porcas[_bitola_pol(it.get("d"))] += it["qtd"]
             # a arruela que já é chapa do projeto (a CH2 do chumbador da CH1) não se compra solta
             if it["qtd"] - int(it.get("sem_arruela") or 0):
