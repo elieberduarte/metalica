@@ -19,6 +19,7 @@ PERFIL = "U 100×40×2,65 (FF)"
 PERFIL_MONTANTE = "TQ 40×40×2,0"
 PERFIL_TUBO = "TC 31,75×1,5"
 ESPESSURA_PISO = 6.35                       # chapa expandida #1/4"
+MASSA_PISO_KG_M2 = 11.0                     # a da lista do projetista (957 kg / 87 m²), a do fabricante na compra
 ESPESSURA_CH9 = 4.76                        # #3/16"
 BORRACHA = 5.0                              # mm entre a telha e o CH9
 ALTURA_TELHA = 40.0                         # TR40
@@ -187,7 +188,8 @@ def lancar(doc, lido: dict, mover, nivel: float, estrutura: Sequence, tercas: Se
                      eixo_y=(0.0, 1.0, 0.0), contorno=[(0.0, 0.0), (x1_ - x0_, 0.0), (x1_ - x0_, y1_ - y0_), (0.0, y1_ - y0_)],
                      espessura=ESPESSURA_PISO, centrada=False, aco=aco)
         piso.camada = "Passarela"
-        piso.atributos = {"tipo_ifc": "IfcPlate", "origem": dict(o, piso="chapa expandida #1/4\"",
+        # a massa por m² da lista do projetista do Posto (957 kg em 87 m²): a lista de compra pesa a chapa expandida por ela
+        piso.atributos = {"tipo_ifc": "IfcPlate", "massa_m2": MASSA_PISO_KG_M2, "origem": dict(o, piso="chapa expandida #1/4\"",
                                                                  a_conferir="chapa expandida: o peso é o da tabela do fabricante "
                                                                             "(~11 kg/m²), não o da chapa cheia")}
         doc.add(piso)

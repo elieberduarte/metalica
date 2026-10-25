@@ -515,6 +515,13 @@ def _pecas(doc: Documento, puladas: Optional[list] = None, fora_do_aco: Optional
                         if fora_do_aco is not None:
                             fora_do_aco.append((px, nao_aco[0], nao_aco[1]))
                         continue
+                    # a chapa expandida (o piso da passarela, Posto V2 23/10): item de compra por m², com o peso do fabricante —
+                    # não é peça de corte (pesava como chapa cheia de 6,35 e ia para o plano de corte)
+                    from nucleo2d.detalhe.fora_do_aco import eh_chapa_expandida
+                    if eh_chapa_expandida(ent):
+                        if fora_do_aco is not None:
+                            fora_do_aco.append((ent, "chapa expandida", 0.0))
+                        continue
                     pecas.append(px)
                 except Exception as exc:              # noqa: BLE001 — chapa degenerada não derruba o lote
                     if puladas is not None:

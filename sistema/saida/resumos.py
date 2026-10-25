@@ -1440,6 +1440,7 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
         r["kg"] += it["kg"]
         r["pecas"] += it["qtd"]
     return {"perfis": perfis, "chapas": chapas, "outros_aco": _outros_aco(lista), "telhas_lancadas": _telhas_lancadas(lista),
+            "chapas_expandidas": _chapas_expandidas(lista),
             "perda_chapas": perda, "chapa_comercial": CHAPA_COMERCIAL,
             "parafusos": pf, "porcas": sorted(porcas.items(), key=lambda kv: ordem_b(kv[0])),
             "arruelas": sorted(arruelas.items(), key=lambda kv: ordem_b(kv[0])), "telhas": list(telhas_p.values()),
@@ -1498,6 +1499,21 @@ def _telhas_lancadas(lista: dict) -> List[dict]:
         r = g.setdefault(nome, {"item": nome, "pecas": 0, "ml": 0.0, "m2": 0.0, "kg": 0.0})
         r["pecas"] += int(it.get("quantidade") or 0)
         r["ml"] += float(it.get("comprimento_m") or 0.0)
+        r["m2"] += float(it.get("area_m2") or 0.0)
+        r["kg"] += float(it.get("peso_kg") or 0.0)
+    return sorted(g.values(), key=lambda r: r["item"])
+
+
+def _chapas_expandidas(lista: dict) -> List[dict]:
+    """A chapa expandida (o piso da passarela, Posto V2 23/10): item de compra por tipo — peças, m² e kg pela massa por
+    m² do fabricante, fora das chapas de corte."""
+    g: Dict[str, dict] = collections.OrderedDict()
+    for it in lista.get("pre_moldados") or []:
+        if it.get("categoria") != "chapa expandida":
+            continue
+        nome = str(it.get("nome") or "?")
+        r = g.setdefault(nome, {"item": nome, "pecas": 0, "m2": 0.0, "kg": 0.0, "observacao": it.get("observacao") or ""})
+        r["pecas"] += int(it.get("quantidade") or 0)
         r["m2"] += float(it.get("area_m2") or 0.0)
         r["kg"] += float(it.get("peso_kg") or 0.0)
     return sorted(g.values(), key=lambda r: r["item"])
@@ -2396,6 +2412,19 @@ def _html_compra(R: dict) -> str:
                                  (_n(sum(x["m2"] for x in T_), 2), "r"), "",
                                  (_n(sum(x["kg"] for x in T_), 1) if any(x["kg"] for x in T_) else "—", "r"), ""],
                          larguras=["36%", "8%", "11%", "11%", "9%", "11%", "14%"]))
+    if C.get("chapas_expandidas"):
+        X_ = C["chapas_expandidas"]
+        h.append("<h3>Chapa expandida</h3><p class=\"explica\">Item de compra, fora das chapas de corte: a área pelo contorno "
+                 "das chapas do modelo e o peso pela massa por m² do fabricante.</p>")
+        h.append(_tabela(["Item", ("Peças", "r"), ("m²", "r"), ("kg/m²", "r"), ("kg", "r"), "Pedido"],
+                         [[(x["item"], "b"), (x["pecas"], "r"), (_n(x["m2"], 2), "r"), (_coef(x["kg"] or 0.0, x["m2"]), "r"),
+                           (_n(x["kg"], 1) if x["kg"] else "—", "r"), ""] for x in X_],
+                         rodape=[("TOTAL", "b"), (sum(x["pecas"] for x in X_), "r"), (_n(sum(x["m2"] for x in X_), 2), "r"), "",
+                                 (_n(sum(x["kg"] for x in X_), 1) if any(x["kg"] for x in X_) else "—", "r"), ""],
+                         larguras=["40%", "10%", "12%", "10%", "12%", "16%"]))
+        sem = [x for x in X_ if not x["kg"]]
+        if sem:
+            h.append("<p class=\"legenda-compra\">Sem a massa por m² do fabricante: %s.</p>" % ", ".join(x["item"] for x in sem))
     if C.get("outros_aco"):
         h.append("<h3>Gradis, pisos e outras peças de aço</h3><p class=\"explica\">O que o IFC traz fora das peças de perfil e chapa; "
                  "o comprimento é a maior extensão de cada peça, somada.</p>")

@@ -165,6 +165,41 @@ def item_fora_das_pecas(ent) -> Tuple[str, float]:
     return "sem material", 0.0
 
 
+#: A chapa expandida (o piso da passarela do Posto V2, 23/10: "#1/4\"", 87 m²): não é chapa de corte — é item de compra
+#: por m², com o peso da tabela do fabricante (~11 kg/m²), não o da chapa cheia (6,35 mm: 4,3 t no lugar de 957 kg).
+NOME_CHAPA_EXPANDIDA = r"chapa\s+expandida|expandid[ao]\b|\bexpanded\s+metal"
+OBS_CHAPA_EXPANDIDA = "área pelo contorno das chapas do modelo; peso pela massa por m² do fabricante"
+
+
+def eh_chapa_expandida(ent) -> bool:
+    """A chapa expandida: o piso que o gerador marca (atributos.origem.piso), ou o nome ou o perfil."""
+    atr = getattr(ent, "atributos", None) or {}
+    texto = " ".join(str(x or "") for x in (getattr(ent, "nome", ""), (atr.get("origem") or {}).get("piso") if isinstance(atr.get("origem"), dict) else "",
+                                            (atr.get("marcas") or {}).get("perfil"), atr.get("perfil")))
+    return bool(re.search(NOME_CHAPA_EXPANDIDA, _sem_acento(texto)))
+
+
+def massa_por_m2(ent) -> Optional[float]:
+    """A massa por m² do fabricante gravada na peça (massa_m2, ou a do gerador em origem), em kg/m²; None sem ela."""
+    atr = getattr(ent, "atributos", None) or {}
+    v = atr.get("massa_m2")
+    if v is None and isinstance(atr.get("origem"), dict):
+        v = atr["origem"].get("massa_m2")
+    try:
+        return float(v) if v not in (None, "") and float(v) > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _area_da_chapa(ent) -> float:
+    """A área (m²) da chapa pelo contorno dela (a chapa paramétrica), senão como a da telha."""
+    cont = getattr(ent, "contorno", None) or []
+    if len(cont) >= 3:
+        return abs(sum(cont[i][0] * cont[(i + 1) % len(cont)][1] - cont[(i + 1) % len(cont)][0] * cont[i][1]
+                       for i in range(len(cont)))) / 2.0 * 1e-6
+    return _area_da_telha(ent)
+
+
 def _extensoes(vertices) -> Tuple[float, float]:
     """(maior, menor) extensão da peça pelos eixos principais (mm): o comprimento e a espessura da chapa ou do
     painel."""
@@ -214,10 +249,25 @@ def resumo_fora_do_aco(itens: Sequence[tuple]) -> List[dict]:
                                             "peso_kg": 0.0, "area_m2": 0.0, "comprimento_m": 0.0, "abertas": 0,
                                             "tipo_ifc": str(atr.get("tipo_ifc") or ""),
                                             "observacao": OBS_PELA_MALHA if categoria == "aço fora das peças" else
-                                            (OBS_TELHA if categoria == "telha" else "")})
+                                            (OBS_TELHA if categoria == "telha" else
+                                             OBS_CHAPA_EXPANDIDA if categoria == "chapa expandida" else "")})
         vs = getattr(ent, "vertices", None) or []
         fs = getattr(ent, "faces", None) or []
         g["quantidade"] += 1
+        if categoria == "chapa expandida":
+            # a área pelo contorno e o peso pela massa por m² do fabricante; sem ela, sem peso (e a observação diz)
+            a_ = _area_da_chapa(ent)
+            g["area_m2"] += a_
+            m2 = massa_por_m2(ent)
+            if m2 is None:
+                g["sem_massa"] = g.get("sem_massa", 0) + 1
+            else:
+                g["peso_kg"] += a_ * m2
+                g["massa_m2"] = m2
+            cont = getattr(ent, "contorno", None) or []
+            if cont:
+                g["comprimento_m"] += max(max(q[0] for q in cont) - min(q[0] for q in cont), max(q[1] for q in cont) - min(q[1] for q in cont)) * 1e-3
+            continue
         if categoria == "telha":
             # a área do modelo (a malha trapezoidal não dá a área da chapa) e o peso pela massa por m² do fabricante
             a_ = _area_da_telha(ent)
@@ -247,6 +297,9 @@ def resumo_fora_do_aco(itens: Sequence[tuple]) -> List[dict]:
         g["comprimento_m"] = round(g["comprimento_m"], 1)
         if g["abertas"]:
             nota = "%d peça(s) com a malha aberta, sem volume nem peso" % g["abertas"]
+            g["observacao"] = "; ".join(x for x in (g["observacao"], nota) if x)
+        if g.get("sem_massa"):
+            nota = "%d peça(s) sem a massa por m² do fabricante (massa_m2 na peça): sem peso" % g["sem_massa"]
             g["observacao"] = "; ".join(x for x in (g["observacao"], nota) if x)
     return linhas
 
