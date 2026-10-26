@@ -75,6 +75,15 @@ LARGURA_TOTAL_TELHA = 1050.0
 #: sobra um pouco (1449 → 1450, 1891 → 1895), nunca falta.
 PASSO_TELHA = 5.0
 
+#: Texto das cotas e das chamadas das pranchas geradas (mm de papel). Era 2,5 (cota) e 2,0 (chamada); o usuário
+#: aumentou à mão na T1 da Sala de Compressores para ler na prancha (26/10: "foram aumentados o tamanho das cotas para
+#: facilitar a visualização na prancha"; regra aprovada no mesmo dia).
+ALTURA_COTA = 5.0
+ALTURA_CHAMADA = 5.0
+#: O espaço mínimo de cada trecho para a cadeia sair (3 textos de 2,5 mm de papel): fica o de antes — com o texto de
+#: 5 mm ele dobraria e as cadeias curtas sumiriam; o número que não cabe vai para fora do trecho (_texto_fora).
+ESPACO_CADEIA = 3.0 * 2.5
+
 
 def arredondar_telha(mm: float) -> float:
     """Comprimento de compra/corte da telha: o múltiplo de PASSO_TELHA logo acima (com
@@ -273,11 +282,14 @@ class _Papel:
             self._p(x0, y)
             self._p(x0 + larg, y + altura)
 
-    def chamada(self, x_alvo, y_alvo, x_txt, y_txt, texto, altura=2.0, camada="TEXTO"):
+    def chamada(self, x_alvo, y_alvo, x_txt, y_txt, texto, altura=ALTURA_CHAMADA, camada="TEXTO", outros=()):
         """Linha de chamada: seta no alvo, texto na ponta (altura em mm de papel). O texto
-        entra nos extremos da célula, como os títulos."""
+        entra nos extremos da célula, como os títulos. `outros`: mais alvos [(x, y)] — uma seta a mais para cada um,
+        saindo do joelho (como o MLEADER), para a mesma peça repetida no desenho."""
+        ramos = [{"de": 1.0, "alvo": self._p(x_, y_)} for x_, y_ in outros]
         self.d.add(Chamada(camada=self._cam(camada), alvo=self._p(x_alvo, y_alvo), posicao=self._p(x_txt, y_txt),
-                           texto=str(texto), altura=float(altura), atributos=dict(self.atr, chamada=True)))
+                           texto=str(texto), altura=float(altura), atributos=dict(self.atr, chamada=True),
+                           **({"ramos": ramos} if ramos else {})))
         esc = self.d.escala
         direita = x_txt >= x_alvo
         larg = largura_da_chamada(texto, altura, esc)
@@ -299,7 +311,7 @@ class _Papel:
         (última: pela da frente) ou "fora" (do meio: um degrau mais longe da peça, para não
         encavalar no número vizinho)."""
         esc = self.d.escala
-        h = 2.5 * esc
+        h = ALTURA_COTA * esc
         seta = min(2.5 * esc, max(1.0 * esc, comp / 4))
         if 0.62 * h * n_car + 2 * seta <= comp:
             return None
@@ -315,7 +327,7 @@ class _Papel:
         x1, x2 = float(round(x1)), float(round(x2))
         if abs(x2 - x1) < 0.05:
             return
-        self.d.add(Cota(modo="h", p1=self._p(x1, y), p2=self._p(x2, y),
+        self.d.add(Cota(modo="h", p1=self._p(x1, y), p2=self._p(x2, y), altura=ALTURA_COTA,
                         deslocamento=float(desl_papel), texto=texto, texto_pos=texto_pos, atributos=dict(self.atr)))
         self._p(x1, y + desl_papel * self.d.escala)
 
@@ -324,14 +336,14 @@ class _Papel:
         y1, y2 = float(round(y1)), float(round(y2))
         if abs(y2 - y1) < 0.05:
             return
-        self.d.add(Cota(modo="v", p1=self._p(x, y1), p2=self._p(x, y2),
+        self.d.add(Cota(modo="v", p1=self._p(x, y1), p2=self._p(x, y2), altura=ALTURA_COTA,
                         deslocamento=-float(desl_papel), texto=texto, texto_pos=texto_pos, atributos=dict(self.atr)))
         self._p(x + desl_papel * self.d.escala, y1)
 
     def _cabe(self, vals) -> bool:
         """Cadeia só quando cada parcial tem espaço para o número (3 alturas de texto);
         senão os textos se atropelam e a cota total, sozinha, é mais legível."""
-        minimo = 3.0 * 2.5 * self.d.escala
+        minimo = ESPACO_CADEIA * self.d.escala
         return all(vals[i + 1] - vals[i] >= minimo for i in range(len(vals) - 1))
 
     def cadeia_alinhada(self, linha, xs, desl_papel, exigir_espaco=True):
@@ -352,7 +364,7 @@ class _Papel:
         for i in range(len(ts) - 1):
             p1 = (ax + ux * ts[i], ay + uy * ts[i])
             p2 = (ax + ux * ts[i + 1], ay + uy * ts[i + 1])
-            self.d.add(Cota(modo="alinhada", p1=self._p(*p1), p2=self._p(*p2),
+            self.d.add(Cota(modo="alinhada", p1=self._p(*p1), p2=self._p(*p2), altura=ALTURA_COTA,
                             deslocamento=float(desl_papel), atributos=dict(self.atr)))
             self._p(p1[0] - uy * desl_papel * self.d.escala, p1[1] + ux * desl_papel * self.d.escala)
         return True
@@ -370,7 +382,7 @@ class _Papel:
         if exigir_espaco and not self._cabe(xs):
             return False
         esc = self.d.escala
-        h = 2.5 * esc
+        h = ALTURA_COTA * esc
         n = len(xs) - 1
         y_linha = y + desl_papel * esc                     # a linha de cota (h: normal para cima)
         sg = 1.0 if desl_papel >= 0 else -1.0
@@ -406,7 +418,7 @@ class _Papel:
         if exigir_espaco and not self._cabe(ys):
             return False
         esc = self.d.escala
-        h = 2.5 * esc
+        h = ALTURA_COTA * esc
         n = len(ys) - 1
         x_linha = x + desl_papel * esc                     # desl > 0: a linha à direita
         sg = 1.0 if desl_papel >= 0 else -1.0
@@ -2664,6 +2676,8 @@ def _mover(e, dx: float, dy: float):
         e.contornos = [[mv(p) for p in c] for c in e.contornos]
     elif hasattr(e, "alvo"):
         e.alvo, e.posicao = mv(e.alvo), mv(e.posicao)
+        if getattr(e, "ramos", None):           # as setas a mais da chamada vão junto (26/10)
+            e.ramos = [dict(r, alvo=mv(tuple(r["alvo"]))) for r in e.ramos]
 
 
 def _extremos_de(e, esc: float) -> list:

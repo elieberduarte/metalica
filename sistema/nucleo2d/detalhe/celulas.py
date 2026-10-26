@@ -17,6 +17,7 @@ from saida.desenhos import Estilo, _mm
 
 from nucleo2d.detalhe.base import (
     largura_da_chamada,  # noqa: E402
+    ALTURA_COTA,
     TIPOS_NOME,
     TIPOS_PECA,
     _Papel,
@@ -264,6 +265,8 @@ NIVEIS_DE_CHAMADA = (3.5, 7.5)
 #: A cadeia da linha de furos de cima (a barra inteira da tesoura), mm de papel acima da peça: por
 #: cima das chamadas dos furos.
 COTA_FUROS_DE_CIMA = 12.0
+#: As chamadas dos furos ficam pequenas: empilham a 3,5 e 7,5 mm uma da outra (NIVEIS_DE_CHAMADA) — o texto de
+#: 5 mm das outras (base.ALTURA_CHAMADA, 26/10) encavalaria.
 ALTURA_CHAMADA = 2.0
 
 
@@ -597,7 +600,7 @@ def _cotas_das_arestas(p, contorno, L: float, H: float) -> int:
             chanfros[catetos].append((a, b))
     for (c1, c2), lados in chanfros.items():
         a, b = max(lados, key=lambda ab: (ab[0][1] + ab[1][1]) - 0.001 * (ab[0][0] + ab[1][0]))
-        p.d.add(Cota(modo="alinhada", p1=p._p(*a), p2=p._p(*b), deslocamento=fora * 4.0,
+        p.d.add(Cota(modo="alinhada", p1=p._p(*a), p2=p._p(*b), deslocamento=fora * 4.0, altura=ALTURA_COTA,
                      texto=("%dx " % len(lados) if len(lados) > 1 else "") + "%d×%d" % (c1, c2), atributos=dict(p.atr)))
         postas += 1
     if not grande:
@@ -607,7 +610,7 @@ def _cotas_das_arestas(p, contorno, L: float, H: float) -> int:
         if c < MENOR_ARESTA_COTADA:
             if not inclinada(a, b) and c >= MENOR_CHANFRO:
                 # a ponta truncada da cunha (Q06: a CH1 e a CH4 sem a medida da ponta): o lado curto reto também
-                p.d.add(Cota(modo="alinhada", p1=p._p(*a), p2=p._p(*b), deslocamento=fora * 6.0,
+                p.d.add(Cota(modo="alinhada", p1=p._p(*a), p2=p._p(*b), deslocamento=fora * 6.0, altura=ALTURA_COTA,
                              texto="%d" % round(c), atributos=dict(p.atr)))
                 postas += 1
             continue
@@ -615,11 +618,11 @@ def _cotas_das_arestas(p, contorno, L: float, H: float) -> int:
         if not inclinada(a, b):
             if c < 0.98 * (abs(L) if abs(dy) < abs(dx) else abs(H)):
                 # o lado reto que não vai de ponta a ponta (a ponta da cunha): a caixa não o mede (Q06)
-                p.d.add(Cota(modo="alinhada", p1=p._p(*a), p2=p._p(*b), deslocamento=fora * 6.0,
+                p.d.add(Cota(modo="alinhada", p1=p._p(*a), p2=p._p(*b), deslocamento=fora * 6.0, altura=ALTURA_COTA,
                              texto="%d" % round(c), atributos=dict(p.atr)))
                 postas += 1
             continue                                # as horizontais e verticais de ponta a ponta: pelas cotas da caixa
-        p.d.add(Cota(modo="alinhada", p1=p._p(*a), p2=p._p(*b), deslocamento=fora * 6.0,
+        p.d.add(Cota(modo="alinhada", p1=p._p(*a), p2=p._p(*b), deslocamento=fora * 6.0, altura=ALTURA_COTA,
                      texto="%d" % round(c), atributos=dict(p.atr)))
         ux, uy = dx / c, dy / c
         p._p(a[0] - uy * fora * 9.0 * p.d.escala, a[1] + ux * fora * 9.0 * p.d.escala)

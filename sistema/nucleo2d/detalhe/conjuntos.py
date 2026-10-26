@@ -17,6 +17,8 @@ from saida.dobras import com_bitola, com_bitola_e_mm
 
 from nucleo2d.detalhe.base import (
     parafusos_posicionados, largura_da_chamada,  # noqa: E402
+    ALTURA_CHAMADA,
+    ALTURA_COTA,
     CAMADAS_PECAS,
     TIPOS_NOME,
     _Papel,
@@ -2287,7 +2289,7 @@ def chamadas_de_parafusos(p, doc, instancia, origem, u, v, u0: float, v0: float,
     cy = (min(ys) + max(ys)) / 2 - p.dy
     ocupado: List[Tuple[float, float, float, float]] = []
     feitas = 0
-    alt = 2.0
+    alt = ALTURA_CHAMADA
     for g in grupos:
         cont = collections.Counter(n for _, n in g)
         txt = " + ".join("%dx %s" % (q, n) for n, q in sorted(cont.items(), key=lambda kv: _ordem_natural(kv[0])))
@@ -2313,6 +2315,13 @@ def chamadas_de_parafusos(p, doc, instancia, origem, u, v, u0: float, v0: float,
     return feitas
 
 
+#: A mesma chapa repetida até este tanto de vezes no desenho leva chamada em todas (usuário, 26/10, na T1 da Sala de
+#: Compressores: "faltou uma linha de chamada para essa chapa", a CH9 da outra ponta; "faltou uma divisão na linha de
+#: chamada para indicar o outro suporte"). Mais que isso (a chapinha de cada terça) fica numa chamada só, como antes.
+MAX_RAMOS_CHAPA = 4
+#: As ocorrências a até isto (mm) uma da outra dividem a chamada (uma seta para cada, saindo do joelho); mais longe, cada
+#: uma tem a sua — uma seta de ponta a ponta da tesoura atravessaria o desenho.
+RAMO_ATE = 1500.0
 #: Chapas a menos disto (mm, na elevação) são o mesmo lugar: uma chamada só ("CH15 + CH17") — com 60 as da cumeeira
 #: da T2 do depósito (CH17, CH20, CH21) saíam em três chamadas encavaladas; o mesmo raio do grupo de parafusos
 MESMO_LUGAR_CHAPAS = 150.0
@@ -2348,17 +2357,36 @@ def chamadas_das_chapas(p, instancia, origem, u, v, u0: float, v0: float, esc: f
     ys = [y for _, y in p.pontos] or [0.0]
     cx = (min(xs) + max(xs)) / 2 - p.dx
     cy = (min(ys) + max(ys)) / 2 - p.dy
-    # cada combinação de chapas uma vez, no lugar mais perto do meio
+    # cada combinação de chapas uma vez, no lugar mais perto do meio; os outros lugares dela, setas a mais
     escolhidos: Dict[tuple, tuple] = {}
+    todos_k: Dict[tuple, list] = collections.defaultdict(list)
     for q, nomes in lugares:
         k = tuple(sorted(nomes, key=_ordem_natural))
+        todos_k[k].append(q)
         if k not in escolhidos or abs(q[0] - cx) < abs(escolhidos[k][0] - cx):
             escolhidos[k] = q
+    # as chamadas: [(chapas, alvo, outros alvos)] — a chapa repetida poucas vezes, uma por grupo de ocorrências perto umas
+    # das outras (a principal a mais perto do meio, as outras como setas a mais); a muito repetida, uma só
+    chamadas_k = []
+    for k, q0 in escolhidos.items():
+        ocorr = todos_k[k]
+        if len(ocorr) > MAX_RAMOS_CHAPA:
+            chamadas_k.append((k, q0, []))
+            continue
+        grupos_q: List[list] = []
+        for q in sorted(ocorr, key=lambda q: abs(q[0] - cx)):
+            for g in grupos_q:
+                if any(math.hypot(q[0] - r[0], q[1] - r[1]) <= RAMO_ATE for r in g):
+                    g.append(q)
+                    break
+            else:
+                grupos_q.append([q])
+        chamadas_k += [(k, g[0], g[1:]) for g in grupos_q]
     ja = set()
     ocupado: List[Tuple[float, float, float, float]] = []
     feitas = 0
-    alt = 2.0
-    for k, (gx, gy) in sorted(escolhidos.items(), key=lambda kv: abs(kv[1][0] - cx)):
+    alt = ALTURA_CHAMADA
+    for k, (gx, gy), outros in sorted(chamadas_k, key=lambda t: abs(t[1][0] - cx)):
         nomes = [n for n in k if n not in ja] or list(k)
         txt = " + ".join(nomes)
         larg = largura_da_chamada(txt, alt, esc)
@@ -2370,7 +2398,7 @@ def chamadas_das_chapas(p, instancia, origem, u, v, u0: float, v0: float, esc: f
                 caixa = (min(xt, xt + fx * larg), yt - 1.0 * esc, max(xt, xt + fx * larg), yt + (alt + 1.0) * esc)
                 if any(_sobrepoe(caixa, o, 1.0 * esc) for o in ocupado):
                     continue
-                p.chamada(gx, gy, xt, yt, txt, alt)
+                p.chamada(gx, gy, xt, yt, txt, alt, outros=outros)
                 ocupado.append(caixa)
                 ja.update(k)
                 feitas += 1
@@ -2835,9 +2863,12 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
                     continue
                 xs_h = {x for x in xs_h if not (a_ - 40.0 <= x <= b_ + 40.0)} | {round(a_, 1), round(b_, 1)}
             if len(ts_c) > 1:
-                xs_h.add(round(ts_c[0][1], 1))
-                xs_h.add(round(ts_c[1][0], 1))          # a folga entre as duas metades
-                fixos |= {round(ts_c[0][1], 1), round(ts_c[1][0], 1)}
+                # a tesoura é montada com as chapas de união no lugar: a cadeia vai até o centro geométrico (usuário,
+                # 26/10, na T1 da Sala: "até o centro geométrico" — 780 | 420 | 7130, não 7126 até a metade e a folga
+                # de 8, que não existe: as duas chapas de topo se encostam no meio)
+                meio_c = round((ts_c[0][1] + ts_c[1][0]) / 2.0, 1)
+                xs_h.add(meio_c)
+                fixos.add(meio_c)
             # a largura do perfil não se cota na cadeia (os 50 do pilar, os 55 da descida do banzo —
             # pedido do usuário, 28/09): de dois pontos a menos de 60 mm fica a face de fora da peça
             # (a ponta da treliça) ou o que está mais para o meio; o outro vira a medida de dentro
@@ -2888,7 +2919,10 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         p.cota_h(0.0, larg, 0, -(off + PASSO_COTA_TESOURA))
     else:
         p.cota_h(face_esq, face_dir, 0, -off * (nivel_baixo + 1))
+    antes_cima = set(desenho.entidades)
     cadeia_cima = len(nos_cima) > 2 and nos_cima != nos_baixo and cadeia_do_banzo(nos_cima, True)
+    cotas_cima = [k_ for k_ in desenho.entidades if k_ not in antes_cima and isinstance(desenho.entidades[k_], _Cota)]
+    sups_cotados: List[list] = []                # as cadeias de suportes desenhadas (abscissas), para a regra das metades iguais
     # suportes de terça (chapinhas/cantoneiras curtas encostadas no banzo de cima): a
     # cadeia do espaçamento deles, alinhada ao banzo, acima da cadeia dos nós
     suportes = []
@@ -2977,8 +3011,11 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             if len(sup) > 2:
                 # o trecho reto na horizontal: a linha pelo topo do desenho, como a cadeia de cima (pelo topo do
                 # trecho, mais baixo, o degrau a mais caía na linha dela — o 906 sobre o 839 do DP.3 da Sala, 29/09)
-                cadeia_suportes = (p.cadeia_alinhada(reta_t, sup, desl, exigir_espaco=False) if reta_t is not None
-                                   else p.cadeia_h(sup, alt, desl, exigir_espaco=False, alturas=topo_em)) or cadeia_suportes
+                feita_s = (p.cadeia_alinhada(reta_t, sup, desl, exigir_espaco=False) if reta_t is not None
+                           else p.cadeia_h(sup, alt, desl, exigir_espaco=False, alturas=topo_em))
+                if feita_s:
+                    sups_cotados.append(sup)
+                cadeia_suportes = feita_s or cadeia_suportes
         suportes = []
     if len(suportes) >= 2:
         sup = fundir(set(round(s, 1) for s in suportes) | {0.0, larg}, tol=60.0, fixos=(0.0, larg))
@@ -2993,6 +3030,10 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             # no pé do suporte, no banzo, e sobe por ele até a cadeia
             cadeia_suportes = (p.cadeia_alinhada(reta_cima, sup, desl, exigir_espaco=False) if reta_cima is not None
                                else p.cadeia_h(sup, alt, desl, exigir_espaco=False, alturas=topo_em))
+            if cadeia_suportes:
+                sups_cotados.append(sup)
+    if cadeia_cima and sups_cotados:
+        sem_metades_iguais(desenho, cotas_cima, sups_cotados, p.dx)
     n_topo = (1 if cadeia_cima else 0) + (1 if cadeia_suportes else 0)
     if alma_cheia and len(trechos_cima) > 1:
         # o comprimento de cada água, na inclinação dela, por fora das cadeias
@@ -3121,9 +3162,12 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             esq_ = [x for x in nos_baixo if x < xa_ - 60.0]
             dir_ = [x for x in nos_baixo if x > xb_ + 60.0]
             if esq_ and dir_:
-                # o último nó de cada lado, as faces das metades e a folga entre elas, na horizontal, logo
-                # abaixo do banzo de baixo na cumeeira (pedido do usuário, 28/09)
-                xs_r = [max(esq_), xa_, xb_, min(dir_)]
+                # o último nó de cada lado até a face das chapas de união e a largura delas, na horizontal, logo
+                # abaixo do banzo de baixo na cumeeira (pedido do usuário, 28/09; 26/10, na T1 da Sala: 853 | 19 | 852
+                # até a "união das chapas" — antes ia às faces das metades com uma folga de 8 que não existe)
+                uniao = uniao_das_chapas(desenho, marca, (xa_ + xb_) / 2.0, dx)
+                xs_r = ([max(esq_), uniao[0], uniao[1], min(dir_)] if uniao
+                        else [max(esq_), (xa_ + xb_) / 2.0, min(dir_)])
                 y_r = min(yb for _a, _b, _r, yb in ts_b if yb is not None) if all(t[3] is not None for t in ts_b) else 0.0
                 p.cadeia_h(xs_r, y_r, -off * 2.0, exigir_espaco=False)
         if len(ts_cima) > 1 and nos_alma:
@@ -3451,6 +3495,63 @@ def _faixa_reta(pecas: Sequence[Solido], normal, tol: float = 30.0, faixas: int 
 def _caixa_de_pecas(pecas: Sequence[Solido]):
     cs = [_caixa(e) for e in pecas]
     return [(min(c[k][0] for c in cs), max(c[k][1] for c in cs)) for k in range(3)]
+
+
+def uniao_das_chapas(desenho, marca: str, meio: float, dx: float = 0.0) -> Optional[Tuple[float, float]]:
+    """As faces de fora das chapas de topo que unem as duas metades da tesoura montada, na abscissa da célula: as
+    chapas do conjunto (camada CHAPAS…) inteiras a menos de 40 mm do meio. Na Sala, duas de 9,5 mm encostadas no
+    meio: (−9,5, +9,5). None quando não há chapa de união no desenho."""
+    xs = []
+    for e in desenho.entidades.values():
+        if not str(e.camada or "").startswith("CHAPAS") or (e.atributos or {}).get("conjunto") != marca:
+            continue
+        pts = [e.a, e.b] if isinstance(e, Linha) else list(getattr(e, "vertices", None) or [])
+        if pts and all(abs(q[0] - dx - meio) <= 40.0 for q in pts):
+            xs += [q[0] - dx for q in pts]
+    if not xs or max(xs) - min(xs) < 1.0:
+        return None
+    # ao mm: a espessura do pacote inteira (19 = duas chapas de 9,5) em volta do centro dele, com o meio milímetro para
+    # cima — 853 | 19 | 852, a cadeia fecha (cada face arredondada sozinha dava 18 ou 20 no meio)
+    w = float(round(max(xs) - min(xs)))
+    lo = float(math.floor((max(xs) + min(xs)) / 2.0 - w / 2.0 + 0.5))
+    return (lo, lo + w)
+
+
+#: Duas metades de um vão entre terças que diferem até isto (mm) são o montante no meio: não se cotam (regra de 26/10).
+METADES_IGUAIS = 1.0
+#: O nó da cadeia e o suporte da terça são o mesmo ponto até esta distância (mm, na abscissa do desenho).
+NO_NO_SUPORTE = 30.0
+
+
+def sem_metades_iguais(desenho, cotas_nos: Sequence[str], sups_cotados: Sequence[Sequence[float]], dx: float = 0.0) -> int:
+    """Regra das metades iguais (usuário, 26/10, na T1 da Sala de Compressores): na cadeia dos nós do banzo de cima, o vão entre duas
+    terças com um nó só no meio, dividido em duas metades iguais (773 + 773 num vão de 1.546), não leva as duas cotas — "o
+    pessoal da fábrica divide manualmente na hora da montagem"; a cadeia das terças, por fora, já mede o vão. Metade
+    desigual (754 + 792, a do lado da cumeeira 773 + 875) fica: "a produção precisa da medida para saber onde a peça
+    precisa ser posicionada". `cotas_nos`: as chaves das cotas da cadeia dos nós; `sups_cotados`: as abscissas de cada
+    cadeia de suportes desenhada. Apaga as cotas das metades iguais e devolve quantas."""
+    segs = []
+    for k in cotas_nos:
+        c = desenho.entidades.get(k)
+        if c is None:
+            continue
+        xa, xb = sorted((c.p1[0] - dx, c.p2[0] - dx))
+        segs.append((xa, xb, math.dist(c.p1, c.p2), k))
+    tirar = set()
+    for sup in sups_cotados:
+        s_ = sorted(sup)
+        for s0, s1 in zip(s_, s_[1:]):
+            dentro = sorted((sg for sg in segs if sg[0] >= s0 - NO_NO_SUPORTE and sg[1] <= s1 + NO_NO_SUPORTE),
+                            key=lambda sg: sg[0])
+            if len(dentro) != 2:
+                continue
+            (a0, a1, la, ka), (b0, b1, lb, kb) = dentro
+            encadeadas = (abs(a0 - s0) <= NO_NO_SUPORTE and abs(a1 - b0) <= 1.0 and abs(b1 - s1) <= NO_NO_SUPORTE)
+            if encadeadas and abs(la - lb) <= METADES_IGUAIS + 0.01:
+                tirar.update((ka, kb))
+    for k in tirar:
+        desenho.entidades.pop(k, None)
+    return len(tirar)
 
 
 def tesouras_montadas(meias: Sequence[tuple]) -> Tuple[List[dict], set]:
@@ -4348,7 +4449,7 @@ def _locacao_dos_chumbadores(p: "_Papel", ex: dict, chumb: Sequence[Solido], u, 
                 continue                                    # menos de 1,5 mm no papel: só no quadro
             pf = (_dot((fx, fy, 0.0), u) - u0, _dot((fx, fy, 0.0), v) - v0)
             pc = (_dot((cx, cy, 0.0), u) - u0, _dot((cx, cy, 0.0), v) - v0)
-            p.d.add(_Cota(modo="alinhada", p1=p._p(*pf), p2=p._p(*pc), deslocamento=4.0, texto="%d" % round(dist),
+            p.d.add(_Cota(modo="alinhada", p1=p._p(*pf), p2=p._p(*pc), deslocamento=4.0, texto="%d" % round(dist), altura=ALTURA_COTA,
                           atributos=dict(p.atr, locacao=rotulo, eixo=str(nome_eixo))))
         topo = None
         for c_ in chapas:
