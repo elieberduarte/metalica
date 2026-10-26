@@ -2776,7 +2776,7 @@ def quebrar_cantos_projeto(s: str, corpo: dict) -> dict:
         _fim_progresso(s)
 
 
-CAMPOS_RESUMO = ("revisao", "descricao", "telha", "eixos", "notas_tesouras", "data", "perda_chapas", "projecao")
+CAMPOS_RESUMO = ("revisao", "descricao", "telha", "eixos", "notas_tesouras", "data", "perda_chapas", "projecao", "peso_resumo")
 
 
 def foto_capa_projeto(s: str, corpo: dict) -> dict:

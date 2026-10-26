@@ -806,6 +806,8 @@ const CAMPOS_RESUMO = [
   ['perda_chapas', 'Perda no corte das chapas (%)', 'para contar as chapas de 1,20 x 3,00 na compra; vazio = 15', false],
   // a projeção do kg/m² quando a do modelo não é a da obra (Kaefer, 19/10: a cobertura fabricada tem 18 x 38)
   ['projecao', 'Projeção da obra (m)', 'largura x comprimento (ex.: 18 x 38) ou a área em m²; vazio = a do modelo', false],
+  // o peso da capa e dos Pesos do resumo da obra (Kaefer, 26/10: a proposta foi fechada pelo peso de compra)
+  ['peso_resumo', 'Peso no resumo da obra', '"compra" = barras e chapas comerciais, como na proposta; vazio = o peso das peças', false],
 ];
 let RESUMOS = null, RESUMOS_MONTADO = false, DOC_ATUAL = 'obra', ULTIMOS_NUMEROS = null;
 

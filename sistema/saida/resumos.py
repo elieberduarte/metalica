@@ -1940,6 +1940,21 @@ LINHAS_LADO_A_LADO = 12
 LINHAS_AO_LADO_DA_FOTO = 8
 
 
+def peso_de_compra(R: dict) -> Optional[dict]:
+    """O peso do aço que o resumo da obra mostra quando os Dados do resumo pedem o de compra (`peso_resumo` = "compra"; Kaefer,
+    26/10: "ainda está com o peso antigo" — a proposta foi fechada pelo peso comprado, 10.505 kg, e o resumo dava o das peças):
+    os perfis em barras comerciais com o aproveitamento (a coluna "com aproveitamento" do resumo de materiais) e as chapas na
+    espessura comercial. {"kg", "kg_m2", "sobra"} (sobra = compra − peças), ou None quando o resumo fica no peso das peças."""
+    if str((R.get("dados") or {}).get("peso_resumo") or "").strip().lower() != "compra":
+        return None
+    C = R.get("compra") or {}
+    kg = sum(float(p.get("kg_compra") or 0.0) for p in C.get("perfis") or []) + sum(float(c.get("kg") or 0.0) for c in C.get("chapas") or [])
+    if kg <= 0.0:
+        return None
+    n, area = R["numeros"], float((R.get("dimensoes") or {}).get("area_m2") or 0.0)
+    return {"kg": kg, "kg_m2": kg / area if area > 0 else None, "sobra": kg - float(n.get("peso_aco") or 0.0)}
+
+
 def html_resumo_obra(R: dict, paginado: bool = False) -> str:
     """O resumo da obra como o dossiê dela (09/10): a foto, os números, a obra desenhada (implantação com eixos e cotas,
     ou o corte com os pavimentos), a estrutura por tipo com a foto de cada um, a ficha de cada pavimento e, no fim, os
@@ -1963,7 +1978,12 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
     elif tem_tesouras and n.get("tesouras"):
         q.append(("Tesouras", "%d" % n["tesouras"], "", ("inclinação %s%% (%s°)" % (_n(100 * math.tan(math.radians(n["inclinacao"])), 0), _n(n["inclinacao"], 1)))
                   if n.get("inclinacao") else ""))
-    q.append(("Estrutura metálica", _n(n["peso_aco"], 1), "kg", ("%s kg/m² de projeção" % _n(n["kg_m2"], 1)) if (n.get("kg_m2") and not varios) else ""))
+    compra = peso_de_compra(R)
+    if compra:
+        q.append(("Estrutura metálica", _n(compra["kg"], 1), "kg", "peso de compra%s · peças %s kg" % (
+            (" · %s kg/m² de projeção" % _n(compra["kg_m2"], 2)) if (compra["kg_m2"] and not varios) else "", _n(n["peso_aco"], 1))))
+    else:
+        q.append(("Estrutura metálica", _n(n["peso_aco"], 1), "kg", ("%s kg/m² de projeção" % _n(n["kg_m2"], 1)) if (n.get("kg_m2") and not varios) else ""))
     if n.get("ml_telhas"):
         q.append(("Telhas", _n(n.get("m2_telhas") or 0.0, 2), "m²", "%s ml · %s kg" % (_n(n["ml_telhas"], 2), _n(n["peso_telhas"], 1))))
         q.append(("Total geral", _n(n["total"], 1), "kg", "aço + telhas%s" % (" + rufos" if n.get("peso_funilaria") else "")))
@@ -2106,17 +2126,22 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
     else:
         linhas = [[_esc(g["grupo"]), (_n(g["kg"], 1), "r"), (_n(g["pct"], 1) + "%", "r")] for g in R["grupos_peso"]]
     linhas.append([("TOTAL ESTRUTURA METÁLICA", "b"), (_n(n["peso_aco"], 1), "r"), ("100%", "r")])
+    if compra:
+        linhas.append(["Sobra das barras comerciais e chapas na espessura comercial", (_n(compra["sobra"], 1), "r"), ""])
+        linhas.append([("TOTAL DE COMPRA", "b"), (_n(compra["kg"], 1), "r"), ""])
     if n.get("ml_telhas"):
         linhas.append(["Telhas (%s ml)" % _n(n["ml_telhas"], 2), (_n(n["peso_telhas"], 1), "r"), ""])
     if n.get("peso_funilaria"):
         linhas.append(["Rufos e calhas", (_n(n["peso_funilaria"], 1), "r"), ""])
     if n.get("ml_telhas") or n.get("peso_funilaria"):
         linhas.append([("TOTAL GERAL (AÇO + TELHAS%s)" % (" + RUFOS" if n.get("peso_funilaria") else ""), "b"), (_n(n["total"], 1), "r"), ""])
-    partes.append(_h2(sec, "Pesos", "%s kg de aço" % _n(n["peso_aco"], 1)) + _tabela(["Grupo", ("Peso (kg)", "r"), ("%", "r")], linhas,
+    partes.append(_h2(sec, "Pesos", ("%s kg de aço na compra" % _n(compra["kg"], 1)) if compra else "%s kg de aço" % _n(n["peso_aco"], 1)) + _tabela(["Grupo", ("Peso (kg)", "r"), ("%", "r")], linhas,
                                                                                     larguras=["70%", "18%", "12%"], bruto=True))
     partes.append("<p class=\"nota\">Pesos teóricos: perfis formados a frio pela NBR 6355 (tira desenvolvida com o desconto das dobras), "
                   "laminados, tubos e barras pelas tabelas do catálogo, chapas pelo retângulo envolvente; o conjunto com as chapas dele. "
-                  "Não inclui solda, pintura, parafusos das telhas, rufos e calhas.</p>")
+                  "Não inclui solda, pintura, parafusos das telhas, rufos e calhas.%s</p>"
+                  % (" Compra: os perfis em barras comerciais com o aproveitamento das sobras e as chapas na espessura comercial "
+                     "(o resumo de materiais)." if compra else ""))
     # ---- telhas (só a obra com telha)
     T = R.get("telhas") or {}
     if T.get("ml_total"):

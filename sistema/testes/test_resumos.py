@@ -329,3 +329,33 @@ def test_pecas_fora_do_escopo_nao_sao_pendencia():
               "do detalhamento, da lista de materiais e do peso — estão no 3D e no cálculo",
               "2 posição(ões) sem peso teórico"]
     assert resumos._avisos_que_contam(avisos) == ["2 posição(ões) sem peso teórico"]
+
+
+def test_resumo_da_obra_no_peso_de_compra_quando_os_dados_pedem():
+    """Kaefer, 26/10 ("ainda está com o peso antigo"): a proposta foi fechada pelo peso de compra (10.505 kg) e o resumo da
+    obra dava o das peças (9.957,8). Com `peso_resumo` = "compra" nos Dados do resumo, a capa e os Pesos mostram os perfis
+    em barras comerciais com aproveitamento + as chapas na espessura comercial, e o das peças fica ao lado; vazio, nada muda."""
+    R = {"projeto": {"nome": "QUADRA"}, "dados": {}, "numeros": {"tesouras": 0, "peso_aco": 9957.8, "ml_telhas": 0.0, "peso_telhas": 0.0,
+                                                                 "total": 9957.8, "parafusos": 0, "inclinacao": 0.0, "kg_m2": 14.56},
+         "dimensoes": {"eixos": "", "comprimento_total": 0.0, "n_tesouras": 0, "nivel_apoio": 0.0, "apoio_por_chapa": False, "trechos": [],
+                       "projecao": (18000.0, 38000.0), "area_m2": 684.0},
+         "tesouras": [], "tercas": {"contagem": {k: {"pecas": 0, "tipos": 0} for k in ("cob", "lat", "oit", "marq")}, "linhas": [],
+                                    "perfil_principal": "", "furos": ""},
+         "grupos_peso": [{"grupo": "Pilares", "kg": 9957.8, "pct": 100.0}],
+         "telhas": {"descricao": "", "itens": [], "trechos": {}, "ml_total": 0.0, "kg_total": 0.0, "ml_por_trecho": {}, "largura_util": 980.0},
+         "parafusos": [], "familias": [], "chaparia": [], "chaparia_total": {"kg": 938.6, "pecas": 84}, "perfis_kg": 9019.2, "avisos": [],
+         "compra": {"perfis": [{"perfil": "W 360×32,9", "kg": 4636.3, "kg_compra": 4737.6}, {"perfil": "W 200×26,6", "kg": 2021.6, "kg_compra": 2234.4},
+                               {"perfil": "W 200×19,3", "kg": 600.6, "kg_compra": 694.8}, {"perfil": "U 127×50×2,00 (FF)", "kg": 1027.7, "kg_compra": 1027.7},
+                               {"perfil": "Barra redonda ø 1\"", "kg": 473.1, "kg_compra": 525.1},
+                               {"perfil": "Barra redonda ø 1/2\"", "kg": 259.8, "kg_compra": 262.4}],
+                    "chapas": [{"kg": 215.7}, {"kg": 69.8}, {"kg": 776.1}]}}
+    assert resumos.peso_de_compra(R) is None
+    pecas = resumos.html_resumo_obra(R)
+    assert "9.957,8" in pecas and "TOTAL DE COMPRA" not in pecas and "peso de compra" not in pecas
+    R["dados"] = {"peso_resumo": "compra"}
+    c = resumos.peso_de_compra(R)
+    assert abs(c["kg"] - 10543.6) < 0.05 and abs(c["kg_m2"] - 10543.6 / 684.0) < 1e-6 and abs(c["sobra"] - 585.8) < 0.05
+    obra = resumos.html_resumo_obra(R)
+    capa = obra.split("Peças principais")[0]
+    assert "10.543,6" in capa and "peso de compra" in capa and "15,41 kg/m² de projeção" in capa and "peças 9.957,8 kg" in capa
+    assert "TOTAL DE COMPRA" in obra and "10.543,6 kg de aço na compra" in obra
