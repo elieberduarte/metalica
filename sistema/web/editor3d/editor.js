@@ -320,7 +320,9 @@ export class Editor {
     else if (this.parametros.get('exemplo')) this.carregarExemplo();
     else if (this.parametros.get('abrir')) await this.abrirModelo(this.parametros.get('abrir'));
     if (this.projeto) this._carregarReferencia();
-    if (this.projeto) carregarTerrenoNoEditor(this);        // a obra no terreno (21/10): a imagem do modo ver no chão
+    // a obra no terreno (21/10): a imagem do modo ver no chão — menos nas fotos dos resumos (?render=1, saida/imagens3d.py):
+    // o usuário, 26/10, na capa do resumo do SESI: "retirar dos resumos, por padrão não colocar a foto do terreno"
+    if (this.projeto && this.parametros.get('render') !== '1') carregarTerrenoNoEditor(this);
     if (this.projeto && !this.parametros.get('destacar')) this._vistaDoVisor();
     if (this.projeto) this._botaoVer();
     if (this.projeto && this.parametros.get('lancar') === '1') {

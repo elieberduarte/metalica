@@ -328,6 +328,12 @@ try:
     ifc = os.path.join(proj, "ifc")
     nomes = [n for n in os.listdir(ifc) if n.endswith(".ifc")] if os.path.isdir(ifc) else []
     ok(nomes and "IFCGEOGRAPHICELEMENT" in open(os.path.join(ifc, nomes[0]), encoding="ascii").read(), f"e o arquivo tem a placa ({nomes})")
+    # as fotos dos resumos (o editor sem janela, ?render=1 — saida/imagens3d.py) saem sem o terreno, mesmo com ele ligado no
+    # projeto (o usuário, 26/10, na capa do resumo do SESI: "retirar dos resumos, por padrão não colocar a foto do terreno")
+    aba.navegar(base + "/editor?projeto=obra&render=1", limite=60)
+    ok(esperar(aba, "window.__renderPronto === true", 90), "o editor das fotos (render=1) ficou pronto")
+    time.sleep(3)                                              # o terreno do editor normal entra em ~1 s depois do modelo
+    ok(aba.avaliar("!(window.editor && window.editor._terreno)"), "as fotos dos resumos saem sem a imagem do terreno")
     erros = [x for x in aba.console if x[0] in ("error", "excecao") and "favicon" not in str(x)]   # o 3D aberto direto, sem a área
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:
