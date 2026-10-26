@@ -26,6 +26,25 @@ def test_nome_de_entrega():
     assert "/" not in entrega.nome_de_entrega("OBRA A/B", "plano-de-corte", ".csv", t)
 
 
+def test_arquivo_com_o_nome_da_obra_nao_repete_a_obra(tmp_path):
+    """26/10 (usuário, o IFC do OrtoBio baixado como "ORTOBIO - Ortobio (26.10.2026).ifc": "o nome do arquivo está
+    saindo duas vezes o nome da obra"): o arquivo que é só o nome da obra sai com a obra uma vez — também com acento,
+    hífen e caixa diferentes ("hora-certa-galpao-novo.ifc" na obra "Hora Certa - Galpão Novo")."""
+    t = time.mktime((2026, 10, 26, 11, 37, 0, 0, 0, -1))
+    assert entrega.nome_de_entrega("ORTOBIO", "ortobio", ".ifc", t) == "ORTOBIO (26.10.2026).ifc"
+    assert entrega.nome_de_entrega("Hora Certa - Galpão Novo", "hora-certa-galpao-novo", ".ifc", t) == \
+        "Hora Certa - Galpão Novo (26.10.2026).ifc"
+    assert entrega.nome_de_entrega("POSTO", "posto", ".dxf", t) == "POSTO (26.10.2026).dxf"     # obra de nome curto
+    # o resto continua: a obra e o arquivo quando são coisas diferentes
+    assert entrega.nome_de_entrega("ORTOBIO", "ortobio-r2", ".ifc", t) == "ORTOBIO - R2 (26.10.2026).ifc"
+    p = tmp_path / "ortobio"
+    p.mkdir()
+    (p / "projeto.json").write_text(json.dumps({"nome": "ORTOBIO"}), encoding="utf-8")
+    (p / "ortobio.ifc").write_text("ISO-10303-21;", encoding="utf-8")
+    nome = entrega.nome_do_arquivo_servido(str(p / "ortobio.ifc"), str(tmp_path))
+    assert nome.startswith("ORTOBIO (") and nome.endswith(").ifc") and nome.upper().count("ORTOBIO") == 1
+
+
 def test_arquivo_servido_pela_pasta_do_projeto(tmp_path):
     p = tmp_path / "obra-x"
     (p / "detalhamento").mkdir(parents=True)

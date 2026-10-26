@@ -6,6 +6,7 @@ import json
 import os
 import re
 import time
+import unicodedata
 from typing import Optional
 
 #: O nome legível dos arquivos que o programa gera (o resto: os hífens viram espaço e a primeira letra maiúscula).
@@ -40,19 +41,32 @@ def nome_legivel(base: str) -> str:
     return (t[:1].upper() + t[1:]) if t else base
 
 
+def _chave(texto: str) -> str:
+    """Só as letras e os números, sem acento e sem caixa: "Galpão-Novo" e "GALPAO NOVO" dão a mesma chave."""
+    t = unicodedata.normalize("NFKD", str(texto or ""))
+    return "".join(c for c in t if c.isalnum()).lower()
+
+
 def nome_de_entrega(obra: str, arquivo: str, extensao: str = "", quando: Optional[float] = None) -> str:
     """"VICENTE RESIDENCE - Resumo de materiais (09.10.2026).pdf". O arquivo que já traz a obra no nome (a proposta
-    "Proposta 2026-001 R00 ME SOORO - DEPÓSITO QUÍM") perde a parte da obra, que já vai na frente."""
+    "Proposta 2026-001 R00 ME SOORO - DEPÓSITO QUÍM") perde a parte da obra, que já vai na frente; o arquivo que é só
+    o nome da obra (o IFC "ortobio.ifc") fica "ORTOBIO (26.10.2026).ifc", sem a obra duas vezes (26/10)."""
     obra = re.sub(r"\s+", " ", str(obra or "").strip())
     rotulo = nome_legivel(arquivo)
-    if obra:
+    if obra and _chave(rotulo) == _chave(obra):
+        rotulo = ""
+    elif obra:
         chave = obra.upper()[:8]
         i = rotulo.upper().find(chave) if len(chave) >= 6 else -1
         if i > 0:
             rotulo = rotulo[:i].rstrip(" -_")
         elif i == 0:
             rotulo = rotulo[len(obra):].lstrip(" -_") or rotulo
-    texto = ("%s - %s (%s)" % (obra, rotulo, data_br(quando))) if obra else "%s (%s)" % (rotulo, data_br(quando))
+            rotulo = rotulo[:1].upper() + rotulo[1:]                  # "ortobio-r2" → "R2"
+    if obra and rotulo:
+        texto = "%s - %s (%s)" % (obra, rotulo, data_br(quando))
+    else:
+        texto = "%s (%s)" % (obra or rotulo, data_br(quando))
     return _PROIBIDOS.sub(" ", texto).strip() + (extensao or "")
 
 
