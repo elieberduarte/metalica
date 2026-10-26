@@ -149,7 +149,7 @@ try:
     aba.avaliar("editor.selecao.sob = window._sob; editor.ativarFerramenta('selecionar'); 1")
     # Empurrar/Puxar na barra (pedido de 30/09: "a função puxar não está funcionando... clicar na face do perfil para
     # estender"): a ponta apontada anda no eixo, a outra fica
-    aba.avaliar("editor.ativarFerramenta('pushpull'); 1")
+    aba.avaliar("editor.selecao.limpar(); editor.ativarFerramenta('pushpull'); 1")   # com seleção, só ela conta (26/10)
     antes_t = json.loads(aba.avaliar("JSON.stringify(editor.documento.get('%s'))" % tubo.id))
     aba.avaliar("""(() => { const f = editor.ativa; f.iniciar({ entidade: '%s', ponto: [3990, 800, 0], tela: [1, 1] }, {}); f.aplicar(150); return 1; })()""" % tubo.id)
     dep_t = json.loads(aba.avaliar("JSON.stringify(editor.documento.get('%s'))" % tubo.id))

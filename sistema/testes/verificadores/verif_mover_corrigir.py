@@ -93,6 +93,7 @@ try:
     r = jsj("""const ed = editor, doc = ed.documento;
       const ch = doc.add({ tipo: 'chapa', nome: 'CH', camada: 'Chapas', origem: [0, 9000, 0], eixo_x: [1, 0, 0], eixo_y: [0, 1, 0],
         contorno: [[0, 0], [300, 0], [300, 200], [0, 200]], espessura: 10, centrada: false, furos: [], atributos: {} });
+      ed.selecao.limpar();   // com peça selecionada o Empurrar/Puxar só enxerga ela (26/10)
       ed.ativarFerramenta('pushpull'); const f = ed.ativa;
       f.onPonto({ ponto: [150, 9100, 10], entidade: ch.id, normal: [0, 0, 1], tela: [0, 0], tipoSnap: 'sobre_face' }, {});
       const pegou = !!f.alvo;

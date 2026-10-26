@@ -53,10 +53,11 @@ export class Selecao {
   }
 
   /**
-   * O que está sob o cursor.
+   * O que está sob o cursor. `aceitar(id)`, quando dado, deixa de fora as outras peças: o raio passa por elas (o
+   * Empurrar/Puxar com peça selecionada só enxerga a selecionada, 26/10).
    * @returns {{id, ponto:[x,y,z], normal:[x,y,z], face:number, distancia:number}|null}
    */
-  sob(x, y) {
+  sob(x, y, aceitar = null) {
     this.raio.setFromCamera(this._ndc(x, y), this.camera.ativa);
     const alvos = this.cena.alvos;
     if (!alvos.length) return null;
@@ -72,7 +73,9 @@ export class Selecao {
     const corte = this.cena.planosCorte && this.cena.planosCorte.length ? this.cena.planosCorte : null;
     const hits = this.raio.intersectObjects(alvos, false).filter(h => {
       if (corte && corte.some(pl => pl.distanceToPoint(h.point) < -1e-6)) return false;
-      const e = this.documento.get(idDe(h));
+      const id = idDe(h);
+      if (aceitar && !aceitar(id)) return false;
+      const e = this.documento.get(id);
       return e && this.documento.aparece(e);
     });
     // Linha desenhada sobre uma face ganha da face: é ela que o usuário está mirando.

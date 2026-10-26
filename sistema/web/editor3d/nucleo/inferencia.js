@@ -100,6 +100,9 @@ export class Inferencia {
     this.travado = null;            // 'x' | 'y' | 'z' | null
     this.travadoPorShift = false;
     this.ultimo = null;             // último ponto resolvido
+    // (id) → bool, ou null: só essas peças entram no snap (a ferramenta que pede liga e desliga; o Empurrar/Puxar com
+    // peça selecionada, 26/10)
+    this.restricao = null;
     this._contornos = new Map();    // id → {chave, pontos, arestas, raioMM}: o contorno da seção da barra no mundo
     this._quinas = new WeakSet();   // os pontos de quina viva do contorno (vencem o empate com os do arco ao lado)
     // o plano de trabalho (ferramenta Plano de trabalho): {origem, normal, ex, ey, nome} ou null = o chão (z da âncora)
@@ -439,7 +442,8 @@ export class Inferencia {
   resolver(x, y, ev = {}) {
     const tela = [x, y];
     const raio = this.selecao.raioEm(x, y);
-    const alvo = this.selecao.sob(x, y);
+    const aceitar = this.restricao;
+    const alvo = this.selecao.sob(x, y, aceitar);
     // a peça de verdade sob o cursor, para as ferramentas que precisam da face e não do snap (Parafuso, Furo): sem
     // repetir o raio, que custa ~10 ms num modelo grande
     this.ultimoAlvo = { x, y, alvo };
@@ -492,18 +496,18 @@ export class Inferencia {
       const vistas = new Set();
       for (const i of primeiras) {
         const e = doc.get(i);
-        if (e && !vistas.has(i)) { vistas.add(i); yield [i, e]; }
+        if (e && !vistas.has(i) && (!aceitar || aceitar(i))) { vistas.add(i); yield [i, e]; }
       }
       if (naTela) {
         for (const i of naTela) {
-          if (vistas.has(i)) continue;
+          if (vistas.has(i) || (aceitar && !aceitar(i))) continue;
           vistas.add(i);
           const e = doc.get(i);
           if (e) yield [i, e];
         }
         return;
       }
-      for (const [i, e] of doc.entidades) if (!vistas.has(i)) yield [i, e];
+      for (const [i, e] of doc.entidades) if (!vistas.has(i) && (!aceitar || aceitar(i))) yield [i, e];
     };
     // descarte pelo raio do cursor: a esfera envolvente de cada peça contra a reta do raio, com a folga da tolerância em
     // milímetros na profundidade dela. Sem ele, cada movimento do mouse projetava na tela os pontos de todas as peças —

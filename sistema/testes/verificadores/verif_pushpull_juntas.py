@@ -73,10 +73,10 @@ try:
       const f1 = fins(), i1 = inicios();
       const n1 = ed.pilha.feitos.length;
       ed.desfazer(); const f2 = fins();
-      // a barra fora da seleção estica sozinha
+      // a barra fora da seleção não é clicada: com seleção, só as selecionadas contam (usuário, 26/10)
       f.onPonto({ ponto: [5900, 500, 0], entidade: c.id, normal: [0, 0, 1], tipoSnap: 'sobre_face' }, {});
-      const sozinha = f.alvo && f.alvo.juntas ? f.alvo.juntas.length : -1;
-      f.onValor('300'); const f3 = fins();
+      const sozinha = f.alvo ? f.alvo.id : null;
+      const f3 = fins();
       // encurtar pelo começo: a ponta do mesmo lado (o início) das duas selecionadas anda
       f.onPonto({ ponto: [100, 50, 0], entidade: b.id, normal: [0, 0, 1], tipoSnap: 'sobre_face' }, {});
       f.onValor('-200'); const i4 = inicios();
@@ -85,8 +85,8 @@ try:
     ok(r and r["juntas"] == 1 and r["f1"] == [[6500, 0, 0], [6500, 50, 0], [6000, 500, 0]] and r["i1"] == [[0, 0, 0], [0, 50, 0], [0, 500, 0]],
        f"as duas barras selecionadas esticam juntas 500 pelo fim; a terceira, fora da seleção, fica: {r and (r['juntas'], r['f1'])}")
     ok(r and r["f2"] == [[6000, 0, 0], [6000, 50, 0], [6000, 500, 0]], f"um Ctrl+Z só devolve as duas: {r and r['f2']}")
-    ok(r and r["sozinha"] == 0 and r["f3"] == [[6000, 0, 0], [6000, 50, 0], [6300, 500, 0]],
-       f"a barra clicada fora da seleção estica sozinha: {r and (r['sozinha'], r['f3'])}")
+    ok(r and r["sozinha"] is None and r["f3"] == [[6000, 0, 0], [6000, 50, 0], [6000, 500, 0]],
+       f"a barra fora da seleção não é clicada (26/10: com seleção, só as selecionadas): {r and (r['sozinha'], r['f3'])}")
     ok(r and r["i4"] == [[200, 0, 0], [200, 50, 0], [0, 500, 0]], f"encurtar 200 pelo início anda o início das duas: {r and r['i4']}")
     ok(r and "juntas" in (r["medidaAntes"] or ""), f"a caixa de medidas avisa que as selecionadas esticam juntas: {r and r['medidaAntes']!r}")
 

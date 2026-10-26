@@ -8,7 +8,8 @@
 //   · barra (perfil)               → a ponta apontada anda no eixo dela: estica ou encurta, a outra
 //                                    ponta parada (os cortes no ângulo da ponta vão junto);
 //   · barras selecionadas          → o clique numa delas estica todas juntas (cada uma na própria ponta do
-//                                    mesmo lado, a mesma distância, no próprio eixo), num desfazer só.
+//                                    mesmo lado, a mesma distância, no próprio eixo), num desfazer só;
+//   · com peça selecionada         → só ela conta: o clique, o destaque e o snap atravessam as outras.
 // A distância pode ser digitada a qualquer momento — e logo depois de terminar, corrige o último (como no SketchUp).
 
 import { Ferramenta, paraMilimetros, formatar } from './base.js';
@@ -29,9 +30,43 @@ export class FerramentaPushPull extends Ferramenta {
     this.novaFace = false;
     this.dica(FerramentaPushPull.dica);
     this.medida('');
+    // o snap também só enxerga as selecionadas (o "Sobre aresta" da peça do lado puxava a face até ela)
+    const inf = this.editor && this.editor.inferencia, sel = this.editor && this.editor.selecao;
+    if (inf && sel && sel.ids instanceof Set) inf.restricao = (id) => !sel.ids.size || sel.ids.has(id);
   }
 
-  desativar() { this.reiniciar(); }
+  desativar() {
+    this.reiniciar();
+    const inf = this.editor && this.editor.inferencia;
+    if (inf) inf.restricao = null;
+  }
+
+  /**
+   * Com peça selecionada, a ferramenta só enxerga as selecionadas (usuário, 26/10, no OrtoBio: "a ferramenta puxar está
+   * interagindo com outras peças diferentes da que está selecionada, preciso que quando uma peça estiver selecionada ele
+   * interaja apenas com ela") — sem seleção, qualquer peça, como no SketchUp. Devolve o filtro (id → bool) ou null.
+   */
+  _aceitar() {
+    const ids = C.idsSelecionados(this.editor);
+    if (!ids.length) return null;
+    const s = new Set(ids);
+    return (id) => s.has(id);
+  }
+
+  /** A peça sob o cursor que a ferramenta enxerga: o raio de verdade, atravessando as não selecionadas; sem o pixel
+   *  (`tela`), a peça do ponto, se ela vale. Devolve o ponto com a entidade, a face e a normal dela, ou null. */
+  _sob(p) {
+    if (!p) return null;
+    const aceitar = this._aceitar();
+    const s = this.editor.selecao;
+    if (p.tela && s && typeof s.sob === 'function') {
+      const h = s.sob(p.tela[0], p.tela[1], aceitar);
+      if (h && h.id) return { ...p, entidade: h.id, ponto: h.ponto, normal: h.normal, face: h.face };
+      if (aceitar) return null;
+    }
+    if (aceitar && !(p.entidade && aceitar(p.entidade))) return null;
+    return p;
+  }
 
   // ------------------------------------------------------------- eventos
 
@@ -162,15 +197,10 @@ export class FerramentaPushPull extends Ferramenta {
     return { espessura: Math.round(t * 100) / 100, origem };
   }
 
-  /** A barra sob o cursor, pelo raio de verdade (a inferência pode ter grudado o ponto num plano). */
+  /** A barra sob o cursor (o ponto já vem de `_sob`: o raio de verdade, não o snap, que pode ter grudado num plano). */
   barraApontada(p) {
-    let ent = p && p.entidade && this.documento && this.documento.get(p.entidade);
-    let ponto = p && p.ponto;
-    if ((!ent || ent.tipo !== 'barra') && p && p.tela && this.editor.selecao && this.editor.selecao.sob) {
-      const s = this.editor.selecao.sob(p.tela[0], p.tela[1]);
-      if (s) { ent = this.documento.get(s.id); ponto = s.ponto; }
-    }
-    return ent && ent.tipo === 'barra' ? { ent, ponto } : null;
+    const ent = p && p.entidade && this.documento && this.documento.get(p.entidade);
+    return ent && ent.tipo === 'barra' ? { ent, ponto: p.ponto } : null;
   }
 
   /** Barra (usuário, 30/09: "a função puxar não está funcionando... clicar na face do perfil para estender"): a
@@ -195,7 +225,7 @@ export class FerramentaPushPull extends Ferramenta {
    * As outras barras selecionadas, quando a barra clicada está entre elas (usuário, 21/10: "quando estão duas peças
    * selecionadas, ela deveria puxar ou empurrar as duas juntas; ela puxa apenas uma" — os dois U do banzo, a terça
    * dupla): cada uma anda na ponta do mesmo lado do puxão, no próprio eixo. Barra atravessada (de lado para o puxão):
-   * a ponta mais perto do clique. A barra clicada fora da seleção estica sozinha, como no SketchUp.
+   * a ponta mais perto do clique. A barra fora da seleção não é clicada (26/10: só as selecionadas contam).
    */
   _barrasJuntas(b, normal, ponto) {
     const ids = C.idsSelecionados(this.editor);
@@ -238,10 +268,12 @@ export class FerramentaPushPull extends Ferramenta {
 
   _iniciar(p, ev) {
     // a face que está debaixo do cursor, como no SketchUp — não o ponto para onde o snap puxou: o canto da chapa pego pelo
-    // snap fazia a face de cima virar "esticar o lado" (teste de fluxo, 15/10)
-    const sob = p && p.tela && this.editor.selecao && typeof this.editor.selecao.sob === 'function'
-      ? this.editor.selecao.sob(p.tela[0], p.tela[1]) : null;
-    if (sob && sob.id) p = { ...p, entidade: sob.id, ponto: sob.ponto, normal: sob.normal, face: sob.face };
+    // snap fazia a face de cima virar "esticar o lado" (teste de fluxo, 15/10). Com seleção, só a selecionada (26/10)
+    p = this._sob(p);
+    if (!p) {
+      this.dica('Aponte uma face da peça selecionada (as outras ficam de fora; Esc duas vezes limpa a seleção).');
+      return false;
+    }
     const entAlvo = p && p.entidade && this.documento && this.documento.get(p.entidade);
     if (entAlvo && entAlvo.tipo === 'chapa') return this.iniciarChapa(p, entAlvo);
     const barra = this.barraApontada(p);
@@ -334,6 +366,8 @@ export class FerramentaPushPull extends Ferramenta {
 
   destacar(p) {
     this.limparPrevia();
+    p = this._sob(p);
+    if (!p) { this.medida(''); return; }
     const ch = p && p.entidade && this.documento && this.documento.get(p.entidade);
     if (ch && ch.tipo === 'chapa') { this.medida('chapa: lado ou espessura'); return; }
     const barra = this.barraApontada(p);
