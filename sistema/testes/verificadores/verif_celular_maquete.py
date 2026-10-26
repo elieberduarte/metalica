@@ -73,11 +73,16 @@ def foto(aba, nome):
 
 
 def esperar(aba, expr, limite=60):
+    # cada pergunta à página espera no máximo 10 s (26/10: logo depois de abrir, a página do celular se refaz e a resposta
+    # da primeira pergunta às vezes não vinha — a espera inteira ficava presa nos 120 s da conexão; a resposta atrasada
+    # chega depois e é descartada)
     t0 = time.time()
     while time.time() - t0 < limite:
+        aba.ws.settimeout(10)
         try:
             if aba.avaliar(expr): return True
         except Exception: pass
+        finally: aba.ws.settimeout(120)
         aba.drenar(0.3)
     return False
 
@@ -394,6 +399,14 @@ try:
     esperar(ap, "!!window.ultimaMaquete && window.ultimaMaquete.como === 'webxr' && !!document.querySelector('#ra-acoes button.forte')", 60)
     tocar(ap, "#ra-acoes button.forte")
     ok(esperar(ap, "!!document.querySelector('#ra-sobre [data-ra=camadas]')", 10), "na câmera: os botões por cima da imagem")
+    # a maquete inteira na vista (26/10: a lente grande angular não abre no WebXR): o botão Inteira, e a conta — a 1 m, com
+    # a câmera do celular em pé (~65° de lado), a maquete de 0,6 m de lado (raio ~0,42) cabe com folga e passa a ~1,1
+    ok(ap.avaliar("!!document.querySelector('#ra-sobre .ra-barra-cima [data-ra=inteira]')"), "na câmera: o botão Inteira (no alto)")
+    caber = json.loads(ap.avaliar("""(async () => { const M = await import('./maquete.js');
+      const p = new Array(16).fill(0); p[0] = 1 / Math.tan(32.5 * Math.PI / 180); p[5] = 1 / Math.tan(38 * Math.PI / 180);
+      return JSON.stringify([M.tamanhoParaCaber(0.42, 1, p), M.tamanhoParaCaber(0.42, 0.3, p), M.tamanhoParaCaber(4.2, 1, p)]); })()""") or "[0,0,0]")
+    ok(1.0 < caber[0] < 1.2 and 0.3 < caber[1] < 0.4 and 0.1 <= caber[2] < 0.12,
+       f"a conta do Inteira: 1 m → {caber[0]:.2f}; perto (0,3 m) → {caber[1]:.2f}; maquete 10× maior → {caber[2]:.2f}")
     ap.avaliar("document.querySelector('#ra-sobre [data-ra=camadas]').click()")
     ok(esperar(ap, "!document.querySelector('#ra-sobre .ra-painel').hidden && [...document.querySelectorAll('#ra-sobre .ra-linha')].some(l => l.textContent.includes('Cotas principais'))", 5),
        "o painel Camadas tem as cotas principais")

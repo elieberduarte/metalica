@@ -606,13 +606,23 @@ export function giroPelaGravidade(x, y, atual = 0) {
  *  `cotas` = as cotas principais (cotasDaMaquete), ou null; `camadas` = {camadas, sistemas, partes, desligadas} para o
  *  botão Camadas (usuário, 20/10: "habilitar os eixos e níveis, por exemplo"); `sol` = o sol da obra (a sombra);
  *  `escala` é o 1:N da maquete, para o rótulo acompanhar o tamanho. */
+/** A fração do meio ângulo da câmera que o raio da maquete ocupa ao caber na vista (folga para os botões e a beira). */
+const FOLGA_NA_VISTA = 0.75;
+
+/** O tamanho (multiplicador da maquete) em que a esfera dela, de raio `raio1` no tamanho 1, cabe na vista a `distancia`
+ *  (m) da câmera de projeção `p` (os 16 números da matriz): pelo ângulo mais estreito, o de lado no celular em pé. */
+export function tamanhoParaCaber(raio1, distancia, p) {
+  const tg = Math.min(1 / Math.abs(p[0] || 1), 1 / Math.abs(p[5] || 1));       // a tangente do meio ângulo
+  return Math.min(20, Math.max(0.1, FOLGA_NA_VISTA * distancia * tg / (raio1 || 0.3)));
+}
+
 export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas = null, sol = null, escala, aoSair }) {
   const sobre = document.createElement('div');
   sobre.id = 'ra-sobre';
   // os botões num quadro que gira com o celular deitado (usuário, 20/10: "os menus poderiam reagir à inclinação")
   sobre.innerHTML = `<div class="ra-giro"><div class="ra-dica">Aponte para a mesa ou o chão e toque para pôr a maquete</div>
     <div class="ra-painel" hidden></div>
-    <div class="ra-barra ra-barra-cima">${camadas ? '<button data-ra="camadas">Camadas</button>' : ''}${situacoes.length > 1
+    <div class="ra-barra ra-barra-cima"><button data-ra="inteira">Inteira</button>${camadas ? '<button data-ra="camadas">Camadas</button>' : ''}${situacoes.length > 1
       ? `<button data-ra="situacao">${situacoes[0].rotulo}</button>` : ''}</div>
     <div class="ra-barra"><button data-ra="menor" aria-label="Menor">−</button><span class="ra-escala"></span>
       <button data-ra="maior" aria-label="Maior">+</button><button data-ra="girar">Girar</button><button data-ra="sair">Sair</button></div></div>`;
@@ -631,8 +641,19 @@ export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas
   let quandoLuz = 0;
   maquete.visible = false;
   const desligadas = new Set(camadas ? camadas.desligadas : []);
-  let tamanho = 1, atual = 0;
+  let tamanho = 1, atual = 0, posta = false;
   const mudou = () => refazerSombra(tamanho);
+  // a maquete inteira na vista (usuário, 26/10: "a câmera não abre a lente grande angular para mostrar a maquete" — o
+  // WebXR/ARCore só usa a câmera principal, e a página não escolhe a lente): o raio dela no tamanho 1, para caber no
+  // ângulo da câmera na distância em que ela está
+  const raio1 = new THREE.Box3().setFromObject(maquete).getBoundingSphere(new THREE.Sphere()).radius || 0.3;
+  const pCentro = new THREE.Vector3();
+  const tamanhoQueCabe = () => {
+    const cam = renderer.xr.getCamera();
+    pCam.setFromMatrixPosition(cam.matrixWorld);
+    pCentro.copy(maquete.position).y += raio1 * tamanho * 0.5;                    // o meio da altura, não o pé
+    return tamanhoParaCaber(raio1, pCam.distanceTo(pCentro), cam.projectionMatrix.elements);
+  };
   const aplicar = () => { aplicarVisiveis(maquete, desligadas); mudou(); };
   aplicar();
   const mira = new THREE.Mesh(new THREE.RingGeometry(0.05, 0.065, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff }));
@@ -686,6 +707,7 @@ export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas
   sobre.addEventListener('click', (e) => {
     const k = e.target.dataset && e.target.dataset.ra;
     if (k === 'maior' || k === 'menor') { tamanho *= k === 'maior' ? 1.25 : 0.8; maquete.scale.setScalar(tamanho); mostrarEscala(); mudou(); }
+    else if (k === 'inteira' && maquete.visible) { tamanho = tamanhoQueCabe(); maquete.scale.setScalar(tamanho); mostrarEscala(); mudou(); }
     else if (k === 'girar') { maquete.rotation.y += Math.PI / 12; mudou(); }
     else if (k === 'sair') fechar();
     else if (k === 'camadas') { if (painel.hidden) abrirPainel(); else painel.hidden = true; }
@@ -741,6 +763,12 @@ export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas
     if (pinca || !mira.visible || !painel.hidden) return;
     maquete.position.setFromMatrixPosition(mira.matrix);
     maquete.visible = true;
+    if (!posta) {                                     // a primeira vez na mesa: do tamanho que cabe na vista (só diminui)
+      posta = true;
+      tamanho = Math.min(tamanho, tamanhoQueCabe());
+      maquete.scale.setScalar(tamanho);
+      mostrarEscala();
+    }
     mudou();
     dica.textContent = 'Dois dedos: aumentar e girar · toque em outro ponto para mudar de lugar';
   });
