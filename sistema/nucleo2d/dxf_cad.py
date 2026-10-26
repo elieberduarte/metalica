@@ -81,7 +81,8 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
 
     ds = doc.dimstyles.new(ESTILO)
     for chave, valor in {"dimscale": k, "dimtxt": 2.5, "dimasz": 2.5, "dimexe": 2.0, "dimexo": 1.5,
-                         "dimgap": folga_da_cota(None, desenho.metadados.get("estilo")), "dimtad": 1, "dimtih": 0, "dimtoh": 0, "dimdec": 1, "dimzin": 8,
+                         "dimgap": folga_da_cota(None, desenho.metadados.get("estilo")), "dimtad": 1, "dimtih": 0, "dimtoh": 0, "dimdec": 0, "dimadec": 1, "dimzin": 8,
+                         # dimdec 0: a cota ao mm inteiro (REGRA 26/10, "700,1" → 700); o ângulo segue com uma casa
                          # linhas e chamadas na cor da camada; o número na ACI 7 (branco no fundo preto),
                          # como os textos — com 0 (PorBloco) ele herdava a cor da camada da cota
                          "dimdsep": ord(","), "dimlunit": 2, "dimclrd": 0, "dimclre": 0, "dimclrt": 7,
@@ -397,6 +398,15 @@ def exportar_pranchas(desenhos, pasta: str, base: str = "pranchas", corte: Optio
 FATOR_TRACO = 1.0 / (2.0 * math.sqrt(2.0))
 
 
+def _casas(c) -> Optional[int]:
+    """as casas decimais escolhidas à mão na cota (None = o automático)"""
+    v = getattr(c, "casas", None)
+    try:
+        return int(v) if v not in (None, "", "auto") and int(v) >= 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _dimensao_especial(msp, c, k: float, at: dict, estilo: dict = None) -> list:
     """A cota angular, de raio, de diâmetro ou ordenada como DIMENSION do AutoCAD (editável lá), no estilo METALICA com o
     tamanho, a folga e a escala da cota; se a ezdxf recusar, as linhas, os arcos e o número que a tela desenha
@@ -406,6 +416,8 @@ def _dimensao_especial(msp, c, k: float, at: dict, estilo: dict = None) -> list:
     override = {"dimtxt": altura, "dimasz": 2.5 * f, "dimgap": folga_da_cota(c, estilo) * f, "dimtmove": 0}
     if c.escala and float(c.escala) != 1.0:
         override["dimlfac"] = float(c.escala)
+    if _casas(c) is not None:
+        override["dimadec" if c.modo == "angular" else "dimdec"] = _casas(c)
     texto = str(c.texto) if c.texto not in (None, "") else "<>"
     C, P1, POS = tuple(c.centro), tuple(c.p1), tuple(c.posicao)
     R = math.hypot(P1[0] - C[0], P1[1] - C[1])
@@ -481,6 +493,8 @@ def _dimensao(msp, c: Cota, k: float, at: dict, terminador: str = "traco", estil
         override.update(dimexe=2.0 * f, dimexo=1.5 * f)
     if c.escala and float(c.escala) != 1.0:
         override["dimlfac"] = float(c.escala)               # a escala da cota: o número é a medida da peça
+    if _casas(c) is not None:
+        override["dimdec"] = _casas(c)                      # as casas escolhidas à mão (no automático, ao mm)
     if terminador == "traco":
         override.update(dimtsz=FATOR_TRACO * seta / k, dimdle=0.0)
     elif terminador == "bola":

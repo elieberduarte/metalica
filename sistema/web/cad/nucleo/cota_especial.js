@@ -8,7 +8,7 @@
 // lado do ângulo), posicao (por onde passa o arco do ângulo / onde fica o número), eixo (x | y, da ordenada), texto
 // (vazio = a medida), altura, casas, escala (o número por mm desenhado), fator, terminador, folga.
 
-import { folgaDaCota, formatarMm } from './desenho2d.js';
+import { folgaDaCota, numeroDaCota } from './desenho2d.js';
 
 const RAD = Math.PI / 180;
 const n360 = (g) => ((g % 360) + 360) % 360;
@@ -30,10 +30,11 @@ export function medidaDaCotaEspecial(c) {
     const v = setorAngular(c).varre;
     return (c.casas != null && c.casas !== '' ? v.toFixed(+c.casas) : Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1)).replace('.', ',') + '°';
   }
-  if (c.modo === 'raio') return 'R' + formatarMm(dist(c.centro, c.p1) * e, c.casas);
-  if (c.modo === 'diametro') return 'Ø' + formatarMm(2 * dist(c.centro, c.p1) * e, c.casas);
+  // ao mm inteiro no automático (REGRA 26/10, desenho2d.js numeroDaCota)
+  if (c.modo === 'raio') return 'R' + numeroDaCota(dist(c.centro, c.p1) * e, c.casas);
+  if (c.modo === 'diametro') return 'Ø' + numeroDaCota(2 * dist(c.centro, c.p1) * e, c.casas);
   const i = c.eixo === 'y' ? 1 : 0;
-  return formatarMm(Math.abs(c.p1[i] - c.centro[i]) * e, c.casas);
+  return numeroDaCota(Math.abs(c.p1[i] - c.centro[i]) * e, c.casas);
 }
 
 /** O ângulo do texto lido de baixo para cima ou da esquerda para a direita: (graus, virou). */

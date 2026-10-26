@@ -180,6 +180,14 @@ export function formatarMm(v, casas = null) {
   return v.toFixed(1).replace('.', ',');
 }
 
+/** O número da cota (REGRA do usuário, 26/10, na T1 da Sala de Compressores: "700,1" → 700): no automático, sempre ao
+ *  mm inteiro; decimal só com as `casas` escolhidas à mão (a chapa, raro). O mesmo de nucleo2d/desenho.py formatar_cota. */
+export function numeroDaCota(v, casas = null) {
+  if (casas != null && casas !== '' && casas !== 'auto' && isFinite(casas) && +casas >= 0) return formatarMm(v, casas);
+  const n = Math.round(v);
+  return String(n === 0 ? 0 : n);
+}
+
 /** Geometria da cota em coordenadas do modelo: as pontas da linha de cota (a1, a2), a direção e a normal. */
 export function geometriaCota(c, k) {
   let [x1, y1] = c.p1, [x2, y2] = c.p2;
@@ -206,7 +214,7 @@ export function textoDaCota(c, k, estilo = null) {
   const f = c.fator || 1;
   const sg = g.desl >= 0 ? 1 : -1, seta = Math.min(2.5 * k * f, Math.max(1 * k * f, g.comp / 4));
   // sem texto escrito, a medida × a escala da cota (a cota feita na célula em 1:25 da prancha mostra a da peça)
-  const txt = c.texto != null && c.texto !== '' ? String(c.texto) : formatarMm(valorCota(c) * (c.escala || 1), c.casas);
+  const txt = c.texto != null && c.texto !== '' ? String(c.texto) : numeroDaCota(valorCota(c) * (c.escala || 1), c.casas);
   const ang = Math.atan2(g.uy, g.ux);
   let angG = ang * 180 / Math.PI;
   const lado = (angG > -90 && angG <= 90) ? 1 : -1;

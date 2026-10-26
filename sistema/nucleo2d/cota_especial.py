@@ -42,7 +42,7 @@ def _js_fixo(v: float, casas: int) -> str:
 
 def medida(c) -> str:
     """o número escrito (sem o texto posto à mão)"""
-    from nucleo2d.desenho import formatar_mm
+    from nucleo2d.desenho import formatar_cota
     e = float(getattr(c, "escala", None) or 1.0)
     casas = getattr(c, "casas", None)
     if c.modo == "angular":
@@ -55,11 +55,11 @@ def medida(c) -> str:
             s = _js_fixo(v, 1)
         return s + "°"
     if c.modo == "raio":
-        return "R" + formatar_mm(_dist(c.centro, c.p1) * e, casas)
+        return "R" + formatar_cota(_dist(c.centro, c.p1) * e, casas)
     if c.modo == "diametro":
-        return "Ø" + formatar_mm(2 * _dist(c.centro, c.p1) * e, casas)
+        return "Ø" + formatar_cota(2 * _dist(c.centro, c.p1) * e, casas)
     i = 1 if getattr(c, "eixo", "x") == "y" else 0
-    return formatar_mm(abs(c.p1[i] - c.centro[i]) * e, casas)
+    return formatar_cota(abs(c.p1[i] - c.centro[i]) * e, casas)
 
 
 def _legivel(g: float):

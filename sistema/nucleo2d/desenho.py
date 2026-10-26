@@ -648,7 +648,7 @@ def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = TERMINADOR_PA
     else:
         _terminador_dxf(d, a1[0], a1[1], ang + 180, tam, camada, terminador)
         _terminador_dxf(d, a2[0], a2[1], ang, tam, camada, terminador)
-    txt = c.texto if c.texto is not None else formatar_mm(c.medida(), c.casas)
+    txt = c.texto if c.texto is not None else formatar_cota(c.medida(), c.casas)
     if c.texto_pos:
         d.texto(c.texto_pos[0], c.texto_pos[1], txt, h, camada_texto or camada, angulo=(ang if -90 < ang <= 90 else ang + 180), alinhamento="centro")
         return
@@ -704,6 +704,20 @@ def formatar_mm(v: float, casas: Optional[int] = None) -> str:
     if abs(v - round(v)) < 0.05:
         return "%d" % round(v)
     return ("%.1f" % v).replace(".", ",")
+
+
+def formatar_cota(v: float, casas=None) -> str:
+    """O número da cota (REGRA do usuário, 26/10, na T1 da Sala de Compressores: "700,1" → 700): no automático,
+    sempre ao mm inteiro; decimal só com as `casas` escolhidas à mão (a chapa, raro). O mesmo de web/cad/nucleo/
+    desenho2d.js numeroDaCota (o meio mm sobe, como o Math.round de lá)."""
+    if casas not in (None, "", "auto"):
+        try:
+            if int(casas) >= 0:
+                return formatar_mm(v, int(casas))
+        except (TypeError, ValueError):
+            pass
+    n = math.floor(v + 0.5)
+    return "%d" % (0 if n == 0 else n)
 
 
 def escala_sugerida(largura_mm: float, altura_mm: float, folha_util=(750.0, 520.0)) -> float:
