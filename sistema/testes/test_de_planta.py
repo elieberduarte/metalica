@@ -1056,6 +1056,19 @@ def test_alem_da_ponta_da_trelica():
     assert de_planta._alem_da_ponta(t, (2000.0, 120.0)) == 0.0
 
 
+def test_transicao_so_da_altura_a_terca_em_cima_dela():
+    """a TC46 do Posto V2 (26/10/2026, foto do usuário: "terça fora do alinhamento, precisa corrigir para as telhas se
+    acertarem"): a linha de terça 150 mm ao lado da TRANSIÇÃO 11 (banzo U 150, debaixo da cumeeira, 80 mm abaixo das
+    tesouras) pegava a altura dela e saía em pedaços soltos fora da água. A transição só dá a altura à terça em cima do
+    banzo dela; a tesoura continua com o alcance de sempre"""
+    t = _tr("TRANSICAO 11", "TRANSICAO", (0.0, 0.0), (0.0, 8000.0), largura=150.0, h=(0.0, 1125.0))
+    em_cima, ao_lado = (73.5, 4000.0), (150.0, 4000.0)            # a TC47 sobre a TRANSIÇÃO 13 × a TC46 ao lado da 11
+    assert de_planta._altura_no_ponto(t, em_cima, de_planta._alcance_da_altura(t)) == pytest.approx(1125.0)
+    assert de_planta._altura_no_ponto(t, ao_lado, de_planta._alcance_da_altura(t)) is None
+    tes = _tr("TESOURA 27", "TESOURA", (0.0, 0.0), (8000.0, 0.0), largura=100.0, h=(0.0, 1208.0))
+    assert de_planta._altura_no_ponto(tes, (4000.0, 150.0), de_planta._alcance_da_altura(tes)) == pytest.approx(1208.0)
+
+
 def _tr(nome, familia, a, b, largura=100.0, comp_el=None, h=(0.0, 1000.0)):
     M = de_planta.Membro
     L = math.dist(a, b)

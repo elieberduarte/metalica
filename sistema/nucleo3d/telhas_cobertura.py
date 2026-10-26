@@ -480,6 +480,7 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0, s
             for k in [k for k in abertos if k not in pares_aqui]:
                 panos.append(abertos.pop(k))
         panos += list(abertos.values())
+        _calha_ate_a_ponta(panos)
         # a borda escalonada (a borda diagonal do Posto, do eixo 13/D ao K): onde uma das duas terças do pano acaba antes
         # e nenhum outro pano continua do lado dela, o triângulo da ponta da mais curta até a ponta da mais longa — a
         # linha da borda passa pelas pontas das terças
@@ -599,6 +600,46 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0, s
     panos = [p for p in panos if not p.get("calha") and not p.get("cumeeira")]
     return {"panos": panos, "calhas": calhas, "cumeeiras": cumeeiras, "fora": fora, "aguas": aguas, "vaos_grandes": vaos_grandes, "amostras": dict(amostras), "direcao": direcao,
             "sem_telha": [dict(v, comp=round(v["comp"])) for v in sem_telha.values()]}
+
+
+def _calha_ate_a_ponta(panos) -> int:
+    """A calha do vale segue até a ponta dele (26/10/2026, Posto V2, o vale de x 49,9 junto da platibanda curva — o
+    usuário: "retirar essa telha", "a calha deve ir até a platibanda"): onde a água de depois acaba (a platibanda chega
+    perto), o par de terças do vale fica sem a inclinação de depois e o vão entre elas virava telha por cima do vale, com a
+    calha parando 2 m antes. O pano comum entre as mesmas duas linhas de terça (até 1 m uma da outra), emendado na ponta de
+    uma calha delas, é calha também, e as telhas das duas águas entram nela como na calha vizinha. Muda `panos`; devolve
+    quantos viraram calha."""
+    def linha(p):
+        return (round(p["q"]["t"] / 30.0), round(p["r"]["t"] / 30.0))
+    calhas = [p for p in panos if p.get("calha") and not p.get("eixo") and not p.get("parede") and p["q"] is not p["r"]]
+    beirais: Dict[tuple, list] = collections.defaultdict(list)
+    for p in panos:
+        if p.get("beiral") and not p.get("sobre_fechamento"):
+            beirais[(round(p["q"]["t"] / 30.0), p["lado"])].append(p)
+    feitos = 0
+    mudou = bool(calhas)
+    while mudou:
+        mudou = False
+        for p in panos:
+            if p.get("calha") or p.get("cumeeira") or p.get("beiral") or p.get("parede") or p["q"] is p["r"]:
+                continue
+            if not (0.0 < p["r"]["t"] - p["q"]["t"] <= 1000.0):
+                continue
+            if not any(linha(c) == linha(p) and (abs(c["s0"] - p["s1"]) < 1.0 or abs(c["s1"] - p["s0"]) < 1.0) for c in calhas):
+                continue
+            p["calha"] = True
+            calhas.append(p)
+            feitos += 1
+            mudou = True
+            # a telha de cada água entra na calha como na vizinha (o mesmo balanço e a mesma caída)
+            for ter, lado in ((p["q"], +1), (p["r"], -1)):
+                ref = beirais.get((round(ter["t"] / 30.0), lado), [])
+                if ref:
+                    b0 = min(ref, key=lambda b: min(abs(b["s0"] - p["s1"]), abs(b["s1"] - p["s0"])))
+                    novo = {"q": ter, "r": ter, "beiral": True, "lado": lado, "L": b0["L"], "m": b0["m"], "s0": p["s0"], "s1": p["s1"]}
+                    panos.append(novo)
+                    beirais[(round(ter["t"] / 30.0), lado)].append(novo)
+    return feitos
 
 
 def _linhas_inteiras(reg) -> List[dict]:
@@ -2594,7 +2635,10 @@ def alinhar_tercas(tercas, barras, tol: float = 10.0, maximo: float = 300.0, vao
         x = b.inicio[0] + (b.fim[0] - b.inicio[0]) * p[0]
         y = b.inicio[1] + (b.fim[1] - b.inicio[1]) * p[0]
         s_ = (x - x0) * u_[0] + (y - y0) * u_[1]
-        return min(abs(s_ - smin), abs(s_ - smax)) <= 400.0
+        # até 600 mm: a terça do outro lado da calha senta a uns 450 mm da ponta da tesoura (o trecho baixo do banzo, debaixo
+        # da calha) — a TC62 do Posto, x 50,17, ficava 0,10 m abaixo da água com a TC58 da mesma linha já no plano (26/10,
+        # foto do usuário: "deve ficar apoiado aqui seguindo o alinhamento da terça ao lado")
+        return min(abs(s_ - smin), abs(s_ - smax)) <= 600.0
 
     def sigla(b):
         o = origem_de(b)

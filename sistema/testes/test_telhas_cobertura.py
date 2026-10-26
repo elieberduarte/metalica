@@ -1112,3 +1112,48 @@ def test_borda_atravessa_o_vao_da_platibanda_curva():
     from shapely.geometry import box
     falta = box(1500.0, 2700.0, 2400.0, 3400.0).difference(_cobertura_em_planta(doc))
     assert falta.area < 1.0, "o buraco no vão da curva (%.0f mm²)" % falta.area
+
+
+def test_calha_do_vale_vai_ate_onde_a_agua_de_depois_acaba():
+    """o vale de x 49,9 do Posto V2 junto da platibanda curva (26/10/2026, o usuário: "retirar essa telha", "a calha deve
+    ir até a platibanda"): onde a água de depois acaba, o par de terças do vale ficava sem a inclinação de depois e o vão
+    entre elas virava telha por cima do vale, com a calha parando antes. A calha segue até a ponta do vale"""
+    doc = Documento()
+    for i in range(4):                                         # a água da esquerda desce 5 % até x 4200
+        _terca(doc, i * 1400.0, 7210.0 - i * 1400.0 * 0.05, "TC1")
+    _terca(doc, 4650.0, 7000.0, "TC2")                          # a outra terça do vale, 0,45 m adiante
+    for i in range(1, 4):                                      # a água da direita só de y 3000 a 6000 (a platibanda chega)
+        _terca(doc, 4650.0 + i * 1400.0, 7000.0 + i * 1400.0 * 0.05, "TC3", y0=3000.0)
+    T.lancar(doc)
+    calhas = [s for s in doc.solidos if s.camada == "Calhas"]
+    ys = [v[1] for s in calhas for v in s.vertices]
+    assert calhas and min(ys) < 1.0 and max(ys) > 5999.0, "a calha não vai de ponta a ponta do vale"
+    por_cima = [v for s in _telhado(doc) for v in s.vertices if 4360.0 < v[0] < 4490.0 and v[1] < 2900.0]
+    assert not por_cima, "telha por cima do vale onde a água de depois acaba"
+
+
+def test_terca_do_outro_lado_da_calha_sobe_ao_plano():
+    """a TC62 do Posto V2, x 50,17 (26/10/2026, o usuário: "deve ficar apoiado aqui seguindo o alinhamento da terça ao
+    lado"): do outro lado da calha a terça senta no trecho baixo do banzo da tesoura, a 450–500 mm da ponta dela, 0,10 m
+    abaixo da água; numa parte do comprimento a água de antes não chega (não é borda) e a regra pedia o apoio a até 400 mm
+    da ponta — ficava embaixo, com a vizinha da mesma linha já no plano"""
+    doc = Documento()
+    _agua(doc, 8500.0, 5, 7100.0, 0.05, sigla="TC3")            # a água da direita sobe 5 % a partir de x 8500
+    lo, hi = T._ext_z(Barra(inicio=(0, 0, 0), fim=(0, 6000, 0), perfil=PERFIL))
+    z_plano = 7100.0 - 0.05 * 1400.0                           # o eixo da terça em x 7100 no plano da água
+    baixa = _terca(doc, 7100.0, z_plano - 100.0, "TC2")
+    _terca(doc, 6650.0, 7010.0, "TC1")                          # a terça do vale do lado de lá, 0,45 m antes
+    for k in (1, 2):                                           # a água de antes só de y 2000 a 6000
+        _terca(doc, 6650.0 - k * 1400.0, 7010.0 + k * 1400.0 * 0.05, "TC1", y0=2000.0)
+    # a tesoura em y 3000: o trecho baixo do banzo de x 6600 (a ponta) até a terça; o alto, no plano, a partir de x 7139
+    b_lo = Barra(inicio=(0, 0, 0), fim=(1, 0, 0), perfil="U 100×50×3,00 (FF)", rotacao=270.0)
+    _lo_b, hi_b = T._ext_z(b_lo)
+    z_b = baixa.inicio[2] + lo - hi_b
+    _banzo(doc, (6600.0, 3000.0, z_b), (7110.0, 3000.0, z_b), "TESOURA 34", perfil="U 100×50×3,00 (FF)").rotacao = 270.0
+    _banzo(doc, (7139.0, 3000.0, z_b + 100.0), (14000.0, 3000.0, z_b + 100.0 + 0.05 * 6861.0), "TESOURA 34",
+           perfil="U 100×50×3,00 (FF)").rotacao = 270.0
+    tercas = [b for b in doc.barras if b.papel == "terça"]
+    r = T.alinhar_tercas(tercas, doc.barras)
+    assert "TC2" in [c["sigla"] for c in r["calha"]], "a terça do outro lado da calha ficou embaixo da água"
+    assert baixa.inicio[2] > z_plano - 100.0 + 20.0 and baixa.fim[2] > z_plano - 100.0 + 20.0      # subiu nas duas pontas
+    assert any(apoio == "TESOURA 34" for _a, _b, apoio in r["suportes"])

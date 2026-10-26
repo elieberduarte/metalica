@@ -2387,6 +2387,17 @@ def _escolher_trechos(L: float, ns: List[float], pedidos: List[Tuple[float, floa
 # Orientação: qual ponta da elevação vai em qual ponta da planta
 # =====================================================================================
 
+def _alcance_da_altura(t: Trecho) -> float:
+    """até onde, de lado do eixo em planta, a treliça `t` dá a altura de apoio da terça. A transição só à terça que fica
+    em cima do banzo dela (a meia largura dele + a meia terça): a TC46 do Posto corre 150 mm ao lado da TRANSIÇÃO 11,
+    debaixo da cumeeira, 80 mm abaixo das tesouras — pegava a altura dela e saía em pedaços soltos, cortados 20 cm antes
+    de cada tesoura, fora da água (26/10, foto do usuário: "terça fora do alinhamento, precisa corrigir para as telhas se
+    acertarem"). As outras, a meia largura + 100 (até 250)."""
+    if t.familia == "TRANSICAO":
+        return t.caminho.largura / 2.0 + 60.0
+    return min(250.0, t.caminho.largura / 2.0 + 100.0)
+
+
 def _altura_no_ponto(t: Trecho, p: Ponto2, tol: float = 350.0) -> Optional[float]:
     """altura do banzo superior da treliça `t` no ponto da planta, ou None se ela não
     passa ali"""
@@ -5060,7 +5071,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         # acima do telhado, na copa do PM8) termina 10 cm antes da TESOURA 32 em que a TC53 apoia — a terça subia 36 cm na
         # ponta e a telha fazia um degrau de 23 cm (12/10, a telha ao lado)
         hs = [(h, t.familia == "TRANSICAO") for t in trelicas_3d if _alem_da_ponta(t, p) <= 50.0
-              for h in [_altura_no_ponto(t, p, min(250.0, t.caminho.largura / 2.0 + 100.0))] if h is not None]
+              for h in [_altura_no_ponto(t, p, _alcance_da_altura(t))] if h is not None]
         comuns = [h for h, tr in hs if not tr]
         return max(comuns) if comuns else (max(h for h, _ in hs) if hs else None)
 
