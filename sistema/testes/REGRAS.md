@@ -402,18 +402,24 @@ Testes: `test_conferencia_3d.py`, `test_reanalise.py`.
   projeto só do IFC não entra.
 - **Código:** o vínculo é o `planta_modelo` do projeto (o desenho 2D com o DXF, o deslocamento do 3D e o de cada planta
   lida), que a tela dividida lê (web/dividida.js). Quem grava: a montagem pela planta (app.py) e por quadros, sozinhas; o
-  script de obra, por `nucleo3d/vinculo_2d.gravar`.
+  script de obra, por `nucleo3d/vinculo_2d.gravar`. **O outro jeito de ligar:** cada peça com a chave do traço do desenho
+  (`atributos.origem_2d`, como a Montagem e a planta de lançamento fazem; o cad.js e o ver3d.js fazem a ida e volta por ela).
+  Vale com 80 % das barras ligadas.
 - **Conferência:** **sim** — `nucleo3d/vinculo_2d.conferir(pasta do projeto)`. Aponta:
-  - o DXF não está no 2D ou não está ligado (sem `planta_modelo`, ou o desenho dele não existe ou não tem nada do DXF);
+  - o DXF não está no 2D ou o 3D não está ligado a ele: sem `planta_modelo` e sem a chave do traço em 80 % das barras, ou o
+    desenho do vínculo sem nada do DXF;
   - falta o deslocamento;
   - peça de uma planta que o vínculo não conhece;
   - **o 3D não cai em cima do desenho**: mais de 12 % das barras, levadas ao 2D, longe de qualquer traço (meio e duas
     pontas, grade de 250 mm). Com o vínculo certo ficam até ~8 % (Posto V2 2,7 %); com o 3D 1 m fora, 16–28 %; com 5 m, mais de 50 %.
-- **Testes:** test_vinculo_2d (6 casos e a trava: as obras do desenvolvimento não pioram em relação a
+- **Testes:** test_vinculo_2d (8 casos e a trava: as obras do desenvolvimento não pioram em relação a
   `Projeto/bateria/vinculo-2d.json`, aceita em 26/10).
-- **Situação em 26/10 (33 obras do dev):** 4 ligadas e certas (Posto V2, Hora Certa Edifício Administrativo, Portaria,
-  Posto teste). **9 vieram do DXF sem o vínculo:** Hangar, Hora Certa galpão novo e existente, Moinho Globo, Ortobio, CD
-  Bom Dia, Docas, PRATI metálica e sem lateral. Todas foram montadas por script de obra; a correção é de cada chat de obra.
+- **Situação em 26/10 (33 obras do dev):**
+  - 8 ligadas: Posto V2, Hora Certa Edifício Administrativo, Portaria e o Posto teste, pelo `planta_modelo`; Hangar (93 %),
+    Ortobio, CD Bom Dia e Docas (92 %), pela chave.
+  - **5 vieram do DXF sem vínculo nenhum:** Hora Certa galpão novo e existente, Moinho Globo, PRATI metálica e sem
+    lateral. Em todas, o DXF já está no 2D. A correção é de cada chat de obra.
+  - A 1ª versão da conferência (a6cc391) só conhecia o `planta_modelo` e acusava também as 4 ligadas pela chave.
 
 ---
 

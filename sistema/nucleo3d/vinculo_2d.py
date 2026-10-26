@@ -7,6 +7,8 @@ com 3D". O vínculo é o `planta_modelo` do projeto, que a tela dividida (web/di
   {desenho: o desenho 2D com o DXF, deslocamento: [dx, dy] (modelo = desenho + deslocamento),
    fontes: {planta: [dx, dy]} (o deslocamento de cada planta lida, além do geral), camadas: {camada do 3D: planta}}.
 A montagem pela planta (app.py, de_planta) e por quadros (de_quadros) já o gravam; o script de obra grava por `gravar`.
+O outro jeito de ligar (sem planta_modelo): cada peça com a chave do traço do desenho (atributos.origem_2d), como a
+Montagem e a planta de lançamento fazem — vale com MIN_CHAVE das barras ligadas (`_pela_chave`).
 
 `conferir` olha o projeto inteiro:
   - o DXF está no 2D: o desenho do `planta_modelo` existe e tem entidades vindas do DXF;
@@ -22,6 +24,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 CEL = 250.0            # mm: a grade dos traços do desenho
 LIMITE_FORA = 0.12     # fração das barras longe de qualquer traço do desenho a partir da qual o vínculo está errado
+MIN_CHAVE = 0.80       # sem planta_modelo: a fração das barras com a chave de um traço do desenho (o Hangar 93 %, as Docas 92 %)
 
 
 def _ler(caminho: str) -> Optional[dict]:
@@ -84,9 +87,7 @@ def conferir(pasta_projeto: str) -> dict:
     nome = pm.get("desenho")
     des = _ler(os.path.join(pasta_projeto, "desenhos-2d", "%s.desenho.json" % nome)) if nome else None
     if not nome or des is None:
-        apontar("o DXF não está ligado ao 3D: o projeto não diz em que desenho 2D está o DXF (planta_modelo) — "
-                "importar o DXF no 2D (o Original) e gravar o vínculo")
-        return out
+        return _pela_chave(pasta_projeto, ents, out, apontar)
     if not any((e.get("atributos") or {}).get("origem") == "dxf" for e in des.get("entidades") or []):
         apontar('o desenho 2D "%s" do vínculo não tem nada vindo do DXF' % nome)
     desl = pm.get("deslocamento")
@@ -124,6 +125,43 @@ def conferir(pasta_projeto: str) -> dict:
         apontar('o 3D não cai em cima do desenho "%s": %d de %d barras (%.0f %%) longe de qualquer traço — o deslocamento '
                 "do vínculo está errado ou a planta da peça não é a dela. Mais fora: %s"
                 % (nome, out["fora"], out["barras"], 100.0 * out["fora"] / out["barras"], pior))
+    return out
+
+
+def _pela_chave(pasta_projeto: str, ents: list, out: dict, apontar) -> dict:
+    """o outro jeito de ligar, sem planta_modelo: a peça leva a chave do traço do desenho (atributos.origem_2d = o id do
+    traço, ou a mesma origem_2d nele) — a Montagem e a planta de lançamento (o Hangar, o Ortobio, o CD Bom Dia, as Docas;
+    o cad.js e o ver3d.js fazem a ida e volta por ela). Vale com MIN_CHAVE das barras ligadas a um desenho com o DXF."""
+    chaves, com_dxf = set(), []
+    pasta = os.path.join(pasta_projeto, "desenhos-2d")
+    for arq in sorted(os.listdir(pasta)) if os.path.isdir(pasta) else []:
+        if not arq.endswith(".desenho.json"):
+            continue
+        des = _ler(os.path.join(pasta, arq)) or {}
+        n = 0
+        for e in des.get("entidades") or []:
+            a = e.get("atributos") or {}
+            if e.get("id"):
+                chaves.add(e["id"])
+            if a.get("origem_2d"):
+                chaves.add(a["origem_2d"])
+            if a.get("origem") == "dxf":
+                n += 1
+        if n:
+            com_dxf.append(arq[:-len(".desenho.json")])
+    barras = [e for e in ents if e.get("tipo") == "barra"]
+    ligadas = sum(1 for e in barras if (e.get("atributos") or {}).get("origem_2d") in chaves)
+    out.update(barras=len(barras), fora=len(barras) - ligadas, por_chave=ligadas)
+    if not com_dxf:
+        apontar("o DXF não está no 2D: nenhum desenho do projeto tem traço vindo do DXF — importar o DXF no 2D (o Original)")
+    if not barras or ligadas >= MIN_CHAVE * len(barras):
+        return out
+    if not ligadas:
+        apontar("o 3D não está ligado ao 2D: nenhuma barra tem a chave de um traço do desenho e o projeto não tem o "
+                "planta_modelo — gravar o vínculo (vinculo_2d.gravar) ou a chave origem_2d em cada peça")
+    else:
+        apontar("só %d de %d barras (%.0f %%) estão ligadas ao 2D pela chave do desenho (origem_2d)"
+                % (ligadas, len(barras), 100.0 * ligadas / len(barras)))
     return out
 
 

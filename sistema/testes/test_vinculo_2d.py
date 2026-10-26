@@ -22,8 +22,8 @@ def _projeto(pasta, projeto, linhas_desenho, barras):
     os.makedirs(os.path.join(pasta, "desenhos-2d"), exist_ok=True)
     with open(os.path.join(pasta, "projeto.json"), "w", encoding="utf-8") as f:
         json.dump(projeto, f, ensure_ascii=False)
-    des = {"nome": "desenho", "entidades": [{"tipo": "linha", "camada": "metalica", "atributos": {"origem": "dxf"}, "a": a, "b": b}
-                                             for a, b in linhas_desenho]}
+    des = {"nome": "desenho", "entidades": [{"id": "l%d" % k, "tipo": "linha", "camada": "metalica", "atributos": {"origem": "dxf"},
+                                              "a": a, "b": b} for k, (a, b) in enumerate(linhas_desenho)]}
     with open(os.path.join(pasta, "desenhos-2d", "desenho.desenho.json"), "w", encoding="utf-8") as f:
         json.dump(des, f)
     ents = []
@@ -71,6 +71,33 @@ def test_planta_da_peca_que_o_vinculo_nao_conhece_aponta(tmp_path):
     _galpao(str(tmp_path), {"desenho": "desenho", "deslocamento": list(DESL), "fontes": {"tercas": [0.0, 0.0]}}, fonte="mezanino")
     r = V.conferir(str(tmp_path))
     assert any('planta "mezanino"' in a["texto"] for a in r["apontamentos"])
+
+
+def _com_chave(pasta, quantas):
+    """as primeiras `quantas` barras com a chave do traço do desenho de baixo delas (atributos.origem_2d = o id do traço)"""
+    caminho = os.path.join(pasta, "modelo.json")
+    with open(caminho, encoding="utf-8") as f:
+        m = json.load(f)
+    for k, e in enumerate(m["entidades"][:quantas]):
+        e.setdefault("atributos", {})["origem_2d"] = "l%d" % k
+    with open(caminho, "w", encoding="utf-8") as f:
+        json.dump(m, f)
+
+
+def test_ligado_pela_chave_do_tracado_passa(tmp_path):
+    """o outro jeito de ligar (o Hangar, o Ortobio, o CD Bom Dia, as Docas — 26/10): sem planta_modelo, cada peça com a chave
+    do traço da Montagem ou da planta de lançamento; a primeira conferência (a6cc391) acusava essas 4 obras por engano"""
+    _galpao(str(tmp_path))
+    _com_chave(str(tmp_path), 6)
+    r = V.conferir(str(tmp_path))
+    assert r["apontamentos"] == [] and r["por_chave"] == 6
+
+
+def test_ligado_pela_chave_so_pela_metade_aponta(tmp_path):
+    _galpao(str(tmp_path))
+    _com_chave(str(tmp_path), 3)
+    r = V.conferir(str(tmp_path))
+    assert len(r["apontamentos"]) == 1 and "só 3 de 6 barras" in r["apontamentos"][0]["texto"]
 
 
 def test_projeto_so_do_ifc_nao_se_aplica(tmp_path):
