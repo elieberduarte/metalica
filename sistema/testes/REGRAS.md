@@ -420,8 +420,10 @@ Testes: `test_conferencia_3d.py`, `test_reanalise.py`.
   - **5 vieram do DXF sem vínculo nenhum:** Hora Certa galpão novo e existente, Moinho Globo, PRATI metálica e sem
     lateral. Em todas, o DXF já está no 2D. A correção é de cada chat de obra.
   - A 1ª versão da conferência (a6cc391) só conhecia o `planta_modelo` e acusava também as 4 ligadas pela chave.
-  - 26/10, depois: o Hora Certa galpão existente (o script da obra grava os dois jeitos) e o Moinho Globo resolvidos.
-    Seguem sem vínculo: Hora Certa galpão novo, PRATI metálica e sem lateral.
+  - 26/10, depois: resolvidos o Hora Certa galpão existente (o script da obra grava os dois jeitos), o Moinho Globo e
+    o Hora Certa galpão novo. No galpão novo (9685e2d), a planta girada no desenho: `fontes[planta]` aceita
+    `{deslocamento, giro}`, no dividida.js e no vinculo_2d.py, com teste de giro certo, trocado e sem giro. Seguem sem
+    vínculo: PRATI metálica e sem lateral.
 
 ---
 
