@@ -1260,6 +1260,9 @@ def rota_get(g, s: str, resto: list, q: dict) -> dict:
     """GET /api/projetos/<s>/terreno[/imagem.jpg|/buscar-endereco?q=]. {"arquivo": caminho} = servir o arquivo."""
     if not resto:
         return estado(g, s)
+    if resto[0] == "cenas":                                   # a estrutura numa foto do local (saida/cenas.py, 26/10)
+        from saida import cenas
+        return cenas.rota_get(g, s, resto[1:])
     if resto == ["imagem.jpg"]:
         return {"arquivo": os.path.join(g.pasta(s), PASTA, "imagem.jpg")}
     if resto == ["buscar-endereco"]:
@@ -1271,6 +1274,9 @@ def rota_post(g, s: str, resto: list, corpo: dict, progresso: Callable) -> dict:
     """POST /api/projetos/<s>/terreno (grava a amarração) e …/terreno/baixar-imagem."""
     if not resto:
         return gravar(g, s, corpo)
+    if resto[0] == "cenas":                                   # a estrutura numa foto do local (saida/cenas.py, 26/10)
+        from saida import cenas
+        return cenas.rota_post(g, s, resto[1:], corpo)
     if resto == ["baixar-imagem"]:
         return baixar_imagem(g, s, corpo, progresso)
     if resto == ["esquecer"]:

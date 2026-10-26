@@ -1,0 +1,391 @@
+// A cena: a estrutura encaixada numa foto do local, para apresentação (usuário, 26/10: "quando tenho uma foto precisava
+// criar uma opção de conseguir colocar a estrutura na foto… 'criar cena', para poder encaixar certinho o 3D na imagem;
+// isso seria só para apresentação"). Guardada no projeto (saida/cenas.py); o projeto em si não muda.
+//
+// O caminho: a foto (Nova cena) → os pares de pontos (um clique na foto e o mesmo ponto no 3D: uma peça, ou o chão da
+// imagem do terreno — os cantos da quadra, um meio-fio) → Encaixar (encaixe.js acha a câmera da foto) → o ajuste fino
+// (lente, rolar, opacidade do 3D) → Salvar imagem (a foto com o 3D, em documentos/).
+//
+// Duas vistas no mesmo palco: a FOTO (a foto parada, o 3D transparente por cima pela câmera da cena; os cliques marcam a
+// foto) e o 3D (o modelo com o terreno, girando como no modo ver; o clique marca o ponto do modelo).
+
+import * as THREE from 'three';
+import { Visor3D } from './visor3d.js';
+import { Terreno } from './terreno.js';
+import { encaixar } from './encaixe.js';
+
+const $ = s => document.querySelector(s);
+const q = new URLSearchParams(location.search);
+const PROJETO = q.get('projeto') || '';
+const API_3D = `/api/projetos/${encodeURIComponent(PROJETO)}/3d-leve`;
+const API = `/api/projetos/${encodeURIComponent(PROJETO)}/terreno/cenas`;
+const nf = (v, c = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const escuro = () => document.documentElement.getAttribute('data-tema') === 'escuro' ||
+  (!document.documentElement.getAttribute('data-tema') && matchMedia('(prefers-color-scheme: dark)').matches);
+
+let visor = null, terreno = null, cena = null, modo = 'foto', marcando = null, camera3d = null, rolar = 0, giroBase = null;
+const foto = $('#foto'), tela = $('#tela'), marcas = $('#marcas'), palco = $('#palco');
+
+function aviso(txt) { $('#aviso').textContent = txt || ''; }
+
+async function pedir(url, corpo, binario) {
+  const r = await fetch(url, binario ? { method: 'POST', body: binario.dados,
+    headers: { 'Content-Type': 'application/octet-stream', 'X-Nome-Arquivo': encodeURIComponent(binario.nome) } }
+    : corpo !== undefined ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) }
+      : { cache: 'no-store' });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.erro) throw new Error(j.erro || `erro ${r.status}`);
+  return j;
+}
+
+// ------------------------------------------------------------------ abrir o modelo
+
+async function abrir() {
+  if (!PROJETO) { aviso('Nenhum projeto na URL.'); return; }
+  $('#voltar').onclick = () => { location.href = `/visor3d/ver3d.html?projeto=${encodeURIComponent(PROJETO)}`; };
+  let r;
+  for (;;) {
+    r = await fetch(API_3D, { cache: 'no-cache' });
+    if (r.status !== 202) break;
+    $('#carregando').textContent = 'Preparando o modelo 3D…';
+    await new Promise(res => setTimeout(res, 800));
+  }
+  if (!r.ok) { $('#carregando').textContent = 'Este projeto ainda não tem modelo 3D.'; return; }
+  const versao = r.headers.get('X-Versao-3D') || '';
+  const buf = await r.arrayBuffer();
+  visor = new Visor3D(tela, { mouse: true, arestas: true, maxPixelRatio: 2, transparente: true, fundo: escuro() ? '#1a212c' : '#e4eaf2' });
+  window.visor = visor;
+  visor.leveAoGirar = false;
+  await visor.carregar(buf);
+  const rf = await fetch(`${API_3D}/pecas?v=${encodeURIComponent(versao)}`);
+  if (rf.ok) visor.definirFichas(await rf.json());
+  visor.definirTema(escuro());
+  visor.ligarApresentacao(true, 2048);
+  terreno = new Terreno(visor, PROJETO, { abrirPainel: () => {}, corpo: () => null, situacao: aviso, palco,
+                                          painelAtual: () => null, aoMudar: () => {}, chaveLigado: null });
+  try { await terreno.carregar(); } catch (e) { /* sem o terreno: os pontos só nas peças */ }
+  $('#carregando').remove();
+  ligarControles();
+  await listar(q.get('cena'));
+  window.cenaPronta = true;
+  requestAnimationFrame(desenharMarcas);
+}
+
+// ------------------------------------------------------------------ as cenas
+
+async function listar(escolher) {
+  const { cenas } = await pedir(API);
+  const sel = $('#lista');
+  sel.innerHTML = cenas.length ? cenas.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('')
+    : '<option value="">(nenhuma cena: comece pela foto)</option>';
+  const id = escolher && cenas.some(c => c.id === escolher) ? escolher : (cenas[cenas.length - 1] || {}).id;
+  if (id) { sel.value = id; await abrirCena(id); } else { cena = null; $('#corpo').hidden = true; foto.hidden = true; mostrarModo('3d'); }
+}
+
+async function abrirCena(id) {
+  cena = await pedir(`${API}/${encodeURIComponent(id)}`);
+  history.replaceState(null, '', `?projeto=${encodeURIComponent(PROJETO)}&cena=${encodeURIComponent(id)}`);
+  foto.hidden = false;
+  foto.src = `${API}/${encodeURIComponent(id)}/foto.jpg?v=${encodeURIComponent(cena.alterada || '')}`;
+  try { await foto.decode(); } catch (e) { aviso('A foto não abriu.'); }
+  $('#corpo').hidden = false;
+  rolar = 0;
+  giroBase = null;
+  $('#opacidade').value = cena.opacidade ?? 1;
+  aplicarCamera();
+  mostrarModo('foto');
+  desenharPares();
+}
+
+// ------------------------------------------------------------------ as duas vistas
+
+/** O retângulo da foto no palco (contida, no meio). */
+function retanguloFoto() {
+  const W = palco.clientWidth, H = palco.clientHeight, [fw, fh] = cena ? cena.px : [W, H];
+  const s = Math.min(W / fw, H / fh), w = Math.round(fw * s), h = Math.round(fh * s);
+  return { x: Math.round((W - w) / 2), y: Math.round((H - h) / 2), w, h };
+}
+
+function posicionar(el, r) { Object.assign(el.style, { left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px' }); }
+
+function mostrarModo(m) {
+  if (modo === '3d' && m === 'foto' && visor) camera3d = { pos: visor.camera.position.clone(), q: visor.camera.quaternion.clone(),
+                                                          fov: visor.camera.fov, alvo: visor.controles.target.clone() };
+  modo = m;
+  document.body.classList.toggle('modo-3d', m === '3d');
+  $('#ver').textContent = m === '3d' ? 'Ver a foto' : 'Ver o 3D';
+  $('#ver').disabled = !cena;
+  if (!visor) return;
+  if (m === 'foto' && cena) {
+    const r = retanguloFoto();
+    posicionar(foto, r); posicionar(tela, r); posicionar(marcas, r);
+    visor.cena.background = null;
+    if (visor.piso) visor.piso.visible = false;
+    if (terreno && terreno.grupo) terreno.grupo.visible = false;
+    visor.controles.enabled = false;
+    tela.style.pointerEvents = 'none';
+    tela.style.opacity = String(cena.opacidade ?? 1);
+    tela.style.visibility = cena.camera ? 'visible' : 'hidden';   // antes do encaixe, o 3D não tem onde ficar na foto
+    visor.redimensionar();
+    aplicarCamera();
+  } else {
+    const r = { x: 0, y: 0, w: palco.clientWidth, h: palco.clientHeight };
+    posicionar(tela, r); posicionar(marcas, r);
+    visor.definirTema(escuro());                      // o fundo e o piso de volta
+    if (visor.piso) visor.piso.visible = true;
+    if (terreno && terreno.grupo) terreno.grupo.visible = true;
+    visor.controles.enabled = true;
+    tela.style.pointerEvents = 'auto';
+    tela.style.opacity = '1';
+    tela.style.visibility = 'visible';
+    visor.redimensionar();
+    if (camera3d) {
+      visor.camera.position.copy(camera3d.pos); visor.camera.quaternion.copy(camera3d.q); visor.camera.fov = camera3d.fov;
+      visor.controles.target.copy(camera3d.alvo); visor.camera.updateProjectionMatrix();
+    } else visor.enquadrar('iso');
+    visor.pedirQuadro();
+  }
+}
+
+/** A câmera da cena no visor (na vista da foto): a posição e o giro gravados (mm do projeto), o rolar e a lente. */
+function aplicarCamera() {
+  if (!visor || !cena || !cena.camera || modo !== 'foto') { atualizarFaixas(); return; }
+  const o = visor.cabecalho.origem, c = cena.camera;
+  visor.camera.position.set(c.posicao[0] - o[0], c.posicao[1] - o[1], c.posicao[2] - o[2]);
+  giroBase = new THREE.Quaternion(...c.giro);
+  visor.camera.quaternion.copy(giroBase).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rolar * Math.PI / 180));
+  visor.camera.fov = c.fov;
+  const dist = visor.camera.position.distanceTo(visor._esferaModelo.center);
+  visor.camera.near = Math.max(10, dist / 5000);
+  visor.camera.far = Math.max(1e6, dist * 20);
+  visor.camera.updateProjectionMatrix();
+  visor.camera.updateMatrixWorld();
+  visor._sombraSuja = true;
+  visor.pedirQuadro();
+  atualizarFaixas();
+}
+
+function atualizarFaixas() {
+  const c = cena && cena.camera;
+  $('#lente').disabled = $('#rolar').disabled = !c;
+  if (c) { $('#lente').value = c.fov; $('#lente-val').textContent = nf(c.fov, 1) + '°'; }
+  else $('#lente-val').textContent = '—';
+  $('#rolar').value = rolar; $('#rolar-val').textContent = nf(rolar, 1) + '°';
+  $('#opacidade-val').textContent = nf((+$('#opacidade').value) * 100) + ' %';
+  $('#erro').textContent = c && c.erro_px != null ? `encaixe com erro de ${nf(c.erro_px, 1)} px` : '';
+}
+
+// ------------------------------------------------------------------ os pares de pontos
+
+function desenharPares() {
+  const pares = (cena && cena.pares) || [];
+  $('#pares').innerHTML = pares.map((p, i) => `<div class="par"><b>${i + 1}</b>
+      <span>foto ✓ · ${p.modelo ? '<em class="ok">3D ✓</em>' : '<em class="falta">falta o 3D</em>'}</span>
+      ${p.modelo ? '' : `<button type="button" data-par-3d="${i}">marcar no 3D</button>`}
+      <button type="button" data-par-apagar="${i}" title="Apagar o ponto">✕</button></div>`).join('')
+    || '<p class="dica">Nenhum ponto ainda.</p>';
+  const completos = pares.filter(p => p.modelo).length;
+  $('#encaixar').disabled = completos < 4;
+  $('#encaixar').title = completos < 4 ? `faltam ${4 - completos} ponto(s) completos` : '';
+}
+
+async function gravar(campos) {
+  cena = await pedir(`${API}/${encodeURIComponent(cena.id)}`, campos);
+  desenharPares();
+  atualizarFaixas();
+}
+
+function comecarPonto() {
+  if (!cena) return;
+  marcando = { etapa: 'foto' };
+  mostrarModo('foto');
+  aviso('Clique o ponto na foto (Esc cancela).');
+}
+
+function marcarNo3d(i) {
+  marcando = { etapa: '3d', i };
+  document.body.classList.add('marcando-3d');
+  mostrarModo('3d');
+  aviso(`Agora clique o mesmo ponto ${i + 1} no 3D: uma peça ou o chão (gire com o botão esquerdo arrastando; Esc cancela).`);
+}
+
+function cancelar() {
+  marcando = null;
+  document.body.classList.remove('marcando-3d');
+  aviso('');
+}
+
+/** O ponto do 3D sob o clique (mm do projeto): a peça, ou o chão da imagem do terreno (sem terreno, o pé do modelo). */
+function pontoDo3d(x, y) {
+  const achado = visor.pontoEm(x, y);
+  if (achado) return achado.ponto;
+  const o = visor.cabecalho.origem;
+  const z = terreno && Number.isFinite(terreno.zChao) && terreno.malha ? terreno.zChao - o[2] : visor._caixaModelo.min.z;
+  const ndc = new THREE.Vector2(x / tela.clientWidth * 2 - 1, -(y / tela.clientHeight) * 2 + 1);
+  const raio = new THREE.Raycaster();
+  visor.camera.updateMatrixWorld();
+  raio.setFromCamera(ndc, visor.camera);
+  const p = new THREE.Vector3();
+  if (!raio.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), -z), p)) return null;
+  return [p.x + o[0], p.y + o[1], p.z + o[2]];
+}
+
+// ------------------------------------------------------------------ o encaixe
+
+async function fazerEncaixe() {
+  const pares = cena.pares.filter(p => p.modelo);
+  if (pares.length < 4) return;
+  const o = visor.cabecalho.origem;
+  const atual = cena.camera ? { posicao: new THREE.Vector3(cena.camera.posicao[0] - o[0], cena.camera.posicao[1] - o[1], cena.camera.posicao[2] - o[2]),
+                                giro: new THREE.Quaternion(...cena.camera.giro), fov: cena.camera.fov } : null;
+  const c = encaixar(pares.map(p => ({ u: p.foto[0], v: p.foto[1], X: [p.modelo[0] - o[0], p.modelo[1] - o[1], p.modelo[2] - o[2]] })),
+                     cena.px[0], cena.px[1], atual);
+  if (!c) return;
+  rolar = 0;
+  await gravar({ camera: { posicao: [c.posicao.x + o[0], c.posicao.y + o[1], c.posicao.z + o[2]], giro: c.giro.toArray(), fov: c.fov,
+                           erro_px: c.erro_px } });
+  mostrarModo('foto');
+  aviso(c.erro_px <= 15 ? `Encaixado: erro médio de ${nf(c.erro_px, 1)} px na foto.`
+    : `Encaixado com erro de ${nf(c.erro_px, 0)} px: confira os pontos (um deles pode estar trocado) ou marque mais.`);
+}
+
+// ------------------------------------------------------------------ a imagem pronta
+
+async function salvarImagem() {
+  if (!cena || !cena.camera) { aviso('Encaixe a cena antes de salvar a imagem.'); return; }
+  mostrarModo('foto');
+  const k = Math.min(1, 4096 / Math.max(...cena.px)), w = Math.round(cena.px[0] * k), h = Math.round(cena.px[1] * k);
+  const saida = document.createElement('canvas');
+  saida.width = w; saida.height = h;
+  const g = saida.getContext('2d');
+  g.drawImage(foto, 0, 0, w, h);
+  const r = visor.renderer, dpr = r.getPixelRatio();
+  r.setPixelRatio(1); r.setSize(w, h, false);
+  visor.camera.aspect = w / h; visor.camera.updateProjectionMatrix();
+  if (visor.apresentacao) visor._desenharSombra();
+  r.render(visor.cena, visor.camera);
+  g.globalAlpha = +$('#opacidade').value;
+  g.drawImage(r.domElement, 0, 0, w, h);
+  r.setPixelRatio(dpr);
+  visor.redimensionar();
+  aviso('Salvando a imagem…');
+  const blob = await new Promise(res => saida.toBlob(res, 'image/png'));
+  try {
+    const j = await pedir(`${API}/${encodeURIComponent(cena.id)}/imagem`, undefined, { dados: blob, nome: 'cena.png' });
+    aviso(`Imagem salva em documentos: ${j.nome} (${w} × ${h} px).`);
+    window.ultimaImagemCena = j;
+  } catch (e) { aviso('A imagem não foi salva: ' + e.message); }
+}
+
+// ------------------------------------------------------------------ os controles
+
+function ligarControles() {
+  $('#nova').onclick = () => $('#arquivo').click();
+  $('#arquivo').onchange = async () => {
+    const f = $('#arquivo').files[0]; $('#arquivo').value = '';
+    if (!f) return;
+    aviso(`Enviando ${f.name} (${nf(f.size / 1048576, 1)} MB)…`);
+    try { const c = await pedir(`${API}/nova`, undefined, { dados: f, nome: f.name }); aviso(''); await listar(c.id); comecarPonto(); }
+    catch (e) { aviso('A foto não entrou: ' + e.message); }
+  };
+  $('#lista').onchange = () => { if ($('#lista').value) abrirCena($('#lista').value); };
+  $('#novo-ponto').onclick = comecarPonto;
+  $('#ver').onclick = () => { cancelar(); mostrarModo(modo === '3d' ? 'foto' : '3d'); };
+  $('#encaixar').onclick = () => { cancelar(); fazerEncaixe().catch(e => aviso('O encaixe falhou: ' + e.message)); };
+  $('#salvar-imagem').onclick = () => salvarImagem();
+  $('#apagar').onclick = async () => {
+    if (!cena || !confirm(`Apagar a cena "${cena.nome}"? A foto e os pontos saem do projeto.`)) return;
+    await pedir(`${API}/${encodeURIComponent(cena.id)}/apagar`, {});
+    await listar();
+  };
+  $('#pares').onclick = async (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.par3d !== undefined) marcarNo3d(+b.dataset.par3d);
+    else if (b.dataset.parApagar !== undefined) {
+      const pares = cena.pares.slice(); pares.splice(+b.dataset.parApagar, 1);
+      await gravar({ pares });
+    }
+  };
+  let tempoLente = 0;
+  $('#lente').oninput = () => {
+    if (!cena || !cena.camera) return;
+    cena.camera.fov = +$('#lente').value; aplicarCamera();
+    clearTimeout(tempoLente); tempoLente = setTimeout(() => gravar({ camera: cena.camera }), 600);
+  };
+  $('#rolar').oninput = () => {
+    rolar = +$('#rolar').value; aplicarCamera();
+    clearTimeout(tempoLente);
+    tempoLente = setTimeout(() => {                       // o rolar entra no giro gravado
+      if (!cena || !cena.camera || !giroBase) return;
+      const g = giroBase.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rolar * Math.PI / 180));
+      rolar = 0;
+      gravar({ camera: { ...cena.camera, giro: g.toArray() } }).then(aplicarCamera);
+    }, 800);
+  };
+  let tempoOpac = 0;
+  $('#opacidade').oninput = () => {
+    tela.style.opacity = modo === 'foto' ? $('#opacidade').value : '1'; atualizarFaixas();
+    clearTimeout(tempoOpac); tempoOpac = setTimeout(() => gravar({ opacidade: +$('#opacidade').value }), 600);
+  };
+  $('#sol').onchange = () => { visor.ligarApresentacao($('#sol').checked, 2048); visor.pedirQuadro(); };
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') cancelar(); });
+  addEventListener('resize', () => mostrarModo(modo));
+
+  // o clique na foto: o ponto novo
+  marcas.addEventListener('click', async (e) => {
+    if (modo !== 'foto' || !marcando || marcando.etapa !== 'foto') return;
+    const r = marcas.getBoundingClientRect();
+    const u = (e.clientX - r.left) / r.width, v = (e.clientY - r.top) / r.height;
+    if (u < 0 || u > 1 || v < 0 || v > 1) return;
+    const pares = (cena.pares || []).concat([{ foto: [u, v] }]);
+    await gravar({ pares });
+    marcarNo3d(pares.length - 1);
+  });
+  // o clique no 3D (sem arrastar): o ponto do modelo
+  let desce = null;
+  tela.addEventListener('pointerdown', (e) => { desce = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+  tela.addEventListener('pointerup', async (e) => {
+    if (!desce || !marcando || marcando.etapa !== '3d' || modo !== '3d') return;
+    const parado = Math.hypot(e.clientX - desce.x, e.clientY - desce.y) < 5 && performance.now() - desce.t < 700;
+    desce = null;
+    if (!parado || e.button !== 0) return;
+    const r = tela.getBoundingClientRect(), p = pontoDo3d(e.clientX - r.left, e.clientY - r.top);
+    if (!p) { aviso('Nada nesse ponto: clique numa peça ou no chão.'); return; }
+    const i = marcando.i, pares = cena.pares.slice();
+    pares[i] = { ...pares[i], modelo: p };
+    cancelar();
+    await gravar({ pares });
+    const completos = pares.filter(x => x.modelo).length;
+    if (completos >= 4) { await fazerEncaixe(); }
+    else { mostrarModo('foto'); aviso(`Ponto ${i + 1} marcado. Faltam ${4 - completos} para encaixar.`); }
+  });
+}
+
+// ------------------------------------------------------------------ as marcas (a cada quadro)
+
+const _v = new THREE.Vector3();
+function desenharMarcas() {
+  requestAnimationFrame(desenharMarcas);
+  if (!visor || !cena) { marcas.innerHTML = ''; return; }
+  const w = marcas.clientWidth, h = marcas.clientHeight, o = visor.cabecalho.origem, html = [];
+  const naTela = (X) => {
+    _v.set(X[0] - o[0], X[1] - o[1], X[2] - o[2]).project(visor.camera);
+    return _v.z < 1 && _v.z > -1 ? [(_v.x + 1) / 2 * w, (1 - _v.y) / 2 * h] : null;
+  };
+  (cena.pares || []).forEach((p, i) => {
+    if (modo === 'foto') {
+      html.push(`<div class="marca foto${p.modelo ? ' feito' : ''}" style="left:${p.foto[0] * w}px;top:${p.foto[1] * h}px">${i + 1}</div>`);
+      if (p.modelo && cena.camera) { const s = naTela(p.modelo); if (s) html.push(`<div class="marca proj" style="left:${s[0]}px;top:${s[1]}px"></div>`); }
+    } else if (p.modelo) {
+      const s = naTela(p.modelo);
+      if (s) html.push(`<div class="marca modelo" style="left:${s[0]}px;top:${s[1]}px">${i + 1}</div>`);
+    }
+  });
+  const novo = html.join('');
+  if (novo !== marcas._html) { marcas.innerHTML = novo; marcas._html = novo; }
+}
+
+window.cenaApi = { estado: () => ({ modo, marcando, cena }), mostrarModo, pontoDo3d, fazerEncaixe };
+abrir().catch(e => { aviso('A cena não abriu: ' + e.message); console.error(e); });

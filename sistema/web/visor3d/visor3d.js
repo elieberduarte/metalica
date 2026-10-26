@@ -202,8 +202,9 @@ function _corHex(h, padrao) {
 export class Visor3D {
   constructor(tela, opcoes = {}) {
     this.tela = tela;
+    // `transparente`: o fundo pode ficar vazado (a cena, cena.js: o 3D por cima da foto do local, 26/10)
     this.renderer = new THREE.WebGLRenderer({ canvas: tela, antialias: opcoes.antialias !== false,
-                                              powerPreference: 'high-performance' });
+                                              powerPreference: 'high-performance', alpha: !!opcoes.transparente });
     this.dprParado = Math.min(window.devicePixelRatio || 1, opcoes.maxPixelRatio || 2);
     // girando, a imagem sai em resolução menor e sem arestas (o que pesa no celular é encher a tela de
     // alta densidade); ao soltar, volta inteira

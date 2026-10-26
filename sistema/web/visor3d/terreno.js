@@ -406,6 +406,12 @@ export class Terreno {
     }
     html += `<button type="button" id="terreno-importar">${p && p.colocada ? 'Importar outra imagem…' : 'Importar imagem própria…'}</button>
       <input type="file" id="terreno-arquivo" hidden multiple accept=".tif,.tiff,.jpg,.jpeg,.png,.jgw,.pgw,.tfw,.wld,.prj">`;
+    // a estrutura numa foto do local, para apresentação (usuário, 26/10: "criar cena… para poder encaixar certinho o 3D
+    // na imagem") — cena.html, com os pontos do chão desta imagem do terreno
+    html += `<p class="titulo-secao">Cena (a estrutura numa foto do local)</p>
+      <p class="dica">Uma foto tirada no local: marque 4 pontos ou mais na foto e os mesmos no 3D (peças ou o chão desta imagem —
+        cantos e linhas da quadra, meios-fios) e a estrutura entra na foto, para a apresentação.</p>
+      <button type="button" id="terreno-cena">Criar cena…</button>`;
     return html;
   }
 
@@ -414,6 +420,8 @@ export class Terreno {
     const bt = $('#terreno-importar'), arq = $('#terreno-arquivo');
     if (bt) bt.onclick = () => arq.click();
     if (arq) arq.onchange = () => { const l = [...arq.files]; arq.value = ''; if (l.length) this.importarPropria(l); };
+    const cn = $('#terreno-cena');
+    if (cn) cn.onclick = () => { location.href = `/visor3d/cena.html?projeto=${encodeURIComponent(this.projeto)}`; };
     const tp = $('#terreno-tirar-propria');
     if (tp) tp.onclick = async () => {
       if (!confirm('Tirar a imagem própria? Volta a imagem do portal (se houver).')) return;
