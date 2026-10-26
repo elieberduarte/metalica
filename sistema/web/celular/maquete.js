@@ -850,7 +850,33 @@ function orientarCamera(cam, alfa, beta, gama, tela) {
   cam.quaternion.multiply(_q0.setFromAxisAngle(_zee, -tela * r));
 }
 
-/** A maquete por cima da câmera grande angular (os mesmos parâmetros de abrirWebXR). */
+/** O pedido da sessão do ARCore só para o rastreio (a imagem dela não aparece): `null` se não abre em `espera` ms. */
+async function rastreioPelaPrincipal(raiz, espera = 4000) {
+  if (!navigator.xr || !navigator.xr.requestSession || typeof XRWebGLLayer === 'undefined') return null;
+  let desistiu = false;
+  const pedido = navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['hit-test'], optionalFeatures: ['dom-overlay'],
+                                                                domOverlay: { root: raiz } })
+    .then(s => { if (desistiu) { s.end().catch(() => {}); return null; } return s; }).catch(() => null);
+  const sessao = await Promise.race([pedido, new Promise(r => setTimeout(() => { desistiu = true; r(null); }, espera))]);
+  if (!sessao) return null;
+  try {
+    const gl = document.createElement('canvas').getContext('webgl', { xrCompatible: true, alpha: true });
+    await sessao.updateRenderState({ baseLayer: new XRWebGLLayer(sessao, gl) });
+    const ref = await sessao.requestReferenceSpace('local');
+    const fonte = await sessao.requestHitTestSource({ space: await sessao.requestReferenceSpace('viewer') });
+    return { sessao, gl, ref, fonte };
+  } catch (e) {
+    sessao.end().catch(() => {});
+    return null;
+  }
+}
+
+/** A maquete por cima da câmera grande angular (os mesmos parâmetros de abrirWebXR).
+ *
+ *  Presa na mesa quando dá (26/10, o usuário no S25 Ultra: "o modelo não fica fixo em um ponto, ele fica se mexendo na
+ *  tela conforme movimenta o celular"): o ARCore rastreia pela lente principal, por baixo, sem a imagem dela, e a tela
+ *  mostra a 0,6× com o 3D na posição que o ARCore dá. Se o aparelho não deixa as duas câmeras ao mesmo tempo (ou não
+ *  tem ARCore), a maquete segue só o giro do celular (o giroscópio), em tela cheia. */
 export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null, camadas = null, sol = null, escala, aoSair }) {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('o navegador não dá acesso à câmera aqui (precisa de https)');
   const raiz = document.createElement('div');
@@ -861,6 +887,8 @@ export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null,
   video.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover';
   raiz.appendChild(video);
   document.body.appendChild(raiz);
+  // o ARCore primeiro, ainda no toque do botão (a sessão só abre com o gesto da pessoa)
+  const pedidoXR = rastreioPelaPrincipal(raiz);
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(0x000000, 0);
@@ -868,7 +896,9 @@ export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null,
   raiz.appendChild(renderer.domElement);
   const sobre = document.createElement('div');
   sobre.id = 'ra-sobre';
-  sobre.innerHTML = `<div class="ra-giro"><div class="ra-dica">Grande angular: a maquete segue o giro do celular, não a mesa</div>
+  // sem a mensagem fixa (usuário, 26/10: "não precisa dessa mensagem"): só avisos curtos; os botões menores, os de cima
+  // numa coluna do lado ("poderia estar na lateral para não atrapalhar a visualização") — celular.css, #ga-camera
+  sobre.innerHTML = `<div class="ra-giro"><div class="ra-dica" hidden></div>
     <div class="ra-painel" hidden></div>
     <div class="ra-barra ra-barra-cima"><button data-ra="lente">Lente</button><button data-ra="inteira">Inteira</button>${camadas
       ? '<button data-ra="camadas">Camadas</button>' : ''}${situacoes.length > 1 ? `<button data-ra="situacao">${situacoes[0].rotulo}</button>` : ''}</div>
@@ -880,6 +910,7 @@ export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null,
   const { cena, maquete, ambiente, refazerSombra, apontarLuz, ligarSombra, solDaObra } = await cenaDaMesa(renderer, { situacoes, piso, cotas, sol });
   cena.add(camera);
   let modoSombra = 'camera', tamanho = 1, atual = 0, lentes = [], lente = null, fluxo = null, fechado = false, quadro = 0;
+  let xr = null, acerto = null;
   const desligadas = new Set(camadas ? camadas.desligadas : []);
   const raio1 = new THREE.Box3().setFromObject(maquete).getBoundingSphere(new THREE.Sphere()).radius || 0.3;
   const mudou = () => refazerSombra(tamanho);
@@ -887,6 +918,11 @@ export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null,
   aplicar();
   maquete.visible = false;
   const dica = sobre.querySelector('.ra-dica'), rotEscala = sobre.querySelector('.ra-escala'), painel = sobre.querySelector('.ra-painel');
+  let tempoAviso = 0;
+  const aviso = (txt) => {
+    dica.textContent = txt; dica.hidden = false;
+    clearTimeout(tempoAviso); tempoAviso = setTimeout(() => { dica.hidden = true; }, 3500);
+  };
   const mostrarEscala = () => { rotEscala.textContent = '1:' + Math.round(escala / tamanho); };
   mostrarEscala();
 
@@ -918,7 +954,7 @@ export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null,
     try { localStorage.setItem(LENTE_GUARDADA, o.id + '|' + (o.zoom || '')); } catch (e) { /* sem armazenamento */ }
     ajustarTela();
   };
-  try {
+  const abrirCamera = async () => {
     // a primeira vez: a permissão (e com ela os nomes das câmeras) e o zoom da câmera lógica
     fluxo = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' } } });
     const faixa = fluxo.getVideoTracks()[0], cap = faixa.getCapabilities ? faixa.getCapabilities() : {};
@@ -928,19 +964,47 @@ export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null,
     lentes = ordenarLentes(await navigator.mediaDevices.enumerateDevices(), cap.zoom ? cap.zoom.min : null, idZoom, guardada);
     if (!lentes.length) lentes = [{ id: '', rotulo: 'Câmera', zoom: null, tipo: 'principal' }];
     await ligarLente(lentes[0]);
+    // a imagem tem de chegar (com o ARCore usando a principal, a outra câmera pode abrir e não mandar nada)
+    for (let i = 0; i < 30 && !video.videoWidth; i++) await new Promise(r => setTimeout(r, 100));
+    if (!video.videoWidth) throw new Error('a câmera não mandou imagem');
+  };
+  const largarXR = () => { if (xr) { const s = xr.sessao; xr = null; s.end().catch(() => {}); } };
+  try {
+    xr = await pedidoXR;
+    try {
+      await abrirCamera();
+    } catch (e) {
+      if (!xr) throw e;
+      largarXR();                                            // as duas câmeras juntas não deu: só o giro do celular
+      parar();
+      await abrirCamera();
+    }
   } catch (e) {
-    parar(); renderer.dispose(); ambiente.dispose(); raiz.remove();
+    largarXR(); parar(); renderer.dispose(); ambiente.dispose(); raiz.remove();
     throw e;
   }
+  // sem o ARCore: tela cheia (a faixa do recorte da câmera do aparelho e as barras do sistema somem)
+  if (!xr && raiz.requestFullscreen) raiz.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
 
-  // o giroscópio: a câmera gira como o celular (3 graus de liberdade)
+  // o giroscópio (só sem o ARCore): a câmera gira como o celular (3 graus de liberdade)
   let giroscopio = false;
   const aoGirar = (e) => {
-    if (e.alpha == null && e.beta == null) return;
+    if (xr || (e.alpha == null && e.beta == null)) return;
     giroscopio = true;
     orientarCamera(camera, e.alpha || 0, e.beta || 0, e.gamma || 0, (screen.orientation && screen.orientation.angle) || window.orientation || 0);
   };
   window.addEventListener('deviceorientation', aoGirar);
+  // deitado com a página travada em pé (o ARCore trava): os botões giram para ficar de pé, como na câmera da mesa
+  const giro = sobre.querySelector('.ra-giro');
+  let angulo = 0;
+  const aoMover = (e) => {
+    const g = e.accelerationIncludingGravity;
+    if (!g || g.x == null) return;
+    if (screen.orientation && screen.orientation.angle) { if (angulo) { angulo = 0; giro.dataset.giro = '0'; } return; }
+    const novo = giroPelaGravidade(g.x, g.y, angulo);
+    if (novo !== angulo) { angulo = novo; giro.dataset.giro = String(novo); }
+  };
+  window.addEventListener('devicemotion', aoMover);
 
   // o plano da mesa e o raio do dedo
   const plano = new THREE.Plane(new THREE.Vector3(0, 1, 0), ABAIXO_DO_CELULAR), raio = new THREE.Raycaster(), ponto = new THREE.Vector3();
@@ -951,17 +1015,17 @@ export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null,
   };
   const tamanhoQueCabe = () => tamanhoParaCaber(raio1, camera.position.distanceTo(maquete.position), camera.projectionMatrix.elements);
   const por = () => {
-    // no meio da imagem, na mesa (ou 1 m à frente, se o celular olha para cima)
-    let p = naMesa(caixa.x + caixa.w / 2, caixa.y + caixa.h / 2);
-    if (!p || p.length() > 6) {
+    // na mesa de verdade (o ARCore achou o plano) ou, sem ele, no meio da imagem a ~35 cm abaixo do celular
+    let p = null;
+    if (acerto) { p = new THREE.Vector3(acerto.x, acerto.y, acerto.z); plano.constant = -acerto.y; }
+    else p = naMesa(caixa.x + caixa.w / 2, caixa.y + caixa.h / 2);
+    if (!p || p.distanceTo(camera.position) > 6) {
       const f = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion); f.y = 0;
       if (f.lengthSq() < 1e-6) f.set(0, 0, -1);
-      p = f.normalize().multiplyScalar(1).setY(-plano.constant);
+      p = f.normalize().multiplyScalar(1).add(camera.position).setY(-plano.constant);
     }
     maquete.position.copy(p);
     maquete.visible = true;
-    dica.textContent = 'Um dedo arrasta · dois aumentam, giram e, juntos para cima ou para baixo, mudam a altura';
-    setTimeout(() => { if (dica.textContent.startsWith('Um dedo')) dica.textContent = 'Grande angular: a maquete segue o giro do celular'; }, 6000);
     tamanho = Math.min(1, tamanhoQueCabe());
     maquete.scale.setScalar(tamanho);
     mostrarEscala(); mudou();
@@ -977,8 +1041,11 @@ export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null,
     if (fechado) return;
     fechado = true;
     cancelAnimationFrame(quadro);
+    largarXR();
     window.removeEventListener('deviceorientation', aoGirar);
+    window.removeEventListener('devicemotion', aoMover);
     window.removeEventListener('resize', ajustarTela);
+    if (document.fullscreenElement === raiz && document.exitFullscreen) document.exitFullscreen().catch(() => {});
     parar();
     for (const s of situacoes) maquete.remove(s.grupo);
     if (piso) maquete.remove(piso);
@@ -996,9 +1063,9 @@ export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null,
     else if (k === 'fechar-painel') painel.hidden = true;
     else if (k === 'lente' && lentes.length > 1) {
       const i = (lentes.indexOf(lente) + 1) % lentes.length;
-      try { await ligarLente(lentes[i]); dica.textContent = `Lente ${i + 1} de ${lentes.length}: ${lentes[i].rotulo}`; }
-      catch (err) { dica.textContent = 'Essa lente não abriu: ' + (err.message || err); }
-    } else if (k === 'lente') dica.textContent = 'O navegador mostra só esta câmera de trás';
+      try { await ligarLente(lentes[i]); aviso(`Lente ${i + 1} de ${lentes.length}: ${lentes[i].rotulo}`); }
+      catch (err) { aviso('Essa lente não abriu: ' + (err.message || err)); }
+    } else if (k === 'lente') aviso('O navegador mostra só esta câmera de trás');
     else if (k === 'situacao') {
       atual = (atual + 1) % situacoes.length;
       situacoes.forEach((s, j) => { s.grupo.visible = j === atual; });
@@ -1006,6 +1073,8 @@ export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null,
       e.target.textContent = situacoes[atual].rotulo;
     }
   });
+  // com o ARCore, tocar num botão não é tocar na mesa
+  for (const el of sobre.querySelectorAll('.ra-barra, .ra-painel')) el.addEventListener('beforexrselect', ev => ev.preventDefault());
 
   // os dedos (fora dos botões e do painel)
   let gesto = null, arrasto = null;
@@ -1029,9 +1098,9 @@ export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null,
       tamanho = Math.min(20, Math.max(0.1, gesto.tam * d / gesto.d));
       maquete.scale.setScalar(tamanho);
       maquete.rotation.y = gesto.rot - (a - gesto.a);
-      // juntos para cima: a mesa sobe (a maquete mais perto da altura do celular); a régua é a da imagem naquela distância
+      // juntos para cima: a mesa sobe; a régua é a da imagem naquela distância
       const dist = camera.position.distanceTo(maquete.position);
-      plano.constant = Math.max(0.02, gesto.alt + (y - gesto.y) / caixa.h * 2 * dist * Math.tan(camera.fov * Math.PI / 360));
+      plano.constant = gesto.alt + (y - gesto.y) / caixa.h * 2 * dist * Math.tan(camera.fov * Math.PI / 360);
       maquete.position.y = -plano.constant;
       mostrarEscala();
     } else if (arrasto && e.touches.length === 1) {
@@ -1052,13 +1121,13 @@ export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null,
     }
   });
 
-  // a primeira vez: espera o giroscópio dizer para onde o celular olha (ou 0,8 s sem ele) e põe a maquete na mesa
+  // o quadro: com o ARCore, a posição do celular vem dele (a cada quadro da sessão) e a maquete fica no lugar da mesa;
+  // sem ele, o giroscópio gira a câmera. A primeira vez: espera a mesa (ou o giro) e põe a maquete
   const inicio = performance.now();
   const ultimaLuz = new THREE.Vector3(), pCam = new THREE.Vector3();
-  const desenhar = () => {
-    if (fechado) return;
-    quadro = requestAnimationFrame(desenhar);
-    if (!maquete.visible && (giroscopio || performance.now() - inicio > 800) && video.videoWidth) por();
+  const passo = () => {
+    const pronto = xr ? (acerto || performance.now() - inicio > 2500) : (giroscopio || performance.now() - inicio > 800);
+    if (!maquete.visible && pronto && video.videoWidth) por();
     if (modoSombra === 'camera' && maquete.visible) {
       pCam.copy(camera.position); maquete.worldToLocal(pCam);
       pCam.y = Math.max(pCam.y, 0.25 * Math.hypot(pCam.x, pCam.z));
@@ -1067,8 +1136,32 @@ export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null,
     }
     renderer.render(cena, camera);
   };
-  desenhar();
-  window.ultimaGrandeAngular = { lentes: () => lentes, lente: () => lente, maquete, camera, caixa, fechar };
+  const quadroXR = (t, frame) => {
+    if (fechado || !xr) return;
+    xr.sessao.requestAnimationFrame(quadroXR);
+    const gl = xr.gl, camada = xr.sessao.renderState.baseLayer;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, camada ? camada.framebuffer : null);        // a imagem do ARCore fica vazia
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    const pose = frame.getViewerPose(xr.ref);
+    if (pose) {
+      const p = pose.transform.position, o = pose.transform.orientation;
+      camera.position.set(p.x, p.y, p.z); camera.quaternion.set(o.x, o.y, o.z, o.w);
+    }
+    const achados = frame.getHitTestResults(xr.fonte);
+    if (achados.length) { const a = achados[0].getPose(xr.ref); if (a) acerto = a.transform.position; }
+    passo();
+  };
+  const desenhar = () => {
+    if (fechado || xr) return;                                // com o ARCore, os quadros vêm da sessão dele
+    quadro = requestAnimationFrame(desenhar);
+    passo();
+  };
+  if (xr) {
+    // a sessão do ARCore acabou sozinha (o sistema a tirou): segue pelo giroscópio
+    xr.sessao.addEventListener('end', () => { if (xr) { xr = null; if (!fechado) desenhar(); } });
+    xr.sessao.requestAnimationFrame(quadroXR);
+  } else desenhar();
+  window.ultimaGrandeAngular = { lentes: () => lentes, lente: () => lente, maquete, camera, caixa, fechar, presaNaMesa: () => !!xr };
 }
 
 const _esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

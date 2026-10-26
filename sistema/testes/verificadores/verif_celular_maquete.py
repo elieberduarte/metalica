@@ -476,10 +476,13 @@ try:
       const r = b.getBoundingClientRect(); if (r.left < -1 || r.top < -1 || r.right > innerWidth + 1 || r.bottom > innerHeight + 1) fora.push(b.dataset.ra || b.className); }
       return JSON.stringify(fora); })()"""
     ok(json.loads(ap.avaliar(DENTRO_GA) or '["?"]') == [], "os botões dentro da tela")
-    # o texto de ajuda não cobre os botões de cima (a primeira versão, em 4 linhas, cobria Lente/Inteira/Camadas)
-    ok(ap.avaliar("""(() => { const d = document.querySelector('#ga-camera .ra-dica').getBoundingClientRect();
-      return [...document.querySelectorAll('#ga-camera .ra-barra-cima button')].every(b => b.getBoundingClientRect().top >= d.bottom - 1); })()"""),
-       "o texto de ajuda não cobre os botões de cima")
+    # sem a mensagem fixa no alto, e os botões de cima numa coluna do lado direito, menores (26/10: "não precisa dessa
+    # mensagem"; "poderia estar na lateral para não atrapalhar a visualização"; "diminuir esses botões")
+    lado = json.loads(ap.avaliar("""(() => { const bs = [...document.querySelectorAll('#ga-camera .ra-barra-cima button')].map(b => b.getBoundingClientRect());
+      return JSON.stringify({ dica: !document.querySelector('#ga-camera .ra-dica').hidden, xs: bs.map(r => Math.round(r.x)), dir: Math.max(...bs.map(r => r.right)),
+        alt: Math.max(...[...document.querySelectorAll('#ga-camera button')].map(b => b.getBoundingClientRect().height)), largura: innerWidth }); })()""") or "{}")
+    ok(not lado.get("dica") and len(set(lado.get("xs") or [0, 1])) == 1 and lado.get("dir", 0) > lado.get("largura", 0) - 30
+       and lado.get("alt", 99) <= 40, f"sem a mensagem; os botões de cima em coluna na direita, até 40 px de altura ({lado})")
     # o giroscópio: o celular de pé olhando para a frente (beta 90) põe a câmera na horizontal; inclinado (beta 50), olha
     # para baixo — e um toque abaixo do meio leva a maquete para mais perto
     ap.avaliar("window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { alpha: 0, beta: 90, gamma: 0 })); 1")
@@ -503,6 +506,35 @@ try:
     ok(ap.avaliar("localStorage.getItem('metalica-maquete-lente')") == "a|", "e a lente escolhida fica guardada")
     ap.avaliar("document.querySelector('#ga-camera [data-ra=sair]').click()")
     ok(esperar(ap, "!document.getElementById('ga-camera')", 5), "Sair fecha a câmera e volta ao 3D")
+    ok(ap.avaliar(f"{GA}.presaNaMesa()") is False, "sem o ARCore (a sessão não abre), a maquete segue o giro")
+
+    # presa na mesa (26/10, "o modelo não fica fixo em um ponto"): o ARCore rastreia pela principal, por baixo — simulado: a
+    # sessão dá a posição do celular a cada quadro e acha a mesa a 0,4 m abaixo e 0,6 m à frente; o celular anda 30 cm
+    # para o lado e a maquete fica onde estava
+    ap.avaliar("""(() => { window.XRWebGLLayer = class { constructor() { this.framebuffer = null; } };
+      window._pose = { x: 0, y: 0, z: 0 }; window._xrFim = false;
+      const quadro = { getViewerPose: () => ({ transform: { position: { ...window._pose }, orientation: { x: -0.3826834, y: 0, z: 0, w: 0.9238795 } } }),
+                       getHitTestResults: () => [{ getPose: () => ({ transform: { position: { x: 0, y: -0.4, z: -0.6 } } }) }] };
+      const sessao = { renderState: { baseLayer: null }, async updateRenderState(s) { this.renderState = s; },
+        async requestReferenceSpace(t) { return { t }; }, async requestHitTestSource() { return {}; },
+        requestAnimationFrame(cb) { return setTimeout(() => cb(performance.now(), quadro), 16); },
+        fim: [], addEventListener(n, f) { if (n === 'end') this.fim.push(f); }, async end() { window._xrFim = true; this.fim.forEach(f => f()); } };
+      Object.defineProperty(navigator, 'xr', { configurable: true, value: { isSessionSupported: async () => true, requestSession: async () => sessao } });
+      return 1; })()""")
+    ap.avaliar("window.ultimaGrandeAngular = null")
+    tocar(ap, "[data-f=maquete]")
+    ok(esperar(ap, "!!document.querySelector('#ra-acoes [data-ra=grande-angular]')", 60), "a folha da maquete de novo")
+    tocar(ap, "#ra-acoes [data-ra=grande-angular]")
+    ok(esperar(ap, f"!!window.ultimaGrandeAngular && {GA}.maquete.visible", 20) and ap.avaliar(f"{GA}.presaNaMesa()") is True,
+       "com o ARCore: a 0,6× abre presa na mesa")
+    p0 = ap.avaliar(f"{GA}.maquete.position.toArray()")
+    ok(p0 and abs(p0[0]) < 1e-6 and abs(p0[1] + 0.4) < 1e-6 and abs(p0[2] + 0.6) < 1e-6, f"a maquete no ponto da mesa que o ARCore achou ({p0})")
+    ap.avaliar("window._pose.x = 0.3; 1")
+    ok(esperar(ap, f"Math.abs({GA}.camera.position.x - 0.3) < 1e-6", 3), "o celular andou 30 cm para o lado (a posição vem do ARCore)")
+    p1 = ap.avaliar(f"{GA}.maquete.position.toArray()")
+    ok(p1 == p0, f"e a maquete ficou no mesmo lugar da mesa ({p1})")
+    ap.avaliar("document.querySelector('#ga-camera [data-ra=sair]').click()")
+    ok(esperar(ap, "!document.getElementById('ga-camera') && window._xrFim", 5), "Sair fecha a câmera e a sessão do ARCore")
     ap.avaliar("clearInterval(window._pintar); 1")
 
     # a cobertura retrátil: as duas situações no mesmo quadro — a parte fixa no mesmo lugar, a parte móvel não
