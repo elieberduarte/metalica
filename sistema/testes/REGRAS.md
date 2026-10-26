@@ -392,6 +392,29 @@ Testes: `test_conferencia_3d.py`, `test_reanalise.py`.
     castanha e a aba encostavam uma na outra e as `pontas_soltas` não viam — 9f2c42c (gerador + conferência reforçada).
     **Reincidência.**
 
+### GER-04 — O 3D modelado do DXF fica vinculado ao 2D
+- **Enunciado (usuário, 26/10):** "todas as vezes que montarmos um projeto modelando ele em 3D a partir de projetos dxf,
+  os projetos dxf utilizados devem ser importados para 2D e o modelo em 3D deve ser vinculado ao 2D para facilitar a
+  verificação do 2D com 3D". Inclui a regra de 23/10 (memória dxf-junto-do-ifc-no-original): a obra com DXF e IFC também
+  leva o DXF para o Original.
+- **Aprovada:** 26/10 (o usuário, direto no REGRAS · SISTEMA).
+- **Aplica-se a:** projeto que veio de DXF (o DXF recebido, o arquitetônico em DXF ou a peça montada pela planta). O
+  projeto só do IFC não entra.
+- **Código:** o vínculo é o `planta_modelo` do projeto (o desenho 2D com o DXF, o deslocamento do 3D e o de cada planta
+  lida), que a tela dividida lê (web/dividida.js). Quem grava: a montagem pela planta (app.py) e por quadros, sozinhas; o
+  script de obra, por `nucleo3d/vinculo_2d.gravar`.
+- **Conferência:** **sim** — `nucleo3d/vinculo_2d.conferir(pasta do projeto)`. Aponta:
+  - o DXF não está no 2D ou não está ligado (sem `planta_modelo`, ou o desenho dele não existe ou não tem nada do DXF);
+  - falta o deslocamento;
+  - peça de uma planta que o vínculo não conhece;
+  - **o 3D não cai em cima do desenho**: mais de 12 % das barras, levadas ao 2D, longe de qualquer traço (meio e duas
+    pontas, grade de 250 mm). Com o vínculo certo ficam até ~8 % (Posto V2 2,7 %); com o 3D 1 m fora, 16–28 %; com 5 m, mais de 50 %.
+- **Testes:** test_vinculo_2d (6 casos e a trava: as obras do desenvolvimento não pioram em relação a
+  `Projeto/bateria/vinculo-2d.json`, aceita em 26/10).
+- **Situação em 26/10 (33 obras do dev):** 4 ligadas e certas (Posto V2, Hora Certa Edifício Administrativo, Portaria,
+  Posto teste). **9 vieram do DXF sem o vínculo:** Hangar, Hora Certa galpão novo e existente, Moinho Globo, Ortobio, CD
+  Bom Dia, Docas, PRATI metálica e sem lateral. Todas foram montadas por script de obra; a correção é de cada chat de obra.
+
 ---
 
 ## FAB — Fábrica, detalhamento e compra
