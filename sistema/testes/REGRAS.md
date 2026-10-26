@@ -480,5 +480,5 @@ comum (progresso.js, cad.js, editor.js, sistemas.js) vale para todas as telas qu
 - As telhas de toda obra são lançadas por script (`Projeto/OBRAS/<obra>/…`), sem botão na tela.
 - GER-04: a camada "3D — Peças em planta" no Original, com a chave `origem_2d` em cada peça (o jeito da chave, para a obra
   lida de PDF ou montada por script), mora em cópias por obra: `Projeto/OBRAS/Sesi-Chapecó/leitura-3d/vinculo_2d.py` e
-  `Projeto/OBRAS/Hora-Certa/Galpão Existente/leitura-3d/vinculo_planta.py`. Deve ir para o código comum (pedido ao
+  `Projeto/OBRAS/Hora-Certa/Galpão Existente/leitura-3d/vinculo_planta.py` e `Projeto/OBRAS/Moinho-Globo/ligar_2d.py` (a chave do traço da vista de cada barra, porque o DXF do Moinho só tem elevações e cortes). Deve ir para o código comum (pedido ao
   FERRAMENTA · LEITURA DXF/IFC → 3D).
