@@ -420,6 +420,8 @@ Testes: `test_conferencia_3d.py`, `test_reanalise.py`.
   - **5 vieram do DXF sem vínculo nenhum:** Hora Certa galpão novo e existente, Moinho Globo, PRATI metálica e sem
     lateral. Em todas, o DXF já está no 2D. A correção é de cada chat de obra.
   - A 1ª versão da conferência (a6cc391) só conhecia o `planta_modelo` e acusava também as 4 ligadas pela chave.
+  - 26/10, depois: o Hora Certa galpão existente (o script da obra grava os dois jeitos) e o Moinho Globo resolvidos.
+    Seguem sem vínculo: Hora Certa galpão novo, PRATI metálica e sem lateral.
 
 ---
 
@@ -476,3 +478,7 @@ comum (progresso.js, cad.js, editor.js, sistemas.js) vale para todas as telas qu
 
 - COB-17: a parede de concreto entra como parede provisória no script de cada obra — o `telhas_cobertura` só vê barras.
 - As telhas de toda obra são lançadas por script (`Projeto/OBRAS/<obra>/…`), sem botão na tela.
+- GER-04: a camada "3D — Peças em planta" no Original, com a chave `origem_2d` em cada peça (o jeito da chave, para a obra
+  lida de PDF ou montada por script), mora em cópias por obra: `Projeto/OBRAS/Sesi-Chapecó/leitura-3d/vinculo_2d.py` e
+  `Projeto/OBRAS/Hora-Certa/Galpão Existente/leitura-3d/vinculo_planta.py`. Deve ir para o código comum (pedido ao
+  FERRAMENTA · LEITURA DXF/IFC → 3D).
