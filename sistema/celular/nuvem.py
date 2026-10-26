@@ -176,8 +176,9 @@ class Nuvem:
         with self._trava:
             try:
                 r = self._enviar(forcar)
-                self.erro = ""
-                self._falhou_em = 0.0
+                # a obra que não deu para preparar fica de fora (a versão de antes continua na nuvem) e vai para o aviso
+                self.erro = ("Não foi para a nuvem: " + "; ".join(r["falhas"]))[:300] if r.get("falhas") else ""
+                self._falhou_em = time.time() if r.get("falhas") else 0.0
                 return r
             except Exception as e:                        # noqa: BLE001 — vai para a tela do PC
                 self.erro = str(e)[:300]
@@ -192,25 +193,46 @@ class Nuvem:
         ja = {} if forcar else dict(cfg.get("obras") or {})
         obras = self.cel.projetos()
         nuvem = set(self.na_nuvem().get("obras") or [])
-        enviados, total_bytes, lista = 0, 0, []
+        enviados, total_bytes, lista, falhas = 0, 0, [], []
+        # as telas primeiro: não dependem das obras (26/10: o pranchas.pdf vazio de uma obra derrubava o envio inteiro
+        # desde 21/10, e as telas novas da maquete nunca chegaram ao celular)
+        self.andamento = {"etapa": "Enviando as telas do celular", "fracao": 0.0}
+        mapa = {rota: _sha1(c) for rota, c in telas()}
+        enviados += self._subir([(mapa[rota], c) for rota, c in telas()], "Telas do celular")
+        self._pedir("PUT", "/pc/telas", mapa)
         for i, p in enumerate(obras):
             slug = p["slug"]
             etapa = "%s (%d de %d)" % (p.get("nome") or slug, i + 1, len(obras))
             self.andamento = {"etapa": "Preparando " + etapa, "fracao": i / max(len(obras), 1)}
-            self.cel.gerar_se_velho(slug)
-            m = self.cel._manifesto(slug)
-            if not m:
-                continue
-            m = dict(m, arquivos=[a for a in m.get("arquivos") or [] if a.get("nome") not in FORA_DA_NUVEM])
-            versao = hashlib.sha1(json.dumps(m, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
-            total_bytes += sum(int(a.get("bytes") or 0) for a in m["arquivos"])
-            if ja.get(slug) != versao or slug not in nuvem:
-                pasta = os.path.join(self.cel.pacotes, slug)
-                enviados += self._subir([(a["sha1"], os.path.join(pasta, *a["nome"].split("/"))) for a in m["arquivos"]],
-                                        "Enviando " + etapa)
-                self._pedir("PUT", "/pc/obra/" + urllib.parse.quote(slug, safe=""), m)
-                ja[slug] = versao
             item = {k: v for k, v in p.items() if k not in ("situacao", "progresso", "erro")}
+            try:
+                self.cel.gerar_se_velho(slug)
+                m = self.cel._manifesto(slug)
+                if not m:
+                    continue
+                m = dict(m, arquivos=[a for a in m.get("arquivos") or [] if a.get("nome") not in FORA_DA_NUVEM])
+                versao = hashlib.sha1(json.dumps(m, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+                if ja.get(slug) != versao or slug not in nuvem:
+                    pasta = os.path.join(self.cel.pacotes, slug)
+                    enviados += self._subir([(a["sha1"], os.path.join(pasta, *a["nome"].split("/"))) for a in m["arquivos"]],
+                                            "Enviando " + etapa)
+                    self._pedir("PUT", "/pc/obra/" + urllib.parse.quote(slug, safe=""), m)
+                    ja[slug] = versao
+            except ErroNuvem:
+                raise                                      # sem conexão ou sem licença: o envio inteiro para
+            except Exception as e:                         # noqa: BLE001 — a obra com defeito não segura as outras
+                falhas.append("%s (%s)" % (p.get("nome") or slug, str(e)[:160]))
+                if slug in nuvem and slug in ja:           # a versão de antes continua lá e na lista
+                    velho = {}
+                    try:
+                        velho = self.cel._manifesto(slug) or {}
+                    except Exception:                      # noqa: BLE001
+                        pass
+                    item.update({"gerado": velho.get("gerado"), "bytes": velho.get("bytes"),
+                                 "numeros": velho.get("numeros") or {}, "atual": False})
+                    lista.append(item)
+                continue
+            total_bytes += sum(int(a.get("bytes") or 0) for a in m["arquivos"])
             item.update({"gerado": m.get("gerado"), "bytes": m.get("bytes"), "numeros": m.get("numeros") or {}, "atual": True})
             lista.append(item)
         locais = {p["slug"] for p in obras}
@@ -219,10 +241,6 @@ class Nuvem:
             self.andamento = {"etapa": "Tirando da nuvem: " + slug, "fracao": None}
             self._pedir("DELETE", "/pc/obra/" + urllib.parse.quote(slug, safe=""))
             ja.pop(slug, None)
-        self.andamento = {"etapa": "Enviando as telas do celular", "fracao": None}
-        mapa = {rota: _sha1(c) for rota, c in telas()}
-        enviados += self._subir([(mapa[rota], c) for rota, c in telas()], "Telas do celular")
-        self._pedir("PUT", "/pc/telas", mapa)
         from versao import VERSAO
         self._pedir("PUT", "/pc/indice", {"formato": 1, "projetos": lista, "computador": socket.gethostname(), "programa": VERSAO})
         if tirar or enviados:
@@ -232,7 +250,7 @@ class Nuvem:
                 pass                                       # limpar fica para o próximo envio
         enviado = time.strftime("%Y-%m-%dT%H:%M:%S")
         self._gravar(obras=ja, enviado=enviado, assinatura=assinatura, bytes=total_bytes)
-        return {"obras": len(lista), "enviados_bytes": enviados, "tiradas": tirar, "enviado": enviado}
+        return {"obras": len(lista), "enviados_bytes": enviados, "tiradas": tirar, "enviado": enviado, "falhas": falhas}
 
     # ------------------------------------------------------------------ em segundo plano
 

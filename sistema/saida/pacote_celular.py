@@ -809,10 +809,14 @@ def _pranchas(pasta_projeto: str, destino: str) -> List[dict]:
     if not folhas:
         return []
     pdf = os.path.join(destino, "pranchas.pdf")
-    if not os.path.exists(pdf) or os.path.getmtime(pdf) < os.path.getmtime(desenho):
+    # o PDF vazio (a geração interrompida no meio, 22/10, ME Sooro: 0 bytes e mais novo que o desenho — nunca era refeito
+    # e derrubava o envio à nuvem de todas as obras) é refeito; e o novo só toma o lugar do velho quando fica pronto
+    if not os.path.exists(pdf) or os.path.getsize(pdf) == 0 or os.path.getmtime(pdf) < os.path.getmtime(desenho):
         from nucleo2d.desenho import Desenho
         from nucleo2d.pranchas import pdf_dos_desenhos
-        pdf_dos_desenhos([Desenho.de_dict(d)], pdf)
+        tmp = pdf + ".tmp.pdf"
+        pdf_dos_desenhos([Desenho.de_dict(d)], tmp)
+        os.replace(tmp, pdf)
     import pymupdf
     os.makedirs(os.path.join(destino, "folhas"), exist_ok=True)
     saida = []
