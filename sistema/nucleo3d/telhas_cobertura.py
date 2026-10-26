@@ -2706,10 +2706,10 @@ def alinhar_tercas(tercas, barras, tol: float = 10.0, maximo: float = 300.0, vao
                 if c.id in vistos_l or abs(c.inicio[0] * n_[0] + c.inicio[1] * n_[1] - tb) > 30.0:
                     continue
                 junta = None
-                for P, sP in ((a.inicio, ai), (a.fim, af)):
+                for k_p, (P, sP) in enumerate(((a.inicio, ai), (a.fim, af))):
                     for k_q, Q in enumerate((c.inicio, c.fim)):
                         if math.dist(P[:2], Q[:2]) <= 60.0 and abs(P[2] - Q[2]) <= 20.0:
-                            junta, ponta_c = sP, k_q
+                            junta, ponta_c, ponta_a, z_a, z_c = sP, k_q, k_p, P[2], Q[2]
                 if junta is None:
                     continue
                 if c.id not in mov and any(x == 0.0 for _s, x, _b in an["amostras"].get(c.id, ())):
@@ -2718,7 +2718,15 @@ def alinhar_tercas(tercas, barras, tol: float = 10.0, maximo: float = 300.0, vao
                     continue                                 # e o que entraria noutra peça (a tesoura de cima da TRANSIÇÃO 3)
                 vistos_l.add(c.id)
                 if c.id in mov and abs(mov[c.id][1 + ponta_c] - junta) <= 20.0:
-                    fila.append(mov[c.id][:3])               # a subida dele já casa na emenda (a terça torta nivelada)
+                    # a subida dele já casa na emenda (a terça torta nivelada) — e as duas pontas ficam na mesma altura, a
+                    # mais alta: a TC62 do Posto (x 50,17) subia 61 mm e a TC58 emendada nela 81, com 6 mm entre elas antes —
+                    # sobravam 26 mm de degrau na telha (26/10, o usuário: "seguindo o alinhamento da terça ao lado")
+                    z_fim = max(z_a + junta, z_c + mov[c.id][1 + ponta_c])
+                    for x_, k_, z0_ in ((c, ponta_c, z_c), (a, ponta_a, z_a)):
+                        m_ = list(mov[x_.id])
+                        m_[1 + k_] = z_fim - z0_
+                        mov[x_.id] = tuple(m_)
+                    fila.append(mov[c.id][:3])
                     continue
                 lo_c, _hi = _ext_z(c)
                 so_c = mov[c.id][3] if c.id in mov else [p for p in _apoios_da_terca(c, apoios, grade, CEL)

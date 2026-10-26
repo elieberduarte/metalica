@@ -1157,3 +1157,26 @@ def test_terca_do_outro_lado_da_calha_sobe_ao_plano():
     assert "TC2" in [c["sigla"] for c in r["calha"]], "a terça do outro lado da calha ficou embaixo da água"
     assert baixa.inicio[2] > z_plano - 100.0 + 20.0 and baixa.fim[2] > z_plano - 100.0 + 20.0      # subiu nas duas pontas
     assert any(apoio == "TESOURA 34" for _a, _b, apoio in r["suportes"])
+
+
+def test_emenda_da_linha_da_calha_fica_na_mesma_altura():
+    """a TC62 e a TC58 do Posto V2, x 50,17 (26/10/2026, o usuário: "deve ficar apoiado aqui seguindo o alinhamento da
+    terça ao lado"): os dois pedaços da linha da calha sobem ao plano, cada um pela sua reta (61 e 81 mm), e a emenda
+    aceitava até 20 mm de diferença — sobrava um degrau de 26 mm na telha. As duas pontas da emenda ficam juntas"""
+    doc = Documento()
+    _agua(doc, 8500.0, 5, 7100.0, 0.05, sigla="TC3")
+    z_plano = 7100.0 - 0.05 * 1400.0
+    a = _terca(doc, 7100.0, z_plano - 100.0, "TC2", y1=3000.0)
+    b = _terca(doc, 7100.0, z_plano - 100.0, "TC2", y0=3000.0)
+    _terca(doc, 6650.0, 7010.0, "TC1")
+    for k in (1, 2):                                           # a água de antes só de y 2000 a 6000
+        _terca(doc, 6650.0 - k * 1400.0, 7010.0 + k * 1400.0 * 0.05, "TC1", y0=2000.0)
+    lo, _hi = T._ext_z(a)
+    tr = Barra(inicio=(7000.0, -500.0, 0), fim=(7000.0, 6500.0, 0), perfil="U 150×70×4,75 (FF)", papel="banzo", camada="Treliças")
+    z_tr = a.inicio[2] + lo - T._ext_z(tr)[1]
+    tr.inicio, tr.fim = (7000.0, -500.0, z_tr), (7000.0, 6500.0, z_tr)
+    tr.atributos = {"origem": {"planta": "TRANSIÇÃO 13", "peca": "TRANSIÇÃO 13#1"}}
+    doc.add(tr)
+    T.alinhar_tercas([x for x in doc.barras if x.papel == "terça"], doc.barras)
+    assert a.fim[2] > z_plano - 100.0 + 20.0 and b.inicio[2] > z_plano - 100.0 + 20.0      # as duas subiram
+    assert abs(a.fim[2] - b.inicio[2]) < 1.0, "degrau de %.0f mm na emenda" % abs(a.fim[2] - b.inicio[2])
