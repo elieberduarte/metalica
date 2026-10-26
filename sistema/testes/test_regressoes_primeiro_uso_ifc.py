@@ -6,7 +6,7 @@ sistema/testes/REGRESSOES.md, seção "Primeiro uso").
 
 Os testes rodam na forma de modelo em que os defeitos apareceram: a ME-Sooro como veio do TecnoMETAL (4.047 peças,
 marcas M/P, terças ligadas sem chapa nos banzos), guardada do histórico do teste em
-Projeto/OBRAS/ME-Sooro/teste-primeiro-uso/modelo-importado.json.gz. Sem o arquivo (outra máquina), pulam."""
+Projeto/OBRAS/ME-Sooro/Compressores de Ar Comprimido/teste-primeiro-uso/modelo-importado.json.gz. Sem o arquivo (outra máquina), pulam."""
 import gzip
 import json
 import os
@@ -21,7 +21,7 @@ import app                                                   # noqa: E402
 from nucleo.base import ErroDeDados                         # noqa: E402
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-SOORO = os.path.join(RAIZ, "Projeto", "OBRAS", "ME-Sooro", "teste-primeiro-uso")
+SOORO = os.path.join(RAIZ, "Projeto", "OBRAS", "ME-Sooro", "Compressores de Ar Comprimido", "teste-primeiro-uso")
 SLUG = "me-sooro"
 
 

@@ -615,7 +615,7 @@ def q18_avisos_e_contagem_do_pdf(aba):
     aba.console[:] = [m for m in aba.console if not ("400" in m[1] and "/pranchas/pdf" in m[1])]
 
 
-LISTA_SOORO = os.path.join(BASE, "..", "Projeto", "OBRAS", "ME-Sooro", "teste-primeiro-uso", "lista-de-materiais.json")
+LISTA_SOORO = os.path.join(BASE, "..", "Projeto", "OBRAS", "ME-Sooro", "Compressores de Ar Comprimido", "teste-primeiro-uso", "lista-de-materiais.json")
 
 
 def q19_dxf_de_corte_na_aba_chapas(aba):

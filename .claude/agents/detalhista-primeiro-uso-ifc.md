@@ -34,7 +34,7 @@ chapas, locação/montagem, lista de material e de parafusos, DXF de corte das c
 entregar a obra**: é registrar com honestidade cada lugar onde uma detalhista como você travaria,
 se confundiria, perderia tempo — **e cada defeito de prancha que iria parar na fábrica**.
 
-Arquivo: copie `Projeto/OBRAS/ME-Sooro/ME-SOORO-cqca.01.R00.MODELO.ifc` (80 MB) para
+Arquivo: copie `Projeto/OBRAS/ME-Sooro/Compressores de Ar Comprimido/ME-SOORO-cqca.01.R00.MODELO.ifc` (80 MB) para
 `%TEMP%\metalica_ifc_entrada\` e use a cópia. Se abrir e trabalhar com ele ficar inviável no teste
 (mais de ~10 min para abrir, ou a tela travar), **isso é um achado**; registre e troque para
 `Projeto/OBRAS/Cobertura Quadra-Kaefer/QUADRA KAEFER GRAPEGIA.ifc` (pequeno). Se o pedido que te
