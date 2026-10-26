@@ -1250,6 +1250,17 @@ def _assentar_tercas(tercas, banzos) -> dict:
         zs = [u[2] * x + v[2] * y for x, y in secao(p)]
         return min(zs), max(zs)
 
+    def meia_largura(e):
+        # de lado, em planta: até onde a seção vai do eixo (o U em pé, a aba)
+        p = _perfil(e.perfil)
+        d = tuple(e.fim[i] - e.inicio[i] for i in range(3))
+        h = math.hypot(d[0], d[1])
+        if p is None or h < 1.0:
+            return 50.0
+        u, v, _w = base_local(d, e.rotacao or 0.0)
+        n = (-d[1] / h, d[0] / h)
+        return max(abs((u[0] * x + v[0] * y) * n[0] + (u[1] * x + v[1] * y) * n[1]) for x, y in secao(p))
+
     grade = collections.defaultdict(list)
     for b in banzos:
         (x0, y0), (x1, y1) = b.inicio[:2], b.fim[:2]
@@ -1264,6 +1275,7 @@ def _assentar_tercas(tercas, banzos) -> dict:
         if L < 1.0:
             continue
         abaixo_t, _acima = ext_z(t)
+        meia_t = meia_largura(t)
         vistos = set()
         req: Dict[tuple, Tuple[float, float]] = {}          # (banzo, posição) → (s, z do fundo da terça para assentar)
         for gx in range(int(min(a[0], c[0]) // 3000), int(max(a[0], c[0]) // 3000) + 1):
@@ -1279,9 +1291,14 @@ def _assentar_tercas(tercas, banzos) -> dict:
                         continue
                     tt = ((b.inicio[0] - a[0]) * q[1] - (b.inicio[1] - a[1]) * q[0]) / den
                     uu = ((b.inicio[0] - a[0]) * r[1] - (b.inicio[1] - a[1]) * r[0]) / den
-                    # o apoio da ponta pode ficar até 15 cm além dela (a terça termina na face do banzo, não no eixo)
-                    if not (-150.0 <= tt * L <= L + 150.0 and 0.0 <= uu <= 1.0):
+                    # o apoio da ponta pode ficar até 15 cm além dela (a terça termina na face do banzo, não no eixo); o banzo
+                    # que começa debaixo da largura da terça, não no eixo dela, também é apoio: na TESOURA 37 do Posto o banzo
+                    # começa 10 mm além do eixo da TC65 (x 50,17) — a ponta dela ficava sem apoio, 90 mm abaixo, dentro dele
+                    # (26/10, a linha da calha com um degrau de 128 mm; o usuário: "sim", corrigir junto)
+                    folga_u = meia_t / max(1.0, math.hypot(*q))
+                    if not (-150.0 <= tt * L <= L + 150.0 and -folga_u <= uu <= 1.0 + folga_u):
                         continue
+                    uu = min(1.0, max(0.0, uu))
                     if id(b) not in topo_b:
                         topo_b[id(b)] = ext_z(b)[1]
                     zb = b.inicio[2] + (b.fim[2] - b.inicio[2]) * uu + topo_b[id(b)]

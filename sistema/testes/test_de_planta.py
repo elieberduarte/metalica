@@ -1027,6 +1027,23 @@ def test_terca_assentada_no_topo_dos_banzos():
         f = (t.inicio[2] + (t.fim[2] - t.inicio[2]) * (y + 50.0) / 6100.0 + fundo) - (zb + topo)
         assert -0.5 <= f <= 20.0
 
+
+def test_terca_assenta_no_banzo_que_comeca_debaixo_da_largura_dela():
+    """a TC65 do Posto V2, x 50,17 (26/10/2026, a linha da calha com um degrau de 128 mm; o usuário: "sim", corrigir
+    junto): o banzo da TESOURA 37 começa 10 mm além do eixo da terça — a ponta dela ficava sem apoio, 90 mm abaixo, dentro
+    dele. O banzo que começa debaixo da largura da terça é apoio"""
+    from nucleo3d.modelo import Barra
+    b1 = Barra(inicio=(1990.0, 0.0, 7000.0), fim=(6000.0, 0.0, 7000.0), perfil="U 150×70×4,75 (FF)", rotacao=270.0, papel="banzo")
+    b2 = Barra(inicio=(1990.0, 3300.0, 7000.0), fim=(6000.0, 3300.0, 7000.0), perfil="U 150×70×4,75 (FF)", rotacao=270.0,
+               papel="banzo")
+    b3 = Barra(inicio=(2010.0, 3300.0, 7000.0), fim=(6000.0, 3300.0, 7000.0), perfil="U 150×70×4,75 (FF)", rotacao=270.0,
+               papel="banzo")
+    alto = Barra(inicio=(2000.0, 3300.0, 7070.0), fim=(2000.0, 0.0, 6980.0), perfil="U 100×40×2,65 (FF)", rotacao=0.0, papel="terça")
+    de_planta._assentar_tercas([alto], [b1, b2])
+    t = Barra(inicio=(2000.0, 3300.0, 6980.0), fim=(2000.0, 0.0, 7070.0), perfil="U 100×40×2,65 (FF)", rotacao=0.0, papel="terça")
+    de_planta._assentar_tercas([t], [b1, b3])                   # o de y 3300 começa 10 mm além do eixo da terça
+    assert t.inicio[2] == pytest.approx(t.fim[2], abs=0.5) == pytest.approx(alto.inicio[2], abs=0.5)
+
 def test_sentido_pela_agua_das_paralelas():
     """de cima para baixo (12/10, as TESOURAS 8 e 9 do Posto): cinco tesouras paralelas, a 3 m uma da outra, numa água
     de 5 %; as duas do meio vieram com o alto do outro lado (o desenho ao contrário) e uma confirma a outra — viram as
