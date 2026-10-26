@@ -1403,3 +1403,42 @@ def test_virada_pelas_chegadas_nao_desencontra_as_pontas():
     assert not t.invertida and t.sentido_por == "costume do desenho"
     assert t.elevacao.topo(de_planta._s_na_elevacao(t, 0.0)) == pytest.approx(800.0, abs=30.0)
     assert caso(False).invertida
+
+
+
+def test_contravento_em_cantoneira_embaixo_do_banzo_e_cruzando_no_x():
+    """o "CV. L 1.1/2"X1/8"" da PLANTA NO NÍVEL 6,00M do Posto CB (26/10/2026, a lista do projetista × 3D: 235 m de L 1½"
+    que o 3D não tinha — o gerador só lia contravento na planta das terças). Caso A aprovado pelo usuário ("sim"): a L
+    embaixo do banzo de baixo, aba deitada encostada no fundo dele, de nó a nó; no X uma passa inteira e a outra logo
+    abaixo dela (a espessura, com calço nas pontas); rótulo sem linha ao lado vira aviso"""
+    # o banzo de y 6000 9 mm mais baixo: as L saem levemente inclinadas e o X ainda se encosta sem se atravessar
+    bz = [Barra(inicio=(0.0, y, z), fim=(9000.0, y, z), perfil="U 100×40×2,25 (FF)", rotacao=90.0, papel="banzo")
+          for y, z in ((0.0, 6000.0), (6000.0, 5991.0))]
+    fundo = 6000.0 + de_planta._faixa_z(bz[0])[0]
+    segs = [((0.0, 0.0), (4500.0, 6000.0)), ((0.0, 6000.0), (4500.0, 0.0)), ((0.0, 0.0), (9000.0, 0.0))]
+    ang = math.degrees(math.atan2(6000.0, 4500.0))
+    # o rótulo escrito ao longo da diagonal dele, ao lado do banzo de baixo (y 0) também: vale a diagonal
+    txt = [texto((2300.0, 3150.0), 'CV. L 1.1/2"X1/8"', angulo=ang), texto((2300.0, 2850.0), 'CV. L1.1/2"X1/8"', angulo=180.0 - ang),
+           texto((7000.0, 3000.0), 'CV. L 1.1/2"X1/8"', angulo=ang)]          # o terceiro, longe de qualquer linha
+    # a VM 2Ue200 no eixo da ponta direita (topo no nível): a L para na face dela
+    vm = Barra(inicio=(4500.0, -500.0, 5900.0), fim=(4500.0, 6500.0, 5900.0), perfil="Ue 200×70×20×2,65", rotacao=0.0, papel="viga")
+    feitas, avisos = de_planta.contraventos_em_cantoneira(txt, segs, bz + [vm], 6000.0, desl=(100.0, 0.0))
+    assert len(feitas) == 2 and len(avisos) == 1
+    assert all(f["perfil"] == 'L 1½"×1/8"' and f["rotacao"] == 180.0 for f in feitas)
+    assert feitas[0]["inicio"][:2] == (100.0, 0.0)
+    topo = de_planta._faixa_z(Barra(inicio=feitas[0]["inicio"], fim=feitas[0]["fim"], perfil=feitas[0]["perfil"], rotacao=180.0))[1]
+    a0 = feitas[0]
+    assert a0["inicio"][2] + topo == pytest.approx(fundo, abs=0.1)        # encostada no fundo dos banzos das pontas
+    assert a0["fim"][2] + topo == pytest.approx(fundo - 9.0, abs=0.1)
+    assert [f["embaixo"] for f in feitas] == [False, True]
+    # no meio do X, a segunda está exatamente a uma espessura abaixo da primeira (nem encosta a menos, nem atravessa)
+    f, g = feitas
+    (p0, p1), (q0, q1) = (f["inicio"], f["fim"]), (g["inicio"], g["fim"])
+    r, w = (p1[0] - p0[0], p1[1] - p0[1]), (q1[0] - q0[0], q1[1] - q0[1])
+    den = r[0] * w[1] - r[1] * w[0]
+    tt = ((q0[0] - p0[0]) * w[1] - (q0[1] - p0[1]) * w[0]) / den
+    uu = ((q0[0] - p0[0]) * r[1] - (q0[1] - p0[1]) * r[0]) / den
+    assert (p0[2] + (p1[2] - p0[2]) * tt) - (q0[2] + (q1[2] - q0[2]) * uu) == pytest.approx(3.18, abs=0.05)
+    meia_vm = max(abs(x) for x, _y in __import__("nucleo3d.geometria", fromlist=["secao"]).secao(de_planta._perfil(vm.perfil)))
+    for f in feitas:
+        assert max(f["inicio"][0], f["fim"][0]) == pytest.approx(4500.0 - meia_vm - 10.0, abs=1.0)

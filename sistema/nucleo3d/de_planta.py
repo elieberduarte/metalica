@@ -3644,6 +3644,153 @@ def _eixos_nao_cobertos(segs: Sequence[Tuple[Ponto2, Ponto2]], tol: float = 5.0)
 _ROTULO_TRAVAMENTO = re.compile(r"^(CR|AG|CV|ESTAB|EST)(\d+[A-Z]?)(?![A-Z0-9])")   # "CV6 Ø12,5" também (22/10)
 
 
+def _faixa_z(e) -> Tuple[float, float]:
+    """(fundo, topo) da seção da barra em relação ao eixo dela, pelo perfil e pelo giro"""
+    from nucleo3d.geometria import base_local, secao
+    p = _perfil(e.perfil)
+    if p is None:
+        return -50.0, 50.0
+    d = tuple(e.fim[i] - e.inicio[i] for i in range(3))
+    u, v, _w = base_local(d, e.rotacao or 0.0)
+    zs = [u[2] * x + v[2] * y for x, y in secao(p)]
+    return min(zs), max(zs)
+
+
+def contraventos_em_cantoneira(textos: Sequence[dict], segs: Sequence[tuple], apoios: Sequence, nivel: float,
+                               desl: Tuple[float, float] = (0.0, 0.0)) -> Tuple[List[dict], List[str]]:
+    """O contravento horizontal em cantoneira de uma planta de nível ("CV. L 1.1/2"X1/8"" na PLANTA NO NÍVEL 6,00M do
+    Posto CB: o X entre as tesouras, de nó a nó). Cada rótulo toma a linha dele (a ≤ 300 mm, ao longo dela); a L fica
+    EMBAIXO do banzo de baixo (ou da viga) das duas pontas, com a aba deitada encostada no fundo dele (giro 180: a outra
+    aba para baixo) — nada atravessa o banzo; no X, uma passa inteira e a outra logo abaixo dela (a espessura), com o
+    calço da mesma espessura nas pontas (caso A aprovado pelo usuário, 26/10/2026).
+
+    `segs` são (a, b) do desenho e `textos` os textos da planta (no lugar do desenho; `desl` leva ao da obra); `apoios`
+    as barras de banzo/viga da planta. Devolve ([{inicio, fim, perfil, rotacao, embaixo, calco}], avisos)."""
+    from nucleo2d.reconhecer import perfil_do_texto
+    avisos: List[str] = []
+    linhas: Dict[int, str] = {}
+    for t in textos:
+        r = perfil_do_texto(str(t.get("texto") or ""))
+        if not r or r.get("papel") != "contraventamento" or not str(r.get("perfil") or "").startswith("L "):
+            continue
+        p = t["posicao"]
+        ang_t = float(t.get("angulo") or 0.0) % 180.0
+        melhor = None
+        for i, (a, b) in enumerate(segs):
+            (ux, uy), L = _unit(a, b)
+            if L < 1500.0:
+                continue
+            # o rótulo vai escrito ao longo da diagonal dele: a linha da tesoura que passa ao lado (outra direção) não é
+            # a dele (no Posto, 4 rótulos tomavam o banzo de 12,6 e 57 m)
+            dif = abs(math.degrees(math.atan2(uy, ux)) % 180.0 - ang_t)
+            if min(dif, 180.0 - dif) > 10.0:
+                continue
+            s = (p[0] - a[0]) * ux + (p[1] - a[1]) * uy
+            d = abs(-(p[0] - a[0]) * uy + (p[1] - a[1]) * ux)
+            if -50.0 <= s <= L + 50.0 and d <= 300.0 and (melhor is None or d < melhor[0]):
+                melhor = (d, i)
+        if melhor is None:
+            avisos.append("rótulo \"%s\" sem linha ao lado (≤ 300 mm)." % str(t.get("texto")).strip())
+            continue
+        linhas.setdefault(melhor[1], r["perfil"])
+
+    def perto(q, papeis):
+        """as barras desses papéis que passam na ponta (≤ 250 mm em planta, perto do nível): (barra, z do eixo ali)"""
+        out = []
+        for b in apoios:
+            if b.papel not in papeis:
+                continue
+            a_, f_ = b.inicio, b.fim
+            ux, uy = f_[0] - a_[0], f_[1] - a_[1]
+            L2 = ux * ux + uy * uy
+            if L2 < 1.0:
+                continue
+            t_ = max(0.0, min(1.0, ((q[0] - a_[0]) * ux + (q[1] - a_[1]) * uy) / L2))
+            if math.hypot(q[0] - a_[0] - ux * t_, q[1] - a_[1] - uy * t_) > 250.0:
+                continue
+            z_ = a_[2] + (f_[2] - a_[2]) * t_
+            if abs(z_ - nivel) <= 400.0:
+                out.append((b, z_))
+        return out
+
+    def fundo_em(q, papeis) -> Optional[float]:
+        zs = [z_ + _faixa_z(b)[0] for b, z_ in perto(q, papeis)]
+        return min(zs) if zs else None
+
+    def ate_a_face(q, outro):
+        """a ponta que chega numa viga (a VM 2Ue200 do eixo 3 do Posto, de topo no nível e 200 de altura) para na face
+        dela — a L embaixo do banzo passaria por dentro da viga"""
+        (dx, dy), L = _unit(q, outro)
+        recuo = 0.0
+        for v, _z in perto(q, ("viga",)):
+            (vx, vy), Lv = _unit(v.inicio[:2], v.fim[:2])
+            nx, ny = -vy, vx
+            lado = 1.0 if ((outro[0] - v.inicio[0]) * nx + (outro[1] - v.inicio[1]) * ny) >= 0.0 else -1.0
+            comp = (dx * nx + dy * ny) * lado                  # quanto a L se afasta da viga por mm andado
+            if comp < 0.1:
+                continue
+            pv = _perfil(v.perfil)
+            from nucleo3d.geometria import base_local, secao
+            u_, v_, _w = base_local((v.fim[0] - v.inicio[0], v.fim[1] - v.inicio[1], v.fim[2] - v.inicio[2]), v.rotacao or 0.0)
+            meia = max(abs(u_[0] * nx + u_[1] * ny) * abs(x) + abs(v_[0] * nx + v_[1] * ny) * abs(y)
+                       for x, y in secao(pv)) if pv else 70.0
+            dist = ((q[0] - v.inicio[0]) * nx + (q[1] - v.inicio[1]) * ny) * lado
+            recuo = max(recuo, (meia + 10.0 - dist) / comp)
+        recuo = min(max(recuo, 0.0), L / 3.0)
+        return (q[0] + dx * recuo, q[1] + dy * recuo)
+
+    feitas: List[dict] = []
+    for i, perfil in linhas.items():
+        a, b = segs[i]
+        a = (a[0] + desl[0], a[1] + desl[1])
+        b = (b[0] + desl[0], b[1] + desl[1])
+        # a altura é a do banzo de baixo das tesouras (o plano do X); sem banzo nas pontas, a da viga
+        za, zb = fundo_em(a, ("banzo",)), fundo_em(b, ("banzo",))
+        if za is None and zb is None:
+            za, zb = fundo_em(a, ("viga",)), fundo_em(b, ("viga",))
+        if za is None and zb is None:
+            avisos.append("contravento %s de (%.0f; %.0f) a (%.0f; %.0f): nenhum banzo nas pontas — no nível da planta."
+                          % (perfil, a[0], a[1], b[0], b[1]))
+            za = zb = nivel
+        za = zb if za is None else za
+        zb = za if zb is None else zb
+        a, b = ate_a_face(a, b), ate_a_face(b, a)
+        feitas.append({"inicio": (a[0], a[1], za), "fim": (b[0], b[1], zb), "perfil": perfil, "rotacao": 180.0,
+                       "embaixo": False, "calco": 0.0})
+    # o topo da L (aba deitada) no fundo do banzo: o eixo desce o quanto a seção sobe acima dele
+    from nucleo3d.modelo import Barra
+    for f in feitas:
+        _fd, topo = _faixa_z(Barra(nome=f["perfil"], inicio=f["inicio"], fim=f["fim"], perfil=f["perfil"], rotacao=180.0))
+        f["inicio"] = (f["inicio"][0], f["inicio"][1], f["inicio"][2] - topo)
+        f["fim"] = (f["fim"][0], f["fim"][1], f["fim"][2] - topo)
+    # o X: a segunda de cada par que se cruza no meio passa embaixo da primeira
+    for j, g in enumerate(feitas):
+        for f in feitas[:j]:
+            if f["embaixo"]:
+                continue
+            p0, p1, q0, q1 = f["inicio"], f["fim"], g["inicio"], g["fim"]
+            r = (p1[0] - p0[0], p1[1] - p0[1])
+            s = (q1[0] - q0[0], q1[1] - q0[1])
+            den = r[0] * s[1] - r[1] * s[0]
+            if abs(den) < 1e-6:
+                continue
+            tt = ((q0[0] - p0[0]) * s[1] - (q0[1] - p0[1]) * s[0]) / den
+            uu = ((q0[0] - p0[0]) * r[1] - (q0[1] - p0[1]) * r[0]) / den
+            if 0.05 < tt < 0.95 and 0.05 < uu < 0.95:
+                pa = _perfil(g["perfil"])
+                e_ = float(pa.tw or 3.18) if pa else 3.18
+                # no cruzamento, a de baixo encosta na de cima: os banzos das pontas não ficam todos na mesma altura (a L
+                # sai levemente inclinada), então a descida é a do ponto do X, não só a espessura
+                z_f = p0[2] + (p1[2] - p0[2]) * tt
+                z_g = q0[2] + (q1[2] - q0[2]) * uu
+                desce = max(0.0, z_g - (z_f - e_))
+                g["inicio"] = (g["inicio"][0], g["inicio"][1], g["inicio"][2] - desce)
+                g["fim"] = (g["fim"][0], g["fim"][1], g["fim"][2] - desce)
+                g["embaixo"], g["calco"] = True, round(desce, 2)
+                break
+    return feitas, avisos
+
+
 def _meio_caixao(nome: Optional[str]) -> float:
     """do eixo do caixão (a junta das bocas) ao eixo de cada U: a aba menos a distância da alma ao
     centroide (Ue 250×70: 70 − 19 = 51 mm)"""
@@ -5753,6 +5900,32 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         if sc1_feitos["sem_banzo"]:
             avisos.append("Suporte SC1: %d contravento(s) sem banzo de tesoura perto da ponta — ficaram sem o SC1." % sc1_feitos["sem_banzo"])
 
+    # ---------------------------------------------------------------- contraventos em cantoneira das plantas de nível
+    # o "CV. L 1.1/2"X1/8"" das plantas (o X entre as tesouras no nível 6,00 do Posto CB, o do mezanino e o da caixa
+    # d'água): embaixo do banzo de baixo, de nó a nó (contraventos_em_cantoneira); depois do SC1, que é do tirante
+    cv_l = {"pecas": 0, "embaixo": 0, "por_planta": {}}
+    plantas_cv = [((caixa_p[0] - 500, caixa_p[1] - 500, caixa_p[2] + 500, caixa_p[3] + 500), (0.0, 0.0), None,
+                   t_planta["texto"].strip(), nivel)]
+    plantas_cv += [(f_o, d_o, ents_o, titulo_o, nivel_o) for f_o, d_o, ents_o, titulo_o, nivel_o, _c in pecas_das_outras]
+    for f_cv, d_cv, ents_cv, titulo_cv, nivel_cv in plantas_cv:
+        txt_cv = [t for t in textos if _dentro(t["posicao"], f_cv) and re.match(r"(?i)^\s*CV\.?\s*L", str(t["texto"]))]
+        if not txt_cv:
+            continue
+        segs_cv = [(a, b) for a, b, _c in _segmentos([e for e in ents if _dentro(_pt(e), f_cv)])]
+        pc_cv = ents_cv if ents_cv is not None else [p_["ent"] for p_ in pecas]
+        apo_cv = [e for e in pc_cv if e.tipo == "barra" and e.papel in ("banzo", "viga")]
+        feitas_cv, av_cv = contraventos_em_cantoneira(txt_cv, segs_cv, apo_cv, nivel_cv, d_cv)
+        avisos += ["%s: %s" % (titulo_cv, a_) for a_ in av_cv]
+        fonte_2d[0] = titulo_cv
+        for f in feitas_cv:
+            b = barra(f["inicio"], f["fim"], f["perfil"], "contraventamento", "Contraventamento", None, f["rotacao"],
+                      dict({"planta": titulo_cv, "contravento": "cantoneira"},
+                           **({"cruzamento": "embaixo", "calco_mm": f["calco"]} if f["embaixo"] else {})))
+            if b is not None:
+                cv_l["pecas"] += 1
+                cv_l["embaixo"] += 1 if f["embaixo"] else 0
+        cv_l["por_planta"][titulo_cv] = len(feitas_cv)
+
     # ---------------------------------------------------------------- perto da origem
     # a planta do projetista fica onde ele desenhou (no posto, a 400 m do zero do DXF): o
     # modelo vem para perto da origem, com o canto da planta no zero (em metros redondos),
@@ -5840,6 +6013,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     resumo["camadas_2d"] = camadas_2d
     resumo["tercas_no_plano"] = no_plano
     resumo["escadas"] = escadas_feitas
+    resumo["contraventos_em_cantoneira"] = cv_l
     if suportes_feitos is not None:
         resumo["suportes_terca"] = suportes_feitos
     if sc1_feitos is not None:
