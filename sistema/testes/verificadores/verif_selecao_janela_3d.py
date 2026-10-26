@@ -13,7 +13,8 @@ Mouse de verdade (Input.dispatchMouseEvent), vista de topo, três barras:
   D. com a janela aberta, o cursor na borda faz a vista andar sozinha; longe dela, para;
   E. Esc cancela só a janela (a seleção fica); o direito sem arrastar também cancela, sem abrir o menu;
   F. no meio do arrasto com o esquerdo apertado, o direito também arrasta a vista;
-  G. Alt+Tab (a janela do programa perde o foco) no meio do arrasto: a janela fica aberta e o próximo clique a fecha.
+  G. Alt+Tab (a janela do programa perde o foco) no meio do arrasto: a janela fica aberta e o próximo clique a fecha;
+  H. a janela que não pega nada, fechada com o clique numa peça, seleciona a peça (26/10).
 """
 import json, os, shutil, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -191,6 +192,18 @@ try:
     ok(sel() == ["B"] and not aberta() and not retangulo(), f"G. ao voltar, o próximo clique fecha a janela e seleciona: {sel()}")
     evento("mouseMoved", p0[0], p0[1]); aba.drenar(0.2)
     ok(not retangulo(), "G. e depois o cursor anda sem janela")
+
+    # H. a janela que não pega nada e o segundo clique numa peça: vale a peça (DECISÃO do usuário, 26/10, OrtoBio:
+    # "depois que cancela a edição de uma peça não consigo selecionar ela novamente" — o clique no vazio para tirar a
+    # seleção abria a janela, e o clique na peça só fechava a janela vazia)
+    preparar(sel=("B",))
+    clique(tela([-600, 1500, 0]))
+    ok(aberta(), "H. clique no vazio (com B selecionada) abre a janela")
+    clique(tela([500, 0, 129]))
+    ok(sel() == ["A"] and not aberta(), f"H. o clique em A, com a janela vazia (A não cabe inteira), seleciona A: {sel()}")
+    preparar()
+    clique(tela([-600, 1500, 0])); clique(tela([1500, -1500, 0]))
+    ok(sel() == ["A"], f"H. a janela que pega alguma coisa continua valendo (A inteira dentro): {sel()}")
 
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:2]]}")

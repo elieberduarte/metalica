@@ -129,6 +129,7 @@ export class Selecionar extends Ferramenta {
       ? `${achados.length} ${achados.length === 1 ? 'objeto selecionado' : 'objetos selecionados'}.`
       : 'Nada na janela.');
     this._desenharAlcas();
+    return achados;
   }
 
   onDuploClique(p, ev) {
@@ -292,12 +293,23 @@ export class Selecionar extends Ferramenta {
     return [t[0], t[1]];
   }
 
+  /**
+   * O segundo clique fecha a janela. Se ela não pegou nada e o clique caiu numa peça, vale a peça (DECISÃO do usuário,
+   * 26/10, no OrtoBio: "depois que cancela a edição de uma peça não consigo selecionar ela novamente" — o clique no vazio
+   * para tirar a seleção abria a janela, e o clique na viga só fechava a janela vazia).
+   */
   _fecharJanelaDoClique(p, ev) {
     const de = this._cantoDaJanela();
     this._janela = null;
     this._fecharJanela();
     this.dica(Selecionar.dica);
-    this._selecionarNaJanela(de, p.tela.slice(0, 2), ev);
+    const achados = this._selecionarNaJanela(de, p.tela.slice(0, 2), ev);
+    if (achados.length) return;
+    const alvo = this.editor.selecao.sobOuRotulo(p.tela[0], p.tela[1]);
+    if (!alvo) return;
+    this.editor.selecao.clicar(alvo.id, ev);
+    this.editor.dica(Selecionar.dica);
+    this._desenharAlcas();
   }
 
   _desenharJanela(de, para) {
