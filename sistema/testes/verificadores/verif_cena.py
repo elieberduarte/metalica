@@ -157,6 +157,35 @@ try:
     import base64
     open(os.path.join(os.path.dirname(__file__), "cena_encaixada.png"), "wb").write(base64.b64decode(dados))
 
+    # o ajuste fino (26/10: "movimentar esse segundo ponto um pouco para cima ou para o lado"): o ponto 2 escolhido pela
+    # lista, Shift+→ três vezes (30 px da tela) — o encaixe acompanha e grava; arrastado de volta com o mouse, o erro volta
+    aba.avaliar("document.querySelector('#pares [data-escolher=\"1\"] span').click(); 1")
+    ok(esperar(aba, "cenaApi.estado().selecionado === 1 && !!document.querySelector('#marcas .marca.sel')", 5), "clicar na linha escolhe o ponto 2 (a marca acesa)")
+    fx, fy, fw, fh = aba.avaliar(FOTO_NA_TELA)
+    erro0 = aba.avaliar("cenaApi.estado().cena.camera.erro_px")
+    for _ in range(3):
+        aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="ArrowRight", code="ArrowRight", windowsVirtualKeyCode=39, modifiers=8)
+        aba.cmd("Input.dispatchKeyEvent", type="keyUp", key="ArrowRight", code="ArrowRight", windowsVirtualKeyCode=39, modifiers=8)
+    aba.drenar(1.5)
+    u2 = aba.avaliar("cenaApi.estado().cena.pares[1].foto[0]")
+    ok(u2 and abs((u2 - uvs[1][0]) * fw - 30) < 1.5, f"Shift+→ ×3: o ponto 2 andou 30 px na tela ({(u2 - uvs[1][0]) * fw:.1f} px)")
+    erro1 = aba.avaliar("cenaApi.estado().cena.camera.erro_px")
+    ok(erro1 > erro0 + 1, f"o encaixe acompanhou o ponto fora do lugar (erro {erro0:.2f} → {erro1:.2f} px)")
+    req = urllib.request.urlopen(base + "/api/projetos/obra/terreno/cenas/foto-teste", timeout=30)
+    gravado = json.loads(req.read())
+    ok(abs(gravado["pares"][1]["foto"][0] - u2) < 1e-9, "e o ponto movido ficou gravado")
+    x0, y0 = fx + u2 * fw, fy + uvs[1][1] * fh
+    aba.cmd("Input.dispatchMouseEvent", type="mousePressed", x=x0, y=y0, button="left", clickCount=1)
+    for k in range(1, 7):
+        aba.cmd("Input.dispatchMouseEvent", type="mouseMoved", x=x0 - 30 * k / 6, y=y0, button="left", buttons=1)
+    aba.cmd("Input.dispatchMouseEvent", type="mouseReleased", x=x0 - 30, y=y0, button="left", clickCount=1)
+    aba.drenar(1.5)
+    u3 = aba.avaliar("cenaApi.estado().cena.pares[1].foto[0]")
+    erro2 = aba.avaliar("cenaApi.estado().cena.camera.erro_px")
+    ok(u3 and abs((u3 - uvs[1][0]) * fw) < 1.5 and erro2 < 3, f"arrastado de volta: no lugar ({(u3 - uvs[1][0]) * fw:.1f} px) e o erro de novo pequeno ({erro2:.2f} px)")
+    aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="Escape", code="Escape", windowsVirtualKeyCode=27)
+    ok(esperar(aba, "cenaApi.estado().selecionado === null", 3), "Esc solta o ponto")
+
     # os pontos depois da cena montada (26/10: "não consigo… excluir/editar os pontos de vínculo da imagem com o 3D"):
     # apagar o 6º, refazer o 5º na foto e no 3D — o encaixe se refaz e continua bom
     aba.avaliar("document.querySelector('#pares [data-acao=apagar][data-i=\"5\"]').click(); 1")

@@ -87,14 +87,21 @@ function marquardt(p, f, voltas) {
 }
 
 /** A câmera que encaixa os `pares` ([{u, v, X: [x, y, z]}]) numa foto `W` × `H` px: {posicao, giro, fov, erro_px (a média
- *  quadrática, em px da foto)}, ou null com menos de 4 pares. `saida` (opcional): uma câmera para começar também dela. */
-export function encaixar(pares, W, H, saida = null) {
+ *  quadrática, em px da foto)}, ou null com menos de 4 pares. `saida` (opcional): uma câmera para começar também dela.
+ *  `rapido`: só a partir da `saida` (o ajuste fino de um ponto, 26/10 — a câmera já está perto: milissegundos). */
+export function encaixar(pares, W, H, saida = null, { rapido = false } = {}) {
   const ps = pares.filter(p => p && p.X).map(p => ({ u: p.u, v: p.v, X: new THREE.Vector3(...p.X) }));
   if (ps.length < 4) return null;
   const centro = ps.reduce((s, p) => s.add(p.X), new THREE.Vector3()).multiplyScalar(1 / ps.length);
   const escala = Math.max(...ps.map(p => p.X.distanceTo(centro)), 1);
   const nos = ps.map(p => ({ ...p, X: p.X.clone() }));
   const partidas = [];
+  if (rapido && saida && saida.posicao && saida.giro) {
+    const q0 = saida.giro.clone(), p0 = [...saida.posicao.clone().sub(centro).multiplyScalar(1 / escala).toArray(), 0, 0, 0,
+                                       Math.log(Math.tan((saida.fov || 60) * Math.PI / 360))];
+    const r = marquardt(p0, (p) => residuos(p, nos, centro, escala, q0, W, H), 200);
+    return { ...camera(r.p, centro, escala, q0), erro_px: Math.sqrt(r.e / ps.length) };
+  }
   const olhar = (olho) => new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(olho, centro, new THREE.Vector3(0, 0, 1)));
   for (const dist of [1.5, 3, 6]) for (const alt of [8, 25, 50]) for (let az = 0; az < 360; az += 30) {
     const a = az * Math.PI / 180, e = alt * Math.PI / 180;

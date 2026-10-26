@@ -26,6 +26,7 @@ const escuro = () => document.documentElement.getAttribute('data-tema') === 'esc
 
 let visor = null, terreno = null, cena = null, modo = 'foto', marcando = null, camera3d = null, rolar = 0, giroBase = null;
 let situacaoAberta = null, sistemas = [], situacaoProjeto = null;
+let selecionado = null, arrasto = null, tempoAjuste = 0, quadroAjuste = 0;
 const foto = $('#foto'), tela = $('#tela'), marcas = $('#marcas'), palco = $('#palco');
 
 function aviso(txt) { $('#aviso').textContent = txt || ''; }
@@ -248,7 +249,7 @@ function desenharPares() {
   const pares = (cena && cena.pares) || [];
   // cada ponto se refaz depois da cena montada (usuário, 26/10: "não consigo… excluir/editar os pontos de vínculo da imagem
   // com o 3D"): a foto de novo, o 3D de novo, ou apagar — e o encaixe se refaz
-  $('#pares').innerHTML = pares.map((p, i) => `<div class="par"><b>${i + 1}</b>
+  $('#pares').innerHTML = pares.map((p, i) => `<div class="par${i === selecionado ? ' sel' : ''}" data-escolher="${i}"><b>${i + 1}</b>
       <span>${p.modelo ? '<em class="ok">foto · 3D ✓</em>' : '<em class="falta">falta o 3D</em>'}</span>
       <button type="button" data-acao="foto" data-i="${i}" title="Marcar de novo o ponto ${i + 1} na foto">foto</button>
       <button type="button" data-acao="3d" data-i="${i}" title="Marcar de novo o ponto ${i + 1} no 3D">3D</button>
@@ -318,6 +319,55 @@ async function fazerEncaixe() {
   mostrarModo('foto');
   aviso(c.erro_px <= 15 ? `Encaixado: erro médio de ${nf(c.erro_px, 1)} px na foto.`
     : `Encaixado com erro de ${nf(c.erro_px, 0)} px: confira os pontos (um deles pode estar trocado) ou marque mais.`);
+}
+
+// ------------------------------------------------------------------ o ajuste fino de um ponto na foto
+// (usuário, 26/10: "habilite um ajuste fino dos pontos, por ex. se quisesse movimentar esse segundo ponto um pouco para cima
+// ou para o lado"): o ponto escolhido (clique na marca ou na linha dele) anda arrastado ou pelas setas (1 px da tela; Shift,
+// 10), e o encaixe acompanha na hora (o rápido, a partir da câmera de agora); grava ao soltar e depois das setas
+
+function escolherPonto(i) {
+  selecionado = i;
+  desenharPares();
+  if (i !== null) aviso(`Ponto ${i + 1}: arraste na foto ou use as setas (Shift = 10×). Esc solta.`);
+}
+
+function encaixeRapido() {
+  if (!cena || !cena.camera) return;
+  const pares = cena.pares.filter(p => p.modelo);
+  if (pares.length < 4) return;
+  const o = visor.cabecalho.origem;
+  const atual = { posicao: new THREE.Vector3(cena.camera.posicao[0] - o[0], cena.camera.posicao[1] - o[1], cena.camera.posicao[2] - o[2]),
+                  giro: new THREE.Quaternion(...cena.camera.giro), fov: cena.camera.fov };
+  const c = encaixar(pares.map(p => ({ u: p.foto[0], v: p.foto[1], X: [p.modelo[0] - o[0], p.modelo[1] - o[1], p.modelo[2] - o[2]] })),
+                     cena.px[0], cena.px[1], atual, { rapido: true });
+  if (!c) return;
+  cena.camera = { posicao: [c.posicao.x + o[0], c.posicao.y + o[1], c.posicao.z + o[2]], giro: c.giro.toArray(), fov: c.fov, erro_px: c.erro_px };
+  rolar = 0;
+  aplicarCamera();
+}
+
+function moverPonto(i, u, v) {
+  cena.pares[i] = { ...cena.pares[i], foto: [Math.min(1, Math.max(0, u)), Math.min(1, Math.max(0, v))] };
+  cancelAnimationFrame(quadroAjuste);
+  quadroAjuste = requestAnimationFrame(encaixeRapido);
+  clearTimeout(tempoAjuste);
+}
+
+function gravarAjuste(espera = 0) {
+  clearTimeout(tempoAjuste);
+  tempoAjuste = setTimeout(async () => {
+    try { await gravar({ pares: cena.pares, camera: cena.camera }); }
+    catch (e) { aviso('O ajuste não foi gravado: ' + e.message); }
+  }, espera);
+}
+
+/** O ponto da foto mais perto do (x, y) da tela (px dentro da foto), até 16 px; ou null. */
+function pontoPerto(x, y) {
+  const w = marcas.clientWidth, h = marcas.clientHeight;
+  let melhor = null, dist = 16;
+  (cena.pares || []).forEach((p, i) => { const d = Math.hypot(p.foto[0] * w - x, p.foto[1] * h - y); if (d < dist) { dist = d; melhor = i; } });
+  return melhor;
 }
 
 /** Depois de mudar os pontos: o encaixe de novo com 4 ou mais completos; com menos, a câmera de antes fica (avisado). */
@@ -426,7 +476,40 @@ function ligarControles() {
     aplicarCamadas();
     clearTimeout(tempoCamadas); tempoCamadas = setTimeout(() => gravar({ desligadas: cena.desligadas }), 500);
   };
-  addEventListener('keydown', (e) => { if (e.key === 'Escape') cancelar(); });
+  addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { cancelar(); if (selecionado !== null) escolherPonto(null); return; }
+    const setas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (!setas || selecionado === null || modo !== 'foto' || marcando || !cena || /INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) return;
+    e.preventDefault();
+    const k = e.shiftKey ? 10 : 1, p = cena.pares[selecionado].foto;
+    moverPonto(selecionado, p[0] + setas[0] * k / marcas.clientWidth, p[1] + setas[1] * k / marcas.clientHeight);
+    gravarAjuste(600);
+  });
+  // escolher o ponto pela linha dele na lista (fora dos botões)
+  $('#pares').addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;
+    const l = e.target.closest('[data-escolher]');
+    if (l) { mostrarModo('foto'); escolherPonto(+l.dataset.escolher === selecionado ? null : +l.dataset.escolher); }
+  });
+  // na foto: pegar a marca e arrastar
+  marcas.addEventListener('pointerdown', (e) => {
+    if (modo !== 'foto' || marcando || !cena || e.button !== 0) return;
+    const r = marcas.getBoundingClientRect(), i = pontoPerto(e.clientX - r.left, e.clientY - r.top);
+    if (i === null) { if (selecionado !== null) escolherPonto(null); return; }
+    escolherPonto(i);
+    arrasto = { i, dx: cena.pares[i].foto[0] * r.width - (e.clientX - r.left), dy: cena.pares[i].foto[1] * r.height - (e.clientY - r.top) };
+    marcas.setPointerCapture(e.pointerId);
+    marcas.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+  marcas.addEventListener('pointermove', (e) => {
+    const r = marcas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    if (!arrasto) { if (modo === 'foto' && !marcando && cena) marcas.style.cursor = pontoPerto(x, y) !== null ? 'grab' : ''; return; }
+    moverPonto(arrasto.i, (x + arrasto.dx) / r.width, (y + arrasto.dy) / r.height);
+  });
+  const soltar = () => { if (!arrasto) return; arrasto = null; marcas.style.cursor = ''; encaixeRapido(); gravarAjuste(0); };
+  marcas.addEventListener('pointerup', soltar);
+  marcas.addEventListener('pointercancel', soltar);
   addEventListener('resize', () => mostrarModo(modo));
 
   // o clique na foto: o ponto novo
@@ -480,7 +563,7 @@ function desenharMarcas() {
   };
   (cena.pares || []).forEach((p, i) => {
     if (modo === 'foto') {
-      html.push(`<div class="marca foto${p.modelo ? ' feito' : ''}" style="left:${p.foto[0] * w}px;top:${p.foto[1] * h}px">${i + 1}</div>`);
+      html.push(`<div class="marca foto${p.modelo ? ' feito' : ''}${i === selecionado ? ' sel' : ''}" style="left:${p.foto[0] * w}px;top:${p.foto[1] * h}px">${i + 1}</div>`);
       if (p.modelo && cena.camera) { const s = naTela(p.modelo); if (s) html.push(`<div class="marca proj" style="left:${s[0]}px;top:${s[1]}px"></div>`); }
     } else if (p.modelo) {
       const s = naTela(p.modelo);
@@ -491,5 +574,5 @@ function desenharMarcas() {
   if (novo !== marcas._html) { marcas.innerHTML = novo; marcas._html = novo; }
 }
 
-window.cenaApi = { estado: () => ({ modo, marcando, cena }), mostrarModo, pontoDo3d, fazerEncaixe };
+window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado }), mostrarModo, pontoDo3d, fazerEncaixe };
 abrir().catch(e => { aviso('A cena não abriu: ' + e.message); console.error(e); });
