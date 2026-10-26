@@ -303,6 +303,8 @@ function selecionarDaDivisao(pedido) {
     const [[x0, y0], [x1, y1]] = pedido.caixa;
     const folga = pedido.folga ?? 300;
     F.forEach((f, i) => {
+      // a planta escolhida no 2D (um pavimento): só as peças dela, não as dos outros andares no mesmo lugar (26/10)
+      if (pedido.fonte && f.f2 !== pedido.fonte) return;
       const mx = f.x[0] + o[0], my = f.x[1] + o[1];
       if (mx >= x0 - folga && mx <= x1 + folga && my >= y0 - folga && my <= y1 + folga) ids.push(i);
     });

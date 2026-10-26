@@ -20,7 +20,10 @@ json.dump({"formato": 1, "nome": "Posto dividido", "tipo": "desenho", "cliente":
            "planta_modelo": {"desenho": "desenho", "deslocamento": [DX, DY],
                              # cada planta lida com o seu deslocamento (22/10): a das terças e a do mezanino
                              "fontes": {"planta": [0.0, 0.0], "tercas": [0.0, 40000.0], "PLANTA NO NÍVEL 3,17m": [-40000.0, 0.0]},
-                             "camadas": {"Mezanino": "PLANTA NO NÍVEL 3,17m"}}},
+                             "camadas": {"Mezanino": "PLANTA NO NÍVEL 3,17m"},
+                             # a caixa de cada planta no desenho (26/10, Edifício Administrativo da Hora Certa: 4 pavimentos,
+                             # cada um numa planta): a escolha no 2D vai às peças daquela planta, com o deslocamento dela
+                             "regioes": {"PLANTA NO NÍVEL 3,17m": [[139000.0, 49000.0], [150000.0, 58000.0]]}}},
           open(os.path.join(PASTA, "projeto.json"), "w", encoding="utf-8"))
 ents = []
 
@@ -40,6 +43,9 @@ for h in (20000.0, 21000.0):
 # a planta das terças (modelo − (DX, DY) − (0; 40000)): o eixo da terça TC1 em x 104000 e o da vizinha 300 mm ao lado
 linha(901, (104000.0, 10000.0), (104000.0, 16000.0), "1-Terça Eixo")
 linha(902, (104300.0, 10000.0), (104300.0, 16000.0), "1-Terça Eixo")
+# a planta do mezanino (modelo − (DX, DY) − (−40000; 0)): a viga VM em y 3000 do modelo; a terça cruza o mesmo ponto em
+# planta, 4 m acima — é de outra planta e não pode vir junto
+linha(903, (141000.0, 53000.0), (147000.0, 53000.0), "Mezanino")
 ents.append({"id": "t1", "tipo": "texto", "camada": "REG", "posicao": [100000.0, 19500.0], "texto": "TESOURA 1 - 2X",
              "altura": 10.0, "angulo": 0, "alinhamento": "esquerda", "vertical": "base"})
 json.dump({"nome": "desenho", "unidade": "mm", "escala": 20, "camadas": {}, "entidades": ents, "vistas": [], "metadados": {}},
@@ -203,6 +209,12 @@ try:
     aba.drenar(1.0)
     pecas = aba.avaliar(f"[...new Set([...{F3}.editor.selecao.ids].map(id => {F3}.editor.documento.get(id).atributos.origem.peca))]") or []
     ok(pecas == ["TESOURA 1#1"], f"2D → 3D: a linha da planta seleciona a cópia que está ali ({pecas})")
+    # 2D → 3D na planta de cada peça (26/10, Hora Certa: "não tem vínculo entre o 3D e 2D"): a viga desenhada na planta do
+    # mezanino vai à viga do mezanino — com o deslocamento daquela planta, e só as peças dela (a terça cruza ali em planta)
+    aba.avaliar(f"{F2}.cad.selecionar(['l903']); 1")
+    aba.drenar(1.0)
+    sel = sorted(aba.avaliar(f"[...{F3}.editor.selecao.ids]") or [])
+    ok(sel == [ID_VIGA_MEZ], f"2D → 3D: a linha da planta do mezanino seleciona a viga do mezanino, só ela ({sel})")
     # 2D → 3D pela marca (o projeto do IFC, 29/09): a célula da posição destaca as peças dela; a peça da
     # localização, ela só
     aba.avaliar(f"{F2}.cad.selecionar(['d1']); 1")
@@ -278,6 +290,17 @@ try:
        "no 2D sozinho, F4 alterna os painéis e Ver tem o item dos painéis laterais")
     alt = aba.avaliar("[...document.querySelectorAll('header.topo > *')].filter(e => e.offsetParent !== null && e.getBoundingClientRect().height > 46).map(e => e.className || e.id)") or []
     ok(not alt, f"a barra do 2D não quebra linha ({alt})")
+    # o mesmo no modo ver (o 3D leve, sem &editar=1): a planta do mezanino → a viga dele, sem a terça
+    aba.navegar(base + "/dividida?projeto=posto", limite=60)
+    t0 = time.time()
+    while time.time() - t0 < 90 and not aba.avaliar(f"!!({F2}.cad && {F3}.ver3dPronto && {F3}.visor && {F3}.visor.fichas)"):
+        aba.drenar(0.5)
+    aba.drenar(1.0)
+    aba.avaliar(f"{F2}.cad.selecionar(['l903']); 1")
+    t0 = time.time()
+    while time.time() - t0 < 5 and not aba.avaliar(f"{F3}.visor.selecaoVarias.size > 0"): aba.drenar(0.3)
+    sel = sorted(aba.avaliar(f"[...{F3}.visor.selecaoVarias].map(i => {F3}.visor.fichas[i].id)") or [])
+    ok(sel == [ID_VIGA_MEZ], f"modo ver, 2D → 3D: a linha da planta do mezanino destaca a viga do mezanino, só ela ({sel})")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:

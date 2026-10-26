@@ -98,6 +98,8 @@ export class MetodosDivisao {
       const [[x0, y0], [x1, y1]] = pedido.caixa;
       const folga = pedido.folga ?? 300;
       for (const e of this.documento.entidades.values()) {
+        // a planta escolhida no 2D (um pavimento): só as peças dela, não as dos outros andares no mesmo lugar (26/10)
+        if (pedido.fonte && String(((e.atributos || {}).origem || {}).fonte_2d || '') !== pedido.fonte) continue;
         const pts = pontosDe(e);
         if (!pts.length) continue;
         const mx = pts.reduce((s, p) => s + p[0], 0) / pts.length;

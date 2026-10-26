@@ -31,6 +31,9 @@ let desl = null;             // [dx, dy]: modelo = desenho + desl
 // geral (modelo = desenho + desl + fontes[planta]), e a camada das peças de cada outra planta (mezanino, caixa d'água)
 let fontesPlanta = {};
 let camadasPlanta = {};
+// a caixa de cada planta no desenho ({planta: [[x0, y0], [x1, y1]]}): a escolha no 2D vai às peças daquela planta, com o
+// deslocamento dela (26/10, Edifício Administrativo da Hora Certa: 4 pavimentos, cada um numa planta do Original)
+let regioesPlanta = {};
 let desenhoDaPlanta = '';    // o desenho de onde a montagem leu a planta
 let trelicas = [];           // [{nome, caixa_desenho}] da tela Treliças lidas
 let avisoTimer = null;
@@ -229,7 +232,10 @@ function doDoisD(m) {
     avisouSemLigacao = true;
     return;
   }
-  para3d({ metalica: 'selecionar3d', caixa: [[m.caixa[0][0] + desl[0], m.caixa[0][1] + desl[1]], [m.caixa[1][0] + desl[0], m.caixa[1][1] + desl[1]]] });
+  const fonte = Object.keys(regioesPlanta).find(k => Array.isArray(regioesPlanta[k]) && dentro(regioesPlanta[k], meio));
+  const d = fonte ? [desl[0] + deslDaFonte([fonte])[0], desl[1] + deslDaFonte([fonte])[1]] : desl;
+  para3d({ metalica: 'selecionar3d', caixa: [[m.caixa[0][0] + d[0], m.caixa[0][1] + d[1]], [m.caixa[1][0] + d[0], m.caixa[1][1] + d[1]]],
+           ...(fonte ? { fonte } : {}) });
 }
 
 function referencia3d() {
@@ -363,6 +369,7 @@ async function iniciar() {
   if (Array.isArray(pm.deslocamento) && pm.deslocamento.length === 2) desl = pm.deslocamento.map(Number);
   fontesPlanta = (pm.fontes && typeof pm.fontes === 'object') ? pm.fontes : {};
   camadasPlanta = (pm.camadas && typeof pm.camadas === 'object') ? pm.camadas : {};
+  regioesPlanta = (pm.regioes && typeof pm.regioes === 'object') ? pm.regioes : {};
   desenhoDaPlanta = pm.desenho || '';
   // o detalhamento completo (tudo num desenho só) primeiro na lista, e é nele que o 2D abre quando o
   // endereço não pede outro desenho
