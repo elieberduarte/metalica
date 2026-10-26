@@ -1459,3 +1459,47 @@ def test_contravento_em_cantoneira_embaixo_do_banzo_e_cruzando_no_x():
     meia_vm = max(abs(x) for x, _y in __import__("nucleo3d.geometria", fromlist=["secao"]).secao(de_planta._perfil(vm.perfil)))
     for f in feitas:
         assert max(f["inicio"][0], f["fim"][0]) == pytest.approx(4500.0 - meia_vm - 10.0, abs=1.0)
+
+
+
+def test_contravento_vertical_da_vista_por_eixo():
+    """o X vertical em cantoneira das vistas e cortes por eixo (26/10/2026, Posto CB: "CV. L1.1/2"X1/8"" no CORTE CX. DÁGUA
+    EIXO E, no EIXO H e na VISTA NO EIXO 1 — a torre da caixa d'água; "pode remontar se ficar errado eu aviso"): o título
+    dá o plano, os balões a posição ao longo dele, a linha do nível debaixo da cota a altura; a segunda L do X fica uma
+    espessura para fora do plano; a vista vizinha (outra fila de títulos) não entra"""
+    def bal(p, nome):
+        return [{"tipo": "circulo", "camada": "Eixo", "centro": [p[0], p[1]], "raio": 250.0}, texto((p[0] - 80, p[1] - 100), nome, camada="Eixo")]
+    ang = math.degrees(math.atan2(3170.0, 3500.0))
+    ents = [texto((0.0, 0.0), "VISTA NO EIXO 1", altura=10.0),
+            texto((-2000.0, 1150.0), "0,00"), linha((-2500.0, 1000.0), (6000.0, 1000.0), "1-Cota"),
+            texto((-2000.0, 4320.0), "+3,17"), linha((-2500.0, 4170.0), (6000.0, 4170.0), "1-Cota"),
+            linha((1000.0, 1000.0), (1000.0, 4170.0)), linha((4500.0, 1000.0), (4500.0, 4170.0)),
+            linha((1000.0, 1000.0), (4500.0, 4170.0)), linha((1000.0, 4170.0), (4500.0, 1000.0)),
+            texto((2600.0, 2700.0), 'CV. L1.1/2"X1/8"', angulo=ang), texto((2600.0, 2400.0), 'CV. L1.1/2"X1/8"', angulo=180.0 - ang)]
+    ents += bal((1000.0, 5500.0), "H") + bal((4500.0, 5500.0), "G")
+    eixos = {"eixo_g": [1.0, 0.0], "numeros": [{"nome": "1", "pos": 1000.0}],
+             "letras": [{"nome": "H", "pos": 20000.0}, {"nome": "G", "pos": 23500.0}]}
+    feitas, avisos = de_planta.contraventos_nas_vistas(ents, eixos)
+    assert not avisos and len(feitas) == 2
+    f, g = feitas
+    assert f["inicio"] == pytest.approx((1000.0, 20000.0, 0.0), abs=1.0)
+    assert f["fim"] == pytest.approx((1000.0, 23500.0, 3170.0), abs=1.0)
+    assert g["inicio"][1:] == pytest.approx((20000.0, 3170.0), abs=1.0) and g["fim"][1:] == pytest.approx((23500.0, 0.0), abs=1.0)
+    assert g["inicio"][0] - 1000.0 == pytest.approx(3.18, abs=0.05)          # encostada na primeira, fora do plano
+
+
+def test_estrado_da_base_de_caixa_pelos_eixos_das_pecas():
+    """as bases das caixas de 500 L (26/10/2026, Posto CB, folha 15: "PLANTA DAS BASES DE CAIXA DÁGUA"): cada peça é o eixo
+    curto dentro da linha dupla; 80 mm de largura = 2U boca com boca; o 2U apoiado no topo do banzo que passa embaixo; o
+    eixo solto longe de um rótulo BASE (o contorno do prédio na mesma folha) não entra"""
+    ents = [linha((0.0, 0.0), (1600.0, 0.0), "Eixo"), linha((0.0, 40.0), (1600.0, 40.0)), linha((0.0, -40.0), (1600.0, -40.0)),
+            linha((800.0, -700.0), (800.0, 700.0), "Eixo"), linha((760.0, -700.0), (760.0, 700.0)), linha((840.0, -700.0), (840.0, 700.0)),
+            texto((300.0, 300.0), "BASE1"),
+            linha((9000.0, 0.0), (10500.0, 0.0), "Eixo"), linha((9000.0, 40.0), (10500.0, 40.0)), linha((9000.0, -40.0), (10500.0, -40.0))]
+    bz = Barra(inicio=(-500.0, 0.0, 6000.0), fim=(3000.0, 0.0, 6000.0), perfil="U 100×40×2,25 (FF)", rotacao=90.0, papel="banzo")
+    out, avisos = de_planta.estrados_da_planta(ents, (-1000.0, -1000.0, 11000.0, 1000.0), (0.0, 0.0), [bz], 6000.0)
+    assert not avisos and len(out) == 2
+    assert all(p["mult"] == 2 and p["largura"] == 80 for p in out)
+    assert len({p["base"] for p in out}) == 1                        # as duas se cruzam: a mesma base
+    topo = 6000.0 + de_planta._faixa_z(bz)[1]
+    assert all(p["z"] == pytest.approx(topo + 50.0, abs=0.1) for p in out)

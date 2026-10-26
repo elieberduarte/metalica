@@ -3673,16 +3673,9 @@ def _faixa_z(e) -> Tuple[float, float]:
     return min(zs), max(zs)
 
 
-def contraventos_em_cantoneira(textos: Sequence[dict], segs: Sequence[tuple], apoios: Sequence, nivel: float,
-                               desl: Tuple[float, float] = (0.0, 0.0)) -> Tuple[List[dict], List[str]]:
-    """O contravento horizontal em cantoneira de uma planta de nível ("CV. L 1.1/2"X1/8"" na PLANTA NO NÍVEL 6,00M do
-    Posto CB: o X entre as tesouras, de nó a nó). Cada rótulo toma a linha dele (a ≤ 300 mm, ao longo dela); a L fica
-    EMBAIXO do banzo de baixo (ou da viga) das duas pontas, com a aba deitada encostada no fundo dele (giro 180: a outra
-    aba para baixo) — nada atravessa o banzo; no X, uma passa inteira e a outra logo abaixo dela (a espessura), com o
-    calço da mesma espessura nas pontas (caso A aprovado pelo usuário, 26/10/2026).
-
-    `segs` são (a, b) do desenho e `textos` os textos da planta (no lugar do desenho; `desl` leva ao da obra); `apoios`
-    as barras de banzo/viga da planta. Devolve ([{inicio, fim, perfil, rotacao, embaixo, calco}], avisos)."""
+def _linhas_dos_rotulos_cv(textos: Sequence[dict], segs: Sequence[tuple]) -> Tuple[Dict[int, str], List[str]]:
+    """{índice da linha: perfil} dos rótulos de contravento em cantoneira ("CV. L 1.1/2"X1/8""): cada rótulo toma a
+    linha escrita ao longo dele (direção do texto ± 10°), a ≤ 300 mm, dentro do comprimento dela"""
     from nucleo2d.reconhecer import perfil_do_texto
     avisos: List[str] = []
     linhas: Dict[int, str] = {}
@@ -3710,6 +3703,20 @@ def contraventos_em_cantoneira(textos: Sequence[dict], segs: Sequence[tuple], ap
             avisos.append("rótulo \"%s\" sem linha ao lado (≤ 300 mm)." % str(t.get("texto")).strip())
             continue
         linhas.setdefault(melhor[1], r["perfil"])
+    return linhas, avisos
+
+
+def contraventos_em_cantoneira(textos: Sequence[dict], segs: Sequence[tuple], apoios: Sequence, nivel: float,
+                               desl: Tuple[float, float] = (0.0, 0.0)) -> Tuple[List[dict], List[str]]:
+    """O contravento horizontal em cantoneira de uma planta de nível ("CV. L 1.1/2"X1/8"" na PLANTA NO NÍVEL 6,00M do
+    Posto CB: o X entre as tesouras, de nó a nó). Cada rótulo toma a linha dele (a ≤ 300 mm, ao longo dela); a L fica
+    EMBAIXO do banzo de baixo (ou da viga) das duas pontas, com a aba deitada encostada no fundo dele (giro 180: a outra
+    aba para baixo) — nada atravessa o banzo; no X, uma passa inteira e a outra logo abaixo dela (a espessura), com o
+    calço da mesma espessura nas pontas (caso A aprovado pelo usuário, 26/10/2026).
+
+    `segs` são (a, b) do desenho e `textos` os textos da planta (no lugar do desenho; `desl` leva ao da obra); `apoios`
+    as barras de banzo/viga da planta. Devolve ([{inicio, fim, perfil, rotacao, embaixo, calco}], avisos)."""
+    linhas, avisos = _linhas_dos_rotulos_cv(textos, segs)
 
     def perto(q, papeis):
         """as barras desses papéis que passam na ponta (≤ 250 mm em planta, perto do nível): (barra, z do eixo ali)"""
@@ -3806,6 +3813,267 @@ def contraventos_em_cantoneira(textos: Sequence[dict], segs: Sequence[tuple], ap
                 g["embaixo"], g["calco"] = True, round(desce, 2)
                 break
     return feitas, avisos
+
+
+#: o título de uma vista ou corte por eixo: "CORTE CX. DÁGUA EIXO E", "VISTA NO EIXO 1"
+_TITULO_VISTA_EIXO = re.compile(r"(?i)^\s*(?:CORTE|VISTA)\b.*\bEIXO\s+([A-Z]{1,2}\d{0,2}|\d{1,2}[A-Z]?)\s*$")
+#: a cota de nível ao lado do símbolo: "+3,17", "0,00", "+11,00"
+_COTA_NIVEL = re.compile(r"^\s*([+-]?\d{1,2}),(\d{2})\s*$")
+
+
+def _ponta_na_face(q, outro, pilares, folga: float = 10.0):
+    """a ponta da barra que chega num pilar (em planta, ≤ 300 mm do eixo dele) recua até a face dele"""
+    (dx, dy), L = _unit(q[:2], outro[:2])
+    recuo = 0.0
+    for pl in pilares:
+        c = pl.inicio
+        if not (min(pl.inicio[2], pl.fim[2]) - 50.0 <= q[2] <= max(pl.inicio[2], pl.fim[2]) + 50.0):
+            continue
+        d0 = math.dist(q[:2], c[:2])
+        if d0 > 300.0:
+            continue
+        pa = _perfil(pl.perfil)
+        meia = (max(float(pa.d or 0.0), float(pa.bf or 0.0)) / 2.0 if pa else 100.0) + folga
+        # o quanto andar ao longo da barra para ficar a `meia` do eixo do pilar (em planta)
+        rx, ry = q[0] - c[0], q[1] - c[1]
+        bq = rx * dx + ry * dy
+        cq = rx * rx + ry * ry - meia * meia
+        disc = bq * bq - cq
+        if disc >= 0.0:
+            recuo = max(recuo, -bq + math.sqrt(disc))
+    recuo = min(max(recuo, 0.0), L / 3.0)
+    return (q[0] + dx * recuo, q[1] + dy * recuo, q[2] + (outro[2] - q[2]) * recuo / max(L, 1.0))
+
+
+def contraventos_nas_vistas(ents: Sequence[dict], eixos: Optional[dict], pilares: Sequence = ()) -> Tuple[List[dict], List[str]]:
+    """O X vertical em cantoneira desenhado nas vistas e cortes por eixo ("CV. L1.1/2"X1/8"" no CORTE CX. DÁGUA EIXO E,
+    no EIXO H e na VISTA NO EIXO 1 do Posto CB: a torre da caixa d'água travada entre os pilares, de 0 a 3,17 e de 3,17 a
+    6,00). O título dá o eixo do plano; os balões dos eixos que cruzam, a posição ao longo dele (o sentido da vista pode
+    ser o contrário); as cotas de nível ("+3,17"), a altura — as pontas vão ao eixo e ao nível mais perto (≤ 400 mm) e
+    recuam até a face do pilar. No X, a segunda L fica encostada na primeira, uma espessura para fora do plano.
+
+    `eixos` é o dos `eixos_da_planta` da planta estrutural (no lugar do desenho). Devolve ([{inicio, fim, perfil, rotacao,
+    vista}], avisos) no lugar da planta estrutural (26/10/2026: "pode remontar se ficar errado eu aviso")."""
+    avisos: List[str] = []
+    feitas: List[dict] = []
+    if not eixos:
+        return feitas, avisos
+    g = tuple(eixos["eixo_g"])
+    p = (-g[1], g[0])
+    num = {e["nome"].upper(): e["pos"] for e in eixos.get("numeros") or []}
+    let = {e["nome"].upper(): e["pos"] for e in eixos.get("letras") or []}
+    textos = [e for e in ents if e["tipo"] == "texto"]
+    titulos = [e for e in textos if re.match(r"(?i)^\s*(PLANTA|CORTE|VISTA|ELEVA|DET)", str(e.get("texto") or ""))]
+
+    def regiao(t):
+        """a vista vai do título dela até o título de cima (na mesma coluna) e até o da direita (na mesma linha): as
+        vistas de fachada encostadas umas nas outras viram um bloco só pelo desenho (Posto: VISTA NO EIXO 1, 3, A, C…)"""
+        tx, ty = t["posicao"][0], t["posicao"][1]
+        h = float(t.get("altura") or 0.0)
+        mesmos = [e for e in titulos if float(e.get("altura") or 0.0) >= 0.8 * h and e is not t]
+        topo = min([e["posicao"][1] for e in mesmos if e["posicao"][1] > ty + 500.0 and abs(e["posicao"][0] - tx) < 8000.0],
+                   default=ty + 30000.0)
+        dir_ = min([e["posicao"][0] for e in mesmos if e["posicao"][0] > tx + 500.0 and abs(e["posicao"][1] - ty) < 3000.0],
+                   default=tx + 90000.0)
+        # a largura do desenho (os cortes da caixa empilhados: o bloco junta na vertical, mas não passa de lado)
+        try:
+            cxb = bloco_do_titulo(ents, t)
+            dir_ = min(dir_, cxb[2] + 3500.0)
+        except ErroDeDados:
+            pass
+        return (tx - 6000.0, ty - 300.0, dir_ - 2000.0, min(topo, ty + 30000.0) - 300.0)
+    for t in textos:
+        m = _TITULO_VISTA_EIXO.match(str(t.get("texto") or ""))
+        if not m:
+            continue
+        nome = m.group(1).upper()
+        if nome in num:
+            pos, cruzam, ao_longo, normal = num[nome], let, p, g
+        elif nome in let:
+            pos, cruzam, ao_longo, normal = let[nome], num, g, p
+        else:
+            continue
+        f = cx = regiao(t)
+        rot_cv = [e for e in textos if _dentro(e["posicao"], f) and re.match(r"(?i)^\s*CV\.?\s*L", str(e["texto"]))]
+        if not rot_cv:
+            continue
+        titulo = str(t["texto"]).strip()
+        # a horizontal: x da vista → posição ao longo do eixo do plano, pelos balões dos eixos que cruzam
+        bal = {k: c for k, c in baloes(ents, cx, folga=600.0).items() if k in cruzam}
+        if len(bal) < 2:
+            avisos.append("%s: menos de dois balões de eixo — os contraventos dela ficaram de fora." % titulo)
+            continue
+        ks = sorted(bal)
+        xs = [bal[k][0] for k in ks]
+        ss = [cruzam[k] for k in ks]
+        mx, ms = sum(xs) / len(xs), sum(ss) / len(ss)
+        a = 1.0 if sum((x - mx) * (s - ms) for x, s in zip(xs, ss)) >= 0.0 else -1.0
+        b = sorted(s - a * x for x, s in zip(xs, ss))[len(xs) // 2]
+        if max(abs(a * x + b - s) for x, s in zip(xs, ss)) > 300.0:
+            avisos.append("%s: os balões não batem com a planta (escala?) — os contraventos dela ficaram de fora." % titulo)
+            continue
+        # a vertical: y da vista → z, pelas cotas de nível — a linha do nível logo abaixo do texto (o texto fica acima
+        # dela); sem a linha, o próprio texto
+        horiz = [(a_, b_) for a_, b_, _c in _segmentos([e for e in ents if _dentro(_pt(e), f)])
+                 if abs(a_[1] - b_[1]) < 1.0 and abs(a_[0] - b_[0]) > 1500.0]
+        cotas = []
+        for e in textos:
+            mc = _COTA_NIVEL.match(str(e.get("texto") or ""))
+            if mc and _dentro(e["posicao"], f):
+                v = float(mc.group(1)) * 1000.0 + (float(mc.group(2)) * 10.0) * (-1.0 if mc.group(1).startswith("-") else 1.0)
+                xt, yt = e["posicao"][0], e["posicao"][1]
+                abaixo = [a_[1] for a_, b_ in horiz if yt - 700.0 <= a_[1] <= yt + 50.0
+                          and min(a_[0], b_[0]) <= xt + 4000.0 and max(a_[0], b_[0]) >= xt - 1500.0]
+                cotas.append((max(abaixo) if abaixo else yt, v))
+        if len(cotas) < 2:
+            avisos.append("%s: sem as cotas de nível — os contraventos dela ficaram de fora." % titulo)
+            continue
+        c_z = sorted(v - y for y, v in cotas)[len(cotas) // 2]
+        niveis = sorted({v for _y, v in cotas})
+        segs = [(a_, b_) for a_, b_, _c in _segmentos([e for e in ents if _dentro(_pt(e), f)])]
+        linhas, av = _linhas_dos_rotulos_cv(rot_cv, segs)
+        avisos += ["%s: %s" % (titulo, x) for x in av]
+        n_antes = len(feitas)
+        for i, perfil in linhas.items():
+            pts = []
+            for q in segs[i]:
+                s = a * q[0] + b
+                z = q[1] + c_z
+                s = min(cruzam.values(), key=lambda v: abs(v - s)) if min(abs(v - s) for v in cruzam.values()) <= 400.0 else s
+                z = min(niveis, key=lambda v: abs(v - z)) if min(abs(v - z) for v in niveis) <= 400.0 else z
+                pts.append((pos * normal[0] + s * ao_longo[0], pos * normal[1] + s * ao_longo[1], z))
+            q0 = _ponta_na_face(pts[0], pts[1], pilares)
+            q1 = _ponta_na_face(pts[1], pts[0], pilares)
+            feitas.append({"inicio": q0, "fim": q1, "perfil": perfil, "rotacao": 0.0, "vista": titulo, "normal": normal})
+        # no X, a segunda encostada na primeira (uma espessura para fora do plano)
+        novas = feitas[n_antes:]
+        for j, g_ in enumerate(novas):
+            for f_ in novas[:j]:
+                if f_.get("fora"):
+                    continue
+                p0, p1, q0, q1 = f_["inicio"], f_["fim"], g_["inicio"], g_["fim"]
+                r_ = ((p1[0] - p0[0]) * ao_longo[0] + (p1[1] - p0[1]) * ao_longo[1], p1[2] - p0[2])
+                s_ = ((q1[0] - q0[0]) * ao_longo[0] + (q1[1] - q0[1]) * ao_longo[1], q1[2] - q0[2])
+                w_ = ((q0[0] - p0[0]) * ao_longo[0] + (q0[1] - p0[1]) * ao_longo[1], q0[2] - p0[2])
+                den = r_[0] * s_[1] - r_[1] * s_[0]
+                if abs(den) < 1e-6:
+                    continue
+                tt = (w_[0] * s_[1] - w_[1] * s_[0]) / den
+                uu = (w_[0] * r_[1] - w_[1] * r_[0]) / den
+                if 0.05 < tt < 0.95 and 0.05 < uu < 0.95:
+                    pa = _perfil(g_["perfil"])
+                    e_ = float(pa.tw or 3.18) if pa else 3.18
+                    dn = (normal[0] * e_, normal[1] * e_)
+                    g_["inicio"] = (q0[0] + dn[0], q0[1] + dn[1], q0[2])
+                    g_["fim"] = (q1[0] + dn[0], q1[1] + dn[1], q1[2])
+                    g_["fora"] = True
+                    break
+    return feitas, avisos
+
+
+def estrados_da_planta(ents: Sequence[dict], caixa, desl: Tuple[float, float], apoios: Sequence,
+                       nivel: float) -> Tuple[List[dict], List[str]]:
+    """As bases das caixas d'água de 500 L do Posto CB ("PLANTA DAS BASES DE CAIXA DÁGUA", folha 15: BASE 1 8X, BASE 2
+    1X — 2U e U 100×40×2,65 com piso de madeira): cada peça é um eixo curto da camada de eixos (a planta desenha o eixo
+    dentro da linha dupla); a largura da linha dupla diz o perfil (≈ 80 mm: 2U boca com boca; ≈ 40 mm: U). Como o corte
+    da base mostra, os 2U embaixo, apoiados no topo do banzo (ou viga) que passa sob a base, e os U em cima dos 2U.
+
+    Devolve ([{a, b, z, perfil, mult}], avisos), no lugar da planta estrutural (`desl`) (26/10/2026)."""
+    avisos: List[str] = []
+    x0, y0, x1, y1 = caixa
+    eixos_c = [s_ for s_ in _segmentos([e for e in ents if _dentro(_pt(e), caixa)], re.compile(r"(?i)\beixo\b"))
+               if 300.0 <= math.dist(s_[0], s_[1]) <= 4000.0]
+    contorno = [s_ for s_ in _segmentos([e for e in ents if _dentro(_pt(e), caixa)]) if math.dist(s_[0], s_[1]) >= 30.0]
+    pecas_e = []
+    for a, b, _c in eixos_c:
+        (ux, uy), L = _unit(a, b)
+        offs = []
+        for c_, d_, _cc in contorno:
+            (vx, vy), Lc = _unit(c_, d_)
+            if abs(ux * vy - uy * vx) > 0.02:
+                continue                                         # não é paralela
+            # a sobreposição ao longo da peça e a distância de lado
+            s0 = (c_[0] - a[0]) * ux + (c_[1] - a[1]) * uy
+            s1 = (d_[0] - a[0]) * ux + (d_[1] - a[1]) * uy
+            if min(max(s0, s1), L) - max(min(s0, s1), 0.0) < 0.3 * min(L, Lc):
+                continue
+            off = -(c_[0] - a[0]) * uy + (c_[1] - a[1]) * ux
+            if 5.0 <= abs(off) <= 60.0:
+                offs.append(off)
+        lados = [o for o in offs if o > 0], [o for o in offs if o < 0]
+        if not lados[0] or not lados[1]:
+            continue
+        larg = max(lados[0]) - min(lados[1])
+        mult = 2 if larg >= 60.0 else 1
+        pecas_e.append({"a": (a[0] + desl[0], a[1] + desl[1]), "b": (b[0] + desl[0], b[1] + desl[1]),
+                        "perfil": "U 100×40×2,65 (FF)", "mult": mult, "largura": round(larg)})
+    # só as peças das bases: a planta da folha 15 desenha também o contorno do prédio (eixos curtos soltos); vale o que
+    # fica a ≤ 3 m de um rótulo "BASE1"/"BASE 2"
+    rot_b = [(e["posicao"][0] + desl[0], e["posicao"][1] + desl[1]) for e in ents
+             if e["tipo"] == "texto" and _dentro(e["posicao"], caixa) and re.match(r"(?i)^\s*BASE\s*\d+\s*$", str(e.get("texto") or ""))]
+    if rot_b:
+        pecas_e = [pc for pc in pecas_e
+                   if min(math.dist(r_, ((pc["a"][0] + pc["b"][0]) / 2, (pc["a"][1] + pc["b"][1]) / 2)) for r_ in rot_b) <= 3000.0]
+    if not pecas_e:
+        return [], ["nenhuma peça (eixo curto com linha dupla) na planta das bases."]
+    # cada base: as peças que se tocam (≤ 150 mm)
+    grupo = list(range(len(pecas_e)))
+
+    def raiz(i):
+        while grupo[i] != i:
+            grupo[i] = grupo[grupo[i]]
+            i = grupo[i]
+        return i
+
+    def dist_seg(p_, a, b):
+        (ux, uy), L = _unit(a, b)
+        t_ = max(0.0, min(L, (p_[0] - a[0]) * ux + (p_[1] - a[1]) * uy))
+        return math.dist(p_, (a[0] + ux * t_, a[1] + uy * t_))
+    def cruzam(p, q):
+        """os dois eixos se cruzam no meio (o 2U de um lado ao outro da base passa pelo do meio)"""
+        r = (p["b"][0] - p["a"][0], p["b"][1] - p["a"][1])
+        s = (q["b"][0] - q["a"][0], q["b"][1] - q["a"][1])
+        den = r[0] * s[1] - r[1] * s[0]
+        if abs(den) < 1e-6:
+            return False
+        w = (q["a"][0] - p["a"][0], q["a"][1] - p["a"][1])
+        t_ = (w[0] * s[1] - w[1] * s[0]) / den
+        u_ = (w[0] * r[1] - w[1] * r[0]) / den
+        return 0.0 <= t_ <= 1.0 and 0.0 <= u_ <= 1.0
+    for i, pi in enumerate(pecas_e):
+        for j in range(i):
+            pj = pecas_e[j]
+            if cruzam(pi, pj) or min(dist_seg(pi["a"], pj["a"], pj["b"]), dist_seg(pi["b"], pj["a"], pj["b"]),
+                                     dist_seg(pj["a"], pi["a"], pi["b"]), dist_seg(pj["b"], pi["a"], pi["b"])) <= 150.0:
+                grupo[raiz(i)] = raiz(j)
+    # o apoio: o topo mais alto dos banzos/vigas (perto do nível) que passam sob alguma ponta ou meio da base
+    topo_g: Dict[int, float] = {}
+    for i, pc in enumerate(pecas_e):
+        for q in (pc["a"], pc["b"], ((pc["a"][0] + pc["b"][0]) / 2, (pc["a"][1] + pc["b"][1]) / 2)):
+            for bz in apoios:
+                if dist_seg(q, bz.inicio[:2], bz.fim[:2]) > 120.0:
+                    continue
+                (ux, uy), Lb = _unit(bz.inicio[:2], bz.fim[:2])
+                t_ = max(0.0, min(1.0, ((q[0] - bz.inicio[0]) * ux + (q[1] - bz.inicio[1]) * uy) / max(Lb, 1.0)))
+                z_ = bz.inicio[2] + (bz.fim[2] - bz.inicio[2]) * t_
+                if abs(z_ - nivel) <= 400.0:
+                    r_ = raiz(i)
+                    topo_g[r_] = max(topo_g.get(r_, -1e9), z_ + _faixa_z(bz)[1])
+    out = []
+    sem = 0
+    for i, pc in enumerate(pecas_e):
+        r_ = raiz(i)
+        base = topo_g.get(r_)
+        if base is None:
+            sem += 1
+            base = nivel
+        pf = _perfil(pc["perfil"])
+        d = float(pf.d or 100.0) if pf else 100.0
+        z = base + d / 2.0 if pc["mult"] == 2 else base + d + d / 2.0      # 2U embaixo, U em cima
+        out.append(dict(pc, z=z, base=r_))
+    if sem:
+        avisos.append("%d peça(s) de base sem banzo ou viga embaixo — no nível %.2f m." % (sem, nivel / 1000.0))
+    return out, avisos
 
 
 def _meio_caixao(nome: Optional[str]) -> float:
@@ -5942,6 +6210,56 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 cv_l["pecas"] += 1
                 cv_l["embaixo"] += 1 if f["embaixo"] else 0
         cv_l["por_planta"][titulo_cv] = len(feitas_cv)
+    # o X vertical das vistas e cortes por eixo (a torre da caixa d'água do Posto): contraventos_nas_vistas
+    if par.get("contraventos_nas_vistas", True):
+        pil_v = [p_["ent"] for p_ in pecas if p_["ent"].tipo == "barra" and p_["papel"] == "pilar"]
+        feitas_v, av_v = contraventos_nas_vistas(ents, eixos_da_planta(ents, caixa_p), pil_v)
+        avisos += av_v
+        for f in feitas_v:
+            fonte_2d[0] = f["vista"]
+            if barra(f["inicio"], f["fim"], f["perfil"], "contraventamento", "Contraventamento", None, f["rotacao"],
+                     {"planta": f["vista"], "contravento": "cantoneira", "vertical": True}) is not None:
+                cv_l["pecas"] += 1
+                cv_l["por_planta"][f["vista"]] = cv_l["por_planta"].get(f["vista"], 0) + 1
+    # as bases das caixas d'água pequenas ("PLANTA DAS BASES DE CAIXA DÁGUA"): estrados_da_planta, pelo parâmetro
+    estrados_feitos = []
+    for est in par.get("estrados") or []:
+        t_e = _achar_titulo(textos, str(est.get("planta") or ""))
+        if t_e is None:
+            avisos.append("planta \"%s\" não achada no desenho." % est.get("planta"))
+            continue
+        try:
+            caixa_e = bloco_do_titulo(ents, t_e)
+        except ErroDeDados as e_:
+            avisos.append(str(e_))
+            continue
+        d_e = deslocamento_entre(b_planta, baloes(ents, caixa_e))
+        if d_e is None or d_e[2] < 2:
+            avisos.append("planta \"%s\": menos de dois balões de eixo em comum com a planta estrutural." % t_e["texto"].strip())
+            continue
+        apo_e = [p_["ent"] for p_ in pecas if p_["ent"].tipo == "barra" and p_["papel"] in ("banzo", "viga")]
+        nome_e = str(est.get("camada") or "Bases das caixas d'água")
+        doc.camadas.setdefault(nome_e, Camada(nome=nome_e))
+        fonte_2d[0] = t_e["texto"].strip()
+        deslocamentos_2d[fonte_2d[0]] = [round(d_e[0], 1), round(d_e[1], 1)]
+        pecas_est, av_e = estrados_da_planta(ents, caixa_e, (d_e[0], d_e[1]), apo_e, float(est.get("nivel") or nivel))
+        avisos += ["%s: %s" % (t_e["texto"].strip(), a_) for a_ in av_e]
+        for pc in pecas_est:
+            conj_e = "BASE %s#%d" % (t_e["texto"].strip()[:4], pc["base"])
+            orig_e = {"planta": t_e["texto"].strip(), "estrado": pc["base"]}
+            if pc["mult"] == 2:
+                (tx, ty), _L = _unit(pc["a"], pc["b"])
+                nx, ny = -ty, tx
+                af = _meio_caixao(pc["perfil"])
+                for sinal, rot in ((1, 180.0), (-1, 0.0)):         # 2U boca com boca, como a VM 2Ue
+                    barra((pc["a"][0] + nx * af * sinal, pc["a"][1] + ny * af * sinal, pc["z"]),
+                          (pc["b"][0] + nx * af * sinal, pc["b"][1] + ny * af * sinal, pc["z"]), pc["perfil"], "viga",
+                          nome_e, conj_e, rot, orig_e)
+            else:
+                barra((pc["a"][0], pc["a"][1], pc["z"]), (pc["b"][0], pc["b"][1], pc["z"]), pc["perfil"], "viga",
+                      nome_e, conj_e, 0.0, orig_e)
+        estrados_feitos.append({"planta": t_e["texto"].strip(), "pecas": len(pecas_est),
+                                "bases": len({pc["base"] for pc in pecas_est})})
 
     # ---------------------------------------------------------------- perto da origem
     # a planta do projetista fica onde ele desenhou (no posto, a 400 m do zero do DXF): o
@@ -6031,6 +6349,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     resumo["tercas_no_plano"] = no_plano
     resumo["escadas"] = escadas_feitas
     resumo["contraventos_em_cantoneira"] = cv_l
+    resumo["estrados"] = estrados_feitos
     if suportes_feitos is not None:
         resumo["suportes_terca"] = suportes_feitos
     if sc1_feitos is not None:
