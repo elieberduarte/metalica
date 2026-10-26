@@ -58,6 +58,10 @@ linha(903, (141000.0, 53000.0), (147000.0, 53000.0), "Mezanino")
 linha(904, (205000.0, 45000.0), (199000.0, 45000.0), "Cobertura G1")
 # o pilar do corte XX: em x = 20000 da linha, de pé no desenho
 linha(905, (420000.0, 101000.0), (420000.0, 112000.0), "Corte")
+# a mesma peça em duas vistas das pranchas do projetista (SESI, 26/10): 2 traços na V1 e 3 na V2, 100 m uma da outra
+for i, (x, v) in enumerate([(500000.0, "V1"), (500500.0, "V1"), (600000.0, "V2"), (600500.0, "V2"), (601000.0, "V2")]):
+    ents.append({"id": "kv%d" % i, "tipo": "linha", "camada": "3D — Peças nas vistas", "a": [x, 200000.0], "b": [x, 203000.0],
+                 "atributos": {"origem_2d": "K-VISTAS", "vista": v, "vinculo_3d": True}})
 ents.append({"id": "t1", "tipo": "texto", "camada": "REG", "posicao": [100000.0, 19500.0], "texto": "TESOURA 1 - 2X",
              "altura": 10.0, "angulo": 0, "alinhamento": "esquerda", "vertical": "base"})
 json.dump({"nome": "desenho", "unidade": "mm", "escala": 20, "camadas": {}, "entidades": ents, "vistas": [], "metadados": {}},
@@ -276,6 +280,17 @@ try:
     reg = aba.avaliar(f"{F2}.cad.tela.regiao") or []
     ok(bool(reg) and reg[0][0] <= 300001 and reg[1][0] >= 307999 and reg[0][1] <= 1 and reg[1][1] >= -1,
        f"3D → 2D pela marca: o 2D enquadra a célula da posição P2 ({reg})")
+    # a peça em várias vistas: enquadra uma vista só (a de mais traços); o pedido seguinte da mesma peça vai à próxima
+    aba.avaliar(f"{F2}.cad._localizarPelaMarca({{origem2d: ['K-VISTAS']}}); 1")
+    aba.drenar(0.5)
+    reg = aba.avaliar(f"{F2}.cad.tela.regiao") or []
+    ok(bool(reg) and reg[0][0] >= 590000 and reg[1][0] <= 611000,
+       f"3D → 2D, a peça em duas vistas: enquadra só a vista de mais traços (V2), não as duas ({reg})")
+    aba.avaliar(f"{F2}.cad._localizarPelaMarca({{origem2d: ['K-VISTAS']}}); 1")
+    aba.drenar(0.5)
+    reg = aba.avaliar(f"{F2}.cad.tela.regiao") or []
+    ok(bool(reg) and reg[0][0] >= 490000 and reg[1][0] <= 511000,
+       f"3D → 2D, o mesmo pedido de novo: vai à outra vista (V1) ({reg})")
     aba.avaliar(f"{F2}.cad.selecionar(['l1']); 1")         # de volta à cópia da planta (a próxima conta com ela)
     aba.drenar(1.0)
     # sem seguir, nada passa

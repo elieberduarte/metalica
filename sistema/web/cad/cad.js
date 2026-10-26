@@ -699,8 +699,22 @@ class CAD {
     let ents = o2d.size ? achar((a, e) => o2d.has(e.id) || (a.origem_2d && o2d.has(a.origem_2d))) : [];
     if (!ents.length && pm.size) ents = achar(a => a.peca && a.eixo && pm.has(`${a.peca}@${a.eixo}`));
     if (ents.length) {
+      // a mesma peça em várias vistas (o desenho das pranchas do projetista com as peças por cima, SESI 26/10: a elevação, o
+      // corte, o detalhe, a planta): enquadra uma vista só — a de mais traços — e o clique seguinte na mesma peça vai à próxima
+      const porVista = new Map();
+      for (const e of ents) { const v = (e.atributos || {}).vista; if (v) { if (!porVista.has(v)) porVista.set(v, []); porVista.get(v).push(e); } }
+      let enquadrar = ents, dicaVistas = '';
+      if (porVista.size > 1) {
+        const ordem = [...porVista.entries()].sort((a, b) => b[1].length - a[1].length || (a[0] < b[0] ? -1 : 1));
+        const chave = [...o2d].sort().join(',');
+        this._cicloVistas = this._cicloVistas && this._cicloVistas.chave === chave
+          ? { chave, i: (this._cicloVistas.i + 1) % ordem.length } : { chave, i: 0 };
+        const [nomeVista, daVista] = ordem[this._cicloVistas.i];
+        enquadrar = daVista;
+        dicaVistas = ` Vista ${this._cicloVistas.i + 1} de ${ordem.length}: ${nomeVista} — clique de novo na peça para a próxima.`;
+      }
       this.tela.selecao = new Set(ents.filter(e => (e.atributos || {}).elemento || (e.atributos || {}).origem_2d).map(e => e.id));
-      const c0 = this.doc.caixa(new Set(ents.map(e => e.id)));
+      const c0 = this.doc.caixa(new Set(enquadrar.map(e => e.id)));
       if (c0) {
         const cx = (c0[0][0] + c0[1][0]) / 2, cy = (c0[0][1] + c0[1][1]) / 2;
         const w = Math.max(c0[1][0] - c0[0][0], 3000), h = Math.max(c0[1][1] - c0[0][1], 3000);
@@ -708,7 +722,7 @@ class CAD {
         this.tela.enquadrar(this.tela.regiao, 0.35);
       }
       this._agendarPaineis('props');
-      this.dica(`${ents.length} traço(s) da peça do 3D neste desenho.`);
+      this.dica(`${ents.length} traço(s) da peça do 3D neste desenho.${dicaVistas}`);
       return;
     }
     // a peça de uma variante de furação ("M83 (b)"): a célula dela pelo id, não a da marca do modelo ("M83", a outra)
