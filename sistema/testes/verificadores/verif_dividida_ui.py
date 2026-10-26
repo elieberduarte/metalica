@@ -19,11 +19,15 @@ json.dump({"formato": 1, "nome": "Posto dividido", "tipo": "desenho", "cliente":
            "criado": "2026-09-27T00:00:00", "alterado": "2026-09-27T00:00:00", "dados": None,
            "planta_modelo": {"desenho": "desenho", "deslocamento": [DX, DY],
                              # cada planta lida com o seu deslocamento (22/10): a das terças e a do mezanino
-                             "fontes": {"planta": [0.0, 0.0], "tercas": [0.0, 40000.0], "PLANTA NO NÍVEL 3,17m": [-40000.0, 0.0]},
+                             "fontes": {"planta": [0.0, 0.0], "tercas": [0.0, 40000.0], "PLANTA NO NÍVEL 3,17m": [-40000.0, 0.0],
+                                        # a planta girada no desenho (26/10, Galpão Novo da Hora Certa: as coberturas G1–G4
+                                        # desenham os eixos A–Q no sentido de x): modelo = gira(desenho, −90°) + geral + desl.
+                                        "COBERTURA G1": {"deslocamento": [56000.0, 275000.0], "giro": -90}},
                              "camadas": {"Mezanino": "PLANTA NO NÍVEL 3,17m"},
                              # a caixa de cada planta no desenho (26/10, Edifício Administrativo da Hora Certa: 4 pavimentos,
                              # cada um numa planta): a escolha no 2D vai às peças daquela planta, com o deslocamento dela
-                             "regioes": {"PLANTA NO NÍVEL 3,17m": [[139000.0, 49000.0], [150000.0, 58000.0]]}}},
+                             "regioes": {"PLANTA NO NÍVEL 3,17m": [[139000.0, 49000.0], [150000.0, 58000.0]],
+                                         "COBERTURA G1": [[195000.0, 40000.0], [215000.0, 60000.0]]}}},
           open(os.path.join(PASTA, "projeto.json"), "w", encoding="utf-8"))
 ents = []
 
@@ -46,6 +50,8 @@ linha(902, (104300.0, 10000.0), (104300.0, 16000.0), "1-Terça Eixo")
 # a planta do mezanino (modelo − (DX, DY) − (−40000; 0)): a viga VM em y 3000 do modelo; a terça cruza o mesmo ponto em
 # planta, 4 m acima — é de outra planta e não pode vir junto
 linha(903, (141000.0, 53000.0), (147000.0, 53000.0), "Mezanino")
+# a planta girada da cobertura G1: a terça de (1000; 20000) a (1000; 26000) no modelo, deitada no desenho
+linha(904, (205000.0, 45000.0), (199000.0, 45000.0), "Cobertura G1")
 ents.append({"id": "t1", "tipo": "texto", "camada": "REG", "posicao": [100000.0, 19500.0], "texto": "TESOURA 1 - 2X",
              "altura": 10.0, "angulo": 0, "alinhamento": "esquerda", "vertical": "base"})
 json.dump({"nome": "desenho", "unidade": "mm", "escala": 20, "camadas": {}, "entidades": ents, "vistas": [], "metadados": {}},
@@ -74,7 +80,11 @@ v_ = Barra(nome="Ue 150×70×20×2,65", inicio=(1000.0, 3000.0, 3100.0), fim=(70
            camada="Mezanino")
 v_.atributos = {"origem": {"planta": "VM-2Ue150X70X20X2,65", "fonte_2d": "PLANTA NO NÍVEL 3,17m"}}
 doc.add(v_)
-ID_TERCA, ID_VIGA_MEZ = t_.id, v_.id
+g_ = Barra(nome="Ue 250×85×25×2,00", inicio=(1000.0, 20000.0, 9000.0), fim=(1000.0, 26000.0, 9000.0), perfil="Ue 250×85×25×2,00",
+           papel="terça", camada="Terças G1")
+g_.atributos = {"origem": {"fonte_2d": "COBERTURA G1"}}
+doc.add(g_)
+ID_TERCA, ID_VIGA_MEZ, ID_TERCA_G1 = t_.id, v_.id, g_.id
 json.dump(doc.dict(), open(os.path.join(PASTA, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
 # o detalhamento do projeto do IFC (sem ligação pela planta): a célula da posição P2 e a peça no lugar,
 # na localização, com a origem dela no 3D — longe da planta e da elevação
@@ -118,10 +128,10 @@ try:
     aba.navegar(base + "/"); aba.console.clear()
     aba.navegar(base + "/dividida?projeto=posto&editar=1", limite=60)      # o editor (sem &editar=1 o 3D abre no modo ver)
     t0 = time.time()
-    while time.time() - t0 < 90 and not aba.avaliar(f"!!({F2}.cad && {F3}.editor && {F3}.editor.documento && {F3}.editor.documento.entidades.size === 6)"):
+    while time.time() - t0 < 90 and not aba.avaliar(f"!!({F2}.cad && {F3}.editor && {F3}.editor.documento && {F3}.editor.documento.entidades.size === 7)"):
         aba.drenar(0.5)
     aba.drenar(1.5)
-    ok(aba.avaliar(f"!!{F2}.cad") and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 6, "os dois lados abrem: o desenho e o modelo do projeto")
+    ok(aba.avaliar(f"!!{F2}.cad") and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 7, "os dois lados abrem: o desenho e o modelo do projeto")
     ok("Posto dividido" in (aba.avaliar("document.title") or ""), "o nome do projeto no título da janela")
     t0 = time.time()
     while time.time() - t0 < 10 and not aba.avaliar(f"!!{F3}.document.querySelector('.seletor-vista a.ativo')"): aba.drenar(0.3)
@@ -215,6 +225,18 @@ try:
     aba.drenar(1.0)
     sel = sorted(aba.avaliar(f"[...{F3}.editor.selecao.ids]") or [])
     ok(sel == [ID_VIGA_MEZ], f"2D → 3D: a linha da planta do mezanino seleciona a viga do mezanino, só ela ({sel})")
+    # a planta girada (26/10, Galpão Novo): a linha deitada no desenho é a terça em pé no modelo, nos dois sentidos
+    aba.avaliar(f"{F2}.cad.selecionar(['l904']); 1")
+    aba.drenar(1.0)
+    sel = sorted(aba.avaliar(f"[...{F3}.editor.selecao.ids]") or [])
+    ok(sel == [ID_TERCA_G1], f"2D → 3D: a linha da planta girada seleciona a terça da cobertura G1 ({sel})")
+    aba.avaliar(f"(() => {{ const e = {F3}.editor; e.selecao.definir([]); e.selecao.definir(['{ID_TERCA_G1}']); return 1; }})()")
+    aba.drenar(1.0)
+    reg = aba.avaliar(f"{F2}.cad.tela.regiao") or []
+    ok(bool(reg) and reg[0][0] <= 199500 and reg[1][0] >= 204500 and reg[0][1] <= 45000 <= reg[1][1] and reg[1][1] - reg[0][1] < 6000,
+       f"3D → 2D: a terça da cobertura G1 vira a região deitada na planta girada ({reg})")
+    sel2 = sorted(aba.avaliar(f"[...{F2}.cad.tela.selecao]") or [])
+    ok(sel2 == ["l904"], f"3D → 2D: a linha da terça acesa na planta girada ({sel2})")
     # 2D → 3D pela marca (o projeto do IFC, 29/09): a célula da posição destaca as peças dela; a peça da
     # localização, ela só
     aba.avaliar(f"{F2}.cad.selecionar(['d1']); 1")
@@ -249,7 +271,7 @@ try:
        and aba.avaliar("getComputedStyle(document.querySelector('#lado-2d')).display") != "none"
        and "vista=2d" in (aba.avaliar("location.search") or ""), "a vista 2D mostra só o desenho (e a URL diz a vista)")
     aba.avaliar(f"{F2}.document.querySelector('.seletor-vista a[data-vista-area=\"3d\"]').click(); 1"); aba.drenar(0.5)
-    ok(aba.avaliar(f"{F3}.__marca") == "mesmo" and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 6,
+    ok(aba.avaliar(f"{F3}.__marca") == "mesmo" and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 7,
        "voltar ao 3D não recarrega o modelo (o mesmo 3D, montado uma vez)")
     ok(aba.avaliar(f"{F2}.document.querySelector('.ligacao-vistas').hidden") is True,
        "fora do 2D + 3D, os controles da seleção somem")

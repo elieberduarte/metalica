@@ -6,6 +6,8 @@ dxf utilizados devem ser importados para 2D e o modelo em 3D deve ser vinculado 
 com 3D". O vínculo é o `planta_modelo` do projeto, que a tela dividida (web/dividida.js) lê:
   {desenho: o desenho 2D com o DXF, deslocamento: [dx, dy] (modelo = desenho + deslocamento),
    fontes: {planta: [dx, dy]} (o deslocamento de cada planta lida, além do geral), camadas: {camada do 3D: planta}}.
+  A planta girada no desenho (26/10, Galpão Novo da Hora Certa: as coberturas G1–G4 desenham os eixos A–Q no sentido de x)
+  tem fontes[planta] = {deslocamento: [dx, dy], giro: graus}: modelo = gira(desenho, giro) + deslocamento geral + o dela.
 A montagem pela planta (app.py, de_planta) e por quadros (de_quadros) já o gravam; o script de obra grava por `gravar`.
 O outro jeito de ligar (sem planta_modelo): cada peça com a chave do traço do desenho (atributos.origem_2d), como a
 Montagem e a planta de lançamento fazem — vale com MIN_CHAVE das barras ligadas (`_pela_chave`).
@@ -73,6 +75,22 @@ def _pontos(des: dict):
             continue
 
 
+def _transf(v) -> Tuple[float, float, float]:
+    """(dx, dy, giro em radianos) de uma planta das fontes: [dx, dy] ou {deslocamento: [dx, dy], giro: graus}"""
+    if isinstance(v, dict):
+        d = v.get("deslocamento") or (0.0, 0.0)
+        return float(d[0]), float(d[1]), math.radians(float(v.get("giro") or 0.0))
+    return float(v[0]), float(v[1]), 0.0
+
+
+def ao_desenho(x: float, y: float, desl, fonte=None) -> Tuple[float, float]:
+    """o ponto do modelo levado ao desenho: o inverso de modelo = gira(desenho, giro) + desl + deslocamento da planta"""
+    fx, fy, g = _transf(fonte) if fonte is not None else (0.0, 0.0, 0.0)
+    u, v = x - desl[0] - fx, y - desl[1] - fy
+    c, s = math.cos(g), math.sin(g)
+    return u * c + v * s, -u * s + v * c
+
+
 def conferir(pasta_projeto: str) -> dict:
     """{aplica, barras, fora, apontamentos: [{regra, nivel, texto}]}"""
     projeto = _ler(os.path.join(pasta_projeto, "projeto.json")) or {}
@@ -110,11 +128,11 @@ def conferir(pasta_projeto: str) -> dict:
         if f and f not in fontes and f != "planta":
             sem_fonte[f] = sem_fonte.get(f, 0) + 1
         f = f if f in fontes else camadas.get(e.get("camada") or "")
-        fx, fy = fontes.get(f, (0.0, 0.0)) if f else (0.0, 0.0)
+        fonte = fontes.get(f) if f else None
         a, b = e["inicio"], e["fim"]
         pts = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), (a[0], a[1]), (b[0], b[1])
         out["barras"] += 1
-        if not all(perto(x - desl[0] - fx, y - desl[1] - fy) for x, y in pts):
+        if not all(perto(*ao_desenho(x, y, desl, fonte)) for x, y in pts):
             out["fora"] += 1
             c = e.get("camada") or "?"
             fora_por_camada[c] = fora_por_camada.get(c, 0) + 1
@@ -176,7 +194,8 @@ def gravar(pasta_projeto: str, desenho: str, deslocamento: Tuple[float, float], 
         raise FileNotFoundError('o desenho 2D "%s" não existe no projeto (importar o DXF no 2D antes)' % desenho)
     pm = {"desenho": desenho, "deslocamento": [float(deslocamento[0]), float(deslocamento[1])]}
     if fontes:
-        pm["fontes"] = {k: [float(v[0]), float(v[1])] for k, v in fontes.items()}
+        pm["fontes"] = {k: ({"deslocamento": [float(v["deslocamento"][0]), float(v["deslocamento"][1])], "giro": float(v.get("giro") or 0.0)}
+                            if isinstance(v, dict) else [float(v[0]), float(v[1])]) for k, v in fontes.items()}
     if camadas:
         pm["camadas"] = dict(camadas)
     projeto["planta_modelo"] = pm

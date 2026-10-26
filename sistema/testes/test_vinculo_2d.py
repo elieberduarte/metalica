@@ -73,6 +73,31 @@ def test_planta_da_peca_que_o_vinculo_nao_conhece_aponta(tmp_path):
     assert any('planta "mezanino"' in a["texto"] for a in r["apontamentos"])
 
 
+def test_planta_girada_no_desenho(tmp_path):
+    """26/10, Galpão Novo da Hora Certa: a cobertura G1 desenha os eixos A–Q no sentido de x, girada −90° em relação ao 3D.
+    As terças deitadas no desenho ficam em pé no modelo: modelo = gira(desenho, −90°) + deslocamento da planta"""
+    pasta = str(tmp_path)
+    linhas = [([0.0, 1500.0 * i], [12000.0, 1500.0 * i]) for i in range(6)]
+    t = (5000.0, 80000.0)
+    gira = lambda p: (p[1] + t[0], -p[0] + t[1])                  # noqa: E731
+    barras = [(gira(a), gira(b), {"fonte_2d": "G1"}) for a, b in linhas]
+    pm = {"desenho": "desenho", "deslocamento": [0.0, 0.0], "fontes": {"G1": {"deslocamento": list(t), "giro": -90}}}
+    _projeto(pasta, {"nome": "Galpão", "dxf_recebido": "GALPAO.dxf", "planta_modelo": pm}, linhas, barras)
+    r = V.conferir(pasta)
+    assert r["barras"] == 6 and r["fora"] == 0 and r["apontamentos"] == []
+    # o giro trocado (+90°) ou sem o giro, o mesmo deslocamento põe o 3D fora do desenho — as barras estão longe do centro do
+    # giro, então o sentido conta (o mesmo do dividida.js: aoDesenho)
+    pm["fontes"]["G1"] = {"deslocamento": list(t), "giro": 90}
+    _projeto(pasta, {"nome": "Galpão", "dxf_recebido": "GALPAO.dxf", "planta_modelo": pm}, linhas, barras)
+    assert V.conferir(pasta)["fora"] == 6
+    pm["fontes"]["G1"] = list(t)
+    _projeto(pasta, {"nome": "Galpão", "dxf_recebido": "GALPAO.dxf", "planta_modelo": pm}, linhas, barras)
+    assert any("não cai em cima do desenho" in a["texto"] for a in V.conferir(pasta)["apontamentos"])
+    # e o gravar guarda o giro
+    V.gravar(pasta, "desenho", (0.0, 0.0), fontes={"G1": {"deslocamento": list(t), "giro": -90}})
+    assert V.conferir(pasta)["apontamentos"] == []
+
+
 def _com_chave(pasta, quantas):
     """as primeiras `quantas` barras com a chave do traço do desenho de baixo delas (atributos.origem_2d = o id do traço)"""
     caminho = os.path.join(pasta, "modelo.json")

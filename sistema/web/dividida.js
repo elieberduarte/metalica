@@ -174,16 +174,14 @@ function doTresD(m) {
     return;
   }
   if (!m.caixa) return;
-  const f = deslDaFonte(m.fontes);
-  const dx = desl[0] + f[0], dy = desl[1] + f[1];
-  const c = [[m.caixa[0][0] - dx, m.caixa[0][1] - dy], [m.caixa[1][0] - dx, m.caixa[1][1] - dy]];
+  const c = caixaDe(m.caixa, p => aoDesenho(p, chaveDaFonte(m.fontes)));
   // uma peça pequena não pode virar um zoom de milímetros: a região tem ao menos 3 m
   const cx = (c[0][0] + c[1][0]) / 2, cy = (c[0][1] + c[1][1]) / 2;
   const w = Math.max(c[1][0] - c[0][0], 3000), h = Math.max(c[1][1] - c[0][1], 3000);
   // o eixo de cada barra escolhida, neste desenho: o 2D acende as linhas que caem sobre ele (a terça, não a região)
   const linhas = (m.eixos || []).map(([a, b, k]) => {
-    const fk = deslDaFonte([k]), ex = desl[0] + fk[0], ey = desl[1] + fk[1];
-    return [[a[0] - ex, a[1] - ey], [b[0] - ex, b[1] - ey]];
+    const fk = chaveDaFonte([k]);
+    return [aoDesenho(a, fk), aoDesenho(b, fk)];
   });
   para2d({ metalica: 'enquadrar2d', caixa: [[cx - w / 2, cy - h / 2], [cx + w / 2, cy + h / 2]], margem: 0.35, linhas,
            dica: (m.nomes || []).length === 1 ? `${m.nomes[0]} na planta.` : `${m.n} peça(s) do 3D na planta.` });
@@ -201,12 +199,41 @@ function fonteDaChave(k) {
   if (papel === 'pilar') return 'locacao';
   return 'planta';
 }
-function deslDaFonte(chaves) {
+/** a planta (chave de fontesPlanta) das peças escolhidas: a primeira que tem ligação gravada; senão nenhuma (a geral) */
+function chaveDaFonte(chaves) {
   for (const k of chaves || []) {
-    const d = fontesPlanta[fonteDaChave(k)];
-    if (Array.isArray(d) && d.length === 2) return d.map(Number);
+    const f = fonteDaChave(k);
+    if (transfDaFonte(f)) return f;
   }
-  return [0, 0];
+  return '';
+}
+/** a ligação de uma planta: [dx, dy], ou {deslocamento: [dx, dy], giro: graus} quando a planta está girada no desenho
+ *  (26/10, Galpão Novo da Hora Certa: as coberturas G1–G4 desenham os eixos A–Q no sentido de x) */
+function transfDaFonte(f) {
+  const d = fontesPlanta[f];
+  if (Array.isArray(d) && d.length === 2) return { d: d.map(Number), g: 0 };
+  if (d && Array.isArray(d.deslocamento) && d.deslocamento.length === 2) {
+    return { d: d.deslocamento.map(Number), g: (Number(d.giro) || 0) * Math.PI / 180 };
+  }
+  return null;
+}
+/** modelo = gira(desenho, giro da planta) + desl + deslocamento da planta, e a volta */
+function aoModelo(p, f) {
+  const t = transfDaFonte(f) || { d: [0, 0], g: 0 };
+  const c = Math.cos(t.g), s = Math.sin(t.g);
+  return [p[0] * c - p[1] * s + desl[0] + t.d[0], p[0] * s + p[1] * c + desl[1] + t.d[1]];
+}
+function aoDesenho(p, f) {
+  const t = transfDaFonte(f) || { d: [0, 0], g: 0 };
+  const x = p[0] - desl[0] - t.d[0], y = p[1] - desl[1] - t.d[1];
+  const c = Math.cos(t.g), s = Math.sin(t.g);
+  return [x * c + y * s, -x * s + y * c];
+}
+/** a caixa [[x0, y0], [x1, y1]] levada por fn: a caixa dos 4 cantos (a planta girada troca largura e altura) */
+function caixaDe(cx, fn) {
+  const ps = [[cx[0][0], cx[0][1]], [cx[1][0], cx[0][1]], [cx[0][0], cx[1][1]], [cx[1][0], cx[1][1]]].map(fn);
+  const xs = ps.map(p => p[0]), ys = ps.map(p => p[1]);
+  return [[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]];
 }
 
 function doDoisD(m) {
@@ -233,8 +260,7 @@ function doDoisD(m) {
     return;
   }
   const fonte = Object.keys(regioesPlanta).find(k => Array.isArray(regioesPlanta[k]) && dentro(regioesPlanta[k], meio));
-  const d = fonte ? [desl[0] + deslDaFonte([fonte])[0], desl[1] + deslDaFonte([fonte])[1]] : desl;
-  para3d({ metalica: 'selecionar3d', caixa: [[m.caixa[0][0] + d[0], m.caixa[0][1] + d[1]], [m.caixa[1][0] + d[0], m.caixa[1][1] + d[1]]],
+  para3d({ metalica: 'selecionar3d', caixa: caixaDe(m.caixa, p => aoModelo(p, fonte || '')),
            ...(fonte ? { fonte } : {}) });
 }
 
