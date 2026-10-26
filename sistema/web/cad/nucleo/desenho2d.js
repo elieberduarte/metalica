@@ -49,7 +49,8 @@ export function criar(reg) {
       folga: reg.folga ?? null };
     case 'hachura': return { ...base, camada: base.camada || 'HACHURA', contornos: reg.contornos || [], padrao: reg.padrao || 'aco',
       angulo: reg.angulo ?? 45, espacamento: reg.espacamento ?? 2.5 };
-    case 'chamada': return { ...base, camada: base.camada || 'TEXTO', alvo: reg.alvo, posicao: reg.posicao, texto: reg.texto || '', altura: reg.altura ?? 2.5 };
+    case 'chamada': return { ...base, camada: base.camada || 'TEXTO', alvo: reg.alvo, posicao: reg.posicao, texto: reg.texto || '', altura: reg.altura ?? 2.5,
+      ...(Array.isArray(reg.ramos) && reg.ramos.length ? { ramos: reg.ramos.map(r => ({ de: +r.de, alvo: r.alvo })) } : {}) };
     // a cota angular, de raio, de diâmetro e ordenada (23/10; nucleo/cota_especial.js)
     case 'cota_especial': return { ...base, camada: base.camada || 'COTA', modo: reg.modo || 'angular', centro: reg.centro, p1: reg.p1, p2: reg.p2 ?? null,
       posicao: reg.posicao, eixo: reg.eixo ?? null, texto: reg.texto ?? null, altura: reg.altura ?? 2.5, casas: reg.casas ?? null, escala: reg.escala ?? null,
@@ -249,7 +250,7 @@ export function pontosDe(e) {
     case 'texto': return [e.posicao];
     case 'cota': return [e.p1, e.p2];
     case 'hachura': return e.contornos.flat();
-    case 'chamada': return [e.alvo, e.posicao];
+    case 'chamada': return [e.alvo, e.posicao, ...(e.ramos || []).map(r => r.alvo)];
     case 'cota_especial': return [e.centro, e.p1, e.posicao, ...(e.p2 ? [e.p2] : [])];
     case 'bloco': return [e.posicao, ...filhosDoBloco(e).flatMap(pontosDe)];
     default: return [];
@@ -268,7 +269,7 @@ export function segmentosDe(e) {
     }
     case 'arco': { const p = pontosArco(e); const s = []; for (let i = 0; i < p.length - 1; i++) s.push([p[i], p[i + 1]]); return s; }
     case 'cota': return [[e.p1, e.p2]];
-    case 'chamada': return [[e.alvo, e.posicao]];
+    case 'chamada': return [[e.alvo, e.posicao], ...ramosDaChamada(e)];
     case 'hachura': return e.contornos.flatMap(c => c.map((p, i) => [p, c[(i + 1) % c.length]]));
     case 'bloco': return filhosDoBloco(e).flatMap(segmentosDe);
     default: return [];
@@ -344,6 +345,23 @@ export function textoDaChamada(e, k = 1) {
            alinhamento: direita ? 'esquerda' : 'direita' };
 }
 
+/** As setas a mais da chamada (usuário, 26/10, ME Sooro: "puxar mais de uma seta da mesma linha de chamada" — o
+ *  "Adicionar linha de chamada" do AutoCAD): cada ramo sai de um ponto da linha da chamada (`de`: 0 na seta, 1 no
+ *  joelho, o ponto onde começa o traço do texto) e vai até o `alvo` dele. Devolve [[origem, alvo], …]. */
+export function ramosDaChamada(e) {
+  return (e.ramos || []).map(r => {
+    const t = Math.min(1, Math.max(0, +r.de || 0));
+    return [[e.alvo[0] + (e.posicao[0] - e.alvo[0]) * t, e.alvo[1] + (e.posicao[1] - e.alvo[1]) * t], r.alvo];
+  });
+}
+
+/** Onde, na linha da chamada (de 0 na seta a 1 no joelho), cai o ponto `p` (o pé da perpendicular). */
+export function fracaoNaChamada(e, p) {
+  const dx = e.posicao[0] - e.alvo[0], dy = e.posicao[1] - e.alvo[1], L2 = dx * dx + dy * dy;
+  if (L2 < 1e-12) return 1;
+  return Math.min(1, Math.max(0, ((p[0] - e.alvo[0]) * dx + (p[1] - e.alvo[1]) * dy) / L2));
+}
+
 /** Os cantos da caixa do texto da chamada (o clique no texto pega a chamada; a alça dele fica no meio). */
 export function cantosDoTextoDaChamada(e, k = 1) {
   const t = textoDaChamada(e, k);
@@ -382,7 +400,8 @@ export function distanciaEntidade(p, e, escalaTexto = 1) {
       const q = [e.posicao[0] + t.traco, e.posicao[1]];
       const c = cantosDoTextoDaChamada(e, escalaTexto);
       const dentro = dentroDe(p, c);
-      return dentro ? 0 : Math.min(distSeg(p, e.alvo, e.posicao), distSeg(p, e.posicao, q), ...c.map((a, i) => distSeg(p, a, c[(i + 1) % 4])));
+      return dentro ? 0 : Math.min(distSeg(p, e.alvo, e.posicao), distSeg(p, e.posicao, q), ...c.map((a, i) => distSeg(p, a, c[(i + 1) % 4])),
+                                   ...ramosDaChamada(e).map(([o, a]) => distSeg(p, o, a)));
     }
     default: {
       const segs = segmentosDe(e);
@@ -412,7 +431,7 @@ export function transladar(e, d) {
     case 'texto': n.posicao = mv(e.posicao); break;
     case 'cota': n.p1 = mv(e.p1); n.p2 = mv(e.p2); if (e.texto_pos) n.texto_pos = mv(e.texto_pos); break;
     case 'hachura': n.contornos = e.contornos.map(c => c.map(mv)); break;
-    case 'chamada': n.alvo = mv(e.alvo); n.posicao = mv(e.posicao); break;
+    case 'chamada': n.alvo = mv(e.alvo); n.posicao = mv(e.posicao); if (e.ramos) n.ramos = e.ramos.map(r => ({ ...r, alvo: mv(r.alvo) })); break;
     case 'cota_especial': n.centro = mv(e.centro); n.p1 = mv(e.p1); n.posicao = mv(e.posicao); if (e.p2) n.p2 = mv(e.p2); break;
     case 'bloco': n.posicao = mv(e.posicao); break;
   }
@@ -454,7 +473,7 @@ export function transformar(e, f, fAng = (a) => a, k = 1, espelha = false) {
       break;
     }
     case 'hachura': n.contornos = e.contornos.map(c => c.map(f)); break;
-    case 'chamada': n.alvo = f(e.alvo); n.posicao = f(e.posicao); break;
+    case 'chamada': n.alvo = f(e.alvo); n.posicao = f(e.posicao); if (e.ramos) n.ramos = e.ramos.map(r => ({ ...r, alvo: f(r.alvo) })); break;
     case 'cota_especial': {
       n.centro = f(e.centro); n.p1 = f(e.p1); n.posicao = f(e.posicao); if (e.p2) n.p2 = f(e.p2);
       // o espelho troca os lados do ângulo (o setor continua o da posição); a ordenada girada 90° troca de eixo
@@ -597,7 +616,7 @@ export class Desenho2D {
     if (e.tipo === 'cota') return caixaDe([...pontosCota(e, this.escala), ...cantosDoTextoDaCota(e, this.escala, (this.metadados || {}).estilo)]);
     if (e.tipo === 'cota_especial') return caixaDe(pontosDaCotaEspecial(e, this.escala, (this.metadados || {}).estilo));
     if (e.tipo === 'texto') return caixaDe(cantosDoTexto(e, this.escala));
-    if (e.tipo === 'chamada') return caixaDe([e.alvo, e.posicao, ...cantosDoTextoDaChamada(e, this.escala)]);
+    if (e.tipo === 'chamada') return caixaDe([e.alvo, e.posicao, ...(e.ramos || []).map(r => r.alvo), ...cantosDoTextoDaChamada(e, this.escala)]);
     if (e.tipo === 'arco') return caixaDe(pontosDaCaixaDoArco(e));
     if (e.tipo === 'bloco') {
       // a caixa do desenho do bloco (os textos e as cotas dele com a largura deles)

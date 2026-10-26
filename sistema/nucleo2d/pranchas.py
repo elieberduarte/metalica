@@ -26,7 +26,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from nucleo.base import ErroDeDados
 from nucleo2d.desenho import CotaEspecial  # noqa: E402 — a cota angular, de raio, de diâmetro e ordenada (23/10)
 from nucleo2d.desenho import (Desenho, Entidade2D, Linha, Polilinha, Circulo, Arco, Texto,
-                              Cota, Hachura, Chamada, Camada2D, formatar_mm, transladar, novo_id)
+                              Cota, Hachura, Chamada, Camada2D, formatar_mm, transladar, novo_id, ramos_levados)
 
 __all__ = ["montar_pranchas", "juntar_pranchas", "FOLHAS", "CARIMBO", "texto_escala"]
 
@@ -104,6 +104,7 @@ def _para_papel(e: Entidade2D, k: float, dx: float, dy: float, fonte: str) -> En
         n.contornos = [[mv(p) for p in c] for c in n.contornos]
     elif isinstance(n, Chamada):
         n.alvo, n.posicao = mv(n.alvo), mv(n.posicao)
+        n.ramos = ramos_levados(n.ramos, mv)
     elif isinstance(n, CotaEspecial):
         # o número da peça fica escrito (na prancha os mm são de papel)
         if n.texto is None or n.texto == "":
@@ -161,7 +162,7 @@ def _caixa_de(ents: Sequence[Entidade2D], escala: float = 1.0, letra: float = 0.
             larg = letra * e.altura * escala * len(e.texto or "") + 10.0 * escala
             (xa, ya), (xt, yt) = e.alvo, e.posicao
             xf = xt + larg if xt >= xa else xt - larg
-            pts += [e.alvo, e.posicao, (xf, yt + e.altura * escala)]
+            pts += [e.alvo, e.posicao, (xf, yt + e.altura * escala)] + [tuple(r["alvo"]) for r in e.ramos]
         else:
             pts += e.pontos()
     if not pts:
@@ -2092,6 +2093,8 @@ def _perfil(ents: Sequence, passo: float = 5.0):
             seg((x0, e.posicao[1] + e.altura), (x0 + larg, e.posicao[1] + e.altura))
         elif isinstance(e, Chamada):
             seg(e.alvo, e.posicao)
+            for o, a in e.segmentos_dos_ramos():
+                seg(o, a)
             larg = LARGURA_LETRA * e.altura * len(e.texto or "") + 10.0
             sx = 1.0 if e.posicao[0] >= e.alvo[0] else -1.0
             seg(e.posicao, (e.posicao[0] + sx * larg, e.posicao[1] + e.altura))
@@ -2181,6 +2184,8 @@ def _ocupacao(ents: Sequence, passo: float = PASSO_OCUPACAO) -> set:
                 seg(e.posicao, (e.posicao[0] + larg * math.cos(a_), e.posicao[1] + larg * math.sin(a_)))
         elif isinstance(e, Chamada):
             seg(e.alvo, e.posicao)
+            for o, a in e.segmentos_dos_ramos():
+                seg(o, a)
             larg = LARGURA_LETRA * e.altura * len(e.texto or "") + 10.0
             x0 = e.posicao[0] if e.posicao[0] >= e.alvo[0] else e.posicao[0] - larg
             ret(x0, e.posicao[1], x0 + larg, e.posicao[1] + e.altura)

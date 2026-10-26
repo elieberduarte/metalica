@@ -12,7 +12,7 @@
 // a cada quadro. Um desenho do modelo inteiro passa de cem mil objetos e leva quase um
 // segundo para ser refeito; sem o cache, cada movimento do mouse custaria isso.
 
-import { pontosArco, dentroDe, segmentosDe, caixaDe, pontosDe, distanciaEntidade, pontosCota, textoDaChamada, cantosDoTextoDaChamada,
+import { pontosArco, dentroDe, segmentosDe, caixaDe, pontosDe, distanciaEntidade, pontosCota, textoDaChamada, cantosDoTextoDaChamada, ramosDaChamada,
   formatarMm, geometriaCota, textoDaCota, ENTRELINHA, linhasDoTexto, filhosDoBloco } from './desenho2d.js';
 import { estiloDaLinha, larguraNaTela, tracosNaTela } from './tipos_linha.js';
 import { primitivasDaCotaEspecial } from './cota_especial.js';
@@ -94,7 +94,8 @@ export class Tela {
         // a ponta da seta e o texto (arrastar o texto leva a linha junto, a seta fica — 28/09)
         const c = cantosDoTextoDaChamada(e, k);
         fora.push({ id, parte: 'alvo', ponto: e.alvo },
-                  { id, parte: 'texto', ponto: [(c[0][0] + c[2][0]) / 2, (c[0][1] + c[2][1]) / 2] });
+                  { id, parte: 'texto', ponto: [(c[0][0] + c[2][0]) / 2, (c[0][1] + c[2][1]) / 2] },
+                  ...(e.ramos || []).map((r, i) => ({ id, parte: 'ramo' + i, ponto: r.alvo })));
         continue;
       }
       if (e.tipo === 'cota_especial') { fora.push({ id, parte: 'posicao', ponto: e.posicao }); continue; }
@@ -752,6 +753,12 @@ export class Tela {
     const f = T([e.posicao[0] + t.traco, e.posicao[1]]);
     ctx.lineTo(f[0], f[1]); ctx.stroke();
     this._seta(ctx, a, Math.atan2(e.alvo[1] - e.posicao[1], e.alvo[0] - e.posicao[0]), 2.5 * k * this.vp.z);
+    // as setas a mais (26/10): cada uma sai do ponto dela na linha
+    for (const [o, b] of ramosDaChamada(e)) {
+      const to = T(o), tb = T(b);
+      ctx.beginPath(); ctx.moveTo(to[0], to[1]); ctx.lineTo(tb[0], tb[1]); ctx.stroke();
+      this._seta(ctx, tb, Math.atan2(b[1] - o[1], b[0] - o[0]), 2.5 * k * this.vp.z);
+    }
     this._texto(ctx, t.posicao, e.texto, e.altura * k, 0, t.alinhamento, 'base', cor);
   }
 

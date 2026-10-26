@@ -34,7 +34,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import fabrica
 from nucleo.base import ErroDeDados
 from nucleo2d.desenho import (Arco, Camada2D, Chamada, Circulo, Cota, Desenho, Hachura, Linha,
-                              Polilinha, Texto)
+                              Polilinha, Texto, ramos_levados)
 
 #: Nome do desenho do CAD que guarda a referência e os eixos.
 DESENHO_LANCAMENTO = "Planta de lançamento"
@@ -163,6 +163,7 @@ def _escalar_entidade(e, k: float, dx: float = 0.0, dy: float = 0.0):
         n.contornos = [[f(q) for q in c] for c in n.contornos]
     elif isinstance(n, Chamada):
         n.alvo, n.posicao = f(n.alvo), f(n.posicao)
+        n.ramos = ramos_levados(n.ramos, f)
     return n
 
 

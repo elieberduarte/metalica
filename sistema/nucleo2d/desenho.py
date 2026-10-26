@@ -202,9 +202,25 @@ class Chamada(Entidade2D):
     posicao: Ponto2 = (0.0, 0.0)
     texto: str = ""
     altura: float = 2.5
+    # as setas a mais (26/10): [{"de": 0..1 — o ponto da linha de onde sai (0 na seta, 1 no joelho), "alvo": (x, y)}]
+    ramos: List[dict] = field(default_factory=list)
 
     def pontos(self):
-        return [self.alvo, self.posicao]
+        return [self.alvo, self.posicao] + [tuple(r["alvo"]) for r in self.ramos]
+
+    def segmentos_dos_ramos(self) -> List[Tuple[Ponto2, Ponto2]]:
+        """[(origem, alvo)] de cada seta a mais (o mesmo de web/cad/nucleo/desenho2d.js ramosDaChamada)."""
+        out = []
+        for r in self.ramos:
+            t = min(1.0, max(0.0, float(r.get("de", 1.0))))
+            o = (self.alvo[0] + (self.posicao[0] - self.alvo[0]) * t, self.alvo[1] + (self.posicao[1] - self.alvo[1]) * t)
+            out.append((o, tuple(r["alvo"])))
+        return out
+
+
+def ramos_levados(ramos, f) -> List[dict]:
+    """As setas a mais da chamada com o alvo de cada uma levado por `f` (o `de` não muda: é a fração da linha)."""
+    return [dict(r, alvo=f(tuple(r["alvo"]))) for r in (ramos or [])]
 
 
 @dataclass
@@ -266,6 +282,9 @@ def entidade_de_dict(e: dict) -> Optional["Entidade2D"]:
         campos["vertices"] = [tuple(q) for q in campos["vertices"]]
     if "contornos" in campos:
         campos["contornos"] = [[tuple(q) for q in c] for c in campos["contornos"]]
+    if "ramos" in campos:
+        campos["ramos"] = [{"de": float(r.get("de", 1.0)), "alvo": tuple(r["alvo"])} for r in campos["ramos"] or []
+                           if isinstance(r, dict) and r.get("alvo")]
     return classe(**campos)
 
 
@@ -341,6 +360,7 @@ def filhos_do_bloco(b: "Bloco", blocos: dict, prof: int = 0) -> List["Entidade2D
             e.angulo = (float(e.angulo or 0.0) + float(b.angulo or 0.0)) % 360.0
         elif isinstance(e, Chamada):
             e.alvo, e.posicao, e.altura = f(e.alvo), f(e.posicao), e.altura * k
+            e.ramos = ramos_levados(e.ramos, f)
         elif isinstance(e, CotaEspecial):
             e.centro, e.p1, e.posicao = f(e.centro), f(e.p1), f(e.posicao)
             if e.p2:
@@ -375,6 +395,7 @@ def transladar(e: "Entidade2D", dx: float, dy: float) -> "Entidade2D":
         n.contornos = [[mv(q) for q in c] for c in n.contornos]
     elif isinstance(n, Chamada):
         n.alvo, n.posicao = mv(n.alvo), mv(n.posicao)
+        n.ramos = ramos_levados(n.ramos, mv)
     elif isinstance(n, CotaEspecial):
         n.centro, n.p1, n.posicao = mv(n.centro), mv(n.p1), mv(n.posicao)
         if n.p2:
@@ -665,6 +686,9 @@ def _chamada_dxf(d, c: Chamada, k: float, camada: str):
     d.linha(c.alvo[0], c.alvo[1], c.posicao[0], c.posicao[1], camada)
     ang = math.degrees(math.atan2(c.alvo[1] - c.posicao[1], c.alvo[0] - c.posicao[0]))
     d.seta(c.alvo[0], c.alvo[1], ang, 2.5 * k, camada)
+    for o, a in c.segmentos_dos_ramos():          # as setas a mais (26/10)
+        d.linha(o[0], o[1], a[0], a[1], camada)
+        d.seta(a[0], a[1], math.degrees(math.atan2(a[1] - o[1], a[0] - o[0])), 2.5 * k, camada)
     direita = c.posicao[0] >= c.alvo[0]
     traco = 8.0 * k if direita else -8.0 * k
     d.linha(c.posicao[0], c.posicao[1], c.posicao[0] + traco, c.posicao[1], camada)

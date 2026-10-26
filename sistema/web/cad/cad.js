@@ -2200,6 +2200,15 @@ class CAD {
         g.append(el('label', { texto: rotulo }), i);
       };
       if (e.tipo === 'texto' || e.tipo === 'chamada') campo('Texto', 'texto');     // a altura: "Tamanho do texto", acima
+      if (e.tipo === 'chamada') {
+        // as setas a mais (26/10): pôr mais uma (a ferramenta, com esta chamada já selecionada) ou tirar
+        const n = (e.ramos || []).length;
+        const tirar = (ramos, rot) => this.executar(new ComandoAlterar({ [e.id]: { ramos } }, rot));
+        g.append(el('label', { texto: 'Setas' }), el('div', { class: 'setas-chamada' }, `${1 + n} `,
+          el('button', { type: 'button', title: 'Seta a mais na chamada (MLE): clique na linha, depois na ponta da seta nova', onclick: () => this.ativarFerramenta('seta_chamada') }, '+ seta'),
+          ...(n ? [' ', el('button', { type: 'button', title: 'Tira a última seta posta', onclick: () => tirar(e.ramos.slice(0, -1), 'Tirar seta da chamada') }, '− última'),
+                   ' ', el('button', { type: 'button', title: 'Deixa só a seta principal', onclick: () => tirar([], 'Tirar as setas a mais da chamada') }, 'só uma')] : [])));
+      }
       if (e.tipo === 'texto') campo('Ângulo', 'angulo', 'number', { step: '15' });
       if (e.tipo === 'bloco') {
         // a inserção do bloco (24/10): o nome, o ângulo, a escala e o BEDIT

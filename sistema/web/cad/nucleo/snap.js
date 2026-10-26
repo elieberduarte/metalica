@@ -150,7 +150,7 @@ export class Snap {
           const pc = pontosCota(e, tela.doc.escala);
           if (pc.length === 4) { considerar(pc[2], 'extremidade', 0, 'linha de cota'); considerar(pc[3], 'extremidade', 0, 'linha de cota'); }
         }
-        else if (e.tipo === 'chamada') { considerar(e.alvo, 'extremidade', 0); }
+        else if (e.tipo === 'chamada') { considerar(e.alvo, 'extremidade', 0); for (const r of e.ramos || []) considerar(r.alvo, 'extremidade', 0); }
       }
       if (a.meio) {
         for (const [s, t] of (e.tipo === 'linha' || e.tipo === 'polilinha' ? segmentosDe(e) : [])) considerar([(s[0] + t[0]) / 2, (s[1] + t[1]) / 2], 'meio', 1);

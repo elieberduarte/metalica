@@ -5,7 +5,8 @@
 // Medida digitada (`onValor`): "1500", "1,5m", "150cm", "@30" (ângulo), e para
 // retângulo "2000;1000". Esc cancela, Enter/espaço confirma ou repete.
 
-import { criar, dist, meio, transladar, transformar, clonar, pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dentroDe, pontosCota, pontosArco, caixaDe, CAMADAS_PADRAO, filhosDoBloco } from './nucleo/desenho2d.js';
+import { criar, dist, meio, transladar, transformar, clonar, pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dentroDe, pontosCota, pontosArco, caixaDe, CAMADAS_PADRAO, filhosDoBloco,
+  distanciaEntidade, ramosDaChamada, fracaoNaChamada } from './nucleo/desenho2d.js';
 import { ComandoAdicionar, ComandoRemover, ComandoSubstituir, ComandoComposto, ComandoAlterar } from './nucleo/comandos.js';
 import { acompanharMalha, eixosCopiados } from './nucleo/malha.js';
 import { medidaDaCotaEspecial } from './nucleo/cota_especial.js';
@@ -144,6 +145,7 @@ export class Selecionar extends Ferramenta {
     }
     if (e && e.tipo === 'chamada') {
       this.dica(a.parte === 'texto' ? 'Leve o texto da chamada para onde ele fica legível — a linha acompanha, a seta fica · Esc cancela'
+        : a.parte.startsWith('ramo') ? 'Leve a ponta desta seta até o ponto apontado — ela continua saindo do mesmo ponto da linha · Esc cancela'
         : 'Leve a ponta da seta até o ponto apontado (extremidade, interseção…) · Esc cancela');
       return;
     }
@@ -195,6 +197,7 @@ export class Selecionar extends Ferramenta {
       if (i > 0) return e.vertices[i - 1];
       return e.fechada ? e.vertices[n - 1] : e.vertices[1];
     }
+    if (e.tipo === 'chamada' && parte.startsWith('ramo')) { const r = ramosDaChamada(e)[Number(parte.slice(4))]; return r ? r[0] : null; }
     return null;
   }
   /** A linha do eixo da malha (Lançamento → Malha de eixos: camada EIXO, com o nome do eixo), ou null. */
@@ -270,6 +273,10 @@ export class Selecionar extends Ferramenta {
     }
     if (e.tipo === 'chamada') {
       if (this.alca.parte === 'alvo') return criar({ ...e, alvo: [p[0], p[1]] });
+      if (this.alca.parte.startsWith('ramo')) {
+        const i = Number(this.alca.parte.slice(4));
+        return criar({ ...e, ramos: (e.ramos || []).map((r, j) => (j === i ? { ...r, alvo: [p[0], p[1]] } : r)) });
+      }
       // o meio do texto vai para o cursor: a posição (o joelho da linha) sai dele, do lado em que o
       // texto fica (à direita da seta, o texto sai para a direita)
       const k = this.doc.escala, h = (e.altura || 2.5) * k;
@@ -661,6 +668,55 @@ export class Chamada extends Ferramenta {
   }
   onMover(p) { if (this.alvo) this.editor.previa([criar({ tipo: 'chamada', camada: 'TEXTO', alvo: this.alvo, posicao: p, texto: '…', altura: this.editor.alturaTexto })]); }
   desfazerPasso() { if (!this.alvo) return false; this.reiniciar(); return true; }
+}
+
+/** Seta a mais na chamada (usuário, 26/10, ME Sooro: "criar essa opção de puxar mais de uma seta da mesma linha de
+ *  chamada" — o MLEADEREDIT › Adicionar do AutoCAD): o 1º clique, na linha da chamada, marca de onde a seta sai; cada
+ *  clique seguinte é uma seta nova saindo desse ponto, até o Enter ou o Esc. A seta a mais acompanha a chamada (mover,
+ *  girar, copiar, o texto arrastado: ela sai sempre do mesmo ponto da linha) e tem a alça dela na ponta. */
+export class SetaChamada extends Ferramenta {
+  static id = 'seta_chamada'; static nome = 'Seta a mais na chamada'; static atalho = 'mle';
+  static dica = 'Seta a mais: clique na linha da chamada, no ponto de onde a seta nova sai';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9l7 6h10"/><path d="M6.5 12L5 20"/><circle cx="3" cy="9" r="1.3"/><circle cx="5" cy="20" r="1.3"/></svg>';
+  reiniciar() { super.reiniciar(); this.chamada = null; this.de = null; }
+  /** a chamada sob o clique (a linha, o traço, o texto); a que já está selecionada ganha das outras */
+  _chamadaSob(p) {
+    const tela = this.editor.tela, t = 8 * tela.mmPorPixel, m = t + 12 * this.doc.escala;
+    let melhor = null, dm = Infinity;
+    for (const e of this.doc.naRegiao([[p[0] - m, p[1] - m], [p[0] + m, p[1] + m]])) {
+      if (e.tipo !== 'chamada' || !this.doc.visivel(e) || this.doc.bloqueada(e)) continue;
+      const d = distanciaEntidade(p, e, this.doc.escala) - (tela.selecao.has(e.id) ? t : 0);
+      if (d < t && d < dm) { dm = d; melhor = e; }
+    }
+    return melhor;
+  }
+  _origem(e) { return ramosDaChamada({ ...e, ramos: [{ de: this.de, alvo: e.alvo }] })[0][0]; }
+  onPonto(p) {
+    if (!this.chamada) {
+      const e = this._chamadaSob(p);
+      if (!e) { this.dica('Seta a mais: clique em cima da linha de uma chamada (entre a seta e o texto)'); return; }
+      this.chamada = e.id; this.de = fracaoNaChamada(e, p);
+      this.editor.snap.ultimo = this._origem(e);
+      this.editor.selecionar([e.id]);
+      this.dica('Clique onde fica a ponta da seta nova · Enter ou Esc termina');
+      return;
+    }
+    const e = this.doc.get(this.chamada);
+    if (!e) { this.reiniciar(); return; }
+    if (dist(this._origem(e), p) < 1e-6) return;
+    this.editor.executar(new ComandoAlterar({ [e.id]: { ramos: [...(e.ramos || []), { de: this.de, alvo: [p[0], p[1]] }] } }, 'Seta a mais na chamada'));
+    this.editor.previa([]);
+    this.dica('Seta posta · clique a próxima (sai do mesmo ponto) · Enter ou Esc termina');
+  }
+  onMover(p) {
+    const e = this.chamada && this.doc.get(this.chamada);
+    if (!e) return;
+    this.editor.previa([criar({ tipo: 'chamada', camada: e.camada, alvo: e.alvo, posicao: e.posicao, texto: '', altura: e.altura, ramos: [{ de: this.de, alvo: [p[0], p[1]] }] })]);
+    this.editor.medida(`${fmt(dist(this._origem(e), p))} mm`);
+  }
+  onTecla(ev) { if ((ev.key === 'Enter' || ev.key === ' ') && this.chamada) { this.reiniciar(); return true; } return false; }
+  desfazerPasso() { if (!this.chamada) return false; this.reiniciar(); return true; }
+  aposDesfazer() { if (this.chamada && !this.doc.get(this.chamada)) this.reiniciar(); }
 }
 
 /**
@@ -1425,7 +1481,10 @@ export class Esticar extends Ferramenta {
       else if (e.tipo === 'cota') { trocar('p1'); trocar('p2'); if (c.texto_pos) trocar('texto_pos'); }
       else if (e.tipo === 'circulo' || e.tipo === 'arco') { trocar('centro'); }
       else if (e.tipo === 'texto') { trocar('posicao'); }
-      else if (e.tipo === 'chamada') { trocar('alvo'); trocar('posicao'); }
+      else if (e.tipo === 'chamada') {
+        trocar('alvo'); trocar('posicao');
+        if (c.ramos) c.ramos = c.ramos.map(r => { const v = mv(r.alvo); if (v !== r.alvo) mudou = true; return { ...r, alvo: v }; });
+      }
       else if (e.tipo === 'hachura') { c.contornos = c.contornos.map(ct => ct.map(q => { const v = mv(q); if (v !== q) mudou = true; return v; })); }
       if (mudou) {
         // cota com o valor escrito (as do detalhamento): o número acompanha a medida nova
@@ -3466,6 +3525,6 @@ export class Corte extends Ferramenta {
   }
 }
 
-export const FERRAMENTAS = [Selecionar, ZoomJanela, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, TextoVariasLinhas, Cota, CotaContinua, CotaBase, CotaRapida, CotaAngular, CotaRaio, CotaDiametro, CotaOrdenada, AjustarCota, Chamada, Corte, Hachura,
+export const FERRAMENTAS = [Selecionar, ZoomJanela, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, TextoVariasLinhas, Cota, CotaContinua, CotaBase, CotaRapida, CotaAngular, CotaRaio, CotaDiametro, CotaOrdenada, AjustarCota, Chamada, SetaChamada, Corte, Hachura,
   GradeFuros, SimboloSolda, BalaoMarca, SimboloNivel, ChamadaDetalhe, NuvemRevisao, CriarBloco, InserirBloco, Mover, Copiar, Girar, Espelhar, Escalar, Matriz, Esticar, Offset, Aparar, Estender, Quebrar, Alongar, Concordar, Chanfro, Explodir, Juntar, Dividir, MoverCota, CopiarPropriedades, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['simbolos', 'Sím'], ['edicao', 'Edi'], ['medicao', 'Med']];

@@ -17,7 +17,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 # (largura, altura, cabem todas em cima?) — a de 2556 × 983 é a tela do usuário (o print de 25/10)
 TELAS = [(1600, 900, None), (1366, 768, None), (1920, 1040, True), (2556, 983, True)]
-TOPO = ["cota", "cota_continua", "cota_base", "cota_angular", "cota_raio", "cota_diametro", "cota_ordenada", "cota_rapida", "mover_cota", "chamada",
+TOPO = ["cota", "cota_continua", "cota_base", "cota_angular", "cota_raio", "cota_diametro", "cota_ordenada", "cota_rapida", "mover_cota", "chamada", "seta_chamada",
         "simbolo_solda", "balao_marca", "simbolo_nivel", "chamada_detalhe", "nuvem_revisao", "grade_furos"]
 DIREITA = ["medir", "dividir", "criar_bloco", "inserir_bloco"]
 ESQUERDA = ["linha", "offset", "apagar", "hachura"]

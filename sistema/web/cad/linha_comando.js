@@ -9,7 +9,7 @@
  *  continuam valendo (DN, DR, DO, DB, DQ, QB, AL, CH); o DI é o DIST do AutoCAD (a cota de diâmetro é DDI). */
 export const ATALHOS = {
   linha: ['L', 'LINE'], polilinha: ['PL', 'PLINE'], retangulo: ['REC', 'RECTANG'], circulo: ['C', 'CIRCLE'], arco: ['A', 'ARC'],
-  texto: ['T', 'DT', 'TEXT'], texto_mt: ['MT', 'MTEXT'], chamada: ['LE', 'MLD', 'LEADER'],
+  texto: ['T', 'DT', 'TEXT'], texto_mt: ['MT', 'MTEXT'], chamada: ['LE', 'MLD', 'LEADER'], seta_chamada: ['MLE', 'MLEADEREDIT'],
   cota: ['DLI', 'DAL', 'D', 'DIM'], cota_continua: ['DCO', 'DC', 'DIMCONTINUE'], cota_angular: ['DAN', 'DN', 'DIMANGULAR'],
   cota_raio: ['DRA', 'DR', 'DIMRADIUS'], cota_diametro: ['DDI', 'DIMDIAMETER'], cota_ordenada: ['DOR', 'DO', 'DIMORDINATE'],
   cota_base: ['DBA', 'DB', 'DIMBASELINE'], cota_rapida: ['QDIM', 'DQ'], mover_cota: ['MOVERCOTA'],

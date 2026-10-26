@@ -10,7 +10,7 @@
 // aciona os botões delas.
 
 export const TOPO = [
-  ['cotas', 'Cot', ['cota', 'cota_continua', 'cota_base', 'cota_angular', 'cota_raio', 'cota_diametro', 'cota_ordenada', 'cota_rapida', 'mover_cota', 'chamada']],
+  ['cotas', 'Cot', ['cota', 'cota_continua', 'cota_base', 'cota_angular', 'cota_raio', 'cota_diametro', 'cota_ordenada', 'cota_rapida', 'mover_cota', 'chamada', 'seta_chamada']],
   ['simbolos', 'Sím', ['simbolo_solda', 'balao_marca', 'simbolo_nivel', 'chamada_detalhe', 'nuvem_revisao', 'grade_furos']],
 ];
 export const DIREITA = [['Med', ['medir', 'dividir']], ['Blo', ['criar_bloco', 'inserir_bloco']]];

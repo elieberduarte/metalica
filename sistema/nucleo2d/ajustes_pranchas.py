@@ -124,6 +124,7 @@ def _transformar(e, f, s: float = 1.0):
         e.contornos = [[f(q) for q in c] for c in e.contornos]
     elif isinstance(e, Chamada):
         e.alvo, e.posicao = f(e.alvo), f(e.posicao)
+        e.ramos = [dict(r, alvo=f(tuple(r["alvo"]))) for r in e.ramos]
         e.altura = round(e.altura * s, 3)
     elif getattr(e, "tipo", "") == "cota_especial":
         e.centro, e.p1, e.posicao = f(e.centro), f(e.p1), f(e.posicao)

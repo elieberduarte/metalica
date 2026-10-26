@@ -204,6 +204,8 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
                 feitas.append(alvo.add_blockref(bloco_dxf(e.nome), e.posicao, dxfattribs=dict(at, xscale=sx, yscale=sy, rotation=float(e.angulo or 0.0))))
         elif isinstance(e, Chamada):
             ld = alvo.add_leader([e.posicao, e.alvo][::-1], dimstyle=ESTILO, dxfattribs=at)
+            # as setas a mais (26/10): um LEADER cada, do alvo dela ao ponto da linha de onde sai
+            feitas += [alvo.add_leader([a, o], dimstyle=ESTILO, dxfattribs=at) for o, a in e.segmentos_dos_ramos()]
             t = alvo.add_text(str(e.texto or ""), height=float(e.altura) * k, dxfattribs=dict(at, style=ESTILO))
             t.set_placement((e.posicao[0], e.posicao[1] + 0.8 * k), align=TextEntityAlignment.LEFT)
             feitas += [ld, t]
