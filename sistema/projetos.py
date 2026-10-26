@@ -347,6 +347,13 @@ class Projetos:
 
     def __init__(self, raiz: str):
         self.raiz = raiz
+        # no servidor, o vigia do 3D leve do modo ver (uma vez por processo): o modelo gravado por outro processo — o
+        # script de uma obra — também refaz o 3D leve logo depois (26/10, SESI)
+        try:
+            from saida import modelo_leve
+            modelo_leve.vigiar(raiz)
+        except Exception:                                           # noqa: BLE001 — o modo ver refaz quando pedido
+            pass
 
     # ------------------------------------------------------------ caminhos
     def pasta(self, s: str) -> str:

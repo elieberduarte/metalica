@@ -233,3 +233,61 @@ def test_renomear_o_projeto_leva_o_3d_leve(tmp_path):
     assert a is not None and a["versao"] == v1
     assert L.pedir(nova)["situacao"] == "pronto"
     assert not os.path.isdir(os.path.join(str(tmp_path), ".3d-leve", "mercado-conceito"))
+
+
+# ------------------------------------------------------------------ o vigia do servidor (26/10, SESI)
+
+_SCRIPT_DA_OBRA = r"""
+import json, sys
+sys.path.insert(0, sys.argv[1])
+import projetos
+from test_pacote_celular import _modelo
+m = _modelo()
+m["entidades"] = m["entidades"][:7]
+projetos.Projetos(sys.argv[2]).salvar_modelo("obra", m, marco=True)   # como o montar_sesi.py: grava e sai
+"""
+
+
+def test_modelo_gravado_por_outro_processo_refaz_pelo_vigia(tmp_path, monkeypatch):
+    """Usuário, 26/10 (SESI): depois que o script da obra gravou, o 3D leve só começava a ser refeito quando ele abria
+    o projeto (~3 min de "Atualizando o 3D"). O script grava pelo Gerenciador no próprio processo: o refazer agendado
+    lá morre com ele. Agora o servidor (aqui, este processo) vigia o modelo.json e refaz sem ninguém pedir."""
+    import subprocess
+    monkeypatch.setattr(L, "ESPERA_DEPOIS_DE_GRAVAR", 0.05)
+    monkeypatch.setattr(L, "INTERVALO_VIGIA", 0.1)
+    pasta = _projeto(tmp_path)
+    L.gerar(pasta)                                           # já visto em "ver"
+    v1 = L.arquivos(pasta)["versao"]
+    assert L.vigiar(str(tmp_path), forcar=True)
+    time.sleep(0.3)                                          # a primeira passada do vigia
+    testes = os.path.dirname(os.path.abspath(__file__))
+    r = subprocess.run([sys.executable, "-c", _SCRIPT_DA_OBRA, os.path.dirname(testes), str(tmp_path)],
+                       cwd=testes, capture_output=True, text=True, timeout=120,
+                       env={**os.environ, "PYTHONPATH": testes})
+    assert r.returncode == 0, r.stderr[-2000:]
+    s = _esperar_pronto(pasta, prazo=60)                     # ninguém pediu: o vigia refez sozinho
+    assert s["versao"] != v1
+    assert len(json.load(open(L.arquivos(pasta)["pecas"], encoding="utf-8"))["pecas"]) == 7
+
+
+def test_vigia_so_no_servidor_e_so_dos_projetos_vistos(tmp_path, monkeypatch):
+    """O vigia não roda no script nem nos testes (só no servidor); olha só os projetos já vistos em "ver"; ao começar,
+    refaz o gravado há pouco e mais novo que o 3D leve (o script que gravou enquanto o servidor reiniciava)."""
+    chamados = []
+    monkeypatch.setattr(L, "gravado", lambda p: chamados.append(os.path.basename(p)))
+    assert not L.vigiar(str(tmp_path))                       # pytest não é o servidor
+    visto, nunca, antigo = _projeto(tmp_path, "visto"), _projeto(tmp_path, "nunca"), _projeto(tmp_path, "antigo")
+    L.gerar(visto); L.gerar(antigo)
+    time.sleep(0.05)
+    os.utime(os.path.join(visto, "modelo.json"))                                   # gravado depois do 3D leve
+    velho = time.time() - 2 * L.RECENTE_AO_COMECAR
+    os.utime(os.path.join(antigo, "modelo.json"), (velho, velho))                  # gravado há muito tempo
+    marcas = {}
+    assert sorted(os.path.basename(p) for p in L._varrer(str(tmp_path), marcas, True)) == ["visto"]
+    assert L._varrer(str(tmp_path), marcas, False) == []                            # nada mudou
+    time.sleep(0.05)
+    for nome in ("visto", "nunca", "antigo"):
+        with open(os.path.join(str(tmp_path), nome, "modelo.json"), "a", encoding="utf-8") as f:
+            f.write(" ")
+    assert sorted(os.path.basename(p) for p in L._varrer(str(tmp_path), marcas, False)) == ["antigo", "visto"]
+    assert "nunca" not in chamados

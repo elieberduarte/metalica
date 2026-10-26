@@ -10,18 +10,25 @@ O arquivo fica numa pasta de trabalho fora do OneDrive (é refeito do modelo qua
 que subir para a nuvem) e é refeito:
 * quando pedido e o modelo mudou desde a última vez (quem pede um velho recebe "preparando");
 * em segundo plano, pouco depois de o modelo ser gravado — só dos projetos já vistos alguma vez, para a
-  próxima abertura ser imediata sem gastar o computador com projetos que ninguém abre em "ver".
+  próxima abertura ser imediata sem gastar o computador com projetos que ninguém abre em "ver". Também quando
+  quem grava é outro processo (o script de uma obra): o servidor vigia o modelo.json dos projetos já vistos.
 """
 import gc
 import hashlib
 import json
 import os
+import sys
 import threading
 import time
 from typing import Dict, Optional
 
 #: Depois de gravar, espera um pouco (o editor grava em sequência) antes de refazer.
 ESPERA_DEPOIS_DE_GRAVAR = 8.0
+#: O vigia do servidor olha o modelo.json dos projetos já vistos a cada tantos segundos (só a data e o tamanho).
+INTERVALO_VIGIA = 3.0
+#: Ao começar a vigiar (o servidor acabou de subir), o modelo gravado há menos que isto e mais novo que o 3D leve
+#: também é refeito: o script que gravou enquanto o servidor reiniciava.
+RECENTE_AO_COMECAR = 15 * 60
 
 _trava = threading.RLock()
 _situacao: Dict[str, dict] = {}        # pasta do cache -> {"situacao", "progresso", "erro"}
@@ -421,3 +428,82 @@ def gravado(pasta_projeto: str):
         t.daemon = True
         _agendados[c] = t
         t.start()
+
+
+# ------------------------------------------------------------------ o vigia do servidor
+#
+# O script de uma obra grava pelo Gerenciador no próprio processo (usuário, 26/10, SESI: o 3D leve só começava a ser
+# refeito quando ele abria o projeto, ~3 min de "Atualizando o 3D"): o `gravado` dele agenda o refazer num fio que morre
+# com o script antes dos 8 s, e o servidor não ficava sabendo. O servidor agora vigia o modelo.json dos projetos já
+# vistos em "ver" e chama o `gravado` ele mesmo — vale para qualquer um que grave fora da tela.
+
+_vigiados: Dict[str, threading.Thread] = {}
+
+
+def _no_servidor() -> bool:
+    """Este processo é o servidor do programa (o app.py rodando, também empacotado): o vigia só roda nele, não no
+    script de uma obra nem nos testes."""
+    m = sys.modules.get("__main__")
+    return bool(m is not None and hasattr(m, "Handler") and hasattr(m, "_gerente"))
+
+
+def _varrer(raiz_projetos: str, marcas: dict, primeira: bool) -> list:
+    """Uma passada do vigia: os projetos já vistos em "ver" cujo modelo.json mudou (data ou tamanho) desde a passada
+    anterior vão para o `gravado`. Na primeira, os gravados há pouco e mais novos que o 3D leve guardado. Devolve as
+    pastas avisadas."""
+    try:
+        nomes = os.listdir(raiz_projetos)
+    except OSError:
+        return []
+    avisados, agora = [], time.time()
+    for nome in nomes:
+        pasta = os.path.join(raiz_projetos, nome)
+        c = _cache(pasta)
+        if not os.path.isdir(c):
+            continue                                     # nunca visto em "ver": não gasta o computador
+        try:
+            st = os.stat(os.path.join(pasta, "modelo.json"))
+        except OSError:
+            continue
+        marca, antes = (st.st_mtime_ns, st.st_size), marcas.get(pasta)
+        marcas[pasta] = marca
+        if antes is None:
+            if primeira and agora - st.st_mtime < RECENTE_AO_COMECAR:
+                try:
+                    feito = os.stat(os.path.join(c, "fonte.txt")).st_mtime
+                except OSError:
+                    feito = 0.0
+                if st.st_mtime > feito:
+                    gravado(pasta)
+                    avisados.append(pasta)
+            continue
+        if marca != antes:
+            gravado(pasta)                               # o refazer confere o conteúdo: gravar igual não refaz
+            avisados.append(pasta)
+    return avisados
+
+
+def _vigia(raiz_projetos: str):
+    marcas: dict = {}
+    primeira = True
+    while True:
+        try:
+            _varrer(raiz_projetos, marcas, primeira)
+        except Exception:                                # noqa: BLE001 — o vigia não pode parar
+            pass
+        primeira = False
+        time.sleep(INTERVALO_VIGIA)
+
+
+def vigiar(raiz_projetos: str, forcar: bool = False) -> bool:
+    """Começa o vigia da pasta de dados, uma vez por processo e só no servidor (o `Projetos` chama a cada pedido;
+    `forcar` para os testes). Devolve se começou agora."""
+    if not (forcar or _no_servidor()):
+        return False
+    chave = os.path.normcase(os.path.abspath(raiz_projetos))
+    with _trava:
+        if chave in _vigiados:
+            return False
+        t = _vigiados[chave] = threading.Thread(target=_vigia, args=(raiz_projetos,), name="3d-leve-vigia", daemon=True)
+    t.start()
+    return True
