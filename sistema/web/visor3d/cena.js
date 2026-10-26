@@ -4,7 +4,7 @@
 //
 // O caminho: a foto (Nova cena) → os pares de pontos (um clique na foto e o mesmo ponto no 3D: uma peça, ou o chão da
 // imagem do terreno — os cantos da quadra, um meio-fio) → Encaixar (encaixe.js acha a câmera da foto) → o ajuste fino
-// (lente, rolar, opacidade do 3D) → Salvar imagem (a foto com o 3D, em documentos/).
+// (lente, rolar, opacidade do 3D) → Salvar imagem (a foto com o 3D, na pasta cenas/ da obra).
 //
 // Duas vistas no mesmo palco: a FOTO (a foto parada, o 3D transparente por cima pela câmera da cena; os cliques marcam a
 // foto) e o 3D (o modelo com o terreno, girando como no modo ver; o clique marca o ponto do modelo).
@@ -25,6 +25,7 @@ const escuro = () => document.documentElement.getAttribute('data-tema') === 'esc
   (!document.documentElement.getAttribute('data-tema') && matchMedia('(prefers-color-scheme: dark)').matches);
 
 let visor = null, terreno = null, cena = null, modo = 'foto', marcando = null, camera3d = null, rolar = 0, giroBase = null;
+let situacaoAberta = null, sistemas = [], situacaoProjeto = null;
 const foto = $('#foto'), tela = $('#tela'), marcas = $('#marcas'), palco = $('#palco');
 
 function aviso(txt) { $('#aviso').textContent = txt || ''; }
@@ -44,9 +45,14 @@ async function pedir(url, corpo, binario) {
 async function abrir() {
   if (!PROJETO) { aviso('Nenhum projeto na URL.'); return; }
   $('#voltar').onclick = () => { location.href = `/visor3d/ver3d.html?projeto=${encodeURIComponent(PROJETO)}`; };
+  // a cobertura retrátil na situação da cena (aberta ou retraída): o 3D leve dela
+  const { cenas } = await pedir(API);
+  const escolhida = cenas.find(c => c.id === q.get('cena')) || cenas[cenas.length - 1] || null;
+  situacaoAberta = (escolhida && escolhida.situacao) || null;
+  const url3d = situacaoAberta ? `${API_3D}/${situacaoAberta}` : API_3D;
   let r;
   for (;;) {
-    r = await fetch(API_3D, { cache: 'no-cache' });
+    r = await fetch(url3d, { cache: 'no-cache' });
     if (r.status !== 202) break;
     $('#carregando').textContent = 'Preparando o modelo 3D…';
     await new Promise(res => setTimeout(res, 800));
@@ -58,8 +64,10 @@ async function abrir() {
   window.visor = visor;
   visor.leveAoGirar = false;
   await visor.carregar(buf);
-  const rf = await fetch(`${API_3D}/pecas?v=${encodeURIComponent(versao)}`);
+  const rf = await fetch(`${url3d}/pecas?v=${encodeURIComponent(versao)}`);
   if (rf.ok) visor.definirFichas(await rf.json());
+  const { gruposDeSistema } = await import('./sistemas.js');
+  sistemas = visor.fichas ? gruposDeSistema(visor) : [];
   visor.definirTema(escuro());
   visor.ligarApresentacao(true, 2048);
   terreno = new Terreno(visor, PROJETO, { abrirPainel: () => {}, corpo: () => null, situacao: aviso, palco,
@@ -67,7 +75,8 @@ async function abrir() {
   try { await terreno.carregar(); } catch (e) { /* sem o terreno: os pontos só nas peças */ }
   $('#carregando').remove();
   ligarControles();
-  await listar(q.get('cena'));
+  await coberturaRetratil();
+  await listar(escolhida ? escolhida.id : null);
   window.cenaPronta = true;
   requestAnimationFrame(desenharMarcas);
 }
@@ -84,7 +93,12 @@ async function listar(escolher) {
 }
 
 async function abrirCena(id) {
-  cena = await pedir(`${API}/${encodeURIComponent(id)}`);
+  const nova = await pedir(`${API}/${encodeURIComponent(id)}`);
+  if ((nova.situacao || null) !== situacaoAberta) {          // a outra situação da cobertura: o 3D dela
+    location.href = `?projeto=${encodeURIComponent(PROJETO)}&cena=${encodeURIComponent(id)}`;
+    return;
+  }
+  cena = nova;
   history.replaceState(null, '', `?projeto=${encodeURIComponent(PROJETO)}&cena=${encodeURIComponent(id)}`);
   foto.hidden = false;
   foto.src = `${API}/${encodeURIComponent(id)}/foto.jpg?v=${encodeURIComponent(cena.alterada || '')}`;
@@ -96,6 +110,58 @@ async function abrirCena(id) {
   aplicarCamera();
   mostrarModo('foto');
   desenharPares();
+  desenharCamadas();
+  marcarSituacao();
+}
+
+// ------------------------------------------------------------------ camadas e cobertura retrátil
+// (usuário, 26/10: "essa imagem interagir com as camadas, poder abrir a quadra, colocar e tirar a lona") — gravadas na cena:
+// a imagem salva sai como está na tela
+
+function desenharCamadas() {
+  if (!visor || !cena) return;
+  const desl = new Set(cena.desligadas || []), cams = visor.cabecalho.camadas || [];
+  const linha = (chave, nome, cor, ligada) => `<label><input type="checkbox" data-chave="${esc(chave)}" ${ligada ? 'checked' : ''}>
+    ${cor ? `<i style="background:${esc(cor)}"></i>` : ''}<span>${esc(nome)}</span></label>`;
+  let html = '';
+  if (sistemas.length > 1) html += '<div class="grupo">Sistema</div>' + sistemas.map(s => linha('sistema:' + s.chave, s.nome, s.cor, !desl.has('sistema:' + s.chave))).join('');
+  html += '<div class="grupo">Camadas</div>' + cams.map(c => linha('camada:' + c.nome, c.nome, c.cor, !desl.has('camada:' + c.nome))).join('');
+  $('#camadas').innerHTML = html;
+  aplicarCamadas();
+}
+
+function aplicarCamadas() {
+  const desl = new Set((cena && cena.desligadas) || []);
+  (visor.cabecalho.camadas || []).forEach((c, i) => {
+    const ligada = !desl.has('camada:' + c.nome);
+    if ((visor.visivelCamada[i] !== false) !== ligada) visor.mostrarCamada(i, ligada);
+  });
+  for (const s of sistemas) visor.ocultarSistema(s.ids, desl.has('sistema:' + s.chave));
+  if (modo === 'foto' && visor.piso) visor.piso.visible = false;
+  visor._sombraSuja = true;
+  visor.pedirQuadro();
+}
+
+async function coberturaRetratil() {
+  let pj = {};
+  try { const j = await (await fetch(`/api/projetos/${encodeURIComponent(PROJETO)}`, { cache: 'no-store' })).json(); pj = j.projeto || j; }
+  catch (e) { return; }
+  if (!((pj.analise_parametros || {}).cobertura_movel || pj.cobertura_movel_vista)) return;
+  situacaoProjeto = pj.cobertura_movel_vista || null;
+  $('#cobertura').hidden = false;
+  for (const b of document.querySelectorAll('#cobertura button')) {
+    b.onclick = async () => {
+      if (!cena || b.dataset.situacao === (situacaoAberta || situacaoProjeto)) return;
+      aviso('Abrindo a cobertura ' + b.textContent.toLowerCase() + '…');
+      await gravar({ situacao: b.dataset.situacao });
+      location.href = `?projeto=${encodeURIComponent(PROJETO)}&cena=${encodeURIComponent(cena.id)}`;
+    };
+  }
+}
+
+function marcarSituacao() {
+  const atual = situacaoAberta || situacaoProjeto;
+  for (const b of document.querySelectorAll('#cobertura button')) b.classList.toggle('ligado', b.dataset.situacao === atual);
 }
 
 // ------------------------------------------------------------------ as duas vistas
@@ -180,10 +246,13 @@ function atualizarFaixas() {
 
 function desenharPares() {
   const pares = (cena && cena.pares) || [];
+  // cada ponto se refaz depois da cena montada (usuário, 26/10: "não consigo… excluir/editar os pontos de vínculo da imagem
+  // com o 3D"): a foto de novo, o 3D de novo, ou apagar — e o encaixe se refaz
   $('#pares').innerHTML = pares.map((p, i) => `<div class="par"><b>${i + 1}</b>
-      <span>foto ✓ · ${p.modelo ? '<em class="ok">3D ✓</em>' : '<em class="falta">falta o 3D</em>'}</span>
-      ${p.modelo ? '' : `<button type="button" data-par-3d="${i}">marcar no 3D</button>`}
-      <button type="button" data-par-apagar="${i}" title="Apagar o ponto">✕</button></div>`).join('')
+      <span>${p.modelo ? '<em class="ok">foto · 3D ✓</em>' : '<em class="falta">falta o 3D</em>'}</span>
+      <button type="button" data-acao="foto" data-i="${i}" title="Marcar de novo o ponto ${i + 1} na foto">foto</button>
+      <button type="button" data-acao="3d" data-i="${i}" title="Marcar de novo o ponto ${i + 1} no 3D">3D</button>
+      <button type="button" data-acao="apagar" data-i="${i}" title="Apagar o ponto ${i + 1}">✕</button></div>`).join('')
     || '<p class="dica">Nenhum ponto ainda.</p>';
   const completos = pares.filter(p => p.modelo).length;
   $('#encaixar').disabled = completos < 4;
@@ -245,9 +314,17 @@ async function fazerEncaixe() {
   rolar = 0;
   await gravar({ camera: { posicao: [c.posicao.x + o[0], c.posicao.y + o[1], c.posicao.z + o[2]], giro: c.giro.toArray(), fov: c.fov,
                            erro_px: c.erro_px } });
+  if (marcando) { aplicarCamera(); return; }               // a pessoa já começou outro ponto: a vista fica onde está
   mostrarModo('foto');
   aviso(c.erro_px <= 15 ? `Encaixado: erro médio de ${nf(c.erro_px, 1)} px na foto.`
     : `Encaixado com erro de ${nf(c.erro_px, 0)} px: confira os pontos (um deles pode estar trocado) ou marque mais.`);
+}
+
+/** Depois de mudar os pontos: o encaixe de novo com 4 ou mais completos; com menos, a câmera de antes fica (avisado). */
+async function reencaixar(texto = '') {
+  const completos = (cena.pares || []).filter(p => p.modelo).length;
+  if (completos >= 4) { await fazerEncaixe(); if (texto) aviso(texto + ' ' + $('#aviso').textContent); }
+  else { mostrarModo('foto'); aviso(`${texto} Com ${completos} ponto(s) completos o encaixe fica o de antes: marque ${4 - completos} para refazer.`.trim()); }
 }
 
 // ------------------------------------------------------------------ a imagem pronta
@@ -273,7 +350,7 @@ async function salvarImagem() {
   const blob = await new Promise(res => saida.toBlob(res, 'image/png'));
   try {
     const j = await pedir(`${API}/${encodeURIComponent(cena.id)}/imagem`, undefined, { dados: blob, nome: 'cena.png' });
-    aviso(`Imagem salva em documentos: ${j.nome} (${w} × ${h} px).`);
+    aviso(`Imagem salva na pasta cenas da obra: ${j.nome} (${w} × ${h} px).`);
     window.ultimaImagemCena = j;
   } catch (e) { aviso('A imagem não foi salva: ' + e.message); }
 }
@@ -295,18 +372,27 @@ function ligarControles() {
   $('#encaixar').onclick = () => { cancelar(); fazerEncaixe().catch(e => aviso('O encaixe falhou: ' + e.message)); };
   $('#salvar-imagem').onclick = () => salvarImagem();
   $('#apagar').onclick = async () => {
-    if (!cena || !confirm(`Apagar a cena "${cena.nome}"? A foto e os pontos saem do projeto.`)) return;
-    await pedir(`${API}/${encodeURIComponent(cena.id)}/apagar`, {});
-    await listar();
+    if (!cena || !confirm(`Apagar a cena "${cena.nome}"? A foto e os pontos saem do projeto (a imagem salva na pasta cenas fica).`)) return;
+    try { await pedir(`${API}/${encodeURIComponent(cena.id)}/apagar`, {}); aviso('Cena apagada.'); await listar(); }
+    catch (err) { aviso('A cena não foi apagada: ' + err.message); }
   };
   $('#pares').onclick = async (e) => {
-    const b = e.target.closest('button');
-    if (!b) return;
-    if (b.dataset.par3d !== undefined) marcarNo3d(+b.dataset.par3d);
-    else if (b.dataset.parApagar !== undefined) {
-      const pares = cena.pares.slice(); pares.splice(+b.dataset.parApagar, 1);
-      await gravar({ pares });
-    }
+    const b = e.target.closest('button[data-acao]');
+    if (!b || !cena) return;
+    const i = +b.dataset.i;
+    try {
+      if (b.dataset.acao === '3d') marcarNo3d(i);
+      else if (b.dataset.acao === 'foto') {
+        marcando = { etapa: 'foto', i };
+        mostrarModo('foto');
+        aviso(`Clique de novo o ponto ${i + 1} na foto (Esc cancela).`);
+      } else if (b.dataset.acao === 'apagar') {
+        cancelar();
+        const pares = cena.pares.slice(); pares.splice(i, 1);
+        await gravar({ pares });
+        await reencaixar(`Ponto ${i + 1} apagado.`);
+      }
+    } catch (err) { aviso('Não deu: ' + err.message); }
   };
   let tempoLente = 0;
   $('#lente').oninput = () => {
@@ -330,6 +416,16 @@ function ligarControles() {
     clearTimeout(tempoOpac); tempoOpac = setTimeout(() => gravar({ opacidade: +$('#opacidade').value }), 600);
   };
   $('#sol').onchange = () => { visor.ligarApresentacao($('#sol').checked, 2048); visor.pedirQuadro(); };
+  let tempoCamadas = 0;
+  $('#camadas').onchange = (e) => {
+    const c = e.target.closest('input[data-chave]');
+    if (!c || !cena) return;
+    const desl = new Set(cena.desligadas || []);
+    if (c.checked) desl.delete(c.dataset.chave); else desl.add(c.dataset.chave);
+    cena.desligadas = [...desl];
+    aplicarCamadas();
+    clearTimeout(tempoCamadas); tempoCamadas = setTimeout(() => gravar({ desligadas: cena.desligadas }), 500);
+  };
   addEventListener('keydown', (e) => { if (e.key === 'Escape') cancelar(); });
   addEventListener('resize', () => mostrarModo(modo));
 
@@ -339,6 +435,14 @@ function ligarControles() {
     const r = marcas.getBoundingClientRect();
     const u = (e.clientX - r.left) / r.width, v = (e.clientY - r.top) / r.height;
     if (u < 0 || u > 1 || v < 0 || v > 1) return;
+    if (marcando.i !== undefined) {                          // o ponto de antes, de novo na foto
+      const i = marcando.i, pares = cena.pares.slice();
+      pares[i] = { ...pares[i], foto: [u, v] };
+      cancelar();
+      await gravar({ pares });
+      await reencaixar(`Ponto ${i + 1} marcado de novo na foto.`);
+      return;
+    }
     const pares = (cena.pares || []).concat([{ foto: [u, v] }]);
     await gravar({ pares });
     marcarNo3d(pares.length - 1);
@@ -358,7 +462,7 @@ function ligarControles() {
     cancelar();
     await gravar({ pares });
     const completos = pares.filter(x => x.modelo).length;
-    if (completos >= 4) { await fazerEncaixe(); }
+    if (completos >= 4) { await reencaixar(); }
     else { mostrarModo('foto'); aviso(`Ponto ${i + 1} marcado. Faltam ${4 - completos} para encaixar.`); }
   });
 }

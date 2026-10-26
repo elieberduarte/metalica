@@ -814,6 +814,8 @@ function ligar() {
     try { localStorage.setItem('ver3d.planta', sim ? '1' : '0'); } catch (e) { /* sem armazenamento */ }
   };
   $('#btn-terreno').onclick = () => (painelAtual === 'terreno' ? fecharPainel() : terreno && terreno.painel());
+  // as cenas, separadas do terreno (usuário, 26/10: "essas cenas deveriam ter um menu próprio"): a página delas
+  $('#btn-cenas').onclick = () => { location.href = `/visor3d/cena.html?projeto=${encodeURIComponent(PROJETO)}`; };
   $('#btn-arestas').onclick = () => { const b = $('#btn-arestas'); b.classList.toggle('ligado'); visor.ligarArestas(b.classList.contains('ligado')); };
   $('#btn-apresentacao').onclick = () => { if (painelAtual === 'apresentacao') fecharPainel(); else painelApresentacao(); };
   document.querySelectorAll('[data-vista]').forEach(b => b.onclick = () => visor.enquadrar(b.dataset.vista));

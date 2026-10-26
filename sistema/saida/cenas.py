@@ -3,10 +3,12 @@
 criar uma opção de conseguir colocar a estrutura na foto… uma ferramenta nova 'criar cena', para poder encaixar certinho
 o 3D na imagem; isso seria só para apresentação, não precisa ser gerado automaticamente com o projeto").
 
-Cada cena fica em <projeto>/cenas/<id>/: a foto (foto.jpg, como veio, até FOTO_LADO_MAX) e cena.json — o nome, os pares
-de pontos (o ponto da foto, de 0 a 1, e o mesmo ponto no modelo, em mm do projeto), a câmera encaixada (posição e giro em
-mm do projeto, o ângulo vertical) e a opacidade do 3D. A conta do encaixe é da tela (web/visor3d/cena.js); aqui só se
-guarda. A imagem pronta (a foto com o 3D) vai para <projeto>/documentos/ (a regra da aba Arquivos, 15/10).
+A imagem pronta (a foto com o 3D) vai para <projeto>/cenas/ (usuário, 26/10: "essas cenas devem ir para uma pasta… uma
+nova chamada cenas, dentro da pasta da obra… isso vai valer para as próximas também"); a aba Arquivos a mostra. Os dados de
+cada cena ficam em <projeto>/cenas/dados/<id>/: a foto (foto.jpg, até FOTO_LADO_MAX) e cena.json — o nome, os pares de
+pontos (o ponto da foto, de 0 a 1, e o mesmo ponto no modelo, em mm do projeto), a câmera encaixada (posição e giro em mm do
+projeto, o ângulo vertical), a opacidade do 3D, as camadas desligadas e a situação da cobertura retrátil. A conta do
+encaixe é da tela (web/visor3d/cena.js); aqui só se guarda.
 
 Rotas, penduradas nas do terreno (saida/local_obra.py, /api/projetos/<s>/terreno/cenas…).
 """
@@ -29,7 +31,25 @@ class ErroCena(ErroDeDados):
 
 
 def _pasta(g, s: str) -> str:
-    return os.path.join(g.pasta(s), PASTA)
+    """A pasta dos dados das cenas (<projeto>/cenas/dados); o arranjo de antes (26/10, a 1ª versão: os dados em cenas/<id>
+    e a imagem em documentos/) muda para o de agora na primeira vez."""
+    raiz = os.path.join(g.pasta(s), PASTA)
+    dados = os.path.join(raiz, "dados")
+    if os.path.isdir(raiz):
+        for i in os.listdir(raiz):
+            velho = os.path.join(raiz, i)
+            if i != "dados" and os.path.isfile(os.path.join(velho, "cena.json")):
+                os.makedirs(dados, exist_ok=True)
+                os.replace(velho, os.path.join(dados, i))
+            elif i != "dados" and os.path.isdir(velho) and set(os.listdir(velho)) <= {"foto.jpg"}:
+                import shutil                                 # a cena apagada pela metade (a 1ª versão do apagar)
+                shutil.rmtree(velho, ignore_errors=True)
+        docs = os.path.join(g.pasta(s), "documentos")
+        if os.path.isdir(docs):
+            for nome in os.listdir(docs):
+                if nome.startswith("Cena - ") and nome.lower().endswith(".png"):
+                    os.replace(os.path.join(docs, nome), os.path.join(raiz, nome))
+    return dados
 
 
 def _id_valido(i: str) -> str:
@@ -57,6 +77,8 @@ def listar(g, s: str) -> dict:
     pasta, cenas = _pasta(g, s), []
     if os.path.isdir(pasta):
         for i in sorted(os.listdir(pasta)):
+            if i.startswith("."):
+                continue
             c = _ler(os.path.join(pasta, i, "cena.json"))
             if c:
                 cenas.append(c)
@@ -157,18 +179,29 @@ def gravar(g, s: str, i: str, corpo: dict) -> dict:
                 c["camera"]["erro_px"] = round(_numeros([cam.get("erro_px")], 1)[0], 2)
     if "opacidade" in corpo:
         c["opacidade"] = min(1.0, max(0.05, _numeros([corpo["opacidade"]], 1)[0]))
+    # o que aparece na cena (usuário, 26/10: "essa imagem interagir com as camadas, poder abrir a quadra, colocar e tirar a
+    # lona"): as camadas e os sistemas desligados ("camada:<nome>", "sistema:<chave>") e a situação da cobertura retrátil
+    if "desligadas" in corpo:
+        d = corpo["desligadas"] or []
+        if not isinstance(d, list) or len(d) > 500 or not all(isinstance(x, str) and len(x) <= 200 for x in d):
+            raise ErroCena("dados da cena inválidos.")
+        c["desligadas"] = sorted(set(d))
+    if "situacao" in corpo:
+        if corpo["situacao"] not in (None, "aberta", "retraida"):
+            raise ErroCena("situação da cobertura desconhecida: %s" % corpo["situacao"])
+        c["situacao"] = corpo["situacao"]
     c["alterada"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     _gravar(os.path.join(_pasta(g, s), i, "cena.json"), c)
     return c
 
 
 def gravar_imagem(g, s: str, i: str, corpo: dict) -> dict:
-    """A imagem pronta (PNG, a foto com o 3D, feita na tela) vai para <projeto>/documentos/."""
+    """A imagem pronta (PNG, a foto com o 3D, feita na tela) vai para <projeto>/cenas/."""
     c = ler(g, s, i)
     origem = corpo.get("arquivo_local")
     if not origem or not os.path.isfile(origem):
         raise ErroCena("nenhuma imagem recebida.")
-    pasta = os.path.join(g.pasta(s), "documentos")
+    pasta = os.path.join(g.pasta(s), PASTA)
     os.makedirs(pasta, exist_ok=True)
     nome = re.sub(r'[\\/:*?"<>|]+', "-", c.get("nome") or i).strip() or i
     destino = os.path.join(pasta, "Cena - %s.png" % nome)
@@ -177,10 +210,25 @@ def gravar_imagem(g, s: str, i: str, corpo: dict) -> dict:
 
 
 def apagar(g, s: str, i: str) -> dict:
+    """A pasta da cena sai da lista na hora (renomeada para .lixo-…) e é removida; o que o Windows ainda prende (a foto aberta
+    pelo OneDrive ou pelo navegador — 26/10, a Kaefer: o apagar parava no meio e a cena ficava pela metade) sai na próxima."""
     import shutil
-    pasta = os.path.join(_pasta(g, s), _id_valido(i))
+    dados = _pasta(g, s)
+    pasta = os.path.join(dados, _id_valido(i))
     if os.path.isdir(pasta):
-        shutil.rmtree(pasta)
+        lixo = os.path.join(dados, ".lixo-%s-%d" % (i, int(time.time() * 1000)))
+        try:
+            os.replace(pasta, lixo)
+        except OSError:
+            lixo = pasta
+            try:
+                os.remove(os.path.join(pasta, "cena.json"))      # sem o cena.json a cena já não aparece
+            except OSError as e:
+                raise ErroCena("a cena está aberta noutro programa (%s). Feche e tente de novo." % e)
+        shutil.rmtree(lixo, ignore_errors=True)
+    for velho in os.listdir(dados) if os.path.isdir(dados) else []:
+        if velho.startswith(".lixo-"):
+            shutil.rmtree(os.path.join(dados, velho), ignore_errors=True)
     return listar(g, s)
 
 

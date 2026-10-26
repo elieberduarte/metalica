@@ -7,7 +7,7 @@ não existe na foto). Pela tela, com cliques de verdade:
   1. a foto entra como cena nova (a rota do terreno) e a página abre nela;
   2. para cada ponto: "+ Ponto", o clique na foto, a vista vai para o 3D, o clique no mesmo ponto do chão;
   3. no 4º ponto o encaixe sai sozinho; com os 6, a lente volta 70° (±2°) e o erro fica abaixo de 3 px;
-  4. Salvar imagem: a foto com o 3D em <projeto>/documentos/, no tamanho da foto;
+  4. Salvar imagem: a foto com o 3D em <projeto>/cenas/, no tamanho da foto;
   5. sem erros no console.
 Porta livre, nunca a 8765/8766."""
 import json, math, os, shutil, subprocess, sys, tempfile, time, urllib.request
@@ -111,6 +111,13 @@ try:
                                  headers={"Content-Type": "application/octet-stream", "X-Nome-Arquivo": "foto-teste.jpg"})
     cena = json.loads(urllib.request.urlopen(req, timeout=60).read())
     ok(cena.get("id") == "foto-teste" and cena.get("px") == [W, H], f"a foto virou a cena ({cena.get('id')}, {cena.get('px')})")
+    # a entrada pelo botão Cenas do modo ver (26/10: "essas cenas deveriam ter um menu próprio, vamos separar isso do terreno"
+    # — a obra aqui nem tem terreno)
+    aba.navegar(base + "/visor3d/ver3d.html?projeto=obra", limite=60)
+    ok(esperar(aba, "!!window.ver3dPronto && !!document.getElementById('btn-cenas')", 90), "o modo ver tem o botão Cenas (sem terreno)")
+    aba.avaliar("document.getElementById('btn-cenas').click(); 1")
+    ok(esperar(aba, "location.pathname === '/visor3d/cena.html' && !!window.cenaPronta && !document.getElementById('foto').hidden", 90),
+       "o botão abre as cenas da obra, na cena que já existe")
     aba.navegar(base + "/visor3d/cena.html?projeto=obra&cena=foto-teste", limite=60)
     ok(esperar(aba, "!!window.cenaPronta && !document.getElementById('foto').hidden", 90), "a página da cena abriu com a foto")
 
@@ -150,11 +157,59 @@ try:
     import base64
     open(os.path.join(os.path.dirname(__file__), "cena_encaixada.png"), "wb").write(base64.b64decode(dados))
 
-    # 4. a imagem pronta em documentos/
+    # os pontos depois da cena montada (26/10: "não consigo… excluir/editar os pontos de vínculo da imagem com o 3D"):
+    # apagar o 6º, refazer o 5º na foto e no 3D — o encaixe se refaz e continua bom
+    aba.avaliar("document.querySelector('#pares [data-acao=apagar][data-i=\"5\"]').click(); 1")
+    ok(esperar(aba, "cenaApi.estado().cena.pares.length === 5", 10), "o ✕ apaga o ponto 6")
+    aba.avaliar("document.querySelector('#pares [data-acao=foto][data-i=\"4\"]').click(); 1")
+    ok(esperar(aba, "cenaApi.estado().marcando && cenaApi.estado().marcando.etapa === 'foto' && cenaApi.estado().marcando.i === 4", 5),
+       "\"foto\" no ponto 5: marcar de novo na foto")
+    fx, fy, fw, fh = aba.avaliar(FOTO_NA_TELA)
+    clicar(aba, fx + uvs[4][0] * fw, fy + uvs[4][1] * fh)
+    ok(esperar(aba, "!cenaApi.estado().marcando && cenaApi.estado().modo === 'foto' && document.getElementById('aviso').textContent.includes('Encaixado')", 10),
+       "o clique na foto troca o ponto 5, refaz o encaixe e volta à foto")
+    aba.avaliar("document.querySelector('#pares [data-acao=\"3d\"][data-i=\"4\"]').click(); 1")
+    ok(esperar(aba, "cenaApi.estado().modo === '3d' && cenaApi.estado().marcando && cenaApi.estado().marcando.i === 4", 5),
+       "\"3D\" no ponto 5: marcar de novo no 3D (o botão respondia antes só em teoria: data-par-3d)")
+    aba.avaliar("""(() => { const v = window.visor, o = v.cabecalho.origem;
+      v.controles.target.set(10000 - o[0], 6000 - o[1], -o[2]); v.camera.position.set(10000 - o[0], -9000 - o[1], 30000 - o[2]);
+      v.controles.update(); v.pedirQuadro(); return 1; })()""")
+    aba.drenar(0.4)
+    clicar(aba, *aba.avaliar(NO_3D % CHAO[4]))
+    ok(esperar(aba, "!cenaApi.estado().marcando && cenaApi.estado().modo === 'foto'", 15), "o clique no 3D troca o ponto 5")
+    cam = aba.avaliar("cenaApi.estado().cena.camera") or {}
+    ok(abs((cam.get("fov") or 0) - FOV) < 2 and (cam.get("erro_px") or 99) < 3,
+       f"com 5 pontos refeitos o encaixe continua: lente {cam.get('fov', 0):.1f}°, erro {cam.get('erro_px')} px")
+
+    # as camadas (26/10: "interagir com as camadas… colocar e tirar a lona"): desligar Pilares esconde as peças, fica gravado
+    # e volta assim depois de recarregar; sem cobertura retrátil, a seção dela não aparece
+    ok(aba.avaliar("document.getElementById('cobertura').hidden") is True, "obra sem cobertura retrátil: sem os botões Aberta/Retraída")
+    ok(aba.avaliar("!!document.querySelector('#camadas input[data-chave=\"camada:Pilares\"]')"), "a lista de camadas tem Pilares")
+    aba.avaliar("document.querySelector('#camadas input[data-chave=\"camada:Pilares\"]').click(); 1")
+    ok(esperar(aba, "visor.visivelCamada[visor.cabecalho.camadas.findIndex(c => c.nome === 'Pilares')] === false", 5),
+       "desmarcar Pilares esconde os pilares da cena")
+    ok(esperar(aba, "(cenaApi.estado().cena.desligadas || []).includes('camada:Pilares')", 5)
+       and esperar(aba, "false", 1.2) is False, "e fica gravado na cena")
+    aba.avaliar("location.reload(); 1")
+    aba.drenar(1.0)
+    ok(esperar(aba, "!!window.cenaPronta && !document.querySelector('#camadas input[data-chave=\"camada:Pilares\"]').checked "
+                     "&& visor.visivelCamada[visor.cabecalho.camadas.findIndex(c => c.nome === 'Pilares')] === false", 60),
+       "recarregada, a cena volta com os pilares desligados")
+    aba.avaliar("document.querySelector('#camadas input[data-chave=\"camada:Pilares\"]').click(); 1")
+    esperar(aba, "!(cenaApi.estado().cena.desligadas || []).includes('camada:Pilares')", 5)
+    aba.drenar(1.0)
+
+    # 4. a imagem pronta na pasta cenas/ da obra
     aba.avaliar("document.getElementById('salvar-imagem').click(); 1")
     ok(esperar(aba, "!!window.ultimaImagemCena", 30), "Salvar imagem responde")
-    arq = os.path.join(DADOS, "obra", "documentos", "Cena - foto-teste.png")
-    ok(os.path.isfile(arq) and Image.open(arq).size == (W, H), f"a imagem em documentos/, no tamanho da foto ({os.path.isfile(arq) and Image.open(arq).size})")
+    arq = os.path.join(DADOS, "obra", "cenas", "Cena - foto-teste.png")
+    ok(os.path.isfile(arq) and Image.open(arq).size == (W, H), f"a imagem na pasta cenas/ da obra, no tamanho da foto ({os.path.isfile(arq) and Image.open(arq).size})")
+
+    # apagar a cena (26/10: "não consigo apagar uma cena"): sai da lista; a imagem salva na pasta cenas fica
+    aba.avaliar("window.confirm = () => true; document.getElementById('apagar').click(); 1")
+    ok(esperar(aba, "!cenaApi.estado().cena && document.getElementById('corpo').hidden", 10), "Apagar a cena: a cena sai da tela")
+    ok(not os.path.exists(os.path.join(DADOS, "obra", "cenas", "dados", "foto-teste")) and os.path.isfile(arq),
+       "e da pasta dela (a imagem salva continua na pasta cenas)")
 
     erros = [x for x in aba.console if x[0] in ("error", "excecao") and "favicon" not in str(x)]
     ok(not erros, f"sem erros no console: {erros[:3]}")

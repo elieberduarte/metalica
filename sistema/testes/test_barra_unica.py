@@ -93,7 +93,8 @@ def test_menus_na_ordem_da_obra():
     nomes = re.findall(r"^    \{ nome: '([^']+)', itens: \[", js, re.M)
     # enxutos em 03/10/2026: o Cálculo foi para o Modelo; Desenho + detalhar/pranchas = Detalhamento; Produção e
     # Comercial viraram etapas da barra do projeto (web/etapas.js)
-    assert nomes == ["Arquivo", "Modelo", "Detalhamento", "Ver", "?"], nomes
+    # 26/10 (usuário): "essas cenas deveriam ter um menu próprio, vamos separar isso do terreno" — o Cenas, antes da ajuda
+    assert nomes == ["Arquivo", "Modelo", "Detalhamento", "Ver", "Cenas", "?"], nomes
     # no 3D, os nomes que batiam com o Explodir e o Juntar do 2D
     assert "I('Dividir a peça em trechos', '3d', 'explodir'" in js and "I('Unir peças', '3d', 'juntar'" in js
     # cada item movido diz de onde veio (? › Onde foi parar)

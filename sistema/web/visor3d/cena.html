@@ -39,7 +39,11 @@
   #pares .par span { flex: 1; }
   #pares .par button { padding: 2px 6px; }
   #pares .ok { color: var(--verde); } #pares .falta { color: var(--amarelo); }
-  #lado label.faixa { display: flex; align-items: center; gap: 8px; } #lado label.faixa input { flex: 1; }
+  #lado label.faixa { display: flex; align-items: center; gap: 8px; } #lado label.faixa input[type=range] { flex: 1; }
+  #camadas { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow: auto; }
+  #camadas label { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
+  #camadas i { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  #camadas .grupo { font-weight: 600; margin-top: 4px; color: var(--texto-fraco, #5b6779); }
   #aviso { min-height: 18px; color: var(--azul-tinta); font-weight: 600; }
   #palco { position: fixed; left: 300px; top: 0; right: 0; bottom: 0; overflow: hidden; background: #10151d; }
   #foto { position: absolute; user-select: none; -webkit-user-drag: none; }
@@ -74,6 +78,10 @@
     <label class="faixa">Rolar <input type="range" id="rolar" min="-15" max="15" step="0.1" value="0"><span id="rolar-val"></span></label>
     <label class="faixa">3D <input type="range" id="opacidade" min="0.05" max="1" step="0.05"><span id="opacidade-val"></span></label>
     <label class="faixa"><input type="checkbox" id="sol" checked> Sol e sombra</label>
+    <div id="cobertura" hidden><p class="titulo-secao">Cobertura retrátil</p>
+      <div class="linha"><button type="button" data-situacao="aberta">Aberta</button><button type="button" data-situacao="retraida">Retraída</button></div></div>
+    <p class="titulo-secao">Camadas</p>
+    <div id="camadas"></div>
     <p class="titulo-secao">3. Imagem</p>
     <div class="linha"><button type="button" id="salvar-imagem" class="forte">Salvar imagem</button><button type="button" id="apagar">Apagar a cena</button></div>
   </div>

@@ -282,6 +282,11 @@
       F('Painéis da direita', 'paineis', { kbd: 'F4', dica: 'propriedades, camadas… dos dois lados' }),
       F('Tema claro / escuro', 'tema', { antes: 'Ver › Tema claro / escuro' }),
     ] },
+    // as cenas: a estrutura encaixada numa foto do local, para apresentação (usuário, 26/10: "essas cenas deveriam ter um menu
+    // próprio, vamos separar isso do terreno") — visor3d/cena.html
+    { nome: 'Cenas', itens: [
+      { texto: 'Cenas da obra…', link: '/visor3d/cena.html?projeto={projeto}', dica: 'a estrutura encaixada numa foto do local: as cenas já montadas e uma nova pela foto' },
+    ] },
     { nome: '?', itens: [
       F('Guia rápido das ferramentas…', 'guia', { kbd: 'F1', dica: 'todas as ferramentas do 3D, os atalhos e como usar' }),
       { texto: 'Ajuda do programa…', link: '/ajuda', nova: true, antes: 'Ver › Ajuda do programa…' },

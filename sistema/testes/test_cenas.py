@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """As cenas (saida/cenas.py, 26/10): a estrutura numa foto do local, guardada no projeto — a foto, os pares de pontos, a
-câmera encaixada e a imagem pronta em documentos/. A conta do encaixe é da tela (verif_cena)."""
+câmera encaixada e a imagem pronta em cenas/ (26/10: "uma pasta… chamada cenas, dentro da pasta da obra"). A conta do encaixe é da tela (verif_cena)."""
 import io
 import os
 import sys
@@ -37,7 +37,7 @@ def test_nova_cena_pela_rota_do_terreno(tmp_path):
     g, s = _gerente(tmp_path)
     c = L.rota_post(g, s, ["cenas", "nova"], _foto(tmp_path), lambda *a: None)
     assert c["id"] == "img-2026" and c["nome"] == "IMG_2026" and c["px"] == [4000, 3000] and c["pares"] == []
-    assert os.path.isfile(os.path.join(g.pasta(s), "cenas", "img-2026", "foto.jpg"))
+    assert os.path.isfile(os.path.join(g.pasta(s), "cenas", "dados", "img-2026", "foto.jpg"))
     assert L.rota_get(g, s, ["cenas"], {})["cenas"][0]["id"] == "img-2026"
     assert L.rota_get(g, s, ["cenas", "img-2026", "foto.jpg"], {})["arquivo"].endswith(os.path.join("img-2026", "foto.jpg"))
     c2 = L.rota_post(g, s, ["cenas", "nova"], _foto(tmp_path), lambda *a: None)
@@ -65,7 +65,20 @@ def test_gravar_pares_camera_e_opacidade(tmp_path):
             C.gravar(g, s, i, ruim)
 
 
-def test_imagem_pronta_vai_para_documentos(tmp_path):
+def test_camadas_e_cobertura_retratil_da_cena(tmp_path):
+    """26/10 ("essa imagem interagir com as camadas, poder abrir a quadra, colocar e tirar a lona"): o que fica desligado e a
+    situação da cobertura retrátil gravados na cena."""
+    g, s = _gerente(tmp_path)
+    i = C.nova(g, s, _foto(tmp_path))["id"]
+    c = C.gravar(g, s, i, {"desligadas": ["camada:Lona", "sistema:cobertura", "camada:Lona"], "situacao": "aberta"})
+    assert c["desligadas"] == ["camada:Lona", "sistema:cobertura"] and c["situacao"] == "aberta"
+    assert C.gravar(g, s, i, {"situacao": None})["situacao"] is None
+    for ruim in ({"situacao": "meia"}, {"desligadas": "camada:Lona"}, {"desligadas": [1]}):
+        with pytest.raises(C.ErroCena):
+            C.gravar(g, s, i, ruim)
+
+
+def test_imagem_pronta_vai_para_a_pasta_cenas(tmp_path):
     g, s = _gerente(tmp_path)
     i = C.nova(g, s, _foto(tmp_path))["id"]
     C.gravar(g, s, i, {"nome": "Vista: da entrada"})
@@ -74,7 +87,11 @@ def test_imagem_pronta_vai_para_documentos(tmp_path):
         f.write(b"\x89PNG\r\n\x1a\n" + b"0" * 100)
     r = C.rota_post(g, s, [i, "imagem"], {"arquivo_local": png})
     assert r["nome"] == "Cena - Vista- da entrada.png"
-    assert os.path.isfile(os.path.join(g.pasta(s), "documentos", r["nome"]))
+    assert os.path.isfile(os.path.join(g.pasta(s), "cenas", r["nome"]))
+    # e a aba Arquivos a mostra (só a imagem: a foto e os dados da cena, em cenas/dados, não)
+    from saida import arquivos_projeto as A
+    lista = A.listar(g.pasta(s), lambda c: c)
+    assert [(a["nome"], a["pasta"]) for a in lista] == [(r["nome"], "cenas")] and lista[0]["descricao"].startswith("Cena")
 
 
 def test_nome_da_cena_nao_sai_da_pasta(tmp_path):
@@ -90,7 +107,41 @@ def test_apagar(tmp_path):
     g, s = _gerente(tmp_path)
     i = C.nova(g, s, _foto(tmp_path))["id"]
     assert C.apagar(g, s, i)["cenas"] == []
-    assert not os.path.exists(os.path.join(g.pasta(s), "cenas", i))
+    assert not os.path.exists(os.path.join(g.pasta(s), "cenas", "dados", i))
+
+
+def test_arranjo_de_antes_muda_sozinho(tmp_path):
+    """A 1ª versão (26/10) gravava os dados em cenas/<id> e a imagem em documentos/ (a Kaefer): mudam na 1ª abertura."""
+    import json
+    g, s = _gerente(tmp_path)
+    velho = os.path.join(g.pasta(s), "cenas", "whatsapp")
+    os.makedirs(velho)
+    json.dump({"id": "whatsapp", "nome": "WhatsApp", "criada": "2026-10-26T20:00:00"}, open(os.path.join(velho, "cena.json"), "w"))
+    os.makedirs(os.path.join(g.pasta(s), "documentos"))
+    open(os.path.join(g.pasta(s), "documentos", "Cena - WhatsApp.png"), "wb").write(b"png")
+    open(os.path.join(g.pasta(s), "documentos", "Proposta.pdf"), "wb").write(b"pdf")
+    assert [c["id"] for c in C.listar(g, s)["cenas"]] == ["whatsapp"]
+    assert os.path.isfile(os.path.join(g.pasta(s), "cenas", "dados", "whatsapp", "cena.json"))
+    assert os.path.isfile(os.path.join(g.pasta(s), "cenas", "Cena - WhatsApp.png"))
+    assert sorted(os.listdir(os.path.join(g.pasta(s), "documentos"))) == ["Proposta.pdf"]
+    # e a cena apagada pela metade (só a foto ficou, a 1ª versão do apagar) sai
+    meia = os.path.join(g.pasta(s), "cenas", "meia")
+    os.makedirs(meia)
+    open(os.path.join(meia, "foto.jpg"), "wb").write(b"jpg")
+    C.listar(g, s)
+    assert sorted(os.listdir(os.path.join(g.pasta(s), "cenas"))) == ["Cena - WhatsApp.png", "dados"]
+
+
+def test_apagar_com_a_foto_presa(tmp_path, monkeypatch):
+    """26/10 (Kaefer): "não consigo apagar uma cena" — no Windows a foto pode estar presa (o OneDrive, o navegador) e o apagar
+    parava no meio, a cena pela metade. Agora a pasta sai da lista na hora e o resto é removido quando der."""
+    import shutil
+    g, s = _gerente(tmp_path)
+    i = C.nova(g, s, _foto(tmp_path))["id"]
+    monkeypatch.setattr(shutil, "rmtree", lambda *a, **k: None)              # nada sai do disco (tudo preso)
+    assert C.apagar(g, s, i)["cenas"] == []
+    assert C.listar(g, s)["cenas"] == []
+    assert not os.path.exists(os.path.join(g.pasta(s), "cenas", "dados", i))
 
 
 def test_so_jpg_e_png(tmp_path):

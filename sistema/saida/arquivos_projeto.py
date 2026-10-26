@@ -15,8 +15,10 @@ from typing import Callable, Dict, List
 #: Extensões de arquivo de entrega (o que se abre fora do programa).
 EXTENSOES = (".pdf", ".xlsx", ".xls", ".csv", ".docx", ".doc", ".dxf", ".dwg", ".ifc", ".zip", ".html", ".md", ".txt",
              ".png", ".jpg", ".jpeg")
-#: Imagem só conta em documentos/ (no resto são as fotos e miniaturas que o programa usa).
+#: Imagem só conta em documentos/ e nas imagens das cenas (no resto são as fotos e miniaturas que o programa usa).
 SO_EM_DOCUMENTOS = (".png", ".jpg", ".jpeg", ".md", ".txt")
+#: As imagens prontas das cenas (saida/cenas.py, 26/10: a estrutura numa foto do local) — os dados delas, em cenas/dados, não.
+PASTA_CENAS = "cenas"
 #: Pastas de trabalho do programa, nunca listadas.
 IGNORAR = {"historico", "dossie", "fotos", "miniaturas", "cache", "__pycache__", "desenhos-2d", "conferencias"}
 PASTA_DOCUMENTOS = "documentos"
@@ -47,7 +49,7 @@ CONHECIDOS: Dict[str, tuple] = {
 POR_PASTA = {
     PASTA_DOCUMENTOS: "Documento da obra", "detalhamento": "Detalhamento", "pranchas": "Pranchas de fabricação",
     "analise": "Análise estrutural", "memorial": "Memorial de cálculo", "ifc": "IFC exportado", "comercial": "Comercial",
-    "origem": "Arquivo recebido (origem)", "": "Projeto",
+    "origem": "Arquivo recebido (origem)", PASTA_CENAS: "Cena (a estrutura numa foto do local)", "": "Projeto",
 }
 #: A data no fim do nome (…-2026-10-14, …_20261014): versões do mesmo documento.
 _DATA = re.compile(r"[-_ ]?(\d{4})[-_.]?(\d{2})[-_.]?(\d{2})(?:[-_]\d{4,6})?$")
@@ -77,7 +79,7 @@ def listar(pasta_projeto: str, url_de: Callable[[str], str]) -> List[dict]:
             ext = os.path.splitext(nome)[1].lower()
             if nome.startswith((".", "~$")) or ext not in EXTENSOES:
                 continue
-            if ext in SO_EM_DOCUMENTOS and topo != PASTA_DOCUMENTOS:
+            if ext in SO_EM_DOCUMENTOS and topo != PASTA_DOCUMENTOS and rel != PASTA_CENAS:
                 continue
             cam = os.path.join(raiz, nome)
             try:
