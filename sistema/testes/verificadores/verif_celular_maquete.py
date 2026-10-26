@@ -479,7 +479,8 @@ try:
     # sem a mensagem fixa no alto, e os botões de cima numa coluna do lado direito, menores (26/10: "não precisa dessa
     # mensagem"; "poderia estar na lateral para não atrapalhar a visualização"; "diminuir esses botões")
     lado = json.loads(ap.avaliar("""(() => { const bs = [...document.querySelectorAll('#ga-camera .ra-barra-cima button')].map(b => b.getBoundingClientRect());
-      return JSON.stringify({ dica: !document.querySelector('#ga-camera .ra-dica').hidden, xs: bs.map(r => Math.round(r.x)), dir: Math.max(...bs.map(r => r.right)),
+      const d = document.querySelector('#ga-camera .ra-dica');
+      return JSON.stringify({ dica: !d.hidden && !d.textContent.startsWith('Sem prender na mesa'), xs: bs.map(r => Math.round(r.x)), dir: Math.max(...bs.map(r => r.right)),
         alt: Math.max(...[...document.querySelectorAll('#ga-camera button')].map(b => b.getBoundingClientRect().height)), largura: innerWidth }); })()""") or "{}")
     ok(not lado.get("dica") and len(set(lado.get("xs") or [0, 1])) == 1 and lado.get("dir", 0) > lado.get("largura", 0) - 30
        and lado.get("alt", 99) <= 40, f"sem a mensagem; os botões de cima em coluna na direita, até 40 px de altura ({lado})")
@@ -506,7 +507,8 @@ try:
     ok(ap.avaliar("localStorage.getItem('metalica-maquete-lente')") == "a|", "e a lente escolhida fica guardada")
     ap.avaliar("document.querySelector('#ga-camera [data-ra=sair]').click()")
     ok(esperar(ap, "!document.getElementById('ga-camera')", 5), "Sair fecha a câmera e volta ao 3D")
-    ok(ap.avaliar(f"{GA}.presaNaMesa()") is False, "sem o ARCore (a sessão não abre), a maquete segue o giro")
+    ok(ap.avaliar(f"{GA}.presaNaMesa()") is False and ap.avaliar(f"{GA}.motivo()") == "o ARCore não respondeu",
+       f"sem o ARCore (a sessão não abre), a maquete segue o giro, e o motivo vai para a tela ({ap.avaliar(f'{GA}.motivo()')})")
 
     # presa na mesa (26/10, "o modelo não fica fixo em um ponto"): o ARCore rastreia pela principal, por baixo — simulado: a
     # sessão dá a posição do celular a cada quadro e acha a mesa a 0,4 m abaixo e 0,6 m à frente; o celular anda 30 cm
