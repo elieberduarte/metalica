@@ -600,12 +600,6 @@ export function giroPelaGravidade(x, y, atual = 0) {
   return atual;
 }
 
-/** A realidade aumentada do Android (WebXR): aponta para a mesa, toca para pôr; dois dedos aumentam e giram; os botões
- *  de baixo fazem o mesmo, e Sair volta ao 3D. `situacoes` = [{rotulo, grupo}] (a cobertura retrátil aberta e
- *  retraída, no mesmo quadro: o botão troca uma pela outra na mesa); `piso` = o desenho do piso (pisoDaMaquete) e
- *  `cotas` = as cotas principais (cotasDaMaquete), ou null; `camadas` = {camadas, sistemas, partes, desligadas} para o
- *  botão Camadas (usuário, 20/10: "habilitar os eixos e níveis, por exemplo"); `sol` = o sol da obra (a sombra);
- *  `escala` é o 1:N da maquete, para o rótulo acompanhar o tamanho. */
 /** A fração do meio ângulo da câmera que o raio da maquete ocupa ao caber na vista (folga para os botões e a beira). */
 const FOLGA_NA_VISTA = 0.75;
 
@@ -616,6 +610,35 @@ export function tamanhoParaCaber(raio1, distancia, p) {
   return Math.min(20, Math.max(0.1, FOLGA_NA_VISTA * distancia * tg / (raio1 || 0.3)));
 }
 
+/** O painel Camadas da câmera (a da mesa e a grande angular): Sombra, Desenho (eixos, cotas), Sistema e Camadas.
+ *  `aoSombra(modo)` e `aoCamada()` (depois de `desligadas` mudar) fazem o resto. */
+function abrirPainelDaMaquete(painel, camadas, desligadas, modoSombra, aoSombra, aoCamada) {
+  const linha = (chave, nome, cor, ligada) => `<label class="ra-linha"><input type="checkbox" data-chave="${_esc(chave)}" ${ligada ? 'checked' : ''}>
+    ${cor ? `<i style="background:${_esc(cor)}"></i>` : ''}<span>${_esc(nome)}</span></label>`;
+  const opcaoSombra = (k, nome) => `<label class="ra-linha"><input type="radio" name="ra-sombra" data-sombra="${k}" ${modoSombra === k ? 'checked' : ''}>
+    <span>${nome}</span></label>`;
+  const secoes = ['<div class="ra-titulo">Sombra</div>' + opcaoSombra('camera', 'Acompanha a câmera') + opcaoSombra('sol', 'Sol da obra')
+    + opcaoSombra('nenhuma', 'Sem sombra')];
+  if (camadas.partes.length) secoes.push('<div class="ra-titulo">Desenho</div>' + camadas.partes.map(([k, nome, cor]) =>
+    linha('piso:' + k, nome, cor, !desligadas.has('piso:' + k))).join(''));
+  if (camadas.sistemas.length > 1) secoes.push('<div class="ra-titulo">Sistema</div>' + camadas.sistemas.map(s =>
+    linha('sistema:' + s.chave, s.nome, s.cor, !desligadas.has('sistema:' + s.chave))).join(''));
+  secoes.push('<div class="ra-titulo">Camadas</div>' + camadas.camadas.map(c => linha('camada:' + c.nome, c.nome, null, !desligadas.has('camada:' + c.nome))).join(''));
+  painel.innerHTML = secoes.join('') + '<button data-ra="fechar-painel">Pronto</button>';
+  painel.hidden = false;
+  painel.querySelectorAll('input[data-sombra]').forEach(c => c.onchange = () => aoSombra(c.dataset.sombra));
+  painel.querySelectorAll('input[data-chave]').forEach(c => c.onchange = () => {
+    if (c.checked) desligadas.delete(c.dataset.chave); else desligadas.add(c.dataset.chave);
+    aoCamada();
+  });
+}
+
+/** A realidade aumentada do Android (WebXR): aponta para a mesa, toca para pôr; dois dedos aumentam e giram; os botões
+ *  de baixo fazem o mesmo, e Sair volta ao 3D. `situacoes` = [{rotulo, grupo}] (a cobertura retrátil aberta e
+ *  retraída, no mesmo quadro: o botão troca uma pela outra na mesa); `piso` = o desenho do piso (pisoDaMaquete) e
+ *  `cotas` = as cotas principais (cotasDaMaquete), ou null; `camadas` = {camadas, sistemas, partes, desligadas} para o
+ *  botão Camadas (usuário, 20/10: "habilitar os eixos e níveis, por exemplo"); `sol` = o sol da obra (a sombra);
+ *  `escala` é o 1:N da maquete, para o rótulo acompanhar o tamanho. */
 export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas = null, sol = null, escala, aoSair }) {
   const sobre = document.createElement('div');
   sobre.id = 'ra-sobre';
@@ -678,32 +701,13 @@ export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas
   window.addEventListener('devicemotion', aoMover);
   let sessao = null;
   const fechar = () => { if (sessao) sessao.end().catch(() => {}); };
-  const linha = (chave, nome, cor, ligada) => `<label class="ra-linha"><input type="checkbox" data-chave="${_esc(chave)}" ${ligada ? 'checked' : ''}>
-    ${cor ? `<i style="background:${_esc(cor)}"></i>` : ''}<span>${_esc(nome)}</span></label>`;
-  const opcaoSombra = (k, nome) => `<label class="ra-linha"><input type="radio" name="ra-sombra" data-sombra="${k}" ${modoSombra === k ? 'checked' : ''}>
-    <span>${nome}</span></label>`;
-  const abrirPainel = () => {
-    const secoes = ['<div class="ra-titulo">Sombra</div>' + opcaoSombra('camera', 'Acompanha a câmera') + opcaoSombra('sol', 'Sol da obra')
-      + opcaoSombra('nenhuma', 'Sem sombra')];
-    if (camadas.partes.length) secoes.push('<div class="ra-titulo">Desenho</div>' + camadas.partes.map(([k, nome, cor]) =>
-      linha('piso:' + k, nome, cor, !desligadas.has('piso:' + k))).join(''));
-    if (camadas.sistemas.length > 1) secoes.push('<div class="ra-titulo">Sistema</div>' + camadas.sistemas.map(s =>
-      linha('sistema:' + s.chave, s.nome, s.cor, !desligadas.has('sistema:' + s.chave))).join(''));
-    secoes.push('<div class="ra-titulo">Camadas</div>' + camadas.camadas.map(c => linha('camada:' + c.nome, c.nome, null, !desligadas.has('camada:' + c.nome))).join(''));
-    painel.innerHTML = secoes.join('') + '<button data-ra="fechar-painel">Pronto</button>';
-    painel.hidden = false;
-    painel.querySelectorAll('input[data-sombra]').forEach(c => c.onchange = () => {
-      modoSombra = c.dataset.sombra;
-      ligarSombra(modoSombra !== 'nenhuma');
-      if (modoSombra === 'sol') apontarLuz(solDaObra);
-      ultimaLuz.set(0, 0, 0);                         // a câmera aponta a luz no próximo quadro
-      mudou();
-    });
-    painel.querySelectorAll('input[data-chave]').forEach(c => c.onchange = () => {
-      if (c.checked) desligadas.delete(c.dataset.chave); else desligadas.add(c.dataset.chave);
-      aplicar();
-    });
-  };
+  const abrirPainel = () => abrirPainelDaMaquete(painel, camadas, desligadas, modoSombra, (k) => {
+    modoSombra = k;
+    ligarSombra(modoSombra !== 'nenhuma');
+    if (modoSombra === 'sol') apontarLuz(solDaObra);
+    ultimaLuz.set(0, 0, 0);                         // a câmera aponta a luz no próximo quadro
+    mudou();
+  }, aplicar);
   sobre.addEventListener('click', (e) => {
     const k = e.target.dataset && e.target.dataset.ra;
     if (k === 'maior' || k === 'menor') { tamanho *= k === 'maior' ? 1.25 : 0.8; maquete.scale.setScalar(tamanho); mostrarEscala(); mudou(); }
@@ -794,6 +798,270 @@ export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas
     limpar();
     if (aoSair) aoSair();
   });
+}
+
+// ---------------------------------------------------------------- a câmera grande angular (0,6×)
+// (usuário, 26/10, Galaxy S25 Ultra: "a maquete abre só a câmera fechada" — o WebXR do Chrome usa o ARCore, e o ARCore
+// só rastreia a mesa pela lente principal; a página não escolhe a lente.) Aqui a câmera vem pelo getUserMedia, que deixa
+// escolher a lente, e a maquete fica presa ao giro do celular (o giroscópio), não à mesa: gira certo quando o celular
+// vira, mas não fica no lugar se a pessoa anda em volta. Um dedo arrasta a maquete no plano da mesa, dois aumentam, giram
+// e (subindo ou descendo juntos) mudam a altura; o botão Lente troca entre as câmeras de trás.
+
+/** O ângulo de visão no lado MAIOR da imagem (graus): a 0,6× do S25 Ultra (13 mm equivalente) e a principal (24 mm). */
+export const ANGULO_LENTE = { larga: 106, principal: 72 };
+const LENTE_GUARDADA = 'metalica-maquete-lente';
+const ABAIXO_DO_CELULAR = 0.35;          // m: a mesa abaixo do celular na mão, para pôr a maquete na primeira vez
+
+/** O ângulo vertical (graus) da câmera do three.js para a imagem `w` × `h` da lente `tipo` (o lado maior tem o ângulo
+ *  da lente; o menor, a mesma tangente na proporção). */
+export function anguloVertical(tipo, w, h) {
+  const t = Math.tan((ANGULO_LENTE[tipo] || ANGULO_LENTE.principal) * Math.PI / 360);
+  return (h >= w ? 2 * Math.atan(t) : 2 * Math.atan(t * h / w)) * 180 / Math.PI;
+}
+
+/** As lentes de trás, a mais provável de ser a grande angular primeiro: o zoom abaixo de 1× da câmera "lógica" (o Chrome
+ *  de alguns Samsung), o nome (ultra, wide, grande angular…), e senão a segunda câmera de trás (no Chrome dos Galaxy a
+ *  "camera2 2" costuma ser a grande angular). A escolhida antes, guardada, vem primeiro. `faixas` = getUserMedia. */
+export function ordenarLentes(dispositivos, zoomMin, idDoZoom, guardada) {
+  const tras = dispositivos.filter(d => d.kind === 'videoinput' && !/front|frontal|user|selfie/i.test(d.label || ''));
+  const lista = tras.map((d, i) => ({ id: d.deviceId, rotulo: d.label || `Câmera ${i + 1}`, zoom: null,
+                                      tipo: /ultra|wide|grande|angular|0[.,][56]/i.test(d.label || '') || (i > 0 && tras.length > 1) ? 'larga' : 'principal' }));
+  if (zoomMin != null && zoomMin < 1) lista.unshift({ id: idDoZoom, rotulo: `${String(zoomMin).replace('.', ',')}× (zoom)`, zoom: zoomMin, tipo: 'larga' });
+  const nota = (o) => (guardada && (o.id + '|' + (o.zoom || '')) === guardada ? 100 : 0) + (o.zoom ? 10 : 0)
+    + (/ultra|wide|grande|angular/i.test(o.rotulo) ? 5 : 0) + (o.tipo === 'larga' ? 1 : 0);
+  return lista.map((o, i) => [o, i]).sort((a, b) => nota(b[0]) - nota(a[0]) || a[1] - b[1]).map(x => x[0]);
+}
+
+/** O giro da câmera pelo giroscópio (o mesmo cálculo do DeviceOrientationControls do three.js, graus → quaternion). */
+const _zee = new THREE.Vector3(0, 0, 1), _eu = new THREE.Euler(), _q0 = new THREE.Quaternion(),
+      _q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+function orientarCamera(cam, alfa, beta, gama, tela) {
+  const r = Math.PI / 180;
+  _eu.set(beta * r, alfa * r, -gama * r, 'YXZ');
+  cam.quaternion.setFromEuler(_eu);
+  cam.quaternion.multiply(_q1);
+  cam.quaternion.multiply(_q0.setFromAxisAngle(_zee, -tela * r));
+}
+
+/** A maquete por cima da câmera grande angular (os mesmos parâmetros de abrirWebXR). */
+export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null, camadas = null, sol = null, escala, aoSair }) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('o navegador não dá acesso à câmera aqui (precisa de https)');
+  const raiz = document.createElement('div');
+  raiz.id = 'ga-camera';
+  raiz.style.cssText = 'position:fixed;inset:0;z-index:99;background:#000;overflow:hidden;touch-action:none';
+  const video = document.createElement('video');
+  video.playsInline = true; video.muted = true; video.autoplay = true;
+  video.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain';
+  raiz.appendChild(video);
+  document.body.appendChild(raiz);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x000000, 0);
+  renderer.domElement.style.cssText = 'position:absolute;pointer-events:none';
+  raiz.appendChild(renderer.domElement);
+  const sobre = document.createElement('div');
+  sobre.id = 'ra-sobre';
+  sobre.innerHTML = `<div class="ra-giro"><div class="ra-dica">Grande angular: a maquete segue o giro do celular, não a mesa</div>
+    <div class="ra-painel" hidden></div>
+    <div class="ra-barra ra-barra-cima"><button data-ra="lente">Lente</button><button data-ra="inteira">Inteira</button>${camadas
+      ? '<button data-ra="camadas">Camadas</button>' : ''}${situacoes.length > 1 ? `<button data-ra="situacao">${situacoes[0].rotulo}</button>` : ''}</div>
+    <div class="ra-barra"><button data-ra="menor" aria-label="Menor">−</button><span class="ra-escala"></span>
+      <button data-ra="maior" aria-label="Maior">+</button><button data-ra="girar">Girar</button><button data-ra="sair">Sair</button></div></div>`;
+  raiz.appendChild(sobre);
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 50);
+  camera.rotation.set(-0.6, 0, 0, 'YXZ');                  // sem giroscópio (o computador): olhando para a mesa
+  const { cena, maquete, ambiente, refazerSombra, apontarLuz, ligarSombra, solDaObra } = await cenaDaMesa(renderer, { situacoes, piso, cotas, sol });
+  cena.add(camera);
+  let modoSombra = 'camera', tamanho = 1, atual = 0, lentes = [], lente = null, fluxo = null, fechado = false, quadro = 0;
+  const desligadas = new Set(camadas ? camadas.desligadas : []);
+  const raio1 = new THREE.Box3().setFromObject(maquete).getBoundingSphere(new THREE.Sphere()).radius || 0.3;
+  const mudou = () => refazerSombra(tamanho);
+  const aplicar = () => { aplicarVisiveis(maquete, desligadas); mudou(); };
+  aplicar();
+  maquete.visible = false;
+  const dica = sobre.querySelector('.ra-dica'), rotEscala = sobre.querySelector('.ra-escala'), painel = sobre.querySelector('.ra-painel');
+  const mostrarEscala = () => { rotEscala.textContent = '1:' + Math.round(escala / tamanho); };
+  mostrarEscala();
+
+  // a imagem: contida na tela inteira (a grande angular inteira, sem cortar os lados), e o 3D exatamente por cima dela
+  const caixa = { x: 0, y: 0, w: 1, h: 1 };
+  const ajustarTela = () => {
+    const W = raiz.clientWidth, H = raiz.clientHeight, vw = video.videoWidth || W, vh = video.videoHeight || H;
+    const s = Math.min(W / vw, H / vh);
+    Object.assign(caixa, { w: Math.round(vw * s), h: Math.round(vh * s) });
+    caixa.x = Math.round((W - caixa.w) / 2); caixa.y = Math.round((H - caixa.h) / 2);
+    renderer.setSize(caixa.w, caixa.h);
+    Object.assign(renderer.domElement.style, { left: caixa.x + 'px', top: caixa.y + 'px' });
+    camera.aspect = caixa.w / caixa.h;
+    camera.fov = anguloVertical(lente ? lente.tipo : 'principal', vw, vh);
+    camera.updateProjectionMatrix();
+  };
+  window.addEventListener('resize', ajustarTela);
+  video.addEventListener('loadedmetadata', ajustarTela);
+
+  const parar = () => { if (fluxo) fluxo.getTracks().forEach(t => t.stop()); fluxo = null; };
+  const ligarLente = async (o) => {
+    parar();
+    fluxo = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: o.id ? { exact: o.id } : undefined,
+      facingMode: o.id ? undefined : { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } } });
+    if (o.zoom) { try { await fluxo.getVideoTracks()[0].applyConstraints({ advanced: [{ zoom: o.zoom }] }); } catch (e) { /* sem zoom */ } }
+    lente = o;
+    video.srcObject = fluxo;
+    try { await video.play(); } catch (e) { /* autoplay mudo */ }
+    try { localStorage.setItem(LENTE_GUARDADA, o.id + '|' + (o.zoom || '')); } catch (e) { /* sem armazenamento */ }
+    ajustarTela();
+  };
+  try {
+    // a primeira vez: a permissão (e com ela os nomes das câmeras) e o zoom da câmera lógica
+    fluxo = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' } } });
+    const faixa = fluxo.getVideoTracks()[0], cap = faixa.getCapabilities ? faixa.getCapabilities() : {};
+    const idZoom = (faixa.getSettings ? faixa.getSettings().deviceId : '') || '';
+    let guardada = null;
+    try { guardada = localStorage.getItem(LENTE_GUARDADA); } catch (e) { /* sem armazenamento */ }
+    lentes = ordenarLentes(await navigator.mediaDevices.enumerateDevices(), cap.zoom ? cap.zoom.min : null, idZoom, guardada);
+    if (!lentes.length) lentes = [{ id: '', rotulo: 'Câmera', zoom: null, tipo: 'principal' }];
+    await ligarLente(lentes[0]);
+  } catch (e) {
+    parar(); renderer.dispose(); ambiente.dispose(); raiz.remove();
+    throw e;
+  }
+
+  // o giroscópio: a câmera gira como o celular (3 graus de liberdade)
+  let giroscopio = false;
+  const aoGirar = (e) => {
+    if (e.alpha == null && e.beta == null) return;
+    giroscopio = true;
+    orientarCamera(camera, e.alpha || 0, e.beta || 0, e.gamma || 0, (screen.orientation && screen.orientation.angle) || window.orientation || 0);
+  };
+  window.addEventListener('deviceorientation', aoGirar);
+
+  // o plano da mesa e o raio do dedo
+  const plano = new THREE.Plane(new THREE.Vector3(0, 1, 0), ABAIXO_DO_CELULAR), raio = new THREE.Raycaster(), ponto = new THREE.Vector3();
+  const naMesa = (cx, cy) => {
+    camera.updateMatrixWorld();
+    raio.setFromCamera(new THREE.Vector2((cx - caixa.x) / caixa.w * 2 - 1, -((cy - caixa.y) / caixa.h) * 2 + 1), camera);
+    return raio.ray.intersectPlane(plano, ponto) ? ponto.clone() : null;
+  };
+  const tamanhoQueCabe = () => tamanhoParaCaber(raio1, camera.position.distanceTo(maquete.position), camera.projectionMatrix.elements);
+  const por = () => {
+    // no meio da imagem, na mesa (ou 1 m à frente, se o celular olha para cima)
+    let p = naMesa(caixa.x + caixa.w / 2, caixa.y + caixa.h / 2);
+    if (!p || p.length() > 6) {
+      const f = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion); f.y = 0;
+      if (f.lengthSq() < 1e-6) f.set(0, 0, -1);
+      p = f.normalize().multiplyScalar(1).setY(-plano.constant);
+    }
+    maquete.position.copy(p);
+    maquete.visible = true;
+    dica.textContent = 'Um dedo arrasta · dois aumentam, giram e, juntos para cima ou para baixo, mudam a altura';
+    setTimeout(() => { if (dica.textContent.startsWith('Um dedo')) dica.textContent = 'Grande angular: a maquete segue o giro do celular'; }, 6000);
+    tamanho = Math.min(1, tamanhoQueCabe());
+    maquete.scale.setScalar(tamanho);
+    mostrarEscala(); mudou();
+  };
+
+  const abrirPainel = () => abrirPainelDaMaquete(painel, camadas, desligadas, modoSombra, (k) => {
+    modoSombra = k;
+    ligarSombra(k !== 'nenhuma');
+    if (k === 'sol') apontarLuz(solDaObra);
+    mudou();
+  }, aplicar);
+  const fechar = () => {
+    if (fechado) return;
+    fechado = true;
+    cancelAnimationFrame(quadro);
+    window.removeEventListener('deviceorientation', aoGirar);
+    window.removeEventListener('resize', ajustarTela);
+    parar();
+    for (const s of situacoes) maquete.remove(s.grupo);
+    if (piso) maquete.remove(piso);
+    if (cotas) maquete.remove(cotas);
+    ambiente.dispose(); renderer.dispose(); raiz.remove();
+    if (aoSair) aoSair();
+  };
+  sobre.addEventListener('click', async (e) => {
+    const k = e.target.dataset && e.target.dataset.ra;
+    if (k === 'maior' || k === 'menor') { tamanho *= k === 'maior' ? 1.25 : 0.8; maquete.scale.setScalar(tamanho); mostrarEscala(); mudou(); }
+    else if (k === 'inteira' && maquete.visible) { tamanho = tamanhoQueCabe(); maquete.scale.setScalar(tamanho); mostrarEscala(); mudou(); }
+    else if (k === 'girar') { maquete.rotation.y += Math.PI / 12; mudou(); }
+    else if (k === 'sair') fechar();
+    else if (k === 'camadas') { if (painel.hidden) abrirPainel(); else painel.hidden = true; }
+    else if (k === 'fechar-painel') painel.hidden = true;
+    else if (k === 'lente' && lentes.length > 1) {
+      const i = (lentes.indexOf(lente) + 1) % lentes.length;
+      try { await ligarLente(lentes[i]); dica.textContent = `Lente ${i + 1} de ${lentes.length}: ${lentes[i].rotulo}`; }
+      catch (err) { dica.textContent = 'Essa lente não abriu: ' + (err.message || err); }
+    } else if (k === 'lente') dica.textContent = 'O navegador mostra só esta câmera de trás';
+    else if (k === 'situacao') {
+      atual = (atual + 1) % situacoes.length;
+      situacoes.forEach((s, j) => { s.grupo.visible = j === atual; });
+      aplicar();
+      e.target.textContent = situacoes[atual].rotulo;
+    }
+  });
+
+  // os dedos (fora dos botões e do painel)
+  let gesto = null, arrasto = null;
+  const medida = (t) => [Math.hypot(t[1].clientX - t[0].clientX, t[1].clientY - t[0].clientY),
+                         Math.atan2(t[1].clientY - t[0].clientY, t[1].clientX - t[0].clientX), (t[0].clientY + t[1].clientY) / 2];
+  const nosControles = (e) => !!e.target.closest('.ra-barra, .ra-painel');
+  sobre.addEventListener('touchstart', (e) => {
+    if (nosControles(e)) return;
+    if (e.touches.length === 2) {
+      const [d, a, y] = medida(e.touches);
+      gesto = { d, a, y, tam: tamanho, rot: maquete.rotation.y, alt: plano.constant };
+      arrasto = null;
+    } else if (e.touches.length === 1 && maquete.visible) {
+      const t = e.touches[0], p = naMesa(t.clientX, t.clientY);
+      arrasto = p ? { dx: maquete.position.x - p.x, dz: maquete.position.z - p.z, x: t.clientX, y: t.clientY, andou: false } : null;
+    }
+  }, { passive: true });
+  sobre.addEventListener('touchmove', (e) => {
+    if (gesto && e.touches.length === 2) {
+      const [d, a, y] = medida(e.touches);
+      tamanho = Math.min(20, Math.max(0.1, gesto.tam * d / gesto.d));
+      maquete.scale.setScalar(tamanho);
+      maquete.rotation.y = gesto.rot - (a - gesto.a);
+      // juntos para cima: a mesa sobe (a maquete mais perto da altura do celular); a régua é a da imagem naquela distância
+      const dist = camera.position.distanceTo(maquete.position);
+      plano.constant = Math.max(0.02, gesto.alt + (y - gesto.y) / caixa.h * 2 * dist * Math.tan(camera.fov * Math.PI / 360));
+      maquete.position.y = -plano.constant;
+      mostrarEscala();
+    } else if (arrasto && e.touches.length === 1) {
+      const t = e.touches[0];
+      if (Math.hypot(t.clientX - arrasto.x, t.clientY - arrasto.y) > 8) arrasto.andou = true;
+      const p = naMesa(t.clientX, t.clientY);
+      if (p && arrasto.andou) { maquete.position.x = p.x + arrasto.dx; maquete.position.z = p.z + arrasto.dz; }
+    }
+  }, { passive: true });
+  sobre.addEventListener('touchend', (e) => {
+    if (gesto && e.touches.length < 2) { gesto = null; mudou(); }
+    if (arrasto && !e.touches.length) {
+      if (!arrasto.andou) {                                    // um toque sem arrastar: a maquete vai para lá
+        const t = e.changedTouches[0], p = naMesa(t.clientX, t.clientY);
+        if (p) { maquete.position.x = p.x; maquete.position.z = p.z; }
+      }
+      arrasto = null; mudou();
+    }
+  });
+
+  // a primeira vez: espera o giroscópio dizer para onde o celular olha (ou 0,8 s sem ele) e põe a maquete na mesa
+  const inicio = performance.now();
+  const ultimaLuz = new THREE.Vector3(), pCam = new THREE.Vector3();
+  const desenhar = () => {
+    if (fechado) return;
+    quadro = requestAnimationFrame(desenhar);
+    if (!maquete.visible && (giroscopio || performance.now() - inicio > 800) && video.videoWidth) por();
+    if (modoSombra === 'camera' && maquete.visible) {
+      pCam.copy(camera.position); maquete.worldToLocal(pCam);
+      pCam.y = Math.max(pCam.y, 0.25 * Math.hypot(pCam.x, pCam.z));
+      pCam.normalize();
+      if (ultimaLuz.lengthSq() === 0 || pCam.angleTo(ultimaLuz) > 0.035) { apontarLuz(pCam); ultimaLuz.copy(pCam); mudou(); }
+    }
+    renderer.render(cena, camera);
+  };
+  desenhar();
+  window.ultimaGrandeAngular = { lentes: () => lentes, lente: () => lente, maquete, camera, caixa, fechar };
 }
 
 const _esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

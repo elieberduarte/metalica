@@ -432,6 +432,69 @@ try:
     ok(esperar(ap, "document.querySelector('#ra-sobre .ra-giro').dataset.giro === '0'", 3), "em pé de novo: os botões voltam")
     ap.avaliar("document.getElementById('ra-sobre').remove(); 1")
 
+    # a câmera grande angular (26/10, S25 Ultra: o WebXR só abre a lente principal): as câmeras como o Chrome dos Galaxy
+    # lista (a da frente e duas de trás, "camera2 2" a grande angular), a imagem de um canvas e o giroscópio simulados
+    ap.avaliar("""(() => { const c = document.createElement('canvas'); c.width = 480; c.height = 640; const g = c.getContext('2d');
+      window._pintar = setInterval(() => { g.fillStyle = '#5a7a4a'; g.fillRect(0, 0, 480, 640); }, 100);
+      window._cams = [{ kind: 'videoinput', deviceId: 'f', label: 'camera2 1, facing front' },
+                      { kind: 'videoinput', deviceId: 'a', label: 'camera2 0, facing back' },
+                      { kind: 'videoinput', deviceId: 'b', label: 'camera2 2, facing back' }];
+      window._pedidos = []; try { localStorage.removeItem('metalica-maquete-lente'); } catch (e) {}
+      Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
+        getUserMedia: async (q) => { window._pedidos.push(JSON.stringify(q.video)); return c.captureStream(10); },
+        enumerateDevices: async () => window._cams } }); return 1; })()""")
+    ordem = json.loads(ap.avaliar("""(async () => { const M = await import('./maquete.js');
+      return JSON.stringify([M.ordenarLentes(window._cams, null, '', null).map(o => o.id + ':' + o.tipo),
+                             M.ordenarLentes(window._cams, 0.6, 'a', null).map(o => o.id + ':' + (o.zoom || '')),
+                             M.ordenarLentes(window._cams, null, '', 'a|').map(o => o.id),
+                             Math.round(M.anguloVertical('larga', 480, 640)), Math.round(M.anguloVertical('larga', 640, 480))]); })()""") or "[]")
+    ok(ordem == [["b:larga", "a:principal"], ["a:0.6", "b:", "a:"], ["a", "b"], 106, 90],
+       f"as lentes: a camera2 2 de trás primeiro, o zoom 0,6× quando a câmera tem, a guardada antes de todas; o ângulo ({ordem})")
+    ap.avaliar("window.ultimaMaquete = null")
+    tocar(ap, "[data-f=maquete]")
+    ok(esperar(ap, "!!document.querySelector('#ra-acoes [data-ra=grande-angular]')", 60), "a folha da maquete tem a Câmera 0,6×")
+    tocar(ap, "#ra-acoes [data-ra=grande-angular]")
+    ok(esperar(ap, "!!document.getElementById('ga-camera') && !!window.ultimaGrandeAngular && window.ultimaGrandeAngular.maquete.visible", 20),
+       "a câmera grande angular abre com a maquete por cima")
+    GA = "window.ultimaGrandeAngular"
+    ok(ap.avaliar(f"{GA}.lente().id") == "b" and abs(ap.avaliar(f"{GA}.camera.fov") - 106) < 1
+       and '"exact":"b"' in (ap.avaliar("window._pedidos[window._pedidos.length - 1]") or ""),
+       f"abriu a camera2 2 (a grande angular), com o ângulo dela ({ap.avaliar(f'{GA}.camera.fov'):.0f}°)")
+    caixa = json.loads(ap.avaliar(f"JSON.stringify({GA}.caixa)") or "{}")
+    ok(caixa.get("w", 0) >= 389 and caixa.get("h", 0) <= 844, f"a imagem inteira, sem cortar os lados ({caixa})")
+    DENTRO_GA = """(() => { const fora = []; for (const b of document.querySelectorAll('#ga-camera button, #ga-camera .ra-dica')) {
+      const r = b.getBoundingClientRect(); if (r.left < -1 || r.top < -1 || r.right > innerWidth + 1 || r.bottom > innerHeight + 1) fora.push(b.dataset.ra || b.className); }
+      return JSON.stringify(fora); })()"""
+    ok(json.loads(ap.avaliar(DENTRO_GA) or '["?"]') == [], "os botões dentro da tela")
+    # o texto de ajuda não cobre os botões de cima (a primeira versão, em 4 linhas, cobria Lente/Inteira/Camadas)
+    ok(ap.avaliar("""(() => { const d = document.querySelector('#ga-camera .ra-dica').getBoundingClientRect();
+      return [...document.querySelectorAll('#ga-camera .ra-barra-cima button')].every(b => b.getBoundingClientRect().top >= d.bottom - 1); })()"""),
+       "o texto de ajuda não cobre os botões de cima")
+    # o giroscópio: o celular de pé olhando para a frente (beta 90) põe a câmera na horizontal; inclinado (beta 50), olha
+    # para baixo — e um toque abaixo do meio leva a maquete para mais perto
+    ap.avaliar("window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { alpha: 0, beta: 90, gamma: 0 })); 1")
+    ap.drenar(0.3)
+    olhar = ap.avaliar(f"(() => {{ const d = {GA}.camera.getWorldDirection({GA}.camera.position.clone()); return [d.x, d.y, d.z]; }})()")
+    ok(olhar and abs(olhar[1]) < 0.05 and olhar[2] < -0.95, f"de pé, a câmera olha para a frente ({[round(v, 2) for v in olhar or []]})")
+    ap.avaliar("window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { alpha: 0, beta: 50, gamma: 0 })); 1")
+    ap.drenar(0.3)
+    antes = ap.avaliar(f"{GA}.maquete.position.toArray()")
+    x, y = caixa["x"] + caixa["w"] / 2, caixa["y"] + caixa["h"] * 0.8
+    ap.cmd("Input.dispatchTouchEvent", type="touchStart", touchPoints=[{"x": x, "y": y}])
+    ap.cmd("Input.dispatchTouchEvent", type="touchEnd", touchPoints=[])
+    ap.drenar(0.3)
+    depois = ap.avaliar(f"{GA}.maquete.position.toArray()")
+    ok(antes and depois and abs(depois[2]) < abs(antes[2]) - 0.05,
+       f"um toque abaixo do meio traz a maquete para mais perto (z {antes and round(antes[2], 2)} → {depois and round(depois[2], 2)} m)")
+    foto(ap, "celular_maquete_grande_angular.png")
+    ap.avaliar("document.querySelector('#ga-camera [data-ra=lente]').click()")
+    ok(esperar(ap, f"{GA}.lente().id === 'a' && Math.abs({GA}.camera.fov - 72) < 1", 5),       # o ângulo quando a imagem nova toca
+       f"Lente troca para a principal, com o ângulo dela ({ap.avaliar(f'{GA}.camera.fov'):.0f}°)")
+    ok(ap.avaliar("localStorage.getItem('metalica-maquete-lente')") == "a|", "e a lente escolhida fica guardada")
+    ap.avaliar("document.querySelector('#ga-camera [data-ra=sair]').click()")
+    ok(esperar(ap, "!document.getElementById('ga-camera')", 5), "Sair fecha a câmera e volta ao 3D")
+    ap.avaliar("clearInterval(window._pintar); 1")
+
     # a cobertura retrátil: as duas situações no mesmo quadro — a parte fixa no mesmo lugar, a parte móvel não
     ap.navegar(cel + "/celular/#/p/cobertura/modelo", limite=30)
     ok(esperar(ap, "document.getElementById('titulo') && document.getElementById('titulo').textContent === 'Cobertura retrátil' && " + ABERTO, 120),
