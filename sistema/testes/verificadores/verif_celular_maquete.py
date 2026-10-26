@@ -18,6 +18,9 @@ BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
+# a pasta de trabalho do celular só do teste (26/10: sem ela o servidor de teste usava a do dev — os pacotes, a
+# nuvem.json e os aparelhos de verdade — e o envio do dev à nuvem atrapalhava o teste)
+os.environ["METALICA_CELULAR_DIR"] = tempfile.mkdtemp(prefix="metalica_celular_teste_")
 from test_pacote_celular import _modelo
 from test_cobertura_movel import PAR, _modelo as _modelo_cobertura
 from nucleo3d import cobertura_movel as CM
@@ -461,7 +464,14 @@ try:
        and '"exact":"b"' in (ap.avaliar("window._pedidos[window._pedidos.length - 1]") or ""),
        f"abriu a camera2 2 (a grande angular), com o ângulo dela ({ap.avaliar(f'{GA}.camera.fov'):.0f}°)")
     caixa = json.loads(ap.avaliar(f"JSON.stringify({GA}.caixa)") or "{}")
-    ok(caixa.get("w", 0) >= 389 and caixa.get("h", 0) <= 844, f"a imagem inteira, sem cortar os lados ({caixa})")
+    ok(caixa.get("w", 0) >= 389 and caixa.get("h", 0) >= 843 and ap.avaliar("getComputedStyle(document.querySelector('#ga-camera video')).objectFit") == "cover",
+       f"a imagem enche a tela, sem as faixas pretas (26/10, o S25 deitado) ({caixa})")
+    # o S25 Ultra deitado (915 × 412) com a 0,6× em 16:9: de lado a lado os 106° da lente, em cima e embaixo o que sobra
+    deitado = json.loads(ap.avaliar("""(async () => { const M = await import('./maquete.js');
+      const fv = M.anguloVertical('larga', 1920, 1080), v = M.anguloNaTela(fv, 1920, 1080, 915, 412);
+      const lado = 2 * Math.atan(Math.tan(v * Math.PI / 360) * 915 / 412) * 180 / Math.PI;
+      return JSON.stringify([Math.round(v), Math.round(lado)]); })()""") or "[0,0]")
+    ok(deitado == [62, 106], f"deitado na tela do S25: 62° de altura e os 106° da lente de lado a lado ({deitado})")
     DENTRO_GA = """(() => { const fora = []; for (const b of document.querySelectorAll('#ga-camera button, #ga-camera .ra-dica')) {
       const r = b.getBoundingClientRect(); if (r.left < -1 || r.top < -1 || r.right > innerWidth + 1 || r.bottom > innerHeight + 1) fora.push(b.dataset.ra || b.className); }
       return JSON.stringify(fora); })()"""

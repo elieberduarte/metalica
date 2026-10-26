@@ -10,6 +10,9 @@ BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
+# a pasta de trabalho do celular só do teste (26/10: sem ela o servidor de teste usava a do dev — os pacotes, a
+# nuvem.json e os aparelhos de verdade — e o envio do dev à nuvem atrapalhava o teste)
+os.environ["METALICA_CELULAR_DIR"] = tempfile.mkdtemp(prefix="metalica_celular_teste_")
 from test_pacote_celular import _modelo
 
 # ------------------------------------------------------------------ a nuvem de mentira (as regras do Worker)

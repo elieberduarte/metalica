@@ -24,6 +24,9 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.abspath(os.path.join(AQUI, "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes")); sys.path.insert(0, AQUI)
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
+# a pasta de trabalho do celular só do teste (26/10: sem ela o servidor de teste usava a do dev — os pacotes, a
+# nuvem.json e os aparelhos de verdade — e o envio do dev à nuvem atrapalhava o teste)
+os.environ["METALICA_CELULAR_DIR"] = tempfile.mkdtemp(prefix="metalica_celular_teste_")
 from verif_camera_modelos import SITUACOES, preparar_dados, ADAPTADOR
 
 PX_PARADO = 4            # o ponto que deveria ficar parado (ou entre os dedos) na tela

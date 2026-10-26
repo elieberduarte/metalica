@@ -819,6 +819,13 @@ export function anguloVertical(tipo, w, h) {
   return (h >= w ? 2 * Math.atan(t) : 2 * Math.atan(t * h / w)) * 180 / Math.PI;
 }
 
+/** O ângulo vertical (graus) da tela `W` × `H` cheia com a imagem `vw` × `vh` (de ângulo vertical `fv`), cortada no que
+ *  passa da tela (object-fit: cover). */
+export function anguloNaTela(fv, vw, vh, W, H) {
+  const s = Math.max(W / vw, H / vh);                       // a imagem na tela: o lado que sobra é cortado
+  return 2 * Math.atan(Math.tan(fv * Math.PI / 360) * H / (vh * s)) * 180 / Math.PI;
+}
+
 /** As lentes de trás, a mais provável de ser a grande angular primeiro: o zoom abaixo de 1× da câmera "lógica" (o Chrome
  *  de alguns Samsung), o nome (ultra, wide, grande angular…), e senão a segunda câmera de trás (no Chrome dos Galaxy a
  *  "camera2 2" costuma ser a grande angular). A escolhida antes, guardada, vem primeiro. `faixas` = getUserMedia. */
@@ -851,7 +858,7 @@ export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null,
   raiz.style.cssText = 'position:fixed;inset:0;z-index:99;background:#000;overflow:hidden;touch-action:none';
   const video = document.createElement('video');
   video.playsInline = true; video.muted = true; video.autoplay = true;
-  video.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain';
+  video.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover';
   raiz.appendChild(video);
   document.body.appendChild(raiz);
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -883,17 +890,17 @@ export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null,
   const mostrarEscala = () => { rotEscala.textContent = '1:' + Math.round(escala / tamanho); };
   mostrarEscala();
 
-  // a imagem: contida na tela inteira (a grande angular inteira, sem cortar os lados), e o 3D exatamente por cima dela
+  // a imagem enche a tela, como o app de câmera (26/10, o usuário no S25 Ultra deitado: "ficou com essas bordas pretas nas
+  // laterais" — a imagem 4:3 contida numa tela de 19,5:9); a imagem vem em 16:9 e o pouco que sobra fica cortado em cima
+  // e embaixo; o 3D na tela inteira, com o ângulo só da parte da imagem que aparece
   const caixa = { x: 0, y: 0, w: 1, h: 1 };
   const ajustarTela = () => {
     const W = raiz.clientWidth, H = raiz.clientHeight, vw = video.videoWidth || W, vh = video.videoHeight || H;
-    const s = Math.min(W / vw, H / vh);
-    Object.assign(caixa, { w: Math.round(vw * s), h: Math.round(vh * s) });
-    caixa.x = Math.round((W - caixa.w) / 2); caixa.y = Math.round((H - caixa.h) / 2);
-    renderer.setSize(caixa.w, caixa.h);
-    Object.assign(renderer.domElement.style, { left: caixa.x + 'px', top: caixa.y + 'px' });
-    camera.aspect = caixa.w / caixa.h;
-    camera.fov = anguloVertical(lente ? lente.tipo : 'principal', vw, vh);
+    Object.assign(caixa, { x: 0, y: 0, w: W, h: H });
+    renderer.setSize(W, H);
+    Object.assign(renderer.domElement.style, { left: '0px', top: '0px' });
+    camera.aspect = W / H;
+    camera.fov = anguloNaTela(anguloVertical(lente ? lente.tipo : 'principal', vw, vh), vw, vh, W, H);
     camera.updateProjectionMatrix();
   };
   window.addEventListener('resize', ajustarTela);
@@ -903,7 +910,7 @@ export async function abrirGrandeAngular({ situacoes, piso = null, cotas = null,
   const ligarLente = async (o) => {
     parar();
     fluxo = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: o.id ? { exact: o.id } : undefined,
-      facingMode: o.id ? undefined : { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } } });
+      facingMode: o.id ? undefined : { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
     if (o.zoom) { try { await fluxo.getVideoTracks()[0].applyConstraints({ advanced: [{ zoom: o.zoom }] }); } catch (e) { /* sem zoom */ } }
     lente = o;
     video.srcObject = fluxo;
