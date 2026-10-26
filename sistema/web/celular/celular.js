@@ -626,20 +626,6 @@ async function abrirMaquete(v, ids, nome) {
         } catch (e) { abrirFolha(`<div class="ficha">${titulo}<p class="fraco">A câmera não abriu: ${esc(e.message || e)}</p></div>`); }
       };
       acoes.append(abrir);
-      // a lente grande angular (usuário, 26/10, S25 Ultra: o WebXR só abre a principal): presa ao giro do celular, não à mesa
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const larga = document.createElement('button');
-        larga.className = 'botao'; larga.textContent = 'Câmera 0,6×'; larga.dataset.ra = 'grande-angular';
-        larga.onclick = async () => {
-          fecharFolha();
-          try {
-            await M.abrirGrandeAngular({ situacoes: situacoes.map(s => ({ rotulo: s.rotulo, grupo: s.r.grupo })), piso, cotas, camadas, escala: r.escala,
-                                         sol: v._luz ? v._luz.uSol.value.toArray() : null,
-                                         aoSair: () => { maqueteAnterior.forEach(g => M.descartar(g)); maqueteAnterior = []; } });
-          } catch (e) { abrirFolha(`<div class="ficha">${titulo}<p class="fraco">A câmera não abriu: ${esc(e.message || e)}</p></div>`); }
-        };
-        acoes.append(larga);
-      }
     }
     acoes.append(fechar);
   } catch (e) {

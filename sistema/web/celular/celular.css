@@ -251,17 +251,6 @@ a.ra-abrir img { width: 1px; height: 1px; opacity: 0; }
 #ra-sobre .ra-giro[data-giro="90"] .ra-barra-cima, #ra-sobre .ra-giro[data-giro="-90"] .ra-barra-cima { top: 10px; left: auto; right: 12px; }
 #ra-sobre .ra-giro[data-giro="90"] .ra-painel, #ra-sobre .ra-giro[data-giro="-90"] .ra-painel { top: 72px; max-height: calc(100% - 156px); width: 250px; }
 #ra-sobre .ra-giro[data-giro="90"] .ra-barra:not(.ra-barra-cima), #ra-sobre .ra-giro[data-giro="-90"] .ra-barra:not(.ra-barra-cima) { bottom: 12px; }
-/* a câmera 0,6× (26/10, o usuário: "esses botões ficaram muito grandes, e poderia estar na lateral para não atrapalhar a
-   visualização"; "diminuir esses botões"): botões menores e mais transparentes, os de cima numa coluna do lado direito */
-#ga-camera #ra-sobre button { min-width: 40px; height: 38px; border-radius: 10px; font-size: 14px; padding: 0 10px;
-  background: rgba(10, 20, 40, .5); }
-#ga-camera #ra-sobre button[data-ra=sair] { background: rgba(31, 95, 191, .85); }
-#ga-camera #ra-sobre .ra-escala { min-width: 48px; font-size: 13px; padding: 4px 6px; background: rgba(10, 20, 40, .45); }
-#ga-camera #ra-sobre .ra-barra { gap: 6px; bottom: calc(env(safe-area-inset-bottom, 0px) + 10px); }
-#ga-camera #ra-sobre .ra-barra-cima { flex-direction: column; align-items: stretch; top: 50%; bottom: auto; left: auto;
-  right: calc(env(safe-area-inset-right, 0px) + 10px); transform: translateY(-50%); }
-#ga-camera #ra-sobre .ra-dica { font-size: 13px; padding: 6px 10px; left: 20%; right: 20%; }
-#ga-camera #ra-sobre .ra-painel { right: 92px; top: 10px; max-height: calc(100% - 70px); }
 
 /* a obra no terreno (20/10): a fonte da imagem do chão no canto do 3D (a Esri e a prefeitura pedem) */
 #terreno-fonte { position: absolute; left: 10px; bottom: 6px; max-width: 70%; font-size: 10px; line-height: 1.2;
