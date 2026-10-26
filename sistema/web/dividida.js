@@ -34,6 +34,7 @@ let camadasPlanta = {};
 // a caixa de cada planta no desenho ({planta: [[x0, y0], [x1, y1]]}): a escolha no 2D vai às peças daquela planta, com o
 // deslocamento dela (26/10, Edifício Administrativo da Hora Certa: 4 pavimentos, cada um numa planta do Original)
 let regioesPlanta = {};
+let elevacoesPlanta = [];    // os cortes do desenho, cada um na linha do modelo dele (26/10, os pórticos do Galpão Novo)
 let desenhoDaPlanta = '';    // o desenho de onde a montagem leu a planta
 let trelicas = [];           // [{nome, caixa_desenho}] da tela Treliças lidas
 let avisoTimer = null;
@@ -163,6 +164,16 @@ function doTresD(m) {
       para2d({ metalica: 'enquadrar2d', caixa: t.caixa_desenho, margem: 0.06, dica: `Elevação ${t.nome}, como o projeto desenha.` });
       return;
     }
+    // o corte do pórtico onde a peça está (pela linha dele no modelo): o 2D vai ao trecho dela no corte
+    const el = m.caixa ? elevacaoDaCaixa(m.caixa) : null;
+    if (el) {
+      const us = cantos(m.caixa).map(p => uDaElevacao(el, p));
+      const u0 = Math.min(...us), u1 = Math.max(...us), um = (u0 + u1) / 2, w = Math.max(u1 - u0, 3000);
+      const [[, v0], [, v1]] = el.caixa_desenho;
+      para2d({ metalica: 'enquadrar2d', caixa: [[um - w / 2, v0], [um + w / 2, v1]], margem: 0.1,
+               dica: (m.nomes || []).length === 1 ? `${m.nomes[0]} no ${el.nome}.` : `${m.n} peça(s) do 3D no ${el.nome}.` });
+      return;
+    }
     if (m.nomes && m.nomes.length > 1) avisar('Várias treliças escolhidas: o 2D mostra a elevação quando o 3D tem uma só.');
     else if (!(m.nomes || []).length) avisar('Essa peça não veio de uma elevação: o 2D mostra o lugar dela na planta.', 4000);
   }
@@ -229,9 +240,41 @@ function aoDesenho(p, f) {
   const c = Math.cos(t.g), s = Math.sin(t.g);
   return [x * c + y * s, -x * s + y * c];
 }
+function cantos(cx) { return [[cx[0][0], cx[0][1]], [cx[1][0], cx[0][1]], [cx[0][0], cx[1][1]], [cx[1][0], cx[1][1]]]; }
 /** a caixa [[x0, y0], [x1, y1]] levada por fn: a caixa dos 4 cantos (a planta girada troca largura e altura) */
 function caixaDe(cx, fn) {
-  const ps = [[cx[0][0], cx[0][1]], [cx[1][0], cx[0][1]], [cx[0][0], cx[1][1]], [cx[1][0], cx[1][1]]].map(fn);
+  const ps = cantos(cx).map(fn);
+  const xs = ps.map(p => p[0]), ys = ps.map(p => p[1]);
+  return [[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]];
+}
+
+/** Os cortes (26/10, Galpão Novo da Hora Certa: um corte por pórtico, AA…QQ): planta_modelo.elevacoes =
+ *  [{nome, caixa_desenho, u0, origem: [x, y], direcao: [dx, dy], faixa}] — o corte é a linha do modelo que passa por
+ *  `origem` na `direcao`; no desenho ela começa em x = u0 e cresce para a direita, em tamanho real. A peça está no corte
+ *  quando o meio dela fica a até `faixa` mm da linha. */
+function direcaoDe(el) {
+  const n = Math.hypot(el.direcao[0], el.direcao[1]) || 1;
+  return [el.direcao[0] / n, el.direcao[1] / n];
+}
+function uDaElevacao(el, p) {
+  const d = direcaoDe(el);
+  return Number(el.u0) + (p[0] - el.origem[0]) * d[0] + (p[1] - el.origem[1]) * d[1];
+}
+function elevacaoDaCaixa(cx) {
+  const c = [(cx[0][0] + cx[1][0]) / 2, (cx[0][1] + cx[1][1]) / 2];
+  let melhor = null, d0 = Infinity;
+  for (const el of elevacoesPlanta) {
+    const d = direcaoDe(el);
+    const dist = Math.abs(-(c[0] - el.origem[0]) * d[1] + (c[1] - el.origem[1]) * d[0]);
+    if (dist <= (Number(el.faixa) || 1000) && dist < d0) { melhor = el; d0 = dist; }
+  }
+  return melhor;
+}
+/** o trecho [u0, u1] do corte, no modelo: a faixa em volta da linha */
+function caixaDaElevacao(el, ua, ub) {
+  const d = direcaoDe(el), n = [-d[1], d[0]], f = Number(el.faixa) || 1000;
+  const ponto = (u) => [el.origem[0] + (u - el.u0) * d[0], el.origem[1] + (u - el.u0) * d[1]];
+  const ps = [ponto(ua), ponto(ub)].flatMap(p => [[p[0] + n[0] * f, p[1] + n[1] * f], [p[0] - n[0] * f, p[1] - n[1] * f]]);
   const xs = ps.map(p => p[0]), ys = ps.map(p => p[1]);
   return [[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]];
 }
@@ -253,6 +296,12 @@ function doDoisD(m) {
   // a peça do detalhamento pela marca (ou, na localização, a própria peça): vale no projeto do IFC, que
   // não tem a ligação pela planta (pedido do usuário, 29/09)
   if (m.alvo) { para3d({ metalica: 'selecionar3d', destacar: m.alvo }); return; }
+  // dentro do quadro de um corte: as peças do trecho escolhido, na linha do pórtico (26/10)
+  const el = elevacoesPlanta.find(x => dentro(x.caixa_desenho, meio));
+  if (el) {
+    para3d({ metalica: 'selecionar3d', caixa: caixaDaElevacao(el, m.caixa[0][0], m.caixa[1][0]) });
+    return;
+  }
   if (!desl) {
     // cota, texto ou traço sem peça: no projeto do IFC não há a ligação pela planta — avisa uma vez só
     if (!avisouSemLigacao) avisar('Essa seleção não é de uma peça do modelo (cota, texto ou desenho à mão): o 3D fica como está.', 5000);
@@ -396,6 +445,8 @@ async function iniciar() {
   fontesPlanta = (pm.fontes && typeof pm.fontes === 'object') ? pm.fontes : {};
   camadasPlanta = (pm.camadas && typeof pm.camadas === 'object') ? pm.camadas : {};
   regioesPlanta = (pm.regioes && typeof pm.regioes === 'object') ? pm.regioes : {};
+  elevacoesPlanta = (Array.isArray(pm.elevacoes) ? pm.elevacoes : [])
+    .filter(e => e && Array.isArray(e.caixa_desenho) && Array.isArray(e.origem) && Array.isArray(e.direcao) && isFinite(Number(e.u0)));
   desenhoDaPlanta = pm.desenho || '';
   // o detalhamento completo (tudo num desenho só) primeiro na lista, e é nele que o 2D abre quando o
   // endereço não pede outro desenho

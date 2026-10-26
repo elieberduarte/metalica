@@ -27,7 +27,11 @@ json.dump({"formato": 1, "nome": "Posto dividido", "tipo": "desenho", "cliente":
                              # a caixa de cada planta no desenho (26/10, Edifício Administrativo da Hora Certa: 4 pavimentos,
                              # cada um numa planta): a escolha no 2D vai às peças daquela planta, com o deslocamento dela
                              "regioes": {"PLANTA NO NÍVEL 3,17m": [[139000.0, 49000.0], [150000.0, 58000.0]],
-                                         "COBERTURA G1": [[195000.0, 40000.0], [215000.0, 60000.0]]}}},
+                                         "COBERTURA G1": [[195000.0, 40000.0], [215000.0, 60000.0]]},
+                             # o corte do pórtico (26/10, Galpão Novo: um corte por linha A…Q): a linha y = 30000 do
+                             # modelo, desenhada a partir de x = 400000, crescendo para a direita
+                             "elevacoes": [{"nome": "CORTE XX", "caixa_desenho": [[399000.0, 100000.0], [430000.0, 115000.0]],
+                                            "u0": 400000.0, "origem": [0.0, 30000.0], "direcao": [1.0, 0.0], "faixa": 1000.0}]}},
           open(os.path.join(PASTA, "projeto.json"), "w", encoding="utf-8"))
 ents = []
 
@@ -52,6 +56,8 @@ linha(902, (104300.0, 10000.0), (104300.0, 16000.0), "1-Terça Eixo")
 linha(903, (141000.0, 53000.0), (147000.0, 53000.0), "Mezanino")
 # a planta girada da cobertura G1: a terça de (1000; 20000) a (1000; 26000) no modelo, deitada no desenho
 linha(904, (205000.0, 45000.0), (199000.0, 45000.0), "Cobertura G1")
+# o pilar do corte XX: em x = 20000 da linha, de pé no desenho
+linha(905, (420000.0, 101000.0), (420000.0, 112000.0), "Corte")
 ents.append({"id": "t1", "tipo": "texto", "camada": "REG", "posicao": [100000.0, 19500.0], "texto": "TESOURA 1 - 2X",
              "altura": 10.0, "angulo": 0, "alinhamento": "esquerda", "vertical": "base"})
 json.dump({"nome": "desenho", "unidade": "mm", "escala": 20, "camadas": {}, "entidades": ents, "vistas": [], "metadados": {}},
@@ -84,7 +90,11 @@ g_ = Barra(nome="Ue 250×85×25×2,00", inicio=(1000.0, 20000.0, 9000.0), fim=(1
            papel="terça", camada="Terças G1")
 g_.atributos = {"origem": {"fonte_2d": "COBERTURA G1"}}
 doc.add(g_)
-ID_TERCA, ID_VIGA_MEZ, ID_TERCA_G1 = t_.id, v_.id, g_.id
+p_ = Barra(nome="W 530×66,0", inicio=(20000.0, 30000.0, 0.0), fim=(20000.0, 30000.0, 10000.0), perfil="W 530×66,0", papel="pilar",
+           camada="Pilares")
+p_.atributos = {"origem": {}}
+doc.add(p_)
+ID_TERCA, ID_VIGA_MEZ, ID_TERCA_G1, ID_PILAR_XX = t_.id, v_.id, g_.id, p_.id
 json.dump(doc.dict(), open(os.path.join(PASTA, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
 # o detalhamento do projeto do IFC (sem ligação pela planta): a célula da posição P2 e a peça no lugar,
 # na localização, com a origem dela no 3D — longe da planta e da elevação
@@ -128,10 +138,10 @@ try:
     aba.navegar(base + "/"); aba.console.clear()
     aba.navegar(base + "/dividida?projeto=posto&editar=1", limite=60)      # o editor (sem &editar=1 o 3D abre no modo ver)
     t0 = time.time()
-    while time.time() - t0 < 90 and not aba.avaliar(f"!!({F2}.cad && {F3}.editor && {F3}.editor.documento && {F3}.editor.documento.entidades.size === 7)"):
+    while time.time() - t0 < 90 and not aba.avaliar(f"!!({F2}.cad && {F3}.editor && {F3}.editor.documento && {F3}.editor.documento.entidades.size === 8)"):
         aba.drenar(0.5)
     aba.drenar(1.5)
-    ok(aba.avaliar(f"!!{F2}.cad") and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 7, "os dois lados abrem: o desenho e o modelo do projeto")
+    ok(aba.avaliar(f"!!{F2}.cad") and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 8, "os dois lados abrem: o desenho e o modelo do projeto")
     ok("Posto dividido" in (aba.avaliar("document.title") or ""), "o nome do projeto no título da janela")
     t0 = time.time()
     while time.time() - t0 < 10 and not aba.avaliar(f"!!{F3}.document.querySelector('.seletor-vista a.ativo')"): aba.drenar(0.3)
@@ -209,6 +219,19 @@ try:
     aba.drenar(1.0)
     reg = aba.avaliar(f"{F2}.cad.tela.regiao")
     ok(reg == CAIXA_EL, f"modo a elevação: o 2D vai para a moldura da elevação da treliça ({reg})")
+    # o corte do pórtico (26/10, Galpão Novo): o pilar na linha do corte → o trecho dele no corte; e de volta
+    aba.avaliar(f"(() => {{ const e = {F3}.editor; e.selecao.definir([]); e.selecao.definir(['{ID_PILAR_XX}']); return 1; }})()")
+    aba.drenar(1.0)
+    reg = aba.avaliar(f"{F2}.cad.tela.regiao") or []
+    ok(bool(reg) and reg[0][0] <= 420000 <= reg[1][0] and reg[1][0] - reg[0][0] < 8000 and reg[0][1] >= 99999 and reg[1][1] <= 115001,
+       f"modo a elevação: o pilar na linha do corte leva o 2D ao trecho dele no CORTE XX ({reg})")
+    aba.avaliar(f"{F2}.cad.selecionar(['l905']); 1")
+    aba.drenar(1.0)
+    sel = sorted(aba.avaliar(f"[...{F3}.editor.selecao.ids]") or [])
+    ok(sel == [ID_PILAR_XX], f"2D → 3D: a linha do pilar no corte seleciona o pilar na linha do pórtico ({sel})")
+    aba.avaliar(f"""(() => {{ const e = {F3}.editor; const ids = [...e.documento.entidades.values()].filter(x => ((x.atributos || {{}}).origem || {{}}).peca === 'TESOURA 1#2').map(x => x.id);
+        e.selecao.definir([]); e.selecao.definir(ids); return ids.length; }})()""")
+    aba.drenar(1.0)
     # 2D → 3D, elevação: uma linha da elevação seleciona o bloco todo (as duas cópias)
     aba.avaliar(f"{F2}.cad.selecionar(['l6']); 1")
     aba.drenar(1.0)
@@ -271,7 +294,7 @@ try:
        and aba.avaliar("getComputedStyle(document.querySelector('#lado-2d')).display") != "none"
        and "vista=2d" in (aba.avaliar("location.search") or ""), "a vista 2D mostra só o desenho (e a URL diz a vista)")
     aba.avaliar(f"{F2}.document.querySelector('.seletor-vista a[data-vista-area=\"3d\"]').click(); 1"); aba.drenar(0.5)
-    ok(aba.avaliar(f"{F3}.__marca") == "mesmo" and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 7,
+    ok(aba.avaliar(f"{F3}.__marca") == "mesmo" and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 8,
        "voltar ao 3D não recarrega o modelo (o mesmo 3D, montado uma vez)")
     ok(aba.avaliar(f"{F2}.document.querySelector('.ligacao-vistas').hidden") is True,
        "fora do 2D + 3D, os controles da seleção somem")
