@@ -281,6 +281,24 @@ def test_cada_peca_sabe_de_qual_planta_veio_e_o_deslocamento_dela():
 
 
 
+def test_contravento_em_cantoneira_da_planta_principal_tem_a_planta_no_vinculo():
+    """GER-04 (27/10/2026, Posto V2 na 14ª remontagem): os 46 CV L 1½" da PLANTA NO NÍVEL 6,00m gravavam fonte_2d = o
+    título da planta principal, que não está em deslocamentos_2d (ela é "planta"): o vínculo 2D↔3D não achava as peças.
+    Toda peça montada tem a planta dela em deslocamentos_2d"""
+    ang = math.degrees(math.atan2(6000.0, 4500.0))
+    cv = [linha((0.0, 0.0), (4500.0, 6000.0)), linha((0.0, 6000.0), (4500.0, 0.0)),
+          texto((2300.0, 3150.0), 'CV. L 1.1/2"X1/8"', angulo=ang), texto((2300.0, 2850.0), 'CV. L1.1/2"X1/8"', angulo=180.0 - ang)]
+    ents = planta() + cv + locacao() + plantas_das_tercas() + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
+    ents += elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
+    r = de_planta.montar(ents, {"nivel": 6000.0, "origem": False})
+    d2 = r["resumo"]["deslocamentos_2d"]
+    fonte = lambda b: (b.atributos or {}).get("origem", {}).get("fonte_2d")
+    cvs = [b for b in r["doc"].barras if (b.atributos or {}).get("origem", {}).get("contravento") == "cantoneira"]
+    assert cvs and {fonte(b) for b in cvs} == {"planta"}
+    assert not {fonte(b) for b in r["doc"].barras if fonte(b)} - set(d2)
+
+
+
 def test_pilar_so_sobe_ate_a_outra_planta_que_o_desenha():
     """a viga da outra planta (a base da caixa d'água, 8,20) passando por cima de um pilar não o leva até ela: só se a
     planta desenha o pilar ali (a seção ou o nome). No Posto V2 os PM5 da escada e os PM3 da fila F subiam até 8,20 e

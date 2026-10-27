@@ -6221,7 +6221,9 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         apo_cv = [e for e in pc_cv if e.tipo == "barra" and e.papel in ("banzo", "viga")]
         feitas_cv, av_cv = contraventos_em_cantoneira(txt_cv, segs_cv, apo_cv, nivel_cv, d_cv)
         avisos += ["%s: %s" % (titulo_cv, a_) for a_ in av_cv]
-        fonte_2d[0] = titulo_cv
+        # a planta de cada peça tem de estar em deslocamentos_2d (o vínculo 2D↔3D, GER-04): a principal é "planta", as
+        # outras pelo título (27/10: os 46 CV do 6,00 do Posto gravavam o título da principal e o vínculo não os achava)
+        fonte_2d[0] = "planta" if ents_cv is None else titulo_cv
         for f in feitas_cv:
             b = barra(f["inicio"], f["fim"], f["perfil"], "contraventamento", "Contraventamento", None, f["rotacao"],
                       dict({"planta": titulo_cv, "contravento": "cantoneira"},
@@ -6236,7 +6238,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         feitas_v, av_v = contraventos_nas_vistas(ents, eixos_da_planta(ents, caixa_p), pil_v)
         avisos += av_v
         for f in feitas_v:
-            fonte_2d[0] = f["vista"]
+            # a vista é de elevação (não tem deslocamento em planta): no vínculo o X fica na linha dos pilares, na locação
+            fonte_2d[0] = "locacao" if "locacao" in deslocamentos_2d else "planta"
             if barra(f["inicio"], f["fim"], f["perfil"], "contraventamento", "Contraventamento", None, f["rotacao"],
                      {"planta": f["vista"], "contravento": "cantoneira", "vertical": True}) is not None:
                 cv_l["pecas"] += 1

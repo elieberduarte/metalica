@@ -25,10 +25,11 @@ altura é de papel, então ela é dividida pela escala do desenho de destino.
 import collections
 import math
 import re
+from dataclasses import replace as dc_replace
 from typing import Dict, List, Optional, Tuple
 
 from nucleo.base import ErroDeDados
-from nucleo2d.desenho import Desenho, Linha, Polilinha, Circulo, Arco, Texto, Hachura, Camada2D
+from nucleo2d.desenho import Desenho, Linha, Polilinha, Circulo, Arco, Texto, Hachura, Camada2D, novo_id
 
 __all__ = ["ler_dxf", "para_desenho", "mtext_linhas", "mtext_limpo", "FATOR_UNIDADE"]
 
@@ -36,7 +37,7 @@ Ponto2 = Tuple[float, float]
 
 TIPOS = {"LINE", "ARC", "CIRCLE", "LWPOLYLINE", "POLYLINE", "VERTEX", "SEQEND", "TEXT", "MTEXT",
          "INSERT", "ATTRIB", "DIMENSION", "HATCH", "LEADER", "POINT", "ELLIPSE", "SOLID", "SPLINE",
-         "WIPEOUT", "MULTILEADER", "VIEWPORT", "ATTDEF", "3DFACE", "TRACE", "IMAGE", "XLINE", "RAY"}
+         "WIPEOUT", "MULTILEADER", "VIEWPORT", "ATTDEF", "3DFACE", "TRACE", "IMAGE", "XLINE", "RAY", "OLE2FRAME"}
 
 #: os que precisam da ordem dos códigos (o bulge e a largura são de cada vértice; a hachura, o spline, o multileader
 #: e o leader com as sobreposições do estilo de cota têm seções)
@@ -210,10 +211,17 @@ def ler_dxf(texto: str) -> dict:
             elif cod == 62:
                 try:
                     ent["cor"] = abs(int(val))
+                    ent["desligada"] = int(val) < 0
                 except ValueError:
                     pass
             elif cod == 6:
                 ent["tipo_linha"] = val
+            elif cod == 5:
+                ent["handle"] = val.strip().upper()           # a janela do papel congela camadas pelo handle (341)
+            elif cod == 70:
+                ent["congelada"] = bool(int(_f(val)) & 1)
+            elif cod == 290:
+                ent["plota"] = int(_f(val, 1)) != 0
             continue
         if ent["tipo"] == "DIMSTYLE":
             try:
@@ -600,6 +608,20 @@ def _preparar(lista, estilos_cota=None):
             e["ratio"] = _num(e, 40, 1)
             e["t0"] = _num(e, 41, 0)
             e["t1"] = _num(e, 42, 2 * math.pi)
+        elif t == "VIEWPORT":
+            # a janela do espaço do papel: o retângulo dela no papel e o pedaço do modelo que ela mostra (folhas_papel)
+            e["c"] = (_num(e, 10), _num(e, 20))
+            e["w"], e["h"] = _num(e, 40), _num(e, 41)
+            e["id"] = int(_num(e, 69, 0))
+            e["status"] = int(_num(e, 68, 1))
+            e["centro_vista"] = (_num(e, 12), _num(e, 22))
+            e["alvo"] = (_num(e, 17), _num(e, 27))
+            e["altura_vista"] = _num(e, 45)
+            e["giro"] = _num(e, 51) % 360.0                 # graus (a marquise da Hora Certa: 990 = 270)
+            e["congeladas"] = [h.strip().upper() for h in g.get(341, [])]
+        elif t == "OLE2FRAME":
+            # objeto colado de outro programa (a planilha do Excel): o DXF só traz o lugar dele
+            e["pts"] = [(_num(e, 10), _num(e, 20)), (_num(e, 11), _num(e, 21))]
         elif t in ("SOLID", "TRACE", "3DFACE"):
             p = [(_num(e, 10), _num(e, 20)), (_num(e, 11), _num(e, 21)),
                  (_num(e, 12), _num(e, 22)), (_num(e, 13), _num(e, 23))]
@@ -796,6 +818,12 @@ class _T:
         x, y = math.cos(r), math.sin(r)
         return math.degrees(math.atan2(self.c * x + self.d * y, self.a * x + self.b * y))
 
+    def depois(self, o: "_T") -> "_T":
+        """esta transformação aplicada depois de `o` (p → self(o(p))): a janela do papel por cima do bloco"""
+        return _T(self.a * o.a + self.b * o.c, self.a * o.b + self.b * o.d,
+                  self.c * o.a + self.d * o.c, self.c * o.b + self.d * o.d,
+                  self.a * o.tx + self.b * o.ty + self.tx, self.c * o.tx + self.d * o.ty + self.ty)
+
     def compor(self, ins_p, sx, sy, rot, base):
         cs, sn = math.cos(math.radians(rot)), math.sin(math.radians(rot))
         # local: q = R(rot)·S(sx, sy)·(p − base) + ins_p
@@ -807,7 +835,9 @@ class _T:
                   self.a * ltx + self.b * lty + self.tx, self.c * ltx + self.d * lty + self.ty)
 
 
-def _achatar(dxf: dict, so_modelo: bool = True):
+def _achatar(dxf: dict, so_modelo: bool = True, ents=None, T0=None):
+    """(objeto, transformação) de cada objeto desenhado, com os blocos abertos. `ents`: outra lista no lugar das
+    entidades do arquivo (as do espaço do papel); `T0`: a transformação de partida."""
     blocos = dxf["blocos"]
 
     def rec(ents, T, prof, camada_pai=None, cor_pai=None):
@@ -835,7 +865,7 @@ def _achatar(dxf: dict, so_modelo: bool = True):
                     yield from rec(b["ents"], T, prof + 1, e.get("camada") or camada_pai, e.get("cor") or cor_pai)
             else:
                 yield e, T
-    yield from rec(dxf["entidades"], _T(), 0)
+    yield from rec(dxf["entidades"] if ents is None else ents, T0 or _T(), 0)
 
 
 def _pontos_do_arco(c, r, a0, a1, passo=5.0):
@@ -879,18 +909,132 @@ def tipo_de_linha(nome: str) -> str:
     return "CONTINUOUS"
 
 
+# ------------------------------------------------------------ recorte pela janela do papel
+def _dentro(p, r) -> bool:
+    return r[0] - 1e-6 <= p[0] <= r[2] + 1e-6 and r[1] - 1e-6 <= p[1] <= r[3] + 1e-6
+
+
+def _recortar_segmento(p, q, r):
+    """o trecho de p a q dentro do retângulo r = (x0, y0, x1, y1) (Liang–Barsky), ou None"""
+    dx, dy = q[0] - p[0], q[1] - p[1]
+    t0, t1 = 0.0, 1.0
+    for pk, qk in ((-dx, p[0] - r[0]), (dx, r[2] - p[0]), (-dy, p[1] - r[1]), (dy, r[3] - p[1])):
+        if abs(pk) < 1e-12:
+            if qk < -1e-9:
+                return None
+            continue
+        t = qk / pk
+        if pk < 0:
+            t0 = max(t0, t)
+        else:
+            t1 = min(t1, t)
+        if t0 > t1 + 1e-12:
+            return None
+    return ((p[0] + t0 * dx, p[1] + t0 * dy), (p[0] + t1 * dx, p[1] + t1 * dy))
+
+
+def _recortar_trechos(vs, fechada, r) -> List[List[Ponto2]]:
+    """a polilinha cortada no retângulo: os trechos que ficam dentro, cada um uma polilinha aberta"""
+    seq = list(vs) + ([vs[0]] if fechada and len(vs) > 2 else [])
+    trechos: List[List[Ponto2]] = []
+    atual: List[Ponto2] = []
+    for p, q in zip(seq, seq[1:]):
+        s = _recortar_segmento(p, q, r)
+        if s is None:
+            if len(atual) > 1:
+                trechos.append(atual)
+            atual = []
+            continue
+        a, b = (round(s[0][0], 3), round(s[0][1], 3)), (round(s[1][0], 3), round(s[1][1], 3))
+        if atual and math.hypot(atual[-1][0] - a[0], atual[-1][1] - a[1]) < 1e-3:
+            atual.append(b)
+        else:
+            if len(atual) > 1:
+                trechos.append(atual)
+            atual = [a, b]
+    if len(atual) > 1:
+        trechos.append(atual)
+    return trechos
+
+
+def _recortar_poligono(vs, r) -> List[Ponto2]:
+    """o contorno fechado cortado no retângulo (Sutherland–Hodgman): a hachura não passa da janela"""
+    out = list(vs)
+    for k, lim, dentro_maior in ((0, r[0], True), (0, r[2], False), (1, r[1], True), (1, r[3], False)):
+        if not out:
+            break
+        ent, out = out, []
+        for i, q in enumerate(ent):
+            p = ent[i - 1]
+            pin = p[k] >= lim if dentro_maior else p[k] <= lim
+            qin = q[k] >= lim if dentro_maior else q[k] <= lim
+            if qin != pin:
+                t = (lim - p[k]) / ((q[k] - p[k]) or 1e-12)
+                out.append((round(p[0] + t * (q[0] - p[0]), 3), round(p[1] + t * (q[1] - p[1]), 3)))
+            if qin:
+                out.append(q)
+    return out if len(out) >= 3 else []
+
+
+def recortar(ent, r) -> list:
+    """O objeto do CAD cortado no retângulo r = (x0, y0, x1, y1) — o que a janela do papel mostra dele: inteiro, em
+    pedaços ou nada. O texto fica se o ponto dele está dentro (a folha do AutoCAD corta a letra; aqui ela fica inteira)."""
+    pts = ent.pontos()
+    if pts:
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        if min(xs) >= r[0] - 1e-6 and max(xs) <= r[2] + 1e-6 and min(ys) >= r[1] - 1e-6 and max(ys) <= r[3] + 1e-6:
+            return [ent]
+        if max(xs) < r[0] or min(xs) > r[2] or max(ys) < r[1] or min(ys) > r[3]:
+            return []
+    t = ent.tipo
+    if t == "texto":
+        return [ent] if _dentro(ent.posicao, r) else []
+    if t == "linha":
+        s = _recortar_segmento(ent.a, ent.b, r)
+        return [dc_replace(ent, id=novo_id(), a=s[0], b=s[1])] if s else []
+    if t == "hachura":
+        cts = [_recortar_poligono(ct, r) for ct in ent.contornos]
+        if not cts or not cts[0]:
+            return []
+        return [dc_replace(ent, id=novo_id(), contornos=[ct for ct in cts if ct])]
+    if t == "polilinha":
+        vs, fechada = ent.vertices, ent.fechada
+    elif t == "circulo":
+        vs, fechada = _pontos_do_arco(ent.centro, ent.raio, 0.0, 360.0)[:-1], True
+    elif t == "arco":
+        vs, fechada = _pontos_do_arco(ent.centro, ent.raio, ent.inicio, ent.fim), False
+    else:
+        return [ent] if not pts or any(_dentro(p, r) for p in pts) else []
+    out = []
+    for tr in _recortar_trechos(vs, fechada, r):
+        if len(tr) == 2:
+            out.append(Linha(camada=ent.camada, a=tr[0], b=tr[1], atributos=dict(ent.atributos),
+                             tipo_linha=ent.tipo_linha, espessura=ent.espessura))
+        else:
+            out.append(Polilinha(camada=ent.camada, vertices=tr, fechada=False, atributos=dict(ent.atributos),
+                                 tipo_linha=ent.tipo_linha, espessura=ent.espessura))
+    return out
+
+
 # ------------------------------------------------------------ desenho do CAD
 def para_desenho(texto: str, escala: float = 1.0, fator: Optional[float] = None,
                  destino: Optional[Desenho] = None, deslocamento: Ponto2 = (0.0, 0.0),
-                 prefixo_camada: str = "") -> Tuple[Desenho, dict]:
+                 prefixo_camada: str = "", dxf: Optional[dict] = None, pares=None,
+                 recorte: Optional[Tuple[float, float, float, float]] = None,
+                 atributos: Optional[dict] = None) -> Tuple[Desenho, dict]:
     """Converte o DXF em entidades do CAD, acrescentando a `destino` (ou a um desenho novo).
 
     `fator` é mm por unidade do arquivo (None: pelo $INSUNITS, senão 1). `escala` é a do
     desenho de destino, para a altura de texto virar mm de papel. Devolve (desenho,
-    resumo)."""
-    if not texto or "SECTION" not in texto[:20000]:
-        raise ErroDeDados("o arquivo não parece um DXF em texto (DXF binário e DWG não são lidos).")
-    dxf = ler_dxf(texto)
+    resumo).
+
+    Para as folhas do espaço do papel (`folhas_papel`): `dxf` já lido, `pares` [(objeto, transformação)] no lugar do
+    espaço do modelo, `recorte` (x0, y0, x1, y1) no desenho — o que passa da janela é cortado nela — e `atributos`
+    a mais em cada objeto."""
+    if dxf is None:
+        if not texto or "SECTION" not in texto[:20000]:
+            raise ErroDeDados("o arquivo não parece um DXF em texto (DXF binário e DWG não são lidos).")
+        dxf = ler_dxf(texto)
     if fator is None:
         fator = FATOR_UNIDADE.get(dxf["cabecalho"].get("insunits", 0)) or 1.0
     des = destino if destino is not None else Desenho(nome="DXF importado", escala=escala)
@@ -916,9 +1060,10 @@ def para_desenho(texto: str, escala: float = 1.0, fator: Optional[float] = None,
         return (round(q[0] * fator + dx, 3), round(q[1] * fator + dy, 3))
 
     def add(ent):
-        des.add(ent)
-        ids.append(ent.id)
-        contagem[ent.tipo] += 1
+        for ent in (recortar(ent, recorte) if recorte else (ent,)):
+            des.add(ent)
+            ids.append(ent.id)
+            contagem[ent.tipo] += 1
 
     def linha_ou_poli(cam, vs, fechada, atr):
         if fechada and len(vs) > 2 and math.hypot(vs[0][0] - vs[-1][0], vs[0][1] - vs[-1][1]) < 1e-6:
@@ -947,8 +1092,8 @@ def para_desenho(texto: str, escala: float = 1.0, fator: Optional[float] = None,
                           angulo=rot % 360, alinhamento=al, vertical=vert, atributos=a))
             desce += 5.0 / 3.0 * h * k
 
-    base_atr = {"origem": "dxf"}
-    for e, T in _achatar(dxf):
+    base_atr = dict({"origem": "dxf"}, **(atributos or {}))
+    for e, T in (_achatar(dxf) if pares is None else pares):
         t = e["tipo"]
         if t in ("POINT", "ATTDEF"):
             continue                       # pontos de definição das cotas: o AutoCAD também não mostra
