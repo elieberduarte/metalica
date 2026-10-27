@@ -103,9 +103,42 @@ def test_sol_da_cena(tmp_path):
     c = C.gravar(g, s, i, {"sol": {"ligado": True, "direcao": 400, "altura": 99}})
     assert c["sol"] == {"ligado": True, "direcao": 40.0, "altura": 85.0}
     assert C.gravar(g, s, i, {"sol": {"ligado": False, "direcao": 120, "altura": 20}})["sol"]["ligado"] is False
+    # 27/10 ("fazer as sombras 'interagir' com o chão da quadra"): a força da sombra no chão
+    assert C.gravar(g, s, i, {"sol": {"direcao": 120, "altura": 20, "chao": 1.7}})["sol"]["chao"] == 1.0
+    assert C.gravar(g, s, i, {"sol": {"direcao": 120, "altura": 20, "chao": 0.35}})["sol"]["chao"] == 0.35
+    with pytest.raises(C.ErroCena):
+        C.gravar(g, s, i, {"sol": {"direcao": 120, "altura": 20, "chao": "forte"}})
     for ruim in ({"sol": "alto"}, {"sol": {"direcao": 10}}, {"sol": {"ligado": "sim", "direcao": 1, "altura": 30}}):
         with pytest.raises(C.ErroCena):
             C.gravar(g, s, i, ruim)
+
+
+def test_gravacoes_ao_mesmo_tempo_nao_se_perdem(tmp_path):
+    """27/10 (verif_cena, a sombra no chão): a tela grava o sol, as camadas, a lente… cada um no seu tempo, e duas gravações
+    da mesma cena ao mesmo tempo usavam o mesmo .tmp — uma caía com erro 500, a outra lia o cena.json no meio da troca
+    ("cena desconhecida") ou gravava por cima do campo da outra."""
+    import threading
+    g, s = _gerente(tmp_path)
+    i = C.nova(g, s, _foto(tmp_path))["id"]
+    erros = []
+
+    campos = [lambda n: {"opacidade": 0.1 + 0.01 * n}, lambda n: {"nome": "Vista %d" % n},
+              lambda n: {"desligadas": ["camada:T%d" % n]}, lambda n: {"sol": {"direcao": n, "altura": 30}}]
+
+    def mexer(k):
+        for n in range(20):
+            try:
+                C.gravar(g, s, i, campos[k % 4](n))
+            except Exception as e:                       # noqa: BLE001 — qualquer erro conta
+                erros.append(repr(e))
+    fios = [threading.Thread(target=mexer, args=(k,)) for k in range(4)]
+    for f in fios:
+        f.start()
+    for f in fios:
+        f.join()
+    assert not erros, erros[:3]
+    c = C.ler(g, s, i)                                   # cada campo com o último valor dele: nenhum gravado por cima
+    assert (round(c["opacidade"], 3), c["nome"], c["desligadas"], c["sol"]["direcao"]) == (0.29, "Vista 19", ["camada:T19"], 19.0)
 
 
 def test_imagem_pronta_vai_para_a_pasta_cenas(tmp_path):

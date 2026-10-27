@@ -67,7 +67,7 @@ function texturaDaSeta() {
 
 // A sombra do sol (modo apresentação): a profundidade vista do sol, desenhada uma vez (a obra não se mexe) e refeita só
 // quando o que está à vista muda; 3 × 3 amostras para a borda sair macia. O piso usa a mesma.
-const SOMBRA_GLSL = /* glsl */`
+export const SOMBRA_GLSL = /* glsl */`
 uniform sampler2D tSombra;
 uniform mat4 uMatSombra;
 uniform float uTexel;

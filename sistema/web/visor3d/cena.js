@@ -11,7 +11,7 @@
 // foto) e o 3D (o modelo com o terreno, girando como no modo ver; o clique marca o ponto do modelo).
 
 import * as THREE from 'three';
-import { Visor3D } from './visor3d.js';
+import { Visor3D, SOMBRA_GLSL } from './visor3d.js';
 import { Terreno } from './terreno.js';
 import { encaixar } from './encaixe.js';
 import { SOL_PADRAO, definirSol, controlesDoSol, ligarControlesDoSol } from './sol.js';
@@ -73,7 +73,8 @@ async function abrir() {
   const { gruposDeSistema } = await import('./sistemas.js');
   sistemas = visor.fichas ? gruposDeSistema(visor) : [];
   visor.definirTema(escuro());
-  visor.ligarApresentacao(true, 2048);
+  visor.ligarApresentacao(true, 4096);                    // no PC: a sombra mais fina (o celular fica nos 2048)
+  visor._recorteSombra = recorteDaCena;
   terreno = new Terreno(visor, PROJETO, { abrirPainel: () => {}, corpo: () => null, situacao: aviso, palco,
                                           painelAtual: () => null, aoMudar: () => {}, chaveLigado: null });
   try { await terreno.carregar(); } catch (e) { /* sem o terreno: os pontos só nas peças */ }
@@ -201,6 +202,7 @@ function mostrarModo(m) {
     tela.style.opacity = String(cena.opacidade ?? 1);
     tela.style.visibility = cena.camera ? 'visible' : 'hidden';   // antes do encaixe, o 3D não tem onde ficar na foto
     visor.redimensionar();
+    atualizarChaoSombra();
     aplicarCamera();
   } else {
     const r = { x: 0, y: 0, w: palco.clientWidth, h: palco.clientHeight };
@@ -213,6 +215,7 @@ function mostrarModo(m) {
     tela.style.opacity = '1';
     tela.style.visibility = 'visible';
     visor.redimensionar();
+    atualizarChaoSombra();
     if (camera3d) {
       visor.camera.position.copy(camera3d.pos); visor.camera.quaternion.copy(camera3d.q); visor.camera.fov = camera3d.fov;
       visor.controles.target.copy(camera3d.alvo); visor.camera.updateProjectionMatrix();
@@ -234,8 +237,7 @@ function aplicarCamera() {
   visor.camera.far = Math.max(1e6, dist * 20);
   visor.camera.updateProjectionMatrix();
   visor.camera.updateMatrixWorld();
-  visor._sombraSuja = true;
-  visor.pedirQuadro();
+  visor.pedirQuadro();                       // a sombra não depende da câmera (recorteDaCena): não se refaz a cada quadro
   atualizarFaixas();
 }
 
@@ -284,23 +286,80 @@ async function gravar(campos) {
 // do modo ver e do celular (sol.js), gravados na cena — cada foto tem a hora dela
 
 let tempoSol = 0;
-function solDaCena() { return { ligado: true, ...SOL_PADRAO, ...((cena && cena.sol) || {}) }; }
+const CHAO_PADRAO = 0.5;
+function solDaCena() { return { ligado: true, ...SOL_PADRAO, chao: CHAO_PADRAO, ...((cena && cena.sol) || {}) }; }
 
 function mostrarSol() {
   const s = solDaCena();
   $('#sol').checked = s.ligado;
   $('#sol-caixa').hidden = !s.ligado;
   $('#sol-caixa').innerHTML = controlesDoSol(s) +
-    '<p class="dica">A direção gira o sol em volta da obra; a altura vai do nascer (baixo, sombras compridas) ao meio-dia (alto).</p>';
-  ligarControlesDoSol($('#sol-caixa'), s, (novo) => { lembrar('sol'); mudarSol({ ...novo, ligado: true }); });
+    `<label class="faixa">Sombra no chão <input type="range" id="sombra-chao" min="0" max="1" step="0.05" value="${s.chao}">
+      <span id="sombra-chao-val">${nf(s.chao * 100)} %</span></label>
+    <p class="dica">A direção gira o sol em volta da obra; a altura vai do nascer (baixo, sombras compridas) ao meio-dia (alto).
+      A sombra no chão cai no plano dos pontos do chão (a quadra); 0 % a desliga.</p>`;
+  // só a direção e a altura: o resto (a sombra no chão) pode ter mudado depois de os controles nascerem
+  ligarControlesDoSol($('#sol-caixa'), s, (novo) => { lembrar('sol'); mudarSol({ direcao: novo.direcao, altura: novo.altura, ligado: true }); });
+  $('#sombra-chao').oninput = () => {
+    lembrar('chao');
+    $('#sombra-chao-val').textContent = nf(+$('#sombra-chao').value * 100) + ' %';
+    mudarSol({ chao: +$('#sombra-chao').value });
+  };
   aplicarSol();
 }
 
 function aplicarSol() {
   const s = solDaCena();
-  visor.ligarApresentacao(s.ligado, 2048);
+  visor.ligarApresentacao(s.ligado, 4096);
   definirSol(visor, s);
+  atualizarChaoSombra();
   visor.pedirQuadro();
+}
+
+// ------------------------------------------------------------------ a sombra no chão da foto
+// (usuário, 27/10: "tem como fazer as sombras 'interagir' com o chão da quadra?"): um chão invisível no plano do chão da cena
+// (o mesmo dos pontos marcados no chão) que só escurece onde cai a sombra da estrutura — a foto aparece por baixo. Só na
+// vista da foto: no 3D o piso já recebe a sombra. Fica fora da raiz do modelo, então não faz sombra (_desenharSombra).
+
+let chaoSombra = null;
+
+function atualizarChaoSombra() {
+  if (!visor || !visor._luz) return;
+  if (!chaoSombra) {
+    chaoSombra = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
+      uniforms: { ...visor._luz, uForca: { value: CHAO_PADRAO } },
+      vertexShader: `varying vec3 vMundo;
+        void main() { vec4 m = modelMatrix * vec4(position, 1.0); vMundo = m.xyz; gl_Position = projectionMatrix * viewMatrix * m; }`,
+      fragmentShader: `varying vec3 vMundo;
+        uniform float uForca;
+        ${SOMBRA_GLSL}
+        void main() {
+          if (uTemSombra < 0.5) discard;
+          float a = (1.0 - luzDoSol(vMundo, vec3(0.0, 0.0, 1.0))) * uForca;
+          if (a < 0.004) discard;
+          gl_FragColor = vec4(0.0, 0.0, 0.0, a);
+        }`,
+      transparent: true, depthWrite: false }));
+    chaoSombra.raycast = () => {};
+    visor.cena.add(chaoSombra);
+  }
+  const cx = visor._caixaModelo, c = cx.getCenter(new THREE.Vector3()), lado = Math.max(cx.getSize(new THREE.Vector3()).length(), 10000) * 20;
+  chaoSombra.position.set(c.x, c.y, zDoChao());
+  chaoSombra.scale.set(lado, lado, 1);
+  const s = solDaCena();
+  chaoSombra.material.uniforms.uForca.value = s.chao;
+  chaoSombra.visible = modo === 'foto' && !!cena && s.ligado && s.chao > 0;
+  visor.pedirQuadro();
+}
+
+/** O recorte da sombra na cena: a obra inteira e o comprido da sombra do sol baixo (a do visor segue o alvo do girar,
+ *  que na vista da foto não anda, e cortava a sombra comprida no chão). */
+function recorteDaCena() {
+  const cx = visor.caixaVisivel(), z0 = zDoChao();
+  const raioObra = Math.max(cx.getSize(new THREE.Vector3()).length() / 2, 1000) * 1.15;
+  const alt = Math.max(solDaCena().altura, 8) * Math.PI / 180;
+  const raio = Math.min(raioObra + Math.max(cx.max.z - z0, 0) / Math.tan(alt), raioObra * 4);
+  return { c: cx.getCenter(new THREE.Vector3()).setZ(z0), raio, raioObra: raio };
 }
 
 function mudarSol(mud) {
@@ -418,11 +477,16 @@ function cancelar() {
 }
 
 /** O ponto do 3D sob o clique (mm do projeto): a peça, ou o chão da imagem do terreno (sem terreno, o pé do modelo). */
+/** O chão da cena (coordenadas do visor): o da imagem do terreno, ou o pé do modelo. Os pontos do chão e a sombra no chão. */
+function zDoChao() {
+  const o = visor.cabecalho.origem;
+  return terreno && Number.isFinite(terreno.zChao) && terreno.malha ? terreno.zChao - o[2] : visor._caixaModelo.min.z;
+}
+
 function pontoDo3d(x, y) {
   const achado = visor.pontoEm(x, y);
   if (achado) return achado.ponto;
-  const o = visor.cabecalho.origem;
-  const z = terreno && Number.isFinite(terreno.zChao) && terreno.malha ? terreno.zChao - o[2] : visor._caixaModelo.min.z;
+  const o = visor.cabecalho.origem, z = zDoChao();
   const ndc = new THREE.Vector2(x / tela.clientWidth * 2 - 1, -(y / tela.clientHeight) * 2 + 1);
   const raio = new THREE.Raycaster();
   visor.camera.updateMatrixWorld();

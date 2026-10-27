@@ -273,6 +273,24 @@ try:
        f"direção 90° e altura 20°: o sol do 3D vai para lá ({[round(x, 2) for x in sol1]})")
     ok(esperar(aba, "(cenaApi.estado().cena.sol || {}).direcao === 90 && cenaApi.estado().cena.sol.altura === 20", 5), "e fica gravado na cena")
 
+    # a sombra no chão da foto (27/10: "tem como fazer as sombras 'interagir' com o chão da quadra?"): o sol de +y a 20° deita
+    # a sombra dos pilares (6 m) uns 16 m para −y, pelo chão da quadra. Na foto, o pixel do chão na sombra do 1º pilar
+    # (x = 2150, y = 8000) fica escurecido; o do vão entre dois pilares (x = 4650), não; com 0 % a sombra some
+    PIXEL = """(() => { const v = window.visor, o = v.cabecalho.origem, r = v.renderer, gl = r.getContext();
+      v._sombraSuja = true; if (v.apresentacao) v._desenharSombra(); r.render(v.cena, v.camera);
+      const p = v.camera.position.clone().set(%s - o[0], %s - o[1], -o[2]).project(v.camera);
+      const px = new Uint8Array(9 * 5 * 4);                 // uma janela de 9 × 5 px em volta (a faixa do pilar tem ~7 px)
+      gl.readPixels(Math.round((p.x + 1) / 2 * gl.drawingBufferWidth) - 4, Math.round((p.y + 1) / 2 * gl.drawingBufferHeight) - 2, 9, 5, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      let m = 0; for (let i = 3; i < px.length; i += 4) m = Math.max(m, px[i]); return m; })()"""
+    aba.drenar(1.0)
+    na_sombra, fora = aba.avaliar(PIXEL % (2150, 8000)), aba.avaliar(PIXEL % (4650, 8000))
+    ok(na_sombra > 60 and fora == 0, f"a sombra do pilar cai no chão da foto (alfa {na_sombra} na sombra, {fora} fora dela)")
+    aba.avaliar("const sc = document.getElementById('sombra-chao'); sc.value = 0; sc.dispatchEvent(new Event('input')); 1")
+    ok(aba.avaliar(PIXEL % (2150, 8000)) == 0, "com a sombra no chão em 0 %, o chão da foto fica limpo")
+    aba.avaliar("const sc2 = document.getElementById('sombra-chao'); sc2.value = 0.5; sc2.dispatchEvent(new Event('input')); 1")
+    ok(esperar(aba, "(cenaApi.estado().cena.sol || {}).chao === 0.5 && cenaApi.estado().cena.sol.direcao === 90", 5),
+       "a força da sombra fica na cena, sem desfazer a direção do sol")
+
     # a cena pronta (27/10: "salvar cena após a conclusão, para não ficar aparecendo essas bolinhas na tela, caso seja
     # necessário editar ter um para editar cena, daí elas reaparecem"): Salvar cena tira as marcas e o encaixe do painel,
     # fica assim depois de recarregar, e Editar cena traz de volta

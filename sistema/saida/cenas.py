@@ -16,6 +16,7 @@ Rotas, penduradas nas do terreno (saida/local_obra.py, /api/projetos/<s>/terreno
 import json
 import os
 import re
+import threading
 import time
 import unicodedata
 from typing import Optional
@@ -59,6 +60,12 @@ def _id_valido(i: str) -> str:
     return i
 
 
+# as rotas rodam cada uma num fio: a tela grava o sol, as camadas, a lente… cada um no seu tempo, e duas gravações da
+# mesma cena juntas usavam o mesmo .tmp (uma caía com erro 500), liam o cena.json no meio da troca ("cena desconhecida")
+# ou gravavam uma por cima do campo da outra (27/10). Ler, mudar e gravar uma cena é uma coisa só.
+_TRAVA = threading.RLock()
+
+
 def _ler(caminho: str) -> Optional[dict]:
     try:
         with open(caminho, encoding="utf-8") as f:
@@ -88,7 +95,8 @@ def listar(g, s: str) -> dict:
 
 
 def ler(g, s: str, i: str) -> dict:
-    c = _ler(os.path.join(_pasta(g, s), _id_valido(i), "cena.json"))
+    with _TRAVA:
+        c = _ler(os.path.join(_pasta(g, s), _id_valido(i), "cena.json"))
     if not c:
         raise ErroCena("cena desconhecida: %s" % i)
     return c
@@ -154,6 +162,11 @@ def _numeros(v, n: int) -> list:
 
 def gravar(g, s: str, i: str, corpo: dict) -> dict:
     """Os pares, a câmera, a opacidade e o nome (o que vier)."""
+    with _TRAVA:
+        return _gravar_campos(g, s, i, corpo)
+
+
+def _gravar_campos(g, s: str, i: str, corpo: dict) -> dict:
     c = ler(g, s, i)
     if "nome" in corpo:
         c["nome"] = str(corpo["nome"] or c["nome"]).strip()[:80] or c["nome"]
@@ -199,6 +212,8 @@ def gravar(g, s: str, i: str, corpo: dict) -> dict:
             raise ErroCena("dados da cena inválidos.")
         direcao, altura = _numeros([sol.get("direcao"), sol.get("altura")], 2)
         c["sol"] = {"ligado": sol.get("ligado", True), "direcao": round(direcao % 360.0, 1), "altura": round(min(85.0, max(5.0, altura)), 1)}
+        if sol.get("chao") is not None:                     # a força da sombra no chão da foto (0 a 1)
+            c["sol"]["chao"] = round(min(1.0, max(0.0, _numeros([sol.get("chao")], 1)[0])), 2)
     # a cena pronta (usuário, 27/10: "salvar cena após a conclusão, para não ficar aparecendo essas bolinhas… caso seja
     # necessário editar ter um para editar cena, daí elas reaparecem"): a tela esconde os pontos e o encaixe
     if "concluida" in corpo:
@@ -229,6 +244,11 @@ def gravar_imagem(g, s: str, i: str, corpo: dict) -> dict:
 def apagar(g, s: str, i: str) -> dict:
     """A pasta da cena sai da lista na hora (renomeada para .lixo-…) e é removida; o que o Windows ainda prende (a foto aberta
     pelo OneDrive ou pelo navegador — 26/10, a Kaefer: o apagar parava no meio e a cena ficava pela metade) sai na próxima."""
+    with _TRAVA:
+        return _apagar(g, s, i)
+
+
+def _apagar(g, s: str, i: str) -> dict:
     import shutil
     dados = _pasta(g, s)
     pasta = os.path.join(dados, _id_valido(i))
