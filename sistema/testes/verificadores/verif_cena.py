@@ -442,6 +442,22 @@ try:
     tecla("z"); ok(esperar(aba, "(cenaApi.estado().cena.frente || []).length === 0", 5), "e de novo, o contorno")
     tecla("y"); tecla("y"); ok(esperar(aba, "(cenaApi.estado().cena.frente || []).length === 1 && cenaApi.estado().cena.frente[0].cobre === 1", 5),
                                "Ctrl+Y refaz os dois")
+    # a opacidade da frente sob medida (27/10: "preciso que tenha um controle do nível de opacidade do fundo/frente"): a
+    # faixa do contorno a 50 % — o pilar atrás sai meio pilar, meio foto; o tipo vira "Sob medida"; Ctrl+Z volta
+    aba.avaliar("(() => { const f = document.querySelector('#contornos input[data-cobre]'); f.value = 0.5; f.dispatchEvent(new Event('input', {bubbles: true}));"
+                " f.dispatchEvent(new Event('change', {bubbles: true})); })(); 1")
+    ok(esperar(aba, "cenaApi.estado().cena.frente[0].cobre === 0.5 && document.querySelector('#contornos select').value === ''"
+                    " && document.querySelector('#contornos label.faixa span').textContent.trim() === '50 %'", 5),
+       "a faixa da opacidade da frente: 50 %, o tipo \"Sob medida\"")
+    aba.drenar(0.8)
+    gravado = json.loads(urllib.request.urlopen(base + "/api/projetos/obra/terreno/cenas/foto-teste", timeout=30).read())
+    ok(gravado["frente"][0]["cobre"] == 0.5, "e fica gravada")
+    aba.avaliar("window.ultimaImagemCena = null; document.getElementById('salvar-imagem').click(); 1")
+    ok(esperar(aba, "!!window.ultimaImagemCena", 30), "Salvar imagem com a frente a 50 % responde")
+    meio = px_img(arq, PIL_BAIXO)
+    esperado = tuple((FUNDO[k] + antes_baixo[k]) / 2 for k in range(3))
+    ok(dist(meio, esperado) < 15, f"a 50 %, o pilar atrás da tela fica meio a meio com a foto ({meio} × {tuple(round(x) for x in esperado)})")
+    tecla("z"); ok(esperar(aba, "cenaApi.estado().cena.frente[0].cobre === 1", 5), "Ctrl+Z volta a faixa (o arrastar é um passo)")
     aba.avaliar("document.querySelector('#contornos button[data-apagar]').click(); 1")
     ok(esperar(aba, "(cenaApi.estado().cena.frente || []).length === 0", 5), "o ✕ apaga o contorno")
     contornar(20000, 1)

@@ -452,7 +452,7 @@ async function voltarA(de, para, texto) {
   if (!cena) return;
   if (!de.length) { aviso(texto === 'Desfeito' ? 'Nada para desfazer.' : 'Nada para refazer.'); return; }
   cancelar();
-  [tempoAjuste, tempoSol, tempoLente, tempoOpac, tempoCamadas].forEach(clearTimeout);
+  [tempoAjuste, tempoSol, tempoLente, tempoOpac, tempoCamadas, tempoCobre].forEach(clearTimeout);
   para.push(retrato());
   const r = de.pop();
   ultimaMudanca = { tipo: null, t: 0 };
@@ -634,6 +634,7 @@ async function reencaixar(texto = '') {
 
 const COBERTURAS = [[1, 'Tela fechada'], [0.7, 'Tela translúcida'], [0.3, 'Malha / alambrado']];
 let desenho = null, contornoSel = null, arrastoCanto = null, verFrente = false, paredes = [], texFoto = null, quadroParedes = 0;
+let tempoCobre = 0;
 const svgFrente = $('#frente-svg');
 
 /** Os cantos da borda de baixo do contorno: os que não têm nada do contorno abaixo deles na foto. */
@@ -722,7 +723,7 @@ function montarParedes() {
   tirarParedes();
   if (!visor || !cena || !cena.camera || !texFoto || modo !== 'foto') return 0;
   let semChao = 0;
-  for (const f of cena.frente || []) {
+  for (const [i, f] of (cena.frente || []).entries()) {
     const { pos, tri, tudo } = geometriaDoContorno(f);
     if (!tri.length) continue;
     semChao += tudo ? 1 : 0;
@@ -731,6 +732,7 @@ function montarParedes() {
     geo.setIndex(tri.flat());
     const m = new THREE.Mesh(geo, materialDaParede(f.cobre ?? 1));
     m.renderOrder = 10;                                     // depois da estrutura e da sombra no chão
+    m.userData.contorno = i;
     m.frustumCulled = false;
     m.raycast = () => {};
     m.onBeforeRender = (renderer, _cena, camera) => {     // o bloco do render (setViewOffset) ou a tela inteira
@@ -773,10 +775,14 @@ function desenharContornos() {
   const semChao = cena && cena.camera && visor && modo === 'foto'
     ? lista.map(f => f.pontos.length >= 3 && geometriaDoContorno(f).tudo) : [];
   $('#contornos').innerHTML = lista.map((f, i) => {
-    const perto = COBERTURAS.reduce((m, c) => Math.abs(c[0] - f.cobre) < Math.abs(m[0] - f.cobre) ? c : m);
+    // os tipos são atalhos; a faixa dá o meio-termo (usuário, 27/10: "preciso que tenha um controle do nível de opacidade
+    // do fundo/frente")
+    const tipo = COBERTURAS.find(c => Math.abs(c[0] - f.cobre) < 0.001);
     return `<div class="contorno${i === contornoSel ? ' sel' : ''}" data-contorno="${i}"><b>${i + 1}</b>
-      <select data-i="${i}" aria-label="O que é o contorno ${i + 1}">${COBERTURAS.map(c => `<option value="${c[0]}" ${c === perto ? 'selected' : ''}>${c[1]}</option>`).join('')}</select>
+      <select data-i="${i}" aria-label="O que é o contorno ${i + 1}">${tipo ? '' : '<option value="" selected>Sob medida</option>'}${COBERTURAS.map(c => `<option value="${c[0]}" ${c === tipo ? 'selected' : ''}>${c[1]}</option>`).join('')}</select>
       <button type="button" data-apagar="${i}" title="Apagar o contorno ${i + 1}">✕</button></div>
+      <label class="faixa" title="Quanto a foto (o alambrado) cobre a estrutura atrás dele: 100 % some, 5 % quase não muda">Opacidade da frente
+        <input type="range" data-cobre="${i}" min="0.05" max="1" step="0.05" value="${f.cobre}"><span>${nf(f.cobre * 100)} %</span></label>
       ${semChao[i] ? '<div class="aviso-contorno">A borda de baixo não chega no chão: cobre tudo o que está dentro do contorno.</div>' : ''}`;
   }).join('');
   $('#frente-ver').checked = verFrente;
@@ -845,9 +851,24 @@ async function gravarFrente(texto) {
 function ligarFrente() {
   $('#novo-contorno').onclick = comecarContorno;
   $('#frente-ver').onchange = () => { verFrente = $('#frente-ver').checked; desenharFrenteSvg(); atualizarParedes(); };
+  // a faixa: a parede na tela muda junto (com "Ver na tela"); grava ao parar
+  $('#contornos').addEventListener('input', (e) => {
+    const f = e.target.closest('input[data-cobre]');
+    if (!f || !cena) return;
+    const i = +f.dataset.cobre, v = +f.value;
+    lembrar('cobre' + i);
+    cena.frente[i].cobre = v;
+    f.nextElementSibling.textContent = nf(v * 100) + ' %';
+    for (const m of paredes) if (m.userData.contorno === i) m.material.uniforms.uCobre.value = v;
+    visor.pedirQuadro();
+    const frente = JSON.parse(JSON.stringify(cena.frente));  // o valor de agora (como o sol)
+    clearTimeout(tempoCobre);
+    tempoCobre = setTimeout(() => gravar({ frente }).catch(err => aviso('Os contornos não foram gravados: ' + err.message)), 500);
+  });
   $('#contornos').onchange = (e) => {
+    if (e.target.closest('input[data-cobre]')) { desenharContornos(); return; }    // o tipo acompanha a faixa
     const s = e.target.closest('select[data-i]');
-    if (!s || !cena) return;
+    if (!s || !cena || s.value === '') return;
     lembrar();
     cena.frente[+s.dataset.i].cobre = +s.value;
     gravarFrente();
