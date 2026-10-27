@@ -270,13 +270,23 @@ function elevacaoDaCaixa(cx) {
   }
   return melhor;
 }
+/** o ponto da linha do corte em u, no modelo */
+function pontoDaElevacao(el, u) {
+  const d = direcaoDe(el);
+  return [el.origem[0] + (u - el.u0) * d[0], el.origem[1] + (u - el.u0) * d[1]];
+}
 /** o trecho [u0, u1] do corte, no modelo: a faixa em volta da linha */
 function caixaDaElevacao(el, ua, ub) {
   const d = direcaoDe(el), n = [-d[1], d[0]], f = Number(el.faixa) || 1000;
-  const ponto = (u) => [el.origem[0] + (u - el.u0) * d[0], el.origem[1] + (u - el.u0) * d[1]];
-  const ps = [ponto(ua), ponto(ub)].flatMap(p => [[p[0] + n[0] * f, p[1] + n[1] * f], [p[0] - n[0] * f, p[1] - n[1] * f]]);
+  const ps = [pontoDaElevacao(el, ua), pontoDaElevacao(el, ub)].flatMap(p => [[p[0] + n[0] * f, p[1] + n[1] * f], [p[0] - n[0] * f, p[1] - n[1] * f]]);
   const xs = ps.map(p => p[0]), ys = ps.map(p => p[1]);
   return [[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]];
+}
+/** o mesmo trecho como faixa: as pontas da linha e a largura. O 3D escolhe pela distância à linha — a caixa alinhada aos
+ *  eixos, com os 0,30 de folga dela, pegava o prédio por dentro na fachada oblíqua e a tesoura da linha Q, a 0,29 do
+ *  fechamento (27/10, Galpão Novo da Hora Certa) */
+function faixaDaElevacao(el, ua, ub) {
+  return { a: pontoDaElevacao(el, ua), b: pontoDaElevacao(el, ub), largura: Number(el.faixa) || 1000 };
 }
 
 function doDoisD(m) {
@@ -299,7 +309,8 @@ function doDoisD(m) {
   // dentro do quadro de um corte: as peças do trecho escolhido, na linha do pórtico (26/10)
   const el = elevacoesPlanta.find(x => dentro(x.caixa_desenho, meio));
   if (el) {
-    para3d({ metalica: 'selecionar3d', caixa: caixaDaElevacao(el, m.caixa[0][0], m.caixa[1][0]) });
+    para3d({ metalica: 'selecionar3d', caixa: caixaDaElevacao(el, m.caixa[0][0], m.caixa[1][0]),
+             faixa: faixaDaElevacao(el, m.caixa[0][0], m.caixa[1][0]) });
     return;
   }
   if (!desl) {

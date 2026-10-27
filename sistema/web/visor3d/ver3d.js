@@ -269,6 +269,16 @@ function avisarDivisao() {
 
 /** O que se escolheu no 2D: {destacar: 'posicao:…'|'conjunto:…'|'peca:…'|'ids:…'|'origem2d:…'|'pm:…'},
  *  {nome} (as peças de uma elevação da planta) ou {caixa} (as que têm o meio nela, em planta). */
+/** o meio da peça na faixa de um corte {a, b, largura} — a mesma conta do editor (editor3d/modulos/divisao.js, 27/10):
+ *  até a largura + 5 cm da linha a–b e, ao longo dela, com a folga de sempre */
+function naFaixa(p, fx, folga = 300) {
+  const dx = fx.b[0] - fx.a[0], dy = fx.b[1] - fx.a[1], L = Math.hypot(dx, dy);
+  const qx = p[0] - fx.a[0], qy = p[1] - fx.a[1];
+  if (L < 1) return Math.hypot(qx, qy) <= Number(fx.largura) + folga;
+  const t = (qx * dx + qy * dy) / L, n = Math.abs(-qx * dy + qy * dx) / L;
+  return t >= -folga && t <= L + folga && n <= Number(fx.largura) + 50;
+}
+
 function selecionarDaDivisao(pedido) {
   if (!visor || !visor.fichas) return;
   const F = visor.fichas, o = visor.cabecalho.origem;
@@ -306,7 +316,8 @@ function selecionarDaDivisao(pedido) {
       // a planta escolhida no 2D (um pavimento): só as peças dela, não as dos outros andares no mesmo lugar (26/10)
       if (pedido.fonte && f.f2 !== pedido.fonte) return;
       const mx = f.x[0] + o[0], my = f.x[1] + o[1];
-      if (mx >= x0 - folga && mx <= x1 + folga && my >= y0 - folga && my <= y1 + folga) ids.push(i);
+      if (pedido.faixa ? naFaixa([mx, my], pedido.faixa, folga)
+        : (mx >= x0 - folga && mx <= x1 + folga && my >= y0 - folga && my <= y1 + folga)) ids.push(i);
     });
     // o que pega uma barra de treliça pega o bloco dela
     const blocos = new Set(ids.map(i => F[i].pc).filter(Boolean));

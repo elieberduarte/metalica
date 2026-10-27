@@ -31,7 +31,12 @@ json.dump({"formato": 1, "nome": "Posto dividido", "tipo": "desenho", "cliente":
                              # o corte do pórtico (26/10, Galpão Novo: um corte por linha A…Q): a linha y = 30000 do
                              # modelo, desenhada a partir de x = 400000, crescendo para a direita
                              "elevacoes": [{"nome": "CORTE XX", "caixa_desenho": [[399000.0, 100000.0], [430000.0, 115000.0]],
-                                            "u0": 400000.0, "origem": [0.0, 30000.0], "direcao": [1.0, 0.0], "faixa": 1000.0}]}},
+                                            "u0": 400000.0, "origem": [0.0, 30000.0], "direcao": [1.0, 0.0], "faixa": 1000.0},
+                                           # a fachada oblíqua (27/10, Galpão Novo, eixo 1 a 10°): a linha segue o vão, faixa
+                                           # de 0,10 — o traço traz o fechamento, não a treliça 0,6 para dentro
+                                           {"nome": "ELEVAÇÃO OBLÍQUA", "caixa_desenho": [[699000.0, 100000.0], [708000.0, 115000.0]],
+                                            "u0": 700000.0, "origem": [50000.0, 10000.0], "direcao": [0.17203, -0.98509],
+                                            "faixa": 100.0}]}},
           open(os.path.join(PASTA, "projeto.json"), "w", encoding="utf-8"))
 ents = []
 
@@ -58,6 +63,8 @@ linha(903, (141000.0, 53000.0), (147000.0, 53000.0), "Mezanino")
 linha(904, (205000.0, 45000.0), (199000.0, 45000.0), "Cobertura G1")
 # o pilar do corte XX: em x = 20000 da linha, de pé no desenho
 linha(905, (420000.0, 101000.0), (420000.0, 112000.0), "Corte")
+# a terça da fachada oblíqua na elevação dela, de ponta a ponta do vão (6.395 mm)
+linha(906, (700000.0, 105000.0), (706395.0, 105000.0), "Elevação oblíqua")
 # a mesma peça em duas vistas das pranchas do projetista (SESI, 26/10): 2 traços na V1 e 3 na V2, 100 m uma da outra
 for i, (x, v) in enumerate([(500000.0, "V1"), (500500.0, "V1"), (600000.0, "V2"), (600500.0, "V2"), (601000.0, "V2")]):
     ents.append({"id": "kv%d" % i, "tipo": "linha", "camada": "3D — Peças nas vistas", "a": [x, 200000.0], "b": [x, 203000.0],
@@ -98,7 +105,17 @@ p_ = Barra(nome="W 530×66,0", inicio=(20000.0, 30000.0, 0.0), fim=(20000.0, 300
            camada="Pilares")
 p_.atributos = {"origem": {}}
 doc.add(p_)
-ID_TERCA, ID_VIGA_MEZ, ID_TERCA_G1, ID_PILAR_XX = t_.id, v_.id, g_.id, p_.id
+# o vão oblíquo: a terça no plano da fachada e, 0,6 m para dentro, a treliça simples — o meio dela cai na caixa alinhada
+# aos eixos do trecho (com os 0,30 de folga), mas não na faixa
+f_ = Barra(nome="Ue 250×85×25×2,00", inicio=(50000.0, 10000.0, 4000.0), fim=(51100.0, 3700.0, 4000.0), perfil="Ue 250×85×25×2,00",
+           papel="terça", camada="Fechamento")
+f_.atributos = {"origem": {}}
+doc.add(f_)
+i_ = Barra(nome="U 75×40×3,00 (FF)", inicio=(50591.0, 10103.0, 10000.0), fim=(51691.0, 3803.0, 10000.0), perfil="U 75×40×3,00 (FF)",
+           papel="banzo", camada="Treliça simples")
+i_.atributos = {"origem": {}}
+doc.add(i_)
+ID_TERCA, ID_VIGA_MEZ, ID_TERCA_G1, ID_PILAR_XX, ID_FECH = t_.id, v_.id, g_.id, p_.id, f_.id
 json.dump(doc.dict(), open(os.path.join(PASTA, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
 # o detalhamento do projeto do IFC (sem ligação pela planta): a célula da posição P2 e a peça no lugar,
 # na localização, com a origem dela no 3D — longe da planta e da elevação
@@ -142,10 +159,10 @@ try:
     aba.navegar(base + "/"); aba.console.clear()
     aba.navegar(base + "/dividida?projeto=posto&editar=1", limite=60)      # o editor (sem &editar=1 o 3D abre no modo ver)
     t0 = time.time()
-    while time.time() - t0 < 90 and not aba.avaliar(f"!!({F2}.cad && {F3}.editor && {F3}.editor.documento && {F3}.editor.documento.entidades.size === 8)"):
+    while time.time() - t0 < 90 and not aba.avaliar(f"!!({F2}.cad && {F3}.editor && {F3}.editor.documento && {F3}.editor.documento.entidades.size === 10)"):
         aba.drenar(0.5)
     aba.drenar(1.5)
-    ok(aba.avaliar(f"!!{F2}.cad") and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 8, "os dois lados abrem: o desenho e o modelo do projeto")
+    ok(aba.avaliar(f"!!{F2}.cad") and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 10, "os dois lados abrem: o desenho e o modelo do projeto")
     ok("Posto dividido" in (aba.avaliar("document.title") or ""), "o nome do projeto no título da janela")
     t0 = time.time()
     while time.time() - t0 < 10 and not aba.avaliar(f"!!{F3}.document.querySelector('.seletor-vista a.ativo')"): aba.drenar(0.3)
@@ -233,6 +250,12 @@ try:
     aba.drenar(1.0)
     sel = sorted(aba.avaliar(f"[...{F3}.editor.selecao.ids]") or [])
     ok(sel == [ID_PILAR_XX], f"2D → 3D: a linha do pilar no corte seleciona o pilar na linha do pórtico ({sel})")
+    # a elevação da fachada oblíqua (27/10, Galpão Novo): a terça do vão, só ela — a caixa alinhada aos eixos trazia a
+    # treliça 0,6 para dentro (e, com ela, o bloco)
+    aba.avaliar(f"{F2}.cad.selecionar(['l906']); 1")
+    aba.drenar(1.0)
+    sel = sorted(aba.avaliar(f"[...{F3}.editor.selecao.ids]") or [])
+    ok(sel == [ID_FECH], f"2D → 3D: a terça na elevação da fachada oblíqua seleciona a terça do vão, não a treliça de dentro ({sel})")
     aba.avaliar(f"""(() => {{ const e = {F3}.editor; const ids = [...e.documento.entidades.values()].filter(x => ((x.atributos || {{}}).origem || {{}}).peca === 'TESOURA 1#2').map(x => x.id);
         e.selecao.definir([]); e.selecao.definir(ids); return ids.length; }})()""")
     aba.drenar(1.0)
@@ -309,7 +332,7 @@ try:
        and aba.avaliar("getComputedStyle(document.querySelector('#lado-2d')).display") != "none"
        and "vista=2d" in (aba.avaliar("location.search") or ""), "a vista 2D mostra só o desenho (e a URL diz a vista)")
     aba.avaliar(f"{F2}.document.querySelector('.seletor-vista a[data-vista-area=\"3d\"]').click(); 1"); aba.drenar(0.5)
-    ok(aba.avaliar(f"{F3}.__marca") == "mesmo" and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 8,
+    ok(aba.avaliar(f"{F3}.__marca") == "mesmo" and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 10,
        "voltar ao 3D não recarrega o modelo (o mesmo 3D, montado uma vez)")
     ok(aba.avaliar(f"{F2}.document.querySelector('.ligacao-vistas').hidden") is True,
        "fora do 2D + 3D, os controles da seleção somem")
@@ -361,6 +384,13 @@ try:
     while time.time() - t0 < 5 and not aba.avaliar(f"{F3}.visor.selecaoVarias.size > 0"): aba.drenar(0.3)
     sel = sorted(aba.avaliar(f"[...{F3}.visor.selecaoVarias].map(i => {F3}.visor.fichas[i].id)") or [])
     ok(sel == [ID_VIGA_MEZ], f"modo ver, 2D → 3D: a linha da planta do mezanino destaca a viga do mezanino, só ela ({sel})")
+    aba.avaliar(f"{F2}.document.querySelector('.ligacao-vistas [data-c=elevacao]').click(); 1"); aba.drenar(0.3)
+    aba.avaliar(f"{F2}.cad.selecionar(['l906']); 1")
+    t0 = time.time()
+    while time.time() - t0 < 5 and not aba.avaliar(f"{F3}.visor.selecaoVarias.size > 0 && [...{F3}.visor.selecaoVarias].some(i => {F3}.visor.fichas[i].id === '{ID_FECH}')"):
+        aba.drenar(0.3)
+    sel = sorted(aba.avaliar(f"[...{F3}.visor.selecaoVarias].map(i => {F3}.visor.fichas[i].id)") or [])
+    ok(sel == [ID_FECH], f"modo ver, 2D → 3D: a terça na elevação da fachada oblíqua destaca a terça do vão, só ela ({sel})")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:

@@ -14,6 +14,16 @@ function pontosDe(ent) {
   return [];
 }
 
+/** o meio da peça na faixa de um corte {a, b, largura} (27/10, Galpão Novo da Hora Certa): até a largura + 5 cm da linha
+ *  a–b e, ao longo dela, com a folga de sempre — a caixa alinhada aos eixos pegava o prédio por dentro na fachada oblíqua */
+export function naFaixa(p, fx, folga = 300) {
+  const dx = fx.b[0] - fx.a[0], dy = fx.b[1] - fx.a[1], L = Math.hypot(dx, dy);
+  const qx = p[0] - fx.a[0], qy = p[1] - fx.a[1];
+  if (L < 1) return Math.hypot(qx, qy) <= Number(fx.largura) + folga;
+  const t = (qx * dx + qy * dy) / L, n = Math.abs(-qx * dy + qy * dx) / L;
+  return t >= -folga && t <= L + folga && n <= Number(fx.largura) + 50;
+}
+
 export class MetodosDivisao {
   _ligarDivisao() {
     if (window.parent === window) return;
@@ -104,7 +114,8 @@ export class MetodosDivisao {
         if (!pts.length) continue;
         const mx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
         const my = pts.reduce((s, p) => s + p[1], 0) / pts.length;
-        if (mx >= x0 - folga && mx <= x1 + folga && my >= y0 - folga && my <= y1 + folga) ids.push(e.id);
+        if (pedido.faixa ? naFaixa([mx, my], pedido.faixa, folga)
+          : (mx >= x0 - folga && mx <= x1 + folga && my >= y0 - folga && my <= y1 + folga)) ids.push(e.id);
       }
       // o que pega uma barra de treliça pega o bloco dela
       const blocos = new Set();
