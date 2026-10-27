@@ -73,6 +73,24 @@
   #sol-caixa label.faixa { display: flex; }
   #pronta { border: 1px solid var(--verde); border-radius: var(--raio-p); padding: 8px; display: flex; flex-direction: column; gap: 6px; }
   #pronta p { margin: 0; }
+  /* o que fica na frente (27/10): os contornos por cima da foto; só os cantos pegam o mouse, a não ser desenhando */
+  #frente-svg { position: absolute; pointer-events: none; overflow: visible; }
+  body.desenhando #frente-svg { pointer-events: all; cursor: crosshair; }
+  body.modo-3d #frente-svg { display: none; }
+  #frente-svg polygon, #frente-svg polyline { fill: rgba(255, 212, 0, .12); stroke: #ffd400; stroke-width: 2; stroke-dasharray: 6 4;
+    stroke-linejoin: round; filter: drop-shadow(0 0 1px rgba(0,0,0,.8)); }
+  #frente-svg polygon.sel { fill: rgba(255, 212, 0, .25); stroke-dasharray: none; }
+  #frente-svg polyline { fill: none; }
+  #frente-svg circle { fill: #ffd400; stroke: #000; stroke-width: 1; pointer-events: all; cursor: grab; }
+  #frente-svg circle.primeiro { fill: #fff; }
+  #frente-svg text { fill: #000; font: 600 11px var(--sans); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+  #contornos { display: flex; flex-direction: column; gap: 4px; }
+  #contornos .contorno { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border: 1px solid var(--borda); border-radius: var(--raio-p); cursor: pointer; }
+  #contornos .contorno.sel { border-color: #ffd400; box-shadow: 0 0 0 1px #ffd400; }
+  #contornos .contorno b { min-width: 18px; text-align: center; }
+  #contornos .contorno select { flex: 1; padding: 2px 4px; }
+  #contornos .contorno button { padding: 2px 6px; }
+  #contornos .aviso-contorno { color: var(--amarelo); font-size: 12px; }
 </style>
 </head>
 <body>
@@ -104,6 +122,13 @@
       <div class="linha"><button type="button" data-situacao="aberta">Aberta</button><button type="button" data-situacao="retraida">Retraída</button></div></div>
     <p class="titulo-secao">Camadas</p>
     <div id="camadas"></div>
+    <p class="titulo-secao">O que fica na frente</p>
+    <p class="dica">O alambrado, um muro, uma árvore na frente da estrutura: clique o contorno dele na foto, com a borda de
+      baixo no chão (clique no primeiro ponto ou Enter fecha; Backspace volta um ponto; Esc cancela). A estrutura atrás dele
+      some ou fica fraca na imagem salva e no render; a que está na frente continua na frente.</p>
+    <div class="linha"><button type="button" id="novo-contorno">+ Contorno</button>
+      <label><input type="checkbox" id="frente-ver"> Ver na tela</label></div>
+    <div id="contornos"></div>
     <p class="titulo-secao">3. Imagem</p>
     <div class="linha"><button type="button" id="salvar-imagem" class="forte">Salvar imagem</button><button type="button" id="apagar">Apagar a cena</button></div>
     <div class="linha"><select id="render-tamanho" aria-label="Tamanho da imagem renderizada"></select>
@@ -117,6 +142,7 @@
   <img id="foto" alt="" hidden>
   <canvas id="tela"></canvas>
   <div id="marcas"></div>
+  <svg id="frente-svg"></svg>
   <div id="carregando">Abrindo o modelo 3D…</div>
 </div>
 <script type="module" src="/visor3d/cena.js"></script>

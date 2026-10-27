@@ -109,6 +109,8 @@ async function abrirCena(id) {
   foto.hidden = false;
   foto.src = `${API}/${encodeURIComponent(id)}/foto.jpg?v=${encodeURIComponent(cena.alterada || '')}`;
   try { await foto.decode(); } catch (e) { aviso('A foto não abriu.'); }
+  atualizarTexturaFoto();
+  desenho = null; contornoSel = null; document.body.classList.remove('desenhando');
   $('#corpo').hidden = false;
   rolar = 0;
   giroBase = null;
@@ -121,6 +123,7 @@ async function abrirCena(id) {
   mostrarTamanhos();
   mostrarSol();
   mostrarConcluida();
+  desenharContornos();
 }
 
 // ------------------------------------------------------------------ camadas e cobertura retrátil
@@ -194,7 +197,7 @@ function mostrarModo(m) {
   if (!visor) return;
   if (m === 'foto' && cena) {
     const r = retanguloFoto();
-    posicionar(foto, r); posicionar(tela, r); posicionar(marcas, r);
+    posicionar(foto, r); posicionar(tela, r); posicionar(marcas, r); posicionar(svgFrente, r);
     visor.cena.background = null;
     if (visor.piso) visor.piso.visible = false;
     if (terreno && terreno.grupo) terreno.grupo.visible = false;
@@ -223,11 +226,12 @@ function mostrarModo(m) {
     } else visor.enquadrar('iso');
     visor.pedirQuadro();
   }
+  desenharFrenteSvg();
 }
 
 /** A câmera da cena no visor (na vista da foto): a posição e o giro gravados (mm do projeto), o rolar e a lente. */
 function aplicarCamera() {
-  if (!visor || !cena || !cena.camera || modo !== 'foto') { atualizarFaixas(); return; }
+  if (!visor || !cena || !cena.camera || modo !== 'foto') { atualizarFaixas(); if (visor) atualizarParedes(); return; }
   const o = visor.cabecalho.origem, c = cena.camera;
   visor.camera.position.set(c.posicao[0] - o[0], c.posicao[1] - o[1], c.posicao[2] - o[2]);
   giroBase = new THREE.Quaternion(...c.giro);
@@ -240,6 +244,7 @@ function aplicarCamera() {
   visor.camera.updateMatrixWorld();
   visor.pedirQuadro();                       // a sombra não depende da câmera (recorteDaCena): não se refaz a cada quadro
   atualizarFaixas();
+  atualizarParedes();                        // as paredes do que fica na frente seguem a câmera
 }
 
 function atualizarFaixas() {
@@ -384,7 +389,7 @@ let ultimaMudanca = { tipo: null, t: 0 };
 
 function retrato() {
   const r = JSON.parse(JSON.stringify({ pares: cena.pares || [], camera: cena.camera || null, opacidade: cena.opacidade ?? 1,
-                                        desligadas: cena.desligadas || [], sol: cena.sol || null }));
+                                        desligadas: cena.desligadas || [], sol: cena.sol || null, frente: cena.frente || [] }));
   if (r.camera && rolar && giroBase)                        // o rolar ainda fora do giro gravado
     r.camera.giro = giroBase.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rolar * Math.PI / 180)).toArray();
   return r;
@@ -417,10 +422,12 @@ async function voltarA(de, para, texto) {
   desenharPares();
   desenharCamadas();
   mostrarSol();
+  if (contornoSel !== null && contornoSel >= cena.frente.length) contornoSel = null;
+  desenharContornos();
   mostrarModo(modo);
   try {
     await gravar({ pares: cena.pares, camera: cena.camera, opacidade: cena.opacidade, desligadas: cena.desligadas,
-                   sol: r.sol || { ligado: true, ...SOL_PADRAO } });
+                   sol: r.sol || { ligado: true, ...SOL_PADRAO }, frente: cena.frente });
     aplicarCamera();
     aviso(texto + '.');
   } catch (e) { aviso(texto + ' na tela, mas não gravado: ' + e.message); }
@@ -473,6 +480,7 @@ function marcarNo3d(i) {
 
 function cancelar() {
   marcando = null;
+  if (desenho) pararContorno();
   document.body.classList.remove('marcando-3d');
   aviso('');
 }
@@ -574,6 +582,274 @@ async function reencaixar(texto = '') {
   else { mostrarModo('foto'); aviso(`${texto} Com ${completos} ponto(s) completos o encaixe fica o de antes: marque ${4 - completos} para refazer.`.trim()); }
 }
 
+// ------------------------------------------------------------------ o que fica na frente da estrutura
+// (usuário, 27/10: "nessa foto por exemplo a estrutura está atrás desse alambrado, como fazer para o sistema entender isso…
+// apenas no renderizar para não consumir muito processamento"): o contorno clicado na foto vira uma parede de pé no 3D, na
+// linha em que a borda de baixo dele toca o chão da cena (o mesmo dos pontos e da sombra no chão). A parede pinta a própria
+// foto por cima do que está ATRÁS dela (o teste de profundidade): o que está na frente continua na frente. `cobre` é quanto
+// da foto vai por cima — 1 a tela fechada, 0,7 a translúcida, 0,3 a malha. Só no Salvar imagem e no Renderizar; na tela,
+// com "Ver na tela". Sem chão sob a borda de baixo (o contorno no céu), cobre tudo o que está dentro dele.
+
+const COBERTURAS = [[1, 'Tela fechada'], [0.7, 'Tela translúcida'], [0.3, 'Malha / alambrado']];
+let desenho = null, contornoSel = null, arrastoCanto = null, verFrente = false, paredes = [], texFoto = null, quadroParedes = 0;
+const svgFrente = $('#frente-svg');
+
+/** Os cantos da borda de baixo do contorno: os que não têm nada do contorno abaixo deles na foto. */
+function bordaDeBaixo(pts) {
+  const n = pts.length, base = [];
+  for (let k = 0; k < n; k++) {
+    const [u, v] = pts[k];
+    let embaixo = false;
+    for (let i = 0; i < n && !embaixo; i++) {
+      const j = (i + 1) % n;
+      if (i === k || j === k) continue;
+      const a = pts[i], b = pts[j];
+      if (Math.abs(a[0] - b[0]) < 1e-9) embaixo = Math.abs(a[0] - u) < 1e-9 && Math.max(a[1], b[1]) > v + 1e-6;
+      else if (u >= Math.min(a[0], b[0]) && u <= Math.max(a[0], b[0])) embaixo = a[1] + (u - a[0]) * (b[1] - a[1]) / (b[0] - a[0]) > v + 1e-6;
+    }
+    if (!embaixo) base.push(k);
+  }
+  return base;
+}
+
+/** O raio da câmera da cena pelo ponto (u, v) da foto (a câmera sem o deslocamento dos blocos do render). */
+function raioDaFoto(u, v) {
+  const r = new THREE.Raycaster();
+  r.setFromCamera(new THREE.Vector2(u * 2 - 1, 1 - v * 2), visor.camera);
+  return r.ray;
+}
+
+/** A parede do contorno: as posições (coordenadas do visor) dos cantos, os triângulos e se cobre tudo (sem chão). */
+function geometriaDoContorno(f) {
+  const cam = visor.camera, pts = f.pontos, z0 = zDoChao();
+  cam.updateMatrixWorld();
+  const chao = new THREE.Plane(new THREE.Vector3(0, 0, 1), -z0), alcance = cam.far * 0.5;
+  const pes = [];
+  for (const k of bordaDeBaixo(pts).sort((a, b) => pts[a][0] - pts[b][0])) {
+    const p = new THREE.Vector3(), ray = raioDaFoto(...pts[k]);
+    if (ray.intersectPlane(chao, p) && p.distanceTo(ray.origin) < alcance) pes.push(p);
+  }
+  let plano = null;
+  if (pes.length) {
+    const a = pes[0], b = pes[pes.length - 1], d = new THREE.Vector3(b.x - a.x, b.y - a.y, 0);
+    if (d.length() >= 200) plano = new THREE.Plane().setFromNormalAndCoplanarPoint(d.cross(new THREE.Vector3(0, 0, 1)).normalize(), a);
+    else {                                                  // uma árvore, um poste: a parede de frente para a câmera
+      const m = pes.reduce((s, p) => s.add(p), new THREE.Vector3()).divideScalar(pes.length);
+      const n = new THREE.Vector3(m.x - cam.position.x, m.y - cam.position.y, 0);
+      if (n.length() > 1) plano = new THREE.Plane().setFromNormalAndCoplanarPoint(n.normalize(), m);
+    }
+  }
+  const pos = [];
+  let tudo = !plano;
+  if (plano) {
+    for (const [u, v] of pts) {
+      const p = new THREE.Vector3(), ray = raioDaFoto(u, v);
+      if (!ray.intersectPlane(plano, p) || p.distanceTo(ray.origin) > alcance) { tudo = true; break; }
+      pos.push(p);
+    }
+  }
+  if (tudo) {                                               // logo na frente da câmera: cobre tudo o que está dentro
+    pos.length = 0;
+    for (const [u, v] of pts) { const ray = raioDaFoto(u, v); pos.push(ray.at(cam.near * 2, new THREE.Vector3())); }
+  }
+  const tri = THREE.ShapeUtils.triangulateShape(pts.map(([u, v]) => new THREE.Vector2(u, -v)), []);
+  return { pos, tri, tudo };
+}
+
+const _db = new THREE.Vector2();
+function materialDaParede(cobre) {
+  return new THREE.ShaderMaterial({
+    uniforms: { tFoto: { value: texFoto }, uCobre: { value: cobre }, uTela: { value: new THREE.Vector4() }, uBuf: { value: new THREE.Vector2() } },
+    vertexShader: 'void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    // o pixel da foto inteira sob este pixel: uTela = a imagem inteira (largura, altura) e o canto do bloco (x, y de cima)
+    fragmentShader: `uniform sampler2D tFoto; uniform float uCobre; uniform vec4 uTela; uniform vec2 uBuf;
+      void main() {
+        vec2 p = vec2(uTela.z + gl_FragCoord.x, uTela.w + uBuf.y - gl_FragCoord.y);
+        gl_FragColor = vec4(texture2D(tFoto, vec2(p.x / uTela.x, 1.0 - p.y / uTela.y)).rgb, uCobre);
+      }`,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide });
+}
+
+function tirarParedes() {
+  for (const m of paredes) { visor.cena.remove(m); m.geometry.dispose(); m.material.dispose(); }
+  paredes = [];
+}
+
+/** As paredes no visor, pela câmera de agora (a vista da foto). Devolve quantas cobrem tudo (sem chão). */
+function montarParedes() {
+  tirarParedes();
+  if (!visor || !cena || !cena.camera || !texFoto || modo !== 'foto') return 0;
+  let semChao = 0;
+  for (const f of cena.frente || []) {
+    const { pos, tri, tudo } = geometriaDoContorno(f);
+    if (!tri.length) continue;
+    semChao += tudo ? 1 : 0;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos.flatMap(p => [p.x, p.y, p.z]), 3));
+    geo.setIndex(tri.flat());
+    const m = new THREE.Mesh(geo, materialDaParede(f.cobre ?? 1));
+    m.renderOrder = 10;                                     // depois da estrutura e da sombra no chão
+    m.frustumCulled = false;
+    m.raycast = () => {};
+    m.onBeforeRender = (renderer, _cena, camera) => {     // o bloco do render (setViewOffset) ou a tela inteira
+      const u = m.material.uniforms, db = renderer.getDrawingBufferSize(_db), v = camera.view;
+      if (v && v.enabled) { const k = db.x / v.width; u.uTela.value.set(v.fullWidth * k, v.fullHeight * k, v.offsetX * k, v.offsetY * k); }
+      else u.uTela.value.set(db.x, db.y, 0, 0);
+      u.uBuf.value.copy(db);
+    };
+    visor.cena.add(m);
+    paredes.push(m);
+  }
+  visor.pedirQuadro();
+  return semChao;
+}
+
+/** Na tela, só com "Ver na tela" (a imagem salva e o render sempre as montam). */
+function atualizarParedes() {
+  cancelAnimationFrame(quadroParedes);
+  if (verFrente && modo === 'foto') montarParedes(); else if (paredes.length) { tirarParedes(); visor.pedirQuadro(); }
+}
+
+/** A foto como textura da parede. Por uma cópia num canvas: a <img> direto subia preta (o three lê o tamanho dela na tela,
+ *  não o da foto, e o envio à placa falhava). */
+function atualizarTexturaFoto() {
+  if (texFoto) texFoto.dispose();
+  texFoto = null;
+  if (!visor || !foto.naturalWidth) return;
+  const k = Math.min(1, Math.min(visor.renderer.capabilities.maxTextureSize, 8192) / Math.max(foto.naturalWidth, foto.naturalHeight));
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(foto.naturalWidth * k); cv.height = Math.round(foto.naturalHeight * k);
+  cv.getContext('2d').drawImage(foto, 0, 0, cv.width, cv.height);
+  texFoto = new THREE.CanvasTexture(cv);
+  texFoto.minFilter = texFoto.magFilter = THREE.LinearFilter;
+  texFoto.generateMipmaps = false;
+  texFoto.needsUpdate = true;
+}
+
+function desenharContornos() {
+  const lista = (cena && cena.frente) || [];
+  const semChao = cena && cena.camera && visor && modo === 'foto'
+    ? lista.map(f => f.pontos.length >= 3 && geometriaDoContorno(f).tudo) : [];
+  $('#contornos').innerHTML = lista.map((f, i) => {
+    const perto = COBERTURAS.reduce((m, c) => Math.abs(c[0] - f.cobre) < Math.abs(m[0] - f.cobre) ? c : m);
+    return `<div class="contorno${i === contornoSel ? ' sel' : ''}" data-contorno="${i}"><b>${i + 1}</b>
+      <select data-i="${i}" aria-label="O que é o contorno ${i + 1}">${COBERTURAS.map(c => `<option value="${c[0]}" ${c === perto ? 'selected' : ''}>${c[1]}</option>`).join('')}</select>
+      <button type="button" data-apagar="${i}" title="Apagar o contorno ${i + 1}">✕</button></div>
+      ${semChao[i] ? '<div class="aviso-contorno">A borda de baixo não chega no chão: cobre tudo o que está dentro do contorno.</div>' : ''}`;
+  }).join('');
+  $('#frente-ver').checked = verFrente;
+  desenharFrenteSvg();
+}
+
+function desenharFrenteSvg() {
+  const w = marcas.clientWidth, h = marcas.clientHeight;
+  const mostrar = modo === 'foto' && cena && (desenho || !verFrente);
+  if (!mostrar) { svgFrente.innerHTML = ''; return; }
+  svgFrente.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  const xy = p => `${(p[0] * w).toFixed(1)},${(p[1] * h).toFixed(1)}`;
+  let html = ((cena && cena.frente) || []).map((f, i) => {
+    const c = f.pontos.map(p => [p[0] * w, p[1] * h]), meio = c.reduce((s, p) => [s[0] + p[0] / c.length, s[1] + p[1] / c.length], [0, 0]);
+    return `<polygon class="${i === contornoSel ? 'sel' : ''}" points="${f.pontos.map(xy).join(' ')}"/>` +
+      f.pontos.map((p, k) => `<circle data-c="${i}" data-k="${k}" cx="${(p[0] * w).toFixed(1)}" cy="${(p[1] * h).toFixed(1)}" r="5"/>`).join('') +
+      `<circle cx="${meio[0].toFixed(1)}" cy="${meio[1].toFixed(1)}" r="9" style="pointer-events:none;fill:#ffd400"/><text x="${meio[0].toFixed(1)}" y="${meio[1].toFixed(1)}">${i + 1}</text>`;
+  }).join('');
+  if (desenho && desenho.length) {
+    html += `<polyline points="${desenho.map(xy).join(' ')}"/>` +
+      desenho.map((p, k) => `<circle class="${k === 0 ? 'primeiro' : ''}" cx="${(p[0] * w).toFixed(1)}" cy="${(p[1] * h).toFixed(1)}" r="${k === 0 ? 7 : 4}" style="pointer-events:none"/>`).join('');
+  }
+  svgFrente.innerHTML = html;
+}
+
+function comecarContorno() {
+  if (!cena) return;
+  if (!cena.camera) { aviso('Encaixe a cena antes: o contorno precisa saber onde fica o chão.'); return; }
+  cancelar();
+  mostrarModo('foto');
+  desenho = [];
+  document.body.classList.add('desenhando');
+  desenharFrenteSvg();
+  aviso('Clique os cantos do contorno na foto, com a borda de baixo no chão. Clique no primeiro ponto ou Enter fecha; Backspace volta um; Esc cancela.');
+}
+
+function pararContorno() {
+  desenho = null;
+  document.body.classList.remove('desenhando');
+  desenharFrenteSvg();
+}
+
+async function fecharContorno() {
+  if (!desenho) return;
+  if (desenho.length < 3) { aviso('O contorno precisa de 3 pontos ou mais.'); return; }
+  lembrar();
+  const frente = ((cena.frente || []).concat([{ pontos: desenho, cobre: 0.7 }]));
+  pararContorno();
+  contornoSel = frente.length - 1;
+  try {
+    await gravar({ frente });
+    aviso(`Contorno ${frente.length} gravado (tela translúcida: troque na lista). Ele vale na imagem salva e no render; "Ver na tela" mostra como fica.`);
+  } catch (e) { aviso('O contorno não foi gravado: ' + e.message); }
+  desenharContornos();
+  atualizarParedes();
+}
+
+/** Grava a lista de contornos de agora (depois de mexer num canto, no tipo, ou apagar). */
+async function gravarFrente(texto) {
+  desenharContornos();
+  atualizarParedes();
+  try { await gravar({ frente: cena.frente || [] }); if (texto) aviso(texto); }
+  catch (e) { aviso('Os contornos não foram gravados: ' + e.message); }
+}
+
+function ligarFrente() {
+  $('#novo-contorno').onclick = comecarContorno;
+  $('#frente-ver').onchange = () => { verFrente = $('#frente-ver').checked; desenharFrenteSvg(); atualizarParedes(); };
+  $('#contornos').onchange = (e) => {
+    const s = e.target.closest('select[data-i]');
+    if (!s || !cena) return;
+    lembrar();
+    cena.frente[+s.dataset.i].cobre = +s.value;
+    gravarFrente();
+  };
+  $('#contornos').onclick = (e) => {
+    const b = e.target.closest('button[data-apagar]');
+    if (b && cena) {
+      lembrar();
+      cena.frente.splice(+b.dataset.apagar, 1);
+      contornoSel = null;
+      gravarFrente(`Contorno ${+b.dataset.apagar + 1} apagado.`);
+      return;
+    }
+    const l = e.target.closest('[data-contorno]');
+    if (l && !e.target.closest('select')) { contornoSel = +l.dataset.contorno === contornoSel ? null : +l.dataset.contorno; desenharContornos(); }
+  };
+  // desenhando: cada clique, um canto; perto do primeiro, fecha
+  svgFrente.addEventListener('click', (e) => {
+    if (!desenho) return;
+    const r = svgFrente.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    if (desenho.length >= 3 && Math.hypot(desenho[0][0] * r.width - x, desenho[0][1] * r.height - y) < 10) { fecharContorno(); return; }
+    desenho.push([Math.min(1, Math.max(0, x / r.width)), Math.min(1, Math.max(0, y / r.height))]);
+    desenharFrenteSvg();
+  });
+  // um canto pego e arrastado
+  svgFrente.addEventListener('pointerdown', (e) => {
+    const c = e.target.closest('circle[data-c]');
+    if (!c || desenho || e.button !== 0 || !cena) return;
+    arrastoCanto = { c: +c.dataset.c, k: +c.dataset.k };
+    contornoSel = arrastoCanto.c;
+    e.preventDefault();
+  });
+  addEventListener('pointermove', (e) => {
+    if (!arrastoCanto) return;
+    const r = svgFrente.getBoundingClientRect();
+    lembrar(`canto${arrastoCanto.c}-${arrastoCanto.k}`);
+    cena.frente[arrastoCanto.c].pontos[arrastoCanto.k] = [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
+                                                          Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))];
+    desenharFrenteSvg();
+    if (verFrente) { cancelAnimationFrame(quadroParedes); quadroParedes = requestAnimationFrame(montarParedes); }
+  });
+  addEventListener('pointerup', () => { if (!arrastoCanto) return; arrastoCanto = null; gravarFrente(); });
+}
+
 // ------------------------------------------------------------------ a imagem pronta
 
 /** A foto com o 3D por cima, num canvas de w × h. O 3D sai em blocos (camera.setViewOffset): qualquer tamanho, sem passar
@@ -591,6 +867,8 @@ async function montarImagem(w, h, ss = 1, aoBloco = null) {
   for (let y = 0; y < h; y += B) for (let x = 0; x < w; x += B) blocos.push([x, y, Math.min(B, w - x), Math.min(B, h - y)]);
   r.setPixelRatio(1);
   cam.aspect = w / h;
+  cam.updateProjectionMatrix();
+  montarParedes();                                          // o que fica na frente: sempre na imagem (aplicarCamera devolve a tela)
   if (visor.apresentacao) visor._desenharSombra();
   g.globalAlpha = +$('#opacidade').value;
   try {
@@ -780,7 +1058,14 @@ function ligarControles() {
     const desligadas = cena.desligadas;                    // o valor de agora (como o sol)
     clearTimeout(tempoCamadas); tempoCamadas = setTimeout(() => gravar({ desligadas }), 500);
   };
+  ligarFrente();
   addEventListener('keydown', (e) => {
+    if (desenho) {                                          // desenhando um contorno: as teclas são dele
+      const ctrlZ = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z';
+      if (e.key === 'Enter') { e.preventDefault(); fecharContorno(); return; }
+      if (e.key === 'Backspace' || ctrlZ) { e.preventDefault(); desenho.pop(); desenharFrenteSvg(); return; }
+      if (e.key === 'Escape') { pararContorno(); aviso('Contorno cancelado.'); return; }
+    }
     const el = document.activeElement || {}, digitando = el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && /^(text|search|number)$/.test(el.type));
     if ((e.ctrlKey || e.metaKey) && !e.altKey && /^[zy]$/i.test(e.key) && !digitando) {
       e.preventDefault();
@@ -887,5 +1172,6 @@ function desenharMarcas() {
   if (novo !== marcas._html) { marcas.innerHTML = novo; marcas._html = novo; }
 }
 
-window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado }), mostrarModo, pontoDo3d, fazerEncaixe, concluir, desfazer, refazer };
+window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado, desenho, paredes: paredes.length }), mostrarModo, pontoDo3d, fazerEncaixe,
+                   concluir, desfazer, refazer, geometriaDoContorno, bordaDeBaixo, montarImagem };
 abrir().catch(e => { aviso('A cena não abriu: ' + e.message); console.error(e); });

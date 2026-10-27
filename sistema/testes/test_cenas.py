@@ -113,6 +113,26 @@ def test_sol_da_cena(tmp_path):
             C.gravar(g, s, i, ruim)
 
 
+def test_o_que_fica_na_frente(tmp_path):
+    """27/10 ("a estrutura está atrás desse alambrado, como fazer para o sistema entender isso"): os contornos na foto e
+    quanto cada um cobre; a parede é da tela (verif_cena)."""
+    g, s = _gerente(tmp_path)
+    i = C.nova(g, s, _foto(tmp_path))["id"]
+    assert "frente" not in C.ler(g, s, i)
+    c = C.gravar(g, s, i, {"frente": [{"pontos": [[0, 0.34], [0.71, 0.445], [0.71, 0.632], [-0.2, 0.7]], "cobre": 0.7},
+                                      {"pontos": [[0.7, 0.44], [1, 0.42], [1.4, 0.63]]}]})
+    assert c["frente"] == [{"pontos": [[0.0, 0.34], [0.71, 0.445], [0.71, 0.632], [0.0, 0.7]], "cobre": 0.7},
+                           {"pontos": [[0.7, 0.44], [1.0, 0.42], [1.0, 0.63]], "cobre": 1.0}]
+    assert C.ler(g, s, i)["frente"][0]["cobre"] == 0.7
+    assert C.gravar(g, s, i, {"frente": [{"pontos": [[0, 0], [1, 0], [1, 1]], "cobre": 0}]})["frente"][0]["cobre"] == 0.05
+    assert C.gravar(g, s, i, {"frente": []})["frente"] == []
+    for ruim in ({"frente": "alambrado"}, {"frente": [{"pontos": [[0, 0], [1, 1]]}]}, {"frente": [{"pontos": [[0, 0], [1], [1, 1]]}]},
+                 {"frente": [{"pontos": [[0, 0], [1, 0], [1, 1]], "cobre": "muito"}]},
+                 {"frente": [{"pontos": [[0, 0], [1, 0], [1, 1]]}] * (C.FRENTE_MAX + 1)}):
+        with pytest.raises(C.ErroCena):
+            C.gravar(g, s, i, ruim)
+
+
 def test_gravacoes_ao_mesmo_tempo_nao_se_perdem(tmp_path):
     """27/10 (verif_cena, a sombra no chão): a tela grava o sol, as camadas, a lente… cada um no seu tempo, e duas gravações
     da mesma cena ao mesmo tempo usavam o mesmo .tmp — uma caía com erro 500, a outra lia o cena.json no meio da troca

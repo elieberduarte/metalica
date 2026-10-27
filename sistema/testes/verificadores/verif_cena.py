@@ -8,7 +8,8 @@ não existe na foto). Pela tela, com cliques de verdade:
   2. para cada ponto: "+ Ponto", o clique na foto, a vista vai para o 3D, o clique no mesmo ponto do chão;
   3. no 4º ponto o encaixe sai sozinho; com os 6, a lente volta 70° (±2°) e o erro fica abaixo de 3 px;
   4. Salvar cena tira as bolinhas da foto e o encaixe do painel (fica depois de recarregar); Editar cena os traz de volta;
-  5. Salvar imagem: a foto com o 3D em <projeto>/cenas/, no tamanho da foto;
+  5. Salvar imagem: a foto com o 3D em <projeto>/cenas/, no tamanho da foto; o que fica na frente (o contorno de um
+     alambrado cobre o pilar atrás dele, não o que está na frente);
   6. sem erros no console.
 Porta livre, nunca a 8765/8766."""
 import json, math, os, shutil, subprocess, sys, tempfile, time, urllib.request
@@ -349,6 +350,75 @@ try:
         ok(dif < 6, f"o render bate com a imagem salva, reduzido (diferença média {dif:.1f} de 255): os blocos emendados no lugar")
     ok(aba.avaliar("document.getElementById('tela').style.visibility") == "visible" and not aba.avaliar("document.getElementById('renderizar').disabled"),
        "depois do render a vista volta (o 3D à mostra, o botão de novo)")
+
+    # o que fica na frente (27/10: "a estrutura está atrás desse alambrado, como fazer para o sistema entender isso… apenas
+    # no renderizar"): um alambrado de 3 m em y = 12 m, entre a câmera e os pilares (y = 16 m), contornado na foto com
+    # cliques de verdade. Na imagem salva o pilar atrás dele vira a foto (tela fechada); acima dele, o pilar continua. O
+    # mesmo contorno em y = 20 m (atrás dos pilares) não cobre nada: o pilar na frente continua na frente
+    def px_img(caminho, X):
+        u, v = projetar(X)
+        return Image.open(caminho).convert("RGB").getpixel((int(u * W), int(v * H)))
+    FUNDO = (120, 110, 95)
+    dist = lambda a, b: sum(abs(a[i] - b[i]) for i in range(3))
+    PIL_BAIXO, PIL_ALTO = (2000, 15850, 1500), (2000, 15850, 4500)
+    antes_baixo, antes_alto = px_img(arq, PIL_BAIXO), px_img(arq, PIL_ALTO)
+    ok(dist(antes_baixo, FUNDO) > 30, f"sem contorno, o pilar aparece na imagem ({antes_baixo} × o fundo {FUNDO})")
+
+    def contornar(yy, cobre):
+        fx, fy, fw, fh = aba.avaliar(FOTO_NA_TELA)
+        aba.avaliar("document.getElementById('novo-contorno').click(); 1")
+        cantos = [projetar(X) for X in ((0, yy, 0), (22000, yy, 0), (22000, yy, 3000), (0, yy, 3000))]
+        for (u, v) in cantos + [(0.40, 0.30)]:              # um canto a mais, que o Backspace tira
+            clicar(aba, fx + u * fw, fy + v * fh); aba.drenar(0.1)
+        n0 = len(aba.avaliar("cenaApi.estado().desenho"))
+        aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="Backspace", code="Backspace", windowsVirtualKeyCode=8)
+        aba.cmd("Input.dispatchKeyEvent", type="keyUp", key="Backspace", code="Backspace", windowsVirtualKeyCode=8)
+        ok(n0 == 5 and len(aba.avaliar("cenaApi.estado().desenho")) == 4, f"desenhando: 5 cliques, o Backspace volta um ({n0} → 4)")
+        clicar(aba, fx + cantos[0][0] * fw, fy + cantos[0][1] * fh)        # no primeiro: fecha
+        ok(esperar(aba, "!cenaApi.estado().desenho && (cenaApi.estado().cena.frente || []).length === 1", 10), "clicar no primeiro ponto fecha o contorno")
+        esperar(aba, "!!document.querySelector('#contornos select')", 5)
+        aba.avaliar("(() => { const s = document.querySelector('#contornos select'); s.value = '%s'; s.dispatchEvent(new Event('change', {bubbles: true})); })(); 1" % cobre)
+        ok(esperar(aba, f"cenaApi.estado().cena.frente[0].cobre === {cobre}", 5), f"o tipo do contorno trocado na lista (cobre {cobre})")
+        g = aba.avaliar("(() => { const o = visor.cabecalho.origem, r = cenaApi.geometriaDoContorno(cenaApi.estado().cena.frente[0]);"
+                        " return { tudo: r.tudo, ys: r.pos.map(p => p.y + o[1]) }; })()")
+        ok(not g["tudo"] and all(abs(y - yy) < 1500 for y in g["ys"]),
+           f"a parede fica na linha do chão do contorno (y = {yy}: {[round(y) for y in g['ys']]})")
+
+    contornar(12000, 1)
+    aba.avaliar("window.ultimaImagemCena = null; document.getElementById('salvar-imagem').click(); 1")
+    ok(esperar(aba, "!!window.ultimaImagemCena", 30), "Salvar imagem com o contorno responde")
+    baixo, alto = px_img(arq, PIL_BAIXO), px_img(arq, PIL_ALTO)
+    ok(dist(baixo, FUNDO) < 12, f"atrás da tela fechada o pilar some: a foto por cima ({baixo} × {FUNDO})")
+    ok(dist(alto, antes_alto) < 12, f"acima do alambrado o pilar continua ({alto} × {antes_alto})")
+    # no render (2× a foto, em blocos de 1.024 px): cada bloco pega o pedaço certo da foto para pintar por cima
+    aba.avaliar("window.ultimaImagemCena = null; document.getElementById('renderizar').click(); 1")
+    ok(esperar(aba, "!!window.ultimaImagemCena && /render/.test(window.ultimaImagemCena.nome)", 180), "Renderizar com o contorno responde")
+    u_, v_ = projetar(PIL_BAIXO)
+    r_baixo = Image.open(rnd).convert("RGB").getpixel((int(u_ * 2 * W), int(v_ * 2 * H)))
+    ok(dist(r_baixo, FUNDO) < 15, f"no render, o pilar atrás da tela também some ({r_baixo} × {FUNDO})")
+    ok(aba.avaliar("cenaApi.estado().paredes") == 0, "na tela, sem \"Ver na tela\", as paredes não ficam (só na imagem)")
+    aba.avaliar("const fv = document.getElementById('frente-ver'); fv.checked = true; fv.dispatchEvent(new Event('change')); 1")
+    ok(esperar(aba, "cenaApi.estado().paredes === 1 && document.querySelectorAll('#frente-svg polygon').length === 0", 5),
+       "Ver na tela: a parede na vista e o contorno sai da frente")
+    aba.avaliar("const fv2 = document.getElementById('frente-ver'); fv2.checked = false; fv2.dispatchEvent(new Event('change')); 1")
+    ok(esperar(aba, "cenaApi.estado().paredes === 0 && document.querySelectorAll('#frente-svg polygon').length === 1", 5),
+       "desligado, a parede sai e o contorno volta")
+    tecla("z"); ok(esperar(aba, "(cenaApi.estado().cena.frente || []).length === 1 && cenaApi.estado().cena.frente[0].cobre === 0.7", 5),
+                   "Ctrl+Z desfaz a troca do tipo")
+    tecla("z"); ok(esperar(aba, "(cenaApi.estado().cena.frente || []).length === 0", 5), "e de novo, o contorno")
+    tecla("y"); tecla("y"); ok(esperar(aba, "(cenaApi.estado().cena.frente || []).length === 1 && cenaApi.estado().cena.frente[0].cobre === 1", 5),
+                               "Ctrl+Y refaz os dois")
+    aba.avaliar("document.querySelector('#contornos button[data-apagar]').click(); 1")
+    ok(esperar(aba, "(cenaApi.estado().cena.frente || []).length === 0", 5), "o ✕ apaga o contorno")
+    contornar(20000, 1)
+    aba.avaliar("window.ultimaImagemCena = null; document.getElementById('salvar-imagem').click(); 1")
+    ok(esperar(aba, "!!window.ultimaImagemCena", 30), "Salvar imagem com o contorno atrás responde")
+    baixo = px_img(arq, PIL_BAIXO)
+    ok(dist(baixo, antes_baixo) < 12, f"o contorno atrás dos pilares não os cobre ({baixo} × {antes_baixo})")
+    ok(aba.avaliar("cenaApi.geometriaDoContorno({ pontos: [[0.1, 0.01], [0.3, 0.01], [0.3, 0.05]], cobre: 1 }).tudo") is True,
+       "um contorno sem chão embaixo (no céu) cobre tudo o que está dentro")
+    gravado = json.loads(urllib.request.urlopen(base + "/api/projetos/obra/terreno/cenas/foto-teste", timeout=30).read())
+    ok(len(gravado.get("frente") or []) == 1 and gravado["frente"][0]["cobre"] == 1, "e o contorno fica gravado na cena")
 
     # apagar a cena (26/10: "não consigo apagar uma cena"): sai da lista; a imagem salva na pasta cenas fica
     aba.avaliar("window.confirm = () => true; document.getElementById('apagar').click(); 1")

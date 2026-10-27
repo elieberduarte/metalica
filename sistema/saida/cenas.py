@@ -8,7 +8,8 @@ nova chamada cenas, dentro da pasta da obra… isso vai valer para as próximas 
 cada cena ficam em <projeto>/cenas/dados/<id>/: a foto (foto.jpg, até FOTO_LADO_MAX) e cena.json — o nome, os pares de
 pontos (o ponto da foto, de 0 a 1, e o mesmo ponto no modelo, em mm do projeto), a câmera encaixada (posição e giro em mm do
 projeto, o ângulo vertical), a opacidade do 3D, as camadas desligadas, a situação da cobertura retrátil, o sol (direção e
-altura) e se a cena está pronta (concluida: os pontos escondidos até "Editar cena"). A conta do
+altura), o que fica na frente da estrutura (frente: os contornos na foto) e se a cena está pronta (concluida: os pontos
+escondidos até "Editar cena"). A conta do
 encaixe é da tela (web/visor3d/cena.js); aqui só se guarda.
 
 Rotas, penduradas nas do terreno (saida/local_obra.py, /api/projetos/<s>/terreno/cenas…).
@@ -26,6 +27,7 @@ from nucleo.base import ErroDeDados
 PASTA = "cenas"
 FOTO_LADO_MAX = 6000                       # px: a foto do celular (4000 × 3000, 12 Mpx) passa inteira
 FOTO_EXT = (".jpg", ".jpeg", ".png")
+FRENTE_MAX = 30                            # contornos do que fica na frente da estrutura, por cena
 
 
 class ErroCena(ErroDeDados):
@@ -214,6 +216,22 @@ def _gravar_campos(g, s: str, i: str, corpo: dict) -> dict:
         c["sol"] = {"ligado": sol.get("ligado", True), "direcao": round(direcao % 360.0, 1), "altura": round(min(85.0, max(5.0, altura)), 1)}
         if sol.get("chao") is not None:                     # a força da sombra no chão da foto (0 a 1)
             c["sol"]["chao"] = round(min(1.0, max(0.0, _numeros([sol.get("chao")], 1)[0])), 2)
+    # o que fica na frente da estrutura (usuário, 27/10: "nessa foto por exemplo a estrutura está atrás desse alambrado, como
+    # fazer para o sistema entender isso… apenas no renderizar"): os contornos clicados na foto (pontos de 0 a 1, a borda de
+    # baixo no chão) e quanto cada um cobre do que está atrás dele (1 = tela fechada; 0,3 = malha). A parede é da tela.
+    if "frente" in corpo:
+        frente = corpo["frente"] or []
+        if not isinstance(frente, list) or len(frente) > FRENTE_MAX:
+            raise ErroCena("dados da cena inválidos.")
+        contornos = []
+        for f in frente:
+            pts = f.get("pontos") if isinstance(f, dict) else None
+            if not isinstance(pts, list) or not 3 <= len(pts) <= 400:
+                raise ErroCena("um contorno precisa de 3 pontos ou mais.")
+            pontos = [[round(min(1.0, max(0.0, u)), 5), round(min(1.0, max(0.0, v)), 5)] for u, v in (_numeros(p, 2) for p in pts)]
+            cobre = f.get("cobre", 1.0)
+            contornos.append({"pontos": pontos, "cobre": round(min(1.0, max(0.05, _numeros([cobre], 1)[0])), 2)})
+        c["frente"] = contornos
     # a cena pronta (usuário, 27/10: "salvar cena após a conclusão, para não ficar aparecendo essas bolinhas… caso seja
     # necessário editar ter um para editar cena, daí elas reaparecem"): a tela esconde os pontos e o encaixe
     if "concluida" in corpo:
