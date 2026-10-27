@@ -14,6 +14,7 @@ import * as THREE from 'three';
 import { Visor3D } from './visor3d.js';
 import { Terreno } from './terreno.js';
 import { encaixar } from './encaixe.js';
+import { SOL_PADRAO, definirSol, controlesDoSol, ligarControlesDoSol } from './sol.js';
 
 const $ = s => document.querySelector(s);
 const q = new URLSearchParams(location.search);
@@ -114,6 +115,7 @@ async function abrirCena(id) {
   desenharPares();
   desenharCamadas();
   marcarSituacao();
+  mostrarSol();
   mostrarConcluida();
 }
 
@@ -269,6 +271,40 @@ async function gravar(campos) {
   $('#salvar-cena').disabled = !cena.camera;
 }
 
+// ------------------------------------------------------------------ o sol da cena
+// (usuário, 27/10: "poderia ter as opções de mudar a posição das sombras aqui na composição da cena"): os mesmos controles
+// do modo ver e do celular (sol.js), gravados na cena — cada foto tem a hora dela
+
+let tempoSol = 0;
+function solDaCena() { return { ligado: true, ...SOL_PADRAO, ...((cena && cena.sol) || {}) }; }
+
+function mostrarSol() {
+  const s = solDaCena();
+  $('#sol').checked = s.ligado;
+  $('#sol-caixa').hidden = !s.ligado;
+  $('#sol-caixa').innerHTML = controlesDoSol(s) +
+    '<p class="dica">A direção gira o sol em volta da obra; a altura vai do nascer (baixo, sombras compridas) ao meio-dia (alto).</p>';
+  ligarControlesDoSol($('#sol-caixa'), s, (novo) => mudarSol({ ...novo, ligado: true }));
+  aplicarSol();
+}
+
+function aplicarSol() {
+  const s = solDaCena();
+  visor.ligarApresentacao(s.ligado, 2048);
+  definirSol(visor, s);
+  visor.pedirQuadro();
+}
+
+function mudarSol(mud) {
+  if (!cena) return;
+  cena.sol = { ...solDaCena(), ...mud };
+  $('#sol-caixa').hidden = !cena.sol.ligado;
+  aplicarSol();
+  clearTimeout(tempoSol);
+  const sol = cena.sol;                                     // o valor de agora: até gravar, outra resposta pode trocar a cena
+  tempoSol = setTimeout(() => gravar({ sol }).catch(e => aviso('O sol não foi gravado: ' + e.message)), 500);
+}
+
 // ------------------------------------------------------------------ a cena pronta
 // (usuário, 27/10: "crie a opção salvar cena após a conclusão, para não ficar aparecendo essas bolinhas na tela, caso seja
 // necessário editar ter um para editar cena, daí elas reaparecem"): pronta, a cena fica só a foto com o 3D — sem as marcas,
@@ -288,9 +324,10 @@ function mostrarConcluida() {
 async function concluir(pronta) {
   if (!cena) return;
   if (pronta && !cena.camera) { aviso('Encaixe a cena antes de salvar (4 pontos ou mais).'); return; }
-  clearTimeout(tempoAjuste);                                // o ajuste fino ainda por gravar vai junto
+  clearTimeout(tempoAjuste); clearTimeout(tempoSol);        // o ajuste fino e o sol ainda por gravar vão junto
   const campos = { concluida: pronta };
   if (pronta) Object.assign(campos, { pares: cena.pares, camera: cena.camera });
+  if (cena.sol) campos.sol = cena.sol;
   await gravar(campos);
   mostrarConcluida();
   aviso(pronta ? 'Cena salva: os pontos saíram da tela. Para mexer neles, Editar cena.' : 'Editando: os pontos de volta na foto.');
@@ -497,7 +534,7 @@ function ligarControles() {
     tela.style.opacity = modo === 'foto' ? $('#opacidade').value : '1'; atualizarFaixas();
     clearTimeout(tempoOpac); tempoOpac = setTimeout(() => gravar({ opacidade: +$('#opacidade').value }), 600);
   };
-  $('#sol').onchange = () => { visor.ligarApresentacao($('#sol').checked, 2048); visor.pedirQuadro(); };
+  $('#sol').onchange = () => mudarSol({ ligado: $('#sol').checked });
   let tempoCamadas = 0;
   $('#camadas').onchange = (e) => {
     const c = e.target.closest('input[data-chave]');
@@ -506,7 +543,8 @@ function ligarControles() {
     if (c.checked) desl.delete(c.dataset.chave); else desl.add(c.dataset.chave);
     cena.desligadas = [...desl];
     aplicarCamadas();
-    clearTimeout(tempoCamadas); tempoCamadas = setTimeout(() => gravar({ desligadas: cena.desligadas }), 500);
+    const desligadas = cena.desligadas;                    // o valor de agora (como o sol)
+    clearTimeout(tempoCamadas); tempoCamadas = setTimeout(() => gravar({ desligadas }), 500);
   };
   addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { cancelar(); if (selecionado !== null) escolherPonto(null); return; }

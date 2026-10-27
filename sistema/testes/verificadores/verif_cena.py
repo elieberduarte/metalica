@@ -232,6 +232,18 @@ try:
     esperar(aba, "!(cenaApi.estado().cena.desligadas || []).includes('camada:Pilares')", 5)
     aba.drenar(1.0)
 
+    # o sol da cena (27/10: "poderia ter as opções de mudar a posição das sombras aqui na composição da cena"): a direção e a
+    # altura mexem no sol do visor, ficam gravadas e voltam depois de recarregar
+    ok(aba.avaliar("!!document.querySelector('#sol-caixa [data-sol=direcao]') && !!document.querySelector('#sol-caixa [data-sol=altura]')"),
+       "a cena tem a direção e a altura do sol")
+    sol0 = aba.avaliar("visor._luz.uSol.value.toArray()")
+    aba.avaliar("""(() => { const d = document.querySelector('#sol-caixa [data-sol=direcao]'), a = document.querySelector('#sol-caixa [data-sol=altura]');
+      d.value = 90; d.dispatchEvent(new Event('input')); a.value = 20; a.dispatchEvent(new Event('input')); return 1; })()""")
+    sol1 = aba.avaliar("visor._luz.uSol.value.toArray()")
+    ok(abs(sol1[0]) < 0.01 and sol1[1] > 0.9 and abs(sol1[2] - math.sin(math.radians(20))) < 0.01 and sol1 != sol0,
+       f"direção 90° e altura 20°: o sol do 3D vai para lá ({[round(x, 2) for x in sol1]})")
+    ok(esperar(aba, "(cenaApi.estado().cena.sol || {}).direcao === 90 && cenaApi.estado().cena.sol.altura === 20", 5), "e fica gravado na cena")
+
     # a cena pronta (27/10: "salvar cena após a conclusão, para não ficar aparecendo essas bolinhas na tela, caso seja
     # necessário editar ter um para editar cena, daí elas reaparecem"): Salvar cena tira as marcas e o encaixe do painel,
     # fica assim depois de recarregar, e Editar cena traz de volta
@@ -257,6 +269,9 @@ try:
     aba.drenar(1.0)
     ok(esperar(aba, "!!window.cenaPronta && document.body.classList.contains('concluida') && document.getElementById('edicao').hidden", 60)
        and aba.avaliar(MARCAS) == 0, "recarregada, a cena volta pronta, sem as bolinhas")
+    sol2 = aba.avaliar("visor._luz.uSol.value.toArray()")
+    ok(abs(sol2[0]) < 0.01 and sol2[1] > 0.9 and aba.avaliar("document.querySelector('#sol-caixa [data-sol=direcao]').value") == "90",
+       "e com o sol que ficou gravado (direção 90°, altura 20°), os controles à mão")
     aba.avaliar("document.getElementById('editar').click(); 1")
     # (27/10: o quadro "Cena salva" ficava na tela editando — o display: flex dele passava por cima do hidden)
     ok(esperar(aba, "cenaApi.estado().cena.concluida === false && !document.getElementById('edicao').hidden "

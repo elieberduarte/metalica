@@ -95,6 +95,19 @@ def test_cena_salva_esconde_os_pontos_ate_editar(tmp_path):
         C.gravar(g, s, i, {"concluida": "sim"})
 
 
+def test_sol_da_cena(tmp_path):
+    """27/10 ("ter as opções de mudar a posição das sombras aqui na composição da cena"): o sol gravado na cena."""
+    g, s = _gerente(tmp_path)
+    i = C.nova(g, s, _foto(tmp_path))["id"]
+    assert "sol" not in C.ler(g, s, i)                      # a tela usa o sol padrão
+    c = C.gravar(g, s, i, {"sol": {"ligado": True, "direcao": 400, "altura": 99}})
+    assert c["sol"] == {"ligado": True, "direcao": 40.0, "altura": 85.0}
+    assert C.gravar(g, s, i, {"sol": {"ligado": False, "direcao": 120, "altura": 20}})["sol"]["ligado"] is False
+    for ruim in ({"sol": "alto"}, {"sol": {"direcao": 10}}, {"sol": {"ligado": "sim", "direcao": 1, "altura": 30}}):
+        with pytest.raises(C.ErroCena):
+            C.gravar(g, s, i, ruim)
+
+
 def test_imagem_pronta_vai_para_a_pasta_cenas(tmp_path):
     g, s = _gerente(tmp_path)
     i = C.nova(g, s, _foto(tmp_path))["id"]

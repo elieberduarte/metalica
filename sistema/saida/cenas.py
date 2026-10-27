@@ -7,8 +7,8 @@ A imagem pronta (a foto com o 3D) vai para <projeto>/cenas/ (usuário, 26/10: "e
 nova chamada cenas, dentro da pasta da obra… isso vai valer para as próximas também"); a aba Arquivos a mostra. Os dados de
 cada cena ficam em <projeto>/cenas/dados/<id>/: a foto (foto.jpg, até FOTO_LADO_MAX) e cena.json — o nome, os pares de
 pontos (o ponto da foto, de 0 a 1, e o mesmo ponto no modelo, em mm do projeto), a câmera encaixada (posição e giro em mm do
-projeto, o ângulo vertical), a opacidade do 3D, as camadas desligadas, a situação da cobertura retrátil e se a cena está
-pronta (concluida: os pontos escondidos até "Editar cena"). A conta do
+projeto, o ângulo vertical), a opacidade do 3D, as camadas desligadas, a situação da cobertura retrátil, o sol (direção e
+altura) e se a cena está pronta (concluida: os pontos escondidos até "Editar cena"). A conta do
 encaixe é da tela (web/visor3d/cena.js); aqui só se guarda.
 
 Rotas, penduradas nas do terreno (saida/local_obra.py, /api/projetos/<s>/terreno/cenas…).
@@ -191,6 +191,14 @@ def gravar(g, s: str, i: str, corpo: dict) -> dict:
         if corpo["situacao"] not in (None, "aberta", "retraida"):
             raise ErroCena("situação da cobertura desconhecida: %s" % corpo["situacao"])
         c["situacao"] = corpo["situacao"]
+    # o sol da cena (usuário, 27/10: "ter as opções de mudar a posição das sombras aqui na composição da cena"): ligado ou
+    # não, a direção em volta da obra (0–360°, nos eixos do modelo) e a altura acima do horizonte (web/visor3d/sol.js)
+    if "sol" in corpo:
+        sol = corpo["sol"]
+        if not isinstance(sol, dict) or not isinstance(sol.get("ligado", True), bool):
+            raise ErroCena("dados da cena inválidos.")
+        direcao, altura = _numeros([sol.get("direcao"), sol.get("altura")], 2)
+        c["sol"] = {"ligado": sol.get("ligado", True), "direcao": round(direcao % 360.0, 1), "altura": round(min(85.0, max(5.0, altura)), 1)}
     # a cena pronta (usuário, 27/10: "salvar cena após a conclusão, para não ficar aparecendo essas bolinhas… caso seja
     # necessário editar ter um para editar cena, daí elas reaparecem"): a tela esconde os pontos e o encaixe
     if "concluida" in corpo:
