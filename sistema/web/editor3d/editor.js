@@ -398,6 +398,26 @@ export class Editor {
     }
   }
 
+  /**
+   * O desfazer e o refazer pedidos pelo usuário (Ctrl+Z, Ctrl+Y, as setas da barra) soltam antes a operação em andamento
+   * da ferramenta, como o Esc: no Mover com o ponto de origem já clicado, o fantasma da peça ficava na tela seguindo o
+   * mouse depois do Ctrl+Z — parecia a chapa, e o clique nele não a pegava (Posto, 27/10: "depois de deixar ela na
+   * posição correta não consigo selecionar mais"). As ferramentas que desfazem por dentro (o "*5" do Mover) chamam
+   * `desfazer` direto e não passam por aqui.
+   */
+  _soltarOperacao() {
+    const f = this.ativa;
+    if (!f || this.idAtiva === 'selecionar' || typeof f.reiniciar !== 'function') return;
+    try { f.reiniciar(); } catch (e) { console.warn('soltar a operação:', e); }
+    this.limparPrevia();
+    this.inferencia.limparAncora();
+    this._atualizarTrava();
+  }
+
+  desfazerDoUsuario() { this._soltarOperacao(); return this.desfazer(); }
+
+  refazerDoUsuario() { this._soltarOperacao(); return this.refazer(); }
+
   desfazer() {
     const c = this.pilha.desfazer();
     this.dica(c ? `Desfeito: ${c.rotulo}` : 'Nada para desfazer.');
@@ -819,8 +839,8 @@ export class Editor {
     // 1. Combinações com Ctrl.
     if (ctrl) {
       const acoes = {
-        z: () => (ev.shiftKey ? this.refazer() : this.desfazer()),
-        y: () => this.refazer(),
+        z: () => (ev.shiftKey ? this.refazerDoUsuario() : this.desfazerDoUsuario()),
+        y: () => this.refazerDoUsuario(),
         c: () => this.copiar(),
         v: () => this.colar(),
         a: () => this.selecao.tudo(),
@@ -2228,8 +2248,8 @@ export class Editor {
       'detalhar-ifc': () => this.dialogoDetalharIfcAvulso(),
       'exportar-ifc': () => this.exportarIFC(),
       'restaurar-modelo': () => this.dialogoRestaurarModelo(),
-      desfazer: () => this.desfazer(),
-      refazer: () => this.refazer(),
+      desfazer: () => this.desfazerDoUsuario(),
+      refazer: () => this.refazerDoUsuario(),
       'selecionar-tudo': () => this.selecao.tudo(),
       'inverter-selecao': () => this.selecao.inverter(),
       apagar: () => this.apagarSelecao(),

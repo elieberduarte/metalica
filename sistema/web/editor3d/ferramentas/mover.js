@@ -160,7 +160,9 @@ export class FerramentaMover extends Ferramenta {
     this.ultimoArray = null;
     this.ultimo = cmd ? { delta: C.copiar(delta), ids: this.ids.slice(), cmd } : null;
     this.reiniciar();
-    this.dica(cmd ? `Movido ${formatar(C.comp(delta))} — digite outra distância para corrigir` : FerramentaMover.dica);
+    // o Mover segue ativo (como no SketchUp) e o próximo clique move a mesma seleção de novo: a dica diz como voltar a
+    // selecionar (Posto, 27/10: "depois de deixar ela na posição correta não consigo selecionar mais")
+    this.dica(cmd ? `Movido ${formatar(C.comp(delta))} — digite outra distância para corrigir; Esc (ou espaço) volta a selecionar` : FerramentaMover.dica);
   }
 
   /** Array linear: refaz a última cópia como n cópias. */
