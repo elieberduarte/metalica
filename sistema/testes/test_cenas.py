@@ -78,6 +78,23 @@ def test_camadas_e_cobertura_retratil_da_cena(tmp_path):
             C.gravar(g, s, i, ruim)
 
 
+def test_cena_salva_esconde_os_pontos_ate_editar(tmp_path):
+    """27/10 ("salvar cena após a conclusão, para não ficar aparecendo essas bolinhas… ter um para editar cena"): a cena
+    pronta fica gravada; só com o encaixe feito; Editar cena volta."""
+    g, s = _gerente(tmp_path)
+    i = C.nova(g, s, _foto(tmp_path))["id"]
+    assert not C.ler(g, s, i).get("concluida")
+    with pytest.raises(C.ErroCena):                       # sem o encaixe não há o que salvar
+        C.gravar(g, s, i, {"concluida": True})
+    cam = {"posicao": [-5000, -20000, 1700], "giro": [0, 0, 0, 1], "fov": 60}
+    assert C.gravar(g, s, i, {"camera": cam, "concluida": True})["concluida"] is True
+    assert C.ler(g, s, i)["concluida"] is True and C.ler(g, s, i)["camera"]["fov"] == 60
+    assert C.gravar(g, s, i, {"opacidade": 0.5})["concluida"] is True    # mexer na opacidade não reabre
+    assert C.gravar(g, s, i, {"concluida": False})["concluida"] is False
+    with pytest.raises(C.ErroCena):
+        C.gravar(g, s, i, {"concluida": "sim"})
+
+
 def test_imagem_pronta_vai_para_a_pasta_cenas(tmp_path):
     g, s = _gerente(tmp_path)
     i = C.nova(g, s, _foto(tmp_path))["id"]

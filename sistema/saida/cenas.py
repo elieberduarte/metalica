@@ -7,7 +7,8 @@ A imagem pronta (a foto com o 3D) vai para <projeto>/cenas/ (usuário, 26/10: "e
 nova chamada cenas, dentro da pasta da obra… isso vai valer para as próximas também"); a aba Arquivos a mostra. Os dados de
 cada cena ficam em <projeto>/cenas/dados/<id>/: a foto (foto.jpg, até FOTO_LADO_MAX) e cena.json — o nome, os pares de
 pontos (o ponto da foto, de 0 a 1, e o mesmo ponto no modelo, em mm do projeto), a câmera encaixada (posição e giro em mm do
-projeto, o ângulo vertical), a opacidade do 3D, as camadas desligadas e a situação da cobertura retrátil. A conta do
+projeto, o ângulo vertical), a opacidade do 3D, as camadas desligadas, a situação da cobertura retrátil e se a cena está
+pronta (concluida: os pontos escondidos até "Editar cena"). A conta do
 encaixe é da tela (web/visor3d/cena.js); aqui só se guarda.
 
 Rotas, penduradas nas do terreno (saida/local_obra.py, /api/projetos/<s>/terreno/cenas…).
@@ -190,6 +191,14 @@ def gravar(g, s: str, i: str, corpo: dict) -> dict:
         if corpo["situacao"] not in (None, "aberta", "retraida"):
             raise ErroCena("situação da cobertura desconhecida: %s" % corpo["situacao"])
         c["situacao"] = corpo["situacao"]
+    # a cena pronta (usuário, 27/10: "salvar cena após a conclusão, para não ficar aparecendo essas bolinhas… caso seja
+    # necessário editar ter um para editar cena, daí elas reaparecem"): a tela esconde os pontos e o encaixe
+    if "concluida" in corpo:
+        if not isinstance(corpo["concluida"], bool):
+            raise ErroCena("dados da cena inválidos.")
+        if corpo["concluida"] and not c.get("camera"):
+            raise ErroCena("encaixe a cena antes de salvar.")
+        c["concluida"] = corpo["concluida"]
     c["alterada"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     _gravar(os.path.join(_pasta(g, s), i, "cena.json"), c)
     return c

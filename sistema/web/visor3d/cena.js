@@ -4,7 +4,8 @@
 //
 // O caminho: a foto (Nova cena) → os pares de pontos (um clique na foto e o mesmo ponto no 3D: uma peça, ou o chão da
 // imagem do terreno — os cantos da quadra, um meio-fio) → Encaixar (encaixe.js acha a câmera da foto) → o ajuste fino
-// (lente, rolar, opacidade do 3D) → Salvar imagem (a foto com o 3D, na pasta cenas/ da obra).
+// (lente, rolar, opacidade do 3D) → Salvar cena (os pontos saem da tela; Editar cena os traz) → Salvar imagem (a foto com o
+// 3D, na pasta cenas/ da obra).
 //
 // Duas vistas no mesmo palco: a FOTO (a foto parada, o 3D transparente por cima pela câmera da cena; os cliques marcam a
 // foto) e o 3D (o modelo com o terreno, girando como no modo ver; o clique marca o ponto do modelo).
@@ -113,6 +114,7 @@ async function abrirCena(id) {
   desenharPares();
   desenharCamadas();
   marcarSituacao();
+  mostrarConcluida();
 }
 
 // ------------------------------------------------------------------ camadas e cobertura retrátil
@@ -264,6 +266,34 @@ async function gravar(campos) {
   cena = await pedir(`${API}/${encodeURIComponent(cena.id)}`, campos);
   desenharPares();
   atualizarFaixas();
+  $('#salvar-cena').disabled = !cena.camera;
+}
+
+// ------------------------------------------------------------------ a cena pronta
+// (usuário, 27/10: "crie a opção salvar cena após a conclusão, para não ficar aparecendo essas bolinhas na tela, caso seja
+// necessário editar ter um para editar cena, daí elas reaparecem"): pronta, a cena fica só a foto com o 3D — sem as marcas,
+// sem os pontos e o encaixe no painel; a opacidade, o sol, as camadas e a imagem continuam
+
+function mostrarConcluida() {
+  const pronta = !!(cena && cena.concluida);
+  document.body.classList.toggle('concluida', pronta);
+  $('#edicao').hidden = pronta;
+  $('#pronta').hidden = !pronta;
+  $('#salvar-cena').disabled = !(cena && cena.camera);
+  $('#salvar-cena').title = cena && cena.camera ? 'Terminar o encaixe: os pontos saem da tela (Editar cena traz de volta)'
+    : 'Encaixe a cena antes de salvar (4 pontos ou mais)';
+  if (pronta) { cancelar(); arrasto = null; selecionado = null; if (modo !== 'foto') mostrarModo('foto'); }
+}
+
+async function concluir(pronta) {
+  if (!cena) return;
+  if (pronta && !cena.camera) { aviso('Encaixe a cena antes de salvar (4 pontos ou mais).'); return; }
+  clearTimeout(tempoAjuste);                                // o ajuste fino ainda por gravar vai junto
+  const campos = { concluida: pronta };
+  if (pronta) Object.assign(campos, { pares: cena.pares, camera: cena.camera });
+  await gravar(campos);
+  mostrarConcluida();
+  aviso(pronta ? 'Cena salva: os pontos saíram da tela. Para mexer neles, Editar cena.' : 'Editando: os pontos de volta na foto.');
 }
 
 function comecarPonto() {
@@ -421,6 +451,8 @@ function ligarControles() {
   $('#ver').onclick = () => { cancelar(); mostrarModo(modo === '3d' ? 'foto' : '3d'); };
   $('#encaixar').onclick = () => { cancelar(); fazerEncaixe().catch(e => aviso('O encaixe falhou: ' + e.message)); };
   $('#salvar-imagem').onclick = () => salvarImagem();
+  $('#salvar-cena').onclick = () => concluir(true).catch(e => aviso('A cena não foi salva: ' + e.message));
+  $('#editar').onclick = () => concluir(false).catch(e => aviso('Não deu: ' + e.message));
   $('#apagar').onclick = async () => {
     if (!cena || !confirm(`Apagar a cena "${cena.nome}"? A foto e os pontos saem do projeto (a imagem salva na pasta cenas fica).`)) return;
     try { await pedir(`${API}/${encodeURIComponent(cena.id)}/apagar`, {}); aviso('Cena apagada.'); await listar(); }
@@ -479,7 +511,7 @@ function ligarControles() {
   addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { cancelar(); if (selecionado !== null) escolherPonto(null); return; }
     const setas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
-    if (!setas || selecionado === null || modo !== 'foto' || marcando || !cena || /INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) return;
+    if (!setas || selecionado === null || modo !== 'foto' || marcando || !cena || cena.concluida || /INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) return;
     e.preventDefault();
     const k = e.shiftKey ? 10 : 1, p = cena.pares[selecionado].foto;
     moverPonto(selecionado, p[0] + setas[0] * k / marcas.clientWidth, p[1] + setas[1] * k / marcas.clientHeight);
@@ -493,7 +525,7 @@ function ligarControles() {
   });
   // na foto: pegar a marca e arrastar
   marcas.addEventListener('pointerdown', (e) => {
-    if (modo !== 'foto' || marcando || !cena || e.button !== 0) return;
+    if (modo !== 'foto' || marcando || !cena || cena.concluida || e.button !== 0) return;
     const r = marcas.getBoundingClientRect(), i = pontoPerto(e.clientX - r.left, e.clientY - r.top);
     if (i === null) { if (selecionado !== null) escolherPonto(null); return; }
     escolherPonto(i);
@@ -555,7 +587,7 @@ function ligarControles() {
 const _v = new THREE.Vector3();
 function desenharMarcas() {
   requestAnimationFrame(desenharMarcas);
-  if (!visor || !cena) { marcas.innerHTML = ''; return; }
+  if (!visor || !cena || cena.concluida) { if (marcas._html) { marcas.innerHTML = ''; marcas._html = ''; } return; }
   const w = marcas.clientWidth, h = marcas.clientHeight, o = visor.cabecalho.origem, html = [];
   const naTela = (X) => {
     _v.set(X[0] - o[0], X[1] - o[1], X[2] - o[2]).project(visor.camera);
@@ -574,5 +606,5 @@ function desenharMarcas() {
   if (novo !== marcas._html) { marcas.innerHTML = novo; marcas._html = novo; }
 }
 
-window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado }), mostrarModo, pontoDo3d, fazerEncaixe };
+window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado }), mostrarModo, pontoDo3d, fazerEncaixe, concluir };
 abrir().catch(e => { aviso('A cena não abriu: ' + e.message); console.error(e); });

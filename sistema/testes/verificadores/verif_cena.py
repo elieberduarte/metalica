@@ -7,8 +7,9 @@ não existe na foto). Pela tela, com cliques de verdade:
   1. a foto entra como cena nova (a rota do terreno) e a página abre nela;
   2. para cada ponto: "+ Ponto", o clique na foto, a vista vai para o 3D, o clique no mesmo ponto do chão;
   3. no 4º ponto o encaixe sai sozinho; com os 6, a lente volta 70° (±2°) e o erro fica abaixo de 3 px;
-  4. Salvar imagem: a foto com o 3D em <projeto>/cenas/, no tamanho da foto;
-  5. sem erros no console.
+  4. Salvar cena tira as bolinhas da foto e o encaixe do painel (fica depois de recarregar); Editar cena os traz de volta;
+  5. Salvar imagem: a foto com o 3D em <projeto>/cenas/, no tamanho da foto;
+  6. sem erros no console.
 Porta livre, nunca a 8765/8766."""
 import json, math, os, shutil, subprocess, sys, tempfile, time, urllib.request
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -227,6 +228,37 @@ try:
     aba.avaliar("document.querySelector('#camadas input[data-chave=\"camada:Pilares\"]').click(); 1")
     esperar(aba, "!(cenaApi.estado().cena.desligadas || []).includes('camada:Pilares')", 5)
     aba.drenar(1.0)
+
+    # a cena pronta (27/10: "salvar cena após a conclusão, para não ficar aparecendo essas bolinhas na tela, caso seja
+    # necessário editar ter um para editar cena, daí elas reaparecem"): Salvar cena tira as marcas e o encaixe do painel,
+    # fica assim depois de recarregar, e Editar cena traz de volta
+    MARCAS = "document.querySelectorAll('#marcas .marca').length"
+    ok(aba.avaliar(MARCAS) >= 5 and not aba.avaliar("document.getElementById('salvar-cena').disabled"),
+       "antes de salvar: os pontos na foto e o Salvar cena ligado")
+    aba.avaliar("document.getElementById('salvar-cena').click(); 1")
+    ok(esperar(aba, "cenaApi.estado().cena.concluida === true && document.getElementById('edicao').hidden "
+                     "&& !document.getElementById('pronta').hidden", 10), "Salvar cena: o painel fica só com a cena pronta (Editar cena)")
+    aba.drenar(0.5)
+    ok(aba.avaliar(MARCAS) == 0 and aba.avaliar("getComputedStyle(document.getElementById('marcas')).display") == "none",
+       "e as bolinhas saem da foto")
+    fx, fy, fw, fh = aba.avaliar(FOTO_NA_TELA)
+    u_antes = aba.avaliar("cenaApi.estado().cena.pares[1].foto[0]")
+    x0, y0 = fx + u_antes * fw, fy + uvs[1][1] * fh
+    aba.cmd("Input.dispatchMouseEvent", type="mousePressed", x=x0, y=y0, button="left", clickCount=1)
+    aba.cmd("Input.dispatchMouseEvent", type="mouseMoved", x=x0 + 40, y=y0, button="left", buttons=1)
+    aba.cmd("Input.dispatchMouseEvent", type="mouseReleased", x=x0 + 40, y=y0, button="left", clickCount=1)
+    aba.drenar(0.8)
+    ok(aba.avaliar("cenaApi.estado().cena.pares[1].foto[0]") == u_antes, "pronta, arrastar na foto não mexe nos pontos")
+    aba.avaliar("location.reload(); 1")
+    aba.drenar(1.0)
+    ok(esperar(aba, "!!window.cenaPronta && document.body.classList.contains('concluida') && document.getElementById('edicao').hidden", 60)
+       and aba.avaliar(MARCAS) == 0, "recarregada, a cena volta pronta, sem as bolinhas")
+    aba.avaliar("document.getElementById('editar').click(); 1")
+    ok(esperar(aba, "cenaApi.estado().cena.concluida === false && !document.getElementById('edicao').hidden "
+                     "&& document.getElementById('pronta').hidden", 10), "Editar cena: os pontos e o encaixe de volta no painel")
+    ok(esperar(aba, MARCAS + " >= 5", 5), "e as bolinhas de volta na foto")
+    gravado = json.loads(urllib.request.urlopen(base + "/api/projetos/obra/terreno/cenas/foto-teste", timeout=30).read())
+    ok(gravado.get("concluida") is False, "Editar cena fica gravado")
 
     # 4. a imagem pronta na pasta cenas/ da obra
     aba.avaliar("document.getElementById('salvar-imagem').click(); 1")
