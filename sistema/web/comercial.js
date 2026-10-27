@@ -224,11 +224,20 @@ function abaProposta() {
       onclick: async () => { if (SUJO) await acao('', { proposta: P }); acao('nova-revisao', {}); } }),
     el('span', { class: 'sep' }), el('span', { class: 'estado estado-sujo', texto: P.numero ? '' : 'o número sai ao gravar' }));
 
+  const empresas = S.empresas || [];
   const ident = caixa('Identificação', 'número e revisão aparecem na capa e no cabeçalho', el('div', { class: 'campos' },
+    empresas.length > 1 ? campo(P, 'empresa', 'Empresa', { tipo: 'select', opcoes: empresas.map(e => [e.id, e.nome]),
+      dica: 'a marca, o desenho do PDF e a numeração são os da empresa escolhida; trocar dá à proposta um número da nova empresa',
+      aoMudar: () => acao('', { proposta: P }) }) : null,
     campo(P, 'numero', 'Número', { dica: 'gerado ao gravar (AAAA-NNN)' }), campo(P, 'revisao', 'Revisão'), campo(P, 'data', 'Data', { dica: 'dd/mm/aaaa' }),
     campo(P, 'validade_dias', 'Validade (dias)', { num: true, dica: 'prazo de validade da proposta' }), campo(P, 'cidade_emissao', 'Emitida em', { dica: 'ex.: Cascavel, PR' }),
     campo(P, 'opcao', 'Opção', { dica: 'ex.: Opção 01 – terças pré-galvanizadas' }),
-    campo(P, 'ref', 'Referência', { largo: true, dica: 'ex.: Proposta para execução das estruturas metálicas de cobertura e fechamentos.' })));
+    campo(P, 'ref', 'Referência', { largo: true, dica: 'ex.: Proposta para execução das estruturas metálicas de cobertura e fechamentos.' }),
+    S.empresa && S.empresa.layout === 'compacto' ? campo(P, 'titulo', 'Título (compacto)', { largo: true,
+      dica: 'o título grande do PDF compacto, ex.: Vigas de içamento dos elevadores; vazio = a referência' }) : null),
+    S.empresa && S.empresa.layout === 'compacto' ? el('div', { style: 'margin-top:8px' },
+      el('p', { class: 'dica', texto: 'Destaques da faixa (até 4; vazio = área, peso e prazo). Só o tipo do perfil — "perfil W", nunca a medida.' }),
+      tabelaLinhas(P.destaques = P.destaques || [], [['valor', 'Número'], ['texto', 'Texto']], 'car', () => ({ valor: '', texto: '' }))) : null);
   const cli = caixa('Cliente e obra', null, el('div', { class: 'campos' },
     campo(P.cliente, 'nome', 'Cliente'), campo(P.cliente, 'contato', 'A/C (contato)'), campo(P.cliente, 'cidade', 'Cidade'), campo(P.cliente, 'uf', 'UF'),
     campo(P.cliente, 'email', 'E-mail'), campo(P.cliente, 'telefone', 'Telefone'),
@@ -478,7 +487,7 @@ function abaEmpresa() {
   E.representante = E.representante || {}; E.banco = E.banco || {}; E.cores = E.cores || {}; E.responsavel_tecnico = E.responsavel_tecnico || {};
   const logos = {};
   const arquivo = (chave, rotulo) => {
-    const i = el('input', { type: 'file', accept: 'image/png,image/jpeg' });
+    const i = el('input', { type: 'file', accept: 'image/svg+xml,image/png,image/jpeg' });
     i.addEventListener('change', () => {
       const f = i.files[0]; if (!f) return;
       const fr = new FileReader(); fr.onload = () => { logos[chave + '_base64'] = fr.result; marcar(); }; fr.readAsDataURL(f);
@@ -488,10 +497,19 @@ function abaEmpresa() {
   const prev = el('div', { class: 'marca-prev' },
     S.empresa.logo_url ? el('img', { src: S.empresa.logo_url + '?t=' + Date.now(), alt: 'logo' }) : null,
     S.empresa.logo_claro_url ? el('img', { class: 'claro', src: S.empresa.logo_claro_url + '?t=' + Date.now(), alt: 'logo claro' }) : null);
-  return el('div', {}, el('div', { class: 'barra' }, el('button', { type: 'button', class: 'botao-m principal', texto: 'Gravar os dados da empresa',
-    onclick: () => acao('empresa', Object.assign({ empresa: E }, logos)) }), el('span', { class: 'sep' }), el('span', { class: 'estado estado-sujo' })),
+  const principal = !E.id || E.id === 'principal';
+  const onde = principal ? 'Documentos\\Metálica\\fabrica\\empresa.json' : `Documentos\\Metálica\\fabrica\\empresas\\${E.id}\\empresa.json`;
+  const nova = () => {
+    const nome = (prompt('Nome da nova empresa (ex.: DEZN Construtora):') || '').trim();
+    if (nome) acao('empresa', { nova: nome }, 'cadastrando a empresa…');
+  };
+  return el('div', {}, el('div', { class: 'barra' }, el('button', { type: 'button', class: 'botao-m principal', texto: `Gravar os dados de ${E.nome_comercial || E.razao_social || 'empresa'}`,
+    onclick: () => acao('empresa', Object.assign({ empresa: E, empresa_id: E.id || 'principal' }, logos)) }),
+    el('button', { type: 'button', class: 'botao-m', texto: '+ Outra empresa', title: 'Cadastra outra empresa (marca, desenho do PDF e numeração próprios) e passa esta proposta para ela', onclick: nova }),
+    el('span', { class: 'sep' }), el('span', { class: 'estado estado-sujo' })),
+  (S.empresas || []).length > 1 ? el('p', { class: 'dica', texto: 'Esta aba mostra a empresa escolhida na proposta. Para editar outra, troque a empresa na aba Proposta.' }) : null,
   el('div', { class: 'grade2' }, el('div', {},
-    caixa('Empresa', 'vale para todas as propostas e contratos; fica em Documentos\\Metálica\\fabrica\\empresa.json', el('div', { class: 'campos' },
+    caixa('Empresa', `vale para as propostas e contratos desta empresa; fica em ${onde}`, el('div', { class: 'campos' },
       campo(E, 'razao_social', 'Razão social', { largo: true }), campo(E, 'nome_comercial', 'Nome comercial'), campo(E, 'cnpj', 'CNPJ'), campo(E, 'ie', 'Inscrição estadual'),
       campo(E, 'endereco', 'Endereço', { largo: true }), campo(E, 'bairro', 'Bairro'), campo(E, 'cidade', 'Cidade'), campo(E, 'uf', 'UF'), campo(E, 'cep', 'CEP'),
       campo(E, 'telefone', 'Telefone'), campo(E, 'email', 'E-mail'), campo(E, 'site', 'Site'), campo(E, 'slogan', 'Slogan'), campo(E, 'foro', 'Foro padrão (comarca)'))),
@@ -502,8 +520,11 @@ function abaEmpresa() {
     caixa('Apresentação na proposta', null, el('div', { class: 'campos' },
       campo(E, 'apresentacao', '"Quem somos"', { tipo: 'area', largo: true }), linhasTexto(E, 'diferenciais', 'Diferenciais (um por linha)')))),
   el('div', {}, caixa('Identidade visual', 'logo no cabeçalho; o logo claro vai na capa escura',
-    el('div', { class: 'campos' }, arquivo('logo', 'Logo (PNG)'), arquivo('logo_claro', 'Logo claro (PNG, para fundo escuro)'),
-      campo(E.cores, 'primaria', 'Cor principal', { dica: '#35434C' }), campo(E.cores, 'destaque', 'Cor de destaque', { dica: '#C3D773' })),
+    el('div', { class: 'campos' }, arquivo('logo', 'Logo (SVG ou PNG)'), arquivo('logo_claro', 'Logo claro (SVG ou PNG, para fundo escuro)'),
+      campo(E.cores, 'primaria', 'Cor principal', { dica: '#35434C' }), campo(E.cores, 'destaque', 'Cor de destaque', { dica: '#C3D773' }),
+      campo(E.cores, 'apoio', 'Cor de apoio (compacto)', { dica: '#7F9FFF' }),
+      campo(E, 'layout', 'Desenho do PDF', { tipo: 'select', opcoes: Object.entries(S.layouts || { classico: 'Clássico' }) }),
+      principal ? null : campo(E, 'prefixo_numero', 'Prefixo do número', { dica: 'ex.: DZ → DZ-2026-001' })),
     el('p', { class: 'dica', texto: S.empresa.logo ? 'Logo cadastrado.' : 'Sem logo cadastrado.' }), prev))));
 }
 

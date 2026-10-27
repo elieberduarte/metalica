@@ -50,6 +50,14 @@ def _nome_arquivo(texto: str, maximo: int = 24) -> str:
     return re.sub(r"[^\w\-]+", "_", str(texto or "obra"), flags=re.UNICODE).strip("_")[:maximo].strip("_") or "obra"
 
 
+def _empresa(ctx: Contexto, P: Optional[dict]) -> dict:
+    """A empresa da proposta (proposta.empresa); a principal quando não escolhida ou quando a escolhida sumiu."""
+    try:
+        return C.ler_empresa(ctx.dados, (P or {}).get("empresa"))
+    except ValueError:
+        return C.ler_empresa(ctx.dados)
+
+
 def _imagens_existentes(ctx: Contexto):
     pasta = os.path.join(_pasta_docs(ctx), "imagens")
     try:
@@ -65,11 +73,12 @@ LEGENDAS = {"capa": "", "aerea_frente": "Estrutura — vista aérea", "aerea_fre
 def estado(ctx: Contexto) -> dict:
     """O estado completo para a tela (cria a proposta inicial na primeira vez, sem gravar)."""
     est = C.ler(ctx.pasta)
-    empresa = C.ler_empresa(ctx.dados)
     P = est["proposta"]
+    empresa = _empresa(ctx, P)
     novo = not P
     if novo:
         P = C.proposta_inicial(ctx.projeto, ctx.lista(), ctx.orcamento(), ctx.numeros(), empresa)
+        P["empresa"] = empresa["id"]
         P["imagens"] = [{"arquivo": a, "legenda": LEGENDAS.get(os.path.splitext(os.path.basename(a))[0], ""), "usar": True}
                         for a in _imagens_existentes(ctx)]
     Cn = est["contrato"]
@@ -91,6 +100,7 @@ def estado(ctx: Contexto) -> dict:
         "etapas": C.etapas(est, ctx.pasta), "financeiro": C.resumo_financeiro(Cn) if Cn else None,
         "historico": list(reversed(est.get("historico") or []))[:40],
         "empresa": empresa, "empresa_incompleta": not (empresa.get("razao_social") and empresa.get("cnpj")),
+        "empresas": C.listar_empresas(ctx.dados), "layouts": C.LAYOUTS,
         "avisos_proposta": C.avisos_proposta(P), "avisos_contrato": C.avisos_contrato(P, Cn) if Cn else [],
         "exclusoes_opcionais": C.EXCLUSOES_OPCIONAIS, "situacoes": list(C.SITUACOES),
         "orcamento": {"tabela": tot.get("tabela"), "fechamento": tot.get("fechamento"), "aco_kg": tot.get("aco_kg")},
@@ -110,8 +120,13 @@ def gravar(ctx: Contexto, corpo: dict) -> dict:
     est = C.ler(ctx.pasta)
     if "proposta" in corpo:
         P = _limpar_imagens(corpo["proposta"] or {})
+        P["empresa"] = _empresa(ctx, P)["id"]
+        antes = est.get("proposta") or {}
+        if P.get("numero") and antes.get("numero") == P.get("numero") and (antes.get("empresa") or C.PRINCIPAL) != P["empresa"]:
+            P["numero"] = ""                                 # trocou de empresa: o número é da sequência da nova
+            C.registrar(est, "proposta passada para a empresa %s" % (_empresa(ctx, P).get("nome_comercial") or P["empresa"]))
         if not P.get("numero"):
-            P["numero"] = C.proximo_numero(ctx.dados)
+            P["numero"] = C.proximo_numero(ctx.dados, empresa_id=P["empresa"])
             C.registrar(est, "proposta nº %s criada" % P["numero"])
         est["proposta"] = P
     if "contrato" in corpo:
@@ -148,7 +163,7 @@ def iniciar_contrato(ctx: Contexto) -> dict:
     if not est.get("proposta"):
         raise ValueError("grave a proposta antes de abrir o contrato")
     if not est.get("contrato"):
-        est["contrato"] = C.contrato_inicial(est["proposta"], C.ler_empresa(ctx.dados))
+        est["contrato"] = C.contrato_inicial(est["proposta"], _empresa(ctx, est["proposta"]))
         C.registrar(est, "contrato aberto a partir da proposta %s %s" % (est["proposta"].get("numero"), est["proposta"].get("revisao")))
         C.gravar(ctx.pasta, est)
     return estado(ctx)
@@ -157,13 +172,14 @@ def iniciar_contrato(ctx: Contexto) -> dict:
 def proposta_pdf(ctx: Contexto, corpo: dict) -> dict:
     if corpo.get("proposta"):
         gravar(ctx, {"proposta": corpo["proposta"]})
-    from saida import proposta_html
+    from saida import proposta_compacta, proposta_html
     est = C.ler(ctx.pasta)
     P = dict(est["proposta"])
     P["imagens"] = [i for i in P.get("imagens") or [] if i.get("usar", True)]
-    empresa = C.ler_empresa(ctx.dados)
+    empresa = _empresa(ctx, P)
     nome = "Proposta_%s_%s_%s" % (_nome_arquivo(P.get("numero")), P.get("revisao") or "R00", _nome_arquivo((P.get("obra") or {}).get("nome")))
-    r = proposta_html.gerar_pdf(P, empresa, _pasta_docs(ctx), nome, ctx.numeros(), ctx.orcamento())
+    layout = proposta_compacta if empresa.get("layout") == "compacto" else proposta_html
+    r = layout.gerar_pdf(P, empresa, _pasta_docs(ctx), nome, ctx.numeros(), ctx.orcamento())
     try:
         os.remove(r.get("html", ""))                       # o HTML usa caminhos locais; o documento é o PDF
     except OSError:
@@ -228,7 +244,7 @@ def contrato_docs(ctx: Contexto, corpo: dict) -> dict:
     P, Cn = est.get("proposta") or {}, est.get("contrato") or {}
     if not Cn:
         raise ValueError("abra o contrato antes de gerar os documentos")
-    empresa = C.ler_empresa(ctx.dados)
+    empresa = _empresa(ctx, P)
     ct = (Cn.get("contratante") or {}).get("razao_social") or (P.get("cliente") or {}).get("nome")
     nome = "Contrato_%s_%s" % (_nome_arquivo(ct), Cn.get("revisao") or "R00")
     pasta = _pasta_docs(ctx)
@@ -256,7 +272,7 @@ def termo_aceite(ctx: Contexto, corpo: dict) -> dict:
     P, Cn = est.get("proposta") or {}, est.get("contrato") or {}
     dados = {"data": corpo.get("data") or date.today().strftime("%d/%m/%Y"), "data_vistoria": corpo.get("data_vistoria") or "",
              "pendencias": [x.strip() for x in str(corpo.get("pendencias") or "").splitlines() if x.strip()]}
-    corpo_html, css = CD.termo_aceite_html(P, Cn, C.ler_empresa(ctx.dados), dados)
+    corpo_html, css = CD.termo_aceite_html(P, Cn, _empresa(ctx, P), dados)
     r = CD.imprimir(corpo_html, css, "Termo de aceite", _pasta_docs(ctx), "Termo_de_Aceite_%s" % _nome_arquivo((P.get("obra") or {}).get("nome")))
     try:
         os.remove(r.get("html", ""))
@@ -280,7 +296,7 @@ def aditivo(ctx: Contexto, corpo: dict) -> dict:
     i = int(corpo.get("indice") or 0)
     if not (0 <= i < len(adits)):
         raise ValueError("aditivo inexistente")
-    corpo_html, css = CD.aditivo_html(P, Cn, C.ler_empresa(ctx.dados), adits[i], i + 1)
+    corpo_html, css = CD.aditivo_html(P, Cn, _empresa(ctx, P), adits[i], i + 1)
     r = CD.imprimir(corpo_html, css, "Termo aditivo", _pasta_docs(ctx), "Termo_Aditivo_%02d" % (i + 1))
     try:
         os.remove(r.get("html", ""))
@@ -295,19 +311,47 @@ def aditivo(ctx: Contexto, corpo: dict) -> dict:
 
 
 def empresa(ctx: Contexto, corpo: dict) -> dict:
+    """Grava os dados de uma empresa ({empresa, empresa_id}; sem id = a principal). {nova: "Nome"} cadastra outra
+    empresa (id tirado do nome) e passa a proposta para ela."""
     e = corpo.get("empresa") or {}
-    C.gravar_empresa(ctx.dados, e)
-    marca = C.pasta_marca(ctx.dados)
-    for chave, nome in (("logo", "logo.png"), ("logo_claro", "logo_claro.png")):
+    eid = corpo.get("empresa_id") or C.PRINCIPAL
+    if corpo.get("nova"):
+        eid = re.sub(r"[^a-z0-9]+", "-", _sem_acento(str(corpo["nova"]).lower())).strip("-")[:40] or "empresa"
+        if any(x["id"] == eid for x in C.listar_empresas(ctx.dados)):
+            raise ValueError("já existe uma empresa com esse nome")
+        e = {"nome_comercial": str(corpo["nova"]).strip(), "layout": "compacto"}
+    C.gravar_empresa(ctx.dados, e, eid)
+    marca = C.pasta_marca(ctx.dados, eid)
+    for chave in ("logo", "logo_claro"):
         b64 = corpo.get(chave + "_base64")
         if b64:
             os.makedirs(marca, exist_ok=True)
             dados = base64.b64decode(str(b64).split(",", 1)[-1])
-            if dados[1:4] != b"PNG" and dados[:2] != b"\xff\xd8":
-                raise ValueError("o logo tem de ser PNG ou JPEG")
-            with open(os.path.join(marca, nome), "wb") as f:
+            if dados[1:4] == b"PNG":
+                ext = ".png"
+            elif dados[:2] == b"\xff\xd8":
+                ext = ".jpg"
+            elif b"<svg" in dados[:2000]:
+                ext = ".svg"
+            else:
+                raise ValueError("o logo tem de ser SVG, PNG ou JPEG")
+            for velho in ("svg", "png", "jpg"):                 # o logo novo vence o de outro formato
+                try:
+                    os.remove(os.path.join(marca, "%s.%s" % (chave, velho)))
+                except OSError:
+                    pass
+            with open(os.path.join(marca, chave + ext), "wb") as f:
                 f.write(dados)
+    if corpo.get("nova"):
+        est = C.ler(ctx.pasta)
+        if est.get("proposta"):
+            gravar(ctx, {"proposta": dict(est["proposta"], empresa=eid)})
     return estado(ctx)
+
+
+def _sem_acento(t: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", t) if unicodedata.category(c) != "Mn")
 
 
 def parcelas(corpo: dict) -> dict:

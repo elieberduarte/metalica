@@ -163,17 +163,42 @@ EMPRESA_PADRAO = {
                      "Montagem com equipe própria, caminhão munck e plataformas de trabalho em altura",
                      "Modelo 3D da estrutura antes da fabricação: o que você vê é o que será montado"],
     "foro": "",
+    "layout": "classico",
+    "prefixo_numero": "",
 }
 
+#: Várias empresas (27/10): a principal é a de sempre, em <dados>/fabrica/ (empresa.json, marca/, comercial-seq.json),
+#: sem mudar de lugar — a proposta dela sai igual. As outras ficam em <dados>/fabrica/empresas/<id>/, cada uma com
+#: o seu empresa.json, a sua marca/ e a sua numeração. A proposta grava a escolhida em ``proposta.empresa``.
+PRINCIPAL = "principal"
+#: O desenho da proposta em PDF: clássico (capa com a foto do 3D, seções — saida/proposta_html.py) ou compacto
+#: (cabeçalho da marca, faixa de destaques, escopo incluso × não incluso — saida/proposta_compacta.py; piloto C da DEZN).
+LAYOUTS = {"classico": "Clássico — capa com a imagem do 3D e seções", "compacto": "Compacto — 2 páginas, sem capa"}
 
-def pasta_marca(dados: str) -> str:
-    return os.path.join(dados, "fabrica", "marca")
+
+def _id_empresa(empresa_id) -> str:
+    i = str(empresa_id or "").strip().lower()
+    if not i or i == PRINCIPAL:
+        return PRINCIPAL
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,39}", i):
+        raise ValueError("identificador de empresa inválido: %s" % empresa_id)
+    return i
 
 
-def ler_empresa(dados: str) -> dict:
+def pasta_empresa(dados: str, empresa_id=None) -> str:
+    i = _id_empresa(empresa_id)
+    return os.path.join(dados, "fabrica") if i == PRINCIPAL else os.path.join(dados, "fabrica", "empresas", i)
+
+
+def pasta_marca(dados: str, empresa_id=None) -> str:
+    return os.path.join(pasta_empresa(dados, empresa_id), "marca")
+
+
+def ler_empresa(dados: str, empresa_id=None) -> dict:
+    i = _id_empresa(empresa_id)
     e = copy.deepcopy(EMPRESA_PADRAO)
     try:
-        with open(os.path.join(dados, "fabrica", "empresa.json"), encoding="utf-8") as f:
+        with open(os.path.join(pasta_empresa(dados, i), "empresa.json"), encoding="utf-8") as f:
             lido = json.load(f)
         for k, v in lido.items():
             if isinstance(v, dict) and isinstance(e.get(k), dict):
@@ -181,26 +206,53 @@ def ler_empresa(dados: str) -> dict:
             else:
                 e[k] = v
     except (OSError, ValueError):
-        pass
-    marca = pasta_marca(dados)
-    for chave, nomes in (("logo", ("logo.png", "logo.jpg")), ("logo_claro", ("logo_claro.png",)), ("rodape", ("rodape.png", "rodape.jpg"))):
+        if i != PRINCIPAL and not os.path.isdir(pasta_empresa(dados, i)):
+            raise ValueError("empresa não cadastrada: %s" % i)
+    if e.get("layout") not in LAYOUTS:
+        e["layout"] = "classico"
+    e["id"] = i
+    marca = pasta_marca(dados, i)
+    for chave, nomes in (("logo", ("logo.svg", "logo.png", "logo.jpg")), ("logo_claro", ("logo_claro.svg", "logo_claro.png")),
+                         ("rodape", ("rodape.png", "rodape.jpg"))):
         e[chave] = next((os.path.join(marca, n) for n in nomes if os.path.exists(os.path.join(marca, n))), "")
     return e
 
 
-def gravar_empresa(dados: str, empresa: dict) -> dict:
-    pasta = os.path.join(dados, "fabrica")
+def listar_empresas(dados: str) -> List[dict]:
+    """[{id, nome, layout}] — a principal primeiro, depois as de fabrica/empresas/ em ordem alfabética."""
+    ids = [PRINCIPAL]
+    try:
+        ids += sorted(n for n in os.listdir(os.path.join(dados, "fabrica", "empresas"))
+                      if re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,39}", n) and n != PRINCIPAL)
+    except OSError:
+        pass
+    saida = []
+    for i in ids:
+        try:
+            e = ler_empresa(dados, i)
+        except ValueError:
+            continue
+        saida.append({"id": i, "nome": e.get("nome_comercial") or e.get("razao_social") or ("Empresa principal" if i == PRINCIPAL else i),
+                      "layout": e["layout"]})
+    return saida
+
+
+def gravar_empresa(dados: str, empresa: dict, empresa_id=None) -> dict:
+    i = _id_empresa(empresa_id)
+    pasta = pasta_empresa(dados, i)
     os.makedirs(pasta, exist_ok=True)
     limpo = {k: v for k, v in (empresa or {}).items() if k in EMPRESA_PADRAO}
     with open(os.path.join(pasta, "empresa.json"), "w", encoding="utf-8") as f:
         json.dump(limpo, f, ensure_ascii=False, indent=1)
-    return ler_empresa(dados)
+    return ler_empresa(dados, i)
 
 
-def proximo_numero(dados: str, ano: Optional[int] = None) -> str:
-    """Número de controle da proposta: AAAA-NNN (sequência por ano, em <dados>/fabrica/comercial-seq.json)."""
+def proximo_numero(dados: str, ano: Optional[int] = None, empresa_id=None) -> str:
+    """Número de controle da proposta: AAAA-NNN (sequência por ano e por empresa, no comercial-seq.json da pasta
+    dela; a principal em <dados>/fabrica/comercial-seq.json). Com ``prefixo_numero`` na empresa: PREF-AAAA-NNN."""
     ano = ano or date.today().year
-    cam = os.path.join(dados, "fabrica", "comercial-seq.json")
+    i = _id_empresa(empresa_id)
+    cam = os.path.join(pasta_empresa(dados, i), "comercial-seq.json")
     try:
         with open(cam, encoding="utf-8") as f:
             seq = json.load(f)
@@ -211,7 +263,8 @@ def proximo_numero(dados: str, ano: Optional[int] = None) -> str:
     os.makedirs(os.path.dirname(cam), exist_ok=True)
     with open(cam, "w", encoding="utf-8") as f:
         json.dump(seq, f)
-    return "%d-%03d" % (ano, n)
+    pref = "" if i == PRINCIPAL else str(ler_empresa(dados, i).get("prefixo_numero") or "").strip().upper()
+    return ("%s-" % pref if pref else "") + "%d-%03d" % (ano, n)
 
 
 # ============================================================ textos-padrão (propostas e contratos da empresa)
@@ -477,7 +530,26 @@ def avisos_proposta(P: dict) -> List[str]:
         av.append("As parcelas somam %s e o investimento é %s." % (reais(soma), reais(inv.get("valor"))))
     if not P.get("imagens"):
         av.append("Sem imagens do modelo 3D (use \"Gerar imagens do 3D\").")
+    especificos = sorted({m.group(0) for t in textos_da_proposta(P) for m in PERFIL_ESPECIFICO.finditer(t)})
+    if especificos:
+        av.append("Medida de perfil na proposta (%s): a proposta cita só o tipo do perfil — perfil W, perfil U… — "
+                  "para o estudo não sair pronto para cotar com outros." % ", ".join(especificos[:4]))
     return av
+
+
+#: A proposta não entrega o estudo (usuário, 27/10): carregamentos de norma, geometria, o TIPO do perfil e o peso
+#: estimado podem; a medida do perfil (W200×15,0, Ue 200×75×25×2,25, HP 250…) não.
+PERFIL_ESPECIFICO = re.compile(r"\b(?:W|HP|Ue|U|C|L|Cx|I|T)\s?\d{2,3}(?:[.,]\d+)?\s?[x×X]\s?\d+(?:[.,]\d+)?"
+                               r"(?:\s?[x×X]\s?\d+(?:[.,]\d+)?)*|\b(?:W|HP)\s?\d{3}\b")
+
+
+def textos_da_proposta(P: dict) -> List[str]:
+    t = [str(P.get("ref") or ""), str(P.get("titulo") or "")]
+    for b in P.get("escopo") or []:
+        t += [str(i.get("texto") or "") for i in b.get("itens") or []]
+    for k in ("condicoes", "exclusoes", "responsabilidades"):
+        t += [str(x) for x in P.get(k) or []]
+    return t
 
 
 # ============================================================ contrato
