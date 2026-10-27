@@ -98,6 +98,28 @@ def test_planta_girada_no_desenho(tmp_path):
     assert V.conferir(pasta)["apontamentos"] == []
 
 
+@pytest.mark.parametrize("origem", ["dxf-papel", "pdf"])
+def test_folhas_do_projetista_contam_como_o_projeto_recebido(tmp_path, origem):
+    """27/10, Hora Certa: o Original passou a ser as pranchas como foram emitidas — as folhas do papel do DXF
+    (folhas_papel, origem "dxf-papel") ou o PDF impresso (origem "pdf"). O traço delas é o do projetista: não aponta
+    "nada vindo do DXF"; o que não veio de projeto nenhum aponta"""
+    pasta = str(tmp_path)
+    _galpao(pasta, {"desenho": "desenho", "deslocamento": list(DESL)})
+    caminho = os.path.join(pasta, "desenhos-2d", "desenho.desenho.json")
+    with open(caminho, encoding="utf-8") as f:
+        des = json.load(f)
+    for e in des["entidades"]:
+        e["atributos"]["origem"] = origem
+    with open(caminho, "w", encoding="utf-8") as f:
+        json.dump(des, f)
+    assert V.conferir(pasta)["apontamentos"] == []
+    for e in des["entidades"]:
+        e["atributos"]["origem"] = "desenhado no CAD"
+    with open(caminho, "w", encoding="utf-8") as f:
+        json.dump(des, f)
+    assert any("nada vindo do projeto recebido" in a["texto"] for a in V.conferir(pasta)["apontamentos"])
+
+
 def _com_chave(pasta, quantas):
     """as primeiras `quantas` barras com a chave do traço do desenho de baixo delas (atributos.origem_2d = o id do traço)"""
     caminho = os.path.join(pasta, "modelo.json")

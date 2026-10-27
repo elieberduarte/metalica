@@ -25,7 +25,10 @@ import os
 from typing import Dict, Iterable, List, Optional, Tuple
 
 CEL = 250.0            # mm: a grade dos traços do desenho
-LIMITE_FORA = 0.12     # fração das barras longe de qualquer traço do desenho a partir da qual o vínculo está errado
+LIMITE_FORA = 0.12
+#: o traço que veio do projeto recebido: o DXF (espaço do modelo), as folhas do papel do DXF (folhas_papel) e as folhas
+#: impressas em PDF (27/10, Hora Certa: o Original passou a ser as pranchas como foram emitidas, regra do usuário)
+ORIGEM_RECEBIDA = ("dxf", "dxf-papel", "pdf")     # fração das barras longe de qualquer traço do desenho a partir da qual o vínculo está errado
 MIN_CHAVE = 0.80       # sem planta_modelo: a fração das barras com a chave de um traço do desenho (o Hangar 93 %, as Docas 92 %)
 
 
@@ -106,8 +109,8 @@ def conferir(pasta_projeto: str) -> dict:
     des = _ler(os.path.join(pasta_projeto, "desenhos-2d", "%s.desenho.json" % nome)) if nome else None
     if not nome or des is None:
         return _pela_chave(pasta_projeto, ents, out, apontar)
-    if not any((e.get("atributos") or {}).get("origem") == "dxf" for e in des.get("entidades") or []):
-        apontar('o desenho 2D "%s" do vínculo não tem nada vindo do DXF' % nome)
+    if not any((e.get("atributos") or {}).get("origem") in ORIGEM_RECEBIDA for e in des.get("entidades") or []):
+        apontar('o desenho 2D "%s" do vínculo não tem nada vindo do projeto recebido (DXF ou PDF)' % nome)
     desl = pm.get("deslocamento")
     if not (isinstance(desl, (list, tuple)) and len(desl) == 2):
         apontar('o 3D não está ligado ao desenho "%s": falta o deslocamento' % nome)
@@ -163,7 +166,7 @@ def _pela_chave(pasta_projeto: str, ents: list, out: dict, apontar) -> dict:
                 chaves.add(e["id"])
             if a.get("origem_2d"):
                 chaves.add(a["origem_2d"])
-            if a.get("origem") == "dxf":
+            if a.get("origem") in ORIGEM_RECEBIDA:
                 n += 1
         if n:
             com_dxf.append(arq[:-len(".desenho.json")])
