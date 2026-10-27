@@ -30,4 +30,11 @@
   // a barra de andamento padrão (web/progresso.js, 16/10): toda chamada demorada ao servidor ganha a barra sozinha
   try { import('/progresso.js').then(function (m) { m.vigiarChamadas(); }).catch(function () {}); }
   catch (e) { /* navegador sem import(): fica sem a barra */ }
+  // a versão como marca d'água em toda tela (27/10): carrega o versao.js onde a página não o traz
+  if (!window.__metalicaVersao && !document.querySelector('script[src="/versao.js"]')) {
+    var s = document.createElement('script');
+    s.src = '/versao.js';
+    s.defer = true;
+    (document.head || document.documentElement).appendChild(s);
+  }
 })();

@@ -19,7 +19,14 @@ html.sem-paineis .area .aba-paineis { right: var(--larg-ferramentas); }
   border-radius: var(--raio-p); padding: 2px 4px; font-size: 12px; }
 .escala-topo select option { color: var(--texto); background: var(--painel); }
 
-.rodape .estado-salvo { margin-left: 12px; font-size: 11px; color: var(--texto3); white-space: nowrap; }
+/* com a tela dividida o rodapé fica estreito (27/10: a barra de andamento encolhia e o trilho dela passava por cima do
+   texto ao lado; a versão saiu do rodapé e virou marca d'água, versao.js). Quem cede lugar, com reticências, é a dica;
+   o trilho e o % da barra e o estado ficam inteiros; a caixa COMANDO encolhe um pouco */
+.rodape .estado-salvo { margin-left: 12px; font-size: 11px; color: var(--texto3); white-space: nowrap; flex: 0 0 auto; }
+.rodape .dica { flex: 0 1000 auto; min-width: 0; }
+.rodape .barra-andamento { min-width: 236px; }
+.rodape .medidas { flex: 0 1 auto; min-width: 0; }
+.rodape .medidas input { flex: 0 1 220px; min-width: 110px; }
 /* a caixa de medidas do rodapé, como a do 3D: fundo e borda do tema (no escuro ficava branca) */
 .rodape .medidas { position: relative; display: flex; align-items: center; gap: 6px; margin-left: 12px; font-size: 11px;
   color: var(--texto3); letter-spacing: .05em; white-space: nowrap; }

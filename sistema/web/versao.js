@@ -10,11 +10,14 @@
 // se o servidor passou a responder outra versão, o programa foi atualizado por baixo e a
 // janela avisa, em amarelo, que precisa ser recarregada (um clique recarrega).
 //
-// O rótulo entra no elemento `#versao-programa`, quando a página tem um; sem ele, num
-// cantinho fixo embaixo à direita. Fora do programa (servidor de desenvolvimento) a rota
-// responde igual, então isto vale também no navegador comum.
+// O rótulo é uma marca d'água fixa no canto de baixo à direita (27/10; antes ia no rodapé do
+// 2D e do 3D), em toda tela: o vivo.js carrega este arquivo onde a página não o traz. Fora do
+// programa (servidor de desenvolvimento) a rota responde igual, então isto vale também no
+// navegador comum.
 (function () {
   'use strict';
+  if (window.__metalicaVersao) return;            // a página que o carrega e o vivo.js que o põe em toda tela
+  window.__metalicaVersao = true;
   var minha = null;                 // versão do código desta janela
   var alvo = null;
   var avisada = false;
@@ -45,6 +48,7 @@
       e.style.color = '#f0a050';
       e.style.background = 'rgba(240,160,80,.14)';
       e.onclick = function () { location.reload(); };
+      assentar(e, true);
       return true;
     }
     // de onde o código saiu (20/10): a última versão criada + os commits depois dela, o commit atual e a data; * = com
@@ -57,6 +61,7 @@
     e.style.color = '#f0a050';
     e.style.cursor = '';
     e.onclick = null;
+    assentar(e, false);
     return true;
   }
 
@@ -94,7 +99,7 @@
     if (!caixaConf) {
       caixaConf = document.createElement('div');
       caixaConf.id = 'conferencia-dev';
-      caixaConf.style.cssText = 'position:fixed;right:8px;bottom:30px;z-index:99998;width:290px;padding:6px 9px 7px;' +
+      caixaConf.style.cssText = 'position:fixed;right:8px;bottom:' + (baseInferior() + 24) + 'px;z-index:99998;width:290px;padding:6px 9px 7px;' +
         'border-radius:7px;font:11px/1.45 system-ui,Segoe UI,sans-serif;color:var(--texto,#e4eaf3);' +
         'background:var(--painel,#1b2230);border:1px solid var(--borda,#33405a);box-shadow:0 4px 14px rgba(0,0,0,.28);' +
         'pointer-events:none;opacity:.96';
@@ -172,21 +177,36 @@
     caixaConf.title = l1 + ' — ' + l2;
   }
 
+  // A versão é uma marca d'água no canto de baixo à direita da janela, em todas as telas (usuário, 27/10: "tirar essa
+  // versão desse menu e deixar isso como uma marca d'água no canto inferior direito, para aparecer em todas as telas";
+  // no rodapé do 2D ela ficava por cima da dica com a tela dividida). Clara e sem pegar o clique; só quando pede para
+  // recarregar ela fica forte e clicável. Na tela com os quadros (2D + 3D) só a janela de fora a mostra.
+  function emQuadro() {
+    try { return window.top !== window; } catch (err) { return true; }
+  }
   function elemento() {
-    if (alvo && alvo.isConnected) return alvo;
-    alvo = document.getElementById('versao-programa');
-    if (!alvo) {
-      alvo = document.createElement('span');
-      alvo.id = 'versao-programa';
-      // a página com as telas em quadros (a área de trabalho 2D + 3D): cada quadro já mostra a
-      // versão no rodapé dele; o rótulo solto no canto ficava por cima dos rodapés deles
-      if (document.querySelector('iframe')) return alvo;
-      alvo.style.cssText = 'position:fixed;right:8px;bottom:6px;z-index:60;font:11px/1.4 ' +
-        'ui-monospace,Consolas,monospace;color:var(--texto3,#8a94a6);opacity:.85;' +
-        'padding:1px 6px;border-radius:5px;pointer-events:auto';
-      document.body.appendChild(alvo);
-    }
+    if (alvo && (alvo.isConnected || emQuadro())) return alvo;
+    alvo = document.createElement('span');
+    alvo.id = 'versao-programa';
+    if (emQuadro()) return alvo;                    // o quadro não mostra: a janela de fora já mostra
+    alvo.style.cssText = 'position:fixed;right:10px;bottom:6px;z-index:60;font:11px/1.4 ' +
+      'ui-monospace,Consolas,monospace;color:var(--texto3,#8a94a6);opacity:.55;white-space:nowrap;' +
+      'padding:1px 6px;border-radius:5px;pointer-events:none;user-select:none';
+    document.body.appendChild(alvo);
     return alvo;
+  }
+  /** Acima do rodapé da tela (o 2D e o 3D têm um, colado embaixo), senão no canto. */
+  function baseInferior() {
+    var r = document.querySelector('.rodape');
+    if (!r) return 6;
+    var b = r.getBoundingClientRect();
+    return b.height && b.bottom >= window.innerHeight - 2 ? Math.round(b.height) + 4 : 6;
+  }
+  /** Assenta a marca: a altura certa e, só quando ela pede para recarregar, o clique. */
+  function assentar(e, clicavel) {
+    e.style.bottom = baseInferior() + 'px';
+    e.style.pointerEvents = clicavel ? 'auto' : 'none';
+    e.style.opacity = clicavel ? '1' : '.55';
   }
 
   function mostrar(nova) {
@@ -196,6 +216,7 @@
       e.title = 'Versão do programa nesta janela';
       e.style.cursor = '';
       e.removeAttribute('data-desatualizada');
+      assentar(e, false);
       return;
     }
     // O servidor já está noutra versão: o código desta janela é o antigo.
@@ -207,6 +228,7 @@
     e.style.background = 'rgba(233,187,35,.12)';
     e.dataset.desatualizada = '1';
     e.onclick = function () { location.reload(); };
+    assentar(e, true);
     if (!avisada) {
       avisada = true;
       try {

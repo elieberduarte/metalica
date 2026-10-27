@@ -1022,7 +1022,7 @@ class CAD {
     this._listaComandos = instalarLista(this, this._tabelaComandos);
     const botao = (F) => {
       const b = el('button', { type: 'button', class: 'ferramenta', 'data-ferramenta': F.id, 'aria-pressed': 'false',
-        title: `${F.nome}${F.atalho ? ` (${F.atalho === ' ' ? 'espaço · depois de Esc, espaço volta à ferramenta anterior' : F.atalho.toUpperCase()})` : ''}`, html: F.icone || '' });
+        title: `${F.nome}${F.atalho ? ` (${F.atalho === ' ' ? 'espaço · depois de Esc, espaço volta à ferramenta anterior' : F.atalho.toUpperCase()})` : ''}${F.ajuda ? `\n${F.ajuda}` : ''}`, html: F.icone || '' });
       b.addEventListener('click', () => this.ativarFerramenta(F.id));
       return b;
     };

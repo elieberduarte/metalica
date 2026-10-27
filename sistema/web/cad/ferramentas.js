@@ -119,7 +119,10 @@ function deslocamentoPara(c, p, escala) {
 
 export class Selecionar extends Ferramenta {
   static id = 'selecionar'; static nome = 'Selecionar'; static atalho = ' '; static grupo = 'navegacao';
-  static dica = 'Clique seleciona (a peça inteira; Alt+clique, só a linha) · Shift soma · Ctrl alterna · arraste uma janela (com Shift ou Ctrl, soma) · Del apaga · arraste as alças (pontas das linhas, vértices, cotas; o meio da linha a move — no eixo da malha, com a bolinha e as cotas)';
+  // o rodapé fica limpo com a Selecionar (usuário, 27/10: o texto "Clique seleciona (…)" é intuitivo e, com a tela
+  // dividida, ficava por cima da versão); o como usar fica no balão do botão
+  static dica = '';
+  static ajuda = 'Clique seleciona (a peça inteira; Alt+clique, só a linha) · Shift soma · Ctrl alterna · arraste uma janela (com Shift ou Ctrl, soma) · Del apaga · arraste as alças (pontas das linhas, vértices, cotas; o meio da linha a move — no eixo da malha, com a bolinha e as cotas)';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 3l14 8-6 2-3 6z"/></svg>';
   reiniciar() { this._soltarAlca(); super.reiniciar(); }
 
