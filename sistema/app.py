@@ -3156,12 +3156,27 @@ def gravar_perfil_compra(s: str, corpo: dict) -> dict:
     return {"perfil": tipo, "catalogo": it.nome if it is not None else "", "escolhas": escolhas}
 
 
+#: A lista de materiais sendo refeita pelo modelo 3D, por projeto: {desde, feito}. O levantamento roda no pedido e segue
+#: até o fim mesmo se a tela sai (o navegador abandona o pedido, o servidor não); sem isto, quem voltava à tela via a lista
+#: antiga com "o modelo 3D foi alterado…", como se tivesse parado, e o novo clique começava outra conta junto (SESI, 27/10:
+#: "cliquei para atualizar a lista de materiais pelo 3D, porém se saio dessa tela ele interrompe a atualização").
+_MATERIAIS_EM_CURSO = {}
+_MATERIAIS_TRAVA = threading.Lock()
+
+
+def materiais_em_curso(s: str) -> Optional[dict]:
+    """{desde (hh:mm), desde_s} enquanto a lista do projeto está sendo refeita; senão None"""
+    em = _MATERIAIS_EM_CURSO.get(s)
+    if not em:
+        return None
+    return {"desde": time.strftime("%H:%M", time.localtime(em["desde"])), "desde_s": round(time.time() - em["desde"])}
+
+
 def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] = None) -> dict:
     """A lista de materiais do projeto (GET /api/projetos/<s>/materiais). Lê a gravada pelo
     último detalhamento; sem ela, ou com `recalcular`, levanta de novo do modelo e grava.
 
     corpo (POST): {barra: 0|6000|12000, regra_tercas: bool}"""
-    from nucleo2d.detalhar import levantar
     from saida import lista_producao
     g = _gerente()
     pasta = os.path.join(g._existente(s), "detalhamento")
@@ -3176,34 +3191,22 @@ def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] =
         with open(caminho, encoding="utf-8") as f:
             lista = json.load(f)
     else:
-        doc = _documento3d_do_projeto(s)
-        _marcar_origem(s, doc)
-        nomes = _nomes_producao(s)
-        lev = levantar(doc, regra_tercas=corpo.get("regra_tercas", True) is not False, ajustes=_ajustes_furos(s), nomes=nomes)
-        lista = lista_producao.montar(lev["posicoes"], lev["categorias"], lev["acessorios"], pecas=lev["pecas"],
-                                      barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
-                                      nomes_conjuntos=nomes.get("ifc_conjuntos"), escolhas=_perfis_compra(s), emendas=_perfis_emenda(s),
-                                      cobertura=nomes.get("cobertura"),
-                                      parafuso_metrico=doc.metadados.get("parafuso_compra") == "metrico")
-        lista["pre_moldados"] = lev.get("fora_do_aco") or []
-        lista["estrutura_a_conferir"] = lev.get("estrutura_a_conferir") or []
-        lista_producao.gravar(pasta, lista, lev["posicoes"], lev["acessorios"])
-        g.tocar(s)
-    arquivos = {}
-    for chave, nome in (("json", lista_producao.ARQUIVO_JSON), ("html", lista_producao.ARQUIVO_HTML),
-                        ("pdf", lista_producao.ARQUIVO_PDF), ("romaneio", "romaneio.csv"),
-                        ("perfis", "resumo-perfis.csv"), ("dobras", "peso-dobras.csv"), ("chapas", "resumo-chapas.csv"),
-                        ("conjuntos", "conjuntos.csv"), ("plano_corte", "plano-de-corte.csv"), ("soldas", "soldas.csv"),
-                        ("pre_moldados", "pre-moldados.csv"), ("estrutura_a_conferir", "estrutura-a-conferir.csv")):
-        cam = os.path.join(pasta, nome)
-        if os.path.exists(cam):
-            arquivos[chave] = _descrever_arquivo(cam, pasta)
-    # os resumos da obra e de materiais na aba Arquivos, sem precisar abrir a aba Resumos antes (13/10)
-    arquivos["resumos"] = _arquivos_dos_resumos(pasta)
-    # os documentos da obra (análises, comparativos com a fábrica), na pasta documentos/ do projeto (13/10)
-    arquivos["documentos"] = _documentos_da_obra(g._existente(s))
-    # e todos os de entrega do projeto, de qualquer pasta (15/10): a aba se monta por eles
-    arquivos["todos"] = arquivos_do_projeto(s)["todos"]
+        with _MATERIAIS_TRAVA:
+            em = _MATERIAIS_EM_CURSO.get(s)
+            dono = em is None
+            if dono:
+                em = _MATERIAIS_EM_CURSO[s] = {"desde": time.time(), "feito": threading.Event()}
+        if not dono:
+            # já está sendo refeita (o segundo clique, a outra aba): espera a mesma e devolve a gravada
+            em["feito"].wait(3600)
+            return lista_de_materiais(s)
+        try:
+            lista = _levantar_lista_de_materiais(s, corpo, pasta)
+        finally:
+            with _MATERIAIS_TRAVA:
+                _MATERIAIS_EM_CURSO.pop(s, None)
+            em["feito"].set()
+    arquivos = _arquivos_da_lista(s, pasta)
     lista["arquivos"] = arquivos
     # a contagem da aba Conferência (13/10)
     try:
@@ -3219,7 +3222,56 @@ def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] =
                 "%d/%m %H:%M", time.localtime(os.path.getmtime(modelo)))
     except OSError:
         pass
+    # sendo refeita por um pedido que a tela deixou para trás: a tela acompanha e mostra a nova quando acabar
+    lista["atualizando"] = materiais_em_curso(s)
     return lista
+
+
+def _levantar_lista_de_materiais(s: str, corpo: dict, pasta: str) -> dict:
+    """levanta a lista do modelo 3D e grava (o botão "Atualizar pelo modelo 3D")"""
+    from nucleo2d.detalhar import levantar
+    from saida import lista_producao
+    g = _gerente()
+    _progresso(s, "lendo o modelo 3D…")
+    doc = _documento3d_do_projeto(s)
+    _marcar_origem(s, doc)
+    nomes = _nomes_producao(s)
+    _progresso(s, "levantando as peças do modelo 3D…")
+    lev = levantar(doc, regra_tercas=corpo.get("regra_tercas", True) is not False, ajustes=_ajustes_furos(s), nomes=nomes,
+                   avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
+    _progresso(s, "montando a lista e as barras de compra…")
+    lista = lista_producao.montar(lev["posicoes"], lev["categorias"], lev["acessorios"], pecas=lev["pecas"],
+                                  barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
+                                  nomes_conjuntos=nomes.get("ifc_conjuntos"), escolhas=_perfis_compra(s), emendas=_perfis_emenda(s),
+                                  cobertura=nomes.get("cobertura"),
+                                  parafuso_metrico=doc.metadados.get("parafuso_compra") == "metrico")
+    lista["pre_moldados"] = lev.get("fora_do_aco") or []
+    lista["estrutura_a_conferir"] = lev.get("estrutura_a_conferir") or []
+    _progresso(s, "gravando a lista e os CSVs…")
+    lista_producao.gravar(pasta, lista, lev["posicoes"], lev["acessorios"])
+    g.tocar(s)
+    return lista
+
+
+def _arquivos_da_lista(s: str, pasta: str) -> dict:
+    from saida import lista_producao
+    g = _gerente()
+    arquivos = {}
+    for chave, nome in (("json", lista_producao.ARQUIVO_JSON), ("html", lista_producao.ARQUIVO_HTML),
+                        ("pdf", lista_producao.ARQUIVO_PDF), ("romaneio", "romaneio.csv"),
+                        ("perfis", "resumo-perfis.csv"), ("dobras", "peso-dobras.csv"), ("chapas", "resumo-chapas.csv"),
+                        ("conjuntos", "conjuntos.csv"), ("plano_corte", "plano-de-corte.csv"), ("soldas", "soldas.csv"),
+                        ("pre_moldados", "pre-moldados.csv"), ("estrutura_a_conferir", "estrutura-a-conferir.csv")):
+        cam = os.path.join(pasta, nome)
+        if os.path.exists(cam):
+            arquivos[chave] = _descrever_arquivo(cam, pasta)
+    # os resumos da obra e de materiais na aba Arquivos, sem precisar abrir a aba Resumos antes (13/10)
+    arquivos["resumos"] = _arquivos_dos_resumos(pasta)
+    # os documentos da obra (análises, comparativos com a fábrica), na pasta documentos/ do projeto (13/10)
+    arquivos["documentos"] = _documentos_da_obra(g._existente(s))
+    # e todos os de entrega do projeto, de qualquer pasta (15/10): a aba se monta por eles
+    arquivos["todos"] = arquivos_do_projeto(s)["todos"]
+    return arquivos
 
 
 def pdf_da_lista_de_materiais(s: str) -> dict:

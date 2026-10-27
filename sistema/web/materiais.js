@@ -658,18 +658,61 @@ function desenharTodosArquivos(alvo, todos) {
 /* ------------------------------------------------------------------- ações */
 async function carregar(recalcular = false) {
   if (!PROJETO) { aviso('Abra a lista por um projeto (gerenciador → projeto → Lista de materiais).', true); return; }
-  aviso(recalcular ? 'Levantando as peças do modelo…' : 'Carregando…');
+  aviso(recalcular ? 'Levantando as peças do modelo 3D… pode sair desta tela: a atualização continua, e a lista nova aparece quando voltar.' : 'Carregando…');
+  const btn = $('#btn-recalcular');
+  if (recalcular && btn) btn.disabled = true;
   try {
     const L = recalcular
       ? await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/materiais`, { barra: Number(seletorBarra() ? seletorBarra().value : 0) || 0 })
       : await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/materiais`);
     aviso('');
     desenhar(L);
+    // ainda sendo refeita por um clique de antes (a tela saiu e voltou, outra aba): acompanha e mostra a nova
+    if (L.atualizando) { acompanharAtualizacao(L.atualizando); return; }
     // a lista só se refaz pelo botão (06/10): o modelo 3D gravado depois dela fica avisado aqui
     if (L.desatualizada) aviso(`Lista de ${L.gerado || '—'}: ${L.desatualizada}. Para refazer, clique em "Atualizar pelo modelo 3D".`);
   } catch (e) {
     aviso(`Não foi possível montar a lista: ${e.message}`, true);
+  } finally {
+    if (recalcular && btn && !ACOMPANHANDO) btn.disabled = false;
   }
+}
+
+/* A lista sendo refeita pelo modelo 3D num pedido que esta tela não fez (SESI, 27/10: "se saio dessa tela ele interrompe a
+ * atualização" — o servidor seguia até o fim, mas quem voltava via a lista antiga e nada dizia que ela estava sendo
+ * refeita). Avisa desde quando, mostra a barra com a etapa do servidor e, quando acaba, a lista nova. */
+let ACOMPANHANDO = false;
+function acompanharAtualizacao(at) {
+  if (ACOMPANHANDO) return;
+  ACOMPANHANDO = true;
+  const btn = $('#btn-recalcular');
+  if (btn) btn.disabled = true;
+  aviso(`A lista está sendo atualizada pelo modelo 3D (começou às ${at.desde}); a nova aparece aqui sozinha quando terminar. Pode sair desta tela: a atualização continua.`);
+  const base = `/api/projetos/${encodeURIComponent(PROJETO)}`;
+  let parar = () => {};
+  import('/progresso.js').then((m) => {
+    if (!ACOMPANHANDO) return;
+    const t = m.tarefaDaChamada(`${base}/materiais`, 'POST');      // a mesma estimativa da barra do clique
+    parar = m.acompanhar({ url: `${base}/progresso`, tarefa: t ? t.tarefa : 'materiais', rotulo: 'Atualizando a lista de materiais' });
+  }).catch(() => { /* sem a barra: o aviso basta */ });
+  const olhar = async () => {
+    // o andamento é leve; a lista (grande) só é pedida quando ele acaba
+    let p = null, L = null;
+    try { p = await pedir(`${base}/progresso`); } catch { /* servidor ocupado */ }
+    if (p && p.etapa) { setTimeout(olhar, 2500); return; }
+    try { L = await pedir(`${base}/materiais`); } catch { /* servidor ocupado: tenta de novo */ }
+    if (L && !L.atualizando) {
+      ACOMPANHANDO = false;
+      parar(true);
+      if (btn) btn.disabled = false;
+      desenhar(L);
+      aviso(L.desatualizada ? `Lista de ${L.gerado || '—'}: ${L.desatualizada}. Para refazer, clique em "Atualizar pelo modelo 3D".`
+        : `Lista atualizada pelo modelo 3D (${L.gerado || 'agora'}).`);
+      return;
+    }
+    setTimeout(olhar, 2500);
+  };
+  setTimeout(olhar, 2500);
 }
 
 async function gerarPDF() {
