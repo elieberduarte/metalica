@@ -4591,8 +4591,10 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     aco = str(par["aco"])
     avisar = avisar or (lambda *a: None)
     ents = desenho.dict()["entidades"] if hasattr(desenho, "dict") else list(desenho)
-    # o quadro do que foi usado (gerado numa montagem anterior) não é projeto: fica de fora
-    ents = [e for e in ents if not str(e.get("camada", "")).upper().startswith(PREFIXO_QUADRO)]
+    # o quadro do que foi usado (gerado numa montagem anterior) não é projeto: fica de fora; as folhas do projetista
+    # (o espaço do papel, folhas_papel) repetem as plantas nas janelas: a escada saía duas vezes (Posto V2, 27/10)
+    ents = [e for e in ents if not str(e.get("camada", "")).upper().startswith(PREFIXO_QUADRO)
+            and (e.get("atributos") or {}).get("origem") != ORIGEM_FOLHAS]
     # a altura dos textos é de papel (× a escala do desenho = o tamanho real) e a leitura (o bloco do título, os balões, o
     # meio do nome) foi afinada na base de 1:20: o desenho noutra escala vem para ela (17/10, o Posto CB passou a 1:50 no
     # CAD com os textos do mesmo tamanho real — altura ÷ 2,5 — e a remontagem lia a caixa d'água com 2.324 peças e a obra
@@ -6504,6 +6506,8 @@ def avisos_pelos_eixos(avisos: List[str], eixos_p: Optional[dict], desl=(0.0, 0.
 # =====================================================================================
 
 PREFIXO_QUADRO = "QUADRO "
+#: a origem das folhas do projetista desenhadas no Original (nucleo2d/folhas_papel): não são lidas como projeto
+ORIGEM_FOLHAS = "dxf-papel"
 #: a escala em que a leitura dos textos foi afinada (o Posto CB veio do DXF em 1:20)
 ESCALA_LEITURA = 20.0
 CAMADAS_QUADRO = {

@@ -299,6 +299,34 @@ def test_contravento_em_cantoneira_da_planta_principal_tem_a_planta_no_vinculo()
 
 
 
+def test_folhas_do_projetista_no_original_nao_sao_lidas_como_projeto():
+    """as folhas do projetista desenhadas no Original (nucleo2d/folhas_papel, origem "dxf-papel"; 27/10/2026, Posto V2)
+    repetem as plantas nas janelas: a montagem a seco do CORREÇÕES fez as ESCADAS 1 e 2 duas vezes (repetidas 7 → 29).
+    A montagem com as folhas é a mesma de sem elas"""
+    def folha(e, dx=2.0e6):
+        e = dict(e, atributos=dict(e.get("atributos") or {}, origem="dxf-papel"), camada="PROJETISTA · " + str(e.get("camada", "0")))
+        for c in ("a", "b", "posicao", "centro"):
+            if c in e:
+                e[c] = [e[c][0] + dx, e[c][1]]
+        if "vertices" in e:
+            e["vertices"] = [[v[0] + dx, v[1]] for v in e["vertices"]]
+        return e
+    ents = planta() + locacao() + plantas_das_tercas() + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
+    ents += elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
+    par = {"nivel": 6000.0, "origem": False}
+    so = de_planta.montar(ents, dict(par))["doc"].barras
+    com = de_planta.montar(ents + [folha(e) for e in ents], dict(par))["doc"].barras
+    chave = lambda b: (tuple(round(c) for c in b.inicio), tuple(round(c) for c in b.fim), b.perfil)
+    assert sorted(map(chave, com)) == sorted(map(chave, so))
+    # só as folhas, sem o espaço do modelo: nada delas é lido (antes montava tudo de novo pela cópia da folha)
+    try:
+        r = de_planta.montar([folha(e) for e in ents], dict(par))
+        assert not r["doc"].barras
+    except __import__("nucleo.base", fromlist=["ErroDeDados"]).ErroDeDados:
+        pass
+
+
+
 def test_pilar_so_sobe_ate_a_outra_planta_que_o_desenha():
     """a viga da outra planta (a base da caixa d'água, 8,20) passando por cima de um pilar não o leva até ela: só se a
     planta desenha o pilar ali (a seção ou o nome). No Posto V2 os PM5 da escada e os PM3 da fila F subiam até 8,20 e
