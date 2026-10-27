@@ -145,7 +145,7 @@ def test_familia_na_lista_dos_tipos():
 
 
 # ------------------------------------------------------------------ os casos aprovados (usuário, 23/10: "1. Sim 2. Pode ser
-# 3. Sim" — as imagens em Projeto/LIGACOES/exemplos/contravento_{A,B,C}_*.png, o nó do print)
+# 3. Sim" — as imagens em Projeto/ESTUDOS/Ligações/exemplos/contravento_{A,B,C}_*.png, o nó do print)
 
 def _aplicado(tipo):
     doc, viga, t1, t2 = _no()
@@ -255,7 +255,7 @@ def test_agulhamento_troca_para_cantoneira_com_chapinhas():
 
 
 # ------------------------------------------------------------------ regressões das pranchas (23/10, o modelo de
-# Projeto/LIGACOES/pranchas_do_no.py: o que o metalúrgico recebe)
+# Projeto/ESTUDOS/Ligações/pranchas_do_no.py: o que o metalúrgico recebe)
 
 def _numerado(tipo):
     from nucleo3d import producao

@@ -1478,7 +1478,7 @@ detalhamento (`_unidade_pela_maioria`): M2 = 8 tesouras, não 1; o peso total é
 composição anota o que difere. CAD: "Abrir desenho do projeto" fechava o diálogo sem abrir (o `close()`
 direto não resolvia a promessa). Saídas dos verificadores headless no `.gitignore`.
 
-**0.7.23.** Pranchas no modelo da fábrica (`Projeto/MODELOS-HERMES/Modelos de Pranchas - Hermes.dwg`, medidas em
+**0.7.23.** Pranchas no modelo da fábrica (`Projeto/REFERENCIAS/MODELOS-HERMES/Modelos de Pranchas - Hermes.dwg`, medidas em
 `nucleo2d/modelo_hermes.py`): quadro com 25 mm à esquerda e 7 mm nos outros lados, marcas de dobra, aviso de
 propriedade em pé na margem e carimbo 178 × 99,8 mm (0,6 disso na A3/A4) com caixas R2 — logo (hachuras do
 bloco do DWG, `nucleo2d/_logo_hermes.py`), CONTEÚDO (gerado: "- TESOURAS: T1 (08X), T2 (02X)", com o número

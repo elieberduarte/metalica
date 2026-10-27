@@ -19,7 +19,7 @@ ponto mexido; a conferência completa (uns 30 a 60 min) roda uma vez, aqui, sobr
    não publica e deixa o relatório; de manhã, conferida e aceita (`bateria_obras.py --aceitar-ultima`),
    `--publicar-aprovado` publica sem refazer a conferência.
 
-Relatório: Projeto/conferencia-noite/AAAA-MM-DD.txt e ultima.json.
+Relatório: Projeto/TESTES/conferencia-noite/AAAA-MM-DD.txt e ultima.json.
 
 Uso:  python empacotar/publicar_noite.py                     a rodada da noite
       python empacotar/publicar_noite.py --sem-publicar       só confere
@@ -43,7 +43,7 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(AQUI)
 SISTEMA = os.path.join(REPO, "sistema")
 PROJETO = os.path.join(REPO, "Projeto")
-PASTA_LOG = os.path.join(PROJETO, "conferencia-noite")
+PASTA_LOG = os.path.join(PROJETO, "TESTES", "conferencia-noite")
 REGISTRO = os.path.join(PASTA_LOG, "ultima.json")
 COPIA = os.path.join(tempfile.gettempdir(), "metalica-noite", "repo")
 TRAVA = os.path.join(tempfile.gettempdir(), "metalica-noite", "rodando.lock")
