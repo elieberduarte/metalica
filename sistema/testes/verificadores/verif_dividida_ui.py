@@ -173,7 +173,7 @@ try:
        and aba.avaliar(f"getComputedStyle({F2}.document.querySelector('header.topo')).display") == "none"
        and aba.avaliar(f"getComputedStyle({F3}.document.querySelector('header.topo')).display") == "none"
        and aba.avaliar("document.querySelector('.vistas button.ativo').dataset.vista") == "ambos"
-       and menus_u == "Arquivo,Modelo,Detalhamento,Ver,?",                # menus enxutos (navegação por etapas, 03/10)
+       and menus_u == "Arquivo,Modelo,Detalhamento,Ver,Cenas,?",          # menus enxutos (03/10) + Cenas (26/10, f8bc35f)
        f"uma barra só, a de fora: o menu geral do 2D e do 3D ({menus_u}); as barras das telas escondidas; abre no 2D + 3D")
     # UI1 (30/09): o ⌂ da tela inicial no começo da barra, o tema em ícone logo depois do seletor de vista
     ok(aba.avaliar("document.querySelector('header.area-topo .marca #btn-inicio') !== null")
