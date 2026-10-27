@@ -80,11 +80,23 @@ def camadas_ocultas(dxf: dict) -> set:
 def layouts(dxf: dict) -> List[dict]:
     """[{nome, ents}] — o layout ativo (as entidades do arquivo marcadas como papel) e os outros (os blocos
     *Paper_Space<n>), na ordem do arquivo; só os que têm algo além da janela da própria folha"""
-    out = [{"nome": "papel", "ents": [e for e in dxf["entidades"] if e.get("papel")]}]
+    ativo = next((b for n, b in dxf["blocos"].items() if n.upper() == "*PAPER_SPACE"), {})
+    out = [{"nome": "papel", "ents": [e for e in dxf["entidades"] if e.get("papel")], "registro": ativo.get("registro")}]
     for nome, b in dxf["blocos"].items():
         if nome.upper().startswith("*PAPER_SPACE") and nome.upper() != "*PAPER_SPACE":
-            out.append({"nome": nome, "ents": b["ents"]})
+            out.append({"nome": nome, "ents": b["ents"], "registro": b.get("registro")})
     return [l for l in out if any(e["tipo"] != "VIEWPORT" or janela_valida(e) for e in l["ents"])]
+
+
+def janela_de_plotagem(dxf: dict, lay: dict) -> Optional[Tuple[float, float, float, float]]:
+    """o retângulo do papel que sai na impressão, quando o layout plota por "Janela" (tipo 4); None: a folha inteira"""
+    L_ = (dxf.get("layouts") or {}).get(lay.get("registro") or "")
+    if not L_ or L_.get("tipo_plot") != 4 or not L_.get("janela_plot"):
+        return None
+    x0, y0, x1, y1 = L_["janela_plot"]
+    if x1 - x0 <= 0 or y1 - y0 <= 0:
+        return None
+    return (x0, y0, x1, y1)
 
 
 def janela_valida(v: dict) -> bool:
@@ -153,14 +165,20 @@ def para_desenho(texto: str = None, destino: Optional[Desenho] = None, deslocame
         caixa = _caixa_do_layout(dxf, lay["ents"])
         if not caixa:
             continue
+        # plotada por "Janela": a folha é o retângulo impresso; o que está no papel fora dele não foi emitido (ADM, 27/10:
+        # 340 mm de papel à esquerda da A0 da 900 entravam na folha)
+        plot = janela_de_plotagem(dxf, lay)
+        if plot:
+            caixa = plot
         ox, oy = x_cursor - F * caixa[0], float(deslocamento[1]) - F * caixa[1]
         Tp = L._T(F, 0.0, 0.0, F, ox, oy)
+        corte = (Tp.ap(plot[:2]) + Tp.ap(plot[2:])) if plot else None
         atr = {"origem": "dxf-papel", "folha_papel": lay["nome"]}
         desenhados = [e for e in lay["ents"] if e["tipo"] not in ("VIEWPORT", "OLE2FRAME")]
         pares = [(e, T) for e, T in L._achatar(dxf, so_modelo=False, ents=desenhados, T0=Tp)
                  if e.get("camada", "0") not in ocultas]
         _, r = L.para_desenho(None, escala=k, fator=1.0, destino=des, prefixo_camada=prefixo_camada, dxf=dxf,
-                              pares=pares, atributos=atr)
+                              pares=pares, recorte=corte, atributos=atr)
         n = r["entidades"]
         for e in lay["ents"]:
             if e["tipo"] != "OLE2FRAME" or e.get("camada", "0") in ocultas:
@@ -172,24 +190,32 @@ def para_desenho(texto: str = None, destino: Optional[Desenho] = None, deslocame
             des.add(Texto(camada=cam, posicao=((x0 + x1) / 2, (y0 + y1) / 2), texto=AVISO_OLE, altura=3.5,
                           alinhamento="centro", vertical="meio", atributos=dict(atr, ole=True)))
             n += 2
-        janelas = 0
+        janelas, mapas = 0, []
         for v in lay["ents"]:
             if not janela_valida(v):
                 continue
+            (px, py), w, h = v["c"], v["w"], v["h"]
+            a, b = Tp.ap((px - w / 2, py - h / 2)), Tp.ap((px + w / 2, py + h / 2))
+            r_ = (a[0], a[1], b[0], b[1])
+            if corte:
+                r_ = (max(r_[0], corte[0]), max(r_[1], corte[1]), min(r_[2], corte[2]), min(r_[3], corte[3]))
+                if r_[0] >= r_[2] or r_[1] >= r_[3]:
+                    continue                                   # a janela está fora do que foi impresso
             janela = janela_no_modelo(v)
             congeladas = {por_handle.get(h) for h in v.get("congeladas") or []}
             Tv = Tp.depois(_janela_para_papel(v))
+            # a conta modelo → desenho de cada janela: o vínculo 2D ↔ 3D vai às vistas da folha impressa (ADM, 27/10)
+            mapas.append({"janela": v.get("id"), "modelo": tuple(round(c, 6) for c in janela),
+                          "transformacao": (Tv.a, Tv.b, Tv.c, Tv.d, Tv.tx, Tv.ty)})
             pares = [(e, Tv.depois(T)) for e, T, c in modelo if _cruza(c, janela) and e.get("camada", "0") not in congeladas]
-            (px, py), w, h = v["c"], v["w"], v["h"]
-            a, b = Tp.ap((px - w / 2, py - h / 2)), Tp.ap((px + w / 2, py + h / 2))
             _, r = L.para_desenho(None, escala=k, fator=1.0, destino=des, prefixo_camada=prefixo_camada, dxf=dxf,
-                                  pares=pares, recorte=(a[0], a[1], b[0], b[1]), atributos=dict(atr, janela=v.get("id")))
+                                  pares=pares, recorte=r_, atributos=dict(atr, janela=v.get("id")))
             n += r["entidades"]
             janelas += 1
         x1 = x_cursor + F * (caixa[2] - caixa[0])
         resumo["folhas"].append({"nome": lay["nome"], "caixa": (round(x_cursor, 1), round(float(deslocamento[1]), 1),
                                                                 round(x1, 1), round(float(deslocamento[1]) + F * (caixa[3] - caixa[1]), 1)),
-                                 "janelas": janelas, "entidades": n})
+                                 "janelas": janelas, "mapas": mapas, "entidades": n})
         resumo["entidades"] += n
         x_cursor = x1 + 0.05 * (x1 - x_cursor)
     return des, resumo

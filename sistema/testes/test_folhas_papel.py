@@ -78,6 +78,47 @@ def test_escala_do_desenho_e_deslocamento():
     assert r["folhas"][0]["caixa"][:2] == pytest.approx((1e6, -2e5))
 
 
+def test_mapa_da_janela_leva_o_modelo_ao_desenho():
+    """o resumo traz a conta modelo → desenho de cada janela (o vínculo 2D ↔ 3D vai às vistas da folha impressa, ADM
+    27/10): o ponto do modelo cai onde a folha o desenhou"""
+    ents, r, _ = _folhas(_dxf(MODELO + PAPEL), escala=50, desl=(1e6, -2e5))
+    (m,) = r["folhas"][0]["mapas"]
+    assert m["janela"] == 2 and m["modelo"] == pytest.approx((0.0, 0.0, 1000.0, 1000.0))
+    a, b, c, d, tx, ty = m["transformacao"]
+    (circ,) = [e for e in ents if e.tipo == "circulo"]
+    assert (a * 500 + b * 500 + tx, c * 500 + d * 500 + ty) == pytest.approx(circ.centro)
+    assert math.hypot(a, c) == pytest.approx(5.0)                 # 1:10 num desenho 1:50: o modelo × 5
+
+
+def _com_plotagem(texto, janela_plot, tipo=4):
+    """o DXF com o bloco *Paper_Space (registro 1DF) e o LAYOUT que aponta para ele, plotando por "Janela" (tipo 4)"""
+    bloco = ("0\nBLOCK\n5\n1E1\n330\n1DF\n100\nAcDbEntity\n67\n1\n8\n0\n100\nAcDbBlockBegin\n2\n*Paper_Space\n70\n0\n"
+             "10\n0\n20\n0\n0\nENDBLK\n5\n1E2\n330\n1DF\n8\n0\n")
+    layout = ("0\nSECTION\n2\nOBJECTS\n0\nLAYOUT\n5\n1E0\n330\n1A\n100\nAcDbPlotSettings\n1\n\n48\n%s\n49\n%s\n140\n%s\n141\n%s\n"
+              "74\n%d\n100\nAcDbLayout\n1\nLayout1\n330\n1DF\n0\nENDSEC\n") % (tuple(janela_plot) + (tipo,))
+    return texto.replace("2\nBLOCKS\n", "2\nBLOCKS\n" + bloco).replace("0\nEOF\n", layout + "0\nEOF\n")
+
+
+def test_folha_cortada_na_janela_de_plotagem():
+    """ADM Hora Certa (27/10): o layout da 900 plota por "Janela" (a A0 de 156 a 1345 mm do papel); 340 mm de papel à
+    esquerda, fora da impressão, entravam na folha. A folha é o retângulo impresso e o que passa dele é cortado"""
+    texto = _com_plotagem(_dxf(MODELO + PAPEL), (100.0, -5.0, 420.0, 297.0))
+    assert L.ler_dxf(texto)["layouts"]["1DF"] == {"nome": "Layout1", "tipo_plot": 4, "janela_plot": (100.0, -5.0, 420.0, 297.0)}
+    ents, r, _ = _folhas(texto)
+    textos = {e.texto for e in ents if e.tipo == "texto"}
+    assert "CARIMBO R02" not in textos                               # x 10 no papel: fora do que foi impresso
+    assert r["folhas"][0]["caixa"] == pytest.approx((0.0, 0.0, 320.0, 302.0))
+    # a linha do papel y 0, de x 0 a 420: de 100 a 420 → no desenho de 0 a 320, y 5
+    base = [e for e in ents if e.tipo == "linha" and abs(e.a[1] - 5.0) < 1e-6]
+    assert len(base) == 1 and sorted([base[0].a[0], base[0].b[0]]) == pytest.approx([0.0, 320.0])
+    # a linha do modelo y 300 na janela (papel x 50 a 150) só de 100 a 150: no desenho de 0 a 50, y 85
+    corte = [e for e in ents if e.tipo == "linha" and abs(e.a[1] - 85.0) < 1e-6]
+    assert len(corte) == 1 and sorted([corte[0].a[0], corte[0].b[0]]) == pytest.approx([0.0, 50.0])
+    # plotagem por "Layout" (tipo 5) ou sem LAYOUT: a folha inteira, como antes
+    ents5, r5, _ = _folhas(_com_plotagem(_dxf(MODELO + PAPEL), (100.0, -5.0, 420.0, 297.0), tipo=5))
+    assert "CARIMBO R02" in {e.texto for e in ents5 if e.tipo == "texto"}
+
+
 def test_camada_congelada_so_naquela_janela():
     papel = PAPEL + _janela(3, 300, 100, 100, 100, 0, 0, (500, 500), 1000, congeladas=("12",))
     ents, r, _ = _folhas(_dxf(MODELO + papel))

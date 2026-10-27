@@ -114,6 +114,7 @@ def ler_dxf(texto: str) -> dict:
     camadas: Dict[str, dict] = {}
     estilos_cota: Dict[str, dict] = {}
     blocos: Dict[str, dict] = {}
+    layouts: Dict[str, dict] = {}
     modelo: List[dict] = []
     bloco = None
     ent = None
@@ -135,6 +136,8 @@ def ler_dxf(texto: str) -> dict:
             camadas[ent["nome"]] = ent
         if ent is not None and ent.get("tipo") == "DIMSTYLE" and ent.get("nome") is not None:
             estilos_cota[ent["nome"]] = ent
+        if ent is not None and ent.get("tipo") == "LAYOUT":
+            _layout(ent, layouts)
         ent = None
 
     for cod, val in pares:
@@ -188,6 +191,9 @@ def ler_dxf(texto: str) -> dict:
             if secao == "ENTITIES" and val in TIPOS:
                 ent = nova(val)
                 alvo = modelo
+            elif secao == "OBJECTS" and val == "LAYOUT":
+                ent = {"tipo": "LAYOUT", "_g": collections.defaultdict(list), "_seq": []}
+                alvo = None
             continue
         if cod == 2 and secao == "?":
             secao = val
@@ -204,6 +210,8 @@ def ler_dxf(texto: str) -> dict:
                 ent["_b"]["base"][0] = float(val)
             elif cod == 20:
                 ent["_b"]["base"][1] = float(val)
+            elif cod == 330 and "registro" not in ent["_b"]:
+                ent["_b"]["registro"] = val.strip().upper()   # o registro do bloco: o LAYOUT do papel aponta para ele
             continue
         if ent["tipo"] == "LAYER":
             if cod == 2:
@@ -242,7 +250,29 @@ def ler_dxf(texto: str) -> dict:
     for b in blocos.values():
         b["ents"] = _preparar(b["ents"], estilos_cota)
     return {"cabecalho": cabecalho, "camadas": camadas, "estilos_cota": estilos_cota, "blocos": blocos,
-            "entidades": _preparar(modelo, estilos_cota)}
+            "layouts": layouts, "entidades": _preparar(modelo, estilos_cota)}
+
+
+def _layout(ent: dict, layouts: Dict[str, dict]) -> None:
+    """o LAYOUT (seção OBJECTS): nome, o registro do bloco do papel (o 330 depois de AcDbLayout) e a plotagem — tipo 4 =
+    "Janela", o retângulo do papel que sai na impressão (48/49 – 140/141). As folhas do projetista (folhas_papel) cortam
+    a folha nele: o que está no papel fora da janela de plotagem não foi emitido (ADM Hora Certa, 27/10)."""
+    registro, nome, em_layout = None, "", False
+    for cod, val in ent["_seq"]:
+        if cod == 100:
+            em_layout = val.strip() == "AcDbLayout"
+        elif em_layout and cod == 1:
+            nome = val.strip()
+        elif em_layout and cod in (330, 340) and registro is None:
+            registro = val.strip().upper()
+    g = ent["_g"]
+    try:
+        tipo = int(_f(g[74][0])) if g.get(74) else None
+        janela = tuple(_f(g[c][0]) for c in (48, 49, 140, 141)) if all(g.get(c) for c in (48, 49, 140, 141)) else None
+    except (ValueError, IndexError):
+        tipo, janela = None, None
+    if registro:
+        layouts[registro] = {"nome": nome, "tipo_plot": tipo, "janela_plot": janela}
 
 
 def _num(e, c, d=0.0):
