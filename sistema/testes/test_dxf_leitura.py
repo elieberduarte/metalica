@@ -55,6 +55,27 @@ def test_mtext_vira_uma_linha_por_paragrafo_com_altura_e_cor():
     assert math.isclose(ts[0].posicao[1] - ts[1].posicao[1], 5 / 3 * 200, abs_tol=1e-2)
 
 
+def test_mtext_quebra_na_largura_da_caixa():
+    """ADM Hora Certa (27/10, folhas do projetista no Original): a nota 4 da ESTM-PE-900-900 — 198 letras, h 2, caixa de
+    164,9 mm — saía numa linha só, com o dobro da caixa, por cima do resto da folha; no PDF emitido são duas linhas"""
+    nota = ("{\\fArial|b1|i0|c0|p34;4.\\fArial|b0|i0|c0|p34; Proteção contra incêndio executada com pintura intumescente, "
+            "dimensionada para resistência ao fogo de 120 minutos, conforme NBR 14323 e NBR 14432, aplicada sobre fundo "
+            "compatível.}\\P{5. A montagem da estrutura.}")
+    mt = "0\nMTEXT\n8\n0\n10\n0\n20\n0\n40\n2\n41\n164.9\n71\n1\n1\n%s\n" % nota
+    ts, _, _ = _ents(_dxf(mt), "texto")
+    ts.sort(key=lambda t: -t.posicao[1])
+    assert len(ts) == 3 and ts[0].texto.startswith("4. Proteção") and ts[2].texto == "5. A montagem da estrutura."
+    assert all(L.largura_do_texto(t.texto, 2.0) <= 164.9 for t in ts)
+    assert " ".join(t.texto for t in ts[:2]) == L.mtext_linhas(nota, 2)[0][0].strip()          # nenhuma palavra perdida
+    # a linha 1 enche a caixa (a próxima palavra não caberia), como o AutoCAD
+    prox = ts[1].texto.split(" ")[0]
+    assert L.largura_do_texto(ts[0].texto + " " + prox, 2.0) > 164.9
+    # sem largura (41 = 0) ou quando cabe: uma linha, como antes
+    assert len(_ents(_dxf(mt.replace("41\n164.9\n", "41\n0\n")), "texto")[0]) == 2
+    curta = "0\nMTEXT\n8\n0\n10\n0\n20\n0\n40\n2\n41\n164.9\n71\n1\n1\nTABELA DE RESUMO\n"
+    assert [t.texto for t in _ents(_dxf(curta), "texto")[0]] == ["TABELA DE RESUMO"]
+
+
 def test_paragrafo_a_esquerda_encosta_na_borda_da_caixa():
     # inserção no centro de cima (71 = 2), largura 1000: o parágrafo \pxql; começa em x = −500
     mt = "0\nMTEXT\n8\n0\n10\n0\n20\n0\n40\n50\n41\n1000\n71\n2\n1\n\\pxql;VIGA\n"

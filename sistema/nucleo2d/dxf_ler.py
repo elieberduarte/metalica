@@ -665,6 +665,45 @@ def _preparar(lista, estilos_cota=None):
     return out
 
 
+#: largura das letras do Arial em fração da altura (o AFM do Helvetica/Arial, /1000): a quebra do MTEXT na caixa
+_LARGURA_LETRA = dict([(c, 0.278) for c in " .,;:!|'ijlI/\\"] + [(c, 0.278) for c in "ft"] + [(c, 0.333) for c in "r()-[]{}"]
+                      + [(c, 0.833) for c in "mMW%"] + [(c, 0.722) for c in "wABCDEGHKNORSUVXYÇ&"] + [(c, 0.611) for c in "FTZJL"])
+
+
+def largura_do_texto(s: str, altura: float) -> float:
+    """a largura estimada de uma linha de texto com a altura dada (letras do Arial; maiúscula 0,667, minúscula 0,556)"""
+    import unicodedata
+    tot = 0.0
+    for ch in s:
+        b = unicodedata.normalize("NFD", ch)[:1] or ch          # a letra acentuada mede como a sem acento
+        tot += _LARGURA_LETRA.get(b, 0.667 if b.isupper() else 0.556)
+    return tot * altura
+
+
+def quebrar_na_caixa(linhas: List[Tuple[str, float, Optional[int]]], altura: float, largura: float):
+    """as linhas do MTEXT quebradas nas palavras para caber na largura da caixa (o código 41), como o AutoCAD faz. Sem
+    isso as notas das folhas AKMX saíam numa linha só, com o dobro da largura da caixa por cima do resto da folha (ADM
+    Hora Certa, 27/10: a nota 4 da 900 tem 198 letras numa caixa de 165 mm; no PDF emitido são duas linhas)"""
+    if not largura or largura <= 0:
+        return linhas
+    out = []
+    for txt, f, cor in linhas:
+        h = altura * (f or 1.0)
+        if largura_do_texto(txt, h) <= largura * 1.001:
+            out.append((txt, f, cor))
+            continue
+        atual = ""
+        for palavra in txt.split(" "):
+            prova = palavra if not atual else atual + " " + palavra
+            if atual and largura_do_texto(prova.rstrip(), h) > largura:
+                out.append((atual.rstrip(), f, cor))
+                atual = palavra
+            else:
+                atual = prova
+        out.append((atual.rstrip(), f, cor))
+    return out
+
+
 def mtext_linhas(t: str, altura: float = 1.0) -> List[Tuple[str, float, Optional[int]]]:
     """O texto do MTEXT em linhas, cada uma com o fator de altura (sobre `altura`, a do MTEXT) e a cor (ACI) com
     que começa.
@@ -1174,7 +1213,7 @@ def para_desenho(texto: str, escala: float = 1.0, fator: Optional[float] = None,
             pos = P(T, e["p2"] if (ha or va) else e["p"])
             textos(cam, T, [(l, 1.0, None) for l in txt.split("\n")], h, pos, T.angulo(e.get("rot", 0.0)), al, vert, atr)
         elif t == "MTEXT":
-            linhas = mtext_linhas(e["texto"], e["h"])
+            linhas = quebrar_na_caixa(mtext_linhas(e["texto"], e["h"]), e["h"], e.get("largura") or 0.0)
             if not any(l.strip() for l, _, _ in linhas):
                 continue
             h = e["h"] * T.esc_y * fator / k
