@@ -148,6 +148,37 @@ def test_2_3_alma_abre_para_o_meio_e_diagonal_nunca_para_cima():
     assert any(e["regra"] == "2.3" and e["nome"] == "DU0" for e in R.conferir(bs))
 
 
+def test_2_1_diagonal_solta_do_painel_de_ponta_entra_na_regra():
+    """usuário, 27/10 (SESI Chapecó, TS23 da cobertura frontal: "perfil U de estrutura treliçada nunca é posicionada nesse
+    sentido"): a diagonal e a horizontal do painel de ponta, a ~80 mm do montante e sem encostar em nada da tesoura, ficavam
+    fora de toda treliça — sem regra e sem conferência — com a boca atravessando o plano. A diagonal em U do mesmo grupo, no
+    plano e dentro do vão, entra na treliça: a conferência acusa e o aplicar a põe com a alma atravessando o plano"""
+    bs = _tesoura_a_mao()
+    R.aplicar(bs)
+    at = {"origem": {"peca": "TT"}}
+    d = (0.0, 920.0, 800.0)
+    giro = next(g for g in (0.0, 90.0, 180.0, 270.0) if abs(base_local(d, g)[0][0]) > 0.99)   # a boca para fora do plano
+    bs.append(Barra(nome="BSP", inicio=(0, -1100, 1000), fim=(0, 0, 1000), perfil=U_BZ, papel="banzo", rotacao=0.0,
+                    atributos=dict(at, papel_trelica="banzo_sup")))          # o banzo de cima segue por cima do painel (TS23: P336)
+    R.aplicar(bs)
+    sol = [Barra(nome="DS", inicio=(0, -1000, 100), fim=(0, -80, 900), perfil=U_AL, papel="diagonal", rotacao=giro,
+                 atributos=dict(at)),
+           Barra(nome="HS", inicio=(0, -1000, 10), fim=(0, -80, 10), perfil=U_AL, papel="diagonal", rotacao=giro,
+                 atributos=dict(at))]
+    bs += sol
+    assert {"DS", "HS"} <= {e["nome"] for e in R.conferir(bs)}             # antes: nenhuma das duas acusada
+    R.aplicar(bs)
+    for b in sol:
+        assert abs(_boca(b)[0]) < 1e-6, b.nome                    # 2.1: a boca no plano (a alma atravessa o plano)
+        assert _boca(b)[2] < 0.3, b.nome                          # 2.3: a diagonal nunca para cima
+    assert R.conferir(bs) == []
+    # a extremidade e o montante soltos não são girados por este caminho (casos próprios: o pilarete em caixa é 2.8)
+    m = Barra(nome="MS", inicio=(0, -1200, 0), fim=(0, -1200, 1000), perfil=U_AL, papel="montante", rotacao=giro,
+              atributos=dict(at))
+    R.aplicar(bs + [m])
+    assert m.rotacao == giro
+
+
 @pytest.mark.parametrize("alta, sinal", [("y1", 1.0), ("y0", -1.0), (None, 1.0)])
 def test_2_3_montante_no_meio_abre_para_a_ponta_alta(alta, sinal):
     """decisão 4: o montante no meio exato do vão abre para a ponta alta (tesoura reta: +eixo)"""

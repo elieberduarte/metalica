@@ -121,6 +121,8 @@ SECOES_2_9 = ("composto",)  # o banzo em U de alma no plano (2.9): só os dois U
 PONTA_NO_PLANO = 25.0    # mm: na treliça de 2U, a peça em U a menos que isso do plano é a ponta em U só (2.9a)
 PONTA_CURTA = 1000.0     # mm: a peça da ponta (montante de extremidade, trecho a 45°) é curta; o banzo não
 TOL_LIGA = 60.0          # mm: a ponta de uma barra a até isso de outra barra está ligada nela (nó da treliça)
+ORFA_PLANO = 30.0        # mm: a peça solta do grupo a até isso do plano de uma treliça dele entra nela (2.1, 27/10)
+ORFA_VAO = 1500.0        # mm: … e dentro do vão dela, com esta folga além das pontas (o painel de ponta em balanço)
 TOL_PLANO = 0.02         # a 3ª dimensão do grupo (desvio padrão / tamanho) acima disso: não é uma treliça plana
 EM_PE = 60.0             # graus: barra a mais que isso do banzo é peça em pé (montante)
 
@@ -367,6 +369,7 @@ def trelicas(entidades: Iterable, por_grupo: bool = True) -> List[dict]:
         por_chave[_chave_grupo(e) if por_grupo else ("todas",)].append(e)
     out = []
     for _k, lista in por_chave.items():
+        feitas = []
         for comp_todo in _componentes(lista + liga.get(_k, [])):
             ids_liga = {id(o) for o in liga.get(_k, [])}
             comp = [b for b in comp_todo if id(b) not in ids_liga]
@@ -410,7 +413,34 @@ def trelicas(entidades: Iterable, por_grupo: bool = True) -> List[dict]:
             out.append({"n": n, "centro": c, "eixo": eixo, "meio": meio, "vao": hi_p - lo_p, "alta": alta,
                         "barras": [(b, _papel(b)) for b in comp], "par": _pares(comp, n, c), "vultos": dentro,
                         "abraca": abraca, "plano_2_9": plano_2_9})
+            feitas.append(out[-1])
+        _orfas_no_plano(lista, feitas)
     return out
+
+
+def _orfas_no_plano(lista: List, feitas: List[dict]) -> None:
+    """2.1 (27/10, SESI Chapecó, foto da TS23: "perfil U de estrutura treliçada nunca é posicionado nesse sentido"): a peça
+    da mesma treliça que não encosta em nenhuma outra — a diagonal e a horizontal do painel de ponta, a ~76 mm do pilarete
+    e na cabeça do pilar metálico — ficava fora de toda treliça, sem regra e sem conferência, com a boca atravessando o plano.
+    Agora a peça do mesmo grupo que está no plano de uma treliça dele (as duas pontas a ≤ ORFA_PLANO da normal) e dentro do
+    vão dela (± ORFA_VAO) entra nessa treliça — só a diagonal em U"""
+    usadas = {id(b) for t in feitas for b, _p in t["barras"]}
+    for b in lista:
+        # só a diagonal em U (o caso visto): o montante, a extremidade (o pilarete em caixa de 2 Ue é 2.8) e o banzo soltos
+        # têm casos próprios e não são girados por aqui
+        if id(b) in usadas or _papel(b) != "diagonal" or forma(getattr(b, "perfil", "")) != "U":
+            continue
+        melhor, dist = None, ORFA_PLANO
+        for t in feitas:
+            dn = max(abs(_dot(_sub(b.inicio, t["centro"]), t["n"])), abs(_dot(_sub(b.fim, t["centro"]), t["n"])))
+            ao_longo = abs(_dot(_sub(_mid(b), t["meio"]), t["eixo"]))
+            if dn <= dist and ao_longo <= t["vao"] / 2.0 + ORFA_VAO:
+                melhor, dist = t, dn
+        if melhor is not None:
+            melhor["barras"].append((b, _papel(b)))
+            if all(o is not b for o in melhor["vultos"]):
+                melhor["vultos"].append(b)
+            usadas.add(id(b))
 
 
 def lado_da_aba(b, n) -> int:
