@@ -21,10 +21,22 @@ json.dump({"formato": 1, "nome": "Obra livre", "tipo": "desenho", "cliente": "",
 MARCA = os.path.join(PASTA, "atualizando.json")
 
 
-def marcar(etapa, fracao=None):
+from projetos import _inicio_processo
+CARIMBO = os.path.join(PASTA, "detalhamento", "carimbo.json")
+
+
+def marcar(etapa, fracao=None, pid=None):
     # este verificador é "o outro processo": vivo, desta máquina, e não é o servidor
+    pid = pid or os.getpid()
     json.dump({"etapa": etapa, "fracao": fracao, "quando": time.time(), "inicio": time.time() - 12, "quem": "script",
-               "pid": os.getpid(), "maquina": platform.node()}, open(MARCA, "w", encoding="utf-8"))
+               "pid": pid, "pid_inicio": _inicio_processo(pid), "maquina": platform.node()}, open(MARCA, "w", encoding="utf-8"))
+
+
+def em_andamento(pid, pid_inicio):
+    """a marca da atualização automática dos desenhos no carimbo (desenhos_vivos, 27/10)"""
+    os.makedirs(os.path.dirname(CARIMBO), exist_ok=True)
+    json.dump({"em_andamento": {"desde": time.time() - 600, "motivo": "o modelo 3D mudou", "pid": pid, "pid_inicio": pid_inicio}},
+              open(CARIMBO, "w", encoding="utf-8"))
 
 
 marcar("montando as treliças…", 0.4)
@@ -102,6 +114,37 @@ try:
     ok(btn == [False, "Abrir"], f"o botão Abrir volta ({btn})")
     st = aba.avaliar("(async () => { const r = await fetch('/api/projetos/obra/renomear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{\"nome\":\"Obra em atualização\"}' }); return r.status; })()")
     ok(st == 200, f"o POST volta a ser aceito ({st})")
+
+    # 6. a atualização automática dos desenhos rodando no servidor: o cartão tem Cancelar, que chama a rota do CAD (Posto,
+    #    27/10: o botão só existia no aviso do CAD). Aqui não há atualização de verdade: o servidor responde que já terminou.
+    # (a etapa vem de atualizando.json deste verificador: o servidor não tem tarefa de verdade para contar a dele)
+    em_andamento(srv.pid, _inicio_processo(srv.pid))
+    marcar("desenhando tirantes e barras redondas…", 0.6)
+    aba.navegar(base + "/", limite=60)
+    ok(esperar(aba, f"!!document.querySelector(\"{sel} .cartao-atualizando button\")", 15), "o cartão em atualização dos desenhos tem Cancelar")
+    ok(not aba.avaliar("!!document.querySelector(\".cartao[data-slug='livre'] .cartao-atualizando\")"), "o outro projeto não")
+    aba.avaliar(f"document.querySelector(\"{sel} .cartao-atualizando button\").click(); 1")
+    ok(esperar(aba, f"(document.querySelector(\"{sel} .cartao-atualizando button\")?.textContent || '') === 'já tinha terminado'", 10),
+       f"o Cancelar chama o servidor ({aba.avaliar(f'document.querySelector(\"{sel} .cartao-atualizando button\")?.textContent')!r}, "
+       f"{aba.avaliar('[...document.querySelectorAll(`#bandeja .recado`)].map(r => r.textContent).join(` | `)')!r})")
+    ok(aba.avaliar("location.pathname") == "/", "o clique no Cancelar não tenta abrir o projeto")
+    # de outro programa (o verificador): sem Cancelar — a rota é deste servidor
+    em_andamento(os.getpid(), _inicio_processo(os.getpid()))
+    marcar("desenhando tirantes e barras redondas…", 0.6)
+    aba.navegar(base + "/", limite=60)
+    ok(esperar(aba, f"document.querySelector(\"{sel}\")?.classList.contains('atualizando')", 15)
+       and not aba.avaliar(f"!!document.querySelector(\"{sel} .cartao-atualizando button\")"), "a de outro programa não tem Cancelar aqui")
+
+    # 7. o programa que atualizava morreu no meio (o reinício do dev, Posto 27/10): o cartão não diz "terminou"
+    morto = subprocess.Popen([sys.executable, "-c", "pass"]); morto.wait()
+    em_andamento(morto.pid, 1.0)
+    aba.avaliar("document.querySelectorAll('#bandeja .recado').forEach(r => r.remove()); 1")
+    os.remove(MARCA)
+    ok(esperar(aba, "[...document.querySelectorAll('#bandeja .recado')].some(r => /interrompida/.test(r.textContent))", 10),
+       "sem a marca e com a atualização dos desenhos interrompida, o recado diz interrompida")
+    rec = aba.avaliar("[...document.querySelectorAll('#bandeja .recado')].map(r => r.textContent).join(' | ')")
+    ok("terminou" not in rec and "recomeça quando" in rec, f"e não diz que terminou ({rec[:160]!r})")
+    os.remove(CARIMBO)
     aba.avaliar(f"document.querySelector(\"{sel}\").click(); 1")
     ok(esperar(aba, "location.pathname !== '/'", 15), f"o clique abre o projeto ({aba.avaliar('location.pathname')})")
 

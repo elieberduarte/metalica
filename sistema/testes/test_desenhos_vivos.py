@@ -64,6 +64,115 @@ def test_primeiro_detalhamento_parcial_fica_carimbado(tmp_path):
     assert dv.por_que_velho("p") == ""
 
 
+def test_avisos_de_um_detalhamento_feito_com_outro_3d(tmp_path):
+    """Posto, 27/10: o aviso das 79 terças fora do passo da máquina era do Detalhar de 24/10; a remontagem de 26/10 trocou
+    todos os ids e o "Ver no 3D" procurava peças que não existem mais. O estado diz de quando é e se o 3D mudou depois."""
+    g = _Gerente(str(tmp_path))
+    os.makedirs(tmp_path / "p" / "detalhamento")
+    (tmp_path / "p" / "modelo.json").write_text("{}", encoding="utf-8")
+    g.desenhos = [{"nome": "detalhamento-tercas"}]
+    dv.configurar(gerente=lambda: g)
+    dv.gravar_carimbo("p", {"detalhamento-tercas": "g1"}, extra={"fora_da_maquina": ["T.C.9: furos a 40 mm"],
+                      "fora_da_maquina_pecas": [{"nome": "T.C.9", "marca": "P211 / P670", "ids": ["e1"], "texto": "T.C.9"}]})
+    e = dv.estado("p", conferir=False)
+    assert e["fora_da_maquina"] and e["pendencias_de"] and e["pendencias_de_outro_3d"] is False
+    # remontado (e a atualização cancelada): os avisos ficam, mas são de outro 3D
+    os.utime(tmp_path / "p" / "modelo.json", (1, 1))
+    e = dv.estado("p", conferir=False)
+    assert e["fora_da_maquina"] and e["pendencias_de_outro_3d"] is True
+
+
+def _pid_morto():
+    import subprocess
+    p = subprocess.Popen([sys.executable, "-c", "pass"])
+    p.wait()
+    return p.pid
+
+
+def _marca_de_quem_morreu(tmp_path, pid):
+    arq = tmp_path / "p" / "detalhamento" / "carimbo.json"
+    c = json.loads(arq.read_text(encoding="utf-8"))
+    c["em_andamento"] = {"desde": 1761550800.0, "motivo": "o modelo 3D mudou", "pid": pid, "pid_inicio": 1.0}
+    arq.write_text(json.dumps(c), encoding="utf-8")
+
+
+def test_reinicio_no_meio_e_interrompida_nao_concluida(tmp_path):
+    """Posto, 27/10: o dev reiniciou no meio dos 35 min do Detalhar em segundo plano; a thread morreu, o estado (só em
+    memória) sumiu e a tela leu "não está atualizando" = concluído; cada abertura recomeçava do zero sem dizer por quê.
+    Agora a marca de início fica no carimbo até o fim: sobrando, é "interrompida"; recomeça uma vez dizendo o porquê, e
+    na segunda seguida espera o "Atualizar agora" (ou uma mudança da obra)."""
+    import threading
+    import time as _t
+    g = _Gerente(str(tmp_path))
+    os.makedirs(tmp_path / "p" / "detalhamento")
+    (tmp_path / "p" / "modelo.json").write_text("{}", encoding="utf-8")
+    g.desenhos = [{"nome": "detalhamento-tesouras"}]
+    dv.configurar(gerente=lambda: g)
+    dv.gravar_carimbo("p", {"detalhamento-tesouras": "g1"})
+    e = dv.estado("p", conferir=False)
+    assert e["interrompida"] is None and dv.por_que_velho("p") == ""
+    # o processo que atualizava morreu no meio
+    _marca_de_quem_morreu(tmp_path, _pid_morto())
+    e = dv.estado("p", conferir=False)
+    assert not e.get("atualizando") and e["interrompida"] and e["interrompida"]["vezes"] == 1 and not e["interrompida"]["parada"]
+    assert dv.por_que_velho("p").startswith("recomeçando: a de ") and "interrompida" in dv.por_que_velho("p")
+    # de novo: parada, não recomeça sozinha
+    _marca_de_quem_morreu(tmp_path, _pid_morto())
+    e = dv.estado("p", conferir=False)
+    assert e["interrompida"]["vezes"] == 2 and e["interrompida"]["parada"] and dv.por_que_velho("p") == ""
+    # a obra mudou depois de parada: atualiza como sempre
+    os.utime(tmp_path / "p" / "modelo.json", (1, 1))
+    assert dv.por_que_velho("p").startswith("recomeçando")
+    # a marca de um programa vivo (outro processo na mesma pasta) não é interrompida
+    import subprocess
+    vivo = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        _t.sleep(0.3)
+        from projetos import _inicio_processo
+        arq = tmp_path / "p" / "detalhamento" / "carimbo.json"
+        c = json.loads(arq.read_text(encoding="utf-8"))
+        c["em_andamento"] = {"desde": _t.time(), "motivo": "x", "pid": vivo.pid, "pid_inicio": _inicio_processo(vivo.pid)}
+        arq.write_text(json.dumps(c), encoding="utf-8")
+        assert dv.estado("p", conferir=False)["interrompida"]["vezes"] == 2
+        assert "em_andamento" in json.loads(arq.read_text(encoding="utf-8"))
+    finally:
+        vivo.kill(); vivo.wait()
+    # a marca deste mesmo processo (a atualização acabando: o estado já diz que não) não é interrompida; a de um processo
+    # novo com o número deste (o programa reiniciado ganhou o mesmo PID), é
+    from projetos import _inicio_processo as _ini
+    arq = tmp_path / "p" / "detalhamento" / "carimbo.json"
+    c = json.loads(arq.read_text(encoding="utf-8"))
+    c["em_andamento"] = {"desde": _t.time(), "motivo": "x", "pid": os.getpid(), "pid_inicio": _ini(os.getpid())}
+    arq.write_text(json.dumps(c), encoding="utf-8")
+    assert dv.estado("p", conferir=False)["interrompida"]["vezes"] == 2
+    c["em_andamento"]["pid_inicio"] = _ini(os.getpid()) - 3600
+    arq.write_text(json.dumps(c), encoding="utf-8")
+    assert dv.estado("p", conferir=False)["interrompida"]["vezes"] == 3
+    # a atualização deste processo: a marca fica no disco enquanto roda e sai no fim; terminada, a interrompida some
+    _marca_de_quem_morreu(tmp_path, _pid_morto())
+    dv.estado("p", conferir=False)
+    durante = {}
+    pode = threading.Event()
+
+    def detalhar(s):
+        durante.update(json.loads((tmp_path / "p" / "detalhamento" / "carimbo.json").read_text(encoding="utf-8")))
+        pode.wait(10)
+        dv.gravar_carimbo(s, {"detalhamento-tesouras": "g2"})
+    dv.configurar(gerente=lambda: g, detalhar=detalhar, pranchas=None, resumos=None)
+    assert dv.atualizar("p", "pedido na tela")
+    _t.sleep(0.5)
+    assert dv.estado("p", conferir=False)["interrompida"] is None          # rodando aqui: não é interrompida
+    pode.set()
+    for _ in range(100):
+        if not dv.estado("p", conferir=False).get("atualizando"):
+            break
+        _t.sleep(0.05)
+    c = json.loads((tmp_path / "p" / "detalhamento" / "carimbo.json").read_text(encoding="utf-8"))
+    assert durante["em_andamento"]["pid"] == os.getpid() and durante["em_andamento"]["motivo"] == "pedido na tela"
+    assert "em_andamento" not in c and "interrompida" not in c
+    assert dv.estado("p", conferir=False)["interrompida"] is None and dv.por_que_velho("p") == ""
+
+
 def test_cores_escolhidas_no_cad_valem_no_projeto(tmp_path):
     """a cor mudada no CAD (um perfil, pedido do usuário, 28/09) fica no projeto: vale nos desenhos gerados
     depois e nos já gravados, menos o aberto no CAD; o mesmo perfil em outra função pega a mesma cor"""

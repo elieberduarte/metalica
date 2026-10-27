@@ -291,13 +291,14 @@ class CAD {
    */
   _vigiarDesenhosVivos() {
     const url = `/api/projetos/${encodeURIComponent(this.projeto)}/desenhos-vivos`;
-    let avisouAtualizando = false, avisouErro = '';
+    let avisouAtualizando = null, avisouErro = '', avisouInterrompida = null;
     const olhar = async () => {
       if (document.hidden || !this.nomeDesenho || this._recarregando) return;
       let e;
       try { e = await pedir(url); } catch { return; }
-      if (e.atualizando && !avisouAtualizando) {
-        avisouAtualizando = true;
+      // cada atualização tem o seu início: a que recomeçou depois de o programa reiniciar é avisada de novo, com o porquê
+      if (e.atualizando && avisouAtualizando !== (e.desde || true)) {
+        avisouAtualizando = e.desde || true;
         // com o Cancelar: para no próximo passo, sem gravar nada (usuário, 21/10: "cliquei para atualizar sem querer")
         const cancelar = el('button', { type: 'button', texto: 'Cancelar', onclick: async () => {
           cancelar.disabled = true;
@@ -311,8 +312,16 @@ class CAD {
         if (!this._pararVivos) this._pararVivos = this._acompanharProgresso('Atualizando os desenhos: ', 'cad.atualizacao-automatica');
       }
       if (!e.atualizando) {
-        avisouAtualizando = false;
-        if (this._pararVivos) { this._pararVivos(!e.erro); this._pararVivos = null; }
+        avisouAtualizando = null;
+        // o programa fechou ou reiniciou no meio (Posto, 27/10): não é "concluído"
+        if (this._pararVivos) { this._pararVivos(!e.erro && !e.interrompida); this._pararVivos = null; }
+        const i = e.interrompida;
+        if (i && i.parada && avisouInterrompida !== i.desde) {
+          avisouInterrompida = i.desde;
+          const hora = i.desde ? new Date(i.desde * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+          this.aviso(el('span', {}, `A atualização dos desenhos de detalhamento foi interrompida ${i.vezes} vezes seguidas${hora ? ` (a última começou às ${hora})` : ''}: o programa fechou ou reiniciou no meio. Ela não recomeça mais sozinha; os desenhos ficam como estavam. `,
+            el('button', { type: 'button', texto: 'Atualizar agora', onclick: () => this.atualizarDesenhosAgora() })), 'atencao', 0);
+        }
       }
       this._avisarPendencias(e);                    // 3D fora do padrão, terça fora da máquina, arrumação descartada
       // o programa mudou e nada da obra (desenhos_vivos.programa_novo): os desenhos ficam como foram conferidos — refazer

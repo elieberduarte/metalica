@@ -1702,7 +1702,8 @@ def _tarefa_padrao(rota: str):
     if len(partes) < 2 or not partes[0]:
         return None
     s = partes[0]
-    if s in PROGRESSO:
+    if s in PROGRESSO or partes[1:] == ["desenhos-vivos", "cancelar"]:
+        # o Cancelar da atualização dos desenhos não é tarefa nem mexe no projeto: nunca recusado (Posto, 27/10)
         return None
     _recusar_se_atualizando(s)
     _progresso(s, "começando…")

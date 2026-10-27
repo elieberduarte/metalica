@@ -335,7 +335,7 @@ export class Editor {
       const url = new URL(location.href); url.searchParams.delete('reanalisar'); history.replaceState(null, '', url);
       setTimeout(() => this.reanalisarEstrutura(), 300);
     }
-    if (this.parametros.get('destacar')) this._destacar(this.parametros.get('destacar'));
+    if (this.parametros.get('destacar')) this._destacar(this.parametros.get('destacar'), false, this.parametros.get('senao') || '');
     else if (!pedidoNaUrl) {
       // Só sem pedido na URL volta ao último modelo (o documento é gravado no servidor a
       // cada mudança, então atualizar a página não pode jogar o trabalho fora). Com um
@@ -1708,9 +1708,11 @@ export class Editor {
 
   /**
    * `destacar=posicao:P77,P12`, `conjunto:M2` ou `ids:…` na URL (vindo do "Ver no 3D" do CAD e das telas):
-   * seleciona as peças com essa marca e enquadra a câmera nelas.
+   * seleciona as peças com essa marca e enquadra a câmera nelas. `senao` (`senao=posicao:…` na URL): o que procurar quando
+   * nenhuma peça do pedido existe — os ids de um aviso do detalhamento feito com um 3D que mudou depois (Posto, 27/10:
+   * a remontagem trocou todos os ids, e o "Ver no 3D" só dizia "Nenhuma peça com ids…").
    */
-  _destacar(spec, silencioso = false) {
+  _destacar(spec, silencioso = false, senao = '') {
     // sessao: a lista longa de ids veio pela memória da aba (as pendências do resumo da obra, 2.415 parafusos, 06/10)
     if (spec === 'sessao') { try { spec = sessionStorage.getItem('metalica.destacar') || ''; } catch (e) { spec = ''; } }
     const m = /^(posicao|conjunto|peca|ids|origem2d|pm):(.+)$/.exec(String(spec || ''));
@@ -1734,6 +1736,15 @@ export class Editor {
         : (e.atributos && e.atributos.marcas && marcas.has(String(e.atributos.marcas[chave]))))
       .map(e => e.id);
     if (!ids.length) {
+      if (senao) {
+        const n = this._destacar(senao, silencioso);
+        if (!silencioso) {
+          const url = new URL(location.href); url.searchParams.delete('senao'); history.replaceState(null, '', url);
+          this.aviso(n ? `As peças deste aviso não existem mais no 3D (ele mudou depois do detalhamento): ${n} peça(s) achada(s) pela ${senao.replace(':', ' ')} do 3D de hoje — confira se são as mesmas; o próximo Detalhar refaz o aviso.`
+            : `As peças deste aviso não existem mais no 3D (ele mudou depois do detalhamento), nem a ${senao.replace(':', ' ')}: o próximo Detalhar refaz o aviso.`, 'atencao', 0);
+        }
+        return n;
+      }
       if (!silencioso) this.aviso(`Nenhuma peça com ${chave} ${[...marcas].join(', ')} no modelo.`, 'atencao');
       return 0;
     }

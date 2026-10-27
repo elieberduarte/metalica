@@ -342,6 +342,47 @@ def _pid_vivo(pid: int) -> bool:
         return True
 
 
+def _inicio_processo(pid: int) -> Optional[float]:
+    """Quando o processo `pid` desta máquina começou (segundos, como time.time()); None quando não dá para saber. Serve
+    para o PID reaproveitado: o Windows dá o número do servidor que morreu a outro processo (um pytest de outro chat,
+    27/10), e o PID sozinho dizia "vivo"."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+            k = ctypes.WinDLL("kernel32", use_last_error=True)
+            h = k.OpenProcess(0x1000, False, int(pid))              # PROCESS_QUERY_LIMITED_INFORMATION
+            if not h:
+                return None
+            try:
+                tempos = [wintypes.FILETIME() for _ in range(4)]
+                if not k.GetProcessTimes(h, *[ctypes.byref(x) for x in tempos]):
+                    return None
+                c = tempos[0]
+                return ((c.dwHighDateTime << 32) | c.dwLowDateTime) / 1e7 - 11644473600.0
+            finally:
+                k.CloseHandle(h)
+        return os.stat("/proc/%d" % int(pid)).st_ctime
+    except Exception:                                               # noqa: BLE001 — sem como saber
+        return None
+
+
+def _mesmo_processo(pid: int, a: dict) -> bool:
+    """O processo `pid` vivo é o que gravou a marca `a`: começou antes dela (o que tem o número reaproveitado nasceu
+    depois que o dono morreu, então depois do início da marca) e, quando a marca diz, na mesma hora do dono."""
+    if not _pid_vivo(pid):
+        return False
+    nasceu = _inicio_processo(pid)
+    if nasceu is None:
+        return True
+    try:
+        if a.get("pid_inicio") is not None:
+            return abs(nasceu - float(a["pid_inicio"])) < 2.0
+        return nasceu <= float(a.get("inicio") or a.get("quando") or 0) + 2.0
+    except (TypeError, ValueError):
+        return True
+
+
 class Projetos:
     """Operações sobre os projetos de uma pasta de dados."""
 
@@ -439,6 +480,7 @@ class Projetos:
                 "tem_comercial": os.path.exists(os.path.join(pasta, "comercial", "comercial.json")),
                 "etapas": self._etapas(s, pasta, p),
                 "aberto_por": self.aberto_por(s), "atualizando": self.atualizando(s), "arquivado": bool(p.get("arquivado")),
+                "desenhos_vivos": self._desenhos_vivos(pasta),
                 "slugs_anteriores": [str(x) for x in (p.get("slugs_anteriores") or [])],
                 "desenhos": [{"nome": d["nome"], "titulo": d.get("titulo") or d["nome"], "vistas": d.get("vistas") or []}
                              for d in self.listar_desenhos(s, contar=False)]}
@@ -931,7 +973,8 @@ class Projetos:
             with open(caminho, "w", encoding="utf-8") as f:
                 json.dump({"etapa": str(etapa or ""), "fracao": fracao, "quando": time.time(),
                            "inicio": float(inicio or time.time()), "quem": str(quem or ""),
-                           "pid": os.getpid(), "maquina": platform.node()}, f)
+                           "pid": os.getpid(), "pid_inicio": _inicio_processo(os.getpid()),
+                           "maquina": platform.node()}, f)
         except (OSError, ValueError, ErroDeDados):
             pass
 
@@ -957,14 +1000,38 @@ class Projetos:
                 return None
             mesma = str(a.get("maquina") or "") == platform.node()
             pid = int(a.get("pid") or 0)
-            if mesma and pid and not _pid_vivo(pid):
-                return None
+            if mesma and pid and not _mesmo_processo(pid, a):
+                return None                                         # morto, ou o número dele dado a outro (27/10)
             return {"etapa": str(a.get("etapa") or ""), "fracao": a.get("fracao"), "ha_s": round(ha),
                     "desde_s": round(agora - float(a.get("inicio") or a.get("quando") or agora)),
                     "quem": str(a.get("quem") or ""), "pid": pid, "maquina": str(a.get("maquina") or ""),
                     "mesma_maquina": mesma, "este_processo": mesma and pid == os.getpid()}
         except (OSError, ValueError, TypeError, ErroDeDados):
             return None
+
+    @staticmethod
+    def _desenhos_vivos(pasta: str) -> Optional[dict]:
+        """A atualização automática dos desenhos (desenhos_vivos.py) pelo carimbo do detalhamento, para o cartão da tela
+        inicial (Posto, 27/10): rodando neste programa → o cartão oferece Cancelar; interrompida (o programa fechou ou
+        reiniciou no meio) → o cartão não diz que terminou. None quando não há o que dizer."""
+        try:
+            with open(os.path.join(pasta, "detalhamento", "carimbo.json"), encoding="utf-8") as f:
+                c = json.load(f)
+        except (OSError, ValueError):
+            return None
+        m, interr = c.get("em_andamento"), c.get("interrompida")
+        if m:
+            pid = int(m.get("pid") or 0)
+            if pid and _mesmo_processo(pid, m):
+                # o Cancelar vai a este programa: o de outro programa aberto na mesma pasta não se cancela daqui
+                return {"rodando": True, "cancelavel": pid == os.getpid()}
+            # a marca de quem morreu: a próxima pergunta do CAD a registra como interrompida
+            interr = {"desde": m.get("desde"), "vezes": int((interr or {}).get("vezes") or 0) + 1}
+        if not interr:
+            return None
+        import desenhos_vivos
+        return {"rodando": False, "interrompida": {"desde": interr.get("desde"), "vezes": int(interr.get("vezes") or 1),
+                                                   "parada": int(interr.get("vezes") or 1) >= desenhos_vivos.LIMITE_INTERRUPCOES}}
 
     def abrir_modelo(self, s: str) -> Optional[dict]:
         caminho = self.caminho_modelo(s)

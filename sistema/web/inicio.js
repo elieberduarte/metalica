@@ -231,6 +231,7 @@ function estiloAtualizando() {
 .cartao.atualizando { cursor: not-allowed; outline: 2px dashed var(--acento, #1f6feb); outline-offset: -2px; }
 .cartao-atualizando { margin-top: 6px; font-size: 12.5px; color: var(--texto2); display: flex; flex-direction: column; gap: 4px; max-width: 520px; }
 .cartao-atualizando b { color: var(--acento, #1f6feb); }
+.cartao-atualizando button { cursor: pointer; font-size: 12px; padding: 0 6px; }
 .cartao-atualizando .trilho { position: relative; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--acento, #1f6feb) 18%, transparent); overflow: hidden; }
 .cartao-atualizando .cheio { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--acento, #1f6feb); border-radius: 3px; transition: width .4s; }
 .cartao-atualizando .cheio.corre { width: 30%; animation: cartao-corre 1.4s linear infinite; }
@@ -245,9 +246,24 @@ function blocoAtualizando(p) {
   const a = p.atualizando || {};
   const cheio = el('span', { class: 'cheio' + (typeof a.fracao === 'number' ? '' : ' corre') });
   if (typeof a.fracao === 'number') cheio.style.width = Math.round(a.fracao * 100) + '%';
+  // a atualização automática dos desenhos rodando neste programa: o Cancelar daqui também (Posto, 27/10: o botão só
+  // existia no aviso do CAD, e o cartão não deixa abrir o projeto)
+  const cancelar = (p.desenhos_vivos || {}).cancelavel
+    ? el('button', { type: 'button', class: 'discreto', title: 'Para a atualização dos desenhos no próximo passo; os desenhos ficam como estavam',
+                     onclick: async (ev) => {
+                       ev.stopPropagation();
+                       const b = ev.currentTarget;
+                       b.disabled = true; b.textContent = 'cancelando…';
+                       try {
+                         const r = await postar(`/api/projetos/${encodeURIComponent(p.slug)}/desenhos-vivos/cancelar`, {});
+                         p.cancelando = !!r.cancelando;
+                         if (!r.cancelando) b.textContent = 'já tinha terminado';
+                       } catch (e) { b.disabled = false; b.textContent = 'Cancelar'; recado('Não foi possível cancelar', e.message, 'erro'); }
+                     } }, 'Cancelar')
+    : null;
   return el('div', { class: 'cartao-atualizando', 'data-slug': p.slug, role: 'progressbar', 'aria-label': 'Atualizando o projeto' },
     el('span', {}, el('b', { texto: 'Atualizando…' }), ' ', el('span', { class: 'etapa', texto: a.etapa || '' }),
-      el('span', { class: 'tempo', texto: a.desde_s >= 5 ? ` · ${tempoCurto(a.desde_s)}` : '' })),
+      el('span', { class: 'tempo', texto: a.desde_s >= 5 ? ` · ${tempoCurto(a.desde_s)}` : '' }), cancelar ? ' ' : null, cancelar),
     el('span', { class: 'trilho' }, cheio));
 }
 
@@ -280,7 +296,13 @@ function vigiarAtualizando() {
         } else {
           vivo = false; VIGIAS.delete(p.slug);
           try { projetos = await api('/api/projetos'); desenhar(); } catch (e) { /* a próxima lista acerta */ }
-          recado('Projeto atualizado', `${p.nome}: a atualização terminou; pode abrir.`, 'ok');
+          // o programa fechou ou reiniciou no meio (Posto, 27/10): não terminou — o cartão não diz que sim
+          const agora = projetos.find(x => x.slug === p.slug) || {};
+          const interr = (agora.desenhos_vivos || {}).interrompida;
+          if (p.cancelando) recado('Atualização cancelada', `${p.nome}: os desenhos ficam como estavam; pode abrir.`, 'ok');
+          else if (interr) recado('Atualização interrompida', `${p.nome}: o programa fechou ou reiniciou no meio da atualização dos desenhos. ` +
+            (interr.parada ? 'Ela não recomeça mais sozinha: abra o projeto e use "Atualizar agora" no 2D.' : 'Ela recomeça quando o 2D do projeto for aberto.'), 'erro');
+          else recado('Projeto atualizado', `${p.nome}: a atualização terminou; pode abrir.`, 'ok');
         }
       }
     })();

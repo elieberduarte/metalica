@@ -53,6 +53,10 @@ EDITOR_AUSENTE = 30.0
 #: código muda a cada minuto (vários chats gravando), o aviso aparecia em toda abertura e o usuário clicou sem querer
 #: (21/10); lá fica o Desenho › Atualizar desenhos.
 AVISAR_PROGRAMA_NOVO = bool(getattr(sys, "frozen", False))
+#: Interrompida tantas vezes seguidas (o programa fechou ou reiniciou no meio), não recomeça mais sozinha: o CAD avisa e
+#: oferece "Atualizar agora" (Posto, 27/10: o dev reiniciou três vezes no meio dos 35 min do Detalhar, e cada abertura
+#: recomeçava do zero sem dizer por quê).
+LIMITE_INTERRUPCOES = 2
 
 
 def editor_sinal(s: str):
@@ -163,6 +167,7 @@ def gravar_carimbo(s: str, geracoes: dict = None, completo: bool = True, extra: 
             c["quando"] = time.strftime("%Y-%m-%d %H:%M:%S")
             c.pop("erro", None)
             c.pop("cancelada", None)
+            c.pop("interrompida", None)
         c.setdefault("desenhos", {}).update(geracoes or {})
         c.update(extra or {})
         _gravar(s, c)
@@ -183,6 +188,54 @@ def ler_carimbo(s: str) -> dict:
             return json.load(f)
     except (OSError, ValueError):
         return {}
+
+
+def _obra(c: dict) -> dict:
+    """o que é da obra no carimbo (o código do programa não entra)"""
+    return {k: c.get(k) for k in ("modelo", "ajustes", "eixos")}
+
+
+def _marcar_em_andamento(s: str, motivo: str):
+    """A atualização começou: fica no carimbo (no disco) até o fim. Se o programa fecha ou reinicia no meio, a marca
+    sobra e a próxima pergunta da tela sabe que ela foi interrompida — não concluída (Posto, 27/10)."""
+    from projetos import _inicio_processo
+    with _trava:
+        c = ler_carimbo(s)
+        c["em_andamento"] = {"desde": time.time(), "motivo": motivo, "pid": os.getpid(),
+                             "pid_inicio": _inicio_processo(os.getpid())}
+        _gravar(s, c)
+
+
+def _tirar_do_carimbo(s: str, *chaves):
+    with _trava:
+        c = ler_carimbo(s)
+        if any(k in c for k in chaves):
+            for k in chaves:
+                c.pop(k, None)
+            _gravar(s, c)
+
+
+def _conferir_interrompida(s: str):
+    """A marca de uma atualização que não está rodando neste processo nem em outro programa vivo: o programa fechou ou
+    reiniciou no meio dela. Vira `interrompida` no carimbo, com quantas vezes seguidas isso aconteceu."""
+    from projetos import _mesmo_processo
+    with _trava:
+        if (_estado.get(s) or {}).get("atualizando"):
+            return
+        c = ler_carimbo(s)
+        m = c.get("em_andamento")
+        if not m:
+            return
+        pid = int(m.get("pid") or 0)
+        if pid and _mesmo_processo(pid, m):
+            # este programa (a atualização acabando: o estado já diz que não, a marca sai logo em seguida) ou outro aberto
+            # na mesma pasta de projetos; o mesmo número de um programa que nasceu depois não conta
+            return
+        antes = c.get("interrompida") or {}
+        c.pop("em_andamento", None)
+        c["interrompida"] = {"desde": m.get("desde"), "motivo": m.get("motivo") or "", "notada": time.time(),
+                             "vezes": int(antes.get("vezes") or 0) + 1, "obra": _obra(carimbo(s))}
+        _gravar(s, c)
 
 
 def tem_detalhamento(s: str) -> bool:
@@ -209,6 +262,12 @@ def por_que_velho(s: str) -> str:
         # tudo logo depois do Detalhar (P24, primeiro uso 16/10); o carimbo completo chega no fim
         return ""
     agora = carimbo(s)
+    interr = antes.get("interrompida")
+    if interr:
+        if interr.get("vezes", 0) >= LIMITE_INTERRUPCOES and interr.get("obra") == _obra(agora):
+            return ""      # interrompida de novo e de novo: espera o "Atualizar agora" (ou uma mudança da obra)
+        quando = time.strftime("%H:%M", time.localtime(float(interr.get("desde") or 0)))
+        return "recomeçando: a de %s foi interrompida, o programa fechou ou reiniciou no meio" % quando
     canc = antes.get("cancelada")
     if canc and all(canc.get(k) == agora.get(k) for k in ("modelo", "ajustes", "eixos")):
         return ""          # cancelada pelo usuário neste mesmo estado da obra: não recomeça sozinha
@@ -235,6 +294,10 @@ def programa_novo(s: str) -> bool:
 def estado(s: str, conferir: bool = True) -> dict:
     """o que o CAD pergunta: se está atualizando, a etapa, e a geração de cada desenho (muda quando o
     desenho é refeito). Com `conferir`, começa a atualização se o detalhamento está velho."""
+    try:
+        _conferir_interrompida(s)
+    except Exception:                                           # noqa: BLE001 — conferir nunca derruba a tela
+        pass
     if conferir:
         motivo = ""
         try:
@@ -251,9 +314,21 @@ def estado(s: str, conferir: bool = True) -> dict:
     e["pendente_3d"] = c.get("pendente_3d") or {}
     e["fora_da_maquina"] = c.get("fora_da_maquina") or []
     e["fora_da_maquina_pecas"] = c.get("fora_da_maquina_pecas") or []      # o "Ver no 3D" de cada terça (Q01)
+    # o 3D mudou depois do detalhamento que deixou esses avisos (cancelado, interrompido, editor aberto): o CAD diz de quando,
+    # e o "Ver no 3D" procura pela posição quando os ids não existem mais (Posto, 27/10: 0 de 285)
+    e["pendencias_de"] = c.get("quando") or ""
+    try:
+        e["pendencias_de_outro_3d"] = bool(c.get("modelo")) and c.get("modelo") != _assinatura_arquivo(
+            _funcoes["gerente"]().caminho_modelo(s))
+    except Exception:                                           # noqa: BLE001 — conferir nunca derruba a tela
+        e["pendencias_de_outro_3d"] = False
     e["desfeito"] = c.get("desfeito") or None        # o CAD avisa: os desenhos não são do 3D atual (Q02)
     e["pranchas_descartadas"] = c.get("pranchas_descartadas") or []
     e["cancelada"] = bool(c.get("cancelada")) and not e.get("atualizando")
+    # o programa fechou ou reiniciou no meio (Posto, 27/10): a tela não diz "concluído"; parada, oferece "Atualizar agora"
+    interr = c.get("interrompida") if not e.get("atualizando") else None
+    e["interrompida"] = {"desde": interr.get("desde"), "motivo": interr.get("motivo") or "", "vezes": interr.get("vezes") or 1,
+                         "parada": (interr.get("vezes") or 0) >= LIMITE_INTERRUPCOES} if interr else None
     try:
         e["programa_novo"] = not e.get("atualizando") and programa_novo(s)
     except Exception:                                           # noqa: BLE001 — conferir nunca derruba a tela
@@ -304,6 +379,23 @@ def conferir_cancelamento(s: str):
 
 
 def _rodar(s: str, motivo: str, so_pranchas: bool):
+    try:
+        _marcar_em_andamento(s, motivo)
+    except Exception:                                           # noqa: BLE001 — sem a marca, só não se sabe se for interrompida
+        traceback.print_exc()
+    de_novo = False
+    try:
+        de_novo = _rodar_marcado(s, motivo, so_pranchas)
+    finally:
+        try:
+            _tirar_do_carimbo(s, "em_andamento")
+        except Exception:                                       # noqa: BLE001
+            traceback.print_exc()
+    if de_novo:                      # depois de tirar a marca: a próxima grava a dela
+        atualizar(s, "mudou durante a atualização")
+
+
+def _rodar_marcado(s: str, motivo: str, so_pranchas: bool):
     erro = ""
     try:
         conferir_cancelamento(s)
@@ -327,7 +419,8 @@ def _rodar(s: str, motivo: str, so_pranchas: bool):
         # pergunta da tela não recomeçar na hora (por_que_velho) — uma mudança nova da obra atualiza como sempre
         try:
             agora = carimbo(s)
-            gravar_carimbo(s, completo=False, extra={"cancelada": {k: agora.get(k) for k in ("modelo", "ajustes", "eixos")}})
+            gravar_carimbo(s, completo=False, extra={"cancelada": _obra(agora)})
+            _tirar_do_carimbo(s, "interrompida")
         except Exception:                                       # noqa: BLE001
             pass
         with _trava:
@@ -345,8 +438,7 @@ def _rodar(s: str, motivo: str, so_pranchas: bool):
     with _trava:
         de_novo = (_estado.get(s) or {}).get("de_novo")
         _estado[s] = {"atualizando": False, "motivo": motivo, "fim": time.time(), "erro": erro}
-    if de_novo and not erro:
-        atualizar(s, "mudou durante a atualização")
+    return bool(de_novo and not erro)
 
 
 def _agendar(chave, espera, fn):

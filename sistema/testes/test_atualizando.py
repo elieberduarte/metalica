@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest                                                    # noqa: E402
 from nucleo.base import ErroDeDados                               # noqa: E402
-from projetos import Projetos, ATUALIZANDO, _pid_vivo             # noqa: E402
+from projetos import Projetos, ATUALIZANDO, _pid_vivo, _inicio_processo  # noqa: E402
 import app                                                        # noqa: E402
 
 
@@ -57,7 +57,7 @@ def test_marca_le_expira_e_some_com_o_processo_morto():
         # de outro processo vivo: vale, e não é este processo
         p = _outro_processo()
         try:
-            _regravar(cam, quando=time.time(), pid=p.pid)
+            _regravar(cam, quando=time.time(), inicio=time.time(), pid=p.pid, pid_inicio=_inicio_processo(p.pid))
             a = g.atualizando(s)
             assert a and not a["este_processo"] and a["pid"] == p.pid
         finally:
@@ -68,6 +68,32 @@ def test_marca_le_expira_e_some_com_o_processo_morto():
         g.desmarcar_atualizando(s)
         assert not os.path.exists(cam)
         g.desmarcar_atualizando(s)                                # de novo: não reclama
+
+
+def test_pid_reaproveitado_por_outro_processo_nao_prende_o_projeto():
+    """Posto, 27/10: a marca tinha o pid 6760 do servidor que morreu no reinício do dev; o Windows deu o 6760 a um pytest
+    de outro chat, o PID sozinho dizia "vivo" e o cartão ficou "Atualizando… desenhando tirantes" sem deixar abrir."""
+    assert _inicio_processo(os.getpid()) and abs(_inicio_processo(os.getpid()) - time.time()) < 24 * 3600 * 30
+    with tempfile.TemporaryDirectory() as raiz:
+        g = Projetos(raiz)
+        s = g.criar("Obra")["slug"]
+        g.marcar_atualizando(s, "desenhando tirantes…", quem="servidor que morreu")
+        cam = os.path.join(raiz, s, ATUALIZANDO)
+        time.sleep(2.5)
+        p = _outro_processo()                                     # nasce depois da marca, com o número do morto
+        try:
+            time.sleep(0.3)
+            # a marca de hoje (com a hora em que o dono nasceu): o outro nasceu em outra hora
+            _regravar(cam, quando=time.time(), pid=p.pid)
+            assert g.atualizando(s) is None
+            # a marca de antes desta correção (sem pid_inicio): o outro nasceu depois do início da tarefa
+            _regravar(cam, pid_inicio=None)
+            assert g.atualizando(s) is None
+            # o mesmo processo continua prendendo
+            _regravar(cam, inicio=time.time(), pid_inicio=_inicio_processo(p.pid))
+            assert g.atualizando(s)
+        finally:
+            p.kill(); p.wait()
 
 
 def test_servidor_grava_no_progresso_recusa_post_de_fora_e_mostra_a_etapa_do_outro():
@@ -94,10 +120,12 @@ def test_servidor_grava_no_progresso_recusa_post_de_fora_e_mostra_a_etapa_do_out
             p = _outro_processo()
             try:
                 g.marcar_atualizando(s, "montando as treliças…", 0.3, quem="script")
-                _regravar(cam, pid=p.pid)
+                _regravar(cam, pid=p.pid, pid_inicio=_inicio_processo(p.pid))
                 with pytest.raises(ErroDeDados) as e:
                     app._tarefa_padrao("/api/projetos/%s/renomear" % s)
                 assert "sendo atualizado" in str(e.value) and "montando as treliças" in str(e.value)
+                # o Cancelar da atualização dos desenhos nunca é recusado (o cartão da tela inicial, Posto 27/10)
+                assert app._tarefa_padrao("/api/projetos/%s/desenhos-vivos/cancelar" % s) is None
                 pr = app.progresso_do_projeto(s)
                 assert pr["etapa"] == "montando as treliças…" and pr["externo"] and pr["fracao"] == 0.3 and pr["quem"] == "script"
                 assert g.resumo(s)["atualizando"]["etapa"] == "montando as treliças…"
