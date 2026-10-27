@@ -354,7 +354,12 @@
       b.type = 'button';
       b.textContent = s[1];
       b.title = s[2];
-      b.addEventListener('click', function () { executar({ lado: ladoDasSetas(), acao: s[0] }); });
+      b.addEventListener('click', function () {
+        // a página das cenas no quadro do 3D (27/10: "o ctrl z não faz ela voltar"): o desfazer é o dela, não o do editor
+        var w3 = ladoDasSetas() === '3d' ? janela('3d') : null;
+        try { if (w3 && w3.cenaApi && w3.cenaApi[s[0]]) { w3.cenaApi[s[0]](); return; } } catch (e) { /* outra tela */ }
+        executar({ lado: ladoDasSetas(), acao: s[0] });
+      });
       setas.appendChild(b);
     });
     caixa.appendChild(setas);

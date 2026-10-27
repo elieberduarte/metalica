@@ -232,6 +232,35 @@ try:
     esperar(aba, "!(cenaApi.estado().cena.desligadas || []).includes('camada:Pilares')", 5)
     aba.drenar(1.0)
 
+    # desfazer e refazer (27/10: "mexi na posição da lente sem querer, e o ctrl z não faz ela voltar para a posição anterior"):
+    # a faixa da lente arrastada (vários passos de um gesto só) — Ctrl+Z volta a lente de antes, Ctrl+Y a refaz, e fica gravado
+    fov0 = aba.avaliar("cenaApi.estado().cena.camera.fov")
+    aba.avaliar("""(() => { const l = document.getElementById('lente'); for (const v of [60, 55, 50, 45]) { l.value = v; l.dispatchEvent(new Event('input')); } l.focus(); return 1; })()""")
+    ok(abs(aba.avaliar("cenaApi.estado().cena.camera.fov") - 45) < 0.01, "a lente arrastada até 45°")
+
+    def tecla(letra, mods=2):
+        aba.cmd("Input.dispatchKeyEvent", type="keyDown", key=letra, code="Key" + letra.upper(), windowsVirtualKeyCode=ord(letra.upper()), modifiers=mods)
+        aba.cmd("Input.dispatchKeyEvent", type="keyUp", key=letra, code="Key" + letra.upper(), windowsVirtualKeyCode=ord(letra.upper()), modifiers=mods)
+    tecla("z")
+    ok(esperar(aba, f"Math.abs(cenaApi.estado().cena.camera.fov - {fov0}) < 0.01 && Math.abs(+document.getElementById('lente').value - {fov0}) < 0.6", 5),
+       f"Ctrl+Z: a lente volta inteira ao de antes do gesto ({fov0:.1f}°), com a faixa no lugar")
+    aba.drenar(1.0)
+    gravado = json.loads(urllib.request.urlopen(base + "/api/projetos/obra/terreno/cenas/foto-teste", timeout=30).read())
+    ok(abs(gravado["camera"]["fov"] - fov0) < 0.01, "e a lente de antes fica gravada (a gravação atrasada do arrastar não volta por cima)")
+    tecla("y")
+    ok(esperar(aba, "Math.abs(cenaApi.estado().cena.camera.fov - 45) < 0.01", 5), "Ctrl+Y: refaz (45°)")
+    tecla("z")
+    ok(esperar(aba, f"Math.abs(cenaApi.estado().cena.camera.fov - {fov0}) < 0.01", 5), "e Ctrl+Z de novo")
+    # o ponto apagado volta pelo Ctrl+Z, com o encaixe de antes
+    n0, erro0 = aba.avaliar("cenaApi.estado().cena.pares.length"), aba.avaliar("cenaApi.estado().cena.camera.erro_px")
+    aba.avaliar("document.querySelector('#pares [data-acao=apagar][data-i=\"0\"]').click(); 1")
+    ok(esperar(aba, f"cenaApi.estado().cena.pares.length === {n0 - 1}", 10), "o ✕ apaga o ponto 1")
+    aba.drenar(0.5)
+    aba.avaliar("document.body.focus(); 1")
+    tecla("z")
+    ok(esperar(aba, f"cenaApi.estado().cena.pares.length === {n0} && Math.abs(cenaApi.estado().cena.camera.erro_px - {erro0}) < 0.01", 10),
+       "Ctrl+Z traz o ponto apagado de volta, com o encaixe de antes")
+
     # o sol da cena (27/10: "poderia ter as opções de mudar a posição das sombras aqui na composição da cena"): a direção e a
     # altura mexem no sol do visor, ficam gravadas e voltam depois de recarregar
     ok(aba.avaliar("!!document.querySelector('#sol-caixa [data-sol=direcao]') && !!document.querySelector('#sol-caixa [data-sol=altura]')"),

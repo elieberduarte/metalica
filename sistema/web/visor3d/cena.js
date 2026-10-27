@@ -29,6 +29,7 @@ const escuro = () => document.documentElement.getAttribute('data-tema') === 'esc
 let visor = null, terreno = null, cena = null, modo = 'foto', marcando = null, camera3d = null, rolar = 0, giroBase = null;
 let situacaoAberta = null, sistemas = [], situacaoProjeto = null;
 let selecionado = null, arrasto = null, tempoAjuste = 0, quadroAjuste = 0;
+let tempoLente = 0, tempoOpac = 0, tempoCamadas = 0;
 const foto = $('#foto'), tela = $('#tela'), marcas = $('#marcas'), palco = $('#palco');
 
 function aviso(txt) { $('#aviso').textContent = txt || ''; }
@@ -102,6 +103,7 @@ async function abrirCena(id) {
     return;
   }
   cena = nova;
+  desfeitos.length = refeitos.length = 0;                   // o histórico é de uma cena só
   history.replaceState(null, '', `?projeto=${encodeURIComponent(PROJETO)}&cena=${encodeURIComponent(id)}`);
   foto.hidden = false;
   foto.src = `${API}/${encodeURIComponent(id)}/foto.jpg?v=${encodeURIComponent(cena.alterada || '')}`;
@@ -264,8 +266,14 @@ function desenharPares() {
   $('#encaixar').title = completos < 4 ? `faltam ${4 - completos} ponto(s) completos` : '';
 }
 
+/** Grava `campos` na cena. A cena da tela é a que vale: os campos entram nela antes de ir ao servidor, e a resposta só traz
+ *  o que é do servidor (a hora) — uma resposta que chegasse depois de outra mudança na tela a desfazia (27/10: o sol
+ *  mexido logo depois de um Ctrl+Z voltava ao de antes). */
 async function gravar(campos) {
-  cena = await pedir(`${API}/${encodeURIComponent(cena.id)}`, campos);
+  const id = cena.id;
+  Object.assign(cena, JSON.parse(JSON.stringify(campos)));
+  const r = await pedir(`${API}/${encodeURIComponent(id)}`, campos);
+  if (cena && cena.id === id) cena.alterada = r.alterada;
   desenharPares();
   atualizarFaixas();
   $('#salvar-cena').disabled = !cena.camera;
@@ -284,7 +292,7 @@ function mostrarSol() {
   $('#sol-caixa').hidden = !s.ligado;
   $('#sol-caixa').innerHTML = controlesDoSol(s) +
     '<p class="dica">A direção gira o sol em volta da obra; a altura vai do nascer (baixo, sombras compridas) ao meio-dia (alto).</p>';
-  ligarControlesDoSol($('#sol-caixa'), s, (novo) => mudarSol({ ...novo, ligado: true }));
+  ligarControlesDoSol($('#sol-caixa'), s, (novo) => { lembrar('sol'); mudarSol({ ...novo, ligado: true }); });
   aplicarSol();
 }
 
@@ -304,6 +312,62 @@ function mudarSol(mud) {
   const sol = cena.sol;                                     // o valor de agora: até gravar, outra resposta pode trocar a cena
   tempoSol = setTimeout(() => gravar({ sol }).catch(e => aviso('O sol não foi gravado: ' + e.message)), 500);
 }
+
+// ------------------------------------------------------------------ desfazer e refazer
+// (usuário, 27/10: "mexi na posição da lente sem querer, e o ctrl z não faz ela voltar para a posição anterior"): o retrato
+// do que se mexe na cena (os pontos, a câmera com a lente e o rolar, a opacidade, as camadas, o sol) antes de cada mudança.
+// Um gesto é um passo: arrastar uma faixa, as setas seguidas num ponto, arrastar o ponto. Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z)
+// aqui, e as setas ↶ ↷ da barra de cima (barra_unica.js) chamam o mesmo
+
+const desfeitos = [], refeitos = [];
+let ultimaMudanca = { tipo: null, t: 0 };
+
+function retrato() {
+  const r = JSON.parse(JSON.stringify({ pares: cena.pares || [], camera: cena.camera || null, opacidade: cena.opacidade ?? 1,
+                                        desligadas: cena.desligadas || [], sol: cena.sol || null }));
+  if (r.camera && rolar && giroBase)                        // o rolar ainda fora do giro gravado
+    r.camera.giro = giroBase.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rolar * Math.PI / 180)).toArray();
+  return r;
+}
+
+/** Antes de mudar a cena. `tipo` junta o mesmo gesto num passo só (o mesmo tipo com menos de 1,5 s entre um e outro). */
+function lembrar(tipo = null) {
+  if (!cena) return;
+  const agora = performance.now(), mesmo = tipo && tipo === ultimaMudanca.tipo && agora - ultimaMudanca.t < 1500;
+  ultimaMudanca = { tipo, t: agora };
+  if (mesmo) return;
+  desfeitos.push(retrato());
+  if (desfeitos.length > 100) desfeitos.shift();
+  refeitos.length = 0;
+}
+
+async function voltarA(de, para, texto) {
+  if (!cena) return;
+  if (!de.length) { aviso(texto === 'Desfeito' ? 'Nada para desfazer.' : 'Nada para refazer.'); return; }
+  cancelar();
+  [tempoAjuste, tempoSol, tempoLente, tempoOpac, tempoCamadas].forEach(clearTimeout);
+  para.push(retrato());
+  const r = de.pop();
+  ultimaMudanca = { tipo: null, t: 0 };
+  Object.assign(cena, r);
+  if (!r.sol) delete cena.sol;
+  rolar = 0;
+  if (selecionado !== null && selecionado >= cena.pares.length) selecionado = null;
+  $('#opacidade').value = cena.opacidade;
+  desenharPares();
+  desenharCamadas();
+  mostrarSol();
+  mostrarModo(modo);
+  try {
+    await gravar({ pares: cena.pares, camera: cena.camera, opacidade: cena.opacidade, desligadas: cena.desligadas,
+                   sol: r.sol || { ligado: true, ...SOL_PADRAO } });
+    aplicarCamera();
+    aviso(texto + '.');
+  } catch (e) { aviso(texto + ' na tela, mas não gravado: ' + e.message); }
+}
+
+const desfazer = () => voltarA(desfeitos, refeitos, 'Desfeito');
+const refazer = () => voltarA(refeitos, desfeitos, 'Refeito');
 
 // ------------------------------------------------------------------ a cena pronta
 // (usuário, 27/10: "crie a opção salvar cena após a conclusão, para não ficar aparecendo essas bolinhas na tela, caso seja
@@ -415,6 +479,7 @@ function encaixeRapido() {
 }
 
 function moverPonto(i, u, v) {
+  lembrar('ponto' + i);
   cena.pares[i] = { ...cena.pares[i], foto: [Math.min(1, Math.max(0, u)), Math.min(1, Math.max(0, v))] };
   cancelAnimationFrame(quadroAjuste);
   quadroAjuste = requestAnimationFrame(encaixeRapido);
@@ -486,7 +551,7 @@ function ligarControles() {
   $('#lista').onchange = () => { if ($('#lista').value) abrirCena($('#lista').value); };
   $('#novo-ponto').onclick = comecarPonto;
   $('#ver').onclick = () => { cancelar(); mostrarModo(modo === '3d' ? 'foto' : '3d'); };
-  $('#encaixar').onclick = () => { cancelar(); fazerEncaixe().catch(e => aviso('O encaixe falhou: ' + e.message)); };
+  $('#encaixar').onclick = () => { cancelar(); lembrar(); fazerEncaixe().catch(e => aviso('O encaixe falhou: ' + e.message)); };
   $('#salvar-imagem').onclick = () => salvarImagem();
   $('#salvar-cena').onclick = () => concluir(true).catch(e => aviso('A cena não foi salva: ' + e.message));
   $('#editar').onclick = () => concluir(false).catch(e => aviso('Não deu: ' + e.message));
@@ -507,19 +572,23 @@ function ligarControles() {
         aviso(`Clique de novo o ponto ${i + 1} na foto (Esc cancela).`);
       } else if (b.dataset.acao === 'apagar') {
         cancelar();
+        lembrar();
         const pares = cena.pares.slice(); pares.splice(i, 1);
         await gravar({ pares });
         await reencaixar(`Ponto ${i + 1} apagado.`);
       }
     } catch (err) { aviso('Não deu: ' + err.message); }
   };
-  let tempoLente = 0;
   $('#lente').oninput = () => {
     if (!cena || !cena.camera) return;
+    lembrar('lente');
     cena.camera.fov = +$('#lente').value; aplicarCamera();
-    clearTimeout(tempoLente); tempoLente = setTimeout(() => gravar({ camera: cena.camera }), 600);
+    const camera = { ...cena.camera };                      // o valor de agora (como o sol)
+    clearTimeout(tempoLente); tempoLente = setTimeout(() => gravar({ camera }), 600);
   };
   $('#rolar').oninput = () => {
+    if (!cena || !cena.camera) return;
+    lembrar('rolar');
     rolar = +$('#rolar').value; aplicarCamera();
     clearTimeout(tempoLente);
     tempoLente = setTimeout(() => {                       // o rolar entra no giro gravado
@@ -529,16 +598,16 @@ function ligarControles() {
       gravar({ camera: { ...cena.camera, giro: g.toArray() } }).then(aplicarCamera);
     }, 800);
   };
-  let tempoOpac = 0;
   $('#opacidade').oninput = () => {
+    lembrar('opacidade');
     tela.style.opacity = modo === 'foto' ? $('#opacidade').value : '1'; atualizarFaixas();
     clearTimeout(tempoOpac); tempoOpac = setTimeout(() => gravar({ opacidade: +$('#opacidade').value }), 600);
   };
-  $('#sol').onchange = () => mudarSol({ ligado: $('#sol').checked });
-  let tempoCamadas = 0;
+  $('#sol').onchange = () => { lembrar(); mudarSol({ ligado: $('#sol').checked }); };
   $('#camadas').onchange = (e) => {
     const c = e.target.closest('input[data-chave]');
     if (!c || !cena) return;
+    lembrar();
     const desl = new Set(cena.desligadas || []);
     if (c.checked) desl.delete(c.dataset.chave); else desl.add(c.dataset.chave);
     cena.desligadas = [...desl];
@@ -547,6 +616,12 @@ function ligarControles() {
     clearTimeout(tempoCamadas); tempoCamadas = setTimeout(() => gravar({ desligadas }), 500);
   };
   addEventListener('keydown', (e) => {
+    const el = document.activeElement || {}, digitando = el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && /^(text|search|number)$/.test(el.type));
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && /^[zy]$/i.test(e.key) && !digitando) {
+      e.preventDefault();
+      if (e.key.toLowerCase() === 'y' || e.shiftKey) refazer(); else desfazer();
+      return;
+    }
     if (e.key === 'Escape') { cancelar(); if (selecionado !== null) escolherPonto(null); return; }
     const setas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
     if (!setas || selecionado === null || modo !== 'foto' || marcando || !cena || cena.concluida || /INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) return;
@@ -588,6 +663,7 @@ function ligarControles() {
     const r = marcas.getBoundingClientRect();
     const u = (e.clientX - r.left) / r.width, v = (e.clientY - r.top) / r.height;
     if (u < 0 || u > 1 || v < 0 || v > 1) return;
+    lembrar();
     if (marcando.i !== undefined) {                          // o ponto de antes, de novo na foto
       const i = marcando.i, pares = cena.pares.slice();
       pares[i] = { ...pares[i], foto: [u, v] };
@@ -599,6 +675,7 @@ function ligarControles() {
     const pares = (cena.pares || []).concat([{ foto: [u, v] }]);
     await gravar({ pares });
     marcarNo3d(pares.length - 1);
+    marcando.novo = true;                                   // o ponto novo inteiro (foto e 3D) é um passo só
   });
   // o clique no 3D (sem arrastar): o ponto do modelo
   let desce = null;
@@ -610,6 +687,7 @@ function ligarControles() {
     if (!parado || e.button !== 0) return;
     const r = tela.getBoundingClientRect(), p = pontoDo3d(e.clientX - r.left, e.clientY - r.top);
     if (!p) { aviso('Nada nesse ponto: clique numa peça ou no chão.'); return; }
+    if (!marcando.novo) lembrar();
     const i = marcando.i, pares = cena.pares.slice();
     pares[i] = { ...pares[i], modelo: p };
     cancelar();
@@ -644,5 +722,5 @@ function desenharMarcas() {
   if (novo !== marcas._html) { marcas.innerHTML = novo; marcas._html = novo; }
 }
 
-window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado }), mostrarModo, pontoDo3d, fazerEncaixe, concluir };
+window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado }), mostrarModo, pontoDo3d, fazerEncaixe, concluir, desfazer, refazer };
 abrir().catch(e => { aviso('A cena não abriu: ' + e.message); console.error(e); });
