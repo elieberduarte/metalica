@@ -2573,6 +2573,22 @@ def _pontas_vistas_de_lado(pecas: List[dict], doc) -> List[dict]:
     return tirar
 
 
+def _sem_transicao_abaixo_das_tesouras(apoios: Sequence[Tuple[float, float]], de_transicao: Sequence[Tuple[float, float]],
+                                       folga: float = 60.0) -> List[Tuple[float, float]]:
+    """os apoios da linha sem os da transição que passa abaixo da reta das tesouras da mesma linha (entre duas delas): a
+    terça corre no plano da água, de tesoura em tesoura, por cima da transição. A TC46 de x 34,06 do Posto V2 corre em
+    cima da TRANSIÇÃO 9 (o vale), 0,10 m abaixo das tesouras que nascem nela: a transição dava os apoios entre elas, a
+    terça reta emendava em cada tesoura e saía em pedaços de 2,8 e 1,0 m com um buraco de 0,4 m em cada uma (27/10, foto
+    do usuário: "todo esse miolo não foi atualizado", a mesma da P544 de 26/10)"""
+    tr = set(de_transicao)
+    outros = sorted(ap for ap in apoios if ap not in tr)
+    if len(outros) < 2:
+        return list(apoios)
+    s0, s1 = outros[0][0], outros[-1][0]
+    return [ap for ap in apoios if ap not in tr or not (s0 < ap[0] < s1)
+            or ap[1] >= _altura_pelos_apoios(outros, ap[0]) - folga]
+
+
 def _altura_pelos_apoios(apoios: Sequence[Tuple[float, float]], s: float, base_min: float = 1500.0) -> float:
     """a altura da terça em `s` pelos apoios [(s, h)]: de apoio em apoio; fora deles (a ponta na face da transição),
     a inclinação de uma base de `base_min` pelo menos — os dois últimos apoios a 20 cm (o par da cumeeira, 5,6 cm de
@@ -5596,6 +5612,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             # apoios: onde a linha da terça passa por cima de uma treliça (o meio de cada
             # travessia, com a altura do banzo ali)
             apoios = []
+            de_transicao: List[Tuple[float, float]] = []      # os apoios que só a transição dá
             tirados: List[Tuple[float, float]] = []
             npas = max(2, int((s_fim - s_ini) / 50.0))
             corrida: List[Tuple[float, float]] = []
@@ -5617,6 +5634,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                     corrida.append((s, h))
                     tipo_c = tipo_k
                 elif corrida:
+                    n_antes = len(apoios)
                     if corrida[-1][0] - corrida[0][0] <= 1000.0:
                         apoios.append((sum(c_[0] for c_ in corrida) / len(corrida), sum(c_[1] for c_ in corrida) / len(corrida)))
                     else:
@@ -5624,6 +5642,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         # contínuo, um a cada ~1 m com a altura de cada ponto
                         passo_c = max(1, int(round(1000.0 / max(1.0, corrida[1][0] - corrida[0][0]))))
                         apoios += corrida[::passo_c] + ([corrida[-1]] if (len(corrida) - 1) % passo_c else [])
+                    if tipo_c:
+                        de_transicao += apoios[n_antes:]
                     corrida = []
                     if h_novo is not None:                   # o outro tipo começa um apoio novo
                         corrida, tipo_c = [(s, h_novo)], tipo_k
@@ -5641,7 +5661,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 h_c = superficie(pt_c)
                 if h_c is not None:
                     apoios.append((c_[0], h_c))
-            apoios.sort()
+            apoios = sorted(_sem_transicao_abaixo_das_tesouras(apoios, de_transicao))
             if not apoios:
                 continue
             # a treliça alta que a terça cruza (a transição que carrega as tesouras) passa

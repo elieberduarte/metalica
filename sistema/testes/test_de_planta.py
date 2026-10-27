@@ -1503,3 +1503,20 @@ def test_estrado_da_base_de_caixa_pelos_eixos_das_pecas():
     assert len({p["base"] for p in out}) == 1                        # as duas se cruzam: a mesma base
     topo = 6000.0 + de_planta._faixa_z(bz)[1]
     assert all(p["z"] == pytest.approx(topo + 50.0, abs=0.1) for p in out)
+
+
+def test_transicao_abaixo_das_tesouras_nao_e_apoio_da_terca():
+    """a TC46 de x 34,06 do Posto V2 (27/10/2026, foto do usuário: "todo esse miolo não foi atualizado, tenta se recordar
+    do que eu pedi ontem para fazer com essas terças" — a P544 de 26/10): a linha corre em cima da TRANSIÇÃO 9 (o vale),
+    100 mm abaixo das tesouras que nascem nela. A transição dava apoio a cada metro entre as tesouras, a terça reta emendava
+    em cada tesoura e saía em pedaços de 2,8 e 1,0 m com um buraco de 0,4 m em cada uma. Os números são os da linha no V2
+    (s, altura do banzo): entre as tesouras só ficam as tesouras; a transição fora delas (a ponta da linha) e a transição
+    acima da reta (a que sobe acima do telhado, barreira) continuam"""
+    tes = [(4803.0, 831.0), (9005.0, 828.0), (13207.0, 863.0), (17409.0, 828.0)]
+    trans = [(4602.0, 725.0), (5003.0, 725.0), (6003.0, 725.0), (7004.0, 725.0), (8004.0, 725.0), (8805.0, 725.0),
+             (9205.0, 725.0), (10205.0, 725.0), (13407.0, 725.0), (17609.0, 725.0), (18610.0, 725.0)]
+    alta = (15408.0, 1460.0)
+    r = de_planta._sem_transicao_abaixo_das_tesouras(tes + trans + [alta], trans + [alta])
+    assert sorted(r) == sorted(tes + [(4602.0, 725.0), (17609.0, 725.0), (18610.0, 725.0), alta])
+    # sem tesoura na linha (a terça que só corre em cima da transição), a transição continua dando a altura
+    assert sorted(de_planta._sem_transicao_abaixo_das_tesouras(trans, trans)) == sorted(trans)
