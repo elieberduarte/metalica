@@ -370,14 +370,17 @@ def trelicas(entidades: Iterable, por_grupo: bool = True) -> List[dict]:
     out = []
     for _k, lista in por_chave.items():
         feitas = []
+        ids_liga = {id(o) for o in liga.get(_k, [])}
+        grupos = []
         for comp_todo in _componentes(lista + liga.get(_k, [])):
-            ids_liga = {id(o) for o in liga.get(_k, [])}
             comp = [b for b in comp_todo if id(b) not in ids_liga]
-            if len(comp) < 3:
-                continue
-            # o composto tem a largura dos dois U de propósito: a folga é a meia largura dele (vão + 2 abas)
+            if len(comp) >= 3:
+                grupos.append((comp_todo, comp, None))
+        for comp_todo, comp, plano_par in _juntar_faces_do_par(grupos):
+            # o composto tem a largura dos dois U de propósito: a folga é a meia largura dele (vão + 2 abas); as faces
+            # do par juntadas: o plano de uma delas, passando no meio das duas
             larg = max((_extensao_u(o) for o in comp_todo if id(o) in ids_liga), default=0.0)
-            pl = _normal(comp_todo, folga=larg)
+            pl = plano_par or _normal(comp_todo, folga=larg)
             if pl is None:
                 continue
             n, c = pl
@@ -416,6 +419,65 @@ def trelicas(entidades: Iterable, por_grupo: bool = True) -> List[dict]:
             feitas.append(out[-1])
         _orfas_no_plano(lista, feitas)
     return out
+
+
+#: mm: as duas faces de um par de cantoneiras, cada uma uma treliça sem ligação com a outra (a viga de transição em caixão)
+FACES_DO_PAR = 250.0
+
+
+def _juntar_faces_do_par(grupos: List[tuple]) -> List[tuple]:
+    """2.5 (27/10, Posto V2, ajuste do usuário na TRANSIÇÃO 1: "montante virado" e "atravessava a gusset"): na viga de
+    transição em caixão, as cantoneiras de cada face ficam na aba de um lado e não tocam nas da outra face (196 mm) nem no
+    banzo (no meio): cada face virava uma treliça sem par e caía na 2.4 — a aba que atravessa o plano sempre para +n, e na
+    face desse lado ela saía para fora, atravessando a gusset (479 cantoneiras no Posto, numa das duas faces de cada par).
+    Os grupos em planos paralelos a até FACES_DO_PAR um do outro, sobrepostos, com cantoneiras que formam par de um com o
+    outro, são uma treliça só. [(comp_todo, comp, (n, centro) do plano no meio das faces juntadas, ou None)]"""
+    if len(grupos) < 2:
+        return grupos
+    planos = [_normal(g[0]) for g in grupos]
+    pai = list(range(len(grupos)))
+    meio_par: Dict[int, tuple] = {}
+
+    def acha(i):
+        while pai[i] != i:
+            pai[i] = pai[pai[i]]
+            i = pai[i]
+        return i
+
+    def caixa(comp):
+        return ([min(min(b.inicio[k], b.fim[k]) for b in comp) for k in range(3)],
+                [max(max(b.inicio[k], b.fim[k]) for b in comp) for k in range(3)])
+    caixas = [caixa(g[1]) for g in grupos]
+    for i in range(len(grupos)):
+        if planos[i] is None or not any(forma(b.perfil) == "L" for b in grupos[i][1]):
+            continue
+        ni, ci = planos[i]
+        for j in range(i + 1, len(grupos)):
+            if planos[j] is None or acha(i) == acha(j):
+                continue
+            nj, cj = planos[j]
+            if abs(_dot(ni, nj)) < 0.999:
+                continue
+            dist = abs(_dot(_sub(cj, ci), ni))
+            if not (5.0 < dist <= FACES_DO_PAR):
+                continue
+            (lo_i, hi_i), (lo_j, hi_j) = caixas[i], caixas[j]
+            if any(hi_i[k] + FACES_DO_PAR < lo_j[k] or hi_j[k] + FACES_DO_PAR < lo_i[k] for k in range(3)):
+                continue
+            meio = tuple((ci[k] + cj[k]) / 2.0 for k in range(3))
+            ids_i = {id(b) for b in grupos[i][1]}
+            par = _pares([b for b in grupos[i][1] + grupos[j][1] if forma(b.perfil) == "L"], ni, meio)
+            de_i = sum(1 for k in par if k in ids_i)
+            if de_i < 2 or len(par) - de_i < 2:
+                continue                         # pares só dentro de cada face (ou nenhum): treliças diferentes
+            pai[acha(j)] = acha(i)
+            meio_par[acha(i)] = (ni, meio)
+    juntos = collections.OrderedDict()
+    for i, g in enumerate(grupos):
+        r = acha(i)
+        todo, comp = juntos.get(r, ([], []))
+        juntos[r] = (todo + list(g[0]), comp + list(g[1]))
+    return [(todo, comp, meio_par.get(r)) for r, (todo, comp) in juntos.items()]
 
 
 def _orfas_no_plano(lista: List, feitas: List[dict]) -> None:

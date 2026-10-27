@@ -238,6 +238,32 @@ def test_2_5_cantoneira_em_par_e_um_u_partido():
     assert abs(da[1] - db[1]) < 1e-6 and abs(da[2] - db[2]) < 1e-6  # as duas na mesma direção
 
 
+def test_2_5_par_nas_duas_faces_do_caixao_sem_ligacao_entre_elas():
+    """a viga de transição em caixão do Posto V2 (27/10/2026, ajuste do usuário na TRANSIÇÃO 1: "montante virado" e
+    "atravessava a gusset"): as cantoneiras de cada face ficam na aba de um lado do caixão, a 196 mm das da outra face, e
+    não tocam nelas nem no banzo do meio — cada face virava uma treliça sem par e caía na 2.4 (a aba que atravessa o plano
+    sempre para +n): na face de +n ela saía para fora, atravessando a gusset (479 cantoneiras no Posto). As faces paralelas
+    com cantoneiras em par são uma treliça só: a aba de pé de cada uma aponta para a outra"""
+    at = {"origem": {"peca": "TRANSICAO"}}
+
+    def face(x):
+        return [Barra(nome="M0%+d" % x, inicio=(x, 0, 0), fim=(x, 0, 1460), perfil=L_AL, papel="montante", rotacao=0.0, atributos=dict(at)),
+                Barra(nome="D%+d" % x, inicio=(x, 0, 0), fim=(x, 1200, 1460), perfil=L_AL, papel="diagonal", rotacao=0.0, atributos=dict(at)),
+                Barra(nome="M1%+d" % x, inicio=(x, 1200, 0), fim=(x, 1200, 1460), perfil=L_AL, papel="montante", rotacao=0.0, atributos=dict(at)),
+                Barra(nome="D2%+d" % x, inicio=(x, 1200, 0), fim=(x, 2400, 1460), perfil=L_AL, papel="diagonal", rotacao=0.0, atributos=dict(at))]
+    a, b = face(-98), face(98)
+    # os banzos em cada face, em cima e embaixo (no Posto eles são o caixão do meio; aqui só fecham a treliça de cada face)
+    banzos = [Barra(nome="B%s%+d" % (h, x), inicio=(x, 0, h), fim=(x, 2400, h), perfil="U 100×40×2,25 (FF)", papel="banzo",
+                    rotacao=0.0, atributos=dict(at)) for x in (-98, 98) for h in (0, 1460)]
+    bs = a + b + banzos
+    ts = R.trelicas(bs)
+    assert len(ts) == 1 and len(ts[0]["par"]) == 8
+    R.aplicar(bs)
+    assert R.conferir(bs) == []
+    miolo = lambda f: [x for x in f if not x.nome.startswith("M0")]          # a ponta (M0) é da 1.4, não do par
+    assert all(R.lado_da_aba(x, N) == 1 for x in miolo(a)) and all(R.lado_da_aba(x, N) == -1 for x in miolo(b))
+
+
 def test_1_2_topo_do_painel_de_ponta_vira_banzo():
     """a ponta da tesoura do anexo do Mercado Hermes (16/10): o painel de ponta com um X, e a peça de cima dele veio do
     desenho como "diagonal" (horizontal, no topo do painel). Decisão 2: vira banzo superior, com o perfil do banzo, e
