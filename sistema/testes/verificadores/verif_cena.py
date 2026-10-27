@@ -119,8 +119,11 @@ try:
     aba.avaliar("document.getElementById('btn-cenas').click(); 1")
     ok(esperar(aba, "location.pathname === '/visor3d/cena.html' && !!window.cenaPronta && !document.getElementById('foto').hidden", 90),
        "o botão abre as cenas da obra, na cena que já existe")
-    aba.navegar(base + "/visor3d/cena.html?projeto=obra&cena=foto-teste", limite=60)
+    aba.navegar(base + "/visor3d/cena.html?projeto=obra&cena=foto-teste&tema=claro", limite=60)
     ok(esperar(aba, "!!window.cenaPronta && !document.getElementById('foto').hidden", 90), "a página da cena abriu com a foto")
+    # 27/10 ("o fundo da cena não está otimizado para o tema claro"): o fundo em volta da foto era sempre o escuro
+    CLARIDADE = "getComputedStyle(document.getElementById('palco')).backgroundColor.match(/[0-9]+/g).slice(0, 3).reduce((a, b) => a + +b, 0)"
+    ok(aba.avaliar(CLARIDADE) > 600, f"tema claro: o fundo em volta da foto é claro (soma RGB {aba.avaliar(CLARIDADE)})")
 
     # 2. os 6 pontos: o clique na foto e o mesmo ponto do chão no 3D
     FOTO_NA_TELA = "(() => { const r = document.getElementById('marcas').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()"
@@ -233,11 +236,12 @@ try:
     # necessário editar ter um para editar cena, daí elas reaparecem"): Salvar cena tira as marcas e o encaixe do painel,
     # fica assim depois de recarregar, e Editar cena traz de volta
     MARCAS = "document.querySelectorAll('#marcas .marca').length"
-    ok(aba.avaliar(MARCAS) >= 5 and not aba.avaliar("document.getElementById('salvar-cena').disabled"),
-       "antes de salvar: os pontos na foto e o Salvar cena ligado")
+    ok(aba.avaliar(MARCAS) >= 5 and not aba.avaliar("document.getElementById('salvar-cena').disabled")
+       and aba.avaliar("getComputedStyle(document.getElementById('pronta')).display") == "none",
+       "antes de salvar: os pontos na foto, o Salvar cena ligado e sem o quadro \"Cena salva\"")
     aba.avaliar("document.getElementById('salvar-cena').click(); 1")
     ok(esperar(aba, "cenaApi.estado().cena.concluida === true && document.getElementById('edicao').hidden "
-                     "&& !document.getElementById('pronta').hidden", 10), "Salvar cena: o painel fica só com a cena pronta (Editar cena)")
+                     "&& getComputedStyle(document.getElementById('pronta')).display !== 'none'", 10), "Salvar cena: o painel fica só com a cena pronta (Editar cena)")
     aba.drenar(0.5)
     ok(aba.avaliar(MARCAS) == 0 and aba.avaliar("getComputedStyle(document.getElementById('marcas')).display") == "none",
        "e as bolinhas saem da foto")
@@ -254,8 +258,10 @@ try:
     ok(esperar(aba, "!!window.cenaPronta && document.body.classList.contains('concluida') && document.getElementById('edicao').hidden", 60)
        and aba.avaliar(MARCAS) == 0, "recarregada, a cena volta pronta, sem as bolinhas")
     aba.avaliar("document.getElementById('editar').click(); 1")
+    # (27/10: o quadro "Cena salva" ficava na tela editando — o display: flex dele passava por cima do hidden)
     ok(esperar(aba, "cenaApi.estado().cena.concluida === false && !document.getElementById('edicao').hidden "
-                     "&& document.getElementById('pronta').hidden", 10), "Editar cena: os pontos e o encaixe de volta no painel")
+                     "&& getComputedStyle(document.getElementById('pronta')).display === 'none'", 10),
+       "Editar cena: os pontos e o encaixe de volta no painel, sem o quadro \"Cena salva\"")
     ok(esperar(aba, MARCAS + " >= 5", 5), "e as bolinhas de volta na foto")
     gravado = json.loads(urllib.request.urlopen(base + "/api/projetos/obra/terreno/cenas/foto-teste", timeout=30).read())
     ok(gravado.get("concluida") is False, "Editar cena fica gravado")

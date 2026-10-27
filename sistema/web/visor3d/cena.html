@@ -45,7 +45,10 @@
   #camadas i { width: 10px; height: 10px; border-radius: 2px; flex: none; }
   #camadas .grupo { font-weight: 600; margin-top: 4px; color: var(--texto-fraco, #5b6779); }
   #aviso { min-height: 18px; color: var(--azul-tinta); font-weight: 600; }
-  #palco { position: fixed; left: 300px; top: 0; right: 0; bottom: 0; overflow: hidden; background: #10151d; }
+  /* o fundo em volta da foto segue o tema (usuário, 27/10: "o fundo da cena não está otimizado para o tema claro") */
+  #palco { position: fixed; left: 300px; top: 0; right: 0; bottom: 0; overflow: hidden; background: var(--fundo); }
+  #terreno-fonte { position: absolute; right: 10px; bottom: 8px; font-size: 11px; color: var(--texto2); pointer-events: none; }
+  body:not(.modo-3d) #terreno-fonte { display: none; }   /* na foto o terreno não aparece: a fonte dele também não */
   #foto { position: absolute; user-select: none; -webkit-user-drag: none; }
   #tela { position: absolute; }
   #marcas { position: absolute; cursor: crosshair; }
@@ -56,12 +59,13 @@
   #pares .par.sel { border-color: #ffd400; box-shadow: 0 0 0 1px #ffd400; } #pares .par { cursor: pointer; }
   .marca.proj { width: 12px; height: 12px; margin: -6px 0 0 -6px; background: transparent; border-color: #4fc3ff; box-shadow: none; }
   .marca.modelo { background: #1f5fbf; }
-  #carregando { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #dfe6f0; }
+  #carregando { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--texto2); }
   body.modo-3d #foto, body.modo-3d #marcas .marca.foto, body.modo-3d #marcas .marca.proj { display: none; }
   body.modo-3d #marcas { cursor: default; pointer-events: none; }
   body.marcando-3d #tela { cursor: crosshair; }
   /* a cena pronta (27/10): sem os pontos na foto e sem o encaixe no painel, até "Editar cena" */
   body.concluida #marcas { display: none; }
+  #pronta[hidden] { display: none; }
   #pronta { border: 1px solid var(--verde); border-radius: var(--raio-p); padding: 8px; display: flex; flex-direction: column; gap: 6px; }
   #pronta p { margin: 0; }
 </style>
