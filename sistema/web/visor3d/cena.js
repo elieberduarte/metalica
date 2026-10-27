@@ -368,6 +368,48 @@ function recorteDaCena() {
   return { c: cx.getCenter(new THREE.Vector3()).setZ(z0), raio, raioObra: raio };
 }
 
+/** A sombra de um bloco da imagem (usuário, 27/10: "as sombras nessa imagem ficaram bastante pixelizadas, mesmo após a
+ *  renderização"): a imagem da sombra inteira só para o que aparece no bloco — o chão e a obra que os raios da câmera
+ *  pelo bloco alcançam —, na vista do sol. O recorte da cena inteira (a obra e a sombra comprida do sol baixo) passa de
+ *  100 m: cada pixel da sombra com 3–5 cm, um degrau no chão perto da câmera; um bloco da frente pega poucos metros. */
+const _luzBloco = new THREE.OrthographicCamera();
+_luzBloco.up.set(0, 0, 1);
+function recorteDoBloco() {
+  const base = recorteDaCena(), cam = visor.camera, z0 = zDoChao();
+  _luzBloco.position.copy(base.c).addScaledVector(visor._luz.uSol.value, base.raioObra * 2);
+  _luzBloco.lookAt(base.c);
+  _luzBloco.updateMatrixWorld();
+  const cx = visor.caixaVisivel(), ray = new THREE.Raycaster(), N = 8, p = new THREE.Vector3();
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  const juntar = (q) => {
+    p.copy(q).applyMatrix4(_luzBloco.matrixWorldInverse);
+    x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
+  };
+  cam.updateMatrixWorld();
+  for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+    ray.setFromCamera(new THREE.Vector2(-1 + 2 * i / N, -1 + 2 * j / N), cam);   // com o deslocamento do bloco
+    const o = ray.ray.origin, d = ray.ray.direction;
+    let tChao = Infinity;
+    if (d.z < -1e-9) {
+      tChao = (z0 - o.z) / d.z;
+      const q = ray.ray.at(tChao, new THREE.Vector3());
+      if (Math.hypot(q.x - base.c.x, q.y - base.c.y) <= base.raio) juntar(q);
+    }
+    let t0 = 0, t1 = tChao;                                 // o trecho do raio dentro da caixa da obra, até o chão
+    for (const e of ['x', 'y', 'z']) {
+      if (Math.abs(d[e]) < 1e-12) { if (o[e] < cx.min[e] || o[e] > cx.max[e]) t1 = -1; continue; }
+      const a = (cx.min[e] - o[e]) / d[e], b = (cx.max[e] - o[e]) / d[e];
+      t0 = Math.max(t0, Math.min(a, b)); t1 = Math.min(t1, Math.max(a, b));
+    }
+    if (t0 < t1 && Number.isFinite(t1)) { juntar(ray.ray.at(t0, new THREE.Vector3())); juntar(ray.ray.at(t1, new THREE.Vector3())); }
+  }
+  if (!(x1 > x0 && y1 > y0)) return base;                    // o bloco só de céu: a sombra de sempre
+  const m = Math.max(x1 - x0, y1 - y0) * 0.04 + 50;
+  const janela = { l: Math.max(-base.raio, x0 - m), r: Math.min(base.raio, x1 + m), b: Math.max(-base.raio, y0 - m), t: Math.min(base.raio, y1 + m) };
+  if (!(janela.r > janela.l && janela.t > janela.b)) return base;
+  return { ...base, janela };
+}
+
 function mudarSol(mud) {
   if (!cena) return;
   cena.sol = { ...solDaCena(), ...mud };
@@ -869,18 +911,24 @@ async function montarImagem(w, h, ss = 1, aoBloco = null) {
   cam.aspect = w / h;
   cam.updateProjectionMatrix();
   montarParedes();                                          // o que fica na frente: sempre na imagem (aplicarCamera devolve a tela)
-  if (visor.apresentacao) visor._desenharSombra();
   g.globalAlpha = +$('#opacidade').value;
+  visor._recorteSombra = recorteDoBloco;                    // a sombra refeita para cada bloco, só com o que ele mostra
+  // o afastamento da sombra ao longo da normal (contra as manchas) igual em todos os blocos, o da cena inteira: o de cada
+  // janela deslocava a borda da sombra de um jeito por bloco, e ela fazia dente na emenda
+  const desloc = 1.5 * 2 * recorteDaCena().raio * visor._luz.uTexel.value;
   try {
     for (let k = 0; k < blocos.length; k++) {
       const [x, y, bw, bh] = blocos[k];
       r.setSize(bw * ss, bh * ss, false);
       cam.setViewOffset(w * ss, h * ss, x * ss, y * ss, bw * ss, bh * ss);
+      if (visor.apresentacao) { visor._desenharSombra(); visor._luz.uDesloc.value = desloc; }
       r.render(visor.cena, cam);
       g.drawImage(r.domElement, 0, 0, bw * ss, bh * ss, x, y, bw, bh);     // na mesma tarefa: o quadro ainda está lá
       if (aoBloco) await aoBloco(k + 1, blocos.length);
     }
   } finally {
+    visor._recorteSombra = recorteDaCena;
+    if (visor.apresentacao) visor._sombraSuja = true;       // a da tela de volta (a cena inteira)
     cam.clearViewOffset();
     r.setPixelRatio(dpr);
     visor.redimensionar();

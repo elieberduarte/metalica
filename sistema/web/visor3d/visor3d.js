@@ -872,9 +872,11 @@ export class Visor3D {
 
   _desenharSombra() {
     this._sombraSuja = false;
-    const { c, raio, raioObra } = this._recorteDesenhado = this._recorteSombra();
+    const { c, raio, raioObra, janela } = this._recorteDesenhado = this._recorteSombra();
     const cam = this._camSombra, sol = this._luz.uSol.value;
-    cam.left = -raio; cam.right = raio; cam.top = raio; cam.bottom = -raio;
+    // `janela` (opcional): um pedaço do quadrado ±raio, na vista do sol — a cena manda só o que aparece num bloco do render
+    const j = janela || { l: -raio, r: raio, b: -raio, t: raio };
+    cam.left = j.l; cam.right = j.r; cam.top = j.t; cam.bottom = j.b;
     // o sol fica fora da obra inteira, mesmo com o recorte pequeno: a coluna alta fora da tela ainda faz sombra nela
     cam.near = 1; cam.far = raioObra * 4 + raio;
     cam.position.copy(c).addScaledVector(sol, raioObra * 2);
@@ -882,7 +884,7 @@ export class Visor3D {
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
     this._luz.uMatSombra.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
-    this._luz.uDesloc.value = 1.5 * (2 * raio) * this._luz.uTexel.value;     // 1,5 pixel da sombra, ao longo da normal
+    this._luz.uDesloc.value = 1.5 * Math.max(j.r - j.l, j.t - j.b) * this._luz.uTexel.value;   // 1,5 pixel da sombra, ao longo da normal
     const fundo = this.cena.background;
     this.cena.background = null;
     const trocas = [];

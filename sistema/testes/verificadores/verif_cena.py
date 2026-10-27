@@ -350,6 +350,40 @@ try:
         ok(dif < 6, f"o render bate com a imagem salva, reduzido (diferença média {dif:.1f} de 255): os blocos emendados no lugar")
     ok(aba.avaliar("document.getElementById('tela').style.visibility") == "visible" and not aba.avaliar("document.getElementById('renderizar').disabled"),
        "depois do render a vista volta (o 3D à mostra, o botão de novo)")
+    # a sombra no render sem degraus (27/10: "as sombras nessa imagem ficaram bastante pixelizadas, mesmo após a
+    # renderização"): o sol de lado e baixo (60°, 10°) deita a sombra do 3º pilar em diagonal pelo chão. A imagem da sombra
+    # da cena inteira (~100 m em 4.096 px, 2–3 cm por pixel dela) fazia a borda em degraus — no chão, uma faixa de 45 mm
+    # entre o claro e o escuro; com a sombra refeita para cada bloco, 10–20 mm (o pixel do render nessa distância)
+    def mudar_sol(direcao, altura):
+        aba.avaliar("""(() => { const d = document.querySelector('#sol-caixa [data-sol=direcao]'), a = document.querySelector('#sol-caixa [data-sol=altura]');
+          d.value = %s; d.dispatchEvent(new Event('input')); a.value = %s; a.dispatchEvent(new Event('input')); return 1; })()""" % (direcao, altura))
+        esperar(aba, f"(cenaApi.estado().cena.sol || {{}}).direcao === {direcao} && cenaApi.estado().cena.sol.altura === {altura}", 5)
+
+    def faixa_da_borda(caminho, escala, direcao):
+        """A largura média (mm, no chão) da passagem de 20 % a 80 % entre o claro e o escuro na borda da sombra do 3º pilar."""
+        px_ = Image.open(caminho).convert("L").load()
+        def lum(X):                                         # bilinear no render
+            u, v = projetar(X); x, y = u * W * escala - 0.5, v * H * escala - 0.5
+            i, j = int(x), int(y); fx_, fy_ = x - i, y - j
+            return px_[i, j] * (1 - fx_) * (1 - fy_) + px_[i + 1, j] * fx_ * (1 - fy_) + px_[i, j + 1] * (1 - fx_) * fy_ + px_[i + 1, j + 1] * fx_ * fy_
+        a_ = math.radians(direcao)
+        ao_longo, atravessa = (-math.cos(a_), -math.sin(a_)), (math.sin(a_), -math.cos(a_))
+        larguras = []
+        for k in range(17):                                 # de 3 m a 11 m do pilar, de meio em meio metro
+            s = 3000 + 500 * k
+            m_ = (12150.0 + ao_longo[0] * s, 16150.0 + ao_longo[1] * s)
+            perfil = [lum((m_[0] + atravessa[0] * d, m_[1] + atravessa[1] * d, 0)) for d in range(-800, 1, 5)]
+            claro, escuro = perfil[0], min(perfil)
+            if claro - escuro < 15: continue
+            larguras.append(5 * sum(1 for v in perfil if escuro + 0.2 * (claro - escuro) < v < escuro + 0.8 * (claro - escuro)))
+        return (sum(larguras) / len(larguras) if len(larguras) >= 10 else None), len(larguras)
+
+    mudar_sol(60, 10)
+    aba.avaliar("window.ultimaImagemCena = null; document.getElementById('renderizar').click(); 1")
+    ok(esperar(aba, "!!window.ultimaImagemCena && /render/.test(window.ultimaImagemCena.nome)", 180), "Renderizar com o sol de lado responde")
+    faixa, n_cortes = faixa_da_borda(rnd, 2, 60)
+    ok(faixa is not None and faixa < 25, f"no render, a borda da sombra no chão é fina, sem degraus ({faixa and round(faixa)} mm de passagem, {n_cortes} cortes)")
+    mudar_sol(90, 20)
 
     # o que fica na frente (27/10: "a estrutura está atrás desse alambrado, como fazer para o sistema entender isso… apenas
     # no renderizar"): um alambrado de 3 m em y = 12 m, entre a câmera e os pilares (y = 16 m), contornado na foto com
