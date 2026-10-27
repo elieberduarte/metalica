@@ -157,6 +157,22 @@ def test_imagem_pronta_vai_para_a_pasta_cenas(tmp_path):
     assert [(a["nome"], a["pasta"]) for a in lista] == [(r["nome"], "cenas")] and lista[0]["descricao"].startswith("Cena")
 
 
+def test_render_vai_ao_lado_da_imagem(tmp_path):
+    """27/10 ("uma opção para 'renderizar' a imagem"): o render (enviado como render.jpg) vira "Cena - <nome> (render).jpg"
+    e não apaga a do Salvar imagem."""
+    from PIL import Image
+    g, s = _gerente(tmp_path)
+    i = C.nova(g, s, _foto(tmp_path))["id"]
+
+    def enviar(nome, fmt):
+        caminho = os.path.join(str(tmp_path), "envio-" + nome)
+        Image.new("RGB", (20, 10)).save(caminho, fmt)
+        return C.rota_post(g, s, [i, "imagem"], {"arquivo_local": caminho, "nome": nome})
+    assert enviar("cena.png", "PNG")["nome"] == "Cena - IMG_2026.png"
+    assert enviar("render.jpg", "JPEG")["nome"] == "Cena - IMG_2026 (render).jpg"
+    assert sorted(os.listdir(os.path.join(g.pasta(s), "cenas"))) == ["Cena - IMG_2026 (render).jpg", "Cena - IMG_2026.png", "dados"]
+
+
 def test_nome_da_cena_nao_sai_da_pasta(tmp_path):
     g, s = _gerente(tmp_path)
     for ruim in ("..", "../outro", "a/b", "A", ""):

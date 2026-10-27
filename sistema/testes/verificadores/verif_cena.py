@@ -334,6 +334,22 @@ try:
     arq = os.path.join(DADOS, "obra", "cenas", "Cena - foto-teste.png")
     ok(os.path.isfile(arq) and Image.open(arq).size == (W, H), f"a imagem na pasta cenas/ da obra, no tamanho da foto ({os.path.isfile(arq) and Image.open(arq).size})")
 
+    # renderizar (27/10: "a resolução ainda é meio baixa… uma opção para 'renderizar' a imagem"): 2× a foto, em blocos com
+    # supersampling; o 3D cai no mesmo lugar da imagem salva (os blocos bem emendados) e sem erro
+    ok(aba.avaliar("[...document.querySelectorAll('#render-tamanho option')].map(o => o.value).join(',')") == "2,3,4",
+       "Renderizar oferece 2×, 3× e 4× a foto")
+    aba.avaliar("document.getElementById('render-tamanho').value = '2'; window.ultimaImagemCena = null; document.getElementById('renderizar').click(); 1")
+    ok(esperar(aba, "!!window.ultimaImagemCena && /render/.test(window.ultimaImagemCena.nome)", 180), "Renderizar responde")
+    rnd = os.path.join(DADOS, "obra", "cenas", "Cena - foto-teste (render).jpg")
+    ok(os.path.isfile(rnd) and Image.open(rnd).size == (2 * W, 2 * H), f"a imagem renderizada, 2× a foto ({os.path.isfile(rnd) and Image.open(rnd).size})")
+    if os.path.isfile(rnd) and os.path.isfile(arq):
+        from PIL import ImageChops, ImageStat
+        a_ = Image.open(arq).convert("L"); b_ = Image.open(rnd).convert("L").resize(a_.size, Image.LANCZOS)
+        dif = ImageStat.Stat(ImageChops.difference(a_, b_)).mean[0]
+        ok(dif < 6, f"o render bate com a imagem salva, reduzido (diferença média {dif:.1f} de 255): os blocos emendados no lugar")
+    ok(aba.avaliar("document.getElementById('tela').style.visibility") == "visible" and not aba.avaliar("document.getElementById('renderizar').disabled"),
+       "depois do render a vista volta (o 3D à mostra, o botão de novo)")
+
     # apagar a cena (26/10: "não consigo apagar uma cena"): sai da lista; a imagem salva na pasta cenas fica
     aba.avaliar("window.confirm = () => true; document.getElementById('apagar').click(); 1")
     ok(esperar(aba, "!cenaApi.estado().cena && document.getElementById('corpo').hidden", 10), "Apagar a cena: a cena sai da tela")

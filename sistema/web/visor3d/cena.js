@@ -118,6 +118,7 @@ async function abrirCena(id) {
   desenharPares();
   desenharCamadas();
   marcarSituacao();
+  mostrarTamanhos();
   mostrarSol();
   mostrarConcluida();
 }
@@ -575,30 +576,129 @@ async function reencaixar(texto = '') {
 
 // ------------------------------------------------------------------ a imagem pronta
 
+/** A foto com o 3D por cima, num canvas de w × h. O 3D sai em blocos (camera.setViewOffset): qualquer tamanho, sem passar
+ *  do que a placa de vídeo desenha de uma vez; cada bloco `ss` vezes maior e reduzido (supersampling — as terças finas
+ *  sem serrilhado nem moiré). `aoBloco(i, n)` depois de cada bloco. */
+async function montarImagem(w, h, ss = 1, aoBloco = null) {
+  const saida = document.createElement('canvas');
+  saida.width = w; saida.height = h;
+  const g = saida.getContext('2d');
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+  g.drawImage(foto, 0, 0, w, h);
+  const r = visor.renderer, dpr = r.getPixelRatio(), cam = visor.camera, gl = r.getContext();
+  const lado = Math.min(2048, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), r.capabilities.maxTextureSize);
+  const B = Math.max(128, Math.floor(lado / ss)), blocos = [];
+  for (let y = 0; y < h; y += B) for (let x = 0; x < w; x += B) blocos.push([x, y, Math.min(B, w - x), Math.min(B, h - y)]);
+  r.setPixelRatio(1);
+  cam.aspect = w / h;
+  if (visor.apresentacao) visor._desenharSombra();
+  g.globalAlpha = +$('#opacidade').value;
+  try {
+    for (let k = 0; k < blocos.length; k++) {
+      const [x, y, bw, bh] = blocos[k];
+      r.setSize(bw * ss, bh * ss, false);
+      cam.setViewOffset(w * ss, h * ss, x * ss, y * ss, bw * ss, bh * ss);
+      r.render(visor.cena, cam);
+      g.drawImage(r.domElement, 0, 0, bw * ss, bh * ss, x, y, bw, bh);     // na mesma tarefa: o quadro ainda está lá
+      if (aoBloco) await aoBloco(k + 1, blocos.length);
+    }
+  } finally {
+    cam.clearViewOffset();
+    r.setPixelRatio(dpr);
+    visor.redimensionar();
+    aplicarCamera();
+  }
+  return saida;
+}
+
+async function enviarImagem(saida, nome, tipo, qualidade) {
+  const blob = await new Promise(res => saida.toBlob(res, tipo, qualidade));
+  const j = await pedir(`${API}/${encodeURIComponent(cena.id)}/imagem`, undefined, { dados: blob, nome });
+  window.ultimaImagemCena = j;
+  return j;
+}
+
 async function salvarImagem() {
   if (!cena || !cena.camera) { aviso('Encaixe a cena antes de salvar a imagem.'); return; }
   mostrarModo('foto');
   const k = Math.min(1, 4096 / Math.max(...cena.px)), w = Math.round(cena.px[0] * k), h = Math.round(cena.px[1] * k);
-  const saida = document.createElement('canvas');
-  saida.width = w; saida.height = h;
-  const g = saida.getContext('2d');
-  g.drawImage(foto, 0, 0, w, h);
-  const r = visor.renderer, dpr = r.getPixelRatio();
-  r.setPixelRatio(1); r.setSize(w, h, false);
-  visor.camera.aspect = w / h; visor.camera.updateProjectionMatrix();
-  if (visor.apresentacao) visor._desenharSombra();
-  r.render(visor.cena, visor.camera);
-  g.globalAlpha = +$('#opacidade').value;
-  g.drawImage(r.domElement, 0, 0, w, h);
-  r.setPixelRatio(dpr);
-  visor.redimensionar();
+  const saida = await montarImagem(w, h);
   aviso('Salvando a imagem…');
-  const blob = await new Promise(res => saida.toBlob(res, 'image/png'));
   try {
-    const j = await pedir(`${API}/${encodeURIComponent(cena.id)}/imagem`, undefined, { dados: blob, nome: 'cena.png' });
+    const j = await enviarImagem(saida, 'cena.png', 'image/png');
     aviso(`Imagem salva na pasta cenas da obra: ${j.nome} (${w} × ${h} px).`);
-    window.ultimaImagemCena = j;
   } catch (e) { aviso('A imagem não foi salva: ' + e.message); }
+}
+
+// ------------------------------------------------------------------ renderizar
+// (usuário, 27/10: "ficou excelente, porém a resolução ainda é meio baixa… depois de definida a cena com as sombras etc.
+// ter uma opção para 'renderizar' a imagem"): a foto do WhatsApp vem com 1.200 × 1.600 e a imagem salva tinha o tamanho
+// dela — as terças de 1–2 px serrilhavam. O render sai 2×–4× maior que a foto (a foto ampliada suave; o 3D desenhado
+// nesse tamanho, em blocos, com supersampling 2×) e a sombra em 8192 em vez de 4096. JPEG 95 % (o PNG de 5.000 px passa
+// de 40 MB).
+
+const LADO_RENDER_MAX = 8000;                               // o lado maior da imagem renderizada (memória do navegador)
+let renderizando = false;
+
+function mostrarTamanhos() {
+  if (!cena) return;
+  const [fw, fh] = cena.px, opcoes = [];
+  for (const m of [2, 3, 4]) if (Math.max(fw, fh) * m <= LADO_RENDER_MAX) opcoes.push(m);
+  if (!opcoes.length) opcoes.push(LADO_RENDER_MAX / Math.max(fw, fh));
+  const antes = $('#render-tamanho').value;
+  $('#render-tamanho').innerHTML = opcoes.map(m => `<option value="${m}">${m >= 1 && Number.isInteger(m) ? m + '× — ' : ''}${nf(fw * m)} × ${nf(fh * m)} px</option>`).join('');
+  $('#render-tamanho').value = opcoes.map(String).includes(antes) ? antes : String(opcoes[Math.min(1, opcoes.length - 1)]);
+}
+
+/** Troca a imagem da sombra por uma maior só durante o render; devolve como estava. */
+function sombraDoRender() {
+  const r = visor.renderer, luz = visor._luz, antes = visor._alvoSombra;
+  const lado = r.capabilities.maxTextureSize >= 16384 ? 8192 : 0;     // 8192² de profundidade: só placa com folga
+  if (!visor.apresentacao || !antes || !lado || lado <= antes.width) return () => {};
+  const alvo = new THREE.WebGLRenderTarget(lado, lado, { depthBuffer: true });
+  alvo.depthTexture = new THREE.DepthTexture(lado, lado);
+  const texel = luz.uTexel.value;
+  visor._alvoSombra = alvo; luz.uTexel.value = 1 / lado;
+  let devolvida = false;
+  return () => {
+    if (devolvida) return;
+    devolvida = true;
+    visor._alvoSombra = antes; luz.uTexel.value = texel;
+    visor._desenharSombra();                                // a de antes de volta no shader antes de soltar a grande
+    alvo.depthTexture.dispose(); alvo.dispose();
+    visor.pedirQuadro();
+  };
+}
+
+async function renderizar() {
+  if (renderizando) return;
+  if (!cena || !cena.camera) { aviso('Encaixe a cena antes de renderizar.'); return; }
+  renderizando = true;
+  $('#renderizar').disabled = $('#salvar-imagem').disabled = true;
+  cancelar();
+  mostrarModo('foto');
+  const m = +$('#render-tamanho').value, w = Math.round(cena.px[0] * m), h = Math.round(cena.px[1] * m);
+  const t0 = performance.now();
+  tela.style.visibility = 'hidden';                         // os blocos passando pela tela não piscam na vista
+  const devolver = sombraDoRender();
+  try {
+    const saida = await montarImagem(w, h, 2, async (i, n) => {
+      aviso(`Renderizando ${nf(w)} × ${nf(h)} px: bloco ${i} de ${n}…`);
+      await new Promise(res => setTimeout(res, 0));
+    });
+    devolver();
+    mostrarModo('foto');
+    aviso('Gravando a imagem renderizada…');
+    const j = await enviarImagem(saida, 'render.jpg', 'image/jpeg', 0.95);
+    aviso(`Imagem renderizada na pasta cenas da obra: ${j.nome} (${nf(w)} × ${nf(h)} px, ${nf((performance.now() - t0) / 1000, 1)} s).`);
+  } catch (e) {
+    devolver();
+    aviso('O render não saiu: ' + e.message);
+  } finally {
+    mostrarModo('foto');
+    renderizando = false;
+    $('#renderizar').disabled = $('#salvar-imagem').disabled = false;
+  }
 }
 
 // ------------------------------------------------------------------ os controles
@@ -617,6 +717,7 @@ function ligarControles() {
   $('#ver').onclick = () => { cancelar(); mostrarModo(modo === '3d' ? 'foto' : '3d'); };
   $('#encaixar').onclick = () => { cancelar(); lembrar(); fazerEncaixe().catch(e => aviso('O encaixe falhou: ' + e.message)); };
   $('#salvar-imagem').onclick = () => salvarImagem();
+  $('#renderizar').onclick = () => renderizar();
   $('#salvar-cena').onclick = () => concluir(true).catch(e => aviso('A cena não foi salva: ' + e.message));
   $('#editar').onclick = () => concluir(false).catch(e => aviso('Não deu: ' + e.message));
   $('#apagar').onclick = async () => {

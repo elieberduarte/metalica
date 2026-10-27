@@ -228,7 +228,9 @@ def _gravar_campos(g, s: str, i: str, corpo: dict) -> dict:
 
 
 def gravar_imagem(g, s: str, i: str, corpo: dict) -> dict:
-    """A imagem pronta (PNG, a foto com o 3D, feita na tela) vai para <projeto>/cenas/."""
+    """A imagem pronta (a foto com o 3D, feita na tela) vai para <projeto>/cenas/: "Cena - <nome>.png" pelo Salvar imagem;
+    "Cena - <nome> (render).jpg" pelo Renderizar (27/10: "a resolução ainda é meio baixa… uma opção para 'renderizar' a
+    imagem") — o envio chamado render.jpg; um não apaga o outro."""
     c = ler(g, s, i)
     origem = corpo.get("arquivo_local")
     if not origem or not os.path.isfile(origem):
@@ -236,7 +238,9 @@ def gravar_imagem(g, s: str, i: str, corpo: dict) -> dict:
     pasta = os.path.join(g.pasta(s), PASTA)
     os.makedirs(pasta, exist_ok=True)
     nome = re.sub(r'[\\/:*?"<>|]+', "-", c.get("nome") or i).strip() or i
-    destino = os.path.join(pasta, "Cena - %s.png" % nome)
+    enviado = str(corpo.get("nome") or "").lower()
+    ext = ".jpg" if enviado.endswith((".jpg", ".jpeg")) else ".png"
+    destino = os.path.join(pasta, "Cena - %s%s%s" % (nome, " (render)" if enviado.startswith("render") else "", ext))
     os.replace(origem, destino)
     return {"arquivo": destino, "nome": os.path.basename(destino)}
 
