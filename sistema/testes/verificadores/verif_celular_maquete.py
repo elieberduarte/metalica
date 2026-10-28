@@ -435,6 +435,87 @@ try:
     ok(esperar(ap, "document.querySelector('#ra-sobre .ra-giro').dataset.giro === '0'", 3), "em pé de novo: os botões voltam")
     ap.avaliar("document.getElementById('ra-sobre').remove(); 1")
 
+    # a câmera de verdade, simulada quadro a quadro (usuário, 28/10, S25: "antes aparecia um círculo para clicar e colocar a
+    # estrutura sobre a mesa, agora não aparece mais, só fica a câmera aberta e não aparece nada, mesmo clicando sobre a
+    # mesa"): uma sessão que entrega quadros, com a mesa achada ou não. Sem a mesa, a tela diz e o toque põe a maquete
+    # solta à frente; com a mesa, o círculo é desenhado e o toque põe a maquete nela; um erro num quadro vai para a tela e o
+    # desenho continua (antes, o primeiro erro parava o desenho calado e ficava só a câmera)
+    XR_FALSO = r"""(async () => {
+      const T = await import('three');
+      const x = window._xr = { mesa: false, quebrar: 0, sessao: null, pintados: 0 };
+      window.XRWebGLLayer = class { constructor(s, gl) { x.gl = gl; this.framebuffer = null;
+        this.framebufferWidth = gl.drawingBufferWidth; this.framebufferHeight = gl.drawingBufferHeight; }
+        getViewport() { return { x: 0, y: 0, width: this.framebufferWidth, height: this.framebufferHeight }; } };
+      for (const C of [window.WebGLRenderingContext, window.WebGL2RenderingContext]) if (C) C.prototype.makeXRCompatible = async () => {};
+      // o celular a 0,5 m de altura e 0,5 m da mesa, olhando para o ponto achado (a origem)
+      const cam = new T.Matrix4().lookAt(new T.Vector3(0, 0.5, 0.5), new T.Vector3(), new T.Vector3(0, 1, 0)).setPosition(0, 0.5, 0.5);
+      const proj = new T.PerspectiveCamera(65, innerWidth / innerHeight, 0.01, 50).projectionMatrix;
+      const quadro = { getViewerPose: () => ({ views: [{ transform: { matrix: Float32Array.from(cam.elements) }, projectionMatrix: Float32Array.from(proj.elements) }] }),
+        getHitTestResults: () => { if (x.quebrar > 0) { x.quebrar--; throw new Error('erro de teste no quadro'); }
+          return x.mesa ? [{ getPose: () => ({ transform: { matrix: Float32Array.from(new T.Matrix4().elements) } }) }] : []; } };
+      class Sessao extends EventTarget {
+        constructor() { super(); this.renderState = {}; this.inputSources = []; x.sessao = this; }
+        updateRenderState(r) { Object.assign(this.renderState, r); }
+        async requestReferenceSpace(t) { return { tipo: t }; }
+        async requestHitTestSource() { return { cancel() {} }; }
+        requestAnimationFrame(cb) { return setTimeout(() => { cb(performance.now(), quadro);
+          const g = x.gl, w = g.drawingBufferWidth, h = g.drawingBufferHeight, px = new Uint8Array(w * h * 4);
+          g.bindFramebuffer(g.FRAMEBUFFER, null); g.readPixels(0, 0, w, h, g.RGBA, g.UNSIGNED_BYTE, px);
+          let n = 0; for (let k = 3; k < px.length; k += 4) if (px[k] > 0) n++; x.pintados = n; }, 30); }
+        cancelAnimationFrame(id) { clearTimeout(id); }
+        async end() { this.dispatchEvent(new Event('end')); }
+      }
+      Object.defineProperty(navigator, 'xr', { configurable: true, value: { isSessionSupported: async m => m === 'immersive-ar',
+        requestSession: async () => new Sessao() } });
+      return 1; })()"""
+    ap.avaliar(XR_FALSO)
+    ok(esperar(ap, "!!window._xr", 10), "a câmera simulada quadro a quadro")
+    ap.avaliar("window.ultimaMaquete = null")
+    tocar(ap, "[data-f=maquete]")
+    esperar(ap, "!!window.ultimaMaquete && window.ultimaMaquete.como === 'webxr' && !!document.querySelector('#ra-acoes button.forte')", 60)
+    tocar(ap, "#ra-acoes button.forte")
+    RA = "JSON.stringify(Object.assign({}, window.maqueteRA, { pintados: window._xr.pintados, dica: (document.querySelector('#ra-sobre .ra-dica') || {}).textContent }))"
+    ok(esperar(ap, "window.maqueteRA && window.maqueteRA.quadros > 5", 20), "a câmera aberta desenha quadro a quadro")
+    ra = json.loads(ap.avaliar(RA) or "{}")
+    ok(ra.get("pintados") == 0 and ra.get("acertos") == 0, f"sem a mesa: nada desenhado ainda ({ra.get('pintados')} pontos)")
+    ok(esperar(ap, "(document.querySelector('#ra-sobre .ra-dica').textContent || '').startsWith('Procurando a mesa')", 9),
+       "sem achar a mesa por uns segundos: a tela diz o que fazer")
+    ap.avaliar("window._xr.mesa = true")
+    ok(esperar(ap, "window._xr.pintados > 500 && window.maqueteRA.acertos > 0", 5), "a mesa achada: o círculo aparece")
+    ok(esperar(ap, "(document.querySelector('#ra-sobre .ra-dica').textContent || '').startsWith('Aponte para a mesa')", 3),
+       "e a dica volta à de pôr a maquete")
+    circulo = ap.avaliar("window._xr.pintados")
+    ap.avaliar("window._xr.sessao.dispatchEvent(new Event('select')); 1")
+    ok(esperar(ap, f"window._xr.pintados > {circulo} * 1.2", 5), f"o toque põe a maquete na mesa ({circulo} → {ap.avaliar('window._xr.pintados')} pontos)")
+    ra = json.loads(ap.avaliar(RA) or "{}")
+    ok(not ra.get("solta") and (ra.get("dica") or "").startswith("Dois dedos"), f"na mesa, não solta ({ra.get('dica')})")
+    # um erro num quadro: a tela mostra, e os quadros seguintes continuam
+    q0 = ap.avaliar("window.maqueteRA.quadros")
+    ap.avaliar("window._xr.quebrar = 1")
+    ok(esperar(ap, f"window.maqueteRA.quadros > {q0} + 10", 5) and "erro de teste no quadro" in (ap.avaliar("window.maqueteRA.erro") or ""),
+       "um erro num quadro não para o desenho")
+    ok("A maquete não desenhou: erro de teste no quadro" in (ap.avaliar("document.querySelector('#ra-sobre .ra-dica').textContent") or ""),
+       "e o erro aparece na tela")
+    ap.avaliar("document.querySelector('#ra-sobre [data-ra=sair]').click()")
+    ok(esperar(ap, "!document.getElementById('ra-sobre')", 5), "Sair fecha a câmera")
+    # sem achar a mesa: o toque põe a maquete solta à frente, e a tela diz
+    ap.avaliar("window._xr.mesa = false; window.ultimaMaquete = null")
+    tocar(ap, "[data-f=maquete]")
+    esperar(ap, "!!window.ultimaMaquete && window.ultimaMaquete.como === 'webxr' && !!document.querySelector('#ra-acoes button.forte')", 60)
+    tocar(ap, "#ra-acoes button.forte")
+    esperar(ap, "window.maqueteRA && window.maqueteRA.quadros > 5", 20)
+    ap.avaliar("window._xr.sessao.dispatchEvent(new Event('select')); 1")
+    ap.drenar(0.5)
+    ok(ap.avaliar("window._xr.pintados") == 0, "logo ao abrir, o toque sem a mesa ainda espera")
+    esperar(ap, "(document.querySelector('#ra-sobre .ra-dica').textContent || '').startsWith('Procurando a mesa')", 9)
+    ap.avaliar("window._xr.sessao.dispatchEvent(new Event('select')); 1")
+    ok(esperar(ap, "window._xr.pintados > 500", 5) and ap.avaliar("window.maqueteRA.solta") is True
+       and "solta no ar" in (ap.avaliar("document.querySelector('#ra-sobre .ra-dica').textContent") or ""),
+       f"sem a mesa, o toque põe a maquete solta à frente ({ap.avaliar('window._xr.pintados')} pontos), e a tela diz")
+    foto(ap, "celular_maquete_camera_solta.png")
+    ap.avaliar("document.querySelector('#ra-sobre [data-ra=sair]').click()")
+    esperar(ap, "!document.getElementById('ra-sobre')", 5)
+
 
     # a cobertura retrátil: as duas situações no mesmo quadro — a parte fixa no mesmo lugar, a parte móvel não
     ap.navegar(cel + "/celular/#/p/cobertura/modelo", limite=30)
@@ -515,7 +596,8 @@ try:
         print(f"        cotas da obra real: {dz.get('cotas')}")
 
     for nome, a in (("computador", pc), ("celular", ap)):
-        erros = [m for m in a.console if m[0] in ("error", "excecao") and "401" not in str(m) and "405" not in str(m)]
+        erros = [m for m in a.console if m[0] in ("error", "excecao") and "401" not in str(m) and "405" not in str(m)
+                 and "erro de teste no quadro" not in str(m)]                    # o erro de propósito da câmera simulada
         ok(not erros, f"sem erros no console do {nome}: {erros[:3]}")
 finally:
     for p, perf in navs:

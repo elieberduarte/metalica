@@ -603,6 +603,9 @@ export function giroPelaGravidade(x, y, atual = 0) {
 /** A fração do meio ângulo da câmera que o raio da maquete ocupa ao caber na vista (folga para os botões e a beira). */
 const FOLGA_NA_VISTA = 0.75;
 
+/** Quanto esperar (ms) a câmera achar a mesa antes de dizer que não achou e deixar pôr a maquete solta à frente. */
+const SEM_SUPERFICIE_MS = 5000;
+
 /** O tamanho (multiplicador da maquete) em que a esfera dela, de raio `raio1` no tamanho 1, cabe na vista a `distancia`
  *  (m) da câmera de projeção `p` (os 16 números da matriz): pelo ângulo mais estreito, o de lado no celular em pé. */
 export function tamanhoParaCaber(raio1, distancia, p) {
@@ -763,9 +766,25 @@ export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas
     limpar();
     throw e;
   }
+  // o que a câmera está fazendo, para a tela dizer e o teste conferir (28/10: "só fica a câmera aberta e não aparece
+  // nada" — sem a mira, a tela não dizia se o ARCore não achava a mesa ou se o desenho tinha parado)
+  const estado = window.maqueteRA = { quadros: 0, acertos: 0, erro: '', solta: false };
+  const DICA = dica.textContent;
+  let agora = 0, inicio = 0, avisouSuperficie = false;
   sessao.addEventListener('select', () => {
-    if (pinca || !mira.visible || !painel.hidden) return;
-    maquete.position.setFromMatrixPosition(mira.matrix);
+    if (pinca || !painel.hidden) return;
+    if (mira.visible) maquete.position.setFromMatrixPosition(mira.matrix);
+    else if (inicio && agora - inicio > SEM_SUPERFICIE_MS) {
+      // sem achar a superfície: a maquete fica solta no ar, à frente da câmera e um pouco abaixo (o toque nunca é em vão)
+      const cam = renderer.xr.getCamera();
+      pCam.setFromMatrixPosition(cam.matrixWorld);
+      const frente = new THREE.Vector3(0, 0, -1).applyQuaternion(new THREE.Quaternion().setFromRotationMatrix(cam.matrixWorld));
+      frente.y = 0;
+      if (frente.lengthSq() < 1e-6) frente.set(0, 0, -1);
+      maquete.position.copy(pCam).addScaledVector(frente.normalize(), 0.8);
+      maquete.position.y -= 0.4;
+    } else return;
+    estado.solta = !mira.visible;
     maquete.visible = true;
     if (!posta) {                                     // a primeira vez na mesa: do tamanho que cabe na vista (só diminui)
       posta = true;
@@ -774,13 +793,29 @@ export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas
       mostrarEscala();
     }
     mudou();
-    dica.textContent = 'Dois dedos: aumentar e girar · toque em outro ponto para mudar de lugar';
+    dica.textContent = estado.solta ? 'A maquete ficou solta no ar: a câmera não achou a mesa. Mova o celular devagar e toque de novo quando aparecer o círculo'
+      : 'Dois dedos: aumentar e girar · toque em outro ponto para mudar de lugar';
   });
   renderer.setAnimationLoop((t, quadro) => {
+    // um erro num quadro não pode parar o desenho calado (o three só pede o próximo quadro depois deste): vai para a dica
+    try { quadroDaMesa(t, quadro); } catch (e) {
+      if (!estado.erro) { estado.erro = String(e && e.message || e); dica.textContent = 'A maquete não desenhou: ' + estado.erro; console.error(e); }
+    }
+  });
+  const quadroDaMesa = (t, quadro) => {
+    estado.quadros++;
+    agora = t;
+    if (!inicio) inicio = t;
     if (quadro) {
       const achou = quadro.getHitTestResults(fonteMira);
       mira.visible = achou.length > 0;
-      if (mira.visible) mira.matrix.fromArray(achou[0].getPose(renderer.xr.getReferenceSpace()).transform.matrix);
+      if (mira.visible) { estado.acertos++; mira.matrix.fromArray(achou[0].getPose(renderer.xr.getReferenceSpace()).transform.matrix); }
+    }
+    // a mesa ainda não achada: dizer o que fazer (e que tocar põe a maquete solta à frente)
+    const semSuperficie = !posta && !mira.visible && t - inicio > SEM_SUPERFICIE_MS;
+    if (!posta && semSuperficie !== avisouSuperficie && !estado.erro) {
+      avisouSuperficie = semSuperficie;
+      dica.textContent = semSuperficie ? 'Procurando a mesa: mova o celular devagar, de um lado para o outro, com boa luz · tocar põe a maquete solta à frente' : DICA;
     }
     // a luz no celular: refeita quando a direção muda mais de 2° (no máximo 8 vezes por segundo: a sombra pesa)
     if (modoSombra === 'camera' && maquete.visible && t - quandoLuz > 120) {
@@ -791,7 +826,7 @@ export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas
       if (ultimaLuz.lengthSq() === 0 || pCam.angleTo(ultimaLuz) > 0.035) { apontarLuz(pCam); ultimaLuz.copy(pCam); quandoLuz = t; mudou(); }
     }
     renderer.render(cena, camera);
-  });
+  };
   sessao.addEventListener('end', () => {
     renderer.setAnimationLoop(null);
     fonteMira.cancel();
