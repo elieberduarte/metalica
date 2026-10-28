@@ -771,6 +771,10 @@ export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas
   const estado = window.maqueteRA = { quadros: 0, acertos: 0, erro: '', solta: false };
   const DICA = dica.textContent;
   let agora = 0, inicio = 0, avisouSuperficie = false;
+  // a câmera que não entrega quadro nenhum (o desenho nem começa): o relógio avisa, sem depender dos quadros
+  const semQuadros = setTimeout(() => {
+    if (!estado.quadros) dica.textContent = 'A câmera abriu, mas não entregou nenhum quadro para desenhar a maquete: feche e abra de novo';
+  }, SEM_SUPERFICIE_MS);
   sessao.addEventListener('select', () => {
     if (pinca || !painel.hidden) return;
     if (mira.visible) maquete.position.setFromMatrixPosition(mira.matrix);
@@ -803,14 +807,15 @@ export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas
     }
   });
   const quadroDaMesa = (t, quadro) => {
+    // o three também chama este laço pelo relógio da página, sem o quadro da câmera: esse não desenha (fora do quadro da
+    // câmera o desenho não vai para a tela, e dobrava o trabalho de cada quadro)
+    if (!quadro) return;
     estado.quadros++;
     agora = t;
     if (!inicio) inicio = t;
-    if (quadro) {
-      const achou = quadro.getHitTestResults(fonteMira);
-      mira.visible = achou.length > 0;
-      if (mira.visible) { estado.acertos++; mira.matrix.fromArray(achou[0].getPose(renderer.xr.getReferenceSpace()).transform.matrix); }
-    }
+    const achou = quadro.getHitTestResults(fonteMira);
+    mira.visible = achou.length > 0;
+    if (mira.visible) { estado.acertos++; mira.matrix.fromArray(achou[0].getPose(renderer.xr.getReferenceSpace()).transform.matrix); }
     // a mesa ainda não achada: dizer o que fazer (e que tocar põe a maquete solta à frente)
     const semSuperficie = !posta && !mira.visible && t - inicio > SEM_SUPERFICIE_MS;
     if (!posta && semSuperficie !== avisouSuperficie && !estado.erro) {
@@ -828,6 +833,7 @@ export async function abrirWebXR({ situacoes, piso = null, cotas = null, camadas
     renderer.render(cena, camera);
   };
   sessao.addEventListener('end', () => {
+    clearTimeout(semQuadros);
     renderer.setAnimationLoop(null);
     fonteMira.cancel();
     limpar();

@@ -458,7 +458,7 @@ try:
         updateRenderState(r) { Object.assign(this.renderState, r); }
         async requestReferenceSpace(t) { return { tipo: t }; }
         async requestHitTestSource() { return { cancel() {} }; }
-        requestAnimationFrame(cb) { return setTimeout(() => { cb(performance.now(), quadro);
+        requestAnimationFrame(cb) { if (x.parado) return 0; return setTimeout(() => { cb(performance.now(), quadro);
           const g = x.gl, w = g.drawingBufferWidth, h = g.drawingBufferHeight, px = new Uint8Array(w * h * 4);
           g.bindFramebuffer(g.FRAMEBUFFER, null); g.readPixels(0, 0, w, h, g.RGBA, g.UNSIGNED_BYTE, px);
           let n = 0; for (let k = 3; k < px.length; k += 4) if (px[k] > 0) n++; x.pintados = n; }, 30); }
@@ -514,6 +514,15 @@ try:
        f"sem a mesa, o toque põe a maquete solta à frente ({ap.avaliar('window._xr.pintados')} pontos), e a tela diz")
     foto(ap, "celular_maquete_camera_solta.png")
     ap.avaliar("document.querySelector('#ra-sobre [data-ra=sair]').click()")
+    esperar(ap, "!document.getElementById('ra-sobre')", 5)
+    # a câmera que não entrega quadro nenhum: o relógio avisa (sem os quadros, a dica ficava no "Aponte para a mesa")
+    ap.avaliar("window._xr.parado = true; window.ultimaMaquete = null")
+    tocar(ap, "[data-f=maquete]")
+    esperar(ap, "!!window.ultimaMaquete && window.ultimaMaquete.como === 'webxr' && !!document.querySelector('#ra-acoes button.forte')", 60)
+    tocar(ap, "#ra-acoes button.forte")
+    ok(esperar(ap, "(document.querySelector('#ra-sobre .ra-dica').textContent || '').includes('não entregou nenhum quadro')", 9),
+       "a câmera sem quadros: a tela diz")
+    ap.avaliar("window._xr.parado = false; document.querySelector('#ra-sobre [data-ra=sair]').click()")
     esperar(ap, "!document.getElementById('ra-sobre')", 5)
 
 
