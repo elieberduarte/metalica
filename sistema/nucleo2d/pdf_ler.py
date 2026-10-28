@@ -26,7 +26,7 @@ import math
 from typing import List, Optional, Sequence, Tuple
 
 from nucleo.base import ErroDeDados
-from nucleo2d.desenho import Camada2D, Circulo, Desenho, Linha, Polilinha, Texto
+from nucleo2d.desenho import Camada2D, Circulo, Desenho, Hachura, Linha, Polilinha, Texto
 
 __all__ = ["para_desenho", "PT_MM"]
 
@@ -66,9 +66,51 @@ def _circulo(pts: Sequence[Ponto2]) -> Optional[Tuple[Ponto2, float]]:
     return (cx, cy), r
 
 
+def _contornos(itens, P) -> List[List[Ponto2]]:
+    """os subcaminhos de um caminho do PDF (linhas, curvas, retângulos, quadriláteros) como contornos fechados"""
+    saida: List[List[Ponto2]] = []
+    atual: List[Ponto2] = []
+
+    def fechar():
+        nonlocal atual
+        if len(atual) >= 3:
+            if math.hypot(atual[0][0] - atual[-1][0], atual[0][1] - atual[-1][1]) < 1e-3:
+                atual = atual[:-1]
+            if len(atual) >= 3:
+                saida.append(atual)
+        atual = []
+    for it in itens or []:
+        op = it[0]
+        if op in ("l", "c"):
+            pts = [P(q.x, q.y) for q in (it[1:3] if op == "l" else it[1:5])]
+            if atual and math.hypot(atual[-1][0] - pts[0][0], atual[-1][1] - pts[0][1]) > 1e-3:
+                fechar()
+            if not atual:
+                atual.append(pts[0])
+            atual.extend([pts[1]] if op == "l" else [(round(x, 3), round(y, 3)) for x, y in _bezier(*pts)])
+        elif op == "re":
+            fechar()
+            r = it[1]
+            atual = [P(r.x0, r.y0), P(r.x1, r.y0), P(r.x1, r.y1), P(r.x0, r.y1)]
+            fechar()
+        elif op == "qu":
+            fechar()
+            q = it[1]
+            atual = [P(q.ul.x, q.ul.y), P(q.ur.x, q.ur.y), P(q.lr.x, q.lr.y), P(q.ll.x, q.ll.y)]
+            fechar()
+    fechar()
+    return saida
+
+
 def para_desenho(dados: bytes, destino: Optional[Desenho] = None, paginas: Optional[Sequence[int]] = None,
-                 deslocamento: Ponto2 = (0.0, 0.0), prefixo_camada: str = "") -> Tuple[Desenho, dict]:
-    """PDF (bytes) → entidades do desenho, em mm de papel. Devolve (desenho, resumo)."""
+                 deslocamento: Ponto2 = (0.0, 0.0), prefixo_camada: str = "",
+                 preenchimentos: bool = False) -> Tuple[Desenho, dict]:
+    """PDF (bytes) → entidades do desenho, em mm de papel. Devolve (desenho, resumo).
+
+    `preenchimentos`: o caminho só preenchido (traço grosso desenhado como polígono cheio, ponta de seta, hachura
+    sólida) entra como hachura sólida na cor dele — a folha como foi impressa (Original das obras: na 940 do Edifício
+    Administrativo Hora Certa as treliças da marquise são polígonos cheios e sumiam, 28/10). Sem ele (leitura do
+    projeto para montar o 3D) fica de fora, como antes. O preenchimento branco (máscara) fica de fora sempre."""
     try:
         import pymupdf
     except ImportError:                                            # pragma: no cover
@@ -123,8 +165,22 @@ def para_desenho(dados: bytes, destino: Optional[Desenho] = None, paginas: Optio
                 continue
             cor = d.get("color")
             if cor is None:
-                # só preenchimento: ponta de seta, hachura sólida — fica de fora
-                contagem["ignorado:preenchimento"] += 1
+                # só preenchimento: ponta de seta, hachura sólida, traço grosso cheio — fica de fora, a não ser que
+                # se peçam os preenchimentos (a folha como foi impressa)
+                fill = d.get("fill")
+                if not preenchimentos or fill is None:
+                    contagem["ignorado:preenchimento"] += 1
+                    continue
+                if all(float(c_) > 0.98 for c_ in fill):
+                    contagem["ignorado:preenchimento branco"] += 1
+                    continue
+                cts = _contornos(d.get("items"), P)
+                if not cts:
+                    contagem["ignorado:preenchimento"] += 1
+                    continue
+                cam = camada(str(d.get("layer") or ("PDF " + _hex(fill)[1:])), _hex(fill))
+                add(Hachura(camada=cam, contornos=cts, padrao="solido",
+                            atributos={"origem": "pdf", "cor": _hex(fill), "preenchimento": True}))
                 continue
             nome_cam = d.get("layer") or ("PDF " + _hex(cor)[1:])
             cam = camada(str(nome_cam), _hex(cor))

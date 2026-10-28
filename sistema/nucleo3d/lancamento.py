@@ -192,8 +192,12 @@ def _escala_pelas_cotas(des: Desenho) -> Tuple[Optional[float], str]:
 
 
 def ler_arquitetonico(dados: bytes, tipo: str, *, fator: Optional[float] = None,
-                      escala_pdf: Optional[float] = None, nome: str = DESENHO_LANCAMENTO) -> Tuple[Desenho, dict]:
+                      escala_pdf: Optional[float] = None, nome: str = DESENHO_LANCAMENTO,
+                      preenchimentos: bool = False) -> Tuple[Desenho, dict]:
     """Arquivo do cliente → (desenho em mm reais, resumo).
+
+    `preenchimentos` (PDF): os polígonos só preenchidos entram como hachura sólida — a folha como foi impressa
+    (pdf_ler.para_desenho).
 
     DXF: `fator` é mm por unidade do arquivo (None = pelo $INSUNITS). PDF vetorial: as
     linhas vêm em mm de papel e `escala_pdf` é o N de 1:N (None = pelas cotas; sem cota
@@ -213,7 +217,7 @@ def ler_arquitetonico(dados: bytes, tipo: str, *, fator: Optional[float] = None,
     elif tipo == "pdf":
         from nucleo2d.pdf_ler import para_desenho
         papel = Desenho(nome=nome, escala=1.0)
-        papel, lido = para_desenho(dados, destino=papel, prefixo_camada=PREFIXO_ARQ)
+        papel, lido = para_desenho(dados, destino=papel, prefixo_camada=PREFIXO_ARQ, preenchimentos=preenchimentos)
         avisos += list(lido.get("avisos") or [])
         fonte = "informado"
         N = float(escala_pdf) if escala_pdf else None
