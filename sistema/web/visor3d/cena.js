@@ -48,7 +48,13 @@ async function pedir(url, corpo, binario) {
 
 async function abrir() {
   if (!PROJETO) { aviso('Nenhum projeto na URL.'); return; }
-  $('#voltar').onclick = () => { location.href = `/visor3d/ver3d.html?projeto=${encodeURIComponent(PROJETO)}`; };
+  // dentro do quadro do 3D (o botão Cenas do modo ver), volta ao modo ver do quadro; na janela inteira (o menu Cenas › Cenas
+  // da obra…), à área de trabalho do projeto com o 3D — antes ia ao modo ver solto, sem a barra de cima, e o Cenas dele
+  // voltava aqui: um laço sem saída para a tela inicial (usuário, 28/10)
+  $('#voltar').onclick = () => {
+    const p = encodeURIComponent(PROJETO);
+    location.href = window.top !== window ? `/visor3d/ver3d.html?projeto=${p}` : `/dividida?projeto=${p}&vista=3d`;
+  };
   // a cobertura retrátil na situação da cena (aberta ou retraída): o 3D leve dela
   const { cenas } = await pedir(API);
   const escolhida = cenas.find(c => c.id === q.get('cena')) || cenas[cenas.length - 1] || null;
