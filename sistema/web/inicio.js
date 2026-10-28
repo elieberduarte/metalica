@@ -166,6 +166,9 @@ function cartao(p) {
     el('button', { type: 'button', class: 'discreto', 'data-acao': 'enviar',
                    title: 'Manda a obra para o Metálica de outra pessoa (pela nuvem): ela recebe um aviso na tela inicial e abre como um projeto novo',
                    onclick: (ev) => { ev.stopPropagation(); enviarObra(p); } }, 'Enviar para…'),
+    (p.envios && p.envios.length) ? el('button', { type: 'button', class: 'discreto', 'data-acao': 'enviar-atualizacao',
+                   title: 'Manda a versão de agora desta obra para quem já a recebeu: lá aparece "Atualizar a minha cópia" (a cópia de antes fica arquivada)',
+                   onclick: (ev) => { ev.stopPropagation(); enviarAtualizacao(p); } }, 'Enviar atualização…') : null,
     el('button', { type: 'button', class: 'discreto', 'data-acao': 'arquivar',
                    title: p.arquivado ? 'Volta para a lista principal' : 'Tira da lista principal sem apagar nada (fica em "Arquivados", no fim da lista)',
                    onclick: (ev) => { ev.stopPropagation(); arquivar(p, !p.arquivado); } }, p.arquivado ? 'Desarquivar' : 'Arquivar'),
@@ -628,6 +631,34 @@ async function enviarObra(p) {
     recado('Obra enviada', `"${p.nome}" foi para ${r.eu ? 'os seus outros computadores' : r.para} (${String(r.mb).replace('.', ',')} MB). ` +
            'Aparece na tela inicial do Metálica dela.');
   } catch (e) { recado('A obra não foi enviada', e.message, 'erro'); }
+  await carregar();                                   // o cartão passa a ter o "Enviar atualização…"
+}
+
+/* A atualização da obra já enviada (28/10, o usuário: "criar uma opção de enviar revisão ou enviar atualização, para
+ * esses ajustes que estamos fazendo enviar para o projeto dela também, não automaticamente, isso eu envio manualmente
+ * quando validar a atualização no nosso modelo"). Vai para quem já recebeu; do outro lado o aviso oferece "Atualizar a
+ * minha cópia" (a versão nova no lugar, a de antes arquivada) ou abrir como projeto novo. */
+async function enviarAtualizacao(p) {
+  const ja = (p.envios || []).slice().reverse();
+  if (!ja.length) { enviarObra(p); return; }
+  const quando = (q) => q ? ` — último envio ${q.slice(8, 10)}/${q.slice(5, 7)} ${q.slice(11, 16)}` : '';
+  const v = await perguntar({ titulo: `Enviar atualização de "${p.nome}"`, ok: 'Enviar atualização',
+    texto: 'A versão de agora da obra vai para quem já a recebeu. Lá, o aviso na tela inicial oferece "Atualizar a minha ' +
+           'cópia": a versão nova entra no lugar da que a pessoa tem, e a de antes (com o que ela tiver mexido) fica guardada ' +
+           'num projeto arquivado. Nada é automático: só vai quando você enviar.',
+    campos: [{ id: 'para', rotulo: 'Para quem', obrigatorio: true, valor: ja[0].para,
+               opcoes: ja.map(x => ({ valor: x.para, titulo: x.eu ? `${x.pessoa} (você — os seus outros computadores)` : x.pessoa,
+                                      texto: quando(x.quando) })) },
+             { id: 'nota', rotulo: 'O que mudou (aparece para quem recebe)', valor: '', dica: 'ex.: Rev. 2 — apoio dos brises da fachada G' }] });
+  if (!v || !v.para) return;
+  const pessoa = (ja.find(x => x.para === v.para) || {}).pessoa || '';
+  recado('Enviando a atualização…', `"${p.nome}" está subindo para a nuvem; a barra no rodapé mostra o andamento.`);
+  try {
+    const r = await postar(`/api/projetos/${encodeURIComponent(p.slug)}/enviar`, { para: v.para, nota: v.nota, pessoa });
+    recado('Atualização enviada', `"${p.nome}" foi para ${r.eu ? 'os seus outros computadores' : r.para} (${String(r.mb).replace('.', ',')} MB). ` +
+           'Lá aparece "Atualizar a minha cópia" na tela inicial.');
+  } catch (e) { recado('A atualização não foi enviada', e.message, 'erro'); }
+  await carregar();
 }
 
 /** As obras que outras pessoas enviaram para esta licença: um aviso por obra, no alto da lista, com Abrir e Recusar. A
@@ -639,11 +670,18 @@ async function verificarRecebidos() {
   document.querySelectorAll('.obra-recebida').forEach(x => x.remove());
   for (const e of lista) {
     const quando = e.criado ? new Date(e.criado).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+    // a mesma obra que já está aqui (veio do mesmo projeto do outro computador): é uma atualização dela (28/10)
+    const copia = (e.copias || [])[0];
+    const quem = e.de_mim ? 'Do seu outro computador' + (e.de_pc ? ` (${e.de_pc})` : '') : `${e.de} te enviou`;
     const aviso = el('div', { class: 'obra-recebida', role: 'status', 'data-envio': e.id },
-      el('span', { class: 'obra-recebida-icone', 'aria-hidden': 'true', texto: '📥' }),
-      el('span', { class: 'obra-recebida-texto' }, el('b', { texto: e.de_mim ? 'Do seu outro computador' + (e.de_pc ? ` (${e.de_pc})` : '') : `${e.de} te enviou` }),
+      el('span', { class: 'obra-recebida-icone', 'aria-hidden': 'true', texto: copia ? '🔄' : '📥' }),
+      el('span', { class: 'obra-recebida-texto' }, el('b', { texto: copia ? `${quem} uma atualização` : quem }),
         ` "${e.nome}" · ${mbDe(e.bytes)} MB${quando ? ' · ' + quando : ''}`),
-      el('button', { type: 'button', class: 'primario', onclick: () => abrirRecebido(e) }, 'Abrir'),
+      copia ? el('button', { type: 'button', class: 'primario', 'data-acao': 'atualizar-copia',
+                             title: `A versão nova entra no lugar de "${copia.nome}"; a de agora fica guardada num projeto arquivado`,
+                             onclick: () => atualizarCopia(e, copia) }, 'Atualizar a minha cópia') : null,
+      el('button', { type: 'button', class: copia ? 'discreto' : 'primario', onclick: () => abrirRecebido(e) },
+         copia ? 'Abrir como projeto novo' : 'Abrir'),
       el('button', { type: 'button', class: 'discreto', onclick: () => recusarRecebido(e) }, 'Recusar'));
     $('#lista').before(aviso);
   }
@@ -656,6 +694,19 @@ async function abrirRecebido(e) {
     recado('Obra recebida', `"${r.nome}" de ${e.de} já está na sua lista de projetos.`);
     await carregar();
   } catch (err) { recado('Não foi possível abrir a obra', err.message, 'erro'); }
+  finally { carregando(false); verificarRecebidos(); }
+}
+
+async function atualizarCopia(e, copia) {
+  if (!confirm(`Atualizar "${copia.nome}" com a versão que ${e.de_mim ? 'veio do seu outro computador' : e.de + ' enviou'}?\n\n` +
+               'A versão nova entra no lugar da sua. A sua de agora, com tudo o que você mexeu nela, fica guardada num projeto ' +
+               'arquivado ("… antes da atualização de …", em Arquivados no fim da lista). Feche a obra se ela estiver aberta.')) return;
+  carregando(true, `Baixando a atualização de "${e.nome}"…`);
+  try {
+    const r = await postar(`/api/compartilhar/recebidos/${e.id}/abrir`, { atualizar: copia.slug });
+    recado('Obra atualizada', `"${r.nome}" está na versão nova${r.nota ? ' — ' + r.nota : ''}. A de antes ficou em Arquivados.`);
+    await carregar();
+  } catch (err) { recado('A obra não foi atualizada', err.message, 'erro'); }
   finally { carregando(false); verificarRecebidos(); }
 }
 

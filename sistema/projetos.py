@@ -482,6 +482,8 @@ class Projetos:
                 "aberto_por": self.aberto_por(s), "atualizando": self.atualizando(s), "arquivado": bool(p.get("arquivado")),
                 "desenhos_vivos": self._desenhos_vivos(pasta),
                 "slugs_anteriores": [str(x) for x in (p.get("slugs_anteriores") or [])],
+                "envios": [{k: e.get(k) for k in ("para", "pessoa", "eu", "quando")} for e in (p.get("envios") or [])
+                           if isinstance(e, dict) and e.get("para")],
                 "desenhos": [{"nome": d["nome"], "titulo": d.get("titulo") or d["nome"], "vistas": d.get("vistas") or []}
                              for d in self.listar_desenhos(s, contar=False)]}
 
@@ -637,7 +639,7 @@ class Projetos:
 
     # ------------------------------------------------------------ pacote (levar o projeto a outro usuário)
     def exportar(self, s: str, pasta_destino: Optional[str] = None, historico: bool = False,
-                 nome: Optional[str] = None) -> dict:
+                 nome: Optional[str] = None, nota: str = "") -> dict:
         """O projeto inteiro num arquivo só, para outro usuário abrir com tudo que foi feito nele (pedido
         do usuário, 29/09): um ZIP com a pasta do projeto — projeto.json, o modelo 3D, o cálculo, o IFC
         de origem, os desenhos 2D, as pranchas, o detalhamento e os ajustes — mais um `pacote.json` com
@@ -661,12 +663,17 @@ class Projetos:
                     continue
                 pastas[:] = sorted(d for d in pastas if not d.startswith("."))
                 for a in sorted(arquivos):
-                    if a.startswith(".") or a.endswith(".parcial") or (not partes and a == ABERTO):
+                    # as marcas de aberto e de "atualizando" (a do próprio empacotar, no envio: do outro lado a obra
+                    # chegava "Atualizando…" e sem Abrir por até 15 min — 28/10) não viajam
+                    if a.startswith(".") or a.endswith(".parcial") or (not partes and a in (ABERTO, ATUALIZANDO)):
                         continue
                     z.write(os.path.join(raiz_, a), "/".join(partes + [a]))
                     n += 1
             manifesto = {"formato": 1, "pacote": "projeto Metálica", "programa": versao.VERSAO,
-                         "exportado": _agora(), "slug": s, "nome": nome, "arquivos": n, "historico": bool(historico)}
+                         "exportado": _agora(), "slug": s, "nome": nome, "arquivos": n, "historico": bool(historico),
+                         "criado": p.get("criado") or ""}
+            if str(nota or "").strip():
+                manifesto["nota"] = str(nota).strip()[:2000]      # o "o que mudou" da atualização (Enviar atualização…)
             z.writestr(PACOTE_MANIFESTO, json.dumps(manifesto, ensure_ascii=False, indent=1))
         return {"caminho": caminho, "nome": os.path.basename(caminho), "arquivos": n,
                 "mb": round(os.path.getsize(caminho) / 1048576, 1)}
@@ -707,7 +714,7 @@ class Projetos:
             os.makedirs(destino)
             try:
                 for m in nomes:
-                    if m == PACOTE_MANIFESTO or m.endswith("/"):
+                    if m == PACOTE_MANIFESTO or m.endswith("/") or m in (ABERTO, ATUALIZANDO):   # pacote antigo com as marcas
                         continue
                     alvo = os.path.join(destino, *m.replace("\\", "/").split("/"))
                     os.makedirs(os.path.dirname(alvo), exist_ok=True)
@@ -723,10 +730,81 @@ class Projetos:
         self._atualizar(novo, nome=nome, dados=dados, importado={
             "de": original.get("nome") or manifesto.get("nome") or nome, "slug": manifesto.get("slug") or "",
             "exportado": manifesto.get("exportado") or "", "programa": manifesto.get("programa") or original.get("programa") or "",
-            "quando": _agora()})
+            "quando": _agora(), **({"nota": manifesto["nota"]} if manifesto.get("nota") else {})})
         if p.get("arquivado"):
             self.arquivar(novo, False)               # chega na lista principal, como um projeto novo
         return self.resumo(novo)
+
+    def copias_de(self, slug_origem: str) -> List[dict]:
+        """Os projetos desta pasta que vieram do projeto `slug_origem` de outro computador (importado.slug): as cópias
+        que uma atualização pode substituir. Fora os arquivados (a cópia guardada antes de uma atualização)."""
+        saida = []
+        if not slug_origem:
+            return saida
+        for nome in sorted(os.listdir(self.raiz)) if os.path.isdir(self.raiz) else []:
+            if nome.startswith(".") or not os.path.isfile(os.path.join(self.raiz, nome, ARQUIVO)):
+                continue
+            try:
+                p = self.ler(nome)
+            except ErroDeDados:
+                continue
+            imp = p.get("importado") or {}
+            if imp.get("slug") == slug_origem and not p.get("arquivado"):
+                saida.append({"slug": nome, "nome": p.get("nome") or nome, "recebido": imp.get("quando") or ""})
+        return saida
+
+    def atualizar_de_pacote(self, s: str, caminho_zip: str) -> dict:
+        """A atualização de uma obra recebida (usuário, 28/10: "uma opção de enviar revisão ou enviar atualização, para
+        esses ajustes que estamos fazendo enviar para o projeto dela também, não automaticamente"): o pacote novo toma o
+        lugar do projeto `s` — o mesmo nome de pasta e o mesmo nome na lista —, e o que estava aqui não se perde: vai
+        inteiro para um projeto arquivado "<nome> (antes da atualização de dd/mm hh:mm)". Recusa a obra aberta numa
+        janela e o pacote de outra obra (a data de criação do projeto de origem não bate). Devolve o resumo do
+        atualizado com `copia_anterior` (o slug da cópia guardada)."""
+        origem = self._existente(s)
+        if self.aberto_por(s):
+            raise ErroDeDados("a obra está aberta numa janela do Metálica: feche-a antes de atualizar.")
+        antes = self.ler(s)
+        if antes.get("ilegivel"):
+            raise ErroDeDados("o arquivo do projeto não pôde ser lido; nada foi atualizado.")
+        imp_antes = antes.get("importado") or {}
+        novo = self.importar_pacote(caminho_zip)["slug"]          # confere o pacote e o abre ao lado, sem tocar em `s`
+        try:
+            chegou = self.ler(novo)
+            c0, c1 = str(antes.get("criado") or ""), str(chegou.get("criado") or "")
+            if c0 and c1 and c0 != c1:
+                raise ErroDeDados("a obra que chegou não é a mesma da sua cópia (\"%s\" foi criada em outra data): abra "
+                                  "como projeto novo." % (antes.get("nome") or s))
+            imp = dict(chegou.get("importado") or {}, atualizacoes=int(imp_antes.get("atualizacoes") or 0) + 1,
+                       primeiro_recebido=imp_antes.get("primeiro_recebido") or imp_antes.get("quando") or "")
+        except Exception:
+            shutil.rmtree(self.pasta(novo), ignore_errors=True)
+            raise
+        nome = antes.get("nome") or s
+        guardada = self._slug_livre("%s antes da atualizacao %s" % (s, time.strftime("%Y%m%d-%H%M")))
+        try:
+            os.rename(origem, os.path.join(self.raiz, guardada))
+        except OSError as e:
+            shutil.rmtree(self.pasta(novo), ignore_errors=True)
+            raise ErroDeDados("a pasta da obra está em uso por outro programa (%s): feche o que a segura e tente de novo; "
+                              "nada foi atualizado." % e)
+        try:
+            os.rename(self.pasta(novo), origem)
+        except OSError as e:
+            os.rename(os.path.join(self.raiz, guardada), origem)            # volta como estava
+            shutil.rmtree(self.pasta(novo), ignore_errors=True)
+            raise ErroDeDados("não foi possível pôr a atualização no lugar (%s); a sua cópia ficou como estava." % e)
+        try:                                       # o 3D leve da cópia antiga vai com ela: o da atualizada é refeito
+            from saida import modelo_leve
+            modelo_leve.mudou_de_pasta(origem, os.path.join(self.raiz, guardada))
+        except Exception:                          # noqa: BLE001
+            pass
+        self._atualizar(guardada, nome="%s (antes da atualização de %s)" % (nome, time.strftime("%d/%m %H:%M")))
+        self.arquivar(guardada, True)
+        dados = chegou.get("dados")
+        if isinstance(dados, dict):
+            dados = dict(dados, nome=nome)
+        self._atualizar(s, nome=nome, dados=dados, importado=imp)
+        return dict(self.resumo(s), copia_anterior=guardada, nota=imp.get("nota") or "")
 
     def excluir(self, s: str) -> dict:
         """Não apaga: move para `.lixeira`, com a data no nome. Apagar de verdade é

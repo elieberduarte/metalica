@@ -153,11 +153,50 @@ try:
     ok(esperar(aba, "document.querySelectorAll('.obra-recebida').length === 0 && document.querySelectorAll('[data-acao=enviar]').length === 3", 40),
        "Abrir: a obra entra na lista como projeto novo e o aviso some")
     ok(NUVEM["envios"][0]["estado"] == "recebido", "e a nuvem marca recebido")
-    pastas = [n for n in os.listdir(DADOS) if os.path.isfile(os.path.join(DADOS, n, "projeto.json"))]
+    ok(aba.avaliar("document.querySelectorAll('.cartao.atualizando').length === 0"),
+       "a obra recebida não chega 'Atualizando… empacotando a obra' (a marca do envio ia no pacote, 28/10)")
+    pastas =[n for n in os.listdir(DADOS) if os.path.isfile(os.path.join(DADOS, n, "projeto.json"))]
     ok(len(pastas) == 3, f"a obra recebida é uma pasta nova, nunca por cima ({pastas})")
     ok(aba.avaliar(ICONE) and aba.avaliar("getComputedStyle(document.querySelector('.cartao[data-slug=hangar]')).gridTemplateColumns.split(' ').length === 3 && "
                                           "document.querySelector('.cartao[data-slug=hangar] .cartao-corpo').getBoundingClientRect().width > 300"),
        "depois de abrir, o cartão tipo recebido continua inteiro (ícone, corpo largo)")
+    # a atualização (28/10, o usuário: "criar uma opção de enviar revisão ou enviar atualização, para esses ajustes que
+    # estamos fazendo enviar para o projeto dela também, não automaticamente"): o cartão já enviado ganha o
+    # "Enviar atualização…" (para quem já recebeu, com o que mudou); do outro lado, "Atualizar a minha cópia" põe a versão
+    # nova no lugar e a de antes fica arquivada
+    NUVEM["eu"] = "A"
+    aba.navegar(base + "/", limite=60)
+    ok(esperar(aba, "!!document.querySelector('.cartao[data-slug=prati-cd] [data-acao=enviar-atualizacao]')", 20),
+       "o cartão já enviado tem Enviar atualização…")
+    ok(not aba.avaliar("!!document.querySelector('.cartao[data-slug=hangar] [data-acao=enviar-atualizacao]')"),
+       "o que nunca foi enviado não tem")
+    aba.avaliar("document.querySelector('.cartao[data-slug=prati-cd] [data-acao=enviar-atualizacao]').click(); 1")
+    ok(esperar(aba, "document.getElementById('dlg').open && document.querySelectorAll('#dlg-campos input[type=radio]').length === 1 && "
+                    "document.querySelector('#dlg-campos input[value=pb]').checked", 15),
+       "o diálogo traz só quem já recebeu (o Andrey), já marcado")
+    aba.avaliar("document.getElementById('dlg-nota').value = 'Rev. 2 — SP5 dos brises'; document.getElementById('dlg-ok').click(); 1")
+    ok(esperar(aba, "document.getElementById('bandeja').textContent.includes('Atualização enviada')", 30), "Atualização enviada (o aviso)")
+    ok(len(NUVEM["envios"]) == 2 and NUVEM["envios"][1]["para_chave"] == "B", "a atualização chegou à nuvem, para o Andrey")
+    NUVEM["eu"] = "B"
+    aba.navegar(base + "/", limite=60)
+    ok(esperar(aba, "document.querySelectorAll('.obra-recebida [data-acao=atualizar-copia]').length === 1", 30),
+       "do outro lado: o aviso oferece Atualizar a minha cópia")
+    ok("uma atualização" in (aba.avaliar("document.querySelector('.obra-recebida').textContent") or ""), "e diz que é uma atualização")
+    foto(aba, "compartilhar_4_atualizacao.png")
+    antes = sorted(n for n in os.listdir(DADOS) if os.path.isfile(os.path.join(DADOS, n, "projeto.json")))
+    aba.avaliar("window.confirm = () => true; document.querySelector('.obra-recebida [data-acao=atualizar-copia]').click(); 1")
+    ok(esperar(aba, "document.querySelectorAll('.obra-recebida').length === 0 && "
+                    "document.getElementById('bandeja').textContent.includes('Obra atualizada')", 40),
+       "Atualizar: o aviso some e diz Obra atualizada")
+    depois = sorted(n for n in os.listdir(DADOS) if os.path.isfile(os.path.join(DADOS, n, "projeto.json")))
+    novas = [n for n in depois if n not in antes]
+    copia = [n for n in antes if json.load(open(os.path.join(DADOS, n, "projeto.json"), encoding="utf-8")).get("importado")]
+    ok(len(novas) == 1 and len(copia) == 1, f"uma pasta a mais só: a cópia de antes guardada ({novas})")
+    pj = lambda n: json.load(open(os.path.join(DADOS, n, "projeto.json"), encoding="utf-8"))
+    ok(copia and pj(copia[0])["importado"].get("atualizacoes") == 1 and pj(copia[0])["importado"].get("nota") == "Rev. 2 — SP5 dos brises"
+       and not pj(copia[0]).get("arquivado"), "a cópia ficou no mesmo lugar, atualizada, com o que mudou")
+    ok(novas and pj(novas[0]).get("arquivado") and "antes da atualização" in pj(novas[0])["nome"], "a de antes está arquivada")
+    ok(NUVEM["envios"][1]["estado"] == "recebido", "e a nuvem marca recebido")
     # recusar
     NUVEM["eu"] = "A"
     aba.navegar(base + "/", limite=60)
@@ -170,7 +209,7 @@ try:
     aba.navegar(base + "/", limite=60)
     esperar(aba, "document.querySelectorAll('.obra-recebida').length === 1", 30)
     aba.avaliar("window.confirm = () => true; [...document.querySelectorAll('.obra-recebida button')].find(b => b.textContent === 'Recusar').click(); 1")
-    ok(esperar(aba, "document.querySelectorAll('.obra-recebida').length === 0", 20) and NUVEM["envios"][1]["estado"] == "recusar",
+    ok(esperar(aba, "document.querySelectorAll('.obra-recebida').length === 0", 20) and NUVEM["envios"][-1]["estado"] == "recusar",
        "Recusar tira o aviso e a obra da nuvem")
     # sem nenhum projeto (o Andrey, 21/10: "aparece essa tela para ele, e não tem também a opção de importar pacote"): o
     # aviso da obra recebida aparece na tela vazia, Abrir funciona, e a tela vazia tem o Importar pacote…

@@ -6011,7 +6011,7 @@ class Handler(BaseHTTPRequestHandler):
                 import compartilhar
                 if rota.endswith("pessoas"):
                     return self._json({"pessoas": compartilhar.pessoas()})
-                return self._json({"recebidos": compartilhar.recebidos()})
+                return self._json({"recebidos": compartilhar.recebidos_com_copias(_gerente())})   # + a cópia daqui (atualização, 28/10)
             if rota.startswith("/api/projetos/"):
                 partes = rota.split("/api/projetos/", 1)[1].strip("/").split("/")
                 if len(partes) == 2 and partes[1] == "modelo":
@@ -6281,7 +6281,8 @@ class Handler(BaseHTTPRequestHandler):
                 import compartilhar
                 if m_env.group(2) == "recusar":
                     return self._json(compartilhar.recusar(int(m_env.group(1))))
-                return self._json(compartilhar.abrir(_gerente(), int(m_env.group(1))))
+                return self._json(compartilhar.abrir(_gerente(), int(m_env.group(1)),
+                                                     atualizar=str((corpo or {}).get("atualizar") or "")))
             if rota == "/api/projetos/importar-pacote":
                 return self._json(importar_pacote_de_projeto(corpo))
             if rota == "/api/conferencia/cancelar":
@@ -6299,7 +6300,9 @@ class Handler(BaseHTTPRequestHandler):
                     import compartilhar
                     s_e = partes[0]
                     return self._json(compartilhar.enviar(_gerente(), s_e, str((corpo or {}).get("para") or ""),
-                                                          lambda etapa, fracao=None: _progresso(s_e, etapa, fracao)))
+                                                          lambda etapa, fracao=None: _progresso(s_e, etapa, fracao),
+                                                          nota=str((corpo or {}).get("nota") or ""),
+                                                          pessoa=str((corpo or {}).get("pessoa") or "")))
                 if len(partes) >= 2 and partes[1] == "terreno" and TERRENO:
                     from saida import local_obra
                     s_t = partes[0]

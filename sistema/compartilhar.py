@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from typing import Callable, Optional
@@ -80,12 +81,14 @@ def _partes(caminho: str):
     return saida, total.hexdigest()
 
 
-def enviar(g, s: str, para: str, progresso: Callable = lambda *a, **k: None) -> dict:
-    """Sobe o pacote da obra `s` e registra o envio para a pessoa `para` (o id de pessoas())."""
+def enviar(g, s: str, para: str, progresso: Callable = lambda *a, **k: None, nota: str = "", pessoa: str = "") -> dict:
+    """Sobe o pacote da obra `s` e registra o envio para a pessoa `para` (o id de pessoas()). `nota`: o que mudou, numa
+    atualização (vai no pacote e aparece para quem recebe). O envio fica anotado no projeto (`envios`), para o
+    "Enviar atualização…" saber a quem a obra já foi (28/10)."""
     if not para:
         raise ErroCompartilhar("escolha para quem enviar")
     progresso("empacotando a obra…", 0.02)
-    r = g.exportar(s)
+    r = g.exportar(s, nota=nota)
     pasta = os.path.dirname(r["caminho"])
     try:
         partes, sha1 = _partes(r["caminho"])
@@ -105,7 +108,24 @@ def enviar(g, s: str, para: str, progresso: Callable = lambda *a, **k: None) -> 
                                            "partes": [{"sha1": h, "bytes": n} for h, n, _i in partes]})
     finally:
         shutil.rmtree(pasta, ignore_errors=True)
-    return {"id": e.get("id"), "para": e.get("para"), "eu": e.get("eu"), "mb": round(sum(p[1] for p in partes) / 1048576, 1)}
+    mb = round(sum(p[1] for p in partes) / 1048576, 1)
+    try:                                                      # a quem a obra já foi (o último envio de cada pessoa)
+        anteriores = [x for x in (g.ler(s).get("envios") or []) if x.get("para") != para]
+        g._atualizar(s, envios=(anteriores + [{"para": para, "pessoa": e.get("para") or pessoa, "eu": bool(e.get("eu")),
+                                               "quando": time.strftime("%Y-%m-%d %H:%M"), "mb": mb,
+                                               **({"nota": str(nota).strip()[:300]} if str(nota or "").strip() else {})}])[-20:])
+    except Exception:                                         # noqa: BLE001 — o envio já foi; só a anotação ficou de fora
+        pass
+    return {"id": e.get("id"), "para": e.get("para"), "eu": e.get("eu"), "mb": mb}
+
+
+def recebidos_com_copias(g, incluir_deste: bool = False) -> list:
+    """recebidos(), cada um com `copias`: os projetos daqui que vieram da mesma obra de origem (o slug dela no outro
+    computador) — os que o "Atualizar a minha cópia" pode substituir (28/10)."""
+    saida = []
+    for e in recebidos(incluir_deste):
+        saida.append(dict(e, copias=g.copias_de(str(e.get("slug") or ""))))
+    return saida
 
 
 def recebidos(incluir_deste: bool = False) -> list:
@@ -113,11 +133,19 @@ def recebidos(incluir_deste: bool = False) -> list:
     return _pedir("GET", "/pc/recebidos" + ("?incluir_deste=1" if incluir_deste else "")).get("recebidos") or []
 
 
-def abrir(g, envio_id: int, progresso: Callable = lambda *a, **k: None, incluir_deste: bool = False) -> dict:
-    """Baixa as partes do envio, confere, importa como projeto novo e marca recebido; devolve o resumo do projeto."""
+def abrir(g, envio_id: int, progresso: Callable = lambda *a, **k: None, incluir_deste: bool = False,
+          atualizar: str = "") -> dict:
+    """Baixa as partes do envio, confere, importa como projeto novo e marca recebido; devolve o resumo do projeto.
+    `atualizar`: o slug de uma cópia daqui da mesma obra (copias_de) — o pacote toma o lugar dela, e a de antes fica
+    guardada num projeto arquivado (Projetos.atualizar_de_pacote, 28/10)."""
     e = next((x for x in recebidos(incluir_deste) if int(x["id"]) == int(envio_id)), None)
     if not e:
         raise ErroCompartilhar("este envio não está mais na nuvem (já foi aberto em outro computador, recusado ou venceu)")
+    if atualizar:
+        if atualizar not in {c["slug"] for c in g.copias_de(str(e.get("slug") or ""))}:
+            raise ErroCompartilhar("o projeto escolhido não é uma cópia desta obra: abra como projeto novo")
+        if g.aberto_por(atualizar):
+            raise ErroCompartilhar("a obra está aberta numa janela do Metálica: feche-a antes de atualizar")
     pasta = tempfile.mkdtemp(prefix="metalica-recebido-")
     try:
         caminho = os.path.join(pasta, "obra.metalica.zip")
@@ -134,8 +162,12 @@ def abrir(g, envio_id: int, progresso: Callable = lambda *a, **k: None, incluir_
                 feito += len(b)
         if e.get("sha1") and inteiro.hexdigest() != e["sha1"]:
             raise ErroCompartilhar("o pacote da obra chegou incompleto — tente abrir de novo")
-        progresso("abrindo a obra…", 0.93)
-        resumo = g.importar_pacote(caminho, e.get("nome") or None)
+        if atualizar:
+            progresso("atualizando a obra (a sua cópia de antes fica arquivada)…", 0.93)
+            resumo = g.atualizar_de_pacote(atualizar, caminho)
+        else:
+            progresso("abrindo a obra…", 0.93)
+            resumo = g.importar_pacote(caminho, e.get("nome") or None)
         try:                                                  # o projeto já está aqui: marcar recebido limpa a nuvem
             _pedir("POST", "/pc/recebidos/%d/recebido" % int(e["id"]), {})
         except ErroCompartilhar:
