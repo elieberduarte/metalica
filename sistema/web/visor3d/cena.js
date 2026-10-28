@@ -75,6 +75,10 @@ async function abrir() {
   visor.definirTema(escuro());
   visor.ligarApresentacao(true, 4096);                    // no PC: a sombra mais fina (o celular fica nos 2048)
   visor._recorteSombra = recorteDaCena;
+  telaFina.hidden = true;
+  tela.after(telaFina);
+  const pedirQuadro = visor.pedirQuadro.bind(visor);
+  visor.pedirQuadro = () => { aoPedirQuadro(); pedirQuadro(); };
   terreno = new Terreno(visor, PROJETO, { abrirPainel: () => {}, corpo: () => null, situacao: aviso, palco,
                                           painelAtual: () => null, aoMudar: () => {}, chaveLigado: null });
   try { await terreno.carregar(); } catch (e) { /* sem o terreno: os pontos só nas peças */ }
@@ -197,7 +201,7 @@ function mostrarModo(m) {
   if (!visor) return;
   if (m === 'foto' && cena) {
     const r = retanguloFoto();
-    posicionar(foto, r); posicionar(tela, r); posicionar(marcas, r); posicionar(svgFrente, r);
+    posicionar(foto, r); posicionar(tela, r); posicionar(telaFina, r); posicionar(marcas, r); posicionar(svgFrente, r);
     visor.cena.background = null;
     if (visor.piso) visor.piso.visible = false;
     if (terreno && terreno.grupo) terreno.grupo.visible = false;
@@ -918,21 +922,21 @@ function ligarFrente() {
 /** A foto com o 3D por cima, num canvas de w × h. O 3D sai em blocos (camera.setViewOffset): qualquer tamanho, sem passar
  *  do que a placa de vídeo desenha de uma vez; cada bloco `ss` vezes maior e reduzido (supersampling — as terças finas
  *  sem serrilhado nem moiré). `aoBloco(i, n)` depois de cada bloco. */
-async function montarImagem(w, h, ss = 1, aoBloco = null) {
+async function montarImagem(w, h, ss = 1, aoBloco = null, { comFoto = true, frente = true, bloco = 2048 } = {}) {
   const saida = document.createElement('canvas');
   saida.width = w; saida.height = h;
   const g = saida.getContext('2d');
   g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
-  g.drawImage(foto, 0, 0, w, h);
+  if (comFoto) g.drawImage(foto, 0, 0, w, h);
   const r = visor.renderer, dpr = r.getPixelRatio(), cam = visor.camera, gl = r.getContext();
-  const lado = Math.min(2048, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), r.capabilities.maxTextureSize);
+  const lado = Math.min(bloco, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), r.capabilities.maxTextureSize);
   const B = Math.max(128, Math.floor(lado / ss)), blocos = [];
   for (let y = 0; y < h; y += B) for (let x = 0; x < w; x += B) blocos.push([x, y, Math.min(B, w - x), Math.min(B, h - y)]);
   r.setPixelRatio(1);
   cam.aspect = w / h;
   cam.updateProjectionMatrix();
-  montarParedes();                                          // o que fica na frente: sempre na imagem (aplicarCamera devolve a tela)
-  g.globalAlpha = +$('#opacidade').value;
+  if (frente) montarParedes();                              // o que fica na frente: sempre na imagem (aplicarCamera devolve a tela)
+  g.globalAlpha = comFoto ? +$('#opacidade').value : 1;
   visor._recorteSombra = recorteDoBloco;                    // a sombra refeita para cada bloco, só com o que ele mostra
   // o afastamento da sombra ao longo da normal (contra as manchas) igual em todos os blocos, o da cena inteira: o de cada
   // janela deslocava a borda da sombra de um jeito por bloco, e ela fazia dente na emenda
@@ -956,6 +960,46 @@ async function montarImagem(w, h, ss = 1, aoBloco = null) {
     aplicarCamera();
   }
   return saida;
+}
+
+// ------------------------------------------------------------------ a tela parada, como o render
+// (usuário, 28/10, print da tela da cena: "a sombra continua pixelizada"): o render já saía limpo, a tela não — ela desenha
+// a cena de uma vez, com a imagem da sombra da cena inteira. Parada a câmera (meio segundo sem pedir quadro), a tela é
+// refeita como o render, em blocos de 256 px com a sombra de cada um, num canvas por cima (#tela-fina); qualquer quadro
+// pedido (a lente, o sol, as camadas, o encaixe, o tamanho da janela) a tira na hora, e o 3D de sempre volta até parar.
+
+const telaFina = document.createElement('canvas');
+telaFina.id = 'tela-fina';
+let tempoFino = 0, refinando = false;
+
+function esconderFino() {
+  clearTimeout(tempoFino);
+  if (!telaFina.hidden) {
+    telaFina.hidden = true;
+    if (modo === 'foto' && cena) tela.style.visibility = cena.camera && !renderizando ? 'visible' : 'hidden';
+  }
+}
+
+/** O visor pediu um quadro: a tela mudou. Os quadros pedidos pelo próprio refino não contam. */
+function aoPedirQuadro() {
+  if (refinando) return;
+  esconderFino();
+  tempoFino = setTimeout(refinarTela, 500);
+}
+
+async function refinarTela() {
+  if (modo !== 'foto' || !cena || !cena.camera || !visor.apresentacao || renderizando || arrasto || arrastoCanto || desenho) return;
+  if (document.hidden) { tempoFino = setTimeout(refinarTela, 1000); return; }
+  refinando = true;
+  try {
+    const camada = await montarImagem(tela.width, tela.height, 1, null, { comFoto: false, frente: verFrente, bloco: Math.round(256 * visor.renderer.getPixelRatio()) });
+    telaFina.width = camada.width; telaFina.height = camada.height;
+    telaFina.getContext('2d').drawImage(camada, 0, 0);
+    telaFina.style.opacity = tela.style.opacity;
+    telaFina.hidden = false;
+    tela.style.visibility = 'hidden';                       // a de sempre por baixo dobraria a sombra no chão
+  } catch (e) { console.warn('refino da tela', e); }
+  finally { refinando = false; }
 }
 
 async function enviarImagem(saida, nome, tipo, qualidade) {
@@ -1112,7 +1156,7 @@ function ligarControles() {
   };
   $('#opacidade').oninput = () => {
     lembrar('opacidade');
-    tela.style.opacity = modo === 'foto' ? $('#opacidade').value : '1'; atualizarFaixas();
+    tela.style.opacity = telaFina.style.opacity = modo === 'foto' ? $('#opacidade').value : '1'; atualizarFaixas();
     clearTimeout(tempoOpac); tempoOpac = setTimeout(() => gravar({ opacidade: +$('#opacidade').value }), 600);
   };
   $('#sol').onchange = () => { lembrar(); mudarSol({ ligado: $('#sol').checked }); };
@@ -1241,6 +1285,6 @@ function desenharMarcas() {
   if (novo !== marcas._html) { marcas.innerHTML = novo; marcas._html = novo; }
 }
 
-window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado, desenho, paredes: paredes.length }), mostrarModo, pontoDo3d, fazerEncaixe,
+window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado, desenho, paredes: paredes.length, fina: !telaFina.hidden }), mostrarModo, pontoDo3d, fazerEncaixe,
                    concluir, desfazer, refazer, geometriaDoContorno, bordaDeBaixo, montarImagem };
 abrir().catch(e => { aviso('A cena não abriu: ' + e.message); console.error(e); });

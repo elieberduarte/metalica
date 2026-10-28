@@ -51,6 +51,8 @@
   body:not(.modo-3d) #terreno-fonte { display: none; }   /* na foto o terreno não aparece: a fonte dele também não */
   #foto { position: absolute; user-select: none; -webkit-user-drag: none; }
   #tela { position: absolute; }
+  #tela-fina { position: absolute; pointer-events: none; }
+  #tela-fina[hidden], body.modo-3d #tela-fina { display: none; }
   #marcas { position: absolute; cursor: crosshair; }
   .marca { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; border: 2px solid #fff;
     box-shadow: 0 0 0 1px rgba(0,0,0,.6); color: #fff; font: 600 11px/18px var(--sans); text-align: center; pointer-events: none; }

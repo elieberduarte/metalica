@@ -348,7 +348,8 @@ try:
         a_ = Image.open(arq).convert("L"); b_ = Image.open(rnd).convert("L").resize(a_.size, Image.LANCZOS)
         dif = ImageStat.Stat(ImageChops.difference(a_, b_)).mean[0]
         ok(dif < 6, f"o render bate com a imagem salva, reduzido (diferença média {dif:.1f} de 255): os blocos emendados no lugar")
-    ok(aba.avaliar("document.getElementById('tela').style.visibility") == "visible" and not aba.avaliar("document.getElementById('renderizar').disabled"),
+    ok((aba.avaliar("document.getElementById('tela').style.visibility") == "visible" or aba.avaliar("cenaApi.estado().fina"))
+       and not aba.avaliar("document.getElementById('renderizar').disabled"),
        "depois do render a vista volta (o 3D à mostra, o botão de novo)")
     # a sombra no render sem degraus (27/10: "as sombras nessa imagem ficaram bastante pixelizadas, mesmo após a
     # renderização"): o sol de lado e baixo (60°, 10°) deita a sombra do 3º pilar em diagonal pelo chão. A imagem da sombra
@@ -383,6 +384,29 @@ try:
     ok(esperar(aba, "!!window.ultimaImagemCena && /render/.test(window.ultimaImagemCena.nome)", 180), "Renderizar com o sol de lado responde")
     faixa, n_cortes = faixa_da_borda(rnd, 2, 60)
     ok(faixa is not None and faixa < 25, f"no render, a borda da sombra no chão é fina, sem degraus ({faixa and round(faixa)} mm de passagem, {n_cortes} cortes)")
+    # a tela parada como o render (28/10, print da tela: "a sombra continua pixelizada"): meio segundo sem mexer, a tela é
+    # refeita em blocos com a sombra de cada um (#tela-fina, por cima; o 3D de sempre escondido); mexer na lente a tira
+    ok(esperar(aba, "cenaApi.estado().fina && document.getElementById('tela').style.visibility === 'hidden'", 15),
+       "parada a câmera, a tela fina aparece por cima (e a de sempre sai)")
+    import base64, io as _io
+    def canvas_png(expr):
+        dados = aba.avaliar(expr)
+        return Image.open(_io.BytesIO(base64.b64decode(dados.split(",", 1)[1]))).convert("RGBA")
+    def sobre_fundo(img):
+        base_ = Image.new("RGBA", img.size, (120, 110, 95, 255)); base_.alpha_composite(img); return base_.convert("RGB")
+    fina = sobre_fundo(canvas_png("document.getElementById('tela-fina').toDataURL('image/png')"))
+    comum = sobre_fundo(canvas_png("(() => { const v = window.visor; v._sombraSuja = true; v._desenharSombra(); v.renderer.render(v.cena, v.camera);"
+                                    " return v.renderer.domElement.toDataURL('image/png'); })()"))
+    tmp_fina, tmp_comum = os.path.join(DADOS, "fina.png"), os.path.join(DADOS, "comum.png")
+    fina.save(tmp_fina); comum.save(tmp_comum)
+    f_fina, _ = faixa_da_borda(tmp_fina, fina.size[0] / W, 60)
+    f_comum, _ = faixa_da_borda(tmp_comum, comum.size[0] / W, 60)
+    ok(f_fina is not None and f_comum is not None and f_fina < 0.75 * f_comum,
+       f"na tela fina a borda da sombra no chão afina ({f_fina and round(f_fina)} mm × {f_comum and round(f_comum)} mm na tela de sempre; 1 px ≈ 25 mm ali)")
+    aba.avaliar("const l9 = document.getElementById('lente'); l9.value = +l9.value + 0.5; l9.dispatchEvent(new Event('input')); 1")
+    ok(aba.avaliar("!cenaApi.estado().fina && document.getElementById('tela').style.visibility === 'visible'"),
+       "mexer na lente tira a tela fina na hora")
+    tecla("z")
     mudar_sol(90, 20)
 
     # o que fica na frente (27/10: "a estrutura está atrás desse alambrado, como fazer para o sistema entender isso… apenas
