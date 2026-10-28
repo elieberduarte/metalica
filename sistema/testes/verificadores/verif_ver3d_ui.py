@@ -153,14 +153,29 @@ try:
                 "eixos: [{nome: 'A', a: [0, 0, 0], b: [0, 6000, 0]}], niveis: [{nome: 'N1', z: 3000}]}); 1")
     ok(esperar(aba, F3 + ".visor.partesReferencia().join() === 'arquitetonico,eixos,niveis'", 10),
        "a planta no chão em três partes (arquitetônico, eixos, níveis)")
-    # os níveis cobrem o modelo inteiro, não só os eixos (Hora Certa · Galpão Existente, 28/10: eixos só no mezanino —
-    # "porque tem níveis só em uma parte do 3D"); aqui o eixo A é uma linha em x = 0 e o modelo vai além dele
-    cobre = aba.avaliar("(() => { const w = " + F3 + "; const c = w.visor._caixaModelo;"
-                        " const l = w.visor.referencia.getObjectByName('niveis').children.find(o => o.isLineSegments);"
-                        " l.geometry.computeBoundingBox(); const b = l.geometry.boundingBox;"
-                        " return [c.max.x - c.min.x > 100, b.min.x <= c.min.x + 1 && b.max.x >= c.max.x - 1"
-                        " && b.min.y <= c.min.y + 1 && b.max.y >= c.max.y - 1]; })()")
-    ok(cobre == [True, True], f"o contorno dos níveis cobre o modelo inteiro, não só os eixos ({cobre})")
+    # os níveis contornam o modelo inteiro, não só os eixos (Hora Certa · Galpão Existente, 28/10: eixos só no mezanino —
+    # "porque tem níveis só em uma parte do 3D"), no referencial do PROJETO: a caixa do visor é relativa à origem do
+    # arquivo e a planta vem em mm do projeto (cb5c0a0 misturava os dois e o quadro saía fora da obra — print do usuário).
+    # Um eixo curto no meio do modelo: o contorno tem de ser a caixa do modelo + origem, nem mais nem menos.
+    MEIO = ("(() => { const v = " + F3 + ".visor, o = v.cabecalho.origem, c = v._caixaModelo;"
+            " return [o, (c.min.x + c.max.x) / 2 + o[0], (c.min.y + c.max.y) / 2 + o[1]]; })()")
+    o_, mx, my = aba.avaliar(MEIO)
+    ok(abs(o_[0]) + abs(o_[1]) > 100, f"o modelo de teste tem a origem do arquivo fora do zero ({o_})")
+    aba.avaliar(F3 + ".visor.definirReferencia({segmentos: [], eixos: [{nome: 'Z9', a: [%f, %f, 0], b: [%f, %f, 0]}],"
+                " niveis: [{nome: 'N1', z: 3000}]}); 1" % (mx, my - 100, mx, my + 100))
+    CONTORNO = ("(() => { const v = " + F3 + ".visor, o = v.cabecalho.origem, c = v._caixaModelo;"
+                " if (!v.referencia || !v._dadosReferencia || v._dadosReferencia.eixos[0].nome !== 'Z9') return null;"
+                " const g = v.referencia.getObjectByName('niveis'); if (!g) return null;"
+                " const l = g.children.find(x => x.isLineSegments); l.geometry.computeBoundingBox(); const b = l.geometry.boundingBox;"
+                " return [b.min.x - (c.min.x + o[0]), b.max.x - (c.max.x + o[0]), b.min.y - (c.min.y + o[1]), b.max.y - (c.max.y + o[1])]"
+                ".map(d => Math.round(d)); })()")
+    esperar(aba, CONTORNO + " !== null", 10)
+    dif = aba.avaliar(CONTORNO)
+    ok(dif is not None and all(abs(d) <= 1 for d in dif),
+       f"o contorno dos níveis é a caixa do modelo no referencial do projeto (diferença nos 4 lados, mm: {dif})")
+    aba.avaliar(F3 + ".visor.definirReferencia({segmentos: [[0, 0, 6000, 0], [0, 0, 0, 3000]], "
+                "eixos: [{nome: 'A', a: [0, 0, 0], b: [0, 6000, 0]}], niveis: [{nome: 'N1', z: 3000}]}); 1")
+    esperar(aba, F3 + ".visor._dadosReferencia.eixos[0].nome === 'A' && " + F3 + ".visor.partesReferencia().join() === 'arquitetonico,eixos,niveis'", 10)
     aba.avaliar(F3 + ".document.getElementById('painel-fechar').click()")
     aba.avaliar(F3 + ".document.querySelector('[data-painel=camadas]').click()")
     n = aba.avaliar(F3 + ".document.querySelectorAll('#painel-corpo input[data-piso]').length")

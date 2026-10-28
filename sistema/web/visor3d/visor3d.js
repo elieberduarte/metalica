@@ -757,10 +757,10 @@ export class Visor3D {
       this.cena.remove(this.referencia);
       this.referencia.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
     }
-    this.referencia = r ? montarReferencia(r, { escuro: this.escuro, caixa: this._caixaModelo, zChao: -2 }) : null;
+    // as peças estão em mm relativos à origem do arquivo (o centro do modelo); a planta vem em mm do projeto
+    const o = (this.cabecalho && this.cabecalho.origem) || [0, 0, 0];
+    this.referencia = r ? montarReferencia(r, { escuro: this.escuro, caixa: this._caixaModelo, zChao: -2, origem: o }) : null;
     if (this.referencia) {
-      // as peças estão em mm relativos à origem do arquivo (o centro do modelo); a planta vem em mm do projeto
-      const o = (this.cabecalho && this.cabecalho.origem) || [0, 0, 0];
       this.referencia.position.set(-o[0], -o[1], -o[2]);
       this.referencia.visible = this._referenciaLigada !== false;
       for (const g of this.referencia.children) g.visible = !(this._partesOcultas && this._partesOcultas.has(g.name));

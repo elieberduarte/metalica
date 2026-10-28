@@ -93,9 +93,11 @@ function tracejado(pos, corHex, opacidade, traco, vao) {
 
 /**
  * O grupo da referência (mm, Z para cima) a partir da resposta de GET …/lancamento/referencia
- * ({segmentos, eixos, niveis}); os níveis contornam os eixos e a `caixa` (THREE.Box3 do modelo) juntos.
+ * ({segmentos, eixos, niveis}); os níveis contornam os eixos e a `caixa` (THREE.Box3 do modelo) juntos. A caixa vem em mm
+ * relativos à `origem` do arquivo (o centro do modelo) e a planta em mm do projeto: a caixa vai + origem antes da conta.
  */
-export function montarReferencia(r, { escuro = false, caixa = null, zChao = 0 } = {}) {
+export function montarReferencia(r, { escuro = false, caixa = null, zChao = 0, origem = null } = {}) {
+  if (caixa && !caixa.isEmpty() && origem) caixa = caixa.clone().translate(new THREE.Vector3(origem[0], origem[1], origem[2] || 0));
   const grupo = new THREE.Group();
   grupo.name = 'referencia';
   const cores = escuro ? TEMA.escuro : TEMA.claro;

@@ -263,9 +263,9 @@ export function visorDaOutra(v, fichas, camadas) {
 export async function pisoDaMaquete(dados, quadro, origem, caixa = null) {
   if (!dados || !quadro) return null;
   const { montarReferencia } = await import('../visor3d/referencia.js');
-  const ref = montarReferencia(dados, { escuro: false, caixa, zChao: -2 });           // como o 3D da tela (visor3d.definirReferencia)
-  if (!ref.children.length) return null;
   const o = origem || [0, 0, 0];
+  const ref = montarReferencia(dados, { escuro: false, caixa, zChao: -2, origem: o });  // como o 3D da tela (visor3d.definirReferencia)
+  if (!ref.children.length) return null;
   ref.position.set(-o[0], -o[1], -o[2]);
   ref.traverse(x => { x.onBeforeRender = () => {}; });
   const meio = new THREE.Group();                                       // mm, z para cima, no centro e no chão
