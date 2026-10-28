@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 """Parte "conjuntos" do detalhamento (nucleo2d/detalhar.py é a fachada)."""
 import collections
+import heapq
 import math
 import re
 from typing import Dict, List, Optional, Sequence, Tuple
+
+import numpy as np
 
 from nucleo.base import ErroDeDados
 from nucleo3d.modelo import Documento, Solido, Chapa
@@ -174,23 +177,65 @@ def _instancias_do_conjunto(lista: Sequence[Solido], unidade: collections.Counte
     frag = [g for g in grupos if comp(g) != unidade and cabe(comp(g))]
     centros = [_centro(g) for g in frag]
     comps = [comp(g) for g in frag]
-    for _ in range(len(frag)):
-        melhor = None
-        for i in range(len(frag)):
-            for j in range(i + 1, len(frag)):
-                if not cabe(comps[i] + comps[j]):
-                    continue
-                d = sum((centros[i][k] - centros[j][k]) ** 2 for k in range(3))
-                if melhor is None or d < melhor[0]:
-                    melhor = (d, i, j)
-        if melhor is None:
-            break
-        _, i, j = melhor
+    # a cada passo junta o par mais próximo que ainda cabe na composição unitária (empate: o primeiro na ordem da lista). 27/10
+    # (SESI, brises com as chapas da rodada 1): varrer todos os pares a cada junção era O(n³) e o resumo da obra não terminava
+    # em 1 h — cada fragmento guarda o seu par mais próximo que cabe (com os de depois dele na lista) e a fila leva só esses; a
+    # cada junção são refeitos os que apontavam para os dois juntados, e os outros só comparam com o fragmento novo (o par que
+    # não cabia não passa a caber: a soma só cresce)
+    n = len(frag)
+    vivo = [True] * n
+    viz: list = [None] * n          # (d, j): o par (i, j), j > i, mais próximo que cabe
+    versao = [0] * n
+    fila: list = []
+
+    def cabe_par(a, b):
+        ca, cb = comps[a], comps[b]
+        return (all(unidade.get(k, 0) >= q + cb.get(k, 0) for k, q in ca.items())
+                and all(unidade.get(k, 0) >= q for k, q in cb.items() if k not in ca))
+
+    def marcar(i, m):
+        viz[i] = m
+        versao[i] += 1
+        if m is not None:
+            heapq.heappush(fila, (m[0], i, m[1], versao[i]))
+
+    def refazer(i):
+        # as distâncias de uma vez (numpy) e o primeiro que cabe na ordem (distância, posição) — o mesmo da varredura
+        js = np.nonzero(vivos[i + 1:])[0] + (i + 1)
+        m = None
+        if len(js):
+            ds = ((pts[js] - pts[i]) ** 2).sum(axis=1)
+            for t in np.lexsort((js, ds)):
+                if cabe_par(i, int(js[t])):
+                    m = (float(ds[t]), int(js[t]))
+                    break
+        marcar(i, m)
+    pts = np.array(centros, dtype=float).reshape(-1, 3)
+    vivos = np.ones(n, dtype=bool)
+    for i in range(n):
+        refazer(i)
+    while fila:
+        _, i, j, v = heapq.heappop(fila)
+        if not vivo[i] or v != versao[i]:
+            continue
         frag[i] = frag[i] + frag[j]
         comps[i] = comps[i] + comps[j]
         centros[i] = _centro(frag[i])
-        del frag[j], comps[j], centros[j]
-    return completos + frag
+        pts[i] = centros[i]
+        vivo[j] = False
+        vivos[j] = False
+        refazer(i)
+        ate_i = ((pts[:i] - pts[i]) ** 2).sum(axis=1)
+        for x in range(n):
+            if not vivo[x] or x == i:
+                continue
+            if viz[x] is not None and viz[x][1] in (i, j):
+                refazer(x)
+            elif x < i:
+                d = float(ate_i[x])
+                if (viz[x] is None or (d, i) < viz[x]) and cabe_par(x, i):
+                    marcar(x, (d, i))
+    return completos + [g for g, v in zip(frag, vivo) if v]
 
 
 def _eixos_do_conjunto(pecas: Sequence[Solido]):
