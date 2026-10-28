@@ -93,7 +93,7 @@ function tracejado(pos, corHex, opacidade, traco, vao) {
 
 /**
  * O grupo da referência (mm, Z para cima) a partir da resposta de GET …/lancamento/referencia
- * ({segmentos, eixos, niveis}); `caixa` (THREE.Box3 do modelo) contorna os níveis quando não há eixos.
+ * ({segmentos, eixos, niveis}); os níveis contornam os eixos e a `caixa` (THREE.Box3 do modelo) juntos.
  */
 export function montarReferencia(r, { escuro = false, caixa = null, zChao = 0 } = {}) {
   const grupo = new THREE.Group();
@@ -136,8 +136,12 @@ export function montarReferencia(r, { escuro = false, caixa = null, zChao = 0 } 
     if (eixos.length) {
       const xs = eixos.flatMap(e => [e.a[0], e.b[0]]), ys = eixos.flatMap(e => [e.a[1], e.b[1]]);
       [x0, y0, x1, y1] = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
-    } else if (caixa && !caixa.isEmpty()) {
-      [x0, y0, x1, y1] = [caixa.min.x - 1500, caixa.min.y - 1500, caixa.max.x + 1500, caixa.max.y + 1500];
+    }
+    if (caixa && !caixa.isEmpty()) {
+      // os níveis valem para o modelo inteiro: com eixos só numa parte (Hora Certa · Galpão Existente, 28/10: eixos do
+      // mezanino e as outras frentes longe — "porque tem níveis só em uma parte do 3D"), o contorno vai até o modelo
+      if (x0 === undefined) [x0, y0, x1, y1] = [caixa.min.x - 1500, caixa.min.y - 1500, caixa.max.x + 1500, caixa.max.y + 1500];
+      else [x0, y0, x1, y1] = [Math.min(x0, caixa.min.x), Math.min(y0, caixa.min.y), Math.max(x1, caixa.max.x), Math.max(y1, caixa.max.y)];
     }
     if (x0 !== undefined) {
       const pos = [];

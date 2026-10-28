@@ -153,6 +153,14 @@ try:
                 "eixos: [{nome: 'A', a: [0, 0, 0], b: [0, 6000, 0]}], niveis: [{nome: 'N1', z: 3000}]}); 1")
     ok(esperar(aba, F3 + ".visor.partesReferencia().join() === 'arquitetonico,eixos,niveis'", 10),
        "a planta no chão em três partes (arquitetônico, eixos, níveis)")
+    # os níveis cobrem o modelo inteiro, não só os eixos (Hora Certa · Galpão Existente, 28/10: eixos só no mezanino —
+    # "porque tem níveis só em uma parte do 3D"); aqui o eixo A é uma linha em x = 0 e o modelo vai além dele
+    cobre = aba.avaliar("(() => { const w = " + F3 + "; const c = w.visor._caixaModelo;"
+                        " const l = w.visor.referencia.getObjectByName('niveis').children.find(o => o.isLineSegments);"
+                        " l.geometry.computeBoundingBox(); const b = l.geometry.boundingBox;"
+                        " return [c.max.x - c.min.x > 100, b.min.x <= c.min.x + 1 && b.max.x >= c.max.x - 1"
+                        " && b.min.y <= c.min.y + 1 && b.max.y >= c.max.y - 1]; })()")
+    ok(cobre == [True, True], f"o contorno dos níveis cobre o modelo inteiro, não só os eixos ({cobre})")
     aba.avaliar(F3 + ".document.getElementById('painel-fechar').click()")
     aba.avaliar(F3 + ".document.querySelector('[data-painel=camadas]').click()")
     n = aba.avaliar(F3 + ".document.querySelectorAll('#painel-corpo input[data-piso]').length")
