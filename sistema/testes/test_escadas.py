@@ -118,3 +118,60 @@ def test_ligacao_ao_mezanino_vigas_do_patamar_e_o_piso():
     p = e["pisos"][0]
     assert p["espessura"] == pytest.approx(2.65) and p["canto"][2] == pytest.approx(1700.0)
     assert p["lx"] > 900 and p["ly"] > 900
+
+
+def test_pisante_e_uma_chapa_dobrada_so():
+    """Posto CB, 29/10/2026 (relação de corte das chapas): o pisante era o piso e duas abas de 40 como três chapas planas,
+    e o corte recebia o piso 302 × 1120 e duas tiras 40 × 1120 por degrau no lugar da chapa xadrez dobrada do
+    "DEGRAU 2 - 17X" (300 + abas de 40, # 2,65). Agora é uma peça só: o levantamento a vê dobrada, com o
+    desenvolvimento pela linha média, e o DXF de corte leva a planificada."""
+    from nucleo2d.detalhar import levantar
+    from nucleo3d.modelo import Documento
+    from saida import corte_chapas
+    pd = {"k": 1, "origem": (1000.0, 2000.0, 170.0), "u": (0.0, 1.0), "n": (-1.0, 0.0), "piso": 300.0, "largura": 1119.0,
+          "aba": escadas.ABA_DEGRAU, "espessura": 2.65}
+    doc = Documento()
+    so = escadas.pisante_dobrado(pd)
+    so.nome = "Pisante 1 (escada 1)"
+    doc.add(so)
+    # o topo do piso na altura do degrau, as abas 40 para baixo, entre as longarinas (x 1000 → -119)
+    zs = [v[2] for v in so.vertices]
+    assert max(zs) == pytest.approx(170.0) and min(zs) == pytest.approx(130.0)
+    assert {round(v[0], 1) for v in so.vertices} == {1000.0, -119.0}
+    lev = levantar(doc, regra_tercas=False)
+    ps = [p for p in lev["posicoes"] if p.quantidade]
+    assert len(ps) == 1 and ps[0].classe == "chapa_dobrada", [(p.classe, p.observacoes) for p in ps]
+    larg, desenv = ps[0].desenvolvimento
+    assert larg == pytest.approx(1119.0, abs=1) and desenv == pytest.approx(300.0 + 2 * 40.0 - 2 * 2.65, abs=1)
+    assert ps[0].espessura == pytest.approx(2.65, abs=0.01)
+    assert ps[0].peso == pytest.approx(1119.0 * desenv * 2.65 * 7.85e-6, rel=0.02)
+    cortes = corte_chapas.chapas_para_corte(lev["posicoes"])
+    assert cortes == ps
+    d = corte_chapas.desenho_de_corte(ps[0])
+    pl = [o for o in d.entidades.values() if type(o).__name__ == "Polilinha"]
+    assert len(pl) == 1 and sorted({round(v[0]) for v in pl[0].vertices}) == [0, round(desenv)]
+
+
+def test_juntar_pisantes_do_modelo_ja_montado():
+    """O V2 do Posto montado antes de 29/10/2026: o pisante em três chapas (piso + duas abas, como o gerador fazia) vira
+    a chapa dobrada no mesmo lugar."""
+    from nucleo3d.modelo import Chapa, Documento
+    doc = Documento()
+    o_, u, n, g, w, ab, e_, zt = (1000.0, 2000.0), (0.0, 1.0), (-1.0, 0.0), 300.0, 1119.0, 40.0, 2.65, 170.0
+    org = {"origem": {"escada": "ESCADA 1", "pisante": 1, "piso": "chapa xadrez dobrada"}}
+    partes = [((o_[0], o_[1], zt - e_), (u[0], u[1], 0.0), (n[0], n[1], 0.0), g, w, False)]
+    for s_ in (e_ / 2.0, g - e_ / 2.0):
+        partes.append(((o_[0] + u[0] * s_, o_[1] + u[1] * s_, zt - ab), (n[0], n[1], 0.0), (0.0, 0.0, 1.0), w, ab, True))
+    for org_, ex_, ey_, lx, ly, cen in partes:
+        ch = Chapa(nome="Pisante 1 (escada 1)", origem=org_, eixo_x=ex_, eixo_y=ey_,
+                   contorno=[(0.0, 0.0), (lx, 0.0), (lx, ly), (0.0, ly)], espessura=e_, centrada=cen)
+        ch.camada = "Escadas"
+        ch.atributos = dict(org)
+        doc.add(ch)
+    assert escadas.juntar_pisantes(doc) == 1
+    assert not doc.chapas and len(doc.solidos) == 1
+    so = doc.solidos[0]
+    assert so.nome == "Pisante 1 (escada 1)" and so.atributos["origem"]["pisante"] == 1
+    assert max(v[2] for v in so.vertices) == pytest.approx(zt) and min(v[2] for v in so.vertices) == pytest.approx(zt - ab)
+    assert {round(v[0], 1) for v in so.vertices} == {1000.0, -119.0}
+    assert escadas.juntar_pisantes(doc) == 0

@@ -5408,24 +5408,15 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 doc.add(ch)
                 chapas_postas.append(ch)
                 n_e += 1
-            # os pisantes: o piso do degrau e as duas abas para baixo (a chapa dobrada)
+            # os pisantes: o piso do degrau e as duas abas para baixo — UMA chapa dobrada (Posto CB, 29/10/2026: eram três
+            # chapas planas, e a relação de corte mandava o piso e duas tiras de 40 no lugar do pisante dobrado do
+            # "DEGRAU 1 - 17X"); o levantamento a reconhece dobrada e dá o desenvolvimento
             for pd in esc.get("pisantes") or []:
-                o_ = pd["origem"]
-                ux, uy = pd["u"]
-                nx, ny = pd["n"]
-                g, w, ab, e_ = pd["piso"], pd["largura"], pd["aba"], pd["espessura"]
-                zt = o_[2] + base
-                orig_d = {"origem": dict(orig_e, pisante=pd["k"], piso="chapa xadrez dobrada")}
-                partes_d = [((o_[0], o_[1], zt - e_), (ux, uy, 0.0), (nx, ny, 0.0), g, w, False)]
-                for s_ in (e_ / 2.0, g - e_ / 2.0):
-                    partes_d.append(((o_[0] + ux * s_, o_[1] + uy * s_, zt - ab), (nx, ny, 0.0), (0.0, 0.0, 1.0), w, ab, True))
-                for org, ex_, ey_, lx, ly, cen in partes_d:
-                    ch = _Chapa(nome="Pisante %d (%s)" % (pd["k"], esc["nome"].lower()), origem=org, eixo_x=ex_, eixo_y=ey_,
-                                contorno=[(0.0, 0.0), (lx, 0.0), (lx, ly), (0.0, ly)], espessura=e_, centrada=cen, aco=aco)
-                    ch.camada = "Escadas"
-                    ch.atributos = dict(orig_d)
-                    doc.add(ch)
-                    chapas_postas.append(ch)
+                ch = _escadas.pisante_dobrado(pd, base, aco)
+                ch.nome = "Pisante %d (%s)" % (pd["k"], esc["nome"].lower())
+                ch.atributos["origem"] = dict(orig_e, pisante=pd["k"], piso="chapa xadrez dobrada")
+                doc.add(ch)
+                chapas_postas.append(ch)
                 n_e += 1
             escadas_feitas.append({"nome": esc["nome"], "pecas": n_e, "alinhada_por": esc["alinhada_por"],
                                    "patamar_z": esc["patamar_z"], "altura": esc["altura"]})

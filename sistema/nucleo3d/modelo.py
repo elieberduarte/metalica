@@ -237,7 +237,9 @@ class Chapa(Entidade):
                 furos += math.pi * (d / 2) ** 2
             else:
                 larg, alt = float(f.get("largura", 0) or 0), float(f.get("altura", 0) or 0)
-                if larg > 0 and alt > 0:
+                if larg > 0 and alt > 0 and f.get("forma") == "retangular":
+                    furos += larg * alt
+                elif larg > 0 and alt > 0:
                     a, b = max(larg, alt), min(larg, alt)
                     furos += (a - b) * b + math.pi * (b / 2) ** 2
         return bruta - furos

@@ -276,7 +276,14 @@ def lancar(doc, placas_l: Sequence[dict], dets: Dict[str, dict], mover, base: fl
             t = 9.53
             conferir.append("espessura sem texto no detalhe: 3/8\" até confirmar")
         canto, u, v, Lu, Lv = _quadro(vs, B, H)
-        # a placa da locação maior ou menor que a do detalhe: os furos do detalhe no meio dela
+        # a placa da locação até TOL_MEDIDA maior ou menor que a do detalhe é a mesma: a chapa sai na medida do detalhe
+        # (é a que a fábrica corta), centrada no lugar da locação (Posto CB, 29/10/2026: a CH6 da locação desenhada
+        # 400 × 390 ia ao corte com 390 e os furos a 30 da borda; o DET. DO CH6 é 400 × 400 com 35). Fora da tolerância
+        # (já a conferir), a da locação, com os furos do detalhe no meio dela.
+        if d is not None and abs(Lu - B) <= TOL_MEDIDA and abs(Lv - H) <= TOL_MEDIDA:
+            canto = (canto[0] + u[0] * (Lu - B) / 2.0 + v[0] * (Lv - H) / 2.0,
+                     canto[1] + u[1] * (Lu - B) / 2.0 + v[1] * (Lv - H) / 2.0)
+            Lu, Lv = B, H
         dx, dy = (Lu - B) / 2.0, (Lv - H) / 2.0
         ch_d = (d or {}).get("chumbador") or {}
         dch = ch_d.get("d")
@@ -287,8 +294,9 @@ def lancar(doc, placas_l: Sequence[dict], dets: Dict[str, dict], mover, base: fl
                 fd = round(dch + 1.5, 1)
             fur.append({"x": round(x + dx, 1), "y": round(y + dy, 1), "diametro": fd})
         for x, y, w, h in abertos:
-            fur.append({"x": round(x + dx, 1), "y": round(y + dy, 1), "largura": w, "altura": h})
-            conferir.append("abertura %.0f × %.0f no meio da placa (no 3D como furo oblongo)" % (w, h))
+            # a abertura retangular como o detalhe desenha (a CH5 do Posto, 250 × 250 hachurada): saía oblonga, e o corte
+            # recebia um estádio no lugar do quadrado (29/10/2026)
+            fur.append({"x": round(x + dx, 1), "y": round(y + dy, 1), "largura": w, "altura": h, "forma": "retangular"})
         org = {"locacao": nome or "placa sem nome", "placa": nome, "detalhe": "DET. DO %s" % nome if d else None}
         if conferir:
             org["a_conferir"] = "; ".join(dict.fromkeys(conferir))
@@ -360,6 +368,43 @@ def lancar(doc, placas_l: Sequence[dict], dets: Dict[str, dict], mover, base: fl
         avisos.append("placas de base sem detalhe (só o contorno da locação, sem furos nem chumbadores): %s"
                       % ", ".join(sorted(sem_detalhe)))
     return {"placas": n_placas, "chumbadores": n_chumb, "nervuras": n_nerv, "detalhes": sorted(dets)}
+
+
+def acertar_no_modelo(doc, dets: Dict[str, dict]) -> dict:
+    """O modelo já montado com as placas de antes de 29/10/2026 (sem remontar): a placa na medida do detalhe quando a da
+    locação difere até TOL_MEDIDA (a CH6 do Posto, 400 × 390 → 400 × 400, no mesmo lugar: os furos, os chumbadores, as
+    nervuras e o pilar não se movem) e a abertura do meio retangular (era oblonga). Devolve {"placas", "aberturas"}."""
+    n_pl = n_ab = 0
+    for ch in doc.chapas:
+        if not str(ch.nome or "").startswith("Placa de base "):
+            continue
+        d = dets.get(_nome(str(ch.nome)[len("Placa de base "):]))
+        if not d:
+            continue
+        xs, ys = [q[0] for q in ch.contorno], [q[1] for q in ch.contorno]
+        if len(ch.contorno) != 4 or min(xs) != 0.0 or min(ys) != 0.0:
+            continue
+        Lu, Lv, B, H = max(xs), max(ys), d["B"], d["H"]
+        if (Lu, Lv) != (B, H) and abs(Lu - B) <= TOL_MEDIDA and abs(Lv - H) <= TOL_MEDIDA:
+            dx, dy = (Lu - B) / 2.0, (Lv - H) / 2.0
+            ex, ey = ch.eixo_x, ch.eixo_y
+            ch.origem = tuple(ch.origem[k] + ex[k] * dx + ey[k] * dy for k in range(3))
+            ch.contorno = [(0.0, 0.0), (B, 0.0), (B, H), (0.0, H)]
+            for f in ch.furos:
+                f["x"], f["y"] = round(f["x"] - dx, 1), round(f["y"] - dy, 1)
+            n_pl += 1
+        for f in ch.furos:
+            if not f.get("diametro") and f.get("largura") and f.get("altura") and f.get("forma") != "retangular":
+                f["forma"] = "retangular"
+                n_ab += 1
+        org = (ch.atributos or {}).get("origem") or {}
+        if "no 3D como furo oblongo" in str(org.get("a_conferir") or ""):
+            resto = [x for x in str(org["a_conferir"]).split("; ") if "no 3D como furo oblongo" not in x]
+            if resto:
+                org["a_conferir"] = "; ".join(resto)
+            else:
+                org.pop("a_conferir", None)
+    return {"placas": n_pl, "aberturas": n_ab}
 
 
 def _dentro_poligono(p, poly) -> bool:

@@ -442,3 +442,62 @@ def ler(ents, textos, referencia: Dict[str, List[Ponto2]], pes_esc: Sequence[Pon
         if not e["perfil"] and perfis:
             e["perfil"] = perfis[0]
     return out
+
+
+def pisante_dobrado(pd: dict, base: float = 0.0, aco: str = "ASTM A36"):
+    """O pisante de um degrau como UMA chapa dobrada (a chapa xadrez do "DEGRAU 1 - 17X" do Posto CB): o piso de
+    profundidade `piso` ao longo de u, as duas abas de `aba` para baixo na frente e atrás, extrudado na largura do
+    degrau ao longo de n. Um Solido IfcPlate com a espessura declarada: o levantamento o reconhece dobrado e dá o
+    desenvolvimento (29/10/2026: eram três chapas planas, e a relação de corte mandava o piso e duas tiras)."""
+    from nucleo3d.modelo import Solido
+    o_ = pd["origem"]
+    ux, uy = pd["u"]
+    nx, ny = pd["n"]
+    g, w, ab, e_ = float(pd["piso"]), float(pd["largura"]), float(pd["aba"]), float(pd["espessura"])
+    zt = o_[2] + base
+    # a seção no plano (u, z), anti-horária, com os cantos de dentro (e, -e) e (g - e, -e) e as quinas (0, -e), (g, -e)
+    sec = [(0.0, 0.0), (0.0, -e_), (0.0, -ab), (e_, -ab), (e_, -e_), (g - e_, -e_), (g - e_, -ab), (g, -ab), (g, -e_), (g, 0.0)]
+
+    def pt(u, z, s):
+        return (o_[0] + ux * u + nx * s, o_[1] + uy * u + ny * s, zt + z)
+    m = len(sec)
+    vs = [pt(u, z, 0.0) for u, z in sec] + [pt(u, z, w) for u, z in sec]
+    # (u, n, z) é destro: a seção anti-horária em (u, z) olha para -n, a tampa de s = 0
+    fs = [[i, m + i, m + (i + 1) % m, (i + 1) % m] for i in range(m)]
+    tampas = [[1, 8, 9, 0], [2, 3, 4, 1], [6, 7, 8, 5]]
+    fs += tampas + [[m + k for k in reversed(t)] for t in tampas]
+    so = Solido(nome="Pisante", camada="Escadas", vertices=vs, faces=fs)
+    so.atributos = {"tipo_ifc": "IfcPlate", "espessura": e_, "material": aco,
+                    "marcas": {"perfil": "CH XADREZ #%s" % ("%g" % e_).replace(".", ",")}}
+    return so
+
+
+def juntar_pisantes(doc) -> int:
+    """O modelo montado antes de 29/10/2026 (sem remontar): o pisante em três chapas planas (o piso e as duas abas, com
+    o mesmo nome) vira a chapa dobrada de `pisante_dobrado`, no mesmo lugar. Devolve quantos pisantes juntou."""
+    from nucleo3d.modelo import Chapa
+    grupos: Dict[str, list] = {}
+    for ch in doc.chapas:
+        org = (ch.atributos or {}).get("origem") or {}
+        if isinstance(ch, Chapa) and org.get("piso") == "chapa xadrez dobrada" and str(ch.nome or "").startswith("Pisante"):
+            grupos.setdefault(str(ch.nome), []).append(ch)
+    n = 0
+    for nome, pecas in grupos.items():
+        pisos = [c for c in pecas if not c.centrada]
+        abas = [c for c in pecas if c.centrada]
+        if len(pisos) != 1 or len(abas) != 2:
+            continue
+        pz = pisos[0]
+        e_ = float(pz.espessura)
+        xs, ys = [q[0] for q in pz.contorno], [q[1] for q in pz.contorno]
+        pd = {"origem": (pz.origem[0], pz.origem[1], pz.origem[2] + e_), "u": tuple(pz.eixo_x[:2]), "n": tuple(pz.eixo_y[:2]),
+              "piso": max(xs) - min(xs), "largura": max(ys) - min(ys),
+              "aba": max(q[1] for q in abas[0].contorno) - min(q[1] for q in abas[0].contorno), "espessura": e_}
+        so = pisante_dobrado(pd, 0.0, pz.aco)
+        so.nome = nome
+        so.atributos["origem"] = dict((pz.atributos or {}).get("origem") or {})
+        for c in pecas:
+            doc.remover(c.id)
+        doc.add(so)
+        n += 1
+    return n

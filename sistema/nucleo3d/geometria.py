@@ -1800,9 +1800,15 @@ def contorno_oblongo(x: float, y: float, largura: float, altura: float,
 
 
 def contorno_do_furo(f: dict) -> Optional[List[Ponto2]]:
-    """Contorno de um furo da Chapa: {x, y, diametro} ou {x, y, largura, altura[, angulo]}."""
+    """Contorno de um furo da Chapa: {x, y, diametro} ou {x, y, largura, altura[, angulo][, forma]} — oblongo, ou
+    retangular com forma "retangular" (a abertura do meio da placa de base, 29/10/2026)."""
     if float(f.get("diametro", 0.0) or 0.0) > 0:
         return contorno_furo(f.get("x", 0.0), f.get("y", 0.0), f.get("diametro", 0.0))
+    if f.get("forma") == "retangular" and float(f.get("largura", 0.0) or 0.0) > 0 and float(f.get("altura", 0.0) or 0.0) > 0:
+        x, y, a, b = float(f.get("x", 0.0)), float(f.get("y", 0.0)), f["largura"] / 2.0, f["altura"] / 2.0
+        ca, sa = math.cos(math.radians(float(f.get("angulo", 0.0) or 0.0))), math.sin(math.radians(float(f.get("angulo", 0.0) or 0.0)))
+        # horário, como o círculo e o oblongo (o laço interno da malha)
+        return [(x + px * ca - py * sa, y + px * sa + py * ca) for px, py in ((-a, b), (a, b), (a, -b), (-a, -b))]
     if float(f.get("largura", 0.0) or 0.0) > 0 and float(f.get("altura", 0.0) or 0.0) > 0:
         return contorno_oblongo(f.get("x", 0.0), f.get("y", 0.0), f["largura"], f["altura"], float(f.get("angulo", 0.0) or 0.0))
     return None

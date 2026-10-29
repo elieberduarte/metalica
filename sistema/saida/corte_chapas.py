@@ -32,7 +32,9 @@ def desenho_de_corte(pos: Posicao):
     retas; recorte: a polilinha dele)."""
     from nucleo2d.desenho import Arco, Circulo, Desenho, Linha, Polilinha
     d = Desenho(nome=pos.nome or pos.marca, escala=1.0)
-    d.add(Polilinha(camada=CAMADA_CORTE, vertices=[(float(x), float(y)) for x, y in pos.contorno], fechada=True))
+    d.add(Polilinha(camada=CAMADA_CORTE, vertices=[(float(x), float(y)) for x, y in _contorno_de_corte(pos)], fechada=True))
+    if pos.classe == "chapa_dobrada":
+        return d                                         # a planificada: só o contorno (ver chapas_para_corte)
     for f in pos.furos:
         if getattr(f, "vista", "frente") != "frente":
             continue
@@ -61,9 +63,24 @@ def desenho_de_corte(pos: Posicao):
     return d
 
 
+def _dobrada_sem_furo(p: Posicao) -> bool:
+    return p.classe == "chapa_dobrada" and bool(p.desenvolvimento) and not p.furos
+
+
+def _contorno_de_corte(p: Posicao):
+    """o contorno que vai à plasma: o da chapa plana; o da dobrada sem furo é a planificada, largura × desenvolvimento"""
+    if p.classe == "chapa_dobrada":
+        larg, desenv = p.desenvolvimento
+        return [(0.0, 0.0), (float(desenv), 0.0), (float(desenv), float(larg)), (0.0, float(larg))]
+    return p.contorno
+
+
 def chapas_para_corte(posicoes: Sequence[Posicao]) -> List[Posicao]:
-    """As chapas planas com contorno (a dobrada vai pela tira, outro assunto; a cantoneira é furada na fábrica)."""
-    return [p for p in posicoes if p.classe == "chapa" and len(p.contorno or []) >= 3 and (p.quantidade or 0) > 0]
+    """As chapas planas com contorno e as dobradas sem furo pela planificada (o pisante de chapa xadrez do Posto CB,
+    29/10/2026: a fábrica corta o retângulo e dobra); a dobrada com furo vai pela tira (outro assunto: o furo depende
+    da dobra) e a cantoneira é furada na fábrica."""
+    return [p for p in posicoes if (p.quantidade or 0) > 0 and
+            ((p.classe == "chapa" and len(p.contorno or []) >= 3) or _dobrada_sem_furo(p))]
 
 
 def gravar_zip(posicoes: Sequence[Posicao], caminho_zip: str) -> dict:

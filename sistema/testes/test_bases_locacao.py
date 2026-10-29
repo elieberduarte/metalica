@@ -136,3 +136,88 @@ def test_chapa_do_pe_do_pilar_inclinado():
     p = doc.barras[0]
     L = math.dist(p.inicio, p.fim)
     assert abs(p.inicio[2] + (p.fim[2] - p.inicio[2]) * p.recorte_inicio / L - (15.88 + (C[1] + D[1]) / 2)) < 1.0
+
+
+def _lancar_so(ents, folga=(5000.0, 5000.0, 30000.0, 30000.0)):
+    doc = Documento()
+    _pilares(doc)
+    chapas, avisos = [], []
+
+    def barra(p0, p1, perfil, papel, camada, conjunto=None, rot=0.0, origem=None):
+        b = Barra(nome=perfil, inicio=tuple(p0), fim=tuple(p1), perfil=perfil, papel=papel, camada=camada)
+        b.atributos = {"origem": dict(origem or {})}
+        doc.add(b)
+        return b
+    dets = BL.detalhes(ents)
+    pl = BL.placas(ents, folga)
+    pl += BL.placas_sem_contorno(pl, BL.rotulos(ents, folga), dets, doc, lambda p: p)
+    BL.lancar(doc, pl, dets, lambda p: p, 0.0, "ASTM A36", barra, chapas, avisos, BL.nervuras(ents))
+    return doc, chapas
+
+
+def test_placa_na_medida_do_detalhe_e_nao_da_locacao():
+    """Posto CB, 29/10/2026 (relação de corte das chapas): a CH6 da locação desenhada 400 × 390 ia ao corte com 390 e os
+    furos a 30 mm da borda; o DET. DO CH6-1X é 400 × 400, furos a 35. A chapa sai na medida do detalhe, no meio do
+    contorno da locação."""
+    e = [_txt("DET. DO CH6-1X", 0, 0), _ret(120, 800, 400, 400)]
+    e += [_circ(120 + x, 800 + y, 10.5) for x in (35, 365) for y in (35, 365)]
+    e += [_txt('CHAPA # 3/8"', 220, 1240), _txt('2 Ø 5/8"', 150, 290), _txt("400", 320, 620, "1-Cota")]
+    e += [_ret(10000 - 200, 10000 - 195, 400, 390, "Chapas"), _txt("CH6", 10000, 10300)]
+    doc, chapas = _lancar_so(e)
+    ch6 = next(c for c in chapas if c.nome.endswith("CH6"))
+    xs, ys = [q[0] for q in ch6.contorno], [q[1] for q in ch6.contorno]
+    assert (max(xs) - min(xs), max(ys) - min(ys)) == (400.0, 400.0), ch6.contorno
+    assert sorted({(f["x"], f["y"]) for f in ch6.furos}) == [(35.0, 35.0), (35.0, 365.0), (365.0, 35.0), (365.0, 365.0)]
+    meio = (ch6.origem[0] + ch6.eixo_x[0] * 200.0 + ch6.eixo_y[0] * 200.0,
+            ch6.origem[1] + ch6.eixo_x[1] * 200.0 + ch6.eixo_y[1] * 200.0)
+    assert math.dist(meio, (10000.0, 10000.0)) < 0.5
+
+
+def test_abertura_da_placa_vai_ao_corte_quadrada():
+    """Posto CB, 29/10/2026: a abertura 250 × 250 do meio da CH5 (hachurada no detalhe) ia ao 3D e ao DXF de corte como
+    furo oblongo (um estádio de 250). Agora é recorte retangular: a malha abre o quadrado e o corte desenha o quadrado."""
+    from nucleo2d.detalhar import levantar
+    from saida import corte_chapas
+    _doc, chapas = _lancar_so(_desenho())
+    ch5 = next(c for c in chapas if c.nome.endswith("CH5"))
+    ab = [f for f in ch5.furos if f.get("largura")]
+    assert ab == [{"x": 275.0, "y": 275.0, "largura": 250.0, "altura": 250.0, "forma": "retangular"}]
+    assert "oblongo" not in (ch5.atributos["origem"].get("a_conferir") or "")
+    so = Documento()
+    so.add(ch5)
+    lev = levantar(so, regra_tercas=False)
+    pos = next(p for p in lev["posicoes"] if p.classe == "chapa")
+    rec = [f for f in pos.furos if f.tipo == "recorte"]
+    assert len(rec) == 1 and not [f for f in pos.furos if f.tipo == "oblongo"], [(f.tipo, f.larg, f.alt) for f in pos.furos]
+    xs, ys = [q[0] for q in rec[0].pontos], [q[1] for q in rec[0].pontos]
+    assert abs(max(xs) - min(xs) - 250.0) < 0.6 and abs(max(ys) - min(ys) - 250.0) < 0.6 and len(rec[0].pontos) == 4
+    d = corte_chapas.desenho_de_corte(pos)
+    furo = [o for o in d.entidades.values() if getattr(o, "camada", "") == corte_chapas.CAMADA_FURO and type(o).__name__ == "Polilinha"]
+    assert len(furo) == 1 and len(furo[0].vertices) == 4
+    assert abs(ch5.area - (550.0 * 550.0 - 8 * math.pi * 10.3 ** 2 - 250.0 * 250.0)) < 1.0
+
+
+def test_acertar_o_modelo_ja_montado():
+    """O V2 do Posto montado antes de 29/10/2026 (sem remontar): a CH6 400 × 390 vai a 400 × 400 no mesmo lugar (os
+    furos não se movem no mundo) e a abertura oblonga da CH5 vira retangular."""
+    from nucleo3d.modelo import Chapa
+    doc = Documento()
+    ch6 = Chapa(nome="Placa de base CH6", origem=(1000.0, 2000.0, 0.0), eixo_x=(0.0, 1.0, 0.0), eixo_y=(-1.0, 0.0, 0.0),
+                contorno=[(0.0, 0.0), (400.0, 0.0), (400.0, 390.0), (0.0, 390.0)], espessura=9.53, centrada=False,
+                furos=[{"x": x, "y": y, "diametro": 21.0} for x in (35.0, 365.0) for y in (30.0, 360.0)])
+    ch5 = Chapa(nome="Placa de base CH5", contorno=[(0.0, 0.0), (550.0, 0.0), (550.0, 550.0), (0.0, 550.0)],
+                espessura=15.88, centrada=False, furos=[{"x": 275.0, "y": 275.0, "largura": 250.0, "altura": 250.0}])
+    ch5.atributos = {"origem": {"a_conferir": "abertura 250 × 250 no meio da placa (no 3D como furo oblongo)"}}
+    doc.add(ch6)
+    doc.add(ch5)
+
+    def mundo(c):
+        return sorted((round(c.origem[0] + c.eixo_x[0] * f["x"] + c.eixo_y[0] * f["y"], 1),
+                       round(c.origem[1] + c.eixo_x[1] * f["x"] + c.eixo_y[1] * f["y"], 1)) for f in c.furos)
+    antes = mundo(ch6)
+    dets = {"CH6": {"B": 400.0, "H": 400.0}, "CH5": {"B": 550.0, "H": 550.0}}
+    assert BL.acertar_no_modelo(doc, dets) == {"placas": 1, "aberturas": 1}
+    assert ch6.contorno[2] == (400.0, 400.0) and mundo(ch6) == antes
+    assert sorted({(f["x"], f["y"]) for f in ch6.furos}) == [(35.0, 35.0), (35.0, 365.0), (365.0, 35.0), (365.0, 365.0)]
+    assert ch5.furos[0]["forma"] == "retangular" and "a_conferir" not in ch5.atributos["origem"]
+    assert BL.acertar_no_modelo(doc, dets) == {"placas": 0, "aberturas": 0}          # de novo: nada muda

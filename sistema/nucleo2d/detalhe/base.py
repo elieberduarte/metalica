@@ -645,7 +645,7 @@ def _forma_da_chapa(ch) -> Optional[tuple]:
                 return round((H - (y - y0)) if sy else (y - y0))
             c_ = tuple(sorted((px(float(q[0])), py(float(q[1]))) for q in cont))
             f_ = tuple(sorted((px(float(f.get("x", 0) or 0)), py(float(f.get("y", 0) or 0)), round(float(f.get("diametro") or 0), 1),
-                               round(float(f.get("largura") or 0), 1), round(float(f.get("altura") or 0), 1)) for f in furos))
+                               round(float(f.get("largura") or 0), 1), round(float(f.get("altura") or 0), 1), str(f.get("forma") or "")) for f in furos))
             formas.append((c_, f_))
     return (round(float(getattr(ch, "espessura", 0) or 0), 1), min(formas))
 
@@ -1457,6 +1457,10 @@ def _posicao_de_chapa(pos: Posicao, ch: Chapa):
         x, y = float(f.get("x", 0) or 0) - u0, float(f.get("y", 0) or 0) - v0
         if d > 0:
             pos.furos.append(Furo("redondo", x, y, d))
+        elif f.get("forma") == "retangular" and float(f.get("largura", 0) or 0) > 0 and float(f.get("altura", 0) or 0) > 0:
+            # a abertura retangular (o meio da placa de base, 29/10/2026): recorte, o contorno dela no corte
+            from nucleo3d.geometria import contorno_do_furo
+            pos.furos.append(Furo("recorte", x, y, pontos=[(px - u0, py - v0) for px, py in contorno_do_furo(f)]))
         elif float(f.get("largura", 0) or 0) > 0 and float(f.get("altura", 0) or 0) > 0:
             pos.furos.append(Furo("oblongo", x, y, larg=float(f["largura"]), alt=float(f["altura"])))
     pos.classe = "chapa"
