@@ -1664,6 +1664,256 @@ for _t in ("castanha_contravento", "duas_chapas_contravento", "cantoneira_contra
            "esticador_contravento"):
     TIPOS_3D[_t] = {"pede": "a viga e o(s) tirante(s) que chegam nela — uma ligação por nó", "barras": ("tirantes", "apoio")}
 
+
+# ------------------------------------------------------------------ ligações soldadas de prédio (viga × pilar, viga × viga)
+#
+# Hora Certa · Edifício Administrativo (29/10, casos A–C aprovados pelo usuário): as típicas da 902 (AKMX, EN 1993-1-8,
+# "ligações soldadas") — a viga soldada direto na face do apoio, com a cantoneira 80×80×8 de apoio provisório de
+# montagem embaixo; os enrijecedores do pilar na altura das mesas da viga; a placa de topo no pilar que termina; a placa
+# de transição (com mísulas) no pilar que nasce sobre a viga ou troca de perfil. As típicas não têm medida ("# ≥ e"):
+# as medidas abaixo são as aprovadas.
+
+def _placa(nome, centro, ex, ey, contorno, t, aco="ASTM A36"):
+    """chapa de contorno qualquer (mm, no plano ex × ey a partir de `centro`), espessura centrada no plano"""
+    from nucleo3d.modelo import Chapa
+    return Chapa(nome=nome, origem=tuple(centro), eixo_x=tuple(ex), eixo_y=tuple(ey),
+                 contorno=[(round(x, 2), round(y, 2)) for x, y in contorno], espessura=t, centrada=True, furos=[],
+                 camada="Chapas", material="Aço", aco=aco, atributos={"tipo_ifc": "IfcPlate"})
+
+
+def _viga_soldada(viga, apoio, p):
+    """A viga soldada na face do apoio (a mesa ou a alma do pilar, a alma da viga principal), cortada na face; embaixo,
+    a cantoneira de apoio provisório de montagem (L 80×80×8 × 200, soldada no apoio na fábrica), quando cabe: na viga
+    sobre viga, só se o fundo da apoiada fica acima da mesa de baixo da principal (902: "apoio indireto … de altura
+    diferente"; na de mesma altura, só a solda). Na viga sobre viga de mesma altura, as mesas que batem saem recortadas."""
+    from nucleo2d.detalhe.soldas import _perna
+    pv = _perfil(viga.perfil)
+    eixo_a = _norm(_sub(apoio.fim, apoio.inicio))
+    ponta, no, outro = _ponta_perto(viga, apoio.inicio, eixo_a)
+    dirv = _norm(_sub(outro, no))
+    nf, F, parede, face = _face_do_apoio(apoio, no, dirv)
+    cosf = _dot(dirv, nf)
+    if cosf < 0.3:
+        raise ErroDeDados("a viga chega muito inclinada na face do apoio")
+    folga = float(p.get("folga") or 0.0)
+    perfil_l = str(p.get("cantoneira") or "L 80×80×8")
+    comp_l = float(p.get("comprimento_cantoneira") or 200.0)
+    dv, tfv, twv, bfv = float(pv.d or 300), float(pv.tf or 10), float(pv.tw or 6), float(pv.bf or 150)
+    _, vv, _ = _triedro(viga)
+    if vv[2] < 0:
+        vv = _mul(vv, -1.0)
+    X = _add(no, _mul(dirv, _dot(_sub(F, no), nf) / cosf))       # o eixo da viga na face
+    em_viga = abs(eixo_a[2]) < 0.7
+    recortes, cope = [], {"cima": 0.0, "baixo": 0.0}
+    poe_cantoneira = True
+    if em_viga:
+        pa = _perfil(apoio.perfil)
+        da, tfa, twa, bfa = float(pa.d or 300), float(pa.tf or 10), float(pa.tw or 6), float(pa.bf or 150)
+        qa = _add(apoio.inicio, _mul(eixo_a, _dot(_sub(X, apoio.inicio), eixo_a)))
+        ha = _dot(_sub(qa, X), vv)                                # o eixo da principal na altura da apoiada
+        sen = math.sqrt(max(0.0, 1.0 - cosf * cosf))
+        comp = _acima5((_dot(_sub(F, no), nf) + bfa / 2.0 - twa / 2.0 + 10.0 + bfv / 2.0 * sen) / cosf)
+        if dv / 2.0 > ha + da / 2.0 - tfa - 0.5:
+            cope["cima"] = _acima5(dv / 2.0 - (ha + da / 2.0 - tfa) + 10.0)
+        if -dv / 2.0 < ha - da / 2.0 + tfa + 0.5:
+            cope["baixo"] = _acima5((ha - da / 2.0 + tfa) + dv / 2.0 + 10.0)
+        recortes = [{"ponta": ponta, "lado": lado, "comprimento": comp, "altura": h} for lado, h in cope.items() if h > 0]
+        # a cantoneira cabe entre o fundo da apoiada e a mesa de baixo da principal (a aba de 80 + 10)
+        livre = (-dv / 2.0) - (ha - da / 2.0 + tfa)
+        poe_cantoneira = livre >= float(_perfil(perfil_l).d or 80.0) + 10.0
+    pecas, conjuntos, soldas = [], [], []
+    if poe_cantoneira:
+        a = _norm(_cruz(nf, vv))                                   # ao longo da face, deitada
+        heel = _add(X, _mul(vv, -dv / 2.0))                        # na face, no fundo da viga
+        L = _cantoneira_no_canto(perfil_l, a, heel, nf, _mul(vv, -1.0), comp_l)
+        L.nome = "Cantoneira de apoio de montagem"
+        pecas.append(L)
+        conjuntos.append((apoio, [L]))
+        tl = float(_perfil(perfil_l).tf or 8.0)
+        soldas.append((apoio.id, L, {"tipo": "filete", "perna": _perna(parede, tl), "lados": 1, "local": "fabrica"}))
+    chave = "cortes_inicio" if ponta == "inicio" else "cortes_fim"
+    rec = "recorte_inicio" if ponta == "inicio" else "recorte_fim"
+    antigos = [r for r in (getattr(viga, "recortes", None) or []) if r.get("ponta") != ponta]
+    ajustes = {viga.id: {chave: copy.deepcopy(getattr(viga, chave) or []), rec: float(getattr(viga, rec) or 0.0),
+                         "recortes": copy.deepcopy(getattr(viga, "recortes", None) or [])}}
+    alterar = {viga.id: {chave: [{"normal": _r(nf, 6), "ponto": _r(_sub(_add(F, _mul(nf, folga)), no), 3)}], rec: 0.0,
+                         "recortes": antigos + recortes}}
+    # a viga na face: penetração total, na obra (902: "os cordões de solda serão contínuos e de penetração completa";
+    # "ligações a realizar na obra")
+    soldas_entre = [(apoio, viga, {"tipo": "penetracao", "perna": _perna(parede, tfv), "lados": 1, "local": "obra",
+                                   "forma": "contorno"})]
+    params = dict(p, viga=viga.perfil, face=face, cantoneira=perfil_l if poe_cantoneira else "",
+                  comprimento_cantoneira=comp_l, folga=folga, recorte_cima=cope["cima"], recorte_baixo=cope["baixo"])
+    avisos = [] if poe_cantoneira else ["viga sobre viga de mesma altura: sem cantoneira de montagem (902), só a solda"]
+    return {"pecas": pecas, "alterar": alterar, "ajustes": ajustes, "conjuntos": conjuntos, "soldas": soldas,
+            "soldas_entre": soldas_entre, "parametros": params, "avisos": avisos}
+
+
+def _enrijecedores_pilar(pilar, vigas, p):
+    """Os enrijecedores do pilar na altura das mesas das vigas que chegam pela mesa dele: um de cada lado da alma, entre
+    as mesas, espessura ≥ a da mesa da viga (12,5 até 12,5; 16 acima). No pilar que termina (`topo_livre`), a mesa de
+    cima fica com a placa de topo (902: "placa de topo # ≥ e" + "enrijecedor # ≥ e1")."""
+    from nucleo2d.detalhe.soldas import _perna
+    pp = _perfil(pilar.perfil)
+    dp, bfp, tfp, twp = float(pp.d or 300), float(pp.bf or 200), float(pp.tf or 10), float(pp.tw or 6)
+    _, pe, topo = _ponta_de_baixo(pilar)
+    up_, vp_, wp_ = _triedro(pilar)                               # u: largura da mesa; v: a altura (a alma)
+    livre = bool(p.get("topo_livre"))
+    niveis = []
+    for v in vigas:
+        pv = _perfil(v.perfil)
+        dv, tfv = float(pv.d or 300), float(pv.tf or 10)
+        dirv = _norm(_sub(v.fim, v.inicio))
+        if abs(_dot(dirv, vp_)) < 0.7:
+            continue                                               # chega pela alma: sem enrijecedor
+        z = (v.inicio[2] + v.fim[2]) / 2.0
+        t = 12.5 if tfv <= 12.5 else 16.0
+        for zz, cima in ((z - dv / 2.0 + tfv / 2.0, False), (z + dv / 2.0 - tfv / 2.0, True)):
+            if cima and livre and abs(topo[2] - (z + dv / 2.0)) < 50.0:
+                continue
+            if not (pe[2] + 20.0 < zz < topo[2] - 1.0):
+                continue
+            achou = next((n for n in niveis if abs(n[0] - zz) < 40.0), None)
+            if achou:
+                achou[1] = max(achou[1], t)
+            else:
+                niveis.append([zz, t])
+    if not niveis:
+        raise ErroDeDados("nenhuma viga chega pela mesa do pilar %s" % (pilar.nome or pilar.id))
+    ch = float(p.get("chanfro") or 15.0)
+    Bv = dp - 2.0 * tfp                                           # entre as mesas
+    Bu = (bfp - twp) / 2.0                                        # da alma à borda da mesa
+    pecas, soldas = [], []
+    for zz, t in sorted(niveis):
+        c = (pe[0], pe[1], zz)
+        for lado in (1.0, -1.0):
+            eu = _mul(up_, lado)
+            o = _add(_add(c, _mul(eu, twp / 2.0)), _mul(vp_, -Bv / 2.0))
+            # chanfro nos cantos junto da alma (a concordância do perfil)
+            cont = [(ch, 0.0), (Bv - ch, 0.0), (Bv, ch), (Bv, Bu), (0.0, Bu), (0.0, ch)]
+            e = _placa("Enrijecedor do pilar", o, vp_, eu, cont, t, aco=str(p.get("aco") or "ASTM A36"))
+            pecas.append(e)
+            soldas.append((pilar.id, e, {"tipo": "filete", "perna": _perna(min(tfp, twp), t), "lados": 2, "local": "fabrica",
+                                         "forma": "contorno"}))
+    params = dict(p, pilar=pilar.perfil, niveis=[round(n[0], 1) for n in sorted(niveis)], chanfro=ch)
+    return {"pecas": pecas, "alterar": {}, "ajustes": {}, "conjuntos": [(pilar, pecas)], "soldas": soldas,
+            "parametros": params, "avisos": []}
+
+
+def _placa_topo_pilar(pilar, p):
+    """A placa de topo do pilar que termina (902): o tamanho do pilar + `sobra`, espessura `t`; o pilar fica mais curto
+    pela espessura (o topo da placa no topo do aço)."""
+    from nucleo2d.detalhe.soldas import _perna
+    pp = _perfil(pilar.perfil)
+    dp, bfp, tfp = float(pp.d or 300), float(pp.bf or 200), float(pp.tf or 10)
+    ponta_b, pe, topo = _ponta_de_baixo(pilar)
+    if _norm(_sub(topo, pe))[2] < 0.7:
+        raise ErroDeDados("a placa de topo pede um pilar em pé")
+    up_, vp_, _ = _triedro(pilar)
+    t = float(p.get("t") or 12.5)
+    sobra = float(p.get("sobra") or 50.0)
+    B, H = bfp + sobra, dp + sobra
+    c = (topo[0], topo[1], topo[2] - t / 2.0)
+    o = _add(_add(c, _mul(up_, -B / 2.0)), _mul(vp_, -H / 2.0))
+    placa = _placa("Placa de topo do pilar", o, up_, vp_, [(0, 0), (B, 0), (B, H), (0, H)], t, aco=str(p.get("aco") or "ASTM A36"))
+    chave = "cortes_fim" if ponta_b == "inicio" else "cortes_inicio"
+    rec = "recorte_fim" if ponta_b == "inicio" else "recorte_inicio"
+    ajustes = {pilar.id: {chave: copy.deepcopy(getattr(pilar, chave) or []), rec: float(getattr(pilar, rec) or 0.0)}}
+    alterar = {pilar.id: {rec: float(getattr(pilar, rec) or 0.0) + t}}
+    soldas = [(pilar.id, placa, {"tipo": "filete", "perna": _perna(tfp, t), "lados": 1, "local": "fabrica", "forma": "contorno"})]
+    params = dict(p, pilar=pilar.perfil, t=t, sobra=sobra, B=B, H=H)
+    return {"pecas": [placa], "alterar": alterar, "ajustes": ajustes, "conjuntos": [(pilar, [placa])], "soldas": soldas,
+            "parametros": params, "avisos": []}
+
+
+def _placa_transicao(pilar, apoio, p):
+    """O pilar que nasce sobre a viga (902: "placa de transição # ≥ 12 mm" + "mísula ≥ 150 mm, # ≥ 10 mm") ou sobre o
+    trecho de baixo de outro perfil (a troca W610 → W530): a placa no pé do pilar, do tamanho do maior + `sobra`, e — sobre
+    viga — as 2 mísulas nas faces das mesas, no plano da alma. O pilar começa em cima da placa."""
+    from nucleo2d.detalhe.soldas import _perna
+    pp, pa = _perfil(pilar.perfil), _perfil(apoio.perfil)
+    ponta, pe, topo = _ponta_de_baixo(pilar)
+    if _norm(_sub(topo, pe))[2] < 0.7:
+        raise ErroDeDados("a placa de transição pede o pilar de cima em pé")
+    up_, vp_, _ = _triedro(pilar)
+    sobre_viga = abs(_norm(_sub(apoio.fim, apoio.inicio))[2]) < 0.7
+    t = float(p.get("t") or 16.0)
+    sobra = float(p.get("sobra") or (100.0 if sobre_viga else 50.0))
+    m, tm = float(p.get("misula") or 150.0), float(p.get("t_misula") or 10.0)
+    dmax = max(float(pp.d or 0), 0.0 if sobre_viga else float(pa.d or 0))
+    bmax = max(float(pp.bf or 0), 0.0 if sobre_viga else float(pa.bf or 0))
+    # sobre viga, a placa vai até a ponta das mísulas (a mísula de m × m nas faces das mesas)
+    B, H = bmax + sobra, dmax + (2.0 * m if sobre_viga else sobra)
+    c = (pe[0], pe[1], pe[2] + t / 2.0)
+    o = _add(_add(c, _mul(up_, -B / 2.0)), _mul(vp_, -H / 2.0))
+    aco = str(p.get("aco") or "ASTM A36")
+    placa = _placa("Placa de transição", o, up_, vp_, [(0, 0), (B, 0), (B, H), (0, H)], t, aco=aco)
+    pecas = [placa]
+    soldas = [(pilar.id, placa, {"tipo": "filete", "perna": _perna(float(pp.tf or 10), t), "lados": 1, "local": "fabrica",
+                                 "forma": "contorno"})]
+    soldas_entre = [(apoio, placa, {"tipo": "filete", "perna": _perna(float(pa.tf or 10), t), "lados": 1, "local": "obra",
+                                    "forma": "contorno"})]
+    if sobre_viga:
+        for lado in (1.0, -1.0):
+            ev = _mul(vp_, lado)
+            o2 = (pe[0] + ev[0] * float(pp.d or 300) / 2.0, pe[1] + ev[1] * float(pp.d or 300) / 2.0, pe[2] + t)
+            mi = _placa("Mísula da transição", o2, ev, (0.0, 0.0, 1.0), [(0, 0), (m, 0), (0, m)], tm, aco=aco)
+            pecas.append(mi)
+            soldas.append((pilar.id, mi, {"tipo": "filete", "perna": _perna(float(pp.tf or 10), tm), "lados": 2,
+                                          "local": "fabrica", "forma": "T"}))
+            soldas_entre.append((placa, mi, {"tipo": "filete", "perna": _perna(t, tm), "lados": 2, "local": "fabrica",
+                                             "forma": "T"}))
+    rec = "recorte_inicio" if ponta == "inicio" else "recorte_fim"
+    ajustes = {pilar.id: {rec: float(getattr(pilar, rec) or 0.0)}}
+    alterar = {pilar.id: {rec: float(getattr(pilar, rec) or 0.0) + t}}
+    params = dict(p, pilar=pilar.perfil, apoio=apoio.perfil, t=t, sobra=sobra, B=B, H=H, sobre_viga=sobre_viga)
+    return {"pecas": pecas, "alterar": alterar, "ajustes": ajustes, "conjuntos": [(pilar, pecas)], "soldas": soldas,
+            "soldas_entre": soldas_entre, "parametros": params, "avisos": []}
+
+
+LOCAIS["viga_soldada_cantoneira"] = {
+    "nome": "Viga soldada no apoio, com cantoneira de montagem", "categoria": "viga",
+    "descricao": "A viga soldada direto na face do apoio (mesa ou alma do pilar, alma da viga principal), penetração total "
+                 "na obra; embaixo, a cantoneira 80×80×8 de apoio provisório de montagem, soldada no apoio na fábrica "
+                 "(na viga sobre viga de mesma altura, só a solda, com as mesas recortadas).",
+    "parametros": [{"chave": "cantoneira", "rotulo": "Cantoneira de montagem", "unidade": "", "padrao": "L 80×80×8"},
+                   {"chave": "comprimento_cantoneira", "rotulo": "Comprimento da cantoneira", "unidade": "mm", "padrao": 200},
+                   {"chave": "folga", "rotulo": "Folga da viga à face", "unidade": "mm", "padrao": 0}],
+    "esforcos": [],
+}
+LOCAIS["enrijecedores_pilar"] = {
+    "nome": "Enrijecedores do pilar na altura das mesas da viga", "categoria": "pilar",
+    "descricao": "Um enrijecedor de cada lado da alma do pilar, entre as mesas, na altura de cada mesa das vigas que chegam "
+                 "pela mesa dele (12,5 mm; 16 mm se a mesa da viga passa de 12,5). No pilar que termina, a mesa de cima "
+                 "fica com a placa de topo.",
+    "parametros": [{"chave": "topo_livre", "rotulo": "O pilar termina aqui (placa de topo)", "unidade": "", "padrao": ""},
+                   {"chave": "chanfro", "rotulo": "Chanfro junto da alma", "unidade": "mm", "padrao": 15}],
+    "esforcos": [],
+}
+LOCAIS["placa_topo_pilar"] = {
+    "nome": "Placa de topo do pilar", "categoria": "pilar",
+    "descricao": "A placa no topo do pilar que termina, do tamanho do pilar + 50; o pilar fica mais curto pela espessura.",
+    "parametros": [{"chave": "t", "rotulo": "Espessura", "unidade": "mm", "padrao": 12.5},
+                   {"chave": "sobra", "rotulo": "Sobra além do pilar", "unidade": "mm", "padrao": 50}],
+    "esforcos": [],
+}
+LOCAIS["placa_transicao_pilar"] = {
+    "nome": "Placa de transição no pé do pilar", "categoria": "pilar",
+    "descricao": "O pilar que nasce sobre a viga (placa + 2 mísulas nas faces das mesas) ou sobre o trecho de baixo de "
+                 "outro perfil (só a placa, do tamanho do maior).",
+    "parametros": [{"chave": "t", "rotulo": "Espessura da placa", "unidade": "mm", "padrao": 16},
+                   {"chave": "sobra", "rotulo": "Sobra além do pilar (vazio: 100 sobre viga, 50 sobre pilar)", "unidade": "mm",
+                    "padrao": ""},
+                   {"chave": "misula", "rotulo": "Mísula (altura)", "unidade": "mm", "padrao": 150},
+                   {"chave": "t_misula", "rotulo": "Mísula: espessura", "unidade": "mm", "padrao": 10}],
+    "esforcos": [],
+}
+TIPOS_3D["viga_soldada_cantoneira"] = {"pede": "a viga apoiada e o pilar ou a viga em que ela chega", "barras": ("viga", "apoio")}
+TIPOS_3D["enrijecedores_pilar"] = {"pede": "o pilar e as vigas que chegam pela mesa dele", "barras": ("pilar", "vigas")}
+TIPOS_3D["placa_topo_pilar"] = {"pede": "um pilar (ou vários)", "barras": ("pilar",)}
+TIPOS_3D["placa_transicao_pilar"] = {"pede": "o pilar de cima e a viga (ou o trecho de pilar) em que ele nasce",
+                                     "barras": ("pilar", "viga")}
+
 #: as famílias: os tipos de uma família ligam as mesmas barras e se trocam um pelo outro
 FAMILIAS = {
     "contravento": {"nome": "Contravento × viga", "tipos": ["castanha_contravento", "duas_chapas_contravento",
@@ -1707,6 +1957,11 @@ def _barras_para(doc, tipo, ids):
             _w, pts = _pontas_da_corrente(c, tercas)
             grupos.append([c] + list({id(pt["terca"]): pt["terca"] for pt in pts}.values()))
         return grupos
+    if pede == ("pilar", "vigas"):
+        pil = [b for b in barras if abs(b.direcao[2]) > 0.7]
+        if len(pil) != 1 or len(barras) < 2:
+            raise ErroDeDados("selecione %s (um pilar só)" % TIPOS_3D[tipo]["pede"])
+        return [pil + [b for b in barras if b is not pil[0]]]
     if pede == ("tirante", "apoio"):
         redondo = lambda b: bool(re.search(r"RED|Ø|TIRANTE|REDOND", str(b.perfil), re.I))      # noqa: E731
         tir = [b for b in barras if str(b.papel).lower().startswith("contravent") or redondo(b)]
@@ -1834,6 +2089,14 @@ def _gerar(tipo, barras, p):
         return _chapa_de_no_contravento(barras, p)
     if tipo == "esticador_contravento":
         return _chapa_de_no_contravento(barras, p, esticador=True)
+    if tipo == "viga_soldada_cantoneira":
+        return _viga_soldada(barras[0], barras[1], p)
+    if tipo == "enrijecedores_pilar":
+        return _enrijecedores_pilar(barras[0], barras[1:], p)
+    if tipo == "placa_topo_pilar":
+        return _placa_topo_pilar(barras[0], p)
+    if tipo == "placa_transicao_pilar":
+        return _placa_transicao(barras[0], barras[1], p)
     raise ErroDeDados("a ligação %s ainda não sabe se pôr no 3D" % tipo)
 
 
@@ -1945,6 +2208,102 @@ def _copiar_em(trabalho, ids):
             feitas.add(i)
 
 
+def _grupo(trabalho, tipo, barras, p, lid, novas, alterar, soldas_pendentes, esforcos=None, analise=None) -> dict:
+    """uma ligação (um grupo de barras): as peças no documento de trabalho, as barras alteradas, os conjuntos e as soldas
+    a definir depois da numeração; devolve o resultado (verificação, avisos, parâmetros)"""
+    from nucleo import acessorios as A
+    g = _gerar(tipo, barras, p)
+    for bid, campos in g["alterar"].items():
+        b = trabalho.entidades[bid]
+        for k, v in campos.items():
+            setattr(b, k, copy.deepcopy(v))
+        alterar.setdefault(bid, {}).update(copy.deepcopy(campos))
+    # a geometria das barras DEPOIS da ligação (o tirante esticado até a castanha): é a que o editor compara
+    reg = {"id": lid, "tipo": tipo, "parametros": g["parametros"], "pecas": [b.id for b in barras],
+           "ajustes": g["ajustes"], "geometria": {b.id: assinatura(b) for b in barras}}
+    for e in g["pecas"]:
+        e.atributos = dict(e.atributos or {}, ligacao=dict(reg, papel=e.nome))
+        trabalho.add(e)
+        novas.append(e)
+    # o conjunto: a chapa soldada entra no conjunto da barra
+    for barra, chapas in g["conjuntos"]:
+        mb = dict((barra.atributos or {}).get("marcas") or {})
+        inst = mb.get("instancia")
+        if not inst and not mb.get("conjunto"):
+            # um conjunto por barra: a ligação por nó tem dois tirantes (e o topo do pilar, o pilar e a viga) —
+            # com a instância da ligação, os dois saíam num conjunto só na prancha (23/10)
+            inst = "c%s-%s" % (lid[1:], barra.id[-6:])
+            mb.update(instancia=inst, conjunto="")
+            mb.setdefault("principal", True)
+            barra.atributos = dict(barra.atributos or {}, marcas=mb)
+            alterar.setdefault(barra.id, {})["atributos"] = barra.atributos
+        for ch in chapas:
+            mc = dict((ch.atributos or {}).get("marcas") or {})
+            if inst:
+                mc.update(instancia=inst, conjunto="")
+            else:
+                mc["conjunto"] = mb.get("conjunto")
+            mc.pop("principal", None)
+            ch.atributos = dict(ch.atributos or {}, marcas=mc)
+            if ch.id in trabalho.entidades and not any(n_ is ch for n_ in g["pecas"]):
+                alterar.setdefault(ch.id, {})["atributos"] = ch.atributos     # a barra que já existia (a outra do par)
+    soldas_pendentes += g["soldas"]
+    soldas_pendentes += [(x.id, y, d) for x, y, d in g.get("soldas_entre", [])]
+    verif = None
+    try:
+        if tipo in LOCAIS:
+            raise LookupError("sem verificação na biblioteca")
+        parametros_lib = {k: v for k, v in g["parametros"].items() if k in {x.chave for x in A.REGISTRO[tipo].parametros}}
+        da_analise = esforcos_da_analise(analise, tipo, barras) if not esforcos else None
+        origem = "informados" if esforcos else ("análise do projeto" if da_analise else "padrão da biblioteca")
+        r = A.montar(tipo, parametros_lib, esforcos or da_analise or {})
+        verif = r.get("verificacao")
+        usados = r.get("esforcos")
+    except Exception as exc:                          # noqa: BLE001 — a verificação não impede a ligação
+        verif, usados, origem = {"erro": str(exc)}, None, "—"
+    return {"id": lid, "tipo": tipo, "barras": [b.id for b in barras], "verificacao": verif, "esforcos": usados,
+            "origem_esforcos": origem, "avisos": g["avisos"], "parametros": g["parametros"]}
+
+
+def _numerar_e_soldar(trabalho, novas, ids_barras, alterar, soldas_pendentes, tudo=False, avisar=None):
+    """as marcas (o numerar no documento de trabalho, uma vez) e as soldas pela posição da outra peça. `tudo`: a
+    numeração vale para o modelo inteiro (o modelo que ainda não tinha marcas), não só para as peças da ligação"""
+    from nucleo3d import producao
+    # marcas: o numerar no documento de trabalho (as peças novas, as barras que entraram em conjunto)
+    r = producao.numerar(trabalho, avisar=avisar)
+    ids_novas = {e.id for e in novas}
+    da_ligacao = ids_novas | set(ids_barras)
+    for i, patch in r["mudancas"].items():
+        if not tudo and i not in da_ligacao:
+            continue                                      # o resto do modelo não é numerado por tabela
+        e = trabalho.entidades[i]
+        a = dict(e.atributos or {})
+        for k, v in patch.items():
+            if v is None:
+                a.pop(k, None)
+            else:
+                a[k] = v
+        e.atributos = a
+        if i not in ids_novas:
+            alterar.setdefault(i, {})["atributos"] = a
+    # as soldas definidas (pela posição da outra peça, nas duas peças)
+    for bid, chapa, d in soldas_pendentes:
+        b = trabalho.entidades[bid]
+        pb = ((b.atributos or {}).get("marcas") or {}).get("posicao")
+        pc = ((chapa.atributos or {}).get("marcas") or {}).get("posicao")
+        if not pb or not pc:
+            continue
+        dd = producao.normalizar_definicao(d)
+        for x, outra in ((b, pc), (chapa, pb)):
+            a = dict(x.atributos or {})
+            a["soldas"] = dict(a.get("soldas") or {}, **{outra: dd})
+            x.atributos = a
+            # a peça nova já sai com os atributos; a que já existia (as duas barras soldadas uma na outra, a viga na face
+            # do pilar — 29/10) vai em `alterar`
+            if x.id not in ids_novas and x.id in trabalho.entidades:
+                alterar.setdefault(x.id, {})["atributos"] = a
+
+
 def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = None, ligacao: Optional[str] = None,
             esforcos: Optional[dict] = None, analise: Optional[dict] = None) -> dict:
     """A ligação `tipo` nas barras `ids` (uma ligação por pilar, nas bases), ou `ligacao` (o id de uma aplicada) refeita
@@ -1993,88 +2352,8 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
     for barras in grupos:
         lid = ligacao if (ligacao and len(grupos) == 1) else _id_ligacao()
         p = {k: v for k, v in base_parametros.items() if v not in (None, "")}
-        g = _gerar(tipo, barras, p)
-        for bid, campos in g["alterar"].items():
-            b = trabalho.entidades[bid]
-            for k, v in campos.items():
-                setattr(b, k, copy.deepcopy(v))
-            alterar.setdefault(bid, {}).update(copy.deepcopy(campos))
-        # a geometria das barras DEPOIS da ligação (o tirante esticado até a castanha): é a que o editor compara
-        reg = {"id": lid, "tipo": tipo, "parametros": g["parametros"], "pecas": [b.id for b in barras],
-               "ajustes": g["ajustes"], "geometria": {b.id: assinatura(b) for b in barras}}
-        for e in g["pecas"]:
-            e.atributos = dict(e.atributos or {}, ligacao=dict(reg, papel=e.nome))
-            trabalho.add(e)
-            novas.append(e)
-        # o conjunto: a chapa soldada entra no conjunto da barra
-        for barra, chapas in g["conjuntos"]:
-            mb = dict((barra.atributos or {}).get("marcas") or {})
-            inst = mb.get("instancia")
-            if not inst and not mb.get("conjunto"):
-                # um conjunto por barra: a ligação por nó tem dois tirantes (e o topo do pilar, o pilar e a viga) —
-                # com a instância da ligação, os dois saíam num conjunto só na prancha (23/10)
-                inst = "c%s-%s" % (lid[1:], barra.id[-6:])
-                mb.update(instancia=inst, conjunto="")
-                mb.setdefault("principal", True)
-                barra.atributos = dict(barra.atributos or {}, marcas=mb)
-                alterar.setdefault(barra.id, {})["atributos"] = barra.atributos
-            for ch in chapas:
-                mc = dict((ch.atributos or {}).get("marcas") or {})
-                if inst:
-                    mc.update(instancia=inst, conjunto="")
-                else:
-                    mc["conjunto"] = mb.get("conjunto")
-                mc.pop("principal", None)
-                ch.atributos = dict(ch.atributos or {}, marcas=mc)
-                if ch.id in trabalho.entidades and not any(n_ is ch for n_ in g["pecas"]):
-                    alterar.setdefault(ch.id, {})["atributos"] = ch.atributos     # a barra que já existia (a outra do par)
-        soldas_pendentes += g["soldas"]
-        soldas_pendentes += [(x.id, y, d) for x, y, d in g.get("soldas_entre", [])]
-        verif = None
-        try:
-            if tipo in LOCAIS:
-                raise LookupError("sem verificação na biblioteca")
-            parametros_lib = {k: v for k, v in g["parametros"].items() if k in {x.chave for x in A.REGISTRO[tipo].parametros}}
-            da_analise = esforcos_da_analise(analise, tipo, barras) if not esforcos else None
-            origem = "informados" if esforcos else ("análise do projeto" if da_analise else "padrão da biblioteca")
-            r = A.montar(tipo, parametros_lib, esforcos or da_analise or {})
-            verif = r.get("verificacao")
-            usados = r.get("esforcos")
-        except Exception as exc:                          # noqa: BLE001 — a verificação não impede a ligação
-            verif, usados, origem = {"erro": str(exc)}, None, "—"
-        resultados.append({"id": lid, "tipo": tipo, "barras": [b.id for b in barras], "verificacao": verif,
-                           "esforcos": usados, "origem_esforcos": origem,
-                           "avisos": g["avisos"], "parametros": g["parametros"]})
-    # marcas: o numerar no documento de trabalho (as peças novas, as barras que entraram em conjunto)
-    r = producao.numerar(trabalho)
-    da_ligacao = {e.id for e in novas} | {b for g_ in grupos for b in (x.id for x in g_)}
-    for i, patch in r["mudancas"].items():
-        if i not in da_ligacao:
-            continue                                      # o resto do modelo não é numerado por tabela
-        e = trabalho.entidades[i]
-        a = dict(e.atributos or {})
-        for k, v in patch.items():
-            if v is None:
-                a.pop(k, None)
-            else:
-                a[k] = v
-        e.atributos = a
-        if not any(n.id == i for n in novas):
-            alterar.setdefault(i, {})["atributos"] = a
-    # as soldas definidas (pela posição da outra peça, nas duas peças)
-    for bid, chapa, d in soldas_pendentes:
-        b = trabalho.entidades[bid]
-        pb = ((b.atributos or {}).get("marcas") or {}).get("posicao")
-        pc = ((chapa.atributos or {}).get("marcas") or {}).get("posicao")
-        if not pb or not pc:
-            continue
-        dd = producao.normalizar_definicao(d)
-        for x, outra in ((b, pc), (chapa, pb)):
-            a = dict(x.atributos or {})
-            a["soldas"] = dict(a.get("soldas") or {}, **{outra: dd})
-            x.atributos = a
-            if x is b and not any(n_ is b for n_ in novas):      # a peça nova já sai com os atributos
-                alterar.setdefault(b.id, {})["atributos"] = a
+        resultados.append(_grupo(trabalho, tipo, barras, p, lid, novas, alterar, soldas_pendentes, esforcos, analise))
+    _numerar_e_soldar(trabalho, novas, {b.id for g_ in grupos for b in g_}, alterar, soldas_pendentes)
     # as barras que voltaram ao de antes e não mudaram de novo (inclusive as soldas tiradas com as peças velhas)
     for bid, campos in restaurar.items():
         for k, v in campos.items():
@@ -2082,6 +2361,39 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
         if "atributos" not in alterar[bid]:
             alterar[bid]["atributos"] = trabalho.entidades[bid].atributos
     return {"novas": [e.dict() for e in novas], "alterar": alterar, "remover": remover, "ligacoes": resultados}
+
+
+def aplicar_lote(doc, pedidos: Sequence, avisar=None, numerar_tudo: bool = False) -> dict:
+    """Muitas ligações de uma vez — [(tipo, ids, parametros)], de tipos diferentes — numeradas uma vez só no fim (29/10,
+    Hora Certa · Edifício Administrativo: ~800 ligações soldadas; o `aplicar` uma a uma numera o modelo inteiro a cada
+    ligação). A que não se põe (ErroDeDados) vai para `recusadas` e as outras seguem. Devolve o mesmo que o `aplicar`
+    (novas, alterar, remover vazio, ligacoes) e as recusadas. `numerar_tudo`: as marcas do modelo inteiro também (o
+    modelo que nunca foi numerado: uma passada só, em vez de numerar antes e de novo depois)."""
+    avisar = avisar or (lambda *a: None)
+    trabalho = _copia_de_trabalho(doc, [])
+    novas, alterar, resultados, recusadas, soldas_pendentes = [], {}, [], [], []
+    ids_barras = set()
+    for k, (tipo, ids, parametros) in enumerate(pedidos):
+        if tipo not in TIPOS_3D:
+            raise ErroDeDados("ligação desconhecida para o 3D: %s" % tipo)
+        if k % 100 == 0:
+            avisar("ligações (%d de %d)" % (k, len(pedidos)))
+        _copiar_em(trabalho, ids)
+        p = {k_: v for k_, v in (parametros or {}).items() if v not in (None, "")}
+        na_ordem = bool(p.pop("_na_ordem", False))
+        try:
+            # `_na_ordem`: quem pede já sabe qual é a apoiada e qual é o apoio (o _barras_para decide pelas retas
+            # infinitas: no nó em que duas vigas terminam na ponta de uma terceira, a terceira virava a apoiada das duas)
+            grupos = [[trabalho.entidades[i] for i in ids]] if na_ordem else _barras_para(trabalho, tipo, ids)
+            for barras in grupos:
+                resultados.append(_grupo(trabalho, tipo, barras, dict(p), _id_ligacao(), novas, alterar, soldas_pendentes))
+                ids_barras |= {b.id for b in barras}
+        except ErroDeDados as exc:
+            recusadas.append({"tipo": tipo, "barras": list(ids), "erro": str(exc)})
+    avisar("marcas e soldas das ligações…")
+    _numerar_e_soldar(trabalho, novas, ids_barras, alterar, soldas_pendentes, tudo=numerar_tudo, avisar=avisar)
+    return {"novas": [e.dict() for e in novas], "alterar": alterar, "remover": [], "ligacoes": resultados,
+            "recusadas": recusadas}
 
 
 def _varias(doc, tipo, lids, parametros, esforcos, analise) -> dict:
