@@ -83,8 +83,23 @@ def _grade(barras, cel: float):
     return g
 
 
-def repetidas(barras, tol: float = 15.0) -> List[dict]:
-    """duas barras com as duas pontas no mesmo lugar (até `tol` mm), qualquer perfil"""
+def _miolo(perfil, cache: dict) -> Optional[float]:
+    """¼ da menor medida da seção (mm): dois eixos paralelos mais perto que isso são a mesma peça. O par composto (2L
+    costas com costas, 2U da caixa) fica de fora: os centroides dele estão a mais de ¼ da aba um do outro"""
+    if perfil not in cache:
+        try:
+            from nucleo3d.geometria import secao
+            pts = secao(perfil)
+            cache[perfil] = min(max(q[0] for q in pts) - min(q[0] for q in pts),
+                                max(q[1] for q in pts) - min(q[1] for q in pts)) / 4.0
+        except Exception:                       # noqa: BLE001  (perfil fora do catálogo: só a regra das pontas)
+            cache[perfil] = None
+    return cache[perfil]
+
+
+def repetidas(barras, tol: float = 15.0, junto: float = 300.0) -> List[dict]:
+    """duas barras com as duas pontas no mesmo lugar (até `tol` mm), qualquer perfil — ou (29/10) paralelas, uma dentro da
+    outra por mais de `junto` mm e pela metade da menor: os eixos a menos de ¼ da menor medida da seção, com as pontas onde estiverem"""
     g = _grade(barras, 2000.0)
     vistos, out = set(), []
     for k, e in enumerate(barras):
@@ -98,6 +113,51 @@ def repetidas(barras, tol: float = 15.0) -> List[dict]:
                 m = [(a[i] + b[i]) / 2 for i in range(3)]
                 out.append({"tipo": "repetida", "ids": [e.id, f.id], "ponto": [round(v) for v in m],
                             "texto": "%s e %s no mesmo lugar (%s / %s)" % (_nome(e), _nome(f), e.perfil, f.perfil)})
+    # GER-01, reforço (29/10, Hora Certa · Edifício Administrativo): no eixo 7 o calculista desenhou duas W530 uma sobre a
+    # outra (mesas de 166 e 178 mm), e as pontas das duas vigas saíram a 18 mm — a regra das pontas não pegou
+    cache: dict = {}
+    dirs = []
+    for e in barras:
+        d = [e.fim[i] - e.inicio[i] for i in range(3)]
+        L = math.sqrt(sum(v * v for v in d))
+        dirs.append((L, [v / L for v in d] if L > 1e-6 else None))
+    for ks in g.values():
+        for ii, k in enumerate(ks):
+            Lk, uk = dirs[k]
+            if uk is None or Lk < junto:
+                continue
+            e = barras[k]
+            for j in ks[ii + 1:]:
+                par = (min(k, j), max(k, j))
+                if par in vistos:
+                    continue
+                Lj, uj = dirs[j]
+                if uj is None or Lj < junto:
+                    continue
+                cx = (uk[1] * uj[2] - uk[2] * uj[1], uk[2] * uj[0] - uk[0] * uj[2], uk[0] * uj[1] - uk[1] * uj[0])
+                if math.sqrt(sum(v * v for v in cx)) > 0.01:
+                    continue
+                vistos.add(par)
+                f = barras[j]
+                # a outra barra no eixo desta: o trecho comum e a distância entre os eixos
+                s0 = sum((f.inicio[i] - e.inicio[i]) * uk[i] for i in range(3))
+                s1 = sum((f.fim[i] - e.inicio[i]) * uk[i] for i in range(3))
+                comum = min(Lk, max(s0, s1)) - max(0.0, min(s0, s1))
+                if comum < max(junto, 0.5 * min(Lk, Lj)):
+                    continue                    # o transpasse da terça nos apoios (um pedaço da peça) não é repetição
+                w = [f.inicio[i] - e.inicio[i] - uk[i] * s0 for i in range(3)]
+                dist = math.sqrt(sum(v * v for v in w))
+                ms = [m for m in (_miolo(e.perfil, cache), _miolo(f.perfil, cache)) if m]
+                if dist > max(tol, min(ms) if ms else tol):
+                    continue
+                if (math.dist(e.inicio, f.inicio) <= tol and math.dist(e.fim, f.fim) <= tol) or \
+                        (math.dist(e.inicio, f.fim) <= tol and math.dist(e.fim, f.inicio) <= tol):
+                    continue                    # já dita pela regra das pontas
+                sm = (max(0.0, min(s0, s1)) + min(Lk, max(s0, s1))) / 2.0
+                m = [e.inicio[i] + uk[i] * sm for i in range(3)]
+                out.append({"tipo": "repetida", "ids": [e.id, f.id], "ponto": [round(v) for v in m],
+                            "texto": "%s e %s uma dentro da outra por %.2f m, eixos a %.0f mm (%s / %s)"
+                                     % (_nome(e), _nome(f), comum / 1000.0, dist, e.perfil, f.perfil)})
     return out
 
 

@@ -21,6 +21,25 @@ def test_repetida_pega_as_mesmas_pontas_em_qualquer_sentido():
     assert len(r) == 1 and "PAINEL 20" in r[0]["texto"] and "PAINEL 21" in r[0]["texto"]
 
 
+def test_repetida_pega_a_viga_dentro_da_outra_com_as_pontas_em_outro_lugar():
+    """GER-01, reincidência de 29/10 (Hora Certa · Edifício Administrativo, eixo 7 de C a B': o calculista desenhou duas
+    W530 uma sobre a outra, mesas de 166 e 178 mm; as pontas das vigas saíram a 18 mm e a regra das pontas não pegou,
+    ~1,1 t a mais). Longe do piso z = 0 e com as coordenadas da obra. O par 2U da caixa e o 2L costas com costas, não"""
+    doc = Documento()
+    z = 4930.0
+    _b(doc, (37688.4, 13.8, z), (37688.4, 8552.4, z), papel="viga", peca="V1.18", perfil="W 530×66,0")
+    _b(doc, (37688.4, 32.2, z), (37688.4, 8545.1, z), papel="viga", peca="V1.75", perfil="W 530×66,0")
+    _b(doc, (37688.4, 8552.4, z), (37688.4, 16076.1, z), papel="viga", peca="V1.19", perfil="W 530×66,0")   # o vão seguinte
+    # a caixa 2 × U 200×75 da marquise (eixos a 75 mm) e um par de cantoneiras costas com costas
+    _b(doc, (0, -37.5, 905.0), (0, -37.5, 4000), papel="pilar", peca="PM1", perfil="U 200×75×3,00 (FF)")
+    _b(doc, (0, 37.5, 905.0), (0, 37.5, 4000), papel="pilar", peca="PM1", perfil="U 200×75×3,00 (FF)")
+    _b(doc, (5000, -15, 6000), (9000, -15, 6000), papel="banzo", perfil="L 50×50×4,76")
+    _b(doc, (5000, 15, 6000), (9000, 15, 6000), papel="banzo", perfil="L 50×50×4,76")
+    r = C.repetidas(list(doc.barras))
+    assert len(r) == 1, r
+    assert "V1.18" in r[0]["texto"] and "V1.75" in r[0]["texto"] and "8.51 m" in r[0]["texto"]
+
+
 def test_ponta_solta_mas_nao_a_que_encosta_no_banzo_curvo():
     """a ponta longe de tudo é solta; a que encosta num sólido (o banzo curvo calandrado) e a do chão não"""
     doc = Documento()
