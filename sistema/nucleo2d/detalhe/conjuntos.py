@@ -3546,8 +3546,20 @@ FOLGA_MEIAS_MONTADAS = 300.0
 
 def _faixa_reta(pecas: Sequence[Solido], normal, tol: float = 30.0, faixas: int = 24) -> bool:
     """As peças, vistas no plano de normal `normal`, formam uma faixa reta — o contorno de cima e o de baixo
-    constantes ao longo do comprimento (até `tol` mm) —, como uma linha de vigas emendadas; a tesoura tem caída."""
-    verts = [v for e in pecas for v in (e.vertices or [])]
+    constantes ao longo do comprimento (até `tol` mm) —, como uma linha de vigas emendadas; a tesoura tem caída. Só as
+    barras: a chapa de apoio de cada ponta, mais alta que a treliça, quebrava a faixa (Hora Certa · Galpão Existente,
+    29/10: as 12 treliças planas TS01 em linha, entre as faces dos pilares, viravam uma "tesoura" de 46 m)."""
+    barras = [e for e in pecas if not _tipo_ifc(e).startswith("IfcPlate")] or list(pecas)
+    # os vértices e pontos ao longo das arestas: o prisma da barra só tem vértice nas pontas, e no meio do vão a faixa via
+    # só a ponta do montante (abaixo da face do banzo) — a treliça plana não dava faixa reta
+    verts = []
+    for e in barras:
+        vs = e.vertices or []
+        verts.extend(vs)
+        for f in (getattr(e, "faces", None) or []):
+            for i in range(len(f)):
+                a, b = vs[f[i]], vs[f[(i + 1) % len(f)]]
+                verts.extend(tuple(a[k] + (b[k] - a[k]) * t / 8.0 for k in range(3)) for t in range(1, 8))
     if len(verts) < 4:
         return False
     n = _norm(normal)
