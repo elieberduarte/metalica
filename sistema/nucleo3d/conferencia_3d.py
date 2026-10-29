@@ -511,6 +511,112 @@ def cobertura(doc) -> List[dict]:
             if p is not None:
                 trecho = [p]
     out += _cobertura_choques(doc, cobre)
+    out += _barras_na_telha(doc, [s for s in telhado if at(s).get("telha_lancada")])
+    return out
+
+
+TELHA_FOLGA = 3.0                # mm: a barra que passa disto da face de baixo da telha está dentro dela (3, como o rufo_choque)
+TELHA_DENTRO_MAX = 150.0         # mm: mais que isto é a treliça que sobe acima da telha (revestida, COB-16) — outro caso
+
+
+def _barras_na_telha(doc, telhas) -> List[dict]:
+    """COB-02 — a barra atravessando o pano de telha (reincidência, SESI Chapecó 29/10: terças com o topo até 33 mm acima
+    da face de baixo da telha, aparecendo por cima da telha e da calha no modo ver; o catálogo dizia que a conferência não
+    pegava). O topo da barra (as 2 arestas mais altas da seção girada no eixo) é lido a cada 200 mm por baixo de cada
+    telha; a barra que entra de TELHA_FOLGA a TELHA_DENTRO_MAX na telha é barra_na_telha, uma por barra."""
+    from nucleo3d.geometria import base_local, secao
+    from nucleo3d.de_planta import _perfil as _perfil_de
+    tris = []
+    G = 2000.0
+    grade: Dict[tuple, list] = collections.defaultdict(list)
+    faixa_z: Dict[tuple, tuple] = {}             # a faixa de altura das telhas em cada quadrícula (o filtro rápido)
+    for s in telhas:
+        vs = s.vertices
+        for f in s.faces:
+            if len(f) < 3:
+                continue
+            pts = [vs[i] for i in f]
+            for i in range(1, len(pts) - 1):
+                a, b, c = pts[0], pts[i], pts[i + 1]
+                d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+                if abs(d) < 1e-6:
+                    continue
+                k = len(tris)
+                tris.append((a, b, c, d, s.id))
+                for gx in range(int(min(a[0], b[0], c[0]) // G), int(max(a[0], b[0], c[0]) // G) + 1):
+                    for gy in range(int(min(a[1], b[1], c[1]) // G), int(max(a[1], b[1], c[1]) // G) + 1):
+                        grade[(gx, gy)].append(k)
+                        zz = faixa_z.get((gx, gy))
+                        z0_, z1_ = min(a[2], b[2], c[2]), max(a[2], b[2], c[2])
+                        faixa_z[(gx, gy)] = (min(zz[0], z0_), max(zz[1], z1_)) if zz else (z0_, z1_)
+
+    def face_de_baixo(px, py):
+        """a menor altura de telha no ponto (a face de baixo) e a de cima, ou None"""
+        zs = []
+        for k in grade.get((int(px // G), int(py // G)), ()):
+            a, b, c, d, _id = tris[k]
+            l1 = ((b[1] - c[1]) * (px - c[0]) + (c[0] - b[0]) * (py - c[1])) / d
+            l2 = ((c[1] - a[1]) * (px - c[0]) + (a[0] - c[0]) * (py - c[1])) / d
+            l3 = 1.0 - l1 - l2
+            if min(l1, l2, l3) >= -1e-6:
+                zs.append(l1 * a[2] + l2 * b[2] + l3 * c[2])
+        return (min(zs), max(zs)) if zs else None
+    if not tris:
+        return []
+    out: List[dict] = []
+    for b in doc.barras:
+        # o filtro rápido: o eixo a cada 500 mm — a quadrícula tem telha a até 400 mm da altura do eixo? E então a telha
+        # em cima do ponto
+        L = math.dist(b.inicio, b.fim)
+        n_eixo = max(1, int(L // 500.0))
+        perto = []
+        for j in range(n_eixo + 1):
+            t = j / n_eixo
+            px, py, pz = (b.inicio[k] + (b.fim[k] - b.inicio[k]) * t for k in range(3))
+            zz = faixa_z.get((int(px // G), int(py // G)))
+            if zz is None or not zz[0] - 400.0 <= pz <= zz[1] + 400.0:
+                continue
+            fz = face_de_baixo(px, py)
+            if fz is not None and -400.0 <= fz[0] - pz <= 400.0:
+                perto.append(t)
+        if not perto:
+            continue
+        # as arestas de cima: a seção girada no eixo (a malha inteira, com os cortes de ponta, custava 16 s no SESI)
+        try:
+            p = _perfil_de(b.perfil)
+            d_ = tuple((b.fim[k] - b.inicio[k]) / L for k in range(3))
+            u_, v_, _w = base_local(d_, b.rotacao or 0.0)
+            offs = sorted(((u_[0] * x + v_[0] * y, u_[1] * x + v_[1] * y, u_[2] * x + v_[2] * y) for x, y in secao(p)),
+                          key=lambda o: -o[2])[:2]
+        except Exception:  # noqa: BLE001 — barra sem seção: fica de fora
+            continue
+        topo_sec = offs[0][2]
+        pior = (0.0, None)
+        # a leitura fina (200 mm) só em volta dos trechos com telha em cima
+        t_ini, t_fim = max(0.0, min(perto) - 1.0 / n_eixo), min(1.0, max(perto) + 1.0 / n_eixo)
+        passos = max(1, int(L * (t_fim - t_ini) // 200.0))
+        for o in offs:
+            p0 = tuple(b.inicio[k] + o[k] for k in range(3))
+            p1 = tuple(b.fim[k] + o[k] for k in range(3))
+            for j in range(passos + 1):
+                t = t_ini + (t_fim - t_ini) * j / passos
+                px, py, pz = (p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t, p0[2] + (p1[2] - p0[2]) * t)
+                fz = face_de_baixo(px, py)
+                if fz is None or pz > fz[1] + 1.0:
+                    continue
+                dentro = pz - fz[0]
+                if TELHA_FOLGA < dentro <= TELHA_DENTRO_MAX and dentro > pior[0]:
+                    pior = (dentro, (px, py, pz))
+        # a barra que sobe acima da telha inteira (a treliça revestida) não é deste achado
+        if pior[1] is not None:
+            topo = max(b.inicio[2], b.fim[2]) + topo_sec
+            fz = face_de_baixo(pior[1][0], pior[1][1])
+            if fz is not None and topo - fz[0] > TELHA_DENTRO_MAX:
+                continue
+            out.append({"tipo": "barra_na_telha", "ids": [b.id], "mm": round(pior[0]),
+                        "ponto": [round(v) for v in pior[1]],
+                        "texto": "%s (%s) entra %.0f mm na telha — a telha passa por cima dela (COB-02)"
+                                 % (b.nome or b.id, b.perfil, pior[0])})
     return out
 
 

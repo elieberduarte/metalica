@@ -72,6 +72,24 @@ def test_rufo_atravessando_peca():
     assert any(a["tipo"] == "rufo_choque" and "capa da P.2" in a["texto"] for a in aps)
 
 
+
+def test_cob02_terca_acima_da_face_de_baixo_da_telha():
+    """COB-02 (reincidência, SESI Chapecó 29/10: "está havendo uma sobreposição com as terças… as terças estão passando acima
+    no nível da telha" — terças até 33 mm dentro da telha, por cima dela e da calha no modo ver): a terça cujo topo passa da
+    face de baixo da telha é barra_na_telha; a telha lançada pelo gerador, em cima das terças, fica limpa"""
+    doc = _caixa_fechada()
+    assert not [a for a in C.cobertura(doc) if a["tipo"] == "barra_na_telha"]
+    terca = [b for b in doc.barras if b.papel == "terça"][2]
+    terca.inicio = (terca.inicio[0], terca.inicio[1], terca.inicio[2] + 20.0)
+    terca.fim = (terca.fim[0], terca.fim[1], terca.fim[2] + 20.0)
+    achados = [a for a in C.cobertura(doc) if a["tipo"] == "barra_na_telha"]
+    assert len(achados) == 1 and terca.id in achados[0]["ids"] and 10 <= achados[0]["mm"] <= 30, achados
+    # a treliça que sobe bem acima da telha (revestida, COB-16) não é este achado
+    terca.inicio = (terca.inicio[0], terca.inicio[1], terca.inicio[2] + 500.0)
+    terca.fim = (terca.fim[0], terca.fim[1], terca.fim[2] + 500.0)
+    assert not [a for a in C.cobertura(doc) if a["tipo"] == "barra_na_telha"]
+
+
 # ------------------------------------------------------------------ COB-01: a cobertura não tem fresta nem buraco
 # (catálogo sistema/testes/REGRAS.md; usuário, 21/10: "o sistema fica andando em círculos" — no Posto V2 a conta do chat
 # da obra achou 53 buracos e 43 frestas com toda a conferência passando)
