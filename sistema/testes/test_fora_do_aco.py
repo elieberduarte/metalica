@@ -222,3 +222,14 @@ def test_acm_fica_fora_do_aco():
     lev = det.levantar(doc)
     assert "Platibanda fachada A — ACM e estrutura" not in {p.marca for p in lev["posicoes"]}
     assert {g["nome"]: g["categoria"] for g in lev["fora_do_aco"]}.get("Platibanda fachada A — ACM e estrutura") == "acm"
+
+
+def test_aluminio_e_prfv_ficam_fora_do_aco():
+    """A veneziana industrial do arquitetônico (SESI Chapecó, 29/10: "verificar as venezianas para modelar ela como é na
+    realidade" — aleta de PRFV, montante de alumínio): sem o material na lista, a peça virava aço; o ACM continua ACM"""
+    from nucleo2d.detalhe import fora_do_aco as fa_
+    v, f = _caixa(60000.0, 50.0, 100.0)
+    assert fa_.material_nao_aco(_solido("Montante", "IfcMember", v, f, "Alumínio branco")) == ("alumínio", 2700.0)
+    assert fa_.material_nao_aco(_solido("Aleta", "IfcMember", v, f, "PRFV branco leitoso")) == ("prfv", 1800.0)
+    assert fa_.material_nao_aco(_solido("Aleta", "IfcMember", v, f, "Fibra de vidro")) == ("prfv", 1800.0)
+    assert fa_.material_nao_aco(_solido("Platibanda", "IfcWall", v, f, "Alumínio composto (ACM)")) == ("acm", 1500.0)
