@@ -30,16 +30,19 @@ def _porta():
     return p
 
 
-def _servidor_falso(ocupado_nas_primeiras: int):
-    """responde /api/dev/ocupado: ocupado nas primeiras n perguntas, depois livre"""
+def _servidor_falso(ocupado_nas_primeiras: int, andamento=None):
+    """responde /api/dev/ocupado: ocupado nas primeiras n perguntas, depois livre; `andamento`: s desde o último
+    _progresso da tarefa (sem ele, o servidor de antes de 29/10)"""
     perguntas = [0]
 
     class H(BaseHTTPRequestHandler):
         def do_GET(self):
             perguntas[0] += 1
             ocup = perguntas[0] <= ocupado_nas_primeiras
-            corpo = json.dumps({"ocupado": ocup, "pedidos": [{"rota": "/api/projetos/cd-bom-dia/reanalisar", "ha_s": 40}]
-                                if ocup else []}).encode()
+            d = {"ocupado": ocup, "pedidos": [{"rota": "/api/projetos/cd-bom-dia/reanalisar", "ha_s": 40}] if ocup else []}
+            if andamento is not None:
+                d["andamento_ha_s"] = andamento
+            corpo = json.dumps(d).encode()
             self.send_response(200)
             self.send_header("Content-Length", str(len(corpo)))
             self.end_headers()
@@ -73,6 +76,44 @@ def test_o_vigia_nao_espera_alem_do_limite_nem_sem_servidor():
     t0 = time.time()
     dev._esperar_ocioso(_porta(), limite=5, intervalo=0.1)            # porta sem servidor: reinicia como antes
     assert time.time() - t0 < 4.5
+
+
+def test_a_tarefa_que_anda_segura_o_reinicio_alem_do_limite():
+    """Edifício Administrativo (29/10): o Detalhar de 41 min era derrubado aos 14 (o limite de 10 min de espera), com a
+    tarefa dizendo o andamento. A que anda segura o reinício até terminar (no máximo o teto); a parada, não."""
+    srv, perguntas = _servidor_falso(14, andamento=0.2)              # ocupada ~1,4 s, com andamento recente
+    try:
+        esperou = dev._esperar_ocioso(srv.server_address[1], limite=0.5, intervalo=0.1)
+    finally:
+        srv.shutdown()
+    assert perguntas[0] >= 15 and esperou > 1.2, "esperou a tarefa que anda terminar, além do limite (%.1f s)" % esperou
+    srv, _ = _servidor_falso(10 ** 6, andamento=999.0)               # parada: sem andamento há mais que o limite
+    try:
+        esperou = dev._esperar_ocioso(srv.server_address[1], limite=0.5, intervalo=0.1)
+    finally:
+        srv.shutdown()
+    assert 0.4 < esperou < 2.5, "a parada não segura além do limite (%.1f s)" % esperou
+    srv, _ = _servidor_falso(10 ** 6, andamento=0.2)                 # anda para sempre: o teto vale
+    try:
+        esperou = dev._esperar_ocioso(srv.server_address[1], limite=0.3, intervalo=0.1, teto=1.0)
+    finally:
+        srv.shutdown()
+    assert 0.9 < esperou < 3.0, "o teto vale (%.1f s)" % esperou
+
+
+def test_o_servidor_dev_diz_o_andamento():
+    """/api/dev/ocupado traz há quanto tempo uma tarefa chamou o _progresso (nenhuma: None)"""
+    import app
+    guardado = dict(app.PROGRESSO)
+    try:
+        app.PROGRESSO.clear()
+        assert app._ocupado()["andamento_ha_s"] is None
+        app.PROGRESSO["obra-a"] = {"etapa": "desenhando conjuntos (3 de 82)…", "quando": time.time() - 40.0}
+        app.PROGRESSO["obra-b"] = {"etapa": "lista…", "quando": time.time() - 5.0}
+        assert 4.0 <= app._ocupado()["andamento_ha_s"] < 15.0, "o andamento mais recente"
+    finally:
+        app.PROGRESSO.clear()
+        app.PROGRESSO.update(guardado)
 
 
 def test_o_servidor_dev_diz_o_pedido_em_curso():

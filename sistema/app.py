@@ -6633,7 +6633,11 @@ def _ocupado() -> dict:
     agora = time.time()
     with _TRAVA_JANELAS:
         pedidos = [{"rota": r, "ha_s": round(agora - t0, 1)} for r, t0 in _ROTAS_EM_CURSO.values()]
-    return {"ocupado": bool(pedidos), "pedidos": sorted(pedidos, key=lambda p: -p["ha_s"])}
+    # há quanto tempo uma tarefa deu andamento (_progresso): enquanto anda, o vigia segura o reinício além de ESPERA_TAREFA
+    # (o Detalhar do Edifício Administrativo, 41 min, morria aos 14 — 29/10)
+    quandos = [float(p.get("quando") or 0.0) for p in list(PROGRESSO.values())]
+    andamento = round(agora - max(quandos), 1) if quandos else None
+    return {"ocupado": bool(pedidos), "pedidos": sorted(pedidos, key=lambda p: -p["ha_s"]), "andamento_ha_s": andamento}
 
 
 def _trabalho_em_curso() -> bool:

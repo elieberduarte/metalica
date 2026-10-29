@@ -10,6 +10,8 @@ Mudança só nas telas (js, html, css) não precisa de reinício: a janela avisa
 Quando o servidor termina por conta própria (o usuário fechou a janela), o vigia termina junto.
 Com uma tarefa em curso (o Reanalisar estrutura, o Detalhar, a análise), o reinício espera ela terminar (até
 ESPERA_TAREFA): vários chats salvam .py o tempo todo, e o reinício no meio dava "Failed to fetch" na tela (19/10).
+A tarefa que segue dizendo o andamento (_progresso) segura o reinício além disso, até ESPERA_MAXIMA: o Detalhar do
+Edifício Administrativo (41 min) era derrubado aos 14 min (29/10).
 """
 import os
 import subprocess
@@ -20,7 +22,8 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 IGNORAR = {"testes", "projetos", "__pycache__", "web", "saida_pdf", ".git"}
 INTERVALO = 1.0            # s entre olhadas no código
 ESPERA_PORTA = 8.0         # s para a porta ficar livre depois de derrubar o servidor
-ESPERA_TAREFA = 600.0      # s, no máximo, esperando a tarefa em curso terminar antes de reiniciar
+ESPERA_TAREFA = 600.0      # s esperando a tarefa em curso terminar; depois, só se ela deu andamento nesse tempo
+ESPERA_MAXIMA = 3600.0     # s, no máximo, mesmo com a tarefa dando andamento
 
 
 def _registro():
@@ -69,25 +72,42 @@ def _porta_ocupada(porta: int) -> bool:
         s.close()
 
 
-def _ocupado(porta: int) -> list:
-    """os pedidos em curso no servidor (GET /api/dev/ocupado); [] se está livre ou não responde"""
+def _consultar(porta: int) -> tuple:
+    """(pedidos em curso, s desde o último andamento de uma tarefa ou None) pelo GET /api/dev/ocupado; ([], None) se está
+    livre ou não responde"""
     import json
     import urllib.request
     try:
         with urllib.request.urlopen("http://127.0.0.1:%d/api/dev/ocupado" % porta, timeout=3) as r:
             d = json.loads(r.read().decode("utf-8"))
-        return list(d.get("pedidos") or []) if d.get("ocupado") else []
+        if not d.get("ocupado"):
+            return [], None
+        andamento = d.get("andamento_ha_s")
+        return list(d.get("pedidos") or []), (None if andamento is None else float(andamento))
     except Exception:                                    # noqa: BLE001 — sem resposta: reinicia como antes
-        return []
+        return [], None
 
 
-def _esperar_ocioso(porta: int, limite: float = ESPERA_TAREFA, intervalo: float = 1.0) -> float:
-    """espera o servidor ficar sem pedido em curso (no máximo `limite` s); devolve quanto esperou"""
+def _ocupado(porta: int) -> list:
+    """os pedidos em curso no servidor (GET /api/dev/ocupado); [] se está livre ou não responde"""
+    return _consultar(porta)[0]
+
+
+def _esperar_ocioso(porta: int, limite: float = ESPERA_TAREFA, intervalo: float = 1.0,
+                    teto: float = ESPERA_MAXIMA) -> float:
+    """espera o servidor ficar sem pedido em curso; devolve quanto esperou. Desiste depois de `limite` s, a não ser que a
+    tarefa tenha dado andamento nos últimos `limite` s (o Detalhar de 41 min, 29/10) — e aí no máximo `teto` s"""
     t0 = time.time()
     avisou = False
-    while time.time() - t0 < limite:
-        pedidos = _ocupado(porta)
+    while True:
+        pedidos, andamento = _consultar(porta)
         if not pedidos:
+            break
+        esperou = time.time() - t0
+        if esperou >= teto or (esperou >= limite and (andamento is None or andamento >= limite)):
+            print("[dev] %s a tarefa segue em curso há %.0f s de espera%s — reiniciando assim mesmo" % (
+                time.strftime("%H:%M:%S"), esperou, "" if andamento is None else
+                " (último andamento há %.0f s)" % andamento), flush=True)
             break
         if not avisou:
             p = pedidos[0]

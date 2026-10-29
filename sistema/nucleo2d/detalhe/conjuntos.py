@@ -1335,12 +1335,50 @@ def _so_bordas_externas(desenho: Desenho, entidades: Sequence, ids_barras: set, 
             desenho.add(Linha(camada=cam, a=(round(a_[0], 2), round(a_[1], 2)), b=(round(b_[0], 2), round(b_[1], 2)), atributos=atr))
 
 
+#: As malhas das peças do modelo enquanto os conjuntos são desenhados (malhas_guardadas): _vizinhos_no_plano e
+#: _cortes_das_tercas olham o modelo inteiro a cada conjunto. No Edifício Administrativo (29/10, 5.562 peças) eram 12,8 s
+#: de malhas por vez, duas vezes em cada um dos 82 conjuntos: 36 dos 41 min do Detalhar. Pela identidade da peça (o
+#: desenho não mexe no modelo); fora do `with`, a malha é feita de novo como antes.
+_MALHAS: Optional[Dict[int, tuple]] = None
+
+
+class malhas_guardadas:
+    """`with malhas_guardadas():` — dentro, a malha de cada peça é feita uma vez só"""
+
+    def __enter__(self):
+        global _MALHAS
+        self._antes = _MALHAS
+        if _MALHAS is None:
+            _MALHAS = {}
+        return self
+
+    def __exit__(self, *a):
+        global _MALHAS
+        _MALHAS = self._antes
+        return False
+
+
+def _malha_guardada(ent):
+    from nucleo3d.geometria import malha
+    if _MALHAS is None:
+        return malha(ent)
+    g = _MALHAS.get(id(ent))
+    if g is None or g[0] is not ent:
+        try:
+            g = (ent, malha(ent), None)
+        except Exception as e:                                # noqa: BLE001 — a peça sem malha falha igual da próxima vez
+            g = (ent, None, e)
+        _MALHAS[id(ent)] = g
+    if g[2] is not None:
+        raise g[2]
+    return g[1]
+
+
 def _vizinhos_no_plano(doc: Documento, instancia: Sequence, origem, u, v, w, u0: float, v0: float,
                        dx: float, dy: float, perto: float = 400.0) -> List[tuple]:
     """As peças de fora da tesoura que ficam no plano dela (cabem em 400 mm atravessado, o meio a até
     300 mm do plano) e encostadas no contorno (até `perto` mm): o montante lateral e as chapas dele na
     ponta. Parafuso, telha, calha e barra redonda não. Devolve (id, marca, contorno projetado)."""
-    from nucleo3d.geometria import malha
     ws = [_dot(_sub(q, origem), w) for e in instancia for q in e.vertices]
     if not ws:
         return []
@@ -1362,7 +1400,7 @@ def _vizinhos_no_plano(doc: Documento, instancia: Sequence, origem, u, v, w, u0:
                 or "telha" in str(getattr(ent, "camada", "") or "").lower():
             continue
         try:
-            vs = malha(ent)[0]
+            vs = _malha_guardada(ent)[0]
         except Exception:                                     # noqa: BLE001 — peça sem malha
             continue
         if not vs:
@@ -1419,7 +1457,6 @@ def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0:
 
     Telha (camada de telhas): só o contorno de baixo, o lado virado para a estrutura, numa polilinha
     — para ver se a telha pega na estrutura (pedido do usuário, 28/09)."""
-    from nucleo3d.geometria import malha
     ws = [_dot(_sub(q, origem), w) for e in instancia for q in e.vertices]
     if not ws or not segs_bz:
         return [], [], []
@@ -1470,7 +1507,7 @@ def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0:
             if m_onda:
                 ondas.append(float(m_onda.group(1)))
         try:
-            vs, fs = malha(ent)
+            vs, fs = _malha_guardada(ent)
         except Exception:                                     # peça sem malha (perfil desconhecido)
             continue
         if not vs:

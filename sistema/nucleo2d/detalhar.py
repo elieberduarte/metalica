@@ -27,7 +27,7 @@ desenho sai em entidades do CAD (cota, texto, polilinha), editáveis.
 import collections
 import math
 import re
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from nucleo.base import ErroDeDados
 from nucleo3d.modelo import Documento, Solido, Chapa
@@ -110,6 +110,7 @@ from nucleo2d.detalhe.base import (  # noqa: E402,F401
     fora_do_limite_da_maquina,
     vincular_furos_de_ligacao)
 from nucleo2d.detalhe.conjuntos import (  # noqa: E402,F401
+    malhas_guardadas,
     posicao_base,
     FRACAO_COMUM_CONJUNTO,
     MENOR_ITEM_LOCALIZACAO,
@@ -365,6 +366,11 @@ def _gravadas() -> Dict[tuple, tuple]:
     return _LOCAL.gravadas
 
 
+#: Chamado a cada célula desenhada, quando o _detalhar liga: o "(i de n)" da etapa na barra de andamento. "desenhando
+#: conjuntos" ficava 36 min sem andar no Edifício Administrativo (29/10), e o vigia do dev a tomava por parada.
+_ANDAMENTO_CELULAS: List[Optional[Callable[[], None]]] = [None]
+
+
 def _desenhar_celula(f, banda: Desenho, x: float, y: float):
     """`f(banda, x, y)` — ou, para as células de conjunto (`f.reaproveitar`), a gravação
     dela na mesma escala, transladada; as de posição mudam com o desenho (furo editável
@@ -373,6 +379,8 @@ def _desenhar_celula(f, banda: Desenho, x: float, y: float):
     vistas que a célula acrescentou."""
     import copy as _copy
     from nucleo2d.desenho import novo_id
+    if _ANDAMENTO_CELULAS[0] is not None:
+        _ANDAMENTO_CELULAS[0]()
     if not getattr(f, "reaproveitar", False):
         return f(banda, x, y)
     chave = (id(f), banda.escala)
@@ -1442,13 +1450,24 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             cels = [(t, f) for fam, t, f in familias_completo if fam in g["familias"]]
             if not cels:
                 continue
-            avisar("desenhando %s…" % g["titulo"].replace("Detalhamento – ", ""))
+            nome_g = g["titulo"].replace("Detalhamento – ", "")
+            avisar("desenhando %s…" % nome_g)
             d = Desenho(nome=g["titulo"], escala=g["escala"])
             _registrar_camadas_de_pecas(d)
             meta = dict(faixas["familias"][2]) if "familias" in faixas else {}
             meta["grupo"] = chave
-            _quadros_por_tipo(d, cels, largura_max_papel=1400.0, meta=meta,
-                              titulos=list(QUADROS) + [q for q in QUADROS_POSICOES if q[0] not in dict(QUADROS)])
+            feitas = [0]
+
+            def _andamento(nome_g=nome_g, n=len(cels), feitas=feitas):
+                feitas[0] += 1
+                avisar("desenhando %s (%d de %d)…" % (nome_g, min(feitas[0], n), n))
+            _ANDAMENTO_CELULAS[0] = _andamento
+            try:
+                with malhas_guardadas():
+                    _quadros_por_tipo(d, cels, largura_max_papel=1400.0, meta=meta,
+                                      titulos=list(QUADROS) + [q for q in QUADROS_POSICOES if q[0] not in dict(QUADROS)])
+            finally:
+                _ANDAMENTO_CELULAS[0] = None
             d.metadados["detalhamento"] = dict(d.metadados.get("detalhamento") or {}, **meta)
             desenhos[chave] = d
     # pedidos pelo nome antigo (chapas, barras, tirantes): os desenhos por classe
