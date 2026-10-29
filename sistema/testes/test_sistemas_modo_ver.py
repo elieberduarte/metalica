@@ -72,6 +72,21 @@ def test_exemplo_1_sesi_o_arquitetonico_de_referencia_e_a_cobertura_dele():
     assert "outros" not in r["chaves"] and r["conferencia"] == []
 
 
+def test_o_telhado_do_arquitetonico_pelo_nome_e_cobertura():
+    """TEL-02, 5ª vez (Hora Certa · Galpão Existente, 29/10, print do usuário): o "Telhado existente (8 %)" do arquitetônico,
+    de Concreto na camada "ARQ — Existente (manter)", ficava no Arquitetônico — desligar a Cobertura não o escondia ("telha"
+    com fim de palavra não pega "Telhado"). Só pelo nome da peça: a camada "Telhado — Tesouras" continua na Metálica."""
+    r = _rodar(*_modelo(("thd", "Telhado existente (8 %)", "Concreto", "ARQ — Existente (manter)", "ARQUITETÔNICO"),
+                        ("tel", "Telha existente TE01 (manter, nova pintura)", "Concreto", "ARQ — Existente (manter)", "ARQUITETÔNICO"),
+                        ("pil", "Pilar existente do galpão", "Concreto", "ARQ — Existente (manter)", "ARQUITETÔNICO"),
+                        ("tes", "banzo", "", "Telhado — Tesouras")))
+    s = r["sistemas"]
+    assert sorted(s["Cobertura — telhas, calhas e rufos"]) == ["tel", "thd"]
+    assert s["Arquitetônico (referência)"] == ["pil"]
+    assert s["Metálica"] == ["tes"]
+    assert r["conferencia"] == []
+
+
 def test_exemplo_2_sooro_o_parafuso_do_ifc_so_com_a_cor_e_metalica():
     """O IFC do Sooro grava o material do parafuso como a cor ("Cor #ff0000"): 1.010 parafusos em Outros. Também o
     marcador de furo ("Cor #1f2430") e a peça metálica do Capitão com o material automático ("<auto>7")."""

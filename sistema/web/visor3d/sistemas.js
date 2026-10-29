@@ -29,8 +29,10 @@ const TELHA = /^\s*telha/i;
 const PLATIBANDA = /(^|[—–-])\s*platibandas?\b/i;
 // e pelo nome da PEÇA, em qualquer camada (TEL-02, 3ª vez em 22/10, a verificação do SESI: 7 calhas e 3 rufos do
 // arquitetônico na camada "ARQ — Outros", de Concreto, ficavam à vista com a Cobertura desligada) — como o Terreno já
-// faz; "Suporte da calha" continua na Metálica (o nome começa pela peça)
-const PECA_COBERTURA = /^\s*(telhas?|calhas?|rufos?|cumeeiras?)\b/i;
+// faz; "Suporte da calha" continua na Metálica (o nome começa pela peça). O telhado também (TEL-02, 5ª vez, Hora Certa ·
+// Galpão Existente, 29/10: os 10 "Telhado existente (8 %)" do arquitetônico ficavam à vista com a Cobertura desligada) —
+// só no nome da peça: a camada "Telhado — Tesouras" é de aço, como o grupo "Cobertura frontal" do SESI
+const PECA_COBERTURA = /^\s*(telhas?|telhados?|calhas?|rufos?|cumeeiras?)\b/i;
 // o terreno, a rua e a calçada num sistema só (usuário, 16/10: "terreno, rua e calçada como uma camada única; parede
 // pode deixar junto com o pré-moldado"): pelo nome da peça, antes do material (no IFC do Mercado são lajes de concreto);
 // o muro e as vagas do estacionamento também (usuário, Mercado, 20/10: "colocar esses itens junto com a layer do

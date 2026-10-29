@@ -67,6 +67,9 @@ sesi += [_peca("acm0", 6000.0, "Platibanda fachada A — ACM e estrutura", "Conc
 # a peça pelo nome (TEL-02, 3ª vez, 22/10): a calha e o rufo do arquitetônico na camada "ARQ — Outros", de Concreto
 sesi += [_peca("cal1", 8000.0, "Calha da borda sul do ginásio", "Concreto", "ARQ — Outros", z=17000),
          _peca("ruf1", 9000.0, "Rufo da platibanda sul", "Concreto", "ARQ — Outros", z=17000)]
+# o telhado pelo nome (TEL-02, 5ª vez, Hora Certa · Galpão Existente, 29/10: "Telhado existente (8 %)" do arquitetônico, na
+# camada "ARQ — Existente (manter)", ficava à vista com a Cobertura desligada — "telha" sem fim de palavra não pegava "Telhado")
+sesi += [_peca("thd1", 12000.0, "Telhado existente (8 %)", "Concreto", "ARQ — Existente (manter)", z=17000)]
 # o resto do arquitetônico de referência (VER-10, 22/10: os forros, venezianas e brises de Vidro caíam em Outros)
 sesi += [_peca("for0", 10000.0, "Forro P.D. 3.00 Térreo", "Vidro", "ARQ — Forros", z=3000),
          _peca("bri0", 11000.0, "Brise fachada A - módulo 1 (+3,96)", "Vidro", "ARQ — Brises do arquitetônico", z=4000)]
@@ -80,6 +83,7 @@ cam_sesi = {TES: {"nome": TES, "cor": "#888888", "visivel": True, "grupo": "Cobe
             "ARQ — Platibandas": {"nome": "ARQ — Platibandas", "cor": "#bfbfbf", "visivel": True, "grupo": "ARQUITETÔNICO"},
             "Fachadas — Platibanda": {"nome": "Fachadas — Platibanda", "cor": "#888888", "visivel": True},
             "ARQ — Outros": {"nome": "ARQ — Outros", "cor": "#c9c0b0", "visivel": True, "grupo": "ARQUITETÔNICO"},
+            "ARQ — Existente (manter)": {"nome": "ARQ — Existente (manter)", "cor": "#c9c0b0", "visivel": True, "grupo": "ARQUITETÔNICO"},
             "ARQ — Forros": {"nome": "ARQ — Forros", "cor": "#dfe6ee", "visivel": True, "grupo": "ARQUITETÔNICO"},
             "ARQ — Brises do arquitetônico": {"nome": "ARQ — Brises do arquitetônico", "cor": "#6fa8dc", "visivel": True}}
 for nome, modelo in (("obra", {"nome": "obra", "unidade": "mm", "entidades": ents, "camadas": camadas, "materiais": {}}), ("aco", _modelo()),
@@ -220,14 +224,14 @@ try:
     ok(esperar(aba, PRONTO, 90), "o projeto do SESI abriu")
     aba.avaliar(PINTAR % "sistema")
     leg = json.loads(aba.avaliar(LEGENDA) or "[]")
-    ok([x[:2] for x in leg] == [["Arquitetônico (referência)", 3], ["Cobertura — telhas, calhas e rufos", 8], ["Metálica", 5]],
-       f"SESI por sistema: as 2 telhas do arquitetônico, a de material Telha, a telha e a calha lançadas, o ACM da platibanda e a calha e o rufo do arq em 'ARQ — Outros' (pelo nome) na "
+    ok([x[:2] for x in leg] == [["Arquitetônico (referência)", 3], ["Cobertura — telhas, calhas e rufos", 9], ["Metálica", 5]],
+       f"SESI por sistema: as 2 telhas do arquitetônico, a de material Telha, a telha e a calha lançadas, o ACM da platibanda, a calha e o rufo do arq em 'ARQ — Outros' e o telhado existente (pelo nome) na "
        f"Cobertura; as 3 barras do grupo 'Cobertura frontal', o suporte da calha e o montante da platibanda na Metálica; o pilar de concreto, o forro e o brise de vidro do arq no Arquitetônico — nada em Outros nem no Pré-moldado ({leg})")
     aba.avaliar("document.querySelector('[data-painel=camadas]').click()")
     aba.avaliar("document.querySelector('#painel-corpo input[data-sistema=cobertura]').click()")
     ID = "visor.fichas.findIndex(f => f.id === '%s')"
-    ok(aba.avaliar("[%s].every(i => visor.ocultasSistema.has(i))" % ",".join(ID % k for k in ("arqt0", "arqt1", "tel0", "lt0", "lc0", "acm0", "cal1", "ruf1"))),
-       "desligar a Cobertura esconde as telhas do arquitetônico (camada 'ARQ — Telhas', de Concreto) o ACM da platibanda e a calha e o rufo de 'ARQ — Outros'")
+    ok(aba.avaliar("[%s].every(i => visor.ocultasSistema.has(i))" % ",".join(ID % k for k in ("arqt0", "arqt1", "tel0", "lt0", "lc0", "acm0", "cal1", "ruf1", "thd1"))),
+       "desligar a Cobertura esconde as telhas do arquitetônico (camada 'ARQ — Telhas', de Concreto) o ACM da platibanda, a calha e o rufo de 'ARQ — Outros' e o 'Telhado existente' de 'ARQ — Existente (manter)'")
     ok(aba.avaliar("[%s].every(i => !visor.ocultasSistema.has(i))" % ",".join(ID % k for k in ("tes0", "tes1", "tes2", "sup0", "arqp0", "plm0"))),
        "e não as tesouras do grupo 'Cobertura frontal e eixo 1', o suporte da calha, o montante da platibanda e o pilar")
     aba.avaliar("document.querySelector('#painel-corpo input[data-sistema=cobertura]').click()")
