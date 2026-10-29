@@ -290,6 +290,61 @@ def test_desenho_grande_vai_como_esta_no_disco():
             importlib.reload(app)
 
 
+def test_referencia_do_3d_nao_decodifica_o_original_recebido(monkeypatch):
+    """SESI (29/10): ao abrir o 3D, a referência do chão decodificava a planta de lançamento inteira (287 MB: 23 s e 2,5 GB,
+    com o servidor parado para todas as telas) só para saber que ela é o Original de um projeto recebido e não mostrar
+    nada. Os metadados vêm da cauda; a resposta é a mesma; a planta da obra (não recebida) segue lida inteira."""
+    import importlib
+    import projetos
+    with tempfile.TemporaryDirectory() as raiz:
+        os.environ["METALICA_DADOS"] = raiz
+        try:
+            import app
+            importlib.reload(app)
+            from nucleo3d import lancamento
+            s = app.criar_projeto({"nome": "Recebido", "tipo": "desenho"})["slug"]
+            g = app._gerente()
+            ents = [{"id": "l%d" % i, "tipo": "linha", "camada": "ARQ PDF 000000", "a": [i * 10.0, 0.0], "b": [i * 10.0, 900.0],
+                     "atributos": {"origem": "pdf", "largura": 0.3}} for i in range(40000)]
+            ents.append({"id": "e1", "tipo": "linha", "camada": "EIXO", "a": [0.0, -500.0], "b": [0.0, 1500.0],
+                         "atributos": {"eixo": "1"}})
+            meta = {"lancamento": True, "arquitetonico": {"tipo": "pdf", "recebido": True, "arquivo": "EMT27 ç.pdf"},
+                    "vistas": ["dentro dos metadados"]}
+
+            def gravar(m, ordem=("nome", "unidade", "entidades", "vistas", "metadados")):
+                d = {"nome": lancamento.DESENHO_LANCAMENTO, "unidade": "mm", "entidades": ents, "vistas": [], "metadados": m}
+                g.salvar_desenho(s, lancamento.DESENHO_LANCAMENTO, {k: d[k] for k in ordem})
+            gravar(meta)
+            caminho = g._caminho_desenho(s, lancamento.DESENHO_LANCAMENTO)
+            assert os.path.getsize(caminho) > projetos.DESENHO_GRANDE
+            assert g.metadados_do_desenho(s, lancamento.DESENHO_LANCAMENTO) == meta
+
+            lidos = []
+            inteiro = projetos.Projetos.abrir_desenho
+            monkeypatch.setattr(projetos.Projetos, "abrir_desenho",
+                                lambda self, s_, n_: lidos.append(n_) or inteiro(self, s_, n_))
+            r = app.referencia_do_lancamento(s)
+            assert r["segmentos"] == [] and not r.get("da_planta")
+            assert lancamento.DESENHO_LANCAMENTO not in lidos          # a planta recebida não foi decodificada
+
+            # a planta da obra (não recebida): lida inteira, com as linhas no chão e a malha dela
+            gravar(dict(meta, arquitetonico={"tipo": "pdf"}))
+            r = app.referencia_do_lancamento(s)
+            assert len(r["segmentos"]) == 40000 and r.get("da_planta")
+            assert lancamento.DESENHO_LANCAMENTO in lidos
+
+            # o que a cauda não fecha vem do arquivo inteiro: metadados antes das vistas, e o arquivo emendado
+            gravar(meta, ordem=("nome", "unidade", "metadados", "entidades", "vistas"))
+            assert g.metadados_do_desenho(s, lancamento.DESENHO_LANCAMENTO) == meta
+            gravar(meta)
+            with open(caminho, "a", encoding="utf-8") as f:
+                f.write('{"lixo": 1')
+            assert g.metadados_do_desenho(s, lancamento.DESENHO_LANCAMENTO) == meta
+        finally:
+            del os.environ["METALICA_DADOS"]
+            importlib.reload(app)
+
+
 def test_modelo_gravado_como_veio_do_editor():
     """A gravação automática do Bella Casa (05/10) passava 200 MB por json.loads e json.dumps: o
     editor manda o texto pronto e ele vai para o disco como veio, com as mesmas regras (data base,

@@ -872,6 +872,31 @@ class Projetos:
             raise ErroDeDados("desenho não encontrado: " + nome)
         return _ler_json(caminho, os.path.join(self.raiz, LIXEIRA))
 
+    def metadados_do_desenho(self, s: str, nome: str) -> dict:
+        """Os metadados de um desenho sem decodificar as entidades: no desenho grande, pela cauda (`Desenho.dict()` grava
+        vistas e metadados por último). A planta do SESI (29/10, 287 MB) levava 23 s e 2,5 GB inteira para a referência
+        do 3D saber que é o Original de um projeto recebido. O que a cauda não fecha (metadados enormes, arquivo
+        emendado) vem do arquivo inteiro."""
+        caminho = self._caminho_desenho(s, nome)
+        if not os.path.exists(caminho):
+            raise ErroDeDados("desenho não encontrado: " + nome)
+        if os.path.getsize(caminho) > DESENHO_GRANDE:
+            with open(caminho, "rb") as f:
+                f.seek(-256 * 1024, os.SEEK_END)
+                cauda = f.read().decode("utf-8", "ignore")
+            # da última para trás: só fecha quando "vistas" é a chave do desenho e o arquivo termina nele — dentro dos
+            # metadados ou de uma entidade, ou com lixo depois, sobram chaves e o loads recusa; sem "metadados" depois das
+            # vistas, o arquivo inteiro
+            for m in reversed(list(re.finditer(r'"vistas":\s?\[', cauda))):
+                try:
+                    fim = json.loads("{" + cauda[m.start():])
+                except ValueError:
+                    continue
+                if isinstance(fim.get("metadados"), dict):
+                    return dict(fim["metadados"])
+                break
+        return dict(self.abrir_desenho(s, nome).get("metadados") or {})
+
     def excluir_desenho(self, s: str, nome: str) -> dict:
         caminho = self._caminho_desenho(s, nome)
         if os.path.exists(caminho):

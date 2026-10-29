@@ -4538,10 +4538,14 @@ def referencia_do_lancamento(s: str) -> dict:
         if guardado and guardado[0] == chave and len(guardado) > 2:
             saida["segmentos"], malha = guardado[1], guardado[2]
         else:
-            des = Desenho.de_dict(g.abrir_desenho(s, lancamento.DESENHO_LANCAMENTO))
-            segs, malha = lancamento.segmentos_da_referencia(des), lancamento.eixos_da_malha(des)
-            if not lancamento.fundo_no_3d(des):
-                segs, malha = [], []            # o Original do projeto recebido: as folhas não são a planta da obra (20/10)
+            meta = g.metadados_do_desenho(s, lancamento.DESENHO_LANCAMENTO)
+            if not lancamento.fundo_no_3d(Desenho.de_dict({"metadados": meta})):
+                # o Original do projeto recebido: as folhas não são a planta da obra (20/10). Decidido pelos metadados, sem
+                # decodificar a planta: a do SESI (287 MB) levava 23 s e 2,5 GB, com o servidor parado, para não mostrar nada (29/10)
+                segs, malha = [], []
+            else:
+                des = Desenho.de_dict(g.abrir_desenho(s, lancamento.DESENHO_LANCAMENTO))
+                segs, malha = lancamento.segmentos_da_referencia(des), lancamento.eixos_da_malha(des)
             _CACHE_REFERENCIA[s] = (chave, segs, malha)
             saida["segmentos"] = segs
     else:
