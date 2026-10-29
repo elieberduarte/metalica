@@ -807,6 +807,13 @@ class CAD {
       if (ent.tipo === 'polilinha' && Array.isArray(ent.vertices)) {
         const v = ent.vertices;
         for (let i = 0; i + 1 < v.length; i++) if (sobre(v[i], v[i + 1])) { ids.push(ent.id); break; }
+        continue;
+      }
+      // o traço grosso que a folha impressa traz como polígono cheio (29/10, Galpão Novo da Hora Certa: a grade do forro
+      // da 942 é polilinha com espessura; o PDF a lê como hachura sólida): a borda dele corre junto do eixo da peça
+      if (ent.tipo === 'hachura' && ent.padrao === 'solido' && Array.isArray(ent.contornos)) {
+        const em = ent.contornos.some(v => Array.isArray(v) && v.some((p, i) => sobre(p, v[(i + 1) % v.length])));
+        if (em) ids.push(ent.id);
       }
     }
     this.tela.selecao = new Set(ids);

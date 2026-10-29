@@ -59,6 +59,10 @@ linha(902, (104300.0, 10000.0), (104300.0, 16000.0), "1-Terça Eixo")
 # a planta do mezanino (modelo − (DX, DY) − (−40000; 0)): a viga VM em y 3000 do modelo; a terça cruza o mesmo ponto em
 # planta, 4 m acima — é de outra planta e não pode vir junto
 linha(903, (141000.0, 53000.0), (147000.0, 53000.0), "Mezanino")
+# a viga do forro do mezanino em y 4500 do modelo, desenhada como traço grosso que o PDF imprime como polígono cheio (29/10,
+# Galpão Novo da Hora Certa, a grade do forro da 942): no Original, só a hachura sólida de 80 mm, sem linha
+ents.append({"id": "hf1", "tipo": "hachura", "camada": "PDF ff0000", "padrao": "solido", "atributos": {"origem": "pdf", "preenchimento": True},
+             "contornos": [[[141000.0, 54460.0], [147000.0, 54460.0], [147000.0, 54540.0], [141000.0, 54540.0]]]})
 # a planta girada da cobertura G1: a terça de (1000; 20000) a (1000; 26000) no modelo, deitada no desenho
 linha(904, (205000.0, 45000.0), (199000.0, 45000.0), "Cobertura G1")
 # o pilar do corte XX: em x = 20000 da linha, de pé no desenho
@@ -97,6 +101,11 @@ v_ = Barra(nome="Ue 150×70×20×2,65", inicio=(1000.0, 3000.0, 3100.0), fim=(70
            camada="Mezanino")
 v_.atributos = {"origem": {"planta": "VM-2Ue150X70X20X2,65", "fonte_2d": "PLANTA NO NÍVEL 3,17m"}}
 doc.add(v_)
+vf_ = Barra(nome="Ue 100×40×15×3,00", inicio=(1000.0, 4500.0, 3100.0), fim=(7000.0, 4500.0, 3100.0), perfil="Ue 100×40×15×3,00",
+            papel="viga", camada="Mezanino")
+vf_.atributos = {"origem": {"fonte_2d": "PLANTA NO NÍVEL 3,17m"}}
+doc.add(vf_)
+ID_VIGA_FORRO = vf_.id
 g_ = Barra(nome="Ue 250×85×25×2,00", inicio=(1000.0, 20000.0, 9000.0), fim=(1000.0, 26000.0, 9000.0), perfil="Ue 250×85×25×2,00",
            papel="terça", camada="Terças G1")
 g_.atributos = {"origem": {"fonte_2d": "COBERTURA G1"}}
@@ -162,7 +171,7 @@ try:
     while time.time() - t0 < 90 and not aba.avaliar(f"!!({F2}.cad && {F3}.editor && {F3}.editor.documento && {F3}.editor.documento.entidades.size === 10)"):
         aba.drenar(0.5)
     aba.drenar(1.5)
-    ok(aba.avaliar(f"!!{F2}.cad") and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 10, "os dois lados abrem: o desenho e o modelo do projeto")
+    ok(aba.avaliar(f"!!{F2}.cad") and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 11, "os dois lados abrem: o desenho e o modelo do projeto")
     ok("Posto dividido" in (aba.avaliar("document.title") or ""), "o nome do projeto no título da janela")
     t0 = time.time()
     while time.time() - t0 < 10 and not aba.avaliar(f"!!{F3}.document.querySelector('.seletor-vista a.ativo')"): aba.drenar(0.3)
@@ -231,6 +240,17 @@ try:
             # e a linha da própria terça acesa, não a vizinha a 300 mm (22/10: "está vinculado a qual terça?")
             sel2 = sorted(aba.avaliar(f"[...{F2}.cad.tela.selecao]") or [])
             ok(sel2 == ["l901"], f"3D → 2D: a linha do eixo da terça selecionada no desenho, só ela ({sel2})")
+    # a viga do forro desenhada só como preenchimento (29/10, Galpão Novo: a 942): o 2D acende a hachura dela, e ela de volta
+    # traz a viga no 3D
+    aba.avaliar(f"(() => {{ const e = {F3}.editor; e.selecao.definir([]); e.selecao.definir(['{ID_VIGA_FORRO}']); return 1; }})()")
+    aba.drenar(1.0)
+    sel2 = sorted(aba.avaliar(f"[...{F2}.cad.tela.selecao]") or [])
+    ok(sel2 == ["hf1"], f"3D → 2D: a viga do forro acende o traço grosso dela (hachura sólida do PDF) ({sel2})")
+    aba.avaliar(f"(() => {{ {F3}.editor.selecao.definir([]); return 1; }})()")
+    aba.avaliar(f"{F2}.cad.selecionar(['hf1']); 1")
+    aba.drenar(1.0)
+    sel = sorted(aba.avaliar(f"[...{F3}.editor.selecao.ids]") or [])
+    ok(sel == [ID_VIGA_FORRO], f"2D → 3D: a hachura do traço grosso traz a viga do forro, só ela ({sel})")
     aba.avaliar(f"""(() => {{ const e = {F3}.editor; const ids = [...e.documento.entidades.values()].filter(x => x.atributos.origem.peca === 'TESOURA 1#2').map(x => x.id);
         e.selecao.definir([]); e.selecao.definir(ids); return ids.length; }})()""")
     aba.drenar(1.0)
@@ -332,7 +352,7 @@ try:
        and aba.avaliar("getComputedStyle(document.querySelector('#lado-2d')).display") != "none"
        and "vista=2d" in (aba.avaliar("location.search") or ""), "a vista 2D mostra só o desenho (e a URL diz a vista)")
     aba.avaliar(f"{F2}.document.querySelector('.seletor-vista a[data-vista-area=\"3d\"]').click(); 1"); aba.drenar(0.5)
-    ok(aba.avaliar(f"{F3}.__marca") == "mesmo" and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 10,
+    ok(aba.avaliar(f"{F3}.__marca") == "mesmo" and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 11,
        "voltar ao 3D não recarrega o modelo (o mesmo 3D, montado uma vez)")
     ok(aba.avaliar(f"{F2}.document.querySelector('.ligacao-vistas').hidden") is True,
        "fora do 2D + 3D, os controles da seleção somem")

@@ -120,6 +120,50 @@ def test_folhas_do_projetista_contam_como_o_projeto_recebido(tmp_path, origem):
     assert any("nada vindo do projeto recebido" in a["texto"] for a in V.conferir(pasta)["apontamentos"])
 
 
+def _cobertura_e_forro(pasta, forro_no_desenho):
+    """a cobertura (300 terças, linhas do desenho) e o forro de uma planta própria (40 vigas a 2 m): o forro no desenho
+    como `forro_no_desenho` diz — None (a folha lida sem ele), "linha" ou "hachura" (o traço grosso que o PDF imprime como
+    polígono cheio de 80 mm, que a leitura com os preenchimentos traz como hachura sólida)"""
+    linhas = [([0.0, 1500.0 * i], [12000.0, 1500.0 * i]) for i in range(300)]
+    forro = [([200000.0 + 2000.0 * i, 0.0], [200000.0 + 2000.0 * i, 6000.0]) for i in range(40)]
+    barras = [((a[0] + DESL[0], a[1] + DESL[1]), (b[0] + DESL[0], b[1] + DESL[1]), {"fonte_2d": "cobertura"}) for a, b in linhas]
+    barras += [((a[0] + DESL[0], a[1] + DESL[1]), (b[0] + DESL[0], b[1] + DESL[1]), {"fonte_2d": "forro"}) for a, b in forro]
+    pm = {"desenho": "desenho", "deslocamento": list(DESL), "fontes": {"cobertura": [0.0, 0.0], "forro": [0.0, 0.0]}}
+    _projeto(pasta, {"nome": "Galpão", "dxf_recebido": "GALPAO.dxf", "planta_modelo": pm},
+             linhas + (forro if forro_no_desenho == "linha" else []), barras)
+    if forro_no_desenho == "hachura":
+        caminho = os.path.join(pasta, "desenhos-2d", "desenho.desenho.json")
+        with open(caminho, encoding="utf-8") as f:
+            des = json.load(f)
+        for k, (a, b) in enumerate(forro):
+            des["entidades"].append({"id": "h%d" % k, "tipo": "hachura", "camada": "PDF ff0000", "padrao": "solido",
+                                     "atributos": {"origem": "pdf", "preenchimento": True},
+                                     "contornos": [[[a[0] - 40.0, a[1]], [a[0] + 40.0, a[1]], [b[0] + 40.0, b[1]], [b[0] - 40.0, b[1]]]]})
+        with open(caminho, "w", encoding="utf-8") as f:
+            json.dump(des, f)
+
+
+def test_planta_sem_o_desenho_aponta_mesmo_com_o_modelo_inteiro_certo(tmp_path):
+    """29/10, Galpão Novo da Hora Certa: o Original perdeu a grade do forro do mezanino (942) e 57 das 201 vigas ficaram
+    longe de traço; no modelo inteiro (18 mil barras) eram 0,3 % e a GER-04 passava. A conta vale também por planta"""
+    pasta = str(tmp_path)
+    _cobertura_e_forro(pasta, None)
+    r = V.conferir(pasta)
+    assert r["fora"] == 40 and r["fora"] < V.LIMITE_FORA * r["barras"]
+    assert [a["texto"][:20] for a in r["apontamentos"]] == ['a planta "forro": 40']
+    _cobertura_e_forro(pasta, "linha")
+    assert V.conferir(pasta)["apontamentos"] == []
+
+
+def test_traco_grosso_impresso_como_preenchimento_conta_como_traco(tmp_path):
+    """29/10, Galpão Novo da Hora Certa: a 942 desenha o forro em polilinha com espessura; o PDF a imprime como polígono só
+    preenchido, que a leitura com os preenchimentos (c5c0e4f) traz como hachura sólida — o traço do projetista"""
+    pasta = str(tmp_path)
+    _cobertura_e_forro(pasta, "hachura")
+    r = V.conferir(pasta)
+    assert r["fora"] == 0 and r["apontamentos"] == []
+
+
 def _com_chave(pasta, quantas):
     """as primeiras `quantas` barras com a chave do traço do desenho de baixo delas (atributos.origem_2d = o id do traço)"""
     caminho = os.path.join(pasta, "modelo.json")

@@ -26,6 +26,9 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 CEL = 250.0            # mm: a grade dos traços do desenho
 LIMITE_FORA = 0.12
+#: a mesma conta em cada planta do vínculo (29/10, Galpão Novo da Hora Certa: 57 das 201 vigas do forro da 942 sem traço —
+#: o Original perdeu a grade do forro — e o modelo inteiro, com 18 mil barras, passava): planta com MIN_PLANTA barras ou mais
+LIMITE_FORA_PLANTA, MIN_PLANTA = 0.25, 30
 #: o traço que veio do projeto recebido: o DXF (espaço do modelo), as folhas do papel do DXF (folhas_papel) e as folhas
 #: impressas em PDF (27/10, Hora Certa: o Original passou a ser as pranchas como foram emitidas, regra do usuário)
 ORIGEM_RECEBIDA = ("dxf", "dxf-papel", "pdf")     # fração das barras longe de qualquer traço do desenho a partir da qual o vínculo está errado
@@ -74,6 +77,12 @@ def _pontos(des: dict):
                     yield from trecho(a, b)
             elif t in ("circulo", "arco") and e.get("centro"):
                 yield e["centro"][0], e["centro"][1]
+            elif t == "hachura":
+                # o traço grosso que a folha impressa traz como polígono cheio (29/10, Galpão Novo da Hora Certa: a grade
+                # do forro da 942 é polilinha com espessura, no PDF só preenchimento)
+                for vs in e.get("contornos") or []:
+                    for a, b in zip(vs, vs[1:] + vs[:1]):
+                        yield from trecho(a, b)
         except (KeyError, TypeError, IndexError):
             continue
 
@@ -123,6 +132,7 @@ def conferir(pasta_projeto: str) -> dict:
         gx, gy = int(x // CEL), int(y // CEL)
         return any((gx + i, gy + j) in grade for i in (-1, 0, 1) for j in (-1, 0, 1))
     fora_por_camada: Dict[str, int] = {}
+    por_planta: Dict[str, List[int]] = {}           # planta → [barras, fora]
     for e in ents:
         if e.get("tipo") != "barra" or not e.get("inicio") or not e.get("fim"):
             continue
@@ -135,12 +145,20 @@ def conferir(pasta_projeto: str) -> dict:
         a, b = e["inicio"], e["fim"]
         pts = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), (a[0], a[1]), (b[0], b[1])
         out["barras"] += 1
+        pp = por_planta.setdefault(f or "(geral)", [0, 0])
+        pp[0] += 1
         if not all(perto(*ao_desenho(x, y, desl, fonte)) for x, y in pts):
             out["fora"] += 1
+            pp[1] += 1
             c = e.get("camada") or "?"
             fora_por_camada[c] = fora_por_camada.get(c, 0) + 1
     for f, n in sorted(sem_fonte.items(), key=lambda kv: -kv[1]):
         apontar('%d peças vêm da planta "%s", que o vínculo não conhece (planta_modelo.fontes)' % (n, f))
+    for f, (n, fora) in sorted(por_planta.items()):
+        if n >= MIN_PLANTA and fora > LIMITE_FORA_PLANTA * n:
+            apontar('a planta "%s": %d de %d barras (%.0f %%) longe de qualquer traço do desenho — o desenho dela no 2D '
+                    "está incompleto (o que a folha traz só como preenchimento, por exemplo) ou o deslocamento dela está errado"
+                    % (f, fora, n, 100.0 * fora / n))
     if out["barras"] and out["fora"] > LIMITE_FORA * out["barras"]:
         pior = ", ".join("%s (%d)" % kv for kv in sorted(fora_por_camada.items(), key=lambda kv: -kv[1])[:4])
         apontar('o 3D não cai em cima do desenho "%s": %d de %d barras (%.0f %%) longe de qualquer traço — o deslocamento '
