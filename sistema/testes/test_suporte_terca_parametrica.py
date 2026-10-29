@@ -35,3 +35,19 @@ def test_sem_a_terca_marcada_nada_muda():
     doc, st = _terca_e_suporte()
     assert ajustar_suportes_as_tercas(doc, {"OUTRA"}, {"Suporte de terça ST1"})["chapas"] == 0
     assert sorted({f["y"] for f in st.furos}) == [25.0, 65.0]
+
+
+def test_suporte_na_ponta_da_linha_de_tercas_fica_com_as_duas_colunas_iguais():
+    """Posto V2, 29/10/2026: a terça acaba entre as duas colunas do ST1 (o suporte da ponta da linha) e só a coluna dentro
+    dela ia ao passo da máquina — a chapa ia ao corte com uma coluna a 50 e a outra a 40 (37 suportes)."""
+    doc, st = _terca_e_suporte()
+    t = doc.barras[0]
+    t.fim = (1500.0, 0.0, 1000.0)                           # a terça acaba no meio do suporte (as colunas em 1460 e 1540)
+    assert ajustar_suportes_as_tercas(doc, {"P1512"}, {"Suporte de terça ST1"})["chapas"] == 1
+    for x in (35.0, 115.0):
+        assert sorted(round(f["y"], 1) for f in st.furos if f["x"] == x) == [20.0, 70.0], st.furos
+
+
+def test_letra_da_variante_depois_do_z():
+    from nucleo2d.detalhe.base import letra_da_variante
+    assert [letra_da_variante(i) for i in (1, 25, 26, 27, 52)] == ["b", "z", "aa", "ab", "ba"]

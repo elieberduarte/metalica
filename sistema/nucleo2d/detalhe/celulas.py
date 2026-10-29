@@ -1982,6 +1982,17 @@ def ajustar_suportes_as_tercas(doc: Documento, tercas: set, suportes: set) -> di
                     break
         if not por_terca:
             continue
+        if len(por_terca) == 1:
+            # o suporte na ponta da linha de terças: a terça acaba entre as duas colunas e a de fora ficava no passo do
+            # projeto (o ST1 com uma coluna a 50 e a outra a 40 no corte do Posto V2, 29/10/2026). O furo da mesma chapa na
+            # faixa da terça (na altura dela), além da ponta, segue a mesma terça
+            (id_t0,) = por_terca
+            e0 = terca_de[id_t0]
+            h0 = _norm(_cruz(nz, eixo_da_terca(e0)))
+            ph0 = [sum(v[k] * h0[k] for k in range(3)) for v in e0.vertices]
+            for i, P in enumerate(pts):
+                if i not in por_terca[id_t0] and min(ph0) - 20.0 <= sum(P[k] * h0[k] for k in range(3)) <= max(ph0) + 20.0:
+                    por_terca[id_t0].append(i)
 
         def parafusado(P, f):
             r = max(float(f.get("diametro", 0) or 0), float(f.get("largura", 0) or 0), 14.0) / 2.0 + 4.0

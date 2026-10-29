@@ -673,13 +673,24 @@ def _separar_variantes(pecas: Sequence[Solido]) -> None:
         i_f = lista.index(forma)
         if i_f > 0:
             s.atributos = dict(s.atributos or {})
-            nova = "%s (%s)" % (base, chr(ord("a") + i_f))
+            nova = "%s (%s)" % (base, letra_da_variante(i_f))
             m = dict(_marcas(s), posicao=nova)
             if str(m.get("conjunto") or "") == base:
                 # a montagem de uma peça só (o conjunto com a marca da própria chapa, a M83 da Sala): o conjunto vai
                 # junto — com a marca velha, virava um "dispositivo" DP.1 com a peça nova dentro
                 m["conjunto"] = nova
             s.atributos["marcas"] = m
+
+
+def letra_da_variante(i: int) -> str:
+    """b, c… z, depois aa, ab… (como as colunas do Excel): passado do z saía "{", "~" e caracteres de controle no nome da
+    posição (os ST1 do Posto V2, 29/10/2026: 34 formas do mesmo suporte)."""
+    s = ""
+    i += 1
+    while i > 0:
+        i, r = divmod(i - 1, 26)
+        s = chr(ord("a") + r) + s
+    return s
 
 
 #: Camadas do desenho por tipo de peça — a mesma paleta das camadas do modelo 3D (chapas
