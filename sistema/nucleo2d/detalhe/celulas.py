@@ -1928,9 +1928,21 @@ def ajustar_suportes_as_tercas(doc: Documento, tercas: set, suportes: set) -> di
     from saida.detalhamento import _autovetores
     from nucleo2d.detalhe.base import FURACAO_TERCA_BAIXA, FURACAO_TERCA_ALTA, LIMITE_TERCA
     saida = {"chapas": 0, "furos": 0, "posicoes": []}
+    from nucleo3d.modelo import Barra
+    from nucleo2d.detalhe.base import _proxy_da_barra
     pecas_t = []
     for e in doc.entidades.values():
-        if str(_marcas(e).get("posicao") or "") in tercas and isinstance(e, Solido) and len(e.vertices or []) >= 8:
+        if str(_marcas(e).get("posicao") or "") not in tercas:
+            continue
+        if isinstance(e, Barra):
+            # a terça paramétrica (gerada pela planta, desenhada no 3D) pelo sólido equivalente, o mesmo do levantamento:
+            # só a do IFC era vista, e os 398 suportes do Posto V2 ficavam com o par a 40/60 do projeto e as terças
+            # "fora do passo da máquina" (29/10/2026)
+            try:
+                e = _proxy_da_barra(e)
+            except Exception:                                  # noqa: BLE001 — barra degenerada: fica como está
+                continue
+        if isinstance(e, Solido) and len(e.vertices or []) >= 8:
             xs, ys, zs = zip(*e.vertices)
             pecas_t.append((e, ((min(xs), min(ys), min(zs)), (max(xs), max(ys), max(zs)))))
     if not pecas_t:
@@ -1949,7 +1961,8 @@ def ajustar_suportes_as_tercas(doc: Documento, tercas: set, suportes: set) -> di
     for ch in doc.entidades.values():
         # só o suporte de terça (`suportes`: as marcas dele); a chapinha da agulha e a castanha, que
         # também prendem na terça, ficam com a furação delas
-        if not isinstance(ch, Chapa) or not ch.furos or str(_marcas(ch).get("posicao") or "") not in suportes:
+        # a marca como o levantamento a dá: a chapa paramétrica sem marca de posição (a do gerador) vai pelo nome
+        if not isinstance(ch, Chapa) or not ch.furos or str(_marcas(ch).get("posicao") or ch.nome or "") not in suportes:
             continue
         o, ex, ey, nz = _mundo_da_chapa(ch)
         meia = float(ch.espessura) / 2.0
