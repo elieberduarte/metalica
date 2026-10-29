@@ -26,6 +26,8 @@ from nucleo3d.modelo import origem_de
 CRUZAM_POR_PROJETO = {"contraventamento", "corrente", "esticador", "agulha", "tirante"}
 #: as famílias de peça que se cruzam nos nós (a viga no pilar, a viga na viga)
 NOS_NORMAIS = {frozenset(("pilar", "viga")), frozenset(("viga",)), frozenset(("pilar",))}
+#: viga × viga: o nó normal é uma terminar na outra; passando uma pela outra é choque (pela altura da seção, _viga_atravessa)
+VIGA_VIGA = frozenset(("viga",))
 
 
 def _peca(e) -> str:
@@ -301,11 +303,45 @@ def pecas_voando(barras, solidos=(), chapas=(), tol: float = 250.0, tol_solido: 
     return out
 
 
+def _altura(perfil, cache: dict) -> Optional[float]:
+    """a altura da seção (mm), do catálogo"""
+    if perfil not in cache:
+        try:
+            from nucleo3d.geometria import secao
+            pts = secao(perfil)
+            cache[perfil] = max(q[1] for q in pts) - min(q[1] for q in pts)
+        except Exception:                       # noqa: BLE001  (perfil fora do catálogo: fica sem a conta)
+            cache[perfil] = None
+    return cache[perfil]
+
+
+def _viga_atravessa(e1, e2, alturas: dict, tol: float, longe_da_ponta: float):
+    """viga × viga (GER-02, 29/10): o encontro normal é uma terminar na outra. As duas passando uma pela outra (em planta,
+    longe das pontas das duas) com as seções na mesma faixa de altura é choque — a W250 contínua atravessando a W530,
+    alinhadas pelo topo, tem os eixos a 136 mm em z e escapava da conta pelo eixo. Devolve o ponto, ou None"""
+    h1, h2 = _altura(e1.perfil, alturas), _altura(e2.perfil, alturas)
+    if not h1 or not h2:
+        return None
+    pl = lambda p: (p[0], p[1], 0.0)                                                         # noqa: E731
+    L1, L2 = math.dist(pl(e1.inicio), pl(e1.fim)), math.dist(pl(e2.inicio), pl(e2.fim))
+    if L1 < 200.0 or L2 < 200.0:
+        return None
+    d, s, t, c = _seg_seg(pl(e1.inicio), pl(e1.fim), pl(e2.inicio), pl(e2.fim))
+    if d >= tol or not (longe_da_ponta < s * L1 < L1 - longe_da_ponta and longe_da_ponta < t * L2 < L2 - longe_da_ponta):
+        return None
+    z1 = e1.inicio[2] + s * (e1.fim[2] - e1.inicio[2])
+    z2 = e2.inicio[2] + t * (e2.fim[2] - e2.inicio[2])
+    if abs(z1 - z2) >= (h1 + h2) / 2.0 - 10.0:
+        return None                                                  # uma passa por cima da outra
+    return [c[0], c[1], (z1 + z2) / 2.0]
+
+
 def choques(barras, tol: float = 40.0, longe_da_ponta: float = 150.0) -> List[dict]:
     """barras de peças diferentes que se atravessam por dentro: os eixos a menos de `tol` mm, longe das pontas das duas.
     Um apontamento por par de peças (com quantos cruzamentos)"""
     g = _grade(barras, 3000.0)
     vistos = set()
+    alturas: dict = {}
     por_par: Dict[tuple, dict] = {}
     for ks in g.values():
         for i in range(len(ks)):
@@ -318,14 +354,19 @@ def choques(barras, tol: float = 40.0, longe_da_ponta: float = 150.0) -> List[di
                 p1, p2 = _peca(e1), _peca(e2)
                 if p1 == p2 or e1.papel in CRUZAM_POR_PROJETO or e2.papel in CRUZAM_POR_PROJETO:
                     continue
-                if frozenset((e1.papel, e2.papel)) in NOS_NORMAIS or "pilar" in (e1.papel, e2.papel):
+                if frozenset((e1.papel, e2.papel)) == VIGA_VIGA:
+                    c = _viga_atravessa(e1, e2, alturas, tol, longe_da_ponta)
+                    if c is None:
+                        continue
+                elif frozenset((e1.papel, e2.papel)) in NOS_NORMAIS or "pilar" in (e1.papel, e2.papel):
                     continue                                 # no pilar é o nó (a ligação), não o choque
-                L1, L2 = math.dist(e1.inicio, e1.fim), math.dist(e2.inicio, e2.fim)
-                if L1 < 200.0 or L2 < 200.0:
-                    continue
-                d, s, t, c = _seg_seg(e1.inicio, e1.fim, e2.inicio, e2.fim)
-                if d >= tol or not (longe_da_ponta < s * L1 < L1 - longe_da_ponta and longe_da_ponta < t * L2 < L2 - longe_da_ponta):
-                    continue
+                else:
+                    L1, L2 = math.dist(e1.inicio, e1.fim), math.dist(e2.inicio, e2.fim)
+                    if L1 < 200.0 or L2 < 200.0:
+                        continue
+                    d, s, t, c = _seg_seg(e1.inicio, e1.fim, e2.inicio, e2.fim)
+                    if d >= tol or not (longe_da_ponta < s * L1 < L1 - longe_da_ponta and longe_da_ponta < t * L2 < L2 - longe_da_ponta):
+                        continue
                 par = tuple(sorted((p1.split("#")[0], p2.split("#")[0])))
                 if par not in por_par:
                     por_par[par] = {"tipo": "choque", "ids": [e1.id, e2.id], "ponto": [round(v) for v in c], "n": 0,

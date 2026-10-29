@@ -99,6 +99,20 @@ def test_choque_entre_pecas_mas_nao_o_cruzamento_normal():
     assert len(r) == 1 and "TC14" in r[0]["texto"] and "PAINEL 11" in r[0]["texto"]
 
 
+def test_viga_atravessando_viga_pela_altura_da_secao():
+    """GER-02 (Hora Certa · Edifício Administrativo, 29/10): a W250 contínua passando pela W530, as duas alinhadas pelo topo
+    — os eixos a 136 mm em z, e viga × viga era "nó normal". A que termina na outra e a que passa por cima não apontam"""
+    doc = Documento()
+    w530, w250 = "W 530×66,0", "W 250×17,9"
+    _b(doc, (0, 0, 4668), (0, 8000, 4668), papel="viga", peca="V1.35 viga", perfil=w530)
+    _b(doc, (-3000, 2000, 4805), (3000, 2000, 4805), papel="viga", peca="V1.58 viga", perfil=w250)          # atravessa
+    _b(doc, (-3000, 4000, 4805), (-80, 4000, 4805), papel="viga", peca="V1.59 viga", perfil=w250)           # termina na face
+    _b(doc, (80, 4000, 4805), (3000, 4000, 4805), papel="viga", peca="V1.60 viga", perfil=w250)
+    _b(doc, (-3000, 6000, 5055), (3000, 6000, 5055), papel="viga", peca="V1.61 viga", perfil=w250)          # passa por cima
+    r = C.choques(list(doc.barras))
+    assert len(r) == 1 and "V1.58" in r[0]["texto"] and "V1.35" in r[0]["texto"], r
+
+
 def test_telha_ao_lado_e_os_avisos():
     """a água reta não aponta; a terça 80 mm acima no meio aponta a dobra, e o aviso traz o ponto no desenho"""
     doc = Documento()
