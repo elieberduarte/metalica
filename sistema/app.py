@@ -5210,6 +5210,25 @@ def modelo_do_projeto_cru(s: str):
     return cab[:-1] + b', "documento": ' + bruto + b"}"
 
 
+def desenho_cru(s: str, nome: str):
+    """A mesma resposta do GET do desenho, com o arquivo do jeito que está no disco: no SESI (29/10) ler e reescrever as
+    vistas de 143 MB levava 9 s e a planta de 287 MB 18 s, com o servidor parado para todas as telas (87 s com a máquina
+    sem memória). Só o desenho grande (o pequeno é barato); o que não parece um JSON inteiro devolve None e fica o
+    caminho completo, que conserta o arquivo emendado."""
+    from projetos import DESENHO_GRANDE
+    try:
+        caminho = _gerente()._caminho_desenho(s, nome)
+        if os.path.getsize(caminho) < DESENHO_GRANDE:
+            return None
+        with open(caminho, "rb") as f:
+            bruto = f.read()
+    except (OSError, ErroDeDados):
+        return None
+    if not bruto[:64].lstrip().startswith(b"{") or not bruto[-64:].rstrip().endswith(b"}"):
+        return None
+    return b'{"desenho": ' + bruto + b"}"
+
+
 
 # ----------------------------------------------------------- modelo 3D e IFC
 
@@ -6119,6 +6138,9 @@ class Handler(BaseHTTPRequestHandler):
                     q = parse_qs(urlparse(self.path).query)
                     return self._json(parecidos_do_perfil(partes[0], (q.get("perfil") or [""])[0]))
                 if len(partes) == 3 and partes[1] == "desenhos":
+                    cru = desenho_cru(partes[0], partes[2])
+                    if cru is not None:
+                        return self._json_pronto(cru)
                     return self._json({"desenho": _gerente().abrir_desenho(partes[0], partes[2])})
                 return self._json(projeto_completo(partes[0]))
             if rota == "/api/modelo/conferencia/progresso":

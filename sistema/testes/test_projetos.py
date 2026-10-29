@@ -256,6 +256,40 @@ def test_modelo_vai_como_esta_no_disco_quando_ja_migrado():
             importlib.reload(app)
 
 
+def test_desenho_grande_vai_como_esta_no_disco():
+    """SESI (29/10, usuário: "todas as vezes que entro na visualização 2D ele demora… e demora mais ainda quando clico
+    para ver o original"): o GET do desenho lia e reescrevia o JSON inteiro — as vistas de 143 MB 9 s e a planta de 287 MB
+    18 s com o servidor parado para todos (87 s com a máquina sem memória). Grande, vai como está no disco e diz o mesmo
+    que o caminho completo; pequeno, emendado ou ausente fica o caminho completo."""
+    import importlib
+    import projetos
+    with tempfile.TemporaryDirectory() as raiz:
+        os.environ["METALICA_DADOS"] = raiz
+        try:
+            import app
+            importlib.reload(app)
+            s = app.criar_projeto({"nome": "Cru 2D", "tipo": "desenho"})["slug"]
+            g = app._gerente()
+            g.salvar_desenho(s, "pequeno", {"nome": "pequeno", "entidades": [{"id": "l1", "tipo": "linha", "a": [0, 0], "b": [1, 0]}]})
+            assert app.desenho_cru(s, "pequeno") is None              # pequeno: o caminho completo é barato
+            ents = [{"id": "l%d" % i, "tipo": "linha", "camada": "VIGAS ç", "a": [i * 0.1, 1e-7], "b": [i + 1.5, -2.0],
+                     "atributos": {"vista": "V1", "vinculo_3d": True}} for i in range(45000)]
+            g.salvar_desenho(s, "Vistas do projetista", {"nome": "Vistas do projetista", "unidade": "mm", "entidades": ents})
+            assert os.path.getsize(g._caminho_desenho(s, "Vistas do projetista")) > projetos.DESENHO_GRANDE
+            cru = app.desenho_cru(s, "Vistas do projetista")
+            assert cru is not None
+            assert json.loads(cru.decode("utf-8")) == {"desenho": g.abrir_desenho(s, "Vistas do projetista")}
+            assert app.desenho_cru(s, "nao-existe") is None
+            with open(g._caminho_desenho(s, "Vistas do projetista"), "a", encoding="utf-8") as f:
+                f.write('{"lixo": 1')                                  # emendado: o caminho completo conserta
+            assert app.desenho_cru(s, "Vistas do projetista") is None
+            assert len(g.abrir_desenho(s, "Vistas do projetista")["entidades"]) == 45000
+            assert app.desenho_cru(s, "Vistas do projetista") is not None   # consertado, volta a ir como está
+        finally:
+            del os.environ["METALICA_DADOS"]
+            importlib.reload(app)
+
+
 def test_modelo_gravado_como_veio_do_editor():
     """A gravação automática do Bella Casa (05/10) passava 200 MB por json.loads e json.dumps: o
     editor manda o texto pronto e ele vai para o disco como veio, com as mesmas regras (data base,
