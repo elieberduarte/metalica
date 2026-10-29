@@ -30,6 +30,9 @@ MATERIAIS_NAO_ACO: Sequence[Tuple[str, str, float]] = (
     (r"vidro|glass", "vidro", 2500.0),
     (r"alvenaria|masonry|tijolo|bloco ceram", "alvenaria", 1800.0),
     (r"argamassa|mortar|graute|grout", "argamassa", 2100.0),
+    # o painel de alumínio composto (a platibanda e o pórtico do arquitetônico do SESI Chapecó, 29/10): sem esta linha a
+    # peça de material ACM virava aço
+    (r"\bacm\b|aluminio composto|composto de aluminio", "acm", 1500.0),
 )
 
 #: Perfil que é de aço pelo nome (W360X64, L 3" x 3/8", U 150x50, o tubo "250x250x10SHS"): fica no aço mesmo com o

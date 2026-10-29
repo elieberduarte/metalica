@@ -205,3 +205,20 @@ def test_telha_lancada_sai_por_tipo_com_area_e_peso_fora_dos_gradis():
     assert abs(tl["Isofachada PIR MG 2F50 (Kingspan Isoeste)"]["ml"] - 10.0) < 0.05  # a altura do painel
     assert tl["TP25 0,5 mm (Isoeste Metálica)"]["pecas"] == 3 and set(tl) == {"TP25 0,5 mm (Isoeste Metálica)",
                                                                              "Isofachada PIR MG 2F50 (Kingspan Isoeste)"}
+
+
+def test_acm_fica_fora_do_aco():
+    """A platibanda e o pórtico de ACM do arquitetônico (SESI Chapecó, 29/10: "tem peças que estão com material de
+    concreto, quando deveria estar ACM"): com o material ACM a peça não pode virar aço — o painel de alumínio composto
+    vai para a lista de fora do aço, como o concreto e o vidro."""
+    from nucleo2d.detalhe import fora_do_aco as fa_
+    for mat in ("ACM branco", "ACM azul", "Alumínio composto (ACM)"):
+        v, f = _caixa(87000.0, 220.0, 2780.0)
+        s = _solido("Platibanda fachada A — ACM e estrutura", "IfcWall", v, f, mat)
+        assert fa_.material_nao_aco(s) == ("acm", 1500.0), mat
+    doc = _modelo()
+    v, f = _caixa(87000.0, 220.0, 2780.0, dz=15845.0)
+    doc.add(_solido("Platibanda fachada A — ACM e estrutura", "IfcWall", v, f, "ACM branco"))
+    lev = det.levantar(doc)
+    assert "Platibanda fachada A — ACM e estrutura" not in {p.marca for p in lev["posicoes"]}
+    assert {g["nome"]: g["categoria"] for g in lev["fora_do_aco"]}.get("Platibanda fachada A — ACM e estrutura") == "acm"
