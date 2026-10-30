@@ -64,6 +64,17 @@ def _num(txt: str) -> float:
     return float(txt.replace(",", "."))
 
 
+def _laminada(perfil: str) -> bool:
+    """A cantoneira do catálogo que não é do grupo "formado a frio" ("laminado", "laminado e formado a frio" — a antiga
+    "(métrica)"): pesa pela tabela, como o catálogo a pesa."""
+    try:
+        from nucleo import catalogo
+        it = catalogo.item(perfil)
+    except Exception:                                   # noqa: BLE001 — sem o catálogo, vale o nome
+        return False
+    return it is not None and it.grupo != "formado a frio"
+
+
 def geometria(perfil: str) -> Optional[dict]:
     """Família, medidas e espessura de um perfil dobrado pelo nome ("U150X50X2.28",
     "C127X50X17X#14", "UE 100x40x17x2,00", "L50X50X2.25"). None para o que não é dobrado
@@ -71,14 +82,22 @@ def geometria(perfil: str) -> Optional[dict]:
     if not perfil or "'" in perfil or '"' in perfil:
         return None
     s = perfil.upper().replace(" ", "").replace("×", "X")
+    ff = s.endswith("(FF)")
     s = re.sub(r"\(FF\)$", "", s)
     # o Z45 (enrijecedor a 45°) é um Ze: o "45" do nome entrava na altura — "Z45 100×50×17×2,00" com 45.100 mm de alma
     # e 723 kg/m (a conferência do catálogo inteiro, 30/10)
     s = re.sub(r"^Z45(?=\d)", "ZE", s)
+    # a cantoneira de abas iguais com uma medida só, "L 50×2,00 (FF)": ficava sem a regra e a lista a pesava pela linha
+    # média, 1,518 kg/m em vez de 1,536 (SESI N10, 30/10 — 47 das 50 cantoneiras dobradas do catálogo)
+    s = re.sub(r"^L(\d+(?:[.,]\d+)?)X(#\d+|\d+(?:[.,]\d+)?)$", r"L\1X\1X\2", s)
     m = re.match(r"^(UE|ZE|CR|U|C|Z|L)(\d+(?:[.,]\d+)?)X(\d+(?:[.,]\d+)?)(?:X(\d+(?:[.,]\d+)?))?X(#\d+|\d+(?:[.,]\d+)?)$", s)
     if not m:
         return None
     fam, h, b, d, esp = m.groups()
+    if fam == "L" and not ff and _laminada(perfil):
+        # a laminada do catálogo ("L 75×50×6,00", "L 50×5,00") pesa pela tabela da usina, não pela regra das dobras: a
+        # L 75×50×6,00 saía a 5,424 kg/m em vez de 5,544 (a mesma conferência, 30/10)
+        return None
     if esp.startswith("#"):
         from nucleo.perfis_fabrica import BITOLAS
         t = BITOLAS.get(int(esp[1:]))
