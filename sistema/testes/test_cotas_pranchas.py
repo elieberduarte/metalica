@@ -106,7 +106,8 @@ def test_chamada_do_suporte_de_terca_com_o_nome_do_suporte():
     """Usuário, 30/10, na T1 da Sala: "Essas devem ser marcado o nome do suporte de terça e não as chapas se é o S.T.1,
     ou S.T.2". Saía "CH1 + CH3" e "CH2" separadas (a CH1 juntava com a CH3 do lado e a CH2, do mesmo suporte, ficava
     sozinha). O S.T.1 é a CH1 soldada na CH2 (a chave "P11 + P12" da nomeação); a CH3 ao lado não é dele e segue com o
-    nome dela; a chapa que é o suporte sozinha (S.T.2 = "P20") também troca."""
+    nome dela, numa chamada própria (usuário, 30/10: "Separados para não confundir" — nada de "CH3 + S.T.1"); a chapa
+    que é o suporte sozinha (S.T.2 = "P20") também troca."""
     from nucleo2d.detalhe.conjuntos import chamadas_das_chapas
     d = Desenho(escala=25.0)
     p = _Papel(d, {}, 0.0, 0.0)
@@ -120,7 +121,7 @@ def test_chamada_do_suporte_de_terca_com_o_nome_do_suporte():
     chamadas_das_chapas(p, pecas, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), 0.0, 0.0, 25.0, nomes.get,
                         suportes={"P11 + P12": "S.T.1", "P20": "S.T.2"})
     textos = sorted(e.texto for e in d.entidades.values() if isinstance(e, Chamada))
-    assert textos == ["CH3 + S.T.1", "S.T.1", "S.T.2"], textos
+    assert textos == ["CH3", "S.T.1", "S.T.2"], textos
     assert not any("CH1" in t or "CH2" in t or "CH7" in t for t in textos)
 
 
@@ -210,6 +211,7 @@ def test_tesouras_da_sala_chamam_o_suporte_de_terca_pelo_s_t():
     for t, textos in por.items():
         assert any("S.T.1" in x for x in textos), (t, textos)
         assert "CH1 + CH10" not in textos and "CH1 + CH2" not in textos, (t, textos)
+        assert not any("S.T." in x and "+" in x for x in textos), (t, textos)     # o S.T. sempre sozinho
 
 
 @pytest.mark.skipif(not os.path.exists(SALA), reason="sem o modelo da Sala (outra máquina)")

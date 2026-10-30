@@ -2467,9 +2467,14 @@ def chamadas_das_chapas(p, instancia, origem, u, v, u0: float, v0: float, esc: f
     if not pts:
         return 0
     pts = [(q, n) for q, n, _m in (_suportes_nas_chamadas(pts, suportes) if suportes else pts)]
+    # o S.T.n não divide a chamada com a chapa do lado (usuário, 30/10: "Separados para não confundir" — o "CH3 + S.T.1"
+    # parecia a CH3 ser do suporte)
+    eh_st = set((suportes or {}).values())
     lugares: List[list] = []
     for q, nome in pts:
         for g in lugares:
+            if (nome in eh_st) != bool(g[1] & eh_st):
+                continue
             if math.hypot(q[0] - g[0][0], q[1] - g[0][1]) <= MESMO_LUGAR_CHAPAS:
                 g[1].add(nome)
                 break
