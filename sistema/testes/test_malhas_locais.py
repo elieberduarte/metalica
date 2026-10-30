@@ -146,3 +146,49 @@ def test_base_no_canto_de_duas_malhas_fica_inteira_numa_planta():
     assert lados == {"X", "Y"}                        # um chumbador sozinho iria para cada uma
     ch = desenho_de_chumbacao(doc, pecas, nomes, eixos=bruto, nomes=nomes["ifc"])
     assert [v["nome"] for v in ch.vistas] == ["PLANTA DE CHUMBAÇÃO — X"], [v["nome"] for v in ch.vistas]
+
+
+def _chapa(x0, y0, x1, y1, z0, z1, posicao):
+    v = [(x, y, z) for z in (z0, z1) for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1))]
+    f = [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]
+    return Solido(nome="PLATE", camada="Chapas", vertices=v, faces=f,
+                  atributos={"tipo_ifc": "IfcPlate", "marcas": {"posicao": posicao, "conjunto": posicao}})
+
+
+def test_duas_bases_encostadas_cada_uma_com_a_locacao_e_o_aviso():
+    """A base da marquise na MQ1, 1,42 m abaixo e por cima da base do W530 na AP5 (montador N01, 30/10): os chumbadores
+    dela, a menos de 400 mm dos do W530, entravam no grupo dele e ficavam sem linha de locação; o papel não dizia nada
+    do conflito. Cada marca é a sua base, e a que sobrepõe outra chapa de base leva o aviso."""
+    bruto = {"eixo_g": [1.0, 0.0], "z_base": 0.0, "numeros": [{"nome": "1", "pos": 0.0}, {"nome": "2", "pos": 6000.0}],
+             "letras": [{"nome": "A", "pos": 0.0}, {"nome": "B", "pos": 5000.0}]}
+    doc = Documento(nome="encostadas")
+    doc.add(_chapa(-250, -400, 250, 400, 80, 100, "P10"))                       # a placa do W530, no cruzamento A-1
+    for dx, dy in ((-150, -180), (150, -180), (-150, 180), (150, 180)):
+        doc.add(_caixa(dx, dy, -900, 100, 18, "FE RED 36", "M2"))
+    doc.add(_chapa(150, 250, 400, 550, -1309, -1300, "P11"))                    # a da marquise, por cima e mais funda
+    for dx, dy in ((200, 300), (350, 300), (200, 500), (350, 500)):
+        doc.add(_caixa(dx, dy, -1800, -1280, 6, "FE RED 12", "M3"))
+    nomes = {"tipos": {"M2": "chumbador", "M3": "chumbador"}, "ifc": {"M2": "CB3", "M3": "CB1.1"}}
+    pecas = [e for e in doc.entidades.values() if isinstance(e, Solido)]
+    ch = desenho_de_chumbacao(doc, pecas, nomes, eixos=bruto, nomes=nomes["ifc"])
+    textos = [e.texto for e in ch.entidades.values() if isinstance(e, Texto)]
+    linhas = [t for t in textos if re.match(r"^CB(3|1\.1) em ", t)]
+    assert len(linhas) == 2, linhas
+    assert all("SOBREPÕE outra chapa de base" in t for t in linhas), linhas
+
+
+def test_duas_bases_da_mesma_marca_encostadas_cada_uma_com_a_linha():
+    """As PM-P18 e PM-P19 do mezanino (auditor N24, 30/10): duas bases com o mesmo chumbador, a menos de 400 mm uma da
+    outra, viravam uma linha só no quadro, com o centro entre elas. A base é a chapa que os chumbadores atravessam."""
+    bruto = {"eixo_g": [1.0, 0.0], "z_base": 0.0, "numeros": [{"nome": "1", "pos": 0.0}, {"nome": "2", "pos": 6000.0}],
+             "letras": [{"nome": "A", "pos": 0.0}, {"nome": "B", "pos": 5000.0}]}
+    doc = Documento(nome="pm")
+    for x0 in (0.0, 450.0):
+        doc.add(_chapa(x0 - 150, -125, x0 + 150, 125, 85, 100, "P20"))
+        for dx, dy in ((-80, -80), (80, -80), (-80, 80), (80, 80)):
+            doc.add(_caixa(x0 + dx, dy, -400, 100, 6, "FE RED 12", "M4"))
+    nomes = {"tipos": {"M4": "chumbador"}, "ifc": {"M4": "CB2"}}
+    pecas = [e for e in doc.entidades.values() if isinstance(e, Solido)]
+    ch = desenho_de_chumbacao(doc, pecas, nomes, eixos=bruto, nomes=nomes["ifc"])
+    linhas = [e.texto for e in ch.entidades.values() if isinstance(e, Texto) and e.texto.startswith("CB2 em ")]
+    assert len(linhas) == 2, linhas

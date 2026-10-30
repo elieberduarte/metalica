@@ -3322,6 +3322,9 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
                 m_ = min(mont, key=lambda e: abs((e.a[0] + e.b[0]) / 2 - dx - xr))
                 if abs((m_.a[0] + m_.b[0]) / 2 - dx - xr) < 300.0:
                     p.cota_v(m_.a[1] - dy, m_.b[1] - dy, (m_.a[0] + m_.b[0]) / 2 - dx, -off * 0.6)
+        if len(ts_cima) > 1:
+            # as duas metades com o mesmo número onde a estrutura é espelhada, o maior (853 | 19 | 853 — usuário, 30/10)
+            metades_espelhadas_iguais(desenho, marca, (ts_cima[0][1] + ts_cima[1][0]) / 2.0 + dx)
     else:
         cadeia = len(alturas) > 2 and p.cadeia_v(alturas, larg, off)
         p.cota_v(0, alt, larg, off2 if cadeia else off)
@@ -3678,6 +3681,47 @@ def _faixa_reta(pecas: Sequence[Solido], normal, tol: float = 30.0, faixas: int 
 def _caixa_de_pecas(pecas: Sequence[Solido]):
     cs = [_caixa(e) for e in pecas]
     return [(min(c[k][0] for c in cs), max(c[k][1] for c in cs)) for k in range(3)]
+
+
+#: Duas cotas espelhadas pelo meio da tesoura montada são a mesma medida se diferem até isto (mm).
+ESPELHADAS_ATE = 1.0
+
+
+def metades_espelhadas_iguais(desenho, marca: str, meio: float, tol_pos: float = 3.0) -> int:
+    """Na tesoura montada, a cota de uma metade e a espelhada dela na outra (pelo x `meio`, no desenho) escritas com o
+    mesmo número quando diferem até ESPELHADAS_ATE: o MAIOR dos dois. Saía 853 | 19 | 852 na cumeeira da T1 da Sala
+    (1724 entre os nós − 19 do pacote = 852,5 de cada lado) e 492 | 7838 | 7839 | 491 na T4 (usuário, 30/10: "Esses
+    valores não deveriam ser igual pela estrutura ser espelhada?" → "853" — "É mais fácil ele cortar um pedacinho do
+    que faltar"). Só escreve o número quando o arredondamento separava os dois; devolve quantas cotas mudaram."""
+    def medida(c):
+        if c.modo == "h":
+            return abs(c.p2[0] - c.p1[0])
+        if c.modo == "v":
+            return abs(c.p2[1] - c.p1[1])
+        return math.dist(c.p1, c.p2)
+    cotas = [e for e in desenho.entidades.values() if isinstance(e, _Cota) and not e.texto
+             and (e.atributos or {}).get("conjunto") == marca and (e.atributos or {}).get("detalhe") == "conjunto"]
+    usadas = set()
+    feitas = 0
+    for i, a in enumerate(cotas):
+        if i in usadas:
+            continue
+        ea = [(2.0 * meio - q[0], q[1]) for q in (a.p1, a.p2)]
+        for j in range(i + 1, len(cotas)):
+            b = cotas[j]
+            if j in usadas or b.modo != a.modo:
+                continue
+            pb = [tuple(b.p1), tuple(b.p2)]
+            if not any(all(math.dist(x, y) <= tol_pos for x, y in zip(ea, par)) for par in (pb, pb[::-1])):
+                continue
+            ma, mb = medida(a), medida(b)
+            ra, rb = math.floor(ma + 0.5), math.floor(mb + 0.5)
+            if abs(ma - mb) <= ESPELHADAS_ATE and ra != rb:
+                a.texto = b.texto = "%d" % max(ra, rb)
+                feitas += 2
+            usadas.update((i, j))
+            break
+    return feitas
 
 
 def uniao_das_chapas(desenho, marca: str, meio: float, dx: float = 0.0) -> Optional[Tuple[float, float]]:
@@ -4570,7 +4614,7 @@ def _desenhar_eixos(p: "_Papel", eixos: dict, u, v, u0: float, v0: float, esc: f
 
 def _locacao_dos_chumbadores(p: "_Papel", ex: dict, chumb: Sequence[Solido], u, v, u0: float, v0: float,
                              nomes: Optional[Dict[str, str]] = None, chapas: Sequence[Solido] = (),
-                             esc: float = 0.0) -> List[Tuple[str, str, str, str, str]]:
+                             esc: float = 0.0, todas_chapas: Sequence[Solido] = ()) -> List[Tuple[str, str, str, str, str]]:
     """A locação de cada grupo de chumbadores (os de uma base: até 400 mm entre si em planta) até o eixo de letra e o de
     número mais perto — o que a obra mede para pôr o chumbador no concreto (Q09, primeiro uso 16/10: a planta de
     chumbação só tinha os eixos e a marca num pontinho; o CB2 de D1/D7 a ~260 mm do eixo sem cota).
@@ -4586,13 +4630,33 @@ def _locacao_dos_chumbadores(p: "_Papel", ex: dict, chumb: Sequence[Solido], u, 
         vs = e.vertices
         centros.append((sum(q[0] for q in vs) / len(vs), sum(q[1] for q in vs) / len(vs), e))
     grupos: List[list] = []
+    marca_de = lambda e_: str(_marcas(e_).get("posicao") or e_.nome or "")      # noqa: E731
+
+    def caixa3(e_):
+        return tuple((min(q[i] for q in e_.vertices), max(q[i] for q in e_.vertices)) for i in range(3))
+    caixas_ch = [(id(c_), caixa3(c_)) for c_ in (todas_chapas or chapas)]
+
+    def chapa_de(e_):
+        # a chapa de base que o chumbador atravessa (None sem nenhuma)
+        b_ = caixa3(e_)
+        return next((i_ for i_, k_ in caixas_ch if all(k_[i][0] - 2.0 <= b_[i][1] and b_[i][0] - 2.0 <= k_[i][1]
+                                                       for i in range(3))), None)
     for c in centros:
         for g in grupos:
-            if any(math.hypot(c[0] - o[0], c[1] - o[1]) <= 400.0 for o in g):
+            # a base é a mesma marca na mesma chapa: o chumbador de outra base encostada (a da marquise na MQ1, 1,42 m
+            # abaixo da do W530 na AP5; as PM-P18 e PM-P19 do mezanino, a menos de 400 mm) entrava no grupo vizinho e
+            # ficava sem linha de locação (montador N01, auditor N24, 30/10)
+            if marca_de(g[0][2]) == marca_de(c[2]) and chapa_de(g[0][2]) == chapa_de(c[2]) and                     any(math.hypot(c[0] - o[0], c[1] - o[1]) <= 400.0 for o in g):
                 g.append(c)
                 break
         else:
             grupos.append([c])
+
+    def caixa_xy(e_):
+        vs_ = e_.vertices
+        return (min(q[0] for q in vs_), min(q[1] for q in vs_), max(q[0] for q in vs_), max(q[1] for q in vs_),
+                max(q[2] for q in vs_))
+    caixas_todas = [(id(c_), caixa_xy(c_)) for c_ in (todas_chapas or chapas)]
     quadro = []
     for g in grupos:
         cx = sum(o[0] for o in g) / len(g)
@@ -4642,14 +4706,36 @@ def _locacao_dos_chumbadores(p: "_Papel", ex: dict, chumb: Sequence[Solido], u, 
             p.d.add(_Cota(modo="alinhada", p1=p._p(*pf), p2=p._p(*pc), deslocamento=4.0, texto="%d" % round(dist), altura=ALTURA_COTA,
                           atributos=dict(p.atr, locacao=rotulo, eixo=str(nome_eixo))))
         topo = None
-        for c_ in chapas:
+        minhas = []
+        # a chapa da base é a que os chumbadores do grupo atravessam; sem nenhuma, as que estão a até 400 mm (antes,
+        # sempre essas: a base de baixo levava o topo da chapa de cima, encostada)
+        cx3 = [tuple((min(q[i] for q in o[2].vertices), max(q[i] for q in o[2].vertices)) for i in range(3)) for o in g]
+        atravessa = [c_ for c_ in chapas if any(all(min(q[i] for q in c_.vertices) - 2.0 <= b_[i][1]
+                                                    and b_[i][0] - 2.0 <= max(q[i] for q in c_.vertices) for i in range(3))
+                                                for b_ in cx3)]
+        for c_ in atravessa or chapas:
             vs_ = c_.vertices
-            if any(math.hypot(q[0] - cx, q[1] - cy) <= 400.0 for q in vs_):
+            if atravessa or any(math.hypot(q[0] - cx, q[1] - cy) <= 400.0 for q in vs_):
                 z_ = max(q[2] for q in vs_)
                 topo = z_ if topo is None else max(topo, z_)
+                minhas.append(caixa_xy(c_))
+        # a chapa de base desta que sobrepõe a de outra base em planta: duas bases no mesmo lugar (montador N01)
+        meus_pts = [(o[0], o[1]) for o in g]
+        conflito = None
+        for i_, cx_ in caixas_todas:
+            if any(i_ == id(c_) for c_ in chapas if caixa_xy(c_) in minhas):
+                continue
+            sobre = any(a[0] < cx_[2] and cx_[0] < a[2] and a[1] < cx_[3] and cx_[1] < a[3] for a in minhas) or any(
+                cx_[0] <= x_ <= cx_[2] and cx_[1] <= y_ <= cx_[3] for x_, y_ in meus_pts)
+            if sobre:
+                conflito = cx_[4]
+                break
+        topo_txt = ("%+.3f" % (topo / 1000.0)).replace(".", ",") if topo is not None else "—"
+        if conflito is not None:
+            topo_txt += " — SOBREPÕE outra chapa de base (topo %s): a conferir com o projetista" % (
+                "%+.3f" % (conflito / 1000.0)).replace(".", ",")
         quadro.append((rotulo, "%s-%s" % (cruz.get("letra", "?"), cruz.get("numero", "?")),
-                       textos.get("letra", "—"), textos.get("numero", "—"),
-                       ("%+.3f" % (topo / 1000.0)).replace(".", ",") if topo is not None else "—"))
+                       textos.get("letra", "—"), textos.get("numero", "—"), topo_txt))
     quadro.sort(key=lambda r: (_ordem_natural(r[0]), r[1]))
     return quadro
 
@@ -4674,10 +4760,11 @@ def _regioes_da_chumbacao(ex: Optional[dict], chumb: Sequence[Solido], chapas: S
     # a base inteira numa malha só, pelo centro do grupo (os chumbadores até 400 mm entre si, como a locação): no canto
     # em que a ampliação encosta na marquise, os 14 CB3 do P5 se dividiam entre as duas plantas (30/10)
     grupos: List[list] = []
+    marca_de = lambda e_: str(_marcas(e_).get("posicao") or e_.nome or "")      # noqa: E731
     for e in chumb:
         c = centro(e)
         for g in grupos:
-            if any(math.hypot(c[0] - o[0], c[1] - o[1]) <= 400.0 for o, _e in g):
+            if marca_de(g[0][1]) == marca_de(e) and any(math.hypot(c[0] - o[0], c[1] - o[1]) <= 400.0 for o, _e in g):
                 g.append((c, e))
                 break
         else:
@@ -4848,7 +4935,8 @@ def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao
         if ex_r:
             _desenhar_eixos(p, ex_r, u, v, u0, v0, esc, larg_v, alt_v)
             if not so_chapas:
-                quadro_loc = _locacao_dos_chumbadores(p, ex_r, chumb_r, u, v, u0, v0, nomes, chapas=chapas_r, esc=esc)
+                quadro_loc = _locacao_dos_chumbadores(p, ex_r, chumb_r, u, v, u0, v0, nomes, chapas=chapas_r, esc=esc,
+                                                      todas_chapas=chapas)
         if not ex_r:
             # sem eixos, as totais das peças; com eixos, a cadeia entre eixos já fecha com a total dela — a total das
             # peças ia até a ponta das linhas de eixo (37828 no depósito, no vazio) e, medindo as peças, ficava fora

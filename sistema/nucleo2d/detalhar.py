@@ -1156,10 +1156,10 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         # dele vão para os detalhes da prancha em que ele está (pedido do usuário, 28/09)
         pos_por = {p.marca: p for p in posicoes}
 
-        def _composicao(unid):
+        def _composicao(unid, marcas_c=()):
             soma = collections.Counter()
             for k, q in unid.items():
-                soma[fundidas.get(k, k)] += q
+                soma[fundidas.get(_variante_unica(marcas_c, k), _variante_unica(marcas_c, k))] += q
             fora = []
             for mk, q in soma.items():
                 p_ = pos_por.get(mk)
@@ -1168,9 +1168,24 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                              "comprimento": round(p_.comprimento or 0) if p_ else 0})
             fora.sort(key=lambda x: _ordem_natural(x["nome"]))
             return fora
+        # a composição conta pela posição de base (a variante "P693 (b)" é a mesma peça no lugar, para as instâncias); na
+        # prancha, a posição cujas peças do conjunto são todas de uma variante vai com a marca dela — o S.T.5 das
+        # treliças da marquise (CH1 + CH34 = "P693 (b)") saía "PL14.1 12x · total 04x", o nome da chapa do pilar W530
+        # (Hora Certa · Galpão Existente, montador N03, 30/10)
+        _reais: Dict[str, Dict[str, set]] = collections.defaultdict(lambda: collections.defaultdict(set))
+        for e in pecas:
+            cj_ = str(_marcas(e).get("conjunto") or "")
+            if cj_:
+                _reais[cj_][posicao_base(e)].add(str(_marcas(e).get("posicao") or e.nome))
+
+        def _variante_unica(marcas_c, k):
+            achadas = set()
+            for m_ in marcas_c:
+                achadas |= _reais.get(m_, {}).get(k, set())
+            return next(iter(achadas)) if len(achadas) == 1 else k
         for c in conjuntos_info:
             if c["marca"] in itens:
-                itens[c["marca"]]["composicao"] = _composicao(c["composicao"])
+                itens[c["marca"]]["composicao"] = _composicao(c["composicao"], c.get("marcas") or [c["marca"]])
         comp_de = {mk: c["composicao"] for c in conjuntos_info for mk in (c.get("marcas") or [c["marca"]])}
         for m in montadas:
             rot_m = " + ".join(m["rotulos"])
@@ -1185,7 +1200,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                         soma_m.update(comp_de[r])
                 else:
                     soma_m = collections.Counter(str(_marcas(e).get("posicao") or e.nome) for e in m["pecas"])
-                itens[rot_m]["composicao"] = _composicao(soma_m)
+                itens[rot_m]["composicao"] = _composicao(soma_m, m["rotulos"])
         d.metadados["detalhamento"] = {"grupo": "conjuntos", "conjuntos": [c["marca"] for c in conjuntos_info], "itens": itens}
         faixas["conjuntos"] = (fns, 1400.0, dict(d.metadados["detalhamento"]))
         familias_completo.extend(((t if t in dict(FAMILIAS) else "conjunto") or "conjunto", t or "conjunto", f) for t, f in fns)
