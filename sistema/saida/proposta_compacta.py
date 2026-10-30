@@ -100,9 +100,10 @@ section.sec { margin-bottom: 5mm; }
 .caixa .eyebrow { color: var(--apoio); }
 .caixa .valor { font-size: 26pt; font-weight: 600; line-height: 1.1; margin-top: 1mm; }
 .caixa .ext { font-size: 8.5pt; opacity: .8; }
-.caixa dl { display: grid; grid-template-columns: auto auto; gap: 1.5mm 5mm; font-size: 9pt; max-width: 80mm; }
-.caixa dt { color: var(--apoio); }
-.caixa dd { font-weight: 600; }
+.caixa dl { min-width: 55mm; max-width: 80mm; border-left: .3mm solid rgba(255,255,255,.28); padding-left: 6mm; }
+.caixa dt { font: 600 7.5pt Bahnschrift, 'Segoe UI', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--apoio); }
+.caixa dd { font-weight: 600; font-size: 11.5pt; margin: .4mm 0 3mm; }
+.caixa dd:last-child { margin-bottom: 0; }
 .notas { font-size: 7.8pt; color: var(--mut); font-style: italic; margin-top: 2.5mm; }
 .notas p { margin: 0 0 1mm; }
 .fim { break-inside: avoid; }
@@ -258,8 +259,8 @@ def html_proposta(P: dict, empresa: dict, numeros: Optional[dict] = None, orc: O
     if P.get("responsabilidades"):
         h.append(secao("Responsabilidades do contratante", '<div class="quadro">%s</div>' % _lista(P["responsabilidades"])))
     if P.get("condicoes") or P.get("seguranca"):
-        h.append(secao("Condições gerais", _lista(P.get("condicoes")) +
-                       (('<h3 style="margin-top:3mm">Segurança do trabalho</h3>' + _lista(P["seguranca"])) if P.get("seguranca") else "")))
+        # a segurança do trabalho entra como condição, sem subtítulo solto (usuário, 30/10: "não entendi essa parte")
+        h.append(secao("Condições gerais", _lista(list(P.get("condicoes") or []) + list(P.get("seguranca") or []))))
     tec = _tecnicos(P) if P.get("mostrar_ficha", True) else ""
     if tec:
         h.append(secao("Dados técnicos", tec))
