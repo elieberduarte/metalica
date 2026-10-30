@@ -48,7 +48,9 @@ _FAMILIAS = {
     "Z": (2, lambda h, b, d: h + 2 * b),
     "ZE": (4, lambda h, b, d: h + 2 * b + 2 * d),
     "L": (1, lambda h, b, d: h + b),
-    "CR": (4, lambda h, b, d: h + 2 * b + 2 * d),     # cartola: alma, abas e as duas mesas
+    # cartola "Cr h×b×D": as duas laterais h, o topo b e as duas abas D, como o catálogo — confere com a área da NBR 6355
+    # nos 41 itens (Cr 100×50×20×3,35: A·7,85 = 7,045 kg/m); lida como alma × abas × mesas dava 5,714 (FF N.2, 30/10)
+    "CR": (4, lambda h, b, d: 2 * h + b + 2 * d),
 }
 
 
@@ -70,6 +72,9 @@ def geometria(perfil: str) -> Optional[dict]:
         return None
     s = perfil.upper().replace(" ", "").replace("×", "X")
     s = re.sub(r"\(FF\)$", "", s)
+    # o Z45 (enrijecedor a 45°) é um Ze: o "45" do nome entrava na altura — "Z45 100×50×17×2,00" com 45.100 mm de alma
+    # e 723 kg/m (a conferência do catálogo inteiro, 30/10)
+    s = re.sub(r"^Z45(?=\d)", "ZE", s)
     m = re.match(r"^(UE|ZE|CR|U|C|Z|L)(\d+(?:[.,]\d+)?)X(\d+(?:[.,]\d+)?)(?:X(\d+(?:[.,]\d+)?))?X(#\d+|\d+(?:[.,]\d+)?)$", s)
     if not m:
         return None

@@ -577,15 +577,47 @@ def desenho_completo(faixas: Dict[str, tuple], localizacao: Optional[Desenho], c
     return dc
 
 
+def _instancia_de_cada(lista, folga: float = 8.0) -> Optional[Dict[int, str]]:
+    """{id(peça): instância} de cada peça do conjunto: a dela (`marcas.instancia`) ou, sem ela, a da peça com instância em
+    que encosta (a chapa soldada no pilar, a chapa soldada nessa chapa…). None quando alguma fica sem."""
+    from nucleo2d.detalhe.base import _caixa
+    inst = {id(e): str(_marcas(e)["instancia"]) for e in lista if _marcas(e).get("instancia")}
+    if not inst:
+        return None
+    faltam = [e for e in lista if id(e) not in inst]
+    if faltam and not all(getattr(e, "vertices", None) for e in lista):
+        return None
+    caixas = {id(e): _caixa(e) for e in lista} if faltam else {}
+
+    def folga_entre(a, b):
+        return max(max(a[k][0] - b[k][1], b[k][0] - a[k][1]) for k in range(3))
+
+    while faltam:
+        resolvidas = {}
+        for e in faltam:
+            perto = [(folga_entre(caixas[id(e)], caixas[i]), i) for i in inst]
+            perto = [(f, i) for f, i in perto if f <= folga]
+            if perto:
+                resolvidas[id(e)] = inst[min(perto)[1]]
+        if not resolvidas:
+            return None
+        inst.update(resolvidas)
+        faltam = [e for e in faltam if id(e) not in inst]
+    return inst
+
+
 def _instancias_pelo_grupo(lista):
-    """(instância, n, unidade, aviso) quando toda peça do conjunto diz a sua instância (`marcas.instancia`, como a
-    peça de um IfcElementAssembly) e há mais de uma; a unidade é a composição da maioria. Senão None (a instância
-    sai da conta das quantidades e do espaço, como sempre)."""
-    if not lista or not all(_marcas(e).get("instancia") for e in lista):
+    """(instância, n, unidade, aviso) quando o conjunto diz as suas instâncias (`marcas.instancia`, como a peça de um
+    IfcElementAssembly) e há mais de uma; a unidade é a composição da maioria. A peça sem instância vai para a da peça
+    em que encosta: as chapas soldadas sem ela juntavam os 5 pilares W530 da Ampliação num conjunto de 20 m (Hora
+    Certa · Galpão Existente, 29/10: PL13 "1 × 3.964,9 kg"). Senão None (a instância sai da conta das quantidades e do
+    espaço, como sempre)."""
+    inst_de = _instancia_de_cada(lista) if lista else None
+    if not inst_de:
         return None
     por_grupo: Dict[str, list] = collections.OrderedDict()
     for e in lista:
-        por_grupo.setdefault(str(_marcas(e)["instancia"]), []).append(e)
+        por_grupo.setdefault(inst_de[id(e)], []).append(e)
     if len(por_grupo) < 2:
         # uma instância só, dita pelo modelo: o conjunto inteiro (a conta das quantidades — 4 tubos, 8 e 4 travessas,
         # mdc 4 — inventava 4 instâncias de um quarto de caixa)
@@ -687,7 +719,8 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
     # as porcas e arruelas soltas no padrão da fábrica: 1 porca + 2 arruelas por ponta roscada
     try:
         from nucleo2d.detalhe.base import acessorios_no_padrao
-        acessorios = acessorios_no_padrao(acessorios, pecas, _fixadores(doc), recebido=projeto_recebido(doc))
+        acessorios = acessorios_no_padrao(acessorios, pecas, _fixadores(doc), recebido=projeto_recebido(doc),
+                                          avisos=avisos_lev)
     except Exception as exc:                        # noqa: BLE001 — a contagem não derruba o levantamento
         avisos_lev.append("porcas e arruelas soltas contadas como no modelo (o padrão 1 porca + 2 arruelas "
                           "por ponta roscada não foi aplicado: %s)" % exc)
@@ -1026,7 +1059,8 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         montadas.sort(key=lambda m: _ordem_natural(" + ".join(nomes_conj.get(r, r) for r in m["rotulos"])))
         from nucleo2d.detalhe.nomes import numerar_estavel
         # o nome guardado de cada tesoura montada (D9, 11/10): a T2 continua T2 no próximo Detalhar
-        nomes_montadas = numerar_estavel([" + ".join(m["rotulos"]) for m in montadas], (nomes or {}).get("montadas"), "T")
+        nomes_montadas = numerar_estavel([" + ".join(m["rotulos"]) for m in montadas], (nomes or {}).get("montadas"), "T",
+                                         reservados=set(nomes_conj.values()))
         nomeacao["montadas"] = nomes_montadas
         for i_m, m in enumerate(montadas, start=1):
             rot_m = " + ".join(m["rotulos"])

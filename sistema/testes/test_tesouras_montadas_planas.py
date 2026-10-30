@@ -69,3 +69,66 @@ def test_as_duas_aguas_continuam_uma_tesoura_montada():
     _trelica(doc, L + 50.0, "T#1", inclinada=-0.10)
     montadas, _ = _montadas(doc)
     assert len(montadas) == 1 and montadas[0]["n"] == 1
+
+
+# --- 30/10 (N.3): a reincidência do mesmo dia (montador M08) — a T1 de 20 m (MT1 + MT5) e a T2 de 16,5 m da Sala de
+# Tintas, duas treliças planas em linha com o pilar entre elas, e a T3 de 14,7 m (MT13 + MT14), a TS02 emendada no nó
+
+def _trelica_longa(doc, x0, comp, inst, maos_francesas=False, paineis=None):
+    """treliça plana com diagonais e o papel de cada barra (papel_trelica), como a execução grava; `maos_francesas`:
+    as duas da ponta, descendo do banzo de baixo para o pilar (fazem parte do conjunto da meia na Sala de Tintas)"""
+    def barra(a, b, perfil, pos, papel):
+        br = Barra(inicio=a, fim=b, perfil=perfil, papel="barra", nome=pos)
+        br.atributos = {"marcas": {"posicao": pos, "conjunto": "TS", "perfil": perfil, "instancia": inst},
+                        "tipo_ifc": "IfcMember", "papel_trelica": papel}
+        doc.add(br)
+    barra((x0, 0.0, 0.0), (x0 + comp, 0.0, 0.0), BANZO, "BI", "banzo")
+    barra((x0, 0.0, 500.0), (x0 + comp, 0.0, 500.0), BANZO, "BS", "banzo")
+    n = paineis or max(2, int(comp // 900))
+    for i in range(n + 1):
+        x = x0 + comp * i / n
+        barra((x, 0.0, 0.0), (x, 0.0, 500.0), ALMA, "M", "montante")
+        if i < n:
+            barra((x, 0.0, 0.0), (x + comp / n, 0.0, 500.0), ALMA, "D", "diagonal")
+    if maos_francesas:
+        for xp, s in ((x0, 1.0), (x0 + comp, -1.0)):
+            br = Barra(inicio=(xp + s * 450.0, 0.0, 0.0), fim=(xp + s * 30.0, 0.0, -480.0), perfil="L 50×5,00", papel="barra",
+                       nome="MF")
+            br.atributos = {"marcas": {"posicao": "MF", "conjunto": "TS", "perfil": "L 50×5,00", "instancia": inst},
+                            "tipo_ifc": "IfcMember", "funcao": "mao_francesa"}
+            doc.add(br)
+
+
+def test_ts02_emendada_no_no_nao_vira_tesoura():
+    """11,9 m + 2,9 m planas em linha: com os pontos a cada 1/8 da aresta, o banzo de 11,9 m deixava faixas sem o
+    contorno de cima e a "faixa reta" falhava (a T3 de 14,7 m)"""
+    doc = Documento(nome="ts02")
+    _trelica_longa(doc, 0.0, 11864.0, "TS02-01A", paineis=13)
+    _trelica_longa(doc, 11864.0 + 5.0, 2874.0, "TS02-01B", paineis=3)
+    montadas, _ = _montadas_varias(doc)
+    assert montadas == [], montadas
+
+
+def test_trelicas_planas_com_maos_francesas_e_pilar_no_meio_nao_viram_tesoura():
+    """duas de 10 m em linha encostadas no pilar do meio, cada uma com as mãos-francesas (abaixo do banzo) no conjunto"""
+    doc = Documento(nome="sala-de-tintas")
+    _trelica_longa(doc, 0.0, 9890.0, "ST-05-10", maos_francesas=True)
+    _trelica_longa(doc, 9900.0, 10120.0, "ST-01-05", maos_francesas=True)
+    montadas, _ = _montadas_varias(doc)
+    assert montadas == [], montadas
+
+
+def _montadas_varias(doc):
+    """como `_montadas`, com cada instância como uma meia (as composições diferem entre os trechos)"""
+    pecas, _ = base._pecas(doc)
+    por_inst = collections.defaultdict(list)
+    for e in pecas:
+        por_inst[base._marcas(e)["instancia"]].append(e)
+    meias = []
+    for inst, lista in por_inst.items():
+        for e in lista:
+            m = dict(base._marcas(e))
+            m["conjunto"] = inst
+            e.atributos = dict(e.atributos or {}, marcas=m)
+        meias.append((inst, lista, collections.Counter(base._marcas(e)["posicao"] for e in lista)))
+    return conjuntos.tesouras_montadas(meias)

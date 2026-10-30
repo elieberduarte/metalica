@@ -909,7 +909,6 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                       if str(x.get("classe") or "").startswith("chapa")]
             alvo = {x["marca"] for x, _ in comp_p}
             cats_p = {c["categoria"] for c in cels_p}
-            nomes_alvo = {x["nome"] for x, _ in comp_p}
             if alvo:
                 # as chapas das tesouras e os chumbamentos delas ("CB1 + CH9"), cada uma com quantas estão
                 # desenhadas na prancha (pedido do usuário, 28/09: "a quantidade total vai na prancha da
@@ -925,8 +924,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                         continue
                     marcas_c = [c.get("marca")] + list((c.get("item") or {}).get("marcas") or [])
                     if c.get("montagem"):
-                        partes = [pt for pt in c["montagem"].split(" + ") if pt in nomes_alvo]
-                        n_loc = max((por_nome[pt] for pt in partes), default=0)
+                        n_loc = _copias_da_montagem(c["montagem"], por_nome)
                     elif any(mk in alvo for mk in marcas_c if mk):
                         n_loc = sum(por_marca[mk] for mk in dict.fromkeys(marcas_c) if mk in por_marca)
                     else:
@@ -2774,6 +2772,16 @@ def _referencia_da_copia(c: dict, onde: Dict[str, int], total: int) -> Dict[str,
     if pr is None:
         return {nome: "referência"}
     return {nome: ("total %02dx: fabricar pela PR. %02d/%02d" % (tot, pr, total)) if tot else "fabricar pela PR. %02d/%02d" % (pr, total)}
+
+
+def _copias_da_montagem(montagem: str, por_nome: Dict[str, int]) -> int:
+    """Quantas unidades da montagem ("CH1 + CH35", a peça repetida conta duas) os conjuntos da prancha levam: o mínimo
+    de cada parte pela multiplicidade dela, 0 se falta uma. Com o máximo de uma parte só, o S.T.2 (CH1 + CH35) saía
+    "59x" na prancha das tesouras que só levam S.T.1 (CH1 + CH2) (Hora Certa · Galpão Existente, 29/10: 20 de 29)."""
+    mult = collections.Counter(pt.strip() for pt in str(montagem or "").split(" + ") if pt.strip())
+    if not mult:
+        return 0
+    return min(int(por_nome.get(pt, 0)) // q for pt, q in mult.items())
 
 
 def _copia_local(c: dict, n: int) -> dict:

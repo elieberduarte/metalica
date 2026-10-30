@@ -284,12 +284,24 @@ def _regra_sob_medida(perfil: str, barra: float, terca: bool = False) -> str:
     """O que do dobrado a fábrica compra no comprimento da peça, sem barra (o relatório de compras da SOORO, 13/10: as
     terças vêm da dobradeira na lista de cortes, "12x 6,035m · 24x 4,925m"; os outros dobrados em kg, cortados de barra
     de 6 m): "todas" as peças da terça, as "maiores" que a barra nos outros dobrados, "" no W, no tubo, no redondo, no
-    laminado em polegada e quando o usuário fixou a barra."""
+    laminado em polegada e quando o usuário fixou a barra. A barra redonda maior que a barra comercial vem sob medida
+    (usuário, 30/10, Hora Certa · Galpão Existente: os contraventos de 7,2 a 10 m saíam emendados no plano de corte e
+    inteiros na prancha, sem emenda detalhada)."""
     if barra and barra > 0:
         return ""
+    if _barra_redonda(perfil):
+        return "maiores"
     if re.match(r"\s*(W|HP)\s*\d", str(perfil or ""), re.I) or _comprado_em_6m(perfil):
         return ""
     return "todas" if terca else "maiores"
+
+
+def _barra_redonda(perfil: str) -> bool:
+    """O redondo maciço (tirante, contravento, chumbador): FE RED, BARRA REDONDA, Ø…; não a chata nem o tubo."""
+    p = str(perfil or "").upper().replace("×", "X").replace(" ", "")
+    if "CHATA" in p or re.match(r"(TQ|TR|TC|TB|TUBO)\d|TUBO", p):
+        return False
+    return bool(re.match(r"(FE?RED|FERRO|RB|Ø|BARRAREDOND)", p)) or "REDOND" in p
 
 
 # ============================================================ montagem

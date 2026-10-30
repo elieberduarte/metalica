@@ -3550,8 +3550,17 @@ def _faixa_reta(pecas: Sequence[Solido], normal, tol: float = 30.0, faixas: int 
     barras: a chapa de apoio de cada ponta, mais alta que a treliça, quebrava a faixa (Hora Certa · Galpão Existente,
     29/10: as 12 treliças planas TS01 em linha, entre as faces dos pilares, viravam uma "tesoura" de 46 m)."""
     barras = [e for e in pecas if not _tipo_ifc(e).startswith("IfcPlate")] or list(pecas)
+    # com o papel na treliça gravado, só ela: as mãos-francesas do conjunto da meia descem abaixo do banzo nas pontas
+    # (Sala de Tintas, 30/10: duas treliças planas de 10 m em linha, com o pilar entre elas, viravam a "T1" de 20 m)
+    da_trelica = [e for e in barras if str((e.atributos or {}).get("papel_trelica") or "") in ("banzo", "montante", "diagonal")]
+    barras = da_trelica or barras
     # os vértices e pontos ao longo das arestas: o prisma da barra só tem vértice nas pontas, e no meio do vão a faixa via
-    # só a ponta do montante (abaixo da face do banzo) — a treliça plana não dava faixa reta
+    # só a ponta do montante (abaixo da face do banzo) — a treliça plana não dava faixa reta. O passo é meia faixa: a
+    # 1/8 da aresta, o banzo de 11,9 m da TS02 deixava faixas sem o contorno de cima (a "T3" de 14,7 m, 30/10)
+    todos = [v for e in barras for v in (e.vertices or [])]
+    if not todos:
+        return False
+    passo = max(1.0, max(max(v[k] for v in todos) - min(v[k] for v in todos) for k in range(3)) / (2.0 * faixas))
     verts = []
     for e in barras:
         vs = e.vertices or []
@@ -3559,7 +3568,8 @@ def _faixa_reta(pecas: Sequence[Solido], normal, tol: float = 30.0, faixas: int 
         for f in (getattr(e, "faces", None) or []):
             for i in range(len(f)):
                 a, b = vs[f[i]], vs[f[(i + 1) % len(f)]]
-                verts.extend(tuple(a[k] + (b[k] - a[k]) * t / 8.0 for k in range(3)) for t in range(1, 8))
+                n_ = max(2, int(math.ceil(math.dist(a, b) / passo)))
+                verts.extend(tuple(a[k] + (b[k] - a[k]) * t / n_ for k in range(3)) for t in range(1, n_))
     if len(verts) < 4:
         return False
     n = _norm(normal)
@@ -4280,13 +4290,18 @@ def _itens_de_localizacao(pecas: Sequence[Solido]) -> List[Tuple[str, List[Solid
         else:
             soltas.append(e)
     itens: List[Tuple[str, List[Solido]]] = []
-    for conj, lista in por_conj.items():
+    for conj, lista in list(por_conj.items()):
         total = collections.Counter(posicao_base(e) for e in lista)
         n = 0
         for q in total.values():
             n = math.gcd(n, q)
         n = max(n, 1)
         unidade = collections.Counter({k: q // n for k, q in total.items()})
+        if sum(unidade.values()) == 1:
+            # o conjunto "solo" de uma peça (o numerar dá M#### à peça fora de conjunto) é peça solta: a marca dela, não o
+            # M#### que não existe em folha nenhuma (Hora Certa · Galpão Existente, 29/10: 239 rótulos M#### na planta)
+            soltas.extend(lista)
+            continue
         for g in _instancias_do_conjunto(lista, unidade):
             itens.append((conj, g))
     for e in soltas:

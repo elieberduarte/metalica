@@ -584,20 +584,23 @@ def aplicar_nomes(posicoes: Sequence[Posicao], nomes: Optional[dict]):
             p.camada_2d = _camada_da_posicao(p, (nomes.get("tipos") or {}).get(p.marca, ""))
 
 
-def numerar_estavel(chaves, anteriores, prefixo: str) -> dict:
+def numerar_estavel(chaves, anteriores, prefixo: str, reservados=()) -> dict:
     """Os nomes PREFIXO+n de uma lista de itens (na ordem de numerar), guardando o que cada item já tinha
     (`anteriores`: {chave: nome}, do nomes.json) — o novo ganha o número seguinte ao maior que ficou. Sem anteriores é a
     numeração em sequência de antes. Auditoria D9 (11/10/2026): S.T., a tesoura montada (T) e as telhas (MD, CU)
-    renumeravam a cada Detalhar, e a prancha e a peça na fábrica trocavam de nome."""
+    renumeravam a cada Detalhar, e a prancha e a peça na fábrica trocavam de nome. `reservados`: os nomes que outra
+    coisa já usa — a tesoura montada não pega o "T2" de um conjunto (Hora Certa · Galpão Existente, 29/10: duas T2 e
+    duas T3 diferentes nas pranchas)."""
     chaves = [str(k) for k in chaves]
     validos = re.compile(r"^%s(\d+)$" % re.escape(prefixo))
-    fora, usados = {}, set()
+    reservados = {str(r) for r in reservados or ()}
+    fora, usados = {}, set(reservados)
     for k in chaves:
         v = str((anteriores or {}).get(k) or "")
         if validos.match(v) and v not in usados:
             fora[k] = v
             usados.add(v)
-    n = max([int(validos.match(v).group(1)) for v in usados] or [0])
+    n = max([int(validos.match(v).group(1)) for v in usados - reservados] or [0])
     for k in chaves:
         if k not in fora:
             n += 1

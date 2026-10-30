@@ -556,7 +556,7 @@ def _pecas(doc: Documento, puladas: Optional[list] = None, fora_do_aco: Optional
                 if proxies is not None:
                     proxies.append(ent)
                 continue
-            acessorios[ent.nome or t] += 1
+            acessorios[nome_do_fixador(ent) or t] += 1
         elif t and fora_do_aco is not None:
             # o guarda-corpo, o piso, a laje: não é peça de produção, mas não some (ia calado — o gradil e o piso de
             # chapa perfurada da Passarela Mirante não estavam em lista nenhuma, 06/10)
@@ -825,7 +825,7 @@ def _fixadores(doc: Documento) -> List[Solido]:
 def _diametro_do_fixador(ent: Solido, ext) -> Tuple[float, bool]:
     """Diâmetro nominal do parafuso: do nome ("BOLT 12x35" → 12) ou, sem tamanho no nome
     ("BOLT () 0x0"), da porca (entre faces → rosca). Devolve (d, inferido_da_porca)."""
-    m = re.search(r"(\d+(?:[.,]\d+)?)\s*[xX×]\s*\d", ent.nome or "")
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*[xX×]\s*\d", nome_do_fixador(ent))
     if m:
         d = float(m.group(1).replace(",", "."))
         if d > 0:
@@ -886,12 +886,13 @@ def _eixos_dos_fixadores(fixadores: Sequence[Solido]) -> Dict[str, tuple]:
 
 def _nome_do_parafuso(f: Solido, ext) -> Tuple[str, bool]:
     """"M12x35" a partir de "BOLT (A) 12x35"; (rosca pela porca, True) sem tamanho no nome."""
-    m = re.search(r"(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?)", f.nome or "")
+    nome = nome_do_fixador(f)
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?)", nome)
     if m and float(m.group(1).replace(",", ".")) > 0:
         d = m.group(1).replace(",", ".")
         d = d[:-2] if d.endswith(".0") else d
         # a classe que o editor 3D grava no nome ("BOLT (A325) 16x50"); o "(A)" do IFC não é classe
-        c = re.search(r"\(([^)]{2,})\)", f.nome or "")
+        c = re.search(r"\(([^)]{2,})\)", nome)
         return "M%s x %s%s" % (d, m.group(2), (" " + c.group(1).strip()) if c else ""), False
     d, _ = _diametro_do_fixador(f, ext)
     return "M%d" % round(d), True
@@ -1856,6 +1857,7 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
                 _posicao_de_chapa(pos, ch)
             else:
                 analisar(pos)
+                _com_o_gancho(pos, primeiro[marca])
                 if fixadores and not _funilaria(pos.perfil):
                     # o rufo e a calha não levam furo de parafuso: a caixa deles cobre o topo da parede e pegava os
                     # parafusos das terças (24 "furos" por trecho de rufo, PRATI 13/10)
@@ -1882,6 +1884,19 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
         except Exception:                           # noqa: BLE001 — sem a conferência, o rótulo de sempre
             pass
     return list(por_marca.values()), camadas
+
+
+def _com_o_gancho(pos: Posicao, ent) -> None:
+    """O chumbador em J cortado com o gancho: o 3D tem a perna reta e o gancho desenvolvido em `atributos.gancho_mm`
+    (ligacoes3d, scripts de obra); o comprimento da posição — o da lista, do romaneio, do plano de corte e do peso — é o
+    reto + o gancho. Sem ele os 174 chumbadores do Hora Certa · Galpão Existente saíam curtos (−113 kg, auditor N05, 29/10)."""
+    g = float(((getattr(ent, "atributos", None) or {}).get("gancho_mm") or 0.0))
+    if g <= 0 or not str(pos.classe or "").startswith("barra") or not pos.comprimento:
+        return
+    reto = float(pos.comprimento)
+    pos.comprimento = reto + g
+    pos.observacoes.append("chumbador em J: reto %s + gancho %s (desenvolvido) = corte %s mm"
+                           % (_mm(reto), _mm(g), _mm(pos.comprimento)))
 
 
 def _parafusos_em_todas(pecas: Sequence[Solido], por_marca: Dict[str, Posicao], eixos_fix: dict) -> None:
@@ -2286,11 +2301,26 @@ def bitola_da_barra(perfil: str) -> str:
     return (m.group(1).strip() + '"') if m else ""
 
 
+def nome_do_fixador(f: Solido) -> str:
+    """O nome do fixador com o tamanho ("BOLT (A325) 12.7x35"): o do modelo, ou — sem o "d × L" no nome — o tamanho que
+    o editor e a biblioteca de ligações gravam em `atributos.parafuso`. Renomeado para "Parafuso", o parafuso virava
+    porca solta na lista (Hora Certa · Galpão Existente, 29/10: 722 parafusos do mezanino como porcas ¾")."""
+    nome = f.nome or ""
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?)", nome)
+    if m and float(m.group(1).replace(",", ".")) > 0:
+        return nome
+    pa = (getattr(f, "atributos", None) or {}).get("parafuso")
+    if isinstance(pa, dict) and float(pa.get("d") or 0) > 0 and float(pa.get("L") or 0) > 0:
+        cl = str(pa.get("classe") or "").replace("ASTM ", "").replace("ISO ", "")
+        return "BOLT (%s) %gx%d" % (cl, float(pa["d"]), int(float(pa["L"])))
+    return nome
+
+
 def _fixador_sem_tamanho(f: Solido) -> bool:
     """porca ou arruela solta do IFC ("BOLT () 0x0"): sem o diâmetro no nome — e não a malha de aço
     inteira que veio como IfcBuildingElementProxy (a estrutura do CYPE do Capitão), nem o que não é aço;
     o levantamento também as tira dos acessórios"""
-    m = re.search(r"(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?)", f.nome or "")
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?)", nome_do_fixador(f))
     if m and float(m.group(1).replace(",", ".")) > 0:
         return False
     from nucleo2d.detalhe.fora_do_aco import material_nao_aco, proxy_estrutural
@@ -2376,7 +2406,7 @@ def pontas_do_modelo(doc) -> Dict[str, dict]:
 
 
 def acessorios_no_padrao(acessorios: Dict[str, int], pecas: Sequence[Solido], fixadores: Sequence[Solido],
-                         recebido: bool = False) -> Dict[str, int]:
+                         recebido: bool = False, avisos: Optional[list] = None) -> Dict[str, int]:
     """A contagem de acessórios da lista de materiais com as porcas e arruelas soltas no padrão da
     fábrica: as de ponta roscada viram 1 porca + 2 arruelas por ponta, na bitola da barra; as que
     sobram, nomeadas pela forma (porca ou arruela e a bitola) em vez de "BOLT () 0x0".
@@ -2384,7 +2414,9 @@ def acessorios_no_padrao(acessorios: Dict[str, int], pecas: Sequence[Solido], fi
     O chumbador nunca entra na regra do parafuso (decisão do usuário, 16/10, N07 do auditor na ME-Sooro: faltavam 28
     porcas de 3/4" na compra): no projeto `recebido` (o IFC/DXF do projetista) as porcas e arruelas dele ficam como o
     projetista pôs no modelo (na Sooro, 2 porcas por perna); no projeto nosso, 2 porcas (porca e contraporca) + 1
-    arruela por perna."""
+    arruela por perna. O chumbador com a ponta acima do concreto (`projecao_mm`) e NENHUMA porca no modelo leva o padrão
+    nos dois casos, com aviso: o modelo montado das folhas não traz a porca que o projetista desenha, e a lista saía sem
+    porca nenhuma (FAB-05, reincidência — Hora Certa · Galpão Existente, 30/10: 218 chumbadores, auditor N06)."""
     from saida.resumos import _fixador_solto
     pontas, usados = pontas_roscadas(pecas, fixadores)
     chumbadores = _ids_de_chumbadores(pecas)
@@ -2408,6 +2440,29 @@ def acessorios_no_padrao(acessorios: Dict[str, int], pecas: Sequence[Solido], fi
         chave, _d, arruela = _fixador_solto(ext)
         pol = chave.split(" ", 1)[1]
         fora[("Arruela lisa Ø%s" if arruela else "Porca sextavada Ø%s UNC") % pol] += 1
+    com_ponta = {p["peca"].id for p in pontas}
+    sem_porca = collections.Counter()
+    for e in pecas:
+        if e.id not in chumbadores or e.id in com_ponta:
+            continue
+        if float(((getattr(e, "atributos", None) or {}).get("projecao_mm") or 0.0)) <= 0:
+            continue                                  # soldado na chapa, ou sem a ponta acima do concreto
+        perfil = str(_marcas(e).get("perfil") or getattr(e, "nome", "") or "")
+        pol = bitola_da_barra(perfil)
+        if pol:
+            porca, arruela = "Porca sextavada Ø%s UNC" % pol, "Arruela lisa Ø%s" % pol
+        else:
+            m = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:mm)?\s*$", perfil)
+            mm = m.group(1).replace(",", ".") if m else "?"
+            porca, arruela = "Porca sextavada M%s" % mm, "Arruela lisa M%s" % mm
+        fora[porca] += PORCAS_POR_PERNA_CHUMBADOR
+        fora[arruela] += ARRUELAS_POR_PERNA_CHUMBADOR
+        sem_porca[pol or "M%s" % mm] += 1
+    if sem_porca and avisos is not None:
+        avisos.append("%d chumbador(es) sem porca no modelo (%s): na lista com o padrão da fábrica, %d porcas + %d arruela "
+                      "por perna — confira com a folha do projetista" % (
+                          sum(sem_porca.values()), ", ".join("%s: %d" % kv for kv in sorted(sem_porca.items())),
+                          PORCAS_POR_PERNA_CHUMBADOR, ARRUELAS_POR_PERNA_CHUMBADOR))
     for p in pontas:
         pol = p["bitola"] or "?"
         if p["peca"].id in chumbadores:
@@ -2518,7 +2573,9 @@ def rosca_dos_chumbadores(doc, pecas: Sequence[Solido], posicoes) -> int:
 def _ids_de_chumbadores(pecas: Sequence[Solido]) -> set:
     """As barras redondas que são chumbador: a barra paramétrica com o papel, e a que atravessa a chapa de base deitada
     (o chumbamento montado — a mesma regra dos nomes de produção, nomes.py)."""
-    ids = {e.id for e in pecas if str(getattr(e, "papel", "") or "") == "chumbador"}
+    # o papel da barra paramétrica fica nela (`parametrica`), não no sólido equivalente do levantamento
+    ids = {e.id for e in pecas if str(getattr(e, "papel", "") or getattr(getattr(e, "parametrica", None), "papel", "")
+                                      or "") == "chumbador"}
     try:
         from nucleo2d.detalhe.montagens import grupos_montados, _eh_chapa
         por_id = {e.id: e for e in pecas}

@@ -23,7 +23,7 @@ from typing import Dict, List, Optional, Tuple
 
 from nucleo3d.modelo import Documento, Solido
 from nucleo2d.detalhe.base import (_marcas, marcas_de, _autovetores, _eixos_dos_fixadores, _fixadores, _parede_da_peca, _so_parafusos,
-                                   _eixo_da_peca)
+                                   _eixo_da_peca, nome_do_fixador)
 from saida import identidade
 from saida.dobras import com_bitola_e_mm as com_bitola
 
@@ -1042,11 +1042,12 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
         if info is None:
             continue
         cc, eixo, meio, ext, porca = info
-        m = re.search(r"(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+)", f.nome or "")
+        nome = nome_do_fixador(f)                 # o tamanho gravado, se o nome não o tem (renomeado para "Parafuso")
+        m = re.search(r"(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+)", nome)
         if m and float(m.group(1).replace(",", ".")) > 0:
             d = float(m.group(1).replace(",", "."))
             # o chumbador químico (barra roscada HIT-V embutida no concreto, 09/10) sai com o nome dele, não como parafuso
-            mc = re.search(r"\((A\d{3}[^)]*)\)", f.nome or "")
+            mc = re.search(r"\((A\d{3}[^)]*)\)", nome)
             if _eh_hardbolt(f.nome, (f.atributos or {})):
                 chave = "HARDBOLT %g x %s" % (d, m.group(2))       # o mecânico: não é o químico HIT-V (PRATI, 14/10)
             elif _eh_parabolt(f.nome, (f.atributos or {})):

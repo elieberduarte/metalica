@@ -288,8 +288,15 @@ def _carregar() -> List[Item]:
             if i.grupo != "formado a frio" or not i.massa:
                 continue
             d_ = i.dados
+            enr = d_.get("enrijecedor") or 0.0
+            if not enr and i.familia in ("Ue", "Ze", "Z45"):
+                # o item de tabela do perfis.json não traz o enrijecedor: o do nome. Sem ele o Ue pesava como U, sem a
+                # dobra da aba — Ue 200×75×25×3,00 a 7,824 kg/m em vez de 9,024 (FAB-03, reincidência: SESI 28/10 e Hora
+                # Certa · Galpão Existente 30/10)
+                g = _dobras.geometria(i.nome)
+                enr = (g or {}).get("d") or 0.0
             kg = _dobras.kg_m_do_formado(i.familia, d_.get("d") or 0.0, d_.get("bf") or d_.get("b") or 0.0,
-                                         d_.get("enrijecedor") or 0.0, d_.get("t") or 0.0, b2=d_.get("b2") or 0.0)
+                                         enr, d_.get("t") or 0.0, b2=d_.get("b2") or 0.0)
             if kg and kg > 0:
                 d_.setdefault("massa_tabela", round(float(i.massa), 3))
                 d_["massa_regra"] = "fábrica: (soma externa − 2·t por dobra) × t × 8 kg/m² por mm"
