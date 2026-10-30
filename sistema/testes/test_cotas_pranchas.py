@@ -102,6 +102,28 @@ def test_chamada_das_chapas_em_toda_ocorrencia_com_ramo_so_para_perto():
     assert por["CH1"] == [0]
 
 
+def test_chamada_do_suporte_de_terca_com_o_nome_do_suporte():
+    """Usuário, 30/10, na T1 da Sala: "Essas devem ser marcado o nome do suporte de terça e não as chapas se é o S.T.1,
+    ou S.T.2". Saía "CH1 + CH3" e "CH2" separadas (a CH1 juntava com a CH3 do lado e a CH2, do mesmo suporte, ficava
+    sozinha). O S.T.1 é a CH1 soldada na CH2 (a chave "P11 + P12" da nomeação); a CH3 ao lado não é dele e segue com o
+    nome dela; a chapa que é o suporte sozinha (S.T.2 = "P20") também troca."""
+    from nucleo2d.detalhe.conjuntos import chamadas_das_chapas
+    d = Desenho(escala=25.0)
+    p = _Papel(d, {}, 0.0, 0.0)
+    pecas = []
+    for i in range(6):                                   # o suporte em cada terça: CH2 a 40 mm da CH1 (como na Sala)
+        x, y = 1000.0 + 1546.0 * i, 800.0 + 300.0 * i
+        pecas += [_chapa("P12", x - 22.0, y + 33.0), _chapa("P11", x, y)]
+    pecas += [_chapa("P13", 1135.0, 788.0)]              # a CH3 a 135 mm da CH1 da primeira terça
+    pecas += [_chapa("P20", 12000.0, 0.0)]
+    nomes = {"P11": "CH1", "P12": "CH2", "P13": "CH3", "P20": "CH7"}
+    chamadas_das_chapas(p, pecas, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), 0.0, 0.0, 25.0, nomes.get,
+                        suportes={"P11 + P12": "S.T.1", "P20": "S.T.2"})
+    textos = sorted(e.texto for e in d.entidades.values() if isinstance(e, Chamada))
+    assert textos == ["CH3 + S.T.1", "S.T.1", "S.T.2"], textos
+    assert not any("CH1" in t or "CH2" in t or "CH7" in t for t in textos)
+
+
 def test_mover_a_celula_leva_as_setas_a_mais_da_chamada():
     """O detalhamento translada cada célula para o lugar dela na folha (base._mover): as setas a mais iam ficando no lugar
     antigo, atravessando a prancha (visto na T1 da Sala de Compressores, 26/10)."""
@@ -172,6 +194,22 @@ def test_tesoura_montada_da_sala_cotada_ate_o_centro_e_a_uniao_das_chapas():
     # no modelo como veio do TecnoMETAL (na obra, depois dos ajustes: 780 | 420 | 7130 e 853 | 19 | 852)
     assert t1[("h", -10.0)][2:4] == [7130, 7130]
     assert t1[("h", -20.0)] == [858, 19, 857]
+
+
+@pytest.mark.skipif(not os.path.exists(SALA), reason="sem o modelo da Sala (outra máquina)")
+def test_tesouras_da_sala_chamam_o_suporte_de_terca_pelo_s_t():
+    """No modelo como veio do TecnoMETAL, só com as tesouras pedidas: o S.T.1 aparece nas chamadas das quatro tesouras e
+    nenhuma chamada junta só as duas chapas dele (CH1 + CH10 nesse modelo, a chave "P11 + P12")."""
+    from nucleo2d.desenho import Chamada as Ch
+    d = _tesouras_da_sala()
+    por = {}
+    for e in d.entidades.values():
+        if isinstance(e, Ch) and str((e.atributos or {}).get("nome") or "").startswith("T"):
+            por.setdefault(e.atributos["nome"], []).append(e.texto)
+    assert set(por) >= {"T1", "T2", "T3", "T4"}
+    for t, textos in por.items():
+        assert any("S.T.1" in x for x in textos), (t, textos)
+        assert "CH1 + CH10" not in textos and "CH1 + CH2" not in textos, (t, textos)
 
 
 @pytest.mark.skipif(not os.path.exists(SALA), reason="sem o modelo da Sala (outra máquina)")

@@ -2409,11 +2409,49 @@ RAMO_ATE = 1500.0
 MESMO_LUGAR_CHAPAS = 150.0
 
 
-def chamadas_das_chapas(p, instancia, origem, u, v, u0: float, v0: float, esc: float, nome_de) -> int:
+def _suportes_nas_chamadas(pts: list, suportes: Dict[str, str]) -> list:
+    """As chapas de um suporte de terça viram uma ocorrência só, com o nome dele (usuário, 30/10, na T1 da Sala de
+    Compressores: "Essas devem ser marcado o nome do suporte de terça e não as chapas se é o S.T.1, ou S.T.2").
+    `pts`: [(ponto, nome, posição fundida)]; `suportes`: "P11 + P12" (as posições soldadas) ou "P14" (a chapa sozinha)
+    → "S.T.1". As chapas do suporte soldado se juntam pela mais perto, a até MESMO_LUGAR_CHAPAS uma da outra; a chapa
+    que fica ao lado e não é dele (a CH3 da Sala) segue com o nome dela."""
+    restam = list(pts)
+    for chave, nome_st in sorted(suportes.items(), key=lambda kv: -len(kv[0].split(" + "))):
+        comp = chave.split(" + ")
+        if len(comp) == 1:
+            restam = [(q, nome_st, None) if m == comp[0] else (q, n, m) for q, n, m in restam]
+            continue
+        achou = True
+        while achou:
+            achou = False
+            for i, (q0, _n, m0) in enumerate(restam):
+                if m0 != comp[0]:
+                    continue
+                usados = [i]
+                for outra in comp[1:]:
+                    cand = [j for j, (q, _n2, m) in enumerate(restam) if m == outra and j not in usados
+                            and math.hypot(q[0] - q0[0], q[1] - q0[1]) <= MESMO_LUGAR_CHAPAS]
+                    if not cand:
+                        break
+                    usados.append(min(cand, key=lambda j: math.hypot(restam[j][0][0] - q0[0], restam[j][0][1] - q0[1])))
+                else:
+                    qs = [restam[j][0] for j in usados]
+                    q_st = (sum(q[0] for q in qs) / len(qs), sum(q[1] for q in qs) / len(qs))
+                    restam = [r for j, r in enumerate(restam) if j not in usados] + [(q_st, nome_st, None)]
+                    achou = True
+                    break
+    return restam
+
+
+def chamadas_das_chapas(p, instancia, origem, u, v, u0: float, v0: float, esc: float, nome_de,
+                        suportes: Optional[Dict[str, str]] = None, fundida_de=None) -> int:
     """Na elevação da tesoura: uma chamada com o nome de produção de cada chapa (a da cumeeira, a do apoio, a
     chapinha do suporte), para a fábrica achar o detalhe dela (pedido do usuário, 02/10: "nos detalhes das tesouras
     não tem nenhuma chamada indicando o nome das chapas"). Cada chapa uma vez — na ocorrência mais perto do meio da
-    tesoura; as do mesmo lugar numa chamada só. O texto vai para fora, no lado com lugar; devolve quantas saíram."""
+    tesoura; as do mesmo lugar numa chamada só. O texto vai para fora, no lado com lugar; devolve quantas saíram.
+    `suportes` (posições → S.T.n, a nomeação do Detalhar): as chapas do suporte de terça saem com o nome dele;
+    `fundida_de`: a marca do IFC → a posição fundida, a das chaves de `suportes`."""
+    fundida_de = fundida_de or (lambda m: m)
     pts = []
     for e in instancia:
         if not (_tipo_ifc(e).startswith("IfcPlate") or isinstance(e, Chapa)) or not getattr(e, "vertices", None):
@@ -2424,9 +2462,11 @@ def chamadas_das_chapas(p, instancia, origem, u, v, u0: float, v0: float, esc: f
         n_ = len(e.vertices)
         c = tuple(sum(q[k] for q in e.vertices) / n_ for k in range(3))
         rel = _sub(c, origem)
-        pts.append(((_dot(rel, u) - u0, _dot(rel, v) - v0), str(nome_de(m["posicao"]) or m["posicao"])))
+        pts.append(((_dot(rel, u) - u0, _dot(rel, v) - v0), str(nome_de(m["posicao"]) or m["posicao"]),
+                    fundida_de(str(m["posicao"]))))
     if not pts:
         return 0
+    pts = [(q, n) for q, n, _m in (_suportes_nas_chamadas(pts, suportes) if suportes else pts)]
     lugares: List[list] = []
     for q, nome in pts:
         for g in lugares:
@@ -2518,7 +2558,8 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
                         fundidas: Optional[Dict[str, str]] = None, nota=None,
                         nomes: Optional[Dict[str, str]] = None, nome: str = "", tipo: str = "",
                         conformadas: Optional[set] = None,
-                        pesos: Optional[Dict[str, float]] = None, caixa: bool = False) -> Tuple[float, float, float, float]:
+                        pesos: Optional[Dict[str, float]] = None, caixa: bool = False,
+                        nomes_st: Optional[Dict[str, str]] = None) -> Tuple[float, float, float, float]:
     """Elevação do conjunto com cotas de nós, título e lista de perfis, em (dx, dy).
     `fundidas`: marca do IFC → posição fundida; `nomes`: posição fundida → nome de
     produção (rótulos e composição com o mesmo nome que as células de posição);
@@ -2526,7 +2567,8 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     `caixa`: a viga caixote (a treliça da obra sem cobertura: os tubos do Vicente, 13/10) é uma prancha de
     produção — as travessas com o perfil cheio (não a linha de eixo), nada de fora do conjunto em volta
     (os suportes e chumbadores da laje são do gabarito, não do soldador) e a altura cotada entre as faces
-    dos banzos (o vão de 150 que fecha os 250), não o comprimento da travessa (146)."""
+    dos banzos (o vão de 150 que fecha os 250), não o comprimento da travessa (146).
+    `nomes_st`: posições → S.T.n (nomeação do Detalhar), para a chamada do suporte de terça na tesoura."""
     fundidas = fundidas or {}
     nomes = nomes or {}
     pesos = pesos or {}
@@ -3266,7 +3308,8 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         p.cota_v(0, alt, larg, off2 if cadeia else off)
     _rotular_barras(p, rotulos, esc)
     if tipo == "tesoura":
-        chamadas_das_chapas(p, instancia, origem, u, v, u0, v0, esc, nome_de)
+        chamadas_das_chapas(p, instancia, origem, u, v, u0, v0, esc, nome_de, suportes=nomes_st,
+                            fundida_de=lambda m: fundidas.get(m, m))
     fora_t = []
     if tipo != "tesoura":
         # no DP, os parafusos que prendem as terças nele não têm chamada (são da terça, na obra — pedido

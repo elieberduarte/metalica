@@ -1072,7 +1072,9 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                 dd, x, y, lambda dd_, x_, y_, rot_m=rot_m, m=m, nome_m=nome_m:
                 desenho_do_conjunto(doc, rot_m, m["pecas"], m["n"], dd_, x_, y_, rotular, fundidas=fundidas,
                                     nomes=nomes_pos, nome=nome_m, tipo="tesoura",
-                                    conformadas=conformadas, pesos=pesos), m["pecas"])))
+                                    conformadas=conformadas, pesos=pesos,
+                                    # os S.T.n saem mais abaixo; a célula é desenhada depois, nos desenhos por família
+                                    nomes_st=nomeacao.get("suportes")), m["pecas"])))
             itens_montadas[rot_m] = {"quantidade": m["n"], "perfil": "tesoura montada (metades %s)" % metades_m, "material": "",
                                      "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
                                      "categoria": "TESOURAS", "nome": nome_m, **titulo_trelica,
@@ -1106,7 +1108,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             fns.append((tipos_conj.get(rotulo, ""), lambda dd, x, y, rotulo=rotulo, inst=inst, n=n, nota=nota:
                        desenho_do_conjunto(doc, rotulo, inst, n, dd, x, y, rotular, fundidas=fundidas, nota=nota,
                                            nomes=nomes_pos, nome=nomes_conj.get(rotulo, ""), tipo=tipos_conj.get(rotulo, ""),
-                                           conformadas=conformadas, pesos=pesos,
+                                           conformadas=conformadas, pesos=pesos, nomes_st=nomeacao.get("suportes"),
                                            # a treliça da obra sem cobertura é viga caixote: prancha de produção (13/10)
                                            caixa=(tipos_conj.get(rotulo, "") == "tesoura" and not cobertura))))
         itens_cv = {}
@@ -1203,7 +1205,8 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
     # dos chumbadores, junto das barras dele (a fábrica prepara o chumbador inteiro)
     montagens_cache = None
     chapas_de_chumbador = set()
-    if any(GRUPOS_BASE.get(c, {}).get("classes") for c in grupos):
+    # também só com as tesouras: a chamada do suporte de terça na elevação delas leva o S.T.n (30/10)
+    if any(GRUPOS_BASE.get(c, {}).get("classes") for c in grupos) or celulas:
         from nucleo2d.detalhe.montagens import grupos_montados
         nome_pc0 = lambda m: nomes_pos.get(fundidas.get(m, m)) or nomes_conj.get(m) or fundidas.get(m, m)    # noqa: E731
         try:
