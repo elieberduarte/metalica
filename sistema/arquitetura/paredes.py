@@ -117,7 +117,7 @@ class Parede:
 class Esquadria:
     id: str
     parede: str
-    tipo: str                   # "janela" | "porta"
+    tipo: str                   # "janela" | "portajanela" (vidro do piso, pelo vão acabado) | "porta" (pela folha)
     u: float                    # distância de p0 da parede até o começo do vão acabado (janela) ou da folha (porta)
     largura: float              # janela: vão acabado; porta: folha
     altura: float
@@ -449,6 +449,9 @@ def montar(paredes: Sequence[Parede], esquadrias: Sequence[Esquadria] = ()) -> M
 
 def _osso(w: Parede, q: Esquadria, u0: float):
     """(u0, u1, z0, z1) do vão no bloco e do vão acabado"""
+    if q.tipo == "passagem":                    # vão livre, sem esquadria: o osso é o próprio vão
+        a = (u0, u0 + q.largura, w.z0, w.z0 + q.altura)
+        return a, a
     if q.tipo == "porta":
         a = (u0, u0 + q.largura, w.z0, w.z0 + q.altura)
         f = PORTA_FOLGA_LARGURA / 2
@@ -456,6 +459,9 @@ def _osso(w: Parede, q: Esquadria, u0: float):
         return o, a
     r = max(w.tp.acabamento(1), w.tp.acabamento(-1))
     a = (u0, u0 + q.largura, w.z0 + q.peitoril, w.z0 + q.peitoril + q.altura)
+    if q.tipo == "portajanela":                 # vidro de correr do piso: o requadro dos lados e em cima, sem peitoril
+        a = (u0, u0 + q.largura, w.z0, w.z0 + q.altura)
+        return (a[0] - r, a[1] + r, a[2], a[3] + r), a
     o = (a[0] - r, a[1] + r, a[2] - r, a[3] + r)
     return o, a
 
