@@ -200,3 +200,81 @@ def test_cob01_posto_v2_antes_e_depois_da_rodada_das_telhas():
     assert conta("antes-c8f1e1f.json") == (23, 43)
     b, f = conta("depois-c8f1e1f.json")
     assert (b, f) == (7, 17)             # o que ficou: a classificar pela obra (defeito ou vão de projeto)
+
+
+def test_cob01_telha_em_camada_do_grupo_entra_na_conta():
+    """a telha na camada de um grupo ("Telhas — Ginásio (PIR)", como o script do SESI lança) também é cobertura: o vão no
+    meio dela é buraco (SESI Chapecó, 30/10: a conta só via a camada "Telhas" e as telhas do SESI ficavam de fora)"""
+    doc = Documento()
+    x0, y0, x1, y1 = 3000.0, 3000.0, 5000.0, 5000.0
+    for a in ((0.0, 0.0, 8000.0, y0), (0.0, y1, 8000.0, 8000.0), (0.0, y0, x0, y1), (x1, y0, 8000.0, y1)):
+        _placa(doc, *a, camada="Telhas — Ginásio (PIR)")
+    assert [a["tipo"] for a in C.cobertura_continua(doc)] == ["buraco"]
+
+
+def _terca_y(doc, x, y0, y1, z=6900.0, nome="TM1"):
+    b = Barra(inicio=(x, y0, z), fim=(x, y1, z), perfil="Ue 150×60×20×2,25", papel="terça", camada="Terças", nome=nome + " terca")
+    doc.add(b)
+
+
+def test_cob03_terca_sem_telha_na_divisa_e_junto_da_parede():
+    """SESI Chapecó, 30/10 ("Sem telha", com print): dois panos com 250 mm entre eles até a borda do telhado e o pano que
+    para 500 mm antes do fim das terças — as terças aparecem. A união não fecha anel (o vão chega na borda): nem buraco nem
+    fresta; é a terça descoberta que acusa. A terça de um telhado sem telha nenhuma fica de fora"""
+    doc = Documento()
+    _placa(doc, 0.0, 0.0, 3000.0, 6000.0, camada="Telhas — coberturas sobre laje")
+    _placa(doc, 3250.0, 0.0, 6000.0, 6000.0, camada="Telhas — coberturas sobre laje")
+    for y in (500.0, 2000.0, 3500.0, 5000.0):
+        doc.add(Barra(inicio=(0.0, y, 6900.0), fim=(6500.0, y, 6900.0), perfil="Ue 150×60×20×2,25", papel="terça",
+                      camada="Terças", nome="TM2 terca"))
+    _terca_y(doc, 20000.0, 0.0, 6000.0)                       # o telhado vizinho, ainda sem telha
+    aps = [a for a in C.cobertura_continua(doc) if a["tipo"] == "terca_sem_telha"]
+    assert len(aps) == 8
+    assert sorted(round(a["mm"], -1) for a in aps) == [250] * 4 + [500] * 4      # (a união leva 2 mm de junta)
+    assert all(a["ponto"][0] < 7000 for a in aps)
+    conf = C.conferir(doc, telha=False, soltas=False, posicao=False)
+    assert conf["contagens"]["cobertura_tercas_sem_telha"] == 8
+    assert "8 terça(s) sem telha por cima" in C.avisos(conf)[0]
+    # com a telha até o fim das terças e a divisa fechada: nada
+    doc2 = Documento()
+    _placa(doc2, 0.0, 0.0, 3125.0, 6000.0)
+    _placa(doc2, 3125.0, 0.0, 6500.0, 6000.0)
+    for y in (500.0, 2000.0, 3500.0, 5000.0):
+        doc2.add(Barra(inicio=(0.0, y, 6900.0), fim=(6500.0, y, 6900.0), perfil="Ue 150×60×20×2,25", papel="terça", camada="Terças"))
+    assert C.cobertura_continua(doc2) == []
+
+
+SESI_COB = os.path.join(os.path.dirname(__file__), "..", "..", "Projeto", "bateria", "entradas", "sesi-cobertura")
+
+
+@pytest.mark.skipif(not os.path.isdir(SESI_COB), reason="sem a entrada congelada do SESI (Projeto/bateria)")
+def test_cob03_sesi_gravado_29_10_terca_sem_telha():
+    """a forma em que o defeito apareceu: o recorte do modelo gravado do SESI em 29/10 (área técnica leste e divisa do
+    Ginásio em x 70,0–70,24): as terças TM35 (6 × 243 mm) e a TM29 (694 mm, canto SO da área técnica) sem telha por cima"""
+    from nucleo3d.modelo import Documento as D
+    doc = D.de_dict(json.load(open(os.path.join(SESI_COB, "antes-30-10.json"), encoding="utf-8")))
+    aps = [a for a in C.cobertura_continua(doc) if a["tipo"] == "terca_sem_telha"]
+    perto = lambda a, x, y: abs(a["ponto"][0] - x) < 600 and abs(a["ponto"][1] - y) < 600
+    assert sum(1 for a in aps if 69900 < a["ponto"][0] < 70300 and 30000 < a["ponto"][1] < 38500) == 6
+    assert any(perto(a, 70014, 10172) and a["mm"] >= 650 for a in aps)
+
+
+def test_borda_baixa_da_chapa_longa_com_calha_fica_fechada():
+    """SESI Chapecó, 30/10: a chapa de 9,7 m a 7 % numa face só (a TP40 do script da obra) — a borda baixa, com a calha logo
+    abaixo da ponta, é fechada. A conta tomava o z mais alto da face para todo o telhado (+700 na ponta baixa) e a calha
+    ficava "abaixo demais" para fechar a borda"""
+    doc = Documento()
+    x0, x1, y0, y1, za, zb = 0.0, 9700.0, 0.0, 2000.0, 7000.0, 7700.0
+    vs = [(x0, y0, za), (x1, y0, zb), (x1, y1, zb), (x0, y1, za), (x0, y0, za + 6), (x1, y0, zb + 6), (x1, y1, zb + 6), (x0, y1, za + 6)]
+    fs = [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]
+    t = Solido(nome="Telha", camada="Telhas", vertices=vs, faces=fs)
+    t.atributos = {"telha_lancada": True}
+    doc.add(t)
+    cx0, cx1, cz0, cz1 = -300.0, 0.0, 6780.0, 6980.0
+    cv = [(cx0, y0, cz0), (cx1, y0, cz0), (cx1, y1, cz0), (cx0, y1, cz0), (cx0, y0, cz1), (cx1, y0, cz1), (cx1, y1, cz1), (cx0, y1, cz1)]
+    c = Solido(nome="Calha", camada="Calhas", vertices=cv, faces=fs)
+    c.atributos = {"calha_lancada": True}
+    doc.add(c)
+    abertas = [a for a in C.cobertura(doc) if a["tipo"] == "borda_aberta"]
+    assert not [a for a in abertas if a["ponto"][0] < 500.0]
+    assert [a for a in abertas if a["ponto"][0] > 9000.0]          # a borda alta, sem nada, continua aberta

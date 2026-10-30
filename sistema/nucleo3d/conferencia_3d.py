@@ -481,7 +481,6 @@ def cobertura(doc) -> List[dict]:
             if len(f) < 3:
                 continue
             pts = [vs[i] for i in f]
-            z = max(p[2] for p in pts)
             for i in range(1, len(pts) - 1):
                 a, b, c = pts[0], pts[i], pts[i + 1]
                 d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
@@ -492,6 +491,9 @@ def cobertura(doc) -> List[dict]:
                         px, py = (gx + 0.5) * CEL, (gy + 0.5) * CEL
                         l1 = ((b[1] - c[1]) * (px - c[0]) + (c[0] - b[0]) * (py - c[1])) / d
                         l2 = ((c[1] - a[1]) * (px - c[0]) + (a[0] - c[0]) * (py - c[1])) / d
+                        # o z da telha NAQUELE ponto (SESI, 30/10: com o z mais alto da face, a chapa de 9,7 m inteira
+                        # numa face só tinha +20,19 na ponta baixa de +19,45, e a calha dela "não fechava" a borda)
+                        z = l1 * a[2] + l2 * b[2] + (1 - l1 - l2) * c[2]
                         if min(l1, l2, 1 - l1 - l2) >= -0.02 and z > alt.get((gx, gy), -1e18):
                             alt[(gx, gy)] = z
     # o que fecha: as caixas em planta (com 40 mm de folga) e a faixa de altura
@@ -730,8 +732,11 @@ def cobertura_continua(doc) -> List[dict]:
       de telhado sem telha;
     * o vão grande (≥ ABERTURA_MIN) com o contorno todo junto de parede ou platibanda é abertura de projeto (a abertura
       oval do Posto) e não é acusado. O resto é acusado: se for vão de projeto, quem diz é a obra.
+    * terca_sem_telha: o trecho (≥ TERCA_SEM_TELHA_MIN) de terça sem nada por cima, na terça que tem outro trecho logo
+      debaixo da cobertura — a telha que para antes do fim da terça, na divisa entre panos ou junto da parede (COB-03; a
+      união fecha pela borda e o buraco não aparece). A terça de um telhado ainda sem telha e a de fachada ficam de fora.
     """
-    sol = [s for s in doc.solidos if s.vertices and str(s.camada or "") in CAMADAS_COBRE]
+    sol = [s for s in doc.solidos if s.vertices and _camada_cobre(s)]
     if not sol:
         return []
     import shapely
@@ -758,7 +763,7 @@ def cobertura_continua(doc) -> List[dict]:
                               if b.papel == "banzo"]
                     linhas += [LineString([(c.inicio[0], c.inicio[1]), (c.fim[0], c.fim[1])]) for c in _paredes_curvas(doc.solidos)]
                     linhas += [MultiPoint([(v[0], v[1]) for v in s.vertices]).convex_hull.boundary for s in doc.solidos
-                               if s.vertices and str(s.camada or "") not in CAMADAS_COBRE
+                               if s.vertices and not _camada_cobre(s)
                                and not str(s.camada or "").startswith("Passarela")]
                     paredes = (linhas, shapely.STRtree(linhas))
                 perto = [paredes[0][i] for i in paredes[1].query(h.buffer(ABERTURA_JUNTO))]
@@ -781,7 +786,47 @@ def cobertura_continua(doc) -> List[dict]:
         out.append({"tipo": "fresta", "ids": [], "mm": round(lados[-1]), "area_m2": round(g.area / 1e6, 4),
                     "ponto": [round(c.x), round(c.y), z_em(c.x, c.y)],
                     "texto": "fresta na cobertura: %.2f m de comprimento, até %d mm de largura" % (lados[-1] / 1000.0, round(lados[0]))})
+    # a terça com um trecho sem nada por cima (SESI Chapecó, 30/10: "Sem telha" — a telha parava 0,2–1,0 m antes do fim
+    # das terças nas divisas dos panos e junto da parede, e a conta de cima não via)
+    for b in doc.barras:
+        if b.papel not in ("terça", "terca"):
+            continue
+        L = LineString([(b.inicio[0], b.inicio[1]), (b.fim[0], b.fim[1])])
+        if L.length < TERCA_SEM_TELHA_MIN:
+            continue
+        dentro = L.intersection(U)
+        if dentro.length < TERCA_SEM_TELHA_MIN:
+            continue
+
+        def z_da_terca(p, b=b):
+            u = (p.x - b.inicio[0]) * (b.fim[0] - b.inicio[0]) + (p.y - b.inicio[1]) * (b.fim[1] - b.inicio[1])
+            u /= ((b.fim[0] - b.inicio[0]) ** 2 + (b.fim[1] - b.inicio[1]) ** 2) or 1.0
+            return b.inicio[2] + u * (b.fim[2] - b.inicio[2])
+        # a terça do telhado: logo abaixo da cobertura (a terça de fachada, embaixo da telha em planta, fica de fora)
+        p = dentro.interpolate(0.5, normalized=True)
+        zc = [k[4] for k in caixas if k[0] <= p.x <= k[2] and k[1] <= p.y <= k[3]]
+        if not zc or not 0.0 <= max(zc) - z_da_terca(p) <= TERCA_ATE_A_TELHA:
+            continue
+        fora = L.difference(U)
+        for g in getattr(fora, "geoms", [fora]):
+            if g.length < TERCA_SEM_TELHA_MIN:
+                continue
+            c = g.interpolate(0.5, normalized=True)
+            nm = str(origem_de(b).get("peca") or "").split("#")[0].strip() or (b.nome or "-").split()[0]
+            out.append({"tipo": "terca_sem_telha", "ids": [b.id], "mm": round(g.length),
+                        "ponto": [round(c.x), round(c.y), round(z_da_terca(c))],
+                        "texto": "terça %s sem telha por cima em %.2f m (a telha para antes do fim da terça)" % (nm, g.length / 1000.0)})
     return out
+
+
+TERCA_SEM_TELHA_MIN = 200.0      # mm: o trecho de terça sem cobertura por cima que vira apontamento
+TERCA_ATE_A_TELHA = 1000.0       # mm: a terça do telhado está até isto abaixo do topo da cobertura em cima dela
+
+
+def _camada_cobre(s) -> bool:
+    """o sólido da cobertura pela camada — "Telhas" ou uma camada dela, "Telhas — Ginásio (PIR)" (SESI Chapecó, 30/10: as
+    telhas do script da obra, em camadas por grupo, ficavam fora da conta de buraco e fresta)"""
+    return str(s.camada or "").split(" — ")[0] in CAMADAS_COBRE
 
 
 def _cobertura_choques(doc, cobre) -> List[dict]:
@@ -866,6 +911,7 @@ def conferir(doc, telha: bool = True, soltas: bool = True, posicao: bool = True,
     pos = posicao_na_trelica(barras) if posicao else []
     cob = (cobertura(doc) + cobertura_continua(doc)) if cobertura_ else []
     ordem = {"peca_voando": 0, "repetida": 0, "choque": 1, "rufo_choque": 2, "buraco": 3, "fresta": 3, "borda_aberta": 3,
+             "terca_sem_telha": 3,
              "sem_rufo": 4, "posicao": 5, "degrau": 6,
              "dobra": 7, "ponta_solta": 8}
     aps = sorted(voando + rep + ch + cob + pos + tl + soltas, key=lambda a: (ordem.get(a["tipo"], 9), -abs(a.get("mm") or 0)))
@@ -880,7 +926,8 @@ def conferir(doc, telha: bool = True, soltas: bool = True, posicao: bool = True,
                           "cobertura_sem_rufo": sum(1 for a in cob if a["tipo"] == "sem_rufo"),
                           "cobertura_choques": sum(1 for a in cob if a["tipo"] == "rufo_choque"),
                           "cobertura_buracos": sum(1 for a in cob if a["tipo"] == "buraco"),
-                          "cobertura_frestas": sum(1 for a in cob if a["tipo"] == "fresta")}}
+                          "cobertura_frestas": sum(1 for a in cob if a["tipo"] == "fresta"),
+                          "cobertura_tercas_sem_telha": sum(1 for a in cob if a["tipo"] == "terca_sem_telha")}}
 
 
 def avisos(conf: dict, desl: Sequence[float] = (0.0, 0.0), telha_min: float = 50.0) -> List[str]:
@@ -890,11 +937,11 @@ def avisos(conf: dict, desl: Sequence[float] = (0.0, 0.0), telha_min: float = 50
     out = ["Conferência do 3D: %d peça(s) voando, %d peça(s) repetida(s), %d choque(s) entre peças, %d peça(s) da treliça "
            "fora da posição da regra, %d ponta(s) solta(s) (%d terça(s) em balanço), telha ao lado: %d degrau(s) e %d dobra(s) "
            "acima de 20 mm (%d acima de 5 cm); cobertura: %d borda(s) aberta(s), %d sem rufo na parede, %d calha/rufo batendo "
-           "em peça, %d buraco(s) e %d fresta(s)."
+           "em peça, %d buraco(s), %d fresta(s) e %d terça(s) sem telha por cima."
            % (c.get("pecas_voando", 0), c["repetidas"], c["choques"], c.get("fora_da_posicao", 0), c["pontas_soltas"], c["tercas_em_balanco"],
               c["telha_degraus"], c["telha_dobras"], c["telha_acima_de_5cm"], c.get("cobertura_bordas_abertas", 0),
               c.get("cobertura_sem_rufo", 0), c.get("cobertura_choques", 0), c.get("cobertura_buracos", 0),
-              c.get("cobertura_frestas", 0))]
+              c.get("cobertura_frestas", 0), c.get("cobertura_tercas_sem_telha", 0))]
     for a in conf["apontamentos"]:
         if a["tipo"] in ("degrau", "dobra") and abs(a.get("mm") or 0) < telha_min:
             continue
