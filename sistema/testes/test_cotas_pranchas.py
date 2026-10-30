@@ -266,3 +266,45 @@ def test_cada_perfil_do_banzo_com_cor_propria_em_todos_os_desenhos():
     banzos = {n: c for n, c in cores.items() if n.startswith("BANZOS ")}
     assert len(banzos) >= 2, banzos
     assert len(set(banzos.values())) == len(banzos), banzos
+
+
+def test_metades_espelhadas_com_o_mesmo_numero_o_maior():
+    """Usuário, 30/10, na cumeeira da T1 da Sala: 853 | 19 | 852 — "Esses valores não deveriam ser igual pela estrutura ser
+    espelhada?" → "853", "É mais fácil ele cortar um pedacinho do que faltar". Entre os nós 1724, menos o pacote de 19:
+    852,5 de cada lado. A cota espelhada leva o mesmo número, o maior; a que não tem par e a de diferença grande ficam."""
+    from nucleo2d.detalhe.conjuntos import metades_espelhadas_iguais
+    d = Desenho(escala=25.0)
+    at = {"conjunto": "T", "detalhe": "conjunto"}
+    cs = [Cota(modo="h", p1=(0.0, 0.0), p2=(853.0, 0.0), atributos=dict(at)),
+          Cota(modo="h", p1=(853.0, 0.0), p2=(872.0, 0.0), atributos=dict(at)),
+          Cota(modo="h", p1=(872.0, 0.0), p2=(1724.0, 0.0), atributos=dict(at)),
+          # na T4 de cima: 491,6 | 7838,4 ‖ 7838,6 | 491,4 (o meio em 8330)
+          Cota(modo="h", p1=(0.0, 50.0), p2=(491.6, 50.0), atributos=dict(at)),
+          Cota(modo="h", p1=(16168.6, 50.0), p2=(16660.0, 50.0), atributos=dict(at)),
+          # diferença de 5 mm: não é a mesma medida
+          Cota(modo="v", p1=(100.0, 0.0), p2=(100.0, 700.0), atributos=dict(at)),
+          Cota(modo="v", p1=(1624.0, 0.0), p2=(1624.0, 705.0), atributos=dict(at))]
+    for c in cs:
+        d.add(c)
+    assert metades_espelhadas_iguais(d, "T", 862.0) == 2
+    assert [c.texto for c in cs[:3]] == ["853", None, "853"]
+    d2 = Desenho(escala=25.0)
+    for c in cs[3:]:
+        d2.add(c)
+    assert metades_espelhadas_iguais(d2, "T", 8330.0) == 2
+    assert cs[3].texto == cs[4].texto == "492"
+    assert cs[5].texto is None and cs[6].texto is None
+
+
+@pytest.mark.skipif(not os.path.exists(SALA), reason="sem o modelo da Sala (outra máquina)")
+def test_tesouras_da_sala_metades_espelhadas_com_o_mesmo_numero():
+    """Na cumeeira de cada montada da Sala (como veio do TecnoMETAL: 858 | 19 | 857), os dois lados escritos iguais."""
+    d = _tesouras_da_sala()
+    montadas = {(e.atributos or {}).get("conjunto") for e in d.entidades.values()
+                if " + " in str((e.atributos or {}).get("conjunto") or "")}
+    for cj in montadas:
+        cum = sorted((c.p1[0], c.texto or str(round(math.dist(c.p1, c.p2)))) for c in d.entidades.values()
+                     if isinstance(c, Cota) and c.modo == "h" and round(c.deslocamento) == -20
+                     and (c.atributos or {}).get("conjunto") == cj)
+        textos = [t for _x, t in cum]
+        assert len(textos) == 3 and textos[0] == textos[2], (cj, textos)
