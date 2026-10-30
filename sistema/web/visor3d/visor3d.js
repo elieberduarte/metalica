@@ -161,7 +161,7 @@ ${SOMBRA_GLSL}
 // horizontal dela e a altura (a LD deitada, como no brise); na deitada, x e y. Os losangos são |X| + |Y| ≤ 1 em X = 2u/LD,
 // Y = 2v/CD, centrados de 2 em 2 e no meio deles; o cordão são as linhas X ± Y ímpares. O cordão é filtrado pelo tamanho do
 // pixel (a fração do pixel que ele cobre), em vez de "dentro ou fora": a malha sai contínua a meia distância e, quando o
-// losango fica com 2–3 pixels, vira a tela uniforme na proporção de aço — mais fechada vista de lado, como a de verdade
+// losango fica com 3–8 pixels, vira a tela uniforme na proporção de aço — mais fechada vista de lado, como a de verdade
 // (30/10, usuário: o furo sim/não "ficou parecendo um monte de pixels")
 float cordao(float x, float f, float w) {
   float e = 0.5 - abs(fract(x) - 0.5);                         // a distância até a linha mais perto
@@ -182,7 +182,7 @@ float alfaDaExpandida() {
   float perto = 1.0 - (1.0 - cordao(a, fa, w)) * (1.0 - cordao(b, fb, w));
   float c = abs(dot(n, normalize(cameraPosition - vMundo)));   // 1 de frente, 0 rasante
   float longe = 1.0 - (1.0 - w) * (1.0 - w) * (0.25 + 0.75 * c);
-  return mix(perto, longe, smoothstep(0.3, 0.55, max(fa, fb)));
+  return mix(perto, longe, smoothstep(0.12, 0.3, max(fa, fb)));   // a malha até ~8 pixels por losango; abaixo de ~3, a tela
 }
 void main() {
 #if defined(SOMBRA)
@@ -224,7 +224,10 @@ void main() {
     return;
   }
   vec3 n = normalize(cross(dFdx(vVista), dFdy(vVista)));
-  if (n.z < 0.0) n = -n;
+  // a face virada para o olho (o raio até ele, não o eixo da câmera): vista quase de lado — a laje de baixo, a parede de
+  // perfil — o n.z fica perto de zero e virava de pixel em pixel, claro e escuro salpicados (30/10, SESI, pelos brises
+  // vazados: "um monte de pixels")
+  if (dot(n, vVista) > 0.0) n = -n;
   vec3 luz = normalize(vec3(0.35, 0.55, 0.75));
   float d = max(dot(n, luz), 0.0);
   float ceu = 0.5 + 0.5 * n.y;
@@ -1078,7 +1081,9 @@ export class Visor3D {
     cam.position.sub(foco).multiplyScalar(fator).add(foco);
     alvo.sub(foco).multiplyScalar(fator).add(foco);
     // o plano de corte de perto menor que a distância até a peça, senão ela é cortada ao chegar perto
-    const perto = Math.max(1, Math.min(cam.near, nova / 20));
+    // e só o necessário: afastando, ele volta a crescer (preso em 1 mm depois de um zoom de perto, a 20 m as faces a menos
+    // de ~25 mm uma da outra brigavam pixel a pixel — SESI, 30/10)
+    const perto = Math.max(1, nova / 20);
     if (perto !== cam.near) { cam.near = perto; cam.updateProjectionMatrix(); }
     this.controles.update();
     this.pedirQuadro();
@@ -1337,7 +1342,7 @@ export class Visor3D {
     const fator = Math.min(Math.max(d * k, 30), cam.far / 4) / d;
     cam.position.sub(P).multiplyScalar(fator).add(P);
     alvo.sub(P).multiplyScalar(fator).add(P);
-    const perto = Math.max(1, Math.min(cam.near, d * fator / 20));
+    const perto = Math.max(1, d * fator / 20);
     if (perto !== cam.near) { cam.near = perto; cam.updateProjectionMatrix(); }
     cam.lookAt(alvo);
     cam.updateMatrixWorld();

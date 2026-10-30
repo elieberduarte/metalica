@@ -43,14 +43,24 @@ ents = [_chapa("exp0", "Chapa expandida 12x25", 0.0), _chapa("che0", "Chapa #2",
         _bloco("bl1", 4500, 600, 500, 2000, 300, 2000, "Aço", "Fachadas — Brises"),
         _bloco("vid0", 8000, 0, 0, 2000, 20, 3000, "Vidro", "ARQ — Esquadrias"),
         _bloco("bl2", 8500, 600, 500, 1000, 300, 2000, "Aço", "Fachadas — Brises"),
-        _bloco("bl3", 11000, 600, 500, 1000, 300, 2000, "Aço", "Fachadas — Brises")]      # o vermelho puro, descoberto
-camadas = {n: {"nome": n, "cor": "#888888", "visivel": True} for n in ("Fachadas — Brises", "ARQ — Esquadrias")}
+        _bloco("bl3", 11000, 600, 500, 1000, 300, 2000, "Aço", "Fachadas — Brises"),      # o vermelho puro, descoberto
+        _bloco("laj0", -20000, 3000, 6000, 50000, 60000, 200, "Concreto", "ARQ — Lajes")]  # a laje vista de baixo, de lado
+camadas = {n: {"nome": n, "cor": "#888888", "visivel": True} for n in ("Fachadas — Brises", "ARQ — Esquadrias", "ARQ — Lajes")}
 mats = {"Aço": {"nome": "Aço", "cor": "#d02020"}, "Aço galv.": {"nome": "Aço galv.", "cor": "#2050f0"},
-        "Vidro": {"nome": "Vidro", "cor": "#9fc6e8", "opacidade": 0.35}}
+        "Vidro": {"nome": "Vidro", "cor": "#9fc6e8", "opacidade": 0.35}, "Concreto": {"nome": "Concreto", "cor": "#9a9a9a"}}
 os.makedirs(os.path.join(DADOS, "exp"))
 json.dump({"nome": "exp", "tipo": "ifc", "alterado": "2026-10-30T01:00:00"}, open(os.path.join(DADOS, "exp", "projeto.json"), "w", encoding="utf-8"))
 json.dump({"nome": "exp", "unidade": "mm", "entidades": ents, "camadas": camadas, "materiais": mats},
           open(os.path.join(DADOS, "exp", "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
+# o recorte do SESI (gravado 30/10): as lajes, pilares e vigas do arquitetônico atrás da fachada A — de baixo, quase de
+# lado, saíam salpicadas de claro e escuro pelos brises vazados
+ARQ_REC = os.path.join(BASE, "..", "Projeto", "bateria", "entradas", "sesi-modo-ver", "arq-fachada-a.json")   # fora do git
+if os.path.exists(ARQ_REC):
+    REC = json.load(open(ARQ_REC, encoding="utf-8"))
+    os.makedirs(os.path.join(DADOS, "sesi"))
+    json.dump({"nome": "sesi", "tipo": "ifc", "alterado": "2026-10-30T01:00:00"}, open(os.path.join(DADOS, "sesi", "projeto.json"), "w", encoding="utf-8"))
+    json.dump({"nome": "sesi", "unidade": "mm", "entidades": REC["entidades"], "camadas": REC["camadas"], "materiais": REC["materiais"]},
+              open(os.path.join(DADOS, "sesi", "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
 srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 base = f"http://localhost:{PORTA}"
@@ -104,15 +114,26 @@ def regiao(aba, img, a, b):
     return [[img.getpixel((x, y))[:3] for x in range(x0, x1)] for y in range(y0, y1)]
 
 
-def soltos(px):
-    """a fração de pixels que destoam dos 4 vizinhos (> 60 no vermelho, para o mesmo lado): o pontilhado"""
+def soltos(px, limiar=60):
+    """a fração de pixels que destoam dos 4 vizinhos (> limiar no vermelho, para o mesmo lado): o pontilhado"""
     n = s = 0
     for y in range(1, len(px) - 1):
         for x in range(1, len(px[0]) - 1):
             r = px[y][x][0]
             d = [r - px[y + dy][x + dx][0] for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))]
             n += 1
-            s += all(v > 60 for v in d) or all(v < -60 for v in d)
+            s += all(v > limiar for v in d) or all(v < -limiar for v in d)
+    return s / max(n, 1)
+
+
+def aspereza(img, y0, y1, limiar=25):
+    """a fração de pares de pixels vizinhos (lado a lado) que diferem mais que o limiar no vermelho: numa superfície lisa,
+    só as bordas das peças (poucos %); salpicada de claro e escuro, dezenas de %"""
+    n = s = 0
+    for y in range(y0, y1):
+        for x in range(0, img.width - 1):
+            n += 1
+            s += abs(img.getpixel((x, y))[0] - img.getpixel((x + 1, y))[0]) > limiar
     return s / max(n, 1)
 
 
@@ -175,6 +196,25 @@ try:
     img.save(os.path.join(os.path.dirname(__file__), "ver3d_expandida_meio.png"))
     sm = soltos(regiao(aba, img, (1000, 0, 2000), (2000, 0, 1000)))
     ok(sm < 0.01, f"a meia distância, a malha sem pixels soltos ({sm:.1%})")
+    # de lado (rasante, de baixo, como olhando o brise de dentro do prédio): a tela por igual, sem chuvisco
+    aba.avaliar("(() => { const o = visor.cabecalho.origem; visor.controles.target.set(1500 - o[0], 0 - o[1], 2500 - o[2]);"
+                " visor.camera.position.set(1500 - o[0], -350 - o[1], -1500 - o[2]); visor.controles.update(); visor.pedirQuadro(); return 1; })()")
+    img = foto(aba)
+    img.save(os.path.join(os.path.dirname(__file__), "ver3d_expandida_lado.png"))
+    r = aba.avaliar("(() => { const r = visor.tela.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")
+    cx, cy = int(r[0] + r[2] / 2), int(r[1] + r[3] / 2)
+    pl = [[img.getpixel((x, y))[:3] for x in range(cx - 150, cx + 150)] for y in range(cy - 120, cy + 120)]
+    sl = soltos(pl)
+    ok(sl < 0.01, f"de lado (rasante), a expandida sem chuvisco ({sl:.1%})")
+    # 4. a laje vista de baixo quase de lado (o que se vê pelos brises vazados de dentro do prédio): lisa — a face virada
+    #    para o olho era decidida pelo eixo da câmera e virava de pixel em pixel, claro e escuro (30/10, SESI)
+    aba.avaliar("(() => { const o = visor.cabecalho.origem; visor.controles.target.set(5000 - o[0], 40000 - o[1], 5600 - o[2]);"
+                " visor.camera.position.set(5000 - o[0], 4000 - o[1], 5600 - o[2]); visor.controles.update(); visor.pedirQuadro(); return 1; })()")
+    img = foto(aba)
+    img.save(os.path.join(os.path.dirname(__file__), "ver3d_laje_de_lado.png"))
+    pj = [[img.getpixel((x, y))[:3] for x in range(cx - 300, cx + 300)] for y in range(cy - 330, cy - 40)]
+    sj = soltos(pj, limiar=25)
+    ok(sj < 0.01, f"a laje vista de baixo, quase de lado, lisa ({sj:.1%} de pixels soltos)")
     camera(aba, 1500, 0, 1500, 400)
     img = foto(aba)
     img.save(os.path.join(os.path.dirname(__file__), "ver3d_expandida_perto.png"))
@@ -193,6 +233,19 @@ try:
     esc = aba.avaliar(f"(() => {{ const r = visor.tela.getBoundingClientRect(); return visor.escolher({alvo[0]} - r.left, {alvo[1]} - r.top); }})()") if alvo else None
     ok(alvo is not None and esc is not None and esc >= 0 and aba.avaliar(f"visor.fichas[{esc}].id") == "exp0",
        f"o clique num furo escolhe a chapa expandida ({alvo}, {esc})")
+
+    # 5. o recorte do SESI: a laje do 3º Pav. vista de baixo pela fachada A (a vista do usuário, 30/10), lisa
+    if not os.path.exists(ARQ_REC):
+        print("  ---   o recorte do SESI (Projeto/bateria/entradas/sesi-modo-ver) não está nesta máquina: item pulado")
+    else:
+        aba.navegar(base + "/visor3d/ver3d.html?projeto=sesi", limite=60)
+        ok(esperar(aba, "!!(window.ver3dPronto && window.visor && visor.fichas)", 90), "o recorte do SESI abriu")
+        aba.avaliar("(() => { visor.enquadrar('frente'); const o = visor.cabecalho.origem; visor.controles.target.set(20000 - o[0], -1400 - o[1], 9000 - o[2]);"
+                    " visor.camera.position.set(20000 - o[0], -9000 - o[1], 9000 - o[2]); visor.controles.update(); visor.pedirQuadro(); return 1; })()")
+        img = foto(aba)
+        img.save(os.path.join(os.path.dirname(__file__), "ver3d_sesi_lajes.png"))
+        asp = aspereza(img, 100, img.height - 30)
+        ok(asp < 0.03, f"SESI: as lajes e vigas vistas de baixo pela fachada A, lisas ({asp:.1%} de vizinhos destoando)")
 
     erros = [x for x in aba.console if x[0] in ("error", "excecao") and "favicon" not in str(x)]
     ok(not erros, f"sem erros no console: {erros[:3]}")
