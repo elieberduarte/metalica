@@ -21,9 +21,9 @@ def test_nome_do_revit_vira_o_tipo():
 def test_do_ifc_acha_o_catalogo_e_o_similar():
     assert cat.do_ifc("Vigas W Gerdau:W200X15:1")["catalogo"] == "W 200×15,0"
     r = cat.do_ifc("X:RHS 127x76.2x6.35:1")
-    assert r["catalogo"] == "TR 127×76×6,3" and r["fonte"] == "catálogo"
-    for nome, esperado in (("SHS 225x225x6.4", "TQ 220×220×7,1"), ("SHS 110x110x3.2", "TQ 110×110×3,35"),
-                           ("RHS 127x63.5x3.2", "TR 130×70×3,0")):
+    assert r["catalogo"] == "TR 127×76×6,30" and r["fonte"] == "catálogo"
+    for nome, esperado in (("SHS 225x225x6.4", "TQ 220×220×7,10"), ("SHS 110x110x3.2", "TQ 110×110×3,35"),
+                           ("RHS 127x63.5x3.2", "TR 130×70×3,00")):
         r = cat.do_ifc("X:%s:1" % nome)
         assert r["fonte"] == "similar" and r["catalogo"] == esperado, (nome, r["catalogo"])
         # a geometria continua a do projeto: a seção e a área são as do IFC
@@ -77,19 +77,19 @@ def test_chapa_vai_para_a_comercial():
 
 def test_parecidos_e_troca_na_lista():
     r = cat.parecidos("X:SHS 225x225x6.4:1")
-    assert r["automatico"] == "TQ 220×220×7,1" and r["itens"][0]["atende"]
+    assert r["automatico"] == "TQ 220×220×7,10" and r["itens"][0]["atende"]
     assert all(not x["atende"] for x in r["itens"] if x["nome"].startswith("TQ 220×220×6,4"))
     from saida.lista_producao import trocar_na_lista
     lista = {"perfis": [{"perfil": "SHS 225x225x6.4", "material": "A36", "comprimento_m": 2.0, "peso": 86.2, "kg_m": 43.1}],
              "posicoes": [{"perfil": "X:SHS 225x225x6.4:1", "material": "A36", "classe": "Barra", "categoria": "BARRAS",
                            "comprimento": 1000, "quantidade": 2, "peso": 43.1, "peso_total": 86.2}],
              "totais": {"peso": 86.2, "categorias": [{"categoria": "BARRAS", "peso": 86.2, "pct": 100.0}]}}
-    trocar_na_lista(lista, {"SHS 225x225x6.4": "TQ 240×240×6,4"})
+    trocar_na_lista(lista, {"SHS 225x225x6.4": "TQ 240×240×6,40"})
     g = lista["perfis"][0]
-    assert g["catalogo"] == "TQ 240×240×6,4" and g["fonte_kg_m"] == "escolhido" and abs(g["peso"] - 92.2) < 0.01
+    assert g["catalogo"] == "TQ 240×240×6,40" and g["fonte_kg_m"] == "escolhido" and abs(g["peso"] - 92.2) < 0.01
     assert abs(lista["totais"]["peso"] - 92.2) < 0.01
     trocar_na_lista(lista, {})                                                   # volta ao automático (o similar)
-    assert lista["perfis"][0]["catalogo"] == "TQ 220×220×7,1" and abs(lista["perfis"][0]["peso"] - 93.2) < 0.01
+    assert lista["perfis"][0]["catalogo"] == "TQ 220×220×7,10" and abs(lista["perfis"][0]["peso"] - 93.2) < 0.01
 
 
 def test_forma_no_fim_do_nome():

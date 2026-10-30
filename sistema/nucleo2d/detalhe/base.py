@@ -1507,7 +1507,8 @@ def _assinatura_posicao(p: Posicao) -> tuple:
     classe = "redonda" if redonda else p.classe
     altura = None if redonda else round(p.H)
     espessura = None if redonda else round(p.T, 1)
-    return (classe, re.sub(r"\s+", "", p.perfil or "").upper(), re.sub(r"\s+", "", p.material or "").upper(),
+    from nucleo.nomes_catalogo import chave_de_perfil            # "TQ 50×50×2,0" = "TQ 50×50×2,00" (padrão de 27/10)
+    return (classe, chave_de_perfil(p.perfil), re.sub(r"\s+", "", p.material or "").upper(),
             altura, espessura, furos, dev)
 
 

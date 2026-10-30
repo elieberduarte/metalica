@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from .base import ErroDeDados
+from .nomes_catalogo import fracoes, numeros_iguais
 
 CAMINHO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dados", "perfis.json")
 
@@ -212,6 +213,10 @@ class Banco:
             indice = {}
             for k, p in self.perfis.items():
                 indice.setdefault(_chave(k), p)
+            # o nome de antes do padrão de 27/10 ("L 1½\"×1/8\"", "TQ 50×50×2,0"), que as obras gravaram
+            for p in self.perfis.values():
+                for apelido in p.dados.get("apelidos") or ():
+                    indice.setdefault(_chave(apelido), p)
             self._por_chave, self._por_chave_n = indice, len(self.perfis)
         p = indice.get(_chave(nome))
         if p is not None:
@@ -247,8 +252,11 @@ class Banco:
 
 
 def _chave(nome: str) -> str:
-    return (nome.upper().replace("×", "X").replace(" ", "").replace(",", ".")
-            .replace('"', "").rstrip("0").rstrip("."))
+    """Grafia única para comparar: "W 360x51" = "W 360×51,0", "TC 12,7×0,5" = "TC 12,7×0,50", "1½" = "1.1/2".
+
+    Antes tirava os zeros do fim do nome inteiro ("W 200×150" virava "W 200×15")."""
+    s = fracoes(str(nome)).upper().replace("×", "X").replace(" ", "").replace(",", ".").replace('"', "")
+    return numeros_iguais(s)
 
 
 _banco: Optional[Banco] = None

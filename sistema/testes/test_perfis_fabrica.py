@@ -48,7 +48,7 @@ def test_ue_e_catalogo():
 
 def test_cantoneiras():
     assert perfil_de_fabrica("L2''X1/8''").nome == 'L 2"×1/8"'            # do catálogo
-    assert perfil_de_fabrica("L 2 1/2'' X 1/4' '").nome == 'L 2½"×1/4"'    # grafia solta do exportador
+    assert perfil_de_fabrica("L 2 1/2'' X 1/4' '").nome == 'L 2.1/2"×1/4"'    # grafia solta do exportador
     fria = perfil_de_fabrica("L50X50X2.25")
     assert fria.tipo == "L" and fria.dados.get("formado_a_frio") and fria.rmin < fria.ry
     desigual = perfil_de_fabrica("L50X75X2.25")
@@ -86,7 +86,7 @@ def test_ff_no_nome_nao_vira_laminada_em_polegada():
     p = perfil_de_fabrica("L 38×3,00 (FF)")
     assert '"' not in p.nome and p.dados["t"] == 3.0 and p.A == pytest.approx(2.132, rel=0.01)
     assert '"' not in perfil_de_fabrica("L50X50X3").nome
-    assert perfil_de_fabrica('L 1.1/2"X1/8"').nome == 'L 1½"×1/8"'          # a polegada continua laminada
+    assert perfil_de_fabrica('L 1.1/2"X1/8"').nome == 'L 1.1/2"×1/8"'          # a polegada continua laminada
 
 
 def test_ue_da_tabela_ganha_o_j_que_falta():

@@ -78,7 +78,8 @@ def perfil_de(e) -> str:
 
 
 def _chave_perfil(e) -> str:
-    return re.sub(r"\s+", "", perfil_de(e)).upper()
+    from nucleo.nomes_catalogo import chave_de_perfil
+    return chave_de_perfil(perfil_de(e))
 
 
 def _proxy(e):
@@ -325,7 +326,7 @@ def _conjuntos(pecas, marcas_ant, pos_ant, pos_novo, avisos) -> Dict[str, str]:
 def _compactar(pecas, pos_novo, conj_novo):
     """Renumerar tudo: P1… na ordem das posições mais numerosas, M1… na das montagens com mais peças."""
     por_pos = collections.Counter(pos_novo[e.id] for e in pecas)
-    perfil = {pos_novo[e.id]: _chave_perfil(e) for e in pecas}
+    perfil = {pos_novo[e.id]: re.sub(r"\s+", "", perfil_de(e)).upper() for e in pecas}   # a ordem de sempre
     ordem_p = sorted(por_pos, key=lambda p: (-por_pos[p], perfil.get(p, ""), _natural(p)))
     mapa_pos = {p: "P%d" % (i + 1) for i, p in enumerate(ordem_p)}
     por_conj = collections.Counter(conj_novo[e.id] for e in pecas)

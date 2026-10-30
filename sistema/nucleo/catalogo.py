@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence
 
 from .base import ErroDeDados
+from .nomes_catalogo import fracoes, numeros_iguais
 from .perfis import Perfil, banco
 
 __all__ = ["Item", "itens", "item", "familias", "buscar", "alternativas", "perfil_de",
@@ -198,23 +199,16 @@ _itens: Optional[List[Item]] = None
 _por_chave: Dict[str, Item] = {}
 
 
-#: Frações que aparecem nos nomes em polegada e não sobrevivem ao corte de acentos.
-_FRACOES = {"½": "1/2", "¼": "1/4", "¾": "3/4", "⅛": "1/8", "⅜": "3/8", "⅝": "5/8",
-            "⅞": "7/8", "⅓": "1/3", "⅔": "2/3"}
-
-
 def _chave(nome: str) -> str:
     """Grafia única para comparar nomes.
 
     A ordem importa: `×` e as frações (½, ¾) têm de virar texto **antes** de tirar os
     acentos, senão somem — e aí "2½\"×1/4\"" e "2\"×1/4\"" viravam a mesma chave.
     """
-    s = str(nome or "")
-    for f, txt in _FRACOES.items():
-        s = s.replace(f, txt)
+    s = fracoes(str(nome or ""))           # "1½" = "1.1/2" (o padrão dos nomes, 27/10)
     s = s.replace("×", "X").replace("Ø", "D").replace("ø", "D").replace(",", ".").replace('"', "")
     s = unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode()
-    return re.sub(r"[\s_]+", "", s.upper())
+    return numeros_iguais(re.sub(r"[\s_]+", "", s.upper()))     # "0,5" = "0,50", "101" = "101,0"
 
 
 def _familia_do_perfil(p: Perfil) -> str:
@@ -307,6 +301,10 @@ def _carregar() -> List[Item]:
                               0 if (i.massa or i.massa_m2) else 1, i.altura, i.massa or i.massa_m2))
     _itens = todos
     _por_chave = {_chave(i.nome): i for i in todos}
+    # o nome de antes do padrão de 27/10 (`apelidos`, nucleo/nomes_catalogo.py), que as obras gravaram
+    for i in todos:
+        for apelido in i.dados.get("apelidos") or ():
+            _por_chave.setdefault(_chave(apelido), i)
     return _itens
 
 
@@ -397,11 +395,19 @@ def buscar(texto: str, familia: Optional[str] = None, limite: int = 60) -> List[
             alvos.append(re.sub(padrao, troca, alvo))
     m = re.search(r"X?#(\d+)", alvo)
     if m:
-        alvos = [a.replace(m.group(0), "X%.2f" % t) for a in alvos
+        alvos = [numeros_iguais(a.replace(m.group(0), "X%.2f" % t)) for a in alvos
                  for t in espessuras_da_bitola(m.group(1))] or alvos
     saida = [i for i in itens(familia)
              if any(a in _chave(i.nome) or a in _chave(i.dados.get("dim", "")) for a in alvos)]
     return saida[:limite]
+
+
+def _com_o_nome(p: Optional[Perfil], nome: str) -> Optional[Perfil]:
+    if p is not None:
+        p.nome = nome
+        if isinstance(p.dados, dict) and "nome" in p.dados:
+            p.dados["nome"] = nome
+    return p
 
 
 def perfil_de(nome) -> Optional[Perfil]:
@@ -425,12 +431,14 @@ def perfil_de(nome) -> Optional[Perfil]:
     from . import perfis_fabrica
     d = it.dados
     try:
+        # montado na hora com o nome do item: o de fábrica ("L 75×6") e o do catálogo ("L 75×6,00", padrão de 27/10)
+        # diferentes faziam o dimensionamento ver dois perfis onde há um e não convergir
         if it.familia in ("U", "Ue") and d.get("d") and d.get("bf"):
             if d.get("enrijecedor"):
-                return perfis_fabrica.perfil_ue_frio(d["d"], d["bf"], d["enrijecedor"], d["t"])
-            return perfis_fabrica.perfil_u_frio(d["d"], d["bf"], d["t"])
+                return _com_o_nome(perfis_fabrica.perfil_ue_frio(d["d"], d["bf"], d["enrijecedor"], d["t"]), it.nome)
+            return _com_o_nome(perfis_fabrica.perfil_u_frio(d["d"], d["bf"], d["t"]), it.nome)
         if it.familia == "L" and d.get("b"):
-            return perfis_fabrica.perfil_cantoneira(d["b"], d.get("b2") or d["b"], d["t"])
+            return _com_o_nome(perfis_fabrica.perfil_cantoneira(d["b"], d.get("b2") or d["b"], d["t"]), it.nome)
         if it.familia == "Cr" and d.get("d") and d.get("bf") and d.get("t"):
             # a cartola (a terça dos estudos, 16/10): a tabela já traz as propriedades; o 3D desenha pela linha média
             return Perfil(nome=it.nome, tipo="Cr", dados=dict(d, nome=it.nome, tw=d["t"], tf=d["t"]))

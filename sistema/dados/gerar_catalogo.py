@@ -663,11 +663,23 @@ def montar():
     base.extend(telhas_de_fornecedores())
     dados["fabricantes_perfis"] = {s["nome"]: s["fabricantes"] for s in base[:n_sombra]
                                    if s.get("fabricantes")}
-    dados["itens"] = base[n_sombra:]
+    dados["itens"] = [_no_padrao(i) for i in base[n_sombra:]]
     dados["massas_corrigidas"] = [{"nome": n, "catalogo": a, "adotada": b}
                                   for n, a, b in conferir_massas(dados["itens"])]
     dados["bitolas"] = bitolas()
     return dados
+
+
+def _no_padrao(reg):
+    """O nome no padrão do catálogo (nucleo/nomes_catalogo.py, 27/10); o de antes fica em `apelidos`, para as obras
+    gravadas com ele acharem o mesmo item."""
+    from nucleo.nomes_catalogo import padrao
+    novo = padrao(reg["nome"], reg.get("familia"), reg)
+    if novo == reg["nome"]:
+        return reg
+    saida = {"nome": novo, "apelidos": [reg["nome"]]}
+    saida.update((k, v) for k, v in reg.items() if k != "nome")
+    return saida
 
 
 def _sombra_do_banco():

@@ -30,7 +30,7 @@ class TestPerfilEscrito(unittest.TestCase):
             "L50X50#3/16\"": 'L 2"×3/16"',
             "W 200 x 19,3": "W 200×19,3",
             "PILAR W 310 x 38,7": "W 310×38,7",
-            "Tubo 30x30#1,5mm": "TQ 30×30×1,5",
+            "Tubo 30x30#1,5mm": "TQ 30×30×1,50",
             "Treliças U100x50x3.04#11": "U 100×50×3,00 (FF)",
             "TERÇA Ue 150x60x20x2,00": "Ue 150×60×20×2,00",
             "FERRO %%c1/2\"": 'Barra redonda ø 1/2"',

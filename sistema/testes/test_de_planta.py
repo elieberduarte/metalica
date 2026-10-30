@@ -1487,7 +1487,7 @@ def test_contravento_em_cantoneira_embaixo_do_banzo_e_cruzando_no_x():
     vm = Barra(inicio=(4500.0, -500.0, 5900.0), fim=(4500.0, 6500.0, 5900.0), perfil="Ue 200×70×20×2,65", rotacao=0.0, papel="viga")
     feitas, avisos = de_planta.contraventos_em_cantoneira(txt, segs, bz + [vm], 6000.0, desl=(100.0, 0.0))
     assert len(feitas) == 2 and len(avisos) == 1
-    assert all(f["perfil"] == 'L 1½"×1/8"' and f["rotacao"] == 180.0 for f in feitas)
+    assert all(f["perfil"] == 'L 1.1/2"×1/8"' and f["rotacao"] == 180.0 for f in feitas)
     assert feitas[0]["inicio"][:2] == (100.0, 0.0)
     topo = de_planta._faixa_z(Barra(inicio=feitas[0]["inicio"], fim=feitas[0]["fim"], perfil=feitas[0]["perfil"], rotacao=180.0))[1]
     a0 = feitas[0]

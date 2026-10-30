@@ -188,7 +188,8 @@ def perfil_cantoneira(b1: float, b2: float, t: float, nome: str = "",
     Wx = q["Ix"] / max(b1c - q["yc"], q["yc"])
     Wy = q["Iy"] / max(b2c - q["xc"], q["xc"])
     if not nome:
-        nome = ("L %g×%g×%g" % (b1, b2, t)) if abs(b1 - b2) >= 0.5 else ("L %g×%g" % (b1, t))
+        # a espessura com 2 casas, como o catálogo (padrão dos nomes, 27/10: "L 75×6,00")
+        nome = ("L %g×%g×%.2f" % (b1, b2, t)) if abs(b1 - b2) >= 0.5 else ("L %g×%.2f" % (b1, t))
         nome = nome.replace(".", ",") + (" (FF)" if formada_a_frio else "")
     dados = {"nome": nome, "b": max(b1, b2), "b2": min(b1, b2), "t": t, "tw": t, "tf": t,
              "d": b1, "bf": b2, "massa": round(A * RHO * 1e-4, 3), "A": round(A, 4),

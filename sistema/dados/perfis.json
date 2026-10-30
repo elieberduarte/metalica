@@ -841,7 +841,10 @@
    "Cw": 848869.0
   },
   {
-   "nome": "W 610×101",
+   "nome": "W 610×101,0",
+   "apelidos": [
+    "W 610×101"
+   ],
    "familia": "W",
    "d": 603.0,
    "bf": 228.0,
@@ -861,7 +864,10 @@
    "Cw": 2551594.0
   },
   {
-   "nome": "W 610×113",
+   "nome": "W 610×113,0",
+   "apelidos": [
+    "W 610×113"
+   ],
    "familia": "W",
    "d": 608.0,
    "bf": 228.0,
@@ -1100,7 +1106,10 @@
    "uso": "correntes, travamentos leves"
   },
   {
-   "nome": "L 1½\"×1/8\"",
+   "nome": "L 1.1/2\"×1/8\"",
+   "apelidos": [
+    "L 1½\"×1/8\""
+   ],
    "b": 38.1,
    "t": 3.18,
    "massa": 1.83,
@@ -1115,7 +1124,10 @@
    "uso": "mãos-francesas, montantes leves"
   },
   {
-   "nome": "L 1½\"×3/16\"",
+   "nome": "L 1.1/2\"×3/16\"",
+   "apelidos": [
+    "L 1½\"×3/16\""
+   ],
    "b": 38.1,
    "t": 4.76,
    "massa": 2.68,
@@ -1175,7 +1187,10 @@
    "uso": "idem, tesouras"
   },
   {
-   "nome": "L 2½\"×3/16\"",
+   "nome": "L 2.1/2\"×3/16\"",
+   "apelidos": [
+    "L 2½\"×3/16\""
+   ],
    "b": 63.5,
    "t": 4.76,
    "massa": 4.57,
@@ -1190,7 +1205,10 @@
    "uso": "tesouras, montantes"
   },
   {
-   "nome": "L 2½\"×1/4\"",
+   "nome": "L 2.1/2\"×1/4\"",
+   "apelidos": [
+    "L 2½\"×1/4\""
+   ],
    "b": 63.5,
    "t": 6.35,
    "massa": 6.1,
@@ -1205,7 +1223,10 @@
    "uso": "contraventamento vertical, banzos"
   },
   {
-   "nome": "L 2½\"×5/16\"",
+   "nome": "L 2.1/2\"×5/16\"",
+   "apelidos": [
+    "L 2½\"×5/16\""
+   ],
    "b": 63.5,
    "t": 7.94,
    "massa": 7.44,
@@ -1400,7 +1421,10 @@
    "uso": "idem"
   },
   {
-   "nome": "L 40×4 (métrica)",
+   "nome": "L 40×4,00",
+   "apelidos": [
+    "L 40×4 (métrica)"
+   ],
    "b": 40.0,
    "t": 4.0,
    "massa": 2.42,
@@ -1415,7 +1439,10 @@
    "uso": "equivalente a L 1½\"×3/16\""
   },
   {
-   "nome": "L 50×5",
+   "nome": "L 50×5,00",
+   "apelidos": [
+    "L 50×5"
+   ],
    "b": 50.0,
    "t": 5.0,
    "massa": 3.77,
@@ -1430,7 +1457,10 @@
    "uso": "equivalente a L 2\"×3/16\""
   },
   {
-   "nome": "L 60×6",
+   "nome": "L 60×6,00",
+   "apelidos": [
+    "L 60×6"
+   ],
    "b": 60.0,
    "t": 6.0,
    "massa": 5.42,
@@ -1445,7 +1475,10 @@
    "uso": "equivalente a L 2½\"×1/4\""
   },
   {
-   "nome": "L 75×8",
+   "nome": "L 75×8,00",
+   "apelidos": [
+    "L 75×8"
+   ],
    "b": 75.0,
    "t": 8.0,
    "massa": 8.99,
@@ -1460,7 +1493,10 @@
    "uso": "equivalente a L 3\"×5/16\""
   },
   {
-   "nome": "L 100×10",
+   "nome": "L 100×10,00",
+   "apelidos": [
+    "L 100×10"
+   ],
    "b": 100.0,
    "t": 10.0,
    "massa": 15.0,
@@ -1675,7 +1711,10 @@
    "J": 6.3
   },
   {
-   "nome": "TQ 40×40×2,0",
+   "nome": "TQ 40×40×2,00",
+   "apelidos": [
+    "TQ 40×40×2,0"
+   ],
    "tipo": "quadrado",
    "h": 40.0,
    "b": 40.0,
@@ -1692,7 +1731,10 @@
    "uso": "grades, caixilhos"
   },
   {
-   "nome": "TR 50×30×2,0",
+   "nome": "TR 50×30×2,00",
+   "apelidos": [
+    "TR 50×30×2,0"
+   ],
    "tipo": "retangular",
    "h": 50.0,
    "b": 30.0,
@@ -1709,7 +1751,10 @@
    "uso": "caixilhos"
   },
   {
-   "nome": "TC 42,4×2,65 (1½\")",
+   "nome": "TC 42,4×2,65 (1.1/2\")",
+   "apelidos": [
+    "TC 42,4×2,65 (1½\")"
+   ],
    "tipo": "redondo",
    "D": 42.4,
    "t": 2.65,
@@ -1723,7 +1768,10 @@
    "J": 13.1
   },
   {
-   "nome": "TQ 50×50×2,0",
+   "nome": "TQ 50×50×2,00",
+   "apelidos": [
+    "TQ 50×50×2,0"
+   ],
    "tipo": "quadrado",
    "h": 50.0,
    "b": 50.0,
@@ -1740,7 +1788,10 @@
    "uso": "guarda-corpos, treliças leves"
   },
   {
-   "nome": "TR 60×40×2,0",
+   "nome": "TR 60×40×2,00",
+   "apelidos": [
+    "TR 60×40×2,0"
+   ],
    "tipo": "retangular",
    "h": 60.0,
    "b": 40.0,
@@ -1757,7 +1808,10 @@
    "uso": "travessas"
   },
   {
-   "nome": "TC 48,3×3,0",
+   "nome": "TC 48,3×3,00",
+   "apelidos": [
+    "TC 48,3×3,0"
+   ],
    "tipo": "redondo",
    "D": 48.3,
    "t": 3.0,
@@ -1771,7 +1825,10 @@
    "J": 22.0
   },
   {
-   "nome": "TQ 50×50×3,0",
+   "nome": "TQ 50×50×3,00",
+   "apelidos": [
+    "TQ 50×50×3,0"
+   ],
    "tipo": "quadrado",
    "h": 50.0,
    "b": 50.0,
@@ -1788,7 +1845,10 @@
    "uso": "montantes, diagonais"
   },
   {
-   "nome": "TR 80×40×2,0",
+   "nome": "TR 80×40×2,00",
+   "apelidos": [
+    "TR 80×40×2,0"
+   ],
    "tipo": "retangular",
    "h": 80.0,
    "b": 40.0,
@@ -1805,7 +1865,10 @@
    "uso": "travessas de fechamento"
   },
   {
-   "nome": "TC 60,3×3,0 (2\")",
+   "nome": "TC 60,3×3,00 (2\")",
+   "apelidos": [
+    "TC 60,3×3,0 (2\")"
+   ],
    "tipo": "redondo",
    "D": 60.3,
    "t": 3.0,
@@ -1819,7 +1882,10 @@
    "J": 44.4
   },
   {
-   "nome": "TQ 60×60×3,0",
+   "nome": "TQ 60×60×3,00",
+   "apelidos": [
+    "TQ 60×60×3,0"
+   ],
    "tipo": "quadrado",
    "h": 60.0,
    "b": 60.0,
@@ -1836,7 +1902,10 @@
    "uso": "treliças"
   },
   {
-   "nome": "TR 100×50×3,0",
+   "nome": "TR 100×50×3,00",
+   "apelidos": [
+    "TR 100×50×3,0"
+   ],
    "tipo": "retangular",
    "h": 100.0,
    "b": 50.0,
@@ -1853,7 +1922,10 @@
    "uso": "terças de marquise, travessas"
   },
   {
-   "nome": "TC 73,0×3,6",
+   "nome": "TC 73,0×3,60",
+   "apelidos": [
+    "TC 73,0×3,6"
+   ],
    "tipo": "redondo",
    "D": 73.0,
    "t": 3.6,
@@ -1867,7 +1939,10 @@
    "J": 94.8
   },
   {
-   "nome": "TQ 80×80×3,0",
+   "nome": "TQ 80×80×3,00",
+   "apelidos": [
+    "TQ 80×80×3,0"
+   ],
    "tipo": "quadrado",
    "h": 80.0,
    "b": 80.0,
@@ -1884,7 +1959,10 @@
    "uso": "montantes, escoras"
   },
   {
-   "nome": "TR 120×60×3,0",
+   "nome": "TR 120×60×3,00",
+   "apelidos": [
+    "TR 120×60×3,0"
+   ],
    "tipo": "retangular",
    "h": 120.0,
    "b": 60.0,
@@ -1901,7 +1979,10 @@
    "uso": "vigas leves, marquises"
   },
   {
-   "nome": "TC 88,9×3,2 (3\")",
+   "nome": "TC 88,9×3,20 (3\")",
+   "apelidos": [
+    "TC 88,9×3,2 (3\")"
+   ],
    "tipo": "redondo",
    "D": 88.9,
    "t": 3.2,
@@ -1949,7 +2030,10 @@
    "uso": "vigas de fechamento, pilares de mezanino"
   },
   {
-   "nome": "TC 88,9×4,0",
+   "nome": "TC 88,9×4,00",
+   "apelidos": [
+    "TC 88,9×4,0"
+   ],
    "tipo": "redondo",
    "D": 88.9,
    "t": 4.0,
@@ -1963,7 +2047,10 @@
    "J": 192.7
   },
   {
-   "nome": "TQ 100×100×4,0",
+   "nome": "TQ 100×100×4,00",
+   "apelidos": [
+    "TQ 100×100×4,0"
+   ],
    "tipo": "quadrado",
    "h": 100.0,
    "b": 100.0,
@@ -1997,7 +2084,10 @@
    "uso": "vigas, pilares de fachada"
   },
   {
-   "nome": "TC 101,6×3,6 (4\")",
+   "nome": "TC 101,6×3,60 (4\")",
+   "apelidos": [
+    "TC 101,6×3,6 (4\")"
+   ],
    "tipo": "redondo",
    "D": 101.6,
    "t": 3.6,
@@ -2028,7 +2118,10 @@
    "uso": "pilares, banzos de treliças"
   },
   {
-   "nome": "TC 114,3×4,0",
+   "nome": "TC 114,3×4,00",
+   "apelidos": [
+    "TC 114,3×4,0"
+   ],
    "tipo": "redondo",
    "D": 114.3,
    "t": 4.0,
@@ -2059,7 +2152,10 @@
    "uso": "pilares de galpões leves"
   },
   {
-   "nome": "TC 141,3×4,5",
+   "nome": "TC 141,3×4,50",
+   "apelidos": [
+    "TC 141,3×4,5"
+   ],
    "tipo": "redondo",
    "D": 141.3,
    "t": 4.5,
@@ -2090,7 +2186,10 @@
    "uso": "pilares, banzos pesados"
   },
   {
-   "nome": "TC 168,3×4,5",
+   "nome": "TC 168,3×4,50",
+   "apelidos": [
+    "TC 168,3×4,5"
+   ],
    "tipo": "redondo",
    "D": 168.3,
    "t": 4.5,
@@ -2104,7 +2203,10 @@
    "J": 1554.4
   },
   {
-   "nome": "TC 168,3×5,6",
+   "nome": "TC 168,3×5,60",
+   "apelidos": [
+    "TC 168,3×5,6"
+   ],
    "tipo": "redondo",
    "D": 168.3,
    "t": 5.6,
@@ -2118,7 +2220,10 @@
    "J": 1896.5
   },
   {
-   "nome": "TC 219,1×6,4",
+   "nome": "TC 219,1×6,40",
+   "apelidos": [
+    "TC 219,1×6,4"
+   ],
    "tipo": "redondo",
    "D": 219.1,
    "t": 6.4,

@@ -133,6 +133,18 @@ def main():
                                       rx=round(math.sqrt(Ix / A), 2), ry=round(math.sqrt(Iy / A), 2),
                                       J=round(J, 1), uso=l[i0 + 3] if len(l) > i0 + 3 else ""))
 
+    # os nomes no padrão do catálogo (nucleo/nomes_catalogo.py, 27/10); o de antes fica em "apelidos" para as obras
+    import sys
+    sys.path.insert(0, os.path.dirname(BASE))
+    from nucleo.nomes_catalogo import padrao
+    for tipo, lista in banco.items():
+        for i, r in enumerate(lista):
+            fam = {"I": "I", "U": "U", "L": "L", "tubo": "tubo"}.get(tipo) or (
+                "Ue" if r["nome"].upper().startswith("UE") else "U")
+            novo = padrao(r["nome"], fam)
+            if novo != r["nome"]:
+                lista[i] = dict({"nome": novo, "apelidos": [r["nome"]]}, **{k: v for k, v in r.items() if k != "nome"})
+
     saida = os.path.join(BASE, "perfis.json")
     with open(saida, "w", encoding="utf-8") as f:
         json.dump(banco, f, ensure_ascii=False, indent=1)

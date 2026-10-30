@@ -51,9 +51,9 @@ def test_tesoura_pela_vista_do_gabarito_e_os_perfis_pela_legenda(v12):
     assert ts["T2-A"].get("pela_folha_de") == "T2"
     p2 = {k: x["perfil"] for k, x in I.perfis_da_tesoura(d, "T2", fs).items()}
     assert (p2["banzo"], p2["montante"], p2["diagonal"], p2["interno"]) == ("U 127×50×3,75 (FF)", "U 100×50×3,00 (FF)",
-                                                                           "U 100×50×3,00 (FF)", "L 25×3 (FF)")
+                                                                           "U 100×50×3,00 (FF)", "L 25×3,00 (FF)")
     p1 = {k: x["perfil"] for k, x in I.perfis_da_tesoura(d, "T1", fs).items()}
-    assert (p1["diagonal"], p1["emenda"]) == ("L 32×3 (FF)", "U 127×50×3,00 (FF)")
+    assert (p1["diagonal"], p1["emenda"]) == ("L 32×3,00 (FF)", "U 127×50×3,00 (FF)")
     des = I.desenho_da_tesoura(d, ts["T2"]["vista"]["caixa"], {})
     assert des["contagem"]["montante"] == 17                 # uma tesoura só (eram as três vistas juntas)
 

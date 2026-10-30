@@ -98,8 +98,8 @@ def test_massas_do_catalogo_conferidas_com_a_area():
     it = {i["nome"]: i for i in cat["itens"]}
     assert it['L 5"×7/16"']["massa"] == 21.16 and it['L 5"×7/16"']["massa_fornecedor"] == 23.52
     assert it["TC 42,4×1,35"]["massa"] == 1.367
-    assert abs(it["TQ 30×30×1,8"]["massa"] - 1.528) < 0.002          # canto arredondado
-    assert it["CH 2 mm"]["bitola_msg"].startswith("14") and it["CH 3,35 mm"]["bitola_msg"].startswith("10")
+    assert abs(it["TQ 30×30×1,80"]["massa"] - 1.528) < 0.002          # canto arredondado
+    assert it["CH 2,00 mm"]["bitola_msg"].startswith("14") and it["CH 3,35 mm"]["bitola_msg"].startswith("10")
     for i in cat["itens"]:
         if i.get("A") and i.get("massa") and i.get("familia") not in ("chapa", "telha", "parafuso"):
             if i.get("familia") == "tubo" and i.get("tipo") != "redondo":

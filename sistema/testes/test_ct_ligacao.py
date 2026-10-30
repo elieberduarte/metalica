@@ -44,7 +44,7 @@ def perto(obtido, esperado, tol=0.005, o=""):
 
 def _l50x3():
     p = perfis_fabrica.perfil_de_fabrica("L 50x3")
-    assert p.nome == "L 50×3 (FF)" and p.dados["formado_a_frio"]
+    assert p.nome == "L 50×3,00 (FF)" and p.dados["formado_a_frio"]
     return p
 
 
