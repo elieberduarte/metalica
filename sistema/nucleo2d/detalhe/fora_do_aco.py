@@ -187,6 +187,32 @@ def eh_chapa_expandida(ent) -> bool:
     return bool(re.search(NOME_CHAPA_EXPANDIDA, _sem_acento(texto)))
 
 
+#: A malha da chapa expandida no 3D (SESI Chapecó, 30/10, usuário: "é uma chapa toda furadinha… pode detalhar no modelo a
+#: chapa real" — "tamanho real"): (LD, CD, cordão) em mm — a diagonal maior, a menor e a largura do fio. Sem a medida na
+#: peça: a 12×25 dos brises do SESI (EMT06 "Chapa expandida 12x25").
+MALHA_EXPANDIDA_PADRAO = (25.0, 12.0, 1.5)
+
+
+def malha_da_expandida(ent) -> Tuple[float, float, float]:
+    """(LD, CD, cordão) da chapa expandida: atributos.malha_mm, senão o "12x25" do nome ou do detalhe (a maior é a LD),
+    senão a padrão. O 3D a desenha vazada em tamanho real (web/visor3d/visor3d.js)."""
+    atr = getattr(ent, "atributos", None) or {}
+    m = atr.get("malha_mm")
+    try:
+        if m and len(m) >= 2:
+            ld, cd = max(float(m[0]), float(m[1])), min(float(m[0]), float(m[1]))
+            return (ld, cd, float(m[2]) if len(m) > 2 else MALHA_EXPANDIDA_PADRAO[2])
+    except (TypeError, ValueError):
+        pass
+    texto = " ".join(str(x or "") for x in (getattr(ent, "nome", ""), atr.get("detalhe")))
+    r = re.search(r"(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)", texto)
+    if r:
+        a, b = (float(g.replace(",", ".")) for g in r.groups())
+        if 3.0 <= min(a, b) and max(a, b) <= 300.0:
+            return (max(a, b), min(a, b), MALHA_EXPANDIDA_PADRAO[2])
+    return MALHA_EXPANDIDA_PADRAO
+
+
 def massa_por_m2(ent) -> Optional[float]:
     """A massa por m² do fabricante gravada na peça (massa_m2, ou a do gerador em origem), em kg/m²; None sem ela."""
     atr = getattr(ent, "atributos", None) or {}

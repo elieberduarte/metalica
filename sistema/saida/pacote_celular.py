@@ -46,7 +46,8 @@ GERACAO_MALHAS = 3
 #: 5 (15/10): a largura da chapa (W, mm) — as medidas espessura × largura × comprimento.
 #: 6 (22/10): a planta de origem (f2) e o papel (pp) — a peça vai à planta dela no 2D (a terça à planta das terças).
 #: 7 (22/10): o eixo da barra (e) — o 2D acende a linha da peça, não só a região.
-VERSAO_FICHAS = 7
+#: 8 (30/10): a malha da chapa expandida (vz: LD, CD, cordão) — o visor a desenha vazada.
+VERSAO_FICHAS = 8
 MAGICA = b"MCEL"
 
 #: Vértices por bloco (índice de 16 bits).
@@ -472,6 +473,12 @@ def _ficha(reg: dict, camadas_idx: Dict[str, int], centro, volume_mm3: float, vs
         md = _medidas_chapa(reg.get("contorno") or [])
         if md and md[1] >= 1.0:
             f["W"] = round(md[1])
+        # a chapa expandida: o visor a desenha vazada, com a malha em tamanho real (SESI, 30/10: "tamanho real")
+        from types import SimpleNamespace
+        from nucleo2d.detalhe import fora_do_aco
+        ent = SimpleNamespace(nome=reg.get("nome") or "", atributos=atrib)
+        if fora_do_aco.eh_chapa_expandida(ent):
+            f["vz"] = [round(x, 2) for x in fora_do_aco.malha_da_expandida(ent)]
     for k_ori, k in (("posicao", "pos"), ("conjunto", "cj"), ("marca", "mc")):
         if marcas.get(k_ori):
             f[k] = str(marcas[k_ori])
