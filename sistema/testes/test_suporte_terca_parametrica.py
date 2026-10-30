@@ -48,6 +48,30 @@ def test_suporte_na_ponta_da_linha_de_tercas_fica_com_as_duas_colunas_iguais():
         assert sorted(round(f["y"], 1) for f in st.furos if f["x"] == x) == [20.0, 70.0], st.furos
 
 
+def test_suporte_sob_terca_muito_inclinada_vai_ao_passo_da_maquina():
+    """Posto V2, 30/10/2026: o ST1 em x 49,71 / y 40,29 (a CH9 da relação de corte de 29/10) foi ao corte com o par a 40 do
+    projeto — a T.C.133 em cima dele sobe 22 % (180 mm em 0,80 m), os dois furos da coluna vertical ficavam 8,8 mm um do
+    outro ao longo da terça e cada um virava uma coluna sozinha. Agora a coluna da chapa é uma coluna só: os dois furos a 50
+    na altura da terça e na mesma abscissa dela (como a máquina fura a terça)."""
+    doc, st = _terca_e_suporte()
+    t = doc.barras[0]
+    t.inicio, t.fim = (0.0, 0.0, 1000.0 - 1500.0 * 0.225), (3000.0, 0.0, 1000.0 + 1500.0 * 0.225)
+    assert ajustar_suportes_as_tercas(doc, {"P1512"}, {"Suporte de terça ST1"})["chapas"] == 1
+    import math
+    L = (1.0, 0.0, 0.225)
+    n = math.hypot(*L)
+    L = tuple(v / n for v in L)
+    h = (-L[2], 0.0, L[0])                                  # na face da chapa, perpendicular à terça
+    for x0 in (35.0, 115.0):
+        col = [f for f in st.furos if abs(f["x"] - x0) < 15.0]
+        assert len(col) == 2, st.furos
+        pts = [(1425.0 + f["x"], 0.0, 955.0 + f["y"]) for f in col]
+        s = [sum(p[k] * L[k] for k in range(3)) for p in pts]
+        a = sorted(sum(p[k] * h[k] for k in range(3)) for p in pts)
+        assert abs(s[0] - s[1]) < 0.5, col                  # na mesma abscissa da terça
+        assert abs((a[1] - a[0]) - 50.0) < 0.5, col          # o passo da máquina
+
+
 def test_letra_da_variante_depois_do_z():
     from nucleo2d.detalhe.base import letra_da_variante
     assert [letra_da_variante(i) for i in (1, 25, 26, 27, 52)] == ["b", "z", "aa", "ab", "ba"]

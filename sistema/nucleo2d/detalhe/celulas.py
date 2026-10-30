@@ -2023,15 +2023,21 @@ def ajustar_suportes_as_tercas(doc: Documento, tercas: set, suportes: set) -> di
                 H = float(m_h.group(1).replace(",", "."))
             eixo_t = eixo_local if eixo_local is not None else (max(ph) + min(ph)) / 2.0
             passo = FURACAO_TERCA_BAIXA[0] if H <= LIMITE_TERCA + 0.5 else FURACAO_TERCA_ALTA[0]
-            # colunas: furos na mesma abscissa ao longo da terça
+            # colunas: furos na mesma abscissa ao longo da terça — ou na mesma coluna da chapa (o eixo dela mais deitado
+            # na terça): sob a terça muito inclinada os dois furos da coluna vertical ficam longe ao longo dela e cada um
+            # virava uma coluna sozinha (o ST1 da T.C.133, 22 %, foi ao corte com o par a 40 no Posto V2, 30/10/2026)
+            u_ch = ex if abs(sum(ex[k] * L[k] for k in range(3))) >= abs(sum(ey[k] * L[k] for k in range(3))) else ey
             cols: List[list] = []
             for i in sorted(idx, key=lambda i: sum(pts[i][k] * L[k] for k in range(3))):
                 s_ = sum(pts[i][k] * L[k] for k in range(3))
-                if cols and s_ - cols[-1][-1][0] <= 3.0:
+                if cols and (s_ - cols[-1][-1][0] <= 3.0 or
+                             abs(sum((pts[i][k] - pts[cols[-1][-1][1]][k]) * u_ch[k] for k in range(3))) <= 3.0):
                     cols[-1].append((s_, i))
                 else:
                     cols.append([(s_, i)])
             for col in cols:
+                # a coluna juntada pela chapa vai também à mesma abscissa da terça: a máquina fura o par perpendicular a ela
+                s_col = sum(s_ for s_, _i in col) / len(col) if max(c[0] for c in col) - min(c[0] for c in col) > 3.0 else None
                 ids_c = [i for _s, i in col]
                 com = [i for i in ids_c if parafusado(pts[i], ch.furos[i])]
                 usar = com if len(com) >= 2 else ids_c
@@ -2044,9 +2050,10 @@ def ajustar_suportes_as_tercas(doc: Documento, tercas: set, suportes: set) -> di
                     atual = sum(pts[i][k] * h[k] for k in range(3))
                     alvo = eixo_t + (k_ - (n - 1) / 2.0) * passo
                     dlt = alvo - atual
-                    if abs(dlt) < 0.5:
+                    ds = 0.0 if s_col is None else s_col - sum(pts[i][k] * L[k] for k in range(3))
+                    if abs(dlt) < 0.5 and abs(ds) < 0.5:
                         continue
-                    dw = tuple(h[k] * dlt for k in range(3))
+                    dw = tuple(h[k] * dlt + L[k] * ds for k in range(3))
                     dxl = sum(dw[k] * ex[k] for k in range(3))
                     dyl = sum(dw[k] * ey[k] for k in range(3))
                     x0, y0 = float(ch.furos[i].get("x", 0) or 0), float(ch.furos[i].get("y", 0) or 0)
