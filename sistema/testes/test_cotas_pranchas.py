@@ -221,3 +221,48 @@ def test_tesouras_da_sala_sem_as_metades_iguais_entre_tercas():
     assert nos("M2 + M2").count(773) == 2                                 # só os da cumeeira (773 | 875)
     assert 750 in nos("M5 + M6") and 796 in nos("M5 + M6")               # a metade desigual fica
     assert {798, 748, 750, 796} <= set(nos("M8 + M9"))
+
+
+@pytest.mark.skipif(not os.path.exists(SALA), reason="sem o modelo da Sala (outra máquina)")
+def test_tesoura_montada_cotada_por_cima_da_ponta_ao_no_e_ao_meio_nos_dois_lados():
+    """Usuário, 30/10, na T1 da Sala: tinha cotado à mão 275 | 8055 só na metade da esquerda — "Essa cota parece estar
+    pegando no ponto errado. Precisa ser bem no nó", "Faltou essa cota", "Precisa repetir para o outro lado". Agora a
+    montada sai com a cadeia de cima nas duas metades: face da ponta → nó do banzo de cima → meio da cumeeira (280 | 8050
+    na obra), fechando a meia tesoura dos dois lados. No modelo como veio do TecnoMETAL as pontas não são iguais
+    (215 | 7839 e 7839 | 225; a obra foi ajustada depois)."""
+    d = _tesouras_da_sala()
+    hs = sorted((min(c.p1[0], c.p2[0]), abs(c.p2[0] - c.p1[0])) for c in d.entidades.values()
+                if isinstance(c, Cota) and c.modo == "h" and (c.atributos or {}).get("conjunto") == "M2 + M2"
+                and (c.atributos or {}).get("detalhe") == "conjunto" and c.deslocamento > 0)
+    medidas = [round(m) for _x, m in hs]
+    assert len(medidas) == 4, medidas
+    assert abs(medidas[1] - medidas[2]) <= 1, medidas
+    assert 200 <= medidas[0] <= 400 and 200 <= medidas[3] <= 400, medidas      # da face ao nó (a ponta do joelho)
+    meias = [round(m) for _x, m in sorted((min(c.p1[0], c.p2[0]), abs(c.p2[0] - c.p1[0])) for c in d.entidades.values()
+                                          if isinstance(c, Cota) and c.modo == "h" and round(c.deslocamento) == -17
+                                          and (c.atributos or {}).get("conjunto") == "M2 + M2")]
+    assert meias and abs(medidas[0] + medidas[1] - meias[0]) <= 1 and abs(medidas[2] + medidas[3] - meias[-1]) <= 1, (medidas, meias)
+
+
+@pytest.mark.skipif(not os.path.exists(SALA), reason="sem o modelo da Sala (outra máquina)")
+def test_cada_perfil_do_banzo_com_cor_propria_em_todos_os_desenhos():
+    """Usuário, 30/10, na T1 da Sala: "Colocar em cores bem diferentes para não confundir onde vai cada um dos perfis" —
+    o U100X50X#11 e o #9 dos banzos saíam com o mesmo ciano: cada célula escolhia as cores no desenho onde era feita e
+    era copiada para os outros sem as camadas. Agora cada perfil tem uma cor só no Detalhar inteiro, e perfis diferentes
+    da mesma função, cores diferentes."""
+    import gzip
+    import json
+    from nucleo3d.modelo import Documento
+    from nucleo2d.detalhar import detalhar
+    with gzip.open(SALA, "rt", encoding="utf-8") as f:
+        doc = Documento.de_dict(json.load(f))
+    r = detalhar(doc, grupos=["tesouras", "completo"])
+    cores = {}
+    for d in r["desenhos"].values():
+        for nome_c, cam in d.camadas.items():
+            base_, _sp, perfil = nome_c.partition(" ")
+            if base_ in ("BANZOS", "DIAGONAIS", "MONTANTES") and perfil:
+                assert cores.setdefault(nome_c, cam.cor) == cam.cor, (nome_c, cores[nome_c], cam.cor)
+    banzos = {n: c for n, c in cores.items() if n.startswith("BANZOS ")}
+    assert len(banzos) >= 2, banzos
+    assert len(set(banzos.values())) == len(banzos), banzos

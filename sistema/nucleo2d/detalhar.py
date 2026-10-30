@@ -392,9 +392,14 @@ def _desenhar_celula(f, banda: Desenho, x: float, y: float):
         novas = [_copy.copy(banda.entidades[k]) for k in banda.entidades if k not in antes]
         for e in novas:
             e.atributos = dict(e.atributos or {})
-        _gravadas()[chave] = (x, y, ext, novas, [dict(v) for v in banda.vistas[n_vistas:]], f)
+        # e as camadas que a célula usou (a do perfil, "BANZOS U100X50X#9", com a cor dela — sem ela, a cópia noutro
+        # desenho caía numa camada sem cor própria, Sala de Compressores 30/10)
+        camadas = {e.camada: banda.camadas[e.camada] for e in novas if e.camada in banda.camadas}
+        _gravadas()[chave] = (x, y, ext, novas, [dict(v) for v in banda.vistas[n_vistas:]], f, camadas)
         return ext
-    x0, y0, ext, ents, vistas, _f = rec
+    x0, y0, ext, ents, vistas, _f, camadas = rec
+    for nome_c, cam in camadas.items():
+        banda.camadas.setdefault(nome_c, cam)
     dx, dy = x - x0, y - y0
     for e in ents:
         e2 = _copy.copy(e)
@@ -775,11 +780,14 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
     {"desenhos": {chave: Desenho}, "posicoes": [...], "conjuntos": [...], "acessorios": {},
      "regra_tercas": {marca: texto}, "avisos": [...]}. `eixos`: os eixos gravados no projeto
     (senão as plantas os identificam do modelo); `niveis`: os do projeto, escritos nas elevações e na chumbação."""
+    from nucleo2d.detalhe.conjuntos import zerar_cores_por_perfil
     _gravadas().clear()
+    zerar_cores_por_perfil()
     try:
         return _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, nomes, eixos, niveis)
     finally:
         _gravadas().clear()
+        zerar_cores_por_perfil()
 
 
 def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, nomes, eixos=None, niveis=None):

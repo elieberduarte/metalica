@@ -4,6 +4,7 @@ import collections
 import heapq
 import math
 import re
+import threading
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -3190,6 +3191,19 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             p.cota_h(face_esq, meio_c, y_ap, off * (n_topo + 1.5))
             p.cota_h(meio_c, face_dir, y_ap, off * (n_topo + 1.5))
             n_topo += 2
+        elif len(ts_meia) > 1 and ys_topo_ok(ts_meia):
+            # a montada (as duas metades juntas): por cima de tudo, cada lado na horizontal da face da ponta ao nó onde
+            # o banzo de cima começa e dele ao meio da cumeeira — 280 | 8050 na T1 da Sala (usuário, 30/10: cotou à mão
+            # 275 | 8055, "Essa cota parece estar pegando no ponto errado. Precisa ser bem no nó", "Faltou essa cota",
+            # "Precisa repetir para o outro lado")
+            meio_c = (ts_meia[0][1] + ts_meia[1][0]) / 2.0
+            y_ap = max(yt for _a, _b, _r, yt in ts_meia)
+            no_esq, no_dir = ts_meia[0][0], ts_meia[-1][1]
+            p.cadeia_h([face_esq] + ([no_esq] if no_esq - face_esq > 30.0 else []) + [meio_c], y_ap, off * (n_topo + 1.5),
+                       exigir_espaco=False)
+            p.cadeia_h([meio_c] + ([no_dir] if face_dir - no_dir > 30.0 else []) + [face_dir], y_ap, off * (n_topo + 1.5),
+                       exigir_espaco=False)
+            n_topo += 1
         # cada ponta: as alturas trecho a trecho (onde o banzo dobra, a base do joelho, o topo) e a
         # altura dela por fora; o chanfro do joelho pelo comprimento, na própria inclinação
         # cada ponta: as alturas das quinas e dos nós (a face de fora como referência, as chamadas saem
@@ -3529,12 +3543,29 @@ PASSO_COTA_TESOURA = 7.0
 #: As cores dos perfis quando um conjunto tem mais de um na mesma função: cada perfil a sua, a mesma em
 #: todas as funções e em todo o desenho; a primeira livre da função (banzo azul-claro, diagonal laranja,
 #: montante roxo), depois as de reserva — nenhuma verde (é a cor das cotas) nem ouro (as chapas).
+#: O 2º perfil do banzo em vermelho, bem longe do ciano do 1º (usuário, 30/10, na T1 da Sala: "Colocar em cores bem
+#: diferentes para não confundir onde vai cada um dos perfis" — o U100X50X#11 e o #9 saíam ciano e azul, ou o mesmo ciano)
 CORES_POR_PERFIL = {
-    "BANZOS": ["#22a7c2", "#2563eb", "#dc2626", "#0e7490"],
+    "BANZOS": ["#22a7c2", "#dc2626", "#2563eb", "#0e7490"],
     "DIAGONAIS": ["#e67e22", "#9a3412", "#be185d"],
     "MONTANTES": ["#a855f7", "#ec4899", "#6366f1", "#7e22ce"],
 }
 CORES_DE_RESERVA = ["#0891b2", "#be185d", "#4f46e5", "#b45309", "#7c3aed", "#475569"]
+
+#: perfil → cor, uma só no Detalhar inteiro: cada célula escolhia as cores no desenho em que era desenhada pela 1ª vez e
+#: era copiada para os outros (o desenho por família, o completo, as pranchas) sem as camadas — na prancha, a camada
+#: "BANZOS U100X50X#9" ficava com o ciano do #11 (Sala de Compressores, 30/10). O Detalhar zera (zerar_cores_por_perfil).
+_CORES_DO_DETALHAR = threading.local()
+
+
+def _cores_do_detalhar() -> Dict[str, str]:
+    if not hasattr(_CORES_DO_DETALHAR, "cores"):
+        _CORES_DO_DETALHAR.cores = {}
+    return _CORES_DO_DETALHAR.cores
+
+
+def zerar_cores_por_perfil():
+    _cores_do_detalhar().clear()
 
 
 def _camadas_por_perfil(desenho: Desenho, marca: str, instancia: Sequence[Solido], camada_de: Dict[str, str]) -> Dict[tuple, str]:
@@ -3554,8 +3585,8 @@ def _camadas_por_perfil(desenho: Desenho, marca: str, instancia: Sequence[Solido
         por_funcao[cam_][perfil_e] += 1
     if not any(len(perfis) > 1 for perfis in por_funcao.values()):
         return {}
-    # as cores já dadas no desenho (outras tesouras): perfil → cor
-    cor_de: Dict[str, str] = {}
+    # as cores já dadas neste Detalhar (outras tesouras, em qualquer desenho) e no desenho: perfil → cor
+    cor_de: Dict[str, str] = _cores_do_detalhar()
     for nome_c, cam in desenho.camadas.items():
         base_, _sp, perfil_c = nome_c.partition(" ")
         if base_ in CORES_POR_PERFIL and perfil_c:
@@ -3569,7 +3600,7 @@ def _camadas_por_perfil(desenho: Desenho, marca: str, instancia: Sequence[Solido
                 livres = [c for c in CORES_POR_PERFIL[cam_] + CORES_DE_RESERVA if c not in usadas]
                 cor_de[perfil_e] = livres[0] if livres else CORES_DE_RESERVA[len(cor_de) % len(CORES_DE_RESERVA)]
             nome_c = "%s %s" % (cam_, perfil_e)
-            if nome_c not in desenho.camadas:
+            if nome_c not in desenho.camadas or desenho.camadas[nome_c].cor != cor_de[perfil_e]:
                 base = desenho.camadas.get(cam_)
                 desenho.camadas[nome_c] = Camada2D(nome_c, cor_de[perfil_e], espessura=base.espessura if base else 0.35)
             mapa[(cam_, perfil_e)] = nome_c
