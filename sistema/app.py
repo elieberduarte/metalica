@@ -1355,7 +1355,7 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     r = detalhar(doc, grupos=grupos, regra_tercas=False,
                  rotular=bool(corpo.get("rotular", False)),
                  converter=False, ajustes=_ajustes_furos(s),
-                 nomes=_nomes_producao(s), eixos=g.ler(s).get("eixos"),
+                 nomes=_nomes_producao(s), eixos=g.ler(s).get("eixos"), niveis=g.ler(s).get("niveis"),
                  # a atualização em segundo plano para no próximo passo quando o usuário cancela (o Cancelar do CAD)
                  avisar=lambda *a: (automatico and _vivos().conferir_cancelamento(s),
                                     _progresso(s, " ".join(str(x) for x in a))))
@@ -2218,7 +2218,7 @@ def _gravar_nomes_producao(s: str, nomes: dict):
     pasta = os.path.join(_gerente()._existente(s), "detalhamento")
     _gravar_ajuste(os.path.join(pasta, "nomes.json"),
                    {k: nomes.get(k) or {} for k in ("posicoes", "conjuntos", "tipos", "tipos_conjuntos", "ifc", "ifc_conjuntos", "camadas_2d",
-                                                     "montadas", "suportes", "telhas")})      # D9 (11/10): T, S.T., MD/CU guardados
+                                                     "montadas", "suportes", "telhas", "variantes")})      # D9 (11/10): T, S.T., MD/CU guardados
 
 
 def _nomes_no_modelo(doc, nomes: dict) -> int:
@@ -2227,13 +2227,16 @@ def _nomes_no_modelo(doc, nomes: dict) -> int:
     editor acha "S.T.1"). Devolve quantas mudaram."""
     ifc = nomes.get("ifc") or {}
     ifc_conj = nomes.get("ifc_conjuntos") or {}
+    # a chapa de furação diferente ("P842 (b)") só tem a marca nova no detalhamento: o nome vai pela dela (auditor N12)
+    variantes = nomes.get("variantes") or {}
     n = 0
     for e in doc.entidades.values():
         m = (e.atributos or {}).get("marcas")
         if not isinstance(m, dict):
             continue
-        novo = ifc.get(str(m.get("posicao") or "")) or ""
-        novo_c = ifc_conj.get(str(m.get("conjunto") or "")) or ""
+        pos, conj = variantes.get(e.id) or (m.get("posicao"), m.get("conjunto"))
+        novo = ifc.get(str(pos or "")) or ""
+        novo_c = ifc_conj.get(str(conj or "")) or ""
         if (m.get("nome") or "") != novo or (m.get("nome_conjunto") or "") != novo_c:
             m["nome"], m["nome_conjunto"] = novo, novo_c
             n += 1
@@ -2643,6 +2646,11 @@ def gravar_eixos_projeto(s: str, corpo: dict) -> dict:
     ex = _eixos.de_dict(pedido)
     if not ex:
         raise ErroDeDados("eixos inválidos: informe ao menos um eixo com nome e posição.")
+    if "malhas" not in pedido:
+        # o diálogo edita a malha principal: as malhas locais gravadas (as frentes fora dela, 30/10) ficam
+        antes = _eixos.de_dict(g.ler(s).get("eixos")) or {}
+        if antes.get("malhas"):
+            ex["malhas"] = antes["malhas"]
     ex["origem"] = "usuario"
     # a hora em que o usuário gravou: a malha da Planta de lançamento só vence se for mexida depois (P04, 16/10)
     ex["gravado_em"] = time.time()

@@ -13,8 +13,14 @@ o programa gravou na pasta da obra (nada é refeito nem gravado):
   copias       a cópia local de uma peça na prancha = Σ (composição × quantidade) dos conjuntos desenhados nela
   nomes        o nome de um conjunto na prancha é o mesmo conjunto do conjuntos.csv; toda posição tem prancha
 
+  fixadores    todo parafuso do 3D (atributos.parafuso) entra na lista como parafuso (Hora Certa · Galpão Existente,
+               auditor N01, 29/10: 722 parafusos ½" viravam porcas); obra com chumbador e nenhuma porca (N06)
+  emissao      o pranchas.pdf não é mais novo que um detalhamento com peça fora do passo da máquina (N11, FAB-01/07)
+  nomes        o mesmo nome em duas células de conjuntos diferentes (os dois "T2" e "T3", N04); o nome de produção
+               gravado no 3D conta as mesmas peças que o romaneio (as 28 CH35 chamadas "PL13.3", N12)
+
 Ainda não confere (próximos, ver o briefing): peças espelhadas juntas numa posição (N03), compra × fábrica
-(bitola do parafuso, espessura comercial, terça sob medida — N04–N06), porcas e arruelas (N07), eixos (N09).
+(bitola do parafuso, espessura comercial, terça sob medida — N04–N06), eixos (N09).
 
 Uso: `conferir(pasta_da_obra)` → lista de achados {conferencia, gravidade, texto}; gravidade "fabrica" (leva a
 fabricar, comprar ou montar diferente) ou "apresentacao". Linha de comando: testes/consistencia_obra.py.
@@ -83,6 +89,25 @@ def _posicoes_do_3d(pasta) -> Optional[collections.Counter]:
         if p:
             cont[str(p)] += 1
     return cont
+
+
+def _entidades(pasta) -> List[dict]:
+    """As entidades do modelo.json com os atributos já como dicionário ([] sem o modelo)."""
+    d = _json(os.path.join(pasta, "modelo.json"))
+    if d is None:
+        return []
+    ents = d.get("entidades") or []
+    ents = list(ents.values()) if isinstance(ents, dict) else ents
+    out = []
+    for e in ents:
+        a = e.get("atributos") or {}
+        if isinstance(a, str):
+            try:
+                a = json.loads(a)
+            except ValueError:
+                a = {}
+        out.append(dict(e, atributos=a if isinstance(a, dict) else {}))
+    return out
 
 
 def _celulas(pasta) -> Optional[List[dict]]:
@@ -162,10 +187,55 @@ def conferir(pasta: str) -> List[dict]:
         if not _perto(s_res, float(tot["peso"])):
             achar("pesos", "fabrica", f"resumo de perfis + chapas + telhas = {s_res:.1f} kg × total {float(tot['peso']):.1f} kg")
 
+    # ---------------------------------------------------------------- fixadores (auditor N01/N06, 29/10)
+    ents = _entidades(pasta)
+    acess = lista.get("acessorios") or []
+    n_par_3d = sum(1 for e in ents if isinstance(e["atributos"].get("parafuso"), dict) and e["atributos"]["parafuso"].get("d"))
+    # o que não é porca nem arruela: o parafuso, o parabolt, o chumbador químico (todos com atributos.parafuso no 3D)
+    n_par_lista = sum(int(a_.get("quantidade") or 0) for a_ in acess
+                      if not str(a_.get("nome") or "").lower().startswith(("porca", "arruela")))
+    if acess and n_par_3d > n_par_lista:
+        achar("fixadores", "fabrica", f"{n_par_3d} fixadores no 3D (com bitola e comprimento) × {n_par_lista} na lista fora as "
+                                      f"porcas e arruelas: o resto saiu como porca solta")
+    nomes_pr = _json(os.path.join(pasta, "detalhamento", "nomes.json")) or {}
+    tipos = nomes_pr.get("tipos") or {}
+    base_ = lambda x: re.sub(r"\s*\([^)]*\)$", "", x.strip())          # noqa: E731
+    n_cb = sum(int(r["Qtd"]) for r in pecas
+               if any(tipos.get(base_(x)) == "chumbador" for x in str(r.get("Posicao") or "").split("/") if x.strip()))
+    n_porcas = sum(int(a_.get("quantidade") or 0) for a_ in acess if "porca" in str(a_.get("nome") or "").lower())
+    if acess and n_cb and not n_porcas:
+        achar("fixadores", "fabrica", f"{n_cb} chumbador(es) e nenhuma porca na lista (FAB-05)")
+
+    # ---------------------------------------------------------------- emissão (auditor N11)
+    pdf = os.path.join(pasta, "pranchas", "pranchas.pdf")
+    carimbo = os.path.join(pasta, "detalhamento", "carimbo.json")
+    car = _json(carimbo) or {}
+    if os.path.exists(pdf) and car.get("fora_da_maquina") and os.path.getmtime(pdf) >= os.path.getmtime(carimbo):
+        fora = car["fora_da_maquina"]
+        fora = ", ".join(sorted(fora)) if isinstance(fora, (list, dict)) else str(fora)
+        achar("emissao", "fabrica", f"pranchas.pdf emitido com peça fora do passo da máquina no detalhamento: {fora[:200]}")
+
+    # ---------------------------------------------------------------- nomes (auditor N04/N12)
+    if ents:
+        nome_3d = collections.Counter(str((e["atributos"].get("marcas") or {}).get("nome") or "") for e in ents)
+        for n, r in sorted(R.items()):
+            if n and nome_3d.get(n) and nome_3d[n] != int(r["Qtd"]):
+                achar("nomes", "fabrica", f"{n}: {nome_3d[n]} peças com esse nome no 3D × {r['Qtd']} no romaneio")
+
     # ---------------------------------------------------------------- pranchas
     cel = _celulas(pasta)
     if not cel:
         return achados
+    # o mesmo nome de conjunto desenhado em duas células com conjuntos diferentes (os dois "T2", N04); a família
+    # desenhada uma vez ("T.C.1" = M18 / M19) é uma célula só
+    celulas_do_nome = collections.defaultdict(set)
+    for c in cel:
+        it = c.get("item") or {}
+        if not c.get("copia") and str(it.get("classe") or "") == "Conjunto" and it.get("nome"):
+            celulas_do_nome[str(it["nome"])].add(str(c.get("marca") or ""))
+    for n in sorted(k for k, v in celulas_do_nome.items() if len(v) > 1):
+        achar("nomes", "fabrica", f"{n} desenhado em {len(celulas_do_nome[n])} células com conjuntos diferentes: "
+                                  f"{'; '.join(sorted(celulas_do_nome[n]))}")
     cj = _csv(pasta, "conjuntos.csv") or []
     comp_de = {r["Conjunto"]: _composicao(r.get("Composicao")) for r in cj}
     inst_de = {r["Conjunto"]: int(r.get("Instancias") or 0) for r in cj}

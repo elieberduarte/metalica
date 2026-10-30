@@ -83,6 +83,9 @@ def gravar(o: dict) -> str:
         json.dump({"entidades": [], "metadados": {"pranchas": o["pranchas"]}}, f)
     with open(os.path.join(pasta, "modelo.json"), "w", encoding="utf-8") as f:
         json.dump({"entidades": o["entidades"]}, f)
+    if o.get("nomes"):
+        with open(os.path.join(det, "nomes.json"), "w", encoding="utf-8") as f:
+            json.dump(o["nomes"], f)
     return pasta
 
 
@@ -228,3 +231,73 @@ def test_obra_real_me_sooro_se_houver():
     a = C.conferir(pasta)
     assert any(x["conferencia"] == "copias" and "CH2" in x["texto"] for x in a)
     assert any(x["conferencia"] == "nomes" and "T4" in x["texto"] for x in a)
+
+
+# ------------------------------------------------------------- Hora Certa · Galpão Existente (auditor, 29/10)
+def test_parafuso_do_3d_que_virou_porca_na_lista():
+    """N01: 722 parafusos ½" (atributos.parafuso, nome sem "d×L") entravam na lista como porcas soltas; o parabolt e o
+    chumbador químico (também com atributos.parafuso) contam como fixador, não como porca"""
+    o = obra_coerente()
+    o["entidades"] += [{"id": "f%d" % i, "nome": "Parafuso", "atributos": {"parafuso": {"d": 12.7, "L": 30}}} for i in range(4)]
+    o["entidades"] += [{"id": "q0", "nome": "PARABOLT 12.7x102", "atributos": {"parafuso": {"d": 12.7, "L": 101.6}}}]
+    o["lista"]["acessorios"] = [{"nome": "Parafuso sextavado M12.7 x 30", "quantidade": 4}, {"nome": "PARABOLT 12.7x102", "quantidade": 1},
+                                {"nome": "Porca sextavada M12.7 (dos parafusos)", "quantidade": 4}]
+    assert "fixadores" not in confs(o)
+    o["lista"]["acessorios"] = [{"nome": "Parafuso sextavado M12.7 x 30", "quantidade": 1}, {"nome": "PARABOLT 12.7x102", "quantidade": 1},
+                                {"nome": "Porca sextavada Ø1/2\" UNC", "quantidade": 3}]
+    a = [x for x in C.conferir(gravar(o)) if x["conferencia"] == "fixadores"]
+    assert len(a) == 1 and "5 fixadores no 3D" in a[0]["texto"] and "× 2 na lista" in a[0]["texto"]
+
+
+def test_chumbador_sem_nenhuma_porca_na_lista():
+    """N06 (FAB-05): 218 chumbadores e nenhuma porca nem arruela"""
+    o = obra_coerente()
+    o["rom"].append(_rom("CB1", "P30", "Barra", "FE RED 1/2''", 8, 0.5))
+    o["lista"]["posicoes"].append({"nome": "CB1", "quantidade": 8, "peso_total": 4.0})
+    o["lista"]["totais"]["peso"] += 4.0
+    o["lista"]["totais"]["categorias"][0]["peso"] += 4.0
+    o["perfis"][0]["Peso (kg)"] = "205,00"
+    o["entidades"] += [{"id": "cb%d" % i, "atributos": {"marcas": {"posicao": "P30"}}} for i in range(8)]
+    o["pranchas"][2]["celulas"].append({"titulo": "CB1 – 08x", "copia": False, "marca": "P30", "item": {"nome": "CB1", "quantidade": 8, "classe": "Barra", "peso": 0.5}})
+    o["nomes"] = {"tipos": {"P30": "chumbador"}}
+    o["lista"]["acessorios"] = [{"nome": "Arruela lisa Ø1/2\"", "quantidade": 8}]
+    a = [x for x in C.conferir(gravar(o)) if x["conferencia"] == "fixadores"]
+    assert len(a) == 1 and "8 chumbador(es) e nenhuma porca" in a[0]["texto"], a
+    o["lista"]["acessorios"].append({"nome": "Porca sextavada Ø1/2\" UNC", "quantidade": 16})
+    assert "fixadores" not in confs(o)
+
+
+def test_pdf_emitido_com_peca_fora_da_maquina():
+    """N11: o carimbo acusava T.C.5/8–11 com furos a 40 mm e o pranchas.pdf saiu assim mesmo"""
+    import time
+    o = obra_coerente()
+    pasta = gravar(o)
+    with open(os.path.join(pasta, "detalhamento", "carimbo.json"), "w", encoding="utf-8") as f:
+        json.dump({"fora_da_maquina": {"T.C.5": "furos a 40 mm na altura (máquina: 50)"}}, f)
+    assert "emissao" not in {a["conferencia"] for a in C.conferir(pasta)}       # sem PDF
+    time.sleep(0.05)
+    os.makedirs(os.path.join(pasta, "pranchas"))
+    open(os.path.join(pasta, "pranchas", "pranchas.pdf"), "wb").write(b"%PDF-1.4")
+    a = [x for x in C.conferir(pasta) if x["conferencia"] == "emissao"]
+    assert len(a) == 1 and "T.C.5" in a[0]["texto"]
+
+
+def test_mesmo_nome_em_duas_celulas_de_conjuntos_diferentes():
+    """N04: dois "T2" desenhados, com peças diferentes; a família "T.C.1" = M18 / M19 numa célula só não é achado"""
+    o = obra_coerente()
+    assert C.conferir(gravar(o)) == []
+    o["pranchas"][1]["celulas"].append({"titulo": "T1 – 01x", "copia": False, "marca": "M7", "item": {"nome": "T1", "quantidade": 1, "classe": "Conjunto"}})
+    a = [x for x in C.conferir(gravar(o)) if x["conferencia"] == "nomes" and "células" in x["texto"]]
+    assert len(a) == 1 and a[0]["texto"].startswith("T1 desenhado em 2 células"), a
+
+
+def test_nome_de_producao_no_3d_conta_o_romaneio():
+    """N12: as 28 CH35 "P842 (b)" se chamavam PL13.3 no 3D — o nome do 3D com mais peças que o romaneio"""
+    o = obra_coerente()
+    for e in o["entidades"]:
+        p = e["atributos"]["marcas"]["posicao"]
+        e["atributos"]["marcas"]["nome"] = {"P1": "B1", "P13": "CH2", "P20": "TC1", "P21": "TC2"}[p]
+    assert C.conferir(gravar(o)) == []
+    o["entidades"][-1]["atributos"]["marcas"]["nome"] = "TC1"               # a peça de TC2 com o nome da TC1
+    a = [x for x in C.conferir(gravar(o)) if x["conferencia"] == "nomes"]
+    assert any("TC1: 4 peças com esse nome no 3D × 3 no romaneio" in x["texto"] for x in a), a

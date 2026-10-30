@@ -13,6 +13,11 @@ eixos com letra (A, B, C…). Coordenadas: `g` ao longo do galpão, `p` atravess
 `segmentos` dá as linhas em 3D para as plantas desenharem (com as bolinhas e as cotas
 entre eixos em `nucleo2d.detalhe.conjuntos._desenhar_eixos`), e `de_dict` valida o que o
 usuário gravou no projeto (`projeto.json` → `eixos`).
+
+Malhas locais (`eixos.malhas`, Hora Certa · Galpão Existente, 30/10): a obra com frentes fora da malha principal
+(a ampliação girada, a sala de tintas a 30 m) ganha uma malha própria por frente — {nome, eixo_g, numeros, letras,
+descricao} —, e cada ponto é locado pela malha em que está (`malha_do_ponto`); sem ela a base ia "73481 do eixo 1
+para fora da malha".
 """
 import math
 import re
@@ -482,7 +487,31 @@ def vazio(d: Optional[dict]) -> dict:
 
 
 def de_dict(d: Optional[dict]) -> Optional[dict]:
-    """O que veio do projeto (ou do usuário), validado; None quando não serve."""
+    """O que veio do projeto (ou do usuário), validado; None quando não serve. As malhas locais (`malhas`) vêm junto,
+    cada uma validada como a principal e com o nível de base dela."""
+    saida = _uma_malha(d)
+    if saida is None:
+        return None
+    malhas = []
+    for k, m in enumerate(d.get("malhas") or [], 1):
+        mm = _uma_malha(dict(m, z_base=saida["z_base"])) if isinstance(m, dict) else None
+        if mm is None:
+            continue
+        mm["nome"] = str(m.get("nome") or "malha %d" % k).strip()[:60]
+        mm["descricao"] = str(m.get("descricao") or "").strip()[:200]
+        malhas.append(mm)
+    if malhas:
+        saida["malhas"] = malhas
+    return saida
+
+
+def malhas_de(eixos: dict) -> List[dict]:
+    """A malha principal (sem as locais) e cada malha local, na ordem gravada."""
+    principal = {k: v for k, v in eixos.items() if k != "malhas"}
+    return [principal] + list(eixos.get("malhas") or [])
+
+
+def _uma_malha(d: Optional[dict]) -> Optional[dict]:
     if not isinstance(d, dict):
         return None
     try:
@@ -538,7 +567,67 @@ def segmentos(eixos: dict, folga: float = FOLGA_EIXO) -> List[dict]:
         a = (g[0] * g0 + p[0] * e["pos"], g[1] * g0 + p[1] * e["pos"], z)
         b = (g[0] * g1 + p[0] * e["pos"], g[1] * g1 + p[1] * e["pos"], z)
         saida.append({"nome": e["nome"], "tipo": "letra", "a": a, "b": b})
+    for m in eixos.get("malhas") or []:
+        # as linhas das malhas locais levam o nome da malha: a locação usa só as da malha do ponto
+        saida.extend(dict(s, malha=m["nome"]) for s in segmentos(dict(m, z_base=z), folga))
     return saida
+
+
+def malha_do_ponto(ponto, segs: Sequence[dict]) -> List[dict]:
+    """As linhas da malha em que o ponto (x, y) está — a principal ou uma local —, com as inclinadas ("extra"). Cada
+    malha é o retângulo das pontas das suas linhas, nos eixos dela; o ponto fora de todas vai para a mais perto (e,
+    dentro de duas, para a de linha mais perto)."""
+    grupos: Dict[str, List[dict]] = {}
+    for s in segs:
+        if s.get("tipo") != "extra":
+            grupos.setdefault(s.get("malha") or "", []).append(s)
+    if len(grupos) <= 1:
+        return list(segs)
+
+    def chave(fam):
+        a, b = fam[0]["a"], fam[0]["b"]
+        L = math.hypot(b[0] - a[0], b[1] - a[1]) or 1.0
+        t = ((b[0] - a[0]) / L, (b[1] - a[1]) / L)
+        n = (-t[1], t[0])
+        us = [q[0] * t[0] + q[1] * t[1] for s in fam for q in (s["a"], s["b"])]
+        vs = [q[0] * n[0] + q[1] * n[1] for s in fam for q in (s["a"], s["b"])]
+        pu, pv = ponto[0] * t[0] + ponto[1] * t[1], ponto[0] * n[0] + ponto[1] * n[1]
+        fora = math.hypot(max(min(us) - pu, 0.0, pu - max(us)), max(min(vs) - pv, 0.0, pv - max(vs)))
+        linha = min(abs((ponto[0] - s["a"][0]) * (s["b"][1] - s["a"][1]) - (ponto[1] - s["a"][1]) * (s["b"][0] - s["a"][0]))
+                    / (math.hypot(s["b"][0] - s["a"][0], s["b"][1] - s["a"][1]) or 1.0) for s in fam)
+        return (round(fora, 1), linha)
+    escolhida = min(grupos, key=lambda k: chave(grupos[k]))
+    return grupos[escolhida] + [s for s in segs if s.get("tipo") == "extra"]
+
+
+def referencia_da_malha(malha: dict, principal: dict) -> str:
+    """Onde a malha local fica na principal, para a obra marcar: o cruzamento do 1º eixo numerado com o 1º de letra
+    (os nomes dela) até o eixo numerado e o de letra mais perto da principal, e o giro entre as duas."""
+    if not malha.get("numeros") or not malha.get("letras"):
+        return ""
+    g, p = malha["eixo_g"], malha["perp_g"]
+    n0 = min(malha["numeros"], key=lambda e: _ordem_do_nome(e["nome"]))
+    l0 = min(malha["letras"], key=lambda e: _ordem_do_nome(e["nome"]))
+    q = (g[0] * n0["pos"] + p[0] * l0["pos"], g[1] * n0["pos"] + p[1] * l0["pos"])
+    G, P = principal["eixo_g"], principal["perp_g"]
+    partes = []
+    for chave, d in (("numeros", G), ("letras", P)):
+        fam = principal.get(chave) or []
+        if not fam:
+            continue
+        v = q[0] * d[0] + q[1] * d[1]
+        e = min(fam, key=lambda x: abs(x["pos"] - v))
+        partes.append("%d do eixo %s" % (round(abs(v - e["pos"])), e["nome"]))
+    giro = math.degrees(math.atan2(G[0] * g[1] - G[1] * g[0], G[0] * g[0] + G[1] * g[1]))
+    # o giro mais perto de zero entre as duas direções (a malha pode correr na outra direção da principal)
+    while giro > 45.0:
+        giro -= 90.0
+    while giro <= -45.0:
+        giro += 90.0
+    texto = "cruzamento %s/%s a %s da malha principal" % (n0["nome"], l0["nome"], " e ".join(partes))
+    if abs(giro) >= 0.01:
+        texto += "; girada %s° em relação a ela" % ("%+.2f" % giro).replace(".", ",")
+    return texto
 
 
 def _ordem_do_nome(nome: str):
@@ -549,9 +638,9 @@ def _ordem_do_nome(nome: str):
 
 def fora_do_eixo(ponto, segs: Sequence[dict], perto: float = 600.0) -> List[Tuple[str, float]]:
     """o eixo mais perto do ponto em cada direção (nome, distância em mm), quando a menos de
-    `perto`. Serve para o pilar que a locação põe fora do eixo."""
+    `perto`. Serve para o pilar que a locação põe fora do eixo. Com malhas locais, só as da malha do ponto."""
     out = {}
-    for s in segs:
+    for s in malha_do_ponto(ponto, segs):
         a, b = s["a"], s["b"]
         dx, dy = b[0] - a[0], b[1] - a[1]
         L = math.hypot(dx, dy)
@@ -567,7 +656,8 @@ def fora_do_eixo(ponto, segs: Sequence[dict], perto: float = 600.0) -> List[Tupl
 def onde(ponto, segs: Sequence[dict], perto: float = 600.0) -> str:
     """Onde fica um ponto (x, y) na malha de eixos, como no projeto: "eixos 4 / C",
     "eixo 4 / entre B e C", "entre 3 e 4 / C". `segs` são as linhas de `segmentos` (e as
-    inclinadas, tipo "extra"); a menos de `perto` mm o ponto está no eixo."""
+    inclinadas, tipo "extra"); a menos de `perto` mm o ponto está no eixo. Com malhas locais, a do ponto."""
+    segs = malha_do_ponto(ponto, segs)
     partes = []
     for tipo in ("numero", "letra"):
         fam = [s for s in segs if s.get("tipo") == tipo]

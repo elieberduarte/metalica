@@ -4395,7 +4395,7 @@ def _plano_da_fatia(itens, w, ex: Optional[dict] = None, largura: float = 0.0, n
         if ex:
             from nucleo3d.eixos import segmentos
             linhas = sorted((_dot(s_["a"], w), s_["nome"]) for s_ in segmentos(ex)
-                            if abs(_dot(s_["a"], w) - _dot(s_["b"], w)) < 1.0)
+                            if abs(_dot(s_["a"], w) - _dot(s_["b"], w)) < 1.0 and not s_.get("malha"))
             if linhas:
                 c, nome = linhas[0]
                 return c - FOLGA_FATIA_EIXO, c + FOLGA_FATIA_EIXO, nome
@@ -4423,7 +4423,7 @@ def _plano_da_fatia(itens, w, ex: Optional[dict] = None, largura: float = 0.0, n
     if ex:
         from nucleo3d.eixos import segmentos
         perto = [(abs(_dot(s_["a"], w) - c), s_["nome"]) for s_ in segmentos(ex)
-                 if abs(_dot(s_["a"], w) - _dot(s_["b"], w)) < 1.0]
+                 if abs(_dot(s_["a"], w) - _dot(s_["b"], w)) < 1.0 and not s_.get("malha")]
         perto = [t for t in perto if t[0] <= (b - a) / 2.0 + FOLGA_FATIA]
         if perto:
             nome = min(perto)[1]
@@ -4504,6 +4504,8 @@ def _desenhar_eixos(p: "_Papel", eixos: dict, u, v, u0: float, v0: float, esc: f
             cx, cy = ponta[0] + sinal * d[0] * r, ponta[1] + sinal * d[1] * r
             p.circulo(cx, cy, r, camada="EIXO")
             p.texto(cx, cy - 0.35 * h, seg["nome"], h, "EIXO", alinhamento="centro")
+        if seg.get("malha"):
+            continue                                  # a malha local tem a planta de chumbação dela, com as cotas
         horizontal = abs(d[0]) >= abs(d[1])
         if seg["tipo"] == "numero":
             if horizontais_sao_numeros is None:
@@ -4621,9 +4623,67 @@ def _locacao_dos_chumbadores(p: "_Papel", ex: dict, chumb: Sequence[Solido], u, 
     return quadro
 
 
+def _regioes_da_chumbacao(ex: Optional[dict], chumb: Sequence[Solido], chapas: Sequence[Solido]) -> list:
+    """As plantas da chumbação: (eixos, chumbadores, chapas, título, referência) — uma só sem malhas locais; com elas,
+    uma por malha que tem peça, cada peça na malha em que o centro dela cai (`eixos.malha_do_ponto`)."""
+    if not ex or not ex.get("malhas"):
+        return [(ex, list(chumb), list(chapas), "PLANTA DE CHUMBAÇÃO", "")]
+    from nucleo3d import eixos as _eixos
+    malhas = _eixos.malhas_de(ex)
+    segs = _eixos.segmentos(ex)
+    por = {m.get("nome") or "": ([], []) for m in malhas}
+
+    def centro(e):
+        vs = e.vertices
+        return (sum(q[0] for q in vs) / len(vs), sum(q[1] for q in vs) / len(vs))
+
+    def malha_de(c):
+        sel = [s for s in _eixos.malha_do_ponto(c, segs) if s.get("tipo") != "extra"]
+        return (sel[0].get("malha") or "") if sel else ""
+    # a base inteira numa malha só, pelo centro do grupo (os chumbadores até 400 mm entre si, como a locação): no canto
+    # em que a ampliação encosta na marquise, os 14 CB3 do P5 se dividiam entre as duas plantas (30/10)
+    grupos: List[list] = []
+    for e in chumb:
+        c = centro(e)
+        for g in grupos:
+            if any(math.hypot(c[0] - o[0], c[1] - o[1]) <= 400.0 for o, _e in g):
+                g.append((c, e))
+                break
+        else:
+            grupos.append([(c, e)])
+    centros = []
+    for g in grupos:
+        cg = (sum(o[0] for o, _e in g) / len(g), sum(o[1] for o, _e in g) / len(g))
+        m = malha_de(cg)
+        centros.append((cg, m))
+        por[m][0].extend(e for _o, e in g)
+    for e in chapas:
+        # a chapa vai com a base em que está (o grupo de chumbadores mais perto, até 400 mm)
+        c = centro(e)
+        perto = min(centros, key=lambda x: math.hypot(c[0] - x[0][0], c[1] - x[0][1]), default=None)
+        if perto is not None and math.hypot(c[0] - perto[0][0], c[1] - perto[0][1]) <= 400.0:
+            por[perto[1]][1].append(e)
+        else:
+            por[malha_de(c)][1].append(e)
+    saida = []
+    for m in malhas:
+        nome = m.get("nome") or ""
+        cb, ch = por[nome]
+        if not cb and not ch:
+            continue
+        if not nome:
+            saida.append((m, cb, ch, "PLANTA DE CHUMBAÇÃO", ""))
+            continue
+        ref = _eixos.referencia_da_malha(m, malhas[0])
+        if m.get("descricao"):
+            ref = (ref + " — " if ref else "") + m["descricao"]
+        saida.append((m, cb, ch, "PLANTA DE CHUMBAÇÃO — %s" % nome.upper(), ref))
+    return saida
+
+
 def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao: Optional[dict],
                          titulo: str = "Detalhamento – chumbação", eixos: Optional[dict] = None,
-                         nomes: Optional[Dict[str, str]] = None) -> Desenho:
+                         nomes: Optional[Dict[str, str]] = None, niveis: Optional[Sequence[dict]] = None) -> Desenho:
     """Planta de chumbação: os chumbadores e as chapas de base vistos de cima, no lugar em
     que ficam, com a marca de cada um, os eixos com as bolinhas e as cotas entre eixos —
     o que a obra precisa para posicionar os chumbadores no concreto."""
@@ -4679,106 +4739,159 @@ def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao
     # a chapa de base é a que o chumbador atravessa; a chapa deitada logo acima (o suporte da agulha
     # no depósito químico, 29/09) não é — a regra da vizinhança fica para o modelo em que nenhuma cruza
     chapas = atravessadas or perto
-    itens = chumb + chapas
-    todos = [v for e in itens for v in e.vertices]
-    if ex:
-        # a planta abrange os eixos inteiros (com a folga das bolinhas)
-        from nucleo3d.eixos import segmentos
-        todos = todos + [q for s in segmentos(ex) for q in (s["a"], s["b"])]
-    minimo = [min(v[i] for v in todos) for i in range(3)]
-    maximo = [max(v[i] for v in todos) for i in range(3)]
-    ext = [maximo[i] - minimo[i] for i in range(3)]
-    comprido_em_y = ext[1] > ext[0]
-    if comprido_em_y:
-        u, v, w = (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0), (0.0, 0.0, -1.0)
-    else:
-        u, v, w = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, -1.0)
-    us = [_dot(q, u) for q in todos]
-    vs_ = [_dot(q, v) for q in todos]
-    u0, v0 = min(us), min(vs_)
-    larg_v, alt_v = max(us) - u0, max(vs_) - v0
-    esc = escala_normalizada(max(larg_v / 700.0, alt_v / 450.0, 1.0))
+    # uma planta por malha (as malhas locais, Hora Certa · Galpão Existente, 30/10): cada frente com os eixos dela e na
+    # escala da maior — a obra inteira numa planta só saía a 1:500 e a base locada "73481 do eixo 1 para fora da malha"
+    regioes = _regioes_da_chumbacao(ex, chumb, chapas)
+    from nucleo3d.eixos import segmentos
+    preparo = []
+    for ex_r, chumb_r, chapas_r, titulo_r, ref_r in regioes:
+        itens = chumb_r + chapas_r
+        todos = [v for e in itens for v in e.vertices]
+        if ex_r:
+            # a planta abrange os eixos inteiros (com a folga das bolinhas)
+            todos = todos + [q for s in segmentos(ex_r) for q in (s["a"], s["b"])]
+        minimo = [min(v[i] for v in todos) for i in range(3)]
+        maximo = [max(v[i] for v in todos) for i in range(3)]
+        if ref_r:
+            # a malha local na direção dela: as linhas em pé e deitadas, as cotas sem o erro do giro
+            g_ = (ex_r["eixo_g"][0], ex_r["eixo_g"][1], 0.0)
+            u, v = g_, (-g_[1], g_[0], 0.0)
+            if max(_dot(q, v) for q in todos) - min(_dot(q, v) for q in todos) > \
+                    max(_dot(q, u) for q in todos) - min(_dot(q, u) for q in todos):
+                u, v = v, (-g_[0], -g_[1], 0.0)
+        elif maximo[1] - minimo[1] > maximo[0] - minimo[0]:
+            u, v = (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0)
+        else:
+            u, v = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)
+        us = [_dot(q, u) for q in todos]
+        vs_ = [_dot(q, v) for q in todos]
+        u0, v0 = min(us), min(vs_)
+        preparo.append((ex_r, chumb_r, chapas_r, titulo_r, ref_r, itens, minimo, u, v, u0, v0,
+                        max(us) - u0, max(vs_) - v0))
+    w = (0.0, 0.0, -1.0)
+    esc = max(escala_normalizada(max(r[11] / 700.0, r[12] / 450.0, 1.0)) for r in preparo)
     d = Desenho(nome=titulo, escala=esc)
     h_txt = 2.5 * esc
     atr_base = {"detalhe": "chumbacao"}
-    p = _Papel(d, dict(atr_base, vista="PLANTA DE CHUMBAÇÃO"), 0.0, 0.0)
     _registrar_camadas_de_pecas(d)
-    rotulos = []
-    quadro_loc = []
-    for e in itens:
-        pts = [(_dot(q, u) - u0, _dot(q, v) - v0) for q in e.vertices]
-        casco = _casco(pts)
-        if len(casco) < 3:
-            continue
-        m = _marcas(e)
-        atr = dict(atr_base, vista="PLANTA DE CHUMBAÇÃO", origem=e.id, nome=e.nome or "")
-        if m.get("posicao"):
-            atr["posicao"] = str(m["posicao"])
-        if m.get("conjunto"):
-            atr["conjunto"] = str(m["conjunto"])
-        pp = _Papel(d, atr, 0.0, 0.0)
-        eh_chumb = e.id in ids_ch
-        pp.polilinha(casco, fechada=True, camada="TIRANTES" if (eh_chumb and not so_chapas) else "CHAPAS-VISTA")
-        # os furos da chapa de base paramétrica são onde os chumbadores passam: é o que a
-        # obra marca no concreto (a chapa do IFC traz o chumbador como peça própria)
-        par = getattr(e, "parametrica", None)
-        if par is not None and getattr(par, "furos", None) and hasattr(par, "eixo_x"):
-            for f in par.furos:
-                P = tuple(par.origem[i] + par.eixo_x[i] * float(f.get("x", 0.0)) + par.eixo_y[i] * float(f.get("y", 0.0))
-                          for i in range(3))
-                pp.circulo(_dot(P, u) - u0, _dot(P, v) - v0, float(f.get("diametro", 20.0)) / 2.0, camada="FURO")
-        p.pontos.extend(pp.pontos)
-        if eh_chumb:
-            marca = str(m.get("posicao") or e.nome or "")
-            # o nome começa na borda direita da peça (do centro, encostava na chapa estreita)
-            cx = max(q[0] for q in pts)
-            cy = sum(q[1] for q in pts) / len(pts)
-            rotulos.append(((nomes or {}).get(marca) or marca, cx, cy))
-    postos: List[Tuple[str, float, float]] = []
-    for rotulo, cx, cy in sorted(rotulos, key=lambda r: (r[2], r[1])):
-        if any(t == rotulo and math.hypot(cx - x_, cy - y_) < 8.0 * h_txt for t, x_, y_ in postos):
-            continue
-        postos.append((rotulo, cx, cy))
-        p.texto(cx + 1.5 * esc, cy + 3.0 * esc, rotulo, h_txt, "TEXTO")
-    if ex:
-        _desenhar_eixos(p, ex, u, v, u0, v0, esc, larg_v, alt_v)
-        if not so_chapas:
-            quadro_loc = _locacao_dos_chumbadores(p, ex, chumb, u, v, u0, v0, nomes, chapas=chapas, esc=esc)
-    if not ex:
-        # sem eixos, as totais das peças; com eixos, a cadeia entre eixos já fecha com a total dela — a total das
-        # peças ia até a ponta das linhas de eixo (37828 no depósito, no vazio) e, medindo as peças, ficava fora
-        # da caixa na prancha reduzida (análise das pranchas, 29/09)
-        p.cota_h(0, larg_v, 0, -10.0)
-        p.cota_v(0, alt_v, larg_v, 10.0)
-    # o título e a linha de baixo são o cabeçalho da caixa (na prancha vão para o canto de cima, fora das bolinhas
-    # dos eixos, onde encostavam); a escala fica só no "ESC." da caixa — a do desenho de origem (1:75) não é a da
-    # prancha reduzida (1:125)
-    n_chumb, n_chapas = (0, len(chumb) + len(chapas)) if so_chapas else (len(chumb), len(chapas))
-    atr_t = p.atr
-    p.atr = dict(atr_t, cabecalho=0)
-    p.texto(0, -(10.0 + 8.0) * esc, "PLANTA DE CHUMBAÇÃO", 3.5 * esc)
-    p.atr = dict(atr_t, cabecalho=1)
-    p.texto(0, -(10.0 + 8.0 + 4.5) * esc, "%d chumbador(es) e %d chapa(s) de base, vistos de cima, nos eixos da obra"
-            % (n_chumb, n_chapas)
-            + (" (sem chumbador no modelo: os furos das chapas marcam onde eles passam)" if so_chapas else ""), 2.0 * esc)
-    if quadro_loc:
-        # o quadro de locação embaixo do título (R11): uma linha por grupo, a distância a cada eixo e para que lado
+    x0 = 0.0
+    for ex_r, chumb_r, chapas_r, titulo_r, ref_r, itens, minimo, u, v, u0, v0, larg_v, alt_v in preparo:
+        p = _Papel(d, dict(atr_base, vista=titulo_r), x0, 0.0)
+        rotulos = []
+        quadro_loc = []
+        for e in itens:
+            pts = [(_dot(q, u) - u0, _dot(q, v) - v0) for q in e.vertices]
+            casco = _casco(pts)
+            if len(casco) < 3:
+                continue
+            m = _marcas(e)
+            atr = dict(atr_base, vista=titulo_r, origem=e.id, nome=e.nome or "")
+            if m.get("posicao"):
+                atr["posicao"] = str(m["posicao"])
+            if m.get("conjunto"):
+                atr["conjunto"] = str(m["conjunto"])
+            pp = _Papel(d, atr, x0, 0.0)
+            eh_chumb = e.id in ids_ch
+            pp.polilinha(casco, fechada=True, camada="TIRANTES" if (eh_chumb and not so_chapas) else "CHAPAS-VISTA")
+            # os furos da chapa de base paramétrica são onde os chumbadores passam: é o que a
+            # obra marca no concreto (a chapa do IFC traz o chumbador como peça própria)
+            par = getattr(e, "parametrica", None)
+            if par is not None and getattr(par, "furos", None) and hasattr(par, "eixo_x"):
+                for f in par.furos:
+                    P = tuple(par.origem[i] + par.eixo_x[i] * float(f.get("x", 0.0)) + par.eixo_y[i] * float(f.get("y", 0.0))
+                              for i in range(3))
+                    pp.circulo(_dot(P, u) - u0, _dot(P, v) - v0, float(f.get("diametro", 20.0)) / 2.0, camada="FURO")
+            p.pontos.extend(pp.pontos)
+            if eh_chumb:
+                marca = str(m.get("posicao") or e.nome or "")
+                # o nome começa na borda direita da peça (do centro, encostava na chapa estreita)
+                cx = max(q[0] for q in pts)
+                cy = sum(q[1] for q in pts) / len(pts)
+                rotulos.append(((nomes or {}).get(marca) or marca, cx, cy))
+        postos: List[Tuple[str, float, float]] = []
+        for rotulo, cx, cy in sorted(rotulos, key=lambda r: (r[2], r[1])):
+            if any(t == rotulo and math.hypot(cx - x_, cy - y_) < 8.0 * h_txt for t, x_, y_ in postos):
+                continue
+            postos.append((rotulo, cx, cy))
+            p.texto(cx + 1.5 * esc, cy + 3.0 * esc, rotulo, h_txt, "TEXTO")
+        if ex_r:
+            _desenhar_eixos(p, ex_r, u, v, u0, v0, esc, larg_v, alt_v)
+            if not so_chapas:
+                quadro_loc = _locacao_dos_chumbadores(p, ex_r, chumb_r, u, v, u0, v0, nomes, chapas=chapas_r, esc=esc)
+        if not ex_r:
+            # sem eixos, as totais das peças; com eixos, a cadeia entre eixos já fecha com a total dela — a total das
+            # peças ia até a ponta das linhas de eixo (37828 no depósito, no vazio) e, medindo as peças, ficava fora
+            # da caixa na prancha reduzida (análise das pranchas, 29/09)
+            p.cota_h(0, larg_v, 0, -10.0)
+            p.cota_v(0, alt_v, larg_v, 10.0)
+        # o título e a linha de baixo são o cabeçalho da caixa (na prancha vão para o canto de cima, fora das bolinhas
+        # dos eixos, onde encostavam); a escala fica só no "ESC." da caixa — a do desenho de origem (1:75) não é a da
+        # prancha reduzida (1:125)
+        n_chumb, n_chapas = (0, len(chumb_r) + len(chapas_r)) if so_chapas else (len(chumb_r), len(chapas_r))
+        atr_t = p.atr
+        p.atr = dict(atr_t, cabecalho=0)
+        p.texto(0, -(10.0 + 8.0) * esc, titulo_r, 3.5 * esc)
+        p.atr = dict(atr_t, cabecalho=1)
+        p.texto(0, -(10.0 + 8.0 + 4.5) * esc, "%d chumbador(es) e %d chapa(s) de base, vistos de cima, nos eixos da obra"
+                % (n_chumb, n_chapas)
+                + (" (sem chumbador no modelo: os furos das chapas marcam onde eles passam)" if so_chapas else ""), 2.0 * esc)
         y_q = -(10.0 + 8.0 + 4.5 + 7.0) * esc
-        p.atr = dict(atr_t, quadro_locacao=True)
-        p.texto(0, y_q, "LOCAÇÃO DOS CHUMBADORES — centro do grupo até os eixos (mm); topo da chapa de base (m)", 2.5 * esc)
-        for k, (rot_, cruz_, t_l, t_n, topo_) in enumerate(quadro_loc, 1):
-            p.texto(0, y_q - 4.0 * k * esc, "%s em %s: %s; %s; topo %s" % (rot_, cruz_, t_l, t_n, topo_), 2.0 * esc)
-    p.atr = atr_t
-    ext_c = p.extremos
-    d.metadados.setdefault("celulas", []).append([round(t, 1) for t in ext_c])
-    d.vistas.append({"origem": [minimo[0], minimo[1], minimo[2]], "normal": list(w), "acima": list(v),
-                     "profundidade": None, "cortar": False, "entidades": None, "rotular": True,
-                     "nome": "PLANTA DE CHUMBAÇÃO", "tipo": "topo", "pecas_cortadas": 0, "pecas_projetadas": len(itens),
-                     "largura": round(larg_v, 1), "altura": round(alt_v, 1), "canto": [0.0, 0.0], "avisos": [],
-                     "ref2d": [round(u0 - _dot(minimo, u), 2), round(v0 - _dot(minimo, v), 2)]})
+        if ref_r:
+            # onde a malha local fica na principal: o que a obra marca primeiro
+            p.atr = dict(atr_t, referencia_malha=True)
+            p.texto(0, y_q, "MALHA LOCAL — " + ref_r, 2.5 * esc)
+            y_q -= 5.0 * esc
+        if quadro_loc:
+            # o quadro de locação embaixo do título (R11): uma linha por grupo, a distância a cada eixo e para que lado
+            p.atr = dict(atr_t, quadro_locacao=True)
+            ref_n = referencia_dos_niveis(niveis)
+            p.texto(0, y_q, "LOCAÇÃO DOS CHUMBADORES — centro do grupo até os eixos (mm); topo da chapa de base (m%s)"
+                    % (", " + ref_n if ref_n else ""), 2.5 * esc)
+            for k, (rot_, cruz_, t_l, t_n, topo_) in enumerate(quadro_loc, 1):
+                p.texto(0, y_q - 4.0 * k * esc, "%s em %s: %s; %s; topo %s" % (rot_, cruz_, t_l, t_n, topo_), 2.0 * esc)
+        p.atr = atr_t
+        ext_c = p.extremos
+        d.metadados.setdefault("celulas", []).append([round(t, 1) for t in ext_c])
+        d.vistas.append({"origem": [minimo[0], minimo[1], minimo[2]], "normal": list(w), "acima": list(v),
+                         "profundidade": None, "cortar": False, "entidades": None, "rotular": True,
+                         "nome": titulo_r, "tipo": "topo", "pecas_cortadas": 0, "pecas_projetadas": len(itens),
+                         "largura": round(larg_v, 1), "altura": round(alt_v, 1), "canto": [x0, 0.0], "avisos": [],
+                         "ref2d": [round(u0 - _dot(minimo, u), 2), round(v0 - _dot(minimo, v), 2)]})
+        x0 = ext_c[2] + 30.0 * esc
     d.metadados["detalhamento"] = {"grupo": "chumbacao", "posicoes": [], "itens": {}}
     d.metadados["eixos"] = ex
     return d
+
+
+def referencia_dos_niveis(niveis: Optional[Sequence[dict]]) -> str:
+    """"±0,000 = Piso acabado +906,40": o nível do projeto em z = 0, a que as cotas de nível das folhas se referem (montador
+    M14, Hora Certa · Galpão Existente, 29/10: "topo −1,389 de quê?"). Vazio sem os níveis do projeto."""
+    zero = [n for n in niveis or () if isinstance(n, dict) and abs(float(n.get("z") or 0.0)) < 1.0 and n.get("nome")]
+    return ("±0,000 = %s" % zero[0]["nome"]) if zero else ""
+
+
+def _nivel_m(z: float) -> str:
+    return ("±0,000" if abs(z) < 0.5 else "%+.3f" % (z / 1000.0)).replace(".", ",")
+
+
+def _desenhar_niveis(p: "_Papel", niveis: Sequence[dict], v0: float, alt_v: float, esc: float) -> int:
+    """As marcas de nível na elevação (v = z): à esquerda da vista, um traço com o triângulo e "nome (+3,290)", para
+    cada nível do projeto na altura das peças (até 0,5 m fora). Devolve quantas."""
+    n = 0
+    for nv in sorted((x for x in niveis or () if isinstance(x, dict) and x.get("nome")), key=lambda x: float(x.get("z") or 0)):
+        z = float(nv.get("z") or 0.0)
+        y = z - v0
+        if y < -500.0 or y > alt_v + 500.0:
+            continue
+        x1, x0 = -3.0 * esc, -40.0 * esc
+        p.linha(x0, y, x1, y, camada="EIXO")
+        t = 1.5 * esc
+        p.polilinha([(x1 - 4.0 * esc - t, y + 2 * t), (x1 - 4.0 * esc + t, y + 2 * t), (x1 - 4.0 * esc, y)], fechada=True,
+                    camada="TEXTO")
+        p.texto(x1 - 7.0 * esc, y + 0.6 * esc, "%s (%s)" % (nv["nome"], _nivel_m(z)), 2.0 * esc, "TEXTO",
+                alinhamento="direita", atributos={"nivel": round(z, 1)})
+        n += 1
+    return n
 
 
 def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str = "Detalhamento – localização",
@@ -4787,7 +4900,7 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
                            nomes_producao: Optional[dict] = None,
                            vistas_pedidas: Sequence[str] = ("topo", "frente", "lateral"),
                            titulo_planta: str = "", deitar_em_y: Optional[bool] = None,
-                           rotular_de_topo: bool = False) -> Desenho:
+                           rotular_de_topo: bool = False, niveis: Optional[Sequence[dict]] = None) -> Desenho:
     """Planta e duas elevações esquemáticas do modelo inteiro (cada peça é o contorno
     convexo da sua projeção, em linha fina) com a marca de cada conjunto e de cada peça
     solta escrita no lugar em que está montada: é a planta de montagem que diz onde vai
@@ -4947,6 +5060,8 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
                 d.metadados["eixos"] = ex
         p.cota_h(0, larg_v, 0, -10.0)
         p.cota_v(0, alt_v, larg_v, 10.0)
+        if tipo != "topo" and niveis:
+            _desenhar_niveis(p, niveis, v0, alt_v, esc)        # os níveis do projeto nas elevações (montador M14, 29/10)
         # o título vai abaixo de tudo o que já foi desenhado: as linhas de eixo passam 1,5 m
         # além das peças, com a bolinha na ponta, e a bolinha do primeiro eixo caía no título
         y_tit = min(-(10.0 + 8.0) * esc, p.extremos[1] - p.dy - 6.0 * esc)      # extremos: absolutos; texto: da vista

@@ -770,19 +770,19 @@ def converter_chapas_planas(doc: Documento, posicoes: Sequence[Posicao], pecas: 
 
 def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_tercas: bool = True,
              rotular: bool = True, avisar=None, converter: bool = True, ajustes: Optional[dict] = None,
-             nomes: Optional[dict] = None, eixos: Optional[dict] = None) -> dict:
+             nomes: Optional[dict] = None, eixos: Optional[dict] = None, niveis: Optional[list] = None) -> dict:
     """Gera os desenhos de detalhamento do modelo. Devolve
     {"desenhos": {chave: Desenho}, "posicoes": [...], "conjuntos": [...], "acessorios": {},
      "regra_tercas": {marca: texto}, "avisos": [...]}. `eixos`: os eixos gravados no projeto
-    (senão as plantas os identificam do modelo)."""
+    (senão as plantas os identificam do modelo); `niveis`: os do projeto, escritos nas elevações e na chumbação."""
     _gravadas().clear()
     try:
-        return _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, nomes, eixos)
+        return _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, nomes, eixos, niveis)
     finally:
         _gravadas().clear()
 
 
-def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, nomes, eixos=None):
+def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, nomes, eixos=None, niveis=None):
     avisar = avisar or (lambda *a: None)
     pedidos = list(grupos or GRUPOS.keys())
     # os grupos por classe (chapas, barras, tirantes, telhas, conjuntos em 1:50) são a base de
@@ -810,12 +810,16 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
     ids_variante: Dict[str, List[str]] = collections.defaultdict(list)
     for e in pecas:
         m_ = str(_marcas(e).get("posicao") or "")
-        if re.search(r" \([b-z]\)$", m_):
+        if re.search(r" \([a-z]+\)$", m_):            # b… z, aa… (letra_da_variante)
             ids_variante[m_].append(e.id)
     for p_ in posicoes:
         ids_p = [i for mk in marcas_de(p_) for i in ids_variante.get(mk, [])]
         if ids_p:
             p_.ids3d = ids_p
+    # e o nome de produção no 3D vai pela variante: com a marca do modelo, as 28 CH35 "P842 (b)" se chamavam PL13.3
+    # (Hora Certa · Galpão Existente, auditor N12, 29/10)
+    variantes_3d = {e.id: [str(_marcas(e).get("posicao") or ""), str(_marcas(e).get("conjunto") or "")]
+                    for e in pecas if re.search(r" \([a-z]+\)$", str(_marcas(e).get("posicao") or ""))}
     desenhos: Dict[str, Desenho] = collections.OrderedDict()
     base: Dict[str, Desenho] = {}             # os desenhos por classe (GRUPOS_BASE)
     avisos: List[str] = list(lev.get("avisos") or [])
@@ -1419,7 +1423,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             localizacao = desenho_de_localizacao(doc, pecas, GRUPOS["localizacao"]["titulo"],
                                                  ignorar=[p.marca for p in posicoes if p.classe == "telha"],
                                                  nomes=nomeacao["ifc"], camadas_pecas=camadas_ifc,
-                                                 eixos=eixos, nomes_producao=nomeacao)
+                                                 eixos=eixos, nomes_producao=nomeacao, niveis=niveis)
         except ErroDeDados as e:
             avisos.append("planta de localização não gerada: %s" % e)
     elevacoes = None
@@ -1442,7 +1446,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                                                         nomes=nomeacao["ifc"])
             else:
                 chumbacao = desenho_de_chumbacao(doc, pecas, nomeacao, GRUPOS["chumbacao"]["titulo"], eixos=eixos,
-                                                 nomes=nomeacao["ifc"])
+                                                 nomes=nomeacao["ifc"], niveis=niveis)
         except ErroDeDados as e:
             avisos.append("planta de chumbação não gerada: %s" % e)
 
@@ -1558,5 +1562,5 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             "peso_total": round(sum(p.peso_total for p in posicoes), 1),
             "objetos_posicoes": posicoes, "objetos_pecas": pecas, "camadas": camadas,
             "objetos_fixadores": _fixadores(doc),         # a lista separa a solda da ligação aparafusada (D3, 11/10)
-            "convertidas": convertidas, "nomes": nomeacao,
+            "convertidas": convertidas, "nomes": dict(nomeacao, variantes=variantes_3d),
             "fora_do_aco": lev.get("fora_do_aco") or [], "estrutura_a_conferir": lev.get("estrutura_a_conferir") or []}
