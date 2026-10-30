@@ -5,8 +5,11 @@ chapa toda furadinha, e a que foi renderizada no projeto é uma chapa sólida, p
 
 Uma chapa expandida 12x25 (azul) na frente de um bloco vermelho e, ao lado, uma chapa comum na frente de outro:
   1. a ficha da expandida leva a malha (vz = LD 25, CD 12, cordão 1,5, pelo "12x25" do nome); a comum não;
-  2. vista de frente, o vermelho aparece através da expandida e não através da comum;
-  3. de perto (o losango com dezenas de pixels), aparecem os dois: o cordão azul e o vermelho pelos furos;
+  2. vista de frente (o losango com 2–3 pixels), o vermelho aparece através da expandida, esmaecido e por igual — sem
+     pixels soltos (30/10, usuário: o furo sim/não de pixel em pixel "ficou parecendo um monte de pixels") — e não através
+     da comum;
+  3. a meia distância (o losango com ~8 pixels), a malha sem pixels soltos; de perto (dezenas de pixels), o cordão azul e
+     o vermelho pelos furos;
   4. o clique num furo da expandida escolhe a chapa (a escolha não tem furo);
   5. o vidro continua translúcido e por trás das vazadas (a faixa do alfa de cada um).
 Porta livre, nunca a 8765/8766."""
@@ -39,7 +42,8 @@ ents = [_chapa("exp0", "Chapa expandida 12x25", 0.0), _chapa("che0", "Chapa #2",
         _bloco("bl0", 500, 600, 500, 2000, 300, 2000, "Aço", "Fachadas — Brises"),
         _bloco("bl1", 4500, 600, 500, 2000, 300, 2000, "Aço", "Fachadas — Brises"),
         _bloco("vid0", 8000, 0, 0, 2000, 20, 3000, "Vidro", "ARQ — Esquadrias"),
-        _bloco("bl2", 8500, 600, 500, 1000, 300, 2000, "Aço", "Fachadas — Brises")]
+        _bloco("bl2", 8500, 600, 500, 1000, 300, 2000, "Aço", "Fachadas — Brises"),
+        _bloco("bl3", 11000, 600, 500, 1000, 300, 2000, "Aço", "Fachadas — Brises")]      # o vermelho puro, descoberto
 camadas = {n: {"nome": n, "cor": "#888888", "visivel": True} for n in ("Fachadas — Brises", "ARQ — Esquadrias")}
 mats = {"Aço": {"nome": "Aço", "cor": "#d02020"}, "Aço galv.": {"nome": "Aço galv.", "cor": "#2050f0"},
         "Vidro": {"nome": "Vidro", "cor": "#9fc6e8", "opacidade": 0.35}}
@@ -92,6 +96,37 @@ def fracoes(aba, img, a, b, n=25):
     return sum(map(verm, px)) / len(px), sum(map(azul, px)) / len(px)
 
 
+def regiao(aba, img, a, b):
+    """os pixels (r, g, b) do retângulo entre os pontos a e b do projeto, na tela"""
+    xa, ya = aba.avaliar(NA_TELA % tuple(a))
+    xb, yb = aba.avaliar(NA_TELA % tuple(b))
+    x0, x1, y0, y1 = int(min(xa, xb)), int(max(xa, xb)), int(min(ya, yb)), int(max(ya, yb))
+    return [[img.getpixel((x, y))[:3] for x in range(x0, x1)] for y in range(y0, y1)]
+
+
+def soltos(px):
+    """a fração de pixels que destoam dos 4 vizinhos (> 60 no vermelho, para o mesmo lado): o pontilhado"""
+    n = s = 0
+    for y in range(1, len(px) - 1):
+        for x in range(1, len(px[0]) - 1):
+            r = px[y][x][0]
+            d = [r - px[y + dy][x + dx][0] for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))]
+            n += 1
+            s += all(v > 60 for v in d) or all(v < -60 for v in d)
+    return s / max(n, 1)
+
+
+def media(px):
+    v = [c for linha in px for c in linha]
+    return tuple(sum(c[i] for c in v) / len(v) for i in range(3))
+
+
+def camera(aba, x, y, z, dist):
+    aba.avaliar("(() => { const o = visor.cabecalho.origem; visor.controles.target.set(%s - o[0], %s - o[1], %s - o[2]);"
+                " visor.camera.position.set(%s - o[0], %s - o[1], %s - o[2]); visor.controles.update(); visor.pedirQuadro();"
+                " return 1; })()" % (x, y, z, x, y - dist, z))
+
+
 exe = next(c for c in CHROMES if os.path.exists(c)); cdp = _porta_livre(); perfil = tempfile.mkdtemp(prefix="verif_ver3d_exp_")
 nav = subprocess.Popen([exe, "--headless=new", "--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars", "--no-first-run",
                         "--remote-allow-origins=*", f"--user-data-dir={perfil}", f"--remote-debugging-port={cdp}", "about:blank"],
@@ -120,19 +155,27 @@ try:
     aba.avaliar("visor.enquadrar('frente'); 1")
     img = foto(aba)
     img.save(os.path.join(os.path.dirname(__file__), "ver3d_expandida.png"))
-    ve, _ = fracoes(aba, img, (800, 0, 2200), (2200, 0, 800))
-    vc, _ = fracoes(aba, img, (4800, 0, 2200), (6200, 0, 800))
-    ok(0.35 <= ve <= 0.97, f"de frente, o bloco vermelho aparece pela expandida ({ve:.0%} vermelho)")
-    ok(vc < 0.05, f"e não pela chapa comum ({vc:.0%} vermelho)")
+    vermelho = lambda c: c[0] - (c[1] + c[2]) / 2
+    pe = regiao(aba, img, (800, 0, 2200), (2200, 0, 800))
+    me, mc, mp = media(pe), media(regiao(aba, img, (4800, 0, 2200), (6200, 0, 800))), media(regiao(aba, img, (11200, 600, 2200), (11800, 600, 800)))
+    ok(vermelho(me) > vermelho(mc) + 40 and vermelho(me) < vermelho(mp) - 15,
+       f"de frente, o bloco vermelho aparece pela expandida, esmaecido (expandida {tuple(map(round, me))}, comum {tuple(map(round, mc))}, puro {tuple(map(round, mp))})")
+    ok(vermelho(mc) < 0, f"e não pela chapa comum ({tuple(map(round, mc))})")
+    sf = soltos(pe)
+    ok(sf < 0.01, f"de frente, a expandida por igual, sem pixels soltos ({sf:.1%})")
     px = lambda p: img.getpixel(tuple(int(t) for t in aba.avaliar(NA_TELA % p)))[:3]
     sobre, so = px((9000, 0, 1500)), px((8200, 0, 2800))      # o vidro sobre o bloco e sobre o fundo
     vermelho = lambda c: c[0] - (c[1] + c[2]) / 2
     ok(vermelho(sobre) > vermelho(so) + 20 and not verm(sobre),
        f"o vidro continua translúcido: o vermelho por trás dele, esmaecido ({sobre} × {so} sobre o fundo)")
 
-    # 3. de perto: a 400 mm da chapa, o losango de 25 mm com dezenas de pixels
-    aba.avaliar("(() => { const o = visor.cabecalho.origem; visor.controles.target.set(1500 - o[0], 0 - o[1], 1500 - o[2]);"
-                " visor.camera.position.set(1500 - o[0], -400 - o[1], 1500 - o[2]); visor.controles.update(); visor.pedirQuadro(); return 1; })()")
+    # 3. a meia distância (2,5 m: o losango com ~8 pixels) e de perto (400 mm: dezenas de pixels)
+    camera(aba, 1500, 0, 1500, 2500)
+    img = foto(aba)
+    img.save(os.path.join(os.path.dirname(__file__), "ver3d_expandida_meio.png"))
+    sm = soltos(regiao(aba, img, (1000, 0, 2000), (2000, 0, 1000)))
+    ok(sm < 0.01, f"a meia distância, a malha sem pixels soltos ({sm:.1%})")
+    camera(aba, 1500, 0, 1500, 400)
     img = foto(aba)
     img.save(os.path.join(os.path.dirname(__file__), "ver3d_expandida_perto.png"))
     ve, ae = fracoes(aba, img, (1440, 0, 1540), (1560, 0, 1460))

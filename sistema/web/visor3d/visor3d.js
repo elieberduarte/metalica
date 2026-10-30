@@ -132,7 +132,7 @@ void main() {
   gl_Position = projectionMatrix * vista;
   // o alfa da célula: 0 = peça escondida, 1 = opaca, entre os dois = translúcida (o vidro), com a opacidade dela
   vAlfa = c.a;
-  bool vidro = c.a < 0.975;                                // 250–253: a chapa vazada, opaca
+  bool vidro = c.a < 0.995;                                // com a chapa vazada (250–253): as duas na passada transparente
 #if defined(SOMBRA)
   if (vidro) c.a = 0.0;                                    // o vidro não faz sombra
 #elif !defined(ESCOLHA) && !defined(PONTO)
@@ -157,33 +157,35 @@ uniform float uApresenta;
 uniform vec3 uSol;
 uniform vec3 uMalhas[${MALHAS_VAZADAS}];
 ${SOMBRA_GLSL}
-// a chapa expandida: true no furo. A posição no plano da chapa (mm): na chapa em pé, a horizontal dela e a altura (a LD
-// deitada, como no brise); na deitada, x e y. Os losangos são |X| + |Y| ≤ 1 em X = 2u/LD, Y = 2v/CD, centrados de 2 em 2
-// e no meio deles; o cordão são as linhas X ± Y ímpares. Quando o losango fica com poucos pixels, uma trama na mesma
-// proporção de aço (sem o moiré)
-bool furoDaExpandida(vec3 m) {
+// a chapa expandida: o alfa dela no ponto, ou −1 quando não é. A posição no plano da chapa (mm): na chapa em pé, a
+// horizontal dela e a altura (a LD deitada, como no brise); na deitada, x e y. Os losangos são |X| + |Y| ≤ 1 em X = 2u/LD,
+// Y = 2v/CD, centrados de 2 em 2 e no meio deles; o cordão são as linhas X ± Y ímpares. O cordão é filtrado pelo tamanho do
+// pixel (a fração do pixel que ele cobre), em vez de "dentro ou fora": a malha sai contínua a meia distância e, quando o
+// losango fica com 2–3 pixels, vira a tela uniforme na proporção de aço — mais fechada vista de lado, como a de verdade
+// (30/10, usuário: o furo sim/não "ficou parecendo um monte de pixels")
+float cordao(float x, float f, float w) {
+  float e = 0.5 - abs(fract(x) - 0.5);                         // a distância até a linha mais perto
+  f = max(f, 1e-5);
+  return clamp((min(e + 0.5 * f, 0.5 * w) - max(e - 0.5 * f, -0.5 * w)) / f, 0.0, 1.0);
+}
+float alfaDaExpandida() {
+  float k = floor(vAlfa * 255.0 + 0.5);
+  if (k < ${ALFA_VAZADA}.0 || k > ${ALFA_VAZADA + MALHAS_VAZADAS - 1}.0) return -1.0;
+  int i = int(${ALFA_VAZADA + MALHAS_VAZADAS - 1}.0 - k);
+  vec3 m = i == 0 ? uMalhas[0] : i == 1 ? uMalhas[1] : i == 2 ? uMalhas[2] : uMalhas[3];
   vec3 n = normalize(cross(dFdx(vMundo), dFdy(vMundo)));
   vec2 q = abs(n.z) < 0.7 ? vec2(dot(vMundo.xy, normalize(vec2(-n.y, n.x))), vMundo.z) : vMundo.xy;
   vec2 g = vec2(2.0 / m.x, 2.0 / m.y);
   float a = (q.x * g.x + q.y * g.y + 1.0) * 0.5, b = (q.x * g.x - q.y * g.y + 1.0) * 0.5;
   float w = clamp(m.z * length(g) * 0.5, 0.0, 1.0);           // o cordão, na unidade de a e b
-  if (max(fwidth(a), fwidth(b)) > 0.3) {
-    float cobre = 1.0 - (1.0 - w) * (1.0 - w);
-    return fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) > cobre;
-  }
-  float da = 0.5 - abs(fract(a) - 0.5), db = 0.5 - abs(fract(b) - 0.5);   // a distância até a linha
-  return da > w * 0.5 && db > w * 0.5;
-}
-bool vazada() {
-  float k = floor(vAlfa * 255.0 + 0.5);
-  if (k < ${ALFA_VAZADA}.0 || k > ${ALFA_VAZADA + MALHAS_VAZADAS - 1}.0) return false;
-  int i = int(${ALFA_VAZADA + MALHAS_VAZADAS - 1}.0 - k);
-  vec3 m = i == 0 ? uMalhas[0] : i == 1 ? uMalhas[1] : i == 2 ? uMalhas[2] : uMalhas[3];
-  return furoDaExpandida(m);
+  float fa = fwidth(a), fb = fwidth(b);
+  float perto = 1.0 - (1.0 - cordao(a, fa, w)) * (1.0 - cordao(b, fb, w));
+  float c = abs(dot(n, normalize(cameraPosition - vMundo)));   // 1 de frente, 0 rasante
+  float longe = 1.0 - (1.0 - w) * (1.0 - w) * (0.25 + 0.75 * c);
+  return mix(perto, longe, smoothstep(0.3, 0.55, max(fa, fb)));
 }
 void main() {
 #if defined(SOMBRA)
-  if (vazada()) discard;
   gl_FragColor = vec4(1.0);
 #elif defined(PONTO)
   gl_FragColor = vec4(vMundo, 1.0);
@@ -200,8 +202,12 @@ void main() {
     vec3 ca = uEscuro > 0.5 ? mix(vCor, vec3(0.94, 0.96, 1.0), 0.55) : vCor * 0.62;   // claro: a paleta mais clara (06/10)
     gl_FragColor = vec4(ca, uEscuro > 0.5 ? a + 0.15 : a); return;
   }
-  if (vazada()) discard;
-  float alfa = vAlfa < 0.975 ? vAlfa : 1.0;                 // a vazada sai opaca (no cordão)
+  float alfa = vAlfa;
+  float ex = alfaDaExpandida();
+  if (ex >= 0.0) {                                          // a vazada: o alfa da malha naquele pixel
+    if (ex < 0.01) discard;
+    alfa = ex;
+  }
   // no escuro a peça sobe um pouco para o claro (o azul-marinho das vigas sumia no fundo)
   vec3 base = uEscuro > 0.5 ? mix(vCor, vec3(1.0), 0.18) : vCor;
   if (uApresenta > 0.5) {
@@ -513,12 +519,12 @@ export class Visor3D {
       if (op < 0.99) { alfa[i] = Math.max(1, Math.min(ALFA_VAZADA - 3, Math.round(op * 255))); algum = true; }
     }
     this.alfa = algum || vazadas ? alfa : null;
-    if (!algum) return;
+    if (!algum && !vazadas) return;
     for (const m of this.malhas) {
       if (m.vidro) continue;
       let tem = false;
-      if (m.ids) { for (const id of m.ids) if (alfa[id] < ALFA_VAZADA) { tem = true; break; } }
-      else { for (let i = m.id0; i < m.id0 + m.n; i++) if (alfa[i] < ALFA_VAZADA) { tem = true; break; } }
+      if (m.ids) { for (const id of m.ids) if (alfa[id] < 255) { tem = true; break; } }
+      else { for (let i = m.id0; i < m.id0 + m.n; i++) if (alfa[i] < 255) { tem = true; break; } }
       if (!tem) continue;
       const mat = m.malha.material.clone();
       mat.uniforms = { ...m.malha.material.uniforms, uPasse: { value: 1 } };
@@ -759,7 +765,7 @@ export class Visor3D {
     // bloco ou forma sem nenhuma peça à vista nem é desenhado; a malha do vidro, só com vidro à vista
     for (const m of this.malhas) {
       let algum = false, vidro = false;
-      const ve = (i) => { const a = d[i * 4 + 3]; if (a) { algum = true; if (a < ALFA_VAZADA) vidro = true; } };
+      const ve = (i) => { const a = d[i * 4 + 3]; if (a) { algum = true; if (a < 255) vidro = true; } };
       if (m.ids) { for (const id of m.ids) { ve(id); if (algum && (vidro || !m.vidro)) break; } }
       else { for (let i = m.id0; i < m.id0 + m.n; i++) { ve(i); if (algum && (vidro || !m.vidro)) break; } }
       m.malha.visible = algum;
