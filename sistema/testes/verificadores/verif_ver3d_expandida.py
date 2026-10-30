@@ -215,6 +215,15 @@ try:
     pj = [[img.getpixel((x, y))[:3] for x in range(cx - 300, cx + 300)] for y in range(cy - 330, cy - 40)]
     sj = soltos(pj, limiar=25)
     ok(sj < 0.01, f"a laje vista de baixo, quase de lado, lisa ({sj:.1%} de pixels soltos)")
+    # 3c. a placa que devolve as derivadas zeradas dentro do desvio do shader (a Intel do usuário, 30/10: "para mim parece
+    #     que ficou igual" — o fio de pixel inteiro, salpicado): o mínimo pela distância segura sozinho
+    for dist, rot in ((2500, "a meia distância"), (9000, "de longe")):
+        camera(aba, 1500, 0, 1500, dist)
+        aba.avaliar("(() => { visor._uDerivadas.value = 0; visor.pedirQuadro(); return 1; })()")
+        imz = foto(aba)
+        aba.avaliar("(() => { visor._uDerivadas.value = 1; visor.pedirQuadro(); return 1; })()")
+        sz = soltos(regiao(aba, imz, (1000, 0, 2000), (2000, 0, 1000)))
+        ok(sz < 0.01, f"sem as derivadas da placa, {rot}, a malha sem pixels soltos ({sz:.1%})")
     camera(aba, 1500, 0, 1500, 400)
     img = foto(aba)
     img.save(os.path.join(os.path.dirname(__file__), "ver3d_expandida_perto.png"))

@@ -156,6 +156,8 @@ uniform float uEscuro;
 uniform float uApresenta;
 uniform vec3 uSol;
 uniform vec3 uMalhas[${MALHAS_VAZADAS}];
+uniform float uPixel;
+uniform float uDerivadas;
 ${SOMBRA_GLSL}
 // a chapa expandida: o alfa dela no ponto, ou −1 quando não é. A posição no plano da chapa (mm): na chapa em pé, a
 // horizontal dela e a altura (a LD deitada, como no brise); na deitada, x e y. Os losangos são |X| + |Y| ≤ 1 em X = 2u/LD,
@@ -168,19 +170,22 @@ float cordao(float x, float f, float w) {
   f = max(f, 1e-5);
   return clamp((min(e + 0.5 * f, 0.5 * w) - max(e - 0.5 * f, -0.5 * w)) / f, 0.0, 1.0);
 }
-float alfaDaExpandida() {
+// nM, qM e as derivadas de qM vêm de main(), calculadas para todo pixel antes de qualquer desvio: dentro do desvio da
+// peça vazada a placa Intel do usuário devolvia as derivadas zeradas — o fio saía de pixel inteiro, salpicado (30/10,
+// SESI). E um mínimo pela distância (uPixel: o tamanho do pixel a 1 mm da câmera), que não depende delas
+float alfaDaExpandida(vec3 nM, vec2 qM, vec2 qx, vec2 qy) {
   float k = floor(vAlfa * 255.0 + 0.5);
   if (k < ${ALFA_VAZADA}.0 || k > ${ALFA_VAZADA + MALHAS_VAZADAS - 1}.0) return -1.0;
   int i = int(${ALFA_VAZADA + MALHAS_VAZADAS - 1}.0 - k);
   vec3 m = i == 0 ? uMalhas[0] : i == 1 ? uMalhas[1] : i == 2 ? uMalhas[2] : uMalhas[3];
-  vec3 n = normalize(cross(dFdx(vMundo), dFdy(vMundo)));
-  vec2 q = abs(n.z) < 0.7 ? vec2(dot(vMundo.xy, normalize(vec2(-n.y, n.x))), vMundo.z) : vMundo.xy;
   vec2 g = vec2(2.0 / m.x, 2.0 / m.y);
-  float a = (q.x * g.x + q.y * g.y + 1.0) * 0.5, b = (q.x * g.x - q.y * g.y + 1.0) * 0.5;
+  float a = (qM.x * g.x + qM.y * g.y + 1.0) * 0.5, b = (qM.x * g.x - qM.y * g.y + 1.0) * 0.5;
   float w = clamp(m.z * length(g) * 0.5, 0.0, 1.0);           // o cordão, na unidade de a e b
-  float fa = fwidth(a), fb = fwidth(b);
+  float c = abs(dot(nM, normalize(cameraPosition - vMundo)));  // 1 de frente, 0 rasante
+  float minimo = 0.25 * (-vVista.z) * uPixel / max(c, 0.1) * (g.x + g.y);
+  float fa = max(0.5 * (abs(dot(qx, g)) + abs(dot(qy, g))), minimo);
+  float fb = max(0.5 * (abs(qx.x * g.x - qx.y * g.y) + abs(qy.x * g.x - qy.y * g.y)), minimo);
   float perto = 1.0 - (1.0 - cordao(a, fa, w)) * (1.0 - cordao(b, fb, w));
-  float c = abs(dot(n, normalize(cameraPosition - vMundo)));   // 1 de frente, 0 rasante
   float longe = 1.0 - (1.0 - w) * (1.0 - w) * (0.25 + 0.75 * c);
   return mix(perto, longe, smoothstep(0.12, 0.3, max(fa, fb)));   // a malha até ~8 pixels por losango; abaixo de ~3, a tela
 }
@@ -193,6 +198,11 @@ void main() {
   float r = mod(vId, 256.0), g = mod(floor(vId / 256.0), 256.0), b = floor(vId / 65536.0);
   gl_FragColor = vec4(r / 255.0, g / 255.0, b / 255.0, 1.0);
 #else
+  // a posição no plano da peça e as derivadas dela, para a chapa vazada (alfaDaExpandida): aqui, para todo pixel, antes
+  // de qualquer desvio. Na chapa em pé, a horizontal dela e a altura (a LD deitada, como no brise); na deitada, x e y
+  vec3 nM = normalize(cross(dFdx(vMundo), dFdy(vMundo)));
+  vec2 qM = abs(nM.z) < 0.7 ? vec2(dot(vMundo.xy, normalize(vec2(-nM.y, nM.x))), vMundo.z) : vMundo.xy;
+  vec2 qx = dFdx(qM) * uDerivadas, qy = dFdy(qM) * uDerivadas;   // uDerivadas = 0: o teste simula a placa que as zera
   // aresta: a cor da peça escurecida e meio transparente (como no editor), para o deck de mil
   // tábuas não virar uma mancha escura de longe
   // e somem aos poucos com a distância: de perto marcam cada peça, de longe só o contorno geral
@@ -203,7 +213,7 @@ void main() {
     gl_FragColor = vec4(ca, uEscuro > 0.5 ? a + 0.15 : a); return;
   }
   float alfa = vAlfa;
-  float ex = alfaDaExpandida();
+  float ex = alfaDaExpandida(nM, qM, qx, qy);
   if (ex >= 0.0) {                                          // a vazada: o alfa da malha naquele pixel
     // só a face voltada para quem olha: a de trás, 2 mm atrás, desenhava a mesma malha um pouco deslocada e as duas
     // ondulavam de perto (30/10, SESI); vista do outro lado, a de trás é que fica de frente
@@ -373,8 +383,10 @@ export class Visor3D {
     this._uLonge = { value: 10000 };
     this._uEscuro = { value: 0 };
     this._uMalhas = this._uMalhas || { value: Array.from({ length: MALHAS_VAZADAS }, () => new THREE.Vector3(25, 12, 1.5)) };
+    this._uPixel = this._uPixel || { value: 0.001 };     // o tamanho do pixel a 1 mm da câmera (a chapa vazada)
+    this._uDerivadas = this._uDerivadas || { value: 1 };  // 0 só no teste (verif_ver3d_expandida): a placa que zera as derivadas
     const un = () => ({ tPecas: { value: this.textura }, uIdBase: { value: 0 }, uAresta: { value: 0 }, uPasse: { value: 0 },
-                        uLonge: this._uLonge, uMalhas: this._uMalhas,
+                        uLonge: this._uLonge, uMalhas: this._uMalhas, uPixel: this._uPixel, uDerivadas: this._uDerivadas,
                         uEscuro: this._uEscuro, ...this._luz });
     this._mat = (defs, aresta) => {
       const sombra = 'SOMBRA' in defs;              // vista do sol: empurrada para trás (sem "acne" nas faces de frente para ele)
@@ -1390,6 +1402,10 @@ export class Visor3D {
       if (this._descartado) return;
       // a sombra é refeita quando o que está à vista muda, ou quando a vista muda o bastante — nunca no meio do gesto
       if (this.apresentacao && this.cabecalho && (this._sombraSuja || (!this._emMovimento && this._vistaMudou()))) this._desenharSombra();
+      if (this._uPixel) {
+        const alt = this.renderer.getDrawingBufferSize(new THREE.Vector2()).y || 1;
+        this._uPixel.value = 2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) / alt;
+      }
       this.renderer.render(this.cena, this.camera);
       this.quadros++;
     });
