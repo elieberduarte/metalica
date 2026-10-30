@@ -116,13 +116,40 @@ def test_compacto_da_dezn_sem_nada_da_hermes():
     d = _dados()
     corpo, css = PC.html_proposta(WE, C.ler_empresa(d, "dezn"))
     texto = corpo + css
-    assert "DEZN CONSTRUTORA" in css and "#22346E" in css and "#800080" in css
-    assert "R$ 22.500,00" in corpo and "vinte e dois mil e quinhentos reais" in corpo
+    assert "#22346E" in css and "#800080" in css
+    # 30/10 (usuário): o logo vai para o rodapé; número/revisão fora do papel; o valor uma vez só (no Investimento)
+    assert "@bottom-center { content: url(\"data:image/svg+xml;base64," in css
+    assert "DZ-2026-001" not in texto and "R00" not in texto
+    assert corpo.count("R$ 22.500,00") == 1 and "vinte e dois mil e quinhentos reais" in corpo
+    assert "Cliente" in corpo and "A/C WE Inc." in corpo and "Obra" in corpo
     for proibido in ("Metalúrgica Teste", "Hermes", "Antidumping", "A-36", "BDI", "margem", "{{", "(00) 00000"):
         assert proibido not in texto, proibido
     assert "Vigas de içamento dos elevadores" in corpo and "Dados técnicos" in corpo and "295 kg" in corpo
     sem_ficha = PC.html_proposta(dict(WE, mostrar_ficha=False), C.ler_empresa(d, "dezn"))[0]
     assert "Dados técnicos" not in sem_ficha
+
+
+def test_linha_metalica_assina_sem_construtora():
+    """30/10 (usuário): "não vamos utilizar construtora nas propostas de metálica" — a linha "metalica" da empresa troca
+    o nome e o logo; sem ela (ou noutra linha) fica a marca de sempre"""
+    d = _dados()
+    with open(os.path.join(C.pasta_marca(d, "dezn"), "logo_metalica.svg"), "w", encoding="utf-8") as f:
+        f.write('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><text>DEZN</text></svg>')
+    C.gravar_empresa(d, dict(DEZN, linhas={"metalica": {"nome_comercial": "DEZN", "logo": "logo_metalica.svg"}}), "dezn")
+    z = C.ler_empresa(d, "dezn")
+    assert z["linhas"]["metalica"]["logo"].endswith("logo_metalica.svg") and os.path.isabs(z["linhas"]["metalica"]["logo"])
+    m = C.empresa_da_linha(z)                               # sem linha na proposta: vale a metálica
+    assert m["nome_comercial"] == "DEZN" and m["logo"].endswith("logo_metalica.svg")
+    assert C.empresa_da_linha(z, "civil")["nome_comercial"] == "DEZN Construtora"
+    corpo = PC.html_proposta(WE, z)[0]
+    assert "<b>DEZN</b>" in corpo and "Construtora" not in corpo
+    assert "DEZN Construtora" in PC.html_proposta(dict(WE, linha="civil"), z)[0]
+    # gravar pela tela (aba Empresa, sem as linhas no corpo — ou com o que leu, caminhos inteiros) não perde a linha
+    C.gravar_empresa(d, {"nome_comercial": "DEZN Construtora", "layout": "compacto"}, "dezn")
+    assert C.ler_empresa(d, "dezn")["linhas"]["metalica"]["nome_comercial"] == "DEZN"
+    C.gravar_empresa(d, C.ler_empresa(d, "dezn"), "dezn")
+    with open(os.path.join(C.pasta_empresa(d, "dezn"), "empresa.json"), encoding="utf-8") as f:
+        assert json.load(f)["linhas"]["metalica"]["logo"] == "logo_metalica.svg"
 
 
 def test_compacto_imprime_em_duas_paginas():

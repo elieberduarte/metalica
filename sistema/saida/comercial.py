@@ -165,6 +165,7 @@ EMPRESA_PADRAO = {
     "foro": "",
     "layout": "classico",
     "prefixo_numero": "",
+    "linhas": {},
 }
 
 #: Várias empresas (27/10): a principal é a de sempre, em <dados>/fabrica/ (empresa.json, marca/, comercial-seq.json),
@@ -215,7 +216,24 @@ def ler_empresa(dados: str, empresa_id=None) -> dict:
     for chave, nomes in (("logo", ("logo.svg", "logo.png", "logo.jpg")), ("logo_claro", ("logo_claro.svg", "logo_claro.png")),
                          ("rodape", ("rodape.png", "rodape.jpg"))):
         e[chave] = next((os.path.join(marca, n) for n in nomes if os.path.exists(os.path.join(marca, n))), "")
+    for lin in (e.get("linhas") or {}).values():
+        for chave in ("logo", "logo_claro"):
+            if lin.get(chave):
+                arq = os.path.join(marca, os.path.basename(str(lin[chave])))
+                lin[chave] = arq if os.path.exists(arq) else ""
     return e
+
+
+def empresa_da_linha(e: dict, linha=None) -> dict:
+    """A marca de uma linha de serviço da empresa — empresa.json "linhas": {"metalica": {nome_comercial, logo,
+    logo_claro}} (arquivos em marca/). A DEZN assina "DEZN", sem o "Construtora", nas propostas de metálica (usuário,
+    30/10). Sem linha na proposta vale a "metalica" (o Metálica orça estrutura metálica), quando a empresa a tiver."""
+    lin = (e.get("linhas") or {}).get(linha or "metalica")
+    if not lin:
+        return e
+    e2 = dict(e)
+    e2.update({k: v for k, v in lin.items() if v not in (None, "")})
+    return e2
 
 
 def listar_empresas(dados: str) -> List[dict]:
@@ -242,6 +260,16 @@ def gravar_empresa(dados: str, empresa: dict, empresa_id=None) -> dict:
     pasta = pasta_empresa(dados, i)
     os.makedirs(pasta, exist_ok=True)
     limpo = {k: v for k, v in (empresa or {}).items() if k in EMPRESA_PADRAO}
+    if "linhas" not in limpo:                               # a tela não mexe nas linhas: ficam as gravadas
+        try:
+            with open(os.path.join(pasta, "empresa.json"), encoding="utf-8") as f:
+                limpo["linhas"] = json.load(f).get("linhas") or {}
+        except (OSError, ValueError):
+            pass
+    for lin in (limpo.get("linhas") or {}).values():       # logo da linha = nome do arquivo em marca/
+        for chave in ("logo", "logo_claro"):
+            if isinstance(lin, dict) and lin.get(chave):
+                lin[chave] = os.path.basename(str(lin[chave]))
     with open(os.path.join(pasta, "empresa.json"), "w", encoding="utf-8") as f:
         json.dump(limpo, f, ensure_ascii=False, indent=1)
     return ler_empresa(dados, i)

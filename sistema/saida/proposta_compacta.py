@@ -35,9 +35,10 @@ def _cores(empresa: dict) -> dict:
 
 
 CSS = """
-@page { size: A4; margin: 16mm 0 16mm;
+@page { size: A4; margin: 16mm 0 18mm;
   @bottom-left { content: "%(rodape)s"; font: 600 7pt Bahnschrift, 'Segoe UI', sans-serif; letter-spacing: .2em; color: %(pri)s; padding-left: 16mm; }
-  @bottom-right { content: "%(ref)s  ·  " counter(page) " / " counter(pages); font: 7pt 'Segoe UI', sans-serif; color: #5A6182; padding-right: 16mm; } }
+  @bottom-center { content: %(logo_rodape)s; }
+  @bottom-right { content: counter(page) " / " counter(pages); font: 7pt 'Segoe UI', sans-serif; color: #5A6182; padding-right: 16mm; } }
 @page :first { margin-top: 0; }
 :root { --pri: %(pri)s; --dest: %(dest)s; --apoio: %(apoio)s; --ink: #1A2040; --mut: #5A6182; --linha: #DCE1F2;
         --fpri: color-mix(in srgb, var(--apoio) 14%%, white); --fdest: color-mix(in srgb, var(--dest) 7%%, white); }
@@ -77,21 +78,22 @@ section.sec { margin-bottom: 5mm; }
 .cab .lg { position: absolute; left: 16mm; top: 7mm; width: 29mm; }
 .cab .lg img { width: 100%%; display: block; }
 .cab .lg b { font: 700 16pt Bahnschrift, 'Segoe UI', sans-serif; }
-.cab .dir { position: absolute; right: 16mm; top: 11mm; text-align: right; }
-.cab .dir .eyebrow { color: var(--apoio); }
-.cab .dir b { font: 600 14pt Bahnschrift, 'Segoe UI', sans-serif; display: block; margin-top: 1mm; }
+.cab .dir { position: absolute; right: 16mm; top: 12mm; text-align: right; font-size: 9.5pt; color: rgba(255,255,255,.88); }
 .cab .ch { position: absolute; left: 30%%; right: -10%%; top: -6mm; height: 60mm; }
-.linha1 { display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; border-bottom: .4mm solid var(--pri);
-          padding-bottom: 3mm; margin-bottom: 4mm; }
-.linha1 .sub { color: var(--mut); }
-.linha1 .para { text-align: right; font-size: 9pt; max-width: 75mm; }
-.faixa { display: grid; gap: 0; margin: 3mm 0 5mm; background: var(--fpri); border-radius: 2.5mm; overflow: hidden; break-inside: avoid; }
-.faixa div { padding: 3.5mm 4mm; }
-.faixa .num { font-size: 15pt; font-weight: 600; color: var(--dest); display: block; line-height: 1.1; }
+.ficha { display: grid; grid-template-columns: 1fr 1fr; margin: 3mm 0 4mm; border-top: .4mm solid var(--pri);
+         border-bottom: .2mm solid var(--linha); break-inside: avoid; }
+.ficha > div { padding: 2.5mm 0 2.5mm 4mm; }
+.ficha > div:first-child { padding-left: 0; }
+.ficha > div + div { border-left: .2mm solid var(--linha); }
+.ficha .eyebrow { display: block; margin-bottom: .8mm; }
+.ficha b { display: block; color: var(--pri); font-size: 10pt; }
+.ficha small { color: var(--mut); font-size: 8.5pt; }
+.faixa { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin: 3mm 0 5mm; background: var(--fpri);
+         border-radius: 2.5mm; break-inside: avoid; text-align: center; }
+.faixa div { padding: 3.5mm 3mm; }
+.faixa div + div { border-left: .3mm solid color-mix(in srgb, var(--apoio) 35%%, white); }
+.faixa .num { font-size: 15pt; font-weight: 600; color: var(--dest); display: block; line-height: 1.1; margin-bottom: .6mm; }
 .faixa small { color: var(--mut); font-size: 8pt; }
-.faixa .v { background: var(--dest); color: #fff; }
-.faixa .v .num { color: #fff; }
-.faixa .v small { color: rgba(255,255,255,.82); }
 .foto { width: 100%%; height: 62mm; border-radius: 2.5mm; background: #eef2f6 center / cover no-repeat; margin: 0 0 5mm; }
 .caixa { display: flex; justify-content: space-between; align-items: center; gap: 8mm; background: var(--pri); color: #fff;
          border-radius: 3mm; padding: 5mm 6mm; break-inside: avoid; }
@@ -104,11 +106,10 @@ section.sec { margin-bottom: 5mm; }
 .notas { font-size: 7.8pt; color: var(--mut); font-style: italic; margin-top: 2.5mm; }
 .notas p { margin: 0 0 1mm; }
 .fim { break-inside: avoid; }
-.assin { margin-top: 7mm; display: flex; align-items: flex-end; gap: 10mm; break-inside: avoid; }
-.assin .linha { width: 70mm; border-top: .3mm solid var(--ink); margin: 14mm 0 1.5mm; padding-top: 1.5mm; font-size: 8.5pt; color: var(--mut); }
-.assin .linha b { color: var(--ink); display: block; }
-.assin img { width: 22mm; display: block; }
-.contato { margin-top: 5mm; border-top: .2mm solid var(--linha); padding-top: 3mm; font-size: 7.8pt; color: var(--mut); }
+.assin { margin-top: 8mm; text-align: center; break-inside: avoid; }
+.assin .linha { width: 75mm; border-top: .3mm solid var(--ink); margin: 14mm auto 0; padding-top: 1.5mm; font-size: 8.5pt; color: var(--mut); }
+.assin .linha b { color: var(--ink); display: block; font-size: 9.5pt; }
+.contato { margin-top: 5mm; border-top: .2mm solid var(--linha); padding-top: 3mm; font-size: 7.8pt; color: var(--mut); text-align: center; }
 """
 
 
@@ -116,6 +117,23 @@ def _chevron(cor: str, opac: float = .3, largura: int = 5) -> str:
     """o motivo da marca: um telhado em traço"""
     return ('<svg viewBox="0 0 642 200" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" style="width:100%%;height:100%%">'
             '<path d="M0 197 L321 2 L642 197" fill="none" stroke="%s" stroke-width="%d" opacity="%s"/></svg>' % (_e(cor), largura, opac))
+
+
+def _logo_rodape(logo: str, altura_mm: float = 9) -> str:
+    """o logo no rodapé de cada página (usuário, 30/10): só SVG, com o tamanho gravado no próprio SVG — a caixa de
+    margem da página não aceita largura. Sem SVG: "none" (o rodapé fica com o nome)."""
+    import base64
+    import re
+    if not logo.lower().endswith(".svg") or not os.path.exists(logo):
+        return "none"
+    with open(logo, encoding="utf-8") as f:
+        svg = f.read()
+    vb = re.search(r'viewBox="\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)', svg)
+    if not vb:
+        return "none"
+    largura = altura_mm * float(vb.group(1)) / float(vb.group(2))
+    svg = re.sub(r"<svg\b", '<svg width="%.1fmm" height="%.1fmm"' % (largura, altura_mm), svg, count=1)
+    return 'url("data:image/svg+xml;base64,%s")' % base64.b64encode(svg.encode("utf-8")).decode("ascii")
 
 
 def _objeto(P: dict) -> str:
@@ -183,40 +201,46 @@ def _tecnicos(P: dict) -> str:
 
 
 def html_proposta(P: dict, empresa: dict, numeros: Optional[dict] = None, orc: Optional[dict] = None):
+    from saida.comercial import empresa_da_linha
+    empresa = empresa_da_linha(empresa, P.get("linha"))
     cor = _cores(empresa)
     cli, obra, inv = P.get("cliente") or {}, P.get("obra") or {}, P.get("investimento") or {}
     nome_emp = empresa.get("nome_comercial") or empresa.get("razao_social") or ""
     d = ler_data(P.get("data"))
     data_txt = data_extenso(d, maiuscula=False) if d else str(P.get("data") or "")
     local_obra = " – ".join(x for x in (obra.get("cidade"), obra.get("uf")) if x)
-    ref = "Proposta %s · %s" % (P.get("numero") or "", P.get("revisao") or "R00")
-    css = CSS % dict(cor, rodape=_e(nome_emp.upper()).replace('"', ""), ref=_e(ref).replace('"', ""))
+    logo = empresa.get("logo") or ""
+    logo_rodape = _logo_rodape(logo)
+    # número e revisão não aparecem no papel (usuário, 30/10): ficam no nome do arquivo e no comercial.json
+    css = CSS % dict(cor, rodape="" if logo_rodape != "none" else _e(nome_emp.upper()).replace('"', ""), logo_rodape=logo_rodape)
     valor = _f(inv.get("valor"))
     titulo = str(P.get("titulo") or "").strip() or _objeto(P).capitalize() or obra.get("nome") or "Proposta comercial"
-    sub = " · ".join(x for x in (obra.get("nome") if obra.get("nome") != titulo else "", local_obra) if x)
     objeto = _objeto(P)
     h = []
 
     logo_claro = empresa.get("logo_claro") or ""
-    h.append('<div class="cab"><div class="ch">%s</div><div class="lg">%s</div><div class="dir"><div class="eyebrow">Proposta comercial</div>'
-             '<b>%s · %s</b>%s%s</div></div>' % (
-                 _chevron(cor["apoio"]), ('<img src="%s" alt="">' % _url(logo_claro)) if logo_claro else "<b>%s</b>" % _e(nome_emp),
-                 _e(P.get("numero") or ""), _e(P.get("revisao") or "R00"), _e(data_txt),
-                 (" · " + _e(P["cidade_emissao"])) if P.get("cidade_emissao") else ""))
-    para = "<b>%s</b>" % _e(cli.get("nome") or "")
-    if cli.get("contato"):
-        para += "<br>A/C %s" % _e(cli["contato"])
-    h.append('<div class="linha1"><div><h1>%s</h1><div class="sub">%s</div></div><div class="para"><div class="eyebrow">Para</div>%s</div></div>'
-             % (_e(titulo), _e(sub), para))
+    h.append('<div class="cab"><div class="ch">%s</div><div class="lg">%s</div><div class="dir">%s%s</div></div>' % (
+        _chevron(cor["apoio"]), ('<img src="%s" alt="">' % _url(logo_claro)) if logo_claro else "<b>%s</b>" % _e(nome_emp),
+        _e(data_txt), (" · " + _e(P["cidade_emissao"])) if P.get("cidade_emissao") else ""))
+    h.append("<h1>%s</h1>" % _e(titulo))
+    ficha = []
+    if cli.get("nome"):
+        ficha.append('<div><span class="eyebrow">Cliente</span><b>%s</b>%s</div>' % (
+            _e(cli["nome"]), ("<small>A/C %s</small>" % _e(cli["contato"])) if cli.get("contato") else ""))
+    if obra.get("nome") or local_obra:
+        ficha.append('<div><span class="eyebrow">Obra</span><b>%s</b>%s</div>' % (
+            _e(obra.get("nome") or local_obra), ("<small>%s</small>" % _e(local_obra)) if obra.get("nome") and local_obra else ""))
+    if ficha:
+        h.append('<div class="ficha">%s</div>' % "".join(ficha))
     h.append("<p>Conforme a vossa solicitação, apresentamos a nossa proposta comercial%s%s%s. Abaixo estão o escopo, o que fica "
              "por conta de cada parte e o investimento.</p>" % (
                  (" para a " + _e(objeto)) if objeto else "", (", na obra " + _e(obra["nome"])) if obra.get("nome") else "",
                  (", em " + _e(local_obra)) if local_obra else ""))
+    # o valor aparece uma vez só, no Investimento, junto do pagamento e do prazo (usuário, 30/10: "se repetem?")
     ds = destaques(P)
-    cols = " ".join(["1fr"] * len(ds) + ["1.5fr"])
-    h.append('<div class="faixa" style="grid-template-columns:%s">%s<div class="v"><span class="num">%s</span><small>investimento global</small></div></div>'
-             % (cols, "".join('<div><span class="num">%s</span><small>%s</small></div>' % (_e(v), _e(t)) for v, t in ds),
-                reais(valor) if valor else "A definir"))
+    if ds:
+        h.append('<div class="faixa">%s</div>' % "".join('<div><span class="num">%s</span><small>%s</small></div>' % (_e(v), _e(t))
+                                                        for v, t in ds))
     fotos = [i for i in P.get("imagens") or [] if i.get("arquivo") and os.path.exists(i["arquivo"])]
     if fotos:
         h.append('<div class="foto" style="background-image:url(\'%s\')"></div>' % _url(fotos[0]["arquivo"]))
@@ -265,9 +289,7 @@ def html_proposta(P: dict, empresa: dict, numeros: Optional[dict] = None, orc: O
     quem = "<b>%s</b>" % _e(empresa.get("razao_social") or nome_emp)
     if rt.get("nome"):
         quem += "%s%s" % (_e(rt["nome"]), (" · " + _e(rt["registro"])) if rt.get("registro") else "")
-    logo = empresa.get("logo") or ""
-    corpo.append('<div class="assin"><div><p>Atenciosamente,</p><div class="linha">%s</div></div>%s</div>'
-                 % (quem, ('<img src="%s" alt="">' % _url(logo)) if logo else ""))
+    corpo.append('<div class="assin"><p>Atenciosamente,</p><div class="linha">%s</div></div>' % quem)
     contato = " · ".join(_e(x) for x in (empresa.get("cnpj") and "CNPJ " + empresa["cnpj"], empresa.get("endereco"),
                                           " – ".join(y for y in (empresa.get("cidade"), empresa.get("uf")) if y),
                                           empresa.get("telefone"), empresa.get("email"), empresa.get("site")) if x)
