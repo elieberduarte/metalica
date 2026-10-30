@@ -224,6 +224,19 @@ try:
         aba.avaliar("(() => { visor._uDerivadas.value = 1; visor.pedirQuadro(); return 1; })()")
         sz = soltos(regiao(aba, imz, (1000, 0, 2000), (2000, 0, 1000)))
         ok(sz < 0.01, f"sem as derivadas da placa, {rot}, a malha sem pixels soltos ({sz:.1%})")
+    # 3d. a placa com a normal tirada das derivadas variando de pixel em pixel (a Intel do usuário, 30/10: "ainda aparece
+    #     pontilhado" — com a apresentação desligada, a chapa selecionada salpicada): a malha não embaralha. A chapa fica
+    #     a ~33 m do centro do modelo (a laje de 60 m), como os brises do SESI
+    for dist, rot, (a0, a1) in ((1200, "de perto", ((1300, 0, 1700), (1700, 0, 1300))),
+                                (2500, "a meia distância", ((1000, 0, 2000), (2000, 0, 1000)))):
+        camera(aba, 1500, 0, 1500, dist)
+        limpa = regiao(aba, foto(aba), a0, a1)
+        aba.avaliar("(() => { visor._uRuido.value = 0.02; visor.pedirQuadro(); return 1; })()")
+        ruid = regiao(aba, foto(aba), a0, a1)
+        aba.avaliar("(() => { visor._uRuido.value = 0; visor.pedirQuadro(); return 1; })()")
+        pares = [(p, q) for lp, lq in zip(limpa, ruid) for p, q in zip(lp, lq)]
+        mudou = sum(max(abs(u - v) for u, v in zip(p, q)) > 40 for p, q in pares) / max(len(pares), 1)
+        ok(mudou < 0.02, f"com a normal ruidosa da placa, {rot}, a malha não embaralha ({mudou:.1%} dos pixels mudaram)")
     camera(aba, 1500, 0, 1500, 400)
     img = foto(aba)
     img.save(os.path.join(os.path.dirname(__file__), "ver3d_expandida_perto.png"))

@@ -158,6 +158,7 @@ uniform vec3 uSol;
 uniform vec3 uMalhas[${MALHAS_VAZADAS}];
 uniform float uPixel;
 uniform float uDerivadas;
+uniform float uRuido;
 ${SOMBRA_GLSL}
 // a chapa expandida: o alfa dela no ponto, ou −1 quando não é. A posição no plano da chapa (mm): na chapa em pé, a
 // horizontal dela e a altura (a LD deitada, como no brise); na deitada, x e y. Os losangos são |X| + |Y| ≤ 1 em X = 2u/LD,
@@ -201,7 +202,15 @@ void main() {
   // a posição no plano da peça e as derivadas dela, para a chapa vazada (alfaDaExpandida): aqui, para todo pixel, antes
   // de qualquer desvio. Na chapa em pé, a horizontal dela e a altura (a LD deitada, como no brise); na deitada, x e y
   vec3 nM = normalize(cross(dFdx(vMundo), dFdy(vMundo)));
-  vec2 qM = abs(nM.z) < 0.7 ? vec2(dot(vMundo.xy, normalize(vec2(-nM.y, nM.x))), vMundo.z) : vMundo.xy;
+  // uRuido > 0: o teste simula a normal com ruído de um bloco de 2 × 2 pixels para o outro (a placa do usuário: as
+  // derivadas saem por bloco, o ruído não aparece nelas)
+  vec2 bloco = floor(gl_FragCoord.xy * 0.5);
+  nM = normalize(nM + uRuido * (vec3(fract(sin(dot(bloco, vec2(12.9898, 78.233))) * 43758.5453),
+                                     fract(sin(dot(bloco, vec2(39.3468, 11.135))) * 24634.6345), 0.5) - 0.5));
+  // o eixo da malha é o eixo do mundo mais perto do plano da chapa, não a normal de cada pixel: na placa do usuário a
+  // normal tirada das derivadas variava de pixel em pixel e, vezes a distância à origem (dezenas de metros), embaralhava
+  // a malha (30/10, SESI: "ainda aparece pontilhado"). Na chapa a 20° do eixo (os brises) o losango estica 6 %
+  vec2 qM = abs(nM.z) < 0.7 ? vec2(abs(nM.x) > abs(nM.y) ? vMundo.y : vMundo.x, vMundo.z) : vMundo.xy;
   vec2 qx = dFdx(qM) * uDerivadas, qy = dFdy(qM) * uDerivadas;   // uDerivadas = 0: o teste simula a placa que as zera
   // aresta: a cor da peça escurecida e meio transparente (como no editor), para o deck de mil
   // tábuas não virar uma mancha escura de longe
@@ -385,8 +394,9 @@ export class Visor3D {
     this._uMalhas = this._uMalhas || { value: Array.from({ length: MALHAS_VAZADAS }, () => new THREE.Vector3(25, 12, 1.5)) };
     this._uPixel = this._uPixel || { value: 0.001 };     // o tamanho do pixel a 1 mm da câmera (a chapa vazada)
     this._uDerivadas = this._uDerivadas || { value: 1 };  // 0 só no teste (verif_ver3d_expandida): a placa que zera as derivadas
+    this._uRuido = this._uRuido || { value: 0 };          // > 0 só no teste: a normal com ruído de pixel em pixel
     const un = () => ({ tPecas: { value: this.textura }, uIdBase: { value: 0 }, uAresta: { value: 0 }, uPasse: { value: 0 },
-                        uLonge: this._uLonge, uMalhas: this._uMalhas, uPixel: this._uPixel, uDerivadas: this._uDerivadas,
+                        uLonge: this._uLonge, uMalhas: this._uMalhas, uPixel: this._uPixel, uDerivadas: this._uDerivadas, uRuido: this._uRuido,
                         uEscuro: this._uEscuro, ...this._luz });
     this._mat = (defs, aresta) => {
       const sombra = 'SOMBRA' in defs;              // vista do sol: empurrada para trás (sem "acne" nas faces de frente para ele)
