@@ -221,6 +221,18 @@ try:
     ve, ae = fracoes(aba, img, (1440, 0, 1540), (1560, 0, 1460))
     ok(0.45 <= ve <= 0.92 and ae >= 0.05, f"de perto, o cordão azul e o vermelho pelos furos ({ve:.0%} vermelho, {ae:.0%} azul)")
 
+    # 3b. de perto e a 45°: a malha de uma face só (a de trás, 2 mm atrás, somava outra malha deslocada — ondulava e o
+    #     fio engrossava): a fração de cordão perto da de frente (30/10, SESI)
+    aba.avaliar("(() => { const o = visor.cabecalho.origem; visor.controles.target.set(1500 - o[0], 0 - o[1], 1500 - o[2]);"
+                " visor.camera.position.set(1217 - o[0], -283 - o[1], 1500 - o[2]); visor.controles.update(); visor.pedirQuadro(); return 1; })()")
+    img45 = foto(aba)
+    img45.save(os.path.join(os.path.dirname(__file__), "ver3d_expandida_45.png"))
+    r = aba.avaliar("(() => { const r = visor.tela.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")
+    cx, cy = int(r[0] + r[2] / 2), int(r[1] + r[3] / 2)
+    px45 = [img45.getpixel((x, y))[:3] for x in range(cx - 100, cx + 100, 3) for y in range(cy - 100, cy + 100, 3)]
+    a45 = sum(map(azul, px45)) / len(px45)
+    ok(abs(a45 - ae) <= 0.10, f"de perto a 45°, a malha de uma face só ({a45:.0%} de cordão, de frente {ae:.0%})")
+
     # 4. o clique num furo escolhe a chapa: o ponto vermelho mais perto do meio
     r = aba.avaliar("(() => { const r = visor.tela.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")
     alvo = None

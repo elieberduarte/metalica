@@ -205,6 +205,9 @@ void main() {
   float alfa = vAlfa;
   float ex = alfaDaExpandida();
   if (ex >= 0.0) {                                          // a vazada: o alfa da malha naquele pixel
+    // só a face voltada para quem olha: a de trás, 2 mm atrás, desenhava a mesma malha um pouco deslocada e as duas
+    // ondulavam de perto (30/10, SESI); vista do outro lado, a de trás é que fica de frente
+    if (!gl_FrontFacing) discard;
     if (ex < 0.01) discard;
     alfa = ex;
   }
