@@ -303,6 +303,69 @@ def pecas_voando(barras, solidos=(), chapas=(), tol: float = 250.0, tol_solido: 
     return out
 
 
+def _raio_secao(perfil, cache: dict) -> float:
+    """o raio da seção em volta do eixo (mm): o canto mais longe — a folga pelas faces fica do lado de quem perdoa"""
+    if perfil not in cache:
+        try:
+            from .geometria import resolver_perfil, secao
+            cache[perfil] = max(math.hypot(q[0], q[1]) for q in secao(resolver_perfil(perfil)))
+        except Exception:  # noqa: BLE001 — perfil fora do catálogo: sem raio, só o eixo
+            cache[perfil] = 0.0
+    return cache[perfil]
+
+
+def pecas_sem_encosto(barras, solidos=(), chapas=(), folga: float = 15.0, tol_solido: float = 150.0) -> List[dict]:
+    """a peça de várias barras (o quadro, o suporte, a castanha com a aba) que não encosta PELA SEÇÃO em nenhuma peça de
+    fora: GER-03, reincidência de 02/11 (Hora Certa · Galpão Novo: 176 quadros de suporte da 960 a 5–30 cm da treliça do
+    contorno, por baixo dela — `pecas_voando` junta tudo a 250 mm pelo eixo e os via presos; é a "ponta a 9 cm da peça em
+    que devia estar presa" que o catálogo dizia não pegar). Encostar: a distância entre os eixos menos os raios das duas
+    seções (o canto mais longe de cada uma) até `folga`; ou um canto de chapa ou vértice de sólido a `tol_solido` de uma
+    ponta. Fora a peça que chega no chão e a de uma barra só (essa é a `pontas_soltas`). Um apontamento por peça"""
+    if len(barras) < 2:
+        return []
+    raios: dict = {}
+    pecas: Dict[str, list] = collections.defaultdict(list)
+    for k, e in enumerate(barras):
+        pecas[_peca(e)].append(k)
+    zmin = min(min(e.inicio[2], e.fim[2]) for e in barras)
+    g = _grade(barras, 3000.0)
+    cel_de: Dict[int, list] = collections.defaultdict(list)
+    for c, ks in g.items():
+        for k in ks:
+            cel_de[k].append(c)
+    cantos = [v for s in solidos for v in (s.vertices or ())] + _cantos_das_chapas(chapas)
+    gc: Dict[tuple, list] = collections.defaultdict(list)
+    for v in cantos:
+        gc[(int(v[0] // 3000.0), int(v[1] // 3000.0))].append(v)
+    out = []
+    for peca, ks in pecas.items():
+        if len(ks) < 2 or any(min(barras[k].inicio[2], barras[k].fim[2]) <= zmin + 5.0 for k in ks):
+            continue
+        dentro = set(ks)
+        encosta = False
+        for k in ks:
+            e = barras[k]
+            r1 = _raio_secao(e.perfil, raios)
+            viz = {j for c in cel_de[k] for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+                   for j in g.get((c[0] + dx, c[1] + dy), ()) if j not in dentro}
+            if any(_seg_seg(e.inicio, e.fim, barras[j].inicio, barras[j].fim)[0] - r1 - _raio_secao(barras[j].perfil, raios)
+                   <= folga for j in viz):
+                encosta = True
+                break
+            if any(math.dist(p, v) <= tol_solido for p in (e.inicio, e.fim)
+                   for v in gc.get((int(p[0] // 3000.0), int(p[1] // 3000.0)), ())):
+                encosta = True
+                break
+        if encosta:
+            continue
+        e0 = barras[ks[0]]
+        zs = [p[2] for k in ks for p in (barras[k].inicio, barras[k].fim)]
+        out.append({"tipo": "peca_voando", "ids": [barras[k].id for k in ks], "ponto": [round(v) for v in e0.inicio],
+                    "texto": "%s (%s): %d barra(s) sem encostar em nenhuma peça — a peça mais perto fica longe da face "
+                             "(z %.0f a %.0f)" % (peca.split("#")[0], e0.papel or "barra", len(ks), min(zs), max(zs))})
+    return out
+
+
 def _altura(perfil, cache: dict) -> Optional[float]:
     """a altura da seção (mm), do catálogo"""
     if perfil not in cache:
@@ -905,6 +968,9 @@ def conferir(doc, telha: bool = True, soltas: bool = True, posicao: bool = True,
     barras = list(doc.barras)
     rep = repetidas(barras)
     voando = pecas_voando(barras, list(doc.solidos), list(doc.chapas)) if soltas else []
+    if soltas:                                       # GER-03 pelas faces (02/11): a peça a poucos cm, que o eixo dava presa
+        ja = {i for a in voando for i in a["ids"]}
+        voando += [a for a in pecas_sem_encosto(barras, list(doc.solidos), list(doc.chapas)) if not ja.intersection(a["ids"])]
     soltas = pontas_soltas(barras, list(doc.solidos)) if soltas else []
     ch = choques(barras)
     tl = telha_ao_lado(doc) if telha else []

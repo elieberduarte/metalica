@@ -89,6 +89,39 @@ def test_peca_voando_pega_o_grupo_que_so_encosta_nele_mesmo():
     assert "1 peça(s) voando" in C.avisos(conf)[0]
 
 
+def _quadro_suporte(doc, x, y0, z_pe, peca):
+    """o quadro de suporte da 960 (cantoneira 3"×1/8", 0,90 × 1,00), perpendicular à treliça (em y), a borda de dentro em y0"""
+    L3 = 'L 3"×1/8"'
+    ys = (y0 + 38.1, y0 + 900.0 - 38.1)
+    for y in ys:
+        _b(doc, (x, y, z_pe), (x, y, z_pe + 1000.0), papel="contraventamento", peca=peca, perfil=L3)
+    for dz in (38.1, 470.0, 961.9):
+        _b(doc, (x, y0 + 76.2, z_pe + dz), (x, y0 + 900.0 - 76.2, z_pe + dz), papel="contraventamento",
+           peca=peca, perfil=L3)
+
+
+def test_peca_sem_encosto_pega_o_quadro_a_centimetros_da_trelica():
+    """GER-03, reincidência de 02/11 (Hora Certa · Galpão Novo: 176 quadros de suporte da 960 por baixo da treliça simples
+    do contorno, a 5–30 cm da face dela — o usuário: "estão literalmente voando, não estão ligados a nada"; a `pecas_voando`
+    junta pelo eixo a 250 mm e os dava presos). Com as coordenadas da obra (y ≈ 100 m, a treliça a 10 m do piso): o
+    quadro a 0,15 da face e abaixo da treliça é apontado; o encostado na face do banzo e com o topo no topo dela, não"""
+    doc = Documento()
+    _b(doc, (0, 100000, 0), (0, 100000, 10700), papel="pilar", peca="P1", perfil="W 530×66,0")
+    _b(doc, (36000, 100000, 0), (36000, 100000, 10700), papel="pilar", peca="P2", perfil="W 530×66,0")
+    U75 = "U 75×40×3,00 (FF)"
+    for z in (10020.0, 10630.0):                                  # os banzos da simples, de pilar a pilar
+        _b(doc, (0, 100000, z), (36000, 100000, z), papel="viga", peca="TSI-P01-P02", perfil=U75)
+    _b(doc, (6000, 100000, 10020.0), (6000, 100000, 10630.0), papel="barra", peca="TSI-P01-P02", perfil="U 50×25×2,00 (FF)")
+    _quadro_suporte(doc, 18282.0, 100000 + 20 + 150, 9000.0, "SUP-061")   # antes: 0,15 da face, de 9,00 a 10,00
+    _quadro_suporte(doc, 20282.0, 100000 + 20, 9642.0, "SUP-062")         # agora: na face (meia mesa de 20 mm), topo no topo
+    bs = list(doc.barras)
+    assert C.pecas_voando(bs, list(doc.solidos), list(doc.chapas)) == []          # o que deixava passar
+    r = C.pecas_sem_encosto(bs, list(doc.solidos), list(doc.chapas))
+    assert [a["texto"].split(" ")[0] for a in r] == ["SUP-061"], r
+    conf = C.conferir(doc, telha=False, posicao=False, cobertura_=False)
+    assert conf["contagens"]["pecas_voando"] == 1
+
+
 def test_choque_entre_pecas_mas_nao_o_cruzamento_normal():
     doc = Documento()
     _b(doc, (0, 0, 7000), (0, 6000, 7000), papel="terça", sigla="TC14")
