@@ -10,6 +10,7 @@ elemento aparece no editor, no modo ver, no corte (`nucleo2d/vistas.py`) e no IF
     arq = {"elemento": "laje", "contorno": [[x, y], ...], "furos": [[[x, y], ...]], "nivel": "Superior"}
     arq = {"elemento": "ambiente", "nome": "Sala", "piso": "porcelanato", "nivel": "Térreo", "ret": [x0, x1, y0, y1]}
     arq = {"elemento": "esquadria", "parede": <id>, "codigo": "J1", ...}     (derivada da parede, refeita sempre)
+    arq = {"elemento": "lote", "contorno": [[x, y], ...], "permeaveis": [[[x, y], ...], ...], "nivel": "Térreo"}
 
 - **Níveis** (`metadados.arquitetura.niveis`): o nome, a cota do piso acabado e a espessura da laje que tem o topo nele.
 - **ARQ-03:** a parede vai da cota do nível da base ao fundo da laje do nível do topo.
@@ -31,6 +32,7 @@ CAMADAS = {
     "ambiente": ("ARQ — Ambientes", "#d8cfc0"),
     "telhado": ("ARQ — Telhas", "#cfd6e0"),
     "escada": ("ARQ — Escadas e rampas", "#aaa39a"),
+    "lote": ("ARQ — Terreno", "#8fb573"),
 }
 GRUPO_CAMADAS = "ARQUITETURA"
 MATERIAIS = {
@@ -41,7 +43,9 @@ MATERIAIS = {
     "Concreto": dict(cor="#b9b2a6", metalico=0.0, rugosidade=0.9),
     "Telha": dict(cor="#cfd6e0", metalico=0.6, rugosidade=0.45),
     "Vidro": dict(cor="#9fc6e8", opacidade=0.35, metalico=0.1, rugosidade=0.05),
+    "Grama": dict(cor="#8fb573", metalico=0.0, rugosidade=1.0),
 }
+DIVISA = 100            # a linha da divisa do lote no 3D: uma faixa de 10 cm por dentro do contorno
 PREFIXO_ID = "arq"
 _CODIGOS = {"janela": "J", "portajanela": "PJ", "porta": "P"}
 
@@ -135,6 +139,15 @@ def nova_escada(doc, lances, base, topo, patamares=(), piso=280, nome="Escada", 
     return _novo(doc, arq, CAMADAS["escada"][0], nome, "Concreto", id_)
 
 
+def novo_lote(doc, contorno, permeaveis=(), nivel="Térreo", nome="Lote", id_=None) -> Solido:
+    """o terreno da estatística (`estatistica.py`): o contorno pelas divisas e as áreas permeáveis (grama, jardim). O que
+    não está numa área permeável conta como impermeável"""
+    _preparar(doc)
+    arq = {"elemento": "lote", "contorno": [list(p) for p in contorno],
+           "permeaveis": [[list(p) for p in a] for a in permeaveis], "nivel": nivel}
+    return _novo(doc, arq, CAMADAS["lote"][0], nome, "Grama", id_)
+
+
 def novo_ambiente(doc, nome, ret, nivel, piso="", id_=None) -> Solido:
     _preparar(doc)
     arq = {"elemento": "ambiente", "nome": nome, "ret": list(ret), "nivel": nivel, "piso": piso}
@@ -200,7 +213,12 @@ def regenerar(doc: Documento) -> dict:
         a = _arq(e)
         if not a:
             continue
-        if a.get("elemento") == "telhado":
+        if a.get("elemento") == "lote":
+            try:
+                e.vertices, e.faces = _malha_lote(a, _cota(nv, a.get("nivel", "Térreo")))
+            except ValueError as ex:
+                avisos.append(f"{e.nome}: {ex}")
+        elif a.get("elemento") == "telhado":
             e.vertices, e.faces = _malha_telhado(a)
             n_tel += 1
         elif a.get("elemento") == "escada":
@@ -244,7 +262,34 @@ def regenerar(doc: Documento) -> dict:
     return r
 
 
-# ------------------------------------------------------------------ telhado e escada
+# ------------------------------------------------------------------ lote, telhado e escada
+
+def _malha_lote(a: dict, z: float):
+    """a divisa (uma faixa por lado, por dentro do contorno, 2 cm acima do chão) e as áreas permeáveis (1 cm abaixo)"""
+    pts = [tuple(map(float, p)) for p in a["contorno"]]
+    giro = sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(pts, pts[1:] + pts[:1]))
+    if abs(giro) < 1:
+        raise ValueError("lote sem área")
+    lado = 1 if giro > 0 else -1                      # anti-horário: o lado de dentro fica à esquerda
+    vs, fs = [], []
+
+    def juntar(v, f):
+        base = len(vs)
+        vs.extend(v)
+        fs.extend([[base + i for i in face] for face in f])
+
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:] + pts[:1]):
+        L = math.hypot(x1 - x0, y1 - y0)
+        if L < 1:
+            continue
+        nx, ny = -(y1 - y0) / L * lado * DIVISA, (x1 - x0) / L * lado * DIVISA
+        faixa = [(x0, y0), (x1, y1), (x1 + nx, y1 + ny), (x0 + nx, y0 + ny)]
+        juntar(*prisma(faixa if lado > 0 else faixa[::-1], z, z + 20))
+    for p in a.get("permeaveis") or []:
+        s = extrudar((_contorno_mundo(p), []), (0, 0, 1), 10, origem=(0, 0, z - 10))
+        juntar(s.vertices, s.faces)
+    return vs, fs
+
 
 def _caixa_inclinada(poly, z_de, esp):
     """prisma de base convexa com o fundo na superfície z_de(x, y) e espessura `esp` medida na vertical"""

@@ -6,6 +6,7 @@
 * POST /api/projetos {..., area: "arquitetura"}   o projeto novo nasce na área da arquitetura, com os níveis padrão
 * POST /api/arquitetura/piloto           monta (ou remonta) a casa piloto num projeto próprio
 * POST /api/arquitetura/regenerar {projeto}   refaz as paredes, esquadrias, lajes e ambientes pelas definições
+* POST /api/arquitetura/estatistica {projeto} o quadro de estatística da prefeitura (estatistica.py), sem gravar
 """
 import json
 import os
@@ -15,6 +16,7 @@ import projetos
 from nucleo.base import ErroDeDados
 from nucleo3d.modelo import Documento
 
+from . import estatistica
 from . import modelo as M
 from . import piloto
 
@@ -90,6 +92,18 @@ def rota_post(h, rota: str, corpo: dict) -> bool:
         doc = _ler(g, s)
         r = M.regenerar(doc)
         _gravar(g, s, doc)
+        h._json(r)
+        return True
+    if rota == "/api/arquitetura/estatistica":
+        g = _app()._gerente()
+        s = (corpo or {}).get("projeto") or ""
+        if not s:
+            raise ErroDeDados("diga o projeto")
+        try:
+            r = estatistica.calcular(_ler(g, s))
+        except ValueError as ex:
+            raise ErroDeDados(str(ex))
+        r["quadro"] = estatistica.quadro(r)
         h._json(r)
         return True
     return False

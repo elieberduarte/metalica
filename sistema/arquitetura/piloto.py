@@ -157,9 +157,24 @@ def cobertura(doc: Documento):
     ], nome="Telhado termoacústico — 2 águas a 10%")
 
 
+def terreno(doc: Documento):
+    """o lote do medidas.md (30,5 × 34,8 m) e o jardim em volta do deck da piscina (de x −3500 a 20500, até y 2200), da
+    casa, da garagem com a rampa e o caminho da entrada, e do estúdio com o deck do ofurô. Estimativa do estudo"""
+    M.novo_lote(doc, [(-8000, -14800), (22500, -14800), (22500, 20000), (-8000, 20000)], permeaveis=[
+        [(-8000, -14800), (22500, -14800), (22500, -12500), (-8000, -12500)],     # canteiros da frente
+        [(-8000, -12500), (-3500, -12500), (-3500, 20000), (-8000, 20000)],       # lateral esquerda
+        [(-3500, 2200), (0, 2200), (0, 20000), (-3500, 20000)],
+        [(0, 11000), (11900, 11000), (11900, 20000), (0, 20000)],                 # fundos da casa
+        [(11900, 18100), (22500, 18100), (22500, 20000), (11900, 20000)],         # atrás do estúdio
+        [(20300, 13700), (22500, 13700), (22500, 18100), (20300, 18100)],
+        [(20500, -12500), (22500, -12500), (22500, 2900), (20500, 2900)],         # lateral direita do deck
+    ], nome="Lote 30,5 × 34,8 m")
+
+
 def montar_casa() -> Documento:
     doc = Documento(nome=NOME_PROJETO)
     M.definir_niveis(doc, NIVEIS)
+    terreno(doc)
     terreo(doc)
     superior(doc)
     garagem_e_estudio(doc)
