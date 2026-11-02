@@ -29,6 +29,8 @@ CAMADAS = {
     "esquadria": ("ARQ — Vidros e esquadrias", "#9fc6e8"),
     "laje": ("ARQ — Pisos e lajes", "#c2bcae"),
     "ambiente": ("ARQ — Ambientes", "#d8cfc0"),
+    "telhado": ("ARQ — Telhas", "#cfd6e0"),
+    "escada": ("ARQ — Escadas e rampas", "#aaa39a"),
 }
 GRUPO_CAMADAS = "ARQUITETURA"
 MATERIAIS = {
@@ -37,6 +39,7 @@ MATERIAIS = {
     "Granito": dict(cor="#6f6a66", metalico=0.1, rugosidade=0.4),
     "Piso": dict(cor="#d8cfc0", metalico=0.0, rugosidade=0.6),
     "Concreto": dict(cor="#b9b2a6", metalico=0.0, rugosidade=0.9),
+    "Telha": dict(cor="#cfd6e0", metalico=0.6, rugosidade=0.45),
     "Vidro": dict(cor="#9fc6e8", opacidade=0.35, metalico=0.1, rugosidade=0.05),
 }
 PREFIXO_ID = "arq"
@@ -116,6 +119,22 @@ def nova_laje(doc, contorno, nivel, furos=(), nome="Laje", id_=None) -> Solido:
     return _novo(doc, arq, CAMADAS["laje"][0], nome, "Concreto", id_)
 
 
+def novo_telhado(doc, aguas, espessura=50, nome="Telhado", id_=None) -> Solido:
+    """aguas = [{"ret": [x0, x1, y0, y1], "beiral_y": y, "z_beiral": z, "inclinacao": 0.10}, ...]"""
+    _preparar(doc)
+    arq = {"elemento": "telhado", "aguas": [dict(a) for a in aguas], "espessura": espessura}
+    return _novo(doc, arq, CAMADAS["telhado"][0], nome, "Telha", id_)
+
+
+def nova_escada(doc, lances, base, topo, patamares=(), piso=280, nome="Escada", id_=None) -> Solido:
+    """lances = [{"p0": [x, y], "dir": [dx, dy], "largura": 1000, "espelhos": 10}, ...] (p0 no canto direito do pé do
+    lance, a largura para a esquerda de quem sobe); patamares = [{"ret": [x0, x1, y0, y1], "apos": n espelhos}]"""
+    _preparar(doc)
+    arq = {"elemento": "escada", "lances": [dict(l) for l in lances], "patamares": [dict(p) for p in patamares],
+           "base": base, "topo": topo, "piso": piso}
+    return _novo(doc, arq, CAMADAS["escada"][0], nome, "Concreto", id_)
+
+
 def novo_ambiente(doc, nome, ret, nivel, piso="", id_=None) -> Solido:
     _preparar(doc)
     arq = {"elemento": "ambiente", "nome": nome, "ret": list(ret), "nivel": nivel, "piso": piso}
@@ -147,7 +166,9 @@ def regenerar(doc: Documento) -> dict:
 
     paredes_ent = [e for e in doc.entidades.values() if (_arq(e) or {}).get("elemento") == "parede"]
     # as paredes se unem por nível de base (as do térreo entre si, as do superior entre si)
-    por_base: Dict[Tuple[float, float], List[Tuple[Solido, Parede]]] = {}
+    # as uniões valem entre as paredes que nascem no mesmo piso, mesmo com topos diferentes (a platibanda e a casinha
+    # das caixas d'água, a mureta e a parede inteira); cada peça sai com a altura da sua parede
+    por_base: Dict[float, List[Tuple[Solido, Parede]]] = {}
     esqs: List[Esquadria] = []
     for e in paredes_ent:
         a = _arq(e)
@@ -157,7 +178,7 @@ def regenerar(doc: Documento) -> dict:
             avisos.append(f"{e.nome}: {ex}")
             continue
         w = Parede(e.id, tuple(a["p0"]), tuple(a["p1"]), a["tipo"], z0, z1)
-        por_base.setdefault((z0, z1), []).append((e, w))
+        por_base.setdefault(z0, []).append((e, w))
         for i, v in enumerate(a.get("vaos") or []):
             esqs.append(Esquadria(f"{e.id}:{i}", e.id, v.get("tipo", "janela"), float(v["u"]), float(v["largura"]),
                                   float(v["altura"]), float(v.get("peitoril", 0)), v.get("codigo", "")))
@@ -174,12 +195,24 @@ def regenerar(doc: Documento) -> dict:
             n_esq += _nova_esquadria(doc, *q)
     _codigos(doc)
 
-    n_lajes = n_amb = 0
+    n_lajes = n_amb = n_tel = n_esc = 0
     for e in list(doc.entidades.values()):
         a = _arq(e)
         if not a:
             continue
-        if a.get("elemento") == "laje":
+        if a.get("elemento") == "telhado":
+            e.vertices, e.faces = _malha_telhado(a)
+            n_tel += 1
+        elif a.get("elemento") == "escada":
+            try:
+                e.vertices, e.faces, av = _malha_escada(a, nv)
+            except ValueError as ex:
+                avisos.append(f"{e.nome}: {ex}")
+                continue
+            a["avisos"] = av
+            avisos += [f"{e.nome}: {x}" for x in av]
+            n_esc += 1
+        elif a.get("elemento") == "laje":
             try:
                 topo = _cota(nv, a["nivel"])
             except ValueError as ex:
@@ -203,7 +236,86 @@ def regenerar(doc: Documento) -> dict:
             e.vertices, e.faces = v, f
             e.nome = f"{a['nome']} — {a['area']:.2f} m²".replace(".", ",")
             n_amb += 1
-    return {"paredes": len(paredes_ent), "esquadrias": n_esq, "lajes": n_lajes, "ambientes": n_amb, "avisos": avisos}
+    r = {"paredes": len(paredes_ent), "esquadrias": n_esq, "lajes": n_lajes, "ambientes": n_amb, "avisos": avisos}
+    if n_tel:
+        r["telhados"] = n_tel
+    if n_esc:
+        r["escadas"] = n_esc
+    return r
+
+
+# ------------------------------------------------------------------ telhado e escada
+
+def _caixa_inclinada(poly, z_de, esp):
+    """prisma de base convexa com o fundo na superfície z_de(x, y) e espessura `esp` medida na vertical"""
+    n = len(poly)
+    v = [(x, y, z_de(x, y)) for x, y in poly] + [(x, y, z_de(x, y) + esp) for x, y in poly]
+    faces = [list(reversed(range(n))), [n + i for i in range(n)]]
+    for i in range(n):
+        j = (i + 1) % n
+        faces.append([i, j, n + j, n + i])
+    return v, faces
+
+
+def _malha_telhado(a: dict):
+    """cada água é um retângulo com o beiral numa das bordas em y (`beiral_y`) e sobe `inclinacao` por mm até a outra"""
+    vs, fs = [], []
+    esp = float(a.get("espessura", 50))
+    for ag in a["aguas"]:
+        x0, x1, y0, y1 = map(float, ag["ret"])
+        by, zb, inc = float(ag["beiral_y"]), float(ag["z_beiral"]), float(ag["inclinacao"])
+        v, f = _caixa_inclinada([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], lambda x, y: zb + inc * abs(y - by), esp)
+        base = len(vs)
+        vs += v
+        fs += [[base + i for i in face] for face in f]
+    return vs, fs
+
+
+def _malha_escada(a: dict, nv: Dict[str, dict]):
+    """escada maciça (cada degrau é um bloco do piso de baixo até a pisada): lances retos e patamares.
+    O espelho sai da altura entre os níveis dividida pelo total de espelhos. Confere (proposta ARQ-08, combinada com o
+    usuário em 30/10 ao falar da escada da casa): 63 ≤ 2e + p ≤ 64 cm e o patamar com pelo menos a largura do lance."""
+    z0 = _cota(nv, a["base"])
+    z1 = _cota(nv, a["topo"])
+    lances = a["lances"]
+    total = sum(int(l["espelhos"]) for l in lances)
+    e = (z1 - z0) / total
+    p = float(a.get("piso", 280))
+    vs, fs, avisos = [], [], []
+
+    def bloco(poly, zt):
+        v, f = prisma(poly, z0, zt)
+        base = len(vs)
+        vs.extend(v)
+        fs.extend([[base + i for i in face] for face in f])
+
+    subidos = 0
+    for l in lances:
+        (px, py), (dx, dy) = l["p0"], l["dir"]
+        nrm = math.hypot(dx, dy)
+        dx, dy = dx / nrm, dy / nrm
+        lx, ly = -dy, dx                         # a largura fica à esquerda do sentido de subida
+        w = float(l["largura"])
+        for k in range(1, int(l["espelhos"])):
+            s0, s1 = (k - 1) * p, k * p
+            pts = [(px + dx * s0, py + dy * s0), (px + dx * s1, py + dy * s1),
+                   (px + dx * s1 + lx * w, py + dy * s1 + ly * w), (px + dx * s0 + lx * w, py + dy * s0 + ly * w)]
+            if (pts[1][0] - pts[0][0]) * (pts[2][1] - pts[0][1]) - (pts[1][1] - pts[0][1]) * (pts[2][0] - pts[0][0]) < 0:
+                pts.reverse()
+            bloco(pts, z0 + (subidos + k) * e)
+        subidos += int(l["espelhos"])
+    for pt in a.get("patamares") or []:
+        x0, x1, y0, y1 = map(float, pt["ret"])
+        bloco([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], z0 + int(pt["apos"]) * e)
+        prof = min(x1 - x0, y1 - y0)
+        larg = max(float(l["largura"]) for l in lances)
+        if prof < larg - 1:
+            avisos.append(f"patamar com {prof / 10:.0f} cm, menor que a largura do lance ({larg / 10:.0f} cm)")
+    blondel = (2 * e + p) / 10
+    if not (63 - 1e-6 <= blondel <= 64 + 1e-6):
+        avisos.append(f"2e + p = {blondel:.1f} cm, fora de 63 a 64 (espelho {e / 10:.1f}, piso {p / 10:.1f})")
+    a["espelho"] = round(e, 1)
+    return vs, fs, avisos
 
 
 def m_esquadrias(ws: List[Parede], esqs: List[Esquadria]):
@@ -274,13 +386,13 @@ def interior(doc: Documento, ret, z: float) -> Tuple[float, float, float, float]
             zb, zt = altura_da_parede(nv, a["base"], a["topo"])
         except ValueError:
             continue
-        if zb - 1 <= z < zt:
+        if zb < z + 2000 and zt > z:          # a parede cruza a altura do ambiente (a garagem 35 cm abaixo da casa)
             paredes.append(a)
 
     def face(c, horizontal, sentido, lo, hi):
         """a face da parede que corre sobre a linha `c` (y = c se horizontal), do lado `sentido` (+1 para dentro
-        crescente); `lo..hi` é o trecho do lado"""
-        melhor = c
+        crescente); `lo..hi` é o trecho do lado. Com mais de uma, vale a que corre mais por esse lado"""
+        melhor, junto = c, 0.0
         for a in paredes:
             (ax, ay), (bx, by) = a["p0"], a["p1"]
             t = TIPOS[a["tipo"]].espessura / 2
@@ -290,10 +402,11 @@ def interior(doc: Documento, ret, z: float) -> Tuple[float, float, float, float]
                 eixo, s0, s1 = ax, min(ay, by), max(ay, by)
             else:
                 continue
-            if min(s1, hi) - max(s0, lo) < 100:          # não corre por esse lado
+            corre = min(s1, hi) - max(s0, lo)
+            if corre < 100:                              # não corre por esse lado
                 continue
-            if eixo - t - 1 <= c <= eixo + t + 1:
-                melhor = eixo + sentido * t
+            if eixo - t - 1 <= c <= eixo + t + 1 and corre > junto:
+                melhor, junto = eixo + sentido * t, corre
         return melhor
     return (face(x0, False, +1, y0, y1), face(x1, False, -1, y0, y1),
             face(y0, True, +1, x0, x1), face(y1, True, -1, x0, x1))
