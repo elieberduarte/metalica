@@ -3783,7 +3783,8 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     cp = p.get("carimbo_pranchas") or {}
     carimbo = {"obra": cp.get("obra") or p.get("nome") or s, "cliente": p.get("cliente") or "",
                "responsavel": p.get("responsavel") or "", "revisao": cp.get("revisao") or "00",
-               "revisoes": cp.get("revisoes") or {}}         # a tabela de revisões de cada prancha (nucleo2d/revisoes.py)
+               "revisoes": cp.get("revisoes") or {},         # a tabela de revisões de cada prancha (nucleo2d/revisoes.py)
+               "logo": _logo_do_carimbo(p)}
     carimbo.update({k: v for k, v in (corpo.get("carimbo") or {}).items() if v not in (None, "")})
     # o que foi digitado no diálogo fica no projeto: o diálogo abre com ele na próxima vez (Q20, primeiro uso 16/10: "tive
     # que redigitar o Projetista"); cliente e projetista são os do projeto, a obra e a revisão das pranchas à parte
@@ -3847,11 +3848,27 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     return {"desenho": salvo["nome"], "pranchas": saida, "formato": corpo.get("formato") or "A1"}
 
 
+def _logo_do_carimbo(p: dict) -> Optional[dict]:
+    """O logo da empresa marcada no projeto (projeto.json "carimbo_pranchas": {"empresa": "dezn"}) para o carimbo das
+    pranchas, do cadastro dela (fabrica/empresas/<id>/marca/logo.svg); sem empresa, o carimbo segue com o da Hermes
+    (OBRA · CASA ALTO PADRÃO, 02/11: a arquitetura sai com o carimbo da DEZN)."""
+    emp = (p.get("carimbo_pranchas") or {}).get("empresa")
+    if not emp:
+        return None
+    from saida import comercial
+    from nucleo2d.modelo_hermes import logo_do_svg
+    try:
+        arq = comercial.ler_empresa(PROJETOS, emp).get("logo") or ""
+        return logo_do_svg(arq) if arq.lower().endswith(".svg") else None
+    except (OSError, ValueError):                       # o SVG sumiu ou não é de retas: o carimbo sai com o da Hermes
+        return None
+
+
 def _carimbo_do_projeto(s: str, corpo: dict) -> dict:
     p = _gerente().ler(s)
     carimbo = {"obra": p.get("nome") or s, "cliente": p.get("cliente") or "",
                "responsavel": p.get("responsavel") or "", "revisao": "00",
-               "revisoes": (p.get("carimbo_pranchas") or {}).get("revisoes") or {}}
+               "revisoes": (p.get("carimbo_pranchas") or {}).get("revisoes") or {}, "logo": _logo_do_carimbo(p)}
     carimbo.update({k: v for k, v in (corpo.get("carimbo") or {}).items() if v not in (None, "")})
     return carimbo
 

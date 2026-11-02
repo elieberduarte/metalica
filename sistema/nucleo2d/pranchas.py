@@ -3050,14 +3050,18 @@ _FATOR_TEXTO = (2.835 / 0.73) / 2.4
 
 def _preencher_solidas(d: Desenho, ax):
     """Hachuras sólidas (o logo do carimbo) preenchidas de verdade — o DXF de linhas do
-    renderizador só tem traços; os contornos internos são furos (regra par-ímpar)."""
+    renderizador só tem traços; os contornos internos são furos (regra par-ímpar).
+
+    Na cor do objeto, como o CAD pinta (`atributos.cor`), senão na da camada, e por baixo das linhas e dos textos, na
+    ordem do desenho (OBRA · CASA ALTO PADRÃO, 02/11: a planta humanizada, de hachuras coloridas, saía toda na cor da
+    camada e por cima dos nomes dos cômodos)."""
     from matplotlib.path import Path
     from matplotlib.patches import PathPatch
     for e in d.entidades.values():
         if not isinstance(e, Hachura) or e.padrao != "solido":
             continue
         cam = d.camadas.get(e.camada)
-        cor = cam.cor if cam is not None else "#111827"
+        cor = (e.atributos or {}).get("cor") or (cam.cor if cam is not None else "#111827")
         verts, codes = [], []
         for c in e.contornos:
             if len(c) < 3:
@@ -3065,7 +3069,7 @@ def _preencher_solidas(d: Desenho, ax):
             verts += list(c) + [c[0]]
             codes += [Path.MOVETO] + [Path.LINETO] * (len(c) - 1) + [Path.CLOSEPOLY]
         if verts:
-            ax.add_patch(PathPatch(Path(verts, codes), facecolor=cor, edgecolor="none", zorder=5))
+            ax.add_patch(PathPatch(Path(verts, codes), facecolor=cor, edgecolor="none", zorder=1))
 
 
 def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: float = 10.0,
@@ -3160,7 +3164,14 @@ def _pagina_do_pdf(pdf, parte: Desenho, arquivo_dxf: str, larg: float, alt: floa
     from saida import dxf_render
     # texto como está no desenho: o PDF não passa pelo ASCII do DXF R12 ("dobra 12,5°", "TERÇAS" e "…" saíam
     # "dobra 12,5 ", "TERCAS" e "?")
-    arq = parte.para_dxf(k_desenho, texto_unicode=True).gravar(arquivo_dxf)
+    # a hachura cheia sai só pelo preenchimento (_preencher_solidas, por baixo); no DXF ela vira riscas na cor da camada,
+    # que pintariam por cima da cor dela
+    todas = parte.entidades
+    parte.entidades = {i: e for i, e in todas.items() if not (isinstance(e, Hachura) and e.padrao == "solido")}
+    try:
+        arq = parte.para_dxf(k_desenho, texto_unicode=True).gravar(arquivo_dxf)
+    finally:
+        parte.entidades = todas
     fig = plt.figure(figsize=(larg / 25.4, alt / 25.4))
     ax = fig.add_axes((0, 0, 1, 1))
     from nucleo2d.tipos_linha import escala_tracejado

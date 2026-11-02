@@ -12,7 +12,7 @@ from typing import List, Sequence, Tuple
 
 from nucleo2d.desenho import Desenho, Linha, Polilinha, Arco, Texto, Hachura, Camada2D
 
-__all__ = ["MARGENS", "carimbo_tamanho", "desenhar_folha", "desenhar_revisoes", "mes_ano"]
+__all__ = ["MARGENS", "carimbo_tamanho", "desenhar_folha", "desenhar_revisoes", "mes_ano", "logo_do_svg"]
 
 #: Margens do quadro (mm): as mesmas em todos os formatos do modelo.
 MARGENS = {"esquerda": 25.0, "direita": 7.0, "superior": 7.0, "inferior": 7.0}
@@ -93,6 +93,82 @@ def _quebrar(texto: str, largura: float, altura: float) -> List[str]:
     return linhas
 
 
+def logo_do_svg(caminho: str) -> dict:
+    """O logo de uma empresa cadastrada (`marca/logo.svg`, saida/comercial.py) para a caixa do logo do carimbo, no lugar
+    do da Hermes (OBRA · CASA ALTO PADRÃO, 02/11: a arquitetura sai com o carimbo da DEZN). Os <path> de retas (M, L, H,
+    V, Z) viram hachuras cheias na cor deles e os <text>, texto; a curva entra pelos pontos de chegada. Coordenadas do
+    viewBox com y para cima: {"hachuras": [{contornos, cor}], "textos": [{pos, texto, altura, cor}], "caixa": (x0, y0,
+    x1, y1)}."""
+    import re
+    import xml.etree.ElementTree as ET
+    raiz = ET.parse(caminho).getroot()
+    hach, textos, pts = [], [], []
+
+    def estilo(el, chave):
+        m = re.search(r"%s\s*:\s*([^;]+)" % chave, el.get("style") or "")
+        return (m.group(1).strip() if m else None) or el.get(chave)
+    for el in raiz.iter():
+        tag = el.tag.split("}")[-1]
+        if tag == "path":
+            contornos, atual, x, y = [], [], 0.0, 0.0
+            for cmd, args in re.findall(r"([MmLlHhVvZzCcSsQqTtAa])([^MmLlHhVvZzCcSsQqTtAa]*)", el.get("d") or ""):
+                nums = [float(n) for n in re.findall(r"-?\d*\.?\d+(?:[eE][-+]?\d+)?", args)]
+                rel = cmd.islower()
+                c = cmd.upper()
+                if c == "Z":
+                    if len(atual) >= 3:
+                        contornos.append(atual)
+                    atual = []
+                    continue
+                passo = {"M": 2, "L": 2, "T": 2, "H": 1, "V": 1, "C": 6, "S": 4, "Q": 4, "A": 7}[c]
+                for i in range(0, len(nums) - passo + 1, passo):
+                    g = nums[i:i + passo]
+                    if c == "H":
+                        x = g[0] + (x if rel else 0.0)
+                    elif c == "V":
+                        y = g[0] + (y if rel else 0.0)
+                    else:
+                        x, y = (g[-2] + x, g[-1] + y) if rel else (g[-2], g[-1])
+                    if c == "M" and i == 0 and len(atual) >= 3:
+                        contornos.append(atual)
+                    if c == "M" and i == 0:
+                        atual = []
+                    atual.append((x, -y))
+            if len(atual) >= 3:
+                contornos.append(atual)
+            if contornos:
+                hach.append({"contornos": contornos, "cor": estilo(el, "fill") or "#111827"})
+                pts += [p for c in contornos for p in c]
+        elif tag == "text" and (el.text or "").strip():
+            m = re.search(r"(\d+(?:\.\d+)?)px", estilo(el, "font") or estilo(el, "font-size") or "")
+            tam = float(m.group(1)) if m else 16.0
+            x, y = float(el.get("x") or 0), float(el.get("y") or 0)
+            larg = float(el.get("textLength") or 0) or 0.6 * tam * len(el.text.strip())
+            # a altura do texto do CAD é a da maiúscula: ~0,72 do tamanho da fonte
+            textos.append({"pos": (x, -y), "texto": el.text.strip(), "altura": 0.72 * tam, "cor": estilo(el, "fill") or "#111827"})
+            pts += [(x, -y + 0.2 * tam), (x + larg, -y - 0.75 * tam)]
+    if not pts:
+        raise ValueError("o SVG não tem desenho que o carimbo saiba ler: %s" % caminho)
+    return {"hachuras": hach, "textos": textos,
+            "caixa": (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts))}
+
+
+def _desenhar_logo(d: Desenho, logo: dict, a, b, atr, folga: float):
+    """o logo (`logo_do_svg`) centrado na caixa a–b do carimbo, sem deformar"""
+    lx0, ly0, lx1, ly1 = logo["caixa"]
+    w, h = (b[0] - a[0]) - 2 * folga, (b[1] - a[1]) - 2 * folga
+    k = min(w / max(lx1 - lx0, 1e-9), h / max(ly1 - ly0, 1e-9))
+    ox = (a[0] + b[0]) / 2.0 - (lx0 + lx1) / 2.0 * k
+    oy = (a[1] + b[1]) / 2.0 - (ly0 + ly1) / 2.0 * k
+    P = lambda p: (round(ox + p[0] * k, 3), round(oy + p[1] * k, 3))     # noqa: E731
+    for hc in logo.get("hachuras") or []:
+        d.add(Hachura(camada="CARIMBO", contornos=[[P(p) for p in c] for c in hc["contornos"]], padrao="solido", angulo=0.0,
+                      espacamento=0.3, atributos=dict(atr, campo="logo", cor=hc.get("cor"))))
+    for t in logo.get("textos") or []:
+        d.add(Texto(camada="CARIMBO", posicao=P(t["pos"]), texto=t["texto"], altura=round(t["altura"] * k, 3),
+                    atributos=dict(atr, campo="logo", cor=t.get("cor"))))
+
+
 def _caixa_arredondada(d: Desenho, x0, y0, x1, y1, r, camada, atr):
     def L(a, b):
         d.add(Linha(camada=camada, a=(round(a[0], 3), round(a[1], 3)), b=(round(b[0], 3), round(b[1], 3)), atributos=dict(atr)))
@@ -148,9 +224,12 @@ def desenhar_folha(d: Desenho, formato: str, larg: float, alt: float, info: dict
     for (bx0, by0, bx1, by1) in CAIXAS.values():
         (ax, ay), (bx, by) = P(bx0, by0), P(bx1, by1)
         _caixa_arredondada(d, ax, ay, bx, by, RAIO * f, "CARIMBO", atr)
-    for contornos in LOGO_HACHURAS:
-        d.add(Hachura(camada="CARIMBO", contornos=[[P(x, y) for x, y in c] for c in contornos], padrao="solido",
-                      angulo=0.0, espacamento=0.3, atributos=dict(atr, campo="logo")))
+    if isinstance(info.get("logo"), dict) and info["logo"].get("caixa"):    # o logo da empresa do projeto (logo_do_svg)
+        _desenhar_logo(d, info["logo"], P(*CAIXAS["logo"][:2]), P(*CAIXAS["logo"][2:]), atr, 2.5 * f)
+    else:
+        for contornos in LOGO_HACHURAS:
+            d.add(Hachura(camada="CARIMBO", contornos=[[P(x, y) for x, y in c] for c in contornos], padrao="solido",
+                          angulo=0.0, espacamento=0.3, atributos=dict(atr, campo="logo")))
 
     def T(pos, texto, h, campo, vertical="base", al="esquerda"):
         d.add(Texto(camada="CARIMBO", posicao=P(*pos), texto=str(texto), altura=round(h * f, 3), alinhamento=al,
