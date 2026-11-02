@@ -140,13 +140,13 @@ if (SO_ORCAMENTO) ABA = 'orcamento';
 else if (ABA === 'orcamento') ABA = 'geral';
 if (!ABAS.some(([k]) => k === ABA)) ABA = 'geral';
 
-function montarAbas(contagem) {
+function montarAbas(contagem, so = null) {
   const nav = $('#abas');
   const busca = el('input', { type: 'search', id: 'filtro', placeholder: 'Filtrar posição, perfil, conjunto…', title: 'Filtra as linhas dos quadros desta aba' });
   busca.addEventListener('input', filtrar);
   const anterior = $('#filtro');
   if (anterior) busca.value = anterior.value;
-  nav.replaceChildren(...ABAS.filter(([k]) => k !== 'orcamento').map(([k, t]) => el('button', { type: 'button', class: k === ABA ? 'ativa' : '', 'data-aba': k, onclick: () => irPara(k) },
+  nav.replaceChildren(...ABAS.filter(([k]) => k !== 'orcamento' && (!so || so.includes(k))).map(([k, t]) => el('button', { type: 'button', class: k === ABA ? 'ativa' : '', 'data-aba': k, onclick: () => irPara(k) },
     t, contagem[k] ? el('span', { class: 'qtd', texto: n(contagem[k]) }) : null)), el('span', { class: 'sep' }), busca);
   busca.hidden = !COM_FILTRO.has(ABA);
 }
@@ -673,9 +673,28 @@ async function carregar(recalcular = false) {
     if (L.desatualizada) aviso(`Lista de ${L.gerado || '—'}: ${L.desatualizada}. Para refazer, clique em "Atualizar pelo modelo 3D".`);
   } catch (e) {
     aviso(`Não foi possível montar a lista: ${e.message}`, true);
+    if (!LISTA) semLista();
   } finally {
     if (recalcular && btn && !ACOMPANHANDO) btn.disabled = false;
   }
+}
+
+/* O projeto sem lista (só arquitetura, ou o 3D ainda sem peças de aço — Casa Alto Padrão, 02/11: "Arquivos do projeto…"
+ * parava no aviso e os PDFs da apresentação, em documentos/, ficavam sem caminho na tela): monta as abas que não dependem
+ * da lista e abre a de Arquivos quando a pedida era uma da lista (testes/verificadores/verif_materiais_sem_aco.py). */
+const SEM_LISTA = ['resumos', 'conferencia', 'arquivos'];
+function semLista() {
+  const c = $('#conteudo');
+  if (!c) return;
+  if (!SEM_LISTA.includes(ABA)) ABA = 'arquivos';
+  const painel = (k, ...filhos) => el('div', { class: 'painel-aba', 'data-aba': k, id: 'aba-' + k, hidden: k !== ABA }, ...filhos);
+  c.replaceChildren(
+    painel('resumos', el('div', { id: 'resumos-corpo' }, vazio('Carregando os resumos…'))),
+    painel('conferencia', el('div', { id: 'conferencia-corpo' }, vazio('Carregando as pendências…'))),
+    painel('arquivos', el('div', { id: 'arquivos-corpo' })));
+  RESUMOS_MONTADO = false;
+  montarAbas({}, SEM_LISTA);
+  irPara(ABA);
 }
 
 /* A lista sendo refeita pelo modelo 3D num pedido que esta tela não fez (SESI, 27/10: "se saio dessa tela ele interrompe a
