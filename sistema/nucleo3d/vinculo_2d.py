@@ -32,6 +32,8 @@ LIMITE_FORA_PLANTA, MIN_PLANTA = 0.25, 30
 #: o traço que veio do projeto recebido: o DXF (espaço do modelo), as folhas do papel do DXF (folhas_papel) e as folhas
 #: impressas em PDF (27/10, Hora Certa: o Original passou a ser as pranchas como foram emitidas, regra do usuário)
 ORIGEM_RECEBIDA = ("dxf", "dxf-papel", "pdf")     # fração das barras longe de qualquer traço do desenho a partir da qual o vínculo está errado
+#: o Original do projeto recebido: a planta de lançamento (web/cad/lancamento.js) e as revisões dela (-r01, -r02…)
+ORIGINAL = "planta-de-lançamento"
 MIN_CHAVE = 0.80       # sem planta_modelo: a fração das barras com a chave de um traço do desenho (o Hangar 93 %, as Docas 92 %)
 
 
@@ -103,16 +105,40 @@ def ao_desenho(x: float, y: float, desl, fonte=None) -> Tuple[float, float]:
     return u * c + v * s, -u * s + v * c
 
 
+def tem_o_original(pasta_projeto: str) -> bool:
+    """o projeto recebido tem as folhas do projetista no Original — a planta de lançamento (ou uma revisão dela, -r01…),
+    que é o que a aba Original do 2D abre (web/cad/montagem.js). 03/11, WE Coqueiral · Escadas: as 5 folhas do PDF
+    entraram por script como desenhos soltos e a aba Original nem aparecia ("não foram trazidos os projetos originais")"""
+    pasta = os.path.join(pasta_projeto, "desenhos-2d")
+    try:
+        nomes = sorted(os.listdir(pasta))
+    except OSError:
+        return False
+    for n in nomes:
+        if n.startswith(ORIGINAL) and n.endswith(".desenho.json"):
+            des = _ler(os.path.join(pasta, n)) or {}
+            if any((e.get("atributos") or {}).get("origem") in ORIGEM_RECEBIDA for e in des.get("entidades") or []):
+                return True
+    return False
+
+
 def conferir(pasta_projeto: str) -> dict:
     """{aplica, barras, fora, apontamentos: [{regra, nivel, texto}]}"""
     projeto = _ler(os.path.join(pasta_projeto, "projeto.json")) or {}
     ents = _entidades(_ler(os.path.join(pasta_projeto, "modelo.json")) or {})
-    out = {"aplica": veio_de_dxf(projeto, ents), "barras": 0, "fora": 0, "apontamentos": []}
-    if not out["aplica"]:
-        return out
+    veio = veio_de_dxf(projeto, ents)
+    out = {"aplica": veio, "barras": 0, "fora": 0, "apontamentos": []}
 
     def apontar(texto, nivel="erro"):
         out["apontamentos"].append({"regra": "GER-04", "nivel": nivel, "texto": texto})
+    # o projeto recebido (DXF ou PDF) tem as folhas do projetista no Original (regra do usuário, 27/10: "no original
+    # precisam aparecer todas as pranchas originais do projetista") — vale também para o que veio só de PDF
+    if projeto.get("tipo") == "recebido" and not tem_o_original(pasta_projeto):
+        out["aplica"] = True
+        apontar("o projeto recebido não está no Original (a aba Original do 2D): importe o DXF/PDF do projetista por "
+                "Arquivo › Projeto recebido (DXF/PDF), ou pelo script em /api/projetos/<obra>/arquitetonico com recebido")
+    if not veio:
+        return out
     pm = projeto.get("planta_modelo") or {}
     nome = pm.get("desenho")
     des = _ler(os.path.join(pasta_projeto, "desenhos-2d", "%s.desenho.json" % nome)) if nome else None

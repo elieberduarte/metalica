@@ -120,6 +120,28 @@ def test_folhas_do_projetista_contam_como_o_projeto_recebido(tmp_path, origem):
     assert any("nada vindo do projeto recebido" in a["texto"] for a in V.conferir(pasta)["apontamentos"])
 
 
+def test_projeto_recebido_do_pdf_sem_o_original_aponta(tmp_path):
+    """03/11, WE Coqueiral · Escadas: o 3D montado por script do PDF do projetista (e do IFC do prédio), com as 5 folhas
+    gravadas como desenhos soltos (F01–F05). Sem a planta de lançamento, a aba Original do 2D não aparece — "não foram
+    trazidos os projetos originais de volta". Vale mesmo sem DXF; com as folhas no Original (ou numa revisão), passa"""
+    pasta = str(tmp_path)
+    _projeto(pasta, {"nome": "Escadas", "tipo": "recebido", "arquitetonico": {"tipo": "pdf"}}, [([0.0, 0.0], [1000.0, 0.0])], [])
+    pdir = os.path.join(pasta, "desenhos-2d")
+    os.replace(os.path.join(pdir, "desenho.desenho.json"), os.path.join(pdir, "f01-projetista.desenho.json"))
+    r = V.conferir(pasta)
+    assert r["aplica"] and any("não está no Original" in a["texto"] for a in r["apontamentos"])
+    with open(os.path.join(pdir, "f01-projetista.desenho.json"), encoding="utf-8") as f:
+        folha = json.load(f)
+    for nome in ("planta-de-lançamento", "planta-de-lançamento-r01"):
+        with open(os.path.join(pdir, "%s.desenho.json" % nome), "w", encoding="utf-8") as f:
+            json.dump(folha, f)
+        assert V.conferir(pasta)["apontamentos"] == []
+        os.remove(os.path.join(pdir, "%s.desenho.json" % nome))
+    # o projeto do IFC (sem projeto recebido) não pede o Original
+    _projeto(pasta, {"nome": "Sooro", "tipo": "ifc"}, [], [])
+    assert V.conferir(pasta)["apontamentos"] == []
+
+
 def _cobertura_e_forro(pasta, forro_no_desenho):
     """a cobertura (300 terças, linhas do desenho) e o forro de uma planta própria (40 vigas a 2 m): o forro no desenho
     como `forro_no_desenho` diz — None (a folha lida sem ele), "linha" ou "hachura" (o traço grosso que o PDF imprime como
