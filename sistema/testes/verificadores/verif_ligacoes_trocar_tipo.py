@@ -101,7 +101,9 @@ try:
     selecionar(no2); aba.drenar(0.8)
     opcoes = jsj("""const l = [...editor.el.props.querySelectorAll('label')].find(l => l.textContent === 'Tipo');
                     const s = l && l.nextElementSibling; return s && s.tagName === 'SELECT' ? [...s.options].map(o => o.value) : null;""")
-    ok(opcoes and set(opcoes) == {"castanha_contravento", "duas_chapas_contravento", "cantoneira_contravento"},
+    # a família inteira, como o servidor a define (22b2fc3 juntou a chapa de nó e o esticador, D/E/F de 23/10)
+    from nucleo3d.ligacoes3d import FAMILIAS, familia_de
+    ok(opcoes and set(opcoes) == set(FAMILIAS[familia_de("castanha_contravento")]["tipos"]),
        f"o painel oferece as variantes da família: {opcoes}")
     jsj("""const l = [...editor.el.props.querySelectorAll('label')].find(l => l.textContent === 'Tipo');
            const s = l.nextElementSibling; s.value = 'duas_chapas_contravento'; s.dispatchEvent(new Event('change')); return 1;""")
