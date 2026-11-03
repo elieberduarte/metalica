@@ -43,6 +43,10 @@ LIMITE = 900
 #: Os que passam disso sozinhos (20/10, conferência da 0.9.0): a câmera em 6 formas de modelo × 2 telas leva 28 min,
 #: os gestos do celular ~15 min — com 900 s eram cortados no meio e davam falha
 LIMITES = {"verif_camera_modelos": 3600, "verif_celular_gestos": 1800}
+#: Módulos só do desenvolvimento (fora do instalado, MODULOS_SO_DEV do construir.py): o verificador deles roda e sai no
+#: relatório, mas a falha não reprova a conferência — o defeito vai para o chat dono (usuário, 03/11, na 0.9.2: o
+#: pré-moldado entrou no git e o verif_detalhar_premoldado passou a rodar na cópia limpa)
+SO_NO_DEV = ("premoldado", "arquitetura")
 _PEDE_ARGUMENTOS = re.compile(r"len\(sys\.argv\)\s*<\s*[23]")
 _PORTA_FIXA = re.compile(r"^(?:PORTA|porta)\s*=\s*(\d{4})\s*$", re.M)
 
@@ -301,6 +305,10 @@ def main(argv):
     _gravar_duracoes(duracoes)
     ruins = [nome for nome, (_c, ok, *_r) in resultados.items() if not ok]
     print(f"\n{len(resultados) - len(ruins)} de {len(resultados)} passaram em {(time.time() - t0) / 60:.1f} min")
+    so_dev = sorted(r for r in ruins if any(m in r for m in SO_NO_DEV))
+    if so_dev:
+        print("falharam, só no desenvolvimento (não reprovam):", ", ".join(so_dev))
+    ruins = [r for r in ruins if r not in so_dev]
     if ruins:
         print("falharam:", ", ".join(sorted(ruins)))
     return 1 if ruins else 0
