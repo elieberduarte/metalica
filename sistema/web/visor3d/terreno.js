@@ -5,6 +5,7 @@
 // tem o Ajustar: arrastar a imagem por baixo da obra e girar o norte até as divisas e as ruas encaixarem.
 
 import * as THREE from 'three';
+import { superficie, contornoDosEixos, cotasDaMalha, paredesDaMalha } from './chao.js';
 
 const R = 6378137;
 const rad = g => g * Math.PI / 180, grau = r => r * 180 / Math.PI;
@@ -70,6 +71,20 @@ function comBordaSuave(img, maxLado = 8192) {
   g.imageSmoothingEnabled = true;
   g.drawImage(m, 0, 0, c.width, c.height);
   return c;
+}
+
+/** A parede do chão em níveis (o muro do subsolo, o degrau entre os níveis): uma cor neutra no lugar da foto esticada. */
+function comParede(mat) {
+  if (mat.userData.comParede) return;
+  mat.userData.comParede = true;
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = 'attribute float parede;\nvarying float vParede;\n'
+      + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vParede = parede;');
+    sh.fragmentShader = 'varying float vParede;\n' + sh.fragmentShader.replace('#include <map_fragment>',
+      '#include <map_fragment>\n  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.54, 0.50, 0.45), 0.85 * vParede);');
+  };
+  mat.customProgramCacheKey = () => 'terreno-parede';
+  mat.needsUpdate = true;
 }
 
 export class Terreno {
@@ -148,7 +163,12 @@ export class Terreno {
       m.renderOrder = -0.5;                               // depois do piso liso, antes das peças transparentes
       m.raycast = () => {};                               // não se escolhe nem mede no chão de foto
     }
-    this.malha.onBeforeRender = () => { if (this._marcarObra()) this.visor.pedirQuadro(); };   // peças novas (outra situação)
+    this.malha.onBeforeRender = () => {
+      if (this._marcarObra()) this.visor.pedirQuadro();                                    // peças novas (outra situação)
+      // os eixos chegaram depois do terreno (a referência vem em paralelo): a face do prédio entra no chão em níveis
+      if (this._pontosDeNivel().length && this.visor._dadosReferencia !== this._referenciaUsada) setTimeout(() => this.posicionar(), 0);
+      if (this.pinos) this.pinos.visible = this._pinosAVista();
+    };
     this._marcarObra();
     this.grupo = new THREE.Group();
     this.grupo.add(this.malha);
@@ -175,7 +195,9 @@ export class Terreno {
     if (!this.grupo) return;
     this.visor.cena.remove(this.grupo);
     this.malha.geometry.dispose(); this.malha.material.map.dispose(); this.malha.material.dispose(); this.vazada.material.dispose();
-    this.grupo = this.malha = this.vazada = null;
+    if (this._plano && this._plano !== this.malha.geometry) this._plano.dispose();
+    this._tirarPinos();
+    this.grupo = this.malha = this.vazada = this._plano = this._geoChao = this._sup = null;
     this.visor.pedirQuadro();
   }
 
@@ -199,7 +221,111 @@ export class Terreno {
     this.malha.scale.set(p.largura, p.altura, 1);
     this.malha.rotation.set(0, 0, p.giro);
     this.malha.updateMatrixWorld();
+    this._moldarChao({ meio: [p.meio[0] + d[0], p.meio[1] + d[1]], largura: p.largura, altura: p.altura, giro: p.giro });
     this.visor.pedirQuadro();
+  }
+
+  // ---------------------------------------------------------------- o chão em mais de um nível (03/11, chao.js)
+  // (o usuário pelo SESI Chapecó, 02/11: "uma limitação legal da nossa representação do terreno, quando temos níveis
+  // diferentes"; escolhida a malha pelos pontos de nível, 03/11): com pontos no projeto (terreno.niveis, mm do projeto), a
+  // imagem vira uma malha que passa por eles; sem pontos, o plano de sempre
+
+  /** Os pontos de nível do chão gravados no projeto: [{x, y, z}] (mm do projeto). */
+  _pontosDeNivel() { return (this.t && Array.isArray(this.t.niveis)) ? this.t.niveis : []; }
+
+  /** A cota do chão (mm do projeto) onde a imagem passa em (x, y): a dos pontos de nível, ou a do plano. */
+  cotaEm(x, y) {
+    if (!this._sup) return this.zChao;
+    const aj = this.t && Number.isFinite(this.t.ajuste) ? this.t.ajuste : 0;
+    return this._sup.cota(x, y) + aj - 3;
+  }
+
+  _moldarChao(g) {
+    const niv = this._pontosDeNivel(), m = this.malha;
+    if (!niv.length) {
+      this._sup = null;
+      if (this._plano && m.geometry !== this._plano) { m.geometry = this.vazada.geometry = this._plano; }
+      this._tirarPinos();
+      return;
+    }
+    if (!this._plano) this._plano = m.geometry;
+    // arrastando a imagem (Ajustar) ou girando o norte: a malha refeita no fim do movimento, não a cada quadro (~0,2 s)
+    clearTimeout(this._esperaChao);
+    if (this.arrasto || performance.now() - (this._ultimoChao || 0) < 150) {
+      this._esperaChao = setTimeout(() => this._moldarChao(g), 160);
+      return;
+    }
+    const aj = this.t && Number.isFinite(this.t.ajuste) ? this.t.ajuste : 0;
+    const base = this.zChao - aj + 3;                     // o plano de antes: o chão de longe volta a ele
+    const ref = this.visor._dadosReferencia;
+    this._referenciaUsada = ref;
+    const contorno = contornoDosEixos(((ref && ref.eixos) || []).map(e => ({ a: e.a, b: e.b })));
+    const chave = JSON.stringify([niv, contorno, base]);
+    if (!this._sup || this._chaveSup !== chave) {
+      this._sup = superficie(niv, { base, contorno, raio: Math.hypot(g.largura, g.altura) * 0.75 });
+      this._chaveSup = chave;
+    }
+    // ~0,8 m por quadrinho (a imagem de 446 m: 512); no celular a metade
+    const n = Math.round(Math.max(64, Math.min(this.ui.maxLado ? 256 : 512, Math.max(g.largura, g.altura) / 800)));
+    const z = cotasDaMalha(this._sup, { ...g, n });
+    let geo = this._geoChao;
+    if (!geo || geo.parameters.widthSegments !== n) {
+      if (geo) geo.dispose();
+      geo = this._geoChao = new THREE.PlaneGeometry(1, 1, n, n);
+      geo.setAttribute('parede', new THREE.BufferAttribute(new Float32Array((n + 1) * (n + 1)), 1));
+    }
+    const pos = geo.attributes.position, par = geo.attributes.parede;
+    for (let v = 0; v < pos.count; v++) pos.setZ(v, z[v] + aj - 3 - this.zChao);
+    par.array.set(paredesDaMalha(z, n, [g.largura / n, g.altura / n]));
+    pos.needsUpdate = par.needsUpdate = true;
+    geo.computeBoundingSphere(); geo.computeBoundingBox();
+    m.geometry = this.vazada.geometry = geo;
+    for (const mat of [m.material, this.vazada.material]) comParede(mat);
+    this._montarPinos();
+    this._ultimoChao = performance.now();
+    this.visor.pedirQuadro();
+  }
+
+  _pinosAVista() { return !!(this.verPontos && this.ui.painelAtual && this.ui.painelAtual() === 'terreno'); }
+
+  _tirarPinos() {
+    if (!this.pinos) return;
+    this.pinos.parent && this.pinos.parent.remove(this.pinos);
+    this.pinos.traverse(o => { if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } if (o.geometry) o.geometry.dispose(); });
+    this.pinos = null;
+  }
+
+  /** Os pontos de nível no 3D (com o painel Terreno aberto e "Mostrar os pontos"): uma haste e a cota escrita. */
+  _montarPinos() {
+    this._tirarPinos();
+    const niv = this._pontosDeNivel();
+    if (!niv.length || !this.grupo) return;
+    const cx = this.visor._caixaModelo, k = Math.max(400, Math.min(4000, cx.min.distanceTo(cx.max) / 80));
+    this.pinos = new THREE.Group();
+    this.pinos.name = 'terreno-niveis';
+    const aj = this.t && Number.isFinite(this.t.ajuste) ? this.t.ajuste : 0;
+    const haste = new THREE.CylinderGeometry(k * 0.04, k * 0.04, k, 6).rotateX(Math.PI / 2).translate(0, 0, k / 2);
+    const matHaste = new THREE.MeshBasicMaterial({ color: 0xe8590c, depthTest: false });
+    niv.forEach((p, i) => {
+      const h = new THREE.Mesh(haste, matHaste);
+      h.position.set(p.x, p.y, p.z + aj);
+      h.renderOrder = 10;
+      const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+      const g = c.getContext('2d');
+      g.fillStyle = 'rgba(232,89,12,.92)'; g.beginPath(); g.roundRect(4, 6, 248, 52, 12); g.fill();
+      g.fillStyle = '#fff'; g.font = 'bold 36px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(cotaTxt(p.z), 128, 33);
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.NoColorSpace;
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+      s.scale.set(k * 1.6, k * 0.4, 1);
+      s.position.set(p.x, p.y, p.z + aj + k * 1.25);
+      s.renderOrder = 11;
+      s.userData.indice = i;
+      this.pinos.add(h, s);
+    });
+    this.pinos.visible = this._pinosAVista();
+    this.grupo.add(this.pinos);
   }
 
   mostrar(sim) {
@@ -265,6 +391,7 @@ export class Terreno {
           <div class="sol-controles"><label>Transparência <output id="terreno-transp-saida">${Math.round((t.transparencia || 0) * 100)} %</output>
             <input type="range" id="terreno-transp" min="0" max="90" step="5" value="${Math.round((t.transparencia || 0) * 100)}"
               aria-label="Transparência da imagem"></label></div>`;
+        html += this._painelNiveis();
       }
       html += `<p class="titulo-secao">Imagem</p>
         <label class="terreno-fonte-sel">Fonte <select id="terreno-fonte-sel">${fontes.map(f => `<option value="${esc(f.chave)}" ${f.chave === fonteAtual ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}
@@ -371,6 +498,7 @@ export class Terreno {
     const bx = $('#terreno-baixar');
     if (bx) bx.onclick = () => this._baixar();
     this._ligarPropria(raiz);
+    this._ligarNiveis(raiz);
     const sq = $('#terreno-esquecer');
     if (sq) sq.onclick = async () => {
       if (!confirm('Tirar o local da obra deste projeto? A imagem baixada fica na pasta, mas some do 3D.')) return;
@@ -378,6 +506,99 @@ export class Terreno {
       this.estado = await this._pedir('/esquecer', {});
       await this.montar(); this.ui.aoMudar(); this.painel();
     };
+  }
+
+  // ---------------------------------------------------------------- os níveis do chão (o painel)
+
+  _painelNiveis() {
+    const niv = this._pontosDeNivel();
+    let html = `<p class="titulo-secao">Níveis do chão</p>
+      <p class="dica">Pontos com a cota do chão (a calçada −0,50, o pátio do subsolo −3,98, a rampa…): a imagem passa por eles e
+        encosta no prédio pelo lado de fora. Sem pontos, a imagem fica plana na altura acima.</p>
+      <button type="button" id="terreno-nivel-marcar" class="${this.marcandoNivel ? 'ligado' : ''}">${this.marcandoNivel
+        ? '✓ Terminar de marcar' : '+ Ponto de nível (clique no chão)'}</button>`;
+    if (niv.length) {
+      html += `<label class="linha-lista"><input type="checkbox" id="terreno-niveis-ver" ${this.verPontos ? 'checked' : ''}><span>Mostrar os
+          ${niv.length} pontos no 3D</span></label>
+        <div class="terreno-niveis">${niv.map((p, i) => `<div class="terreno-nivel" data-i="${i}">
+          <input type="text" inputmode="decimal" data-cota="${i}" value="${esc(cotaTxt(p.z))}" aria-label="Cota do ponto ${i + 1} (m)"><span>m</span>
+          <span class="onde" title="${esc(p.nome || '')}">x ${nf(p.x / 1000, 1)} · y ${nf(p.y / 1000, 1)}${p.nome ? ' · ' + esc(p.nome) : ''}</span>
+          <button type="button" data-tirar="${i}" title="Tirar este ponto">✕</button></div>`).join('')}</div>
+        <button type="button" id="terreno-niveis-tirar">Tirar todos os pontos</button>`;
+    }
+    return html;
+  }
+
+  _ligarNiveis(raiz) {
+    const $ = s => raiz.querySelector(s);
+    const bm = $('#terreno-nivel-marcar');
+    if (bm) bm.onclick = () => { this.marcarNivel(!this.marcandoNivel); this.painel(); };
+    const vp = $('#terreno-niveis-ver');
+    if (vp) vp.onchange = () => { this.verPontos = vp.checked; if (this.pinos) this.pinos.visible = this._pinosAVista(); this.visor.pedirQuadro(); };
+    raiz.querySelectorAll('[data-cota]').forEach(inp => {
+      const i = +inp.dataset.cota;
+      inp.onchange = () => {
+        const v = parseFloat(String(inp.value).replace('−', '-').replace('+', '').replace(',', '.'));
+        if (!Number.isFinite(v) || !this._pontosDeNivel()[i]) { if (this._pontosDeNivel()[i]) inp.value = cotaTxt(this._pontosDeNivel()[i].z); return; }
+        this.t.niveis[i] = { ...this.t.niveis[i], z: Math.round(v * 1000) };
+        inp.value = cotaTxt(this.t.niveis[i].z);
+        this.posicionar(); this._gravarLogo();
+      };
+      inp.onkeydown = (ev) => { if (ev.key === 'Enter') inp.blur(); };
+    });
+    raiz.querySelectorAll('[data-tirar]').forEach(b => {
+      b.onclick = () => { this.t.niveis.splice(+b.dataset.tirar, 1); this._depoisDosNiveis(); };
+    });
+    const tt = $('#terreno-niveis-tirar');
+    if (tt) tt.onclick = () => {
+      if (!confirm(`Tirar os ${this._pontosDeNivel().length} pontos de nível? A imagem volta a ficar plana.`)) return;
+      this.t.niveis = []; this._depoisDosNiveis();
+    };
+  }
+
+  _depoisDosNiveis(focar = null) {
+    if (!this._pontosDeNivel().length) delete this.t.niveis;
+    this.posicionar();
+    this._gravarLogo();
+    if (this.ui.painelAtual && this.ui.painelAtual() === 'terreno') {
+      this.painel();
+      if (focar !== null) {
+        const inp = this.ui.corpo().querySelector(`[data-cota="${focar}"]`);
+        if (inp) { inp.scrollIntoView({ block: 'nearest' }); inp.focus(); inp.select(); }
+      }
+    }
+  }
+
+  /** Marcar pontos de nível: cada clique no chão põe um ponto com a cota que o chão tem ali; a cota se digita na lista. */
+  marcarNivel(sim) {
+    this.marcandoNivel = !!sim && !!this.malha;
+    if (this.marcandoNivel) { this.ajustar(false); this.verPontos = true; if (!this.ligado) this.mostrar(true); }
+    this.ui.palco.classList.toggle('marcando-nivel', this.marcandoNivel);
+    this._ouvirPalco();
+    if (this.pinos) this.pinos.visible = this._pinosAVista();
+    this.visor.pedirQuadro();
+  }
+
+  /** O ponto do chão sob o mouse (mm do projeto), já na cota do chão em níveis (o raio vai e volta até a malha). */
+  _noChaoEmNiveis(ev) {
+    let z = this.zChao, p = null;
+    for (let k = 0; k < 8; k++) {
+      p = this._noChao(ev, z);
+      if (!p) return null;
+      const z2 = this.cotaEm(p[0], p[1]);
+      if (Math.abs(z2 - z) < 1) break;
+      z = z2;
+    }
+    return p;
+  }
+
+  _marcarNoChao(ev) {
+    const p = this._noChaoEmNiveis(ev);
+    if (!p) return;
+    const aj = this.t && Number.isFinite(this.t.ajuste) ? this.t.ajuste : 0;
+    const z = Math.round(this.cotaEm(p[0], p[1]) - aj + 3);
+    this.t.niveis = [...this._pontosDeNivel(), { x: Math.round(p[0]), y: Math.round(p[1]), z }];
+    this._depoisDosNiveis(this.t.niveis.length - 1);
   }
 
   // ---------------------------------------------------------------- a imagem própria (o drone do cliente)
@@ -533,7 +754,9 @@ export class Terreno {
   async _escolher(r) {
     const cx = this.caixaDoModelo();
     const t = { lat: r.lat, lon: r.lon, ponto: [(cx[0] + cx[2]) / 2, (cx[1] + cx[3]) / 2], norte: (this.t && this.t.norte) || 0,
-                endereco: r.nome, fonte: (this.t && this.t.fonte) || 'esri', caixa: cx };
+                endereco: r.nome, fonte: (this.t && this.t.fonte) || 'esri', caixa: cx,
+                // os pontos de nível são do projeto (mm da obra), não do lugar: ficam quando o lugar muda
+                ...(this._pontosDeNivel().length ? { niveis: this._pontosDeNivel() } : {}) };
     try {
       this.estado = await this._pedir('', t);
       await this._baixar();
@@ -570,30 +793,44 @@ export class Terreno {
 
   ajustar(sim) {
     this.ajustando = !!sim && !!this.malha;
+    if (this.ajustando && this.marcandoNivel) this.marcarNivel(false);
     this.ui.palco.classList.toggle('ajustando-terreno', this.ajustando);
-    if (this.ajustando && !this._ouvindo) {
-      this._ouvindo = true;
-      const palco = this.ui.palco;
-      // na captura, no palco: o arrasto não chega à tela (nem à órbita nem à escolha de peça); a roda continua no zoom
-      palco.addEventListener('pointerdown', ev => this._inicio(ev), true);
-      window.addEventListener('pointermove', ev => this._move(ev));
-      window.addEventListener('pointerup', ev => this._fim(ev));
-    }
+    this._ouvirPalco();
     if (this.ajustando && !this.ligado) this.mostrar(true);
   }
 
-  _noChao(ev) {
+  _ouvirPalco() {
+    if (this._ouvindo || !(this.ajustando || this.marcandoNivel)) return;
+    this._ouvindo = true;
+    const palco = this.ui.palco;
+    // na captura, no palco: o arrasto não chega à tela (nem à órbita nem à escolha de peça); a roda continua no zoom
+    palco.addEventListener('pointerdown', ev => this._inicio(ev), true);
+    window.addEventListener('pointermove', ev => this._move(ev));
+    window.addEventListener('pointerup', ev => this._fim(ev));
+    window.addEventListener('keydown', ev => {
+      if (ev.key !== 'Escape' || !this.marcandoNivel) return;
+      this.marcarNivel(false);
+      if (this.ui.painelAtual() === 'terreno') this.painel();
+    });
+  }
+
+  _noChao(ev, zChao = this.zChao) {
     const tela = this.visor.renderer.domElement, r = tela.getBoundingClientRect();
     const ndc = new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, this.visor.camera);
     const o = (this.visor.cabecalho && this.visor.cabecalho.origem) || [0, 0, 0], k = this.escala;
-    const plano = new THREE.Plane(new THREE.Vector3(0, 0, 1), -(this.zChao - o[2]) * k);
+    const plano = new THREE.Plane(new THREE.Vector3(0, 0, 1), -(zChao - o[2]) * k);
     const p = ray.ray.intersectPlane(plano, new THREE.Vector3());
     return p ? [p.x / k + o[0], p.y / k + o[1]] : null;
   }
 
   _inicio(ev) {
+    if (this.marcandoNivel && ev.button === 0 && ev.target === this.visor.renderer.domElement) {
+      // o clique parado marca o ponto; o arrasto continua girando a vista
+      this._cliqueNivel = { x: ev.clientX, y: ev.clientY };
+      return;
+    }
     if (!this.ajustando || ev.button !== 0 || ev.target !== this.visor.renderer.domElement) return;
     const p = this._noChao(ev);
     if (!p) return;
@@ -611,7 +848,13 @@ export class Terreno {
 
   /** Soltou: a imagem andou `d` por baixo da obra — o ponto de amarração do modelo passa a cair no lugar do mundo que
    *  estava em `ponto − d`. */
-  _fim() {
+  _fim(ev) {
+    if (this._cliqueNivel) {
+      const c = this._cliqueNivel;
+      this._cliqueNivel = null;
+      if (this.marcandoNivel && ev && Math.hypot(ev.clientX - c.x, ev.clientY - c.y) < 5) this._marcarNoChao(ev);
+      return;
+    }
     if (!this.arrasto) return;
     const d = this.arrasto.d;
     this.arrasto = null;

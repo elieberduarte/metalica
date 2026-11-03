@@ -193,7 +193,10 @@ def test_pacote_leva_o_terreno(tmp_path):
     from PIL import Image
     proj = tmp_path / "obra"
     (proj / "terreno").mkdir(parents=True)
-    t = {"lat": -24.958, "lon": -53.484, "ponto": [0, 0], "norte": -78.5, "fonte": "cascavel", "cota": 0, "transparencia": 0.4}
+    # com os pontos de nível do chão (03/11, o chão em níveis — o celular desenha pelo mesmo terreno.js)
+    niveis = [{"x": 0, "y": -6000, "z": -500}, {"x": 3000, "y": 13000, "z": -4000}, {"x": 9000, "y": 13000, "z": -4000}]
+    t = {"lat": -24.958, "lon": -53.484, "ponto": [0, 0], "norte": -78.5, "fonte": "cascavel", "cota": 0, "transparencia": 0.4,
+         "niveis": niveis}
     (proj / "projeto.json").write_text(json.dumps({"nome": "Obra Teste", "terreno": t}), encoding="utf-8")
     (proj / "modelo.json").write_text(json.dumps(_modelo()), encoding="utf-8")
     Image.new("RGB", (64, 64), (90, 130, 78)).save(proj / "terreno" / "imagem.jpg")
@@ -206,6 +209,7 @@ def test_pacote_leva_o_terreno(tmp_path):
     assert m["terreno"] == "terreno.json" and m["terreno_imagem"] == "terreno.jpg" and {"terreno.json", "terreno.jpg"} <= nomes
     tj = json.loads((dest / "terreno.json").read_text(encoding="utf-8"))
     assert tj["terreno"]["norte"] == -78.5 and tj["terreno"]["cota"] == 0 and tj["terreno"]["transparencia"] == 0.4
+    assert tj["terreno"]["niveis"] == niveis
     assert tj["imagem"]["atribuicao"].startswith("Ortofoto 2021")
     assert (dest / "terreno.jpg").read_bytes() == (proj / "terreno" / "imagem.jpg").read_bytes()
     # tirado o local: os arquivos saem

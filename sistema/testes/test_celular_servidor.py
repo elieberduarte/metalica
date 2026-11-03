@@ -260,3 +260,18 @@ def test_extensao_so_no_desenvolvimento():
     i = app.index("def _extensoes_dev()")
     trecho = app[i:app.index("\ndef ", i + 10)]
     assert "if not DEV:" in trecho and trecho.index("if not DEV:") < trecho.index("import celular.web")
+
+
+def test_tudo_o_que_o_visor_do_celular_importa_esta_liberado():
+    """O visor do celular importa arquivos do modo ver do PC (VISOR_LIBERADO) e o servidor do Wi-Fi, a nuvem e o sw.js só
+    entregam os da lista: um import novo fora dela derruba o módulo inteiro no celular (03/11: o terreno.js passou a importar
+    o chao.js — o chão em níveis — e o terreno de todas as obras não abriria no celular sem ele na lista)."""
+    import re
+    pasta = os.path.join(S.WEB, "visor3d")
+    sw = open(os.path.join(S.WEB, "celular", "sw.js"), encoding="utf-8").read()
+    for nome in sorted(S.VISOR_LIBERADO):
+        texto = open(os.path.join(pasta, nome), encoding="utf-8").read()
+        for imp in re.findall(r"""(?:from|import\()\s*['"]\./([\w.]+\.js)['"]""", texto):
+            assert imp in S.VISOR_LIBERADO, "%s importa %s, fora do VISOR_LIBERADO (celular/servidor.py)" % (nome, imp)
+    for nome in ("terreno.js", "chao.js"):
+        assert "'../visor3d/%s'" % nome in sw, "%s fora do BASE_TELAS do sw.js (o celular sem rede)" % nome

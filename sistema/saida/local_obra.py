@@ -218,7 +218,40 @@ def validar(t: dict) -> dict:
         raise ErroTerreno("fonte de imagem desconhecida: %s" % fonte)
     if isinstance(t.get("caixa"), list) and len(t["caixa"]) == 4:
         saida["caixa"] = [round(float(v), 1) for v in t["caixa"]]
+    niveis = niveis_do_chao(t.get("niveis"))
+    if niveis:
+        saida["niveis"] = niveis
     return saida
+
+
+#: os pontos de nível do chão que um projeto guarda (o painel marca um a um; o script da obra traz os da implantação)
+NIVEIS_MAX = 2000
+
+
+def niveis_do_chao(lista) -> list:
+    """Os pontos de nível do chão (03/11, o usuário pelo SESI Chapecó: "uma limitação legal da nossa representação do
+    terreno, quando temos níveis diferentes"): [{x, y, z, nome?}] em mm do projeto, mm inteiro; a imagem do terreno passa
+    por eles (web/visor3d/chao.js). O ponto sem número, fora do mundo ou repetido no mesmo lugar (o último vale) sai."""
+    if lista is None:
+        return []
+    if not isinstance(lista, list):
+        raise ErroTerreno("os níveis do chão vêm numa lista de pontos {x, y, z} (mm).")
+    if len(lista) > NIVEIS_MAX:
+        raise ErroTerreno("até %d pontos de nível do chão (vieram %d)." % (NIVEIS_MAX, len(lista)))
+    por_lugar = {}
+    for p in lista:
+        try:
+            x, y, z = float(p["x"]), float(p["y"]), float(p["z"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not all(math.isfinite(v) for v in (x, y, z)) or max(abs(x), abs(y)) > 1e8 or abs(z) > 1e6:
+            continue
+        ponto = {"x": int(round(x)), "y": int(round(y)), "z": int(round(z))}
+        if p.get("nome"):
+            ponto["nome"] = str(p["nome"])[:60]
+        por_lugar.pop((ponto["x"], ponto["y"]), None)
+        por_lugar[(ponto["x"], ponto["y"])] = ponto
+    return list(por_lugar.values())
 
 
 COMO_COPIAR = ("No geoportal, aperte F12 → aba Rede (Network), escreva GetMap no filtro, mexa no mapa e copie o endereço de "

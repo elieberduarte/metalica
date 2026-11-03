@@ -105,3 +105,10 @@ html, body.ver3d { height: 100%; margin: 0; overflow: hidden; background: var(--
   border-radius: var(--raio-p); background: var(--painel); color: var(--texto); font-variant-numeric: tabular-nums; }
 .terreno-norte-barra { display: block; width: 100%; margin: 4px 0 6px; accent-color: var(--azul); }
 .painel-terreno input[type=range] { box-sizing: border-box; margin-left: 0; margin-right: 0; max-width: 100%; }
+.terreno-niveis { max-height: 220px; overflow-y: auto; margin: 4px 0; }
+.terreno-nivel { display: flex; align-items: center; gap: 4px; font-size: 12px; padding: 1px 0; }
+.terreno-nivel input { width: 58px; text-align: right; font: inherit; padding: 2px 5px; border: 1px solid var(--borda);
+  border-radius: var(--raio-p); background: var(--painel); color: var(--texto); font-variant-numeric: tabular-nums; }
+.terreno-nivel .onde { flex: 1; color: var(--texto2); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.painel-terreno .terreno-nivel button { padding: 1px 6px; margin: 0; font-size: 11px; }
+#palco.marcando-nivel #tela { cursor: crosshair; }
