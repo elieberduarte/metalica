@@ -4,8 +4,9 @@ do terreno, quando temos níveis diferentes"; caso (b) aprovado — Projeto/ESTU
 chao.js. A situação do SESI em miniatura — um prédio de 20 × 10 m (eixos 1–3 × A–B), a frente sul no térreo (−0,50), o
 pátio norte do subsolo (−4,00), a rua norte acima (−1,50) e um muro (−4,00 → −0,50 em 1,5 m) — e a obra plana (sem pontos:
 o plano de sempre). Confere: a imagem passa pelos pontos, encosta na face norte na cota do pátio, o muro sai em cor neutra,
-o "+ Ponto de nível" marca com um clique de verdade no chão e a cota digitada grava no projeto, o ✕ e o "Tirar todos"
-voltam ao plano, e tudo continua depois do F5. Fonte de imagem de teste (sem internet). Porta livre, nunca a 8765/8766."""
+os pontos gravados pelo script aparecem no painel e o "Tirar todos" volta ao plano, e tudo continua depois do F5. E os PLANOS (o modelo simplificado do usuário, 03/11: "Plano" —
+"Inclinado" — "Plano"): "+ Plano" com dois cliques no chão (o retângulo) e com três (+ ✓), a cota digitada, plano por dentro e
+inclinado entre eles. Fonte de imagem de teste (sem internet). Porta livre, nunca a 8765/8766."""
 import base64, json, os, shutil, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCR = os.path.dirname(os.path.abspath(__file__))
@@ -144,52 +145,88 @@ try:
     foto(aba, "ver3d_terreno_niveis_1.png")
 
     # o painel: a lista dos pontos e os pinos no 3D só com o painel aberto
-    ok(not aba.avaliar("!!(window.terreno.pinos && window.terreno.pinos.visible)"), "os pinos dos pontos escondidos com o painel fechado")
+    ok(not aba.avaliar("!!(window.terreno.pinos && window.terreno.pinos.visible)"), "os pinos escondidos com o painel fechado")
     aba.avaliar("document.getElementById('btn-terreno').click()")
     ok(esperar(aba, "document.querySelectorAll('.terreno-nivel').length === %d" % len(NIVEIS), 5),
        f"o painel Terreno lista os {len(NIVEIS)} pontos de nível")
     aba.avaliar("document.getElementById('terreno-niveis-ver').click()")
-    ok(esperar(aba, "window.terreno.pinos && window.terreno.pinos.visible", 5), "Mostrar os pontos: os pinos aparecem no 3D")
-
-    # + Ponto de nível: um clique de verdade no chão (na vista de cima, no pátio norte)
-    aba.avaliar("""(() => { const v = window.visor, o = v.cabecalho.origem || [0, 0, 0];
-      v.camera.position.set(6500 - o[0], 13000 - o[1] - 1, 60000 - o[2]); v.controles.target.set(6500 - o[0], 13000 - o[1], -4000 - o[2]);
-      v.controles.update(); v.pedirQuadro(); return 1; })()""")
-    aba.drenar(0.6)
-    aba.avaliar("document.getElementById('terreno-nivel-marcar').click()")
-    ok(esperar(aba, "window.terreno.marcandoNivel && document.getElementById('palco').classList.contains('marcando-nivel')", 5),
-       "+ Ponto de nível: marcando (cursor em cruz)")
-    tela = aba.avaliar("(() => { const r = window.visor.renderer.domElement.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
-    cx, cy = tela
-    aba.cmd("Input.dispatchMouseEvent", type="mouseMoved", x=cx, y=cy, button="none")
-    aba.cmd("Input.dispatchMouseEvent", type="mousePressed", x=cx, y=cy, button="left", buttons=1, clickCount=1)
-    aba.cmd("Input.dispatchMouseEvent", type="mouseReleased", x=cx, y=cy, button="left", buttons=0, clickCount=1)
-    ok(esperar(aba, "window.terreno.t.niveis.length === %d" % (len(NIVEIS) + 1), 5), "o clique no chão põe um ponto")
-    novo = aba.avaliar("window.terreno.t.niveis[window.terreno.t.niveis.length - 1]")
-    ok(novo and abs(novo["x"] - 6500) < 800 and abs(novo["y"] - 13000) < 800 and abs(novo["z"] + 4000) < 150,
-       f"o ponto cai onde se clicou, com a cota que o chão tem ali ({novo})")
-    ok(esperar(aba, "document.activeElement && document.activeElement.dataset.cota === '%d'" % len(NIVEIS), 5),
-       "a cota do ponto novo fica pronta para digitar")
-    aba.avaliar("document.execCommand('selectAll'); 1")
-    aba.cmd("Input.insertText", text="-3,20")
-    aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="Enter", code="Enter", windowsVirtualKeyCode=13)
-    aba.cmd("Input.dispatchKeyEvent", type="keyUp", key="Enter", code="Enter", windowsVirtualKeyCode=13)
-    ok(esperar(aba, "window.terreno.t.niveis[%d].z === -3200" % len(NIVEIS), 5), "a cota digitada (−3,20) vale para o ponto")
-    ok(esperar(aba, "Math.abs(window.terreno.cotaEm(%d, %d) + 3203) < 2" % (novo["x"], novo["y"]), 5), "e a imagem passa a passar por ela")
-    aba.drenar(1.2)
-    t = _json(API)["terreno"]
-    ok(len(t.get("niveis") or []) == len(NIVEIS) + 1 and t["niveis"][-1]["z"] == -3200, "o ponto novo gravado no projeto")
-    aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="Escape", code="Escape", windowsVirtualKeyCode=27)
-    ok(esperar(aba, "!window.terreno.marcandoNivel", 3), "Esc termina de marcar")
-
-    # o ✕ tira um ponto; "Tirar todos" volta ao plano
-    aba.avaliar("document.querySelector('[data-tirar=\"%d\"]').click()" % len(NIVEIS))
-    aba.drenar(1.2)
-    ok(len(_json(API)["terreno"].get("niveis") or []) == len(NIVEIS), "o ✕ tira o ponto (no projeto também)")
+    ok(esperar(aba, "window.terreno.pinos && window.terreno.pinos.visible", 5), "Mostrar no 3D: os pinos aparecem")
     aba.avaliar("window.confirm = () => true; document.getElementById('terreno-niveis-tirar').click(); 1")
     aba.drenar(1.2)
-    ok("niveis" not in _json(API)["terreno"], "Tirar todos os pontos: o projeto fica sem níveis")
+    ok("niveis" not in _json(API)["terreno"], "Tirar todos: o projeto fica sem níveis")
     ok(aba.avaliar("window.terreno.malha.geometry.parameters.widthSegments === 1 && !window.terreno._sup"), "e a imagem volta ao plano")
+
+    # os planos (o modelo simplificado, 03/11: "Plano" — "Inclinado" — "Plano"), desenhados com cliques de verdade no chão,
+    # de cima: o pátio norte com dois cliques (o retângulo) e a frente sul com três (um triângulo) e o ✓
+    aba.avaliar("""(() => { const v = window.visor, o = v.cabecalho.origem || [0, 0, 0];
+      v.camera.position.set(12000 - o[0], 6000 - o[1] - 1, 90000 - o[2]); v.controles.target.set(12000 - o[0], 6000 - o[1], -2000 - o[2]);
+      v.controles.update(); v.pedirQuadro(); return 1; })()""")
+    aba.drenar(0.6)
+
+    def clicar_no_chao(x, y, z=-3):
+        sx, sy = aba.avaliar("""(() => { const v = window.visor, o = v.cabecalho.origem || [0, 0, 0];
+          const p = new v.camera.position.constructor(%f - o[0], %f - o[1], %f - o[2]).project(v.camera);
+          const r = v.renderer.domElement.getBoundingClientRect();
+          return [r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height]; })()""" % (x, y, z))
+        aba.cmd("Input.dispatchMouseEvent", type="mouseMoved", x=sx, y=sy, button="none")
+        aba.cmd("Input.dispatchMouseEvent", type="mousePressed", x=sx, y=sy, button="left", buttons=1, clickCount=1)
+        aba.cmd("Input.dispatchMouseEvent", type="mouseReleased", x=sx, y=sy, button="left", buttons=0, clickCount=1)
+        aba.drenar(0.2)
+
+    def digitar_cota(i, texto):
+        ok(esperar(aba, "document.activeElement && document.activeElement.dataset.planoCota === '%d'" % i, 5),
+           f"a cota do plano {i + 1} fica pronta para digitar")
+        aba.avaliar("document.execCommand('selectAll'); 1")
+        aba.cmd("Input.insertText", text=texto)
+        aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="Enter", code="Enter", windowsVirtualKeyCode=13)
+        aba.cmd("Input.dispatchKeyEvent", type="keyUp", key="Enter", code="Enter", windowsVirtualKeyCode=13)
+
+    aba.avaliar("document.getElementById('terreno-plano-novo').click()")
+    ok(esperar(aba, "!!window.terreno.desenhandoPlano && document.getElementById('palco').classList.contains('marcando-nivel')", 5),
+       "+ Plano: desenhando (cursor em cruz)")
+    clicar_no_chao(-5000, 11000)
+    clicar_no_chao(30000, 25000)
+    ok(aba.avaliar("window.terreno.desenhandoPlano.length === 2"), "dois cliques no chão = dois cantos")
+    aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="Enter", code="Enter", windowsVirtualKeyCode=13)
+    aba.cmd("Input.dispatchKeyEvent", type="keyUp", key="Enter", code="Enter", windowsVirtualKeyCode=13)
+    ok(esperar(aba, "!window.terreno.desenhandoPlano && (window.terreno.t.planos || []).length === 1", 5), "Enter fecha o plano")
+    pl = aba.avaliar("window.terreno.t.planos[0]")
+    xs = sorted(v[0] for v in pl["contorno"]); ys = sorted(v[1] for v in pl["contorno"])
+    ok(len(pl["contorno"]) == 4 and abs(xs[0] + 5000) < 600 and abs(xs[-1] - 30000) < 600 and abs(ys[0] - 11000) < 600 and abs(ys[-1] - 25000) < 600,
+       f"dois cantos = o retângulo deles ({pl['contorno']})")
+    digitar_cota(0, "-4,00")
+    ok(esperar(aba, "window.terreno.t.planos[0].cota === -4000", 5), "a cota digitada (−4,00) vale para o plano")
+
+    aba.avaliar("document.getElementById('terreno-plano-novo').click()")
+    for x, y in ((-5000, -3000), (30000, -3000), (30000, -12000)):
+        clicar_no_chao(x, y)
+    aba.avaliar("document.getElementById('terreno-plano-fechar').click()")
+    ok(esperar(aba, "(window.terreno.t.planos || []).length === 2 && window.terreno.t.planos[1].contorno.length === 3", 5),
+       "três cliques e ✓ Fechar = um plano de três cantos")
+    digitar_cota(1, "-0,50")
+    ok(esperar(aba, "window.terreno.t.planos[1].cota === -500", 5), "a cota digitada (−0,50) vale para o segundo plano")
+    aba.drenar(1.2)
+    t = _json(API)["terreno"]
+    ok(len(t.get("planos") or []) == 2 and [p["cota"] for p in t["planos"]] == [-4000, -500], "os dois planos gravados no projeto")
+
+    aba.navegar(base + "/visor3d/ver3d.html?projeto=obra", limite=60)
+    ok(esperar(aba, "!!(window.ver3dPronto && window.terreno && window.terreno._sup)", 90), "depois do F5, o chão com os planos")
+    for nome, (x, y, z) in {"dentro do pátio (plano em −4,00)": (12000, 18000, -4003),
+                            "dentro da frente (plano em −0,50)": (25000, -5000, -503)}.items():
+        r = aba.avaliar(COTA_DA_MALHA + f"({x}, {y})")
+        ok(r and abs(r["z"] - z) < 2, f"{nome}: a imagem em {r and round(r['z'])} mm (esperado {z})")
+    meio = aba.avaliar("window.terreno.cotaEm(-3000, 4000)")
+    ok(-4003 < meio < -503, f"entre os dois planos o chão sai inclinado ({round(meio)} mm)")
+
+    # o ✕ tira um plano; "Tirar todos" volta ao plano de sempre
+    aba.avaliar("document.getElementById('btn-terreno').click()")
+    ok(esperar(aba, "!!document.querySelector('[data-plano-tirar=\"1\"]')", 5), "o painel lista os planos")
+    aba.avaliar("document.querySelector('[data-plano-tirar=\"1\"]').click()")
+    aba.drenar(1.2)
+    ok(len(_json(API)["terreno"].get("planos") or []) == 1, "o ✕ tira o plano (no projeto também)")
+    aba.avaliar("window.confirm = () => true; document.getElementById('terreno-niveis-tirar').click(); 1")
+    aba.drenar(1.2)
+    ok("planos" not in _json(API)["terreno"], "Tirar todos: o projeto fica sem planos")
     aba.navegar(base + "/visor3d/ver3d.html?projeto=obra", limite=60)
     ok(esperar(aba, "!!(window.ver3dPronto && window.terreno && window.terreno.malha)", 90)
        and aba.avaliar("window.terreno.malha.geometry.parameters.widthSegments === 1"), "depois do F5, continua plana")

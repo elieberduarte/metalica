@@ -5,7 +5,9 @@ Projeto/ESTUDOS/Terreno-niveis, caso (b)): os pontos gravados no projeto (saida/
 chão (web/visor3d/chao.js, rodado no node).
 
 Os casos: o SESI (frente sul no térreo −0,50, pátio norte do subsolo −3,98/−4,16, a rua norte em rampa −0,15 → −2,86; os
-eixos de 0 a 84,1 m × 0 a 49,46 m) e a obra plana (sem pontos: nada muda — o plano de sempre)."""
+eixos de 0 a 84,1 m × 0 a 49,46 m) e a obra plana (sem pontos: nada muda — o plano de sempre). E os PLANOS, o modelo
+simplificado pedido no mesmo dia ("o terreno ficou meio estranho, vamos trabalhar com um modelo mais simplificado": "Plano" —
+"Inclinado" — "Plano"), que é o padrão do painel: o pátio norte −3,99 e a frente sul −0,03 do SESI, retos entre eles."""
 import json
 import os
 import shutil
@@ -159,3 +161,61 @@ def test_obra_plana_um_ponto_so_e_o_plano():
         console.log(JSON.stringify([s.cota(0, 0), s.cota(50000, -30000), s.cota(1000, 1000)].map(Math.round)));
     """)
     assert r == [-1200, -1200, -1200]
+
+
+# ------------------------------------------------------------------ os planos (o modelo simplificado, 03/11)
+# o usuário no print do SESI: "o terreno ficou meio estranho, vamos trabalhar com um modelo mais simplificado" — "Plano" (o
+# pátio norte) — "Inclinado" (ao longo da face oeste) — "Plano" (a frente sul); a amostra aprovada ("sim"):
+# Projeto/ESTUDOS/Terreno-niveis/amostra-planos-usuario.png e perfil-planos-face-oeste.png
+PLANOS_SESI = [{"cota": -3990, "contorno": [[-3200, 49786], [87000, 49786], [87000, 61000], [-3200, 61000]], "nome": "Pátio norte"},
+               {"cota": -30, "contorno": [[-3200, -11300], [87000, -11300], [87000, -1019], [-3200, -1019]], "nome": "Frente sul"}]
+
+
+def test_os_planos_gravados_no_projeto():
+    base = {"lat": -27.09, "lon": -52.63, "ponto": [42000, 24700]}
+    assert "planos" not in L.validar(base) and "planos" not in L.validar(dict(base, planos=[]))
+    t = L.validar(dict(base, planos=PLANOS_SESI + [
+        {"cota": -500, "contorno": [[0, 0], [10, 0]]},                                   # 2 cantos: sai
+        {"cota": "x", "contorno": [[0, 0], [10, 0], [10, 10]]},                          # sem cota: sai
+        {"cota": -500.4, "contorno": [[0, 0], [10.2, 0], [10, 10], [10, 10], [0, 0]]}]))  # repetidos e fechado: limpa
+    assert t["planos"][:2] == PLANOS_SESI
+    assert t["planos"][2] == {"cota": -500, "contorno": [[0, 0], [10, 0], [10, 10]]} and len(t["planos"]) == 3
+    with pytest.raises(L.ErroTerreno, match="lista"):
+        L.validar(dict(base, planos={"cota": 0}))
+
+
+@node
+def test_sesi_plano_inclinado_plano_ao_longo_da_face_oeste():
+    """O corte do print: o pátio norte plano em −3,99, a frente sul plana em −0,03 e, entre eles, o chão reto ao longo da face
+    oeste (3,96 m em 50,8 m); dentro de cada plano, a cota dele em toda a malha da imagem."""
+    r = _rodar("""
+        const s = C.superficie([], { base: -30, planos, centro: [42000, 24700] });
+        const em = (x, y) => Math.round(s.cota(x, y));
+        const face = []; for (let y = -1019; y <= 49786; y += 5000) face.push(em(-2000, y));
+        const g = { meio: [42000, 24700], largura: 446000, altura: 446000, giro: -53.1 * Math.PI / 180, n: 256 };
+        const z = C.cotasDaMalha(s, g), c = Math.cos(g.giro), sn = Math.sin(g.giro), N = g.n + 1;
+        let foraDoPlano = 0;
+        for (let l = 0; l < N; l++) for (let col = 0; col < N; col++) {
+          const u = (col / g.n - 0.5) * g.largura, w = (0.5 - l / g.n) * g.altura;
+          const x = g.meio[0] + c * u - sn * w, y = g.meio[1] + sn * u + c * w, v = l * N + col;
+          for (const pl of planos) if (C.dentroDoPoligono(pl.contorno, x, y) && z[v] !== pl.cota) foraDoPlano++;
+        }
+        console.log(JSON.stringify({ norte: [em(0, 55000), em(80000, 60000)], sul: [em(0, -5000), em(80000, -11000)], face, foraDoPlano,
+          longe: em(42000, 24700 + 600000) }));
+    """, planos=PLANOS_SESI)
+    assert r["norte"] == [-3990, -3990] and r["sul"] == [-30, -30], r
+    assert r["foraDoPlano"] == 0, r
+    f = r["face"]
+    assert all(a > b for a, b in zip(f, f[1:])), r                              # desce sempre, do sul para o norte
+    passo = [a - b for a, b in zip(f, f[1:])]
+    assert max(passo) - min(passo) < 60, r                                      # reto: o mesmo tanto a cada 5 m
+    assert abs(r["longe"] + 30) < 5, r
+
+
+@node
+def test_ponto_solto_dentro_de_um_plano_nao_conta():
+    r = _rodar("""
+        const s = C.superficie([{ x: 40000, y: 55000, z: 0 }], { base: -30, planos, centro: [42000, 24700] });
+        console.log(JSON.stringify([s.cota(40000, 55000), s.cota(40100, 55000)].map(Math.round)));
+    """, planos=PLANOS_SESI)
+    assert r == [-3990, -3990]

@@ -221,6 +221,49 @@ def validar(t: dict) -> dict:
     niveis = niveis_do_chao(t.get("niveis"))
     if niveis:
         saida["niveis"] = niveis
+    planos = planos_do_chao(t.get("planos"))
+    if planos:
+        saida["planos"] = planos
+    return saida
+
+
+PLANOS_MAX, CANTOS_MAX = 200, 200
+
+
+def planos_do_chao(lista) -> list:
+    """Os planos do chão (03/11, o usuário: "vamos trabalhar com um modelo mais simplificado" — "Plano" — "Inclinado" —
+    "Plano"): [{cota, contorno: [[x, y]…], nome?}] em mm do projeto, mm inteiro; a imagem do terreno fica plana dentro de
+    cada um e reta entre eles (web/visor3d/chao.js). O plano sem cota ou com menos de 3 cantos diferentes sai."""
+    if lista is None:
+        return []
+    if not isinstance(lista, list):
+        raise ErroTerreno("os planos do chão vêm numa lista {cota, contorno} (mm).")
+    if len(lista) > PLANOS_MAX:
+        raise ErroTerreno("até %d planos do chão (vieram %d)." % (PLANOS_MAX, len(lista)))
+    saida = []
+    for p in lista:
+        try:
+            cota = float(p["cota"])
+            cantos = [(float(v[0]), float(v[1])) for v in p["contorno"]]
+        except (KeyError, TypeError, ValueError, IndexError):
+            continue
+        if not math.isfinite(cota) or abs(cota) > 1e6 or len(cantos) > CANTOS_MAX:
+            continue
+        contorno = []
+        for x, y in cantos:
+            if not (math.isfinite(x) and math.isfinite(y)) or max(abs(x), abs(y)) > 1e8:
+                break
+            c = [int(round(x)), int(round(y))]
+            if not contorno or c != contorno[-1]:
+                contorno.append(c)
+        else:
+            if len(contorno) > 1 and contorno[0] == contorno[-1]:
+                contorno.pop()                                    # o contorno fechado repetindo o 1º canto
+            if len(contorno) >= 3:
+                plano = {"cota": int(round(cota)), "contorno": contorno}
+                if p.get("nome"):
+                    plano["nome"] = str(p["nome"])[:60]
+                saida.append(plano)
     return saida
 
 

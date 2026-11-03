@@ -73,6 +73,9 @@ function comBordaSuave(img, maxLado = 8192) {
   return c;
 }
 
+/** O retângulo de dois cantos opostos (alinhado com os eixos do projeto): o plano desenhado com dois cliques. */
+function retangulo(a, b) { return [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]]]; }
+
 /** A parede do chão em níveis (o muro do subsolo, o degrau entre os níveis): uma cor neutra no lugar da foto esticada. */
 function comParede(mat) {
   if (mat.userData.comParede) return;
@@ -166,7 +169,7 @@ export class Terreno {
     this.malha.onBeforeRender = () => {
       if (this._marcarObra()) this.visor.pedirQuadro();                                    // peças novas (outra situação)
       // os eixos chegaram depois do terreno (a referência vem em paralelo): a face do prédio entra no chão em níveis
-      if (this._pontosDeNivel().length && this.visor._dadosReferencia !== this._referenciaUsada) setTimeout(() => this.posicionar(), 0);
+      if (this._temChao() && this.visor._dadosReferencia !== this._referenciaUsada) setTimeout(() => this.posicionar(), 0);
       if (this.pinos) this.pinos.visible = this._pinosAVista();
     };
     this._marcarObra();
@@ -227,11 +230,17 @@ export class Terreno {
 
   // ---------------------------------------------------------------- o chão em mais de um nível (03/11, chao.js)
   // (o usuário pelo SESI Chapecó, 02/11: "uma limitação legal da nossa representação do terreno, quando temos níveis
-  // diferentes"; escolhida a malha pelos pontos de nível, 03/11): com pontos no projeto (terreno.niveis, mm do projeto), a
-  // imagem vira uma malha que passa por eles; sem pontos, o plano de sempre
+  // diferentes"; escolhida a malha pelos pontos de nível, 03/11; simplificada no mesmo dia: "Plano" — "Inclinado" — "Plano"):
+  // com planos no projeto (terreno.planos: contorno + cota, mm do projeto) e/ou pontos soltos (terreno.niveis), a imagem vira
+  // uma malha plana por dentro de cada plano e reta entre eles; sem nada, o plano de sempre
 
-  /** Os pontos de nível do chão gravados no projeto: [{x, y, z}] (mm do projeto). */
+  /** Os pontos de nível soltos gravados no projeto: [{x, y, z}] (mm do projeto). */
   _pontosDeNivel() { return (this.t && Array.isArray(this.t.niveis)) ? this.t.niveis : []; }
+
+  /** Os planos do chão gravados no projeto: [{cota, contorno: [[x, y]…]}] (mm do projeto). */
+  _planos() { return (this.t && Array.isArray(this.t.planos)) ? this.t.planos : []; }
+
+  _temChao() { return this._pontosDeNivel().length > 0 || this._planos().length > 0; }
 
   /** A cota do chão (mm do projeto) onde a imagem passa em (x, y): a dos pontos de nível, ou a do plano. */
   cotaEm(x, y) {
@@ -241,8 +250,8 @@ export class Terreno {
   }
 
   _moldarChao(g) {
-    const niv = this._pontosDeNivel(), m = this.malha;
-    if (!niv.length) {
+    const niv = this._pontosDeNivel(), planos = this._planos(), m = this.malha;
+    if (!this._temChao()) {
       this._sup = null;
       if (this._plano && m.geometry !== this._plano) { m.geometry = this.vazada.geometry = this._plano; }
       this._tirarPinos();
@@ -260,9 +269,9 @@ export class Terreno {
     const ref = this.visor._dadosReferencia;
     this._referenciaUsada = ref;
     const contorno = contornoDosEixos(((ref && ref.eixos) || []).map(e => ({ a: e.a, b: e.b })));
-    const chave = JSON.stringify([niv, contorno, base]);
+    const chave = JSON.stringify([niv, planos, contorno, base]);
     if (!this._sup || this._chaveSup !== chave) {
-      this._sup = superficie(niv, { base, contorno, raio: Math.hypot(g.largura, g.altura) * 0.75 });
+      this._sup = superficie(niv, { base, contorno, planos, raio: Math.hypot(g.largura, g.altura) * 0.75 });
       this._chaveSup = chave;
     }
     // ~0,8 m por quadrinho (a imagem de 446 m: 512); no celular a metade
@@ -286,7 +295,9 @@ export class Terreno {
     this.visor.pedirQuadro();
   }
 
-  _pinosAVista() { return !!(this.verPontos && this.ui.painelAtual && this.ui.painelAtual() === 'terreno'); }
+  _pinosAVista() {
+    return !!((this.verPontos || this.desenhandoPlano) && this.ui.painelAtual && this.ui.painelAtual() === 'terreno');
+  }
 
   _tirarPinos() {
     if (!this.pinos) return;
@@ -295,35 +306,58 @@ export class Terreno {
     this.pinos = null;
   }
 
-  /** Os pontos de nível no 3D (com o painel Terreno aberto e "Mostrar os pontos"): uma haste e a cota escrita. */
+  /** A cota escrita numa plaquinha laranja, de frente para a câmera. */
+  _etiqueta(texto, x, y, z, k) {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+    const g = c.getContext('2d');
+    g.fillStyle = 'rgba(232,89,12,.92)'; g.beginPath(); g.roundRect(4, 6, 248, 52, 12); g.fill();
+    g.fillStyle = '#fff'; g.font = 'bold 36px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(texto, 128, 33);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.NoColorSpace;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+    s.scale.set(k * 1.6, k * 0.4, 1);
+    s.position.set(x, y, z);
+    s.renderOrder = 11;
+    return s;
+  }
+
+  /** Os planos e os pontos de nível no 3D (com o painel Terreno aberto e "Mostrar no 3D"): o contorno de cada plano com
+   *  a cota no meio, a haste de cada ponto solto; e o plano que está sendo desenhado (os cantos já clicados). */
   _montarPinos() {
     this._tirarPinos();
-    const niv = this._pontosDeNivel();
-    if (!niv.length || !this.grupo) return;
+    const niv = this._pontosDeNivel(), planos = this._planos(), rasc = this.desenhandoPlano || [];
+    if ((!niv.length && !planos.length && !rasc.length) || !this.grupo) return;
     const cx = this.visor._caixaModelo, k = Math.max(400, Math.min(4000, cx.min.distanceTo(cx.max) / 80));
     this.pinos = new THREE.Group();
     this.pinos.name = 'terreno-niveis';
     const aj = this.t && Number.isFinite(this.t.ajuste) ? this.t.ajuste : 0;
     const haste = new THREE.CylinderGeometry(k * 0.04, k * 0.04, k, 6).rotateX(Math.PI / 2).translate(0, 0, k / 2);
     const matHaste = new THREE.MeshBasicMaterial({ color: 0xe8590c, depthTest: false });
-    niv.forEach((p, i) => {
+    niv.forEach(p => {
       const h = new THREE.Mesh(haste, matHaste);
       h.position.set(p.x, p.y, p.z + aj);
       h.renderOrder = 10;
-      const c = document.createElement('canvas'); c.width = 256; c.height = 64;
-      const g = c.getContext('2d');
-      g.fillStyle = 'rgba(232,89,12,.92)'; g.beginPath(); g.roundRect(4, 6, 248, 52, 12); g.fill();
-      g.fillStyle = '#fff'; g.font = 'bold 36px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText(cotaTxt(p.z), 128, 33);
-      const tex = new THREE.CanvasTexture(c);
-      tex.colorSpace = THREE.NoColorSpace;
-      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
-      s.scale.set(k * 1.6, k * 0.4, 1);
-      s.position.set(p.x, p.y, p.z + aj + k * 1.25);
-      s.renderOrder = 11;
-      s.userData.indice = i;
-      this.pinos.add(h, s);
+      this.pinos.add(h, this._etiqueta(cotaTxt(p.z), p.x, p.y, p.z + aj + k * 1.25, k));
     });
+    const linha = (pts, z, cor, fechada) => {
+      const g = new THREE.BufferGeometry().setFromPoints(pts.map(([x, y]) => new THREE.Vector3(x, y, z)));
+      const l = new (fechada ? THREE.LineLoop : THREE.Line)(g, new THREE.LineBasicMaterial({ color: cor, depthTest: false }));
+      l.renderOrder = 10;
+      return l;
+    };
+    planos.forEach(pl => {
+      const z = pl.cota + aj + 20;
+      this.pinos.add(linha(pl.contorno, z, 0xe8590c, true));
+      const m = pl.contorno.reduce((s, v) => [s[0] + v[0] / pl.contorno.length, s[1] + v[1] / pl.contorno.length], [0, 0]);
+      this.pinos.add(this._etiqueta(cotaTxt(pl.cota), m[0], m[1], z + k * 0.6, k));
+    });
+    if (rasc.length) {
+      const z = this.cotaEm(rasc[0][0], rasc[0][1]) + 20;
+      this.pinos.add(linha(rasc.length === 2 ? retangulo(rasc[0], rasc[1]) : rasc, z, 0x1c7ed6, rasc.length !== 1));
+      rasc.forEach(([x, y]) => { const h = new THREE.Mesh(haste, new THREE.MeshBasicMaterial({ color: 0x1c7ed6, depthTest: false }));
+        h.position.set(x, y, this.cotaEm(x, y)); h.renderOrder = 10; this.pinos.add(h); });
+    }
     this.pinos.visible = this._pinosAVista();
     this.grupo.add(this.pinos);
   }
@@ -509,74 +543,125 @@ export class Terreno {
   }
 
   // ---------------------------------------------------------------- os níveis do chão (o painel)
+  // (03/11, o usuário: "vamos trabalhar com um modelo mais simplificado" — os planos; os pontos soltos de antes continuam
+  // valendo e aparecem na lista só se o projeto tiver)
 
   _painelNiveis() {
-    const niv = this._pontosDeNivel();
+    const niv = this._pontosDeNivel(), planos = this._planos(), d = this.desenhandoPlano;
     let html = `<p class="titulo-secao">Níveis do chão</p>
-      <p class="dica">Pontos com a cota do chão (a calçada −0,50, o pátio do subsolo −3,98, a rampa…): a imagem passa por eles e
-        encosta no prédio pelo lado de fora. Sem pontos, a imagem fica plana na altura acima.</p>
-      <button type="button" id="terreno-nivel-marcar" class="${this.marcandoNivel ? 'ligado' : ''}">${this.marcandoNivel
-        ? '✓ Terminar de marcar' : '+ Ponto de nível (clique no chão)'}</button>`;
-    if (niv.length) {
-      html += `<label class="linha-lista"><input type="checkbox" id="terreno-niveis-ver" ${this.verPontos ? 'checked' : ''}><span>Mostrar os
-          ${niv.length} pontos no 3D</span></label>
-        <div class="terreno-niveis">${niv.map((p, i) => `<div class="terreno-nivel" data-i="${i}">
+      <p class="dica">Planos do chão, cada um na sua cota (a frente no térreo −0,03, o pátio do subsolo −3,99…): por dentro a imagem
+        fica plana, e entre dois planos sai reta, inclinada. Sem planos, a imagem fica plana na altura acima.</p>`;
+    if (d) {
+      html += `<p class="dica"><b>Clique os cantos do plano no chão</b> (${d.length} ${d.length === 1 ? 'canto' : 'cantos'}). Dois
+          cantos = um retângulo. Enter fecha, Esc cancela.</p>
+        <button type="button" id="terreno-plano-fechar" class="forte" ${d.length >= 2 ? '' : 'disabled'}>✓ Fechar o plano</button>
+        <button type="button" id="terreno-plano-cancelar">Cancelar</button>`;
+    } else {
+      html += `<button type="button" id="terreno-plano-novo">+ Plano (clique os cantos no chão)</button>`;
+    }
+    if (planos.length || niv.length) {
+      html += `<label class="linha-lista"><input type="checkbox" id="terreno-niveis-ver" ${this.verPontos ? 'checked' : ''}><span>Mostrar
+          no 3D</span></label><div class="terreno-niveis">`;
+      html += planos.map((pl, i) => {
+        const xs = pl.contorno.map(v => v[0]), ys = pl.contorno.map(v => v[1]);
+        const tam = `${nf((Math.max(...xs) - Math.min(...xs)) / 1000, 1)} × ${nf((Math.max(...ys) - Math.min(...ys)) / 1000, 1)} m`;
+        return `<div class="terreno-nivel" data-plano="${i}">
+          <input type="text" inputmode="decimal" data-plano-cota="${i}" value="${esc(cotaTxt(pl.cota))}" aria-label="Cota do plano ${i + 1} (m)"><span>m</span>
+          <span class="onde" title="${esc(pl.nome || '')}">${esc(pl.nome || 'Plano ' + (i + 1))} · ${tam}${pl.contorno.length !== 4 ? ` · ${pl.contorno.length} cantos` : ''}</span>
+          <button type="button" data-plano-tirar="${i}" title="Tirar este plano">✕</button></div>`;
+      }).join('');
+      html += niv.map((p, i) => `<div class="terreno-nivel" data-i="${i}">
           <input type="text" inputmode="decimal" data-cota="${i}" value="${esc(cotaTxt(p.z))}" aria-label="Cota do ponto ${i + 1} (m)"><span>m</span>
-          <span class="onde" title="${esc(p.nome || '')}">x ${nf(p.x / 1000, 1)} · y ${nf(p.y / 1000, 1)}${p.nome ? ' · ' + esc(p.nome) : ''}</span>
-          <button type="button" data-tirar="${i}" title="Tirar este ponto">✕</button></div>`).join('')}</div>
-        <button type="button" id="terreno-niveis-tirar">Tirar todos os pontos</button>`;
+          <span class="onde" title="${esc(p.nome || '')}">ponto · x ${nf(p.x / 1000, 1)} · y ${nf(p.y / 1000, 1)}</span>
+          <button type="button" data-tirar="${i}" title="Tirar este ponto">✕</button></div>`).join('');
+      html += `</div><button type="button" id="terreno-niveis-tirar">Tirar todos (a imagem volta a ficar plana)</button>`;
     }
     return html;
   }
 
   _ligarNiveis(raiz) {
     const $ = s => raiz.querySelector(s);
-    const bm = $('#terreno-nivel-marcar');
-    if (bm) bm.onclick = () => { this.marcarNivel(!this.marcandoNivel); this.painel(); };
+    const bn = $('#terreno-plano-novo');
+    if (bn) bn.onclick = () => { this.desenharPlano(true); this.painel(); };
+    const bf = $('#terreno-plano-fechar');
+    if (bf) bf.onclick = () => this._fecharPlano();
+    const bc = $('#terreno-plano-cancelar');
+    if (bc) bc.onclick = () => { this.desenharPlano(false); this.painel(); };
     const vp = $('#terreno-niveis-ver');
     if (vp) vp.onchange = () => { this.verPontos = vp.checked; if (this.pinos) this.pinos.visible = this._pinosAVista(); this.visor.pedirQuadro(); };
+    const lerCota = inp => { const v = parseFloat(String(inp.value).replace('−', '-').replace('+', '').replace(',', '.')); return Number.isFinite(v) ? Math.round(v * 1000) : null; };
+    raiz.querySelectorAll('[data-plano-cota]').forEach(inp => {
+      const i = +inp.dataset.planoCota;
+      inp.onchange = () => {
+        const mm = lerCota(inp), pl = this._planos()[i];
+        if (!pl) return;
+        if (mm !== null) pl.cota = mm;
+        inp.value = cotaTxt(pl.cota);
+        this.posicionar(); this._gravarLogo();
+      };
+      inp.onkeydown = (ev) => { if (ev.key === 'Enter') inp.blur(); };
+    });
     raiz.querySelectorAll('[data-cota]').forEach(inp => {
       const i = +inp.dataset.cota;
       inp.onchange = () => {
-        const v = parseFloat(String(inp.value).replace('−', '-').replace('+', '').replace(',', '.'));
-        if (!Number.isFinite(v) || !this._pontosDeNivel()[i]) { if (this._pontosDeNivel()[i]) inp.value = cotaTxt(this._pontosDeNivel()[i].z); return; }
-        this.t.niveis[i] = { ...this.t.niveis[i], z: Math.round(v * 1000) };
+        const mm = lerCota(inp), p = this._pontosDeNivel()[i];
+        if (!p) return;
+        if (mm !== null) this.t.niveis[i] = { ...p, z: mm };
         inp.value = cotaTxt(this.t.niveis[i].z);
         this.posicionar(); this._gravarLogo();
       };
       inp.onkeydown = (ev) => { if (ev.key === 'Enter') inp.blur(); };
+    });
+    raiz.querySelectorAll('[data-plano-tirar]').forEach(b => {
+      b.onclick = () => { this.t.planos.splice(+b.dataset.planoTirar, 1); this._depoisDosNiveis(); };
     });
     raiz.querySelectorAll('[data-tirar]').forEach(b => {
       b.onclick = () => { this.t.niveis.splice(+b.dataset.tirar, 1); this._depoisDosNiveis(); };
     });
     const tt = $('#terreno-niveis-tirar');
     if (tt) tt.onclick = () => {
-      if (!confirm(`Tirar os ${this._pontosDeNivel().length} pontos de nível? A imagem volta a ficar plana.`)) return;
-      this.t.niveis = []; this._depoisDosNiveis();
+      if (!confirm('Tirar todos os planos e pontos do chão? A imagem volta a ficar plana.')) return;
+      this.t.planos = []; this.t.niveis = []; this._depoisDosNiveis();
     };
   }
 
-  _depoisDosNiveis(focar = null) {
+  _depoisDosNiveis(focarPlano = null) {
     if (!this._pontosDeNivel().length) delete this.t.niveis;
+    if (!this._planos().length) delete this.t.planos;
     this.posicionar();
     this._gravarLogo();
     if (this.ui.painelAtual && this.ui.painelAtual() === 'terreno') {
       this.painel();
-      if (focar !== null) {
-        const inp = this.ui.corpo().querySelector(`[data-cota="${focar}"]`);
+      if (focarPlano !== null) {
+        const inp = this.ui.corpo().querySelector(`[data-plano-cota="${focarPlano}"]`);
         if (inp) { inp.scrollIntoView({ block: 'nearest' }); inp.focus(); inp.select(); }
       }
     }
   }
 
-  /** Marcar pontos de nível: cada clique no chão põe um ponto com a cota que o chão tem ali; a cota se digita na lista. */
-  marcarNivel(sim) {
-    this.marcandoNivel = !!sim && !!this.malha;
-    if (this.marcandoNivel) { this.ajustar(false); this.verPontos = true; if (!this.ligado) this.mostrar(true); }
-    this.ui.palco.classList.toggle('marcando-nivel', this.marcandoNivel);
+  /** Desenhar um plano: cada clique no chão é um canto; Enter (ou ✓) fecha — dois cantos = o retângulo deles —, Esc cancela.
+   *  A cota do plano novo é a que o chão tem no meio dele; ela se digita na lista. */
+  desenharPlano(sim) {
+    this.desenhandoPlano = sim && this.malha ? [] : null;
+    if (this.desenhandoPlano) { this.ajustar(false); if (!this.ligado) this.mostrar(true); }
+    this.ui.palco.classList.toggle('marcando-nivel', !!this.desenhandoPlano);
     this._ouvirPalco();
-    if (this.pinos) this.pinos.visible = this._pinosAVista();
+    this._montarPinos();
     this.visor.pedirQuadro();
+  }
+
+  _fecharPlano() {
+    const d = this.desenhandoPlano;
+    if (!d || d.length < 2) return;
+    const contorno = (d.length === 2 ? retangulo(d[0], d[1]) : d).map(([x, y]) => [Math.round(x), Math.round(y)]);
+    const m = contorno.reduce((s, v) => [s[0] + v[0] / contorno.length, s[1] + v[1] / contorno.length], [0, 0]);
+    const aj = this.t && Number.isFinite(this.t.ajuste) ? this.t.ajuste : 0;
+    const cota = Math.round(this.cotaEm(m[0], m[1]) - aj + 3);
+    this.t.planos = [...this._planos(), { cota, contorno }];
+    this.desenhandoPlano = null;
+    this.verPontos = true;
+    this.ui.palco.classList.remove('marcando-nivel');
+    this._depoisDosNiveis(this.t.planos.length - 1);
   }
 
   /** O ponto do chão sob o mouse (mm do projeto), já na cota do chão em níveis (o raio vai e volta até a malha). */
@@ -592,13 +677,13 @@ export class Terreno {
     return p;
   }
 
-  _marcarNoChao(ev) {
+  _cantoNoChao(ev) {
     const p = this._noChaoEmNiveis(ev);
-    if (!p) return;
-    const aj = this.t && Number.isFinite(this.t.ajuste) ? this.t.ajuste : 0;
-    const z = Math.round(this.cotaEm(p[0], p[1]) - aj + 3);
-    this.t.niveis = [...this._pontosDeNivel(), { x: Math.round(p[0]), y: Math.round(p[1]), z }];
-    this._depoisDosNiveis(this.t.niveis.length - 1);
+    if (!p || !this.desenhandoPlano) return;
+    this.desenhandoPlano.push(p);
+    this._montarPinos();
+    this.visor.pedirQuadro();
+    if (this.ui.painelAtual && this.ui.painelAtual() === 'terreno') this.painel();
   }
 
   // ---------------------------------------------------------------- a imagem própria (o drone do cliente)
@@ -755,8 +840,9 @@ export class Terreno {
     const cx = this.caixaDoModelo();
     const t = { lat: r.lat, lon: r.lon, ponto: [(cx[0] + cx[2]) / 2, (cx[1] + cx[3]) / 2], norte: (this.t && this.t.norte) || 0,
                 endereco: r.nome, fonte: (this.t && this.t.fonte) || 'esri', caixa: cx,
-                // os pontos de nível são do projeto (mm da obra), não do lugar: ficam quando o lugar muda
-                ...(this._pontosDeNivel().length ? { niveis: this._pontosDeNivel() } : {}) };
+                // os planos e os pontos de nível são do projeto (mm da obra), não do lugar: ficam quando o lugar muda
+                ...(this._pontosDeNivel().length ? { niveis: this._pontosDeNivel() } : {}),
+                ...(this._planos().length ? { planos: this._planos() } : {}) };
     try {
       this.estado = await this._pedir('', t);
       await this._baixar();
@@ -793,14 +879,14 @@ export class Terreno {
 
   ajustar(sim) {
     this.ajustando = !!sim && !!this.malha;
-    if (this.ajustando && this.marcandoNivel) this.marcarNivel(false);
+    if (this.ajustando && this.desenhandoPlano) this.desenharPlano(false);
     this.ui.palco.classList.toggle('ajustando-terreno', this.ajustando);
     this._ouvirPalco();
     if (this.ajustando && !this.ligado) this.mostrar(true);
   }
 
   _ouvirPalco() {
-    if (this._ouvindo || !(this.ajustando || this.marcandoNivel)) return;
+    if (this._ouvindo || !(this.ajustando || this.desenhandoPlano)) return;
     this._ouvindo = true;
     const palco = this.ui.palco;
     // na captura, no palco: o arrasto não chega à tela (nem à órbita nem à escolha de peça); a roda continua no zoom
@@ -808,8 +894,10 @@ export class Terreno {
     window.addEventListener('pointermove', ev => this._move(ev));
     window.addEventListener('pointerup', ev => this._fim(ev));
     window.addEventListener('keydown', ev => {
-      if (ev.key !== 'Escape' || !this.marcandoNivel) return;
-      this.marcarNivel(false);
+      if (!this.desenhandoPlano || !['Escape', 'Enter'].includes(ev.key)) return;
+      if (ev.target && /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) return;
+      if (ev.key === 'Enter' && this.desenhandoPlano.length >= 2) { this._fecharPlano(); return; }
+      this.desenharPlano(false);
       if (this.ui.painelAtual() === 'terreno') this.painel();
     });
   }
@@ -826,8 +914,8 @@ export class Terreno {
   }
 
   _inicio(ev) {
-    if (this.marcandoNivel && ev.button === 0 && ev.target === this.visor.renderer.domElement) {
-      // o clique parado marca o ponto; o arrasto continua girando a vista
+    if (this.desenhandoPlano && ev.button === 0 && ev.target === this.visor.renderer.domElement) {
+      // o clique parado marca o canto; o arrasto continua girando a vista
       this._cliqueNivel = { x: ev.clientX, y: ev.clientY };
       return;
     }
@@ -852,7 +940,7 @@ export class Terreno {
     if (this._cliqueNivel) {
       const c = this._cliqueNivel;
       this._cliqueNivel = null;
-      if (this.marcandoNivel && ev && Math.hypot(ev.clientX - c.x, ev.clientY - c.y) < 5) this._marcarNoChao(ev);
+      if (this.desenhandoPlano && ev && Math.hypot(ev.clientX - c.x, ev.clientY - c.y) < 5) this._cantoNoChao(ev);
       return;
     }
     if (!this.arrasto) return;

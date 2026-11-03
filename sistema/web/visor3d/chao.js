@@ -4,6 +4,9 @@
 // subsolo −3,98, a rua que desce em rampa). Só as contas, sem o three (o node roda os testes): a triangulação dos pontos, a
 // face do prédio pelos eixos (o chão encosta nela na cota do lado de fora, não numa rampa por baixo do prédio), o anel de
 // longe na altura de sempre (fora da obra o chão volta ao plano de antes) e a cota de cada vértice da malha da imagem.
+// Os PLANOS (03/11, o usuário no print do SESI: "o terreno ficou meio estranho, vamos trabalhar com um modelo mais
+// simplificado" — "Plano" — "Inclinado" — "Plano"): cada plano é um contorno numa cota, plano por dentro, e o chão entre
+// dois planos sai reto (a triangulação das bordas). É o jeito padrão; os pontos soltos continuam valendo.
 
 const PASSO_FACE = 5000;          // mm entre os pontos da face do prédio
 const FORA_FACE = 1500;           // mm para fora da face (o pilar e a fachada ficam por cima)
@@ -134,25 +137,61 @@ function dentro(poli, x, y) {
   return true;
 }
 
-/** A superfície do chão: os pontos de nível ({x, y, z} mm), a face do prédio (o `contorno` dos eixos) e o anel de longe
- *  na cota `base` (o plano de antes) a `raio` mm do `centro`. `cota(x, y)` é a do chão ali (a base fora de tudo). */
-export function superficie(pontos, { base = 0, contorno = null, centro = null, raio = 400000 } = {}) {
-  const reais = (pontos || []).filter(p => p && [p.x, p.y, p.z].every(Number.isFinite));
+/** true: (x, y) dentro do polígono [[x, y]…] (qualquer forma, par–ímpar). */
+export function dentroDoPoligono(poli, x, y) {
+  let dentro_ = false;
+  for (let i = 0, j = poli.length - 1; i < poli.length; j = i++) {
+    const [xi, yi] = poli[i], [xj, yj] = poli[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) dentro_ = !dentro_;
+  }
+  return dentro_;
+}
+
+const PASSO_PLANO = 2000;         // mm entre os pontos da borda de um plano (a borda bem marcada na triangulação)
+
+/** Os planos do chão válidos: [{cota, contorno: [[x, y]…] (≥ 3)}]. */
+function planosValidos(planos) {
+  return (planos || []).filter(p => p && Number.isFinite(p.cota) && Array.isArray(p.contorno) && p.contorno.length >= 3
+    && p.contorno.every(v => Array.isArray(v) && Number.isFinite(v[0]) && Number.isFinite(v[1])));
+}
+
+/** A borda de um plano em pontos a cada PASSO_PLANO, todos na cota dele. */
+function bordaDoPlano(p) {
+  const saida = [], c = p.contorno;
+  for (let i = 0; i < c.length; i++) {
+    const a = c[i], b = c[(i + 1) % c.length], k = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / PASSO_PLANO));
+    for (let j = 0; j < k; j++) saida.push({ x: a[0] + (b[0] - a[0]) * j / k, y: a[1] + (b[1] - a[1]) * j / k, z: p.cota, plano: true });
+  }
+  return saida;
+}
+
+/** A superfície do chão: os planos (o modelo simplificado do usuário, 03/11: "Plano" — "Inclinado" — "Plano"; cada um
+ *  plano por dentro, o chão reto entre eles), os pontos de nível soltos ({x, y, z} mm), a face do prédio (o `contorno`
+ *  dos eixos, só para os pontos soltos) e o anel de longe na cota `base` (o plano de antes) a `raio` mm do `centro`.
+ *  `cota(x, y)` é a do chão ali (dentro de um plano, a dele; o último da lista vale onde dois se cobrem). */
+export function superficie(pontos, { base = 0, contorno = null, centro = null, raio = 400000, planos = [] } = {}) {
+  const pls = planosValidos(planos);
+  const noPlano = (x, y) => { for (let i = pls.length - 1; i >= 0; i--) if (dentroDoPoligono(pls[i].contorno, x, y)) return pls[i]; return null; };
+  const reais = (pontos || []).filter(p => p && [p.x, p.y, p.z].every(Number.isFinite) && !noPlano(p.x, p.y));
   const face = pontosDaFace(reais, contorno);
-  const c = centro || (reais.length ? [reais.reduce((s, p) => s + p.x, 0) / reais.length, reais.reduce((s, p) => s + p.y, 0) / reais.length] : [0, 0]);
-  const longe = Math.max(raio, ...reais.map(p => Math.hypot(p.x - c[0], p.y - c[1]) + 100000));
+  const borda = pls.flatMap(bordaDoPlano);
+  const nucleo = reais.concat(borda);
+  const c = centro || (nucleo.length ? [nucleo.reduce((s, p) => s + p.x, 0) / nucleo.length, nucleo.reduce((s, p) => s + p.y, 0) / nucleo.length] : [0, 0]);
+  const longe = Math.max(raio, ...nucleo.map(p => Math.hypot(p.x - c[0], p.y - c[1]) + 100000));
   const anel = [];
   for (let k = 0; k < 24; k++) anel.push({ x: c[0] + longe * Math.cos(k * Math.PI / 12), y: c[1] + longe * Math.sin(k * Math.PI / 12), z: base, anel: true });
-  const todos = reais.concat(face, anel);
+  const todos = nucleo.concat(face, anel);
   const tri = triangular(todos.map(p => [p.x, p.y]));
   const cota = (x, y) => {
+    const pl = noPlano(x, y);
+    if (pl) return pl.cota;
     for (const [i, j, k] of tri) {
       const z = baricentrica(todos[i], todos[j], todos[k], x, y);
       if (z !== null) return z;
     }
     return base;
   };
-  return { pontos: todos, tri, face, base, cota };
+  return { pontos: todos, tri, face, base, cota, planos: pls };
 }
 
 function baricentrica(a, b, c, x, y, folga = 1e-9) {
@@ -188,6 +227,14 @@ export function cotasDaMalha(sup, { meio, largura, altura, giro, n }) {
       const zz = baricentrica(a, b, d, col, l, 1e-7);
       if (zz !== null) { z[v] = zz; feito[v] = 1; }
     }
+  }
+  // dentro de cada plano, a cota dele (a triangulação pode passar um triângulo de borda a borda por cima de um plano)
+  for (const pl of sup.planos || []) {
+    const poli = pl.contorno.map(([x, y]) => { const q = naGrade({ x, y, z: 0 }); return [q.x, q.y]; });
+    const cs = poli.map(q => q[0]), ls = poli.map(q => q[1]);
+    const c0 = Math.max(0, Math.ceil(Math.min(...cs))), c1 = Math.min(n, Math.floor(Math.max(...cs)));
+    const l0 = Math.max(0, Math.ceil(Math.min(...ls))), l1 = Math.min(n, Math.floor(Math.max(...ls)));
+    for (let l = l0; l <= l1; l++) for (let col = c0; col <= c1; col++) if (dentroDoPoligono(poli, col, l)) z[l * N + col] = pl.cota;
   }
   return z;
 }
