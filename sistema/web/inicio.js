@@ -105,7 +105,11 @@ function urlDoProjeto(p, destino) {
   if (p.tipo === 'desenho') return area('2d');    // começa desenhando
   if (p.tipo === 'lancamento') return p.tem_modelo ? area('3d') : area('2d', 'planta-de-lançamento');
   if (p.tipo === 'recebido') return area(p.tem_modelo ? '3d' : '2d');
-  return p.tipo === 'ifc' ? area('3d') : `/dimensionar?projeto=${s}`;
+  if (p.tipo === 'ifc') return area('3d');
+  // só o galpão do configurador abre na configuração; o projeto de um módulo que esta versão não tem (a arquitetura
+  // do dev, na mesma pasta Documentos\Metálica) abria /dimensionar e ganhava o galpão 20 × 40 gravado (02/11)
+  if (p.tipo === 'galpao') return `/dimensionar?projeto=${s}`;
+  return area(p.tem_modelo ? '3d' : '2d');
 }
 
 const expandidos = new Set();   // projetos com todos os desenhos à mostra

@@ -518,3 +518,22 @@ def test_arquivar_tira_da_lista_principal_sem_apagar(tmp_path):
     assert r["arquivado"] is True and g.ler(s)["alterado"] == antes
     assert [x["arquivado"] for x in g.listar() if x["slug"] == s] == [True]
     assert g.arquivar(s, False)["arquivado"] is False and "arquivado" not in g.ler(s)
+
+
+def test_tipo_de_modulo_que_esta_versao_nao_tem_nao_ganha_o_galpao(tmp_path):
+    """02/11, casa piloto da arquitetura aberta no instalado (que não tem o módulo; a pasta é a mesma do dev): a tela
+    do galpão gravava o formulário padrão (20 × 40) no projeto.json só de abrir."""
+    g = Projetos(str(tmp_path))
+    os.makedirs(os.path.join(str(tmp_path), "casa"))
+    original = {"formato": 1, "nome": "CASA", "tipo": "modulo-que-esta-versao-nao-tem", "dados": None}
+    with open(os.path.join(str(tmp_path), "casa", ARQUIVO), "w", encoding="utf-8") as f:
+        json.dump(original, f)
+    try:
+        g.salvar_dados("casa", {"nome": "CASA", "vao": 20, "comprimento": 40})
+        assert False, "gravou o galpão no projeto de outro módulo"
+    except ErroDeDados as e:
+        assert "módulo" in str(e)
+    assert g.ler("casa").get("dados") is None
+    # o galpão continua gravando
+    s = g.criar("Galpão")["slug"]
+    assert g.salvar_dados(s, {"nome": "Galpão", "vao": 20})["tem_dados"]

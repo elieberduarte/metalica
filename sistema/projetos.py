@@ -560,6 +560,12 @@ class Projetos:
         acompanha o que está no formulário."""
         if not isinstance(dados, dict):
             raise ErroDeDados("dados do projeto inválidos.")
+        tipo = self.ler(s).get("tipo") or "galpao"
+        if tipo not in TIPOS:
+            # projeto de um módulo que esta versão não tem (a arquitetura do dev, na mesma pasta): a tela do galpão
+            # gravava o formulário padrão nele só de abrir (02/11, casa piloto no instalado)
+            raise ErroDeDados("este projeto é de um módulo que esta versão do programa não tem (%s): o formulário do "
+                              "galpão não é gravado nele." % tipo)
         campos = {"dados": dados}
         for k in IDENTIFICACAO:
             v = dados.get(k)
