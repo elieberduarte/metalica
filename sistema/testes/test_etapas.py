@@ -100,7 +100,8 @@ def test_orcamento_como_aba_do_comercial():
     mat = _ler("materiais.js")
     # dentro do Comercial, a tela de materiais mostra só o orçamento; aberta direto com #orcamento, vai para o Comercial
     assert "get('so') === 'orcamento'" in mat and "location.replace(`/comercial?projeto=${encodeURIComponent(PROJETO)}#orcamento`)" in mat
-    assert "ABAS.filter(([k]) => k !== 'orcamento')" in mat
+    # a aba Orçamento sai da lista (975c716 juntou ao mesmo filtro as abas do projeto sem aço)
+    assert "ABAS.filter(([k]) => k !== 'orcamento' " in mat or "ABAS.filter(([k]) => k !== 'orcamento')" in mat
     assert "html.so-orcamento header.topo" in _ler("materiais.html")
 
 
