@@ -217,7 +217,7 @@ def ler_empresa(dados: str, empresa_id=None) -> dict:
                          ("rodape", ("rodape.png", "rodape.jpg"))):
         e[chave] = next((os.path.join(marca, n) for n in nomes if os.path.exists(os.path.join(marca, n))), "")
     for lin in (e.get("linhas") or {}).values():
-        for chave in ("logo", "logo_claro"):
+        for chave in ("logo", "logo_claro", "logo_carimbo"):
             if lin.get(chave):
                 arq = os.path.join(marca, os.path.basename(str(lin[chave])))
                 lin[chave] = arq if os.path.exists(arq) else ""
@@ -267,7 +267,7 @@ def gravar_empresa(dados: str, empresa: dict, empresa_id=None) -> dict:
         except (OSError, ValueError):
             pass
     for lin in (limpo.get("linhas") or {}).values():       # logo da linha = nome do arquivo em marca/
-        for chave in ("logo", "logo_claro"):
+        for chave in ("logo", "logo_claro", "logo_carimbo"):
             if isinstance(lin, dict) and lin.get(chave):
                 lin[chave] = os.path.basename(str(lin[chave]))
     with open(os.path.join(pasta, "empresa.json"), "w", encoding="utf-8") as f:

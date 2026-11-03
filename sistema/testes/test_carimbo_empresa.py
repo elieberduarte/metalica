@@ -157,3 +157,68 @@ def test_logo_da_linha_metalica_sem_o_construtora():
             assert [t["texto"] for t in logo["textos"]] == ["DEZN", "CONSTRUTORA"]
         finally:
             app.PROJETOS = antes
+
+
+SVG_EM_LINHA = ('<?xml version="1.0" encoding="UTF-8"?>\n<svg viewBox="0 0 100 20" xmlns="http://www.w3.org/2000/svg">'
+                '<path fill="#22346E" d="M0 0 L60 0 L60 15 L0 15 Z"/><path fill="#800080" d="M70 0 L90 0 L90 15 L70 15 Z"/></svg>')
+
+
+def test_logo_do_carimbo_proprio_da_linha_sem_trocar_o_das_propostas():
+    """OBRA · WE COQUEIRAL · ESCADAS N.2, 03/11 (usuário, print do carimbo: "precisamos otimizar ela"; escolheu a opção A):
+    o logo da DEZN no carimbo em linha — "DEZN" à esquerda, o símbolo à direita, ocupando a largura da caixa — sem mudar o
+    logo das propostas (o símbolo em cima, "DEZN" embaixo). A linha ganha "logo_carimbo" (marca/), que o carimbo prefere."""
+    import app
+    from saida import comercial
+    with tempfile.TemporaryDirectory() as raiz:
+        marca = os.path.join(raiz, "fabrica", "empresas", "dezn", "marca")
+        os.makedirs(marca)
+        _svg(marca)
+        with open(os.path.join(marca, "logo_metalica.svg"), "w", encoding="utf-8") as f:
+            f.write(SVG_DEZN)
+        with open(os.path.join(marca, "logo_carimbo_metalica.svg"), "w", encoding="utf-8") as f:
+            f.write(SVG_EM_LINHA)
+        with open(os.path.join(raiz, "fabrica", "empresas", "dezn", "empresa.json"), "w", encoding="utf-8") as f:
+            json.dump({"nome_comercial": "DEZN Construtora",
+                       "linhas": {"metalica": {"nome_comercial": "DEZN", "logo": "logo_metalica.svg",
+                                               "logo_carimbo": "logo_carimbo_metalica.svg"}}}, f)
+        antes = app.PROJETOS
+        app.PROJETOS = raiz
+        try:
+            logo = app._logo_do_carimbo({"carimbo_pranchas": {"empresa": "dezn", "linha": "metalica"}})
+            assert logo and len(logo["hachuras"]) == 2 and not logo["textos"]
+            x0, y0, x1, y1 = logo["caixa"]
+            assert (x1 - x0) / (y1 - y0) == 6.0                         # em linha: 90 × 15
+            e = comercial.empresa_da_linha(comercial.ler_empresa(raiz, "dezn"), "metalica")
+            assert os.path.basename(e["logo"]) == "logo_metalica.svg"   # a proposta segue com o logo dela
+        finally:
+            app.PROJETOS = antes
+
+
+def _largura_no_pdf(texto, altura):
+    """a largura do texto no PDF das pranchas, medida na fonte dele (saida/dxf_render: DejaVu Sans, a maiúscula com a altura
+    do CAD), sem passar pelo modelo_hermes"""
+    import unicodedata
+    from fontTools.ttLib import TTFont
+    from matplotlib.font_manager import findfont, FontProperties
+    f = TTFont(findfont(FontProperties(family="DejaVu Sans")))
+    cmap, hmtx = f.getBestCmap(), f["hmtx"]
+    cap = f["glyf"][cmap[ord("H")]].yMax                                 # a altura da maiúscula
+    tot = 0
+    for ch in texto:
+        g = cmap.get(ord(ch)) or cmap.get(ord(unicodedata.normalize("NFD", ch)[0])) or cmap[ord("M")]
+        tot += hmtx[g][0]
+    return tot / cap * altura
+
+
+def test_valor_da_obra_nao_passa_da_caixa_no_pdf():
+    """OBRA · WE COQUEIRAL · ESCADAS N.2, 03/11 (visto nas opções do logo, EX-01…09): o nome da obra com o cliente (111
+    letras) passava da caixa OBRA e entrava na do PROJETISTA no PDF. A letra diminuía pela estimativa de 0,74 × altura por
+    letra, e a fonte do PDF é ~8 % mais larga nesse texto."""
+    info = {"obra": "WE COQUEIRAL RESIDENCE — ESCADAS METÁLICAS DOS DUPLEX",
+            "cliente": "Coqueiral Residence Inc. de Imóveis SPE Ltda. (WE Inc.)"}
+    for obra in (info, {"obra": "W" * 200}, {"obra": "GALPÃO"}):
+        d = _folha(obra)
+        t = next(e for e in d.entidades.values() if isinstance(e, Texto) and (e.atributos or {}).get("campo") == "obra")
+        cx0 = 841.0 - MH.MARGENS["direita"] - MH.CARIMBO[0]
+        assert t.posicao[0] + _largura_no_pdf(t.texto, t.altura) <= cx0 + MH.CAIXAS["obra"][2] - 1.0, (t.texto, t.altura)
+    assert t.texto == "GALPÃO" and t.altura == MH.H_VALOR                # o curto segue como era

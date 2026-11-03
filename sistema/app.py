@@ -3884,7 +3884,9 @@ def _logo_do_carimbo(p: dict) -> Optional[dict]:
     """O logo da empresa marcada no projeto (projeto.json "carimbo_pranchas": {"empresa": "dezn"}) para o carimbo das
     pranchas, do cadastro dela (fabrica/empresas/<id>/marca/logo.svg); sem empresa, o carimbo segue com o da Hermes
     (OBRA · CASA ALTO PADRÃO, 02/11: a arquitetura sai com o carimbo da DEZN). Com "linha" (02/11, WE Coqueiral · escadas:
-    "metalica"), o logo da linha de serviço — a DEZN assina só "DEZN", sem o "CONSTRUTORA", na metálica."""
+    "metalica"), o logo da linha de serviço — a DEZN assina só "DEZN", sem o "CONSTRUTORA", na metálica. A linha pode ter
+    um "logo_carimbo" próprio (03/11, WE Coqueiral · escadas: o logo em linha, "DEZN" à esquerda e o símbolo à direita,
+    na largura da caixa), sem mudar o das propostas."""
     cp = p.get("carimbo_pranchas") or {}
     emp = cp.get("empresa")
     if not emp:
@@ -3895,7 +3897,7 @@ def _logo_do_carimbo(p: dict) -> Optional[dict]:
         e = comercial.ler_empresa(PROJETOS, emp)
         if cp.get("linha"):
             e = comercial.empresa_da_linha(e, cp["linha"])
-        arq = e.get("logo") or ""
+        arq = e.get("logo_carimbo") or e.get("logo") or ""
         return logo_do_svg(arq) if arq.lower().endswith(".svg") else None
     except (OSError, ValueError):                       # o SVG sumiu ou não é de retas: o carimbo sai com o da Hermes
         return None

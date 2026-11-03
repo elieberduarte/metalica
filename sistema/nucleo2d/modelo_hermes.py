@@ -72,10 +72,42 @@ def carimbo_tamanho(formato: str) -> Tuple[float, float]:
     return CARIMBO[0] * f, CARIMBO[1] * f
 
 
+_LETRAS_PDF = None
+
+
+def _largura_no_pdf(texto: str, altura: float) -> float:
+    """A largura da linha no PDF das pranchas, pelas letras da fonte dele (saida/dxf_render: DejaVu Sans, com a maiúscula
+    na altura do CAD); 0 sem a fonte."""
+    global _LETRAS_PDF
+    if _LETRAS_PDF is None:
+        try:
+            from fontTools.ttLib import TTFont
+            from matplotlib.font_manager import findfont, FontProperties
+            f = TTFont(findfont(FontProperties(family="DejaVu Sans")))
+            cmap, hmtx = f.getBestCmap(), f["hmtx"]
+            cap = float(f["glyf"][cmap[ord("H")]].yMax)
+            _LETRAS_PDF = {"cmap": cmap, "hmtx": hmtx, "cap": cap, "cache": {}}
+        except Exception:                                   # sem fontTools/matplotlib: fica a estimativa
+            _LETRAS_PDF = {}
+    if not _LETRAS_PDF:
+        return 0.0
+    import unicodedata
+    c = _LETRAS_PDF["cache"]
+    tot = 0.0
+    for ch in texto:
+        if ch not in c:
+            cmap = _LETRAS_PDF["cmap"]
+            g = cmap.get(ord(ch)) or cmap.get(ord(unicodedata.normalize("NFD", ch)[0])) or cmap[ord("M")]
+            c[ch] = _LETRAS_PDF["hmtx"][g][0] / _LETRAS_PDF["cap"]
+        tot += c[ch]
+    return tot * altura
+
+
 def _largura_texto(texto: str, altura: float) -> float:
-    """Largura aproximada de uma linha em maiúsculas: 0,74 × altura por caractere (com 0,68 a linha do
-    CONTEÚDO passava da borda da caixa — "CB4 + CH14" da Sala, análise das pranchas de 29/09)."""
-    return 0.74 * altura * len(texto)
+    """Largura de uma linha em maiúsculas: 0,74 × altura por caractere (com 0,68 a linha do CONTEÚDO passava da borda da
+    caixa — "CB4 + CH14" da Sala, análise das pranchas de 29/09), ou a das letras do PDF, se for maior (WE Coqueiral ·
+    escadas, 03/11: o nome da obra com o cliente, 111 letras, passava da caixa OBRA e entrava na do PROJETISTA)."""
+    return max(0.74 * altura * len(texto), _largura_no_pdf(texto, altura))
 
 
 def _quebrar(texto: str, largura: float, altura: float) -> List[str]:
@@ -244,9 +276,10 @@ def desenhar_folha(d: Desenho, formato: str, larg: float, alt: float, info: dict
         h = H_VALOR
         while h > 1.3 and _largura_texto(texto, h) > larg_util:
             h -= 0.1
-        n_max = int(larg_util / (0.74 * h))
-        if len(texto) > n_max:
-            texto = texto[:max(n_max - 1, 1)] + "…"
+        if _largura_texto(texto, h) > larg_util:
+            while len(texto) > 2 and _largura_texto(texto + "…", h) > larg_util:
+                texto = texto[:-1]
+            texto = texto.rstrip() + "…"
         T((vx, vy), texto, h, campo, vertical="meio")
     obra = str(info.get("obra") or "").strip()
     cliente = str(info.get("cliente") or "").strip()
