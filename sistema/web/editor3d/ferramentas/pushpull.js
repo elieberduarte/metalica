@@ -312,9 +312,10 @@ export class FerramentaPushPull extends Ferramenta {
     }
     const fechado = C.faceTemVizinhas(ent, iFace);
     const normalFace = C.normalDaFace(ent, iFace);
-    const peca = fechado ? pontaDaPeca(ent, iFace, normalFace) : null;
+    const iFaces = fechado ? facesDoPlano(ent, iFace) : [iFace];
+    const peca = fechado ? pontaDaPeca(ent, iFaces, normalFace) : null;
     this.alvo = {
-      id: ent.id, iFace,
+      id: ent.id, iFace, iFaces,
       base: C.copiar(p.ponto),
       normal: peca ? peca.direcao : normalFace,
       normalFace,
@@ -334,7 +335,8 @@ export class FerramentaPushPull extends Ferramenta {
     const usarExtrusao = this.novaFace || !this.alvo.fechado;
     // a distância anda na direção do alvo; a extrusão (Ctrl) vai pela normal da face, no mesmo sentido
     if (usarExtrusao) return C.extrudarFace(s, this.alvo.iFace, peca ? d * Math.sign(C.dot(peca.direcao, this.alvo.normalFace) || 1) : d);
-    return peca ? esticarPeca(s, peca, d) : C.moverFace(s, this.alvo.iFace, d);
+    if (peca) return esticarPeca(s, peca, d);
+    return this.alvo.iFaces.length > 1 ? moverFaces(s, this.alvo.iFaces, this.alvo.normalFace, d) : C.moverFace(s, this.alvo.iFace, d);
   }
 
   aplicar(d) {
@@ -416,9 +418,13 @@ export class FerramentaPushPull extends Ferramenta {
     const achado = this.faceApontada(p);
     if (!achado) { this.medida(''); return; }
     const { ent, iFace } = achado;
-    const face = ent.faces[iFace].map(i => ent.vertices[i]);
-    const g = C.grupo(C.gPoligono(face, C.CORES.face, 0.30),
-                      C.gLinha(face, C.CORES.face, { fechada: true }));
+    // a face como o usuário a vê: os triângulos do mesmo plano juntos, sem a diagonal entre eles
+    const iFaces = C.faceTemVizinhas(ent, iFace) ? facesDoPlano(ent, iFace) : [iFace];
+    const naFace = new Set(iFaces.flatMap(k => ent.faces[k]));
+    const g = C.grupo(...iFaces.map(k => C.gPoligono(ent.faces[k].map(i => ent.vertices[i]), C.CORES.face, 0.30)));
+    for (const [a, b] of arestasReais(ent).values()) {
+      if (naFace.has(a) && naFace.has(b)) g.add(C.gLinha([ent.vertices[a], ent.vertices[b]], C.CORES.face));
+    }
     this.previa(g);
   }
 
@@ -483,17 +489,11 @@ export class FerramentaPushPull extends Ferramenta {
  * não é ponta (a de cima de uma chapa, a da telha) segue pela normal. Devolve { direcao (para fora), mover, menor, inteira }
  * ou null.
  */
-export function pontaDaPeca(ent, iFace, normalFace = C.normalDaFace(ent, iFace)) {
-  const V = ent.vertices || [], face = ent.faces[iFace] || [];
-  const naFace = new Set(face);
-  const arestas = new Map(), usados = new Set();
-  for (const f of ent.faces) {
-    for (let i = 0; i < f.length; i++) {
-      const a = f[i], b = f[(i + 1) % f.length];
-      usados.add(a);
-      if (a !== b) arestas.set(a < b ? `${a},${b}` : `${b},${a}`, [a, b]);
-    }
-  }
+export function pontaDaPeca(ent, iFaces, normalFace = C.normalDaFace(ent, [].concat(iFaces)[0])) {
+  const V = ent.vertices || [];
+  const naFace = new Set([].concat(iFaces).flatMap(k => ent.faces[k] || []));
+  const usados = new Set(ent.faces.flat());
+  const arestas = arestasReais(ent);
   // as arestas que saem da face, cada uma de fora para a face: todas na mesma direção
   const saem = [];
   let u = null;
@@ -523,6 +523,69 @@ export function pontaDaPeca(ent, iFace, normalFace = C.normalDaFace(ent, iFace))
     menor: Math.min(...pares.map(([a, b]) => C.dist(V[a], V[b]))),
     inteira,
   };
+}
+
+/** O plano de cada face do sólido: { n, c } (normal e n·ponto), ou null na face degenerada. */
+function planosDasFaces(ent) {
+  return ent.faces.map(f => {
+    const pts = f.map(i => ent.vertices[i]).filter(Boolean);
+    if (pts.length < 3) return null;
+    const n = C.normalDoContorno(pts);
+    return Math.hypot(...n) > 0.5 ? { n, c: C.dot(n, pts[0]) } : null;
+  });
+}
+
+const mesmoPlano = (p, q) => p && q && C.dot(p.n, q.n) > 0.9999 && Math.abs(p.c - q.c) < 0.5;
+
+/**
+ * As faces do sólido no mesmo plano da apontada e ligadas a ela por um lado: a face como o usuário a vê. A parede do
+ * arquitetônico tem o topo em dois triângulos (usuário, 03/11, no SESI: "editei essa peça… quando tento puxar a aba ele
+ * não pega"): puxar um triângulo só andava 3 dos 4 cantos e a parede empenava — como no SketchUp, os triângulos no mesmo
+ * plano são uma face, e o lado entre eles não é aresta.
+ */
+export function facesDoPlano(ent, iFace, planos = planosDasFaces(ent)) {
+  const grupo = [iFace], vistas = new Set(grupo);
+  for (let k = 0; k < grupo.length; k++) {
+    const lados = new Set();
+    const f = ent.faces[grupo[k]];
+    for (let i = 0; i < f.length; i++) { const a = f[i], b = f[(i + 1) % f.length]; lados.add(a < b ? `${a},${b}` : `${b},${a}`); }
+    ent.faces.forEach((g, j) => {
+      if (vistas.has(j) || !mesmoPlano(planos[iFace], planos[j])) return;
+      for (let i = 0; i < g.length; i++) {
+        const a = g[i], b = g[(i + 1) % g.length];
+        if (lados.has(a < b ? `${a},${b}` : `${b},${a}`)) { vistas.add(j); grupo.push(j); return; }
+      }
+    });
+  }
+  return grupo;
+}
+
+/** As arestas de verdade do sólido (chave → [a, b]): o lado entre duas faces no mesmo plano (a diagonal do topo em
+ *  triângulos) não conta. */
+function arestasReais(ent, planos = planosDasFaces(ent)) {
+  const faces = new Map();
+  ent.faces.forEach((f, j) => {
+    for (let i = 0; i < f.length; i++) {
+      const a = f[i], b = f[(i + 1) % f.length];
+      if (a === b) continue;
+      const k = a < b ? `${a},${b}` : `${b},${a}`;
+      if (!faces.has(k)) faces.set(k, { ab: [a, b], js: [] });
+      faces.get(k).js.push(j);
+    }
+  });
+  const reais = new Map();
+  for (const [k, { ab, js }] of faces) {
+    if (js.length === 2 && mesmoPlano(planos[js[0]], planos[js[1]])) continue;
+    reais.set(k, ab);
+  }
+  return reais;
+}
+
+/** A face (as do mesmo plano juntas) andando `d` na normal: o sólido fechado que não é peça prismática. */
+function moverFaces(solido, iFaces, normal, d) {
+  const mover = new Set(iFaces.flatMap(k => solido.faces[k] || []));
+  const passo = C.mul(normal, d);
+  return { vertices: solido.vertices.map((v, i) => mover.has(i) ? C.add(v, passo) : C.copiar(v)), faces: solido.faces.map(f => f.slice()) };
 }
 
 /** A ponta da peça andando `d` na direção dela; encurta até 1 mm, sem virar a peça do avesso. */

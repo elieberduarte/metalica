@@ -13,6 +13,9 @@ from nucleo3d.modelo import Documento
 
 # o rufo do SESI (vértices e faces como estão no modelo.json da obra)
 RUFO_V = [[11049.91,9208.5,20213.24],[11049.91,9440.12,20213.24],[18714.96,9440.12,19810],[18714.96,9208.5,19810],[11049.91,9208.5,20216.24],[11049.91,9440.12,20216.24],[18714.96,9440.12,19813],[18714.96,9208.5,19813],[11028.6,9208.5,19733.24],[18693.65,9208.5,19330.0],[18714.96,9208.5,19810],[11049.91,9208.5,20213.24],[11028.6,9211.5,19733.24],[18693.65,9211.5,19330.0],[18714.96,9211.5,19810],[11049.91,9211.5,20213.24],[11052.82,9440.12,20143.62],[18717.87,9440.12,19740.38],[18714.96,9440.12,19810],[11049.91,9440.12,20213.24],[11052.82,9443.12,20143.62],[18717.87,9443.12,19740.38],[18714.96,9443.12,19810],[11049.91,9443.12,20213.24]]
+# a parede do arquitetônico (e5191d5c6ba73 do SESI): o topo e o fundo em dois triângulos, como as 733 paredes ARQ da obra
+PAREDE_V = [[70475, 13403, 15810], [70667, 13403, 15810], [70667, 29866, 15810], [70475, 29866, 15810], [70475, 13403, 20351], [70667, 13403, 20351], [70667, 29866, 20351], [70475, 29866, 20351]]
+PAREDE_F = [[7, 4, 5], [1, 0, 3], [5, 6, 7], [3, 2, 1], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]
 RUFO_F = [[3,2,1,0],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7],[8,9,10,11],[15,14,13,12],[8,12,13,9],[9,13,14,10],[10,14,15,11],[11,15,12,8],[16,17,18,19],[23,22,21,20],[16,20,21,17],[17,21,22,18],[18,22,23,19],[19,23,20,16]]
 
 PORTA = _porta_livre()
@@ -90,7 +93,22 @@ try:
       f.onPonto({{ ponto: [1000, 100, 150], entidade: C.id, face: 6, normal: [1, 0, 0], tipoSnap: 'sobre_face' }}, {{}});
       f.onValor('200');
       const caixa = doc.get(C.id).vertices.map(v => v.map(c => Math.round(c)));
-      return {{ W, voltou, rotulo, caixa, alinhado }};""")
+      // a parede do arquitetônico (e5191d5c6ba73 do SESI, 03/11): caixa com o topo e o fundo em dois triângulos
+      const P = doc.add({{ tipo: 'solido', nome: 'cerâmico 14 cm Reservatórios', camada: 'ARQ — Paredes', vertices: {json.dumps(PAREDE_V)}, faces: {json.dumps(PAREDE_F)}, arestas_vivas: [], atributos: {{ tipo_ifc: 'IfcWall' }} }});
+      ed.selecao.definir([P.id]);
+      let ultima = null; const previaOrig = ed.previa.bind(ed); ed.previa = (o) => (ultima = o, previaOrig(o));
+      f.onMover({{ ponto: [70571, 20000, 20351], entidade: P.id, face: 0, normal: [0, 0, 1], tipoSnap: 'sobre_face' }}, {{}});
+      let destaque = 0; if (ultima) ultima.traverse(o => {{ if (o.isMesh) destaque++; }}); ed.previa = previaOrig;
+      f.onPonto({{ ponto: [70571, 20000, 20351], entidade: P.id, face: 0, normal: [0, 0, 1], tipoSnap: 'sobre_face' }}, {{}});
+      const faces = f.alvo ? (f.alvo.iFaces || [f.alvo.iFace]).slice().sort() : null;
+      f.onValor('500');
+      const topo = doc.get(P.id).vertices.map(v => v.map(Math.round));
+      ed.desfazer();
+      // a lateral (x 70.667, triângulos 6 e 7): anda inteira 100
+      f.onPonto({{ ponto: [70667, 20000, 18000], entidade: P.id, face: 6, normal: [1, 0, 0], tipoSnap: 'sobre_face' }}, {{}});
+      f.onValor('100');
+      const lado = doc.get(P.id).vertices.map(v => v.map(Math.round));
+      return {{ W, voltou, rotulo, caixa, alinhado, destaque, faces, topo, lado }};""")
     if r:
         V, W = RUFO_V, r["W"]
         u = [V[3][k] - V[0][k] for k in range(3)]
@@ -118,6 +136,13 @@ try:
         ok(all(abs(x - 19000) < 0.01 for x in xs), f"no canto da parede, a ponta da capa fica rente ao plano dela (x 19.000): {xs}")
         ok(all(all(abs(Al[i][k] - V[i][k] - t * u[k]) < 0.05 for k in range(3)) for i in ponta),
            f"e as três chapas andam o mesmo no caimento ({t:.1f} mm)")
+        PV = PAREDE_V
+        ok(r["faces"] == [0, 2], f"parede: o topo em dois triângulos é uma face só (as faces 0 e 2): {r['faces']}")
+        ok(r["destaque"] >= 2, f"parede: o destaque pinta os dois triângulos do topo: {r['destaque']} malhas na prévia")
+        ok(r["topo"] == [v[:2] + [v[2] + (500 if v[2] == 20351 else 0)] for v in PV],
+           f"parede: o topo inteiro sobe 500 (os 4 cantos), sem empenar: {r['topo']}")
+        ok(r["lado"] == [[v[0] + (100 if v[0] == 70667 else 0)] + v[1:] for v in PV],
+           f"parede: a lateral anda 100 inteira: {r['lado']}")
         ok(r["caixa"] == [[0,0,0],[1200,0,0],[1200,200,0],[0,200,0],[0,0,300],[1200,0,300],[1200,200,300],[0,200,300]],
            f"a caixa comum estica 200 na normal da ponta, como antes: {r['caixa']}")
     else:
