@@ -138,6 +138,31 @@ try:
     ok(nos_quadros == [], f"C. na tela dividida, os quadros sem a marca deles (com marca: {nos_quadros})")
     m = json.loads(aba.avaliar(MARCA))
     ok(m["existe"] and m["dir"] >= m["larg"] - 20 and m["base"] > m["alt"] - 30, f"C. na tela dividida, a marca no canto de baixo à direita ({m})")
+    # e acima do rodapé do quadro do canto (Sesi Chapecó, 03/11: a marca da janela de fora ficava a 6 px do chão, por cima
+    # do "Medidas" e do nome da peça no rodapé do 3D — os textos empilhados)
+    POR_CIMA = """(() => {
+      const e = document.getElementById('versao-programa'); if (!e) return JSON.stringify(null);
+      const m = e.getBoundingClientRect(), por_cima = [];
+      for (const f of document.querySelectorAll('iframe')) {
+        let r = null; try { r = f.contentDocument.querySelector('.rodape'); } catch (err) {}
+        if (!r) continue;
+        const q = f.getBoundingClientRect();
+        for (const x of r.querySelectorAll('*')) {
+          const b = x.getBoundingClientRect();
+          if (!b.width || !b.height || getComputedStyle(x).visibility === 'hidden') continue;
+          const l = q.left + b.left, t = q.top + b.top;
+          if (l < m.right && l + b.width > m.left && t < m.bottom && t + b.height > m.top)
+            por_cima.push(f.id + ' ' + (x.id || x.className || x.tagName));
+        }
+      }
+      return JSON.stringify(por_cima); })()"""
+    # o 3D no Editar, como no print (o modo ver não tem rodapé; o editor tem o "Medidas" no canto)
+    aba.avaliar("document.getElementById('f3d').src = '/editor?projeto=obra-rodape'; 1")
+    ok(esperar("(() => { try { return !!document.getElementById('f3d').contentDocument.querySelector('.rodape #medida'); } catch (e) { return false; } })()", 60),
+       "C. o editor abriu no quadro do 3D, com o rodapé")
+    aba.drenar(2.5)
+    por_cima = json.loads(aba.avaliar(POR_CIMA) or "null")
+    ok(por_cima == [], f"C. na tela dividida, a marca não fica por cima do rodapé do quadro ({por_cima})")
     # o modo ver do projeto de teste não tem modelo 3D: os 404 dele (e o do favicon) são esperados
     erros = [x for x in aba.console if x[0] in ("error", "excecao") and not str(x[1]).startswith("Failed to load resource")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:3]]}")

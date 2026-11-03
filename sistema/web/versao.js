@@ -195,12 +195,27 @@
     document.body.appendChild(alvo);
     return alvo;
   }
-  /** Acima do rodapé da tela (o 2D e o 3D têm um, colado embaixo), senão no canto. */
+  /** Acima do rodapé da tela (o 2D e o 3D têm um, colado embaixo), senão no canto. Na tela dividida o rodapé está
+   *  dentro do quadro (o 2D ou o 3D) que encosta no canto de baixo à direita: a marca da janela de fora ficava a 6 px
+   *  do chão, por cima do "Medidas" do 3D (Sesi Chapecó, 03/11). */
   function baseInferior() {
+    var alt = window.innerHeight, larg = window.innerWidth;
     var r = document.querySelector('.rodape');
-    if (!r) return 6;
-    var b = r.getBoundingClientRect();
-    return b.height && b.bottom >= window.innerHeight - 2 ? Math.round(b.height) + 4 : 6;
+    if (r) {
+      var b = r.getBoundingClientRect();
+      if (b.height && b.bottom >= alt - 2) return Math.round(b.height) + 4;
+    }
+    var quadros = document.querySelectorAll('iframe');
+    for (var i = 0; i < quadros.length; i++) {
+      var q = quadros[i].getBoundingClientRect();
+      if (!q.height || q.bottom < alt - 2 || q.right < larg - 2) continue;      // o quadro do canto de baixo à direita
+      var rq = null;
+      try { rq = quadros[i].contentDocument && quadros[i].contentDocument.querySelector('.rodape'); } catch (err) { rq = null; }
+      if (!rq) continue;
+      var bq = rq.getBoundingClientRect();
+      if (bq.height && q.top + bq.bottom >= alt - 2) return Math.round(bq.height) + 4;
+    }
+    return 6;
   }
   /** Assenta a marca: a altura certa e, só quando ela pede para recarregar, o clique. */
   function assentar(e, clicavel) {
@@ -259,5 +274,7 @@
   setInterval(perguntar, 60000);
   // no desenvolvimento, o carimbo do código muda a cada edição: pergunta mais vezes
   setInterval(function () { if (window.__dev) perguntar(); }, 4000);
+  // o quadro da tela dividida carrega depois (e o 2D/3D troca de lado): a altura da marca acompanha
+  setInterval(function () { if (alvo && alvo.isConnected) alvo.style.bottom = baseInferior() + 'px'; }, 1500);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) perguntar(); });
 })();

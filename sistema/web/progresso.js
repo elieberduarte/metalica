@@ -107,7 +107,8 @@ export function acompanhar({ url = '', tarefa = 'tarefa', rotulo = '', onde = nu
     else {
       const v = Math.round(f.fracao * 100);
       cheio.style.width = `${v}%`;
-      pct.textContent = (f.modo === 'estimada' ? '~' : '') + `${v} %`;
+      // a estimada com "≈": o "~" na letra pequena do rodapé parecia um sinal de menos ("−28 %", Sesi Chapecó, 03/11)
+      pct.textContent = (f.modo === 'estimada' ? '≈' : '') + `${v} %`;
       barra.setAttribute('aria-valuenow', String(v));
     }
     const etapa = (ultimoP && ultimoP.etapa) || '';
@@ -177,6 +178,10 @@ const ROTULOS = {
   'enviar': 'Enviando a obra', 'apoios-tesouras': 'Lendo os apoios e os chumbadores', 'suportes-tercas': 'Lendo o suporte das terças', 'chapas-tesouras': 'Lendo as chapas das tesouras', 'aletas-contraventos': 'Lendo as aletas dos contraventos',
 };
 
+/** A rota que é tarefa só num método: a gravação do modelo (a do editor, que no modelo grande leva minutos, aparecia como
+ *  "Processando", Sesi Chapecó, 03/11); o GET do mesmo modelo é a leitura. */
+const ROTULOS_DO_METODO = { 'POST modelo': 'Gravando o modelo' };
+
 function _caminho(url) {
   try { return new URL(url, location.href).pathname; } catch (e) { return String(url || '').split('?')[0]; }
 }
@@ -190,8 +195,8 @@ export function tarefaDaChamada(url, metodo = 'GET') {
   // a rota sem o projeto e sem o nome do desenho: a mesma tarefa em desenhos diferentes estima pelo mesmo tempo
   const rota = (m ? m[2] : c.slice(5)).replace(/^desenhos\/[^/]+\//, 'desenhos/*/');
   const partes = rota.split('/').filter(Boolean);
-  let rotulo = GENERICO;
-  for (let i = partes.length - 1; i >= 0; i--) if (ROTULOS[partes[i]]) { rotulo = ROTULOS[partes[i]]; break; }
+  let rotulo = ROTULOS_DO_METODO[`${String(metodo).toUpperCase()} ${rota}`] || GENERICO;
+  if (rotulo === GENERICO) for (let i = partes.length - 1; i >= 0; i--) if (ROTULOS[partes[i]]) { rotulo = ROTULOS[partes[i]]; break; }
   return { projeto, rotulo, tarefa: `${projeto || '-'}|${String(metodo).toUpperCase()} ${rota}`,
            progresso: m ? `/api/projetos/${m[1]}/progresso` : '' };
 }

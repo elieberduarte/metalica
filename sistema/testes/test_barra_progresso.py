@@ -131,6 +131,37 @@ class TestFracaoDaBarra(unittest.TestCase):
         self.assertEqual(a[2:5], [None, None, None])                          # as consultas da barra e o que não é /api/
         self.assertEqual((a[5]["projeto"], a[5]["progresso"], a[5]["rotulo"]), ("", "", "Exportando"))
 
+    def test_estimada_com_aproximado_e_a_gravacao_do_modelo_com_nome(self):
+        """Sesi Chapecó, 03/11 (editor, 42.721 objetos): "~28 %" na letra pequena do rodapé parecia "−28 %", e a
+        gravação do modelo (minutos no modelo grande) aparecia como "Processando"."""
+        pasta = tempfile.mkdtemp(prefix="barra_")
+        try:
+            script = os.path.join(pasta, "t.mjs")
+            url = "file:///" + os.path.join(WEB, "progresso.js").replace("\\", "/")
+            open(script, "w", encoding="utf-8").write(r"""
+globalThis.location = { href: 'http://localhost/editor' };
+const todos = [];
+const el = () => { const e = { className: '', dataset: {}, style: {}, attrs: {}, textContent: '', title: '',
+  setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; }, append() {}, appendChild() {},
+  remove() {} }; todos.push(e); return e; };
+globalThis.document = { createElement: el, head: el(), body: { appendChild() {} }, querySelector: () => null };
+globalThis.localStorage = { getItem: () => '10', setItem() {} };        // a última vez levou 10 s: modo estimada
+globalThis.fetch = () => new Promise(() => {});
+const { acompanhar, tarefaDaChamada: t } = await import(%s);
+const parar = acompanhar({ tarefa: 'x', rotulo: 'Gravando o modelo' });
+const pct = todos.find((e) => e.className === 'barra-andamento-pct').textContent;
+parar();
+console.log(JSON.stringify({ pct, post: t('/api/projetos/sesi/modelo', 'POST').rotulo, get: t('/api/projetos/sesi/modelo').rotulo }));
+""" % json.dumps(url))
+            r = subprocess.run(["node", script], capture_output=True, text=True, encoding="utf-8", timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            v = json.loads(r.stdout)
+        finally:
+            shutil.rmtree(pasta, ignore_errors=True)
+        self.assertRegex(v["pct"], r"^≈\d+ %$")                  # nada que pareça sinal de menos
+        self.assertEqual(v["post"], "Gravando o modelo")
+        self.assertEqual(v["get"], "Processando")
+
     def test_uma_barra_por_vez(self):
         """TEL-01, reincidência (03/11, conferência da 0.9.2): com a máquina ocupada, a consulta sem nome (o peso, o
         catálogo, a malha) passava de 1,2 s no meio do Detalhar e ganhava uma barra "Processando…" ao lado — duas ou
