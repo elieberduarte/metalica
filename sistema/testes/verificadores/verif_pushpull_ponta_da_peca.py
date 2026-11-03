@@ -75,6 +75,14 @@ try:
       const rotulo = ed.pilha.feitos[ed.pilha.feitos.length - 1].rotulo || ed.pilha.feitos[ed.pilha.feitos.length - 1].nome || '';
       ed.desfazer();
       const voltou = doc.get(s.id).vertices.every((v, i) => v.every((c, k) => Math.abs(c - V[i][k]) < 1e-6));
+      // alinhar no canto da parede (03/11): a ponta da capa, cortada na vertical, fica rente ao plano do canto (x 19.000)
+      const parede = doc.add({{ tipo: 'solido', nome: 'parede', camada: 'Estrutura', vertices: [[19000,8000,18000],[19400,8000,18000],[19400,11000,18000],[19000,11000,18000],[19000,8000,21000],[19400,8000,21000],[19400,11000,21000],[19000,11000,21000]],
+                               faces: [[3,2,1,0],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]], arestas_vivas: [], atributos: {{}} }});
+      f.onPonto(clique, {{}});
+      f.onMover({{ ponto: [19000, 8000, 21000], entidade: parede.id, tipoSnap: 'extremidade' }}, {{}});
+      f.onPonto({{ ponto: [19000, 8000, 21000], entidade: parede.id, tipoSnap: 'extremidade' }}, {{}});
+      const alinhado = doc.get(s.id).vertices.map(v => v.slice());
+      ed.desfazer();
       // a caixa comum (sem caimento): a ponta anda na normal, como antes
       const C = doc.add({{ tipo: 'solido', nome: 'caixa', camada: 'Estrutura', vertices: [[0,0,0],[1000,0,0],[1000,200,0],[0,200,0],[0,0,300],[1000,0,300],[1000,200,300],[0,200,300]],
                          faces: [[3,2,1,0],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]], arestas_vivas: [], atributos: {{}} }});
@@ -82,7 +90,7 @@ try:
       f.onPonto({{ ponto: [1000, 100, 150], entidade: C.id, face: 6, normal: [1, 0, 0], tipoSnap: 'sobre_face' }}, {{}});
       f.onValor('200');
       const caixa = doc.get(C.id).vertices.map(v => v.map(c => Math.round(c)));
-      return {{ W, voltou, rotulo, caixa }};""")
+      return {{ W, voltou, rotulo, caixa, alinhado }};""")
     if r:
         V, W = RUFO_V, r["W"]
         u = [V[3][k] - V[0][k] for k in range(3)]
@@ -104,6 +112,12 @@ try:
             return sum(v[k] * u[k] for k in range(3)) / n > 0.99999
         ok(all(paralela(a, b) for a, b in longas), "o rufo não entorta: as 12 arestas do comprimento seguem no caimento")
         ok(r["voltou"], "um Ctrl+Z devolve o rufo como estava")
+        Al = r["alinhado"]
+        xs = [round(Al[i][0], 2) for i in (2, 3, 6, 7)]
+        t = (19000 - V[3][0]) / u[0]
+        ok(all(abs(x - 19000) < 0.01 for x in xs), f"no canto da parede, a ponta da capa fica rente ao plano dela (x 19.000): {xs}")
+        ok(all(all(abs(Al[i][k] - V[i][k] - t * u[k]) < 0.05 for k in range(3)) for i in ponta),
+           f"e as três chapas andam o mesmo no caimento ({t:.1f} mm)")
         ok(r["caixa"] == [[0,0,0],[1200,0,0],[1200,200,0],[0,200,0],[0,0,300],[1200,0,300],[1200,200,300],[0,200,300]],
            f"a caixa comum estica 200 na normal da ponta, como antes: {r['caixa']}")
     else:

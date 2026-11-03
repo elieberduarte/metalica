@@ -103,6 +103,9 @@ export class Inferencia {
     // (id) → bool, ou null: só essas peças entram no snap (a ferramenta que pede liga e desliga; o Empurrar/Puxar com
     // peça selecionada, 26/10)
     this.restricao = null;
+    // com a restrição, os cantos das peças de fora também pegam (só a extremidade; aresta, meio e centro delas não):
+    // o puxão alinhando a ponta no canto da parede ao lado (usuário, 03/11, no SESI)
+    this.cantosDeFora = false;
     this._contornos = new Map();    // id → {chave, pontos, arestas, raioMM}: o contorno da seção da barra no mundo
     this._quinas = new WeakSet();   // os pontos de quina viva do contorno (vencem o empate com os do arco ao lado)
     // o plano de trabalho (ferramenta Plano de trabalho): {origem, normal, ex, ey, nome} ou null = o chão (z da âncora)
@@ -487,6 +490,8 @@ export class Inferencia {
     // primeiro a peça sob o cursor e as selecionadas: o laço para em 4000 peças, e num modelo grande (o PRATI CD, 7.800) as do
     // fim da lista — o agulhamento — nunca eram examinadas e o canto delas não pegava (13/10/2026)
     const doc = this.documento;
+    const deFora = aceitar && this.cantosDeFora ? (i) => !aceitar(i) : null;
+    const entra = (i) => !aceitar || !!deFora || aceitar(i);
     const primeiras = [];
     if (alvo && alvo.id) primeiras.push(alvo.id);
     for (const i of (this.selecao && this.selecao.ids) || []) primeiras.push(i);
@@ -496,18 +501,18 @@ export class Inferencia {
       const vistas = new Set();
       for (const i of primeiras) {
         const e = doc.get(i);
-        if (e && !vistas.has(i) && (!aceitar || aceitar(i))) { vistas.add(i); yield [i, e]; }
+        if (e && !vistas.has(i) && entra(i)) { vistas.add(i); yield [i, e]; }
       }
       if (naTela) {
         for (const i of naTela) {
-          if (vistas.has(i) || (aceitar && !aceitar(i))) continue;
+          if (vistas.has(i) || !entra(i)) continue;
           vistas.add(i);
           const e = doc.get(i);
           if (e) yield [i, e];
         }
         return;
       }
-      for (const [i, e] of doc.entidades) if (!vistas.has(i) && (!aceitar || aceitar(i))) yield [i, e];
+      for (const [i, e] of doc.entidades) if (!vistas.has(i) && entra(i)) yield [i, e];
     };
     // descarte pelo raio do cursor: a esfera envolvente de cada peça contra a reta do raio, com a folga da tolerância em
     // milímetros na profundidade dela. Sem ele, cada movimento do mouse projetava na tela os pontos de todas as peças —
@@ -577,6 +582,7 @@ export class Inferencia {
           cand.push({ tipo: 'extremidade', ponto: pts[i], d, id, quina: this._quinas.has(pts[i]) });
         }
       }
+      if (deFora && deFora(id)) continue;          // a peça de fora: só os cantos
       const ars = contorno ? geo.arestas.concat(contorno.arestas) : geo.arestas;
       for (const [a, b] of ars) {
         // descarte exato pela tela: com as duas pontas na frente da câmera, a aresta projetada é o segmento entre as

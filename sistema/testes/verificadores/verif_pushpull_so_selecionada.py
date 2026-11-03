@@ -127,12 +127,30 @@ try:
     clique(p_barra)
     ok(alvo() == "viga", f"A. o clique ali começa na viga selecionada (atravessa a barra): {alvo()}")
 
-    # B. no arrasto, o canto da vizinha não pega
-    mover([p_viz[0] - 20, p_viz[1] + 10]); mover(p_viz)
+    # B. no arrasto, a aresta da vizinha não gruda (26/10); o canto dela pega e a face chega no plano dele (usuário,
+    # 03/11, no SESI: "preciso que ele se alinhe com essa face, porém a ferramenta não reconhece essas quinas ou cantos")
+    p_aresta = tela([1400, 4200, 900])              # no meio da aresta de cima da vizinha, longe dos cantos
+    mover([p_aresta[0] - 20, p_aresta[1] + 10]); mover(p_aresta)
     s = snap()
-    ok(nome.get(s.get("e")) != "viz", f"B. no arrasto o snap não gruda na vizinha: {nome.get(s.get('e'), s.get('e'))} {s.get('t')}")
-    tecla("Escape", "Escape", 27)
-    ok(alvo() is None, "B. Esc cancela o puxão")
+    ok(not (nome.get(s.get("e")) == "viz" and s.get("t") in ("sobre_aresta", "meio", "centro", "sobre_face")),
+       f"B. no arrasto a aresta da vizinha não gruda: {nome.get(s.get('e'), s.get('e'))} {s.get('t')}")
+    # um canto de cima da vizinha que a vista mostra (o primeiro que pega)
+    p_canto, s = None, {}
+    for c in ([900, 7000, 900], [1400, 7000, 900], [900, 0, 900], [1400, 0, 900]):
+        q = tela(c)
+        mover([q[0] - 20, q[1] + 10]); mover(q)
+        s = snap()
+        if nome.get(s.get("e")) == "viz" and s.get("t") == "extremidade":
+            p_canto = q; break
+    ok(p_canto is not None, f"B. no arrasto o canto da vizinha pega: {nome.get(s.get('e'), s.get('e'))} {s.get('t')}")
+    clique(p_canto or p_viz)
+    topo = jsj("return Math.max(...editor.documento.get('%s').vertices.map(v => v[2]));" % ids["viga"])
+    ok(topo is not None and abs(topo - 900) < 0.01, f"B. o clique no canto leva a face de cima da viga à altura dele (900): {topo}")
+    ok(alvo() is None, "B. o puxão termina no clique")
+    ok(jsj("return editor.inferencia.cantosDeFora === false;"), "B. terminado o puxão, os cantos de fora deixam de pegar")
+    jsj("editor.desfazer(); return 1;")
+    mover(p_canto or p_viz)
+    ok(nome.get(snap().get("e")) != "viz", f"B. fora do arrasto, o canto da vizinha não pega (só a selecionada): {snap()}")
 
     # C. o clique na vizinha (fora da seleção) não começa nada
     # um pixel da vizinha cujo raio não chega na viga (se chegasse, valeria a viga, como no A)

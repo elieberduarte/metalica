@@ -15,6 +15,9 @@
 import { Ferramenta, paraMilimetros, formatar } from './base.js';
 import * as C from './_comum.js';
 
+// os pontos de uma feição que alinham a face do puxão (o canto da parede, a ponta da peça ao lado)
+const PONTOS_DE_ALINHAR = new Set(['extremidade', 'interseccao']);
+
 export class FerramentaPushPull extends Ferramenta {
   static id = 'pushpull';
   static nome = 'Empurrar/Puxar';
@@ -74,7 +77,7 @@ export class FerramentaPushPull extends Ferramenta {
     if (!p) return;
     if (!this.alvo) { this.destacar(p); return; }
     if (ev) this.novaFace = !!ev.ctrlKey || this.novaFace;
-    this.distancia = C.distanciaNaReta(this.editor, p, this.alvo.base, this.alvo.normal);
+    this.distancia = this._distancia(p);
     this.desenhar();
   }
 
@@ -86,8 +89,23 @@ export class FerramentaPushPull extends Ferramenta {
       this.desenhar();
       return;
     }
-    this.distancia = C.distanciaNaReta(this.editor, p, this.alvo.base, this.alvo.normal);
+    this.distancia = this._distancia(p);
     this.aplicar(this.distancia);
+  }
+
+  /**
+   * A distância do puxão até o cursor. No canto de uma peça (a de fora também, durante o arrasto: usuário, 03/11, no SESI —
+   * "preciso que ele se alinhe com essa face, porém a ferramenta não reconhece essas quinas ou cantos como ponto de
+   * referência"), a face apontada chega ao plano dela passando pelo canto — não só o ponto do clique: a ponta cortada
+   * na vertical de um rufo em caimento fica rente à parede.
+   */
+  _distancia(p) {
+    const A = this.alvo;
+    if (p && PONTOS_DE_ALINHAR.has(p.tipoSnap) && A.normalFace) {
+      const k = C.dot(A.normal, A.normalFace);
+      if (Math.abs(k) > 0.5) return C.dot(C.sub(p.ponto, A.base), A.normalFace) / k;
+    }
+    return C.distanciaNaReta(this.editor, p, A.base, A.normal);
   }
 
   onDuploClique(p, ev) {
@@ -263,7 +281,14 @@ export class FerramentaPushPull extends Ferramenta {
       this.dica(C.DICA_BLOQUEADA);
       return false;
     }
+    // no arrasto, os cantos das outras peças pegam (alinhar na parede); a aresta e a face delas não (26/10)
+    if (ok) this._cantosDeFora(true);
     return ok;
+  }
+
+  _cantosDeFora(sim) {
+    const inf = this.editor && this.editor.inferencia;
+    if (inf) inf.cantosDeFora = sim;
   }
 
   _iniciar(p, ev) {
@@ -363,6 +388,7 @@ export class FerramentaPushPull extends Ferramenta {
 
   reiniciar() {
     C.desancorar(this.editor);
+    this._cantosDeFora(false);
     this.alvo = null;
     this.distancia = 0;
     this.novaFace = false;
