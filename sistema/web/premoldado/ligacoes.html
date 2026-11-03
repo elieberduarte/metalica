@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101b2e">
+<script src="/tema-janela.js"></script>
+<title>Ligações pré-moldadas — Metálica (dev)</title>
+<link rel="stylesheet" href="/estilo.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%236b7280'/><path d='M9 27V9M23 27V9M6 9h20' stroke='%23fff' stroke-width='3' stroke-linecap='round'/></svg>">
+<script>
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<link rel="stylesheet" href="/premoldado/pm.css">
+</head>
+<body>
+<header class="topo">
+  <div class="marca">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><path d="M8 28V8M24 28V8M5 8h22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><rect x="5" y="26" width="6" height="3" fill="currentColor"/><rect x="21" y="26" width="6" height="3" fill="currentColor"/></svg>
+    <h1>Ligações pré-moldadas<span class="dev">em desenvolvimento</span></h1>
+  </div>
+  <div class="acoes">
+    <button type="button" id="btn-voltar" title="Volta para a tela anterior" onclick="history.length > 1 ? history.back() : (location.href = '/?area=premoldado')">&larr; Voltar</button>
+    <button type="button" id="btn-tema" title="Alternar tema claro/escuro">Tema</button>
+    <button type="button" onclick="location.href='/premoldado/catalogo'" title="Concretos, aços, bitolas, cobrimentos e seções">Catálogo de peças</button>
+    <button type="button" onclick="location.href='/?area=premoldado'" title="Voltar à lista das obras pré-moldadas">Projetos</button>
+  </div>
+</header>
+<main class="pm indexada">
+  <nav class="indice" id="indice"></nav>
+  <section id="conteudo" class="ligacao"><div class="caixa"><p class="vazio">carregando…</p></div></section>
+</main>
+<script src="/premoldado/comum.js"></script>
+<script src="/premoldado/ligacoes.js"></script>
+<script src="/versao.js" defer></script>
+<script src="/vivo.js"></script>
+</body>
+</html>

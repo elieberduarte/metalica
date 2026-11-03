@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101b2e">
+<script src="/tema-janela.js"></script>
+<title>Galpão pré-moldado — Metálica (dev)</title>
+<link rel="stylesheet" href="/estilo.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%236b7280'/><path d='M9 27V9M23 27V9M6 9h20' stroke='%23fff' stroke-width='3' stroke-linecap='round'/></svg>">
+<script>
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<link rel="stylesheet" href="/premoldado/pm.css">
+</head>
+<body>
+<header class="topo">
+  <div class="marca">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><path d="M8 28V8M24 28V8M5 8h22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><rect x="5" y="26" width="6" height="3" fill="currentColor"/><rect x="21" y="26" width="6" height="3" fill="currentColor"/></svg>
+    <h1>Galpão pré-moldado<span id="nome-projeto"></span><span class="dev">em desenvolvimento</span></h1>
+  </div>
+  <div class="acoes">
+    <button type="button" id="btn-voltar" title="Volta para a tela anterior" onclick="history.length > 1 ? history.back() : (location.href = '/?area=premoldado')">&larr; Voltar</button>
+    <button type="button" id="btn-tema" title="Alternar tema claro/escuro">Tema</button>
+    <button type="button" onclick="location.href='/premoldado/catalogo'" title="Concretos, aços, bitolas, cobrimentos e seções">Catálogo de peças</button>
+    <button type="button" onclick="location.href='/premoldado/ligacoes'" title="Cálice, consolo e aparelho de apoio calculados avulsos">Ligações</button>
+    <button type="button" onclick="location.href='/?area=premoldado'" title="Voltar à lista das obras pré-moldadas">Projetos</button>
+  </div>
+</header>
+<main class="pm">
+  <section>
+    <div class="caixa" id="caixa-eixos" hidden>
+      <h3>Eixos da planta</h3>
+      <p class="mem" id="eixos-texto"></p>
+      <div class="botoes">
+        <button type="button" class="principal" id="btn-usar-eixos" title="Traz o vão (eixos com letra) e os vãos entre pórticos (eixos numerados) para a geometria">Usar os eixos da planta</button>
+        <button type="button" id="btn-planta" title="Abre a planta de lançamento no Desenho 2D">Abrir a planta</button>
+      </div>
+    </div>
+    <div class="caixa">
+      <h3>Geometria</h3>
+      <div class="campos" id="f-geometria"></div>
+      <div class="botoes"><button type="button" id="btn-ler-planta" title="Lê a planta de lançamento do projeto (CAD, menu Estrutura): as filas e os pórticos pelos pilares, a altura pelos níveis do topo (filas diferentes viram cobertura de uma água), os pilares de oitão, as seções lançadas, as vigas, os consolos e as fundações">Ler a planta de lançamento</button>
+      <button type="button" id="btn-apoios-cobertura" title="Posiciona os pilares embaixo dos chumbadores da cobertura escolhida: o vão, os vãos entre pórticos, a altura (topo do concreto na chapa de base) e os pilares de oitão">Usar os apoios da cobertura</button></div>
+    </div>
+    <div class="caixa">
+      <h3>Cargas e vento</h3>
+      <div class="campos" id="f-cargas"></div>
+    </div>
+    <div class="caixa">
+      <h3>Vigas</h3>
+      <p class="explica">As longitudinais ficam no topo dos pilares, apoiadas em consolos (calha em U ou travamento retangular). A viga de cobertura é transversal, em seção I com o banzo de cima na inclinação; com ela, a cobertura permanente acima é só a telha e as terças.</p>
+      <div class="campos" id="f-vigas"></div>
+    </div>
+    <div class="caixa">
+      <h3>Ponte rolante</h3>
+      <p class="explica">Cargas das rodas, impacto e forças horizontais do catálogo do fabricante da ponte (a NBR 8800:2024 traz só γ = 1,5 e os ψ). A viga de rolamento apoia no consolo, a esta altura acima da boca do cálice.</p>
+      <div class="campos" id="f-ponte"></div>
+    </div>
+    <div class="caixa">
+      <h3>Fundação</h3>
+      <p class="explica">Sapata ou bloco sobre estacas sob o cálice. A tensão admissível do solo, a carga e a tração admissíveis da estaca, a área comprimida mínima e o espaçamento das estacas vêm da sondagem e do projeto geotécnico (NBR 6122).</p>
+      <div class="campos" id="f-fundacao"></div>
+    </div>
+    <div class="caixa">
+      <h3>Concreto e produção</h3>
+      <div class="campos" id="f-concreto"></div>
+      <div class="botoes">
+        <button type="button" class="principal" id="btn-dimensionar">Dimensionar</button>
+        <button type="button" id="btn-3d" title="Grava o modelo 3D no projeto e abre o editor">Ver no 3D</button>
+        <button type="button" id="btn-memorial" title="Gera o memorial de cálculo em PDF">Memorial em PDF</button>
+        <button type="button" id="btn-detalhar" title="Gera a fôrma e a armação dos pilares no Desenho 2D">Detalhar pilares (2D)</button>
+        <button type="button" id="btn-pranchas" title="Gera as plantas de saída (locação, fôrmas da cobertura, cálices e fundações, cortes transversal e longitudinais, pilares) e monta o jogo de pranchas A1">Pranchas</button>
+        <button type="button" id="btn-locacao" title="Gera a planta de locação dos pilares (eixos, pilares, cálices e fundações) no Desenho 2D">Locação dos pilares (2D)</button>
+      </div>
+      <p class="mem" id="situacao"></p>
+    </div>
+  </section>
+  <section id="resultado"><div class="caixa"><p class="vazio">Informe a obra e clique em Dimensionar.</p></div></section>
+</main>
+<script src="/premoldado/comum.js"></script>
+<script src="/premoldado/app.js"></script>
+<script src="/versao.js" defer></script>
+<script src="/vivo.js"></script>
+</body>
+</html>

@@ -54,14 +54,15 @@ MODULOS_SO_DEV = ["saida.orcamento", "saida.comercial", "saida.comercial_servico
                   "saida.proposta_html", "saida.imagens3d", "saida.docx_simples",
                   "celular", "celular.servidor", "celular.web", "celular.certificado", "celular.nuvem",  # celular: só no dev até a Fase 1 fechar
                   "licencas_dev",                       # a tela das licenças (11/10): só no desenvolvimento
-                  # o pré-moldado vive fora do git (.git/info/exclude) e entra pelo _extensoes_dev: a conferência
-                  # da noite constrói da cópia limpa, mas o construir.py rodado da pasta de trabalho o levaria junto
-                  "premoldado",
+                  # os módulos do _extensoes_dev do app.py (pré-moldado; arquitetura, 30/10): no git desde 02/11 (base
+                  # limpa), só no desenvolvimento — testes/test_so_no_dev.py confere que todo módulo do gancho está aqui
+                  "premoldado", "arquitetura",
                   "painel_dev", "painel_dev.chats", "painel_dev.web"]   # o Painel DEV (16/10): os chats do Claude Code
 # (saida.pacote_celular vai no instalado: é ele que monta o 3D leve do modo "ver" do modelo 3D, saida/modelo_leve.py)
 TELAS_SO_DEV = ["comercial.html", "comercial.js", "celular", "acesso-celular*", "qrcode.js", "premoldado",
                 "licencas.html",                       # a tela das licenças (11/10): só no desenvolvimento
-                "painel_dev"]                          # o Painel DEV (16/10)
+                "painel_dev",                          # o Painel DEV (16/10)
+                "arquitetura"]                         # a área Arquitetura da tela de projetos (30/10)
 
 #: Partes de bibliotecas que o programa não usa (07/10): do scipy só entram as matrizes esparsas
 #: (scipy.sparse, .linalg, .csgraph na análise estrutural; os testes da análise passam com estas

@@ -166,6 +166,37 @@ TERRENO = os.environ.get("METALICA_TERRENO", "1") == "1"
 SO_NO_DEV = "a parte comercial (orçamento, proposta, contrato e obra) fica só na versão de desenvolvimento."
 
 
+
+def _extensoes_dev() -> list:
+    """os módulos em desenvolvimento, ainda fora da versão publicada (o pré-moldado): só com --dev
+    e se a pasta existir. Cada um responde as rotas dele (rota_get/rota_post) e a tela inicial
+    ganha o script /api/dev/extensoes.js"""
+    if not DEV:
+        return []
+    out = []
+    try:
+        import celular.web as _cel        # o acesso pelo celular (antes: o script da tela inicial junta os dois)
+        out.append(_cel)
+    except ImportError:
+        pass
+    try:
+        import premoldado.web as _pm
+        out.append(_pm)
+    except ImportError:
+        pass
+    try:
+        import arquitetura.web as _arq   # o módulo de arquitetura (30/10; a área no menu da tela de projetos)
+        out.append(_arq)
+    except ImportError:
+        pass
+    try:
+        import painel_dev.web as _pd       # o Painel DEV: o que cada chat do Claude Code está fazendo (16/10)
+        out.append(_pd)
+    except ImportError:
+        pass
+    return out
+
+
 def _pasta_de_dados() -> str:
     """Onde ficam projetos, modelos e arquivos gerados.
 
@@ -186,6 +217,7 @@ def _pasta_de_dados() -> str:
 
 
 PROJETOS = _pasta_de_dados()
+EXTENSOES_DEV = _extensoes_dev()
 
 from nucleo.base import ErroDeDados            # noqa: E402
 from nucleo.modelo_galpao import DadosGalpao   # noqa: E402
@@ -6014,6 +6046,21 @@ class Handler(BaseHTTPRequestHandler):
         if self._licenca_get(rota):
             return
         try:
+            if EXTENSOES_DEV:
+                if rota == "/":
+                    html = open(os.path.join(WEB, "inicio.html"), encoding="utf-8").read().replace(
+                        "</body>", ('<script src="/api/dev/arquitetura.js"></script>' if any(getattr(x, "__name__", "") == "arquitetura.web" for x in EXTENSOES_DEV) else "") + '<script src="/api/dev/extensoes.js"></script></body>')
+                    corpo_ = html.encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(corpo_)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    self.wfile.write(corpo_)
+                    return
+                for ext in EXTENSOES_DEV:
+                    if ext.rota_get(self, rota):
+                        return
             if rota == "/":
                 return self._arquivo(os.path.join(WEB, "inicio.html"), WEB)
             if rota in ("/dimensionar", "/index.html"):

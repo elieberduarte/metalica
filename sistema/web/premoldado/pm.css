@@ -1,0 +1,43 @@
+/* Pré-moldado (em desenvolvimento): o estilo comum das telas — galpão, catálogo e ligações. */
+.pm { max-width: 1500px; margin: 0 auto; padding: 16px 22px 60px; display: grid; grid-template-columns: minmax(300px, 380px) 1fr; gap: 16px; align-items: start; }
+@media (max-width: 1000px) { .pm { grid-template-columns: 1fr; } }
+.caixa { background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 12px 14px; box-shadow: var(--sombra); margin: 0 0 14px; }
+.caixa h3 { font-size: 13px; margin: 0 0 8px; color: var(--azul); text-transform: uppercase; letter-spacing: .04em; }
+.campos { display: grid; grid-template-columns: 1fr 120px; gap: 5px 10px; align-items: center; font-size: 13px; }
+.campos label { color: var(--texto2); }
+.campos input, .campos select { font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid var(--campo-borda); border-radius: var(--raio-p); background: var(--campo-fundo); color: var(--texto); width: 100%; box-sizing: border-box; }
+.campos .largo { grid-column: 1 / -1; }
+.botoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.botoes button { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: var(--raio-p); border: 1px solid var(--borda); background: var(--painel2); color: var(--texto); cursor: pointer; }
+.botoes button.principal { background: var(--azul); color: #fff; border-color: var(--azul); }
+.numeros { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 0 0 8px; }
+.numeros div { background: var(--painel2); border-radius: var(--raio-p); padding: 7px 9px; }
+.numeros b { display: block; font-size: 17px; color: var(--texto); }
+.numeros span { font-size: 11.5px; color: var(--texto2); }
+table.tab { border-collapse: collapse; width: 100%; font-size: 12.5px; margin: 4px 0 8px; }
+table.tab th, table.tab td { border: 1px solid var(--borda); padding: 4px 7px; text-align: left; vertical-align: top; }
+table.tab th { background: var(--painel2); font-weight: 600; }
+table.tab td.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ok { color: #16a34a; font-weight: 600; } .nao { color: #dc2626; font-weight: 600; }
+.mem { font-size: 12.5px; color: var(--texto2); line-height: 1.5; }
+details summary { cursor: pointer; font-size: 12.5px; color: var(--texto2); margin: 4px 0; }
+.passo { font-size: 12px; color: var(--texto2); margin: 2px 0 2px 14px; }
+.dev { display: inline-block; font-size: 11px; background: #f0a050; color: #1b2433; border-radius: 4px; padding: 1px 6px; margin-left: 8px; }
+.secao { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.vazio { color: var(--texto3); font-size: 13px; padding: 10px 0; }
+/* catálogo e ligações: o índice à esquerda e o conteúdo */
+.pm.indexada { grid-template-columns: 220px 1fr; }
+@media (max-width: 1000px) { .pm.indexada { grid-template-columns: 1fr; } }
+nav.indice { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 2px; }
+nav.indice a, nav.indice button { display: block; text-align: left; font: inherit; font-size: 13px; padding: 7px 10px; border-radius: var(--raio-p);
+  color: var(--texto); text-decoration: none; background: none; border: 1px solid transparent; cursor: pointer; }
+nav.indice a:hover, nav.indice button:hover { background: var(--painel2); }
+nav.indice .atual { background: var(--painel2); border-color: var(--borda); font-weight: 600; }
+nav.indice .nota-indice { font-size: 11.5px; color: var(--texto3); padding: 8px 10px; line-height: 1.45; }
+.caixa .explica { font-size: 12.5px; color: var(--texto2); margin: 0 0 8px; line-height: 1.5; }
+.rolagem { overflow-x: auto; }
+.lado-a-lado { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+.lado-a-lado > * { min-width: 0; }
+.desenho svg { max-width: 100%; height: auto; }
+.desenho text { font-family: inherit; }
+.campos.estreitos { grid-template-columns: 1fr 110px; max-width: 360px; }
