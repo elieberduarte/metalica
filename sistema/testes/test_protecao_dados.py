@@ -129,6 +129,11 @@ class TestLixeiraEEncerramento(unittest.TestCase):
         self.assertTrue(os.path.exists(danificado))
 
     def test_encerramento_espera_operacao(self):
+        # o PROGRESSO é do processo inteiro: o teste que chama a função direto, sem a rota (que limpa a etapa no fim,
+        # _fim_tarefa_padrao), deixa a dele pendurada — o colar do AutoCAD, a impressão (conferência da 0.9.2, 03/11)
+        antes = dict(app.PROGRESSO)
+        app.PROGRESSO.clear()
+        self.addCleanup(app.PROGRESSO.update, antes)
         self.assertFalse(app._trabalho_em_curso())
         app._em_curso(+1)
         try:
