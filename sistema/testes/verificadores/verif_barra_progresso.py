@@ -61,7 +61,9 @@ def disparar_e_ver(aba, rotulo):
     t0 = time.time()
     while time.time() - t0 < 60 and aba.avaliar("window.__fim") is None:
         b = json.loads(aba.avaliar(BARRAS) or "[]")
-        if b and viu is None:
+        # depois dos 1,2 s da vigilância: antes, a barra na tela pode ser a de uma consulta que começou antes (a tela
+        # carregando), e é certo que ela esteja lá; a do Detalhar a tira quando aparece (TEL-01, 03/11)
+        if b and viu is None and time.time() - t0 > 1.6:
             viu = b
             aba.drenar(1.0)
             viu = json.loads(aba.avaliar(BARRAS) or "[]") or b       # um tique depois, com a etapa do servidor

@@ -131,6 +131,62 @@ class TestFracaoDaBarra(unittest.TestCase):
         self.assertEqual(a[2:5], [None, None, None])                          # as consultas da barra e o que não é /api/
         self.assertEqual((a[5]["projeto"], a[5]["progresso"], a[5]["rotulo"]), ("", "", "Exportando"))
 
+    def test_uma_barra_por_vez(self):
+        """TEL-01, reincidência (03/11, conferência da 0.9.2): com a máquina ocupada, a consulta sem nome (o peso, o
+        catálogo, a malha) passava de 1,2 s no meio do Detalhar e ganhava uma barra "Processando…" ao lado — duas ou
+        três barras no rodapé do CAD e do editor, a do peso repetindo a etapa do Detalhar. Os tempos aqui são fixos:
+        não depende da carga."""
+        pasta = tempfile.mkdtemp(prefix="barra_")
+        try:
+            script = os.path.join(pasta, "t.mjs")
+            url = "file:///" + os.path.join(WEB, "progresso.js").replace("\\", "/")
+            open(script, "w", encoding="utf-8").write(r"""
+globalThis.location = { href: 'http://localhost/cad' };
+const tela = [];
+const el = () => ({ className: '', dataset: {}, style: {}, attrs: {}, textContent: '', title: '',
+  setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; }, append() {}, appendChild() {},
+  remove() { const i = tela.indexOf(this); if (i >= 0) tela.splice(i, 1); } });
+globalThis.document = { createElement: el, head: el(), body: { appendChild(c) { tela.push(c); } }, querySelector: () => null };
+globalThis.localStorage = { getItem: () => null, setItem() {} };
+const DEMORA = { '/api/projetos/obra/detalhar': 4000, '/api/projetos/obra/peso': 2500, '/api/catalogo': 2500 };
+globalThis.window = globalThis;
+globalThis.fetch = (u) => new Promise((r) => setTimeout(() => r({ ok: true, json: async () => ({ etapa: 'nomes de produção…' }) }),
+                                                    DEMORA[String(u).split('?')[0]] ?? 5));
+const { vigiarChamadas, acompanhar } = await import(%s);
+vigiarChamadas();
+const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+const barras = () => tela.filter((b) => b.className.startsWith('barra-andamento')).map((b) => b.dataset.tarefa);
+const visto = {};
+// 1. o catálogo carregando (começou antes) e o Detalhar; depois o peso no meio do Detalhar
+fetch('/api/catalogo');
+await espera(300); fetch('/api/projetos/obra/detalhar', { method: 'POST' });
+await espera(1300); visto.catalogo_e_detalhar = barras();          // 1,6 s: as duas já passaram de 1,2 s
+fetch('/api/projetos/obra/peso');
+await espera(1500); visto.peso_no_meio = barras();                 // 3,1 s: o peso já passou de 1,2 s
+await espera(1800); visto.fim = barras();                          // 4,9 s: tudo terminou
+// 2. a tela que acompanha a própria tarefa (o editor), com o catálogo já na tela e outro depois
+fetch('/api/catalogo');
+await espera(1400); visto.so_a_consulta = barras();                // sozinha, a consulta demorada tem a barra
+const parar = acompanhar({ url: '/api/projetos/obra/progresso', tarefa: 'editor.detalhando', rotulo: 'Detalhando' });
+visto.editor = barras();
+fetch('/api/catalogo');
+await espera(1500); visto.editor_depois = barras();
+parar(); await espera(1200); visto.editor_fim = barras();
+console.log(JSON.stringify(visto));
+""" % json.dumps(url))
+            r = subprocess.run(["node", script], capture_output=True, text=True, encoding="utf-8", timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            v = json.loads(r.stdout)
+        finally:
+            shutil.rmtree(pasta, ignore_errors=True)
+        self.assertEqual(v["catalogo_e_detalhar"], ["obra|POST detalhar"])   # a tarefa com nome tira a consulta
+        self.assertEqual(v["peso_no_meio"], ["obra|POST detalhar"])          # e a consulta não põe outra ao lado
+        self.assertEqual(v["fim"], [])
+        self.assertEqual(v["so_a_consulta"], ["-|GET catalogo"])
+        self.assertEqual(v["editor"], ["editor.detalhando"])
+        self.assertEqual(v["editor_depois"], ["editor.detalhando"])
+        self.assertEqual(v["editor_fim"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

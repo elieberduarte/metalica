@@ -80,7 +80,9 @@ function _tempo(s) {
  */
 export function acompanhar({ url = '', tarefa = 'tarefa', rotulo = '', onde = null, dica = null } = {}) {
   _injetarEstilo();
-  if (url) ATIVAS.set(url, (ATIVAS.get(url) || 0) + 1);       // a vigilância das chamadas não põe outra barra
+  const naTela = { url, generica: rotulo === GENERICO, parar: null };
+  if (!naTela.generica) for (const b of [...NA_TELA]) if (b.generica) b.parar(false);   // a tarefa com nome tira a da consulta
+  NA_TELA.add(naTela);                                           // a vigilância das chamadas não põe outra barra
   const ultima = _ler(tarefa);
   const inicio = performance.now();
   const cheio = document.createElement('span'); cheio.className = 'barra-andamento-cheio';
@@ -128,14 +130,15 @@ export function acompanhar({ url = '', tarefa = 'tarefa', rotulo = '', onde = nu
   };
   desenhar();
   timer = setTimeout(tique, 250);
-  return (ok = true) => {
+  naTela.parar = (ok = true) => {
     if (!vivo) return;
     vivo = false;
     clearTimeout(timer);
-    if (url) { const n = (ATIVAS.get(url) || 1) - 1; if (n > 0) ATIVAS.set(url, n); else ATIVAS.delete(url); }
+    NA_TELA.delete(naTela);
     if (ok) _guardar(tarefa, (performance.now() - inicio) / 1000);
     barra.remove();
   };
+  return naTela.parar;
 }
 
 // ------------------------------------------------------------------ a vigilância das chamadas
@@ -144,9 +147,13 @@ export function acompanhar({ url = '', tarefa = 'tarefa', rotulo = '', onde = nu
 // projeto e a estimativa pela duração da mesma tarefa, no mesmo projeto, da última vez. Instalada em toda página pelo
 // vivo.js; a tela que já acompanha a tarefa (acompanhar) não ganha uma segunda barra.
 
-/** url do andamento → quantos acompanhamentos explícitos estão abertos */
-const ATIVAS = new Map();
+/** As barras na tela, {url do andamento, generica, parar}: uma barra por vez (TEL-01, 03/11/2026 — com a máquina
+ *  ocupada, o peso, o catálogo e a malha passavam de 1,2 s no meio do Detalhar e ganhavam um "Processando…" ao lado,
+ *  duas ou três barras no rodapé, a do peso repetindo a etapa do Detalhar). */
+const NA_TELA = new Set();
 const ESPERA_MS = 1200;
+/** O rótulo da chamada que não é uma tarefa com nome (uma consulta). */
+const GENERICO = 'Processando';
 /** As consultas que a própria barra e o sinal de vida fazem: nunca viram tarefa. */
 const NUNCA = /\/(progresso|vivo|fechou|versao|lento)(\?|$)|\/desenhos-vivos(\?|$)|\/conferencia\/progresso/;
 /** O nome da tarefa na barra, pelo último pedaço da rota. */
@@ -183,7 +190,7 @@ export function tarefaDaChamada(url, metodo = 'GET') {
   // a rota sem o projeto e sem o nome do desenho: a mesma tarefa em desenhos diferentes estima pelo mesmo tempo
   const rota = (m ? m[2] : c.slice(5)).replace(/^desenhos\/[^/]+\//, 'desenhos/*/');
   const partes = rota.split('/').filter(Boolean);
-  let rotulo = 'Processando';
+  let rotulo = GENERICO;
   for (let i = partes.length - 1; i >= 0; i--) if (ROTULOS[partes[i]]) { rotulo = ROTULOS[partes[i]]; break; }
   return { projeto, rotulo, tarefa: `${projeto || '-'}|${String(metodo).toUpperCase()} ${rota}`,
            progresso: m ? `/api/projetos/${m[1]}/progresso` : '' };
@@ -205,7 +212,9 @@ export function vigiarChamadas() {
     if (!t) return original(entrada, opcoes);
     let parar = null;
     const espera = setTimeout(() => {
-      if (t.progresso && ATIVAS.get(t.progresso)) return;          // a tela já acompanha esta tarefa
+      const outras = [...NA_TELA];
+      if (t.progresso && outras.some((b) => b.url === t.progresso)) return;   // a etapa deste projeto já está na tela
+      if (t.rotulo === GENERICO && outras.length) return;          // a consulta não põe barra ao lado de outra
       parar = acompanhar({ url: t.progresso, tarefa: t.tarefa, rotulo: t.rotulo, onde: _rodape() });
     }, ESPERA_MS);
     const fim = (ok) => { clearTimeout(espera); if (parar) parar(ok); };
