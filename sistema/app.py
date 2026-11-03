@@ -3851,14 +3851,19 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
 def _logo_do_carimbo(p: dict) -> Optional[dict]:
     """O logo da empresa marcada no projeto (projeto.json "carimbo_pranchas": {"empresa": "dezn"}) para o carimbo das
     pranchas, do cadastro dela (fabrica/empresas/<id>/marca/logo.svg); sem empresa, o carimbo segue com o da Hermes
-    (OBRA · CASA ALTO PADRÃO, 02/11: a arquitetura sai com o carimbo da DEZN)."""
-    emp = (p.get("carimbo_pranchas") or {}).get("empresa")
+    (OBRA · CASA ALTO PADRÃO, 02/11: a arquitetura sai com o carimbo da DEZN). Com "linha" (02/11, WE Coqueiral · escadas:
+    "metalica"), o logo da linha de serviço — a DEZN assina só "DEZN", sem o "CONSTRUTORA", na metálica."""
+    cp = p.get("carimbo_pranchas") or {}
+    emp = cp.get("empresa")
     if not emp:
         return None
     from saida import comercial
     from nucleo2d.modelo_hermes import logo_do_svg
     try:
-        arq = comercial.ler_empresa(PROJETOS, emp).get("logo") or ""
+        e = comercial.ler_empresa(PROJETOS, emp)
+        if cp.get("linha"):
+            e = comercial.empresa_da_linha(e, cp["linha"])
+        arq = e.get("logo") or ""
         return logo_do_svg(arq) if arq.lower().endswith(".svg") else None
     except (OSError, ValueError):                       # o SVG sumiu ou não é de retas: o carimbo sai com o da Hermes
         return None

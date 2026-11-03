@@ -130,3 +130,30 @@ def test_logo_da_empresa_marcada_no_projeto():
             assert app._logo_do_carimbo({"carimbo_pranchas": {"empresa": "nao-existe"}}) is None
         finally:
             app.PROJETOS = antes
+
+
+def test_logo_da_linha_metalica_sem_o_construtora():
+    """OBRA · WE COQUEIRAL · ESCADAS, 02/11 (usuário: "o projeto executivo detalhado nas pranchas com o logo da DEZN"): na
+    metálica a DEZN assina só "DEZN" (memória dezn-proposta-metalica, empresa.json "linhas.metalica"); o carimbo saía com o
+    logo principal, com o "CONSTRUTORA". O projeto marca a linha: "carimbo_pranchas": {"empresa": "dezn", "linha": "metalica"}."""
+    import app
+    with tempfile.TemporaryDirectory() as raiz:
+        marca = os.path.join(raiz, "fabrica", "empresas", "dezn", "marca")
+        os.makedirs(marca)
+        _svg(marca)
+        so_dezn = SVG_DEZN[:SVG_DEZN.index("<text x=\"3822\"")] + "</svg>"
+        with open(os.path.join(marca, "logo_metalica.svg"), "w", encoding="utf-8") as f:
+            f.write(so_dezn)
+        with open(os.path.join(raiz, "fabrica", "empresas", "dezn", "empresa.json"), "w", encoding="utf-8") as f:
+            json.dump({"nome_comercial": "DEZN Construtora",
+                       "linhas": {"metalica": {"nome_comercial": "DEZN", "logo": "logo_metalica.svg"}}}, f)
+        antes = app.PROJETOS
+        app.PROJETOS = raiz
+        try:
+            logo = app._logo_do_carimbo({"carimbo_pranchas": {"empresa": "dezn", "linha": "metalica"}})
+            assert logo and [t["texto"] for t in logo["textos"]] == ["DEZN"]
+            # sem a linha (a arquitetura da Casa Alto Padrão): o logo principal, com o CONSTRUTORA
+            logo = app._logo_do_carimbo({"carimbo_pranchas": {"empresa": "dezn"}})
+            assert [t["texto"] for t in logo["textos"]] == ["DEZN", "CONSTRUTORA"]
+        finally:
+            app.PROJETOS = antes
