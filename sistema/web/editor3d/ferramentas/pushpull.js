@@ -285,12 +285,17 @@ export class FerramentaPushPull extends Ferramenta {
       this.dica('Aponte uma face de sólido, de chapa ou a ponta de uma barra.');
       return false;
     }
+    const fechado = C.faceTemVizinhas(ent, iFace);
+    const normalFace = C.normalDaFace(ent, iFace);
+    const peca = fechado ? pontaDaPeca(ent, iFace, normalFace) : null;
     this.alvo = {
       id: ent.id, iFace,
       base: C.copiar(p.ponto),
-      normal: C.normalDaFace(ent, iFace),
+      normal: peca ? peca.direcao : normalFace,
+      normalFace,
+      peca,
       original: { vertices: ent.vertices.map(C.copiar), faces: ent.faces.map(f => f.slice()) },
-      fechado: C.faceTemVizinhas(ent, iFace),
+      fechado,
     };
     this.novaFace = !!(ev && ev.ctrlKey);
     this.distancia = 0;
@@ -300,10 +305,11 @@ export class FerramentaPushPull extends Ferramenta {
 
   /** Geometria resultante para uma distância, sem tocar no documento. */
   resultado(d) {
-    const s = this.alvo.original;
+    const s = this.alvo.original, peca = this.alvo.peca;
     const usarExtrusao = this.novaFace || !this.alvo.fechado;
-    return usarExtrusao ? C.extrudarFace(s, this.alvo.iFace, d)
-                        : C.moverFace(s, this.alvo.iFace, d);
+    // a distância anda na direção do alvo; a extrusão (Ctrl) vai pela normal da face, no mesmo sentido
+    if (usarExtrusao) return C.extrudarFace(s, this.alvo.iFace, peca ? d * Math.sign(C.dot(peca.direcao, this.alvo.normalFace) || 1) : d);
+    return peca ? esticarPeca(s, peca, d) : C.moverFace(s, this.alvo.iFace, d);
   }
 
   aplicar(d) {
@@ -330,7 +336,7 @@ export class FerramentaPushPull extends Ferramenta {
     const geo = this.resultado(d);
     this._executarLembrando(C.cmdAlterar(this.alvo.id,
       C.marcarParaConferir(this.documento.get(this.alvo.id), { vertices: geo.vertices, faces: geo.faces }),
-      this.novaFace || !this.alvo.fechado ? 'Puxar face' : 'Mover face'), d);
+      this.novaFace || !this.alvo.fechado ? 'Puxar face' : this.alvo.peca && this.alvo.peca.inteira ? 'Esticar peça' : 'Mover face'), d);
     this.constructor.ultimaDistancia = d;
     this.reiniciar();
     this.dica(`Última distância: ${formatar(Math.abs(d))} (duplo clique repete)`);
@@ -440,6 +446,64 @@ export class FerramentaPushPull extends Ferramenta {
     g.add(C.gRotulo(texto, ponta));
     this.previa(g);
   }
+}
+
+/**
+ * A ponta de uma peça em sólido (usuário, 03/11, no SESI: "o puxar está fixando no eixo apenas e não seguindo o alinhamento
+ * da peça; isso está fazendo o modelo entortar" — o rufo em caimento, com a ponta cortada na vertical, andava na horizontal
+ * pela normal da ponta, e só a capa; as abas ficavam). Quando as arestas que saem da face apontada vão todas na mesma
+ * direção, a face anda nessa direção (o comprimento da peça), não na normal. Se cada vértice do sólido está numa aresta
+ * só dessa direção (a capa e as duas abas do rufo, um perfil, uma caixa), a ponta da peça inteira anda junto. A face que
+ * não é ponta (a de cima de uma chapa, a da telha) segue pela normal. Devolve { direcao (para fora), mover, menor, inteira }
+ * ou null.
+ */
+export function pontaDaPeca(ent, iFace, normalFace = C.normalDaFace(ent, iFace)) {
+  const V = ent.vertices || [], face = ent.faces[iFace] || [];
+  const naFace = new Set(face);
+  const arestas = new Map(), usados = new Set();
+  for (const f of ent.faces) {
+    for (let i = 0; i < f.length; i++) {
+      const a = f[i], b = f[(i + 1) % f.length];
+      usados.add(a);
+      if (a !== b) arestas.set(a < b ? `${a},${b}` : `${b},${a}`, [a, b]);
+    }
+  }
+  // as arestas que saem da face, cada uma de fora para a face: todas na mesma direção
+  const saem = [];
+  let u = null;
+  for (const [a, b] of arestas.values()) {
+    if (naFace.has(a) === naFace.has(b)) continue;
+    const [fora, ponta] = naFace.has(a) ? [b, a] : [a, b];
+    const v = C.sub(V[ponta], V[fora]);
+    if (Math.hypot(...v) < 1e-6) return null;
+    const w = C.normalizar(v);
+    if (!u) u = w;
+    else if (C.dot(u, w) < 0.999) return null;
+    saem.push([fora, ponta]);
+  }
+  if (!u || Math.abs(C.dot(u, normalFace)) < 0.5) return null;
+  // a peça inteira: toda aresta nessa direção, e cada vértice em uma só
+  const paralelas = [...arestas.values()].filter(([a, b]) => {
+    const v = C.sub(V[b], V[a]), L = Math.hypot(...v);
+    return L > 1e-6 && Math.abs(C.dot(v, u)) / L > 0.999;
+  });
+  const uso = new Map();
+  for (const [a, b] of paralelas) { uso.set(a, (uso.get(a) || 0) + 1); uso.set(b, (uso.get(b) || 0) + 1); }
+  const inteira = [...usados].every(i => uso.get(i) === 1);
+  const pares = inteira ? paralelas.map(([a, b]) => C.dot(C.sub(V[b], V[a]), u) > 0 ? [a, b] : [b, a]) : saem;
+  return {
+    direcao: u,
+    mover: pares.map(([, ponta]) => ponta),
+    menor: Math.min(...pares.map(([a, b]) => C.dist(V[a], V[b]))),
+    inteira,
+  };
+}
+
+/** A ponta da peça andando `d` na direção dela; encurta até 1 mm, sem virar a peça do avesso. */
+export function esticarPeca(solido, peca, d) {
+  const passo = C.mul(peca.direcao, Math.max(d, 1 - peca.menor));
+  const mover = new Set(peca.mover);
+  return { vertices: solido.vertices.map((v, i) => mover.has(i) ? C.add(v, passo) : C.copiar(v)), faces: solido.faces.map(f => f.slice()) };
 }
 
 FerramentaPushPull.ultimaDistancia = 0;
