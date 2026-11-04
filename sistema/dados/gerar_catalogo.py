@@ -175,6 +175,9 @@ CHAPAS_FINAS = [
 ]
 #: Chapas grossas (polegada) — espessura em mm e massa em kg/m². Tabela 17.5.
 CHAPAS_GROSSAS = [
+    # a 3/16" pela espessura que se compra (4,75, a das bitolas dos fornecedores e dos resumos), não a 4,76 da polegada
+    # exata: usuário, 03/11, "Chapa ASTM A-36 3/16\"" de uma lista não estava no catálogo
+    ('3/16"', 4.75, 37.3, "chapas de ligação leves, enrijecedores, chapas de terça"),
     ('1/4"', 6.35, 49.8, "chapas de terça, gussets leves, enrijecedores"),
     ('5/16"', 7.94, 62.3, "gussets, chapas de ligação"),
     ('3/8"', 9.53, 74.8, "gussets, chapas de alma, cantoneiras de apoio"),
@@ -216,10 +219,13 @@ BARRAS_CHATAS = [
 def chapas():
     itens = []
     for bitola, esp, kgm2, uso in CHAPAS_FINAS:
-        itens.append({"nome": "CH %s mm" % ("%g" % esp).replace(".", ","), "familia": "chapa",
-                      "grupo": "chapa fina", "t": esp, "bitola_msg": bitola,
-                      "massa_m2": kgm2, "uso": uso, "origem": "tabela",
-                      "norma": "bitola MSG; massa = 7,85 kg/m² por mm"})
+        item = {"nome": "CH %s mm" % ("%g" % esp).replace(".", ","), "familia": "chapa",
+                "grupo": "chapa fina", "t": esp, "bitola_msg": bitola,
+                "massa_m2": kgm2, "uso": uso, "origem": "tabela",
+                "norma": "bitola MSG; massa = 7,85 kg/m² por mm"}
+        if esp == 3.00:
+            item["polegada"] = '1/8"'         # a #11 é vendida como 1/8" (saida/resumos.py, _CHAPA_COMERCIAL)
+        itens.append(item)
     for pol, esp, kgm2, uso in CHAPAS_GROSSAS:
         itens.append({"nome": "CH %s mm (%s)" % (("%g" % esp).replace(".", ","), pol),
                       "familia": "chapa", "grupo": "chapa grossa", "t": esp, "polegada": pol,

@@ -386,13 +386,33 @@ def espessuras_da_bitola(bitola: str) -> List[float]:
 
 #: Apelidos da fábrica na busca: "BR 3/8" é a barra redonda, "BC" a chata.
 _APELIDOS = [(r"^BR(?=[0-9])", "BARRAREDONDAD"), (r"^BC(?=[0-9])", "BARRACHATA")]
+#: O aço escrito na lista ("Chapa ASTM A-36 3/16\"", "A572 Gr.50", "SAE 1020") é material, não peça: sai da busca.
+_ACO = re.compile(r"\bASTM\b|\b(?:A\s*-?\s*(?:36|242|500|572|588)|SAE\s*-?\s*10\d\d|USI[\s-]*SAC[\s-]*\d+|"
+                  r"COS[\s-]*AR[\s-]*COR\s*\d*)\b(?:\s*GR(?:AU)?\.?\s*\d+)?", re.I)
+#: "Chapa 5/16", "CH 3/16": a família das chapas (usuário, 03/11, a lista do projetista).
+_CHAPA = re.compile(r"^\s*(?:CHAPAS?|CH)\b\.?", re.I)
+
+
+def _inteira(alvo: str, chave: str) -> bool:
+    """`alvo` aparece na chave como medida inteira: "1/2" na CH 12,70 mm (1/2"), não dentro da 1.1/2"."""
+    return any(not (k > 0 and (chave[k - 1].isdigit() or chave[k - 1] == "."))
+               for k in (m.start() for m in re.finditer(re.escape(alvo), chave)))
 
 
 def buscar(texto: str, familia: Optional[str] = None, limite: int = 60) -> List[Item]:
     """Busca livre pelo nome e pelas dimensões ("150x60", "W 310", "3/8").
 
     Entende a bitola no lugar da espessura ("127x50x17x#14" acha as de 1,90, 1,95 e 2,00
-    mm) e os apelidos BR/BC das barras."""
+    mm), os apelidos BR/BC das barras e a chapa como a lista escreve ("Chapa ASTM A-36 5/16\"").
+    A medida inteira vem antes da que só contém o texto ("1/2" antes de "1.1/2")."""
+    texto = str(texto or "")
+    sem_aco = _ACO.sub(" ", texto)
+    if _CHAPA.search(sem_aco):
+        sem_aco = _CHAPA.sub(" ", sem_aco)
+        familia = familia or "chapa"
+    if sem_aco.strip() != texto.strip() and not _chave(sem_aco) and familia is None:
+        return []                                       # só o aço: não é peça nenhuma
+    texto = sem_aco
     alvo = _chave(texto)
     if not alvo:
         return itens(familia)[:limite]
@@ -404,8 +424,10 @@ def buscar(texto: str, familia: Optional[str] = None, limite: int = 60) -> List[
     if m:
         alvos = [numeros_iguais(a.replace(m.group(0), "X%.2f" % t)) for a in alvos
                  for t in espessuras_da_bitola(m.group(1))] or alvos
-    saida = [i for i in itens(familia)
-             if any(a in _chave(i.nome) or a in _chave(i.dados.get("dim", "")) for a in alvos)]
+    def chaves(i):
+        return [_chave(i.nome), _chave(i.dados.get("dim", "")), _chave(i.dados.get("polegada", ""))]
+    saida = [i for i in itens(familia) if any(a and a in k for a in alvos for k in chaves(i))]
+    saida.sort(key=lambda i: not any(_inteira(a, k) for a in alvos for k in chaves(i) if a))
     return saida[:limite]
 
 

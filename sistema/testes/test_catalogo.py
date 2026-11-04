@@ -52,6 +52,30 @@ def test_buscar_por_dimensao():
     assert achados and all("150" in n and "60" in n for n in achados)
 
 
+@pytest.mark.parametrize("texto, nome", [
+    ('Chapa ASTM A-36 3/16"', 'CH 4,75 mm (3/16")'),
+    ('Chapa ASTM A-36 5/16"', 'CH 7,94 mm (5/16")'),
+    ('Chapa ASTM A-36 1/2"', 'CH 12,70 mm (1/2")'),
+    ('Chapa ASTM A-36 3/4"', 'CH 19,05 mm (3/4")'),
+    ("chapa 3/16", 'CH 4,75 mm (3/16")'),
+    ("CH 1/8", "CH 3,00 mm"),
+    ('chapa A572 Gr.50 3/8"', 'CH 9,53 mm (3/8")'),
+])
+def test_chapa_da_lista_do_projetista(texto, nome):
+    """Usuário, 03/11: as chapas de uma lista ("Chapa ASTM A-36 3/16\"" … "3/4\"") não apareciam no catálogo — faltava
+    a 3/16" e a busca não entendia "chapa" nem o aço (material, não peça). A peça certa vem primeiro: "1/2\"" é a
+    1/2", não a 1.1/2"."""
+    achados = catalogo.buscar(texto)
+    assert achados and achados[0].nome == nome, [i.nome for i in achados[:4]]
+    assert all(i.familia == "chapa" for i in achados)
+
+
+def test_chapa_de_3_16_pesa_pela_espessura_comercial():
+    ch = catalogo.item('CH 4,75 mm (3/16")')
+    assert ch is not None and ch.massa_m2 == pytest.approx(4.75 * 7.85, abs=0.05)
+    assert catalogo.buscar("A-36") == []                 # só o aço não é peça nenhuma
+
+
 def test_alternativas_vizinhas():
     atual = catalogo.item("Ue 150×60×20×2,65")
     alt = catalogo.alternativas(atual.nome, limite=8)
