@@ -22,7 +22,7 @@
 // igual. Espelhada ou que não bate vértice a vértice, a peça fica no bloco.
 
 import * as THREE from 'three';
-import { misturar, COR_DESTAQUE, COR_DESTAQUE_ARESTA } from './cena.js';
+import { misturar, COR_DESTAQUE, COR_DESTAQUE_ARESTA, arestasDaGeometria } from './cena.js';
 import { arestasDoSolido } from './arestas.js';
 
 /** Acima de tantas entidades os sólidos são desenhados em lote. */
@@ -45,6 +45,8 @@ const COR_SELECAO = '#1f7ae0';
 const COR_SOBRE = '#5fa8f5';
 
 const _cor = new THREE.Color();
+const _vt = new THREE.Vector3();        // temporário de transformar vértices
+const _nm = new THREE.Matrix3();        // a matriz das normais de uma peça
 // temporários do raycast (um por módulo: a escolha roda a cada movimento do mouse)
 const _inv = new THREE.Matrix4();
 const _raio = new THREE.Ray();
@@ -102,7 +104,18 @@ function _bate(vsRef, vs, m) {
   return true;
 }
 
+/** A matriz é a identidade? (sólidos: os números já estão no mundo) */
+function _ehIdentidade(m) {
+  const e = m.elements;
+  for (let i = 0; i < 16; i++) if (e[i] !== (i % 5 === 0 ? 1 : 0)) return false;
+  return true;
+}
+
 export class Lote {
+  /** As arestas de barra e chapa vêm do cache da geometria (ver `_geometria`). `false` só na
+   *  comparação do teste, que monta o mesmo modelo pelos dois caminhos. */
+  static arestasDoCache = true;
+
   constructor(cena) {
     this.cena = cena;
     this.grupo = new THREE.Group();
@@ -160,6 +173,16 @@ export class Lote {
       pecas.push(g);
     }
     if (!pecas.length) return;
+    const lotes = this._dividirEmBlocos(pecas);
+    for (const l of lotes) this._montarBloco(l);
+    for (const p of pecas) { for (const g of p.descartar) g.dispose(); }
+    for (const p of pecas) this.pintar(p.id);
+    this.aplicarModo(this.modo);
+    this.definirSombras(this.cena.sombrasAtivas);
+  }
+
+  /** Os blocos de `definirVarios`: as peças ordenadas no espaço e cortadas em VERTS_POR_BLOCO. */
+  _dividirEmBlocos(pecas) {
     pecas.sort((a, b) => (a.centro[0] - b.centro[0]) || (a.centro[1] - b.centro[1]));
     let atual = [], soma = 0;
     const lotes = [];
@@ -169,12 +192,70 @@ export class Lote {
       soma += p.nv;
     }
     if (atual.length) lotes.push(atual);
-    for (const l of lotes) this._montarBloco(l);
-    for (const p of pecas) { if (p.proprio && p.geom) p.geom.dispose(); p.arestas.dispose(); }
-    for (const p of pecas) this.pintar(p.id);
-    this.aplicarModo(this.modo);
-    this.definirSombras(this.cena.sombrasAtivas);
+    return lotes;
   }
+
+  /**
+   * O `definirVarios` em partes, soltando o fio principal entre elas: o modelo grande aparece aos poucos
+   * e a página continua respondendo (o SESI, 42,7 mil peças, dava "Página sem resposta" ao abrir, 03/11).
+   * As peças saem iguais e nos mesmos blocos do `definirVarios` (a ordem é a mesma). `aoAndar(feitas,
+   * total)` a cada parte, `aoTerminar()` no fim. Uma peça mexida ou tirada enquanto a montagem anda já
+   * foi refeita pelo caminho de uma vez (`atualizar`) e é pulada aqui; `descartar()` e outra montagem
+   * cancelam esta. Devolve a função que cancela.
+   */
+  definirVariosAosPoucos(ents, { aoAndar = null, aoTerminar = null, fatia = 40 } = {}) {
+    const velhas = ents.filter(e => this.itens.has(e.id));
+    for (const e of velhas) this.remover(e.id, true);
+    if (velhas.length) this.concluir();
+    const token = {};
+    this._montagem = token;
+    const copias = this._agruparCopias(ents);
+    const pecas = [];
+    const total = ents.length;
+    const doc = this.cena.documento;
+    let i = 0;
+    const largar = () => { for (const p of pecas) for (const g of p.descartar) g.dispose(); };
+    const geometrias = () => {
+      if (this._montagem !== token) { largar(); return; }
+      const t0 = performance.now();
+      while (i < total && performance.now() - t0 < fatia) {
+        const ent = ents[i++];
+        if (this.itens.has(ent.id) || doc.get(ent.id) !== ent) continue;
+        const g = this._geometria(ent, copias.get(ent.id));
+        if (g) pecas.push(g);
+      }
+      if (aoAndar) aoAndar(i, total);
+      if (i < total) { setTimeout(geometrias, 0); return; }
+      const lotes = this._dividirEmBlocos(pecas);
+      let k = 0;
+      const blocos = () => {
+        if (this._montagem !== token) { largar(); return; }
+        const t1 = performance.now();
+        while (k < lotes.length && performance.now() - t1 < fatia) {
+          const l = lotes[k++];
+          this._montarBloco(l);
+          for (const p of l) {
+            for (const g of p.descartar) g.dispose();
+            this.pintar(p.id);
+            // selecionada enquanto a montagem andava: o contorno dela entra agora
+            if (this.estado.get(p.id) === 'selecionado') this._porContorno(p.id);
+          }
+        }
+        this.aplicarModo(this.modo);
+        this.definirSombras(this.cena.sombrasAtivas);
+        if (aoAndar) aoAndar(total, total, k, lotes.length);
+        if (k < lotes.length) { setTimeout(blocos, 0); return; }
+        this._montagem = null;
+        if (aoTerminar) aoTerminar();
+      };
+      blocos();
+    };
+    geometrias();
+    return () => { if (this._montagem === token) this._montagem = null; };
+  }
+
+  /** Há uma montagem em partes andando? */
+  get montando() { return !!this._montagem; }
 
   /**
    * Sólidos que são a mesma malha só movida ou girada: id -> {grupo, i}. Candidatas pela
@@ -252,15 +333,24 @@ export class Lote {
     grupo.malha.dispose();
   }
 
+  /**
+   * Os números de uma peça para o bloco: {pos, nor, apos} (Float32Array no mundo), a caixa e o centro.
+   *
+   * Barra e chapa vêm do cache da cena em coordenadas locais. Antes (até 03/11) cada peça clonava a
+   * geometria, levava a cópia ao mundo e refazia o `THREE.EdgesGeometry` dela — no SESI (16 mil barras
+   * e 16,6 mil chapas) eram 16 dos 26 s de montar o modelo. Agora as arestas são as da geometria do
+   * cache (feitas uma vez por chave, como no desenho peça por peça: `arestasDaGeometria`) e só os
+   * números são levados ao mundo, vértice a vértice, pelas mesmas contas do three.js
+   * (`Vector3.applyMatrix4`, `applyNormalMatrix`) — o bloco sai igual, byte a byte.
+   */
   _geometria(ent, copia = null) {
     if (copia) {
       // a malha está no grupo de cópias; aqui só as arestas, no mundo, e a caixa
-      const arestas = new THREE.BufferGeometry();
-      arestas.setAttribute('position', new THREE.BufferAttribute(arestasDoSolido(ent.vertices, ent.faces), 3));
+      const apos = arestasDoSolido(ent.vertices, ent.faces);
       const caixa = new THREE.Box3();
       for (const v of ent.vertices) caixa.expandByPoint(_p.set(v[0], v[1], v[2]));
-      return { id: ent.id, geom: null, arestas, nv: 0, na: arestas.getAttribute('position').count,
-               centro: caixa.getCenter(new THREE.Vector3()).toArray(), chave: null, proprio: false, caixa, copia };
+      return { id: ent.id, pos: null, nor: null, apos, nv: 0, na: apos.length / 3,
+               centro: caixa.getCenter(new THREE.Vector3()).toArray(), chave: null, descartar: [], caixa, copia };
     }
     let geom = null, matriz = null, chave = null;
     try {
@@ -269,26 +359,62 @@ export class Lote {
       else ({ geom } = this.cena._geometriaSolido(ent));
     } catch (e) { geom = null; }
     if (!geom) return null;
-    // Barra e chapa vêm do cache, em coordenadas locais: a cópia entra no bloco já no
-    // mundo (a do cache fica intacta para as outras peças iguais).
-    let g = geom.index ? geom.toNonIndexed() : (chave ? geom.clone() : geom);
-    if (matriz) {
-      if (g === geom) g = geom.clone();
-      g.applyMatrix4(matriz);
-    }
-    if (!g.getAttribute('normal')) g.computeVertexNormals();
-    const pos = g.getAttribute('position');
-    let arestas = null;
+    const descartar = [];
+    let pos, nor, apos;
+    const identidade = !matriz || _ehIdentidade(matriz);
     if (ent.tipo === 'solido') {
-      arestas = new THREE.BufferGeometry();
-      arestas.setAttribute('position', new THREE.BufferAttribute(arestasDoSolido(ent.vertices, ent.faces), 3));
-    } else arestas = new THREE.EdgesGeometry(g, 24);
+      // tesselado na hora, já no mundo (a matriz do sólido é a identidade)
+      let g = geom.index ? geom.toNonIndexed() : geom;
+      if (!identidade) { if (g === geom) g = geom.clone(); g.applyMatrix4(matriz); }
+      if (!g.getAttribute('normal')) g.computeVertexNormals();
+      if (g !== geom) descartar.push(g);
+      pos = g.getAttribute('position').array;
+      nor = g.getAttribute('normal').array;
+      apos = arestasDoSolido(ent.vertices, ent.faces);
+    } else if (chave && geom.getAttribute('normal') && !geom.index && Lote.arestasDoCache) {
+      // barra e chapa: a geometria do cache fica intacta; só os números vão ao mundo
+      const p = geom.getAttribute('position'), n = geom.getAttribute('normal');
+      const nv = p.count;
+      pos = new Float32Array(nv * 3);
+      nor = new Float32Array(nv * 3);
+      const ar = arestasDaGeometria(geom, true).getAttribute('position');
+      apos = new Float32Array(ar.count * 3);
+      if (identidade) {
+        pos.set(p.array); nor.set(n.array); apos.set(ar.array);
+      } else {
+        _nm.getNormalMatrix(matriz);
+        for (let i = 0; i < nv; i++) {
+          _vt.fromBufferAttribute(p, i).applyMatrix4(matriz);
+          pos[i * 3] = _vt.x; pos[i * 3 + 1] = _vt.y; pos[i * 3 + 2] = _vt.z;
+          _vt.fromBufferAttribute(n, i).applyNormalMatrix(_nm);
+          nor[i * 3] = _vt.x; nor[i * 3 + 1] = _vt.y; nor[i * 3 + 2] = _vt.z;
+        }
+        for (let i = 0; i < ar.count; i++) {
+          _vt.fromBufferAttribute(ar, i).applyMatrix4(matriz);
+          apos[i * 3] = _vt.x; apos[i * 3 + 1] = _vt.y; apos[i * 3 + 2] = _vt.z;
+        }
+      }
+    } else {
+      // o caminho de antes (geometria sem normais ou indexada, ou a comparação do teste): a cópia
+      // vai ao mundo e as arestas são refeitas nela
+      let g = geom.index ? geom.toNonIndexed() : (chave ? geom.clone() : geom);
+      if (matriz) {
+        if (g === geom) g = geom.clone();
+        g.applyMatrix4(matriz);
+      }
+      if (!g.getAttribute('normal')) g.computeVertexNormals();
+      if (g !== geom) descartar.push(g);
+      pos = g.getAttribute('position').array;
+      nor = g.getAttribute('normal').array;
+      const e = new THREE.EdgesGeometry(g, 24);
+      apos = e.getAttribute('position').array;
+      descartar.push(e);
+    }
+    const nv = pos.length / 3;
     const centro = [0, 0, 0];
-    const arr = pos.array;
-    for (let i = 0; i < arr.length; i += 3) { centro[0] += arr[i]; centro[1] += arr[i + 1]; centro[2] += arr[i + 2]; }
-    for (let i = 0; i < 3; i++) centro[i] /= Math.max(pos.count, 1);
-    return { id: ent.id, geom: g, arestas, nv: pos.count, na: arestas.getAttribute('position').count, centro,
-             chave: chave || null, proprio: g !== geom };
+    for (let i = 0; i < pos.length; i += 3) { centro[0] += pos[i]; centro[1] += pos[i + 1]; centro[2] += pos[i + 2]; }
+    for (let i = 0; i < 3; i++) centro[i] /= Math.max(nv, 1);
+    return { id: ent.id, pos, nor, apos, nv, na: apos.length / 3, centro, chave: chave || null, descartar };
   }
 
   _montarBloco(pecas) {
@@ -303,15 +429,15 @@ export class Lote {
     let v0 = 0, a0 = 0;
     const caixaBloco = new THREE.Box3();
     for (const p of pecas) {
-      if (p.geom) {
-        pos.set(p.geom.getAttribute('position').array, v0 * 3);
-        const n = p.geom.getAttribute('normal').array;
+      if (p.pos) {
+        pos.set(p.pos, v0 * 3);
+        const n = p.nor;
         for (let i = 0, k = v0 * 3; i < n.length; i++, k++) nor[k] = Math.round(Math.max(-1, Math.min(1, n[i])) * 32767);
       }
-      apos.set(p.arestas.getAttribute('position').array, a0 * 3);
+      apos.set(p.apos, a0 * 3);
       // Caixa envolvente da peça: é o que faz a escolha pelo cursor ser barata (sem ela,
       // o raio testaria os ~16 mil triângulos de cada bloco a cada movimento do mouse).
-      const caixa = p.caixa || new THREE.Box3().setFromArray(p.geom.getAttribute('position').array);
+      const caixa = p.caixa || new THREE.Box3().setFromArray(p.pos);
       caixaBloco.union(caixa);
       const item = { id: p.id, bloco, v0, nv: p.nv, a0, na: p.na, chave: p.chave,
                      corMalha: null, corAresta: null, caixa, copia: p.copia || null };
@@ -495,7 +621,11 @@ export class Lote {
   /** Esconde ou mostra a peça (camada apagada): entra ou sai do índice do bloco. */
   mostrar(id, visivel) {
     const it = this.itens.get(id);
-    if (!it) return;
+    if (!it) {
+      // ainda não montada (montagem em partes): fica anotado, e o bloco dela já nasce com o índice certo
+      if (visivel) this.escondidos.delete(id); else this.escondidos.add(id);
+      return;
+    }
     const escondida = this.escondidos.has(id);
     if (visivel === !escondida) return;
     if (visivel) this.escondidos.delete(id); else this.escondidos.add(id);
@@ -596,8 +726,8 @@ export class Lote {
 
   /** Realce da seleção ou do cursor. `estado` null tira. */
   realcar(id, estado) {
-    if (!this.itens.has(id)) return;
     if (estado) this.estado.set(id, estado); else this.estado.delete(id);
+    if (!this.itens.has(id)) return;          // ainda não montada: a cor e o contorno entram com o bloco dela
     this.pintar(id);
     if (estado === 'selecionado') this._porContorno(id); else this._tirarContorno(id);
   }
@@ -680,6 +810,7 @@ export class Lote {
   }
 
   descartar() {
+    this._montagem = null;                    // cancela a montagem em partes, se havia
     for (const b of this.blocos.slice()) this._descartarBloco(b);
     for (const g of this.copias.slice()) this._descartarCopias(g);
     for (const id of [...this.contornos.keys()]) this._tirarContorno(id);

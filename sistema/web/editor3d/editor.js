@@ -256,6 +256,7 @@ export class Editor {
   async iniciar() {
     this.cena.aoDesenhar = () => { this._sujo = true; };
     this.cena.aoRepintar = () => this.selecao.reaplicar();
+    this.cena.aoMontar = (m) => this._andamentoDaMontagem(m);
     // Textos das cotas: HTML por cima do canvas, abaixo do snap e dos avisos.
     this.el.rotulos = el('div', { class: 'camada-rotulos', 'aria-hidden': 'true' });
     this.el.snap.before(this.el.rotulos);
@@ -462,6 +463,37 @@ export class Editor {
       url: `/api/projetos/${encodeURIComponent(this.projeto)}/progresso`,
       tarefa: tarefa || 'editor.' + rotulo.toLowerCase(), rotulo, onde: this.el.dica, dica: (t) => this.dica(t),
     });
+  }
+
+  /**
+   * O modelo grande é montado na tela em partes (cena._montarAosPoucos, 03/11): a barra de andamento padrão
+   * no rodapé, com "i de n peças", enquanto anda; `body[data-montando]` para quem espera o modelo inteiro
+   * (fotos, verificadores). `m` = {feitas, total, blocos, totalBlocos} a cada parte, null no fim.
+   */
+  _andamentoDaMontagem(m) {
+    if (m) {
+      this._montagem = m;
+      document.body.dataset.montando = '1';
+      if (!this._pararMontagem) {
+        this._pararMontagem = acompanharTarefa({
+          tarefa: 'editor.montar-na-tela', rotulo: 'Montando o modelo na tela', onde: this.el.dica, dica: (t) => this.dica(t),
+          andamento: () => {
+            const a = this._montagem || {};
+            const n = a.totalBlocos ? a.totalBlocos : 0;
+            const etapa = a.feitas < a.total ? `${numero(a.feitas)} de ${numero(a.total)} peças`
+              : (n ? `blocos (${a.blocos} de ${n})` : `${numero(a.total)} peças`);
+            // as geometrias são ~85 % do trabalho; os blocos, o resto
+            const fracao = a.total ? Math.min(0.99, 0.85 * a.feitas / a.total + (n ? 0.15 * a.blocos / n : 0)) : null;
+            return { etapa, fracao };
+          },
+        });
+      }
+      return;
+    }
+    this._montagem = null;
+    delete document.body.dataset.montando;
+    if (this._pararMontagem) { this._pararMontagem(); this._pararMontagem = null; }
+    this.dica(this.projeto ? `Modelo montado na tela: ${numero(this.documento.tamanho)} peças.` : '');
   }
 
   /** Caixa de medidas: o que a ferramenta está medindo agora. */
@@ -1089,6 +1121,26 @@ export class Editor {
     } catch (e) { console.warn('perfis fora do catálogo do editor:', e.message || e); }
   }
 
+  /** Antes de montar um modelo na tela: os perfis dele que o catálogo do editor não traz (dobrados de fábrica, barras
+   *  redondas, dos fornecedores) vêm do servidor primeiro, para cada barra ser desenhada uma vez só, já com a seção
+   *  certa — e não com a genérica e refeita logo depois pelo `_completarPerfis` (SESI, 03/11: 61 s a mais ao abrir). */
+  async _prepararPerfis(json) {
+    const cat = this.cena.catalogo && this.cena.catalogo.perfis;
+    if (!(cat instanceof Map) || !cat.size) return;
+    const nomes = new Set();
+    for (const e of ((json && json.entidades) || [])) {
+      if (e && e.tipo === 'barra' && e.perfil && !cat.has(e.perfil)) nomes.add(e.perfil);
+    }
+    if (!nomes.size) return;
+    try {
+      const r = await this.api.perfis([...nomes]);
+      const lista = (r && r.perfis) || [];
+      const ja = new Set((this.catalogo.perfis || []).map(p => p.nome));
+      for (const p of lista) if (!ja.has(p.nome)) this.catalogo.perfis.push(p);
+      this.cena.acrescentarPerfis(lista, { refazer: false });
+    } catch (e) { console.warn('perfis fora do catálogo do editor:', e.message || e); }
+  }
+
   carregarDocumento(json, { enquadrar = true, autosalvar = true } = {}) {
     // A análise é de um modelo só: trocar o documento a invalida. Quem gera do galpão
     // repõe os dados logo em seguida; modelo aberto ou importado fica sem o que calcular.
@@ -1180,6 +1232,7 @@ export class Editor {
   async abrirModelo(nome, { avisarErro = true } = {}) {
     try {
       const r = await this.api.abrir(nome);
+      await this._prepararPerfis(r.documento);
       // o que acabou de vir do servidor não precisa voltar para lá
       this.carregarDocumento(r.documento, { autosalvar: false });
       this._lembrar(nome);
@@ -1356,6 +1409,7 @@ export class Editor {
     }
 
     if (modelo && modelo.documento) {
+      await this._prepararPerfis(modelo.documento);
       try { this.carregarDocumento(modelo.documento, { autosalvar: false }); } catch (e) {
         this._modeloNaoAbriu = e.message || 'erro';
         this.aviso(`O modelo do projeto não pôde ser montado na tela: ${e.message}. Nada será gravado nesta tela, para não sobrescrevê-lo.`, 'erro', 0);

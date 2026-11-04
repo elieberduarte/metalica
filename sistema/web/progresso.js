@@ -78,7 +78,9 @@ function _tempo(s) {
  * @param onde    elemento depois do qual a barra entra (a linha de dica do rodapé); sem ele, a barra flutua embaixo
  * @param dica    função(texto) que também recebe a linha (o rodapé do editor e do CAD), opcional
  */
-export function acompanhar({ url = '', tarefa = 'tarefa', rotulo = '', onde = null, dica = null } = {}) {
+export function acompanhar({ url = '', tarefa = 'tarefa', rotulo = '', onde = null, dica = null, andamento = null } = {}) {
+  // `andamento`: () => {etapa, fracao} de uma tarefa da própria tela (a montagem do modelo grande no editor 3D, 03/11),
+  // no lugar da consulta à `url` do servidor
   _injetarEstilo();
   const naTela = { url, generica: rotulo === GENERICO, parar: null };
   if (!naTela.generica) for (const b of [...NA_TELA]) if (b.generica) b.parar(false);   // a tarefa com nome tira a da consulta
@@ -124,6 +126,8 @@ export function acompanhar({ url = '', tarefa = 'tarefa', rotulo = '', onde = nu
         const r = await fetch(url, { cache: 'no-store' });
         if (r.ok) { const p = await r.json(); if (vivo && p && (p.etapa || typeof p.fracao === 'number')) ultimoP = p; }
       } catch (e) { /* servidor ocupado ou reiniciando: tenta no próximo tique */ }
+    } else if (typeof andamento === 'function') {
+      try { const p = andamento(); if (p && (p.etapa || typeof p.fracao === 'number')) ultimoP = p; } catch (e) { /* a tela decide */ }
     }
     if (!vivo) return;
     desenhar();

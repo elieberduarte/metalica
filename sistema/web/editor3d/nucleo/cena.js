@@ -95,6 +95,11 @@ export function medir(nome, fn) {
  *  5 mil peças). */
 export const LIMITE_SOMBRAS = 1500;
 
+/** Acima de tantas peças de uma vez, o lote é montado em partes, soltando o fio principal entre elas
+ *  (lote.definirVariosAosPoucos): a página responde e mostra o andamento. Abaixo, de uma vez, como sempre —
+ *  é o caminho que as ferramentas e os testes de modelo médio conhecem. */
+export const LIMITE_AOS_POUCOS = 6000;
+
 export const MODOS = [
   ['sombreado', 'Sombreado'],
   ['sombreado_arestas', 'Sombreado com arestas'],
@@ -184,6 +189,9 @@ export class Cena {
     this.objetos = new Map();         // id da entidade -> THREE.Group
     this.lote = null;                 // sólidos em lote (modelo grande): ver lote.js
     this.semLote = !!opcoes.semLote;  // força um objeto por peça (teste e comparação)
+    this.montando = null;             // {feitas, total} enquanto o lote é montado em partes (ver _montarAosPoucos)
+    this.montarDeUmaVez = !!opcoes.montarDeUmaVez;   // nunca em partes (comparação do teste)
+    this.aoMontar = null;             // (montando | null) => …: o editor mostra o andamento
     this.cacheGeometria = new Map();  // chave (perfil|comprimento) -> BufferGeometry
     this.origemGeometria = new Map(); // mesma chave -> 'servidor' | 'local'
     this.cacheMaterial = new Map();
@@ -596,7 +604,9 @@ export class Cena {
   }
 
   _reconstruirTudo() {
-    for (const [id, obj] of this.objetos) this._descartarObjeto(obj);
+    // as peças do lote saem com ele inteiro (`descartar`): tirá-las uma a uma refazia o índice
+    // e a esfera do bloco a cada peça (SESI, 03/11: 39 + 34 s de abrir o editor)
+    for (const [id, obj] of this.objetos) if (!obj.userData.lote) this._descartarObjeto(obj);
     this.objetos.clear();
     this.rotulos.clear();
     if (this.lote) { this.lote.descartar(); this.lote = null; }
@@ -623,7 +633,8 @@ export class Cena {
     for (const id of ids) {
       const ent = this.documento.get(id);
       const antigo = this.objetos.get(id);
-      if (antigo) { this.raiz.remove(antigo); this._descartarObjeto(antigo); this.objetos.delete(id); }
+      // do lote, sai "adiado": os índices dos blocos são refeitos uma vez, no `concluir()` do fim
+      if (antigo) { this.raiz.remove(antigo); this._descartarObjeto(antigo, true); this.objetos.delete(id); }
       this.rotulos.delete(id);
       if (!ent) continue;
       if (!this.documento.aparece(ent)) continue;
@@ -635,7 +646,8 @@ export class Cena {
     if (paraLote.length) {
       // Um grupo vazio por peça mantém a contabilidade (`objetos`) e faz o código de um
       // objeto por peça não achar malha nenhuma — e portanto não mexer.
-      this.lote.definirVarios(paraLote);
+      if (this._montaAosPoucos(paraLote.length)) this._montarAosPoucos(paraLote);
+      else this.lote.definirVarios(paraLote);
       for (const ent of paraLote) {
         const proxy = new THREE.Group();
         proxy.name = ent.id;
@@ -656,6 +668,44 @@ export class Cena {
     this._ajustarSombras();
     this._agendarRefino();
     this.pedirQuadro();
+  }
+
+  /** Tantas peças de uma vez vão para o lote em partes? (abrir um modelo grande; o pequeno e as edições, de uma vez) */
+  _montaAosPoucos(n) {
+    return !!this.lote && !this.montarDeUmaVez && n > LIMITE_AOS_POUCOS && typeof setTimeout === 'function';
+  }
+
+  /**
+   * A montagem em partes (lote.definirVariosAosPoucos): `montando` = {feitas, total} enquanto anda, e
+   * `aoMontar(montando)` avisa o editor a cada parte (a barra de andamento) e no fim (null). Enquanto os
+   * blocos entram, a tela é redesenhada a cada quarto deles — só quando o quadro é barato (placa de vídeo;
+   * no Chrome sem janela, com o swiftshader, cada quadro do SESI leva 3–5 s e o meio do caminho não compensa).
+   */
+  _montarAosPoucos(ents) {
+    this.montando = { feitas: 0, total: ents.length };
+    let proximoQuadro = 0;
+    this.lote.definirVariosAosPoucos(ents, {
+      aoAndar: (feitas, total, blocos, totalBlocos) => {
+        this.montando = { feitas, total, blocos: blocos || 0, totalBlocos: totalBlocos || 0 };
+        if (this.aoMontar) this.aoMontar(this.montando);
+        if (blocos && blocos < totalBlocos && blocos >= proximoQuadro && (this.ultimoQuadroMs || 0) < 150) {
+          proximoQuadro = blocos + Math.max(1, Math.ceil(totalBlocos / 4));
+          this.pedirQuadro();
+        }
+      },
+      aoTerminar: () => {
+        this.montando = null;
+        for (const ent of ents) {
+          const p = this.objetos.get(ent.id), it = this.lote && this.lote.itens.get(ent.id);
+          if (p && p.userData.lote) p.userData.chave = it ? it.chave : null;
+        }
+        if (this.lote) this.lote.concluir();
+        if (this.aoRepintar) this.aoRepintar();
+        this._ajustarSombras();
+        this.pedirQuadro();
+        if (this.aoMontar) this.aoMontar(null);
+      },
+    });
   }
 
   /** Refaz só a visibilidade e a cor, sem tocar na geometria (camadas, materiais). */
@@ -731,9 +781,9 @@ export class Cena {
     return grupo;
   }
 
-  _descartarObjeto(obj) {
+  _descartarObjeto(obj, adiar = false) {
     if (!obj) return;
-    if (obj.userData.lote) { if (this.lote) this.lote.remover(obj.userData.entidade); return; }
+    if (obj.userData.lote) { if (this.lote) this.lote.remover(obj.userData.entidade, adiar); return; }
     obj.traverse(f => {
       // As geometrias de barra e chapa são compartilhadas pelo cache: não descarte.
       if (f.geometry && f.geometry.userData && f.geometry.userData.emCache !== true) {
@@ -1048,7 +1098,7 @@ export class Cena {
 
   /** Perfis que chegaram depois (fora do banco básico: dobrados de fábrica, barras
    *  redondas): entram no catálogo e as barras deles são refeitas com a seção certa. */
-  acrescentarPerfis(lista) {
+  acrescentarPerfis(lista, { refazer = true } = {}) {
     if (!this.catalogo || !(this.catalogo.perfis instanceof Map)) this.catalogo = { ...(this.catalogo || {}), perfis: new Map() };
     const nomes = new Set();
     for (const p of lista || []) { this.catalogo.perfis.set(p.nome, p); nomes.add(p.nome); }
@@ -1059,6 +1109,7 @@ export class Cena {
         this.origemGeometria.delete(chave);
       }
     }
+    if (!refazer) return 0;             // os perfis chegaram antes do modelo (editor._prepararPerfis): nada a refazer
     const ids = this.documento.barras.filter(b => nomes.has(b.perfil)).map(b => b.id);
     if (ids.length) this.atualizar(ids);
     return ids.length;
@@ -1467,7 +1518,9 @@ export class Cena {
       const t = d.z < -0.08 ? Math.min(-c.z / d.z, this._gradeExtensao || 1e4) : 0;
       this.piso.material.uniforms.uCentro.value.set(c.x + d.x * t, c.y + d.y * t);
     }
+    const t0 = performance.now();
     this.renderizador.render(this.cena, camera);
+    this.ultimoQuadroMs = performance.now() - t0;     // a montagem em partes só mostra o meio do caminho se o quadro é barato
   }
 
   descartar() {
@@ -1925,7 +1978,9 @@ export function prismaRecortado(forma, f0, f1, r0, r1) {
 }
 
 const _cacheArestas = new WeakMap();
-/** As arestas acompanham o destino da geometria: compartilhadas quando ela é. */
+/** As arestas acompanham o destino da geometria: compartilhadas quando ela é. O lote (lote.js) usa as
+ *  mesmas, em coordenadas locais, e leva só os números ao mundo. */
+export function arestasDaGeometria(geom, compartilhada) { return obterArestas(geom, compartilhada); }
 function obterArestas(geom, compartilhada) {
   if (!compartilhada) {
     const e = new THREE.EdgesGeometry(geom, 24);

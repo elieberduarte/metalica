@@ -182,7 +182,12 @@ export class MetodosDiagnostico {
       perspectiva: { dir: [1.35, -0.7, 0.3] }, lateral: { dir: [0.18, -1, 0.22] },
       topo: { dir: [0.0001, -0.0001, 1], cima: [0, 1, 0] }, interna: { dir: [0.35, -1, 0.12] },
     };
-    const quadros = (n) => new Promise((ok) => { let i = 0; const f = () => (++i >= n ? ok() : requestAnimationFrame(f)); requestAnimationFrame(f); });
+    // os quadros contam depois de o lote estar inteiro na tela (o modelo grande é montado em partes, 03/11)
+    const quadros = (n) => new Promise((ok) => {
+      let i = 0;
+      const f = () => { if (this.cena.montando) { setTimeout(f, 200); return; } (++i >= n ? ok() : requestAnimationFrame(f)); };
+      requestAnimationFrame(f);
+    });
     const doc = this.documento;
     const aparecia = doc.aparece.bind(doc);
     let comTelhas = false;
