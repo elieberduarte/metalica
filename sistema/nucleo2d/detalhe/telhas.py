@@ -1513,17 +1513,61 @@ def _repetidas_na_fileira(ordenadas: Sequence[dict]) -> set:
 #: Quantas chapas iguais lado a lado fazem a sequência que leva o nome e a cota só na primeira (face densa).
 SEQUENCIA_TIPICA = 3
 
+#: Telhas de fachada a mais que isto do plano umas das outras são faces diferentes na saia "fora a fora"
+#: (as duas faces da platibanda do Depósito Químico ficam a 230 mm; antes eram 400 e as duas viravam uma).
+FACE_DA_SAIA = 150.0
+
+
+def _eh_funilaria(e, nome: str) -> bool:
+    """Calha, rufo ou cumeeira: o que fecha a cobertura e pode receber a ponta de uma telha de fachada."""
+    txt = (nome + " " + str(e.nome or "") + " " + str(getattr(e, "camada", "") or "")).upper()
+    return any(p in txt for p in ("CALHA", "RUFO", "CUMEEIRA"))
+
+
+def _caixa(e) -> tuple:
+    xs = [q[0] for q in e.vertices]
+    ys = [q[1] for q in e.vertices]
+    zs = [q[2] for q in e.vertices]
+    return min(xs), max(xs), min(ys), max(ys), min(zs), max(zs)
+
+
+def _ponta_sobre_cobertura(e, coberturas, folga: float = 60.0) -> bool:
+    """A ponta de baixo da telha de fachada encosta na cobertura (a telha deitada, a calha ou o rufo logo
+    abaixo dela, cobrindo a ponta na planta)? Então a ponta não é livre e não leva a saia."""
+    z0 = min(q[2] for q in e.vertices)
+    base = [q for q in e.vertices if q[2] <= z0 + 100.0]
+    bx0, bx1 = min(q[0] for q in base), max(q[0] for q in base)
+    by0, by1 = min(q[1] for q in base), max(q[1] for q in base)
+    for cob in coberturas:
+        x0, x1, y0, y1, zc0, zc1 = cob[1:7]
+        if bx1 < x0 - folga or bx0 > x1 + folga or by1 < y0 - folga or by0 > y1 + folga or zc0 > z0 + 80.0:
+            continue
+        for q in base:
+            if not (x0 - folga <= q[0] <= x1 + folga and y0 - folga <= q[1] <= y1 + folga):
+                continue
+            if cob[0] == "plano":                     # a telha deitada: a altura dela neste ponto
+                c, n = cob[7], cob[8]
+                zc = c[2] - (n[0] * (q[0] - c[0]) + n[1] * (q[1] - c[1])) / n[2]
+                if q[2] - 250.0 <= zc <= q[2] + 80.0:
+                    return True
+            elif zc0 <= q[2] + 80.0 and zc1 >= q[2] - 250.0:
+                return True
+    return False
+
+
 def saias_de_fachada(pecas, ignorar=frozenset()) -> Dict[str, float]:
     """{id da telha: quanto a ponta de baixo desce (mm; negativo sobe)} das telhas de
     fachada (chapa em pé, onda na vertical), para a ponta de baixo ficar SAIA_TELHA abaixo
     da longarina mais baixa atrás dela — a regra da fábrica. Longarina: barra comprida,
     deitada, paralela à face e a menos de 400 mm do plano da telha, cobrindo a largura dela."""
-    barras, telhas = [], []
+    barras, telhas, coberturas = [], [], []
     for e in pecas:
         m = _marcas(e)
         nome = str(m.get("perfil") or e.nome or "")
         if len(e.vertices or []) < 8:
             continue
+        if _eh_funilaria(e, nome):
+            coberturas.append(("caixa",) + _caixa(e))
         if _eh_telha(nome):
             if e.id not in ignorar:                   # as peças das multi-dobra têm regra própria
                 telhas.append(e)
@@ -1536,17 +1580,21 @@ def saias_de_fachada(pecas, ignorar=frozenset()) -> Dict[str, float]:
         c, eixos, ext = _medidas(e)
         n = _norm(eixos[2])
         if abs(n[2]) > 0.2:
+            coberturas.append(("plano",) + _caixa(e) + (c, n))   # telha da cobertura
             continue                                  # não é fachada
         u, clara = _direcao_da_onda(e, n)
         if clara and abs(u[2]) < 0.8:
             continue                                  # onda deitada: não é a telha da saia
         fachada.append((e, c, n))
+    # a telha que nasce em cima da cobertura (a face de dentro da platibanda, sobre a calha; o
+    # oitão por dentro, sobre a telha) não tem ponta livre: sem saia (Depósito Químico, 04/11)
+    fachada = [item for item in fachada if not _ponta_sobre_cobertura(item[0], coberturas)]
     # a saia é "fora a fora": uma altura só por face, a da longarina mais baixa da face —
     # a telha do canto, onde a longarina já terminou, desce junto com as outras
     grupos = []
     for item in fachada:
         for g in grupos:
-            if abs(_dot(g["n"], item[2])) > 0.985 and abs(_dot(g["n"], _sub(item[1], g["c"]))) < 400.0:
+            if abs(_dot(g["n"], item[2])) > 0.985 and abs(_dot(g["n"], _sub(item[1], g["c"]))) < FACE_DA_SAIA:
                 g["itens"].append(item)
                 break
         else:
