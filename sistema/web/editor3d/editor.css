@@ -429,6 +429,12 @@ kbd {
   color: inherit; opacity: .6; font-size: 15px; line-height: 1; padding: 0 2px;
 }
 .aviso button:hover { opacity: 1; }
+/* as faixas que ficam até a situação mudar (editor.faixaFixa): no alto da coluna dos avisos */
+.avisos > .faixa {
+  display: flex; gap: 12px; align-items: center; color: #fff; padding: 6px 12px; border-radius: 6px;
+  font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+.avisos > .faixa > button { flex: 0 0 auto; }
 
 /* ---- painéis ---- */
 

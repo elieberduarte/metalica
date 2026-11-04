@@ -2643,10 +2643,25 @@ export class Editor {
     caixa.append(el('button', { type: 'button', 'aria-label': 'Fechar', texto: '×',
                                 onclick: () => caixa.remove() }));
     this.el.avisos.append(caixa);
-    while (this.el.avisos.children.length > 5) this.el.avisos.firstElementChild.remove();
+    // até 5 avisos; as faixas fixas (ligações desatualizadas, padrão de fábrica) não contam e não saem
+    const avisos = () => this.el.avisos.querySelectorAll(':scope > .aviso');
+    while (avisos().length > 5) avisos()[0].remove();
     const t = duracao !== undefined ? duracao : tipo === 'erro' ? 16000 : tipo === 'atencao' ? 9000 : 5000;
     if (t > 0) setTimeout(() => caixa.remove(), t);
     return caixa;
+  }
+
+  /**
+   * Uma faixa que fica até a situação mudar (ligações com barra que mudou, o 3D fora do padrão de fábrica): no alto da
+   * coluna dos avisos, uma embaixo da outra e os avisos embaixo delas — antes cada uma tinha a sua altura fixa na tela e
+   * se cobriam com os avisos (usuário, 04/11, Galpão Existente: "agora ficou uma salada de fruta de notificação").
+   */
+  faixaFixa(classe, cor, ...filhos) {
+    const f = el('div', { class: `faixa ${classe}` }, ...filhos);
+    f.style.background = cor;
+    const outras = this.el.avisos.querySelectorAll(':scope > .faixa');
+    if (outras.length) outras[outras.length - 1].after(f); else this.el.avisos.prepend(f);
+    return f;
   }
 
   /** Diálogo modal; devolve 'ok' ou 'cancelar'. `ok: null` esconde o botão. */

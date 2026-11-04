@@ -114,7 +114,7 @@ export class MetodosLigacoes {
   }
 
   /** Manda o pedido, aplica a resposta num comando só e mostra a verificação. */
-  async _pedirLigacao(pedido, rotulo, rota = '/api/modelo/ligacao') {
+  async _pedirLigacao(pedido, rotulo, rota = '/api/modelo/ligacao', { quieto = false } = {}) {
     let r;
     try {
       this.dica(`${rotulo}…`);
@@ -128,6 +128,7 @@ export class MetodosLigacoes {
       this._refazendoLigacao = true;
       try { this.executar(cmd); } finally { this._refazendoLigacao = false; }
     }
+    if (quieto) return r;           // o lote (Refazer as ligações) avisa uma vez no fim
     const novas = (r.novas || []).map(d => d.id);
     if (novas.length) this.selecao.definir(novas.filter(id => this.documento.get(id)));
     this._resumoDaVerificacao(r.ligacoes || [], rotulo);
@@ -222,27 +223,60 @@ export class MetodosLigacoes {
   _conferirLigacoes() {
     let lista = [];
     try { lista = this.ligacoesDesatualizadas(); } catch (e) { console.error('conferência das ligações:', e); }
-    if (!lista.length) { if (this._faixaLigacoes) { this._faixaLigacoes.remove(); this._faixaLigacoes = null; } return; }
+    // fechada no ×, não volta para as mesmas ligações; outra barra que mude a traz de novo (usuário, 04/11, Galpão Existente:
+    // "não consigo fechar essa notificação")
+    const chave = lista.map(l => l.id).sort().join('|');
+    if (!lista.length || chave === this._ligacoesDispensadas) {
+      if (this._faixaLigacoes) { this._faixaLigacoes.remove(); this._faixaLigacoes = null; }
+      return;
+    }
     const orfas = lista.filter(l => l.sumiu).length;
     const texto = `${lista.length} ligação(ões) com barra que mudou${orfas ? ` (${orfas} com barra apagada)` : ''}: as peças estão no lugar antigo.`;
     if (this._faixaLigacoes) { this._faixaLigacoes.querySelector('span').textContent = texto; return; }
     const botao = el('button', { texto: 'Refazer as ligações', title: 'Refaz cada ligação nas barras como estão agora; a de barra apagada sai' });
     botao.style.cssText = 'background:#fff;color:#1e40af;border:0;border-radius:4px;padding:4px 10px;font-weight:600;cursor:pointer';
     botao.addEventListener('click', () => this.refazerLigacoesDesatualizadas());
-    const f = el('div', { class: 'faixa-ligacoes' }, el('span', { texto }), botao);
-    f.style.cssText = 'position:fixed;left:50%;top:104px;transform:translateX(-50%);z-index:50;display:flex;gap:12px;' +
-      'align-items:center;max-width:80vw;background:#1d4ed8;color:#fff;padding:6px 12px;border-radius:6px;' +
-      'font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.25)';
-    document.body.append(f);
-    this._faixaLigacoes = f;
+    const fechar = el('button', { class: 'fechar', texto: '×', title: 'Fechar o aviso (as ligações ficam como estão; ele volta se outra barra mudar)' });
+    fechar.style.cssText = 'background:transparent;color:#fff;border:0;font-size:18px;line-height:1;padding:0 2px;cursor:pointer';
+    fechar.addEventListener('click', () => {
+      this._ligacoesDispensadas = this.ligacoesDesatualizadas().map(l => l.id).sort().join('|');
+      if (this._faixaLigacoes) { this._faixaLigacoes.remove(); this._faixaLigacoes = null; }
+    });
+    this._faixaLigacoes = this.faixaFixa('faixa-ligacoes', '#1d4ed8', el('span', { texto }), botao, fechar);
   }
 
+  /**
+   * Refaz de uma vez as ligações com barra que mudou: um pedido por tipo (o servidor refaz a lista numa resposta só, um
+   * desfazer por tipo) e um aviso no fim. Antes era um pedido por ligação, com o modelo inteiro em cada um e um aviso
+   * "Refazer ligação — 1 ligação(ões)…" por ligação — 51 no Galpão Existente (04/11, "salada de fruta de notificação").
+   */
   async refazerLigacoesDesatualizadas() {
     const lista = this.ligacoesDesatualizadas();
-    for (const l of lista) {
-      if (l.sumiu) await this.apagarLigacao(l.id);
-      else await this.refazerLigacao(l.id);
+    if (!lista.length) { this._conferirLigacoes(); return; }
+    const botao = this._faixaLigacoes && this._faixaLigacoes.querySelector('button');
+    if (botao) { botao.disabled = true; botao.textContent = 'Refazendo…'; }
+    const porTipo = new Map();
+    for (const l of lista) if (!l.sumiu) (porTipo.get(l.tipo) || porTipo.set(l.tipo, []).get(l.tipo)).push(l.id);
+    let refeitas = 0, apagadas = 0, falhas = 0;
+    const ligs = [];
+    try {
+      for (const [tipo, lids] of porTipo) {
+        const r = await this._pedirLigacao({ tipo, ids: [], ligacao: lids }, `Refazer ${lids.length} ligação(ões)`,
+          '/api/modelo/ligacao', { quieto: true });
+        if (r) { refeitas += lids.length; ligs.push(...(r.ligacoes || [])); } else falhas += lids.length;
+      }
+      for (const l of lista.filter(x => x.sumiu)) {
+        if (await this._pedirLigacao({ ligacao: l.id }, 'Apagar ligação', '/api/modelo/ligacao/remover', { quieto: true })) apagadas++;
+        else falhas++;
+      }
+    } finally {
+      if (botao) { botao.disabled = false; botao.textContent = 'Refazer as ligações'; }
     }
+    const semVerif = ligs.filter(l => l.verificacao && l.verificacao.erro).length;
+    const naoPassa = ligs.filter(l => l.verificacao && l.verificacao.ok === false).length;
+    this.aviso(`Ligações refeitas nas barras como estão agora: ${refeitas}` + (apagadas ? `; ${apagadas} de barra apagada saíram` : '') +
+      (naoPassa ? `; ${naoPassa} NÃO PASSAM na verificação` : '') + (semVerif ? `; ${semVerif} sem verificação na biblioteca` : '') +
+      (falhas ? `; ${falhas} não foram refeitas (veja o erro acima)` : '') + '.', naoPassa || falhas ? 'atencao' : 'info', naoPassa || falhas ? 0 : 10000);
     this._conferirLigacoes();
   }
 

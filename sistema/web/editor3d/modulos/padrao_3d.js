@@ -33,12 +33,7 @@ export class MetodosPadrao3D {
     const botao = el('button', { texto: 'Aplicar no 3D', title: 'Grava a sua edição, aplica o padrão de fábrica no modelo e recarrega' });
     botao.style.cssText = 'background:#fff;color:#92400e;border:0;border-radius:4px;padding:4px 10px;font-weight:600;cursor:pointer';
     botao.addEventListener('click', () => this.aplicarPadraoNo3D());
-    const f = el('div', { class: 'faixa-padrao-3d' }, el('span', { texto }), botao);
-    f.style.cssText = 'position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:50;display:flex;gap:12px;' +
-      'align-items:center;max-width:80vw;background:#b45309;color:#fff;padding:6px 12px;border-radius:6px;' +
-      'font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.25)';
-    document.body.append(f);
-    this._faixaPadrao = f;
+    this._faixaPadrao = this.faixaFixa('faixa-padrao-3d', '#b45309', el('span', { texto }), botao);
   }
 
   /** Grava o que está pendente aqui, manda o servidor aplicar o padrão no modelo e recarrega o modelo. */
