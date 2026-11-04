@@ -1593,6 +1593,22 @@ class TestSteelX(Asserts):
         sem = next(e for e in self.ents if (e.atributos.get("propriedades") or {}).get("SteelXData", {}).get("MainPartMark") == "indefinido")
         self.assertNotIn("conjunto", sem.atributos.get("marcas") or {})
 
+    def test_marca_provisoria_sem_numero_nao_e_posicao(self):
+        # "p.", "cl.", "rft" e "PERF." (o prefixo do SteelX sem número) não são marca: a lista juntava as 150 telhas do
+        # Mall numa posição com o comprimento da primeira (1.087,5 m × 802,87 m; auditor, N01, 04/11)
+        from nucleo2d.detalhar import levantar
+        por_papel = {(e.atributos.get("propriedades") or {}).get("SteelXData", {}).get("ModelRole"): e for e in self.ents}
+        for papel in ("CALHA", "RUFOCT", "Perfil de Fechamento"):
+            self.assertNotIn("posicao", por_papel[papel].atributos.get("marcas") or {}, papel)
+            self.assertNotIn("conjunto", por_papel[papel].atributos.get("marcas") or {}, papel)
+        self.assertEqual(self._por_perfil("TR 150").atributos["marcas"]["posicao"], "tc.9")
+        telhas = {e.id: float(e.atributos["propriedades"]["SteelXData"]["LengthNet_mm"]) for e in self.ents if e.camada == "Telhas"}
+        self.assertEqual(sorted(telhas.values()), [435.2, 7250.0, 7250.0])
+        # cada telha na lista com o comprimento dela (as duas de 7,25 m podem ficar juntas; a de 0,44 m não)
+        for q in levantar(self.doc, regra_tercas=False)["posicoes"]:
+            for i in set(q.global_ids or []) & set(telhas):
+                self.assertLess(abs(float(q.comprimento) - telhas[i]), 10.0, "%s: %s na posição de %s" % (q.marca, telhas[i], q.comprimento))
+
     def test_calha_rufo_e_telha_nas_camadas(self):
         camada = {(e.atributos.get("propriedades") or {}).get("SteelXData", {}).get("ModelRole"): e.camada for e in self.ents}
         self.assertEqual(camada["CALHA"], "Calhas")
@@ -1622,8 +1638,13 @@ class TestSteelX(Asserts):
             inteiro = im.malha_da_representacao(corpo).transformada(im.matriz(prod.arg(5)))
             s = next(e for e in self.doc.solidos if e.origem_ifc == str(prod.arg(0)))
             v = Solido(vertices=s.vertices, faces=s.faces).volume
+            perdeu = inteiro.volume_assinado() - v
+            if inteiro.caixa()[0][1] > 16900:
+                # a telha curta em que a abertura só encosta na ponta: nada a tirar
+                self.assertLess(abs(perdeu), 1e3, "%s perdeu %.0f mm³" % (s.nome, perdeu))
+                continue
             # o pórtico perde só o corte da ponta (0,2 litro de 30); a telha da borda, quase toda a largura
-            self.assertLess(v, inteiro.volume_assinado() - 1e5, "%s não foi recortado" % s.nome)
+            self.assertGreater(perdeu, 1e5, "%s não foi recortado" % s.nome)
             # nada do sólido fica no meio da abertura
             for ab in im.lista(aberturas):
                 caixa_ab = im._malha_da_abertura(ab).caixa()

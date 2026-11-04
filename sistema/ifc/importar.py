@@ -2773,8 +2773,12 @@ def marcas_de(nome: str, descricao: str, propriedades: dict) -> dict:
         for campo, nomes in chaves.items():
             for k in nomes:
                 v = pset.get(k)
-                # a peça sem marca no SteelX vem com MainPartMark "indefinido": não é um conjunto
-                if isinstance(v, str) and v.strip() and campo not in achado and v.strip().lower() not in ("indefinido", "undefined"):
+                # a peça sem marca no SteelX vem com MainPartMark "indefinido", e as telhas, calhas e rufos com só o
+                # prefixo provisório, sem número ("p.", "cl.", "rft", "PERF."): não é marca — a lista juntava as 150
+                # telhas numa posição com o comprimento da primeira (auditor do Mall Av. Londrina, N01, 04/11)
+                provisoria = k in ("SinglePartMark", "MainPartMark") and isinstance(v, str) and not re.search(r"\d", v)
+                if isinstance(v, str) and v.strip() and campo not in achado and not provisoria \
+                        and v.strip().lower() not in ("indefinido", "undefined"):
                     achado[campo] = re.sub(r"\s+", " ", v).strip()
     for campo, chave in (("posicao", "Pos"), ("conjunto", "Mark")):
         if campo not in achado:
