@@ -129,7 +129,19 @@ try:
     # C. Refazer as ligações: um pedido por tipo e um aviso só
     js("""window.__pedidos = []; const f0 = window.fetch; window.fetch = (u, o) => { if (String(u).startsWith('/api/modelo/ligacao')) window.__pedidos.push(String(u)); return f0(u, o); }; 1""")
     n_antes = jsj("return editor.ligacoesDesatualizadas().length;")
+    # D. antes de regravar, o aviso do que muda; Cancelar não refaz nada (Hora Certa · Galpão Existente, 04/11: o usuário
+    # clicou sem saber que o botão refaz as peças)
     ok(clicar(".faixa-ligacoes button:not(.fechar)"), "clique em Refazer as ligações")
+    ok(esperar("editor.el.dialogo.open", 10), "o botão pergunta antes de refazer")
+    txt = js("editor.el.dialogoCorpo.textContent") or ""
+    ok(f"refaz {n_antes} ligação" in txt and "Detalhar" in txt, f"o aviso diz quantas e que as pranchas mudam ({txt[:160]})")
+    js("editor.el.dialogoCancelar.click(); 1")
+    time.sleep(1.5)
+    ok(js("window.__pedidos.length") == 0 and js("!!document.querySelector('.faixa-ligacoes')"),
+       "Cancelar não refaz nada e a faixa fica")
+    ok(clicar(".faixa-ligacoes button:not(.fechar)"), "clique em Refazer as ligações de novo")
+    ok(esperar("editor.el.dialogo.open", 10), "o aviso de novo")
+    js("editor.el.dialogoOk.click(); 1")
     ok(esperar("!document.querySelector('.faixa-ligacoes')", 90), "a faixa sai depois de refazer")
     r = jsj("""return { pedidos: window.__pedidos.length, avisos: [...document.querySelectorAll('#avisos > .aviso')].map(a => a.textContent),
                         desat: editor.ligacoesDesatualizadas().length,

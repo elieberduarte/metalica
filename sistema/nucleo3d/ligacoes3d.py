@@ -2208,12 +2208,89 @@ def _copiar_em(trabalho, ids):
             feitas.add(i)
 
 
-def _grupo(trabalho, tipo, barras, p, lid, novas, alterar, soldas_pendentes, esforcos=None, analise=None) -> dict:
+def _perfis_trocados_depois(trabalho, reg) -> Dict[str, dict]:
+    """{id da barra: {"perfil": o de agora}} das barras da ligação cujo perfil foi trocado depois dela (o script da obra
+    que põe o CE50 do projeto no lugar da cantoneira do agulhamento, o usuário): o refazer não volta ao da biblioteca."""
+    fora = {}
+    for bid, g_ in (reg.get("geometria") or {}).items():
+        b = trabalho.entidades.get(bid)
+        if b is None or getattr(b, "tipo", "") == "chapa" or not g_ or len(g_) < 3:
+            continue
+        if str(b.perfil) != str(g_[2]):
+            fora[bid] = {"perfil": b.perfil}
+    return fora
+
+
+#: os atributos que o gerador da ligação escreve; os outros (setor, premissa, origem no 2D…) são da obra
+_ATRIBUTOS_DO_GERADOR = frozenset({"tipo_ifc", "ligacao", "marcas", "soldas", "furo", "parafuso", "criado_no_editor",
+                                   "elemento", "exportar"})
+#: os da obra que são de uma peça só (não passam para outra peça que não tem par na ligação velha)
+_ATRIBUTOS_DA_PECA = frozenset({"origem_2d"})
+
+
+def _herdar_da_obra(velhas, novas) -> list:
+    """A ligação refeita fica onde a obra a tinha posto (Hora Certa · Galpão Existente, 04/11: o "Refazer as ligações"
+    jogou 150 peças das camadas "<frente> — Ligações" nas genéricas Chapas/Parafusos/Furos e perdeu setor e premissa).
+    Cada peça nova herda da velha do mesmo papel, na mesma ordem: a camada, os atributos da obra e a marca de posição,
+    "a conferir" (a numeração a mantém se a peça continua igual; senão dá outra). A que não tem par: a camada, se a obra
+    tinha posto a ligação inteira numa camada só, e os atributos da obra iguais em todas as velhas. Antes da numeração;
+    devolve os pares (nova, velha) para `_nomes_de_producao`."""
+    if not velhas or not novas:
+        return []
+    fila: Dict[str, list] = collections.defaultdict(list)
+    for v in velhas:
+        fila[v.nome or ""].append(v)
+    camadas = {v.camada for v in velhas}
+    uma = next(iter(camadas)) if len(camadas) == 1 else None
+    da_obra = [{k: x for k, x in (v.atributos or {}).items() if k not in _ATRIBUTOS_DO_GERADOR} for v in velhas]
+    comuns = {k: x for k, x in da_obra[0].items()
+              if k not in _ATRIBUTOS_DA_PECA and all(k in d and d[k] == x for d in da_obra[1:])}
+    pares = []
+    for e in novas:
+        par = fila[e.nome or ""].pop(0) if fila.get(e.nome or "") else None
+        a = dict(e.atributos or {})
+        if par is None:
+            if uma:
+                e.camada = uma
+            extra = comuns
+        else:
+            e.camada = par.camada
+            extra = {k: x for k, x in (par.atributos or {}).items() if k not in _ATRIBUTOS_DO_GERADOR}
+            pos = ((par.atributos or {}).get("marcas") or {}).get("posicao")
+            if pos and not (a.get("marcas") or {}).get("posicao"):
+                a["marcas"] = dict(a.get("marcas") or {}, posicao=pos)
+                a["marca_a_conferir"] = True
+            pares.append((e, par))
+        for k, x in extra.items():
+            a.setdefault(k, copy.deepcopy(x))
+        e.atributos = a
+    return pares
+
+
+def _nomes_de_producao(pares):
+    """o nome de produção (CT.1, DP.1…) que o Detalhar escreveu na peça velha passa para a nova quando a marca de
+    posição (de conjunto) continua a mesma; a peça que mudou fica sem, até o próximo Detalhar"""
+    for e, par in pares:
+        mv = (par.atributos or {}).get("marcas") or {}
+        mn = dict((e.atributos or {}).get("marcas") or {})
+        if not mn:
+            continue
+        if mv.get("nome") and mn.get("posicao") == mv.get("posicao"):
+            mn.setdefault("nome", mv["nome"])
+        if mv.get("nome_conjunto") is not None and mn.get("conjunto") == mv.get("conjunto"):
+            mn.setdefault("nome_conjunto", mv["nome_conjunto"])
+        e.atributos = dict(e.atributos, marcas=mn)
+
+
+def _grupo(trabalho, tipo, barras, p, lid, novas, alterar, soldas_pendentes, esforcos=None, analise=None,
+           manter=None) -> dict:
     """uma ligação (um grupo de barras): as peças no documento de trabalho, as barras alteradas, os conjuntos e as soldas
-    a definir depois da numeração; devolve o resultado (verificação, avisos, parâmetros)"""
+    a definir depois da numeração; devolve o resultado (verificação, avisos, parâmetros). `manter`: {id: {campo: valor}}
+    das barras que ficam como estão nesses campos, mesmo que o gerador os mude (o perfil trocado depois da ligação)."""
     from nucleo import acessorios as A
     g = _gerar(tipo, barras, p)
     for bid, campos in g["alterar"].items():
+        campos = dict(campos, **(manter or {}).get(bid, {}))
         b = trabalho.entidades[bid]
         for k, v in campos.items():
             setattr(b, k, copy.deepcopy(v))
@@ -2320,6 +2397,8 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
     remover: List[str] = []
     restaurar: Dict[str, dict] = {}
     base_parametros = dict(parametros or {})
+    velhas: list = []
+    manter: Dict[str, dict] = {}
     if ligacao:
         velhas = [e for e in trabalho.entidades.values() if ((e.atributos or {}).get("ligacao") or {}).get("id") == ligacao]
         if not velhas:
@@ -2329,6 +2408,7 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
         _copiar_em(trabalho, ids)
         if reg.get("tipo") == tipo:
             base_parametros = dict(reg.get("parametros") or {}, **(parametros or {}))
+            manter = _perfis_trocados_depois(trabalho, reg)
         else:
             # trocar o tipo (a variante da mesma família): as mesmas barras, os parâmetros do tipo novo
             if familia_de(tipo) is None or familia_de(tipo) != familia_de(str(reg.get("tipo"))):
@@ -2343,6 +2423,7 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
             b = trabalho.entidades.get(bid)
             if b is None:
                 continue
+            campos = {k: v for k, v in campos.items() if k not in manter.get(bid, {})}
             for k, v in campos.items():
                 setattr(b, k, copy.deepcopy(v))
             restaurar.setdefault(bid, {}).update(copy.deepcopy(campos))
@@ -2352,8 +2433,11 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
     for barras in grupos:
         lid = ligacao if (ligacao and len(grupos) == 1) else _id_ligacao()
         p = {k: v for k, v in base_parametros.items() if v not in (None, "")}
-        resultados.append(_grupo(trabalho, tipo, barras, p, lid, novas, alterar, soldas_pendentes, esforcos, analise))
+        resultados.append(_grupo(trabalho, tipo, barras, p, lid, novas, alterar, soldas_pendentes, esforcos, analise,
+                                 manter=manter))
+    pares = _herdar_da_obra(velhas, novas)
     _numerar_e_soldar(trabalho, novas, {b.id for g_ in grupos for b in g_}, alterar, soldas_pendentes)
+    _nomes_de_producao(pares)
     # as barras que voltaram ao de antes e não mudaram de novo (inclusive as soldas tiradas com as peças velhas)
     for bid, campos in restaurar.items():
         for k, v in campos.items():

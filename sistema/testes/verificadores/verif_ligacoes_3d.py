@@ -141,6 +141,8 @@ try:
     js(f"editor.alterarEntidades(['{ids['pilar']}'], {{ inicio: [0, 0, -500], fim: [0, 0, 4000] }}, 'baixar o pé'); 1")
     ok(esperar("!!document.querySelector('.faixa-ligacoes')", 10), "a faixa das ligações desatualizadas apareceu")
     js("document.querySelector('.faixa-ligacoes button').click(); 1")
+    ok(esperar("editor.el.dialogo.open", 10), "Refazer as ligações pergunta antes")
+    js("editor.el.dialogoOk.click(); 1")
     ok(esperar("!document.querySelector('.faixa-ligacoes')", 30), "Refazer as ligações apagou a faixa")
     placa = next((c for c in chapas() if c["nome"] == "Placa de base"), None)
     ok(placa and abs(placa["origem"][2] + 500) < 0.01, f"a placa foi para o pé novo: {placa and placa['origem']}")

@@ -253,6 +253,15 @@ export class MetodosLigacoes {
   async refazerLigacoesDesatualizadas() {
     const lista = this.ligacoesDesatualizadas();
     if (!lista.length) { this._conferirLigacoes(); return; }
+    // antes de regravar, dizer o que muda (Hora Certa · Galpão Existente, 04/11: o usuário clicou sem saber que o botão
+    // refaz as peças, e o Detalhar e as pranchas saíram com as ligações refeitas)
+    const orfas = lista.filter(l => l.sumiu).length;
+    const corpo = el('div', {},
+      el('p', { texto: `Isto refaz ${lista.length - orfas} ligação(ões) nas barras como estão agora` +
+        (orfas ? ` e apaga ${orfas} de barra apagada` : '') + ': as peças delas são apagadas e geradas de novo.' }),
+      el('p', { texto: 'As peças ficam na mesma camada e com a mesma marca quando continuam iguais; a que mudou ganha marca ' +
+        'nova. A lista de materiais e as pranchas mudam no próximo Detalhar. Desfazer (Ctrl+Z) volta tudo.' }));
+    if (await this.dialogo({ titulo: 'Refazer as ligações', corpo, ok: 'Refazer' }) !== 'ok') return;
     const botao = this._faixaLigacoes && this._faixaLigacoes.querySelector('button');
     if (botao) { botao.disabled = true; botao.textContent = 'Refazendo…'; }
     const porTipo = new Map();

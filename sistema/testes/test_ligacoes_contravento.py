@@ -297,3 +297,123 @@ def test_regressao_castanha_nao_vira_agulhamento_nem_tesoura():
                       if getattr(e, "texto", None))
     assert "A.C." not in textos and "Agulhamento de cobertura" not in textos
     assert "Vigas caixote" not in textos and "VIGAS CAIXOTE" not in textos
+
+
+# ------------------------------------------------------------------ refazer as ligações (Hora Certa · Galpão Existente,
+# 04/11: o "Refazer as ligações" do editor jogou 150 peças das camadas "<frente> — Ligações" nas genéricas Chapas,
+# Parafusos e Furos, perdeu setor e premissa e voltou os travamentos CE50 do projeto para a cantoneira da biblioteca)
+
+UE50 = "Ue 50×25×10×2,28"
+
+
+def _como_o_script_da_obra(doc, r, frente):
+    """o que os scripts do GE fazem depois do aplicar: as peças na camada da frente, com setor e premissa"""
+    _aplicar(doc, r)
+    for e in doc.entidades.values():
+        if (e.atributos or {}).get("ligacao"):
+            e.camada = "%s — Ligações" % frente
+            e.atributos = dict(e.atributos, setor=frente, a_conferir_projetista="padrão da fábrica",
+                               origem_2d="o2d-" + e.id[-4:])
+
+
+def _numerar(doc):
+    from nucleo3d import producao
+    for i, patch in producao.numerar(doc)["mudancas"].items():
+        doc.entidades[i].atributos = dict(doc.entidades[i].atributos or {}, **{k: v for k, v in patch.items() if v is not None})
+
+
+@pytest.mark.parametrize("caso", ["castanha", "agulhamento"])
+def test_regressao_refazer_mantem_camada_atributos_marcas_e_perfil(caso):
+    if caso == "castanha":
+        doc, viga, t1, t2 = _no()
+        r = ligacoes3d.aplicar(doc, "castanha_contravento", [t1.id, t2.id, viga.id])
+        movida = t1
+    else:
+        doc, t1, t2, cr = _agulha()
+        r = ligacoes3d.aplicar(doc, "agulhamento_cantoneira", [cr.id, t1.id, t2.id])
+        movida = t2
+    lid = r["ligacoes"][0]["id"]
+    _como_o_script_da_obra(doc, r, "Sala de Tintas")
+    if caso == "agulhamento":
+        doc.entidades[cr.id].perfil = UE50                 # o CE50 do projeto no lugar da cantoneira da biblioteca
+    _numerar(doc)
+    for e in _da_ligacao(doc, lid):                       # o nome de produção que o Detalhar escreve
+        m = (e.atributos or {}).get("marcas")
+        if m:
+            e.atributos = dict(e.atributos, marcas=dict(m, nome="CT.1", nome_conjunto="DP.1"))
+    velhas = {(e.nome, e.atributos.get("origem_2d")) for e in _da_ligacao(doc, lid)}
+    marcas_antes = {i: dict(e.atributos["marcas"]) for i, e in doc.entidades.items()
+                    if (e.atributos or {}).get("marcas") and not e.atributos.get("ligacao")}
+    pos_antes = {e.nome: e.atributos["marcas"]["posicao"] for e in _da_ligacao(doc, lid) if (e.atributos or {}).get("marcas")}
+    movida.inicio = tuple(x + (0, 0, 5)[k] for k, x in enumerate(movida.inicio))   # a barra mudou: a faixa do editor
+    movida.fim = tuple(x + (0, 0, 5)[k] for k, x in enumerate(movida.fim))
+    tipo = "castanha_contravento" if caso == "castanha" else "agulhamento_cantoneira"
+    _aplicar(doc, ligacoes3d.aplicar(doc, tipo, [], ligacao=[lid]))      # o que o botão manda: a lista, por tipo
+    novas = _da_ligacao(doc, lid)
+    assert novas
+    assert {e.camada for e in novas} == {"Sala de Tintas — Ligações"}, {e.camada for e in novas}
+    assert all(e.atributos.get("setor") == "Sala de Tintas" and e.atributos.get("a_conferir_projetista") for e in novas)
+    assert {(e.nome, e.atributos.get("origem_2d")) for e in novas} == velhas
+    # as marcas das outras peças não mudam; as da ligação continuam as mesmas, com o nome de produção
+    for i, m in marcas_antes.items():
+        assert {k: v for k, v in doc.entidades[i].atributos["marcas"].items() if k in ("posicao", "conjunto")} == \
+            {k: v for k, v in m.items() if k in ("posicao", "conjunto")}, doc.entidades[i].nome
+    for e in novas:
+        m = (e.atributos or {}).get("marcas")
+        if m:
+            assert m["posicao"] == pos_antes[e.nome] and m.get("nome") == "CT.1", (e.nome, m)
+    if caso == "agulhamento":
+        assert doc.entidades[cr.id].perfil == UE50
+        _aplicar(doc, ligacoes3d.remover(doc, lid))       # apagar devolve o CE50, não a cantoneira
+        assert doc.entidades[cr.id].perfil == UE50
+
+
+GE_ANTES = "C:/Metálica/dados/hora-certa-galpão-existente/historico/modelo-20261104-152449.json.gz"
+
+
+@pytest.mark.skipif(not os.path.exists(GE_ANTES), reason="o histórico do Galpão Existente não está nesta máquina")
+def test_regressao_refazer_no_modelo_do_galpao_existente():
+    """a cópia do modelo das 15:24 (logo antes do clique): as ligações com barra que mudou refeitas como o editor faz
+    (um pedido por tipo) não saem das camadas da frente nem mudam marca de peça nenhuma; o CE50 fica"""
+    import collections
+    import gzip
+    import json
+    with gzip.open(GE_ANTES, "rt", encoding="utf-8") as f:
+        doc = Documento.de_dict(json.load(f))
+    perto = lambda a, b: all(abs(x - y) < 0.25 for x, y in zip(a, b))     # noqa: E731 — o editor (ligacoes.js)
+    regs = {}
+    for e in doc.entidades.values():
+        g = (e.atributos or {}).get("ligacao")
+        if g:
+            regs.setdefault(g["id"], g)
+    fora = collections.defaultdict(list)
+    for lid, reg in regs.items():
+        for bid, g in (reg.get("geometria") or {}).items():
+            b = doc.entidades.get(bid)
+            if b is not None and b.tipo != "chapa" and (not perto(g[0], b.inicio) or not perto(g[1], b.fim) or g[2] != str(b.perfil)):
+                fora[reg["tipo"]].append(lid)
+                break
+    assert fora, "o modelo das 15:24 tinha ligações com barra que mudou"
+    # uma de cada frente por tipo (o modelo inteiro leva minutos)
+    escolhidas = {}
+    for tipo, lids in fora.items():
+        por_camada = {}
+        for lid in lids:
+            c = next(e.camada for e in doc.entidades.values() if ((e.atributos or {}).get("ligacao") or {}).get("id") == lid)
+            por_camada.setdefault(c, lid)
+        escolhidas[tipo] = list(por_camada.values())
+    perfis = {i: str(e.perfil) for i, e in doc.entidades.items() if getattr(e, "perfil", None) is not None}
+    marcas = {i: (e.atributos["marcas"].get("posicao"), e.atributos["marcas"].get("conjunto"))
+              for i, e in doc.entidades.items() if (e.atributos or {}).get("marcas") and not e.atributos.get("ligacao")}
+    camadas_antes = {lid: {e.camada for e in _da_ligacao(doc, lid)} for ls in escolhidas.values() for lid in ls}
+    for tipo, lids in escolhidas.items():
+        _aplicar(doc, ligacoes3d.aplicar(doc, tipo, [], ligacao=lids))
+    for lid, cams in camadas_antes.items():
+        novas = _da_ligacao(doc, lid)
+        assert novas and {e.camada for e in novas} <= cams, (lid, {e.camada for e in novas}, cams)
+        assert not {e.camada for e in novas} & {"Chapas", "Parafusos", "Furos"}
+    for i, m in marcas.items():
+        e = doc.entidades.get(i)
+        assert e is not None and (e.atributos["marcas"].get("posicao"), e.atributos["marcas"].get("conjunto")) == m, i
+    trocados = [i for i, p in perfis.items() if i in doc.entidades and str(doc.entidades[i].perfil) != p]
+    assert not trocados, [(doc.entidades[i].nome, perfis[i], doc.entidades[i].perfil) for i in trocados]
