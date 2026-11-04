@@ -612,7 +612,13 @@ def multidobras(pecas: Sequence) -> Dict[str, object]:
         cm = cumeeiras([e for e in pecas if e.id not in {i for t in telhas for i in t.get("ids", [])}])
     except Exception:                                 # noqa: BLE001 — sem cumeeira, o resto segue
         cm = {"cumeeiras": [], "posicoes": set()}
-    return {"telhas": telhas, "posicoes": consumidas | cm["posicoes"], "cumeeiras": cm["cumeeiras"]}
+    # a cumeeira que o TecnoMETAL grava como uma barra de funilaria ("CUMEEIRA I7.5") sobre as duas águas
+    try:
+        cf = cumeeiras_de_funilaria(pecas)
+    except Exception:                                 # noqa: BLE001 — sem ela, a barra segue como rufo
+        cf = {"cumeeiras": [], "posicoes": set()}
+    return {"telhas": telhas, "posicoes": consumidas | cm["posicoes"] | cf["posicoes"],
+            "cumeeiras": cm["cumeeiras"] + cf["cumeeiras"], "funilaria": set(cf["posicoes"])}
 
 
 # ============================================================ cumeeira
@@ -745,6 +751,107 @@ def cumeeiras(pecas: Sequence) -> Dict[str, object]:
             for p in par[:2]:
                 usadas[_posicao(p["e"])] += 1
     consumidas = {p for p, n in usadas.items() if n >= todas_por_pos.get(p, 0)}
+    return {"cumeeiras": saida, "posicoes": consumidas}
+
+
+#: A barra de funilaria que é a cumeeira de telha: o nome começa por CUMEEIRA e não diz que é chapa lisa (a do SESI,
+#: "Cumeeira (chapa galv. #0,50, dev. 600)", é rufo de verdade).
+_RE_CUMEEIRA_FUNILARIA = re.compile(r"^\s*CUMEEIRA\b", re.I)
+_RE_CHAPA_LISA = re.compile(r"CHAPA|GALV|LISA|DEV\.", re.I)
+#: Até onde (mm, em planta, para cada lado do eixo) a ponta alta da telha conta como debaixo da cumeeira.
+ALCANCE_CUMEEIRA = 400.0
+
+
+def _contorno_de_cima(pts: Sequence[Tuple[float, float]]) -> List[Tuple[float, float]]:
+    """A cadeia de cima do casco convexo dos pontos (da esquerda para a direita)."""
+    pts = sorted(set(pts))
+    cima: List[Tuple[float, float]] = []
+    for p in reversed(pts):
+        while len(cima) >= 2 and ((cima[-1][0] - cima[-2][0]) * (p[1] - cima[-2][1])
+                                  - (cima[-1][1] - cima[-2][1]) * (p[0] - cima[-2][0])) <= 0:
+            cima.pop()
+        cima.append(p)
+    return list(reversed(cima))
+
+
+def cumeeiras_de_funilaria(pecas: Sequence) -> Dict[str, object]:
+    """A cumeeira de telha que o modelo traz como uma barra de funilaria corrida ao longo da cumeeira (o TecnoMETAL,
+    "CUMEEIRA I7.5" na camada Rufos — Depósito Químico, ME Sooro, 04/11: saía como o rufo RF2, 1 × 33.310 mm, sem o
+    detalhe da cumeeira; a compra é "Cumeeira TP40 — 34 peças"). Na fábrica é a mesma cumeeira das duas pernas: uma
+    peça por telha da água, dobrada no meio. As pernas vêm da seção da barra (da crista até cada ponta, pela regra
+    300/500 da fábrica), a dobra das águas que estão embaixo, o perfil e o peso da telha delas.
+    Só a barra importada (a cumeeira lançada pelo sistema tem a regra dela) e só com telha das duas águas embaixo.
+    {"cumeeiras": [...], "posicoes": {...}} no formato de `cumeeiras`."""
+    telhas_cob = []
+    for e in pecas:
+        if not _eh_telha(str(_marcas(e).get("perfil") or e.nome or "")):
+            continue
+        c, eixos, ext = _medidas(e)
+        n = _norm(eixos[2])
+        if abs(n[2]) < 0.5 or ext[0] < 1000.0:
+            continue                                  # fachada ou retalho
+        telhas_cob.append((e, c, eixos, ext))
+    if not telhas_cob:
+        return {"cumeeiras": [], "posicoes": set()}
+    from nucleo2d.detalhe.base import _material
+    saida, consumidas = [], set()
+    for e in pecas:
+        a_ = e.atributos or {}
+        nome = str(_marcas(e).get("perfil") or e.nome or "")
+        if (not _RE_CUMEEIRA_FUNILARIA.match(nome) or _RE_CHAPA_LISA.search(nome) or _eh_telha(nome)
+                or a_.get("cumeeira_lancada") or str(getattr(e, "camada", "") or "") != "Rufos"):
+            continue
+        c, eixos, ext = _medidas(e)
+        L = _norm(eixos[0])
+        if ext[0] < 2000.0 or abs(L[2]) > 0.2:
+            continue
+        v = _norm(_sub((0.0, 0.0, 1.0), tuple(x * L[2] for x in L)))
+        u = _norm(_cruz(v, L))
+        sec = [(_dot(q, u), _dot(q, v)) for q in e.vertices]
+        cima = _contorno_de_cima(sec)
+        k = max(range(len(cima)), key=lambda i: cima[i][1])
+        if k == 0 or k == len(cima) - 1:
+            continue                                  # sem crista no meio: não é cumeeira
+        pernas_m = [sum(math.dist(cima[i], cima[i + 1]) for i in range(0, k)),
+                    sum(math.dist(cima[i], cima[i + 1]) for i in range(k, len(cima) - 1))]
+        crista = cima[k]
+        tL = [_dot(q, L) for q in e.vertices]
+        t0, t1 = min(tL), max(tL)
+        # as telhas debaixo: a ponta alta a até ALCANCE_CUMEEIRA da crista, dentro do comprimento da barra
+        lados = {-1: [], 1: []}
+        for t, ct, eixos_t, ext_t in telhas_cob:
+            alta = max(t.vertices, key=lambda q: q[2])
+            du = _dot(alta, u) - crista[0]
+            if abs(du) > ALCANCE_CUMEEIRA or not (t0 - 50.0 <= _dot(ct, L) <= t1 + 50.0):
+                continue
+            lado = -1 if _dot(ct, u) < crista[0] else 1
+            ax = eixos_t[0]
+            incl = math.atan2(abs(ax[2]), math.hypot(ax[0], ax[1]))
+            lados[lado].append((t, incl, ext_t))
+        if not lados[-1] or not lados[1]:
+            continue
+        inst = max(len(lados[-1]), len(lados[1]))
+        incl_e = sum(x[1] for x in lados[-1]) / len(lados[-1])
+        incl_d = sum(x[1] for x in lados[1]) / len(lados[1])
+        ang = 180.0 - math.degrees(incl_e + incl_d)
+        if not (90.0 <= ang <= 178.0):
+            continue
+        L1, L2 = perna_padrao(pernas_m[0]), perna_padrao(pernas_m[1])
+        # o perfil e o peso: os da telha mais comum debaixo dela (o peso por mm do comprimento, na largura da telha)
+        cont = collections.Counter(str(_marcas(t).get("perfil") or t.nome or "") for x in lados.values() for t, _, _ in x)
+        perfil = cont.most_common(1)[0][0]
+        ref = max((x for xs in lados.values() for x in xs if str(_marcas(x[0]).get("perfil") or x[0].nome or "") == perfil),
+                  key=lambda x: x[2][1])
+        peso = _volume(ref[0]) * RHO_ACO / max(ref[2][0], 1.0) * (L1 + L2)
+        pos = _posicao(e)
+        saida.append({"tipo": "cumeeira", "conjunto": pos, "instancias": inst, "composicao": {pos: 1},
+                      "ids": [e.id], "perna1": L1, "perna2": L2, "angulo": round(ang, 1), "desenv": L1 + L2,
+                      "pernas_modelo": [arredondar_telha(pernas_m[0]), arredondar_telha(pernas_m[1])],
+                      "desenv_ext": L1 + L2, "altura_onda": 40.0, "perfil": perfil, "material": _material(ref[0]),
+                      "peso": round(peso, 3), "topo": (0.0, 0.0),
+                      "d1": (-math.cos(incl_e), -math.sin(incl_e)), "d2": (math.cos(incl_d), -math.sin(incl_d)),
+                      "de_funilaria": nome, "comprimento_corrido": round(ext[0])})
+        consumidas.add(pos)
     return {"cumeeiras": saida, "posicoes": consumidas}
 
 

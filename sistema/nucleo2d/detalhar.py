@@ -1286,7 +1286,9 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         if not g or chave in ("conjuntos", "localizacao", "completo"):
             continue
         lista = [p for p in _ordenar(posicoes) if p.classe in g["classes"]
-                 and not (p.classe == "telha" and all(m in md["posicoes"] for m in marcas_de(p)))]
+                 and not (p.classe == "telha" and all(m in md["posicoes"] for m in marcas_de(p)))
+                 # a barra de funilaria que é a cumeeira de telha vai no quadro CUMEEIRAS, não nos rufos
+                 and not all(m in md.get("funilaria", ()) for m in marcas_de(p))]
         # a barra redonda curva que só existe no detalhe típico do agulhamento (a A.D.9.1 da ME-Sooro, com o gancho
         # curvo) vai com as barras redondas para cortar: na prancha das barras ela não tinha célula (está no típico) nem
         # entrava no típico das redondas — sumia das pranchas (R04 da 2ª rodada do primeiro uso IFC, 16/10)
@@ -1439,7 +1441,8 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         try:
             from nucleo2d.detalhe.predio import pavimentos
             predio_pav = pavimentos(doc, [e for e in pecas if str(_marcas(e).get("posicao") or e.nome)
-                                          not in {p.marca for p in posicoes if p.classe == "telha"}], nomeacao)
+                                          not in {p.marca for p in posicoes if p.classe == "telha"} | set(md.get("funilaria") or ())],
+                              nomeacao)
         except Exception as exc:                             # noqa: BLE001 — sem isso, as plantas do galpão
             avisos.append("pavimentos do prédio não separados: %s" % exc)
     if predio_pav and ("localizacao" in pedidos or "completo" in pedidos):
@@ -1451,7 +1454,8 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         avisar("planta de localização…")
         try:
             localizacao = desenho_de_localizacao(doc, pecas, GRUPOS["localizacao"]["titulo"],
-                                                 ignorar=[p.marca for p in posicoes if p.classe == "telha"],
+                                                 # a cumeeira de funilaria é telha (CU): fora da planta, como as telhas
+                                                 ignorar=[p.marca for p in posicoes if p.classe == "telha"] + sorted(md.get("funilaria") or ()),
                                                  nomes=nomeacao["ifc"], camadas_pecas=camadas_ifc,
                                                  eixos=eixos, nomes_producao=nomeacao, niveis=niveis)
         except ErroDeDados as e:

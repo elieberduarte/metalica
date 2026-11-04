@@ -512,7 +512,9 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         except Exception:                                   # noqa: BLE001
             md = {"telhas": [], "posicoes": set()}
     md.setdefault("cumeeiras", [])
-    consumida = lambda p: p.classe == "telha" and all(m in md["posicoes"] for m in (getattr(p, "marcas", None) or [p.marca]))   # noqa: E731
+    consumida = lambda p: ((p.classe == "telha" and all(m in md["posicoes"] for m in (getattr(p, "marcas", None) or [p.marca])))   # noqa: E731
+                           # a barra de funilaria que é a cumeeira de telha sai como CU (Depósito Químico, 04/11)
+                           or all(m in md.get("funilaria", ()) for m in (getattr(p, "marcas", None) or [p.marca])))
     lista = [p for p in lista if not consumida(p)]
     linhas = [_linha_posicao(p, categorias.get(p.marca, "OUTROS")) for p in lista]
     # a fase e o acabamento dados no editor 3D (o lado BIM, 14/10/2026): os das peças da posição
