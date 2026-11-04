@@ -1180,3 +1180,127 @@ def test_emenda_da_linha_da_calha_fica_na_mesma_altura():
     T.alinhar_tercas([x for x in doc.barras if x.papel == "terça"], doc.barras)
     assert a.fim[2] > z_plano - 100.0 + 20.0 and b.inicio[2] > z_plano - 100.0 + 20.0      # as duas subiram
     assert abs(a.fim[2] - b.inicio[2]) < 1.0, "degrau de %.0f mm na emenda" % abs(a.fim[2] - b.inicio[2])
+
+
+# os vales dos eixos 2 e 4 do Galpão Novo (Hora Certa, 03/11/2026): x e z (topo do eixo) das terças em volta do vale,
+# como estão no 3D — a terça da calha de um lado e o par de 0,4 m da água do outro
+VALE_EIXO_2 = [(21618, 11335), (22528, 11207), (23438, 11079), (24260, 10964), (25138, 10935), (25548, 10993),
+               (26462, 11121), (27372, 11249)]
+VALE_EIXO_4 = [(72118, 11377), (73028, 11249), (73938, 11121), (74852, 10993), (75261, 10935), (75979, 10941),
+               (76247, 10978), (77257, 11120), (78167, 11248)]
+
+
+@pytest.mark.parametrize("tercas, entre", [(VALE_EIXO_2, (24260, 25138)), (VALE_EIXO_4, (75261, 75979))],
+                         ids=["eixo-2", "eixo-4"])
+def test_dois_vales_com_uma_terca_em_comum_viram_uma_calha(tercas, entre):
+    """03/11/2026, Galpão Novo (usuário, ao lançar as telhas: "sim, como o DET1" — uma calha central entre as duas águas):
+    nos eixos 2 e 4 a água do outro lado começa com um par de terças a 0,4 m, e a regra do vale via dois vales seguidos
+    com uma terça em comum — saíam duas calhas lado a lado e uma telha quase plana entre elas. A calha é o par mais plano"""
+    doc = Documento()
+    for k, (x, z) in enumerate(tercas):
+        _terca(doc, float(x), float(z), "TC%d" % k)
+    T.lancar(doc)
+    calhas = [s for s in doc.solidos if s.camada == "Calhas"]
+    assert len(calhas) == 1, "%d calhas no vale" % len(calhas)
+    xs = [v[0] for v in calhas[0].vertices]
+    assert entre[0] < min(xs) and max(xs) < entre[1]
+    meio = (entre[0] + entre[1]) / 2.0
+    assert (min(xs) + max(xs)) / 2.0 == pytest.approx(meio, abs=2)
+    # nenhuma telha plana por cima da calha: as pontas das duas águas a AFASTAMENTO_CALHA uma da outra
+    esq = max(v[0] for s in _telhado(doc) for v in s.vertices if v[0] < meio)
+    dir_ = min(v[0] for s in _telhado(doc) for v in s.vertices if v[0] > meio)
+    assert dir_ - esq == pytest.approx(T.AFASTAMENTO_CALHA, abs=2)
+
+
+def _lanternim(doc, zt, y_estacoes, topo_meio=152.0, meia_base=935.0, meia_topo=1085.0):
+    """o lanternim do Galpão Novo: longarinas em caixão nos topos dos montantes (±935) e a travessa de 2,17 em cada
+    estação, em duas águas até o meio (topo_meio acima das pontas) ou reta (topo_meio 0)"""
+    ue = "Ue 127×50×17×3,00"
+    y0, y1 = y_estacoes[0], y_estacoes[-1]
+    for s in (-1, 1):
+        for dx, rot in ((-34.0, 0.0), (34.0, 180.0)):
+            b = Barra(inicio=(s * meia_base + dx, y0, zt), fim=(s * meia_base + dx, y1, zt), perfil=ue, papel="viga",
+                      camada="Lanternim", rotacao=rot)
+            doc.add(b)
+    for y in y_estacoes:
+        for s in (-1, 1):
+            b = Barra(inicio=(s * meia_topo, y, zt), fim=(0.0, y, zt + topo_meio), perfil=ue, papel="viga",
+                      camada="Lanternim")
+            doc.add(b)
+
+
+@pytest.mark.parametrize("topo_meio, duas", [(152.0, True), (0.0, False)], ids=["duas-aguas", "reto"])
+def test_lanternim_sem_telha_na_abertura_e_telha_no_topo(topo_meio, duas):
+    """03/11/2026, Galpão Novo: o gerador fechava a abertura do lanternim com telha na altura das terças de baixo (o par
+    de terças a ±0,94 da cumeeira) e não punha telha no topo dele. Usuário: "duas águas, como o desenho" (DET3 da 600 e o
+    detalhe em círculo da 907). A abertura fica sem telha; no topo, a telha das pontas da travessa até a cumeeira (o par
+    a ±LANTERNIM_CUME do meio) e a peça de cumeeira em cima — ou, com a travessa reta, a telha plana entre as pontas"""
+    doc = Documento()
+    for s in (-1, 1):                                    # as duas águas de 14 % subindo até a última terça a ±937
+        for k in range(6):
+            x = s * (937.0 + k * 1010.0)
+            _terca(doc, x, 10000.0 - k * 1010.0 * 0.14, "TC%d" % k)
+    zt = 10000.0 + 750.0                                 # as longarinas 0,75 acima das terças de baixo
+    _lanternim(doc, zt, [0.0, 3000.0, 6000.0], topo_meio)
+    r = T.lancar(doc)
+    telhas = _telhado(doc)
+    # a abertura: nenhuma telha entre as terças de baixo na altura delas
+    na_abertura = [s_ for s_ in telhas if min(v[0] for v in s_.vertices) < -500.0 and max(v[0] for v in s_.vertices) > 500.0
+                   and min(v[2] for v in s_.vertices) < zt - 100.0]
+    assert not na_abertura, "telha fechando a abertura do lanternim"
+    # o topo: telha de ponta a ponta da travessa (2,17), nas águas dela
+    topo = [v for s_ in telhas for v in s_.vertices if v[2] > zt - 10.0]
+    assert topo, "o topo do lanternim ficou sem telha"
+    assert min(v[0] for v in topo) == pytest.approx(-1085.0, abs=5) and max(v[0] for v in topo) == pytest.approx(1085.0, abs=5)
+    cumes = [s_ for s_ in doc.solidos if s_.camada == "Cumeeiras"]
+    if duas:
+        assert len(cumes) >= 1 and all(abs(v[0]) < 400.0 for s_ in cumes for v in s_.vertices)
+        alto = max(v[2] for v in topo)
+        assert alto > zt + 0.6 * (1085.0 - T.LANTERNIM_CUME) * 0.14       # a telha sobe a água da travessa
+    else:
+        assert not cumes
+    assert len(r["lanternins"]) == 1 and r["lanternins"][0]["duas_aguas"] is duas
+
+
+def test_lanternim_com_as_pontas_da_travessa_desencontradas():
+    """o lanternim do G4 do Galpão Novo (03/11/2026): as tesouras não são paralelas e a ponta da travessa de cada uma
+    acaba uns mm antes ou depois — o topo saía sem as telhas das pontas e sem a cumeeira (65,8 m de lanternim)"""
+    doc = Documento()
+    for s in (-1, 1):
+        for k in range(6):
+            x = s * (937.0 + k * 1010.0)
+            _terca(doc, x, 10000.0 - k * 1010.0 * 0.14, "TC%d" % k)
+    zt = 10750.0
+    ue = "Ue 127×50×17×3,00"
+    for s in (-1, 1):
+        doc.add(Barra(inicio=(s * 935.0, 0.0, zt), fim=(s * 935.0, 6000.0, zt), perfil=ue, papel="viga", camada="Lanternim"))
+    for y, dx in ((0.0, 0.0), (3000.0, -18.0), (6000.0, 12.0)):          # as pontas a −18 e +12 mm uma da outra
+        for s in (-1, 1):
+            doc.add(Barra(inicio=(s * 1085.0 + dx, y, zt), fim=(dx, y, zt + 152.0), perfil=ue, papel="viga", camada="Lanternim"))
+    r = T.lancar(doc)
+    assert r["lanternins"] and r["lanternins"][0]["duas_aguas"]
+    cumes = [s_ for s_ in doc.solidos if s_.camada == "Cumeeiras"]
+    assert cumes, "o lanternim ficou sem cumeeira"
+    ys = sorted(v[1] for s_ in cumes for v in s_.vertices)
+    assert ys[0] == pytest.approx(0.0, abs=1) and ys[-1] == pytest.approx(6000.0, abs=1)
+    topo = [v for s_ in _telhado(doc) for v in s_.vertices if v[2] > zt - 10.0]
+    assert min(v[0] for v in topo) < -1050.0 and max(v[0] for v in topo) > 1050.0
+
+
+def test_calha_do_fim_do_vale_nao_sobe_ao_lado_da_calha_do_vale():
+    """03/11/2026, Galpão Novo, eixo 4: onde o G4 acaba (o dente, y 87–90,7), a água do G3 desce até a última terça e
+    o par de 0,4 m do G3 vira a calha ali; a calha "até a ponta do vale" (26/10, Posto) a levava para trás a linha inteira
+    — ao lado da calha do vale de verdade (entre o G3 e o G4): duas calhas em 87 m. Agora a do fim fica no trecho dela"""
+    doc = Documento()
+    for x, z in VALE_EIXO_4:
+        if x <= 75261:
+            _terca(doc, float(x), float(z), "G3", 0.0, 6000.0)          # o G3 vai até o fim
+        else:
+            _terca(doc, float(x), float(z), "G4", 0.0, 4000.0)          # o G4 acaba em y 4000
+    _terca(doc, 75700.0, 11050.0, "D", 4000.0, 6000.0)                   # depois dele, a borda do dente sobe
+    T.lancar(doc)
+    calhas = [s for s in doc.solidos if s.camada == "Calhas"]
+    na_frente = [s for s in calhas if min(v[1] for v in s.vertices) < 3500.0]
+    assert len(na_frente) == 1, "%d calhas no trecho do vale" % len(na_frente)
+    xs = [v[0] for v in na_frente[0].vertices]
+    assert 75261 < min(xs) and max(xs) < 75979

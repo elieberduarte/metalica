@@ -278,3 +278,42 @@ def test_borda_baixa_da_chapa_longa_com_calha_fica_fechada():
     abertas = [a for a in C.cobertura(doc) if a["tipo"] == "borda_aberta"]
     assert not [a for a in abertas if a["ponto"][0] < 500.0]
     assert [a for a in abertas if a["ponto"][0] > 9000.0]          # a borda alta, sem nada, continua aberta
+
+
+def _calha(doc, x0, x1, z, y0=0.0, y1=6000.0):
+    vs = [(x0, y0, z), (x1, y0, z), (x1, y1, z), (x0, y1, z),
+          (x0, y0, z - 150.0), (x1, y0, z - 150.0), (x1, y1, z - 150.0), (x0, y1, z - 150.0)]
+    fs = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]
+    s = Solido(nome="Calha", camada="Calhas", vertices=vs, faces=fs)
+    s.atributos = {"calha_lancada": True}
+    doc.add(s)
+    return s
+
+
+def test_cob06_calha_dupla_no_vale():
+    """COB-06 reforçada (03/11/2026, Galpão Novo — a reincidência: o vale dos eixos 2 e 4 com duas calhas lado a lado e
+    uma telha quase plana entre elas): a conferência acha as duas calhas paralelas a menos de 1,5 m no mesmo trecho; a
+    calha de outro vale (a 25 m) e a de outro trecho não contam"""
+    doc = Documento()
+    _calha(doc, 24520.0, 24870.0, 10900.0)                        # as duas do eixo 2 (como saíam)
+    _calha(doc, 25170.0, 25520.0, 10900.0)
+    _calha(doc, 50030.0, 50380.0, 10900.0)                        # a do eixo 3, sozinha
+    _calha(doc, 75000.0, 75350.0, 10900.0, 0.0, 6000.0)            # eixo 4: uma em cada trecho, sem trecho em comum
+    _calha(doc, 75600.0, 75950.0, 10900.0, 6500.0, 12000.0)
+    duplas = C.calhas_duplas([s for s in doc.solidos])
+    assert len(duplas) == 1 and duplas[0]["mm"] == 650
+    assert "calha dupla" in C.avisos({"apontamentos": [], "contagens": {"repetidas": 0, "choques": 0, "pontas_soltas": 0,
+                                                                        "tercas_em_balanco": 0, "telha_degraus": 0,
+                                                                        "telha_dobras": 0, "telha_acima_de_5cm": 0,
+                                                                        "cobertura_calhas_duplas": 1}})[0]
+
+
+def test_cob06_vale_do_galpao_novo_sem_calha_dupla():
+    """o gerador corrigido (telhas_cobertura: dois vales com uma terça em comum → o par mais plano) no vale do eixo 2 do
+    Galpão Novo: a conferência não acha calha dupla"""
+    from test_telhas_cobertura import VALE_EIXO_2
+    doc = Documento()
+    for x, z in VALE_EIXO_2:
+        _terca(doc, float(x), float(z))
+    T.lancar(doc)
+    assert C.calhas_duplas([s for s in doc.solidos if (s.atributos or {}).get("calha_lancada")]) == []

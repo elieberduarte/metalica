@@ -618,6 +618,56 @@ def cobertura(doc) -> List[dict]:
                 trecho = [p]
     out += _cobertura_choques(doc, cobre)
     out += _barras_na_telha(doc, [s for s in telhado if at(s).get("telha_lancada")])
+    out += calhas_duplas([s for s in sol if at(s).get("calha_lancada")])
+    return out
+
+
+CALHA_DUPLA = 1500.0             # mm: duas calhas paralelas mais perto que isto, no mesmo trecho, são o mesmo vale
+
+
+def _eixo_em_planta(s):
+    """(a, b) o eixo da calha em planta: a direção principal dos vértices, pelo centro, de ponta a ponta"""
+    vs = [(v[0], v[1]) for v in s.vertices]
+    cx, cy = sum(p[0] for p in vs) / len(vs), sum(p[1] for p in vs) / len(vs)
+    sxx = sum((p[0] - cx) ** 2 for p in vs)
+    syy = sum((p[1] - cy) ** 2 for p in vs)
+    sxy = sum((p[0] - cx) * (p[1] - cy) for p in vs)
+    ang = 0.5 * math.atan2(2 * sxy, sxx - syy)
+    u = (math.cos(ang), math.sin(ang))
+    ss = [(p[0] - cx) * u[0] + (p[1] - cy) * u[1] for p in vs]
+    return (cx + u[0] * min(ss), cy + u[1] * min(ss)), (cx + u[0] * max(ss), cy + u[1] * max(ss))
+
+
+def calhas_duplas(calhas) -> List[dict]:
+    """COB-06 (reforço, 03/11/2026 — Galpão Novo, eixos 2 e 4): o vale tem UMA calha. Duas calhas paralelas a menos de
+    CALHA_DUPLA uma da outra, lado a lado no mesmo trecho (≥ 1 m) e na mesma altura, são o vale lido duas vezes — o gerador
+    via dois vales seguidos com uma terça em comum e punha uma telha quase plana entre as calhas."""
+    out = []
+    eixos = [(_eixo_em_planta(s), sum(v[2] for v in s.vertices) / len(s.vertices)) for s in calhas]
+    for i in range(len(calhas)):
+        (a1, b1), z1 = eixos[i]
+        L1 = math.dist(a1, b1)
+        if L1 < 1000.0:
+            continue
+        u = ((b1[0] - a1[0]) / L1, (b1[1] - a1[1]) / L1)
+        for j in range(i + 1, len(calhas)):
+            (a2, b2), z2 = eixos[j]
+            L2 = math.dist(a2, b2)
+            if L2 < 1000.0 or abs(z1 - z2) > 300.0:
+                continue
+            u2 = ((b2[0] - a2[0]) / L2, (b2[1] - a2[1]) / L2)
+            if abs(u[0] * u2[1] - u[1] * u2[0]) > 0.05:
+                continue                                   # não são paralelas
+            # a distância entre as linhas e o trecho em comum ao longo delas
+            dist = abs((a2[0] - a1[0]) * -u[1] + (a2[1] - a1[1]) * u[0])
+            s2 = sorted(((a2[0] - a1[0]) * u[0] + (a2[1] - a1[1]) * u[1], (b2[0] - a1[0]) * u[0] + (b2[1] - a1[1]) * u[1]))
+            comum = min(L1, s2[1]) - max(0.0, s2[0])
+            if dist < CALHA_DUPLA and comum >= 1000.0:
+                m = (a1[0] + u[0] * (max(0.0, s2[0]) + comum / 2), a1[1] + u[1] * (max(0.0, s2[0]) + comum / 2))
+                out.append({"tipo": "calha_dupla", "ids": [calhas[i].id, calhas[j].id], "mm": round(dist),
+                            "ponto": [round(m[0]), round(m[1]), round(z1)],
+                            "texto": "duas calhas lado a lado a %.2f m uma da outra em %.1f m (o vale tem uma calha só)"
+                                     % (dist / 1000.0, comum / 1000.0)})
     return out
 
 
@@ -977,7 +1027,7 @@ def conferir(doc, telha: bool = True, soltas: bool = True, posicao: bool = True,
     pos = posicao_na_trelica(barras) if posicao else []
     cob = (cobertura(doc) + cobertura_continua(doc)) if cobertura_ else []
     ordem = {"peca_voando": 0, "repetida": 0, "choque": 1, "rufo_choque": 2, "buraco": 3, "fresta": 3, "borda_aberta": 3,
-             "terca_sem_telha": 3,
+             "terca_sem_telha": 3, "calha_dupla": 3,
              "sem_rufo": 4, "posicao": 5, "degrau": 6,
              "dobra": 7, "ponta_solta": 8}
     aps = sorted(voando + rep + ch + cob + pos + tl + soltas, key=lambda a: (ordem.get(a["tipo"], 9), -abs(a.get("mm") or 0)))
@@ -993,7 +1043,8 @@ def conferir(doc, telha: bool = True, soltas: bool = True, posicao: bool = True,
                           "cobertura_choques": sum(1 for a in cob if a["tipo"] == "rufo_choque"),
                           "cobertura_buracos": sum(1 for a in cob if a["tipo"] == "buraco"),
                           "cobertura_frestas": sum(1 for a in cob if a["tipo"] == "fresta"),
-                          "cobertura_tercas_sem_telha": sum(1 for a in cob if a["tipo"] == "terca_sem_telha")}}
+                          "cobertura_tercas_sem_telha": sum(1 for a in cob if a["tipo"] == "terca_sem_telha"),
+                          "cobertura_calhas_duplas": sum(1 for a in cob if a["tipo"] == "calha_dupla")}}
 
 
 def avisos(conf: dict, desl: Sequence[float] = (0.0, 0.0), telha_min: float = 50.0) -> List[str]:
@@ -1003,11 +1054,11 @@ def avisos(conf: dict, desl: Sequence[float] = (0.0, 0.0), telha_min: float = 50
     out = ["Conferência do 3D: %d peça(s) voando, %d peça(s) repetida(s), %d choque(s) entre peças, %d peça(s) da treliça "
            "fora da posição da regra, %d ponta(s) solta(s) (%d terça(s) em balanço), telha ao lado: %d degrau(s) e %d dobra(s) "
            "acima de 20 mm (%d acima de 5 cm); cobertura: %d borda(s) aberta(s), %d sem rufo na parede, %d calha/rufo batendo "
-           "em peça, %d buraco(s), %d fresta(s) e %d terça(s) sem telha por cima."
+           "em peça, %d buraco(s), %d fresta(s), %d terça(s) sem telha por cima e %d vale(s) com calha dupla."
            % (c.get("pecas_voando", 0), c["repetidas"], c["choques"], c.get("fora_da_posicao", 0), c["pontas_soltas"], c["tercas_em_balanco"],
               c["telha_degraus"], c["telha_dobras"], c["telha_acima_de_5cm"], c.get("cobertura_bordas_abertas", 0),
               c.get("cobertura_sem_rufo", 0), c.get("cobertura_choques", 0), c.get("cobertura_buracos", 0),
-              c.get("cobertura_frestas", 0), c.get("cobertura_tercas_sem_telha", 0))]
+              c.get("cobertura_frestas", 0), c.get("cobertura_tercas_sem_telha", 0), c.get("cobertura_calhas_duplas", 0))]
     for a in conf["apontamentos"]:
         if a["tipo"] in ("degrau", "dobra") and abs(a.get("mm") or 0) < telha_min:
             continue

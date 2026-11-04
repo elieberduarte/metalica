@@ -282,12 +282,22 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0, s
 
                 def sobe_de(j, inc_=inc_):
                     return inc_[j] > 0.005 and (j == len(inc_) - 1 or inc_[j + 1] > -0.005)
-                for i, (q, r) in enumerate(zip(seq, seq[1:])):
+
+                def candidato(i, inc_=inc_, ts_=ts_):
                     # o vale estreito entre duas águas (a de antes desce até q, a de depois sobe a partir de r, até 1 m uma da
                     # outra): é a calha, não telha — as calhas de x 10,06, 21,37 e 33,96 do Posto. Qualquer inclinação entre as
                     # duas (17/10: a terça do fundo 0,1 m abaixo da vizinha a 0,45 m — a linha x 10,06 — ficava sem calha)
-                    no_fundo = 0 < i and i + 1 < len(inc_) and desce_ate(i - 1) and sobe_de(i + 1)
-                    vale = no_fundo and ts_[i + 1] - ts_[i] <= 1000.0
+                    return (0 < i and i + 1 < len(inc_) and desce_ate(i - 1) and sobe_de(i + 1)
+                            and ts_[i + 1] - ts_[i] <= 1000.0)
+                vales = {i for i in range(len(seq) - 1) if candidato(i)}
+                # dois vales seguidos com uma terça em comum (03/11/2026, Galpão Novo, eixos 2 e 4: a terça da calha de um
+                # lado e o par de terças de 0,4 m da água do outro — a água a 14 % entre elas também "subia" do fundo): a
+                # calha é o par mais plano; o outro é o começo da água (saíam duas calhas lado a lado e uma telha plana)
+                for i in sorted(vales):
+                    if i + 1 in vales:
+                        vales.discard(i + 1 if abs(inc_[i]) <= abs(inc_[i + 1]) else i)
+                for i, (q, r) in enumerate(zip(seq, seq[1:])):
+                    vale = i in vales
                     # o par de terças da cumeeira (as duas águas sobem até elas, até 0,5 m uma da outra): a cumeeira cobre o
                     # meio (a peça de funilaria), não a telha — o par a 0,35 m das cumeeiras de x 27,6 e 41,9 do Posto
                     cume = (0 < i and i + 1 < len(inc_) and inc_[i - 1] > 0.005 and inc_[i + 1] < -0.005
@@ -626,6 +636,11 @@ def _calha_ate_a_ponta(panos) -> int:
             if not (0.0 < p["r"]["t"] - p["q"]["t"] <= 1000.0):
                 continue
             if not any(linha(c) == linha(p) and (abs(c["s0"] - p["s1"]) < 1.0 or abs(c["s1"] - p["s0"]) < 1.0) for c in calhas):
+                continue
+            # o mesmo trecho já tem a calha do vale numa terça em comum (03/11/2026, Galpão Novo, eixo 4: a calha do dente,
+            # entre as duas terças do G3 onde o G4 acaba, subia a linha inteira ao lado da calha do vale — duas calhas)
+            lp = {round(p["q"]["t"] / 30.0), round(p["r"]["t"] / 30.0)}
+            if any(c is not p and c["s0"] < p["s1"] - 1.0 and c["s1"] > p["s0"] + 1.0 and lp & set(linha(c)) for c in calhas):
                 continue
             p["calha"] = True
             calhas.append(p)
@@ -2272,6 +2287,187 @@ def _calha_em_u(cs, topo):
     return vs, fs
 
 
+#: mm: o lanternim — a longarina pelo menos isto acima do topo das terças de baixo (a abertura entre elas)
+LANTERNIM_ACIMA = 300.0
+#: mm: a meia largura da cumeeira no topo do lanternim em duas águas (o par de terças de conta da regra "cume", ≤ 500)
+LANTERNIM_CUME = 250.0
+
+
+def _dir_do_grupo(b):
+    """(d, n) da direção em planta da terça, como `_analise` agrupa (o ângulo arredondado, módulo 180°)"""
+    ang = int(round(math.degrees(math.atan2(b.fim[1] - b.inicio[1], b.fim[0] - b.inicio[0])) % 180.0)) % 180
+    d = (math.cos(math.radians(ang)), math.sin(math.radians(ang)))
+    return d, (-d[1], d[0])
+
+
+def _lanternins(tercas, barras) -> List[dict]:
+    """O lanternim (03/11/2026, Galpão Novo — o usuário: "duas águas, como o desenho"): as longarinas paralelas às terças
+    LANTERNIM_ACIMA ou mais acima do topo de duas terças vizinhas e as travessas que as cruzam no topo. A abertura entre as
+    duas terças de baixo não leva telha (o gerador fechava o lanternim na altura das terças); a telha vai no topo dele, pela
+    travessa: das pontas dela até a cumeeira (o par de terças de conta a ±LANTERNIM_CUME do ponto mais alto), ou plana entre
+    as pontas quando a travessa é reta.
+    → [{d, n, t0, t1 (as pontas da travessa), s0, s1, pes (t das terças de baixo), virtuais: [Barra de conta]}]"""
+    from nucleo3d.modelo import Barra
+    ids_t = {b.id for b in tercas}
+    por_dir = collections.defaultdict(list)
+    for b in tercas:
+        if math.hypot(b.fim[0] - b.inicio[0], b.fim[1] - b.inicio[1]) >= 300:
+            d, n = _dir_do_grupo(b)
+            por_dir[(round(d[0], 6), round(d[1], 6))].append(b)
+    saida = []
+    for (dx, dy), lst in por_dir.items():
+        d, n = (dx, dy), (-dy, dx)
+        st = lambda p: p[0] * d[0] + p[1] * d[1]  # noqa: E731
+        tt = lambda p: p[0] * n[0] + p[1] * n[1]  # noqa: E731
+        baixo = []
+        for b in lst:
+            top = _topo_da_terca(b)
+            baixo.append((tt(b.inicio), min(st(b.inicio), st(b.fim)), max(st(b.inicio), st(b.fim)),
+                          max(b.inicio[2], b.fim[2]) + top))
+        # as longarinas: paralelas, não terça, com uma terça de baixo até 300 mm de lado e LANTERNIM_ACIMA abaixo
+        longs = []
+        for b in barras:
+            if b.id in ids_t or b.papel in ("terça", "terca"):
+                continue
+            L = math.hypot(b.fim[0] - b.inicio[0], b.fim[1] - b.inicio[1])
+            if L < 1000.0 or abs(((b.fim[0] - b.inicio[0]) * n[0] + (b.fim[1] - b.inicio[1]) * n[1]) / L) > 0.02 \
+                    or abs(b.fim[2] - b.inicio[2]) > 0.05 * L:
+                continue
+            t_, s0, s1 = tt(b.inicio), min(st(b.inicio), st(b.fim)), max(st(b.inicio), st(b.fim))
+            ztop = max(b.inicio[2], b.fim[2]) + _ext_z(b)[1]
+            if any(abs(tb - t_) <= 300.0 and sb0 < s1 and sb1 > s0 and ztop - zb >= LANTERNIM_ACIMA
+                   for tb, sb0, sb1, zb in baixo):
+                longs.append((t_, s0, s1, ztop))
+        if len(longs) < 2:
+            continue
+        # as linhas de longarina (o caixão de duas barras é uma linha) e os pares de linhas: o lanternim
+        linhas = []
+        for t_, s0, s1, z_ in sorted(longs):
+            if linhas and t_ - linhas[-1]["t"] < 150.0 and abs(z_ - linhas[-1]["z"]) < 80.0:
+                ln = linhas[-1]
+                ln["s0"], ln["s1"] = min(ln["s0"], s0), max(ln["s1"], s1)
+                ln["ts"].append(t_)
+                ln["t"] = sum(ln["ts"]) / len(ln["ts"])
+            else:
+                linhas.append({"t": t_, "s0": s0, "s1": s1, "z": z_, "ts": [t_]})
+        usados = set()
+        for i, a in enumerate(linhas):
+            for j in range(i + 1, len(linhas)):
+                c = linhas[j]
+                if i in usados or j in usados or c["t"] - a["t"] > 3000.0 or abs(c["z"] - a["z"]) > 80.0 \
+                        or min(a["s1"], c["s1"]) - max(a["s0"], c["s0"]) < 1000.0:
+                    continue
+                s0, s1 = max(a["s0"], c["s0"]), min(a["s1"], c["s1"])
+                # as travessas: cruzam as duas linhas no topo, dentro do trecho
+                trav = []
+                for b in barras:
+                    L = math.dist(b.inicio, b.fim)
+                    if L < 300.0 or b.id in ids_t:
+                        continue
+                    if abs(((b.fim[0] - b.inicio[0]) * d[0] + (b.fim[1] - b.inicio[1]) * d[1]) / L) > 0.2:
+                        continue
+                    ta, tb_ = tt(b.inicio), tt(b.fim)
+                    sm_ = st(((b.inicio[0] + b.fim[0]) / 2, (b.inicio[1] + b.fim[1]) / 2))
+                    if not (s0 - 50.0 <= sm_ <= s1 + 50.0) or min(b.inicio[2], b.fim[2]) < a["z"] - 150.0:
+                        continue
+                    if max(ta, tb_) < a["t"] - 400.0 or min(ta, tb_) > c["t"] + 400.0:
+                        continue
+                    top = _ext_z(b)[1]
+                    trav.append((sm_, (ta, b.inicio[2] + top), (tb_, b.fim[2] + top)))
+                if not trav:
+                    continue
+                usados.update((i, j))
+                # o perfil do topo em cada estação (as duas barras do caixão e as duas metades da travessa juntas):
+                # [(s, [segmentos (t, z do topo) → (t, z do topo)])]
+                est = collections.defaultdict(list)
+                for sm_, p, q in trav:
+                    est[round(sm_ / 200.0)].append((sm_, p, q))
+                est2 = [(sum(s_ for s_, _p, _q in lst_) / len(lst_), [(p, q) for _s, p, q in lst_])
+                        for _k, lst_ in sorted(est.items())]
+
+                def z_no(segs, t_):
+                    """o topo da travessa em t (a mais alta das barras que passam ali); além da ponta (até 150 mm: a
+                    travessa de cada tesoura acaba uns mm antes ou depois — as tesouras do G4 do Galpão Novo não são
+                    paralelas), a altura da ponta mais perto; senão None"""
+                    melhor = None
+                    for (t1_, z1), (t2_, z2) in segs:
+                        if min(t1_, t2_) - 1.0 <= t_ <= max(t1_, t2_) + 1.0:
+                            z_ = z1 if abs(t2_ - t1_) < 1 else z1 + (z2 - z1) * (t_ - t1_) / (t2_ - t1_)
+                            melhor = z_ if melhor is None else max(melhor, z_)
+                    if melhor is None:
+                        pontas = [(abs(tp - t_), zp) for seg in segs for tp, zp in seg if abs(tp - t_) <= 150.0]
+                        if pontas:
+                            melhor = min(pontas)[1]
+                    return melhor
+                t0 = min(min(p[0], q[0]) for _s, segs in est2 for p, q in segs)
+                t1 = max(max(p[0], q[0]) for _s, segs in est2 for p, q in segs)
+                # a cumeeira: o ponto mais alto do topo, longe das pontas
+                amostras = [t0 + (t1 - t0) * k_ / 40.0 for k_ in range(41)]
+                zs = [z_no(est2[0][1], t_) for t_ in amostras]
+                zs = [z_ if z_ is not None else -1e9 for z_ in zs]
+                k_max = max(range(len(zs)), key=lambda k_: zs[k_])
+                t_pico = amostras[k_max]
+                duas = (zs[k_max] - max(zs[0], zs[-1]) > 30.0 and t0 + LANTERNIM_CUME < t_pico < t1 - LANTERNIM_CUME)
+                linhas_t = [t0, t_pico - LANTERNIM_CUME, t_pico + LANTERNIM_CUME, t1] if duas else [t0, t1]
+                virt = []
+                for (sa, pa), (sb, pb) in zip(est2, est2[1:]):
+                    for t_ in linhas_t:
+                        za, zb = z_no(pa, t_), z_no(pb, t_)
+                        if za is None or zb is None:
+                            continue
+                        ini = (d[0] * sa + n[0] * t_, d[1] * sa + n[1] * t_, za - 50.0)
+                        fim = (d[0] * sb + n[0] * t_, d[1] * sb + n[1] * t_, zb - 50.0)
+                        vb = Barra(inicio=ini, fim=fim, perfil="", papel="terça", camada="_lanternim")
+                        vb.atributos = {"origem": {"sigla": "lanternim"}, "conta": True}
+                        virt.append(vb)
+                pes = [tb for tb, sb0, sb1, zb in baixo if sb0 < s1 and sb1 > s0
+                       and min(a["t"], c["t"]) - 300.0 <= tb <= max(a["t"], c["t"]) + 300.0
+                       and a["z"] - zb >= LANTERNIM_ACIMA]
+                saida.append({"d": d, "n": n, "t0": t0, "t1": t1, "s0": s0, "s1": s1, "pes": pes, "duas_aguas": duas,
+                              "virtuais": virt})
+    return saida
+
+
+def _sem_abertura_do_lanternim(panos, lants) -> List[dict]:
+    """tira dos panos o trecho que fecha a abertura debaixo do lanternim (o par de terças de baixo dos dois lados dele)"""
+    out = []
+    for p in panos:
+        q, r = p.get("q"), p.get("r")
+        if p.get("calha") or p.get("cumeeira") or q is None or r is None or q is r:
+            out.append(p)
+            continue
+        tq, tr = sorted((q["t"], r["t"]))
+        pedacos = [(p["s0"], p["s1"])]
+        for L in lants:
+            dq = direcao_de(q["b"])
+            if dq is None or abs(dq[0] - L["d"][0]) > 1e-6 or abs(dq[1] - L["d"][1]) > 1e-6:
+                continue
+            if not (tq - 300.0 <= min(L["pes"] or [1e18]) and max(L["pes"] or [-1e18]) <= tr + 300.0
+                    and len(L["pes"]) >= 2 and tr - tq >= 0.5 * (max(L["pes"]) - min(L["pes"]))):
+                continue
+            novos = []
+            for a_, b_ in pedacos:
+                if b_ <= L["s0"] or a_ >= L["s1"]:
+                    novos.append((a_, b_))
+                    continue
+                if a_ < L["s0"] - 1.0:
+                    novos.append((a_, L["s0"]))
+                if b_ > L["s1"] + 1.0:
+                    novos.append((L["s1"], b_))
+            pedacos = novos
+        for a_, b_ in pedacos:
+            out.append(dict(p, s0=a_, s1=b_))
+    return out
+
+
+def direcao_de(b):
+    """(d) da terça como `_analise` agrupa"""
+    if math.hypot(b.fim[0] - b.inicio[0], b.fim[1] - b.inicio[1]) < 300:
+        return None
+    d, _n = _dir_do_grupo(b)
+    return (round(d[0], 6), round(d[1], 6))
+
+
 def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano: float = 10.0,
            camada: str = "Telhas") -> dict:
     """Lança os panos de telha em cima das terças de `doc` (tira os panos lançados antes por aqui). Devolve o resumo,
@@ -2288,6 +2484,14 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
         doc.remover(i)
     tercas = [b for b in doc.barras if b.papel in ("terça", "terca")]
     an = _analise(tercas, doc.barras, vao_max, tol_plano, solidos=doc.solidos)
+    # o lanternim: a abertura debaixo dele sem telha, e a telha no topo dele pelas travessas (03/11/2026, Galpão Novo)
+    lants = _lanternins(tercas, doc.barras)
+    if lants:
+        an["panos"] = _sem_abertura_do_lanternim(an["panos"], lants)
+        virt = [vb for L in lants for vb in L["virtuais"]]
+        an_l = _analise(virt, virt, vao_max, tol_plano)
+        for k in ("panos", "calhas", "cumeeiras"):
+            an[k] = an[k] + an_l[k]
     feitos = an["panos"]
     chapas = _chapas(feitos, telha, an["calhas"])
     # a conferência da estrutura pela telha assentada nas terças (degrau, dobra) antes de endireitar as chapas; a telha do
@@ -2405,6 +2609,8 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
         "rufo_ml": round(rufo_ml / 1000.0, 1),
         "cumeeiras": len(an["cumeeiras"]), "cumeeira_ml": round(ml_cume / 1000.0, 1),
         "tercas": len(tercas), "aguas": lista_aguas,
+        "lanternins": [{"duas_aguas": L["duas_aguas"], "largura": round(L["t1"] - L["t0"]),
+                        "comprimento": round(L["s1"] - L["s0"])} for L in lants],
         "caida_min": min((a["caida_pct"] for a in lista_aguas), default=None),
         "caida_max": max((a["caida_pct"] for a in lista_aguas), default=None),
         "fora_do_plano": sorted(fora.values(), key=lambda f: -abs(f["desvio"])),
