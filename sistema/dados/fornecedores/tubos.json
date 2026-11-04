@@ -87801,6 +87801,28 @@
    "sob_consulta": null,
    "fonte": "Projeto/OBRAS/Vicente-Residence — BSL-101-DE-002/004/005/006 (Almeida Oliveira, R00/R01)",
    "observacao": "cadastrado pelas medidas nominais do projeto, para o detalhamento (usuário, 08/10/2026: 'pode cadastrar pelas medidas para o detalhamento, enquanto isso vou me informar sobre quais foram comprados'); propriedades calculadas pela geometria — confirmar o fornecedor e a bitola comprada"
+  },
+  {
+   "nome": "TQ 22×22×0,90",
+   "tipo": "quadrado",
+   "D": null,
+   "b": 22.0,
+   "h": 22.0,
+   "t": 0.9,
+   "massa": null,
+   "A": null,
+   "Ix": null,
+   "Iy": null,
+   "Wx": null,
+   "Wy": null,
+   "rx": null,
+   "ry": null,
+   "J": null,
+   "fabricante": "Medidas nominais (Vicente Residence)",
+   "norma": "",
+   "sob_consulta": null,
+   "fonte": "Projeto/OBRAS/Vicente-Residence/MET_PE_DECK_EDVICENTE.dxf (FEPLAN, R00 02/09/24)",
+   "observacao": "cadastrado pelas medidas nominais do projeto do deck, para o 3D (04/11/2026); propriedades calculadas pela geometria — confirmar o fornecedor"
   }
  ]
 }

@@ -4257,6 +4257,17 @@
    "fonte": "ABNT NBR 6355:2012, Anexo A (designação)"
   },
   {
+   "nome": "Cr 100×60×20×2,65",
+   "familia": "Cr",
+   "h": 100.0,
+   "b": 60.0,
+   "D": 20.0,
+   "t": 2.65,
+   "fabricante": "Medidas nominais (Vicente Residence)",
+   "fonte": "Projeto/OBRAS/Vicente-Residence/MET_PE_DECK_EDVICENTE.dxf (FEPLAN, R00 02/09/24)",
+   "observacao": "cadastrado pelas medidas nominais do projeto do deck, para o 3D (04/11/2026); propriedades calculadas pela geometria — confirmar o fornecedor"
+  },
+  {
    "nome": "Ue 75×40×15×0,65",
    "familia": "Ue",
    "h": 75.0,
