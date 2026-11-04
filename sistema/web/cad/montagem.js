@@ -70,6 +70,8 @@ const ORDEM = ['implantacao', 'locacao', 'tercas', 'tesouras_pos', 'elev_frontal
 
 let _seq = 0;
 const novoId = () => 'q' + Date.now().toString(36) + (_seq++).toString(36);
+/** O desenho é prancha: a listagem do servidor conta as folhas (metadados.prancha / pranchas) ou o nome é "pranchas…" (04/11). */
+const ehPrancha = (d) => !!d && ((d.pranchas > 0) || /^pranchas/.test(d.nome || ''));
 
 /** A montagem de um projeto novo: um quadro de cada tipo e uma tesoura sem nome. */
 export function montagemPadrao(original = DESENHO_LANCAMENTO) {
@@ -346,7 +348,9 @@ class Montagem {
     const bd = this.abas.querySelector('[data-aba=detalhamento]');
     bd.hidden = !nomes.has(DESENHO_COMPLETO);
     bd.title = bd.dataset.dica;
-    this.abas.querySelector('[data-aba=pranchas]').hidden = !lista.some(d => /^pranchas/.test(d.nome));
+    // prancha é o que a listagem diz (metadados.prancha / pranchas → `pranchas` > 0) ou o nome "pranchas…" (04/11, WE Coqueiral ·
+    // Escadas: as EX-01…09 feitas por script não se chamam "pranchas" — a aba não aparecia e, no Original, não havia como voltar)
+    this.abas.querySelector('[data-aba=pranchas]').hidden = !lista.some(ehPrancha);
     for (const aba of ['original', 'montagem']) this.abas.querySelector(`[data-aba=${aba}]`).hidden = !temProjetoRecebido;
     // a Original é a revisão para onde a montagem aponta (R00, R01…)
     let mm = this.m;
@@ -357,7 +361,8 @@ class Montagem {
     const atual = this.cad.nomeDesenho === DESENHO_MONTAGEM ? 'montagem'
       : this.cad.nomeDesenho === this.original ? 'original'
       : this.cad.nomeDesenho === DESENHO_COMPLETO ? 'detalhamento'
-      : /^pranchas/.test(this.cad.nomeDesenho || '') ? 'pranchas' : '';
+      : (ehPrancha(lista.find(d => d.nome === this.cad.nomeDesenho) || { nome: this.cad.nomeDesenho || '' })
+         || !!((this.cad.doc && this.cad.doc.metadados) || {}).prancha) ? 'pranchas' : '';
     for (const b of this.abas.querySelectorAll('button[data-aba]')) b.classList.toggle('on', b.dataset.aba === atual);
     this.naOriginal = atual === 'original';
     this.botaoEnviar.hidden = !this.naOriginal || !nomes.has(DESENHO_MONTAGEM);   // só com a Montagem para onde enviar
@@ -412,7 +417,11 @@ class Montagem {
       await this.cad.abrirDesenho(DESENHO_MONTAGEM);
       this.cad.dica('Montagem: ponha em cada quadro a parte do projeto que ele pede. A alça no canto de baixo ajusta o tamanho (os outros se acomodam); a escala e o nome da tesoura ficam no título.');
     } else {
-      const pr = lista.filter(d => /^pranchas/.test(d.nome)).sort((a, b) => (a.alterado < b.alterado ? 1 : -1))[0];
+      // o jogo "pranchas…" do sistema: o mais novo; as pranchas soltas (EX-01, EX-02…): a primeira pelo nome
+      const prs = lista.filter(ehPrancha);
+      const pr = prs.some(d => /^pranchas/.test(d.nome))
+        ? prs.filter(d => /^pranchas/.test(d.nome)).sort((a, b) => (a.alterado < b.alterado ? 1 : -1))[0]
+        : prs.sort((a, b) => a.nome.localeCompare(b.nome))[0];
       if (!pr) { this.cad.aviso('As pranchas saem depois do 3D (menu Produção › Pranchas). Ainda não há pranchas neste projeto.', 'info'); return; }
       await this.cad.abrirDesenho(pr.nome);
     }
