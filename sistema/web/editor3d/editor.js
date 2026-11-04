@@ -1203,7 +1203,8 @@ export class Editor {
         const t0 = Date.now();
         while (this._autosalvando && Date.now() - t0 < 120000) await new Promise(r => setTimeout(r, 200));
         const versao = this._versaoEdicao || 0;
-        const s = await this.api.salvarModeloDoProjeto(this.projeto, this.documento.paraJSON(), this._modeloAlterado);
+        const s = await this.api.salvarModeloDoProjeto(this.projeto, await this._textoParaGravar(), this._modeloAlterado,
+                                                       this.documento.tamanho);
         if (s && s.alterado) this._modeloAlterado = s.alterado;
         if ((this._versaoEdicao || 0) === versao) this._autosavePendente = false;
         this._salvoEm = new Date(); this._erroGravacao = null;
@@ -1251,6 +1252,20 @@ export class Editor {
     try { if (n) localStorage.setItem(CHAVE_ULTIMO, n); } catch { /* janela privativa */ }
   }
 
+  /**
+   * O texto do modelo para gravar no projeto: em partes, soltando o fio principal (documento.paraTextoAosPoucos), e
+   * recomeçando se o modelo mudar no meio — o gravado nunca é uma mistura de antes e depois. Medido (`medir`) para
+   * o Diagnóstico de desempenho.
+   */
+  async _textoParaGravar() {
+    const t0 = performance.now();
+    const versao = () => this._versaoEdicao || 0;
+    const v0 = versao();
+    const texto = await this.documento.paraTextoAosPoucos({ mudou: () => versao() !== v0 });
+    this._ultimaPreparacaoMs = Math.round(performance.now() - t0);
+    return texto;
+  }
+
   /** Agenda a gravação no servidor depois de um intervalo sem mudanças. */
   _agendarAutosave() {
     this._autosavePendente = true;
@@ -1274,13 +1289,14 @@ export class Editor {
     this._autosalvando = true;
     const nome = this.el.nome.value.trim() || this.documento.nome || 'modelo';
     try {
-      // Preparar o JSON de um modelo de milhares de peças custa segundos e trava a tela:
-      // fica medido, para o diagnóstico poder apontá-lo.
-      const json = medir('preparar a gravação automática', () => this.documento.paraJSON());
       if (this.projeto) {
-        const s = await this.api.salvarModeloDoProjeto(this.projeto, json, this._modeloAlterado);
+        // o texto do modelo em partes, sem travar a tela (a gravação de um modelo de milhares de peças custava segundos
+        // no fio principal: clonar cada peça e depois o JSON.stringify de tudo — SESI, 03/11)
+        const texto = await this._textoParaGravar();
+        const s = await this.api.salvarModeloDoProjeto(this.projeto, texto, this._modeloAlterado, this.documento.tamanho);
         if (s && s.alterado) this._modeloAlterado = s.alterado;
       } else {
+        const json = medir('preparar a gravação automática', () => this.documento.paraJSON());
         const r = await this.api.salvar(json, nome);
         this._lembrar(r.salvo || nome);
       }
@@ -1939,11 +1955,12 @@ export class Editor {
     this._autosalvando = true;
     const versao = this._versaoEdicao || 0;
     try {
-      const json = this.documento.paraJSON();
       if (this.projeto) {
-        const s = await this.api.salvarModeloDoProjeto(this.projeto, json, this._modeloAlterado);
+        const s = await this.api.salvarModeloDoProjeto(this.projeto, await this._textoParaGravar(), this._modeloAlterado,
+                                                       this.documento.tamanho);
         if (s && s.alterado) this._modeloAlterado = s.alterado;
       } else {
+        const json = this.documento.paraJSON();
         const nome = this.el.nome.value.trim() || this.documento.nome || 'modelo';
         const r = await this.api.salvar(json, nome);
         this._lembrar(r.salvo || nome);

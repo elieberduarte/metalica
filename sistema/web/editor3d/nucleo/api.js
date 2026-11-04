@@ -106,13 +106,17 @@ export class Api {
 
   /** O documento vai como texto JSON e o servidor o grava como veio, sem ler e reescrever (no Bella
    *  Casa, 05/10, eram 200 MB por json.loads e json.dumps a cada gravação automática). */
-  salvarModeloDoProjeto(slug, documentoJSON, baseAlterado = null) {
+  /** `documentoJSON` pode vir já como texto (documento.paraTexto / paraTextoAosPoucos); aí `entidades` diz quantas são. */
+  salvarModeloDoProjeto(slug, documentoJSON, baseAlterado = null, entidades = null) {
     if (this._cobertura()) return Promise.reject(new Error('o modelo da foto (cobertura em outra situação) não se grava'));
     const cab = { 'Content-Type': 'application/json; charset=utf-8', 'X-Modelo-Cru': '1' };
     if (baseAlterado !== null && baseAlterado !== undefined) cab['X-Base-Alterado'] = String(baseAlterado);
-    if (documentoJSON && Array.isArray(documentoJSON.entidades)) cab['X-Entidades'] = String(documentoJSON.entidades.length);
+    const texto = typeof documentoJSON === 'string' ? documentoJSON : JSON.stringify(documentoJSON);
+    const n = entidades !== null && entidades !== undefined ? entidades
+      : (documentoJSON && Array.isArray(documentoJSON.entidades) ? documentoJSON.entidades.length : null);
+    if (n !== null) cab['X-Entidades'] = String(n);
     return pedir(this._r('/api/projetos/' + encodeURIComponent(slug) + '/modelo'),
-                 { method: 'POST', headers: cab, body: JSON.stringify(documentoJSON) });
+                 { method: 'POST', headers: cab, body: texto });
   }
 
   importarIFCNoProjeto(slug, arquivo) {

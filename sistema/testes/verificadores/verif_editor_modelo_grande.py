@@ -17,7 +17,10 @@ Para cada um:
      a barra com esse perfil sai com a seção do servidor (não o retângulo genérico de 100 × 200);
   D. tirar peças do lote (editar) refaz o índice dos blocos UMA vez (`concluir`), não uma por peça;
   E. a seleção feita no meio da montagem fica (cor e contorno) quando o bloco dela entra;
-  F. ?render=1 (as fotos dos resumos) só fica pronto com o lote inteiro; sem erros no console.
+  F. ?render=1 (as fotos dos resumos) só fica pronto com o lote inteiro; sem erros no console;
+  G. GRAVAR (03/11, "1 min 40 s num ajuste pequeno"): o texto do modelo sai sem clonar cada peça (paraTexto = o mesmo texto
+     de JSON.stringify(paraJSON()), 3,6 → 0,8 s no SESI) e em partes de 40 ms (paraTextoAosPoucos; a mudança no meio
+     recomeça); o modelo.json gravado é esse texto, byte a byte.
 Sem a correção (git stash dos 4 arquivos): A falha (travada de vários segundos, sem andamento), C falha (refazer 3000),
 D falha (3001 conclusões)."""
 import json, os, shutil, subprocess, sys, tempfile, time
@@ -114,7 +117,14 @@ try:
     def jsj(e):
         r = aba.avaliar(f"(() => {{ try {{ return JSON.stringify((() => {{ {e} }})()); }} catch (x) {{ return JSON.stringify({{ erro: String(x && x.stack || x) }}); }} }})()")
         r = json.loads(r) if r else None
-        if isinstance(r, dict) and "erro" in r: print("     erro JS:", r["erro"][:400]); return None
+        if isinstance(r, dict) and r.get("erro"): print("     erro JS:", str(r["erro"])[:400]); return None
+        return r
+
+    def jsa(e):
+        """como jsj, para um corpo com await"""
+        r = aba.avaliar(f"(async () => {{ try {{ return JSON.stringify(await (async () => {{ {e} }})()); }} catch (x) {{ return JSON.stringify({{ erro: String(x && x.stack || x) }}); }} }})()")
+        r = json.loads(r) if r else None
+        if isinstance(r, dict) and r.get("erro"): print("     erro JS:", str(r["erro"])[:400]); return None
         return r
 
     for nome, nb, nc, ns in SITUACOES:
@@ -193,6 +203,23 @@ try:
           for (const b of l.blocos) { let nv = 0; for (const it of b.itens) if (!l.escondidos.has(it.id)) nv += it.nv; if (b.malha.geometry.index.count !== nv) coerente = false; }
           return { n, antes, depois: l.tamanho, coerente };""")
         ok(d and d["n"] == 1 and d["antes"] == d["depois"] == total and d["coerente"], f"refazer 1000 peças concluiu os blocos 1 vez (foi {d and d['n']}), o lote segue com {d and d['depois']} e os índices batem")
+        # --- G. gravar: o texto do modelo sem clonar cada peça e em partes (o mesmo texto, byte a byte), e o gravado no disco
+        g = jsj("""const d = editor.documento; const ref = JSON.stringify(d.paraJSON());
+          const t0 = performance.now(); const direto = d.paraTexto(); const t1 = performance.now();
+          return { igual: direto === ref, bytes: ref.length, ms: Math.round(t1 - t0) };""")
+        ok(g and g["igual"], f"paraTexto dá o mesmo texto de JSON.stringify(paraJSON()) ({g and (g['bytes'], g['ms'])} ms)")
+        g = jsa("""const d = editor.documento; const ref = JSON.stringify(d.paraJSON());
+          let n = 0; const mudou = () => (++n === 2 ? (d.alterar('b0002', { nome: 'mudou no meio' }), true) : false);
+          const partes = await d.paraTextoAosPoucos({ fatia: 0, mudou });      // uma peça por fatia: a mudança cai no meio
+          const depois = JSON.stringify(d.paraJSON());
+          return { antesIgual: partes === ref, depoisIgual: partes === depois, vezes: n };""")
+        ok(g and g["depoisIgual"] and not g["antesIgual"], f"em partes: a mudança no meio recomeça e o texto é o do modelo depois dela ({g})")
+        g = jsa("""const ed = editor, d = ed.documento; d.alterar('b0003', { nome: 'gravar em partes' });
+          await ed.gravarConfirmado(); return { ms: ed._ultimaPreparacaoMs, pendente: ed._autosavePendente, falha: ed._erroGravacao || null };""")
+        ok(g and isinstance(g["ms"], int) and not g["pendente"] and not g["falha"], f"a gravação usa o texto em partes e termina ({g})")
+        texto = aba.avaliar("editor.documento.paraTexto()")
+        disco = open(os.path.join(DADOS, nome, "modelo.json"), "rb").read().decode("utf-8")
+        ok(texto is not None and disco == texto, f"o modelo.json gravado é o texto do documento, byte a byte ({len(disco)} bytes)")
         erros = [m for m in aba.console if m[0] in ("error", "excecao") and "Failed to load resource" not in m[1]]
         ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:2]]}")
         aba.avaliar("(async () => { try { await editor.gravarConfirmado(); } catch (e) {} return 1; })()")

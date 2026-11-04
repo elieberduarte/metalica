@@ -47,6 +47,26 @@ def test_app_le_e_grava_o_mesmo_arquivo(tmp_path):
     with pytest.raises(ValueError):
         app.ritmo_da_conferencia("", arquivo=arq)
 
+def test_cheio_vence_depois_de_uma_noite(tmp_path):
+    """O cheio é para o computador parado: ligado à noite, de manhã a conferência volta ao calmo sozinha (DESEMPENHO,
+    03/11: o arquivo ficou em "cheio" de 22/10 a 03/11 e toda conferência de dia tomava todos os processadores)."""
+    arq = str(tmp_path / "_conferencia_ritmo.json")
+    ritmo.gravar("cheio", arq)
+    assert ritmo.modo(arq) == "cheio"                      # acabou de ligar
+    (tmp_path / "_conferencia_ritmo.json").write_text('{"modo": "cheio", "quando": "2026-10-22 20:39:49"}', encoding="utf-8")
+    assert ritmo.modo(arq) == "calmo"                      # ligado há dias: venceu
+    (tmp_path / "_conferencia_ritmo.json").write_text('{"modo": "cheio"}', encoding="utf-8")
+    assert ritmo.modo(arq) == "calmo"                      # sem data: vence
+    (tmp_path / "_conferencia_ritmo.json").write_text('{"modo": "calmo", "quando": "2026-10-22 20:39:49"}', encoding="utf-8")
+    assert ritmo.modo(arq) == "calmo"                      # o calmo não vence
+    import time
+    assert ritmo.modo_valido("cheio", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - 9 * 3600))) == "cheio"
+    assert ritmo.modo_valido("cheio", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - 11 * 3600))) == "calmo"
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import app
+    (tmp_path / "_conferencia_ritmo.json").write_text('{"modo": "cheio", "quando": "2026-10-22 20:39:49"}', encoding="utf-8")
+    assert app.ritmo_da_conferencia(arquivo=arq) == {"modo": "calmo"}     # o botão da barrinha diz o mesmo
+
 
 def _prioridade(pid: int) -> int:
     import ctypes

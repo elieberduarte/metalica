@@ -433,14 +433,48 @@ export class Documento {
   // ---- serialização (mesmo formato de Documento.dict() no Python) ----
 
   paraJSON() {
+    return this._cabecalhoJSON([...this.entidades.values()].map(e => clonar(e)));
+  }
+
+  _cabecalhoJSON(entidades) {
     const camadas = {}, materiais = {};
     for (const [k, v] of this.camadas) camadas[k] = { ...v };
     for (const [k, v] of this.materiais) materiais[k] = { ...v };
-    return {
-      nome: this.nome, unidade: this.unidade,
-      entidades: [...this.entidades.values()].map(e => clonar(e)),
-      camadas, materiais, projeto: this.projeto, metadados: this.metadados,
-    };
+    return { nome: this.nome, unidade: this.unidade, entidades, camadas, materiais, projeto: this.projeto, metadados: this.metadados };
+  }
+
+  /** O texto JSON do documento — o mesmo de `JSON.stringify(this.paraJSON())`, byte a byte — sem clonar cada
+   *  entidade antes (o clonar por JSON é um stringify + parse por peça: no SESI, 42,7 mil peças e 57 MB, eram
+   *  três passadas pelo modelo em vez de uma, a cada gravação). */
+  paraTexto() {
+    return JSON.stringify(this._cabecalhoJSON([...this.entidades.values()]));
+  }
+
+  /**
+   * `paraTexto` em partes, soltando o fio principal a cada `fatia` ms: a gravação do modelo grande não trava a
+   * tela. O texto é o mesmo (um array em JSON é cada elemento em JSON, separado por vírgula). Se `mudou()` diz que
+   * o documento mudou no meio, recomeça (até 3 vezes; depois vai de uma vez), para o gravado não ser uma mistura.
+   */
+  async paraTextoAosPoucos({ fatia = 40, mudou = null } = {}) {
+    const MARCA = '"__ENTIDADES_DO_DOCUMENTO__"';
+    for (let tentativa = 0; tentativa < 3; tentativa++) {
+      const ents = [...this.entidades.values()];
+      const partes = [];
+      let i = 0, recomeca = false;
+      while (i < ents.length) {
+        const t0 = performance.now();
+        do { partes.push(JSON.stringify(ents[i++])); } while (i < ents.length && performance.now() - t0 < fatia);   // ≥ 1 por fatia
+        if (i < ents.length) {
+          await new Promise(r => setTimeout(r, 0));
+          if (mudou && mudou()) { recomeca = true; break; }
+        }
+      }
+      if (recomeca) continue;
+      const cab = JSON.stringify(this._cabecalhoJSON('__ENTIDADES_DO_DOCUMENTO__')).split(MARCA);
+      if (cab.length !== 2) break;                  // o nome do modelo tem a marca? vai de uma vez
+      return cab[0] + '[' + partes.join(',') + ']' + cab[1];
+    }
+    return this.paraTexto();
   }
 
   static deJSON(d) {

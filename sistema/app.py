@@ -3552,10 +3552,18 @@ def ritmo_da_conferencia(novo: Optional[str] = None, arquivo: Optional[str] = No
         os.replace(tmp, arquivo)
     try:
         with open(arquivo, encoding="utf-8") as f:
-            m = json.load(f).get("modo")
+            d = json.load(f)
+        m, quando = d.get("modo"), d.get("quando")
     except (OSError, ValueError, AttributeError):
-        m = None
-    return {"modo": m if m in RITMOS else "calmo"}
+        m, quando = None, None
+    # a mesma regra da conferência (testes/ritmo.py): o "cheio" vence depois de uma noite (DESEMPENHO, 03/11)
+    try:
+        if os.path.join(BASE, "testes") not in sys.path:
+            sys.path.append(os.path.join(BASE, "testes"))
+        from ritmo import modo_valido
+        return {"modo": modo_valido(m, quando)}
+    except ImportError:
+        return {"modo": m if m in RITMOS else "calmo"}
 
 
 def _matar_arvore(pid: int) -> str:

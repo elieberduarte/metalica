@@ -22,8 +22,10 @@ import threading
 import time
 from typing import Dict, Optional
 
-#: Depois de gravar, espera um pouco (o editor grava em sequência) antes de refazer.
-ESPERA_DEPOIS_DE_GRAVAR = 8.0
+#: Depois de gravar, espera um pouco (o editor grava em sequência) antes de refazer. Eram 8 s: no SESI (42,7 mil peças)
+#: refazer leva ~3 min de processador, e a gravação automática do editor vem 4 s depois de cada ajuste — enquanto o
+#: usuário editava, o servidor refazia o 3D leve sem parar (DESEMPENHO, 03/11). Meio minuto de sossego primeiro.
+ESPERA_DEPOIS_DE_GRAVAR = 30.0
 #: O vigia do servidor olha o modelo.json dos projetos já vistos a cada tantos segundos (só a data e o tamanho).
 INTERVALO_VIGIA = 3.0
 #: Ao começar a vigiar (o servidor acabou de subir), o modelo gravado há menos que isto e mais novo que o 3D leve
@@ -253,11 +255,50 @@ def mudou_de_pasta(antiga: str, nova: str) -> bool:
     return True
 
 
+def em_segundo_plano():
+    """Põe o fio corrente na prioridade mais baixa do Windows (processador, disco e memória: o "modo segundo plano" do
+    sistema): o 3D leve de um modelo grande é refeito só com o que sobra da máquina, e o que o usuário está fazendo
+    (o editor, o CAD, as outras telas) passa na frente. Fora do Windows não faz nada. Devolve a função que desfaz."""
+    if os.name != "nt":
+        return lambda: None
+    try:
+        k, h = _kernel32_do_fio()
+        k.SetThreadPriority(h, 0x00010000)            # THREAD_MODE_BACKGROUND_BEGIN (só vale para o fio corrente)
+        k.SetThreadPriority(h, -2)                    # THREAD_PRIORITY_LOWEST, para o GetThreadPriority dizer
+        return lambda: (k.SetThreadPriority(h, 0x00020000), k.SetThreadPriority(h, 0))   # BACKGROUND_END, NORMAL
+    except Exception:                                 # noqa: BLE001 — sem prioridade baixa, só não cede a vez
+        return lambda: None
+
+
+def _kernel32_do_fio():
+    """O kernel32 com os tipos declarados (o pseudo-handle do fio é um ponteiro: sem o tipo, o ctypes o passava como
+    inteiro de 32 bits e as chamadas falhavam em silêncio) e o handle do fio corrente."""
+    import ctypes
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.GetCurrentThread.restype = ctypes.c_void_p
+    k.SetThreadPriority.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    k.SetThreadPriority.restype = ctypes.c_int
+    k.GetThreadPriority.argtypes = [ctypes.c_void_p]
+    k.GetThreadPriority.restype = ctypes.c_int
+    return k, k.GetCurrentThread()
+
+
+def prioridade_do_fio() -> Optional[int]:
+    """A prioridade do fio corrente no Windows (THREAD_PRIORITY_*: 0 normal, −2 a mais baixa; None fora do Windows)."""
+    if os.name != "nt":
+        return None
+    k, h = _kernel32_do_fio()
+    return int(k.GetThreadPriority(h))
+
+
 def _gerar_calado(pasta_projeto: str):
+    voltar = em_segundo_plano()
     try:
         gerar(pasta_projeto)
     except Exception:                                                   # noqa: BLE001 — já ficou em _situacao
         pass
+    finally:
+        voltar()
 
 
 # ------------------------------------------------------------------ cobertura retrátil (aberta / retraída)
@@ -382,10 +423,13 @@ def gerar_situacao(pasta_projeto: str, sit: str) -> dict:
 
 
 def _gerar_situacao_calado(pasta_projeto: str, sit: str):
+    voltar = em_segundo_plano()
     try:
         gerar_situacao(pasta_projeto, sit)
     except Exception:                                                   # noqa: BLE001 — já ficou em _situacao
         pass
+    finally:
+        voltar()
 
 
 def pedir_situacao(pasta_projeto: str, sit: str, iniciar: bool = True) -> dict:

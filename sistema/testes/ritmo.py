@@ -32,13 +32,33 @@ _IDLE = 0x00000040
 _ABAIXO = 0x00004000
 
 
+#: O "cheio" é para o computador parado (a noite): vale por tantas horas depois de ligado e volta ao calmo sozinho —
+#: ficou em "cheio" de 22/10 a 03/11 e toda conferência de dia tomava todos os processadores (DESEMPENHO, 03/11).
+VALIDADE_CHEIO_H = 10.0
+
+
 def modo(arquivo: str = None) -> str:
     try:
         with open(arquivo or ARQ, encoding="utf-8") as f:
-            m = json.load(f).get("modo")
+            d = json.load(f)
+        m, quando = d.get("modo"), d.get("quando")
     except (OSError, ValueError, AttributeError):
-        m = None
-    return m if m in MODOS else PADRAO
+        m, quando = None, None
+    return modo_valido(m, quando)
+
+
+def modo_valido(m, quando, agora: float = None) -> str:
+    """O modo gravado, ou o padrão: desconhecido, ou "cheio" ligado há mais de VALIDADE_CHEIO_H (sem data, vence)."""
+    if m not in MODOS:
+        return PADRAO
+    if m == "cheio":
+        try:
+            ligado = time.mktime(time.strptime(str(quando), "%Y-%m-%d %H:%M:%S"))
+        except (ValueError, TypeError, OverflowError):
+            return PADRAO
+        if (agora if agora is not None else time.time()) - ligado > VALIDADE_CHEIO_H * 3600:
+            return PADRAO
+    return m
 
 
 def gravar(m: str, arquivo: str = None) -> str:

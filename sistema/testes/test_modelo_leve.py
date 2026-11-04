@@ -81,6 +81,33 @@ def test_gravar_pelo_gerente_refaz(tmp_path, monkeypatch):
     assert _esperar_pronto(pasta)["versao"] != v1
 
 
+def test_refazer_depois_de_gravar_roda_em_segundo_plano(tmp_path, monkeypatch):
+    """O 3D leve de um modelo grande é refeito só com o que sobra da máquina (DESEMPENHO, 03/11: no SESI, 42,7 mil
+    peças, ~3 min de processador no fio do servidor a cada gravação do editor): o fio que refaz entra na prioridade
+    mais baixa do Windows e volta ao normal no fim; e a espera depois de gravar é de meio minuto, não 8 s."""
+    assert L.ESPERA_DEPOIS_DE_GRAVAR >= 30
+    visto = {}
+    original = L.gerar
+
+    def gerar_espiando(pasta):
+        visto["durante"] = L.prioridade_do_fio()
+        return original(pasta)
+    monkeypatch.setattr(L, "gerar", gerar_espiando)
+    monkeypatch.setattr(L, "ESPERA_DEPOIS_DE_GRAVAR", 0.05)
+    pasta = _projeto(tmp_path)
+    L.gerar(pasta)                                           # visto em "ver"
+    m = _modelo()
+    m["entidades"] = m["entidades"][:10]
+    time.sleep(0.01)
+    with open(os.path.join(pasta, "modelo.json"), "w", encoding="utf-8") as f:
+        json.dump(m, f)
+    L.gravado(pasta)
+    _esperar_pronto(pasta)
+    if os.name == "nt":
+        assert visto["durante"] is not None and visto["durante"] < 0, visto     # abaixo do normal enquanto refaz
+    assert (L.prioridade_do_fio() or 0) == 0                 # o fio do teste não foi tocado
+
+
 def test_sem_modelo(tmp_path):
     p = tmp_path / "vazio"
     p.mkdir()
