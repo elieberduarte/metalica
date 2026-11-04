@@ -189,4 +189,23 @@ def test_telha_fora_da_agua():
     conf = C.conferir(doc, soltas=False, posicao=False, cobertura_=False)
     assert conf["contagens"]["telha_fora_da_agua"] == 1
     assert conf["apontamentos"][0]["tipo"] == "fora_da_agua"
-    assert "1 telha(s) fora da água" in C.avisos(conf)[0]
+    assert "1 telha(s) fora da água ou baixa" in C.avisos(conf)[0]
+
+
+def test_telha_baixa():
+    """COB-04, reforço (04/11/2026, Hora Certa · Galpão Novo, auditor N12): a telha da cobertura deitada a 0,7 m do piso (na
+    terça de fechamento mais baixa da fachada) passava pela telha_fora_da_agua (era plana). O fechamento em pé não conta"""
+    def telha(vs, **atr):
+        s = Solido(nome="Telha", camada="Telhas", vertices=vs, faces=[[0, 1, 2, 3]])
+        s.atributos = {"telha_lancada": True, **atr}
+        return s
+    doc = Documento()
+    doc.add(Barra(inicio=(0, 0, 0), fim=(0, 0, 10000), perfil="W 200×22,5", papel="pilar", camada="Pilares"))
+    doc.add(telha([(0, 0, 10000), (1000, 0, 10000), (1000, 6000, 10300), (0, 6000, 10300)]))      # a cobertura
+    doc.add(telha([(0, 0, 0), (1000, 0, 0), (1000, 0, 6000), (0, 0, 6000)], fechamento=True))      # o fechamento em pé
+    baixa = telha([(0, 0, 700), (300, 0, 700), (300, 1000, 730), (0, 1000, 730)])
+    doc.add(baixa)
+    r = C.telha_baixa(doc)
+    assert [a["ids"] for a in r] == [[baixa.id]], r
+    conf = C.conferir(doc, soltas=False, posicao=False, cobertura_=False)
+    assert conf["contagens"]["telha_fora_da_agua"] == 1 and conf["apontamentos"][0]["tipo"] == "telha_baixa"

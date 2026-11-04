@@ -90,7 +90,7 @@ def _paredes_curvas(solidos) -> list:
     return out
 
 
-def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0, solidos=()) -> dict:
+def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0, solidos=(), parede=frozenset()) -> dict:
     """A cobertura pelas terças: os panos (os cantos no topo das terças vizinhas), a terça fora do plano da água, as
     águas, os vãos grandes e, por terça, as amostras do desvio ao plano ao longo dela ({id: [(s, desvio, borda)]}, com a
     direção da terça em planta) — o que o lançamento das telhas e o alinhamento das terças usam."""
@@ -160,6 +160,8 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0, s
         n = (-d[1], d[0])
         reg = []
         for b in lst:
+            if b.id in parede:
+                continue            # a terça de parede (_tercas_de_parede) não dá pano; segue como a terça de outra direção
             sa = b.inicio[0] * d[0] + b.inicio[1] * d[1]
             sb = b.fim[0] * d[0] + b.fim[1] * d[1]
             t = ((b.inicio[0] + b.fim[0]) / 2) * n[0] + ((b.inicio[1] + b.fim[1]) / 2) * n[1]
@@ -2479,6 +2481,43 @@ def direcao_de(b):
     return (round(d[0], 6), round(d[1], 6))
 
 
+def _tercas_de_parede(tercas, tol_t: float = 30.0, n_min: int = 3, dz_min: float = 300.0) -> set:
+    """COB-04, reforço (04/11/2026, Hora Certa · Galpão Novo, auditor N12): as terças empilhadas a prumo — `n_min` ou mais na
+    mesma linha em planta (até `tol_t`), em alturas a `dz_min` ou mais uma da outra, no mesmo trecho — são o fechamento de
+    uma parede, não a cobertura: ficam fora do telhado. A terça de fechamento mais baixa das fachadas, com a vizinha de
+    outra fachada ao lado, dava 185 chapas de 0,30 m a 0,7 m do piso. O par da cumeeira (duas na mesma linha, quase na mesma
+    altura) não é pilha. Ela não dá pano, mas continua sendo a terça de outra direção onde a telha da beira termina"""
+    grupos: Dict[int, list] = collections.defaultdict(list)
+    for b in tercas:
+        dx, dy = b.fim[0] - b.inicio[0], b.fim[1] - b.inicio[1]
+        if math.hypot(dx, dy) < 300 or abs(b.fim[2] - b.inicio[2]) > 0.3 * math.hypot(dx, dy):
+            continue
+        grupos[int(round(math.degrees(math.atan2(dy, dx)) % 180.0)) % 180].append(b)
+    fora = set()
+    for ang, lst in grupos.items():
+        d = (math.cos(math.radians(ang)), math.sin(math.radians(ang)))
+        n = (-d[1], d[0])
+        reg = []
+        for b in lst:
+            sa, sb = sorted((b.inicio[0] * d[0] + b.inicio[1] * d[1], b.fim[0] * d[0] + b.fim[1] * d[1]))
+            t = ((b.inicio[0] + b.fim[0]) / 2) * n[0] + ((b.inicio[1] + b.fim[1]) / 2) * n[1]
+            reg.append((b, t, sa, sb, (b.inicio[2] + b.fim[2]) / 2))
+        balde: Dict[int, list] = collections.defaultdict(list)
+        for r in reg:
+            balde[int(r[1] // tol_t)].append(r)
+        for b, t, sa, sb, z in reg:
+            k = int(t // tol_t)
+            alturas = [z]
+            for r in balde[k - 1] + balde[k] + balde[k + 1]:
+                if r[0] is b or abs(r[1] - t) > tol_t or min(sb, r[3]) - max(sa, r[2]) < 0.5 * min(sb - sa, r[3] - r[2]):
+                    continue
+                if all(abs(r[4] - z_) >= dz_min for z_ in alturas):
+                    alturas.append(r[4])
+            if len(alturas) >= n_min:
+                fora.add(b.id)
+    return fora
+
+
 def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano: float = 10.0,
            camada: str = "Telhas") -> dict:
     """Lança os panos de telha em cima das terças de `doc` (tira os panos lançados antes por aqui). Devolve o resumo,
@@ -2494,7 +2533,7 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
               or (e.atributos or {}).get("rufo_lancado")]:
         doc.remover(i)
     tercas = [b for b in doc.barras if b.papel in ("terça", "terca")]
-    an = _analise(tercas, doc.barras, vao_max, tol_plano, solidos=doc.solidos)
+    an = _analise(tercas, doc.barras, vao_max, tol_plano, solidos=doc.solidos, parede=_tercas_de_parede(tercas))
     # o lanternim: a abertura debaixo dele sem telha, e a telha no topo dele pelas travessas (03/11/2026, Galpão Novo)
     lants = _lanternins(tercas, doc.barras)
     if lants:

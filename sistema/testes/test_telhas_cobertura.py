@@ -1368,3 +1368,23 @@ def test_terca_de_parede_nao_da_telha_de_borda():
         planta = max(max(xs) - min(xs), max(ys) - min(ys))
         assert max(zs) < 14000.0, ("telha acima da platibanda", max(zs))
         assert max(zs) - min(zs) <= 0.3 * planta + 300.0, ("telha fora da água", max(zs) - min(zs), planta)
+
+
+def test_terca_de_parede_empilhada_nao_da_telha():
+    """COB-04, reforço (04/11/2026, Hora Certa · Galpão Novo, auditor N12): as terças de fechamento das fachadas, empilhadas a
+    prumo, davam pano entre si e com a da fachada vizinha — 185 chapas de 0,30 m a 0,7 m do piso no pé das fachadas, e tiras
+    de 0,30 m deitadas em cima das duas terças da platibanda (11,5 m). Terça em pilha (3 ou mais na mesma linha em planta)
+    é parede: não dá telha; a telha da cobertura segue até ela"""
+    doc = Documento()
+    for perfil, a, b in CANTO_GN:
+        t_ = Barra(inicio=a, fim=b, perfil=perfil, papel="terça", camada="Terças")
+        t_.atributos = {"origem": {"sigla": "T"}}
+        doc.add(t_)
+    T.lancar(doc)
+    telhas = _telhado(doc)
+    zs_cob = min(b[1][2] for b in CANTO_GN if b[1][0] > 1000.0 and b[1][1] == 94800)       # a terça de cobertura mais baixa
+    assert telhas
+    baixas = [s for s in telhas if max(v[2] for v in s.vertices) < zs_cob]
+    assert not baixas, ("telha abaixo da cobertura", len(baixas), [round(max(v[2] for v in s.vertices)) for s in baixas][:5])
+    # a cobertura continua: a água das 4 terças tem telha
+    assert sum(1 for s in telhas if min(v[2] for v in s.vertices) >= zs_cob) >= 4

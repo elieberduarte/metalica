@@ -240,12 +240,14 @@ a pergunta de toda correção de telha é: foi no `telhas_cobertura.py` ou só n
 - **Código:** `telhas_cobertura._analise` (terça fora do plano, `tol_plano`), `de_planta` (C7: altura da terça).
 - **Conferência:** **sim** — `conferencia_3d.telha_ao_lado` (telha de teste só na conta: "degrau" e "dobra" ≥ 20 mm;
   cumeeira e vale não contam) e, desde 04/11, `conferencia_3d.telha_fora_da_agua` (a telha lançada que sobe mais que a
-  caída de 0,3 na medida dela em planta + 300 mm: "fora_da_agua", no topo dos apontamentos).
+  caída de 0,3 na medida dela em planta + 300 mm: "fora_da_agua", no topo dos apontamentos) e `telha_baixa` (a telha da
+  cobertura com o topo a menos de 1,5 m do pé dos pilares).
 - **Testes:** test_agua_reta_de_5_por_cento, test_terca_erguida_no_meio_da_agua, test_terca_da_calha_sobe_ao_plano_com_suporte,
   test_terca_torta_fica_nivelada_no_apoio, test_telha_ao_lado_aponta_o_degrau_e_a_dobra, test_linha_da_calha_emendada_sobe_inteira,
   test_linha_emendada_nao_sobe_para_dentro_de_outra_peca, test_chapa_reta_por_cima_da_terca_fora_da_reta,
   test_conferencia_3d::test_telha_ao_lado_e_os_avisos, test_terca_de_parede_nao_da_telha_de_borda (o canto noroeste do
-  Hora Certa · Galpão Novo congelado), test_conferencia_3d::test_telha_fora_da_agua.
+  Hora Certa · Galpão Novo congelado), test_conferencia_3d::test_telha_fora_da_agua, test_terca_de_parede_empilhada_nao_da_telha,
+  test_conferencia_3d::test_telha_baixa.
 - **Histórico:**
   - 17/10 Posto CB — degrau de 133 mm na calha x 34,06 (a ponta da linha subia sozinha ao plano) — a2d716a.
   - 21/10 Posto V2 — "trecho caído/levantado": a terça fora da reta partia a chapa — 8bedaa1. **Reincidência** (a
@@ -254,6 +256,10 @@ a pergunta de toda correção de telha é: foi no `telhas_cobertura.py` ou só n
     inclinação da borda contra a parede (`inclinacao`) vinha da vizinha mais perto, a terça de fechamento a prumo (caída
     30–38); agora só vizinha que forma água (caída ≤ 0,3), e terça de parede não dá telha de borda. **Reincidência** (a
     telha_ao_lado não olhava a telha sozinha): conferência reforçada, `telha_fora_da_agua` (109 no modelo de antes, 0 depois).
+  - 04/11 Hora Certa · Galpão Novo (auditor N12, na rev4) — 185 telhas de 0,30 m deitadas na terça de fechamento mais baixa
+    das fachadas (0,7 m do piso) e tiras sobre as duas terças da platibanda: a terça de PAREDE dava pano. Agora a terça em
+    pilha a prumo (3 ou mais na mesma linha, `_tercas_de_parede`) não dá pano (segue como terça de outra direção).
+    **Reincidência** (a correção de 15:07 só olhava a inclinação): conferência `telha_baixa` (185 antes, 0 depois).
 
 ### COB-05 — Toda borda de telhado é fechada
 - **Enunciado (regra 11, 19/10):** toda borda de telhado termina em calha, rufo, fechamento, parede ou no telhado de
