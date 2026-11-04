@@ -2150,10 +2150,19 @@ class Importador:
         for pset in (propriedades or {}).values():
             if isinstance(pset, dict) and isinstance(pset.get("Aco"), str):
                 candidatos.append(pset["Aco"].strip())
+        # o Material do pset do exportador (SteelXData "ASTMA36", Mall Av. Londrina 04/11: sem ele a barra ficava com o
+        # aço padrão, A572 Gr.50, e a folha diz A36)
+        for pset in (propriedades or {}).values():
+            if isinstance(pset, dict) and isinstance(pset.get("Material"), str):
+                candidatos.append(pset["Material"].strip())
         candidatos.append(material or "")
+        chave = lambda t: re.sub(r"[^A-Z0-9]", "", str(t).upper())                # noqa: E731 — "ASTMA36" = "ASTM A36"
+        por_chave = {chave(a): a for a in conhecidos}
         for c in candidatos:
             if c in conhecidos:
                 return c
+            if chave(c) in por_chave:
+                return por_chave[chave(c)]
         return ""
 
     def _papel(self, prod: Entidade) -> str:
@@ -2702,7 +2711,8 @@ def marcas_de(nome: str, descricao: str, propriedades: dict) -> dict:
     if "perfil" not in achado and nome and nome.strip():
         achado["perfil"] = perfil_do_nome(nome, propriedades)
     if achado.get("perfil"):
-        achado["perfil"] = perfil_limpo(achado["perfil"])
+        # o SteelX: a grafia do catálogo em todos ("Ue 500x75x25x3,00" junto de "Ue 300×70×25×2,25", Mall 04/11)
+        achado["perfil"] = perfil_limpo(achado["perfil"], grafia_do_catalogo="SteelXData" in (propriedades or {}))
     return achado
 
 
@@ -2711,25 +2721,28 @@ def marcas_de(nome: str, descricao: str, propriedades: dict) -> dict:
 _RE_FAMILIA_STEELX = re.compile(r"^.*#@.{1,3}@#")
 
 
-def perfil_limpo(nome: str) -> str:
+def perfil_limpo(nome: str, grafia_do_catalogo: bool = False) -> str:
     """O nome do perfil como o catálogo o conhece, quando o exportador o escreve de outro jeito (o SteelX, Mall Av.
     Londrina 04/11: a família antes ("Usr Perfil Ue#@?@#"), o "mm" no fim ("TR 150x100x2,00mm", "Ue 400x70x25x3,75mm")
-    e a barra redonda como "D 16,0mm" — 16 de 19 perfis ficavam fora do catálogo, sem peso teórico). Só troca quando
-    a forma limpa está no catálogo; senão devolve o nome sem a família."""
+    e a barra redonda como "D 16,0mm" — 16 de 19 perfis ficavam fora do catálogo, sem peso teórico). O nome que o
+    catálogo já conhece fica como o exportador escreveu ("U92X40X2.25", "W200X22.5"); com `grafia_do_catalogo` (o
+    SteelX, que mistura "Ue 500x75x25x3,00" e os nomes com "mm" na mesma obra) sai com a grafia do catálogo, a mesma da
+    barra casada. O que o catálogo não conhece volta sem a família."""
     n = re.sub(r"\s+", " ", _RE_FAMILIA_STEELX.sub("", nome or "")).strip()
     sem_mm = re.sub(r"(?<=\d)\s*mm$", "", n, flags=re.I)
     m = re.match(r"^D\s*(\d+(?:[.,]\d+)?)$", sem_mm, re.I)
     candidatos = [sem_mm] if sem_mm != n else []
     if m:
         candidatos.append("Barra redonda ø %s mm" % ("%g" % float(m.group(1).replace(",", "."))).replace(".", ","))
-    if not candidatos:
+    if not n:
         return n
     try:
         from nucleo import catalogo as _cat
     except Exception:                                    # noqa: BLE001 — sem catálogo, o nome sem a família
         return n
-    if (_cat.item(n) or _cat.perfil_de(n)) is not None:
-        return n                                        # o nome já é do catálogo ("Barra ø 16 mm"): fica
+    p = _cat.item(n) or _cat.perfil_de(n)
+    if p is not None:
+        return p.nome if grafia_do_catalogo else n
     for c in candidatos:
         # o tabelado ou o montado pelo nome de fábrica (Ue 300×70×25×2,25, fora da tabela)
         p = _cat.item(c) or _cat.perfil_de(c)

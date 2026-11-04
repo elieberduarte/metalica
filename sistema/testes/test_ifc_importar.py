@@ -1553,7 +1553,19 @@ class TestSteelX(Asserts):
         self.assertEqual(perfil_limpo("Ue 300x70x25x2,25mm"), catalogo.perfil_de("Ue 300x70x25x2,25").nome)
         self.assertEqual(perfil_limpo("D 16,0mm"), "Barra redonda ø 16 mm")
         self.assertEqual(perfil_limpo("ISOTELHA RB - PIR/PIR AP 30mm"), "ISOTELHA RB - PIR/PIR AP 30mm")
+        # sem "mm" também: a grafia do catálogo (Mall, 04/11: "Ue 500x75x25x3,00" e "U600X100X3,75" saíam como no IFC)
+        # e com a grafia do catálogo no SteelX; os outros exportadores ficam com a deles
+        self.assertEqual(perfil_limpo("Ue 500x75x25x3,00", True), catalogo.perfil_de("Ue 500x75x25x3,00").nome)
+        self.assertEqual(perfil_limpo("U600X100X3,75", True), catalogo.perfil_de("U600X100X3,75").nome)
         self.assertEqual(perfil_limpo("W200X22.5"), "W200X22.5")
+        pilar = next(e for e in self.ents if isinstance(e, Barra) and e.perfil.startswith("Ue 200"))
+        self.assertEqual(pilar.atributos["marcas"]["perfil"], catalogo.perfil_de("Ue 200x50x25x2,65").nome)
+        self.assertEqual(perfil_limpo("Barra ø 16 mm"), "Barra ø 16 mm")
+
+    def test_aco_do_pset(self):
+        # o Material do SteelXData ("ASTMA36") vale; antes a barra ficava com o padrão, A572 Gr.50
+        tr = self._por_perfil("TR 150")
+        self.assertEqual(tr.aco, "ASTM A36")
 
     def test_perfis_viram_barra_do_catalogo(self):
         tr = self._por_perfil("TR 150")
