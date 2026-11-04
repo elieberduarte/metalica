@@ -304,8 +304,9 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
     for p in posicoes:
         cls = p.classe
         # rufo e calha: barra comprida solta como o agulhamento, mas é funilaria de aluzinc
-        # (antes saíam como A.C. e somavam no peso dos agulhamentos)
-        f = funilaria(p.perfil) if cls != "telha" else ""
+        # (antes saíam como A.C. e somavam no peso dos agulhamentos); pela camada quando o nome não diz ("cl." do SteelX)
+        from nucleo2d.detalhe.base import funilaria_da_posicao
+        f = funilaria_da_posicao(p, camadas.get(p.marca, "")) if cls != "telha" else ""
         pap = papel_da(p) if cls not in ("chapa", "chapa_dobrada", "telha") else ""
         if f:
             t = f

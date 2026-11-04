@@ -756,6 +756,8 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
     # catálogo, chapa pelo retângulo envolvente); o da malha fica em `peso_malha`
     from nucleo2d.detalhe.base import aplicar_peso_teorico
     sem_teorico = aplicar_peso_teorico(posicoes)
+    from nucleo2d.detalhe.fora_do_aco import conferir_compra_por_m2
+    avisos_lev.extend(conferir_compra_por_m2(posicoes, fora_do_aco))
     if sem_teorico:
         perfis = sorted({str(p.perfil or "?") for p in posicoes if getattr(p, "sem_peso_teorico", False)})
         avisos_lev.append("%d posição(ões) sem peso teórico (perfil fora do catálogo: %s): ficou o peso da malha 3D"

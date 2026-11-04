@@ -158,6 +158,34 @@ def _area_da_telha(ent) -> float:
     return ext[0] * ext[1] * 1e-6
 
 
+#: O que se compra por m² pesa no máximo isto (kg/m²): a telha de aço de uma chapa dá ~5, o painel sanduíche ~10–15, a
+#: chapa expandida ~11. Mais que isso é a malha pesada como aço maciço (FAB-09).
+KG_M2_MAXIMO = 30.0
+
+
+def conferir_compra_por_m2(posicoes: Sequence, fora_do_aco: Sequence[dict]) -> List[str]:
+    """FAB-09, a conferência (REGRAS.md, reforço de 04/11): o que se compra por m² — a telha e o painel do levantamento
+    (classe "telha") e as linhas de telha e chapa expandida do Quadro 8 — não passa de KG_M2_MAXIMO. As 150 Isotelhas do
+    Mall Av. Londrina (IFC do SteelX, PIR 30 mm) pesavam 229 kg/m², 266 t na lista; a chapa expandida do Posto V2 (24/10),
+    a chapa cheia de 6,35."""
+    avisos = []
+    for p in posicoes:
+        if getattr(p, "classe", "") != "telha":
+            continue
+        area = float(p.L or 0.0) * float(p.H or 0.0) * 1e-6
+        if area > 0 and p.peso / area > KG_M2_MAXIMO:
+            avisos.append("FAB-09: a telha %s pesa %.0f kg/m² (%d peça(s), %.1f t) — pesada como aço maciço; o que se compra "
+                          "por m² pesa pela massa por m² do fabricante" % (p.nome or p.marca, p.peso / area,
+                                                                          p.quantidade, p.peso * p.quantidade / 1000.0))
+    for g in fora_do_aco:
+        if g.get("categoria") not in ("telha", "chapa expandida") or not g.get("area_m2"):
+            continue
+        if g["peso_kg"] / g["area_m2"] > KG_M2_MAXIMO:
+            avisos.append("FAB-09: %s (%s) pesa %.0f kg/m² no Quadro 8 — pesada como aço maciço; o que se compra por m² "
+                          "pesa pela massa por m² do fabricante" % (g["nome"], g["categoria"], g["peso_kg"] / g["area_m2"]))
+    return avisos
+
+
 def item_fora_das_pecas(ent) -> Tuple[str, float]:
     """(categoria, massa específica) do sólido que não é peça de produção nem acessório (o guarda-corpo, o piso, a
     laje): antes ele sumia calado do levantamento — o gradil, o piso de chapa perfurada e a argamassa da Passarela

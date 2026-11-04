@@ -9,6 +9,7 @@ import fabrica
 from nucleo3d.modelo import Barra, Chapa, Documento, Solido
 from nucleo3d import geometria as _geo
 from nucleo2d.desenho import Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota, Chamada, FOLGA_TEXTO_COTA
+from nucleo2d.detalhe.fora_do_aco import KG_M2_MAXIMO          # o limite da conferência da FAB-09
 from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desenhar_furos, RHO_ACO, _area_2d,
                                 _arestas_dos_furos, _ordem_natural, _autovetores, _lacos_2d, polegada_de, mm_da_bitola)
 from saida.desenhos import _mm
@@ -2279,8 +2280,18 @@ def _funilaria(perfil: str) -> str:
     return funilaria(perfil or "")
 
 
+def funilaria_da_posicao(pos: Posicao, camada: str = "") -> str:
+    """"rufo", "calha" ou "": pelo perfil e, quando o nome não diz ("cl.", "rft" do SteelX, Mall 04/11), pela camada do
+    3D em que a leitura pôs a funilaria (Calhas, Rufos). A chapa e a telha não são funilaria pela camada."""
+    f = _funilaria(pos.perfil)
+    if f or pos.classe in ("chapa", "chapa_dobrada", "telha"):
+        return f
+    from ifc.importar import CAMADA_DA_FUNILARIA
+    return next((t for t, c in CAMADA_DA_FUNILARIA.items() if c == (camada or "")), "")
+
+
 def _categoria(pos: Posicao, camada: str) -> str:
-    if _funilaria(pos.perfil):
+    if funilaria_da_posicao(pos, camada):
         return "RUFOS"
     if pos.classe in ("chapa", "chapa_dobrada"):
         return "CHAPAS"
@@ -2678,11 +2689,46 @@ def _parede_da_peca(e: Solido, eixo_galpao=None, limites_g=None) -> Optional[str
     return "oitao" if min(g - limites_g[0], limites_g[1] - g) < FOLGA_OITAO else "lateral"
 
 
+#: O painel sanduíche (as duas chapas e o miolo isolante): o volume da malha é quase todo do miolo. As 150 Isotelhas RB
+#: PIR/PIR 30 mm do Mall Av. Londrina (IFC do SteelX, 04/11) pesavam pelo volume × 7.850: 229 kg/m², 266 t (FAB-09).
+PAINEL_SANDUICHE = r"(?i)isotelh|isopainel|isofachada|sandu[ií]ch|termoac[uú]st|\bPIR\b|\bPUR\b|\bEPS\b|l[aã] de rocha"
+
+
+def _kg_m2_pelo_volume(pos: Posicao) -> float:
+    """kg/m² da telha pelo volume da malha × 7.850 (o peso da análise) e a área L × H."""
+    area = float(pos.L or 0.0) * float(pos.H or 0.0) * 1e-6
+    peso = getattr(pos, "peso_malha", None)
+    return float(pos.peso if peso is None else peso) / area if area > 0 else 0.0
+
+
+def peso_do_painel(pos: Posicao) -> float:
+    """A telha que não é uma chapa de aço — o painel sanduíche pelo nome, ou a que pelo volume passa de KG_M2_MAXIMO (o
+    bloco maciço do Tekla: "Telha cobertura" do Mercado Conceito, 314 kg/m², 886 t) — pela massa por m² do catálogo (o
+    item da telha pelo nome) × a área da peça; sem ela, 0 — com a observação de onde vem o peso (FAB-09: o que se compra
+    por m² não pesa pelo volume)."""
+    from nucleo import catalogo
+    try:
+        it = catalogo.item(pos.perfil or "")
+    except Exception:                                   # noqa: BLE001 — fora do catálogo
+        it = None
+    m2 = ((getattr(it, "dados", None) or {}).get("massa_m2") if it is not None else None)
+    area = float(pos.L or 0.0) * float(pos.H or 0.0) * 1e-6
+    obs = ("telha que não é uma chapa de aço (painel ou bloco do arquivo): peso pela massa por m² do fabricante (%s kg/m²)"
+           % m2 if m2 else "telha que não é uma chapa de aço (painel ou bloco do arquivo) sem a massa por m² do fabricante no "
+           "catálogo: sem peso (pelo volume dava %.0f kg/m²)" % _kg_m2_pelo_volume(pos))
+    if obs not in pos.observacoes:
+        pos.observacoes.append(obs)
+    return float(m2) * area if m2 else 0.0
+
+
 def peso_teorico(pos: Posicao) -> Optional[float]:
     """Peso por peça (kg) como a fábrica calcula: perfil dobrado pela tira desenvolvida
     com o desconto das dobras (NBR 6355 — confere com a planilha da fábrica), laminado,
     tubo e barra redonda pelo kg/m do catálogo, chapa pelo retângulo envolvente ×
-    espessura. None quando não há como (telha, perfil desconhecido, sem geometria)."""
+    espessura. None quando não há como (telha, perfil desconhecido, sem geometria). O painel sanduíche pela massa por m²
+    do fabricante (FAB-09; 0 sem ela)."""
+    if pos.classe == "telha" and (re.search(PAINEL_SANDUICHE, pos.perfil or "") or _kg_m2_pelo_volume(pos) > KG_M2_MAXIMO):
+        return peso_do_painel(pos)
     if pos.classe in ("indefinida", "telha"):
         return None
     if pos.classe in ("chapa", "chapa_dobrada"):
