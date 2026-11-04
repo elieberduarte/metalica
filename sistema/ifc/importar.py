@@ -41,8 +41,9 @@ Limitações conhecidas (todas registram aviso no relatório):
   nominais, não a malha);
 * a origem dos perfis U, L e T é tomada no centro da caixa envolvente, e não no centro
   de gravidade, o que desloca a seção alguns milímetros em relação ao eixo declarado;
-* `IfcOpeningElement` (vãos de porta e janela) é lido mas não subtraído do elemento
-  hospedeiro; passe `incluir_aberturas=True` para vê-los como sólidos separados.
+* `IfcOpeningElement` (IfcRelVoidsElement): o furo redondo que atravessa a chapa vira furo dela; no sólido a
+  abertura é recortada; da barra paramétrica não é tirada (o relatório conta em `aberturas`). Passe
+  `incluir_aberturas=True` para vê-las também como sólidos separados.
 """
 import gc
 import math
@@ -69,7 +70,7 @@ LIMITACOES = [
     "IfcBooleanResult só é recortado quando o segundo operando é meio-espaço plano",
     "raios de concordância dos perfis paramétricos são ignorados na malha",
     "perfis U, L e T são posicionados pelo centro da caixa envolvente",
-    "aberturas (IfcOpeningElement) não são subtraídas do elemento hospedeiro",
+    "aberturas (IfcOpeningElement) não são tiradas das barras paramétricas (só das chapas, como furo, e dos sólidos)",
 ]
 
 EPS = 1e-9
@@ -432,6 +433,8 @@ class Importador:
         self._props: Dict[int, List[Entidade]] = {}
         self._materiais: Dict[int, Entidade] = {}
         self._agregados: Dict[int, List[int]] = {}
+        self._aberturas: Dict[int, List[int]] = {}          # peça → os IfcOpeningElement dela (IfcRelVoidsElement)
+        self.aberturas_feitas = {"furos_em_chapa": 0, "recortadas_em_solido": 0, "nao_feitas": 0, "em_barra": 0}
         self._contidos: Dict[int, List[int]] = {}
         self._cor_material: Dict[int, Tuple[str, float]] = {}
         self._vistos: set = set()
@@ -1386,6 +1389,12 @@ class Importador:
             for obj in (rel.arg(4) or []):
                 if isinstance(obj, int):
                     self._materiais[int(obj)] = material
+        # as aberturas de cada peça: o SteelX fura as placas de base e recorta as telhas da borda e os pórticos assim
+        # (Mall Av. Londrina, 04/11 — antes entravam inteiras)
+        for rel in self.arq.por_tipo("IFCRELVOIDSELEMENT"):
+            hospedeiro, abertura = rel.arg(4), rel.arg(5)
+            if isinstance(hospedeiro, int) and isinstance(abertura, int):
+                self._aberturas.setdefault(int(hospedeiro), []).append(int(abertura))
 
     # ------------------------------------------------------------ camadas
     def ler_camadas(self):
@@ -2228,6 +2237,60 @@ class Importador:
         self.avisar("modelo trazido para a origem: no arquivo ele estava em x = %.1f m, "
                     "y = %.1f m; o exportador devolve essa posição" % (x0 / 1000, y0 / 1000))
 
+    def _malha_da_abertura(self, abertura: Entidade) -> Optional[Malha]:
+        """A malha de um IfcOpeningElement, no mundo."""
+        corpo, _todas = self.representacao_de(abertura)
+        if corpo is None:
+            return None
+        malha = self.malha_da_representacao(corpo)
+        if malha is None or malha.vazia:
+            return None
+        mundo = self.matriz(abertura.arg(5)) if abertura.arg(5) is not None else m_identidade()
+        return malha.transformada(mundo) if mundo != m_identidade() else malha
+
+    def _furar_chapa(self, chapa: Chapa, prod: Entidade) -> bool:
+        """As aberturas da chapa que são furo redondo atravessando (extrusão de IfcCircleProfileDef na normal dela — os
+        furos Ø18 dos chumbadores nas placas de base do SteelX, Mall Av. Londrina 04/11) entram em `chapa.furos`. False
+        quando alguma não é: a chapa cai para sólido recortado, como o vazio que não é círculo."""
+        n = _norm(_cruz(chapa.eixo_x, chapa.eixo_y))
+        furos = []
+        for ab in self.lista(self._aberturas.get(prod.id, [])):
+            corpo, _todas = self.representacao_de(ab)
+            itens = self.lista(corpo.arg(3)) if corpo is not None else []
+            if len(itens) != 1 or not itens[0].e_tipo("IFCEXTRUDEDAREASOLID"):
+                return False
+            _ext, _f, info = self.perfil_2d(itens[0].arg(0))
+            if info.get("familia") != "circulo" or not info.get("d"):
+                return False
+            mundo = self.matriz(ab.arg(5)) if ab.arg(5) is not None else m_identidade()
+            total = m_multiplicar(mundo, self.matriz(itens[0].arg(1)))
+            d = _norm(m_direcao(total, self.direcao(itens[0].arg(2), (0.0, 0.0, 1.0))))
+            malha = self._malha_da_abertura(ab)
+            if malha is None or abs(_dot(d, n)) < 0.999:
+                return False
+            xs = [_dot(_sub(v, chapa.origem), chapa.eixo_x) for v in malha.vertices]
+            ys = [_dot(_sub(v, chapa.origem), chapa.eixo_y) for v in malha.vertices]
+            furos.append({"x": round((min(xs) + max(xs)) / 2, 2), "y": round((min(ys) + max(ys)) / 2, 2),
+                          "diametro": round(float(info["d"]), 2)})
+        chapa.furos = list(chapa.furos or []) + furos
+        self.aberturas_feitas["furos_em_chapa"] += len(furos)
+        return True
+
+    def _recortar_aberturas(self, malha: Malha, prod: Entidade, nome: str) -> Malha:
+        """O sólido menos as aberturas dele (as telhas da borda e da clarabóia e os pórticos do SteelX, Mall Av. Londrina
+        04/11 — antes entravam inteiros, a telha passava do eixo 1). Pela árvore de planos do recorte booleano; a abertura
+        que não dá para tirar fica, com aviso."""
+        for ab in self.lista(self._aberturas.get(prod.id, [])):
+            recorte = self._malha_da_abertura(ab)
+            nova = _subtrair(malha, recorte) if recorte is not None else None
+            if nova is None:
+                self.aberturas_feitas["nao_feitas"] += 1
+                self.avisar("abertura %s de %s não foi recortada" % (str(ab.arg(0) or ab.id), nome))
+                continue
+            malha = nova
+            self.aberturas_feitas["recortadas_em_solido"] += 1
+        return malha
+
     def _ler_eixos(self) -> Optional[dict]:
         """Os eixos do IfcGrid, no formato dos eixos do projeto (nucleo3d/eixos.de_dict). Antes a malha era ignorada e os
         eixos saíam vazios (o SteelX do Mall Av. Londrina, 04/11, grava 36 IfcGridAxis). Cada eixo reto vira a linha dele
@@ -2349,6 +2412,7 @@ class Importador:
             "perfis_casados": self.perfis_casados,
             "sem_perfil_no_catalogo": self.sem_perfil,
             "barras_como_solido": self.barras_como_solido,
+            "aberturas": dict(self.aberturas_feitas),
             "camadas_ifc": self.camadas_ifc,
             "origem_camada": dict(sorted(self.origem_camada.items())),
             "nao_suportados": dict(sorted(self.nao_suportados.items())),
@@ -2453,6 +2517,14 @@ class Importador:
             motivo = "falha ao reconhecer: %s" % erro
             self.avisar("falha ao reconhecer %s em %s: %s"
                         % ("chapa" if e_chapa else "barra", nome or global_id, erro))
+        if self._aberturas.get(prod.id) and parametrica is not None:
+            if isinstance(parametrica, Chapa):
+                if not self._furar_chapa(parametrica, prod):
+                    parametrica = None                      # abertura que não é furo redondo: sólido recortado
+            else:
+                # a barra paramétrica fica (o Tekla grava os furos de parafuso assim, e a barra perderia a edição): a
+                # abertura não é tirada dela, e o relatório conta
+                self.aberturas_feitas["em_barra"] += len(self._aberturas[prod.id])
         if parametrica is None and motivo:
             self.barras_como_solido.append({
                 "elemento": nome or global_id, "tipo_ifc": nome_ifc(tipo),
@@ -2485,6 +2557,8 @@ class Importador:
                         % (nome or global_id, nome_ifc(tipo)))
             return
         mundial = malha.transformada(mundo) if mundo != m_identidade() else malha
+        if self._aberturas.get(prod.id):
+            mundial = self._recortar_aberturas(mundial, prod, nome or global_id)
         solido = Solido(nome=nome, camada=camada, material=material,
                         vertices=mundial.vertices, faces=mundial.faces,
                         origem_ifc=global_id)

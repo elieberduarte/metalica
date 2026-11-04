@@ -1599,6 +1599,40 @@ class TestSteelX(Asserts):
         self.assertEqual(camada["RUFOCT"], "Rufos")
         self.assertEqual(camada["Perfil de Fechamento"], "Telhas")
 
+    def test_furos_redondos_das_aberturas_na_placa_de_base(self):
+        # os Ø18 dos chumbadores: IfcOpeningElement de IfcCircleProfileDef (antes: "furos: 0" em todas as placas)
+        pb = next(e for e in self.ents if isinstance(e, Chapa) and e.nome == "pb.2")
+        self.assertEqual(sorted((f["x"], f["y"], f["diametro"]) for f in pb.furos),
+                         sorted((x, y, 18.0) for x in (-125.0, 125.0) for y in (-125.0, 125.0)))
+        self.assertEqual(self.doc.metadados["importacao"]["aberturas"]["furos_em_chapa"], 4)
+
+    def test_aberturas_recortadas_da_telha_e_do_portico(self):
+        # a telha da borda e o pórtico entravam inteiros: o volume do sólido é o do IFC menos a abertura
+        from ifc import step
+        from ifc.importar import Importador
+        im = Importador(step.ler(dado("steelx_mall_trecho.ifc")))
+        im.ler_unidades()
+        im.indexar_relacoes()
+        recortados = 0
+        for hospedeiro, aberturas in im._aberturas.items():
+            prod = im.arq.entidades[hospedeiro]
+            if prod.tipo == "IFCPLATE":
+                continue
+            corpo, _todas = im.representacao_de(prod)
+            inteiro = im.malha_da_representacao(corpo).transformada(im.matriz(prod.arg(5)))
+            s = next(e for e in self.doc.solidos if e.origem_ifc == str(prod.arg(0)))
+            v = Solido(vertices=s.vertices, faces=s.faces).volume
+            # o pórtico perde só o corte da ponta (0,2 litro de 30); a telha da borda, quase toda a largura
+            self.assertLess(v, inteiro.volume_assinado() - 1e5, "%s não foi recortado" % s.nome)
+            # nada do sólido fica no meio da abertura
+            for ab in im.lista(aberturas):
+                caixa_ab = im._malha_da_abertura(ab).caixa()
+                centro = [(caixa_ab[0][k] + caixa_ab[1][k]) / 2 for k in range(3)]
+                self.assertFalse(any(all(abs(p[k] - centro[k]) < 1.0 for k in range(3)) for p in s.vertices))
+            recortados += 1
+        self.assertEqual(recortados, 2)
+        self.assertEqual(self.doc.metadados["importacao"]["aberturas"]["nao_feitas"], 0)
+
     def test_eixos_do_ifcgrid(self):
         from nucleo3d import eixos
         ex = eixos.de_dict(self.doc.metadados.get("eixos"))
