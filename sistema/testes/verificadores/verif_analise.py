@@ -12,7 +12,7 @@ SCR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
 
-ORIGEM = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.expanduser("~"), "OneDrive", "Documentos", "Metálica", "teste-dwg")
+ORIGEM = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.environ.get("METALICA_DADOS", r"C:\Metálica\dados"), "teste-dwg")
 if not os.path.exists(os.path.join(ORIGEM, "calculo.json")):
     print("sem projeto com cálculo em %s: passe a pasta de um projeto calculado" % ORIGEM)
     sys.exit(0)

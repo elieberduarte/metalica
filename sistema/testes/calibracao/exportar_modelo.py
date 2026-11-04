@@ -58,7 +58,7 @@ def _nocionais(M: dict, sol: dict, combs: dict, so2: dict) -> dict:
 
 
 def exportar(slug: str, pasta: str) -> str:
-    os.environ.setdefault("METALICA_DADOS", os.path.join(os.path.expanduser("~"), "OneDrive", "Documentos", "Metálica"))
+    os.environ.setdefault("METALICA_DADOS", r"C:\Metálica\dados")      # os dados fora do OneDrive desde 04/11
     import app
     from nucleo3d import analise_estrutural as AE
     proj = app._gerente().ler(slug)

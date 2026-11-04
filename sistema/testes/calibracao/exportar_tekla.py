@@ -45,7 +45,7 @@ def perfil_tekla(nome: str) -> str:
 
 
 def exportar(slug: str, pasta: str) -> str:
-    os.environ.setdefault("METALICA_DADOS", os.path.join(os.path.expanduser("~"), "OneDrive", "Documentos", "Metálica"))
+    os.environ.setdefault("METALICA_DADOS", r"C:\Metálica\dados")      # os dados fora do OneDrive desde 04/11
     import app
     from nucleo3d import geometria as G
     doc = app._documento3d_do_projeto(slug)

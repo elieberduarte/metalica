@@ -46,7 +46,7 @@ def _ler(pasta, nome):
 
 def _usos(slug):
     """o aproveitamento por grupo de peças com as regras de antes (terça engastada, carga do telhado no banzo) e as de agora"""
-    os.environ.setdefault("METALICA_DADOS", os.path.join(os.path.expanduser("~"), "OneDrive", "Documentos", "Metálica"))
+    os.environ.setdefault("METALICA_DADOS", r"C:\Metálica\dados")      # os dados fora do OneDrive desde 04/11
     import warnings
     warnings.filterwarnings("ignore")
     import app

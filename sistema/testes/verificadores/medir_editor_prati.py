@@ -13,7 +13,7 @@ BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
 
-ORIGEM = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.expanduser("~"), "OneDrive", "Documentos", "Metálica", "prati-cd-metálica")
+ORIGEM = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.environ.get("METALICA_DADOS", r"C:\Metálica\dados"), "prati-cd-metálica")
 LIMITE_MOUSE = 60      # ms: o que roda a cada movimento do mouse (snap, Tab, alças, prévia)
 if not os.path.exists(os.path.join(ORIGEM, "modelo.json")):
     print("sem o modelo em", ORIGEM); sys.exit(2)
