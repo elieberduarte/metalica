@@ -15,6 +15,8 @@ Cuidado por: chat REGRAS · SISTEMA (`Projeto/BRIEFINGS/CHATS/REGRAS-sistema.md`
 - **Depois de corrigir:** teste + linha no REGRESSOES.md + linha no REGRAS-entrada.md. O REGRAS · SISTEMA acrescenta a
   linha no histórico da regra e +1 no placar.
 - **Regra nova** só entra com o "aprovada" do usuário. Até lá fica em "Propostas" (no fim).
+- **Histórico depois de 22/10:** as reincidências triadas pelo N.4 (22/10 a 04/11) estão juntas em "Triagem de 22/10 a
+  04/11", logo depois do placar, regra por regra. As regras aprovadas nesse período já estão nas seções delas.
 
 - **Regra nova ou mudança de regra** se combina com exemplos antes do código (CLAUDE.md, 21/10): 2–3 casos com imagem e
   medidas para o usuário aprovar. Os casos aprovados viram o teste e o **exemplo** da regra aqui.
@@ -36,25 +38,116 @@ do usuário. Sorteio fixo no antes_de_publicar; `METALICA_HIPOTESE=aleatorio` so
 ## Placar de reincidências
 
 Reincidência = defeito corrigido de novo, numa regra que já existia (inclusive com outra forma). Meta: zero.
-Triagem inicial de 21/10 (REGRESSOES.md + git log desde 12/10).
+Triagem inicial de 21/10 (REGRESSOES.md + git log desde 12/10); atualizado em 04/11 pelo N.4 com a caixa de 22/10 a 04/11
+(+62). Ordem: mais reincidências primeiro.
 
 | Regra | Reincidências | Conferência | Última |
 |---|---|---|---|
-| COB-03 telha até a parede | 4 (+ a 1ª correção) | parcial | 21/10 c8f1e1f |
+| GER-01 cada barra uma vez só | 7 | parcial | 03/11 SESI (paredes ARQ e capas um dentro do outro; só no script da obra). Barras pela seção desde 29/10 (372490b); sólidos ainda não |
+| COB-04 cada água é um plano | 6 | sim, mas não barra | 04/11 SESI (telha levantada no transpasse entre panos; só no script da obra) |
+| COB-03 telha até a parede | 5 | parcial | 30/10 SESI (terça sem telha até a borda; conferência reforçada) |
+| GER-03 nenhuma ponta solta | 5 | sim | 02/11 Galpão Novo 60878fe (`pecas_sem_encosto`, pelas faces) |
+| TES-7 mesma peça, mesmo nome | 5 | parcial | 30/10 Galpão Existente bd1c514 (o consistencia.py acusa, não trava) |
+| COB-02 nada atravessa telha, calha e rufo | 4 | parcial | 03/11 SESI (calha e capa atravessados por pilaretes; só no script da obra). A telha desde 29/10; calha e rufo não |
+| GER-02 nada atravessa outra peça | 4 | parcial | 03/11 SESI (airbrises dentro das paredes ARQ; só no script da obra). Viga × viga pela seção desde 29/10 (a2e78bc) |
+| FAB-03 peso dos dobrados | 4 | sim | 30/10 7a6b475 (o catálogo inteiro conferido) |
+| GER-06 a peça é como o projetista desenha | 4 | não | 03/11 Galpão Novo (simples no lugar da transição; só no script da obra) |
+| GER-08 tudo o que o desenho mostra vira peça | 4 | não | 30/10 Galpão Novo (25,8 t de chapas laterais das notas; só no script da obra) |
+| TEL-02 cada peça no sistema que diz o que ela é | 4 | sim | 29/10 Galpão Existente 6cc14e3 |
 | COB-01 sem fresta nem buraco | 3 | sim | 21/10 c8f1e1f (Posto V2, 53 buracos e 43 frestas) |
+| COB-12 o rufo segue a telha | 3 | **não** | 03/11 SESI (11 rufos ajustados à mão; só no script da obra) |
+| FAB-01 furação das terças | 3 | parcial | 30/10 Posto V2 (ST1 a 40 mm; a R6 olha só a terça) |
+| TEL-01 barra de andamento | 3 | parcial | 03/11 conferência da 0.9.2 (duas barras no rodapé) |
+| GER-04 3D vinculado ao 2D | 3 | parcial | 29/10 Galpão Novo 510fb67 (planta por planta; peça por peça não) |
 | TES-3.1 nada atravessa o banzo | 2 | sim | 19/10 22c229a |
-| GER-01 cada barra uma vez só | 3, aberta | parcial | 22/10 SESI (montantes repetidos a 30–120 mm nos cantos; ainda sem correção) |
 | TES-2.2 banzos abrem para dentro | 2 | sim | 21/10 8421ab5 |
-| TES-2.9 banzo 2U composto | 1 | sim | 21/10 1188b4c |
-| COB-02 nada atravessa telha, calha e rufo | 1 | parcial | 21/10 c8f1e1f (calhas cortadas na treliça) |
-| COB-04 cada água é um plano | 1 | sim | 21/10 8bedaa1 |
-| COB-12 o rufo segue a telha | 1 | **não** | 19/10 b886cb9 |
-| COB-13 peças inteiriças | 1 | **não** | 19/10 b886cb9 |
-| GER-03 nenhuma ponta solta | 2 | parcial | 22/10 9f2c42c (Hangar, 64 castanhas CA1 5 m acima do banzo) |
-| TEL-02 cada peça no sistema que diz o que ela é | 3 | sim | 22/10 8aa0515 (SESI, 4 correções no mesmo dia; virou conferência em seguida) |
-| GER-02 nada atravessa outra peça | 1, aberta | parcial | 22/10 6b22115 (SESI, VM caixa com os 2 Ue 22–30 mm um dentro do outro; degraus, steel deck e postes ainda abertos) |
-
+| TES-2.1 U com a alma atravessando o plano | 2 | parcial | 27/10 SESI (peças lidas sem encostar não formam treliça; só no script da obra) |
+| TES-2.9 banzo 2U composto | 2 | sim | 28/10 Galpão Novo (o par como uma barra "2×"; só no script da obra) |
+| COB-05 toda borda é fechada | 2 | parcial | 03/11 SESI (telha interna abaixo do ACM; só no script da obra) |
+| COB-06 calha onde a água chega | 2 | parcial | 03/11 Galpão Novo ed3bbb3 (`calhas_duplas`) |
+| COB-13 peças inteiriças | 2 | **não** | 30/10 SESI (capa interrompido; só no script da obra) |
+| FAB-05 porcas do chumbador | 2 | parcial | 30/10 Galpão Existente (só no script da obra) |
+| TES-2.5 cantoneira em par | 1 | sim | 27/10 Posto V2 a703f6c (o par nas duas faces do caixão) |
+| FAB-07 3D → detalhe → prancha | 1 | **não** | 23/10 ligações (furo do 3D sem furo na prancha) |
+| FAB-08 chumbador mecânico | 1 | **não** | 24/10 SESI (Parabolt como químico; a 1ª foi o Hardbolt, 14/10) |
+| GER-07 o Original traz as pranchas do projetista | 1 | sim | 03/11 WE Coqueiral 9265545 (`tem_o_original`) |
 ---
+
+## Triagem de 22/10 a 04/11 (REGRAS · SISTEMA N.4, 04/11)
+
+150 linhas da caixa REGRAS-entrada, de 22/10 a 04/11:
+- **62 reincidências**, em 58 linhas. **34 linhas foram corrigidas só no script da obra**: SESI, Galpão Novo, Edifício
+  Administrativo e Galpão Existente, obras montadas por script sem gerador comum.
+- 6 casos em que a conferência pegou antes do usuário (não contam).
+- 19 linhas com regra nova aprovada pelo usuário; 17 viraram propostas.
+- 49 defeitos pontuais sem regra, como o CAD 2D, o editor 3D, as Cenas e o desempenho. O teste de regressão basta.
+
+**O que mudou nas conferências** (reforços feitos pelos chats donos no código comum):
+- GER-01 `repetidas` pela seção (372490b);
+- GER-02 viga × viga pela altura da seção (a2e78bc);
+- GER-03 `pecas_sem_encosto` (60878fe);
+- GER-04 planta por planta (510fb67);
+- GER-07 `tem_o_original` (9265545);
+- COB-02 `_barras_na_telha`;
+- COB-03 `terca_sem_telha`;
+- COB-06 `calhas_duplas` (ed3bbb3);
+- FAB-03 o catálogo inteiro (941fa4e, 7a6b475);
+- TEL-01 uma barra por vez;
+- TEL-02 a expressão do telhado (6cc14e3);
+- TES-7 nome do 3D × romaneio no consistencia.py (840c3da).
+
+**Histórico das reincidências** (data, obra, commit; "script" = corrigido só no script da obra):
+- **COB-02:** 29/10 SESI, terças acima da telha (conferência reforçada; modelo no script); 03/11 SESI, calha CM4 atravessada
+  por pilaretes (script); 03/11 SESI, capa do muro atravessando os pilares (script).
+- **COB-03:** 30/10 SESI, terças à mostra até a borda (conferência reforçada; modelo no script).
+- **COB-04:** 23/10 Posto V2, a TESOURA 14 virada e as telhas levantadas (7601597; a correção 47b588a, do efeito, foi
+  desfeita); 26/10 Posto V2, terça fora do alinhamento e 0,10 m abaixo do outro lado da calha (fc00ae9); 27/10 Posto V2, terça
+  picada sobre a TRANSIÇÃO 9 (4ba1089); 03/11 SESI, TM1 erguida até o banzo da VF (script); 04/11 SESI, telha levantada
+  no transpasse (script). Em todas, a conferência acusava (telha_degrau) e a montagem seguiu. **Reforço:** barrar.
+- **COB-05:** 30/10 SESI, capa fora do lugar (conferência reforçada); 03/11 SESI, telha interna 95 mm abaixo do ACM (script).
+- **COB-06:** 26/10 Posto V2, calha do vale parando 2 m antes (fc00ae9); 03/11 Galpão Novo, duas calhas lado a lado no vale (ed3bbb3).
+- **COB-12:** 30/10 SESI, rufo em degrau (script); 03/11 SESI, 11 rufos ajustados à mão pelo usuário (script; conferir_ajustes_usuario.py).
+- **COB-13:** 30/10 SESI, capa do muro interrompido (script).
+- **GER-01:** 26/10 SESI, 5 suportes para 66 terças: "um suporte por apoio" vale também para o apoio sem suporte (script);
+  29/10 ADM, duas W530 no mesmo lugar (372490b, reforço); 03/11 SESI, capa dentro de outro (script); 03/11 SESI, 50 pares de
+  paredes ARQ uma dentro da outra (script). **Reforço:** sólido dentro de sólido da mesma camada.
+- **GER-02:** 22/10 Hangar, a castanha entrando na CB1 (5cd788b; a `choques` não olha barra × chapa); 29/10 ADM, 45 vigas
+  atravessando outras (a2e78bc, reforço); 03/11 SESI, airbrises dentro das paredes ARQ (script). Resto da 6b22115: 22/10
+  SESI, correntes 7 mm fora da alma (d25a5e2), sem +1.
+- **GER-03:** 27/10 SESI, ~1.800 pontas a 10–300 mm (script, `fechar_nos.py`); 28/10 Galpão Novo, terças da platibanda a 16 cm
+  (script); 02/11 Galpão Novo, quadros de suporte voando (60878fe, reforço). Lição de 28/10 (SESI, BM14): a conferência não
+  isenta uma peça pelo nome do apoio sem ver o apoio no 3D.
+- **GER-04:** 27/10 Galpão Novo, pente fino com o 3D fora do desenho (script); 27/10 SESI, vínculo à vista errada, 3.002 de
+  6.036 peças (script); 29/10 Galpão Novo, vigas do forro sem traço (510fb67, reforço). **Reforço que falta:** a peça e a
+  vista (prova por vetores, pente_fino_vinculo.py), e a remontagem rodar o `vinculo_2d.conferir` no fim (27/10, Posto).
+- **GER-06:** 26/10 SESI, pilaretes 100 mm curtos (script); 27/10 Galpão Novo, terça de 89,5 m atravessando o prédio (script);
+  29/10 Posto V2, CH6 400 × 390 contra o detalhe 400 × 400 (bases_locacao); 03/11 Galpão Novo, simples no lugar da transição (script).
+- **GER-07:** 03/11 WE Coqueiral, o PDF recebido sem o Original (9265545, reforço).
+- **GER-08:** 26/10 ADM, vigas W530 faltando (script; leitura a duas linhas); 27/10 ADM, o P12 fora da camada (script); 28/10
+  SESI, os 22 SP5 do romaneio sem peça (script); 30/10 Galpão Novo, as chapas laterais 9,52 das notas, o gancho dos
+  chumbadores e as diagonais do lanternim, 25,8 t (script).
+- **TEL-01:** 27/10, rodapé do CAD com textos sobrepostos (37da918); 03/11, duas barras no rodapé (0.9.2); 03/11, o "~28 %"
+  e o rodapé sobreposto na tela dividida.
+- **TEL-02:** 29/10 Galpão Existente, o telhado do arquitetônico fora da Cobertura (6cc14e3).
+- **TES-2.1/2.3:** 27/10 SESI, a diagonal em U solta do painel de ponta (81d299f); 27/10 SESI, TS6 com peças lidas sem encostar (script).
+- **TES-2.5:** 27/10 Posto V2, o par nas duas faces do caixão, pelo ajuste à mão do usuário (a703f6c, VERSAO_REGRAS 6).
+- **TES-2.9:** 28/10 Galpão Novo, o par ]-[ como uma barra "2×", 32 t a menos na lista (script).
+- **TES-7:** 24/10, a peça girada 180° com outra marca (_assinatura_posicao); 30/10 Galpão Existente, duas T2/T3 diferentes
+  (941fa4e); 30/10 Sooro, a chamada do S.T. com os nomes das chapas (d3047c4); 30/10 Galpão Existente, CH35 como "PL13.3" no 3D
+  e "PL14.1 12x · total 04x" (840c3da, bd1c514). **Reforço:** a trava na emissão.
+- **FAB-01:** 29/10 Posto V2, 77 terças e 398 ST fora do passo (96db66b); 29/10 Posto V2, ST na ponta (bbb9a0e); 30/10 Posto V2,
+  ST1 sob terça a 22 % (celulas.py). **Reforço:** conferir o par do próprio suporte e recusar o DXF de corte como a R6 recusa a prancha.
+- **FAB-03:** 28/10 SESI, Ue sem o enrijecedor e "L 50×2 (FF)" (o auditor); 30/10 Galpão Existente, Ue 200 a 7,824 (941fa4e);
+  30/10 SESI, L (FF) e laminadas pela regra das dobras (7a6b475).
+- **FAB-05:** 30/10 Galpão Existente, 218 chumbadores sem porca (941fa4e); 30/10 Galpão Existente, CB5 sem porca (script).
+- **FAB-07:** 23/10, a cantoneira da SC1 e a castanha "sem furo" na prancha (ligações).
+- **FAB-08:** 24/10 SESI, o Parabolt como químico (resumos.py).
+
+**Origens e refinamentos sem +1:**
+- TES-2.3: os montantes da junta com as costas na junta (22/10 Hangar, 5cd788b, VERSAO_REGRAS 5).
+- GER-04: a peça sabe de que planta veio (22/10 Posto, 847bbfa); o prédio em pavimentos (26/10 ADM); a elevação oblíqua
+  (27/10 Galpão Novo, 54254f3); o encaixe das plantas pelos balões (23/10 Posto, ee44272).
+- GER-07: os leitores do Original ignoram as folhas (27/10 Posto, c8b1a4a); código comum `nucleo2d/folhas_papel.py` (8cd53e9).
 
 ## COB — Cobertura: telhas, calhas e rufos
 
@@ -219,6 +312,8 @@ a pergunta de toda correção de telha é: foi no `telhas_cobertura.py` ou só n
 
 ### COB-11 — Os rufos e as medidas
 - **Enunciado (regra 6, 19/10):** rufos #26: capa (abas 100), encosto (150 + 150), contra-rufo até 150 acima da crista da telha.
+  **Usuário, 03/11 (padrão da empresa):** calha em chapa 0,65 mm, rufo 0,50 mm. A espessura da calha **ainda não está no
+  código** (pedido ao dono do `telhas_cobertura`).
 - **Aprovada:** 19/10. **Aplica-se a:** obra com fechamento ou parede encostando na telha.
 - **Código:** `telhas_cobertura`. **Conferência:** **não**.
 - **Testes:** test_rufos_do_fechamento, test_capa_desce_ate_a_telha_perto_do_topo, test_contra_rufo_sobe_acima_da_telha_e_calha_inteira.
@@ -269,6 +364,14 @@ a pergunta de toda correção de telha é: foi no `telhas_cobertura.py` ou só n
   (pedido ao chat dono do `telhas_cobertura`). **Conferência:** "sem_rufo" (COB-05) vê a parede depois de lançada.
 - **Histórico:** (nenhum)
 
+### COB-19 — O lanternim
+- **Enunciado (usuário, 03/11, pela figura "duas águas, como o desenho"):** a abertura debaixo do lanternim fica sem telha; a
+  telha do topo dele vai pela travessa, em duas águas, com cumeeira no ponto alto.
+- **Aprovada:** 03/11 (Hora Certa · Galpão Novo). **Aplica-se a:** cobertura com lanternim.
+- **Código:** `telhas_cobertura` (`_lanternins`, `_sem_abertura_do_lanternim`). **Conferência:** **não**.
+- **Testes:** test_telhas_cobertura (os 7 de ed3bbb3).
+- **Histórico:** 03/11 Galpão Novo — a abertura fechada com telha e o topo sem telha — ed3bbb3 (a 1ª).
+
 ---
 
 ## TES — Tesoura de aço (montagem das treliças)
@@ -296,9 +399,9 @@ tubo, barra redonda, I/W, banzo em caixa (2.8).
 | TES-2.0 | Um plano por tesoura, normal com sinal fixo | 16/10 | (base das outras) | — |
 | TES-2.1 | Todo U/Ue com a alma atravessando o plano (exceto o composto, 2.9) | 16/10 | **sim** | test_2_1_e_2_2_banzos_abrem_para_dentro |
 | TES-2.2 | Banzos abrem para dentro; o intermediário para cima; nenhum banzo de cima de boca para cima | 16/10 | **sim** | test_2_1_e_2_2_…, test_2_2_banzo_intermediario_abre_para_cima, test_u_simples_com_alma_2l_e_2_2_e_2_5, test_alma_no_plano_de_modelo_antigo_e_acusado_pela_2_2 |
-| TES-2.3 | Alma abre para o meio do vão; "a diagonal nunca para cima"; montante do meio para a ponta alta | 16/10 | **sim** | test_2_3_alma_abre_para_o_meio_e_diagonal_nunca_para_cima, test_2_3_montante_no_meio_abre_para_a_ponta_alta |
+| TES-2.3 | Alma abre para o meio do vão; "a diagonal nunca para cima"; montante do meio para a ponta alta; na junta com dois montantes, as costas na junta (22/10, Hangar) | 16/10 | **sim** | test_2_3_alma_abre_para_o_meio_e_diagonal_nunca_para_cima, test_2_3_montante_no_meio_abre_para_a_ponta_alta |
 | TES-2.4 | Cantoneira simples = "um U cortado ao meio" (aba de pé sempre +n) | 16/10 | **sim** | test_2_4_cantoneira_simples_e_um_u_cortado_ao_meio |
-| TES-2.5 | Cantoneira em par = um U partido (abas de pé para o centro), par coincidente ≤ 40 mm | 16/10 (≤ 40 mm: 21/10) | **sim** | test_2_5_cantoneira_em_par_e_um_u_partido |
+| TES-2.5 | Cantoneira em par = um U partido (abas de pé para o centro), par coincidente ≤ 40 mm; vale também nas duas faces do caixão sem ligação entre elas (27/10, ajuste do usuário no Posto V2, a703f6c) | 16/10 (≤ 40 mm: 21/10) | **sim** | test_2_5_cantoneira_em_par_e_um_u_partido |
 | TES-2.6 | U deitado fora da tesoura nunca para cima | 16/10 | não (fica com o gerador) | — |
 | TES-2.7 | "Virar" do painel = o contrário da regra (`boca_virada`) | 16/10 | **sim** | test_2_7_boca_virada_pelo_usuario_fica |
 | TES-2.8 | Fora da regra: tubo, redonda, I/W, secundária, presilha, caixa | 16/10 | — | test_2_8_presilha_e_secundaria_ficam_fora |
@@ -346,9 +449,9 @@ Testes: `test_conferencia_3d.py`, `test_reanalise.py`.
 ### GER-01 — Cada barra entra uma vez só
 - **Enunciado (B10 e C8, 12/10):** a linha repetida na elevação não dobra o montante nem a presilha; um suporte de terça por apoio.
 - **Aprovada:** 12/10. **Aplica-se a:** todo modelo.
-- **Conferência:** **parcial** — `repetidas` (as mesmas pontas a 15 mm). Não pega a peça dobrada deslocada (o montante
-  visto de lado a 11 cm do verdadeiro, no Posto V2; os montantes a 30–120 mm no SESI). **Reforço pendente:** conferir
-  pela seção real (duas barras paralelas cujas seções se sobrepõem são a mesma peça), como no item da GER-02.
+- **Conferência:** **parcial** — `repetidas` (as mesmas pontas a 15 mm). **Reforçada em 29/10 (372490b):** a barra paralela dentro da outra, pela seção
+  (eixos a < ¼ da menor medida, trecho comum > 300 mm). Achou casos nas obras do dev (CD Bom Dia 60, Galpão Novo 9…).
+  **Falta:** sólido dentro de sólido (paredes ARQ, capas de rufo), que o SESI corrigiu só no script.
 - **Testes:** test_repetida_pega_as_mesmas_pontas_em_qualquer_sentido, test_3_3_presilha_dobrada_aparece_e_sai.
 - **Histórico:**
   - 19/10 CD Bom Dia — montantes repetidos (modelo antigo) — 934dbd0 (Reanalisar).
@@ -365,8 +468,9 @@ Testes: `test_conferencia_3d.py`, `test_reanalise.py`.
 - **Aprovada:** 12/10. **Aplica-se a:** todo modelo.
 - **Conferência:** **parcial** (rebaixada em 22/10) — `choques` olha o eixo (40 mm) e pula as barras paralelas (fora os
   cruzamentos normais: X do contraventamento, corrente, nó no pilar). Por isso não pegou os 2 Ue da VM caixa um dentro
-  do outro, nem degraus, steel deck e postes sobrepostos no SESI. **Reforço pendente:** conferir pela seção real do
-  catálogo, girada como a barra. O SESI já tem a conta (`Projeto/OBRAS/Sesi-Chapecó/leitura-3d/conferir_met.py`, 12 s
+  do outro, nem degraus, steel deck e postes sobrepostos no SESI. **Reforçada em 29/10 (a2e78bc):** viga × viga pela altura da seção,
+  longe das pontas. **Falta:** barra × chapa (a castanha na CB1, Hangar), aço × ARQ (airbrises do SESI) e o resto pela seção real
+  do catálogo, girada como a barra. O SESI já tem a conta (`Projeto/OBRAS/Sesi-Chapecó/leitura-3d/conferir_met.py`, 12 s
   para 577 mil pares) e ela vai para `conferencia_3d`.
 - **Código:** `nucleo3d/encaixe_pela_secao.py` (eixo_pelo_contorno, correntes_ate_a_alma), `de_planta._assentar_tercas`.
 - **Testes:** test_choque_entre_pecas_mas_nao_o_cruzamento_normal, test_encaixe_pela_secao.
@@ -381,7 +485,7 @@ Testes: `test_conferencia_3d.py`, `test_reanalise.py`.
 - **Conferência:** **parcial** — `pontas_soltas` (250 mm; 150 mm de sólido), barra por barra, e desde 22/10
   `pecas_voando` (9f2c42c, pelo Hangar): o grupo de barras ligadas só entre si, longe de tudo (fora o maior e o que chega
   no chão), com grade 3D e sólido simples pela caixa (Hangar 0,8 s, Posto V2 7,8 s, SESI 4,2 s). Roda também no Montar pela
-  Montagem (gerar_no_projeto). Ainda não pega a ponta a 9 cm da peça em que devia estar presa.
+  Montagem (gerar_no_projeto). Desde 02/11 (60878fe) também `pecas_sem_encosto`, pelas faces (raio das seções + 15 mm), que pega a peça a centímetros.
 - **Testes:** test_ponta_solta_mas_nao_a_que_encosta_no_banzo_curvo, test_reanalise,
   test_conferencia_3d::test_peca_voando_pega_o_grupo_que_so_encosta_nele_mesmo, test_hangar_v12::test_chapa_da_vc_e_castanha_no_3d.
 - **Histórico:**
@@ -412,6 +516,9 @@ Testes: `test_conferencia_3d.py`, `test_reanalise.py`.
   - peça de uma planta que o vínculo não conhece;
   - **o 3D não cai em cima do desenho**: mais de 12 % das barras, levadas ao 2D, longe de qualquer traço (meio e duas
     pontas, grade de 250 mm). Com o vínculo certo ficam até ~8 % (Posto V2 2,7 %); com o 3D 1 m fora, 16–28 %; com 5 m, mais de 50 %.
+- **Reforçada em 29/10 (510fb67):** também planta por planta (> 25 % das barras de uma planta, com ≥ 30, longe do traço); a
+  borda da hachura conta como traço. **Falta:** a peça e a vista certas (a prova por vetores do SESI e o
+  pente_fino_vinculo.py do Galpão Novo) e a remontagem rodar a conferência no fim.
 - **Testes:** test_vinculo_2d (8 casos e a trava: as obras do desenvolvimento não pioram em relação a
   `Projeto/bateria/vinculo-2d.json`, aceita em 26/10).
 - **Situação em 26/10 (33 obras do dev):**
@@ -425,6 +532,40 @@ Testes: `test_conferencia_3d.py`, `test_reanalise.py`.
     `{deslocamento, giro}`, no dividida.js e no vinculo_2d.py, com teste de giro certo, trocado e sem giro. Seguem sem
     vínculo: PRATI metálica e sem lateral.
 
+### GER-06 — A peça é como o projetista a desenha
+- **Enunciado (usuário, 22/10, memória seguir-o-projeto):** "a concepção do projetista primeiro (os encontros como a planta),
+  a execução depois". A peça chega onde a planta a desenha, com a altura, a medida e o tipo que o desenho cota. Exceção da
+  TES-4.8: no encontro quase tangente (< 30°) a peça segue a planta e não para na face.
+- **Aprovada:** 22/10 (decisão do usuário; princípio PRI-01). **Aplica-se a:** todo modelo montado de desenho.
+- **Código:** `de_planta.aparar_nas_faces` (TANGENTE_ATE 30°), `ancorar_pelas_chegadas`, `bases_locacao` (a medida do detalhe).
+- **Conferência:** **não**. Propostas: ponta do 3D × ponta da planta > 50 mm; chegadas × montantes da elevação > 30 mm; a chapa
+  do 3D × o DET. do CHn; o tipo da peça × o rótulo ou a hachura; o apoio fora da linha das vizinhas (rampa).
+- **Testes:** test_de_planta::test_encontro_quase_tangente_segue_a_planta e os 12 de 22/10 (79788b6, 0d06d01, 86132d9).
+- **Histórico:** 22/10 Posto V2 — a curva do PAINEL 9 parando na face do PAINEL 12, vão de 0,42 m — 8848154 (a 1ª); 22/10
+  Posto V2 — as referências dos elementos errados — 79788b6, 0d06d01, 86132d9. Depois: ver "Triagem de 22/10 a 04/11".
+
+### GER-07 — O Original traz as pranchas do projetista como foram emitidas
+- **Enunciado (usuário, 27/10):** "no original precisam aparecer todas as pranchas originais do projetista, para que eu
+  consiga conferir com o que ele projetou… isso é regra para todas as importações desse tipo" — com o carimbo, as tabelas e
+  as notas. Os leitores do Original ignoram as folhas (não viram peça de novo).
+- **Aprovada:** 27/10 (Hora Certa · Galpão Novo). **Aplica-se a:** projeto recebido, em DXF ou PDF.
+- **Código:** `nucleo2d/folhas_papel.py` (o espaço do papel do DXF como sai na impressão, 8cd53e9); `de_planta.montar` ignora
+  a origem "dxf-papel" (c8b1a4a).
+- **Conferência:** **sim** — `vinculo_2d.tem_o_original` (9265545): projeto recebido sem traço do projeto na planta de lançamento aponta.
+- **Testes:** test_folhas_papel, test_vinculo_2d::test_projeto_recebido_do_pdf_sem_o_original_aponta,
+  test_de_planta::test_folhas_do_projetista_no_original_nao_sao_lidas_como_projeto.
+- **Histórico:** 27/10 Galpão Novo (a 1ª, no script da obra); 03/11 WE Coqueiral — **reincidência**.
+
+### GER-08 — Tudo o que o desenho mostra vira peça ou apontamento
+- **Enunciado:** a conferência do PRI-01 ("o que não encaixa vira apontamento"). Toda peça desenhada, todo texto "PILAR nn",
+  todo rótulo de perfil ("CV. L…", "2U…"), toda borda de viga, toda nota e toda linha dos quadros RESUMO/TABELA do projetista
+  vira peça no 3D ou premissa/apontamento declarado.
+- **Aprovada:** 26/09 (PRI-01). **Aplica-se a:** todo projeto recebido.
+- **Código:** cada leitor (de_planta, leituras por script). **Conferência:** **não**. Proposta (auditor, 30/10): ler as notas e
+  os quadros RESUMO das folhas e exigir uma peça ou uma premissa para cada perfil/nota ("PLATIMBA", "GANCHO", "DIAGONAL"…); o
+  chumbador com gancho no detalhe pesa pelo desenvolvido.
+- **Histórico:** ver "Triagem de 22/10 a 04/11" (4 reincidências, todas no script da obra).
+
 ---
 
 ## FAB — Fábrica, detalhamento e compra
@@ -435,11 +576,14 @@ Regras aprovadas; a conferência de cada uma ainda está por levantar (etapa seg
 |---|---|---|---|---|
 | FAB-01 | Furação das terças e de tudo da ligação delas: 50 × 60 até 200 mm, 100 × 60 acima; oblongo 25 × 13; **o padrão da máquina vence o projeto** (também no IFC recebido) | 22/09 (30/09, 02/10, 16/10) | `_padronizar_3d` (app.py), `regra_furacao_terca` | R6 recusa o PDF "fora_da_maquina"; test_regressoes_primeiro_uso_ifc |
 | FAB-02 | Furo cotado pelo projetista vale; sem cota, d + 1,5 mm no mínimo | 15/10 | saida/detalhamento.py `FOLGA_MINIMA_FURO` | aviso "< 1,5" no detalhe; TestFolgaNaPranchaDoProjetoRecebido |
-| FAB-03 | Peso do dobrado: (soma externa − 2t por dobra) × t × 8 kg/m² por mm | 14/10 | saida/dobras.py, nucleo/catalogo.py | test_dobras.py |
+| FAB-03 | Peso do dobrado: (soma externa − 2t por dobra) × t × 8 kg/m² por mm | 14/10 | saida/dobras.py, nucleo/catalogo.py | **sim** desde 30/10: test_dobras.py + test_massa_formados_catalogo.py (o catálogo inteiro; o nome que o leitor não entende falha) |
 | FAB-04 | Barra não se dobra: curva = calandrada ou trechos retos | 06/10 | catalogo, resumos | — |
 | FAB-05 | Porcas: projeto recebido segue o projetista; nosso: parafuso 1 porca + 2 arruelas, chumbador 1 arruela + 2 porcas | 16/10 | lista de materiais | TestParafusosEPorcasNaLista, TestSegundaRodadaDaCamila::test_r05 |
 | FAB-06 | Nomes CT.n (cantoneira furada), MT.n (meia-tesoura); parafuso métrico × polegada por projeto | 16/10 | nucleo2d/detalhe/base.py, nomes.py | TestNomesDecididosPeloUsuario |
 | FAB-07 | 3D → detalhe → prancha (R1–R6): o 3D é a peça; regra de fábrica vai para o 3D; peça travada na prancha; PDF recusado com desenho velho | 02/10 | app.py `_padronizar_3d`, `_conferir_para_emitir`, web/cad/trava_pecas.js | R6 |
+| FAB-08 | Chumbador mecânico (Hardbolt, Parabolt) não leva químico nem porca solta | 14/10 (Hardbolt, PRATI) | saida/resumos.py (`_eh_parabolt`, Hardbolt) | não; test_hardbolt_sai_como_hardbolt_e_nao_como_quimico, test_parabolt. Histórico: 24/10 Parabolt — **reincidência** |
+| FAB-10 | Nomes do catálogo: polegada `1.1/4"`, espessura com 2 casas, W com a massa em 1 casa, telha = modelo + espessura + fabricante curto; o nome antigo gravado continua valendo | 27/10 (usuário, entre exemplos) | nucleo/nomes_catalogo.py | **sim**: test_nomes_catalogo (o catálogo inteiro) |
+| FAB-11 | Barra redonda maior que a barra comercial vem sob medida, sem emenda no plano de corte | 30/10 (usuário, Galpão Existente) | saida/lista_producao._regra_sob_medida | não; test_redondo_sob_medida |
 
 ## PRI — Princípios (valem em toda regra)
 
@@ -459,6 +603,51 @@ comum (progresso.js, cad.js, editor.js, sistemas.js) vale para todas as telas qu
 |---|---|---|---|---|
 | TEL-01 | Toda tarefa demorada mostra a barra de andamento, com a etapa e a estimativa, **numa linha só e sem repetir o texto do aviso** | 16/10 (CLAUDE.md); a linha só, 21/10 | web/progresso.js (instalado pelo vivo.js), `_progresso` no servidor | **parcial**: verif_ver3d_atualizando (só o modo ver). Histórico: 21/10 Sesi Chapecó, a barra do "Atualizando o 3D" e o aviso em duas linhas, com o texto repetido — 4d633bc (1ª correção) |
 | TEL-02 | Toda peça cai num sistema do modo ver e do celular cujo nome diz o que ela é: primeiro o nome da peça, depois a camada e o grupo, por último o material. **Outros só com motivo conhecido**, com o motivo no nome ("Outros — PVC"; PVC, neoprene, borracha, madeira, argamassa, tela, vidro). O material que ninguém reconhece vai para **"Sem material — a definir"**. Material só com a cor ("Cor #…") ou automático ("<auto>") é como sem material: Metálica. Armadura (e o aço CA-50/60 que não é chapa) é Pré-moldado | 22/10 (usuário, pelo GESTÃO, depois de 4 correções no mesmo dia; os 3 exemplos em `Projeto/ANALISES/Interface/TEL-02-sistemas-do-modo-ver-proposta-2026-10-22.pdf`) | web/visor3d/sistemas.js (`gruposDeSistema`, `conferirSistemas`), o mesmo no modo ver e no celular | **sim**: `conferirSistemas` (sem material, cobertura fora da Cobertura, ARQ fora do Arquitetônico, perfil de aço em Outros); test_sistemas_modo_ver (os 3 exemplos e a trava: as obras do desenvolvimento não pioram em relação a `Projeto/bateria/sistemas-modo-ver.json`); verif_ver3d_sistema. Histórico: 22/10 SESI e156c93 (1ª), c39a8b1, e014461, 8aa0515 (**3 reincidências**); 22/10 a regra virou conferência (este commit): 1.010–1.292 parafusos do Sooro, os furos do Hangar e do PRATI e 15 peças do Capitão para a Metálica, 1.876 armaduras e 534 pinos CA-50 do Ortobio para o Pré-moldado, as 3.146 peças da Vicente e 127 do Bellacasa em "Sem material — a definir" |
+| TEL-05 | O chão do terreno é feito de planos (contorno + cota): Plano / Inclinado / Plano, o degrau em pé em cor neutra, longe da obra volta ao plano; sem planos, o plano de sempre. Todo lote tem chão em todo ponto | 03/11 (usuário, caso (b); simplificado no mesmo dia, c22fc2f) | web/visor3d/chao.js, terreno.js; saida/local_obra.niveis_do_chao | test_chao_em_niveis, verif_ver3d_terreno_niveis |
+
+---
+
+## LIG — Ligações
+
+Padrões de ligação aprovados com exemplos. O tipo se troca por nó (tela /ligacoes). Prefixo aberto em 04/11 (GESTÃO avisado).
+
+| Código | Regra | Aprovada | Onde | Conferência / teste |
+|---|---|---|---|---|
+| LIG-01 | Contravento × viga, uma ligação por nó, três variantes que se trocam: A castanha (CA1 do Hangar), B duas chapas (Sooro), C cantoneira cortada (SC1) | 23/10 (usuário: "1. Sim 2. Pode ser 3. Sim", Projeto/ESTUDOS/Ligações/exemplos/contravento_{A,B,C}_*.png) | nucleo3d/ligacoes3d.py (FAMILIAS) | colisão nos 3 tipos: test_ligacoes_contravento, verif_ligacoes_trocar_tipo |
+| LIG-02 | Ligação "chapa simples" (viga na viga do heliponto: chapa 8 × 90 na alma do apoio, 5 M16 a 45 da face, borda 29, viga 10 mm antes, cope com 10 de folga) — padrão que se escolhe por obra | 23/10 (3 casos, Projeto/OBRAS/Heliponto/ligacoes-v2/1-casos-viga-na-viga.png) | nucleo3d/ligacoes3d.py (`chapa_simples`) | test_ligacoes3d::test_chapa_simples_* |
+| LIG-03 | Contravento horizontal em cantoneira ("CV. L…" na planta de nível) embaixo do banzo de baixo, de nó a nó, aba deitada no fundo dele; no X uma passa inteira e a outra logo abaixo (calço nas pontas); a ponta que chega numa VM para na face dela | 26/10 (usuário, caso A, Posto-CB/lista-do-projetista/exemplos-cv) | de_planta.contraventos_em_cantoneira | não (pela GER-08 e GER-02); test_de_planta::test_contravento_em_cantoneira_embaixo_do_banzo_e_cruzando_no_x |
+
+## DET — Desenho e pranchas
+
+| Código | Regra | Aprovada | Onde | Conferência / teste |
+|---|---|---|---|---|
+| DET-02 | Revisões: a tabela inteira em cima do carimbo (2 mm acima, a mais nova em cima, começa em "00 — EMISSÃO INICIAL", o REV. do carimbo = a última); nuvem com o △ do número; o diálogo "Revisões das pranchas…" marca as pranchas | 24/10 (usuário, opção A) | nucleo2d/revisoes.py, web/cad/revisoes.js | não (proposta: nenhuma prancha emitida com a tabela sobre um detalhe); test_revisoes, verif_cad_revisoes |
+| DET-03 | Cota em mm inteiro (decimal só escolhido à mão; ângulo com uma casa); na dúvida entre dois, o MAIOR ("é mais fácil ele cortar um pedacinho do que faltar"); metades espelhadas com o mesmo número | 26/10 (T1 da Sala, Sooro); o maior e as metades, 30/10 | desenho.py formatar_cota, desenho2d.js, conjuntos.metades_espelhadas_iguais | não; test_cota_mm_inteiro, test_cotas_pranchas. Pendência: as metades só na tesoura montada (faltam pórticos e vigas) |
+| DET-04 | Pranchas da tesoura (o ajuste do usuário na T1 da Sala): texto de cotas e chamadas 5 mm (furos 2,0); o vão dividido ao meio por um nó leva uma cota só; chamada das chapas em toda ocorrência até 4; a cadeia de baixo até o centro geométrico, a da cumeeira pelas faces das chapas de união; cada perfil do banzo com a sua cor | 26/10 ("sim"; muda o pedido de 28/09 das faces das metades); a cor, 30/10 | nucleo2d/detalhe/base.py, celulas.py, conjuntos.py | não; test_cotas_pranchas |
+| DET-06 | A frente fora da malha ganha eixos locais nossos (a conferir com o projetista), uma planta de chumbação por malha; toda base desenhada tem linha de locação a um eixo | 30/10 (usuário, Galpão Existente) | nucleo3d/eixos (malhas), detalhe/conjuntos (_locacao_dos_chumbadores) | não (proposta: nenhuma locação a mais de 15 m de um eixo); test_malhas_locais |
+
+## COM — Proposta e orçamento
+
+| Código | Regra | Aprovada | Onde | Conferência / teste |
+|---|---|---|---|---|
+| COM-01 | A proposta não entrega o estudo: cargas de norma, geometria, só o TIPO do perfil (W, U), peso estimado; nada de bitola ou lista copiável | 27/10 (usuário; memória proposta-nao-entrega-o-estudo) | saida/comercial.py (`PERFIL_ESPECIFICO`, `avisos_proposta`) | **sim**: a medida de perfil vira aviso; test_proposta_empresas |
+| COM-02 | Orçamento: o projeto (desenho) vale sobre a lista; na dúvida, a MAIOR medida; chumbador por unidade (fora do kg); guarda-corpo fora (adendo com a quantidade); calha só a metragem | 03/11 (usuário; memória regras-de-orcamento) | **só no relatório da obra** (relatorio_quantitativos.py) — pendência de gerador (FERRAMENTA · ORÇAMENTO) | não |
+
+## ARQ — Arquitetura (módulo só no dev)
+
+Família pedida pelo FERRAMENTA · ARQUITETURA; regras aprovadas pelo usuário em 30/10 ("pode seguir com as recomendações"), exemplos
+em `Projeto/ANALISES/Arquitetura/Prova-fase-1-arquitetura-2026-10-30.pdf`. Código: `sistema/arquitetura/paredes.py`; teste:
+test_arquitetura_paredes (14). ARQ-05 a 07 vêm na fase 2.
+
+| Código | Regra |
+|---|---|
+| ARQ-01 | A parede é desenhada pelo eixo e tem um tipo com camadas: externa 20 (reboco 3 + bloco 14 + reboco 3), interna 15 (3 + 9 + 3) |
+| ARQ-02 | Nas uniões L/T/X o bloco se amarra (núcleo contínuo) e o reboco contorna; na T e na X passa a parede mais grossa (empate: a desenhada primeiro) |
+| ARQ-03 | A base fica no nível e o topo no fundo da laje de cima |
+| ARQ-04 | A esquadria abre o vão sozinha; janela pelo vão acabado, osso +3 cm por lado e em cima; porta pela folha, osso folha +10 × folha +5 |
+| ARQ-05 | Planta cortada a 1,20 m (NBR 6492), penas 0,50/0,25/0,15/0,13; alvenaria cortada hachurada; abaixo em vista, acima tracejado |
+| ARQ-06 | Etiqueta do ambiente: nome, área pelas faces internas e piso; cotas em metro com 2 casas e traço a 45° |
+| ARQ-07 | Pranchas para a prefeitura de Cascavel (art. 6º e 7º: espaço de 17,5 × 6 cm), com o carimbo da DEZN |
 
 ---
 
@@ -476,6 +665,19 @@ comum (progresso.js, cad.js, editor.js, sistemas.js) vale para todas as telas qu
 | COB-01 (ampliação) | …nem chapa sobre chapa: duas telhas de direções diferentes não se cobrem além do cobrimento na terça | 7cf6e1d (Posto V2, 22/10: no canto da oval com a parede reta, chapas de duas direções uma sobre a outra — efeito das correções de encontro de 21/10). Conferência proposta: `Projeto/OBRAS/Posto-CB/leitura-3d/sobreposicao.py` (pares de direções diferentes que se cobrem > 0,005 m² em planta; Posto V2 0,77 → 0,31 m², 24 pares que sobram, quase todos o cobrimento de 50–100 mm) |
 | TES-2.9b | A terça de fim de curso (sem outra terça do outro lado) sobre banzo de perfil duplo vai até a face de fora do último perfil, apoiada nos dois. Na emenda, cada terça vai até o meio (fica). No banzo de perfil único, para no eixo (a confirmar) | usuário, 26/10, print do Ortobio. Exemplos: `Projeto/ANALISES/Montagem/Terca-fim-de-curso-banzo-duplo-exemplos-2026-10-26.pdf`. Hoje, nas obras do dev: Ortobio 58 terças curtas (+114, +125 e +250 mm), Mercado 4, Posto teste 1. Precedente: Hangar 22/10 ("a terça vai até a face de fora da tesoura", de_planta_estrutura), que só valia com o suporte lançado e ficou só no REGRESSOES — **a mesma ideia voltando** |
 | DET-01 | Planta de localização e chumbação por pavimento (o modo prédio) só em prédio de aço: chumbador em 3 pavimentos ou mais. Senão, a planta do galpão | 1725e84 (bateria da 0.9.1, 22/10: o modo prédio da Vicente entrou no Capitão pré-moldado, 17 plantas "IFCBEAM"); test_predio |
+| GER-05 | O perfil composto desenhado (2U/2Ue/2L) sai composto; o rótulo da peça vale mais que a camada. Conferência: texto 2U/2Ue/2L do desenho × peça simples; barra com "2×"/composicao no atributo e um perfil só | f22b561 (Posto, 22/10: o pilar 2U em 1 U); 28/10 Galpão Novo (32 t a menos na lista, TES-2.9) |
+| GER-09 | A peça é inteira como no desenho: o banzo não sai picado por painel. Conferência: trechos colineares seguidos da mesma peça | 27/10 Galpão Novo (só no script da obra) |
+| GER-10 | A peça e a chapa se posicionam pelo contorno da seção, não pelo centro de gravidade (U, Ue, L) | 6b22115 (SESI, 22/10: a VM caixa) e 51545e6 (SESI, 28/10: 41 bases a 12,9 mm) — **2 vezes** |
+| GER-11 | Peça fixada no concreto encosta na face dele: nem dentro nem no ar, e o concreto está no 3D | 03/11 SESI (airbrises dentro das paredes e depois voando: a viga de borda faltava) |
+| TES-2.8b | A caixa de 2 U/Ue é boca com boca (hoje a 2.8 deixa a caixa fora da regra) | 27/10 SESI (os postes da TS6 com os dois Ue para o mesmo lado) — com exemplos |
+| TES-3.2a | **Decisão do usuário:** a alma entre banzos em par tem comprimento de corte até a face de fora (o nó continua no eixo) | 28/10 Galpão Novo: a alma 3,6 t curta (22,0 → 25,6 t, +17 %) |
+| DET-05 | Treliça plana em linha não sai como tesoura montada; só a de duas águas sai montada | d2fd713 (29/10) e 941fa4e (30/10), Galpão Existente — **2 vezes** |
+| FAB-09 | O que se compra por m² (telha, chapa expandida) pesa pela massa por m² do fabricante e não vai para o plano de corte | 24/10 Posto (a chapa expandida pesando 4,3 t) |
+| TEL-01 (ampliação) | O fim da tarefa diz onde ela parou e sai sozinho ou tem ×; a tarefa segue quando o usuário sai da tela e a tela de volta mostra o andamento; nada se sobrepõe ao rodapé, também na tela dividida | 8bbdef0 (22/10), db64dab (27/10), 37da918 (27/10), 03/11 (a marca d'água) |
+| TEL-06 | Abrir um modelo de qualquer tamanho não trava a tela: acima de 6.000 peças a montagem é em partes com andamento, e o resultado é o mesmo | f3eaed8 (SESI, 03/11); verif_editor_modelo_grande |
+| TEL-07 | O que o servidor refaz sozinho depois de gravar (3D leve, desenhos, pranchas) roda em segundo plano, depois de meio minuto de sossego; o usuário passa na frente | b8aeebc (SESI, 03/11) |
+| COB-18 | O capa fica centrado no topo da parede que é o apoio dele (alvenaria ou concreto, nunca revestimento); na platibanda cobre a telha interna e o ACM; parede corrida = capa reto; pilar acima = o capa termina nele | 30/10, 03/11 (duas vezes) SESI — só no script da obra |
+| ARQ-08 | A escada confortável: 63 ≤ 2e + p ≤ 64 cm (Blondel) e o patamar com pelo menos a largura do lance | e4e98f3 (casa alto padrão, 02/11); hoje só avisa |
 
 ## Pendências de gerador (correção que mora só no script da obra)
 
@@ -485,3 +687,16 @@ comum (progresso.js, cad.js, editor.js, sistemas.js) vale para todas as telas qu
   lida de PDF ou montada por script), mora em cópias por obra: `Projeto/OBRAS/Sesi-Chapecó/leitura-3d/vinculo_2d.py` e
   `Projeto/OBRAS/Hora-Certa/Galpão Existente/leitura-3d/vinculo_planta.py` e `Projeto/OBRAS/Moinho-Globo/ligar_2d.py` (a chave do traço da vista de cada barra, porque o DXF do Moinho só tem elevações e cortes). Deve ir para o código comum (pedido ao
   FERRAMENTA · LEITURA DXF/IFC → 3D).
+- **Leituras por script sem gerador comum** (de onde vieram 34 das 150 linhas de 22/10 a 04/11):
+  - SESI: a leitura por subagente (pilaretes, suportes de terça, quadros da frontal, `fechar_nos.py`, rufos e capas em
+    `telhas_sesi.py`, airbrises);
+  - Edifício Administrativo e Galpão Existente: a planta a duas linhas (`vigas_por_pares.py`) e o pilar fora da camada;
+  - Galpão Novo: a elevação no trecho dela, o par ]-[ e as notas dos quadros RESUMO.
+
+  O `fechar_nos.py` e os critérios de rufo do SESI são os candidatos mais fortes ao código comum (GER-03, COB-12/13/18).
+- `regras_trelica.aplicar` deixa barra de comprimento zero (o montante de ponta mais curto que o banzo; Residencial Madrid,
+  04/11). Foi contornado no script da obra. Pedido ao dono das tesouras: não deixar peça nula, com teste.
+- "A viga de menor hierarquia é partida no cruzamento": só em `nos_das_vigas.py` do ADM (29/10).
+- COB-11: a calha em 0,65 mm (usuário, 03/11) ainda não está no `telhas_cobertura`.
+- COM-02: as regras de orçamento estão só no relatório da obra.
+- GER-07: resolvida no código comum (`folhas_papel.py`, 8cd53e9); a leitura das folhas em PDF segue por script nas obras.
