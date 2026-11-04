@@ -557,14 +557,16 @@ def _eixo_trocado_com_a_secao(pos: Posicao, e1, e2) -> bool:
     não têm mesas para decidir."""
     from nucleo.catalogo import nome_do_ifc
     # o nome do Revit vem "Vigas W Gerdau:W200X22.5:6474310": o tipo é o do meio
-    if not re.match(r"^\s*(W|HP|I|U|C|L)\s*\d", nome_do_ifc(pos.perfil), re.I):
+    # e o dobrado com mesas (Ue, Z, Ze, Cr): os tocos de Ue 500 de 250 mm do SteelX saíam com 680 (Mall, 04/11)
+    if not re.match(r"^\s*(W|HP|I|U|Ue|C|L|Ze|Z|Cr)\s*\d", nome_do_ifc(pos.perfil), re.I):
         return False
     verts = pos.vertices
     # até o toco de 20 mm de um W200 (os de 65 mm da Bella Casa, 06/10, ficavam de fora com
     # o limite antigo de 2×): numa barra deitada certa as pontas nunca somam mais que as mesas
     if _extensao_ao_longo(verts, e1) > 12.0 * _extensao_ao_longo(verts, e2):
         return False
-    a1 = a2 = total = 0.0
+    e3 = _norm(_cruz(e1, e2))
+    a1 = a2 = a3 = total = 0.0
     for f in pos.faces:
         n, a = _normal_area([verts[i] for i in f])
         if a <= 1e-9:
@@ -574,9 +576,12 @@ def _eixo_trocado_com_a_secao(pos: Posicao, e1, e2) -> bool:
             a1 += a
         elif abs(_dot(n, e2)) > 0.985:
             a2 += a
-    # e as faces que decidem têm de ser boa parte da peça: com os eixos oblíquos às faces
-    # (a W530 de 2,5 m da Bella Casa) sobram retalhos de 500 mm², e o retalho não decide
-    return a1 > 1.5 * a2 and a1 > 0 and a1 + a2 > 0.3 * total
+        elif abs(_dot(n, e3)) > 0.985:
+            a3 += a
+    # e as faces que decidem têm de ser boa parte da peça fora da alma (a alma nunca decide): com os eixos oblíquos às
+    # faces (a W530 de 2,5 m da Bella Casa) sobram retalhos de 500 mm², e o retalho não decide; na Ue 500×75 fina a alma
+    # é quase toda a área e escondia as mesas (Mall, 04/11)
+    return a1 > 1.5 * a2 and a1 > 0 and a1 + a2 > 0.3 * (total - a3)
 
 
 def _extensao_ao_longo(verts, ax) -> float:

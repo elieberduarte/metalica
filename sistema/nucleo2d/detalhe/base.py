@@ -605,17 +605,27 @@ def _separar_barras_sem_marca(pecas: Sequence[Solido]) -> None:
     vez de ~4,4 t, na lista de materiais, no peso da barra do 3D e em qualquer orçamento feito em cima deles. Mesmo
     nome com comprimento diferente ganha a marca "nome · comprimento" (" #2", " #3"… quando o comprimento repete com
     corte diferente; o "(b)" é das variantes de furação das chapas), gravada no sólido do detalhamento (a barra do modelo não muda); as iguais continuam juntas, e
-    `fundir_posicoes_iguais` reúne o que for a mesma peça com nomes diferentes."""
+    `fundir_posicoes_iguais` reúne o que for a mesma peça com nomes diferentes.
+
+    A barra de malha também (o sólido IfcBeam/IfcMember/IfcColumn sem marca, com o nome do perfil): o comprimento pelo
+    eixo principal dos vértices e o volume no lugar do comprimento médio — as Ue do SteelX do Mall Av. Londrina (04/11)
+    saíam 20 × 528 mm no lugar de 528 mm a 14,4 m."""
     grupos: Dict[str, Dict[tuple, List[Solido]]] = collections.OrderedDict()
     for s in pecas:
-        b = getattr(s, "parametrica", None)
-        if not isinstance(b, Barra) or _marcas(s).get("posicao") or not s.nome:
+        if _marcas(s).get("posicao") or not s.nome:
             continue
+        b = getattr(s, "parametrica", None)
         try:
-            medio, corte = _geo.comprimentos_da_barra(b)
+            if isinstance(b, Barra):
+                medio, corte = _geo.comprimentos_da_barra(b)
+                chave = (round(corte), round(medio))
+            elif b is None and _tipo_ifc(s) in TIPOS_PECA and not _tipo_ifc(s).startswith("IfcPlate"):
+                chave = _comprimento_e_volume_da_malha(s)
+            else:
+                continue
         except Exception:                                   # noqa: BLE001 — sem o comprimento, fica como estava
             continue
-        grupos.setdefault(str(s.nome), collections.OrderedDict()).setdefault((round(corte), round(medio)), []).append(s)
+        grupos.setdefault(str(s.nome), collections.OrderedDict()).setdefault(chave, []).append(s)
     for nome, por_geo in grupos.items():
         if len(por_geo) < 2:
             continue
@@ -628,6 +638,18 @@ def _separar_barras_sem_marca(pecas: Sequence[Solido]) -> None:
             for s in ss:
                 s.atributos = dict(s.atributos or {})
                 s.atributos["marcas"] = dict(_marcas(s), posicao=marca)
+
+
+def _comprimento_e_volume_da_malha(s: Solido) -> Tuple[int, int]:
+    """(comprimento ao longo do eixo principal dos vértices, mm; volume em cm³), arredondados: o que separa as barras de
+    malha sem marca de mesmo nome."""
+    import numpy as np
+    from nucleo2d.detalhe.fora_do_aco import volume_da_malha
+    X = np.asarray(s.vertices, dtype=float)
+    c = X - X.mean(axis=0)
+    eixo = np.linalg.svd(c, full_matrices=False)[2][0]
+    proj = c @ eixo
+    return int(round(float(proj.max() - proj.min()))), int(round(volume_da_malha(s.vertices, s.faces) / 1000.0))
 
 
 def _forma_da_chapa(ch) -> Optional[tuple]:
@@ -1801,9 +1823,10 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
             t = _tipo_ifc(ent)
             perfil_m = str(m.get("perfil") or "")
             ch_p = getattr(ent, "parametrica", None)
-            if not perfil_m and isinstance(ch_p, Chapa):
+            if isinstance(ch_p, Chapa) and (not perfil_m or perfil_m.strip() == str(m.get("posicao") or "").strip()):
                 # chapa paramétrica sem marcas (gerador, editor): o perfil é a espessura, como o lançamento grava — com o
-                # NOME da peça no lugar, a assinatura separava chapas iguais só pelo nome (CH2…CH79 do PRATI, 13/10)
+                # NOME da peça no lugar, a assinatura separava chapas iguais só pelo nome (CH2…CH79 do PRATI, 13/10); e a
+                # que traz a própria marca como perfil ("ch.12", "pb.2" do SteelX, Mall 04/11: lida como perfil, sem espessura)
                 perfil_m = "CH %s" % ("%g" % round(float(ch_p.espessura), 2)).replace(".", ",")
             pos = Posicao(marca=marca, tipo_ifc="IfcPlate" if t.startswith("IfcPlate") else t,
                           perfil=re.sub(r"\s+", " ", perfil_m or str(ent.nome or "")),
