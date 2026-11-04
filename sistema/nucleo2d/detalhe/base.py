@@ -488,6 +488,19 @@ def fora_do_escopo(ent) -> str:
     return str((getattr(ent, "atributos", None) or {}).get("fora_do_escopo") or "")
 
 
+def referencia_de_outro_projeto(ent) -> str:
+    """De onde vem a referência de outro projeto posta no 3D (`atributos["referencia_arquitetonica"]` dos geradores do
+    arquitetônico; `atributos["referencia"]` com o nome da fonte: "concreto TQS V4…", "deck — não é aço…"), ou "".
+    Fica no 3D e nas fotos; fora da lista de materiais, do Quadro 8, dos acessórios e da compra — os sólidos "ARQ — "
+    iam ao Quadro 8 como concreto e vidro (Hora Certa · Galpão Novo, 5.789 t, N06 do auditor de 30/10; SESI Chapecó, o
+    ACM a 323,7 t, N29 de 02/11) e o letreiro sem material ia à compra como porca (SESI, N09)."""
+    atr = getattr(ent, "atributos", None) or {}
+    if atr.get("referencia_arquitetonica"):
+        return "arquitetônico de referência"
+    ref = atr.get("referencia")
+    return str(ref) if isinstance(ref, str) else ""
+
+
 def _pecas(doc: Documento, puladas: Optional[list] = None, fora_do_aco: Optional[list] = None,
            proxies: Optional[list] = None):
     """Sólidos do modelo que são peças de produção, e os acessórios contados.
@@ -505,8 +518,8 @@ def _pecas(doc: Documento, puladas: Optional[list] = None, fora_do_aco: Optional
     from nucleo2d.detalhe.fora_do_aco import material_nao_aco, proxy_estrutural
     pecas, acessorios = [], collections.Counter()
     for ent in doc.entidades.values():
-        if fora_do_escopo(ent):
-            continue                                  # do cliente (a cobertura industrializada): só no 3D e no cálculo
+        if fora_do_escopo(ent) or referencia_de_outro_projeto(ent):
+            continue                                  # do cliente (a cobertura industrializada) e a referência: só no 3D
         if isinstance(ent, Barra):
             if (_tipo_ifc(ent) or ent.tipo_ifc()) in TIPOS_PECA:
                 try:
@@ -819,7 +832,7 @@ def _furo_marcado(f: Solido):
 
 def _fixadores(doc: Documento) -> List[Solido]:
     return [e for e in doc.entidades.values() if isinstance(e, Solido) and len(e.vertices) >= 4
-            and (_tipo_ifc(e) in TIPOS_ACESSORIO or _eh_furo(e))]
+            and (_tipo_ifc(e) in TIPOS_ACESSORIO or _eh_furo(e)) and not referencia_de_outro_projeto(e)]
 
 
 def _diametro_do_fixador(ent: Solido, ext) -> Tuple[float, bool]:
@@ -2395,7 +2408,7 @@ def pontas_do_modelo(doc) -> Dict[str, dict]:
     cache = getattr(doc, "_pontas_roscadas", None)
     if cache is None:
         pecas = [e for e in doc.entidades.values() if getattr(e, "vertices", None) and getattr(e, "faces", None)
-                 and not isinstance(e, Chapa)]
+                 and not isinstance(e, Chapa) and not referencia_de_outro_projeto(e)]
         pontas, _usados = pontas_roscadas(pecas, _fixadores(doc))
         cache = {fid: p for p in pontas for fid in p["fixadores"]}
         try:

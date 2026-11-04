@@ -45,12 +45,12 @@ def pecas_de_producao(doc) -> list:
     """As entidades que viram posição no detalhamento: Barra e Chapa paramétricas e os sólidos de aço com tipo de peça
     (a mesma escolha de nucleo2d.detalhe.base._pecas, sem montar malha nenhuma)."""
     from nucleo3d.modelo import Barra, Chapa, Solido
-    from nucleo2d.detalhe.base import TIPOS_PECA, _tipo_ifc
+    from nucleo2d.detalhe.base import TIPOS_PECA, _tipo_ifc, referencia_de_outro_projeto
     from nucleo2d.detalhe.fora_do_aco import material_nao_aco
     fora = []
     for e in doc.entidades.values():
         a = e.atributos or {}
-        if a.get("tipo") in ("cota", "construcao") or a.get("furo"):
+        if a.get("tipo") in ("cota", "construcao") or a.get("furo") or referencia_de_outro_projeto(e):
             continue
         if isinstance(e, Barra):
             if (_tipo_ifc(e) or e.tipo_ifc()) in TIPOS_PECA:
