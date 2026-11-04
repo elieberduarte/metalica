@@ -35,7 +35,8 @@ def _registro():
         # a mesma pasta que o servidor em --dev usa (o vigia não tem o --dev no argv: sem isto
         # o app resolveria sistema/projetos e o "[dev] …" ia parar noutro arquivo)
         import app
-        pasta = app.PROJETOS if "--dados" in sys.argv else os.path.join(app._documentos(), app.versao.NOME)
+        # com METALICA_DADOS (a pasta de dados fora do OneDrive, opção A de 03/11) o app já resolve a pasta certa
+        pasta = app.PROJETOS if ("--dados" in sys.argv or os.environ.get("METALICA_DADOS")) else os.path.join(app._documentos(), app.versao.NOME)
     except Exception:                                # noqa: BLE001
         pasta = BASE
     try:
