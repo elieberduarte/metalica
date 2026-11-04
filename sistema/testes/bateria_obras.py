@@ -39,7 +39,7 @@ import time
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PASTA = os.path.abspath(os.path.join(RAIZ, "..", "Projeto", "bateria"))
 ENTRADAS = os.path.join(PASTA, "entradas")
-#: As obras da bateria (a pasta delas em Documentos\Metálica).
+#: As obras da bateria (a pasta delas na pasta de dados: METALICA_DADOS, C:\Metálica\dados desde 04/11).
 OBRAS = ["me-sooro-sala-compressores", "me-sooro-cags-01-r00-modelo-água-gelada",
          "me-sooro-depósito-químico", "obra-capitão-2026"]
 #: As obras montadas pela planta: a pasta de origem (o desenho recebido) e os parâmetros da montagem.
