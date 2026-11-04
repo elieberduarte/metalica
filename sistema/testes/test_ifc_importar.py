@@ -1525,3 +1525,77 @@ class TestRecorteSolidoMenosSolido(Asserts):
 
     def test_sem_aviso_de_recorte_nao_resolvido(self):
         self.assertFalse([a for a in self.avisos if "não resolvido" in a], self.avisos)
+
+
+# =================================================================== SteelX (Mall Av. Londrina)
+
+class TestSteelX(Asserts):
+    """O IFC4 do SteelX (OBRA · MALL AV. LONDRINA, 04/11/2026): o trecho `steelx_mall_trecho.ifc` do arquivo do projetista
+    (uma Ue de pilar, uma TR de terça, uma calha, um rufo de canto, uma Isotelha, uma Ue sem marca e o IfcGrid inteiro).
+    Antes: 16 de 19 perfis fora do catálogo (o "mm" no fim e a família do SteelX antes do nome), marcas vazias (o pset
+    SteelXData não era lido), eixos vazios (o IfcGrid era ignorado), calhas e rufos em Barras, e as Ue que viravam barra
+    saíam 7 a 25 mm para a boca (o contorno livre tem a origem no centro da caixa)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.doc = importar(dado("steelx_mall_trecho.ifc"))
+        cls.solidos = importar(dado("steelx_mall_trecho.ifc"), estrutural=False)
+        cls.ents = list(cls.doc.entidades.values())
+
+    def _por_perfil(self, trecho, doc=None):
+        return next(e for e in (doc or self.doc).entidades.values()
+                    if trecho in str((e.atributos.get("marcas") or {}).get("perfil") or ""))
+
+    def test_nome_do_perfil_como_o_catalogo(self):
+        from ifc.importar import perfil_limpo
+        from nucleo import catalogo
+        self.assertEqual(perfil_limpo("Usr Tubo Retangular#@?@#TR 150x100x2,00mm"), catalogo.perfil_de("TR 150x100x2,00").nome)
+        self.assertEqual(perfil_limpo("Ue 300x70x25x2,25mm"), catalogo.perfil_de("Ue 300x70x25x2,25").nome)
+        self.assertEqual(perfil_limpo("D 16,0mm"), "Barra redonda ø 16 mm")
+        self.assertEqual(perfil_limpo("ISOTELHA RB - PIR/PIR AP 30mm"), "ISOTELHA RB - PIR/PIR AP 30mm")
+        self.assertEqual(perfil_limpo("W200X22.5"), "W200X22.5")
+
+    def test_perfis_viram_barra_do_catalogo(self):
+        tr = self._por_perfil("TR 150")
+        self.assertIsInstance(tr, Barra)
+        self.assertNotIn("mm", tr.perfil)
+        ue = next(e for e in self.ents if isinstance(e, Barra) and e.perfil.startswith("Ue 400"))
+        self.assertNotIn("mm", ue.atributos["marcas"]["perfil"])
+
+    def test_ue_no_lugar_do_contorno(self):
+        from nucleo3d import geometria
+        for trecho in ("Ue 200", "Ue 400"):
+            b = next(e for e in self.ents if isinstance(e, Barra) and e.perfil.startswith(trecho))
+            s = next(e for e in self.solidos.solidos if e.origem_ifc == b.atributos["origem_ifc"])
+            vb, _ = geometria.malha_barra(b)
+            (a0, a1), (b0, b1) = caixa(vb), caixa(s.vertices)
+            for i in range(3):
+                self.assertLessEqual(abs(a0[i] - b0[i]), 1.5, "%s: caixa %s × %s" % (trecho, (a0, a1), (b0, b1)))
+                self.assertLessEqual(abs(a1[i] - b1[i]), 1.5, "%s: caixa %s × %s" % (trecho, (a0, a1), (b0, b1)))
+
+    def test_marcas_do_pset(self):
+        tr = self._por_perfil("TR 150")
+        self.assertEqual(tr.atributos["marcas"]["posicao"], "tc.9")
+        self.assertEqual(tr.atributos["marcas"]["conjunto"], "TC.9")
+        # sem marca no SteelX: MainPartMark "indefinido" não vira conjunto
+        sem = next(e for e in self.ents if (e.atributos.get("propriedades") or {}).get("SteelXData", {}).get("MainPartMark") == "indefinido")
+        self.assertNotIn("conjunto", sem.atributos.get("marcas") or {})
+
+    def test_calha_rufo_e_telha_nas_camadas(self):
+        camada = {(e.atributos.get("propriedades") or {}).get("SteelXData", {}).get("ModelRole"): e.camada for e in self.ents}
+        self.assertEqual(camada["CALHA"], "Calhas")
+        self.assertEqual(camada["RUFOCT"], "Rufos")
+        self.assertEqual(camada["Perfil de Fechamento"], "Telhas")
+
+    def test_eixos_do_ifcgrid(self):
+        from nucleo3d import eixos
+        ex = eixos.de_dict(self.doc.metadados.get("eixos"))
+        self.assertIsNotNone(ex)
+        self.assertEqual([n["nome"] for n in ex["numeros"]], [str(i) for i in range(1, 12)])
+        self.assertEqual([n["nome"] for n in ex["letras"]], list("ABCDEF"))
+        self.assertEqual(ex["numeros"][0]["pos"], -41970.0)
+        self.assertEqual(ex["letras"][-1]["pos"], 30598.0)
+        self.assertEqual(ex["z_base"], 125.0)
+        self.assertEqual(len(ex["malhas"]), 1)
+        self.assertEqual([n["nome"] for n in ex["malhas"][0]["numeros"]], [str(i) for i in range(1, 14)])
+        self.assertEqual(ex["malhas"][0]["letras"][-1]["pos"], 18600.0)

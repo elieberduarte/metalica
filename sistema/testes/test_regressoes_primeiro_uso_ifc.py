@@ -546,6 +546,31 @@ class TestResumoDaImportacao(_SooroDetalhada):
         self.assertIn("resumo", r)
         self.assertEqual(app._gerente().ler(s).get("importacao_resumo"), r["resumo"])
 
+    def test_importar_leva_os_eixos_do_ifcgrid_ao_projeto(self):
+        """O IfcGrid do SteelX (Mall Av. Londrina, 04/11): os eixos vão para o projeto (antes, vazios); os que o usuário
+        gravou ficam."""
+        import base64
+        from projetos import Projetos
+        from nucleo3d import eixos as _eixos
+        ifc = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dados_ifc", "steelx_mall_trecho.ifc")
+        with open(ifc, "rb") as f:
+            corpo = {"nome": "steelx.ifc", "conteudo_b64": base64.b64encode(f.read()).decode()}
+        s = Projetos(self.pasta).criar("IFC SteelX", tipo="ifc")["slug"]
+        r = app.importar_ifc_no_projeto(s, dict(corpo))
+        ex = _eixos.de_dict(app._gerente().ler(s).get("eixos"))
+        self.assertIsNotNone(ex)
+        self.assertEqual(ex["origem"], "ifc")
+        self.assertEqual(len(ex["numeros"]) + len(ex["letras"]), 17)
+        self.assertEqual(len(ex["malhas"]), 1)
+        self.assertEqual(r["resumo"]["eixos"], 36)
+        self.assertEqual(app._gerente().ler(s).get("importacao_resumo"), r["resumo"])
+        # os eixos do usuário ficam na reimportação
+        meus = {"eixo_g": [1.0, 0.0], "numeros": [{"nome": "1", "pos": 0.0}], "letras": [{"nome": "A", "pos": 0.0}], "origem": "usuario"}
+        app._gerente()._atualizar(s, eixos=meus)
+        app.importar_ifc_no_projeto(s, dict(corpo))
+        self.assertEqual(app._gerente().ler(s).get("eixos")["origem"], "usuario")
+        self.assertEqual(len(app._gerente().ler(s).get("eixos")["numeros"]), 1)
+
 
 class TestAjudaComORoteiroDoIfc(unittest.TestCase):
     """Q22 — "a Ajuda não guia o caminho do IFC": texto corrido, sem um roteiro IFC → pranchas. O roteiro no topo, com os

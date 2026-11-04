@@ -1522,6 +1522,15 @@ class Importador:
             origem = "pset" if nome else ""
         if not nome:
             nome = camada_semantica(tipo, nome_elemento)
+            if nome in ("", "Vigas", "Barras", "Pilares"):
+                # o exportador que dá à peça o nome da marca ("cl.", "rf.", "p." do SteelX, Mall Av. Londrina 04/11): a
+                # calha, o rufo e a telha se reconhecem pelo pset — a função (ModelRole "CALHA", "RUFOCT"), o perfil
+                # ("ISOTELHA RB…") ou o layer de lá ("0-Telha")
+                for texto in _textos_do_pset(propriedades):
+                    outra = camada_semantica("", texto)
+                    if outra in ("Telhas", "Rufos", "Calhas"):
+                        nome = outra
+                        break
             origem = "tipo" if nome else "pavimento"
             if nome and nome not in self.doc.camadas:
                 self.doc.camadas[nome] = Camada(nome=nome, cor=CAMADAS_SEMANTICAS[nome])
@@ -1787,7 +1796,7 @@ class Importador:
         tipos = {"I": ("I",), "U": ("U", "Ue"), "Ue": ("Ue", "U"), "L": ("L",),
                  "tubo_circular": ("tubo",), "tubo_retangular": ("tubo",)}.get(familia)
         # nome declarado no IFC, quando bate com o catálogo, vale mais que a medida
-        declarado = (info.get("nome") or "").strip()
+        declarado = perfil_limpo((info.get("nome") or "").strip())
         p = banco.get(declarado) if declarado else None
         if p is None and declarado:
             # Perfil fora do banco tabelado mas conhecido do catálogo de peças: séries
@@ -1921,7 +1930,13 @@ class Importador:
                 # (o contorno `ext` já vem com a posição do perfil: o centroide dele está no sistema da extrusão)
                 cx, cy = _centroide_area(ext)
                 inicio = m_ponto(total, (cx, cy, 0.0))
-        passo = m_direcao(total, (direcao[0] * prof, direcao[1] * prof, direcao[2] * prof))
+        elif familia == "livre" and len(ext) >= 3:
+            # o contorno livre casado com o catálogo (o Ue do SteelX, Mall Av. Londrina 04/11): a origem dele é a que o
+            # exportador quis — no SteelX, o centro da caixa — e o eixo da barra é o centroide do próprio contorno; pela
+            # origem, as Ue saíam 7 a 25 mm para a boca
+            cx, cy = _centroide_area(ext)
+            inicio = m_ponto(total, (cx, cy, 0.0))
+        passo = m_direcao(total,(direcao[0] * prof, direcao[1] * prof, direcao[2] * prof))
         fim = (inicio[0] + passo[0], inicio[1] + passo[1], inicio[2] + passo[2])
         if prof < 0:
             inicio, fim = fim, inicio
@@ -2204,6 +2219,48 @@ class Importador:
         self.avisar("modelo trazido para a origem: no arquivo ele estava em x = %.1f m, "
                     "y = %.1f m; o exportador devolve essa posição" % (x0 / 1000, y0 / 1000))
 
+    def _ler_eixos(self) -> Optional[dict]:
+        """Os eixos do IfcGrid, no formato dos eixos do projeto (nucleo3d/eixos.de_dict). Antes a malha era ignorada e os
+        eixos saíam vazios (o SteelX do Mall Av. Londrina, 04/11, grava 36 IfcGridAxis). Cada eixo reto vira a linha dele
+        no mundo; as IfcGrid do arquivo — e, dentro de uma, os eixos de mesmo nome em outra altura (o Mall tem 1–11 × A–F
+        no alto e 1–13 × A–F embaixo) — são malhas: a de maior área é a principal, as outras as malhas locais. O nome que
+        começa com número é eixo numerado; o resto, letra. None quando o arquivo não tem malha."""
+        desloc = self.doc.metadados.get("deslocamento_mm") or [0.0, 0.0, 0.0]
+        grupos: Dict[Tuple[str, int], List[dict]] = {}
+        for grade in self.arq.por_tipo("IFCGRID"):
+            mundo = self.matriz(grade.arg(5)) if grade.arg(5) is not None else m_identidade()
+            for k in (7, 8, 9):
+                for eixo in self.lista(grade.arg(k) or []):
+                    nome = str(eixo.arg(0) or "").strip()
+                    curva = self.res(eixo.arg(1))
+                    if not nome or curva is None or not curva.e_tipo("IFCPOLYLINE"):
+                        continue
+                    pts = [m_ponto(mundo, self.ponto(r)) for r in (curva.arg(0) or [])]
+                    if len(pts) < 2:
+                        continue
+                    a, b = [(p[0] - desloc[0], p[1] - desloc[1], p[2]) for p in (pts[0], pts[-1])]
+                    if math.hypot(b[0] - a[0], b[1] - a[1]) < 1.0:
+                        continue
+                    chave = (str(grade.arg(2) or "Eixos"), int(round(a[2])))
+                    grupos.setdefault(chave, []).append({"nome": nome, "a": a, "b": b})
+        malhas = []
+        for (nome_grade, z), linhas in grupos.items():
+            m = _malha_de_eixos(linhas, z)
+            if m:
+                m["nome"] = ("%s no nível %s m" % (nome_grade, ("%.3f" % (z / 1000.0)).replace(".", ",")))[:60]
+                malhas.append(m)
+        if not malhas:
+            return None
+        malhas.sort(key=lambda m: -m.pop("area"))
+        principal = malhas[0]
+        principal["z_base"] = min(m["z_base"] for m in malhas)
+        principal.pop("nome", None)
+        if len(malhas) > 1:
+            principal["malhas"] = malhas[1:]
+        n = sum(len(m["numeros"]) + len(m["letras"]) for m in malhas)
+        self.avisar("eixos do IfcGrid: %d eixos em %d malha(s)" % (n, len(malhas)))
+        return principal
+
     def _arredondar_vertices(self):
         """Vértices dos sólidos com 3 casas, 1 µm — a tolerância com que `Malha.ponto` já junta
         os pontos coincidentes. No Bella Casa (05/10) as 17 casas do float eram uns 40% do
@@ -2260,6 +2317,13 @@ class Importador:
                 del self.doc.camadas[nome]
         self._trazer_para_origem()
         self._arredondar_vertices()
+        try:
+            eixos = self._ler_eixos()
+        except (TypeError, ValueError, IndexError, AttributeError, ZeroDivisionError) as erro:
+            eixos = None
+            self.avisar("os eixos do IfcGrid não foram lidos: %s" % erro)
+        if eixos:
+            self.doc.metadados["eixos"] = eixos
 
         self.doc.metadados["importacao"] = {
             "arquivo": os.path.basename(self.arq.caminho),
@@ -2549,6 +2613,48 @@ def camada_semantica(tipo: str, nome: str) -> str:
     return ""
 
 
+def _malha_de_eixos(linhas: List[dict], z: float) -> Optional[dict]:
+    """Uma malha de eixos ({eixo_g, perp_g, numeros, letras, z_base, origem, limites, area}) pelas linhas dos eixos
+    ({nome, a, b}) — a direção é a dos eixos numerados (eles correm atravessados; eixo_g é perpendicular a eles, para o
+    lado do +x, como os automáticos). None sem eixo numerado e com letra."""
+    numeradas = [li for li in linhas if li["nome"][:1].isdigit()]
+    com_letra = [li for li in linhas if not li["nome"][:1].isdigit()]
+    if not numeradas or not com_letra:
+        return None
+    a, b = numeradas[0]["a"], numeradas[0]["b"]
+    L = math.hypot(b[0] - a[0], b[1] - a[1])
+    d = ((b[0] - a[0]) / L, (b[1] - a[1]) / L)
+    g = max(((d[1], -d[0]), (-d[1], d[0])), key=lambda v: (round(v[0], 9), -v[1]))
+    p = (-g[1], g[0])
+    paralela = lambda li, u: abs(((li["b"][0] - li["a"][0]) * u[0] + (li["b"][1] - li["a"][1]) * u[1])      # noqa: E731
+                                 / (math.hypot(li["b"][0] - li["a"][0], li["b"][1] - li["a"][1]) or 1.0)) > 0.9998
+    numeradas = [li for li in numeradas if paralela(li, p)]
+    com_letra = [li for li in com_letra if paralela(li, g)]
+    if not numeradas or not com_letra:
+        return None
+    em = lambda q, u: q[0] * u[0] + q[1] * u[1]                                                                # noqa: E731
+    numeros = sorted(({"nome": li["nome"][:6], "pos": round(em(li["a"], g), 1)} for li in numeradas), key=lambda x: x["pos"])
+    letras = sorted(({"nome": li["nome"][:6], "pos": round(em(li["a"], p), 1)} for li in com_letra), key=lambda x: x["pos"])
+    lg = [em(q, g) for li in com_letra for q in (li["a"], li["b"])]
+    lp = [em(q, p) for li in numeradas for q in (li["a"], li["b"])]
+    return {"eixo_g": [g[0], g[1]], "perp_g": [p[0], p[1]], "numeros": numeros, "letras": letras,
+            "z_base": float(z), "origem": "ifc", "fonte_letras": "",
+            "limites": {"g": [min(lg), max(lg)], "p": [min(lp), max(lp)]},
+            "area": (max(lg) - min(lg)) * (max(lp) - min(lp))}
+
+
+def _textos_do_pset(propriedades: dict) -> List[str]:
+    """O que o pset do exportador diz que a peça é, na ordem de confiança: a função, o perfil, o nome do elemento e o
+    layer (os campos do SteelXData)."""
+    fora = []
+    for chave in ("ModelRole", "Profile", "ElementName", "Layer"):
+        for pset in (propriedades or {}).values():
+            v = pset.get(chave) if isinstance(pset, dict) else None
+            if isinstance(v, str) and v.strip():
+                fora.append(v.strip())
+    return fora
+
+
 def producao_do_pset(propriedades: dict) -> dict:
     """A informação de produção que o exportador grava no Pset_MetalicaCalculo (o editor 3D, 14/10/2026): fase,
     acabamento e peça principal — de volta para a peça na reimportação."""
@@ -2574,8 +2680,9 @@ def marcas_de(nome: str, descricao: str, propriedades: dict) -> dict:
     Profile), os do Tekla (PART_POS, ASSEMBLY_POS, PROFILE) e, na falta deles, a
     descrição "Mark:M86 Pos:P93 Material:CIVIL 300" que o TecnoMETAL também grava."""
     achado = {}
-    chaves = {"posicao": ("Part Mark", "PART_POS", "Part Position", "Posicao"),
-              "conjunto": ("Assembly Mark", "ASSEMBLY_POS", "Assembly Position", "Conjunto"),
+    # o SteelX (SteelXData, Mall Av. Londrina 04/11): SinglePartMark "tc.9" é a posição, MainPartMark "TC.9" o conjunto
+    chaves = {"posicao": ("Part Mark", "PART_POS", "Part Position", "Posicao", "SinglePartMark"),
+              "conjunto": ("Assembly Mark", "ASSEMBLY_POS", "Assembly Position", "Conjunto", "MainPartMark"),
               "perfil": ("Profile", "PROFILE", "Perfil")}
     for pset in (propriedades or {}).values():
         if not isinstance(pset, dict):
@@ -2583,7 +2690,8 @@ def marcas_de(nome: str, descricao: str, propriedades: dict) -> dict:
         for campo, nomes in chaves.items():
             for k in nomes:
                 v = pset.get(k)
-                if isinstance(v, str) and v.strip() and campo not in achado:
+                # a peça sem marca no SteelX vem com MainPartMark "indefinido": não é um conjunto
+                if isinstance(v, str) and v.strip() and campo not in achado and v.strip().lower() not in ("indefinido", "undefined"):
                     achado[campo] = re.sub(r"\s+", " ", v).strip()
     for campo, chave in (("posicao", "Pos"), ("conjunto", "Mark")):
         if campo not in achado:
@@ -2593,7 +2701,41 @@ def marcas_de(nome: str, descricao: str, propriedades: dict) -> dict:
                 achado[campo] = m.group(1)
     if "perfil" not in achado and nome and nome.strip():
         achado["perfil"] = perfil_do_nome(nome, propriedades)
+    if achado.get("perfil"):
+        achado["perfil"] = perfil_limpo(achado["perfil"])
     return achado
+
+
+#: O separador do SteelX entre a família e o perfil no nome do IfcProfileDef: "Usr Tubo Retangular#@§@#TR 150x100x2,00mm"
+#: (o "§" chega como "?" no arquivo)
+_RE_FAMILIA_STEELX = re.compile(r"^.*#@.{1,3}@#")
+
+
+def perfil_limpo(nome: str) -> str:
+    """O nome do perfil como o catálogo o conhece, quando o exportador o escreve de outro jeito (o SteelX, Mall Av.
+    Londrina 04/11: a família antes ("Usr Perfil Ue#@?@#"), o "mm" no fim ("TR 150x100x2,00mm", "Ue 400x70x25x3,75mm")
+    e a barra redonda como "D 16,0mm" — 16 de 19 perfis ficavam fora do catálogo, sem peso teórico). Só troca quando
+    a forma limpa está no catálogo; senão devolve o nome sem a família."""
+    n = re.sub(r"\s+", " ", _RE_FAMILIA_STEELX.sub("", nome or "")).strip()
+    sem_mm = re.sub(r"(?<=\d)\s*mm$", "", n, flags=re.I)
+    m = re.match(r"^D\s*(\d+(?:[.,]\d+)?)$", sem_mm, re.I)
+    candidatos = [sem_mm] if sem_mm != n else []
+    if m:
+        candidatos.append("Barra redonda ø %s mm" % ("%g" % float(m.group(1).replace(",", "."))).replace(".", ","))
+    if not candidatos:
+        return n
+    try:
+        from nucleo import catalogo as _cat
+    except Exception:                                    # noqa: BLE001 — sem catálogo, o nome sem a família
+        return n
+    if (_cat.item(n) or _cat.perfil_de(n)) is not None:
+        return n                                        # o nome já é do catálogo ("Barra ø 16 mm"): fica
+    for c in candidatos:
+        # o tabelado ou o montado pelo nome de fábrica (Ue 300×70×25×2,25, fora da tabela)
+        p = _cat.item(c) or _cat.perfil_de(c)
+        if p is not None:
+            return p.nome
+    return n
 
 
 def perfil_do_nome(nome: str, propriedades: Optional[dict] = None) -> str:

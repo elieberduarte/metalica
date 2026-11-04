@@ -623,6 +623,13 @@ def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
         _progresso(s, "gravando o modelo 3D…")
         _regravar_modelo(s, doc)
         resumo = _resumo_da_importacao(doc)
+        # os eixos do IfcGrid vão para o projeto, como os da planta lida (o SteelX do Mall Av. Londrina, 04/11); os que o
+        # usuário gravou ficam
+        eixos = doc.metadados.get("eixos")
+        if eixos and str((g.ler(s).get("eixos") or {}).get("origem") or "") != "usuario":
+            g._atualizar(s, eixos=eixos)
+            resumo["eixos"] = len(eixos.get("numeros") or []) + len(eixos.get("letras") or []) + sum(
+                len(m.get("numeros") or []) + len(m.get("letras") or []) for m in eixos.get("malhas") or [])
         g.tocar(s, tipo="ifc", origem_ifc=nome, importacao_resumo=resumo)
     finally:
         _fim_progresso(s)
