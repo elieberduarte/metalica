@@ -784,7 +784,14 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
         viz = [x for x in reg if x is not r and x["s0"] <= s_ <= x["s1"] and 30.0 <= (r["t"] - x["t"]) * lado <= vao_max]
         if not viz:
             return 0.0
-        x = min(viz, key=lambda x: abs(r["t"] - x["t"]))
+        # COB-04 (04/11/2026, Hora Certa · Galpão Novo): a vizinha forma água com r — a caída até 0,3, como a cadeia das
+        # águas. A terça de fora da platibanda, 351 mm ao lado das terças de fechamento da fachada (2 m uma da outra na
+        # altura), dava 30 a 38: 105 telhas da borda subiam até 64 m. Só vizinhas a prumo: r é terça de parede, não borda
+        # de telhado (None: sem telha)
+        agua = [x for x in viz if abs(z_em(r, s_) - z_em(x, s_)) <= 0.3 * abs(r["t"] - x["t"])]
+        if not agua:
+            return None
+        x = min(agua, key=lambda x: abs(r["t"] - x["t"]))
         return (z_em(r, s_) - z_em(x, s_)) / (r["t"] - x["t"])
 
     beiras = set()                               # as amostras levadas à beira (id): o pedaço só delas (_pedacos)
@@ -975,6 +982,8 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
                 elif sb - sa < 300.0 or max(La, Lb) - FOLGA < 200.0 or min(La, Lb) > ALCANCE_APOIADO - 100.0 or abs(La - Lb) < 100.0:
                     continue
                 m = inclinacao(r, lado, (sa + sb) / 2)
+                if m is None:
+                    continue
 
                 def face(s_, L_):
                     P = ponto(r, s_)
@@ -1059,6 +1068,8 @@ def _ate_a_parede_diagonal(reg, panos, d, n, ponto, z_em, banzos, vao_max, terca
                     if sb - sa < (1.0 if id(livres[a_i]) in beiras or id(livres[b_i]) in beiras else 50.0):
                         continue
                     m = inclinacao(r, lado, (sa + sb) / 2)
+                    if m is None:
+                        continue
 
                     def ate(s_, D_):
                         P = ponto(r, s_)

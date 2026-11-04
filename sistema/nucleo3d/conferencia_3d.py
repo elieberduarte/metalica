@@ -442,6 +442,28 @@ def choques(barras, tol: float = 40.0, longe_da_ponta: float = 150.0) -> List[di
     return out
 
 
+def telha_fora_da_agua(doc, caida: float = 0.3, folga: float = 300.0) -> List[dict]:
+    """COB-04, reforço (04/11/2026, Hora Certa · Galpão Novo): a telha da cobertura (não o fechamento nem o revestimento)
+    que sobe mais do que a água mais inclinada que o lançamento aceita (a caída até 0,3 — a cadeia das águas de
+    telhas_cobertura) na medida dela em planta, mais `folga` (a espessura, a onda, o beiral). 105 telhas da borda subiam até
+    64 m (a inclinação tomada das terças de fechamento a prumo) e a telha_ao_lado não acusava: a dobra é entre vizinhas"""
+    out: List[dict] = []
+    for s in doc.solidos:
+        a = s.atributos or {}
+        if not a.get("telha_lancada") or a.get("fechamento") or a.get("revestimento") or not s.vertices:
+            continue
+        xs, ys, zs = [v[0] for v in s.vertices], [v[1] for v in s.vertices], [v[2] for v in s.vertices]
+        planta = max(max(xs) - min(xs), max(ys) - min(ys))
+        sobe = max(zs) - min(zs)
+        if sobe > caida * planta + folga:
+            i = zs.index(max(zs))
+            out.append({"tipo": "fora_da_agua", "ids": [s.id], "ponto": [round(xs[i]), round(ys[i]), round(zs[i])],
+                        "mm": round(sobe - caida * planta),
+                        "texto": "telha fora da água: sobe %.2f m em %.2f m de planta (até %.0f %%)"
+                                 % (sobe / 1000.0, planta / 1000.0, caida * 100)})
+    return out
+
+
 def telha_ao_lado(doc, limite: float = 20.0) -> List[dict]:
     """a telha de teste lançada só na conta (nada entra no modelo): o degrau entre chapas vizinhas e a dobra na caída"""
     from nucleo3d import telhas_cobertura as tc
@@ -1023,10 +1045,10 @@ def conferir(doc, telha: bool = True, soltas: bool = True, posicao: bool = True,
         voando += [a for a in pecas_sem_encosto(barras, list(doc.solidos), list(doc.chapas)) if not ja.intersection(a["ids"])]
     soltas = pontas_soltas(barras, list(doc.solidos)) if soltas else []
     ch = choques(barras)
-    tl = telha_ao_lado(doc) if telha else []
+    tl = (telha_ao_lado(doc) + telha_fora_da_agua(doc)) if telha else []
     pos = posicao_na_trelica(barras) if posicao else []
     cob = (cobertura(doc) + cobertura_continua(doc)) if cobertura_ else []
-    ordem = {"peca_voando": 0, "repetida": 0, "choque": 1, "rufo_choque": 2, "buraco": 3, "fresta": 3, "borda_aberta": 3,
+    ordem = {"peca_voando": 0, "repetida": 0, "fora_da_agua": 0, "choque": 1, "rufo_choque": 2, "buraco": 3, "fresta": 3, "borda_aberta": 3,
              "terca_sem_telha": 3, "calha_dupla": 3,
              "sem_rufo": 4, "posicao": 5, "degrau": 6,
              "dobra": 7, "ponta_solta": 8}
@@ -1037,6 +1059,7 @@ def conferir(doc, telha: bool = True, soltas: bool = True, posicao: bool = True,
                           "tercas_em_balanco": sum(1 for a in soltas if "balanço" in a["texto"]),
                           "telha_degraus": sum(1 for a in tl if a["tipo"] == "degrau"),
                           "telha_dobras": sum(1 for a in tl if a["tipo"] == "dobra"),
+                          "telha_fora_da_agua": sum(1 for a in tl if a["tipo"] == "fora_da_agua"),
                           "telha_acima_de_5cm": sum(1 for a in tl if abs(a["mm"]) >= 50),
                           "cobertura_bordas_abertas": sum(1 for a in cob if a["tipo"] == "borda_aberta"),
                           "cobertura_sem_rufo": sum(1 for a in cob if a["tipo"] == "sem_rufo"),
@@ -1053,10 +1076,11 @@ def avisos(conf: dict, desl: Sequence[float] = (0.0, 0.0), telha_min: float = 50
     c = conf["contagens"]
     out = ["Conferência do 3D: %d peça(s) voando, %d peça(s) repetida(s), %d choque(s) entre peças, %d peça(s) da treliça "
            "fora da posição da regra, %d ponta(s) solta(s) (%d terça(s) em balanço), telha ao lado: %d degrau(s) e %d dobra(s) "
-           "acima de 20 mm (%d acima de 5 cm); cobertura: %d borda(s) aberta(s), %d sem rufo na parede, %d calha/rufo batendo "
+           "acima de 20 mm (%d acima de 5 cm), %d telha(s) fora da água; cobertura: %d borda(s) aberta(s), %d sem rufo na parede, %d calha/rufo batendo "
            "em peça, %d buraco(s), %d fresta(s), %d terça(s) sem telha por cima e %d vale(s) com calha dupla."
            % (c.get("pecas_voando", 0), c["repetidas"], c["choques"], c.get("fora_da_posicao", 0), c["pontas_soltas"], c["tercas_em_balanco"],
-              c["telha_degraus"], c["telha_dobras"], c["telha_acima_de_5cm"], c.get("cobertura_bordas_abertas", 0),
+              c["telha_degraus"], c["telha_dobras"], c["telha_acima_de_5cm"], c.get("telha_fora_da_agua", 0),
+              c.get("cobertura_bordas_abertas", 0),
               c.get("cobertura_sem_rufo", 0), c.get("cobertura_choques", 0), c.get("cobertura_buracos", 0),
               c.get("cobertura_frestas", 0), c.get("cobertura_tercas_sem_telha", 0), c.get("cobertura_calhas_duplas", 0))]
     for a in conf["apontamentos"]:

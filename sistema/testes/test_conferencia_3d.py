@@ -169,3 +169,24 @@ def test_verificar_apoios_traz_as_regras_da_conferencia():
     r = apoios.verificar(doc)
     assert r["resumo"]["por_regra"].get("repetida") == 1
     assert all(a["ids"] for a in r["achados"] if a["regra"] == "repetida")
+
+
+def test_telha_fora_da_agua():
+    """COB-04, reforço (04/11/2026, Hora Certa · Galpão Novo): a telha da borda que subia até 64 m (5 m em 1,5 m de planta)
+    passava pela conferência — a telha_ao_lado só olha a dobra entre vizinhas. A telha da água de 5 % e a de fechamento
+    (em pé) não apontam"""
+    def telha(vs, **atr):
+        s = Solido(nome="Telha", camada="Telhas", vertices=vs, faces=[[0, 1, 2, 3]])
+        s.atributos = {"telha_lancada": True, **atr}
+        return s
+    doc = Documento()
+    doc.add(telha([(0, 0, 7000), (1000, 0, 7000), (1000, 6000, 7300), (0, 6000, 7300)]))       # água de 5 %
+    doc.add(telha([(0, 0, 0), (1000, 0, 0), (1000, 0, 6000), (0, 0, 6000)], fechamento=True))   # o fechamento em pé
+    espeto = telha([(-7, 100974, 12716), (-11, 100996, 12716), (1319, 101231, 58791), (1470, 101234, 63910)])
+    doc.add(espeto)
+    r = C.telha_fora_da_agua(doc)
+    assert [a["ids"] for a in r] == [[espeto.id]] and "fora da água" in r[0]["texto"], r
+    conf = C.conferir(doc, soltas=False, posicao=False, cobertura_=False)
+    assert conf["contagens"]["telha_fora_da_agua"] == 1
+    assert conf["apontamentos"][0]["tipo"] == "fora_da_agua"
+    assert "1 telha(s) fora da água" in C.avisos(conf)[0]

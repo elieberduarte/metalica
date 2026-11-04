@@ -1304,3 +1304,67 @@ def test_calha_do_fim_do_vale_nao_sobe_ao_lado_da_calha_do_vale():
     assert len(na_frente) == 1, "%d calhas no trecho do vale" % len(na_frente)
     xs = [v[0] for v in na_frente[0].vertices]
     assert 75261 < min(xs) and max(xs) < 75979
+
+
+# o canto noroeste do Hora Certa · Galpão Novo (04/11/2026): as terças da cobertura (y), a fachada oblíqua e a fachada A
+# com as terças de fechamento a cada 2 m e a platibanda (Ue 250 por fora, U 80 por dentro, 351 mm uma da outra)
+UE, U80 = "Ue 250×85×25×2,00", "U 80×40×2,00 (FF)"
+CANTO_GN = [
+    (UE, (1362, 94800, 11079), (1362, 101120, 11079)),
+    (UE, (2372, 94800, 11220), (2372, 101120, 11220)),
+    (UE, (3382, 94800, 11361), (3382, 101120, 11361)),
+    (UE, (4392, 94800, 11503), (4392, 101120, 11503)),
+    (UE, (744, 94732, 670), (-384, 101052, 670)),
+    (UE, (744, 94732, 2670), (-384, 101052, 2670)),
+    (UE, (744, 94732, 4670), (-384, 101052, 4670)),
+    (UE, (744, 94732, 6670), (-384, 101052, 6670)),
+    (UE, (744, 94732, 8670), (-384, 101052, 8670)),
+    (UE, (744, 94732, 10670), (-384, 101052, 10670)),
+    (UE, (744, 94732, 11470), (-384, 101052, 11470)),
+    (U80, (1090, 94793, 11470), (-38, 101113, 11470)),
+    (UE, (744, 94732, 12670), (-384, 101052, 12670)),
+    (U80, (1090, 94793, 12670), (-38, 101113, 12670)),
+    (UE, (744, 94732, 13500), (-384, 101052, 13500)),
+    (U80, (1090, 94793, 13500), (-38, 101113, 13500)),
+    (UE, (-265, 101510, 0), (0, 101510, 0)),
+    (UE, (0, 101510, 0), (5366, 101510, 0)),
+    (UE, (-265, 101510, 2000), (0, 101510, 2000)),
+    (UE, (0, 101510, 2000), (5366, 101510, 2000)),
+    (UE, (-265, 101510, 4000), (0, 101510, 4000)),
+    (UE, (0, 101510, 4000), (5366, 101510, 4000)),
+    (UE, (-265, 101510, 6000), (0, 101510, 6000)),
+    (UE, (0, 101510, 6000), (5366, 101510, 6000)),
+    (UE, (-265, 101510, 8000), (0, 101510, 8000)),
+    (UE, (0, 101510, 8000), (5366, 101510, 8000)),
+    (UE, (-265, 101510, 10000), (0, 101510, 10000)),
+    (UE, (0, 101510, 10000), (5366, 101510, 10000)),
+    (UE, (-265, 101510, 11750), (0, 101510, 11750)),
+    (U80, (-265, 101159, 11750), (0, 101159, 11750)),
+    (UE, (0, 101510, 11750), (5366, 101510, 11750)),
+    (U80, (0, 101159, 11750), (5366, 101159, 11750)),
+    (UE, (-265, 101510, 13500), (0, 101510, 13500)),
+    (U80, (-265, 101159, 13500), (0, 101159, 13500)),
+    (UE, (0, 101510, 13500), (5366, 101510, 13500)),
+    (U80, (0, 101159, 13500), (5366, 101159, 13500)),
+]
+
+
+def test_terca_de_parede_nao_da_telha_de_borda():
+    """COB-04 (04/11/2026, Hora Certa · Galpão Novo, print do usuário: "verifique o que são esses elementos, bugaram"): a
+    telha da borda seguia a inclinação da vizinha mais perto — a U 80 de dentro da platibanda, 351 mm ao lado das terças de
+    fechamento empilhadas (2 m na altura), dava caída de 30 a 38 e 105 telhas subiam até 64 m. A vizinha tem de formar
+    água (caída até 0,3); só vizinhas a prumo é terça de parede: dela não sai telha"""
+    doc = Documento()
+    for perfil, a, b in CANTO_GN:
+        t_ = Barra(inicio=a, fim=b, perfil=perfil, papel="terça", camada="Terças")
+        t_.atributos = {"origem": {"sigla": "T"}}
+        doc.add(t_)
+    T.lancar(doc)
+    telhas = _telhado(doc)
+    assert telhas
+    for s in telhas:
+        zs = [v[2] for v in s.vertices]
+        xs, ys = [v[0] for v in s.vertices], [v[1] for v in s.vertices]
+        planta = max(max(xs) - min(xs), max(ys) - min(ys))
+        assert max(zs) < 14000.0, ("telha acima da platibanda", max(zs))
+        assert max(zs) - min(zs) <= 0.3 * planta + 300.0, ("telha fora da água", max(zs) - min(zs), planta)
