@@ -2282,7 +2282,11 @@ class Importador:
         que não dá para tirar fica, com aviso."""
         for ab in self.lista(self._aberturas.get(prod.id, [])):
             recorte = self._malha_da_abertura(ab)
-            nova = _subtrair(malha, recorte) if recorte is not None else None
+            planos = _planos_do_convexo(recorte) if recorte is not None else None
+            if planos is not None:
+                nova = malha if not _encosta(malha, recorte) else _menos_convexo(malha, planos)
+            else:
+                nova = _subtrair(malha, recorte) if recorte is not None else None
             if nova is None:
                 self.aberturas_feitas["nao_feitas"] += 1
                 self.avisar("abertura %s de %s não foi recortada" % (str(ab.arg(0) or ab.id), nome))
@@ -3131,6 +3135,54 @@ def _cortar_por_plano(malha: Malha, origem, normal, manter_positivo=True):
         nrm = _normal_poligono(laco)
         nova.face(laco if _dot(nrm, alvo) >= 0 else list(reversed(laco)))
     return (nova if not nova.vazia else None), completo
+
+
+def _encosta(a: Malha, b: Malha) -> bool:
+    """As caixas das duas malhas se cruzam?"""
+    ca, cb = a.caixa(), b.caixa()
+    return ca is not None and cb is not None and all(cb[1][i] > ca[0][i] + 1e-6 and cb[0][i] < ca[1][i] - 1e-6 for i in range(3))
+
+
+def _planos_do_convexo(recorte: Malha, tol: float = 0.5):
+    """Os planos (ponto, normal para fora) de um recorte convexo; None quando ele não é convexo."""
+    if not recorte.vertices or not recorte.faces:
+        return None
+    centro = tuple(sum(v[k] for v in recorte.vertices) / len(recorte.vertices) for k in range(3))
+    planos = []
+    for f in recorte.faces:
+        pts = [recorte.vertices[i] for i in f]
+        if len(pts) < 3:
+            continue
+        n = _normal_poligono(pts)
+        if _dot(_sub(centro, pts[0]), n) > 0:                  # para fora: o centro do recorte fica atrás da face
+            n = (-n[0], -n[1], -n[2])
+        planos.append((pts[0], n))
+    if not planos or any(_dot(_sub(v, p0), n) > tol for p0, n in planos for v in recorte.vertices):
+        return None
+    return planos
+
+
+def _menos_convexo(malha: Malha, planos, tol: float = 0.5) -> Optional[Malha]:
+    """`malha` menos o recorte convexo dado pelos `planos`: os pedaços de fora de cada plano, dentro dos anteriores,
+    pelo corte por plano (que fecha a boca). Cada pedaço é de fora da abertura por construção — na telha do SteelX, com
+    a ponta no mesmo plano da face da abertura, a árvore de planos guardava a tampa da ponta dentro da abertura e
+    sobravam tiras finas para fora da moldura (Mall Av. Londrina, 04/11). O pedaço que não passa do plano mais que
+    `tol` não conta. None se a peça inteira está dentro do recorte."""
+    nova, resto = Malha(), malha
+    for p0, n in planos:
+        d = [_dot(_sub(v, p0), n) for v in resto.vertices]
+        if max(d) > tol:
+            fora = resto if min(d) >= -1e-6 else _cortar_por_plano(resto, p0, n, manter_positivo=True)[0]
+            if fora is not None:
+                for f in fora.faces:
+                    nova.face([fora.vertices[i] for i in f])
+        if min(d) >= -tol:
+            resto = None                                      # o resto é todo de fora: nada mais dentro
+            break
+        resto = _cortar_por_plano(resto, p0, n, manter_positivo=False)[0]
+        if resto is None or resto.vazia:
+            break
+    return None if nova.vazia else nova
 
 
 def _pares_no_plano(pontos, tol=1e-6):

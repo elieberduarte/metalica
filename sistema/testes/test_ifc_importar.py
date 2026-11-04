@@ -1603,7 +1603,7 @@ class TestSteelX(Asserts):
             self.assertNotIn("conjunto", por_papel[papel].atributos.get("marcas") or {}, papel)
         self.assertEqual(self._por_perfil("TR 150").atributos["marcas"]["posicao"], "tc.9")
         telhas = {e.id: float(e.atributos["propriedades"]["SteelXData"]["LengthNet_mm"]) for e in self.ents if e.camada == "Telhas"}
-        self.assertEqual(sorted(telhas.values()), [435.2, 7250.0, 7250.0])
+        self.assertEqual(sorted(telhas.values()), [435.2, 7250.0, 7250.0, 7250.0])
         # cada telha na lista com o comprimento dela (as duas de 7,25 m podem ficar juntas; a de 0,44 m não)
         for q in levantar(self.doc, regra_tercas=False)["posicoes"]:
             for i in set(q.global_ids or []) & set(telhas):
@@ -1651,8 +1651,16 @@ class TestSteelX(Asserts):
                 centro = [(caixa_ab[0][k] + caixa_ab[1][k]) / 2 for k in range(3)]
                 self.assertFalse(any(all(abs(p[k] - centro[k]) < 1.0 for k in range(3)) for p in s.vertices))
             recortados += 1
-        self.assertEqual(recortados, 2)
+        self.assertEqual(recortados, 3)
         self.assertEqual(self.doc.metadados["importacao"]["aberturas"]["nao_feitas"], 0)
+
+    def test_telha_da_borda_sem_tira_fora_da_moldura(self):
+        # a ponta da telha no mesmo plano da face da abertura: a árvore de planos deixava a tampa da ponta dentro da
+        # abertura, e na borda (x −42,7 m) apareciam tiras finas fora da moldura (usuário, Mall, 04/11). A telha
+        # termina no corte, x −41.820
+        telha = next(e for e in self.doc.solidos if e.camada == "Telhas" and min(v[1] for v in e.vertices) < 10300
+                     and max(v[0] for v in e.vertices) < -41000)
+        self.assertGreater(min(v[0] for v in telha.vertices), -41821.0)
 
     def test_eixos_do_ifcgrid(self):
         from nucleo3d import eixos
