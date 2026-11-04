@@ -48,3 +48,34 @@ def test_chumbador_em_milimetro():
 def test_chumbador_soldado_sem_projecao_nao_muda():
     r = levantar(_doc("recebido", projecao=None), regra_tercas=False)
     assert not any("orca" in k for k in r["acessorios"]), r["acessorios"]
+
+
+def _compra_e_lista(doc):
+    """A compra do resumo (porcas e arruelas soltas por bitola) e a lista de materiais do mesmo levantamento."""
+    from saida.lista_producao import acessorios_da_lista
+    from saida.resumos import _compra, _parafusos_com_local
+    from nucleo2d.detalhe.base import _fixadores, _so_parafusos
+    lev = levantar(doc, regra_tercas=False)
+    parafusos = _parafusos_com_local(_so_parafusos(_fixadores(doc)), lev["pecas"], {}, {}, {}, {}, {})
+    lista = {"acessorios": acessorios_da_lista(lev["acessorios"])}
+    return _compra(lista, parafusos, {}, {}), lista, parafusos
+
+
+@pytest.mark.parametrize("origem", ["recebido", "nosso"])
+def test_a_compra_do_resumo_traz_as_porcas_do_chumbador_sem_porca(origem):
+    """FAB-05, reincidência — SESI Chapecó, auditor N30 (02/11): a lista trazia 24 porcas + 12 arruelas Ø1/2" dos 12 CHU1
+    (FE RED 1/2", sem porca no modelo) e a compra do resumo, nenhuma — ela refazia as porcas pelo modelo sem o padrão."""
+    compra, _lista, _p = _compra_e_lista(_doc(origem))
+    assert dict(compra["porcas"]).get('5/8"') == 8 and dict(compra["arruelas"]).get('5/8"') == 4, compra
+    compra_m, _l, _p = _compra_e_lista(_doc(origem, perfil="BARRA REDONDA 36", d=36.0))
+    assert dict(compra_m["porcas"]).get("M36") == 8 and dict(compra_m["arruelas"]).get("M36") == 4, compra_m
+
+
+def test_a_conferencia_da_fab05_compara_a_compra_com_a_lista():
+    from saida.resumos import conferir_porcas_da_compra
+    _compra, lista, parafusos = _compra_e_lista(_doc("nosso"))
+    assert conferir_porcas_da_compra(lista, parafusos) == []
+    # a compra de antes da correção: sem as porcas soltas do chumbador
+    avisos = conferir_porcas_da_compra(lista, [p for p in parafusos if p["parafuso"]])
+    assert len(avisos) == 2 and all(a.startswith("FAB-05") for a in avisos), avisos
+    assert any("0 porca(s) 5/8\"" in a and "lista de materiais 8" in a for a in avisos), avisos

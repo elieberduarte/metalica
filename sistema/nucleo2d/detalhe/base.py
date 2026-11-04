@@ -2452,6 +2452,50 @@ def pontas_do_modelo(doc) -> Dict[str, dict]:
     return cache
 
 
+def nome_da_porca(bitola: str) -> str:
+    """'1/2"' → 'Porca sextavada Ø1/2" UNC'; 'M12' → 'Porca sextavada M12' (o nome da lista de materiais)."""
+    return ("Porca sextavada %s" if bitola.startswith("M") else "Porca sextavada Ø%s UNC") % bitola
+
+
+def nome_da_arruela(bitola: str) -> str:
+    """'1/2"' → 'Arruela lisa Ø1/2"'; 'M12' → 'Arruela lisa M12'."""
+    return ("Arruela lisa %s" if bitola.startswith("M") else "Arruela lisa Ø%s") % bitola
+
+
+def chumbadores_sem_porca(pecas: Sequence[Solido], pontas: Sequence[dict],
+                          chumbadores: Optional[set] = None) -> List[Tuple[Solido, str, float]]:
+    """Os chumbadores com a ponta acima do concreto (`projecao_mm`) e NENHUMA porca no modelo: levam o padrão da fábrica
+    (FAB-05, 2 porcas + 1 arruela por perna) no projeto recebido e no nosso. [(peça, bitola '1/2"' ou 'M12', Ø mm)].
+
+    A mesma regra para a lista de materiais (`acessorios_no_padrao`) e para a compra do resumo
+    (`saida.resumos._parafusos_com_local`): a compra refazia as porcas pelo modelo sem este padrão e saía sem as 24 porcas
+    e as 12 arruelas dos 12 CHU1 (FE RED 1/2") que a lista trazia (FAB-05, reincidência — SESI Chapecó, auditor N30,
+    02/11)."""
+    from nucleo.perfis_fabrica import polegadas_mm
+    if chumbadores is None:
+        chumbadores = _ids_de_chumbadores(pecas)
+    com_ponta = {p["peca"].id for p in pontas}
+    saida = []
+    for e in pecas:
+        if e.id not in chumbadores or e.id in com_ponta:
+            continue
+        if float(((getattr(e, "atributos", None) or {}).get("projecao_mm") or 0.0)) <= 0:
+            continue                                  # soldado na chapa, ou sem a ponta acima do concreto
+        perfil = str(_marcas(e).get("perfil") or getattr(e, "nome", "") or "")
+        pol = bitola_da_barra(perfil)
+        if pol:
+            saida.append((e, pol, polegadas_mm(pol) or 0.0))
+            continue
+        m = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:mm)?\s*$", perfil)
+        mm = m.group(1).replace(",", ".") if m else "?"
+        try:
+            d = float(mm)
+        except ValueError:
+            d = 0.0
+        saida.append((e, "M%s" % mm, d))
+    return saida
+
+
 def acessorios_no_padrao(acessorios: Dict[str, int], pecas: Sequence[Solido], fixadores: Sequence[Solido],
                          recebido: bool = False, avisos: Optional[list] = None) -> Dict[str, int]:
     """A contagem de acessórios da lista de materiais com as porcas e arruelas soltas no padrão da
@@ -2487,24 +2531,11 @@ def acessorios_no_padrao(acessorios: Dict[str, int], pecas: Sequence[Solido], fi
         chave, _d, arruela = _fixador_solto(ext)
         pol = chave.split(" ", 1)[1]
         fora[("Arruela lisa Ø%s" if arruela else "Porca sextavada Ø%s UNC") % pol] += 1
-    com_ponta = {p["peca"].id for p in pontas}
     sem_porca = collections.Counter()
-    for e in pecas:
-        if e.id not in chumbadores or e.id in com_ponta:
-            continue
-        if float(((getattr(e, "atributos", None) or {}).get("projecao_mm") or 0.0)) <= 0:
-            continue                                  # soldado na chapa, ou sem a ponta acima do concreto
-        perfil = str(_marcas(e).get("perfil") or getattr(e, "nome", "") or "")
-        pol = bitola_da_barra(perfil)
-        if pol:
-            porca, arruela = "Porca sextavada Ø%s UNC" % pol, "Arruela lisa Ø%s" % pol
-        else:
-            m = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:mm)?\s*$", perfil)
-            mm = m.group(1).replace(",", ".") if m else "?"
-            porca, arruela = "Porca sextavada M%s" % mm, "Arruela lisa M%s" % mm
-        fora[porca] += PORCAS_POR_PERNA_CHUMBADOR
-        fora[arruela] += ARRUELAS_POR_PERNA_CHUMBADOR
-        sem_porca[pol or "M%s" % mm] += 1
+    for _e, bit, _d in chumbadores_sem_porca(pecas, pontas, chumbadores):
+        fora[nome_da_porca(bit)] += PORCAS_POR_PERNA_CHUMBADOR
+        fora[nome_da_arruela(bit)] += ARRUELAS_POR_PERNA_CHUMBADOR
+        sem_porca[bit] += 1
     if sem_porca and avisos is not None:
         avisos.append("%d chumbador(es) sem porca no modelo (%s): na lista com o padrão da fábrica, %d porcas + %d arruela "
                       "por perna — confira com a folha do projetista" % (

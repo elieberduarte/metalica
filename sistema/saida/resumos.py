@@ -905,8 +905,37 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
         "tesouras": tipos_tes, "tercas": tercas, "grupos_peso": grupos_peso, "telhas": telhas, "parafusos": parafusos,
         "familias": familias, "chaparia": chaparia, "chaparia_total": chaparia_total, "funilaria": funilaria_da_lista(lista),
         "perfis_kg": peso_aco - chaparia_total["kg"] if chaparia_total["kg"] else perfis_kg,
-        "avisos": list(lev.get("avisos") or []),
+        "avisos": list(lev.get("avisos") or []) + conferir_porcas_da_compra(lista, parafusos),
     }
+
+
+_RE_SOLTA_DA_LISTA = re.compile(r"^(Porca|Arruela)\s+(?:sextavada|lisa)\s+(?:Ø)?(\S+?)(?:\s+UNC)?$")
+
+
+def conferir_porcas_da_compra(lista: dict, parafusos: List[dict]) -> List[str]:
+    """FAB-05 (porcas do chumbador): as porcas e arruelas SOLTAS da compra (pontas roscadas, chumbadores) por bitola têm
+    de ser as da lista de materiais — as duas contam pelo modelo, cada uma pelo seu caminho, e a compra do SESI saiu sem
+    as 24 porcas e 12 arruelas dos CHU1 que a lista trazia (auditor N30, 02/11; a 1ª vez, a lista do Galpão Existente
+    sem porca, 30/10). As dos parafusos (1 porca + 1 arruela cada) não entram: vêm com o parafuso. Avisos "FAB-05: …"."""
+    da_lista: Dict[Tuple[str, str], int] = collections.Counter()
+    for a in lista.get("acessorios") or []:
+        m = _RE_SOLTA_DA_LISTA.match(str(a.get("nome") or "").strip())
+        if m:
+            da_lista[(m.group(1), m.group(2))] += int(a.get("quantidade") or 0)
+    da_compra: Dict[Tuple[str, str], int] = collections.Counter()
+    for it in parafusos or []:
+        if it.get("parafuso"):
+            continue
+        tipo, _, bit = str(it.get("nome") or "").partition(" ")
+        if tipo in ("Porca", "Arruela"):
+            da_compra[(tipo, bit.strip())] += int(it.get("qtd") or 0)
+    avisos = []
+    for k in sorted(set(da_lista) | set(da_compra)):
+        if da_lista.get(k, 0) != da_compra.get(k, 0):
+            avisos.append("FAB-05: a compra traz %d %s(s) %s soltas e a lista de materiais %d — conferir as porcas e "
+                          "arruelas das pontas roscadas e dos chumbadores" % (da_compra.get(k, 0), k[0].lower(), k[1],
+                                                                              da_lista.get(k, 0)))
+    return avisos
 
 
 def _no_poligono(xs, ys, poly) -> "object":
@@ -982,7 +1011,9 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
     par de famílias das peças que ele atravessa (a peça é a que tem o furo em volta do eixo
     do fixador) e as peças envolvidas."""
     if not fixadores:
-        return []
+        from nucleo2d.detalhe.base import chumbadores_sem_porca as _csp
+        if not _csp(pecas, []):                     # só os chumbadores sem porca no modelo (o padrão da fábrica, FAB-05)
+            return []
     import numpy as np
     eixos = _eixos_dos_fixadores(fixadores)
     # grade das peças por caixa, para achar as candidatas de cada fixador (a telha fica de
@@ -1026,11 +1057,16 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
     # as porcas e arruelas soltas de ponta roscada saem no padrão da fábrica (1 porca + 2 arruelas por
     # ponta, na bitola da barra — pedido do usuário, 28/09), no local da barra; as outras, como estão
     from nucleo2d.detalhe.base import (pontas_roscadas, PORCAS_POR_PONTA, ARRUELAS_POR_PONTA, PORCAS_POR_PERNA_CHUMBADOR,
-                                       ARRUELAS_POR_PERNA_CHUMBADOR)
+                                       ARRUELAS_POR_PERNA_CHUMBADOR, chumbadores_sem_porca, nome_da_porca, nome_da_arruela)
     pontas, usados = pontas_roscadas(pecas, fixadores)
     # o chumbador nunca na regra do parafuso (N07, decisão do usuário 16/10): no projeto recebido, as porcas e arruelas
     # que o projetista pôs (contadas como estão); no nosso, 2 porcas + 1 arruela por perna
-    eh_chumbador = lambda pt: familia_peca(pt["peca"])[0] == "chumbador" or         tipos.get(str(_marcas(pt["peca"]).get("posicao") or pt["peca"].nome or "")) == "chumbador"     # noqa: E731
+    # quem é chumbador: a MESMA regra da lista de materiais (`_ids_de_chumbadores`: o papel ou a chapa de base atravessada)
+    # — pelo tipo de produção, a perna sem o tipo gravado saía como tirante (1 porca + 2 arruelas) na compra e como
+    # chumbador (2 porcas + 1 arruela) na lista (FAB-05, a conferência da compra × lista, 04/11)
+    from nucleo2d.detalhe.base import _ids_de_chumbadores
+    ids_chumb = _ids_de_chumbadores(pecas)
+    eh_chumbador = lambda pt: pt["peca"].id in ids_chumb     # noqa: E731
     if recebido:
         for pt in pontas:
             if eh_chumbador(pt):
@@ -1132,6 +1168,17 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
             lr = r["locais"].setdefault(local, {"qtd": 0, "pecas": set(), "ids": []})
             lr["qtd"] += q
             lr["pecas"].add(fam[1])
+    # o chumbador com a ponta acima do concreto e nenhuma porca no modelo: o padrão da fábrica, a mesma regra da lista
+    # (FAB-05, reincidência — SESI, auditor N30, 02/11: a compra saía sem as 24 porcas e 12 arruelas dos CHU1)
+    for e, bit, d_ in chumbadores_sem_porca(pecas, pontas, ids_chumb):
+        fam = familia_peca(e)
+        local = rotulos.get(fam[0], fam[0])
+        for chave, q in (("Porca %s" % bit, PORCAS_POR_PERNA_CHUMBADOR), ("Arruela %s" % bit, ARRUELAS_POR_PERNA_CHUMBADOR)):
+            r = contagem.setdefault(chave, {"parafuso": False, "qtd": 0, "locais": collections.OrderedDict(), "d": d_})
+            r["qtd"] += q
+            lr = r["locais"].setdefault(local, {"qtd": 0, "pecas": set(), "ids": []})
+            lr["qtd"] += q
+            lr["pecas"].add(fam[1])
     saida = []
     for chave, r in contagem.items():
         if r["parafuso"] and chave.startswith("HARDBOLT"):
@@ -1145,7 +1192,7 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
             nome, desc, _d = descricao_parafuso(chave.split(" (")[0].replace(" ", ""), mc.group(1) if mc else None, metrico=metrico)
         else:
             nome = chave
-            desc = ("Arruela lisa Ø%s" if chave.startswith("Arruela") else "Porca sextavada Ø%s UNC") % chave.split(" ", 1)[1]
+            desc = (nome_da_arruela if chave.startswith("Arruela") else nome_da_porca)(chave.split(" ", 1)[1])
         locais = sorted(r["locais"].items(), key=lambda kv: -kv[1]["qtd"])
         if r.get("sem_arruela") and r["sem_arruela"] >= r["qtd"]:
             desc = desc.replace(" + porca e arruela", " + porca (a arruela é chapa do projeto)")
