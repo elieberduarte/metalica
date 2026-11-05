@@ -525,10 +525,14 @@ def _com_recorte(lista: dict, linhas: List[dict], num: dict) -> None:
     com_emenda = set()
     emendas = 0
     for g in lista.get("perfis") or []:
-        # a compra é COM EMENDA de perfil (o usuário, 05/11: "aqui na empresa, para não ter muito desperdício, é feito
-        # emenda de perfis"): o plano com emenda do Detalhar (pedaço mínimo de 1 m, uma emenda por peça) sempre que ele
-        # poupa barra, mesmo sem a emenda ligada no perfil
-        b = g.get("barras_com_emenda") or g.get("barras") or {}
+        # a compra é COM EMENDA de perfil W (o usuário, 05/11: "aqui na empresa, para não ter muito desperdício, é feito
+        # emenda de perfis"; "as emendas são só para perfil W"): no W/HP, o plano com emenda do Detalhar (pedaço mínimo
+        # de 1 m, uma emenda por peça) sempre que ele poupa barra, mesmo sem a emenda ligada no perfil; nos outros, o
+        # plano sem emenda, mesmo com ela ligada
+        if re.match(r"\s*(W|HP)\s*\d", str(g.get("perfil") or ""), re.I):
+            b = g.get("barras_com_emenda") or g.get("barras") or {}
+        else:
+            b = g.get("barras_sem_emenda") or g.get("barras") or {}
         n_emendas = len(b.get("emendadas") or [])
         emendas += n_emendas
         if not (b.get("quantidade") or b.get("sob_medida_m")):
@@ -553,7 +557,7 @@ def _com_recorte(lista: dict, linhas: List[dict], num: dict) -> None:
         elif li["id"] in recorte:
             li["qtd_recorte"] = round(recorte[li["id"]], 1)
             li["recorte_como"] = "barras comerciais do plano de corte" + (
-                ", com emenda de perfil (padrão da fábrica)" if li["id"] in com_emenda else "")
+                ", com emenda de perfil W (padrão da fábrica)" if li["id"] in com_emenda else "")
     num["aco_emendas"] = emendas
     num["aco_kg_recorte"] = round(sum(li.get("qtd_recorte") or 0.0 for li in linhas if li["grupo"] == "aco"
                                       and li["id"] != "corte_chaparia"), 1)
@@ -731,8 +735,8 @@ REGRAS_TEXTO = [
     "U dobrado de 2,00/2,25/2,65/3,00/4,75 mm = U padrão MVAL; outra espessura = U fora padrão (Perfyaço).",
     "Terça fora de 4,80–6,40 m e qualquer peça acima de 6,40 m: preço MVAL 'menor 4,80 / maior 6,40 m'.",
     "Peso teórico da lista de materiais, sem perda de corte. Telhas em metro linear de chapa comprada.",
-    "Com recorte (a compra): as barras do plano de corte com emenda de perfil, o padrão da fábrica (pedaço mínimo de 1 m, "
-    "uma emenda por peça); W em barra de 12 m, os outros em 6 m; chapa com a perda de recorte.",
+    "Com recorte (a compra): as barras do plano de corte; o perfil W em barra de 12 m com emenda, o padrão da fábrica "
+    "(pedaço mínimo de 1 m, uma emenda por peça); os outros em 6 m sem emenda; chapa com a perda de recorte.",
     "Parafusos: o completo (porca e arruela) zincado da tabela, no menor comprimento que não fica curto; "
     "o preço da linha é a média pelos comprimentos da obra.",
 ]

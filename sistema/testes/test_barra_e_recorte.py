@@ -56,7 +56,25 @@ def test_compra_do_orcamento_com_emenda_de_perfil():
     w = next(li for li in R["linhas"] if li["id"] == "w")
     assert w["qtd_recorte"] == round(2 * 12.0 * 26.6, 1)                     # 638,4 kg, não 957,6
     assert "com emenda" in w["recorte_como"] and R["totais"]["aco_emendas"] == 1
-    assert any("emenda de perfil" in t for t in R["regras"])
+    assert any("W em barra de 12 m com emenda" in t for t in R["regras"])
+
+
+def test_emenda_da_compra_so_no_perfil_w():
+    """Ajuste do usuário (05/11): "as emendas são só para perfil W". O tubo (e a cantoneira, o redondo, o dobrado) segue
+    em barra de 6 m sem emenda, mesmo com o plano com emenda pronto e com a emenda ligada no Detalhar: 3 peças de 3,9 m
+    de TQ são 3 barras de 6 m, não 2"""
+    g = {"perfil": "TQ 50x50x3,0"}
+    lp._os_dois_encaixes(g, [3900.0] * 3, 6000.0, ["T1"] * 3, {"TQ 50x50x3,0"})
+    assert g["emenda"] is True and g["barras"]["quantidade"] == 2                # ligada no Detalhar
+    assert g["barras_sem_emenda"]["quantidade"] == 3
+    g.update({"posicoes": ["T1"], "peso": 3 * 3.9 * 4.25, "kg_m": 4.25, "kg_m_catalogo": 4.25})
+    lista = {"posicoes": [{"marca": "T1", "classe": "Barra", "perfil": "TQ 50x50x3,0", "quantidade": 3, "comprimento": 3900,
+                           "peso_total": 49.7}],
+             "perfis": [g]}
+    R = orc.montar(lista, None)
+    tubo = next(li for li in R["linhas"] if li["id"] == "tubo")
+    assert tubo["qtd_recorte"] == round(3 * 6.0 * 4.25, 1)                      # 76,5 kg: as 3 barras inteiras
+    assert "emenda" not in tubo["recorte_como"] and R["totais"]["aco_emendas"] == 0
 
 
 def test_compra_com_e_sem_aproveitamento_lado_a_lado():
