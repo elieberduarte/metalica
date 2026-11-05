@@ -297,9 +297,9 @@ def rotulo_pol(p: float) -> str:
 
 #: A chapa grossa que se compra (mm do rótulo e do peso, polegada), regra do usuário de 05/11: a MAIS PRÓXIMA da do
 #: projeto, mesmo menor ("CH 15 → CH 16 - 5/8"", "CH 20 → CH 19,1 - 3/4""), e o kg pela comercial. 16, 19,1 e 31,8 são
-#: os do usuário; 6,3 / 8,0 / 9,5 / 12,5 os de sempre do sistema e da tabela da Hermes ("3,75 à 12,50mm"); acima de
+#: os do usuário (e 6,35 para 1/4", gestor 05/11); 8,0 / 9,5 / 12,5 os de sempre do sistema e da tabela da Hermes ("3,75 à 12,50mm"); acima de
 #: 19,1 a polegada em mm com uma casa.
-CHAPAS_GROSSAS = [(4.75, '3/16"'), (6.3, '1/4"'), (8.0, '5/16"'), (9.5, '3/8"'), (12.5, '1/2"'), (16.0, '5/8"'),
+CHAPAS_GROSSAS = [(4.75, '3/16"'), (6.35, '1/4"'), (8.0, '5/16"'), (9.5, '3/8"'), (12.5, '1/2"'), (16.0, '5/8"'),
                   (19.1, '3/4"'), (22.2, '7/8"'), (25.4, '1"'), (31.8, '1 1/4"'), (38.1, '1 1/2"'), (44.5, '1 3/4"'),
                   (50.8, '2"'), (63.5, '2 1/2"'), (76.2, '3"')]
 

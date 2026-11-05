@@ -16,7 +16,7 @@ def test_chapa_pela_comercial_mais_proxima_em_mm_e_polegada():
     assert orc.chapa_do_orcamento(20.0) == (19.1, 'CH 19,1 - 3/4"')
     assert orc.chapa_do_orcamento(31.5) == (31.8, 'CH 31,8 - 1 1/4"')
     assert orc.chapa_do_orcamento(17.55)[0] == 19.1                    # empate: a maior ("na dúvida a MAIOR")
-    assert orc.chapa_do_orcamento(6.35) == (6.3, 'CH 6,3 - 1/4"')
+    assert orc.chapa_do_orcamento(6.3) == (6.35, 'CH 6,35 - 1/4"')     # 1/4" com o rótulo 6,35 (gestor, 05/11)
     assert orc.chapa_do_orcamento(3.0)[1].startswith("CH #11 - 3,00mm")  # a fina segue a bitola do resumo de compra
     lista = {"posicoes": [
         {"marca": "C1", "classe": "Chapa", "perfil": "CH 15", "espessura": 15.0, "quantidade": 2, "peso_total": 150.0},
