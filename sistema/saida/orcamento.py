@@ -522,8 +522,15 @@ def _com_recorte(lista: dict, linhas: List[dict], num: dict) -> None:
         grupo_de[li.get("marca")] = classificar(li)
         peso_de[li.get("marca")] = float(li.get("peso_total") or 0.0)
     recorte: Dict[str, float] = collections.defaultdict(float)
+    com_emenda = set()
+    emendas = 0
     for g in lista.get("perfis") or []:
-        b = g.get("barras") or {}
+        # a compra é COM EMENDA de perfil (o usuário, 05/11: "aqui na empresa, para não ter muito desperdício, é feito
+        # emenda de perfis"): o plano com emenda do Detalhar (pedaço mínimo de 1 m, uma emenda por peça) sempre que ele
+        # poupa barra, mesmo sem a emenda ligada no perfil
+        b = g.get("barras_com_emenda") or g.get("barras") or {}
+        n_emendas = len(b.get("emendadas") or [])
+        emendas += n_emendas
         if not (b.get("quantidade") or b.get("sob_medida_m")):
             continue
         kg_m = float(g.get("kg_m_catalogo") or 0.0) or float(g.get("kg_m") or 0.0)
@@ -535,6 +542,8 @@ def _com_recorte(lista: dict, linhas: List[dict], num: dict) -> None:
         soma = sum(por_grupo.values())
         for gr, kg in por_grupo.items():
             recorte[gr] += kg_compra * (kg / soma if soma else 1.0 / len(por_grupo))
+            if n_emendas:
+                com_emenda.add(gr)
     for li in linhas:
         if li["grupo"] != "aco" or li["qtd"] is None:
             continue
@@ -543,7 +552,9 @@ def _com_recorte(lista: dict, linhas: List[dict], num: dict) -> None:
             li["recorte_como"] = "chapa com %s%% de perda de recorte" % br(PERDA_CHAPAS, 0)
         elif li["id"] in recorte:
             li["qtd_recorte"] = round(recorte[li["id"]], 1)
-            li["recorte_como"] = "barras comerciais do plano de corte"
+            li["recorte_como"] = "barras comerciais do plano de corte" + (
+                ", com emenda de perfil (padrão da fábrica)" if li["id"] in com_emenda else "")
+    num["aco_emendas"] = emendas
     num["aco_kg_recorte"] = round(sum(li.get("qtd_recorte") or 0.0 for li in linhas if li["grupo"] == "aco"
                                       and li["id"] != "corte_chaparia"), 1)
 
@@ -703,6 +714,7 @@ def montar(lista: dict, tabela: Optional[dict], edicoes: Optional[dict] = None, 
     if area:
         cab["area_m2"] = round(area, 2)
     totais = {"tabela": tot_tab, "fechamento": tot_fech, "aco_kg": num["aco_kg"], "aco_kg_recorte": num.get("aco_kg_recorte"),
+              "aco_emendas": num.get("aco_emendas", 0),
               "telhas_ml": round(num["telhas_ml"], 2),
               "telhas_kg": round(num["telhas_kg"], 1), "funilaria_kg": round(num["funilaria_kg"], 1),
               "rs_kg_tabela": round(tot_tab / num["aco_kg"], 2) if num["aco_kg"] else None,
@@ -719,6 +731,8 @@ REGRAS_TEXTO = [
     "U dobrado de 2,00/2,25/2,65/3,00/4,75 mm = U padrão MVAL; outra espessura = U fora padrão (Perfyaço).",
     "Terça fora de 4,80–6,40 m e qualquer peça acima de 6,40 m: preço MVAL 'menor 4,80 / maior 6,40 m'.",
     "Peso teórico da lista de materiais, sem perda de corte. Telhas em metro linear de chapa comprada.",
+    "Com recorte (a compra): as barras do plano de corte com emenda de perfil, o padrão da fábrica (pedaço mínimo de 1 m, "
+    "uma emenda por peça); W em barra de 12 m, os outros em 6 m; chapa com a perda de recorte.",
     "Parafusos: o completo (porca e arruela) zincado da tabela, no menor comprimento que não fica curto; "
     "o preço da linha é a média pelos comprimentos da obra.",
 ]

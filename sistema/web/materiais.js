@@ -1327,7 +1327,7 @@ function desenharOrcamento() {
     // chapa com a perda), lado a lado para conferir a diferença (09/10)
     el('thead', {}, el('tr', {}, ['Descrição', 'Quantidade', 'Un', 'Sem recorte', 'Com recorte', 'Valor (tabela)', 'Valor total', 'Valor (fechamento)', 'Valor total (fechamento)', '']
       .map((t, i) => el('th', { class: i >= 1 && i !== 2 && i < 9 ? 'r' : '', texto: t,
-        title: i === 3 ? 'Peso teórico das peças (o da lista de materiais), sem perda de corte' : i === 4 ? 'O que se compra: as barras comerciais do plano de corte (6 m; W em 12 m) e as chapas com a perda de recorte' : '' })))),
+        title: i === 3 ? 'Peso teórico das peças (o da lista de materiais), sem perda de corte' : i === 4 ? 'O que se compra: as barras comerciais do plano de corte com emenda de perfil, o padrão da fábrica (pedaço mínimo de 1 m, uma emenda por peça; 6 m, W em 12 m) e as chapas com a perda de recorte' : '' })))),
     tbody, el('tfoot', {}, el('tr', {}, el('td', { colspan: 2, texto: 'TOTAL' }), el('td', {}),
       el('td', { class: 'r', id: 'orc-tot-sem', texto: ORC.totais && ORC.totais.aco_kg_recorte ? n(ORC.totais.aco_kg, 1) : '' }),
       el('td', { class: 'r', id: 'orc-tot-com', texto: ORC.totais && ORC.totais.aco_kg_recorte ? n(ORC.totais.aco_kg_recorte, 1) : '' }),
@@ -1433,7 +1433,7 @@ function recalcularOrcamento() {
   if (c) c.replaceChildren(
     cartao(reais(tot), 'total pela tabela', t.aco_kg ? `${n(tot / t.aco_kg, 2)} R$/kg de aço` : null, !totF),
     cartao(totF ? reais(totF) : '—', 'fechamento', totF && t.aco_kg ? `${n(totF / t.aco_kg, 2)} R$/kg${area ? ` · ${n(totF / area, 2)} R$/m²` : ''}` : 'preencha as colunas da direita', !!totF),
-    cartao(n(t.aco_kg, 1) + ' kg', 'aço (estrutura)', t.aco_kg_recorte ? `peso teórico · com recorte ${n(t.aco_kg_recorte, 1)} kg (+${n(100 * (t.aco_kg_recorte - t.aco_kg) / t.aco_kg, 1)}%)` : 'peso teórico da lista'),
+    cartao(n(t.aco_kg, 1) + ' kg', 'aço (estrutura)', t.aco_kg_recorte ? `peso teórico · com recorte ${n(t.aco_kg_recorte, 1)} kg (+${n(100 * (t.aco_kg_recorte - t.aco_kg) / t.aco_kg, 1)}%)${t.aco_emendas ? ` · ${t.aco_emendas} emenda(s) de perfil` : ''}` : 'peso teórico da lista'),
     cartao(n(t.telhas_ml, 1) + ' m', 'telhas', t.funilaria_kg ? `+ ${n(t.funilaria_kg, 1)} kg de rufos e calhas` : null));
 }
 

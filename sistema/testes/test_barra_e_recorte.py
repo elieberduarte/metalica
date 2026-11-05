@@ -40,6 +40,25 @@ def test_com_recorte_ao_lado_do_teorico():
     assert R["totais"]["aco_kg"] == 146.3 and R["totais"]["aco_kg_recorte"] == round(127.5 + 46.0, 1)
 
 
+def test_compra_do_orcamento_com_emenda_de_perfil():
+    """Decisão do usuário (05/11): "aqui na empresa, para não ter muito desperdício, é feito emenda de perfis". A compra
+    do orçamento usa o plano com emenda do Detalhar (pedaço mínimo de 1 m, uma emenda por peça) mesmo sem a emenda
+    ligada no perfil: 3 vigas W de 7 m saem de 2 barras de 12 m (uma emendada), não de 3"""
+    g = {"perfil": "W200X26.6"}
+    lp._os_dois_encaixes(g, [7000.0] * 3, 12000.0, ["V1"] * 3, set())
+    assert g["emenda"] is False and g["barras"]["quantidade"] == 3          # o Detalhar continua sem emenda até ligar
+    assert g["barras_com_emenda"]["quantidade"] == 2
+    g.update({"posicoes": ["V1"], "peso": 3 * 7.0 * 26.6, "kg_m": 26.6, "kg_m_catalogo": 26.6})
+    lista = {"posicoes": [{"marca": "V1", "classe": "Barra", "perfil": "W200X26.6", "quantidade": 3, "comprimento": 7000,
+                           "peso_total": 558.6}],
+             "perfis": [g]}
+    R = orc.montar(lista, None)
+    w = next(li for li in R["linhas"] if li["id"] == "w")
+    assert w["qtd_recorte"] == round(2 * 12.0 * 26.6, 1)                     # 638,4 kg, não 957,6
+    assert "com emenda" in w["recorte_como"] and R["totais"]["aco_emendas"] == 1
+    assert any("emenda de perfil" in t for t in R["regras"])
+
+
 def test_compra_com_e_sem_aproveitamento_lado_a_lado():
     """A compra de perfis em dois blocos (o usuário, 09/10): com aproveitamento (o plano de corte) e sem (cada posição só
     das barras dela; a peça maior que a barra em barras inteiras), barras × kg/barra = kg nos dois."""
