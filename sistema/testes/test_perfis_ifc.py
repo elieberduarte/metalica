@@ -64,15 +64,18 @@ def test_trecho_reto_com_meia_esquadria_nao_e_curva():
 
 
 def test_chapa_vai_para_a_comercial():
+    """Na faixa fina (abaixo de 3/16") a chapa da compra é a mesma ou a próxima acima, na bitola; de 3/16" para cima, a
+    comercial MAIS PRÓXIMA, mesmo mais fina (regra do usuário, 05/11: a régua da aba Orçamento, uma tabela só — 9c0c643;
+    antes daqui 10 e 11,2 iam juntas para a 1/2" de 12,7)."""
     from saida.resumos import chapa_comercial, _chapas_por_rotulo
-    assert chapa_comercial(3.0) == 3.0 and chapa_comercial(19.1) == 19.05
-    assert chapa_comercial(10.3) == 12.7 and chapa_comercial(5.6) == 6.3      # nunca mais fina que o projeto
+    assert chapa_comercial(3.0) == 3.0 and chapa_comercial(4.3) == 4.25 and chapa_comercial(0.5) == 0.45
     g = _chapas_por_rotulo([{"espessura": 10.0, "material": "A36", "peso": 78.5, "pecas": 2, "area_m2": 1.0},
                             {"espessura": 11.2, "material": "A36", "peso": 87.9, "pecas": 1, "area_m2": 1.0}])
-    assert len(g) == 1 and g[0]["polegada"] == '1/2"' and g[0]["modelo"] == '10,00mm, 11,20mm (≈7/16")'
+    assert [(x["t"], x["polegada"]) for x in g] == [(9.5, '3/8"'), (12.5, '1/2"')], g
+    assert g[1]["modelo"] == '11,20mm (≈7/16")' and g[0]["diferente"]
     from saida.resumos import fracao_polegada
     assert fracao_polegada(5.6) == '7/32"' and fracao_polegada(8.9) == "" and fracao_polegada(25.4) == '1"'
-    assert abs(g[0]["kg_compra"] - 2.0 * 12.7 * 7.85) < 0.01 and abs(g[0]["kg"] - 166.4) < 0.01
+    assert abs(g[0]["kg_compra"] - 9.5 * 7.85) < 0.01 and abs(g[0]["kg"] + g[1]["kg"] - 166.4) < 0.01
 
 
 def test_parecidos_e_troca_na_lista():
