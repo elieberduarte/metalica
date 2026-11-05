@@ -104,7 +104,8 @@ async function listar(escolher) {
   sel.innerHTML = cenas.length ? cenas.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('')
     : '<option value="">(nenhuma cena: comece pela foto)</option>';
   const id = escolher && cenas.some(c => c.id === escolher) ? escolher : (cenas[cenas.length - 1] || {}).id;
-  if (id) { sel.value = id; await abrirCena(id); } else { cena = null; $('#corpo').hidden = true; foto.hidden = true; mostrarModo('3d'); }
+  if (id) { sel.value = id; await abrirCena(id); }
+  else { cena = null; $('#corpo').hidden = true; foto.hidden = true; mostrarModo('3d'); desenharCamadas(); }
 }
 
 async function abrirCena(id) {
@@ -140,9 +141,18 @@ async function abrirCena(id) {
 // (usuário, 26/10: "essa imagem interagir com as camadas, poder abrir a quadra, colocar e tirar a lona") — gravadas na cena:
 // a imagem salva sai como está na tela
 
+// Sem cena (antes da foto), as camadas ligam e desligam no 3D do mesmo jeito (usuário, 05/11): ficam lembradas por projeto
+// neste navegador e a cena nova começa com elas.
+const CHAVE_SOLTAS = 'cena.camadas.' + PROJETO;
+let soltas = [];
+try { soltas = JSON.parse(localStorage.getItem(CHAVE_SOLTAS) || '[]'); if (!Array.isArray(soltas)) soltas = []; } catch (e) { soltas = []; }
+const desligadasAgora = () => (cena ? cena.desligadas || [] : soltas);
+
 function desenharCamadas() {
-  if (!visor || !cena) return;
-  const desl = new Set(cena.desligadas || []), cams = visor.cabecalho.camadas || [];
+  if (!visor) return;
+  const caixa = $('#camadas-caixa');                         // com a cena, no lugar de sempre; sem ela, logo abaixo da lista
+  if (cena) $('#lugar-camadas').append(caixa); else $('#corpo').before(caixa);
+  const desl = new Set(desligadasAgora()), cams = visor.cabecalho.camadas || [];
   const linha = (chave, nome, cor, ligada) => `<label><input type="checkbox" data-chave="${esc(chave)}" ${ligada ? 'checked' : ''}>
     ${cor ? `<i style="background:${esc(cor)}"></i>` : ''}<span>${esc(nome)}</span></label>`;
   let html = '';
@@ -153,7 +163,7 @@ function desenharCamadas() {
 }
 
 function aplicarCamadas() {
-  const desl = new Set((cena && cena.desligadas) || []);
+  const desl = new Set(desligadasAgora());
   (visor.cabecalho.camadas || []).forEach((c, i) => {
     const ligada = !desl.has('camada:' + c.nome);
     if ((visor.visivelCamada[i] !== false) !== ligada) visor.mostrarCamada(i, ligada);
@@ -1106,7 +1116,11 @@ function ligarControles() {
     const f = $('#arquivo').files[0]; $('#arquivo').value = '';
     if (!f) return;
     aviso(`Enviando ${f.name} (${nf(f.size / 1048576, 1)} MB)…`);
-    try { const c = await pedir(`${API}/nova`, undefined, { dados: f, nome: f.name }); aviso(''); await listar(c.id); comecarPonto(); }
+    try {
+      const c = await pedir(`${API}/nova`, undefined, { dados: f, nome: f.name });
+      if (soltas.length) await pedir(`${API}/${encodeURIComponent(c.id)}`, { desligadas: soltas });   // começa com as camadas de agora
+      aviso(''); await listar(c.id); comecarPonto();
+    }
     catch (e) { aviso('A foto não entrou: ' + e.message); }
   };
   $('#lista').onchange = () => { if ($('#lista').value) abrirCena($('#lista').value); };
@@ -1168,7 +1182,15 @@ function ligarControles() {
   $('#sol').onchange = () => { lembrar(); mudarSol({ ligado: $('#sol').checked }); };
   $('#camadas').onchange = (e) => {
     const c = e.target.closest('input[data-chave]');
-    if (!c || !cena) return;
+    if (!c) return;
+    if (!cena) {                                            // antes da foto: só o 3D da tela (e a cena nova começa assim)
+      const s = new Set(soltas);
+      if (c.checked) s.delete(c.dataset.chave); else s.add(c.dataset.chave);
+      soltas = [...s];
+      try { localStorage.setItem(CHAVE_SOLTAS, JSON.stringify(soltas)); } catch (err) { /* sem o navegador lembrar */ }
+      aplicarCamadas();
+      return;
+    }
     lembrar();
     const desl = new Set(cena.desligadas || []);
     if (c.checked) desl.delete(c.dataset.chave); else desl.add(c.dataset.chave);
