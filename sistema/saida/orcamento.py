@@ -308,7 +308,16 @@ def chapa_do_orcamento(t: float) -> Tuple[float, str]:
     """(espessura comercial, rótulo) da chapa do projeto: de 3/16" para cima a comercial mais próxima (empate: a maior,
     "na dúvida a MAIOR"), "CH 16 - 5/8""; abaixo, a chapa fina como no resumo de compra (a mesma ou a próxima acima,
     na bitola), "CH #11 - 3,00mm - 1/8""."""
-    if t >= CHAPAS_GROSSAS[0][0] - 0.3:
+    maior = CHAPAS_GROSSAS[-1][0]
+    if t > maior + (maior - CHAPAS_GROSSAS[-2][0]) / 2.0:
+        # fora da série (mais de meio passo acima da maior): a espessura do projeto, com a polegada só quando bate — a de
+        # 146,5 mm do Heliponto R00 saía 76,2 (−3.300 kg na compra, FÁBRICA N.3 05/11)
+        from saida.resumos import fracao_polegada
+        pol = fracao_polegada(t)
+        return t, "CH %s%s (fora da série comercial: espessura do projeto)" % (("%g" % t).replace(".", ","),
+                                                                              (" - " + pol) if pol else "")
+    # abaixo de 3/16" a bitola (a #7 de 4,50 não vira 4,75: "abaixo de 4,75 continua a bitola", 05/11)
+    if t >= CHAPAS_GROSSAS[0][0] - 0.06:
         tc, pol = min(CHAPAS_GROSSAS, key=lambda c: (abs(c[0] - t), -c[0]))
         return tc, "CH %s - %s" % (("%g" % tc).replace(".", ","), pol)
     from saida.resumos import chapa_comercial, rotulo_chapa

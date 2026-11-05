@@ -134,7 +134,8 @@ _CHAPA_COMERCIAL = [(3.0, '1/8"'), (3.18, '1/8"'), (4.75, '3/16"'), (4.76, '3/16
                     (6.35, '1/4"'), (6.4, '1/4"'), (7.94, '5/16"'), (8.0, '5/16"'), (9.5, '3/8"'), (9.53, '3/8"'),
                     (12.5, '1/2"'), (12.7, '1/2"'), (13.0, '1/2"'), (15.88, '5/8"'), (16.0, '5/8"'), (19.0, '3/4"'),
                     (19.05, '3/4"'), (19.1, '3/4"'), (22.2, '7/8"'), (22.23, '7/8"'), (25.0, '1"'), (25.4, '1"'),
-                    (31.75, '1.1/4"'), (38.1, '1.1/2"'), (50.8, '2"')]
+                    (31.75, '1.1/4"'), (31.8, '1.1/4"'), (38.1, '1.1/2"'), (44.5, '1.3/4"'), (50.8, '2"'), (63.5, '2.1/2"'),
+                    (76.2, '3"')]
 def _polegada_da_chapa(t: float) -> Optional[str]:
     return next((p for esp, p in _CHAPA_COMERCIAL if abs(t - esp) < 0.06), None)
 
@@ -212,7 +213,12 @@ def _chapas_por_rotulo(chapas) -> List[dict]:
     juntas: Dict[tuple, dict] = collections.OrderedDict()
     for g in chapas or []:
         t = float(g.get("espessura") or 0.0)
-        tc = chapa_comercial(t)
+        # a chapa da compra: a mesma régua da aba Orçamento (regra do usuário, 05/11: de 3/16" para cima a comercial MAIS
+        # PRÓXIMA, mesmo mais fina — CH 15 → 16 (5/8"), CH 20 → 19,1 (3/4"), empate a maior; abaixo, a bitola, a mesma ou
+        # a próxima acima). Antes o resumo usava "a mesma ou a próxima acima" na série 6,30/7,94/12,70/15,9/19,05 — a de
+        # 16 virava 19,05 e o 1/4" saía 6,30 aqui e 6,35 no orçamento (GESTÃO, 05/11)
+        from saida.orcamento import chapa_do_orcamento
+        tc = chapa_do_orcamento(t)[0] if t > 0 else t
         mat = str(g.get("material") or "")
         j = juntas.setdefault((tc, mat), {"material": mat, "t": tc, "kg": 0.0, "pecas": 0, "m2": 0.0, "modelo": set()})
         j["kg"] += float(g.get("peso") or 0.0)
@@ -223,7 +229,7 @@ def _chapas_por_rotulo(chapas) -> List[dict]:
         b = bitola_de(j["t"]) or next((n for t_, n in BITOLAS_FINAS.items() if abs(t_ - j["t"]) < 0.03), None)
         j["bitola"] = "#%d" % b if b else ""
         j["mm"] = "%smm" % _n(j["t"], 2)
-        j["polegada"] = _polegada_da_chapa(j["t"]) or ""
+        j["polegada"] = _polegada_da_chapa(j["t"]) or fracao_polegada(j["t"])
         j["rotulo"] = " - ".join(x for x in (j["bitola"], j["mm"], j["polegada"]) if x)
         todas = sorted(j.pop("modelo"))
         # a espessura do modelo sempre escrita (o usuário estranhou a coluna vazia, 14/10), com a polegada dela quando bate
