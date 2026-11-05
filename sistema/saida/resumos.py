@@ -60,8 +60,6 @@ GRUPOS_PESO = [
     ("Chumbadores", ("chumbadores",)),
 ]
 _POLEGADA = {12: '1/2"', 16: '5/8"', 10: '3/8"', 20: '3/4"', 8: '5/16"', 24: '1"'}
-_COMPRIMENTO_POL = {25: '1"', 30: '1.1/4"', 35: '1.1/2"', 40: '1.3/4"', 45: '1.3/4"', 50: '2"', 55: '2.1/4"', 60: '2.1/2"',
-                    65: '2.1/2"', 70: '2.3/4"', 75: '3"', 80: '3"', 90: '3.1/2"', 100: '4"'}
 _CHAPA_POL = [(4.75, '3/16"'), (4.8, '3/16"'), (6.3, '1/4"'), (6.35, '1/4"'), (6.4, '1/4"'), (7.94, '5/16"'), (8.0, '5/16"'),
               (9.5, '3/8"'), (9.53, '3/8"'), (12.7, '1/2"'), (13.0, '1/2"'), (15.88, '5/8"'), (16.0, '5/8"'), (19.05, '3/4"'),
               (25.4, '1"')]
@@ -246,12 +244,11 @@ CLASSE_METRICA = {"A307": "4.6", "A325": "8.8", "A490": "10.9"}
 
 
 def comprimento_em_polegada(L) -> str:
-    """O comprimento da compra em polegada: o da tabela para os comprimentos métricos de catálogo (35 → 1.1/2", 50 → 2");
-    fora dela, pela conta — o menor 1/4" que cabe o comprimento (38 → 1.1/2" = 38,1; 44 → 1.3/4"; 12 → 1/2"). Antes ia
-    para a chave mais próxima da tabela, e os 3.178 parafusos de 38 mm da SESI saíam "1.3/4"" (auditor 02/11, N03)."""
+    """O comprimento da compra em polegada: o menor 1/4" que não fica mais curto que o do projeto (o usuário, 05/11: "na
+    dúvida, o maior" — 45 → 2", 65 → 2.3/4", 80 → 3.1/4", 90 → 3.3/4"; a tabela antiga comprava 1.3/4", 2.1/2", 3" e
+    3.1/2", curtos). A folga de 0,5 mm é a do mm arredondado do parafuso em polegada do modelo (38 = 1.1/2" de 38,1;
+    70 = 2.3/4" de 69,85). Antes do 05/11 o 38 ia à chave mais próxima da tabela, 1.3/4" (SESI, auditor 02/11, N03)."""
     L = int(round(float(L)))
-    if L in _COMPRIMENTO_POL:
-        return _COMPRIMENTO_POL[L]
     q = max(1, int(math.ceil((L - 0.5) / 6.35 - 1e-9)))       # quartos de polegada (0,5 mm de folga: 38 → 38,1)
     inteiro, quartos = divmod(q, 4)
     frac = {0: "", 1: "1/4", 2: "1/2", 3: "3/4"}[quartos]

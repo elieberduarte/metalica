@@ -29,14 +29,16 @@ def _pol(txt):
     return v
 
 
-def test_fora_da_tabela_o_menor_quarto_que_cabe():
+def test_o_menor_quarto_que_nao_fica_curto():
+    """e a regra do usuário de 05/11 (via GESTÃO): nunca mais curto que o projeto — a tabela antiga comprava 45 → 1.3/4",
+    65 → 2.1/2", 80 → 3" e 90 → 3.1/2" (o GE: 48 de 5/8" × 45; o Vicente: 724 de 1/2" × 80)"""
     for L in range(10, 201):
-        if L in resumos._COMPRIMENTO_POL:
-            continue
         mm = 25.4 * _pol(resumos.comprimento_em_polegada(L))
         assert mm >= L - 0.5 and mm - L <= 6.35, (L, resumos.comprimento_em_polegada(L))
     assert resumos.comprimento_em_polegada(38) == '1.1/2"' and resumos.comprimento_em_polegada(12) == '1/2"'
     assert resumos.comprimento_em_polegada(44) == '1.3/4"' and resumos.comprimento_em_polegada(35) == '1.1/2"'
+    for L, pol in ((45, '2"'), (65, '2.3/4"'), (80, '3.1/4"'), (90, '3.3/4"'), (70, '2.3/4"'), (25, '1"'), (50, '2"'), (100, '4"')):
+        assert resumos.comprimento_em_polegada(L) == pol, (L, resumos.comprimento_em_polegada(L))
     assert "x 1.1/2\" ASTM A325" in resumos.descricao_parafuso("M12.7x38", "A325")[1]
 
 
