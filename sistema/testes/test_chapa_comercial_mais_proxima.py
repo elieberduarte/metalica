@@ -18,9 +18,9 @@ from saida.resumos import _chapas_por_rotulo  # noqa: E402
 
 
 @pytest.mark.parametrize("t, tc, rotulo", [
-    # 5/8" = 15,88 e a CH 28 sobe para 1 1/4" (os 2 ajustes do usuário, 05/11, via GESTÃO); a 27 segue a mais próxima
+    # 5/8" = 15,88 e a CH 27 e a CH 28 sobem para 1 1/4" (os ajustes do usuário, 05/11, via GESTÃO); a 26 segue a mais próxima
     (15.0, 15.88, '15,88mm - 5/8"'), (20.0, 19.1, '19,10mm - 3/4"'), (16.0, 15.88, '15,88mm - 5/8"'),
-    (6.3, 6.35, '6,35mm - 1/4"'), (10.0, 9.5, '9,50mm - 3/8"'), (28.0, 31.8, '31,80mm - 1.1/4"'), (27.0, 25.4, '25,40mm - 1"'), (31.75, 31.8, '31,80mm - 1.1/4"'),
+    (6.3, 6.35, '6,35mm - 1/4"'), (10.0, 9.5, '9,50mm - 3/8"'), (28.0, 31.8, '31,80mm - 1.1/4"'), (27.0, 31.8, '31,80mm - 1.1/4"'), (26.0, 25.4, '25,40mm - 1"'), (31.75, 31.8, '31,80mm - 1.1/4"'),
     (4.5, 4.5, '#7 - 4,50mm'), (3.0, 3.0, '#11 - 3,00mm - 1/8"'), (146.5, 146.5, '146,50mm'),
 ])
 def test_a_chapa_da_compra_e_a_comercial_mais_proxima(t, tc, rotulo):

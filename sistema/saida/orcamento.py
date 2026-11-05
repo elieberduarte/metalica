@@ -303,14 +303,14 @@ CHAPAS_GROSSAS = [(4.75, '3/16"'), (6.35, '1/4"'), (8.0, '5/16"'), (9.5, '3/8"')
                   (19.1, '3/4"'), (22.2, '7/8"'), (25.4, '1"'), (31.8, '1 1/4"'), (38.1, '1 1/2"'), (44.5, '1 3/4"'),
                   (50.8, '2"'), (63.5, '2 1/2"'), (76.2, '3"')]
 
-#: As exceções do usuário à "mais próxima" (projeto → comercial): a CH 28 SOBE para 1 1/4" "para não termos problema"
-#: (05/11, via gestor) — só ela; as outras seguem a mais próxima.
-CHAPAS_EXCECOES = {28.0: (31.8, '1 1/4"')}
+#: As exceções do usuário à "mais próxima" (projeto → comercial): a CH 27 e a CH 28 SOBEM para 1 1/4" "para não
+#: termos problema" (05/11, via gestor; a 27 entrou depois da 28) — só elas; as outras seguem a mais próxima.
+CHAPAS_EXCECOES = {27.0: (31.8, '1 1/4"'), 28.0: (31.8, '1 1/4"')}
 
 
 def chapa_do_orcamento(t: float) -> Tuple[float, str]:
     """(espessura comercial, rótulo) da chapa do projeto: de 3/16" para cima a comercial mais próxima (empate: a maior,
-    "na dúvida a MAIOR"), "CH 15,88 - 5/8"" (a CH 28 sobe para 31,8: exceção do usuário); abaixo, a chapa fina como no resumo de compra (a mesma ou a próxima acima,
+    "na dúvida a MAIOR"), "CH 15,88 - 5/8"" (a CH 27 e a CH 28 sobem para 31,8: exceção do usuário); abaixo, a chapa fina como no resumo de compra (a mesma ou a próxima acima,
     na bitola), "CH #11 - 3,00mm - 1/8""."""
     for te, (tc, pol) in CHAPAS_EXCECOES.items():
         if abs(t - te) < 0.06:
@@ -830,7 +830,7 @@ REGRAS_TEXTO = [
     "Parafusos: o completo (porca e arruela) zincado da tabela, no menor comprimento que não fica curto; "
     "o preço da linha é a média pelos comprimentos da obra.",
     "Chapa: a comercial mais próxima da do projeto, em mm e polegada (CH 15 → CH 15,88 - 5/8\"; CH 20 → CH 19,1 - 3/4\"), "
-    "mesmo menor; o kg pela comercial. Exceção do usuário: a CH 28 sobe para CH 31,8 - 1 1/4\".",
+    "mesmo menor; o kg pela comercial. Exceção do usuário: a CH 27 e a CH 28 sobem para CH 31,8 - 1 1/4\".",
     "Chumbador de barra redonda: o comprimento total da barra na linha (Ø12 - 1/2\" x 230 x 60 pç = 13,8 m).",
     "Disco: em branco (o gestor preenche). Tinta: só a área de pintura (m²); tinta especial (intumescente) é cotada à parte.",
 ]
