@@ -6,6 +6,8 @@ com uma foto aberta: com "(nenhuma cena)" o painel não tinha nada. Agora, pela 
      recarregada, a página lembra;
   B. a cena nova (o botão Nova cena, o arquivo escolhido) começa com essa camada desligada, gravada na cena, e a lista vai
      para o lugar dela no corpo da cena;
+  A2. o sol também (05/11: "não consigo mexer no sol da cena"): sem cena, a direção arrastada com o mouse move o sol do 3D;
+     recarregada, a página lembra; a cena nova começa com ele;
   C. sem erro no console.
 Porta livre, nunca a 8765/8766."""
 import json, os, shutil, subprocess, sys, tempfile, time, urllib.request
@@ -91,7 +93,29 @@ try:
     ok(esperar(aba, f"!!window.cenaPronta && !document.querySelector({json.dumps(SEL)}).checked && visor.visivelCamada[{IDX}] === false", 120),
        "recarregada, a tela lembra a camada desligada")
 
-    print("B — a cena nova começa com as camadas de agora")
+    print("A2 — sem cena: o sol (usuário, 05/11: \"não consigo mexer no sol da cena\" — sem cena ele nem aparecia)")
+    ok(aba.avaliar("(() => { const d = document.querySelector('#sol-caixa [data-sol=direcao]'); return !!(d && d.offsetWidth); })()"),
+       "a direção e a altura do sol aparecem sem cena")
+    ok(aba.avaliar("document.getElementById('sombra-chao').closest('label').offsetWidth === 0"), "a sombra no chão (a da foto) fica escondida sem cena")
+    sol0 = aba.avaliar("visor._luz.uSol.value.toArray()")
+    # arrastar a faixa da direção com o mouse, da ponta esquerda até ~1/4 (90°)
+    r = aba.avaliar("(() => { const d = document.querySelector('#sol-caixa [data-sol=direcao]'); d.scrollIntoView({block: 'center'});"
+                    " const q = d.getBoundingClientRect(); return [q.x, q.y + q.height / 2, q.width]; })()")
+    x0, y0, w = r
+    aba.cmd("Input.dispatchMouseEvent", type="mousePressed", x=x0 + 2, y=y0, button="left", clickCount=1)
+    for k in range(1, 9):
+        aba.cmd("Input.dispatchMouseEvent", type="mouseMoved", x=x0 + 2 + (w * 0.25 - 2) * k / 8, y=y0, button="left", buttons=1)
+    aba.cmd("Input.dispatchMouseEvent", type="mouseReleased", x=x0 + w * 0.25, y=y0, button="left", clickCount=1)
+    aba.drenar(0.5)
+    dir1 = int(aba.avaliar("document.querySelector('#sol-caixa [data-sol=direcao]').value"))
+    sol1 = aba.avaliar("visor._luz.uSol.value.toArray()")
+    ok(60 <= dir1 <= 120 and sol1 != sol0, f"arrastada com o mouse, a direção muda ({dir1}°) e o sol do 3D vai junto ({[round(x, 2) for x in sol1]})")
+    aba.avaliar("location.reload(); 1")
+    aba.drenar(1.0)
+    ok(esperar(aba, f"!!window.cenaPronta && +document.querySelector('#sol-caixa [data-sol=direcao]').value === {dir1}", 120),
+       "recarregada, a tela lembra o sol")
+
+    print("B — a cena nova começa com as camadas e o sol de agora")
     doc = aba.cmd("DOM.getDocument")["root"]["nodeId"]
     no = aba.cmd("DOM.querySelector", nodeId=doc, selector="#arquivo")["nodeId"]
     aba.cmd("DOM.setFileInputFiles", nodeId=no, files=[FOTO])
@@ -100,8 +124,11 @@ try:
        "a cena nova tem a camada desligada")
     gravado = json.loads(urllib.request.urlopen(f"{base}/api/projetos/obra/terreno/cenas/foto-local", timeout=30).read())
     ok(("camada:" + nome) in (gravado.get("desligadas") or []), f"e gravada no servidor ({gravado.get('desligadas')})")
-    ok(aba.avaliar("document.getElementById('camadas-caixa').parentElement.id === 'lugar-camadas'"),
-       "com a cena aberta, a lista vai para o lugar dela no corpo da cena")
+    ok(((gravado.get("sol") or {}).get("direcao")) == dir1, f"e o sol de antes da foto ({(gravado.get('sol') or {}).get('direcao')}°)")
+    ok(aba.avaliar("document.getElementById('camadas-caixa').parentElement.id === 'lugar-camadas'"
+                   " && document.getElementById('sol-bloco').parentElement.id === 'lugar-sol'"),
+       "com a cena aberta, as camadas e o sol vão para o lugar deles no corpo da cena")
+    ok(aba.avaliar("document.getElementById('sombra-chao').closest('label').offsetWidth > 0"), "e a sombra no chão aparece")
     ok(aba.avaliar(f"(() => {{ const c = document.querySelector({json.dumps(SEL)}); return !!(c && c.offsetWidth && !c.checked); }})()")
        and aba.avaliar(f"visor.visivelCamada[{IDX}] === false"), "à mostra, desmarcada, e a camada continua escondida")
     # a cena apagada: a lista volta para cima, com as camadas de antes da foto

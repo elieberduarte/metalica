@@ -71,7 +71,7 @@
   .sol-controles label { display: block; margin: 2px 0 8px; }
   .sol-controles output { float: right; color: var(--texto2); font-variant-numeric: tabular-nums; }
   .sol-controles input[type=range] { display: block; width: 100%; margin-top: 4px; accent-color: var(--azul); }
-  #sol-caixa[hidden] { display: none; }
+  #sol-caixa[hidden], #sol-caixa .so-cena[hidden] { display: none; }
   #sol-caixa label.faixa { display: flex; }
   #pronta { border: 1px solid var(--verde); border-radius: var(--raio-p); padding: 8px; display: flex; flex-direction: column; gap: 6px; }
   #pronta p { margin: 0; }
@@ -105,6 +105,9 @@
     <button type="button" id="nova">Nova cena (foto)…</button><input type="file" id="arquivo" hidden accept=".jpg,.jpeg,.png"></div>
   <!-- as camadas valem também sem cena (usuário, 05/11: "na tela de configuração de cenas tenham as camadas para poder
        ocultar e habilitar"): aqui antes da foto; com a cena aberta, vão para o lugar delas no corpo (#lugar-camadas) -->
+  <!-- o sol também (usuário, 05/11: "não consigo mexer no sol da cena"): antes da foto, mexe no 3D; com a cena, #lugar-sol -->
+  <div id="sol-bloco"><label class="faixa"><input type="checkbox" id="sol" checked> Sol e sombra</label>
+    <div id="sol-caixa"></div></div>
   <div id="camadas-caixa"><p class="titulo-secao">Camadas</p>
     <div id="camadas"></div></div>
   <div id="corpo" hidden>
@@ -124,8 +127,7 @@
     <div class="linha"><button type="button" id="salvar-cena" class="forte" title="Terminar o encaixe: os pontos saem da tela (Editar cena traz de volta)">Salvar cena</button></div>
     </div>
     <label class="faixa">3D <input type="range" id="opacidade" min="0.05" max="1" step="0.05"><span id="opacidade-val"></span></label>
-    <label class="faixa"><input type="checkbox" id="sol" checked> Sol e sombra</label>
-    <div id="sol-caixa"></div>
+    <div id="lugar-sol"></div>
     <div id="cobertura" hidden><p class="titulo-secao">Cobertura retrátil</p>
       <div class="linha"><button type="button" data-situacao="aberta">Aberta</button><button type="button" data-situacao="retraida">Retraída</button></div></div>
     <div id="lugar-camadas"></div>

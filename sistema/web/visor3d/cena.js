@@ -105,7 +105,7 @@ async function listar(escolher) {
     : '<option value="">(nenhuma cena: comece pela foto)</option>';
   const id = escolher && cenas.some(c => c.id === escolher) ? escolher : (cenas[cenas.length - 1] || {}).id;
   if (id) { sel.value = id; await abrirCena(id); }
-  else { cena = null; $('#corpo').hidden = true; foto.hidden = true; mostrarModo('3d'); desenharCamadas(); }
+  else { cena = null; $('#corpo').hidden = true; foto.hidden = true; mostrarModo('3d'); desenharCamadas(); mostrarSol(); }
 }
 
 async function abrirCena(id) {
@@ -150,8 +150,7 @@ const desligadasAgora = () => (cena ? cena.desligadas || [] : soltas);
 
 function desenharCamadas() {
   if (!visor) return;
-  const caixa = $('#camadas-caixa');                         // com a cena, no lugar de sempre; sem ela, logo abaixo da lista
-  if (cena) $('#lugar-camadas').append(caixa); else $('#corpo').before(caixa);
+  arrumarPainel();                                          // com a cena, no lugar de sempre; sem ela, logo abaixo da lista
   const desl = new Set(desligadasAgora()), cams = visor.cabecalho.camadas || [];
   const linha = (chave, nome, cor, ligada) => `<label><input type="checkbox" data-chave="${esc(chave)}" ${ligada ? 'checked' : ''}>
     ${cor ? `<i style="background:${esc(cor)}"></i>` : ''}<span>${esc(nome)}</span></label>`;
@@ -313,17 +312,31 @@ async function gravar(campos) {
 
 let tempoSol = 0;
 const CHAO_PADRAO = 0.5;
-function solDaCena() { return { ligado: true, ...SOL_PADRAO, chao: CHAO_PADRAO, ...((cena && cena.sol) || {}) }; }
+// Sem cena (antes da foto), o sol mexe no 3D da tela do mesmo jeito (usuário, 05/11: "não consigo mexer no sol da cena" —
+// na tela sem cena o sol nem aparecia, e o mudarSol saía calado): lembrado por projeto e a cena nova começa com ele.
+const CHAVE_SOL_SOLTO = 'cena.sol.' + PROJETO;
+let solSolto = null;
+try { solSolto = JSON.parse(localStorage.getItem(CHAVE_SOL_SOLTO) || 'null'); if (!solSolto || typeof solSolto !== 'object') solSolto = null; }
+catch (e) { solSolto = null; }
+function solDaCena() { return { ligado: true, ...SOL_PADRAO, chao: CHAO_PADRAO, ...((cena ? cena.sol : solSolto) || {}) }; }
+
+/** O sol e as camadas valem com ou sem cena: sem ela, logo abaixo da lista das cenas; com ela, no lugar deles no corpo. */
+function arrumarPainel() {
+  if (cena) { $('#lugar-sol').append($('#sol-bloco')); $('#lugar-camadas').append($('#camadas-caixa')); }
+  else { $('#corpo').before($('#sol-bloco')); $('#corpo').before($('#camadas-caixa')); }
+}
 
 function mostrarSol() {
   const s = solDaCena();
+  arrumarPainel();
   $('#sol').checked = s.ligado;
   $('#sol-caixa').hidden = !s.ligado;
   $('#sol-caixa').innerHTML = controlesDoSol(s) +
-    `<label class="faixa">Sombra no chão <input type="range" id="sombra-chao" min="0" max="1" step="0.05" value="${s.chao}">
+    `<label class="faixa so-cena">Sombra no chão <input type="range" id="sombra-chao" min="0" max="1" step="0.05" value="${s.chao}">
       <span id="sombra-chao-val">${nf(s.chao * 100)} %</span></label>
     <p class="dica">A direção gira o sol em volta da obra; a altura vai do nascer (baixo, sombras compridas) ao meio-dia (alto).
-      A sombra no chão cai no plano dos pontos do chão (a quadra); 0 % a desliga.</p>`;
+      <span class="so-cena">A sombra no chão cai no plano dos pontos do chão (a quadra); 0 % a desliga.</span></p>`;
+  for (const el of $('#sol-caixa').querySelectorAll('.so-cena')) el.hidden = !cena;   // a sombra no chão é a da foto
   // só a direção e a altura: o resto (a sombra no chão) pode ter mudado depois de os controles nascerem
   ligarControlesDoSol($('#sol-caixa'), s, (novo) => { lembrar('sol'); mudarSol({ direcao: novo.direcao, altura: novo.altura, ligado: true }); });
   $('#sombra-chao').oninput = () => {
@@ -431,7 +444,13 @@ function recorteDoBloco() {
 }
 
 function mudarSol(mud) {
-  if (!cena) return;
+  if (!cena) {                                              // antes da foto: só o 3D da tela (e a cena nova começa assim)
+    solSolto = { ...solDaCena(), ...mud };
+    try { localStorage.setItem(CHAVE_SOL_SOLTO, JSON.stringify(solSolto)); } catch (e) { /* sem o navegador lembrar */ }
+    $('#sol-caixa').hidden = !solSolto.ligado;
+    aplicarSol();
+    return;
+  }
   cena.sol = { ...solDaCena(), ...mud };
   $('#sol-caixa').hidden = !cena.sol.ligado;
   aplicarSol();
@@ -1118,7 +1137,10 @@ function ligarControles() {
     aviso(`Enviando ${f.name} (${nf(f.size / 1048576, 1)} MB)…`);
     try {
       const c = await pedir(`${API}/nova`, undefined, { dados: f, nome: f.name });
-      if (soltas.length) await pedir(`${API}/${encodeURIComponent(c.id)}`, { desligadas: soltas });   // começa com as camadas de agora
+      const comeco = {};                                    // começa com as camadas e o sol de agora
+      if (soltas.length) comeco.desligadas = soltas;
+      if (solSolto) comeco.sol = solDaCena();
+      if (Object.keys(comeco).length) await pedir(`${API}/${encodeURIComponent(c.id)}`, comeco);
       aviso(''); await listar(c.id); comecarPonto();
     }
     catch (e) { aviso('A foto não entrou: ' + e.message); }
