@@ -359,8 +359,22 @@ def funilaria_da_lista(lista: dict) -> List[dict]:
                       # a área exata da chapa planificada (a da lista vem arredondada: o RF7 de 0,0235 m² saía 0,01 e o
                       # kg/m² da mesma chapa de 0,50 mm dava 4,167 em vez de 3,925, 19/10)
                       "ml": qtd * comp / 1000.0, "m2": m2, "kg": kg})
+    # a calha, o rufo e a cumeeira lançados no modelo (sólidos, no Quadro 8 da lista): na mesma tabela, com o peso da chapa
+    # planificada — antes as calhas iam para "Gradis…" sem peso e os rufos para "Telhas" com "—" (SESI, auditor N23, 02/11)
+    for g in funilaria_lancada(lista):
+        nome = str(g.get("nome") or "?")
+        tipo = ("Calha" if re.match(r"(?i)\s*calha", nome) else "Cumeeira" if re.match(r"(?i)\s*cumeeira", nome) else "Rufo")
+        saida.append({"nome": nome, "tipo": tipo, "perfil": str(g.get("material") or ""),
+                      "desenvolvimento": float(g.get("desenvolvimento") or 0.0), "comprimento": float(g.get("comprimento_peca") or 0.0),
+                      "qtd": int(g.get("quantidade") or 0), "ml": float(g.get("comprimento_m") or 0.0),
+                      "m2": float(g.get("area_m2") or 0.0), "kg": float(g.get("peso_kg") or 0.0)})
     saida.sort(key=lambda x: (x["tipo"] != "Calha", _ordem_natural(x["nome"])))
     return saida
+
+
+def funilaria_lancada(lista: dict) -> List[dict]:
+    """As linhas de funilaria lançada no modelo do Quadro 8 da lista (categoria "funilaria")."""
+    return [g for g in (lista or {}).get("pre_moldados") or [] if g.get("categoria") == "funilaria"]
 
 
 def _coef(kg: float, base: float, casas: int = 2) -> str:
@@ -374,7 +388,8 @@ def _tabela_funilaria(R: dict) -> str:
     if not F:
         return ""
     linhas = [[("<b>%s</b>" % _esc(x["nome"]), "c"), _esc("%s — %s" % (x["tipo"], x["perfil"])),
-               (_n(x["desenvolvimento"], 0), "r"), (_n(x["comprimento"] / 1000.0, 2), "r"), (x["qtd"], "c"),
+               (_n(x["desenvolvimento"], 0) if x["desenvolvimento"] else "—", "r"),
+               (_n(x["comprimento"] / 1000.0, 2) if x["comprimento"] else "var.", "r"), (x["qtd"], "c"),
                (_n(x["ml"], 2), "r"), (_n(x["m2"], 2), "r"), (_coef(x["kg"], x["ml"], 3), "r"), (_coef(x["kg"], x["m2"], 3), "r"),
                (_n(x["kg"], 1), "r")] for x in F]
     ml, m2, kg = sum(x["ml"] for x in F), sum(x["m2"] for x in F), sum(x["kg"] for x in F)
@@ -864,7 +879,7 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
         ml_telhas += t_["ml"]
         m2_telhas += t_["m2"]
         peso_telhas += t_["kg"]
-    peso_funilaria = peso_fam.get("funilaria", 0.0)
+    peso_funilaria = peso_fam.get("funilaria", 0.0) + sum(float(g.get("peso_kg") or 0.0) for g in funilaria_lancada(lista))
     for g in grupos_peso:
         g["pct"] = 100.0 * g["kg"] / peso_aco if peso_aco else 0.0
     perfis_kg = sum(f["kg"] for f in familias if f["chave"] not in FORA_DO_ACO) - peso_fam.get("chapas", 0.0)

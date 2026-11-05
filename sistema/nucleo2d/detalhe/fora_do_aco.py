@@ -186,10 +186,77 @@ def conferir_compra_por_m2(posicoes: Sequence, fora_do_aco: Sequence[dict]) -> L
     return avisos
 
 
+#: A calha, o rufo e a cumeeira lançados no modelo (o sólido da funilaria, fora das posições de produção): pesam pela chapa
+#: planificada, não pela malha — a malha da cumeeira do SESI dava 2.007 kg (a chapa, 167) e a das 11 calhas, 841 kg contra
+#: os 2.083 gravados no 3D (auditor N23, 02/11).
+NOME_DE_FUNILARIA = r"^\s*(calha|rufo|cumeeira|contra.?rufo|pingadeira)\b"
+OBS_FUNILARIA = ("peso pela chapa planificada (desenvolvimento × comprimento × espessura × 7,85 kg/m² por mm) ou o gravado "
+                 "no modelo")
+
+
+def eh_funilaria_lancada(ent) -> bool:
+    """O sólido de calha, rufo ou cumeeira lançado no modelo: os atributos do lançamento (calha_lancada, rufo_lancado,
+    cumeeira_lancada), a camada Calhas/Rufos/Cumeeiras ou o nome que começa por calha/rufo/cumeeira."""
+    atr = getattr(ent, "atributos", None) or {}
+    if atr.get("calha_lancada") or atr.get("rufo_lancado") or atr.get("cumeeira_lancada"):
+        return True
+    if _sem_acento(str(getattr(ent, "camada", "") or "")).strip() in ("calhas", "rufos", "cumeeiras"):
+        return True
+    return bool(re.search(NOME_DE_FUNILARIA, _sem_acento(str(getattr(ent, "nome", "") or ""))))
+
+
+def _espessura_do_nome(texto: str) -> Optional[float]:
+    """"Calha CM9 (chapa galv. #1,0, corte E)" → 1.0; "#0,50" → 0.5 (mm, com a vírgula); "#26" → 0.45 (a bitola: o
+    número inteiro é o da chapa fina, não 26 mm)."""
+    m = re.search(r"#\s*(\d+)(?:([.,])(\d+))?", texto or "")
+    if not m:
+        return None
+    if m.group(2):
+        return float("%s.%s" % (m.group(1), m.group(3)))
+    n = int(m.group(1))
+    from saida.dobras import ESPESSURAS_BITOLA
+    from saida.resumos import BITOLAS_FINAS
+    finas = {b: t for t, b in BITOLAS_FINAS.items()}
+    if n in finas:
+        return finas[n]
+    if n in ESPESSURAS_BITOLA:
+        return ESPESSURAS_BITOLA[n][1]                # a da ABNT/fornecedores
+    return None
+
+
+def chapa_da_funilaria(ent) -> Tuple[Optional[float], float, float, float]:
+    """(peso kg ou None, desenvolvimento mm, comprimento mm, espessura mm) da funilaria lançada: o `peso_kg` gravado no
+    3D; sem ele, a chapa planificada (desenvolvimento × comprimento × espessura × 7,85 kg/m² por mm, a régua dos rufos
+    da lista); sem o desenvolvimento, None (sem peso, com a observação)."""
+    atr = getattr(ent, "atributos", None) or {}
+
+    def num(*chaves):
+        for k in chaves:
+            try:
+                v = float(atr.get(k) or 0.0)
+            except (TypeError, ValueError):
+                v = 0.0
+            if v > 0:
+                return v
+        return 0.0
+    dev, comp = num("desenvolvimento", "corte"), num("comprimento")     # "corte": o desenvolvimento nos lançamentos
+    esp = num("espessura") or (_espessura_do_nome(str(getattr(ent, "nome", "") or "")) or 0.0)
+    if not comp:
+        vs = getattr(ent, "vertices", None) or []
+        if vs:
+            comp = max(max(v[i] for v in vs) - min(v[i] for v in vs) for i in range(3))
+    kg = num("peso_kg") or None
+    if kg is None and dev and comp and esp:
+        kg = dev * comp * 1e-6 * esp * 7.85
+    return kg, dev, comp, esp
+
+
 def item_fora_das_pecas(ent) -> Tuple[str, float]:
     """(categoria, massa específica) do sólido que não é peça de produção nem acessório (o guarda-corpo, o piso, a
     laje): antes ele sumia calado do levantamento — o gradil, o piso de chapa perfurada e a argamassa da Passarela
     Mirante não estavam em lista nenhuma (06/10). De aço pelo material ou pelo nome: 7850; senão, sem peso."""
+    if eh_funilaria_lancada(ent):
+        return "funilaria", 0.0                       # a calha e o rufo do modelo: antes do IfcCovering (rufo como "telha")
     nao_aco = material_nao_aco(ent)
     if nao_aco is not None:
         return nao_aco
@@ -312,7 +379,8 @@ def resumo_fora_do_aco(itens: Sequence[tuple]) -> List[dict]:
                                             "tipo_ifc": str(atr.get("tipo_ifc") or ""),
                                             "observacao": OBS_PELA_MALHA if categoria == "aço fora das peças" else
                                             (OBS_TELHA if categoria == "telha" else
-                                             OBS_CHAPA_EXPANDIDA if categoria == "chapa expandida" else "")})
+                                             OBS_CHAPA_EXPANDIDA if categoria == "chapa expandida" else
+                                             OBS_FUNILARIA if categoria == "funilaria" else "")})
         vs = getattr(ent, "vertices", None) or []
         fs = getattr(ent, "faces", None) or []
         g["quantidade"] += 1
@@ -329,6 +397,22 @@ def resumo_fora_do_aco(itens: Sequence[tuple]) -> List[dict]:
             cont = getattr(ent, "contorno", None) or []
             if cont:
                 g["comprimento_m"] += max(max(q[0] for q in cont) - min(q[0] for q in cont), max(q[1] for q in cont) - min(q[1] for q in cont)) * 1e-3
+            continue
+        if categoria == "funilaria":
+            kg, dev, comp, esp = chapa_da_funilaria(ent)
+            g["comprimento_m"] += comp * 1e-3
+            g["area_m2"] += dev * comp * 1e-6
+            if kg is None:
+                g["sem_peso"] = g.get("sem_peso", 0) + 1
+            else:
+                g["peso_kg"] += kg
+            # o desenvolvimento e a espessura do grupo (a linha da tabela dos rufos e calhas do resumo); o comprimento da
+            # peça só quando todas são iguais
+            for k, v in (("desenvolvimento", dev), ("espessura", esp), ("comprimento_peca", comp)):
+                if g["quantidade"] == 1:
+                    g[k] = v
+                elif g.get(k) is not None and abs(g[k] - v) > 0.5:
+                    g[k] = None
             continue
         if categoria == "telha":
             # a área do modelo (a malha trapezoidal não dá a área da chapa) e o peso pela massa por m² do fabricante
@@ -359,6 +443,9 @@ def resumo_fora_do_aco(itens: Sequence[tuple]) -> List[dict]:
         g["comprimento_m"] = round(g["comprimento_m"], 1)
         if g["abertas"]:
             nota = "%d peça(s) com a malha aberta, sem volume nem peso" % g["abertas"]
+            g["observacao"] = "; ".join(x for x in (g["observacao"], nota) if x)
+        if g.get("sem_peso"):
+            nota = "%d peça(s) sem o desenvolvimento da chapa no modelo: sem peso" % g["sem_peso"]
             g["observacao"] = "; ".join(x for x in (g["observacao"], nota) if x)
         if g.get("sem_massa"):
             nota = "%d peça(s) sem a massa por m² do fabricante (massa_m2 na peça): sem peso" % g["sem_massa"]
