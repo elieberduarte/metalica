@@ -445,7 +445,7 @@ def acessorios_da_lista(acessorios: Dict[str, int], metrico: bool = False) -> Li
     da classe do resumo de compras (saida/resumos.descricao_parafuso: a do modelo quando o nome a traz, senão A325 a
     partir de Ø16 × 50 e A307 abaixo) — e a porca e a arruela de cada parafuso contadas em linhas próprias. [{nome,
     quantidade, origem?}]."""
-    from saida.resumos import descricao_parafuso
+    from saida.resumos import codigo_autobrocante, descricao_autobrocante, descricao_parafuso, eh_autobrocante
     fora: Dict[str, dict] = collections.OrderedDict()
 
     def somar(nome, n, origem=None):
@@ -460,6 +460,9 @@ def acessorios_da_lista(acessorios: Dict[str, int], metrico: bool = False) -> Li
         m = _RE_BOLT_IFC.match(str(nome))
         if not m:
             somar(nome, n)
+            continue
+        if eh_autobrocante(nome):              # sem porca nem arruela (SESI, auditor 02/11, N03: o PB8-18 da costura do deck)
+            somar(descricao_autobrocante(float(m.group(2).replace(",", ".")), m.group(3), codigo_autobrocante(nome))[1], n, nome)
             continue
         classe = m.group(1).strip().upper().replace("ASTM", "").replace(" ", "")
         classe = classe if re.match(r"^(A\d{3}|\d+\.\d)$", classe) else None

@@ -245,6 +245,43 @@ def _chapas_por_rotulo(chapas) -> List[dict]:
 CLASSE_METRICA = {"A307": "4.6", "A325": "8.8", "A490": "10.9"}
 
 
+def comprimento_em_polegada(L) -> str:
+    """O comprimento da compra em polegada: o da tabela para os comprimentos métricos de catálogo (35 → 1.1/2", 50 → 2");
+    fora dela, pela conta — o menor 1/4" que cabe o comprimento (38 → 1.1/2" = 38,1; 44 → 1.3/4"; 12 → 1/2"). Antes ia
+    para a chave mais próxima da tabela, e os 3.178 parafusos de 38 mm da SESI saíam "1.3/4"" (auditor 02/11, N03)."""
+    L = int(round(float(L)))
+    if L in _COMPRIMENTO_POL:
+        return _COMPRIMENTO_POL[L]
+    q = max(1, int(math.ceil((L - 0.5) / 6.35 - 1e-9)))       # quartos de polegada (0,5 mm de folga: 38 → 38,1)
+    inteiro, quartos = divmod(q, 4)
+    frac = {0: "", 1: "1/4", 2: "1/2", 3: "3/4"}[quartos]
+    if not inteiro:
+        return '%s"' % frac
+    return '%d.%s"' % (inteiro, frac) if frac else '%d"' % inteiro
+
+
+#: O parafuso autobrocante (costura do deck, telha): não leva porca nem arruela. O TecnoMETAL o grava como
+#: "BOLT (PB8-18) 4.2x12" (SESI, auditor 02/11, N03: saía "sextavado ØM4.2 x 1" + porca e arruela", com 1.641 porcas
+#: e 1.641 arruelas que não existem).
+_RE_AUTOBROCANTE = re.compile(r"AUTO[\s-]*(?:BROC|PERFUR|ATARRAX)|\bPB\s*\d+\s*-\s*\d+|\bTEK\b", re.I)
+
+
+def eh_autobrocante(nome: str) -> bool:
+    return bool(_RE_AUTOBROCANTE.search(str(nome or "")))
+
+
+def codigo_autobrocante(nome: str) -> str:
+    m = re.search(r"\bPB\s*\d+\s*-\s*\d+", str(nome or ""), re.I)
+    return m.group(0).upper().replace(" ", "") if m else ""
+
+
+def descricao_autobrocante(d: float, L, codigo: str = "") -> Tuple[str, str]:
+    """("Autobrocante PB8-18 4,2x12", "Parafuso autobrocante PB8-18 Ø4,2 x 12 mm (sem porca e arruela)")."""
+    dd = ("%g" % float(d)).replace(".", ",")
+    cod = (" " + codigo) if codigo else ""
+    return ("Autobrocante%s %sx%s" % (cod, dd, L), "Parafuso autobrocante%s Ø%s x %s mm (sem porca e arruela)" % (cod, dd, L))
+
+
 def descricao_parafuso(nome: str, classe: Optional[str] = None, metrico: bool = False) -> Tuple[str, str, Optional[float]]:
     """"M12 x 35" → ("Parafuso M12x35", 'Parafuso sextavado Ø1/2" x 1.1/2" ASTM A307 + porca e arruela', 12)."""
     m = re.match(r"M(\d+(?:[.,]\d+)?)\s*x\s*(\d+)", nome or "", re.I)
@@ -253,7 +290,7 @@ def descricao_parafuso(nome: str, classe: Optional[str] = None, metrico: bool = 
     d = float(m.group(1).replace(",", "."))
     L = int(m.group(2))
     pol = _pol_mais_perto(d) or "M%g" % d
-    lpol = _COMPRIMENTO_POL.get(L) or _COMPRIMENTO_POL.get(min(_COMPRIMENTO_POL, key=lambda k: abs(k - L)))
+    lpol = comprimento_em_polegada(L)
     classe = classe or ("A325" if (d >= 16 and L >= 50) else "A307")     # a do modelo ("BOLT (A325) …") quando há
     if metrico:
         # a compra no métrico do modelo (opção do projeto, N04): M12 x 35 classe 4.6, sem a conversão para polegada
@@ -1110,6 +1147,8 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
                 chave = "HARDBOLT %g x %s" % (d, m.group(2))       # o mecânico: não é o químico HIT-V (PRATI, 14/10)
             elif _eh_parabolt(f.nome, (f.atributos or {})):
                 chave = "PARABOLT %g x %s" % (d, m.group(2))       # o mecânico de expansão (SESI, 22/10): nem químico
+            elif eh_autobrocante(nome) or eh_autobrocante(f.nome):
+                chave = ("AUTOBROCANTE %s %g x %s" % (codigo_autobrocante(nome) or codigo_autobrocante(f.nome), d, m.group(2))).replace("  ", " ")
             else:
                 chave = ("CHUMBADOR %g x %s" % (d, m.group(2))) if _eh_chumbador(f.nome) else (
                     "M%g x %s" % (d, m.group(2)) + (" (%s)" % mc.group(1).strip() if mc else ""))
@@ -1207,6 +1246,9 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
             nome, desc = descricao_hardbolt(r["d"], chave.rsplit(" ", 1)[-1])
         elif r["parafuso"] and chave.startswith("PARABOLT"):
             nome, desc = descricao_parabolt(r["d"], chave.rsplit(" ", 1)[-1])
+        elif r["parafuso"] and chave.startswith("AUTOBROCANTE"):
+            partes = chave.split()
+            nome, desc = descricao_autobrocante(r["d"], partes[-1], partes[1] if len(partes) == 5 else "")
         elif r["parafuso"] and chave.startswith("CHUMBADOR"):
             nome, desc = descricao_chumbador(r["d"], chave.rsplit(" ", 1)[-1])
         elif r["parafuso"]:
@@ -1220,7 +1262,7 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
             desc = desc.replace(" + porca e arruela", " + porca (a arruela é chapa do projeto)")
         saida.append({"nome": nome, "descricao": desc, "qtd": r["qtd"], "parafuso": r["parafuso"], "d": r["d"],
                       # o Hardbolt (cabeça com arruela flangeada) e o Parabolt (porca e arruela no kit): sem porca solta
-                      "sem_porca": chave.startswith(("HARDBOLT", "PARABOLT")),
+                      "sem_porca": chave.startswith(("HARDBOLT", "PARABOLT", "AUTOBROCANTE")),
                       "sem_arruela": int(r.get("sem_arruela") or 0), "embutimento": r.get("embutimento"), "quimico": r.get("quimico"),
                       "locais": [{"local": k, "qtd": v["qtd"], "pecas": sorted(v["pecas"], key=_ordem_natural), "ids": v.get("ids") or []}
                                  for k, v in locais]})
