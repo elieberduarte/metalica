@@ -345,17 +345,18 @@ def funilaria_da_lista(lista: dict) -> List[dict]:
     """Os rufos e as calhas da lista de materiais, peça por peça (19/10): a marca, a descrição, o desenvolvimento (a
     largura da chapa planificada: o "comprimento" da chapa dobrada na lista), o comprimento da peça (a "largura"), a
     quantidade, os metros lineares, a área e o peso — antes o resumo só tinha o total em kg e em m²."""
+    from ifc.importar import funilaria          # a regra única (o suporte de calha é aço: SESI, auditor N22, 02/11)
     saida = []
     for p in (lista or {}).get("posicoes") or []:
         perfil = str(p.get("perfil") or "")
         nome = str(p.get("nome") or p.get("marca") or "")
-        if p.get("categoria") != "RUFOS" and not re.search(r"RUFO|CALHA", perfil, re.I):
+        if p.get("categoria") != "RUFOS" and not funilaria(perfil):
             continue
         qtd = int(p.get("quantidade") or 0)
         desenv, comp = float(p.get("comprimento") or 0.0), float(p.get("largura") or 0.0)
         if desenv > comp:                              # a peça curta e larga: o desenvolvimento é o lado menor
             desenv, comp = comp, desenv
-        tipo = "Calha" if (re.search(r"CALHA", perfil, re.I) or re.match(r"CL\d", nome)) else "Rufo"
+        tipo = "Calha" if (funilaria(perfil) == "calha" or re.match(r"CL\d", nome)) else "Rufo"
         m2 = (qtd * desenv * comp / 1e6) or float(p.get("area_m2") or 0.0)
         esp = float(p.get("espessura") or 0.0)
         # o peso teórico (área × espessura × 7,85): a mesma chapa com o mesmo kg/m² em todas as linhas — o da lista vem
@@ -1611,9 +1612,9 @@ def _maior_e_mais_pesada(lista: dict, tipos_tes: List[dict], nome_trelica: str =
     """A maior peça (comprimento, para o transporte) e a mais pesada (para o içamento): entre as peças soltas e os
     conjuntos montados (a tesoura inteira, ou as meias quando é fabricada em duas)."""
     # sem as telhas e a funilaria (rufo, calha: chapa dobrada de aluzinc, não é peça de aço a transportar montada)
-    funilaria = re.compile(r"RUFO|CALHA", re.I)
-    soltas = [li for li in lista.get("posicoes") or [] if li.get("categoria") != "TELHAS"
-              and not re.match(r"(RF|CL)\d", str(li.get("nome") or "")) and not funilaria.search(str(li.get("perfil") or "") + str(li.get("classe") or ""))]
+    from ifc.importar import funilaria
+    soltas = [li for li in lista.get("posicoes") or [] if li.get("categoria") not in ("TELHAS", "RUFOS")
+              and not re.match(r"(RF|CL)\d", str(li.get("nome") or "")) and not funilaria(str(li.get("perfil") or ""))]
     maior = max(soltas, key=lambda li: float(li.get("comprimento") or 0.0), default=None)
     m = {"nome": (maior.get("nome") or maior.get("marca")) if maior else "", "comprimento": float(maior.get("comprimento") or 0.0) if maior else 0.0,
          "perfil": com_bitola(maior.get("perfil") or "") if maior else ""}

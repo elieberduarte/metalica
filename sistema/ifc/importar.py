@@ -2603,12 +2603,16 @@ _RE_TIRANTE = re.compile(r"FE\s*RED|BARRA\s*ROSC|REDOND|VERG|TIRANTE", re.I)
 #: A cumeeira de telha (TELHA/TP40…) é telha e fica na regra da telha.
 _RE_CALHA = re.compile(r"\bCALHA", re.I)
 _RE_RUFO = re.compile(r"RUFO|PINGADEIRA|ARREMATE|FUNILARIA|TESTEIRA|^\s*CUMEEIRA\b", re.I)   # RUFO pega CONTRARRUFO
+#: A peça de aço que segura a funilaria não é funilaria: "SC1 suporte de calha #3 × 70" (SESI Chapecó, auditor 02/11, N22:
+#: os 200 suportes, 207,8 kg de chapa #3, saíam do aço do resumo como "Rufos e calhas", com marca CL).
+_RE_SEGURA_FUNILARIA = re.compile(r"\b(?:SUP(?:ORTE|\.)?|APOIO|FIXA[CÇ][AÃ]O|TRAVA\w*|GANCHO|M[AÃ]O[\s-]*FRANCESA|ESTRIBO|"
+                                  r"CANTONEIRA|BRA[CÇ]O)S?\s+(?:D[AEO]S?\s+|P/\s*|PARA\s+)?(?:CALHA|RUFO|CUMEEIRA)", re.I)
 
 
 def funilaria(nome: str) -> str:
     """"rufo", "calha" ou "" pelo nome (ou perfil) da peça. Telha nunca é funilaria."""
     n = nome or ""
-    if not n or _RE_TELHA.search(n):
+    if not n or _RE_TELHA.search(n) or _RE_SEGURA_FUNILARIA.search(n):
         return ""
     if _RE_CALHA.search(n):
         return "calha"
