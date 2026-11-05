@@ -11,8 +11,12 @@ from saida import orcamento as orc                             # noqa: E402
 
 
 def test_chapa_pela_comercial_mais_proxima_em_mm_e_polegada():
-    # os exemplos do usuário: CH 15 → CH 16 - 5/8"; CH 20 → CH 19,1 - 3/4" (a mais próxima, mesmo menor)
-    assert orc.chapa_do_orcamento(15.0) == (16.0, 'CH 16 - 5/8"')
+    # os exemplos do usuário: CH 15 → CH 15,88 - 5/8"; CH 20 → CH 19,1 - 3/4" (a mais próxima, mesmo menor)
+    assert orc.chapa_do_orcamento(15.0) == (15.88, 'CH 15,88 - 5/8"')     # 5/8" = 15,88 no rótulo e no kg (05/11)
+    assert orc.chapa_do_orcamento(16.0) == (15.88, 'CH 15,88 - 5/8"')
+    # a exceção do usuário (05/11): a CH 28 SOBE para 1 1/4" ("para não termos problema"); só ela
+    assert orc.chapa_do_orcamento(28.0) == (31.8, 'CH 31,8 - 1 1/4"')
+    assert orc.chapa_do_orcamento(27.0)[0] == 25.4 and orc.chapa_do_orcamento(25.0)[0] == 25.4
     assert orc.chapa_do_orcamento(20.0) == (19.1, 'CH 19,1 - 3/4"')
     assert orc.chapa_do_orcamento(31.5) == (31.8, 'CH 31,8 - 1 1/4"')
     assert orc.chapa_do_orcamento(17.55)[0] == 19.1                    # empate: a maior ("na dúvida a MAIOR")
@@ -24,12 +28,12 @@ def test_chapa_pela_comercial_mais_proxima_em_mm_e_polegada():
         {"marca": "C3", "classe": "Chapa", "perfil": "CH 16", "espessura": 16.0, "quantidade": 1, "peso_total": 32.0}]}
     R = orc.montar(lista, None)
     ch = {li["descricao"]: li for li in R["linhas"] if li["id"].startswith("chapa:")}
-    assert set(ch) == {'Estrutura # CH 16 - 5/8"', 'Estrutura # CH 19,1 - 3/4"'}
-    c16, c19 = ch['Estrutura # CH 16 - 5/8"'], ch['Estrutura # CH 19,1 - 3/4"']
-    assert c16["qtd"] == 192.0 and c16["kg_modelo"] == 182.0                  # 150 × 16/15 + 32: o kg pela comercial
-    assert "projeto 15,00 / 16,00 mm → comercial 16,00 mm" in c16["detalhe"]
+    assert set(ch) == {'Estrutura # CH 15,88 - 5/8"', 'Estrutura # CH 19,1 - 3/4"'}
+    c16, c19 = ch['Estrutura # CH 15,88 - 5/8"'], ch['Estrutura # CH 19,1 - 3/4"']
+    assert c16["qtd"] == 190.6 and c16["kg_modelo"] == 182.0          # 150 × 15,88/15 + 32 × 15,88/16: o kg pela comercial
+    assert "projeto 15,00 / 16,00 mm → comercial 15,88 mm" in c16["detalhe"]
     assert c19["qtd"] == 191.0                                                # 200 × 19,1/20: menor que o projeto
-    assert R["totais"]["aco_kg"] == 383.0
+    assert R["totais"]["aco_kg"] == 381.6
     assert c19["qtd_recorte"] == round(191.0 * 1.15, 1)                        # a compra com a perda de recorte
 
 
