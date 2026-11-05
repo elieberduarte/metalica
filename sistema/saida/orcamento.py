@@ -295,6 +295,36 @@ def rotulo_pol(p: float) -> str:
     return {3 / 8: '3/8"', 1 / 2: '1/2"', 5 / 8: '5/8"', 3 / 4: '3/4"', 7 / 8: '7/8"', 1.0: '1"'}.get(p, '%g"' % p)
 
 
+#: A chapa grossa que se compra (mm do rótulo e do peso, polegada), regra do usuário de 05/11: a MAIS PRÓXIMA da do
+#: projeto, mesmo menor ("CH 15 → CH 16 - 5/8"", "CH 20 → CH 19,1 - 3/4""), e o kg pela comercial. 16, 19,1 e 31,8 são
+#: os do usuário; 6,3 / 8,0 / 9,5 / 12,5 os de sempre do sistema e da tabela da Hermes ("3,75 à 12,50mm"); acima de
+#: 19,1 a polegada em mm com uma casa.
+CHAPAS_GROSSAS = [(4.75, '3/16"'), (6.3, '1/4"'), (8.0, '5/16"'), (9.5, '3/8"'), (12.5, '1/2"'), (16.0, '5/8"'),
+                  (19.1, '3/4"'), (22.2, '7/8"'), (25.4, '1"'), (31.8, '1 1/4"'), (38.1, '1 1/2"'), (44.5, '1 3/4"'),
+                  (50.8, '2"'), (63.5, '2 1/2"'), (76.2, '3"')]
+
+
+def chapa_do_orcamento(t: float) -> Tuple[float, str]:
+    """(espessura comercial, rótulo) da chapa do projeto: de 3/16" para cima a comercial mais próxima (empate: a maior,
+    "na dúvida a MAIOR"), "CH 16 - 5/8""; abaixo, a chapa fina como no resumo de compra (a mesma ou a próxima acima,
+    na bitola), "CH #11 - 3,00mm - 1/8""."""
+    if t >= CHAPAS_GROSSAS[0][0] - 0.3:
+        tc, pol = min(CHAPAS_GROSSAS, key=lambda c: (abs(c[0] - t), -c[0]))
+        return tc, "CH %s - %s" % (("%g" % tc).replace(".", ","), pol)
+    from saida.resumos import chapa_comercial, rotulo_chapa
+    tc = chapa_comercial(t)
+    return tc, "CH " + rotulo_chapa(tc)
+
+
+#: A barra redonda que se compra (mm, polegada) para o chumbador: a mais próxima (empate: a maior).
+BARRAS_REDONDAS = [(9.53, '3/8"'), (12.7, '1/2"'), (15.88, '5/8"'), (19.05, '3/4"'), (22.23, '7/8"'), (25.4, '1"'),
+                   (28.58, '1 1/8"'), (31.75, '1 1/4"'), (38.1, '1 1/2"'), (44.45, '1 3/4"'), (50.8, '2"')]
+
+
+def pol_da_barra(d_mm: float) -> str:
+    return min(BARRAS_REDONDAS, key=lambda b: (abs(b[0] - d_mm), -b[0]))[1]
+
+
 # ============================================================ classificação das peças
 
 def _norm(perfil: str) -> str:
@@ -451,25 +481,35 @@ def linhas_da_lista(lista: dict, precos: Precos) -> Tuple[List[dict], dict]:
             f["kg"] += kg
             f["perfis"].append(str(li.get("perfil") or ""))
             continue
-        num["aco_kg"] += kg
         if g == "chapa":
-            num["chapas_kg"] += kg
+            # a chapa comercial mais próxima, e o kg por ela (o usuário, 05/11): CH 15 → CH 16 - 5/8", 16/15 do peso
             t = float(li.get("espessura") or 0.0)
-            item = precos.chapa(t)
-            chave = item["item"] if item else "sem preço (%s mm)" % br(t, 2)
-            c = chapas.setdefault(chave, {"kg": 0.0, "esp": set(), "item": item})
-            c["kg"] += kg
+            tc, rot = chapa_do_orcamento(t) if t > 0 else (0.0, "CH sem espessura")
+            kg_c = kg * tc / t if t > 0 and tc > 0 else kg
+            num["aco_kg"] += kg_c
+            num["chapas_kg"] += kg_c
+            c = chapas.setdefault(rot, {"kg": 0.0, "kg_modelo": 0.0, "esp": set(), "t": tc, "item": precos.chapa(tc) if tc else None})
+            c["kg"] += kg_c
+            c["kg_modelo"] += kg
             c["esp"].add(round(t, 2))
             continue
+        num["aco_kg"] += kg
         a = acc.setdefault(g, {"kg": 0.0, "perfis": []})
         a["kg"] += kg
         a["perfis"].append(str(li.get("perfil") or ""))
 
     linhas: List[dict] = []
-    for chave, c in sorted(chapas.items(), key=lambda kv: min(kv[1]["esp"])):
+    for rot, c in sorted(chapas.items(), key=lambda kv: kv[1]["t"]):
         esp = sorted(c["esp"])
-        linhas.append(_linha("chapa:" + chave, "aco", "Estrutura # (chapas %s mm)" % " / ".join(br(e, 2) for e in esp),
-                             round(c["kg"], 1), "kg", c["item"], detalhe=chave if not c["item"] else ""))
+        # a tabela projeto → comercial: a espessura do projeto que mudou e o peso do modelo
+        difere = [e for e in esp if abs(e - c["t"]) >= 0.06]
+        det = ("projeto %s mm → comercial %s mm (%s kg no modelo, o kg pela comercial)"
+               % (" / ".join(br(e, 2) for e in esp), br(c["t"], 2), br(c["kg_modelo"], 1)) if difere else "")
+        if not c["item"]:
+            det = "; ".join(x for x in (det, "sem preço na tabela") if x)
+        lin = _linha("chapa:" + rot, "aco", "Estrutura # %s" % rot, round(c["kg"], 1), "kg", c["item"], detalhe=det)
+        lin["kg_modelo"] = round(c["kg_modelo"], 1)
+        linhas.append(lin)
     for g, desc, como in GRUPOS_ACO:
         if g == "chapa" or g not in acc:
             continue
@@ -577,6 +617,7 @@ def _preco_telha(precos: Precos, perfil: str) -> Optional[dict]:
 
 _RE_PARAF = re.compile(r"(?:BOLT|PARAFUSO)\s*(?:\(([^)]*)\))?\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)", re.I)
 _RE_MIUDO = re.compile(r"(PORCA|ARRUELA)\D*?(\d+(?:/\d+)?)\"", re.I)
+_RE_CHUMB_BARRA = re.compile(r"\s*CHUMBADOR\s+(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?)\s*$", re.I)
 
 
 def _linhas_fixadores(acessorios: Sequence[dict], precos: Precos) -> List[dict]:
@@ -640,6 +681,20 @@ def _linhas_fixadores(acessorios: Sequence[dict], precos: Precos) -> List[dict]:
         linhas.append(_linha("%s:%s" % (tipo, rotulo_pol(d)), "parafusos", "%s Ø%s (barras roscadas)" % (tipo.capitalize(), rotulo_pol(d)),
                              q, "pç", item))
     for nome, q in chumb:
+        # o chumbador de barra redonda (o usuário, 05/11): o comprimento total da barra na linha,
+        # "Ø12 - 1/2" x 230 x 60 pç = 13,8 m" (a quantidade em m); o químico e o mecânico seguem por peça
+        m = _RE_CHUMB_BARRA.match(nome)
+        d = float(m.group(1).replace(",", ".")) if m else 0.0
+        L = float(m.group(2).replace(",", ".")) if m else 0.0
+        # o nome estragado da importação ("CHUMBADOR 23x24", "136x859" do heliponto) não vira barra: fica por peça
+        if m and 6.0 <= d <= 80.0 and L >= 100.0 and not re.search(r"QU[IÍ]MICO|HIT|PARABOLT|HARDBOLT", nome, re.I):
+            metros = round(q * L / 1000.0, 2)
+            kg = metros * 3.14159265 / 4.0 * (d / 1000.0) ** 2 * 7850.0
+            g_ = lambda x: ("%g" % round(x, 2)).replace(".", ",")      # noqa: E731 — 12 e 12,7, 1507 sem ponto
+            linhas.append(_linha("chumb:" + nome, "parafusos", "Chumbador Ø%s - %s x %s x %d pç" % (g_(d), pol_da_barra(d), g_(L), q),
+                                 metros, "m", None, detalhe="barra redonda Ø%s: %d pç × %s mm = %s m (~%s kg)"
+                                 % (g_(d), q, g_(L), br(metros, 2), br(kg, 1))))
+            continue
         linhas.append(_linha("chumb:" + nome, "parafusos", "Chumbador %s (previsão)" % re.sub(r"(?i)chumbador\s*", "", nome).strip(),
                              q, "pç", None))
     # o químico dos chumbadores químicos (09/10): os cartuchos pelo volume dos furos, a mesma conta do resumo de compra
@@ -691,6 +746,15 @@ def _aplicar_edicoes(linhas: List[dict], edicoes: dict) -> List[dict]:
     return saida
 
 
+def _pintura(lista: dict) -> dict:
+    """A área de pintura do resumo de compra (perfis pelo perímetro da seção, chapas nas duas faces)."""
+    try:
+        from saida.resumos import _area_de_pintura
+        return _area_de_pintura(lista)
+    except Exception:                                       # noqa: BLE001 — sem a área, a linha fica em branco
+        return {"total_m2": 0.0, "chapas_m2": 0.0}
+
+
 GRUPOS = [("aco", "Estrutura metálica"), ("telhas", "Telhas e funilaria"), ("parafusos", "Parafusos e chumbadores"),
           ("acessorios", "Acessórios de telha"), ("dono", "Fabricação, montagem e despesas"), ("extras", "Itens acrescentados")]
 
@@ -703,7 +767,17 @@ def montar(lista: dict, tabela: Optional[dict], edicoes: Optional[dict] = None, 
     precos = Precos(tabela)
     linhas, num = linhas_da_lista(lista, precos)
     for id_, desc, un, auto in LINHAS_DO_DONO:
-        linhas.append(_linha(id_, "dono", desc, num["aco_kg"] if auto == "aco" else None, un, None, origem="dono"))
+        lin = _linha(id_, "dono", desc, num["aco_kg"] if auto == "aco" else None, un, None, origem="dono")
+        if id_ == "tinta":
+            # a tinta só pela metragem de pintura (o usuário, 05/11); a especial (intumescente) é cotada à parte
+            pt = _pintura(lista)
+            if pt["total_m2"]:
+                lin.update(descricao="Tinta (área de pintura)", qtd=round(pt["total_m2"], 1), un="m²",
+                           detalhe="perfis %s m² (perímetro × comprimento) + chapas %s m² (duas faces); tinta especial "
+                                   "(intumescente) é cotada à parte" % (br(pt["total_m2"] - pt["chapas_m2"], 1), br(pt["chapas_m2"], 1)))
+        elif id_ == "disco":
+            lin["detalhe"] = "não preencher: fica para o gestor"
+        linhas.append(lin)
     linhas = _aplicar_edicoes(linhas, edicoes or {})
     vis = [li for li in linhas if not li.get("oculta")]
     tot_tab = round(sum(li["total"] or 0.0 for li in vis), 2)
@@ -739,6 +813,10 @@ REGRAS_TEXTO = [
     "(pedaço mínimo de 1 m, uma emenda por peça); os outros em 6 m sem emenda; chapa com a perda de recorte.",
     "Parafusos: o completo (porca e arruela) zincado da tabela, no menor comprimento que não fica curto; "
     "o preço da linha é a média pelos comprimentos da obra.",
+    "Chapa: a comercial mais próxima da do projeto, em mm e polegada (CH 15 → CH 16 - 5/8\"; CH 20 → CH 19,1 - 3/4\"), "
+    "mesmo menor; o kg pela comercial.",
+    "Chumbador de barra redonda: o comprimento total da barra na linha (Ø12 - 1/2\" x 230 x 60 pç = 13,8 m).",
+    "Disco: em branco (o gestor preenche). Tinta: só a área de pintura (m²); tinta especial (intumescente) é cotada à parte.",
 ]
 
 

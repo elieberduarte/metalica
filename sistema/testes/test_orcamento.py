@@ -127,23 +127,24 @@ def test_monta_o_resumo_com_totais_edicoes_e_avisos():
         T = _tabela(tmp)
     R = O.montar(LISTA, T, projeto={"nome": "Obra teste"}, hoje=date(2026, 10, 3))
     L = {li["id"]: li for li in R["linhas"]}
-    assert R["totais"]["aco_kg"] == 896.0                          # sem telhas e cumeeira
+    # sem telhas e cumeeira; a chapa de 12,7 pela comercial de 12,5 (1/2"), o kg pela comercial (05/11): 18 × 12,5/12,7
+    assert R["totais"]["aco_kg"] == 895.7
     assert L["u_fino"]["qtd"] == 220.0 and L["u_fino"]["preco"] == 5.75 and L["u_fino"]["total"] == 1265.0
     assert L["u_fino_fora"]["qtd"] == 300.0 and L["u_fino_fora"]["preco"] == 6
     assert L["u_fora"]["preco"] == 6.6 and L["outro"]["preco"] is None
-    assert L["corte_chaparia"]["qtd"] == 43.0 and L["corte_chaparia"]["origem"] == "dono"
+    assert L["corte_chaparia"]["qtd"] == 42.7 and L["corte_chaparia"]["origem"] == "dono"
     assert L["telha:TELHA TP40 0.50MM"]["qtd"] == 52.0 and L["telha:TELHA TP40 0.50MM"]["descricao"] == "Telha TP40 0.50MM"
     assert L["cumeeira"]["qtd"] == 6 and L["cumeeira"]["preco"] == 60
     par = L['paraf:A307:1/2"']
     assert par["qtd"] == 20 and abs(par["preco"] - (1.54 + 1.63) / 2) < 1e-6
     assert L['paraf:A325:3/4"']["preco"] == 5.45
     assert L['porca:3/8"']["total"] == 0.6 and L['arruela:3/8"']["qtd"] == 8
-    assert L["fabricacao"]["qtd"] == 896.0 and L["fabricacao"]["preco"] is None
+    assert L["fabricacao"]["qtd"] == 895.7 and L["fabricacao"]["preco"] is None
     soma = round(sum(li["total"] or 0 for li in R["linhas"]), 2)
     assert R["totais"]["tabela"] == soma
     textos = " | ".join(a["texto"] for a in R["avisos"])
     assert "Sem preço na tabela: Estrutura — outros perfis" in textos and "acima de 12 m" in textos
-    assert "Chumbador 25x600" in textos and "Cotação de 24/07/2026" in textos
+    assert 'Chumbador Ø25 - 1" x 600 x 4 pç' in textos and "Cotação de 24/07/2026" in textos
     assert "VER ?" not in textos                                   # a fixação "VER ?" ainda não tem quantidade
     assert "Sem preço na tabela: Corte chaparia" not in textos
 
@@ -155,9 +156,9 @@ def test_monta_o_resumo_com_totais_edicoes_e_avisos():
     R2 = O.montar(LISTA, T, ed, projeto={"nome": "Obra teste"}, hoje=date(2026, 10, 3))
     L2 = {li["id"]: li for li in R2["linhas"]}
     assert L2["w"]["preco"] == 7.9 and L2["w"]["preco_auto"] == 7.45 and L2["w"]["total"] == round(156 * 7.9, 2)
-    assert L2["fabricacao"]["total_fech"] == 896 * 3.5 and L2["frete"]["total_fech"] == 6400
+    assert L2["fabricacao"]["total_fech"] == round(895.7 * 3.5, 2) and L2["frete"]["total_fech"] == 6400
     assert L2["extra:0"]["total"] == 3600 and L2["extra:0"]["total_fech"] == 3400
-    assert R2["totais"]["fechamento"] == round(896 * 3.5 + 6400 + 3400, 2)
+    assert R2["totais"]["fechamento"] == round(895.7 * 3.5 + 6400 + 3400, 2)
     assert R2["totais"]["tabela"] == round(R["totais"]["tabela"] - L["u_fora"]["total"] - L["w"]["total"] + L2["w"]["total"] + 3600, 2)
     # com quantidade, a fixação "VER ?" passa a ser avisada
     R3 = O.montar(LISTA, T, {"linhas": {"fix_oa": {"qtd": 100}}}, hoje=date(2026, 10, 3))
