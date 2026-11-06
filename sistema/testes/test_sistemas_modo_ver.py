@@ -142,6 +142,31 @@ def test_o_steel_deck_tem_sistema_proprio():
     assert r["conferencia"] == []
 
 
+def test_os_isopaineis_tem_sistema_proprio():
+    """Hora Certa · Galpão Novo (usuário, 06/11: "pode colocar os isopainéis em uma camada separada do sistema"): os "Painel
+    isotérmico 100 mm" do arquitetônico (Concreto em "ARQ — Paredes de fachada" e "ARQ — Paredes internas") e a "Isofachada
+    PIR" do PRATI (material Telha, camada "Isopainel externo") vão para "Isopainéis"; o drywall e o "Painel sob a janela" ficam
+    no Arquitetônico; a "Telha TP40 PIR 50" continua na Cobertura, e o rufo também na camada de isopainel; o suporte do
+    isopainel (aço) continua na Metálica — sem achado na conferência."""
+    r = _rodar(*_modelo(("f1", "Painel isotérmico 100 mm, face de fora micro-frisa", "Concreto", "ARQ — Paredes de fachada", "ARQUITETÔNICO"),
+                        ("i1", "Painel isotérmico 100 mm, interno, liso branco (DIV03)", "Concreto", "ARQ — Paredes internas", "ARQUITETÔNICO"),
+                        ("pr", "Isofachada PIR MG 2F50 (Kingspan Isoeste) — fila 0", "Telha", "Isopainel externo"),
+                        ("ps", "Peça 12", "Telha", "Isopainel externo"),
+                        ("rf", "Rufo do isopainel", "Telha", "Isopainel externo"),
+                        ("dw", "Drywall RU (DRY-RU 01)", "Concreto", "ARQ — Paredes internas", "ARQUITETÔNICO"),
+                        ("pj", "Painel sob a janela", "Concreto", "ARQ — Paredes de fachada", "ARQUITETÔNICO"),
+                        ("tl", "Telha TL01 TP40 PIR 50 0,43/0,43 branca RAL 9003", "Telha branca RAL 9003", "Telhas",
+                         "Cobertura — telhas, calhas e rufos"),
+                        ("su", "Ue 150×60×20×2,66", "", "Marquise — suporte do isopainel"),
+                        ("sp", "Suporte do isopainel", "Aço", "Fixação do fechamento")))
+    s = r["sistemas"]
+    assert sorted(s["Isopainéis"]) == ["f1", "i1", "pr", "ps"]
+    assert sorted(s["Arquitetônico (referência)"]) == ["dw", "pj"]
+    assert sorted(s["Cobertura — telhas, calhas e rufos"]) == ["rf", "tl"]
+    assert sorted(s["Metálica"]) == ["sp", "su"]
+    assert r["conferencia"] == []
+
+
 def test_conferencia_acusa_o_perfil_de_aco_em_outros():
     """O sinal que não é o da classificação: a peça com perfil de aço (W, U, L…) e material de Outros (PVC) é apontada."""
     camadas, pecas = _modelo(("x", "Viga", "MISCELLANEOUS/PVC", "Importadas"))

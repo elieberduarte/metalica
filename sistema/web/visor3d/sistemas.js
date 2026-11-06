@@ -11,6 +11,7 @@
  *  neoprene que vêm no modelo do pré-moldado (a camada dele é quase toda de concreto: as porcas, arruelas e cantoneiras
  *  das ligações dele) ficam com o pré-moldado. O resto com motivo conhecido (o PVC das descidas…) é Outros. */
 export const SISTEMAS = { metalica: ['Metálica', '#2f6fd6'], cobertura: ['Cobertura — telhas, calhas e rufos', '#3aa69b'],
+  isopainel: ['Isopainéis', '#7fb24a'],
   outros: ['Outros', '#e08a1e'], premoldado: ['Pré-moldado (concreto)', '#8f969e'], arquitetonico: ['Arquitetônico (referência)', '#a58fc9'],
   terreno: ['Terreno, rua e calçada', '#b9a27a'], steeldeck: ['Steel deck (lajes)', '#d29a2c'], semmaterial: ['Sem material — a definir', '#d62828'] };
 // a cobertura num sistema só (usuário, Mercado, 19/10: "não foi criado o grupo com as telhas, calhas e rufos" — as telhas
@@ -50,6 +51,15 @@ const ARQ_CAMADA = /^\s*ARQ\s*[—–-]/i;
 // deck 2º pav", "Steel deck MF-55"), antes do Arquitetônico (as lajes do estudo de massas são de Concreto em "ARQ — Pisos e
 // lajes") e do material ("steel" do aço). A viga de aço não cai aqui: o nome dela não diz deck
 const STEEL_DECK = /\bsteel[\s-]*deck\b/i;
+// os isopainéis num sistema próprio (usuário, Hora Certa · Galpão Novo, 06/11: "pode colocar os isopainéis em uma camada
+// separada do sistema" — os 856 "Painel isotérmico 100 mm" da fachada e das paredes internas, de Concreto nas camadas "ARQ —
+// Paredes…", caíam no Arquitetônico; a "Isofachada PIR" do PRATI, de material Telha, na Cobertura): pelo começo do nome da
+// peça ou da camada, antes da Cobertura (menos a peça com nome de telha, calha, rufo ou cumeeira: a "Telha TP40 PIR 50"
+// continua na Cobertura) e do Arquitetônico. "Marquise — suporte do isopainel" e "Suporte do isopainel" são de aço: o nome
+// começa pelo suporte, e continuam na Metálica
+const ISO = String.raw`(isopain[eé]is|isopainel|isofachadas?|pain[eé](l|is)\s+(isot[eé]rmic|sandu[ií]ch|termoac[uú]stic|frigor[ií]fic))`;
+const ISOPAINEL = new RegExp(String.raw`^\s*${ISO}`, 'i');
+const ISOPAINEL_CAMADA = new RegExp(String.raw`(^|[—–-])\s*${ISO}`, 'i');
 const ARQ_GRUPO = /^\s*arquitet[ôo]nico\b/i;
 const CONCRETO = /concret|fck|cimento|\bc\s?[1-9]\d\b/i;
 // a armadura é do concreto (TEL-02, 22/10: as 1.876 armaduras do Sooro pré-moldado em Outros)
@@ -83,11 +93,13 @@ function classificar(visor) {
   const doTerreno = cams.map(c => TERRENO.test(c.nome || ''));
   const doArq = cams.map(c => ARQ_CAMADA.test(c.nome || '') || ARQ_GRUPO.test(c.grupo || ''));
   const doDeck = cams.map(c => STEEL_DECK.test(c.nome || ''));
+  const doIso = cams.map(c => ISOPAINEL_CAMADA.test(c.nome || ''));
   const sist = new Array(n), mot = new Array(n);
   for (let i = 0; i < n; i++) {
     const m = fichas[i].m || '', q = porCamada.get(fichas[i].c);
     let s;
-    if (daCobertura[fichas[i].c] || TELHA.test(m) || PECA_COBERTURA.test(fichas[i].n || '')
+    if (!PECA_COBERTURA.test(fichas[i].n || '') && (ISOPAINEL.test(fichas[i].n || '') || doIso[fichas[i].c])) s = 'isopainel';
+    else if (daCobertura[fichas[i].c] || TELHA.test(m) || PECA_COBERTURA.test(fichas[i].n || '')
         || (daPlatibanda[fichas[i].c] && m && !ACO.test(m) && !SO_COR.test(m))) s = 'cobertura';
     else if (doTerreno[fichas[i].c] || TERRENO.test(fichas[i].p || '') || TERRENO.test(fichas[i].n || '')) s = 'terreno';
     else if (doDeck[fichas[i].c] || STEEL_DECK.test(fichas[i].n || '')) s = 'steeldeck';
@@ -105,7 +117,7 @@ function classificar(visor) {
 
 export function gruposDeSistema(visor) {
   const [sist, mot] = classificar(visor);
-  const ids = { metalica: [], cobertura: [], outros: [], premoldado: [], arquitetonico: [], terreno: [], steeldeck: [], semmaterial: [] };
+  const ids = { metalica: [], cobertura: [], isopainel: [], outros: [], premoldado: [], arquitetonico: [], terreno: [], steeldeck: [], semmaterial: [] };
   sist.forEach((s, i) => ids[s].push(i));
   const motivos = [...new Set(ids.outros.map(i => mot[i]).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   return Object.entries(ids).filter(([, l]) => l.length)
@@ -127,10 +139,10 @@ export function conferirSistemas(visor) {
   };
   sist.forEach((s, i) => {
     const f = fichas[i], c = cams[f.c] || {}, m = f.m || '', nome = f.n || '';
-    const cob = PECA_COBERTURA.test(nome) || COBERTURA_CAMADA.test(c.nome || '') || COBERTURA_GRUPO.test(c.grupo || '') || TELHA.test(m);
+    const cob = s !== 'isopainel' && (PECA_COBERTURA.test(nome) || COBERTURA_CAMADA.test(c.nome || '') || COBERTURA_GRUPO.test(c.grupo || '') || TELHA.test(m));
     if (s === 'semmaterial') anotar('sem_material', i, 'sem material conhecido — a definir');
     else if (cob && s !== 'cobertura') anotar('cobertura_fora', i, 'telha, calha, rufo ou cumeeira fora da Cobertura');
-    else if (!cob && (ARQ_CAMADA.test(c.nome || '') || ARQ_GRUPO.test(c.grupo || '')) && !['arquitetonico', 'terreno', 'cobertura', 'steeldeck'].includes(s))
+    else if (!cob && (ARQ_CAMADA.test(c.nome || '') || ARQ_GRUPO.test(c.grupo || '')) && !['arquitetonico', 'terreno', 'cobertura', 'steeldeck', 'isopainel'].includes(s))
       anotar('arquitetonico_fora', i, 'peça do arquitetônico de referência fora do Arquitetônico');
     else if (s === 'outros' && PERFIL_ACO.test(f.p || '')) anotar('aco_em_outros', i, 'perfil de aço em Outros');
   });
