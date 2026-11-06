@@ -17,6 +17,7 @@ import { PARTES_PISO } from './referencia.js';
 import { SOL_PADRAO, definirSol, controlesDoSol, ligarControlesDoSol } from './sol.js';
 import { acompanhar } from '../progresso.js';
 import { Terreno } from './terreno.js';
+import { carregarQuantidades, quantidadeDa, somarQuantidades, textoQuantidade, notaDoResumo } from '../quantidade_camadas.js';
 
 const $ = s => document.querySelector(s);
 const q = new URLSearchParams(location.search);
@@ -559,6 +560,7 @@ function esperarVersaoNova(versao, parar = () => {}) {
 
 function abrirPainel(nome, titulo, html) {
   painelAtual = nome;
+  $('#painel').dataset.painel = nome;               // o painel Camadas é mais largo (a coluna da quantidade, 06/11)
   $('#painel-titulo').textContent = titulo;
   $('#painel-corpo').innerHTML = html;
   $('#painel').hidden = false;
@@ -594,11 +596,27 @@ function escolher(i, centrar) {
   ficha(i);
 }
 
+// a quantidade de cada camada (kg, m², m) do resumo da obra, ao lado do número de peças (06/11; quantidade_camadas.js):
+// buscada ao abrir o painel, no máximo a cada 10 s (o painel se refaz a cada caixinha)
+let qtdCamadas = null, qtdBuscada = 0;
+function buscarQuantidades() {
+  if (Date.now() - qtdBuscada < 10000) return;
+  qtdBuscada = Date.now();
+  carregarQuantidades(PROJETO).then(d => {
+    if (!d) return;
+    qtdCamadas = d;
+    if (painelAtual === 'camadas') painelCamadas();
+  });
+}
+const celulaQtd = (q) => `<b class="qtd">${esc(textoQuantidade(q))}</b>`;
+
 function painelCamadas() {
   const cams = visor.cabecalho.camadas;
+  buscarQuantidades();
+  const qtd = (c) => quantidadeDa(qtdCamadas, c.nome);
   const linha = (c, i, recuo) => c.pecas ? `<label class="linha-lista${recuo ? ' no-grupo' : ''}">
       <input type="checkbox" data-c="${i}" ${visor.visivelCamada[i] !== false ? 'checked' : ''}>
-      ${quadradinho('camada', c.nome, corEscolhida('camada', c.nome) || c.cor)}<span>${esc(c.nome)}</span><em>${nf(c.pecas)}</em></label>` : '';
+      ${quadradinho('camada', c.nome, corEscolhida('camada', c.nome) || c.cor)}<span>${esc(c.nome)}</span><em>${nf(c.pecas)}</em>${celulaQtd(qtd(c))}</label>` : '';
   // os grupos de camadas (19/10/2026, o usuário no Mercado: "agrupar layers onde seja possível desabilitar a layer de um
   // grupo todo de uma vez"): a caixinha do grupo liga e desliga todas as camadas dele; as camadas do grupo logo abaixo
   const membros = new Map();
@@ -611,10 +629,12 @@ function painelCamadas() {
     feitos.add(c.grupo);
     const is = membros.get(c.grupo), vis = is.filter(k => visor.visivelCamada[k] !== false).length;
     html += `<label class="linha-lista grupo-camadas"><input type="checkbox" data-g="${esc(c.grupo)}" ${vis ? 'checked' : ''}>
-      <span>${esc(c.grupo)}</span><em>${nf(is.reduce((t, k) => t + cams[k].pecas, 0))}</em></label>`
+      <span>${esc(c.grupo)}</span><em>${nf(is.reduce((t, k) => t + cams[k].pecas, 0))}</em>${celulaQtd(somarQuantidades(is.map(k => qtd(cams[k]))))}</label>`
       + is.map(k => linha(cams[k], k, true)).join('');
   });
-  abrirPainel('camadas', 'Camadas', secaoPiso() + html);
+  const nota = notaDoResumo(qtdCamadas);
+  const cab = nota ? `<p class="nota-qtd" data-situacao="${nota.situacao}">${esc(nota.texto)}</p>` : '';
+  abrirPainel('camadas', 'Camadas', secaoPiso() + cab + `<div class="lista-camadas" data-situacao="${nota ? nota.situacao : ''}">${html}</div>`);
   ligarSecaoPiso();
   const corpo = $('#painel-corpo');
   corpo.querySelectorAll('input[data-g]').forEach(el => {

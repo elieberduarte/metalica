@@ -695,6 +695,12 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
     avisos_lev: List[str] = []
     from nucleo2d.detalhe.fora_do_aco import resumo_fora_do_aco, estrutura_a_conferir
     fora_do_aco = resumo_fora_do_aco(fora) if fora else []
+    # a mesma conta separada pela camada da peça: o painel Camadas mostra a quantidade do resumo da obra, camada por camada,
+    # e a soma é o número do resumo (usuário, 06/11: "não posso mostrar para o fornecedor um peso na apresentação e na proposta outro")
+    por_camada: Dict[str, list] = collections.defaultdict(list)
+    for it in fora:
+        por_camada[str(getattr(it[0], "camada", "") or "")].append(it)
+    fora_por_camada = {c: resumo_fora_do_aco(v) for c, v in por_camada.items()}
     if fora_do_aco:
         cats = collections.Counter()
         for g in fora_do_aco:
@@ -764,7 +770,7 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
                           % (sem_teorico, ", ".join(perfis[:8]) + (" …" if len(perfis) > 8 else "")))
     return {"pecas": pecas, "acessorios": acessorios, "posicoes": posicoes, "camadas": camadas,
             "regra_tercas": mudadas, "ajustes": ajustadas, "saias": saias, "avisos": avisos_lev,
-            "fora_do_aco": fora_do_aco, "estrutura_a_conferir": a_conferir,
+            "fora_do_aco": fora_do_aco, "fora_por_camada": fora_por_camada, "estrutura_a_conferir": a_conferir,
             "categorias": {p.marca: _categoria(p, camadas.get(p.marca, "")) for p in posicoes}}
 
 
@@ -1597,4 +1603,5 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             "objetos_posicoes": posicoes, "objetos_pecas": pecas, "camadas": camadas,
             "objetos_fixadores": _fixadores(doc),         # a lista separa a solda da ligação aparafusada (D3, 11/10)
             "convertidas": convertidas, "nomes": dict(nomeacao, variantes=variantes_3d),
-            "fora_do_aco": lev.get("fora_do_aco") or [], "estrutura_a_conferir": lev.get("estrutura_a_conferir") or []}
+            "fora_do_aco": lev.get("fora_do_aco") or [], "fora_por_camada": lev.get("fora_por_camada") or {},
+            "estrutura_a_conferir": lev.get("estrutura_a_conferir") or []}

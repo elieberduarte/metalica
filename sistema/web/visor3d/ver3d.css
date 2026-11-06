@@ -48,6 +48,15 @@ html, body.ver3d { height: 100%; margin: 0; overflow: hidden; background: var(--
 .linha-lista i.cor:hover { outline: 2px solid var(--texto2); outline-offset: 1px; }
 .linha-lista span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .linha-lista em { font-style: normal; color: var(--texto3); font-variant-numeric: tabular-nums; }
+/* a quantidade de cada camada, do resumo da obra (06/11): a coluna à direita do número de peças */
+#painel[data-painel="camadas"] { width: 430px; }
+.linha-lista em { min-width: 44px; text-align: right; }
+.linha-lista b.qtd { flex: none; min-width: 112px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.linha-lista.grupo-camadas b.qtd { color: var(--acento, #0b3d91); }
+.lista-camadas[data-situacao="velho"] b.qtd { opacity: .55; }
+.nota-qtd { font-size: 12px; line-height: 1.4; color: var(--texto2); margin: 4px 0 6px; padding: 5px 8px; border-radius: 4px; background: var(--painel2); }
+.nota-qtd[data-situacao="velho"], .nota-qtd[data-situacao="sem"] { color: #92400e; background: rgba(245, 158, 11, .14); }
+@media (max-width: 520px) { #painel[data-painel="camadas"] { width: auto; left: 8px; } }
 .linha-lista input { margin: 0; }
 .dica { color: var(--texto2); font-size: 12.5px; margin: 6px 0; }
 .titulo-secao { color: var(--texto3); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin: 10px 0 2px; }

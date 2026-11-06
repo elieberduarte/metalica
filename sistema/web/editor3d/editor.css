@@ -536,6 +536,15 @@ kbd {
   white-space: nowrap; font-size: 12.5px; }
 .linha .contagem { font-family: var(--mono); font-size: 11px; color: var(--texto3);
   white-space: nowrap; flex: 0 0 auto; }
+/* a quantidade da camada, do resumo da obra (06/11): kg, m², m — vazia quando o resumo não fala dela */
+.linha .qtd { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--texto2); white-space: nowrap;
+  flex: 0 0 auto; text-align: right; }
+.linha .qtd:empty { display: none; }
+.linha.grupo-camadas .qtd { color: var(--acento, var(--texto)); }
+.lista-linhas[data-situacao="velho"] .qtd { opacity: .55; }
+.nota-qtd { font-size: 11.5px; line-height: 1.4; color: var(--texto2); margin: 4px 2px 6px; padding: 4px 7px;
+  border-radius: var(--raio-p); background: var(--painel2); }
+.nota-qtd[data-situacao="velho"], .nota-qtd[data-situacao="sem"] { color: #92400e; background: rgba(245, 158, 11, .14); }
 /* resultado do dimensionamento: a diferença de peso numa coluna alinhada à direita */
 .lista-linhas.dimensionamento .contagem.delta { min-width: 6.5em; text-align: right; }
 .linha .amostra {

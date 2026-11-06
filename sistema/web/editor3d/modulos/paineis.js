@@ -7,6 +7,7 @@ import { PAPEIS, areaDaChapa, medidasDaChapa, comprimentoDaBarra, direcaoDaBarra
 import { lerPerfil } from '../nucleo/trocar_perfil.js';
 import { Comando, ComandoComposto } from '../nucleo/comandos.js';
 import { chapaEditavel } from './edicao_chapa.js';
+import { carregarQuantidades, quantidadeDa, somarQuantidades, textoQuantidade, notaDoResumo } from '../../quantidade_camadas.js';
 import { $, ComandoAparencia, contarPor, corDeGrupo, corHex, dimensoesPrincipais, el, metros, normalizarBusca, numero, ponto3, uniao, volumeDe } from '../editor.js';
 
 /** Diâmetro (mm) → bitola em polegada, para a busca achar parafuso e chumbador por 5/8", 3/4"… */
@@ -615,12 +616,34 @@ export class MetodosPaineis {
     this.dica(`Grupo ${g}: o olho do grupo liga e desliga todas as camadas dele (Ctrl+Z desfaz).`);
   }
 
+  /** A quantidade de cada camada do resumo da obra (06/11; quantidade_camadas.js), buscada no máximo a cada 10 s: o painel
+   *  se refaz a cada clique. Quando chega, o painel se refaz com ela. */
+  _buscarQuantidades() {
+    if (!this.projeto || this._qtdBuscando || Date.now() - (this._qtdBuscada || 0) < 10000) return;
+    this._qtdBuscando = true;
+    this._qtdBuscada = Date.now();
+    carregarQuantidades(this.projeto).then(d => {
+      if (!d) return;
+      this._qtdCamadas = d;
+      this._agendarPaineis('camadas');
+    }).finally(() => { this._qtdBuscando = false; });
+  }
+
   _painelCamadas() {
     const raiz = this.el.camadas;
     raiz.replaceChildren();
     raiz.append(this._seletorCorPor());
     const cont = this.documento.contagemPorCamada();
+    this._buscarQuantidades();
+    const qd = this._qtdCamadas || null;
+    const nota = notaDoResumo(qd);
+    if (nota) {
+      const p = el('p', { class: 'nota-qtd', texto: nota.texto });
+      p.dataset.situacao = nota.situacao;
+      raiz.append(p);
+    }
     const lista = el('div', { class: 'lista-linhas' });
+    if (nota) lista.dataset.situacao = nota.situacao;
     const olho = (vis) => vis
       ? '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>'
       : '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".45"/><path d="M3 13L13 3" stroke="currentColor" stroke-width="1.3"/></svg>';
@@ -664,7 +687,8 @@ export class MetodosPaineis {
         onclick: () => this._excluirCamada(nome, n) });
       excluir.textContent = '×';
       if (n || this.documento.camadas.size <= 1) excluir.style.opacity = '.35';
-      linha.append(vis, cor, rotulo, el('span', { class: 'contagem', texto: numero(n) }), trava, excluir);
+      linha.append(vis, cor, rotulo, el('span', { class: 'contagem', texto: numero(n) }),
+                   el('span', { class: 'qtd', texto: textoQuantidade(quantidadeDa(qd, nome)) }), trava, excluir);
       return linha;
     };
     // os grupos de camadas (19/10/2026, o usuário no Mercado: "criar uma ferramenta para agrupar layers onde seja possível
@@ -718,6 +742,7 @@ export class MetodosPaineis {
         nomes.forEach((k, i) => this.selecao.porCamada(k, ev.shiftKey || i > 0));
       });
       cab.append(seta, vis, el('span', { class: 'nome', texto: g }), el('span', { class: 'contagem', texto: numero(n) }),
+                 el('span', { class: 'qtd', texto: textoQuantidade(somarQuantidades(nomes.map(k => quantidadeDa(qd, k)))) }),
                  trava, desagrupar);
       lista.append(cab);
       if (!recolhido) for (const k of nomes) lista.append(linhaCamada(k, this.documento.camadas.get(k), true));

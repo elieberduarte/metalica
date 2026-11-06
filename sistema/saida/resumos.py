@@ -399,7 +399,7 @@ def funilaria_da_lista(lista: dict) -> List[dict]:
         saida.append({"nome": nome, "tipo": tipo, "perfil": perfil, "desenvolvimento": desenv, "comprimento": comp, "qtd": qtd,
                       # a área exata da chapa planificada (a da lista vem arredondada: o RF7 de 0,0235 m² saía 0,01 e o
                       # kg/m² da mesma chapa de 0,50 mm dava 4,167 em vez de 3,925, 19/10)
-                      "ml": qtd * comp / 1000.0, "m2": m2, "kg": kg})
+                      "ml": qtd * comp / 1000.0, "m2": m2, "kg": kg, "_marca": p.get("marca")})
     # a calha, o rufo e a cumeeira lançados no modelo (sólidos, no Quadro 8 da lista): na mesma tabela, com o peso da chapa
     # planificada — antes as calhas iam para "Gradis…" sem peso e os rufos para "Telhas" com "—" (SESI, auditor N23, 02/11)
     for g in funilaria_lancada(lista):
@@ -468,6 +468,49 @@ def projecao_informada(texto) -> Optional[Tuple[Optional[Tuple[float, float]], f
     except ValueError:
         return None
     return None
+
+
+def quantidade_por_camada(doc, pecas, fam_pos: dict, telhas: dict, funil: List[dict], marca_para_pos: dict,
+                          fora_por_camada: Optional[dict]) -> Dict[str, dict]:
+    """A quantidade do resumo repartida pela camada de cada peça do modelo, para o painel Camadas (usuário, 06/11: "não posso
+    mostrar para o fornecedor um peso na apresentação e na proposta outro"): {camada: {"kg", "m2", "m", "n"}}.
+
+    kg = o aço das posições (o mesmo `peso_total` que soma o `peso_aco`), cada posição repartida igual pelas suas peças
+    (`global_ids`, uma por unidade); m2 = as telhas (as das posições pela área da linha da lista, as lançadas pela mesma conta
+    do Quadro 8, camada por camada); m = a funilaria (as linhas de rufo e calha da lista e a lançada no modelo). A soma de
+    cada unidade é o total do resumo: peso_aco, m2_telhas e os metros da tabela de rufos e calhas."""
+    cam_de: Dict[str, str] = {}
+    for e in pecas or []:
+        cam_de[e.id] = e.camada or ""
+    for e in (getattr(doc, "entidades", None) or {}).values():
+        cam_de.setdefault(e.id, e.camada or "")
+    saida: Dict[str, dict] = collections.defaultdict(lambda: {"kg": 0.0, "m2": 0.0, "m": 0.0})
+
+    def repartir(p, valor: float, unidade: str) -> None:
+        cams = [cam_de.get(i, "") for i in (getattr(p, "global_ids", None) or [])] or [""]
+        parte = valor / len(cams)
+        for c in cams:
+            saida[c][unidade] += parte
+
+    for f, ps in fam_pos.items():
+        if f in FORA_DO_ACO:
+            continue
+        for p in ps:
+            repartir(p, p.peso_total, "kg")
+    for t in telhas.get("itens") or []:
+        p = marca_para_pos.get(str(t["marca"]).split(" / ")[0])
+        repartir(p, float(t["m2"]), "m2")
+    for g in funil:
+        if g.get("_marca") is None:
+            continue
+        repartir(marca_para_pos.get(str(g["_marca"]).split(" / ")[0]), float(g["ml"]), "m")
+    for cam, grupos in (fora_por_camada or {}).items():
+        for g in grupos:
+            if g.get("categoria") == "telha":
+                saida[cam]["m2"] += float(g.get("area_m2") or 0.0)
+            elif g.get("categoria") == "funilaria":
+                saida[cam]["m"] += float(g.get("comprimento_m") or 0.0)
+    return {c: {k: round(v, 3) for k, v in q.items()} for c, q in saida.items() if any(q.values())}
 
 
 def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados: Optional[dict] = None) -> dict:
@@ -921,6 +964,9 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
         m2_telhas += t_["m2"]
         peso_telhas += t_["kg"]
     peso_funilaria = peso_fam.get("funilaria", 0.0) + sum(float(g.get("peso_kg") or 0.0) for g in funilaria_lancada(lista))
+    funil = funilaria_da_lista(lista)
+    # o mesmo resumo, camada por camada (o painel Camadas do 3D, 06/11)
+    camadas_qtd = quantidade_por_camada(doc, pecas, fam_pos, telhas, funil, marca_para_pos, lev.get("fora_por_camada"))
     for g in grupos_peso:
         g["pct"] = 100.0 * g["kg"] / peso_aco if peso_aco else 0.0
     perfis_kg = sum(f["kg"] for f in familias if f["chave"] not in FORA_DO_ACO) - peso_fam.get("chapas", 0.0)
@@ -959,7 +1005,7 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
                       "projecao_informada": bool(informada), "area_m2": area_m2, "nivel_apoio": nivel_apoio, "apoio_por_chapa": apoio_por_chapa,
                       "n_tesouras": len(tes_inst)},
         "tesouras": tipos_tes, "tercas": tercas, "grupos_peso": grupos_peso, "telhas": telhas, "parafusos": parafusos,
-        "familias": familias, "chaparia": chaparia, "chaparia_total": chaparia_total, "funilaria": funilaria_da_lista(lista),
+        "familias": familias, "chaparia": chaparia, "chaparia_total": chaparia_total, "funilaria": funil, "camadas": camadas_qtd,
         "perfis_kg": peso_aco - chaparia_total["kg"] if chaparia_total["kg"] else perfis_kg,
         "avisos": list(lev.get("avisos") or []) + conferir_porcas_da_compra(lista, parafusos),
     }
@@ -2920,6 +2966,8 @@ def gerar_resumos(pasta: str, R: dict, imprimir_pdf: bool = True) -> dict:
         import json
         with open(os.path.join(pasta, ARQ_NUMEROS), "w", encoding="utf-8") as f:
             json.dump({"numeros": R.get("numeros"), "dimensoes": R.get("dimensoes"),
+                       # a quantidade de cada camada (kg, m², m), a do resumo repartida pelas peças: o painel Camadas (06/11)
+                       "camadas": R.get("camadas") or {},
                        # as pendências de conferência, para a aba Conferência responder (13/10)
                        "pendencias": R.get("pendencias") or []}, f, ensure_ascii=False, default=str)
     except (OSError, TypeError, ValueError):

@@ -85,6 +85,8 @@ Rotas da API:
     POST /api/projetos/<slug>/materiais[/pdf]           recalcula do modelo (barra, regra_tercas) / imprime o PDF
     GET  /api/projetos/<slug>/resumos                    dados dos resumos (revisão, telha, eixos…) e sugestões
     POST /api/projetos/<slug>/resumos {dados}            grava os dados e gera o resumo da obra e o de materiais (HTML + PDF)
+    GET  /api/projetos/<slug>/camadas-quantidade         a quantidade de cada camada (kg, m², m) do último resumo da obra, e se ele
+                                                         é mais novo que o modelo; o arquitetônico pela conta do 3D (painel Camadas)
     GET  /api/projetos/<slug>/conferencias               as pendências de conferência do resumo da obra com as respostas do usuário
     POST /api/projetos/<slug>/conferencias {chave, resposta, situacao}  registra a resposta a uma pendência (conferencias.json)
     GET  /api/projetos/<slug>/arquivos                  todos os arquivos de entrega do projeto, lidos do disco (a aba Arquivos)
@@ -2931,6 +2933,83 @@ def _conferencias_por_chave(s: str) -> dict:
             for k, v in _ler_conferencias(s)["itens"].items() if v.get("resposta") or v.get("situacao") not in (None, "", "aberta")}
 
 
+_QTD_ARQ: Dict[str, tuple] = {}          # caminho do modelo → ((mtime_ns, tamanho), {camada: {"m2", "un"}})
+
+
+def _area_maior_face(vs, faces) -> float:
+    """A maior face do sólido, em mm² (a parede, a laje e a esquadria do arquitetônico: a face de um lado)."""
+    melhor = 0.0
+    for f in faces or []:
+        nx = ny = nz = 0.0
+        for k in range(len(f)):
+            a, b = vs[f[k]], vs[f[(k + 1) % len(f)]]
+            nx += (a[1] - b[1]) * (a[2] + b[2])
+            ny += (a[2] - b[2]) * (a[0] + b[0])
+            nz += (a[0] - b[0]) * (a[1] + b[1])
+        melhor = max(melhor, (nx * nx + ny * ny + nz * nz) ** 0.5 / 2.0)
+    return melhor
+
+
+def _quantidade_arquitetonico(caminho: str) -> Dict[str, dict]:
+    """O arquitetônico (referência, fora do resumo e da proposta) camada por camada, pela conta do 3D: parede, laje e esquadria
+    em m² (a maior face), o resto em unidades. Guardado pela data do modelo."""
+    try:
+        st = os.stat(caminho)
+    except OSError:
+        return {}
+    chave = (st.st_mtime_ns, st.st_size)
+    guardado = _QTD_ARQ.get(caminho)
+    if guardado and guardado[0] == chave:
+        return guardado[1]
+    saida: Dict[str, dict] = {}
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            ents = json.load(f).get("entidades") or {}
+    except (OSError, ValueError):
+        ents = {}
+    for e in (ents.values() if isinstance(ents, dict) else ents):
+        a = e.get("atributos") or {}
+        if not (a.get("referencia_arquitetonica") or a.get("elemento_arq")):
+            continue
+        q = saida.setdefault(str(e.get("camada") or ""), {"m2": 0.0, "un": 0})
+        if a.get("elemento_arq") in ("parede", "laje", "esquadria") and e.get("vertices") and e.get("faces"):
+            q["m2"] += _area_maior_face(e["vertices"], e["faces"]) / 1e6
+        else:
+            q["un"] += 1
+    saida = {c: {"m2": round(q["m2"], 3), "un": q["un"]} for c, q in saida.items()}
+    _QTD_ARQ[caminho] = (chave, saida)
+    return saida
+
+
+def quantidade_das_camadas(s: str) -> dict:
+    """GET /api/projetos/<s>/camadas-quantidade: a quantidade de cada camada para o painel Camadas do modo ver e do editor
+    (usuário, 06/11: "não posso mostrar para o fornecedor um peso na apresentação e na proposta outro" — o peso é o do resumo
+    da obra). {"resumo": {"gerado", "atual", "tem_camadas"}, "camadas": {camada: {"kg", "m2", "m"}}, "arq": {camada: {"m2",
+    "un"}}}. `atual` = o resumo é mais novo que o modelo gravado; `tem_camadas` = o resumo já guarda as camadas (os de antes
+    de 06/11 não)."""
+    from saida import resumos
+    pasta = _gerente()._existente(s)
+    arq_res = os.path.join(pasta, "detalhamento", resumos.ARQ_NUMEROS)
+    caminho = _gerente().caminho_modelo(s)
+    camadas, gerado, t_res, tem = {}, "", None, False
+    try:
+        with open(arq_res, encoding="utf-8") as f:
+            d = json.load(f)
+        tem = "camadas" in d
+        camadas = d.get("camadas") or {}
+        t_res = os.path.getmtime(arq_res)
+        gerado = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t_res))
+    except (OSError, ValueError):
+        pass
+    try:
+        t_mod = os.path.getmtime(caminho)
+    except OSError:
+        t_mod = None
+    atual = t_res is not None and (t_mod is None or t_res >= t_mod)
+    return {"resumo": {"gerado": gerado, "atual": atual, "tem_camadas": tem}, "camadas": camadas,
+            "arq": _quantidade_arquitetonico(caminho)}
+
+
 def conferencias_do_projeto(s: str) -> dict:
     """GET /api/projetos/<s>/conferencias: as pendências do último resumo da obra (resumo-numeros.json) com a resposta
     de cada uma, e as já respondidas que não estão mais no resumo (o histórico da obra)."""
@@ -3077,7 +3156,8 @@ def gerar_resumos_projeto(s: str, corpo: dict, porta: Optional[int] = None) -> d
                                       parafuso_metrico=doc.metadados.get("parafuso_compra") == "metrico")
         # o aço fora das peças (gradil, piso de chapa perfurada) entra na compra do resumo de materiais (06/10)
         lista["pre_moldados"] = r.get("fora_do_aco") or []
-        lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"], "avisos": r["avisos"]}
+        lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"], "avisos": r["avisos"],
+               "fora_por_camada": r.get("fora_por_camada") or {}}         # as telhas e a funilaria lançadas, por camada (06/11)
         _progresso(s, "montando os resumos…")
         R = resumos.levantar_resumos(doc, lev, lista, nomes, dados)
         # o logo e as cores da empresa, os mesmos da proposta comercial (08/10)
@@ -6189,6 +6269,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(dados_dos_resumos(partes[0]))
                 if len(partes) == 2 and partes[1] == "conferencias":
                     return self._json(conferencias_do_projeto(partes[0]))
+                if len(partes) == 2 and partes[1] == "camadas-quantidade":
+                    return self._json(quantidade_das_camadas(partes[0]))
                 if len(partes) == 2 and partes[1] == "revisoes-pranchas":
                     return self._json(revisoes_das_pranchas(partes[0]))
                 if len(partes) == 2 and partes[1] == "blocos":
