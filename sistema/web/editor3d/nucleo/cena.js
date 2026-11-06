@@ -1018,7 +1018,7 @@ export class Cena {
     for (const f of fs) {
       if (f.length < 3 || f.some(i => !vs[i])) continue;
       // Face desenhada à mão pode ser côncava (um L): o leque sairia para fora dela.
-      const tris = f.length <= 4 ? leque(f.length) : triangularFace(f.map(i => vs[i]));
+      const tris = f.length <= 4 ? leque(f.length) : triangularFace(f.map(i => vs[i]), f);
       for (const t of tris) for (const k of t) { const p = vs[f[k]]; pos.push(p[0], p[1], p[2]); }
     }
     if (!pos.length) return { geom: null, matriz: null };
@@ -1235,7 +1235,7 @@ export class Cena {
     for (const f of reg.faces) {
       // Faces de até 4 lados são convexas; acima disso (tampa de um perfil I, por
       // exemplo) o leque sairia para fora da seção, então triangulamos de verdade.
-      const tris = f.length <= 4 ? leque(f.length) : triangularFace(f.map(ponto));
+      const tris = f.length <= 4 ? leque(f.length) : triangularFace(f.map(ponto), f);
       for (const [a, b, c] of tris) {
         for (const idx of [f[a], f[b], f[c]]) {
           p.set(v[idx * 3], v[idx * 3 + 1], v[idx * 3 + 2]).applyMatrix4(inv);
@@ -2108,7 +2108,7 @@ const leque = (n) => {
 };
 
 /** Triangula uma face plana qualquer, projetando-a no próprio plano. */
-function triangularFace(pts) {
+function triangularFace(pts, ids = null) {
   let nx = 0, ny = 0, nz = 0;                 // normal de Newell
   for (let i = 0; i < pts.length; i++) {
     const a = pts[i], b = pts[(i + 1) % pts.length];
@@ -2121,8 +2121,158 @@ function triangularFace(pts) {
   const plano = az >= ax && az >= ay ? (p) => new THREE.Vector2(p[0], p[1])
               : ax >= ay ? (p) => new THREE.Vector2(p[1], p[2])
               : (p) => new THREE.Vector2(p[2], p[0]);
-  const tris = THREE.ShapeUtils.triangulateShape(pts.map(plano), []);
+  const p2 = pts.map(plano);
+  if (ids && new Set(ids).size < ids.length) {
+    // Face costurada do IFC (o furo ligado ao contorno por uma ponte, índices repetidos): o earcut direto sobre ela se
+    // perde e tampa furos (GESTÃO, 22/10, ME Sooro Depósito Químico). Desmontada em contorno e furos, como o servidor.
+    const t = triangularFaceCosturada(p2, ids);
+    if (t) return t;
+  }
+  const tris = THREE.ShapeUtils.triangulateShape(p2, []);
   return tris.length ? tris : leque(pts.length);
+}
+
+/**
+ * Os laços de uma face costurada: posições na lista `ids` de cada laço simples, na ordem da face. A ponte (a aresta
+ * percorrida nos dois sentidos) sai; o que sobra se fecha em laços, cortados onde o caminho volta a um vértice já
+ * visitado. [] quando as arestas que sobram não se fecham. O mesmo de `geometria.lacos_da_face` (servidor).
+ */
+export function lacosDaFace(ids) {
+  const n = ids.length;
+  const posDe = new Map();
+  ids.forEach((v, k) => { if (!posDe.has(v)) posDe.set(v, k); });
+  const arestas = [];
+  for (let k = 0; k < n; k++) { const a = ids[k], b = ids[(k + 1) % n]; if (a !== b) arestas.push([a, b]); }
+  const ch = (a, b) => a + '|' + b;
+  const conta = new Map();
+  for (const [a, b] of arestas) conta.set(ch(a, b), (conta.get(ch(a, b)) || 0) + 1);
+  const sobra = new Map();
+  for (const [a, b] of arestas) {
+    const k = ch(a, b);
+    if (sobra.has(k)) continue;
+    const r = conta.get(k) - (conta.get(ch(b, a)) || 0);
+    sobra.set(k, r > 0 ? r : 0);
+  }
+  const saem = new Map();
+  for (const [a, b] of arestas) {
+    const k = ch(a, b);
+    if (sobra.get(k) > 0) {
+      sobra.set(k, sobra.get(k) - 1);
+      if (!saem.has(a)) saem.set(a, []);
+      saem.get(a).push(b);
+    }
+  }
+  const lacos = [];
+  for (const [inicio] of arestas) {
+    while (saem.get(inicio) && saem.get(inicio).length) {
+      let caminho = [inicio];
+      const onde = new Map([[inicio, 0]]);
+      let atual = inicio;
+      for (;;) {
+        const prox = saem.get(atual);
+        if (!prox || !prox.length) return [];
+        const b = prox.shift();
+        if (onde.has(b)) {
+          const k = onde.get(b);
+          const laco = caminho.slice(k);
+          for (const v of laco.slice(1)) onde.delete(v);
+          caminho = caminho.slice(0, k + 1);
+          if (laco.length >= 3) lacos.push(laco.map(v => posDe.get(v)));
+          atual = b;
+          if (caminho.length === 1 && b === inicio) break;
+        } else {
+          onde.set(b, caminho.length);
+          caminho.push(b);
+          atual = b;
+        }
+      }
+    }
+  }
+  return lacos;
+}
+
+const _cr2 = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+
+function _areaV2(q) {
+  let s = 0;
+  for (let i = 0; i < q.length; i++) { const a = q[i], b = q[(i + 1) % q.length]; s += a.x * b.y - b.x * a.y; }
+  return s / 2;
+}
+
+function _dentro2(p, q) {
+  let dentro = false;
+  for (let i = 0, n = q.length; i < n; i++) {
+    const a = q[i], b = q[(i + 1) % n];
+    if ((a.y > p.y) !== (b.y > p.y) && a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y) > p.x) dentro = !dentro;
+  }
+  return dentro;
+}
+
+function _cruzam2(a, b, c, d, eps = 1e-7) {
+  const d1 = _cr2(c, d, a), d2 = _cr2(c, d, b), d3 = _cr2(a, b, c), d4 = _cr2(a, b, d);
+  if (((d1 > eps && d2 < -eps) || (d1 < -eps && d2 > eps)) && ((d3 > eps && d4 < -eps) || (d3 < -eps && d4 > eps))) return true;
+  const entre = (p, q, r) => Math.min(p.x, q.x) - 1e-6 <= r.x && r.x <= Math.max(p.x, q.x) + 1e-6
+                          && Math.min(p.y, q.y) - 1e-6 <= r.y && r.y <= Math.max(p.y, q.y) + 1e-6;
+  for (const [p, q, r] of [[c, d, a], [c, d, b], [a, b, c], [a, b, d]]) {
+    if (Math.abs(_cr2(p, q, r)) <= eps && entre(p, q, r)) return true;
+  }
+  return false;
+}
+
+/** O laço não cruza nem encosta em si mesmo (arestas não vizinhas sem toque). */
+function _simples2(q) {
+  const m = q.length;
+  for (let i = 0; i < m; i++) {
+    for (let j = i + 2; j < m; j++) {
+      if (i === 0 && j === m - 1) continue;
+      if (_cruzam2(q[i], q[(i + 1) % m], q[j], q[(j + 1) % m])) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Triângulos (posições na face) de uma face costurada, com os furos abertos de verdade — o mesmo de
+ * `geometria.triangular_face_costurada` (servidor): o laço de área com o sinal da face é material, o de sinal contrário
+ * (e simples) é furo do menor material que o contém; cada material vai ao earcut com os seus furos. Os triângulos
+ * saem no sentido da face. null quando a face não se desmonta (fica a triangulação de antes).
+ */
+export function triangularFaceCosturada(p2, ids) {
+  const lacos = lacosDaFace(ids);
+  if (lacos.length < 2) return null;
+  const limpos = [];
+  for (const laco of lacos) {                       // sem pontos coincidentes seguidos
+    const lp = [];
+    for (const k of laco) if (!lp.length || p2[lp[lp.length - 1]].distanceTo(p2[k]) > 1e-9) lp.push(k);
+    while (lp.length > 1 && p2[lp[0]].distanceTo(p2[lp[lp.length - 1]]) <= 1e-9) lp.pop();
+    if (lp.length >= 3) limpos.push({ area: _areaV2(lp.map(k => p2[k])), lp });
+  }
+  const total = limpos.reduce((s, l) => s + l.area, 0);
+  if (Math.abs(total) < 1e-9) return null;
+  const sinal = total > 0 ? 1 : -1;
+  const materiais = limpos.filter(l => l.area * sinal > 1e-9).sort((a, b) => Math.abs(a.area) - Math.abs(b.area))
+    .map(l => ({ lp: l.lp, furos: [] }));
+  for (const l of limpos) {
+    if (l.area * sinal >= -1e-9) continue;
+    const q = l.lp.map(k => p2[k]);
+    if (!_simples2(q)) continue;                    // a ponte torta que volta por cima de si (a lasca da U 200)
+    const meio = new THREE.Vector2(q.reduce((s, p) => s + p.x, 0) / q.length, q.reduce((s, p) => s + p.y, 0) / q.length);
+    const dono = materiais.find(m => _dentro2(meio, m.lp.map(k => p2[k])));
+    if (dono) dono.furos.push(l.lp);
+  }
+  const tris = [];
+  for (const m of materiais) {
+    const externo = _areaV2(m.lp.map(k => p2[k])) > 0 ? m.lp : m.lp.slice().reverse();
+    const furos = m.furos.map(f => (_areaV2(f.map(k => p2[k])) < 0 ? f : f.slice().reverse()));
+    const lista = externo.concat(...furos);
+    const res = THREE.ShapeUtils.triangulateShape(externo.map(k => p2[k].clone()), furos.map(f => f.map(k => p2[k].clone())));
+    for (const [a, b, c] of res) {
+      let t = [lista[a], lista[b], lista[c]];
+      if (_cr2(p2[t[0]], p2[t[1]], p2[t[2]]) * sinal < 0) t = [t[0], t[2], t[1]];
+      tris.push(t);
+    }
+  }
+  return tris.length ? tris : null;
 }
 
 function caminho(pts) {
