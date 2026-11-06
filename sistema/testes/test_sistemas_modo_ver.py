@@ -123,6 +123,25 @@ def test_outros_so_com_motivo_e_o_motivo_no_nome():
     assert s["Metálica"] == ["ch"]
 
 
+def test_o_steel_deck_tem_sistema_proprio():
+    """Hora Certa · Edifício Administrativo (usuário, 06/11: "sobre o steel deck pode criar uma camada para ele no pintar por
+    sistema", para apresentar o modelo ao montador): as lajes de steel deck do estudo de massas (Concreto, "ARQ — Pisos e
+    lajes") e a camada com o nome de steel deck vão para "Steel deck (lajes)"; o piso, a laje de concreto do núcleo e o
+    núcleo continuam no Arquitetônico; a viga de aço (material "Steel") continua na Metálica — sem achado na conferência."""
+    r = _rodar(*_modelo(("d2", "Laje steel deck 2º pav", "Concreto", "ARQ — Pisos e lajes", "ARQUITETÔNICO"),
+                        ("dc", "Laje steel deck da cobertura", "Concreto", "ARQ — Pisos e lajes", "ARQUITETÔNICO"),
+                        ("mf", "Chapa MF-55", "Aço", "Steel deck MF-55"),
+                        ("pis", "Piso 2º pav", "Concreto", "ARQ — Pisos e lajes", "ARQUITETÔNICO"),
+                        ("top", "Laje do topo da escada e do elevador", "Concreto", "ARQ — Pisos e lajes", "ARQUITETÔNICO"),
+                        ("nuc", "Núcleo de concreto 2º pav", "Concreto", "ARQ — Estrutura de concreto", "ARQUITETÔNICO"),
+                        ("vig", "V2.10 viga", "Steel", "2º pavimento — Vigas")))
+    s = r["sistemas"]
+    assert sorted(s["Steel deck (lajes)"]) == ["d2", "dc", "mf"]
+    assert sorted(s["Arquitetônico (referência)"]) == ["nuc", "pis", "top"]
+    assert s["Metálica"] == ["vig"]
+    assert r["conferencia"] == []
+
+
 def test_conferencia_acusa_o_perfil_de_aco_em_outros():
     """O sinal que não é o da classificação: a peça com perfil de aço (W, U, L…) e material de Outros (PVC) é apontada."""
     camadas, pecas = _modelo(("x", "Viga", "MISCELLANEOUS/PVC", "Importadas"))
