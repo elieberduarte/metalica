@@ -895,6 +895,9 @@ const CAMPOS_RESUMO = [
   ['peso_resumo', 'Peso no resumo da obra', '"compra" = barras e chapas comerciais, como na proposta; vazio = o peso das peças', false],
 ];
 let RESUMOS = null, RESUMOS_MONTADO = false, DOC_ATUAL = 'obra', ULTIMOS_NUMEROS = null;
+// o recado do fim da geração ("Pronto…"): a lista recarregada remonta as abas e a aba dos resumos se redesenha depois —
+// sem guardar, o recado sumia logo depois de aparecer
+let RECADO_RESUMOS = '';
 
 async function abrirResumos(forcar = false) {
   if (RESUMOS_MONTADO && !forcar) return;
@@ -903,6 +906,49 @@ async function abrirResumos(forcar = false) {
   catch (e) { $('#resumos-corpo').replaceChildren(vazio(`Não foi possível ler os dados dos resumos: ${e.message}`)); return; }
   desenharResumos();
   desenharArquivos();
+  if (RESUMOS.atualizando) acompanharResumos(RESUMOS.atualizando);
+}
+
+/* Os resumos sendo gerados por um clique de antes (usuário, 06/11: "Se clico para gerar um novo resumo e saio da tela ele
+ * interrompe o processo" — o servidor seguia até o fim, mas quem voltava via o resumo antigo com "Gerar de novo" livre):
+ * o botão fica desligado, a etapa do servidor aparece e, quando acaba, os resumos novos entram sozinhos. */
+let ACOMPANHANDO_RESUMOS = false;
+function acompanharResumos(at) {
+  if (ACOMPANHANDO_RESUMOS) return;
+  ACOMPANHANDO_RESUMOS = true;
+  const base = `/api/projetos/${encodeURIComponent(PROJETO)}`;
+  const quando = `os resumos estão sendo gerados (começou às ${at.desde})`;
+  const pintar = (etapa) => {
+    const botao = $('#resumos-corpo .form-resumo button[type=submit]');
+    if (botao) { botao.disabled = true; botao.textContent = 'Gerando…'; }
+    const est = $('#resumo-estado');
+    if (est) est.replaceChildren(el('span', { class: 'giro' }), `${etapa ? etapa + ' — ' : ''}${quando}; pode sair desta tela: a geração continua, e os novos aparecem aqui quando terminar.`);
+  };
+  pintar('');
+  const olhar = async () => {
+    // o andamento é leve; os dados dos resumos só quando ele acaba
+    let p = null;
+    try { p = await pedir(`${base}/progresso`); } catch { /* servidor ocupado */ }
+    if (p && p.etapa) { pintar(p.etapa); setTimeout(olhar, 2500); return; }
+    let R = null;
+    try { R = await pedir(`${base}/resumos`); } catch { /* tenta de novo */ }
+    if (!R || R.atualizando) { setTimeout(olhar, 2500); return; }
+    ACOMPANHANDO_RESUMOS = false;
+    RESUMOS = R;
+    DOC_ATUAL = 'obra';
+    try {
+      const L = await pedir(`${base}/materiais`);
+      desenhar(L);
+    } catch { /* a lista fica a de antes */ }
+    RESUMOS = R; RESUMOS_MONTADO = true;
+    desenharResumos();
+    desenharArquivos();
+    atualizarArquivos();
+    RECADO_RESUMOS = 'Pronto: os resumos novos estão na prévia ao lado e em PDF na pasta detalhamento/.';
+    const est = $('#resumo-estado');
+    if (est) est.replaceChildren(RECADO_RESUMOS);
+  };
+  setTimeout(olhar, 2500);
 }
 
 function desenharResumos() {
@@ -916,7 +962,7 @@ function desenharResumos() {
     form.append(el('label', {}, rotulo, entradas[id]));
   }
   const botao = el('button', { type: 'submit', class: 'botao-m principal', texto: RESUMOS.arquivos && RESUMOS.arquivos.obra ? 'Gerar de novo' : 'Gerar os resumos' });
-  const estado = el('div', { class: 'progresso', id: 'resumo-estado' });
+  const estado = el('div', { class: 'progresso', id: 'resumo-estado' }, RECADO_RESUMOS || '');
   form.append(el('div', { class: 'passos' }, botao), estado);
   if (ULTIMOS_NUMEROS) form.append(numerosDoResumo(ULTIMOS_NUMEROS));
   form.addEventListener('submit', (ev) => {
@@ -1210,11 +1256,12 @@ async function gerarResumos(valores, botao, estado) {
   botao.disabled = true;
   const rot = botao.textContent;
   botao.textContent = 'Gerando…';
+  RECADO_RESUMOS = '';
   const mostrar = (txt) => estado.replaceChildren(el('span', { class: 'giro' }), txt);
-  mostrar('levantando as peças do modelo…');
+  mostrar('levantando as peças do modelo… (pode sair desta tela: a geração continua)');
   // a etapa do servidor (levantamento, lista, resumos, PDFs) enquanto roda
   const vigia = setInterval(async () => {
-    try { const p = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/progresso`); if (p.etapa) mostrar(p.etapa); } catch (e) { /* segue */ }
+    try { const p = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/progresso`); if (p.etapa) mostrar(`${p.etapa} (pode sair desta tela: a geração continua)`); } catch (e) { /* segue */ }
   }, 800);
   try {
     const r = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/resumos`, { dados: valores });
@@ -1225,7 +1272,8 @@ async function gerarResumos(valores, botao, estado) {
     const erros = ['obra', 'materiais'].map(k => r[k] && r[k].erro_pdf).filter(Boolean);
     desenharResumos();
     const est = $('#resumo-estado');
-    if (est) est.replaceChildren(erros.length ? `Gerados, mas o PDF falhou: ${erros[0]}` : 'Pronto: os dois resumos estão na prévia ao lado e em PDF na pasta detalhamento/.');
+    RECADO_RESUMOS = erros.length ? `Gerados, mas o PDF falhou: ${erros[0]}` : 'Pronto: os dois resumos estão na prévia ao lado e em PDF na pasta detalhamento/.';
+    if (est) est.replaceChildren(RECADO_RESUMOS);
     if ((r.avisos || []).length && est) est.append(el('div', { class: 'nota', texto: 'Avisos: ' + r.avisos.slice(0, 4).join(' · ') }));
     // a lista foi levantada de novo com os nomes atualizados: recarrega os quadros
     const L = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/materiais`);

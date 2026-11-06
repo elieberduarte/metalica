@@ -2878,7 +2878,9 @@ def dados_dos_resumos(s: str) -> dict:
             sug["telha"] = t0 if re.match(r"(?i)telha\b", t0) else "Telha %s" % t0
     # os resumos já gerados (a tela mostra o último ao abrir)
     arquivos = _arquivos_dos_resumos(os.path.join(_gerente()._existente(s), "detalhamento"))
-    return {"dados": dados, "sugestoes": sug, "campos": list(CAMPOS_RESUMO), "arquivos": arquivos}
+    # sendo gerados por um pedido que a tela deixou para trás: a tela acompanha e mostra os novos quando acabar
+    return {"dados": dados, "sugestoes": sug, "campos": list(CAMPOS_RESUMO), "arquivos": arquivos,
+            "atualizando": resumos_em_curso(s)}
 
 
 #: A pasta dos documentos da obra dentro do projeto: análises, comparativos com a fábrica, o que chega de fora (13/10).
@@ -3118,7 +3120,48 @@ def _arquivos_dos_resumos(pasta: str) -> dict:
     return arquivos
 
 
+#: Os resumos sendo gerados, por projeto: {desde, feito, resultado, erro}. A geração roda no pedido e segue até o fim mesmo
+#: se a tela sai (o navegador abandona o pedido, o servidor não — 6 min no Galpão Novo); sem isto, quem voltava via o
+#: resumo antigo com "Gerar de novo" livre, como se tivesse parado, e o novo clique começava outra geração junto
+#: (usuário, 06/11: "Se clico para gerar um novo resumo e saio da tela ele interrompe o processo").
+_RESUMOS_EM_CURSO = {}
+_RESUMOS_TRAVA = threading.Lock()
+
+
+def resumos_em_curso(s: str) -> Optional[dict]:
+    """{desde (hh:mm), desde_s} enquanto os resumos do projeto estão sendo gerados; senão None"""
+    em = _RESUMOS_EM_CURSO.get(s)
+    if not em:
+        return None
+    return {"desde": time.strftime("%H:%M", time.localtime(em["desde"])), "desde_s": round(time.time() - em["desde"])}
+
+
 def gerar_resumos_projeto(s: str, corpo: dict, porta: Optional[int] = None) -> dict:
+    """POST /api/projetos/<s>/resumos: um de cada vez por projeto — o segundo pedido (outra aba, o clique de novo
+    depois de voltar à tela) espera o que está rodando e devolve o mesmo resultado."""
+    with _RESUMOS_TRAVA:
+        em = _RESUMOS_EM_CURSO.get(s)
+        dono = em is None
+        if dono:
+            em = _RESUMOS_EM_CURSO[s] = {"desde": time.time(), "feito": threading.Event(), "resultado": None, "erro": None}
+    if not dono:
+        em["feito"].wait(7200)
+        if em["erro"] is not None:
+            raise em["erro"]
+        return em["resultado"]
+    try:
+        em["resultado"] = _gerar_resumos_projeto(s, corpo, porta)
+        return em["resultado"]
+    except Exception as exc:
+        em["erro"] = exc
+        raise
+    finally:
+        with _RESUMOS_TRAVA:
+            _RESUMOS_EM_CURSO.pop(s, None)
+        em["feito"].set()
+
+
+def _gerar_resumos_projeto(s: str, corpo: dict, porta: Optional[int] = None) -> dict:
     """POST /api/projetos/<s>/resumos {dados}: grava `dados_resumo` no projeto e gera os
     dois documentos do mesmo levantamento da lista de materiais (nomes de produção
     atualizados e gravados; peso teórico), em detalhamento/. O resumo da obra é o dossiê dela (09/10): os desenhos
