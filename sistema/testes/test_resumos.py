@@ -293,11 +293,14 @@ def test_tabela_comprida_parte_sem_deixar_o_cabecalho_sozinho():
     assert re.search(r"tbody\.com-cab, tbody\.com-total \{ break-inside: avoid; \}", css)
 
 
-def test_tipo_comprido_comeca_ao_lado_da_foto(tmp_path):
-    """PRATI (19/10): o tipo com mais de 12 linhas (Longarinas, 28) punha a foto de 120 mm em cima, centralizada, com as
-    faixas dos lados vazias; e, como a foto não se parte, ficavam 87 mm em branco no pé da folha anterior. Agora as 8
-    primeiras linhas vão ao lado da foto e o resto segue embaixo, na largura da folha"""
+def test_tipo_comprido_tabela_inteira_e_foto_grande_no_fim(tmp_path):
+    """Hora Certa · Galpão Novo (usuário, 06/11): "esses itens que têm bastante repetição ficam muito difíceis de ver com uma
+    imagem pequena … colocar a lista inteira e, separado, no final, uma imagem maior onde apareçam todos os números
+    certinho" — os Perfis de fechamento (24+ linhas) saíam com 8 linhas ao lado da miniatura de 64 mm e as bolinhas umas
+    em cima das outras. Agora, acima de 8 linhas: a tabela inteira na largura da folha e a foto grande depois dela (a
+    regra de 19/10, PRATI, das 8 primeiras linhas ao lado da foto, sai)"""
     import re
+    from saida import dossie
     cam = tmp_path / "tipo-longarinas.jpg"
     cam.write_bytes(b"\xff\xd8\xff\xd9")
     R = {"dossie": {"fotos": {"tipo-longarinas": str(cam)}}}
@@ -306,11 +309,39 @@ def test_tipo_comprido_comeca_ao_lado_da_foto(tmp_path):
     b = {"chave": "longarinas", "titulo": "Longarinas", "cor": "#ae3ec9", "ids": [], "qtd": 56, "m": 600.0, "kg": 280.0,
          "linhas": linhas}
     h = resumos._bloco_tipo(R, b, False)
-    assert 'class="bloco-tipo longa"' in h
-    lado, resto = h.split('<div class="lado-a-lado">', 1)[1].split("</div></div>", 1)
-    assert "<figure" in lado and lado.count('data-ids="p') == resumos.LINHAS_AO_LADO_DA_FOTO == 8
-    assert resto.count('data-ids="p') == 20 and 'class="tipo continua"' in resto and "TOTAL" in resto
-    assert re.search(r"\.bloco-tipo\.longa \.lado-a-lado \{ break-inside: avoid; \}", resumos._CSS)
+    assert 'class="bloco-tipo grande"' in h and "lado-a-lado" not in h
+    assert h.count("<table") == 1 and h.count('data-ids="p') == 28 and "TOTAL" in h      # a lista inteira, numa tabela só
+    assert h.index("</table>") < h.index('<figure class="foto-grande">')                 # a foto depois da tabela
+    assert re.search(r"(?m)^figure\.foto-grande \{[^}]*break-inside: avoid", resumos._CSS)
+    css_img = re.search(r"(?m)^figure\.foto-grande img \{([^}]*)\}", resumos._CSS).group(1)
+    assert "width: 100%" in css_img                                                       # na largura da folha
+    # 9 linhas já vão assim; 8 seguem ao lado da foto (test_tipo_de_8_linhas_vai_ao_lado_da_foto)
+    b9 = dict(b, linhas=linhas[:9])
+    assert 'class="bloco-tipo grande"' in resumos._bloco_tipo(R, b9, False)
+    assert dossie.LINHAS_FOTO_GRANDE == 8
+
+
+def test_foto_do_tipo_comprido_pede_os_numeros_menores():
+    """Galpão Novo (06/11): a foto grande sai na largura da folha — a bolinha de 5 % da altura ficaria do tamanho de um
+    botão; o pedido do tipo comprido leva tam_rotulo (a letra a 2,8 % da altura, ~4 mm de bolinha no papel); o curto, não"""
+    from saida import dossie
+
+    def tipo(chave, n):
+        return {"chave": chave, "titulo": chave, "cor": "#1971c2", "kg": 100.0, "ids": ["%s%d" % (chave, k) for k in range(n)],
+                "linhas": [{"qtd": 1, "comprimento": 1000.0, "marcas": ["M%d" % k], "ids": ["%s%d" % (chave, k)]} for k in range(n)]}
+    por = {p["nome"]: p for p in dossie.pedidos_de_fotos({"estrutura": [tipo("fech", 24), tipo("pil", 5)]})}
+    assert por["tipo-fech"]["tam_rotulo"] == dossie.TAM_ROTULO_GRANDE == 0.028
+    assert all(r["numero"] for r in por["tipo-fech"]["rotulos"]) and len(por["tipo-fech"]["rotulos"]) == 24
+    assert "tam_rotulo" not in por["tipo-pil"]
+
+
+def test_bolinhas_da_foto_procuram_lugar_livre_em_aneis():
+    """Galpão Novo (06/11): com 13 lugares em volta da peça, as bolinhas das 24 linhas caíam umas em cima das outras na
+    foto; agora procuram em anéis (até 9) e a letra segue o tam_rotulo do pedido (diagnostico.js, __render)"""
+    import os
+    js = open(os.path.join(os.path.dirname(__file__), "..", "web", "editor3d", "modulos", "diagnostico.js"), encoding="utf-8").read()
+    assert "anel <= 9" in js and "obj.tam_rotulo" in js and "const comRotulos = (rotulos, formato, qualidade, fracao)" in js
+    assert "const dw = Math.max(dn, g.measureText(r.texto).width" in js            # 3 algarismos: a pílula (119 linhas)
 
 
 def test_fotos_da_lona_numa_fileira_so():

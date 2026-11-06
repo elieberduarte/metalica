@@ -125,6 +125,35 @@ def test_pedidos_de_fotos_pelas_pecas_de_cada_linha():
     assert P["linha-perfil-w-laminado-a572"]["cores"] == {MQ.CORES[0]: ["a"], MQ.CORES[1]: ["b"]}
     assert P["linha-chaparia"]["destaque"] == ["c"]
     assert MQ._perfil_canonico("U 200×75×3,00 (FF)") == MQ._perfil_canonico("U 200×75×3,0")
+    assert "rotulos" not in P["linha-perfil-w-laminado-a572"]             # 2 linhas: sem número na foto
+
+
+def test_linha_comprida_tabela_inteira_numerada_e_foto_grande_no_fim(tmp_path):
+    """Galpão Novo (usuário, 06/11): "esses itens que têm bastante repetição ficam muito difíceis de ver com uma imagem
+    pequena … colocar a lista inteira e, separado, no final, uma imagem maior onde apareçam todos os números certinho" —
+    a linha do Word com mais de 8 linhas tinha a foto de 110 mm em cima e só 4 cores para todas. Agora: a tabela inteira,
+    o número de cada linha na pílula e, depois da tabela, a foto grande com o mesmo número em cada peça"""
+    cam = tmp_path / "f.jpg"
+    cam.write_bytes(b"\xff\xd8\xff")
+    D = _D()
+    base = D["linhas"][0]["itens"]
+    D["linhas"][0]["itens"] = [dict(base[k % 2], perfil="W %d×%d,0" % (200 + 50 * k, 20 + k)) for k in range(12)]
+    fotos = {MQ.chave_da_foto(x): str(cam) for x in D["linhas"] if x["peso"]}
+    h = MQ.corpo_memorial(D, "x.docx", fotos)
+    sec_w = h[h.index("Perfil W laminado A572 — "):h.index("Chaparia # — ")]
+    assert "foto-em-cima" not in sec_w and "lado-a-lado" not in sec_w
+    assert sec_w.count('class="num-linha"') == 12 and ">12</span>" in sec_w
+    assert sec_w.index("</table>") < sec_w.index('<figure class="foto-grande">')
+    assert "o número na bolinha é o da linha da tabela" in sec_w
+    ent = [{"id": "p%d" % k, "tipo": "barra", "perfil": "W %d×%d,0" % (200 + 50 * k, 20 + k)} for k in range(12)]
+    P = {p["nome"]: p for p in MQ.pedidos_de_fotos(D, ent)}["linha-perfil-w-laminado-a572"]
+    assert [r["texto"] for r in P["rotulos"]] == [str(k) for k in range(1, 13)] and all(r["numero"] for r in P["rotulos"])
+    assert P["rotulos"][11]["ids"] == ["p11"] and P["tam_rotulo"] == 0.028
+    # 8 linhas seguem como antes (test_foto_ao_lado_so_da_tabela_curta)
+    D["linhas"][0]["itens"] = D["linhas"][0]["itens"][:8]
+    h = MQ.corpo_memorial(D, "x.docx", fotos)
+    sec_w = h[h.index("Perfil W laminado A572 — "):h.index("Chaparia # — ")]
+    assert "foto-grande" not in sec_w and "num-linha" not in sec_w
 
 
 def test_a_ponte_que_nao_fecha_trava():

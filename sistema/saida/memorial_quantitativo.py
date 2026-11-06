@@ -24,6 +24,7 @@ import re
 from typing import Dict, List, Optional
 
 from saida import identidade
+from saida.dossie import LINHAS_FOTO_GRANDE, TAM_ROTULO_GRANDE
 
 #: as cores das linhas de uma seção (a mesma na foto e na pílula da tabela); da 4ª em diante, a última
 CORES = ["#e03131", "#1c7ed6", "#2f9e44", "#f08c00"]
@@ -123,14 +124,21 @@ def pedidos_de_fotos(D: dict, entidades: List[dict]) -> List[dict]:
                                 "angulo": "aerea_frente"})
             continue
         cores: Dict[str, List[str]] = {}
+        rotulos = []
         for k, i in enumerate(x.get("itens") or []):
             ids = por_perfil.get(_perfil_canonico(i.get("perfil")), [])
             if ids:
-                cores.setdefault(CORES[min(k, len(CORES) - 1)], []).extend(ids)
+                c = CORES[min(k, len(CORES) - 1)]
+                cores.setdefault(c, []).extend(ids)
+                rotulos.append({"texto": str(k + 1), "cor": c, "ids": ids, "numero": True})
         todos = [i for v in cores.values() for i in v]
         if todos:
-            pedidos.append({"nome": chave_da_foto(x), "destaque": todos, "cores": cores, "fantasma": "claro",
-                            "angulo": "aerea_frente", "enquadrar": "destaque"})
+            p = {"nome": chave_da_foto(x), "destaque": todos, "cores": cores, "fantasma": "claro",
+                 "angulo": "aerea_frente", "enquadrar": "destaque"}
+            # a linha comprida (usuário, 06/11): a foto grande no fim, com o número de cada linha da tabela numa bolinha
+            if _comprida(x):
+                p.update({"rotulos": rotulos, "tam_rotulo": TAM_ROTULO_GRANDE})
+            pedidos.append(p)
     return pedidos
 
 
@@ -188,6 +196,12 @@ def _preco_html(x: dict, preco: bool) -> str:
 LINHAS_AO_LADO = 6
 
 
+def _comprida(x: dict) -> bool:
+    """A linha do Word com muitas linhas na tabela (as mesmas do Resumo da obra, dossie.LINHAS_FOTO_GRANDE): a tabela inteira
+    na largura da folha, o número de cada linha na pílula e a foto grande no fim (usuário, Galpão Novo 06/11)"""
+    return len(x.get("itens") or []) > LINHAS_FOTO_GRANDE
+
+
 def _prefixo_comum(textos: List[str]) -> str:
     """O começo comum de todas as origens, cortado no último "; " (só quando vale a pena: 2 linhas ou mais, 30 letras ou mais)."""
     if len(textos) < 2 or not all(textos):
@@ -223,11 +237,14 @@ def _secao_linha(D: dict, x: dict, numero: str, fotos: Dict[str, str], preco: bo
         # vai para uma nota, e a coluna fica só com o que muda de linha para linha
         prefixo = _prefixo_comum([str(i.get("origem") or "") for i in itens])
         linhas = []
+        chaparia = x["nome"].startswith("Chaparia")
+        numerada = _comprida(x) and not chaparia           # a chaparia: todas as chapas numa cor só, sem número
         for k, i in enumerate(itens):
             c = CORES[min(k, len(CORES) - 1)]
             # a ordem perfil · peças · m · kg/m · kg é a que a conferência C07 lê no PDF
             resto_o = str(i.get("origem") or "")[len(prefixo):].strip(" ;") or "—"
-            linhas.append(["<b>%s</b>" % _esc(i["perfil"]), _pilula(c, br(i["n"], 0)), br(i["m"], 1) if i.get("m") else "—",
+            num = ("<span class=\"num-linha\" style=\"background:%s\">%d</span>" % (c, k + 1)) if numerada else ""
+            linhas.append(["<b>%s</b>" % _esc(i["perfil"]), num + _pilula(c, br(i["n"], 0)), br(i["m"], 1) if i.get("m") else "—",
                            br(i["kgm"], 3) if i.get("kgm") else "—", br(i["kg"], 1), "<span class=\"orig\">%s</span>" % _esc(resto_o)])
         corpo = _tabela(["Perfil / chapa", "Peças", "m", "kg/m", "kg (lista)", "Origem"], linhas,
                         ["Soma", "", "", "", br(soma, 1), "no RESUMO: <b>%s</b> (de 5 em 5)" % _esc(txt)], num=[1, 2, 3, 4],
@@ -238,7 +255,13 @@ def _secao_linha(D: dict, x: dict, numero: str, fotos: Dict[str, str], preco: bo
         if foto:
             curta = len(itens) <= LINHAS_AO_LADO and max((len(l[-1]) for l in linhas), default=0) <= 120
             # a chaparia: todas as chapas numa cor só (a foto não separa espessura)
-            leg = ("As chapas em destaque" if x["nome"].startswith("Chaparia") else "As peças da linha em destaque, na cor da tabela")
+            leg = ("As chapas em destaque" if chaparia else "As peças da linha em destaque, na cor da tabela")
+            if _comprida(x):
+                # a tabela inteira e, depois dela, a foto grande na largura da folha (a de 110 mm em cima não se lia)
+                leg += "" if chaparia else " — o número na bolinha é o da linha da tabela"
+                corpo += "<figure class=\"foto-grande\"><img src=\"%s\" alt=\"\"><figcaption>%s</figcaption></figure>" % (foto, leg)
+                foto = ""
+        if foto:
             fig = "<figure class=\"foto-tipo\"><img src=\"%s\" alt=\"\"><figcaption>%s</figcaption></figure>" % (foto, leg)
             # a foto ao lado só da tabela curta; com a de 10 linhas de origem comprida (a chaparia do ADM) ela espremia a tabela
             corpo = ("<div class=\"lado-a-lado\">%s<div>%s</div></div>" % (fig, corpo)) if curta else                     "<div class=\"foto-em-cima\">%s</div>%s" % (fig, corpo)

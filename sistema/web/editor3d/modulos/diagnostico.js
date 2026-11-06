@@ -273,7 +273,9 @@ export class MetodosDiagnostico {
     doc.aparece = (ent) => ((visiveis && ent && !visiveis.has(ent.id)) || (ocultos && ent && ocultos.has(ent.id)) ? false : apareciaAntes(ent));
     // as etiquetas desenhadas por cima da foto: cada uma na peça da linha mais perto da câmera e dentro do quadro,
     // empurrada para cima quando encosta noutra
-    const comRotulos = (rotulos, formato, qualidade) => {
+    // `fracao`: a altura da letra sobre a altura da foto (0,05; a foto grande do tipo comprido do resumo, 0,028: no papel
+    // ela sai na largura da folha e a bolinha de 0,05 ficava do tamanho de um botão, 06/11)
+    const comRotulos = (rotulos, formato, qualidade, fracao) => {
       const cv = this.el.canvas;
       const cam = this.camera.ativa;
       const V = cam.position.constructor;
@@ -282,7 +284,7 @@ export class MetodosDiagnostico {
       c2.width = cv.width; c2.height = cv.height;
       const g = c2.getContext('2d');
       g.drawImage(cv, 0, 0);
-      const tam = Math.max(12, Math.round(c2.height * 0.05));
+      const tam = Math.max(12, Math.round(c2.height * (fracao > 0 && fracao < 0.2 ? fracao : 0.05)));
       g.font = `700 ${tam}px "Segoe UI", Arial, sans-serif`;
       g.textBaseline = 'middle';
       const caixas = [];
@@ -310,13 +312,27 @@ export class MetodosDiagnostico {
           // o número da linha numa bolinha em cima da peça (o tipo com muitas linhas): sem traço, só sai do lugar se
           // encostar noutra
           const dn = tam * 1.15;
-          let bx = melhor.x - dn / 2, by = melhor.y - dn / 2;
-          for (const [ox, oy] of [[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [-1, -1], [1, 1], [-1, 1], [0, -2], [2, 0], [0, 2], [-2, 0]]) {
-            if (!bate(melhor.x - dn / 2 + ox * dn * 1.05, melhor.y - dn / 2 + oy * dn * 1.05, dn, dn)) {
-              bx = melhor.x - dn / 2 + ox * dn * 1.05; by = melhor.y - dn / 2 + oy * dn * 1.05; break;
+          // o número de 3 algarismos (as 119 linhas dos travamentos do Galpão Novo) saía da bolinha: vira uma pílula
+          g.font = `700 ${Math.round(tam * 0.72)}px "Segoe UI", Arial, sans-serif`;
+          const dw = Math.max(dn, g.measureText(r.texto).width + tam * 0.45);
+          g.font = `700 ${tam}px "Segoe UI", Arial, sans-serif`;
+          let bx = melhor.x - dw / 2, by = melhor.y - dn / 2;
+          // o primeiro lugar livre em anéis cada vez maiores em volta da peça (o traço leva até ela); com os 13 lugares de
+          // antes, as 24 linhas dos fechamentos do Galpão Novo caíam umas em cima das outras (06/11)
+          const lugares = [[0, 0]];
+          for (let anel = 1; anel <= 9; anel++) {
+            const n = 8 * anel;
+            for (let k = 0; k < n; k++) {
+              const ang = -Math.PI / 2 + (2 * Math.PI * k) / n;
+              lugares.push([Math.cos(ang) * anel, Math.sin(ang) * anel]);
             }
           }
-          caixas.push({ x: bx, y: by, w: dn, h: dn, r, px: melhor.x, py: melhor.y, numero: true });
+          for (const [ox, oy] of lugares) {
+            if (!bate(melhor.x - dw / 2 + ox * dw * 1.1, melhor.y - dn / 2 + oy * dn * 1.1, dw, dn)) {
+              bx = melhor.x - dw / 2 + ox * dw * 1.1; by = melhor.y - dn / 2 + oy * dn * 1.1; break;
+            }
+          }
+          caixas.push({ x: bx, y: by, w: dw, h: dn, r, px: melhor.x, py: melhor.y, numero: true });
           continue;
         }
         const w = g.measureText(r.texto).width + tam * 0.9, h = tam * 1.5, d = tam * 2.2;
@@ -337,7 +353,7 @@ export class MetodosDiagnostico {
         g.strokeStyle = c.r.cor; g.fillStyle = c.r.cor;
         if (c.numero) {
           // a bolinha deslocada ganha um traço curto até a peça
-          if (Math.hypot(c.px - (c.x + c.w / 2), c.py - (c.y + c.h / 2)) > c.w * 0.6) {
+          if (Math.hypot(c.px - (c.x + c.w / 2), c.py - (c.y + c.h / 2)) > c.h * 0.6) {
             g.beginPath(); g.moveTo(c.px, c.py); g.lineTo(c.x + c.w / 2, c.y + c.h / 2); g.stroke();
           }
           continue;
@@ -350,7 +366,10 @@ export class MetodosDiagnostico {
       for (const c of caixas) {
         if (c.numero) {
           g.fillStyle = c.r.cor; g.strokeStyle = '#ffffff'; g.lineWidth = Math.max(2, tam * 0.1);
-          g.beginPath(); g.arc(c.x + c.w / 2, c.y + c.h / 2, c.w / 2, 0, Math.PI * 2); g.fill(); g.stroke();
+          g.beginPath();
+          if (c.w > c.h + 0.5 && g.roundRect) g.roundRect(c.x, c.y, c.w, c.h, c.h / 2);
+          else g.arc(c.x + c.w / 2, c.y + c.h / 2, c.h / 2, 0, Math.PI * 2);
+          g.fill(); g.stroke();
           g.fillStyle = '#ffffff'; g.textAlign = 'center';
           g.font = `700 ${Math.round(tam * 0.72)}px "Segoe UI", Arial, sans-serif`;
           g.fillText(c.r.texto, c.x + c.w / 2, c.y + c.h / 2 + 1);
@@ -424,7 +443,7 @@ export class MetodosDiagnostico {
         let imagem = this.el.canvas.toDataURL(formato, qualidade);
         // `rotulos` (as fotos dos tipos do resumo, 19/10): a marca de cada linha na cor dela, presa à peça mais à frente
         if (obj && Array.isArray(obj.rotulos) && obj.rotulos.length) {
-          try { imagem = comRotulos(obj.rotulos, formato, qualidade) || imagem; } catch (e) { /* a foto sem as etiquetas */ }
+          try { imagem = comRotulos(obj.rotulos, formato, qualidade, Number(obj.tam_rotulo) || 0) || imagem; } catch (e) { /* a foto sem as etiquetas */ }
         }
         saida.push({ nome: obj ? String(obj.nome || nome) : String(pedido).replace('+', '_'), imagem });
       }

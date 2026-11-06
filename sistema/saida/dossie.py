@@ -1044,6 +1044,19 @@ def _cores_das_linhas(b: dict, so: Optional[set] = None) -> Dict[str, list]:
 ROTULOS_COM_MARCA = 6
 
 
+#: Acima de quantas linhas o tipo vai com a tabela inteira na largura da folha e a foto GRANDE no fim da seção (usuário,
+#: Galpão Novo 06/11: "esses itens que têm bastante repetição ficam muito difíceis de ver com uma imagem pequena …
+#: colocar a lista inteira e, separado, no final, uma imagem maior onde apareçam todos os números certinho")
+LINHAS_FOTO_GRANDE = 8
+#: a letra da bolinha na foto grande, sobre a altura da foto (ela sai na largura da folha, 186 mm: ~4 mm de bolinha)
+TAM_ROTULO_GRANDE = 0.028
+
+
+def foto_grande(b: dict) -> bool:
+    """O tipo comprido: a tabela inteira e a foto grande, com os números legíveis, no fim da seção"""
+    return len(b.get("linhas") or []) > LINHAS_FOTO_GRANDE
+
+
 def numerar(b: dict) -> bool:
     """O tipo com muitas linhas vai por números (a tabela é a legenda da foto)"""
     return len(b.get("linhas") or []) > ROTULOS_COM_MARCA
@@ -1091,6 +1104,7 @@ def pedidos_de_fotos(X: dict, tem_telhas: bool = False) -> List[dict]:
         for i in b["ids"]:
             papel_do_id[i] = b
     kg_total = sum(b["kg"] for b in X.get("estrutura") or []) or 1.0
+    n_antes = len(pedidos)
     for b in X.get("estrutura") or []:
         # a peça miúda e o tipo de peso irrisório (os 6 ganchos do Vicente) ficam sem foto
         if b["chave"] == "suportes" or b["kg"] < 0.005 * kg_total:
@@ -1114,6 +1128,10 @@ def pedidos_de_fotos(X: dict, tem_telhas: bool = False) -> List[dict]:
             pedidos.append(dict({"nome": "tipo-" + b["chave"], "destaque": list(b["ids"]), "cor": b["cor"],
                                  "cores": _cores_das_linhas(b), "fantasma": "claro", "rotulos": _rotulos_das_linhas(b)},
                                 **_angulo(X)))
+    grandes = {"tipo-" + b["chave"] for b in X.get("estrutura") or [] if foto_grande(b)}
+    for p in pedidos[n_antes:]:
+        if p["nome"] in grandes:
+            p["tam_rotulo"] = TAM_ROTULO_GRANDE
     for k, p in enumerate(pavs):
         ids = list(p.get("ids_andar") or [])
         if not ids:

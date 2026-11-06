@@ -1893,6 +1893,11 @@ h3.tipo small { margin-left: auto; font: 600 7.4pt 'Segoe UI', Arial; color: var
 .bloco-tipo.lado { break-inside: avoid; }
 .bloco-tipo.longa .lado-a-lado { break-inside: avoid; }            /* a foto e as primeiras linhas juntas; o resto parte */
 table.tipo.continua { margin-top: 1.2mm; }
+/* a foto grande do tipo comprido, no fim da seção: na largura da folha, inteira numa folha só (o memorial do quantitativo
+   usa a mesma) */
+figure.foto-grande { margin: 3mm 0 0; break-inside: avoid; }
+figure.foto-grande img { width: 100%; max-height: 200mm; object-fit: contain; display: block;
+  border: .3mm solid var(--linha, #dde2ea); border-radius: 1.5mm; }
 /* a foto ao lado da tabela: 64 mm (com 74 a tabela das treliças da PRATI, com o kg/m, quebrava o perfil em 3 linhas, 19/10) */
 .lado-a-lado { display: grid; grid-template-columns: 64mm 1fr; gap: 3mm; align-items: start; }
 table.tipo { font-size: 7.4pt; }
@@ -2086,26 +2091,24 @@ def _bloco_tipo(R: dict, b: dict, varios: bool) -> str:
         if (R.get("dados") or {}).get("notas_tesouras"):
             nota += " " + R["dados"]["notas_tesouras"]
         nota = "<p class=\"nota\">%s</p>" % _esc(nota)
+    # o tipo comprido (usuário, Galpão Novo 06/11): a tabela inteira na largura da folha e, no fim da seção, a foto grande
+    # com todos os números legíveis — a miniatura ao lado das primeiras linhas deixava as bolinhas umas em cima das outras
+    from saida.dossie import foto_grande as _foto_grande
+    if fig and _foto_grande(b):
+        grande = ("<figure class=\"foto-grande\"><img src=\"%s\" alt=\"\"><figcaption>%s em destaque%s — o número na bolinha é "
+                  "o da linha da tabela</figcaption></figure>"
+                  % (foto, _esc(b["titulo"]), (" · no %s (o mesmo nos outros pavimentos)" % _esc(onde)) if onde else ""))
+        return "<section class=\"bloco-tipo grande\">%s%s%s%s</section>" % (cab, tabela, nota, grande)
     # foto e tabela lado a lado até 12 linhas: com a foto grande em cima, o bloco de 8 linhas dos contraventamentos da
     # Kaefer não cabia no fim da folha e ia inteiro para a próxima, deixando meia folha em branco (19/10)
     if fig and len(b["linhas"]) <= LINHAS_LADO_A_LADO:
         return "<section class=\"bloco-tipo lado\">%s<div class=\"lado-a-lado\">%s<div>%s%s</div></div></section>" % (cab, fig, tabela, nota)
-    if fig:
-        # a tabela comprida (19/10): as primeiras linhas ao lado da foto e o resto embaixo, na largura da folha, partindo
-        # entre as folhas; com a foto de 120 mm em cima, centralizada, sobravam as faixas dos lados e, como a foto não se
-        # parte, o pé da folha anterior ficava vazio (87 mm na PRATI, Longarinas com 28 linhas)
-        k = LINHAS_AO_LADO_DA_FOTO
-        cima = _tabela(colunas, linhas[:k], larguras=larg, bruto=True, classe="tipo", ids_linhas=ids[:k])
-        baixo = _tabela(colunas, linhas[k:], rodape=rod, larguras=larg, bruto=True, classe="tipo continua", ids_linhas=ids[k:])
-        return ("<section class=\"bloco-tipo longa\">%s<div class=\"lado-a-lado\">%s<div>%s</div></div>%s%s</section>"
-                % (cab, fig, cima, baixo, nota))
     return "<section class=\"bloco-tipo\">%s%s%s%s</section>" % (cab, fig, tabela, nota)
 
 
-#: até quantas linhas a tabela de um tipo de estrutura vai inteira ao lado da foto
+#: até quantas linhas a tabela de um tipo de estrutura vai inteira ao lado da foto (acima de dossie.LINHAS_FOTO_GRANDE,
+#: hoje 8, a tabela vai inteira na largura da folha e a foto grande no fim — o 12 só vale se aquele subir)
 LINHAS_LADO_A_LADO = 12
-#: acima disso, quantas linhas vão ao lado da foto (a altura dela) antes de a tabela seguir na largura da folha
-LINHAS_AO_LADO_DA_FOTO = 8
 
 
 #: os tipos que não contam como peça principal (os mesmos do cartão "Peças principais" da capa)
