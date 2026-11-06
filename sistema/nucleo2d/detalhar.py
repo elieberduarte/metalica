@@ -681,6 +681,10 @@ def projeto_recebido(doc: Documento) -> bool:
     return o == "recebido" if o else bool(m.get("importacao"))
 
 
+#: as categorias de fora_do_aco que são a cobertura lançada no modelo (não pendência: têm lugar na lista e no resumo)
+LANCADAS_NO_MODELO = ("telha", "funilaria")
+
+
 def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Optional[dict] = None,
              nomes: Optional[dict] = None, regra_so_maquina: bool = False) -> dict:
     """Só o levantamento: as peças de produção do modelo agrupadas em posições, com a
@@ -702,12 +706,24 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
         por_camada[str(getattr(it[0], "camada", "") or "")].append(it)
     fora_por_camada = {c: resumo_fora_do_aco(v) for c, v in por_camada.items()}
     if fora_do_aco:
-        cats = collections.Counter()
+        # a telha e a funilaria LANÇADAS no modelo não são pendência: saem da lista em "Telhas e rufos" e do resumo da obra em
+        # Telhas e em Rufos e calhas (usuário, Hora Certa · Galpão Novo 06/11: "por que não foi incluso as telhas no resumo se
+        # modelamos elas" — o aviso as dava junto do concreto, "fora do detalhamento… na lista de pré-moldados")
+        cats, lancadas = collections.Counter(), collections.Counter()
         for g in fora_do_aco:
-            cats[g["categoria"]] += g["quantidade"]
-        avisos_lev.append("%d peça(s) que não são de aço (%s) ficaram fora do detalhamento e do peso de aço: estão na "
-                          "lista de pré-moldados (volume e peso), na lista de materiais"
-                          % (len(fora), ", ".join("%s: %d" % kv for kv in cats.most_common())))
+            (lancadas if g["categoria"] in LANCADAS_NO_MODELO else cats)[g["categoria"]] += g["quantidade"]
+        if cats:
+            avisos_lev.append("%d peça(s) que não são de aço (%s) ficaram fora do detalhamento e do peso de aço: estão na "
+                              "lista de pré-moldados (volume e peso), na lista de materiais"
+                              % (sum(cats.values()), ", ".join("%s: %d" % kv for kv in cats.most_common())))
+        if lancadas:
+            avisos_lev.append("%s lançada(s) no modelo: na lista de materiais em Telhas e rufos e no resumo da obra (Telhas; Rufos e "
+                              "calhas)" % " e ".join("%d %s" % (q, "telha(s) e painel(is)" if c == "telha" else "peça(s) de calha, rufo "
+                                                     "e cumeeira") for c, q in lancadas.most_common()))
+        sem = sum(int(g.get("sem_peso") or 0) for g in fora_do_aco if g["categoria"] == "funilaria")
+        if sem:
+            avisos_lev.append("%d peça(s) de calha, rufo ou cumeeira lançadas sem o desenvolvimento da chapa no modelo: sem peso "
+                              "— conferir" % sem)
     from nucleo2d.detalhe.base import fora_do_escopo, referencia_de_outro_projeto
     escopo = collections.Counter(fora_do_escopo(e) for e in doc.entidades.values() if fora_do_escopo(e))
     if escopo:

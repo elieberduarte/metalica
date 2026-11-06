@@ -233,3 +233,39 @@ def test_aluminio_e_prfv_ficam_fora_do_aco():
     assert fa_.material_nao_aco(_solido("Aleta", "IfcMember", v, f, "PRFV branco leitoso")) == ("prfv", 1800.0)
     assert fa_.material_nao_aco(_solido("Aleta", "IfcMember", v, f, "Fibra de vidro")) == ("prfv", 1800.0)
     assert fa_.material_nao_aco(_solido("Platibanda", "IfcWall", v, f, "Alumínio composto (ACM)")) == ("acm", 1500.0)
+
+
+def test_telha_e_funilaria_lancadas_nao_sao_pendencia_de_nao_aco():
+    """Hora Certa · Galpão Novo (usuário, 06/11: "por que não foi incluso as telhas no resumo se modelamos elas"): as 1.967
+    telhas e as 57 calhas e cumeeiras lançadas no modelo saíam no aviso "peça(s) que não são de aço … ficaram fora do
+    detalhamento … na lista de pré-moldados", junto do concreto, e viravam pendência no resumo da obra — quando elas estão
+    na lista (Telhas e rufos) e no resumo (Telhas; Rufos e calhas). O aviso de não aço fica só com o que é de fato outro
+    material; a calha sem o desenvolvimento da chapa (sem peso) continua pendência."""
+    from saida import resumos
+    doc = _obra()
+    for i in range(3):
+        v, f = _caixa(7140.0, 955.0, 50.0, dy=i * 1000.0, dz=8000.0)
+        t = _solido("Telha TL01 TP40 PIR 50 0,43/0,43 branca RAL 9003 (Kingspan Isoeste)", "IfcCovering", v, f, "Telha branca RAL 9003")
+        t.camada = "Telhas"
+        t.atributos.update({"telha_lancada": True, "telha": "TP40 PIR 50", "largura": 955, "massa_m2": 15, "comprimento": 7140})
+        doc.add(t)
+    v, f = _caixa(20000.0, 300.0, 150.0, dz=8000.0)
+    c = _solido("Calha", "IfcPipeSegment", v, f, "")
+    c.camada = "Calhas"
+    doc.add(c)
+    lev = det.levantar(doc)
+    cats = {g["categoria"]: g["quantidade"] for g in lev["fora_do_aco"]}
+    assert cats.get("telha") == 3 and cats.get("funilaria") == 1          # continuam no Quadro 8 (a lista e o resumo leem de lá)
+    nao_aco = [a for a in lev["avisos"] if "não são de aço" in a]
+    assert len(nao_aco) == 1 and nao_aco[0].startswith("4 peça(s)") and "telha" not in nao_aco[0] and "funilaria" not in nao_aco[0]
+    assert any("3 telha(s) e painel(is)" in a and "1 peça(s) de calha" in a and "Telhas e rufos" in a for a in lev["avisos"])
+    pend = resumos._avisos_que_contam(lev["avisos"])
+    assert not any("lançada(s) no modelo" in a for a in pend)              # a telha lançada não é pendência…
+    assert any("sem o desenvolvimento da chapa" in a for a in pend)        # …a calha sem peso é
+    # a obra só com a cobertura lançada (sem concreto): nenhum aviso de "não são de aço"
+    doc2 = _modelo()
+    v, f = _caixa(7140.0, 955.0, 50.0, dz=8000.0)
+    t = _solido("TP40 PIR 50", "IfcCovering", v, f, "Telha branca RAL 9003")
+    t.atributos.update({"telha_lancada": True, "telha": "TP40 PIR 50", "largura": 955, "massa_m2": 15, "comprimento": 7140})
+    doc2.add(t)
+    assert not any("não são de aço" in a for a in det.levantar(doc2)["avisos"])

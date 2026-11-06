@@ -191,15 +191,23 @@ function desenhar(L) {
   $('#obra-nome').textContent = p.nome || PROJETO;
   $('#obra-sub').textContent = [p.cliente, p.local, L.gerado ? `lista levantada do modelo 3D em ${dataBR(L.gerado)}` : null].filter(Boolean).join(' · ') || '—';
 
-  const telhas = pesoCategoria(t, 'TELHAS'), rufos = pesoCategoria(t, 'RUFOS');
-  const aco = (t.peso || 0) - telhas - rufos;
-  const mlTelhas = (L.telhas || []).reduce((s, g) => s + (g.comprimento_m || 0), 0);
+  const telhasCat = pesoCategoria(t, 'TELHAS'), rufosCat = pesoCategoria(t, 'RUFOS');
+  const aco = (t.peso || 0) - telhasCat - rufosCat;
+  // a telha e a funilaria LANÇADAS no modelo (sólidos fora das posições: o Quadro 8, categoria telha/funilaria) também são telha
+  // e rufo da lista — o cartão dava 0,0 kg com as 1.967 telhas do Galpão Novo modeladas (usuário, 06/11)
+  const lancTelhas = (L.pre_moldados || []).filter(g => g.categoria === 'telha');
+  const lancFunil = (L.pre_moldados || []).filter(g => g.categoria === 'funilaria');
+  const somar = (lst, k) => lst.reduce((s, g) => s + (g[k] || 0), 0);
+  const telhas = telhasCat + somar(lancTelhas, 'peso_kg'), rufos = rufosCat + somar(lancFunil, 'peso_kg');
+  const mlTelhas = (L.telhas || []).reduce((s, g) => s + (g.comprimento_m || 0), 0) + somar(lancTelhas, 'comprimento_m');
+  const m2Telhas = (L.telhas || []).reduce((s, g) => s + (g.area_m2 || 0), 0) + somar(lancTelhas, 'area_m2');
   const barrasCompra = (L.perfis || []).reduce((s, g) => s + (g.barras?.quantidade || 0), 0);
   // a terça e o dobrado maior que a barra vêm sob medida, fora das barras (13/10)
   const sobMedidaCompra = (L.perfis || []).reduce((s, g) => s + (g.barras?.sob_medida_pecas || 0), 0);
   $('#cartoes').replaceChildren(
     cartao(n(aco, 1) + ' kg', 'aço (estrutura)', 'perfis, barras e chapas', true),
-    cartao(n(telhas, 1) + ' kg', 'telhas', mlTelhas ? `${n(mlTelhas, 1)} m de telha` : (rufos ? `+ ${n(rufos, 1)} kg de rufos` : null)),
+    cartao(n(telhas, 1) + ' kg', 'telhas', m2Telhas ? `${n(m2Telhas, 2)} m² · ${n(mlTelhas, 1)} m de telha`
+      : mlTelhas ? `${n(mlTelhas, 1)} m de telha` : (rufos ? `+ ${n(rufos, 1)} kg de rufos` : null)),
     cartao(n(t.pecas), 'peças', `${n(t.posicoes)} posições`),
     cartao(n(t.conjuntos), 'conjuntos', 'tesouras, vigas, dispositivos'),
     cartao(n(barrasCompra), 'barras de compra', sobMedidaCompra ? `+ ${n(sobMedidaCompra)} peças sob medida` : 'pelo encaixe das peças'),
@@ -209,7 +217,7 @@ function desenhar(L) {
   c.replaceChildren();
   const painel = (k, ...filhos) => el('div', { class: 'painel-aba', 'data-aba': k, id: 'aba-' + k, hidden: k !== ABA }, ...filhos);
   const contagem = { conferencia: L.conferencia_abertas || 0,
-    corte: (L.perfis || []).reduce((s, g) => s + (g.barras?.quantidade || 0), 0), perfis: (L.perfis || []).length, chapas: (L.chapas || []).length, telhas: (L.telhas || []).length,
+    corte: (L.perfis || []).reduce((s, g) => s + (g.barras?.quantidade || 0), 0), perfis: (L.perfis || []).length, chapas: (L.chapas || []).length, telhas: (L.telhas || []).length + lancTelhas.length + lancFunil.length,
                      conjuntos: (L.conjuntos || []).length, romaneio: (L.posicoes || []).length, acessorios: (L.acessorios || []).length };
 
   // ---- visão geral
@@ -430,6 +438,21 @@ function desenhar(L) {
       { titulo: 'Qtd', chave: 'quantidade', classe: 'c b', num: true }, { titulo: 'Compr. (mm)', chave: 'comprimento', classe: 'r', num: true },
       { titulo: 'Peso tot. (kg)', chave: 'peso_total', classe: 'r b', num: true, casas: 1 },
     ], rufos_, null, (x) => [x.nome, x.perfil].join(' '))));
+  }
+  if (lancTelhas.length) {
+    pTelhas.append(secao('Telhas e painéis lançados no modelo', 'pela massa por m² do fabricante (FAB-09); no resumo da obra em Telhas', tabela([
+      { titulo: 'Telha / painel', chave: 'nome', classe: 'b' }, { titulo: 'Material', chave: 'material' },
+      { titulo: 'Peças', chave: 'quantidade', classe: 'c', num: true }, { titulo: 'Compr. (m)', chave: 'comprimento_m', classe: 'r', num: true, casas: 2 },
+      { titulo: 'Área (m²)', chave: 'area_m2', classe: 'r', num: true, casas: 2 }, { titulo: 'Peso (kg)', chave: 'peso_kg', classe: 'r b', num: true, casas: 1 },
+    ], lancTelhas, ['TOTAL', '', n(somar(lancTelhas, 'quantidade')), n(somar(lancTelhas, 'comprimento_m'), 2), n(somar(lancTelhas, 'area_m2'), 2),
+                    n(somar(lancTelhas, 'peso_kg'), 1)], (g) => [g.nome, g.material].join(' '))));
+  }
+  if (lancFunil.length) {
+    pTelhas.append(secao('Calhas, rufos e cumeeiras lançados no modelo', 'pela chapa planificada; no resumo da obra em Rufos e calhas', tabela([
+      { titulo: 'Peça', chave: 'nome', classe: 'b' }, { titulo: 'Peças', chave: 'quantidade', classe: 'c', num: true },
+      { titulo: 'Compr. (m)', chave: 'comprimento_m', classe: 'r', num: true, casas: 2 }, { titulo: 'Peso (kg)', chave: 'peso_kg', classe: 'r b', num: true, casas: 1 },
+      { titulo: 'Observação', valor: (g) => g.sem_peso ? `${g.sem_peso} peça(s) sem o desenvolvimento da chapa no modelo: sem peso` : '', classe: 'quebra' },
+    ], lancFunil, null, (g) => g.nome)));
   }
   if (!pTelhas.children.length) pTelhas.append(vazio('Sem telhas nem rufos nesta lista.'));
   c.append(pTelhas);
