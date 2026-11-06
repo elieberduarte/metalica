@@ -344,6 +344,16 @@ def test_bolinhas_da_foto_procuram_lugar_livre_em_aneis():
     assert "const dw = Math.max(dn, g.measureText(r.texto).width" in js            # 3 algarismos: a pílula (119 linhas)
 
 
+def test_foto_mostra_pecas_escondidas_pelo_pedido():
+    """Caderno de escopo de montagem do Galpão Novo (06/11): a folha dos painéis isotérmicos precisa da foto com os painéis,
+    que no GN são do arquitetônico de referência (fora das fotos); o pedido do __render leva `mostrar` com os ids que entram
+    mesmo escondidos no modelo, e a foto seguinte volta ao normal"""
+    import os
+    js = open(os.path.join(os.path.dirname(__file__), "..", "web", "editor3d", "modulos", "diagnostico.js"), encoding="utf-8").read()
+    assert "Array.isArray(obj.mostrar)" in js and "(mostrados && ent && mostrados.has(ent.id)) || apareciaAntes(ent)" in js
+    assert "mostrados = null; cena.repintarTudo(); }" in js
+
+
 def test_fotos_da_lona_numa_fileira_so():
     """Kaefer (19/10): as 4 fotos sem/com a lona em 2 × 2 com 52 mm ocupavam meia folha sozinhas e a implantação pulava
     (144 mm em branco); numa fileira, inteiras (3:2), cabem no pé da capa"""

@@ -267,10 +267,14 @@ export class MetodosDiagnostico {
     let visiveis = null;
     // `ocultar`: ids que ficam fora desta foto (a lona das paredes na foto da cobertura retraída, 19/10)
     let ocultos = null;
+    // `mostrar`: ids que entram nesta foto mesmo escondidos no modelo (os isopainéis do arquitetônico de referência na folha
+    // do serviço de painéis do caderno de montagem, Galpão Novo 06/11)
+    let mostrados = null;
     const corDe = cena._corDe.bind(cena);
     cena._corDe = (ent) => (corDestaque && cena.destaque && ent && cena.destaque.has(ent.id) && corDaPeca(ent.id)) || corDe(ent);
     const apareciaAntes = doc.aparece;
-    doc.aparece = (ent) => ((visiveis && ent && !visiveis.has(ent.id)) || (ocultos && ent && ocultos.has(ent.id)) ? false : apareciaAntes(ent));
+    doc.aparece = (ent) => ((visiveis && ent && !visiveis.has(ent.id)) || (ocultos && ent && ocultos.has(ent.id)) ? false
+      : ((mostrados && ent && mostrados.has(ent.id)) || apareciaAntes(ent)));
     // as etiquetas desenhadas por cima da foto: cada uma na peça da linha mais perto da câmera e dentro do quadro,
     // empurrada para cima quando encosta noutra
     // `fracao`: a altura da letra sobre a altura da foto (0,05; a foto grande do tipo comprido do resumo, 0,028: no papel
@@ -418,8 +422,10 @@ export class MetodosDiagnostico {
           cena.repintarTudo(); await quadros(3);
         }
         const novosOcultos = obj && Array.isArray(obj.ocultar) && obj.ocultar.length ? new Set(obj.ocultar) : null;
-        if (querTelhas !== comTelhas || novosVisiveis || visiveis || novosOcultos || ocultos) {
-          comTelhas = querTelhas; visiveis = novosVisiveis; ocultos = novosOcultos; cena.repintarTudo(); await quadros(4);
+        const novosMostrados = obj && Array.isArray(obj.mostrar) && obj.mostrar.length ? new Set(obj.mostrar) : null;
+        if (querTelhas !== comTelhas || novosVisiveis || visiveis || novosOcultos || ocultos || novosMostrados || mostrados) {
+          comTelhas = querTelhas; visiveis = novosVisiveis; ocultos = novosOcultos; mostrados = novosMostrados;
+          cena.repintarTudo(); await quadros(4);
         }
         if (ids && ids.length) {
           cena.destacar(ids);
@@ -450,7 +456,7 @@ export class MetodosDiagnostico {
       if (destacando) { cena.destacar(null); destacando = false; }
       corDestaque = null;
       cena.corDestaqueFoto = null;
-      if (comTelhas || visiveis || ocultos) { comTelhas = false; visiveis = null; ocultos = null; cena.repintarTudo(); }
+      if (comTelhas || visiveis || ocultos || mostrados) { comTelhas = false; visiveis = null; ocultos = null; mostrados = null; cena.repintarTudo(); }
       const cam = this.camera.perspectiva || this.camera.ativa;
       if (cam.clearViewOffset) cam.clearViewOffset();
       return saida;
