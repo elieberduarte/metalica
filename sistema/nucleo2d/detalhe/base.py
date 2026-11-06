@@ -2475,11 +2475,20 @@ def chumbadores_sem_porca(pecas: Sequence[Solido], pontas: Sequence[dict],
     if chumbadores is None:
         chumbadores = _ids_de_chumbadores(pecas)
     com_ponta = {p["peca"].id for p in pontas}
+    candidatos = [e for e in pecas if e.id in chumbadores and e.id not in com_ponta]
+    # sem a projeção gravada: o chumbador que ATRAVESSA a placa de base deitada é chumbamento de pilar, com a ponta roscada e
+    # as porcas que o modelo não desenhou (FAB-05, 3ª reincidência — Hora Certa · Galpão Novo, 06/11: os 1.106 chumbadores Ø36
+    # e Ø33 do 3D montado por script param rente ao topo da placa de 31,8, sem `projecao_mm`, e a lista saía sem porca
+    # nenhuma); o chumbador solto, sem placa, segue soldado (sem porca), como antes
+    sem_projecao = [e for e in candidatos if (getattr(e, "atributos", None) or {}).get("projecao_mm") is None]
+    na_placa = _atravessam_placa_deitada(sem_projecao, pecas) if sem_projecao else set()
     saida = []
-    for e in pecas:
-        if e.id not in chumbadores or e.id in com_ponta:
-            continue
-        if float(((getattr(e, "atributos", None) or {}).get("projecao_mm") or 0.0)) <= 0:
+    for e in candidatos:
+        proj = (getattr(e, "atributos", None) or {}).get("projecao_mm")
+        if proj is None:
+            if e.id not in na_placa:
+                continue                              # solto, sem placa: soldado
+        elif float(proj or 0.0) <= 0:
             continue                                  # soldado na chapa, ou sem a ponta acima do concreto
         perfil = str(_marcas(e).get("perfil") or getattr(e, "nome", "") or "")
         pol = bitola_da_barra(perfil)
@@ -2494,6 +2503,37 @@ def chumbadores_sem_porca(pecas: Sequence[Solido], pontas: Sequence[dict],
             d = 0.0
         saida.append((e, "M%s" % mm, d))
     return saida
+
+
+def _atravessam_placa_deitada(barras: Sequence[Solido], pecas: Sequence[Solido]) -> set:
+    """Os ids das barras em pé que atravessam uma chapa deitada (a placa de base): as caixas se cruzam de verdade (2 mm),
+    como o chumbamento montado (montagens.grupos_montados)."""
+    def caixa(e):
+        vs = getattr(e, "vertices", None) or []
+        return tuple((min(v[i] for v in vs), max(v[i] for v in vs)) for i in range(3)) if vs else None
+    from nucleo2d.detalhe.montagens import _eh_chapa      # a chapa já vem como sólido do levantamento
+    placas = []
+    for c in pecas:
+        if not (isinstance(c, Chapa) or _eh_chapa(c)):
+            continue
+        cx = caixa(c)
+        if cx and (cx[2][1] - cx[2][0]) < 0.5 * min(cx[0][1] - cx[0][0], cx[1][1] - cx[1][0]):
+            placas.append(cx)
+    if not placas:
+        return set()
+    placas.sort(key=lambda c: c[0][0])
+    xs = [c[0][0] for c in placas]
+    import bisect
+    ids = set()
+    for b in barras:
+        cb = caixa(b)
+        if not cb or (cb[2][1] - cb[2][0]) < max(cb[0][1] - cb[0][0], cb[1][1] - cb[1][0]):
+            continue                                  # não está em pé
+        for c in placas[:bisect.bisect_right(xs, cb[0][1])]:
+            if all(min(cb[i][1], c[i][1]) - max(cb[i][0], c[i][0]) >= 2.0 for i in range(3)):
+                ids.add(b.id)
+                break
+    return ids
 
 
 def acessorios_no_padrao(acessorios: Dict[str, int], pecas: Sequence[Solido], fixadores: Sequence[Solido],

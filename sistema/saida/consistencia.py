@@ -203,7 +203,9 @@ def conferir(pasta: str) -> List[dict]:
     n_cb = sum(int(r["Qtd"]) for r in pecas
                if any(tipos.get(base_(x)) == "chumbador" for x in str(r.get("Posicao") or "").split("/") if x.strip()))
     n_porcas = sum(int(a_.get("quantidade") or 0) for a_ in acess if "porca" in str(a_.get("nome") or "").lower())
-    if acess and n_cb and not n_porcas:
+    # também com a lista sem acessório nenhum (FAB-05, reforço da conferência — Hora Certa · Galpão Novo, 06/11: 1.106 chumbadores,
+    # ACESSÓRIOS 0, e o aviso não saía porque esperava a lista ter algum acessório)
+    if n_cb and not n_porcas:
         achar("fixadores", "fabrica", f"{n_cb} chumbador(es) e nenhuma porca na lista (FAB-05)")
 
     # ---------------------------------------------------------------- emissão (auditor N11)

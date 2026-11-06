@@ -79,3 +79,19 @@ def test_a_conferencia_da_fab05_compara_a_compra_com_a_lista():
     avisos = conferir_porcas_da_compra(lista, [p for p in parafusos if p["parafuso"]])
     assert len(avisos) == 2 and all(a.startswith("FAB-05") for a in avisos), avisos
     assert any("0 porca(s) 5/8\"" in a and "lista de materiais 8" in a for a in avisos), avisos
+
+
+def test_chumbador_sem_projecao_que_atravessa_a_placa_de_base_leva_o_padrao():
+    """FAB-05, 3ª reincidência (Hora Certa · Galpão Novo, 06/11, "porque não está reconhecendo os acessórios"): o 3D montado
+    por script põe os 1.106 chumbadores Ø36/Ø33 atravessando a placa de base de 31,8, rentes ao topo dela, SEM `projecao_mm` —
+    e a lista saía sem porca nenhuma (ACESSÓRIOS 0). O chumbador que atravessa a placa deitada é chumbamento de pilar: leva o
+    padrão (2 porcas + 1 arruela) com o aviso; o solto, sem placa, segue soldado (o teste acima)."""
+    from nucleo3d.modelo import Chapa
+    doc = _doc("nosso", projecao=None, perfil="Barra redonda ø 36 mm", d=36.0)
+    for e in list(doc.entidades.values()):           # o chumbador do GN: do topo da placa (−220) para baixo
+        e.inicio, e.fim = (e.inicio[0], 0.0, -220.0), (e.fim[0], 0.0, -1726.0)
+    doc.add(Chapa(nome="Placa base 500×800×31,8", origem=(300.0, 0.0, -251.8), contorno=[(-400, -250), (400, -250), (400, 250), (-400, 250)],
+                  espessura=31.8, material="Aço", atributos={"tipo_ifc": "IfcPlate", "funcao": "placa de base"}))
+    r = levantar(doc, regra_tercas=False)
+    assert r["acessorios"].get("Porca sextavada M36") == 8 and r["acessorios"].get("Arruela lisa M36") == 4, r["acessorios"]
+    assert any("sem porca no modelo" in a for a in r.get("avisos") or [])

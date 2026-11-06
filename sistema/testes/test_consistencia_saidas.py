@@ -265,6 +265,11 @@ def test_chumbador_sem_nenhuma_porca_na_lista():
     assert len(a) == 1 and "8 chumbador(es) e nenhuma porca" in a[0]["texto"], a
     o["lista"]["acessorios"].append({"nome": "Porca sextavada Ø1/2\" UNC", "quantidade": 16})
     assert "fixadores" not in confs(o)
+    # FAB-05, reforço (Hora Certa · Galpão Novo, 06/11: 1.106 chumbadores e ACESSÓRIOS 0): com a lista sem acessório NENHUM
+    # o aviso não saía (esperava a lista ter algum acessório)
+    o["lista"]["acessorios"] = []
+    a = [x for x in C.conferir(gravar(o)) if x["conferencia"] == "fixadores"]
+    assert len(a) == 1 and "8 chumbador(es) e nenhuma porca" in a[0]["texto"], a
 
 
 def test_pdf_emitido_com_peca_fora_da_maquina():
