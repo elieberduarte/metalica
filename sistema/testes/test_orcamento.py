@@ -144,7 +144,7 @@ def test_monta_o_resumo_com_totais_edicoes_e_avisos():
     assert R["totais"]["tabela"] == soma
     textos = " | ".join(a["texto"] for a in R["avisos"])
     assert "Sem preço na tabela: Estrutura — outros perfis" in textos and "acima de 12 m" in textos
-    assert 'Chumbador Ø25 - 1" x 600 x 4 pç' in textos and "Cotação de 24/07/2026" in textos
+    assert 'Chumbador Ø25 - 1"' in textos and "Cotação de 24/07/2026" in textos
     assert "VER ?" not in textos                                   # a fixação "VER ?" ainda não tem quantidade
     assert "Sem preço na tabela: Corte chaparia" not in textos
 

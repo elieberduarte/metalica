@@ -33,6 +33,7 @@ import collections
 import csv
 import html
 import json
+import math
 import os
 import re
 import zipfile
@@ -449,6 +450,41 @@ LINHAS_ACESSORIOS_TELHA = [
 ]
 
 
+#: Os grupos de perfil DOBRADO: a compra no comprimento real (o usuário, 04/11: a dobradeira faz a peça na medida, sobra
+#: zero); o W em barra de 12 m com emenda e o resto (L laminado, tubo, redondo) em barra de 6 m sem emenda.
+GRUPOS_DOBRADOS = ("u_fino", "u_grosso", "u_fino_fora", "u_grosso_fora", "u_fora", "l_dobrado", "cartola")
+
+#: Calha e rufo em CHAPA DE BOBINA de 1,20 m, em kg (o usuário, 05/11: "a calha e rufo vão seguir as especificações de
+#: chapa dos projetos, só mudar a largura para a da bobina de compra"); sem espessura no projeto, o padrão da empresa.
+BOBINA_MM = 1200.0
+FUNILARIA_ESP_PADRAO = {"calha": 0.65, "rufo": 0.50}
+
+
+def larguras_de_bobina(desenvolvimento_mm: float) -> int:
+    """Quantas larguras de bobina de 1,20 m a peça pede: 1 até 1.200 mm de desenvolvimento, 2 acima (na dúvida a maior);
+    sem desenvolvimento no projeto, 1."""
+    d = float(desenvolvimento_mm or 0.0)
+    return max(1, int(math.ceil(d / BOBINA_MM - 1e-9))) if d > 0 else 1
+
+
+def funilaria_em_bobina(li: dict, grupo: str) -> Optional[dict]:
+    """Uma posição de calha ou rufo em chapa de bobina: {material, t, de_t, larguras, ml, m_bobina, kg}. O desenvolvimento
+    é o lado menor da chapa planificada (comprimento × largura da lista, como em resumos.funilaria_da_lista); sem
+    comprimento de peça, None (fica o kg da lista)."""
+    desenv, comp = float(li.get("comprimento") or 0.0), float(li.get("largura") or 0.0)
+    if desenv > comp:
+        desenv, comp = comp, desenv
+    qtd = int(li.get("quantidade") or 0)
+    ml = qtd * comp / 1000.0
+    if ml <= 0:
+        return None
+    esp = float(li.get("espessura") or 0.0)
+    t, de_t = (esp, "projeto") if esp > 0 else (FUNILARIA_ESP_PADRAO[grupo], "padrão da empresa")
+    n = larguras_de_bobina(desenv)
+    return {"material": str(li.get("material") or "").strip() or "chapa", "t": t, "de_t": de_t, "larguras": n, "ml": ml,
+            "m_bobina": n * ml, "kg": n * ml * BOBINA_MM / 1000.0 * t * 7.85}
+
+
 def _achar(precos: Precos, como) -> Optional[dict]:
     if not como:
         return None
@@ -493,9 +529,20 @@ def linhas_da_lista(lista: dict, precos: Precos) -> Tuple[List[dict], dict]:
             continue
         if g in ("rufo", "calha"):
             num["funilaria_kg"] += kg
-            f = funil.setdefault(g, {"kg": 0.0, "perfis": []})
+            f = funil.setdefault(g, {"kg": 0.0, "perfis": [], "bobina": collections.OrderedDict(), "kg_bobina": 0.0,
+                                     "sem_comp": 0.0})
             f["kg"] += kg
             f["perfis"].append(str(li.get("perfil") or ""))
+            b = funilaria_em_bobina(li, g)
+            if b is None:                                # sem comprimento de peça: o kg da lista
+                f["kg_bobina"] += kg
+                f["sem_comp"] += kg
+            else:
+                f["kg_bobina"] += b["kg"]
+                a = f["bobina"].setdefault((b["material"], b["t"]), {"m_bobina": 0.0, "kg": 0.0, "de_t": set()})
+                a["m_bobina"] += b["m_bobina"]
+                a["kg"] += b["kg"]
+                a["de_t"].add(b["de_t"])
             continue
         if g == "chapa":
             # a chapa comercial mais próxima, e o kg por ela (o usuário, 05/11): CH 15 → CH 15,88 - 5/8", 15,88/15 do peso
@@ -549,19 +596,30 @@ def linhas_da_lista(lista: dict, precos: Precos) -> Tuple[List[dict], dict]:
             linhas.append(_linha("cumeeira", "telhas", "Cumeeira", t["pecas"], "pç", precos.chave("cumeeira")))
     for g in ("rufo", "calha"):
         if g in funil:
+            f = funil[g]
             item = precos.chave("rufo050") if g == "rufo" else precos.chave("calha")
-            lin = _linha(g, "telhas", "Rufos" if g == "rufo" else "Calhas", round(funil[g]["kg"], 1), "kg", item,
-                         detalhe=_faixa(funil[g]["perfis"]))
+            # em chapa de bobina de 1,20 m, em kg (o usuário, 05/11): por chapa, a metragem × as larguras de bobina que a
+            # peça pede × 1,20 × t × 7,85; a mão de obra segue pelo desenvolvimento (o kg da peça)
+            partes = ["%s #%s – %s m = %s kg%s" % (mat[:1].upper() + mat[1:], br(t, 2), br(a["m_bobina"], 2), br(a["kg"], 0),
+                                                   " (espessura: padrão da empresa)" if a["de_t"] == {"padrão da empresa"} else "")
+                      for (mat, t), a in f["bobina"].items()]
+            if f["sem_comp"]:
+                partes.append("%s kg sem comprimento de peça (o kg da lista)" % br(f["sem_comp"], 1))
+            det = "chapa de bobina 1,20 m: " + "; ".join(partes) + " — peças: " + _faixa(f["perfis"])
+            lin = _linha(g, "telhas", ("Rufos" if g == "rufo" else "Calhas") + " (chapa de bobina 1,20 m)",
+                         round(f["kg_bobina"], 1), "kg", item, detalhe=det)
+            lin["kg_modelo"] = round(f["kg"], 1)
             if item is not None:
                 lin["confira"] = "preço de %s: confira material e espessura desta obra" % item["item"]
             linhas.append(lin)
-            linhas.append(_linha("mo_" + g, "telhas", "Mão de obra de %s" % ("rufo" if g == "rufo" else "calha"), None, "", None,
-                                 origem="dono"))
+            linhas.append(_linha("mo_" + g, "telhas", "Mão de obra de %s" % ("rufo" if g == "rufo" else "calha"),
+                                 round(f["kg"], 1), "kg", None, detalhe="pelo desenvolvimento (o kg da peça)", origem="dono"))
     if telhas:
         for id_, desc, un, como in LINHAS_ACESSORIOS_TELHA:
             linhas.append(_linha(id_, "acessorios", desc, None, un, _achar(precos, como), origem="equipe"))
     linhas.extend(_linhas_fixadores(lista.get("acessorios") or [], precos))
     _com_recorte(lista, linhas, num)
+    num["funilaria_kg_bobina"] = round(sum(f["kg_bobina"] for f in funil.values()), 1)
     num["aco_kg"] = round(num["aco_kg"], 1)
     return linhas, num
 
@@ -574,13 +632,30 @@ def _com_recorte(lista: dict, linhas: List[dict], num: dict) -> None:
     from saida.resumos import PERDA_CHAPAS
     grupo_de = {}
     peso_de = {}
+    m_de = {}
     for li in lista.get("posicoes") or []:
         grupo_de[li.get("marca")] = classificar(li)
         peso_de[li.get("marca")] = float(li.get("peso_total") or 0.0)
+        m_de[li.get("marca")] = float(li.get("comprimento") or 0.0) * int(li.get("quantidade") or 0) / 1000.0
     recorte: Dict[str, float] = collections.defaultdict(float)
     com_emenda = set()
+    no_real = set()
     emendas = 0
     for g in lista.get("perfis") or []:
+        marcas = g.get("posicoes") or []
+        grupos = {grupo_de.get(mk, "outro") for mk in marcas}
+        if grupos and grupos <= set(GRUPOS_DOBRADOS):
+            # o DOBRADO no comprimento real (o usuário, 04/11: a dobradeira faz a peça na medida, sobra zero): o kg/m do
+            # catálogo de compras × os metros reais, sem barra nem sobra
+            kg_m = float(g.get("kg_m_catalogo") or 0.0) or float(g.get("kg_m") or 0.0)
+            m_real = float(g.get("comprimento_m") or 0.0) or sum(m_de.get(mk, 0.0) for mk in marcas)
+            soma = sum(peso_de.get(mk, 0.0) for mk in marcas)
+            kg_compra = kg_m * m_real if kg_m and m_real else soma
+            for gr in grupos:
+                kg = sum(peso_de.get(mk, 0.0) for mk in marcas if grupo_de.get(mk) == gr)
+                recorte[gr] += kg_compra * (kg / soma if soma else 1.0 / len(grupos))
+                no_real.add(gr)
+            continue
         # a compra é COM EMENDA de perfil W (o usuário, 05/11: "aqui na empresa, para não ter muito desperdício, é feito
         # emenda de perfis"; "as emendas são só para perfil W"): no W/HP, o plano com emenda do Detalhar (pedaço mínimo
         # de 1 m, uma emenda por peça) sempre que ele poupa barra, mesmo sem a emenda ligada no perfil; nos outros, o
@@ -612,8 +687,11 @@ def _com_recorte(lista: dict, linhas: List[dict], num: dict) -> None:
             li["recorte_como"] = "chapa com %s%% de perda de recorte" % br(PERDA_CHAPAS, 0)
         elif li["id"] in recorte:
             li["qtd_recorte"] = round(recorte[li["id"]], 1)
-            li["recorte_como"] = "barras comerciais do plano de corte" + (
-                ", com emenda de perfil W (padrão da fábrica)" if li["id"] in com_emenda else "")
+            if li["id"] in no_real:
+                li["recorte_como"] = "dobrado no comprimento real (a dobradeira faz a peça na medida, sem sobra)"
+            else:
+                li["recorte_como"] = "barras comerciais do plano de corte" + (
+                    ", com emenda de perfil W (padrão da fábrica)" if li["id"] in com_emenda else "")
     num["aco_emendas"] = emendas
     num["aco_kg_recorte"] = round(sum(li.get("qtd_recorte") or 0.0 for li in linhas if li["grupo"] == "aco"
                                       and li["id"] != "corte_chaparia"), 1)
@@ -696,23 +774,32 @@ def _linhas_fixadores(acessorios: Sequence[dict], precos: Precos) -> List[dict]:
         item = precos.porca(d) if tipo == "porca" else precos.arruela(d)
         linhas.append(_linha("%s:%s" % (tipo, rotulo_pol(d)), "parafusos", "%s Ø%s (barras roscadas)" % (tipo.capitalize(), rotulo_pol(d)),
                              q, "pç", item))
+    # o chumbador de barra redonda (o usuário, 05/11): a barra é comprada por metro — UMA linha por diâmetro, em m, com o
+    # peso teórico; as peças ("Ø12 - 1/2" x 230 x 60 pç = 13,8 m") no detalhe; o diâmetro em mm inteiro, o maior (30/10),
+    # e a polegada da barra mais próxima; o químico e o mecânico seguem por peça
+    g_ = lambda x: ("%g" % round(x, 2)).replace(".", ",")      # noqa: E731 — 13,8 e 12,06; 1507 sem ponto
+    por_d: Dict[str, dict] = {}
+    previsao = []
     for nome, q in chumb:
-        # o chumbador de barra redonda (o usuário, 05/11): o comprimento total da barra na linha,
-        # "Ø12 - 1/2" x 230 x 60 pç = 13,8 m" (a quantidade em m); o químico e o mecânico seguem por peça
         m = _RE_CHUMB_BARRA.match(nome)
         d = float(m.group(1).replace(",", ".")) if m else 0.0
         L = float(m.group(2).replace(",", ".")) if m else 0.0
         # o nome estragado da importação ("CHUMBADOR 23x24", "136x859" do heliponto) não vira barra: fica por peça
         if m and 6.0 <= d <= 80.0 and L >= 100.0 and not re.search(r"QU[IÍ]MICO|HIT|PARABOLT|HARDBOLT", nome, re.I):
-            metros = round(q * L / 1000.0, 2)
-            kg = metros * 3.14159265 / 4.0 * (d / 1000.0) ** 2 * 7850.0
-            g_ = lambda x: ("%g" % round(x, 2)).replace(".", ",")      # noqa: E731 — 12 e 12,7, 1507 sem ponto
-            linhas.append(_linha("chumb:" + nome, "parafusos", "Chumbador Ø%s - %s x %s x %d pç" % (g_(d), pol_da_barra(d), g_(L), q),
-                                 metros, "m", None, detalhe="barra redonda Ø%s: %d pç × %s mm = %s m (~%s kg)"
-                                 % (g_(d), q, g_(L), br(metros, 2), br(kg, 1))))
+            di = int(math.ceil(d - 0.05))
+            k = "Ø%d - %s" % (di, pol_da_barra(d))
+            metros = q * L / 1000.0
+            a = por_d.setdefault(k, {"di": di, "m": 0.0, "kg": 0.0, "pecas": []})
+            a["m"] += metros
+            a["kg"] += metros * math.pi / 4.0 * (d / 1000.0) ** 2 * 7850.0
+            a["pecas"].append("%s x %s x %d pç = %s m" % (k, g_(L), q, g_(metros)))
             continue
-        linhas.append(_linha("chumb:" + nome, "parafusos", "Chumbador %s (previsão)" % re.sub(r"(?i)chumbador\s*", "", nome).strip(),
-                             q, "pç", None))
+        previsao.append(_linha("chumb:" + nome, "parafusos", "Chumbador %s (previsão)" % re.sub(r"(?i)chumbador\s*", "", nome).strip(),
+                               q, "pç", None))
+    for k, a in sorted(por_d.items(), key=lambda kv: kv[1]["di"]):
+        linhas.append(_linha("chumb:" + k, "parafusos", "Chumbador %s" % k, round(a["m"], 2), "m", None,
+                             detalhe="barra redonda, %s m (~%s kg): %s" % (g_(a["m"]), br(a["kg"], 1), "; ".join(a["pecas"]))))
+    linhas.extend(previsao)
     # o químico dos chumbadores químicos (09/10): os cartuchos pelo volume dos furos, a mesma conta do resumo de compra
     from saida.resumos import volume_quimico_ml, cartuchos_quimico, EMBUTIMENTO_QUIMICO, PERDA_QUIMICO
     ml, furos = 0.0, 0
@@ -811,6 +898,7 @@ def montar(lista: dict, tabela: Optional[dict], edicoes: Optional[dict] = None, 
               "aco_emendas": num.get("aco_emendas", 0),
               "telhas_ml": round(num["telhas_ml"], 2),
               "telhas_kg": round(num["telhas_kg"], 1), "funilaria_kg": round(num["funilaria_kg"], 1),
+              "funilaria_kg_bobina": num.get("funilaria_kg_bobina", 0.0),
               "rs_kg_tabela": round(tot_tab / num["aco_kg"], 2) if num["aco_kg"] else None,
               "rs_kg_fechamento": round(tot_fech / num["aco_kg"], 2) if num["aco_kg"] and tot_fech else None,
               "rs_m2_fechamento": round(tot_fech / area, 2) if area and tot_fech else None}
@@ -826,12 +914,16 @@ REGRAS_TEXTO = [
     "Terça fora de 4,80–6,40 m e qualquer peça acima de 6,40 m: preço MVAL 'menor 4,80 / maior 6,40 m'.",
     "Peso teórico da lista de materiais, sem perda de corte. Telhas em metro linear de chapa comprada.",
     "Com recorte (a compra): as barras do plano de corte; o perfil W em barra de 12 m com emenda, o padrão da fábrica "
-    "(pedaço mínimo de 1 m, uma emenda por peça); os outros em 6 m sem emenda; chapa com a perda de recorte.",
+    "(pedaço mínimo de 1 m, uma emenda por peça); o dobrado (U, Ue, L dobrada, cartola) no comprimento real, sem sobra; "
+    "os outros (L laminado, tubo, redondo) em 6 m sem emenda; chapa com a perda de recorte.",
+    "Calha e rufo em chapa de bobina de 1,20 m, em kg: por chapa, a metragem × as larguras de bobina (1 até 1.200 mm de "
+    "desenvolvimento, 2 acima) × 1,20 × t × 7,85; sem espessura no projeto, calha 0,65 e rufo 0,50. A mão de obra pelo kg da peça.",
     "Parafusos: o completo (porca e arruela) zincado da tabela, no menor comprimento que não fica curto; "
     "o preço da linha é a média pelos comprimentos da obra.",
     "Chapa: a comercial mais próxima da do projeto, em mm e polegada (CH 15 → CH 15,88 - 5/8\"; CH 20 → CH 19,1 - 3/4\"), "
     "mesmo menor; o kg pela comercial. Exceção do usuário: a CH 27 e a CH 28 sobem para CH 31,8 - 1 1/4\".",
-    "Chumbador de barra redonda: o comprimento total da barra na linha (Ø12 - 1/2\" x 230 x 60 pç = 13,8 m).",
+    "Chumbador de barra redonda: comprado por metro, uma linha por diâmetro com o total em m e o peso; as peças no "
+    "detalhe (Ø12 - 1/2\" x 230 x 60 pç = 13,8 m).",
     "Disco: em branco (o gestor preenche). Tinta: só a área de pintura (m²); tinta especial (intumescente) é cotada à parte.",
 ]
 

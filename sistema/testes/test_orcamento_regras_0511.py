@@ -39,22 +39,79 @@ def test_chapa_pela_comercial_mais_proxima_em_mm_e_polegada():
     assert c19["qtd_recorte"] == round(191.0 * 1.15, 1)                        # a compra com a perda de recorte
 
 
-def test_chumbador_de_barra_redonda_com_o_comprimento_total():
+def test_chumbador_de_barra_redonda_uma_linha_por_diametro_em_metro():
+    # a barra é comprada por metro (o usuário, 05/11 tarde): UMA linha por diâmetro, com as peças no detalhe
     lista = {"posicoes": [], "acessorios": [{"nome": "CHUMBADOR 12x230", "quantidade": 60},
+                                            {"nome": "CHUMBADOR 12x400", "quantidade": 10},
                                             {"nome": "CHUMBADOR 36x1507", "quantidade": 8},
+                                            {"nome": "CHUMBADOR 12.7x300", "quantidade": 4},
                                             {"nome": "CHUMBADOR QUÍMICO HIT-V 12.7x190", "quantidade": 4},
                                             {"nome": "Chumbador Hardbolt 12x150", "quantidade": 4},
                                             {"nome": "CHUMBADOR 23x24", "quantidade": 24}]}
-    L = {li["id"]: li for li in orc.montar(lista, None)["linhas"]}
-    c = L["chumb:CHUMBADOR 12x230"]
-    assert c["descricao"] == 'Chumbador Ø12 - 1/2" x 230 x 60 pç' and c["qtd"] == 13.8 and c["un"] == "m"   # = 13,8 m
-    c = L["chumb:CHUMBADOR 36x1507"]
-    assert c["descricao"] == 'Chumbador Ø36 - 1 1/2" x 1507 x 8 pç' and c["qtd"] == 12.06
+    linhas = orc.montar(lista, None)["linhas"]
+    L = {li["id"]: li for li in linhas}
+    c = L['chumb:Ø12 - 1/2"']
+    assert c["descricao"] == 'Chumbador Ø12 - 1/2"' and c["un"] == "m" and c["qtd"] == 17.8      # 13,8 + 4,0 m
+    assert 'Ø12 - 1/2" x 230 x 60 pç = 13,8 m' in c["detalhe"] and 'Ø12 - 1/2" x 400 x 10 pç = 4 m' in c["detalhe"]
+    assert "~15,8 kg" in c["detalhe"]                                         # π·12²/4 × 7,85 × 17,8 m
+    c = L['chumb:Ø36 - 1 1/2"']
+    assert c["descricao"] == 'Chumbador Ø36 - 1 1/2"' and c["qtd"] == 12.06
+    # o 12,7 vai em mm inteiro, o maior (13), na mesma polegada mas em outra linha (outro diâmetro de barra)
+    assert L['chumb:Ø13 - 1/2"']["qtd"] == 1.2
+    assert sum(1 for li in linhas if li["id"].startswith("chumb:Ø")) == 3
     # o químico e o mecânico não são barra comprada: seguem por peça
     assert L["chumb:CHUMBADOR QUÍMICO HIT-V 12.7x190"]["un"] == "pç"
     assert L["chumb:Chumbador Hardbolt 12x150"]["un"] == "pç"
     # o nome estragado da importação (heliponto: 24 mm de comprimento) não vira metro de barra
     assert L["chumb:CHUMBADOR 23x24"]["un"] == "pç"
+
+
+def test_dobrado_no_comprimento_real_e_w_em_barras():
+    # o usuário, 04/11: o dobrado (U/Ue, L dobrada, cartola) entra na compra no comprimento real, sem sobra; o W segue
+    # pelas barras de 12 m do plano de corte com emenda, e o L laminado pelas barras de 6 m
+    pos = [{"marca": "U1", "classe": "Barra", "perfil": "U150X50X2.25", "quantidade": 7, "comprimento": 4300, "peso_total": 151.3},
+           {"marca": "C1", "classe": "Barra", "perfil": "CARTOLA 50X25X2", "quantidade": 3, "comprimento": 2000, "peso_total": 12.0},
+           {"marca": "V1", "classe": "Barra", "perfil": "W200X26.6", "quantidade": 2, "comprimento": 7000, "peso_total": 372.4},
+           {"marca": "L1", "classe": "Barra", "perfil": "L 2\"×1/4\"", "quantidade": 4, "comprimento": 2500, "peso_total": 47.6}]
+    barras6 = {"comprimento": 6000, "quantidade": 7}                         # o plano em barras de 6 m: 7 barras
+    perfis = [{"perfil": "U150X50X2.25", "posicoes": ["U1"], "comprimento_m": 30.1, "kg_m": 5.03, "kg_m_catalogo": 5.03,
+               "barras": barras6, "barras_sem_emenda": barras6},
+              {"perfil": "CARTOLA 50X25X2", "posicoes": ["C1"], "comprimento_m": 6.0, "kg_m": 2.0,
+               "barras_sem_emenda": {"comprimento": 6000, "quantidade": 2}},
+              {"perfil": "W200X26.6", "posicoes": ["V1"], "comprimento_m": 14.0, "kg_m": 26.6,
+               "barras_com_emenda": {"comprimento": 12000, "quantidade": 2, "emendadas": []}},
+              {"perfil": "L 2\"×1/4\"", "posicoes": ["L1"], "comprimento_m": 10.0, "kg_m": 4.76,
+               "barras_sem_emenda": {"comprimento": 6000, "quantidade": 2}}]
+    L = {li["id"]: li for li in orc.montar({"posicoes": pos, "perfis": perfis}, None)["linhas"]}
+    u = L["u_fino"]
+    assert u["qtd_recorte"] == round(5.03 * 30.1, 1) and "comprimento real" in u["recorte_como"]   # não 7 × 6 m
+    assert L["cartola"]["qtd_recorte"] == 12.0 and "comprimento real" in L["cartola"]["recorte_como"]
+    assert L["w"]["qtd_recorte"] == round(26.6 * 24.0, 1) and "barras" in L["w"]["recorte_como"]  # 2 barras de 12 m
+    assert L["redondo_L"]["qtd_recorte"] == round(4.76 * 12.0, 1)                                  # 2 barras de 6 m
+
+
+def test_calha_e_rufo_em_chapa_de_bobina_em_kg():
+    # o usuário, 05/11: a chapa do projeto, só a largura muda para a da bobina de compra (1,20 m); acima de 1.200 mm de
+    # desenvolvimento, 2 larguras; sem espessura no projeto, calha 0,65 e rufo 0,50
+    pos = [{"marca": "CL1", "classe": "Barra", "categoria": "RUFOS", "perfil": "CALHA 1", "material": "aluzinc", "quantidade": 2,
+            "comprimento": 600, "largura": 10000, "espessura": 0.65, "peso_total": 61.2},
+           {"marca": "CL2", "classe": "Barra", "categoria": "RUFOS", "perfil": "CALHA 2", "material": "aluzinc", "quantidade": 1,
+            "comprimento": 1500, "largura": 5000, "espessura": 0.65, "peso_total": 38.3},
+           {"marca": "RF1", "classe": "Barra", "categoria": "RUFOS", "perfil": "RUFO 1", "material": "galvalume", "quantidade": 4,
+            "comprimento": 300, "largura": 6000, "espessura": 0, "peso_total": 28.3},
+           {"marca": "RF2", "classe": "Barra", "categoria": "RUFOS", "perfil": "RUFO 2", "material": "galvalume", "quantidade": 1,
+            "comprimento": 0, "largura": 0, "espessura": 0, "peso_total": 5.0}]
+    R = orc.montar({"posicoes": pos}, None)
+    L = {li["id"]: li for li in R["linhas"]}
+    kg_calha = 20.0 * 1 * 1.2 * 0.65 * 7.85 + 5.0 * 2 * 1.2 * 0.65 * 7.85       # 122,5 + 61,2
+    assert L["calha"]["qtd"] == round(kg_calha, 1) and L["calha"]["un"] == "kg" and L["calha"]["kg_modelo"] == 99.5
+    assert "Aluzinc #0,65 – 30,00 m" in L["calha"]["detalhe"]                    # 20 m × 1 + 5 m × 2 larguras
+    kg_rufo = 24.0 * 1.2 * 0.50 * 7.85 + 5.0                                    # padrão 0,50; o RF2 sem comprimento: o kg da lista
+    assert L["rufo"]["qtd"] == round(kg_rufo, 1)
+    assert "padrão da empresa" in L["rufo"]["detalhe"] and "sem comprimento de peça" in L["rufo"]["detalhe"]
+    assert L["mo_calha"]["qtd"] == 99.5 and L["mo_calha"]["preco"] is None      # a mão de obra pelo kg da peça
+    assert R["totais"]["funilaria_kg_bobina"] == round(kg_calha, 1) + round(kg_rufo, 1)
+    assert orc.larguras_de_bobina(1200) == 1 and orc.larguras_de_bobina(1201) == 2 and orc.larguras_de_bobina(0) == 1
 
 
 def test_disco_em_branco_e_tinta_pela_area_de_pintura():
