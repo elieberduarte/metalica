@@ -472,9 +472,36 @@ def html_memorial(D: dict, nome_docx: str, fotos=None, marca=None, preco: bool =
             % (_esc(t_pag), css, corpo))
 
 
+#: o nome do arquivo de uma revisão: "<prefixo>-<aaaa-mm-dd>-<rev><variante>.pdf" (ADM-memorial-quantitativo-2026-11-05-rev14.pdf;
+#: a variante "-sem-preco" é outro documento)
+_NOME_REVISAO = re.compile(r"^(?P<pre>.+)-(?P<data>\d{4}-\d{2}-\d{2})-(?P<rev>[^-.]+)(?P<suf>[^.]*)\.pdf$", re.I)
+
+
+def revisoes_anteriores(destino_pdf: str) -> List[str]:
+    """Os PDFs (e o HTML de prévia ao lado) das OUTRAS revisões do mesmo documento na pasta do destino — o mesmo prefixo e a
+    mesma variante, outra data ou revisão — para irem ao Obsoleto/ (usuário, 06/11)."""
+    m = _NOME_REVISAO.match(os.path.basename(destino_pdf))
+    pasta = os.path.dirname(os.path.abspath(destino_pdf))
+    if not m or not os.path.isdir(pasta):
+        return []
+    saida = []
+    for nome in sorted(os.listdir(pasta)):
+        n = _NOME_REVISAO.match(nome)
+        if not n or nome == os.path.basename(destino_pdf):
+            continue
+        if n.group("pre").lower() == m.group("pre").lower() and n.group("suf").lower() == m.group("suf").lower():
+            saida.append(os.path.join(pasta, nome))
+            h = os.path.join(pasta, nome[:-4] + ".html")
+            if os.path.isfile(h):
+                saida.append(h)
+    return saida
+
+
 def gerar(D: dict, nome_docx: str, destino_pdf: str, fotos=None, marca=None, preco: bool = True) -> dict:
-    """Grava o memorial em PDF (e o HTML ao lado, para a prévia); os anexos de `D["anexos"]` vão no fim do PDF."""
+    """Grava o memorial em PDF (e o HTML ao lado, para a prévia); os anexos de `D["anexos"]` vão no fim do PDF. A revisão
+    anterior do mesmo documento vai para Obsoleto/ no mesmo passo (usuário, 06/11); a que está aberta fica, com o aviso."""
     from saida import printpdf
+    from saida.entrega import para_obsoleto, aviso_dos_presos
     base = destino_pdf[:-4] if destino_pdf.lower().endswith(".pdf") else destino_pdf
     with open(base + ".html", "w", encoding="utf-8") as f:
         f.write(html_memorial(D, nome_docx, fotos, marca, preco))
@@ -496,4 +523,6 @@ def gerar(D: dict, nome_docx: str, destino_pdf: str, fotos=None, marca=None, pre
         mem.save(destino_pdf + ".tmp")
         mem.close()
         os.replace(destino_pdf + ".tmp", destino_pdf)
-    return {"pdf": destino_pdf, "html": base + ".html"}
+    obs = para_obsoleto(revisoes_anteriores(destino_pdf))
+    return {"pdf": destino_pdf, "html": base + ".html", "obsoletos": [b for _a, b in obs["movidos"]],
+            "aviso": aviso_dos_presos(obs["presos"])}

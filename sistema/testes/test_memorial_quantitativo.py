@@ -132,3 +132,23 @@ def test_a_ponte_que_nao_fecha_trava():
     D["ponte"][0] = ("Projeto", 70000.0)
     with pytest.raises(AssertionError, match="ponte"):
         MQ.corpo_memorial(D, "x.docx")
+
+
+def test_a_revisao_anterior_do_memorial_vai_para_o_obsoleto(tmp_path):
+    """Usuário, 06/11: o memorial da revisão nova manda o anterior (outra data ou revisão, a mesma variante) para Obsoleto/."""
+    for n in ("ADM-memorial-quantitativo-2026-11-04-rev13.pdf", "ADM-memorial-quantitativo-2026-11-04-rev13.html",
+              "ADM-memorial-quantitativo-2026-11-05-rev14-sem-preco.pdf", "ADM-RESUMO-2026-11-05-rev14.pdf", "GN-memorial-quantitativo-2026-11-05-rev3.pdf"):
+        (tmp_path / n).write_text("x")
+    ant = MQ.revisoes_anteriores(str(tmp_path / "ADM-memorial-quantitativo-2026-11-05-rev14.pdf"))
+    assert sorted(os.path.basename(a) for a in ant) == ["ADM-memorial-quantitativo-2026-11-04-rev13.html",
+                                                         "ADM-memorial-quantitativo-2026-11-04-rev13.pdf"]
+    # a variante sem preço só substitui a variante sem preço
+    ant = MQ.revisoes_anteriores(str(tmp_path / "ADM-memorial-quantitativo-2026-11-06-rev15-sem-preco.pdf"))
+    assert [os.path.basename(a) for a in ant] == ["ADM-memorial-quantitativo-2026-11-05-rev14-sem-preco.pdf"]
+    from saida.entrega import para_obsoleto
+    r = para_obsoleto(MQ.revisoes_anteriores(str(tmp_path / "ADM-memorial-quantitativo-2026-11-05-rev14.pdf")))
+    assert sorted(os.listdir(tmp_path / "Obsoleto")) == ["ADM-memorial-quantitativo-2026-11-04-rev13.html",
+                                                          "ADM-memorial-quantitativo-2026-11-04-rev13.pdf"] and not r["presos"]
+    (tmp_path / "ADM-memorial-quantitativo-2026-11-04-rev13.pdf").write_text("de novo")     # o nome repetido no Obsoleto: " (2)"
+    para_obsoleto([str(tmp_path / "ADM-memorial-quantitativo-2026-11-04-rev13.pdf")])
+    assert (tmp_path / "Obsoleto" / "ADM-memorial-quantitativo-2026-11-04-rev13 (2).pdf").read_text() == "de novo"

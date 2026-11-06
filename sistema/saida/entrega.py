@@ -94,3 +94,41 @@ def nome_do_arquivo_servido(caminho: str, raiz_projetos: str) -> Optional[str]:
     except OSError:
         quando = None
     return nome_de_entrega(obra_do_projeto(os.path.join(raiz_projetos, partes[0])), base, ext.lower(), quando)
+
+
+# ============================================================ revisões antigas para Obsoleto/
+#: A subpasta das revisões substituídas (usuário, 06/11: "o arquivo antigo vai para Obsoleto/, na mesma pasta e no mesmo
+#: passo"; no definitivo, o usuário decide apagar). Projeto/BRIEFINGS/CHATS/LEIA-ME.md, "Revisões de documentos".
+PASTA_OBSOLETO = "Obsoleto"
+
+
+def para_obsoleto(caminhos, novo_nome=None) -> dict:
+    """Move cada arquivo de `caminhos` para a subpasta Obsoleto/ da pasta dele, no mesmo passo da revisão nova.
+    `novo_nome(caminho)` dá o nome lá dentro (padrão: o mesmo); um nome que já existe lá ganha " (2)", " (3)"… — o Obsoleto
+    nunca perde um arquivo. O arquivo aberto no Word/Excel não se move: volta em "presos", para avisar e mover depois.
+    {"movidos": [(de, para)], "presos": [caminho]}."""
+    movidos, presos = [], []
+    for c in caminhos:
+        if not c or not os.path.isfile(c):
+            continue
+        pasta = os.path.join(os.path.dirname(os.path.abspath(c)), PASTA_OBSOLETO)
+        nome = novo_nome(c) if novo_nome else os.path.basename(c)
+        base, ext = os.path.splitext(nome)
+        alvo, k = os.path.join(pasta, nome), 2
+        while os.path.exists(alvo):
+            alvo, k = os.path.join(pasta, "%s (%d)%s" % (base, k, ext)), k + 1
+        try:
+            os.makedirs(pasta, exist_ok=True)
+            os.replace(c, alvo)
+            movidos.append((c, alvo))
+        except PermissionError:
+            presos.append(c)
+    return {"movidos": movidos, "presos": presos}
+
+
+def aviso_dos_presos(presos) -> str:
+    """O aviso do arquivo que ficou aberto (não foi para o Obsoleto)."""
+    if not presos:
+        return ""
+    return ("%d arquivo(s) da revisão anterior estão abertos (Word/Excel) e não foram para o Obsoleto/: %s — feche e gere de "
+            "novo, ou mova à mão" % (len(presos), ", ".join(os.path.basename(p) for p in presos)))

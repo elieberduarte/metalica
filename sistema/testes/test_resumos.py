@@ -488,3 +488,50 @@ def test_quantidade_por_tipo_no_peso_de_compra_leva_a_ponte_ate_a_compra():
     assert _celulas(q, "Na compra (barras e chapas comerciais)")[3:5] == ["10.543,6 kg", ""]
     R["dados"] = {}
     assert "Na compra" not in resumos.quadro_por_tipo(R, 1)
+
+
+def test_revisao_nova_manda_os_documentos_da_anterior_para_o_obsoleto(tmp_path):
+    """Usuário, 06/11 (LEIA-ME, "Revisões de documentos"): o documento da revisão nova substitui o anterior e o ANTIGO vai
+    para Obsoleto/, na mesma pasta e no mesmo passo, com a revisão no nome; a mesma revisão gerada de novo substitui no lugar."""
+    import json
+    pasta = str(tmp_path)
+    R = {"projeto": {"nome": "QUADRA"}, "dados": {"revisao": "R01", "data": "05/11/2026"},
+         "numeros": {"tesouras": 0, "peso_aco": 100.0, "ml_telhas": 0.0, "peso_telhas": 0.0, "total": 100.0, "parafusos": 0,
+                     "inclinacao": 0.0, "kg_m2": 1.0},
+         "dimensoes": {"eixos": "", "comprimento_total": 0.0, "n_tesouras": 0, "nivel_apoio": 0.0, "apoio_por_chapa": False,
+                       "trechos": [], "projecao": (10000.0, 10000.0), "area_m2": 100.0},
+         "tesouras": [], "tercas": {"contagem": {k: {"pecas": 0, "tipos": 0} for k in ("cob", "lat", "oit", "marq")}, "linhas": [],
+                                    "perfil_principal": "", "furos": ""},
+         "grupos_peso": [], "telhas": {"descricao": "", "itens": [], "trechos": {}, "ml_total": 0.0, "kg_total": 0.0,
+                                       "ml_por_trecho": {}, "largura_util": 980.0},
+         "parafusos": [], "familias": [], "chaparia": [], "chaparia_total": {"kg": 0.0, "pecas": 0}, "perfis_kg": 100.0, "avisos": []}
+    resumos.gerar_resumos(pasta, dict(R), imprimir_pdf=False)
+    assert json.load(open(os.path.join(pasta, resumos.ARQ_NUMEROS), encoding="utf-8"))["revisao"] == "R01"
+    for n in resumos.DOCUMENTOS_DA_REVISAO:                     # os PDFs e a planilha da R01 (a impressão fica fora do teste)
+        open(os.path.join(pasta, n), "w").write("R01")
+    resumos.gerar_resumos(pasta, dict(R), imprimir_pdf=False)  # a mesma revisão: nada vai para o Obsoleto
+    assert not os.path.exists(os.path.join(pasta, "Obsoleto"))
+    R2 = dict(R, dados={"revisao": "R02", "data": "06/11/2026"}, avisos=[])
+    resumos.gerar_resumos(pasta, R2, imprimir_pdf=False)
+    obs = sorted(os.listdir(os.path.join(pasta, "Obsoleto")))
+    assert obs == ["resumo-da-obra (R01).pdf", "resumo-de-materiais (R01).pdf", "resumo-de-materiais (R01).xlsx"], obs
+    assert open(os.path.join(pasta, "Obsoleto", "resumo-da-obra (R01).pdf")).read() == "R01"
+    assert len(R2["obsoletos"]) == 3 and not any("abertos" in a for a in R2["avisos"])
+    # o arquivo aberto (o Word/Excel prende) não se move: fica, com o aviso
+    for n in resumos.DOCUMENTOS_DA_REVISAO:
+        open(os.path.join(pasta, n), "w").write("R02")
+    from saida import entrega
+    real = os.replace
+
+    def preso(a, b):
+        if a.endswith(".xlsx"):
+            raise PermissionError(a)
+        return real(a, b)
+    entrega.os.replace = preso
+    try:
+        R3 = dict(R, dados={"revisao": "R03"}, avisos=[])
+        resumos.gerar_resumos(pasta, R3, imprimir_pdf=False)
+    finally:
+        entrega.os.replace = real
+    assert any("abertos" in a and "resumo-de-materiais.xlsx" in a for a in R3["avisos"]), R3["avisos"]
+    assert "resumo-da-obra (R02).pdf" in os.listdir(os.path.join(pasta, "Obsoleto"))

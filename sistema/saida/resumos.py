@@ -2956,16 +2956,50 @@ CSS_FOLHAS = ("<script>new MutationObserver(function (m, o) {"
               "}).observe(document.documentElement, {attributes: true});</script>")
 
 
+#: os documentos do resumo que vão para o Obsoleto/ quando a revisão muda (as prévias .html são internas e se refazem)
+DOCUMENTOS_DA_REVISAO = ("resumo-da-obra.pdf", "resumo-de-materiais.pdf", "resumo-de-materiais.xlsx")
+
+
+def revisao_anterior_para_obsoleto(pasta: str, revisao_nova) -> dict:
+    """Os PDFs e a planilha do resumo de OUTRA revisão (a gravada no resumo-numeros.json da geração anterior) vão para
+    Obsoleto/, com a revisão (ou a data) no nome: "resumo-da-obra (R02).pdf". A mesma revisão gerada de novo substitui no
+    lugar, como antes. {"movidos": [caminhos no Obsoleto], "aviso": "" ou o dos arquivos abertos}."""
+    import json
+    from saida.entrega import para_obsoleto, aviso_dos_presos, data_br
+    cam = os.path.join(pasta, ARQ_NUMEROS)
+    try:
+        ant = json.load(open(cam, encoding="utf-8")) if os.path.exists(cam) else None
+    except (OSError, ValueError):
+        ant = None
+    docs = [os.path.join(pasta, n) for n in DOCUMENTOS_DA_REVISAO if os.path.isfile(os.path.join(pasta, n))]
+    if ant is None or not docs:
+        return {}
+    rev_ant, rev_nova = str(ant.get("revisao") or "").strip(), str(revisao_nova or "").strip()
+    if rev_ant == rev_nova or not (rev_ant or rev_nova):
+        return {}
+    rotulo = rev_ant or str(ant.get("data") or "").replace("/", ".") or data_br(os.path.getmtime(docs[0]))
+    r = para_obsoleto(docs, lambda c: "%s (%s)%s" % (os.path.splitext(os.path.basename(c))[0], rotulo, os.path.splitext(c)[1]))
+    return {"movidos": [b for _a, b in r["movidos"]], "aviso": aviso_dos_presos(r["presos"])}
+
+
 def gerar_resumos(pasta: str, R: dict, imprimir_pdf: bool = True) -> dict:
     """Grava resumo-da-obra.html/.pdf e resumo-de-materiais.html/.pdf em `pasta`."""
     from projetos import trocar_arquivo
     os.makedirs(pasta, exist_ok=True)
     saida = {}
+    # a revisão nova (outra "Revisão do projeto" nos Dados do resumo): os documentos da anterior vão para Obsoleto/ no mesmo
+    # passo, com a revisão no nome (usuário, 06/11: "o arquivo antigo vai para Obsoleto/, na mesma pasta e no mesmo passo")
+    obsoleto = revisao_anterior_para_obsoleto(pasta, (R.get("dados") or {}).get("revisao"))
+    if obsoleto.get("aviso"):
+        R.setdefault("avisos", []).append(obsoleto["aviso"])
+    R["obsoletos"] = obsoleto.get("movidos") or []     # (fora da `saida`: a rota lê nela só os documentos)
     # os números principais (área, dimensões, pesos) para o resumo de orçamento (saida/orcamento.py)
     try:
         import json
         with open(os.path.join(pasta, ARQ_NUMEROS), "w", encoding="utf-8") as f:
             json.dump({"numeros": R.get("numeros"), "dimensoes": R.get("dimensoes"),
+                       # a revisão e a data dos Dados do resumo: a próxima revisão manda estes documentos ao Obsoleto/ (06/11)
+                       "revisao": str((R.get("dados") or {}).get("revisao") or ""), "data": str((R.get("dados") or {}).get("data") or ""),
                        # a quantidade de cada camada (kg, m², m), a do resumo repartida pelas peças: o painel Camadas (06/11)
                        "camadas": R.get("camadas") or {},
                        # as pendências de conferência, para a aba Conferência responder (13/10)
