@@ -1865,6 +1865,19 @@ table.tipo td { vertical-align: middle; }
 .pecas-pav { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 1.2mm; font-size: 7.6pt; }
 .pecas-pav li.t { font: 600 6.6pt 'Segoe UI', Arial; letter-spacing: .12em; text-transform: uppercase; color: var(--mudo); width: 100%; }
 .pecas-pav b { color: var(--pri); margin-right: 1mm; }
+/* ---------------- a quantidade por tipo de peça (05/11, o quadro do Vicente de 13/10): um tipo por linha, na abertura */
+.qtipo-bloco { break-inside: avoid; }
+table.qtipo td { vertical-align: middle; }
+table.qtipo td.tipo b { color: var(--pri); }
+table.qtipo td.tipo .cinza { display: block; font-size: 6.9pt; line-height: 1.25; }
+table.qtipo td.grande { font: 300 12pt 'Segoe UI Light', 'Segoe UI', Arial; color: var(--pri); white-space: nowrap; }
+table.qtipo td.grande small { font: 600 7.4pt 'Segoe UI', Arial; color: var(--mudo); }
+table.qtipo th.pav, table.qtipo td.pav { text-align: center; }
+table.qtipo td.pav { color: var(--pri); font-weight: 600; }
+table.qtipo td.pav.zero { color: #c9d1d6; font-weight: 400; }
+table.qtipo tr.resto td { color: var(--mudo); }
+.barra-kg { height: 1.6mm; border-radius: 1mm; background: var(--linha); margin-top: .8mm; overflow: hidden; }
+.barra-kg i { display: block; height: 100%; }
 
 /* ---------------- na tela (a prévia da página de materiais): a folha sobre o fundo */
 @media screen {
@@ -2049,6 +2062,132 @@ LINHAS_LADO_A_LADO = 12
 LINHAS_AO_LADO_DA_FOTO = 8
 
 
+#: os tipos que não contam como peça principal (os mesmos do cartão "Peças principais" da capa)
+FORA_DAS_PRINCIPAIS = ("suportes", "travamentos")
+#: acima de tantos pavimentos, o quadro por tipo diz onde em texto, sem uma coluna por pavimento
+MAX_COLUNAS_PAVIMENTO = 7
+
+
+def _marcas_resumidas(marcas) -> str:
+    """As marcas de um tipo numa célula: até 4 por extenso; mais, a primeira … a última (quantas)."""
+    ms = sorted({m for m in marcas if m}, key=_ordem_natural)
+    if len(ms) <= 4:
+        return " · ".join(ms)
+    return "%s … %s (%d marcas)" % (ms[0], ms[-1], len(ms))
+
+
+def _perfis_do_tipo(b: dict) -> str:
+    ps: List[str] = []
+    for li in b.get("linhas") or []:
+        for p in li.get("perfis") or []:
+            if p and p not in ps:
+                ps.append(p)
+    return ", ".join(ps[:3]) + (" …" if len(ps) > 3 else "")
+
+
+def quadro_por_tipo(R: dict, sec: int) -> str:
+    """A quantidade por tipo de peça (usuário, 05/11: "um resumo igual ao que foi feito no Vicente mostrando a quantidade
+    por tipo de peças" — o resumo por tipo de estrutura de 13/10): um tipo por linha, na abertura do resumo da obra, com a
+    quantidade, os metros, o peso e a fatia dele; na obra de um nível, as marcas; na de vários pavimentos, uma coluna por
+    pavimento com quantas peças do tipo vão nele, já com as repetições. Sai dos mesmos blocos da Estrutura por tipo, sem
+    conta nova: as peças principais fecham com o cartão da capa e a última linha com o peso da estrutura."""
+    X = R.get("dossie") or {}
+    blocos = [b for b in X.get("estrutura") or [] if b.get("qtd")]
+    if not blocos:
+        return ""
+    peso = float((R.get("numeros") or {}).get("peso_aco") or 0.0)
+    varios = bool(X.get("varios"))
+    pavs = list(X.get("pavimentos") or []) if varios else []
+    por_coluna = 0 < len(pavs) <= MAX_COLUNAS_PAVIMENTO
+    principais = [b for b in blocos if b["chave"] not in FORA_DAS_PRINCIPAIS]
+    demais = [b for b in blocos if b["chave"] in FORA_DAS_PRINCIPAIS]
+
+    def pct(kg):
+        return (_n(100.0 * kg / peso, 1) + "%") if peso > 0 else ""
+
+    def onde(b) -> Dict[str, int]:
+        c: Dict[str, int] = collections.Counter()
+        for li in b.get("linhas") or []:
+            for p, q in li.get("onde") or []:
+                c[p] += int(q)
+        return c
+
+    def celulas_pav(c: Dict[str, int], mostrar: bool = True) -> str:
+        if por_coluna:
+            if not mostrar or not sum(c.values()):
+                return "".join("<td class=\"pav zero\"></td>" for _ in pavs)
+            return "".join(("<td class=\"pav\">%d</td>" % c[p["nome"]]) if c.get(p["nome"]) else "<td class=\"pav zero\">·</td>"
+                           for p in pavs)
+        if varios:
+            return "<td class=\"cinza\">%s</td>" % _esc(" · ".join("%s %d" % (p["nome"], c[p["nome"]]) for p in pavs if c.get(p["nome"])))
+        return ""
+
+    def linha(b, classe=""):
+        ids = ",".join(b.get("ids") or [])
+        tipo = "<span class=\"chip\" style=\"background:%s\"></span><b>%s</b>%s" % (
+            _esc(b["cor"]), _esc(b["titulo"]), ("<span class=\"cinza\">%s</span>" % _esc(_perfis_do_tipo(b))) if _perfis_do_tipo(b) else "")
+        kg = "<b>%s</b> kg" % _n(b["kg"], 1)
+        if not varios:
+            kg += "<div class=\"barra-kg\"><i style=\"width:%.1f%%;background:%s\"></i></div>" % (
+                min(100.0, 100.0 * b["kg"] / peso) if peso > 0 else 0.0, _esc(b["cor"]))
+        cel = ["<td class=\"tipo\">%s</td>" % tipo, "<td class=\"r grande\">%d<small> un</small></td>" % b["qtd"]]
+        if varios:
+            cel.append(celulas_pav(onde(b)))
+        cel += ["<td class=\"r\">%s m</td>" % _n(b["m"], 1), "<td class=\"r\">%s</td>" % kg]
+        if not varios:
+            cel += ["<td class=\"r\">%s</td>" % pct(b["kg"]),
+                    "<td class=\"cinza\">%s</td>" % _esc(_marcas_resumidas(m for li in b["linhas"] for m in li.get("marcas") or []))]
+        return "<tr%s%s>%s</tr>" % ((" class=\"%s\"" % classe) if classe else "", (" data-ids=\"%s\"" % html.escape(ids)) if ids else "",
+                                     "".join(cel))
+
+    def total(rotulo, qtd, m, kg, c=None, classe="total", com_pct=True):
+        cel = ["<td>%s</td>" % _esc(rotulo), "<td class=\"r\">%s</td>" % (("%d un" % qtd) if qtd else "")]
+        if varios:
+            cel.append(celulas_pav(c or {}, c is not None))
+        cel += ["<td class=\"r\">%s</td>" % (("%s m" % _n(m, 1)) if m else ""), "<td class=\"r\">%s kg</td>" % _n(kg, 1)]
+        if not varios:
+            cel += ["<td class=\"r\">%s</td>" % (pct(kg) if com_pct else ""), "<td></td>"]
+        return "<tr class=\"%s\">%s</tr>" % (classe, "".join(cel))
+
+    corpo = [linha(b) for b in principais]
+    if principais:
+        c_pr: Dict[str, int] = collections.Counter()
+        for b in principais:
+            c_pr.update(onde(b))
+        corpo.append(total("PEÇAS PRINCIPAIS", sum(b["qtd"] for b in principais), sum(b["m"] for b in principais),
+                           sum(b["kg"] for b in principais), c_pr))
+    corpo += [linha(b, "resto") for b in demais]
+    resto = peso - sum(b["kg"] for b in blocos)
+    if resto > 0.5:
+        corpo.append(total("Chapas soltas, chumbadores e o mais", 0, 0.0, resto, None, "resto"))
+    compra = peso_de_compra(R)
+    corpo.append(total("ESTRUTURA METÁLICA" + (" (peças)" if compra else ""), 0, 0.0, peso))
+    if compra:
+        # o cartão da capa dá o peso de compra (Kaefer, 26/10): a ponte das peças até ele, para o quadro não parecer errado
+        corpo.append(total("Na compra (barras e chapas comerciais)", 0, 0.0, compra["kg"], None, "resto", com_pct=False))
+
+    if varios:
+        cab_pav = ("".join("<th class=\"pav\">%s</th>" % _esc(p["nome"] + ((" ×%d" % p["repete"]) if p.get("repete", 1) > 1 else ""))
+                           for p in pavs) if por_coluna else "<th>Onde</th>")
+        cab = "<th>Tipo</th><th class=\"r\">Qtd</th>%s<th class=\"r\">Metros</th><th class=\"r\">Peso</th>" % cab_pav
+        resto_larg = 100 - 30 - 10 - 10 - 14
+        larg = ["30%", "10%"] + (["%.2f%%" % (resto_larg / len(pavs))] * len(pavs) if por_coluna else ["%d%%" % resto_larg]) + ["10%", "14%"]
+        explica = ("Cada tipo pelo papel na obra, sem separar perfil nem espessura. %s"
+                   % ("Uma coluna por pavimento: quantas peças do tipo vão nele, já com as repetições (o pavimento ×12 conta os 12 andares)."
+                      if por_coluna else "Onde: quantas peças do tipo vão em cada pavimento, já com as repetições."))
+    else:
+        cab = "<th>Tipo</th><th class=\"r\">Qtd</th><th class=\"r\">Metros</th><th class=\"r\">Peso</th><th class=\"r\">%</th><th>Marcas</th>"
+        larg = ["36%", "11%", "12%", "17%", "8%", "16%"]
+        explica = "Cada tipo pelo papel na obra, sem separar perfil nem espessura; a marca é a das pranchas."
+    explica += " O detalhe de cada tipo (as peças por comprimento, com a foto) está em Estrutura por tipo."
+    q = sum(b["qtd"] for b in principais)
+    tag = "%d peças principais" % q + ((" · %d pavimentos" % len(pavs)) if pavs else "")
+    # o título, a explicação e a tabela num bloco só: no Vicente o título ficava sozinho no pé da capa e a tabela na folha seguinte
+    return ("<section class=\"qtipo-bloco\">" + _h2(sec, "Quantidade por tipo de peça", tag) + "<p class=\"explica\">%s</p>" % _esc(explica)
+            + "<table class=\"qtipo inteira\"><colgroup>%s</colgroup><thead><tr>%s</tr></thead><tbody>%s</tbody></table></section>"
+            % ("".join("<col style=\"width:%s\">" % w for w in larg), cab, "".join(corpo)))
+
+
 def peso_de_compra(R: dict) -> Optional[dict]:
     """O peso do aço que o resumo da obra mostra quando os Dados do resumo pedem o de compra (`peso_resumo` = "compra"; Kaefer,
     26/10: "ainda está com o peso antigo" — a proposta foi fechada pelo peso comprado, 10.505 kg, e o resumo dava o das peças):
@@ -2122,6 +2261,11 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
             "<figure><img src=\"%s\" alt=\"\"><figcaption>%s</figcaption></figure>" % (img, legenda(k, com))
             for k, sem, com_ in pares for img, com in ((sem, False), (com_, True)))))
     sec = 0
+    # ---- a quantidade por tipo de peça, antes dos desenhos (05/11, o quadro do Vicente)
+    quadro = quadro_por_tipo(R, sec + 1)
+    if quadro:
+        sec += 1
+        partes.append(quadro)
     # ---- a obra desenhada
     svgs = X.get("svg") or {}
     if varios:

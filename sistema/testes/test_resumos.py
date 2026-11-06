@@ -359,3 +359,132 @@ def test_resumo_da_obra_no_peso_de_compra_quando_os_dados_pedem():
     capa = obra.split("Peças principais")[0]
     assert "10.543,6" in capa and "peso de compra" in capa and "15,41 kg/m² de projeção" in capa and "peças 9.957,8 kg" in capa
     assert "TOTAL DE COMPRA" in obra and "10.543,6 kg de aço na compra" in obra
+
+
+# ---- a quantidade por tipo de peça (05/11, usuário: "um resumo igual ao que foi feito no Vicente mostrando a quantidade
+# por tipo de peças" — Projeto/OBRAS/Vicente-Residence/Resumo-por-tipo-de-estrutura-2026-10-13.pdf)
+
+def _bloco(chave, titulo, cor, linhas):
+    """Um tipo da Estrutura por tipo do dossiê: linhas (qtd, comprimento mm, kg, marcas, perfil, onde)."""
+    ls = [{"qtd": q, "comprimento": L, "kg": kg, "marcas": list(ms), "perfis": [perfil], "onde": list(onde), "ids": ["e%s%d" % (chave, k)]}
+          for k, (q, L, kg, ms, perfil, onde) in enumerate(linhas)]
+    return {"chave": chave, "titulo": titulo, "cor": cor, "ids": [i for li in ls for i in li["ids"]], "linhas": ls,
+            "qtd": sum(li["qtd"] for li in ls), "m": sum(li["qtd"] * li["comprimento"] for li in ls) / 1000.0,
+            "kg": sum(li["kg"] for li in ls)}
+
+
+def _R_kaefer():
+    """Os números do resumo da obra da Quadra Kaefer de 26/10 (um nível)."""
+    est = [_bloco("pilares", "Pilares", "#364fc7", [(4, 8000, 1052.8, ["PL5"], "W 360×32,9", []), (4, 7780, 600.6, ["PL3"], "W 200×19,3", []),
+                                                    (14, 7780, 3583.5, ["PL1"], "W 360×32,9", [])]),
+           _bloco("vigas_i", "Vigas I", "#2f9e44", [(2, 38000, 2021.6, ["VG1"], "W 200×26,6", [])]),
+           _bloco("longarinas", "Longarinas de fechamento", "#ae3ec9", [(16, 5925, 332.3, ["T.L.2"], "U 127×50×2,00 (FF)", []),
+                                                                       (8, 5825, 163.4, ["T.L.3"], "U 127×50×2,00 (FF)", []),
+                                                                       (32, 4744, 531.9, ["T.L.1"], "U 127×50×2,00 (FF)", [])]),
+           _bloco("contrav", "Contraventamentos", "#e03131", [(12, 7155, 85.4, ["CV.3"], "Barra redonda ø 1/2\"", []),
+                                                              (4, 7035, 28.0, ["CV.4"], "Barra redonda ø 1/2\"", []),
+                                                              (12, 6210, 74.1, ["CV.1"], "Barra redonda ø 1/2\"", []),
+                                                              (12, 6075, 72.4, ["CV.2"], "Barra redonda ø 1/2\"", [])])]
+    return {"projeto": {"nome": "QUADRA"}, "dados": {}, "dimensoes": {}, "numeros": {"peso_aco": 9957.8, "parafusos": 0},
+            "grupos_peso": [], "tesouras": [], "parafusos": [], "familias": [], "chaparia": [], "avisos": [],
+            "dossie": {"estrutura": est, "varios": False}}
+
+
+def _celulas(html_, rotulo):
+    """O texto das células da linha da tabela que começa com `rotulo`."""
+    import re
+    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", html_, re.S):
+        tds = [re.sub(r"<[^>]+>", " ", t) for t in re.findall(r"<td[^>]*>(.*?)</td>", tr, re.S)]
+        tds = [" ".join(t.split()) for t in tds]
+        if tds and tds[0].startswith(rotulo):
+            return tds
+    raise AssertionError("sem a linha %r" % rotulo)
+
+
+def test_quantidade_por_tipo_na_obra_de_um_nivel():
+    """Kaefer: um tipo por linha com qtd, metros, peso, % e as marcas; as peças principais fecham com o cartão da capa
+    (120 un) e a última linha com o peso da estrutura (o resto é chapa solta e chumbador)."""
+    R = _R_kaefer()
+    q = resumos.quadro_por_tipo(R, 1)
+    assert "Quantidade por tipo de peça" in q and "120 peças principais" in q
+    assert _celulas(q, "Pilares") == ["Pilares W 360×32,9, W 200×19,3", "22 un", "172,0 m", "5.236,9 kg", "52,6%", "PL1 · PL3 · PL5"]
+    assert _celulas(q, "Contraventamentos")[1:] == ["40 un", "261,4 m", "259,9 kg", "2,6%", "CV.1 · CV.2 · CV.3 · CV.4"]
+    assert _celulas(q, "PEÇAS PRINCIPAIS")[1:5] == ["120 un", "802,7 m", "8.546,0 kg", "85,8%"]
+    assert _celulas(q, "Chapas soltas, chumbadores e o mais")[3:5] == ["1.411,8 kg", "14,2%"]
+    assert _celulas(q, "ESTRUTURA METÁLICA")[3:5] == ["9.957,8 kg", "100,0%"]
+    assert 'data-ids="epilares0,epilares1,epilares2"' in q          # na tela, a linha abre o 3D com as peças do tipo
+    # o título vai junto com a tabela (Vicente, ensaio de 05/11: o título ficava no pé da capa e a tabela na folha seguinte)
+    assert q.startswith('<section class="qtipo-bloco">') and q.endswith("</section>")
+    assert ".qtipo-bloco { break-inside: avoid; }" in resumos.html_resumo_obra(R)
+    # na abertura do resumo da obra: logo depois dos cartões, antes dos desenhos (a seção 01; a Implantação vira a 02)
+    obra = resumos.html_resumo_obra(R)
+    assert obra.index('class="ficha"') < obra.index("Quantidade por tipo de peça") < obra.index("Implantação")
+    assert '<span class="n">01</span>Quantidade por tipo de peça' in obra and '<span class="n">02</span>Implantação' in obra
+
+
+def test_quantidade_por_tipo_marcas_demais_resumidas():
+    assert resumos._marcas_resumidas(["T10", "T2", "T1", "T3", "T5", "T2"]) == "T1 … T10 (5 marcas)"
+    assert resumos._marcas_resumidas(["PL3", "PL1", ""]) == "PL1 · PL3"
+
+
+def _R_vicente(pavs=None):
+    """Os números do resumo da obra do Vicente Residence de 13/10 (6 pavimentos com repetição)."""
+    P, La, D, T, Pe, C = "Piscina", "Lazer", "Duplex", "Tipo", "Penthouse", "Cobertura"
+    est = [_bloco("pilares", "Pilares", "#364fc7", [(22, 6850, 7869.0, ["PL2"], "TQ 250x6,3", [(La, 6), (D, 12), (C, 4)]),
+                                                    (1, 6320, 356.1, ["PL6"], "TQ 250x6,3", [(P, 1)])]),
+           _bloco("pilaretes", "Pilaretes", "#15aabf", [(47, 3666, 9991.5, ["PL1", "PL3", "PL4", "PL5", "PL7"], "TR 250x100x9,5",
+                                                         [(P, 6), (La, 8), (D, 24), (C, 9)])]),
+           _bloco("caixote", "Vigas caixote", "#c77700", [(123, 3784, 10972.6, ["T%d" % k for k in range(1, 20)], "TQ 50x50x3,0",
+                                                           [(La, 12), (D, 33), (T, 48), (Pe, 18), (C, 12)])]),
+           _bloco("vigas_tubo", "Vigas tubo", "#0f8a7e", [(22, 6491, 6907.9, ["VG1", "VG2"], "TR 250x100x9,5", [(P, 2), (La, 4), (D, 12), (C, 4)])]),
+           _bloco("travamentos", "Travamentos e agulhamentos", "#495057", [(6, 517, 4.8, ["G.1"], "FE RED 5/8\"", [(D, 6)])]),
+           _bloco("suportes", "Suportes e peças curtas", "#adb5bd", [(724, 160, 395.9, ["S1"], "U 75x40", [(T, 336), (Pe, 168), (D, 220)])])]
+    pavs = pavs or [{"nome": P, "repete": 1}, {"nome": La, "repete": 1}, {"nome": D, "repete": 3}, {"nome": T, "repete": 12},
+                    {"nome": Pe, "repete": 6}, {"nome": C, "repete": 1}]
+    return {"projeto": {"nome": "VICENTE"}, "dados": {}, "dimensoes": {}, "numeros": {"peso_aco": 39667.0, "parafusos": 0},
+            "dossie": {"estrutura": est, "varios": True, "pavimentos": pavs}}
+
+
+def test_quantidade_por_tipo_com_uma_coluna_por_pavimento():
+    """Vicente: na obra de vários pavimentos, quantas peças do tipo vão em cada um, já com as repetições (o Tipo ×12
+    conta os 12 andares); travamentos e suportes ficam fora das peças principais, como no cartão da capa (215)."""
+    q = resumos.quadro_por_tipo(_R_vicente(), 1)
+    assert "215 peças principais · 6 pavimentos" in q
+    for cab in ("Piscina", "Lazer", "Duplex ×3", "Tipo ×12", "Penthouse ×6", "Cobertura"):
+        assert '<th class="pav">%s</th>' % cab in q
+    assert _celulas(q, "Vigas caixote")[1:] == ["123 un", "·", "12", "33", "48", "18", "12", "465,4 m", "10.972,6 kg"]
+    assert _celulas(q, "Pilares")[1:8] == ["23 un", "1", "6", "12", "·", "·", "4"]
+    assert _celulas(q, "PEÇAS PRINCIPAIS")[1:] == ["215 un", "9", "30", "81", "48", "18", "29", "937,6 m", "36.097,1 kg"]
+    assert _celulas(q, "Travamentos e agulhamentos")[1:5] == ["6 un", "·", "·", "6"]
+    assert _celulas(q, "Chapas soltas, chumbadores e o mais")[-1] == "3.169,2 kg"
+    assert _celulas(q, "ESTRUTURA METÁLICA")[-1] == "39.667,0 kg"
+    assert "%" not in "".join(_celulas(q, "PEÇAS PRINCIPAIS"))          # o % e as marcas só na obra de um nível
+
+
+def test_quantidade_por_tipo_com_pavimentos_demais_diz_onde_em_texto():
+    pavs = [{"nome": "P%d" % k, "repete": 1} for k in range(1, 9)]
+    R = _R_vicente(pavs)
+    for b in R["dossie"]["estrutura"]:
+        for li in b["linhas"]:
+            li["onde"] = [("P1", li["qtd"])]
+    q = resumos.quadro_por_tipo(R, 1)
+    assert '<th class="pav">' not in q and "<th>Onde</th>" in q and _celulas(q, "Vigas caixote")[2] == "P1 123"
+
+
+def test_sem_a_estrutura_do_dossie_nao_ha_quadro_por_tipo():
+    """o resumo montado à mão (sem o dossiê): só as tesouras, que não são a obra inteira — o quadro não sai"""
+    assert resumos.quadro_por_tipo({"numeros": {"peso_aco": 1000.0}, "tesouras": [{"qtd": 2}]}, 1) == ""
+
+
+def test_quantidade_por_tipo_no_peso_de_compra_leva_a_ponte_ate_a_compra():
+    """com o resumo no peso de compra (o cartão da capa dá 10.543,6 kg), o quadro fecha no peso das peças e diz a compra
+    embaixo — sem isso, o 9.957,8 do quadro parecia contradizer o cartão"""
+    R = _R_kaefer()
+    R["dados"] = {"peso_resumo": "compra"}
+    R["dimensoes"] = {"area_m2": 684.0}
+    R["compra"] = {"perfis": [{"kg_compra": 9482.0}], "chapas": [{"kg": 1061.6}]}
+    q = resumos.quadro_por_tipo(R, 1)
+    assert _celulas(q, "ESTRUTURA METÁLICA (peças)")[3:5] == ["9.957,8 kg", "100,0%"]
+    assert _celulas(q, "Na compra (barras e chapas comerciais)")[3:5] == ["10.543,6 kg", ""]
+    R["dados"] = {}
+    assert "Na compra" not in resumos.quadro_por_tipo(R, 1)
