@@ -1,0 +1,1658 @@
+{
+"_leia": "Base PM6 do Posto de Combustível V2 (C:/Metálica/dados/posto-de-combustível-v2, 06/11/2026): a placa CH5 550×550×15,88 com a abertura retangular 250×250 (forma 'retangular', 90be457), as 16 NERVURA 1 (6,35 × 70 × 150) e os 8 chumbadores, como estão no modelo, nas coordenadas da obra.",
+"unidade": "mm",
+"camadas": {
+"Estrutura": {
+"nome": "Estrutura",
+"cor": "#4b5563",
+"visivel": true,
+"bloqueada": false
+},
+"Terças": {
+"nome": "Terças",
+"cor": "#0b3d91",
+"visivel": true,
+"bloqueada": false
+},
+"Contraventamento": {
+"nome": "Contraventamento",
+"cor": "#2e8b57",
+"visivel": true,
+"bloqueada": false
+},
+"Chapas": {
+"nome": "Chapas",
+"cor": "#b8860b",
+"visivel": true,
+"bloqueada": false
+},
+"Fechamento": {
+"nome": "Fechamento",
+"cor": "#9aa4b2",
+"visivel": true,
+"bloqueada": false
+},
+"Referência": {
+"nome": "Referência",
+"cor": "#c0392b",
+"visivel": true,
+"bloqueada": false
+},
+"Importado": {
+"nome": "Importado",
+"cor": "#6a3fb5",
+"visivel": true,
+"bloqueada": false
+},
+"Treliças": {
+"nome": "Treliças",
+"cor": "#8a94a6",
+"visivel": true,
+"bloqueada": false
+},
+"Vigas": {
+"nome": "Vigas",
+"cor": "#8a94a6",
+"visivel": true,
+"bloqueada": false
+},
+"Pilares": {
+"nome": "Pilares",
+"cor": "#8a94a6",
+"visivel": true,
+"bloqueada": false
+},
+"Correntes": {
+"nome": "Correntes",
+"cor": "#8a94a6",
+"visivel": true,
+"bloqueada": false
+},
+"Mezanino": {
+"nome": "Mezanino",
+"cor": "#8a94a6",
+"visivel": true,
+"bloqueada": false
+},
+"Caixa d'água 8,20": {
+"nome": "Caixa d'água 8,20",
+"cor": "#8a94a6",
+"visivel": true,
+"bloqueada": false
+},
+"Caixa d'água 11,00": {
+"nome": "Caixa d'água 11,00",
+"cor": "#8a94a6",
+"visivel": true,
+"bloqueada": false
+},
+"Escadas": {
+"nome": "Escadas",
+"cor": "#8a94a6",
+"visivel": true,
+"bloqueada": false
+},
+"Chumbadores": {
+"nome": "Chumbadores",
+"cor": "#8a94a6",
+"visivel": true,
+"bloqueada": false
+},
+"Parafusos": {
+"nome": "Parafusos",
+"cor": "#8a94a6",
+"visivel": true,
+"bloqueada": false
+},
+"Passarela": {
+"nome": "Passarela",
+"cor": "#8a94a6",
+"visivel": true,
+"bloqueada": false
+},
+"Suportes": {
+"nome": "Suportes",
+"cor": "#8a94a6",
+"visivel": true,
+"bloqueada": false
+},
+"Furos": {
+"nome": "Furos",
+"cor": "#8a94a6",
+"visivel": true,
+"bloqueada": false
+},
+"Bases das caixas d'água": {
+"nome": "Bases das caixas d'água",
+"cor": "#8a94a6",
+"visivel": true,
+"bloqueada": false
+},
+"Telhas": {
+"nome": "Telhas",
+"cor": "#8a94a6",
+"visivel": false,
+"bloqueada": false,
+"grupo": "Cobertura — telhas, calhas e rufos"
+},
+"Rufos": {
+"nome": "Rufos",
+"cor": "#8a94a6",
+"visivel": false,
+"bloqueada": false,
+"grupo": "Cobertura — telhas, calhas e rufos"
+},
+"Calhas": {
+"nome": "Calhas",
+"cor": "#8a94a6",
+"visivel": false,
+"bloqueada": false,
+"grupo": "Cobertura — telhas, calhas e rufos"
+},
+"Cumeeiras": {
+"nome": "Cumeeiras",
+"cor": "#8a94a6",
+"visivel": false,
+"bloqueada": false,
+"grupo": "Cobertura — telhas, calhas e rufos"
+},
+"Painéis solares": {
+"nome": "Painéis solares",
+"cor": "#1e3a8a",
+"visivel": false,
+"bloqueada": false
+}
+},
+"materiais": {
+"Aço": {
+"nome": "Aço",
+"cor": "#8a94a6",
+"opacidade": 1,
+"metalico": 0.85,
+"rugosidade": 0.45,
+"aco": "ASTM A572 Gr.50"
+},
+"Aço galvanizado": {
+"nome": "Aço galvanizado",
+"cor": "#b6bec9",
+"opacidade": 1,
+"metalico": 0.85,
+"rugosidade": 0.45,
+"aco": "ZAR-345"
+},
+"Concreto": {
+"nome": "Concreto",
+"cor": "#b9b2a6",
+"opacidade": 1,
+"metalico": 0,
+"rugosidade": 0.9,
+"aco": ""
+},
+"Telha": {
+"nome": "Telha",
+"cor": "#cfd6e0",
+"opacidade": 1,
+"metalico": 0.6,
+"rugosidade": 0.45,
+"aco": ""
+},
+"Vidro": {
+"nome": "Vidro",
+"cor": "#9fc6e8",
+"opacidade": 0.35,
+"metalico": 0.1,
+"rugosidade": 0.05,
+"aco": ""
+}
+},
+"entidades": [
+{
+"id": "e52f67e7740a7",
+"tipo": "chapa",
+"nome": "Placa de base CH5",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "CH5",
+"placa": "CH5",
+"detalhe": "DET. DO CH5",
+"a_conferir": "a locação só escreve CH5 ao lado do pilar (sem o contorno): a placa do detalhe centrada nele; furo Ø18 desenhado menor que o chumbador Ø19.05: Ø20.6 (folga de 1,5)"
+}
+},
+"origem": [
+34771.59999999998,
+23234.850000000006,
+0
+],
+"eixo_x": [
+0,
+1,
+0
+],
+"eixo_y": [
+-1,
+0,
+0
+],
+"contorno": [
+[
+0,
+0
+],
+[
+550,
+0
+],
+[
+550,
+550
+],
+[
+0,
+550
+]
+],
+"espessura": 15.88,
+"centrada": false,
+"furos": [
+{
+"x": 35,
+"y": 515,
+"diametro": 20.6
+},
+{
+"x": 275,
+"y": 515,
+"diametro": 20.6
+},
+{
+"x": 515,
+"y": 515,
+"diametro": 20.6
+},
+{
+"x": 515,
+"y": 35,
+"diametro": 20.6
+},
+{
+"x": 35,
+"y": 35,
+"diametro": 20.6
+},
+{
+"x": 275,
+"y": 35,
+"diametro": 20.6
+},
+{
+"x": 35,
+"y": 275,
+"diametro": 20.6
+},
+{
+"x": 515,
+"y": 275,
+"diametro": 20.6
+},
+{
+"x": 275,
+"y": 275,
+"largura": 250,
+"altura": 250,
+"forma": "retangular"
+}
+],
+"aco": "ASTM A36"
+},
+{
+"id": "edba83ecb3196",
+"tipo": "chapa",
+"nome": "Nervura 1 (CH5)",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "NERVURA 1 da CH5",
+"placa": "CH5"
+}
+},
+"origem": [
+34693.42499999999,
+23309.850000000006,
+15.88
+],
+"eixo_x": [
+0,
+-1,
+0
+],
+"eixo_y": [
+0,
+0,
+1
+],
+"contorno": [
+[
+0,
+15
+],
+[
+0,
+150
+],
+[
+15,
+150
+],
+[
+70,
+15
+],
+[
+70,
+0
+],
+[
+15,
+0
+]
+],
+"espessura": 6.35,
+"centrada": true,
+"furos": [],
+"aco": "ASTM A36"
+},
+{
+"id": "edf77c0dbd1f6",
+"tipo": "chapa",
+"nome": "Nervura 1 (CH5)",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "NERVURA 1 da CH5",
+"placa": "CH5"
+}
+},
+"origem": [
+34696.59999999998,
+23313.024999999994,
+15.88
+],
+"eixo_x": [
+1,
+0,
+0
+],
+"eixo_y": [
+0,
+0,
+1
+],
+"contorno": [
+[
+0,
+15
+],
+[
+0,
+150
+],
+[
+15,
+150
+],
+[
+70,
+15
+],
+[
+70,
+0
+],
+[
+15,
+0
+]
+],
+"espessura": 6.35,
+"centrada": true,
+"furos": [],
+"aco": "ASTM A36"
+},
+{
+"id": "e23f676f429dc",
+"tipo": "chapa",
+"nome": "Nervura 1 (CH5)",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "NERVURA 1 da CH5",
+"placa": "CH5"
+}
+},
+"origem": [
+34693.42499999999,
+23709.850000000006,
+15.88
+],
+"eixo_x": [
+0,
+1,
+0
+],
+"eixo_y": [
+0,
+0,
+1
+],
+"contorno": [
+[
+0,
+15
+],
+[
+0,
+150
+],
+[
+15,
+150
+],
+[
+70,
+15
+],
+[
+70,
+0
+],
+[
+15,
+0
+]
+],
+"espessura": 6.35,
+"centrada": true,
+"furos": [],
+"aco": "ASTM A36"
+},
+{
+"id": "ea4150e4b4ada",
+"tipo": "chapa",
+"nome": "Nervura 1 (CH5)",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "NERVURA 1 da CH5",
+"placa": "CH5"
+}
+},
+"origem": [
+34696.59999999998,
+23706.675000000017,
+15.88
+],
+"eixo_x": [
+1,
+0,
+0
+],
+"eixo_y": [
+0,
+0,
+1
+],
+"contorno": [
+[
+0,
+15
+],
+[
+0,
+150
+],
+[
+15,
+150
+],
+[
+70,
+15
+],
+[
+70,
+0
+],
+[
+15,
+0
+]
+],
+"espessura": 6.35,
+"centrada": true,
+"furos": [],
+"aco": "ASTM A36"
+},
+{
+"id": "e66b600418cad",
+"tipo": "chapa",
+"nome": "Nervura 1 (CH5)",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "NERVURA 1 da CH5",
+"placa": "CH5"
+}
+},
+"origem": [
+34299.774999999965,
+23309.850000000006,
+15.88
+],
+"eixo_x": [
+0,
+-1,
+0
+],
+"eixo_y": [
+0,
+0,
+1
+],
+"contorno": [
+[
+0,
+15
+],
+[
+0,
+150
+],
+[
+15,
+150
+],
+[
+70,
+15
+],
+[
+70,
+0
+],
+[
+15,
+0
+]
+],
+"espessura": 6.35,
+"centrada": true,
+"furos": [],
+"aco": "ASTM A36"
+},
+{
+"id": "efc447884b435",
+"tipo": "chapa",
+"nome": "Nervura 1 (CH5)",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "NERVURA 1 da CH5",
+"placa": "CH5"
+}
+},
+"origem": [
+34296.59999999998,
+23313.024999999994,
+15.88
+],
+"eixo_x": [
+-1,
+0,
+0
+],
+"eixo_y": [
+0,
+0,
+1
+],
+"contorno": [
+[
+0,
+15
+],
+[
+0,
+150
+],
+[
+15,
+150
+],
+[
+70,
+15
+],
+[
+70,
+0
+],
+[
+15,
+0
+]
+],
+"espessura": 6.35,
+"centrada": true,
+"furos": [],
+"aco": "ASTM A36"
+},
+{
+"id": "e949aaa4daa83",
+"tipo": "chapa",
+"nome": "Nervura 1 (CH5)",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "NERVURA 1 da CH5",
+"placa": "CH5"
+}
+},
+"origem": [
+34299.774999999965,
+23709.850000000006,
+15.88
+],
+"eixo_x": [
+0,
+1,
+0
+],
+"eixo_y": [
+0,
+0,
+1
+],
+"contorno": [
+[
+0,
+15
+],
+[
+0,
+150
+],
+[
+15,
+150
+],
+[
+70,
+15
+],
+[
+70,
+0
+],
+[
+15,
+0
+]
+],
+"espessura": 6.35,
+"centrada": true,
+"furos": [],
+"aco": "ASTM A36"
+},
+{
+"id": "eb4a9af9b3a95",
+"tipo": "chapa",
+"nome": "Nervura 1 (CH5)",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "NERVURA 1 da CH5",
+"placa": "CH5"
+}
+},
+"origem": [
+34296.59999999998,
+23706.675000000017,
+15.88
+],
+"eixo_x": [
+-1,
+0,
+0
+],
+"eixo_y": [
+0,
+0,
+1
+],
+"contorno": [
+[
+0,
+15
+],
+[
+0,
+150
+],
+[
+15,
+150
+],
+[
+70,
+15
+],
+[
+70,
+0
+],
+[
+15,
+0
+]
+],
+"espessura": 6.35,
+"centrada": true,
+"furos": [],
+"aco": "ASTM A36"
+},
+{
+"id": "e33636c29e82d",
+"tipo": "chapa",
+"nome": "Nervura 1 (CH5)",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "NERVURA 1 da CH5",
+"placa": "CH5"
+}
+},
+"origem": [
+34296.59999999998,
+23459.850000000006,
+15.88
+],
+"eixo_x": [
+-1,
+0,
+0
+],
+"eixo_y": [
+0,
+0,
+1
+],
+"contorno": [
+[
+0,
+15
+],
+[
+0,
+150
+],
+[
+15,
+150
+],
+[
+70,
+15
+],
+[
+70,
+0
+],
+[
+15,
+0
+]
+],
+"espessura": 6.35,
+"centrada": true,
+"furos": [],
+"aco": "ASTM A36"
+},
+{
+"id": "e552cb54e1f90",
+"tipo": "chapa",
+"nome": "Nervura 1 (CH5)",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "NERVURA 1 da CH5",
+"placa": "CH5"
+}
+},
+"origem": [
+34296.59999999998,
+23559.850000000006,
+15.88
+],
+"eixo_x": [
+-1,
+0,
+0
+],
+"eixo_y": [
+0,
+0,
+1
+],
+"contorno": [
+[
+0,
+15
+],
+[
+0,
+150
+],
+[
+15,
+150
+],
+[
+70,
+15
+],
+[
+70,
+0
+],
+[
+15,
+0
+]
+],
+"espessura": 6.35,
+"centrada": true,
+"furos": [],
+"aco": "ASTM A36"
+},
+{
+"id": "e0091391e22a2",
+"tipo": "chapa",
+"nome": "Nervura 1 (CH5)",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "NERVURA 1 da CH5",
+"placa": "CH5"
+}
+},
+"origem": [
+34446.59999999998,
+23309.850000000006,
+15.88
+],
+"eixo_x": [
+0,
+-1,
+0
+],
+"eixo_y": [
+0,
+0,
+1
+],
+"contorno": [
+[
+0,
+15
+],
+[
+0,
+150
+],
+[
+15,
+150
+],
+[
+70,
+15
+],
+[
+70,
+0
+],
+[
+15,
+0
+]
+],
+"espessura": 6.35,
+"centrada": true,
+"furos": [],
+"aco": "ASTM A36"
+},
+{
+"id": "ed9dfebdfbee0",
+"tipo": "chapa",
+"nome": "Nervura 1 (CH5)",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "NERVURA 1 da CH5",
+"placa": "CH5"
+}
+},
+"origem": [
+34546.59999999998,
+23309.850000000006,
+15.88
+],
+"eixo_x": [
+0,
+-1,
+0
+],
+"eixo_y": [
+0,
+0,
+1
+],
+"contorno": [
+[
+0,
+15
+],
+[
+0,
+150
+],
+[
+15,
+150
+],
+[
+70,
+15
+],
+[
+70,
+0
+],
+[
+15,
+0
+]
+],
+"espessura": 6.35,
+"centrada": true,
+"furos": [],
+"aco": "ASTM A36"
+},
+{
+"id": "e1a1d9a16bb3d",
+"tipo": "chapa",
+"nome": "Nervura 1 (CH5)",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "NERVURA 1 da CH5",
+"placa": "CH5"
+}
+},
+"origem": [
+34696.59999999998,
+23459.850000000006,
+15.88
+],
+"eixo_x": [
+1,
+0,
+0
+],
+"eixo_y": [
+0,
+0,
+1
+],
+"contorno": [
+[
+0,
+15
+],
+[
+0,
+150
+],
+[
+15,
+150
+],
+[
+70,
+15
+],
+[
+70,
+0
+],
+[
+15,
+0
+]
+],
+"espessura": 6.35,
+"centrada": true,
+"furos": [],
+"aco": "ASTM A36"
+},
+{
+"id": "e68df187ea3df",
+"tipo": "chapa",
+"nome": "Nervura 1 (CH5)",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "NERVURA 1 da CH5",
+"placa": "CH5"
+}
+},
+"origem": [
+34696.59999999998,
+23559.850000000006,
+15.88
+],
+"eixo_x": [
+1,
+0,
+0
+],
+"eixo_y": [
+0,
+0,
+1
+],
+"contorno": [
+[
+0,
+15
+],
+[
+0,
+150
+],
+[
+15,
+150
+],
+[
+70,
+15
+],
+[
+70,
+0
+],
+[
+15,
+0
+]
+],
+"espessura": 6.35,
+"centrada": true,
+"furos": [],
+"aco": "ASTM A36"
+},
+{
+"id": "e755d2bb29001",
+"tipo": "chapa",
+"nome": "Nervura 1 (CH5)",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "NERVURA 1 da CH5",
+"placa": "CH5"
+}
+},
+"origem": [
+34446.59999999998,
+23709.850000000006,
+15.88
+],
+"eixo_x": [
+0,
+1,
+0
+],
+"eixo_y": [
+0,
+0,
+1
+],
+"contorno": [
+[
+0,
+15
+],
+[
+0,
+150
+],
+[
+15,
+150
+],
+[
+70,
+15
+],
+[
+70,
+0
+],
+[
+15,
+0
+]
+],
+"espessura": 6.35,
+"centrada": true,
+"furos": [],
+"aco": "ASTM A36"
+},
+{
+"id": "e095f66f69390",
+"tipo": "chapa",
+"nome": "Nervura 1 (CH5)",
+"camada": "Chapas",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcPlate",
+"origem": {
+"locacao": "NERVURA 1 da CH5",
+"placa": "CH5"
+}
+},
+"origem": [
+34546.59999999998,
+23709.850000000006,
+15.88
+],
+"eixo_x": [
+0,
+1,
+0
+],
+"eixo_y": [
+0,
+0,
+1
+],
+"contorno": [
+[
+0,
+15
+],
+[
+0,
+150
+],
+[
+15,
+150
+],
+[
+70,
+15
+],
+[
+70,
+0
+],
+[
+15,
+0
+]
+],
+"espessura": 6.35,
+"centrada": true,
+"furos": [],
+"aco": "ASTM A36"
+},
+{
+"id": "e0b79ff2a598f",
+"tipo": "barra",
+"nome": "FE RED 3/4''",
+"camada": "Chumbadores",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcMember",
+"origem": {
+"locacao": "chumbador da CH5",
+"placa": "CH5"
+},
+"marcas": {
+"posicao": "P24",
+"conjunto": "M285",
+"perfil": "FE RED 3/4''",
+"nome": "CB2",
+"nome_conjunto": ""
+},
+"peso_kg": 1.119
+},
+"inicio": [
+34256.59999999998,
+23269.899999999994,
+84.5
+],
+"fim": [
+34256.59999999998,
+23269.899999999994,
+-415.5
+],
+"perfil": "FE RED 3/4''",
+"rotacao": 0,
+"papel": "chumbador",
+"aco": "ASTM A36",
+"recorte_inicio": 0,
+"recorte_fim": 0,
+"cortes_inicio": [],
+"cortes_fim": [],
+"recortes": []
+},
+{
+"id": "e5eff8d754c26",
+"tipo": "barra",
+"nome": "FE RED 3/4''",
+"camada": "Chumbadores",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcMember",
+"origem": {
+"locacao": "chumbador da CH5",
+"placa": "CH5"
+},
+"marcas": {
+"posicao": "P24",
+"conjunto": "M285",
+"perfil": "FE RED 3/4''",
+"nome": "CB2",
+"nome_conjunto": ""
+},
+"peso_kg": 1.119
+},
+"inicio": [
+34256.59999999998,
+23509.899999999994,
+84.5
+],
+"fim": [
+34256.59999999998,
+23509.899999999994,
+-415.5
+],
+"perfil": "FE RED 3/4''",
+"rotacao": 0,
+"papel": "chumbador",
+"aco": "ASTM A36",
+"recorte_inicio": 0,
+"recorte_fim": 0,
+"cortes_inicio": [],
+"cortes_fim": [],
+"recortes": []
+},
+{
+"id": "eaa334d90e890",
+"tipo": "barra",
+"nome": "FE RED 3/4''",
+"camada": "Chumbadores",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcMember",
+"origem": {
+"locacao": "chumbador da CH5",
+"placa": "CH5"
+},
+"marcas": {
+"posicao": "P24",
+"conjunto": "M285",
+"perfil": "FE RED 3/4''",
+"nome": "CB2",
+"nome_conjunto": ""
+},
+"peso_kg": 1.119
+},
+"inicio": [
+34256.59999999998,
+23749.899999999994,
+84.5
+],
+"fim": [
+34256.59999999998,
+23749.899999999994,
+-415.5
+],
+"perfil": "FE RED 3/4''",
+"rotacao": 0,
+"papel": "chumbador",
+"aco": "ASTM A36",
+"recorte_inicio": 0,
+"recorte_fim": 0,
+"cortes_inicio": [],
+"cortes_fim": [],
+"recortes": []
+},
+{
+"id": "ec1338d4087f8",
+"tipo": "barra",
+"nome": "FE RED 3/4''",
+"camada": "Chumbadores",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcMember",
+"origem": {
+"locacao": "chumbador da CH5",
+"placa": "CH5"
+},
+"marcas": {
+"posicao": "P24",
+"conjunto": "M285",
+"perfil": "FE RED 3/4''",
+"nome": "CB2",
+"nome_conjunto": ""
+},
+"peso_kg": 1.119
+},
+"inicio": [
+34736.59999999998,
+23749.899999999994,
+84.5
+],
+"fim": [
+34736.59999999998,
+23749.899999999994,
+-415.5
+],
+"perfil": "FE RED 3/4''",
+"rotacao": 0,
+"papel": "chumbador",
+"aco": "ASTM A36",
+"recorte_inicio": 0,
+"recorte_fim": 0,
+"cortes_inicio": [],
+"cortes_fim": [],
+"recortes": []
+},
+{
+"id": "e9535ddcec685",
+"tipo": "barra",
+"nome": "FE RED 3/4''",
+"camada": "Chumbadores",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcMember",
+"origem": {
+"locacao": "chumbador da CH5",
+"placa": "CH5"
+},
+"marcas": {
+"posicao": "P24",
+"conjunto": "M285",
+"perfil": "FE RED 3/4''",
+"nome": "CB2",
+"nome_conjunto": ""
+},
+"peso_kg": 1.119
+},
+"inicio": [
+34736.59999999998,
+23269.899999999994,
+84.5
+],
+"fim": [
+34736.59999999998,
+23269.899999999994,
+-415.5
+],
+"perfil": "FE RED 3/4''",
+"rotacao": 0,
+"papel": "chumbador",
+"aco": "ASTM A36",
+"recorte_inicio": 0,
+"recorte_fim": 0,
+"cortes_inicio": [],
+"cortes_fim": [],
+"recortes": []
+},
+{
+"id": "eb3f65ea726f6",
+"tipo": "barra",
+"nome": "FE RED 3/4''",
+"camada": "Chumbadores",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcMember",
+"origem": {
+"locacao": "chumbador da CH5",
+"placa": "CH5"
+},
+"marcas": {
+"posicao": "P24",
+"conjunto": "M285",
+"perfil": "FE RED 3/4''",
+"nome": "CB2",
+"nome_conjunto": ""
+},
+"peso_kg": 1.119
+},
+"inicio": [
+34736.59999999998,
+23509.899999999994,
+84.5
+],
+"fim": [
+34736.59999999998,
+23509.899999999994,
+-415.5
+],
+"perfil": "FE RED 3/4''",
+"rotacao": 0,
+"papel": "chumbador",
+"aco": "ASTM A36",
+"recorte_inicio": 0,
+"recorte_fim": 0,
+"cortes_inicio": [],
+"cortes_fim": [],
+"recortes": []
+},
+{
+"id": "e72259be5f5af",
+"tipo": "barra",
+"nome": "FE RED 3/4''",
+"camada": "Chumbadores",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcMember",
+"origem": {
+"locacao": "chumbador da CH5",
+"placa": "CH5"
+},
+"marcas": {
+"posicao": "P24",
+"conjunto": "M285",
+"perfil": "FE RED 3/4''",
+"nome": "CB2",
+"nome_conjunto": ""
+},
+"peso_kg": 1.119
+},
+"inicio": [
+34496.59999999998,
+23269.899999999994,
+84.5
+],
+"fim": [
+34496.59999999998,
+23269.899999999994,
+-415.5
+],
+"perfil": "FE RED 3/4''",
+"rotacao": 0,
+"papel": "chumbador",
+"aco": "ASTM A36",
+"recorte_inicio": 0,
+"recorte_fim": 0,
+"cortes_inicio": [],
+"cortes_fim": [],
+"recortes": []
+},
+{
+"id": "ec6d060185903",
+"tipo": "barra",
+"nome": "FE RED 3/4''",
+"camada": "Chumbadores",
+"material": "",
+"visivel": true,
+"bloqueada": false,
+"grupo": "",
+"atributos": {
+"tipo_ifc": "IfcMember",
+"origem": {
+"locacao": "chumbador da CH5",
+"placa": "CH5"
+},
+"marcas": {
+"posicao": "P24",
+"conjunto": "M285",
+"perfil": "FE RED 3/4''",
+"nome": "CB2",
+"nome_conjunto": ""
+},
+"peso_kg": 1.119
+},
+"inicio": [
+34496.59999999998,
+23749.899999999994,
+84.5
+],
+"fim": [
+34496.59999999998,
+23749.899999999994,
+-415.5
+],
+"perfil": "FE RED 3/4''",
+"rotacao": 0,
+"papel": "chumbador",
+"aco": "ASTM A36",
+"recorte_inicio": 0,
+"recorte_fim": 0,
+"cortes_inicio": [],
+"cortes_fim": [],
+"recortes": []
+}
+]
+}

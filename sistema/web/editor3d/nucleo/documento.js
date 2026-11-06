@@ -243,6 +243,8 @@ export function areaDaChapa(ch) {
   let a = Math.abs(s) / 2;
   for (const f of (ch.furos || [])) {
     if (f.diametro) { a -= Math.PI * Math.pow(f.diametro / 2, 2); continue; }
+    // a abertura retangular (placa CH5 do Posto, 29/10): largura × altura, como Chapa.area no servidor
+    if (f.forma === 'retangular') { a -= (f.largura || 0) * (f.altura || 0); continue; }
     // o oblongo (largura × altura): o retângulo do meio e as duas meias-voltas (D8: não era descontado)
     const L = Math.max(f.largura || 0, f.altura || 0), d = Math.min(f.largura || 0, f.altura || 0);
     if (d > 0) a -= (L - d) * d + Math.PI * d * d / 4;

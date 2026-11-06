@@ -979,7 +979,7 @@ export class Cena {
     const contorno = ch.contorno || [];
     if (contorno.length < 3) return { geom: null, matriz: null };
     const chave = `chapa|${ch.espessura}|${contorno.map(p => p.join()).join(';')}|` +
-                  (ch.furos || []).map(f => `${f.x},${f.y},${f.diametro || ''},${f.largura || ''},${f.altura || ''},${f.angulo || ''}`).join(';');
+                  (ch.furos || []).map(f => `${f.x},${f.y},${f.diametro || ''},${f.largura || ''},${f.altura || ''},${f.angulo || ''},${f.forma || ''}`).join(';');
     let geom = this.cacheGeometria.get(chave);
     if (!geom) {
       const forma = new THREE.Shape(contorno.map(p => new THREE.Vector2(p[0], p[1])));
@@ -988,6 +988,14 @@ export class Cena {
         const furo = new THREE.Path();
         if (r > 0) {
           furo.absarc(f.x || 0, f.y || 0, r, 0, Math.PI * 2, true);
+        } else if (f.forma === 'retangular' && (f.largura || 0) > 0 && (f.altura || 0) > 0) {
+          // abertura retangular (a 250 × 250 do meio da placa CH5 do Posto, 29/10), como geometria.contorno_do_furo
+          const a = f.largura / 2, b = f.altura / 2, ang = (f.angulo || 0) * Math.PI / 180;
+          const ca = Math.cos(ang), sa = Math.sin(ang), x0 = f.x || 0, y0 = f.y || 0;
+          const q = [[-a, b], [a, b], [a, -b], [-a, -b]].map(([px, py]) => [x0 + px * ca - py * sa, y0 + px * sa + py * ca]);
+          furo.moveTo(q[0][0], q[0][1]);
+          for (let k = 1; k < 4; k++) furo.lineTo(q[k][0], q[k][1]);
+          furo.closePath();
         } else if ((f.largura || 0) > 0 && (f.altura || 0) > 0) {
           // oblongo: dois semicírculos ligados por retas (o Path liga os arcos sozinho)
           let larg = f.largura, alt = f.altura, ang = (f.angulo || 0) * Math.PI / 180;
