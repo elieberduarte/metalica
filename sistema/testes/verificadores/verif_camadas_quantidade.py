@@ -13,6 +13,8 @@ gerado pela conta de verdade (test_camadas_quantidade._resumo + resumos.gerar_re
      da proposta"; a camada escondida continua com a quantidade;
   B. editor 3D, painel Camadas: as mesmas quantidades, e o mesmo total do grupo;
   C. o modelo gravado depois do resumo: a nota avisa e os números ficam (apagados);
+  E. o resumo de antes das camadas (o do GN em 06/11: "porque tem várias camadas sem informação?"): o aço com "—" e a
+     dica, a nota com o caminho para os Resumos da obra e presa no alto do painel rolado, no modo ver e no editor;
   D. sem erros no console.
 Porta livre, nunca a 8765/8766."""
 import base64, io, json, os, shutil, subprocess, sys, tempfile, time
@@ -155,6 +157,47 @@ try:
     ok(v.get("nota") and v["nota"][0] == "velho" and "mudou" in v["nota"][1], f"[modelo mudou] a nota avisa ({v.get('nota')})")
     ok(v.get("situacao") == "velho" and (v.get("linhas") or {}).get("Pilares") == esperado["Pilares"],
        f"[modelo mudou] os números ficam, apagados ({v.get('situacao')}, {(v.get('linhas') or {}).get('Pilares')})")
+
+    # --- E. o resumo de antes das camadas (o do GN, 05/11 — usuário, 06/11: "porque tem várias camadas sem informação?"): a
+    # camada de aço com "—" e a dica, o arquitetônico com o número dele, e a nota com o caminho para os Resumos, presa no alto
+    # do painel rolado
+    arq_num = os.path.join(pasta, "detalhamento", resumos.ARQ_NUMEROS)
+    d = json.load(open(arq_num, encoding="utf-8")); d.pop("camadas", None)
+    json.dump(d, open(arq_num, "w", encoding="utf-8"))
+    futuro2 = time.time() + 20
+    os.utime(arq_num, (futuro2, futuro2))
+    aba.cmd("Emulation.setDeviceMetricsOverride", width=1900, height=520, deviceScaleFactor=1, mobile=False)
+    aba.navegar(base_url + "/visor3d/ver3d.html?projeto=gn", limite=60)
+    esperar("!!(window.ver3dPronto && window.visor && visor.fichas)", 180)
+    clicar('[data-painel="camadas"]')
+    LER_SEM = LER_VER.replace("o[n.textContent.trim()] = q.textContent.trim();", "o[n.textContent.trim()] = [q.textContent.trim(), q.title || ''];")
+    v = json.loads(esperar(f"(() => {{ const r = {LER_SEM}; return JSON.parse(r).nota ? r : null; }})()", 30) or "{}")
+    L = v.get("linhas") or {}
+    print("     sem camadas no resumo:", L, v.get("nota"))
+    ok(v.get("nota") and v["nota"][0] == "sem", f"[resumo sem camadas] a nota pede o resumo ({v.get('nota')})")
+    ok(all((L.get(c) or ["", ""])[0] == "—" and "Resumo da obra" in (L.get(c) or ["", ""])[1] for c in ("Pilares", "Placas de base")),
+       f"[resumo sem camadas] o aço com '—' e a dica do porquê ({L.get('Pilares')}, {L.get('Placas de base')})")
+    ok((L.get("ARQ — Paredes de fachada") or [""])[0] == esperado["ARQ — Paredes de fachada"],
+       f"[resumo sem camadas] o arquitetônico continua com o número dele ({L.get('ARQ — Paredes de fachada')})")
+    href = aba.avaliar("(() => { const a = document.querySelector('#painel-corpo .nota-qtd a'); return a ? a.getAttribute('href') : null; })()")
+    ok(href == "/materiais?projeto=gn#resumos", f"[resumo sem camadas] a nota leva aos Resumos da obra ({href})")
+    rolou = aba.avaliar("""(() => { const p = document.querySelector('#painel'); p.scrollTop = p.scrollHeight; return p.scrollTop; })()""")
+    aba.drenar(0.5)
+    pos = aba.avaliar("""(() => { const p = document.querySelector('#painel').getBoundingClientRect(), t = document.querySelector('.painel-topo').getBoundingClientRect(),
+        n = document.querySelector('#painel-corpo .nota-qtd').getBoundingClientRect(); return [p.top, t.bottom, n.top, n.bottom, p.bottom]; })()""")
+    ok(rolou > 50 and pos and pos[1] - 1 <= pos[2] <= pos[1] + 8 and pos[3] < pos[4],
+       f"[resumo sem camadas] com o painel rolado ({rolou} px), a nota fica à vista logo abaixo do título ({pos})")
+    foto("camadas_quantidade_sem_resumo.png")
+    aba.cmd("Emulation.setDeviceMetricsOverride", width=1900, height=1000, deviceScaleFactor=1, mobile=False)
+    aba.navegar(base_url + "/editor?projeto=gn", limite=120)
+    esperar("!!(window.editor && editor.documento && editor.documento.tamanho && document.body.dataset.pronto === '1')", 120)
+    if not aba.avaliar("(() => { const c = document.querySelector('#painel-camadas'); return !!(c && c.offsetHeight > 0); })()"):
+        clicar('section.painel[data-painel="camadas"] .cabecalho')
+    e = json.loads(esperar(f"(() => {{ const r = {LER_ED}; return JSON.parse(r).nota ? r : null; }})()", 30) or "{}")
+    L = e.get("linhas") or {}
+    href = aba.avaliar("(() => { const a = document.querySelector('#painel-camadas .nota-qtd a'); return a ? a.getAttribute('href') : null; })()")
+    ok(e.get("nota") and e["nota"][0] == "sem" and L.get("Pilares") == "—" and href == "/materiais?projeto=gn#resumos",
+       f"[editor, resumo sem camadas] '—' no aço e o caminho para os Resumos ({L.get('Pilares')!r}, {href})")
 
     erros = [x for x in aba.console if x[0] in ("error", "excecao") and "favicon" not in str(x)]
     ok(not erros, f"sem erros no console: {erros[:3]}")

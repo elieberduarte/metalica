@@ -17,7 +17,7 @@ import { PARTES_PISO } from './referencia.js';
 import { SOL_PADRAO, definirSol, controlesDoSol, ligarControlesDoSol } from './sol.js';
 import { acompanhar } from '../progresso.js';
 import { Terreno } from './terreno.js';
-import { carregarQuantidades, quantidadeDa, somarQuantidades, textoQuantidade, notaDoResumo } from '../quantidade_camadas.js';
+import { carregarQuantidades, textoDaCamada, textoDoGrupo, notaDoResumo, linkDoResumo } from '../quantidade_camadas.js';
 
 const $ = s => document.querySelector(s);
 const q = new URLSearchParams(location.search);
@@ -608,15 +608,14 @@ function buscarQuantidades() {
     if (painelAtual === 'camadas') painelCamadas();
   });
 }
-const celulaQtd = (q) => `<b class="qtd">${esc(textoQuantidade(q))}</b>`;
+const celulaQtd = (t) => `<b class="qtd"${t.dica ? ` title="${esc(t.dica)}"` : ''}>${esc(t.texto)}</b>`;
 
 function painelCamadas() {
   const cams = visor.cabecalho.camadas;
   buscarQuantidades();
-  const qtd = (c) => quantidadeDa(qtdCamadas, c.nome);
   const linha = (c, i, recuo) => c.pecas ? `<label class="linha-lista${recuo ? ' no-grupo' : ''}">
       <input type="checkbox" data-c="${i}" ${visor.visivelCamada[i] !== false ? 'checked' : ''}>
-      ${quadradinho('camada', c.nome, corEscolhida('camada', c.nome) || c.cor)}<span>${esc(c.nome)}</span><em>${nf(c.pecas)}</em>${celulaQtd(qtd(c))}</label>` : '';
+      ${quadradinho('camada', c.nome, corEscolhida('camada', c.nome) || c.cor)}<span>${esc(c.nome)}</span><em>${nf(c.pecas)}</em>${celulaQtd(textoDaCamada(qtdCamadas, c.nome))}</label>` : '';
   // os grupos de camadas (19/10/2026, o usuário no Mercado: "agrupar layers onde seja possível desabilitar a layer de um
   // grupo todo de uma vez"): a caixinha do grupo liga e desliga todas as camadas dele; as camadas do grupo logo abaixo
   const membros = new Map();
@@ -629,14 +628,19 @@ function painelCamadas() {
     feitos.add(c.grupo);
     const is = membros.get(c.grupo), vis = is.filter(k => visor.visivelCamada[k] !== false).length;
     html += `<label class="linha-lista grupo-camadas"><input type="checkbox" data-g="${esc(c.grupo)}" ${vis ? 'checked' : ''}>
-      <span>${esc(c.grupo)}</span><em>${nf(is.reduce((t, k) => t + cams[k].pecas, 0))}</em>${celulaQtd(somarQuantidades(is.map(k => qtd(cams[k]))))}</label>`
+      <span>${esc(c.grupo)}</span><em>${nf(is.reduce((t, k) => t + cams[k].pecas, 0))}</em>${celulaQtd(textoDoGrupo(qtdCamadas, is.map(k => cams[k].nome)))}</label>`
       + is.map(k => linha(cams[k], k, true)).join('');
   });
   const nota = notaDoResumo(qtdCamadas);
-  const cab = nota ? `<p class="nota-qtd" data-situacao="${nota.situacao}">${esc(nota.texto)}</p>` : '';
+  // presa no alto do painel (06/11, no GN a nota subia com a rolagem e as linhas vazias ficavam sem explicação), com o
+  // caminho para o Resumo da obra quando ele falta ou ficou velho
+  const cab = nota ? `<p class="nota-qtd" data-situacao="${nota.situacao}">${esc(nota.texto)}${nota.situacao !== 'atual'
+    ? ` <a href="${linkDoResumo(PROJETO)}" target="_blank">Abrir os Resumos da obra</a>` : ''}</p>` : '';
   abrirPainel('camadas', 'Camadas', secaoPiso() + cab + `<div class="lista-camadas" data-situacao="${nota ? nota.situacao : ''}">${html}</div>`);
   ligarSecaoPiso();
   const corpo = $('#painel-corpo');
+  const presa = corpo.querySelector('.nota-qtd');                 // presa logo abaixo do título (a altura dele, medida)
+  if (presa) presa.style.top = `${$('.painel-topo').offsetHeight}px`;
   corpo.querySelectorAll('input[data-g]').forEach(el => {
     const is = membros.get(el.dataset.g);
     const vis = is.filter(k => visor.visivelCamada[k] !== false).length;

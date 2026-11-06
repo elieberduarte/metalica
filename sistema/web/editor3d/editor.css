@@ -545,6 +545,9 @@ kbd {
 .nota-qtd { font-size: 11.5px; line-height: 1.4; color: var(--texto2); margin: 4px 2px 6px; padding: 4px 7px;
   border-radius: var(--raio-p); background: var(--painel2); }
 .nota-qtd[data-situacao="velho"], .nota-qtd[data-situacao="sem"] { color: #92400e; background: rgba(245, 158, 11, .14); }
+.nota-qtd { position: sticky; top: 0; z-index: 2; box-shadow: 0 0 0 4px var(--painel); }
+.nota-qtd[data-situacao="velho"], .nota-qtd[data-situacao="sem"] { background: color-mix(in srgb, #f59e0b 16%, var(--painel)); }
+.nota-qtd a { color: inherit; font-weight: 600; }
 /* resultado do dimensionamento: a diferença de peso numa coluna alinhada à direita */
 .lista-linhas.dimensionamento .contagem.delta { min-width: 6.5em; text-align: right; }
 .linha .amostra {

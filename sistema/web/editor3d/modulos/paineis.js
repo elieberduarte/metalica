@@ -7,7 +7,7 @@ import { PAPEIS, areaDaChapa, medidasDaChapa, comprimentoDaBarra, direcaoDaBarra
 import { lerPerfil } from '../nucleo/trocar_perfil.js';
 import { Comando, ComandoComposto } from '../nucleo/comandos.js';
 import { chapaEditavel } from './edicao_chapa.js';
-import { carregarQuantidades, quantidadeDa, somarQuantidades, textoQuantidade, notaDoResumo } from '../../quantidade_camadas.js';
+import { carregarQuantidades, textoDaCamada, textoDoGrupo, notaDoResumo, linkDoResumo } from '../../quantidade_camadas.js';
 import { $, ComandoAparencia, contarPor, corDeGrupo, corHex, dimensoesPrincipais, el, metros, normalizarBusca, numero, ponto3, uniao, volumeDe } from '../editor.js';
 
 /** Diâmetro (mm) → bitola em polegada, para a busca achar parafuso e chumbador por 5/8", 3/4"… */
@@ -629,6 +629,12 @@ export class MetodosPaineis {
     }).finally(() => { this._qtdBuscando = false; });
   }
 
+  _celulaQtd(t) {
+    const c = el('span', { class: 'qtd', texto: t.texto });
+    if (t.dica) c.title = t.dica;
+    return c;
+  }
+
   _painelCamadas() {
     const raiz = this.el.camadas;
     raiz.replaceChildren();
@@ -640,6 +646,10 @@ export class MetodosPaineis {
     if (nota) {
       const p = el('p', { class: 'nota-qtd', texto: nota.texto });
       p.dataset.situacao = nota.situacao;
+      if (nota.situacao !== 'atual') {
+        // o caminho para o Resumo da obra (06/11, no GN: as linhas vazias sem explicação à vista); outra aba, o editor fica
+        p.append(' ', el('a', { href: linkDoResumo(this.projeto), target: '_blank', texto: 'Abrir os Resumos da obra' }));
+      }
       raiz.append(p);
     }
     const lista = el('div', { class: 'lista-linhas' });
@@ -688,7 +698,7 @@ export class MetodosPaineis {
       excluir.textContent = '×';
       if (n || this.documento.camadas.size <= 1) excluir.style.opacity = '.35';
       linha.append(vis, cor, rotulo, el('span', { class: 'contagem', texto: numero(n) }),
-                   el('span', { class: 'qtd', texto: textoQuantidade(quantidadeDa(qd, nome)) }), trava, excluir);
+                   this._celulaQtd(textoDaCamada(qd, nome)), trava, excluir);
       return linha;
     };
     // os grupos de camadas (19/10/2026, o usuário no Mercado: "criar uma ferramenta para agrupar layers onde seja possível
@@ -742,7 +752,7 @@ export class MetodosPaineis {
         nomes.forEach((k, i) => this.selecao.porCamada(k, ev.shiftKey || i > 0));
       });
       cab.append(seta, vis, el('span', { class: 'nome', texto: g }), el('span', { class: 'contagem', texto: numero(n) }),
-                 el('span', { class: 'qtd', texto: textoQuantidade(somarQuantidades(nomes.map(k => quantidadeDa(qd, k)))) }),
+                 this._celulaQtd(textoDoGrupo(qd, nomes)),
                  trava, desagrupar);
       lista.append(cab);
       if (!recolhido) for (const k of nomes) lista.append(linhaCamada(k, this.documento.camadas.get(k), true));

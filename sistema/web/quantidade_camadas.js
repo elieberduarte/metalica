@@ -51,6 +51,32 @@ export function textoQuantidade(q) {
   return p.join(' · ');
 }
 
+/**
+ * O que a coluna mostra para a camada: {texto, dica}. Sem resumo com as camadas, a camada que não é do arquitetônico fica com
+ * "—" e a dica do porquê (usuário, 06/11, no GN: "porque tem várias camadas sem informação?" — o resumo era de antes das
+ * camadas e as linhas ficavam vazias, sem explicação à vista).
+ */
+export function textoDaCamada(dados, camada) {
+  const q = quantidadeDa(dados, camada);
+  if (q) return { texto: textoQuantidade(q), dica: '' };
+  const nota = notaDoResumo(dados);
+  if (nota && nota.situacao === 'sem') return { texto: '—', dica: 'Sem o peso desta camada: gere o Resumo da obra (o peso é o dele, o mesmo da proposta).' };
+  return { texto: '', dica: '' };
+}
+
+/** O mesmo, para o grupo: a soma do que as camadas têm (a camada sem número mostra o "—" dela); "—" quando nenhuma tem e
+ *  falta o resumo. */
+export function textoDoGrupo(dados, camadas) {
+  const q = somarQuantidades(camadas.map(c => quantidadeDa(dados, c)));
+  const nota = notaDoResumo(dados);
+  const falta = nota && nota.situacao === 'sem' && camadas.some(c => !quantidadeDa(dados, c));
+  if (q) return { texto: textoQuantidade(q), dica: falta ? 'Só a soma das camadas que têm quantidade: as outras esperam o Resumo da obra.' : '' };
+  return falta ? { texto: '—', dica: 'Sem o peso destas camadas: gere o Resumo da obra (o peso é o dele, o mesmo da proposta).' } : { texto: '', dica: '' };
+}
+
+/** A tela que gera o Resumo da obra (a lista de materiais, aba Resumos). */
+export const linkDoResumo = (projeto) => `/materiais?projeto=${encodeURIComponent(projeto || '')}#resumos`;
+
 function quando(iso) {
   const d = new Date(iso);
   if (isNaN(d)) return iso || '';
