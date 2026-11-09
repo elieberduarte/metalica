@@ -314,6 +314,8 @@ def estado(s: str, conferir: bool = True) -> dict:
     e["pendente_3d"] = c.get("pendente_3d") or {}
     e["fora_da_maquina"] = c.get("fora_da_maquina") or []
     e["fora_da_maquina_pecas"] = c.get("fora_da_maquina_pecas") or []      # o "Ver no 3D" de cada terça (Q01)
+    e["suportes_fora_da_maquina"] = c.get("suportes_fora_da_maquina") or []            # FAB-01, 04/11
+    e["suportes_fora_da_maquina_pecas"] = c.get("suportes_fora_da_maquina_pecas") or []
     # o 3D mudou depois do detalhamento que deixou esses avisos (cancelado, interrompido, editor aberto): o CAD diz de quando,
     # e o "Ver no 3D" procura pela posição quando os ids não existem mais (Posto, 27/10: 0 de 285)
     e["pendencias_de"] = c.get("quando") or ""

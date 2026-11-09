@@ -54,10 +54,10 @@ Triagem inicial de 21/10 (REGRESSOES.md + git log desde 12/10); atualizado em 04
 | GER-06 a peça é como o projetista desenha | 4 | não | 03/11 Galpão Novo (simples no lugar da transição; só no script da obra) |
 | GER-08 tudo o que o desenho mostra vira peça | 4 | não | 30/10 Galpão Novo (25,8 t de chapas laterais das notas; só no script da obra) |
 | TEL-02 cada peça no sistema que diz o que ela é | 4 | sim | 29/10 Galpão Existente 6cc14e3 |
+| FAB-01 furação das terças | 4 | sim | 09/11 Posto V2 dfcae78 (13 suportes com furo na borda ou fora da chapa no corte de 29/10). Desde 09/11 a conferência olha o suporte no 3D (par e borda) e trava as pranchas e o corte |
 | FAB-05 porcas do chumbador | 4 | sim (aviso) | 06/11 Galpão Novo b3c43a3 (ACESSÓRIOS 0 com 1.410 chumbadores; `consistencia` avisa com a lista vazia); 04/11 SESI d723e43 (`conferir_porcas_da_compra`) |
 | COB-01 sem fresta nem buraco | 3 | sim | 21/10 c8f1e1f (Posto V2, 53 buracos e 43 frestas) |
 | COB-12 o rufo segue a telha | 3 | **não** | 03/11 SESI (11 rufos ajustados à mão; só no script da obra) |
-| FAB-01 furação das terças | 3 | parcial | 30/10 Posto V2 (ST1 a 40 mm; a R6 olha só a terça) |
 | TEL-01 barra de andamento | 3 | parcial | 03/11 conferência da 0.9.2 (duas barras no rodapé) |
 | GER-04 3D vinculado ao 2D | 3 | parcial | 29/10 Galpão Novo 510fb67 (planta por planta; peça por peça não) |
 | TES-3.1 nada atravessa o banzo | 2 | sim | 19/10 22c229a |
@@ -137,7 +137,9 @@ Triagem inicial de 21/10 (REGRESSOES.md + git log desde 12/10); atualizado em 04
   (941fa4e); 30/10 Sooro, a chamada do S.T. com os nomes das chapas (d3047c4); 30/10 Galpão Existente, CH35 como "PL13.3" no 3D
   e "PL14.1 12x · total 04x" (840c3da, bd1c514). **Reforço:** a trava na emissão.
 - **FAB-01:** 29/10 Posto V2, 77 terças e 398 ST fora do passo (96db66b); 29/10 Posto V2, ST na ponta (bbb9a0e); 30/10 Posto V2,
-  ST1 sob terça a 22 % (celulas.py). **Reforço:** conferir o par do próprio suporte e recusar o DXF de corte como a R6 recusa a prancha.
+  ST1 sob terça a 22 % (celulas.py); 09/11 Posto V2, 13 suportes com o furo na borda ou fora da chapa depois do par ir ao passo
+  (dfcae78: o suporte cresce). **Reforço feito em 09/11** (N.4): `celulas.suportes_fora_da_maquina` — o par do próprio suporte no 3D,
+  na terça em que o parafuso entra, e a borda mínima; recusa as pranchas (R6) e o corte das chapas.
 - **FAB-03:** 28/10 SESI, Ue sem o enrijecedor e "L 50×2 (FF)" (o auditor); 30/10 Galpão Existente, Ue 200 a 7,824 (941fa4e);
   30/10 SESI, L (FF) e laminadas pela regra das dobras (7a6b475).
 - **FAB-05:** 30/10 Galpão Existente, 218 chumbadores sem porca (941fa4e); 30/10 Galpão Existente, CB5 sem porca (script).
@@ -616,7 +618,7 @@ Regras aprovadas; a conferência de cada uma ainda está por levantar (etapa seg
 
 | Código | Regra | Aprovada | Onde | Conferência / teste |
 |---|---|---|---|---|
-| FAB-01 | Furação das terças e de tudo da ligação delas: 50 × 60 até 200 mm, 100 × 60 acima; oblongo 25 × 13; **o padrão da máquina vence o projeto** (também no IFC recebido) | 22/09 (30/09, 02/10, 16/10) | `_padronizar_3d` (app.py), `regra_furacao_terca` | R6 recusa o PDF "fora_da_maquina"; test_regressoes_primeiro_uso_ifc |
+| FAB-01 | Furação das terças e de tudo da ligação delas: 50 × 60 até 200 mm, 100 × 60 acima; oblongo 25 × 13; **o padrão da máquina vence o projeto** (também no IFC recebido) | 22/09 (30/09, 02/10, 16/10) | `_padronizar_3d` (app.py), `regra_furacao_terca`; o suporte: `celulas.ajustar_suportes_as_tercas` (e cresce para caber o par, dfcae78) | R6 recusa o PDF "fora_da_maquina"; test_regressoes_primeiro_uso_ifc. **Desde 09/11 o suporte de terça, no 3D** (`celulas.suportes_fora_da_maquina`): cada furo pela terça em que o parafuso entra; o par perpendicular a ela no passo (±0,5; a mesma coluna até 3 mm) e o furo dentro da chapa com a borda mínima do parafuso (`borda_minima_do_parafuso`). Recusa as pranchas (R6) e o corte das chapas; o CAD mostra o "Ver no 3D". test_suporte_fora_da_maquina (16). Nas obras do dev: o Posto V2 de 09/11 limpo; a placa de canto M83 da cópia "pré-moldado-teste" da Sala acusa 60 (o 1º Detalhar da ME Sooro a acerta). A 1ª versão (04/11, pela grade 2D, sem a terça) saiu da árvore por alarme falso |
 | FAB-02 | Furo cotado pelo projetista vale; sem cota, d + 1,5 mm no mínimo | 15/10 | saida/detalhamento.py `FOLGA_MINIMA_FURO` | aviso "< 1,5" no detalhe; TestFolgaNaPranchaDoProjetoRecebido |
 | FAB-03 | Peso do dobrado: (soma externa − 2t por dobra) × t × 8 kg/m² por mm | 14/10 | saida/dobras.py, nucleo/catalogo.py | **sim** desde 30/10: test_dobras.py + test_massa_formados_catalogo.py (o catálogo inteiro; o nome que o leitor não entende falha) |
 | FAB-04 | Barra não se dobra: curva = calandrada ou trechos retos | 06/10 | catalogo, resumos | — |

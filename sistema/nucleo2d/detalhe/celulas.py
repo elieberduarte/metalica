@@ -2140,6 +2140,195 @@ def ajustar_suportes_as_tercas(doc: Documento, tercas: set, suportes: set) -> di
     return saida
 
 
+#: O nome do suporte de terça quando não há os tipos de produção (a chapa do gerador, "Suporte de terça ST1", e o nome de
+#: produção S.T.n / ST n).
+NOME_SUPORTE_TERCA = re.compile(r"suporte\s+de\s+ter[cç]a|^\s*S\.?\s*T\.?\s*\d", re.I)
+
+
+def suportes_fora_da_maquina(doc: Documento, tercas: set, suportes: set = frozenset()) -> List[dict]:
+    """FAB-01, a conferência do suporte de terça no 3D (REGRAS.md; reforço do REGRAS · SISTEMA N.4, 09/11/2026). O
+    suporte é furado junto com a terça e vai ao corte das chapas; a R6 só olhava a terça, e o Posto V2 foi ao corte com o
+    suporte fora do passo três vezes em dois dias (96db66b, bbb9a0e, o ST1 sob a T.C.133 a 22 %, 29–30/10).
+
+    Cada furo do suporte é ligado à terça pela qual o parafuso passa de verdade: o eixo do furo (a normal da chapa) entra
+    no sólido da terça (a caixa orientada pelo eixo dela, 1 mm de folga). O ajuste do gerador acha a terça pela caixa do
+    mundo com 20 mm de folga e fica com a primeira — cada uma das três vezes foi uma terça que ele não viu. Furo que não
+    entra em terça (o do banzo, o da ligação) não é conferido. Na terça, cada coluna de furos (a mesma abscissa ao longo
+    dela, ou a mesma coluna da chapa) tem de ser o par da máquina: a mesma abscissa (até 3 mm, a coluna do gerador) e o passo, perpendicular à
+    terça, de 50 mm (até 200 de altura) ou 100 (acima), ±0,5. E o furo que vai na terça fica dentro da chapa, a pelo
+    menos a borda mínima do parafuso dele (`borda_minima_do_parafuso`, a conta do gerador; ±0,5).
+
+    `tercas`: marcas de posição das terças; `suportes`: as do tipo "suporte_terca" (sem elas, pelo nome). Devolve, por
+    marca, {"nome", "marca", "passos", "maquina", "ids", "texto"} — o formato de fora_do_limite_da_maquina_pecas."""
+    from nucleo3d.modelo import Barra
+    from nucleo2d.detalhe.base import FURACAO_TERCA_BAIXA, FURACAO_TERCA_ALTA, LIMITE_TERCA, _proxy_da_barra
+    from nucleo2d.detalhe.conjuntos import _direcao_pelas_arestas
+    from saida.detalhamento import _autovetores
+    ts = []
+    for e in doc.entidades.values():
+        if str(_marcas(e).get("posicao") or "") not in tercas:
+            continue
+        if isinstance(e, Barra):
+            try:
+                e = _proxy_da_barra(e)
+            except Exception:                                  # noqa: BLE001 — barra degenerada
+                continue
+        if not isinstance(e, Solido) or len(e.vertices or []) < 8:
+            continue
+        L = _direcao_pelas_arestas(e) or _norm(tuple(_autovetores(e.vertices)[1][0]))
+        xs, ys, zs = zip(*e.vertices)
+        m_h = re.match(r"^\s*[A-Za-z]+\s*(\d+(?:[.,]\d+)?)", str(_marcas(e).get("perfil") or ""))
+        ts.append({"e": e, "L": L, "caixa": ((min(xs), max(xs)), (min(ys), max(ys)), (min(zs), max(zs))),
+                   "H": float(m_h.group(1).replace(",", ".")) if m_h else None})
+    if not ts:
+        return []
+
+    def dentro(t, q, n):
+        # a caixa orientada da terça: ao longo dela, e na seção pelas direções h = n × L e n' = L × h
+        L = t["L"]
+        h = _norm(_cruz(n, L))
+        if h == (0.0, 0.0, 0.0) or math.isnan(h[0]):
+            return False
+        n2 = _norm(_cruz(L, h))
+        chave = (round(h[0], 4), round(h[1], 4), round(h[2], 4))
+        ext = t.setdefault("_ext", {}).get(chave)
+        if ext is None:
+            ext = [(min(_dot(v, a) for v in t["e"].vertices), max(_dot(v, a) for v in t["e"].vertices)) for a in (L, h, n2)]
+            t["_ext"][chave] = ext
+        return all(lo - 1.0 <= _dot(q, a) <= hi + 1.0 for a, (lo, hi) in zip((L, h, n2), ext))
+
+    fora: Dict[str, dict] = {}
+    centros_fx = None
+    for ch in doc.entidades.values():
+        if not isinstance(ch, Chapa) or not ch.furos:
+            continue
+        marca = str(_marcas(ch).get("posicao") or "")
+        if marca not in suportes and not NOME_SUPORTE_TERCA.search(str(ch.nome or "")) \
+                and not NOME_SUPORTE_TERCA.search(marca):
+            continue
+        o, ex, ey, nz = _mundo_da_chapa(ch)
+        meia = float(ch.espessura) / 2.0
+        pts = [tuple(o[i] + ex[i] * float(f.get("x", 0) or 0) + ey[i] * float(f.get("y", 0) or 0) + nz[i] * meia
+                     for i in range(3)) for f in ch.furos]
+        por_terca: Dict[int, list] = collections.defaultdict(list)
+        for i, P in enumerate(pts):
+            achou = None
+            for k, t in enumerate(ts):
+                # só a terça que corre ao longo da face da chapa (o parafuso atravessa a alma dela)
+                if abs(_dot(t["L"], nz)) > 0.5:
+                    continue
+                if not all(t["caixa"][a][0] - 60.0 <= P[a] <= t["caixa"][a][1] + 60.0 for a in range(3)):
+                    continue
+                for passo_t in (2.0, 5.0, 10.0, 20.0, 40.0):
+                    if any(dentro(t, tuple(P[a] + nz[a] * sgn * (meia + passo_t) for a in range(3)), nz) for sgn in (1, -1)):
+                        achou = k
+                        break
+                if achou is not None:
+                    break
+            if achou is not None:
+                por_terca[achou].append(i)
+        ruins = set()
+        for k, idx in por_terca.items():
+            t = ts[k]
+            L = t["L"]
+            h = _norm(_cruz(nz, L))
+            if t["H"] is not None:
+                H = t["H"]
+            else:
+                ph = [_dot(v, h) for v in t["e"].vertices]
+                H = max(ph) - min(ph)
+            passo = FURACAO_TERCA_BAIXA[0] if H <= LIMITE_TERCA + 0.5 else FURACAO_TERCA_ALTA[0]
+            u_ch = ex if abs(_dot(ex, L)) >= abs(_dot(ey, L)) else ey
+            cols: List[list] = []
+            for i in sorted(idx, key=lambda i: _dot(pts[i], L)):
+                if cols and (_dot(pts[i], L) - _dot(pts[cols[-1][-1]], L) <= 3.0
+                             or abs(_dot(_sub(pts[i], pts[cols[-1][-1]]), u_ch)) <= 3.0):
+                    cols[-1].append(i)
+                else:
+                    cols.append([i])
+            for col in cols:
+                if len(col) < 2:
+                    continue
+                col.sort(key=lambda i: _dot(pts[i], h))
+                for a, b in zip(col, col[1:]):
+                    dv = _dot(pts[b], h) - _dot(pts[a], h)
+                    ds = abs(_dot(pts[b], L) - _dot(pts[a], L))
+                    if abs(dv - passo) > 0.5 or ds > 3.0:
+                        ruins.add((round(dv), passo))
+        # a borda: o furo que vai na terça (o que o ajuste leva ao passo) a pelo menos a borda mínima do parafuso dele
+        # (NBR 8800, Tabela 14 — a mesma conta do gerador, borda_minima_do_parafuso) de cada lado da chapa, e nunca fora
+        # dela. No Posto V2, 09/11: 11 suportes com o par no passo e o furo na borda ou fora da chapa (um ST1 de 90 com
+        # furo a 127), sob as terças com degrau ou inclinadas — no corte de 29/10 assim
+        bordas = []
+        cont = [(float(a), float(b)) for a, b in (ch.contorno or [])]
+        nos_furos = sorted({i for idx in por_terca.values() for i in idx})
+        if len(cont) >= 3 and nos_furos:
+            if centros_fx is None:
+                centros_fx = [(fx, _centro_do_fixador(fx)) for fx in _fixadores(doc)]
+            perto = [fx for fx, c in centros_fx if math.dist(c, pts[nos_furos[0]]) <= 400.0]
+            for i in nos_furos:
+                f = ch.furos[i]
+                x, y = float(f.get("x", 0) or 0), float(f.get("y", 0) or 0)
+                larg = float(f.get("largura", 0) or f.get("diametro", 0) or 0)
+                alt = float(f.get("altura", 0) or f.get("diametro", 0) or 0)
+                minimo = borda_minima_do_parafuso(_parafuso_do_furo(ch, f, perto))
+                d_min, falta = None, 0.0
+                for (x1, y1), (x2, y2) in zip(cont, cont[1:] + cont[:1]):
+                    lx, ly = x2 - x1, y2 - y1
+                    comp = math.hypot(lx, ly)
+                    if comp < 1e-6:
+                        continue
+                    tq = max(0.0, min(1.0, ((x - x1) * lx + (y - y1) * ly) / (comp * comp)))
+                    d = math.hypot(x - (x1 + tq * lx), y - (y1 + tq * ly))
+                    # o oblongo: a metade dele na direção da borda (a "meia altura" do gerador)
+                    meio = abs(ly / comp) * larg / 2.0 + abs(lx / comp) * alt / 2.0
+                    req = max(minimo, meio)
+                    if d_min is None or d - req < falta:
+                        d_min, falta = d, d - req
+                        req_min = req
+                dentro_ch = _ponto_no_poligono((x, y), cont)
+                if not dentro_ch:
+                    bordas.append("furo fora da chapa")
+                elif d_min is not None and falta < -0.5:
+                    bordas.append("furo a %d mm da borda (mínimo %d)" % (math.floor(d_min), math.ceil(req_min - 0.05)))
+        if ruins or bordas:
+            nome = marca or str(ch.nome or ch.id)
+            r = fora.setdefault(nome, {"nome": nome, "marca": marca or nome, "passos": set(), "bordas": set(),
+                                       "maquina": set(), "ids": []})
+            r["passos"] |= {d for d, _p in ruins}
+            r["bordas"] |= set(bordas)
+            r["maquina"] |= {p_ for _d, p_ in ruins}
+            r["ids"].append(ch.id)
+    saida = []
+    for r in fora.values():
+        r["passos"] = sorted(r["passos"])
+        r["bordas"] = sorted(r["bordas"])
+        maq = sorted(r["maquina"])
+        r["maquina"] = maq[0] if maq else FURACAO_TERCA_BAIXA[0]
+        partes = []
+        if r["passos"]:
+            partes.append("par de furos a %s mm na terça (máquina: %s)" % (
+                "/".join(map(str, r["passos"])), " ou ".join("%g" % m for m in maq)))
+        partes += r["bordas"][:3]
+        r["texto"] = "%s: %s (%d peça(s))" % (r["nome"], "; ".join(partes), len(r["ids"]))
+        saida.append(r)
+    return saida
+
+
+def _ponto_no_poligono(p, poli) -> bool:
+    """O ponto dentro do contorno (par-ímpar), a borda contando como dentro."""
+    x, y = p
+    dentro_ = False
+    for (x1, y1), (x2, y2) in zip(poli, poli[1:] + poli[:1]):
+        if min(y1, y2) <= y <= max(y1, y2) and min(x1, x2) - 1e-6 <= x <= max(x1, x2) + 1e-6:
+            lx, ly = x2 - x1, y2 - y1
+            if abs(lx * (y - y1) - ly * (x - x1)) <= 1e-6 * max(1.0, math.hypot(lx, ly)):
+                return True
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            dentro_ = not dentro_
+    return dentro_
+
+
 def alinhar_furos_das_barras_as_chapas(doc: Documento, limite: float = LIMITE_DESLOCAMENTO_FURO) -> dict:
     """Os furos das barras (terças) seguem os da chapa parafusada nelas: cada furo da malha
     da barra que tem, a menos de `limite` mm e encostado nela, um furo de uma chapa

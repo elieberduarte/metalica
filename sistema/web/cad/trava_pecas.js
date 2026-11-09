@@ -135,11 +135,13 @@ export class MetodosTravaPecasCAD {
   _avisarPendencias(e) {
     const pend = ((e && e.pendente_3d) || {}).posicoes || [];
     const fora = (e && e.fora_da_maquina) || [];
+    // FAB-01 (04/11): o suporte de terça com o par fora do passo — vai ao corte das chapas assim
+    const sup = (e && e.suportes_fora_da_maquina) || [];
     const desc = (e && e.pranchas_descartadas) || [];
     // os avisos são do último detalhamento: com o 3D mudado depois, a tela diz de quando (Posto, 27/10: as 79 terças eram
     // de um detalhamento de 3 dias antes, de um 3D já remontado, e nada dizia isso)
     const antigo = !!(e && e.pendencias_de_outro_3d);
-    const chave = JSON.stringify([pend, fora, desc, antigo]);
+    const chave = JSON.stringify([pend, fora, sup, desc, antigo]);
     if (chave === this._pendenciasAvisadas) return;
     this._pendenciasAvisadas = chave;
     // o aviso de antes sai: depois de um Detalhar que resolveu, ficava o amarelo velho na tela (Q18, primeiro uso 16/10)
@@ -147,15 +149,16 @@ export class MetodosTravaPecasCAD {
     const partes = [];
     if (pend.length) partes.push(`o 3D está fora do padrão de fábrica em ${pend.length} posição(ões) (${pend.slice(0, 8).join(', ')}${pend.length > 8 ? '…' : ''}): os desenhos mostram o 3D como está — no editor 3D, "Aplicar no 3D"`);
     if (fora.length) partes.push(`${fora.length} terça(s) com o par de furos fora do passo da máquina, ligadas sem chapa — no 3D, ponha a chapa de ligação (suporte de terça) ou leve o par ao passo da máquina`);
-    if (pend.length || fora.length) partes.push('as pranchas não são emitidas até resolver');
+    if (sup.length) partes.push(`${sup.length} suporte(s) de terça com o par de furos fora do passo da máquina — no 3D, leve o par do suporte ao passo da terça (50 mm até 200 de altura, 100 acima)`);
+    if (pend.length || fora.length || sup.length) partes.push(sup.length ? 'as pranchas e o corte das chapas não saem até resolver' : 'as pranchas não são emitidas até resolver');
     if (desc.length) partes.push(`a arrumação feita à mão em ${desc.length} célula(s) da prancha foi descartada porque o detalhe mudou (${desc.slice(0, 6).join(', ')}${desc.length > 6 ? '…' : ''}): arrume de novo`);
     if (!partes.length) return;
     if (antigo) partes.unshift(`Aviso do detalhamento de ${String(e.pendencias_de || '').replace(/^(\d{4})-(\d\d)-(\d\d) (\d\d:\d\d).*$/, '$3/$2 às $4') || 'antes'}, feito com o 3D de antes (o 3D mudou depois; o próximo Detalhar confere de novo)`);
-    const pecas = (e && e.fora_da_maquina_pecas) || [];
+    const pecas = ((e && e.fora_da_maquina_pecas) || []).concat((e && e.suportes_fora_da_maquina_pecas) || []);
     // cada terça com o caminho até ela (Q01, primeiro uso 16/10: o aviso dizia "T.O.6" e nada levava à peça)
     const caixa = document.createElement('span');
     caixa.append(partes.join(' · ') + '.');
-    if (fora.length) caixa.append(this._listaVerNo3D(pecas.length ? pecas : fora.map(t => ({ texto: t, ids: [] }))));
+    if (fora.length || sup.length) caixa.append(this._listaVerNo3D(pecas.length ? pecas : fora.concat(sup).map(t => ({ texto: t, ids: [] }))));
     this.aviso(caixa, 'atencao', 0);
     this._avisoPendencias = caixa;
   }

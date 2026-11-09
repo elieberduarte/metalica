@@ -1437,6 +1437,11 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     fora_pecas = _com_as_ligadas(doc, fora_do_limite_da_maquina_pecas(r.get("objetos_posicoes") or [], r.get("camadas") or {}))
     r["fora_da_maquina"] = [f["texto"] for f in fora_pecas]
     r["fora_da_maquina_pecas"] = fora_pecas
+    # e o suporte de terça, que é furado junto com ela e vai ao corte das chapas (FAB-01, reforço de 09/11: o Posto V2 foi
+    # ao corte com os ST a 40/60 três vezes em dois dias; a R6 só olhava a terça)
+    sup_pecas = _suportes_fora_da_maquina(doc, (r.get("nomes") or {}).get("tipos") or _tipos_de_producao(s, doc))
+    r["suportes_fora_da_maquina"] = [f["texto"] for f in sup_pecas]
+    r["suportes_fora_da_maquina_pecas"] = sup_pecas
     _progresso(s, "gravando os desenhos…")
     substituir = corpo.get("substituir", True) is not False
     if substituir:
@@ -1525,6 +1530,8 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     _vivos().gravar_carimbo(s, geracoes, completo=set(grupos) >= set(GRUPOS.keys()), extra={"pendente_3d": r.get("pendente_3d") or {},
                                                                                     "fora_da_maquina": r.get("fora_da_maquina") or [],
                                                                                     "fora_da_maquina_pecas": r.get("fora_da_maquina_pecas") or [],
+                                                                                    "suportes_fora_da_maquina": r.get("suportes_fora_da_maquina") or [],
+                                                                                    "suportes_fora_da_maquina_pecas": r.get("suportes_fora_da_maquina_pecas") or [],
                                                                                     "desfeito": None})
     g.tocar(s)
     return {"desenhos": desenhos, "posicoes": len(r["posicoes"]), "conjuntos": len(r["conjuntos"]),
@@ -5129,10 +5136,28 @@ def _conferir_para_emitir(s: str, desenhos) -> None:
                      "pôde corrigir sozinho): %s%s — no 3D, ponha a chapa de ligação (suporte de terça) entre a terça e a "
                      "barra, ou leve o par de furos ao passo da máquina; depois Detalhar de novo"
                      % (len(fora), "; ".join(fora[:10]), "…" if len(fora) > 10 else ""))
+    sup = c.get("suportes_fora_da_maquina") or []
+    if sup:
+        falta.append(_texto_suportes_fora(sup))
     if falta:
         e = ErroDeDados("As pranchas não podem ser emitidas: " + " · ".join(falta) + ".")
-        e.pecas = c.get("fora_da_maquina_pecas") or []
+        e.pecas = (c.get("fora_da_maquina_pecas") or []) + (c.get("suportes_fora_da_maquina_pecas") or [])
         raise e
+
+
+def _suportes_fora_da_maquina(doc, tipos) -> list:
+    """FAB-01: os suportes de terça com o par de furos fora do passo da máquina, no 3D (nucleo2d.detalhe.celulas): cada
+    furo pela terça em que o parafuso entra. As marcas pelos tipos de produção ("terca…", "suporte_terca")."""
+    from nucleo2d.detalhe.celulas import suportes_fora_da_maquina
+    marcas = lambda f: {m.strip() for k, t in (tipos or {}).items() if f(str(t)) for m in str(k).split("/")}  # noqa: E731
+    return suportes_fora_da_maquina(doc, marcas(lambda t: t.startswith("terca")), marcas(lambda t: t == "suporte_terca"))
+
+
+def _texto_suportes_fora(sup: list) -> str:
+    return ("%d suporte(s) de terça com o par de furos fora do passo da máquina (o suporte é furado com a terça e vai ao "
+            "corte assim): %s%s — no 3D, leve o par do suporte ao passo da terça (50 mm até 200 de altura, 100 acima, "
+            "perpendicular a ela), ou confira a peça; depois Detalhar de novo"
+            % (len(sup), "; ".join(sup[:10]), "…" if len(sup) > 10 else ""))
 
 
 def exportar_desenho_pdf(s: str, nome: str, corpo: dict) -> dict:
@@ -5692,6 +5717,13 @@ def corte_das_chapas(s: str) -> dict:
     doc = _documento3d_do_projeto(s)
     _marcar_origem(s, doc)
     lev = levantar(doc, regra_tercas=False, ajustes=_ajustes_furos(s), nomes=_nomes_producao(s))
+    # FAB-01 (reforço de 09/11): o corte é recusado como a R6 recusa a prancha — o pacote de 29/10 do Posto V2 saiu com
+    # os 398 ST a 40/60 mm, sem trava nenhuma
+    sup = _suportes_fora_da_maquina(doc, (_nomes_producao(s) or {}).get("tipos") or _tipos_de_producao(s, doc))
+    if sup:
+        e = ErroDeDados("O corte das chapas não pode sair: " + _texto_suportes_fora([f["texto"] for f in sup]) + ".")
+        e.pecas = sup
+        raise e
     pasta = os.path.join(_gerente()._existente(s), "detalhamento")
     r = corte_chapas.gravar_zip(lev["posicoes"], os.path.join(pasta, "corte-chapas.zip"))
     if not r["chapas"]:
