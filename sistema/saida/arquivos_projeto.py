@@ -20,8 +20,11 @@ SO_EM_DOCUMENTOS = (".png", ".jpg", ".jpeg", ".md", ".txt")
 #: As imagens prontas das cenas (saida/cenas.py, 26/10: a estrutura numa foto do local) — os dados delas, em cenas/dados, não.
 PASTA_CENAS = "cenas"
 #: Pastas de trabalho do programa, nunca listadas.
-IGNORAR = {"historico", "dossie", "fotos", "miniaturas", "cache", "__pycache__", "desenhos-2d", "conferencias"}
+IGNORAR = {"historico", "dossie", "fotos", "miniaturas", "cache", "__pycache__", "desenhos-2d", "conferencias", "Obsoleto"}
 PASTA_DOCUMENTOS = "documentos"
+#: as pastas do padrão da obra (saida/documentos_obra.py, 09/11): contam como documentos, como documentos/; o Obsoleto\ de
+#: cada uma fica fora da aba (só a revisão vigente aparece)
+PASTAS_DO_PADRAO = ("01-RECEBIDOS", "02-ORCAMENTO", "03-PROPOSTA", "04-EXECUCAO", "05-ENVIADOS", "_interno")
 
 #: Descrição pelo nome do arquivo (os que o programa gera sempre com o mesmo nome).
 CONHECIDOS: Dict[str, tuple] = {
@@ -50,6 +53,8 @@ POR_PASTA = {
     PASTA_DOCUMENTOS: "Documento da obra", "detalhamento": "Detalhamento", "pranchas": "Pranchas de fabricação",
     "analise": "Análise estrutural", "memorial": "Memorial de cálculo", "ifc": "IFC exportado", "comercial": "Comercial",
     "origem": "Arquivo recebido (origem)", PASTA_CENAS: "Cena (a estrutura numa foto do local)", "": "Projeto",
+    "01-RECEBIDOS": "Recebido (do cliente ou do projetista)", "02-ORCAMENTO": "Orçamento", "03-PROPOSTA": "Proposta",
+    "04-EXECUCAO": "Execução", "05-ENVIADOS": "Enviado (cópia do que saiu)", "_interno": "Interno",
 }
 #: A data no fim do nome (…-2026-10-14, …_20261014): versões do mesmo documento.
 _DATA = re.compile(r"[-_ ]?(\d{4})[-_.]?(\d{2})[-_.]?(\d{2})(?:[-_]\d{4,6})?$")
@@ -79,7 +84,8 @@ def listar(pasta_projeto: str, url_de: Callable[[str], str]) -> List[dict]:
             ext = os.path.splitext(nome)[1].lower()
             if nome.startswith((".", "~$")) or ext not in EXTENSOES:
                 continue
-            if ext in SO_EM_DOCUMENTOS and topo != PASTA_DOCUMENTOS and rel != PASTA_CENAS:
+            doc = topo == PASTA_DOCUMENTOS or topo in PASTAS_DO_PADRAO
+            if ext in SO_EM_DOCUMENTOS and not doc and rel != PASTA_CENAS:
                 continue
             cam = os.path.join(raiz, nome)
             try:
@@ -92,7 +98,7 @@ def listar(pasta_projeto: str, url_de: Callable[[str], str]) -> List[dict]:
                 desc = POR_PASTA.get(topo, POR_PASTA[""]) + (" — " + rel if rel and rel != topo else "")
             saida.append({"nome": nome, "pasta": rel, "url": url_de(cam), "tamanho_kb": round(st.st_size / 1024, 1),
                           "alterado": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(st.st_mtime)),
-                          "rotulo": rot, "descricao": desc, "documento": topo == PASTA_DOCUMENTOS})
+                          "rotulo": rot, "descricao": desc, "documento": doc})
     # versões: o mesmo documento com outra data no nome — a mais nova vale, as outras ficam marcadas
     grupos: Dict[tuple, list] = {}
     for a in saida:
