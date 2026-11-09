@@ -98,6 +98,25 @@ def test_chapa_lisa_lancada_ou_fora_dos_rufos_continua_rufo():
     assert not T.cumeeiras_de_funilaria(_pecas(b))["cumeeiras"]
 
 
+def test_resumo_nao_conta_a_cumeeira_duas_vezes():
+    """O resumo de materiais regerado em 09/11 (pedido do GESTÃO N.6) trazia a CU1 nas telhas e, nos rufos e calhas, a barra
+    "CUMEEIRA I7.5" de novo (84 kg): o peso da funilaria saía das posições do levantamento, onde a barra continua."""
+    from nucleo2d.detalhar import detalhar
+    from nucleo2d.detalhe.base import _categoria
+    from saida import lista_producao, resumos
+    doc = Documento.de_dict(_bruto())
+    r = detalhar(doc, grupos=["localizacao"], converter=False)
+    cat = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
+    lista = lista_producao.montar(r["objetos_posicoes"], cat, r["acessorios"], pecas=r["objetos_pecas"])
+    lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"],
+           "avisos": r["avisos"], "fora_por_camada": {}}
+    R = resumos.levantar_resumos(doc, lev, lista, r.get("nomes") or {}, {})
+    cus = [t for t in R["telhas"]["itens"] if t["codigo"] == "CU"]
+    assert len(cus) == 1 and cus[0]["qtd"] > 0
+    # no recorte, a cumeeira é a única funilaria: nada nos rufos e calhas
+    assert R["numeros"]["peso_funilaria"] == 0.0
+
+
 def test_sem_telha_das_duas_aguas_nao_e_cumeeira():
     bruto = _bruto()
     meio = None

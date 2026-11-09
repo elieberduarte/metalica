@@ -859,8 +859,14 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
 
     # ---- famílias: posições e perfis
     fam_pos: Dict[str, List] = collections.defaultdict(list)
+    # a barra de funilaria que a lista virou cumeeira CU (Depósito Químico, 09/11): ela já está nas telhas; nos rufos
+    # contava duas vezes (os 84 kg da "CUMEEIRA I7.5" do TecnoMETAL)
+    viraram_cu = {str(li.get("marca")) for li in (lista.get("posicoes") or []) if li.get("classe") == "Cumeeira"}
     for p in posicoes:
-        fam_pos[familia_da_posicao(p)].append(p)
+        fam = familia_da_posicao(p)
+        if fam == "funilaria" and all(m in viraram_cu for m in marcas_de(p)):
+            continue
+        fam_pos[fam].append(p)
     peso_fam = {f: sum(p.peso_total for p in ps) for f, ps in fam_pos.items()}
 
     def nome_da_peca(marca: str) -> str:
