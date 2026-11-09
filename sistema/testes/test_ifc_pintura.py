@@ -54,14 +54,14 @@ def test_com_a_pintura_do_modo_ver_cada_peca_sai_com_a_cor_e_a_camada_do_grupo()
     assert "IFCSURFACESTYLE('Metalica'" in texto and "IFCSURFACESTYLE('Pre-moldado'" in texto
 
 
-def test_rota_passa_a_pintura_ao_exportador():
+def test_rota_passa_a_pintura_ao_exportador(tmp_path, monkeypatch):
+    # numa pasta de dados do teste: sem ela o IFC caía na pasta de dados de verdade (METALICA_DADOS) e a tela de
+    # Projetos mostrava a obra "Teste pintura" (GESTÃO N.6, 09/11)
     import app
+    monkeypatch.setattr(app, "PROJETOS", str(tmp_path))
     doc, a, b, c, d = _doc()
     r = app.exportar_ifc({"documento": doc.dict(), "nome": "teste-pintura", "pintura": PINTURA(a, b, c)})
     assert r["entidades"] == 4
-    pasta = os.path.dirname(r["arquivo"]["url"])
-    caminhos = [os.path.join(dp, f) for dp, _d, fs in os.walk(os.path.join(app.BASE, "projetos", "modelos"))
-                for f in fs if f == r["arquivo"]["nome"]] if pasta else []
-    if caminhos:
-        texto = open(caminhos[0], encoding="ascii").read()
-        assert {"Metalica", "Pre-moldado"} <= _camadas(texto)
+    caminho = tmp_path / "teste-pintura" / "ifc" / "teste-pintura.ifc"
+    assert caminho.is_file()
+    assert {"Metalica", "Pre-moldado"} <= _camadas(caminho.read_text(encoding="ascii"))
