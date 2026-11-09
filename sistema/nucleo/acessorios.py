@@ -1328,7 +1328,11 @@ _registrar(Tipo(
     "fixacao_telha", "Fixação da telha na terça", "fechamento",
     "Parafuso autobrocante com arruela de vedação atravessando a crista da telha até a mesa da terça.",
     [Param("telhas", "Telhas", "", 40), Param("apoios", "Terças em que cada telha apoia", "", 6),
-     Param("comprimento", "Comprimento (OA)", "", '2.3/8"', ['2.3/8"', '4"', '5"', '2"'])],
+     Param("comprimento", "Comprimento (OA)", "", '2.3/8"', ['2.3/8"', '4"', '5"', '2"']),
+     # os dois da conta antiga (2,2 parafusos por m²), mantidos para quem os lê ou passa (o quantitativos_dados.py do Galpão
+     # Novo da Hora Certa lia o padrão da "densidade" e parou quando ela saiu, 09/11): não entram mais na conta
+     Param("area", "Área de cobertura (antigo, sem uso)", "m²", 450, dica="não entra na conta: a COM-05 conta por telha × terça"),
+     Param("densidade", "Parafusos por m² (antigo, sem uso)", "", 2.2, dica="não entra na conta: a COM-05 conta por telha × terça")],
     [], _g_telha, None, "regra COM-05 da fábrica", "Toda telha metálica."))
 
 

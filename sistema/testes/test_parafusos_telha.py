@@ -242,3 +242,15 @@ def test_biblioteca_de_acessorios_na_regra_nova():
     assert d == {'Parafuso autobrocante OA 2.3/8" – na cor da telha (com arruela de vedação)': 2700,       # 100 × 9 × 3
                  'Parafuso autobrocante de costura 7/8" – na cor da telha': 675}, d
     assert not any("12-14" in k or '1"' in k for k in d)
+
+
+def test_biblioteca_aceita_os_parametros_antigos():
+    """Compatibilidade (GESTÃO N.6, 09/11): o b083a50 tirou "area" e "densidade" do fixacao_telha e o quantitativos_dados.py
+    do Galpão Novo, que lia o padrão da densidade no REGISTRO, parou (StopIteration). Os dois voltam como parâmetros sem uso:
+    quem lê ou passa não quebra, e a conta segue a COM-05."""
+    from nucleo import acessorios as A
+    pr = {x.chave: x.padrao for x in A.REGISTRO["fixacao_telha"].parametros}
+    assert float(pr["densidade"]) == 2.2 and float(pr["area"]) == 450
+    r = A.montar("fixacao_telha", {"telhas": 100, "apoios": 9, "area": 1000, "densidade": 2.2})
+    d = {p["descricao"]: p["qtd"] for p in r["pecas"]}
+    assert d['Parafuso autobrocante OA 2.3/8" – na cor da telha (com arruela de vedação)'] == 2700, d
