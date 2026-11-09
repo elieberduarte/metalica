@@ -90,3 +90,28 @@ def test_telha_em_bloco_macico_sem_nome_de_painel():
     aplicar_peso_teorico([p])
     assert p.peso == 0.0 and p.peso_malha > 2000.0
     assert conferir_compra_por_m2([p], []) == []
+
+
+def _telha_de_aco(perfil, kg_m2_malha, L=9600.0, H=1031.2, q=832):
+    return dt.Posicao(marca="M117", tipo_ifc="IfcBeam", classe="telha", perfil=perfil, L=L, H=H, quantidade=q,
+                      peso=kg_m2_malha * L * H * 1e-6)
+
+
+def test_telha_de_aco_pesa_pelo_catalogo_do_modelo_e_da_espessura():
+    """FAB-09, 3ª vez (ME Sooro, Sala de Compressores, 09/11): as 832 telhas da cobertura trocadas de "TELHA TP40 0.65MM"
+    para "TELHA TP40 0.50MM" pela lista de compra (só o nome; a malha do IFC segue com 0,65) continuavam pesando pela malha:
+    5.096 kg em vez de ~4.075. A telha de aço com o modelo e a espessura no nome pesa pela massa por m² do catálogo de
+    compras (a TP-40 de 1.032 mm: 4,81 kg/m² na 0,50), e a conferência da FAB-09 avisa quando o peso não bate com ele"""
+    from nucleo2d.detalhe.base import aplicar_peso_teorico, peso_da_telha_de_aco
+    p = _telha_de_aco("TELHA TP40 0.50MM", 6.25)                 # a malha da 0,65
+    area = p.L * p.H * 1e-6
+    assert any("catálogo de compras dá 4.81" in a for a in conferir_compra_por_m2([p], []))   # a conferência pega o caso
+    aplicar_peso_teorico([p])
+    assert abs(p.peso / area - 4.81) < 0.01 and abs(p.peso_malha / area - 6.25) < 0.01
+    assert conferir_compra_por_m2([p], []) == []
+    # a largura escolhe o fabricante (a Isoeste de 1.074: 4,62); outra espessura do mesmo modelo, na proporção
+    assert abs(peso_da_telha_de_aco(_telha_de_aco("TP40 0,5 mm (Isoeste Metálica)", 5.0, H=1074.0)) / (9.6 * 1.074) - 4.62) < 0.01
+    assert abs(peso_da_telha_de_aco(_telha_de_aco("TELHA TP-40 #0,80", 5.0)) / area - 6.25 * 0.80 / 0.65) < 0.01
+    # sem a espessura no nome ou sem o modelo no catálogo, fica o da malha
+    assert peso_da_telha_de_aco(_telha_de_aco("TELHA TP40", 5.0)) is None
+    assert peso_da_telha_de_aco(_telha_de_aco("TELHA ONDULADA 0,50", 5.0)) is None

@@ -2815,6 +2815,52 @@ def peso_do_painel(pos: Posicao) -> float:
     return float(m2) * area if m2 else 0.0
 
 
+def _modelo_e_espessura_da_telha(nome: str) -> Tuple[Optional[str], Optional[float]]:
+    """"TELHA TP40 0.50MM" → ("TP40", 0.5); "TP-40 #0,65" → ("TP40", 0.65); sem o modelo ou a espessura, None."""
+    t = str(nome or "")
+    m = re.search(r"(?i)\b(T[A-Z]{1,2}|RT|LR)\s*-?\s*(\d{2,3})\b", t)
+    modelo = (m.group(1) + m.group(2)).upper() if m else None
+    esp = None
+    for x in re.findall(r"(?<![\d.,])(\d+[.,]\d+)", t):
+        v = float(x.replace(",", "."))
+        if 0.3 <= v <= 1.5:
+            esp = v
+            break
+    return modelo, esp
+
+
+def peso_da_telha_de_aco(pos: Posicao) -> Optional[float]:
+    """A telha de aço com o modelo e a espessura no nome ("TELHA TP40 0.50MM") pesa pelo catálogo de compras: a área da peça
+    (L × H) × a massa por m² do item do mesmo modelo e espessura (o de largura mais perto da peça); sem a espessura exata no
+    catálogo, a de outra espessura do mesmo modelo, proporcional. Sem o modelo no catálogo, None (fica o da malha).
+    Antes era sempre pela malha: na Sala de Compressores (ME Sooro, 09/11) as 832 telhas da cobertura trocadas de 0,65 para
+    0,50 pela lista de compra continuaram com o peso da 0,65 (5.096 kg em vez de ~4.075)."""
+    modelo, esp = _modelo_e_espessura_da_telha(pos.perfil or "")
+    area = float(pos.L or 0.0) * float(pos.H or 0.0) * 1e-6
+    if not modelo or not esp or area <= 0:
+        return None
+    from nucleo import catalogo
+    try:
+        itens = catalogo.itens("telha")
+    except Exception:                                   # noqa: BLE001 — catálogo indisponível
+        return None
+    H = float(pos.H or 0.0)
+    candidatos = []
+    for it in itens:
+        d = getattr(it, "dados", None) or {}
+        if not d.get("massa_m2") or re.sub(r"[\s-]", "", str(d.get("modelo") or "")).upper() != modelo:
+            continue
+        m_it, e_it = _modelo_e_espessura_da_telha(it.nome)
+        if not e_it:
+            continue
+        larg = float(d.get("largura_total") or 0.0)
+        candidatos.append((abs(e_it - esp) > 1e-6, abs(larg - H) if larg else 1e9, it.nome, e_it, float(d["massa_m2"])))
+    if not candidatos:
+        return None
+    _dif, _l, _nome, e_it, m2 = min(candidatos)
+    return m2 * esp / e_it * area
+
+
 def peso_teorico(pos: Posicao) -> Optional[float]:
     """Peso por peça (kg) como a fábrica calcula: perfil dobrado pela tira desenvolvida
     com o desconto das dobras (NBR 6355 — confere com a planilha da fábrica), laminado,
@@ -2823,7 +2869,9 @@ def peso_teorico(pos: Posicao) -> Optional[float]:
     do fabricante (FAB-09; 0 sem ela)."""
     if pos.classe == "telha" and (re.search(PAINEL_SANDUICHE, pos.perfil or "") or _kg_m2_pelo_volume(pos) > KG_M2_MAXIMO):
         return peso_do_painel(pos)
-    if pos.classe in ("indefinida", "telha"):
+    if pos.classe == "telha":
+        return peso_da_telha_de_aco(pos)
+    if pos.classe == "indefinida":
         return None
     if pos.classe in ("chapa", "chapa_dobrada"):
         t = float(pos.espessura or pos.T or 0.0)

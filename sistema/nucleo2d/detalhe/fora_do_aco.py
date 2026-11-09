@@ -177,6 +177,20 @@ def conferir_compra_por_m2(posicoes: Sequence, fora_do_aco: Sequence[dict]) -> L
             avisos.append("FAB-09: a telha %s pesa %.0f kg/m² (%d peça(s), %.1f t) — pesada como aço maciço; o que se compra "
                           "por m² pesa pela massa por m² do fabricante" % (p.nome or p.marca, p.peso / area,
                                                                           p.quantidade, p.peso * p.quantidade / 1000.0))
+            continue
+        # reforço de 09/11 (ME Sooro, Sala de Compressores): a telha de aço com o modelo e a espessura no nome pesa o que o
+        # catálogo dá para eles — as 832 telhas trocadas de 0,65 para 0,50 pela lista de compra seguiam com o peso da malha
+        # de 0,65 (5,8 kg/m² em vez de 4,81)
+        from nucleo2d.detalhe.base import peso_da_telha_de_aco
+        try:
+            esperado = peso_da_telha_de_aco(p)
+        except Exception:                                       # noqa: BLE001 — sem o catálogo, sem a conferência
+            esperado = None
+        # 10 %: entre fabricantes do mesmo modelo a massa varia ~5 % (TP40 0,50: Isoeste 4,62, Kingspan 4,81); a malha da
+        # espessura errada passa de 25 %
+        if area > 0 and esperado and abs(p.peso - esperado) > 0.10 * esperado:
+            avisos.append("FAB-09: a telha %s (%s) pesa %.2f kg/m² e o catálogo de compras dá %.2f kg/m² para esse modelo e "
+                          "espessura (%d peça(s))" % (p.nome or p.marca, p.perfil, p.peso / area, esperado / area, p.quantidade))
     for g in fora_do_aco:
         if g.get("categoria") not in ("telha", "chapa expandida") or not g.get("area_m2"):
             continue
