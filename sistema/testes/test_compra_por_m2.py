@@ -115,3 +115,37 @@ def test_telha_de_aco_pesa_pelo_catalogo_do_modelo_e_da_espessura():
     # sem a espessura no nome ou sem o modelo no catálogo, fica o da malha
     assert peso_da_telha_de_aco(_telha_de_aco("TELHA TP40", 5.0)) is None
     assert peso_da_telha_de_aco(_telha_de_aco("TELHA ONDULADA 0,50", 5.0)) is None
+
+
+def test_multidobra_e_telha_cortada_pesam_pelo_catalogo():
+    """FAB-09, o mesmo caso da Sala por outro caminho (09/11, o chat da obra: o resumo de materiais SUBIU para 5.160,7 kg,
+    6,17 kg/m², depois da correção das posições): a cobertura da Sala sai como multi-dobra (MD1 e o complemento MD1-C) e
+    cumeeira, que pesavam pelo volume da malha em nucleo2d/detalhe/telhas.py; e a telha cortada da compra era inflada até a
+    chapa inteira em cima do peso que já era o da chapa (TL16, 9,4 kg/m²)"""
+    import math
+    from test_dxf_multidobra import _caixa
+    from nucleo2d.detalhe.base import arredondar_telha, compra_da_telha
+    from nucleo2d.detalhe.telhas import multidobras
+    pecas = []
+    R, h = 800.0, 40.0                                          # a malha em bloco: 314 kg/m² pelo volume
+    for y in (0.0, 1100.0):
+        m = lambda pos: {"posicao": pos, "conjunto": "M9", "perfil": "TELHA TP40 0.50MM"}   # noqa: E731
+        w = (0.0, 1.0, 0.0)
+        pecas.append(_caixa((0.0, y, -300.0), ((0, 0, 1), w, (1, 0, 0)), (600.0, 1000.0, h), m("PA")))
+        n = 9
+        for i in range(n):
+            a0, a1 = math.pi - i * (math.pi / 2) / n, math.pi - (i + 1) * (math.pi / 2) / n
+            p0, p1 = (R + R * math.cos(a0), R * math.sin(a0)), (R + R * math.cos(a1), R * math.sin(a1))
+            d = (p1[0] - p0[0], 0.0, p1[1] - p0[1])
+            L = math.hypot(d[0], d[2])
+            u = (d[0] / L, 0.0, d[2] / L)
+            pecas.append(_caixa(((p0[0] + p1[0]) / 2, y, (p0[1] + p1[1]) / 2), (u, w, (-u[2], 0.0, u[0])), (L, 1000.0, h), m("FA")))
+        pecas.append(_caixa((R + 1500.0, y, R), ((1, 0, 0), w, (0, 0, 1)), (3000.0, 1000.0, h), m("CO")))
+    t = multidobras(pecas)["telhas"][0]
+    desenv = t["reta1"] + t["reta2"] + t["raio"] * math.radians(t["angulo"])
+    assert abs(t["peso"] / (desenv * 1000.0 * 1e-6) - 4.81) < 0.15          # a TP-40 0,50 do catálogo, não 314
+    # a telha cortada: a chapa inteira, comprimento comprado × largura total do item × 4,81
+    p = _telha_de_aco("TELHA TP40 0.50MM", 4.81, L=960.0)
+    p.local = [(0.0, 0.0), (960.0, 0.0), (960.0, 400.0), (0.0, 1031.2)]       # recortada na diagonal
+    c = compra_da_telha(p)
+    assert c["cortada"] and abs(c["peso"] - 4.81 * arredondar_telha(960.0) * 1032.0 * 1e-6) < 0.05

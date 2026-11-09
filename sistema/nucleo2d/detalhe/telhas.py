@@ -62,6 +62,24 @@ def _medidas(e):
     return r
 
 
+def _fator_catalogo(e) -> float:
+    """Catálogo de compras ÷ malha da telha `e` (FAB-09): o peso da multi-dobra, do complemento, da cumeeira e da paginação
+    sai do volume da malha; com o modelo e a espessura no nome, ele é levado à massa por m² do catálogo. A malha de 0,65
+    das 832 telhas da Sala de Compressores renomeadas para 0,50 (ME Sooro, 09/11) seguia pesando 6,2 kg/m² nas MD. 1,0
+    sem o catálogo."""
+    from nucleo2d.detalhe.base import massa_m2_da_telha
+    try:
+        _c, _eixos, ext = _medidas(e)
+        m2 = massa_m2_da_telha(str(_marcas(e).get("perfil") or e.nome or ""), ext[1])
+        malha = _volume(e) * RHO_ACO
+        area = ext[0] * ext[1] * 1e-6
+    except Exception:                                   # noqa: BLE001 — sem a medida, o da malha
+        return 1.0
+    if not m2 or malha <= 0 or area <= 0:
+        return 1.0
+    return m2 * area / malha
+
+
 def _medidas_calc(e):
     c, pca = _autovetores(e.vertices)
     ext = []
@@ -247,7 +265,7 @@ def _analisar_instancia(inst, barras: Sequence = ()) -> Optional[dict]:
     # à mão para R490, 01/10); o arco e o desenvolvido externos seguem esse raio
     R_int = R - h / 2
     R_ext = R_int + altura_nominal_da_onda(str(m0.get("perfil") or e_longa.nome or ""), h)
-    peso = sum(_volume(e) for e in inst) * RHO_ACO
+    peso = sum(_volume(e) for e in inst) * RHO_ACO * _fator_catalogo(e_longa)
     arco_mid = R * abs(theta)
     peso_mm = peso / max(desenv_modelo + arco_mid, 1.0)      # kg por mm de telha desenvolvida
     peso = peso_mm * (L1 + L2 + arco_mid)
@@ -731,7 +749,7 @@ def cumeeiras(pecas: Sequence) -> Dict[str, object]:
         # a perna 1 é a da esquerda no desenho
         if da[0] > db[0]:
             L1, L2, da, db, M1, M2 = L2, L1, db, da, M2, M1
-        peso_m = sum(_volume(p["e"]) for p in (A, B)) * RHO_ACO
+        peso_m = sum(_volume(p["e"]) for p in (A, B)) * RHO_ACO * _fator_catalogo(A["e"])
         peso = peso_m * (L1 + L2) / max(A["L"] + B["L"], 1.0)
         from nucleo2d.detalhe.base import _material
         m0 = _marcas(A["e"])
@@ -842,7 +860,7 @@ def cumeeiras_de_funilaria(pecas: Sequence) -> Dict[str, object]:
         perfil = cont.most_common(1)[0][0]
         ref = max((x for xs in lados.values() for x in xs if str(_marcas(x[0]).get("perfil") or x[0].nome or "") == perfil),
                   key=lambda x: x[2][1])
-        peso = _volume(ref[0]) * RHO_ACO / max(ref[2][0], 1.0) * (L1 + L2)
+        peso = _volume(ref[0]) * RHO_ACO * _fator_catalogo(ref[0]) / max(ref[2][0], 1.0) * (L1 + L2)
         pos = _posicao(e)
         saida.append({"tipo": "cumeeira", "conjunto": pos, "instancias": inst, "composicao": {pos: 1},
                       "ids": [e.id], "perna1": L1, "perna2": L2, "angulo": round(ang, 1), "desenv": L1 + L2,
@@ -1123,7 +1141,7 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
                               "peso": cb.get("peso"),
                               "x": (x0_ + x1_) / 2 + 1e-3, "y0": min(yc, yf), "y1": max(yc, yf), "multidobra": False})
                 continue
-            vol_ = _volume(ch["e"]) * RHO_ACO
+            vol_ = _volume(ch["e"]) * RHO_ACO * _fator_catalogo(ch["e"])
             peso_ = (ch["multidobra"].get("peso") if ch["multidobra"] else
                      vol_ * comp / max(max(proj) - min(proj), 1.0))
             lista.append({"contorno": contorno, "corte": corte, "comprimento": comp, "_bruto": bruto, "nome": ch["nome"], "saia": desce,

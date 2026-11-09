@@ -124,6 +124,12 @@ def compra_da_telha(pos) -> dict:
     cheia = L * H
     cortada = bool(area and cheia and area < 0.995 * cheia)
     peso = pos.peso * cheia / area if cortada and area > 0.2 * cheia else pos.peso
+    # a telha de aço do catálogo de compras (FAB-09): a chapa inteira é comprimento × largura total do item × kg/m² — o peso
+    # da posição já é o do retângulo, e a conta do recorte acima o contava duas vezes (a TL16 da Sala, 9,4 kg/m², 09/11)
+    cat = (telha_do_catalogo(getattr(pos, "perfil", "") or "", H)
+           if getattr(pos, "classe", "telha") == "telha" and not re.search(PAINEL_SANDUICHE, getattr(pos, "perfil", "") or "") else None)
+    if cat and L > 0:
+        peso = cat[0] * L * max(H, cat[1] or 0.0) * 1e-6
     saia = float(getattr(pos, "saia", 0.0) or 0.0)       # fachada: desce até 150 abaixo da longarina
     if saia and L > 0:
         peso *= (L + saia) / L
@@ -2332,14 +2338,16 @@ def _eh_redonda_perfil(perfil: str) -> bool:
 
 
 # ============================================================ pontas roscadas (padrão da fábrica)
-#: Na ponta roscada de toda barra redonda — tirante, agulha, gancho, barra roscada, chumbador — a
-#: fábrica põe 1 porca sextavada e 2 arruelas lisas (pedido do usuário, 28/09: "é 1 porca e 2
-#: arruelas por padrão … mantenha esse padrão para tudo"), e não o que o projetista modelou.
+#: Na ponta roscada de toda barra redonda — tirante, agulha, gancho, barra roscada — a fábrica põe 1 porca sextavada e
+#: 1 arruela lisa (usuário, 09/11, pelo GESTÃO N.6: "Vamos revisar essa regra, é 1 porca e 1 arruela"; antes, 28/09, eram
+#: 1 porca + 2 arruelas — no IFC da Sooro o projetista pôs 1 + 1 e a lista trocava por 1 + 2). Exceções do usuário, ainda
+#: a programar depois do "é assim?": ligação primária que precisa de travamento → porca + contraporca; o projeto que
+#: exigir → o do projeto. O chumbador tem a regra dele (abaixo).
 PORCAS_POR_PONTA = 1
 #: O chumbador no projeto nosso: porca e contraporca + 1 arruela por perna (decisão do usuário, 16/10, N07).
 PORCAS_POR_PERNA_CHUMBADOR = 2
 ARRUELAS_POR_PERNA_CHUMBADOR = 1
-ARRUELAS_POR_PONTA = 2
+ARRUELAS_POR_PONTA = 1
 
 
 def bitola_da_barra(perfil: str) -> str:
@@ -2835,16 +2843,31 @@ def peso_da_telha_de_aco(pos: Posicao) -> Optional[float]:
     catálogo, a de outra espessura do mesmo modelo, proporcional. Sem o modelo no catálogo, None (fica o da malha).
     Antes era sempre pela malha: na Sala de Compressores (ME Sooro, 09/11) as 832 telhas da cobertura trocadas de 0,65 para
     0,50 pela lista de compra continuaram com o peso da 0,65 (5.096 kg em vez de ~4.075)."""
-    modelo, esp = _modelo_e_espessura_da_telha(pos.perfil or "")
     area = float(pos.L or 0.0) * float(pos.H or 0.0) * 1e-6
-    if not modelo or not esp or area <= 0:
+    if area <= 0:
+        return None
+    m2 = massa_m2_da_telha(pos.perfil or "", float(pos.H or 0.0))
+    return m2 * area if m2 else None
+
+
+def massa_m2_da_telha(perfil: str, largura: float = 0.0) -> Optional[float]:
+    """kg/m² (da chapa: comprimento × largura total) da telha de aço pelo catálogo de compras, pelo modelo e a espessura do
+    nome; o item de largura total mais perto de `largura`; outra espessura do mesmo modelo, na proporção. None sem eles."""
+    r = telha_do_catalogo(perfil, largura)
+    return r[0] if r else None
+
+
+def telha_do_catalogo(perfil: str, largura: float = 0.0) -> Optional[Tuple[float, float]]:
+    """(kg/m², largura total da chapa em mm) do item do catálogo de compras para a telha de aço (massa_m2_da_telha)."""
+    modelo, esp = _modelo_e_espessura_da_telha(perfil or "")
+    if not modelo or not esp:
         return None
     from nucleo import catalogo
     try:
         itens = catalogo.itens("telha")
     except Exception:                                   # noqa: BLE001 — catálogo indisponível
         return None
-    H = float(pos.H or 0.0)
+    H = float(largura or 0.0)
     candidatos = []
     for it in itens:
         d = getattr(it, "dados", None) or {}
@@ -2854,11 +2877,11 @@ def peso_da_telha_de_aco(pos: Posicao) -> Optional[float]:
         if not e_it:
             continue
         larg = float(d.get("largura_total") or 0.0)
-        candidatos.append((abs(e_it - esp) > 1e-6, abs(larg - H) if larg else 1e9, it.nome, e_it, float(d["massa_m2"])))
+        candidatos.append((abs(e_it - esp) > 1e-6, abs(larg - H) if larg else 1e9, it.nome, e_it, float(d["massa_m2"]), larg))
     if not candidatos:
         return None
-    _dif, _l, _nome, e_it, m2 = min(candidatos)
-    return m2 * esp / e_it * area
+    _dif, _l, _nome, e_it, m2, larg = min(candidatos)
+    return m2 * esp / e_it, larg
 
 
 def peso_teorico(pos: Posicao) -> Optional[float]:
