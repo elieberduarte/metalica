@@ -189,8 +189,32 @@ def test_beiral_curvo_e_cumeeira_uma_faixa_por_agua():
     T = PT.apoios_por_telha(_cobertura_de_beiral_curvo())
     cob = sorted((t["apoios"], t["pontas"], t["pedacos"]) for t in T)
     assert cob == [(7, 2, 6), (7, 2, 6)], T                 # 2 faixas (uma por água), cada uma com os 6 pedaços dela
+    assert [t["apoios_em_pe"] for t in T] == [2, 2], T      # as 2 longarinas da saia em pé
     R = PT.parafusos_de_telha(None, T)
-    assert {x["item"]: x["qtd"] for x in R["linhas"]} == {'OA 2.3/8"': 50, 'Costura 7/8"': 15}   # 2 × 7 × 3 = 42 → 50
+    # OA ou OB pela posição da telha em cada apoio (usuário 09/11, "na vertical entra como fechamento"): as 5 terças da parte
+    # deitada OA (2 × 5 × 3 = 30 → 50), as 2 longarinas da saia em pé OB (2 × 2 × 3 = 12 → 50); costura 100 ÷ 4 = 25
+    assert {x["item"]: x["qtd"] for x in R["linhas"]} == {'OA 2.3/8"': 50, 'OB 3/4"': 50, 'Costura 7/8"': 25}
+    por = {x["item"]: x for x in R["linhas"]}
+    assert por['OA 2.3/8"']["apoios"] == 10 and por['OB 3/4"']["apoios"] == 4
+
+
+def test_oa_ou_ob_pela_posicao_da_telha_em_cada_apoio():
+    """Os 3 casos do REGRAS (1ad1b48). 1: a Sala de Compressores — faixa da multidobra com 8 apoios, 6 terças deitadas (OA) e
+    2 longarinas da saia em pé (OB): 64 faixas → OA 64 × 6 × 3 = 1.152 → 1.200; OB (313 + 128) × 3 = 1.323 → 1.350; costura
+    (1.200 + 1.350) ÷ 4 = 637,5 → 640 (antes, tudo OA: 1.550 / 950 / 625). 2: o oitão (fechamento), todo OB. 3: a telha reta da
+    cobertura, toda OA. O recorte sem apoio em pé vai como fechamento."""
+    multi = {"id": "m", "nome": "TELHA TP40 0.50MM", "camada": "Telhas", "texto": "TELHA TP40 0.50MM", "uso": "cobertura",
+             "ml": 10.0, "largura": 1031, "apoios": 8, "pontas": 2, "apoios_em_pe": 2, "ml_em_pe": 0.9}
+    (d, ud), (p, up) = PT._partes(multi)
+    assert (ud, d["apoios"], up, p["apoios"]) == ("cobertura", 6, "fechamento", 2)
+    assert PT.arredondar(64 * PT.fixacoes_da_telha(d, "OA"), 50) == 1200
+    assert PT.arredondar(313 * PT.FIX_FECHAMENTO + 64 * PT.fixacoes_da_telha(p, "OB"), 50) == 1350
+    assert PT.costura(1200, 1350) == 640
+    oitao = dict(multi, uso="fechamento", apoios=4, apoios_em_pe=4)
+    assert [u for _t, u in PT._partes(oitao)] == ["fechamento"]
+    reta = dict(multi, apoios=4, apoios_em_pe=0)
+    assert [u for _t, u in PT._partes(reta)] == ["cobertura"]
+    assert [u for _t, u in PT._partes(dict(multi, apoios=0, apoios_em_pe=0, em_pe=True))] == ["fechamento"]
 
 
 def test_no_resumo_de_compra():

@@ -9,6 +9,10 @@
   pontas, 2,5 no meio — ficou de fora): 3 por telha em cada apoio, na cobertura (OA, terça) e no fechamento e no forro (OB,
   longarina). O recorte sem apoio conta 1 apoio; a telha estreita, proporcional à largura útil (TP40: 5 cristas, passo 196,
   útil 0,98). Na emenda de duas telhas sobre a mesma terça, cada telha conta a dela.
+- OA ou OB pela posição da telha EM CADA APOIO (usuário, 09/11: "quando a telha está na 'vertical' ela entra como
+  fechamento"; REGRAS 1ad1b48): a parte deitada (até 45°, terça por baixo) leva OA na crista; a parte em pé (acima de 45°:
+  fechamento, oitão, a saia da multidobra) leva OB no vale; o forro, OB. Na multidobra cada apoio segue a parte que encosta
+  nele (Sala de Compressores: 6 terças OA + as 2 longarinas da saia OB por faixa).
 - Costura 7/8" = (OA + OB) ÷ 4 por cor, sem o isopainel. Arredonda: OA e OB para cima no múltiplo de 50; costura no de 5.
 - Cabeça sempre na cor da telha (galvalume/natural → natural). Um lote de OA/OB/costura por cor.
 - Conferência (aviso, sem trava): nas linhas com ≥ 1.000 ml, OA fora de ±30 % de 2,4 pç/ml (simples) ou 2,0 (PIR) e OB fora
@@ -33,6 +37,8 @@ FOLGA_FAIXA = 30.0
 #: Só a faceta e a ponta da cumeeira (menos de 0,5 m) se juntam à vizinha: duas telhas que se encostam (o forro de 0,96 m ao
 #: lado do outro ou do oitão, a cumeeira, a emenda) são duas telhas. A saia em pé do beiral curvo chega à faixa pelas facetas.
 PEDACO_ML = 0.5
+#: Telha em pé (OB, como fechamento): mais de 45° com a horizontal — a normal com |z| abaixo de cos 45°.
+EM_PE_NZ = math.cos(math.radians(45.0))
 #: A largura útil da telha (TP40: 5 cristas de 196 mm): a telha mais estreita (recorte) leva a parte proporcional.
 LARGURA_UTIL = 980.0
 #: A costura é ¼ da fixação (53 de 75 casos da Hermes).
@@ -285,15 +291,19 @@ def _faixas(pecas: List[dict]) -> List[dict]:
     saida = []
     for membros in juntas.values():
         base = max(membros, key=lambda t: t["ml"])
-        pts = []
+        pts, em_pe = [], []
         for t in membros:
             for q in t["_apoios"]:
                 if all(np.linalg.norm(q - r) >= MESMO_APOIO for r in pts):
                     pts.append(q)
+                    em_pe.append(t["_em_pe"])
         n = len(pts)
+        n_pe = sum(em_pe)
         saida.append({"id": base["id"], "ids": [t["id"] for t in membros], "nome": base["nome"], "camada": base["camada"],
                       "texto": base["texto"], "uso": base["uso"], "ml": sum(t["ml"] for t in membros),
-                      "largura": max(t["largura"] for t in membros), "apoios": n, "pontas": min(2, n), "pedacos": len(membros)})
+                      "largura": max(t["largura"] for t in membros), "apoios": n, "pontas": min(2, n - n_pe),
+                      "pedacos": len(membros), "apoios_em_pe": n_pe,
+                      "ml_em_pe": sum(t["ml"] for t in membros if t["_em_pe"]), "em_pe": bool(base["_em_pe"])})
     return saida
 
 
@@ -310,7 +320,8 @@ def _linha(t, V, apoios: list) -> dict:
     return {"id": t.id, "nome": str(getattr(t, "nome", "") or ""), "camada": cam, "texto": texto,
             "uso": "forro" if forro else ("fechamento" if fech else "cobertura"),
             "ml": float(pl.max() - pl.min()) / 1000.0, "largura": float(pw.max() - pw.min()),
-            "_apoios": list(apoios), "_w": ax_w, "_pw": float(c @ ax_w), "_lo": V.min(0), "_hi": V.max(0), "_sobe": _sobe(nrm)}
+            "_apoios": list(apoios), "_w": ax_w, "_pw": float(c @ ax_w), "_lo": V.min(0), "_hi": V.max(0), "_sobe": _sobe(nrm),
+            "_em_pe": bool(abs(nrm[2]) < EM_PE_NZ - 1e-6)}
 
 
 def _sobe(nrm):
@@ -349,6 +360,25 @@ def parafuso_da_telha(uso: str, tipo: str) -> Tuple[Optional[str], Optional[str]
     return None, None, "fechamento em telha sanduíche: o comprimento do parafuso está EM ABERTO na regra (a Hermes usou 2.3/8\", 3\" e 4\") — perguntar ao usuário"
 
 
+def _partes(t: dict) -> List[Tuple[dict, str]]:
+    """A faixa da cobertura em partes pela posição da telha em cada apoio (usuário, 09/11): os apoios da parte deitada → a
+    cobertura (OA), os da parte em pé (a saia da multidobra) → o fechamento (OB). O recorte sem apoio vai inteiro pela posição
+    dele. Fechamento e forro ficam como estão (OB)."""
+    n, n_pe = int(t.get("apoios") or 0), int(t.get("apoios_em_pe") or 0)
+    if t["uso"] != "cobertura":
+        return [(t, t["uso"])]
+    if n == 0:
+        return [(t, "fechamento" if t.get("em_pe") else "cobertura")]
+    if n_pe == 0:
+        return [(t, "cobertura")]
+    if n_pe == n:
+        return [(t, "fechamento")]
+    ml_pe = float(t.get("ml_em_pe") or 0.0)
+    deitada = dict(t, apoios=n - n_pe, pontas=min(2, n - n_pe), ml=max(0.0, t["ml"] - ml_pe))
+    em_pe = dict(t, apoios=n_pe, pontas=0, ml=ml_pe)
+    return [(deitada, "cobertura"), (em_pe, "fechamento")]
+
+
 def parafusos_de_telha(doc, telhas: Optional[List[dict]] = None, telha_dos_dados: str = "") -> dict:
     """{"linhas": [{item, tipo, comprimento, cor, descricao, qtd, apoios, telhas, ml, pc_ml}], "avisos": [...]}.
 
@@ -359,21 +389,23 @@ def parafusos_de_telha(doc, telhas: Optional[List[dict]] = None, telha_dos_dados
     grupos: Dict[tuple, dict] = collections.OrderedDict()
     avisos, pend = [], collections.Counter()
     sem_apoio = collections.Counter()
-    for t in telhas:
-        tipo = tipo_da_telha(t["texto"])
-        pf, comp, p = parafuso_da_telha(t["uso"], tipo)
-        if p:
-            pend[p] += 1
-            continue
-        cor = cor_da_telha(t["texto"]) or cor_da_telha(telha_dos_dados)
-        if not t["apoios"]:
-            sem_apoio[t["nome"][:60]] += 1
-        g = grupos.setdefault((pf, comp, cor), {"tipo": pf, "comprimento": comp, "cor": cor, "bruto": 0, "apoios": 0, "telhas": 0,
-                                                "ml": 0.0, "isopainel": tipo == "isopainel", "pir": tipo in ("pir30", "pir50")})
-        g["bruto"] += fixacoes_da_telha(t, pf)
-        g["apoios"] += t["apoios"]
-        g["telhas"] += 1
-        g["ml"] += t["ml"]
+    for t0 in telhas:
+        tipo = tipo_da_telha(t0["texto"])
+        cor = cor_da_telha(t0["texto"]) or cor_da_telha(telha_dos_dados)
+        if not t0["apoios"]:
+            sem_apoio[t0["nome"][:60]] += 1
+        for t, uso in _partes(t0):
+            pf, comp, p = parafuso_da_telha(uso, tipo)
+            if p:
+                pend[p] += 1
+                continue
+            g = grupos.setdefault((pf, comp, cor), {"tipo": pf, "comprimento": comp, "cor": cor, "bruto": 0, "apoios": 0,
+                                                    "telhas": 0, "ml": 0.0, "isopainel": tipo == "isopainel",
+                                                    "pir": tipo in ("pir30", "pir50")})
+            g["bruto"] += fixacoes_da_telha(t, pf)
+            g["apoios"] += t["apoios"]
+            g["telhas"] += 1
+            g["ml"] += t["ml"]
     linhas = []
     for (pf, comp, cor), g in grupos.items():
         qtd = arredondar(g["bruto"], ARRED_FIXACAO)
