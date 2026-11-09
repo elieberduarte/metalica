@@ -2,8 +2,10 @@
 """Trava da peça gerada (regra R5, combinada com o usuário em 02/10): no desenho gerado do 3D a geometria da peça não
 se edita — apagar um furo ou esticar uma linha dela é recusado, com o caminho ("Editar isolada/no local"); mover ou
 apagar a célula inteira (arrumar a prancha) passa; no ambiente de edição (faixa EDITANDO) a peça é livre e a camada
-REFERENCIA continua travada para tudo."""
-import json, os, shutil, subprocess, sys, tempfile, time, urllib.request
+REFERENCIA continua travada para tudo. O símbolo de solda é anotação, como a chamada (Sooro, T1 da Sala, 09/11: "não
+estou conseguindo apagar esse detalhe da solda"): na prancha das tesouras ele se apaga e se move, a linha do banzo ao
+lado continua travada, e o apagado continua apagado quando as pranchas são montadas de novo."""
+import json, os, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
@@ -44,7 +46,7 @@ nav = subprocess.Popen([chrome, "--headless=new", "--disable-gpu", "--use-gl=swi
                         "--no-first-run", "--remote-allow-origins=*", f"--user-data-dir={perfil}", f"--remote-debugging-port={cdp}", "about:blank"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 try:
-    post("/api/projetos/compressores/detalhar", {"grupos": ["chaparias"]})
+    det = post("/api/projetos/compressores/detalhar", {"grupos": ["chaparias", "tesouras"]})
     for _ in range(60):
         alvos = [t for t in _json(f"http://127.0.0.1:{cdp}/json/list") if t.get("type") == "page"]
         if alvos:
@@ -96,6 +98,46 @@ try:
         return { furo, tudo, ref: ref.length, ref_ainda: ref.filter(e => cad.doc.get(e.id)).length }; })()""" % JS_CMD)
     ok(r and r["furo"], "no ambiente de edição o furo da peça se apaga")
     ok(r and r["tudo"] and r["ref"] > 0 and r["ref_ainda"] == r["ref"], f"tudo selecionado e apagado: sai a peça, a REFERENCIA travada fica ({r})")
+    # 5) na prancha das tesouras: o símbolo de solda da T1 se move e se apaga; a linha do banzo não; e o apagado continua
+    # apagado na próxima montagem das pranchas
+    tesouras = next(d["nome"] for d in det["desenhos"] if d["grupo"] == "tesouras")
+    pr = post("/api/projetos/compressores/pranchas", {"desenhos": [tesouras], "formato": "A1"})
+    aba.navegar(base + f"/cad?projeto=compressores&desenho={pr['desenho']}", limite=90)
+    esperar(aba, "document.body.dataset.pronto === '1' && window.cad && window.cad.doc.tamanho > 50")
+    aba.avaliar("document.querySelectorAll('.aviso').forEach(x => x.remove()); 1")
+    r = aba.avaliar("""(async () => { %s const cad = window.cad; const ents = [...cad.doc.entidades.values()];
+        const solda = ents.filter(e => e.camada === 'SOLDA' && (e.atributos || {}).conjunto && (e.atributos || {}).cel);
+        if (!solda.length) return null;
+        const cel = solda[0].atributos.cel;
+        const daCel = solda.filter(e => e.atributos.cel === cel);
+        const banzo = ents.find(e => e.atributos && e.atributos.cel === cel && cad._pecaTravada(e));
+        const mover = (es) => es.map(e => { const n = JSON.parse(JSON.stringify(e));
+            const m = p => [p[0] + 5, p[1]];
+            if (n.vertices) n.vertices = n.vertices.map(m); if (n.a) n.a = m(n.a); if (n.b) n.b = m(n.b);
+            if (n.posicao) n.posicao = m(n.posicao); return n; });
+        const moveu = !!cad.executar(new C.ComandoSubstituir(mover(daCel), 'mover a solda'));
+        cad.tela.selecao.clear(); daCel.forEach(e => cad.tela.selecao.add(e.id)); cad.apagarSelecao();
+        const sobrou = daCel.filter(e => cad.doc.get(e.id)).length;
+        const aviso = [...document.querySelectorAll('.aviso')].map(x => x.textContent).join(' | ');
+        const banzoApaga = banzo ? !!cad.executar(new C.ComandoRemover([banzo.id], 'apagar banzo')) : null;
+        return { cel, n: daCel.length, tipos: [...new Set(daCel.map(e => e.tipo))], moveu, sobrou, aviso, banzo: banzo && banzo.camada, banzoApaga }; })()""" % JS_CMD)
+    ok(r is not None, "a prancha das tesouras tem símbolo de solda na célula do conjunto")
+    r = r or {}
+    ok(r.get("moveu"), f"mover o símbolo de solda passa ({r.get('cel')}: {r.get('n')} objetos {r.get('tipos')})")
+    ok(r.get("n") and r.get("sobrou") == 0 and "Peça gerada" not in (r.get("aviso") or ""),
+       f"apagar o símbolo de solda passa, sem o aviso de peça gerada ({r.get('sobrou')} sobraram; aviso: {r.get('aviso')!r})")
+    ok(r.get("banzoApaga") is False, f"apagar uma linha da peça ao lado ({r.get('banzo')}) continua recusado")
+    for _ in range(20):
+        if aba.avaliar("!window.cad._editado && !window.cad._salvando"):
+            break
+        aba.avaliar("window.cad.salvar({ avisar: false }), 1"); aba.drenar(0.5)
+    ok(aba.avaliar("!window.cad._editado"), "a prancha arrumada foi gravada")
+    pr2 = post("/api/projetos/compressores/pranchas", {"desenhos": [tesouras], "formato": "A1"})
+    novo = json.load(urllib.request.urlopen(base + "/api/projetos/compressores/desenhos/" + urllib.parse.quote(pr2["desenho"])))["desenho"]
+    ents = novo["entidades"].values() if isinstance(novo["entidades"], dict) else novo["entidades"]
+    da = [e for e in ents if (e.get("atributos") or {}).get("cel") == r.get("cel")]
+    ok(da and not [e for e in da if e.get("camada") == "SOLDA"],
+       f"montadas de novo, o símbolo apagado continua apagado e a célula fica ({len(da)} objetos nela)")
     # o desenho ficou com edição por gravar (os apagamentos acima) e a navegação para o outro dispara o aviso de sair sem
     # gravar — o comportamento certo do CAD; o Chrome 154 passou a registrar o aviso bloqueado como erro (11/10)
     erros = [m for m in aba.console if m[0] in ("error", "excecao") and "beforeunload' confirmation panel" not in m[1]]

@@ -303,8 +303,8 @@ def _peca_solta(a: dict, e=None) -> bool:
     """geometria de peça gerada (furo, contorno, vista de uma posição) que perdeu a célula: não é desenho à mão — a
     peça é do 3D e só o gerador a desenha. Guardada como à mão, voltava em toda geração no lugar de antes, por cima
     de outra peça (os 2 furos da M117 (b) em cima da P27 (b) do depósito, 02/10). A anotação (cota, texto, chamada)
-    copiada continua sendo do usuário."""
-    if e is not None and (isinstance(e, (Texto, Cota, Chamada)) or str(getattr(e, "camada", "")).upper() in ("COTA", "TEXTO")):
+    copiada continua sendo do usuário — o símbolo de solda também (09/11, Sooro)."""
+    if e is not None and (isinstance(e, (Texto, Cota, Chamada)) or str(getattr(e, "camada", "")).upper() in ("COTA", "TEXTO", "SOLDA")):
         return False
     return bool(a.get("detalhe") and (a.get("posicao") or a.get("conjunto")))
 

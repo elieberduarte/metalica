@@ -11,7 +11,9 @@
 import { ComandoAdicionar, ComandoAlterar, ComandoComposto, ComandoRemover, ComandoSubstituir } from './nucleo/comandos.js';
 
 /** Camadas de anotação: livres mesmo no desenho gerado. */
-const LIVRES = new Set(['COTA', 'TEXTO', 'AUXILIAR', 'PRANCHA', 'EIXO', 'LEGENDA', 'CARIMBO']);
+// o símbolo de solda é anotação como a chamada (Sooro, T1 da Sala, 09/11: "não estou conseguindo apagar esse detalhe da
+// solda" — as linhas e a seta dele caíam na trava da peça)
+const LIVRES = new Set(['COTA', 'TEXTO', 'AUXILIAR', 'PRANCHA', 'EIXO', 'LEGENDA', 'CARIMBO', 'SOLDA']);
 /** Campos que só mudam a aparência (livres). */
 const APARENCIA = new Set(['cor', 'espessura', 'tipo_linha', 'escala_tipo']);
 
