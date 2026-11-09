@@ -6852,11 +6852,40 @@ def _ocupado() -> dict:
     agora = time.time()
     with _TRAVA_JANELAS:
         pedidos = [{"rota": r, "ha_s": round(agora - t0, 1)} for r, t0 in _ROTAS_EM_CURSO.values()]
+    pedidos += _tarefas_de_fundo(agora)
     # há quanto tempo uma tarefa deu andamento (_progresso): enquanto anda, o vigia segura o reinício além de ESPERA_TAREFA
     # (o Detalhar do Edifício Administrativo, 41 min, morria aos 14 — 29/10)
     quandos = [float(p.get("quando") or 0.0) for p in list(PROGRESSO.values())]
     andamento = round(agora - max(quandos), 1) if quandos else None
     return {"ocupado": bool(pedidos), "pedidos": sorted(pedidos, key=lambda p: -p["ha_s"]), "andamento_ha_s": andamento}
+
+
+#: a tarefa sem pedido aberto que deu andamento (_progresso) há menos disto (s) conta como em curso para o vigia do dev
+FUNDO_RECENTE = 600.0
+
+
+def _tarefas_de_fundo(agora: float) -> list:
+    """As tarefas em segundo plano, sem pedido aberto, como pedidos para o vigia do dev: a atualização automática dos
+    desenhos e pranchas (desenhos_vivos) e toda tarefa que deu andamento há pouco. O vigia só via os pedidos da tela e
+    reiniciava no meio delas (Vicente, 04/11: "a atualização dos desenhos de detalhamento foi interrompida 3 vezes
+    seguidas… o programa fechou ou reiniciou no meio")."""
+    out = []
+    projetos = set()
+    dv = sys.modules.get("desenhos_vivos")              # só se já foi usado: a pergunta do vigia não carrega nada
+    if dv is not None and hasattr(dv, "em_curso"):
+        try:
+            for s, desde, etapa in dv.em_curso():
+                projetos.add(s)
+                out.append({"rota": "segundo plano: desenhos de %s (%s)" % (s, etapa), "ha_s": round(agora - desde, 1)})
+        except Exception:                                                     # noqa: BLE001 — a pergunta nunca falha
+            pass
+    for s, p in list(PROGRESSO.items()):
+        quando = float(p.get("quando") or 0.0)
+        if s in projetos or agora - quando >= FUNDO_RECENTE:
+            continue
+        out.append({"rota": "em andamento: %s (%s)" % (s, p.get("etapa") or ""),
+                    "ha_s": round(agora - float(p.get("inicio") or quando), 1)})
+    return out
 
 
 def _trabalho_em_curso() -> bool:

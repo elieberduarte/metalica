@@ -157,3 +157,81 @@ def test_o_servidor_dev_diz_o_pedido_em_curso():
         assert dev._ocupado(porta) == [], "livre depois"
     finally:
         srv.kill()
+
+
+def _servidor_do_app():
+    """responde /api/dev/ocupado com o app._ocupado() deste processo (o mesmo da rota do app.py --dev)"""
+    import app
+
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            corpo = json.dumps(app._ocupado()).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(corpo)))
+            self.end_headers()
+            self.wfile.write(corpo)
+
+        def log_message(self, *a):
+            pass
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def test_a_atualizacao_em_segundo_plano_segura_o_reinicio(tmp_path):
+    """Vicente, 04/11 (pelo GESTÃO): "a atualização dos desenhos de detalhamento foi interrompida 3 vezes seguidas: o
+    programa fechou ou reiniciou no meio" — a atualização automática (desenhos_vivos) roda numa thread, sem pedido aberto,
+    e o /api/dev/ocupado dizia "livre": o vigia reiniciava a cada .py salvo por outro chat. Agora ela conta como em curso,
+    e o vigia espera ela terminar."""
+    import app
+    import desenhos_vivos as dv
+    from test_desenhos_vivos import _Gerente
+    g = _Gerente(str(tmp_path))
+    os.makedirs(tmp_path / "vicente" / "detalhamento")
+    (tmp_path / "vicente" / "modelo.json").write_text("{}", encoding="utf-8")
+    comecou, soltar = threading.Event(), threading.Event()
+
+    def detalhar(s):                                  # o Detalhar longo, sem pedido HTTP aberto
+        comecou.set()
+        soltar.wait(30)
+    guardado_funcoes, guardado_progresso = dict(dv._funcoes), dict(app.PROGRESSO)
+    app.PROGRESSO.clear()
+    dv.configurar(gerente=lambda: g, detalhar=detalhar, pranchas=None, resumos=None)
+    srv = _servidor_do_app()
+    try:
+        assert app._ocupado()["ocupado"] is False
+        assert dv.atualizar("vicente", "o modelo 3D mudou") is True
+        assert comecou.wait(10)
+        d = app._ocupado()
+        assert d["ocupado"] is True and "vicente" in d["pedidos"][0]["rota"], d
+        threading.Timer(1.5, soltar.set).start()      # termina 1,5 s depois do .py salvo
+        esperou = dev._esperar_ocioso(srv.server_address[1], limite=20, intervalo=0.1)
+        assert 1.0 < esperou < 15.0, "o vigia esperou a atualização (%.1f s)" % esperou
+        assert not dv.em_curso()
+    finally:
+        soltar.set()
+        srv.shutdown()
+        dv._funcoes.clear()
+        dv._funcoes.update(guardado_funcoes)
+        dv._estado.pop("vicente", None)
+        app.PROGRESSO.clear()
+        app.PROGRESSO.update(guardado_progresso)
+
+
+def test_a_tarefa_sem_pedido_que_anda_conta_como_em_curso():
+    """a tarefa que dá andamento (_progresso) sem pedido aberto — em segundo plano — conta para o vigia; a que parou de
+    andar há mais de FUNDO_RECENTE (sobrou de uma tarefa que morreu) não segura o reinício"""
+    import app
+    guardado = dict(app.PROGRESSO)
+    try:
+        app.PROGRESSO.clear()
+        agora = time.time()
+        app.PROGRESSO["obra-a"] = {"etapa": "pranchas (3 de 40)…", "quando": agora - 2.0, "inicio": agora - 300.0}
+        d = app._ocupado()
+        assert d["ocupado"] is True and "obra-a" in d["pedidos"][0]["rota"] and d["pedidos"][0]["ha_s"] >= 299
+        app.PROGRESSO["obra-a"]["quando"] = agora - app.FUNDO_RECENTE - 5.0
+        assert app._ocupado()["ocupado"] is False
+    finally:
+        app.PROGRESSO.clear()
+        app.PROGRESSO.update(guardado)

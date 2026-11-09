@@ -352,6 +352,15 @@ def atualizar(s: str, motivo: str = "pedido", so_pranchas: bool = False) -> bool
     return True
 
 
+def em_curso() -> list:
+    """[(projeto, desde, etapa)] das atualizações rodando agora. Rodam em segundo plano, sem pedido aberto: o vigia do modo
+    dev (dev.py, pelo /api/dev/ocupado) só via os pedidos e reiniciava no meio delas (Vicente, 04/11: as pranchas
+    interrompidas três vezes seguidas por .py salvos de outros chats)."""
+    with _trava:
+        return [(s, float(e.get("desde") or 0.0), str(e.get("etapa") or "")) for s, e in _estado.items()
+                if e.get("atualizando")]
+
+
 class Cancelada(BaseException):
     """A atualização em segundo plano cancelada pelo usuário (o Cancelar do aviso no CAD; usuário, 21/10: "cliquei para
     atualizar sem querer, tem como criar um botão para cancelar"). BaseException: os `except Exception` do detalhamento
