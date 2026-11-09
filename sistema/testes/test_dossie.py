@@ -253,3 +253,40 @@ def test_so_a_capa_leva_a_cobertura():
     js = open(os.path.join(os.path.dirname(__file__), "..", "web", "editor3d", "modulos", "diagnostico.js"), encoding="utf-8").read()
     assert "if (ehCobertura(ent, cam)) return comTelhas && ent.visivel !== false;" in js
     assert "(telhas?|isotelhas?|rufos?|calhas?|cumeeiras?)" in js and "telha_lancada" in js and "'IfcCovering'" in js
+
+
+def test_fotos_so_com_o_aco_sem_o_pre_moldado():
+    """Mall (usuário, 09/11: "os elementos pré-moldados do resumo da obra … estão confundindo a visualização, poderia trazer
+    apenas a estrutura metálica"): o pilar de concreto do TQS e a parede do ARQ ficavam no fantasma das fotos de cada tipo e
+    na capa. Agora o que não é aço (a mesma conta do levantamento) vai em `ocultar` na capa, na lona e nos tipos; a foto do
+    pavimento segue com o concreto do andar (diz onde o aço está)"""
+    from nucleo3d.modelo import Barra, Documento, Solido
+    doc = Documento(nome="mall")
+    aco = doc.add(Barra(nome="P1", inicio=(0.0, 0.0, 0.0), fim=(0.0, 0.0, 6000.0), perfil="W 200×19,3", papel="pilar"))
+    cubo = [(0.0, 0.0, 0.0), (400.0, 0.0, 0.0), (400.0, 400.0, 0.0), (0.0, 400.0, 0.0),
+            (0.0, 0.0, 6000.0), (400.0, 0.0, 6000.0), (400.0, 400.0, 6000.0), (0.0, 400.0, 6000.0)]
+    pil = doc.add(Solido(nome="P12", camada="TQS — Pilares", material="Concreto", vertices=cubo, faces=[],
+                         atributos={"tipo_ifc": "IfcColumn"}))
+    par = doc.add(Solido(nome="Parede", camada="ARQ — Paredes", material="Alvenaria", vertices=cubo, faces=[],
+                         atributos={"tipo_ifc": "IfcWall"}))
+    telha = doc.add(Solido(nome="Telha", camada="Fachada — telha galvalume", material="Galvalume", vertices=cubo, faces=[]))
+    ids_aco = [aco.id]
+    fora = dossie.nao_aco(doc, [aco])
+    ids = lambda x: x.id                                                   # noqa: E731
+    assert telha.id not in fora and fora == sorted([ids(pil), ids(par)])   # a telha e o aço ficam
+    b = {"chave": "pilares", "titulo": "Pilares", "cor": "#1971c2", "kg": 100.0, "ids": ids_aco,
+         "linhas": [{"qtd": 1, "comprimento": 6000.0, "marcas": ["P1"], "ids": ids_aco}]}
+    pav = {"nome": "Térreo", "ids_andar": ids_aco, "contexto": [ids(pil)]}
+    X = {"estrutura": [b], "nao_aco": fora, "varios": True, "pavimentos": [pav]}
+    por = {p["nome"]: p for p in dossie.pedidos_de_fotos(X, tem_telhas=True)}
+    assert por["capa"]["ocultar"] == fora and por["capa"]["angulo"].endswith("+telhas")
+    assert por["tipo-pilares"]["ocultar"] == fora and ids(pil) not in por["tipo-pilares"]["contexto"]
+    assert "ocultar" not in por["pav-0"] and por["pav-0"]["contexto"] == [ids(pil)]
+    # a obra só de aço: nada a esconder, o pedido fica como era
+    assert "ocultar" not in dossie.pedidos_de_fotos({"estrutura": [b]})[0]
+    # sem o concreto, o enquadramento vai pelas caixas das peças (numa grade), não pelos 8 cantos da caixa do modelo — o canto
+    # vazio da planta em L deixava o aço na metade de cima da foto
+    import os
+    js = open(os.path.join(os.path.dirname(__file__), "..", "web", "editor3d", "modulos", "diagnostico.js"), encoding="utf-8").read()
+    corpo = js[js.index("const enquadrarJusto"):js.index("// bisseção na distância")]
+    assert "doc.caixaDe(e)" in corpo and "const N = [12, 12, 6];" in corpo

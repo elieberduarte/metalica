@@ -139,7 +139,28 @@ def pedidos_de_fotos(D: dict, entidades: List[dict]) -> List[dict]:
             if _comprida(x):
                 p.update({"rotulos": rotulos, "tam_rotulo": TAM_ROTULO_GRANDE})
             pedidos.append(p)
+    # só o aço: o pré-moldado e o arquitetônico de referência saem de todas as fotos (Mall, usuário 09/11: "os elementos
+    # pré-moldados … estão confundindo a visualização, poderia trazer apenas a estrutura metálica")
+    fora = _nao_aco(entidades)
+    if fora:
+        for p in pedidos:
+            p["ocultar"] = fora
     return pedidos
+
+
+def _nao_aco(entidades: List[dict]) -> List[str]:
+    """Os ids das entidades que não são de aço (concreto, alvenaria, vidro…), pela conta do levantamento."""
+    import types
+    from nucleo2d.detalhe.fora_do_aco import material_nao_aco
+    saida = []
+    for e in entidades:
+        try:
+            if e.get("id") and material_nao_aco(types.SimpleNamespace(nome=e.get("nome"), material=e.get("material"),
+                                                                      atributos=e.get("atributos") or {})):
+                saida.append(e["id"])
+        except Exception:                                       # noqa: BLE001 — na dúvida, fica na foto
+            continue
+    return sorted(saida)
 
 
 def fotografar(porta: int, slug: str, pasta: str, D: dict, entidades: List[dict], avisar=None) -> Dict[str, str]:

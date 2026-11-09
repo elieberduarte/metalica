@@ -218,10 +218,30 @@ export class MetodosDiagnostico {
     const enquadrarJusto = (dir, cima, ids) => {
       const cam = this.camera.perspectiva || this.camera.ativa;
       const V = cam.position.constructor;
-      const caixa = doc.caixa(ids && ids.length ? ids : [...doc.entidades.values()].filter((e) => doc.aparece(e)).map((e) => e.id));
+      const alvo = (ids && ids.length ? ids.map((i) => doc.get(i)) : [...doc.entidades.values()].filter((e) => doc.aparece(e))).filter(Boolean);
+      const caixa = doc.caixa(alvo.map((e) => e.id));
       const esc = cena.raiz.scale.x;
+      // os cantos das peças, juntadas numa grade de 12 × 12 × 6 (não os 8 cantos da caixa do modelo: só com o aço, o canto
+      // vazio da planta em L e o pé do pilar que o concreto escondia contavam como modelo, e a estrutura ia para a metade de
+      // cima da foto — Mall, 09/11)
+      const N = [12, 12, 6];
+      const celulas = new Map();
+      for (const e of alvo) {
+        const c = doc.caixaDe(e);
+        if (!c) continue;
+        const k = [0, 1, 2].map((d) => {
+          const L = caixa[1][d] - caixa[0][d];
+          return L > 0 ? Math.min(N[d] - 1, Math.max(0, Math.floor(((c[0][d] + c[1][d]) / 2 - caixa[0][d]) / L * N[d]))) : 0;
+        }).join(',');
+        const m = celulas.get(k);
+        if (!m) celulas.set(k, [c[0].slice(), c[1].slice()]);
+        else for (let d = 0; d < 3; d++) { m[0][d] = Math.min(m[0][d], c[0][d]); m[1][d] = Math.max(m[1][d], c[1][d]); }
+      }
+      if (!celulas.size) celulas.set('0', caixa);
       const cantos = [];
-      for (const x of [caixa[0][0], caixa[1][0]]) for (const y of [caixa[0][1], caixa[1][1]]) for (const z of [caixa[0][2], caixa[1][2]]) cantos.push(new V(x * esc, y * esc, z * esc));
+      for (const [a, b] of celulas.values()) {
+        for (const x of [a[0], b[0]]) for (const y of [a[1], b[1]]) for (const z of [a[2], b[2]]) cantos.push(new V(x * esc, y * esc, z * esc));
+      }
       const centro = new V((caixa[0][0] + caixa[1][0]) / 2 * esc, (caixa[0][1] + caixa[1][1]) / 2 * esc, (caixa[0][2] + caixa[1][2]) / 2 * esc);
       const d = new V(...dir).normalize();
       cam.up.set(...(cima || [0, 0, 1]));

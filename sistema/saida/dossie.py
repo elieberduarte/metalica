@@ -422,7 +422,31 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
         legenda.append(PAPEIS["cliente"])
     return {"varios": varios, "pavimentos": pavs, "estrutura": estrutura, "svg": svgs, "legenda": legenda,
             "tem_cobertura": tem_cobertura, "eixos": eixos_ok, "tem_lona": tem_lona(doc), "lona_paredes": lona_das_paredes(doc),
-            "cobertura_movel": movel is not None}
+            "cobertura_movel": movel is not None, "nao_aco": nao_aco(doc, pecas)}
+
+
+def nao_aco(doc, pecas) -> List[str]:
+    """Os ids do que não é aço no modelo (o pré-moldado e o arquitetônico de referência: concreto, alvenaria, vidro…, pela
+    mesma conta do levantamento) — saem das fotos do resumo (Mall, usuário 09/11: "os elementos pré-moldados … estão
+    confundindo a visualização, poderia trazer apenas a estrutura metálica")."""
+    if doc is None:
+        return []
+    from nucleo2d.detalhe.fora_do_aco import material_nao_aco
+    aco = {e.id for e in pecas}
+    try:
+        ents = list(doc.entidades.values()) if isinstance(getattr(doc, "entidades", None), dict) else list(getattr(doc, "entidades", []) or [])
+    except Exception:                                           # noqa: BLE001
+        return []
+    saida = []
+    for e in ents:
+        if getattr(e, "id", None) in aco:
+            continue
+        try:
+            if material_nao_aco(e):
+                saida.append(e.id)
+        except Exception:                                       # noqa: BLE001 — na dúvida, fica na foto
+            continue
+    return sorted(saida)
 
 
 def _geometria_do_cliente(doc) -> Dict[str, dict]:
@@ -1136,6 +1160,15 @@ def pedidos_de_fotos(X: dict, tem_telhas: bool = False) -> List[dict]:
     for p in pedidos[n_antes:]:
         if p["nome"] in grandes:
             p["tam_rotulo"] = TAM_ROTULO_GRANDE
+    # só o aço (Mall, usuário 09/11: "os elementos pré-moldados … estão confundindo a visualização, poderia trazer apenas a
+    # estrutura metálica"): o concreto e o arquitetônico saem da capa, das fotos da lona e das de cada tipo — a foto do
+    # pavimento (prédio de vários andares) segue com o concreto do andar em volta, que diz onde o aço está
+    fora = set(X.get("nao_aco") or [])
+    if fora:
+        for p in pedidos:
+            p["ocultar"] = sorted(set(p.get("ocultar") or []) | fora)
+            if p.get("contexto"):
+                p["contexto"] = [i for i in p["contexto"] if i not in fora]
     for k, p in enumerate(pavs):
         ids = list(p.get("ids_andar") or [])
         if not ids:

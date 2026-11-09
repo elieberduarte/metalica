@@ -181,3 +181,15 @@ def test_a_revisao_anterior_do_memorial_vai_para_o_obsoleto(tmp_path):
     (tmp_path / "ADM-memorial-quantitativo-2026-11-04-rev13.pdf").write_text("de novo")     # o nome repetido no Obsoleto: " (2)"
     para_obsoleto([str(tmp_path / "ADM-memorial-quantitativo-2026-11-04-rev13.pdf")])
     assert (tmp_path / "Obsoleto" / "ADM-memorial-quantitativo-2026-11-04-rev13 (2).pdf").read_text() == "de novo"
+
+
+def test_fotos_do_memorial_so_com_o_aco():
+    """Mall (usuário, 09/11: "os elementos pré-moldados … estão confundindo a visualização, poderia trazer apenas a estrutura
+    metálica"): o concreto e a alvenaria do modelo vão em `ocultar` em todas as fotos do memorial"""
+    ent = [{"id": "w1", "tipo": "barra", "perfil": "W 200×19,3", "material": "A572"},
+           {"id": "c1", "tipo": "solido", "nome": "P12", "material": "Concreto", "atributos": {"tipo_ifc": "IfcColumn"}},
+           {"id": "a1", "tipo": "solido", "nome": "Parede", "material": "Alvenaria"},
+           {"id": "t1", "tipo": "solido", "nome": "Telha", "material": "Galvalume"}]
+    P = MQ.pedidos_de_fotos(_D(), ent)
+    assert P and all(p["ocultar"] == ["a1", "c1"] for p in P)
+    assert all("ocultar" not in p for p in MQ.pedidos_de_fotos(_D(), ent[:1]))
