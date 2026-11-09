@@ -72,6 +72,36 @@ def test_suporte_sob_terca_muito_inclinada_vai_ao_passo_da_maquina():
         assert abs((a[1] - a[0]) - 50.0) < 0.5, col          # o passo da máquina
 
 
+def test_suporte_cresce_para_caber_o_par_da_maquina():
+    """Posto V2, 09/11/2026 (FAB-01, 4ª vez): o par ia ao passo da máquina e a chapa ficava como estava — 11 suportes do
+    pacote de corte de 29/10 com furo na borda ou fora da chapa (um ST1 de 90 com furo a 127, sob terça com degrau; o da
+    T.C.133 a 2 mm da borda). Usuário: "o suporte deve se adaptar à furação da fábrica". A chapa cresce para cima (embaixo
+    ela está no banzo) até o furo ter a borda mínima, em mm inteiro."""
+    from nucleo2d.detalhe.celulas import borda_minima_do_parafuso
+    from nucleo3d.lancamento import _parafuso_solido
+    doc, st = _terca_e_suporte()
+    t = doc.barras[0]
+    t.inicio, t.fim = (0.0, 0.0, 1035.0), (3000.0, 0.0, 1035.0)      # o eixo da terça a 80 da base da chapa
+    for f in st.furos:                                       # os parafusos 3/8" do detalhe, atravessando a chapa e a terça
+        doc.add(_parafuso_solido((1425.0 + f["x"], 0.0, 955.0 + f["y"]), (0.0, 1.0, 0.0), 9.525, 25.4, "ASTM A307"))
+    assert ajustar_suportes_as_tercas(doc, {"P1512"}, {"Suporte de terça ST1"})["chapas"] == 1
+    ys = sorted({round(f["y"], 1) for f in st.furos})
+    assert ys == [55.0, 105.0], st.furos                    # o par da máquina, no eixo da terça
+    assert abs(borda_minima_do_parafuso(9.525) - 14.29) < 0.01   # 3/8" fora da Tabela 14: 1,5·d
+    assert max(p[1] for p in st.contorno) == 120.0, st.contorno  # 105 + 14,3 → 120 (mm inteiro, o maior)
+    assert min(p[1] for p in st.contorno) == 0.0 and max(p[0] for p in st.contorno) == 150.0   # o pé no banzo
+    # o que já cabe não muda: o par a 20/70 na chapa de 90 (a borda de 20)
+    doc2, st2 = _terca_e_suporte()
+    ajustar_suportes_as_tercas(doc2, {"P1512"}, {"Suporte de terça ST1"})
+    assert max(p[1] for p in st2.contorno) == 90.0
+    # e a chapa que já veio com o par ajustado e o furo fora (o Posto V2 gravado) também cresce
+    doc3, st3 = _terca_e_suporte()
+    doc3.barras[0].inicio, doc3.barras[0].fim = (0.0, 0.0, 1035.0), (3000.0, 0.0, 1035.0)
+    st3.furos = [{"x": x, "y": y, "largura": 25.0, "altura": 12.7} for x in (35.0, 115.0) for y in (55.0, 105.0)]
+    r = ajustar_suportes_as_tercas(doc3, {"P1512"}, {"Suporte de terça ST1"})
+    assert r["chapas"] == 1 and r.get("crescidas") == [st3.id] and max(p[1] for p in st3.contorno) > 105.0
+
+
 def test_letra_da_variante_depois_do_z():
     from nucleo2d.detalhe.base import letra_da_variante
     assert [letra_da_variante(i) for i in (1, 25, 26, 27, 52)] == ["b", "z", "aa", "ab", "ba"]

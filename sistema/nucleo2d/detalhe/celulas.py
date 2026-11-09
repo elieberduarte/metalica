@@ -1916,6 +1916,68 @@ def _eixo_da_terca_no_ponto(vertices, L, h, s_ponto):
     return pontas[0] + (pontas[1] - pontas[0]) * t
 
 
+#: diâmetro do parafuso (mm) → o nome da Tabela 14 da NBR 8800 (nucleo.ligacoes.BORDA_MINIMA_MM)
+_NOME_TABELA_14 = {12.7: '1/2"', 15.875: '5/8"', 19.05: '3/4"', 22.225: '7/8"', 25.4: '1"', 16.0: "M16", 20.0: "M20",
+                   22.0: "M22", 24.0: "M24", 27.0: "M27", 30.0: "M30"}
+
+
+def borda_minima_do_parafuso(d: float) -> float:
+    """Do centro do furo à borda (mm), NBR 8800, Tabela 14 (borda laminada ou cortada com serra, a do corte das chapas);
+    o diâmetro fora da tabela (3/8" do suporte de terça, M12) com 1,5·d, como a conferir_gabarito."""
+    from nucleo import ligacoes as LG
+    for dt, nome in _NOME_TABELA_14.items():
+        if abs(d - dt) < 0.05:
+            return float(LG.BORDA_MINIMA_MM[nome][0])
+    return 1.5 * float(d)
+
+
+def _parafuso_do_furo(ch: Chapa, f: dict, fixadores) -> float:
+    """o diâmetro do parafuso que atravessa o furo (o eixo dele perto do centro do furo); sem parafuso, pelo furo"""
+    import fabrica
+    o, ex, ey, nz = _mundo_da_chapa(ch)
+    P = tuple(o[i] + ex[i] * float(f.get("x", 0) or 0) + ey[i] * float(f.get("y", 0) or 0) for i in range(3))
+    r = max(float(f.get("diametro", 0) or 0), float(f.get("largura", 0) or 0), 14.0) / 2.0 + 4.0
+    for fx in fixadores:
+        par = (fx.atributos or {}).get("parafuso") or {}
+        if not par.get("d"):
+            continue
+        dlt = _sub(_centro_do_fixador(fx), P)
+        t = _dot(dlt, nz)
+        if abs(t) <= 120.0 and math.sqrt(max(_dot(dlt, dlt) - t * t, 0.0)) <= r:
+            return float(par["d"])
+    furo = min(v for v in (float(f.get("diametro", 0) or 0), float(f.get("altura", 0) or 0),
+                           float(f.get("largura", 0) or 0)) if v > 0) if any(f.get(k) for k in ("diametro", "altura", "largura")) else 14.0
+    return float(fabrica.parafuso_do_furo(furo))
+
+
+def _crescer_suporte_para_os_furos(ch: Chapa, fixadores) -> Optional[float]:
+    """O suporte se adapta à furação da máquina (usuário, 09/11/2026, Posto V2: "as terças serão furadas aqui usando a
+    nossa máquina, logo o suporte deve se adaptar a eles"): o par no passo da máquina sob a terça com degrau ou inclinada
+    saía na borda ou fora da chapa (11 suportes, um ST1 de 90 com furo a 127). A chapa em pé (o eixo y dela para cima,
+    o pé no banzo) cresce para cima até o furo mais alto ter a borda mínima (NBR 8800, Tab. 14), em mm inteiro, o maior.
+    Só a chapa retangular; devolve a altura nova ou None."""
+    if not ch.furos or len(ch.contorno or []) != 4:
+        return None
+    _o, _ex, ey, _nz = _mundo_da_chapa(ch)
+    if ey[2] < 0.9:
+        return None                                    # não está em pé: não há "para cima" que não mexa no apoio
+    xs = sorted({round(float(p[0]), 3) for p in ch.contorno})
+    ys = sorted({round(float(p[1]), 3) for p in ch.contorno})
+    if len(xs) != 2 or len(ys) != 2:
+        return None
+    topo = ys[1]
+    precisa = topo
+    for f in ch.furos:
+        meia_v = float(f.get("altura") or f.get("diametro") or 0.0) / 2.0
+        e_min = max(borda_minima_do_parafuso(_parafuso_do_furo(ch, f, fixadores)), meia_v)
+        precisa = max(precisa, float(f.get("y", 0) or 0) + e_min)
+    if precisa <= topo + 0.5:
+        return None                                    # a tolerância da conferir_gabarito: 90 → 91 não vira peça nova
+    novo = float(math.ceil(precisa - 0.01))            # mm inteiro, o maior (regra de 30/10)
+    ch.contorno = [(float(p[0]), novo if abs(float(p[1]) - topo) < 0.01 else float(p[1])) for p in ch.contorno]
+    return novo
+
+
 def ajustar_suportes_as_tercas(doc: Documento, tercas: set, suportes: set) -> dict:
     """O suporte de terça segue a furação padrão da terça, e não o contrário (pedido do usuário, 29/09:
     "a furação é de 50 mm no eixo central da terça e a chaparia precisa ser adaptada para bater com a
@@ -2065,6 +2127,11 @@ def ajustar_suportes_as_tercas(doc: Documento, tercas: set, suportes: set) -> di
             mudou = True
         if mudou:
             ch.furos = [f for i, f in enumerate(novos) if i not in tirar]
+        # a chapa cresce para caber o par da máquina — também a que já veio ajustada antes (o Posto V2 gravado)
+        if _crescer_suporte_para_os_furos(ch, fixadores) is not None:
+            saida.setdefault("crescidas", []).append(ch.id)
+            mudou = True
+        if mudou:
             saida["chapas"] += 1
             saida["furos"] += len(ch.furos)
             m = str(_marcas(ch).get("posicao") or "")
