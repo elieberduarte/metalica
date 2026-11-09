@@ -1030,10 +1030,11 @@ def test_bitola_da_barra_redonda():
     assert _bitola("U100X50X3.04") == ""
 
 
-def test_ponta_roscada_1_porca_2_arruelas():
-    """Padrão da fábrica (28/09): cada ponta roscada de barra redonda — com as porcas e arruelas
-    soltas que o projetista modelou em volta, quantas forem — conta 1 porca + 2 arruelas na bitola da
-    barra; a solta longe de barra segue pela forma."""
+def test_ponta_roscada_1_porca_1_arruela():
+    """Padrão da fábrica: cada ponta roscada de barra redonda — com as porcas e arruelas soltas que o projetista modelou
+    em volta, quantas forem — conta 1 porca + 1 arruela na bitola da barra (usuário 09/11, pelo GESTÃO N.6: "é 1 porca e 1
+    arruela"; de 28/09 a 09/11 eram 2 arruelas, e o IFC da Sooro com 1 + 1 saía com 1 + 2); a solta longe de barra segue
+    pela forma."""
     import math
     from nucleo3d.modelo import Solido
     from nucleo2d.detalhe.base import pontas_roscadas, acessorios_no_padrao
@@ -1059,7 +1060,7 @@ def test_ponta_roscada_1_porca_2_arruelas():
     pontas, usados = pontas_roscadas([b], fx)
     assert len(pontas) == 2 and len(usados) == 4 and all(p["bitola"] == '3/8"' for p in pontas)
     ac = acessorios_no_padrao({"BOLT () 0x0": 5}, [b], fx)
-    assert ac.get("Porca sextavada Ø3/8\" UNC") == 2 and ac.get("Arruela lisa Ø3/8\"") == 4 + 1
+    assert ac.get("Porca sextavada Ø3/8\" UNC") == 2 and ac.get("Arruela lisa Ø3/8\"") == 2 + 1
     assert "BOLT () 0x0" not in ac
 
 
