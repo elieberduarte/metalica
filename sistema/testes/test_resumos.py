@@ -463,6 +463,15 @@ def test_quantidade_por_tipo_na_obra_de_um_nivel():
     assert '<span class="n">01</span>Quantidade por tipo de peça' in obra and '<span class="n">02</span>Implantação' in obra
 
 
+def test_quantidade_por_tipo_sem_a_barrinha_de_participacao():
+    """Mall (usuário, 09/11, print do quadro: "Podemos retirar essa barra"): a barrinha colorida embaixo do peso de cada tipo
+    sai — do PDF, do "Ver contínuo" e do memorial, que usam o mesmo quadro; a coluna do % continua"""
+    R = _R_kaefer()
+    q = resumos.quadro_por_tipo(R, 1)
+    assert "barra-kg" not in q and "barra-kg" not in resumos._CSS
+    assert _celulas(q, "Pilares")[3:5] == ["5.236,9 kg", "52,6%"]
+
+
 def test_quantidade_por_tipo_marcas_demais_resumidas():
     assert resumos._marcas_resumidas(["T10", "T2", "T1", "T3", "T5", "T2"]) == "T1 … T10 (5 marcas)"
     assert resumos._marcas_resumidas(["PL3", "PL1", ""]) == "PL1 · PL3"

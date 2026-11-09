@@ -1927,8 +1927,6 @@ table.qtipo th.pav, table.qtipo td.pav { text-align: center; }
 table.qtipo td.pav { color: var(--pri); font-weight: 600; }
 table.qtipo td.pav.zero { color: #c9d1d6; font-weight: 400; }
 table.qtipo tr.resto td { color: var(--mudo); }
-.barra-kg { height: 1.6mm; border-radius: 1mm; background: var(--linha); margin-top: .8mm; overflow: hidden; }
-.barra-kg i { display: block; height: 100%; }
 
 /* ---------------- na tela (a prévia da página de materiais): a folha sobre o fundo */
 @media screen {
@@ -2175,10 +2173,8 @@ def quadro_por_tipo(R: dict, sec: int) -> str:
         ids = ",".join(b.get("ids") or [])
         tipo = "<span class=\"chip\" style=\"background:%s\"></span><b>%s</b>%s" % (
             _esc(b["cor"]), _esc(b["titulo"]), ("<span class=\"cinza\">%s</span>" % _esc(_perfis_do_tipo(b))) if _perfis_do_tipo(b) else "")
+        # sem a barrinha de participação embaixo do peso (usuário, 09/11, no Mall: "Podemos retirar essa barra"); o % fica na coluna
         kg = "<b>%s</b> kg" % _n(b["kg"], 1)
-        if not varios:
-            kg += "<div class=\"barra-kg\"><i style=\"width:%.1f%%;background:%s\"></i></div>" % (
-                min(100.0, 100.0 * b["kg"] / peso) if peso > 0 else 0.0, _esc(b["cor"]))
         cel = ["<td class=\"tipo\">%s</td>" % tipo, "<td class=\"r grande\">%d<small> un</small></td>" % b["qtd"]]
         if varios:
             cel.append(celulas_pav(onde(b)))
