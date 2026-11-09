@@ -12,7 +12,9 @@ Eventos de mouse de verdade (Input.dispatchMouseEvent), servidor de teste com pa
   D. com a janela aberta, o cursor na borda faz o desenho andar sozinho;
   E. Esc cancela só a janela;
   F. no meio do arrasto com o botão apertado, o botão do meio também arrasta a vista;
-  G. Alt+Tab (a janela do programa perde o foco) no meio do arrasto: a janela fica aberta, e o próximo clique a fecha.
+  G. Alt+Tab (a janela do programa perde o foco) no meio do arrasto: a janela fica aberta, e o próximo clique a fecha;
+  H. a janela aberta no vazio que não pega nada: o segundo clique numa peça seleciona a peça, como no 3D (DECISÃO do
+     usuário, 26/10 no OrtoBio; no 2D, "pode fazer" em 09/11); a janela que pega alguma coisa continua valendo.
 """
 import json, os, subprocess, sys, tempfile, time, urllib.parse, urllib.request
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -174,6 +176,20 @@ try:
        f"G. ao voltar, o próximo clique fecha a janela e seleciona: {sel()}")
     evento("mouseMoved", x0, y0); aba.drenar(0.2)
     ok(not js("return !!c.tela.retangulo;"), "G. e depois o cursor anda sem janela")
+
+    # H. a janela vazia e o segundo clique numa peça
+    preparar(); js("c.selecionar(['wb']); return 1;")
+    clique(*tela([-300, 600]))
+    ok(aberta(), "H. o clique no vazio abre a janela")
+    xa, ya = tela([50, 0]); evento("mouseMoved", xa, ya); clique(xa, ya)
+    ok(sel() == ["wa"] and not aberta() and not js("return !!c.tela.retangulo;"),
+       f"H. a janela não pegou nada e o clique caiu na peça: vale a peça: {sel()}")
+    preparar()
+    clique(*tela([-50, 100])); xc, yc = tela([1050, -250]); evento("mouseMoved", xc, yc); clique(xc, yc)
+    ok(sel() == ["wa"], f"H. a janela que pega alguma coisa continua valendo (o clique em cima de outra peça não conta): {sel()}")
+    preparar(); js("c.selecionar(['wb']); return 1;")
+    clique(*tela([500, 600])); xv, yv = tela([600, 700]); evento("mouseMoved", xv, yv); clique(xv, yv)
+    ok(sel() == [] and not aberta(), f"H. a janela vazia fechada no vazio não seleciona nada: {sel()}")
 
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:2]]}")

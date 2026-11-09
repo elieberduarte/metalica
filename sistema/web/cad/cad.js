@@ -1236,7 +1236,7 @@ class CAD {
         this._janela = null; pararAutoPan();
         this.tela.retangulo = null;
         const s = this.snap.resolver(p, { orto: ev.shiftKey });
-        if (this.ferramenta) this.ferramenta.onSoltar(s.ponto, { ...evInfo(ev), px: p, arrasto: { de, para: p } });
+        if (this.ferramenta) this.ferramenta.onSoltar(s.ponto, { ...evInfo(ev), px: p, arrasto: { de, para: p }, doClique: true });
         this.tela.pedirQuadro();
         return;
       }

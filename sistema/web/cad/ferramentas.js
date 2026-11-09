@@ -392,6 +392,10 @@ export class Selecionar extends Ferramenta {
   onSoltar(p, ev) {
     if (!ev.arrasto) return;
     const ids = this.editor.tela.naJanela(ev.arrasto.de, ev.arrasto.para);
+    // o segundo clique da janela aberta no vazio: se ela não pegou nada e o clique caiu num objeto, vale o objeto, como no
+    // 3D (DECISÃO do usuário, 26/10, no OrtoBio; no 2D, "pode fazer" em 09/11) — o clique no vazio para tirar a seleção
+    // abria a janela, e o clique na peça em seguida só fechava a janela vazia
+    if (!ids.length && ev.doClique && this.editor.tela.sob(ev.px)) { this.onPonto(p, ev); return; }
     // Shift ou Ctrl: a janela soma à seleção (com o Ctrl ela trocava a seleção — pedido de 01/10)
     this.editor.selecionar(ev.shiftKey || ev.ctrlKey ? [...this.editor.tela.selecao, ...ids] : ids);
   }
