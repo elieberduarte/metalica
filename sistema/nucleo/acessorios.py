@@ -1299,7 +1299,7 @@ _registrar(Tipo(
 # ------------------------------------------------------------------ fechamento
 
 def _g_telha(p):
-    """A regra COM-05 (usuário, 09/11): 5 por telha na terça do beiral e na da cumeeira, 2,5 (cristas alternadas) nas do meio;
+    """A regra COM-05 (usuário, 09/11, critério C): 3 por telha em cada terça (beiral, meio e cumeeira);
     OA no múltiplo de 50, costura = OA ÷ 4 no de 5. A conta da obra inteira (pelo 3D, OA/OB/costura por cor) é a de
     saida/parafusos_telha.py; este é o detalhe de um pano de telhas inteiras do beiral à cumeeira."""
     from saida.parafusos_telha import arredondar, costura, fixacoes_da_telha, ARRED_FIXACAO
@@ -1318,9 +1318,9 @@ def _g_telha(p):
     s.ret(-50, -150, 1600, 150, "oculta")
     s.texto(0, -200, "terça", "rot")
     pecas = [peca_fixador("parafuso", "Parafuso autobrocante OA %s – na cor da telha (com arruela de vedação)" % p["comprimento"], n,
-                          "%d telhas × %d terças: 5 por telha no beiral e na cumeeira, 2,5 nas do meio" % (telhas, apoios)),
+                          "%d telhas × %d terças × 3 por telha" % (telhas, apoios)),
              peca_fixador("parafuso", "Parafuso autobrocante de costura 7/8\" – na cor da telha", costura(n, 0), "OA ÷ 4")]
-    return pecas, s.render(), ["Fixação na crista: todas (5 por telha) no beiral e na cumeeira, alternadas (2,5) nas terças do meio (regra da fábrica, 09/11).",
+    return pecas, s.render(), ["Fixação na crista: 3 por telha em cada terça — beiral, meio e cumeeira (regra da fábrica, 09/11).",
                                "OA 2.3/8\" na telha simples; 4\" na PIR 30, 5\" na PIR 50, 2\" no isopainel; OB 3/4\" no fechamento."]
 
 

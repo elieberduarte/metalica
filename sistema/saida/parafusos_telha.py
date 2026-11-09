@@ -5,12 +5,10 @@
   isopainel → 2". OB (onda baixa) 3/4" no fechamento em telha simples, na TP25 e no forro. Fechamento em sanduíche: pendência
   (perguntar ao usuário), sem comprimento chutado.
 - Quantidade pela contagem do 3D, cada telha × cada apoio (terça ou longarina em que ela encosta), com as fixações por telha
-  aprovadas pelo usuário em 09/11 (Sooro Depósito Químico e Sala de Compressores, caso B; TP40 = 5 cristas, passo 196, útil
-  0,98): na cobertura (OA) TODAS as cristas (5 por telha) na terça do beiral e na da cumeeira — o apoio a até 400 mm da ponta
-  da telha — e cristas ALTERNADAS (2,5 por telha) nas terças do meio; no fechamento e no forro (OB) vales alternados (2,5 por
-  telha) em toda longarina. O recorte sem apoio conta 1 apoio; a telha estreita, proporcional à largura útil. Na média dá ~3
-  por telha em cada terça (a resposta "C (média 3 por telha)" do "é assim?" da FÁBRICA). Na emenda de duas telhas sobre a
-  mesma terça, cada telha conta a dela.
+  decididas pelo usuário em 09/11 (critério C do "é assim?" da FÁBRICA, para todas as obras; o caso B da Sooro — 5 nas
+  pontas, 2,5 no meio — ficou de fora): 3 por telha em cada apoio, na cobertura (OA, terça) e no fechamento e no forro (OB,
+  longarina). O recorte sem apoio conta 1 apoio; a telha estreita, proporcional à largura útil (TP40: 5 cristas, passo 196,
+  útil 0,98). Na emenda de duas telhas sobre a mesma terça, cada telha conta a dela.
 - Costura 7/8" = (OA + OB) ÷ 4 por cor, sem o isopainel. Arredonda: OA e OB para cima no múltiplo de 50; costura no de 5.
 - Cabeça sempre na cor da telha (galvalume/natural → natural). Um lote de OA/OB/costura por cor.
 - Conferência (aviso, sem trava): nas linhas com ≥ 1.000 ml, OA fora de ±30 % de 2,4 pç/ml (simples) ou 2,0 (PIR) e OB fora
@@ -23,11 +21,11 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-#: Fixações por telha (usuário, 09/11, caso B da Sooro): todas as 5 cristas no apoio da ponta, alternadas (2,5) no do meio e
-#: no fechamento/forro.
-FIX_PONTA = 5.0
-FIX_MEIO = 2.5
-FIX_FECHAMENTO = 2.5
+#: Fixações por telha em cada apoio (usuário, 09/11, critério C para todas as obras): 3 em toda terça — a do beiral, a da
+#: cumeeira e as do meio — e 3 em toda longarina do fechamento e do forro.
+FIX_PONTA = 3.0
+FIX_MEIO = 3.0
+FIX_FECHAMENTO = 3.0
 #: Pedaços da mesma faixa de telha (o beiral curvo R450 que o IFC parte em facetas, a telha cortada): a mesma posição na
 #: largura (até isto, mm) e encostados ponta com ponta (até FOLGA_FAIXA mm).
 MESMA_FAIXA = 100.0
@@ -325,9 +323,9 @@ def _sobe(nrm):
 
 
 def fixacoes_da_telha(t: dict, tipo_parafuso: str) -> float:
-    """As fixações de uma faixa de telha (caso B, usuário 09/11): OA = 5 na terça do beiral e na da cumeeira (o primeiro e o
-    último apoio) + 2,5 em cada terça do meio; OB = 2,5 por apoio; o recorte sem apoio conta 1 apoio (de ponta, no OA); a
-    telha mais estreita que a útil, proporcional."""
+    """As fixações de uma faixa de telha (critério C, usuário 09/11): 3 por apoio (OA: FIX_PONTA no primeiro e no último,
+    FIX_MEIO nos do meio — hoje os dois 3; OB: FIX_FECHAMENTO = 3); o recorte sem apoio conta 1 apoio; a telha mais estreita
+    que a útil, proporcional."""
     n = int(t.get("apoios") or 0)
     f = min(1.0, float(t.get("largura") or LARGURA_UTIL) / LARGURA_UTIL)
     if tipo_parafuso == "OA":

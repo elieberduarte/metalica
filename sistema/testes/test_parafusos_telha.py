@@ -4,9 +4,8 @@
 OA 2.3/8" (TP40 simples na cobertura; PIR 30 4", PIR 50 5", isopainel 2"), OB 3/4" (fechamento, TP25, forro), costura 7/8" =
 (OA + OB) ÷ 4 por cor sem o isopainel; OA/OB no múltiplo de 50, costura no de 5; cabeça na cor da telha; aviso fora de ±30 % da
 mediana Hermes nas linhas ≥ 1.000 ml; fechamento em sanduíche vira pendência.
-Fixações por telha (usuário, 09/11, caso B das duas obras da Sooro; TP40 = 5 cristas, passo 196): na cobertura TODAS as cristas
-(5) na terça do beiral e na da cumeeira e ALTERNADAS (2,5) nas do meio; fechamento e forro, vales alternados (2,5) em toda
-longarina; recorte sem apoio = 1 apoio; telha estreita proporcional à largura útil. Os pedaços da mesma faixa (as facetas do
+Fixações por telha (usuário, 09/11, critério C para todas as obras — o caso B da Sooro, 5 nas pontas e 2,5 no meio, saiu):
+3 por telha em cada apoio, terça da cobertura (OA) e longarina do fechamento e do forro (OB); recorte sem apoio = 1 apoio; telha estreita proporcional à largura útil. Os pedaços da mesma faixa (as facetas do
 beiral curvo R450 e a saia em pé, que o IFC parte) são uma telha só; os dois lados da cumeeira, duas.
 Antes o sistema só tinha "Autobrocante 12-14 × 1"" a 2,2/m² (nucleo/acessorios.py), que nenhuma obra da Hermes usa, e o resumo
 de compra não trazia parafuso de telha nenhum."""
@@ -46,26 +45,28 @@ def _placa(nome, a, b, y0, y1, esp=40.0, camada="Telhas"):
 
 
 def test_exemplos_aprovados_das_duas_obras_da_sooro():
-    """Os números aprovados pelo usuário em 09/11 (caso B): Depósito Químico 68 telhas × 8 terças (2 de ponta) = 68 × 25 =
-    1.700 OA; OB 398 apoios-telha × 2,5 = 995 → 1.000; costura (1.700 + 1.000) ÷ 4 = 675. Sala de Compressores 64 faixas × 8
-    apoios = 1.600 OA; OB (121 do oitão + 200 do forro) × 2,5 = 802,5 → 850; costura (1.600 + 850) ÷ 4 = 612,5 → 615."""
+    """Os números do critério C (usuário, 09/11, 3 por telha em cada apoio), conferidos pelo chat da Sooro: Sala de Compressores
+    64 faixas × 8 terças = 512 apoios × 3 = 1.536 → 1.550 OA; OB (121 do oitão + 92 × 2 + 8 × 1 do forro) = 313 × 3 = 939 → 950;
+    costura (1.550 + 950) ÷ 4 = 625. Depósito Químico 68 telhas × 8 terças × 3 = 1.632 → 1.650 OA; OB 398 × 3 = 1.194 → 1.200;
+    costura (1.650 + 1.200) ÷ 4 = 712,5 → 715. No caso B (5 nas pontas, 2,5 no meio) a Sala dava 1.600 / 800 / 600."""
     faixa = {"apoios": 8, "pontas": 2, "largura": 1031}
-    assert PT.fixacoes_da_telha(faixa, "OA") == 25.0
-    assert PT.arredondar(68 * PT.fixacoes_da_telha(faixa, "OA"), 50) == 1700
-    assert PT.arredondar(398 * PT.FIX_FECHAMENTO, 50) == 1000 and PT.costura(1700, 1000) == 675
-    assert PT.arredondar(64 * PT.fixacoes_da_telha(faixa, "OA"), 50) == 1600
-    assert PT.arredondar((121 + 200) * PT.FIX_FECHAMENTO, 50) == 850 and PT.costura(1600, 850) == 615
+    assert PT.fixacoes_da_telha(faixa, "OA") == 24.0
+    assert PT.arredondar(64 * PT.fixacoes_da_telha(faixa, "OA"), 50) == 1550
+    assert PT.arredondar((121 + 92 * 2 + 8) * PT.FIX_FECHAMENTO, 50) == 950 and PT.costura(1550, 950) == 625
+    assert PT.arredondar(68 * PT.fixacoes_da_telha(faixa, "OA"), 50) == 1650
+    assert PT.arredondar(398 * PT.FIX_FECHAMENTO, 50) == 1200 and PT.costura(1650, 1200) == 715
     # o exemplo da regra (Padrao-quantitativo-orcamento.md): (1.725 + 980) ÷ 4 = 676,25 → 680
     assert PT.costura(1725, 980) == 680
     assert PT.arredondar(1725, 50) == 1750 and PT.arredondar(0, 50) == 0 and PT.arredondar(676.25, 5) == 680
 
 
 def test_fixacoes_por_telha():
-    assert PT.fixacoes_da_telha({"apoios": 2, "pontas": 2}, "OA") == 10.0           # só beiral e cumeeira: 5 + 5
-    assert PT.fixacoes_da_telha({"apoios": 0, "pontas": 0}, "OA") == 5.0            # recorte sem apoio = 1 apoio
-    assert PT.fixacoes_da_telha({"apoios": 3, "pontas": 2}, "OB") == 7.5            # vales alternados em toda longarina
-    assert PT.fixacoes_da_telha({"apoios": 0, "pontas": 0}, "OB") == 2.5
-    assert PT.fixacoes_da_telha({"apoios": 8, "pontas": 2, "largura": 490}, "OA") == 12.5   # meia telha: metade
+    assert PT.fixacoes_da_telha({"apoios": 2, "pontas": 2}, "OA") == 6.0            # beiral e cumeeira: 3 + 3
+    assert PT.fixacoes_da_telha({"apoios": 4, "pontas": 2}, "OA") == 12.0           # a do meio leva 3 como a da ponta
+    assert PT.fixacoes_da_telha({"apoios": 0, "pontas": 0}, "OA") == 3.0            # recorte sem apoio = 1 apoio
+    assert PT.fixacoes_da_telha({"apoios": 3, "pontas": 2}, "OB") == 9.0            # 3 em toda longarina
+    assert PT.fixacoes_da_telha({"apoios": 0, "pontas": 0}, "OB") == 3.0
+    assert PT.fixacoes_da_telha({"apoios": 8, "pontas": 2, "largura": 490}, "OA") == 12.0   # meia telha: metade
 
 
 def test_comprimento_pela_telha_e_pelo_uso():
@@ -93,10 +94,10 @@ def test_cor_da_cabeca_e_a_da_telha():
 
 def test_aviso_fora_da_mediana_hermes():
     poucos = [{"id": str(i), "nome": "TP40 0,50 natural", "camada": "Telhas", "texto": "TP40 0,50 aço nat.", "uso": "cobertura",
-               "ml": 10.0, "apoios": 2, "pontas": 2} for i in range(100)]          # 1.000 / 1.000 ml = 1,0 pç/ml
+               "ml": 10.0, "apoios": 2, "pontas": 2} for i in range(100)]          # 600 / 1.000 ml = 0,6 pç/ml
     R = PT.parafusos_de_telha(None, poucos)
     assert any("mediana Hermes" in a for a in R["avisos"]), R["avisos"]
-    certos = [dict(t, apoios=7) for t in poucos]                                  # 100 × 22,5 / 1.000 ml = 2,25 pç/ml
+    certos = [dict(t, apoios=7) for t in poucos]                                  # 100 × 21 / 1.000 ml = 2,1 pç/ml
     assert not any("mediana Hermes" in a for a in PT.parafusos_de_telha(None, certos)["avisos"])
 
 
@@ -139,8 +140,8 @@ def test_contagem_pelo_3d():
     assert len(fech) == 1 and fech[0]["apoios"] == 1, fech
     R = PT.parafusos_de_telha(None, T)
     por = {x["item"]: x for x in R["linhas"]}
-    assert por['OA 2.3/8"']["qtd"] == 100 and por['OA 2.3/8"']["apoios"] == 16      # 4 × (5 + 5 + 2,5 + 2,5) + 5 = 65 → 100
-    assert por['OB 3/4"']["qtd"] == 50                                                # 2,5 → 50
+    assert por['OA 2.3/8"']["qtd"] == 100 and por['OA 2.3/8"']["apoios"] == 16      # 4 × 4 × 3 + 3 = 51 → 100
+    assert por['OB 3/4"']["qtd"] == 50                                                # 3 → 50
     assert por['Costura 7/8"']["qtd"] == 40                                           # (100 + 50) ÷ 4 = 37,5 → 40
     assert all(x["cor"] == "bege RAL 1015" and "bege RAL 1015" in x["descricao"] for x in R["linhas"])
     assert any("sem apoio achado" in a for a in R["avisos"]), R["avisos"]
@@ -189,7 +190,7 @@ def test_beiral_curvo_e_cumeeira_uma_faixa_por_agua():
     cob = sorted((t["apoios"], t["pontas"], t["pedacos"]) for t in T)
     assert cob == [(7, 2, 6), (7, 2, 6)], T                 # 2 faixas (uma por água), cada uma com os 6 pedaços dela
     R = PT.parafusos_de_telha(None, T)
-    assert {x["item"]: x["qtd"] for x in R["linhas"]} == {'OA 2.3/8"': 50, 'Costura 7/8"': 15}   # 2 × (10 + 5 × 2,5) = 45
+    assert {x["item"]: x["qtd"] for x in R["linhas"]} == {'OA 2.3/8"': 50, 'Costura 7/8"': 15}   # 2 × 7 × 3 = 42 → 50
 
 
 def test_no_resumo_de_compra():
@@ -214,6 +215,6 @@ def test_biblioteca_de_acessorios_na_regra_nova():
     from nucleo import acessorios as A
     r = A.montar("fixacao_telha", {"telhas": 100, "apoios": 9})
     d = {p["descricao"]: p["qtd"] for p in r["pecas"]}
-    assert d == {'Parafuso autobrocante OA 2.3/8" – na cor da telha (com arruela de vedação)': 2750,       # 100 × (10 + 7 × 2,5)
-                 'Parafuso autobrocante de costura 7/8" – na cor da telha': 690}, d
+    assert d == {'Parafuso autobrocante OA 2.3/8" – na cor da telha (com arruela de vedação)': 2700,       # 100 × 9 × 3
+                 'Parafuso autobrocante de costura 7/8" – na cor da telha': 675}, d
     assert not any("12-14" in k or '1"' in k for k in d)
