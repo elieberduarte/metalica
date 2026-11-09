@@ -25,7 +25,7 @@ import math
 import re
 from typing import Optional
 
-from nucleo2d.desenho import (Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota, Hachura, Chamada, folga_da_cota,
+from nucleo2d.desenho import (Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota, Hachura, Chamada, folga_da_cota, seta_da_cota,
                               CotaEspecial, Bloco, entidade_de_dict)
 
 FONTE = "segoeui.ttf"
@@ -80,7 +80,7 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
     doc.styles.add(ESTILO, font=FONTE)
 
     ds = doc.dimstyles.new(ESTILO)
-    for chave, valor in {"dimscale": k, "dimtxt": 2.5, "dimasz": 2.5, "dimexe": 2.0, "dimexo": 1.5,
+    for chave, valor in {"dimscale": k, "dimtxt": 2.5, "dimasz": seta_da_cota(None, desenho.metadados.get("estilo")), "dimexe": 2.0, "dimexo": 1.5,
                          "dimgap": folga_da_cota(None, desenho.metadados.get("estilo")), "dimtad": 1, "dimtih": 0, "dimtoh": 0, "dimdec": 0, "dimadec": 1, "dimzin": 8,
                          # dimdec 0: a cota ao mm inteiro (REGRA 26/10, "700,1" → 700); o ângulo segue com uma casa
                          # linhas e chamadas na cor da camada; o número na ACI 7 (branco no fundo preto),
@@ -413,7 +413,7 @@ def _dimensao_especial(msp, c, k: float, at: dict, estilo: dict = None) -> list:
     (nucleo2d/cota_especial.primitivas)."""
     f = float(getattr(c, "fator", None) or 1.0)
     altura = float(c.altura or 2.5) * f
-    override = {"dimtxt": altura, "dimasz": 2.5 * f, "dimgap": folga_da_cota(c, estilo) * f, "dimtmove": 0}
+    override = {"dimtxt": altura, "dimasz": seta_da_cota(c, estilo) * f, "dimgap": folga_da_cota(c, estilo) * f, "dimtmove": 0}
     if c.escala and float(c.escala) != 1.0:
         override["dimlfac"] = float(c.escala)
     if _casas(c) is not None:
@@ -484,7 +484,8 @@ def _dimensao(msp, c: Cota, k: float, at: dict, terminador: str = "traco", estil
     f = float(getattr(c, "fator", None) or 1.0)            # o fator de tamanho da cota (texto, ponta, afastamentos)
     altura = float(c.altura or 2.5) * f
     h = altura * k
-    seta = min(2.5 * k * f, max(1.0 * k * f, comp / 4))    # mm do desenho
+    s_ = seta_da_cota(c, estilo)                           # a ponta escolhida (mm de papel; 2,5 sem escolha)
+    seta = min(s_ * k * f, max(min(1.0, s_) * k * f, comp / 4))    # mm do desenho
     folga = folga_da_cota(c, estilo) * f                   # mm de papel (a DIMGAP), como na tela (22/10)
     override = {"dimtxt": altura, "dimasz": seta / k,
                 # o número a `folga` acima da linha, como na tela

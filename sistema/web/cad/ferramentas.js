@@ -958,7 +958,7 @@ export class CotaContinua extends Ferramenta {
     const fc = fatorDaCota(b);
     const escala = b.escala || (Math.abs(fc - 1) > 1e-9 ? fc : null);
     const c = criar({ tipo: 'cota', camada: b.camada, modo: this.trava || b.modo, p1: [inicio[0], inicio[1]], p2: [p[0], p[1]], deslocamento: b.deslocamento,
-      altura: b.altura, fator: b.fator, terminador: b.terminador, casas: b.casas, folga: b.folga, escala });
+      altura: b.altura, fator: b.fator, terminador: b.terminador, casas: b.casas, folga: b.folga, seta: b.seta, escala });
     if (valorDaCota(c) < 1e-6) return null;
     // a linha de cota nova passa pela ponta da linha da base que fica no início: a mesma linha
     const pc = pontosCota(b, k);
@@ -1184,7 +1184,7 @@ export class CotaBase extends Ferramenta {
     const b = this.base, k = this.doc.escala;
     const fc = fatorDaCota(b), escala = b.escala || (Math.abs(fc - 1) > 1e-9 ? fc : null);
     const c = criar({ tipo: 'cota', camada: b.camada, modo: b.modo, p1: [this.ponto[0], this.ponto[1]], p2: [p[0], p[1]], deslocamento: b.deslocamento,
-      altura: b.altura, fator: b.fator, terminador: b.terminador, casas: b.casas, folga: b.folga, escala });
+      altura: b.altura, fator: b.fator, terminador: b.terminador, casas: b.casas, folga: b.folga, seta: b.seta, escala });
     if (valorDaCota(c) < 1e-6) return null;
     const q = linhaEmpurrada(this.ultima, k, PASSO_LINHA_DE_BASE);
     if (q) c.deslocamento = deslocamentoPara(c, q, k);
@@ -1900,7 +1900,7 @@ export class CopiarPropriedades extends Ferramenta {
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 4l6 6-8 8H6v-6z"/><path d="M4 20h6"/></svg>';
   // na cota, o estilo dela inteiro: o tamanho (altura e fator, que leva a ponta e os afastamentos), o terminador, as
   // casas e a folga do número (22/10); a escala não, que muda o número medido
-  static CAMPOS = { cota: ['altura', 'fator', 'terminador', 'casas', 'folga'], cota_especial: ['altura', 'fator', 'terminador', 'casas', 'folga'], texto: ['altura'], chamada: ['altura'], hachura: ['padrao', 'espacamento', 'angulo'] };
+  static CAMPOS = { cota: ['altura', 'fator', 'terminador', 'casas', 'folga', 'seta'], cota_especial: ['altura', 'fator', 'terminador', 'casas', 'folga', 'seta'], texto: ['altura'], chamada: ['altura'], hachura: ['padrao', 'espacamento', 'angulo'] };
   reiniciar() {
     super.reiniciar();
     const sel = [...this.editor.tela.selecao];

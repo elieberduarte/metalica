@@ -46,7 +46,7 @@ export function criar(reg) {
     case 'cota': return { ...base, camada: base.camada || 'COTA', modo: reg.modo || 'alinhada', p1: reg.p1, p2: reg.p2,
       deslocamento: reg.deslocamento ?? 10, texto: reg.texto ?? null, altura: reg.altura ?? 2.5, texto_pos: reg.texto_pos ?? null,
       terminador: reg.terminador ?? null, casas: reg.casas ?? null, escala: reg.escala ?? null, fator: reg.fator ?? null,
-      folga: reg.folga ?? null };
+      folga: reg.folga ?? null, seta: reg.seta ?? null };
     case 'hachura': return { ...base, camada: base.camada || 'HACHURA', contornos: reg.contornos || [], padrao: reg.padrao || 'aco',
       angulo: reg.angulo ?? 45, espacamento: reg.espacamento ?? 2.5 };
     case 'chamada': return { ...base, camada: base.camada || 'TEXTO', alvo: reg.alvo, posicao: reg.posicao, texto: reg.texto || '', altura: reg.altura ?? 2.5,
@@ -54,7 +54,7 @@ export function criar(reg) {
     // a cota angular, de raio, de diâmetro e ordenada (23/10; nucleo/cota_especial.js)
     case 'cota_especial': return { ...base, camada: base.camada || 'COTA', modo: reg.modo || 'angular', centro: reg.centro, p1: reg.p1, p2: reg.p2 ?? null,
       posicao: reg.posicao, eixo: reg.eixo ?? null, texto: reg.texto ?? null, altura: reg.altura ?? 2.5, casas: reg.casas ?? null, escala: reg.escala ?? null,
-      fator: reg.fator ?? null, terminador: reg.terminador ?? null, folga: reg.folga ?? null };
+      fator: reg.fator ?? null, terminador: reg.terminador ?? null, folga: reg.folga ?? null, seta: reg.seta ?? null };
     // a inserção de um bloco (24/10): a definição em metadados.blocos[nome] (e na biblioteca da empresa)
     case 'bloco': return { ...base, camada: base.camada || 'VISTA', nome: reg.nome || '', posicao: reg.posicao,
       escala: Array.isArray(reg.escala) ? [+reg.escala[0] || 1, +reg.escala[1] || 1] : [1, 1], angulo: +reg.angulo || 0 };
@@ -172,6 +172,24 @@ export function folgaDaCota(c, estilo = null) {
   return FOLGA_TEXTO_COTA;
 }
 
+/** O tamanho da ponta da cota em mm de papel (× o fator), a DIMASZ do AutoCAD: 2,5 como até aqui (pedido do usuário,
+ *  26/10, ME Sooro: "como faço para trocar o tipo e tamanho dos arrowheads?"). A cota pode ter o dela (`seta`) e o desenho
+ *  o dele (metadados.estilo.seta). Espelho de nucleo2d/desenho.py SETA_COTA. */
+export const SETA_COTA = 2.5;
+
+/** A ponta da cota (mm de papel): a dela, a do estilo do desenho ou a padrão. */
+export function setaDaCota(c, estilo = null) {
+  for (const v of [c && c.seta, estilo && estilo.seta]) if (v != null && v !== '' && isFinite(v) && +v > 0) return +v;
+  return SETA_COTA;
+}
+
+/** A ponta desenhada (mm do desenho): a da cota, encolhendo na cota curta até ¼ dela (nunca abaixo de 1 mm de papel, nem
+ *  acima da escolhida). */
+export function setaNaCota(c, k, comp, estilo = null) {
+  const f = (c && c.fator) || 1, s = setaDaCota(c, estilo);
+  return Math.min(s * k * f, Math.max(Math.min(1, s) * k * f, comp / 4));
+}
+
 /** Número de cota: inteiro quando é, senão uma casa; com `casas` (0 a 3), sempre esse número de
  *  casas depois da vírgula (pedido do usuário, 28/09). */
 export function formatarMm(v, casas = null) {
@@ -212,7 +230,7 @@ export function textoDaCota(c, k, estilo = null) {
   // o fator de tamanho da cota (texto, ponta e afastamentos juntos): a cota feita sobre um desenho importado acompanha
   // o tamanho das cotas dele (07/10); vazio = 1
   const f = c.fator || 1;
-  const sg = g.desl >= 0 ? 1 : -1, seta = Math.min(2.5 * k * f, Math.max(1 * k * f, g.comp / 4));
+  const sg = g.desl >= 0 ? 1 : -1, seta = setaNaCota(c, k, g.comp, estilo);
   // sem texto escrito, a medida × a escala da cota (a cota feita na célula em 1:25 da prancha mostra a da peça)
   const txt = c.texto != null && c.texto !== '' ? String(c.texto) : numeroDaCota(valorCota(c) * (c.escala || 1), c.casas);
   const ang = Math.atan2(g.uy, g.ux);

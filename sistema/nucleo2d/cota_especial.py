@@ -72,10 +72,10 @@ def _legivel(g: float):
 def primitivas(c, k: float = 1.0, estilo: Optional[dict] = None) -> dict:
     """{linhas: [(a, b)], arcos: [{centro, raio, inicio, fim}], pontas: [{p, ang, tam, tipo}], textos: [{pos, txt, h, ang,
     alinhamento}]}, em mm do desenho; `k` é a escala do desenho (mm de papel → mm)"""
-    from nucleo2d.desenho import folga_da_cota
+    from nucleo2d.desenho import folga_da_cota, seta_da_cota
     f = float(getattr(c, "fator", None) or 1.0)
     h = float(getattr(c, "altura", None) or 2.5) * k * f
-    seta, ext = 2.5 * k * f, 2.0 * k * f
+    seta, ext = seta_da_cota(c, estilo) * k * f, 2.0 * k * f
     fol = folga_da_cota(c, estilo) * k * f
     termo = getattr(c, "terminador", None) or (estilo or {}).get("terminador") or "traco"
     txt = str(c.texto) if c.texto not in (None, "") else medida(c)

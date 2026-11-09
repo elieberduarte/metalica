@@ -165,6 +165,8 @@ class Cota(Entidade2D):
     # a folga do número à linha de cota, em mm de papel (a DIMGAP do AutoCAD); None = a do desenho (metadados.estilo
     # .folga_texto) ou FOLGA_TEXTO_COTA — 22/10, web/cad/nucleo/desenho2d.js folgaDaCota
     folga: Optional[float] = None
+    # o tamanho da ponta em mm de papel (a DIMASZ); None = a do desenho (metadados.estilo.seta) ou SETA_COTA — 09/11
+    seta: Optional[float] = None
 
     def pontos(self):
         return [self.p1, self.p2]
@@ -243,6 +245,7 @@ class CotaEspecial(Entidade2D):
     fator: Optional[float] = None
     terminador: Optional[str] = None
     folga: Optional[float] = None
+    seta: Optional[float] = None
 
     def pontos(self):
         return [self.centro, self.p1, self.posicao] + ([self.p2] if self.p2 else [])
@@ -610,6 +613,22 @@ def folga_da_cota(c, estilo: Optional[dict] = None) -> float:
     return FOLGA_TEXTO_COTA
 
 
+#: o tamanho da ponta da cota em mm de papel (× o fator), a DIMASZ (pedido do usuário, 26/10: "como faço para trocar o
+#: tipo e tamanho dos arrowheads?"). Espelho de web/cad/nucleo/desenho2d.js SETA_COTA.
+SETA_COTA = 2.5
+
+
+def seta_da_cota(c, estilo: Optional[dict] = None) -> float:
+    """A ponta da cota (mm de papel): a da cota, a do estilo do desenho ou a padrão."""
+    for v in (getattr(c, "seta", None), (estilo or {}).get("seta")):
+        try:
+            if v is not None and v != "" and float(v) > 0:
+                return float(v)
+        except (TypeError, ValueError):
+            pass
+    return SETA_COTA
+
+
 def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = TERMINADOR_PADRAO, camada_texto: str = None,
               estilo: Optional[dict] = None):
     """Cota com setas (ou bolas, ou traços) e texto proporcionais à escala (o que
@@ -632,7 +651,7 @@ def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = TERMINADOR_PA
     sg = 1.0 if desl >= 0 else -1.0
     f = float(c.fator or 1.0)
     h = c.altura * k * f
-    ext, fol, seta = 2.0 * k * f, 1.5 * k * f, 2.5 * k * f
+    ext, fol, seta = 2.0 * k * f, 1.5 * k * f, seta_da_cota(c, estilo) * k * f
     a1 = (x1 + nx * desl, y1 + ny * desl)
     a2 = (x2 + nx * desl, y2 + ny * desl)
     # linhas de chamada saem dos pontos originais (em cota h/v, dos pontos projetados)

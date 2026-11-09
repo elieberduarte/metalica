@@ -8,7 +8,7 @@
 // lado do ângulo), posicao (por onde passa o arco do ângulo / onde fica o número), eixo (x | y, da ordenada), texto
 // (vazio = a medida), altura, casas, escala (o número por mm desenhado), fator, terminador, folga.
 
-import { folgaDaCota, numeroDaCota } from './desenho2d.js';
+import { folgaDaCota, numeroDaCota, setaDaCota } from './desenho2d.js';
 
 const RAD = Math.PI / 180;
 const n360 = (g) => ((g % 360) + 360) % 360;
@@ -46,7 +46,7 @@ function legivel(g) { g = n360(g); return g > 90 && g <= 270 ? [g - 180, true] :
  * desenho (mm de papel → mm), `estilo` o metadados.estilo (a folga e o terminador padrão).
  */
 export function primitivasDaCotaEspecial(c, k = 1, estilo = null) {
-  const f = c.fator || 1, h = (c.altura || 2.5) * k * f, seta = 2.5 * k * f, ext = 2 * k * f, fol = folgaDaCota(c, estilo) * k * f;
+  const f = c.fator || 1, h = (c.altura || 2.5) * k * f, seta = setaDaCota(c, estilo) * k * f, ext = 2 * k * f, fol = folgaDaCota(c, estilo) * k * f;
   const termo = c.terminador || (estilo && estilo.terminador) || 'traco';
   const txt = c.texto != null && c.texto !== '' ? String(c.texto) : medidaDaCotaEspecial(c);
   const larg = Math.max(h, txt.length * h * 0.62);

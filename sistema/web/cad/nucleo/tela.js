@@ -13,7 +13,7 @@
 // segundo para ser refeito; sem o cache, cada movimento do mouse custaria isso.
 
 import { pontosArco, dentroDe, segmentosDe, caixaDe, pontosDe, distanciaEntidade, pontosCota, textoDaChamada, cantosDoTextoDaChamada, ramosDaChamada,
-  formatarMm, geometriaCota, textoDaCota, ENTRELINHA, linhasDoTexto, filhosDoBloco } from './desenho2d.js';
+  formatarMm, geometriaCota, textoDaCota, ENTRELINHA, linhasDoTexto, filhosDoBloco, setaNaCota } from './desenho2d.js';
 import { estiloDaLinha, larguraNaTela, tracosNaTela } from './tipos_linha.js';
 import { primitivasDaCotaEspecial } from './cota_especial.js';
 export { formatarMm };
@@ -691,7 +691,7 @@ export class Tela {
     if (!g) return;
     const z = this.vp.z, T = (p) => this.paraTela(p);
     const f = c.fator || 1;
-    const sg = g.desl >= 0 ? 1 : -1, ext = 2 * k * f, fol = 1.5 * k * f, seta = Math.min(2.5 * k * f, Math.max(1 * k * f, g.comp / 4));
+    const sg = g.desl >= 0 ? 1 : -1, ext = 2 * k * f, fol = 1.5 * k * f, seta = setaNaCota(c, k, g.comp, this.estiloDoDesenho);
     ctx.setLineDash([]);
     ctx.beginPath();
     for (const [p, a] of [[c.p1, g.a1], [c.p2, g.a2]]) {

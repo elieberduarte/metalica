@@ -4,7 +4,7 @@
 // Mouse: botão esquerdo é da ferramenta; do meio ou direito arrasta a vista; roda dá
 // zoom no cursor. Shift trava orto. Esc cancela; Enter e espaço confirmam/repetem.
 
-import { Desenho2D, clonar, valorCota, pontosDe, criar, segmentosDe, dist, maisProximoSeg, folgaDaCota, FOLGA_TEXTO_COTA, usarBlocosDe } from './nucleo/desenho2d.js';
+import { Desenho2D, clonar, valorCota, pontosDe, criar, segmentosDe, dist, maisProximoSeg, folgaDaCota, FOLGA_TEXTO_COTA, setaDaCota, SETA_COTA, usarBlocosDe } from './nucleo/desenho2d.js';
 import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia, ComandoAdicionar, ComandoComposto, ComandoEscala } from './nucleo/comandos.js';
 import { Tela, formatarMm } from './nucleo/tela.js';
 import { acompanhar as acompanharTarefa } from '../progresso.js';
@@ -2246,6 +2246,7 @@ class CAD {
           el('option', { value: v, texto: t, selected: String(e.casas ?? '') === v ? 'selected' : undefined })));
         casas.addEventListener('change', () => this.executar(new ComandoAlterar({ [e.id]: { casas: casas.value === '' ? null : +casas.value } }, 'Casas decimais da cota')));
         g.append(el('label', { texto: 'Casas decimais' }), casas);
+        this._camposDaPonta(g, e);
         if (e.modo === 'ordenada') {
           g.append(el('label', { texto: 'Origem' }), el('div', { texto: `${formatarMm(e.centro[0], 1)}; ${formatarMm(e.centro[1], 1)}` }));
           const eixo = el('select', {}, ...[['x', 'x (a chamada vertical)'], ['y', 'y (a chamada horizontal)']].map(([v, t]) => el('option', { value: v, texto: t, selected: (e.eixo || 'x') === v ? 'selected' : undefined })));
@@ -2280,6 +2281,7 @@ class CAD {
           this.executar(new ComandoAlterar({ [e.id]: { folga: v } }, 'Folga do número da cota'));
         });
         g.append(el('label', { texto: 'Folga do número (mm)' }), folga);
+        this._camposDaPonta(g, e);
         const modo =el('select', {}, ...['alinhada', 'h', 'v'].map(m => el('option', { value: m, texto: m, selected: e.modo === m ? 'selected' : undefined })));
         modo.addEventListener('change', () => this.executar(new ComandoAlterar({ [e.id]: { modo: modo.value } }, 'Modo da cota')));
         g.append(el('label', { texto: 'Modo' }), modo);
@@ -3025,6 +3027,26 @@ class CAD {
     caixa.addEventListener('blur', () => fechar(true));
   }
 
+  /** No painel da cota (pedido do usuário, 26/10, ME Sooro: "como faço para trocar o tipo e tamanho dos arrowheads?"):
+   *  o terminador e o tamanho da ponta dela, em mm no papel (a DIMASZ); vazio = o do desenho (Estilos). */
+  _camposDaPonta(g, e) {
+    const estilo = (this.doc.metadados || {}).estilo || {};
+    const nomes = { traco: 'Traço oblíquo', seta: 'Seta', bola: 'Bola (ponto)' };
+    const doDesenho = estilo.terminador || 'traco';
+    const term = el('select', { name: 'terminador' }, ...[['', `do desenho (${nomes[doDesenho] || doDesenho})`], ['traco', nomes.traco], ['seta', nomes.seta], ['bola', nomes.bola]].map(([v, t]) =>
+      el('option', { value: v, texto: t, selected: String(e.terminador ?? '') === v ? 'selected' : undefined })));
+    term.addEventListener('change', () => this.executar(new ComandoAlterar({ [e.id]: { terminador: term.value || null } }, 'Terminador da cota')));
+    g.append(el('label', { texto: 'Terminador' }), term);
+    const seta = el('input', { type: 'number', name: 'seta', step: '0.25', min: '0.25', value: e.seta == null ? '' : String(e.seta),
+      placeholder: `${formatarMm(setaDaCota({}, estilo), 2)} (do desenho)`, title: 'Tamanho da ponta (seta, traço ou bola), em mm no papel (vazio: o do desenho, em Estilos)' });
+    seta.addEventListener('change', () => {
+      const v = String(seta.value).trim() === '' ? null : parseFloat(String(seta.value).replace(',', '.'));
+      if (v !== null && !(v > 0)) return;
+      this.executar(new ComandoAlterar({ [e.id]: { seta: v } }, 'Tamanho da ponta da cota'));
+    });
+    g.append(el('label', { texto: 'Tamanho da seta (mm)' }), seta);
+  }
+
   aplicarEstilos(opcoes, ids = null) {
     const alvo = ids ? ids.map(id => this.doc.get(id)).filter(Boolean) : [...this.doc.entidades.values()];
     const mud = {};
@@ -3037,6 +3059,8 @@ class CAD {
       if (opcoes.casas != null && ehCota) m.casas = opcoes.casas === 'auto' ? null : opcoes.casas;
       // a folga do número: na seleção, a da cota; no desenho todo, a do estilo — as cotas voltam a seguir a dele
       if (opcoes.folga != null && ehCota) { const v = ids ? opcoes.folga : null; if ((e.folga ?? null) !== v) m.folga = v; }
+      // a ponta, do mesmo jeito: na seleção, a da cota; no desenho todo, a do estilo (as cotas voltam a seguir a dele)
+      if (opcoes.seta != null && ehCota) { const v = ids ? opcoes.seta : null; if ((e.seta ?? null) !== v) m.seta = v; }
       if (e.tipo === 'hachura') {
         if (opcoes.padrao) m.padrao = opcoes.padrao;
         if (opcoes.espacamento != null && isFinite(opcoes.espacamento) && opcoes.espacamento > 0) m.espacamento = +opcoes.espacamento;
@@ -3055,9 +3079,10 @@ class CAD {
       if (opcoes.padrao) estilo.hachura = opcoes.padrao;
       if (opcoes.casas != null) { if (opcoes.casas === 'auto') delete estilo.casas; else estilo.casas = opcoes.casas; }
       if (opcoes.folga != null) estilo.folga_texto = opcoes.folga;
+      if (opcoes.seta != null) estilo.seta = opcoes.seta;
       if (opcoes.escala_tracejado != null) estilo.escala_tracejado = opcoes.escala_tracejado;
       this.doc.metadados = { ...(this.doc.metadados || {}), estilo };
-      if (opcoes.folga != null) this.doc._grade = null;        // a caixa do número das cotas (o índice) mudou
+      if (opcoes.folga != null || opcoes.seta != null) this.doc._grade = null;   // a caixa do número das cotas (o índice) mudou
     }
     const n = Object.keys(mud).length;
     if (n) this.executar(new ComandoAlterar(mud, 'Estilos do desenho'));
@@ -3079,15 +3104,18 @@ class CAD {
       casas: el('select', {}, ...[['', 'manter'], ['auto', 'automático (inteiro, ou 1 casa)'], ['0', '0 (ao mm)'], ['1', '1'], ['2', '2'], ['3', '3']].map(([v, t]) => el('option', { value: v, texto: t }))),
       // a DIMGAP do AutoCAD: da linha de cota à base do número, em mm no papel (22/10)
       folga: el('input', { type: 'number', step: '0.125', min: '0', placeholder: `manter (hoje ${formatarMm(folgaDaCota({}, estilo), 3)}; AutoCAD ${formatarMm(FOLGA_TEXTO_COTA, 3)})` }),
+      // a DIMASZ do AutoCAD: o tamanho da ponta (seta, traço ou bola) em mm no papel (09/11)
+      seta: el('input', { type: 'number', name: 'seta', step: '0.25', min: '0.25', placeholder: `manter (hoje ${formatarMm(setaDaCota({}, estilo), 2)}; padrão ${formatarMm(SETA_COTA, 2)})` }),
       // o LTSCALE do desenho em relação à escala: o tamanho dos traços das linhas tracejadas no papel (23/10)
       escalaTracejado: el('input', { type: 'number', name: 'escala_tracejado', step: '0.05', min: '0.01', placeholder: `manter (hoje ${formatarMm(escalaTracejado(estilo), 2)}; padrão ${formatarMm(ESCALA_TRACEJADO, 2)})` }),
     };
     campos.terminador.value = '';
     const corpo = el('div', {},
-      el('div', { class: 'explica', texto: 'Como os estilos do AutoCAD: a altura vale para textos, cotas e chamadas; o terminador, as casas e a folga do número para as cotas; padrão, espaçamento e ângulo para as hachuras. Com "todo o desenho", a altura vira a altura padrão dos textos novos e o terminador o das cotas novas.' }),
+      el('div', { class: 'explica', texto: 'Como os estilos do AutoCAD: a altura vale para textos, cotas e chamadas; o terminador, o tamanho da ponta, as casas e a folga do número para as cotas; padrão, espaçamento e ângulo para as hachuras. Com "todo o desenho", a altura vira a altura padrão dos textos novos e o terminador o das cotas novas.' }),
       el('label', {}, 'Aplicar a', campos.escopo),
       el('label', {}, el('span', {}, campos.mudarAltura, ' Altura de texto e cota (mm)'), campos.altura),
       el('label', {}, 'Terminador das cotas', campos.terminador),
+      el('label', {}, 'Tamanho da ponta das cotas (mm)', campos.seta),
       el('label', {}, 'Casas decimais das cotas', campos.casas),
       el('label', {}, 'Folga do número à linha de cota (mm)', campos.folga),
       el('label', {}, 'Escala dos tracejados (o LTSCALE do desenho)', campos.escalaTracejado),
@@ -3103,6 +3131,7 @@ class CAD {
       angulo: campos.angulo.value ? parseFloat(campos.angulo.value) : null,
       casas: campos.casas.value === '' ? null : campos.casas.value === 'auto' ? 'auto' : +campos.casas.value,
       folga: String(campos.folga.value).trim() !== '' && parseFloat(String(campos.folga.value).replace(',', '.')) >= 0 ? parseFloat(String(campos.folga.value).replace(',', '.')) : null,
+      seta: parseFloat(String(campos.seta.value).replace(',', '.')) > 0 ? parseFloat(String(campos.seta.value).replace(',', '.')) : null,
       escala_tracejado: parseFloat(String(campos.escalaTracejado.value).replace(',', '.')) > 0 ? parseFloat(String(campos.escalaTracejado.value).replace(',', '.')) : null,
     };
     const ids = campos.escopo.value === 'selecao' ? sel : null;
