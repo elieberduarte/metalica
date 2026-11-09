@@ -234,3 +234,22 @@ def test_projecao_entre_eixos_sem_tesouras():
     assert R2["dimensoes"]["projecao_informada"] and R2["dimensoes"]["area_m2"] == 684.0
     assert abs(R2["numeros"]["kg_m2"] - R2["numeros"]["peso_aco"] / 684.0) < 1e-9
     assert resumos.projecao_informada("684 m²") == (None, 684.0) and resumos.projecao_informada("abc") is None
+
+
+def test_so_a_capa_leva_a_cobertura():
+    """Mall (usuário, 09/11: "essa telha, não dá pra ver a estrutura metálica com a telha, poderia ter uma só com telha e as
+    demais sem"): a capa pede "+telhas" quando a obra tem telha (e não tem a lona de ilustração, que vem no par dela); as fotos
+    dos tipos e dos pavimentos não pedem — e o editor (diagnostico.js) esconde telha, calha, rufo e cumeeira, também a telha
+    da fachada e a lançada do IFC, mesmo com a camada ligada no modelo"""
+    import os
+    b = {"chave": "tercas", "titulo": "Terças", "cor": "#1971c2", "kg": 100.0, "ids": ["t1"],
+         "linhas": [{"qtd": 1, "comprimento": 1000.0, "marcas": ["T1"], "ids": ["t1"]}]}
+    por = {p["nome"]: p for p in dossie.pedidos_de_fotos({"estrutura": [b]}, tem_telhas=True)}
+    assert por["capa"]["angulo"].endswith("+telhas")
+    assert "+telhas" not in str(por["tipo-tercas"].get("angulo", ""))
+    assert not str(dossie.pedidos_de_fotos({"estrutura": [b]})[0].get("angulo", "")).endswith("+telhas")   # obra sem telha
+    com_lona = dossie.pedidos_de_fotos({"tem_lona": True}, tem_telhas=True)
+    assert "+telhas" not in str(com_lona[0].get("angulo", "")) and com_lona[2]["angulo"].endswith("+telhas")
+    js = open(os.path.join(os.path.dirname(__file__), "..", "web", "editor3d", "modulos", "diagnostico.js"), encoding="utf-8").read()
+    assert "if (ehCobertura(ent, cam)) return comTelhas && ent.visivel !== false;" in js
+    assert "(telhas?|isotelhas?|rufos?|calhas?|cumeeiras?)" in js and "telha_lancada" in js and "'IfcCovering'" in js

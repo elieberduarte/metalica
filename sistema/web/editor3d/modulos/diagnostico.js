@@ -193,13 +193,18 @@ export class MetodosDiagnostico {
     let comTelhas = false;
     // "com cobertura": as telhas aparecem na cena sem mexer na camada do modelo (nada vai para o disco);
     // a referência (eixos, níveis, arquitetônico) e a camada Referência não entram nas imagens
+    const ehCobertura = (ent, cam) => !!ent && (/(^|[\s—–])(telhas?|isotelhas?|rufos?|calhas?|cumeeiras?)(\b|$)/i.test(cam)
+      || !!(ent.atributos && (ent.atributos.telha_lancada || ent.atributos.tipo_ifc === 'IfcCovering')));
     doc.aparece = (ent) => {
       const cam = String((ent && ent.camada) || '');
       if (/^refer/i.test(cam)) return false;
       // a lona de ilustração (Kaefer, 19/10): só nas fotos "com lona" do resumo — nas outras não, nem com a camada ligada
       // no modelo (as "sem a lona" saíam com ela)
       if (/^lonas?$/i.test(cam)) return comTelhas && !!ent && ent.visivel !== false;
-      if (comTelhas && /^(telhas?|rufos?|calhas?|cumeeiras?)$/i.test(cam) && ent && ent.visivel !== false) return true;
+      // a cobertura (telha, calha, rufo, cumeeira — também a telha da fachada e a telha lançada do IFC) só entra na foto "+telhas":
+      // nas outras ela tapava a estrutura quando a camada estava ligada no modelo (Mall, usuário 09/11: "não dá pra ver a
+      // estrutura metálica com a telha, poderia ter uma só com telha e as demais sem")
+      if (ehCobertura(ent, cam)) return comTelhas && ent.visivel !== false;
       return aparecia(ent);
     };
     const esconderReferencia = () => {

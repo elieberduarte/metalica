@@ -1083,8 +1083,12 @@ def pedidos_de_fotos(X: dict, tem_telhas: bool = False) -> List[dict]:
     dele, com o resto apagado — na obra de vários pavimentos, no pavimento onde ele mais aparece, com o resto do aço
     daquele pavimento em cinza (o prédio inteiro deixava o tipo do tamanho de um risco); e cada pavimento sozinho,
     com o concreto em volta e cada peça na cor do tipo."""
-    # a capa mostra a estrutura (com as telhas, o galpão virava uma laje cinza)
+    # a capa é a única foto com a cobertura (Mall, usuário 09/11: "não dá pra ver a estrutura metálica com a telha, poderia
+    # ter uma só com telha e as demais sem"); as outras saem sem telha, calha e rufo (diagnostico.js, só "+telhas" as mostra).
+    # Com a lona de ilustração, a capa segue sem a cobertura: a obra com a lona vem no par de fotos dela.
     pedidos = [dict({"nome": "capa"}, **_angulo(X))]
+    if tem_telhas and not X.get("tem_lona"):
+        pedidos[0]["angulo"] = ANGULO + "+telhas"
     # a obra com e sem a lona (Kaefer, 19/10: "quero ela com lona e sem lona"): os mesmos dois ângulos — a aérea da capa e
     # a perspectiva baixa do mesmo lado —, um par por ângulo
     # com a cobertura retrátil, o segundo par é ela retraída no mesmo ângulo (fotografar: outra carga do modelo)
