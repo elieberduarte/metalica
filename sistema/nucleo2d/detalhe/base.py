@@ -2861,6 +2861,36 @@ def peso_teorico(pos: Posicao) -> Optional[float]:
     return None
 
 
+#: Até esta espessura (mm) a barra de perfil desconhecido com seção de um laço só é chapa fina dobrada (calha, rufo):
+#: o dobrado de perfil começa em 1,50 mm
+ESPESSURA_CHAPA_FINA = 1.25
+
+
+def chapa_fina_da_secao(pos: Posicao) -> Optional[Tuple[int, float]]:
+    """(desenvolvimento em mm inteiro, espessura em mm) da barra que é uma chapa fina dobrada — a calha e o rufo do IFC
+    com o nome da peça no lugar do perfil ("cl.", "rft" do TecnoMETAL): o contorno da seção é a chapa ida e volta, então
+    desenvolvimento = contorno / 2 − espessura e espessura = área / (contorno / 2). O desenvolvimento no mm inteiro de
+    cima (regra mm inteiro, o maior). None quando a seção não é de chapa fina.
+    09/11 (usuário, Mall: "as calhas precisa ter o comprimento total, normalmente orçamento com o desenvolvimento ou
+    largura que é comprado a chapa da bobina"): a calha "cl." saía com desenvolvimento "—", 0 m² e no aviso de
+    posições sem peso teórico; o nome do IFC ("PL0.5x5454x1044.2") confere com esta conta peça a peça."""
+    if pos.classe != "barra" or len(pos.secao or []) != 1:
+        return None
+    laco = pos.secao[0]
+    n = len(laco)
+    if n < 4:
+        return None
+    contorno = sum(math.hypot(laco[(i + 1) % n][0] - laco[i][0], laco[(i + 1) % n][1] - laco[i][1]) for i in range(n))
+    area = abs(sum(laco[i][0] * laco[(i + 1) % n][1] - laco[(i + 1) % n][0] * laco[i][1] for i in range(n))) / 2.0
+    meio = contorno / 2.0
+    if meio <= 0:
+        return None
+    t = area / meio
+    if not 0.2 <= t <= ESPESSURA_CHAPA_FINA or meio < 40.0 * t:
+        return None
+    return int(math.ceil(meio - t - 0.01)), round(t, 2)
+
+
 def aplicar_peso_teorico(posicoes: Sequence[Posicao]) -> int:
     """Troca `peso` pelo teórico em cada posição (o da malha fica em `peso_malha`).
     Devolve quantas posições ficaram com o da malha por falta de regra (a telha não conta:
@@ -2870,6 +2900,11 @@ def aplicar_peso_teorico(posicoes: Sequence[Posicao]) -> int:
         if getattr(p, "peso_malha", None) is None:
             p.peso_malha = p.peso
         pt = peso_teorico(p)
+        if pt is None and p.classe == "barra":
+            ch = chapa_fina_da_secao(p)
+            if ch:
+                p.chapa_fina = ch                   # a lista dá a largura (desenvolvimento) e a espessura da chapa
+                pt = ch[0] * float(p.comprimento or 0.0) * ch[1] * 7.85e-6 or None
         p.sem_peso_teorico = pt is None and p.classe != "telha" and not _funilaria(p.perfil)   # chapa fina: pela geometria
         if pt is None:
             sem += int(p.sem_peso_teorico)

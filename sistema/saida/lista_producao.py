@@ -333,6 +333,17 @@ def _linha_posicao(p: Posicao, categoria: str) -> dict:
                 "furos": p.rotulo_furos(), "parafusos": p.rotulo_parafusos(), "peso": round(c["peso"], 3),
                 "peso_total": round(c["peso"] * p.quantidade, 2), "conjuntos": list(p.conjuntos),
                 "observacoes": list(p.observacoes) + (["corte em obra"] if c["cortada"] else [])}
+    fina = getattr(p, "chapa_fina", None)
+    if fina:
+        # a calha/o rufo do IFC sem perfil de catálogo ("cl.", "rft"): a largura é o desenvolvimento da chapa (o que se
+        # compra da bobina) e a espessura a dela, pela seção (nucleo2d.detalhe.base.chapa_fina_da_secao, Mall 09/11)
+        return {"marca": p.marca, "nome": getattr(p, "nome", ""), "categoria": categoria, "classe": CLASSES.get(p.classe, p.classe),
+                "perfil": p.perfil, "material": p.material, "quantidade": p.quantidade,
+                "comprimento": round(p.comprimento), "largura": int(fina[0]), "espessura": fina[1],
+                "area_m2": round(fina[0] * p.comprimento / 1e6 * p.quantidade, 3),
+                "furos": p.rotulo_furos(), "parafusos": p.rotulo_parafusos(), "peso": round(p.peso, 3), "peso_total": round(p.peso_total, 2),
+                "peso_malha": round(getattr(p, "peso_malha", p.peso), 3),
+                "conjuntos": list(p.conjuntos), "observacoes": list(p.observacoes)}
     return {"marca": p.marca, "nome": getattr(p, "nome", ""), "categoria": categoria, "classe": CLASSES.get(p.classe, p.classe),
             "perfil": p.perfil, "material": p.material, "quantidade": p.quantidade,
             "comprimento": round(p.comprimento) if p.classe != "indefinida" else 0,

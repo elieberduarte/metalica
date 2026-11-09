@@ -51,3 +51,52 @@ def test_categoria_e_resumo_fora_do_aco():
     assert _categoria(P(), "") == "RUFOS" and "RUFOS" in CATEGORIAS
     assert PREFIXO_NOME["rufo"] == "RF" and PREFIXO_NOME["calha"] == "CL"
     assert _FAMILIA_DO_TIPO["rufo"] == "funilaria" and "funilaria" in FAMILIAS and "funilaria" in FORA_DO_ACO
+
+
+def _calha_u(x0, x1, y, largura, altura, t, perfil, camada="Calhas"):
+    """A calha em U de chapa fina, extrudada ao longo de x, como o TecnoMETAL a exporta: o nome da peça ("cl.") no
+    lugar do perfil e a seção de chapa ida e volta (8 pontos)."""
+    sec = [(0, altura), (0, 0), (largura, 0), (largura, altura), (largura - t, altura), (largura - t, t), (t, t), (t, altura)]
+    vs = [(float(x), float(y + a), float(b) + 3000.0) for x in (x0, x1) for a, b in sec]
+    n = len(sec)
+    faces = [list(range(n - 1, -1, -1)), list(range(n, 2 * n))]
+    faces += [[i, (i + 1) % n, n + (i + 1) % n, n + i] for i in range(n)]
+    return Solido(nome=perfil, camada=camada, vertices=vs, faces=faces,
+                  atributos={"tipo_ifc": "IfcMember", "marcas": {"perfil": perfil},
+                             "propriedades": {"SteelXData": {"ElementName": "PL%gx%gx%g" % (t, x1 - x0, 0), "ModelRole": "CALHA",
+                                                             "SinglePartMark": perfil}}})
+
+
+def test_calha_do_ifc_com_desenvolvimento_e_peso_teorico():
+    """Mall 09/11 (usuário: "as calhas precisa ter o comprimento total, normalmente orçamento com o desenvolvimento ou
+    largura que é comprado a chapa da bobina"): a calha "cl." do TecnoMETAL saía no Resumo de materiais com o
+    desenvolvimento "—", 0 m² e no aviso "posições sem peso teórico". A seção de chapa fina dá o desenvolvimento
+    (contorno / 2 − t, mm inteiro de cima) e a espessura; a lista e o resumo levam os dois."""
+    from nucleo2d import detalhar as det
+    from saida.lista_producao import _linha_posicao
+    from saida.resumos import funilaria_da_lista
+    doc = Documento(nome="t")
+    doc.add(_calha_u(0, 9000, 0, 300, 200, 0.5, "cl."))
+    lev = det.levantar(doc, regra_tercas=False)
+    p = next(p for p in lev["posicoes"] if p.perfil == "cl.")
+    # contorno da seção 1.399 → meio 699,5; t = 349,5 / 699,5 = 0,4996; desenvolvimento 699,0 → 699
+    assert getattr(p, "chapa_fina", None) == (699, 0.5), getattr(p, "chapa_fina", None)
+    assert not p.sem_peso_teorico
+    assert not any("sem peso teórico" in a for a in lev["avisos"]), lev["avisos"]
+    assert abs(p.peso - 699 * 9000 * 0.5 * 7.85e-6) < 0.01
+    linha = _linha_posicao(p, "RUFOS")
+    assert linha["largura"] == 699 and linha["espessura"] == 0.5 and linha["area_m2"] > 6.2
+    linha["nome"] = linha["nome"] or "CL1"              # o nome de produção (a lista do sistema o dá)
+    f = funilaria_da_lista({"posicoes": [linha]})[0]
+    assert f["tipo"] == "Calha" and f["desenvolvimento"] == 699 and abs(f["comprimento"] - 9000) < 1
+    assert abs(f["ml"] - 9.0) < 0.01 and abs(f["m2"] - 6.291) < 0.01
+
+
+def test_barra_grossa_de_perfil_desconhecido_nao_vira_chapa_fina():
+    """O limite da regra: a seção de 3 mm (um dobrado de nome desconhecido) não é calha nem rufo."""
+    from nucleo2d import detalhar as det
+    doc = Documento(nome="t")
+    doc.add(_calha_u(0, 6000, 0, 150, 60, 3.0, "XYZ 99", camada="Vigas"))
+    lev = det.levantar(doc, regra_tercas=False)
+    p = next(p for p in lev["posicoes"] if p.perfil == "XYZ 99")
+    assert getattr(p, "chapa_fina", None) is None
