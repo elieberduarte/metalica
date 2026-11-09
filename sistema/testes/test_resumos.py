@@ -129,14 +129,15 @@ def test_descricao_da_telha_pelo_perfil_dela():
 
 
 def test_compra_chapas_comerciais_porcas_e_arruelas():
-    """chapa de 1,20 x 3,00 pela área com a perda; cada parafuso com 1 porca e 1 arruela, as soltas somadas (05/10)"""
+    """chapa de 1,20 x 3,00 pela área com a perda; o parafuso é kit (+ porca e arruela): porcas e arruelas só as soltas
+    (usuário 09/11; antes, 1 porca + 1 arruela por parafuso somadas, em dobro)"""
     lista = {"perfis": [], "chapas": [{"espessura": 3.0, "pecas": 10, "area_m2": 10.0, "peso": 235.5}]}
     pf = [{"nome": "Parafuso M12x35", "descricao": "Parafuso sextavado Ø1/2\" + porca e arruela", "qtd": 10, "parafuso": True, "d": 12},
           {"nome": "Porca 1/2\"", "descricao": "", "qtd": 4, "parafuso": False, "d": 12.7},
           {"nome": "Arruela 5/8\"", "descricao": "", "qtd": 6, "parafuso": False, "d": 15.9}]
     C = resumos._compra(lista, pf, {"itens": []}, {})
     assert C["chapas"][0]["chapas"] == 4                       # 10 m² × 1,15 / 3,6 m² = 3,2 → 4
-    assert dict(C["porcas"]) == {'1/2"': 14} and dict(C["arruelas"]) == {'1/2"': 10, '5/8"': 6}
+    assert dict(C["porcas"]) == {'1/2"': 4} and dict(C["arruelas"]) == {'5/8"': 6}
     assert resumos._compra(lista, pf, {"itens": []}, {"perda_chapas": "0"})["chapas"][0]["chapas"] == 3
 
 

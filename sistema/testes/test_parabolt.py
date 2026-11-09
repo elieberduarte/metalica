@@ -35,6 +35,6 @@ def test_parabolt_na_lista_fora_do_quimico_e_das_porcas():
     assert p["qtd"] == 2 and p["sem_porca"] and not p.get("embutimento") and "químico de injeção" not in p["descricao"]
     assert por_nome['Chumbador químico HIT-V Ø1/2" x 190']["qtd"] == 1
     C = rz._compra({"perfis": [], "posicoes": []}, itens, {}, {})
-    assert dict(C["porcas"]) == {'1/2"': 1} and dict(C["arruelas"]) == {'1/2"': 1}, "só as do HIT-V: as do Parabolt vêm no kit"
+    assert dict(C["porcas"]) == {} and dict(C["arruelas"]) == {}, "Parabolt e HIT-V em kit: porca e arruela só as avulsas (09/11)"
     (q,) = C["quimicos"]
     assert q["furos"] == 1, "o químico só nos furos do HIT-V"

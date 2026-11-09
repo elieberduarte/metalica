@@ -1579,8 +1579,9 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
         chapas.append({"rotulo": c["rotulo"], "bitola": c["bitola"], "mm": c["mm"], "polegada": c["polegada"], "modelo": c["modelo"],
                        "diferente": bool(c.get("diferente")), "material": c["material"], "m2": m2, "kg": c["kg_compra"], "pecas": c["pecas"],
                        "chapas": int(math.ceil(m2 * (1.0 + perda / 100.0) / area_chapa - 1e-9)) if m2 > 0 else 0})
-    # cada parafuso vem com 1 porca e 1 arruela ("+ porca e arruela"); as porcas e arruelas soltas (pontas roscadas,
-    # chumbadores) somam na bitola delas
+    # o parafuso é comprado em KIT ("+ porca e arruela"): as linhas "Porca"/"Arruela" levam SÓ AS AVULSAS — pontas roscadas,
+    # tirantes, ganchos, chumbadores (usuário 09/11, pelo GESTÃO N.6: a porca 1/2" da Sala de Compressores saía 906 = 280 + 24
+    # + 602 parafusos M12, todas dos kits, contadas duas vezes)
     pf, porcas, arruelas, quimico = [], collections.Counter(), collections.Counter(), collections.OrderedDict()
     for it in parafusos:
         if it["parafuso"]:
@@ -1589,10 +1590,6 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
                        "ids": [i for lc in it.get("locais") or [] for i in lc.get("ids") or []]})
             if it.get("sem_porca"):
                 continue                                     # o Hardbolt e o Parabolt: a porca e a arruela são deles, sem químico
-            porcas[_bitola_pol(it.get("d"))] += it["qtd"]
-            # a arruela que já é chapa do projeto (a CH2 do chumbador da CH1) não se compra solta
-            if it["qtd"] - int(it.get("sem_arruela") or 0):
-                arruelas[_bitola_pol(it.get("d"))] += it["qtd"] - int(it.get("sem_arruela") or 0)
             if it.get("embutimento"):
                 q_ = quimico.setdefault(it.get("quimico") or "HIT-RE 500", {"furos": 0, "ml": 0.0})
                 q_["furos"] += it["qtd"]

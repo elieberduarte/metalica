@@ -359,8 +359,9 @@ class TestParafusosEPorcasNaLista(_SooroDetalhada):
         self.assertFalse([k for k in ac if k.startswith("BOLT (")], ac)
         m12 = {k: v for k, v in ac.items() if k.startswith("Parafuso sextavado M12 x ")}
         self.assertTrue(m12 and all("ASTM A307" in k for k in m12), m12)
-        self.assertEqual(ac.get("Porca sextavada M12 (dos parafusos)"), sum(m12.values()))
-        self.assertEqual(ac.get("Arruela lisa M12 (dos parafusos)"), sum(m12.values()))
+        # o parafuso é kit ("+ porca e arruela", usuário 09/11): a porca e a arruela dele não saem em linha própria
+        self.assertTrue(all(k.endswith("+ porca e arruela") for k in m12), m12)
+        self.assertFalse([k for k in ac if "dos parafusos" in k], ac)
 
     def test_n07_porcas_do_chumbador_recebido_e_nosso(self):
         from nucleo2d.detalhar import levantar

@@ -454,8 +454,8 @@ def acessorios_da_lista(acessorios: Dict[str, int], metrico: bool = False) -> Li
     """Os acessórios da lista com o parafuso por extenso (Q08, primeiro uso 16/10: "BOLT (A) 12x30 264", sem classe,
     norma nem porca): "Parafuso sextavado Ø1/2" x 1.1/4" ASTM A307 + porca e arruela" — a mesma descrição e a mesma regra
     da classe do resumo de compras (saida/resumos.descricao_parafuso: a do modelo quando o nome a traz, senão A325 a
-    partir de Ø16 × 50 e A307 abaixo) — e a porca e a arruela de cada parafuso contadas em linhas próprias. [{nome,
-    quantidade, origem?}]."""
+    partir de Ø16 × 50 e A307 abaixo). A porca e a arruela do parafuso vêm no kit ("+ porca e arruela"): não saem em linha
+    própria — as linhas de porca e arruela são só as avulsas (usuário 09/11, pelo GESTÃO N.6). [{nome, quantidade, origem?}]."""
     from saida.resumos import codigo_autobrocante, descricao_autobrocante, descricao_parafuso, eh_autobrocante
     fora: Dict[str, dict] = collections.OrderedDict()
 
@@ -466,7 +466,6 @@ def acessorios_da_lista(acessorios: Dict[str, int], metrico: bool = False) -> Li
             it.setdefault("origem", [])
             if origem not in it["origem"]:
                 it["origem"].append(origem)
-    porcas: Dict[str, int] = collections.Counter()
     for nome, n in sorted((acessorios or {}).items()):
         m = _RE_BOLT_IFC.match(str(nome))
         if not m:
@@ -485,11 +484,6 @@ def acessorios_da_lista(acessorios: Dict[str, int], metrico: bool = False) -> Li
             desc = "Parafuso sextavado M%g x %s – ASTM %s (na compra: Ø%s x %s) + porca e arruela" % (
                 d, m.group(3), mc.group(3), mc.group(1), mc.group(2))
         somar(desc, n, nome)
-        if d:
-            porcas["M%g" % d] += n
-    for bitola, n in sorted(porcas.items()):
-        somar("Porca sextavada %s (dos parafusos)" % bitola, n)
-        somar("Arruela lisa %s (dos parafusos)" % bitola, n)
     return [dict(it, origem=", ".join(it["origem"])) if it.get("origem") else it for it in fora.values()]
 
 

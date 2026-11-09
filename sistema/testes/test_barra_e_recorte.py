@@ -118,7 +118,7 @@ def test_quimico_em_cartuchos_e_a_arruela_que_e_chapa():
                   "embutimento": 150.0, "quimico": "HIT-RE 500"},
                  {"nome": "Parafuso", "descricao": "y", "qtd": 4, "parafuso": True, "d": 12.7}]
     C = rz._compra({"perfis": [], "posicoes": []}, parafusos, {}, {})
-    assert dict(C["porcas"])['1/2"'] == 14 and dict(C["arruelas"])['1/2"'] == 4
+    assert dict(C["porcas"]) == {} and dict(C["arruelas"]) == {}, "o chumbador químico e o parafuso são kit (usuário 09/11)"
     (q,) = C["quimicos"]
     assert q["furos"] == 10 and q["cartuchos"] == 1
     R = orc.montar({"posicoes": [], "acessorios": [{"nome": "CHUMBADOR QUÍMICO HIT-V 15.875x250", "quantidade": 100}]}, None)

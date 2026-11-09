@@ -49,7 +49,7 @@ def test_lista_o_autobrocante_sem_porca_e_o_38_em_um_e_meio():
     assert a['Parafuso sextavado M12.7 x 38 – ASTM A325 (na compra: Ø1/2" x 1.1/2") + porca e arruela'] == 3130, a
     assert a['Parafuso sextavado M15.875 x 38 – ASTM A325 (na compra: Ø5/8" x 1.1/2") + porca e arruela'] == 48, a
     assert not [k for k in a if "M4.2" in k and ("orca" in k or "rruela" in k)], a
-    assert a["Porca sextavada M12.7 (dos parafusos)"] == 3130
+    assert not [k for k in a if "dos parafusos" in k], a        # a porca e a arruela vêm no kit (usuário 09/11)
 
 
 def test_no_resumo_o_autobrocante_e_compra_sem_porca():
