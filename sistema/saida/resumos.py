@@ -975,6 +975,14 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
     pendencias = _pendencias(lista, parafusos, lev, nomes_pos)
     pintura = _area_de_pintura(lista)
     compra = _compra(lista, parafusos, telhas, dados)
+    # os parafusos de telha pela contagem do 3D (COM-05, usuário 09/11): OA/OB/costura por cor, 3 por telha em cada apoio
+    avisos_telha = []
+    try:
+        from saida.parafusos_telha import parafusos_de_telha
+        pt_ = parafusos_de_telha(doc, telha_dos_dados=str(dados.get("telha") or ""))
+        compra["parafusos_telha"], avisos_telha = pt_["linhas"], pt_["avisos"]
+    except Exception as exc_:                                # noqa: BLE001 — a conta não derruba o resumo
+        compra["parafusos_telha"], avisos_telha = [], ["COM-05: os parafusos de telha não foram contados (%s)" % exc_]
     maior, pesada = _maior_e_mais_pesada(lista, tipos_tes, "tesoura" if cobertura else "viga caixote")
     # onde fica cada tesoura, para o tipo dela na implantação do dossiê: a ponta de cima em planta (09/10)
     tesouras_lugar = []
@@ -1007,7 +1015,7 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
         "tesouras": tipos_tes, "tercas": tercas, "grupos_peso": grupos_peso, "telhas": telhas, "parafusos": parafusos,
         "familias": familias, "chaparia": chaparia, "chaparia_total": chaparia_total, "funilaria": funil, "camadas": camadas_qtd,
         "perfis_kg": peso_aco - chaparia_total["kg"] if chaparia_total["kg"] else perfis_kg,
-        "avisos": list(lev.get("avisos") or []) + conferir_porcas_da_compra(lista, parafusos),
+        "avisos": list(lev.get("avisos") or []) + conferir_porcas_da_compra(lista, parafusos) + avisos_telha,
     }
 
 
@@ -2789,6 +2797,12 @@ def _html_compra(R: dict) -> str:
         ids = [",".join(pf.get("ids") or []) for pf in C.get("parafusos") or []]
         h.append(_tabela(["Item", "Descrição", ("Qtd", "r"), "Pedido"], linhas, larguras=["20%", "52%", "12%", "16%"],
                          ids_linhas=ids + [""] * (len(linhas) - len(ids))))
+    if C.get("parafusos_telha"):
+        h.append("<h3>Parafusos de telha</h3><p class=\"explica\">Pela contagem do 3D: 3 por telha em cada terça ou longarina em que "
+                 "ela apoia; OA e OB no múltiplo de 50, costura = (OA + OB) ÷ 4 no múltiplo de 5; cabeça na cor da telha.</p>")
+        h.append(_tabela(["Item", "Descrição", ("Telhas", "r"), ("Apoios", "r"), ("Qtd", "r"), "Pedido"],
+                         [[x["item"], x["descricao"], (x["telhas"] or "", "r"), (x["apoios"] or "", "r"), (x["qtd"], "r"), ""]
+                          for x in C["parafusos_telha"]], larguras=["14%", "50%", "8%", "8%", "8%", "12%"]))
     if C.get("telhas"):
         h.append("<h3>Telhas</h3><p class=\"explica\">m² pela largura útil.</p>")
         h.append(_tabela(["Telha", ("Peças", "r"), ("ml", "r"), ("m²", "r"), ("kg", "r"), "Pedido"],
@@ -2914,6 +2928,7 @@ def planilha_de_materiais(R: dict, lista: Optional[dict], caminho: str) -> str:
     fix += [["Químico %s" % q["nome"], "Químico de injeção %s, cartucho %d ml (%s furos, ~%s ml com %d%% de perda)"
              % (q["nome"], q["cartucho_ml"], _n(q["furos"], 0), _n(q["ml_total"], 0), round(PERDA_QUIMICO * 100)), int(q["cartuchos"]), ""]
             for q in C.get("quimicos") or []]
+    fix += [[x["item"], x["descricao"], int(x["qtd"]), ""] for x in C.get("parafusos_telha") or []]
     if len(fix) > 1:
         abas.append({"nome": "Parafusos e chumbadores", "linhas": fix, "larguras": [34, 80, 9, 10]})
     if lista and lista.get("posicoes"):

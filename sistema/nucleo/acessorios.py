@@ -1299,8 +1299,13 @@ _registrar(Tipo(
 # ------------------------------------------------------------------ fechamento
 
 def _g_telha(p):
-    area = _num(p["area"]); d = _num(p["densidade"])
-    n = int(math.ceil(area * d))
+    """A regra COM-05 (usuário, 09/11): 5 por telha na terça do beiral e na da cumeeira, 2,5 (cristas alternadas) nas do meio;
+    OA no múltiplo de 50, costura = OA ÷ 4 no de 5. A conta da obra inteira (pelo 3D, OA/OB/costura por cor) é a de
+    saida/parafusos_telha.py; este é o detalhe de um pano de telhas inteiras do beiral à cumeeira."""
+    from saida.parafusos_telha import arredondar, costura, fixacoes_da_telha, ARRED_FIXACAO
+    telhas = int(_num(p["telhas"])); apoios = int(_num(p["apoios"]))
+    por_telha = fixacoes_da_telha({"apoios": apoios, "pontas": min(2, apoios)}, "OA")
+    n = arredondar(telhas * por_telha, ARRED_FIXACAO)
     s = Svg(); s.origem(0, 0, h=40)
     s.titulo(0, 360, "FIXAÇÃO DA TELHA NA TERÇA")
     pts = []
@@ -1308,19 +1313,23 @@ def _g_telha(p):
         x = i * 250
         pts += [(x, 0), (x + 40, 0), (x + 80, 120), (x + 170, 120), (x + 210, 0)]
     s.poli(pts, "aco", fechada=False)
-    for i in range(6):
+    for i in (0, 2, 4):
         s.linha(i * 250 + 125, 140, i * 250 + 125, 60, "barra")
     s.ret(-50, -150, 1600, 150, "oculta")
     s.texto(0, -200, "terça", "rot")
-    pecas = [peca_fixador("parafuso", "Autobrocante 12-14 × 1\" com arruela de vedação", n, "%s por m² de cobertura" % fmt(d, 1))]
-    return pecas, s.render(), ["Fixação na crista da onda, em todas as terças; nas bordas e na cumeeira, em todas as ondas."]
+    pecas = [peca_fixador("parafuso", "Parafuso autobrocante OA %s – na cor da telha (com arruela de vedação)" % p["comprimento"], n,
+                          "%d telhas × %d terças: 5 por telha no beiral e na cumeeira, 2,5 nas do meio" % (telhas, apoios)),
+             peca_fixador("parafuso", "Parafuso autobrocante de costura 7/8\" – na cor da telha", costura(n, 0), "OA ÷ 4")]
+    return pecas, s.render(), ["Fixação na crista: todas (5 por telha) no beiral e na cumeeira, alternadas (2,5) nas terças do meio (regra da fábrica, 09/11).",
+                               "OA 2.3/8\" na telha simples; 4\" na PIR 30, 5\" na PIR 50, 2\" no isopainel; OB 3/4\" no fechamento."]
 
 
 _registrar(Tipo(
     "fixacao_telha", "Fixação da telha na terça", "fechamento",
     "Parafuso autobrocante com arruela de vedação atravessando a crista da telha até a mesa da terça.",
-    [Param("area", "Área de cobertura", "m²", 450), Param("densidade", "Parafusos por m²", "", 2.2)],
-    [], _g_telha, None, "prática de montagem", "Toda telha metálica."))
+    [Param("telhas", "Telhas", "", 40), Param("apoios", "Terças em que cada telha apoia", "", 6),
+     Param("comprimento", "Comprimento (OA)", "", '2.3/8"', ['2.3/8"', '4"', '5"', '2"'])],
+    [], _g_telha, None, "regra COM-05 da fábrica", "Toda telha metálica."))
 
 
 def _g_parafusos(p):
