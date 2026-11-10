@@ -171,6 +171,10 @@ def _juntar_duplos(linhas: List[dict]) -> Tuple[List[dict], int]:
                     continue
                 if max(math.dist(a1, pa), math.dist(b1, pb)) < 1.0:
                     continue                                 # a mesma barra repetida, não o par
+                if min(math.dist(a1, a2), math.dist(a1, b2), math.dist(b1, a2), math.dist(b1, b2)) < 1.0:
+                    # dois trechos SEGUIDOS da mesma peça (dividem uma ponta) não são o par lado a lado: a cinta do Residencial
+                    # Madrid partida no toco e na chapa de apoio a 150 mm virava "duplo" e os nós iam para a média (10/11)
+                    continue
                 fora.update((i, j))
                 ln = dict(linhas[i])
                 ln["a"] = tuple((a1[m] + pa[m]) / 2 for m in range(3))

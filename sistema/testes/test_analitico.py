@@ -160,3 +160,23 @@ def test_ponta_perto_do_eixo_mas_fora_dele_nao_corta_a_peca():
     doc.add(barra((3000.0, 40.0, 3000.0), (3000.0, 40.0, 4000.0), "viga"))
     r = analitico.analitico(doc)
     assert r["resumo"]["ponta_no_eixo"] == 0
+
+
+def test_dois_trechos_curtos_seguidos_da_mesma_peca_nao_viram_perfil_duplo():
+    # Residencial Madrid (10/11): a cinta partida a 150 mm (no toco e na chapa de apoio) — dois trechos seguidos da mesma peça, os
+    # dois com menos de TOL_DUPLO, eram tomados pelo par lado a lado e fundidos na média (os nós saíam do lugar e o apoio caía)
+    doc = Documento()
+    for x in (0.0, 6000.0):
+        doc.add(barra((x, 0.0, 0.0), (x, 0.0, 3000.0), "pilar", perfil="W 200×19,3"))
+    for x0, x1 in ((0.0, 2000.0), (2000.0, 2150.0), (2150.0, 2300.0), (2300.0, 6000.0)):
+        doc.add(barra((x0, 0.0, 3000.0), (x1, 0.0, 3000.0), "viga", "CI.1"))
+    r = analitico.analitico(doc)
+    xs = sorted(round(p[0]) for p in r["nos"] if round(p[2]) == 3000)
+    assert r["resumo"]["duplos_juntados"] == 0 and xs == [0, 2000, 2150, 2300, 6000], (r["resumo"], xs)
+
+
+def test_perfil_duplo_lado_a_lado_ainda_vira_uma_barra():
+    doc = Documento()
+    doc.add(barra((0.0, -16.0, 3000.0), (150.0, -16.0, 3000.0), "diagonal", "T#1", perfil='L 1"×1/8"'))
+    doc.add(barra((0.0, 16.0, 3000.0), (150.0, 16.0, 3000.0), "diagonal", "T#1", perfil='L 1"×1/8"'))
+    assert analitico.analitico(doc)["resumo"]["duplos_juntados"] == 1
