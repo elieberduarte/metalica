@@ -2491,7 +2491,8 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
                          + (["lançadas no 3D %s ml" % _n(sum(t_["ml"] for t_ in TL), 2)] if TL else []))
         partes.append(_tabela(["Tipo", "Descrição", ("Qtd", "c"), ("Comp. (m)", "r"), ("Total (ml)", "r"), ("m²", "r"), ("kg/m²", "r"), ("kg", "r")], linhas,
                               rodape=[("TOTAL", "b"), sub, "", "", (_n(ml_q, 2), "r"), (_n(m2_q, 2), "r"),
-                                      (_coef(kg_q, m2_q), "r"), (_n(kg_q, 1), "r")],
+                                      # a média de tipos diferentes não diz nada (0,50 kg/m² entre a PIR sem peso e a TP40, Mall)
+                                      (_coef(kg_q, m2_q) if not (TL and T.get("ml_total")) else "", "r"), (_n(kg_q, 1), "r")],
                               larguras=["10%", "41%", "6%", "8%", "9%", "9%", "8%", "9%"]))
         if T.get("ml_total"):
             partes.append("<p class=\"nota\">m² pela largura útil (%s m)%s.</p>" % (
