@@ -74,6 +74,36 @@ export function textoDoGrupo(dados, camadas) {
   return falta ? { texto: '—', dica: 'Sem o peso destas camadas: gere o Resumo da obra (o peso é o dele, o mesmo da proposta).' } : { texto: '', dica: '' };
 }
 
+/** O nível do piso (±0,00) entre os níveis do projeto: o que diz "±0" ou "piso" mais perto do zero, ou o de z = 0; null sem. */
+export function nivelDoPiso(niveis) {
+  const l = (niveis || []).filter(n => n && Number.isFinite(+n.z));
+  const zero = l.filter(n => /±\s*0|\+\/-\s*0/.test(n.nome || ''));
+  const piso = zero.length ? zero : l.filter(n => /\bpiso\b/i.test(n.nome || ''));
+  if (piso.length) return +piso.reduce((a, b) => (Math.abs(+b.z) < Math.abs(+a.z) ? b : a)).z;
+  return l.some(n => +n.z === 0) ? 0 : null;
+}
+
+/**
+ * A linha do rodapé do modo ver (usuário, 10/11, no GN: "preciso que revise isso para aparecer algumas informações rápidas
+ * aqui: Área obra - Altura - Qtd peças - Peso estrutura"). A área e o peso são os do resumo da obra — os da proposta e do kg/m²
+ * (peso-na-tela-igual-ao-resumo); a altura, do piso (±0,00 dos níveis; sem ele, o pé do modelo) ao ponto mais alto do modelo;
+ * as peças, as do modelo. o = {pecas, zTopo, zPe, niveis} (z em mm do projeto).
+ */
+export function linhaDaObra(dados, o) {
+  const p = [];
+  const ob = (dados && dados.obra) || {}, r = (dados && dados.resumo) || {};
+  if (ob.area_m2 >= 0.5) p.push(`Área ${inteiro(ob.area_m2)} m²`);
+  const z0 = nivelDoPiso(o.niveis);
+  const base = z0 !== null ? z0 : o.zPe;
+  if (Number.isFinite(o.zTopo) && Number.isFinite(base) && o.zTopo > base) {
+    p.push(`Altura ${((o.zTopo - base) / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m`);
+  }
+  if (o.pecas) p.push(`${inteiro(o.pecas)} peças`);
+  if (ob.peso_aco >= 0.5) p.push(`Estrutura ${inteiro(ob.peso_aco)} kg${r.atual ? '' : ` (resumo de ${quando(r.gerado)}, antes da última mudança do modelo)`}`);
+  else if (dados) p.push('área e peso: gere o Resumo da obra');
+  return p.join(' · ');
+}
+
 /** A tela que gera o Resumo da obra (a lista de materiais, aba Resumos). */
 export const linkDoResumo = (projeto) => `/materiais?projeto=${encodeURIComponent(projeto || '')}#resumos`;
 

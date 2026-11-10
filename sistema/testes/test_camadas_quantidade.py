@@ -71,6 +71,9 @@ def test_a_rota_le_o_resumo_e_diz_se_o_modelo_mudou(tmp_path, monkeypatch):
     q = app.quantidade_das_camadas("gn")
     assert q["resumo"]["tem_camadas"] and q["resumo"]["atual"] and q["resumo"]["gerado"]
     assert abs(sum(c["kg"] for c in q["camadas"].values()) - R["numeros"]["peso_aco"]) < 0.01
+    # o rodapé do modo ver (usuário, 10/11: "Área obra - Altura - Qtd peças - Peso estrutura"): a área e o peso são os do resumo
+    assert abs(q["obra"]["peso_aco"] - R["numeros"]["peso_aco"]) < 0.1, q["obra"]
+    assert abs(q["obra"]["area_m2"] - R["dimensoes"]["area_m2"]) < 0.01, (q["obra"], R["dimensoes"])
     # o arquitetônico pela conta do 3D: as paredes em m², o pilar em unidade
     assert q["arq"]["ARQ — Paredes de fachada"]["m2"] > 0 and q["arq"]["ARQ — Pilares do arquitetônico"]["un"] == 1
     # o modelo gravado depois do resumo: os números ficam (os da proposta), com o aviso

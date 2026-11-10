@@ -2994,18 +2994,24 @@ def quantidade_das_camadas(s: str) -> dict:
     """GET /api/projetos/<s>/camadas-quantidade: a quantidade de cada camada para o painel Camadas do modo ver e do editor
     (usuário, 06/11: "não posso mostrar para o fornecedor um peso na apresentação e na proposta outro" — o peso é o do resumo
     da obra). {"resumo": {"gerado", "atual", "tem_camadas"}, "camadas": {camada: {"kg", "m2", "m"}}, "arq": {camada: {"m2",
-    "un"}}}. `atual` = o resumo é mais novo que o modelo gravado; `tem_camadas` = o resumo já guarda as camadas (os de antes
-    de 06/11 não)."""
+    "un"}}}, "obra": {"area_m2", "peso_aco"}}. `atual` = o resumo é mais novo que o modelo gravado; `tem_camadas` = o resumo
+    já guarda as camadas (os de antes de 06/11 não). `obra` = a área e o peso do aço do resumo (os da proposta e do kg/m²),
+    para o rodapé do modo ver (usuário, 10/11: "Área obra - Altura - Qtd peças - Peso estrutura"); 0 sem resumo."""
     from saida import resumos
     pasta = _gerente()._existente(s)
     arq_res = os.path.join(pasta, "detalhamento", resumos.ARQ_NUMEROS)
     caminho = _gerente().caminho_modelo(s)
-    camadas, gerado, t_res, tem = {}, "", None, False
+    camadas, gerado, t_res, tem, obra = {}, "", None, False, {"area_m2": 0.0, "peso_aco": 0.0}
     try:
         with open(arq_res, encoding="utf-8") as f:
             d = json.load(f)
         tem = "camadas" in d
         camadas = d.get("camadas") or {}
+        try:
+            obra = {"area_m2": round(float((d.get("dimensoes") or {}).get("area_m2") or 0.0), 2),
+                    "peso_aco": round(float((d.get("numeros") or {}).get("peso_aco") or 0.0), 1)}
+        except (TypeError, ValueError):
+            pass
         t_res = os.path.getmtime(arq_res)
         gerado = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t_res))
     except (OSError, ValueError):
@@ -3016,7 +3022,7 @@ def quantidade_das_camadas(s: str) -> dict:
         t_mod = None
     atual = t_res is not None and (t_mod is None or t_res >= t_mod)
     return {"resumo": {"gerado": gerado, "atual": atual, "tem_camadas": tem}, "camadas": camadas,
-            "arq": _quantidade_arquitetonico(caminho)}
+            "arq": _quantidade_arquitetonico(caminho), "obra": obra}
 
 
 def conferencias_do_projeto(s: str) -> dict:

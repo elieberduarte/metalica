@@ -15,6 +15,9 @@ gerado pela conta de verdade (test_camadas_quantidade._resumo + resumos.gerar_re
   C. o modelo gravado depois do resumo: a nota avisa e os números ficam (apagados);
   E. o resumo de antes das camadas (o do GN em 06/11: "porque tem várias camadas sem informação?"): o aço com "—" e a
      dica, a nota com o caminho para os Resumos da obra e presa no alto do painel rolado, no modo ver e no editor;
+  F. o rodapé do modo ver (usuário, 10/11: "Área obra - Altura - Qtd peças - Peso estrutura"): a área e o peso do resumo
+     (os da proposta), a altura do piso ±0,00 dos níveis ao topo do modelo, as peças do modelo; com o modelo mudado depois
+     do resumo, o peso diz de quando é;
   D. sem erros no console.
 Porta livre, nunca a 8765/8766."""
 import base64, io, json, os, shutil, subprocess, sys, tempfile, time
@@ -42,11 +45,13 @@ for c in camadas:
 camadas["Calhas"]["visivel"] = False             # a camada escondida continua com a quantidade
 pasta = os.path.join(DADOS, "gn")
 os.makedirs(os.path.join(pasta, "detalhamento"))
-json.dump({"nome": "gn", "tipo": "ifc", "alterado": "2026-11-06T10:00:00"}, open(os.path.join(pasta, "projeto.json"), "w", encoding="utf-8"))
+NIVEIS = [{"nome": "Topo da base 906,18", "z": -220.0}, {"nome": "Piso 906,40 (±0,00)", "z": 0.0}, {"nome": "Topo dos pilares 917,05", "z": 10650.0}]
+json.dump({"nome": "gn", "tipo": "ifc", "alterado": "2026-11-06T10:00:00", "niveis": NIVEIS}, open(os.path.join(pasta, "projeto.json"), "w", encoding="utf-8"))
 json.dump({"nome": "gn", "unidade": "mm", "entidades": m["entidades"], "camadas": camadas, "materiais": m.get("materiais", {})},
           open(os.path.join(pasta, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
 time.sleep(0.1)
 R.update({"projeto": {"nome": "gn"}, "dados": {}})
+R["dimensoes"]["area_m2"] = 10653.79                # a amostra não tem eixos: a área da projeção do GN, como o resumo grava
 resumos.gerar_resumos(os.path.join(pasta, "detalhamento"), R, imprimir_pdf=False)
 
 srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
@@ -129,6 +134,21 @@ try:
     ok(aba.avaliar("document.querySelector('#painel').getBoundingClientRect().width") >= 420, "[modo ver] o painel Camadas mais largo, com a coluna")
     foto("camadas_quantidade_ver.png")
 
+    # --- F. o rodapé com as informações rápidas da obra
+    z_topo = max([p[2] for e in m["entidades"] if e["tipo"] == "barra" for p in (e["inicio"], e["fim"])]
+                 + [v[2] for e in m["entidades"] if e["tipo"] == "solido" for v in e["vertices"]])
+    rod = aba.avaliar("document.querySelector('#situacao').textContent") or ""
+    print("     rodapé:", rod)
+    ok(f"Área {br(R['dimensoes']['area_m2'])} m²" in rod, f"[rodapé] a área do resumo, {br(R['dimensoes']['area_m2'])} m² ({rod!r})")
+    ok(f"Estrutura {br(R['numeros']['peso_aco'])} kg" in rod and "antes da última" not in rod,
+       f"[rodapé] o peso do resumo, {br(R['numeros']['peso_aco'])} kg — o mesmo do painel e da proposta")
+    ok(f"{len(m['entidades'])} peças" in rod, f"[rodapé] as peças do modelo ({len(m['entidades'])})")
+    import re as _re
+    alt = _re.search(r"Altura ([\d.,]+) m", rod)
+    alt_v = float(alt.group(1).replace(".", "").replace(",", ".")) if alt else None
+    ok(alt_v is not None and abs(alt_v - z_topo / 1000) <= 0.1,
+       f"[rodapé] a altura do piso ±0,00 ao topo do modelo, ~{z_topo / 1000:.2f} m ({alt_v}) — não do pé do chumbador")
+
     # --- B. editor
     LER_ED = """JSON.stringify((() => { const o = {}; document.querySelectorAll('#painel-camadas .linha').forEach(l => {
         const n = l.querySelector('.nome'), q = l.querySelector('.qtd'); if (n && q) o[n.textContent.trim()] = q.textContent.trim(); });
@@ -157,6 +177,9 @@ try:
     ok(v.get("nota") and v["nota"][0] == "velho" and "mudou" in v["nota"][1], f"[modelo mudou] a nota avisa ({v.get('nota')})")
     ok(v.get("situacao") == "velho" and (v.get("linhas") or {}).get("Pilares") == esperado["Pilares"],
        f"[modelo mudou] os números ficam, apagados ({v.get('situacao')}, {(v.get('linhas') or {}).get('Pilares')})")
+    rod = aba.avaliar("document.querySelector('#situacao').textContent") or ""
+    ok(f"Estrutura {br(R['numeros']['peso_aco'])} kg (resumo de" in rod and "antes da última mudança" in rod,
+       f"[modelo mudou] o rodapé diz de quando é o peso ({rod!r})")
 
     # --- E. o resumo de antes das camadas (o do GN, 05/11 — usuário, 06/11: "porque tem várias camadas sem informação?"): a
     # camada de aço com "—" e a dica, o arquitetônico com o número dele, e a nota com o caminho para os Resumos, presa no alto

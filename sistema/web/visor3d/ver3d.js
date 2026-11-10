@@ -17,7 +17,7 @@ import { PARTES_PISO } from './referencia.js';
 import { SOL_PADRAO, definirSol, controlesDoSol, ligarControlesDoSol } from './sol.js';
 import { acompanhar } from '../progresso.js';
 import { Terreno } from './terreno.js';
-import { carregarQuantidades, textoDaCamada, textoDoGrupo, notaDoResumo, linkDoResumo } from '../quantidade_camadas.js';
+import { carregarQuantidades, textoDaCamada, textoDoGrupo, notaDoResumo, linkDoResumo, linhaDaObra } from '../quantidade_camadas.js';
 
 const $ = s => document.querySelector(s);
 const q = new URLSearchParams(location.search);
@@ -412,8 +412,9 @@ async function abrir() {
   const ms = Math.round(performance.now() - t0);
   $('#carregando').remove();
   $('#ferramentas').hidden = false;
-  situacaoBase = `Modo ver · ${nf(visor.nPecas)} peças · aberto em ${nf(ms / 1000, 1)} s · Editar carrega o editor completo`;
-  situacao(situacaoBase);
+  msAberto = ms;
+  atualizarRodape();
+  buscarQuantidades();
   const vista = vistaGuardada();
   if (vista) {
     visor.definirCamera(vista);
@@ -451,6 +452,8 @@ async function carregarReferencia() {
   try {
     const r = await (await fetch(`/api/projetos/${encodeURIComponent(PROJETO)}/lancamento/referencia`, { cache: 'no-store' })).json();
     const tem = r && !r.erro && ((r.segmentos || []).length || (r.eixos || []).length || (r.niveis || []).length);
+    niveisDoProjeto = (r && r.niveis) || [];
+    atualizarRodape();
     visor.definirReferencia(tem ? r : null);
     if (b) b.hidden = !tem;
   } catch (e) { if (b) b.hidden = true; }
@@ -518,6 +521,21 @@ function ligarSecaoPiso() {
 
 let situacaoBase = '';
 function situacao(t) { $('#situacao').textContent = t; }
+
+// o rodapé com as informações rápidas da obra (usuário, 10/11, no GN: "Área obra - Altura - Qtd peças - Peso estrutura"):
+// a área e o peso do resumo da obra (quantidade_camadas.linhaDaObra), a altura do piso ±0,00 ao topo do modelo; refeito
+// quando chegam as quantidades e os níveis. A barra de andamento, quando há, troca a linha e volta para esta no fim
+let msAberto = 0, niveisDoProjeto = [];
+function atualizarRodape() {
+  if (!visor || !visor.cabecalho) return;
+  const cab = visor.cabecalho, o = cab.origem || [0, 0, 0], cx = cab.caixa;
+  const info = linhaDaObra(qtdCamadas, { pecas: visor.nPecas, niveis: niveisDoProjeto,
+    zTopo: cx ? cx[1][2] + o[2] : NaN, zPe: cx ? cx[0][2] + o[2] : NaN });
+  const novo = `${info} · modo ver, aberto em ${nf(msAberto / 1000, 1)} s`;
+  const igual = $('#situacao').textContent === situacaoBase;
+  situacaoBase = novo;
+  if (igual || !$('#situacao').textContent) situacao(situacaoBase);
+}
 
 /** A barra de andamento na mesma linha do aviso do rodapé (usuário, 21/10: as mensagens "em duas linhas" com o texto
  *  repetido — "atualizando o 3D" no aviso e na barra): o trilho e o % no começo da linha, a etapa no próprio aviso. */
@@ -605,6 +623,7 @@ function buscarQuantidades() {
   carregarQuantidades(PROJETO).then(d => {
     if (!d) return;
     qtdCamadas = d;
+    atualizarRodape();
     if (painelAtual === 'camadas') painelCamadas();
   });
 }
