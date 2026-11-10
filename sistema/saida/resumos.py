@@ -1019,6 +1019,7 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
                       "projecao_informada": bool(informada), "area_m2": area_m2, "nivel_apoio": nivel_apoio, "apoio_por_chapa": apoio_por_chapa,
                       "n_tesouras": len(tes_inst)},
         "tesouras": tipos_tes, "tercas": tercas, "grupos_peso": grupos_peso, "telhas": telhas, "parafusos": parafusos,
+        "telhas_lancadas": _telhas_lancadas(lista),
         "familias": familias, "chaparia": chaparia, "chaparia_total": chaparia_total, "funilaria": funil, "camadas": camadas_qtd,
         "perfis_kg": peso_aco - chaparia_total["kg"] if chaparia_total["kg"] else perfis_kg,
         "avisos": list(lev.get("avisos") or []) + conferir_porcas_da_compra(lista, parafusos) + avisos_telha,
@@ -2453,13 +2454,20 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
                      "(o resumo de materiais)." if compra else ""))
     # ---- telhas (só a obra com telha)
     T = R.get("telhas") or {}
-    if T.get("ml_total"):
+    # as telhas lançadas no 3D (sólidos fora das posições: a fachada do Mall, o fechamento do Galpão Novo) também têm linha
+    # no quadro — antes só entravam no total geral, e o quadro somava menos que ele (TEL-08, reincidência: usuário, Mall
+    # 10/11: "Não encontrei as telhas simples do fechamentos laterais nos resumos" — 802,90 ml no quadro, 904,10 no total)
+    TL = [t_ for t_ in (R.get("telhas_lancadas") or []) if t_.get("ml") or t_.get("m2")]
+    if T.get("ml_total") or TL:
         sec += 1
-        partes.append(_h2(sec, "Telhas", "%s ml" % _n(T["ml_total"], 2)))
+        ml_q = float(T.get("ml_total") or 0.0) + sum(t_["ml"] for t_ in TL)
+        m2_q = float(T.get("m2_total") or 0.0) + sum(t_["m2"] for t_ in TL)
+        kg_q = float(T.get("kg_total") or 0.0) + sum(t_["kg"] for t_ in TL)
+        partes.append(_h2(sec, "Telhas", "%s ml" % _n(ml_q, 2)))
         desc = T.get("descricao")
         rot_trecho = {"cobertura": "cobertura", "fechamento": "fechamentos (oitões e paredes)", "forro": "forro do beiral"}
         linhas = []
-        for trecho, itens in T["trechos"].items():
+        for trecho, itens in (T.get("trechos") or {}).items():
             soltos = [it for it in itens if it["ml"] >= 20.0 or it["qtd"] >= 10] if len(itens) > 6 else list(itens)
             miudos = [it for it in itens if it not in soltos]
             for it in soltos:
@@ -2476,12 +2484,18 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
                                (_n(sum(it["ml"] for it in miudos), 2), "r"), (_n(sum(it.get("m2") or 0.0 for it in miudos), 2), "r"),
                                (_coef(sum(it["kg"] for it in miudos), sum(it.get("m2") or 0.0 for it in miudos)), "r"),
                                (_n(sum(it["kg"] for it in miudos), 1), "r")])
-        sub = " + ".join("%s %s ml" % (rot_trecho[k], _n(v, 2)) for k, v in T["ml_por_trecho"].items())
+        for t_ in TL:
+            linhas.append(["lançada", "%s - lançada no 3D" % t_["item"], (t_["pecas"], "c"), ("vários", "r"), (_n(t_["ml"], 2), "r"),
+                           (_n(t_["m2"], 2), "r"), (_coef(t_["kg"], t_["m2"]), "r"), (_n(t_["kg"], 1) if t_["kg"] else "—", "r")])
+        sub = " + ".join(["%s %s ml" % (rot_trecho[k], _n(v, 2)) for k, v in (T.get("ml_por_trecho") or {}).items()]
+                         + (["lançadas no 3D %s ml" % _n(sum(t_["ml"] for t_ in TL), 2)] if TL else []))
         partes.append(_tabela(["Tipo", "Descrição", ("Qtd", "c"), ("Comp. (m)", "r"), ("Total (ml)", "r"), ("m²", "r"), ("kg/m²", "r"), ("kg", "r")], linhas,
-                              rodape=[("TOTAL", "b"), sub, "", "", (_n(T["ml_total"], 2), "r"), (_n(T.get("m2_total") or 0.0, 2), "r"),
-                                      (_coef(T["kg_total"], T.get("m2_total") or 0.0), "r"), (_n(T["kg_total"], 1), "r")],
+                              rodape=[("TOTAL", "b"), sub, "", "", (_n(ml_q, 2), "r"), (_n(m2_q, 2), "r"),
+                                      (_coef(kg_q, m2_q), "r"), (_n(kg_q, 1), "r")],
                               larguras=["10%", "41%", "6%", "8%", "9%", "9%", "8%", "9%"]))
-        partes.append("<p class=\"nota\">m² pela largura útil (%s m).</p>" % _n(T["largura_util"] / 1000.0, 2))
+        if T.get("ml_total"):
+            partes.append("<p class=\"nota\">m² pela largura útil (%s m)%s.</p>" % (
+                _n(T["largura_util"] / 1000.0, 2), "; as lançadas no 3D pela área das chapas do modelo" if TL else ""))
     # ---- rufos e calhas, peça por peça (19/10)
     if R.get("funilaria"):
         sec += 1

@@ -269,3 +269,39 @@ def test_telha_e_funilaria_lancadas_nao_sao_pendencia_de_nao_aco():
     t.atributos.update({"telha_lancada": True, "telha": "TP40 PIR 50", "largura": 955, "massa_m2": 15, "comprimento": 7140})
     doc2.add(t)
     assert not any("não são de aço" in a for a in det.levantar(doc2)["avisos"])
+
+
+def test_quadro_telhas_do_resumo_da_obra_soma_as_lancadas():
+    """TEL-08, reincidência (usuário, Mall Av. Londrina 10/11: "Não encontrei as telhas simples do fechamentos laterais nos
+    resumos"): a telha lançada no 3D (a TP40 galvalume da fachada, 60 chapas, 95,40 m²) entrava no total geral do Resumo
+    da obra (904,10 ml) e no Resumo de materiais, mas o quadro "Telhas" só tinha as telhas das posições (802,90 ml) —
+    e, numa obra só com telhas lançadas, nem aparecia. Conferência: o rodapé do quadro é o ml de telhas do resumo."""
+    import re as _re
+    from nucleo2d.detalhe.base import _categoria
+    from saida import resumos
+    doc = _obra()
+    for i in range(3):
+        v, f = _caixa(1020.0, 6.0, 3000.0, dx=i * 1020.0, dy=-500.0)
+        t = _solido("Telha de fachada A.%02d — TP40 galvalume natural" % (i + 1), "IfcCovering", v, f, "Galvalume")
+        t.camada = "Fachada — telha galvalume"
+        t.atributos.update({"telha_lancada": True, "fechamento": True, "telha": "Telha TP40 0,5 mm galvalume natural (fachada)",
+                            "area_m2": 3.06, "massa_m2": 4.62})
+        doc.add(t)
+    r = det.detalhar(doc, grupos=["localizacao"], converter=False)
+    nomes = r.get("nomes") or {}
+    cat = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
+    lista = lp.montar(r["objetos_posicoes"], cat, r["acessorios"], pecas=r["objetos_pecas"], projeto={"nome": "t"},
+                      nomes_telhas=nomes.get("telhas"), fixadores=r.get("objetos_fixadores"))
+    lista["pre_moldados"] = r.get("fora_do_aco") or []
+    lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"], "avisos": r["avisos"],
+           "fora_por_camada": r.get("fora_por_camada") or {}}
+    R = resumos.levantar_resumos(doc, lev, lista, nomes, {})
+    n = R["numeros"]
+    assert abs(n["m2_telhas"] - 9.2) < 0.01 and n["ml_telhas"] > 0            # 3 × 3,06 (o Quadro 8 arredonda a 0,1)
+    h = resumos.html_resumo_obra(R)
+    assert "Telha TP40 0,5 mm galvalume natural (fachada) - lançada no 3D" in h
+    sec = h[h.index("Telhas</h2>") if "Telhas</h2>" in h else h.index("Telhas"):]
+    tot = _re.search(r"TOTAL.*?</t[dh]>.*?</t[dh]>.*?</t[dh]>.*?</t[dh]>\s*<t[dh][^>]*>([\d.,]+)</t[dh]>\s*<t[dh][^>]*>([\d.,]+)", sec, _re.S)
+    assert tot, sec[:2000]
+    num = lambda x: float(x.replace(".", "").replace(",", "."))          # noqa: E731
+    assert abs(num(tot.group(1)) - n["ml_telhas"]) < 0.01 and abs(num(tot.group(2)) - n["m2_telhas"]) < 0.01, tot.groups()
