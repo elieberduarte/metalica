@@ -128,3 +128,35 @@ def test_canto_de_vigas_ao_lado_do_pilar_apoia_nele():
     assert (10000, 0, 1500) in cantos, cantos
     pilar = [b for b in r["barras"] if b["papel"] == "pilar" and round(nos[b["a"]][0]) == 10000]
     assert len(pilar) == 2                                   # o pilar ganhou o nó do canto
+
+
+def test_dois_banzos_que_se_encontram_no_eixo_do_espigao_cortam_o_espigao():
+    # Residencial Madrid, opção B (10/11): os banzos das duas águas vizinhas terminam juntos em cima do eixo do espigão
+    # (o espigão passa exatamente pelo ponto). Os dois "apoiavam" um no outro e o espigão seguia inteiro — o encontro
+    # ficava solto e o caibro levava a força de um banzo ao outro
+    doc = Documento()
+    for x, y in ((0.0, 0.0), (6000.0, 6000.0)):
+        doc.add(barra((x, y, 0.0), (x, y, 3000.0), "pilar", perfil="W 200×19,3"))
+    doc.add(barra((0.0, 0.0, 3000.0), (6000.0, 6000.0, 4800.0), "banzo", "E.1", perfil="TR 150×100×2,65"))
+    # o ponto do espigão a 1/3: (2000, 2000, 3600); um banzo chega por x, o outro por y
+    doc.add(barra((2000.0, -400.0, 3000.0), (2000.0, 2000.0, 3600.0), "banzo", "BS.1", perfil="TR 100×50×2,00"))
+    doc.add(barra((-400.0, 2000.0, 3000.0), (2000.0, 2000.0, 3600.0), "banzo", "BS.2", perfil="TR 100×50×2,00"))
+    r = analitico.analitico(doc)
+    nos = r["nos"]
+    enc = [i for i, p in enumerate(nos) if [round(c) for c in p] == [2000, 2000, 3600]]
+    assert len(enc) == 1, nos
+    esp = [b for b in r["barras"] if b["peca"] == "E.1"]
+    assert len(esp) == 2 and any(enc[0] in (b["a"], b["b"]) for b in esp), esp    # o espigão cortado no encontro
+    assert r["resumo"]["ponta_no_eixo"] >= 1
+
+
+def test_ponta_perto_do_eixo_mas_fora_dele_nao_corta_a_peca():
+    # a mesma ponta 40 mm fora do eixo (mais que TOL_NA_LINHA): o passo novo não liga nada sozinho — quem decide é o passo 3
+    doc = Documento()
+    doc.add(barra((0.0, 0.0, 0.0), (0.0, 0.0, 3000.0), "pilar", perfil="W 200×19,3"))
+    doc.add(barra((6000.0, 0.0, 0.0), (6000.0, 0.0, 3000.0), "pilar", perfil="W 200×19,3"))
+    doc.add(barra((0.0, 0.0, 3000.0), (6000.0, 0.0, 3000.0), "viga", perfil="W 200×19,3"))
+    doc.add(barra((3000.0, 40.0, 3000.0), (3000.0, 3000.0, 3000.0), "viga"))
+    doc.add(barra((3000.0, 40.0, 3000.0), (3000.0, 40.0, 4000.0), "viga"))
+    r = analitico.analitico(doc)
+    assert r["resumo"]["ponta_no_eixo"] == 0

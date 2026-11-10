@@ -492,6 +492,38 @@ def analitico(doc, base: Optional[float] = None) -> dict:
                             gr[n] -= 1
                 ligadas += 1
 
+    # --- 3c. a ponta que termina EM CIMA do eixo de outra peça (a até TOL_NA_LINHA, sem deslocar nada) corta a peça ali.
+    # O passo 3 dá a ponta por apoiada quando outra peça em que ela apoia chega no mesmo nó — os dois banzos das águas
+    # vizinhas que se encontram na linha do espigão "apoiavam" um no outro e o espigão, que passa exatamente por ali,
+    # seguia inteiro: o caibro levava 13 kN de um banzo ao outro (Residencial Madrid, opção B, 10/11: 8 dos 22 encontros
+    # com o espigão soltos — os que não caíam a até 12 cm de um cruzamento de caibro)
+    no_eixo = 0
+    feitos = set()
+    for k, ln in enumerate(linhas):
+        alvo = APOIA_EM.get(ln["papel"])
+        if not alvo:
+            continue
+        for lado in ("na", "nb"):
+            n = ln[lado]
+            p = nos[n]
+            for j in set(gl.perto(p)):
+                lj = linhas[j]
+                # o pilar que passa fica de fora: o pilar de oitão do galpão gerado passa pelo banzo de baixo da tesoura de
+                # oitão com o topo solto (não leva o peso da cobertura) — ligar ali é decisão do projeto, não deste passo
+                if j == k or (j, n) in feitos or lj["papel"] not in alvo or lj["papel"] not in ("banzo", "viga") \
+                        or n in (lj["na"], lj["nb"]):
+                    continue
+                c, e = nos[lj["na"]], nos[lj["nb"]]
+                Lj = math.dist(c, e)
+                dd, t, _q = _proj(p, c, e)
+                if dd > TOL_NA_LINHA or Lj < 1.0 or not (2 * TOL_NO < t * Lj < Lj - 2 * TOL_NO):
+                    continue
+                if any(n2 == n or math.dist(nos[n2], p) <= 2 * TOL_NO for _t2, n2 in cortes[j]):
+                    continue                               # já cortada ali (ou bem do lado: o nó de lá serve)
+                cortes[j].append((t, n))
+                feitos.add((j, n))
+                no_eixo += 1
+
     # --- 4. a terça que passa sobre as treliças ganha um nó em cada banzo que ela cruza; a viga
     # também, no banzo que ela cruza (a VM do piso da caixa d'água deitada sobre as treliças) e na
     # viga horizontal que ela cruza no mesmo nível (o barrote do mezanino sobre a viga principal)
@@ -570,6 +602,7 @@ def analitico(doc, base: Optional[float] = None) -> dict:
         "soltas": soltas,
         "resumo": {"nos": len(usados), "barras": len(barras), "duplos_juntados": duplos,
                    "pontas_levadas_ao_apoio": ligadas, "alma_no_banzo": na_alma, "deitada_ao_lado": ao_lado, "apoio_no_montante": no_montante,
+                   "ponta_no_eixo": no_eixo,
                    "soltas": len(soltas),
                    "soltas_por_papel": dict(collections.Counter(s["papel"] for s in soltas))},
     }
