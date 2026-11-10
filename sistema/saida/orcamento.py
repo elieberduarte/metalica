@@ -333,13 +333,23 @@ def chapa_do_orcamento(t: float) -> Tuple[float, str]:
     return tc, "CH " + rotulo_chapa(tc)
 
 
-#: A barra redonda que se compra (mm, polegada) para o chumbador: a mais próxima (empate: a maior).
+#: A barra redonda que se compra (mm, polegada) para o chumbador. 10/11 (usuário, Hora Certa, auditor final V04:
+#: "vamos padronizar para a maior"; no "é assim?": "maior de verdade, Ø33 em 1 3/8""): a IGUAL OU MAIOR que o Ø do
+#: projeto — a mais próxima dava Ø33 → 1 1/4" (31,75, mais fina que o projeto, com porca 1 3/8") e Ø20 → 3/4" (19,05). A
+#: tolerância de 1 % deixa o par do M16 em 5/8" (15,88). O kg sai pela barra comprada, como a chapa.
 BARRAS_REDONDAS = [(9.53, '3/8"'), (12.7, '1/2"'), (15.88, '5/8"'), (19.05, '3/4"'), (22.23, '7/8"'), (25.4, '1"'),
-                   (28.58, '1 1/8"'), (31.75, '1 1/4"'), (38.1, '1 1/2"'), (44.45, '1 3/4"'), (50.8, '2"')]
+                   (28.58, '1 1/8"'), (31.75, '1 1/4"'), (34.93, '1 3/8"'), (38.1, '1 1/2"'), (44.45, '1 3/4"'), (50.8, '2"')]
+TOL_BARRA = 0.01
+
+
+def barra_de_compra(d_mm: float) -> Tuple[float, str]:
+    """(mm, polegada) da barra redonda comprada para o Ø do projeto: a igual ou maior (1 % de tolerância); acima da maior
+    da série, a maior"""
+    return next((b for b in BARRAS_REDONDAS if b[0] >= d_mm * (1.0 - TOL_BARRA)), BARRAS_REDONDAS[-1])
 
 
 def pol_da_barra(d_mm: float) -> str:
-    return min(BARRAS_REDONDAS, key=lambda b: (abs(b[0] - d_mm), -b[0]))[1]
+    return barra_de_compra(d_mm)[1]
 
 
 # ============================================================ classificação das peças
@@ -776,7 +786,7 @@ def _linhas_fixadores(acessorios: Sequence[dict], precos: Precos) -> List[dict]:
                              q, "pç", item))
     # o chumbador de barra redonda (o usuário, 05/11): a barra é comprada por metro — UMA linha por diâmetro, em m, com o
     # peso teórico; as peças ("Ø12 - 1/2" x 230 x 60 pç = 13,8 m") no detalhe; o diâmetro em mm inteiro, o maior (30/10),
-    # e a polegada da barra mais próxima; o químico e o mecânico seguem por peça
+    # e a polegada da barra igual ou maior (10/11, barra_de_compra; o kg por ela); o químico e o mecânico seguem por peça
     g_ = lambda x: ("%g" % round(x, 2)).replace(".", ",")      # noqa: E731 — 13,8 e 12,06; 1507 sem ponto
     por_d: Dict[str, dict] = {}
     previsao = []
@@ -791,7 +801,7 @@ def _linhas_fixadores(acessorios: Sequence[dict], precos: Precos) -> List[dict]:
             metros = q * L / 1000.0
             a = por_d.setdefault(k, {"di": di, "m": 0.0, "kg": 0.0, "pecas": []})
             a["m"] += metros
-            a["kg"] += metros * math.pi / 4.0 * (d / 1000.0) ** 2 * 7850.0
+            a["kg"] += metros * math.pi / 4.0 * (barra_de_compra(d)[0] / 1000.0) ** 2 * 7850.0   # 10/11: pela comprada
             a["pecas"].append("%s x %s x %d pç = %s m" % (k, g_(L), q, g_(metros)))
             continue
         previsao.append(_linha("chumb:" + nome, "parafusos", "Chumbador %s (previsão)" % re.sub(r"(?i)chumbador\s*", "", nome).strip(),

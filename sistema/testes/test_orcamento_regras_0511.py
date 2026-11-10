@@ -53,7 +53,7 @@ def test_chumbador_de_barra_redonda_uma_linha_por_diametro_em_metro():
     c = L['chumb:Ø12 - 1/2"']
     assert c["descricao"] == 'Chumbador Ø12 - 1/2"' and c["un"] == "m" and c["qtd"] == 17.8      # 13,8 + 4,0 m
     assert 'Ø12 - 1/2" x 230 x 60 pç = 13,8 m' in c["detalhe"] and 'Ø12 - 1/2" x 400 x 10 pç = 4 m' in c["detalhe"]
-    assert "~15,8 kg" in c["detalhe"]                                         # π·12²/4 × 7,85 × 17,8 m
+    assert "~17,7 kg" in c["detalhe"]       # 10/11: pela barra comprada, π·12,7²/4 × 7,85 × 17,8 m (era 15,8 pelo Ø12)
     c = L['chumb:Ø36 - 1 1/2"']
     assert c["descricao"] == 'Chumbador Ø36 - 1 1/2"' and c["qtd"] == 12.06
     # o 12,7 vai em mm inteiro, o maior (13), na mesma polegada mas em outra linha (outro diâmetro de barra)
@@ -125,3 +125,18 @@ def test_disco_em_branco_e_tinta_pela_area_de_pintura():
     assert t["un"] == "m²" and t["preco"] is None and "intumescente" in t["detalhe"]
     assert t["qtd"] > 1.0                                    # perfis (perímetro × comprimento) + 2 × 0,5 m² das chapas
     assert "chapas 1,0 m²" in t["detalhe"]
+
+
+def test_barra_do_chumbador_na_polegada_igual_ou_maior():
+    # 10/11 (usuário, Hora Certa, auditor final V04: "vamos padronizar para a maior"; no "é assim?": "maior de verdade, Ø33
+    # em 1 3/8""): a mais próxima dava Ø33 → 1 1/4" (31,75 < 33, com porca 1 3/8") e Ø20 → 3/4" (19,05 < 20)
+    casos = {36: '1 1/2"', 33: '1 3/8"', 27: '1 1/8"', 20: '7/8"', 16: '5/8"', 12: '1/2"', 25: '1"', 25.4: '1"'}
+    for d, pol in casos.items():
+        assert orc.pol_da_barra(d) == pol, (d, orc.pol_da_barra(d))
+        assert orc.barra_de_compra(d)[0] >= d * 0.99
+    # o kg da linha pela barra comprada: Ø33 × 10 m → 1 3/8" (34,93) = 75,2 kg (pelo Ø33 seriam 67,1)
+    lista = {"posicoes": [], "acessorios": [{"nome": "CHUMBADOR 33x1000", "quantidade": 10}]}
+    L = {li["id"]: li for li in orc.montar(lista, None)["linhas"]}
+    c = L['chumb:Ø33 - 1 3/8"']
+    assert c["descricao"] == 'Chumbador Ø33 - 1 3/8"' and c["qtd"] == 10
+    assert "~75,2 kg" in c["detalhe"], c["detalhe"]
