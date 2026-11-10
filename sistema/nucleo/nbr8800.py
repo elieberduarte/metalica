@@ -176,10 +176,11 @@ def _classe_para_verificacao(c: Classe, titulo: str) -> Verificacao:
 
 
 def classificar_mesa(perfil, aco, solicitacao: str = "flexao",
-                     fabricacao: str = "laminado") -> Classe:
+                     fabricacao: str = "laminado", eixo: str = "x") -> Classe:
     """Classifica a mesa (ou a parede/aba equivalente) — NBR 8800, Tabelas F.1 e G.1.
 
     solicitacao: "flexao" (FLM) ou "compressao" (fator Qs / Qa).
+    eixo: na flexão em y do tubo retangular a parede comprimida é a de altura d (não a de largura bf).
     """
     p = _perfil_obj(perfil)
     a = _aco(aco)
@@ -204,6 +205,11 @@ def classificar_mesa(perfil, aco, solicitacao: str = "flexao",
 
     b = _b_mesa_cm(p)
     t = p.tf / 10.0
+    tubo_y = p.tipo == "tubo" and eixo == "y" and solicitacao == "flexao"
+    if tubo_y:
+        # 10/11 (calculista, Residencial Madrid): fletido em y, o tubo retangular comprime a parede de altura d — o TR 100×50×2,00
+        # tem b/t = 47 nela (esbelta), e a conta usava a de 50 (b/t = 22, compacta): M,Rd 3,50 em vez de ≈ 2,2 kN·m
+        b, t = (p.d - 3 * p.tw) / 10.0, p.tw / 10.0
     if t <= 0:
         raise ErroDeDados(f"espessura da mesa nula no perfil {p.nome}")
     lam = b / t
@@ -216,7 +222,7 @@ def classificar_mesa(perfil, aco, solicitacao: str = "flexao",
         else:
             lam_p, lam_r = None, 1.40 * r
             norma = "NBR 8800, Tabela F.1, grupo 6 (parede de tubo retangular)"
-        formula = "λ = (B − 3t)/t"
+        formula = "λ = (H − 3t)/t (flexão em y: a parede de altura H)" if tubo_y else "λ = (B − 3t)/t"
     elif p.tipo == "L":
         grupo, elemento = "AL", "aba"
         if solicitacao == "flexao":
@@ -1285,7 +1291,7 @@ def _interpolar(Mpl: float, Mr: float, lam: float, lam_p: float, lam_r: float) -
 def _verificacao_flm(p, a, eixo, W, Z, Mpl, M_Sd, fabricacao) -> Verificacao:
     """Flambagem local da mesa comprimida (FLM) — Anexo G."""
     fy = a.fy
-    c = classificar_mesa(p, a, "flexao", fabricacao)
+    c = classificar_mesa(p, a, "flexao", fabricacao, eixo=eixo)
     v = Verificacao("Flexão — flambagem local da mesa (FLM)",
                     norma="NBR 8800:2008, Anexo G (Tabela G.1)", Sd=M_Sd, unidade="kN·cm")
     for passo in c.passos:
@@ -1309,8 +1315,11 @@ def _verificacao_flm(p, a, eixo, W, Z, Mpl, M_Sd, fabricacao) -> Verificacao:
             if p.tipo == "tubo":
                 # largura efetiva da mesa comprimida (Tabela G.1, nota)
                 t = p.tw / 10.0
-                bef = largura_efetiva(_b_mesa_cm(p), t, fy, ca=0.38)
-                Wef = W * (1.0 - (_b_mesa_cm(p) - bef) * t / p.A)
+                b_m = (p.d - 3 * p.tw) / 10.0 if eixo == "y" else _b_mesa_cm(p)
+                bef = largura_efetiva(b_m, t, fy, ca=0.38)
+                # a mesa que perde largura está a ~h/2 da linha neutra: W perde (b − bef)·t·(h/2)²/(h/2) = (b − bef)·t·h/2
+                h_m = (p.bf if eixo == "y" else p.d) / 10.0 - t
+                Wef = max(0.0, W - (b_m - bef) * t * h_m / 2.0)
                 Mn = Wef * fy
                 v.observacao = ("mesa esbelta: módulo resistente efetivo estimado "
                                 "pela largura efetiva da mesa comprimida")

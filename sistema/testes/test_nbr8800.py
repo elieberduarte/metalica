@@ -777,3 +777,26 @@ if __name__ == "__main__":
                 print(f"FALHA {nome}: {exc}")
     print(f"\n{falhas} falha(s)")
     sys.exit(1 if falhas else 0)
+
+
+def _rd_flexao(nome, eixo):
+    from nucleo3d.calculo_ifc import _perfil_de
+    r = n.flexao(_perfil_de(nome, "", {}, {}), "ASTM A36", eixo=eixo)
+    return min(v.Rd for v in r.verificacoes if not v.dispensada and "Flex" in v.titulo)
+
+
+def test_tubo_retangular_fletido_em_y_comprime_a_parede_de_altura_d():
+    """Residencial Madrid, opção B (calculista, 10/11): na flexão em y do TR 100×50×2,00 a parede comprimida é a de 100
+    (b/t = 47 > λr 39,6 — esbelta), e a FLM usava a de 50 (b/t = 22, compacta): 359 kN·cm em vez de ≈ 220–231."""
+    perto(_rd_flexao("TR 100×50×2,00", "y"), 226.0, tol=0.04, o="TR 100×50×2,00 em y")
+    assert _rd_flexao("TR 100×50×2,00", "y") < _rd_flexao("TR 100×50×2,00", "x")
+    perto(_rd_flexao("TR 100×50×2,65", "y"), 330.0, tol=0.04, o="TR 100×50×2,65 em y (conta do calculista 3,30 kN·m)")
+
+
+def test_tubo_quadrado_tem_o_mesmo_momento_nos_dois_eixos():
+    """o Z dos tubos não vem no catálogo: o Zy caía em 1,5·W (retângulo maciço) e o TQ 100×100×3,00 tinha M,Rd em y
+    34 % maior que em x. Agora pela seção do tubo (cantos vivos × razão das áreas), igual nos dois eixos."""
+    perto(_rd_flexao("TQ 100×100×3,00", "y"), _rd_flexao("TQ 100×100×3,00", "x"), tol=0.001, o="TQ simétrico")
+    from nucleo3d.calculo_ifc import _perfil_de
+    p = _perfil_de("TQ 100×100×3,00", "", {}, {})
+    assert 1.10 * p.Wx < p.Zx < 1.25 * p.Wx

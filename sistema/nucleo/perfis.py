@@ -85,14 +85,33 @@ class Perfil:
     @property
     def Wy(self) -> float: return self.dados.get("Wy", 0.0)
 
+    def _z_tubo(self, eixo: str) -> float:
+        """Z do tubo retangular/quadrado pela seção de cantos vivos, reduzido pela razão das áreas (os cantos arredondados
+        do catálogo). 10/11 (calculista, Residencial Madrid R3/B): o catálogo não traz o Z dos tubos e o 1,5·W (retângulo
+        maciço) dava 28–34 % a mais — o TQ 100×100×3,00 saía com M,Rd em y maior que em x."""
+        B, H, t = self.bf / 10.0, self.d / 10.0, self.tw / 10.0
+        if eixo == "y":
+            B, H = H, B
+        a_viva = B * H - (B - 2 * t) * (H - 2 * t)
+        if a_viva <= 0:
+            return 0.0
+        return (B * H ** 2 - (B - 2 * t) * (H - 2 * t) ** 2) / 4.0 * min(1.0, self.A / a_viva if self.A else 1.0)
+
+    def _tubo_retangular(self) -> bool:
+        return self.tipo == "tubo" and self.dados.get("tipo") != "redondo" and bool(self.bf and self.d and self.tw)
+
     @property
     def Zx(self) -> float:
         z = self.dados.get("Zx")
+        if not z and self._tubo_retangular():
+            return self._z_tubo("x")
         return z if z else 1.12 * self.Wx      # estimativa quando o catálogo não traz
 
     @property
     def Zy(self) -> float:
         z = self.dados.get("Zy")
+        if not z and self._tubo_retangular():
+            return self._z_tubo("y")
         return z if z else 1.5 * self.Wy
 
     @property

@@ -156,6 +156,10 @@ def _k_trelicas_tubulares(M: dict, pecas: List[dict]) -> List[str]:
         ds = [dim(pc["perfil"]) for pc in pcs]
         if not ds or any(d is None or d[0] != "tubo" for d in ds):
             continue
+        # 10/11 (calculista, Residencial Madrid B): só é treliça se tem alma — banzos inclinados, espigões e cumeeira de uma
+        # cobertura sem tesouras (papel "banzo superior", sem montante nem diagonal) ganhavam K = 0,9 da 4.8 (E.2: Nc,Rd 174 em vez de 158)
+        if not any(pc["papel"] in ("montante", "diagonal") for pc in pcs):
+            continue
         tmin = min(d[3] for d in ds)
         if tmin < T_MIN_16239 - 1e-9:
             finas.add(min((pc["perfil"] for pc in pcs), key=lambda nm: dim(nm)[3]))
