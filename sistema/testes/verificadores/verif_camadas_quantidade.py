@@ -137,7 +137,11 @@ try:
     # --- F. o rodapé com as informações rápidas da obra
     z_topo = max([p[2] for e in m["entidades"] if e["tipo"] == "barra" for p in (e["inicio"], e["fim"])]
                  + [v[2] for e in m["entidades"] if e["tipo"] == "solido" for v in e["vertices"]])
-    rod = aba.avaliar("document.querySelector('#situacao').textContent") or ""
+    # o rodapé é refeito quando chegam os níveis do projeto (lancamento/referencia, assíncrono): esperar a linha com eles —
+    # lida uma vez só, a leitura às vezes vinha antes e media do pé do modelo (11/11, depois das Cenas no modo ver)
+    alvo = f"Altura {z_topo / 1000:.2f}".replace(".", ",")
+    rod = esperar(f"(() => {{ const t = document.querySelector('#situacao').textContent; return t.includes({json.dumps(alvo)}) ? t : null; }})()", 20) \
+        or aba.avaliar("document.querySelector('#situacao').textContent") or ""
     print("     rodapé:", rod)
     ok(f"Área {br(R['dimensoes']['area_m2'])} m²" in rod, f"[rodapé] a área do resumo, {br(R['dimensoes']['area_m2'])} m² ({rod!r})")
     ok(f"Estrutura {br(R['numeros']['peso_aco'])} kg" in rod and "antes da última" not in rod,
