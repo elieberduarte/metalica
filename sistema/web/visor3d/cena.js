@@ -17,7 +17,7 @@
 // estilo (cores, arestas, fundo), luz. A lente gravada (camera.fov) é a do quadro: a tela abre a dela para o quadro caber.
 
 import * as THREE from 'three';
-import { Visor3D, SOMBRA_GLSL } from './visor3d.js';
+import { Visor3D, SOMBRA_GLSL, LUZES_MAX } from './visor3d.js';
 import { Terreno } from './terreno.js';
 import { encaixar } from './encaixe.js';
 import { SOL_PADRAO, definirSol, controlesDoSol, ligarControlesDoSol } from './sol.js';
@@ -75,6 +75,7 @@ async function abrir() {
   // voltava aqui: um laço sem saída para a tela inicial (usuário, 28/10)
   $('#voltar').onclick = () => {
     const p = encodeURIComponent(PROJETO);
+    saindoDaPagina = true;
     location.href = window.top !== window ? `/visor3d/ver3d.html?projeto=${p}` : `/dividida?projeto=${p}&vista=3d`;
   };
   try {                                                     // o nome da obra no alto
@@ -212,8 +213,27 @@ async function abrirCena(id, { recarregar = true } = {}) {
 
 const PROPORCOES = { '16:9': 16 / 9, '4:3': 4 / 3, '3:4': 3 / 4, 'A3': 420 / 297, 'livre': null };
 const FOV_PADRAO = 45;
-const CEU = ['#8fb8de', '#dfe9f3'];                         // o céu: o alto e o horizonte (o piso some nessa cor)
-let fovCena = FOV_PADRAO, vistaMudou = false, quadroAtual = null, texCeu = null, tempoMini = 0, ouvindoVista = false;
+// os AMBIENTES (11/11, amostra-6 aprovada: "criar umas cenas noturnas… opções de fundos diferentes"): o céu (de cima até o
+// horizonte, onde o chão começa na cor `piso`), a luz do 3D (visor.definirAmbiente: o céu e o chão nas faces, a cor e a força
+// do sol, as arestas) e, de noite, as luzes automáticas (refletores em volta e a luz interna: [força dos refletores, da
+// interna]). "ceu" é o Dia de antes (a luz padrão, as linhas do piso).
+const AMBIENTES = {
+  ceu: { nome: 'Dia', ceu: ['#8fb8de', '#dfe9f3'], piso: '#dfe9f3', grade: true },
+  entardecer: { nome: 'Entardecer', ceu: ['#3f5687', '#c98a7a', '#f3c48c'], piso: '#e9c6a0', solAltura: 9,
+                luz: { ambCeu: [0.62, 0.60, 0.74], ambChao: [0.66, 0.50, 0.40], ambK: 0.62, solCor: [1.0, 0.68, 0.40], solK: 0.95, pisoAmb: 0.95, aresta: 0.9 } },
+  nublado: { nome: 'Nublado', ceu: ['#aeb8c4', '#e4e7eb'], piso: '#e1e3e6',
+             luz: { ambCeu: [0.92, 0.93, 0.95], ambChao: [0.80, 0.80, 0.80], ambK: 0.92, solCor: [1, 1, 1], solK: 0.18 } },
+  estudio: { nome: 'Estúdio', ceu: ['#f7f8fa', '#e3e6ea'], radial: true, piso: '#e6e8eb',
+             luz: { ambCeu: [0.86, 0.87, 0.90], ambChao: [0.70, 0.70, 0.72], ambK: 0.82, solCor: [1, 1, 1], solK: 0.45 } },
+  'noite-azul': { nome: 'Noite azul', ceu: ['#0d1a36', '#28467a', '#6b7fa6'], piso: '#3c4a66', noite: [1.6, 1.3],
+                  luz: { ambCeu: [0.26, 0.31, 0.48], ambChao: [0.16, 0.16, 0.22], ambK: 0.75, solCor: [0.55, 0.62, 0.9], solK: 0.12, pisoAmb: 0.75, aresta: 0.45 } },
+  noite: { nome: 'Noite', ceu: ['#03050b', '#0b1222', '#1a2338'], estrelas: true, piso: '#121826', noite: [2.2, 1.8],
+           luz: { ambCeu: [0.09, 0.11, 0.17], ambChao: [0.05, 0.05, 0.07], ambK: 0.8, solCor: [0.55, 0.65, 0.95], solK: 0.08, pisoAmb: 0.6, aresta: 0.25 } },
+};
+const LUZ_PADRAO = { refletores: true, interna: true, forca_ref: 1, forca_int: 1, cor: 'quente' };
+const luzesDaCena = () => ({ ...LUZ_PADRAO, ...((cena && cena.luzes) || {}) });
+const ambienteDaCena = () => (eh3d() ? AMBIENTES[cena.fundo || 'ceu'] || null : null);
+let fovCena = FOV_PADRAO, vistaMudou = false, quadroAtual = null, tempoMini = 0, ouvindoVista = false;
 
 /** Os botões que dependem da cena (a imagem e o render). */
 function mostrarBotoes() {
@@ -221,11 +241,14 @@ function mostrarBotoes() {
   $('#salvar-imagem').disabled = $('#renderizar').disabled = !pode || renderizando;
   $('#render-tamanho').disabled = !cena;
   $('#exportar').disabled = !todasCenas.length || renderizando;
+  $('#copiar-ajustes').disabled = !cena || todasCenas.length < 2;
 }
 
 /** Saindo de uma cena do 3D (para a da foto ou nenhuma): o estilo de sempre de volta. */
 function sairDaCena() {
   if (!eh3d() || !visor) return;
+  visor.definirAmbiente(null);                              // a luz de sempre
+  $('#ceu').hidden = true;
   visor.pintarPor('material');
   visor.ligarArestas(true);
   document.body.classList.remove('fundo-transparente');
@@ -252,7 +275,8 @@ function abrirCena3d() {
   mostrarSol();
   mostrarPainel3d();
   mostrarMarca();
-  if (!cena.miniatura) agendarMiniatura(300);              // a cena feita no modo ver ainda sem miniatura
+  // a cena feita no modo ver ainda sem miniatura, ou mudada por fora dela (Copiar ajustes de outra cena)
+  if (!cena.miniatura || (cena.alterada && cena.miniatura < cena.alterada)) agendarMiniatura(300);
 }
 
 /** O quadro da imagem no palco (centrado: a tela inteira é o 3D e o quadro é o recorte do meio) e a lente da tela que
@@ -273,6 +297,7 @@ function ajustarQuadro() {
   visor.camera.fov = Math.min(170, Math.atan(t) * 360 / Math.PI);
   visor.camera.updateProjectionMatrix();
   visor.pedirQuadro();
+  ceuDaTela();
   desenharPreviaMarca();
 }
 
@@ -285,7 +310,7 @@ function aplicarVistaDaCena() {
   marcarVista(false);
   if (!ouvindoVista) {                                      // girar/andar/aproximar: a vista mudou (Atualizar grava)
     ouvindoVista = true;
-    visor.controles.addEventListener('change', () => { if (eh3d() && !renderizando && !refinando) marcarVista(true); });
+    visor.controles.addEventListener('change', () => { if (eh3d() && !renderizando && !refinando) { marcarVista(true); ceuDaTela(); } });
   }
 }
 
@@ -314,32 +339,89 @@ function pintarComo(modo3d) {
   } else visor.pintarPor(['camada', 'perfil'].includes(modo3d) ? modo3d : 'material');
 }
 
-function texturaDoCeu() {
-  if (texCeu) return texCeu;
-  const cv = document.createElement('canvas'); cv.width = 4; cv.height = 256;
-  const g = cv.getContext('2d'), grad = g.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, CEU[0]); grad.addColorStop(1, CEU[1]);
-  g.fillStyle = grad; g.fillRect(0, 0, 4, 256);
-  texCeu = new THREE.CanvasTexture(cv);
-  texCeu.colorSpace = THREE.SRGBColorSpace;
-  return texCeu;
+/** As luzes de noite, postas sozinhas (amostra-6, "automáticas + ajuste"): refletores em volta das peças à vista, a meia
+ *  altura e 2,5 m para fora, um a cada ~11 m (até 8 por lado), e a luz interna numa grade de ~15 m a 42 % da altura. A
+ *  força de cada grupo é a do ambiente vezes a da cena (0–3); a cor, quente ou branca. */
+function luzesDoAmbiente(amb) {
+  if (!amb || !amb.noite || !visor) return [];
+  const lz = luzesDaCena(), cx = visor.caixaVisivel(), a = cx.min, b = cx.max, h = Math.max(1000, b.z - a.z);
+  const quente = lz.cor === 'branca' ? [1, 0.95, 0.88] : [1, 0.80, 0.55], dentro = lz.cor === 'branca' ? [1, 0.97, 0.94] : [1, 0.93, 0.82];
+  const out = [];
+  if (lz.refletores && lz.forca_ref > 0) {
+    const f = amb.noite[0] * lz.forca_ref, z = a.z + 0.5 * h, fora = 2500;
+    const lado = (de, ate) => { const n = Math.min(7, Math.max(1, Math.round((ate - de) / 11000))); return Array.from({ length: n + 1 }, (_, i) => de + i * (ate - de) / n); };
+    const xs = lado(a.x, b.x), ys = lado(a.y, b.y);
+    const alcance = Math.max(11000, (b.x - a.x) / (xs.length - 1 || 1), (b.y - a.y) / (ys.length - 1 || 1));
+    for (const x of xs) out.push({ p: [x, a.y - fora, z], alcance, cor: quente, forca: f }, { p: [x, b.y + fora, z], alcance, cor: quente, forca: f });
+    for (const y of ys.slice(1, -1)) out.push({ p: [a.x - fora, y, z], alcance, cor: quente, forca: f }, { p: [b.x + fora, y, z], alcance, cor: quente, forca: f });
+  }
+  if (lz.interna && lz.forca_int > 0) {
+    const f = amb.noite[1] * lz.forca_int, z = a.z + 0.42 * h, resto = Math.max(1, LUZES_MAX - out.length);
+    let nx = Math.max(1, Math.round((b.x - a.x) / 15000)), ny = Math.max(1, Math.round((b.y - a.y) / 15000));
+    while (nx * ny > resto) { if (nx >= ny) nx--; else ny--; }
+    const alcance = Math.max(12000, (b.x - a.x) / nx, (b.y - a.y) / ny);
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++)
+      out.push({ p: [a.x + (i + 0.5) * (b.x - a.x) / nx, a.y + (j + 0.5) * (b.y - a.y) / ny, z], alcance, cor: dentro, forca: f });
+  }
+  return out.slice(0, LUZES_MAX);
+}
+
+/** O céu do ambiente em g (w × h) para a câmera `cam` (a lente e a proporção da imagem): o degradê de cima até o
+ *  HORIZONTE — um ponto do chão muito longe na direção do olhar —, onde o chão começa na mesma cor; o estúdio é um degradê
+ *  redondo; a noite tem estrelas (sempre as mesmas, o tamanho pela imagem). */
+function pintarCeu(g, w, h, amb, cam) {
+  let grad;
+  if (amb.radial) grad = g.createRadialGradient(w / 2, h * 0.45, 0.03 * w, w / 2, h * 0.45, 0.75 * w);
+  else {
+    const alvo = visor.controles.target, dx = alvo.x - cam.position.x, dy = alvo.y - cam.position.y, d = Math.hypot(dx, dy);
+    let yh = 0;                                             // olhando reto para baixo: o chão cobre tudo
+    if (d > 1e-6) {
+      const pz = visor.piso ? visor.piso.position.z : 0;
+      const p = new THREE.Vector3(cam.position.x + dx / d * 1e9, cam.position.y + dy / d * 1e9, pz).project(cam);
+      yh = (1 - (p.y + 1) / 2) * h;
+    }
+    grad = g.createLinearGradient(0, 0, 0, Math.max(10, yh));
+  }
+  amb.ceu.forEach((c, i) => grad.addColorStop(i / (amb.ceu.length - 1), c));
+  g.fillStyle = grad; g.fillRect(0, 0, w, h);
+  if (amb.estrelas) {
+    let sd = 7; const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    const k = Math.sqrt(w * h) / 1200, n = Math.min(2000, Math.round(260 * w * h / (1600 * 900)));
+    for (let i = 0; i < n; i++) {
+      const a = 0.25 + 0.6 * r(), t = (r() < 0.08 ? 1.6 : 0.9) * Math.max(1, k);
+      g.fillStyle = `rgba(255,255,255,${a})`; g.fillRect(r() * w, r() * h * 0.5, t, t);
+    }
+  }
+}
+
+/** O céu da tela, atrás do 3D (o canvas do visor é vazado): o mesmo do render, pela câmera da tela. */
+function ceuDaTela() {
+  const cv = $('#ceu'), amb = modo === '3d' ? ambienteDaCena() : null;
+  if (!amb || !visor) { cv.hidden = true; return; }
+  const W = palco.clientWidth, H = palco.clientHeight;
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  cv.hidden = false;
+  visor.camera.updateMatrixWorld();
+  pintarCeu(cv.getContext('2d'), W, H, amb, visor.camera);
 }
 
 /** O fundo da cena do 3D: céu (degradê, o piso se perde no horizonte), branco (sem as linhas do piso), transparente (sem
  *  fundo nem piso: PNG) ou o terreno (a imagem do lugar, quando a obra tem). */
 function aplicarFundo() {
-  const f = cena.fundo || 'ceu', u = visor.piso && visor.piso.material.uniforms;
+  const f = cena.fundo || 'ceu', u = visor.piso && visor.piso.material.uniforms, amb = AMBIENTES[f];
   visor.definirTema(escuro());                              // o piso e o fundo do tema; depois o da cena
   document.body.classList.toggle('fundo-transparente', f === 'transparente');
   if (terreno && terreno.grupo) terreno.grupo.visible = f === 'terreno';
   if (visor.piso) visor.piso.visible = f !== 'transparente';
-  if (f === 'ceu') {
-    visor.cena.background = texturaDoCeu();
-    if (u) u.uFundo.value.setStyle(CEU[1], THREE.LinearSRGBColorSpace);
+  visor.definirAmbiente(amb && amb.luz ? { ...amb.luz, luzes: luzesDoAmbiente(amb) } : null, false);
+  if (amb) {                                                // o céu atrás (#ceu), o chão na cor do horizonte
+    visor.cena.background = null;
+    if (u) { u.uFundo.value.setStyle(amb.piso, THREE.LinearSRGBColorSpace); if (!amb.grade) u.uAlfa.value = 0; }
   } else if (f === 'branco') {
     visor.cena.background = new THREE.Color().setStyle('#ffffff', THREE.LinearSRGBColorSpace);
     if (u) { u.uFundo.value.setStyle('#ffffff', THREE.LinearSRGBColorSpace); u.uAlfa.value = 0; }
   } else if (f === 'transparente') visor.cena.background = null;
+  ceuDaTela();
   visor.pedirQuadro();
 }
 
@@ -357,6 +439,13 @@ function mostrarPainel3d() {
   marcar('#pintar3d', cena.pintar && cena.pintar !== 'editor' ? cena.pintar : 'material');
   marcar('#arestas3d', cena.arestas === false ? '0' : '1');
   marcar('#fundo3d', cena.fundo || 'ceu');
+  marcar('#ambiente3d', cena.fundo || 'ceu');
+  const amb = AMBIENTES[cena.fundo || 'ceu'], lz = luzesDaCena();
+  $('#luzes3d').hidden = !(amb && amb.noite);
+  $('#luz-ref').checked = lz.refletores; $('#luz-int').checked = lz.interna;
+  $('#luz-ref-forca').value = lz.forca_ref; $('#luz-int-forca').value = lz.forca_int;
+  $('#luz-ref-forca').disabled = !lz.refletores; $('#luz-int-forca').disabled = !lz.interna;
+  marcar('#luz-cor', lz.cor);
   const bt = document.querySelector('#fundo3d [data-v=terreno]');
   bt.disabled = !(terreno && terreno.malha);
   bt.title = bt.disabled ? 'A obra ainda não tem o terreno (modo ver › Terreno)' : '';
@@ -393,12 +482,15 @@ async function gerarMiniatura() {
 /** A imagem da cena do 3D em w × h: a lente da cena, o quadro inteiro; o céu pintado antes (o degradê da tela se repetiria
  *  em cada bloco do render) e o 3D por cima. Devolve a tela com a lente do quadro. */
 async function imagemDaCena3d(w, h, ss = 1, aoBloco = null, comMarca = true) {
-  const f = cena.fundo || 'ceu', fundoAntes = visor.cena.background;
+  const amb = ambienteDaCena(), fundoAntes = visor.cena.background;
   visor.camera.fov = fovCena;
-  if (f === 'ceu') visor.cena.background = null;
+  if (amb) visor.cena.background = null;
   try {
     const img = await montarImagem(w, h, ss, aoBloco, { comFoto: false, frente: false,
-      antes: f === 'ceu' ? (g) => { const grad = g.createLinearGradient(0, 0, 0, h); grad.addColorStop(0, CEU[0]); grad.addColorStop(1, CEU[1]); g.fillStyle = grad; g.fillRect(0, 0, w, h); } : null });
+      antes: amb ? (g) => {                                 // o céu do ambiente pela câmera da imagem (a lente e a proporção dela)
+        const cam = visor.camera.clone(); cam.fov = fovCena; cam.aspect = w / h; cam.clearViewOffset();
+        cam.updateProjectionMatrix(); cam.updateMatrixWorld(); pintarCeu(g, w, h, amb, cam);
+      } : null });
     if (comMarca) await marcaNaImagem(img);                // a marca d'água
     return img;
   } finally {
@@ -499,6 +591,7 @@ function menuDoCartao(c, el) {
     const copia = Object.fromEntries(campos.filter(f => c[f] !== undefined).map(f => [f, c[f]]));
     try { const n = await pedir(`${API}/nova-3d`, { ...copia, nome: c.nome + ' (cópia)' }); await listar(n.id); } catch (e) { aviso('Não deu: ' + e.message); }
   }]);
+  itens.push(['Copiar ajustes para outras cenas…', () => copiarAjustes(c)]);
   if (c.render_arquivo || c.imagem_arquivo) {
     const nome = c.render_arquivo || c.imagem_arquivo;
     itens.push([c.render_arquivo ? 'Mostrar o render na pasta' : 'Mostrar a imagem na pasta',
@@ -517,6 +610,55 @@ function menuDoCartao(c, el) {
   setTimeout(() => addEventListener('pointerdown', function fora(ev) {
     if (menuCartao && !menuCartao.contains(ev.target)) { fecharMenuCartao(); removeEventListener('pointerdown', fora, true); }
   }, true), 0);
+}
+
+// ------------------------------------------------------------------ copiar ajustes para outras cenas (11/11)
+// (usuário: "quando ajusto as configurações em uma cena poderia já fazer o ajuste para outras ou ter a opção de copiar de uma
+// cena para (sol, terreno...)"): a janela marca O QUE (o sol, o ambiente — céu, noite, terreno… e as luzes —, as camadas,
+// o estilo, o enquadramento, a marca d'água) e PARA QUAIS cenas; o servidor copia (…/cenas/copiar). A vista (a posição da
+// câmera) de cada uma fica. Na cena da foto só vale o que ela tem.
+const GRUPOS_COPIA = [['sol', 'Luz — o sol e a sombra', true], ['ambiente', 'Ambiente — o céu, a noite, o terreno… e as luzes da noite', true],
+                      ['camadas', 'O que aparece — as camadas e os sistemas', false], ['estilo', 'Estilo — as cores e as arestas', false],
+                      ['enquadramento', 'Enquadramento — a proporção e a lente', false], ['marca', 'Marca d\'água', false]];
+const SO_3D = new Set(['ambiente', 'estilo', 'enquadramento']);
+
+function copiarAjustes(origem) {
+  if (!origem) return;
+  const outras = todasCenas.filter(c => c.id !== origem.id);
+  if (!outras.length) { aviso('Não há outra cena para receber os ajustes.'); return; }
+  const fundo = document.createElement('div');
+  fundo.id = 'caixa-copiar';
+  fundo.style.cssText = 'position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.25)';
+  const marca = (v, t, sim, extra = '') => `<label style="display:flex;gap:6px;align-items:baseline;line-height:1.6"><input type="checkbox" value="${esc(v)}"${sim ? ' checked' : ''}${extra}> <span>${t}</span></label>`;
+  fundo.innerHTML = `<div style="width:min(460px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;padding:14px 16px;background:var(--painel);border:1px solid var(--borda);border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.3)">
+    <b>Copiar os ajustes de “${esc(origem.nome)}”</b>
+    <p class="titulo-secao" style="margin-top:10px">O quê</p><div id="copiar-grupos">${GRUPOS_COPIA.map(([v, t, sim]) => marca(v, t + (SO_3D.has(v) ? ' <small style="color:var(--texto2)">(só cenas do 3D)</small>' : ''), sim)).join('')}</div>
+    <p class="titulo-secao" style="margin-top:10px">Para quais cenas</p>
+    ${marca('*todas', '<b>Todas as outras</b>', true)}
+    <div id="copiar-cenas" style="margin-left:18px">${outras.map(c => marca(c.id, `${esc(c.nome)} <small style="color:var(--texto2)">${c.tipo === '3d' ? '3D' : 'foto'}</small>`, true)).join('')}</div>
+    <p class="dica" style="margin:8px 0">A vista de cada cena (de onde se olha) não muda. O render já feito delas fica marcado como velho.</p>
+    <div class="linha"><button type="button" class="forte" data-r="ok">Copiar</button><button type="button" data-r="nao">Cancelar</button></div></div>`;
+  document.body.append(fundo);
+  const todas = fundo.querySelector('input[value="*todas"]'), caixas = [...fundo.querySelectorAll('#copiar-cenas input')];
+  todas.onchange = () => caixas.forEach(c => { c.checked = todas.checked; });
+  caixas.forEach(c => { c.onchange = () => { todas.checked = caixas.every(x => x.checked); }; });
+  const sair = () => fundo.remove();
+  fundo.querySelector('[data-r=nao]').onclick = sair;
+  fundo.onkeydown = (ev) => { ev.stopPropagation(); if (ev.key === 'Escape') sair(); };
+  fundo.querySelector('[data-r=ok]').onclick = async () => {
+    const grupos = [...fundo.querySelectorAll('#copiar-grupos input:checked')].map(i => i.value);
+    const para = caixas.filter(c => c.checked).map(c => c.value);
+    if (!grupos.length || !para.length) { aviso('Marque o que copiar e para quais cenas.'); return; }
+    sair();
+    try {
+      if (cena && cena.id === origem.id) { clearTimeout(tempo3d); await gravar(Object.fromEntries(['sol', 'fundo', 'luzes', 'desligadas', 'pintar', 'arestas', 'proporcao', 'marca'].filter(k => cena[k] !== undefined).map(k => [k, cena[k]]))); }
+      const r = await pedir(`${API}/copiar`, { de: origem.id, para, grupos });
+      todasCenas = r.cenas || todasCenas; desenharCartoes();
+      if (cena && r.copiadas.includes(cena.id)) await abrirCena(cena.id);   // a aberta recebeu: a tela com o que foi gravado
+      window.ultimaCopiaCenas = r.copiadas;
+      aviso(`Ajustes copiados para ${r.copiadas.length} ${r.copiadas.length === 1 ? 'cena' : 'cenas'}.`);
+    } catch (e) { aviso('Os ajustes não foram copiados: ' + e.message); }
+  };
 }
 
 async function apagarCena(c) {
@@ -547,6 +689,7 @@ function ligar3d() {
   };
   $('#nova-3d').onclick = () => novaCena3d();
   $('#apagar-3d').onclick = () => cena && apagarCena(cena);
+  $('#copiar-ajustes').onclick = () => cena && copiarAjustes(cena);
   $('#cena-nome').onchange = async () => {
     const nome = $('#cena-nome').value.trim();
     if (!eh3d() || !nome || nome === cena.nome) return;
@@ -563,7 +706,25 @@ function ligar3d() {
   opcoes('#proporcao', 'proporcao');
   opcoes('#pintar3d', 'pintar');
   opcoes('#arestas3d', 'arestas', v => v === '1');
-  opcoes('#fundo3d', 'fundo');
+  // o ambiente ou o fundo liso (11/11, amostra-6): o entardecer abaixa o sol (sombra comprida); voltar ao dia com o sol
+  // muito baixo o sobe para o padrão
+  const escolherFundo = (e) => {
+    const b = e.target.closest('button[data-v]');
+    if (!b || !eh3d() || b.disabled) return;
+    const f = b.dataset.v, amb = AMBIENTES[f], sol = solDaCena(), campos = { fundo: f };
+    if (amb && amb.solAltura && sol.altura > 20) campos.sol = { ...sol, altura: amb.solAltura };
+    else if (f === 'ceu' && sol.altura < 15) campos.sol = { ...sol, altura: SOL_PADRAO.altura };
+    mudar3d(campos);
+    if (campos.sol) { mostrarSol(); aplicarSol(); }
+  };
+  $('#fundo3d').onclick = escolherFundo;
+  $('#ambiente3d').onclick = escolherFundo;
+  const mudarLuzes = (mud, tipo) => { if (eh3d()) mudar3d({ luzes: { ...luzesDaCena(), ...mud } }, tipo); };
+  $('#luz-ref').onchange = () => mudarLuzes({ refletores: $('#luz-ref').checked });
+  $('#luz-int').onchange = () => mudarLuzes({ interna: $('#luz-int').checked });
+  $('#luz-ref-forca').oninput = () => mudarLuzes({ forca_ref: +$('#luz-ref-forca').value }, 'luz-ref');
+  $('#luz-int-forca').oninput = () => mudarLuzes({ forca_int: +$('#luz-int-forca').value }, 'luz-int');
+  $('#luz-cor').onclick = (e) => { const b = e.target.closest('button[data-v]'); if (b) mudarLuzes({ cor: b.dataset.v }); };
   $('#lente3d').oninput = () => {
     if (!eh3d()) return;
     lembrar('lente3d');
@@ -1060,7 +1221,7 @@ const desfeitos = [], refeitos = [];
 let ultimaMudanca = { tipo: null, t: 0 };
 
 // a cena do 3D (11/11): o retrato é a câmera, as camadas, o sol e o estilo/enquadramento
-const CAMPOS_3D = ['camera', 'desligadas', 'sol', 'pintar', 'arestas', 'fundo', 'proporcao', 'marca'];
+const CAMPOS_3D = ['camera', 'desligadas', 'sol', 'pintar', 'arestas', 'fundo', 'proporcao', 'marca', 'luzes'];
 
 function retrato() {
   if (eh3d()) return JSON.parse(JSON.stringify(Object.fromEntries(CAMPOS_3D.map(k => [k, cena[k] ?? null]))));
@@ -1101,7 +1262,7 @@ async function voltarA(de, para, texto) {
     mostrarSol();
     mostrarPainel3d();
     mostrarMarca();
-    try { await gravar({ ...campos, marca: r.marca }); agendarMiniatura(); aviso(texto + '.'); }
+    try { await gravar({ ...campos, marca: r.marca, luzes: r.luzes }); agendarMiniatura(); aviso(texto + '.'); }
     catch (e) { aviso(texto + ' na tela, mas não gravado: ' + e.message); }
     return;
   }
@@ -2071,4 +2232,8 @@ window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado, desenho, 
                                     fovCena, quadro: quadroAtual, vistaMudou, cenas: todasCenas.map(c => c.id) }), mostrarModo, pontoDo3d, fazerEncaixe,
                    concluir, desfazer, refazer, geometriaDoContorno, bordaDeBaixo, montarImagem, abrirCena, novaCena3d, imagemDaCena3d, cameraDaTela,
                    exportar: () => exportar, tamanhoExportar };
-abrir().catch(e => { aviso('A cena não abriu: ' + e.message); console.error(e); });
+// saindo da página (o ← 3D antes de o 3D terminar de chegar): o pedido cortado pela troca de página não é erro
+let saindoDaPagina = false;
+addEventListener('beforeunload', () => { saindoDaPagina = true; });
+addEventListener('pagehide', () => { saindoDaPagina = true; });
+abrir().catch(e => { if (saindoDaPagina) return; aviso('A cena não abriu: ' + e.message); console.error(e); });

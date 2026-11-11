@@ -166,7 +166,7 @@ try:
             ok(im.size == (1920, 1440), f"1920 × 1440 (4:3): {im.size}")
             ok(im.mode == "RGBA" and im.getpixel((2, 2))[3] == 0, f"o canto vazado ({im.mode}, {im.getpixel((2, 2))})")
     ok(esperar(aba, "/render/.test(document.querySelector('.cartao-cena[data-cena=fachada]').textContent)", 10), "o cartão diz que tem render")
-    clicar_no(aba, "#fundo3d [data-v=ceu]")
+    clicar_no(aba, "#ambiente3d [data-v=ceu]")
     clicar_no(aba, "#barra-palco [data-vista=frente]")      # de frente: o céu aparece em cima (de cima, só o chão)
     aba.drenar(0.8)
     clicar_no(aba, "#renderizar")

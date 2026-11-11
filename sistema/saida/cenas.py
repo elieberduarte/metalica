@@ -37,7 +37,11 @@ FOTO_EXT = (".jpg", ".jpeg", ".png")
 FRENTE_MAX = 30                            # contornos do que fica na frente da estrutura, por cena
 #: o quadro da imagem da cena do 3D (largura ÷ altura; "livre" = o palco inteiro) e o fundo (11/11, a tela das Cenas)
 PROPORCOES = {"16:9": 16 / 9, "4:3": 4 / 3, "3:4": 3 / 4, "A3": 420 / 297, "livre": None}
-FUNDOS = ("ceu", "branco", "transparente", "terreno")
+FUNDOS = ("ceu", "branco", "transparente", "terreno",
+          # os ambientes (11/11, amostra-6 aprovada): o céu, o chão e a luz juntos; "ceu" é o Dia
+          "entardecer", "nublado", "estudio", "noite-azul", "noite")
+#: as luzes de noite da cena (amostra-6: automáticas + ajuste): refletores em volta e a luz interna, a força e a cor
+CORES_LUZ = ("quente", "branca")
 MINIATURA_LADO = 480                       # px: a miniatura da lista das cenas
 
 
@@ -314,7 +318,7 @@ def ler(g, s: str, i: str) -> dict:
 def _novo_id(pasta: str, nome: str) -> str:
     base = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode().lower()
     base = re.sub(r"[^a-z0-9]+", "-", base).strip("-")[:30] or "cena"
-    if base in ("marca", "nova", "nova-3d", "ordem", "pdf", "mostrar"):   # os nomes das rotas (…/cenas/marca etc.)
+    if base in ("marca", "nova", "nova-3d", "ordem", "pdf", "mostrar", "copiar"):   # os nomes das rotas (…/cenas/marca etc.)
         base += "-cena"
     i, k = base, 2
     while os.path.exists(os.path.join(pasta, i)):
@@ -481,6 +485,17 @@ def _gravar_campos(g, s: str, i: str, corpo: dict) -> dict:
             if corpo["fundo"] not in FUNDOS:
                 raise ErroCena("fundo desconhecido: %s" % corpo["fundo"])
             c["fundo"] = corpo["fundo"]
+        if "luzes" in corpo:
+            lz = corpo["luzes"]
+            if lz is None:
+                c.pop("luzes", None)
+            else:
+                if not isinstance(lz, dict) or lz.get("cor", "quente") not in CORES_LUZ:
+                    raise ErroCena("dados das luzes inválidos.")
+                c["luzes"] = {"refletores": lz.get("refletores", True) is not False, "interna": lz.get("interna", True) is not False,
+                              "forca_ref": min(3.0, max(0.0, _numeros([lz.get("forca_ref", 1)], 1)[0])),
+                              "forca_int": min(3.0, max(0.0, _numeros([lz.get("forca_int", 1)], 1)[0])),
+                              "cor": lz.get("cor", "quente")}
         if "guarda" in corpo:
             gd = corpo["guarda"]
             if not isinstance(gd, dict) or not all(k in ("camera", "camadas", "estilo") and isinstance(v, bool) for k, v in gd.items()):
@@ -558,6 +573,54 @@ def gravar_imagem(g, s: str, i: str, corpo: dict) -> dict:
     destino = os.path.join(pasta, "Cena - %s%s%s" % (nome, " (render)" if enviado.startswith("render") else "", ext))
     os.replace(origem, destino)
     return {"arquivo": destino, "nome": os.path.basename(destino)}
+
+
+#: Copiar ajustes (usuário, 11/11: "quando ajusto as configurações em uma cena poderia… ter a opção de copiar de uma cena para
+#: (sol, terreno...)"): os grupos e os campos de cada um; os marcados com * só existem na cena do 3D
+GRUPOS_COPIA = {"sol": ("sol",), "ambiente": ("*fundo", "*luzes"), "camadas": ("desligadas",), "estilo": ("*pintar", "*arestas"),
+                "enquadramento": ("*proporcao", "*lente"), "marca": ("marca",)}
+
+
+def copiar_ajustes(g, s: str, corpo: dict) -> dict:
+    """Copia os grupos de ajustes de uma cena (`de`) para outras (`para`). O que a cena de origem não tem (o sol padrão, as
+    luzes padrão, a marca padrão) sai da cena de destino também — ela fica igual. Na cena da foto só vale o que ela tem
+    (o sol, as camadas, a marca); o resto do 3D fica de fora."""
+    de = _id_valido(str(corpo.get("de") or ""))
+    para = [_id_valido(str(i)) for i in (corpo.get("para") or []) if str(i) != de]
+    grupos = [x for x in (corpo.get("grupos") or []) if x in GRUPOS_COPIA]
+    if not para or not grupos:
+        raise ErroCena("escolha o que copiar e para quais cenas.")
+    copiadas = []
+    with _TRAVA:
+        src = ler(g, s, de)
+        for i in para:
+            alvo = ler(g, s, i)
+            dele_3d = alvo.get("tipo") == "3d"
+            novo, tirar = {}, []
+            for grupo in grupos:
+                for campo in GRUPOS_COPIA[grupo]:
+                    so_3d = campo.startswith("*")
+                    campo = campo.lstrip("*")
+                    if so_3d and not (dele_3d and src.get("tipo") == "3d"):
+                        continue
+                    if campo == "lente":
+                        fov = (src.get("camera") or {}).get("fov")
+                        if fov and alvo.get("camera"):
+                            novo["camera"] = {**alvo["camera"], "fov": fov}
+                    elif campo in src and src[campo] is not None:
+                        novo[campo] = src[campo]
+                    else:
+                        tirar.append(campo)
+            if novo:
+                _gravar_campos(g, s, i, novo)
+            if tirar:
+                arq = os.path.join(_pasta(g, s), i, "cena.json")
+                c = _ler(arq) or {}
+                for campo in tirar:
+                    c.pop(campo, None)
+                _gravar(arq, c)
+            copiadas.append(i)
+    return {"copiadas": copiadas, **listar(g, s)}
 
 
 def gravar_pdf(g, s: str, corpo: dict) -> dict:
@@ -640,6 +703,8 @@ def rota_post(g, s: str, resto: list, corpo: dict) -> dict:
         return gravar_pdf(g, s, corpo)
     if resto == ["mostrar"]:
         return mostrar_na_pasta(g, s, corpo)
+    if resto == ["copiar"]:
+        return copiar_ajustes(g, s, corpo)
     if len(resto) == 1:
         return gravar(g, s, _id_valido(resto[0]), corpo)
     if len(resto) == 2 and resto[1] == "imagem":

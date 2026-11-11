@@ -89,6 +89,10 @@
   body:not(.modo-3d) #terreno-fonte { display: none; }   /* na foto o terreno não aparece: a fonte dele também não */
   #foto { position: absolute; user-select: none; -webkit-user-drag: none; }
   #tela { position: absolute; }
+  #ceu { position: absolute; left: 0; top: 0; pointer-events: none; }    /* o céu do ambiente, atrás do 3D (11/11) */
+  #ceu[hidden], #luzes3d[hidden] { display: none; }
+  .luzes3d { display: flex; flex-direction: column; gap: 4px; }
+  #ambiente3d { max-width: 230px; justify-content: flex-end; }
   #tela-fina { position: absolute; pointer-events: none; }
   #tela-fina[hidden], body.modo-3d #tela-fina { display: none; }
   /* o quadro da imagem da cena do 3D: o que sai no render; fora dele, escurecido */
@@ -189,7 +193,12 @@
     <div class="secao3d"><h2>Estilo</h2>
       <div class="linha-opcao">Cores <span class="opcoes" id="pintar3d"><button type="button" data-v="material">material</button><button type="button" data-v="sistema">sistema</button><button type="button" data-v="camada">camada</button><button type="button" data-v="perfil">perfil</button></span></div>
       <div class="linha-opcao">Arestas <span class="opcoes" id="arestas3d"><button type="button" data-v="1">finas</button><button type="button" data-v="0">sem</button></span></div>
-      <div class="linha-opcao">Fundo <span class="opcoes" id="fundo3d"><button type="button" data-v="ceu">céu</button><button type="button" data-v="branco">branco</button><button type="button" data-v="transparente">transparente</button><button type="button" data-v="terreno">terreno</button></span></div></div>
+      <div class="linha-opcao">Ambiente <span class="opcoes" id="ambiente3d"><button type="button" data-v="ceu" title="O céu azul de dia">Dia</button><button type="button" data-v="entardecer" title="O sol baixo e quente, o céu laranja">Entardecer</button><button type="button" data-v="nublado" title="Luz difusa, sombra leve">Nublado</button><button type="button" data-v="estudio" title="Cinza neutro, sem o chão marcado">Estúdio</button><button type="button" data-v="noite-azul" title="Logo depois do pôr do sol, as luzes acesas">Noite azul</button><button type="button" data-v="noite" title="Escuro, refletores e luz interna">Noite</button></span></div>
+      <div class="linha-opcao">Fundo liso <span class="opcoes" id="fundo3d"><button type="button" data-v="branco">branco</button><button type="button" data-v="transparente">transparente</button><button type="button" data-v="terreno">terreno</button></span></div>
+      <div id="luzes3d" class="luzes3d" hidden><p class="titulo-secao">Luzes da noite</p>
+        <label class="faixa"><input type="checkbox" id="luz-ref"> Refletores em volta <input type="range" id="luz-ref-forca" min="0" max="3" step="0.1" aria-label="Força dos refletores"></label>
+        <label class="faixa"><input type="checkbox" id="luz-int"> Luz interna <input type="range" id="luz-int-forca" min="0" max="3" step="0.1" aria-label="Força da luz interna"></label>
+        <div class="linha-opcao">Cor <span class="opcoes" id="luz-cor"><button type="button" data-v="quente">quente</button><button type="button" data-v="branca">branca</button></span></div></div></div>
     <div class="secao3d"><h2>Luz</h2><div id="lugar-sol-3d"></div></div>
     <div class="linha"><button type="button" id="apagar-3d">Apagar a cena</button></div>
   </div>
@@ -231,6 +240,7 @@
     <div class="linha-opcao">Jeito <span class="opcoes" id="marca-jeito"><button type="button" data-v="A" title="O logo claro solto no canto, com sombra leve">A · logo</button><button type="button" data-v="B" title="O logo em cor numa placa branca translúcida">B · placa</button><button type="button" data-v="C" title="Uma faixa no rodapé com o nome da obra e o logo">C · faixa</button></span></div>
     <div class="linha-opcao">Canto <span class="opcoes" id="marca-canto"><button type="button" data-v="esq">esquerdo</button><button type="button" data-v="dir">direito</button></span></div>
     <p class="dica">Sai em toda imagem: Salvar imagem e Renderizar. A empresa de saída é a do projeto (a do carimbo das pranchas).</p></div>
+  <div class="linha"><button type="button" id="copiar-ajustes" title="Leva o sol, o ambiente, as camadas, o estilo… desta cena para outras">Copiar ajustes para outras cenas…</button></div>
   <p class="dica" id="dica-imagem">Salvar imagem: a cena como está. Renderizar: a imagem final, maior, com as peças finas sem
     serrilhado e a sombra mais definida (leva alguns segundos). Vão para a pasta cenas da obra.</p>
   <div id="aviso" role="status"></div>
@@ -238,6 +248,7 @@
 
 <div id="palco">
   <img id="foto" alt="" hidden>
+  <canvas id="ceu" hidden></canvas>
   <canvas id="tela"></canvas>
   <div id="marcas"></div>
   <svg id="frente-svg"></svg>

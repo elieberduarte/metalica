@@ -91,6 +91,27 @@ float luzDoSol(vec3 p, vec3 n) {
 // de onde vem o sol: alto (57°), da esquerda e um pouco da frente da vista inicial (a perspectiva do enquadrar), para
 // as faces que se veem saírem em tons diferentes e a sombra cair para trás do modelo, no chão à vista
 const SOL = [-0.19, -0.71, 1.15];
+// o ambiente da cena (11/11, as cenas do 3D, amostra-6 aprovada: dia, entardecer, nublado, estúdio, noite azul, noite): a luz
+// do céu e do chão, a cor e a força do sol e as luzes de noite (refletores e a luz interna, sem sombra) no modo apresentação.
+// Os padrões são a conta de antes (o modo ver, o editor e o celular não mudam); só a tela das Cenas chama definirAmbiente.
+export const LUZES_MAX = 40;
+const AMBIENTE_PADRAO = { ambCeu: [0.76, 0.81, 0.90], ambChao: [0.58, 0.56, 0.54], ambK: 0.7, solCor: [1.0, 0.97, 0.92], solK: 0.66,
+                          pisoAmb: 1, aresta: 1, luzes: [] };
+const LUZES_GLSL = /* glsl */`
+uniform vec3 uAmbCeu; uniform vec3 uAmbChao; uniform vec3 uSolCor; uniform float uSolK; uniform float uAmbK; uniform float uBrilhoK;
+uniform int uNLuz; uniform vec4 uLuzP[${LUZES_MAX}]; uniform vec4 uLuzC[${LUZES_MAX}]; uniform float uPisoAmb; uniform float uArestaK;
+// as luzes de noite: cada uma (posição, alcance) e (cor, força); caem com o cubo da distância sobre o alcance, sem sombra
+vec3 luzesDaNoite(vec3 p, vec3 n) {
+  vec3 s = vec3(0.0);
+  for (int i = 0; i < ${LUZES_MAX}; i++) {
+    if (i >= uNLuz) break;
+    vec3 d = uLuzP[i].xyz - p; float r = max(length(d), 1.0); float q = r / uLuzP[i].w;
+    s += uLuzC[i].rgb * uLuzC[i].a * max(dot(n, d / r), 0.0) / (1.0 + q * q * q);
+  }
+  // somadas, saturam devagar (a fachada a 2,5 m dos refletores não vira um branco chapado): fraca quase igual, forte até ~1,6
+  return 1.6 * s / (1.0 + s);
+}
+`;
 
 const VERT = /* glsl */`
 uniform sampler2D tPecas;
@@ -156,6 +177,7 @@ uniform float uEscuro;
 uniform float uApresenta;
 uniform vec3 uSol;
 uniform vec3 uMalhas[${MALHAS_VAZADAS}];
+${LUZES_GLSL}
 uniform float uPixel;
 uniform float uDerivadas;
 uniform float uRuido;
@@ -219,7 +241,7 @@ void main() {
     float a = mix(0.5, 0.1, clamp((-vVista.z - 0.6 * uLonge) / uLonge, 0.0, 1.0));
     // como o editor: no escuro a aresta é a cor da peça puxada para o claro; no claro, para o escuro
     vec3 ca = uEscuro > 0.5 ? mix(vCor, vec3(0.94, 0.96, 1.0), 0.55) : vCor * 0.62;   // claro: a paleta mais clara (06/10)
-    gl_FragColor = vec4(ca, uEscuro > 0.5 ? a + 0.15 : a); return;
+    gl_FragColor = vec4(ca * uArestaK, uEscuro > 0.5 ? a + 0.15 : a); return;
   }
   float alfa = vAlfa;
   float ex = alfaDaExpandida(nM, qM, qx, qy);
@@ -239,10 +261,10 @@ void main() {
     vec3 olho = normalize(cameraPosition - vMundo);
     if (dot(nm, olho) < 0.0) nm = -nm;
     float sol = max(dot(nm, uSol), 0.0) * luzDoSol(vMundo, nm);
-    vec3 amb = mix(vec3(0.58, 0.56, 0.54), vec3(0.76, 0.81, 0.90), 0.5 + 0.5 * nm.z);
-    float brilho = pow(max(dot(nm, normalize(uSol + olho)), 0.0), 48.0) * 0.2 * sol;
+    vec3 amb = mix(uAmbChao, uAmbCeu, 0.5 + 0.5 * nm.z);
+    float brilho = pow(max(dot(nm, normalize(uSol + olho)), 0.0), 48.0) * 0.2 * sol * uBrilhoK;
     vec3 b = uEscuro > 0.5 ? base : base * 0.86;            // no claro a paleta vem clareada: tira um pouco
-    gl_FragColor = vec4(min(b * (0.7 * amb + 0.66 * vec3(1.0, 0.97, 0.92) * sol) + brilho, 1.0), alfa);
+    gl_FragColor = vec4(min(b * (uAmbK * amb + uSolK * uSolCor * sol + luzesDaNoite(vMundo, nm)) + brilho, 1.0), alfa);
     return;
   }
   vec3 n = normalize(cross(dFdx(vVista), dFdy(vVista)));
@@ -388,7 +410,12 @@ export class Visor3D {
     const comum = { vertexShader: VERT, fragmentShader: FRAG };
     this._luz = this._luz || {
       uApresenta: { value: 0 }, uSol: { value: new THREE.Vector3(...SOL).normalize() }, tSombra: { value: null },
-      uMatSombra: { value: new THREE.Matrix4() }, uTexel: { value: 1 / 2048 }, uDesloc: { value: 0 }, uTemSombra: { value: 0 } };
+      uMatSombra: { value: new THREE.Matrix4() }, uTexel: { value: 1 / 2048 }, uDesloc: { value: 0 }, uTemSombra: { value: 0 },
+      uAmbCeu: { value: new THREE.Vector3() }, uAmbChao: { value: new THREE.Vector3() }, uSolCor: { value: new THREE.Vector3() },
+      uSolK: { value: 0 }, uAmbK: { value: 0 }, uBrilhoK: { value: 1 }, uPisoAmb: { value: 1 }, uArestaK: { value: 1 }, uNLuz: { value: 0 },
+      uLuzP: { value: Array.from({ length: LUZES_MAX }, () => new THREE.Vector4()) },
+      uLuzC: { value: Array.from({ length: LUZES_MAX }, () => new THREE.Vector4()) } };
+    if (!this._ambienteFeito) { this._ambienteFeito = true; this.definirAmbiente(null, false); }
     this._uLonge = { value: 10000 };
     this._uEscuro = { value: 0 };
     this._uMalhas = this._uMalhas || { value: Array.from({ length: MALHAS_VAZADAS }, () => new THREE.Vector3(25, 12, 1.5)) };
@@ -873,7 +900,8 @@ export class Visor3D {
       vertexShader: `varying vec2 vXY; varying vec3 vMundo;
         void main() { vec4 w = modelMatrix * vec4(position, 1.0); vXY = w.xy; vMundo = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
       fragmentShader: `uniform vec3 uFundo, uLinha; uniform float uAlfa, uRaio, uEscuro; uniform vec2 uCentro; varying vec2 vXY; varying vec3 vMundo;
-        ${this._luz ? 'uniform float uApresenta; ' + SOMBRA_GLSL : 'float uApresenta = 0.0; float luzDoSol(vec3 p, vec3 n) { return 1.0; }'}
+        ${this._luz ? 'uniform float uApresenta; ' + SOMBRA_GLSL + LUZES_GLSL
+                    : 'float uApresenta = 0.0; float luzDoSol(vec3 p, vec3 n) { return 1.0; } float uSolK = 0.66; float uPisoAmb = 1.0; vec3 luzesDaNoite(vec3 p, vec3 n) { return vec3(0.0); }'}
         float grade(float passo) {
           vec2 q = vXY / passo, w = fwidth(q);
           vec2 d = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-6));
@@ -882,7 +910,11 @@ export class Visor3D {
         void main() {
           float a = grade(10000.0) * uAlfa * (1.0 - smoothstep(uRaio * 0.55, uRaio, distance(vXY, uCentro)));
           vec3 cor = mix(uFundo, uLinha, a);
-          if (uApresenta > 0.5) cor *= 1.0 - (uEscuro > 0.5 ? 0.75 : 0.3) * (1.0 - luzDoSol(vMundo, vec3(0.0, 0.0, 1.0)));
+          if (uApresenta > 0.5) {
+            // a sombra no chão some com o sol fraco (o nublado, a noite); as luzes de noite fazem a poça de luz no chão
+            cor *= 1.0 - min(1.0, uSolK / 0.66) * (uEscuro > 0.5 ? 0.75 : 0.3) * (1.0 - luzDoSol(vMundo, vec3(0.0, 0.0, 1.0)));
+            cor = cor * uPisoAmb + luzesDaNoite(vMundo, vec3(0.0, 0.0, 1.0)) * vec3(0.30, 0.24, 0.17);
+          }
           gl_FragColor = vec4(cor, 1.0);
         }`,
       depthWrite: false, side: THREE.FrontSide });
@@ -904,6 +936,24 @@ export class Visor3D {
     this.piso.material.uniforms.uRaio.value = Math.max(s.x, s.y) * 0.85 + 15000;
     this._sombraSuja = true;
     this.pedirQuadro();
+  }
+
+  // ---------------------------------------------------------------- apresentação: o ambiente da cena
+
+  /** O ambiente do modo apresentação (11/11, as cenas do 3D): `cfg` = {ambCeu, ambChao: [r,g,b] 0–1, ambK, solCor, solK,
+   *  pisoAmb, aresta, luzes: [{p: [x,y,z] no mundo, alcance (mm), cor: [r,g,b], forca}]} — o que faltar fica no padrão;
+   *  null = o padrão (a conta de antes). */
+  definirAmbiente(cfg, pedir = true) {
+    if (!this._luz) return;
+    const c = { ...AMBIENTE_PADRAO, ...(cfg || {}) }, L = this._luz;
+    L.uAmbCeu.value.set(...c.ambCeu); L.uAmbChao.value.set(...c.ambChao); L.uSolCor.value.set(...c.solCor);
+    L.uAmbK.value = c.ambK; L.uSolK.value = c.solK; L.uBrilhoK.value = c.solK / AMBIENTE_PADRAO.solK;
+    L.uPisoAmb.value = c.pisoAmb; L.uArestaK.value = c.aresta;
+    const luzes = (c.luzes || []).slice(0, LUZES_MAX);
+    luzes.forEach((l, i) => { L.uLuzP.value[i].set(l.p[0], l.p[1], l.p[2], l.alcance); L.uLuzC.value[i].set(l.cor[0], l.cor[1], l.cor[2], l.forca); });
+    L.uNLuz.value = luzes.length;
+    this.ambiente = cfg || null;
+    if (pedir) this.pedirQuadro();
   }
 
   // ---------------------------------------------------------------- apresentação: sol e sombra

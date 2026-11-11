@@ -475,3 +475,44 @@ def test_mostrar_o_render_na_pasta(tmp_path, monkeypatch):
     with pytest.raises(C.ErroCena):
         C.rota_post(g, s.replace(s, "nao-existe"), ["mostrar"], {})
     assert not os.path.exists(os.path.join(str(tmp_path), "nao-existe")) and len(abertos) == 4
+
+
+def test_ambientes_e_luzes_da_noite(tmp_path):
+    """11/11 (amostra-6 aprovada: os 6 ambientes; as luzes de noite automáticas + ajuste): o fundo da cena do 3D pode ser um
+    ambiente, e as luzes (refletores, interna, a força 0–3 e a cor) ficam na cena; null tira."""
+    g, s = _gerente(tmp_path)
+    i = C.nova_3d(g, s, {"nome": "Noite", "camera": _CAM, "fundo": "noite",
+                         "luzes": {"refletores": True, "interna": False, "forca_ref": 9, "forca_int": -1, "cor": "branca"}})["id"]
+    c = C.ler(g, s, i)
+    assert c["fundo"] == "noite"
+    assert c["luzes"] == {"refletores": True, "interna": False, "forca_ref": 3.0, "forca_int": 0.0, "cor": "branca"}
+    for f in ("ceu", "entardecer", "nublado", "estudio", "noite-azul", "noite"):
+        assert C.gravar(g, s, i, {"fundo": f})["fundo"] == f
+    with pytest.raises(C.ErroCena, match="luzes"):
+        C.gravar(g, s, i, {"luzes": {"cor": "verde"}})
+    assert "luzes" not in C.gravar(g, s, i, {"luzes": None})
+
+
+def test_copiar_ajustes_para_outras_cenas(tmp_path):
+    """11/11 ("quando ajusto as configurações em uma cena poderia… ter a opção de copiar de uma cena para (sol, terreno...)"):
+    os grupos marcados vão da cena de origem para as escolhidas; o que a origem não tem sai do destino; na cena da foto só o
+    que ela tem (sol, camadas, marca); a vista (posição) de cada uma fica."""
+    g, s = _gerente(tmp_path)
+    a = C.nova_3d(g, s, {"nome": "A", "camera": {**_CAM, "fov": 30}, "fundo": "noite", "proporcao": "4:3", "pintar": "sistema",
+                         "luzes": {"cor": "branca"}, "sol": {"direcao": 120, "altura": 40}, "desligadas": ["camada:Fechamento"]})["id"]
+    b = C.nova_3d(g, s, {"nome": "B", "camera": _CAM, "fundo": "ceu", "marca": {"empresa": "sem"}})["id"]
+    f = C.nova(g, s, _foto(tmp_path))["id"]
+    r = C.rota_post(g, s, ["copiar"], {"de": a, "para": [b, f, a], "grupos": ["sol", "ambiente", "marca", "enquadramento"]})
+    assert r["copiadas"] == [b, f]
+    cb, cf = C.ler(g, s, b), C.ler(g, s, f)
+    assert cb["sol"]["direcao"] == 120 and cb["fundo"] == "noite" and cb["luzes"]["cor"] == "branca"
+    assert "marca" not in cb                                   # A não tem marca (o padrão): B volta ao padrão
+    assert cb["proporcao"] == "4:3" and cb["camera"]["fov"] == 30 and cb["camera"]["posicao"] == C.ler(g, s, b)["camera"]["posicao"]
+    assert cb.get("pintar") is None and cb.get("desligadas") in (None, [])   # estilo e camadas não foram marcados
+    assert cf["sol"]["direcao"] == 120 and "fundo" not in cf and "luzes" not in cf   # a foto: só o que ela tem
+    C.rota_post(g, s, ["copiar"], {"de": a, "para": [f], "grupos": ["camadas"]})
+    assert C.ler(g, s, f)["desligadas"] == ["camada:Fechamento"]
+    with pytest.raises(C.ErroCena):
+        C.rota_post(g, s, ["copiar"], {"de": a, "para": [], "grupos": ["sol"]})
+    with pytest.raises(C.ErroCena):
+        C.rota_post(g, s, ["copiar"], {"de": a, "para": ["../x"], "grupos": ["sol"]})
