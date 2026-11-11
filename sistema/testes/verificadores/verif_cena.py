@@ -117,9 +117,12 @@ try:
     # — a obra aqui nem tem terreno)
     aba.navegar(base + "/visor3d/ver3d.html?projeto=obra", limite=60)
     ok(esperar(aba, "!!window.ver3dPronto && !!document.getElementById('btn-cenas')", 90), "o modo ver tem o botão Cenas (sem terreno)")
+    # 11/11 (cenas3d.js): o botão Cenas abre o painel das cenas, com a da foto na lista (e na aba 📷 do rodapé)
     aba.avaliar("document.getElementById('btn-cenas').click(); 1")
+    ok(esperar(aba, "!!document.querySelector('#painel-corpo [data-ir=\"foto-teste\"]')", 15), "o botão abre o painel das cenas, com a da foto")
+    aba.avaliar("document.querySelector('#painel-corpo [data-ir=\"foto-teste\"]').click(); 1")
     ok(esperar(aba, "location.pathname === '/visor3d/cena.html' && !!window.cenaPronta && !document.getElementById('foto').hidden", 90),
-       "o botão abre as cenas da obra, na cena que já existe")
+       "a cena da foto abre na página dela")
     aba.navegar(base + "/visor3d/cena.html?projeto=obra&cena=foto-teste&tema=claro", limite=60)
     ok(esperar(aba, "!!window.cenaPronta && !document.getElementById('foto').hidden", 90), "a página da cena abriu com a foto")
     # 27/10 ("o fundo da cena não está otimizado para o tema claro"): o fundo em volta da foto era sempre o escuro

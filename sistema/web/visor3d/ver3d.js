@@ -18,6 +18,7 @@ import { SOL_PADRAO, definirSol, controlesDoSol, ligarControlesDoSol } from './s
 import { acompanhar } from '../progresso.js';
 import { Terreno } from './terreno.js';
 import { carregarQuantidades, textoDaCamada, textoDoGrupo, notaDoResumo, linkDoResumo, linhaDaObra } from '../quantidade_camadas.js';
+import { ligarCenas3d } from './cenas3d.js';
 
 const $ = s => document.querySelector(s);
 const q = new URLSearchParams(location.search);
@@ -437,6 +438,8 @@ async function abrir() {
   carregarReferencia();
   carregarTerreno();
   ligar();
+  cenas3d = ligarCenas3d({ visor, projeto: PROJETO, estado: estadoParaCena, aplicar: aplicarDaCena, abrirPainel, fecharPainel,
+    painelAtual: () => painelAtual, situacao, cobertura: () => SIT_COBERTURA, trocarCobertura });
   if (NA_DIVIDIDA) { try { window.parent.postMessage({ metalica: 'pronto3d' }, location.origin); } catch (e) { /* sem a tela de fora */ } }
 }
 
@@ -828,6 +831,82 @@ function painelBusca(texto) {
   $('#painel-corpo').querySelectorAll('[data-i]').forEach(el => el.onclick = () => { visor.selecionar(+el.dataset.i); visor.centrarEm(+el.dataset.i); avisarDivisao(); });
 }
 
+// ------------------------------------------------------------------ cenas do 3D (cenas3d.js — FERRAMENTA · CENAS, 11/11)
+// O que uma cena guarda desta tela e como volta a ela (usuário, 11/11: "criar cena… salvar cena", como no SketchUp). A
+// câmera e as abas são do cenas3d.js; aqui as camadas, os sistemas, a planta no piso, o Pintar, as arestas e o sol.
+
+let cenas3d = null;
+
+function estadoParaCena() {
+  const cams = visor.cabecalho.camadas || [];
+  const desligadas = [];
+  cams.forEach((c, i) => { if (c.pecas && visor.visivelCamada[i] === false) desligadas.push('camada:' + c.nome); });
+  for (const g of gruposDeSistema()) if ((doVer.sistemas || {})[g.chave] === false) desligadas.push('sistema:' + g.chave);
+  const a = apresentacaoDoVer();
+  return {
+    camera: { ...visor.lerCamera(), projecao: 'perspectiva' },
+    desligadas,
+    planta: $('#btn-planta').classList.contains('ligado'),
+    piso_oculto: pisoOculto(),
+    pintar: $('#pintar').value,
+    arestas: $('#btn-arestas').classList.contains('ligado'),
+    sol: { ligado: !!a.ligada, direcao: +a.direcao || 0, altura: +a.altura || SOL_PADRAO.altura },
+    situacao: SIT_COBERTURA,
+  };
+}
+
+/** Aplica a cena `c` na tela (a câmera não: é do cenas3d.js) e guarda como o "da outra vez" deste projeto (doVer). O que
+ *  a cena não guarda (c.guarda) fica como está. */
+function aplicarDaCena(c) {
+  const guarda = c.guarda || {};
+  if (guarda.camadas !== false && Array.isArray(c.desligadas)) {
+    const desl = new Set(c.desligadas), cams = visor.cabecalho.camadas || [], camadas = { ...(doVer.camadas || {}) };
+    cams.forEach((cm, i) => {
+      if (!cm.pecas) return;
+      const ver = !desl.has('camada:' + cm.nome);
+      if ((visor.visivelCamada[i] !== false) !== ver) visor.mostrarCamada(i, ver);
+      camadas[cm.nome] = ver;
+    });
+    doVer.camadas = camadas;
+    const sistemas = { ...(doVer.sistemas || {}) };
+    for (const g of gruposDeSistema()) { const ver = !desl.has('sistema:' + g.chave); visor.ocultarSistema(g.ids, !ver); sistemas[g.chave] = ver; }
+    doVer.sistemas = sistemas;
+    if (Array.isArray(c.piso_oculto)) {
+      try { localStorage.setItem('ver3d.pisoOculto', JSON.stringify(c.piso_oculto)); } catch (e) { /* sem armazenamento */ }
+      for (const n of visor.partesReferencia()) visor.mostrarParteReferencia(n, !c.piso_oculto.includes(n));
+    }
+    if (typeof c.planta === 'boolean') {
+      $('#btn-planta').classList.toggle('ligado', c.planta);
+      visor.ligarReferencia(c.planta);
+      try { localStorage.setItem('ver3d.planta', c.planta ? '1' : '0'); } catch (e) { /* sem armazenamento */ }
+    }
+  }
+  if (guarda.estilo !== false) {
+    const sel = $('#pintar');
+    if (c.pintar && sel.value !== c.pintar && [...sel.options].some(o => o.value === c.pintar)) {
+      sel.value = c.pintar;
+      pintar(c.pintar);
+      if (painelAtual === 'legenda') { if (c.pintar === 'material') fecharPainel(); else painelLegenda(c.pintar); }
+    }
+    if (typeof c.arestas === 'boolean') { $('#btn-arestas').classList.toggle('ligado', c.arestas); visor.ligarArestas(c.arestas); }
+    if (c.sol) {
+      doVer.apresentacao = { ...apresentacaoDoVer(), ligada: !!c.sol.ligado, direcao: c.sol.direcao, altura: c.sol.altura };
+      aplicarApresentacao(doVer.apresentacao);
+      if (painelAtual === 'apresentacao') painelApresentacao();
+    }
+  }
+  gravarDoVer();
+  if (painelAtual === 'camadas') painelCamadas();
+}
+
+/** A cena noutra situação da cobertura retrátil: o botão Aberta/Retraída (o 3D abre de novo nela). False sem o botão. */
+function trocarCobertura(sit) {
+  const b = document.querySelector(`#cobertura:not([hidden]) button[data-situacao="${sit}"]`);
+  if (!b) return false;
+  b.click();
+  return true;
+}
+
 // ------------------------------------------------------------------ eventos
 
 function ligar() {
@@ -868,8 +947,9 @@ function ligar() {
     try { localStorage.setItem('ver3d.planta', sim ? '1' : '0'); } catch (e) { /* sem armazenamento */ }
   };
   $('#btn-terreno').onclick = () => (painelAtual === 'terreno' ? fecharPainel() : terreno && terreno.painel());
-  // as cenas, separadas do terreno (usuário, 26/10: "essas cenas deveriam ter um menu próprio"): a página delas
-  $('#btn-cenas').onclick = () => { location.href = `/visor3d/cena.html?projeto=${encodeURIComponent(PROJETO)}`; };
+  // as cenas, separadas do terreno (usuário, 26/10: "essas cenas deveriam ter um menu próprio"): o painel delas — as cenas
+  // do 3D e, por ele, a página da cena pela foto (11/11, cenas3d.js)
+  $('#btn-cenas').onclick = () => { if (cenas3d) cenas3d.alternarPainel(); else location.href = `/visor3d/cena.html?projeto=${encodeURIComponent(PROJETO)}`; };
   $('#btn-arestas').onclick = () => { const b = $('#btn-arestas'); b.classList.toggle('ligado'); visor.ligarArestas(b.classList.contains('ligado')); };
   $('#btn-apresentacao').onclick = () => { if (painelAtual === 'apresentacao') fecharPainel(); else painelApresentacao(); };
   document.querySelectorAll('[data-vista]').forEach(b => b.onclick = () => visor.enquadrar(b.dataset.vista));

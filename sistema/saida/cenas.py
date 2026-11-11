@@ -12,6 +12,13 @@ altura), o que fica na frente da estrutura (frente: os contornos na foto) e se a
 escondidos até "Editar cena"). A conta do
 encaixe é da tela (web/visor3d/cena.js); aqui só se guarda.
 
+As cenas do 3D (usuário, 11/11: "não tem a opção de criar cena, não tem uma opção para salvar cena, renderizar, colocar isso
+em uma prancha"; aprovado nas amostras de Projeto/BRIEFINGS/imagens/cenas-3d/ — abas no rodapé, como as cenas do
+SketchUp): a vista do modo ver guardada com nome, sem foto — `tipo: "3d"`, a câmera {posicao, alvo, fov, projecao}
+em mm do projeto, as camadas/sistemas desligados, as partes do piso ocultas, a planta, o Pintar, as arestas e o sol, e
+`guarda` (o que a cena aplica ao voltar a ela: camera, camadas, estilo). Ficam na mesma lista das cenas por foto, na
+ordem das abas (`ordem`). A tela é web/visor3d/cenas3d.js.
+
 Rotas, penduradas nas do terreno (saida/local_obra.py, /api/projetos/<s>/terreno/cenas…).
 """
 import json
@@ -92,8 +99,40 @@ def listar(g, s: str) -> dict:
             c = _ler(os.path.join(pasta, i, "cena.json"))
             if c:
                 cenas.append(c)
-    cenas.sort(key=lambda c: c.get("criada") or "")
+    cenas.sort(key=lambda c: (_ordem(c), c.get("criada") or ""))
     return {"cenas": cenas}
+
+
+def _ordem(c: dict) -> float:
+    """A ordem das abas: a gravada (`ordem`) ou, na cena de antes dela, a hora de criação — a cena nova vai para o fim."""
+    o = c.get("ordem")
+    if isinstance(o, (int, float)) and o == o:
+        return float(o)
+    try:
+        return time.mktime(time.strptime(c.get("criada") or "", "%Y-%m-%dT%H:%M:%S"))
+    except (ValueError, OverflowError):
+        return 0.0
+
+
+def _proxima_ordem(g, s: str) -> float:
+    return max([_ordem(c) for c in listar(g, s)["cenas"]] or [-1.0]) + 1
+
+
+def ordenar(g, s: str, corpo: dict) -> dict:
+    """A ordem das abas (arrastar ou "mover para a esquerda/direita"): `ids` na ordem nova; as que faltarem vão depois."""
+    ids = corpo.get("ids")
+    if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+        raise ErroCena("dados da cena inválidos.")
+    with _TRAVA:
+        todas = listar(g, s)["cenas"]
+        pos = {i: k for k, i in enumerate(ids)}
+        todas.sort(key=lambda c: (pos.get(c["id"], len(ids)), _ordem(c)))
+        pasta = _pasta(g, s)
+        for k, c in enumerate(todas):
+            if c.get("ordem") != k:
+                c["ordem"] = k
+                _gravar(os.path.join(pasta, c["id"], "cena.json"), c)
+    return listar(g, s)
 
 
 def ler(g, s: str, i: str) -> dict:
@@ -150,6 +189,52 @@ def nova(g, s: str, corpo: dict) -> dict:
     return c
 
 
+def nova_3d(g, s: str, corpo: dict) -> dict:
+    """A cena do 3D: a vista atual do modo ver com nome (sem foto). A câmera é obrigatória; o resto, o que vier."""
+    if not isinstance(corpo.get("camera"), dict):
+        raise ErroCena("a cena do 3D precisa da câmera.")
+    with _TRAVA:
+        pasta = _pasta(g, s)
+        os.makedirs(pasta, exist_ok=True)
+        n = len(listar(g, s)["cenas"]) + 1
+        nome = str(corpo.get("nome") or "").strip()[:80] or "Cena %d" % n
+        i = _novo_id(pasta, nome)
+        agora = time.strftime("%Y-%m-%dT%H:%M:%S")
+        c = {"id": i, "tipo": "3d", "nome": nome, "ordem": _proxima_ordem(g, s), "criada": agora, "alterada": agora,
+             "guarda": {"camera": True, "camadas": True, "estilo": True}}
+        os.makedirs(os.path.join(pasta, i))
+        try:
+            _gravar(os.path.join(pasta, i, "cena.json"), c)
+            return _gravar_campos(g, s, i, {k: v for k, v in corpo.items() if k != "nome"})
+        except ErroCena:
+            import shutil                                      # dado inválido: a cena não fica pela metade
+            shutil.rmtree(os.path.join(pasta, i), ignore_errors=True)
+            raise
+
+
+def _camera_3d(cam) -> dict:
+    """A câmera da cena do 3D em mm do projeto: posição, alvo, ângulo vertical, perspectiva ou ortogonal (e o zoom dela)."""
+    if not isinstance(cam, dict):
+        raise ErroCena("dados da cena inválidos.")
+    pos, alvo = _numeros(cam.get("posicao"), 3), _numeros(cam.get("alvo"), 3)
+    if sum((a - b) ** 2 for a, b in zip(pos, alvo)) < 1.0:
+        raise ErroCena("a câmera da cena olha para o próprio lugar.")
+    projecao = cam.get("projecao") or "perspectiva"
+    if projecao not in ("perspectiva", "ortografica"):
+        raise ErroCena("projeção desconhecida: %s" % projecao)
+    out = {"posicao": [round(x, 1) for x in pos], "alvo": [round(x, 1) for x in alvo], "projecao": projecao,
+           "fov": round(min(170.0, max(1.0, _numeros([cam.get("fov", 45.0)], 1)[0])), 2)}
+    if cam.get("zoom") is not None:
+        out["zoom"] = max(1e-6, _numeros([cam.get("zoom")], 1)[0])
+    return out
+
+
+def _lista_de_textos(v, n_max=500) -> list:
+    if not isinstance(v, list) or len(v) > n_max or not all(isinstance(x, str) and len(x) <= 200 for x in v):
+        raise ErroCena("dados da cena inválidos.")
+    return sorted(set(v))
+
+
 def _numeros(v, n: int) -> list:
     if not isinstance(v, (list, tuple)) or len(v) != n:
         raise ErroCena("dados da cena inválidos.")
@@ -182,7 +267,10 @@ def _gravar_campos(g, s: str, i: str, corpo: dict) -> dict:
                 par["modelo"] = _numeros(p.get("modelo"), 3)
             pares.append(par)
         c["pares"] = pares
-    if "camera" in corpo:
+    tres_d = c.get("tipo") == "3d"
+    if "camera" in corpo and tres_d:
+        c["camera"] = _camera_3d(corpo["camera"])
+    elif "camera" in corpo:
         cam = corpo["camera"]
         if cam is None:
             c["camera"] = None
@@ -198,10 +286,27 @@ def _gravar_campos(g, s: str, i: str, corpo: dict) -> dict:
     # o que aparece na cena (usuário, 26/10: "essa imagem interagir com as camadas, poder abrir a quadra, colocar e tirar a
     # lona"): as camadas e os sistemas desligados ("camada:<nome>", "sistema:<chave>") e a situação da cobertura retrátil
     if "desligadas" in corpo:
-        d = corpo["desligadas"] or []
-        if not isinstance(d, list) or len(d) > 500 or not all(isinstance(x, str) and len(x) <= 200 for x in d):
-            raise ErroCena("dados da cena inválidos.")
-        c["desligadas"] = sorted(set(d))
+        c["desligadas"] = _lista_de_textos(corpo["desligadas"] or [])
+    # o estilo da cena do 3D (11/11): o Pintar do modo ver, as arestas, a planta no chão e as partes dela ocultas, e o que
+    # a cena aplica ao voltar a ela
+    if tres_d:
+        if "pintar" in corpo:
+            p = corpo["pintar"]
+            if p is not None and not (isinstance(p, str) and re.fullmatch(r"[a-z_]{1,30}", p)):
+                raise ErroCena("dados da cena inválidos.")
+            c["pintar"] = p
+        for chave in ("arestas", "planta"):
+            if chave in corpo:
+                if not isinstance(corpo[chave], bool):
+                    raise ErroCena("dados da cena inválidos.")
+                c[chave] = corpo[chave]
+        if "piso_oculto" in corpo:
+            c["piso_oculto"] = _lista_de_textos(corpo["piso_oculto"] or [], 50)
+        if "guarda" in corpo:
+            gd = corpo["guarda"]
+            if not isinstance(gd, dict) or not all(k in ("camera", "camadas", "estilo") and isinstance(v, bool) for k, v in gd.items()):
+                raise ErroCena("dados da cena inválidos.")
+            c["guarda"] = {**c.get("guarda", {}), **gd}
     if "situacao" in corpo:
         if corpo["situacao"] not in (None, "aberta", "retraida"):
             raise ErroCena("situação da cobertura desconhecida: %s" % corpo["situacao"])
@@ -234,7 +339,7 @@ def _gravar_campos(g, s: str, i: str, corpo: dict) -> dict:
         c["frente"] = contornos
     # a cena pronta (usuário, 27/10: "salvar cena após a conclusão, para não ficar aparecendo essas bolinhas… caso seja
     # necessário editar ter um para editar cena, daí elas reaparecem"): a tela esconde os pontos e o encaixe
-    if "concluida" in corpo:
+    if "concluida" in corpo and not tres_d:
         if not isinstance(corpo["concluida"], bool):
             raise ErroCena("dados da cena inválidos.")
         if corpo["concluida"] and not c.get("camera"):
@@ -307,6 +412,10 @@ def rota_post(g, s: str, resto: list, corpo: dict) -> dict:
     """…/terreno/cenas/nova (a foto), …/<id> (grava), …/<id>/imagem (a imagem pronta), …/<id>/apagar."""
     if resto == ["nova"]:
         return nova(g, s, corpo)
+    if resto == ["nova-3d"]:
+        return nova_3d(g, s, corpo)
+    if resto == ["ordem"]:
+        return ordenar(g, s, corpo)
     if len(resto) == 1:
         return gravar(g, s, _id_valido(resto[0]), corpo)
     if len(resto) == 2 and resto[1] == "imagem":

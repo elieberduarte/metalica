@@ -79,7 +79,11 @@ try:
     # o botão ganha o clique quando o modo ver termina de abrir o modelo
     ok(esperar(aba, "(() => { try { const b = document.querySelector('#f3d').contentDocument.querySelector('#btn-cenas'); return !!(b && b.onclick && b.offsetWidth); } catch (e) { return false; } })()", 90),
        "o modo ver no quadro, com o botão Cenas")
+    # 11/11 (cenas3d.js): o botão Cenas abre o painel das cenas; a da foto sai dele ("📷 Nova cena pela foto…")
     clicar_no(aba, "document.querySelector('#f3d').contentDocument", "#btn-cenas")
+    ok(esperar(aba, "(() => { try { const b = document.querySelector('#f3d').contentDocument.querySelector('#cena-foto'); return !!(b && b.offsetWidth); } catch (e) { return false; } })()", 15),
+       "o botão Cenas abre o painel das cenas")
+    clicar_no(aba, "document.querySelector('#f3d').contentDocument", "#cena-foto")
     ok(esperar(aba, "(() => { try { const d = document.querySelector('#f3d').contentDocument; return d.location.pathname === '/visor3d/cena.html' && !!d.querySelector('#voltar'); } catch (e) { return false; } })()", 30),
        "a cena abre dentro do quadro")
     clicar_no(aba, "document.querySelector('#f3d').contentDocument", "#voltar")

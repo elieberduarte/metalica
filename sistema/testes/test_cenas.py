@@ -251,3 +251,75 @@ def test_so_jpg_e_png(tmp_path):
     with pytest.raises(C.ErroCena, match="JPG ou PNG"):
         C.nova(g, s, {"arquivo_local": caminho, "nome": "doc.pdf"})
     assert not os.path.exists(caminho)
+
+
+# ---------------------------------------------------------------- as cenas do 3D (11/11: "criar cena… salvar cena")
+
+_CAM = {"posicao": [-20000, -30000, 15000], "alvo": [10000, 20000, 0], "fov": 45, "projecao": "perspectiva"}
+
+
+def test_cena_do_3d_guarda_a_vista_com_nome(tmp_path):
+    g, s = _gerente(tmp_path)
+    c = L.rota_post(g, s, ["cenas", "nova-3d"], {"nome": "Fachada frontal", "camera": _CAM, "desligadas": ["camada:Telhas"],
+                                                  "pintar": "camada", "arestas": False, "planta": True,
+                                                  "piso_oculto": ["eixos"], "sol": {"ligado": True, "direcao": 400, "altura": 30}},
+                    lambda *a: None)
+    assert c["id"] == "fachada-frontal" and c["tipo"] == "3d" and c["nome"] == "Fachada frontal"
+    assert c["camera"] == {"posicao": [-20000, -30000, 15000], "alvo": [10000, 20000, 0], "fov": 45, "projecao": "perspectiva"}
+    assert c["desligadas"] == ["camada:Telhas"] and c["pintar"] == "camada" and c["arestas"] is False and c["planta"] is True
+    assert c["piso_oculto"] == ["eixos"] and c["sol"] == {"ligado": True, "direcao": 40.0, "altura": 30.0}
+    assert c["guarda"] == {"camera": True, "camadas": True, "estilo": True} and "foto" not in c
+    assert not os.path.exists(os.path.join(g.pasta(s), "cenas", "dados", "fachada-frontal", "foto.jpg"))
+    assert [x["id"] for x in L.rota_get(g, s, ["cenas"], {})["cenas"]] == ["fachada-frontal"]
+
+
+def test_atualizar_a_cena_do_3d_com_a_vista_atual(tmp_path):
+    g, s = _gerente(tmp_path)
+    i = C.nova_3d(g, s, {"nome": "Interna", "camera": _CAM})["id"]
+    cam2 = {"posicao": [0, 0, 5000], "alvo": [0, 1, 0], "fov": 60, "projecao": "ortografica", "zoom": 2.5}
+    c = C.rota_post(g, s, [i], {"camera": cam2, "desligadas": [], "guarda": {"estilo": False}, "nome": "Interna — ponte"})
+    assert c["camera"]["projecao"] == "ortografica" and c["camera"]["zoom"] == 2.5 and c["camera"]["fov"] == 60
+    assert c["guarda"] == {"camera": True, "camadas": True, "estilo": False} and c["nome"] == "Interna — ponte"
+    assert C.ler(g, s, i)["camera"]["posicao"] == [0, 0, 5000]
+
+
+def test_cena_do_3d_sem_camera_ou_com_dado_ruim_nao_fica(tmp_path):
+    g, s = _gerente(tmp_path)
+    with pytest.raises(C.ErroCena, match="câmera"):
+        C.nova_3d(g, s, {"nome": "X"})
+    with pytest.raises(C.ErroCena):
+        C.nova_3d(g, s, {"nome": "X", "camera": {**_CAM, "alvo": _CAM["posicao"]}})      # olha para o próprio lugar
+    with pytest.raises(C.ErroCena):
+        C.nova_3d(g, s, {"nome": "X", "camera": _CAM, "pintar": "<script>"})
+    with pytest.raises(C.ErroCena):
+        C.nova_3d(g, s, {"nome": "X", "camera": {**_CAM, "projecao": "olho-de-peixe"}})
+    assert C.listar(g, s)["cenas"] == []
+    assert not [d for d in os.listdir(os.path.join(g.pasta(s), "cenas", "dados")) if not d.startswith(".")]
+
+
+def test_nome_padrao_e_nomes_repetidos(tmp_path):
+    g, s = _gerente(tmp_path)
+    a = C.nova_3d(g, s, {"camera": _CAM})
+    b = C.nova_3d(g, s, {"nome": "Cena 1", "camera": _CAM})
+    assert a["nome"] == "Cena 1" and a["id"] == "cena-1" and b["id"] == "cena-1-2"
+
+
+def test_abas_na_ordem_de_criacao_e_reordenadas(tmp_path):
+    g, s = _gerente(tmp_path)
+    foto = C.nova(g, s, _foto(tmp_path, tam=(40, 30)))["id"]            # a cena por foto de antes (sem "ordem")
+    a = C.nova_3d(g, s, {"nome": "A", "camera": _CAM})["id"]
+    b = C.nova_3d(g, s, {"nome": "B", "camera": _CAM})["id"]
+    assert [c["id"] for c in C.listar(g, s)["cenas"]] == [foto, a, b]     # a nova vai para o fim
+    r = L.rota_post(g, s, ["cenas", "ordem"], {"ids": [b, foto, a]}, lambda *x: None)
+    assert [c["id"] for c in r["cenas"]] == [b, foto, a]
+    c = C.nova_3d(g, s, {"nome": "C", "camera": _CAM})["id"]
+    assert [x["id"] for x in C.listar(g, s)["cenas"]] == [b, foto, a, c]
+    assert [x["id"] for x in C.ordenar(g, s, {"ids": [c]})["cenas"]] == [c, b, foto, a]   # as que faltam vão depois
+    with pytest.raises(C.ErroCena):
+        C.ordenar(g, s, {"ids": "a,b"})
+
+
+def test_apagar_a_cena_do_3d(tmp_path):
+    g, s = _gerente(tmp_path)
+    i = C.nova_3d(g, s, {"nome": "Some", "camera": _CAM})["id"]
+    assert L.rota_post(g, s, ["cenas", i, "apagar"], {}, lambda *a: None)["cenas"] == []

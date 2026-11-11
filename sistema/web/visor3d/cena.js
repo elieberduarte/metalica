@@ -56,8 +56,8 @@ async function abrir() {
     location.href = window.top !== window ? `/visor3d/ver3d.html?projeto=${p}` : `/dividida?projeto=${p}&vista=3d`;
   };
   // a cobertura retrátil na situação da cena (aberta ou retraída): o 3D leve dela
-  const { cenas } = await pedir(API);
-  const escolhida = cenas.find(c => c.id === q.get('cena')) || cenas[cenas.length - 1] || null;
+  const cenas = soDeFoto((await pedir(API)).cenas);
+  const escolhida =cenas.find(c => c.id === q.get('cena')) || cenas[cenas.length - 1] || null;
   situacaoAberta = (escolhida && escolhida.situacao) || null;
   const url3d = situacaoAberta ? `${API_3D}/${situacaoAberta}` : API_3D;
   let r;
@@ -98,8 +98,11 @@ async function abrir() {
 
 // ------------------------------------------------------------------ as cenas
 
+// as cenas do 3D (tipo "3d", 11/11: cenas3d.js no modo ver) ficam na mesma lista do servidor; aqui só as da foto
+const soDeFoto = (lista) => (lista || []).filter(c => c.tipo !== '3d');
+
 async function listar(escolher) {
-  const { cenas } = await pedir(API);
+  const cenas = soDeFoto((await pedir(API)).cenas);
   const sel = $('#lista');
   sel.innerHTML = cenas.length ? cenas.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('')
     : '<option value="">(nenhuma cena: comece pela foto)</option>';

@@ -1,0 +1,36 @@
+/* As cenas do 3D no modo ver (cenas3d.js, 11/11): as abas no rodapé, como as cenas do SketchUp, o menu do botão direito
+   na aba, a caixa de nome e a parte do painel Cenas. */
+#abas-cenas { position: fixed; left: 8px; right: 8px; bottom: 28px; z-index: 6; display: flex; align-items: flex-end; gap: 3px;
+  overflow-x: auto; scrollbar-width: thin; pointer-events: none; }
+#abas-cenas .aba-cena { pointer-events: auto; flex: none; font: 12.5px var(--sans); padding: 4px 12px 3px; max-width: 220px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; color: var(--texto);
+  background: var(--painel); border: 1px solid var(--borda); border-bottom-width: 2px; border-radius: 7px 7px 0 0;
+  box-shadow: 0 -1px 3px rgba(0, 0, 0, .08); }
+#abas-cenas .aba-cena:hover { border-color: var(--borda-forte); }
+#abas-cenas .aba-cena.ativa { color: var(--azul-tinta); background: var(--azul-fraco); border-color: var(--azul2); font-weight: 600; }
+#abas-cenas .aba-foto { border-style: solid; border-top-color: #d9a441; }
+#abas-cenas .aba-mais { background: transparent; border-style: dashed; color: var(--texto2); box-shadow: none; }
+#abas-cenas .aba-mais:hover { background: var(--painel); color: var(--texto); }
+html.embutida #abas-cenas { bottom: 26px; }
+
+#menu-cena { position: fixed; z-index: 40; display: flex; flex-direction: column; min-width: 200px; padding: 4px;
+  background: var(--painel); border: 1px solid var(--borda); border-radius: 6px; box-shadow: 0 4px 16px rgba(0, 0, 0, .2); }
+#menu-cena button { font: 13px var(--sans); text-align: left; padding: 6px 10px; border: 0; border-radius: 4px; background: none;
+  color: var(--texto); cursor: pointer; }
+#menu-cena button:hover { background: var(--azul-fraco); color: var(--azul-tinta); }
+
+#caixa-cena { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .25); }
+#caixa-cena .caixa { width: min(360px, calc(100vw - 32px)); padding: 14px 16px; background: var(--painel); color: var(--texto);
+  border: 1px solid var(--borda); border-radius: 8px; box-shadow: 0 8px 30px rgba(0, 0, 0, .3); font: 13px var(--sans); }
+#caixa-cena p { margin: 8px 0; color: var(--texto2); }
+#caixa-cena input, #painel #cena-nome { width: 100%; box-sizing: border-box; margin: 8px 0 2px; padding: 6px 8px; font: 13px var(--sans);
+  color: var(--texto); background: var(--fundo, var(--painel)); border: 1px solid var(--borda); border-radius: 4px; }
+
+.botoes-cena { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.botoes-cena button { font: 12.5px var(--sans); padding: 5px 10px; border-radius: 5px; border: 1px solid var(--borda);
+  background: var(--painel); color: var(--texto); cursor: pointer; }
+.botoes-cena button:hover { border-color: var(--borda-forte); }
+.botoes-cena button.forte { background: var(--azul2); border-color: var(--azul2); color: #fff; font-weight: 600; }
+#painel .linha-cena.ativa { background: var(--azul-fraco); color: var(--azul-tinta); font-weight: 600; }
+#painel .linha-cena em { margin-left: auto; }
