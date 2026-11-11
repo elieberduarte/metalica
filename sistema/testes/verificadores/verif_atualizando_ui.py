@@ -124,16 +124,22 @@ try:
     ok(esperar(aba, f"!!document.querySelector(\"{sel} .cartao-atualizando button\")", 15), "o cartão em atualização dos desenhos tem Cancelar")
     ok(not aba.avaliar("!!document.querySelector(\".cartao[data-slug='livre'] .cartao-atualizando\")"), "o outro projeto não")
     aba.avaliar(f"document.querySelector(\"{sel} .cartao-atualizando button\").click(); 1")
-    ok(esperar(aba, f"(document.querySelector(\"{sel} .cartao-atualizando button\")?.textContent || '') === 'já tinha terminado'", 10),
+    # desde 11/11 o Cancelar confirma antes (usuário: "preciso que crie um botão para fazer esse cancelamento")
+    ok(esperar(aba, "!!document.querySelector('dialog.dlg-cancelar-tarefa[open]')", 10), "o Cancelar pede confirmação")
+    aba.avaliar("[...document.querySelectorAll('dialog.dlg-cancelar-tarefa button')].find(b => b.textContent === 'Cancelar a tarefa').click(); 1")
+    # a marca é deste verificador (outro processo): o servidor manda o pedido a ele pelo cancelar.json (11/11) — "cancelando…";
+    # sem tarefa de ninguém seria "já tinha terminado". Nos dois, o clique chegou ao servidor
+    ok(esperar(aba, f"['cancelando…', 'já tinha terminado'].includes(document.querySelector(\"{sel} .cartao-atualizando button\")?.textContent || '')", 10)
+       and os.path.exists(os.path.join(PASTA, "cancelar.json")),
        f"o Cancelar chama o servidor ({aba.avaliar(f'document.querySelector(\"{sel} .cartao-atualizando button\")?.textContent')!r}, "
        f"{aba.avaliar('[...document.querySelectorAll(`#bandeja .recado`)].map(r => r.textContent).join(` | `)')!r})")
     ok(aba.avaliar("location.pathname") == "/", "o clique no Cancelar não tenta abrir o projeto")
-    # de outro programa (o verificador): sem Cancelar — a rota é deste servidor
+    # de outro programa (o verificador, um script de obra): desde 11/11 também tem Cancelar (o servidor pede pelo cancelar.json)
     em_andamento(os.getpid(), _inicio_processo(os.getpid()))
     marcar("desenhando tirantes e barras redondas…", 0.6)
     aba.navegar(base + "/", limite=60)
     ok(esperar(aba, f"document.querySelector(\"{sel}\")?.classList.contains('atualizando')", 15)
-       and not aba.avaliar(f"!!document.querySelector(\"{sel} .cartao-atualizando button\")"), "a de outro programa não tem Cancelar aqui")
+       and aba.avaliar(f"!!document.querySelector(\"{sel} .cartao-atualizando button.cancelar-tarefa\")"), "a de outro programa também tem Cancelar (11/11)")
 
     # 7. o programa que atualizava morreu no meio (o reinício do dev, Posto 27/10): o cartão não diz "terminou"
     morto = subprocess.Popen([sys.executable, "-c", "pass"]); morto.wait()

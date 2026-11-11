@@ -1750,9 +1750,12 @@ def _tarefa_padrao(rota: str):
     if len(partes) < 2 or not partes[0]:
         return None
     s = partes[0]
-    if s in PROGRESSO or partes[1:] == ["desenhos-vivos", "cancelar"]:
-        # o Cancelar da atualização dos desenhos não é tarefa nem mexe no projeto: nunca recusado (Posto, 27/10)
+    _limpar_progresso_orfao(s)
+    if s in PROGRESSO or partes[1:] in (["desenhos-vivos", "cancelar"], ["cancelar"]):
+        # o Cancelar (da atualização dos desenhos, 27/10; de toda tarefa, 11/11) não é tarefa nem mexe no projeto: nunca
+        # recusado
         return None
+    _CANCELAR.pop(s, None)                  # o pedido de antes não cancela a tarefa nova
     _recusar_se_atualizando(s)
     _progresso(s, "começando…")
     return (s, PROGRESSO[s]["inicio"])
@@ -1779,6 +1782,7 @@ def _fim_tarefa_padrao(tarefa) -> None:
     s, inicio = tarefa
     p = PROGRESSO.get(s)
     if p and p.get("inicio") == inicio:
+        _CANCELAR.pop(s, None)
         PROGRESSO.pop(s, None)
         if p.get("gravado"):
             _desmarcar_atualizando(s)
@@ -1789,10 +1793,17 @@ def _progresso(s: str, etapa: str, fracao: Optional[float] = None):
     `fracao` (0–1) é o andamento da tarefa inteira, quando ela sabe; o "(i de n)" do texto vira o da etapa."""
     agora = time.time()
     antes = PROGRESSO.get(s)
+    if antes is not None and antes.get("fio") is not None and not antes["fio"].is_alive():
+        antes = None                       # a etapa de uma tarefa que já acabou não é desta (Filipin, 11/11)
+    _conferir_cancelamento(s, antes, etapa)
     m = _I_DE_N.search(str(etapa))
     PROGRESSO[s] = {"etapa": str(etapa), "quando": agora, "inicio": antes["inicio"] if antes else agora,
                     "fracao": None if fracao is None else max(0.0, min(1.0, float(fracao))),
-                    "fracao_etapa": _fracao_do_texto(m), "gravado": antes.get("gravado") if antes else None}
+                    "fracao_etapa": _fracao_do_texto(m), "gravado": antes.get("gravado") if antes else None,
+                    # o dono da etapa: a tarefa (o fio) que a começou. Acabou o fio, a etapa sai (_limpar_progresso_orfao)
+                    "fio": antes.get("fio") if antes else threading.current_thread(),
+                    # a tarefa começou a gravar no projeto: daí em diante o Cancelar espera ela terminar (nada pela metade)
+                    "gravando": bool((antes or {}).get("gravando") or _e_gravacao(etapa))}
     # atualizando.json no projeto (21/10/2026): a tela inicial mostra "Atualizando…" com a barra e não deixa abrir; outro
     # processo é recusado nos POST. Só a tarefa que passa de 1 s (ou diz a fração), e no máximo uma gravação por segundo
     p = PROGRESSO[s]
@@ -1800,8 +1811,114 @@ def _progresso(s: str, etapa: str, fracao: Optional[float] = None):
         try:
             _gerente().marcar_atualizando(s, etapa, p["fracao"], quem=USUARIO, inicio=p["inicio"])
             p["gravado"] = agora
+            # o Cancelar do cartão para a tarefa de outro processo (um script de obra com o _progresso deste módulo)
+            if _gerente().pedido_de_cancelar(s, os.getpid()):
+                _CANCELAR.setdefault(s, agora)
         except Exception:                                         # noqa: BLE001 — sem pasta de projeto (tarefa sem projeto)
             pass
+
+
+class TarefaCancelada(BaseException):
+    """A tarefa do projeto cancelada pelo usuário (o Cancelar da barra e do cartão; usuário, 11/11: "Não consigo cancelar
+    um processo quando está em andamento, preciso que crie um botão para fazer esse cancelamento"). Sai no próximo
+    _progresso, antes de a tarefa gravar no projeto. BaseException: os `except Exception` do caminho não a engolem (como
+    o desenhos_vivos.Cancelada)."""
+
+
+#: projeto → hora do pedido de cancelar a tarefa deste processo
+_CANCELAR: Dict[str, float] = {}
+#: a etapa que diz que a tarefa está gravando no projeto ("gravando o modelo…", "gravando a lista e os CSVs…")
+_GRAVANDO = re.compile(r"^\s*(gravando|regravando|salvando|escrevendo)\b", re.I)
+#: o que muda na pasta do projeto sem ser a tarefa (as marcas, o 3D leve que se refaz sozinho, o histórico)
+_NAO_E_GRAVACAO = {"atualizando.json", "cancelar.json", ".3d-leve", "historico", "__pycache__"}
+
+
+def _e_gravacao(etapa) -> bool:
+    return bool(_GRAVANDO.search(str(etapa or "")))
+
+
+def _gravou_no_projeto(s: str, desde: float) -> bool:
+    """A tarefa já mudou algum arquivo do projeto (depois de `desde`)? Só olhado quando há um pedido de cancelar: a
+    tarefa que gravou sem dizer "gravando…" também não é parada no meio."""
+    try:
+        raiz = _gerente()._existente(s)
+    except Exception:                                             # noqa: BLE001 — sem pasta: nada gravado
+        return False
+    for pasta, subs, arquivos in os.walk(raiz):
+        subs[:] = [d for d in subs if d not in _NAO_E_GRAVACAO and not d.endswith(".3d-leve")]
+        for a in arquivos:
+            if a in _NAO_E_GRAVACAO or ".3d-leve" in a:
+                continue
+            try:
+                if os.path.getmtime(os.path.join(pasta, a)) > desde:
+                    return True
+            except OSError:
+                pass
+    return False
+
+
+def _conferir_cancelamento(s: str, p: Optional[dict], etapa) -> None:
+    """No começo de cada etapa: com o pedido de cancelar e a tarefa ainda sem gravar no projeto, sai com
+    TarefaCancelada. Já gravando, segue até o fim (o projeto fica com o resultado inteiro, nunca pela metade). A
+    atualização automática dos desenhos tem o Cancelar dela (desenhos_vivos.cancelar)."""
+    pedido = _CANCELAR.get(s)
+    if pedido is None or p is None or threading.current_thread().name.startswith("desenhos-vivos-"):
+        return
+    if p.get("gravando") or _e_gravacao(etapa):
+        return
+    if _gravou_no_projeto(s, float(p.get("inicio") or pedido)):
+        p["gravando"] = True
+        return
+    raise TarefaCancelada("tarefa cancelada pelo usuário: o projeto ficou como estava.")
+
+
+def _limpar_progresso_orfao(s: Optional[str] = None) -> None:
+    """Tira a etapa cuja tarefa (o fio que a começou) já acabou: a lista de materiais feita pelo GET (abrir a aba sem a
+    lista gravada) deixava "gravando a lista e os CSVs…" pendurada, e o cartão do projeto ficava "Atualizando…" sem fim
+    (Filipin, 11/11; a volta do Aplicar furos de 16/10, que só tinha sido corrigido no POST)."""
+    for k in ([s] if s else list(PROGRESSO)):
+        p = PROGRESSO.get(k)
+        fio = p.get("fio") if p else None
+        if fio is not None and not fio.is_alive() and PROGRESSO.get(k) is p:
+            PROGRESSO.pop(k, None)
+            _CANCELAR.pop(k, None)
+            if p.get("gravado"):
+                _desmarcar_atualizando(k)
+
+
+def _fim_progresso_do_fio() -> None:
+    """No fim de cada pedido: a etapa que este pedido começou sai junto (o GET não tinha o _fim_tarefa_padrao)."""
+    eu = threading.current_thread()
+    for k, p in list(PROGRESSO.items()):
+        if p.get("fio") is eu and PROGRESSO.get(k) is p:
+            PROGRESSO.pop(k, None)
+            _CANCELAR.pop(k, None)
+            if p.get("gravado"):
+                _desmarcar_atualizando(k)
+
+
+def cancelar_tarefa(s: str) -> dict:
+    """POST /api/projetos/<s>/cancelar: pede o fim da tarefa em andamento no projeto. A deste processo para no próximo
+    _progresso; a atualização automática dos desenhos, pelo cancelar dela; a de outro processo (um script), pelo arquivo
+    cancelar.json que o _progresso dele confere. {cancelando, gravando (já gravava: termina sozinha), onde}."""
+    _limpar_progresso_orfao(s)
+    vivos = sys.modules.get("desenhos_vivos")
+    if vivos is not None and any(k == s for k, _, _ in vivos.em_curso()):
+        return {"cancelando": bool(vivos.cancelar(s)), "gravando": False, "onde": "desenhos"}
+    p = PROGRESSO.get(s)
+    if p is not None:
+        _CANCELAR.setdefault(s, time.time())
+        return {"cancelando": True, "gravando": bool(p.get("gravando")), "onde": "este"}
+    try:
+        a = _gerente().atualizando(s)
+    except Exception:                                             # noqa: BLE001
+        a = None
+    if a and not a.get("este_processo") and a.get("mesma_maquina"):
+        _gerente().pedir_cancelar(s, a.get("pid"))
+        return {"cancelando": True, "gravando": _e_gravacao(a.get("etapa")), "onde": "outro"}
+    if a and a.get("este_processo"):
+        _desmarcar_atualizando(s)           # a marca sobrou sem tarefa nenhuma neste programa: sai
+    return {"cancelando": False, "gravando": False, "onde": ""}
 
 
 def _fracao_do_texto(m) -> Optional[float]:
@@ -1812,6 +1929,7 @@ def _fracao_do_texto(m) -> Optional[float]:
 
 
 def _fim_progresso(s: str):
+    _CANCELAR.pop(s, None)
     p = PROGRESSO.pop(s, None)
     if p and p.get("gravado"):
         _desmarcar_atualizando(s)
@@ -1825,7 +1943,8 @@ def _desmarcar_atualizando(s: str) -> None:
 
 
 def progresso_do_projeto(s: str) -> dict:
-    """{etapa, ha_s (desde a etapa), desde_s (desde o começo da tarefa), fracao?, fracao_etapa?}"""
+    """{etapa, ha_s (desde a etapa), desde_s (desde o começo da tarefa), fracao?, fracao_etapa?, gravando, cancelando}"""
+    _limpar_progresso_orfao(s)
     p = PROGRESSO.get(s)
     if not p:
         # outro processo (um script, outra janela do programa) atualizando o projeto: a barra mostra a etapa dele
@@ -1835,13 +1954,14 @@ def progresso_do_projeto(s: str) -> dict:
             a = None
         if a and not a.get("este_processo"):
             out = {"etapa": a["etapa"] or "trabalhando…", "ha_s": a["ha_s"], "desde_s": a["desde_s"], "externo": True,
-                   "quem": a.get("quem") or ""}
+                   "quem": a.get("quem") or "", "gravando": _e_gravacao(a["etapa"])}
             if a.get("fracao") is not None:
                 out["fracao"] = round(float(a["fracao"]), 4)
             return out
         return {"etapa": "", "ha_s": 0}
     agora = time.time()
-    out = {"etapa": p["etapa"], "ha_s": round(agora - p["quando"], 1), "desde_s": round(agora - p.get("inicio", p["quando"]), 1)}
+    out = {"etapa": p["etapa"], "ha_s": round(agora - p["quando"], 1), "desde_s": round(agora - p.get("inicio", p["quando"]), 1),
+           "gravando": bool(p.get("gravando")), "cancelando": s in _CANCELAR}
     if p.get("fracao") is not None:
         out["fracao"] = round(p["fracao"], 4)
     if p.get("fracao_etapa") is not None:
@@ -6213,6 +6333,14 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- rotas --
     def do_GET(self):
+        try:
+            return self._do_get()
+        except TarefaCancelada as e:
+            return self._json({"erro": str(e), "cancelada": True}, 409)
+        finally:
+            _fim_progresso_do_fio()                  # a lista feita pelo GET deixava a etapa pendurada (Filipin, 11/11)
+
+    def _do_get(self):
         rota = unquote(urlparse(self.path).path)
         if self._de_fora():
             return self._erro("pedido de fora do programa recusado", 403)
@@ -6283,6 +6411,7 @@ class Handler(BaseHTTPRequestHandler):
             if rota == "/api/ligacoes/exemplos":
                 return self._json(ligacoes_exemplos(parse_qs(urlparse(self.path).query)))
             if rota == "/api/projetos":
+                _limpar_progresso_orfao()
                 return self._json(_gerente().listar())
             if rota in ("/api/compartilhar/pessoas", "/api/compartilhar/recebidos"):
                 # a obra para outro usuário (21/10, compartilhar.py): quem pode receber / o que chegou para esta licença
@@ -6498,11 +6627,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._erro(e, 409)
         try:
             return self._do_post(rota)
+        except TarefaCancelada as e:
+            return self._json({"erro": str(e), "cancelada": True}, 409)
         finally:
             _em_curso(-1)
             with _TRAVA_JANELAS:
                 _ROTAS_EM_CURSO.pop(id(self), None)
             _fim_tarefa_padrao(tarefa)
+            _fim_progresso_do_fio()
 
     def _do_post(self, rota):
         try:
@@ -6725,6 +6857,8 @@ class Handler(BaseHTTPRequestHandler):
                 if len(partes) == 3 and partes[1] == "desenhos-vivos" and partes[2] == "atualizar":
                     _vivos().atualizar(partes[0], "pedido na tela")
                     return self._json(_vivos().estado(partes[0], conferir=False))
+                if len(partes) == 2 and partes[1] == "cancelar":
+                    return self._json(cancelar_tarefa(partes[0]))
                 if len(partes) == 3 and partes[1] == "desenhos-vivos" and partes[2] == "cancelar":
                     return self._json(dict(_vivos().estado(partes[0], conferir=False), cancelando=_vivos().cancelar(partes[0])))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "dxf":
@@ -6907,6 +7041,7 @@ def _tarefas_de_fundo(agora: float) -> list:
     desenhos e pranchas (desenhos_vivos) e toda tarefa que deu andamento há pouco. O vigia só via os pedidos da tela e
     reiniciava no meio delas (Vicente, 04/11: "a atualização dos desenhos de detalhamento foi interrompida 3 vezes
     seguidas… o programa fechou ou reiniciou no meio")."""
+    _limpar_progresso_orfao()
     out = []
     projetos = set()
     dv = sys.modules.get("desenhos_vivos")              # só se já foi usado: a pergunta do vigia não carrega nada
@@ -6928,6 +7063,7 @@ def _tarefas_de_fundo(agora: float) -> list:
 
 def _trabalho_em_curso() -> bool:
     """Há gravação ou operação longa (Detalhar, cálculo, importação) em andamento?"""
+    _limpar_progresso_orfao()
     with _TRAVA_JANELAS:
         if _PEDIDOS_EM_CURSO[0]:
             return True

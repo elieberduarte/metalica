@@ -239,6 +239,8 @@ function estiloAtualizando() {
 .cartao-atualizando { margin-top: 6px; font-size: 12.5px; color: var(--texto2); display: flex; flex-direction: column; gap: 4px; max-width: 520px; }
 .cartao-atualizando b { color: var(--acento, #1f6feb); }
 .cartao-atualizando button { cursor: pointer; font-size: 12px; padding: 0 6px; }
+.cartao-atualizando button.cancelar-tarefa { border: 1px solid #c0392b; color: #c0392b; background: transparent; font-weight: 600; padding: 0 9px; border-radius: 5px; margin-left: 4px; }
+.cartao-atualizando button.cancelar-tarefa:hover:not(:disabled) { background: #c0392b; color: #fff; }
 .cartao-atualizando .trilho { position: relative; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--acento, #1f6feb) 18%, transparent); overflow: hidden; }
 .cartao-atualizando .cheio { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--acento, #1f6feb); border-radius: 3px; transition: width .4s; }
 .cartao-atualizando .cheio.corre { width: 30%; animation: cartao-corre 1.4s linear infinite; }
@@ -253,24 +255,27 @@ function blocoAtualizando(p) {
   const a = p.atualizando || {};
   const cheio = el('span', { class: 'cheio' + (typeof a.fracao === 'number' ? '' : ' corre') });
   if (typeof a.fracao === 'number') cheio.style.width = Math.round(a.fracao * 100) + '%';
-  // a atualização automática dos desenhos rodando neste programa: o Cancelar daqui também (Posto, 27/10: o botão só
-  // existia no aviso do CAD, e o cartão não deixa abrir o projeto)
-  const cancelar = (p.desenhos_vivos || {}).cancelavel
-    ? el('button', { type: 'button', class: 'discreto', title: 'Para a atualização dos desenhos no próximo passo; os desenhos ficam como estavam',
+  // o Cancelar de toda tarefa em andamento no projeto (usuário, 11/11: "Não consigo cancelar um processo quando está em
+  // andamento, preciso que crie um botão para fazer esse cancelamento"): a deste programa, a atualização automática dos
+  // desenhos (Posto, 27/10) e a de um script de obra. Confirma antes; o projeto fica como estava
+  const cancelar = el('button', { type: 'button', class: 'cancelar-tarefa', title: 'Para a tarefa no próximo passo; o projeto fica como estava',
                      onclick: async (ev) => {
                        ev.stopPropagation();
                        const b = ev.currentTarget;
-                       b.disabled = true; b.textContent = 'cancelando…';
+                       b.disabled = true;
+                       let r = null;
                        try {
-                         const r = await postar(`/api/projetos/${encodeURIComponent(p.slug)}/desenhos-vivos/cancelar`, {});
-                         p.cancelando = !!r.cancelando;
-                         if (!r.cancelando) b.textContent = 'já tinha terminado';
-                       } catch (e) { b.disabled = false; b.textContent = 'Cancelar'; recado('Não foi possível cancelar', e.message, 'erro'); }
-                     } }, 'Cancelar')
-    : null;
+                         const m = await import('/progresso.js');
+                         r = await m.pedirCancelar(p.slug, { etapa: (p.atualizando || {}).etapa || '', desde_s: (p.atualizando || {}).desde_s || 0, nome: p.nome });
+                       } catch (e) { recado('Não foi possível cancelar', e.message, 'erro'); }
+                       if (!r) { b.disabled = false; return; }
+                       p.cancelando = !!r.cancelando;
+                       p.cancelando_gravando = !!r.gravando;
+                       b.textContent = !r.cancelando ? 'já tinha terminado' : r.gravando ? 'terminando de gravar…' : 'cancelando…';
+                     } }, 'Cancelar');
   return el('div', { class: 'cartao-atualizando', 'data-slug': p.slug, role: 'progressbar', 'aria-label': 'Atualizando o projeto' },
     el('span', {}, el('b', { texto: 'Atualizando…' }), ' ', el('span', { class: 'etapa', texto: a.etapa || '' }),
-      el('span', { class: 'tempo', texto: a.desde_s >= 5 ? ` · ${tempoCurto(a.desde_s)}` : '' }), cancelar ? ' ' : null, cancelar),
+      el('span', { class: 'tempo', texto: a.desde_s >= 5 ? ` · ${tempoCurto(a.desde_s)}` : '' }), ' ', cancelar),
     el('span', { class: 'trilho' }, cheio));
 }
 
@@ -306,7 +311,8 @@ function vigiarAtualizando() {
           // o programa fechou ou reiniciou no meio (Posto, 27/10): não terminou — o cartão não diz que sim
           const agora = projetos.find(x => x.slug === p.slug) || {};
           const interr = (agora.desenhos_vivos || {}).interrompida;
-          if (p.cancelando) recado('Atualização cancelada', `${p.nome}: os desenhos ficam como estavam; pode abrir.`, 'ok');
+          if (p.cancelando && p.cancelando_gravando) recado('Tarefa concluída', `${p.nome}: ela já estava gravando quando o cancelamento chegou e terminou inteira, para o projeto não ficar pela metade; pode abrir.`, 'ok');
+          else if (p.cancelando) recado('Tarefa cancelada', `${p.nome}: o projeto ficou como estava; pode abrir.`, 'ok');
           else if (interr) recado('Atualização interrompida', `${p.nome}: o programa fechou ou reiniciou no meio da atualização dos desenhos. ` +
             (interr.parada ? 'Ela não recomeça mais sozinha: abra o projeto e use "Atualizar agora" no 2D.' : 'Ela recomeça quando o 2D do projeto for aberto.'), 'erro');
           else recado('Projeto atualizado', `${p.nome}: a atualização terminou; pode abrir.`, 'ok');

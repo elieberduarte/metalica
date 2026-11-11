@@ -48,6 +48,8 @@ INTERVALO_HISTORICO = 600.0
 ABERTO = "aberto.json"
 #: o projeto está sendo atualizado por uma tarefa demorada (deste ou de outro processo); a tela inicial não deixa abrir
 ATUALIZANDO = "atualizando.json"
+#: o pedido de cancelar a tarefa que outro processo (um script de obra) está fazendo no projeto (o Cancelar do cartão, 11/11)
+CANCELAR = "cancelar.json"
 #: o pacote do projeto (exportar/importar): sufixo do arquivo e o manifesto dentro dele
 PACOTE_SUFIXO = ".metalica.zip"
 PACOTE_MANIFESTO = "pacote.json"
@@ -1086,6 +1088,30 @@ class Projetos:
                            "maquina": platform.node()}, f)
         except (OSError, ValueError, ErroDeDados):
             pass
+
+    def pedir_cancelar(self, s: str, pid) -> None:
+        """O Cancelar do cartão para a tarefa de outro processo: grava cancelar.json com o processo dela; o _progresso de lá
+        confere a cada gravação do atualizando.json (pedido_de_cancelar) e para no passo seguinte."""
+        try:
+            with open(os.path.join(self._existente(s), CANCELAR), "w", encoding="utf-8") as f:
+                json.dump({"pid": int(pid or 0), "quando": time.time(), "maquina": platform.node()}, f)
+        except (OSError, ValueError, ErroDeDados):
+            pass
+
+    def pedido_de_cancelar(self, s: str, pid: int) -> bool:
+        """Há pedido de cancelar a tarefa do processo `pid` neste projeto? Sim: o pedido é consumido (o arquivo sai)."""
+        try:
+            caminho = os.path.join(self.pasta(s), CANCELAR)
+            if not os.path.exists(caminho):
+                return False
+            with open(caminho, encoding="utf-8") as f:
+                d = json.load(f)
+            if int(d.get("pid") or 0) != int(pid):
+                return False
+            os.remove(caminho)
+            return True
+        except (OSError, ValueError, TypeError, ErroDeDados):
+            return False
 
     def desmarcar_atualizando(self, s: str) -> None:
         try:

@@ -14,6 +14,11 @@
 //
 // Uso:   const parar = acompanhar({ url, tarefa: 'detalhar', rotulo: 'Detalhando', onde: elementoDoRodape, dica });
 //        … await a chamada …;  parar();            // parar(false) quando falhou: a duração não é guardada
+//
+// A tarefa de um projeto (a url é …/api/projetos/<s>/progresso) ganha o botão "Cancelar" na barra (usuário, 11/11: "Não
+// consigo cancelar um processo quando está em andamento, preciso que crie um botão para fazer esse cancelamento"):
+// confirma, pede POST …/cancelar e o servidor para a tarefa no próximo passo, antes de gravar (o projeto fica como
+// estava); a que já está gravando termina sozinha, inteira. A chamada da tarefa volta com 409 {cancelada: true}.
 
 const CHAVE = 'metalica.duracao.';
 const TIQUE_MS = 600;
@@ -36,6 +41,16 @@ function _injetarEstilo() {
 @keyframes barra-andamento-corre { from { left: -35%; } to { left: 100%; } }
 .barra-andamento-pct { font-family: var(--mono, ui-monospace, monospace); font-size: 11px; min-width: 38px; opacity: .8; }
 .barra-andamento-texto { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.barra-andamento-cancelar { font: inherit; font-size: 11.5px; font-weight: 600; padding: 1px 9px; border-radius: 5px; cursor: pointer;
+  border: 1px solid #c0392b; color: #c0392b; background: transparent; flex: 0 0 auto; }
+.barra-andamento-cancelar:hover:not(:disabled) { background: #c0392b; color: #fff; }
+.barra-andamento-cancelar:disabled { opacity: .6; cursor: default; }
+.dlg-cancelar-tarefa { border: 1px solid var(--borda-forte, #9aa8c0); border-radius: 8px; padding: 14px 16px; max-width: 460px;
+  background: var(--painel, #fff); color: var(--texto, #1b2433); box-shadow: 0 6px 22px rgba(0,0,0,.25); font-size: 13px; }
+.dlg-cancelar-tarefa::backdrop { background: rgba(16,24,40,.35); }
+.dlg-cancelar-tarefa p { margin: 0 0 12px; line-height: 1.45; }
+.dlg-cancelar-tarefa .bts { display: flex; gap: 8px; justify-content: flex-end; }
+.dlg-cancelar-tarefa .perigo { background: #c0392b; border-color: #c0392b; color: #fff; font-weight: 600; }
 .barra-andamento.flutuante { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 9999;
   max-width: min(720px, calc(100vw - 32px)); padding: 8px 14px; border-radius: 8px;
   background: var(--painel, #1c2430); color: var(--texto, #e8edf3); border: 1px solid var(--borda, transparent);
@@ -98,6 +113,24 @@ export function acompanhar({ url = '', tarefa = 'tarefa', rotulo = '', onde = nu
   barra.dataset.tarefa = tarefa;
   barra.append(trilho, pct);
   if (!dica) barra.append(texto);              // sem a linha de dica, o texto da etapa vai na própria barra
+  // o Cancelar da tarefa do projeto (11/11)
+  const projeto = projetoDaUrl(url);
+  let botao = null;
+  if (projeto) {
+    botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = 'barra-andamento-cancelar';
+    botao.textContent = 'Cancelar';
+    botao.title = 'Para a tarefa no próximo passo; o projeto fica como estava';
+    botao.onclick = async () => {
+      const decorrido = (performance.now() - inicio) / 1000;
+      botao.disabled = true;
+      const r = await pedirCancelar(projeto, { rotulo, etapa: (ultimoP && ultimoP.etapa) || '', desde_s: decorrido });
+      if (!r) { botao.disabled = false; return; }
+      mostrarCancelamento(botao, r);
+    };
+    barra.append(botao);
+  }
   if (onde && onde.parentNode) onde.after(barra); else document.body.appendChild(barra);
   let vivo = true, timer = null, ultimoP = null;
 
@@ -114,6 +147,7 @@ export function acompanhar({ url = '', tarefa = 'tarefa', rotulo = '', onde = nu
       barra.setAttribute('aria-valuenow', String(v));
     }
     const etapa = (ultimoP && ultimoP.etapa) || '';
+    if (botao && ultimoP && ultimoP.cancelando && !botao.disabled) mostrarCancelamento(botao, ultimoP);
     const linha = `${rotulo ? rotulo + (etapa ? ': ' : '…') : ''}${etapa}${decorrido >= 3 ? ` · ${_tempo(decorrido)}` : ''}`;
     texto.textContent = linha;
     barra.title = linha;
@@ -146,6 +180,67 @@ export function acompanhar({ url = '', tarefa = 'tarefa', rotulo = '', onde = nu
   return naTela.parar;
 }
 
+// ------------------------------------------------------------------ o Cancelar (11/11)
+
+/** O projeto da url do andamento (…/api/projetos/<s>/progresso), ou '' (a tarefa sem projeto não tem Cancelar). */
+export function projetoDaUrl(url) {
+  const m = _caminho(url || '').match(/^\/api\/projetos\/([^/]+)\/progresso$/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+
+/** O botão depois do pedido: "cancelando…", ou a tarefa já gravava e termina sozinha. */
+function mostrarCancelamento(botao, r) {
+  botao.disabled = true;
+  if (r.gravando) {
+    botao.textContent = 'terminando de gravar…';
+    botao.title = 'A tarefa já estava gravando no projeto: termina sozinha, para o projeto não ficar pela metade';
+  } else {
+    botao.textContent = 'cancelando…';
+    botao.title = 'A tarefa para no próximo passo; o projeto fica como estava';
+  }
+}
+
+/** Pergunta "Cancelar a tarefa?" e, com o sim, pede ao servidor. Devolve a resposta {cancelando, gravando, onde}, ou null
+ *  (o usuário desistiu ou o pedido falhou). Usada também pelo cartão da tela Projetos. */
+export async function pedirCancelar(projeto, { rotulo = '', etapa = '', desde_s = 0, nome = '' } = {}) {
+  _injetarEstilo();
+  const oQue = rotulo && rotulo !== GENERICO ? rotulo : 'A tarefa';
+  const sim = await _confirmar(`${oQue}${nome ? ' de ' + nome : ''}${desde_s >= 3 ? ', há ' + _tempo(desde_s) : ''}` +
+    `${etapa ? ' (' + etapa + ')' : ''}.`);
+  if (!sim) return null;
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projeto)}/cancelar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.erro || r.statusText);
+    return d;
+  } catch (e) {
+    try { alert('Não foi possível cancelar: ' + e.message); } catch (e2) { /* sem janela */ }
+    return null;
+  }
+}
+
+function _confirmar(descricao) {
+  return new Promise((pronto) => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'dlg-cancelar-tarefa';
+    const p = document.createElement('p');
+    const b = document.createElement('b'); b.textContent = 'Cancelar a tarefa?';
+    p.append(b, document.createElement('br'), descricao, document.createElement('br'),
+      'O projeto volta como estava. Se ela já estiver gravando, termina sozinha, para nada ficar pela metade.');
+    const continuar = document.createElement('button'); continuar.type = 'button'; continuar.textContent = 'Continuar a tarefa';
+    const cancelar = document.createElement('button'); cancelar.type = 'button'; cancelar.className = 'perigo'; cancelar.textContent = 'Cancelar a tarefa';
+    const bts = document.createElement('div'); bts.className = 'bts'; bts.append(continuar, cancelar);
+    dlg.append(p, bts);
+    document.body.appendChild(dlg);
+    const fechar = (v) => { try { dlg.close(); } catch (e) { /* já fechado */ } dlg.remove(); pronto(v); };
+    continuar.addEventListener('click', () => fechar(false));
+    cancelar.addEventListener('click', () => fechar(true));
+    dlg.addEventListener('cancel', (ev) => { ev.preventDefault(); fechar(false); });
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+    continuar.focus();
+  });
+}
+
 // ------------------------------------------------------------------ a vigilância das chamadas
 // O padrão sem esforço: toda chamada ao servidor (/api/…) que demora mais que ESPERA_MS ganha a barra sozinha — no
 // rodapé da tela, quando ela tem a linha de dica, senão flutuando embaixo —, com a etapa que o servidor conta para o
@@ -160,7 +255,7 @@ const ESPERA_MS = 1200;
 /** O rótulo da chamada que não é uma tarefa com nome (uma consulta). */
 const GENERICO = 'Processando';
 /** As consultas que a própria barra e o sinal de vida fazem: nunca viram tarefa. */
-const NUNCA = /\/(progresso|vivo|fechou|versao|lento)(\?|$)|\/desenhos-vivos(\?|$)|\/conferencia\/progresso/;
+const NUNCA = /\/(progresso|vivo|fechou|versao|lento|cancelar)(\?|$)|\/desenhos-vivos(\?|$)|\/conferencia\/progresso/;
 /** O nome da tarefa na barra, pelo último pedaço da rota. */
 const ROTULOS = {
   'detalhar': 'Detalhando', 'detalhar-premoldado': 'Pré-moldado', 'detalhar-posicao': 'Detalhe da peça',
@@ -232,4 +327,4 @@ export function vigiarChamadas() {
   };
 }
 
-if (typeof window !== 'undefined') window.metalicaProgresso = { acompanhar, fracaoDaBarra, tarefaDaChamada, vigiarChamadas };
+if (typeof window !== 'undefined') window.metalicaProgresso = { acompanhar, fracaoDaBarra, tarefaDaChamada, vigiarChamadas, pedirCancelar, projetoDaUrl };
