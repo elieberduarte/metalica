@@ -119,10 +119,41 @@ def _imagens_prontas(g, s: str, c: dict) -> dict:
     raiz = os.path.join(g.pasta(s), PASTA)
     base = "Cena - " + _nome_arquivo(c)
     for chave, nomes in (("render_em", [base + " (render).jpg", base + " (render).png"]), ("imagem_em", [base + ".png", base + ".jpg"])):
-        tempos = [os.path.getmtime(os.path.join(raiz, n)) for n in nomes if os.path.isfile(os.path.join(raiz, n))]
+        tempos = [(os.path.getmtime(os.path.join(raiz, n)), n) for n in nomes if os.path.isfile(os.path.join(raiz, n))]
         if tempos:
-            out[chave] = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(max(tempos)))
+            t, n = max(tempos)
+            out[chave] = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t))
+            out[chave.replace("_em", "_arquivo")] = n            # o "Mostrar na pasta" do cartão seleciona este
     return out
+
+
+def _abrir_no_explorador(pasta: str, arquivo: Optional[str] = None) -> None:
+    """Abre a pasta no Explorador (o servidor é local) com o arquivo já selecionado, quando há um."""
+    import subprocess
+    import sys
+    if os.name == "nt":
+        if arquivo:
+            subprocess.Popen('explorer /select,"%s"' % os.path.normpath(arquivo))
+        else:
+            os.startfile(pasta)
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", "-R", arquivo] if arquivo else ["open", pasta])
+    else:
+        subprocess.Popen(["xdg-open", pasta])
+
+
+def mostrar_na_pasta(g, s: str, corpo: dict) -> dict:
+    """O acesso rápido ao render (usuário, 11/11: "preciso que os render feito tenha um acesso rápido a pasta para encontrar o
+    arquivo"): abre a pasta cenas/ da obra no Explorador com o arquivo pedido selecionado — só um nome de arquivo de dentro
+    dela; sem nome (ou o arquivo já não está lá), a pasta."""
+    pasta = os.path.join(g.pasta(s), PASTA)
+    os.makedirs(pasta, exist_ok=True)
+    nome = os.path.basename(str(corpo.get("nome") or "").replace("\\", "/"))
+    arquivo = os.path.join(pasta, nome) if nome and not nome.startswith(".") else None
+    if arquivo and not os.path.isfile(arquivo):
+        arquivo = None
+    _abrir_no_explorador(pasta, arquivo)
+    return {"pasta": pasta, "arquivo": arquivo}
 
 
 # ------------------------------------------------------------------ a marca d'água (11/11, aprovada: B — o logo em cor numa
@@ -281,7 +312,7 @@ def ler(g, s: str, i: str) -> dict:
 def _novo_id(pasta: str, nome: str) -> str:
     base = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode().lower()
     base = re.sub(r"[^a-z0-9]+", "-", base).strip("-")[:30] or "cena"
-    if base in ("marca", "nova", "nova-3d", "ordem"):          # os nomes das rotas (…/cenas/marca etc.)
+    if base in ("marca", "nova", "nova-3d", "ordem", "pdf", "mostrar"):   # os nomes das rotas (…/cenas/marca etc.)
         base += "-cena"
     i, k = base, 2
     while os.path.exists(os.path.join(pasta, i)):
@@ -527,6 +558,28 @@ def gravar_imagem(g, s: str, i: str, corpo: dict) -> dict:
     return {"arquivo": destino, "nome": os.path.basename(destino)}
 
 
+def gravar_pdf(g, s: str, corpo: dict) -> dict:
+    """O PDF do Exportar da tela das Cenas (11/11, amostra-5: uma página por cena, montado na tela) na pasta cenas/: o nome
+    vem da tela ("Cena - <nome> (render).pdf" ou "Cenas - <obra> (render).pdf"), só o nome do arquivo e sempre .pdf."""
+    origem = corpo.get("arquivo_local")
+    if not origem or not os.path.isfile(origem):
+        raise ErroCena("nenhum PDF recebido.")
+    with open(origem, "rb") as f:
+        if f.read(5) != b"%PDF-":
+            raise ErroCena("o arquivo recebido não é um PDF.")
+    nome = os.path.basename(str(corpo.get("nome") or "").replace("\\", "/"))
+    nome = re.sub(r'[<>:"|?*\x00-\x1f]+', "-", nome).strip(" .")
+    if not nome.lower().endswith(".pdf"):
+        nome = (nome or "Cenas (render)") + ".pdf"
+    if nome.startswith("."):
+        nome = "Cenas" + nome
+    pasta = os.path.join(g.pasta(s), PASTA)
+    os.makedirs(pasta, exist_ok=True)
+    destino = os.path.join(pasta, nome)
+    os.replace(origem, destino)
+    return {"arquivo": destino, "nome": nome}
+
+
 def apagar(g, s: str, i: str) -> dict:
     """A pasta da cena sai da lista na hora (renomeada para .lixo-…) e é removida; o que o Windows ainda prende (a foto aberta
     pelo OneDrive ou pelo navegador — 26/10, a Kaefer: o apagar parava no meio e a cena ficava pela metade) sai na próxima."""
@@ -579,6 +632,10 @@ def rota_post(g, s: str, resto: list, corpo: dict) -> dict:
         return nova_3d(g, s, corpo)
     if resto == ["ordem"]:
         return ordenar(g, s, corpo)
+    if resto == ["pdf"]:
+        return gravar_pdf(g, s, corpo)
+    if resto == ["mostrar"]:
+        return mostrar_na_pasta(g, s, corpo)
     if len(resto) == 1:
         return gravar(g, s, _id_valido(resto[0]), corpo)
     if len(resto) == 2 and resto[1] == "imagem":

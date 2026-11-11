@@ -21,6 +21,7 @@ import { Visor3D, SOMBRA_GLSL } from './visor3d.js';
 import { Terreno } from './terreno.js';
 import { encaixar } from './encaixe.js';
 import { SOL_PADRAO, definirSol, controlesDoSol, ligarControlesDoSol } from './sol.js';
+import { ligarExportar } from './exportar_cenas.js';
 
 const $ = s => document.querySelector(s);
 const q = new URLSearchParams(location.search);
@@ -42,6 +43,18 @@ const eh3d = () => !!cena && cena.tipo === '3d';
 let todasCenas = [];                                        // a lista da esquerda (as do 3D e as da foto)
 
 function aviso(txt) { $('#aviso').textContent = txt || ''; }
+
+/** O acesso rápido ao arquivo (usuário, 11/11: "preciso que os render feito tenha um acesso rápido a pasta para encontrar o
+ *  arquivo"): a pasta cenas da obra no Explorador, com o arquivo selecionado. */
+const mostrarNaPasta = (nome) => pedir(`${API}/mostrar`, { nome: nome || '' });
+function avisoComPasta(txt, nome) {
+  aviso(txt + ' ');
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'mostrar-pasta'; b.textContent = '📁 Mostrar na pasta';
+  b.title = 'Abre a pasta cenas da obra com o arquivo selecionado';
+  b.onclick = () => mostrarNaPasta(nome).catch(e => aviso('A pasta não abriu: ' + e.message));
+  $('#aviso').append(b);
+}
 
 async function pedir(url, corpo, binario) {
   const r = await fetch(url, binario ? { method: 'POST', body: binario.dados,
@@ -158,9 +171,10 @@ async function atualizarCartoes() {
   desenharCartoes();
 }
 
-async function abrirCena(id) {
+async function abrirCena(id, { recarregar = true } = {}) {
   const nova = await pedir(`${API}/${encodeURIComponent(id)}`);
   if ((nova.situacao || null) !== situacaoAberta) {          // a outra situação da cobertura: o 3D dela
+    if (!recarregar) return false;                          // (o lote do Exportar: pula a cena e segue)
     location.href = `?projeto=${encodeURIComponent(PROJETO)}&cena=${encodeURIComponent(id)}`;
     return;
   }
@@ -206,6 +220,7 @@ function mostrarBotoes() {
   const pode = !!cena && (eh3d() || !!cena.camera);
   $('#salvar-imagem').disabled = $('#renderizar').disabled = !pode || renderizando;
   $('#render-tamanho').disabled = !cena;
+  $('#exportar').disabled = !todasCenas.length || renderizando;
 }
 
 /** Saindo de uma cena do 3D (para a da foto ou nenhuma): o estilo de sempre de volta. */
@@ -484,6 +499,11 @@ function menuDoCartao(c, el) {
     const copia = Object.fromEntries(campos.filter(f => c[f] !== undefined).map(f => [f, c[f]]));
     try { const n = await pedir(`${API}/nova-3d`, { ...copia, nome: c.nome + ' (cópia)' }); await listar(n.id); } catch (e) { aviso('Não deu: ' + e.message); }
   }]);
+  if (c.render_arquivo || c.imagem_arquivo) {
+    const nome = c.render_arquivo || c.imagem_arquivo;
+    itens.push([c.render_arquivo ? 'Mostrar o render na pasta' : 'Mostrar a imagem na pasta',
+                () => mostrarNaPasta(nome).catch(e => aviso('A pasta não abriu: ' + e.message))]);
+  }
   itens.push(['Mover para cima', () => mover(-1)], ['Mover para baixo', () => mover(1)], ['Apagar…', () => apagarCena(c)]);
   for (const [t, fazer] of itens) {
     const b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.dataset.acao = t;
@@ -1644,7 +1664,7 @@ async function salvarImagem() {
       const saida = await imagemDaCena3d(w, h, 1);
       aviso('Salvando a imagem…');
       const j = await enviarImagem(saida, png ? 'cena.png' : 'cena.jpg', png ? 'image/png' : 'image/jpeg', 0.92);
-      aviso(`Imagem salva na pasta cenas da obra: ${j.nome} (${nf(w)} × ${nf(h)} px).`);
+      avisoComPasta(`Imagem salva na pasta cenas da obra: ${j.nome} (${nf(w)} × ${nf(h)} px).`, j.nome);
       atualizarCartoes();
     } catch (e) { aviso('A imagem não foi salva: ' + e.message); }
     return;
@@ -1657,7 +1677,7 @@ async function salvarImagem() {
   aviso('Salvando a imagem…');
   try {
     const j = await enviarImagem(saida, 'cena.png', 'image/png');
-    aviso(`Imagem salva na pasta cenas da obra: ${j.nome} (${w} × ${h} px).`);
+    avisoComPasta(`Imagem salva na pasta cenas da obra: ${j.nome} (${w} × ${h} px).`, j.nome);
     atualizarCartoes();
   } catch (e) { aviso('A imagem não foi salva: ' + e.message); }
 }
@@ -1730,8 +1750,8 @@ async function renderizar3d() {
     devolver();
     aviso('Gravando a imagem renderizada…');
     const j = await enviarImagem(saida, png ? 'render.png' : 'render.jpg', png ? 'image/png' : 'image/jpeg', 0.95);
-    aviso(`Imagem renderizada na pasta cenas da obra: ${j.nome} (${nf(w)} × ${nf(h)} px, ${nf((performance.now() - t0) / 1000, 1)} s).`
-      + (vistaMudou ? ' A vista da tela não está gravada na cena: o render saiu com ela (Atualizar a cena guarda).' : ''));
+    avisoComPasta(`Imagem renderizada na pasta cenas da obra: ${j.nome} (${nf(w)} × ${nf(h)} px, ${nf((performance.now() - t0) / 1000, 1)} s).`
+      + (vistaMudou ? ' A vista da tela não está gravada na cena: o render saiu com ela (Atualizar a cena guarda).' : ''), j.nome);
     atualizarCartoes();
   } catch (e) { devolver(); aviso('O render não saiu: ' + e.message); }
   finally { renderizando = false; mostrarBotoes(); ajustarQuadro(); }
@@ -1759,7 +1779,7 @@ async function renderizar() {
     mostrarModo('foto');
     aviso('Gravando a imagem renderizada…');
     const j = await enviarImagem(saida, 'render.jpg', 'image/jpeg', 0.95);
-    aviso(`Imagem renderizada na pasta cenas da obra: ${j.nome} (${nf(w)} × ${nf(h)} px, ${nf((performance.now() - t0) / 1000, 1)} s).`);
+    avisoComPasta(`Imagem renderizada na pasta cenas da obra: ${j.nome} (${nf(w)} × ${nf(h)} px, ${nf((performance.now() - t0) / 1000, 1)} s).`, j.nome);
     atualizarCartoes();
   } catch (e) {
     devolver();
@@ -1769,6 +1789,75 @@ async function renderizar() {
     renderizando = false;
     $('#renderizar').disabled = $('#salvar-imagem').disabled = false;
   }
+}
+
+// ------------------------------------------------------------------ Renderizar e exportar (amostra-5, exportar_cenas.js)
+
+/** O tamanho da imagem da cena aberta para o lado escolhido na janela: 'tela' (o quadro como está na tela; na foto, a foto
+ *  até 4.096 px, como o Salvar imagem) ou o lado maior em px (na foto, a proporção dela). */
+function tamanhoExportar(lado) {
+  if (eh3d()) {
+    if (lado !== 'tela') return tamanho3d(+lado || 1920);
+    const k = window.devicePixelRatio || 1, q3 = quadroAtual || { w: 1280, h: 720 };
+    return [Math.round(q3.w * k), Math.round(q3.h * k)];
+  }
+  if (!cena || !cena.px) return [0, 0];
+  const maior = Math.max(...cena.px);
+  const k = lado === 'tela' ? Math.min(1, 4096 / maior) : Math.min(+lado || 1920, LADO_RENDER_MAX) / maior;
+  return [Math.round(cena.px[0] * k), Math.round(cena.px[1] * k)];
+}
+
+/** A imagem da cena aberta para a janela (a prévia e o lote): a marca d'água junto; refinada = a sombra maior. */
+async function imagemParaExportar({ lado, ss = 1, refinada = false, aoBloco = null }) {
+  const [w, h] = tamanhoExportar(lado);
+  if (!w || !h) throw new Error('a cena não tem tamanho');
+  if (ehFoto() && !cena.camera) throw new Error('a foto ainda não está encaixada');
+  cancelar();
+  renderizando = true; mostrarBotoes();
+  const devolver = refinada ? sombraDoRender() : () => {};
+  try {
+    if (eh3d()) return await imagemDaCena3d(w, h, ss, aoBloco, true);
+    mostrarModo('foto');
+    tela.style.visibility = 'hidden';                       // os blocos passando pela tela não piscam na vista
+    const saida = await montarImagem(w, h, ss, aoBloco);
+    await marcaNaImagem(saida);
+    return saida;
+  } finally {
+    devolver();
+    renderizando = false;
+    if (ehFoto()) mostrarModo('foto');
+    mostrarBotoes();
+  }
+}
+
+function textoDaMarca() {
+  if (!cena) return '';
+  const m = marcaDaCena();
+  if (m.empresa === 'sem' || !temLogo(m.empresa)) return 'Sem marca d\'água.';
+  const e = marcaInfo.empresas.find(x => x.id === m.empresa) || {};
+  const jeito = { A: 'A · logo no canto', B: 'B · logo na placa', C: 'C · faixa com o nome da obra' }[m.jeito] || m.jeito;
+  return `${e.nome || m.empresa} · ${jeito} · canto ${m.canto === 'esq' ? 'esquerdo' : 'direito'}`;
+}
+
+let exportar = null;
+function ligarExportarCenas() {
+  exportar = ligarExportar({
+    cenas: () => todasCenas,
+    atual: () => cena,
+    abrir: async (id) => { const r = await abrirCena(id, { recarregar: false }); await new Promise(res => requestAnimationFrame(res)); return r; },
+    podeRender: (c) => (c && c.tipo !== '3d' && !c.camera ? 'a foto ainda não está encaixada' : ''),
+    tamanho: tamanhoExportar,
+    imagem: imagemParaExportar,
+    transparente: () => eh3d() && (cena.fundo || 'ceu') === 'transparente',
+    marca: textoDaMarca,
+    enviar: (blob, nome) => pedir(`${API}/${encodeURIComponent(cena.id)}/imagem`, undefined, { dados: blob, nome }),
+    enviarPdf: (blob, nome) => pedir(`${API}/pdf`, undefined, { dados: blob, nome }),
+    abrirPasta: (nome) => mostrarNaPasta(nome),
+    terminou: () => atualizarCartoes(),
+    nomeObra: () => $('#titulo-obra').textContent,
+  });
+  $('#exportar').onclick = () => exportar.abrir();
+  $('#pasta-cenas').onclick = () => mostrarNaPasta('').catch(e => aviso('A pasta não abriu: ' + e.message));
 }
 
 // ------------------------------------------------------------------ os controles
@@ -1796,6 +1885,7 @@ function ligarControles() {
   $('#encaixar').onclick = () => { cancelar(); lembrar(); fazerEncaixe().catch(e => aviso('O encaixe falhou: ' + e.message)); };
   $('#salvar-imagem').onclick = () => salvarImagem();
   $('#renderizar').onclick = () => renderizar();
+  ligarExportarCenas();
   $('#salvar-cena').onclick = () => concluir(true).catch(e => aviso('A cena não foi salva: ' + e.message));
   $('#editar').onclick = () => concluir(false).catch(e => aviso('Não deu: ' + e.message));
   $('#apagar').onclick = () => cena && apagarCena(cena);
@@ -1979,5 +2069,6 @@ function desenharMarcas() {
 
 window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado, desenho, paredes: paredes.length, fina: !telaFina.hidden,
                                     fovCena, quadro: quadroAtual, vistaMudou, cenas: todasCenas.map(c => c.id) }), mostrarModo, pontoDo3d, fazerEncaixe,
-                   concluir, desfazer, refazer, geometriaDoContorno, bordaDeBaixo, montarImagem, abrirCena, novaCena3d, imagemDaCena3d, cameraDaTela };
+                   concluir, desfazer, refazer, geometriaDoContorno, bordaDeBaixo, montarImagem, abrirCena, novaCena3d, imagemDaCena3d, cameraDaTela,
+                   exportar: () => exportar, tamanhoExportar };
 abrir().catch(e => { aviso('A cena não abriu: ' + e.message); console.error(e); });

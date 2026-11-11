@@ -431,3 +431,43 @@ def test_lista_da_marca_diz_quem_tem_logo(tmp_path):
     assert C.empresas_da_marca(g, s)["empresas"] == [{"id": "principal", "nome": "Empresa principal", "logo": False}]
     _logo_em_faixa(os.path.join(str(tmp_path), "fabrica", "marca", "logo.png"))
     assert C.empresas_da_marca(g, s)["empresas"][0]["logo"] is True
+
+
+def test_pdf_do_exportar_vai_para_a_pasta_cenas(tmp_path):
+    """11/11 (amostra-5, o Exportar da tela das Cenas): o PDF com uma página por cena, montado na tela, vai para cenas/ com o
+    nome dado pela tela — só o nome (nada de pasta), sempre .pdf, e só PDF de verdade; "pdf" não vira id de cena."""
+    g, s = _gerente(tmp_path)
+
+    def enviar(nome, conteudo=b"%PDF-1.4\n%%EOF\n"):
+        caminho = os.path.join(str(tmp_path), "envio.pdf")
+        with open(caminho, "wb") as f:
+            f.write(conteudo)
+        return C.rota_post(g, s, ["pdf"], {"arquivo_local": caminho, "nome": nome})
+    assert enviar("Cenas - Obra (render).pdf")["nome"] == "Cenas - Obra (render).pdf"
+    assert enviar(r"..\..\fora.pdf")["nome"] == "fora.pdf"           # sem sair da pasta
+    assert enviar("../x/Cena: a?b")["nome"] == "Cena- a-b.pdf"
+    assert sorted(os.listdir(os.path.join(g.pasta(s), "cenas"))) == ["Cena- a-b.pdf", "Cenas - Obra (render).pdf", "fora.pdf"]
+    with pytest.raises(C.ErroCena):
+        enviar("x.pdf", b"\x89PNG\r\n\x1a\n")                          # não é PDF
+    assert C.nova_3d(g, s, {"nome": "PDF", "camera": _CAM})["id"] == "pdf-cena"
+
+
+def test_mostrar_o_render_na_pasta(tmp_path, monkeypatch):
+    """11/11 ("preciso que os render feito tenha um acesso rápido a pasta para encontrar o arquivo"): …/cenas/mostrar abre a
+    pasta cenas/ com o arquivo selecionado — só de dentro dela; a lista diz qual é o render da cena (o do cartão)."""
+    from PIL import Image
+    g, s = _gerente(tmp_path)
+    abertos = []
+    monkeypatch.setattr(C, "_abrir_no_explorador", lambda pasta, arquivo=None: abertos.append((pasta, arquivo)))
+    i = C.nova(g, s, _foto(tmp_path))["id"]
+    caminho = os.path.join(str(tmp_path), "envio-render.jpg")
+    Image.new("RGB", (20, 10)).save(caminho, "JPEG")
+    nome = C.rota_post(g, s, [i, "imagem"], {"arquivo_local": caminho, "nome": "render.jpg"})["nome"]
+    pasta = os.path.join(g.pasta(s), "cenas")
+    assert C.listar(g, s)["cenas"][0]["render_arquivo"] == nome
+    C.rota_post(g, s, ["mostrar"], {"nome": nome})
+    C.rota_post(g, s, ["mostrar"], {})
+    C.rota_post(g, s, ["mostrar"], {"nome": "../../projeto.json"})       # fora da pasta: só a pasta
+    C.rota_post(g, s, ["mostrar"], {"nome": "nao-existe.jpg"})
+    assert abertos == [(pasta, os.path.join(pasta, nome)), (pasta, None), (pasta, None), (pasta, None)]
+    assert C.nova_3d(g, s, {"nome": "Mostrar", "camera": _CAM})["id"] == "mostrar-cena"

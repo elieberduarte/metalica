@@ -70,6 +70,7 @@
   #camadas i { width: 10px; height: 10px; border-radius: 2px; flex: none; }
   #camadas .grupo { font-weight: 600; margin-top: 4px; color: var(--texto-fraco, #5b6779); }
   #aviso { min-height: 18px; color: var(--azul-tinta); font-weight: 600; }
+  #aviso .mostrar-pasta { display: block; margin-top: 6px; font-weight: 600; }
   .secao3d { border-bottom: 1px solid var(--borda); padding-bottom: 8px; display: flex; flex-direction: column; gap: 6px; }
   .secao3d:last-child { border: 0; }
   .opcoes { display: inline-flex; border: 1px solid var(--borda); border-radius: var(--raio-p); overflow: hidden; flex-wrap: wrap; }
@@ -155,6 +156,8 @@
   <button type="button" id="salvar-imagem" title="A imagem da cena como está na tela, na pasta cenas da obra">Salvar imagem</button>
   <select id="render-tamanho" aria-label="Tamanho da imagem renderizada"></select>
   <button type="button" id="renderizar" class="forte" title="A imagem final em alta: sem serrilhado nas peças finas e com a sombra mais fina">Renderizar</button>
+  <button type="button" id="pasta-cenas" title="Abre a pasta cenas da obra (as imagens, os renders e os PDF)">📁 Pasta</button>
+  <button type="button" id="exportar" title="Renderizar e exportar: várias cenas de uma vez, JPG/PNG/PDF, gravar na pasta ou baixar (ZIP)">Exportar…</button>
 </header>
 
 <aside id="esq">
