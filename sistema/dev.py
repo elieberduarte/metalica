@@ -12,10 +12,15 @@ Com uma tarefa em curso (o Reanalisar estrutura, o Detalhar, a análise), o rein
 ESPERA_TAREFA): vários chats salvam .py o tempo todo, e o reinício no meio dava "Failed to fetch" na tela (19/10).
 A tarefa que segue dizendo o andamento (_progresso) segura o reinício além disso, até ESPERA_MAXIMA: o Detalhar do
 Edifício Administrativo (41 min) era derrubado aos 14 min (29/10).
+
+O vigia é um só por porta (_trancar): o atalho aberto com o dev no meio de um reinício subia um segundo vigia, e a cada .py
+salvo os dois (chegaram a três) reiniciavam juntos e disputavam a 8766 — um ficava com ela, os outros subiam em porta
+solta e a janela dava "ERR_CONNECTION_REFUSED" (11/11). O segundo agora só mostra a janela do que já roda e sai.
 """
 import os
 import subprocess
 import sys
+import tempfile
 import time
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -119,6 +124,47 @@ def _esperar_ocioso(porta: int, limite: float = ESPERA_TAREFA, intervalo: float 
     return time.time() - t0
 
 
+def _trancar(porta: int):
+    """A trava do vigia desta porta: um arquivo travado enquanto o processo vive (o Windows a solta quando ele termina,
+    mesmo derrubado). Devolve o arquivo aberto, que precisa ficar vivo, ou None se outro vigia já a tem."""
+    pasta = os.path.join(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir(), "Metalica")
+    try:
+        os.makedirs(pasta, exist_ok=True)
+        f = open(os.path.join(pasta, "dev-vigia-%d.trava" % porta), "a+b")
+    except OSError:
+        return True                                      # sem onde travar: segue como antes
+    try:
+        if os.name == "nt":
+            import msvcrt
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return None
+    return f
+
+
+def _mostrar_o_que_ja_roda(porta: int):
+    """O segundo clique no atalho: o vigia que já roda segue com o servidor dele; este só abre a janela (esperando o
+    servidor responder, se ele está no meio de um reinício) e sai."""
+    print("[dev] %s já há um vigia na porta %d — este só mostra a janela e sai" % (time.strftime("%H:%M:%S"), porta),
+          flush=True)
+    if "--sem-navegador" in sys.argv:
+        return
+    sys.path.insert(0, BASE)
+    import app
+    t0 = time.time()
+    while time.time() - t0 < 90 and not app._ja_esta_rodando(porta):
+        time.sleep(0.5)
+    url = "http://localhost:%d/" % porta
+    if app._abrir_janela(url) is None:
+        import webbrowser
+        webbrowser.open(url)
+
+
 def _subir(reaberto: bool) -> subprocess.Popen:
     cmd = [sys.executable, os.path.join(BASE, "app.py"), "--dev"] + [a for a in sys.argv[1:] if a != "--dev"]
     if reaberto:
@@ -133,6 +179,10 @@ def main():
     porta = 8766
     if "--porta" in sys.argv:
         porta = int(sys.argv[sys.argv.index("--porta") + 1])
+    trava = _trancar(porta)                                # fica viva até o vigia terminar
+    if trava is None:
+        _mostrar_o_que_ja_roda(porta)
+        return
     vistos = _carimbos()
     filho = _subir(reaberto=False)
     while True:

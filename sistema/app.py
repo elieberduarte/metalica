@@ -6943,6 +6943,9 @@ class Handler(BaseHTTPRequestHandler):
 class Servidor(ThreadingHTTPServer):
     """Servidor HTTP que ignora conexões encerradas pelo navegador no meio da resposta."""
     daemon_threads = True
+    # No Windows o SO_REUSEADDR deixa um segundo servidor ouvir na MESMA porta de um que já ouve (os dois vigias do dev
+    # de 11/11 chegaram a isso); lá a porta de um servidor encerrado já volta livre sem ele.
+    allow_reuse_address = os.name != "nt"
 
     def handle_error(self, request, client_address):
         erro = sys.exc_info()[1]
@@ -7126,6 +7129,33 @@ def _porta_livre(preferida: int) -> int:
     return preferida
 
 
+#: s que o servidor reiniciado pelo vigia do dev espera a porta dele ficar livre antes de aceitar outra
+ESPERA_PORTA_REINICIO = 20.0
+
+
+def _servidores_do_reinicio(preferida: int, espera: Optional[float] = None):
+    """O reinício pelo vigia do dev (--reaberto): a janela aberta está na porta `preferida`, e só ela serve. Espera a
+    porta ficar livre; se outro Metálica já responde nela, devolve None — havia um segundo vigia, e este servidor (e o
+    vigia dele) sai, em vez de subir numa porta solta (11/11: três vigias, as janelas com ERR_CONNECTION_REFUSED).
+    Só se a porta segue presa por outro programa, depois de `espera` s, cai numa porta que o sistema escolher, como antes.
+    Devolve (servidor, extras, porta)."""
+    espera = ESPERA_PORTA_REINICIO if espera is None else espera
+    t0 = time.time()
+    while True:
+        try:
+            servidor, extras = _servidores(preferida)
+            return servidor, extras, preferida
+        except OSError:
+            pass
+        if _ja_esta_rodando(preferida):
+            return None
+        if time.time() - t0 >= espera:
+            porta = _porta_livre(preferida)
+            servidor, extras = _servidores(porta)
+            return servidor, extras, porta
+        time.sleep(0.25)
+
+
 def _abrir_janela(url: str):
     """Janela própria do programa: o Edge (ou Chrome) em modo aplicativo, sem abas nem
     barra de endereço, com perfil separado do navegador do usuário.
@@ -7183,8 +7213,16 @@ def main():
     sys.setswitchinterval(0.0002)
     com_janela = "--janela" in sys.argv or ((versao.CONGELADO or DEV) and "--sem-navegador" not in sys.argv)
     preferida = PORTA_DEV if DEV else PORTA_PADRAO
+    servidores = None
     if "--porta" in sys.argv:
         porta = int(sys.argv[sys.argv.index("--porta") + 1])
+    elif DEV and "--reaberto" in sys.argv:
+        servidores = _servidores_do_reinicio(preferida)
+        if servidores is None:
+            print("[dev] %s outro servidor do desenvolvimento já atende a porta %d: este não sobe (havia um vigia a mais)"
+                  % (time.strftime("%H:%M:%S"), preferida), flush=True)
+            return
+        porta = servidores[2]
     else:
         if com_janela and _ja_esta_rodando(preferida):
             # segundo clique no atalho: mostra o que já está aberto, não sobe outro
@@ -7193,7 +7231,7 @@ def main():
                 webbrowser.open(f"http://localhost:{preferida}/")
             return
         porta = _porta_livre(preferida)
-    servidor, extras = _servidores(porta)
+    servidor, extras = servidores[:2] if servidores else _servidores(porta)
     for s in extras:
         threading.Thread(target=s.serve_forever, daemon=True).start()
     url = _url_para_reabrir(f"http://localhost:{porta}/")     # volta ao desenho de antes da atualização
