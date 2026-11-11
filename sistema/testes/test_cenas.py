@@ -471,3 +471,7 @@ def test_mostrar_o_render_na_pasta(tmp_path, monkeypatch):
     C.rota_post(g, s, ["mostrar"], {"nome": "nao-existe.jpg"})
     assert abertos == [(pasta, os.path.join(pasta, nome)), (pasta, None), (pasta, None), (pasta, None)]
     assert C.nova_3d(g, s, {"nome": "Mostrar", "camera": _CAM})["id"] == "mostrar-cena"
+    # o projeto que não existe: recusa, sem criar a pasta dele nem abrir o Explorador (11/11, achado na sondagem do dev)
+    with pytest.raises(C.ErroCena):
+        C.rota_post(g, s.replace(s, "nao-existe"), ["mostrar"], {})
+    assert not os.path.exists(os.path.join(str(tmp_path), "nao-existe")) and len(abertos) == 4

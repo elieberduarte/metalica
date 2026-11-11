@@ -146,6 +146,8 @@ def mostrar_na_pasta(g, s: str, corpo: dict) -> dict:
     """O acesso rápido ao render (usuário, 11/11: "preciso que os render feito tenha um acesso rápido a pasta para encontrar o
     arquivo"): abre a pasta cenas/ da obra no Explorador com o arquivo pedido selecionado — só um nome de arquivo de dentro
     dela; sem nome (ou o arquivo já não está lá), a pasta."""
+    if not os.path.isdir(g.pasta(s)):                       # projeto que não existe: nada de criar a pasta dele
+        raise ErroCena("projeto não encontrado: %s" % s)
     pasta = os.path.join(g.pasta(s), PASTA)
     os.makedirs(pasta, exist_ok=True)
     nome = os.path.basename(str(corpo.get("nome") or "").replace("\\", "/"))
@@ -561,6 +563,8 @@ def gravar_imagem(g, s: str, i: str, corpo: dict) -> dict:
 def gravar_pdf(g, s: str, corpo: dict) -> dict:
     """O PDF do Exportar da tela das Cenas (11/11, amostra-5: uma página por cena, montado na tela) na pasta cenas/: o nome
     vem da tela ("Cena - <nome> (render).pdf" ou "Cenas - <obra> (render).pdf"), só o nome do arquivo e sempre .pdf."""
+    if not os.path.isdir(g.pasta(s)):
+        raise ErroCena("projeto não encontrado: %s" % s)
     origem = corpo.get("arquivo_local")
     if not origem or not os.path.isfile(origem):
         raise ErroCena("nenhum PDF recebido.")
