@@ -834,7 +834,61 @@ async function iniciar() {
   } catch (e) { /* sem versão: a tela funciona igual */ }
   verificarAtualizacao();
   verificarRecebidos();                                    // as obras que outras pessoas enviaram (21/10)
+  seloCopia();                                             // a cópia no OneDrive (11/11)
+  setInterval(() => { if (!document.hidden) seloCopia(); }, 60 * 1000);
   setInterval(() => { if (!document.hidden) verificarRecebidos(); }, 5 * 60 * 1000);
+}
+
+/** O selo da cópia no OneDrive, no topo (copia_onedrive.py, 11/11 — o usuário: "Preciso que continue salvando os
+ * arquivos no OneDrive, tem arquivo que está sendo salvo só no disco C"). Desligada: nada aparece. O clique copia agora. */
+function haQuanto(s) {
+  if (s == null) return '';
+  if (s < 90) return 'agora há pouco';
+  if (s < 3600) return `há ${Math.round(s / 60)} min`;
+  if (s < 48 * 3600) return `há ${Math.round(s / 3600)} h`;
+  return `há ${Math.round(s / 86400)} dias`;
+}
+function pintarSeloCopia(c) {
+  const b = document.getElementById('selo-copia');
+  if (!b) return;
+  if (!document.getElementById('estilo-selo-copia')) {
+    const st = el('style', { id: 'estilo-selo-copia' });
+    st.textContent = `
+.topo .selo-copia { flex: none; font-size: 12px; padding: 3px 10px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  border: 1px solid rgba(255,255,255,.35); background: transparent; color: var(--topo-texto, #eaf0fb); }
+.topo .selo-copia:hover { background: rgba(255,255,255,.12); }
+.topo .selo-copia[data-sit="atrasada"] { background: var(--amarelo-fundo, #fdf4d8); color: var(--amarelo, #9a6b06); border-color: transparent; font-weight: 600; }
+.topo .selo-copia[data-sit="falhou"] { background: var(--verm-fundo, #fbeae8); color: var(--verm, #b3261e); border-color: transparent; font-weight: 600; }
+.topo .selo-copia[data-sit="copiando"] { opacity: .85; cursor: progress; }`;
+    document.head.appendChild(st);
+  }
+  if (!c || !c.ligada) { b.hidden = true; return; }
+  b.hidden = false;
+  b.dataset.sit = c.situacao;
+  const onde = c.destino ? `Cópia dos dados para ${c.destino}.` : 'Cópia dos dados para o OneDrive.';
+  const ultima = c.ultima_ok ? ` A última que deu certo: ${new Date(c.ultima_ok * 1000).toLocaleString('pt-BR')}.` : '';
+  if (c.situacao === 'copiando') {
+    b.textContent = '☁ OneDrive: copiando…';
+    b.title = onde + ultima;
+  } else if (c.situacao === 'falhou') {
+    b.textContent = `☁ OneDrive: a cópia falhou ${haQuanto(c.falhou_em ? Date.now() / 1000 - c.falhou_em : null)}`;
+    b.title = `${onde} Falhou: ${c.falha}.${ultima} Clique para tentar de novo.`;
+  } else if (c.situacao === 'atrasada') {
+    b.textContent = c.ha_s == null ? '☁ OneDrive: nenhuma cópia ainda' : `☁ OneDrive: sem cópia ${haQuanto(c.ha_s)}`;
+    b.title = onde + ultima + ' Clique para copiar agora.';
+  } else {
+    b.textContent = `☁ OneDrive: cópia ${haQuanto(c.ha_s)}`;
+    b.title = onde + ultima + ' A cada hora, os documentos logo depois de gravados e ao fechar o programa. Clique para copiar agora.';
+  }
+  b.onclick = async () => {
+    try {
+      pintarSeloCopia(await api('/api/copia-onedrive/agora', { method: 'POST', body: '{}' }));
+      setTimeout(seloCopia, 5000);
+    } catch (e) { recado('Não foi possível copiar agora', e.message, 'erro'); }
+  };
+}
+async function seloCopia() {
+  try { pintarSeloCopia(await api('/api/copia-onedrive')); } catch (e) { /* sem a rota: nada aparece */ }
 }
 
 /** Avisa quando há versão mais nova publicada; sem internet, nada aparece. */

@@ -99,6 +99,10 @@ def test_a_lista_feita_pelo_get_nao_deixa_a_etapa_pendurada(servidor, dados):
     st, lista = _pedir("%s/api/projetos/%s/materiais" % (servidor, quote(s)))
     assert st == 200, lista
     assert os.path.exists(os.path.join(dados, s, "detalhamento", "lista-de-materiais.json"))
+    for _ in range(40):                     # o fim do pedido (finally do do_GET) roda logo depois de a resposta sair
+        if s not in app.PROGRESSO:
+            break
+        time.sleep(0.05)
     assert app.progresso_do_projeto(s)["etapa"] == "", app.PROGRESSO.get(s)
     assert s not in app.PROGRESSO
     assert app._gerente().atualizando(s) is None

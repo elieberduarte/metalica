@@ -6354,6 +6354,9 @@ class Handler(BaseHTTPRequestHandler):
         _ULTIMO_PEDIDO[0] = time.time()
         if self._licenca_get(rota):
             return
+        if rota == "/api/copia-onedrive":                     # o selo da tela inicial (copia_onedrive.py, 11/11)
+            import copia_onedrive
+            return self._json(copia_onedrive.situacao(PROJETOS))
         try:
             if EXTENSOES_DEV:
                 if rota == "/":
@@ -6616,6 +6619,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True})
         if self._licenca_post(rota):
             return
+        if rota == "/api/copia-onedrive/agora":               # o clique no selo: copia agora, em segundo plano
+            import copia_onedrive
+            if copia_onedrive.ler_estado(PROJETOS).get("ligada"):
+                threading.Thread(target=copia_onedrive.copiar, args=(PROJETOS, "agora"), name="copia-onedrive-agora",
+                                 daemon=True).start()
+                time.sleep(0.3)
+            return self._json(copia_onedrive.situacao(PROJETOS))
         # pedido em curso segura o encerramento automático (fechar a janela no meio do
         # Detalhar deixava o projeto com os desenhos antigos na lixeira e os novos por gravar)
         _em_curso(+1)
@@ -7243,6 +7253,11 @@ def main():
     except Exception:                                           # noqa: BLE001 — sem a pasta, as regras padrão
         pass
     try:
+        import copia_onedrive
+        copia_onedrive.iniciar(PROJETOS)                        # a cópia para o OneDrive, se ligada (11/11)
+    except Exception:                                           # noqa: BLE001
+        pass
+    try:
         limpar_instaladores_antigos()                           # o que as atualizações anteriores deixaram
     except Exception:                                           # noqa: BLE001
         pass
@@ -7312,6 +7327,11 @@ def main():
                 vazio_desde = vazio_desde or (time.time() if ja_abriu else inicio)
                 if time.time() - vazio_desde >= limite:
                     print("nenhuma janela aberta: encerrando.", flush=True)
+                    try:
+                        import copia_onedrive
+                        copia_onedrive.ao_fechar(PROJETOS)      # a última cópia para o OneDrive, se ligada
+                    except Exception:                           # noqa: BLE001
+                        pass
                     encerrar()
                     return
         threading.Thread(target=vigiar, daemon=True).start()
