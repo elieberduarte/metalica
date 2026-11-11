@@ -7,9 +7,9 @@ cenas3d.js, aprovado nas amostras de Projeto/BRIEFINGS/imagens/cenas-3d/). Pela 
   D. botão direito na aba: Atualizar com a vista atual (a câmera nova no servidor), Renomear, Mover para a esquerda;
   E. recarregada, as abas voltam na ordem; Alt+1 e PageDown trocam de cena;
   F. o painel Cenas (botão Cenas): a lista, e "A cena guarda" sem a câmera → ir para a cena não mexe na câmera;
-  G. a cena por foto aparece como aba 📷; a página da foto (cena.html) lista também as cenas do 3D e escolher uma abre o
-     modo ver nela (REGRESSÃO 11/11: "as cenas criadas não aparecem aqui");
-  I. o menu Cenas da barra de cima: Cenas da obra… abre o painel Cenas no modo ver do quadro, também com o editor nele;
+  G. a cena por foto aparece como aba 📷; a tela das Cenas (cena.html) lista também as cenas do 3D e abre a do 3D ali
+     (REGRESSÃO 11/11: "as cenas criadas não aparecem aqui");
+  I. o menu Cenas da barra de cima (Cenas da obra…) e o painel Cenas do modo ver levam à tela das Cenas;
   H. apagar pelo menu (a caixa confirma): a aba sai; sem erro no console.
 Porta livre, nunca a 8765/8766."""
 import json, os, shutil, subprocess, sys, tempfile, time, urllib.request
@@ -217,21 +217,23 @@ try:
     aba.drenar(1.0)
     ok(perto(camera(aba)["posicao"], cam_f["posicao"], 1), "ir para a cena sem a câmera não mexe na vista")
 
-    print("G — a página da foto lista também as cenas do 3D, e escolher uma volta ao modo ver nela")
+    print("G — a tela das Cenas lista também as cenas do 3D e abre a do 3D ali mesmo")
     # REGRESSÃO 11/11 (usuário, Cobertura Filipin: "a ferramenta de cenas não estão se conversando, as cenas criadas não
-    # aparecem aqui"): a página da foto filtrava as cenas do 3D e o menu Cenas da barra só levava a ela
+    # aparecem aqui"): a página da foto filtrava as cenas do 3D. Agora ela é a tela das Cenas (cena.html) com todas
     aba.navegar(f"{base}/visor3d/cena.html?projeto=obra&tema=claro", limite=60)
-    ok(esperar(aba, "!!window.cenaPronta", 120), "a página das cenas por foto abriu")
-    opcoes = aba.avaliar("[...document.querySelectorAll('#lista option')].map(o => o.value)")
-    ok(opcoes == ["quadra", "3d:planta", "3d:fachada-frontal"], f"a lista tem a da foto e as do 3D ({opcoes})")
-    aba.avaliar("(() => { const s = document.getElementById('lista'); s.value = '3d:fachada-frontal'; s.dispatchEvent(new Event('change')); })(); 1")
-    F3D = "(document.querySelector('#f3d') && document.querySelector('#f3d').contentWindow)"
-    ok(esperar(aba, f"location.pathname === '/dividida' && !!({F3D}) && !!({F3D}.cenas3d) && {F3D}.cenas3d.ativa() === 'fachada-frontal'", 180),
-       "escolhida a cena do 3D, a área de trabalho abre o modo ver nela")
+    ok(esperar(aba, "!!window.cenaPronta", 120), "a tela das Cenas abriu")
+    cartoes = aba.avaliar("[...document.querySelectorAll('#cartoes .cartao-cena')].map(b => b.dataset.cena)")
+    ok(cartoes == ["quadra", "planta", "fachada-frontal"], f"os cartões: a da foto e as do 3D, na ordem das abas ({cartoes})")
+    aba.avaliar("document.querySelector('#cartoes [data-cena=fachada-frontal]').click(); 1")
+    ok(esperar(aba, "cenaApi.estado().cena && cenaApi.estado().cena.id === 'fachada-frontal' && !document.getElementById('quadro').hidden", 30),
+       "o cartão da cena do 3D a abre na tela, com o quadro")
     aba.drenar(1.0)
-    ok(perto(aba.avaliar(f"{F3D}.visor.lerCamera().posicao"), cam_a["posicao"]), "com a câmera da cena")
+    ok(perto(aba.avaliar("visor.lerCamera().posicao"), cam_a["posicao"]), "com a câmera da cena")
 
-    print("I — o menu Cenas da barra de cima abre o painel das cenas no modo ver")
+    print("I — o menu Cenas da barra de cima leva à tela das Cenas")
+    aba.navegar(f"{base}/dividida?projeto=obra&vista=3d", limite=90)
+    F3D = "(document.querySelector('#f3d') && document.querySelector('#f3d').contentWindow)"
+    ok(esperar(aba, f"(() => {{ try {{ return !!{F3D}.cenas3d; }} catch (e) {{ return false; }} }})()", 180), "a área de trabalho com o modo ver")
     MENU = "#menus-unicos .menu[data-nome=\"Cenas\"]"
     itens = aba.avaliar(f"""(() => {{ const b = document.querySelector('{MENU} .menu-botao'); b.click();
         const t = [...document.querySelectorAll('{MENU} .menu-lista button')].map(e => e.textContent.trim()); b.click(); return t; }})()""")
@@ -239,16 +241,13 @@ try:
        and any(x.startswith("Nova cena pela foto") for x in itens), f"o menu tem as cenas da obra, a nova pela vista e a nova pela foto ({itens})")
     aba.avaliar(f"""(() => {{ document.querySelector('{MENU} .menu-botao').click();
         [...document.querySelectorAll('{MENU} .menu-lista button')].find(e => e.textContent.trim().startsWith('Cenas da obra')).click(); }})(); 1""")
-    ok(esperar(aba, f"{F3D}.document.getElementById('painel').dataset.painel === 'cenas' && !{F3D}.document.getElementById('painel').hidden", 15),
-       "Cenas da obra… abre o painel Cenas no modo ver do quadro")
-    ok(aba.avaliar(f"{F3D}.document.querySelectorAll('#painel-corpo .linha-cena').length") == 3, "com as três cenas (a da foto e as do 3D)")
-    # com o editor no quadro: o quadro volta ao modo ver e o painel abre lá
-    aba.avaliar(f"{F3D}.location.href = '/editor?projeto=obra'; 1")
-    ok(esperar(aba, f"(() => {{ try {{ return {F3D}.location.pathname === '/editor' && !!{F3D}.editor; }} catch (e) {{ return false; }} }})()", 120), "o editor no quadro")
-    aba.avaliar(f"""(() => {{ document.querySelector('{MENU} .menu-botao').click();
-        [...document.querySelectorAll('{MENU} .menu-lista button')].find(e => e.textContent.trim().startsWith('Cenas da obra')).click(); }})(); 1""")
-    ok(esperar(aba, f"(() => {{ try {{ const w = {F3D}; return w.location.pathname === '/visor3d/ver3d.html' && w.document.getElementById('painel').dataset.painel === 'cenas' && !w.document.getElementById('painel').hidden; }} catch (e) {{ return false; }} }})()", 180),
-       "com o editor no quadro, Cenas da obra… volta ao modo ver com o painel aberto")
+    ok(esperar(aba, "location.pathname === '/visor3d/cena.html' && !!window.cenaPronta && document.querySelectorAll('#cartoes .cartao-cena').length === 3", 120),
+       "Cenas da obra… abre a tela das Cenas, com as três")
+    # o painel Cenas do modo ver também leva à tela
+    aba.navegar(f"{base}/visor3d/ver3d.html?projeto=obra&tema=claro", limite=90)
+    ok(esperar(aba, "!!window.ver3dPronto && !!window.cenas3d", 180), "o modo ver de novo")
+    aba.avaliar("cenas3d.painel(); 1")
+    ok(esperar(aba, "!!document.querySelector('#cena-tela')", 5), "o painel Cenas tem \"Abrir a tela das Cenas…\"")
 
     print("H — apagar pelo menu da aba")
     aba.navegar(f"{base}/visor3d/ver3d.html?projeto=obra&tema=claro", limite=90)

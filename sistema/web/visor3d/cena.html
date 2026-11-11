@@ -11,48 +11,95 @@
   if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
 })();
 </script>
-<title>Cena — Metálica</title>
+<title>Cenas — Metálica</title>
 <link rel="stylesheet" href="/estilo.css">
 <script type="importmap">
 { "imports": { "three": "/lib/three.module.js", "three/addons/": "/lib/" } }
 </script>
 <style>
-  /* A cena (26/10): a estrutura encaixada numa foto do local, para apresentação. O painel à esquerda; a foto com o 3D por
-     cima (ou o 3D sozinho, para marcar o ponto do modelo) no resto. */
+  /* A tela das Cenas (11/11, amostra-4 aprovada: "a tela de tratamento, criação, exportação, renderização das cenas"): as
+     cenas da obra à esquerda, o palco no meio (o 3D com o quadro da imagem, ou a foto com o 3D por cima) e o tratamento
+     da cena à direita. A cena por foto (26/10) é um tipo de cena, na mesma tela. */
   html, body { height: 100%; margin: 0; overflow: hidden; background: var(--fundo); color: var(--texto); font: 13px var(--sans); }
-  #lado { position: fixed; left: 0; top: 0; bottom: 0; width: 300px; overflow: auto; background: var(--painel);
-    border-right: 1px solid var(--borda); padding: 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; }
-  #lado h1 { font-size: 15px; margin: 0; }
-  #lado .linha { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  #lado button, #lado select { font: 13px var(--sans); border: 1px solid var(--borda); background: var(--painel); color: var(--texto);
+  button, select { font: 13px var(--sans); border: 1px solid var(--borda); background: var(--painel); color: var(--texto);
     border-radius: var(--raio-p); padding: 5px 9px; cursor: pointer; }
-  #lado button:hover { border-color: var(--borda-forte); }
-  #lado button.forte { background: var(--azul2, #1f5fbf); border-color: var(--azul2, #1f5fbf); color: #fff; font-weight: 600; }
-  #lado button.ligado { background: var(--azul-fraco); border-color: var(--azul2, #1f5fbf); }
-  #lado button:disabled { opacity: .5; cursor: default; }
+  button:hover { border-color: var(--borda-forte); }
+  button.forte { background: var(--azul2, #1f5fbf); border-color: var(--azul2, #1f5fbf); color: #fff; font-weight: 600; }
+  button.ligado { background: var(--azul-fraco); border-color: var(--azul2, #1f5fbf); }
+  button:disabled { opacity: .5; cursor: default; }
+  .dica { color: var(--texto-fraco, #5b6779); margin: 0; line-height: 1.4; }
+  .titulo-secao { font-weight: 600; margin: 4px 0 0; }
+  .linha { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  label.faixa { display: flex; align-items: center; gap: 8px; } label.faixa input[type=range] { flex: 1; }
+
+  #topo { position: fixed; left: 0; right: 0; top: 0; height: 46px; display: flex; align-items: center; gap: 8px; padding: 0 10px;
+    background: var(--painel); border-bottom: 1px solid var(--borda); box-sizing: border-box; z-index: 5; }
+  #topo h1 { font-size: 15px; margin: 0 8px 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #topo .sp { flex: 1; }
+  #esq { position: fixed; left: 0; top: 46px; bottom: 0; width: 250px; overflow: auto; background: var(--painel);
+    border-right: 1px solid var(--borda); padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; }
+  #esq h2, #lado h2 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--texto3, #6b7787); margin: 2px 0; }
+  #lista { display: none; }                         /* a lista de sempre (os testes e o desfazer): os cartões mandam nela */
+  #cartoes { display: flex; flex-direction: column; gap: 6px; }
+  .cartao-cena { display: flex; gap: 8px; align-items: center; padding: 5px; border: 1px solid var(--borda); border-radius: 7px;
+    cursor: pointer; background: var(--painel); text-align: left; }
+  .cartao-cena:hover { border-color: var(--borda-forte); }
+  .cartao-cena.ativa { border: 2px solid var(--azul2, #1f5fbf); background: var(--azul-fraco); padding: 4px; }
+  .cartao-cena .mini { width: 78px; height: 48px; border-radius: 4px; flex: none; background: var(--fundo) center/cover no-repeat;
+    border: 1px solid var(--borda); }
+  .cartao-cena b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px; }
+  .cartao-cena small { display: block; color: var(--texto2); font-size: 11.5px; }
+  .cartao-cena .tipo { font-size: 10.5px; background: var(--fundo); border-radius: 3px; padding: 0 4px; }
+  .cartao-cena .ok { color: var(--verde); } .cartao-cena .velho { color: var(--amarelo); }
+  #menu-cartao { position: fixed; z-index: 40; display: flex; flex-direction: column; min-width: 190px; padding: 4px;
+    background: var(--painel); border: 1px solid var(--borda); border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.2); }
+  #menu-cartao button { text-align: left; border: 0; background: none; }
+  #menu-cartao button:hover { background: var(--azul-fraco); }
+
+  #lado { position: fixed; right: 0; top: 46px; bottom: 0; width: 320px; overflow: auto; background: var(--painel);
+    border-left: 1px solid var(--borda); padding: 10px 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; }
   #lado select { flex: 1; min-width: 0; }
-  #lado .dica { color: var(--texto-fraco, #5b6779); margin: 0; line-height: 1.4; }
-  #lado .titulo-secao { font-weight: 600; margin: 4px 0 0; }
   #pares { display: flex; flex-direction: column; gap: 4px; }
   #pares .par { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border: 1px solid var(--borda); border-radius: var(--raio-p); }
   #pares .par b { min-width: 18px; text-align: center; }
   #pares .par span { flex: 1; }
   #pares .par button { padding: 2px 6px; }
   #pares .ok { color: var(--verde); } #pares .falta { color: var(--amarelo); }
-  #lado label.faixa { display: flex; align-items: center; gap: 8px; } #lado label.faixa input[type=range] { flex: 1; }
   #camadas { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow: auto; }
   #camadas label { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
   #camadas i { width: 10px; height: 10px; border-radius: 2px; flex: none; }
   #camadas .grupo { font-weight: 600; margin-top: 4px; color: var(--texto-fraco, #5b6779); }
   #aviso { min-height: 18px; color: var(--azul-tinta); font-weight: 600; }
+  .secao3d { border-bottom: 1px solid var(--borda); padding-bottom: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .secao3d:last-child { border: 0; }
+  .opcoes { display: inline-flex; border: 1px solid var(--borda); border-radius: var(--raio-p); overflow: hidden; flex-wrap: wrap; }
+  .opcoes button { border: 0; border-right: 1px solid var(--borda); border-radius: 0; padding: 3px 8px; font-size: 12px; }
+  .opcoes button:last-child { border-right: 0; }
+  .opcoes button.ligado { background: var(--azul2, #1f5fbf); color: #fff; }
+  .linha-opcao { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #cena-nome { flex: 1; padding: 5px 7px; border: 1px solid var(--borda); border-radius: var(--raio-p); background: var(--fundo);
+    color: var(--texto); font: 13px var(--sans); }
+
   /* o fundo em volta da foto segue o tema (usuário, 27/10: "o fundo da cena não está otimizado para o tema claro") */
-  #palco { position: fixed; left: 300px; top: 0; right: 0; bottom: 0; overflow: hidden; background: var(--fundo); }
+  #palco { position: fixed; left: 250px; top: 46px; right: 320px; bottom: 0; overflow: hidden; background: var(--fundo); }
+  /* o fundo transparente da cena do 3D: o xadrez de sempre dos editores de imagem */
+  body.fundo-transparente #palco { background: repeating-conic-gradient(#cfd5dd 0% 25%, #f4f6f9 0% 50%) 0 0 / 18px 18px; }
   #terreno-fonte { position: absolute; right: 10px; bottom: 8px; font-size: 11px; color: var(--texto2); pointer-events: none; }
   body:not(.modo-3d) #terreno-fonte { display: none; }   /* na foto o terreno não aparece: a fonte dele também não */
   #foto { position: absolute; user-select: none; -webkit-user-drag: none; }
   #tela { position: absolute; }
   #tela-fina { position: absolute; pointer-events: none; }
   #tela-fina[hidden], body.modo-3d #tela-fina { display: none; }
+  /* o quadro da imagem da cena do 3D: o que sai no render; fora dele, escurecido */
+  #quadro { position: absolute; pointer-events: none; outline: 2px solid var(--azul2, #1f5fbf); box-shadow: 0 0 0 4000px rgba(25, 34, 48, .38); }
+  #quadro[hidden] { display: none; }
+  #quadro span { position: absolute; left: -2px; top: -22px; background: var(--azul2, #1f5fbf); color: #fff; font-size: 11.5px;
+    padding: 2px 7px; border-radius: 3px 3px 0 0; white-space: nowrap; }
+  #barra-palco { position: absolute; left: 12px; right: 12px; bottom: 10px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  #barra-palco[hidden] { display: none; }
+  #barra-palco button { padding: 4px 9px; font-size: 12px; }
+  #barra-palco .sp { flex: 1; }
+  #atualizar-vista.pendente { box-shadow: 0 0 0 3px rgba(232, 89, 12, .55); }
   #marcas { position: absolute; cursor: crosshair; }
   .marca { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; border: 2px solid #fff;
     box-shadow: 0 0 0 1px rgba(0,0,0,.6); color: #fff; font: 600 11px/18px var(--sans); text-align: center; pointer-events: none; }
@@ -98,11 +145,27 @@
 </style>
 </head>
 <body>
+<header id="topo">
+  <button type="button" id="voltar" title="Voltar ao modelo 3D">← 3D</button>
+  <h1>Cenas — <span id="titulo-obra"></span></h1>
+  <span class="sp"></span>
+  <button type="button" id="btn-desfazer" title="Desfazer (Ctrl+Z)">↶</button><button type="button" id="btn-refazer" title="Refazer (Ctrl+Y)">↷</button>
+  <button type="button" id="salvar-imagem" title="A imagem da cena como está na tela, na pasta cenas da obra">Salvar imagem</button>
+  <select id="render-tamanho" aria-label="Tamanho da imagem renderizada"></select>
+  <button type="button" id="renderizar" class="forte" title="A imagem final em alta: sem serrilhado nas peças finas e com a sombra mais fina">Renderizar</button>
+</header>
+
+<aside id="esq">
+  <h2>Cenas da obra</h2>
+  <div id="cartoes"></div>
+  <select id="lista" aria-label="Cenas do projeto"></select>
+  <button type="button" id="nova-3d" class="forte" title="Grava a vista de agora do 3D como uma cena (a câmera, as camadas, o estilo e o sol)">+ Nova cena pela vista</button>
+  <button type="button" id="nova" title="A estrutura encaixada numa foto tirada no local">📷 Nova cena pela foto…</button>
+  <input type="file" id="arquivo" hidden accept=".jpg,.jpeg,.png">
+  <p class="dica">As cenas do 3D são as mesmas das abas do modo ver. Botão direito num cartão: renomear, duplicar, mover, apagar.</p>
+</aside>
+
 <div id="lado">
-  <div class="linha"><button type="button" id="voltar" title="Voltar ao modelo 3D">← 3D</button><h1>Cena</h1></div>
-  <p class="dica">A estrutura encaixada numa foto tirada no local, para a apresentação. Só a cena muda: o projeto não.</p>
-  <div class="linha"><select id="lista" aria-label="Cenas do projeto"></select>
-    <button type="button" id="nova">Nova cena (foto)…</button><input type="file" id="arquivo" hidden accept=".jpg,.jpeg,.png"></div>
   <!-- as camadas valem também sem cena (usuário, 05/11: "na tela de configuração de cenas tenham as camadas para poder
        ocultar e habilitar"): aqui antes da foto; com a cena aberta, vão para o lugar delas no corpo (#lugar-camadas) -->
   <!-- o sol também (usuário, 05/11: "não consigo mexer no sol da cena"): antes da foto, mexe no 3D; com a cena, #lugar-sol -->
@@ -110,6 +173,23 @@
     <div id="sol-caixa"></div></div>
   <div id="camadas-caixa"><p class="titulo-secao">Camadas</p>
     <div id="camadas"></div></div>
+
+  <!-- a cena do 3D (11/11): o tratamento à direita -->
+  <div id="corpo3d" hidden>
+    <div class="linha"><input type="text" id="cena-nome" aria-label="Nome da cena"></div>
+    <div class="secao3d"><h2>Enquadramento</h2>
+      <div class="linha-opcao">Proporção <span class="opcoes" id="proporcao"><button type="button" data-v="16:9">16:9</button><button type="button" data-v="4:3">4:3</button><button type="button" data-v="3:4">3:4</button><button type="button" data-v="A3">A3</button><button type="button" data-v="livre">livre</button></span></div>
+      <label class="faixa">Lente <input type="range" id="lente3d" min="10" max="100" step="0.5"><span id="lente3d-val"></span></label></div>
+    <div class="secao3d"><h2>O que aparece</h2><div id="lugar-camadas-3d"></div></div>
+    <div class="secao3d"><h2>Estilo</h2>
+      <div class="linha-opcao">Cores <span class="opcoes" id="pintar3d"><button type="button" data-v="material">material</button><button type="button" data-v="sistema">sistema</button><button type="button" data-v="camada">camada</button><button type="button" data-v="perfil">perfil</button></span></div>
+      <div class="linha-opcao">Arestas <span class="opcoes" id="arestas3d"><button type="button" data-v="1">finas</button><button type="button" data-v="0">sem</button></span></div>
+      <div class="linha-opcao">Fundo <span class="opcoes" id="fundo3d"><button type="button" data-v="ceu">céu</button><button type="button" data-v="branco">branco</button><button type="button" data-v="transparente">transparente</button><button type="button" data-v="terreno">terreno</button></span></div></div>
+    <div class="secao3d"><h2>Luz</h2><div id="lugar-sol-3d"></div></div>
+    <div class="linha"><button type="button" id="apagar-3d">Apagar a cena</button></div>
+  </div>
+
+  <!-- a cena pela foto (26/10) -->
   <div id="corpo" hidden>
     <div id="pronta" hidden><p><b>Cena salva.</b> Os pontos e o encaixe ficam escondidos.</p>
       <div class="linha"><button type="button" id="editar" title="Mostrar de novo os pontos e o encaixe">Editar cena</button></div></div>
@@ -138,20 +218,26 @@
     <div class="linha"><button type="button" id="novo-contorno">+ Contorno</button>
       <label><input type="checkbox" id="frente-ver"> Ver na tela</label></div>
     <div id="contornos"></div>
-    <p class="titulo-secao">3. Imagem</p>
-    <div class="linha"><button type="button" id="salvar-imagem" class="forte">Salvar imagem</button><button type="button" id="apagar">Apagar a cena</button></div>
-    <div class="linha"><select id="render-tamanho" aria-label="Tamanho da imagem renderizada"></select>
-      <button type="button" id="renderizar" class="forte" title="A imagem final em alta: maior que a foto, sem serrilhado nas peças finas e com a sombra mais fina">Renderizar</button></div>
-    <p class="dica">Renderizar: a imagem final, maior que a foto, com as peças finas sem serrilhado e a sombra mais definida
-      (leva alguns segundos). Vai para a pasta cenas como "(render).jpg", sem apagar a do Salvar imagem.</p>
+    <div class="linha"><button type="button" id="apagar">Apagar a cena</button></div>
   </div>
+  <p class="dica" id="dica-imagem">Salvar imagem: a cena como está. Renderizar: a imagem final, maior, com as peças finas sem
+    serrilhado e a sombra mais definida (leva alguns segundos). Vão para a pasta cenas da obra.</p>
   <div id="aviso" role="status"></div>
 </div>
+
 <div id="palco">
   <img id="foto" alt="" hidden>
   <canvas id="tela"></canvas>
   <div id="marcas"></div>
   <svg id="frente-svg"></svg>
+  <div id="quadro" hidden><span id="quadro-rotulo"></span></div>
+  <div id="barra-palco" hidden>
+    <button type="button" data-vista="iso">Iso</button><button type="button" data-vista="topo">Topo</button>
+    <button type="button" data-vista="frente">Frente</button><button type="button" data-vista="lado">Lado</button>
+    <span class="sp"></span>
+    <button type="button" id="desfazer-vista" title="A vista de volta à da cena gravada">Voltar à vista da cena</button>
+    <button type="button" id="atualizar-vista" class="forte" title="Grava a vista de agora na cena (a câmera e a lente)">Atualizar a cena com esta vista</button>
+  </div>
   <div id="carregando">Abrindo o modelo 3D…</div>
 </div>
 <script src="/vivo.js"></script>

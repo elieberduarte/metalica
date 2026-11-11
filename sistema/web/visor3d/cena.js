@@ -9,6 +9,12 @@
 //
 // Duas vistas no mesmo palco: a FOTO (a foto parada, o 3D transparente por cima pela câmera da cena; os cliques marcam a
 // foto) e o 3D (o modelo com o terreno, girando como no modo ver; o clique marca o ponto do modelo).
+//
+// A TELA DAS CENAS (11/11, amostra-4 aprovada: "a tela de tratamento, criação, exportação, renderização das cenas"): esta
+// página é a de todas as cenas da obra — as do 3D (tipo "3d", as mesmas das abas do modo ver, cenas3d.js) e as pela foto.
+// À esquerda os cartões com a miniatura e a situação do render; no palco, a cena do 3D com o QUADRO da imagem na proporção
+// dela (fora dele, escurecido: é o que não sai) e a lente da cena; à direita o tratamento — enquadramento, o que aparece,
+// estilo (cores, arestas, fundo), luz. A lente gravada (camera.fov) é a do quadro: a tela abre a dela para o quadro caber.
 
 import * as THREE from 'three';
 import { Visor3D, SOMBRA_GLSL } from './visor3d.js';
@@ -31,6 +37,9 @@ let situacaoAberta = null, sistemas = [], situacaoProjeto = null;
 let selecionado = null, arrasto = null, tempoAjuste = 0, quadroAjuste = 0;
 let tempoLente = 0, tempoOpac = 0, tempoCamadas = 0;
 const foto = $('#foto'), tela = $('#tela'), marcas = $('#marcas'), palco = $('#palco');
+const ehFoto = () => !!cena && cena.tipo !== '3d';
+const eh3d = () => !!cena && cena.tipo === '3d';
+let todasCenas = [];                                        // a lista da esquerda (as do 3D e as da foto)
 
 function aviso(txt) { $('#aviso').textContent = txt || ''; }
 
@@ -55,9 +64,14 @@ async function abrir() {
     const p = encodeURIComponent(PROJETO);
     location.href = window.top !== window ? `/visor3d/ver3d.html?projeto=${p}` : `/dividida?projeto=${p}&vista=3d`;
   };
-  // a cobertura retrátil na situação da cena (aberta ou retraída): o 3D leve dela
-  const cenas = soDeFoto((await pedir(API)).cenas);
-  const escolhida =cenas.find(c => c.id === q.get('cena')) || cenas[cenas.length - 1] || null;
+  try {                                                     // o nome da obra no alto
+    const j = await (await fetch(`/api/projetos/${encodeURIComponent(PROJETO)}`, { cache: 'no-store' })).json();
+    $('#titulo-obra').textContent = (j.projeto || j).nome || PROJETO;
+  } catch (e) { $('#titulo-obra').textContent = PROJETO; }
+  // a cobertura retrátil na situação da cena (aberta ou retraída): o 3D leve dela. Sem a cena pedida, a última da foto
+  // (como antes) ou a primeira do 3D
+  const todas = (await pedir(API)).cenas || [], cenas = soDeFoto(todas);
+  const escolhida = todas.find(c => c.id === q.get('cena')) || cenas[cenas.length - 1] || todas[0] || null;
   situacaoAberta = (escolhida && escolhida.situacao) || null;
   const url3d = situacaoAberta ? `${API_3D}/${situacaoAberta}` : API_3D;
   let r;
@@ -98,23 +112,49 @@ async function abrir() {
 
 // ------------------------------------------------------------------ as cenas
 
-// as cenas do 3D (tipo "3d", 11/11: cenas3d.js no modo ver) ficam na mesma lista do servidor. Aqui se abrem as da foto;
-// as do 3D aparecem na lista também (11/11: "a ferramenta de cenas não estão se conversando, as cenas criadas não aparecem
-// aqui") e, escolhida uma, o modo ver abre nela.
+// as cenas do 3D (tipo "3d", 11/11: cenas3d.js no modo ver) e as da foto na mesma lista do servidor e nesta tela (11/11:
+// "a ferramenta de cenas não estão se conversando, as cenas criadas não aparecem aqui"; a tela das Cenas, amostra-4)
 const soDeFoto = (lista) => (lista || []).filter(c => c.tipo !== '3d');
-const PENDENTE_3D = 'metalica.cena3dPendente';           // a mesma chave do cenas3d.js
+
+/** A situação da imagem da cena no cartão: o render (feito, velho — mais velho que a cena —, ou nenhum). */
+function situacaoDoRender(c) {
+  const data = (s) => s ? `${s.slice(8, 10)}/${s.slice(5, 7)}` : '';
+  if (!c.render_em) return '<span>sem render</span>';
+  return c.render_em < (c.alterada || '') ? `<span class="velho" title="A cena mudou depois do render">render velho</span>`
+    : `<span class="ok">render ${data(c.render_em)} ✓</span>`;
+}
+
+function miniaturaDe(c) {
+  if (c.miniatura) return `${API}/${encodeURIComponent(c.id)}/miniatura.jpg?v=${encodeURIComponent(c.miniatura)}`;
+  return c.tipo === '3d' ? '' : `${API}/${encodeURIComponent(c.id)}/foto.jpg?v=${encodeURIComponent(c.alterada || '')}`;
+}
+
+function desenharCartoes() {
+  $('#cartoes').innerHTML = todasCenas.map(c => {
+    const mini = miniaturaDe(c);
+    return `<button type="button" class="cartao-cena${cena && cena.id === c.id ? ' ativa' : ''}" data-cena="${esc(c.id)}">
+      <span class="mini"${mini ? ` style="background-image:url('${esc(mini)}')"` : ''}></span>
+      <span><b title="${esc(c.nome)}">${esc(c.nome)}</b><small><span class="tipo">${c.tipo === '3d' ? '3D' : '📷 foto'}</span>
+        ${c.tipo === '3d' ? esc(c.proporcao || '16:9') + ' · ' : ''}${situacaoDoRender(c)}</small></span></button>`;
+  }).join('') || '<p class="dica">Nenhuma cena ainda: arrume a vista e grave (+ Nova cena pela vista), ou comece por uma foto do local.</p>';
+}
 
 async function listar(escolher) {
-  const todas = (await pedir(API)).cenas || [];
-  const cenas = soDeFoto(todas), do3d = todas.filter(c => c.tipo === '3d');
-  const sel = $('#lista');
-  const opcoes = (lista, pre = '') => lista.map(c => `<option value="${pre}${esc(c.id)}">${pre ? '🎬 ' : ''}${esc(c.nome)}</option>`).join('');
-  sel.innerHTML = (cenas.length ? (do3d.length ? `<optgroup label="Cenas pela foto">${opcoes(cenas)}</optgroup>` : opcoes(cenas))
-    : `<option value="">(nenhuma cena pela foto${do3d.length ? '' : ': comece pela foto'})</option>`)
-    + (do3d.length ? `<optgroup label="Cenas do 3D (abrem no modo ver)">${opcoes(do3d, '3d:')}</optgroup>` : '');
-  const id = escolher && cenas.some(c => c.id === escolher) ? escolher : (cenas[cenas.length - 1] || {}).id;
-  if (id) { sel.value = id; await abrirCena(id); }
-  else { cena = null; $('#corpo').hidden = true; foto.hidden = true; mostrarModo('3d'); desenharCamadas(); mostrarSol(); }
+  todasCenas = (await pedir(API)).cenas || [];
+  const cenas = soDeFoto(todasCenas);
+  $('#lista').innerHTML = todasCenas.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('')
+    || '<option value="">(nenhuma cena: comece pela foto)</option>';
+  const id = escolher && todasCenas.some(c => c.id === escolher) ? escolher : ((cenas[cenas.length - 1] || todasCenas[0] || {}).id);
+  if (id) { $('#lista').value = id; await abrirCena(id); }
+  else { sairDaCena(); cena = null; $('#corpo').hidden = true; $('#corpo3d').hidden = true; foto.hidden = true; mostrarModo('3d'); desenharCamadas(); mostrarSol(); }
+  desenharCartoes();
+  mostrarBotoes();
+}
+
+/** Recarrega só os cartões (a situação do render, a miniatura, o nome), sem trocar de cena. */
+async function atualizarCartoes() {
+  try { todasCenas = (await pedir(API)).cenas || []; } catch (e) { return; }
+  desenharCartoes();
 }
 
 async function abrirCena(id) {
@@ -123,9 +163,15 @@ async function abrirCena(id) {
     location.href = `?projeto=${encodeURIComponent(PROJETO)}&cena=${encodeURIComponent(id)}`;
     return;
   }
+  if (eh3d() || nova.tipo === '3d') sairDaCena();
   cena = nova;
   desfeitos.length = refeitos.length = 0;                   // o histórico é de uma cena só
   history.replaceState(null, '', `?projeto=${encodeURIComponent(PROJETO)}&cena=${encodeURIComponent(id)}`);
+  $('#lista').value = id;
+  desenharCartoes();
+  mostrarBotoes();
+  if (nova.tipo === '3d') { abrirCena3d(); return; }
+  $('#corpo3d').hidden = true;
   foto.hidden = false;
   foto.src = `${API}/${encodeURIComponent(id)}/foto.jpg?v=${encodeURIComponent(cena.alterada || '')}`;
   try { await foto.decode(); } catch (e) { aviso('A foto não abriu.'); }
@@ -144,6 +190,372 @@ async function abrirCena(id) {
   mostrarSol();
   mostrarConcluida();
   desenharContornos();
+}
+
+// ------------------------------------------------------------------ a cena do 3D na tela das Cenas (11/11)
+
+const PROPORCOES = { '16:9': 16 / 9, '4:3': 4 / 3, '3:4': 3 / 4, 'A3': 420 / 297, 'livre': null };
+const FOV_PADRAO = 45;
+const CEU = ['#8fb8de', '#dfe9f3'];                         // o céu: o alto e o horizonte (o piso some nessa cor)
+let fovCena = FOV_PADRAO, vistaMudou = false, quadroAtual = null, texCeu = null, tempoMini = 0, ouvindoVista = false;
+
+/** Os botões que dependem da cena (a imagem e o render). */
+function mostrarBotoes() {
+  const pode = !!cena && (eh3d() || !!cena.camera);
+  $('#salvar-imagem').disabled = $('#renderizar').disabled = !pode || renderizando;
+  $('#render-tamanho').disabled = !cena;
+}
+
+/** Saindo de uma cena do 3D (para a da foto ou nenhuma): o estilo de sempre de volta. */
+function sairDaCena() {
+  if (!eh3d() || !visor) return;
+  visor.pintarPor('material');
+  visor.ligarArestas(true);
+  document.body.classList.remove('fundo-transparente');
+  visor.definirTema(escuro());
+  if (terreno && terreno.grupo) terreno.grupo.visible = true;
+  visor.camera.fov = FOV_PADRAO;
+  visor.camera.updateProjectionMatrix();
+  $('#quadro').hidden = $('#barra-palco').hidden = true;
+}
+
+function abrirCena3d() {
+  foto.hidden = true;
+  $('#corpo').hidden = true;
+  $('#corpo3d').hidden = false;
+  desenho = null; contornoSel = null; document.body.classList.remove('desenhando', 'concluida');
+  tirarParedes();
+  chaoSombra && (chaoSombra.visible = false);
+  mostrarModo('3d');
+  aplicarVistaDaCena();
+  aplicarEstilo3d();
+  desenharCamadas();
+  marcarSituacao();
+  mostrarTamanhos();
+  mostrarSol();
+  mostrarPainel3d();
+  if (!cena.miniatura) agendarMiniatura(300);              // a cena feita no modo ver ainda sem miniatura
+}
+
+/** O quadro da imagem no palco (centrado: a tela inteira é o 3D e o quadro é o recorte do meio) e a lente da tela que
+ *  mostra no quadro o que a lente da cena mostra na imagem. */
+function ajustarQuadro() {
+  const q3 = $('#quadro'), barra = $('#barra-palco');
+  if (!eh3d() || modo !== '3d' || !visor) { q3.hidden = barra.hidden = true; quadroAtual = null; return; }
+  const W = palco.clientWidth, H = palco.clientHeight, lado = 24, alto = 60;    // embaixo, a barra das vistas
+  const p = PROPORCOES[cena.proporcao || '16:9'] || (W - 2 * lado) / (H - 2 * alto);
+  let qw = W - 2 * lado, qh = qw / p;
+  if (qh > H - 2 * alto) { qh = H - 2 * alto; qw = qh * p; }
+  qw = Math.max(40, Math.round(qw)); qh = Math.max(30, Math.round(qh));
+  quadroAtual = { x: Math.round((W - qw) / 2), y: Math.round((H - qh) / 2), w: qw, h: qh, p: qw / qh };
+  Object.assign(q3.style, { left: quadroAtual.x + 'px', top: quadroAtual.y + 'px', width: qw + 'px', height: qh + 'px' });
+  $('#quadro-rotulo').textContent = `Quadro da imagem · ${cena.proporcao || '16:9'} · lente ${nf(fovCena, 0)}°`;
+  q3.hidden = barra.hidden = false;
+  const t = Math.tan(fovCena * Math.PI / 360) * H / qh;
+  visor.camera.fov = Math.min(170, Math.atan(t) * 360 / Math.PI);
+  visor.camera.updateProjectionMatrix();
+  visor.pedirQuadro();
+}
+
+/** A câmera da cena no visor (a posição e o alvo; a lente pelo quadro). */
+function aplicarVistaDaCena() {
+  const c = cena.camera || {};
+  fovCena = +c.fov || FOV_PADRAO;
+  if (c.posicao && c.alvo) visor.definirCamera({ posicao: c.posicao, alvo: c.alvo });
+  ajustarQuadro();
+  marcarVista(false);
+  if (!ouvindoVista) {                                      // girar/andar/aproximar: a vista mudou (Atualizar grava)
+    ouvindoVista = true;
+    visor.controles.addEventListener('change', () => { if (eh3d() && !renderizando && !refinando) marcarVista(true); });
+  }
+}
+
+function marcarVista(mudou) {
+  vistaMudou = mudou;
+  $('#atualizar-vista').classList.toggle('pendente', mudou);
+  $('#desfazer-vista').disabled = !mudou;
+}
+
+/** A câmera de agora como a da cena (mm do projeto, a lente do quadro). */
+function cameraDaTela() {
+  const c = visor.lerCamera();
+  return { posicao: c.posicao, alvo: c.alvo, fov: Math.round(fovCena * 100) / 100, projecao: 'perspectiva' };
+}
+
+function pintarComo(modo3d) {
+  if (modo3d === 'sistema' && sistemas.length) {
+    visor.pintarPor('perfil');                              // zera as cores; depois a de cada sistema
+    const c = document.createElement('canvas').getContext('2d');
+    for (const s of sistemas) {
+      c.fillStyle = '#000'; c.fillStyle = s.cor || '#888';
+      const h = String(c.fillStyle), rr = parseInt(h.slice(1, 3), 16), gg = parseInt(h.slice(3, 5), 16), bb = parseInt(h.slice(5, 7), 16);
+      for (const i of s.ids) { visor.corBase[i * 3] = rr; visor.corBase[i * 3 + 1] = gg; visor.corBase[i * 3 + 2] = bb; }
+    }
+    visor._repintar();
+  } else visor.pintarPor(['camada', 'perfil'].includes(modo3d) ? modo3d : 'material');
+}
+
+function texturaDoCeu() {
+  if (texCeu) return texCeu;
+  const cv = document.createElement('canvas'); cv.width = 4; cv.height = 256;
+  const g = cv.getContext('2d'), grad = g.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, CEU[0]); grad.addColorStop(1, CEU[1]);
+  g.fillStyle = grad; g.fillRect(0, 0, 4, 256);
+  texCeu = new THREE.CanvasTexture(cv);
+  texCeu.colorSpace = THREE.SRGBColorSpace;
+  return texCeu;
+}
+
+/** O fundo da cena do 3D: céu (degradê, o piso se perde no horizonte), branco (sem as linhas do piso), transparente (sem
+ *  fundo nem piso: PNG) ou o terreno (a imagem do lugar, quando a obra tem). */
+function aplicarFundo() {
+  const f = cena.fundo || 'ceu', u = visor.piso && visor.piso.material.uniforms;
+  visor.definirTema(escuro());                              // o piso e o fundo do tema; depois o da cena
+  document.body.classList.toggle('fundo-transparente', f === 'transparente');
+  if (terreno && terreno.grupo) terreno.grupo.visible = f === 'terreno';
+  if (visor.piso) visor.piso.visible = f !== 'transparente';
+  if (f === 'ceu') {
+    visor.cena.background = texturaDoCeu();
+    if (u) u.uFundo.value.setStyle(CEU[1], THREE.LinearSRGBColorSpace);
+  } else if (f === 'branco') {
+    visor.cena.background = new THREE.Color().setStyle('#ffffff', THREE.LinearSRGBColorSpace);
+    if (u) { u.uFundo.value.setStyle('#ffffff', THREE.LinearSRGBColorSpace); u.uAlfa.value = 0; }
+  } else if (f === 'transparente') visor.cena.background = null;
+  visor.pedirQuadro();
+}
+
+function aplicarEstilo3d() {
+  pintarComo(cena.pintar || 'material');
+  visor.ligarArestas(cena.arestas !== false);
+  aplicarFundo();
+  aplicarCamadas();
+}
+
+function mostrarPainel3d() {
+  $('#cena-nome').value = cena.nome || '';
+  const marcar = (sel, v) => { for (const b of document.querySelectorAll(`${sel} button`)) b.classList.toggle('ligado', b.dataset.v === v); };
+  marcar('#proporcao', cena.proporcao || '16:9');
+  marcar('#pintar3d', cena.pintar && cena.pintar !== 'editor' ? cena.pintar : 'material');
+  marcar('#arestas3d', cena.arestas === false ? '0' : '1');
+  marcar('#fundo3d', cena.fundo || 'ceu');
+  const bt = document.querySelector('#fundo3d [data-v=terreno]');
+  bt.disabled = !(terreno && terreno.malha);
+  bt.title = bt.disabled ? 'A obra ainda não tem o terreno (modo ver › Terreno)' : '';
+  $('#lente3d').value = fovCena; $('#lente3d-val').textContent = nf(fovCena, 0) + '°';
+  const pai = document.querySelector('#pintar3d [data-v=sistema]');
+  pai.hidden = sistemas.length < 2;
+}
+
+/** A miniatura do cartão: a cena do 3D pequena (como no render, sem o quadro), gravada no servidor. */
+function agendarMiniatura(espera = 1200) {
+  clearTimeout(tempoMini);
+  tempoMini = setTimeout(() => gerarMiniatura().catch(e => console.warn('miniatura da cena', e)), espera);
+}
+
+async function gerarMiniatura() {
+  if (!eh3d() || renderizando || !quadroAtual) return;
+  const id = cena.id, p = quadroAtual.p, w = 320, h = Math.max(60, Math.round(320 / p));
+  // a vista GRAVADA da cena (a da tela pode ter girado sem "Atualizar"); depois, a da tela de volta
+  const tela0 = visor.lerCamera(), c = cena.camera || {};
+  if (vistaMudou && c.posicao && c.alvo) visor.definirCamera({ posicao: c.posicao, alvo: c.alvo });
+  let img;
+  try { img = await imagemDaCena3d(w, h, 1, null, false); }
+  finally { if (vistaMudou) { visor.definirCamera(tela0); marcarVista(true); } }
+  const jpg = document.createElement('canvas');             // o JPEG não tem transparência: o vazado vai sobre o branco
+  jpg.width = w; jpg.height = h;
+  const g = jpg.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0);
+  const blob = await new Promise(res => jpg.toBlob(res, 'image/jpeg', 0.85));
+  const r = await pedir(`${API}/${encodeURIComponent(id)}/miniatura`, undefined, { dados: blob, nome: 'miniatura.jpg' });
+  const cartao = todasCenas.find(x => x.id === id);
+  if (cartao) { cartao.miniatura = r.miniatura; desenharCartoes(); }
+  if (cena && cena.id === id) cena.miniatura = r.miniatura;
+}
+
+/** A imagem da cena do 3D em w × h: a lente da cena, o quadro inteiro; o céu pintado antes (o degradê da tela se repetiria
+ *  em cada bloco do render) e o 3D por cima. Devolve a tela com a lente do quadro. */
+async function imagemDaCena3d(w, h, ss = 1, aoBloco = null, comMarca = true) {
+  const f = cena.fundo || 'ceu', fundoAntes = visor.cena.background;
+  visor.camera.fov = fovCena;
+  if (f === 'ceu') visor.cena.background = null;
+  try {
+    const img = await montarImagem(w, h, ss, aoBloco, { comFoto: false, frente: false,
+      antes: f === 'ceu' ? (g) => { const grad = g.createLinearGradient(0, 0, 0, h); grad.addColorStop(0, CEU[0]); grad.addColorStop(1, CEU[1]); g.fillStyle = grad; g.fillRect(0, 0, w, h); } : null });
+    if (comMarca && window.marcaDagua) await window.marcaDagua(img, cena);       // a marca d'água (a etapa seguinte)
+    return img;
+  } finally {
+    visor.cena.background = fundoAntes;
+    ajustarQuadro();
+  }
+}
+
+/** Uma caixa de texto da tela (o prompt do navegador trava os testes e o quadro): o texto ou null. */
+function pedirTexto(titulo, valor) {
+  return new Promise((fim) => {
+    const fundo = document.createElement('div');
+    fundo.id = 'caixa-cena';
+    fundo.style.cssText = 'position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.25)';
+    fundo.innerHTML = `<div style="width:min(360px,calc(100vw - 32px));padding:14px 16px;background:var(--painel);border:1px solid var(--borda);border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.3)">
+      <b>${esc(titulo)}</b><input type="text" value="${esc(valor)}" style="width:100%;box-sizing:border-box;margin:10px 0;padding:6px 8px;font:13px var(--sans)">
+      <div class="linha"><button type="button" class="forte" data-r="ok">OK</button><button type="button" data-r="nao">Cancelar</button></div></div>`;
+    document.body.append(fundo);
+    const campo = fundo.querySelector('input');
+    const sair = (sim) => { fundo.remove(); fim(sim ? campo.value.trim() || null : null); };
+    fundo.querySelector('[data-r=ok]').onclick = () => sair(true);
+    fundo.querySelector('[data-r=nao]').onclick = () => sair(false);
+    fundo.onkeydown = (ev) => { ev.stopPropagation(); if (ev.key === 'Enter') sair(true); else if (ev.key === 'Escape') sair(false); };
+    campo.focus(); campo.select();
+  });
+}
+
+/** A cena nova pela vista de agora: a câmera (a lente do quadro 16:9 na primeira), as camadas, o sol e o estilo de agora. */
+async function novaCena3d(nome) {
+  if (!visor) return null;
+  if (nome === undefined) {
+    nome = await pedirTexto('Nova cena pela vista', `Cena ${todasCenas.filter(c => c.tipo === '3d').length + 1}`);
+    if (nome === null) return null;
+  }
+  let fov = fovCena;
+  if (!eh3d()) {                                            // de fora de uma cena: o que se vê na tela cabe no quadro 16:9
+    const W = palco.clientWidth, H = palco.clientHeight, qh = Math.min(H - 120, (W - 48) / (16 / 9));
+    fov = Math.atan(Math.tan(visor.camera.fov * Math.PI / 360) * qh / H) * 360 / Math.PI;
+  }
+  const base = eh3d() ? { pintar: cena.pintar, arestas: cena.arestas, fundo: cena.fundo, proporcao: cena.proporcao } : { proporcao: '16:9', fundo: 'ceu' };
+  const c = visor.lerCamera();
+  try {
+    const nova = await pedir(`${API}/nova-3d`, { nome, ...base, camera: { posicao: c.posicao, alvo: c.alvo, fov, projecao: 'perspectiva' },
+      desligadas: desligadasAgora(), sol: solDaCena(), situacao: situacaoAberta });
+    await listar(nova.id);
+    aviso(`Cena ${nova.nome} gravada (também nas abas do modo ver).`);
+    return nova;
+  } catch (e) { aviso('A cena não foi gravada: ' + e.message); return null; }
+}
+
+async function atualizarVista() {
+  if (!eh3d()) return;
+  lembrar();
+  try {
+    await gravar({ camera: cameraDaTela() });
+    marcarVista(false);
+    agendarMiniatura(200);
+    atualizarCartoes();
+    aviso('A cena ficou com esta vista.');
+  } catch (e) { aviso('A vista não foi gravada: ' + e.message); }
+}
+
+/** Uma mudança de estilo/enquadramento da cena do 3D: na tela já, gravada logo depois (o valor de agora). */
+let tempo3d = 0;
+function mudar3d(campos, tipo) {
+  lembrar(tipo || null);
+  Object.assign(cena, campos);
+  aplicarEstilo3d();
+  ajustarQuadro();
+  mostrarPainel3d();
+  clearTimeout(tempo3d);
+  const valor = JSON.parse(JSON.stringify(campos));
+  tempo3d = setTimeout(() => gravar(valor).then(() => { agendarMiniatura(); atualizarCartoes(); })
+    .catch(e => aviso('Não foi gravado: ' + e.message)), tipo ? 500 : 0);
+}
+
+let menuCartao = null;
+function fecharMenuCartao() { if (menuCartao) { menuCartao.remove(); menuCartao = null; } }
+function menuDoCartao(c, el) {
+  fecharMenuCartao();
+  menuCartao = document.createElement('div');
+  menuCartao.id = 'menu-cartao';
+  const ordem = todasCenas.map(x => x.id), k = ordem.indexOf(c.id);
+  const mover = async (d) => {
+    const j = k + d; if (j < 0 || j >= ordem.length) return;
+    [ordem[k], ordem[j]] = [ordem[j], ordem[k]];
+    try { todasCenas = (await pedir(`${API}/ordem`, { ids: ordem })).cenas; desenharCartoes(); } catch (e) { aviso('Não deu: ' + e.message); }
+  };
+  const itens = [['Renomear…', async () => {
+      const nome = await pedirTexto('Renomear a cena', c.nome);
+      if (!nome || nome === c.nome) return;
+      await pedir(`${API}/${encodeURIComponent(c.id)}`, { nome });
+      if (cena && cena.id === c.id) { cena.nome = nome; mostrarPainel3d(); }
+      atualizarCartoes();
+    }]];
+  if (c.tipo === '3d') itens.push(['Duplicar', async () => {
+    const campos = ['camera', 'desligadas', 'pintar', 'arestas', 'planta', 'piso_oculto', 'sol', 'situacao', 'guarda', 'proporcao', 'fundo'];
+    const copia = Object.fromEntries(campos.filter(f => c[f] !== undefined).map(f => [f, c[f]]));
+    try { const n = await pedir(`${API}/nova-3d`, { ...copia, nome: c.nome + ' (cópia)' }); await listar(n.id); } catch (e) { aviso('Não deu: ' + e.message); }
+  }]);
+  itens.push(['Mover para cima', () => mover(-1)], ['Mover para baixo', () => mover(1)], ['Apagar…', () => apagarCena(c)]);
+  for (const [t, fazer] of itens) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.dataset.acao = t;
+    b.onclick = () => { fecharMenuCartao(); fazer(); };
+    menuCartao.append(b);
+  }
+  document.body.append(menuCartao);
+  const r = el.getBoundingClientRect();
+  menuCartao.style.left = `${r.right - 20}px`;
+  menuCartao.style.top = `${Math.min(r.top, innerHeight - menuCartao.offsetHeight - 8)}px`;
+  setTimeout(() => addEventListener('pointerdown', function fora(ev) {
+    if (menuCartao && !menuCartao.contains(ev.target)) { fecharMenuCartao(); removeEventListener('pointerdown', fora, true); }
+  }, true), 0);
+}
+
+async function apagarCena(c) {
+  const texto = c.tipo === '3d' ? `Apagar a cena "${c.nome}"? (o modelo não muda; a imagem salva na pasta cenas fica)`
+    : `Apagar a cena "${c.nome}"? A foto e os pontos saem do projeto (a imagem salva na pasta cenas fica).`;
+  if (!confirm(texto)) return;
+  try {
+    await pedir(`${API}/${encodeURIComponent(c.id)}/apagar`, {});
+    if (cena && cena.id === c.id) { sairDaCena(); cena = null; }
+    aviso('Cena apagada.');
+    await listar();
+  } catch (err) { aviso('A cena não foi apagada: ' + err.message); }
+}
+
+function ligar3d() {
+  $('#cartoes').onclick = (e) => {
+    const b = e.target.closest('.cartao-cena');
+    if (!b || renderizando) return;
+    cancelar();
+    if (!cena || cena.id !== b.dataset.cena) abrirCena(b.dataset.cena).catch(err => aviso('A cena não abriu: ' + err.message));
+  };
+  $('#cartoes').oncontextmenu = (e) => {
+    const b = e.target.closest('.cartao-cena');
+    if (!b) return;
+    e.preventDefault();
+    const c = todasCenas.find(x => x.id === b.dataset.cena);
+    if (c) menuDoCartao(c, b);
+  };
+  $('#nova-3d').onclick = () => novaCena3d();
+  $('#apagar-3d').onclick = () => cena && apagarCena(cena);
+  $('#cena-nome').onchange = async () => {
+    const nome = $('#cena-nome').value.trim();
+    if (!eh3d() || !nome || nome === cena.nome) return;
+    try { await gravar({ nome }); atualizarCartoes(); } catch (e) { aviso('O nome não foi gravado: ' + e.message); }
+  };
+  $('#cena-nome').onkeydown = (e) => { if (e.key === 'Enter') e.target.blur(); };
+  const opcoes = (sel, campo, conv = v => v) => {
+    $(sel).onclick = (e) => {
+      const b = e.target.closest('button[data-v]');
+      if (!b || !eh3d() || b.disabled) return;
+      mudar3d({ [campo]: conv(b.dataset.v) });
+    };
+  };
+  opcoes('#proporcao', 'proporcao');
+  opcoes('#pintar3d', 'pintar');
+  opcoes('#arestas3d', 'arestas', v => v === '1');
+  opcoes('#fundo3d', 'fundo');
+  $('#lente3d').oninput = () => {
+    if (!eh3d()) return;
+    lembrar('lente3d');
+    fovCena = +$('#lente3d').value;
+    $('#lente3d-val').textContent = nf(fovCena, 0) + '°';
+    ajustarQuadro();
+    cena.camera = { ...(cena.camera || {}), fov: fovCena };
+    clearTimeout(tempo3d);
+    tempo3d = setTimeout(() => gravar({ camera: cameraDaTela() }).then(() => { marcarVista(false); agendarMiniatura(); })
+      .catch(e => aviso('A lente não foi gravada: ' + e.message)), 600);
+  };
+  for (const b of document.querySelectorAll('#barra-palco [data-vista]')) b.onclick = () => { visor.enquadrar(b.dataset.vista); marcarVista(true); };
+  $('#atualizar-vista').onclick = () => atualizarVista();
+  $('#desfazer-vista').onclick = () => { if (eh3d()) { aplicarVistaDaCena(); aviso('A vista da cena de volta.'); } };
+  $('#btn-desfazer').onclick = () => desfazer();
+  $('#btn-refazer').onclick = () => refazer();
 }
 
 // ------------------------------------------------------------------ camadas e cobertura retrátil
@@ -221,9 +633,9 @@ function mostrarModo(m) {
   modo = m;
   document.body.classList.toggle('modo-3d', m === '3d');
   $('#ver').textContent = m === '3d' ? 'Ver a foto' : 'Ver o 3D';
-  $('#ver').disabled = !cena;
+  $('#ver').disabled = !ehFoto();
   if (!visor) return;
-  if (m === 'foto' && cena) {
+  if (m === 'foto' && ehFoto()) {
     const r = retanguloFoto();
     posicionar(foto, r); posicionar(tela, r); posicionar(telaFina, r); posicionar(marcas, r); posicionar(svgFrente, r);
     visor.cena.background = null;
@@ -248,18 +660,20 @@ function mostrarModo(m) {
     tela.style.visibility = 'visible';
     visor.redimensionar();
     atualizarChaoSombra();
-    if (camera3d) {
+    if (eh3d()) aplicarFundo();                             // a cena do 3D: a câmera é a dela (aplicarVistaDaCena)
+    else if (camera3d) {
       visor.camera.position.copy(camera3d.pos); visor.camera.quaternion.copy(camera3d.q); visor.camera.fov = camera3d.fov;
       visor.controles.target.copy(camera3d.alvo); visor.camera.updateProjectionMatrix();
     } else visor.enquadrar('iso');
     visor.pedirQuadro();
   }
+  ajustarQuadro();
   desenharFrenteSvg();
 }
 
 /** A câmera da cena no visor (na vista da foto): a posição e o giro gravados (mm do projeto), o rolar e a lente. */
 function aplicarCamera() {
-  if (!visor || !cena || !cena.camera || modo !== 'foto') { atualizarFaixas(); if (visor) atualizarParedes(); return; }
+  if (!visor || !ehFoto() || !cena.camera || modo !== 'foto') { atualizarFaixas(); if (visor) atualizarParedes(); return; }
   const o = visor.cabecalho.origem, c = cena.camera;
   visor.camera.position.set(c.posicao[0] - o[0], c.posicao[1] - o[1], c.posicao[2] - o[2]);
   giroBase = new THREE.Quaternion(...c.giro);
@@ -276,7 +690,7 @@ function aplicarCamera() {
 }
 
 function atualizarFaixas() {
-  const c = cena && cena.camera;
+  const c = ehFoto() && cena.camera;
   $('#lente').disabled = $('#rolar').disabled = !c;
   if (c) { $('#lente').value = c.fov; $('#lente-val').textContent = nf(c.fov, 1) + '°'; }
   else $('#lente-val').textContent = '—';
@@ -310,6 +724,7 @@ async function gravar(campos) {
   Object.assign(cena, JSON.parse(JSON.stringify(campos)));
   const r = await pedir(`${API}/${encodeURIComponent(id)}`, campos);
   if (cena && cena.id === id) cena.alterada = r.alterada;
+  if (eh3d() && Object.keys(campos).some(k => k !== 'nome')) agendarMiniatura();   // a miniatura acompanha a cena
   desenharPares();
   atualizarFaixas();
   $('#salvar-cena').disabled = !cena.camera;
@@ -331,8 +746,9 @@ function solDaCena() { return { ligado: true, ...SOL_PADRAO, chao: CHAO_PADRAO, 
 
 /** O sol e as camadas valem com ou sem cena: sem ela, logo abaixo da lista das cenas; com ela, no lugar deles no corpo. */
 function arrumarPainel() {
-  if (cena) { $('#lugar-sol').append($('#sol-bloco')); $('#lugar-camadas').append($('#camadas-caixa')); }
-  else { $('#corpo').before($('#sol-bloco')); $('#corpo').before($('#camadas-caixa')); }
+  if (eh3d()) { $('#lugar-sol-3d').append($('#sol-bloco')); $('#lugar-camadas-3d').append($('#camadas-caixa')); }
+  else if (cena) { $('#lugar-sol').append($('#sol-bloco')); $('#lugar-camadas').append($('#camadas-caixa')); }
+  else { $('#corpo3d').before($('#sol-bloco')); $('#corpo3d').before($('#camadas-caixa')); }
 }
 
 function mostrarSol() {
@@ -345,7 +761,7 @@ function mostrarSol() {
       <span id="sombra-chao-val">${nf(s.chao * 100)} %</span></label>
     <p class="dica">A direção gira o sol em volta da obra; a altura vai do nascer (baixo, sombras compridas) ao meio-dia (alto).
       <span class="so-cena">A sombra no chão cai no plano dos pontos do chão (a quadra); 0 % a desliga.</span></p>`;
-  for (const el of $('#sol-caixa').querySelectorAll('.so-cena')) el.hidden = !cena;   // a sombra no chão é a da foto
+  for (const el of $('#sol-caixa').querySelectorAll('.so-cena')) el.hidden = !ehFoto();   // a sombra no chão é a da foto
   // só a direção e a altura: o resto (a sombra no chão) pode ter mudado depois de os controles nascerem
   ligarControlesDoSol($('#sol-caixa'), s, (novo) => { lembrar('sol'); mudarSol({ direcao: novo.direcao, altura: novo.altura, ligado: true }); });
   $('#sombra-chao').oninput = () => {
@@ -396,7 +812,7 @@ function atualizarChaoSombra() {
   chaoSombra.scale.set(lado, lado, 1);
   const s = solDaCena();
   chaoSombra.material.uniforms.uForca.value = s.chao;
-  chaoSombra.visible = modo === 'foto' && !!cena && s.ligado && s.chao > 0;
+  chaoSombra.visible = modo === 'foto' && ehFoto() && s.ligado && s.chao > 0;
   visor.pedirQuadro();
 }
 
@@ -477,7 +893,11 @@ function mudarSol(mud) {
 const desfeitos = [], refeitos = [];
 let ultimaMudanca = { tipo: null, t: 0 };
 
+// a cena do 3D (11/11): o retrato é a câmera, as camadas, o sol e o estilo/enquadramento
+const CAMPOS_3D = ['camera', 'desligadas', 'sol', 'pintar', 'arestas', 'fundo', 'proporcao'];
+
 function retrato() {
+  if (eh3d()) return JSON.parse(JSON.stringify(Object.fromEntries(CAMPOS_3D.map(k => [k, cena[k] ?? null]))));
   const r = JSON.parse(JSON.stringify({ pares: cena.pares || [], camera: cena.camera || null, opacidade: cena.opacidade ?? 1,
                                         desligadas: cena.desligadas || [], sol: cena.sol || null, frente: cena.frente || [] }));
   if (r.camera && rolar && giroBase)                        // o rolar ainda fora do giro gravado
@@ -500,10 +920,23 @@ async function voltarA(de, para, texto) {
   if (!cena) return;
   if (!de.length) { aviso(texto === 'Desfeito' ? 'Nada para desfazer.' : 'Nada para refazer.'); return; }
   cancelar();
-  [tempoAjuste, tempoSol, tempoLente, tempoOpac, tempoCamadas, tempoCobre].forEach(clearTimeout);
+  [tempoAjuste, tempoSol, tempoLente, tempoOpac, tempoCamadas, tempoCobre, tempo3d].forEach(clearTimeout);
   para.push(retrato());
   const r = de.pop();
   ultimaMudanca = { tipo: null, t: 0 };
+  if (eh3d()) {
+    const campos = Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null));
+    Object.assign(cena, r);
+    for (const k of Object.keys(r)) if (r[k] === null) delete cena[k];
+    aplicarVistaDaCena();
+    aplicarEstilo3d();
+    desenharCamadas();
+    mostrarSol();
+    mostrarPainel3d();
+    try { await gravar(campos); agendarMiniatura(); aviso(texto + '.'); }
+    catch (e) { aviso(texto + ' na tela, mas não gravado: ' + e.message); }
+    return;
+  }
   Object.assign(cena, r);
   if (!r.sol) delete cena.sol;
   rolar = 0;
@@ -555,7 +988,7 @@ async function concluir(pronta) {
 }
 
 function comecarPonto() {
-  if (!cena) return;
+  if (!ehFoto()) return;
   marcando = { etapa: 'foto' };
   mostrarModo('foto');
   aviso('Clique o ponto na foto (Esc cancela).');
@@ -966,12 +1399,13 @@ function ligarFrente() {
 /** A foto com o 3D por cima, num canvas de w × h. O 3D sai em blocos (camera.setViewOffset): qualquer tamanho, sem passar
  *  do que a placa de vídeo desenha de uma vez; cada bloco `ss` vezes maior e reduzido (supersampling — as terças finas
  *  sem serrilhado nem moiré). `aoBloco(i, n)` depois de cada bloco. */
-async function montarImagem(w, h, ss = 1, aoBloco = null, { comFoto = true, frente = true, bloco = 2048 } = {}) {
+async function montarImagem(w, h, ss = 1, aoBloco = null, { comFoto = true, frente = true, bloco = 2048, antes = null } = {}) {
   const saida = document.createElement('canvas');
   saida.width = w; saida.height = h;
   const g = saida.getContext('2d');
   g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
   if (comFoto) g.drawImage(foto, 0, 0, w, h);
+  if (antes) antes(g);                                      // o fundo da cena do 3D (o céu), antes do 3D
   const r = visor.renderer, dpr = r.getPixelRatio(), cam = visor.camera, gl = r.getContext();
   const lado = Math.min(bloco, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), r.capabilities.maxTextureSize);
   const B = Math.max(128, Math.floor(lado / ss)), blocos = [];
@@ -1054,6 +1488,17 @@ async function enviarImagem(saida, nome, tipo, qualidade) {
 }
 
 async function salvarImagem() {
+  if (eh3d()) {                                             // a cena do 3D como está: Full HD, sem o refino
+    const [w, h] = tamanho3d(1920), png = true;
+    try {
+      const saida = await imagemDaCena3d(w, h, 1);
+      aviso('Salvando a imagem…');
+      const j = await enviarImagem(saida, png ? 'cena.png' : 'cena.jpg', png ? 'image/png' : 'image/jpeg', 0.92);
+      aviso(`Imagem salva na pasta cenas da obra: ${j.nome} (${nf(w)} × ${nf(h)} px).`);
+      atualizarCartoes();
+    } catch (e) { aviso('A imagem não foi salva: ' + e.message); }
+    return;
+  }
   if (!cena || !cena.camera) { aviso('Encaixe a cena antes de salvar a imagem.'); return; }
   mostrarModo('foto');
   const k = Math.min(1, 4096 / Math.max(...cena.px)), w = Math.round(cena.px[0] * k), h = Math.round(cena.px[1] * k);
@@ -1062,6 +1507,7 @@ async function salvarImagem() {
   try {
     const j = await enviarImagem(saida, 'cena.png', 'image/png');
     aviso(`Imagem salva na pasta cenas da obra: ${j.nome} (${w} × ${h} px).`);
+    atualizarCartoes();
   } catch (e) { aviso('A imagem não foi salva: ' + e.message); }
 }
 
@@ -1075,8 +1521,21 @@ async function salvarImagem() {
 const LADO_RENDER_MAX = 8000;                               // o lado maior da imagem renderizada (memória do navegador)
 let renderizando = false;
 
+/** A cena do 3D: o lado maior da imagem (Full HD, 4K, A3 a 300 dpi) na proporção do quadro. */
+const LADOS_3D = [[1920, 'Full HD'], [3840, '4K'], [4961, 'A3 300 dpi']];
+function tamanho3d(lado) {
+  const p = PROPORCOES[cena.proporcao || '16:9'] || (quadroAtual ? quadroAtual.p : 16 / 9);
+  return p >= 1 ? [lado, Math.round(lado / p)] : [Math.round(lado * p), lado];
+}
+
 function mostrarTamanhos() {
   if (!cena) return;
+  if (eh3d()) {
+    const antes = $('#render-tamanho').value;
+    $('#render-tamanho').innerHTML = LADOS_3D.map(([l, t]) => { const [w, h] = tamanho3d(l); return `<option value="L${l}">${t} — ${nf(w)} × ${nf(h)} px</option>`; }).join('');
+    $('#render-tamanho').value = LADOS_3D.some(([l]) => 'L' + l === antes) ? antes : 'L3840';
+    return;
+  }
   const [fw, fh] = cena.px, opcoes = [];
   for (const m of [2, 3, 4]) if (Math.max(fw, fh) * m <= LADO_RENDER_MAX) opcoes.push(m);
   if (!opcoes.length) opcoes.push(LADO_RENDER_MAX / Math.max(fw, fh));
@@ -1105,8 +1564,31 @@ function sombraDoRender() {
   };
 }
 
+/** O render da cena do 3D: o lado escolhido na proporção do quadro, supersampling 2×, a sombra maior; o fundo
+ *  transparente sai em PNG, o resto em JPEG 95 %. */
+async function renderizar3d() {
+  const lado = +String($('#render-tamanho').value || 'L3840').slice(1) || 3840, [w, h] = tamanho3d(lado);
+  const png = (cena.fundo || 'ceu') === 'transparente';
+  renderizando = true; mostrarBotoes();
+  const t0 = performance.now(), devolver = sombraDoRender();
+  try {
+    const saida = await imagemDaCena3d(w, h, 2, async (i, n) => {
+      aviso(`Renderizando ${nf(w)} × ${nf(h)} px: bloco ${i} de ${n}…`);
+      await new Promise(res => setTimeout(res, 0));
+    });
+    devolver();
+    aviso('Gravando a imagem renderizada…');
+    const j = await enviarImagem(saida, png ? 'render.png' : 'render.jpg', png ? 'image/png' : 'image/jpeg', 0.95);
+    aviso(`Imagem renderizada na pasta cenas da obra: ${j.nome} (${nf(w)} × ${nf(h)} px, ${nf((performance.now() - t0) / 1000, 1)} s).`
+      + (vistaMudou ? ' A vista da tela não está gravada na cena: o render saiu com ela (Atualizar a cena guarda).' : ''));
+    atualizarCartoes();
+  } catch (e) { devolver(); aviso('O render não saiu: ' + e.message); }
+  finally { renderizando = false; mostrarBotoes(); ajustarQuadro(); }
+}
+
 async function renderizar() {
   if (renderizando) return;
+  if (eh3d()) { cancelar(); await renderizar3d(); return; }
   if (!cena || !cena.camera) { aviso('Encaixe a cena antes de renderizar.'); return; }
   renderizando = true;
   $('#renderizar').disabled = $('#salvar-imagem').disabled = true;
@@ -1126,6 +1608,7 @@ async function renderizar() {
     aviso('Gravando a imagem renderizada…');
     const j = await enviarImagem(saida, 'render.jpg', 'image/jpeg', 0.95);
     aviso(`Imagem renderizada na pasta cenas da obra: ${j.nome} (${nf(w)} × ${nf(h)} px, ${nf((performance.now() - t0) / 1000, 1)} s).`);
+    atualizarCartoes();
   } catch (e) {
     devolver();
     aviso('O render não saiu: ' + e.message);
@@ -1154,15 +1637,8 @@ function ligarControles() {
     }
     catch (e) { aviso('A foto não entrou: ' + e.message); }
   };
-  $('#lista').onchange = () => {
-    const v = $('#lista').value;
-    if (v.startsWith('3d:')) {                              // a cena do 3D: o modo ver (o ← 3D) abre e vai até ela
-      try { sessionStorage.setItem(PENDENTE_3D, JSON.stringify({ projeto: PROJETO, id: v.slice(3) })); } catch (e) { /* sem armazenamento */ }
-      $('#voltar').onclick();
-      return;
-    }
-    if (v) abrirCena(v);
-  };
+  $('#lista').onchange = () => { if ($('#lista').value) abrirCena($('#lista').value); };
+  ligar3d();
   $('#novo-ponto').onclick = comecarPonto;
   $('#ver').onclick = () => { cancelar(); mostrarModo(modo === '3d' ? 'foto' : '3d'); };
   $('#encaixar').onclick = () => { cancelar(); lembrar(); fazerEncaixe().catch(e => aviso('O encaixe falhou: ' + e.message)); };
@@ -1170,11 +1646,7 @@ function ligarControles() {
   $('#renderizar').onclick = () => renderizar();
   $('#salvar-cena').onclick = () => concluir(true).catch(e => aviso('A cena não foi salva: ' + e.message));
   $('#editar').onclick = () => concluir(false).catch(e => aviso('Não deu: ' + e.message));
-  $('#apagar').onclick = async () => {
-    if (!cena || !confirm(`Apagar a cena "${cena.nome}"? A foto e os pontos saem do projeto (a imagem salva na pasta cenas fica).`)) return;
-    try { await pedir(`${API}/${encodeURIComponent(cena.id)}/apagar`, {}); aviso('Cena apagada.'); await listar(); }
-    catch (err) { aviso('A cena não foi apagada: ' + err.message); }
-  };
+  $('#apagar').onclick = () => cena && apagarCena(cena);
   $('#pares').onclick = async (e) => {
     const b = e.target.closest('button[data-acao]');
     if (!b || !cena) return;
@@ -1352,6 +1824,7 @@ function desenharMarcas() {
   if (novo !== marcas._html) { marcas.innerHTML = novo; marcas._html = novo; }
 }
 
-window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado, desenho, paredes: paredes.length, fina: !telaFina.hidden }), mostrarModo, pontoDo3d, fazerEncaixe,
-                   concluir, desfazer, refazer, geometriaDoContorno, bordaDeBaixo, montarImagem };
+window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado, desenho, paredes: paredes.length, fina: !telaFina.hidden,
+                                    fovCena, quadro: quadroAtual, vistaMudou, cenas: todasCenas.map(c => c.id) }), mostrarModo, pontoDo3d, fazerEncaixe,
+                   concluir, desfazer, refazer, geometriaDoContorno, bordaDeBaixo, montarImagem, abrirCena, novaCena3d, imagemDaCena3d, cameraDaTela };
 abrir().catch(e => { aviso('A cena não abriu: ' + e.message); console.error(e); });

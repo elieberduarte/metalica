@@ -232,13 +232,19 @@ export function ligarCenas3d(ctx) {
         <button type="button" id="cena-apagar">Apagar</button></div>
       <p class="dica">Gravada em ${esc((atual.alterada || '').replace('T', ' ').slice(0, 16))}. Renderizar e pôr na prancha vêm nas próximas etapas.</p>` : '';
     ctx.abrirPainel('cenas', 'Cenas', `<div class="botoes-cena"><button type="button" class="forte" id="cena-nova">+ Nova cena pela vista atual</button>
-        <button type="button" id="cena-foto" title="A estrutura encaixada numa foto do local">📷 Nova cena pela foto…</button></div>
+        <button type="button" id="cena-foto" title="A estrutura encaixada numa foto do local">📷 Nova cena pela foto…</button>
+        <button type="button" id="cena-tela" title="Criar, tratar (enquadramento, estilo, fundo, luz), renderizar e exportar as cenas">Abrir a tela das Cenas…</button></div>
       <p class="titulo-secao">Cenas da obra</p>${lista}${detalhe}
       <p class="dica">As cenas ficam nas abas do rodapé: um clique vai até a cena. Botão direito na aba: renomear, atualizar, mover, apagar.
         PageUp/PageDown: a anterior/seguinte.</p>`);
     const corpo = document.querySelector('#painel-corpo');
     corpo.querySelector('#cena-nova').onclick = () => novaCena();
     corpo.querySelector('#cena-foto').onclick = () => { location.href = `/visor3d/cena.html?projeto=${encodeURIComponent(projeto)}`; };
+    // a tela das Cenas (11/11, amostra-4) na janela inteira: três colunas não cabem no quadro do 3D da área de trabalho
+    corpo.querySelector('#cena-tela').onclick = () => {
+      const url = `/visor3d/cena.html?projeto=${encodeURIComponent(projeto)}${ativa ? `&cena=${encodeURIComponent(ativa)}` : ''}`;
+      try { window.top.location.href = url; } catch (e) { location.href = url; }
+    };
     corpo.querySelectorAll('[data-ir]').forEach(el => { el.onclick = () => irPara(cenas.find(c => c.id === el.dataset.ir)); });
     if (atual) {
       const nome = corpo.querySelector('#cena-nome');

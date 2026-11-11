@@ -35,6 +35,10 @@ PASTA = "cenas"
 FOTO_LADO_MAX = 6000                       # px: a foto do celular (4000 × 3000, 12 Mpx) passa inteira
 FOTO_EXT = (".jpg", ".jpeg", ".png")
 FRENTE_MAX = 30                            # contornos do que fica na frente da estrutura, por cena
+#: o quadro da imagem da cena do 3D (largura ÷ altura; "livre" = o palco inteiro) e o fundo (11/11, a tela das Cenas)
+PROPORCOES = {"16:9": 16 / 9, "4:3": 4 / 3, "3:4": 3 / 4, "A3": 420 / 297, "livre": None}
+FUNDOS = ("ceu", "branco", "transparente", "terreno")
+MINIATURA_LADO = 480                       # px: a miniatura da lista das cenas
 
 
 class ErroCena(ErroDeDados):
@@ -98,9 +102,52 @@ def listar(g, s: str) -> dict:
                 continue
             c = _ler(os.path.join(pasta, i, "cena.json"))
             if c:
+                c.update(_imagens_prontas(g, s, c))
                 cenas.append(c)
     cenas.sort(key=lambda c: (_ordem(c), c.get("criada") or ""))
     return {"cenas": cenas}
+
+
+def _nome_arquivo(c: dict) -> str:
+    return re.sub(r'[\\/:*?"<>|]+', "-", c.get("nome") or c.get("id") or "").strip() or c.get("id") or "cena"
+
+
+def _imagens_prontas(g, s: str, c: dict) -> dict:
+    """A situação das imagens da cena na lista da tela das Cenas: a hora do render (render_em) e da imagem salva
+    (imagem_em), se existem na pasta cenas/ — o render mais velho que a cena é um "render velho" na tela."""
+    out = {}
+    raiz = os.path.join(g.pasta(s), PASTA)
+    base = "Cena - " + _nome_arquivo(c)
+    for chave, nomes in (("render_em", [base + " (render).jpg", base + " (render).png"]), ("imagem_em", [base + ".png", base + ".jpg"])):
+        tempos = [os.path.getmtime(os.path.join(raiz, n)) for n in nomes if os.path.isfile(os.path.join(raiz, n))]
+        if tempos:
+            out[chave] = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(max(tempos)))
+    return out
+
+
+def gravar_miniatura(g, s: str, i: str, corpo: dict) -> dict:
+    """A miniatura da cena para a lista da tela (a imagem pequena feita na tela), em cenas/dados/<id>/miniatura.jpg."""
+    origem = corpo.get("arquivo_local")
+    if not origem or not os.path.isfile(origem):
+        raise ErroCena("nenhuma imagem recebida.")
+    from PIL import Image
+    try:
+        with _TRAVA:
+            c = ler(g, s, i)
+            with Image.open(origem) as im:
+                im = im.convert("RGB")
+                im.thumbnail((MINIATURA_LADO, MINIATURA_LADO))
+                im.save(os.path.join(_pasta(g, s), i, "miniatura.jpg"), "JPEG", quality=85)
+            c["miniatura"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+            _gravar(os.path.join(_pasta(g, s), i, "cena.json"), c)
+    except OSError as e:
+        raise ErroCena("a miniatura não abriu (%s)." % e)
+    finally:
+        try:
+            os.remove(origem)
+        except OSError:
+            pass
+    return {"miniatura": c["miniatura"]}
 
 
 def _ordem(c: dict) -> float:
@@ -130,6 +177,7 @@ def ordenar(g, s: str, corpo: dict) -> dict:
         pasta = _pasta(g, s)
         for k, c in enumerate(todas):
             if c.get("ordem") != k:
+                c = _ler(os.path.join(pasta, c["id"], "cena.json")) or c     # a do disco (a lista traz render_em…)
                 c["ordem"] = k
                 _gravar(os.path.join(pasta, c["id"], "cena.json"), c)
     return listar(g, s)
@@ -302,6 +350,15 @@ def _gravar_campos(g, s: str, i: str, corpo: dict) -> dict:
                 c[chave] = corpo[chave]
         if "piso_oculto" in corpo:
             c["piso_oculto"] = _lista_de_textos(corpo["piso_oculto"] or [], 50)
+        # a tela das Cenas (11/11, amostra-4 aprovada): o quadro da imagem e o fundo
+        if "proporcao" in corpo:
+            if corpo["proporcao"] not in PROPORCOES:
+                raise ErroCena("proporção desconhecida: %s" % corpo["proporcao"])
+            c["proporcao"] = corpo["proporcao"]
+        if "fundo" in corpo:
+            if corpo["fundo"] not in FUNDOS:
+                raise ErroCena("fundo desconhecido: %s" % corpo["fundo"])
+            c["fundo"] = corpo["fundo"]
         if "guarda" in corpo:
             gd = corpo["guarda"]
             if not isinstance(gd, dict) or not all(k in ("camera", "camadas", "estilo") and isinstance(v, bool) for k, v in gd.items()):
@@ -360,7 +417,7 @@ def gravar_imagem(g, s: str, i: str, corpo: dict) -> dict:
         raise ErroCena("nenhuma imagem recebida.")
     pasta = os.path.join(g.pasta(s), PASTA)
     os.makedirs(pasta, exist_ok=True)
-    nome = re.sub(r'[\\/:*?"<>|]+', "-", c.get("nome") or i).strip() or i
+    nome = _nome_arquivo(c)
     enviado = str(corpo.get("nome") or "").lower()
     ext = ".jpg" if enviado.endswith((".jpg", ".jpeg")) else ".png"
     destino = os.path.join(pasta, "Cena - %s%s%s" % (nome, " (render)" if enviado.startswith("render") else "", ext))
@@ -401,8 +458,8 @@ def rota_get(g, s: str, resto: list) -> dict:
     if not resto:
         return listar(g, s)
     i = _id_valido(resto[0])
-    if resto[1:] == ["foto.jpg"]:
-        return {"arquivo": os.path.join(_pasta(g, s), i, "foto.jpg")}
+    if resto[1:] in (["foto.jpg"], ["miniatura.jpg"]):
+        return {"arquivo": os.path.join(_pasta(g, s), i, resto[1])}
     if len(resto) == 1:
         return ler(g, s, i)
     raise ErroCena("rota da cena desconhecida: %s" % "/".join(resto))
@@ -420,6 +477,8 @@ def rota_post(g, s: str, resto: list, corpo: dict) -> dict:
         return gravar(g, s, _id_valido(resto[0]), corpo)
     if len(resto) == 2 and resto[1] == "imagem":
         return gravar_imagem(g, s, _id_valido(resto[0]), corpo)
+    if len(resto) == 2 and resto[1] == "miniatura":
+        return gravar_miniatura(g, s, _id_valido(resto[0]), corpo)
     if len(resto) == 2 and resto[1] == "apagar":
         return apagar(g, s, _id_valido(resto[0]))
     raise ErroCena("rota da cena desconhecida: %s" % "/".join(resto))

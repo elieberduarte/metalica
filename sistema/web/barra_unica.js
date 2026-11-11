@@ -284,9 +284,9 @@
     ] },
     // as cenas (usuário, 26/10: "essas cenas deveriam ter um menu próprio, vamos separar isso do terreno"): as do 3D, como no
     // SketchUp (11/11, visor3d/cenas3d.js — abas no rodapé do modo ver), e a estrutura encaixada numa foto do local
-    // (visor3d/cena.html). Uma lista só: o painel Cenas do modo ver mostra as duas (11/11: "as cenas criadas não aparecem aqui")
+    // (visor3d/cena.html). Uma lista só (11/11: "as cenas criadas não aparecem aqui"); a tela das Cenas (cena.html, amostra-4) tem todas
     { nome: 'Cenas', itens: [
-      F('Cenas da obra…', 'cenas-3d', { dica: 'as cenas do 3D (abas no rodapé do modo ver) e as cenas pela foto do local' }),
+      { texto: 'Cenas da obra…', link: '/visor3d/cena.html?projeto={projeto}', dica: 'a tela das Cenas: criar, tratar, renderizar e exportar — as do 3D e as pela foto' },
       F('Nova cena pela vista atual', 'cena-nova-3d', { kbd: 'Alt+0', dica: 'grava a câmera, as camadas, o Pintar e o sol do modo ver' }),
       { texto: 'Nova cena pela foto…', link: '/visor3d/cena.html?projeto={projeto}', dica: 'a estrutura encaixada numa foto do local, para a apresentação' },
     ] },

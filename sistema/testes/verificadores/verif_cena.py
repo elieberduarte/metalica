@@ -106,7 +106,7 @@ try:
         time.sleep(0.5)
     aba = Aba(alvos[0]["webSocketDebuggerUrl"])
     for dm in ("Page", "Runtime", "Log"): aba.cmd(f"{dm}.enable")
-    aba.cmd("Emulation.setDeviceMetricsOverride", width=1400, height=860, deviceScaleFactor=1, mobile=False)
+    aba.cmd("Emulation.setDeviceMetricsOverride", width=1670, height=860, deviceScaleFactor=1, mobile=False)   # o palco com 1.100 px, como antes das duas colunas da tela das Cenas (11/11)
 
     # 1. a foto entra pela rota do terreno (o envio binário, como o botão Nova cena faz)
     req = urllib.request.Request(base + "/api/projetos/obra/terreno/cenas/nova", data=open(FOTO, "rb").read(), method="POST",

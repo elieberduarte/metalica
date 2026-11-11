@@ -323,3 +323,42 @@ def test_apagar_a_cena_do_3d(tmp_path):
     g, s = _gerente(tmp_path)
     i = C.nova_3d(g, s, {"nome": "Some", "camera": _CAM})["id"]
     assert L.rota_post(g, s, ["cenas", i, "apagar"], {}, lambda *a: None)["cenas"] == []
+
+
+# ---------------------------------------------------------------- a tela das Cenas (11/11, amostra-4 aprovada)
+
+def test_quadro_e_fundo_da_cena_do_3d(tmp_path):
+    g, s = _gerente(tmp_path)
+    i = C.nova_3d(g, s, {"nome": "Fachada", "camera": _CAM, "proporcao": "4:3", "fundo": "transparente"})["id"]
+    c = C.ler(g, s, i)
+    assert c["proporcao"] == "4:3" and c["fundo"] == "transparente"
+    assert C.gravar(g, s, i, {"proporcao": "A3", "fundo": "ceu"})["proporcao"] == "A3"
+    with pytest.raises(C.ErroCena, match="proporção"):
+        C.gravar(g, s, i, {"proporcao": "21:9"})
+    with pytest.raises(C.ErroCena, match="fundo"):
+        C.gravar(g, s, i, {"fundo": "nuvens"})
+
+
+def test_miniatura_da_cena(tmp_path):
+    g, s = _gerente(tmp_path)
+    i = C.nova_3d(g, s, {"nome": "Mini", "camera": _CAM})["id"]
+    envio = _foto(tmp_path, "mini.jpg", tam=(1600, 900))
+    r = L.rota_post(g, s, ["cenas", i, "miniatura"], envio, lambda *a: None)
+    caminho = L.rota_get(g, s, ["cenas", i, "miniatura.jpg"], {})["arquivo"]
+    from PIL import Image
+    with Image.open(caminho) as im:
+        assert max(im.size) == C.MINIATURA_LADO                  # reduzida para a lista
+    assert C.ler(g, s, i)["miniatura"] == r["miniatura"] and not os.path.exists(envio["arquivo_local"])
+
+
+def test_lista_diz_se_a_cena_tem_render_e_a_ordem_nao_grava_isso(tmp_path):
+    g, s = _gerente(tmp_path)
+    a = C.nova_3d(g, s, {"nome": "Com render", "camera": _CAM})["id"]
+    b = C.nova_3d(g, s, {"nome": "Sem render", "camera": _CAM})["id"]
+    pasta = os.path.join(g.pasta(s), "cenas")
+    with open(os.path.join(pasta, "Cena - Com render (render).jpg"), "wb") as f:
+        f.write(b"jpg")
+    cenas = {c["id"]: c for c in C.listar(g, s)["cenas"]}
+    assert cenas[a].get("render_em") and not cenas[b].get("render_em")
+    C.ordenar(g, s, {"ids": [b, a]})
+    assert "render_em" not in C._ler(os.path.join(pasta, "dados", a, "cena.json"))    # a situação é da lista, não do arquivo
