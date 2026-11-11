@@ -267,9 +267,29 @@ class Bloco(Entidade2D):
         return [self.posicao]
 
 
+@dataclass
+class Imagem(Entidade2D):
+    """A imagem de uma cena da obra na prancha (11/11, FERRAMENTA · CENAS; amostra-2 aprovada): o retângulo de `posicao`
+    (canto de baixo à esquerda) com `largura` × `altura` (mm do desenho), sem girar. `cena` é o id da cena (saida/cenas.py);
+    `viva` = a imagem é o render atual da cena (renderizar de novo atualiza a prancha); fixa = `arquivo`, a cópia congelada
+    em cenas/dados/prancha/. No DXF sai a moldura; no PDF, a imagem (nucleo2d/pranchas._imagens_no_pdf)."""
+    tipo: str = "imagem"
+    posicao: Ponto2 = (0.0, 0.0)
+    largura: float = 100.0
+    altura: float = 100.0
+    cena: str = ""
+    nome: str = ""
+    viva: bool = True
+    arquivo: str = ""
+
+    def pontos(self):
+        x, y = self.posicao
+        return [(x, y), (x + self.largura, y), (x + self.largura, y + self.altura), (x, y + self.altura)]
+
+
 TIPOS = {"linha": Linha, "polilinha": Polilinha, "circulo": Circulo, "arco": Arco,
          "texto": Texto, "cota": Cota, "hachura": Hachura, "chamada": Chamada, "cota_especial": CotaEspecial,
-         "bloco": Bloco}
+         "bloco": Bloco, "imagem": Imagem}
 
 
 def entidade_de_dict(e: dict) -> Optional["Entidade2D"]:
@@ -403,6 +423,8 @@ def transladar(e: "Entidade2D", dx: float, dy: float) -> "Entidade2D":
         n.centro, n.p1, n.posicao = mv(n.centro), mv(n.p1), mv(n.posicao)
         if n.p2:
             n.p2 = mv(n.p2)
+    elif isinstance(n, Imagem):
+        n.posicao = mv(n.posicao)
     return n
 
 
@@ -550,6 +572,8 @@ class Desenho:
             elif isinstance(e, CotaEspecial):
                 _cota_especial_dxf(d, e, k, camada, camada_texto=nome_cam("TEXTO") if "TEXTO" in self.camadas else None,
                                    estilo=self.metadados.get("estilo") or {})
+            elif isinstance(e, Imagem):
+                d.polilinha(e.pontos(), True, camada)          # a moldura (a imagem vai pelo PDF, por baixo)
             # a cor própria do objeto (o DXF importado com as cores, 08/10) volta no DXF
             cor = (e.atributos or {}).get("cor") if isinstance(e, (Linha, Polilinha, Circulo, Arco, Texto)) else None
             if cor:

@@ -7,7 +7,7 @@
 // O documento é a única fonte de verdade da tela. Ferramentas nunca mexem nele
 // diretamente: passam por um comando (comandos.js), que é o que dá desfazer.
 
-export const TIPOS = ['linha', 'polilinha', 'circulo', 'arco', 'texto', 'cota', 'hachura', 'chamada', 'cota_especial', 'bloco'];
+export const TIPOS = ['linha', 'polilinha', 'circulo', 'arco', 'texto', 'cota', 'hachura', 'chamada', 'cota_especial', 'bloco', 'imagem'];
 import { pontosDaCotaEspecial, distanciaCotaEspecial } from './cota_especial.js';
 
 export const CAMADAS_PADRAO = [
@@ -58,8 +58,18 @@ export function criar(reg) {
     // a inserção de um bloco (24/10): a definição em metadados.blocos[nome] (e na biblioteca da empresa)
     case 'bloco': return { ...base, camada: base.camada || 'VISTA', nome: reg.nome || '', posicao: reg.posicao,
       escala: Array.isArray(reg.escala) ? [+reg.escala[0] || 1, +reg.escala[1] || 1] : [1, 1], angulo: +reg.angulo || 0 };
+    // a imagem de uma cena da obra (11/11, FERRAMENTA · CENAS): o retângulo de `posicao` (canto de baixo à esquerda) com
+    // largura × altura (mm do desenho), sem girar; `viva` = o render atual da cena; fixa = `arquivo` (a cópia congelada)
+    case 'imagem': return { ...base, camada: base.camada || 'VISTA', posicao: reg.posicao, largura: +reg.largura || 100, altura: +reg.altura || 100,
+      cena: reg.cena || '', nome: reg.nome || '', viva: reg.viva !== false, arquivo: reg.arquivo || '' };
     default: throw new Error('tipo de entidade desconhecido: ' + reg.tipo);
   }
+}
+
+/** Os 4 cantos da imagem (de baixo à esquerda, no sentido anti-horário). */
+export function cantosDaImagem(e) {
+  const [x, y] = e.posicao, w = e.largura, h = e.altura;
+  return [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
 }
 
 // ---- blocos (24/10; usuário: "Como no AutoCAD" e "Biblioteca da empresa") ----
@@ -279,6 +289,7 @@ export function pontosDe(e) {
     case 'chamada': return [e.alvo, e.posicao, ...(e.ramos || []).map(r => r.alvo)];
     case 'cota_especial': return [e.centro, e.p1, e.posicao, ...(e.p2 ? [e.p2] : [])];
     case 'bloco': return [e.posicao, ...filhosDoBloco(e).flatMap(pontosDe)];
+    case 'imagem': return cantosDaImagem(e);
     default: return [];
   }
 }
@@ -298,6 +309,7 @@ export function segmentosDe(e) {
     case 'chamada': return [[e.alvo, e.posicao], ...ramosDaChamada(e)];
     case 'hachura': return e.contornos.flatMap(c => c.map((p, i) => [p, c[(i + 1) % c.length]]));
     case 'bloco': return filhosDoBloco(e).flatMap(segmentosDe);
+    case 'imagem': { const c = cantosDaImagem(e); return c.map((p, i) => [p, c[(i + 1) % 4]]); }
     default: return [];
   }
 }
@@ -420,6 +432,10 @@ export function distanciaEntidade(p, e, escalaTexto = 1) {
       return Math.min(distSeg(p, e.p1, e.p2), dist(p, e.p1), dist(p, e.p2));
     }
     case 'cota_especial': return distanciaCotaEspecial(p, e, escalaTexto);
+    case 'imagem': {                                     // dentro da imagem pega a imagem
+      const c = cantosDaImagem(e);
+      return dentroDe(p, c) ? 0 : Math.min(...c.map((a, i) => distSeg(p, a, c[(i + 1) % 4])));
+    }
     case 'chamada': {
       // a linha, o traço e o texto (clicar no texto pega a chamada — pedido do usuário, 28/09)
       const t = textoDaChamada(e, escalaTexto);
@@ -460,6 +476,7 @@ export function transladar(e, d) {
     case 'chamada': n.alvo = mv(e.alvo); n.posicao = mv(e.posicao); if (e.ramos) n.ramos = e.ramos.map(r => ({ ...r, alvo: mv(r.alvo) })); break;
     case 'cota_especial': n.centro = mv(e.centro); n.p1 = mv(e.p1); n.posicao = mv(e.posicao); if (e.p2) n.p2 = mv(e.p2); break;
     case 'bloco': n.posicao = mv(e.posicao); break;
+    case 'imagem': n.posicao = mv(e.posicao); break;
   }
   return n;
 }
@@ -470,6 +487,14 @@ export function transformar(e, f, fAng = (a) => a, k = 1, espelha = false) {
   const n = clonar(e);
   switch (e.tipo) {
     case 'bloco': Object.assign(n, transformarInsercao(e, f)); break;
+    case 'imagem': {
+      // a imagem não gira nem distorce: os cantos levados, a caixa deles; a altura pela proporção da imagem
+      const q = cantosDaImagem(e).map(f), xs = q.map(p => p[0]), ys = q.map(p => p[1]);
+      const x0 = Math.min(...xs), y0 = Math.min(...ys), w = Math.max(...xs) - x0, h = Math.max(...ys) - y0;
+      const prop = e.altura / e.largura, girou = Math.abs(h / w - prop) > Math.abs(w / h - prop) && Math.abs(prop - 1) > 1e-6;
+      n.posicao = [x0, y0]; n.largura = girou ? h : w; n.altura = girou ? w : h;
+      break;
+    }
     case 'linha': n.a = f(e.a); n.b = f(e.b); break;
     case 'polilinha': n.vertices = e.vertices.map(f); break;
     case 'circulo': n.centro = f(e.centro); n.raio = e.raio * k; break;

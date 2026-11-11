@@ -3074,7 +3074,7 @@ def _preencher_solidas(d: Desenho, ax):
 
 def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: float = 10.0,
                      so: Optional[Sequence[int]] = None, avisos: Optional[List[str]] = None,
-                     penas: Optional[dict] = None) -> str:
+                     penas: Optional[dict] = None, pasta_projeto: Optional[str] = None) -> str:
     """PDF vetorial, uma página por desenho, no tamanho real do papel.
 
     Prancha (escala 1, `metadados.prancha`) sai na folha do seu formato; qualquer outro
@@ -3128,7 +3128,8 @@ def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: floa
             for j, ((larg, alt, k, x0, y0), parte) in enumerate(zip(paginas, partes)):
                 if escolhidas is not None and primeira + j not in escolhidas:
                     continue
-                _pagina_do_pdf(pdf, parte, os.path.join(tmp, "p%d_%d.dxf" % (i, j)), larg, alt, k, k, x0, y0, cores, penas)
+                _pagina_do_pdf(pdf, parte, os.path.join(tmp, "p%d_%d.dxf" % (i, j)), larg, alt, k, k, x0, y0, cores, penas,
+                               pasta_projeto=pasta_projeto, avisos=avisos)
     return caminho_pdf
 
 
@@ -3156,8 +3157,38 @@ def _estilos_do_pdf(d: Desenho) -> dict:
     return out
 
 
+def _imagens_no_pdf(ax, parte: Desenho, k_pagina: float, pasta_projeto: Optional[str], avisos: Optional[List[str]] = None):
+    """As imagens das cenas (11/11, nucleo2d.desenho.Imagem) por baixo das linhas: o arquivo pela pasta do projeto (o
+    render atual da cena, se viva; a cópia congelada, se fixa), reduzido a 300 dpi no tamanho dela no papel."""
+    from nucleo2d.desenho import Imagem
+    imagens = [e for e in parte.entidades.values() if isinstance(e, Imagem)]
+    if not imagens:
+        return
+    from PIL import Image
+    import numpy as np
+    from saida.cenas import arquivo_da_imagem
+    for e in imagens:
+        cam = parte.camadas.get(e.camada)
+        if cam is not None and not cam.visivel:
+            continue
+        arq = arquivo_da_imagem(pasta_projeto, e.cena, e.viva, e.arquivo) if pasta_projeto else None
+        if not arq:
+            if avisos is not None:
+                avisos.append("a imagem da cena \"%s\" não foi achada (renderize a cena de novo): sai só a moldura" % (e.nome or e.cena))
+            continue
+        with Image.open(arq) as im:
+            im = im.convert("RGB")
+            lado = max(64, int(max(e.largura, e.altura) / k_pagina / 25.4 * 300))     # 300 dpi no papel
+            if max(im.size) > lado:
+                im.thumbnail((lado, lado), Image.LANCZOS)
+            x, y = e.posicao
+            ax.imshow(np.asarray(im), extent=(x, x + e.largura, y, y + e.altura), origin="upper", zorder=0.5,
+                      interpolation="antialiased", aspect="auto")
+
+
 def _pagina_do_pdf(pdf, parte: Desenho, arquivo_dxf: str, larg: float, alt: float, k_desenho: float, k_pagina: float,
-                   x0: float, y0: float, cores: dict, penas: Optional[dict] = None):
+                   x0: float, y0: float, cores: dict, penas: Optional[dict] = None, pasta_projeto: Optional[str] = None,
+                   avisos: Optional[List[str]] = None):
     """Uma página de `larg` × `alt` mm com o trecho do desenho que começa em (x0, y0) e mede larg × k_pagina: o que é de
     papel (texto, cota) no tamanho do desenho (`k_desenho`, a escala dele), a página na escala de impressão."""
     import matplotlib.pyplot as plt
@@ -3178,6 +3209,7 @@ def _pagina_do_pdf(pdf, parte: Desenho, arquivo_dxf: str, larg: float, alt: floa
     dxf_render.desenhar(arq, ax, escala_texto=_FATOR_TEXTO / k_pagina, cores=cores, estilos=_estilos_do_pdf(parte),
                         fator_tracejado=escala_tracejado(parte.metadados.get("estilo")) * k_desenho / k_pagina, penas=penas)
     _preencher_solidas(parte, ax)
+    _imagens_no_pdf(ax, parte, k_pagina, pasta_projeto, avisos)
     ax.set_xlim(x0, x0 + larg * k_pagina)
     ax.set_ylim(y0, y0 + alt * k_pagina)
     ax.set_aspect("equal")
@@ -3186,7 +3218,8 @@ def _pagina_do_pdf(pdf, parte: Desenho, arquivo_dxf: str, larg: float, alt: floa
     plt.close(fig)
 
 
-def pdf_da_area(d: Desenho, caminho_pdf: str, caixa, escala: Optional[float] = None, penas: Optional[dict] = None) -> str:
+def pdf_da_area(d: Desenho, caminho_pdf: str, caixa, escala: Optional[float] = None, penas: Optional[dict] = None,
+                pasta_projeto: Optional[str] = None) -> str:
     """PDF de uma página com o trecho `caixa` ((x0, y0), (x1, y1), mm do desenho) na escala `escala` (1:n; vazio = a
     do desenho): a página mede o trecho ÷ n. É o Ctrl+P de um desenho que não é das pranchas — o Original do projeto
     recebido, um detalhamento — pela vista da tela ou pelo desenho inteiro (usuário, 23/10: "se dou um ctrl + p nessa
@@ -3221,7 +3254,8 @@ def pdf_da_area(d: Desenho, caminho_pdf: str, caixa, escala: Optional[float] = N
             parte.add(e)
     os.makedirs(os.path.dirname(os.path.abspath(caminho_pdf)), exist_ok=True)
     with PdfPages(caminho_pdf) as pdf, tempfile.TemporaryDirectory() as tmp:
-        _pagina_do_pdf(pdf, parte, os.path.join(tmp, "area.dxf"), larg, alt, float(d.escala or 1.0), n, x0, y0, _cores_do_pdf(d), penas)
+        _pagina_do_pdf(pdf, parte, os.path.join(tmp, "area.dxf"), larg, alt, float(d.escala or 1.0), n, x0, y0, _cores_do_pdf(d), penas,
+                       pasta_projeto=pasta_projeto)
     return caminho_pdf
 
 

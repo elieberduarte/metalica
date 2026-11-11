@@ -131,6 +131,9 @@ def _transformar(e, f, s: float = 1.0):
         if e.p2:
             e.p2 = f(e.p2)
         e.altura = round(e.altura * s, 3)
+    elif getattr(e, "tipo", "") == "imagem":          # a cena na prancha (11/11): o canto levado, o tamanho na escala
+        e.posicao = f(e.posicao)
+        e.largura, e.altura = round(e.largura * s, 3), round(e.altura * s, 3)
 
 
 def _mediana(vs: List[float]) -> float:

@@ -131,6 +131,51 @@ def _imagens_prontas(g, s: str, c: dict) -> dict:
     return out
 
 
+# ------------------------------------------------------------------ a cena na prancha (11/11, amostra-2 aprovada; o objeto
+# imagem do CAD 2D, nucleo2d.desenho.Imagem): VIVA = o render atual da cena (renderizar de novo atualiza a prancha); FIXA = a
+# cópia congelada em cenas/dados/prancha/ (o render daquele dia, mesmo que a cena mude)
+PASTA_PRANCHA = "prancha"
+
+
+def _render_atual(pasta_projeto: str, c: dict) -> Optional[str]:
+    raiz = os.path.join(pasta_projeto, PASTA)
+    base = "Cena - " + _nome_arquivo(c) + " (render)"
+    achados = [os.path.join(raiz, base + x) for x in (".jpg", ".png") if os.path.isfile(os.path.join(raiz, base + x))]
+    return max(achados, key=os.path.getmtime) if achados else None
+
+
+def arquivo_da_imagem(pasta_projeto: str, cena: str, viva: bool = True, arquivo: str = "") -> Optional[str]:
+    """O arquivo da imagem da cena na prancha (o PDF e a tela do CAD): o render atual da cena (viva) ou a cópia fixa;
+    None quando não há (a cena sem render, apagada). Só de dentro da pasta cenas/ do projeto."""
+    if not viva:
+        nome = os.path.basename(str(arquivo or "").replace("\\", "/"))
+        p = os.path.join(pasta_projeto, PASTA, "dados", PASTA_PRANCHA, nome)
+        return p if nome and not nome.startswith(".") and os.path.isfile(p) else None
+    try:
+        i = _id_valido(str(cena or ""))
+    except ErroCena:
+        return None
+    c = _ler(os.path.join(pasta_projeto, PASTA, "dados", i, "cena.json"))
+    return _render_atual(pasta_projeto, c) if c else None
+
+
+def fixar_render(g, s: str, i: str) -> dict:
+    """A cópia congelada do render atual da cena (a imagem FIXA da prancha): cenas/dados/prancha/<id>-<data>.jpg."""
+    import shutil
+    c = ler(g, s, i)
+    origem = _render_atual(g.pasta(s), c)
+    if not origem:
+        raise ErroCena("a cena \"%s\" ainda não tem render: renderize-a na tela das Cenas." % c.get("nome", i))
+    pasta = os.path.join(_pasta(g, s), PASTA_PRANCHA)
+    os.makedirs(pasta, exist_ok=True)
+    quando = time.strftime("%Y%m%d-%H%M%S", time.localtime(os.path.getmtime(origem)))
+    nome = "%s-%s%s" % (i, quando, os.path.splitext(origem)[1].lower())
+    destino = os.path.join(pasta, nome)
+    if not os.path.isfile(destino):
+        shutil.copyfile(origem, destino)
+    return {"arquivo": nome, "render_em": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(os.path.getmtime(origem)))}
+
+
 def _abrir_no_explorador(pasta: str, arquivo: Optional[str] = None) -> None:
     """Abre a pasta no Explorador (o servidor é local) com o arquivo já selecionado, quando há um."""
     import subprocess
@@ -318,7 +363,7 @@ def ler(g, s: str, i: str) -> dict:
 def _novo_id(pasta: str, nome: str) -> str:
     base = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode().lower()
     base = re.sub(r"[^a-z0-9]+", "-", base).strip("-")[:30] or "cena"
-    if base in ("marca", "nova", "nova-3d", "ordem", "pdf", "mostrar", "copiar"):   # os nomes das rotas (…/cenas/marca etc.)
+    if base in ("marca", "nova", "nova-3d", "ordem", "pdf", "mostrar", "copiar", "prancha"):   # os nomes das rotas (…/cenas/marca etc.)
         base += "-cena"
     i, k = base, 2
     while os.path.exists(os.path.join(pasta, i)):
@@ -683,7 +728,17 @@ def rota_get(g, s: str, resto: list) -> dict:
         return empresas_da_marca(g, s)
     if len(resto) == 3 and resto[0] == "marca":
         return {"arquivo": arquivo_da_marca(g, s, resto[1], resto[2])}
+    if len(resto) == 2 and resto[0] == PASTA_PRANCHA:          # a cópia fixa da cena na prancha
+        arq = arquivo_da_imagem(g._existente(s), "", False, resto[1])
+        if not arq:
+            raise ErroCena("a imagem fixa não está mais na pasta da obra.")
+        return {"arquivo": arq}
     i = _id_valido(resto[0])
+    if resto[1:] == ["render.jpg"]:                         # o render atual (a imagem viva da prancha)
+        arq = arquivo_da_imagem(g._existente(s), i, True)
+        if not arq:
+            raise ErroCena("a cena ainda não tem render.")
+        return {"arquivo": arq}
     if resto[1:] in (["foto.jpg"], ["miniatura.jpg"]):
         return {"arquivo": os.path.join(_pasta(g, s), i, resto[1])}
     if len(resto) == 1:
@@ -709,6 +764,8 @@ def rota_post(g, s: str, resto: list, corpo: dict) -> dict:
         return gravar(g, s, _id_valido(resto[0]), corpo)
     if len(resto) == 2 and resto[1] == "imagem":
         return gravar_imagem(g, s, _id_valido(resto[0]), corpo)
+    if len(resto) == 2 and resto[1] == "fixar":
+        return fixar_render(g, s, _id_valido(resto[0]))
     if len(resto) == 2 and resto[1] == "miniatura":
         return gravar_miniatura(g, s, _id_valido(resto[0]), corpo)
     if len(resto) == 2 and resto[1] == "apagar":

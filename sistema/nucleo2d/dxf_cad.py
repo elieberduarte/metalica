@@ -25,6 +25,7 @@ import math
 import re
 from typing import Optional
 
+from nucleo2d.desenho import Imagem  # noqa: E402 — a imagem da cena na prancha (11/11): no DXF, a moldura
 from nucleo2d.desenho import (Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota, Hachura, Chamada, folga_da_cota, seta_da_cota,
                               CotaEspecial, Bloco, entidade_de_dict)
 
@@ -186,6 +187,8 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
                 feitas.append(d)
         elif isinstance(e, CotaEspecial):
             feitas += _dimensao_especial(alvo, e, k, at, estilo)
+        elif isinstance(e, Imagem):
+            feitas.append(alvo.add_lwpolyline(e.pontos(), close=True, dxfattribs=at))
         elif isinstance(e, Hachura):
             if e.contornos and len(e.contornos[0]) >= 3:
                 h = alvo.add_hatch(dxfattribs=at)

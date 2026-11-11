@@ -5307,7 +5307,8 @@ def exportar_desenho_pdf(s: str, nome: str, corpo: dict) -> dict:
     # as folhas pelo que está no desenho (a apagada no CAD sai, a movida leva o que está nela): o que mudou e o que ficou fora
     # de toda folha vão para a tela (Vicente, 21/10: "está saindo várias folhas em branco")
     avisos = []
-    caminho = pdf_dos_desenhos(desenhos, os.path.join(pasta, base + ".pdf"), avisos=avisos, penas=_ler_penas())
+    caminho = pdf_dos_desenhos(desenhos, os.path.join(pasta, base + ".pdf"), avisos=avisos, penas=_ler_penas(),
+                               pasta_projeto=g._existente(s))     # as imagens das cenas na prancha (11/11)
     g.tocar(s)
     return {"arquivo": _descrever_arquivo(caminho, pasta), "paginas": sum(len(paginas_de(d)) for d in desenhos),
             "avisos": avisos}
@@ -5446,9 +5447,11 @@ def rota_impressao(s: str, acao: str, corpo: dict) -> dict:
             arquivo = os.path.join(pasta, "impressao-" + (_slug(nome_imp) or "impressora") + ".pdf")
         with tempfile.TemporaryDirectory() as tmp:
             if area is not None:
-                pdf = pdf_da_area(desenho_area, os.path.join(tmp, "desenho.pdf"), caixa, area.get("escala"), penas=_ler_penas())
+                pdf = pdf_da_area(desenho_area, os.path.join(tmp, "desenho.pdf"), caixa, area.get("escala"), penas=_ler_penas(),
+                                  pasta_projeto=g._existente(s))
             else:
-                pdf = pdf_dos_desenhos(desenhos, os.path.join(tmp, "pranchas.pdf"), so=so, penas=_ler_penas())
+                pdf = pdf_dos_desenhos(desenhos, os.path.join(tmp, "pranchas.pdf"), so=so, penas=_ler_penas(),
+                                       pasta_projeto=g._existente(s))
             r = impressao.imprimir_pdf(
                 pdf, nome_imp, papel=None if corpo.get("papel") in (None, "", "auto") else int(corpo["papel"]), ajuste=str(corpo.get("ajuste") or "real"),
                 cor=str(corpo.get("cor") or "preto"), copias=int(corpo.get("copias") or 1),

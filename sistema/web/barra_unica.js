@@ -195,6 +195,7 @@
       S('Pranchas', [
         I('Montar pranchas (automático)…', '2d', 'pranchas', { antes: 'Desenhos › Montar pranchas (automático)…' }),
         I('Inserir folha…', '2d', 'inserir-folha', { antes: 'Desenhos › Inserir folha (prancha)…' }),
+        I('Inserir cena da obra…', '2d', 'inserir-cena', { dica: 'a imagem renderizada de uma cena (menu Cenas) na folha, viva ou fixa' }),
         I('Gerar pranchas das folhas', '2d', 'pranchas-das-folhas', { antes: 'Desenhos › Gerar pranchas das folhas' }),
         HR,
         I('Atualizar desenhos e pranchas agora', '2d', 'atualizar-desenhos', { antes: 'Desenhos › Atualizar desenhos e pranchas agora' }),

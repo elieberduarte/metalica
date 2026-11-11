@@ -24,6 +24,7 @@ import { MetodosImpressaoCAD } from './impressao.js';
 import { MetodosRevisoesCAD } from './revisoes.js';
 import { MetodosLocalizarCAD } from './localizar.js';
 import { MetodosBlocosCAD, blocosUsados } from './blocos.js';
+import { MetodosCenaNaPranchaCAD } from './cena_na_prancha.js';
 
 const CHAVE_TEMA = 'galpao.tema';
 const ATRASO_AUTOSAVE = 3000;
@@ -107,6 +108,7 @@ class CAD {
     usarBlocosDe(this.doc);                 // as inserções de bloco usam as definições deste desenho (24/10)
     this.pilha = new Pilha(this.doc);
     this.tela = new Tela($('#canvas2d'), this.doc);
+    this.tela.urlDaImagem = (e) => this._urlDaImagem(e);     // a imagem da cena na prancha (11/11, cena_na_prancha.js)
     this.snap = new Snap(this.tela);
     this.tela.adquiridos = this.snap.adquiridos;
     // o snap enxerga o que a ferramenta já marcou (os vértices da polilinha em andamento, 25/10)
@@ -1475,6 +1477,7 @@ class CAD {
       'gerar-3d': () => this.dialogoGerar3D(),
       pranchas: () => this.dialogoPranchas(),
       'inserir-folha': () => this.inserirFolha(),
+      'inserir-cena': () => this.inserirCena(),
       'alternar-tema': () => this._alternarTema(),
       'pranchas-das-folhas': () => this.pranchasDasFolhas(),
       'atualizar-desenhos': () => this.atualizarDesenhosAgora(),
@@ -2237,6 +2240,7 @@ class CAD {
           g.append(el('label', { texto: rot }), inp);
         }
       }
+      if (e.tipo === 'imagem') this._propsImagem(g, e);       // a cena na prancha (11/11, cena_na_prancha.js)
       if (e.tipo === 'cota_especial') {
         // a cota angular, de raio, de diâmetro ou ordenada (23/10)
         const nomes = { angular: 'angular', raio: 'de raio', diametro: 'de diâmetro', ordenada: `ordenada (em ${e.eixo === 'y' ? 'y' : 'x'})` };
@@ -3550,7 +3554,7 @@ function lerTema() { try { return localStorage.getItem(CHAVE_TEMA); } catch { re
 
 // os métodos da planta de lançamento (menu Lançamento) moram em lancamento.js; os do
 // projeto recebido montado pela planta, em montar_planta.js
-for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEstruturaCAD, MetodosEdicaoChapaCAD, MetodosTravaPecasCAD, MetodosImpressaoCAD, MetodosRevisoesCAD, MetodosLocalizarCAD, MetodosBlocosCAD]) {
+for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEstruturaCAD, MetodosEdicaoChapaCAD, MetodosTravaPecasCAD, MetodosImpressaoCAD, MetodosRevisoesCAD, MetodosLocalizarCAD, MetodosBlocosCAD, MetodosCenaNaPranchaCAD]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) {
     if (k === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(CAD.prototype, k)) throw new Error(`método repetido no CAD: ${k}`);

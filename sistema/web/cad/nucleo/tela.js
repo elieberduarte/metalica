@@ -305,7 +305,7 @@ export class Tela {
     const Wi = Math.ceil(W) + 1, Hi = Math.ceil(H) + 1;
     if (!this._ocupado || this._ocupado.length !== Wi * Hi) this._ocupado = new Uint16Array(Wi * Hi); else this._ocupado.fill(0);
     const ocupado = this._ocupado, coresDosPontos = [], indiceDaCor = new Map();
-    const tracos = new Map(), hachuras = [], porCima = [], selecionadas = [];
+    const tracos = new Map(), hachuras = [], porCima = [], selecionadas = [], imagens = [];
     // o tracejado de cada tipo de linha neste zoom (no tamanho do papel, como no AutoCAD): um por tipo, não por objeto
     const estiloDes = this.estiloDoDesenho, tracejados = new Map();
     const tracejadoDe = (tl) => { let t = tracejados.get(tl); if (!t) tracejados.set(tl, t = tracosNaTela(tl, k, z, estiloDes)); return t; };
@@ -326,6 +326,7 @@ export class Tela {
         }
       }
       nDesenhadas++;
+      if (tipo === 'imagem') { imagens.push(e); return; }
       if (tipo === 'hachura') { hachuras.push(e); return; }
       if (tipo === 'texto' || tipo === 'cota' || tipo === 'chamada' || tipo === 'cota_especial') { porCima.push(e); return; }
       const cor = corDe(e, cam);
@@ -351,6 +352,7 @@ export class Tela {
       }
       pintar(e, cam, caixas[i]);
     }
+    for (const e of imagens) { const cam = camadas.get(e.camada); this._entidade(ctx, e, corDe(e, cam), cam, k, false); }
     for (const e of hachuras) { const cam = camadas.get(e.camada); this._entidade(ctx, e, corDe(e, cam), cam, k, false); }
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     // o lote cujo último objeto veio depois vai por cima: onde linhas de cores diferentes se sobrepõem (o contorno da
@@ -599,8 +601,38 @@ export class Tela {
       case 'hachura': this._hachura(ctx, e, k, cor); break;
       case 'chamada': this._chamada(ctx, e, k, cor); break;
       case 'bloco': for (const f of filhosDoBloco(e)) this._entidade(ctx, f, cor, this.doc.camadas.get(f.camada) || cam, k, selecionada, previa); break;
+      case 'imagem': this._imagem(ctx, e, cor, selecionada); break;
     }
     ctx.setLineDash([]);
+  }
+
+  /** A imagem de uma cena (11/11): o arquivo por `urlDaImagem(e)` (o CAD dá o endereço; sem ele, só a moldura), guardado
+   *  por endereço; enquanto carrega, a moldura com o nome. Chegando, o quadro inteiro de novo. */
+  _imagem(ctx, e, cor, selecionada) {
+    const [x0, y1] = this.paraTela([e.posicao[0], e.posicao[1] + e.altura]), [x1, y0] = this.paraTela([e.posicao[0] + e.largura, e.posicao[1]]);
+    const w = x1 - x0, h = y0 - y1;
+    const url = this.urlDaImagem ? this.urlDaImagem(e) : null;
+    const cache = this._imagensCarregadas || (this._imagensCarregadas = new Map());
+    let im = url ? cache.get(url) : null;
+    if (url && !im) {
+      im = new Image();
+      im.onload = () => { im._pronta = true; this._cache = null; this.pedirQuadro(); };
+      im.onerror = () => { im._falhou = true; this._cache = null; this.pedirQuadro(); };
+      im.src = url;
+      cache.set(url, im);
+    }
+    if (im && im._pronta && w > 0.5 && h > 0.5) {
+      ctx.save(); ctx.imageSmoothingQuality = 'high'; ctx.drawImage(im, x0, y1, w, h); ctx.restore();
+    }
+    if (!(im && im._pronta) || selecionada) {
+      ctx.save(); ctx.setLineDash(selecionada ? [6, 4] : [3, 3]); ctx.strokeStyle = cor; ctx.lineWidth = selecionada ? 2 : 1;
+      ctx.strokeRect(x0, y1, w, h);
+      if (!(im && im._pronta) && h > 14) {
+        ctx.fillStyle = cor; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(im && im._falhou ? `cena "${e.nome || e.cena}": sem render` : `cena "${e.nome || e.cena}"`, x0 + w / 2, y1 + h / 2);
+      }
+      ctx.restore();
+    }
   }
 
   _texto(ctx, pos, texto, alturaMm, angulo, alinhamento = 'esquerda', vertical = 'base', cor) {

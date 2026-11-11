@@ -340,7 +340,7 @@ export function ligarExportar(ctx) {
         <span class="fraco" id="exportar-aviso-fmt"></span>
         <label><input type="checkbox" id="exportar-gravar"${o.gravar ? ' checked' : ''}> <span>Gravar na pasta da obra <small>(cenas/ — aparece na aba Arquivos)</small></span></label>
         <label><input type="checkbox" id="exportar-baixar"${o.baixar ? ' checked' : ''}> <span>Baixar também <small>(um ZIP quando forem várias)</small></span></label>
-        <label class="off" title="A próxima etapa: a cena como imagem na folha do CAD 2D"><input type="checkbox" disabled> <span>Pôr na prancha… <small>(em breve)</small></span></label>
+        <span class="fraco">Pôr na prancha: no CAD 2D, Desenhos › Pranchas › Inserir cena da obra… (a imagem viva acompanha o render).</span>
       </div><div class="col">
         <h3>Como vai sair</h3>
         <div id="exportar-previa"></div>
