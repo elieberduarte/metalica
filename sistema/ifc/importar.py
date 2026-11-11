@@ -440,6 +440,13 @@ class Importador:
         self._vistos: set = set()
         self.doc = Documento(nome=self.op["nome"] or "Importado")
         self._banco = None
+        # o export padrão do Tekla (Mezanino Drugovich, 11/11): o Tag do IfcElementAssembly pai é a marca do conjunto; os
+        # parafusos vêm em grupos ("Bolt count"), o "só furo" sem porca nem arruela, e o chumbador (PBA = parabolt) com a porca
+        # e a arruela do kit como IfcColumn soltas
+        self._conjunto_tekla: Optional[str] = None
+        self._soltas_tekla: List[Solido] = []
+        self.tekla = {"furos_sem_parafuso": 0, "grupos_de_parafusos": 0, "parafusos": 0, "chumbadores": 0,
+                      "porcas_arruelas_do_kit": 0, "porcas_arruelas_soltas": 0, "soldas": 0}
 
     # ------------------------------------------------------------ diagnóstico
     def avisar(self, msg: str):
@@ -2138,6 +2145,16 @@ class Importador:
             furos.append({"x": round(cx, 4), "y": round(cy, 4),
                           "diametro": round(2 * r, 4)})
 
+        # os eixos nos lados do menor retângulo do contorno (o Tekla grava o perfil da chapa recortada girado a 45°: o
+        # retângulo de corte saía quase o dobro — Mezanino Drugovich, 11/11)
+        giro = angulo_do_menor_retangulo(contorno)
+        if giro:
+            c_, s_ = math.cos(giro), math.sin(giro)
+            ex, ey = (tuple(c_ * ex[k] + s_ * ey[k] for k in range(3)), tuple(-s_ * ex[k] + c_ * ey[k] for k in range(3)))
+            gira = lambda p: (round(p[0] * c_ + p[1] * s_, 6), round(-p[0] * s_ + p[1] * c_, 6))  # noqa: E731
+            contorno = [gira(p) for p in contorno]
+            for f in furos:
+                f["x"], f["y"] = (round(v, 4) for v in gira((f["x"], f["y"])))
         limpo = lambda vet: tuple(0.0 if abs(c) < 1e-12 else round(c, 12)  # noqa: E731
                                   for c in vet)
         chapa = Chapa(nome=nome, origem=tuple(round(c, 6) for c in origem),
@@ -2387,6 +2404,7 @@ class Importador:
         # as camadas padrão do documento (Estrutura, Terças…) só servem ao galpão
         # dimensionado; num modelo importado ficariam vazias no painel, entre as que
         # importam. Some as que não receberam peça, desde que sobre alguma
+        self._kit_dos_chumbadores_tekla()
         usadas = {e.camada for e in self.doc.entidades.values()}
         if usadas:
             for nome in [n for n in self.doc.camadas if n not in usadas]:
@@ -2417,6 +2435,7 @@ class Importador:
             "sem_perfil_no_catalogo": self.sem_perfil,
             "barras_como_solido": self.barras_como_solido,
             "aberturas": dict(self.aberturas_feitas),
+            "tekla": dict(self.tekla),
             "camadas_ifc": self.camadas_ifc,
             "origem_camada": dict(sorted(self.origem_camada.items())),
             "nao_suportados": dict(sorted(self.nao_suportados.items())),
@@ -2428,6 +2447,73 @@ class Importador:
         }
         self._pilares_pela_geometria()
         return self.doc
+
+    def _fixador_tekla(self, papel: str, malha, nome: str, descricao: str, camada: str, material: str, global_id: str,
+                       propriedades: dict, marcas: dict):
+        """Os fixadores do export padrão do Tekla (Mezanino Drugovich, 11/11):
+        - "parafusos": o IfcMechanicalFastener é um GRUPO ("Tekla Bolt": Bolt count = 3) numa malha só — vira um sólido por
+          parafuso ("BOLT (A325N) 15.875x44.5", `atributos.parafuso`), pela malha separada em partes; antes o grupo contava
+          1 e saía sem tamanho na lista;
+        - "chumbador": o IfcColumn "CHUMBADOR" com o perfil PBA_1/2"X5"_ANCORA (o parabolt da Âncora) — vira o fixador
+          "PARABOLT 12.7x127" (o mecânico de expansão, a porca e a arruela no kit), e não barra redonda com 0 kg;
+        - "solta": a porca e a arruela soltas (IfcColumn PORCA/ARRUELA) — fixador sem tamanho; as do kit do parabolt saem
+          no fim (`_kit_dos_chumbadores_tekla`)."""
+        def novo(nome_, vs, fs, extra):
+            s = Solido(nome=nome_, camada=camada, material=material, vertices=vs, faces=fs, origem_ifc=global_id)
+            s.atributos["tipo_ifc"] = "IfcMechanicalFastener"
+            if propriedades:
+                s.atributos["propriedades"] = propriedades
+            s.atributos.update(extra)
+            self.doc.add(s)
+            return s
+        if papel == "parafusos":
+            b = propriedades.get("Tekla Bolt") or {}
+            n = int(_num_pset(b.get("Bolt count")) or 1)
+            d = bitola_nominal(_num_pset(b.get("Bolt size")) or 0.0, b.get("Bolt Name"))
+            L = float(_num_pset(b.get("Bolt length")) or 0.0)
+            classe = str(b.get("Bolt standard") or "").strip()
+            nome_b = "BOLT (%s) %gx%g" % (classe, round(d, 3), round(L, 1))
+            par = {"d": d, "L": L, "classe": classe}
+            partes = separar_em_partes(malha.vertices, malha.faces, n)
+            self.tekla["grupos_de_parafusos"] += 1
+            self.tekla["parafusos"] += n
+            if partes is None:
+                novo(nome_b, malha.vertices, malha.faces, {"parafuso": dict(par, quantidade=n)})
+                self.avisar("grupo de %d parafusos do Tekla (%s) não se separou em %d partes: ficou um sólido só"
+                            % (n, nome_b, n))
+            else:
+                for vs, fs in partes:
+                    novo(nome_b, vs, fs, {"parafuso": dict(par)})
+        elif papel == "chumbador":
+            d, L = medida_do_chumbador_tekla(descricao, propriedades)
+            novo("PARABOLT %gx%g" % (round(d, 3), round(L, 1)), malha.vertices, malha.faces,
+                 {"parabolt": True, "tipo_ifc_original": "IfcColumn", "marcas": dict(marcas or {}, perfil=descricao)})
+            self.tekla["chumbadores"] += 1
+        else:
+            s = novo(nome, malha.vertices, malha.faces, {"tipo_ifc_original": "IfcColumn", "marcas": dict(marcas or {})})
+            self._soltas_tekla.append(s)
+
+    def _kit_dos_chumbadores_tekla(self):
+        """A porca e a arruela soltas que estão no parabolt (a até 30 mm da caixa dele) são do kit: saem do modelo — o
+        parabolt já as traz (a lista do Drugovich as tinha como 126 "PORCA" + 126 "ARRUELA" de aço). As outras ficam como
+        porca/arruela solta (a ponta roscada as acha)."""
+        if not self._soltas_tekla:
+            return
+        caixas = []
+        for e in self.doc.entidades.values():
+            if isinstance(e, Solido) and (e.atributos or {}).get("parabolt") and e.vertices:
+                xs, ys, zs = zip(*e.vertices)
+                caixas.append((min(xs) - 30, min(ys) - 30, min(zs) - 30, max(xs) + 30, max(ys) + 30, max(zs) + 30))
+        for s in self._soltas_tekla:
+            if not s.vertices:
+                continue
+            xs, ys, zs = zip(*s.vertices)
+            c = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2, (min(zs) + max(zs)) / 2)
+            if any(b[0] <= c[0] <= b[3] and b[1] <= c[1] <= b[4] and b[2] <= c[2] <= b[5] for b in caixas):
+                self.doc.remover(s.id)
+                self.tekla["porcas_arruelas_do_kit"] += 1
+            else:
+                self.tekla["porcas_arruelas_soltas"] += 1
 
     def _pilares_pela_geometria(self):
         """IfcColumn não quer dizer pilar: o TecnoMETAL exporta montantes e diagonais de
@@ -2482,8 +2568,15 @@ class Importador:
         filhos = self._agregados.get(prod.id, [])
         if filhos and tipo in ("IFCELEMENTASSEMBLY", "IFCCURTAINWALL", "IFCROOF",
                                "IFCSTAIR", "IFCRAMP", "IFCBUILDINGELEMENTPART"):
-            for filho in self.lista(filhos):
-                self._elemento(filho, camada)
+            ant = self._conjunto_tekla
+            tag = prod.arg(7) if tipo == "IFCELEMENTASSEMBLY" else None
+            if isinstance(tag, str) and tag.strip():
+                self._conjunto_tekla = tag.strip()           # a marca do conjunto (Tekla: "0065A")
+            try:
+                for filho in self.lista(filhos):
+                    self._elemento(filho, camada)
+            finally:
+                self._conjunto_tekla = ant
             if prod.arg(6) is None:
                 return
 
@@ -2496,6 +2589,18 @@ class Importador:
         propriedades = self.propriedades_de(prod)
         material, material_ifc = self.material_de(prod, corpo, propriedades)
         marcas = marcas_de(nome, descricao, propriedades)
+        tekla = e_tekla(propriedades)
+        tekla_papel = ""
+        if tekla:
+            marcas = marcas_tekla(marcas, descricao, prod.arg(7), self._conjunto_tekla, propriedades)
+            tekla_papel = papel_tekla(tipo, nome, descricao, propriedades)
+            if tekla_papel == "so_furo":
+                # o "só furo" do Tekla (Nut count = Washer count = 0): o furo da placa de base para o chumbador — não é parafuso
+                self.tekla["furos_sem_parafuso"] += int(_num_pset(propriedades.get("Tekla Bolt", {}).get("Bolt count")) or 1)
+                return
+            if tekla_papel == "solda":
+                self.tekla["soldas"] += 1                # o cordão de solda: nem peça nem fixador (1.261 no Drugovich)
+                return
         producao = producao_do_pset(propriedades)
         if producao.pop("principal", False) and marcas:
             marcas["principal"] = True
@@ -2511,7 +2616,9 @@ class Importador:
         e_chapa = tipo in ("IFCPLATE", "IFCPLATESTANDARDCASE")
         parametrica, motivo = None, ""
         try:
-            if e_chapa:
+            if tekla_papel in ("chumbador", "solta"):
+                pass                                    # o parabolt e a porca/arruela soltas do Tekla: fixador, não barra
+            elif e_chapa:
                 parametrica = self.tentar_chapa(prod, corpo, mundo)
             else:
                 parametrica, motivo = self.tentar_barra(prod, corpo, mundo,
@@ -2563,6 +2670,9 @@ class Importador:
         mundial = malha.transformada(mundo) if mundo != m_identidade() else malha
         if self._aberturas.get(prod.id):
             mundial = self._recortar_aberturas(mundial, prod, nome or global_id)
+        if tekla_papel in ("parafusos", "chumbador", "solta"):
+            self._fixador_tekla(tekla_papel, mundial, nome, descricao, camada, material, global_id, propriedades, marcas)
+            return
         solido = Solido(nome=nome, camada=camada, material=material,
                         vertices=mundial.vertices, faces=mundial.faces,
                         origem_ifc=global_id)
@@ -2800,6 +2910,203 @@ def marcas_de(nome: str, descricao: str, propriedades: dict) -> dict:
         # o SteelX: a grafia do catálogo em todos ("Ue 500x75x25x3,00" junto de "Ue 300×70×25×2,25", Mall 04/11)
         achado["perfil"] = perfil_limpo(achado["perfil"], grafia_do_catalogo="SteelXData" in (propriedades or {}))
     return achado
+
+
+def e_tekla(propriedades: dict) -> bool:
+    """O elemento veio do export padrão do Tekla (os psets "Tekla Common", "Tekla Quantity", "Tekla Bolt", "Tekla Weld …")."""
+    return isinstance(propriedades, dict) and any(str(k).startswith("Tekla ") for k in propriedades)   # Common, Quantity, Bolt, Weld…
+
+
+def _num_pset(v) -> Optional[float]:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def marcas_tekla(marcas: dict, descricao: str, tag, conjunto: Optional[str], propriedades: dict) -> dict:
+    """As marcas do export padrão do Tekla (Mezanino Drugovich, 11/11): `IFCBEAM(guid, #, 'VIGA', 'W250X17.9', $, …, 'W18')`
+    — o PERFIL na Description, a POSIÇÃO no Tag e o CONJUNTO no Tag do IfcElementAssembly pai ("0065A"). O perfil saía do
+    Name ("VIGA", "COLUNA", "CHAPA") e a lista de materiais ficava sem perfil e sem conjunto. O perfil da Description só vale
+    quando o catálogo o conhece (ou é chapa, "CH8x150"); o pset com Profile, quando há, continua mandando."""
+    m = dict(marcas or {})
+    tem_pset = any(isinstance(ps, dict) and any(ps.get(k) for k in ("Profile", "PROFILE", "Perfil"))
+                   for ps in (propriedades or {}).values())
+    d = re.sub(r"\s+", " ", str(descricao or "")).strip()
+    if d and not tem_pset:
+        # a grafia do catálogo ("W 250×17,9"), a mesma do orçamento e do memorial; a chapa "CH8x150" → "CH 8x150" (o nome
+        # das chapas dos outros exportadores, que a lista e a conferência do RESUMO tratam pela espessura)
+        p = re.sub(r"^(CH|PL|FL)\s*(\d)", r"\1 \2", perfil_limpo(d, grafia_do_catalogo=True), flags=re.I)
+        try:
+            from nucleo import catalogo as _cat
+            conhecido = _cat.item(p) or _cat.perfil_de(p)
+        except Exception:                                # noqa: BLE001 — sem catálogo, só a chapa pelo nome
+            conhecido = None
+        if conhecido is not None or re.match(r"^(CH|PL|FL)\s*\d", d, re.I):
+            m["perfil"] = p
+    # o Tag das chapas e das soldas é o identificador interno do Tekla ("ID64e7a5a8-0cc3-…"), não a marca: não vira posição
+    if isinstance(tag, str) and tag.strip() and "posicao" not in m and not re.match(r"^ID[0-9A-Fa-f]{8}-", tag.strip()):
+        m["posicao"] = tag.strip()
+    if conjunto and "conjunto" not in m:
+        m["conjunto"] = conjunto
+    return m
+
+
+def papel_tekla(tipo: str, nome: str, descricao: str, propriedades: dict) -> str:
+    """O que o elemento do Tekla é para a lista: "parafusos" (grupo do IfcMechanicalFastener), "so_furo" (o "só furo":
+    Nut count e Washer count 0), "chumbador" (o PBA_… = parabolt da Âncora, IfcColumn), "solta" (porca/arruela IfcColumn)
+    ou "" (peça normal)."""
+    if tipo == "IFCFASTENER" and str(nome or "").strip().lower() in ("weld", "solda"):
+        return "solda"                                  # o cordão de solda do Tekla: a lista o lia como porca/arruela solta
+    if tipo == "IFCMECHANICALFASTENER" and isinstance((propriedades or {}).get("Tekla Bolt"), dict):
+        b = propriedades["Tekla Bolt"]
+        if not int(_num_pset(b.get("Nut count")) or 0) and not int(_num_pset(b.get("Washer count")) or 0):
+            return "so_furo"
+        return "parafusos"
+    if tipo in ("IFCCOLUMN", "IFCMEMBER", "IFCBEAM", "IFCDISCRETEACCESSORY"):
+        d = str(descricao or "").upper()
+        if re.match(r"^PBA[_ ]", d) or "PARABOLT" in d:
+            return "chumbador"
+        if re.search(r"HEX_NUT|_NUT\b|WASHER", d) or str(nome or "").strip().upper() in ("PORCA", "ARRUELA", "NUT", "WASHER"):
+            return "solta"
+    return ""
+
+
+def _polegada_mm(txt: str) -> Optional[float]:
+    """'1/2' → 12,7; '5' → 127; '1"1/4' ou '1 1/4' → 31,75 (polegada para mm)"""
+    t = str(txt or "").replace('"', " ").strip()
+    tot = 0.0
+    for parte in t.split():
+        if "/" in parte:
+            a, b = parte.split("/", 1)
+            try:
+                tot += float(a) / float(b)
+            except (ValueError, ZeroDivisionError):
+                return None
+        else:
+            try:
+                tot += float(parte)
+            except ValueError:
+                return None
+    return tot * 25.4 if tot > 0 else None
+
+
+def bitola_nominal(d: float, nome_parafuso) -> float:
+    """O diâmetro nominal pelo nome do parafuso do Tekla ('PARAF_5/8"X1"3/4_A325' → 15,875), quando bate com o "Bolt size"
+    arredondado (15,9); senão o do pset"""
+    m = re.search(r"(\d+/\d+|\d+(?:\.\d+)?)\s*\"", str(nome_parafuso or ""))
+    dn = _polegada_mm(m.group(1)) if m else None
+    return round(dn, 3) if dn and (not d or abs(dn - d) <= 0.6) else float(d or 0.0)
+
+
+def medida_do_chumbador_tekla(descricao: str, propriedades: dict) -> Tuple[float, float]:
+    """'PBA_1/2"X5"_ANCORA' → (12,7, 127) mm; sem a medida no nome, a do "Tekla Quantity" (Width × Length)"""
+    m = re.search(r"(\d+(?:/\d+)?)\"?\s*[Xx]\s*(\d+(?:[./]\d+)?)\"", str(descricao or ""))
+    if m:
+        d, L = _polegada_mm(m.group(1)), _polegada_mm(m.group(2))
+        if d and L:
+            return round(d, 3), round(L, 1)
+    q = (propriedades or {}).get("Tekla Quantity") or {}
+    return float(_num_pset(q.get("Width")) or 0.0), float(_num_pset(q.get("Length")) or 0.0)
+
+
+def separar_em_partes(vertices, faces, n: int):
+    """A malha de um grupo de `n` parafusos do Tekla em `n` partes: as cascas ligadas (faces que dividem vértice) e, delas,
+    as que se tocam (caixas a até 1 mm: cabeça, corpo, porca e arruela do mesmo parafuso) viram uma parte. Devolve
+    [(vértices, faces)] reindexados, ou None quando não dá exatamente `n`."""
+    if n <= 1:
+        return [(list(vertices), [list(f) for f in faces])]
+    pai = list(range(len(vertices)))
+
+    def raiz(i):
+        while pai[i] != i:
+            pai[i] = pai[pai[i]]
+            i = pai[i]
+        return i
+    for f in faces:
+        r0 = raiz(f[0])
+        for i in f[1:]:
+            ri = raiz(i)
+            if ri != r0:
+                pai[ri] = r0
+    comp: Dict[int, List[int]] = {}
+    for i in range(len(vertices)):
+        comp.setdefault(raiz(i), []).append(i)
+    caixas = []
+    for ids in comp.values():
+        xs = [vertices[i][0] for i in ids]
+        ys = [vertices[i][1] for i in ids]
+        zs = [vertices[i][2] for i in ids]
+        caixas.append([min(xs), min(ys), min(zs), max(xs), max(ys), max(zs), set(ids)])
+    juntou = True
+    while juntou:
+        juntou = False
+        for a in range(len(caixas)):
+            for b in range(a + 1, len(caixas)):
+                A, B = caixas[a], caixas[b]
+                if all(A[k] <= B[k + 3] + 1.0 and B[k] <= A[k + 3] + 1.0 for k in range(3)):
+                    A[:3] = [min(A[k], B[k]) for k in range(3)]
+                    A[3:6] = [max(A[k + 3], B[k + 3]) for k in range(3)]
+                    A[6] |= B[6]
+                    del caixas[b]
+                    juntou = True
+                    break
+            if juntou:
+                break
+    if len(caixas) != n:
+        return None
+    partes = []
+    for cx in caixas:
+        ids = cx[6]
+        novo = {}
+        vs = []
+        for i in sorted(ids):
+            novo[i] = len(vs)
+            vs.append(vertices[i])
+        fs = [[novo[i] for i in f] for f in faces if f[0] in ids]
+        partes.append((vs, fs))
+    return partes
+
+
+def angulo_do_menor_retangulo(pontos) -> float:
+    """O giro (rad, entre −45° e 45°) que deixa os eixos da chapa nos lados do MENOR retângulo que contém o contorno, ou 0
+    quando os eixos já estão nele (até 2 % de área). O Tekla grava o perfil da chapa recortada girado: os enrijecedores
+    de 150 × 288 do Drugovich vinham a 45° e o retângulo de corte da lista (o bruto) saía 249 × 281 — quase o dobro do peso."""
+    pts = sorted(set((float(p[0]), float(p[1])) for p in pontos))
+    if len(pts) < 3:
+        return 0.0
+
+    def cruz(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    baixo, cima = [], []
+    for p in pts:
+        while len(baixo) >= 2 and cruz(baixo[-2], baixo[-1], p) <= 0:
+            baixo.pop()
+        baixo.append(p)
+    for p in reversed(pts):
+        while len(cima) >= 2 and cruz(cima[-2], cima[-1], p) <= 0:
+            cima.pop()
+        cima.append(p)
+    casca = baixo[:-1] + cima[:-1]
+
+    def area(t):
+        c, s = math.cos(t), math.sin(t)
+        xs = [x * c + y * s for x, y in casca]
+        ys = [-x * s + y * c for x, y in casca]
+        return (max(xs) - min(xs)) * (max(ys) - min(ys))
+    a0 = area(0.0)
+    melhor, a_m = 0.0, a0
+    for i in range(len(casca)):
+        x0, y0 = casca[i]
+        x1, y1 = casca[(i + 1) % len(casca)]
+        if abs(x1 - x0) + abs(y1 - y0) < 1e-9:
+            continue
+        t = math.atan2(y1 - y0, x1 - x0)
+        t = (t + math.pi / 4) % (math.pi / 2) - math.pi / 4
+        a = area(t)
+        if a < a_m - 1e-9:
+            melhor, a_m = t, a
+    return melhor if a_m < 0.98 * a0 else 0.0
 
 
 #: O separador do SteelX entre a família e o perfil no nome do IfcProfileDef: "Usr Tubo Retangular#@§@#TR 150x100x2,00mm"
