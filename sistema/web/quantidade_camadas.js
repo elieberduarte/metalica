@@ -101,7 +101,21 @@ export function linhaDaObra(dados, o) {
   if (o.pecas) p.push(`${inteiro(o.pecas)} peças`);
   if (ob.peso_aco >= 0.5) p.push(`Estrutura ${inteiro(ob.peso_aco)} kg${r.atual ? '' : ` (resumo de ${quando(r.gerado)}, antes da última mudança do modelo)`}`);
   else if (dados) p.push('área e peso: gere o Resumo da obra');
+  const aviso = avisoSemDesenho(o.numeros);
+  if (aviso) p.push(aviso);
   return p.join(' · ');
+}
+
+/**
+ * As peças do modelo que o 3D leve não desenhou (perfil sem geometria conhecida): "⚠ 183 peças sem desenho (Cr 50×60×15×0,95:
+ * 120, …)"; "" sem nenhuma. numeros = cabeçalho do 3D leve (saida/pacote_celular.gerar_3d). Antes a peça sumia sem aviso
+ * (Residencial Madrid, 11/11: as ripas cartola não apareciam e o usuário achou que tinham sido retiradas do modelo).
+ */
+export function avisoSemDesenho(numeros) {
+  const n = (numeros && +numeros.sem_desenho) || 0;
+  if (!n) return '';
+  const perfis = Object.entries(numeros.sem_desenho_perfis || {}).map(([k, v]) => `${k}: ${inteiro(v)}`).join(', ');
+  return `⚠ ${inteiro(n)} ${n === 1 ? 'peça' : 'peças'} sem desenho${perfis ? ` (${perfis})` : ''}`;
 }
 
 /** A tela que gera o Resumo da obra (a lista de materiais, aba Resumos). */

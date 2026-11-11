@@ -93,3 +93,34 @@ def test_ue_da_tabela_ganha_o_j_que_falta():
     """o Ue 200×75×20×2,65 da tabela do manual vinha com J = 0 e a análise usava 1 % da menor inércia (3,4 × o do Tekla)"""
     p = perfil_de_fabrica("Ue 200×75×20×2,65")
     assert p.A == pytest.approx(10.1) and p.dados["J"] == pytest.approx(0.2311, rel=0.02)
+
+
+@pytest.mark.parametrize("nome, h, b, c, t", [
+    ("Cr 50×60×15×0,95", 50, 60, 15, 0.95), ("Cr 50×80×15×1,95", 50, 80, 15, 1.95), ("Cr 50x60x15x1,25", 50, 60, 15, 1.25),
+])
+def test_cartola_fora_do_catalogo_pelo_nome(nome, h, b, c, t):
+    """A cartola "Cr h×B×C×t" fora do catálogo pelo nome (Residencial Madrid, 11/11: as ripas Cr 50×60×15×0,95… não tinham
+    geometria — "perfil fora do catálogo" — e o modo ver as pulava sem aviso). A seção desenhada como a do catálogo (chapéu
+    para cima: a mesa de cima com a largura B, as abas C para fora embaixo) e o peso pela regra da fábrica."""
+    from nucleo3d import geometria
+    from nucleo3d.modelo import Barra
+    p = perfil_de_fabrica(nome)
+    assert p is not None and p.tipo == "Cr", p
+    assert p.dados["d"] == h and p.dados["bf"] == b and p.dados["enrijecedor"] == c and p.dados["t"] == t
+    assert abs(p.dados["massa"] - (2 * c + 2 * h + b - 8 * t) * t * 8.0 / 1000.0) < 1e-3
+    assert p.dados["A"] > 0 and p.dados["Ix"] > 0 and p.dados["Iy"] > p.dados["Ix"] and p.dados["J"] > 0 and p.dados["Cw"] > 0
+    assert geometria.resolver_perfil(nome).tipo == "Cr"           # o caminho do servidor (malhas e 3D leve)
+    v, _f = geometria.malha_barra(Barra(inicio=(137526.0, 72917.0, 6427.0), fim=(139526.0, 72917.0, 6427.0), perfil=nome))
+    larg = max(q[1] for q in v) - min(q[1] for q in v)
+    alt = max(q[2] for q in v) - min(q[2] for q in v)
+    assert abs(larg - (b + 2 * c)) <= 2 * t + 0.1 and abs(alt - h) < 0.5, (larg, alt)   # a mesma conta da Cr do catálogo
+
+
+def test_cartola_do_catalogo_continua_a_do_catalogo():
+    """As propriedades calculadas são as da tabela (A, Ix, Iy, J, Cw); a cartola que está no catálogo vem dele."""
+    from nucleo.secoes_frio import propriedades
+    p = perfil_de_fabrica("Cr 50×100×20×2,00")
+    assert p is not None and p.tipo == "Cr" and not p.dados.get("sintetico")
+    s = propriedades("Cr", 50, 100, 20, 2.0)
+    for k in ("A", "Ix", "Iy", "J", "Cw"):
+        assert abs(s[k] - p.dados[k]) <= 0.05 * abs(p.dados[k]) + 0.01, (k, s[k], p.dados[k])

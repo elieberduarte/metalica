@@ -533,7 +533,7 @@ function atualizarRodape() {
   if (!visor || !visor.cabecalho) return;
   const cab = visor.cabecalho, o = cab.origem || [0, 0, 0], cx = cab.caixa;
   const info = linhaDaObra(qtdCamadas, { pecas: visor.nPecas, niveis: niveisDoProjeto,
-    zTopo: cx ? cx[1][2] + o[2] : NaN, zPe: cx ? cx[0][2] + o[2] : NaN });
+    zTopo: cx ? cx[1][2] + o[2] : NaN, zPe: cx ? cx[0][2] + o[2] : NaN, numeros: cab.numeros });
   const novo = `${info} · modo ver, aberto em ${nf(msAberto / 1000, 1)} s`;
   const igual = $('#situacao').textContent === situacaoBase;
   situacaoBase = novo;

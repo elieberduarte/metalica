@@ -38,7 +38,8 @@ VERSAO_3D = 1
 #: A geração das malhas (não muda o formato do arquivo, só o conteúdo): entra na assinatura do cache para o pacote
 #: velho ser refeito. 2 (13/10): as barras saem com os furos dos marcadores abertos de verdade.
 #: 3 (22/10): as faces costuradas do IFC (furo ligado ao contorno por ponte) com os furos abertos — ME Sooro.
-GERACAO_MALHAS = 3
+#: 4 (11/11): a cartola "Cr h×B×C×t" fora do catálogo desenhada pelo nome (antes pulada) — Residencial Madrid.
+GERACAO_MALHAS = 4
 #: Versão das fichas (pecas.json): mudou o que elas levam, os 3D leves guardados são refeitos.
 #: 2 (06/10): o vínculo com o 2D — peça e planta de origem, elemento da planta, marca do pré-moldado e caixa.
 #: 3 (12/10): a sigla da terça (TC3, TC46…) para a busca do modo ver achar a peça pelo nome do projeto.
@@ -502,12 +503,19 @@ def gerar_3d(modelo: dict, progresso=None) -> Tuple[bytes, dict, dict]:
     materiais = modelo.get("materiais") or {}
     nomes_camadas = list(camadas.keys())
     pecas: List[dict] = []
+    # a barra ou chapa que não vira malha (perfil sem geometria conhecida) é contada e vai ao cabeçalho: o modo ver diz
+    # "N peças sem desenho" em vez de escondê-las (Residencial Madrid, 11/11: as 183 ripas cartola sumiram sem aviso e o
+    # usuário achou que tinham sido retiradas do modelo)
+    sem_desenho: Dict[str, int] = {}
     furos_de, marcadores = _furos_das_barras(modelo.get("entidades") or [])
     for reg in modelo.get("entidades") or []:
         if reg.get("id") in marcadores:
             continue                                        # o furo já está aberto na barra
         m = _malha(reg, furos_de.get(reg.get("id")))
         if not m:
+            if reg.get("tipo") in ("barra", "chapa"):
+                chave = str(reg.get("perfil") or "") if reg.get("tipo") == "barra" else "chapa"
+                sem_desenho[chave or "barra sem perfil"] = sem_desenho.get(chave or "barra sem perfil", 0) + 1
             continue
         cam = reg.get("camada") or ""
         if cam not in camadas and cam not in nomes_camadas:
@@ -683,6 +691,8 @@ def gerar_3d(modelo: dict, progresso=None) -> Tuple[bytes, dict, dict]:
         "vertices_blocos": n_vert, "triangulos": n_tri, "arestas": n_ar,
         "s_malhas": round(t_malha - t0, 1), "s_copias": round(t_copias - t_malha, 1),
         "s_blocos": round(t_fim - t_copias, 1),
+        "sem_desenho": sum(sem_desenho.values()),
+        "sem_desenho_perfis": dict(sorted(sem_desenho.items(), key=lambda kv: -kv[1])[:8]),
     }
     cab = {
         "versao": VERSAO_3D, "unidade": "mm", "origem": origem,

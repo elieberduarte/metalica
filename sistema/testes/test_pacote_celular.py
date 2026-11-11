@@ -216,3 +216,21 @@ def test_pacote_leva_o_terreno(tmp_path):
     (proj / "projeto.json").write_text(json.dumps({"nome": "Obra Teste", "terreno": None}), encoding="utf-8")
     m = gerar_pacote(str(proj), str(dest), "obra")
     assert "terreno" not in m and not (dest / "terreno.json").exists() and not (dest / "terreno.jpg").exists()
+
+
+def test_peca_sem_desenho_vai_ao_cabecalho():
+    """O 3D leve do modo ver não esconde peça sem aviso (Residencial Madrid, 11/11: 994 peças no modelo, 811 no modo ver — as
+    183 ripas cartola fora do catálogo sumiam e o usuário achou que tinham sido retiradas): a cartola "Cr h×B×C×t" é
+    desenhada pelo nome, e a barra que ainda assim fica sem malha é contada no cabeçalho, com o perfil, para a tela avisar.
+    Longe da origem, como o modelo da obra."""
+    x0, y0, z0 = 137526.0, 72917.0, 6427.0
+    def barra(id_, perfil, dy):
+        return {"id": id_, "tipo": "barra", "inicio": [x0, y0 + dy, z0], "fim": [x0 + 3000.0, y0 + dy, z0], "perfil": perfil,
+                "rotacao": 0.0, "camada": "Ripas", "material": ""}
+    modelo = {"nome": "madrid", "unidade": "mm", "camadas": {"Ripas": {"nome": "Ripas", "cor": "#888888", "visivel": True}},
+              "materiais": {}, "entidades": [barra("r1", "Cr 50×60×15×0,95", 0.0), barra("r2", "Cr 50×80×15×1,95", 320.0),
+                                             barra("x1", "PERFIL INVENTADO 99", 640.0)]}
+    binario, fichas, _num = gerar_3d(modelo)
+    num = ler_cabecalho(binario)["numeros"]
+    assert num["pecas"] == 2, num                       # as duas cartolas desenhadas
+    assert num["sem_desenho"] == 1 and num["sem_desenho_perfis"] == {"PERFIL INVENTADO 99": 1}, num

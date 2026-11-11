@@ -148,6 +148,34 @@ def perfil_ue_frio(h: float, bf: float, d: float, t: float, nome: str = "") -> P
     return _registrar(_de_secao_frio(sec, "Ue"))
 
 
+def perfil_cartola_frio(h: float, b: float, d: float, t: float, nome: str = "") -> Perfil:
+    """Cartola (chapéu) formada a frio pelo nome "Cr h×B×C×t" (mm: altura, mesa de cima, abas de apoio, espessura).
+    Prefere a do catálogo; fora dele, as propriedades pela linha média (nucleo/secoes_frio, as mesmas da tabela — A, Ix,
+    Iy, J e Cw iguais aos do catálogo nas Cr 20×30, 50×100, 75×75 e 100×50) e o peso pela regra da fábrica, a mesma das
+    cartolas do catálogo: (soma externa − 2t por dobra) × t × 8 kg/m² por mm, 4 dobras. Antes a cartola fora do catálogo
+    (Residencial Madrid, 11/11: Cr 50×60×15×0,95…) não tinha geometria e o modo ver a pulava sem aviso."""
+    nome_cat = ("Cr %g×%g×%g×%.2f" % (h, b, d, t)).replace(".", ",")
+    try:
+        from . import catalogo
+        if catalogo.item(nome_cat) is not None:
+            p = catalogo.perfil_de(nome_cat)
+            if p is not None:
+                return p
+    except Exception:                                   # noqa: BLE001 — sem o catálogo, calcula
+        pass
+    from .secoes_frio import propriedades
+    s = propriedades("Cr", h, b, d, t)
+    massa = (2 * d + 2 * h + b - 8 * t) * t * 8.0 / 1000.0
+    rot = nome or nome_cat
+    dados = {"nome": rot, "familia": "Cr", "dim": ("%g×%g×%g×%g" % (h, b, d, t)).replace(".", ","), "d": h, "bf": b,
+             "enrijecedor": d, "t": t, "tw": t, "tf": t, "massa": round(massa, 3), "A": round(s["A"], 4),
+             "Ix": round(s["Ix"], 3), "Wx": round(s["Wx"], 3), "rx": round(s["rx"], 4), "Iy": round(s["Iy"], 3),
+             "Wy": round(s["Wy"], 3), "ry": round(s["ry"], 4), "J": round(s["J"], 5), "Cw": round(s["Cw"], 4),
+             "x0": round(s["x0"], 4), "y0": round(s["y0"], 4), "r0": round(s["r0"], 4), "formado_a_frio": True,
+             "sintetico": True}
+    return _registrar(Perfil(nome=rot, tipo="Cr", dados=dados))
+
+
 def _props_cantoneira(b1: float, b2: float, t: float, r: float) -> dict:
     """Propriedades (cm) de uma cantoneira pela linha média: aba `b1` vertical, aba
     `b2` horizontal, canto de raio interno `r`. Devolve também os eixos principais."""
@@ -266,6 +294,7 @@ _RE_U = re.compile(r"^U\s*(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\
 _RE_UE = re.compile(r"^(?:C|UE|U\s*E)\s*(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)$")
 _RE_L3 = re.compile(r"^L\s*(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)$")
 _RE_L2 = re.compile(r"^L\s*(.+?)\s*X\s*(.+?)$")
+_RE_CR = re.compile(r"^CR\s*(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)$")
 _RE_W = re.compile(r"^(W|HP)\s*(\d+)\s*X\s*(\d+(?:\.\d+)?)$")
 # "Barra ø 16 mm" (o nome que o galpão dá às correntes) chega aqui como "BARRA 16 MM":
 # barra seguida de número é redonda (a chata diz "BARRA CHATA")
@@ -284,6 +313,10 @@ def perfil_de_fabrica(nome: str) -> Optional[Perfil]:
     if m:
         h, bf, d, t = (float(x) for x in m.groups())
         return perfil_ue_frio(h, bf, d, t)
+    m = _RE_CR.match(s)
+    if m:
+        h, bf, d, t = (float(x) for x in m.groups())
+        return perfil_cartola_frio(h, bf, d, t, nome=str(nome).strip())
     m = _RE_U.match(s)
     if m:
         h, bf, t = (float(x) for x in m.groups())
