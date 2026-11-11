@@ -9,6 +9,7 @@ em Projeto/BRIEFINGS/imagens/cenas-3d/): visor3d/cena.html com as cenas do 3D e 
      câmera gravada;
   E. o estilo: cores por camada e sem arestas, no visor e no servidor;
   F. o cartão da foto abre a cena da foto (a foto no palco, sem o quadro); o do 3D volta com o quadro;
+  H. a marca d'água: o padrão B (a empresa do projeto), a prévia, o render com a placa no canto e sem ela ("sem"), a faixa C;
   G. botão direito no cartão: Duplicar e Apagar; sem erro no console.
 Porta livre, nunca a 8765/8766. Capturas na pasta temporária metalica_saida_tela_cenas (para conferir de olho)."""
 import json, os, shutil, subprocess, sys, tempfile, time, urllib.request, base64
@@ -36,6 +37,13 @@ Image.new("RGB", (120, 90), (120, 110, 95)).save(os.path.join(FOTO_DIR, "foto.jp
 json.dump({"id": "quadra", "nome": "Quadra", "foto": "foto.jpg", "px": [120, 90], "pares": [], "camera": None, "opacidade": 1.0,
            "criada": "2026-11-01T08:00:00", "alterada": "2026-11-01T08:00:00"},
           open(os.path.join(FOTO_DIR, "cena.json"), "w", encoding="utf-8"))
+# a marca d'água: um logo em faixa como o da Hermes (o nome numa ponta, o símbolo na outra), em cor e claro
+from PIL import ImageDraw
+os.makedirs(os.path.join(DADOS, "fabrica", "marca"))
+for nome, cor in (("logo.png", (53, 67, 76, 255)), ("logo_claro.png", (255, 255, 255, 255))):
+    im = Image.new("RGBA", (1772, 229), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
+    d.rectangle((82, 68, 564, 145), fill=cor); d.rectangle((1621, 68, 1690, 145), fill=(195, 215, 115, 255))
+    im.save(os.path.join(DADOS, "fabrica", "marca", nome))
 srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 base = f"http://localhost:{PORTA}"
@@ -61,7 +69,7 @@ def esperar(aba, expr, limite=30.0):
 
 def clicar_no(aba, sel, botao="left"):
     r = aba.avaliar(f"(() => {{ const b = document.querySelector({json.dumps(sel)}); if (!b || !b.offsetWidth) return null;"
-                    f" const q = b.getBoundingClientRect(); return [q.x + q.width / 2, q.y + q.height / 2]; }})()")
+                    f" b.scrollIntoView({{block: 'nearest'}}); const q = b.getBoundingClientRect(); return [q.x + q.width / 2, q.y + q.height / 2]; }})()")
     if not r: return False
     aba.cmd("Input.dispatchMouseEvent", type="mouseMoved", x=r[0], y=r[1])
     for tipo in ("mousePressed", "mouseReleased"):
@@ -208,6 +216,52 @@ try:
         from PIL import ImageStat
         desvio = max(ImageStat.Stat(im.convert("RGB")).stddev)
         ok(desvio > 12, f"a miniatura tem a obra (não uma cor só: desvio {desvio:.1f})")
+
+    print("H — a marca d'água (o padrão B: o logo em cor numa placa)")
+    ok(aba.avaliar("!document.getElementById('marca-bloco').hidden"), "a seção Marca d'água à direita")
+    ok(aba.avaliar("[...document.querySelectorAll('#marca-empresa button')].map(b => b.dataset.v)") == ["principal", "sem"],
+       "as empresas do cadastro e 'sem'")
+    ok(aba.avaliar("document.querySelector('#marca-jeito .ligado').dataset.v === 'B' && document.querySelector('#marca-empresa .ligado').dataset.v === 'principal'"),
+       "o padrão: B, a empresa do projeto")
+    ok(esperar(aba, "!document.getElementById('marca-previa').hidden", 10), "a prévia por cima do quadro")
+    clicar_no(aba, "#fundo3d [data-v=branco]")
+    clicar_no(aba, "#barra-palco [data-vista=topo]")
+    aba.drenar(0.8)
+    def render_jpg():
+        for n in arquivos("Cena - Fachada (render)"):
+            os.remove(os.path.join(PASTA_CENAS, n))
+        aba.avaliar("document.getElementById('aviso').textContent = ''; 1")
+        clicar_no(aba, "#renderizar")
+        esperar(aba, "/Imagem renderizada/.test(document.getElementById('aviso').textContent)", 240)
+        n = arquivos("Cena - Fachada (render).jpg")
+        return Image.open(os.path.join(PASTA_CENAS, n[0])).convert("RGB") if n else None
+    com_b = render_jpg()
+    clicar_no(aba, "#marca-empresa [data-v=sem]")
+    aba.drenar(0.8)
+    sem = render_jpg()
+    from PIL import ImageChops, ImageStat
+    if com_b and sem:
+        W, H = com_b.size
+        canto = (int(W * 0.7), int(H * 0.85), W, H)
+        dif = max(ImageStat.Stat(ImageChops.difference(com_b.crop(canto), sem.crop(canto))).mean)
+        resto = max(ImageStat.Stat(ImageChops.difference(com_b.crop((0, 0, W // 2, H // 2)), sem.crop((0, 0, W // 2, H // 2)))).mean)
+        ok(dif > 4 and resto < 1, f"o render com a placa no canto de baixo à direita e nada no resto (canto {dif:.1f}, resto {resto:.2f})")
+        com_b.save(os.path.join(SAIDA, "render-marca-b.jpg"))
+    else:
+        ok(False, "os dois renders (com e sem a marca)")
+    clicar_no(aba, "#marca-empresa [data-v=principal]")
+    clicar_no(aba, "#marca-jeito [data-v=C]")
+    aba.drenar(0.8)
+    com_c = render_jpg()
+    if com_c:
+        W, H = com_c.size
+        faixa = ImageStat.Stat(com_c.crop((0, int(H * 0.97), W, H)).convert("L")).mean[0]
+        ok(faixa < 110, f"a faixa C escura no rodapé (luz {faixa:.0f})")
+        com_c.save(os.path.join(SAIDA, "render-marca-c.jpg"))
+    m = servidor()["fachada"].get("marca") or {}
+    ok(m.get("empresa") == "principal" and m.get("jeito") == "C", f"a marca gravada na cena ({m})")
+    clicar_no(aba, "#marca-jeito [data-v=B]")
+    aba.drenar(0.6)
 
     print("F — a cena da foto na mesma tela")
     clicar_no(aba, ".cartao-cena[data-cena=quadra]")

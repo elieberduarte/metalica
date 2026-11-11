@@ -95,6 +95,8 @@
   #quadro[hidden] { display: none; }
   #quadro span { position: absolute; left: -2px; top: -22px; background: var(--azul2, #1f5fbf); color: #fff; font-size: 11.5px;
     padding: 2px 7px; border-radius: 3px 3px 0 0; white-space: nowrap; }
+  #marca-previa { position: absolute; pointer-events: none; }
+  #marca-previa[hidden], #marca-bloco[hidden] { display: none; }
   #barra-palco { position: absolute; left: 12px; right: 12px; bottom: 10px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   #barra-palco[hidden] { display: none; }
   #barra-palco button { padding: 4px 9px; font-size: 12px; }
@@ -220,6 +222,12 @@
     <div id="contornos"></div>
     <div class="linha"><button type="button" id="apagar">Apagar a cena</button></div>
   </div>
+  <!-- a marca d'água (11/11, aprovada: B — o logo em cor numa placa; sai em toda imagem exportada) -->
+  <div id="marca-bloco" class="secao3d" hidden><h2>Marca d'água</h2>
+    <div class="linha-opcao">Empresa <span class="opcoes" id="marca-empresa"></span></div>
+    <div class="linha-opcao">Jeito <span class="opcoes" id="marca-jeito"><button type="button" data-v="A" title="O logo claro solto no canto, com sombra leve">A · logo</button><button type="button" data-v="B" title="O logo em cor numa placa branca translúcida">B · placa</button><button type="button" data-v="C" title="Uma faixa no rodapé com o nome da obra e o logo">C · faixa</button></span></div>
+    <div class="linha-opcao">Canto <span class="opcoes" id="marca-canto"><button type="button" data-v="esq">esquerdo</button><button type="button" data-v="dir">direito</button></span></div>
+    <p class="dica">Sai em toda imagem: Salvar imagem e Renderizar. A empresa de saída é a do projeto (a do carimbo das pranchas).</p></div>
   <p class="dica" id="dica-imagem">Salvar imagem: a cena como está. Renderizar: a imagem final, maior, com as peças finas sem
     serrilhado e a sombra mais definida (leva alguns segundos). Vão para a pasta cenas da obra.</p>
   <div id="aviso" role="status"></div>
@@ -231,6 +239,7 @@
   <div id="marcas"></div>
   <svg id="frente-svg"></svg>
   <div id="quadro" hidden><span id="quadro-rotulo"></span></div>
+  <canvas id="marca-previa" hidden></canvas>
   <div id="barra-palco" hidden>
     <button type="button" data-vista="iso">Iso</button><button type="button" data-vista="topo">Topo</button>
     <button type="button" data-vista="frente">Frente</button><button type="button" data-vista="lado">Lado</button>

@@ -105,6 +105,7 @@ async function abrir() {
   $('#carregando').remove();
   ligarControles();
   await coberturaRetratil();
+  await carregarMarcas();
   await listar(escolhida ? escolhida.id : null);
   window.cenaPronta = true;
   requestAnimationFrame(desenharMarcas);
@@ -146,7 +147,7 @@ async function listar(escolher) {
     || '<option value="">(nenhuma cena: comece pela foto)</option>';
   const id = escolher && todasCenas.some(c => c.id === escolher) ? escolher : ((cenas[cenas.length - 1] || todasCenas[0] || {}).id);
   if (id) { $('#lista').value = id; await abrirCena(id); }
-  else { sairDaCena(); cena = null; $('#corpo').hidden = true; $('#corpo3d').hidden = true; foto.hidden = true; mostrarModo('3d'); desenharCamadas(); mostrarSol(); }
+  else { sairDaCena(); cena = null; $('#corpo').hidden = true; $('#corpo3d').hidden = true; foto.hidden = true; mostrarModo('3d'); desenharCamadas(); mostrarSol(); mostrarMarca(); }
   desenharCartoes();
   mostrarBotoes();
 }
@@ -190,6 +191,7 @@ async function abrirCena(id) {
   mostrarSol();
   mostrarConcluida();
   desenharContornos();
+  mostrarMarca();
 }
 
 // ------------------------------------------------------------------ a cena do 3D na tela das Cenas (11/11)
@@ -234,6 +236,7 @@ function abrirCena3d() {
   mostrarTamanhos();
   mostrarSol();
   mostrarPainel3d();
+  mostrarMarca();
   if (!cena.miniatura) agendarMiniatura(300);              // a cena feita no modo ver ainda sem miniatura
 }
 
@@ -255,6 +258,7 @@ function ajustarQuadro() {
   visor.camera.fov = Math.min(170, Math.atan(t) * 360 / Math.PI);
   visor.camera.updateProjectionMatrix();
   visor.pedirQuadro();
+  desenharPreviaMarca();
 }
 
 /** A câmera da cena no visor (a posição e o alvo; a lente pelo quadro). */
@@ -380,7 +384,7 @@ async function imagemDaCena3d(w, h, ss = 1, aoBloco = null, comMarca = true) {
   try {
     const img = await montarImagem(w, h, ss, aoBloco, { comFoto: false, frente: false,
       antes: f === 'ceu' ? (g) => { const grad = g.createLinearGradient(0, 0, 0, h); grad.addColorStop(0, CEU[0]); grad.addColorStop(1, CEU[1]); g.fillStyle = grad; g.fillRect(0, 0, w, h); } : null });
-    if (comMarca && window.marcaDagua) await window.marcaDagua(img, cena);       // a marca d'água (a etapa seguinte)
+    if (comMarca) await marcaNaImagem(img);                // a marca d'água
     return img;
   } finally {
     visor.cena.background = fundoAntes;
@@ -558,6 +562,147 @@ function ligar3d() {
   $('#btn-refazer').onclick = () => refazer();
 }
 
+// ------------------------------------------------------------------ a marca d'água (11/11)
+// Aprovada na amostra-3: B — o logo em cor numa placa branca translúcida no canto de baixo — é o padrão; A (o logo claro
+// solto) e C (a faixa com o nome da obra) na hora. A empresa é a do projeto (a do carimbo das pranchas; sem = Hermes),
+// trocável, ou "sem". Sai em TODA imagem (Salvar imagem e Renderizar), nas cenas do 3D e nas da foto. Os tamanhos são
+// frações de √(largura × altura): a prévia na tela e a imagem de 8.000 px ficam iguais.
+
+let marcaInfo = { padrao: 'principal', empresas: [] };
+const logosMarca = new Map();
+
+async function carregarMarcas() {
+  try { marcaInfo = await pedir(`${API}/marca`); } catch (e) { /* sem empresas: a principal */ }
+}
+
+function marcaDaCena() {
+  return { empresa: marcaInfo.padrao || 'principal', jeito: 'B', canto: 'dir', ...((cena && cena.marca) || {}) };
+}
+
+/** A empresa tem logo para a marca? (a lista do servidor diz; sem a lista, tenta) */
+function temLogo(empresa) {
+  const e = (marcaInfo.empresas || []).find(x => x.id === empresa);
+  return e ? e.logo !== false : !(marcaInfo.empresas || []).length;
+}
+
+/** O logo como imagem (o SVG sem largura ganha a do viewBox: o navegador o desenharia com 300 × 150). */
+async function logoDa(empresa, tom) {
+  const chave = empresa + '/' + tom;
+  if (logosMarca.has(chave)) return logosMarca.get(chave);
+  const promessa = (async () => {
+    const r = await fetch(`${API}/marca/${encodeURIComponent(empresa)}/${tom}`);
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erro || `erro ${r.status}`);
+    let blob = await r.blob();
+    if (/svg/.test(blob.type)) {
+      let txt = await blob.text();
+      const vb = /viewBox\s*=\s*"([^"]+)"/.exec(txt);
+      if (vb && !/<svg[^>]*\swidth=/.test(txt)) {
+        const [, , w, h] = vb[1].trim().split(/[\s,]+/).map(Number);
+        txt = txt.replace(/<svg/, `<svg width="${1000}" height="${Math.round(1000 * h / w)}"`);
+      }
+      blob = new Blob([txt], { type: 'image/svg+xml' });
+    }
+    const img = new Image();
+    img.src = URL.createObjectURL(blob);
+    await img.decode();
+    return img;
+  })();
+  logosMarca.set(chave, promessa);                          // a falha também fica: não se pede de novo a cada prévia
+  return promessa;
+}
+
+/** Desenha a marca `m` no canvas inteiro (a imagem pronta ou a prévia). */
+async function desenharMarca(cv, m) {
+  if (!m || m.empresa === 'sem' || !temLogo(m.empresa)) return;
+  const logo = await logoDa(m.empresa, m.jeito === 'B' ? 'cor' : 'claro');
+  const g = cv.getContext('2d'), W = cv.width, H = cv.height, base = Math.sqrt(W * H);
+  const r = logo.naturalWidth / logo.naturalHeight || 3, esq = m.canto === 'esq', marg = base * 0.025;
+  const caber = (mw, mh) => { let w = mw, h = w / r; if (h > mh) { h = mh; w = h * r; } return [w, h]; };
+  g.save();
+  if (m.jeito === 'C') {
+    const fh = Math.max(base * 0.075, 24);
+    const grad = g.createLinearGradient(0, H - fh, 0, H);
+    grad.addColorStop(0, 'rgba(10,14,20,.55)'); grad.addColorStop(1, 'rgba(10,14,20,.78)');
+    g.fillStyle = grad; g.fillRect(0, H - fh, W, fh);
+    const [lw, lh] = caber(W * 0.25, fh * 0.36);
+    g.drawImage(logo, esq ? marg : W - marg - lw, H - fh / 2 - lh / 2, lw, lh);
+    const xt = esq ? W - marg : marg, mes = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).replace(' de ', '/');
+    g.textAlign = esq ? 'right' : 'left';
+    g.fillStyle = '#fff'; g.font = `600 ${Math.round(fh * 0.26)}px "Segoe UI", system-ui, sans-serif`;
+    g.fillText(($('#titulo-obra').textContent || '').toUpperCase(), xt, H - fh * 0.5);
+    g.fillStyle = '#c9d1db'; g.font = `${Math.round(fh * 0.19)}px "Segoe UI", system-ui, sans-serif`;
+    g.fillText(`Imagem ilustrativa · ${mes}`, xt, H - fh * 0.2);
+  } else if (m.jeito === 'B') {
+    const [lw, lh] = caber(base * 0.2, base * 0.075);
+    const pad = Math.max(lh * 0.3, base * 0.008), pw = lw + 2 * pad, ph = lh + 2 * pad;
+    const x = esq ? marg : W - marg - pw, y = H - marg - ph;
+    g.shadowColor = 'rgba(0,0,0,.25)'; g.shadowBlur = base * 0.006;
+    g.fillStyle = 'rgba(255,255,255,.82)';
+    g.beginPath(); g.roundRect(x, y, pw, ph, pad * 0.8); g.fill();
+    g.shadowColor = 'transparent'; g.shadowBlur = 0;
+    g.drawImage(logo, x + pad, y + pad, lw, lh);
+  } else {
+    const [lw, lh] = caber(base * 0.22, base * 0.085);
+    g.globalAlpha = 0.88; g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = base * 0.004; g.shadowOffsetY = base * 0.001;
+    g.drawImage(logo, esq ? marg : W - marg - lw, H - marg - lh, lw, lh);
+  }
+  g.restore();
+}
+
+/** A marca da cena na imagem pronta; sem o logo (empresa sem cadastro), a imagem sai sem ela e a tela avisa. */
+async function marcaNaImagem(cv) {
+  const m = marcaDaCena();
+  if (m.empresa !== 'sem' && !temLogo(m.empresa)) { aviso("Sem a marca d'água: a empresa não tem logo cadastrado (Comercial › Empresa)."); return; }
+  try { await desenharMarca(cv, m); }
+  catch (e) { aviso('A imagem saiu sem a marca d\'água: ' + e.message); }
+}
+
+/** A prévia da marca por cima do quadro (cena do 3D) ou da foto. */
+let quadroMarca = 0;
+function desenharPreviaMarca() {
+  cancelAnimationFrame(quadroMarca);
+  quadroMarca = requestAnimationFrame(async () => {
+    const cv = $('#marca-previa');
+    const r = eh3d() && quadroAtual ? quadroAtual : (ehFoto() && modo === 'foto' ? retanguloFoto() : null);
+    const m = marcaDaCena();
+    if (!r || m.empresa === 'sem' || !temLogo(m.empresa)) { cv.hidden = true; return; }
+    const dpr = window.devicePixelRatio || 1;
+    Object.assign(cv.style, { left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px' });
+    cv.width = Math.round(r.w * dpr); cv.height = Math.round(r.h * dpr);
+    cv.hidden = false;
+    try { await desenharMarca(cv, marcaDaCena()); } catch (e) { cv.hidden = true; }
+  });
+}
+
+function mostrarMarca() {
+  $('#marca-bloco').hidden = !cena;
+  if (!cena) { $('#marca-previa').hidden = true; return; }
+  const m = marcaDaCena();
+  const emps = (marcaInfo.empresas || []).length ? marcaInfo.empresas : [{ id: 'principal', nome: 'Hermes' }];
+  $('#marca-empresa').innerHTML = emps.map(e => `<button type="button" data-v="${esc(e.id)}"${e.logo === false ? ' disabled title="Sem logo cadastrado (Comercial › Empresa)"' : ''}>${esc(e.nome)}</button>`).join('')
+    + '<button type="button" data-v="sem">sem</button>';
+  const marcar = (sel, v) => { for (const b of document.querySelectorAll(`${sel} button`)) b.classList.toggle('ligado', b.dataset.v === v); };
+  marcar('#marca-empresa', m.empresa); marcar('#marca-jeito', m.jeito); marcar('#marca-canto', m.canto);
+  desenharPreviaMarca();
+}
+
+let tempoMarca = 0;
+function mudarMarca(campos) {
+  if (!cena) return;
+  lembrar('marca');
+  cena.marca = { ...marcaDaCena(), ...campos };
+  mostrarMarca();
+  const marca = cena.marca;
+  clearTimeout(tempoMarca);
+  tempoMarca = setTimeout(() => gravar({ marca }).catch(e => aviso('A marca não foi gravada: ' + e.message)), 300);
+}
+
+function ligarMarca() {
+  for (const [sel, campo] of [['#marca-empresa', 'empresa'], ['#marca-jeito', 'jeito'], ['#marca-canto', 'canto']]) {
+    $(sel).onclick = (e) => { const b = e.target.closest('button[data-v]'); if (b && !b.disabled) mudarMarca({ [campo]: b.dataset.v }); };
+  }
+}
+
 // ------------------------------------------------------------------ camadas e cobertura retrátil
 // (usuário, 26/10: "essa imagem interagir com as camadas, poder abrir a quadra, colocar e tirar a lona") — gravadas na cena:
 // a imagem salva sai como está na tela
@@ -669,6 +814,7 @@ function mostrarModo(m) {
   }
   ajustarQuadro();
   desenharFrenteSvg();
+  desenharPreviaMarca();
 }
 
 /** A câmera da cena no visor (na vista da foto): a posição e o giro gravados (mm do projeto), o rolar e a lente. */
@@ -894,12 +1040,13 @@ const desfeitos = [], refeitos = [];
 let ultimaMudanca = { tipo: null, t: 0 };
 
 // a cena do 3D (11/11): o retrato é a câmera, as camadas, o sol e o estilo/enquadramento
-const CAMPOS_3D = ['camera', 'desligadas', 'sol', 'pintar', 'arestas', 'fundo', 'proporcao'];
+const CAMPOS_3D = ['camera', 'desligadas', 'sol', 'pintar', 'arestas', 'fundo', 'proporcao', 'marca'];
 
 function retrato() {
   if (eh3d()) return JSON.parse(JSON.stringify(Object.fromEntries(CAMPOS_3D.map(k => [k, cena[k] ?? null]))));
   const r = JSON.parse(JSON.stringify({ pares: cena.pares || [], camera: cena.camera || null, opacidade: cena.opacidade ?? 1,
-                                        desligadas: cena.desligadas || [], sol: cena.sol || null, frente: cena.frente || [] }));
+                                        desligadas: cena.desligadas || [], sol: cena.sol || null, frente: cena.frente || [],
+                                        marca: cena.marca || null }));
   if (r.camera && rolar && giroBase)                        // o rolar ainda fora do giro gravado
     r.camera.giro = giroBase.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rolar * Math.PI / 180)).toArray();
   return r;
@@ -933,12 +1080,14 @@ async function voltarA(de, para, texto) {
     desenharCamadas();
     mostrarSol();
     mostrarPainel3d();
-    try { await gravar(campos); agendarMiniatura(); aviso(texto + '.'); }
+    mostrarMarca();
+    try { await gravar({ ...campos, marca: r.marca }); agendarMiniatura(); aviso(texto + '.'); }
     catch (e) { aviso(texto + ' na tela, mas não gravado: ' + e.message); }
     return;
   }
   Object.assign(cena, r);
   if (!r.sol) delete cena.sol;
+  if (!r.marca) delete cena.marca;
   rolar = 0;
   if (selecionado !== null && selecionado >= cena.pares.length) selecionado = null;
   $('#opacidade').value = cena.opacidade;
@@ -948,9 +1097,10 @@ async function voltarA(de, para, texto) {
   if (contornoSel !== null && contornoSel >= cena.frente.length) contornoSel = null;
   desenharContornos();
   mostrarModo(modo);
+  mostrarMarca();
   try {
     await gravar({ pares: cena.pares, camera: cena.camera, opacidade: cena.opacidade, desligadas: cena.desligadas,
-                   sol: r.sol || { ligado: true, ...SOL_PADRAO }, frente: cena.frente });
+                   sol: r.sol || { ligado: true, ...SOL_PADRAO }, frente: cena.frente, marca: r.marca });
     aplicarCamera();
     aviso(texto + '.');
   } catch (e) { aviso(texto + ' na tela, mas não gravado: ' + e.message); }
@@ -1503,6 +1653,7 @@ async function salvarImagem() {
   mostrarModo('foto');
   const k = Math.min(1, 4096 / Math.max(...cena.px)), w = Math.round(cena.px[0] * k), h = Math.round(cena.px[1] * k);
   const saida = await montarImagem(w, h);
+  await marcaNaImagem(saida);
   aviso('Salvando a imagem…');
   try {
     const j = await enviarImagem(saida, 'cena.png', 'image/png');
@@ -1604,6 +1755,7 @@ async function renderizar() {
       await new Promise(res => setTimeout(res, 0));
     });
     devolver();
+    await marcaNaImagem(saida);
     mostrarModo('foto');
     aviso('Gravando a imagem renderizada…');
     const j = await enviarImagem(saida, 'render.jpg', 'image/jpeg', 0.95);
@@ -1711,6 +1863,7 @@ function ligarControles() {
     clearTimeout(tempoCamadas); tempoCamadas = setTimeout(() => gravar({ desligadas }), 500);
   };
   ligarFrente();
+  ligarMarca();
   addEventListener('keydown', (e) => {
     if (desenho) {                                          // desenhando um contorno: as teclas são dele
       const ctrlZ = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z';

@@ -125,6 +125,93 @@ def _imagens_prontas(g, s: str, c: dict) -> dict:
     return out
 
 
+# ------------------------------------------------------------------ a marca d'água (11/11, aprovada: B — o logo em cor numa
+# placa branca translúcida no canto de baixo; a empresa do projeto, a mesma do carimbo das pranchas, sem = Hermes; trocável
+# por cena — Hermes/DEZN/sem, A logo claro solto / B placa / C faixa com o nome da obra; sai em toda imagem exportada)
+
+JEITOS_MARCA = ("A", "B", "C")
+CANTOS_MARCA = ("dir", "esq")
+
+
+def empresa_padrao(g, s: str) -> str:
+    try:
+        return str(((g.ler(s) or {}).get("carimbo_pranchas") or {}).get("empresa") or "principal")
+    except (OSError, ValueError, KeyError):
+        return "principal"
+
+
+def empresas_da_marca(g, s: str) -> dict:
+    from saida import comercial
+    try:
+        lista = comercial.listar_empresas(g.raiz)
+    except OSError:
+        lista = []
+    out = []
+    for e in lista:
+        nome, logo = e.get("nome") or e["id"], False
+        try:                                                # a DEZN assina "DEZN" na metálica (a linha de serviço)
+            el = comercial.empresa_da_linha(comercial.ler_empresa(g.raiz, e["id"]), "metalica")
+            nome = el.get("nome_comercial") or nome
+            logo = any(el.get(k) and os.path.isfile(el[k]) for k in ("logo", "logo_claro"))
+        except (OSError, ValueError):
+            pass
+        # sem logo, a tela nem pede (cada pedido sem logo era um erro 400 no console — verif_cena, 11/11)
+        out.append({"id": e["id"], "nome": re.sub(r"\s+(Ltda\.?|S/?A|Construtora)$", "", nome, flags=re.I), "logo": logo})
+    return {"padrao": empresa_padrao(g, s), "empresas": out}
+
+
+def _compactar_faixa(origem: str, destino: str) -> None:
+    """O logo em faixa de papel timbrado (o da Hermes: o nome numa ponta, o símbolo na outra) com os dois juntos, como no
+    carimbo: os vãos sem tinta maiores que a altura do logo viram meio logo de altura."""
+    from PIL import Image
+    with Image.open(origem) as im:
+        im = im.convert("RGBA")
+        caixa = im.getchannel("A").getbbox()
+        if not caixa:
+            im.save(destino); return
+        im = im.crop(caixa)
+        alfa, (w, h) = im.getchannel("A"), im.size
+        tinta = [alfa.crop((x, 0, x + 1, h)).getbbox() is not None for x in range(w)]
+        blocos, ini = [], None
+        for x, t in enumerate(tinta + [False]):
+            if t and ini is None: ini = x
+            if not t and ini is not None: blocos.append([ini, x]); ini = None
+        juntos = [blocos[0]]
+        for b in blocos[1:]:
+            if b[0] - juntos[-1][1] <= h: juntos[-1][1] = b[1]
+            else: juntos.append(b)
+        vao = int(h * 0.55)
+        larg = sum(b - a for a, b in juntos) + vao * (len(juntos) - 1)
+        out, x = Image.new("RGBA", (larg, h), (0, 0, 0, 0)), 0
+        for a, b in juntos:
+            out.paste(im.crop((a, 0, b, h)), (x, 0)); x += b - a + vao
+        out.save(destino)
+
+
+def arquivo_da_marca(g, s: str, empresa: str, tom: str) -> str:
+    """O logo da empresa para a marca d'água: "cor" (o logo) ou "claro" (o logo claro), da linha metálica quando ela tem.
+    PNG em faixa → compacto (guardado em cenas/dados/.marca-… da obra, pela data do arquivo: o servidor só entrega o que
+    está na pasta de dados)."""
+    from saida import comercial
+    if tom not in ("cor", "claro"):
+        raise ErroCena("tom da marca desconhecido: %s" % tom)
+    try:
+        e = comercial.empresa_da_linha(comercial.ler_empresa(g.raiz, empresa), "metalica")
+    except ValueError as err:
+        raise ErroCena(str(err))
+    arq = (e.get("logo_claro") if tom == "claro" else None) or e.get("logo") or ""
+    if not arq or not os.path.isfile(arq):
+        raise ErroCena("a empresa não tem logo cadastrado (Comercial › Empresa).")
+    if not arq.lower().endswith(".png"):
+        return arq
+    pasta = _pasta(g, s)
+    os.makedirs(pasta, exist_ok=True)
+    destino = os.path.join(pasta, ".marca-%s-%s-%d.png" % (re.sub(r"[^a-z0-9_-]", "", empresa), tom, int(os.path.getmtime(arq))))
+    if not os.path.isfile(destino):
+        _compactar_faixa(arq, destino)
+    return destino
+
+
 def gravar_miniatura(g, s: str, i: str, corpo: dict) -> dict:
     """A miniatura da cena para a lista da tela (a imagem pequena feita na tela), em cenas/dados/<id>/miniatura.jpg."""
     origem = corpo.get("arquivo_local")
@@ -194,6 +281,8 @@ def ler(g, s: str, i: str) -> dict:
 def _novo_id(pasta: str, nome: str) -> str:
     base = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode().lower()
     base = re.sub(r"[^a-z0-9]+", "-", base).strip("-")[:30] or "cena"
+    if base in ("marca", "nova", "nova-3d", "ordem"):          # os nomes das rotas (…/cenas/marca etc.)
+        base += "-cena"
     i, k = base, 2
     while os.path.exists(os.path.join(pasta, i)):
         i, k = "%s-%d" % (base, k), k + 1
@@ -396,6 +485,19 @@ def _gravar_campos(g, s: str, i: str, corpo: dict) -> dict:
         c["frente"] = contornos
     # a cena pronta (usuário, 27/10: "salvar cena após a conclusão, para não ficar aparecendo essas bolinhas… caso seja
     # necessário editar ter um para editar cena, daí elas reaparecem"): a tela esconde os pontos e o encaixe
+    if "marca" in corpo:                                    # a marca d'água da cena (as duas: 3D e foto)
+        m = corpo["marca"]
+        if m is None:
+            c.pop("marca", None)
+        else:
+            if not isinstance(m, dict):
+                raise ErroCena("dados da cena inválidos.")
+            emp = str(m.get("empresa") or "")
+            if emp != "sem" and not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,39}", emp):
+                raise ErroCena("empresa da marca inválida: %s" % emp)
+            if m.get("jeito", "B") not in JEITOS_MARCA or m.get("canto", "dir") not in CANTOS_MARCA:
+                raise ErroCena("dados da marca inválidos.")
+            c["marca"] = {"empresa": emp, "jeito": m.get("jeito", "B"), "canto": m.get("canto", "dir")}
     if "concluida" in corpo and not tres_d:
         if not isinstance(corpo["concluida"], bool):
             raise ErroCena("dados da cena inválidos.")
@@ -457,6 +559,10 @@ def rota_get(g, s: str, resto: list) -> dict:
     """…/terreno/cenas[/<id>[/foto.jpg]]. {"arquivo": caminho} = servir o arquivo."""
     if not resto:
         return listar(g, s)
+    if resto == ["marca"]:
+        return empresas_da_marca(g, s)
+    if len(resto) == 3 and resto[0] == "marca":
+        return {"arquivo": arquivo_da_marca(g, s, resto[1], resto[2])}
     i = _id_valido(resto[0])
     if resto[1:] in (["foto.jpg"], ["miniatura.jpg"]):
         return {"arquivo": os.path.join(_pasta(g, s), i, resto[1])}

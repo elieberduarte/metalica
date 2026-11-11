@@ -362,3 +362,72 @@ def test_lista_diz_se_a_cena_tem_render_e_a_ordem_nao_grava_isso(tmp_path):
     assert cenas[a].get("render_em") and not cenas[b].get("render_em")
     C.ordenar(g, s, {"ids": [b, a]})
     assert "render_em" not in C._ler(os.path.join(pasta, "dados", a, "cena.json"))    # a situação é da lista, não do arquivo
+
+
+# ---------------------------------------------------------------- a marca d'água (11/11: B — o logo em cor numa placa)
+
+def _logo_em_faixa(caminho, largura=1772, altura=229):
+    """Como o logo.png da Hermes: o nome numa ponta, o símbolo na outra, com transparência em volta."""
+    from PIL import Image, ImageDraw
+    im = Image.new("RGBA", (largura, altura), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    d.rectangle((82, 68, 564, 145), fill=(53, 67, 76, 255))          # o "HERMES"
+    d.rectangle((1621, 68, 1690, 145), fill=(195, 215, 115, 255))    # o símbolo
+    os.makedirs(os.path.dirname(caminho), exist_ok=True)
+    im.save(caminho)
+
+
+def test_marca_dagua_empresa_do_projeto_e_o_logo_compacto(tmp_path):
+    g, s = _gerente(tmp_path)
+    _logo_em_faixa(os.path.join(str(tmp_path), "fabrica", "marca", "logo.png"))
+    marca_dezn = os.path.join(str(tmp_path), "fabrica", "empresas", "dezn", "marca")
+    os.makedirs(marca_dezn)
+    with open(os.path.join(marca_dezn, "logo_metalica.svg"), "w", encoding="utf-8") as f:
+        f.write('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"><rect width="100" height="80"/></svg>')
+    import json as _json
+    with open(os.path.join(str(tmp_path), "fabrica", "empresas", "dezn", "empresa.json"), "w", encoding="utf-8") as f:
+        _json.dump({"nome_comercial": "DEZN Construtora", "linhas": {"metalica": {"nome_comercial": "DEZN", "logo": "logo_metalica.svg"}}}, f)
+    r = L.rota_get(g, s, ["cenas", "marca"], {})
+    assert r["padrao"] == "principal" and {e["id"] for e in r["empresas"]} >= {"principal", "dezn"}
+    assert next(e for e in r["empresas"] if e["id"] == "dezn")["nome"] == "DEZN"
+    # o projeto com a DEZN no carimbo: a marca padrão é a dela
+    p = g.ler(s); p["carimbo_pranchas"] = {"empresa": "dezn"}
+    with open(os.path.join(g.pasta(s), "projeto.json"), "w", encoding="utf-8") as f:
+        _json.dump(p, f)
+    assert C.empresa_padrao(g, s) == "dezn"
+    # o PNG em faixa sai compacto: o nome e o símbolo juntos (a faixa tinha 1.608 px de largura útil)
+    arq = L.rota_get(g, s, ["cenas", "marca", "principal", "cor"], {})["arquivo"]
+    from PIL import Image
+    with Image.open(arq) as im:
+        assert im.size[1] == 78 and im.size[0] < 600                 # 483 + 42 + 70
+    assert os.path.dirname(arq) == os.path.join(g.pasta(s), "cenas", "dados") and os.path.basename(arq).startswith(".marca-")
+    assert C.listar(g, s)["cenas"] == []                             # o arquivo da marca não vira cena
+    assert L.rota_get(g, s, ["cenas", "marca", "dezn", "cor"], {})["arquivo"].endswith("logo_metalica.svg")
+    with pytest.raises(C.ErroCena, match="tom"):
+        C.arquivo_da_marca(g, s, "principal", "xadrez")
+    os.makedirs(os.path.join(str(tmp_path), "fabrica", "empresas", "outra"))       # cadastrada, sem logo
+    with pytest.raises(C.ErroCena, match="logo"):
+        C.arquivo_da_marca(g, s, "outra", "cor")
+
+
+def test_marca_da_cena(tmp_path):
+    g, s = _gerente(tmp_path)
+    i = C.nova_3d(g, s, {"nome": "Marca", "camera": _CAM})["id"]
+    assert i == "marca-cena"                                         # "marca" é a rota da marca d'água
+    c = C.gravar(g, s, i, {"marca": {"empresa": "dezn", "jeito": "C", "canto": "esq"}})
+    assert c["marca"] == {"empresa": "dezn", "jeito": "C", "canto": "esq"}
+    assert C.gravar(g, s, i, {"marca": {"empresa": "sem"}})["marca"] == {"empresa": "sem", "jeito": "B", "canto": "dir"}
+    with pytest.raises(C.ErroCena):
+        C.gravar(g, s, i, {"marca": {"empresa": "../x"}})
+    with pytest.raises(C.ErroCena):
+        C.gravar(g, s, i, {"marca": {"empresa": "dezn", "jeito": "D"}})
+    f = C.nova(g, s, _foto(tmp_path, tam=(40, 30)))["id"]            # a cena da foto também
+    assert C.gravar(g, s, f, {"marca": {"empresa": "principal", "jeito": "A"}})["marca"]["jeito"] == "A"
+
+
+def test_lista_da_marca_diz_quem_tem_logo(tmp_path):
+    """verif_cena, 11/11: numa obra sem logo cadastrado a tela pedia o logo a cada prévia (erro 400 no console)."""
+    g, s = _gerente(tmp_path)
+    assert C.empresas_da_marca(g, s)["empresas"] == [{"id": "principal", "nome": "Empresa principal", "logo": False}]
+    _logo_em_faixa(os.path.join(str(tmp_path), "fabrica", "marca", "logo.png"))
+    assert C.empresas_da_marca(g, s)["empresas"][0]["logo"] is True
