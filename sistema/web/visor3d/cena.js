@@ -98,14 +98,20 @@ async function abrir() {
 
 // ------------------------------------------------------------------ as cenas
 
-// as cenas do 3D (tipo "3d", 11/11: cenas3d.js no modo ver) ficam na mesma lista do servidor; aqui só as da foto
+// as cenas do 3D (tipo "3d", 11/11: cenas3d.js no modo ver) ficam na mesma lista do servidor. Aqui se abrem as da foto;
+// as do 3D aparecem na lista também (11/11: "a ferramenta de cenas não estão se conversando, as cenas criadas não aparecem
+// aqui") e, escolhida uma, o modo ver abre nela.
 const soDeFoto = (lista) => (lista || []).filter(c => c.tipo !== '3d');
+const PENDENTE_3D = 'metalica.cena3dPendente';           // a mesma chave do cenas3d.js
 
 async function listar(escolher) {
-  const cenas = soDeFoto((await pedir(API)).cenas);
+  const todas = (await pedir(API)).cenas || [];
+  const cenas = soDeFoto(todas), do3d = todas.filter(c => c.tipo === '3d');
   const sel = $('#lista');
-  sel.innerHTML = cenas.length ? cenas.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('')
-    : '<option value="">(nenhuma cena: comece pela foto)</option>';
+  const opcoes = (lista, pre = '') => lista.map(c => `<option value="${pre}${esc(c.id)}">${pre ? '🎬 ' : ''}${esc(c.nome)}</option>`).join('');
+  sel.innerHTML = (cenas.length ? (do3d.length ? `<optgroup label="Cenas pela foto">${opcoes(cenas)}</optgroup>` : opcoes(cenas))
+    : `<option value="">(nenhuma cena pela foto${do3d.length ? '' : ': comece pela foto'})</option>`)
+    + (do3d.length ? `<optgroup label="Cenas do 3D (abrem no modo ver)">${opcoes(do3d, '3d:')}</optgroup>` : '');
   const id = escolher && cenas.some(c => c.id === escolher) ? escolher : (cenas[cenas.length - 1] || {}).id;
   if (id) { sel.value = id; await abrirCena(id); }
   else { cena = null; $('#corpo').hidden = true; foto.hidden = true; mostrarModo('3d'); desenharCamadas(); mostrarSol(); }
@@ -1148,7 +1154,15 @@ function ligarControles() {
     }
     catch (e) { aviso('A foto não entrou: ' + e.message); }
   };
-  $('#lista').onchange = () => { if ($('#lista').value) abrirCena($('#lista').value); };
+  $('#lista').onchange = () => {
+    const v = $('#lista').value;
+    if (v.startsWith('3d:')) {                              // a cena do 3D: o modo ver (o ← 3D) abre e vai até ela
+      try { sessionStorage.setItem(PENDENTE_3D, JSON.stringify({ projeto: PROJETO, id: v.slice(3) })); } catch (e) { /* sem armazenamento */ }
+      $('#voltar').onclick();
+      return;
+    }
+    if (v) abrirCena(v);
+  };
   $('#novo-ponto').onclick = comecarPonto;
   $('#ver').onclick = () => { cancelar(); mostrarModo(modo === '3d' ? 'foto' : '3d'); };
   $('#encaixar').onclick = () => { cancelar(); lembrar(); fazerEncaixe().catch(e => aviso('O encaixe falhou: ' + e.message)); };

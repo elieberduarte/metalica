@@ -282,10 +282,13 @@
       F('Painéis da direita', 'paineis', { kbd: 'F4', dica: 'propriedades, camadas… dos dois lados' }),
       F('Tema claro / escuro', 'tema', { antes: 'Ver › Tema claro / escuro' }),
     ] },
-    // as cenas: a estrutura encaixada numa foto do local, para apresentação (usuário, 26/10: "essas cenas deveriam ter um menu
-    // próprio, vamos separar isso do terreno") — visor3d/cena.html
+    // as cenas (usuário, 26/10: "essas cenas deveriam ter um menu próprio, vamos separar isso do terreno"): as do 3D, como no
+    // SketchUp (11/11, visor3d/cenas3d.js — abas no rodapé do modo ver), e a estrutura encaixada numa foto do local
+    // (visor3d/cena.html). Uma lista só: o painel Cenas do modo ver mostra as duas (11/11: "as cenas criadas não aparecem aqui")
     { nome: 'Cenas', itens: [
-      { texto: 'Cenas da obra…', link: '/visor3d/cena.html?projeto={projeto}', dica: 'a estrutura encaixada numa foto do local: as cenas já montadas e uma nova pela foto' },
+      F('Cenas da obra…', 'cenas-3d', { dica: 'as cenas do 3D (abas no rodapé do modo ver) e as cenas pela foto do local' }),
+      F('Nova cena pela vista atual', 'cena-nova-3d', { kbd: 'Alt+0', dica: 'grava a câmera, as camadas, o Pintar e o sol do modo ver' }),
+      { texto: 'Nova cena pela foto…', link: '/visor3d/cena.html?projeto={projeto}', dica: 'a estrutura encaixada numa foto do local, para a apresentação' },
     ] },
     { nome: '?', itens: [
       F('Guia rápido das ferramentas…', 'guia', { kbd: 'F1', dica: 'todas as ferramentas do 3D, os atalhos e como usar' }),
@@ -556,6 +559,22 @@
     })();
   }
 
+  /** As cenas do 3D (11/11, visor3d/cenas3d.js): o painel Cenas (ou a cena nova) no modo ver do quadro do 3D. Com o editor
+   *  no quadro — ou o modo ver ainda abrindo —, o pedido vai pela sessão (que o quadro divide com esta janela) e o quadro
+   *  vai ao modo ver, que abre o painel ao ficar pronto. Fora da área de trabalho, ela abre com o 3D. */
+  function abrirCenas3d(nova) {
+    var proj = new URLSearchParams(location.search).get('projeto') || '';
+    if (window.mostrarVista) window.mostrarVista('3d');
+    var w3 = janela('3d');
+    try { if (w3 && w3.cenas3d) { if (nova) w3.cenas3d.novaCena(); else w3.cenas3d.painel(); return; } } catch (e) { /* outra tela */ }
+    try { sessionStorage.setItem('metalica.cenas3dAbrir', JSON.stringify({ projeto: proj, nova: !!nova })); } catch (e) { /* sem armazenamento */ }
+    var noVer = false;
+    try { noVer = !!w3 && w3.location.pathname === '/visor3d/ver3d.html'; } catch (e) { /* outra origem */ }
+    if (noVer) return;                                 // o modo ver abrindo: ele lê o pedido quando ficar pronto
+    if (w3 && quadro('3d')) { try { w3.location.href = '/visor3d/ver3d.html?projeto=' + encodeURIComponent(proj); return; } catch (e) { /* abaixo */ } }
+    location.href = '/dividida?projeto=' + encodeURIComponent(proj) + '&vista=3d';
+  }
+
   function funcao(fn) {
     if (fn.indexOf('vista-') === 0) { if (window.mostrarVista) window.mostrarVista(fn.slice(6)); return; }
     if (fn === 'paineis') { var p = $('#btn-paineis'); if (p) p.click(); return; }
@@ -569,6 +588,7 @@
       try { w3.editor.cena.definirPiso(fn.slice(5)); } catch (e) { /* 3D ainda carregando */ }
       return;
     }
+    if (fn === 'cenas-3d' || fn === 'cena-nova-3d') { abrirCenas3d(fn === 'cena-nova-3d'); return; }
     if (fn === 'exportar-pacote') { exportarPacote(); return; }
     if (fn === 'ferramentas-faixa') {                  // Ver › Tela: colunas ao lado (padrão) ou a faixa de cima
       try {

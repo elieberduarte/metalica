@@ -13,7 +13,9 @@
 // (camadas, Pintar, sol…) é do ver3d.js (`estado` e `aplicar`, passados em ligarCenas3d); aqui só a câmera.
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const CHAVE_PENDENTE = 'metalica.cena3dPendente';     // a cena que espera o 3D da outra situação da cobertura abrir
+// a cena que espera o modo ver abrir: o 3D da outra situação da cobertura, ou a cena do 3D escolhida na página da foto
+const CHAVE_PENDENTE = 'metalica.cena3dPendente';
+const CHAVE_ABRIR = 'metalica.cenas3dAbrir';          // o painel Cenas pedido pelo menu da barra de cima
 
 export function ligarCenas3d(ctx) {
   const { visor, projeto } = ctx;
@@ -281,6 +283,10 @@ export function ligarCenas3d(ctx) {
     let p = null;
     try { p = JSON.parse(sessionStorage.getItem(CHAVE_PENDENTE) || 'null'); sessionStorage.removeItem(CHAVE_PENDENTE); } catch (e) { p = null; }
     if (p && p.projeto === projeto) irPara(cenas.find(c => c.id === p.id), true);
+    // o menu Cenas da barra de cima pediu o painel (ou a cena nova) antes de o modo ver estar pronto (barra_unica.js)
+    let pedido = null;
+    try { pedido = JSON.parse(sessionStorage.getItem(CHAVE_ABRIR) || 'null'); sessionStorage.removeItem(CHAVE_ABRIR); } catch (e) { pedido = null; }
+    if (pedido && pedido.projeto === projeto) { if (pedido.nova) novaCena(); else painel(); }
   });
 
   const api = { carregar, irPara, novaCena, atualizar, apagar, mover, renomear, alternarPainel, painel, pronto,
