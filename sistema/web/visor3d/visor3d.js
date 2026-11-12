@@ -1141,9 +1141,16 @@ export class Visor3D {
     const alv = new THREE.Vector3(c.alvo[0] - o[0], c.alvo[1] - o[1], c.alvo[2] - o[2]);
     const esf = this._esferaModelo;
     if (![pos.x, pos.y, pos.z, alv.x, alv.y, alv.z].every(Number.isFinite) || pos.distanceTo(alv) < 1
-        || alv.distanceTo(esf.center) > esf.radius * 3 || pos.distanceTo(esf.center) > esf.radius * 40) return;
-    this.camera.position.set(c.posicao[0] - o[0], c.posicao[1] - o[1], c.posicao[2] - o[2]);
-    this.controles.target.set(c.alvo[0] - o[0], c.alvo[1] - o[1], c.alvo[2] - o[2]);
+        || pos.distanceTo(esf.center) > esf.radius * 40) return;
+    // o alvo longe do modelo com a câmera num lugar bom (o zoom na roda apontando o céu leva o alvo a quilômetros): a MESMA
+    // vista, com o alvo trazido para perto na direção do olhar — antes a vista inteira era descartada e a cena voltava em
+    // outra posição (usuário, 12/11, Filipin: "toda vez que uso quando volto para cena ele está em outra posição")
+    if (alv.distanceTo(esf.center) > esf.radius * 3) {
+      const dir = alv.clone().sub(pos).normalize();
+      alv.copy(pos).addScaledVector(dir, Math.max(esf.radius * 0.5, Math.min(esf.radius * 2, pos.distanceTo(esf.center))));
+    }
+    this.camera.position.copy(pos);
+    this.controles.target.copy(alv);
     const dist = this.camera.position.distanceTo(this.controles.target);
     this.camera.near = Math.max(dist / 2000, 1);
     this.camera.far = Math.max(dist * 20, this.camera.far);

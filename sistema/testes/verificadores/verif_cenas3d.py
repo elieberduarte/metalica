@@ -259,6 +259,30 @@ try:
     ok(esperar(aba, "!document.querySelector('#abas-cenas [data-cena=fachada-frontal]')", 10), "a aba sai")
     ok([c["id"] for c in servidor()] == ["quadra", "planta"], "e a cena sai do servidor")
 
+    print("J — a vista com o alvo longe (12/11, Filipin: \"o atualizar cena com a vista atual não está funcionando, toda vez que "
+          "uso quando volto para cena ele está em outra posição\" — a Cena 5 gravada com o alvo a 1,3 km)")
+    # a câmera perto do modelo, olhando para o horizonte: o zoom na roda apontando o céu leva o alvo a quilômetros. Os mesmos
+    # números relativos da Cena 5 do Filipin (a posição a ~2 m do chão, o alvo ~1.300 m para frente)
+    info = aba.avaliar("JSON.stringify({o: visor.cabecalho.origem, c: visor._esferaModelo.center, r: visor._esferaModelo.radius})")
+    info = json.loads(info)
+    o, c0 = info["o"], info["c"]
+    pos = [c0["x"] + o[0] - 12000, c0["y"] + o[1] - 15000, c0["z"] + o[2] + 2000]
+    alvo = [pos[0] + 1200000, pos[1] + 600000, pos[2] + 180000]
+    req = urllib.request.Request(f"{API}/nova-3d", data=json.dumps({"nome": "Horizonte", "camera": {"posicao": pos, "alvo": alvo, "fov": 45}}).encode(),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    urllib.request.urlopen(req, timeout=30).read()
+    aba.avaliar("cenas3d.carregar(); 1"); aba.drenar(1.0)
+    aba.avaliar("visor.enquadrar('topo'); 1"); aba.drenar(0.5)
+    clicar_no(aba, "#abas-cenas [data-cena=horizonte]")
+    aba.drenar(1.5)
+    cam = json.loads(aba.avaliar("JSON.stringify(visor.lerCamera())"))
+    import math
+    dir_salva = [a - p for a, p in zip(alvo, pos)]; n1 = math.sqrt(sum(v * v for v in dir_salva))
+    dir_tela = [a - p for a, p in zip(cam["alvo"], cam["posicao"])]; n2 = math.sqrt(sum(v * v for v in dir_tela)) or 1
+    cosang = sum(a * b for a, b in zip(dir_salva, dir_tela)) / (n1 * n2)
+    ok(perto(cam["posicao"], pos, 5) and cosang > 0.99999, f"a aba volta para a vista gravada: a posição e a direção do olhar ({cam['posicao']} × {pos}; cos {cosang:.6f})")
+    ok(math.dist(cam["alvo"], [c0["x"] + o[0], c0["y"] + o[1], c0["z"] + o[2]]) < 3 * info["r"], "com o alvo trazido para perto (o giro continua em volta da obra)")
+
     erros = [c for c in aba.console if c[0] in ("excecao", "error") and "Failed to load resource" not in c[1]]
     ok(not erros, f"sem erro no console ({erros[:3]})")
 finally:
