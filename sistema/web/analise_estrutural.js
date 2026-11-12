@@ -1486,14 +1486,17 @@ function painelSegunda() {
   const cls = { pequena: 'pequena (≤ 1,1)', 'média': 'média (1,1 a 1,4)', grande: 'GRANDE (> 1,4)' };
   const t = el('table', {}, el('tr', {}, el('th', { texto: 'combinação' }), el('th', { texto: 'Δ1 mm' }), el('th', { texto: 'Δ2 mm' }), el('th', { texto: 'Δ2/Δ1' }), el('th', { texto: 'it.' })));
   for (const [c, x] of Object.entries(so.combinacoes)) {
-    t.append(el('tr', { title: x.instavel || `forças nocionais: ${nf(x.nocional.H_kN, 2)} kN na direção (${x.nocional.dir.map(v => nf(v, 2)).join('; ')})` },
-      el('td', { texto: c }), el('td', { texto: nf(x.delta1_mm, 1) }), el('td', { texto: x.delta2_mm !== undefined ? nf(x.delta2_mm, 1) : '—' }),
-      el('td', { html: x.instavel ? '<b class="g-ruim">instável</b>' : `<span class="${x.razao > 1.4 ? 'g-ruim' : ''}">${nf(x.razao, 3)}</span>` }),
+    // Δ1 abaixo do piso: sem razão (era ruído); tirantes que oscilaram: ficaram desligados (12/11)
+    const notas = [x.instavel, x.razao_nota, x.tirantes_oscilaram ? `${x.tirantes_oscilaram} tirante(s) oscilavam entre ligado e desligado: ficaram desligados (a favor da segurança)` : '',
+      `forças nocionais: ${nf(x.nocional.H_kN, 2)} kN na direção (${x.nocional.dir.map(v => nf(v, 2)).join('; ')})`].filter(Boolean);
+    t.append(el('tr', { title: notas.join('\n') },
+      el('td', { texto: c + (x.tirantes_oscilaram ? ' *' : '') }), el('td', { texto: nf(x.delta1_mm, 1) }), el('td', { texto: x.delta2_mm !== undefined ? nf(x.delta2_mm, 1) : '—' }),
+      el('td', { html: x.instavel ? '<b class="g-ruim">instável</b>' : x.razao === undefined || x.razao === null ? '<span class="sub">—</span>' : `<span class="${x.razao > 1.4 ? 'g-ruim' : ''}">${nf(x.razao, 3)}</span>` }),
       el('td', { texto: String(x.iteracoes) })));
   }
   S.replaceChildren(
     el('div', { html: `Deslocabilidade <b>${cls[r.classe] || '—'}</b> — Δ2/Δ1 até <b>${nf(r.razao_max, 3)}</b>${r.comb_razao_max ? ` (${r.comb_razao_max})` : ''}.${(r.instaveis || []).length ? ` <b class="g-ruim">Instável em ${r.instaveis.length} combinação(ões).</b>` : ''}` }),
-    el('div', { class: 'sub', style: 'margin:4px 0', texto: `Cada combinação última com P-Δ (rigidez geométrica, iterando a normal), EA e EI × ${nf(r.fator_rigidez || 0.8, 1)} e forças nocionais de ${nf((r.nocional || 0.003) * 100, 1)}% da carga gravitacional de cálculo de cada nó nas combinações só gravitacionais, nas duas direções em planta (cada uma vira ·X e ·Y; NBR 8800:2024, 4.10.7.1.1) — nas de vento a norma as dispensa (carregamento lateral mínimo), salvo na grande deslocabilidade (4.10.7.2). Δ = o maior deslocamento horizontal no topo dos pilares; Δ1 = 1ª ordem com as mesmas cargas e rigidez. Os esforços, as reações e a verificação das ELU já são os de 2ª ordem.` }),
+    el('div', { class: 'sub', style: 'margin:4px 0', texto: `Cada combinação última com P-Δ (rigidez geométrica, iterando a normal), EA e EI × ${nf(r.fator_rigidez || 0.8, 1)} e forças nocionais de ${nf((r.nocional || 0.003) * 100, 1)}% da carga gravitacional de cálculo de cada nó nas combinações só gravitacionais, nas duas direções em planta (cada uma vira ·X e ·Y; NBR 8800:2024, 4.10.7.1.1) — nas de vento a norma as dispensa (carregamento lateral mínimo), salvo na grande deslocabilidade (4.10.7.2). Δ = o maior deslocamento horizontal no topo dos pilares; Δ1 = 1ª ordem com as mesmas cargas e rigidez (inclusive os mesmos tirantes desligados por compressão); com Δ1 abaixo de 0,5 mm a razão não se mede (—); * = tirantes que oscilavam ficaram desligados. Os esforços, as reações e a verificação das ELU já são os de 2ª ordem.` }),
     t);
 }
 

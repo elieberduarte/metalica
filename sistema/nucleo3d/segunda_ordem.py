@@ -32,6 +32,8 @@ import numpy as np
 FATOR_RIGIDEZ = 0.8           # NBR 8800:2024, 4.10.7.1.2
 NOCIONAL = 0.003              # NBR 8800:2024, 4.10.7.1.1: 0,3% das cargas gravitacionais de cálculo
 MAX_ITERACOES = 30
+PISO_DELTA1 = 0.0005          # m: abaixo disto o Δ2/Δ1 é ruído numérico (ver analisar)
+PASSOS_LIVRES = 10           # o liga-desliga dos tirantes fica livre até aqui; depois congela (ver analisar)
 TOLERANCIA = 1e-3             # da normal (× a maior) e do deslocamento (× o maior): 0,1%
 AMPLIFICACAO_LIMITE = 10.0    # Δ2/Δ1 acima disto: tratada como instabilidade global
 
@@ -67,6 +69,15 @@ def _horizontal(U: np.ndarray, nos_idx) -> np.ndarray:
     """(len(nos_idx), 2): o deslocamento horizontal dos nós (m)"""
     u = U.reshape(-1, 6)
     return u[nos_idx, :2]
+
+
+def _nos_do_mecanismo(AE, lt, mont, k_ativo, livres, ndof) -> List[int]:
+    """os nós do mecanismo pela rigidez ELÁSTICA com os tirantes do passo (sem a geométrica: a compressão dá rigidez negativa
+    e a direção solta deixa de ser "quase zero" para o localizador)"""
+    kc, _f, _r = AE._condensar_lote(lt, k_ativo)
+    Kg = AE._para_global(lt, kc)
+    esc = float(np.abs(np.einsum("nii->ni", Kg)).max(initial=1.0))
+    return AE._onde_o_mecanismo(mont, Kg, livres, ndof, esc)
 
 
 def _tem_vento(cb: dict) -> bool:
@@ -153,19 +164,41 @@ def analisar(M: dict, sol: dict, combs: Dict[str, dict], nocionais_no_vento: boo
         instavel, convergiu, it = None, False, 0
         pontas = None
         ativo = ~(tir & (N < 0.0))
+        # o liga-desliga dos tirantes pode ciclar (o X de vento que alterna 6 ↔ 7 tirantes: Madrid 04/11; a tesoura 20×40 do
+        # configurador, ELU V↑ cpi+0,2, 20/10) — sem convergir em 30 passos, saía como "instabilidade global". Ao repetir um
+        # conjunto já visto (ou passado PASSOS_LIVRES), os que oscilaram ficam desligados (o lado da segurança: menos
+        # rigidez) e o conjunto congela; a normal e os deslocamentos convergem com ele
+        tir_mec: List[int] = []
+        vistos: List[bytes] = [ativo.tobytes()]
+        congelado, oscilaram = False, 0
         for it in range(1, MAX_ITERACOES + 1):
             kt = (ke + AE._kg_local_lote(lt, N)) * ativo[:, None, None]
             kc, f0c, rec = AE._condensar_lote(lt, kt, f0e)
             rhs = rhs_n - AE._somar_nos_graus(lt, ndof, AE._forcas_para_global(lt, f0c))[:, 0]
+            Kel = AE._para_global(lt, kc)
             try:
-                lu = _fatorar(mont.matriz(AE._para_global(lt, kc)))
+                lu = _fatorar(mont.matriz(Kel))
             except RuntimeError:
-                instavel = "a matriz de rigidez com o efeito da normal ficou singular (carga crítica atingida)"
+                if it == 1:
+                    # singular já no 1º passo, antes de a normal crescer: é mecanismo (rótula errada, o tirante comprimido
+                    # desligado deixando a peça solta), não carga crítica — o memorial da Madrid (10/11) saiu com a 1ª ordem
+                    # e o texto "carga crítica atingida" quando era a TV.1 girando no próprio eixo
+                    mec = _nos_do_mecanismo(AE, lt, mont, ke * ativo[:, None, None], livres, ndof)
+                    instavel = ("mecanismo já no 1º passo (não é carga crítica): a rigidez sem os tirantes comprimidos e com as "
+                                "rótulas não segura a estrutura" + (" — nós %s" % ", ".join(map(str, mec[:6])) if mec else ""))
+                    tir_mec = mec
+                else:
+                    instavel = "a matriz de rigidez com o efeito da normal ficou singular (carga crítica atingida)"
                 break
             Un = np.zeros(ndof)
             Un[livres] = lu.solve(rhs[livres])
             if AE._sem_limite(Un[:, None]):
-                instavel = "os deslocamentos de 2ª ordem cresceram sem limite"
+                if it == 1:
+                    tir_mec = _nos_do_mecanismo(AE, lt, mont, ke * ativo[:, None, None], livres, ndof)
+                    instavel = ("mecanismo já no 1º passo (não é carga crítica): a rigidez sem os tirantes comprimidos e com as "
+                                "rótulas não segura a estrutura" + (" — nós %s" % ", ".join(map(str, tir_mec[:6])) if tir_mec else ""))
+                else:
+                    instavel = "os deslocamentos de 2ª ordem cresceram sem limite"
                 break
             ul = AE._deslocamentos_locais(lt, Un[:, None])
             AE._recuperar_soltos(ul, f0e, rec)
@@ -175,10 +208,18 @@ def analisar(M: dict, sol: dict, combs: Dict[str, dict], nocionais_no_vento: boo
             dU = float(np.abs(Un - U).max(initial=0.0))
             U, N = Un, Nn
             novo = ativo
-            if tir.any():
+            if tir.any() and not congelado:
                 # o tirante desligado volta se o alongamento dele daria tração
                 Npot = -(np.einsum("nj,nj->n", ke[:, 0, :], ul[:, :, 0]))
                 novo = ~(tir & np.where(ativo, Nn < 0.0, Npot <= 0.0))
+                chave = novo.tobytes()
+                if chave in vistos or it >= PASSOS_LIVRES:
+                    estados = [np.frombuffer(v, dtype=bool) for v in
+                               (vistos[vistos.index(chave):] if chave in vistos else vistos[-2:])] + [novo]
+                    junto = np.logical_and.reduce(estados)                 # ligado só se ligado em todos
+                    oscilaram = int((np.logical_or.reduce(estados) & ~junto).sum())
+                    novo, congelado = junto, True
+                vistos.append(novo.tobytes())
             mudou = bool((novo != ativo).any())
             ativo = novo
             if not mudou and dN <= TOLERANCIA * max(1.0, float(np.abs(Nn).max(initial=0.0))) and dU <= TOLERANCIA * max(float(np.abs(Un).max(initial=0.0)), 1e-6):
@@ -186,9 +227,25 @@ def analisar(M: dict, sol: dict, combs: Dict[str, dict], nocionais_no_vento: boo
                 break
         r: dict = {"iteracoes": it, "convergiu": convergiu, "instavel": instavel, "base": analises[e][1], "imperfeicao": analises[e][2],
                    "tirantes_desligados": int((tir & ~ativo).sum()),
+                   **({"tirantes_oscilaram": oscilaram} if oscilaram else {}),
+                   **({"mecanismo_nos": tir_mec[:200]} if tir_mec else {}),
                    "nocional": {"dir": [round(float(v), 4) for v in dirs[e]],
                                 "H_kN": round(float(NOCIONAL * grav[:, e].sum()) if dirs[e].any() else 0.0, 3)}}
-        d1 = np.hypot(*_horizontal(U1[:, e], topos).T)
+        # Δ1 com a MESMA rigidez da 2ª ordem: os tirantes que ela desligou também fora — com todos ligados, a razão media a
+        # troca de rigidez e não o efeito geométrico (galpão de 12 m do configurador, ELU V↓ cpi−0,3: 74 tirantes fora,
+        # Δ2/Δ1 = 1,93 "grande"; Madrid B2 b: 3,24)
+        U1e = U1[:, e]
+        if tir.any() and bool((tir & ~ativo).any()):
+            try:
+                kc1, f0c1, _r1 = AE._condensar_lote(lt, ke * ativo[:, None, None], f0e)
+                rhs1 = rhs_n - AE._somar_nos_graus(lt, ndof, AE._forcas_para_global(lt, f0c1))[:, 0]
+                U1e = np.zeros(ndof)
+                U1e[livres] = _fatorar(mont.matriz(AE._para_global(lt, kc1))).solve(rhs1[livres])
+                if AE._sem_limite(U1e[:, None]):
+                    U1e = U1[:, e]
+            except RuntimeError:
+                U1e = U1[:, e]
+        d1 = np.hypot(*_horizontal(U1e, topos).T)
         d1max = float(d1.max(initial=0.0))
         r["delta1_mm"] = round(d1max * 1000, 2)
         if instavel is None and not convergiu:
@@ -198,10 +255,15 @@ def analisar(M: dict, sol: dict, combs: Dict[str, dict], nocionais_no_vento: boo
             d2 = np.hypot(*h2.T)
             d2max = float(d2.max(initial=0.0))
             r["delta2_mm"] = round(d2max * 1000, 2)
-            if d1max > 1e-6:
+            if d1max < PISO_DELTA1:
+                # Δ1 de décimos de mm (a cobertura que quase não anda de lado): a razão é ruído — saía "grande" ou
+                # "inverteu" com Δ1 = 0,1 mm (Residencial Madrid, tesoura leve, 11/11)
+                r["razao_nota"] = "Δ1 %.2f mm, abaixo de %.1f mm: a estrutura quase não se desloca, Δ2/Δ1 não se mede" % (
+                    d1max * 1000, PISO_DELTA1 * 1000)
+            elif d1max > 1e-6:
                 razao = d2max / d1max
                 j = int(np.argmax(d1))
-                if float(h2[j] @ _horizontal(U1[:, e], topos)[j]) < 0:
+                if float(h2[j] @ _horizontal(U1e, topos)[j]) < 0:
                     instavel = "o deslocamento de 2ª ordem inverteu o sentido (a carga passou da crítica)"
                 elif razao > AMPLIFICACAO_LIMITE:
                     instavel = "a 2ª ordem amplifica o deslocamento %.1f vezes (instabilidade global)" % razao
