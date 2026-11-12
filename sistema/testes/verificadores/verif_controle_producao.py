@@ -130,7 +130,7 @@ try:
     ok(esperar(aba, "location.pathname === '/controle-producao' && !!document.querySelector('#ctl-cartoes')", 30),
        "Controle de produção leva à tela, com os cartões")
     ok(esperar(aba, "!!document.querySelector('.be-aba.ativa[data-etapa=producao]')", 10), "na tela do controle a Produção fica acesa no topo")
-    ok(aba.avaliar("document.querySelector('#obra-nome').textContent") == "Obra de teste", "o nome da obra (o da lista) no título")
+    ok(aba.avaliar("document.querySelector('#obra-nome').textContent") == "OBRA DO CONTROLE", "o nome do projeto no título, não o da lista (\"Obra de teste\") — 12/11 Posto renomeado")
     ok("/materiais?projeto=obra-controle" in (aba.avaliar("document.querySelector('#btn-lista').href") or ""), "o botão Lista de materiais leva à lista da obra")
 
     # 2. o começo

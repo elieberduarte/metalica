@@ -279,3 +279,56 @@ def test_etapas_js_abre_a_lista_das_telas_e_reconhece_o_controle():
     js = open(os.path.join(os.path.dirname(AQUI), "web", "etapas.js"), encoding="utf-8").read()
     assert "controle-producao" in js
     assert "(e.telas || []).length > 1" in js and "abrirLista(ev.currentTarget, e.telas.map(" in js
+
+
+def test_nome_da_obra_vem_do_projeto_e_nao_da_lista_antiga(monkeypatch, tmp_path):
+    """12/11 (usuário, Posto): trocou o nome do projeto para "POSTO DE COMBUSTÍVEL" e o Controle seguia com
+    "POSTO DE COMBUSTÍVEL - V2" no título e na aba — o nome vinha da lista de materiais levantada em 09/11"""
+    from producao import web
+
+    class _G:
+        @staticmethod
+        def ler(s):
+            return {"nome": "POSTO DE COMBUSTÍVEL"}
+
+        @staticmethod
+        def _existente(s):
+            return str(tmp_path)
+
+    class _App:
+        @staticmethod
+        def _gerente():
+            return _G
+
+    monkeypatch.setattr(web, "_app", lambda: _App)
+    lista = _lista()
+    lista["projeto"] = {"nome": "POSTO DE COMBUSTÍVEL - V2"}
+    os.makedirs(tmp_path / "detalhamento")
+    json.dump(lista, open(tmp_path / "detalhamento" / "lista-de-materiais.json", "w", encoding="utf-8"), ensure_ascii=False)
+    h = _H("/api/producao/controle?projeto=posto")
+    assert web.rota_get(h, "/api/producao/controle")
+    assert h.resposta["obra"] == "POSTO DE COMBUSTÍVEL"
+    h = _H("/api/producao/erp?projeto=posto")
+    assert web.rota_get(h, "/api/producao/erp")
+    assert h.resposta["nome"] == "POSTO DE COMBUSTÍVEL"
+    # sem nome no projeto, o da lista
+    monkeypatch.setattr(_G, "ler", staticmethod(lambda s: {}))
+    assert web._nome_da_obra("posto", lista) == "POSTO DE COMBUSTÍVEL - V2"
+
+
+@pytest.mark.parametrize("nome,instancias,esperado", [
+    ("TESOURA 14", 2, ["TESOURA 14-1", "TESOURA 14-2"]),
+    ("COMP.18", 3, ["COMP.18-1", "COMP.18-2", "COMP.18-3"]),
+    ("TRANSIÇÃO 2", 1, ["TRANSIÇÃO 2"]),
+])
+def test_nomes_do_projetista_com_espaco_e_ponto_numeram_igual(nome, instancias, esperado):
+    """12/11 (Posto N.7): as peças e os conjuntos do V2 vão ganhar os nomes do projetista (TESOURA 14, COMP.18,
+    TRANSIÇÃO 2…); a regra de 12/11 (número à frente nas unidades iguais) vale igual"""
+    lista = {"gerado": "2026-11-12 16:00", "totais": {"peso": 10.0 * instancias},
+             "posicoes": [{"marca": "P1", "nome": "P1", "categoria": "BARRAS", "perfil": "L 25x3", "quantidade": 2 * instancias,
+                           "comprimento": 1000, "peso": 10.0 * instancias, "conjuntos": [nome]}],
+             "conjuntos": [{"marca": "M1", "nome": nome, "instancias": instancias, "pecas_unidade": 2,
+                            "composicao": {"P1": 2}, "peso_total": 10.0 * instancias, "categoria": "TESOURAS"}]}
+    its = C.itens(lista, {})
+    assert [x["id"] for x in its if x["origem"] == "conjunto"] == esperado
+    assert not [x for x in its if x["origem"] == "pecas"]

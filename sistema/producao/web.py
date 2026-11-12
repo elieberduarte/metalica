@@ -49,13 +49,13 @@ def _quem() -> str:
 
 
 def _nome_da_obra(slug: str, lista: dict) -> str:
-    nome = (lista.get("projeto") or {}).get("nome")
-    if not nome:
-        try:
-            nome = _app()._gerente().ler(slug).get("nome")          # a lista sem o nome: o do projeto
-        except Exception:                               # noqa: BLE001 — sem o projeto, o slug
-            nome = None
-    return nome or slug
+    """o nome do projeto (projeto.json) — a lista guarda o nome do dia em que foi levantada: 12/11 o usuário trocou o
+    nome do Posto e o Controle seguia com o "- V2" da lista de 09/11. Sem nome no projeto, o da lista; sem os dois, o slug."""
+    try:
+        nome = (_app()._gerente().ler(slug) or {}).get("nome")
+    except Exception:                                   # noqa: BLE001 — sem o projeto, o da lista
+        nome = None
+    return nome or (lista.get("projeto") or {}).get("nome") or slug
 
 
 def _consulta(h) -> dict:
