@@ -690,7 +690,7 @@ def saia_da_fabrica(doc: Documento) -> bool:
 
 def cumeeira_do_projeto(doc: Documento) -> Optional[float]:
     """A chapa aberta da cumeeira (mm) que a obra decidiu (`metadados.cumeeira_desenvolvida`, das opções do projeto), ou
-    None para o padrão da fábrica (PERNAS_CUMEEIRA). Decisão por obra (usuário 12/11, Sooro: 500 = 250 + 250)."""
+    None para o padrão (telhas.CUMEEIRA_DESENVOLVIDA = 500, todas as obras desde 12/11). Exceção por obra."""
     v = (getattr(doc, "metadados", None) or {}).get("cumeeira_desenvolvida")
     try:
         return float(v) if v and float(v) > 0 else None

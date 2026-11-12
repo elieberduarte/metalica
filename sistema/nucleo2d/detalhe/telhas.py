@@ -275,7 +275,9 @@ def _analisar_instancia(inst, barras: Sequence = ()) -> Optional[dict]:
     return {"reta1": round(L1, 1), "reta2": round(L2, 1), "raio": round(R, 1), "raio_int": round(R_int, 1),
             "raio_ext": round(R_ext, 1), "angulo": round(math.degrees(abs(theta)), 2), "altura_onda": round(h, 1),
             "largura": round(largura_eixo[1]), "arco_ext": round(R_ext * abs(theta), 1), "arco_int": round(R_int * abs(theta), 1),
-            "desenv_ext": round(L1 + L2 + R_ext * abs(theta), 1), "desenv_int": round(L1 + L2 + R_int * abs(theta), 1),
+            # o desenvolvido é o comprimento de corte: mm inteiro, o MAIOR (DET-03; usuário 12/11, Sala de Compressores:
+            # 2.223,2 sai 2.224 — "é mais fácil cortar um pedacinho do que faltar"), igual na prancha, na lista e nos textos
+            "desenv_ext": mm_o_maior(L1 + L2 + R_ext * abs(theta)), "desenv_int": mm_o_maior(L1 + L2 + R_int * abs(theta)),
             "corda": round(math.dist(p1, p2), 1), "peso": round(peso, 3),
             "perfil": str(m0.get("perfil") or e_longa.nome or "TELHA"), "material": _material(e_longa),
             # o perfil no plano: pontas livres, tangências, centro do arco (para o desenho)
@@ -645,27 +647,23 @@ def multidobras(pecas: Sequence, cumeeira_desenvolvida: Optional[float] = None) 
 #: Perna de cumeeira mais comprida que isto (mm) não é cumeeira: é telha que se apoia.
 PERNA_MAX_CUMEEIRA = 600.0
 
-#: As pernas de cumeeira da fábrica (mm): a perna vai no menor padrão que cobre a modelada — o
-#: TecnoMETAL modela 260, a peça sai com 300 (usuário, 01/10: "por padrão a empresa usa pernas de
-#: 300 mm e 500 mm"). Acima do maior, o comprimento de compra da telha.
-PERNAS_CUMEEIRA = (300.0, 500.0)
+#: A chapa aberta da cumeeira de telha (mm), metade para cada água: 250 + 250, qualquer que seja a dobra, em todas as
+#: obras (usuário, 12/11, chat da Sala de Compressores: "Sim: 500" — as cumeeiras com 50 cm desenvolvidos). Antes
+#: (01/10) as pernas iam no menor de 300/500 que cobrisse a modelada (CU1 300 + 300). Outra medida numa obra: a opção
+#: do projeto opcoes_detalhamento.cumeeira_desenvolvida (COB-21).
+CUMEEIRA_DESENVOLVIDA = 500.0
 
 
-def perna_padrao(mm: float) -> float:
-    """a perna de cumeeira da fábrica para uma perna modelada de `mm`"""
-    for p in PERNAS_CUMEEIRA:
-        if mm <= p + 0.5:
-            return p
-    return arredondar_telha(mm)
+def mm_o_maior(v: float) -> float:
+    """O comprimento de corte em mm inteiro, o MAIOR (DET-03: 2.223,2 → 2.224); o ruído de conta (2.223,04) fica."""
+    return float(math.ceil(round(float(v), 1) - 1e-9))
 
 
 def pernas_da_cumeeira(m1: float, m2: float, desenvolvida: Optional[float] = None) -> Tuple[float, float]:
-    """As duas pernas da cumeeira na fábrica. Sem opção, o padrão (perna_padrao). Com a opção do projeto
-    `cumeeira_desenvolvida` (a chapa aberta, em mm), metade para cada lado — decisão por obra (usuário 12/11, obras Sooro:
-    "as cumeeiras, por padrão, com desenvolvimento de 50 cm" → 250 + 250; REGRAS N.4: o PERNAS_CUMEEIRA não muda)."""
-    if desenvolvida and float(desenvolvida) > 0:
-        return float(desenvolvida) / 2.0, float(desenvolvida) / 2.0
-    return perna_padrao(m1), perna_padrao(m2)
+    """As duas pernas da cumeeira na fábrica: a chapa aberta (`desenvolvida`, a opção do projeto, ou o padrão
+    CUMEEIRA_DESENVOLVIDA = 500), metade para cada lado. As pernas modeladas (m1, m2) não mudam a peça."""
+    d = float(desenvolvida) if desenvolvida and float(desenvolvida) > 0 else CUMEEIRA_DESENVOLVIDA
+    return d / 2.0, d / 2.0
 
 
 def _perna(e, w):

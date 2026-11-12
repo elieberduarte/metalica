@@ -5,7 +5,8 @@ Depósito Químico (ME Sooro, 12/11/2026): o usuário pediu a relação de fabri
 o fechamento externo com 1,55 m, como o projetista, sem a saia de 150 mm da fábrica, e a cumeeira com 50 cm
 desenvolvidos (250 + 250). Depois: "Os projetos 2D não tiveram as telhas atualizadas". O 2D saía pelo padrão, com
 TL1 93 × 1.655 (com a saia) e CU1 300 + 300 = 600, diferente da relação. A Sala de Compressores decidiu o contrário
-(com saia). REGRAS N.4: opção por projeto, sem mudar a COB-20 nem o PERNAS_CUMEEIRA.
+(com saia). REGRAS N.4: opção por projeto, sem mudar a COB-20. Depois (usuário, 12/11, Sala de Compressores: "Sim: 500")
+a cumeeira de 500 passou a ser o padrão de todas as obras (telhas.CUMEEIRA_DESENVOLVIDA); a opção fica para a exceção.
 
 Os dados são os recortes do modelo do Depósito: a cumeeira com as telhas das duas águas
 (dados_telhas/deposito_quimico_cumeeira.json.gz) e o canto das fachadas (dados_telhas/deposito_quimico_canto.json.gz)."""
@@ -38,14 +39,14 @@ def _cumeeira(md):
 def test_cumeeira_padrao_e_a_da_obra():
     pecas = _pecas(_doc("deposito_quimico_cumeeira.json.gz"))
     padrao = _cumeeira(T.multidobras(pecas))
-    assert (padrao["perna1"], padrao["perna2"], padrao["desenv"]) == (300.0, 300.0, 600.0)
-    obra = _cumeeira(T.multidobras(pecas, 500))
-    assert (obra["perna1"], obra["perna2"], obra["desenv"]) == (250.0, 250.0, 500.0)
+    assert (padrao["perna1"], padrao["perna2"], padrao["desenv"]) == (250.0, 250.0, 500.0)
+    assert _cumeeira(T.multidobras(pecas, 500)) == padrao
+    obra = _cumeeira(T.multidobras(pecas, 600))           # a exceção de uma obra: outra chapa
+    assert (obra["perna1"], obra["perna2"], obra["desenv"]) == (300.0, 300.0, 600.0)
     assert obra["angulo"] == padrao["angulo"]
-    # o peso acompanha a chapa: 500/600
-    assert abs(obra["peso"] / padrao["peso"] - 500.0 / 600.0) < 0.01
-    # o padrão do catálogo não muda
-    assert T.PERNAS_CUMEEIRA == (300.0, 500.0)
+    # o peso acompanha a chapa: 600/500
+    assert abs(obra["peso"] / padrao["peso"] - 600.0 / 500.0) < 0.01
+    assert T.CUMEEIRA_DESENVOLVIDA == 500.0
 
 
 def test_desenho_e_lista_com_a_cumeeira_da_obra():
@@ -61,7 +62,7 @@ def test_desenho_e_lista_com_a_cumeeira_da_obra():
     assert any("pernas 250 + 250 mm" in (getattr(e, "texto", "") or "") for e in ents)
     r = detalhar(doc, grupos=["localizacao"], converter=False)
     cat = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
-    for opcao, comp in ((None, 600), (500.0, 500)):
+    for opcao, comp in ((None, 500), (500.0, 500), (600.0, 600)):
         lista = lista_producao.montar(r["objetos_posicoes"], cat, r["acessorios"], pecas=r["objetos_pecas"],
                                       cumeeira_desenvolvida=opcao)
         cu = [li for li in lista["posicoes"] if li.get("classe") == "Cumeeira"]
