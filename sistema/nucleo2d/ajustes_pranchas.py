@@ -26,6 +26,7 @@ import hashlib
 import json
 import math
 import os
+import random
 import time
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -103,8 +104,24 @@ def assinatura(e, origem: Tuple[float, float]) -> str:
     return hashlib.md5(repr(chave).encode("utf-8")).hexdigest()[:16]
 
 
-def _transformar(e, f, s: float = 1.0):
-    """A entidade com cada ponto levado por `f` (e os tamanhos pela escala `s`), no lugar."""
+def _transformar(e, f, s: float = 1.0, giro: float = 0.0):
+    """A entidade com cada ponto levado por `f` (e os tamanhos pela escala `s`), no lugar. `giro` (graus): a célula
+    girada à mão (a FACE 1 da Sala deitada ao lado dos tipos, 12/11) — os textos, os arcos e as hachuras giram junto, e a
+    cota horizontal vira vertical (e o contrário) a cada 90°."""
+    _transformar_pontos(e, f, s)
+    if not giro:
+        return
+    if isinstance(e, Texto):
+        e.angulo = round(((e.angulo or 0.0) + giro) % 360.0, 4)          # 0 a 360°, como o Girar do CAD
+    elif isinstance(e, Arco):
+        e.inicio, e.fim = round((e.inicio + giro) % 360.0, 4), round((e.fim + giro) % 360.0, 4)
+    elif isinstance(e, Hachura):
+        e.angulo = round(((e.angulo or 0.0) + giro) % 180.0, 4)
+    elif isinstance(e, Cota) and e.modo in ("h", "v") and round(giro / 90.0) % 2 == 1 and abs(giro / 90.0 - round(giro / 90.0)) < 1e-6:
+        e.modo = "v" if e.modo == "h" else "h"
+
+
+def _transformar_pontos(e, f, s: float = 1.0):
     if isinstance(e, Linha):
         e.a, e.b = f(e.a), f(e.b)
     elif isinstance(e, Polilinha):
@@ -134,6 +151,93 @@ def _transformar(e, f, s: float = 1.0):
     elif getattr(e, "tipo", "") == "imagem":          # a cena na prancha (11/11): o canto levado, o tamanho na escala
         e.posicao = f(e.posicao)
         e.largura, e.altura = round(e.largura * s, 3), round(e.altura * s, 3)
+
+
+def _levar(o, s: float = 1.0, giro: float = 0.0, d=(0.0, 0.0)):
+    """p → o + s·R(giro)·(p − o) + d: a célula gerada (origem `o`) levada para onde o usuário a pôs."""
+    c, sn = math.cos(math.radians(giro)), math.sin(math.radians(giro))
+    ox, oy, dx, dy = float(o[0]), float(o[1]), float(d[0]), float(d[1])
+
+    def f(p):
+        x, y = p[0] - ox, p[1] - oy
+        return (ox + s * (c * x - sn * y) + dx, oy + s * (sn * x + c * y) + dy)
+    return f
+
+
+def _caixa_levada(o, cx, s: float = 1.0, giro: float = 0.0, d=(0.0, 0.0)) -> Tuple[float, float, float, float]:
+    """a caixa da célula gerada (origem `o`, tamanho `cx`) depois do movimento: (x0, y0, x1, y1)"""
+    f = _levar(o, s, giro, d)
+    q = [f((o[0] + a * float(cx[0]), o[1] + b * float(cx[1]))) for a in (0, 1) for b in (0, 1)]
+    return (min(p[0] for p in q), min(p[1] for p in q), max(p[0] for p in q), max(p[1] for p in q))
+
+
+#: Quantos pares de entidades o movimento da célula experimenta (a semelhança: escala e giro).
+PARES_MAX = 150
+
+
+def movimento_da_celula(G: Sequence[Tuple[float, float]], C: Sequence[Tuple[float, float]], o) -> Tuple[float, float, Tuple[float, float], int]:
+    """O movimento da célula — (escala, giro em graus, deslocamento, quantas entidades o seguem) — pelo que a MAIORIA das
+    entidades fez: G é onde cada uma foi gerada, C onde está agora. O usuário arruma a célula (move, gira, escala) e às
+    vezes mexe numa parte dela (o texto, a moldura com o título): a média de todas misturava as duas coisas e inventava
+    uma escala (o MD1 da Sala "× 1,031", a CU1 "× 0,734") e, com a célula girada, nada fechava (a FACE 1 deitada,
+    12/11). Primeiro o deslocamento puro mais repetido; se ele não explica quase todas, a semelhança (escala + giro)
+    tirada de pares de entidades; vale a que mais entidades seguem, a mais simples no empate."""
+    n = len(G)
+    if not n:
+        return 1.0, 0.0, (0.0, 0.0), 0
+
+    def seguem(f):
+        return sum(1 for g, c in zip(G, C) if math.dist(f(g), c) <= TOLERANCIA)
+
+    # o deslocamento puro: o mais repetido (a 0,1 mm)
+    contagem = collections.Counter((round(c[0] - g[0], 1), round(c[1] - g[1], 1)) for g, c in zip(G, C))
+    melhor_d = None
+    for d_, _q in contagem.most_common(5):
+        k = seguem(_levar(o, 1.0, 0.0, d_))
+        if melhor_d is None or k > melhor_d[1]:
+            melhor_d = (d_, k)
+    d0, k0 = melhor_d
+    melhor = (1.0, 0.0, d0, k0)
+    if k0 < 0.9 * n and n >= 2:
+        sorteio = random.Random(7)
+        pares = [(i, j) for i in range(n) for j in range(i + 1, n)] if n <= 18 else \
+            [tuple(sorteio.sample(range(n), 2)) for _ in range(PARES_MAX * 3)]
+        tentados = 0
+        for i, j in pares:
+            if tentados >= PARES_MAX:
+                break
+            vg = complex(G[j][0] - G[i][0], G[j][1] - G[i][1])
+            if abs(vg) < 5.0:
+                continue
+            tentados += 1
+            z = complex(C[j][0] - C[i][0], C[j][1] - C[i][1]) / vg
+            s_, giro = abs(z), math.degrees(math.atan2(z.imag, z.real))
+            if not 0.2 < s_ < 5.0:
+                continue
+            q = _levar(o, s_, giro)(G[i])
+            d_ = (C[i][0] - (q[0] - 0.0), C[i][1] - (q[1] - 0.0))
+            k = seguem(_levar(o, s_, giro, d_))
+            if k > melhor[3] * 1.03 + 1:
+                melhor = (s_, giro, d_, k)
+    s_, giro, d_, k = melhor
+    # os números redondos: o giro em 90° (a 0,2°), a escala 1 (a 0,5 %)
+    g90 = round(giro / 90.0) * 90.0
+    if abs(giro - g90) < 0.2:
+        giro = g90
+    giro = ((giro + 180.0) % 360.0) - 180.0
+    if abs(giro) < 1e-9 or abs(abs(giro) - 360.0) < 1e-9:
+        giro = 0.0
+    if giro == -180.0:
+        giro = 180.0
+    if abs(s_ - 1.0) < TOLERANCIA_ESCALA:
+        s_ = 1.0
+    # o deslocamento acertado pelas que seguem o movimento (a mediana do que sobra)
+    f0 = _levar(o, s_, giro)
+    seg = [(g, c) for g, c in zip(G, C) if math.dist(_levar(o, s_, giro, d_)(g), c) <= 1.0]
+    if seg:
+        d_ = (_mediana([c[0] - f0(g)[0] for g, c in seg]), _mediana([c[1] - f0(g)[1] for g, c in seg]))
+    k = seguem(_levar(o, s_, giro, d_))
+    return s_, giro, (d_[0], d_[1]), k
 
 
 def _mediana(vs: List[float]) -> float:
@@ -386,28 +490,20 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
                     a_mao.append(c_)
             G = [tuple(e.atributos["g"]["r"]) for e in originais]
             C = [_ref(e) for e in originais]
-            # a escala: a distância de cada ponto ao centro, agora e no gerado
-            gx, gy = sum(p[0] for p in G) / len(G), sum(p[1] for p in G) / len(G)
-            cx, cy = sum(p[0] for p in C) / len(C), sum(p[1] for p in C) / len(C)
-            razoes = [math.dist(c, (cx, cy)) / math.dist(g, (gx, gy)) for g, c in zip(G, C) if math.dist(g, (gx, gy)) > 5.0]
-            s = _mediana(razoes) if len(razoes) >= 3 else 1.0
-            if abs(s - 1.0) < TOLERANCIA_ESCALA:
-                s = 1.0
-            # o deslocamento da célula: p' = o + s (p − o) + d, pela mediana
-            dx = _mediana([c[0] - (o[0] + s * (g[0] - o[0])) for g, c in zip(G, C)])
-            dy = _mediana([c[1] - (o[1] + s * (g[1] - o[1])) for g, c in zip(G, C)])
+            # o movimento da célula, p' = o + s·R(giro)·(p − o) + d: o que a maioria das entidades fez
+            s, giro, (dx, dy), _k = movimento_da_celula(G, C, o)
             if abs(dx) < TOLERANCIA:
                 dx = 0.0
             if abs(dy) < TOLERANCIA:
                 dy = 0.0
-            desloc[cel] = (dx, dy)
+            desloc[cel] = (dx, dy, s, giro)
             # pela folha: a folha inteira movida não é a célula movida; a célula levada para outra folha vai para ela
             gd, em, outra_folha = (dx, dy), None, False
             S = folha_ger.get(cel)
             cx_c = info.get("cx") or cx_antigo.get(cel) or [0.0, 0.0]
             if S is not None and (dx or dy):
                 o_atual = (o[0] + dx, o[1] + dy)
-                T = _folha_em(folhas, (o_atual[0] + float(cx_c[0]) * s / 2.0, o_atual[1] + float(cx_c[1]) * s / 2.0))
+                T = _folha_em(folhas, _levar(o, s, giro, (dx, dy))((o[0] + float(cx_c[0]) / 2.0, o[1] + float(cx_c[1]) / 2.0)))
                 if T is not None:
                     rel_atual = (o_atual[0] - T["atual"][0], o_atual[1] - T["atual"][1])
                     rel_ger = (o[0] - S["gerada"][0], o[1] - S["gerada"][1])
@@ -416,17 +512,21 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
                         gd = (0.0, 0.0)                   # só a folha andou
                     elif outra_folha or (S["atual"] is not None and S["atual"] != S["gerada"]):
                         em = {"folha": T["chave"], "rel": [round(rel_atual[0], 3), round(rel_atual[1], 3)]}
-            if s != 1.0 or gd != (0.0, 0.0) or em:
+            if giro and gd == (0.0, 0.0):
+                gd = (dx, dy)                         # girada no lugar: o deslocamento faz parte do giro
+            if s != 1.0 or giro or gd != (0.0, 0.0) or em:
                 novo["d"] = [round(gd[0], 3), round(gd[1], 3)]
                 novo["s"] = round(s, 5)
+                if giro:
+                    novo["r"] = round(giro, 4)
                 if em:
                     novo["em"] = em
                 diario.append({"quando": quando, "celula": cel,
                                "ajuste": ("célula levada para a folha de %s" % em["folha"].split("|")[-1] if outra_folha
-                                          else "célula movida %.1f, %.1f mm" % gd) + ("" if s == 1.0 else ", escala × %.3f" % s)})
+                                          else "célula movida %.1f, %.1f mm" % gd) + ("" if s == 1.0 else ", escala × %.3f" % s)
+                               + ("" if not giro else ", girada %g°" % round(giro, 2))})
 
-            def leva(p):
-                return (o[0] + s * (p[0] - o[0]) + dx, o[1] + s * (p[1] - o[1]) + dy)
+            leva = _levar(o, s, giro, (dx, dy))
             ents_aj = {}
             for e in originais:
                 g = e.atributos["g"]
@@ -449,9 +549,22 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
                     esp_p = (esp_p[0] + aj.get("d", [0, 0])[0], esp_p[1] + aj.get("d", [0, 0])[1])
                     if math.dist(e.posicao, esp_p) > TOLERANCIA:
                         aj["p"] = [round(e.posicao[0] - esp_p[0], 3), round(e.posicao[1] - esp_p[1], 3)]
+                if "d" in aj and (s != 1.0 or giro):
+                    # a célula girada ou escalada e esta entidade só andou (a moldura e o título da FACE 1 da Sala, que o
+                    # usuário deixou de pé num canto, 12/11): ela volta só deslocada do lugar gerado, sem o giro da célula
+                    volta = copy.deepcopy(e)
+                    _transformar(volta, lambda p, r=r, g=g: (p[0] - (r[0] - g["r"][0]), p[1] - (r[1] - g["r"][1])))
+                    if isinstance(volta, (Texto, Cota)) and "x" in g:
+                        volta.texto = g["x"] or (None if isinstance(volta, Cota) else "")
+                    if assinatura(volta, o) == g["s"]:
+                        aj.pop("d")
+                        aj["solta"] = [round(r[0] - g["r"][0], 3), round(r[1] - g["r"][1], 3)]
                 if aj:
                     ents_aj[g["s"]] = aj
-            if len(ents_aj) >= max(FORA_DO_LUGAR_MIN, FORA_DO_LUGAR_FRACAO * len(originais)):
+            # só o que mudou de LUGAR conta (o texto trocado à mão não: o "CU1" que virou "CUM1" na Sala, 12/11), e só
+            # quando MAIS da metade não segue o movimento da célula
+            fora = sum(1 for v in ents_aj.values() if "d" in v or "solta" in v)
+            if fora >= FORA_DO_LUGAR_MIN and fora > FORA_DO_LUGAR_FRACAO * len(originais):
                 # quase tudo "movido dentro da célula": não foi o usuário — a célula foi montada de outro jeito
                 # entre as duas gerações (outra escala, outro arranjo) e a comparação não fecha. Nada é
                 # aprendido dela: o S.TI.2 do depósito ganhou "escala × 1,088 + 21 entidades movidas" e ficou
@@ -486,9 +599,11 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
         if not o_ or not cx_:
             continue
         aj_ = celulas.get(cel) or {}
-        d_, s_ = desloc.get(cel) or aj_.get("d") or [0.0, 0.0], float(aj_.get("s") or 1.0)
-        x0, y0 = float(o_[0]) + d_[0], float(o_[1]) + d_[1]
-        caixas[cel] = (x0, y0, x0 + float(cx_[0]) * s_, y0 + float(cx_[1]) * s_)
+        if cel in desloc:
+            dx_, dy_, s_, g_ = desloc[cel]
+        else:
+            (dx_, dy_), s_, g_ = aj_.get("d") or [0.0, 0.0], float(aj_.get("s") or 1.0), float(aj_.get("r") or 0.0)
+        caixas[cel] = _caixa_levada((float(o_[0]), float(o_[1])), cx_, s_, g_, (dx_, dy_))
 
     def ancora(e):
         r = _ref(e)
@@ -537,17 +652,21 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
     # de novo o que a regra nova já arrumou
     tam = _tamanhos(junto)
     na_folha = {f["chave"]: f["gerada"] for f in _folhas(junto)}     # a montagem nova: onde cada folha ficou
-    descartar = [cel for cel in celulas if por_cel.get(cel) and cel in origens
-                 and _gerador_mudou(cel, celulas[cel], ajustes, por_cel[cel], tam.get(cel))]
-    if descartar:
+    mudadas = [cel for cel in celulas if por_cel.get(cel) and cel in origens
+               and _gerador_mudou(cel, celulas[cel], ajustes, por_cel[cel], tam.get(cel))]
+    if mudadas:
+        # o gerador mudou a célula (o 3D mudou, uma regra nova): o ajuste continua — o lugar dela na folha (movida,
+        # girada, escalada, levada para outra folha, apagada) e, dentro, o que é a mesma entidade no mesmo lugar (pela
+        # assinatura: a que o gerador mudou de lugar ou de forma não é achada e fica como ele fez). Antes o ajuste inteiro
+        # saía, e só o topo de uma telha mudado no 3D desfazia a prancha das telhas arrumada à mão (Sala, 12/11). O que
+        # o gerador põe em OUTRO canto da folha perde o movimento logo abaixo.
         quando = time.strftime("%Y-%m-%d %H:%M")
         diario = list(ajustes.get("diario") or [])
-        for cel in descartar:
-            celulas.pop(cel, None)
-            diario.append({"quando": quando, "celula": cel, "ajuste": "descartado: o gerador mudou a célula"})
+        for cel in mudadas:
+            diario.append({"quando": quando, "celula": cel,
+                           "ajuste": "o gerador mudou a célula: o ajuste continua no que é igual"})
         ajustes["diario"] = diario[-DIARIO_MAX:]
-        rel["descartadas"] = len(descartar)
-        rel["descartadas_celulas"] = list(descartar)      # o CAD avisa quais (antes só no diário)
+        rel["mudadas"] = len(mudadas)
     # a célula igual, mas posta em outro lugar da folha (outra prancha, outro canto): o movimento dela, medido do lugar
     # antigo, a jogaria em cima de outra; ficam a escala e o que foi mexido dentro dela
     for cel in list(celulas):
@@ -557,7 +676,7 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
             continue
         if math.dist(o_velho, origens[cel]) <= TOLERANCIA_CAIXA:
             continue
-        aj = {k: v for k, v in aj.items() if k != "d"}
+        aj = {k: v for k, v in aj.items() if k not in ("d", "r")}
         if float(aj.get("s") or 1.0) == 1.0:
             aj.pop("s", None)
         if any(k in aj for k in ("s", "ents", "apagadas", "apagada")):
@@ -583,6 +702,7 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
             continue
         o = origens[cel]
         s = float(aj.get("s") or 1.0)
+        giro = float(aj.get("r") or 0.0)
         dx, dy = (aj.get("d") or [0.0, 0.0])
         em = aj.get("em") or {}
         if em.get("folha") in na_folha and em.get("rel"):
@@ -592,8 +712,9 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
         apagadas = set(aj.get("apagadas") or [])
         ents_aj = aj.get("ents") or {}
         achadas = set()
-        if dx or dy or s != 1.0:
+        if dx or dy or s != 1.0 or giro:
             rel["celulas"] += 1
+        leva = _levar(o, s, giro, (dx, dy))
         for e in ents:
             sg = (e.atributos.get("g") or {}).get("s")
             if sg in apagadas:
@@ -602,10 +723,14 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
                 continue
             ex = ents_aj.get(sg) or {}
             ed = ex.get("d") or [0.0, 0.0]
-            f = (lambda p, ed=ed: (round(o[0] + s * (p[0] - o[0]) + dx + ed[0], 3),
-                                   round(o[1] + s * (p[1] - o[1]) + dy + ed[1], 3)))
-            if dx or dy or s != 1.0 or ex:
-                _transformar(e, f, s)
+            if ex.get("solta"):
+                # só deslocada do lugar gerado, sem o giro e a escala da célula
+                sd = ex["solta"]
+                _transformar(e, lambda p, sd=sd: (round(p[0] + sd[0], 3), round(p[1] + sd[1], 3)))
+            else:
+                f = (lambda p, ed=ed: (round(leva(p)[0] + ed[0], 3), round(leva(p)[1] + ed[1], 3)))
+                if dx or dy or s != 1.0 or giro or ex:
+                    _transformar(e, f, s, giro)
             if ex:
                 achadas.add(sg)
                 if isinstance(e, Cota):
@@ -617,7 +742,7 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
                     e.posicao = (round(e.posicao[0] + ex["p"][0], 3), round(e.posicao[1] + ex["p"][1], 3))
                 if "x" in ex and isinstance(e, (Texto, Cota)):
                     e.texto = ex["x"] or (None if isinstance(e, Cota) else "")
-        lugar[cel] = (o[0] + dx, o[1] + dy)
+        lugar[cel] = _caixa_levada(o, tam.get(cel) or [0.0, 0.0], s, giro, (dx, dy))[:2]
         rel["entidades"] += len(achadas)
         rel["sem_alvo"] += len(set(ents_aj) - achadas)
     for i in tirar:

@@ -151,7 +151,8 @@ export class MetodosTravaPecasCAD {
     if (fora.length) partes.push(`${fora.length} terça(s) com o par de furos fora do passo da máquina, ligadas sem chapa — no 3D, ponha a chapa de ligação (suporte de terça) ou leve o par ao passo da máquina`);
     if (sup.length) partes.push(`${sup.length} suporte(s) de terça com o par de furos fora do passo da máquina — no 3D, leve o par do suporte ao passo da terça (50 mm até 200 de altura, 100 acima)`);
     if (pend.length || fora.length || sup.length) partes.push(sup.length ? 'as pranchas e o corte das chapas não saem até resolver' : 'as pranchas não são emitidas até resolver');
-    if (desc.length) partes.push(`a arrumação feita à mão em ${desc.length} célula(s) da prancha foi descartada porque o detalhe mudou (${desc.slice(0, 6).join(', ')}${desc.length > 6 ? '…' : ''}): arrume de novo`);
+    // desde 12/11 a célula mudada pelo gerador continua onde o usuário a pôs; sai só o movimento da que ele pôs noutro canto
+    if (desc.length) partes.push(`${desc.length} célula(s) da prancha voltaram para onde a montagem as pôs, porque ela as pôs em outro lugar da folha (${desc.slice(0, 6).join(', ')}${desc.length > 6 ? '…' : ''}): confira e, se for o caso, leve de novo`);
     if (!partes.length) return;
     if (antigo) partes.unshift(`Aviso do detalhamento de ${String(e.pendencias_de || '').replace(/^(\d{4})-(\d\d)-(\d\d) (\d\d:\d\d).*$/, '$3/$2 às $4') || 'antes'}, feito com o 3D de antes (o 3D mudou depois; o próximo Detalhar confere de novo)`);
     const pecas = ((e && e.fora_da_maquina_pecas) || []).concat((e && e.suportes_fora_da_maquina_pecas) || []);

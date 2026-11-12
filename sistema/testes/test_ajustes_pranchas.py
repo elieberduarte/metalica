@@ -198,11 +198,13 @@ def test_texto_trocado_e_desenho_a_mao_preso_a_celula():
     assert notas["SOLDAR NA OBRA"] == (420.0, 160.0) and notas["NOTA GERAL"] == (700.0, 700.0), notas
 
 
-def test_ajuste_descartado_quando_o_gerador_muda_a_celula():
-    """A regra do gerador mudou a célula depois que o ajuste foi aprendido (o desenho dela foi arrumado de outro
-    jeito): o ajuste não volta — reaplicado, deslocava de novo o que a regra já tinha posto no lugar (as telhas e os
-    S.T. da Sala, 01/10) — e vai para o diário. As células que o gerador não mudou continuam com o ajuste; a célula
-    igual mas posta noutro lugar da folha perde só o movimento (de lá ela cairia em cima de outra)."""
+def test_quando_o_gerador_muda_a_celula_ela_fica_onde_o_usuario_pos():
+    """A regra do gerador (ou o 3D) mudou a célula depois que o ajuste foi aprendido: até 12/11 o ajuste inteiro saía, e
+    só o topo de uma telha mudado no 3D desfazia a prancha das telhas arrumada à mão (Sala). Agora o lugar da célula na
+    folha continua (ela vai para onde o usuário a pôs) e, dentro, o que o gerador mudou fica como ele fez — o ajuste
+    pela assinatura não acha a entidade mudada, e nada é deslocado duas vezes (o cuidado de 01/10, as telhas e os
+    S.T. da Sala). As células que o gerador não mudou continuam com o ajuste; a célula igual mas posta noutro lugar da
+    folha perde só o movimento (de lá ela cairia em cima de outra)."""
     g1 = _gerado("g1")
     imp1 = AP.marcar(g1)
     ed = Desenho.de_dict(copy.deepcopy(g1.dict()))
@@ -228,10 +230,11 @@ def test_ajuste_descartado_quando_o_gerador_muda_a_celula():
     AP.marcar(g2)
     antes = {e.id: AP._ref(e) for e in g2.entidades.values()}
     rel = AP.aplicar(g2, aj)
-    assert rel["descartadas"] == 2, rel
-    assert all(math.dist(AP._ref(e), antes[e.id]) < 1e-9 for e in _por(g2, A))          # A: como o gerador fez
-    assert A not in aj["celulas"]
-    assert any(x["celula"] == A and x["ajuste"] == "descartado: o gerador mudou a célula" for x in aj["diario"])
+    assert rel["descartadas"] == 1 and rel["mudadas"] == 1, rel
+    # A: onde o usuário a pôs (40, −15), com o desenho de dentro como a regra nova o fez (as linhas 10, 5 mais adiante)
+    assert all(math.dist(AP._ref(e), (antes[e.id][0] + 40.0, antes[e.id][1] - 15.0)) < 1e-6 for e in _por(g2, A))
+    assert A in aj["celulas"]
+    assert any(x["celula"] == A and "o gerador mudou a célula" in x["ajuste"] for x in aj["diario"])
     assert all(abs(AP._ref(e)[0] - antes[e.id][0] - 40.0) < 1e-6 for e in _por(g2, B))  # B: o ajuste continua
     tc = _por(g2, C, "texto")[0]                             # C: sem o movimento, com o título arrastado
     assert abs(tc.posicao[0] - antes[tc.id][0] - 12.0) < 1e-6
@@ -241,7 +244,8 @@ def test_ajuste_descartado_quando_o_gerador_muda_a_celula():
 
 def test_sem_assinaturas_a_caixa_da_celula_decide():
     """O ajuste sem as assinaturas da geração em que foi aprendido (o arquivo de antes): a célula mudou se a caixa
-    gerada dela mudou de tamanho; sem nem isso, o ajuste vale como antes."""
+    gerada dela mudou de tamanho — e, desde 12/11, a mudada continua onde o usuário a pôs (vai para o diário); sem nem
+    isso, o ajuste vale como antes."""
     g1 = _gerado("g1")
     imp1 = AP.marcar(g1)
     A, B = "tesouras|conjunto:M1", "chaparias|posicao:P5"
@@ -254,7 +258,8 @@ def test_sem_assinaturas_a_caixa_da_celula_decide():
     AP.marcar(g2)
     antes = {e.id: AP._ref(e) for e in g2.entidades.values()}
     rel = AP.aplicar(g2, aj)
-    assert rel["descartadas"] == 1 and A not in aj["celulas"] and B in aj["celulas"], rel
-    assert all(math.dist(AP._ref(e), antes[e.id]) < 1e-9 for e in _por(g2, A))
+    assert rel["mudadas"] == 1 and not rel["descartadas"] and A in aj["celulas"] and B in aj["celulas"], rel
+    assert all(abs(AP._ref(e)[0] - antes[e.id][0] - 40.0) < 1e-6 for e in _por(g2, A))
+    assert any(x["celula"] == A and "o gerador mudou a célula" in x["ajuste"] for x in aj["diario"])
     assert all(abs(AP._ref(e)[0] - antes[e.id][0] - 40.0) < 1e-6 for e in _por(g2, B))
     assert imp1                                              # (a geração 1 só deu as caixas de base)
