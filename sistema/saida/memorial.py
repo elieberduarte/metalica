@@ -997,20 +997,20 @@ def _cap_normas(doc: _Doc, projeto: ProjetoGalpao):
     doc.tabela(["Elemento", "Critério", "Limite adotado", "Origem"],
                [[("Terça de cobertura", "l"), (f"L/{d.flecha_terca}", "c"),
                  (fmt(d.espacamento_porticos * 100 / d.flecha_terca, 2, "cm"), "r"),
-                 ("NBR 8800:2008, Anexo C (vão de %s m)"
+                 ("NBR 8800:2024, Anexo B, Tabela B.1 (vão de %s m)"
                   % fmt(d.espacamento_porticos, 2), "l")],
                 [("Viga do pórtico", "l"), (f"L/{d.flecha_viga}", "c"),
                  (fmt(d.vao * 100 / d.flecha_viga, 2, "cm"), "r"),
-                 ("NBR 8800:2008, Anexo C (vão de %s m)" % fmt(d.vao, 2), "l")],
+                 ("NBR 8800:2024, Anexo B, Tabela B.1 (vão de %s m)" % fmt(d.vao, 2), "l")],
                 [("Deslocamento horizontal do topo do pilar", "l"),
                  (f"H/{d.desloc_horizontal}", "c"),
                  (fmt(H * 100 / d.desloc_horizontal, 2, "cm"), "r"),
-                 ("NBR 8800:2008, Anexo C (altura de %s m)" % fmt(H, 2), "l")]],
+                 ("NBR 8800:2024, Anexo B, Tabela B.1 (altura de %s m)" % fmt(H, 2), "l")]],
                "Estados-limites de serviço", larguras=["34%", "14%", "18%", "34%"])
     doc.add(_box(
         "<p>Os deslocamentos são verificados em combinações de <b>serviço</b>, com "
-        "γ<sub>f</sub> = 1,0 e o fator ψ correspondente, conforme a NBR 8800:2008, "
-        "item 4.7.7.3 e Anexo C. Os limites do Anexo C são recomendações; adotá-los é "
+        "γ<sub>f</sub> = 1,0 e o fator ψ correspondente, conforme a NBR 8800:2024, "
+        "Anexo B. Os limites da Tabela B.1 são recomendações; adotá-los é "
         "decisão de projeto registrada aqui.</p>", "Como os limites são aplicados",
         "norma"))
 

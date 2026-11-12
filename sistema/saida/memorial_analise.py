@@ -274,7 +274,7 @@ def _segunda_ordem(an: dict) -> str:
 
 
 def deslocamentos(an: dict) -> Optional[dict]:
-    """o topo dos pilares contra H/300 e a flecha das tesouras contra L/250 nas combinações ELS (NBR 8800, Tabela C.1) —
+    """o topo dos pilares contra H/300 e a flecha das tesouras contra L/250 nas combinações ELS (NBR 8800:2024, Tabela B.1) —
     a mesma conta do quadro "Como ler" da tela (web/analise_guia.js)"""
     combs, por = an.get("combinacoes") or {}, an.get("por_comb") or {}
     els = [c for c, v in combs.items() if v.get("tipo") == "ELS" and c in por]
@@ -328,7 +328,7 @@ def _servico(an: dict) -> str:
     if v and v.get("lim"):
         L.append("<p>Flecha das tesouras: <b>%s mm</b> em %s; limite L/250 = %s mm (vão %s m) — %s.</p>" % (
             _n(v["max"], 0), _esc(v["comb"]), _n(v["lim"], 0), _n(v["vao"], 2), _ok(v["max"] <= v["lim"])))
-    L.append("<p class=nota>Combinações raras de serviço, sem coeficientes (NBR 8800, Anexo C, Tabela C.1). Os limites são os "
+    L.append("<p class=nota>Combinações raras de serviço, sem coeficientes (NBR 8800:2024, Anexo B, Tabela B.1). Os limites são os "
              "de galpão: o projeto pode adotar outros.</p>")
     return "".join(L)
 

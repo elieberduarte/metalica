@@ -569,16 +569,28 @@ def test_flecha_limites_do_anexo_c():
     perto(v250.Rd, 2.80, o="L/250")
     perto(v180.Rd, 3.89, o="L/180")
     assert v350.ok and v250.ok and v180.ok
-    # nomes do Anexo C e denominador numérico
+    # nomes do Anexo B (2024) e denominador numérico
     perto(n.flecha(p, 700.0, q=0.17, limite="viga_piso").Rd, 2.00, o="viga_piso")
     perto(n.flecha(p, 700.0, q=0.17, limite=500).Rd, 1.40, o="L/500")
     assert not n.flecha(p, 700.0, q=0.17, limite="viga_alvenaria").ok
-    # balanço: vão equivalente 2L (Anexo C, Tabela C.1)
+    # balanço: vão equivalente 2L (Anexo B, Tabela B.1)
     vb = n.flecha(p, 200.0, caso="balanco_distribuida", q=0.17, limite="L/250")
     perto(vb.Rd, 400.0 / 250.0, tol=1e-9, o="limite do balanço")
     # contraflecha desconta da flecha verificada
     vc = n.flecha(p, 700.0, q=0.17, limite="L/350", contraflecha=1.0)
     perto(vc.Sd, v350.Sd - 1.0, tol=1e-9, o="contraflecha")
+
+
+def test_deslocamentos_citam_o_anexo_b_da_2024():
+    """ANA-05 (calculista do Madrid, 12/11): a NBR 8800:2024 tem os deslocamentos máximos no Anexo B, Tabela B.1 — o
+    memorial e as telas citavam o Anexo C, Tabela C.1 (a numeração de 2008)"""
+    v = n.flecha("W 200 x 15,0", 500.0, q=0.1, limite="L/250")
+    textos = [v.norma] + [ps.norma for ps in v.passos]
+    assert "Tabela B.1" in v.norma and not any("C.1" in t or "Anexo C" in t for t in textos), textos
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for arq in ("saida/memorial_analise.py", "saida/memorial.py", "web/analise_guia.js", "web/index.html"):
+        with open(os.path.join(raiz, arq), encoding="utf-8") as fh:
+            assert "Tabela C.1" not in fh.read(), arq
 
 
 # ===========================================================================

@@ -164,7 +164,7 @@ const MODOS = {
     titulo: 'Deformada — os deslocamentos',
     oque: 'A estrutura deformada, exagerada para ver a forma (a escala não é real). O número é o maior deslocamento da combinação.',
     preocupe: [
-      'Os limites de serviço (NBR 8800, Anexo C, Tabela C.1) se conferem nas combinações ELS (sem coeficientes): topo dos pilares em galpões H/300; vigas e treliças de cobertura L/250.',
+      'Os limites de serviço (NBR 8800:2024, Anexo B, Tabela B.1) se conferem nas combinações ELS (sem coeficientes): topo dos pilares em galpões H/300; vigas e treliças de cobertura L/250.',
       'Balanço grande nas combinações de vento = estrutura flexível: os efeitos de 2ª ordem (P-Δ) aumentam os momentos dos pilares. O programa já faz a 2ª ordem nas ELU — o quadro "2ª ordem" mostra Δ2/Δ1 (NBR 8800:2024, 4.10.4: até 1,10 pequena, até 1,40 média, acima grande). Grande deslocabilidade pede mais rigidez lateral.',
       'A forma: se a cobertura "anda" toda para um lado, falta contraventamento naquela direção.',
     ],

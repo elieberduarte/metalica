@@ -9,7 +9,7 @@ Cobre os estados-limites do Capítulo 7 do manual:
     flexao()             item 5.4.2 + Anexo G
     cisalhamento()       item 5.4.3
     flexao_composta()    item 5.5.1.2
-    flecha()             Anexo C (estado-limite de serviço)
+    flecha()             Anexo B (estado-limite de serviço; NBR 8800:2024 — era o Anexo C em 2008)
     dimensionar_viga()   busca do perfil mais leve que atende
     dimensionar_pilar()
 
@@ -1767,10 +1767,10 @@ def flexao_composta(perfil, aco, N_Sd: float = 0.0, Mx_Sd: float = 0.0, My_Sd: f
 
 
 # ---------------------------------------------------------------------------
-# 7. Estados-limites de serviço (NBR 8800, Anexo C)
+# 7. Estados-limites de serviço (NBR 8800:2024, Anexo B; em 2008 era o Anexo C)
 # ---------------------------------------------------------------------------
 
-# Deslocamentos máximos do Anexo C (Tabela C.1) — denominador de L
+# Deslocamentos máximos do Anexo B (Tabela B.1 da 2024) — denominador de L
 LIMITES_FLECHA = {
     "travessa": 120,
     "terca": 180,
@@ -1836,10 +1836,10 @@ def limite_flecha(limite, L: float) -> Tuple[float, float]:
 def flecha(perfil, L: float, caso: str = "biapoiada_distribuida", q: float = 0.0,
            P: float = 0.0, limite="L/350", Ix: float = None, contraflecha: float = 0.0,
            elemento: str = "Viga") -> Verificacao:
-    """Estado-limite de serviço de deslocamento — NBR 8800, Anexo C.
+    """Estado-limite de serviço de deslocamento — NBR 8800:2024, Anexo B.
 
     Cargas de serviço (sem majoração) e rigidez elástica. Em balanços o vão
-    equivalente é 2L, como manda a Tabela C.1. `limite` aceita "L/250", "L/350",
+    equivalente é 2L, como manda a Tabela B.1. `limite` aceita "L/250", "L/350",
     "L/180", o nome do elemento ("viga_piso", "terca"...) ou o denominador.
     """
     p = _perfil_obj(perfil) if not isinstance(perfil, (int, float)) else None
@@ -1850,19 +1850,19 @@ def flecha(perfil, L: float, caso: str = "biapoiada_distribuida", q: float = 0.0
     d_lim, den = limite_flecha(limite, L_ref)
 
     v = Verificacao("Deslocamento vertical (ELS)",
-                    norma="NBR 8800:2008, Anexo C (Tabela C.1)",
+                    norma="NBR 8800:2024, Anexo B (Tabela B.1)",
                     Sd=d, Rd=d_lim, unidade="cm")
     v.passo("Flecha sob carga de serviço", formula=formula, conta=conta,
             valor=fmt(d, 2, "cm"), norma="análise elástica")
     if contraflecha:
         v.passo("Contraflecha descontada", formula="δ<sub>ef</sub> = δ − δ<sub>contraflecha</sub>",
                 conta=f"− {fmt(contraflecha, 2)} cm", valor=fmt(d, 2, "cm"),
-                norma="NBR 8800, Anexo C")
+                norma="NBR 8800:2024, Anexo B")
     v.passo("Deslocamento máximo admitido",
             formula=f"δ<sub>lim</sub> = L/{den:.0f}",
             conta=f"{fmt(L_ref, 0)} / {den:.0f}"
                   + (" (vão equivalente 2L, balanço)" if caso.startswith("balanco") else ""),
-            valor=fmt(d_lim, 2, "cm"), norma="Anexo C, Tabela C.1")
+            valor=fmt(d_lim, 2, "cm"), norma="NBR 8800:2024, Anexo B, Tabela B.1")
     if p is not None:
         v.observacao = f"perfil {p.nome}, I = {fmt(I, 0)} cm⁴"
     return v
