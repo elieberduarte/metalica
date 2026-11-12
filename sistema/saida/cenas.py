@@ -42,6 +42,11 @@ FUNDOS = ("ceu", "branco", "transparente", "terreno",
           "entardecer", "nublado", "estudio", "noite-azul", "noite")
 #: as luzes de noite da cena (amostra-6: automáticas + ajuste): refletores em volta e a luz interna, a força e a cor
 CORES_LUZ = ("quente", "branca")
+#: o entorno (12/11, amostra-8 aprovada): o chão em volta da obra, a calçada (m) e o pátio desenhado (mm do projeto); as luzes
+#: postas à mão (poste no chão, refletor na parede, luminária no teto), até 20 por cena
+ENTORNOS = ("liso", "grama", "patio", "concreto", "terra", "terreno")
+TIPOS_LUZ_MAO = ("poste", "refletor", "luminaria")
+LUZES_MAO_MAX = 20
 MINIATURA_LADO = 480                       # px: a miniatura da lista das cenas
 
 
@@ -84,21 +89,41 @@ _TRAVA = threading.RLock()
 
 
 def _ler(caminho: str) -> Optional[dict]:
-    try:
-        with open(caminho, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return None
+    # o Windows nega por um instante o arquivo que está sendo trocado (o OneDrive, o antivírus, outra gravação): tenta de novo
+    for k in range(6):
+        try:
+            with open(caminho, encoding="utf-8") as f:
+                return json.load(f)
+        except PermissionError:
+            time.sleep(0.03)
+        except (OSError, ValueError):
+            return None
+    return None
 
 
 def _gravar(caminho: str, dados: dict) -> None:
+    """Grava trocando o arquivo de uma vez (o .tmp no lugar). No Windows a troca é negada enquanto alguém lê o arquivo
+    (12/11, test_a_lista_nao_perde_a_cena_que_esta_sendo_gravada: "Acesso negado" e a mudança não gravada): tenta de novo."""
     tmp = caminho + ".tmp"
     with open(tmp, "w", encoding="utf-8", newline="") as f:
         json.dump(dados, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, caminho)
+    for k in range(40):
+        try:
+            os.replace(tmp, caminho)
+            return
+        except PermissionError:
+            if k == 39:
+                raise
+            time.sleep(0.05)
 
 
 def listar(g, s: str) -> dict:
+    """As cenas da obra (lidas com a trava das gravações: a cena que está sendo gravada não fica de fora da lista)."""
+    with _TRAVA:
+        return _listar(g, s)
+
+
+def _listar(g, s: str) -> dict:
     pasta, cenas = _pasta(g, s), []
     if os.path.isdir(pasta):
         for i in sorted(os.listdir(pasta)):
@@ -542,10 +567,33 @@ def _gravar_campos(g, s: str, i: str, corpo: dict) -> dict:
             else:
                 if not isinstance(lz, dict) or lz.get("cor", "quente") not in CORES_LUZ:
                     raise ErroCena("dados das luzes inválidos.")
+                mao = lz.get("mao") or []
+                if not isinstance(mao, list) or len(mao) > LUZES_MAO_MAX:
+                    raise ErroCena("até %d luzes postas à mão." % LUZES_MAO_MAX)
+                maos = []
+                for m in mao:
+                    if not isinstance(m, dict) or m.get("tipo") not in TIPOS_LUZ_MAO:
+                        raise ErroCena("dados das luzes inválidos.")
+                    maos.append({"tipo": m["tipo"], "p": [round(v, 1) for v in _numeros(m.get("p"), 3)],
+                                 "forca": min(3.0, max(0.0, _numeros([m.get("forca", 1)], 1)[0]))})
                 c["luzes"] = {"refletores": lz.get("refletores", True) is not False, "interna": lz.get("interna", True) is not False,
                               "forca_ref": min(3.0, max(0.0, _numeros([lz.get("forca_ref", 1)], 1)[0])),
                               "forca_int": min(3.0, max(0.0, _numeros([lz.get("forca_int", 1)], 1)[0])),
-                              "cor": lz.get("cor", "quente")}
+                              "cor": lz.get("cor", "quente"), **({"mao": maos} if maos else {})}
+        if "entorno" in corpo:
+            en = corpo["entorno"]
+            if en is None:
+                c.pop("entorno", None)
+            else:
+                if not isinstance(en, dict) or en.get("tipo", "liso") not in ENTORNOS:
+                    raise ErroCena("entorno desconhecido.")
+                patio = en.get("patio")
+                if patio is not None:
+                    if not isinstance(patio, list) or len(patio) != 2:
+                        raise ErroCena("dados do entorno inválidos.")
+                    patio = [[round(v, 1) for v in _numeros(q, 2)] for q in patio]
+                c["entorno"] = {"tipo": en.get("tipo", "liso"), "calcada": min(15.0, max(0.0, _numeros([en.get("calcada", 4)], 1)[0])),
+                                "patio": patio}
         if "guarda" in corpo:
             gd = corpo["guarda"]
             if not isinstance(gd, dict) or not all(k in ("camera", "camadas", "estilo") and isinstance(v, bool) for k, v in gd.items()):
@@ -627,7 +675,7 @@ def gravar_imagem(g, s: str, i: str, corpo: dict) -> dict:
 
 #: Copiar ajustes (usuário, 11/11: "quando ajusto as configurações em uma cena poderia… ter a opção de copiar de uma cena para
 #: (sol, terreno...)"): os grupos e os campos de cada um; os marcados com * só existem na cena do 3D
-GRUPOS_COPIA = {"sol": ("sol",), "ambiente": ("*fundo", "*luzes"), "camadas": ("desligadas",), "estilo": ("*pintar", "*arestas"),
+GRUPOS_COPIA = {"sol": ("sol",), "ambiente": ("*fundo", "*luzes", "*entorno"), "camadas": ("desligadas",), "estilo": ("*pintar", "*arestas"),
                 "enquadramento": ("*proporcao", "*lente"), "marca": ("marca",)}
 
 

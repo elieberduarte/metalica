@@ -541,3 +541,49 @@ def test_marca_dagua_usa_o_logo_deitado_do_carimbo(tmp_path):
         _json.dump({"nome_comercial": "DEZN Construtora", "linhas": {"metalica": linha}}, f)
     assert C.arquivo_da_marca(g, s, "dezn", "cor").endswith("logo_metalica.svg")
     assert C.arquivo_da_marca(g, s, "dezn", "claro").endswith("logo_claro_metalica.svg")
+
+
+def test_entorno_e_luzes_postas_a_mao(tmp_path):
+    """12/11 (amostra-8 aprovada: o entorno — grama, pátio, concreto, terra —, a calçada ajustável, o pátio desenhado, e as
+    luzes postas à mão): os campos da cena, os limites, e o Copiar ajustes leva o entorno com o ambiente."""
+    g, s = _gerente(tmp_path)
+    i = C.nova_3d(g, s, {"nome": "A", "camera": _CAM, "entorno": {"tipo": "patio", "calcada": 40, "patio": [[0, 0], [30000, -20000]]},
+                         "luzes": {"mao": [{"tipo": "poste", "p": [1000, -12000, 0], "forca": 9}, {"tipo": "refletor", "p": [0, 0, 5000]}]}})["id"]
+    c = C.ler(g, s, i)
+    assert c["entorno"] == {"tipo": "patio", "calcada": 15.0, "patio": [[0, 0], [30000, -20000]]}
+    assert c["luzes"]["mao"] == [{"tipo": "poste", "p": [1000, -12000, 0], "forca": 3.0}, {"tipo": "refletor", "p": [0, 0, 5000], "forca": 1.0}]
+    for ruim in ({"entorno": {"tipo": "neve"}}, {"entorno": {"patio": [[1, 2]]}},
+                 {"luzes": {"mao": [{"tipo": "vela", "p": [0, 0, 0]}]}}, {"luzes": {"mao": [{"tipo": "poste", "p": [0, 0, 0]}] * 21}}):
+        with pytest.raises(C.ErroCena):
+            C.gravar(g, s, i, ruim)
+    assert "entorno" not in C.gravar(g, s, i, {"entorno": None})
+    C.gravar(g, s, i, {"entorno": {"tipo": "grama"}})
+    b = C.nova_3d(g, s, {"nome": "B", "camera": _CAM})["id"]
+    C.rota_post(g, s, ["copiar"], {"de": i, "para": [b], "grupos": ["ambiente"]})
+    assert C.ler(g, s, b)["entorno"]["tipo"] == "grama" and len(C.ler(g, s, b)["luzes"]["mao"]) == 2
+
+
+def test_a_lista_nao_perde_a_cena_que_esta_sendo_gravada(tmp_path):
+    """12/11 (verif_ambientes_cenas: a lista veio sem a cena "fachada" no meio das gravações): ler a lista enquanto a cena é
+    gravada (o arquivo trocado no Windows) não pode deixar a cena de fora."""
+    import threading
+    g, s = _gerente(tmp_path)
+    i = C.nova_3d(g, s, {"nome": "Fachada", "camera": _CAM})["id"]
+    parar = threading.Event()
+
+    erros = []
+
+    def gravar_sem_parar():
+        k = 0
+        while not parar.is_set():
+            try:
+                C.gravar(g, s, i, {"luzes": {"forca_ref": (k % 30) / 10}}); k += 1
+            except Exception as e:                       # noqa: BLE001 — a gravação negada ("Acesso negado") é o defeito
+                erros.append(repr(e)); return
+    t = threading.Thread(target=gravar_sem_parar)
+    t.start()
+    try:
+        faltou = sum(1 for _ in range(400) if [c["id"] for c in C.listar(g, s)["cenas"]] != [i])
+    finally:
+        parar.set(); t.join()
+    assert faltou == 0 and not erros, (faltou, erros[:1])

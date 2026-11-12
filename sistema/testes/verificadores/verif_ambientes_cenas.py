@@ -226,6 +226,75 @@ try:
     while time.time() - t0 < 20 and (servidor()["lateral"].get("miniatura") or "") < (servidor()["lateral"].get("alterada") or ""): aba.drenar(0.5)
     ok((servidor()["lateral"].get("miniatura") or "") >= (servidor()["lateral"].get("alterada") or "x"), "a miniatura dela refeita (a de dia era velha)")
 
+    print("I — o entorno e as luzes postas à mão (12/11, amostra-8: \"as 4 + calçada ajustável + pátio desenhado\"; luzes \"é assim\")")
+    def clicar_xy(fx, fy):
+        q = aba.avaliar("(() => { const r = document.getElementById('palco').getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; })()")
+        x, y = q[0] + q[2] * fx, q[1] + q[3] * fy
+        aba.cmd("Input.dispatchMouseEvent", type="mouseMoved", x=x, y=y)
+        for tipo in ("mousePressed", "mouseReleased"):
+            aba.cmd("Input.dispatchMouseEvent", type=tipo, x=x, y=y, button="left", clickCount=1)
+        aba.drenar(0.6)
+    clicar_no(aba, ".cartao-cena[data-cena=fachada]")
+    esperar(aba, "cenaApi.estado().cena && cenaApi.estado().cena.id === 'fachada'", 30)
+    clicar_no(aba, "#ambiente3d [data-v=ceu]")
+    clicar_no(aba, "#barra-palco [data-vista=frente]"); aba.drenar(0.5)
+    clicar_no(aba, "#entorno3d [data-v=grama]"); aba.drenar(0.8)
+    ok(aba.avaliar("visor._luz.uChao.value") == 1 and (servidor()["fachada"].get("entorno") or {}).get("tipo") == "grama", "Grama: o chão desenhado e gravado")
+    ok(aba.avaliar("!document.getElementById('calcada-linha').hidden"), "a calçada ajustável aparece")
+    aba.avaliar("(() => { const i = document.getElementById('calcada'); i.value = '10'; i.dispatchEvent(new Event('input')); return 1; })()")
+    aba.drenar(1.2)
+    ok(aba.avaliar("visor._luz.uCalcada.value") == 10000 and (servidor()["fachada"].get("entorno") or {}).get("calcada") == 10, "calçada de 10 m (tela e servidor)")
+    # o chão do entorno recebe a luz da cena (12/11: "o piso da área próxima ao barracão não está interagindo com a cena"):
+    # a grama do Entardecer sai mais escura que a do Dia (antes saía igual — só a sombra mudava)
+    def chao_medio(nome):
+        im = render(aba, nome).convert("RGB")
+        W, H = im.size
+        return ImageStat.Stat(im.crop((0, int(H * 0.88), W, H))).mean
+    dia = chao_medio("chao-dia.png")
+    clicar_no(aba, "#ambiente3d [data-v=entardecer]"); aba.drenar(1.0)
+    tarde = chao_medio("chao-entardecer.png")
+    ok(sum(tarde) < 0.85 * sum(dia), f"o chão do Entardecer mais escuro que o do Dia (o chão pega a luz da cena: {[round(v) for v in dia]} → {[round(v) for v in tarde]})")
+    clicar_no(aba, "#ambiente3d [data-v=ceu]"); aba.drenar(0.8)
+    clicar_no(aba, "#entorno3d [data-v=patio]"); aba.drenar(0.8)
+    ok(aba.avaliar("visor._luz.uChao.value") == 2 and aba.avaliar("!document.getElementById('patio-linha').hidden"), "Pátio: o asfalto e o Desenhar o pátio")
+    clicar_no(aba, "#patio-desenhar")
+    clicar_xy(0.3, 0.85); clicar_xy(0.7, 0.95)
+    t0 = time.time()
+    while time.time() - t0 < 10 and not (servidor()["fachada"].get("entorno") or {}).get("patio"): aba.drenar(0.3)
+    pt = (servidor()["fachada"].get("entorno") or {}).get("patio")
+    ok(pt and len(pt) == 2 and pt[0] != pt[1], f"o pátio desenhado com dois cliques no chão ({pt})")
+    clicar_no(aba, "#ambiente3d [data-v=noite]"); aba.drenar(0.8)
+    n0 = luz(aba)["n"]
+    clicar_no(aba, ".bt-luzes [data-tipo=poste]")
+    ok(aba.avaliar("document.body.classList.contains('colocando-luz')"), "+ Poste: espera o clique no 3D")
+    clicar_xy(0.5, 0.9)
+    def mao_do_servidor(n, lim=10):
+        t0 = time.time()
+        while time.time() - t0 < lim:
+            m = (servidor()["fachada"].get("luzes") or {}).get("mao") or []
+            if len(m) == n: return m
+            aba.drenar(0.3)
+        return (servidor()["fachada"].get("luzes") or {}).get("mao") or []
+    mao = mao_do_servidor(1)
+    ok(len(mao) == 1 and mao[0]["tipo"] == "poste", f"o poste posto no chão ({mao})")
+    ok(luz(aba)["n"] == min(40, n0 + 1) and aba.avaliar("visor.cena.children.some(o => o.isGroup && o.children.length === 3)"),
+       "a luz dele acesa e o poste (haste, braço, luminária) no 3D")
+    clicar_no(aba, ".bt-luzes [data-tipo=refletor]")
+    clicar_xy(0.5, 0.5)
+    mao = mao_do_servidor(2)
+    ok(len(mao) == 2 and mao[1]["tipo"] == "refletor", f"o refletor posto na parede ({[m['tipo'] for m in mao]})")
+    ok(aba.avaliar("document.querySelectorAll('#luzes-mao .item-luz').length") == 2, "a lista com as duas")
+    clicar_no(aba, ".bt-luzes [data-tipo=luminaria]")
+    tecla_esc = [aba.cmd("Input.dispatchKeyEvent", type=t, key="Escape", code="Escape", windowsVirtualKeyCode=27) for t in ("rawKeyDown", "keyUp")]
+    aba.drenar(0.3)
+    ok(aba.avaliar("!document.body.classList.contains('colocando-luz')"), "Esc cancela")
+    clicar_no(aba, "#luzes-mao .item-luz[data-i='0'] [data-r=tirar]"); aba.drenar(0.5)
+    mao = mao_do_servidor(1)
+    ok([m["tipo"] for m in mao] == ["refletor"], "✕ tira o poste")
+    im = render(aba, "noite-entorno.png").convert("RGB")
+    W, H = im.size
+    ok(max(im.getpixel((W // 2, 3))) < 30, "o render de noite com o entorno sai")
+
     print("G — o console")
     erros = [c for c in aba.console if c[0] in ("excecao", "error") and "Failed to load resource" not in c[1]]
     ok(not erros, f"sem erro no console ({erros[:3]})")

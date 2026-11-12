@@ -97,20 +97,45 @@ const SOL = [-0.19, -0.71, 1.15];
 export const LUZES_MAX = 40;
 const AMBIENTE_PADRAO = { ambCeu: [0.76, 0.81, 0.90], ambChao: [0.58, 0.56, 0.54], ambK: 0.7, solCor: [1.0, 0.97, 0.92], solK: 0.66,
                           pisoAmb: 1, aresta: 1, luzes: [] };
+// o ENTORNO da cena (12/11, amostra-8 aprovada): o chão em volta desenhado no piso — 1 grama, 2 pátio asfaltado, 3 concreto,
+// 4 terra e brita —, com a calçada de concreto em volta do prédio (uCalcada, mm) e o pátio (uPatio: x0, y0, x1, y1); some
+// na cor do horizonte (uFundo) longe do prédio. uChao = 0: o piso de sempre. Ruído procedural em metros (sem foto).
+const ENTORNO_GLSL = /* glsl */`
+uniform int uChao; uniform vec4 uCaixaE; uniform float uCalcada; uniform vec4 uPatio; uniform float uLuzChao;
+float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float rn(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), u.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), u.x), u.y); }
+float fbm(vec2 p) { float s = 0.0, k = 0.5; for (int i = 0; i < 5; i++) { s += k * rn(p); p = p * 2.03 + 17.0; k *= 0.5; } return s; }
+vec3 entorno(vec2 xy, vec3 horizonte) {
+  vec2 m = xy / 1000.0;
+  vec3 grama = mix(vec3(0.24, 0.36, 0.13), vec3(0.42, 0.52, 0.22), fbm(m * 0.3)) * (0.88 + 0.24 * rn(m * 5.0));
+  vec2 d = abs(fract(m / 4.0 + 0.5) - 0.5) * 4.0;
+  float junta = 1.0 - smoothstep(0.012, 0.035, min(d.x, d.y));
+  vec3 conc = vec3(0.70, 0.69, 0.66) * (0.93 + 0.12 * fbm(m * 0.7)) * (1.0 - 0.22 * junta);
+  vec3 asf = vec3(0.20, 0.21, 0.22) * (0.88 + 0.24 * rn(m * 8.0)) * (0.92 + 0.16 * fbm(m * 0.4));
+  vec3 terra = mix(vec3(0.52, 0.42, 0.30), vec3(0.66, 0.60, 0.50), fbm(m * 0.5)) * (0.86 + 0.28 * rn(m * 12.0));
+  bool calcada = xy.x > uCaixaE.x - uCalcada && xy.x < uCaixaE.z + uCalcada && xy.y > uCaixaE.y - uCalcada && xy.y < uCaixaE.w + uCalcada;
+  bool patio = xy.x > uPatio.x && xy.x < uPatio.z && xy.y > uPatio.y && xy.y < uPatio.w;
+  vec3 c = uChao == 3 ? conc : calcada ? conc : uChao == 2 && patio ? asf : uChao == 4 ? terra : grama;
+  vec2 meio = 0.5 * (uCaixaE.xy + uCaixaE.zw);
+  return mix(c * uLuzChao, horizonte, smoothstep(150000.0, 450000.0, distance(xy, meio)));
+}
+`;
 const LUZES_GLSL = /* glsl */`
 uniform vec3 uAmbCeu; uniform vec3 uAmbChao; uniform vec3 uSolCor; uniform float uSolK; uniform float uAmbK; uniform float uBrilhoK;
 uniform int uNLuz; uniform vec4 uLuzP[${LUZES_MAX}]; uniform vec4 uLuzC[${LUZES_MAX}]; uniform float uPisoAmb; uniform float uArestaK;
 // as luzes de noite: cada uma (posição, alcance) e (cor, força); caem com o cubo da distância sobre o alcance, sem sombra
-vec3 luzesDaNoite(vec3 p, vec3 n) {
+vec3 luzesBrutas(vec3 p, vec3 n) {
   vec3 s = vec3(0.0);
   for (int i = 0; i < ${LUZES_MAX}; i++) {
     if (i >= uNLuz) break;
     vec3 d = uLuzP[i].xyz - p; float r = max(length(d), 1.0); float q = r / uLuzP[i].w;
     s += uLuzC[i].rgb * uLuzC[i].a * max(dot(n, d / r), 0.0) / (1.0 + q * q * q);
   }
-  // somadas, saturam devagar (a fachada a 2,5 m dos refletores não vira um branco chapado): fraca quase igual, forte até ~1,6
-  return 1.6 * s / (1.0 + s);
+  return s;
 }
+// somadas, saturam devagar (a fachada a 2,5 m dos refletores não vira um branco chapado): fraca quase igual, forte até ~1,6
+vec3 luzesDaNoite(vec3 p, vec3 n) { vec3 s = luzesBrutas(p, n); return 1.6 * s / (1.0 + s); }
 `;
 
 const VERT = /* glsl */`
@@ -414,7 +439,9 @@ export class Visor3D {
       uAmbCeu: { value: new THREE.Vector3() }, uAmbChao: { value: new THREE.Vector3() }, uSolCor: { value: new THREE.Vector3() },
       uSolK: { value: 0 }, uAmbK: { value: 0 }, uBrilhoK: { value: 1 }, uPisoAmb: { value: 1 }, uArestaK: { value: 1 }, uNLuz: { value: 0 },
       uLuzP: { value: Array.from({ length: LUZES_MAX }, () => new THREE.Vector4()) },
-      uLuzC: { value: Array.from({ length: LUZES_MAX }, () => new THREE.Vector4()) } };
+      uLuzC: { value: Array.from({ length: LUZES_MAX }, () => new THREE.Vector4()) },
+      uChao: { value: 0 }, uCaixaE: { value: new THREE.Vector4() }, uCalcada: { value: 0 }, uPatio: { value: new THREE.Vector4() },
+      uLuzChao: { value: 1 } };
     if (!this._ambienteFeito) { this._ambienteFeito = true; this.definirAmbiente(null, false); }
     this._uLonge = { value: 10000 };
     this._uEscuro = { value: 0 };
@@ -900,8 +927,8 @@ export class Visor3D {
       vertexShader: `varying vec2 vXY; varying vec3 vMundo;
         void main() { vec4 w = modelMatrix * vec4(position, 1.0); vXY = w.xy; vMundo = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
       fragmentShader: `uniform vec3 uFundo, uLinha; uniform float uAlfa, uRaio, uEscuro; uniform vec2 uCentro; varying vec2 vXY; varying vec3 vMundo;
-        ${this._luz ? 'uniform float uApresenta; ' + SOMBRA_GLSL + LUZES_GLSL
-                    : 'float uApresenta = 0.0; float luzDoSol(vec3 p, vec3 n) { return 1.0; } float uSolK = 0.66; float uPisoAmb = 1.0; vec3 luzesDaNoite(vec3 p, vec3 n) { return vec3(0.0); }'}
+        ${this._luz ? 'uniform float uApresenta; uniform vec3 uSol; ' + SOMBRA_GLSL + LUZES_GLSL + ENTORNO_GLSL
+                    : 'float uApresenta = 0.0; float luzDoSol(vec3 p, vec3 n) { return 1.0; } float uSolK = 0.66; float uPisoAmb = 1.0; vec3 luzesDaNoite(vec3 p, vec3 n) { return vec3(0.0); } vec3 luzesBrutas(vec3 p, vec3 n) { return vec3(0.0); } int uChao = 0; vec3 entorno(vec2 p, vec3 h) { return h; } vec3 uSol = vec3(0.0, 0.0, 1.0); float uAmbK = 0.7; vec3 uAmbCeu = vec3(1.0); vec3 uSolCor = vec3(1.0);'}
         float grade(float passo) {
           vec2 q = vXY / passo, w = fwidth(q);
           vec2 d = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-6));
@@ -909,8 +936,15 @@ export class Visor3D {
         }
         void main() {
           float a = grade(10000.0) * uAlfa * (1.0 - smoothstep(uRaio * 0.55, uRaio, distance(vXY, uCentro)));
-          vec3 cor = mix(uFundo, uLinha, a);
-          if (uApresenta > 0.5) {
+          vec3 cor = uChao > 0 ? entorno(vXY, uFundo) : mix(uFundo, uLinha, a);
+          if (uApresenta > 0.5 && uChao > 0) {
+            // o entorno recebe a luz da cena como as peças (12/11: "o piso da área próxima ao barracão não está interagindo
+            // com a cena"): a luz do céu de cima e a do sol na cor e na altura dele, apagada na sombra; ÷ 1,1 para o dia dar a
+            // cor do desenho. As luzes de noite iluminam o chão (a grama sob o poste continua grama)
+            float sol = max(uSol.z, 0.0) * luzDoSol(vMundo, vec3(0.0, 0.0, 1.0));
+            // no chão a soma sem o limite (com ele, os refletores em volta já "enchiam" o chão e a poça do poste não aparecia)
+            cor = cor * (uAmbK * uAmbCeu + uSolK * uSolCor * sol + 0.22 * luzesBrutas(vMundo, vec3(0.0, 0.0, 1.0))) / 1.1;
+          } else if (uApresenta > 0.5) {
             // a sombra no chão some com o sol fraco (o nublado, a noite); as luzes de noite fazem a poça de luz no chão
             cor *= 1.0 - min(1.0, uSolK / 0.66) * (uEscuro > 0.5 ? 0.75 : 0.3) * (1.0 - luzDoSol(vMundo, vec3(0.0, 0.0, 1.0)));
             cor = cor * uPisoAmb + luzesDaNoite(vMundo, vec3(0.0, 0.0, 1.0)) * vec3(0.30, 0.24, 0.17);
@@ -953,6 +987,23 @@ export class Visor3D {
     luzes.forEach((l, i) => { L.uLuzP.value[i].set(l.p[0], l.p[1], l.p[2], l.alcance); L.uLuzC.value[i].set(l.cor[0], l.cor[1], l.cor[2], l.forca); });
     L.uNLuz.value = luzes.length;
     this.ambiente = cfg || null;
+    if (pedir) this.pedirQuadro();
+  }
+
+  /** O entorno da cena (12/11, amostra-8): `cfg` = {chao: 1 grama | 2 pátio | 3 concreto | 4 terra, caixa: [[x0,y0],[x1,y1]]
+   *  (o prédio, no mundo), calcada (mm em volta do prédio), patio: [[x0,y0],[x1,y1]] ou null, luz: o claro do chão (0–1,
+   *  a noite escurece)}; null = o piso de sempre. */
+  definirEntorno(cfg, pedir = true) {
+    if (!this._luz) return;
+    const L = this._luz;
+    if (!cfg || !cfg.chao) { L.uChao.value = 0; if (pedir) this.pedirQuadro(); return; }
+    const [[x0, y0], [x1, y1]] = cfg.caixa;
+    L.uChao.value = cfg.chao | 0;
+    L.uCaixaE.value.set(x0, y0, x1, y1);
+    L.uCalcada.value = Math.max(0, +cfg.calcada || 0);
+    const p = cfg.patio || [[x0 - 25000, y0 - 35000], [x1 + 25000, y1 + 25000]];
+    L.uPatio.value.set(Math.min(p[0][0], p[1][0]), Math.min(p[0][1], p[1][1]), Math.max(p[0][0], p[1][0]), Math.max(p[0][1], p[1][1]));
+    L.uLuzChao.value = cfg.luz ?? 1;
     if (pedir) this.pedirQuadro();
   }
 

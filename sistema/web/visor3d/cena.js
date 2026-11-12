@@ -218,21 +218,28 @@ const FOV_PADRAO = 45;
 // do sol, as arestas) e, de noite, as luzes automáticas (refletores em volta e a luz interna: [força dos refletores, da
 // interna]). "ceu" é o Dia de antes (a luz padrão, as linhas do piso).
 const AMBIENTES = {
-  ceu: { nome: 'Dia', ceu: ['#8fb8de', '#dfe9f3'], piso: '#dfe9f3' },
-  entardecer: { nome: 'Entardecer', ceu: ['#3f5687', '#c98a7a', '#f3c48c'], piso: '#e9c6a0', solAltura: 9,
+  ceu: { nome: 'Dia', ceu: ['#8fb8de', '#dfe9f3'], piso: '#dfe9f3', luzChao: 1 },
+  entardecer: { nome: 'Entardecer', ceu: ['#3f5687', '#c98a7a', '#f3c48c'], piso: '#e9c6a0', solAltura: 9, luzChao: 1,
                 luz: { ambCeu: [0.62, 0.60, 0.74], ambChao: [0.66, 0.50, 0.40], ambK: 0.62, solCor: [1.0, 0.68, 0.40], solK: 0.95, pisoAmb: 0.95, aresta: 0.9 } },
-  nublado: { nome: 'Nublado', ceu: ['#aeb8c4', '#e4e7eb'], piso: '#e1e3e6',
+  nublado: { nome: 'Nublado', ceu: ['#aeb8c4', '#e4e7eb'], piso: '#e1e3e6', luzChao: 1,
              luz: { ambCeu: [0.92, 0.93, 0.95], ambChao: [0.80, 0.80, 0.80], ambK: 0.92, solCor: [1, 1, 1], solK: 0.18 } },
-  estudio: { nome: 'Estúdio', ceu: ['#f7f8fa', '#e3e6ea'], radial: true, piso: '#e6e8eb',
+  estudio: { nome: 'Estúdio', ceu: ['#f7f8fa', '#e3e6ea'], radial: true, piso: '#e6e8eb', luzChao: 1,
              luz: { ambCeu: [0.86, 0.87, 0.90], ambChao: [0.70, 0.70, 0.72], ambK: 0.82, solCor: [1, 1, 1], solK: 0.45 } },
-  'noite-azul': { nome: 'Noite azul', ceu: ['#0d1a36', '#28467a', '#6b7fa6'], piso: '#3c4a66', noite: [1.6, 1.3],
+  'noite-azul': { nome: 'Noite azul', ceu: ['#0d1a36', '#28467a', '#6b7fa6'], piso: '#3c4a66', noite: [1.6, 1.3], luzChao: 1,
                   luz: { ambCeu: [0.26, 0.31, 0.48], ambChao: [0.16, 0.16, 0.22], ambK: 0.75, solCor: [0.55, 0.62, 0.9], solK: 0.12, pisoAmb: 0.75, aresta: 0.45 } },
-  noite: { nome: 'Noite', ceu: ['#03050b', '#0b1222', '#1a2338'], estrelas: true, piso: '#121826', noite: [2.2, 1.8],
+  noite: { nome: 'Noite', ceu: ['#03050b', '#0b1222', '#1a2338'], estrelas: true, piso: '#121826', noite: [2.2, 1.8], luzChao: 1,
            luz: { ambCeu: [0.09, 0.11, 0.17], ambChao: [0.05, 0.05, 0.07], ambK: 0.8, solCor: [0.55, 0.65, 0.95], solK: 0.08, pisoAmb: 0.6, aresta: 0.25 } },
 };
 const LUZ_PADRAO = { refletores: true, interna: true, forca_ref: 1, forca_int: 1, cor: 'quente' };
 const luzesDaCena = () => ({ ...LUZ_PADRAO, ...((cena && cena.luzes) || {}) });
 const ambienteDaCena = () => (eh3d() ? AMBIENTES[cena.fundo || 'ceu'] || null : null);
+// o ENTORNO (12/11, amostra-8 aprovada: as 4 + a calçada ajustável + o pátio desenhado): o chão em volta (visor.definirEntorno)
+const ENTORNOS = { liso: 0, grama: 1, patio: 2, concreto: 3, terra: 4, terreno: 0 };
+const ENTORNO_NOME = { liso: 'chão liso', grama: 'grama', patio: 'pátio', concreto: 'concreto', terra: 'terra', terreno: 'terreno real' };
+const entornoDaCena = () => ({ tipo: 'liso', calcada: 4, patio: null, ...((cena && cena.entorno) || {}) });
+const paraMundo = (p) => { const o = visor.cabecalho.origem; return [p[0] - o[0], p[1] - o[1], (p[2] || 0) - o[2]]; };
+const paraProjeto = (p) => { const o = visor.cabecalho.origem; return [p[0] + o[0], p[1] + o[1], p[2] + o[2]]; };
+const NOME_LUZ = { poste: 'Poste', refletor: 'Refletor', luminaria: 'Luminária' };
 let fovCena = FOV_PADRAO, vistaMudou = false, quadroAtual = null, tempoMini = 0, ouvindoVista = false;
 
 /** Os botões que dependem da cena (a imagem e o render). */
@@ -249,6 +256,9 @@ function mostrarBotoes() {
 function sairDaCena() {
   if (!eh3d() || !visor) return;
   visor.definirAmbiente(null);                              // a luz de sempre
+  visor.definirEntorno(null, false);                        // o piso de sempre
+  desenharObjetosDasLuzes(null);
+  pararDeColocar();
   $('#ceu').hidden = true;
   visor.pintarPor('material');
   visor.ligarArestas(true);
@@ -343,11 +353,25 @@ function pintarComo(modo3d) {
 /** As luzes de noite, postas sozinhas (amostra-6, "automáticas + ajuste"): refletores em volta das peças à vista, a meia
  *  altura e 2,5 m para fora, um a cada ~11 m (até 8 por lado), e a luz interna numa grade de ~15 m a 42 % da altura. A
  *  força de cada grupo é a do ambiente vezes a da cena (0–3); a cor, quente ou branca. */
+/** Onde fica a luz de cada uma posta à mão (mundo): o poste com o braço para o prédio, a 7,7 m; o refletor 1,5 m para fora da
+ *  parede; a luminária 0,6 m abaixo do ponto. `dir` = para fora do prédio, no plano. */
+function geometriaDaLuz(m) {
+  const cx = visor.caixaVisivel(), c = cx.getCenter(new THREE.Vector3()), p = paraMundo(m.p);
+  let dx = p[0] - c.x, dy = p[1] - c.y; const d = Math.hypot(dx, dy) || 1; dx /= d; dy /= d;
+  if (m.tipo === 'poste') return { p, dir: [dx, dy], luz: [p[0] - dx * 1350, p[1] - dy * 1350, p[2] + 7600] };
+  if (m.tipo === 'refletor') return { p, dir: [dx, dy], luz: [p[0] + dx * 1500, p[1] + dy * 1500, p[2]] };
+  return { p, dir: [dx, dy], luz: [p[0], p[1], p[2] - 600] };
+}
+
 function luzesDoAmbiente(amb) {
   if (!amb || !amb.noite || !visor) return [];
   const lz = luzesDaCena(), cx = visor.caixaVisivel(), a = cx.min, b = cx.max, h = Math.max(1000, b.z - a.z);
   const quente = lz.cor === 'branca' ? [1, 0.95, 0.88] : [1, 0.80, 0.55], dentro = lz.cor === 'branca' ? [1, 0.97, 0.94] : [1, 0.93, 0.82];
   const out = [];
+  for (const m of lz.mao || []) {                           // as postas à mão primeiro (12/11, amostra-8)
+    const gm = geometriaDaLuz(m), k = { poste: [2.4, 16000], refletor: [2.0, 12000], luminaria: [1.8, 12000] }[m.tipo] || [2, 12000];
+    out.push({ p: gm.luz, alcance: k[1], cor: m.tipo === 'luminaria' ? dentro : quente, forca: k[0] * (m.forca ?? 1) });
+  }
   if (lz.refletores && lz.forca_ref > 0) {
     const f = amb.noite[0] * lz.forca_ref, z = a.z + 0.5 * h, fora = 2500;
     const lado = (de, ate) => { const n = Math.min(7, Math.max(1, Math.round((ate - de) / 11000))); return Array.from({ length: n + 1 }, (_, i) => de + i * (ate - de) / n); };
@@ -408,13 +432,50 @@ function ceuDaTela() {
 
 /** O fundo da cena do 3D: céu (degradê, o piso se perde no horizonte), branco (sem as linhas do piso), transparente (sem
  *  fundo nem piso: PNG) ou o terreno (a imagem do lugar, quando a obra tem). */
+/** Os postes, refletores e luminárias postos à mão, no 3D (aparecem na imagem; de noite a cabeça acende). */
+let grupoDasLuzes = null;
+function desenharObjetosDasLuzes(amb) {
+  if (grupoDasLuzes) { visor.cena.remove(grupoDasLuzes); grupoDasLuzes.traverse(o => { if (o.geometry) o.geometry.dispose(); }); grupoDasLuzes = null; }
+  const mao = eh3d() ? luzesDaCena().mao || [] : [];
+  if (!mao.length) return;
+  const g = grupoDasLuzes = new THREE.Group();
+  const escuro_ = new THREE.MeshBasicMaterial({ color: 0x2c3138 }), cabeca = new THREE.MeshBasicMaterial({ color: amb && amb.noite ? 0xfff1c9 : 0xd8dde3 });
+  for (const m of mao) {
+    const gm = geometriaDaLuz(m), [x, y, z] = gm.p, ang = Math.atan2(-gm.dir[1], -gm.dir[0]);
+    if (m.tipo === 'poste') {
+      const haste = new THREE.Mesh(new THREE.CylinderGeometry(70, 90, 8000, 10), escuro_); haste.rotation.x = Math.PI / 2; haste.position.set(x, y, z + 4000);
+      const braco = new THREE.Mesh(new THREE.BoxGeometry(1400, 80, 80), escuro_); braco.rotation.z = ang;
+      braco.position.set(x - gm.dir[0] * 700, y - gm.dir[1] * 700, z + 7950);
+      const cab = new THREE.Mesh(new THREE.BoxGeometry(650, 450, 160), cabeca); cab.rotation.z = ang;
+      cab.position.set(x - gm.dir[0] * 1350, y - gm.dir[1] * 1350, z + 7860);
+      g.add(haste, braco, cab);
+    } else if (m.tipo === 'refletor') {
+      const r = new THREE.Mesh(new THREE.BoxGeometry(300, 500, 300), cabeca); r.rotation.z = ang; r.position.set(x + gm.dir[0] * 200, y + gm.dir[1] * 200, z); g.add(r);
+    } else {
+      const l = new THREE.Mesh(new THREE.CylinderGeometry(250, 250, 80, 16), cabeca); l.rotation.x = Math.PI / 2; l.position.set(x, y, z - 100); g.add(l);
+    }
+  }
+  visor.cena.add(g);
+}
+
+/** O chão do entorno (o piso desenhado: grama, pátio, concreto, terra), pelo ambiente; sem ambiente, o piso de sempre. */
+function aplicarEntorno(amb) {
+  const en = entornoDaCena(), chao = amb ? ENTORNOS[en.tipo] || 0 : 0;
+  if (!chao) { visor.definirEntorno(null, false); return; }
+  const cx = visor.caixaVisivel();
+  visor.definirEntorno({ chao, caixa: [[cx.min.x, cx.min.y], [cx.max.x, cx.max.y]], calcada: en.tipo === 'concreto' ? 0 : (+en.calcada || 0) * 1000,
+                         patio: en.patio ? en.patio.map(q => paraMundo([q[0], q[1], 0]).slice(0, 2)) : null, luz: amb.luzChao ?? 1 }, false);
+}
+
 function aplicarFundo() {
   const f = cena.fundo || 'ceu', u = visor.piso && visor.piso.material.uniforms, amb = AMBIENTES[f];
   visor.definirTema(escuro());                              // o piso e o fundo do tema; depois o da cena
   document.body.classList.toggle('fundo-transparente', f === 'transparente');
-  if (terreno && terreno.grupo) terreno.grupo.visible = f === 'terreno';
+  if (terreno && terreno.grupo) terreno.grupo.visible = f === 'terreno' || (!!amb && entornoDaCena().tipo === 'terreno');
   if (visor.piso) visor.piso.visible = f !== 'transparente';
   visor.definirAmbiente(amb && amb.luz ? { ...amb.luz, luzes: luzesDoAmbiente(amb) } : null, false);
+  aplicarEntorno(amb);
+  desenharObjetosDasLuzes(amb);
   if (amb) {                                                // o céu atrás (#ceu), o chão na cor do horizonte
     visor.cena.background = null;
     // sem as linhas de 10 m do piso em nenhum ambiente (usuário, 12/11: "essas linhas do piso para as cenas não precisa existir")
@@ -448,7 +509,8 @@ function resumirPainel() {
       `${cl === cams.length ? cl : cl + ' de ' + cams.length} camadas`);
   const f = cena.fundo || 'ceu', amb = AMBIENTES[f], s = solDaCena(), lz = luzesDaCena();
   const luzes = amb && amb.noite ? (lz.refletores || lz.interna ? ' · luzes acesas' : ' · luzes apagadas') : '';
-  pos('res-ambiente', `${amb ? amb.nome : { branco: 'fundo branco', transparente: 'transparente', terreno: 'terreno' }[f] || f}${luzes}${amb && amb.noite ? '' : s.ligado ? ` · sol ${nf(s.altura, 0)}°` : ' · sem sol'}`);
+  const ent = amb && entornoDaCena().tipo !== 'liso' ? ' · ' + ENTORNO_NOME[entornoDaCena().tipo] : '';
+  pos('res-ambiente', `${amb ? amb.nome : { branco: 'fundo branco', transparente: 'transparente', terreno: 'terreno' }[f] || f}${ent}${luzes}${amb && amb.noite ? '' : s.ligado ? ` · sol ${nf(s.altura, 0)}°` : ' · sem sol'}`);
   pos('res-estilo', `cores por ${cena.pintar && cena.pintar !== 'editor' ? cena.pintar : 'material'} · ${cena.arestas === false ? 'sem arestas' : 'arestas finas'}`);
 }
 
@@ -466,9 +528,16 @@ function mostrarPainel3d() {
   $('#luz-ref-forca').value = lz.forca_ref; $('#luz-int-forca').value = lz.forca_int;
   $('#luz-ref-forca').disabled = !lz.refletores; $('#luz-int-forca').disabled = !lz.interna;
   marcar('#luz-cor', lz.cor);
-  const bt = document.querySelector('#fundo3d [data-v=terreno]');
+  const en = entornoDaCena();
+  marcar('#entorno3d', en.tipo);
+  const bt = document.querySelector('#entorno3d [data-v=terreno]');
   bt.disabled = !(terreno && terreno.malha);
-  bt.title = bt.disabled ? 'A obra ainda não tem o terreno (modo ver › Terreno)' : '';
+  bt.title = bt.disabled ? 'A obra ainda não tem o terreno (modo ver › Terreno)' : 'A imagem do lugar (modo ver › Terreno)';
+  $('#calcada-linha').hidden = !['grama', 'patio', 'terra'].includes(en.tipo);
+  $('#calcada').value = en.calcada; $('#calcada-val').textContent = nf(en.calcada, en.calcada % 1 ? 1 : 0) + ' m';
+  $('#patio-linha').hidden = en.tipo !== 'patio';
+  $('#patio-volta').disabled = !en.patio;
+  desenharLuzesMao();
   $('#lente3d').value = fovCena; $('#lente3d-val').textContent = nf(fovCena, 0) + '°';
   const pai = document.querySelector('#pintar3d [data-v=sistema]');
   pai.hidden = sistemas.length < 2;
@@ -757,6 +826,29 @@ function ligar3d() {
   $('#luz-ref-forca').oninput = () => mudarLuzes({ forca_ref: +$('#luz-ref-forca').value }, 'luz-ref');
   $('#luz-int-forca').oninput = () => mudarLuzes({ forca_int: +$('#luz-int-forca').value }, 'luz-int');
   $('#luz-cor').onclick = (e) => { const b = e.target.closest('button[data-v]'); if (b) mudarLuzes({ cor: b.dataset.v }); };
+  // o entorno (12/11, amostra-8)
+  const mudarEntorno = (mud, tipo) => { if (eh3d()) mudar3d({ entorno: { ...entornoDaCena(), ...mud } }, tipo); };
+  $('#entorno3d').onclick = (e) => { const b = e.target.closest('button[data-v]'); if (b && !b.disabled) mudarEntorno({ tipo: b.dataset.v }); };
+  $('#calcada').oninput = () => { $('#calcada-val').textContent = nf(+$('#calcada').value, 1) + ' m'; mudarEntorno({ calcada: +$('#calcada').value }, 'calcada'); };
+  $('#patio-desenhar').onclick = () => comecarAColocar({ tipo: 'patio' });
+  $('#patio-volta').onclick = () => mudarEntorno({ patio: null });
+  // as luzes postas à mão: o tipo, depois o clique no 3D
+  for (const b of document.querySelectorAll('.bt-luzes button')) b.onclick = () => comecarAColocar({ tipo: b.dataset.tipo });
+  $('#luzes-mao').onclick = (e) => {
+    const b = e.target.closest('button[data-r]'), it = e.target.closest('.item-luz');
+    if (!b || !it) return;
+    const i = +it.dataset.i, mao = [...(luzesDaCena().mao || [])];
+    if (b.dataset.r === 'tirar') { mao.splice(i, 1); mudarLuzes({ mao }); }
+    else comecarAColocar({ tipo: mao[i].tipo, i });
+  };
+  $('#luzes-mao').oninput = (e) => {
+    const it = e.target.closest('.item-luz');
+    if (!it || e.target.type !== 'range') return;
+    const mao = (luzesDaCena().mao || []).map((m, k) => k === +it.dataset.i ? { ...m, forca: +e.target.value } : m);
+    mudarLuzes({ mao }, 'luz-mao-' + it.dataset.i);
+  };
+  palco.addEventListener('pointerdown', (ev) => { if (colocando && eh3d() && !ev.target.closest('#barra-palco')) { ev.stopPropagation(); ev.preventDefault(); colocarEm(ev); } }, true);
+  addEventListener('keydown', (ev) => { if (colocando && ev.key === 'Escape') { pararDeColocar(); aviso('Cancelado.'); } });
   $('#lente3d').oninput = () => {
     if (!eh3d()) return;
     lembrar('lente3d');
@@ -1255,7 +1347,7 @@ const desfeitos = [], refeitos = [];
 let ultimaMudanca = { tipo: null, t: 0 };
 
 // a cena do 3D (11/11): o retrato é a câmera, as camadas, o sol e o estilo/enquadramento
-const CAMPOS_3D = ['camera', 'desligadas', 'sol', 'pintar', 'arestas', 'fundo', 'proporcao', 'marca', 'luzes'];
+const CAMPOS_3D = ['camera', 'desligadas', 'sol', 'pintar', 'arestas', 'fundo', 'proporcao', 'marca', 'luzes', 'entorno'];
 
 function retrato() {
   if (eh3d()) return JSON.parse(JSON.stringify(Object.fromEntries(CAMPOS_3D.map(k => [k, cena[k] ?? null]))));
@@ -1296,7 +1388,7 @@ async function voltarA(de, para, texto) {
     mostrarSol();
     mostrarPainel3d();
     mostrarMarca();
-    try { await gravar({ ...campos, marca: r.marca, luzes: r.luzes }); agendarMiniatura(); aviso(texto + '.'); }
+    try { await gravar({ ...campos, marca: r.marca, luzes: r.luzes, entorno: r.entorno }); agendarMiniatura(); aviso(texto + '.'); }
     catch (e) { aviso(texto + ' na tela, mas não gravado: ' + e.message); }
     return;
   }
@@ -1984,6 +2076,77 @@ async function renderizar() {
     renderizando = false;
     $('#renderizar').disabled = $('#salvar-imagem').disabled = false;
   }
+}
+
+// ------------------------------------------------------------------ pôr as luzes e o pátio com o clique no 3D (12/11)
+
+let colocando = null;                                       // {tipo: 'poste'|'refletor'|'luminaria'|'patio', i (mover), p0 (o 1º canto)}
+const DICAS_COLOCAR = { poste: 'Clique no chão onde fica o poste.', refletor: 'Clique na parede onde fica o refletor.',
+                        luminaria: 'Clique no teto (ou na peça) onde fica a luminária.', patio: 'Clique no chão: o primeiro canto do pátio.' };
+
+function comecarAColocar(c) {
+  if (!eh3d()) return;
+  colocando = c;
+  document.body.classList.add('colocando-luz');
+  for (const b of document.querySelectorAll('.bt-luzes button')) b.classList.toggle('ligado', b.dataset.tipo === c.tipo && c.i === undefined);
+  $('#dica-luz').hidden = c.tipo === 'patio';
+  $('#dica-luz').textContent = DICAS_COLOCAR[c.tipo] + ' (Esc cancela)';
+  aviso(DICAS_COLOCAR[c.tipo] + ' (Esc cancela)');
+}
+
+function pararDeColocar() {
+  colocando = null;
+  document.body.classList.remove('colocando-luz');
+  for (const b of document.querySelectorAll('.bt-luzes button')) b.classList.remove('ligado');
+  const d = document.getElementById('dica-luz'); if (d) d.hidden = true;
+}
+
+/** O ponto do chão sob o mouse (o plano do chão, mm do projeto). */
+function pontoNoChao(x, y) {
+  const o = visor.cabecalho.origem, z = zDoChao();
+  const ndc = new THREE.Vector2(x / tela.clientWidth * 2 - 1, -(y / tela.clientHeight) * 2 + 1);
+  const raio = new THREE.Raycaster();
+  visor.camera.updateMatrixWorld();
+  raio.setFromCamera(ndc, visor.camera);
+  const p = new THREE.Vector3();
+  return raio.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), -z), p) ? [p.x + o[0], p.y + o[1], p.z + o[2]] : null;
+}
+
+function colocarEm(ev) {
+  const r = tela.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top, c = colocando;
+  const lz = luzesDaCena(), mao = [...(lz.mao || [])];
+  if (c.tipo === 'patio') {
+    const p = pontoNoChao(x, y);
+    if (!p) return;
+    if (!c.p0) { colocando = { ...c, p0: p }; aviso('Agora o canto oposto do pátio. (Esc cancela)'); return; }
+    pararDeColocar();
+    mudar3d({ entorno: { ...entornoDaCena(), tipo: 'patio', patio: [[c.p0[0], c.p0[1]], [p[0], p[1]]] } });
+    aviso('Pátio desenhado.');
+    return;
+  }
+  let p;
+  if (c.tipo === 'poste') p = pontoNoChao(x, y);
+  else { const a = visor.pontoEm(x, y); p = a && a.ponto; }
+  if (!p) { aviso(c.tipo === 'poste' ? 'Clique no chão.' : 'Clique numa peça do modelo (a parede, o teto).'); return; }
+  if (c.i !== undefined) mao[c.i] = { ...mao[c.i], p: p.map(v => Math.round(v)) };
+  else {
+    if (mao.length >= 20) { aviso('Até 20 luzes postas à mão por cena.'); pararDeColocar(); return; }
+    mao.push({ tipo: c.tipo, p: p.map(v => Math.round(v)), forca: 1 });
+  }
+  pararDeColocar();
+  mudar3d({ luzes: { ...lz, mao } });
+  aviso(c.i !== undefined ? `${NOME_LUZ[c.tipo]} mudado de lugar.` : `${NOME_LUZ[c.tipo]} posto.` + (ambienteDaCena() && ambienteDaCena().noite ? '' : ' Acende nos ambientes de noite.'));
+}
+
+/** A lista das luzes postas à mão no painel: o nome, a força, mover (📍) e tirar (✕). */
+function desenharLuzesMao() {
+  const mao = luzesDaCena().mao || [], conta = {};
+  $('#luzes-mao').innerHTML = mao.map((m, i) => {
+    conta[m.tipo] = (conta[m.tipo] || 0) + 1;
+    return `<div class="item-luz" data-i="${i}"><span>${NOME_LUZ[m.tipo] || m.tipo} ${conta[m.tipo]}</span>
+      <input type="range" min="0" max="3" step="0.1" value="${m.forca ?? 1}" aria-label="Força">
+      <button type="button" data-r="mover" title="Mudar de lugar (clique no 3D)">📍</button><button type="button" data-r="tirar" title="Tirar esta luz">✕</button></div>`;
+  }).join('');
 }
 
 // ------------------------------------------------------------------ Renderizar e exportar (amostra-5, exportar_cenas.js)
