@@ -1903,7 +1903,9 @@ export class CopiarPropriedades extends Ferramenta {
   static dica = 'Clique no objeto de origem (o que tem as propriedades certas)';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 4l6 6-8 8H6v-6z"/><path d="M4 20h6"/></svg>';
   // na cota, o estilo dela inteiro: o tamanho (altura e fator, que leva a ponta e os afastamentos), o terminador, as
-  // casas e a folga do número (22/10); a escala não, que muda o número medido
+  // casas e a folga do número (22/10) — e a escala, como o DIMLFAC no MATCHPROP do AutoCAD (usuário, 12/11, nas pranchas
+  // da ME Sooro: "a ferramenta MA não copia as informações da escala da cota, apenas o tamanho da letra"): a da cota, ou a
+  // que o número escrito dá (a cota gerada na prancha tem o número da peça escrito e nenhuma escala — 16234 sobre 129,87)
   static CAMPOS = { cota: ['altura', 'fator', 'terminador', 'casas', 'folga', 'seta'], cota_especial: ['altura', 'fator', 'terminador', 'casas', 'folga', 'seta'], texto: ['altura'], chamada: ['altura'], hachura: ['padrao', 'espacamento', 'angulo'] };
   reiniciar() {
     super.reiniciar();
@@ -1937,6 +1939,7 @@ export class CopiarPropriedades extends Ferramenta {
     const novos = alvos.filter(e => !this.doc.bloqueada(e)).map(e => {
       const m = { camada: this.fonte.camada };
       if (e.tipo === this.fonte.tipo) for (const k of CopiarPropriedades.CAMPOS[e.tipo] || []) m[k] = clonar(this.fonte[k] ?? null);
+      if (e.tipo === 'cota' && this.fonte.tipo === 'cota') { const fc = fatorDaCota(this.fonte); m.escala = Math.abs(fc - 1) > 1e-9 ? fc : null; }
       else if ((e.tipo === 'texto' || e.tipo === 'chamada' || e.tipo === 'cota') && this.fonte.altura) m.altura = this.fonte.altura;
       return criar({ ...clonar(e), ...m });
     });

@@ -166,8 +166,28 @@ try:
     clique([(destino[0][0] + destino[1][0]) / 2, (destino[0][1] + destino[1][1]) / 2])
     e376 = ent(COTA_376)
     ok(e376["fator"] == 1.96 and e376["altura"] == 2.5, f"C. MA: a cota 376 recebe o tamanho da 275 (altura {e376['altura']}, fator {e376['fator']}; '{dica()[:50]}')")
+    # a escala também (usuário, 12/11: "a ferramenta MA não copia as informações da escala da cota, apenas o tamanho da letra")
+    ok(e376.get("escala") == 25, f"C. MA: e a escala da 275 (1:25): {e376.get('escala')}")
     tecla("z", CTRL)
     esc()
+    # da cota gerada (o número escrito, sem escala) para uma cota feita à mão: a escala que o número escrito dá
+    cx = jsj("const b = c.doc.caixa(); return [b[1][0] + 60, b[0][1] + 40];")
+    js("c.doc.add({ tipo: 'cota', id: 'nova_ma', camada: 'COTA', modo: 'h', p1: %s, p2: %s, deslocamento: 6, altura: 2.5 }); c.tela.pedirQuadro(); return 1;"
+       % (json.dumps(cx), json.dumps([cx[0] + 12, cx[1]])))
+    preparar(VISTA_C)
+    duas("m", "a")
+    o = pontas(COTA_376)
+    clique([(o[0][0] + o[1][0]) / 2, (o[0][1] + o[1][1]) / 2])
+    ok("Origem: cota" in dica(), f"C. MA: a cota 376 do detalhamento como origem: '{dica()[:50]}'")
+    js("c.tela.enquadrar([[%f, %f], [%f, %f]], 0.05); return 1;" % (cx[0] - 10, cx[1] - 10, cx[0] + 22, cx[1] + 20)); aba.drenar(0.3)
+    d_ = pontas("nova_ma")
+    clique([(d_[0][0] + d_[1][0]) / 2, (d_[0][1] + d_[1][1]) / 2])
+    nova = ent("nova_ma")
+    numero_nova = js("const e = c.doc.get('nova_ma'); return c.tela.constructor.textoCota(e, c.doc.escala, c.tela.estiloDoDesenho).txt;")
+    ok(nova.get("escala") == 25 and numero_nova == "300",
+       f"C. MA da cota gerada (376 escrito): a cota à mão passa a 1:25 e mostra 300 (12 mm × 25): escala {nova.get('escala')}, número {numero_nova}")
+    esc()
+    js("c.doc.remover('nova_ma'); c.tela.pedirQuadro(); return 1;")      # a cota do teste sai (o E conta as cotas novas)
 
     # ---------------------------------------------------------------- B. o canto da linha de cota
     preparar([[1835, 470], [1875, 500]])
