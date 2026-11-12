@@ -535,6 +535,11 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             return any(isinstance(e, Texto) and str(e.texto or "").startswith("TIPOS DE TELHA") for e in c_["entidades"])
         principais = [c for c in tel if re.match(r"FACE", str(c.get("titulo") or "")) or e_paginacao(c)]
         detalhes_t = [c for c in tel if not any(c is x for x in principais)]
+        coluna_t = next((c for c in principais if e_paginacao(c)), None)
+        if coluna_t is not None:
+            itens = _prancha_padrao_de_telhas(itens, coluna_t, [c for c in principais if c is not coluna_t], detalhes_t,
+                                              ux1 - ux0 - FOLGA, uy1 - QUADRO_CABECALHO - FOLGA - uy0, ordem, titulos_q)
+            detalhes_t = []
         alt_band = (m["inferior"] + ac) - (m["inferior"] + 3.0) - QUADRO_CABECALHO - FOLGA - FAIXA
         for c in detalhes_t:
             (bx0, by0), (bx1, by1) = c["caixa"]
@@ -544,27 +549,16 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 c["categoria"] = "TELHAS_DET"
             else:
                 principais.append(c)
-        # a paginação por tipo (a vista alta) numa coluna à esquerda, as faces e o detalhe à direita (pedido do
-        # usuário, 28/09: vistas maiores, sem o espaço vazio embaixo)
-        coluna_t = next((c for c in principais if e_paginacao(c)), None)
-        direita_t = [c for c in principais if c is not coluna_t]
-        for c in direita_t:
-            c["categoria"] = "TELHAS"
-        teto_t = {id(c): 2.0 for c in direita_t if not re.match(r"FACE", str(c.get("titulo") or ""))}
-        if coluna_t is not None and direita_t:
-            coluna_t["categoria"] = "TELHAS_TIPOS"
-            ordem["TELHAS_TIPOS"] = ordem.get("TELHAS", 0) - 0.5
-            titulos_q["TELHAS_TIPOS"] = "Tipos de telha"
-            planta_t = [c for c in direita_t if re.match(r"FACE \d+ – COBERTURA \(0", str(c.get("titulo") or ""))]
-            _caber_numa_prancha(direita_t, ux1 - ux0 - FOLGA, uy1 - QUADRO_CABECALHO - FOLGA - uy0, teto_t, coluna=coluna_t,
-                                par=planta_t, escala_max=ESCALA_MINIMA_TELHAS)
-        else:
+        if coluna_t is None:
+            # sem a planta dos tipos: as faces no quadro das telhas, na escala que as faz caber, e os detalhes na faixa
+            # de baixo (com ela, a prancha padrão de telhas, acima)
             for c in principais:
                 c["categoria"] = "TELHAS"
+            teto_t = {id(c): 2.0 for c in principais if not re.match(r"FACE", str(c.get("titulo") or ""))}
             _caber_numa_prancha(principais, qx1 - qx0, (uy1 - QUADRO_CABECALHO - FOLGA) - (uy0 - FOLGA * 0.5 + 2.0), teto_t,
                                 escala_max=ESCALA_MINIMA_TELHAS)
-        ordem["TELHAS_DET"] = 999
-        titulos_q["TELHAS_DET"] = "Telhas – detalhes"
+            ordem["TELHAS_DET"] = 999
+            titulos_q["TELHAS_DET"] = "Telhas – detalhes"
     # a prancha dos chumbadores (pedido do usuário, 28/09): a planta de locação reduzida à esquerda e, à direita,
     # as chapas e as barras de chumbamento; a primeira da obra (a ordem da fábrica: chumbadores → … → telhas)
     # a localização (a planta e as elevações com os nomes das peças) abre o jogo, com o índice das pranchas
@@ -736,6 +730,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             w1 = min(max(larg_t * area(g1) / (area(g1) + area(g2)), w1_min), larg_t - w2_min)
             if cat1 == "TELHAS_TIPOS":
                 w1 = w1_min                                   # a coluna da paginação só da largura dela
+            if cat2 == "TELHAS_DET":
+                w1 = larg_t - w2_min                          # a coluna dos detalhes só da largura deles (padrão de 12/11)
             xs = ux0 + w1
             for cat_, x0_, x1_ in ((cat1, ux0, xs), (cat2, xs + FOLGA, ux1)):
                 y_ = uy1 - QUADRO_CABECALHO - FOLGA
@@ -747,14 +743,15 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 while resto_:
                     linha_, x_ = [], x0_ + QUADRO_MARGEM
                     for c_ in resto_:
-                        if linha_ and x_ + c_["w"] > x1_ - QUADRO_MARGEM:
+                        if linha_ and (x_ + c_["w"] > x1_ - QUADRO_MARGEM or c_.get("quebra_antes")):
                             break
                         linha_.append(c_)
                         x_ += c_["w"] + FOLGA
                     linhas_.append(linha_)
                     resto_ = resto_[len(linha_):]
-                if sum(max(c_["h"] for c_ in l_) + FOLGA for l_ in linhas_) <= y_ - uy0 + FOLGA:
-                    # só quando tudo cabe no quadro: a célula que desce não pode cair para a prancha seguinte
+                if sum(max(c_["h"] for c_ in l_) + FOLGA for l_ in linhas_) <= y_ - uy0 + FOLGA                         and not any(c_.get("quebra_antes") for c_ in grupo_):
+                    # só quando tudo cabe no quadro: a célula que desce não pode cair para a prancha seguinte; as fileiras
+                    # marcadas (a prancha padrão de telhas: os tipos em cima, as fachadas embaixo) ficam como estão
                     linhas_ = _realocar_sozinhas(linhas_, (x1_ - QUADRO_MARGEM) - (x0_ + QUADRO_MARGEM), FOLGA)
                 for linha_ in linhas_:
                     alt_ = max(c_["h"] for c_ in linha_)
@@ -824,13 +821,14 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             # contraventos/agulhamentos e conjuntos: dois quadros lado a lado, cada um na altura toda
             seq_ = list(dict.fromkeys(c_["categoria"] for c_ in fila))
             if not cels_p and len(seq_) >= 2 and tuple(seq_[:2]) in (("CONTRAVENTOS", "CONJUNTOS"), ("CHUMBACAO", "CHUMBAMENTO"),
-                                                                        ("TELHAS_TIPOS", "TELHAS")):
+                                                                        ("TELHAS_TIPOS", "TELHAS"), ("TELHAS", "TELHAS_DET")):
                 cheia = lado_a_lado(seq_[0], seq_[1], cels_p, mold_p)
             while fila and not cheia:
                 cat = fila[0]["categoria"]
                 # os quadros lado a lado abrem prancha nova
                 seq2 = list(dict.fromkeys(c_["categoria"] for c_ in fila))[:2]
-                if cels_p and tuple(seq2) in (("CONTRAVENTOS", "CONJUNTOS"), ("CHUMBACAO", "CHUMBAMENTO"), ("TELHAS_TIPOS", "TELHAS")):
+                if cels_p and tuple(seq2) in (("CONTRAVENTOS", "CONJUNTOS"), ("CHUMBACAO", "CHUMBAMENTO"), ("TELHAS_TIPOS", "TELHAS"),
+                                             ("TELHAS", "TELHAS_DET")):
                     break
                 if cels_p and cat == "CHAPAS" and not any(c_["categoria"] == "CHAPAS" for c_ in cels_p):
                     break                                       # a prancha de corte começa numa folha nova
@@ -2423,6 +2421,154 @@ def _espacar_textos(c: dict):
 #: As faces de telha não se reduzem além disto para caber numa prancha só: em 1:200 as cotas das chapas não se liam
 #: (o depósito, análise das pranchas de 29/09); o que não cabe segue para a prancha seguinte.
 ESCALA_MINIMA_TELHAS = 125.0
+
+
+def _cobertura_inclinada(c: dict) -> bool:
+    """a face de cobertura com a água inclinada ("FACES 2 E 3 – COBERTURA (11°)…"): a planta dos tipos já a mostra"""
+    m_ = re.search(r"COBERTURA \(([\d.,]+)°\)", str(c.get("titulo") or "").upper())
+    return bool(m_) and abs(float(m_.group(1).replace(",", "."))) > 1e-6
+
+
+def _girar_celula(c: dict, giro: float) -> None:
+    """o desenho da célula girado em volta do meio dele, o título (o cabeçalho) de pé em cima, como o usuário deitou a
+    FACE 1 ao lado dos tipos (Sala, 12/11)"""
+    from nucleo2d.ajustes_pranchas import _levar, _transformar
+    k = float(c["k"])
+    # só a lista base (a outra é refeita dela pelo _reescalar; as duas podem ter os mesmos objetos)
+    ents = c.get("_ents_escala0") or c["entidades"]
+    cab = [e for e in ents if (e.atributos or {}).get("cabecalho") is not None]
+    corpo = [e for e in ents if (e.atributos or {}).get("cabecalho") is None]
+    cx = _caixa_de(corpo, k)
+    if not cx:
+        return
+    (x0, y0), (x1, y1) = cx
+    f = _levar(((x0 + x1) / 2.0, (y0 + y1) / 2.0), 1.0, giro)
+    for e in corpo:
+        _transformar(e, f, 1.0, giro)
+    (n0, _m0), (_n1, m1) = _caixa_de(corpo, k)
+    dx, dy = n0 - x0, m1 - y1                          # o título acompanha o canto de cima, à esquerda
+    for e in cab:
+        _transformar(e, lambda p, dx=dx, dy=dy: (p[0] + dx, p[1] + dy))
+    c["entidades"] = list(ents)
+    _reescalar(c, k)
+
+
+def _quebrar_cabecalho(c: dict, largura: float) -> None:
+    """as linhas do cabeçalho da célula mais largas que `largura` (mm de papel) em mais linhas, umas embaixo das outras: o
+    subtítulo das fachadas ("TL7 2x · TL8 2x · … corte em obra") tem 250 mm no papel e, sem quebrar, as duas fachadas
+    não ficavam lado a lado em escala nenhuma"""
+    ents = c.get("_ents_escala0") or c["entidades"]
+    esc = float(c.get("escala") or c["k"])                # as posições estão no desenho de origem
+    cab = sorted((e for e in ents if isinstance(e, Texto) and (e.atributos or {}).get("cabecalho") is not None),
+                 key=lambda e: -e.posicao[1])
+    novas, desce = [], 0.0
+    for e in cab:
+        if desce:
+            e.posicao = (e.posicao[0], e.posicao[1] - desce)
+        n = int(largura / (0.75 * e.altura)) if e.altura else 0
+        if n < 12 or len(e.texto or "") <= n:
+            continue
+        partes = _quebrar(e.texto, n)
+        passo = 1.5 * e.altura * esc
+        e.texto = partes[0]
+        for i, t in enumerate(partes[1:], 1):
+            nova = copy.deepcopy(e)
+            nova.id = Entidade2D().id
+            nova.texto = t
+            nova.posicao = (e.posicao[0], e.posicao[1] - i * passo)
+            novas.append(nova)
+        desce += passo * (len(partes) - 1)
+    ents.extend(novas)
+    c["entidades"] = list(ents)
+
+
+def _prancha_padrao_de_telhas(itens: list, tipos: dict, faces: List[dict], detalhes: List[dict], largura: float,
+                              altura: float, ordem: dict, titulos_q: dict) -> list:
+    """A PRANCHA PADRÃO DE TELHAS (usuário, 12/11, sobre a revisão à mão da prancha 13 da Sala: "Sim, é assim"; regras
+    para as outras obras escolhidas por ele: sai a água inclinada, a planta das marcas na orientação dos tipos):
+
+    * um quadro largo "TIPOS DE TELHA | TELHAS": em cima a planta dos tipos e, ao lado, a planta das marcas (a face de
+      cobertura plana, 0°) girada para ficar na orientação dela; embaixo as fachadas e os oitões, lado a lado numa
+      fileira — sem passar de 1:125; se não cabem, em mais fileiras, e a planta dos tipos cede;
+    * à direita, numa coluna, os detalhes (a multidobra, a cumeeira…), um embaixo do outro;
+    * a face de cobertura inclinada sai (a planta dos tipos já a mostra).
+
+    Devolve os itens (sem as faces que saíram); as categorias, a ordem e as escalas ficam nas células."""
+    inclinadas = [c for c in faces if _cobertura_inclinada(c)]
+    faces = [c for c in faces if not any(c is x for x in inclinadas)]
+    itens = [c for c in itens if not any(c is x for x in inclinadas)]
+    planta = next((c for c in faces if re.match(r"FACES? [\d E]+ – COBERTURA \(0", str(c.get("titulo") or "").upper())), None)
+    resto = [c for c in faces if c is not planta]
+    if planta is not None and (tipos["h"] > tipos["w"]) != (planta["h"] > planta["w"]):
+        _girar_celula(planta, -90.0)
+    seq = [tipos] + ([planta] if planta is not None else []) + resto
+    for i, c in enumerate(seq):
+        c["categoria"] = "TELHAS"
+        c["_ordem"] = i
+        c.pop("quebra_antes", None)
+    if resto:
+        resto[0]["quebra_antes"] = True                # as fachadas na fileira de baixo
+    for i, c in enumerate(detalhes):
+        c["categoria"] = "TELHAS_DET"
+        c["_ordem"] = i
+    titulos_q["TELHAS"] = "Tipos de telha | Telhas"
+    titulos_q["TELHAS_DET"] = ""
+    ordem["TELHAS_DET"] = ordem.get("TELHAS", 0) + 0.5
+    # a coluna dos detalhes: na escala deles, reduzidos só se não couberem um embaixo do outro
+    fatores = (1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0)
+    if detalhes:
+        base_d = {id(c): float(c.get("escala") or c["k"]) for c in detalhes}
+        for f in fatores:
+            for c in detalhes:
+                _reescalar(c, escala_normalizada(base_d[id(c)] * f - 1e-6))
+            if sum(c["h"] + FOLGA for c in detalhes) - FOLGA <= altura:
+                break
+    larg_det = (max(c["w"] for c in detalhes) + 2 * QUADRO_MARGEM + FOLGA) if detalhes else 0.0
+    larg = largura - larg_det - 2 * QUADRO_MARGEM
+    # o quadro largo: os tipos e a planta na mesma escala (g), as fachadas na delas (f); a menor redução que cabe e, no
+    # empate, as fachadas maiores (levam as cotas das chapas)
+    base = {id(c): float(c.get("escala") or c["k"]) for c in seq}
+    de_cima = [tipos] + ([planta] if planta is not None else [])
+
+    def legivel(f):
+        """as fachadas não vão além de 1:125 (ESCALA_MINIMA_TELHAS) — ou da delas, se já é menor"""
+        return all(escala_normalizada(base[id(c)] * f - 1e-6) <= max(ESCALA_MINIMA_TELHAS, base[id(c)]) for c in resto)
+
+    def cabe(g, f, uma_fileira):
+        for c in de_cima:
+            _reescalar(c, escala_normalizada(base[id(c)] * g - 1e-6))
+        for c in resto:
+            _reescalar(c, escala_normalizada(base[id(c)] * f - 1e-6))
+        if sum(c["w"] + FOLGA for c in de_cima) - FOLGA > larg:
+            return False
+        if uma_fileira and resto and sum(c["w"] + FOLGA for c in resto) - FOLGA > larg:
+            return False
+        y = max(c["h"] for c in de_cima)
+        x, alt_l = 0.0, 0.0
+        for c in resto:
+            if c["w"] > larg:
+                return False
+            if x > 0 and x + c["w"] > larg:
+                y += alt_l + FOLGA
+                x, alt_l = 0.0, 0.0
+            x += c["w"] + FOLGA
+            alt_l = max(alt_l, c["h"])
+        return y + (alt_l + FOLGA if resto else 0.0) <= altura
+    # as fachadas lado a lado, numa fileira (como na prancha do usuário), com o subtítulo comprido quebrado na largura
+    # de cada uma; só sem jeito, em mais de uma
+    if len(resto) > 1:
+        for c in resto:
+            _quebrar_cabecalho(c, (larg - FOLGA * (len(resto) - 1)) / len(resto) - 2 * MARGEM_RETANGULO)
+    # de preferência sem passar de 1:125 nas fachadas (o Depósito, com 7, ia a 1:500 numa fileira só): numa fileira, senão
+    # em mais, a planta dos tipos cedendo; sem jeito nenhum, a menor redução que cabe
+    pares = sorted(((g, f) for g in fatores + (6.0, 8.0, 10.0) for f in fatores + (6.0, 8.0, 10.0)),
+                   key=lambda gf: (max(gf), gf[1], gf[0]))
+    legiveis = [(g, f) for g, f in pares if legivel(f)]
+    if not any(cabe(g, f, True) for g, f in legiveis) and not any(cabe(g, f, False) for g, f in legiveis):
+        for g, f in pares:
+            if cabe(g, f, False):
+                break
+    return itens
 
 
 def _caber_numa_prancha(cels: Sequence[dict], largura: float, altura: float, teto: Optional[Dict[int, float]] = None,

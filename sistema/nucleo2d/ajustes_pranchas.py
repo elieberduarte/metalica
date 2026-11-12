@@ -677,6 +677,12 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
         if math.dist(o_velho, origens[cel]) <= TOLERANCIA_CAIXA:
             continue
         aj = {k: v for k, v in aj.items() if k not in ("d", "r")}
+        # a entidade "solta" (só deslocada, medida na folha) cai com o movimento da célula: a escala da FACE 1 da Sala
+        # ficava solta no alto da prancha padrão de telhas, que já põe a FACE 1 de pé ao lado dos tipos (12/11)
+        if aj.get("ents"):
+            aj["ents"] = {k: v for k, v in aj["ents"].items() if "solta" not in v}
+            if not aj["ents"]:
+                aj.pop("ents")
         if float(aj.get("s") or 1.0) == 1.0:
             aj.pop("s", None)
         if any(k in aj for k in ("s", "ents", "apagadas", "apagada")):

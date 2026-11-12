@@ -126,3 +126,25 @@ def test_giro_nos_objetos():
     linha = Linha(a=(0.0, 0.0), b=(10.0, 0.0))
     AP._transformar(linha, AP._levar((0.0, 0.0), 2.0, 90.0, (5.0, 5.0)), 2.0, 90.0)
     assert linha.b == pytest.approx((5.0, 25.0))
+
+
+@pytest.mark.parametrize("ox,oy", SITUACOES)
+def test_o_solto_cai_quando_o_gerador_poe_a_celula_em_outro_lugar(ox, oy):
+    """A prancha padrão de telhas (12/11) põe a FACE 1 de pé noutro lugar: o movimento e o giro aprendidos caem, e a
+    moldura "solta" (medida na folha) cai junto — ficava no alto da prancha, longe da célula."""
+    g1, cel = _gerado(ox, oy, "g1")
+    imp = AP.marcar(g1)
+    ed = Desenho.de_dict(copy.deepcopy(g1.dict()))
+    gira = AP._levar((ox + 300.0, oy + 400.0), 1.0, -90.0, (0.0, 0.0))
+    for e in list(ed.entidades.values()):
+        if e.id in ("moldura", "titulo"):
+            AP._transformar(e, lambda p: (p[0] + 500.0, p[1] - 30.0))
+        else:
+            AP._transformar(e, gira, 1.0, -90.0)
+    aj = AP.aprender(ed, {"impressoes": {"g1": imp}})
+    g2, _ = _gerado(ox + 400.0, oy, "g2")                                # a montagem nova põe a célula 400 mm adiante
+    AP.marcar(g2)
+    antes = {k: AP._pontos(e) for k, e in g2.entidades.items()}
+    rel = AP.aplicar(g2, aj)
+    assert rel["descartadas"] == 1
+    assert all(AP._pontos(g2.entidades[k]) == pytest.approx(antes[k]) for k in antes)   # como a montagem a pôs
