@@ -574,7 +574,7 @@ def _cotas_dos_apoios(md, p, T, r1, r2, centro, atr, amp: float = 1.0):
                          texto=txt, texto_pos=pos, atributos=dict(atr)))
 
 
-def multidobras(pecas: Sequence) -> Dict[str, object]:
+def multidobras(pecas: Sequence, cumeeira_desenvolvida: Optional[float] = None) -> Dict[str, object]:
     """{"telhas": [ {conjunto, instancias, composicao, perfil…} ], "posicoes": {marcas de
     posição consumidas}}. Uma posição só é consumida quando todas as peças dela estão em
     telhas multi-dobra reconhecidas."""
@@ -627,16 +627,18 @@ def multidobras(pecas: Sequence) -> Dict[str, object]:
     consumidas = {p for p, n in usadas.items() if n >= todas_por_pos.get(p, 0)}
     # a cumeeira (duas pernas curtas, uma em cada água) é uma peça só
     try:
-        cm = cumeeiras([e for e in pecas if e.id not in {i for t in telhas for i in t.get("ids", [])}])
+        cm = cumeeiras([e for e in pecas if e.id not in {i for t in telhas for i in t.get("ids", [])}],
+                       desenvolvida=cumeeira_desenvolvida)
     except Exception:                                 # noqa: BLE001 — sem cumeeira, o resto segue
         cm = {"cumeeiras": [], "posicoes": set()}
     # a cumeeira que o TecnoMETAL grava como uma barra de funilaria ("CUMEEIRA I7.5") sobre as duas águas
     try:
-        cf = cumeeiras_de_funilaria(pecas)
+        cf = cumeeiras_de_funilaria(pecas, desenvolvida=cumeeira_desenvolvida)
     except Exception:                                 # noqa: BLE001 — sem ela, a barra segue como rufo
         cf = {"cumeeiras": [], "posicoes": set()}
     return {"telhas": telhas, "posicoes": consumidas | cm["posicoes"] | cf["posicoes"],
-            "cumeeiras": cm["cumeeiras"] + cf["cumeeiras"], "funilaria": set(cf["posicoes"])}
+            "cumeeiras": cm["cumeeiras"] + cf["cumeeiras"], "funilaria": set(cf["posicoes"]),
+            "cumeeira_desenvolvida": cumeeira_desenvolvida}
 
 
 # ============================================================ cumeeira
@@ -657,6 +659,15 @@ def perna_padrao(mm: float) -> float:
     return arredondar_telha(mm)
 
 
+def pernas_da_cumeeira(m1: float, m2: float, desenvolvida: Optional[float] = None) -> Tuple[float, float]:
+    """As duas pernas da cumeeira na fábrica. Sem opção, o padrão (perna_padrao). Com a opção do projeto
+    `cumeeira_desenvolvida` (a chapa aberta, em mm), metade para cada lado — decisão por obra (usuário 12/11, obras Sooro:
+    "as cumeeiras, por padrão, com desenvolvimento de 50 cm" → 250 + 250; REGRAS N.4: o PERNAS_CUMEEIRA não muda)."""
+    if desenvolvida and float(desenvolvida) > 0:
+        return float(desenvolvida) / 2.0, float(desenvolvida) / 2.0
+    return perna_padrao(m1), perna_padrao(m2)
+
+
 def _perna(e, w):
     """Perna (peça curta de telha) no plano perpendicular à largura `w`: centro, direção,
     comprimento, espessura (altura da onda)."""
@@ -668,7 +679,7 @@ def _perna(e, w):
     return c, ax_l, comp, alt
 
 
-def cumeeiras(pecas: Sequence) -> Dict[str, object]:
+def cumeeiras(pecas: Sequence, desenvolvida: Optional[float] = None) -> Dict[str, object]:
     """Cumeeiras do modelo: o TecnoMETAL modela cada uma como duas telhas curtas (uma em cada
     água) que se encontram na cumeeira; na fábrica é uma peça só, dobrada no meio. Por
     conjunto de telhas, as peças são pareadas pela ponta que se encontra (até 60 mm) com
@@ -744,7 +755,7 @@ def cumeeiras(pecas: Sequence) -> Dict[str, object]:
         if not pares or len(pares) * 2 < 0.8 * len(pernas):
             continue
         A, B, topo, da, db, ang = pares[0]
-        L1, L2 = perna_padrao(A["L"]), perna_padrao(B["L"])
+        L1, L2 = pernas_da_cumeeira(A["L"], B["L"], desenvolvida)
         M1, M2 = arredondar_telha(A["L"]), arredondar_telha(B["L"])          # como o modelo traz
         # a perna 1 é a da esquerda no desenho
         if da[0] > db[0]:
@@ -792,7 +803,7 @@ def _contorno_de_cima(pts: Sequence[Tuple[float, float]]) -> List[Tuple[float, f
     return list(reversed(cima))
 
 
-def cumeeiras_de_funilaria(pecas: Sequence) -> Dict[str, object]:
+def cumeeiras_de_funilaria(pecas: Sequence, desenvolvida: Optional[float] = None) -> Dict[str, object]:
     """A cumeeira de telha que o modelo traz como uma barra de funilaria corrida ao longo da cumeeira (o TecnoMETAL,
     "CUMEEIRA I7.5" na camada Rufos — Depósito Químico, ME Sooro, 04/11: saía como o rufo RF2, 1 × 33.310 mm, sem o
     detalhe da cumeeira; a compra é "Cumeeira TP40 — 34 peças"). Na fábrica é a mesma cumeeira das duas pernas: uma
@@ -854,7 +865,7 @@ def cumeeiras_de_funilaria(pecas: Sequence) -> Dict[str, object]:
         ang = 180.0 - math.degrees(incl_e + incl_d)
         if not (90.0 <= ang <= 178.0):
             continue
-        L1, L2 = perna_padrao(pernas_m[0]), perna_padrao(pernas_m[1])
+        L1, L2 = pernas_da_cumeeira(pernas_m[0], pernas_m[1], desenvolvida)
         # o perfil e o peso: os da telha mais comum debaixo dela (o peso por mm do comprimento, na largura da telha)
         cont = collections.Counter(str(_marcas(t).get("perfil") or t.nome or "") for x in lados.values() for t, _, _ in x)
         perfil = cont.most_common(1)[0][0]
@@ -1178,6 +1189,8 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
                 ch["comprimento"] = novo
             ch.pop("_bruto", None)
     saida.sort(key=lambda f: (f["tipo"] != "cobertura", -len(f["chapas"])))
+    for f in saida:                                  # a opção do projeto chega ao rótulo da perna na paginação
+        f["cumeeira_desenvolvida"] = (md or {}).get("cumeeira_desenvolvida")
     return saida
 
 
@@ -1550,7 +1563,8 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         xb_f = max(q[0] for ch in chapas for q in ch["contorno"]) - x0
         p.linha(xa_f, y_cm, xb_f, y_cm, "EIXO")
         cont_cm = collections.Counter(ch["nome"] for ch in pernas)
-        comp_cm = sorted({round(perna_padrao(ch["comprimento"])) for ch in pernas})        # a perna da fábrica
+        comp_cm = sorted({round(pernas_da_cumeeira(ch["comprimento"], ch["comprimento"],
+                                                   face.get("cumeeira_desenvolvida"))[0]) for ch in pernas})   # a perna da fábrica
         # o rótulo logo acima da faixa, terminando na ponta dela: à direita da face ele alargava a célula (o usuário o
         # pôs aí à mão, 01/10); o título e o resumo sobem para dar lugar a ele
         p.texto(xb_f, y_cm + 1.5 * esc, "CUMEEIRA %s – perna %s mm (faixa hachurada)" % (

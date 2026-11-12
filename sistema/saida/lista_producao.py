@@ -491,7 +491,8 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
            pecas=None, barra: float = 0.0, projeto: Optional[dict] = None,
            nomes_conjuntos: Optional[Dict[str, str]] = None, escolhas: Optional[Dict[str, str]] = None,
            nomes_telhas: Optional[Dict[str, str]] = None, fixadores=None,
-           emendas: Optional[Sequence[str]] = None, cobertura: Optional[bool] = None, parafuso_metrico: bool = False) -> dict:
+           emendas: Optional[Sequence[str]] = None, cobertura: Optional[bool] = None, parafuso_metrico: bool = False,
+           cumeeira_desenvolvida: Optional[float] = None) -> dict:
     """A lista inteira, pronta para gravar em JSON. `barra` em mm (0 = automático);
     `cobertura`: a obra tem cobertura (o detalhar diz, pelos nomes); sem ela, a treliça é viga caixote e não tesoura
     (None: pela lista — telha ou terça na obra);
@@ -516,7 +517,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
     if pecas:
         try:
             from nucleo2d.detalhe.telhas import multidobras
-            md = multidobras(pecas)
+            md = multidobras(pecas, cumeeira_desenvolvida)      # a cumeeira da obra (opção do projeto, 12/11)
         except Exception:                                   # noqa: BLE001
             md = {"telhas": [], "posicoes": set()}
     md.setdefault("cumeeiras", [])

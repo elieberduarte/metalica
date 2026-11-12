@@ -681,6 +681,23 @@ def projeto_recebido(doc: Documento) -> bool:
     return o == "recebido" if o else bool(m.get("importacao"))
 
 
+def saia_da_fabrica(doc: Documento) -> bool:
+    """A telha de fachada leva a saia da fábrica (150 mm abaixo da última longarina, COB-20)? Sim, a não ser que a obra
+    tenha decidido seguir o comprimento do projetista: `metadados.saia_telha` = False, que o servidor copia das opções do
+    projeto (opcoes_detalhamento.saia_telha). Decisão por obra (REGRAS N.4, 12/11): Depósito Químico sem, Sala com."""
+    return (getattr(doc, "metadados", None) or {}).get("saia_telha", True) is not False
+
+
+def cumeeira_do_projeto(doc: Documento) -> Optional[float]:
+    """A chapa aberta da cumeeira (mm) que a obra decidiu (`metadados.cumeeira_desenvolvida`, das opções do projeto), ou
+    None para o padrão da fábrica (PERNAS_CUMEEIRA). Decisão por obra (usuário 12/11, Sooro: 500 = 250 + 250)."""
+    v = (getattr(doc, "metadados", None) or {}).get("cumeeira_desenvolvida")
+    try:
+        return float(v) if v and float(v) > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
 #: as categorias de fora_do_aco que são a cobertura lançada no modelo (não pendência: têm lugar na lista e no resumo)
 LANCADAS_NO_MODELO = ("telha", "funilaria")
 
@@ -766,10 +783,14 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
     if regra_tercas:
         oblongar_tercas(posicoes, camadas)
     aplicar_nomes(posicoes, nomes)
-    # telhas de fachada: saia 150 mm abaixo da última longarina (regra da fábrica)
+    # telhas de fachada: saia 150 mm abaixo da última longarina (regra da fábrica) — menos na obra que decidiu seguir o
+    # comprimento do projetista (opção do projeto saia_telha = False; Depósito Químico, usuário 12/11: "1,55 m")
     try:
-        from nucleo2d.detalhe.telhas import aplicar_saias
-        saias = aplicar_saias(posicoes, pecas)
+        from nucleo2d.detalhe.telhas import aplicar_saias, multidobras as _md_saia
+        if saia_da_fabrica(doc):
+            saias = aplicar_saias(posicoes, pecas, _md_saia(pecas, cumeeira_do_projeto(doc)))
+        else:
+            saias = {}
     except Exception as exc:                        # noqa: BLE001 — a regra não pode derrubar o levantamento
         saias = {}
         avisos_lev.append("a saia das telhas de fachada (150 mm abaixo da última longarina) não foi aplicada: %s — "
@@ -1240,7 +1261,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
     # telhas multi-dobra: a fileira de facetas de um conjunto de telhas é uma peça só
     from nucleo2d.detalhe.telhas import multidobras, desenho_da_multidobra, faces_de_telhas, desenho_da_paginacao
     try:
-        md = multidobras(pecas)
+        md = multidobras(pecas, cumeeira_do_projeto(doc))
     except Exception as exc:                      # noqa: BLE001 — o resto do detalhamento sai
         md = {"telhas": [], "posicoes": set()}
         avisos.append("telhas multi-dobra não analisadas: %s" % exc)

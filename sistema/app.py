@@ -1371,6 +1371,15 @@ def _marcar_origem(s: str, doc) -> None:
     doc.metadados["origem_projeto"] = "recebido" if p.get("tipo") in ("ifc", "recebido") else "nosso"
     # o parafuso da compra: polegada (ASTM) ou o métrico do modelo — opção do projeto (N04, decisão do usuário 16/10)
     doc.metadados["parafuso_compra"] = (p.get("opcoes_detalhamento") or {}).get("parafuso_compra") or "polegada"
+    # a saia da telha de fachada e a chapa da cumeeira: decisões por obra (usuário 12/11, Sooro; REGRAS N.4) — sem elas,
+    # o padrão da fábrica (saia de 150 mm, pernas 300/500)
+    op = p.get("opcoes_detalhamento") or {}
+    doc.metadados["saia_telha"] = op.get("saia_telha", True) is not False
+    try:
+        cd = float(op.get("cumeeira_desenvolvida") or 0)
+    except (TypeError, ValueError):
+        cd = 0.0
+    doc.metadados["cumeeira_desenvolvida"] = cd if cd > 0 else None
 
 
 def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, lista_producao) -> dict:
@@ -1519,7 +1528,7 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
         categorias = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
         lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
                                       barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
-                                      parafuso_metrico=doc.metadados.get("parafuso_compra") == "metrico",
+                                      parafuso_metrico=doc.metadados.get("parafuso_compra") == "metrico", cumeeira_desenvolvida=doc.metadados.get("cumeeira_desenvolvida"),
                                       nomes_conjuntos=(r.get("nomes") or {}).get("ifc_conjuntos"), escolhas=_perfis_compra(s), emendas=_perfis_emenda(s),
                                       cobertura=(r.get("nomes") or {}).get("cobertura"),
                                       nomes_telhas=(r.get("nomes") or {}).get("telhas"),
@@ -3334,7 +3343,7 @@ def _gerar_resumos_projeto(s: str, corpo: dict, porta: Optional[int] = None) -> 
                                       projeto=_identificacao_do_projeto(s), nomes_conjuntos=nomes.get("ifc_conjuntos"),
                                       escolhas=_perfis_compra(s), emendas=_perfis_emenda(s), cobertura=nomes.get("cobertura"),
                                       nomes_telhas=nomes.get("telhas"), fixadores=r.get("objetos_fixadores"),
-                                      parafuso_metrico=doc.metadados.get("parafuso_compra") == "metrico")
+                                      parafuso_metrico=doc.metadados.get("parafuso_compra") == "metrico", cumeeira_desenvolvida=doc.metadados.get("cumeeira_desenvolvida"))
         # o aço fora das peças (gradil, piso de chapa perfurada) entra na compra do resumo de materiais (06/10)
         lista["pre_moldados"] = r.get("fora_do_aco") or []
         lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"], "avisos": r["avisos"],
@@ -3552,7 +3561,7 @@ def _levantar_lista_de_materiais(s: str, corpo: dict, pasta: str) -> dict:
                                   barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
                                   nomes_conjuntos=nomes.get("ifc_conjuntos"), escolhas=_perfis_compra(s), emendas=_perfis_emenda(s),
                                   cobertura=nomes.get("cobertura"),
-                                  parafuso_metrico=doc.metadados.get("parafuso_compra") == "metrico")
+                                  parafuso_metrico=doc.metadados.get("parafuso_compra") == "metrico", cumeeira_desenvolvida=doc.metadados.get("cumeeira_desenvolvida"))
     lista["pre_moldados"] = lev.get("fora_do_aco") or []
     lista["estrutura_a_conferir"] = lev.get("estrutura_a_conferir") or []
     _progresso(s, "gravando a lista e os CSVs…")
