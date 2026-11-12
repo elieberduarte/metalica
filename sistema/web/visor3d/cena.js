@@ -22,6 +22,7 @@ import { Terreno } from './terreno.js';
 import { encaixar } from './encaixe.js';
 import { SOL_PADRAO, definirSol, controlesDoSol, ligarControlesDoSol } from './sol.js';
 import { ligarExportar } from './exportar_cenas.js';
+import { ligarVideos } from './assistir_videos.js';
 import { Figuras, TIPOS_FIGURA, arvoresDoFundo } from './figuras_cena.js';
 import { linhaDoTempo, caminhoContinuo, cameraEntre, anguloEntre, GravadorMp4 } from './video_cenas.js';
 
@@ -2529,6 +2530,9 @@ function ligarExportarCenas() {
   });
   $('#exportar').onclick = () => exportar.abrir();
   $('#pasta-cenas').onclick = () => mostrarNaPasta('').catch(e => aviso('A pasta não abriu: ' + e.message));
+  // os vídeos já gravados, assistidos aqui (usuário, 12/11: "quero assistir dentro do sistema")
+  const videos = ligarVideos({ api: API, abrirPasta: (nome) => mostrarNaPasta(nome) });
+  $('#videos-cenas').onclick = () => videos.abrir();
 }
 
 // ------------------------------------------------------------------ os controles

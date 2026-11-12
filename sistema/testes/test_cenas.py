@@ -475,6 +475,52 @@ def test_video_do_exportar_vai_para_a_pasta_cenas(tmp_path):
     assert C.nova_3d(g, s, {"nome": "Video", "camera": _CAM})["id"] == "video-cena"
 
 
+def _mp4(segundos, escala=1000, versao=0):
+    """Um MP4 mínimo como o do vídeo das cenas: ftyp, mdat e a moov no fim, com a mvhd (a duração)."""
+    import struct
+
+    def caixa(tipo, corpo):
+        return struct.pack(">I", 8 + len(corpo)) + tipo + corpo
+    if versao == 1:
+        mvhd = bytes([1, 0, 0, 0]) + struct.pack(">QQIQ", 0, 0, escala, int(segundos * escala))
+    else:
+        mvhd = bytes(4) + struct.pack(">IIII", 0, 0, escala, int(segundos * escala))
+    return (caixa(b"ftyp", b"isom\x00\x00\x02\x00isomavc1") + caixa(b"mdat", b"\x00" * 5000)
+            + caixa(b"moov", caixa(b"mvhd", mvhd + bytes(80))))
+
+
+def test_videos_gravados_para_assistir_na_tela(tmp_path):
+    """12/11 (usuário: "quero assistir dentro do sistema" — antes só tocava o recém-gravado, na janela do Exportar): a lista
+    dos MP4 da pasta cenas/ (o mais novo primeiro, com a duração lida da mvhd) e a rota que entrega um deles para o player —
+    só um nome .mp4 de dentro da pasta; "videos" não vira id de cena."""
+    g, s = _gerente(tmp_path)
+    assert L.rota_get(g, s, ["cenas", "videos"], {}) == {"videos": []}          # sem a pasta cenas/ ainda
+    pasta = os.path.join(g.pasta(s), "cenas")
+    os.makedirs(pasta)
+    for nome, seg, versao, hora in (("Vídeo - Obra (cenas).mp4", 36.033, 0, 1000), ("Antigo.MP4", 75, 1, 500)):
+        p = os.path.join(pasta, nome)
+        with open(p, "wb") as f:
+            f.write(_mp4(seg, versao=versao))
+        os.utime(p, (1_700_000_000 + hora, 1_700_000_000 + hora))
+    with open(os.path.join(pasta, "Cena - Fachada (render).jpg"), "wb") as f:
+        f.write(b"\xff\xd8\xff")
+    with open(os.path.join(pasta, "estragado.mp4"), "wb") as f:          # não é MP4: entra sem a duração
+        f.write(b"nada")
+    os.utime(os.path.join(pasta, "estragado.mp4"), (1_600_000_000, 1_600_000_000))
+    v = L.rota_get(g, s, ["cenas", "videos"], {})["videos"]
+    assert [x["nome"] for x in v] == ["Vídeo - Obra (cenas).mp4", "Antigo.MP4", "estragado.mp4"]
+    assert abs(v[0]["segundos"] - 36.033) < 1e-6 and v[1]["segundos"] == 75 and v[2]["segundos"] is None
+    assert v[0]["bytes"] == len(_mp4(36.033)) and v[0]["em"].startswith("2023-11-")
+    arq = L.rota_get(g, s, ["cenas", "videos", "Vídeo - Obra (cenas).mp4"], {})["arquivo"]
+    assert os.path.samefile(arq, os.path.join(pasta, "Vídeo - Obra (cenas).mp4"))
+    for ruim in ("..\\..\\projeto.json", "../projeto.json", "Cena - Fachada (render).jpg", ".escondido.mp4", "sumiu.mp4", ""):
+        with pytest.raises(C.ErroCena):
+            L.rota_get(g, s, ["cenas", "videos", ruim], {})
+    with pytest.raises(C.ErroCena):
+        C.listar_videos(g, "nao-existe")
+    assert C.nova_3d(g, s, {"nome": "Videos", "camera": _CAM})["id"] == "videos-cena"
+
+
 def test_mostrar_o_render_na_pasta(tmp_path, monkeypatch):
     """11/11 ("preciso que os render feito tenha um acesso rápido a pasta para encontrar o arquivo"): …/cenas/mostrar abre a
     pasta cenas/ com o arquivo selecionado — só de dentro dela; a lista diz qual é o render da cena (o do cartão)."""

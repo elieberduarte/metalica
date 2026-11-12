@@ -399,7 +399,7 @@ def ler(g, s: str, i: str) -> dict:
 def _novo_id(pasta: str, nome: str) -> str:
     base = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode().lower()
     base = re.sub(r"[^a-z0-9]+", "-", base).strip("-")[:30] or "cena"
-    if base in ("marca", "nova", "nova-3d", "ordem", "pdf", "video", "mostrar", "copiar", "prancha"):   # os nomes das rotas (…/cenas/marca etc.)
+    if base in ("marca", "nova", "nova-3d", "ordem", "pdf", "video", "videos", "mostrar", "copiar", "prancha"):   # os nomes das rotas (…/cenas/marca etc.)
         base += "-cena"
     i, k = base, 2
     while os.path.exists(os.path.join(pasta, i)):
@@ -808,6 +808,70 @@ def gravar_video(g, s: str, corpo: dict) -> dict:
     return {"arquivo": destino, "nome": nome}
 
 
+def _duracao_mp4(caminho: str) -> Optional[float]:
+    """Os segundos do MP4 pela caixa mvhd (dentro da moov, que no vídeo das cenas fica no fim, depois da mdat): anda pelas
+    caixas do primeiro nível sem ler a mdat. None quando o arquivo não é um MP4 legível."""
+    import struct
+    try:
+        tam = os.path.getsize(caminho)
+        with open(caminho, "rb") as f:
+            pos = 0
+            while pos + 8 <= tam:
+                f.seek(pos)
+                n, tipo = struct.unpack(">I4s", f.read(8))
+                cab = 8
+                if n == 1:
+                    n, cab = struct.unpack(">Q", f.read(8))[0], 16
+                elif n == 0:
+                    n = tam - pos
+                if n < cab:
+                    return None
+                if tipo == b"moov":
+                    moov = f.read(min(n - cab, 32 << 20))
+                    k = moov.find(b"mvhd")
+                    if k < 4:
+                        return None
+                    corpo = moov[k + 4:]
+                    if corpo[0] == 1:                          # versão 1: datas de 64 bits
+                        escala, dur = struct.unpack(">IQ", corpo[20:32])
+                    else:
+                        escala, dur = struct.unpack(">II", corpo[12:20])
+                    return dur / escala if escala else None
+                pos += n
+    except (OSError, struct.error, IndexError):
+        return None
+    return None
+
+
+def listar_videos(g, s: str) -> dict:
+    """Os vídeos já gravados na pasta cenas/ da obra (usuário, 12/11: "quero assistir dentro do sistema" — antes só tocava o
+    recém-feito, na janela do Exportar), o mais novo primeiro: nome, tamanho, hora e duração."""
+    if not os.path.isdir(g.pasta(s)):
+        raise ErroCena("projeto não encontrado: %s" % s)
+    pasta = os.path.join(g.pasta(s), PASTA)
+    videos = []
+    for nome in os.listdir(pasta) if os.path.isdir(pasta) else []:
+        p = os.path.join(pasta, nome)
+        if nome.startswith(".") or not nome.lower().endswith(".mp4") or not os.path.isfile(p):
+            continue
+        st = os.stat(p)
+        videos.append({"nome": nome, "bytes": st.st_size, "segundos": _duracao_mp4(p),
+                       "em": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(st.st_mtime))})
+    videos.sort(key=lambda v: v["em"], reverse=True)
+    return {"videos": videos}
+
+
+def arquivo_do_video(g, s: str, nome: str) -> str:
+    """O caminho de um vídeo da pasta cenas/ para tocar na tela — só um nome .mp4 de dentro dela."""
+    nome = str(nome or "")
+    if not nome or nome != os.path.basename(nome.replace("\\", "/")) or nome.startswith(".") or not nome.lower().endswith(".mp4"):
+        raise ErroCena("vídeo desconhecido: %s" % nome)
+    p = os.path.join(g.pasta(s), PASTA, nome)
+    if not os.path.isfile(p):
+        raise ErroCena("o vídeo \"%s\" não está mais na pasta cenas da obra." % nome)
+    return p
+
+
 def apagar(g, s: str, i: str) -> dict:
     """A pasta da cena sai da lista na hora (renomeada para .lixo-…) e é removida; o que o Windows ainda prende (a foto aberta
     pelo OneDrive ou pelo navegador — 26/10, a Kaefer: o apagar parava no meio e a cena ficava pela metade) sai na próxima."""
@@ -842,6 +906,10 @@ def rota_get(g, s: str, resto: list) -> dict:
         return listar(g, s)
     if resto == ["marca"]:
         return empresas_da_marca(g, s)
+    if resto == ["videos"]:                                 # os vídeos gravados, para assistir na tela (12/11)
+        return listar_videos(g, s)
+    if len(resto) == 2 and resto[0] == "videos":
+        return {"arquivo": arquivo_do_video(g, s, resto[1])}
     if len(resto) == 3 and resto[0] == "marca":
         return {"arquivo": arquivo_da_marca(g, s, resto[1], resto[2])}
     if len(resto) == 2 and resto[0] == PASTA_PRANCHA:          # a cópia fixa da cena na prancha
