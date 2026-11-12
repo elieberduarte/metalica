@@ -635,7 +635,7 @@ Testes: `test_conferencia_3d.py`, `test_reanalise.py`.
   chumbador com gancho no detalhe pesa pelo desenvolvido.
 - **Histórico:** ver "Triagem de 22/10 a 04/11" (4 reincidências, todas no script da obra).
 
-### GER-12 — Explodir com critério: o que está junto por um motivo fica junto
+### GER-13 — Explodir com critério: o que está junto por um motivo fica junto
 - **Enunciado (usuário, 12/11):** o modelo que chega do SketchUp como UMA peça com tudo dentro se separa com critério, "não
   peçinha por peçinha": (1) cada pedaço ligado da malha é uma peça e nunca é cortado — a não ser os dois perfis I iguais lado a
   lado numa malha só (a viga mestra dupla), que viram dois, como na importação do .skp; (2) TRELIÇA = banzos paralelos
