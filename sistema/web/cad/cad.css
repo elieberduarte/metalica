@@ -80,7 +80,9 @@ html.sem-paineis .area .aba-paineis { right: var(--larg-ferramentas); }
 
 /* diálogo simples */
 dialog.dialogo { border: 1px solid var(--borda-forte); border-radius: var(--raio); background: var(--painel); color: var(--texto);
-  padding: 0; width: min(440px, calc(100vw - 32px)); box-shadow: var(--sombra-menu); }
+  padding: 0; width: min(440px, calc(100vw - 32px)); max-width: calc(100vw - 32px); box-shadow: var(--sombra-menu); }
+/* o editor.css do 3D (carregado aqui também) limita todo <dialog> a 540 px: os diálogos do CAD que pedem mais (as penas, o
+   Imprimir pranchas, a malha) ficavam com a barra de rolagem de lado (usuário, 12/11, nas Penas de impressão do Vicente) */
 dialog.dialogo::backdrop { background: rgba(9, 16, 28, .5); }
 dialog.dialogo form { padding: 18px 20px 16px; }
 dialog.dialogo h3 { font-size: 16px; color: var(--azul); margin: 0 0 10px; }

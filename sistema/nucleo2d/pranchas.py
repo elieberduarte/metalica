@@ -1268,8 +1268,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 d.camadas.setdefault(k, copy.deepcopy(cam))
         fontes_da = sorted({c["fonte"] for c in cels})
         info = dict(carimbo)
-        info.setdefault("titulo", ", ".join(dict.fromkeys(mq["titulo"].replace(" (continuação)", "") for mq in molduras[i0 - 1]
-                                                          if mq["categoria"] not in ("DETALHES", "LEGENDA")))[:48] or fontes_titulo(cels))
+        info.setdefault("titulo", titulo_curto(", ".join(dict.fromkeys(mq["titulo"].replace(" (continuação)", "") for mq in molduras[i0 - 1]
+                                                          if mq["categoria"] not in ("DETALHES", "LEGENDA")))) or fontes_titulo(cels))
         usar(formatos[i0 - 1])
         quadro, carimbo_caixa = _moldura(d, fmt_atual, info, i, total, [c["k"] for c in cels], _conteudo_de(cels))
         for mq in molduras[i0 - 1]:
@@ -3038,7 +3038,24 @@ def fontes_titulo(cels: Sequence[dict]) -> str:
         t = c.get("desenho_titulo") or c["fonte"]
         if t not in nomes:
             nomes.append(t)
-    return ", ".join(nomes)[:48]
+    return titulo_curto(", ".join(nomes))
+
+
+#: o título curto da folha (o da relação das pranchas, da lista do Imprimir, dos nomes de arquivo)
+TITULO_MAX = 48
+
+
+def titulo_curto(texto: str, limite: int = TITULO_MAX) -> str:
+    """O título da folha em até `limite` letras, cortado numa palavra inteira, sem vírgula ou travessão pendurado no fim,
+    com "…" quando cortou (Vicente, 12/11: "Planta de locação dos chumbadores, Chumbamento –" era o corte nas 48 letras
+    de "…, Chumbamento – chapas e barras")."""
+    texto = str(texto or "").strip()
+    if len(texto) <= limite:
+        return texto
+    corte = texto[:limite - 1]                       # o lugar do "…"
+    if not texto[limite - 1].isspace() and " " in corte:
+        corte = corte[:corte.rfind(" ")]
+    return corte.rstrip(" ,;–—-:") + "…"
 
 
 # ============================================================ PDF
@@ -3360,7 +3377,7 @@ def pranchas_das_folhas(desenho: Desenho, fonte: str, carimbo: Optional[dict] = 
         info = dict(carimbo)
         if f["titulo"]:
             info["titulo"] = f["titulo"]
-        info.setdefault("titulo", desenho.nome.replace("Detalhamento – ", "")[:48])
+        info.setdefault("titulo", titulo_curto(desenho.nome.replace("Detalhamento – ", "")))
         # o carimbo como está na folha do desenho (editado à mão no CAD — pedido do usuário, 28/09):
         # obra, projetista, data, escala, revisão e as linhas do conteúdo
         tx = [e for e in f["entidades"] if isinstance(e, Texto)]

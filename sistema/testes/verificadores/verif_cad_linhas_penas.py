@@ -163,6 +163,12 @@ try:
     ok(clicar("document.querySelector('.menu[data-menu=desenho] .menu-botao')") or True, "D. o menu")
     ok(clicar("document.querySelector('button[data-acao=penas]')"), "D. o item Penas de impressão…")
     ok(esperar("document.querySelector('dialog[open] .penas .pena')", 15), "D. o diálogo das penas abriu")
+    # sem a rolagem de lado (usuário, 12/11, no Vicente: "a tela das penas da impressão está com rolagem lateral" — o
+    # editor.css do 3D limitava todo diálogo a 540 px, e as penas pedem 640)
+    m = js("""const d = document.querySelector('dialog[open]'), f = d.querySelector('form'), t = d.querySelector('.penas .tabela');
+        return { dialogo: Math.round(d.getBoundingClientRect().width), max: getComputedStyle(d).maxWidth, form: [f.scrollWidth, f.clientWidth], tabela: [t.scrollWidth, t.clientWidth] };""") or {}
+    ok(m.get("dialogo", 0) >= 700 and m["form"][0] <= m["form"][1] + 1 and m["tabela"][0] <= m["tabela"][1] + 1 and m.get("max") != "540px",
+       f"D. as penas sem rolagem de lado, o diálogo sem o teto de 540 px: {m}")
     cores = js("return [...document.querySelectorAll('dialog[open] .pena')].map(l => l.dataset.cor);") or []
     ok("#c0392b" in cores, f"D. as cores do desenho na lista: {cores}")
     escolher("document.querySelector('dialog[open] .pena[data-cor=\"#c0392b\"] select[name=espessura]')", "1")

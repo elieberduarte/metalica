@@ -20,7 +20,7 @@ import math
 import re
 import sys
 from ctypes import wintypes
-from typing import Callable, Optional, Sequence, Tuple
+from typing import Callable, Dict, Optional, Sequence, Tuple
 
 #: Resolução máxima do que é desenhado; acima disso a faixa é ampliada um número inteiro de vezes pelo GDI (a
 #: plotter de 1200 dpi recebe a imagem de 300 × 4) — linha de prancha a 300 dpi já é a da caneta de 0,1 mm.
@@ -73,6 +73,16 @@ def papel_da_folha(folha: Tuple[float, float], papeis: Sequence[dict], papel: Op
         raise ErroDeImpressao("a impressora não informou nenhum papel.")
     p = max(papeis, key=lambda p: dims(p)[0] * dims(p)[1])
     return p, "ajustar", "a folha não cabe em nenhum papel da impressora: vai reduzida no %s" % p["nome"]
+
+
+def ajuste_para(fw: float, fh: float, papeis: Sequence[dict], papel: int) -> str:
+    """O ajuste da folha no papel escolhido para ela: tamanho real quando ela cabe nele, senão ajustada."""
+    p = next((q for q in papeis if q["id"] == papel), None)
+    if p is None:
+        return "ajustar"
+    a, b = sorted((fw, fh))
+    pa, pb = sorted((p["largura"], p["altura"]))
+    return "real" if pa >= a - FOLGA_PAPEL and pb >= b - FOLGA_PAPEL else "ajustar"
 
 
 def colocar(folha: Tuple[float, float], area: dict, ajuste: str) -> dict:
@@ -325,9 +335,12 @@ def _desenhar_pagina(hdc, pagina, area: dict, ajuste: str, cor: str) -> dict:
 
 def imprimir_pdf(caminho_pdf: str, impressora: str, papel: Optional[int] = None, ajuste: str = "real",
                  cor: str = "preto", copias: int = 1, titulo: str = "Pranchas", arquivo: Optional[str] = None,
-                 progresso: Optional[Callable[[str, float], None]] = None, serie_a: bool = False) -> dict:
+                 progresso: Optional[Callable[[str, float], None]] = None, serie_a: bool = False,
+                 papeis_por_pagina: Optional[Dict[int, int]] = None) -> dict:
     """Manda as páginas do PDF para a impressora, num trabalho só. `papel` None: o de cada folha (ver
-    `papel_da_folha`). `arquivo`: imprime nele em vez de no papel (a "Microsoft Print to PDF", os testes).
+    `papel_da_folha`). `papeis_por_pagina` ({página de 0: id do papel}): o papel escolhido para aquela folha na lista
+    (12/11) — ajustada a ele quando é menor que a folha, em tamanho real quando ela cabe. `arquivo`: imprime nele em vez
+    de no papel (a "Microsoft Print to PDF", os testes).
     Devolve {paginas, folhas: [{pagina, papel, escala, girada, fora_mm}], avisos}."""
     _exigir_windows()
     import pymupdf
@@ -343,7 +356,11 @@ def imprimir_pdf(caminho_pdf: str, impressora: str, papel: Optional[int] = None,
     planos = []
     for i, pg in enumerate(doc):
         fw, fh = pg.rect.width / 72.0 * 25.4, pg.rect.height / 72.0 * 25.4
-        p, aj, aviso = papel_da_folha((fw, fh), lista, papel, ajuste, serie_a=serie_a)
+        proprio = (papeis_por_pagina or {}).get(i)
+        if proprio is not None:
+            p, aj, aviso = papel_da_folha((fw, fh), lista, int(proprio), ajuste_para(fw, fh, lista, int(proprio)))
+        else:
+            p, aj, aviso = papel_da_folha((fw, fh), lista, papel, ajuste, serie_a=serie_a)
         planos.append((i, p, aj, aviso, fw >= fh))
     avisos, folhas = [], []
     hdc = None

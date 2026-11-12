@@ -5314,15 +5314,44 @@ def exportar_desenho_pdf(s: str, nome: str, corpo: dict) -> dict:
             "avisos": avisos}
 
 
-def _folhas_para_imprimir(s: str, nomes) -> list:
+#: as assinaturas das folhas por arquivo de pranchas (caminho, data, tamanho): abrir o Imprimir pranchas de novo, sem
+#: mudar o desenho, não refaz a conta (1,3 s nas 34 mil entidades do Vicente)
+_ASSINATURAS_CACHE: dict = {}
+
+
+def _assinaturas_das_folhas(s: str, nome: str, bruto: dict, folhas: list) -> list:
+    from nucleo2d import impressoes
+    try:
+        caminho = _gerente()._caminho_desenho(s, nome)
+        st = os.stat(caminho)
+        k = (caminho, st.st_mtime_ns, st.st_size, json.dumps([[f.get("origem"), f.get("tamanho")] for f in folhas]))
+    except (OSError, ErroDeDados):
+        k = None
+    if k is not None and k in _ASSINATURAS_CACHE:
+        return _ASSINATURAS_CACHE[k]
+    r = impressoes.assinaturas(bruto.get("entidades") or [], folhas)
+    if k is not None:
+        if len(_ASSINATURAS_CACHE) > 20:
+            _ASSINATURAS_CACHE.clear()
+        _ASSINATURAS_CACHE[k] = r
+    return r
+
+
+def _folhas_para_imprimir(s: str, nomes, detalhes: bool = False) -> list:
     """As folhas dos desenhos de pranchas, na ordem das páginas do PDF (`paginas_de`): {indice, desenho, numero,
     titulo, formato, largura, altura} — a lista do Imprimir pranchas… O desenho das pranchas lado a lado passa pela
     mesma `sincronizar_folhas` do PDF (a folha apagada ou movida no CAD): sem ela os índices marcados apontariam para
-    outra página."""
+    outra página. Com `detalhes` (usuário, 12/11: "melhorar a ferramenta de gestão das impressões"), também a escala,
+    a revisão, a chave, a assinatura do que está na folha, a moldura (origem, tamanho) e a situação (nunca impressa,
+    impressa, mudou depois) — nucleo2d/impressoes.py."""
     from nucleo2d.desenho import Desenho
     from nucleo2d.pranchas import FOLHAS, paginas_de, sincronizar_folhas
+    from nucleo2d import impressoes
     g = _gerente()
     out = []
+    if detalhes:
+        revs = (g.ler(s).get("carimbo_pranchas") or {}).get("revisoes") or {}
+        hist = impressoes.ler(g._existente(s))["historico"]
     for n in nomes:
         bruto = g.abrir_desenho(s, n)
         m = bruto.get("metadados") or {}
@@ -5334,10 +5363,18 @@ def _folhas_para_imprimir(s: str, nomes) -> list:
             itens = [m["prancha"]]
         else:                                            # desenho comum: uma página do tamanho dele
             itens = [{"titulo": bruto.get("nome") or n, "tamanho": [p[0], p[1]]} for p in paginas_de(Desenho.de_dict(bruto))]
-        for f in itens:
+        assin = _assinaturas_das_folhas(s, n, bruto, [f if m.get("pranchas") else {} for f in itens]) if detalhes else []
+        for i, f in enumerate(itens):
             larg, alt = FOLHAS.get(f.get("formato")) or tuple(f.get("tamanho") or (0.0, 0.0))
-            out.append({"indice": len(out), "desenho": n, "numero": f.get("numero"), "formato": f.get("formato") or "",
-                        "titulo": f.get("titulo") or f.get("nome") or n, "largura": larg, "altura": alt})
+            item = {"indice": len(out), "desenho": n, "numero": f.get("numero"), "formato": f.get("formato") or "",
+                    "titulo": f.get("titulo") or f.get("nome") or n, "largura": larg, "altura": alt}
+            if detalhes:
+                ch = impressoes.chave(n, f.get("numero"), i)
+                item.update({"chave": ch, "escala": impressoes.escala_da_folha(f), "revisao": impressoes.revisao_da_folha(revs, f.get("numero")),
+                             "assinatura": assin[i], "origem": f.get("origem") if m.get("pranchas") else None,
+                             "tamanho": f.get("tamanho") if m.get("pranchas") else None})
+                item["situacao"] = impressoes.situacao(hist, ch, assin[i])
+            out.append(item)
     return out
 
 
@@ -5394,7 +5431,18 @@ def rota_impressao(s: str, acao: str, corpo: dict) -> dict:
     nomes = [str(n) for n in corpo.get("desenhos") or []]
     try:
         if acao == "folhas":
-            return {"folhas": _folhas_para_imprimir(s, nomes)}
+            from nucleo2d import impressoes as reg_imp
+            return {"folhas": _folhas_para_imprimir(s, nomes, detalhes=True),
+                    "conjuntos": reg_imp.ler(_gerente()._existente(s))["conjuntos"]}
+        if acao == "conjuntos":
+            # os conjuntos de folhas guardados da obra ("Fabricação", "Montagem"…): sem "conjuntos" no pedido, lê; com, grava
+            from nucleo2d import impressoes as reg_imp
+            pasta = _gerente()._existente(s)
+            d = reg_imp.ler(pasta)
+            if "conjuntos" in corpo:
+                d["conjuntos"] = reg_imp.conjuntos_validos(corpo["conjuntos"])
+                reg_imp.gravar(pasta, d)
+            return {"conjuntos": d["conjuntos"]}
         if acao == "impressoras":
             return impressao.impressoras()
         if acao == "papeis":
@@ -5452,14 +5500,32 @@ def rota_impressao(s: str, acao: str, corpo: dict) -> dict:
             else:
                 pdf = pdf_dos_desenhos(desenhos, os.path.join(tmp, "pranchas.pdf"), so=so, penas=_ler_penas(),
                                        pasta_projeto=g._existente(s))
+            # o papel de cada folha escolhido na lista ({índice da folha: id do papel}): a página dela no PDF é a posição
+            # do índice entre as folhas impressas (o PDF segue a ordem das folhas)
+            ordem = sorted(so) if so is not None else None
+            por_pagina = {}
+            for k_, v_ in (corpo.get("papeis") or {}).items() if isinstance(corpo.get("papeis"), dict) and area is None else []:
+                if v_ in (None, "", "auto"):
+                    continue
+                i_ = int(k_)
+                pos = (ordem.index(i_) if i_ in ordem else None) if ordem is not None else i_
+                if pos is not None:
+                    por_pagina[pos] = int(v_)
             r = impressao.imprimir_pdf(
                 pdf, nome_imp, papel=None if corpo.get("papel") in (None, "", "auto") else int(corpo["papel"]), ajuste=str(corpo.get("ajuste") or "real"),
+                papeis_por_pagina=por_pagina or None,
                 cor=str(corpo.get("cor") or "preto"), copias=int(corpo.get("copias") or 1),
                 titulo="Metálica — %s — %s" % (obra, "pranchas" if area is None else (desenho_area.nome or "desenho")), arquivo=arquivo,
                 serie_a=area is not None,
                 progresso=lambda etapa, f: _progresso(s, etapa + "…", 0.4 + 0.6 * f))
         if arquivo:
             r["arquivo"] = _descrever_arquivo(arquivo, os.path.dirname(arquivo))
+        if area is None:
+            # o histórico: o que saiu, de qual revisão, com a assinatura de agora (a situação "mudou depois" vem dela)
+            from nucleo2d import impressoes as reg_imp
+            todas = _folhas_para_imprimir(s, nomes, detalhes=True)
+            saiu = [f for f in todas if so is None or f["indice"] in so]
+            reg_imp.registrar(g._existente(s), nome_imp, saiu)
         return r
     except impressao.ErroDeImpressao as e:
         raise ErroDeDados(str(e))

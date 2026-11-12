@@ -221,7 +221,7 @@ try:
     tecla("p", 2)
     ok(esperar("document.querySelector('dialog[open] select[name=area]')", 20), "D. Ctrl+P de novo")
     clicar("[...document.querySelectorAll('dialog[open] .botoes-folhas button')].find(b => b.textContent.startsWith('Imprimir as pranchas'))")
-    ok(esperar("document.querySelector('dialog[open] .folhas label')", 20), "D. o botão leva ao Imprimir pranchas, com as folhas do projeto")
+    ok(esperar("document.querySelector('dialog[open] .folhas tbody tr')", 20), "D. o botão leva ao Imprimir pranchas, com as folhas do projeto")
     clicar("document.querySelector('#dialogo-cancelar')")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:3]]}")

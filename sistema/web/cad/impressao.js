@@ -5,6 +5,7 @@
 // o mesmo do "PDF de todas as pranchas", com a regra R6 de emissão — e imprime pelo Windows.
 
 import { ESPESSURAS } from './nucleo/tipos_linha.js';
+import { Tela } from './nucleo/tela.js';
 
 const CHAVE = 'impressao.ultima';
 
@@ -45,6 +46,8 @@ function ordemDoPapel(p) {
   const m = /^A(\d)\b/i.exec(String(p.nome).replace(/^ISO\s*/i, ''));
   return m ? Number(m[1]) : 10 + 1 / Math.max(1, p.largura * p.altura);
 }
+/** A plotter da fábrica (a HP Designjet T120, memória impressao-das-pranchas): vem marcada sempre (DECISÃO 12/11). */
+export const ehPlotter = (p) => /designjet|t120|plotter/i.test(`${p && p.nome || ''} ${p && p.driver || ''}`.replace(/Microsoft IPP Class Driver/i, ''));
 const mm = (v) => Math.round(v).toLocaleString('pt-BR');
 const porcento = (v) => `${Math.round(v * 100)}%`;
 
@@ -57,19 +60,41 @@ function reducao(folha, papel) {
 
 if (!document.getElementById('estilo-impressao')) {
   document.head.append(el('style', { id: 'estilo-impressao' }, `
-    .impressao { min-width: min(560px, 88vw); }
-    .impressao .folhas { max-height: 34vh; overflow: auto; border: 1px solid var(--campo-borda); border-radius: var(--raio-p); padding: 4px 0; }
-    .impressao .folhas label { flex-direction: row; align-items: center; gap: 8px; padding: 3px 10px; color: var(--texto); font-size: 13px; cursor: pointer; }
-    .impressao .folhas label:hover { background: var(--campo-borda); }
-    .impressao .folhas .fmt { margin-left: auto; color: var(--texto2); font-variant-numeric: tabular-nums; }
+    dialog.dialogo:has(.impressao-folhas) { width: min(1180px, calc(100vw - 32px)); max-width: none; }   /* o editor.css do 3D limita todo diálogo a 540 px */
+    .impressao:not(.impressao-folhas) { min-width: min(560px, 88vw); }
+    .impressao { display: flex; flex-direction: column; gap: 8px; }
+    .impressao .grade-impressao { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 12px; align-items: start; }
+    .impressao .folhas { max-height: 52vh; overflow-y: auto; overflow-x: hidden; border: 1px solid var(--campo-borda); border-radius: var(--raio-p); }
+    .impressao .folhas table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .impressao .folhas th { position: sticky; top: 0; background: var(--painel); text-align: left; font-weight: 600; color: var(--texto2); font-size: 11px; padding: 5px 6px; border-bottom: 1px solid var(--campo-borda); }
+    .impressao .folhas td { padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--campo-borda) 55%, transparent); vertical-align: middle; color: var(--texto); }
+    .impressao .folhas td.titulo { white-space: normal; overflow-wrap: anywhere; }
+    .impressao .folhas td.num, .impressao .folhas td.rev, .impressao .folhas td.escala { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .impressao .folhas tr { cursor: pointer; }
+    .impressao .folhas tr.foco td { background: color-mix(in srgb, var(--azul) 12%, transparent); }
+    .impressao .folhas select.papel-folha { padding: 2px 4px; font-size: 12px; max-width: 190px; }
+    .impressao .chip { display: inline-block; border-radius: 9px; padding: 1px 8px; font-size: 11px; white-space: nowrap; }
+    .impressao .chip.nunca { background: color-mix(in srgb, var(--texto2) 15%, transparent); color: var(--texto2); }
+    .impressao .chip.ok { background: color-mix(in srgb, #15803d 16%, transparent); color: #15803d; }
+    .impressao .chip.mudou { background: color-mix(in srgb, #d97706 20%, transparent); color: #b45309; font-weight: 600; }
+    .impressao .lado { display: flex; flex-direction: column; gap: 8px; }
+    .impressao .previa { border: 1px solid var(--campo-borda); border-radius: var(--raio-p); padding: 6px; text-align: center; }
+    .impressao .previa canvas { display: block; width: 100%; height: 180px; }
+    .impressao .previa .leg { color: var(--texto2); font-size: 11px; margin-top: 4px; }
+    .impressao .botoes-folhas .espaco { flex: 1; }
+    .impressao .botoes-folhas .rotulo { color: var(--texto2); font-size: 12px; }
+    .impressao .botoes-folhas select, .impressao .botoes-folhas input[type=text] { padding: 3px 6px; font-size: 12px; }
+    .impressao .rodape-impressao { display: flex; gap: 10px; align-items: baseline; }
+    .impressao .rodape-impressao .conta { margin-left: auto; color: var(--texto2); font-size: 12px; }
     .impressao .linha { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
     .impressao .linha > label { flex: 1 1 160px; }
     .impressao .botoes-folhas { display: flex; gap: 6px; align-items: center; }
     .impressao .botoes-folhas button { padding: 3px 9px; font-size: 12px; }
     .impressao .botoes-folhas .conta { margin-left: auto; color: var(--texto2); font-size: 12px; }
     .impressao label.opcao { flex-direction: row; align-items: center; gap: 6px; color: var(--texto); }
-    .impressao .resumo { color: var(--texto2); font-size: 12px; line-height: 1.45; min-height: 2.9em; }
-    .penas { min-width: min(640px, 92vw); }
+    .impressao .resumo { color: var(--texto2); font-size: 12px; line-height: 1.45; }
+    dialog.dialogo:has(.penas) { width: min(760px, calc(100vw - 32px)); }
+    .penas { min-width: 0; }
     .penas .tabela { max-height: 46vh; overflow: auto; border: 1px solid var(--campo-borda); border-radius: var(--raio-p); }
     .penas .pena { display: grid; grid-template-columns: 18px 72px 1fr 120px 150px; gap: 8px; align-items: center; padding: 4px 8px; font-size: 12.5px; }
     .penas .pena:nth-child(odd) { background: color-mix(in srgb, var(--campo-borda) 35%, transparent); }
@@ -103,6 +128,13 @@ export class MetodosImpressaoCAD {
     return f ? f.indice : null;
   }
 
+  /**
+   * Imprimir pranchas (Ctrl+P) — a tela A aprovada pelo usuário em 12/11 ("precisamos melhorar a ferramenta de gestão das
+   * impressões"; Projeto/ANALISES/Interface/Impressao-gerenciador-proposta-2026-11-12.pdf): o diálogo largo, com o título
+   * inteiro; em cada folha o formato, a escala, a revisão, a situação (nunca impressa, impressa, mudou depois) e o papel
+   * dela; "só as que mudaram"; os conjuntos de folhas guardados da obra; a pré-visualização da folha em foco; a plotter da
+   * fábrica sempre marcada (DECISÃO 12/11), mesmo com outra padrão no Windows.
+   */
   async dialogoImprimir(soPranchas = false) {
     if (!this.projeto) { this.aviso('Imprimir precisa de um projeto aberto.', 'atencao'); return; }
     const base = `/api/projetos/${encodeURIComponent(this.projeto)}/impressao`;
@@ -112,111 +144,215 @@ export class MetodosImpressaoCAD {
     if (!soPranchas && this.nomeDesenho && !desenhos.includes(this.nomeDesenho)) return this._imprimirEsteDesenho(base, desenhos);
     if (!desenhos.length) { this.aviso('O projeto não tem pranchas ainda: Desenho → Montar pranchas (automático)… ou Gerar pranchas das folhas.', 'atencao'); return; }
     if (this.nomeDesenho && desenhos.includes(this.nomeDesenho)) await this.salvar({ avisar: false });
-    let folhas, imps;
+    let folhas, imps, conjuntos;
     try {
-      [folhas, imps] = await Promise.all([postar(`${base}/folhas`, { desenhos }).then(r => r.folhas || []), postar(`${base}/impressoras`, {})]);
+      const [rf, ri] = await Promise.all([postar(`${base}/folhas`, { desenhos }), postar(`${base}/impressoras`, {})]);
+      folhas = rf.folhas || []; conjuntos = rf.conjuntos || {}; imps = ri;
     } catch (e) { this.aviso(`Não foi possível preparar a impressão: ${e.message}`, 'erro', 0); return; }
     if (!folhas.length) { this.aviso('As pranchas do projeto não têm folhas para imprimir.', 'atencao'); return; }
     const lista = imps.impressoras || [];
     if (!lista.length) { this.aviso('Nenhuma impressora instalada no Windows: use Arquivo › Exportar › PDF de todas as pranchas.', 'atencao', 0); return; }
     const ultima = lerUltima();
+    const plotter = lista.find(ehPlotter);
 
-    // as folhas
+    // ---- as folhas: uma linha cada, com o papel dela
     const marcas = folhas.map(f => el('input', { type: 'checkbox', checked: true, 'data-indice': f.indice }));
+    const papelDe = folhas.map(f => el('select', { class: 'papel-folha', 'data-indice': f.indice, title: 'o papel desta folha' }));
     const conta = el('span', { class: 'conta' });
     const marcadas = () => folhas.filter((f, i) => marcas[i].checked);
     const marcar = (fn) => { marcas.forEach((c, i) => { c.checked = fn(folhas[i]); }); atualizar(); };
     const naTela = this._folhaNaTela(folhas);
-    const caixaFolhas = el('div', { class: 'folhas' }, folhas.map((f, i) => el('label', {}, marcas[i],
-      el('span', { texto: `${f.numero != null ? String(f.numero).padStart(2, '0') + ' · ' : ''}${f.titulo}` }),
-      el('span', { class: 'fmt', texto: f.formato || `${mm(f.largura)} × ${mm(f.altura)} mm` }))));
-    caixaFolhas.addEventListener('change', () => atualizar());
+    const linhas = folhas.map((f, i) => {
+      const s = f.situacao || { estado: 'nunca' };
+      const chip = s.estado === 'impressa' ? el('span', { class: 'chip ok', texto: `impressa ${s.quando} · ${s.onde}` })
+        : s.estado === 'mudou' ? el('span', { class: 'chip mudou', texto: `mudou depois da impressão de ${s.quando}` })
+          : el('span', { class: 'chip nunca', texto: 'nunca impressa' });
+      const tr = el('tr', { 'data-indice': f.indice },
+        el('td', {}, marcas[i]),
+        el('td', { class: 'num', texto: f.numero != null ? String(f.numero).padStart(2, '0') : '' }),
+        el('td', { class: 'titulo', texto: f.titulo }),
+        el('td', { texto: f.formato || `${mm(f.largura)} × ${mm(f.altura)}` }),
+        el('td', { class: 'escala', texto: f.escala || '—' }),
+        el('td', { class: 'rev', texto: f.revisao || '—' }),
+        el('td', { class: 'situacao', 'data-estado': s.estado }, chip),
+        el('td', {}, papelDe[i]));
+      tr.addEventListener('click', (ev) => { if (ev.target.tagName !== 'INPUT' && ev.target.tagName !== 'SELECT') focar(i); });
+      return tr;
+    });
+    const tabela = el('div', { class: 'folhas' }, el('table', {},
+      el('thead', {}, el('tr', {}, el('th', {}), el('th', { texto: 'Nº' }), el('th', { texto: 'Folha' }), el('th', { texto: 'Formato' }),
+        el('th', { texto: 'Escala' }), el('th', { texto: 'Rev.' }), el('th', { texto: 'Situação' }), el('th', { texto: 'Papel' }))),
+      el('tbody', {}, linhas)));
+    tabela.addEventListener('change', () => atualizar());
 
-    // impressora, papel, ajuste, cor, cópias
-    const selImp = el('select', { name: 'impressora' }, lista.map(p => el('option', { value: p.nome, texto: p.nome + (p.padrao ? ' (padrão)' : '') })));
-    selImp.value = lista.some(p => p.nome === ultima.impressora) ? ultima.impressora : (imps.padrao || lista[0].nome);
-    const selPapel = el('select', { name: 'papel' });
-    const selAjuste = el('select', { name: 'ajuste' },
-      el('option', { value: 'real', texto: 'Tamanho real (1:1 — a escala do carimbo)' }),
-      el('option', { value: 'ajustar', texto: 'Ajustar ao papel' }));
-    selAjuste.value = ultima.ajuste === 'ajustar' ? 'ajustar' : 'real';
+    // ---- os filtros e os conjuntos
+    const mudaram = folhas.filter(f => (f.situacao || {}).estado === 'mudou');
+    const selConj = el('select', { name: 'conjunto' });
+    const montarConjuntos = () => {
+      selConj.replaceChildren(el('option', { value: '', texto: Object.keys(conjuntos).length ? '— conjunto —' : '(nenhum guardado)' }),
+        ...Object.keys(conjuntos).sort((a, b) => a.localeCompare(b, 'pt-BR')).map(n => el('option', { value: n, texto: `${n} (${conjuntos[n].length})` })));
+      apagarConj.hidden = !selConj.value;
+    };
+    selConj.addEventListener('change', () => {
+      apagarConj.hidden = !selConj.value;
+      if (!selConj.value) return;
+      const ch = new Set(conjuntos[selConj.value] || []);
+      marcar(f => ch.has(f.chave));
+    });
+    const gravarConjuntos = async (novos) => {
+      try { conjuntos = (await postar(`${base}/conjuntos`, { conjuntos: novos })).conjuntos || {}; }
+      catch (e) { this.aviso(`Não foi possível gravar o conjunto: ${e.message}`, 'erro'); }
+    };
+    const nomeConj = el('input', { type: 'text', name: 'nome-conjunto', placeholder: 'nome do conjunto (Fabricação, Montagem…)', hidden: true });
+    const okConj = el('button', { type: 'button', texto: 'Guardar', hidden: true });
+    const salvarConj = el('button', { type: 'button', texto: 'Salvar a seleção como…', title: 'guarda as folhas marcadas com um nome, nesta obra' });
+    const apagarConj = el('button', { type: 'button', texto: '×', title: 'apagar este conjunto', hidden: true });
+    salvarConj.addEventListener('click', () => { nomeConj.hidden = okConj.hidden = false; salvarConj.hidden = true; nomeConj.focus(); });
+    const guardar = async () => {
+      const nome = nomeConj.value.trim();
+      if (!nome) return;
+      await gravarConjuntos({ ...conjuntos, [nome]: marcadas().map(f => f.chave) });
+      nomeConj.value = ''; nomeConj.hidden = okConj.hidden = true; salvarConj.hidden = false;
+      montarConjuntos(); selConj.value = nome; apagarConj.hidden = false;
+    };
+    okConj.addEventListener('click', guardar);
+    nomeConj.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); guardar(); } });
+    apagarConj.addEventListener('click', async () => {
+      const n = selConj.value; if (!n) return;
+      const novos = { ...conjuntos }; delete novos[n];
+      await gravarConjuntos(novos); montarConjuntos();
+    });
+    montarConjuntos();
+
+    // ---- impressora, cor, cópias, o papel das marcadas
+    const selImp = el('select', { name: 'impressora' }, lista.map(p => el('option', { value: p.nome,
+      texto: (p === plotter ? `★ Plotter da fábrica — ${p.nome.split(String.fromCharCode(92)).pop()}` : p.nome) + (p.padrao ? ' (padrão do Windows)' : ''), title: p.nome })));
+    // a plotter da fábrica sempre (DECISÃO do usuário, 12/11); sem ela, a padrão do Windows
+    selImp.value = plotter ? plotter.nome : (imps.padrao || lista[0].nome);
     const selCor = el('select', { name: 'cor' },
       el('option', { value: 'preto', texto: 'Preto (as cores saem pretas; o cinza continua cinza)' }),
       el('option', { value: 'cor', texto: 'Colorida (as cores das camadas)' }),
       el('option', { value: 'cinza', texto: 'Tons de cinza' }));
     selCor.value = ['preto', 'cor', 'cinza'].includes(ultima.cor) ? ultima.cor : 'preto';
     const copias = el('input', { type: 'number', name: 'copias', min: 1, max: 99, step: 1, value: 1 });
+    const papelTodas = el('select', { name: 'papel-marcadas' });
+    papelTodas.addEventListener('change', () => {
+      if (papelTodas.value === '') return;
+      marcas.forEach((c, i) => { if (c.checked) papelDe[i].value = papelTodas.value; });
+      papelTodas.value = ''; atualizar();
+    });
     const resumo = el('div', { class: 'resumo' });
     let papeis = [];
+
+    const opcoesDoPapel = (f) => [el('option', { value: 'auto', texto: 'o da folha' }),
+      ...papeis.map(p => {
+        const k = reducao(f, p);
+        return el('option', { value: String(p.id), texto: k >= 0.98 ? `${p.nome} — tamanho real` : `${p.nome} — ajustada (${porcento(k)})` });
+      })];
+    const nomeDoPapel = (f, i) => {
+      const v = papelDe[i].value;
+      if (v === 'auto' || !v) return { texto: `${f.formato || 'folha'} no papel dela`, chave: 'auto' };
+      const p = papeis.find(x => String(x.id) === v), k = p ? reducao(f, p) : 1;
+      return { texto: p ? (k >= 0.98 ? `${p.nome}` : `${p.nome} ajustada`) : v, chave: v };
+    };
 
     const atualizar = () => {
       const m = marcadas();
       conta.textContent = `${m.length} de ${folhas.length} folha(s)`;
-      const p = papeis.find(x => String(x.id) === selPapel.value);
-      selAjuste.disabled = false;
+      linhas.forEach((tr, i) => tr.classList.toggle('marcada', marcas[i].checked));
       if (!m.length) { resumo.textContent = 'Marque ao menos uma folha.'; return; }
-      if (!p) {
-        resumo.textContent = 'Cada folha no papel do tamanho dela (a A1 na A1), quando a impressora o tem; senão no menor papel em que ela cabe.';
-        return;
-      }
-      const fs = [...new Set(m.map(f => f.formato || `${mm(f.largura)}×${mm(f.altura)}`))];
-      const f0 = m[0], k = reducao(f0, p);
-      if (selAjuste.value === 'ajustar') {
-        const k2 = Math.min(...m.map(f => reducao(f, p)));
-        resumo.textContent = Math.abs(k2 - 1) < 0.02
-          ? `${fs.join(', ')} no ${p.nome}: no tamanho real.`
-          : `${fs.join(', ')} no ${p.nome}: ${k2 < 1 ? 'reduzida' : 'ampliada'} a cerca de ${porcento(k2)} — a escala escrita no carimbo não vale no papel (1:25 vira ~1:${Math.round(25 / k2)}).`;
-      } else {
-        resumo.textContent = k < 0.98
-          ? `A folha ${f0.formato || ''} é maior que o ${p.nome}: em tamanho real só o meio dela sai. Use "Ajustar ao papel".`
-          : `${fs.join(', ')} no ${p.nome}, em tamanho real, no meio do papel.`;
-      }
+      const grupos = new Map();
+      for (const f of m) { const i = folhas.indexOf(f), n = nomeDoPapel(f, i).texto; grupos.set(n, (grupos.get(n) || 0) + 1); }
+      const revs = [...new Set(m.map(f => f.revisao).filter(Boolean))];
+      const imp = selImp.value === (plotter && plotter.nome) ? 'na plotter' : `em ${selImp.value}`;
+      resumo.textContent = `${m.length} folha(s) marcada(s) ${imp}: ${[...grupos].map(([n, q]) => `${q} ${n}`).join(' + ')}`
+        + (revs.length ? ` · revisão ${revs.join(', ')}` : '');
     };
 
     const carregarPapeis = async () => {
-      selPapel.replaceChildren(el('option', { value: 'auto', texto: 'carregando os papéis…' }));
-      selPapel.disabled = true;
+      const antes = papelDe.map(s => s.value);
+      papelTodas.disabled = true;
+      papelDe.forEach(s => { s.replaceChildren(el('option', { value: 'auto', texto: 'carregando…' })); s.disabled = true; });
       try {
         const r = await postar(`${base}/papeis`, { impressora: selImp.value });
         papeis = (r.papeis || []).slice().sort((a, b) => ordemDoPapel(a) - ordemDoPapel(b));
       } catch (e) { papeis = []; this.aviso(`A impressora não deu os papéis dela: ${e.message}`, 'atencao'); }
-      selPapel.replaceChildren(el('option', { value: 'auto', texto: 'Automático: o tamanho de cada folha' }),
+      folhas.forEach((f, i) => {
+        papelDe[i].replaceChildren(...opcoesDoPapel(f));
+        papelDe[i].disabled = false;
+        papelDe[i].value = papeis.some(p => String(p.id) === antes[i]) ? antes[i] : 'auto';
+      });
+      papelTodas.replaceChildren(el('option', { value: '', texto: 'escolher…' }), el('option', { value: 'auto', texto: 'o de cada folha' }),
         ...papeis.map(p => el('option', { value: String(p.id), texto: `${p.nome} — ${mm(p.largura)} × ${mm(p.altura)} mm` })));
-      selPapel.disabled = false;
-      selPapel.value = selImp.value === ultima.impressora && papeis.some(p => String(p.id) === String(ultima.papel)) ? String(ultima.papel) : 'auto';
+      papelTodas.disabled = false;
       atualizar();
     };
     selImp.addEventListener('change', carregarPapeis);
-    for (const s of [selPapel, selAjuste]) s.addEventListener('change', atualizar);
 
-    const corpo = el('div', { class: 'impressao' },
+    // ---- a pré-visualização da folha em foco (desenhada pela própria tela do CAD, num canvas pequeno)
+    const previa = el('canvas', { class: 'previa-folha' });
+    const legenda = el('div', { class: 'leg' });
+    let telaPrevia = null;
+    const focar = (i) => {
+      linhas.forEach((tr, j) => tr.classList.toggle('foco', j === i));
+      const f = folhas[i];
+      legenda.textContent = `${f.numero != null ? String(f.numero).padStart(2, '0') + ' · ' : ''}${f.titulo}`;
+      if (f.desenho !== this.nomeDesenho || !f.origem || !f.tamanho) {
+        previa.hidden = true;
+        legenda.textContent += ' — a pré-visualização é das folhas do desenho aberto';
+        return;
+      }
+      previa.hidden = false;
+      try {
+        if (!telaPrevia) { telaPrevia = new Tela(previa, this.doc); telaPrevia.grade = false; }
+        telaPrevia.escuro = this.tela.escuro;
+        telaPrevia.redimensionar();
+        telaPrevia.enquadrar([[f.origem[0], f.origem[1]], [f.origem[0] + f.tamanho[0], f.origem[1] + f.tamanho[1]]], 0.02);
+        telaPrevia.desenhar();
+      } catch (e) { previa.hidden = true; legenda.textContent += ` — sem pré-visualização (${e.message})`; }
+    };
+    this._previaImpressao = () => telaPrevia;              // para o verificador
+
+    const corpo = el('div', { class: 'impressao impressao-folhas' },
       el('div', { class: 'botoes-folhas' },
         el('button', { type: 'button', texto: 'Todas', onclick: () => marcar(() => true) }),
         el('button', { type: 'button', texto: 'Nenhuma', onclick: () => marcar(() => false) }),
         naTela !== null ? el('button', { type: 'button', texto: 'Só a da tela', title: 'a folha que está no meio da tela', onclick: () => marcar(f => f.indice === naTela) }) : null,
-        conta),
-      caixaFolhas,
-      el('label', {}, 'Impressora', selImp),
-      el('div', { class: 'linha' }, el('label', {}, 'Papel', selPapel), el('label', {}, 'Tamanho', selAjuste)),
-      el('div', { class: 'linha' }, el('label', {}, 'Cor', selCor), el('label', { style: 'flex: 0 0 90px' }, 'Cópias', copias)),
-      resumo,
-      el('div', { class: 'botoes-folhas' }, el('button', { type: 'button', texto: 'Penas de impressão…', title: 'A espessura e a cor de cada cor do desenho no papel (o CTB do AutoCAD)',
-        onclick: () => { irPenas = true; document.getElementById('dialogo-cancelar').click(); } })));
+        el('button', { type: 'button', name: 'so-mudaram', texto: `Só as que mudaram desde a última impressão (${mudaram.length})`, disabled: !mudaram.length,
+          title: 'as folhas que mudaram depois da última vez que foram impressas', onclick: () => marcar(f => (f.situacao || {}).estado === 'mudou') }),
+        el('span', { class: 'espaco' }),
+        el('span', { class: 'rotulo', texto: 'Conjunto:' }), selConj, apagarConj, salvarConj, nomeConj, okConj),
+      el('div', { class: 'grade-impressao' },
+        tabela,
+        el('div', { class: 'lado' },
+          el('label', {}, 'Impressora', selImp),
+          el('label', {}, 'Cor', selCor),
+          el('div', { class: 'linha' }, el('label', { style: 'flex: 0 0 80px' }, 'Cópias', copias), el('label', {}, 'Papel das marcadas', papelTodas)),
+          el('div', { class: 'previa' }, previa, legenda),
+          el('button', { type: 'button', texto: 'Penas de impressão…', title: 'A espessura e a cor de cada cor do desenho no papel (o CTB do AutoCAD)',
+            onclick: () => { irPenas = true; document.getElementById('dialogo-cancelar').click(); } }))),
+      el('div', { class: 'rodape-impressao' }, resumo, conta));
     let irPenas = false;
     atualizar();
     carregarPapeis();
+    // a folha em foco: a da tela, senão a primeira (depois que o diálogo está na tela, para o canvas ter tamanho)
+    const inicial = Math.max(0, folhas.findIndex(f => f.indice === naTela));
+    requestAnimationFrame(() => requestAnimationFrame(() => focar(inicial)));
     const resposta = await this.dialogo({ titulo: 'Imprimir pranchas', corpo, ok: 'Imprimir' });
+    this._previaImpressao = null;
     if (irPenas) { if (await this.dialogoPenas()) return this.dialogoImprimir(true); return; }
     if (resposta !== 'ok') return;
 
     const escolhidas = marcadas();
     if (!escolhidas.length) { this.aviso('Nenhuma folha marcada: nada foi impresso.', 'atencao'); return; }
+    const papeisDasFolhas = {};
+    for (const f of escolhidas) { const v = papelDe[folhas.indexOf(f)].value; if (v && v !== 'auto') papeisDasFolhas[f.indice] = Number(v); }
     const pedido = {
-      desenhos, impressora: selImp.value, papel: selPapel.value === 'auto' ? null : Number(selPapel.value),
-      ajuste: selAjuste.value, cor: selCor.value, copias: Math.max(1, Math.min(99, parseInt(copias.value, 10) || 1)),
+      desenhos, impressora: selImp.value, papel: null, ajuste: 'real', papeis: papeisDasFolhas,
+      cor: selCor.value, copias: Math.max(1, Math.min(99, parseInt(copias.value, 10) || 1)),
       folhas: escolhidas.length === folhas.length ? null : escolhidas.map(f => f.indice),
     };
-    gravarUltima({ impressora: pedido.impressora, papel: pedido.papel, ajuste: pedido.ajuste, cor: pedido.cor });
+    gravarUltima({ ...ultima, cor: pedido.cor });
     this.dica(`Imprimindo ${escolhidas.length} folha(s) em ${pedido.impressora}…`);
     try {
       const r = await postar(`${base}/imprimir`, pedido);
