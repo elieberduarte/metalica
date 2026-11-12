@@ -674,36 +674,73 @@ function misturarVisual(A, B, k) {
   };
 }
 
-/** O fechamento do vídeo (12/11, amostra-12 A aprovada: "conseguimos fechar o vídeo com o logo da empresa?" → fundo branco,
- *  só no fim, o nome da obra e a linha embaixo): o logo em cor da empresa da marca d'água no centro (a altura com teto, como
- *  na marca — a DEZN não sai enorme), o nome da obra e "Estrutura metálica · imagem ilustrativa". Sem logo (a marca "sem"
- *  ou a empresa sem cadastro): null, o vídeo termina no voo. */
-async function cartaoDeFecho(w, h, marca) {
-  if (!marca || marca.empresa === 'sem' || !temLogo(marca.empresa)) return null;
+/** A abertura e o fechamento do vídeo (12/11, amostra-12: "conseguimos fechar o vídeo com o logo da empresa?"; depois: "não
+ *  colocaria esse texto… gostaria de ver o vídeo por dentro do sistema… as outras opções de fechamento e abertura escolher lá
+ *  por dentro também, para comparar lado a lado"): o logo da empresa da marca d'água — A no fundo branco; B sobre a vista
+ *  desfocada e escurecida (o logo claro); C numa faixa branca embaixo, a obra à vista. `texto`: o nome da obra e "Estrutura
+ *  metálica · imagem ilustrativa" (desligado). Sem logo (a marca "sem" ou a empresa sem cadastro): null. */
+async function cartaoDoVideo(w, h, marca, jeito, vista, texto = false) {
+  if (!['A', 'B', 'C'].includes(jeito) || !marca || marca.empresa === 'sem' || !temLogo(marca.empresa)) return null;
   let logo;
-  try { logo = await logoDa(marca.empresa, 'cor'); } catch (e) { return null; }
+  try { logo = await logoDa(marca.empresa, jeito === 'B' ? 'claro' : 'cor'); } catch (e) { return null; }
   const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
   const g = cv.getContext('2d'), r = logo.naturalWidth / logo.naturalHeight || 3;
-  g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h);
-  let lw = w * 0.47, lh = lw / r;
-  if (lh > h * 0.115) { lh = h * 0.115; lw = lh * r; }
-  const cy = h * 0.44;
   g.imageSmoothingQuality = 'high';
+  const obra = ($('#titulo-obra').textContent || '').trim().toUpperCase(), linha = 'Estrutura metálica · imagem ilustrativa';
+  const caber = (mw, mh) => { let lw = mw, lh = lw / r; if (lh > mh) { lh = mh; lw = lh * r; } return [lw, lh]; };
+  const letra = (peso, k) => `${peso} ${Math.round(h * k)}px "Segoe UI", system-ui, sans-serif`;
+  if (jeito === 'C') {                                      // a faixa embaixo, a obra continua à vista
+    if (vista) g.drawImage(vista, 0, 0, w, h); else { g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h); }
+    const fh = h * 0.2;
+    g.fillStyle = 'rgba(255,255,255,.93)'; g.fillRect(0, h - fh, w, fh);
+    const [lw, lh] = caber(w * 0.27, fh * 0.42);
+    if (!texto) { g.drawImage(logo, (w - lw) / 2, h - fh / 2 - lh / 2, lw, lh); return cv; }
+    const x0 = w * 0.04;
+    g.drawImage(logo, x0, h - fh / 2 - lh / 2, lw, lh);
+    const xs = x0 + lw + w * 0.03;
+    g.strokeStyle = '#c8cdd4'; g.lineWidth = Math.max(1, h * 0.002);
+    g.beginPath(); g.moveTo(xs, h - fh + fh * 0.2); g.lineTo(xs, h - fh * 0.2); g.stroke();
+    g.textAlign = 'left'; g.textBaseline = 'middle';
+    g.fillStyle = '#28303c'; g.font = letra(600, 0.037); g.fillText(obra, xs + w * 0.02, h - fh / 2 - h * 0.022);
+    g.fillStyle = '#78808c'; g.font = letra(400, 0.026); g.fillText(linha, xs + w * 0.02, h - fh / 2 + h * 0.026);
+    return cv;
+  }
+  if (jeito === 'B' && vista) {                             // sobre a obra: a vista desfocada e escurecida
+    g.filter = `blur(${Math.max(2, Math.round(h * 0.006))}px)`; g.drawImage(vista, 0, 0, w, h); g.filter = 'none';
+    g.fillStyle = 'rgba(12,18,28,.65)'; g.fillRect(0, 0, w, h);
+  } else { g.fillStyle = jeito === 'B' ? '#1b2330' : '#ffffff'; g.fillRect(0, 0, w, h); }
+  const [lw, lh] = caber(w * 0.47, h * 0.115), cy = texto ? h * 0.44 : h * 0.5;
   g.drawImage(logo, (w - lw) / 2, cy - lh / 2, lw, lh);
-  g.textAlign = 'center'; g.textBaseline = 'top';
-  g.fillStyle = '#3c4652'; g.font = `600 ${Math.round(h * 0.037)}px "Segoe UI", system-ui, sans-serif`;
-  g.fillText(($('#titulo-obra').textContent || '').trim().toUpperCase(), w / 2, cy + lh / 2 + h * 0.046);
-  g.fillStyle = '#828a96'; g.font = `${Math.round(h * 0.026)}px "Segoe UI", system-ui, sans-serif`;
-  g.fillText('Estrutura metálica · imagem ilustrativa', w / 2, cy + lh / 2 + h * 0.097);
+  if (texto) {
+    g.textAlign = 'center'; g.textBaseline = 'top';
+    g.fillStyle = jeito === 'B' ? '#ffffff' : '#3c4652'; g.font = letra(600, 0.037); g.fillText(obra, w / 2, cy + lh / 2 + h * 0.046);
+    g.fillStyle = jeito === 'B' ? '#c8d0da' : '#828a96'; g.font = letra(400, 0.026); g.fillText(linha, w / 2, cy + lh / 2 + h * 0.097);
+  }
   return cv;
 }
-const FECHO_SUMIR = 1, FECHO_FICAR = 3;
-const suaveFecho = (t) => t * t * (3 - 2 * t);                     // s: a última vista some no branco; o fechamento parado
+const FECHO_SUMIR = 1, FECHO_FICAR = 3, ABERTURA_FICAR = 2, ABERTURA_SUMIR = 1;   // s
+const suaveFecho = (t) => t * t * (3 - 2 * t);
+
+/** Passa de uma imagem à outra em `segundos` (o quadro do meio misturado), no gravador. */
+async function dissolver(gravador, de, para, segundos, fps, cancelado, aoAndar) {
+  const w = de.width, h = de.height, mistura = document.createElement('canvas'); mistura.width = w; mistura.height = h;
+  const g = mistura.getContext('2d'), n = Math.max(1, Math.round(segundos * fps));
+  for (let k = 1; k <= n; k++) {
+    if (cancelado()) throw new Error('cancelado');
+    g.globalAlpha = 1; g.drawImage(de, 0, 0);
+    g.globalAlpha = suaveFecho(k / n); g.drawImage(para, 0, 0);
+    await gravador.quadro(mistura);
+    if (aoAndar) await aoAndar(k, n);
+  }
+  return n;
+}
 
 /** O vídeo das cenas `ids` (as do 3D, nessa ordem): o lado maior `lado` na proporção da 1ª cena, `porTrecho` segundos de uma
  *  cena à outra, `parada` segundos parado em cada uma; `aoAndar(f, total, texto)` a cada quadro; `cancelado()` para. Devolve o
  *  MP4 (Blob) e os números. */
-async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada = 0, ss = 1, fecho = true, aoAndar = null, cancelado = () => false }) {
+async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada = 0, ss = 1, fecho = 'A', abertura = 'nenhuma', texto = false,
+                               aoAndar = null, cancelado = () => false }) {
+  if (fecho === true) fecho = 'A'; else if (fecho === false) fecho = 'nenhum';
   const lista = ids.map(id => todasCenas.find(c => c.id === id)).filter(c => c && c.tipo === '3d' && c.camera && c.camera.posicao && c.camera.alvo);
   if (lista.length < 2) throw new Error('escolha duas cenas do 3D ou mais');
   const voltar = cena && cena.id;
@@ -718,46 +755,62 @@ async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada
   const visuais = new Map();                                 // o visual de cada cena, lido uma vez (com a cena dela)
   const visual = (c) => { if (!visuais.has(c.id)) visuais.set(c.id, visualDaCena(cena && cena.id === c.id ? cena : c)); return visuais.get(c.id); };
   const t0 = performance.now();
-  let aberta = lista[0].id, img = null;
+  let aberta = lista[0].id, img = null, quadros = 0;
   renderizando = true; mostrarBotoes();
+  const quadroDoVoo = async (q) => {
+    const A = lista[q.i], B = lista[q.j];
+    const chegando = q.k >= 0.5 ? B : A;                     // as camadas, as figuras e o estilo trocam no meio do trecho
+    if (chegando.id !== aberta) {
+      if (!(await abrirCena(chegando.id, { recarregar: false }))) { if (!cena || cena.id !== chegando.id) throw new Error(`a cena ${chegando.nome} é da outra situação da cobertura`); }
+      aberta = chegando.id;
+      renderizando = true;
+    }
+    const cam = q.cam || cameraEntre(A.camera, B.camera, q.k);
+    visor.definirCamera({ posicao: cam.posicao, alvo: cam.alvo });
+    fovCena = cam.fov;
+    let ceu = null;
+    if (q.i !== q.j && q.k > 0 && q.k < 1) ceu = misturarVisual(visual(A), visual(B), q.k);
+    const quadro = await imagemDaCena3d(w, h, ss, null, false, ceu);
+    await desenharMarca(quadro, marca);
+    return quadro;
+  };
   try {
+    // a abertura (opção): o cartão parado e depois ele some na primeira vista do voo
+    let abriu = false;
+    if (abertura && abertura !== 'nenhuma') {
+      const primeira = await quadroDoVoo(linha.quadro(0));
+      const sem = document.createElement('canvas'); sem.width = w; sem.height = h;   // o cartão sobre a vista sem a marca do canto
+      sem.getContext('2d').drawImage(await imagemDaCena3d(w, h, ss, null, false, null), 0, 0);
+      const cartao = await cartaoDoVideo(w, h, marca, abertura, sem, texto);
+      if (cartao) {
+        await gravador.quadro(cartao, Math.round(ABERTURA_FICAR * fps));
+        quadros += Math.round(ABERTURA_FICAR * fps);
+        quadros += await dissolver(gravador, cartao, primeira, ABERTURA_SUMIR, fps, cancelado, aoAndar && ((k, n) => aoAndar(k, n, 'abertura com o logo')));
+        abriu = true;
+      }
+    }
     for (let f = 0; f < linha.total; f++) {
       if (cancelado()) throw new Error('cancelado');
       const q = linha.quadro(f), A = lista[q.i], B = lista[q.j];
-      if (q.parado && img) { await gravador.quadro(img); continue; }
-      const chegando = q.k >= 0.5 ? B : A;                   // as camadas, as figuras e o estilo trocam no meio do trecho
-      if (chegando.id !== aberta) {
-        if (!(await abrirCena(chegando.id, { recarregar: false }))) { if (!cena || cena.id !== chegando.id) throw new Error(`a cena ${chegando.nome} é da outra situação da cobertura`); }
-        aberta = chegando.id;
-        renderizando = true;
-      }
-      const cam = q.cam || cameraEntre(A.camera, B.camera, q.k);
-      visor.definirCamera({ posicao: cam.posicao, alvo: cam.alvo });
-      fovCena = cam.fov;
-      let ceu = null;
-      if (q.i !== q.j && q.k > 0 && q.k < 1) ceu = misturarVisual(visual(A), visual(B), q.k);
-      img = await imagemDaCena3d(w, h, ss, null, false, ceu);
-      await desenharMarca(img, marca);
-      await gravador.quadro(img);
+      if (q.parado && img) { await gravador.quadro(img); quadros++; continue; }
+      img = await quadroDoVoo(q);
+      await gravador.quadro(img); quadros++;
       if (aoAndar) await aoAndar(f + 1, linha.total, q.i === q.j ? lista[q.i].nome : `${A.nome} → ${B.nome}`);
     }
-    let quadros = linha.total;
-    const cartao = fecho ? await cartaoDeFecho(w, h, marca) : null;
-    if (cartao && img) {                                     // a última vista some no branco do fechamento, que fica parado
-      const mistura = document.createElement('canvas'); mistura.width = w; mistura.height = h;
-      const g = mistura.getContext('2d'), n = Math.round(FECHO_SUMIR * fps);
-      for (let k = 1; k <= n; k++) {
-        if (cancelado()) throw new Error('cancelado');
-        g.globalAlpha = 1; g.drawImage(img, 0, 0);
-        g.globalAlpha = suaveFecho(k / n); g.drawImage(cartao, 0, 0);
-        await gravador.quadro(mistura);
-        if (aoAndar) await aoAndar(linha.total + k, linha.total + n, 'fechamento com o logo');
+    // o fechamento: a última vista some no cartão, que fica parado (B e C feitos sobre a última vista, sem a marca do canto)
+    let fechou = false;
+    if (fecho && fecho !== 'nenhum' && img) {
+      const ultima = fecho === 'A' ? null : await imagemDaCena3d(w, h, ss, null, false, null);
+      const cartao = await cartaoDoVideo(w, h, marca, fecho, ultima, texto);
+      if (cartao) {
+        quadros += await dissolver(gravador, img, cartao, FECHO_SUMIR, fps, cancelado, aoAndar && ((k, n) => aoAndar(k, n, 'fechamento com o logo')));
+        await gravador.quadro(cartao, Math.round(FECHO_FICAR * fps));
+        quadros += Math.round(FECHO_FICAR * fps);
+        fechou = true;
       }
-      await gravador.quadro(cartao, Math.round(FECHO_FICAR * fps));
-      quadros += n + Math.round(FECHO_FICAR * fps);
     }
     const mp4 = await gravador.fim();
-    return { mp4, w, h, fps, quadros, segundos: quadros / fps, demorou: (performance.now() - t0) / 1000, cenas: lista.length, fecho: !!(cartao && img) };
+    return { mp4, w, h, fps, quadros, segundos: quadros / fps, demorou: (performance.now() - t0) / 1000, cenas: lista.length, fecho: fechou, abertura: abriu };
   } catch (e) { gravador.cancelar(); throw e; }
   finally {
     renderizando = false;
@@ -2468,6 +2521,7 @@ function ligarExportarCenas() {
     enviar: (blob, nome) => pedir(`${API}/${encodeURIComponent(cena.id)}/imagem`, undefined, { dados: blob, nome }),
     enviarPdf: (blob, nome) => pedir(`${API}/pdf`, undefined, { dados: blob, nome }),
     video: (o) => videoDasCenas(o),
+    cartao: (jeito, vista, texto) => cartaoDoVideo(vista.width, vista.height, marcaDaCena(), jeito, vista, texto),
     enviarVideo: (blob, nome) => pedir(`${API}/video`, undefined, { dados: blob, nome }),
     abrirPasta: (nome) => mostrarNaPasta(nome),
     terminou: () => atualizarCartoes(),
@@ -2687,7 +2741,7 @@ function desenharMarcas() {
 window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado, desenho, paredes: paredes.length, fina: !telaFina.hidden,
                                     fovCena, quadro: quadroAtual, vistaMudou, cenas: todasCenas.map(c => c.id) }), mostrarModo, pontoDo3d, fazerEncaixe,
                    concluir, desfazer, refazer, geometriaDoContorno, bordaDeBaixo, montarImagem, abrirCena, novaCena3d, imagemDaCena3d, cameraDaTela,
-                   exportar: () => exportar, tamanhoExportar, medidaDoLogo, videoDasCenas };
+                   exportar: () => exportar, tamanhoExportar, medidaDoLogo, videoDasCenas, cartaoDoVideo };
 // saindo da página (o ← 3D antes de o 3D terminar de chegar): o pedido cortado pela troca de página não é erro
 let saindoDaPagina = false;
 addEventListener('beforeunload', () => { saindoDaPagina = true; });

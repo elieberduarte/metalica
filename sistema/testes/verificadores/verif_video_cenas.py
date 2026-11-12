@@ -8,7 +8,8 @@ das Cenas, com cliques de verdade:
      Várias com 3 cenas: o resumo diz 3 cenas e a duração;
   C. Gravar o vídeo (2 das 3: Frente no Dia → Topo na Noite, o voo contínuo): o MP4 na pasta cenas da obra ("Vídeo - <obra> (cenas).mp4"), 1920 × 1080, 30 quadros/s, a duração certa;
      o OpenCV lê o arquivo; o quadro do meio do trecho é diferente das duas paradas; o céu escurece suave no caminho (Dia → Noite);
-     o fechamento com o logo (amostra-12 A): a última vista some no branco, o logo no centro e o nome da obra embaixo;
+     a abertura B e o fechamento A escolhidos nas miniaturas (12/11: "comparar lado a lado"): a obra escurecida com o logo
+     claro; a última vista some no branco, só o logo ("não colocaria esse texto"); o vídeo tocando na janela;
   D. depois do vídeo a tela volta à cena de antes, com a vista dela;
   E. Cancelar no meio para e não grava;
   F. sem erro no console.
@@ -162,13 +163,25 @@ try:
     clicar_no(aba, "#exportar-varias input[value=lado]"); aba.drenar(0.3)     # o vídeo do teste: Frente (Dia) → Topo (Noite)
     info = aba.avaliar("document.getElementById('exportar-info').textContent")
     ok("2 cenas" in info and "~6 s" in info and "Frente → Topo" in info, f"sem a do meio, voo contínuo + fechamento: 2 cenas, ~6 s ({info})")
-    ok(aba.avaliar("document.getElementById('exportar-fecho').checked"), "Fechar com o logo da empresa: ligado (12/11, amostra-12 A)")
-    clicar_no(aba, "#exportar-fecho"); aba.drenar(0.3)
-    ok("~2 s" in aba.avaliar("document.getElementById('exportar-info').textContent"), "sem o fechamento: ~2 s")
-    clicar_no(aba, "#exportar-fecho"); aba.drenar(0.3)
+    # a abertura e o fechamento lado a lado (12/11: "as outras opções de fechamento e abertura escolher lá por dentro também,
+    # para comparar lado a lado"): as miniaturas feitas com a vista e o logo; o fechamento A e nenhuma abertura no começo
+    ok(esperar(aba, "window.cartoesDoVideo >= 4 && [...document.querySelectorAll('#exportar-cartoes .mini')].every(m => m.style.backgroundImage.startsWith('url'))", 120),
+       "as miniaturas: abertura e fechamento (Nenhum, A, B, C)")
+    minis = aba.avaliar("[...document.querySelectorAll('#exportar-cartoes .cartoes')].map(c => [...c.querySelectorAll('.mini')].map(m => m.style.backgroundImage.length + ':' + m.style.backgroundImage.slice(-40)))")
+    ok(len(minis) == 2 and len(set(minis[1])) == 4, "as quatro do fechamento são diferentes")
+    ok(aba.avaliar("document.querySelector('input[name=fecho]:checked').value") == "A" and aba.avaliar("document.querySelector('input[name=abertura]:checked').value") == "nenhuma"
+       and not aba.avaliar("document.getElementById('exportar-texto').checked"),
+       "o padrão: fechamento A, sem abertura, sem o texto (12/11: \"não colocaria esse texto\")")
+    mini = lambda nome, v: f"label.cartao-op:has(input[name={nome}][value={v}]) .mini"
+    clicar_no(aba, mini("fecho", "nenhum")); aba.drenar(0.3)
+    ok("~2 s" in aba.avaliar("document.getElementById('exportar-info').textContent"), "fechamento Nenhum: ~2 s")
+    clicar_no(aba, mini("fecho", "A")); aba.drenar(0.3)
     clicar_no(aba, "#exportar-parar"); aba.drenar(0.3)
     ok("~9 s" in aba.avaliar("document.getElementById('exportar-info').textContent"), "Parar um instante em cada cena: ~9 s")
     clicar_no(aba, "#exportar-parar"); aba.drenar(0.3)
+    clicar_no(aba, mini("abertura", "B")); aba.drenar(0.3)
+    ok(aba.avaliar("document.querySelector('input[name=abertura]:checked').value") == "B"
+       and "~9 s" in aba.avaliar("document.getElementById('exportar-info').textContent"), "abertura B (sobre a obra): ~9 s")
 
     print("C — gravar o vídeo")
     aba.avaliar("window.ultimoLoteCenas = null; 1")
@@ -179,7 +192,10 @@ try:
     lote = aba.avaliar("JSON.stringify(window.ultimoLoteCenas)"); lote = json.loads(lote or "{}")
     ok(not lote.get("erro") and lote.get("gravados") == ["Vídeo - Obra Teste (cenas).mp4"], f"gravado na pasta cenas ({lote.get('gravados')}, {lote.get('erro')})")
     v = lote.get("video") or {}
-    ok(v.get("w") == 1920 and v.get("h") == 1080 and abs(v.get("segundos", 0) - 181 / 30) < 1e-6, f"1920 × 1080, 2 s de voo + 1 s sumindo + 3 s de fechamento ({v})")
+    ok(v.get("w") == 1920 and v.get("h") == 1080 and abs(v.get("segundos", 0) - 271 / 30) < 1e-6 and v.get("abertura") and v.get("fecho"),
+       f"1920 × 1080: 3 s de abertura + 2 s de voo + 4 s de fechamento ({v})")
+    ok(esperar(aba, "(v => !!v && v.duration > 8.9 && v.duration < 9.2)(document.getElementById('exportar-player'))", 30)
+       and aba.avaliar("document.getElementById('exportar-previa').hidden"), "o vídeo pronto tocando na janela, no lugar da prévia")
     arq = os.path.join(PASTA, "Vídeo - Obra Teste (cenas).mp4")
     ok(os.path.isfile(arq) and open(arq, "rb").read(8)[4:8] == b"ftyp", "o arquivo é um MP4")
     ok("Pronto: vídeo de 2 cenas" in aba.avaliar("document.getElementById('exportar-situacao').textContent")
@@ -188,19 +204,22 @@ try:
         import cv2
         cap = cv2.VideoCapture(arq)
         n, fps, w = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), cap.get(cv2.CAP_PROP_FPS), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        ok(n == 181 and abs(fps - 30) < 0.01 and w == 1920, f"o OpenCV lê: {n} quadros, {fps} q/s, {w} px")
+        ok(n == 271 and abs(fps - 30) < 0.01 and w == 1920, f"o OpenCV lê: {n} quadros, {fps} q/s, {w} px")
         def q(i):
             cap.set(cv2.CAP_PROP_POS_FRAMES, i); _, f = cap.read(); cv2.imwrite(os.path.join(SAIDA, f"quadro-{i}.jpg"), f); return f
-        a0, meio, fim, sumindo, fecho = q(2), q(30), q(58), q(75), q(150)
+        abre, a0, meio, fim, sumindo, fecho = q(30), q(92), q(120), q(148), q(165), q(240)
         cap.release()                                       # o arquivo solto (o E apaga e grava de novo)
-        # o fechamento (12/11, amostra-12 A: "conseguimos fechar o vídeo com o logo da empresa?"): o fundo branco com o logo
-        # no meio (o escuro da faixa) e o nome da obra embaixo; antes, a última vista sumindo no branco
-        cinza = cv2.cvtColor(fecho, cv2.COLOR_BGR2GRAY); hh, ww = cinza.shape
+        # a abertura B: a obra escurecida e o logo claro no centro
+        ca = cv2.cvtColor(abre, cv2.COLOR_BGR2GRAY); hh, ww = ca.shape
+        ok(ca[: hh // 4].mean() < 110 and ca[int(hh * 0.45): int(hh * 0.55), int(ww * 0.25): int(ww * 0.75)].max() > 220,
+           f"a abertura B: escura, o logo claro no centro ({ca[: hh // 4].mean():.0f})")
+        # o fechamento (12/11, amostra-12 A; "não colocaria esse texto"): o fundo branco, só o logo no meio
+        cinza = cv2.cvtColor(fecho, cv2.COLOR_BGR2GRAY)
         ok(cinza[: hh // 4].mean() > 245 and cinza[hh * 3 // 4:].mean() > 245, f"o fechamento: fundo branco ({cinza[: hh // 4].mean():.0f})")
-        faixa = cinza[int(hh * 0.39): int(hh * 0.49), int(ww * 0.25): int(ww * 0.75)]
+        faixa = cinza[int(hh * 0.45): int(hh * 0.55), int(ww * 0.25): int(ww * 0.75)]
         ok(faixa.min() < 100, f"o logo no centro ({faixa.min()})")
-        nome = cinza[int(hh * 0.53): int(hh * 0.62), int(ww * 0.3): int(ww * 0.7)]
-        ok(nome.min() < 140, f"o nome da obra embaixo ({nome.min()})")
+        nome = cinza[int(hh * 0.57): int(hh * 0.68), int(ww * 0.3): int(ww * 0.7)]
+        ok(nome.min() > 230, f"sem o texto embaixo do logo ({nome.min()})")
         ok(float(fim.mean()) < float(sumindo.mean()) < float(fecho.mean()), f"a última vista some no branco ({fim.mean():.0f} → {sumindo.mean():.0f} → {fecho.mean():.0f})")
         dif = lambda x, y: float(abs(x.astype(int) - y.astype(int)).mean())
         ok(dif(a0, meio) > 3 and dif(meio, fim) > 3, f"o meio do trecho é outro quadro ({dif(a0, meio):.1f}, {dif(meio, fim):.1f})")

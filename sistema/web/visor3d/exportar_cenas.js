@@ -89,13 +89,16 @@ const CHAVE = 'metalica.exportarCenas';
 const BYTES_POR_PX = { jpg: 0.3, png: 1.4, pdf: 0.3 };       // para o "~2,5 MB" da prévia (a média do Filipin)
 // o vídeo das cenas (12/11: "o sistema ir passeando por elas como se fosse uma câmera"): segundos de uma cena à outra, a
 // parada em cada uma; só Full HD e 4K (o H.264 do navegador)
-const VELOCIDADES = { lento: 4, normal: 3, rapido: 2 }, PARADA_VIDEO = 1.5, FECHO_VIDEO = 4, LADOS_VIDEO = ['1920', '3840'];
+const VELOCIDADES = { lento: 4, normal: 3, rapido: 2 }, PARADA_VIDEO = 1.5, FECHO_VIDEO = 4, ABERTURA_VIDEO = 3, LADOS_VIDEO = ['1920', '3840'];
 const MBIT_VIDEO = (w, h) => Math.min(60, Math.max(4, w * h * 30 * 0.2 / 1e6));   // o mesmo de video_cenas.js (taxa)
 
 function lerOpcoes() {
   const padrao = { quais: 'esta', marcadas: [], lado: '3840', qualidade: 'refinada', formato: 'jpg', gravar: true, baixar: false, abrirPasta: true,
-                   velocidade: 'normal', parar: false, fecho: true };
-  try { return { ...padrao, ...(JSON.parse(localStorage.getItem(CHAVE) || '{}')) }; } catch (e) { return padrao; }
+                   velocidade: 'normal', parar: false, fecho: 'A', abertura: 'nenhuma', textoLogo: false };
+  let o = padrao;
+  try { o = { ...padrao, ...(JSON.parse(localStorage.getItem(CHAVE) || '{}')) }; } catch (e) { /* o padrão */ }
+  if (o.fecho === true) o.fecho = 'A'; else if (o.fecho === false) o.fecho = 'nenhum';     // a opção de antes (sim/não)
+  return o;
 }
 function guardarOpcoes(o) { try { localStorage.setItem(CHAVE, JSON.stringify(o)); } catch (e) { /* sem o navegador guardar: tudo bem */ } }
 
@@ -122,7 +125,14 @@ const ESTILO = `
 #exportar-situacao { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
 #exportar-barra { flex: 1; height: 8px; border-radius: 4px; background: var(--borda); overflow: hidden; min-width: 60px; }
 #exportar-barra i { display: block; height: 100%; width: 0; background: var(--azul2, #1f5fbf); transition: width .2s; }
-#exportar-pasta[hidden], #exportar-video[hidden] { display: none; }
+#exportar-pasta[hidden], #exportar-video[hidden], #exportar-cartoes[hidden], #exportar-previa[hidden] { display: none; }
+#exportar-cartoes .cartoes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+#exportar-caixa label.cartao-op { flex-direction: column; align-items: stretch; gap: 2px; position: relative; }
+.cartao-op input { position: absolute; opacity: 0; pointer-events: none; }
+.cartao-op .mini { aspect-ratio: 16 / 9; border: 2px solid var(--borda); border-radius: 4px; background: #fff center / cover no-repeat; }
+.cartao-op input:checked + .mini { border-color: var(--azul2, #1f5fbf); box-shadow: 0 0 0 1px var(--azul2, #1f5fbf); }
+.cartao-op small { text-align: center; font-size: 11px !important; }
+#exportar-player { width: 100%; border-radius: 6px; background: #000; }
 #exportar-falta { font-size: 12px; color: var(--texto2); min-width: 44px; text-align: right; }
 @media (max-width: 700px) { #exportar-caixa .corpo { grid-template-columns: 1fr; } #exportar-caixa .col + .col { border-left: 0; border-top: 1px solid var(--borda); } }
 `;
@@ -148,11 +158,12 @@ export function ligarExportar(ctx) {
   if (!document.getElementById('exportar-estilo')) {
     const s = document.createElement('style'); s.id = 'exportar-estilo'; s.textContent = ESTILO; document.head.append(s);
   }
-  let fundo = null, rodando = null, tempoPrevia = 0;
+  let fundo = null, rodando = null, tempoPrevia = 0, ultimaPrevia = null, urlVideo = null;
 
   function fechar() {
     if (rodando) { rodando.cancelado = true; return; }
     clearTimeout(tempoPrevia);
+    tirarVideo();
     if (fundo) { fundo.remove(); fundo = null; }
   }
 
@@ -161,7 +172,8 @@ export function ligarExportar(ctx) {
     const ch = (id) => fundo.querySelector('#' + id).checked;
     return { quais: v('quais'), marcadas: [...fundo.querySelectorAll('#exportar-varias input:checked')].map(i => i.value),
              lado: v('lado'), qualidade: v('qualidade'), formato: v('formato'), gravar: ch('exportar-gravar'),
-             baixar: ch('exportar-baixar'), abrirPasta: ch('exportar-abrir'), velocidade: v('velocidade') || 'normal', parar: ch('exportar-parar'), fecho: ch('exportar-fecho') };
+             baixar: ch('exportar-baixar'), abrirPasta: ch('exportar-abrir'), velocidade: v('velocidade') || 'normal', parar: ch('exportar-parar'),
+             fecho: v('fecho') || 'A', abertura: v('abertura') || 'nenhuma', textoLogo: ch('exportar-texto') };
   }
 
   function escolhidas(o) {
@@ -178,7 +190,7 @@ export function ligarExportar(ctx) {
   /** O vídeo: os tamanhos que não servem ficam apagados; o resumo diz as cenas, a duração e o tamanho do arquivo. */
   function resumoDoVideo(o) {
     const video = o.formato === 'mp4';
-    fundo.querySelector('#exportar-video').hidden = !video;
+    fundo.querySelector('#exportar-video').hidden = fundo.querySelector('#exportar-cartoes').hidden = !video;
     for (const i of fundo.querySelectorAll('input[name=lado]')) {
       const off = video && !LADOS_VIDEO.includes(i.value);
       i.disabled = off; i.closest('label').classList.toggle('off', off);
@@ -187,7 +199,8 @@ export function ligarExportar(ctx) {
     if (!video) return false;
     const lista = escolhidas(o).filter(c => c.tipo === '3d'), n = lista.length, atual = ctx.atual();
     const [w, h] = atual && atual.tipo === '3d' ? ctx.tamanho(o.lado) : [+o.lado, Math.round(+o.lado * 9 / 16)];
-    const seg = n * (o.parar ? PARADA_VIDEO : 0) + Math.max(0, n - 1) * (VELOCIDADES[o.velocidade] || 3) + (o.fecho ? FECHO_VIDEO : 0), mb = MBIT_VIDEO(w, h) * seg / 8;
+    const seg = n * (o.parar ? PARADA_VIDEO : 0) + Math.max(0, n - 1) * (VELOCIDADES[o.velocidade] || 3) + (o.fecho !== 'nenhum' ? FECHO_VIDEO : 0)
+      + (o.abertura !== 'nenhuma' ? ABERTURA_VIDEO : 0), mb = MBIT_VIDEO(w, h) * seg / 8;
     fundo.querySelector('#exportar-info').innerHTML = n >= 2
       ? `Vídeo de ${n} cenas · ~${nf(seg)} s · ${nf(w)} × ${nf(h)} · MP4 · ~${nf(mb)} MB<br><span class="fraco">${lista.map(c => esc(c.nome)).join(' → ')}</span>`
       : 'O vídeo passa por duas cenas do 3D ou mais.';
@@ -242,7 +255,48 @@ export function ligarExportar(ctx) {
       const el = fundo.querySelector('#exportar-previa');
       el.style.backgroundImage = `url(${cv.toDataURL('image/jpeg', 0.85)})`;
       el.style.aspectRatio = `${img.width} / ${img.height}`;
+      ultimaPrevia = cv;
+      await desenharCartoes();
     } catch (e) { console.warn('prévia do render', e); }
+  }
+
+  /** As miniaturas da abertura e do fechamento do vídeo (12/11: "as outras opções de fechamento e abertura escolher lá por
+   *  dentro também, para comparar lado a lado"), feitas com a vista da prévia e o logo de verdade. */
+  async function desenharCartoes() {
+    if (!fundo || !ultimaPrevia || !ctx.cartao) return;
+    const texto = fundo.querySelector('#exportar-texto').checked, feitos = {};
+    for (const el of fundo.querySelectorAll('#exportar-cartoes .mini')) {
+      const j = el.dataset.jeito;
+      if (!(j in feitos)) {
+        let cv = ['A', 'B', 'C'].includes(j) ? await ctx.cartao(j, ultimaPrevia, texto).catch(() => null) : ultimaPrevia;
+        if (!cv) cv = ultimaPrevia;                           // sem logo cadastrado: a vista (o vídeo sai sem o cartão)
+        const p = document.createElement('canvas'); p.width = 320; p.height = Math.round(320 * cv.height / cv.width);
+        p.getContext('2d').drawImage(cv, 0, 0, p.width, p.height);
+        feitos[j] = p.toDataURL('image/jpeg', 0.85);
+      }
+      if (!fundo) return;
+      el.style.backgroundImage = `url(${feitos[j]})`;
+    }
+    window.cartoesDoVideo = Object.keys(feitos).length;      // os testes esperam por elas
+  }
+
+  /** O vídeo pronto tocando na janela, no lugar da prévia (12/11: "gostaria de ver o vídeo por dentro do sistema"). */
+  function mostrarVideo(blob) {
+    tirarVideo();
+    const el = fundo.querySelector('#exportar-previa');
+    urlVideo = URL.createObjectURL(blob);
+    const v = document.createElement('video');
+    v.id = 'exportar-player'; v.controls = true; v.muted = true; v.autoplay = true; v.playsInline = true; v.src = urlVideo;
+    el.hidden = true; el.before(v);
+    fundo.querySelector('#exportar-titulo-previa').textContent = 'O vídeo pronto';
+  }
+  function tirarVideo() {
+    if (!fundo) return;
+    const v = fundo.querySelector('#exportar-player');
+    if (v) { v.pause(); v.remove(); }
+    if (urlVideo) { URL.revokeObjectURL(urlVideo); urlVideo = null; }
+    fundo.querySelector('#exportar-previa').hidden = false;
+    fundo.querySelector('#exportar-titulo-previa').textContent = 'Como vai sair';
   }
 
   function agendarPrevia() { clearTimeout(tempoPrevia); tempoPrevia = setTimeout(desenharPrevia, 150); }
@@ -280,12 +334,14 @@ export function ligarExportar(ctx) {
     for (const el of fundo.querySelectorAll('.corpo input, #exportar-ir')) el.disabled = true;
     fundo.querySelector('#exportar-pasta').hidden = true;
     fundo.querySelector('#exportar-cancelar').textContent = 'Cancelar';
+    tirarVideo();
     const t0 = performance.now(), obra = String(ctx.nomeObra() || 'obra').replace(/[<>:"/\\|?*]+/g, '-').trim();
     let erro = null, gravado = null, info = null;
     try {
       andamento('Vídeo · abrindo a primeira cena…', 0, '');
       info = await ctx.video({ ids: lista.map(c => c.id), lado: +o.lado || 1920, ss: o.qualidade === 'rapida' || +o.lado > 1920 ? 1 : 2,
-        porTrecho: VELOCIDADES[o.velocidade] || 3, parada: o.parar ? PARADA_VIDEO : 0, fecho: o.fecho, cancelado: () => estado.cancelado,
+        porTrecho: VELOCIDADES[o.velocidade] || 3, parada: o.parar ? PARADA_VIDEO : 0, fecho: o.fecho, abertura: o.abertura,
+        texto: o.textoLogo, cancelado: () => estado.cancelado,
         aoAndar: async (f, n, txt) => {
           const fr = f / n, gasto = (performance.now() - t0) / 1000, falta = fr > 0.02 ? Math.max(0, gasto / fr - gasto) : NaN;
           andamento(`Vídeo · quadro ${nf(f)} de ${nf(n)} — ${txt}`, fr, isFinite(falta) ? `~${falta > 90 ? nf(falta / 60) + ' min' : nf(falta) + ' s'}` : '');
@@ -314,9 +370,11 @@ export function ligarExportar(ctx) {
       bt.hidden = !gravado;
       bt.onclick = () => ctx.abrirPasta(gravado).catch(e => andamento('A pasta não abriu: ' + e.message, 1, ''));
       agendarPrevia();
+      if (!erro && info) mostrarVideo(info.mp4);
     }
     window.ultimoLoteCenas = { gravados: gravado ? [gravado] : [], pulados: [], erro: erro ? erro.message : null, paginas: 0, baixados: [],
-                               video: info ? { cenas: info.cenas, segundos: info.segundos, w: info.w, h: info.h, quadros: info.quadros, bytes: info.mp4.size } : null };
+                               video: info ? { cenas: info.cenas, segundos: info.segundos, w: info.w, h: info.h, quadros: info.quadros, bytes: info.mp4.size,
+                                               abertura: info.abertura, fecho: info.fecho } : null };
   }
 
   async function renderizarLote() {
@@ -403,6 +461,8 @@ export function ligarExportar(ctx) {
     const radio = (nome, v, txt, sub = '', marcado = false, off = false) =>
       `<label${off ? ' class="off"' : ''}><input type="radio" name="${nome}" value="${v}"${marcado ? ' checked' : ''}${off ? ' disabled' : ''}> <span>${txt}${sub ? ` <small>${sub}</small>` : ''}</span></label>`;
     const [w0, h0] = atual ? ctx.tamanho('tela') : [0, 0];
+    const cartoes = (nome, marcado, nada, rotulo) => [[nada, rotulo], ['A', 'A · fundo branco'], ['B', 'B · sobre a obra'], ['C', 'C · faixa']]
+      .map(([v, t]) => `<label class="cartao-op"><input type="radio" name="${nome}" value="${v}"${(marcado || nada) === v ? ' checked' : ''}><span class="mini" data-jeito="${v}"></span><small>${t}</small></label>`).join('');
     fundo = document.createElement('div');
     fundo.id = 'exportar-fundo';
     fundo.innerHTML = `<div id="exportar-caixa" role="dialog" aria-label="Renderizar e exportar">
@@ -423,7 +483,6 @@ export function ligarExportar(ctx) {
         ${radio('formato', 'mp4', 'Vídeo MP4', '(a câmera passeando pelas cenas escolhidas, na ordem da lista)', o.formato === 'mp4')}
         <div id="exportar-video" hidden><h3>Vídeo</h3>
           <div class="linha" style="gap:14px">${radio('velocidade', 'lento', 'Lento', '(4 s de uma cena à outra)', o.velocidade === 'lento')}${radio('velocidade', 'normal', 'Normal', '(3 s)', !['lento', 'rapido'].includes(o.velocidade))}${radio('velocidade', 'rapido', 'Rápido', '(2 s)', o.velocidade === 'rapido')}</div>
-          <label><input type="checkbox" id="exportar-fecho"${o.fecho !== false ? ' checked' : ''}> <span>Fechar com o logo da empresa <small>(fundo branco, o nome da obra; 4 s)</small></span></label>
           <label><input type="checkbox" id="exportar-parar"${o.parar ? ' checked' : ''}> <span>Parar um instante em cada cena <small>(${nf(PARADA_VIDEO, 1)} s)</small></span></label>
           <span class="fraco">Sem parar, a câmera voa numa curva só por todas as cenas, na mesma velocidade, como um drone; a luz muda suave de uma à outra. A marca d'água é a da primeira cena.</span></div>
         <span class="fraco" id="exportar-aviso-fmt"></span>
@@ -431,9 +490,14 @@ export function ligarExportar(ctx) {
         <label><input type="checkbox" id="exportar-baixar"${o.baixar ? ' checked' : ''}> <span>Baixar também <small>(um ZIP quando forem várias)</small></span></label>
         <span class="fraco">Pôr na prancha: no CAD 2D, Desenhos › Pranchas › Inserir cena da obra… (a imagem viva acompanha o render).</span>
       </div><div class="col">
-        <h3>Como vai sair</h3>
+        <h3 id="exportar-titulo-previa">Como vai sair</h3>
         <div id="exportar-previa"></div>
         <div id="exportar-info" class="fraco" style="font-size:12.5px;color:var(--texto)"></div>
+        <div id="exportar-cartoes" hidden>
+          <h3>Abertura <small class="fraco">(3 s)</small></h3><div class="cartoes">${cartoes('abertura', o.abertura, 'nenhuma', 'Nenhuma')}</div>
+          <h3>Fechamento <small class="fraco">(4 s)</small></h3><div class="cartoes">${cartoes('fecho', o.fecho, 'nenhum', 'Nenhum')}</div>
+          <label><input type="checkbox" id="exportar-texto"${o.textoLogo ? ' checked' : ''}> <span>Nome da obra embaixo do logo</span></label>
+          <span class="fraco">O logo é o da empresa da marca d'água; com a marca "sem", o vídeo sai sem abertura e fechamento.</span></div>
         <h3>Marca d'água</h3>
         <span id="exportar-marca"></span>
         <span class="fraco">A de cada cena: muda no painel à direita da tela (Marca d'água).</span>
@@ -451,6 +515,7 @@ export function ligarExportar(ctx) {
       if (ev.target.closest('#exportar-varias')) fundo.querySelector('input[name=quais][value=varias]').checked = true;
       mostrarResumo();
       if (ev.target.name === 'formato') agendarPrevia();
+      if (ev.target.id === 'exportar-texto') desenharCartoes();
     });
     fundo.addEventListener('keydown', (ev) => { ev.stopPropagation(); if (ev.key === 'Escape') fechar(); });
     fundo.addEventListener('pointerdown', (ev) => { if (ev.target === fundo) fechar(); });
