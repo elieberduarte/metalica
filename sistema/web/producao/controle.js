@@ -1,12 +1,87 @@
-/* A aba Controle da lista de materiais (FERRAMENTA · CONTROLE DE PRODUÇÃO, 12/11/2026): o andamento da obra por etapa
- * (Produção e Pintura), a lista do que se controla e o apontamento. Só no modo desenvolvimento: producao/web.py põe este
- * script antes do materiais.js, que monta a aba pelo window.ABAS_EXTRA. Usa as funções da tela (el, n, pedir, secao,
- * cartao, vazio), que existem quando a aba abre.
+/* O controle de produção (FERRAMENTA · CONTROLE DE PRODUÇÃO, 12/11/2026): o andamento da obra por etapa (Produção e
+ * Pintura), a lista do que se controla e o apontamento. Tela própria (/controle-producao, web/producao/controle.html),
+ * aberta pelo menu Produção do topo — até 12/11 era a aba Controle da lista de materiais; o usuário não achou e pediu no
+ * menu. Só no modo desenvolvimento (producao/web.py).
  * Itens: cada unidade de tesoura/conjunto (T38-1, T38-2) e cada posição de peças avulsas iguais (T.C.1: 46 peças).
  * O registro fica no projeto (producao/apontamentos.jsonl); erro vira estorno, nada se apaga. */
 'use strict';
 (function () {
-  const ESTADO = { dados: null, corpo: null, carregando: false, filtroEtapa: '', filtroTipo: '' };
+  const $ = (s, raiz = document) => raiz.querySelector(s);
+  const PROJETO = new URLSearchParams(location.search).get('projeto') || '';
+  const ESTADO = { dados: null, corpo: null, carregando: false, filtroEtapa: '', filtroTipo: '', busca: '' };
+
+  function el(tag, attrs = {}, ...filhos) {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v === undefined || v === null || v === false) continue;
+      if (k === 'class') e.className = v;
+      else if (k === 'texto') e.textContent = v;
+      else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v === true ? '' : v);
+    }
+    for (const f of filhos.flat()) {
+      if (f === null || f === undefined || f === false) continue;
+      e.append(f.nodeType ? f : document.createTextNode(String(f)));
+    }
+    return e;
+  }
+  const n = (x, casas = 0) => (x === null || x === undefined || x === '') ? '—'
+    : Number(x).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
+  async function pedir(rota, corpo) {
+    const r = await fetch(rota, corpo === undefined ? {} : {
+      method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(corpo) });
+    let j = {};
+    try { j = await r.json(); } catch { /* sem corpo */ }
+    if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+    return j;
+  }
+  function aviso(texto, erro = false) {
+    const a = $('#aviso');
+    a.hidden = !texto;
+    a.textContent = texto || '';
+    a.classList.toggle('erro', !!erro);
+  }
+  const vazio = (texto) => el('div', { class: 'vazio', texto });
+  const secao = (titulo, sub, conteudo) => el('section', {}, el('h3', {}, titulo, sub ? el('small', { texto: sub }) : null), conteudo);
+  /** tabela ordenável pelo clique no título: colunas = [{titulo, chave|valor(l), classe, num, casas}] */
+  function tabela(colunas, linhas, rodape, chaveFiltro) {
+    const thead = el('thead', {}, el('tr', {}, colunas.map((c, i) => el('th', {
+      class: c.classe || '', texto: c.titulo, title: 'Clique para ordenar', onclick: (ev) => ordenar(ev.currentTarget.closest('table'), i, c) }))));
+    const tbody = el('tbody');
+    for (const li of linhas) {
+      const tr = el('tr', { 'data-filtro': chaveFiltro(li).toLowerCase() });
+      for (const c of colunas) {
+        const v = c.valor ? c.valor(li) : li[c.chave];
+        const td = el('td', { class: c.classe || '' });
+        if (v && v.nodeType) td.append(v); else td.textContent = c.num ? n(v, c.casas || 0) : (v ?? '—');
+        td.dataset.v = c.num ? String(Number(v) || 0) : (v && v.nodeType ? v.textContent || '' : String(v ?? ''));
+        tr.append(td);
+      }
+      tbody.append(tr);
+    }
+    const t = el('table', {}, thead, tbody);
+    if (rodape) t.append(el('tfoot', {}, el('tr', {}, rodape.map((v, i) => el('td', { class: colunas[i].classe || '', texto: v ?? '' })))));
+    return t;
+  }
+  function ordenar(table, i, c) {
+    const th = table.tHead.rows[0].cells[i];
+    const asc = !th.classList.contains('ordem-asc');
+    for (const x of table.tHead.rows[0].cells) x.classList.remove('ordem-asc', 'ordem-desc');
+    th.classList.add(asc ? 'ordem-asc' : 'ordem-desc');
+    const linhas = [...table.tBodies[0].rows];
+    linhas.sort((a, b) => {
+      const va = a.cells[i].dataset.v, vb = b.cells[i].dataset.v;
+      const r = c.num ? (Number(va) - Number(vb)) : va.localeCompare(vb, 'pt-BR', { numeric: true });
+      return asc ? r : -r;
+    });
+    table.tBodies[0].append(...linhas);
+  }
+  function filtrar() {
+    const termo = (ESTADO.busca || '').trim().toLowerCase();
+    for (const tr of document.querySelectorAll('#controle-corpo tbody tr[data-filtro]')) {
+      tr.classList.toggle('oculta', !!termo && !tr.dataset.filtro.includes(termo));
+    }
+  }
 
   const estilo = document.createElement('style');
   estilo.textContent = `
@@ -17,6 +92,7 @@
     .ctl-meio { color: var(--amarelo-tinta, #9a6a00); font-weight: 650; }
     .ctl-nada { color: var(--texto3); }
     .ctl-barra { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 8px; font-size: 13px; color: var(--texto2); }
+    .ctl-barra input[type=search] { font: inherit; font-size: 13px; padding: 4px 9px; border: 1px solid var(--campo-borda); border-radius: var(--raio-p); background: var(--campo-fundo); color: var(--texto); width: 230px; }
     .ctl-barra select { font: inherit; font-size: 13px; padding: 4px 8px; border: 1px solid var(--campo-borda); border-radius: var(--raio-p); background: var(--campo-fundo); color: var(--texto); }
     .ctl-btn { font: inherit; font-size: 12.5px; padding: 3px 10px; border: 1px solid var(--azul-linha, #8fb3df); border-radius: var(--raio-p); background: var(--azul-fraco, #eef4fc); color: var(--azul-tinta, #1f5fa8); cursor: pointer; }
     .ctl-btn:hover { filter: brightness(.96); }
@@ -53,6 +129,9 @@
     ESTADO.carregando = true;
     try {
       ESTADO.dados = await pedir(`/api/producao/controle?projeto=${encodeURIComponent(PROJETO)}`);
+      const D = ESTADO.dados;
+      if (D.obra) { $('#obra-nome').textContent = D.obra; document.title = `Controle de produção — ${D.obra}`; }
+      if (D.lista_gerada) $('#quando').textContent = `lista levantada em ${dataBRc(D.lista_gerada)} ${horaBR(D.lista_gerada)}`;
     } catch (e) {
       ESTADO.dados = { erro: e.message };
     } finally {
@@ -92,6 +171,10 @@
     selTipo.value = ESTADO.filtroTipo;
     selTipo.addEventListener('change', () => { ESTADO.filtroTipo = selTipo.value; desenhar(); });
 
+    const busca = el('input', { type: 'search', id: 'filtro', placeholder: 'Procurar item, tipo, perfil…', title: 'Filtra as linhas do quadro' });
+    busca.value = ESTADO.busca;
+    busca.addEventListener('input', () => { ESTADO.busca = busca.value; filtrar(); });
+
     const linhas = D.itens.filter(x => (!ESTADO.filtroTipo || x.tipo === ESTADO.filtroTipo)
       && (!ESTADO.filtroEtapa || (x.feito[ESTADO.filtroEtapa] || 0) < x.quantidade));
     const colunas = [
@@ -116,11 +199,11 @@
         + 'Eles continuam guardados; confira e estorne se for o caso.'));
     }
     partes.push(secao('O que se controla', 'cada tesoura/conjunto pela unidade (T38-1, T38-2); as peças avulsas iguais pela posição, com a quantidade',
-      el('div', {}, el('div', { class: 'ctl-barra' }, selEtapa, selTipo,
+      el('div', {}, el('div', { class: 'ctl-barra' }, busca, selEtapa, selTipo,
         el('span', { texto: `${n(D.total.unidades_conjunto)} unidades de conjunto · ${n(D.total.itens - D.total.unidades_conjunto)} grupos de peças · ${n(D.total.kg, 1)} kg` })), quadro)));
     partes.push(secao('Últimos apontamentos', 'o mais novo em cima; estorno não apaga, desfaz', tabelaEventos(D.eventos || [])));
     corpo.replaceChildren(...partes);
-    if (typeof filtrar === 'function') filtrar();
+    filtrar();
   }
 
   function tabelaEventos(eventos) {
@@ -216,12 +299,22 @@
     }
   }
 
-  window.ABAS_EXTRA = (window.ABAS_EXTRA || []).concat([{
-    chave: 'controle', titulo: 'Controle', filtro: true,
-    abrir(corpo) {
-      ESTADO.corpo = corpo;
-      desenhar();
-      carregar();
-    },
-  }]);
+  function alternarTema() {
+    const raiz = document.documentElement;
+    const atual = raiz.getAttribute('data-tema') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'escuro' : 'claro');
+    const novo = atual === 'escuro' ? 'claro' : 'escuro';
+    raiz.setAttribute('data-tema', novo);
+    try { localStorage.setItem('galpao.tema', novo); } catch (e) { /* janela privativa */ }
+  }
+
+  function iniciar() {
+    $('#btn-tema').addEventListener('click', alternarTema);
+    if (!PROJETO) { $('#controle-corpo').replaceChildren(vazio('Abra o controle de produção pelo menu Produção de um projeto.')); return; }
+    $('#btn-lista').href = `/materiais?projeto=${encodeURIComponent(PROJETO)}#geral`;
+    ESTADO.corpo = $('#controle-corpo');
+    desenhar();
+    carregar();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
+  else iniciar();
 })();

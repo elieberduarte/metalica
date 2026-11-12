@@ -2,8 +2,10 @@
 """As rotas do controle de produção (extensão do modo desenvolvimento: app.py `_extensoes_dev`; o programa instalado
 não tem nada disto até o usuário aprovar).
 
-* GET  /materiais, /lista-de-materiais      a mesma tela da lista, com o script da aba Controle antes do materiais.js
-* GET  /api/producao/controle.js            o script da aba (web/producao/controle.js)
+* GET  /controle-producao?projeto=          a tela do controle (web/producao/controle.html); era uma aba da lista de
+                                            materiais até 12/11, o usuário pediu no menu Produção do topo
+* GET  /api/projetos/<slug>/etapas          a barra de cima, com a Produção abrindo a lista das duas telas (etapas.js)
+* GET  /api/producao/controle.js            o script da tela (web/producao/controle.js)
 * GET  /api/producao/controle?projeto=      a situação da obra (controle.situacao)
 * POST /api/producao/apontar                {projeto, item, etapa, quantidade, data?, obs?}
 * POST /api/producao/estornar               {projeto, evento, obs?}
@@ -13,13 +15,14 @@ não tem nada disto até o usuário aprovar).
 """
 import os
 import sys
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from producao import controle
 
 _AQUI = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(os.path.dirname(_AQUI), "web")
 SCRIPT = os.path.join(WEB, "producao", "controle.js")
+PAGINA = os.path.join(WEB, "producao", "controle.html")
 
 
 def _app():
@@ -46,41 +49,63 @@ def _quem() -> str:
 
 
 def _nome_da_obra(slug: str, lista: dict) -> str:
-    return ((lista.get("projeto") or {}).get("nome")) or slug
+    nome = (lista.get("projeto") or {}).get("nome")
+    if not nome:
+        try:
+            nome = _app()._gerente().ler(slug).get("nome")          # a lista sem o nome: o do projeto
+        except Exception:                               # noqa: BLE001 — sem o projeto, o slug
+            nome = None
+    return nome or slug
 
 
 def _consulta(h) -> dict:
     return {k: v[0] for k, v in parse_qs(urlparse(h.path).query).items()}
 
 
-def _pagina_da_lista(h):
-    html = open(os.path.join(WEB, "materiais.html"), encoding="utf-8").read()
-    marca = '<script src="/materiais.js"></script>'
-    if marca in html:
-        html = html.replace(marca, '<script src="/api/producao/controle.js"></script>\n' + marca, 1)
-    corpo = html.encode("utf-8")
+def _enviar(h, corpo: bytes, tipo: str):
     h.send_response(200)
-    h.send_header("Content-Type", "text/html; charset=utf-8")
+    h.send_header("Content-Type", tipo)
     h.send_header("Content-Length", str(len(corpo)))
     h.send_header("Cache-Control", "no-store")
     h.end_headers()
     h.wfile.write(corpo)
+
+
+def _pagina(h):
+    _enviar(h, open(PAGINA, "rb").read(), "text/html; charset=utf-8")
+
+
+def telas_da_producao(slug: str) -> list:
+    """as páginas da Produção na barra de cima (o clique na Produção abre esta lista)"""
+    s = quote(slug)
+    return [{"texto": "Lista de materiais", "url": "/materiais?projeto=%s#geral" % s,
+             "dica": "peças, perfis, plano de corte, romaneio e resumos"},
+            {"texto": "Controle de produção", "url": "/controle-producao?projeto=%s" % s,
+             "dica": "apontar o que a fábrica fez: produção e pintura"}]
+
+
+def _etapas(h, slug: str):
+    r = _app().etapas_do_projeto(slug)
+    for e in r.get("etapas") or []:
+        if e.get("chave") == "producao":
+            e["telas"] = telas_da_producao(slug)
+            e["itens"] = list(e.get("itens") or []) + [{"texto": "Controle de produção", "link": e["telas"][1]["url"]}]
+    h._json(r)
 
 
 def _script(h):
-    corpo = open(SCRIPT, "rb").read()
-    h.send_response(200)
-    h.send_header("Content-Type", "text/javascript; charset=utf-8")
-    h.send_header("Content-Length", str(len(corpo)))
-    h.send_header("Cache-Control", "no-store")
-    h.end_headers()
-    h.wfile.write(corpo)
+    _enviar(h, open(SCRIPT, "rb").read(), "text/javascript; charset=utf-8")
 
 
 def rota_get(h, rota: str) -> bool:
-    if rota in ("/materiais", "/lista-de-materiais"):
-        _pagina_da_lista(h)
+    if rota == "/controle-producao":
+        _pagina(h)
         return True
+    if rota.startswith("/api/projetos/") and rota.endswith("/etapas"):
+        partes = rota.split("/api/projetos/", 1)[1].strip("/").split("/")
+        if len(partes) == 2:
+            _etapas(h, partes[0])
+            return True
     if rota == "/api/producao/controle.js":
         _script(h)
         return True
@@ -94,6 +119,7 @@ def rota_get(h, rota: str) -> bool:
             return True
         r = controle.situacao(lista, controle.ler_eventos(pasta), controle.ler_nomes(pasta))
         r["quem"] = _quem()
+        r["obra"] = _nome_da_obra(s, lista)
         h._json(r)
         return True
     if rota == "/api/producao/erp":

@@ -134,14 +134,6 @@ const ABAS = [
   ['orcamento', 'Orçamento'], ['resumos', 'Resumos da obra'], ['conferencia', 'Conferência'], ['arquivos', 'Arquivos'],
 ];
 const COM_FILTRO = new Set(['perfis', 'corte', 'chapas', 'telhas', 'conjuntos', 'romaneio', 'acessorios']);
-// abas de extensão (12/11): um script carregado antes deste registra {chave, titulo, filtro, abrir(corpo)} em
-// window.ABAS_EXTRA (a aba Controle do controle de produção, só no modo desenvolvimento: producao/web.py)
-const EXTENSOES_ABAS = Array.isArray(window.ABAS_EXTRA) ? window.ABAS_EXTRA : [];
-for (const x of EXTENSOES_ABAS) {
-  ABAS.splice(ABAS.findIndex(([k]) => k === 'resumos'), 0, [x.chave, x.titulo]);
-  if (x.filtro) COM_FILTRO.add(x.chave);
-}
-const abrirExtra = (k) => { const x = EXTENSOES_ABAS.find(a => a.chave === k); if (x) x.abrir($('#' + k + '-corpo')); };
 let ABA = 'geral';
 try { ABA = (location.hash || '').slice(1) || localStorage.getItem('materiais.aba') || 'geral'; } catch (e) { /* sem armazenamento */ }
 if (SO_ORCAMENTO) ABA = 'orcamento';
@@ -178,7 +170,6 @@ function irPara(k) {
   if (k === 'conferencia') abrirConferencia();
   if (k === 'arquivos') atualizarArquivos();
   if (k === 'orcamento') abrirOrcamento();
-  abrirExtra(k);
   filtrar();
 }
 
@@ -514,8 +505,6 @@ function desenhar(L) {
   // ---- conferência das pendências (montado ao abrir a aba, 13/10)
   c.append(painel('conferencia', el('div', { id: 'conferencia-corpo' }, vazio('Carregando as pendências…'))));
   RESUMOS_MONTADO = false;
-  // ---- abas de extensão (ABAS_EXTRA): montadas ao abrir
-  for (const x of EXTENSOES_ABAS) c.append(painel(x.chave, el('div', { id: x.chave + '-corpo' })));
 
   // ---- arquivos
   c.append(painel('arquivos', el('div', { id: 'arquivos-corpo' })));
@@ -526,7 +515,6 @@ function desenhar(L) {
   if (ABA === 'resumos') abrirResumos();
   if (ABA === 'conferencia') abrirConferencia();
   if (ABA === 'orcamento') abrirOrcamento();
-  abrirExtra(ABA);
   filtrar();
 }
 

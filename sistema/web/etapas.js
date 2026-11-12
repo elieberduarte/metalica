@@ -32,6 +32,7 @@
     'border-bottom:2px solid transparent!important;color:inherit!important;opacity:.7;font:500 13px "Segoe UI",Arial,sans-serif;cursor:pointer;white-space:nowrap}',
     '.be-aba:hover{opacity:1;background:rgba(255,255,255,.06)!important}',
     '.be-aba.ativa{opacity:1;font-weight:600;border-bottom-color:#5b9bff!important}',
+    '.be-aba .be-v{opacity:.55;font-size:10px;margin-left:-3px}',
     '.be-ponto{width:7px;height:7px;border-radius:50%;flex:none;border:1.5px solid currentColor;opacity:.55;box-sizing:border-box}',
     '.be-aba.feita .be-ponto{background:#3fbf7f;border-color:#3fbf7f;opacity:1}',
     '.be-aba.andamento .be-ponto{border-color:#e3b341;opacity:1}',
@@ -119,7 +120,7 @@
   function etapaAtiva() {
     var p = location.pathname, h = (location.hash || '').slice(1);
     if (/^\/(dividida|2d-3d)/.test(p)) return 'engenharia';
-    if (/^\/(materiais|lista-de-materiais)/.test(p)) return 'producao';
+    if (/^\/(materiais|lista-de-materiais|controle-producao)/.test(p)) return 'producao';
     if (/^\/(comercial|proposta|contrato)/.test(p)) return h === 'obra' ? 'obra' : 'comercial';
     if (/^\/(analise|resultado|memorial|esforcos|trelicas|dimensionar)/.test(p)) return 'engenharia';
     return '';
@@ -239,9 +240,17 @@
     var abas = el('nav', { class: 'be-abas', 'data-be': '1', 'aria-label': 'Telas do projeto' },
       DADOS.etapas.map(function (e) {
         var s = e.situacao === 'feita' ? ' — feita' : e.situacao === 'andamento' ? ' — em andamento' : '';
+        // a tela com mais de uma página (12/11, Produção no dev: Lista de materiais e Controle de produção): o clique abre
+        // a lista das páginas em vez de ir direto
+        var menu = (e.telas || []).length > 1;
         return el('button', { type: 'button', class: 'be-aba ' + (e.situacao || '') + (e.chave === ativa ? ' ativa' : ''), title: e.nome + ': ' + (e.dica || '') + s,
-          'aria-current': e.chave === ativa ? 'page' : null, onclick: function () { irPara(e.url); } },
-          el('span', { class: 'be-ponto' }), el('span', { class: 'be-txt', texto: e.nome }));
+          'aria-current': e.chave === ativa ? 'page' : null, 'aria-haspopup': menu ? 'menu' : null, 'data-etapa': e.chave,
+          onclick: function (ev) {
+            if (!menu) { irPara(e.url); return; }
+            ev.stopPropagation();
+            abrirLista(ev.currentTarget, e.telas.map(function (t) { return { texto: t.texto, link: t.url, dica: t.dica }; }));
+          } },
+          el('span', { class: 'be-ponto' }), el('span', { class: 'be-txt', texto: e.nome }), menu ? el('span', { class: 'be-v', texto: '▾' }) : null);
       }));
     var sep = el('span', { class: 'be-sep', 'data-be': '1' });
     var busca = el('button', { type: 'button', class: 'be-busca', 'data-be': '1', title: 'Buscar comando, tela ou peça do modelo (Ctrl+K)', onclick: abrirPaleta },

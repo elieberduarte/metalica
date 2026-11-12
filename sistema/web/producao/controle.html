@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101b2e">
+<script src="/tema-janela.js"></script>
+<script src="/atualizacao.js" defer></script>
+<title>Controle de produção — Metálica</title>
+<link rel="stylesheet" href="/estilo.css">
+<script>
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%231f7a4d'/><path d='M8 16.5l5 5L24 10' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<!-- O controle de produção (FERRAMENTA · CONTROLE DE PRODUÇÃO, 12/11/2026): tela própria no menu Produção do topo
+     (era a aba Controle da lista de materiais). Só no modo desenvolvimento: producao/web.py serve esta página. -->
+<style>
+  .controle { max-width: 1320px; margin: 0 auto; padding: 18px 24px 60px; }
+  .obra { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 18px; margin: 4px 0 14px; }
+  .obra .titulo { flex: 1; min-width: 260px; }
+  .obra .titulo h2 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -.01em; color: var(--texto); }
+  .obra .titulo p { margin: 3px 0 0; font-size: 13px; color: var(--texto2); }
+  .obra .acoes-obra { display: flex; flex-wrap: wrap; gap: 6px; }
+  .botao-m { font: inherit; font-size: 13px; padding: 6px 12px; border: 1px solid var(--borda-forte); border-radius: var(--raio-p);
+             background: var(--painel); color: var(--texto); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+  .botao-m:hover { border-color: var(--azul2); color: var(--azul2); }
+  .cartao-n { padding: 11px 14px 10px; background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); box-shadow: var(--sombra); }
+  .cartao-n b { display: block; font-size: 22px; font-weight: 650; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+  .cartao-n span { font-size: 11.5px; color: var(--texto2); text-transform: uppercase; letter-spacing: .05em; }
+  .cartao-n small { display: block; font-size: 12px; color: var(--texto3); margin-top: 2px; }
+  .controle h3 { font-size: 15px; margin: 18px 0 8px; color: var(--azul); display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .controle h3 small { font-size: 12px; font-weight: 400; color: var(--texto3); }
+  .controle table { border-collapse: collapse; width: 100%; font-size: 13px; background: var(--painel); }
+  .controle th, .controle td { border: 1px solid var(--borda); padding: 5px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
+  .controle td.quebra { white-space: normal; }
+  .controle th { background: var(--painel2); font-weight: 600; position: sticky; top: 0; z-index: 2; cursor: pointer; user-select: none; }
+  .controle th.ordem-asc::after { content: " ▲"; font-size: 9px; color: var(--texto3); }
+  .controle th.ordem-desc::after { content: " ▼"; font-size: 9px; color: var(--texto3); }
+  .controle td.r, .controle th.r { text-align: right; font-variant-numeric: tabular-nums; }
+  .controle td.c, .controle th.c { text-align: center; }
+  .controle td.b { font-weight: 600; }
+  .controle tbody tr:hover td { background: var(--azul-fraco); }
+  .controle tfoot td { background: var(--painel2); font-weight: 600; }
+  .controle tr.oculta { display: none; }
+  .controle .vazio { padding: 18px; color: var(--texto3); font-size: 13.5px; border: 1px dashed var(--borda-forte); border-radius: var(--raio); text-align: center; background: var(--painel); }
+  .controle .nota, .ctl-dlg .nota { font-size: 12.5px; color: var(--texto2); margin: 6px 0 0; }
+  .controle .rolagem { overflow: auto; max-height: 68vh; border: 1px solid var(--borda); border-radius: var(--raio); }
+  .controle .rolagem table { border: 0; }
+  .aviso-topo { padding: 10px 14px; border-left: 3px solid var(--amarelo); background: var(--amarelo-fundo); border-radius: var(--raio-p); margin: 0 0 14px; font-size: 13.5px; }
+  .aviso-topo.erro { border-color: var(--verm); background: var(--verm-fundo); }
+  @media print {
+    .topo, .obra .acoes-obra, .ctl-barra, #aviso, .ctl-btn { display: none !important; }
+    .controle { max-width: none; padding: 0; }
+    .controle .rolagem { max-height: none; overflow: visible; border: 0; }
+    .controle th { position: static; }
+    body { background: #fff; color: #000; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topo">
+  <div class="marca">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M8 16.5l5 5L24 10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <h1>Controle de produção</h1>
+  </div>
+  <div class="projeto-atual" id="quando" title="Quando a lista de materiais foi levantada do modelo">—</div>
+  <div class="acoes">
+    <button type="button" id="btn-voltar" title="Volta para a tela anterior" onclick="history.length > 1 ? history.back() : (location.href = '/')">&larr; Voltar</button>
+    <button type="button" id="btn-tema" title="Alternar tema claro/escuro">Tema</button>
+  </div>
+</header>
+
+<main class="controle">
+  <div id="aviso" class="aviso-topo" hidden></div>
+  <section class="obra">
+    <div class="titulo">
+      <h2 id="obra-nome">—</h2>
+      <p id="obra-sub">o andamento da fábrica por etapa: produção e pintura</p>
+    </div>
+    <div class="acoes-obra">
+      <a class="botao-m" id="btn-lista" title="A lista de materiais desta obra (de onde saem os itens do controle)">Lista de materiais</a>
+      <button type="button" class="botao-m" id="btn-imprimir" title="Imprime os quadros desta tela" onclick="print()">Imprimir</button>
+    </div>
+  </section>
+  <div id="controle-corpo"></div>
+</main>
+
+<script src="/api/producao/controle.js"></script>
+<script src="/versao.js" defer></script>
+<script src="/etapas.js"></script>
+<script src="/vivo.js"></script>
+</body>
+</html>

@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-"""A aba Controle da lista de materiais (controle de produção, 12/11/2026), com eventos de verdade.
+"""A tela Controle de produção (12/11/2026), com eventos de verdade. Até 12/11 era a aba Controle da lista de materiais;
+o usuário não a achou e pediu no menu Produção do topo: agora é a tela /controle-producao.
 
 Servidor de teste com --dev (o controle é extensão do desenvolvimento) e uma obra com a lista da obra de teste do
 pytest (tesoura T38 ×2, T74, MT71 em duas marcas, terças T.C.1 ×46, contraventos CV.2 ×6, chapas):
-  1. a aba "Controle" aparece entre Acessórios e Resumos, abre pelo clique e pelo #controle depois de recarregar;
+  1. a lista de materiais não tem mais a aba; o clique em "Produção" no topo abre a lista das telas (Lista de materiais,
+     Controle de produção) e "Controle de produção" leva à tela, com a Produção acesa;
   2. os cartões começam em 0 % e a lista tem T38-1, T38-2, T74, MT71-1..3 e T.C.1 (46);
   3. "Apontar" na T.C.1, etapa Pintura, 30 → a linha mostra "30 de 46" e o registro fica em producao/apontamentos.jsonl;
   4. 17 a mais é recusado no próprio diálogo ("só faltam 16"), sem gravar;
@@ -11,18 +13,17 @@ pytest (tesoura T38 ×2, T74, MT71 em duas marcas, terças T.C.1 ×46, contraven
   6. o filtro "Falta na produção" esconde a T38-1; a busca "T.C" deixa só a T.C.1;
   7. "Estornar" desfaz a pintura (a linha volta a "—") e o histórico mostra o original riscado;
   8. sem erro no console.
-Se o Posto V2 estiver nesta máquina, a aba também abre com a lista dele (702 itens, 233 unidades de conjunto).
+Se o Posto V2 estiver nesta máquina, a tela também abre com a lista dele (702 itens, 233 unidades de conjunto).
 Porta livre, nunca a 8765/8766."""
 import base64, json, os, shutil, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
-from test_producao_controle import _lista, NOMES
+from test_producao_controle import _lista, NOMES, POSTO
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 PORTA = _porta_livre()
 DADOS = tempfile.mkdtemp(prefix="metalica_controle_")
-POSTO = os.path.join(r"C:\Metálica\dados", "posto-de-combustível-v2")
 
 
 def _obra(slug, nome, lista, nomes):
@@ -115,15 +116,22 @@ try:
     for dm in ("Page", "Runtime", "Log"): aba.cmd(f"{dm}.enable")
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1400, height=1000, deviceScaleFactor=1, mobile=False)
 
-    # 1. a aba
+    # 1. o menu Produção do topo
     aba.navegar(base + "/materiais?projeto=obra-controle#geral", limite=40)
-    ok(esperar(aba, "!!document.querySelector('#abas button[data-aba=controle]')", 40), "a aba Controle aparece na lista de materiais")
-    ordem = aba.avaliar("[...document.querySelectorAll('#abas button[data-aba]')].map(b => b.dataset.aba)") or []
-    ok("controle" in ordem and ordem.index("controle") == ordem.index("acessorios") + 1 and ordem[ordem.index("controle") + 1] == "resumos",
-       f"entre Acessórios e Resumos ({ordem})")
-    clicar(aba, "#abas button[data-aba=controle]")
-    ok(esperar(aba, "!document.querySelector('#aba-controle').hidden && !!document.querySelector('#ctl-cartoes')", 20),
-       "o clique abre a aba com os cartões")
+    ok(esperar(aba, "!!document.querySelector('.be-aba[data-etapa=producao]') && !!document.querySelector('#abas button[data-aba]')", 40),
+       "a lista de materiais abre com a barra de cima")
+    ok(not aba.avaliar("!!document.querySelector('#abas button[data-aba=controle]')"), "a lista não tem mais a aba Controle")
+    clicar(aba, ".be-aba[data-etapa=producao]")
+    ok(esperar(aba, "!!document.querySelector('.be-lista')", 10), "o clique em Produção abre a lista das telas")
+    telas = aba.avaliar("[...document.querySelectorAll('.be-lista .be-it')].map(b => b.firstChild.textContent.trim())") or []
+    ok(telas == ["Lista de materiais", "Controle de produção"], f"Lista de materiais e Controle de produção ({telas})")
+    ok(aba.avaliar("location.pathname") == "/materiais", "abrir a lista não sai da tela")
+    clicar(aba, ".be-lista .be-it:nth-child(2)")
+    ok(esperar(aba, "location.pathname === '/controle-producao' && !!document.querySelector('#ctl-cartoes')", 30),
+       "Controle de produção leva à tela, com os cartões")
+    ok(esperar(aba, "!!document.querySelector('.be-aba.ativa[data-etapa=producao]')", 10), "na tela do controle a Produção fica acesa no topo")
+    ok(aba.avaliar("document.querySelector('#obra-nome').textContent") == "Obra de teste", "o nome da obra (o da lista) no título")
+    ok("/materiais?projeto=obra-controle" in (aba.avaliar("document.querySelector('#btn-lista').href") or ""), "o botão Lista de materiais leva à lista da obra")
 
     # 2. o começo
     cartoes = aba.avaliar("[...document.querySelectorAll('#ctl-cartoes .cartao-n[data-etapa] b')].map(b => b.textContent)") or []
@@ -177,15 +185,15 @@ try:
     linhas = open(arq, encoding="utf-8").read().strip().splitlines()
     ok(len(linhas) == 3 and json.loads(linhas[-1]).get("estorno_de") == ev_id, "o estorno é mais uma linha; nada apagado")
 
-    # recarregar mantém a aba
-    aba.navegar(base + "/materiais?projeto=obra-controle#controle", limite=40)
-    ok(esperar(aba, "!document.querySelector('#aba-controle').hidden && !!document.querySelector('#ctl-cartoes')", 30),
-       "recarregar com #controle abre direto na aba")
+    # recarregar abre a mesma tela, com o histórico
+    aba.navegar(base + "/controle-producao?projeto=obra-controle", limite=40)
+    ok(esperar(aba, f"!!document.querySelector('#ctl-cartoes') && !!document.querySelector(\"#controle-corpo tr[data-evento='{ev_id}']\")", 30),
+       "recarregar abre a tela do controle com o histórico")
     open(os.path.join(AQUI, "_controle_producao.png"), "wb").write(base64.b64decode(aba.cmd("Page.captureScreenshot", format="png")["data"]))
 
     if TEM_POSTO:
-        aba.navegar(base + "/materiais?projeto=posto-copia#controle", limite=60)
-        ok(esperar(aba, "!!document.querySelector('#ctl-cartoes')", 60), "a cópia do Posto V2 abre na aba Controle")
+        aba.navegar(base + "/controle-producao?projeto=posto-copia", limite=60)
+        ok(esperar(aba, "!!document.querySelector('#ctl-cartoes')", 60), "a cópia do Posto V2 abre no controle de produção")
         n = aba.avaliar("document.querySelectorAll('#controle-corpo .rolagem table tbody tr').length")
         ok(n == 702, f"Posto V2: 702 itens ({n})")
         open(os.path.join(AQUI, "_controle_producao_posto.png"), "wb").write(base64.b64decode(aba.cmd("Page.captureScreenshot", format="png")["data"]))

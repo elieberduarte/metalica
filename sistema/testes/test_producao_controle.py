@@ -192,7 +192,16 @@ def test_o_que_o_erp_le(tmp_path):
 
 # ------------------------------------------------------------------ a obra piloto (se a pasta estiver nesta máquina)
 # a pasta real dos dados (o conftest troca METALICA_DADOS por uma pasta de teste)
-POSTO = os.path.join(r"C:\Metálica\dados", "posto-de-combustível-v2")
+def _posto():
+    """a pasta do Posto nesta máquina (chamou-se posto-de-combustível-v2; hoje posto-de-combustível)"""
+    import glob
+    for p in sorted(glob.glob(os.path.join(r"C:\Metálica\dados", "posto-de-combust*"))):
+        if os.path.exists(os.path.join(p, "detalhamento", "lista-de-materiais.json")):
+            return p
+    return os.path.join(r"C:\Metálica\dados", "posto-de-combustível")
+
+
+POSTO = _posto()
 
 
 @pytest.mark.skipif(not os.path.exists(os.path.join(POSTO, C.LISTA)), reason="o Posto V2 não está nesta máquina")
@@ -227,20 +236,46 @@ class _H:
         self.resposta = obj
 
 
-def test_pagina_da_lista_leva_o_script_da_aba_antes_do_materiais_js():
+def test_tela_propria_do_controle_e_a_lista_volta_a_ser_so_a_lista():
+    """12/11: o usuário não achou a aba Controle dentro da lista e pediu no menu Produção — virou a tela
+    /controle-producao; a lista de materiais não é mais interceptada nem tem o gancho de abas"""
     from producao import web
-    h = _H("/materiais?projeto=x")
-    assert web.rota_get(h, "/materiais")
+    assert not web.rota_get(_H("/materiais?projeto=x"), "/materiais")
+    h = _H("/controle-producao?projeto=x")
+    assert web.rota_get(h, "/controle-producao")
     html = h.wfile.getvalue().decode("utf-8")
-    assert html.index('/api/producao/controle.js') < html.index('<script src="/materiais.js">')
+    assert '<script src="/api/producao/controle.js"></script>' in html and '<script src="/etapas.js"></script>' in html
+    assert 'id="controle-corpo"' in html and "<h1>Controle de produção</h1>" in html
     h = _H("/api/producao/controle.js")
     assert web.rota_get(h, "/api/producao/controle.js")
-    assert b"ABAS_EXTRA" in h.wfile.getvalue()
+    js = h.wfile.getvalue().decode("utf-8")
+    assert "ABAS_EXTRA" not in js and "function tabela(" in js and "#controle-corpo" in js
+    mat = open(os.path.join(os.path.dirname(AQUI), "web", "materiais.js"), encoding="utf-8").read()
+    assert "ABAS_EXTRA" not in mat
 
 
-def test_materiais_js_monta_as_abas_de_extensao():
-    """o ponto de extensão no materiais.js (sem ele a aba não aparece): a lista de abas, o painel e a abertura"""
-    js = open(os.path.join(os.path.dirname(AQUI), "web", "materiais.js"), encoding="utf-8").read()
-    assert "window.ABAS_EXTRA" in js
-    assert "abrirExtra(k)" in js and "abrirExtra(ABA)" in js
-    assert "for (const x of EXTENSOES_ABAS) c.append(painel(" in js
+def test_menu_producao_do_topo_abre_as_duas_telas(monkeypatch):
+    from producao import web
+
+    class _App:
+        @staticmethod
+        def etapas_do_projeto(s):
+            return {"projeto": {"slug": s}, "etapas": [
+                {"chave": "engenharia", "nome": "Engenharia", "url": "/dividida", "itens": []},
+                {"chave": "producao", "nome": "Produção", "url": "/materiais?projeto=%s#geral" % s, "itens": [{"texto": "Lista de materiais"}]}]}
+
+    monkeypatch.setattr(web, "_app", lambda: _App)
+    h = _H("/api/projetos/posto-de-combustível/etapas")
+    assert web.rota_get(h, "/api/projetos/posto-de-combustível/etapas")
+    prod = [e for e in h.resposta["etapas"] if e["chave"] == "producao"][0]
+    assert [t["texto"] for t in prod["telas"]] == ["Lista de materiais", "Controle de produção"]
+    assert prod["telas"][1]["url"] == "/controle-producao?projeto=posto-de-combust%C3%ADvel"
+    assert prod["itens"][-1]["texto"] == "Controle de produção"            # a busca Ctrl+K acha
+    assert "telas" not in h.resposta["etapas"][0]
+    assert not web.rota_get(_H("/api/projetos/x/etapas/mais"), "/api/projetos/x/etapas/mais")
+
+
+def test_etapas_js_abre_a_lista_das_telas_e_reconhece_o_controle():
+    js = open(os.path.join(os.path.dirname(AQUI), "web", "etapas.js"), encoding="utf-8").read()
+    assert "controle-producao" in js
+    assert "(e.telas || []).length > 1" in js and "abrirLista(ev.currentTarget, e.telas.map(" in js
