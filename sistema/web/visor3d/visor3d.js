@@ -350,6 +350,9 @@ export class Visor3D {
     this.controles.addEventListener('end', () => this._movendo(false));
     this.raiz = new THREE.Group();
     this.cena.add(this.raiz);
+    // os objetos da cena (Cenas, 12/11: pessoas, carros, árvores, postes): fazem sombra no modo apresentação (_desenharSombra)
+    this.extras = new THREE.Group();
+    this.cena.add(this.extras);
     this.malhas = [];        // {malha, arestas, escolha, forma?, ids?}
     this.fichas = null;
     this.cabecalho = null;
@@ -1007,6 +1010,42 @@ export class Visor3D {
     if (pedir) this.pedirQuadro();
   }
 
+  /** Um material para os objetos da cena (12/11, Cenas: pessoas, carros, árvores, postes) iluminado como as peças: no modo
+   *  apresentação o sol com a sombra, o céu, o chão e as luzes da noite; fora dele, a luz fixa de sempre. `cor` em hex. Os
+   *  objetos vão no grupo `extras` — o único, além do modelo, que entra na sombra do sol. */
+  materialIluminado(cor) {
+    const L = this._luz || {};
+    const u = { ...L, uCor: { value: new THREE.Color().setStyle(cor || '#888888', THREE.LinearSRGBColorSpace) }, uEscuro: this._uEscuro || { value: 0 } };
+    return new THREE.ShaderMaterial({
+      uniforms: u,
+      vertexShader: /* glsl */`
+        varying vec3 vMundo; varying vec3 vNormal;
+        void main() {
+          vec4 m = modelMatrix * vec4(position, 1.0); vMundo = m.xyz;
+          vNormal = normalize(mat3(modelMatrix) * normal);
+          gl_Position = projectionMatrix * viewMatrix * m;
+        }`,
+      fragmentShader: /* glsl */`
+        varying vec3 vMundo; varying vec3 vNormal;
+        uniform vec3 uCor; uniform float uApresenta; uniform float uEscuro; uniform vec3 uSol;
+        ${LUZES_GLSL}
+        ${SOMBRA_GLSL}
+        void main() {
+          vec3 n = normalize(vNormal);
+          if (!gl_FrontFacing) n = -n;
+          if (uApresenta > 0.5) {
+            float sol = max(dot(n, uSol), 0.0) * luzDoSol(vMundo, n);
+            vec3 amb = mix(uAmbChao, uAmbCeu, 0.5 + 0.5 * n.z);
+            gl_FragColor = vec4(min(uCor * 0.86 * (uAmbK * amb + uSolK * uSolCor * sol + luzesDaNoite(vMundo, n)), 1.0), 1.0);
+          } else {
+            float d = max(dot(n, normalize(vec3(0.35, 0.55, 0.75))), 0.0);
+            gl_FragColor = vec4(min(uCor * (0.55 + 0.5 * d), 1.0), 1.0);
+          }
+        }`,
+      side: THREE.DoubleSide,
+    });
+  }
+
   // ---------------------------------------------------------------- apresentação: sol e sombra
 
   /** Liga ou desliga o modo apresentação (20/10, para mostrar ao cliente no celular): o sol parado no mundo, a sombra
@@ -1067,7 +1106,8 @@ export class Visor3D {
     const fundo = this.cena.background;
     this.cena.background = null;
     const trocas = [];
-    for (const o of this.cena.children) if (o !== this.raiz && o.visible) { trocas.push([o, true, true]); o.visible = false; }
+    // os objetos da cena (extras: pessoas, carros, árvores) também fazem sombra
+    for (const o of this.cena.children) if (o !== this.raiz && o !== this.extras && o.visible) { trocas.push([o, true, true]); o.visible = false; }
     for (const m of this.malhas) {
       trocas.push([m.malha, m.malha.material]);
       m.malha.material = m.sombra;

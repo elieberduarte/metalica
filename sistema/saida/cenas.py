@@ -47,6 +47,12 @@ CORES_LUZ = ("quente", "branca")
 ENTORNOS = ("liso", "grama", "patio", "concreto", "terra", "terreno")
 TIPOS_LUZ_MAO = ("poste", "refletor", "luminaria")
 LUZES_MAO_MAX = 20
+#: as figuras da cena do 3D (12/11, amostra-9 aprovada: "os dois, por cena", árvores do fundo em 3 densidades, postas como as
+#: luzes): pessoas, veículos e árvores no chão (mm do projeto, giro em graus), até 60; o estilo colorido ou de maquete branca
+#: ("auto": branca no Estúdio, colorida nos outros); as árvores do fundo (entorno.arvores 0–3) são da tela, não ficam aqui
+TIPOS_FIGURA = ("pessoa", "operario", "carro", "caminhonete", "caminhao", "arvore", "araucaria", "arbusto")
+ESTILOS_FIGURA = ("auto", "cor", "neutro")
+FIGURAS_MAX = 60
 MINIATURA_LADO = 480                       # px: a miniatura da lista das cenas
 
 
@@ -592,8 +598,32 @@ def _gravar_campos(g, s: str, i: str, corpo: dict) -> dict:
                     if not isinstance(patio, list) or len(patio) != 2:
                         raise ErroCena("dados do entorno inválidos.")
                     patio = [[round(v, 1) for v in _numeros(q, 2)] for q in patio]
+                arv = en.get("arvores", 0)
+                if arv not in (0, 1, 2, 3):
+                    raise ErroCena("dados do entorno inválidos.")
                 c["entorno"] = {"tipo": en.get("tipo", "liso"), "calcada": min(15.0, max(0.0, _numeros([en.get("calcada", 4)], 1)[0])),
-                                "patio": patio}
+                                "patio": patio, **({"arvores": arv} if arv else {})}
+        if "figuras" in corpo:
+            fg = corpo["figuras"]
+            itens = (fg or {}).get("itens") or [] if isinstance(fg, dict) or fg is None else None
+            if itens is None or not isinstance(itens, list) or (fg or {}).get("estilo", "auto") not in ESTILOS_FIGURA:
+                raise ErroCena("dados das figuras inválidos.")
+            if len(itens) > FIGURAS_MAX:
+                raise ErroCena("até %d figuras por cena." % FIGURAS_MAX)
+            lista = []
+            for f in itens:
+                if not isinstance(f, dict) or f.get("tipo") not in TIPOS_FIGURA:
+                    raise ErroCena("dados das figuras inválidos.")
+                semente = f.get("semente", 1)
+                if not isinstance(semente, int) or isinstance(semente, bool) or not 0 <= semente < 10 ** 6:
+                    raise ErroCena("dados das figuras inválidos.")
+                lista.append({"tipo": f["tipo"], "p": [round(v, 1) for v in _numeros(f.get("p"), 3)],
+                              "giro": round(_numeros([f.get("giro", 0)], 1)[0] % 360.0, 1), "semente": semente})
+            estilo = (fg or {}).get("estilo", "auto")
+            if not lista and estilo == "auto":
+                c.pop("figuras", None)
+            else:
+                c["figuras"] = {"estilo": estilo, "itens": lista}
         if "guarda" in corpo:
             gd = corpo["guarda"]
             if not isinstance(gd, dict) or not all(k in ("camera", "camadas", "estilo") and isinstance(v, bool) for k, v in gd.items()):
@@ -675,7 +705,7 @@ def gravar_imagem(g, s: str, i: str, corpo: dict) -> dict:
 
 #: Copiar ajustes (usuário, 11/11: "quando ajusto as configurações em uma cena poderia… ter a opção de copiar de uma cena para
 #: (sol, terreno...)"): os grupos e os campos de cada um; os marcados com * só existem na cena do 3D
-GRUPOS_COPIA = {"sol": ("sol",), "ambiente": ("*fundo", "*luzes", "*entorno"), "camadas": ("desligadas",), "estilo": ("*pintar", "*arestas"),
+GRUPOS_COPIA = {"sol": ("sol",), "ambiente": ("*fundo", "*luzes", "*entorno"), "figuras": ("*figuras",), "camadas": ("desligadas",), "estilo": ("*pintar", "*arestas"),
                 "enquadramento": ("*proporcao", "*lente"), "marca": ("marca",)}
 
 

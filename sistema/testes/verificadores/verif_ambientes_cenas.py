@@ -112,8 +112,8 @@ try:
     ok(aba.avaliar("visor.piso.material.uniforms.uAlfa.value") == 0, "sem as linhas do piso (12/11: \"essas linhas do piso para as cenas não precisa existir\")")
 
     print("P — o painel em seções (12/11, amostra-7: \"1 · Seções que abrem\")")
-    ok(aba.avaliar("document.querySelectorAll('#corpo3d details.secao').length === 4 && !!document.querySelector('details#marca-bloco')"),
-       "as seções Quadro, O que aparece, Ambiente e luz, Estilo e Marca d'água")
+    ok(aba.avaliar("document.querySelectorAll('#corpo3d details.secao').length === 5 && !!document.querySelector('details#marca-bloco')"),
+       "as seções Quadro, O que aparece, Ambiente e luz, Pessoas e veículos, Estilo e Marca d'água")
     clicar_no(aba, "#sec-quadro > summary"); aba.drenar(0.3)
     clicar_no(aba, "#sec-estilo > summary"); aba.drenar(0.3)
     abertas = aba.avaliar("[...document.querySelectorAll('details.secao[open]')].map(d => d.id)")
@@ -277,7 +277,7 @@ try:
         return (servidor()["fachada"].get("luzes") or {}).get("mao") or []
     mao = mao_do_servidor(1)
     ok(len(mao) == 1 and mao[0]["tipo"] == "poste", f"o poste posto no chão ({mao})")
-    ok(luz(aba)["n"] == min(40, n0 + 1) and aba.avaliar("visor.cena.children.some(o => o.isGroup && o.children.length === 3)"),
+    ok(luz(aba)["n"] == min(40, n0 + 1) and aba.avaliar("visor.extras.children.some(o => o.isGroup && o.children.length === 3)"),
        "a luz dele acesa e o poste (haste, braço, luminária) no 3D")
     clicar_no(aba, ".bt-luzes [data-tipo=refletor]")
     clicar_xy(0.5, 0.5)

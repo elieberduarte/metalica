@@ -22,6 +22,7 @@ import { Terreno } from './terreno.js';
 import { encaixar } from './encaixe.js';
 import { SOL_PADRAO, definirSol, controlesDoSol, ligarControlesDoSol } from './sol.js';
 import { ligarExportar } from './exportar_cenas.js';
+import { Figuras, TIPOS_FIGURA, arvoresDoFundo } from './figuras_cena.js';
 
 const $ = s => document.querySelector(s);
 const q = new URLSearchParams(location.search);
@@ -240,6 +241,14 @@ const entornoDaCena = () => ({ tipo: 'liso', calcada: 4, patio: null, ...((cena 
 const paraMundo = (p) => { const o = visor.cabecalho.origem; return [p[0] - o[0], p[1] - o[1], (p[2] || 0) - o[2]]; };
 const paraProjeto = (p) => { const o = visor.cabecalho.origem; return [p[0] + o[0], p[1] + o[1], p[2] + o[2]]; };
 const NOME_LUZ = { poste: 'Poste', refletor: 'Refletor', luminaria: 'Luminária' };
+// as figuras (12/11, amostra-9 aprovada: "os dois, por cena"; árvores do fundo em 3 densidades; postas como as luzes): pessoas,
+// veículos e árvores no chão. O estilo "auto" é a maquete branca no Estúdio e nos fundos lisos, colorido nos outros
+const FIGURAS_MAX = 60;
+const figurasDaCena = () => ({ estilo: 'auto', itens: [], ...((cena && cena.figuras) || {}) });
+const estiloDasFiguras = () => {
+  const e = figurasDaCena().estilo;
+  return e !== 'auto' ? e : ['estudio', 'branco', 'transparente'].includes(cena.fundo || 'ceu') ? 'neutro' : 'cor';
+};
 let fovCena = FOV_PADRAO, vistaMudou = false, quadroAtual = null, tempoMini = 0, ouvindoVista = false;
 
 /** Os botões que dependem da cena (a imagem e o render). */
@@ -258,6 +267,7 @@ function sairDaCena() {
   visor.definirAmbiente(null);                              // a luz de sempre
   visor.definirEntorno(null, false);                        // o piso de sempre
   desenharObjetosDasLuzes(null);
+  desenharFiguras(true);
   pararDeColocar();
   $('#ceu').hidden = true;
   visor.pintarPor('material');
@@ -435,7 +445,8 @@ function ceuDaTela() {
 /** Os postes, refletores e luminárias postos à mão, no 3D (aparecem na imagem; de noite a cabeça acende). */
 let grupoDasLuzes = null;
 function desenharObjetosDasLuzes(amb) {
-  if (grupoDasLuzes) { visor.cena.remove(grupoDasLuzes); grupoDasLuzes.traverse(o => { if (o.geometry) o.geometry.dispose(); }); grupoDasLuzes = null; }
+  // no grupo extras do visor (12/11): o poste faz sombra no chão, como as figuras
+  if (grupoDasLuzes) { visor.extras.remove(grupoDasLuzes); grupoDasLuzes.traverse(o => { if (o.geometry) o.geometry.dispose(); }); grupoDasLuzes = null; }
   const mao = eh3d() ? luzesDaCena().mao || [] : [];
   if (!mao.length) return;
   const g = grupoDasLuzes = new THREE.Group();
@@ -455,7 +466,30 @@ function desenharObjetosDasLuzes(amb) {
       const l = new THREE.Mesh(new THREE.CylinderGeometry(250, 250, 80, 16), cabeca); l.rotation.x = Math.PI / 2; l.position.set(x, y, z - 100); g.add(l);
     }
   }
-  visor.cena.add(g);
+  visor.extras.add(g);
+  visor._sombraSuja = true;
+}
+
+/** As figuras da cena (pessoas, veículos, árvores postas) e as árvores do fundo (Entorno, num ambiente com chão), no estilo
+ *  da cena. Só refaz quando algo mudou (o painel chama a cada passo do controle). As árvores do fundo saem pela câmera
+ *  GRAVADA da cena (girar a tela não as muda; Atualizar a vista as refaz). */
+let figuras = null, chaveFiguras = '';
+function desenharFiguras(tirar = false) {
+  if (!visor || !visor.extras) return;
+  figuras = figuras || new Figuras(visor);
+  const amb = !tirar && eh3d() ? ambienteDaCena() : null, en = eh3d() ? entornoDaCena() : {};
+  const itens = !tirar && eh3d() ? figurasDaCena().itens : [];
+  const arv = amb && en.tipo !== 'terreno' ? +en.arvores || 0 : 0, cam = (cena && cena.camera) || {};
+  const chave = JSON.stringify([itens, arv && [en.patio, cam.posicao], arv, !tirar && eh3d() && estiloDasFiguras()]);
+  if (chave === chaveFiguras) return;
+  chaveFiguras = chave;
+  const lista = itens.map(f => ({ ...f, p: paraMundo(f.p) }));
+  if (arv) {
+    const cx = visor.caixaVisivel(), olho = cam.posicao ? paraMundo(cam.posicao) : null;
+    lista.push(...arvoresDoFundo([[cx.min.x, cx.min.y], [cx.max.x, cx.max.y]],
+                                 en.patio ? en.patio.map(q => paraMundo([q[0], q[1], 0]).slice(0, 2)) : null, olho, arv, zDoChao()));
+  }
+  figuras.desenhar(lista, lista.length ? estiloDasFiguras() : 'cor');
 }
 
 /** O chão do entorno (o piso desenhado: grama, pátio, concreto, terra), pelo ambiente; sem ambiente, o piso de sempre. */
@@ -476,6 +510,7 @@ function aplicarFundo() {
   visor.definirAmbiente(amb && amb.luz ? { ...amb.luz, luzes: luzesDoAmbiente(amb) } : null, false);
   aplicarEntorno(amb);
   desenharObjetosDasLuzes(amb);
+  desenharFiguras();
   if (amb) {                                                // o céu atrás (#ceu), o chão na cor do horizonte
     visor.cena.background = null;
     // sem as linhas de 10 m do piso em nenhum ambiente (usuário, 12/11: "essas linhas do piso para as cenas não precisa existir")
@@ -511,6 +546,11 @@ function resumirPainel() {
   const luzes = amb && amb.noite ? (lz.refletores || lz.interna ? ' · luzes acesas' : ' · luzes apagadas') : '';
   const ent = amb && entornoDaCena().tipo !== 'liso' ? ' · ' + ENTORNO_NOME[entornoDaCena().tipo] : '';
   pos('res-ambiente', `${amb ? amb.nome : { branco: 'fundo branco', transparente: 'transparente', terreno: 'terreno' }[f] || f}${ent}${luzes}${amb && amb.noite ? '' : s.ligado ? ` · sol ${nf(s.altura, 0)}°` : ' · sem sol'}`);
+  const fi = figurasDaCena().itens, conta = (g) => fi.filter(f => (TIPOS_FIGURA[f.tipo] || {}).grupo === g).length;
+  const partes = [['gente', 'pessoa', 'pessoas'], ['veiculo', 'veículo', 'veículos'], ['verde', 'árvore', 'árvores']]
+    .map(([g, um, varios]) => { const n = conta(g); return n ? `${n} ${n === 1 ? um : varios}` : ''; }).filter(Boolean);
+  if (amb && +entornoDaCena().arvores) partes.push('árvores no fundo');
+  pos('res-figuras', partes.join(' · ') || 'nenhuma');
   pos('res-estilo', `cores por ${cena.pintar && cena.pintar !== 'editor' ? cena.pintar : 'material'} · ${cena.arestas === false ? 'sem arestas' : 'arestas finas'}`);
 }
 
@@ -537,6 +577,10 @@ function mostrarPainel3d() {
   $('#calcada').value = en.calcada; $('#calcada-val').textContent = nf(en.calcada, en.calcada % 1 ? 1 : 0) + ' m';
   $('#patio-linha').hidden = en.tipo !== 'patio';
   $('#patio-volta').disabled = !en.patio;
+  $('#arvores-linha').hidden = !amb || en.tipo === 'terreno';
+  marcar('#arvores3d', String(en.arvores || 0));
+  marcar('#figuras-estilo', figurasDaCena().estilo);
+  desenharListaFiguras();
   desenharLuzesMao();
   $('#lente3d').value = fovCena; $('#lente3d-val').textContent = nf(fovCena, 0) + '°';
   const pai = document.querySelector('#pintar3d [data-v=sistema]');
@@ -637,6 +681,7 @@ async function atualizarVista() {
   try {
     await gravar({ camera: cameraDaTela() });
     marcarVista(false);
+    desenharFiguras();                                      // as árvores do fundo pela vista nova
     agendarMiniatura(200);
     atualizarCartoes();
     aviso('A cena ficou com esta vista.');
@@ -677,7 +722,8 @@ function menuDoCartao(c, el) {
       atualizarCartoes();
     }]];
   if (c.tipo === '3d') itens.push(['Duplicar', async () => {
-    const campos = ['camera', 'desligadas', 'pintar', 'arestas', 'planta', 'piso_oculto', 'sol', 'situacao', 'guarda', 'proporcao', 'fundo'];
+    const campos = ['camera', 'desligadas', 'pintar', 'arestas', 'planta', 'piso_oculto', 'sol', 'situacao', 'guarda', 'proporcao', 'fundo',
+                    'luzes', 'entorno', 'figuras', 'marca'];
     const copia = Object.fromEntries(campos.filter(f => c[f] !== undefined).map(f => [f, c[f]]));
     try { const n = await pedir(`${API}/nova-3d`, { ...copia, nome: c.nome + ' (cópia)' }); await listar(n.id); } catch (e) { aviso('Não deu: ' + e.message); }
   }]);
@@ -708,9 +754,10 @@ function menuDoCartao(c, el) {
 // o estilo, o enquadramento, a marca d'água) e PARA QUAIS cenas; o servidor copia (…/cenas/copiar). A vista (a posição da
 // câmera) de cada uma fica. Na cena da foto só vale o que ela tem.
 const GRUPOS_COPIA = [['sol', 'Luz — o sol e a sombra', true], ['ambiente', 'Ambiente — o céu, a noite, o terreno… e as luzes da noite', true],
+                      ['figuras', 'Pessoas, veículos e árvores postas', false],
                       ['camadas', 'O que aparece — as camadas e os sistemas', false], ['estilo', 'Estilo — as cores e as arestas', false],
                       ['enquadramento', 'Enquadramento — a proporção e a lente', false], ['marca', 'Marca d\'água', false]];
-const SO_3D = new Set(['ambiente', 'estilo', 'enquadramento']);
+const SO_3D = new Set(['ambiente', 'figuras', 'estilo', 'enquadramento']);
 
 function copiarAjustes(origem) {
   if (!origem) return;
@@ -832,6 +879,20 @@ function ligar3d() {
   $('#calcada').oninput = () => { $('#calcada-val').textContent = nf(+$('#calcada').value, 1) + ' m'; mudarEntorno({ calcada: +$('#calcada').value }, 'calcada'); };
   $('#patio-desenhar').onclick = () => comecarAColocar({ tipo: 'patio' });
   $('#patio-volta').onclick = () => mudarEntorno({ patio: null });
+  $('#arvores3d').onclick = (e) => { const b = e.target.closest('button[data-v]'); if (b) mudarEntorno({ arvores: +b.dataset.v }); };
+  // as figuras (12/11, amostra-9): o estilo; o tipo e os cliques no chão (até Esc); girar, mover e tirar na lista
+  const mudarFiguras = (mud) => { if (eh3d()) mudar3d({ figuras: { ...figurasDaCena(), ...mud } }); };
+  $('#figuras-estilo').onclick = (e) => { const b = e.target.closest('button[data-v]'); if (b) mudarFiguras({ estilo: b.dataset.v }); };
+  for (const b of document.querySelectorAll('.bt-figuras button')) b.onclick = () => comecarAColocar({ tipo: b.dataset.tipo, figura: true });
+  $('#figuras-lista').onclick = (e) => {
+    const b = e.target.closest('button[data-r]'), it = e.target.closest('.item-luz');
+    if (!b || !it) return;
+    const i = +it.dataset.i, itens = [...figurasDaCena().itens];
+    if (b.dataset.r === 'tirar') { itens.splice(i, 1); mudarFiguras({ itens }); }
+    else if (b.dataset.r === 'girar') { itens[i] = { ...itens[i], giro: ((+itens[i].giro || 0) + 45) % 360 }; mudarFiguras({ itens }); }
+    else comecarAColocar({ tipo: itens[i].tipo, figura: true, i });
+  };
+  $('#figuras-tirar').onclick = () => { if (figurasDaCena().itens.length) { mudarFiguras({ itens: [] }); aviso('As figuras saíram da cena (↶ desfaz).'); } };
   // as luzes postas à mão: o tipo, depois o clique no 3D
   for (const b of document.querySelectorAll('.bt-luzes button')) b.onclick = () => comecarAColocar({ tipo: b.dataset.tipo });
   $('#luzes-mao').onclick = (e) => {
@@ -916,6 +977,16 @@ async function logoDa(empresa, tom) {
   return promessa;
 }
 
+/** O tamanho do logo [w, h] na marca A ou B para o logo de proporção `r` (largura/altura) e a base √(W × H). A altura tem
+ *  teto perto da do logo comprido da Hermes (7,7 : 1, 0,026 da base): o logo mais "quadrado" (a DEZN, ~3,3 : 1) saía com a placa
+ *  2,4 vezes mais alta (usuário, 12/11: "pode diminuir a altura desse quadro para ficar no mesmo padrão da Hermes"). */
+function medidaDoLogo(jeito, r, base) {
+  const [mw, mh] = jeito === 'B' ? [base * 0.2, base * 0.028] : [base * 0.22, base * 0.031];
+  let w = mw, h = w / r;
+  if (h > mh) { h = mh; w = h * r; }
+  return [w, h];
+}
+
 /** Desenha a marca `m` no canvas inteiro (a imagem pronta ou a prévia). */
 async function desenharMarca(cv, m) {
   if (!m || m.empresa === 'sem' || !temLogo(m.empresa)) return;
@@ -938,7 +1009,7 @@ async function desenharMarca(cv, m) {
     g.fillStyle = '#c9d1db'; g.font = `${Math.round(fh * 0.19)}px "Segoe UI", system-ui, sans-serif`;
     g.fillText(`Imagem ilustrativa · ${mes}`, xt, H - fh * 0.2);
   } else if (m.jeito === 'B') {
-    const [lw, lh] = caber(base * 0.2, base * 0.075);
+    const [lw, lh] = medidaDoLogo('B', r, base);
     const pad = Math.max(lh * 0.3, base * 0.008), pw = lw + 2 * pad, ph = lh + 2 * pad;
     const x = esq ? marg : W - marg - pw, y = H - marg - ph;
     g.shadowColor = 'rgba(0,0,0,.25)'; g.shadowBlur = base * 0.006;
@@ -947,7 +1018,7 @@ async function desenharMarca(cv, m) {
     g.shadowColor = 'transparent'; g.shadowBlur = 0;
     g.drawImage(logo, x + pad, y + pad, lw, lh);
   } else {
-    const [lw, lh] = caber(base * 0.22, base * 0.085);
+    const [lw, lh] = medidaDoLogo('A', r, base);
     g.globalAlpha = 0.88; g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = base * 0.004; g.shadowOffsetY = base * 0.001;
     g.drawImage(logo, esq ? marg : W - marg - lw, H - marg - lh, lw, lh);
   }
@@ -1347,7 +1418,7 @@ const desfeitos = [], refeitos = [];
 let ultimaMudanca = { tipo: null, t: 0 };
 
 // a cena do 3D (11/11): o retrato é a câmera, as camadas, o sol e o estilo/enquadramento
-const CAMPOS_3D = ['camera', 'desligadas', 'sol', 'pintar', 'arestas', 'fundo', 'proporcao', 'marca', 'luzes', 'entorno'];
+const CAMPOS_3D = ['camera', 'desligadas', 'sol', 'pintar', 'arestas', 'fundo', 'proporcao', 'marca', 'luzes', 'entorno', 'figuras'];
 
 function retrato() {
   if (eh3d()) return JSON.parse(JSON.stringify(Object.fromEntries(CAMPOS_3D.map(k => [k, cena[k] ?? null]))));
@@ -2088,17 +2159,68 @@ function comecarAColocar(c) {
   if (!eh3d()) return;
   colocando = c;
   document.body.classList.add('colocando-luz');
-  for (const b of document.querySelectorAll('.bt-luzes button')) b.classList.toggle('ligado', b.dataset.tipo === c.tipo && c.i === undefined);
-  $('#dica-luz').hidden = c.tipo === 'patio';
-  $('#dica-luz').textContent = DICAS_COLOCAR[c.tipo] + ' (Esc cancela)';
-  aviso(DICAS_COLOCAR[c.tipo] + ' (Esc cancela)');
+  for (const b of document.querySelectorAll('.bt-luzes button')) b.classList.toggle('ligado', !c.figura && b.dataset.tipo === c.tipo && c.i === undefined);
+  for (const b of document.querySelectorAll('.bt-figuras button')) b.classList.toggle('ligado', !!c.figura && b.dataset.tipo === c.tipo && c.i === undefined);
+  const nome = c.figura && (TIPOS_FIGURA[c.tipo] || {}).nome;
+  const dica = c.figura ? (c.i !== undefined ? `Clique no chão: o novo lugar de ${nome.toLowerCase()}.` : `Clique no chão para pôr: ${nome.toLowerCase()}. Cada clique põe mais uma.`)
+                        : DICAS_COLOCAR[c.tipo];
+  const el = c.figura ? $('#dica-figura') : $('#dica-luz');
+  $('#dica-luz').hidden = $('#dica-figura').hidden = true;
+  el.hidden = c.tipo === 'patio';
+  el.textContent = dica + ' (Esc termina)';
+  aviso(dica + ' (Esc termina)');
 }
 
 function pararDeColocar() {
   colocando = null;
   document.body.classList.remove('colocando-luz');
-  for (const b of document.querySelectorAll('.bt-luzes button')) b.classList.remove('ligado');
-  const d = document.getElementById('dica-luz'); if (d) d.hidden = true;
+  for (const b of document.querySelectorAll('.bt-luzes button, .bt-figuras button')) b.classList.remove('ligado');
+  for (const id of ['dica-luz', 'dica-figura']) { const d = document.getElementById(id); if (d) d.hidden = true; }
+}
+
+/** O giro de uma figura posta (graus): a pessoa olhando para a câmera, com um desvio; o veículo de frente para o prédio, no
+ *  eixo mais perto (estacionado); a árvore, qualquer. */
+function giroDaFigura(tipo, p, semente) {
+  const r = ((semente * 9301 + 49297) % 233280) / 233280, w = paraMundo(p);
+  const grupo = (TIPOS_FIGURA[tipo] || {}).grupo;
+  if (grupo === 'gente') {
+    const cam = visor.camera.position;
+    return Math.round((Math.atan2(cam.y - w[1], cam.x - w[0]) * 180 / Math.PI + (r - 0.5) * 120 + 360) % 360);
+  }
+  if (grupo === 'veiculo') {
+    const c = visor.caixaVisivel().getCenter(new THREE.Vector3()), dx = c.x - w[0], dy = c.y - w[1];
+    return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 0 : 180) : (dy > 0 ? 90 : 270);
+  }
+  return Math.round(r * 360);
+}
+
+/** A lista das figuras postas no painel: o nome e o número, girar 45° (↻), mover (📍) e tirar (✕). */
+function desenharListaFiguras() {
+  const itens = figurasDaCena().itens, conta = {};
+  $('#figuras-lista').innerHTML = itens.map((f, i) => {
+    conta[f.tipo] = (conta[f.tipo] || 0) + 1;
+    return `<div class="item-luz item-figura" data-i="${i}"><span>${(TIPOS_FIGURA[f.tipo] || {}).nome || f.tipo} ${conta[f.tipo]}</span>
+      <button type="button" data-r="girar" title="Girar 45°">↻</button><button type="button" data-r="mover" title="Mudar de lugar (clique no chão)">📍</button><button type="button" data-r="tirar" title="Tirar">✕</button></div>`;
+  }).join('');
+  $('#figuras-tirar').disabled = !itens.length;
+}
+
+function colocarFigura(x, y, c) {
+  const p = pontoNoChao(x, y);
+  if (!p) { aviso('Clique no chão.'); return; }
+  const fg = figurasDaCena(), itens = [...fg.itens], q = p.map(v => Math.round(v));
+  if (c.i !== undefined) {
+    itens[c.i] = { ...itens[c.i], p: q };
+    pararDeColocar();
+    mudar3d({ figuras: { ...fg, itens } });
+    aviso(`${TIPOS_FIGURA[c.tipo].nome}: mudou de lugar.`);
+    return;
+  }
+  if (itens.length >= FIGURAS_MAX) { aviso(`Até ${FIGURAS_MAX} figuras por cena.`); pararDeColocar(); return; }
+  const semente = itens.reduce((m, f) => Math.max(m, f.semente || 0), 0) + 1;
+  itens.push({ tipo: c.tipo, p: q, giro: giroDaFigura(c.tipo, q, semente), semente });
+  mudar3d({ figuras: { ...fg, itens } });
+  aviso(`Pôs: ${TIPOS_FIGURA[c.tipo].nome.toLowerCase()} (${itens.length} na cena). Clique para pôr mais; Esc termina.`);
 }
 
 /** O ponto do chão sob o mouse (o plano do chão, mm do projeto). */
@@ -2114,6 +2236,7 @@ function pontoNoChao(x, y) {
 
 function colocarEm(ev) {
   const r = tela.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top, c = colocando;
+  if (c.figura) { colocarFigura(x, y, c); return; }
   const lz = luzesDaCena(), mao = [...(lz.mao || [])];
   if (c.tipo === 'patio') {
     const p = pontoNoChao(x, y);
@@ -2428,7 +2551,7 @@ function desenharMarcas() {
 window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado, desenho, paredes: paredes.length, fina: !telaFina.hidden,
                                     fovCena, quadro: quadroAtual, vistaMudou, cenas: todasCenas.map(c => c.id) }), mostrarModo, pontoDo3d, fazerEncaixe,
                    concluir, desfazer, refazer, geometriaDoContorno, bordaDeBaixo, montarImagem, abrirCena, novaCena3d, imagemDaCena3d, cameraDaTela,
-                   exportar: () => exportar, tamanhoExportar };
+                   exportar: () => exportar, tamanhoExportar, medidaDoLogo };
 // saindo da página (o ← 3D antes de o 3D terminar de chegar): o pedido cortado pela troca de página não é erro
 let saindoDaPagina = false;
 addEventListener('beforeunload', () => { saindoDaPagina = true; });

@@ -98,7 +98,14 @@
   .item-luz { display: grid; grid-template-columns: 1fr 80px auto auto; align-items: center; gap: 4px; border: 1px solid var(--borda); border-radius: 5px; padding: 2px 6px; font-size: 12px; }
   .item-luz button { padding: 1px 6px; font-size: 12px; border: 0; background: none; }
   #dica-luz { color: var(--azul-tinta); font-weight: 600; }
-  #calcada-linha[hidden], #patio-linha[hidden], #dica-luz[hidden] { display: none; }
+  #calcada-linha[hidden], #patio-linha[hidden], #dica-luz[hidden], #arvores-linha[hidden], #dica-figura[hidden] { display: none; }
+  /* as figuras (12/11, amostra-9): pessoas, veículos e árvores */
+  .bt-figuras { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+  .bt-figuras button { padding: 4px 4px; font-size: 12px; text-align: left; }
+  .bt-figuras button.ligado { background: var(--azul2, #1f5fbf); color: #fff; }
+  #figuras-lista { display: flex; flex-direction: column; gap: 3px; max-height: 220px; overflow: auto; }
+  .item-figura { grid-template-columns: 1fr auto auto auto; }
+  #dica-figura { color: var(--azul-tinta); font-weight: 600; }
   body.colocando-luz #tela { cursor: crosshair; }
   .luzes3d label.faixa { display: grid; grid-template-columns: 18px 82px 1fr; align-items: center; gap: 4px; }
   #ambiente3d { max-width: 230px; justify-content: flex-end; }
@@ -231,6 +238,7 @@
       <div class="amb-grade" id="entorno3d"><button type="button" data-v="liso" title="O chão liso na cor do horizonte (como hoje)" style="background:#e7edf4"><span>Liso</span></button><button type="button" data-v="grama" title="Grama, com a calçada de concreto em volta" style="background:linear-gradient(135deg,#4f6e2a,#6d8a3c)"><span>Grama</span></button><button type="button" data-v="patio" title="Pátio asfaltado (estacionamento) e grama além" style="background:linear-gradient(135deg,#34373a,#4a4d50)"><span>Pátio</span></button><button type="button" data-v="concreto" title="Piso de concreto (pátio industrial, juntas de 4 m)" style="background:linear-gradient(135deg,#bdbbb5,#d4d2cc)"><span>Concreto</span></button><button type="button" data-v="terra" title="Terra e brita (terreno de obra)" style="background:linear-gradient(135deg,#8d7556,#b0a189)"><span>Terra</span></button><button type="button" data-v="terreno" title="A imagem do lugar (modo ver › Terreno)" style="background:linear-gradient(135deg,#7a8b6a,#a6b39a)"><span>Terreno real</span></button></div>
       <label class="faixa" id="calcada-linha">Calçada em volta <input type="range" id="calcada" min="0" max="15" step="0.5" aria-label="Largura da calçada (m)"><span id="calcada-val"></span></label>
       <div class="linha" id="patio-linha"><button type="button" id="patio-desenhar" title="Dois cliques no chão: os cantos do pátio asfaltado">Desenhar o pátio</button><button type="button" id="patio-volta" title="O pátio em volta do prédio (o padrão)">Em volta do prédio</button></div>
+      <div class="linha-opcao" id="arvores-linha">Árvores no fundo <span class="opcoes" id="arvores3d"><button type="button" data-v="0">nenhuma</button><button type="button" data-v="1">poucas</button><button type="button" data-v="2">médio</button><button type="button" data-v="3">muitas</button></span></div>
       <div class="linha-opcao">Fundo liso <span class="opcoes" id="fundo3d"><button type="button" data-v="branco">branco</button><button type="button" data-v="transparente">transparente</button></span></div>
       <div id="luzes3d" class="luzes3d" hidden><p class="titulo-secao">Luzes da noite</p>
         <label class="faixa"><input type="checkbox" id="luz-ref"> Refletores <input type="range" id="luz-ref-forca" min="0" max="3" step="0.1" aria-label="Força dos refletores"></label>
@@ -241,6 +249,14 @@
         <p class="dica" id="dica-luz" hidden></p>
         <div id="luzes-mao"></div></div>
       <div id="lugar-sol-3d"></div></div></details>
+    <details class="secao" name="painel-cena" id="sec-figuras"><summary><span class="t">Pessoas, veículos e árvores</span><span class="resumo" id="res-figuras"></span></summary>
+      <div class="corpo-sec luzes3d">
+      <div class="linha-opcao">Estilo <span class="opcoes" id="figuras-estilo"><button type="button" data-v="auto" title="Maquete branca no Estúdio e nos fundos lisos; colorido nos outros">pelo ambiente</button><button type="button" data-v="cor">coloridas</button><button type="button" data-v="neutro">maquete branca</button></span></div>
+      <p class="titulo-secao">Pôr na cena <span class="info" title="Escolha o que pôr e clique no chão: cada clique põe mais uma (Esc termina). A pessoa sai olhando para a câmera; o veículo, de frente para o prédio. Na lista: ↻ gira 45°, 📍 muda de lugar, ✕ tira. Até 60 por cena. As árvores do fundo ficam no Ambiente › Entorno.">ⓘ</span></p>
+      <div class="bt-figuras"><button type="button" data-tipo="pessoa">+ Pessoa</button><button type="button" data-tipo="operario">+ Operário</button><button type="button" data-tipo="carro">+ Carro</button><button type="button" data-tipo="caminhonete">+ Caminhonete</button><button type="button" data-tipo="caminhao">+ Caminhão</button><button type="button" data-tipo="arvore">+ Árvore</button><button type="button" data-tipo="araucaria">+ Araucária</button><button type="button" data-tipo="arbusto">+ Arbusto</button></div>
+      <p class="dica" id="dica-figura" hidden></p>
+      <div id="figuras-lista"></div>
+      <div class="linha"><button type="button" id="figuras-tirar">Tirar todas</button></div></div></details>
     <details class="secao" name="painel-cena" id="sec-estilo"><summary><span class="t">Estilo</span><span class="resumo" id="res-estilo"></span></summary>
       <div class="corpo-sec">
       <div class="linha-opcao">Cores <span class="opcoes" id="pintar3d"><button type="button" data-v="material">material</button><button type="button" data-v="sistema">sistema</button><button type="button" data-v="camada">camada</button><button type="button" data-v="perfil">perfil</button></span></div>

@@ -563,6 +563,34 @@ def test_entorno_e_luzes_postas_a_mao(tmp_path):
     assert C.ler(g, s, b)["entorno"]["tipo"] == "grama" and len(C.ler(g, s, b)["luzes"]["mao"]) == 2
 
 
+def test_figuras_e_arvores_do_fundo(tmp_path):
+    """12/11 (amostra-9 aprovada: pessoas, veículos e árvores postas como as luzes, o estilo por cena, as árvores do fundo em 3
+    densidades): os campos da cena, os limites, e o Copiar ajustes › Pessoas, veículos e árvores."""
+    g, s = _gerente(tmp_path)
+    i = C.nova_3d(g, s, {"nome": "A", "camera": _CAM, "entorno": {"tipo": "grama", "arvores": 2},
+                         "figuras": {"estilo": "neutro", "itens": [{"tipo": "pessoa", "p": [1000, -5000, 0], "giro": 400, "semente": 3},
+                                                                    {"tipo": "caminhao", "p": [0, -20000.04, 0]}]}})["id"]
+    c = C.ler(g, s, i)
+    assert c["entorno"]["arvores"] == 2
+    assert c["figuras"] == {"estilo": "neutro", "itens": [{"tipo": "pessoa", "p": [1000, -5000, 0], "giro": 40.0, "semente": 3},
+                                                          {"tipo": "caminhao", "p": [0, -20000.0, 0], "giro": 0.0, "semente": 1}]}
+    for ruim in ({"figuras": {"itens": [{"tipo": "dinossauro", "p": [0, 0, 0]}]}}, {"figuras": {"estilo": "neon"}},
+                 {"figuras": {"itens": [{"tipo": "carro", "p": [0, 0, 0]}] * 61}}, {"figuras": {"itens": "pessoa"}},
+                 {"figuras": {"itens": [{"tipo": "carro", "p": [0, 0, 0], "semente": True}]}},
+                 {"figuras": [1]}, {"entorno": {"tipo": "grama", "arvores": 5}}):
+        with pytest.raises(C.ErroCena):
+            C.gravar(g, s, i, ruim)
+    assert "arvores" not in C.gravar(g, s, i, {"entorno": {"tipo": "grama", "arvores": 0}})["entorno"]
+    assert "figuras" not in C.gravar(g, s, i, {"figuras": {"estilo": "auto", "itens": []}})   # nada posto, o padrão: sai
+    C.gravar(g, s, i, {"figuras": {"itens": [{"tipo": "araucaria", "p": [0, 30000, 0], "semente": 7}]}})
+    b = C.nova_3d(g, s, {"nome": "B", "camera": _CAM})["id"]
+    C.rota_post(g, s, ["copiar"], {"de": i, "para": [b], "grupos": ["figuras"]})
+    assert [f["tipo"] for f in C.ler(g, s, b)["figuras"]["itens"]] == ["araucaria"]
+    C.gravar(g, s, i, {"figuras": None})
+    C.rota_post(g, s, ["copiar"], {"de": i, "para": [b], "grupos": ["figuras"]})   # a origem sem figuras: o destino fica igual
+    assert "figuras" not in C.ler(g, s, b)
+
+
 def test_a_lista_nao_perde_a_cena_que_esta_sendo_gravada(tmp_path):
     """12/11 (verif_ambientes_cenas: a lista veio sem a cena "fachada" no meio das gravações): ler a lista enquanto a cena é
     gravada (o arquivo trocado no Windows) não pode deixar a cena de fora."""

@@ -224,6 +224,11 @@ try:
     ok(aba.avaliar("document.querySelector('#marca-jeito .ligado').dataset.v === 'B' && document.querySelector('#marca-empresa .ligado').dataset.v === 'principal'"),
        "o padrão: B, a empresa do projeto")
     ok(esperar(aba, "!document.getElementById('marca-previa').hidden", 10), "a prévia por cima do quadro")
+    # a placa da DEZN (logo deitado 3,34 : 1) da altura da da Hermes (7,74 : 1) — usuário, 12/11: "pode diminuir a altura desse
+    # quadro para ficar no mesmo padrão da Hermes, hoje ele está muito alto" (saía 2,3 vezes mais alta)
+    for jeito in ("B", "A"):
+        hh = aba.avaliar(f"cenaApi.medidaDoLogo('{jeito}', 7.74, 1000)[1]"); hd = aba.avaliar(f"cenaApi.medidaDoLogo('{jeito}', 3.34, 1000)[1]")
+        ok(hd <= hh * 1.15, f"marca {jeito}: o logo da DEZN da altura do da Hermes ({hd:.1f} × {hh:.1f})")
     clicar_no(aba, "#fundo3d [data-v=branco]")
     clicar_no(aba, "#barra-palco [data-vista=topo]")
     aba.drenar(0.8)
