@@ -13,7 +13,7 @@ pytest (tesoura T38 ×2, T74, MT71 em duas marcas, terças T.C.1 ×46, contraven
   6. o filtro "Falta na produção" esconde a T38-1; a busca "T.C" deixa só a T.C.1;
   7. "Estornar" desfaz a pintura (a linha volta a "—") e o histórico mostra o original riscado;
   8. sem erro no console.
-Se o Posto V2 estiver nesta máquina, a tela também abre com a lista dele (702 itens, 233 unidades de conjunto).
+Se o Posto V2 estiver nesta máquina, a tela também abre com a lista dele (os itens que producao.controle.itens dá para a lista dele).
 Porta livre, nunca a 8765/8766."""
 import base64, json, os, shutil, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -39,8 +39,14 @@ def _obra(slug, nome, lista, nomes):
 OBRA = _obra("obra-controle", "OBRA DO CONTROLE", _lista(), NOMES)
 TEM_POSTO = os.path.exists(os.path.join(POSTO, "detalhamento", "lista-de-materiais.json"))
 if TEM_POSTO:
-    _obra("posto-copia", "POSTO (CÓPIA)", json.load(open(os.path.join(POSTO, "detalhamento", "lista-de-materiais.json"), encoding="utf-8")),
-          json.load(open(os.path.join(POSTO, "detalhamento", "nomes.json"), encoding="utf-8")))
+    _lista_posto = json.load(open(os.path.join(POSTO, "detalhamento", "lista-de-materiais.json"), encoding="utf-8"))
+    _nomes_posto = json.load(open(os.path.join(POSTO, "detalhamento", "nomes.json"), encoding="utf-8"))
+    _obra("posto-copia", "POSTO (CÓPIA)", _lista_posto, _nomes_posto)
+    # os itens que a tela tem de mostrar: a conta do controle sobre a mesma lista (702 em 09/11; 648 desde os nomes do
+    # projetista de 12/11, com as meias unidades juntas — 5315b80, d9b0365)
+    sys.path.insert(0, BASE)
+    from producao import controle as _C
+    N_POSTO = len(_C.itens(_lista_posto, _nomes_posto))
 
 srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--dev", "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -195,7 +201,7 @@ try:
         aba.navegar(base + "/controle-producao?projeto=posto-copia", limite=60)
         ok(esperar(aba, "!!document.querySelector('#ctl-cartoes')", 60), "a cópia do Posto V2 abre no controle de produção")
         n = aba.avaliar("document.querySelectorAll('#controle-corpo .rolagem table tbody tr').length")
-        ok(n == 702, f"Posto V2: 702 itens ({n})")
+        ok(n == N_POSTO, f"Posto: {N_POSTO} itens ({n})")
         open(os.path.join(AQUI, "_controle_producao_posto.png"), "wb").write(base64.b64decode(aba.cmd("Page.captureScreenshot", format="png")["data"]))
 
     # o 400 do pedido de 17 a mais (passo 4) é o esperado

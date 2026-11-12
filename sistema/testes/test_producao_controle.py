@@ -212,7 +212,11 @@ def test_posto_v2_fecha_o_peso_e_numera_as_tesouras():
     assert len(ids) == len(set(ids))
     assert sum(1 for x in its if x["origem"] == "conjunto") == sum(c["instancias"] for c in L["conjuntos"])
     assert sum(x["kg"] for x in its) == pytest.approx(L["totais"]["peso"], abs=1.0)
-    assert {"T38-1", "T38-2", "T74", "MT71-6", "T.C.1", "CV.2"} <= set(ids)
+    # os nomes do projetista (12/11, d9b0365): a T38 ×2 eram duas meias da TRANSIÇÃO 1 (5315b80), a T74 é a TRANSIÇÃO 16, o
+    # MT71 são 4 TESOURA 1 + 2 TESOURA 2, e as cópias diferentes do mesmo nome com o número na frente
+    assert {"TRANSIÇÃO 1", "TRANSIÇÃO 16", "TESOURA 1-7", "TESOURA 2-2", "TESOURA 14-1", "TESOURA 14-2", "T.C.1",
+            "CV.2"} <= set(ids)
+    assert not {"T38-1", "T74", "MT71-6", "TESOURA 14"} & set(ids)
 
 
 # ------------------------------------------------------------------ as rotas (producao/web.py)
