@@ -109,3 +109,30 @@ def test_exportar_pacote_do_projeto():
     assert "if (fn === 'exportar-pacote') { exportarPacote(); return; }" in js
     assert "'/api/projetos/' + encodeURIComponent(proj) + '/exportar'" in js and "if (salvar) executar(salvar);" in js
     assert "exportar-json" not in js
+
+
+#: Os comandos dos menus escondidos das telas que, de propósito, não têm item na barra (atalho de teclado, botão próprio
+#: na tela, outra tela). Congelado em 12/11: o comando NOVO de uma tela tem de ganhar o item na barra.
+SEM_LUGAR = {
+    "3d": {"abrir-cad", "agrupar", "alternar-tema", "apagar", "cobertura-aberta", "cobertura-retraida", "desagrupar",
+           "desfazer", "dividir-2d", "esqueleto", "excluir-desenhos", "ficha-mouse", "materiais", "planta-lancamento",
+           "refazer", "resultado-analise", "selecionar-tudo", "trocar-grupos"},
+    "2d": {"alternar-tema", "apagar", "colar", "colar-autocad", "copiar", "copiar-base", "criar-bloco", "desfazer", "detalhar",
+           "editar-bloco", "eixo", "inserir-bloco", "lancar-3d", "localizar", "materiais", "penas", "pm-configuracao",
+           "refazer", "revisoes", "selecionar-tudo", "zoom-anterior", "zoom-janela"},
+}
+
+
+def test_comando_novo_das_telas_tem_lugar_na_barra():
+    """O Explodir com critério entrou só no menu Editar do editor (escondido pela barra única) e o usuário não o achou
+    (12/11, Galpão Viena: "Onde está a ferramenta de explodir?"). Todo comando do menu de uma tela tem item na barra —
+    ou está na lista SEM_LUGAR, de propósito."""
+    tem = _comandos_do_mapa(_ler("barra_unica.js"))
+    faltam = []
+    for lado, arq in (("3d", ("editor3d", "editor.html")), ("2d", ("cad", "cad.html"))):
+        h = _ler(*arq)
+        topo = h[h.index('<header class="topo"'):h.index("</header>")]
+        for a in sorted(set(re.findall(r'data-acao="([^"]+)"', topo))):
+            if (lado, "acao:" + a) not in tem and a not in SEM_LUGAR[lado]:
+                faltam.append((lado, a))
+    assert not faltam, faltam

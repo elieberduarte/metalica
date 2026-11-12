@@ -11,6 +11,8 @@ banzos U, 6 diagonais, 4 presilhas), um pilar PS, um contravento Ø16, uma viga 
      treliça pega a treliça inteira (o grupo), os perfis lidos (PS 500×300×8×12,5, Barra redonda Ø16, a viga dupla em 2);
   C. Ctrl+Z: o sólido de volta;
   D. sem erros no console;
+  F. pela barra única da área de trabalho (a tela do usuário): Modelo › Explodir com critério… explode no quadro do 3D;
+  G. pelo menu do botão direito no sólido (clique direito de verdade);
   E. o Galpão Viena de verdade (C:\Metálica\dados\galpão-viena, quando existe nesta máquina; uma CÓPIA na pasta do teste):
      1.903 pedaços → as treliças e as peças em menos de 60 s, a da frente com as 1.014 presilhas dentro.
 Porta livre, nunca a 8765/8766."""
@@ -131,6 +133,56 @@ try:
        "[C] Ctrl+Z: o sólido de volta, sem grupo")
     erros = [x for x in aba.console if x[0] in ("error", "excecao") and "favicon" not in str(x)]
     ok(not erros, f"[D] sem erros no console: {erros[:3]}")
+    # --- G. o botão direito no sólido (usuário, 12/11: "Pode deixar a opção nesse menu do botão direito")
+    aba.avaliar("editor.camera.zoomExtensao(); editor.camera.concluirAnimacao && editor.camera.concluirAnimacao(); 1")
+    aba.drenar(0.8)
+    pt = json.loads(aba.avaliar("""JSON.stringify((() => { const r = editor.el.canvas.getBoundingClientRect();
+      for (let fy = 0.2; fy < 0.9; fy += 0.02) for (let fx = 0.1; fx < 0.9; fx += 0.01) {
+        const x = r.width * fx, y = r.height * fy, s = editor.selecao.sob(x, y);
+        if (s && s.id === 'tudo' && document.elementFromPoint(r.left + x, r.top + y) === editor.el.canvas) return [r.left + x, r.top + y];
+      } return null; })())"""))
+    ok(bool(pt), f"[G] um ponto da tela sobre o sólido ({pt})")
+    if pt:
+        # como no print do usuário: o sólido selecionado (clique), depois o botão direito nele
+        for tipo in ("mouseMoved", "mousePressed", "mouseReleased"):
+            aba.cmd("Input.dispatchMouseEvent", type=tipo, x=pt[0], y=pt[1], button="left", clickCount=1)
+        aba.drenar(0.4)
+        if not aba.avaliar("editor.selecao.ids.has('tudo')"):
+            aba.avaliar("editor.selecao.definir(['tudo']); 1")
+        for tipo in ("mousePressed", "mouseReleased"):
+            aba.cmd("Input.dispatchMouseEvent", type=tipo, x=pt[0], y=pt[1], button="right", clickCount=1)
+        aba.drenar(0.4)
+        itens = aba.avaliar("[...document.querySelectorAll('.menu-contexto button')].map(b => b.textContent).join(' | ')") or ""
+        ok("Explodir com critério" in itens, f"[G] o menu do botão direito tem o Explodir com critério ({itens[:160]})")
+        aba.avaliar("""(() => { const b = [...document.querySelectorAll('.menu-contexto button')].find(x => /Explodir com crit/.test(x.textContent));
+          if (b) b.dataset.verif = 'explodir-ctx'; return 1; })()""")
+        clicar('[data-verif="explodir-ctx"]')
+        txt = esperar("(() => { const d = document.querySelector('#dialogo'); return d && d.open && /Explodir com crit/.test(d.textContent) ? d.textContent : null; })()", 60) or ""
+        ok("1 treliça inteira" in txt, "[G] e o clique explode (o resumo abre)")
+        clicar("#dialogo-cancelar")
+        ok(esperar(f"{N} === 1", 10) is True, "[G] Desfazer: o sólido de volta")
+    # --- F. pela barra única da área de trabalho, a tela que o usuário usa (12/11: "Onde está a ferramenta de explodir?" —
+    # o item tinha entrado só no menu Editar do editor, que a barra esconde): Modelo › Explodir com critério…
+    esperar("!editor._autosalvando && !editor._autosavePendente", 120)
+    aba.navegar(base + "/dividida?projeto=viena", limite=90)
+    ok(bool(esperar("!!document.querySelector('.menu[data-nome=\"Modelo\"] .menu-botao')", 30)), "[F] a área de trabalho abriu com a barra única")
+    esperar("(() => { const f = document.getElementById('f3d'); const w = f && f.contentWindow; return !!(w && (w.ver3dPronto || (w.editor && w.editor.documento))); })()", 120)
+    aba.drenar(1.0)
+    item = None
+    for _ in range(10):
+        clicar('.menu[data-nome="Modelo"] .menu-botao')
+        item = esperar("""(() => { const b = [...document.querySelectorAll('.menu[data-nome="Modelo"] .menu-lista button')]
+          .find(x => /Explodir com crit/.test(x.textContent)); if (!b) return null; b.dataset.verif = 'explodir'; return b.textContent; })()""", 2)
+        if item: break
+    ok(bool(item), f"[F] o menu Modelo da barra tem o Explodir com critério ({item!r})")
+    clicar('[data-verif="explodir"]')
+    DLG = "(() => { const d = document.getElementById('f3d').contentDocument; const g = d && d.querySelector('#dialogo'); return g && g.open && /Explodir com crit/.test(g.textContent) ? g.textContent : null; })()"
+    txt = esperar(DLG, 120) or ""
+    ok("1 treliça inteira" in txt, "[F] o clique na barra explode no editor do quadro 3D: " + " ".join(txt.split())[:120])
+    aba.avaliar("document.getElementById('f3d').contentDocument.querySelector('#dialogo-cancelar').click(); 1")
+    ok(esperar("(() => { const w = document.getElementById('f3d').contentWindow; return w.editor.documento.lista.filter(e => e.tipo === 'solido').length === 1; })()", 20) is True,
+       "[F] e o Desfazer do resumo volta o sólido")
+    esperar("(() => { const w = document.getElementById('f3d').contentWindow; return !w.editor._autosalvando && !w.editor._autosavePendente; })()", 120)
     # --- E. o Galpão Viena de verdade
     if os.path.isdir(os.path.join(DADOS, "viena-real")):
         # sair com a gravação automática em curso dispara o aviso de edição por gravar (beforeunload): espera ela terminar

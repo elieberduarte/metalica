@@ -106,6 +106,11 @@ export function itensDoMenu(editor, x, y) {
     if (ents.some(q => q.tipo === 'chapa')) itens.push({ rotulo: 'Alças da chapa no 3D', fazer: ferramenta('editar_chapa') });
     if (perfil) itens.push({ rotulo: 'Virar perfil', tecla: 'V', fazer: ferramenta('virar') },
                            { rotulo: 'Encaixar ponta', fazer: ferramenta('encaixar') });
+    // o sólido do SketchUp com tudo dentro (o Galpão Viena: 1 peça, 63 mil faces): Explodir com critério (usuário, 12/11:
+    // "Pode deixar a opção nesse menu do botão direito") — só no sólido grande, não em toda peça
+    if (typeof editor.explodirComCriterio === 'function' && ents.some(q => q.tipo === 'solido' && (q.faces || []).length >= 100)) {
+      itens.push('-', { rotulo: 'Explodir com critério…', fazer: () => editor.explodirComCriterio() });
+    }
     itens.push('-', { rotulo: 'Apagar', tecla: 'Del', fazer: () => editor.apagarSelecao() });
   } else {
     itens.push({ titulo: 'Modelo' },

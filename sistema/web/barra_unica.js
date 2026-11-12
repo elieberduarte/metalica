@@ -146,6 +146,7 @@
       HR,
       I('Eixos da obra…', '3d', 'eixos-obra', { antes: 'Estrutura › Eixos da obra…' }),
       HR,
+      I('Explodir com critério…', '3d', 'explodir-criterio', { dica: 'o modelo do SketchUp que chegou como UMA peça: cada pedaço vira peça com o perfil lido, e as treliças ficam inteiras (um grupo cada)' }),
       S('Peça selecionada', [
         I('Cantos redondos…', '3d', 'cantos-redondos', { antes: 'Estrutura › Cantos redondos…' }),
         I('Multidobra da telha no 3D…', '3d', 'multidobras-3d', { dica: 'a telha do beiral reescrita no 3D com o raio comercial (R450), girando no vértice das retas — para conferir com banzos e terças' }),
