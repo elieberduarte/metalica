@@ -452,6 +452,11 @@ def analitico(doc, base: Optional[float] = None) -> dict:
                     melhor = (d, j, t, q)
             if melhor:
                 _d, j, t, q = melhor
+                if ln["papel"] == "terça":
+                    # onde a terça senta de verdade: o nó reaproveitado no banzo pode estar a até 2·TOL_NO dali (o nó
+                    # do painel da tesoura) — a faixa de influência sai do assento, não do nó (configurador 20×40, 12/11:
+                    # terças a 1,592 m puxadas para os nós a 1,667 m, faixa 5 % maior)
+                    ln.setdefault("assento", {})[lado] = tuple(q)
                 novo = no_em(j, q, t)
                 if novo == n:
                     continue
@@ -575,12 +580,18 @@ def analitico(doc, base: Optional[float] = None) -> dict:
     barras = []
     for k, ln in enumerate(linhas):
         seq = [(0.0, ln["na"])] + sorted(cortes.get(k, [])) + [(1.0, ln["nb"])]
+        assento = ln.get("assento") or {}
         for (t0, n0), (t1, n1) in zip(seq, seq[1:]):
             if n0 == n1:
                 continue
-            barras.append({"a": n0, "b": n1, "papel": ln["papel"], "peca": ln["peca"], "perfil": ln["perfil"],
-                           "ids": ln["ids"], "duplo": ln["duplo"], "importada": bool(ln.get("importada")),
-                           "deitada": bool(ln.get("deitada"))})
+            br = {"a": n0, "b": n1, "papel": ln["papel"], "peca": ln["peca"], "perfil": ln["perfil"],
+                  "ids": ln["ids"], "duplo": ln["duplo"], "importada": bool(ln.get("importada")),
+                  "deitada": bool(ln.get("deitada"))}
+            if t0 == 0.0 and "na" in assento:
+                br["assento_a"] = [round(c, 1) for c in assento["na"]]
+            if t1 == 1.0 and "nb" in assento:
+                br["assento_b"] = [round(c, 1) for c in assento["nb"]]
+            barras.append(br)
 
     # --- 5. o que sobrou sem ligar
     gr = collections.Counter()

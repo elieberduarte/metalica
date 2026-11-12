@@ -554,6 +554,8 @@ def montar(doc, par: Optional[dict] = None) -> dict:
             "sec": sec, "duplo": duplo, "rot": float(getattr(ent, "rotacao", 0.0) or 0.0) if ent is not None else 0.0,
             "R": _eixos(a, b, float(getattr(ent, "rotacao", 0.0) or 0.0) if ent is not None else 0.0),
             "soltos": [],
+            # onde a terça senta no banzo (o nó dela pode ter ido ao nó do painel da tesoura, a até 12 cm): a faixa sai daqui
+            **{k_: (np.array(br[k_], float) / 1000.0).tolist() for k_ in ("assento_a", "assento_b") if br.get(k_)},
         })
     for nome, n in sem_secao.items():
         avisos.append("%d barra(s) com o perfil \"%s\" fora do catálogo ficaram fora da análise" % (n, nome))
@@ -1242,7 +1244,12 @@ def _tercas_da_cobertura(M: dict, cob: dict, avisos: List[str]) -> dict:
             return min(incl_c, key=lambda x: min(abs(s_ - x[0]), abs(s_ - x[1])))[2] if incl_c else 0.0
         for tc in ts:
             pts = np.array([nos[k] for k in tc["nos"]])
-            tc.update(s=float(np.mean(pts[:, :2] @ u)), z=float(np.mean(pts[:, 2])), t0=float((pts[:, :2] @ n).min()),
+            # a posição ao longo da água é a do assento no banzo, quando o esqueleto levou a ponta a um nó vizinho (o
+            # nó do painel da tesoura a até 12 cm): pelos nós, as terças a 1,592 m do configurador 20×40 davam faixas de
+            # 1,49 a 1,675 m (12/11)
+            ass = [np.array(barras[i][k_]) for i in tc["barras"] for k_ in ("assento_a", "assento_b") if barras[i].get(k_)]
+            pos = np.array(ass) if ass else pts
+            tc.update(s=float(np.mean(pos[:, :2] @ u)), z=float(np.mean(pos[:, 2])), t0=float((pts[:, :2] @ n).min()),
                       t1=float((pts[:, :2] @ n).max()), L=sum(barras[i]["L"] for i in tc["barras"]))
         for tc in ts:
             viz = [o for o in ts if o is not tc and min(o["t1"], tc["t1"]) - max(o["t0"], tc["t0"]) > 0.3]
