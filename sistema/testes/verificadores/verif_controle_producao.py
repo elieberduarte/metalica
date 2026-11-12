@@ -1,0 +1,203 @@
+# -*- coding: utf-8 -*-
+"""A aba Controle da lista de materiais (controle de produção, 12/11/2026), com eventos de verdade.
+
+Servidor de teste com --dev (o controle é extensão do desenvolvimento) e uma obra com a lista da obra de teste do
+pytest (tesoura T38 ×2, T74, MT71 em duas marcas, terças T.C.1 ×46, contraventos CV.2 ×6, chapas):
+  1. a aba "Controle" aparece entre Acessórios e Resumos, abre pelo clique e pelo #controle depois de recarregar;
+  2. os cartões começam em 0 % e a lista tem T38-1, T38-2, T74, MT71-1..3 e T.C.1 (46);
+  3. "Apontar" na T.C.1, etapa Pintura, 30 → a linha mostra "30 de 46" e o registro fica em producao/apontamentos.jsonl;
+  4. 17 a mais é recusado no próprio diálogo ("só faltam 16"), sem gravar;
+  5. T38-1 na Produção (quantidade 1) → ✓ e o cartão da Produção sai do 0 %;
+  6. o filtro "Falta na produção" esconde a T38-1; a busca "T.C" deixa só a T.C.1;
+  7. "Estornar" desfaz a pintura (a linha volta a "—") e o histórico mostra o original riscado;
+  8. sem erro no console.
+Se o Posto V2 estiver nesta máquina, a aba também abre com a lista dele (702 itens, 233 unidades de conjunto).
+Porta livre, nunca a 8765/8766."""
+import base64, json, os, shutil, subprocess, sys, tempfile, time
+BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
+from verificar_editor import Aba, CHROMES, _json, _porta_livre
+from test_producao_controle import _lista, NOMES
+
+AQUI = os.path.dirname(os.path.abspath(__file__))
+PORTA = _porta_livre()
+DADOS = tempfile.mkdtemp(prefix="metalica_controle_")
+POSTO = os.path.join(r"C:\Metálica\dados", "posto-de-combustível-v2")
+
+
+def _obra(slug, nome, lista, nomes):
+    pasta = os.path.join(DADOS, slug)
+    os.makedirs(os.path.join(pasta, "detalhamento"))
+    json.dump({"formato": 1, "nome": nome, "tipo": "ifc", "alterado": "2026-11-12T08:00:00"},
+              open(os.path.join(pasta, "projeto.json"), "w", encoding="utf-8"))
+    json.dump(lista, open(os.path.join(pasta, "detalhamento", "lista-de-materiais.json"), "w", encoding="utf-8"), ensure_ascii=False)
+    json.dump(nomes, open(os.path.join(pasta, "detalhamento", "nomes.json"), "w", encoding="utf-8"), ensure_ascii=False)
+    return pasta
+
+
+OBRA = _obra("obra-controle", "OBRA DO CONTROLE", _lista(), NOMES)
+TEM_POSTO = os.path.exists(os.path.join(POSTO, "detalhamento", "lista-de-materiais.json"))
+if TEM_POSTO:
+    _obra("posto-copia", "POSTO (CÓPIA)", json.load(open(os.path.join(POSTO, "detalhamento", "lista-de-materiais.json"), encoding="utf-8")),
+          json.load(open(os.path.join(POSTO, "detalhamento", "nomes.json"), encoding="utf-8")))
+
+srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--dev", "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+base = f"http://localhost:{PORTA}"
+falhas = []
+try: sys.stdout.reconfigure(errors="replace")
+except Exception: pass
+
+
+def ok(c, m):
+    print(("  ok    " if c else "  FALHA ") + m, flush=True)
+    if not c: falhas.append(m)
+
+
+def esperar(aba, expr, limite=30):
+    t0 = time.time()
+    while time.time() - t0 < limite:
+        try:
+            if aba.avaliar(expr): return True
+        except Exception: pass
+        aba.drenar(0.25)
+    return False
+
+
+def clicar(aba, seletor):
+    r = aba.avaliar(f"(() => {{ const e = document.querySelector({json.dumps(seletor)}); if (!e) return null; e.scrollIntoView({{block: 'center'}});"
+                    f" const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; }})()")
+    if not r: return False
+    for t in ("mousePressed", "mouseReleased"):
+        aba.cmd("Input.dispatchMouseEvent", type=t, x=r[0], y=r[1], button="left", clickCount=1)
+    return True
+
+
+def digitar(aba, seletor, texto):
+    """foco no campo, seleciona tudo e digita (teclado de verdade)"""
+    clicar(aba, seletor)
+    aba.avaliar(f"document.querySelector({json.dumps(seletor)}).select()")
+    aba.cmd("Input.insertText", text=texto)
+
+
+def celula(item, coluna):
+    """o texto da célula da coluna (pelo título) na linha do item"""
+    return (f"(() => {{ const t = document.querySelector('#controle-corpo table'); if (!t) return null;"
+            f" const i = [...t.tHead.rows[0].cells].findIndex(c => c.textContent.trim().startsWith({json.dumps(coluna)}));"
+            f" const tr = [...t.tBodies[0].rows].find(r => r.cells[0].textContent.trim() === {json.dumps(item)});"
+            f" return tr ? tr.cells[i].textContent.trim() : null; }})()")
+
+
+def apontar(aba, item, etapa=None, qtd=None):
+    clicar(aba, f"#controle-corpo button[data-item={json.dumps(item)}]")
+    if not esperar(aba, "!!document.querySelector('#ctl-dialogo[open]')", 10): return False
+    if etapa:
+        clicar(aba, f"#ctl-dialogo input[name=ctl-etapa][value={etapa}]")
+    if qtd is not None:
+        digitar(aba, "#ctl-qtd", str(qtd))
+    clicar(aba, "#ctl-confirmar")
+    return True
+
+
+exe = next(c for c in CHROMES if os.path.exists(c)); cdp = _porta_livre(); perfil = tempfile.mkdtemp(prefix="verif_controle_")
+nav = subprocess.Popen([exe, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run",
+                        "--remote-allow-origins=*", f"--user-data-dir={perfil}", f"--remote-debugging-port={cdp}", "about:blank"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+try:
+    for _ in range(80):
+        try: _json(base + "/api/versao"); break
+        except Exception: time.sleep(0.5)
+    for _ in range(60):
+        alvos = [t for t in _json(f"http://127.0.0.1:{cdp}/json/list") if t.get("type") == "page"]
+        if alvos: break
+        time.sleep(0.5)
+    aba = Aba(alvos[0]["webSocketDebuggerUrl"])
+    for dm in ("Page", "Runtime", "Log"): aba.cmd(f"{dm}.enable")
+    aba.cmd("Emulation.setDeviceMetricsOverride", width=1400, height=1000, deviceScaleFactor=1, mobile=False)
+
+    # 1. a aba
+    aba.navegar(base + "/materiais?projeto=obra-controle#geral", limite=40)
+    ok(esperar(aba, "!!document.querySelector('#abas button[data-aba=controle]')", 40), "a aba Controle aparece na lista de materiais")
+    ordem = aba.avaliar("[...document.querySelectorAll('#abas button[data-aba]')].map(b => b.dataset.aba)") or []
+    ok("controle" in ordem and ordem.index("controle") == ordem.index("acessorios") + 1 and ordem[ordem.index("controle") + 1] == "resumos",
+       f"entre Acessórios e Resumos ({ordem})")
+    clicar(aba, "#abas button[data-aba=controle]")
+    ok(esperar(aba, "!document.querySelector('#aba-controle').hidden && !!document.querySelector('#ctl-cartoes')", 20),
+       "o clique abre a aba com os cartões")
+
+    # 2. o começo
+    cartoes = aba.avaliar("[...document.querySelectorAll('#ctl-cartoes .cartao-n[data-etapa] b')].map(b => b.textContent)") or []
+    ok(cartoes == ["0,0 %", "0,0 %"], f"Produção e Pintura começam em 0 % ({cartoes})")
+    ids = aba.avaliar("[...document.querySelectorAll('#controle-corpo table tbody tr')].map(r => r.cells[0].textContent.trim())") or []
+    ok({"T38-1", "T38-2", "T74", "MT71-1", "MT71-3", "T.C.1", "CV.2"} <= set(ids) and "T38" not in ids,
+       f"itens numerados (T38-1, T38-2, T74, MT71-1..3) e peças pela posição ({len(ids)} linhas)")
+    ok(aba.avaliar(celula("T.C.1", "Qtd")) == "46", "T.C.1 com 46 peças")
+
+    # 3. apontar 30 terças na pintura
+    ok(apontar(aba, "T.C.1", "pintura", 30), "o diálogo de apontar abre pela linha da T.C.1")
+    ok(esperar(aba, "!document.querySelector('#ctl-dialogo')", 15), "o diálogo fecha depois de apontar")
+    ok(esperar(aba, celula("T.C.1", "Pintura") + " === '30 de 46'", 15), f"a linha mostra 30 de 46 na pintura ({aba.avaliar(celula('T.C.1', 'Pintura'))})")
+    arq = os.path.join(OBRA, "producao", "apontamentos.jsonl")
+    evs = [json.loads(l) for l in open(arq, encoding="utf-8")] if os.path.exists(arq) else []
+    ok(len(evs) == 1 and evs[0]["item"] == "T.C.1" and evs[0]["etapa"] == "pintura" and evs[0]["quantidade"] == 30 and evs[0]["quem"],
+       "o apontamento ficou no projeto (producao/apontamentos.jsonl), com quem apontou")
+
+    # 4. a mais é recusado no diálogo
+    apontar(aba, "T.C.1", "pintura", 17)
+    ok(esperar(aba, "(() => { const e = document.querySelector('#ctl-dialogo .erro'); return e && !e.hidden && /só faltam 16/.test(e.textContent); })()", 10),
+       "17 a mais é recusado no diálogo (só faltam 16)")
+    clicar(aba, "#ctl-dialogo .acoes button[type=button]")
+    esperar(aba, "!document.querySelector('#ctl-dialogo')", 5)
+    ok(len(open(arq, encoding="utf-8").read().strip().splitlines()) == 1, "nada gravado com o pedido recusado")
+
+    # 5. uma tesoura na produção
+    apontar(aba, "T38-1")
+    ok(esperar(aba, celula("T38-1", "Produção") + " === '✓'", 15), "T38-1 produzida (✓)")
+    prod = aba.avaliar("document.querySelector('#ctl-cartoes .cartao-n[data-etapa=producao] b').textContent")
+    ok(prod not in (None, "0,0 %"), f"o cartão da Produção sai do 0 % ({prod})")
+
+    # 6. filtros
+    aba.avaliar("(() => { const s = document.querySelector('#ctl-filtro-etapa'); s.value = 'producao'; s.dispatchEvent(new Event('change')); })()")
+    ok(esperar(aba, celula("T38-1", "Item") + " === null && " + celula("T38-2", "Item") + " === 'T38-2'", 10),
+       "'Falta na produção' esconde a T38-1 e mostra a T38-2")
+    aba.avaliar("(() => { const s = document.querySelector('#ctl-filtro-etapa'); s.value = ''; s.dispatchEvent(new Event('change')); })()")
+    digitar(aba, "#filtro", "t.c")
+    visiveis = aba.avaliar("[...document.querySelectorAll('#controle-corpo tbody tr[data-filtro]:not(.oculta)')].map(r => r.cells[0].textContent.trim())") or []
+    ok(visiveis == ["T.C.1"], f"a busca 'T.C' deixa só a T.C.1 ({visiveis})")
+    digitar(aba, "#filtro", "")
+    aba.avaliar("document.querySelector('#filtro').dispatchEvent(new Event('input'))")
+
+    # 7. estorno
+    aba.avaliar("window.confirm = () => true")
+    ev_id = evs[0]["id"] if evs else ""
+    clicar(aba, f"#controle-corpo tr[data-evento='{ev_id}'] button")
+    ok(esperar(aba, celula("T.C.1", "Pintura") + " === '—'", 15), "o estorno desfaz a pintura da T.C.1")
+    ok(esperar(aba, f"(() => {{ const tr = document.querySelector(\"#controle-corpo tr[data-evento='{ev_id}']\"); return tr && tr.classList.contains('ctl-estornado'); }})()", 5),
+       "o apontamento original continua no histórico, riscado")
+    linhas = open(arq, encoding="utf-8").read().strip().splitlines()
+    ok(len(linhas) == 3 and json.loads(linhas[-1]).get("estorno_de") == ev_id, "o estorno é mais uma linha; nada apagado")
+
+    # recarregar mantém a aba
+    aba.navegar(base + "/materiais?projeto=obra-controle#controle", limite=40)
+    ok(esperar(aba, "!document.querySelector('#aba-controle').hidden && !!document.querySelector('#ctl-cartoes')", 30),
+       "recarregar com #controle abre direto na aba")
+    open(os.path.join(AQUI, "_controle_producao.png"), "wb").write(base64.b64decode(aba.cmd("Page.captureScreenshot", format="png")["data"]))
+
+    if TEM_POSTO:
+        aba.navegar(base + "/materiais?projeto=posto-copia#controle", limite=60)
+        ok(esperar(aba, "!!document.querySelector('#ctl-cartoes')", 60), "a cópia do Posto V2 abre na aba Controle")
+        n = aba.avaliar("document.querySelectorAll('#controle-corpo .rolagem table tbody tr').length")
+        ok(n == 702, f"Posto V2: 702 itens ({n})")
+        open(os.path.join(AQUI, "_controle_producao_posto.png"), "wb").write(base64.b64decode(aba.cmd("Page.captureScreenshot", format="png")["data"]))
+
+    # o 400 do pedido de 17 a mais (passo 4) é o esperado
+    erros = [c for c in aba.console if c[0] in ("error", "excecao") and not ("400" in c[1] and "/api/producao/apontar" in c[1])]
+    ok(not erros, f"sem erro no console ({erros[:3]})")
+finally:
+    nav.terminate(); srv.terminate()
+    try: nav.wait(10); srv.wait(10)
+    except Exception: pass
+    shutil.rmtree(DADOS, ignore_errors=True); shutil.rmtree(perfil, ignore_errors=True)
+
+print("\n%d falha(s)" % len(falhas) if falhas else "\ntudo ok")
+sys.exit(1 if falhas else 0)

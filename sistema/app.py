@@ -196,6 +196,11 @@ def _extensoes_dev() -> list:
         out.append(_pd)
     except ImportError:
         pass
+    try:
+        import producao.web as _prod      # o controle de produção: a aba Controle da lista e o que o ERP lê (12/11)
+        out.append(_prod)
+    except ImportError:
+        pass
     return out
 
 

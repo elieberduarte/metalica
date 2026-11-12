@@ -46,7 +46,7 @@ LIMITES = {"verif_camera_modelos": 3600, "verif_celular_gestos": 1800}
 #: Módulos só do desenvolvimento (fora do instalado, MODULOS_SO_DEV do construir.py): o verificador deles roda e sai no
 #: relatório, mas a falha não reprova a conferência — o defeito vai para o chat dono (usuário, 03/11, na 0.9.2: o
 #: pré-moldado entrou no git e o verif_detalhar_premoldado passou a rodar na cópia limpa)
-SO_NO_DEV = ("premoldado", "arquitetura")
+SO_NO_DEV = ("premoldado", "arquitetura", "controle_producao")   # controle_producao: 12/11 (o verif_producao_3d é do instalado)
 _PEDE_ARGUMENTOS = re.compile(r"len\(sys\.argv\)\s*<\s*[23]")
 _PORTA_FIXA = re.compile(r"^(?:PORTA|porta)\s*=\s*(\d{4})\s*$", re.M)
 
