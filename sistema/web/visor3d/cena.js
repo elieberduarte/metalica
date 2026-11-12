@@ -674,10 +674,36 @@ function misturarVisual(A, B, k) {
   };
 }
 
+/** O fechamento do vídeo (12/11, amostra-12 A aprovada: "conseguimos fechar o vídeo com o logo da empresa?" → fundo branco,
+ *  só no fim, o nome da obra e a linha embaixo): o logo em cor da empresa da marca d'água no centro (a altura com teto, como
+ *  na marca — a DEZN não sai enorme), o nome da obra e "Estrutura metálica · imagem ilustrativa". Sem logo (a marca "sem"
+ *  ou a empresa sem cadastro): null, o vídeo termina no voo. */
+async function cartaoDeFecho(w, h, marca) {
+  if (!marca || marca.empresa === 'sem' || !temLogo(marca.empresa)) return null;
+  let logo;
+  try { logo = await logoDa(marca.empresa, 'cor'); } catch (e) { return null; }
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const g = cv.getContext('2d'), r = logo.naturalWidth / logo.naturalHeight || 3;
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h);
+  let lw = w * 0.47, lh = lw / r;
+  if (lh > h * 0.115) { lh = h * 0.115; lw = lh * r; }
+  const cy = h * 0.44;
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(logo, (w - lw) / 2, cy - lh / 2, lw, lh);
+  g.textAlign = 'center'; g.textBaseline = 'top';
+  g.fillStyle = '#3c4652'; g.font = `600 ${Math.round(h * 0.037)}px "Segoe UI", system-ui, sans-serif`;
+  g.fillText(($('#titulo-obra').textContent || '').trim().toUpperCase(), w / 2, cy + lh / 2 + h * 0.046);
+  g.fillStyle = '#828a96'; g.font = `${Math.round(h * 0.026)}px "Segoe UI", system-ui, sans-serif`;
+  g.fillText('Estrutura metálica · imagem ilustrativa', w / 2, cy + lh / 2 + h * 0.097);
+  return cv;
+}
+const FECHO_SUMIR = 1, FECHO_FICAR = 3;
+const suaveFecho = (t) => t * t * (3 - 2 * t);                     // s: a última vista some no branco; o fechamento parado
+
 /** O vídeo das cenas `ids` (as do 3D, nessa ordem): o lado maior `lado` na proporção da 1ª cena, `porTrecho` segundos de uma
  *  cena à outra, `parada` segundos parado em cada uma; `aoAndar(f, total, texto)` a cada quadro; `cancelado()` para. Devolve o
  *  MP4 (Blob) e os números. */
-async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada = 0, ss = 1, aoAndar = null, cancelado = () => false }) {
+async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada = 0, ss = 1, fecho = true, aoAndar = null, cancelado = () => false }) {
   const lista = ids.map(id => todasCenas.find(c => c.id === id)).filter(c => c && c.tipo === '3d' && c.camera && c.camera.posicao && c.camera.alvo);
   if (lista.length < 2) throw new Error('escolha duas cenas do 3D ou mais');
   const voltar = cena && cena.id;
@@ -715,8 +741,23 @@ async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada
       await gravador.quadro(img);
       if (aoAndar) await aoAndar(f + 1, linha.total, q.i === q.j ? lista[q.i].nome : `${A.nome} → ${B.nome}`);
     }
+    let quadros = linha.total;
+    const cartao = fecho ? await cartaoDeFecho(w, h, marca) : null;
+    if (cartao && img) {                                     // a última vista some no branco do fechamento, que fica parado
+      const mistura = document.createElement('canvas'); mistura.width = w; mistura.height = h;
+      const g = mistura.getContext('2d'), n = Math.round(FECHO_SUMIR * fps);
+      for (let k = 1; k <= n; k++) {
+        if (cancelado()) throw new Error('cancelado');
+        g.globalAlpha = 1; g.drawImage(img, 0, 0);
+        g.globalAlpha = suaveFecho(k / n); g.drawImage(cartao, 0, 0);
+        await gravador.quadro(mistura);
+        if (aoAndar) await aoAndar(linha.total + k, linha.total + n, 'fechamento com o logo');
+      }
+      await gravador.quadro(cartao, Math.round(FECHO_FICAR * fps));
+      quadros += n + Math.round(FECHO_FICAR * fps);
+    }
     const mp4 = await gravador.fim();
-    return { mp4, w, h, fps, quadros: linha.total, segundos: linha.segundos, demorou: (performance.now() - t0) / 1000, cenas: lista.length };
+    return { mp4, w, h, fps, quadros, segundos: quadros / fps, demorou: (performance.now() - t0) / 1000, cenas: lista.length, fecho: !!(cartao && img) };
   } catch (e) { gravador.cancelar(); throw e; }
   finally {
     renderizando = false;

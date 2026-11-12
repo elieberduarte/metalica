@@ -89,12 +89,12 @@ const CHAVE = 'metalica.exportarCenas';
 const BYTES_POR_PX = { jpg: 0.3, png: 1.4, pdf: 0.3 };       // para o "~2,5 MB" da prévia (a média do Filipin)
 // o vídeo das cenas (12/11: "o sistema ir passeando por elas como se fosse uma câmera"): segundos de uma cena à outra, a
 // parada em cada uma; só Full HD e 4K (o H.264 do navegador)
-const VELOCIDADES = { lento: 4, normal: 3, rapido: 2 }, PARADA_VIDEO = 1.5, LADOS_VIDEO = ['1920', '3840'];
+const VELOCIDADES = { lento: 4, normal: 3, rapido: 2 }, PARADA_VIDEO = 1.5, FECHO_VIDEO = 4, LADOS_VIDEO = ['1920', '3840'];
 const MBIT_VIDEO = (w, h) => Math.min(60, Math.max(4, w * h * 30 * 0.2 / 1e6));   // o mesmo de video_cenas.js (taxa)
 
 function lerOpcoes() {
   const padrao = { quais: 'esta', marcadas: [], lado: '3840', qualidade: 'refinada', formato: 'jpg', gravar: true, baixar: false, abrirPasta: true,
-                   velocidade: 'normal', parar: false };
+                   velocidade: 'normal', parar: false, fecho: true };
   try { return { ...padrao, ...(JSON.parse(localStorage.getItem(CHAVE) || '{}')) }; } catch (e) { return padrao; }
 }
 function guardarOpcoes(o) { try { localStorage.setItem(CHAVE, JSON.stringify(o)); } catch (e) { /* sem o navegador guardar: tudo bem */ } }
@@ -161,7 +161,7 @@ export function ligarExportar(ctx) {
     const ch = (id) => fundo.querySelector('#' + id).checked;
     return { quais: v('quais'), marcadas: [...fundo.querySelectorAll('#exportar-varias input:checked')].map(i => i.value),
              lado: v('lado'), qualidade: v('qualidade'), formato: v('formato'), gravar: ch('exportar-gravar'),
-             baixar: ch('exportar-baixar'), abrirPasta: ch('exportar-abrir'), velocidade: v('velocidade') || 'normal', parar: ch('exportar-parar') };
+             baixar: ch('exportar-baixar'), abrirPasta: ch('exportar-abrir'), velocidade: v('velocidade') || 'normal', parar: ch('exportar-parar'), fecho: ch('exportar-fecho') };
   }
 
   function escolhidas(o) {
@@ -187,7 +187,7 @@ export function ligarExportar(ctx) {
     if (!video) return false;
     const lista = escolhidas(o).filter(c => c.tipo === '3d'), n = lista.length, atual = ctx.atual();
     const [w, h] = atual && atual.tipo === '3d' ? ctx.tamanho(o.lado) : [+o.lado, Math.round(+o.lado * 9 / 16)];
-    const seg = n * (o.parar ? PARADA_VIDEO : 0) + Math.max(0, n - 1) * (VELOCIDADES[o.velocidade] || 3), mb = MBIT_VIDEO(w, h) * seg / 8;
+    const seg = n * (o.parar ? PARADA_VIDEO : 0) + Math.max(0, n - 1) * (VELOCIDADES[o.velocidade] || 3) + (o.fecho ? FECHO_VIDEO : 0), mb = MBIT_VIDEO(w, h) * seg / 8;
     fundo.querySelector('#exportar-info').innerHTML = n >= 2
       ? `Vídeo de ${n} cenas · ~${nf(seg)} s · ${nf(w)} × ${nf(h)} · MP4 · ~${nf(mb)} MB<br><span class="fraco">${lista.map(c => esc(c.nome)).join(' → ')}</span>`
       : 'O vídeo passa por duas cenas do 3D ou mais.';
@@ -285,7 +285,7 @@ export function ligarExportar(ctx) {
     try {
       andamento('Vídeo · abrindo a primeira cena…', 0, '');
       info = await ctx.video({ ids: lista.map(c => c.id), lado: +o.lado || 1920, ss: o.qualidade === 'rapida' || +o.lado > 1920 ? 1 : 2,
-        porTrecho: VELOCIDADES[o.velocidade] || 3, parada: o.parar ? PARADA_VIDEO : 0, cancelado: () => estado.cancelado,
+        porTrecho: VELOCIDADES[o.velocidade] || 3, parada: o.parar ? PARADA_VIDEO : 0, fecho: o.fecho, cancelado: () => estado.cancelado,
         aoAndar: async (f, n, txt) => {
           const fr = f / n, gasto = (performance.now() - t0) / 1000, falta = fr > 0.02 ? Math.max(0, gasto / fr - gasto) : NaN;
           andamento(`Vídeo · quadro ${nf(f)} de ${nf(n)} — ${txt}`, fr, isFinite(falta) ? `~${falta > 90 ? nf(falta / 60) + ' min' : nf(falta) + ' s'}` : '');
@@ -423,6 +423,7 @@ export function ligarExportar(ctx) {
         ${radio('formato', 'mp4', 'Vídeo MP4', '(a câmera passeando pelas cenas escolhidas, na ordem da lista)', o.formato === 'mp4')}
         <div id="exportar-video" hidden><h3>Vídeo</h3>
           <div class="linha" style="gap:14px">${radio('velocidade', 'lento', 'Lento', '(4 s de uma cena à outra)', o.velocidade === 'lento')}${radio('velocidade', 'normal', 'Normal', '(3 s)', !['lento', 'rapido'].includes(o.velocidade))}${radio('velocidade', 'rapido', 'Rápido', '(2 s)', o.velocidade === 'rapido')}</div>
+          <label><input type="checkbox" id="exportar-fecho"${o.fecho !== false ? ' checked' : ''}> <span>Fechar com o logo da empresa <small>(fundo branco, o nome da obra; 4 s)</small></span></label>
           <label><input type="checkbox" id="exportar-parar"${o.parar ? ' checked' : ''}> <span>Parar um instante em cada cena <small>(${nf(PARADA_VIDEO, 1)} s)</small></span></label>
           <span class="fraco">Sem parar, a câmera voa numa curva só por todas as cenas, na mesma velocidade, como um drone; a luz muda suave de uma à outra. A marca d'água é a da primeira cena.</span></div>
         <span class="fraco" id="exportar-aviso-fmt"></span>
