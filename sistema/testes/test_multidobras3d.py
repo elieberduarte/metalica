@@ -115,3 +115,42 @@ def test_aplicar_de_novo_parte_do_original_e_voltar_restaura():
     # só os conjuntos pedidos
     assert M.ajustar_modelo(doc, conjuntos=["M9"])["instancias"] == 0
     assert M.ajustar_modelo(doc, conjuntos=["M1"])["instancias"] == 1
+
+
+def _oitao(y0=-480.0, x0=600.0, x1=780.0, conjunto="OIT"):
+    """A telha do oitão em pé no plano y = y0, debaixo da curva do TecnoMETAL: o topo cortado na face de baixo do arco
+    de R_MODELO (o raio de dentro, R − H/2, centro (0, −R)) e o pé na base da parede."""
+    def topo(x):
+        return -R_MODELO + math.sqrt((R_MODELO - H / 2) ** 2 - x ** 2)
+    vs = []
+    for y in (y0 - 10.0, y0 + 10.0):
+        vs += [(x0, y, -R_MODELO - 600.0), (x1, y, -R_MODELO - 600.0), (x1, y, topo(x1)), (x0, y, topo(x0))]
+    faces = [[0, 1, 2, 3], [4, 7, 6, 5], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]]
+    return Solido(nome="TELHA TP40 0.50MM", camada="Telhas", vertices=vs, faces=faces,
+                  atributos={"tipo_ifc": "IfcPlate", "marcas": {"posicao": "OI", "conjunto": conjunto, "perfil": "TELHA TP40 0.50MM"}})
+
+
+def test_oitao_acompanha_a_curva_nova_sem_abrir_vao():
+    """Sala de Compressores (12/11, "ficou uma abertura, olhando no original não tinha isso"): o R450 levanta o arco
+    junto da parede e o topo do oitão, cortado no arco do modelo, ficava até 30 cm abaixo dele. O topo sobe com a curva
+    e o voltar ao original o devolve."""
+    doc = _doc(1)
+    oit = _oitao()
+    doc.add(oit)
+    orig = [tuple(v) for v in oit.vertices]
+    r = M.ajustar_modelo(doc)
+    assert r["oitao"] == 1
+    # a face de baixo do arco novo: raio de dentro RAIO_INTERNO_COMERCIAL, centro a R da linha média do vértice (800, 0)
+    Rm = RAIO_INTERNO_COMERCIAL + H / 2
+    cx, cz = R_MODELO - Rm, -Rm
+
+    def fundo_novo(x):
+        return cz + math.sqrt(RAIO_INTERNO_COMERCIAL ** 2 - (x - cx) ** 2)
+    for v, v0 in zip(oit.vertices, orig):
+        if v0[2] > -R_MODELO - 600.0 + 1:                       # os do topo
+            assert abs(v[2] - fundo_novo(v[0])) < 20.0, (v, fundo_novo(v[0]))
+            assert v[2] - v0[2] > 150.0                         # sem isso ficava o vão (192 mm em x = 600)
+        else:
+            assert v == v0                                      # o pé não se move
+    assert M.desfazer_modelo(doc)["pecas"] == 9
+    assert [tuple(v) for v in oit.vertices] == orig and M.CHAVE not in oit.atributos

@@ -189,26 +189,131 @@ def _ajustar_instancia(it: dict, raio_int: float) -> Optional[dict]:
     return {"raio_modelo": p.get("raio_modelo"), "raio_novo": round(R, 1)}
 
 
+#: O topo da telha do oitão está "na curva" da multidobra quando fica até isto (mm) da face de baixo dela.
+OITAO_NA_CURVA = 80.0
+
+
+def _fundo(pecas: Sequence[Solido], hdir, parede: Solido):
+    """A face de baixo da multidobra no plano do oitão, z(h), com h a distância na horizontal ao longo de `hdir`: o
+    envelope de baixo das retas e facetas (cada peça uma corda, da ponta mais baixa de um lado à do outro) e, onde
+    nenhuma passa (junto da parede), o topo da reta da parede."""
+    baixos = []                                            # o contorno de baixo de cada peça vista de lado (h, z)
+    for e in pecas:
+        if e is parede:
+            continue
+        pts = sorted({(round(_dot(v, hdir), 3), round(v[2], 3)) for v in e.vertices})
+        casco: List[Tuple[float, float]] = []
+        for p in pts:                                      # o casco convexo de baixo (cadeia monótona)
+            while len(casco) >= 2 and ((casco[-1][0] - casco[-2][0]) * (p[1] - casco[-2][1])
+                                       - (casco[-1][1] - casco[-2][1]) * (p[0] - casco[-2][0])) <= 0:
+                casco.pop()
+            casco.append(p)
+        if casco[-1][0] - casco[0][0] >= 1.0:
+            baixos.append(casco)
+    hp = [_dot(v, hdir) for v in parede.vertices]
+    topo_parede = max(v[2] for v in parede.vertices)
+
+    def no_casco(c, h):
+        for (h0, z0), (h1, z1) in zip(c, c[1:]):
+            if h0 - 0.5 <= h <= h1 + 0.5:
+                return z0 + (z1 - z0) * (min(max(h, h0), h1) - h0) / max(h1 - h0, 1e-9)
+        return None
+
+    def z(h):
+        zs = [q for q in (no_casco(c, h) for c in baixos) if q is not None]
+        if zs:
+            return min(zs)
+        if min(hp) - 60.0 <= h <= max(hp) + 60.0:
+            return topo_parede
+        return None
+    return z
+
+
+def _acompanhar_oitao(doc: Documento, it: dict, antes: Dict[str, list], conj: str) -> int:
+    """As telhas do oitão em pé debaixo da curva da multidobra (dentro da largura da fileira, nos pontos do topo que
+    encostavam na face de baixo dela) sobem ou descem junto com a curva nova. Sem isso, o R450 levanta o arco e abre um
+    vão entre o oitão e a multidobra (Sala de Compressores, 12/11: "ficou uma abertura, olhando no original não
+    tinha isso"). Guarda os vértices de antes na peça (`original`, `acompanha`) para o voltar ao original."""
+    pecas = it["pecas"]
+    a, b, w = it["perfil"]["eixos_perfil"]
+    hw = math.hypot(w[0], w[1])
+    if hw < 0.9:
+        return 0
+    hdir = (-w[1] / hw, w[0] / hw, 0.0)                   # a horizontal no plano do perfil (o oitão)
+
+    def em_pe(e):
+        hs_ = [_dot(v, hdir) for v in e.vertices]
+        zs_ = [v[2] for v in e.vertices]
+        return (max(zs_) - min(zs_)) - (max(hs_) - min(hs_))
+    parede = max((pecas[0], pecas[-1]), key=em_pe)         # a reta da parede: a ponta da fileira que está em pé
+    ids = {e.id for e in pecas}
+    velhos = []
+    for e in pecas:
+        vs = e.vertices
+        e.vertices = [tuple(v) for v in antes[e.id]]
+        velhos.append(vs)
+    z_antes = _fundo(pecas, hdir, parede)
+    for e, vs in zip(pecas, velhos):
+        e.vertices = vs
+    z_depois = _fundo(pecas, hdir, parede)
+    ws = [_dot(v, w) for e in pecas for v in e.vertices]
+    w0, w1 = min(ws), max(ws)
+    hs = [_dot(v, hdir) for e in pecas for v in e.vertices]
+    h0, h1 = min(hs), max(hs)
+    mexidas = 0
+    for e in _telhas(doc):
+        if e.id in ids or (e.atributos or {}).get(CHAVE, {}).get("raio_int"):
+            continue                                       # a própria multidobra (desta ou de outra fileira)
+        vs = e.vertices
+        we = [_dot(v, w) for v in vs]
+        if min(we) < w0 - 50.0 or max(we) > w1 + 50.0 or max(we) - min(we) > 200.0:
+            continue                                       # fora da fileira, ou não está em pé no plano do oitão
+        he = [_dot(v, hdir) for v in vs]
+        if max(he) < h0 or min(he) > h1:
+            continue
+        novos, mudou = [], False
+        for v, h in zip(vs, he):
+            zo, zn = z_antes(h), z_depois(h)
+            if zo is not None and zn is not None and abs(zn - zo) > 1.0 and zo - OITAO_NA_CURVA <= v[2] <= zo + OITAO_NA_CURVA:
+                novos.append((v[0], v[1], v[2] + zn - zo))
+                mudou = True
+            else:
+                novos.append(tuple(v))
+        if not mudou:
+            continue
+        at = dict(e.atributos or {})
+        guardado = at.get(CHAVE) or {}
+        at[CHAVE] = {"acompanha": conj, "original": guardado.get("original") or {"vertices": [list(v) for v in vs]}}
+        e.atributos = at
+        e.vertices = novos
+        mexidas += 1
+    return mexidas
+
+
 def ajustar_modelo(doc: Documento, raio_int: Optional[float] = None, conjuntos: Optional[Sequence[str]] = None) -> dict:
     """Reescreve todas as multidobras (ou só os `conjuntos` pedidos) com o raio interno `raio_int` (o
-    comercial por padrão). A instância já ajustada parte dos vértices originais guardados, então
-    aplicar de novo com outro raio funciona. Devolve {"instancias", "pecas", "conjuntos", "falhas"}."""
+    comercial por padrão), e o topo das telhas do oitão debaixo da curva vai junto. A instância já ajustada parte
+    dos vértices originais guardados, então aplicar de novo com outro raio funciona. Devolve {"instancias",
+    "pecas", "conjuntos", "falhas", "oitao"}."""
     from nucleo2d.detalhe.telhas import RAIO_INTERNO_COMERCIAL
     raio_int = float(raio_int or RAIO_INTERNO_COMERCIAL)
     quer = set(conjuntos) if conjuntos else None
-    saida = {"instancias": 0, "pecas": 0, "conjuntos": [], "falhas": [], "raio_int": raio_int}
+    saida = {"instancias": 0, "pecas": 0, "conjuntos": [], "falhas": [], "raio_int": raio_int, "oitao": 0}
     _restaurar(doc, quer, limpar=False)                      # parte sempre do original
     for it in instancias(doc):
         if quer is not None and it["conjunto"] not in quer:
             continue
+        antes = {e.id: [tuple(v) for v in e.vertices] for e in it["pecas"]}
         r = _ajustar_instancia(it, raio_int)
         if r is None:
             saida["falhas"].append("%s: uma instância sem dobra reconhecível ficou como estava" % it["conjunto"])
             continue
         saida["instancias"] += 1
         saida["pecas"] += len(it["pecas"])
+        saida["oitao"] += _acompanhar_oitao(doc, it, antes, it["conjunto"])
         if it["conjunto"] not in saida["conjuntos"]:
             saida["conjuntos"].append(it["conjunto"])
+    saida["pecas"] += saida["oitao"]
     return saida
 
 
@@ -221,8 +326,8 @@ def _restaurar(doc: Documento, quer, limpar: bool) -> int:
         if not g:
             continue
         from nucleo2d.detalhe.base import _marcas
-        if quer is not None and str(_marcas(e).get("conjunto") or "") not in quer:
-            continue
+        if quer is not None and str(_marcas(e).get("conjunto") or "") not in quer and g.get("acompanha") not in quer:
+            continue                                       # a telha do oitão volta com a multidobra que ela acompanha
         orig = (g.get("original") or {}).get("vertices")
         if orig:
             e.vertices = [tuple(v) for v in orig]
