@@ -6054,6 +6054,17 @@ def malhas_do_documento(corpo: dict) -> dict:
     return {"malhas": saida}
 
 
+def explodir_com_criterio(corpo: dict) -> dict:
+    """POST /api/modelo/explodir-criterio {"entidade": {vertices, faces, nome}}: o sólido do SketchUp com tudo dentro
+    separado com critério (nucleo3d/explodir_criterio.py) — as treliças inteiras (grupos), o resto uma peça cada, com o
+    perfil lido na seção. O editor aplica (web/editor3d/modulos/explodir.js, explodirComCriterio)."""
+    from nucleo3d.explodir_criterio import explodir
+    e = corpo.get("entidade") or {}
+    if not e.get("vertices") or not e.get("faces"):
+        raise ErroDeDados("mande o sólido a explodir (vértices e faces).")
+    return explodir(e["vertices"], e["faces"], e.get("nome") or "")
+
+
 def exportar_ifc(corpo: dict) -> dict:
     from ifc import exportar as exp
     # sem o documento e com o projeto: o modelo gravado dele — é o "IFC do modelo" do modo Ver, que antes carregava o
@@ -6962,6 +6973,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(acao_de_projeto(partes[0], partes[1], corpo))
             if rota == "/api/modelo/malha":
                 return self._json(malhas_do_documento(corpo))
+            if rota == "/api/modelo/explodir-criterio":
+                return self._json(explodir_com_criterio(corpo))
             if rota == "/api/modelo/perfis":
                 return self._json(perfis_para_o_editor(corpo))
             if rota == "/api/modelo/apoios":

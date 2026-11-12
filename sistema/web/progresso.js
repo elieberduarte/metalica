@@ -264,7 +264,7 @@ const ROTULOS = {
   'dxf': 'Gerando o DXF', 'imprimir': 'Imprimindo as pranchas', 'folhas': 'Lendo as folhas', 'pranchas': 'Montando as pranchas', 'pranchas-das-folhas': 'Pranchas das folhas',
   'analise-estrutural': 'Análise estrutural', 'esforcos': 'Esforços e verificação', 'calcular': 'Calculando',
   'dimensionar': 'Dimensionando', 'memorial': 'Memorial', 'conferencia': 'Conferindo', 'aplicar-pecas': 'Aplicando no 3D',
-  'aplicar-furos': 'Aplicando os furos', 'aplicar-3d': 'Aplicando no 3D', 'aplicar-trocas': 'Aplicando as trocas', 'trocar-grupos': 'Trocando os perfis por grupo', 'regras-trelica': 'Corrigindo pelas regras das tesouras', 'reanalisar': 'Reanalisando a estrutura',
+  'aplicar-furos': 'Aplicando os furos', 'aplicar-3d': 'Aplicando no 3D', 'aplicar-trocas': 'Aplicando as trocas', 'trocar-grupos': 'Trocando os perfis por grupo', 'regras-trelica': 'Corrigindo pelas regras das tesouras', 'explodir-criterio': 'Explodindo com critério', 'reanalisar': 'Reanalisando a estrutura',
   'vista2d': 'Gerando a vista', 'gerar-3d': 'Gerando o 3D', 'montar-pela-planta': 'Montando pela planta',
   'projeto-2d': 'Projeto recebido', 'varrer': 'Identificação', 'reconhecer': 'Reconhecendo', 'arquitetonico': 'Arquitetônico', 'exportar': 'Exportando',
   'imagens': 'Imagens 3D', 'cantos': 'Cantos', 'multidobras-3d': 'Multidobras', 'cobertura-movel': 'Cobertura móvel',

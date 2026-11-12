@@ -2357,6 +2357,7 @@ export class Editor {
       'cantos-redondos': () => this.dialogoCantosRedondos(),
       'multidobras-3d': () => this.dialogoMultidobras3D(),
       explodir: () => this.explodirSelecao(),
+      'explodir-criterio': () => this.explodirComCriterio(),
       juntar: () => this.juntarSelecao(),
       agrupar: () => this.agruparSelecao(),
       desagrupar: () => this.desagruparSelecao(),

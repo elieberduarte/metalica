@@ -72,6 +72,9 @@ export class Api {
   /** Sólidos desenhados à mão → Chapa paramétrica (contorno, espessura e furos medidos da malha). */
   converterChapa(documentoJSON, ids) { return postar(this._r('/api/modelo/converter-chapa'), { documento: documentoJSON, ids }); }
 
+  /** O sólido do SketchUp com tudo dentro separado com critério: {pecas, grupos (as treliças), resumo}. */
+  explodirComCriterio(entidade) { return postar(this._r('/api/modelo/explodir-criterio'), { entidade }); }
+
   /** Malhas de um documento. `ids` limita o pedido ao que mudou. */
   malhas(documentoJSON, ids = null) {
     const corpo = { documento: documentoJSON };
