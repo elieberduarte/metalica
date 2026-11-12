@@ -77,6 +77,7 @@
   </div>
 </header>
 
+<div class="palco-ctl">
 <main class="controle">
   <div id="aviso" class="aviso-topo" hidden></div>
   <section class="obra">
@@ -86,13 +87,17 @@
     </div>
     <div class="acoes-obra">
       <a class="botao-m" id="btn-lista" title="A lista de materiais desta obra (de onde saem os itens do controle)">Lista de materiais</a>
+      <button type="button" class="botao-m" id="btn-3d" title="Mostrar ou esconder o modelo 3D ao lado da lista">Modelo 3D</button>
       <button type="button" class="botao-m" id="btn-imprimir" title="Imprime os quadros desta tela" onclick="print()">Imprimir</button>
     </div>
   </section>
   <div id="controle-corpo"></div>
 </main>
+<aside id="painel3d" hidden></aside>
+</div>
 
 <script src="/api/producao/controle.js"></script>
+<script src="/api/producao/controle3d.js"></script>
 <script src="/versao.js" defer></script>
 <script src="/etapas.js"></script>
 <script src="/vivo.js"></script>

@@ -8,7 +8,7 @@
 (function () {
   const $ = (s, raiz = document) => raiz.querySelector(s);
   const PROJETO = new URLSearchParams(location.search).get('projeto') || '';
-  const ESTADO = { dados: null, corpo: null, carregando: false, filtroEtapa: '', filtroTipo: '', busca: '' };
+  const ESTADO = { dados: null, corpo: null, carregando: false, filtroEtapa: '', filtroTipo: '', busca: '', escolhidos: [] };
 
   function el(tag, attrs = {}, ...filhos) {
     const e = document.createElement(tag);
@@ -49,7 +49,7 @@
       class: c.classe || '', texto: c.titulo, title: 'Clique para ordenar', onclick: (ev) => ordenar(ev.currentTarget.closest('table'), i, c) }))));
     const tbody = el('tbody');
     for (const li of linhas) {
-      const tr = el('tr', { 'data-filtro': chaveFiltro(li).toLowerCase() });
+      const tr = el('tr', { 'data-filtro': chaveFiltro(li).toLowerCase(), 'data-item': li.origem ? li.id : null });
       for (const c of colunas) {
         const v = c.valor ? c.valor(li) : li[c.chave];
         const td = el('td', { class: c.classe || '' });
@@ -108,6 +108,9 @@
     dialog.ctl-dlg .acoes { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
     dialog.ctl-dlg .erro { color: var(--verm, #b23b3b); font-size: 13px; margin-top: 8px; }
     .ctl-estornado td { text-decoration: line-through; color: var(--texto3); }
+    .controle tbody tr[data-item] { cursor: pointer; }
+    .controle tbody tr.escolhida td { background: color-mix(in srgb, var(--ctl-destaque, #f2b01e) 26%, var(--painel)); }
+    .controle tbody tr.escolhida td:first-child { box-shadow: inset 3px 0 0 var(--ctl-destaque, #f2b01e); }
   `;
   document.head.append(estilo);
 
@@ -132,6 +135,8 @@
       const D = ESTADO.dados;
       if (D.obra) { $('#obra-nome').textContent = D.obra; document.title = `Controle de produção — ${D.obra}`; }
       if (D.lista_gerada) $('#quando').textContent = `lista levantada em ${dataBRc(D.lista_gerada)} ${horaBR(D.lista_gerada)}`;
+      window.controleDados = D;
+      if (D.itens) document.dispatchEvent(new CustomEvent('controle:dados', { detail: D }));   // o 3D ao lado (controle3d.js)
     } catch (e) {
       ESTADO.dados = { erro: e.message };
     } finally {
@@ -204,6 +209,31 @@
     partes.push(secao('Últimos apontamentos', 'o mais novo em cima; estorno não apaga, desfaz', tabelaEventos(D.eventos || [])));
     corpo.replaceChildren(...partes);
     filtrar();
+    marcarLinhas(ESTADO.escolhidos, false);
+  }
+
+  /** as linhas escolhidas (pelo clique nela ou numa peça do 3D ao lado) ficam marcadas; `rolar` traz a primeira à vista */
+  function marcarLinhas(ids, rolar) {
+    ESTADO.escolhidos = ids || [];
+    const quer = new Set(ESTADO.escolhidos);
+    let primeira = null;
+    for (const tr of document.querySelectorAll('#controle-corpo tr[data-item]')) {
+      const sim = quer.has(tr.dataset.item);
+      tr.classList.toggle('escolhida', sim);
+      if (sim && !primeira) primeira = tr;
+    }
+    if (rolar && primeira) {
+      if (primeira.classList.contains('oculta')) {          // escondida pela busca: a busca sai
+        ESTADO.busca = '';
+        const b = $('#filtro');
+        if (b) b.value = '';
+        filtrar();
+      }
+      primeira.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    } else if (rolar && ESTADO.escolhidos.length) {
+      aviso(`${ESTADO.escolhidos.join(', ')} está fora do filtro da lista (etapa ou tipo).`);
+      setTimeout(() => aviso(''), 4000);
+    }
   }
 
   function tabelaEventos(eventos) {
@@ -312,6 +342,14 @@
     if (!PROJETO) { $('#controle-corpo').replaceChildren(vazio('Abra o controle de produção pelo menu Produção de um projeto.')); return; }
     $('#btn-lista').href = `/materiais?projeto=${encodeURIComponent(PROJETO)}#geral`;
     ESTADO.corpo = $('#controle-corpo');
+    // clicar numa linha (fora do botão Apontar) destaca as peças dela no 3D ao lado
+    ESTADO.corpo.addEventListener('click', (ev) => {
+      const tr = ev.target.closest('tr[data-item]');
+      if (!tr || ev.target.closest('button, a, input, select')) return;
+      marcarLinhas([tr.dataset.item], false);
+      document.dispatchEvent(new CustomEvent('controle:item', { detail: { id: tr.dataset.item } }));
+    });
+    document.addEventListener('controle:marcar', (ev) => marcarLinhas(ev.detail.ids, true));
     desenhar();
     carregar();
   }

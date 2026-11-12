@@ -10,6 +10,9 @@ não tem nada disto até o usuário aprovar).
 * POST /api/producao/apontar                {projeto, item, etapa, quantidade, data?, obs?}
 * POST /api/producao/estornar               {projeto, evento, obs?}
 * GET  /api/producao/erp?projeto=&desde=    o que o ERP lê (só leitura; controle.para_erp)
+* GET  /api/producao/controle3d.js          o 3D ao lado da lista (web/producao/controle3d.js): clicar destaca, cor = situação
+* GET  /api/producao/cores                  as cores do 3D (não feita, produzida, pintada, destaque) e o padrão
+* POST /api/producao/cores                  {cores: {...}} grava para todas as obras; {cores: {}} volta ao padrão
 
 "Quem" é sempre a pessoa da licença desta máquina (decisão do usuário, 12/11: só a engenharia aponta).
 """
@@ -22,6 +25,7 @@ from producao import controle
 _AQUI = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(os.path.dirname(_AQUI), "web")
 SCRIPT = os.path.join(WEB, "producao", "controle.js")
+SCRIPT_3D = os.path.join(WEB, "producao", "controle3d.js")
 PAGINA = os.path.join(WEB, "producao", "controle.html")
 
 
@@ -93,8 +97,17 @@ def _etapas(h, slug: str):
     h._json(r)
 
 
-def _script(h):
-    _enviar(h, open(SCRIPT, "rb").read(), "text/javascript; charset=utf-8")
+def _script(h, caminho=SCRIPT):
+    _enviar(h, open(caminho, "rb").read(), "text/javascript; charset=utf-8")
+
+
+def _raiz() -> str:
+    """a pasta dos projetos (onde ficam as cores do 3D, comuns a todas as obras)"""
+    return _app().PROJETOS
+
+
+def _cores(h):
+    h._json({"cores": controle.ler_cores(_raiz()), "padrao": controle.CORES_PADRAO})
 
 
 def rota_get(h, rota: str) -> bool:
@@ -109,6 +122,12 @@ def rota_get(h, rota: str) -> bool:
     if rota == "/api/producao/controle.js":
         _script(h)
         return True
+    if rota == "/api/producao/controle3d.js":
+        _script(h, SCRIPT_3D)
+        return True
+    if rota == "/api/producao/cores":
+        _cores(h)
+        return True
     if rota == "/api/producao/controle":
         s = _consulta(h).get("projeto", "")
         pasta = _pasta(s)
@@ -120,6 +139,7 @@ def rota_get(h, rota: str) -> bool:
         r = controle.situacao(lista, controle.ler_eventos(pasta), controle.ler_nomes(pasta))
         r["quem"] = _quem()
         r["obra"] = _nome_da_obra(s, lista)
+        r["tem_3d"] = os.path.isfile(os.path.join(pasta, "modelo.json"))      # sem modelo, a tela nem abre o 3D ao lado
         h._json(r)
         return True
     if rota == "/api/producao/erp":
@@ -137,6 +157,13 @@ def rota_get(h, rota: str) -> bool:
 
 
 def rota_post(h, rota: str, corpo: dict) -> bool:
+    if rota == "/api/producao/cores":
+        try:
+            controle.gravar_cores(_raiz(), (corpo if isinstance(corpo, dict) else {}).get("cores") or {})
+        except controle.ErroControle as e:
+            raise _erro(str(e))
+        _cores(h)
+        return True
     if rota not in ("/api/producao/apontar", "/api/producao/estornar"):
         return False
     corpo = corpo if isinstance(corpo, dict) else {}

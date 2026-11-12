@@ -630,6 +630,7 @@ export class Visor3D {
    */
   pintarPor(modo) {
     this.modoPintura = modo;
+    this.coresExatas = false;
     this.ocultas = new Set();
     if (modo === 'material' || !this.fichas) {
       this.corBase.set(this.corMaterial);
@@ -655,6 +656,18 @@ export class Visor3D {
     });
     this._repintar();
     return lista;
+  }
+
+  /** Cada peça na cor dada: `cores` é um Uint8Array [r, g, b] por peça, na ordem das fichas. As cores saem exatas
+   *  (o tema claro não as clareia) e `selecao` [r, g, b] troca o azul da peça escolhida — o Controle de produção
+   *  (12/11) pinta não feita / produzida / pintada, e o azul da produzida não pode ser o da escolhida. */
+  pintarComCores(cores, selecao = null) {
+    this.modoPintura = 'cores';
+    this.coresExatas = true;
+    this.corSelecao = selecao;
+    this.ocultas = new Set();
+    this.corBase.set(cores.subarray(0, this.corBase.length));
+    this._repintar();
   }
 
   /** Esconde (ou mostra) as peças `ids` (um grupo da legenda do Pintar). */
@@ -837,11 +850,12 @@ export class Visor3D {
 
   _repintar() {
     const d = this.dadosTex, sel = this.selecaoVarias, fant = this.emDestaque ? this.corFantasma : null;
-    const k0 = this.escuro ? 0 : CLAREAR_NO_CLARO, cb = this.corBase;
+    const k0 = this.escuro || this.coresExatas ? 0 : CLAREAR_NO_CLARO, cb = this.corBase;
+    const cs = (this.coresExatas && this.corSelecao) || [31, 122, 224];
     for (let i = 0; i < this.nPecas; i++) {
       const k = i * 4;
       const vis = this.visivelCamada[this.camadaDe[i]] !== false && !this.ocultas.has(i) && !this.ocultasSistema.has(i);
-      if (sel.has(i)) { d[k] = 31; d[k + 1] = 122; d[k + 2] = 224; }
+      if (sel.has(i)) { d[k] = cs[0]; d[k + 1] = cs[1]; d[k + 2] = cs[2]; }
       else if (fant) { d[k] = fant[0]; d[k + 1] = fant[1]; d[k + 2] = fant[2]; }
       else for (let j = 0; j < 3; j++) d[k + j] = cb[i * 3 + j] + (255 - cb[i * 3 + j]) * k0;
       d[k + 3] = vis ? (this.alfa ? this.alfa[i] : 255) : 0;

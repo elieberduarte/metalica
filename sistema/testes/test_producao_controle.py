@@ -336,3 +336,47 @@ def test_nomes_do_projetista_com_espaco_e_ponto_numeram_igual(nome, instancias, 
     its = C.itens(lista, {})
     assert [x["id"] for x in its if x["origem"] == "conjunto"] == esperado
     assert not [x for x in its if x["origem"] == "pecas"]
+
+
+# ------------------------------------------------------------------ as cores do 3D (12/11: o 3D ao lado da lista)
+def test_cores_do_3d_padrao_gravar_e_voltar(tmp_path):
+    """não feita cinza, produzida azul, pintada verde (usuário, 12/11) — e a ferramenta grava outros tons para todas as obras"""
+    raiz = str(tmp_path)
+    assert list(C.ler_cores(raiz)) == ["falta", "producao", "pintura", "destaque"]
+    assert C.ler_cores(raiz) == C.CORES_PADRAO
+    novas = C.gravar_cores(raiz, {"producao": "#FF0000"})
+    assert novas["producao"] == "#ff0000" and novas["pintura"] == C.CORES_PADRAO["pintura"]
+    assert json.load(open(os.path.join(raiz, C.ARQUIVO_CORES), encoding="utf-8")) == {"producao": "#ff0000"}
+    assert C.ARQUIVO_CORES.startswith("_")                 # a lista de projetos pula o que começa com "_"
+    with pytest.raises(C.ErroControle):
+        C.gravar_cores(raiz, {"producao": "azul"})
+    with pytest.raises(C.ErroControle):
+        C.gravar_cores(raiz, {"fundo": "#000000"})
+    assert C.ler_cores(raiz)["producao"] == "#ff0000"      # o pedido recusado não estragou o gravado
+    assert C.gravar_cores(raiz, {}) == C.CORES_PADRAO      # vazio volta ao padrão e apaga o arquivo
+    assert not os.path.exists(os.path.join(raiz, C.ARQUIVO_CORES))
+    open(os.path.join(raiz, C.ARQUIVO_CORES), "w", encoding="utf-8").write("{quebrado")
+    assert C.ler_cores(raiz) == C.CORES_PADRAO             # arquivo estragado: o padrão
+
+
+def test_rotas_das_cores_e_do_script_do_3d(monkeypatch, tmp_path):
+    from producao import web
+
+    class _App:
+        PROJETOS = str(tmp_path)
+
+    monkeypatch.setattr(web, "_app", lambda: _App)
+    h = _H("/api/producao/cores")
+    assert web.rota_get(h, "/api/producao/cores")
+    assert h.resposta["cores"] == C.CORES_PADRAO and h.resposta["padrao"] == C.CORES_PADRAO
+    h = _H("/api/producao/cores")
+    assert web.rota_post(h, "/api/producao/cores", {"cores": {"pintura": "#123456"}})
+    assert h.resposta["cores"]["pintura"] == "#123456"
+    h = _H("/api/producao/controle3d.js")
+    assert web.rota_get(h, "/api/producao/controle3d.js")
+    js = h.wfile.getvalue().decode("utf-8")
+    assert "pintarComCores" in js and "controle:item" in js and "/api/producao/cores" in js
+    html = open(os.path.join(os.path.dirname(AQUI), "web", "producao", "controle.html"), encoding="utf-8").read()
+    assert '<script src="/api/producao/controle3d.js"></script>' in html and 'id="painel3d"' in html and 'id="btn-3d"' in html
+    vis = open(os.path.join(os.path.dirname(AQUI), "web", "visor3d", "visor3d.js"), encoding="utf-8").read()
+    assert "pintarComCores(cores, selecao = null)" in vis

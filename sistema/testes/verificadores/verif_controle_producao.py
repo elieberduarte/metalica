@@ -195,6 +195,8 @@ try:
     aba.navegar(base + "/controle-producao?projeto=obra-controle", limite=40)
     ok(esperar(aba, f"!!document.querySelector('#ctl-cartoes') && !!document.querySelector(\"#controle-corpo tr[data-evento='{ev_id}']\")", 30),
        "recarregar abre a tela do controle com o histórico")
+    ok(esperar(aba, "document.querySelector('#painel3d').hidden && document.querySelector('#btn-3d').disabled && !document.querySelector('#p3-quadro')", 10),
+       "obra sem modelo 3D: o painel do 3D não aparece, o botão fica desligado e o 3D nem é pedido")
     open(os.path.join(AQUI, "_controle_producao.png"), "wb").write(base64.b64decode(aba.cmd("Page.captureScreenshot", format="png")["data"]))
 
     if TEM_POSTO:

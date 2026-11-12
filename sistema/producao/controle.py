@@ -280,6 +280,52 @@ def situacao(lista: dict, eventos: List[dict], nomes: Optional[dict] = None, ult
             "eventos": recentes, "lista_gerada": lista.get("gerado")}
 
 
+# ------------------------------------------------------------------ as cores do 3D
+# a situação de cada peça no modelo 3D ao lado da lista (usuário, 12/11: "toda a estrutura não feita cinza, produzida azul,
+# pintada verde", com a ferramenta para escolher os tons). Valem para todas as obras desta máquina: um arquivo na pasta
+# dos projetos (o "_" a tira da lista de projetos).
+CORES_PADRAO = OrderedDict([("falta", "#9aa3ad"), ("producao", "#2f6fd6"), ("pintura", "#2e9d57"), ("destaque", "#f2b01e")])
+ARQUIVO_CORES = "_producao-cores.json"
+_HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def ler_cores(pasta_projetos: str) -> dict:
+    """as cores escolhidas, com o padrão no que faltar ou estiver errado"""
+    cores = OrderedDict(CORES_PADRAO)
+    try:
+        with open(os.path.join(pasta_projetos, ARQUIVO_CORES), encoding="utf-8") as f:
+            gravadas = json.load(f)
+    except (OSError, ValueError):
+        gravadas = {}
+    for k in cores:
+        v = (gravadas or {}).get(k) if isinstance(gravadas, dict) else None
+        if isinstance(v, str) and _HEX.match(v):
+            cores[k] = v.lower()
+    return cores
+
+
+def gravar_cores(pasta_projetos: str, cores: dict) -> dict:
+    """grava as cores (só as quatro conhecidas, em #rrggbb); `cores` vazio volta ao padrão"""
+    novas = OrderedDict()
+    for k, v in (cores or {}).items():
+        if k not in CORES_PADRAO:
+            raise ErroControle("cor desconhecida: %r" % k)
+        if not (isinstance(v, str) and _HEX.match(v)):
+            raise ErroControle("cor inválida para %s: %r (use #rrggbb)" % (k, v))
+        novas[k] = v.lower()
+    caminho_ = os.path.join(pasta_projetos, ARQUIVO_CORES)
+    with _TRAVA:
+        if not novas:
+            if os.path.exists(caminho_):
+                os.remove(caminho_)
+        else:
+            tmp = caminho_ + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(novas, f, ensure_ascii=False, indent=1)
+            os.replace(tmp, caminho_)
+    return ler_cores(pasta_projetos)
+
+
 def para_erp(slug: str, nome: str, lista: dict, eventos: List[dict], nomes: Optional[dict] = None,
              desde: Optional[str] = None) -> dict:
     """o que o ERP lê (só leitura): o andamento já somado, cada item e os eventos (com `desde`, só os de depois)"""
