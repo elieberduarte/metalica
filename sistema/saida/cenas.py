@@ -399,7 +399,7 @@ def ler(g, s: str, i: str) -> dict:
 def _novo_id(pasta: str, nome: str) -> str:
     base = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode().lower()
     base = re.sub(r"[^a-z0-9]+", "-", base).strip("-")[:30] or "cena"
-    if base in ("marca", "nova", "nova-3d", "ordem", "pdf", "mostrar", "copiar", "prancha"):   # os nomes das rotas (…/cenas/marca etc.)
+    if base in ("marca", "nova", "nova-3d", "ordem", "pdf", "video", "mostrar", "copiar", "prancha"):   # os nomes das rotas (…/cenas/marca etc.)
         base += "-cena"
     i, k = base, 2
     while os.path.exists(os.path.join(pasta, i)):
@@ -775,6 +775,39 @@ def gravar_pdf(g, s: str, corpo: dict) -> dict:
     return {"arquivo": destino, "nome": nome}
 
 
+def gravar_video(g, s: str, corpo: dict) -> dict:
+    """O vídeo do Exportar (12/11: "o sistema ir passeando por elas como se fosse uma câmera se movimentando" — o MP4 montado
+    na tela) na pasta cenas/: o nome vem da tela ("Vídeo - <obra> (cenas).mp4"), só o nome do arquivo e sempre .mp4."""
+    if not os.path.isdir(g.pasta(s)):
+        raise ErroCena("projeto não encontrado: %s" % s)
+    origem = corpo.get("arquivo_local")
+    if not origem or not os.path.isfile(origem):
+        raise ErroCena("nenhum vídeo recebido.")
+    with open(origem, "rb") as f:
+        e_mp4 = f.read(8)[4:8] == b"ftyp"
+    if not e_mp4:
+        os.remove(origem)
+        raise ErroCena("o arquivo recebido não é um vídeo MP4.")
+    nome = os.path.basename(str(corpo.get("nome") or "").replace("\\", "/"))
+    nome = re.sub(r'[<>:"|?*\x00-\x1f]+', "-", nome).strip(" .")
+    if not nome.lower().endswith(".mp4"):
+        nome = (nome or "Vídeo das cenas") + ".mp4"
+    if nome.startswith("."):
+        nome = "Vídeo" + nome
+    pasta = os.path.join(g.pasta(s), PASTA)
+    os.makedirs(pasta, exist_ok=True)
+    destino = os.path.join(pasta, nome)
+    for k in range(40):                                     # o vídeo de antes aberto no player do Windows: espera um pouco
+        try:
+            os.replace(origem, destino)
+            break
+        except PermissionError:
+            if k == 39:
+                raise ErroCena("o vídeo anterior está aberto em outro programa: feche-o e grave de novo.")
+            time.sleep(0.05)
+    return {"arquivo": destino, "nome": nome}
+
+
 def apagar(g, s: str, i: str) -> dict:
     """A pasta da cena sai da lista na hora (renomeada para .lixo-…) e é removida; o que o Windows ainda prende (a foto aberta
     pelo OneDrive ou pelo navegador — 26/10, a Kaefer: o apagar parava no meio e a cena ficava pela metade) sai na próxima."""
@@ -837,6 +870,8 @@ def rota_post(g, s: str, resto: list, corpo: dict) -> dict:
         return nova_3d(g, s, corpo)
     if resto == ["ordem"]:
         return ordenar(g, s, corpo)
+    if resto == ["video"]:
+        return gravar_video(g, s, corpo)
     if resto == ["pdf"]:
         return gravar_pdf(g, s, corpo)
     if resto == ["mostrar"]:

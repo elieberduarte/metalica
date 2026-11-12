@@ -260,7 +260,7 @@ const NUNCA = /\/(progresso|vivo|fechou|versao|lento|cancelar)(\?|$)|\/desenhos-
 const ROTULOS = {
   'detalhar': 'Detalhando', 'detalhar-premoldado': 'Pré-moldado', 'detalhar-posicao': 'Detalhe da peça',
   'importar-ifc': 'Importando o modelo', 'importar-pacote': 'Importando o projeto', 'importar-dxf': 'Lendo o DXF', 'colar-autocad': 'Colando do AutoCAD',
-  'importar-pdf': 'Lendo o PDF', 'resumos': 'Resumos da obra', 'materiais': 'Lista de materiais', 'pdf': 'Gerando o PDF',
+  'importar-pdf': 'Lendo o PDF', 'resumos': 'Resumos da obra', 'materiais': 'Lista de materiais', 'pdf': 'Gerando o PDF', 'video': 'Gravando o vídeo',
   'dxf': 'Gerando o DXF', 'imprimir': 'Imprimindo as pranchas', 'folhas': 'Lendo as folhas', 'pranchas': 'Montando as pranchas', 'pranchas-das-folhas': 'Pranchas das folhas',
   'analise-estrutural': 'Análise estrutural', 'esforcos': 'Esforços e verificação', 'calcular': 'Calculando',
   'dimensionar': 'Dimensionando', 'memorial': 'Memorial', 'conferencia': 'Conferindo', 'aplicar-pecas': 'Aplicando no 3D',

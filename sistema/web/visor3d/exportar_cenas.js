@@ -87,9 +87,14 @@ const LADOS = [['tela', 'Tela', 'rápido, para conferir'], ['1920', 'Full HD', '
                ['3840', '4K', 'apresentação, proposta'], ['4961', 'Impressão A3 a 300 dpi', '']];
 const CHAVE = 'metalica.exportarCenas';
 const BYTES_POR_PX = { jpg: 0.3, png: 1.4, pdf: 0.3 };       // para o "~2,5 MB" da prévia (a média do Filipin)
+// o vídeo das cenas (12/11: "o sistema ir passeando por elas como se fosse uma câmera"): segundos de uma cena à outra, a
+// parada em cada uma; só Full HD e 4K (o H.264 do navegador)
+const VELOCIDADES = { lento: 4, normal: 3, rapido: 2 }, PARADA_VIDEO = 1.5, LADOS_VIDEO = ['1920', '3840'];
+const MBIT_VIDEO = (w, h) => Math.min(60, Math.max(4, w * h * 30 * 0.2 / 1e6));   // o mesmo de video_cenas.js (taxa)
 
 function lerOpcoes() {
-  const padrao = { quais: 'esta', marcadas: [], lado: '3840', qualidade: 'refinada', formato: 'jpg', gravar: true, baixar: false, abrirPasta: true };
+  const padrao = { quais: 'esta', marcadas: [], lado: '3840', qualidade: 'refinada', formato: 'jpg', gravar: true, baixar: false, abrirPasta: true,
+                   velocidade: 'normal', parar: false };
   try { return { ...padrao, ...(JSON.parse(localStorage.getItem(CHAVE) || '{}')) }; } catch (e) { return padrao; }
 }
 function guardarOpcoes(o) { try { localStorage.setItem(CHAVE, JSON.stringify(o)); } catch (e) { /* sem o navegador guardar: tudo bem */ } }
@@ -117,7 +122,7 @@ const ESTILO = `
 #exportar-situacao { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
 #exportar-barra { flex: 1; height: 8px; border-radius: 4px; background: var(--borda); overflow: hidden; min-width: 60px; }
 #exportar-barra i { display: block; height: 100%; width: 0; background: var(--azul2, #1f5fbf); transition: width .2s; }
-#exportar-pasta[hidden] { display: none; }
+#exportar-pasta[hidden], #exportar-video[hidden] { display: none; }
 #exportar-falta { font-size: 12px; color: var(--texto2); min-width: 44px; text-align: right; }
 @media (max-width: 700px) { #exportar-caixa .corpo { grid-template-columns: 1fr; } #exportar-caixa .col + .col { border-left: 0; border-top: 1px solid var(--borda); } }
 `;
@@ -156,7 +161,7 @@ export function ligarExportar(ctx) {
     const ch = (id) => fundo.querySelector('#' + id).checked;
     return { quais: v('quais'), marcadas: [...fundo.querySelectorAll('#exportar-varias input:checked')].map(i => i.value),
              lado: v('lado'), qualidade: v('qualidade'), formato: v('formato'), gravar: ch('exportar-gravar'),
-             baixar: ch('exportar-baixar'), abrirPasta: ch('exportar-abrir') };
+             baixar: ch('exportar-baixar'), abrirPasta: ch('exportar-abrir'), velocidade: v('velocidade') || 'normal', parar: ch('exportar-parar') };
   }
 
   function escolhidas(o) {
@@ -170,9 +175,38 @@ export function ligarExportar(ctx) {
     return `Cena - ${String(c.nome || c.id).replace(/[<>:"/\\|?*]+/g, '-').trim()} (render).${fmt}`;
   }
 
+  /** O vídeo: os tamanhos que não servem ficam apagados; o resumo diz as cenas, a duração e o tamanho do arquivo. */
+  function resumoDoVideo(o) {
+    const video = o.formato === 'mp4';
+    fundo.querySelector('#exportar-video').hidden = !video;
+    for (const i of fundo.querySelectorAll('input[name=lado]')) {
+      const off = video && !LADOS_VIDEO.includes(i.value);
+      i.disabled = off; i.closest('label').classList.toggle('off', off);
+    }
+    if (video && !LADOS_VIDEO.includes(o.lado)) { fundo.querySelector('input[name=lado][value="1920"]').checked = true; o.lado = '1920'; }
+    if (!video) return false;
+    const lista = escolhidas(o).filter(c => c.tipo === '3d'), n = lista.length, atual = ctx.atual();
+    const [w, h] = atual && atual.tipo === '3d' ? ctx.tamanho(o.lado) : [+o.lado, Math.round(+o.lado * 9 / 16)];
+    const seg = n * (o.parar ? PARADA_VIDEO : 0) + Math.max(0, n - 1) * (VELOCIDADES[o.velocidade] || 3), mb = MBIT_VIDEO(w, h) * seg / 8;
+    fundo.querySelector('#exportar-info').innerHTML = n >= 2
+      ? `Vídeo de ${n} cenas · ~${nf(seg)} s · ${nf(w)} × ${nf(h)} · MP4 · ~${nf(mb)} MB<br><span class="fraco">${lista.map(c => esc(c.nome)).join(' → ')}</span>`
+      : 'O vídeo passa por duas cenas do 3D ou mais.';
+    const pronto = n >= 2 && (o.gravar || o.baixar), bt = fundo.querySelector('#exportar-ir');
+    bt.disabled = !pronto;
+    bt.textContent = 'Gravar o vídeo';
+    fundo.querySelector('#exportar-situacao').textContent = n < 2 ? 'Marque duas cenas do 3D ou mais em Várias (ou escolha Todas).'
+      : !(o.gravar || o.baixar) ? 'Escolha gravar na pasta ou baixar.' : '';
+    fundo.querySelector('#exportar-aviso-fmt').textContent = '';
+    return true;
+  }
+
   function mostrarResumo() {
     if (!fundo) return;
     const o = opcoesDaTela(), lista = escolhidas(o), atual = ctx.atual();
+    fundo.querySelector('#exportar-varias').hidden = o.quais !== 'varias';
+    fundo.querySelector('#exportar-marca').textContent = ctx.marca();
+    fundo.querySelector('#exportar-abrir').disabled = !o.gravar;
+    if (resumoDoVideo(o)) { guardarOpcoes(opcoesDaTela()); return; }
     const [w, h] = atual ? ctx.tamanho(o.lado) : [0, 0];
     const fmt = o.formato === 'png' ? 'PNG' : o.formato === 'pdf' ? 'PDF' : 'JPG';
     const mb = w * h * BYTES_POR_PX[o.formato] / 1048576;
@@ -237,8 +271,57 @@ export function ligarExportar(ctx) {
     setTimeout(() => URL.revokeObjectURL(a.href), 60000);
   }
 
+  /** O vídeo das cenas escolhidas (as do 3D, na ordem da lista): a tela anda por elas e grava o MP4. */
+  async function gravarVideo(o) {
+    const lista = escolhidas(o).filter(c => c.tipo === '3d');
+    if (lista.length < 2 || rodando) return;
+    rodando = { cancelado: false };
+    const estado = rodando;
+    for (const el of fundo.querySelectorAll('.corpo input, #exportar-ir')) el.disabled = true;
+    fundo.querySelector('#exportar-pasta').hidden = true;
+    fundo.querySelector('#exportar-cancelar').textContent = 'Cancelar';
+    const t0 = performance.now(), obra = String(ctx.nomeObra() || 'obra').replace(/[<>:"/\\|?*]+/g, '-').trim();
+    let erro = null, gravado = null, info = null;
+    try {
+      andamento('Vídeo · abrindo a primeira cena…', 0, '');
+      info = await ctx.video({ ids: lista.map(c => c.id), lado: +o.lado || 1920, ss: o.qualidade === 'rapida' || +o.lado > 1920 ? 1 : 2,
+        porTrecho: VELOCIDADES[o.velocidade] || 3, parada: o.parar ? PARADA_VIDEO : 0, cancelado: () => estado.cancelado,
+        aoAndar: async (f, n, txt) => {
+          const fr = f / n, gasto = (performance.now() - t0) / 1000, falta = fr > 0.02 ? Math.max(0, gasto / fr - gasto) : NaN;
+          andamento(`Vídeo · quadro ${nf(f)} de ${nf(n)} — ${txt}`, fr, isFinite(falta) ? `~${falta > 90 ? nf(falta / 60) + ' min' : nf(falta) + ' s'}` : '');
+          await new Promise(res => setTimeout(res, 0));
+        } });
+      if (estado.cancelado) throw new Error('cancelado');
+      andamento('Vídeo · gravando o arquivo…', 1, '');
+      const nome = `Vídeo - ${obra} (cenas).mp4`;
+      if (o.gravar) gravado = (await ctx.enviarVideo(info.mp4, nome)).nome;
+      if (o.baixar) baixar(info.mp4, nome);
+      if (o.gravar && o.abrirPasta && gravado) await ctx.abrirPasta(gravado).catch(() => {});
+    } catch (e) { erro = e; }
+    rodando = null;
+    const fim = erro && erro.message === 'cancelado' ? 'Vídeo cancelado.'
+      : erro ? 'O vídeo parou: ' + erro.message
+      : `Pronto: vídeo de ${info.cenas} cenas, ${nf(info.segundos, 1)} s, ${nf(info.w)} × ${nf(info.h)}, feito em ${nf((performance.now() - t0) / 1000)} s`
+        + (gravado ? ` — na pasta cenas da obra: ${gravado}` : '') + '.';
+    await ctx.terminou().catch(() => {});
+    if (fundo) {
+      for (const el of fundo.querySelectorAll('.corpo input, #exportar-ir')) el.disabled = false;
+      fundo.querySelector('#exportar-cancelar').textContent = 'Fechar';
+      mostrarResumo();
+      andamento(fim, erro ? 0 : 1, '');
+      fundo.querySelector('#exportar-situacao').title = fim;
+      const bt = fundo.querySelector('#exportar-pasta');
+      bt.hidden = !gravado;
+      bt.onclick = () => ctx.abrirPasta(gravado).catch(e => andamento('A pasta não abriu: ' + e.message, 1, ''));
+      agendarPrevia();
+    }
+    window.ultimoLoteCenas = { gravados: gravado ? [gravado] : [], pulados: [], erro: erro ? erro.message : null, paginas: 0, baixados: [],
+                               video: info ? { cenas: info.cenas, segundos: info.segundos, w: info.w, h: info.h, quadros: info.quadros, bytes: info.mp4.size } : null };
+  }
+
   async function renderizarLote() {
     const o = opcoesDaTela(), lista = escolhidas(o);
+    if (o.formato === 'mp4') return gravarVideo(o);
     if (!lista.length || rodando) return;
     const antes = ctx.atual() && ctx.atual().id;
     rodando = { cancelado: false };
@@ -337,6 +420,11 @@ export function ligarExportar(ctx) {
         ${radio('qualidade', 'rapida', 'Rápida', 'como está na tela', o.qualidade === 'rapida')}
         <h3>Formato e destino</h3>
         <div class="linha" style="gap:14px">${radio('formato', 'jpg', 'JPG', '(menor)', !['png', 'pdf'].includes(o.formato))}${radio('formato', 'png', 'PNG', '(fundo transparente possível)', o.formato === 'png')}${radio('formato', 'pdf', 'PDF', '(uma página por cena)', o.formato === 'pdf')}</div>
+        ${radio('formato', 'mp4', 'Vídeo MP4', '(a câmera passeando pelas cenas escolhidas, na ordem da lista)', o.formato === 'mp4')}
+        <div id="exportar-video" hidden><h3>Vídeo</h3>
+          <div class="linha" style="gap:14px">${radio('velocidade', 'lento', 'Lento', '(4 s de uma cena à outra)', o.velocidade === 'lento')}${radio('velocidade', 'normal', 'Normal', '(3 s)', !['lento', 'rapido'].includes(o.velocidade))}${radio('velocidade', 'rapido', 'Rápido', '(2 s)', o.velocidade === 'rapido')}</div>
+          <label><input type="checkbox" id="exportar-parar"${o.parar ? ' checked' : ''}> <span>Parar um instante em cada cena <small>(${nf(PARADA_VIDEO, 1)} s)</small></span></label>
+          <span class="fraco">Sem parar, a câmera voa numa curva só por todas as cenas, na mesma velocidade, como um drone; a luz muda suave de uma à outra. A marca d'água é a da primeira cena.</span></div>
         <span class="fraco" id="exportar-aviso-fmt"></span>
         <label><input type="checkbox" id="exportar-gravar"${o.gravar ? ' checked' : ''}> <span>Gravar na pasta da obra <small>(cenas/ — aparece na aba Arquivos)</small></span></label>
         <label><input type="checkbox" id="exportar-baixar"${o.baixar ? ' checked' : ''}> <span>Baixar também <small>(um ZIP quando forem várias)</small></span></label>

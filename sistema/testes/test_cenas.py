@@ -452,6 +452,29 @@ def test_pdf_do_exportar_vai_para_a_pasta_cenas(tmp_path):
     assert C.nova_3d(g, s, {"nome": "PDF", "camera": _CAM})["id"] == "pdf-cena"
 
 
+def test_video_do_exportar_vai_para_a_pasta_cenas(tmp_path):
+    """12/11 (o vídeo passeando pelas cenas, montado na tela): o MP4 vai para cenas/ com o nome dado pela tela — só o nome,
+    sempre .mp4, só MP4 de verdade (a caixa ftyp); o de mesmo nome é trocado; "video" não vira id de cena."""
+    g, s = _gerente(tmp_path)
+    mp4 = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomavc1" + b"\x00" * 64
+
+    def enviar(nome, conteudo=mp4):
+        caminho = os.path.join(str(tmp_path), "envio.mp4")
+        with open(caminho, "wb") as f:
+            f.write(conteudo)
+        return C.rota_post(g, s, ["video"], {"arquivo_local": caminho, "nome": nome})
+    assert enviar("Vídeo - Obra (cenas).mp4")["nome"] == "Vídeo - Obra (cenas).mp4"
+    assert enviar("Vídeo - Obra (cenas).mp4", mp4 + b"mais")["nome"] == "Vídeo - Obra (cenas).mp4"   # o de antes trocado
+    assert os.path.getsize(os.path.join(g.pasta(s), "cenas", "Vídeo - Obra (cenas).mp4")) == len(mp4) + 4
+    assert enviar(r"..\..\fora")["nome"] == "fora.mp4"
+    with pytest.raises(C.ErroCena):
+        enviar("x.mp4", b"%PDF-1.4\n%%EOF\n")                         # não é MP4
+    assert not os.path.exists(os.path.join(str(tmp_path), "envio.mp4"))  # o recusado não fica no disco
+    with pytest.raises(C.ErroCena):
+        C.rota_post(g, "nao-existe", ["video"], {"arquivo_local": "x", "nome": "a.mp4"})
+    assert C.nova_3d(g, s, {"nome": "Video", "camera": _CAM})["id"] == "video-cena"
+
+
 def test_mostrar_o_render_na_pasta(tmp_path, monkeypatch):
     """11/11 ("preciso que os render feito tenha um acesso rápido a pasta para encontrar o arquivo"): …/cenas/mostrar abre a
     pasta cenas/ com o arquivo selecionado — só de dentro dela; a lista diz qual é o render da cena (o do cartão)."""

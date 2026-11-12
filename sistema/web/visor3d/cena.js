@@ -23,6 +23,7 @@ import { encaixar } from './encaixe.js';
 import { SOL_PADRAO, definirSol, controlesDoSol, ligarControlesDoSol } from './sol.js';
 import { ligarExportar } from './exportar_cenas.js';
 import { Figuras, TIPOS_FIGURA, arvoresDoFundo } from './figuras_cena.js';
+import { linhaDoTempo, caminhoContinuo, cameraEntre, anguloEntre, GravadorMp4 } from './video_cenas.js';
 
 const $ = s => document.querySelector(s);
 const q = new URLSearchParams(location.search);
@@ -615,21 +616,113 @@ async function gerarMiniatura() {
 
 /** A imagem da cena do 3D em w × h: a lente da cena, o quadro inteiro; o céu pintado antes (o degradê da tela se repetiria
  *  em cada bloco do render) e o 3D por cima. Devolve a tela com a lente do quadro. */
-async function imagemDaCena3d(w, h, ss = 1, aoBloco = null, comMarca = true) {
-  const amb = ambienteDaCena(), fundoAntes = visor.cena.background;
+async function imagemDaCena3d(w, h, ss = 1, aoBloco = null, comMarca = true, ceu = null) {
+  // `ceu(g, w, h, cam)`: o fundo pintado por quem chama (o vídeo, no meio de um trecho entre dois ambientes)
+  const amb = ambienteDaCena(), fundoAntes = visor.cena.background, pintar = ceu || (amb ? (g, w_, h_, cam) => pintarCeu(g, w_, h_, amb, cam) : null);
   visor.camera.fov = fovCena;
-  if (amb) visor.cena.background = null;
+  if (pintar) visor.cena.background = null;
   try {
     const img = await montarImagem(w, h, ss, aoBloco, { comFoto: false, frente: false,
-      antes: amb ? (g) => {                                 // o céu do ambiente pela câmera da imagem (a lente e a proporção dela)
+      antes: pintar ? (g) => {                              // o céu do ambiente pela câmera da imagem (a lente e a proporção dela)
         const cam = visor.camera.clone(); cam.fov = fovCena; cam.aspect = w / h; cam.clearViewOffset();
-        cam.updateProjectionMatrix(); cam.updateMatrixWorld(); pintarCeu(g, w, h, amb, cam);
+        cam.updateProjectionMatrix(); cam.updateMatrixWorld(); pintar(g, w, h, cam);
       } : null });
     if (comMarca) await marcaNaImagem(img);                // a marca d'água
     return img;
   } finally {
     visor.cena.background = fundoAntes;
     ajustarQuadro();
+  }
+}
+
+// ------------------------------------------------------------------ o vídeo das cenas (12/11)
+// (usuário: "fiz uma sequência de cenas… usar ela como ref. e o sistema ir passeando por elas como se fosse uma câmera se
+// movimentando"; aprovado: para em cada cena, o visual muda suave no caminho, na janela Exportar). A câmera anda em arco
+// de uma cena à outra (video_cenas.js); no meio do trecho a cena de chegada é aberta (as camadas, as figuras, o estilo trocam
+// ali); a luz, o céu, o chão e o sol passam de um ambiente ao outro durante o trecho. A marca d'água é a da 1ª cena.
+const LUZ_DO_VISOR = { ambCeu: [0.76, 0.81, 0.90], ambChao: [0.58, 0.56, 0.54], ambK: 0.7, solCor: [1.0, 0.97, 0.92], solK: 0.66, pisoAmb: 1, aresta: 1 };
+
+/** O ambiente de uma cena (a luz, as luzes de noite, o sol, o céu, a cor do chão) sem abri-la. */
+function visualDaCena(c) {
+  const salva = cena; cena = c;
+  try {
+    const amb = eh3d() ? ambienteDaCena() : null;
+    return { amb, fundo: c.fundo || 'ceu', luz: { ...LUZ_DO_VISOR, ...((amb && amb.luz) || {}) }, luzes: amb ? luzesDoAmbiente(amb) : [],
+             sol: solDaCena(), piso: amb ? amb.piso : null };
+  } finally { cena = salva; }
+}
+
+/** O fundo de uma cena na imagem (o céu do ambiente; o branco nos fundos lisos). */
+function pintarFundoDe(v, g, w, h, cam) {
+  if (v.amb) pintarCeu(g, w, h, v.amb, cam);
+  else { g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h); }
+}
+
+/** Põe na tela o visual entre a cena A e a B (k de 0 a 1): a luz e as luzes da noite, o chão, o sol; devolve o céu misturado. */
+function misturarVisual(A, B, k) {
+  const l = (a, b) => Array.isArray(a) ? a.map((v, i) => v + (b[i] - v) * k) : a + (b - a) * k;
+  const luz = Object.fromEntries(Object.keys(LUZ_DO_VISOR).map(c => [c, l(A.luz[c], B.luz[c])]));
+  const luzes = [...A.luzes.map(x => ({ ...x, forca: x.forca * (1 - k) })), ...B.luzes.map(x => ({ ...x, forca: x.forca * k }))]
+    .filter(x => x.forca > 1e-3).sort((a, b) => b.forca - a.forca).slice(0, LUZES_MAX);
+  visor.definirAmbiente({ ...luz, luzes }, false);
+  const u = visor.piso && visor.piso.material.uniforms;
+  if (u && A.piso && B.piso) u.uFundo.value.setStyle(A.piso, THREE.LinearSRGBColorSpace).lerp(new THREE.Color().setStyle(B.piso, THREE.LinearSRGBColorSpace), k);
+  if (A.sol.ligado && B.sol.ligado) definirSol(visor, { direcao: anguloEntre(A.sol.direcao, B.sol.direcao, k), altura: A.sol.altura + (B.sol.altura - A.sol.altura) * k });
+  return (g, w, h, cam) => {
+    pintarFundoDe(A, g, w, h, cam);
+    g.save(); g.globalAlpha = k; pintarFundoDe(B, g, w, h, cam); g.restore();
+  };
+}
+
+/** O vídeo das cenas `ids` (as do 3D, nessa ordem): o lado maior `lado` na proporção da 1ª cena, `porTrecho` segundos de uma
+ *  cena à outra, `parada` segundos parado em cada uma; `aoAndar(f, total, texto)` a cada quadro; `cancelado()` para. Devolve o
+ *  MP4 (Blob) e os números. */
+async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada = 0, ss = 1, aoAndar = null, cancelado = () => false }) {
+  const lista = ids.map(id => todasCenas.find(c => c.id === id)).filter(c => c && c.tipo === '3d' && c.camera && c.camera.posicao && c.camera.alvo);
+  if (lista.length < 2) throw new Error('escolha duas cenas do 3D ou mais');
+  const voltar = cena && cena.id;
+  if (!(await abrirCena(lista[0].id, { recarregar: false }))) {
+    if (!cena || cena.id !== lista[0].id) throw new Error(`a cena ${lista[0].nome} é da outra situação da cobertura`);
+  }
+  let [w, h] = tamanho3d(lado); w -= w % 2; h -= h % 2;
+  // sem parada (o padrão, 12/11: "como se fosse um drone sobrevoando a estrutura"): uma curva só, na velocidade constante
+  const marca = marcaDaCena(), linha = parada > 0 ? linhaDoTempo(lista.length, { porTrecho, parada, fps })
+    : caminhoContinuo(lista.map(c => c.camera), { porTrecho, fps });
+  const gravador = await GravadorMp4.abrir(w, h, fps);
+  const visuais = new Map();                                 // o visual de cada cena, lido uma vez (com a cena dela)
+  const visual = (c) => { if (!visuais.has(c.id)) visuais.set(c.id, visualDaCena(cena && cena.id === c.id ? cena : c)); return visuais.get(c.id); };
+  const t0 = performance.now();
+  let aberta = lista[0].id, img = null;
+  renderizando = true; mostrarBotoes();
+  try {
+    for (let f = 0; f < linha.total; f++) {
+      if (cancelado()) throw new Error('cancelado');
+      const q = linha.quadro(f), A = lista[q.i], B = lista[q.j];
+      if (q.parado && img) { await gravador.quadro(img); continue; }
+      const chegando = q.k >= 0.5 ? B : A;                   // as camadas, as figuras e o estilo trocam no meio do trecho
+      if (chegando.id !== aberta) {
+        if (!(await abrirCena(chegando.id, { recarregar: false }))) { if (!cena || cena.id !== chegando.id) throw new Error(`a cena ${chegando.nome} é da outra situação da cobertura`); }
+        aberta = chegando.id;
+        renderizando = true;
+      }
+      const cam = q.cam || cameraEntre(A.camera, B.camera, q.k);
+      visor.definirCamera({ posicao: cam.posicao, alvo: cam.alvo });
+      fovCena = cam.fov;
+      let ceu = null;
+      if (q.i !== q.j && q.k > 0 && q.k < 1) ceu = misturarVisual(visual(A), visual(B), q.k);
+      img = await imagemDaCena3d(w, h, ss, null, false, ceu);
+      await desenharMarca(img, marca);
+      await gravador.quadro(img);
+      if (aoAndar) await aoAndar(f + 1, linha.total, q.i === q.j ? lista[q.i].nome : `${A.nome} → ${B.nome}`);
+    }
+    const mp4 = await gravador.fim();
+    return { mp4, w, h, fps, quadros: linha.total, segundos: linha.segundos, demorou: (performance.now() - t0) / 1000, cenas: lista.length };
+  } catch (e) { gravador.cancelar(); throw e; }
+  finally {
+    renderizando = false;
+    if (voltar && (!cena || cena.id !== voltar)) await abrirCena(voltar, { recarregar: false }).catch(() => {});
+    else if (eh3d()) { aplicarEstilo3d(); aplicarSol(); aplicarVistaDaCena(); }
+    mostrarBotoes();
   }
 }
 
@@ -2333,6 +2426,8 @@ function ligarExportarCenas() {
     marca: textoDaMarca,
     enviar: (blob, nome) => pedir(`${API}/${encodeURIComponent(cena.id)}/imagem`, undefined, { dados: blob, nome }),
     enviarPdf: (blob, nome) => pedir(`${API}/pdf`, undefined, { dados: blob, nome }),
+    video: (o) => videoDasCenas(o),
+    enviarVideo: (blob, nome) => pedir(`${API}/video`, undefined, { dados: blob, nome }),
     abrirPasta: (nome) => mostrarNaPasta(nome),
     terminou: () => atualizarCartoes(),
     nomeObra: () => $('#titulo-obra').textContent,
@@ -2551,7 +2646,7 @@ function desenharMarcas() {
 window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado, desenho, paredes: paredes.length, fina: !telaFina.hidden,
                                     fovCena, quadro: quadroAtual, vistaMudou, cenas: todasCenas.map(c => c.id) }), mostrarModo, pontoDo3d, fazerEncaixe,
                    concluir, desfazer, refazer, geometriaDoContorno, bordaDeBaixo, montarImagem, abrirCena, novaCena3d, imagemDaCena3d, cameraDaTela,
-                   exportar: () => exportar, tamanhoExportar, medidaDoLogo };
+                   exportar: () => exportar, tamanhoExportar, medidaDoLogo, videoDasCenas };
 // saindo da página (o ← 3D antes de o 3D terminar de chegar): o pedido cortado pela troca de página não é erro
 let saindoDaPagina = false;
 addEventListener('beforeunload', () => { saindoDaPagina = true; });
