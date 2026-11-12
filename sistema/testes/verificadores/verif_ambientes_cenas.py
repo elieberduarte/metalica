@@ -109,6 +109,7 @@ try:
     l0 = luz(aba)
     ok(l0 == {"n": 0, "solK": 0.66, "ambK": 0.7, "solCor": [1.0, 0.97, 0.92], "aresta": 1}, f"o Dia: a luz de sempre ({l0})")
     ok(aba.avaliar("!!document.querySelector('#ambiente3d [data-v=ceu].ligado') && !document.getElementById('ceu').hidden"), "Dia marcado, o céu atrás do 3D")
+    ok(aba.avaliar("visor.piso.material.uniforms.uAlfa.value") == 0, "sem as linhas do piso (12/11: \"essas linhas do piso para as cenas não precisa existir\")")
 
     print("P — o painel em seções (12/11, amostra-7: \"1 · Seções que abrem\")")
     ok(aba.avaliar("document.querySelectorAll('#corpo3d details.secao').length === 4 && !!document.querySelector('details#marca-bloco')"),

@@ -218,7 +218,7 @@ const FOV_PADRAO = 45;
 // do sol, as arestas) e, de noite, as luzes automáticas (refletores em volta e a luz interna: [força dos refletores, da
 // interna]). "ceu" é o Dia de antes (a luz padrão, as linhas do piso).
 const AMBIENTES = {
-  ceu: { nome: 'Dia', ceu: ['#8fb8de', '#dfe9f3'], piso: '#dfe9f3', grade: true },
+  ceu: { nome: 'Dia', ceu: ['#8fb8de', '#dfe9f3'], piso: '#dfe9f3' },
   entardecer: { nome: 'Entardecer', ceu: ['#3f5687', '#c98a7a', '#f3c48c'], piso: '#e9c6a0', solAltura: 9,
                 luz: { ambCeu: [0.62, 0.60, 0.74], ambChao: [0.66, 0.50, 0.40], ambK: 0.62, solCor: [1.0, 0.68, 0.40], solK: 0.95, pisoAmb: 0.95, aresta: 0.9 } },
   nublado: { nome: 'Nublado', ceu: ['#aeb8c4', '#e4e7eb'], piso: '#e1e3e6',
@@ -417,7 +417,8 @@ function aplicarFundo() {
   visor.definirAmbiente(amb && amb.luz ? { ...amb.luz, luzes: luzesDoAmbiente(amb) } : null, false);
   if (amb) {                                                // o céu atrás (#ceu), o chão na cor do horizonte
     visor.cena.background = null;
-    if (u) { u.uFundo.value.setStyle(amb.piso, THREE.LinearSRGBColorSpace); if (!amb.grade) u.uAlfa.value = 0; }
+    // sem as linhas de 10 m do piso em nenhum ambiente (usuário, 12/11: "essas linhas do piso para as cenas não precisa existir")
+    if (u) { u.uFundo.value.setStyle(amb.piso, THREE.LinearSRGBColorSpace); u.uAlfa.value = 0; }
   } else if (f === 'branco') {
     visor.cena.background = new THREE.Color().setStyle('#ffffff', THREE.LinearSRGBColorSpace);
     if (u) { u.uFundo.value.setStyle('#ffffff', THREE.LinearSRGBColorSpace); u.uAlfa.value = 0; }
