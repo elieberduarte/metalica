@@ -154,3 +154,29 @@ def test_oitao_acompanha_a_curva_nova_sem_abrir_vao():
             assert v == v0                                      # o pé não se move
     assert M.desfazer_modelo(doc)["pecas"] == 9
     assert [tuple(v) for v in oit.vertices] == orig and M.CHAVE not in oit.atributos
+
+
+def test_oitao_longe_do_arco_antigo_tambem_sobe_ate_a_curva_nova():
+    """Sala de Compressores (12/11, "A telha precisa seguir a multidobra"): o TecnoMETAL deixa pontos do topo do oitão
+    longe do arco antigo, por dentro da reta da parede; a conta pelo arco antigo não os movia e, junto da parede, eles
+    ficavam até 100 mm abaixo do arco novo — uma abertura. Todo ponto do topo perto da curva sobe até ela (e entra na
+    onda); o pé não sobe."""
+    doc = _doc(1)
+    x = 700.0
+    z_velho = -R_MODELO + math.sqrt((R_MODELO - H / 2) ** 2 - x ** 2) + 150.0     # 150 acima do arco antigo
+    vs = []
+    for y in (-490.0, -470.0):
+        vs += [(x - 20, y, -R_MODELO - 600.0), (x + 20, y, -R_MODELO - 600.0), (x + 20, y, z_velho), (x - 20, y, z_velho)]
+    oit = Solido(nome="TELHA TP40 0.50MM", camada="Telhas", vertices=vs,
+                 faces=[[0, 1, 2, 3], [4, 7, 6, 5], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]],
+                 atributos={"tipo_ifc": "IfcPlate", "marcas": {"posicao": "OI", "conjunto": "OIT", "perfil": "TELHA TP40 0.50MM"}})
+    doc.add(oit)
+    M.ajustar_modelo(doc)
+    Rm = RAIO_INTERNO_COMERCIAL + H / 2
+    cx, cz = R_MODELO - Rm, -Rm
+    for v in oit.vertices:
+        if v[2] > -R_MODELO - 600.0 + 1:
+            fundo = cz + math.sqrt(RAIO_INTERNO_COMERCIAL ** 2 - (v[0] - cx) ** 2)
+            assert v[2] >= fundo - 15.0, (v, fundo)          # sem a correção: 92 mm abaixo do arco novo
+        else:
+            assert abs(v[2] - (-R_MODELO - 600.0)) < 1e-6

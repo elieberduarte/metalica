@@ -191,6 +191,8 @@ def _ajustar_instancia(it: dict, raio_int: float) -> Optional[dict]:
 
 #: O topo da telha do oitão está "na curva" da multidobra quando fica até isto (mm) da face de baixo dela.
 OITAO_NA_CURVA = 80.0
+#: Quanto o topo do oitão entra na onda da multidobra quando precisa subir até ela (mm): o TecnoMETAL encaixa 50 a 80.
+OITAO_ENCAIXE = 50.0
 
 
 def _fundo(pecas: Sequence[Solido], hdir, parede: Solido):
@@ -279,6 +281,23 @@ def _acompanhar_oitao(doc: Documento, it: dict, antes: Dict[str, list], conj: st
                 mudou = True
             else:
                 novos.append(tuple(v))
+        # e nenhum ponto do topo fica abaixo da curva nova (12/11, "a telha precisa seguir a multidobra"): o TecnoMETAL
+        # deixa pontos do topo longe do arco antigo, por dentro da reta da parede, que a conta de cima não move — junto
+        # da parede eles ficavam até 100 mm abaixo do arco novo. O topo de cada coluna (o ponto mais alto em h, w) sobe até
+        # a face de baixo e entra OITAO_ENCAIXE na onda.
+        topo = {}
+        for i, (v, h) in enumerate(zip(novos, he)):
+            k = (round(h), round(_dot(v, w)))
+            if k not in topo or v[2] > novos[topo[k]][2]:
+                topo[k] = i
+        for i in topo.values():
+            v = novos[i]
+            zn, zo = z_depois(he[i]), z_antes(he[i])
+            if zn is None or (zo is not None and abs(zn - zo) <= 1.0):
+                continue                                    # onde a curva não mudou (a reta da água), o topo fica como veio
+            if zn - 300.0 < v[2] < zn:                      # perto da curva: o pé da telha nunca sobe
+                novos[i] = (v[0], v[1], zn + OITAO_ENCAIXE)
+                mudou = True
         if not mudou:
             continue
         at = dict(e.atributos or {})
