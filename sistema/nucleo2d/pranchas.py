@@ -319,7 +319,7 @@ def _conteudo_de(cels: Sequence[dict]) -> List[str]:
             continue                                  # o detalhe de furos é da tesoura, que já está na lista
         it = c.get("item") or {}
         cat = (c.get("categoria") or it.get("categoria") or "VISTAS").upper()
-        cat = {"CHUMBACAO": "PLANTA DE CHUMBAÇÃO", "TELHAS_DET": "TELHAS", "TELHAS_TIPOS": "TELHAS",
+        cat = {"CHUMBACAO": "PLANTA DE CHUMBAÇÃO", "TELHAS_DET": "TELHAS", "TELHAS_TIPOS": "TELHAS", "TELHAS_PARAF": "TELHAS",
                "LOCALIZACAO": "VISTAS"}.get(cat, cat)
         if cat == "TESOURAS" and it.get("titulo_categoria"):
             cat = str(it["titulo_categoria"]).upper()
@@ -731,7 +731,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             if cat1 == "TELHAS_TIPOS":
                 w1 = w1_min                                   # a coluna da paginação só da largura dela
             if cat2 == "TELHAS_DET":
-                w1 = larg_t - w2_min                          # a coluna dos detalhes só da largura deles (padrão de 12/11)
+                # o quadro das fachadas só da largura delas (padrão de 12/11), com quantas couberem por fileira
+                w1 = larg_t - max([w2_min] + [c_.get("_larg_quadro", 0.0) for c_ in g2])
             xs = ux0 + w1
             for cat_, x0_, x1_ in ((cat1, ux0, xs), (cat2, xs + FOLGA, ux1)):
                 y_ = uy1 - QUADRO_CABECALHO - FOLGA
@@ -950,7 +951,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             else:
                 candidatas = [c for c in fila if c["categoria"] in cats_p and c.get("pai") is None]
                 if "TELHAS" in cats_p or "TELHAS_TIPOS" in cats_p:
-                    candidatas = [c for c in fila if c["categoria"] == "TELHAS_DET"]
+                    # a relação dos parafusos de telha (o padrão de 12/11) e os detalhes que não couberam em cima
+                    candidatas = [c for c in fila if c["categoria"] in ("TELHAS_DET", "TELHAS_PARAF")]
                 if "TERÇAS" in cats_p:
                     # a prancha das terças leva nos ACESSÓRIOS/DISPOSITIVOS os suportes de terça, não mais terças
                     # (pedido do usuário, 28/09)
@@ -2369,6 +2371,46 @@ def _espacar_textos(c: dict):
                 n = copy.copy(t)
                 n.posicao = (t.posicao[0], y0 + (t.posicao[1] - y0) * fator)
                 novo_de[id(t)] = n
+    # as pilhas de texto de pé (a 90° ou 270°) também: a chamada do canto do forro girada para ficar como os tipos (a
+    # prancha padrão de telhas, Sala 12/11) tinha as linhas encavaladas a 1:125 — no referencial do texto, a mesma conta
+    for ang_ in (90.0, 270.0):
+        sg = 1.0 if ang_ == 90.0 else -1.0
+        rot = [t for t in ents if isinstance(t, Texto) and abs(((t.angulo or 0.0) - ang_ + 180.0) % 360.0 - 180.0) < 1e-3]
+        if len(rot) < 2:
+            continue
+        loc = {id(t): (sg * t.posicao[1], -sg * t.posicao[0]) for t in rot}      # X ao longo do texto, Y para cima da letra
+
+        def faixa_X(t):
+            larg = LARGURA_LETRA * t.altura * esc0 * len(t.texto or "")
+            x0 = loc[id(t)][0] - (larg / 2 if t.alinhamento == "centro" else larg if t.alinhamento == "direita" else 0.0)
+            return x0, x0 + larg
+        fX = [faixa_X(t) for t in rot]
+        pai_r = list(range(len(rot)))
+
+        def raiz_r(i):
+            while pai_r[i] != i:
+                pai_r[i] = pai_r[pai_r[i]]
+                i = pai_r[i]
+            return i
+        for i in range(len(rot)):
+            for j in range(i + 1, len(rot)):
+                if (fX[i][0] < fX[j][1] and fX[j][0] < fX[i][1]
+                        and abs(loc[id(rot[i])][1] - loc[id(rot[j])][1]) <= (max(rot[i].altura, rot[j].altura) + 3.0) * esc0):
+                    pai_r[raiz_r(i)] = raiz_r(j)
+        grupos_r: Dict[int, list] = collections.OrderedDict()
+        for i, t in enumerate(rot):
+            grupos_r.setdefault(raiz_r(i), []).append(t)
+        for g in grupos_r.values():
+            if len(g) < 2:
+                continue
+            g.sort(key=lambda t: -loc[id(t)][1])
+            Y0 = loc[id(g[-1])][1]                       # a linha de baixo (a da chamada) fica
+            for t in g[:-1]:
+                X, Y = loc[id(t)]
+                Yn = Y0 + (Y - Y0) * fator
+                n = copy.copy(t)
+                n.posicao = (-sg * Yn, sg * X)
+                novo_de[id(t)] = n
     # a amostra de cor da legenda (o quadradinho à esquerda do texto) vai junto com o texto dela (29/09)
     for t in txts:
         n = novo_de.get(id(t))
@@ -2485,12 +2527,14 @@ def _quebrar_cabecalho(c: dict, largura: float) -> None:
 def _prancha_padrao_de_telhas(itens: list, tipos: dict, faces: List[dict], detalhes: List[dict], largura: float,
                               altura: float, ordem: dict, titulos_q: dict) -> list:
     """A PRANCHA PADRÃO DE TELHAS (usuário, 12/11, sobre a revisão à mão da prancha 13 da Sala: "Sim, é assim"; regras
-    para as outras obras escolhidas por ele: sai a água inclinada, a planta das marcas na orientação dos tipos):
+    para as outras obras escolhidas por ele: sai a água inclinada, a planta das marcas na orientação dos tipos; rodada 2,
+    o mesmo dia, nas duas obras da Sooro e no padrão):
 
-    * um quadro largo "TIPOS DE TELHA | TELHAS": em cima a planta dos tipos e, ao lado, a planta das marcas (a face de
-      cobertura plana, 0°) girada para ficar na orientação dela; embaixo as fachadas e os oitões, lado a lado numa
-      fileira — sem passar de 1:125; se não cabem, em mais fileiras, e a planta dos tipos cede;
-    * à direita, numa coluna, os detalhes (a multidobra, a cumeeira…), um embaixo do outro;
+    * à esquerda, o quadro "TIPOS DE TELHA | TELHAS": em cima a planta dos tipos e, ao lado, a planta das marcas (a face
+      de cobertura plana, 0°) girada para ficar na orientação dela; embaixo os detalhes (a multidobra e, ao lado, a
+      cumeeira);
+    * à direita, numa coluna, as fachadas e os oitões, uma embaixo da outra (sem passar de 1:125);
+    * a relação dos parafusos de telha no quadro de baixo, ao lado da legenda (onde ficavam os ACESSÓRIOS);
     * a face de cobertura inclinada sai (a planta dos tipos já a mostra).
 
     Devolve os itens (sem as faces que saíram); as categorias, a ordem e as escalas ficam nas células."""
@@ -2501,73 +2545,120 @@ def _prancha_padrao_de_telhas(itens: list, tipos: dict, faces: List[dict], detal
     resto = [c for c in faces if c is not planta]
     if planta is not None and (tipos["h"] > tipos["w"]) != (planta["h"] > planta["w"]):
         _girar_celula(planta, -90.0)
-    seq = [tipos] + ([planta] if planta is not None else []) + resto
-    for i, c in enumerate(seq):
+    parafusos = [c for c in detalhes if str(c.get("titulo") or "").upper().startswith("RELAÇÃO DE PARAFUSOS")]
+    detalhes = [c for c in detalhes if not any(c is x for x in parafusos)]
+    de_cima = [tipos] + ([planta] if planta is not None else [])
+    for i, c in enumerate(de_cima + detalhes):
         c["categoria"] = "TELHAS"
         c["_ordem"] = i
         c.pop("quebra_antes", None)
-    if resto:
-        resto[0]["quebra_antes"] = True                # as fachadas na fileira de baixo
-    for i, c in enumerate(detalhes):
+    if detalhes:
+        detalhes[0]["quebra_antes"] = True             # os detalhes na fileira de baixo
+    for i, c in enumerate(resto):
         c["categoria"] = "TELHAS_DET"
+        c["_ordem"] = i
+        c.pop("quebra_antes", None)
+    for i, c in enumerate(parafusos):
+        c["categoria"] = "TELHAS_PARAF"
         c["_ordem"] = i
     titulos_q["TELHAS"] = "Tipos de telha | Telhas"
     titulos_q["TELHAS_DET"] = ""
+    titulos_q["TELHAS_PARAF"] = ""                      # a relação tem o título dela
     ordem["TELHAS_DET"] = ordem.get("TELHAS", 0) + 0.5
-    # a coluna dos detalhes: na escala deles, reduzidos só se não couberem um embaixo do outro
-    fatores = (1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0)
-    if detalhes:
-        base_d = {id(c): float(c.get("escala") or c["k"]) for c in detalhes}
-        for f in fatores:
-            for c in detalhes:
-                _reescalar(c, escala_normalizada(base_d[id(c)] * f - 1e-6))
-            if sum(c["h"] + FOLGA for c in detalhes) - FOLGA <= altura:
-                break
-    larg_det = (max(c["w"] for c in detalhes) + 2 * QUADRO_MARGEM + FOLGA) if detalhes else 0.0
-    larg = largura - larg_det - 2 * QUADRO_MARGEM
-    # o quadro largo: os tipos e a planta na mesma escala (g), as fachadas na delas (f); a menor redução que cabe e, no
-    # empate, as fachadas maiores (levam as cotas das chapas)
-    base = {id(c): float(c.get("escala") or c["k"]) for c in seq}
-    de_cima = [tipos] + ([planta] if planta is not None else [])
+    ordem["TELHAS_PARAF"] = ordem.get("TELHAS", 0) + 0.6
+    # o subtítulo comprido das fachadas quebrado na largura do desenho delas a 1:125 (senão ele decide a largura da coluna)
+    for c in resto:
+        esc0 = float(c.get("escala") or c["k"])
+        geo = [e for e in (c.get("_ents_escala0") or c["entidades"]) if not isinstance(e, (Texto, Cota, Chamada))]
+        cx_ = _caixa_de(geo, esc0)
+        if cx_:
+            _quebrar_cabecalho(c, (cx_[1][0] - cx_[0][0]) / max(ESCALA_MINIMA_TELHAS, esc0))
+    # as medidas de cada célula em cada redução, uma vez (a busca abaixo só soma)
+    fatores = (1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0)
+    base = {id(c): float(c.get("escala") or c["k"]) for c in de_cima + detalhes + resto}
+    medidas: Dict[tuple, Tuple[float, float]] = {}
 
-    def legivel(f):
-        """as fachadas não vão além de 1:125 (ESCALA_MINIMA_TELHAS) — ou da delas, se já é menor"""
-        return all(escala_normalizada(base[id(c)] * f - 1e-6) <= max(ESCALA_MINIMA_TELHAS, base[id(c)]) for c in resto)
-
-    def cabe(g, f, uma_fileira):
-        for c in de_cima:
-            _reescalar(c, escala_normalizada(base[id(c)] * g - 1e-6))
-        for c in resto:
+    def medir(c, f):
+        ch_ = (id(c), f)
+        if ch_ not in medidas:
             _reescalar(c, escala_normalizada(base[id(c)] * f - 1e-6))
-        if sum(c["w"] + FOLGA for c in de_cima) - FOLGA > larg:
-            return False
-        if uma_fileira and resto and sum(c["w"] + FOLGA for c in resto) - FOLGA > larg:
-            return False
-        y = max(c["h"] for c in de_cima)
-        x, alt_l = 0.0, 0.0
-        for c in resto:
-            if c["w"] > larg:
-                return False
-            if x > 0 and x + c["w"] > larg:
+            medidas[ch_] = (c["w"], c["h"])
+        return medidas[ch_]
+
+    def fileiras(cels, f, larg):
+        """a altura das fileiras das células (na ordem, cada fileira até encher a largura), ou None se uma não cabe;
+        `f`: a redução de todas, ou {id: redução} de cada uma"""
+        y, x, alt_l = 0.0, 0.0, 0.0
+        for c in cels:
+            w, h = medir(c, f[id(c)] if isinstance(f, dict) else f)
+            if w > larg:
+                return None
+            if x > 0 and x + w > larg:
                 y += alt_l + FOLGA
                 x, alt_l = 0.0, 0.0
-            x += c["w"] + FOLGA
-            alt_l = max(alt_l, c["h"])
-        return y + (alt_l + FOLGA if resto else 0.0) <= altura
-    # as fachadas lado a lado, numa fileira (como na prancha do usuário), com o subtítulo comprido quebrado na largura
-    # de cada uma; só sem jeito, em mais de uma
-    if len(resto) > 1:
-        for c in resto:
-            _quebrar_cabecalho(c, (larg - FOLGA * (len(resto) - 1)) / len(resto) - 2 * MARGEM_RETANGULO)
-    # de preferência sem passar de 1:125 nas fachadas (o Depósito, com 7, ia a 1:500 numa fileira só): numa fileira, senão
-    # em mais, a planta dos tipos cedendo; sem jeito nenhum, a menor redução que cabe
-    pares = sorted(((g, f) for g in fatores + (6.0, 8.0, 10.0) for f in fatores + (6.0, 8.0, 10.0)),
-                   key=lambda gf: (max(gf), gf[1], gf[0]))
-    legiveis = [(g, f) for g, f in pares if legivel(f)]
-    if not any(cabe(g, f, True) for g, f in legiveis) and not any(cabe(g, f, False) for g, f in legiveis):
-        for g, f in pares:
-            if cabe(g, f, False):
-                break
+            x += w + FOLGA
+            alt_l = max(alt_l, h)
+        return y + alt_l
+
+    def legivel(f, g=None):
+        """as fachadas não vão além de 1:125 (ESCALA_MINIMA_TELHAS) — ou da delas, se já é menor; com `g`, também a
+        planta dos tipos não passa de 1:250 (o Depósito, com 7 fachadas, a punha a 1:500 para elas caberem)"""
+        ok = all(escala_normalizada(base[id(c)] * f - 1e-6) <= max(ESCALA_MINIMA_TELHAS, base[id(c)]) for c in resto)
+        return ok and (g is None or all(escala_normalizada(base[id(c)] * g - 1e-6) <= max(2 * ESCALA_MINIMA_TELHAS, base[id(c)])
+                                        for c in de_cima))
+
+    def larg_dir_de(f, ncol):
+        """o quadro das fachadas com a largura de `ncol` das mais largas: (largura, altura) com elas encaixadas na
+        ordem, cada fileira até encher a largura (a pequena vai ao lado da outra, como o quadro as põe)"""
+        if not resto:
+            return 0.0, 0.0
+        larg_u = ncol * max(medir(c, f)[0] for c in resto) + (ncol - 1) * FOLGA
+        alt_u = fileiras(resto, f, larg_u + 1e-6)
+        return larg_u + 2 * QUADRO_MARGEM, alt_u
+
+    def cabe(g, d, f, ncol):
+        """os tipos e a planta em g, os detalhes em d, as fachadas em f (ncol por fileira): o quadro das fachadas na
+        altura e o da esquerda no que sobra da largura"""
+        larg_dir, alt_dir = larg_dir_de(f, ncol)
+        if alt_dir > altura:
+            return False
+        larg_esq = largura - larg_dir - 2 * QUADRO_MARGEM
+        if sum(medir(c, g)[0] + FOLGA for c in de_cima) - FOLGA > larg_esq:
+            return False
+        alt_det = fileiras(detalhes, d, larg_esq) if detalhes else 0.0
+        if alt_det is None:
+            return False
+        return max(medir(c, g)[1] for c in de_cima) + (alt_det + FOLGA if detalhes else 0.0) <= altura
+    # a menor redução que cabe — as fachadas legíveis antes de tudo; no empate, as fachadas maiores (levam as cotas das
+    # chapas), depois os tipos
+    # uma fachada embaixo da outra (a Sala, com duas); com muitas (o Depósito, com 7), mais de uma por fileira
+    trios = sorted(((g, d, f, n) for g in fatores for d in fatores for f in fatores
+                    for n in range(1, max(1, min(len(resto), 4)) + 1)),
+                   key=lambda t: (0 if legivel(t[2], t[0]) else 1 if legivel(t[2]) else 2, max(t[:3]), t[2], t[0], t[1], t[3]))
+    escolha = next((t for t in trios if cabe(*t)), (fatores[-1],) * 3 + (max(1, min(len(resto), 4)),))
+    g, d, f, ncol = escolha
+    # cada detalhe o maior que cabe na fileira de baixo: o detalhe pequeno (a cumeeira) não reduz junto com o grande (a
+    # multidobra, que decide a altura) — a CU1 da Sala ia a 1:125, miúda num quadro vazio
+    red_d = {id(c): d for c in detalhes}
+    if detalhes:
+        larg_esq = largura - larg_dir_de(f, ncol)[0] - 2 * QUADRO_MARGEM
+        alt_livre = altura - max(medir(c, g)[1] for c in de_cima) - FOLGA
+        for c in detalhes:
+            for f2 in [x for x in fatores if x < d]:
+                tenta = dict(red_d)
+                tenta[id(c)] = f2
+                alt_t = fileiras(detalhes, tenta, larg_esq)
+                if alt_t is not None and alt_t <= min(alt_livre, fileiras(detalhes, red_d, larg_esq) + 1e-6):
+                    red_d = tenta
+                    break
+    for c in de_cima:
+        _reescalar(c, escala_normalizada(base[id(c)] * g - 1e-6))
+    for c in detalhes:
+        _reescalar(c, escala_normalizada(base[id(c)] * red_d[id(c)] - 1e-6))
+    for c in resto:
+        _reescalar(c, escala_normalizada(base[id(c)] * f - 1e-6))
+    if resto:
+        resto[0]["_larg_quadro"] = larg_dir_de(f, ncol)[0] + 0.5
     return itens
 
 
@@ -2828,6 +2919,12 @@ def _blocos_da_legenda(cels: Sequence[dict], detalhes: Sequence[dict] = ()) -> L
                 if linha not in linhas:
                     linhas.append(linha)
                 nomes.append(m_t.group(1))
+            # a telha reta que continua a multidobra (a TL18 da Sala, 12/11): escrita no detalhe dela, entra também
+            for e in c.get("entidades") or ():
+                m_c = re.match(r"^telha complementar (\S+): (\d+)x", str(getattr(e, "texto", "") or ""))
+                if m_c and (m_c.group(1), "%02dx" % int(m_c.group(2))) not in linhas:
+                    linhas.append((m_c.group(1), "%02dx" % int(m_c.group(2))))
+                    nomes.append(m_c.group(1))
             continue
         m_f = re.match(r"^\s*DETALHE (\w+) – FUROS DE (\S+)", str(c.get("titulo") or "")) if not nome else None
         if m_f:

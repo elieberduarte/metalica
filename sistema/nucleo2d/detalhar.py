@@ -274,6 +274,7 @@ QUADROS = [("tesoura", "TESOURAS"), ("viga", "VIGAS"), ("pilar", "PILARES"), ("c
 
 #: Título do quadro de cada tipo de posição (peça avulsa), na ordem em que saem.
 QUADROS_POSICOES = [("planta_telhas", "PAGINAÇÃO DAS TELHAS DA COBERTURA (PLANTA)"), ("quadro_telhas", "QUADRO DAS TELHAS DA COBERTURA"),
+                    ("parafusos_telhas", "PARAFUSOS DAS TELHAS"),
                     ("paginacao", "PAGINAÇÃO DAS TELHAS – COMPRIMENTOS REAIS"), ("multidobra", "TELHAS MULTI-DOBRA"), ("cumeeira", "CUMEEIRAS"), ("terca_cobertura", "TERÇAS DE COBERTURA"), ("terca_marquise", "TERÇAS DE MARQUISE"),
                     ("terca_lateral", "TERÇAS LATERAIS"), ("terca_oitao", "TERÇAS DE OITÃO"),     # saíam "TERCA LATERALS" (PRATI, 13/10)
                     ("suporte_terca", "SUPORTES DE TERÇA"), ("suporte_tirante", "SUPORTES DE TIRANTE"), ("montagem", "PEÇAS MONTADAS – FRENTE E LATERAL"), ("agulhamento", "AGULHAMENTOS"),
@@ -1315,6 +1316,15 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         t["nome"] = nomes_telhas[str(t["conjunto"])]
     for cm in md["cumeeiras"]:
         cm["nome"] = nomes_telhas[str(cm["conjunto"])]
+    # a telha reta que continua a multidobra é uma TL, com marca própria (usuário, 12/11, Sooro Sala: "MD1-C? esse nome
+    # acho que não está certo") — o número seguinte ao maior TL das posições, guardado como "<conjunto>-C"
+    tl_das_posicoes = {str(v) for v in nomes_pos.values() if re.match(r"^TL\d+$", str(v))}
+    nomes_c = numerar_estavel([str(t["conjunto"]) + "-C" for t in md["telhas"] if t.get("cobrimento")], ant_telhas, "TL",
+                              reservados=tl_das_posicoes)
+    nomes_telhas.update(nomes_c)
+    for t in md["telhas"]:
+        if t.get("cobrimento"):
+            t["nome_c"] = nomes_c[str(t["conjunto"]) + "-C"]
     nomeacao["telhas"] = nomes_telhas
     # peças montadas (levantadas uma vez): a chapa soldada no chumbador vai para o quadro
     # dos chumbadores, junto das barras dele (a fábrica prepara o chumbador inteiro)
@@ -1437,6 +1447,17 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                 eixos_t = _eixos_mod.de_dict(eixos) if eixos else None
                 celulas_g += [("planta_telhas", (lambda dd, x, y: desenho_da_planta_das_telhas(faces, eixos_t, dd, x, y))),
                               ("quadro_telhas", (lambda dd, x, y: desenho_do_quadro_das_telhas(faces, md.get("cumeeiras") or [], dd, x, y)))]
+                # a relação dos parafusos de telha, a mesma do resumo de materiais, para a prancha das telhas (usuário,
+                # 12/11, Sooro Sala: "Colocar a relação de parafusos aqui")
+                try:
+                    from saida.parafusos_telha import parafusos_de_telha
+                    from nucleo2d.detalhe.telhas import desenho_dos_parafusos_das_telhas
+                    pf_t = parafusos_de_telha(doc, telha_dos_dados=str((doc.metadados or {}).get("telha_dos_dados") or ""))["linhas"]
+                    if pf_t:
+                        celulas_g.append(("parafusos_telhas",
+                                          (lambda dd, x, y, l_=pf_t: desenho_dos_parafusos_das_telhas(l_, dd, x, y))))
+                except Exception as exc:          # noqa: BLE001 — o resto das telhas sai
+                    avisos.append("relação dos parafusos de telha não gerada: %s" % exc)
             celulas_g += [("paginacao", (lambda dd, x, y, f=f, i=i: desenho_da_paginacao(f, dd, x, y, i)))
                           for i, f in enumerate(faces, 1)]
         celulas_g += [("multidobra", (lambda dd, x, y, t=t: desenho_da_multidobra(t, dd, x, y, t["nome"]))) for t in extra_md]

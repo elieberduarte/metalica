@@ -517,7 +517,8 @@ def desenho_da_multidobra(md: dict, desenho, dx: float, dy: float, nome: str = "
     if cb:
         linhas.append("cobrimento: passa %d mm da 1ª terça (%s) — transpasse %s mm" % (
             COBRIMENTO_TERCA, cb["terca"], fmt(cb["transpasse"])))
-        linhas.append("telha complementar %s-C: %02dx  L = %s mm" % (nome or md["conjunto"], md["instancias"], fmt(cb["resto"])))
+        linhas.append("telha complementar %s: %02dx  L = %s mm" % (md.get("nome_c") or "%s-C" % (nome or md["conjunto"]),
+                                                                  md["instancias"], fmt(cb["resto"])))
     y = -margem - 6.0 * esc
     for txt in linhas:
         p.texto(0, y, txt, 2.5 * esc)
@@ -1147,7 +1148,8 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
                 lista.append({"contorno": ret(yt, ym), "comprimento": comp, "nome": ch["nome"], "perfil": perfil_,
                               "peso": ch["multidobra"].get("peso"),
                               "x": (x0_ + x1_) / 2, "y0": min(yt, ym), "y1": max(yt, ym), "multidobra": True})
-                lista.append({"contorno": ret(yc, yf), "comprimento": cb["resto"], "nome": ch["nome"] + "-C", "perfil": perfil_,
+                lista.append({"contorno": ret(yc, yf), "comprimento": cb["resto"],
+                              "nome": ch["multidobra"].get("nome_c") or ch["nome"] + "-C", "perfil": perfil_,
                               "peso": cb.get("peso"),
                               "x": (x0_ + x1_) / 2 + 1e-3, "y0": min(yc, yf), "y1": max(yc, yf), "multidobra": False})
                 continue
@@ -1436,6 +1438,34 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
     alinhadas = [c for c in ordenadas if c.get("alinhada", True) and id(c) not in no_canto
                  and 600.0 < max(q[0] for q in c["contorno"]) - min(q[0] for q in c["contorno"]) < 1200.0]
     da_largura = min(alinhadas, key=lambda c: (round(c["y0"]), c["x"])) if alinhadas else None
+    # a face em anel (o forro do beiral da Sala: as fileiras com a onda num sentido e as laterais no outro): as chapas se
+    # repetem — a cota só na primeira e na última de cada lado e o nome DENTRO de cada chapa (usuário, 12/11, Sooro Sala:
+    # "Como são valores que se repetem vamos deixar apenas as cotas nas pontas e colocar o nome TL dentro da telha")
+    normais_ = [c for c in ordenadas if not c.get("multidobra")]
+    anel = (any(c.get("alinhada", True) for c in normais_) and any(not c.get("alinhada", True) for c in normais_))
+    pontas_anel = set()
+    if anel:
+        # cada lado do anel: as chapas da mesma direção com o meio na mesma faixa (atravessada no lado), a menos de meia
+        # chapa — pelo meio, não pelas pontas (as pontas variam de uma chapa para outra e partiam o lado em pedaços)
+        for alinh in (True, False):
+            itens_l = []
+            for c in normais_:
+                if id(c) in no_canto or c.get("alinhada", True) != alinh:
+                    continue
+                xs_l = [q[0] for q in c["contorno"]]
+                ys_l = [q[1] for q in c["contorno"]]
+                meio_x, meio_y = (min(xs_l) + max(xs_l)) / 2.0, (min(ys_l) + max(ys_l)) / 2.0
+                itens_l.append((meio_y, meio_x, c) if alinh else (meio_x, meio_y, c))
+            itens_l.sort(key=lambda t: t[0])
+            lados_l: List[list] = []
+            for t in itens_l:
+                if lados_l and t[0] - lados_l[-1][-1][0] <= 0.5 * LARGURA_TOTAL_TELHA:
+                    lados_l[-1].append(t)
+                else:
+                    lados_l.append([t])
+            for lst in lados_l:
+                lst.sort(key=lambda t: t[1])
+                pontas_anel.update((id(lst[0][2]), id(lst[-1][2])))
     for n, ch in enumerate(ordenadas):
         if id(ch) in no_canto:
             # a chapa do canto em meia-esquadria do anel (a cobertura plana da Sala, 02/10): a comprada presa às bordas
@@ -1462,6 +1492,17 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
             if area_ and area_ < 0.99 * (max(q[0] for q in corte_) - min(q[0] for q in corte_)) * larg_y:
                 p.polilinha([T(q) for q in corte_], fechada=True, camada="OCULTA")
             rep = {"repete_tipica": True} if id(ch) in repetidas else {}
+            if anel:
+                # a cota só nas pontas do lado: a linha no meio, o número fixo de um lado (texto_pos) e o nome do outro —
+                # girada a face para a prancha (a planta das marcas em pé), os dois giram juntos e não se encontram
+                if id(ch) in pontas_anel:
+                    tp_ = p._p(*T(((xa_ + xb_) / 2.0, yc_ + (yb_ - ya_) * 0.25)))
+                    desenho.add(Cota(modo="h", p1=p._p(*T((xa_, yc_))), p2=p._p(*T((xb_, yc_))), deslocamento=0.0,
+                                     texto="%d" % round(ch["comprimento"]), altura=1.8, texto_pos=tp_,
+                                     atributos=dict(atr, chapa=ch["nome"])))
+                p.texto((xa_ + xb_) / 2.0 - x0, yc_ - y0 - (yb_ - ya_) * 0.25 - 0.9 * esc, ch["nome"], 1.8 * esc,
+                        alinhamento="centro", atributos={"nome_dentro": True})
+                continue
             desenho.add(Cota(modo="h", p1=p._p(*T((xa_, yc_))), p2=p._p(*T((xb_, yc_))), deslocamento=0.0,
                              texto="%d" % round(ch["comprimento"]), altura=1.8, atributos=dict(atr, chapa=ch["nome"], **rep)))
             p.texto(xa_ - x0 - 4.0 * esc, yc_ - y0 - 0.9 * esc, ch["nome"], 1.8 * esc, alinhamento="direita", atributos=rep)
@@ -1516,6 +1557,15 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         # a chapa igual à vizinha da mesma fileira leva a marca: na face densa a prancha só deixa o nome e a cota da
         # primeira da sequência (pranchas.LARGURA_CHAPA_DENSA)
         rep = {"repete_tipica": True} if id(ch) in repetidas else {}
+        if anel and not ch.get("multidobra"):
+            # a face em anel: a cota só nas pontas do lado; o nome dentro da chapa, de pé, ao lado da linha da cota
+            if id(ch) in pontas_anel:
+                tp_ = p._p(xm - larg * k * 0.25, (a[1] + b[1]) / 2.0)
+                desenho.add(Cota(modo="v", p1=p._p(*a), p2=p._p(*b), deslocamento=0.0, texto=texto, altura=1.8, texto_pos=tp_,
+                                 atributos=dict(atr, chapa=ch["nome"])))
+            p.texto(xm + larg * k * 0.25 + 0.9 * esc, (ch["y0"] + ch["y1"]) / 2.0 - y0, ch["nome"], 1.8 * esc, angulo=90.0,
+                    alinhamento="centro", atributos={"nome_dentro": True})
+            continue
         desenho.add(Cota(modo="v", p1=p._p(*a), p2=p._p(*b), deslocamento=-desl, texto=texto, altura=1.8,
                          atributos=dict(atr, chapa=ch["nome"], **rep)))
         # o nome vai abaixo da chapa; na face com telhas emendadas no comprimento, abaixo dela
@@ -1851,7 +1901,10 @@ def desenho_da_planta_das_telhas(faces: Sequence[dict], eixos, desenho, dx: floa
     xs = [q[0] for c in chapas for q in c["contorno"]]
     ys = [q[1] for c in chapas for q in c["contorno"]]
     x0, y0 = min(xs), min(ys)
+    largura, altura = max(xs) - x0, max(ys) - y0
     h = 2.2 * esc
+    vao = 2.0 * esc
+    fora = {"esq": 0.0, "dir": 0.0, "baixo": 0.0, "cima": 0.0}     # o quanto os nomes de fora ocupam de cada lado
     for c in chapas:
         pts = [(q[0] - x0, q[1] - y0) for q in c["contorno"]]
         p.polilinha(pts, fechada=True, camada="ACO")
@@ -1865,9 +1918,23 @@ def desenho_da_planta_das_telhas(faces: Sequence[dict], eixos, desenho, dx: floa
             ang -= 180.0
         elif ang <= -90.0:
             ang += 180.0
-        # o texto ao longo da chapa, centrado nela
         a_ = math.radians(ang)
         larg = 0.62 * h * len(txt)
+        if c["multidobra"]:
+            # a multidobra aparece só pela reta (uma faixa estreita na borda): o nome dela vai para fora da planta, ao
+            # lado da fileira, do lado da borda (usuário, 12/11, Sooro Sala: "Colocar esse nome para fora do desenho")
+            if abs(math.cos(a_)) >= abs(math.sin(a_)):
+                lado = "dir" if cx > largura / 2.0 else "esq"
+                xt = largura + vao if lado == "dir" else -vao
+                p.texto(xt, cy - h / 2.0, txt, h, alinhamento="esquerda" if lado == "dir" else "direita")
+            else:
+                lado = "cima" if cy > altura / 2.0 else "baixo"
+                yt = altura + vao if lado == "cima" else -vao
+                p.texto(cx + h / 2.0, yt, txt, h, angulo=90.0, alinhamento="esquerda" if lado == "cima" else "direita")
+                p._p(cx, yt + (0.75 * h * len(txt) if lado == "cima" else -0.75 * h * len(txt)))
+            fora[lado] = max(fora[lado], vao + 0.75 * h * len(txt))
+            continue
+        # o texto ao longo da chapa, centrado nela
         p.texto(cx - math.cos(a_) * larg / 2 + math.sin(a_) * h / 2,
                 cy - math.sin(a_) * larg / 2 - math.cos(a_) * h / 2, txt, h, angulo=ang)
     # a cumeeira: as pernas
@@ -1881,10 +1948,9 @@ def desenho_da_planta_das_telhas(faces: Sequence[dict], eixos, desenho, dx: floa
                 if ch["nome"] not in cumeeiras:
                     cumeeiras.append(ch["nome"])
                 p.polilinha([(q[0] - x0, q[1] - y0) for q in (P(r) for r in _retangulo_da_chapa(ch))], fechada=True, camada="ACO")
-    largura, altura = max(xs) - x0, max(ys) - y0
-    # as medidas totais da cobertura
-    p.cota_h(0.0, largura, altura, 12.0)
-    p.cota_v(0.0, altura, 0.0, -12.0)
+    # as medidas totais da cobertura (além dos nomes que ficam fora da planta)
+    p.cota_h(0.0, largura, altura, 12.0 + fora["cima"] / esc)
+    p.cota_v(0.0, altura, 0.0, -12.0 - fora["esq"] / esc)
     # a legenda das cores: embaixo da planta quando ela é mais alta que larga (o usuário a levou para lá à mão, 01/10:
     # à direita, a célula ficava larga e sobrava altura); senão à direita, como antes
     if altura >= largura:
@@ -1906,6 +1972,46 @@ def desenho_da_planta_das_telhas(faces: Sequence[dict], eixos, desenho, dx: floa
         else:
             txt = "%s - cumeeira" % nm
         p.texto(xl, yy + 0.4 * esc, txt, 2.2 * esc)
+    return p.extremos
+
+
+TITULO_PARAFUSOS_TELHAS = "RELAÇÃO DE PARAFUSOS DAS TELHAS"
+
+
+def desenho_dos_parafusos_das_telhas(linhas: Sequence[dict], desenho, dx: float, dy: float):
+    """A relação dos parafusos de telha (OA, OB, costura) na prancha das telhas (usuário, 12/11, Sooro Sala: "Colocar a
+    relação de parafusos aqui"), a mesma do resumo de materiais (saida/parafusos_telha.parafusos_de_telha: 3 por telha
+    em cada apoio, OA/OB no múltiplo de 50, costura = (OA + OB) ÷ 4 no múltiplo de 5, cabeça na cor da telha)."""
+    from nucleo2d.detalhe.base import _Papel
+    esc = desenho.escala
+    p = _Papel(desenho, {"detalhe": "parafusos_telhas"}, dx, dy)
+    colunas = [("ITEM", 34), ("DESCRIÇÃO", 92), ("COR", 40), ("QTD", 18)]
+    lh = 6.0 * esc
+    larg_tot = sum(w for _n, w in colunas) * esc
+    corpo = []
+    for li in linhas or []:
+        desc = "autobrocante de costura" if li.get("tipo") == "C" else "autobrocante com arruela de vedação"
+        corpo.append([str(li.get("item") or ""), desc, str(li.get("cor") or "na cor da telha"),
+                      ("{:,}".format(int(li.get("qtd") or 0))).replace(",", ".")])
+    if not corpo:
+        corpo.append(["-", "sem parafusos de telha contados no 3D", "", ""])
+    p.texto(0, 3.0 * esc, TITULO_PARAFUSOS_TELHAS, 3.5 * esc, atributos={"cabecalho": 0})
+    n = len(corpo) + 1
+    for i in range(n + 1):
+        p.linha(0, -i * lh, larg_tot, -i * lh, camada="TEXTO" if i in (0, 1, n) else "VISTA-FINA")
+    x = 0.0
+    for _nome, w in colunas:
+        p.linha(x, 0, x, -n * lh, camada="VISTA-FINA")
+        x += w * esc
+    p.linha(larg_tot, 0, larg_tot, -n * lh, camada="VISTA-FINA")
+    for i, linha in enumerate([[c for c, _w in colunas]] + corpo):
+        x = 0.0
+        for (col, w), val in zip(colunas, linha):
+            if col == "QTD" and i > 0:
+                p.texto(x + (w - 1.5) * esc, -(i + 1) * lh + 1.8 * esc, val, 2.2 * esc, alinhamento="direita")
+            else:
+                p.texto(x + 1.5 * esc, -(i + 1) * lh + 1.8 * esc, val, 2.2 * esc)
+            x += w * esc
     return p.extremos
 
 

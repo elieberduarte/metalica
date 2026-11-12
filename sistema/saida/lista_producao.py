@@ -530,7 +530,9 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
                            t["reta1"], t["reta2"], t["raio_int"], t["angulo"], t["desenv_int"])]})
         cb = t.get("cobrimento")
         if cb:
-            linhas.append({"marca": t["conjunto"] + "-C", "nome": nome_md + "-C", "categoria": "TELHAS",
+            linhas.append({"marca": t["conjunto"] + "-C", "categoria": "TELHAS",
+                           # a telha reta que continua a multidobra é uma TL, a mesma das pranchas (Sooro Sala, 12/11)
+                           "nome": (nomes_telhas or {}).get(str(t["conjunto"]) + "-C") or nome_md + "-C",
                            "classe": "Telha (complemento da multi-dobra)", "perfil": t["perfil"], "material": t["material"],
                            "quantidade": t["instancias"], "comprimento": round(cb["resto"]), "largura": 980, "espessura": 0,
                            "area_m2": round(cb["resto"] * 980 / 1e6 * t["instancias"], 3), "furos": "", "parafusos": "",

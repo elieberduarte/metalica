@@ -1380,6 +1380,9 @@ def _marcar_origem(s: str, doc) -> None:
     except (TypeError, ValueError):
         cd = 0.0
     doc.metadados["cumeeira_desenvolvida"] = cd if cd > 0 else None
+    # a telha escrita nos dados do resumo ("TP40 0,50 … bege RAL 1015"): a cor dos parafusos de telha na prancha das telhas,
+    # a mesma do resumo de materiais quando a telha do 3D não tem a cor
+    doc.metadados["telha_dos_dados"] = str((p.get("dados_resumo") or {}).get("telha") or "")
 
 
 def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, lista_producao) -> dict:
