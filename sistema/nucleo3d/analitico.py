@@ -43,6 +43,11 @@ APOIA_EM = {
     # contraventamento criava o nó (a Kaefer do engenheiro, 15/10: os pilares sem X ficavam sem a travessa)
     "longarina": ("pilar", "viga"),
     "contraventamento": ("banzo", "pilar", "viga", "montante", "diagonal", "terça", "longarina"),
+    # a linha de travamento do banzo inferior (lançamento, de_projeto, identificação) e o agulhamento: presos como o
+    # contraventamento. Sem a entrada, a ponta só se ligava caindo a menos de TOL_NO de um nó — na Cobertura Filipin
+    # (12/11) as duas linhas de 8 barras ficaram soltas no ar e a estrutura inteira saiu instável
+    "travamento": ("banzo", "pilar", "viga", "montante", "diagonal", "terça", "longarina"),
+    "agulhamento": ("banzo", "pilar", "viga", "montante", "diagonal", "terça", "longarina"),
     "pilar": ("banzo", "viga"),
     "banzo": ("pilar", "banzo", "viga", "montante"),
     # a alma da mão-francesa (PM6) termina na face do pilar, a meia seção do eixo

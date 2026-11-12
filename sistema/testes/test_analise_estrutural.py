@@ -123,3 +123,27 @@ def test_ca_do_cilindro_acima_do_critico_confere_o_subcritico():
     Vc = 4.2e5 / (70000 * 0.3239)
     assert Ca * K == pytest.approx(max(0.7 * 0.99, 1.2 * 0.87 * (Vc / 45.0) ** 2), rel=1e-6)
     assert "acima do crítico" in regime
+
+
+def test_grupo_solto_no_ar_fica_preso_e_o_resto_calcula():
+    # Cobertura Filipin (12/11): duas linhas de travamento que o esqueleto não ligou ficaram soltas no ar — a matriz saía
+    # singular e a estrutura INTEIRA "instável", sem dizer onde. Agora o grupo sem caminho até apoio é preso e apontado
+    L, w = 6.0, 10.0
+    M = _modelo([[0, 0, 3], [L, 0, 3], [0, 2, 3], [L, 2, 3]], [(0, 1), (2, 3)], [(0, "engastada"), (1, "engastada")])
+    sol = AE.resolver(M, {"q": _caso(dist={0: np.array([0, 0, -w])})})
+    assert sol["instavel"] is None, sol["instavel"]
+    assert sol["soltas"] == [[1]]
+    e = AE.esforcos_em(sol["pontas"][0, 0], sol["w"][0, 0], np.array([0.0]))
+    assert e[0, 5] == pytest.approx(-w * L * L / 12, rel=1e-6)        # a viga apoiada segue certa
+
+
+def test_mecanismo_aponta_os_nos_que_andam():
+    # Cobertura Filipin (12/11): a tesoura da marquise presa só por terças rotuladas — o motor dizia "instável" e mais nada.
+    # Uma viga engastada (0–1) com outra pendurada nela por rótula nas duas pontas de um lado e solta do outro (1–2–3: a 2–3
+    # rotulada na 2 e com a 3 sem apoio) gira em torno da rótula: os nós 3 (e o 2, que só a 2–3 segura) são o mecanismo
+    M = _modelo([[0, 0, 3], [3, 0, 3], [3, 0, 3.5], [6, 0, 3.5]], [(0, 1), (1, 2), (2, 3)], [(0, "engastada")])
+    M["barras"][2]["soltos"] = [4, 5]                                  # rótula esférica na ponta 2: a barra 2–3 gira livre
+    M["barras"][2]["soltos"] += [3]
+    sol = AE.resolver(M, {"q": _caso(dist={2: np.array([0, 0, -1.0])})})
+    assert sol["instavel"], "devia sair instável"
+    assert 3 in sol["mecanismo_nos"] and 0 not in sol["mecanismo_nos"] and 1 not in sol["mecanismo_nos"], sol["mecanismo_nos"]

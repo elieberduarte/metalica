@@ -150,6 +150,24 @@ def test_dois_banzos_que_se_encontram_no_eixo_do_espigao_cortam_o_espigao():
     assert r["resumo"]["ponta_no_eixo"] >= 1
 
 
+def _ligada(r, i):
+    """as duas pontas da barra i chegam em nó de outra barra"""
+    b = r["barras"][i]
+    return all(any(j != i and n in (o["a"], o["b"]) for j, o in enumerate(r["barras"])) for n in (b["a"], b["b"]))
+
+
+def test_linha_de_travamento_no_banzo_inferior_se_liga_as_tesouras():
+    # Cobertura Filipin (12/11): a linha de travamento do banzo inferior (papel "travamento", Barra redonda ø 1/2") com a
+    # ponta EM CIMA do eixo do banzo, a 100 mm do nó do montante — o papel não estava em APOIA_EM e o passo 3c pulava a
+    # ponta "bem do lado" do nó: as linhas ficavam soltas no ar e a estrutura inteira saía instável (matriz singular)
+    doc = modelo()
+    for x in (2900.0, 6000.0 - 100.0):
+        doc.add(barra((x, 0.0, 6000.0), (x, 5000.0, 6000.0), "travamento", perfil='Barra redonda ø 1/2"'))
+    r = analitico.analitico(doc)
+    trav = [i for i, b in enumerate(r["barras"]) if b["papel"] == "travamento"]
+    assert len(trav) == 2 and all(_ligada(r, i) for i in trav), [r["barras"][i] for i in trav]
+
+
 def test_ponta_perto_do_eixo_mas_fora_dele_nao_corta_a_peca():
     # a mesma ponta 40 mm fora do eixo (mais que TOL_NA_LINHA): o passo novo não liga nada sozinho — quem decide é o passo 3
     doc = Documento()

@@ -2238,6 +2238,91 @@ def _sem_limite(U: np.ndarray) -> bool:
     return float(np.abs(tr).max(initial=0.0)) > 50.0
 
 
+def _grupos_sem_apoio(nos: np.ndarray, barras: list, apoios: list) -> List[List[int]]:
+    """os grupos de barras ligadas só entre si, sem caminho até nenhum apoio (a linha de travamento solta no ar, a peça que o
+    esqueleto não ligou) — cada um é uma lista de índices de barra"""
+    pai = list(range(len(nos)))
+
+    def raiz(x):
+        while pai[x] != x:
+            pai[x] = pai[pai[x]]
+            x = pai[x]
+        return x
+    for br in barras:
+        pai[raiz(br["a"])] = raiz(br["b"])
+    apoiadas = {raiz(ap["no"]) for ap in apoios}
+    grupos: Dict[int, List[int]] = {}
+    for i, br in enumerate(barras):
+        r = raiz(br["a"])
+        if r not in apoiadas:
+            grupos.setdefault(r, []).append(i)
+    return list(grupos.values())
+
+
+def _onde_o_mecanismo(mont, Kg: np.ndarray, livres: np.ndarray, ndof: int, escala: float) -> List[int]:
+    """os nós do mecanismo: a matriz com uma mola mínima em cada grau e uma carga unitária em todos, resolvida com a mola de
+    1e-9 e de 1e-10 da maior rigidez — o que é preso de verdade anda o mesmo nas duas; o mecanismo anda 10 vezes mais
+    quando a mola cai (só a mola o segura). Devolve os nós, do que mais anda ao que menos anda (vazio se não achou)"""
+    from scipy.sparse import identity
+    from scipy.sparse.linalg import splu
+    K0 = mont.matriz(Kg)
+    I = identity(len(livres), format="csc")
+    f = np.ones(len(livres))
+    us = []
+    try:
+        for eps in (1e-9, 1e-10):
+            u = np.zeros(ndof)
+            u[livres] = splu((K0 + I * (eps * escala)).tocsc()).solve(f)
+            if not np.all(np.isfinite(u)):
+                return []
+            # só as translações: o giro da barra fina (a torção da barra chata, J minúsculo) também "cede" com a mola e
+            # marcava o lanternim inteiro da Filipin sem ser o mecanismo
+            us.append(np.abs(u.reshape(-1, 6)[:, :3]).max(1))
+    except (RuntimeError, ValueError):
+        return []
+    u1, u2 = us
+    piso = 1e-6 * max(float(u2.max()), 1e-30)
+    nos = np.where((u2 > piso) & (u2 > 5.0 * u1))[0]
+    return [int(n) for n in nos[np.argsort(-u2[nos])]]
+
+
+def descrever_pecas(nos: np.ndarray, barras: list, idx: Sequence[int], limite: int = 4) -> str:
+    """"8 travamento Barra redonda ø 1/2" em x 6,73 · y 7,50–67,50 · z 6,56 m" — as barras de idx por papel e perfil, com a
+    caixa onde ficam (para o aviso dizer ONDE procurar no 3D)"""
+    por: Dict[Tuple[str, str], List[int]] = {}
+    for i in idx:
+        por.setdefault((barras[i].get("papel") or "barra", barras[i]["perfil"]), []).append(i)
+    partes = []
+    for (papel, perfil), bs in sorted(por.items(), key=lambda x: -len(x[1]))[:limite]:
+        pts = np.array([nos[barras[i][k]] for i in bs for k in ("a", "b")])
+        lo, hi = pts.min(0), pts.max(0)
+        caixa = " · ".join("%s %s" % (eixo, ("%.2f" % lo[k]).replace(".", ",") if hi[k] - lo[k] < 0.05 else
+                                      ("%.2f–%.2f" % (lo[k], hi[k])).replace(".", ","))
+                           for k, eixo in enumerate("xyz"))
+        partes.append("%d %s %s em %s m" % (len(bs), papel, perfil, caixa))
+    if len(por) > limite:
+        partes.append("e mais %d grupo(s)" % (len(por) - limite))
+    return "; ".join(partes)
+
+
+def regioes_do_mecanismo(barras: list, idx: Sequence[int]) -> List[List[int]]:
+    """as barras do mecanismo separadas por região (ligadas entre si por nó), na ordem de idx (a primeira é a que mais anda)"""
+    pai: Dict[int, int] = {}
+
+    def raiz(x):
+        pai.setdefault(x, x)
+        while pai[x] != x:
+            pai[x] = pai[pai[x]]
+            x = pai[x]
+        return x
+    for i in idx:
+        pai[raiz(barras[i]["a"])] = raiz(barras[i]["b"])
+    regs: Dict[int, List[int]] = {}
+    for i in idx:
+        regs.setdefault(raiz(barras[i]["a"]), []).append(i)
+    return list(regs.values())
+
+
 def resolver(M: dict, casos: Dict[str, dict]) -> dict:
     """resolve todos os casos de uma vez: deslocamentos, reações e esforços nas pontas de cada barra (local)"""
     from scipy.sparse.linalg import splu
@@ -2279,6 +2364,13 @@ def resolver(M: dict, casos: Dict[str, dict]) -> dict:
     soltos = [d for d in np.where(np.abs(diag) < 1e-9 * escala)[0].tolist() if d not in fixos]
     soltos_reais = [d for d in soltos if d // 6 in com_barra]
     fixos.update(soltos)
+    # o grupo de barras sem caminho até um apoio fica preso inteiro, com aviso: solto, ele deixava a matriz singular e a
+    # estrutura INTEIRA saía instável, sem dizer onde (Cobertura Filipin, 12/11: duas linhas de travamento no ar)
+    soltas = _grupos_sem_apoio(nos, barras, M["apoios"])
+    for g in soltas:
+        for i in g:
+            for no in (barras[i]["a"], barras[i]["b"]):
+                fixos.update(range(6 * no, 6 * no + 6))
     mascara = np.ones(ndof, bool)
     mascara[list(fixos)] = False
     livres = np.where(mascara)[0]
@@ -2288,10 +2380,11 @@ def resolver(M: dict, casos: Dict[str, dict]) -> dict:
     try:
         lu = splu(mont.matriz(Kg))
         U[livres] = lu.solve(F[livres])
-    except RuntimeError as e:
-        instavel = str(e)
+    except RuntimeError:
+        instavel = "mecanismo: a matriz de rigidez não tem inversa"          # o "Factor is exactly singular" do scipy
     if instavel is None and _sem_limite(U):
         instavel = "deslocamentos sem limite (mecanismo)"
+    mecanismo = _onde_o_mecanismo(mont, Kg, livres, ndof, escala) if instavel else []
     # esforços nas pontas (local), por caso: f = k·u + f0, com os giros soltos recuperados (dão momento zero)
     ul = _deslocamentos_locais(lt, U)
     _recuperar_soltos(ul, f0, rec)
@@ -2300,7 +2393,7 @@ def resolver(M: dict, casos: Dict[str, dict]) -> dict:
     reac = {int(ap["no"]): R_all[6 * ap["no"]:6 * ap["no"] + 6] for ap in M["apoios"]}
     ctx = {"lote": lt, "k": k, "f0": f0, "w_loc": w_loc, "Fn": Fn, "livres": livres, "montador": mont, "ndof": ndof}
     return {"casos": nomes, "U": U, "reacoes": reac, "pontas": pontas, "w": w_loc, "instavel": instavel,
-            "graus_presos": len(soltos_reais), "_ctx": ctx}
+            "graus_presos": len(soltos_reais), "soltas": soltas, "mecanismo_nos": mecanismo, "_ctx": ctx}
 
 
 # ------------------------------------------------------------------ esforços ao longo da barra e tensões
@@ -2688,9 +2781,24 @@ def _calcular_situacao(doc, par: Optional[dict] = None, montador=None, carregado
     combs = combinador(list(casos)) if combinador else combinacoes(casos)
     sol = resolver(M, casos)
     avisos = list(M["avisos"]) + av_c
+    mec_barras: List[int] = []
     if sol["instavel"]:
+        mn = sol.get("mecanismo_nos") or []
+        ordem = {n: k for k, n in enumerate(mn)}
+        mec_barras = sorted((i for i, br in enumerate(M["barras"]) if br["a"] in ordem or br["b"] in ordem),
+                            key=lambda i: min(ordem.get(M["barras"][i]["a"], 1 << 30), ordem.get(M["barras"][i]["b"], 1 << 30)))
+        regs = regioes_do_mecanismo(M["barras"], mec_barras)
+        onde = (" Onde (%d região(ões), em vermelho no 3D; a primeira é a que mais anda): %s. Procure a peça que não chega no "
+                "apoio ou a ligação que falta ali." % (len(regs), " | ".join(
+                    "(%d) %s" % (k + 1, descrever_pecas(M["nos"], M["barras"], r, limite=2)) for k, r in enumerate(regs[:4]))
+                    + (" | e mais %d" % (len(regs) - 4) if len(regs) > 4 else ""))) if mec_barras else ""
         avisos.insert(0, ("A estrutura está instável (%s): falta travamento — contraventamento, base engastada ou ligação "
-                          "viga–pilar rígida. Os resultados não valem.") % sol["instavel"])
+                          "viga–pilar rígida. Os resultados não valem.%s") % (sol["instavel"], onde))
+    soltas = [i for g in (sol.get("soltas") or []) for i in g]
+    if soltas:
+        avisos.insert(0, ("%d barra(s) soltas no ar, sem caminho até nenhum apoio, ficaram presas fora da análise (o peso delas "
+                          "não chega aos apoios): %s — ligue-as no 3D (em vermelho na tela)")
+                      % (len(soltas), descrever_pecas(M["nos"], M["barras"], soltas)))
     if sol["graus_presos"]:
         avisos.append("%d grau(s) de liberdade sem rigidez foram presos (nós só de barras rotuladas)" % sol["graus_presos"])
     so2: Dict[str, dict] = {}
@@ -2791,6 +2899,9 @@ def _calcular_situacao(doc, par: Optional[dict] = None, montador=None, carregado
         "info": info,
         "avisos": avisos,
         "instavel": sol["instavel"],
+        # as barras a mostrar em vermelho: as do mecanismo (instável) e as soltas no ar (presas fora da análise)
+        "mecanismo": mec_barras[:2000],
+        "soltas": soltas,
         "movel": ({k: v for k, v in M["movel"].items() if k != "tesouras"} if M.get("movel") else None),
     }
     return saida

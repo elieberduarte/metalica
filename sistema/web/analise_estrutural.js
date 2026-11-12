@@ -335,6 +335,9 @@ function desenhar() {
   // a cor de cada barra
   let maxN = 1e-9;
   if (modo === 'esforcos' && estado.esforco === 'N') B.forEach((b, i) => { const e0 = esforcosEm(i, fat, 0, cd)[0]; maxN = Math.max(maxN, Math.abs(e0)); });
+  // o mecanismo (estrutura instável) e as barras soltas no ar: em vermelho e grossas, em qualquer modo (12/11)
+  const problema = barrasComProblema();
+  const posP = [], corP = [];
   B.forEach((b, i) => {
     const a = nos[b.a], c = nos[b.b];
     let rgb;
@@ -345,12 +348,14 @@ function desenhar() {
     else rgb = cinza;
     if (modo === 'pecas' && b.ids && marcadas().has(b.ids[0])) rgb = [235, 120, 20];
     if (estado.escolhida === i) rgb = [255, 0, 200];
+    if (problema.has(i) && estado.escolhida !== i) { posP.push(...a, ...c); corP.push(1, 0, 0, 1, 0, 0); return; }
     const alvo = b.hipotese ? [posH, corH] : [pos, cor];
     alvo[0].push(...a, ...c);
     alvo[1].push(...rgb.map(x => x / 255), ...rgb.map(x => x / 255));
   });
   grupo.add(linhas(pos, cor, modo === 'modelo' || modo === 'tensoes' || modo === 'verificacao' ? 3 : 2));
   if (posH.length) grupo.add(linhas(posH, corH.map(x => x * 0.85), 1.5, true));
+  if (posP.length) grupo.add(linhas(posP, corP, 5));
   apoios();
   secoesDosPilares();
   if (modo === 'cargas') setasCargas();
@@ -995,6 +1000,12 @@ function gruposDaVerificacao() {
 
 function painelRanking() {
   const R = $('#ranking');
+  // instável: as tensões são de uma matriz singular (a Barra redonda de 12,5 mm "a 137% de fy" e as alternativas "a 0%" da
+  // Filipin, 12/11) — sem ranking nem "trocar", que só recalculava o mesmo mecanismo e parecia não fazer nada
+  if (D.instavel) {
+    R.replaceChildren(el('div', { class: 'erro', texto: 'A estrutura está instável: as tensões e os usos não valem e trocar perfil não resolve. Corrija primeiro o que está em vermelho no 3D (o aviso no alto diz onde) e calcule de novo.' }), caixaDasTrocas());
+    return;
+  }
   if (D.verificacao) return painelRankingVerificacao(R);
   const fy = D.parametros.fy_mpa || 345;
   const ord = D.envoltoria.map((e, i) => [e.sigma, i]).filter(([s, i]) => !D.barras[i].hipotese).sort((a, b) => b[0] - a[0]).slice(0, 15);
@@ -1494,10 +1505,41 @@ function painelEquilibrio() {
   E.replaceChildren(el('div', { class: 'sub', texto: 'A soma das reações deve fechar com a soma das cargas em cada caso (última coluna ≈ 0).' }), t);
 }
 
+// as barras do mecanismo (o motor acha os nós que andam sem limite) e as soltas no ar (presas fora da análise)
+function barrasComProblema() { return new Set([...((D && D.mecanismo) || []), ...((D && D.soltas) || [])]); }
+
+// o enquadramento das barras (a câmera vai para o meio delas, a distância pelo tamanho)
+function focarBarras(idx) {
+  if (!idx.length) return;
+  const cx = new THREE.Box3();
+  for (const i of idx) { const b = D.barras[i]; cx.expandByPoint(new THREE.Vector3(...D.nos[b.a])); cx.expandByPoint(new THREE.Vector3(...D.nos[b.b])); }
+  const c = cx.getCenter(new THREE.Vector3()), r = Math.max(cx.getSize(new THREE.Vector3()).length(), 3000);
+  const d = camera.position.clone().sub(controles.target).normalize().multiplyScalar(r * 1.6);
+  controles.target.copy(c); camera.position.copy(c).add(d);
+  controles.update(); pedirQuadro();
+}
+
 function painelAvisos() {
   const A = $('#avisos');
   A.replaceChildren(...(D.avisos || []).map(a => el('div', { class: 'aviso', texto: a })));
-  $('#instavel').replaceChildren(D.instavel ? el('div', { class: 'erro', texto: `Estrutura instável: ${D.instavel}. Veja os avisos.` }) : '');
+  // o primeiro aviso é o que diz ONDE (a região que mais anda vem primeiro): o botão leva a câmera até lá
+  const mec = D.mecanismo || [], sol = D.soltas || [];
+  const onde = (idx) => {
+    const ini = D.barras[idx[0]]; const viz = new Set([ini.a, ini.b]); const reg = [idx[0]];
+    for (let mudou = true; mudou;) {                       // a região ligada à barra que mais anda
+      mudou = false;
+      for (const i of idx) if (!reg.includes(i) && (viz.has(D.barras[i].a) || viz.has(D.barras[i].b))) { reg.push(i); viz.add(D.barras[i].a); viz.add(D.barras[i].b); mudou = true; }
+    }
+    return reg;
+  };
+  $('#instavel').replaceChildren(
+    D.instavel ? el('div', { class: 'erro' },
+      el('b', { texto: 'Estrutura instável — os números desta análise não valem.' }),
+      el('div', { texto: mec.length ? `As barras que andam sem limite estão em vermelho no 3D. Trocar perfil não resolve: falta um apoio ou uma ligação ali (o aviso diz onde).` : `${D.instavel}. Veja os avisos.` }),
+      mec.length ? el('button', { type: 'button', class: 'sec mini', style: 'margin-top:4px', texto: 'Mostrar onde', onclick: () => focarBarras(onde(mec)) }) : '') : '',
+    sol.length ? el('div', { class: 'aviso' },
+      el('span', { texto: `${sol.length} barra(s) soltas no ar ficaram fora da análise (em vermelho). ` }),
+      el('button', { type: 'button', class: 'sec mini', texto: 'Mostrar', onclick: () => focarBarras(onde(sol)) })) : '');
 }
 
 function cabecalho() {
@@ -1684,11 +1726,20 @@ async function calcular(extra = {}) {
     const j = await r.json();
     if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
     aplicar(j);
+    // o recado de que calculou (a troca de perfil recalculava sem nada mudar à vista e parecia que o clique não pegou)
+    const tr = Object.entries((extra && extra.trocas_perfil) || {}).map(([k, v]) => `${k.split('|')[1]} → ${v}`);
+    recado(`Calculado de novo${tr.length ? ' com ' + tr.join(', ') : ''}.` + (j.instavel ? ' A estrutura continua instável: veja em vermelho.' : ''), !!j.instavel);
   } catch (e) { alert('Não foi possível calcular: ' + e.message); }
   $('#carregando').style.display = 'none';
+}
+
+function recado(texto, ruim) {
+  const r = el('div', { class: ruim ? 'erro' : 'aviso', texto, style: 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:50;max-width:560px;box-shadow:0 4px 16px rgba(0,0,0,.25)' });
+  document.body.append(r);
+  setTimeout(() => r.remove(), 6000);
 }
 $('#btn-calcular').addEventListener('click', () => calcular());
 
 redimensionar();
 carregar().catch(e => { $('#vazio').hidden = false; $('#vazio').textContent = 'Não foi possível abrir: ' + e.message; });
-window.ae = { get D() { return D; }, estado, desenhar, camera, painelPeca };
+window.ae = { get D() { return D; }, estado, desenhar, camera, painelPeca, grupo };

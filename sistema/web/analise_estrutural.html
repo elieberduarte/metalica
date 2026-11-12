@@ -45,6 +45,8 @@
   tr.clic { cursor: pointer; } tr.clic:hover { background: var(--ae-chip); }
   button.mini { padding: 1px 6px; font-size: 11px; border-radius: 5px; }
   tr.troca td { text-align: left; white-space: normal; background: var(--ae-chip); padding: 6px; }
+  /* o nome do grupo e o do perfil quebram linha: o "1/2" → 12,5 mm" empurrava a tabela para fora do painel (12/11) */
+  #ranking td:first-child, table.alts td:first-child { white-space: normal; }
   .lista-alts { max-height: 230px; overflow: auto; margin-top: 4px; border: 1px solid var(--ae-borda); border-radius: 5px; background: var(--ae-painel); }
   table.alts th { position: sticky; top: 0; background: var(--ae-painel); }
   table.alts tr.sel td { background: color-mix(in srgb, var(--ae-azul) 18%, transparent); }
