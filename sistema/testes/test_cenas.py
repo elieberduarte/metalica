@@ -516,3 +516,28 @@ def test_copiar_ajustes_para_outras_cenas(tmp_path):
         C.rota_post(g, s, ["copiar"], {"de": a, "para": [], "grupos": ["sol"]})
     with pytest.raises(C.ErroCena):
         C.rota_post(g, s, ["copiar"], {"de": a, "para": ["../x"], "grupos": ["sol"]})
+
+
+def test_marca_dagua_usa_o_logo_deitado_do_carimbo(tmp_path):
+    """12/11 ("gostaria que o logo da DEZN ficasse na mesma configuração da Hermes, com o nome dezn antes e o logo depois"):
+    a empresa com o logo do carimbo (o DEZN_logo_metalica_carimbo do manual: o nome e o símbolo à direita) usa ele na marca
+    d'água; no fundo escuro, o claro dele; sem o do carimbo, o logo de sempre."""
+    import json as _json
+    g, s = _gerente(tmp_path)
+    marca = os.path.join(str(tmp_path), "fabrica", "empresas", "dezn", "marca")
+    os.makedirs(marca)
+    for n in ("logo_metalica.svg", "logo_claro_metalica.svg", "logo_carimbo_metalica.svg", "logo_carimbo_claro_metalica.svg"):
+        with open(os.path.join(marca, n), "w", encoding="utf-8") as f:
+            f.write('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 30"><rect width="100" height="30"/></svg>')
+    linha = {"nome_comercial": "DEZN", "logo": "logo_metalica.svg", "logo_claro": "logo_claro_metalica.svg",
+             "logo_carimbo": "logo_carimbo_metalica.svg", "logo_carimbo_claro": "logo_carimbo_claro_metalica.svg"}
+    caminho = os.path.join(str(tmp_path), "fabrica", "empresas", "dezn", "empresa.json")
+    with open(caminho, "w", encoding="utf-8") as f:
+        _json.dump({"nome_comercial": "DEZN Construtora", "linhas": {"metalica": linha}}, f)
+    assert C.arquivo_da_marca(g, s, "dezn", "cor").endswith("logo_carimbo_metalica.svg")
+    assert C.arquivo_da_marca(g, s, "dezn", "claro").endswith("logo_carimbo_claro_metalica.svg")
+    linha = {k: v for k, v in linha.items() if not k.startswith("logo_carimbo")}
+    with open(caminho, "w", encoding="utf-8") as f:
+        _json.dump({"nome_comercial": "DEZN Construtora", "linhas": {"metalica": linha}}, f)
+    assert C.arquivo_da_marca(g, s, "dezn", "cor").endswith("logo_metalica.svg")
+    assert C.arquivo_da_marca(g, s, "dezn", "claro").endswith("logo_claro_metalica.svg")

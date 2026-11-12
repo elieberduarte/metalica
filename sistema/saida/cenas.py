@@ -234,7 +234,7 @@ def empresas_da_marca(g, s: str) -> dict:
         try:                                                # a DEZN assina "DEZN" na metálica (a linha de serviço)
             el = comercial.empresa_da_linha(comercial.ler_empresa(g.raiz, e["id"]), "metalica")
             nome = el.get("nome_comercial") or nome
-            logo = any(el.get(k) and os.path.isfile(el[k]) for k in ("logo", "logo_claro"))
+            logo = any(el.get(k) and os.path.isfile(el[k]) for k in ("logo", "logo_claro", "logo_carimbo"))
         except (OSError, ValueError):
             pass
         # sem logo, a tela nem pede (cada pedido sem logo era um erro 400 no console — verif_cena, 11/11)
@@ -281,7 +281,12 @@ def arquivo_da_marca(g, s: str, empresa: str, tom: str) -> str:
         e = comercial.empresa_da_linha(comercial.ler_empresa(g.raiz, empresa), "metalica")
     except ValueError as err:
         raise ErroCena(str(err))
-    arq = (e.get("logo_claro") if tom == "claro" else None) or e.get("logo") or ""
+    # o logo do CARIMBO quando a empresa tem (usuário, 12/11: "gostaria que o logo da DEZN ficasse na mesma configuração da
+    # Hermes, com o nome dezn antes e o logo depois" — o DEZN_logo_metalica_carimbo do manual da marca, deitado); senão o de sempre
+    if tom == "claro":
+        arq = e.get("logo_carimbo_claro") or e.get("logo_claro") or e.get("logo") or ""
+    else:
+        arq = e.get("logo_carimbo") or e.get("logo") or ""
     if not arq or not os.path.isfile(arq):
         raise ErroCena("a empresa não tem logo cadastrado (Comercial › Empresa).")
     if not arq.lower().endswith(".png"):
