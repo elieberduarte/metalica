@@ -189,6 +189,18 @@ def _k_trelicas_tubulares(M: dict, pecas: List[dict]) -> List[str]:
 
 # ------------------------------------------------------------------ as resistências (com cache)
 
+def _avisos_sem_aco(sem_aco) -> List[str]:
+    """ANA-04: a peça cujo aço o modelo não diz (ou diz com um nome fora do catálogo) é verificada com o ACO_PADRAO — e o
+    memorial diz quais, em vez de cair calada no padrão (a cinta A500 do Madrid saiu A572, 11/11)"""
+    if not sem_aco:
+        return []
+    from nucleo import materiais as mat
+    partes = ["%d %s (%s)" % (n, perf, ("aço \"%s\" fora do catálogo" % a) if a else "sem aço no modelo")
+              for (a, perf), n in sorted(sem_aco.items(), key=lambda x: -x[1])[:6]]
+    return ["aço não informado: %d peça(s) verificadas com o aço padrão %s — %s. Informe o aço da peça no 3D"
+            % (sum(sem_aco.values()), mat.ACO_PADRAO, "; ".join(partes))]
+
+
 def aco_da_peca(pc: dict, P: dict, tipo: str) -> str:
     from nucleo import materiais as mat
     if tipo in TIPOS_TUBO and P.get("aco_tubos"):
@@ -440,9 +452,13 @@ def verificar(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = 
     valida = np.zeros(n, bool)
     Iz = np.array([br["sec"]["Iz"] for br in barras])
     Iy = np.array([br["sec"]["Iy"] for br in barras])
+    from nucleo import materiais as _mat
+    sem_aco = collections.Counter()
     for j, pc in enumerate(pecas):
         tipo = barras[pc["barras"][0]]["sec"].get("tipo") or ""
         aco = aco_da_peca(pc, P, tipo)
+        if aco == _mat.ACO_PADRAO and pc.get("aco_modelo") != aco and not pc.get("hipotese") and                 not (tipo in TIPOS_TUBO and P.get("aco_tubos")):
+            sem_aco[(pc.get("aco_modelo") or "", pc["perfil"])] += 1
         lig = ligacao_da_peca(M, pc)
         res = resistencias(pc["perfil"], aco, pc["Lx"], pc["Ly"], pc["L"], cache, ligacao=lig)
         ch = (pc["perfil"], aco, round(pc["Lx"], 2), round(pc["Ly"], 2), _chave_ligacao(lig))
@@ -633,7 +649,7 @@ def verificar(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = 
     return {"pecas": saida_pecas, "resistencias": lista_res,
             "uso_barras": {c: np.round(np.minimum(uso_bc[e], 99.0), 3).tolist() for e, c in enumerate(elu)},
             "uso_env": np.round(np.minimum(uso_env, 99.0), 3).tolist(), "comb_env": comb_env,
-            "peca_da_barra": pk.tolist(), "combinacoes": elu, "instaveis": instaveis, "avisos": avisos_k,
+            "peca_da_barra": pk.tolist(), "combinacoes": elu, "instaveis": instaveis, "avisos": avisos_k + _avisos_sem_aco(sem_aco),
             "primeira_ordem": not any((so2.get(c) or {}).get("pontas") is not None for c in elu)}
 
 

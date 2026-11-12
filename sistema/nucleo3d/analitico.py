@@ -113,7 +113,7 @@ def _linhas_do(doc) -> List[dict]:
         if ent.tipo == "barra":
             out.append({"a": tuple(ent.inicio), "b": tuple(ent.fim), "papel": ent.papel or "barra",
                         "peca": o.get("peca"), "grupo": o.get("peca") or o.get("planta") or ent.id,
-                        "perfil": ent.perfil, "ids": [ent.id], "duplo": False,
+                        "perfil": ent.perfil, "ids": [ent.id], "duplo": False, "aco": getattr(ent, "aco", "") or "",
                         "deitada": "deitada" in str(o.get("sentido") or "")})
         elif ent.tipo == "solido" and (ent.atributos or {}).get("calandrada") and ent.faces:
             at = ent.atributos or {}
@@ -586,7 +586,7 @@ def analitico(doc, base: Optional[float] = None) -> dict:
                 continue
             br = {"a": n0, "b": n1, "papel": ln["papel"], "peca": ln["peca"], "perfil": ln["perfil"],
                   "ids": ln["ids"], "duplo": ln["duplo"], "importada": bool(ln.get("importada")),
-                  "deitada": bool(ln.get("deitada"))}
+                  "deitada": bool(ln.get("deitada")), "aco": ln.get("aco") or ""}
             if t0 == 0.0 and "na" in assento:
                 br["assento_a"] = [round(c, 1) for c in assento["na"]]
             if t1 == 1.0 and "nb" in assento:

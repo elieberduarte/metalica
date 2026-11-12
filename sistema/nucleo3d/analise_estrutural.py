@@ -550,7 +550,9 @@ def montar(doc, par: Optional[dict] = None) -> dict:
             "topo_oblongo": bool(at.get("topo_oblongo")), "folga_axial": bool(at.get("folga_axial")),
             "marca": at.get("marca") or at.get("peca"), "perfil": perfil, "ids": list(br.get("ids") or []),
             **({"perfil_modelo": br.get("perfil")} if at.get("perfil_calculo") else {}),
-            "aco": (getattr(ent, "aco", "") or "") if ent is not None else "",
+            # o aço da entidade; sem ela (o script da obra que troca os ids pelo da peça: a cinta CI.1 do Madrid, 11/11), o
+            # que a linha do esqueleto trouxe dela — antes ficava vazio e a cinta A500 era verificada como A572 (ANA-04)
+            "aco": ((getattr(ent, "aco", "") or "") if ent is not None else "") or br.get("aco") or "",
             "sec": sec, "duplo": duplo, "rot": float(getattr(ent, "rotacao", 0.0) or 0.0) if ent is not None else 0.0,
             "R": _eixos(a, b, float(getattr(ent, "rotacao", 0.0) or 0.0) if ent is not None else 0.0),
             "soltos": [],

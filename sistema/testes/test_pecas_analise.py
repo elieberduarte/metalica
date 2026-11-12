@@ -54,3 +54,44 @@ def test_html_com_os_nomes():
     ids = [b["ids"][0] for b in an["barras"] if b["papel"] == "pilar"][:2]
     h = PA.html_pecas(an, ids, {"nome": "teste"}, {ids[0]: "P7"}, [])
     assert "P7" in h and "Envoltória de cálculo" in h and h.count("<section") == 2
+
+
+def _portico_aco(aco_viga, ids_da_peca=False, monkeypatch=None):
+    """dois pilares W engastados e uma viga TR 150×50 (o tubo da cinta do Madrid) com o aço `aco_viga`"""
+    from nucleo3d import analise_estrutural as AE, analitico
+    from nucleo3d.modelo import Barra
+    doc = Documento()
+    for x in (0.0, 6000.0):
+        doc.add(Barra(inicio=(x, 0.0, 0.0), fim=(x, 0.0, 4000.0), perfil="W 200×22,5", papel="pilar", aco="ASTM A572 Gr.50"))
+    doc.add(Barra(inicio=(0.0, 0.0, 4000.0), fim=(6000.0, 0.0, 4000.0), perfil="TR 150×50×2,25", papel="viga", aco=aco_viga))
+    if ids_da_peca:
+        # como o script do Madrid (11/11): a cinta partida segue como UMA peça — as linhas levam o id da peça, não o da entidade
+        orig = analitico._linhas_do
+
+        def linhas(doc_):
+            ls = orig(doc_)
+            for ln in ls:
+                if ln["papel"] == "viga":
+                    ln["ids"] = ["CI.1"]
+            return ls
+        monkeypatch.setattr(analitico, "_linhas_do", linhas)
+    r = AE.calcular(doc, {"vento": False, "segunda_ordem": False, "base": "engastada"})
+    assert not r["instavel"], r["instavel"]
+    ver = r["verificacao"]
+    tubo = [pc for pc in ver["pecas"] if pc["perfil"].startswith("TR")]
+    return tubo, ver
+
+
+def test_o_aco_da_peca_e_o_da_entidade_mesmo_com_os_ids_da_peca(monkeypatch):
+    # ANA-04 (Madrid, 11/11): a cinta TR 150×50 em ASTM A500 Gr.B saiu no memorial como ASTM A572 Gr.50 — o script trocava os
+    # ids pelo da peça, a análise não achava a entidade e o aço caía calado no ACO_PADRAO
+    tubo, ver = _portico_aco("ASTM A500 Gr.B", ids_da_peca=True, monkeypatch=monkeypatch)
+    assert tubo and all(pc["aco"] == "ASTM A500 Gr.B" for pc in tubo), [pc["aco"] for pc in tubo]
+    assert not any("aço não informado" in a for a in ver["avisos"])
+
+
+def test_peca_sem_aco_no_modelo_avisa_o_aco_padrao():
+    tubo, ver = _portico_aco("")
+    assert tubo and tubo[0]["aco"] == "ASTM A572 Gr.50"
+    av = [a for a in ver["avisos"] if "aço não informado" in a]
+    assert av and "TR 150×50×2,25" in av[0] and "sem aço no modelo" in av[0], ver["avisos"]
