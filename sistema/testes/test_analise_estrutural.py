@@ -147,3 +147,24 @@ def test_mecanismo_aponta_os_nos_que_andam():
     sol = AE.resolver(M, {"q": _caso(dist={2: np.array([0, 0, -1.0])})})
     assert sol["instavel"], "devia sair instável"
     assert 3 in sol["mecanismo_nos"] and 0 not in sol["mecanismo_nos"] and 1 not in sol["mecanismo_nos"], sol["mecanismo_nos"]
+
+
+def test_barra_chata_tem_a_inercia_do_retangulo_e_nao_a_da_redonda():
+    # Cobertura Filipin (12/11): o lanternim de Barra chata 2"×3/16" ia na análise como barra REDONDA de mesma área
+    # (I = A²/4π = 4,65e-9 m⁴ nos dois eixos). Deitada no 3D (largura no x da seção), o eixo da altura é o fraco
+    s = AE._secao('Barra chata 2"×3/16"', False, {})
+    b, t = 5.08, 0.476                                                  # cm
+    assert s["Iz"] == pytest.approx(b * t ** 3 / 12 * 1e-8, rel=1e-6)   # 4,57e-10 m⁴
+    assert s["Iy"] == pytest.approx(t * b ** 3 / 12 * 1e-8, rel=1e-6)   # 5,20e-8 m⁴
+    assert s["Wz"] == pytest.approx(b * t * t / 6 * 1e-6, rel=1e-6) and not s["redonda"]
+
+
+def test_barra_chata_verificada_como_secao_solida_retangular():
+    # a mesma chata na verificação: era "barra redonda: só tração" (Nc = 0, sem flexão). Agora compressão com χ (Q = 1),
+    # flexão no eixo fraco Mpl/γa1 (D.2.5) e no forte pela FLT da Tabela D.1 — conta à mão para L = 0,5 m, A36
+    from nucleo3d import verificacao_pecas as VP
+    r = VP.resistencias('Barra chata 2"×3/16"', "ASTM A36", 0.5, 0.5, 0.5, {})
+    assert not r["redonda"] and r["erro"] is None
+    assert r["Nc"] == pytest.approx(2.874, rel=2e-3)                    # Ne 3,605 kN, λ0 4,095, χ 0,0523
+    assert r["Mz"] == pytest.approx(0.0654, rel=3e-3)                   # 5,08·0,476²/4 · 25 / 1,10
+    assert r["My"] == pytest.approx(0.533, rel=3e-3)                    # FLT inelástica: λ 364, λp 21,8, λr 504

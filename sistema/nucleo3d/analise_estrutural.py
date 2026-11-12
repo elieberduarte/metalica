@@ -140,6 +140,24 @@ def _unit(v):
 _SECOES: Dict[str, Optional[dict]] = {}       # as seções do catálogo já lidas (entre um cálculo e outro)
 
 
+def secao_chata(p) -> Optional[dict]:
+    """a seção da barra chata (o catálogo só traz a área e as medidas), em cm: no 3D ela fica deitada — a largura b no x da
+    seção e a espessura t na altura (geometria.secao) —, então o eixo x (o da altura, o Mz da análise) é o FRACO: Ix = b·t³/12,
+    Iy = t·b³/12; Z = 1,5·W; J = b·t³/3·(1 − 0,63·t/b). None se não for barra chata"""
+    d = getattr(p, "dados", None) or {}
+    if getattr(p, "tipo", "") != "barra" or d.get("tipo") != "chata":
+        return None
+    b, t = float(d.get("b") or d.get("d") or 0) / 10.0, float(d.get("t") or 0) / 10.0
+    if b <= 0 or t <= 0:
+        return None
+    if t > b:
+        b, t = t, b
+    Ix, Iy = b * t ** 3 / 12.0, t * b ** 3 / 12.0
+    return {"b": b, "t": t, "A": b * t, "Ix": Ix, "Iy": Iy, "Wx": b * t * t / 6.0, "Wy": t * b * b / 6.0,
+            "Zx": b * t * t / 4.0, "Zy": t * b * b / 4.0, "rx": t / math.sqrt(12.0), "ry": b / math.sqrt(12.0),
+            "J": b * t ** 3 / 3.0 * (1.0 - 0.63 * t / b)}
+
+
 def _secao(nome: str, duplo: bool, cache: dict) -> Optional[dict]:
     """A, Iz (forte), Iy (fraca), J em m; Wz, Wy em m³; kg/m — pelo catálogo"""
     if nome not in cache and nome in _SECOES:
@@ -152,6 +170,11 @@ def _secao(nome: str, duplo: bool, cache: dict) -> Optional[dict]:
             A = p.A * 1e-4
             Ix, Iy = (p.Ix or 0) * 1e-8, (p.Iy or 0) * 1e-8
             Wx, Wy = (p.Wx or 0) * 1e-6, (p.Wy or 0) * 1e-6
+            ret = secao_chata(p)
+            if Ix <= 0 and ret:
+                # a barra chata pelas medidas (o catálogo só traz a área): ela ia como REDONDA de mesma área — a 2"×3/16" com
+                # 4,65e-9 m⁴ nos dois eixos, onde o certo é 5,2e-8 de pé e 4,6e-10 deitada (Cobertura Filipin, 12/11)
+                Ix, Iy, Wx, Wy = ret["Ix"] * 1e-8, ret["Iy"] * 1e-8, ret["Wx"] * 1e-6, ret["Wy"] * 1e-6
             if Ix <= 0:                                   # barra redonda: só a área
                 Ix = Iy = A * A / (4 * math.pi)
             if Iy <= 0:
@@ -162,6 +185,8 @@ def _secao(nome: str, duplo: bool, cache: dict) -> Optional[dict]:
             if Wy <= 0:
                 Wy = Wx if abs(Ix - Iy) < 1e-12 else Iy / max(r, 1e-6)
             J = (p.dados.get("J") or p.J or 0) * 1e-8 if hasattr(p, "dados") else (p.J or 0) * 1e-8
+            if not J and ret:
+                J = ret["J"] * 1e-8
             s = {"A": A, "Iz": Ix, "Iy": Iy, "J": J or min(Ix, Iy) * 0.01, "Wz": Wx, "Wy": Wy,
                  "kg_m": p.massa or A * 7850.0, "tipo": getattr(p, "tipo", ""),
                  "redonda": (getattr(p, "dados", None) or {}).get("tipo") == "redonda" and getattr(p, "tipo", "") == "barra"}

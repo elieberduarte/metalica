@@ -265,6 +265,43 @@ def ligacao_da_peca(M: dict, pc: dict) -> Optional[dict]:
                 pt["n"], _n(pt["d"], 1).replace(",0", ""), _n(pt["lc"], 1), pt["lado"])}
 
 
+def _resistencias_chata(r: dict, p, a, ch: dict, Lx: float, Ly: float, L: float, kw_lig: dict) -> None:
+    """a barra chata como seção sólida retangular (NBR 8800:2024): ela ia como barra REDONDA, "só tração" — o lanternim da
+    Cobertura Filipin (12/11), todo de chata 2"×3/16" à flexão e à compressão, saía verificado só pela normal de tração.
+    Compressão: 5.3 com Q = 1 (maciça) e a flambagem em cada eixo; flexão no eixo FRACO (o x da seção, deitada no 3D): D.2.5,
+    Mpl/γa1; no eixo FORTE (y): FLT da Tabela D.1 (seções sólidas retangulares), Lb = Ly, Cb = 1; cortante 0,6·fy·A/γa1.
+    Unidades: cm, kN; momentos em kN·m"""
+    from nucleo import nbr8800
+    E, fy, g1 = 20000.0, a.fy, 1.10
+    A, b, t = ch["A"], ch["b"], ch["t"]
+    r["lam"] = max(Lx * 100 / ch["rx"], Ly * 100 / ch["ry"])
+    Ne = min(math.pi ** 2 * E * ch["Ix"] / max(Lx * 100, 1e-6) ** 2, math.pi ** 2 * E * ch["Iy"] / max(Ly * 100, 1e-6) ** 2)
+    l0 = math.sqrt(A * fy / Ne)
+    chi = 0.658 ** (l0 * l0) if l0 <= 1.5 else 0.877 / (l0 * l0)
+    r.update(Nc=chi * A * fy / g1, chi=round(chi, 4), Q=1.0, lambda0=round(l0, 4), Ne=round(Ne, 2), redonda=False)
+    rt = nbr8800.tracao(p, a, N_Sd=1.0, L=max(Lx, Ly) * 100, **kw_lig)
+    r["Nt"] = float(rt.dados["N_Rd"])
+    # eixo fraco (D.2.5): Mpl/γa1
+    r["Mz"] = ch["Zx"] * fy / g1 / 100.0
+    r["gov_Mz"] = "Mpl (D.2.5, eixo de menor inércia)"
+    # eixo forte (Tabela D.1): FLT
+    Mpl, Mr = ch["Zy"] * fy, ch["Wy"] * fy
+    rJA = math.sqrt(ch["J"] * A)
+    lam = Ly * 100 / ch["rx"]
+    lp, lr = 0.13 * E * rJA / Mpl, 2.0 * E * rJA / Mr
+    if lam <= lp:
+        Mn, gov = Mpl, "Mpl"
+    elif lam <= lr:
+        Mn, gov = Mpl - (Mpl - Mr) * (lam - lp) / (lr - lp), "FLT inelástica"
+    else:
+        Mn, gov = min(2.0 * E * rJA / lam, Mpl), "FLT elástica"
+    r["My"] = Mn / g1 / 100.0
+    r["gov_My"] = "%s (Tabela D.1, sólida retangular; λ = %.0f, λp = %.0f, λr = %.0f)" % (gov, lam, lp, lr)
+    r["Vy"] = r["Vz"] = 0.6 * fy * A / g1
+    r["obs"].append("barra chata %.0f × %.2f mm: seção sólida retangular — compressão com χ (Q = 1), flexão D.2.5 (fraco) e "
+                    "Tabela D.1 (forte, FLT)" % (b * 10, t * 10))
+
+
 def resistencias(nome: str, aco_nome: str, Lx: float, Ly: float, L: float, cache: dict,
                  ligacao: Optional[dict] = None) -> dict:
     """as resistências de cálculo de um perfil com os comprimentos de flambagem (m): kN e kN·m. `ligacao`: a ligação
@@ -289,7 +326,11 @@ def resistencias(nome: str, aco_nome: str, Lx: float, Ly: float, L: float, cache
         r["lam"] = max(Lx * 100 / p.rx if p.rx else 0.0, Ly * 100 / p.ry if p.ry else 0.0)
         modo = perfis_fabrica.tipo_de_verificacao(p)
         circular = p.tipo == "tubo" and not (p.bf or 0)
-        if modo == "redonda":
+        from nucleo3d.analise_estrutural import secao_chata
+        ch = secao_chata(p)
+        if ch:
+            _resistencias_chata(r, p, a, ch, Lx, Ly, L, kw_lig)
+        elif modo == "redonda":
             r.update(norma="NBR 8800", redonda=True)
             rt = nbr8800.tracao(p, a, N_Sd=1.0, L=max(Lx, Ly) * 100, rosqueada=bool(p.dados.get("rosqueada")), **kw_lig)
             r["Nt"] = float(rt.dados["N_Rd"])
