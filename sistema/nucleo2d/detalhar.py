@@ -672,6 +672,92 @@ def _unidade_pela_maioria(total: collections.Counter, fracao: float = 0.8):
     return None
 
 
+def _mdc_da_composicao(total: collections.Counter):
+    """(n, unidade): instâncias iguais pelo máximo divisor comum das quantidades por posição
+    (8 pórticos M2 = 80 P10, 64 P11, 64 P12, 56 P4 → mdc 8)."""
+    n = 0
+    for q in total.values():
+        n = math.gcd(n, q)
+    n = max(n, 1)
+    return n, collections.Counter({k: q // n for k, q in total.items()})
+
+
+def _uma_copia_da_elevacao(lista) -> bool:
+    """As peças do conjunto vêm todas de UMA cópia da elevação do projeto (`origem.peca`, "PAINEL 15#169", que a montagem
+    pela planta grava em cada barra): o conjunto é uma instância só. As peças sem origem (a chapa soldada) não contam,
+    mas as com origem têm de ser a maioria."""
+    copias = set()
+    com = 0
+    for e in lista:
+        o = (getattr(e, "atributos", None) or {}).get("origem") or {}
+        if isinstance(o, dict) and o.get("peca"):
+            copias.add(str(o["peca"]))
+            com += 1
+    return len(copias) == 1 and 2 * com >= len(lista)
+
+
+def decidir_instancias(conj: str, lista, total: Optional[collections.Counter] = None):
+    """(instância desenhada, n, unidade, aviso) de um conjunto — a MESMA decisão para as pranchas (o Detalhar) e para a
+    lista de materiais, o romaneio e o Controle de produção (saida/lista_producao._conjuntos). Antes a lista tinha uma
+    conta só dela (o mdc e, caindo para 1, a "maioria" das posições, sem conferir no espaço): a treliça simétrica de uma
+    cópia — quase toda diagonal em par — virava duas meias unidades (Posto, 12/11: PAINEL 15 = MT97 ×2 de 57 peças nas
+    listas, 1 de 115 nas pranchas; 33 conjuntos assim e o Controle de produção ia pedir duas meias tesouras)."""
+    total = total if total is not None else collections.Counter(posicao_base(e) for e in lista)
+    n, unidade = _mdc_da_composicao(total)
+    # as instâncias que o modelo já diz (marcas.instancia em cada peça, como o conjunto do IFC): sem
+    # adivinhar pela conta
+    pelo_grupo = _instancias_pelo_grupo(lista)
+    if pelo_grupo:
+        return pelo_grupo
+    if not all(getattr(e, "vertices", None) for e in lista):
+        # sem geometria (só as contagens): o mdc e, caindo para 1, a maioria das posições
+        robusta = _unidade_pela_maioria(total) if n == 1 else None
+        if robusta:
+            n, unidade = robusta[0], collections.Counter(robusta[1])
+        return lista, n, unidade, ""
+    # a instância desenhada: um agrupamento espacial com exatamente a composição
+    # unitária; sem um, o conjunto inteiro quando n = 1, senão o maior agrupamento
+    insts = _instancias_do_conjunto(lista, unidade)
+    inst = next((i for i in insts if collections.Counter(
+        posicao_base(e) for e in i) == unidade), None)
+    aviso = ""
+    if inst is None or n == 1:
+        # uma peça a mais ou a menos numa das instâncias (29 P13 em 8 tesouras de
+        # 4) derruba o mdc para 1 e o conjunto inteiro saía desenhado como se fosse
+        # uma instância só (os fragmentos juntos batiam com a "unidade" = tudo); a
+        # composição da maioria das posições dá a unidade — só quando o espaço confirma
+        robusta = _unidade_pela_maioria(total)
+        if robusta:
+            n2, unidade2 = robusta
+            iguais = [i for i in _instancias_do_conjunto(lista, unidade2)
+                      if collections.Counter(posicao_base(e) for e in i) == unidade2]
+            if iguais:
+                difere = ["%s (%d em vez de %d)" % (k, total.get(k, 0), n2 * unidade2.get(k, 0))
+                          for k in sorted(set(total) | set(unidade2), key=_ordem_natural)
+                          if total.get(k, 0) != n2 * unidade2.get(k, 0)]
+                aviso = ("conjunto %s: %d instâncias, %d com a composição desenhada; no total diferem %s"
+                         % (conj, n2, len(iguais), ", ".join(difere)))
+                inst, n, unidade = iguais[0], n2, unidade2
+    if inst is None:
+        # a unidade pelos agrupamentos no espaço: o mdc das quantidades erra quando a composição da instância
+        # tem um divisor comum (a viga-caixa do Vicente, 08/10: 4 tubos, 42 travessas e 6 montantes por viga →
+        # mdc 2, "meia viga" como unidade e 48 instâncias em vez de 24); quando quase todos os grupos de peças
+        # encostadas têm a mesma composição, ela é a unidade e o número de grupos é a quantidade
+        pelos_grupos = _unidade_pelos_agrupamentos(lista)
+        if pelos_grupos:
+            inst, n, unidade, aviso = pelos_grupos
+    if inst is None and _uma_copia_da_elevacao(lista):
+        # nada no espaço bate com a "unidade" do mdc e o modelo diz que é uma cópia só da elevação: o conjunto
+        # inteiro, 1 vez (Posto, 12/11: PAINEL 2, PAINEL 7 e TRELIÇA 6 saíam 2× de meia peça também nas pranchas)
+        inst, n, unidade = lista, 1, collections.Counter(total)
+    if inst is None:
+        # nunca o conjunto inteiro quando ele está espalhado em vários grupos
+        inst = max(insts, key=len) if len(insts) > 1 else lista
+        aviso = ("conjunto %s: %d instâncias pela composição, mas nenhum agrupamento "
+                 "espacial bate com a composição unitária; desenhado o maior" % (conj, n))
+    return inst, n, unidade, aviso
+
+
 def projeto_recebido(doc: Documento) -> bool:
     """O modelo veio pronto do projetista (IFC importado, ou o projeto recebido em DXF/PDF): as porcas e arruelas do
     chumbador ficam como ele pôs (N07, decisão do usuário 16/10). `metadados.origem_projeto` ("recebido" | "nosso"),
@@ -897,60 +983,12 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         candidatos = []
         for conj, lista in por_conj.items():
             total = collections.Counter(posicao_base(e) for e in lista)
-            # instâncias iguais: o máximo divisor comum das quantidades por posição
-            # (8 pórticos M2 = 80 P10, 64 P11, 64 P12, 56 P4 → mdc 8)
-            n = 0
-            for q in total.values():
-                n = math.gcd(n, q)
-            n = max(n, 1)
-            unidade = collections.Counter({k: q // n for k, q in total.items()})
+            n, unidade = _mdc_da_composicao(total)
             # conjuntos de uma peça só (terça = marca) não são elevação: já estão nas
             # posições; telhas também não
             if sum(unidade.values()) < 2 or all(classe_de.get(k) == "telha" for k in unidade):
                 continue
-            # as instâncias que o modelo já diz (marcas.instancia em cada peça, como o conjunto do IFC): sem
-            # adivinhar pela conta
-            pelo_grupo = _instancias_pelo_grupo(lista)
-            if pelo_grupo:
-                candidatos.append((conj, lista) + pelo_grupo)
-                continue
-            # a instância desenhada: um agrupamento espacial com exatamente a composição
-            # unitária; sem um, o conjunto inteiro quando n = 1, senão o maior agrupamento
-            insts = _instancias_do_conjunto(lista, unidade)
-            inst = next((i for i in insts if collections.Counter(
-                posicao_base(e) for e in i) == unidade), None)
-            aviso = ""
-            if inst is None or n == 1:
-                # uma peça a mais ou a menos numa das instâncias (29 P13 em 8 tesouras de
-                # 4) derruba o mdc para 1 e o conjunto inteiro saía desenhado como se fosse
-                # uma instância só (os fragmentos juntos batiam com a "unidade" = tudo); a
-                # composição da maioria das posições dá a unidade
-                robusta = _unidade_pela_maioria(total)
-                if robusta:
-                    n2, unidade2 = robusta
-                    iguais = [i for i in _instancias_do_conjunto(lista, unidade2)
-                              if collections.Counter(posicao_base(e) for e in i) == unidade2]
-                    if iguais:
-                        difere = ["%s (%d em vez de %d)" % (k, total.get(k, 0), n2 * unidade2.get(k, 0))
-                                  for k in sorted(set(total) | set(unidade2), key=_ordem_natural)
-                                  if total.get(k, 0) != n2 * unidade2.get(k, 0)]
-                        aviso = ("conjunto %s: %d instâncias, %d com a composição desenhada; no total diferem %s"
-                                 % (conj, n2, len(iguais), ", ".join(difere)))
-                        inst, n, unidade = iguais[0], n2, unidade2
-            if inst is None:
-                # a unidade pelos agrupamentos no espaço: o mdc das quantidades erra quando a composição da instância
-                # tem um divisor comum (a viga-caixa do Vicente, 08/10: 4 tubos, 42 travessas e 6 montantes por viga →
-                # mdc 2, "meia viga" como unidade e 48 instâncias em vez de 24); quando quase todos os grupos de peças
-                # encostadas têm a mesma composição, ela é a unidade e o número de grupos é a quantidade
-                pelos_grupos = _unidade_pelos_agrupamentos(lista)
-                if pelos_grupos:
-                    inst, n, unidade, aviso = pelos_grupos
-            if inst is None:
-                # nunca o conjunto inteiro quando ele está espalhado em vários grupos
-                inst = max(insts, key=len) if len(insts) > 1 else lista
-                aviso = ("conjunto %s: %d instâncias pela composição, mas nenhum agrupamento "
-                         "espacial bate com a composição unitária; desenhado o maior" % (conj, n))
-            candidatos.append((conj, lista, inst, n, unidade, aviso))
+            candidatos.append((conj, lista) + decidir_instancias(conj, lista, total))
         candidatos.sort(key=lambda c: (-len(c[1]), _ordem_natural(c[0])))
         # marcas diferentes com a mesma geometria (o TecnoMETAL numera por pórtico) viram
         # uma célula só: "M17 / M46 – 08x"

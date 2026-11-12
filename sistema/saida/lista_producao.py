@@ -17,7 +17,6 @@ Grava em ``<projeto>/detalhamento/``: ``lista-de-materiais.json`` (a tela lê), 
 """
 import collections
 import csv
-import math
 import os
 import re
 from datetime import datetime
@@ -374,34 +373,18 @@ def _conjuntos(pecas, por_marca: Dict[str, Posicao], nomes: Optional[Dict[str, s
         por_conj.setdefault(conj, collections.Counter())[posicao_base(e)] += 1
         por_conj_var.setdefault(conj, collections.Counter())[str(m.get("posicao") or e.nome)] += 1
         pecas_conj.setdefault(conj, []).append(e)
-    from nucleo2d.detalhar import _instancias_pelo_grupo, _unidade_pela_maioria
+    from nucleo2d.detalhar import decidir_instancias
     saida = []
     for conj, total in por_conj.items():
-        n = 0
-        for q in total.values():
-            n = math.gcd(n, q)
-        n = max(n, 1)
-        unidade = {k: q // n for k, q in total.items()}
-        difere = []
-        # as instâncias que o modelo já diz (marcas.instancia em cada peça: o IfcElementAssembly, a viga-caixa do
-        # Vicente), como o detalhamento (13/10): o mdc das quantidades dividia a caixa de 4 tubos em 48 meias caixas
-        # de 2 tubos (T1) ou 48 quartos (T3), e o resumo da obra contava 48 onde as pranchas dizem 24 e 12
-        pelo_grupo = _instancias_pelo_grupo(pecas_conj.get(conj) or [])
-        if pelo_grupo:
-            n, unidade = pelo_grupo[1], dict(pelo_grupo[2])
-            difere = ["%s (%d em vez de %d)" % (k, total.get(k, 0), n * unidade.get(k, 0))
-                      for k in sorted(set(total) | set(unidade), key=_ordem_natural)
-                      if total.get(k, 0) != n * unidade.get(k, 0)]
-        elif n == 1:
-            # uma peça a mais ou a menos numa das instâncias derruba o mdc para 1 e o
-            # conjunto inteiro saía como uma unidade só; a maioria das posições dá a unidade
-            # (a mesma regra do detalhamento)
-            robusta = _unidade_pela_maioria(collections.Counter(total))
-            if robusta:
-                n, unidade = robusta[0], dict(robusta[1])
-                difere = ["%s (%d em vez de %d)" % (k, total.get(k, 0), n * unidade.get(k, 0))
-                          for k in sorted(set(total) | set(unidade), key=_ordem_natural)
-                          if total.get(k, 0) != n * unidade.get(k, 0)]
+        # as instâncias pela MESMA decisão das pranchas (detalhar.decidir_instancias): as que o modelo diz
+        # (marcas.instancia — a viga-caixa do Vicente, 13/10), o mdc, a maioria das posições só quando o espaço confirma, e
+        # a cópia da elevação (origem.peca). A conta própria daqui (mdc e maioria sem conferir no espaço) partia a treliça
+        # simétrica de uma cópia em duas meias unidades (Posto, 12/11: PAINEL 15 = MT97 ×2 de 57 peças; as pranchas, 1)
+        _inst, n, unidade, _aviso = decidir_instancias(conj, pecas_conj.get(conj) or [], collections.Counter(total))
+        unidade = dict(unidade)
+        difere = ["%s (%d em vez de %d)" % (k, total.get(k, 0), n * unidade.get(k, 0))
+                  for k in sorted(set(total) | set(unidade), key=_ordem_natural)
+                  if total.get(k, 0) != n * unidade.get(k, 0)]
         if sum(unidade.values()) < 2:
             continue
         if all(por_marca.get(k) is not None and por_marca[k].classe == "telha" for k in unidade):
