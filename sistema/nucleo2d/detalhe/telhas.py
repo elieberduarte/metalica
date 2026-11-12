@@ -647,11 +647,12 @@ def multidobras(pecas: Sequence, cumeeira_desenvolvida: Optional[float] = None) 
 #: Perna de cumeeira mais comprida que isto (mm) não é cumeeira: é telha que se apoia.
 PERNA_MAX_CUMEEIRA = 600.0
 
-#: A chapa aberta da cumeeira de telha (mm), metade para cada água: 250 + 250, qualquer que seja a dobra, em todas as
-#: obras (usuário, 12/11, chat da Sala de Compressores: "Sim: 500" — as cumeeiras com 50 cm desenvolvidos). Antes
-#: (01/10) as pernas iam no menor de 300/500 que cobrisse a modelada (CU1 300 + 300). Outra medida numa obra: a opção
-#: do projeto opcoes_detalhamento.cumeeira_desenvolvida (COB-21).
-CUMEEIRA_DESENVOLVIDA = 500.0
+#: A perna da cumeeira de telha (mm), igual nas duas águas e qualquer que seja a dobra, em todas as obras: 500 + 500,
+#: a chapa aberta de 1.000 (usuário, 12/11: "o desenvolvimento da cumeeira é 50cm para cada lado"; o 250 + 250 do
+#: 9254571 leu os 50 cm como o total). Antes (01/10) as pernas iam no menor de 300/500 que cobrisse a modelada (CU1
+#: 300 + 300). Outra medida numa obra: a opção do projeto opcoes_detalhamento.cumeeira_desenvolvida, a chapa aberta (COB-21).
+PERNA_CUMEEIRA = 500.0
+CUMEEIRA_DESENVOLVIDA = 2 * PERNA_CUMEEIRA
 
 
 def mm_o_maior(v: float) -> float:
@@ -661,7 +662,7 @@ def mm_o_maior(v: float) -> float:
 
 def pernas_da_cumeeira(m1: float, m2: float, desenvolvida: Optional[float] = None) -> Tuple[float, float]:
     """As duas pernas da cumeeira na fábrica: a chapa aberta (`desenvolvida`, a opção do projeto, ou o padrão
-    CUMEEIRA_DESENVOLVIDA = 500), metade para cada lado. As pernas modeladas (m1, m2) não mudam a peça."""
+    CUMEEIRA_DESENVOLVIDA = 1.000), metade para cada lado. As pernas modeladas (m1, m2) não mudam a peça."""
     d = float(desenvolvida) if desenvolvida and float(desenvolvida) > 0 else CUMEEIRA_DESENVOLVIDA
     return d / 2.0, d / 2.0
 

@@ -5,7 +5,7 @@ Depósito Químico (ME Sooro, IFC do TecnoMETAL, 04/11/2026 — o usuário: "Nã
 grava a cumeeira como uma barra só, "CUMEEIRA I7.5" (camada Rufos, 33,31 m, a seção de uma chapa lisa com 250 mm de
 cada lado da crista). O detalhamento a tratava como o rufo RF2 (1 × 33.310 mm, prancha dos rufos) e não havia o quadro
 CUMEEIRAS. A compra é "Cumeeira TP40 — 34 peças": uma por telha da água, dobrada na cumeeira, como a da Sala de
-Compressores (CU1; pernas 250 + 250, a chapa de 500 de todas as obras desde 12/11).
+Compressores (CU1; pernas 500 + 500, a chapa de 1.000 de todas as obras desde 12/11).
 
 Os dados são um recorte do modelo do Depósito: a barra da cumeeira inteira e as telhas das duas águas (7,5 % e 7,11 %)
 dos primeiros 4,2 m — testes/dados_telhas/deposito_quimico_cumeeira.json.gz."""
@@ -49,13 +49,13 @@ def test_barra_de_funilaria_vira_a_cumeeira_cu():
     assert cm["conjunto"] == "CUMEEIRA I7.5"
     # uma por telha da água (no modelo inteiro, 34: a compra)
     assert cm["instancias"] == max(_telhas_por_agua(pecas))
-    # a chapa de 500 da fábrica, 250 para cada água (usuário, 12/11: "Sim: 500")
-    assert (cm["perna1"], cm["perna2"]) == (250.0, 250.0)
+    # a perna de 500 da fábrica em cada água (usuário, 12/11: "o desenvolvimento da cumeeira é 50cm para cada lado")
+    assert (cm["perna1"], cm["perna2"]) == (500.0, 500.0)
     assert cm["pernas_modelo"] == [250.0, 250.0]
     # a dobra pelas águas de baixo: 180 − (4,29° + 4,07°)
     assert abs(cm["angulo"] - 171.6) < 0.15
     assert cm["perfil"] == "TELHA TP40 ESP.0.65"
-    assert 2.9 < cm["peso"] < 3.45
+    assert 5.8 < cm["peso"] < 6.9
     # a barra sai dos rufos (a lista e as pranchas a tiram pelo md["funilaria"])
     assert md["funilaria"] == {"CUMEEIRA I7.5"}
     assert "CUMEEIRA I7.5" in md["posicoes"]
@@ -69,7 +69,7 @@ def test_desenho_da_cumeeira_de_funilaria():
     ents = list(d.entidades.values()) if isinstance(d.entidades, dict) else list(d.entidades)
     textos = [getattr(e, "texto", "") or "" for e in ents]
     assert any(t.startswith("CU1 – %02dx" % cm["instancias"]) for t in textos), textos
-    assert any("pernas 250 + 250 mm" in t for t in textos), textos
+    assert any("pernas 500 + 500 mm" in t for t in textos), textos
 
 
 def _so_cumeeira(bruto, **mudar):

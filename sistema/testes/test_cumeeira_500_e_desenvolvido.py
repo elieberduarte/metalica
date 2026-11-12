@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
-"""A cumeeira com 500 de chapa em todas as obras e o desenvolvido da multidobra no mm de cima (DET-03).
+"""A cumeeira com pernas de 500 em todas as obras e o desenvolvido da multidobra no mm de cima (DET-03).
 
 Sala de Compressores (ME Sooro, IFC do TecnoMETAL), 12/11/2026. O chat da obra perguntou ao usuário: "Para o 2D sair igual
 à relação, o programa precisa mudar para todas as obras. Confirma?" Resposta: "Sim: 500 e 2.224".
-- A cumeeira de telha sai com 500 de desenvolvimento, pernas 250 + 250, qualquer que seja a dobra (Sala 157,2°, Depósito
-  171,6°). Antes: o menor de 300/500 que cobrisse a perna modelada (CU1 300 + 300).
+- A cumeeira de telha sai com pernas de 500 + 500 (a chapa aberta de 1.000), qualquer que seja a dobra (Sala 157,2°,
+  Depósito 171,6°). Antes: o menor de 300/500 que cobrisse a perna modelada (CU1 300 + 300). O 1º commit (9254571) leu
+  os "50 cm" como o total (250 + 250); o usuário corrigiu no mesmo dia: "o desenvolvimento da cumeeira é 50cm para cada
+  lado".
 - A multidobra MD1 tem 2.223,2 mm desenvolvidos por fora: o 2D, a lista e os textos diziam 2.223 ("desenvolvida: ext. 2223
   mm", "MD1: 2223"); a relação de fabricação já dizia 2.224. Pela DET-03 (mm inteiro, o MAIOR), 2.224. É a 1ª reincidência
   da DET-03 (a regra é de 26/10, nas cotas; o desenvolvido da telha ficou de fora).
@@ -74,11 +76,11 @@ def test_cumeeira_da_sala_com_500():
     assert len(md["cumeeiras"]) == 1
     cm = md["cumeeiras"][0]
     assert abs(cm["angulo"] - 157.2) < 0.15
-    assert (cm["perna1"], cm["perna2"], cm["desenv"]) == (250.0, 250.0, 500.0)
+    assert (cm["perna1"], cm["perna2"], cm["desenv"]) == (500.0, 500.0, 1000.0)
     from nucleo2d.desenho import Desenho
     d = Desenho(nome="t", escala=20.0)
     T.desenho_da_cumeeira(cm, d, 0.0, 0.0, "CU1")
-    assert any("pernas 250 + 250 mm" in x and "desenvolvida 500 mm" in x for x in _textos(d)), _textos(d)
+    assert any("pernas 500 + 500 mm" in x and "desenvolvida 1000 mm" in x for x in _textos(d)), _textos(d)
 
 
 def test_mm_o_maior():
