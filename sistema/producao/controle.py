@@ -84,16 +84,19 @@ def itens(lista: dict, nomes: Optional[dict] = None) -> List[dict]:
         por_nome.setdefault(str(c.get("nome") or c.get("marca")), []).append(c)
     usados: Counter = Counter()
     saida = []
+    # o número de cada unidade é o dos títulos das pranchas (nomes.numerar_unidades: o mesmo nome numera junto, na ordem
+    # natural das marcas — TESOURA 14-1 e 14-2, Posto 12/11), não a ordem da lista por peso
+    from nucleo2d.detalhe.nomes import numerar_unidades
+    ids_de = numerar_unidades((c.get("marca"), nome, int(c.get("instancias") or 1))
+                              for nome, grupo in por_nome.items() for c in grupo)
     for nome, grupo in por_nome.items():
-        total = sum(int(c.get("instancias") or 1) for c in grupo)
-        i = 0
         for c in grupo:
             n = int(c.get("instancias") or 1)
             kg_u = float(c.get("peso_total") or 0.0) / n if n else 0.0
             tipo = tipos_cj.get(c.get("marca")) or _TIPO_CATEGORIA.get(str(c.get("categoria") or "").upper(), "conjunto")
-            for _ in range(n):
-                i += 1
-                saida.append({"id": "%s-%d" % (nome, i) if total > 1 else nome, "nome": nome, "tipo": tipo,
+            ids_c = list(ids_de.get(str(c.get("marca")), []))
+            for k in range(n):
+                saida.append({"id": ids_c[k] if k < len(ids_c) else "%s-%d" % (nome, k + 1), "nome": nome, "tipo": tipo,
                               "origem": "conjunto", "refs": [c.get("marca")],
                               "descricao": "%d peças" % int(c.get("pecas_unidade") or 0),
                               "quantidade": 1, "kg_unidade": round(kg_u, 3), "kg": round(kg_u, 3)})

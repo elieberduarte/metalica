@@ -1565,6 +1565,45 @@ def _decisao_vale(entradas, t, raio: float = 1500.0) -> bool:
     return False
 
 
+SUFIXO_TESOURA_DE_CIMA = " (tesoura de cima)"
+
+
+def conjunto_de_fabrica(chave: str) -> str:
+    """A chave do conjunto de fabricação da peça da elevação ("TRANSICAO 2 (tesoura de cima)#3" → "TRANSICAO 2#3"): as
+    duas partes da transição montada em duas peças são um conjunto só na fábrica (Posto, 12/11)."""
+    return str(chave or "").replace(SUFIXO_TESOURA_DE_CIMA + "#", "#")
+
+
+def juntar_tesouras_de_cima(doc) -> int:
+    """O modelo já montado (sem remontar, a obra em produção): as barras da tesoura de cima passam para o conjunto da
+    transição de baixo da mesma cópia (`marcas.conjunto` e `nome_conjunto` dela), como a montagem faz agora
+    (conjunto_de_fabrica). Devolve quantas barras mudaram."""
+    base: Dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+    for e in doc.entidades.values():
+        a = e.atributos or {}
+        p = str((a.get("origem") or {}).get("peca") or "")
+        m = a.get("marcas") or {}
+        if p and SUFIXO_TESOURA_DE_CIMA not in p and m.get("conjunto"):
+            base[p][(m.get("conjunto"), m.get("nome_conjunto"))] += 1
+    n = 0
+    for e in doc.entidades.values():
+        a = e.atributos or {}
+        p = str((a.get("origem") or {}).get("peca") or "")
+        m = a.get("marcas")
+        if SUFIXO_TESOURA_DE_CIMA not in p or not isinstance(m, dict):
+            continue
+        alvo = base.get(conjunto_de_fabrica(p))
+        if not alvo:
+            continue
+        conj, nome = alvo.most_common(1)[0][0]
+        if m.get("conjunto") != conj:
+            m["conjunto"] = conj
+            if nome:
+                m["nome_conjunto"] = nome
+            n += 1
+    return n
+
+
 def _partes_da_elevacao(el: "Elevacao", dividir: bool, sem_cima: bool = False) -> List[Tuple[str, List["Membro"]]]:
     """A elevação que o projeto confirma como duas peças — a viga de transição embaixo e a tesoura
     em cima dela (TRANSIÇÕES 2 e 5 do Posto CB): o que fica abaixo do banzo reto do meio é a viga,
@@ -1607,7 +1646,7 @@ def _partes_da_elevacao(el: "Elevacao", dividir: bool, sem_cima: bool = False) -
     if sem_cima:
         el.avisos.append("%s: só a viga de transição — a tesoura de cima saiu (decisão do projeto)." % _bonito(el.nome))
         return [("", baixo)]
-    return [("", baixo), (" (tesoura de cima)", cima)]
+    return [("", baixo), (SUFIXO_TESOURA_DE_CIMA, cima)]
 
 
 def _tirar_vista_de_fundo(el: "Elevacao") -> int:
@@ -6303,6 +6342,10 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     por_conj: Dict[str, list] = collections.defaultdict(list)
     for p in pecas:
         if p["conjunto"]:
+            # a tesoura de cima da transição em duas peças (_partes_da_elevacao) é montada à parte no 3D, mas vai fabricada
+            # com a viga de transição: um conjunto só, com o nome da transição (usuário, Posto, 12/11: "vai fabricado uma
+            # peça só, pode juntar os nomes"); a origem de cada barra continua dizendo de que parte ela é
+            p["conjunto"] = conjunto_de_fabrica(p["conjunto"])
             por_conj[p["conjunto"]].append(p)
     marca_do_conj: Dict[str, str] = {}
     for conj, lista in por_conj.items():

@@ -180,6 +180,78 @@ def _nomes_do_projeto(pecas: Sequence[Solido]) -> Dict[str, str]:
     return fixos
 
 
+# o nome da origem que é título de vista, não de peça ("PLANTA DAS BASES DE CAIXA DÁGUA", "CORTE CX. DAGUA EIXO E")
+_VISTA_NAO_E_PECA = re.compile(r"^(PLANTA|CORTE|VISTA|ELEVA[CÇ][AÃ]O|DETALHE|COBERTURA|FACHADA)\b", re.I)
+
+
+def _conjuntos_do_projeto(pecas: Sequence[Solido]) -> Dict[str, str]:
+    """{marca do conjunto: nome} que o projeto recebido dá ao conjunto — `marcas.conjunto_projeto` gravado pela obra ou,
+    sem ele, a elevação do projetista de onde as barras vieram (`origem.planta`, "TESOURA 14", "TRANSIÇÃO 2"; a tesoura
+    de cima da transição leva o nome dela). Pela maioria das peças do conjunto, e só quando as peças com nome são pelo
+    menos metade dele. Esse nome vence a numeração da fábrica e o nomes.json (Posto, 12/11: "o nome das peças deve ser o
+    mesmo que o projetista utilizou… os conjuntos devem ser os mesmos, para não ocorrer erros nos apontamentos"); as
+    cópias diferentes do mesmo nome ficam com o mesmo nome e o Controle de produção as numera, TESOURA 14-1 e 14-2."""
+    votos: Dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+    total: Dict[str, int] = collections.Counter()
+    for e in pecas:
+        m = _marcas(e)
+        c = str(m.get("conjunto") or "")
+        if not c:
+            continue
+        total[c] += 1
+        n = str(m.get("conjunto_projeto") or "").strip()
+        if not n:
+            o = (getattr(e, "atributos", None) or {}).get("origem") or {}
+            n = str(o.get("planta") or "").strip() if isinstance(o, dict) else ""
+            n = n.replace(" (tesoura de cima)", "").strip().upper()
+            if _VISTA_NAO_E_PECA.match(n):
+                n = ""
+        if n:
+            votos[c][n] += 1
+    saida: Dict[str, str] = {}
+    for c, v in votos.items():
+        nome, q = v.most_common(1)[0]
+        if 2 * sum(v.values()) >= total[c] and 2 * q > sum(v.values()):
+            saida[c] = nome
+    return saida
+
+
+def numerar_unidades(conjuntos) -> Dict[str, List[str]]:
+    """{marca do conjunto: [nome de cada unidade]} a partir de (marca, nome, instâncias): as unidades do mesmo nome
+    numeram juntas, na ordem natural das marcas, com o número na frente (TESOURA 14-1, TESOURA 14-2 — usuário, Posto,
+    12/11); o nome com uma unidade só fica sem número. É a numeração do Controle de produção e dos títulos das pranchas:
+    a peça pintada na fábrica e o desenho dizem o mesmo número."""
+    por_nome: Dict[str, list] = collections.OrderedDict()
+    for marca, nome, n in conjuntos:
+        por_nome.setdefault(str(nome or marca), []).append((str(marca), max(int(n or 1), 1)))
+    saida: Dict[str, List[str]] = {}
+    for nome, grupo in por_nome.items():
+        grupo.sort(key=lambda g: _ordem_natural(g[0]))
+        total = sum(n for _m, n in grupo)
+        i = 0
+        for marca, n in grupo:
+            ids = []
+            for _ in range(n):
+                i += 1
+                ids.append("%s-%d" % (nome, i) if total > 1 else nome)
+            saida.setdefault(marca, []).extend(ids)
+    return saida
+
+
+def _rotulo_das_unidades(ids: Sequence[str]) -> str:
+    """"TESOURA 1-3 A 6" para unidades seguidas, "TESOURA 14-1" para uma; o nome sem número fica como está."""
+    ids = list(ids)
+    if not ids:
+        return ""
+    if len(ids) == 1:
+        return ids[0]
+    m0, m1 = re.match(r"^(.*)-(\d+)$", ids[0]), re.match(r"^(.*)-(\d+)$", ids[-1])
+    if m0 and m1 and m0.group(1) == m1.group(1):
+        return "%s-%s A %s" % (m0.group(1), m0.group(2), m1.group(2)) if len(ids) > 2 else "%s-%s E %s" % (
+            m0.group(1), m0.group(2), m1.group(2))
+    return ", ".join(ids)
+
+
 def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence[Solido],
            conjuntos_info: Sequence[dict], anteriores: Optional[dict] = None,
            fixadores: Sequence[Solido] = ()) -> dict:
@@ -435,11 +507,43 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
                 return n
         return ""
 
-    # ---- conjuntos: por tipo, quantidade decrescente, mantendo os nomes anteriores
+    # ---- conjuntos com o nome do projeto recebido (a elevação do projetista): ficam fora da numeração da fábrica. O
+    # desenho que junta conjuntos de nomes diferentes com a mesma geometria (o MT71 do Posto: TESOURA 1 e TESOURA 2) leva
+    # os dois nomes; cada conjunto (a lista, o romaneio, o Controle e o 3D) leva o dele
+    proj_conj = _conjuntos_do_projeto(pecas)
     nomes_conj: Dict[str, str] = {}
+    # as unidades de cada conjunto (marca) dentro do desenho: as peças da marca sobre as peças de uma unidade
+    pecas_da_marca = collections.Counter(str(_marcas(e).get("conjunto") or "") for e in pecas)
+    inst_da_marca: Dict[str, int] = {}
+    for c in conjuntos_info:
+        ms = list(c.get("marcas") or [c["marca"]])
+        n_c = max(int(c.get("instancias") or 1), 1)
+        por_un = sum(pecas_da_marca.get(m, 0) for m in ms) / float(n_c)
+        for m in ms:
+            inst_da_marca[m] = max(int(round(pecas_da_marca.get(m, 0) / por_un)), 1) if por_un else 1
+    unidades = numerar_unidades((m, proj_conj[m], inst_da_marca.get(m, 1)) for m in sorted(proj_conj, key=_ordem_natural))
+    repetidos = collections.Counter()
+    for c in conjuntos_info:
+        for nome in {proj_conj[m] for m in (c.get("marcas") or [c["marca"]]) if m in proj_conj}:
+            repetidos[nome] += 1
+    for c in conjuntos_info:
+        ms = list(c.get("marcas") or [c["marca"]])
+        if ms and all(m in proj_conj for m in ms):
+            partes_t = []
+            for nome in sorted({proj_conj[m] for m in ms}, key=_ordem_natural):
+                if repetidos[nome] > 1:
+                    # o nome em mais de um desenho (cópias de geometria diferente): o título diz quais unidades são
+                    ids = [u for m in sorted(ms, key=_ordem_natural) if proj_conj[m] == nome for u in unidades.get(m, [])]
+                    partes_t.append(_rotulo_das_unidades(ids) or nome)
+                else:
+                    partes_t.append(nome)
+            nomes_conj[c["marca"]] = " / ".join(partes_t)
+    # ---- conjuntos: por tipo, quantidade decrescente, mantendo os nomes anteriores
     usados_por_prefixo: Dict[str, set] = collections.defaultdict(set)   # conjuntos e posições não repetem nome
     por_tipo: Dict[str, list] = collections.defaultdict(list)
     for c in conjuntos_info:
+        if c["marca"] in nomes_conj:
+            continue
         por_tipo[tipo_conj[c["marca"]]].append(c)
     pendentes_conj: list = []
     for t, lista in por_tipo.items():
@@ -561,7 +665,7 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
     ifc_conj: Dict[str, str] = {}
     for c in conjuntos_info:
         for m in c.get("marcas") or [c["marca"]]:
-            ifc_conj[m] = nomes_conj.get(c["marca"], "")
+            ifc_conj[m] = proj_conj.get(m) if c["marca"] in nomes_conj and m in proj_conj else nomes_conj.get(c["marca"], "")
     ifc.update(ifc_conj)
     for p in posicoes:
         for m in marcas_de(p):
