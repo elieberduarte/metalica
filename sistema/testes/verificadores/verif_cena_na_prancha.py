@@ -81,7 +81,10 @@ try:
     aba.console.clear()
 
     print("A — Inserir cena da obra…")
-    js("c.inserirCena(); return 1;")
+    # pelo item do menu, como a pessoa (o botão data-acao do cabeçalho do CAD, que a barra única aciona — 12/11: o item
+    # estava na barra mas não no CAD e test_barra_unica falhou)
+    ok(js("const b = document.querySelector('[data-acao=\"inserir-cena\"]'); if (!b) return false; b.click(); return true;") is True,
+       "o item Inserir cena da obra… no menu do CAD")
     ok(esperar("document.querySelector('#dialogo').open && document.querySelector('#dialogo-corpo input[name=cena-prancha]')"), "a janela abre")
     ids = js("return [...document.querySelectorAll('#dialogo-corpo input[name=cena-prancha]')].map(i => i.value);")
     ok(ids == ["fachada"], f"só as cenas com render ({ids})")
