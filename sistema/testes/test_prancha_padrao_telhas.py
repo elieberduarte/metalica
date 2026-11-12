@@ -69,8 +69,13 @@ def test_sala_no_arranjo_aprovado():
     # à direita de tudo, as fachadas, uma embaixo da outra
     assert min(f4[0], f5[0]) > max(face1[2], cu1[2]) and f5[3] < f4[1]
     assert all(float(cel[k]["escala"]) <= 125.0 for k in ("FACE 4", "FACE 5"))
+    # o detalhe do beiral (exemplo A, 1:20) embaixo das fachadas, na coluna da direita
+    beiral = next(c for k, c in cel.items() if k.startswith("DETALHE DO BEIRAL"))
+    bb = _caixa(beiral)
+    assert bb[3] < f5[1] and bb[0] > max(face1[2], cu1[2])
+    assert any(t.startswith("ESC. 1:20") for t in textos)
     # a relação dos parafusos no quadro de baixo, abaixo de tudo
-    assert paraf[3] < min(md1[1], cu1[1], f5[1])
+    assert paraf[3] < min(md1[1], cu1[1], bb[1])
     assert any(t.startswith("OA ") for t in textos) and any(t.startswith('Costura 7/8"') for t in textos)
     # a FACE 1 em pé (girada −90°), como os tipos, e o título dela de pé
     assert (face1[3] - face1[1]) > (face1[2] - face1[0])

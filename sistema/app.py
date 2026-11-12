@@ -4116,6 +4116,14 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     if novos:
         g.tocar(s, **novos)
     titulo = (corpo.get("titulo") or "Pranchas").strip() or "Pranchas"
+    # o detalhamento das telhas de antes da rodada 2 da prancha padrão (12/11) não tem a relação dos parafusos nem os
+    # nomes novos: as pranchas saem, com o aviso de Detalhar de novo (Depósito Químico, 12/11)
+    aviso_telhas = ""
+    from nucleo2d.detalhe.telhas import detalhamento_de_telhas_velho
+    for fo in fontes:
+        if detalhamento_de_telhas_velho(fo["desenho"]):
+            aviso_telhas = ("O detalhamento das telhas é de antes da prancha padrão de 12/11: a relação dos parafusos, a TL que "
+                            "continua a multidobra e o forro com as cotas nas pontas só saem depois de Detalhar de novo.")
     folhas = montar_pranchas(fontes, formato=corpo.get("formato") or "A1", carimbo=carimbo, titulo="Prancha",
                              indice=corpo.get("indice", True) is not False)
     junto = juntar_pranchas(folhas, nome=titulo)
@@ -4165,7 +4173,8 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     saida = [{"titulo": f.nome, "numero": f.metadados["prancha"]["numero"], "entidades": f.tamanho,
               "celulas": len(f.metadados["prancha"]["celulas"])} for f in folhas]
     g.tocar(s)
-    return {"desenho": salvo["nome"], "pranchas": saida, "formato": corpo.get("formato") or "A1"}
+    return {"desenho": salvo["nome"], "pranchas": saida, "formato": corpo.get("formato") or "A1",
+            **({"aviso": aviso_telhas} if aviso_telhas else {})}
 
 
 def _logo_do_carimbo(p: dict) -> Optional[dict]:

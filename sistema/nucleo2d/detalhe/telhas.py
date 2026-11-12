@@ -1975,7 +1975,249 @@ def desenho_da_planta_das_telhas(faces: Sequence[dict], eixos, desenho, dx: floa
     return p.extremos
 
 
+#: o perfil de terça ou de longarina (U, C, Ue, Z) entre as peças cortadas no detalhe do beiral
+_RE_PERFIL_TERCA = re.compile(r"^\s*(U|C|UE|Z|CE)\s*\d", re.I)
+TITULO_CORTE_BEIRAL = "DETALHE DO BEIRAL – TESOURA E TELHA NO RECORTE"
+#: a escala do detalhe do beiral (exemplo A aprovado pelo usuário, 12/11: "A")
+ESCALA_CORTE_BEIRAL = 20.0
+
+
+def _corte_da_malha(e, n, d) -> List[Tuple[tuple, tuple]]:
+    """os segmentos (3D) do corte da malha da peça pelo plano n·x = d"""
+    V = e.vertices
+    sd = [_dot(v, n) - d for v in V]
+    segs = []
+    for f in e.faces or ():
+        for i in range(1, len(f) - 1):
+            tri = (f[0], f[i], f[i + 1])
+            s_ = [sd[k] for k in tri]
+            if min(s_) > 0 or max(s_) < 0:
+                continue
+            pts = []
+            for a, b in ((0, 1), (1, 2), (2, 0)):
+                sa, sb = s_[a], s_[b]
+                if (sa > 0) != (sb > 0):
+                    t = sa / (sa - sb)
+                    pa, pb = V[tri[a]], V[tri[b]]
+                    pts.append(tuple(pa[j] + t * (pb[j] - pa[j]) for j in range(3)))
+            if len(pts) >= 2:
+                segs.append((pts[0], pts[1]))
+    return segs
+
+
+def corte_do_beiral(pecas: Sequence, md: dict, nome_de=None) -> Optional[dict]:
+    """O corte do beiral pelo plano de uma tesoura, com a multidobra no recorte (usuário, 12/11, Sooro Sala: "Criar um novo
+    com a tesoura e a telha no recorte"; escolhido o exemplo A: a ponta da tesoura, a 1ª terça, as longarinas e as cotas
+    da telha).
+
+    O plano: o das peças de pé de uma tesoura (finas na direção da largura da telha), o que tem mais peças; sem tesoura no
+    modelo, o meio da multidobra. Devolve, no referencial do corte (x horizontal, com o beiral à direita; y = z),
+    {segs: [(segmentos, camada)], reta: (a, b) da face de cima da água, xv, zfim, raio_int, raio_ext, angulo, cobrimento,
+    reta1, pecas_cortadas: [{nome, perfil, caixa}]} ou None."""
+    nome_de = nome_de or (lambda m: m)
+    ids_md = set(md.get("ids") or ())
+    pecas_md = [e for e in pecas if e.id in ids_md and e.vertices]
+    if not pecas_md:
+        return None
+    # a largura da telha (o eixo de 900–1250 mm da faceta maior) é a normal do corte, deitada
+    e0 = max(pecas_md, key=lambda e: len(e.vertices))
+    _c0, eixos, ext = _medidas(e0)
+    w = next((ax for ax, x in zip(eixos, ext) if 900.0 < x < 1250.0), eixos[0])
+    n = _norm((w[0], w[1], 0.0)) if abs(w[0]) + abs(w[1]) > 1e-6 else (1.0, 0.0, 0.0)
+    ex = _norm(_cruz((0.0, 0.0, 1.0), n))
+    contagem = collections.Counter()
+    for e in pecas:
+        if e.id in ids_md or not e.vertices or len(e.vertices) < 4 or _eh_telha(str(_marcas(e).get("perfil") or e.nome or "")):
+            continue
+        pn = [_dot(v, n) for v in e.vertices]
+        zs = [v[2] for v in e.vertices]
+        if max(pn) - min(pn) < 400.0 and max(zs) - min(zs) > 100.0:
+            contagem[round(sum(pn) / len(pn) / 25.0) * 25.0] += 1
+    centro_md = sum(_dot(v, n) for e in pecas_md for v in e.vertices) / sum(len(e.vertices) for e in pecas_md)
+    candidatos = [v for v, q in contagem.items() if q >= 3]
+    d = (max(candidatos, key=lambda v: (contagem[v], -abs(v - centro_md))) if candidatos else centro_md) + 0.37
+    cortes = []
+    for e in pecas:
+        if not e.vertices or not e.faces:
+            continue
+        pn = [_dot(v, n) for v in e.vertices]
+        # a peça comprida na direção da largura (terça, longarina, telha) é cortada um pouco ao lado da tesoura: nas obras
+        # ela termina no eixo dela (um vão por peça, a Sala) e o plano da tesoura passava entre as duas
+        planos = (d, d + 300.0, d - 300.0) if max(pn) - min(pn) > 400.0 else (d,)
+        d_e = next((x for x in planos if min(pn) + 20.0 < x < max(pn) - 20.0), None)
+        if d_e is None:
+            continue
+        ss = _corte_da_malha(e, n, d_e)
+        if ss:
+            cortes.append((e, [((_dot(a, ex), a[2]), (_dot(b, ex), b[2])) for a, b in ss]))
+    seg_md = [s_ for e, ss in cortes if e.id in ids_md for s_ in ss]
+    if not seg_md:
+        return None
+    # o beiral à direita: o lado da multidobra mais longe do meio do corte; o outro, espelhado
+    xs_all = [q[0] for _e, ss in cortes for s_ in ss for q in s_]
+    meio = (min(xs_all) + max(xs_all)) / 2.0
+    xs_md = [q[0] for s_ in seg_md for q in s_]
+    if (max(xs_md) - meio) < (meio - min(xs_md)):
+        cortes = [(e, [((-a[0], a[1]), (-b[0], b[1])) for a, b in ss]) for e, ss in cortes]
+        seg_md = [((-a[0], a[1]), (-b[0], b[1])) for a, b in seg_md]
+    xv = max(q[0] for s_ in seg_md for q in s_)                       # a face de fora da perna de pé
+    zfim = min(q[1] for s_ in seg_md for q in s_ if q[0] > xv - 100.0)
+    R = float(md.get("raio_ext") or (float(md.get("raio_int") or 450.0) + 40.0))
+    # a reta da cobertura: o segmento mais longo da multidobra na água (longe da curva); a face de cima
+    agua = [s_ for s_ in seg_md if max(s_[0][0], s_[1][0]) < xv - R - 30.0 and abs(s_[1][0] - s_[0][0]) > 1.0]
+    if not agua:
+        return None
+    lg = max(agua, key=lambda s_: math.dist(*s_))
+    a_ = (lg[1][1] - lg[0][1]) / (lg[1][0] - lg[0][0])
+    b_ = max(q[1] - a_ * q[0] for s_ in agua for q in s_)
+    segs, pecas_cortadas = [], []
+    for e, ss in cortes:
+        if e.id in ids_md or _eh_telha(str(_marcas(e).get("perfil") or e.nome or "")):
+            continue
+        xs_ = [q[0] for s_ in ss for q in s_]
+        ys_ = [q[1] for s_ in ss for q in s_]
+        cortada = max(xs_) - min(xs_) < 300.0 and max(ys_) - min(ys_) < 300.0
+        segs.append((ss, "ACO" if cortada else "VISTA-FINA"))
+        if cortada:
+            pecas_cortadas.append({"nome": str(nome_de(_posicao(e)) or ""), "perfil": str(_marcas(e).get("perfil") or e.nome or ""),
+                                   "caixa": (min(xs_), min(ys_), max(xs_), max(ys_))})
+    return {"segs": segs, "reta": (a_, b_), "xv": xv, "zfim": zfim, "raio_ext": R, "plano": d, "normal": n,
+            "raio_int": float(md.get("raio_int") or R - 40.0), "angulo": float(md.get("angulo") or 0.0),
+            "cobrimento": md.get("cobrimento"), "reta1": float(md.get("reta1") or 0.0), "pecas_cortadas": pecas_cortadas}
+
+
+def _recortar(a, b, x0, y0, x1, y1):
+    """o segmento a–b dentro da janela (Liang–Barsky), ou None"""
+    t0, t1 = 0.0, 1.0
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    for p_, q_ in ((-dx, a[0] - x0), (dx, x1 - a[0]), (-dy, a[1] - y0), (dy, y1 - a[1])):
+        if abs(p_) < 1e-12:
+            if q_ < 0:
+                return None
+            continue
+        r = q_ / p_
+        if p_ < 0:
+            t0 = max(t0, r)
+        else:
+            t1 = min(t1, r)
+        if t0 > t1:
+            return None
+    return (a[0] + t0 * dx, a[1] + t0 * dy), (a[0] + t1 * dx, a[1] + t1 * dy)
+
+
+def desenho_do_corte_do_beiral(c: dict, desenho, dx: float, dy: float, nome_md: str = "MD1", nome_tl: str = ""):
+    """O detalhe do beiral (o exemplo A aprovado, 12/11): a ponta da tesoura cortada no plano dela, a 1ª terça e as
+    longarinas cortadas, a multidobra no recorte (a reta, o raio e a perna de pé até a saia) e a TL que a continua por
+    cima; cotas da reta da multidobra, do transpasse, dos 150 antes e depois da terça, do raio e da saia. A 1:20 (a
+    geometria ampliada na célula, como a da multidobra; as cotas com a medida real)."""
+    from nucleo2d.detalhe.base import _Papel
+    from nucleo2d.desenho import Cota
+    esc = desenho.escala
+    amp = max(1.0, esc / ESCALA_CORTE_BEIRAL)
+    atr = {"detalhe": "corte_beiral"}
+    if amp > 1.0:
+        atr["ampliacao"] = amp
+    p = _Papel(desenho, atr, dx, dy, camada_peca="TELHAS")
+    a_, b_ = c["reta"]
+    R, xv, zfim = c["raio_ext"], c["xv"], c["zfim"]
+    nrm = math.hypot(a_, 1.0)
+    up = (-a_ / nrm, 1.0 / nrm)
+    dirv = (-1.0 / nrm, -a_ / nrm)                     # subindo a água, para dentro
+    cx_, cz_ = xv - R, a_ * (xv - R) + b_ - R * nrm
+    Tg = (cx_ + up[0] * R, cz_ + up[1] * R)            # onde a curva encontra a reta
+    cb = c.get("cobrimento") or {}
+    reta = float(cb.get("reta_nova") or c["reta1"] or 600.0)
+
+    def ao_longo(dist, acima=0.0):
+        return (Tg[0] + dirv[0] * dist + up[0] * acima, Tg[1] + dirv[1] * dist + up[1] * acima)
+    # a janela: da perna de pé até 700 mm além do fim da reta da multidobra
+    fim_j = ao_longo(reta + 700.0)
+    x0, x1 = fim_j[0], xv + 60.0
+    y0, y1 = zfim - 60.0, fim_j[1] + 260.0
+    X = lambda q: ((q[0] - x0) * amp, (q[1] - y0) * amp)      # noqa: E731
+    for ss, camada in c["segs"]:
+        for a, b in ss:
+            r = _recortar(a, b, x0, y0, x1, y1)
+            if r is not None and math.dist(*r) > 0.5:
+                p.linha(*X(r[0]), *X(r[1]), camada)
+    # a multidobra: a reta, o arco por fora e a perna de pé até a ponta
+    ang0 = math.atan2(up[1], up[0])
+    arco = [(cx_ + R * math.cos(ang0 * (1 - i / 24.0)), cz_ + R * math.sin(ang0 * (1 - i / 24.0))) for i in range(25)]
+    fim_md = ao_longo(reta)
+    p.polilinha([X(fim_md)] + [X(q) for q in arco] + [X((xv, zfim))], camada="ACO")
+    if cb and nome_tl:
+        p.linha(*X(ao_longo(cb["terca_ini"] - COBRIMENTO_TERCA, 18.0)), *X(ao_longo(reta + 700.0, 18.0)), "ACO")
+
+    def cota(pa, pb, desl, texto):
+        A, B = X(pa), X(pb)
+        desenho.add(Cota(modo="alinhada", p1=p._p(*A), p2=p._p(*B), deslocamento=desl, texto=texto, atributos=dict(atr)))
+        ux, uy = B[0] - A[0], B[1] - A[1]
+        L = math.hypot(ux, uy) or 1.0
+        p._p(A[0] - uy / L * desl * esc, A[1] + ux / L * desl * esc)
+    # as cotas da telha por cima da água
+    cota(fim_md, Tg, 22.0, "%d" % round(reta))
+    if cb:
+        ini_tl = ao_longo(cb["terca_ini"] - COBRIMENTO_TERCA)
+        cota(fim_md, ini_tl, 12.0, "transpasse %d" % round(cb["transpasse"]))
+        cota(ao_longo(cb["terca_ini"]), ini_tl, -8.0, "%d" % COBRIMENTO_TERCA)
+        cota(fim_md, ao_longo(cb["terca_fim"]), -8.0, "%d" % round(reta - cb["terca_fim"]))
+    # a saia: da longarina de baixo (a cortada mais baixa junto da perna) até a ponta
+    junto = [pc for pc in c["pecas_cortadas"] if pc["caixa"][2] > xv - 300.0]
+    if junto:
+        z_l = min(junto, key=lambda pc: pc["caixa"][1])["caixa"][3]
+        if z_l - zfim > 5.0:
+            cota((xv, zfim), (xv, z_l), -10.0, "saia %d" % round(z_l - zfim))
+    # o raio e o ângulo
+    am = ang0 / 2.0
+    A = X((cx_ + R * math.cos(am), cz_ + R * math.sin(am)))
+    p.chamada(A[0], A[1], A[0] + 16.0 * esc, A[1] + 16.0 * esc,
+              "R%d int. (R%d ext.) – %s°" % (round(c["raio_int"]), round(R), ("%.1f" % c["angulo"]).replace(".", ",")), altura=2.5)
+    # os nomes: a multidobra, a TL, a terça e as longarinas
+    A = X(ao_longo(reta - 60.0))
+    p.chamada(A[0], A[1], A[0] - 4.0 * esc, A[1] + 30.0 * esc, "%s – multidobra" % nome_md, altura=2.5)
+    if cb and nome_tl:
+        A = X(ao_longo(reta + 450.0, 18.0))
+        p.chamada(A[0], A[1], A[0] - 10.0 * esc, A[1] + 18.0 * esc, "%s – telha reta (continua a %s)" % (nome_tl, nome_md), altura=2.5)
+    vistos = set()
+    for pc in sorted(c["pecas_cortadas"], key=lambda pc: -pc["caixa"][3]):
+        bx0, by0, bx1, by1 = pc["caixa"]
+        if not (x0 < (bx0 + bx1) / 2 < x1 and y0 < (by0 + by1) / 2 < y1):
+            continue
+        if not _RE_PERFIL_TERCA.match(pc["perfil"]):
+            continue                                   # a chapa do suporte, a corrente, a cantoneira: só a terça e a longarina
+        perfil = pc["perfil"].replace("X", "×").replace(".", ",")
+        junto_perna = bx1 > xv - 300.0
+        rot = ("LONGARINA" if junto_perna else "TERÇA") + " %s – %s" % (pc["nome"], perfil)
+        if rot in vistos:
+            continue
+        vistos.add(rot)
+        A = X(((bx0 + bx1) / 2, (by0 + by1) / 2))
+        if junto_perna:
+            p.chamada(A[0], A[1], X((xv, 0.0))[0] + 14.0 * esc, A[1], rot, altura=2.5)
+        else:
+            p.chamada(A[0], A[1], A[0] - 20.0 * esc, A[1] - 22.0 * esc, rot, altura=2.5)
+    alt = (y1 - y0) * amp
+    p.texto(0, alt + 9.0 * esc, TITULO_CORTE_BEIRAL, 3.5 * esc, atributos={"cabecalho": 0})
+    p.texto(0, alt + 4.5 * esc, "corte no plano da tesoura, o beiral visto de frente – medidas em mm", 2.0 * esc,
+            atributos={"cabecalho": 1})
+    return p.extremos
+
+
 TITULO_PARAFUSOS_TELHAS = "RELAÇÃO DE PARAFUSOS DAS TELHAS"
+
+#: a "edição" do detalhamento das telhas, gravada nele: 2 = a rodada 2 da prancha padrão (12/11 — a relação dos parafusos,
+#: a TL que continua a multidobra, o forro com cota nas pontas). Montar as pranchas com um detalhamento mais velho avisa
+#: que falta Detalhar (Depósito Químico, 12/11: só "refazer as pranchas" não trazia a relação dos parafusos)
+EDICAO_TELHAS = 2
+
+
+def detalhamento_de_telhas_velho(desenho) -> bool:
+    """o desenho é um detalhamento com a paginação das telhas de uma edição anterior à EDICAO_TELHAS"""
+    meta = (getattr(desenho, "metadados", None) or {}).get("detalhamento") or {}
+    if meta.get("grupo") == "conjuntos" or int(meta.get("edicao_telhas") or 0) >= EDICAO_TELHAS:
+        return False
+    ents = desenho.entidades.values() if isinstance(desenho.entidades, dict) else desenho.entidades
+    return any((e.atributos or {}).get("detalhe") == "paginacao" for e in ents)
 
 
 def desenho_dos_parafusos_das_telhas(linhas: Sequence[dict], desenho, dx: float, dy: float):

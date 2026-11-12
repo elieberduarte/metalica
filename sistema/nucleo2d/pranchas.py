@@ -1369,7 +1369,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             amp_ = max((float((e.atributos or {}).get("ampliacao") or 1.0) for e in c["entidades"]), default=1.0)
             if amp_ > 1.0:
                 # o detalhe desenhado ampliado dentro da caixa (a multi-dobra): a escala real dele
-                rot = "ESC. 1:%d  (1:%g ampliada %dx)" % (round(c["k"] / amp_), c["k"], round(amp_))
+                rot = "ESC. 1:%d  (1:%g ampliada %sx)" % (round(c["k"] / amp_), c["k"], ("%g" % round(amp_, 2)).replace(".", ","))
             if not c.get("sem_escala"):
                 ex_, ey_ = c.get("escala_em") or (c["px"], c["py"] + 1.5)
                 d.add(Texto(camada="TEXTO", posicao=(round(ex_, 2), round(ey_, 2)), texto=rot, altura=2.0,
@@ -2546,7 +2546,9 @@ def _prancha_padrao_de_telhas(itens: list, tipos: dict, faces: List[dict], detal
     if planta is not None and (tipos["h"] > tipos["w"]) != (planta["h"] > planta["w"]):
         _girar_celula(planta, -90.0)
     parafusos = [c for c in detalhes if str(c.get("titulo") or "").upper().startswith("RELAÇÃO DE PARAFUSOS")]
-    detalhes = [c for c in detalhes if not any(c is x for x in parafusos)]
+    # o detalhe do beiral (a tesoura e a telha no recorte, 12/11): embaixo das fachadas, na coluna da direita
+    beiral = [c for c in detalhes if str(c.get("titulo") or "").upper().startswith("DETALHE DO BEIRAL")]
+    detalhes = [c for c in detalhes if not any(c is x for x in parafusos + beiral)]
     de_cima = [tipos] + ([planta] if planta is not None else [])
     for i, c in enumerate(de_cima + detalhes):
         c["categoria"] = "TELHAS"
@@ -2558,6 +2560,10 @@ def _prancha_padrao_de_telhas(itens: list, tipos: dict, faces: List[dict], detal
         c["categoria"] = "TELHAS_DET"
         c["_ordem"] = i
         c.pop("quebra_antes", None)
+    for i, c in enumerate(beiral):
+        c["categoria"] = "TELHAS_DET"
+        c["_ordem"] = len(resto) + i
+        c["quebra_antes"] = True                       # numa fileira só dele, embaixo das fachadas
     for i, c in enumerate(parafusos):
         c["categoria"] = "TELHAS_PARAF"
         c["_ordem"] = i
@@ -2575,7 +2581,8 @@ def _prancha_padrao_de_telhas(itens: list, tipos: dict, faces: List[dict], detal
             _quebrar_cabecalho(c, (cx_[1][0] - cx_[0][0]) / max(ESCALA_MINIMA_TELHAS, esc0))
     # as medidas de cada célula em cada redução, uma vez (a busca abaixo só soma)
     fatores = (1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0)
-    base = {id(c): float(c.get("escala") or c["k"]) for c in de_cima + detalhes + resto}
+    base = {id(c): float(c.get("escala") or c["k"]) for c in de_cima + detalhes + resto + beiral}
+    red_b = {}                                          # a redução do detalhe do beiral em cada arranjo que cabe
     medidas: Dict[tuple, Tuple[float, float]] = {}
 
     def medir(c, f):
@@ -2620,6 +2627,17 @@ def _prancha_padrao_de_telhas(itens: list, tipos: dict, faces: List[dict], detal
         """os tipos e a planta em g, os detalhes em d, as fachadas em f (ncol por fileira): o quadro das fachadas na
         altura e o da esquerda no que sobra da largura"""
         larg_dir, alt_dir = larg_dir_de(f, ncol)
+        if beiral:
+            # o detalhe do beiral na largura da coluna (ou a coluna na dele, se não há fachadas), o maior que cabe embaixo
+            fb = next((x for x in fatores
+                       if (not resto or medir(beiral[0], x)[0] + 2 * QUADRO_MARGEM <= larg_dir + 1e-6)
+                       and alt_dir + (FOLGA if resto else 0.0) + medir(beiral[0], x)[1] <= altura), None)
+            if fb is None:
+                return False
+            red_b[(g, d, f, ncol)] = fb
+            if not resto:
+                larg_dir = medir(beiral[0], fb)[0] + 2 * QUADRO_MARGEM
+            alt_dir += (FOLGA if resto else 0.0) + medir(beiral[0], fb)[1]
         if alt_dir > altura:
             return False
         larg_esq = largura - larg_dir - 2 * QUADRO_MARGEM
@@ -2657,6 +2675,8 @@ def _prancha_padrao_de_telhas(itens: list, tipos: dict, faces: List[dict], detal
         _reescalar(c, escala_normalizada(base[id(c)] * red_d[id(c)] - 1e-6))
     for c in resto:
         _reescalar(c, escala_normalizada(base[id(c)] * f - 1e-6))
+    for c in beiral:
+        _reescalar(c, escala_normalizada(base[id(c)] * red_b.get(escolha, fatores[-1]) - 1e-6))
     if resto:
         resto[0]["_larg_quadro"] = larg_dir_de(f, ncol)[0] + 0.5
     return itens

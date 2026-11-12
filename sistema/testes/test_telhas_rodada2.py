@@ -133,3 +133,64 @@ def test_relacao_dos_parafusos_no_detalhamento_das_telhas():
     assert T.TITULO_PARAFUSOS_TELHAS in textos
     assert any(t.startswith("OA ") for t in textos) and any(t.startswith('Costura 7/8"') for t in textos)
     assert any("bege" in t for t in textos)
+
+
+def test_detalhamento_velho_pede_detalhar_de_novo():
+    """Depósito Químico, 12/11: só remontar as pranchas (sem Detalhar) não trazia a relação dos parafusos nem a TL nova — o
+    detalhamento das telhas leva a edição dele, e o de antes da rodada 2 faz a montagem avisar"""
+    from nucleo2d.detalhar import detalhar
+    r = detalhar(_doc(), grupos=["telhas"], converter=False)
+    d = next(d for k, d in r["desenhos"].items() if "telha" in k)
+    assert d.metadados["detalhamento"]["edicao_telhas"] == T.EDICAO_TELHAS
+    assert not T.detalhamento_de_telhas_velho(d)
+    del d.metadados["detalhamento"]["edicao_telhas"]                     # como o de antes de 12/11
+    assert T.detalhamento_de_telhas_velho(d)
+
+
+def _textos_do_beiral(c, t):
+    d = Desenho(nome="t", escala=50.0)
+    T.desenho_do_corte_do_beiral(c, d, 0.0, 0.0, "MD1", "TL18")
+    return [str(getattr(e, "texto", "") or "") for e in _ents(d)], d
+
+
+def test_detalhe_do_beiral_exemplo_a():
+    """o detalhe novo (usuário, 12/11: "Criar um novo com a tesoura e a telha no recorte"; escolhido o exemplo A): a ponta
+    da tesoura, a 1ª terça e as longarinas cortadas, a MD1 e a TL18, as cotas da telha, a 1:20"""
+    pecas = _pecas(_doc())
+    t = T.multidobras(pecas)["telhas"][0]
+    c = T.corte_do_beiral(pecas, t)
+    assert c is not None
+    perfis = {pc["perfil"] for pc in c["pecas_cortadas"]}
+    assert "U150X50X2.28" in perfis and "C150X50X17X2.25" in perfis, perfis
+    textos, d = _textos_do_beiral(c, t)
+    assert T.TITULO_CORTE_BEIRAL in textos
+    for esperado in ("556", "transpasse 350", "150", "saia 150"):
+        assert esperado in textos, (esperado, textos)
+    assert any(x.startswith("TERÇA ") and "U150×50×2,28" in x for x in textos), textos
+    assert any(x.startswith("LONGARINA ") and "C150×50×17×2,25" in x for x in textos), textos
+    assert any(x.startswith("R450 int.") for x in textos)
+    assert any(x.startswith("TL18 – telha reta") for x in textos) and any(x.startswith("MD1 – multidobra") for x in textos)
+    amp = {(e.atributos or {}).get("ampliacao") for e in _ents(d)}
+    assert 2.5 in amp                                                    # 1:50 ampliado = 1:20
+
+
+def test_detalhe_do_beiral_com_terca_que_termina_na_tesoura():
+    """na Sala as terças e as longarinas são uma peça por vão e terminam no eixo da tesoura: o plano da tesoura passava
+    entre elas e o detalhe saía sem a terça e sem as longarinas (sem os nomes e sem a saia)"""
+    pecas = _pecas(_doc())
+    t = T.multidobras(pecas)["telhas"][0]
+    c0 = T.corte_do_beiral(pecas, t)
+    n, d = c0["normal"], c0["plano"]
+    ids_md = set(t["ids"])
+    for e in pecas:
+        if e.id in ids_md:
+            continue
+        pn = [sum(v[i] * n[i] for i in range(3)) for v in e.vertices]
+        if max(pn) - min(pn) > 400.0 and min(pn) < d < max(pn):
+            # a peça começa logo depois do plano da tesoura (um vão por peça)
+            e.vertices = [tuple(v[i] + n[i] * (max(x, d + 1.0) - x) for i in range(3)) for v, x in zip(e.vertices, pn)]
+    c = T.corte_do_beiral(pecas, t)
+    perfis = {pc["perfil"] for pc in c["pecas_cortadas"]}
+    assert "U150X50X2.28" in perfis and "C150X50X17X2.25" in perfis, perfis
+    textos, _d = _textos_do_beiral(c, t)
+    assert "saia 150" in textos and any(x.startswith("TERÇA ") for x in textos)

@@ -274,7 +274,7 @@ QUADROS = [("tesoura", "TESOURAS"), ("viga", "VIGAS"), ("pilar", "PILARES"), ("c
 
 #: Título do quadro de cada tipo de posição (peça avulsa), na ordem em que saem.
 QUADROS_POSICOES = [("planta_telhas", "PAGINAÇÃO DAS TELHAS DA COBERTURA (PLANTA)"), ("quadro_telhas", "QUADRO DAS TELHAS DA COBERTURA"),
-                    ("parafusos_telhas", "PARAFUSOS DAS TELHAS"),
+                    ("parafusos_telhas", "PARAFUSOS DAS TELHAS"), ("corte_beiral", "DETALHE DO BEIRAL"),
                     ("paginacao", "PAGINAÇÃO DAS TELHAS – COMPRIMENTOS REAIS"), ("multidobra", "TELHAS MULTI-DOBRA"), ("cumeeira", "CUMEEIRAS"), ("terca_cobertura", "TERÇAS DE COBERTURA"), ("terca_marquise", "TERÇAS DE MARQUISE"),
                     ("terca_lateral", "TERÇAS LATERAIS"), ("terca_oitao", "TERÇAS DE OITÃO"),     # saíam "TERCA LATERALS" (PRATI, 13/10)
                     ("suporte_terca", "SUPORTES DE TERÇA"), ("suporte_tirante", "SUPORTES DE TIRANTE"), ("montagem", "PEÇAS MONTADAS – FRENTE E LATERAL"), ("agulhamento", "AGULHAMENTOS"),
@@ -1429,6 +1429,8 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         # um quadro por tipo de peça (terças, suportes de terça, chapas…), como os conjuntos
         celulas_g = []
         if chave == "telhas":
+            from nucleo2d.detalhe.telhas import EDICAO_TELHAS
+            d.metadados["detalhamento"]["edicao_telhas"] = EDICAO_TELHAS
             # paginação: cada face com as chapas lado a lado, marca e comprimento real
             try:
                 nome_tl = lambda m: nomes_pos.get(fundidas.get(m, m)) or fundidas.get(m, m)    # noqa: E731
@@ -1458,6 +1460,17 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                                           (lambda dd, x, y, l_=pf_t: desenho_dos_parafusos_das_telhas(l_, dd, x, y))))
                 except Exception as exc:          # noqa: BLE001 — o resto das telhas sai
                     avisos.append("relação dos parafusos de telha não gerada: %s" % exc)
+                # o detalhe do beiral: a tesoura e a telha no recorte (usuário, 12/11, Sooro Sala; o exemplo A, 1:20)
+                if md.get("telhas"):
+                    try:
+                        from nucleo2d.detalhe.telhas import corte_do_beiral, desenho_do_corte_do_beiral
+                        t_b = md["telhas"][0]
+                        c_b = corte_do_beiral(pecas, t_b, nome_tl)
+                        if c_b:
+                            celulas_g.append(("corte_beiral", (lambda dd, x, y, c_=c_b, t_=t_b: desenho_do_corte_do_beiral(
+                                c_, dd, x, y, t_.get("nome") or "MD1", t_.get("nome_c") or ""))))
+                    except Exception as exc:      # noqa: BLE001
+                        avisos.append("detalhe do beiral não gerado: %s" % exc)
             celulas_g += [("paginacao", (lambda dd, x, y, f=f, i=i: desenho_da_paginacao(f, dd, x, y, i)))
                           for i, f in enumerate(faces, 1)]
         celulas_g += [("multidobra", (lambda dd, x, y, t=t: desenho_da_multidobra(t, dd, x, y, t["nome"]))) for t in extra_md]

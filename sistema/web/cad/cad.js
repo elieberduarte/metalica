@@ -3514,6 +3514,7 @@ class CAD {
         carimbo: { obra: campos.obra.value, cliente: campos.cliente.value, responsavel: campos.responsavel.value, revisao: campos.revisao.value, data: campos.data.value },
       });
       this.aviso(`${j.pranchas.length} prancha(s) ${j.formato} montada(s), lado a lado no desenho "${j.desenho}": ${j.pranchas.map(p => p.titulo).join(', ')}. Exportar DXF grava em papel 1:1; o PDF de todas as pranchas sai uma página por folha.`, 'info', 15000);
+      if (j.aviso) this.aviso(j.aviso, 'atencao', 0);           // o detalhamento das telhas pede Detalhar de novo (12/11)
       await this.abrirDesenho(j.desenho);
     } catch (e) { this.aviso(`Não foi possível montar as pranchas: ${e.message}`, 'erro', 0); this.dica(''); }
   }
