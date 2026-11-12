@@ -610,6 +610,20 @@ Testes: `test_conferencia_3d.py`, `test_reanalise.py`.
   chumbador com gancho no detalhe pesa pelo desenvolvido.
 - **Histórico:** ver "Triagem de 22/10 a 04/11" (4 reincidências, todas no script da obra).
 
+### GER-12 — Explodir com critério: o que está junto por um motivo fica junto
+- **Enunciado (usuário, 12/11):** o modelo que chega do SketchUp como UMA peça com tudo dentro se separa com critério, "não
+  peçinha por peçinha": (1) cada pedaço ligado da malha é uma peça e nunca é cortado — a não ser os dois perfis I iguais lado a
+  lado numa malha só (a viga mestra dupla), que viram dois, como na importação do .skp; (2) TRELIÇA = banzos paralelos
+  ligados por 3 ou mais diagonais/montantes, com as presilhas que só encostam nos banzos, é UM elemento (um grupo), e cada
+  peça de dentro continua com o perfil dela para a lista; (3) o resto, uma peça cada, com o perfil lido na seção (W do
+  catálogo ou PS h×b×tw×tf, U/Ue com a espessura pela área, redondo em mm inteiro, PLATE); o que não se lê fica "a confirmar".
+- **Exemplo aprovado:** `Projeto/BRIEFINGS/imagens/explodir-criterio/amostra-1-explodir-com-criterio.png` (Galpão Viena:
+  1.903 pedaços → 12 treliças — a da frente, 135 m, com 4 banzos + 253 diagonais/montantes + 1.014 presilhas — e 393 peças;
+  "pode seguir, preciso explodir o galpão viena").
+- **Aprovada:** 12/11. **Aplica-se a:** Editar → Explodir com critério (o IFC/DWG do SketchUp sem os grupos).
+- **Código:** `nucleo3d/explodir_criterio.py` (rota POST /api/modelo/explodir-criterio; editor `modulos/explodir.js`).
+  **Conferência:** `test_explodir_criterio.py` e `verif_explodir_criterio.py` (o E no Galpão Viena de verdade).
+
 ---
 
 ## FAB — Fábrica, detalhamento e compra
