@@ -51,7 +51,7 @@ def esperar(aba, expr, limite=30.0):
 
 
 def clicar_no(aba, sel):
-    r = aba.avaliar(f"(() => {{ const b = document.querySelector({json.dumps(sel)}); if (!b || !b.offsetWidth) return null;"
+    r = aba.avaliar(f"(() => {{ const b = document.querySelector({json.dumps(sel)}); const sec = b && b.closest('details'); if (sec && !sec.open && b.tagName !== 'SUMMARY') sec.open = true; if (!b || !b.offsetWidth) return null;"
                     f" b.scrollIntoView({{block: 'center'}}); const q = b.getBoundingClientRect(); return [q.x + q.width / 2, q.y + q.height / 2]; }})()")
     if not r: return False
     for tipo in ("mousePressed", "mouseReleased"):

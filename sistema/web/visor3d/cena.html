@@ -92,6 +92,7 @@
   #ceu { position: absolute; left: 0; top: 0; pointer-events: none; }    /* o céu do ambiente, atrás do 3D (11/11) */
   #ceu[hidden], #luzes3d[hidden] { display: none; }
   .luzes3d { display: flex; flex-direction: column; gap: 4px; }
+  .luzes3d label.faixa { display: grid; grid-template-columns: 18px 82px 1fr; align-items: center; gap: 4px; }
   #ambiente3d { max-width: 230px; justify-content: flex-end; }
   #tela-fina { position: absolute; pointer-events: none; }
   #tela-fina[hidden], body.modo-3d #tela-fina { display: none; }
@@ -101,7 +102,27 @@
   #quadro span { position: absolute; left: -2px; top: -22px; background: var(--azul2, #1f5fbf); color: #fff; font-size: 11.5px;
     padding: 2px 7px; border-radius: 3px 3px 0 0; white-space: nowrap; }
   #marca-previa { position: absolute; pointer-events: none; }
-  #marca-previa[hidden], #marca-bloco[hidden] { display: none; }
+  #marca-previa[hidden], #marca-bloco[hidden], #menu-mais[hidden], #copiar-ajustes[hidden] { display: none; }
+  /* o painel em seções que abrem e fecham (12/11, amostra-7): a barra com o título e o resumo; uma aberta por vez */
+  details.secao { border: 1px solid var(--borda); border-radius: 6px; background: var(--painel); }
+  details.secao > summary { display: flex; align-items: center; gap: 6px; padding: 7px 9px; cursor: pointer; list-style: none; user-select: none; }
+  details.secao > summary::-webkit-details-marker { display: none; }
+  details.secao > summary::before { content: '▸'; color: var(--texto2); width: 10px; }
+  details.secao[open] > summary::before { content: '▾'; }
+  details.secao > summary .t { font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+  details.secao > summary .resumo { margin-left: auto; color: var(--texto2); font-size: 12px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  details.secao[open] > summary { background: var(--azul-fraco); border-bottom: 1px solid var(--borda); border-radius: 6px 6px 0 0; }
+  details.secao .corpo-sec { padding: 8px 9px; display: flex; flex-direction: column; gap: 7px; }
+  details.secao #camadas { max-height: none; overflow: visible; }
+  .nome-cena { flex-wrap: nowrap; } #mais-cena { padding: 4px 9px; font-weight: 700; }
+  #menu-mais { display: flex; flex-direction: column; border: 1px solid var(--borda); border-radius: 6px; padding: 4px; background: var(--painel); box-shadow: 0 4px 14px rgba(0,0,0,.15); }
+  #menu-mais button { border: 0; background: none; text-align: left; } #menu-mais button:hover { background: var(--azul-fraco); }
+  /* os ambientes em quadradinhos com a cor do céu deles */
+  .amb-grade { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+  .amb-grade button { height: 40px; padding: 0; position: relative; overflow: hidden; border-radius: 5px; }
+  .amb-grade button span { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,.86); color: #1d2633; font-size: 11px; padding: 1px 0; }
+  .amb-grade button.ligado { outline: 2px solid var(--azul2, #1f5fbf); outline-offset: 1px; }
+  .info { cursor: help; color: var(--texto2); font-size: 12px; }
   #barra-palco { position: absolute; left: 12px; right: 12px; bottom: 10px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   #barra-palco[hidden] { display: none; }
   #barra-palco button { padding: 4px 9px; font-size: 12px; }
@@ -184,23 +205,30 @@
     <div id="camadas"></div></div>
 
   <!-- a cena do 3D (11/11): o tratamento à direita -->
+  <!-- o painel em seções que abrem e fecham (12/11, amostra-7 aprovada: "1 · Seções que abrem"): cada assunto numa
+       barra com o resumo do que está escolhido; uma aberta por vez (details name=painel-cena) -->
   <div id="corpo3d" hidden>
-    <div class="linha"><input type="text" id="cena-nome" aria-label="Nome da cena"></div>
-    <div class="secao3d"><h2>Enquadramento</h2>
+    <div class="linha nome-cena"><input type="text" id="cena-nome" aria-label="Nome da cena"><button type="button" id="mais-cena" title="Copiar ajustes para outras cenas, apagar a cena">⋯</button></div>
+    <div id="menu-mais" hidden><button type="button" id="copiar-3d">Copiar ajustes para outras cenas…</button><button type="button" id="apagar-3d">Apagar a cena…</button></div>
+    <details class="secao" name="painel-cena" id="sec-quadro"><summary><span class="t">Quadro</span><span class="resumo" id="res-quadro"></span></summary>
+      <div class="corpo-sec">
       <div class="linha-opcao">Proporção <span class="opcoes" id="proporcao"><button type="button" data-v="16:9">16:9</button><button type="button" data-v="4:3">4:3</button><button type="button" data-v="3:4">3:4</button><button type="button" data-v="A3">A3</button><button type="button" data-v="livre">livre</button></span></div>
-      <label class="faixa">Lente <input type="range" id="lente3d" min="10" max="100" step="0.5"><span id="lente3d-val"></span></label></div>
-    <div class="secao3d"><h2>O que aparece</h2><div id="lugar-camadas-3d"></div></div>
-    <div class="secao3d"><h2>Estilo</h2>
-      <div class="linha-opcao">Cores <span class="opcoes" id="pintar3d"><button type="button" data-v="material">material</button><button type="button" data-v="sistema">sistema</button><button type="button" data-v="camada">camada</button><button type="button" data-v="perfil">perfil</button></span></div>
-      <div class="linha-opcao">Arestas <span class="opcoes" id="arestas3d"><button type="button" data-v="1">finas</button><button type="button" data-v="0">sem</button></span></div>
-      <div class="linha-opcao">Ambiente <span class="opcoes" id="ambiente3d"><button type="button" data-v="ceu" title="O céu azul de dia">Dia</button><button type="button" data-v="entardecer" title="O sol baixo e quente, o céu laranja">Entardecer</button><button type="button" data-v="nublado" title="Luz difusa, sombra leve">Nublado</button><button type="button" data-v="estudio" title="Cinza neutro, sem o chão marcado">Estúdio</button><button type="button" data-v="noite-azul" title="Logo depois do pôr do sol, as luzes acesas">Noite azul</button><button type="button" data-v="noite" title="Escuro, refletores e luz interna">Noite</button></span></div>
+      <label class="faixa">Lente <input type="range" id="lente3d" min="10" max="100" step="0.5"><span id="lente3d-val"></span></label></div></details>
+    <details class="secao" name="painel-cena" id="sec-aparece"><summary><span class="t">O que aparece</span><span class="resumo" id="res-aparece"></span></summary>
+      <div class="corpo-sec"><div id="lugar-camadas-3d"></div></div></details>
+    <details class="secao" name="painel-cena" id="sec-ambiente"><summary><span class="t">Ambiente e luz</span><span class="resumo" id="res-ambiente"></span></summary>
+      <div class="corpo-sec">
+      <div class="amb-grade" id="ambiente3d"><button type="button" data-v="ceu" title="O céu azul de dia" style="background:linear-gradient(#8fb8de,#dfe9f3)"><span>Dia</span></button><button type="button" data-v="entardecer" title="O sol baixo e quente, o céu laranja" style="background:linear-gradient(#3f5687,#c98a7a,#f3c48c)"><span>Entardecer</span></button><button type="button" data-v="nublado" title="Luz difusa, sombra leve" style="background:linear-gradient(#aeb8c4,#e4e7eb)"><span>Nublado</span></button><button type="button" data-v="estudio" title="Cinza neutro, sem o chão marcado" style="background:radial-gradient(#fafbfc,#e3e6ea)"><span>Estúdio</span></button><button type="button" data-v="noite-azul" title="Logo depois do pôr do sol, as luzes acesas" style="background:linear-gradient(#0d1a36,#28467a,#6b7fa6)"><span>Noite azul</span></button><button type="button" data-v="noite" title="Escuro, refletores e luz interna" style="background:linear-gradient(#03050b,#0b1222,#1a2338)"><span>Noite</span></button></div>
       <div class="linha-opcao">Fundo liso <span class="opcoes" id="fundo3d"><button type="button" data-v="branco">branco</button><button type="button" data-v="transparente">transparente</button><button type="button" data-v="terreno">terreno</button></span></div>
       <div id="luzes3d" class="luzes3d" hidden><p class="titulo-secao">Luzes da noite</p>
-        <label class="faixa"><input type="checkbox" id="luz-ref"> Refletores em volta <input type="range" id="luz-ref-forca" min="0" max="3" step="0.1" aria-label="Força dos refletores"></label>
+        <label class="faixa"><input type="checkbox" id="luz-ref"> Refletores <input type="range" id="luz-ref-forca" min="0" max="3" step="0.1" aria-label="Força dos refletores"></label>
         <label class="faixa"><input type="checkbox" id="luz-int"> Luz interna <input type="range" id="luz-int-forca" min="0" max="3" step="0.1" aria-label="Força da luz interna"></label>
-        <div class="linha-opcao">Cor <span class="opcoes" id="luz-cor"><button type="button" data-v="quente">quente</button><button type="button" data-v="branca">branca</button></span></div></div></div>
-    <div class="secao3d"><h2>Luz</h2><div id="lugar-sol-3d"></div></div>
-    <div class="linha"><button type="button" id="apagar-3d">Apagar a cena</button></div>
+        <div class="linha-opcao">Cor <span class="opcoes" id="luz-cor"><button type="button" data-v="quente">quente</button><button type="button" data-v="branca">branca</button></span></div></div>
+      <div id="lugar-sol-3d"></div></div></details>
+    <details class="secao" name="painel-cena" id="sec-estilo"><summary><span class="t">Estilo</span><span class="resumo" id="res-estilo"></span></summary>
+      <div class="corpo-sec">
+      <div class="linha-opcao">Cores <span class="opcoes" id="pintar3d"><button type="button" data-v="material">material</button><button type="button" data-v="sistema">sistema</button><button type="button" data-v="camada">camada</button><button type="button" data-v="perfil">perfil</button></span></div>
+      <div class="linha-opcao">Arestas <span class="opcoes" id="arestas3d"><button type="button" data-v="1">finas</button><button type="button" data-v="0">sem</button></span></div></div></details>
   </div>
 
   <!-- a cena pela foto (26/10) -->
@@ -235,13 +263,14 @@
     <div class="linha"><button type="button" id="apagar">Apagar a cena</button></div>
   </div>
   <!-- a marca d'água (11/11, aprovada: B — o logo em cor numa placa; sai em toda imagem exportada) -->
-  <div id="marca-bloco" class="secao3d" hidden><h2>Marca d'água</h2>
+  <details id="marca-bloco" class="secao" name="painel-cena" hidden><summary title="Sai em toda imagem (Salvar imagem, Renderizar, Exportar). A empresa é a do projeto (a do carimbo das pranchas)."><span class="t">Marca d'água</span><span class="resumo" id="res-marca"></span></summary>
+    <div class="corpo-sec">
     <div class="linha-opcao">Empresa <span class="opcoes" id="marca-empresa"></span></div>
     <div class="linha-opcao">Jeito <span class="opcoes" id="marca-jeito"><button type="button" data-v="A" title="O logo claro solto no canto, com sombra leve">A · logo</button><button type="button" data-v="B" title="O logo em cor numa placa branca translúcida">B · placa</button><button type="button" data-v="C" title="Uma faixa no rodapé com o nome da obra e o logo">C · faixa</button></span></div>
     <div class="linha-opcao">Canto <span class="opcoes" id="marca-canto"><button type="button" data-v="esq">esquerdo</button><button type="button" data-v="dir">direito</button></span></div>
-    <p class="dica">Sai em toda imagem: Salvar imagem e Renderizar. A empresa de saída é a do projeto (a do carimbo das pranchas).</p></div>
+    </div></details>
   <div class="linha"><button type="button" id="copiar-ajustes" title="Leva o sol, o ambiente, as camadas, o estilo… desta cena para outras">Copiar ajustes para outras cenas…</button></div>
-  <p class="dica" id="dica-imagem">Salvar imagem: a cena como está. Renderizar: a imagem final, maior, com as peças finas sem
+  <p class="dica" id="dica-imagem" hidden>Salvar imagem: a cena como está. Renderizar: a imagem final, maior, com as peças finas sem
     serrilhado e a sombra mais definida (leva alguns segundos). Vão para a pasta cenas da obra.</p>
   <div id="aviso" role="status"></div>
 </div>

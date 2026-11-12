@@ -58,7 +58,7 @@ def esperar(aba, expr, limite=30.0):
 
 
 def clicar_no(aba, sel, botao="left"):
-    r = aba.avaliar(f"(() => {{ const b = document.querySelector({json.dumps(sel)}); if (!b || !b.offsetWidth) return null;"
+    r = aba.avaliar(f"(() => {{ const b = document.querySelector({json.dumps(sel)}); const sec = b && b.closest('details'); if (sec && !sec.open && b.tagName !== 'SUMMARY') sec.open = true; if (!b || !b.offsetWidth) return null;"
                     f" b.scrollIntoView({{block: 'nearest'}}); const q = b.getBoundingClientRect(); return [q.x + q.width / 2, q.y + q.height / 2]; }})()")
     if not r: return False
     aba.cmd("Input.dispatchMouseEvent", type="mouseMoved", x=r[0], y=r[1])
@@ -110,12 +110,26 @@ try:
     ok(l0 == {"n": 0, "solK": 0.66, "ambK": 0.7, "solCor": [1.0, 0.97, 0.92], "aresta": 1}, f"o Dia: a luz de sempre ({l0})")
     ok(aba.avaliar("!!document.querySelector('#ambiente3d [data-v=ceu].ligado') && !document.getElementById('ceu').hidden"), "Dia marcado, o céu atrás do 3D")
 
+    print("P — o painel em seções (12/11, amostra-7: \"1 · Seções que abrem\")")
+    ok(aba.avaliar("document.querySelectorAll('#corpo3d details.secao').length === 4 && !!document.querySelector('details#marca-bloco')"),
+       "as seções Quadro, O que aparece, Ambiente e luz, Estilo e Marca d'água")
+    clicar_no(aba, "#sec-quadro > summary"); aba.drenar(0.3)
+    clicar_no(aba, "#sec-estilo > summary"); aba.drenar(0.3)
+    abertas = aba.avaliar("[...document.querySelectorAll('details.secao[open]')].map(d => d.id)")
+    ok(abertas == ["sec-estilo"], f"uma aberta por vez ({abertas})")
+    res = aba.avaliar("({q: document.getElementById('res-quadro').textContent, a: document.getElementById('res-ambiente').textContent, e: document.getElementById('res-estilo').textContent})")
+    ok(res["q"].startswith("16:9 · lente") and res["a"].startswith("Dia · sol") and "arestas finas" in res["e"], f"o resumo na barra de cada uma ({res})")
+    ok(clicar_no(aba, "#mais-cena") and aba.avaliar("!document.getElementById('menu-mais').hidden && !!document.getElementById('copiar-3d') && !!document.getElementById('apagar-3d')"),
+       "⋯ ao lado do nome: Copiar ajustes e Apagar")
+    clicar_no(aba, "#mais-cena")
+
     print("A — a Noite")
     clicar_no(aba, "#ambiente3d [data-v=noite]")
     aba.drenar(1.0)
     l = luz(aba)
     ok(l["n"] > 4 and l["solK"] < 0.1 and l["aresta"] < 0.5, f"a luz da noite: o sol fraco e as luzes acesas ({l})")
     ok(aba.avaliar("!document.getElementById('luzes3d').hidden"), "o painel Luzes da noite aparece")
+    ok(aba.avaliar("document.getElementById('res-ambiente').textContent") == "Noite · luzes acesas", "o resumo: Noite · luzes acesas")
     topo = aba.avaliar("Array.from(document.getElementById('ceu').getContext('2d').getImageData(200, 3, 1, 1).data)")
     ok(topo and max(topo[:3]) < 30, f"o céu escuro atrás do 3D na tela ({topo})")
     aba.drenar(0.8)

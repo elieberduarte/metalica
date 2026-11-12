@@ -241,7 +241,8 @@ function mostrarBotoes() {
   $('#salvar-imagem').disabled = $('#renderizar').disabled = !pode || renderizando;
   $('#render-tamanho').disabled = !cena;
   $('#exportar').disabled = !todasCenas.length || renderizando;
-  $('#copiar-ajustes').disabled = !cena || todasCenas.length < 2;
+  $('#copiar-ajustes').disabled = $('#copiar-3d').disabled = !cena || todasCenas.length < 2;
+  $('#copiar-ajustes').hidden = !ehFoto();                // a cena do 3D: no ⋯ ao lado do nome
 }
 
 /** Saindo de uma cena do 3D (para a da foto ou nenhuma): o estilo de sempre de volta. */
@@ -432,6 +433,24 @@ function aplicarEstilo3d() {
   aplicarCamadas();
 }
 
+/** O resumo de cada seção do painel (12/11, amostra-7): o que está escolhido, na barra dela. */
+function resumirPainel() {
+  if (!cena) return;
+  const pos = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+  const m = marcaDaCena(), emp = (marcaInfo.empresas || []).find(e => e.id === m.empresa);
+  pos('res-marca', m.empresa === 'sem' || !temLogo(m.empresa) ? 'sem' : `${(emp && emp.nome) || 'Hermes'} · ${{ A: 'logo', B: 'placa', C: 'faixa' }[m.jeito] || m.jeito} · ${m.canto === 'esq' ? 'esquerda' : 'direita'}`);
+  if (!eh3d()) return;
+  pos('res-quadro', `${cena.proporcao || '16:9'} · lente ${nf(fovCena, 0)}°`);
+  const desl = new Set(desligadasAgora()), cams = (visor && visor.cabecalho.camadas) || [];
+  const sl = sistemas.filter(s => !desl.has('sistema:' + s.chave)).length, cl = cams.filter(c => !desl.has('camada:' + c.nome)).length;
+  pos('res-aparece', (sistemas.length > 1 ? `${sl === sistemas.length ? sl : sl + ' de ' + sistemas.length} sistemas · ` : '') +
+      `${cl === cams.length ? cl : cl + ' de ' + cams.length} camadas`);
+  const f = cena.fundo || 'ceu', amb = AMBIENTES[f], s = solDaCena(), lz = luzesDaCena();
+  const luzes = amb && amb.noite ? (lz.refletores || lz.interna ? ' · luzes acesas' : ' · luzes apagadas') : '';
+  pos('res-ambiente', `${amb ? amb.nome : { branco: 'fundo branco', transparente: 'transparente', terreno: 'terreno' }[f] || f}${luzes}${amb && amb.noite ? '' : s.ligado ? ` · sol ${nf(s.altura, 0)}°` : ' · sem sol'}`);
+  pos('res-estilo', `cores por ${cena.pintar && cena.pintar !== 'editor' ? cena.pintar : 'material'} · ${cena.arestas === false ? 'sem arestas' : 'arestas finas'}`);
+}
+
 function mostrarPainel3d() {
   $('#cena-nome').value = cena.nome || '';
   const marcar = (sel, v) => { for (const b of document.querySelectorAll(`${sel} button`)) b.classList.toggle('ligado', b.dataset.v === v); };
@@ -452,6 +471,7 @@ function mostrarPainel3d() {
   $('#lente3d').value = fovCena; $('#lente3d-val').textContent = nf(fovCena, 0) + '°';
   const pai = document.querySelector('#pintar3d [data-v=sistema]');
   pai.hidden = sistemas.length < 2;
+  resumirPainel();
 }
 
 /** A miniatura do cartão: a cena do 3D pequena (como no render, sem o quadro), gravada no servidor. */
@@ -688,7 +708,18 @@ function ligar3d() {
     if (c) menuDoCartao(c, b);
   };
   $('#nova-3d').onclick = () => novaCena3d();
-  $('#apagar-3d').onclick = () => cena && apagarCena(cena);
+  $('#apagar-3d').onclick = () => { $('#menu-mais').hidden = true; if (cena) apagarCena(cena); };
+  $('#copiar-3d').onclick = () => { $('#menu-mais').hidden = true; if (cena) copiarAjustes(cena); };
+  $('#mais-cena').onclick = (ev) => { ev.stopPropagation(); $('#menu-mais').hidden = !$('#menu-mais').hidden; };
+  addEventListener('pointerdown', (ev) => { if (!ev.target.closest('#menu-mais, #mais-cena')) $('#menu-mais').hidden = true; });
+  // a seção aberta fica a mesma de uma cena para outra (e de uma vez para outra, no navegador)
+  const CHAVE_SECAO = 'cena.secaoAberta';
+  let aberta = 'sec-ambiente';
+  try { aberta = localStorage.getItem(CHAVE_SECAO) || aberta; } catch (e) { /* sem o navegador guardar */ }
+  const sec = document.getElementById(aberta); if (sec) sec.open = true;
+  for (const d of document.querySelectorAll('details.secao')) d.addEventListener('toggle', () => {
+    if (d.open) try { localStorage.setItem(CHAVE_SECAO, d.id); } catch (e) { /* idem */ }
+  });
   $('#copiar-ajustes').onclick = () => cena && copiarAjustes(cena);
   $('#cena-nome').onchange = async () => {
     const nome = $('#cena-nome').value.trim();
@@ -865,6 +896,7 @@ function mostrarMarca() {
   const marcar = (sel, v) => { for (const b of document.querySelectorAll(`${sel} button`)) b.classList.toggle('ligado', b.dataset.v === v); };
   marcar('#marca-empresa', m.empresa); marcar('#marca-jeito', m.jeito); marcar('#marca-canto', m.canto);
   desenharPreviaMarca();
+  resumirPainel();
 }
 
 let tempoMarca = 0;
@@ -910,6 +942,7 @@ function desenharCamadas() {
 
 function aplicarCamadas() {
   const desl = new Set(desligadasAgora());
+  resumirPainel();
   (visor.cabecalho.camadas || []).forEach((c, i) => {
     const ligada = !desl.has('camada:' + c.nome);
     if ((visor.visivelCamada[i] !== false) !== ligada) visor.mostrarCamada(i, ligada);
@@ -1086,8 +1119,7 @@ function mostrarSol() {
   $('#sol-caixa').innerHTML = controlesDoSol(s) +
     `<label class="faixa so-cena">Sombra no chão <input type="range" id="sombra-chao" min="0" max="1" step="0.05" value="${s.chao}">
       <span id="sombra-chao-val">${nf(s.chao * 100)} %</span></label>
-    <p class="dica">A direção gira o sol em volta da obra; a altura vai do nascer (baixo, sombras compridas) ao meio-dia (alto).
-      <span class="so-cena">A sombra no chão cai no plano dos pontos do chão (a quadra); 0 % a desliga.</span></p>`;
+    <span class="info" title="A direção gira o sol em volta da obra; a altura vai do nascer (baixo, sombras compridas) ao meio-dia (alto).${ehFoto() ? ' A sombra no chão cai no plano dos pontos do chão (a quadra); 0 % a desliga.' : ''}">ⓘ como o sol funciona</span>`;
   for (const el of $('#sol-caixa').querySelectorAll('.so-cena')) el.hidden = !ehFoto();   // a sombra no chão é a da foto
   // só a direção e a altura: o resto (a sombra no chão) pode ter mudado depois de os controles nascerem
   ligarControlesDoSol($('#sol-caixa'), s, (novo) => { lembrar('sol'); mudarSol({ direcao: novo.direcao, altura: novo.altura, ligado: true }); });
@@ -1101,6 +1133,7 @@ function mostrarSol() {
 
 function aplicarSol() {
   const s = solDaCena();
+  resumirPainel();
   visor.ligarApresentacao(s.ligado, 4096);
   definirSol(visor, s);
   atualizarChaoSombra();
