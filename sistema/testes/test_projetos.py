@@ -11,6 +11,16 @@ from nucleo.base import ErroDeDados                    # noqa: E402
 from projetos import Projetos, slug, LIXEIRA, ARQUIVO   # noqa: E402
 
 
+def _devolver_dados(antes):
+    """devolve o METALICA_DADOS de antes do teste — o `del` apagava a pasta temporária do conftest, e os testes seguintes
+    no mesmo processo (o app recarregado) caíam em sistema/projetos (conferência da 0.9.3, 13/11:
+    test_testes_nao_gravam_nos_dados falhou pela ordem do pytest no ritmo calmo)"""
+    if antes is None:
+        os.environ.pop("METALICA_DADOS", None)
+    else:
+        os.environ["METALICA_DADOS"] = antes
+
+
 def test_slug():
     assert slug("Galpão da Fazenda São João") == "galpão-da-fazenda-são-joão"   # acento fica
     assert slug("  ") == "projeto"
@@ -197,6 +207,7 @@ def test_rotas_do_servidor():
     """As rotas de app.py com uma pasta de dados temporária."""
     import importlib
     with tempfile.TemporaryDirectory() as raiz:
+        antes_dados = os.environ.get("METALICA_DADOS")    # a pasta temporária do conftest
         os.environ["METALICA_DADOS"] = raiz
         try:
             import app
@@ -221,7 +232,7 @@ def test_rotas_do_servidor():
             assert resp["pasta"] == os.path.join(raiz, "outra")
             assert any(e["pasta"] == "lista" for e in app._gerente().resumo("outra")["entregas"])
         finally:
-            del os.environ["METALICA_DADOS"]
+            _devolver_dados(antes_dados)
             importlib.reload(app)
 
 
@@ -231,6 +242,7 @@ def test_modelo_vai_como_esta_no_disco_quando_ja_migrado():
     marca da migração, ou com lixo depois do JSON, fica o caminho completo."""
     import importlib
     with tempfile.TemporaryDirectory() as raiz:
+        antes_dados = os.environ.get("METALICA_DADOS")    # a pasta temporária do conftest
         os.environ["METALICA_DADOS"] = raiz
         try:
             import app
@@ -252,7 +264,7 @@ def test_modelo_vai_como_esta_no_disco_quando_ja_migrado():
                 f.write('{"lixo": 1')                                  # emendado: o caminho completo conserta
             assert app.modelo_do_projeto_cru(s) is None
         finally:
-            del os.environ["METALICA_DADOS"]
+            _devolver_dados(antes_dados)
             importlib.reload(app)
 
 
@@ -264,6 +276,7 @@ def test_desenho_grande_vai_como_esta_no_disco():
     import importlib
     import projetos
     with tempfile.TemporaryDirectory() as raiz:
+        antes_dados = os.environ.get("METALICA_DADOS")    # a pasta temporária do conftest
         os.environ["METALICA_DADOS"] = raiz
         try:
             import app
@@ -286,7 +299,7 @@ def test_desenho_grande_vai_como_esta_no_disco():
             assert len(g.abrir_desenho(s, "Vistas do projetista")["entidades"]) == 45000
             assert app.desenho_cru(s, "Vistas do projetista") is not None   # consertado, volta a ir como está
         finally:
-            del os.environ["METALICA_DADOS"]
+            _devolver_dados(antes_dados)
             importlib.reload(app)
 
 
@@ -297,6 +310,7 @@ def test_referencia_do_3d_nao_decodifica_o_original_recebido(monkeypatch):
     import importlib
     import projetos
     with tempfile.TemporaryDirectory() as raiz:
+        antes_dados = os.environ.get("METALICA_DADOS")    # a pasta temporária do conftest
         os.environ["METALICA_DADOS"] = raiz
         try:
             import app
@@ -341,7 +355,7 @@ def test_referencia_do_3d_nao_decodifica_o_original_recebido(monkeypatch):
                 f.write('{"lixo": 1')
             assert g.metadados_do_desenho(s, lancamento.DESENHO_LANCAMENTO) == meta
         finally:
-            del os.environ["METALICA_DADOS"]
+            _devolver_dados(antes_dados)
             importlib.reload(app)
 
 
@@ -351,6 +365,7 @@ def test_modelo_gravado_como_veio_do_editor():
     texto que não é um objeto JSON recusado)."""
     import importlib
     with tempfile.TemporaryDirectory() as raiz:
+        antes_dados = os.environ.get("METALICA_DADOS")    # a pasta temporária do conftest
         os.environ["METALICA_DADOS"] = raiz
         try:
             import app
@@ -380,7 +395,7 @@ def test_modelo_gravado_como_veio_do_editor():
             with open(app._gerente().caminho_modelo(s), "rb") as f:
                 assert f.read() == texto
         finally:
-            del os.environ["METALICA_DADOS"]
+            _devolver_dados(antes_dados)
             importlib.reload(app)
 
 
