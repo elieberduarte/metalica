@@ -207,6 +207,41 @@ def chapa_comercial(t: float) -> float:
     return t
 
 
+#: A chapa grossa que se compra (mm do rótulo e do peso, polegada), regra do usuário de 05/11: a MAIS PRÓXIMA da do
+#: projeto, mesmo menor ("CH 15 → CH 15,88 - 5/8"", "CH 20 → CH 19,1 - 3/4""), e o kg pela comercial. 15,88, 19,1 e
+#: 31,8 são os do usuário (e 6,35 para 1/4"; 5/8" = 15,88 no rótulo e no kg — gestor, 05/11); 8,0 / 9,5 / 12,5 os de sempre do sistema e da tabela da Hermes ("3,75 à 12,50mm"); acima de
+#: 19,1 a polegada em mm com uma casa.
+CHAPAS_GROSSAS = [(4.75, '3/16"'), (6.35, '1/4"'), (8.0, '5/16"'), (9.5, '3/8"'), (12.5, '1/2"'), (15.88, '5/8"'),
+                  (19.1, '3/4"'), (22.2, '7/8"'), (25.4, '1"'), (31.8, '1 1/4"'), (38.1, '1 1/2"'), (44.5, '1 3/4"'),
+                  (50.8, '2"'), (63.5, '2 1/2"'), (76.2, '3"')]
+
+#: As exceções do usuário à "mais próxima" (projeto → comercial): a CH 27 e a CH 28 SOBEM para 1 1/4" "para não
+#: termos problema" (05/11, via gestor; a 27 entrou depois da 28) — só elas; as outras seguem a mais próxima.
+CHAPAS_EXCECOES = {27.0: (31.8, '1 1/4"'), 28.0: (31.8, '1 1/4"')}
+
+
+def chapa_do_orcamento(t: float) -> Tuple[float, str]:
+    """(espessura comercial, rótulo) da chapa do projeto: de 3/16" para cima a comercial mais próxima (empate: a maior,
+    "na dúvida a MAIOR"), "CH 15,88 - 5/8"" (a CH 27 e a CH 28 sobem para 31,8: exceção do usuário); abaixo, a chapa fina como no resumo de compra (a mesma ou a próxima acima,
+    na bitola), "CH #11 - 3,00mm - 1/8""."""
+    for te, (tc, pol) in CHAPAS_EXCECOES.items():
+        if abs(t - te) < 0.06:
+            return tc, "CH %s - %s" % (("%g" % tc).replace(".", ","), pol)
+    maior = CHAPAS_GROSSAS[-1][0]
+    if t > maior + (maior - CHAPAS_GROSSAS[-2][0]) / 2.0:
+        # fora da série (mais de meio passo acima da maior): a espessura do projeto, com a polegada só quando bate — a de
+        # 146,5 mm do Heliponto R00 saía 76,2 (−3.300 kg na compra, FÁBRICA N.3 05/11)
+        pol = fracao_polegada(t)
+        return t, "CH %s%s (fora da série comercial: espessura do projeto)" % (("%g" % t).replace(".", ","),
+                                                                              (" - " + pol) if pol else "")
+    # abaixo de 3/16" a bitola (a #7 de 4,50 não vira 4,75: "abaixo de 4,75 continua a bitola", 05/11)
+    if t >= CHAPAS_GROSSAS[0][0] - 0.06:
+        tc, pol = min(CHAPAS_GROSSAS, key=lambda c: (abs(c[0] - t), -c[0]))
+        return tc, "CH %s - %s" % (("%g" % tc).replace(".", ","), pol)
+    tc = chapa_comercial(t)
+    return tc, "CH " + rotulo_chapa(tc)
+
+
 def _chapas_por_rotulo(chapas) -> List[dict]:
     """As chapas da lista (uma linha por espessura medida e material) juntas pela chapa comercial e pelo material
     (06/10): 19,0 e 19,1 mm do modelo são a mesma 3/4", e a espessura fora do comercial vai para a próxima acima.
@@ -220,7 +255,6 @@ def _chapas_por_rotulo(chapas) -> List[dict]:
         # PRÓXIMA, mesmo mais fina — CH 15 → 16 (5/8"), CH 20 → 19,1 (3/4"), empate a maior; abaixo, a bitola, a mesma ou
         # a próxima acima). Antes o resumo usava "a mesma ou a próxima acima" na série 6,30/7,94/12,70/15,9/19,05 — a de
         # 16 virava 19,05 e o 1/4" saía 6,30 aqui e 6,35 no orçamento (GESTÃO, 05/11)
-        from saida.orcamento import chapa_do_orcamento
         tc = chapa_do_orcamento(t)[0] if t > 0 else t
         mat = str(g.get("material") or "")
         j = juntas.setdefault((tc, mat), {"material": mat, "t": tc, "kg": 0.0, "pecas": 0, "m2": 0.0, "modelo": set()})

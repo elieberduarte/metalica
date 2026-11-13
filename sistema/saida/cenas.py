@@ -258,16 +258,16 @@ def empresa_padrao(g, s: str) -> str:
 
 
 def empresas_da_marca(g, s: str) -> dict:
-    from saida import comercial
+    from saida import empresas
     try:
-        lista = comercial.listar_empresas(g.raiz)
+        lista = empresas.listar_empresas(g.raiz)
     except OSError:
         lista = []
     out = []
     for e in lista:
         nome, logo = e.get("nome") or e["id"], False
         try:                                                # a DEZN assina "DEZN" na metálica (a linha de serviço)
-            el = comercial.empresa_da_linha(comercial.ler_empresa(g.raiz, e["id"]), "metalica")
+            el = empresas.empresa_da_linha(empresas.ler_empresa(g.raiz, e["id"]), "metalica")
             nome = el.get("nome_comercial") or nome
             logo = any(el.get(k) and os.path.isfile(el[k]) for k in ("logo", "logo_claro", "logo_carimbo"))
         except (OSError, ValueError):
@@ -309,11 +309,11 @@ def arquivo_da_marca(g, s: str, empresa: str, tom: str) -> str:
     """O logo da empresa para a marca d'água: "cor" (o logo) ou "claro" (o logo claro), da linha metálica quando ela tem.
     PNG em faixa → compacto (guardado em cenas/dados/.marca-… da obra, pela data do arquivo: o servidor só entrega o que
     está na pasta de dados)."""
-    from saida import comercial
+    from saida import empresas
     if tom not in ("cor", "claro"):
         raise ErroCena("tom da marca desconhecido: %s" % tom)
     try:
-        e = comercial.empresa_da_linha(comercial.ler_empresa(g.raiz, empresa), "metalica")
+        e = empresas.empresa_da_linha(empresas.ler_empresa(g.raiz, empresa), "metalica")
     except ValueError as err:
         raise ErroCena(str(err))
     # o logo do CARIMBO quando a empresa tem (usuário, 12/11: "gostaria que o logo da DEZN ficasse na mesma configuração da

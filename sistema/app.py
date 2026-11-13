@@ -4202,12 +4202,12 @@ def _logo_do_carimbo(p: dict) -> Optional[dict]:
     emp = cp.get("empresa")
     if not emp:
         return None
-    from saida import comercial
+    from saida import empresas
     from nucleo2d.modelo_hermes import logo_do_svg
     try:
-        e = comercial.ler_empresa(PROJETOS, emp)
+        e = empresas.ler_empresa(PROJETOS, emp)
         if cp.get("linha"):
-            e = comercial.empresa_da_linha(e, cp["linha"])
+            e = empresas.empresa_da_linha(e, cp["linha"])
         arq = e.get("logo_carimbo") or e.get("logo") or ""
         return logo_do_svg(arq) if arq.lower().endswith(".svg") else None
     except (OSError, ValueError):                       # o SVG sumiu ou não é de retas: o carimbo sai com o da Hermes

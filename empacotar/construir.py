@@ -51,7 +51,7 @@ INSTALADOR = os.path.join(RAIZ, "Metalica-instalador.exe")
 #: A parte comercial (orçamento, proposta, contrato, obra e pagamentos) fica só no desenvolvimento (pedido de
 #: 05/10): o programa instalado não leva o código nem as telas dela, e o app.py desliga as rotas (COMERCIAL).
 MODULOS_SO_DEV = ["saida.orcamento", "saida.comercial", "saida.comercial_servico", "saida.contrato_docs",
-                  "saida.proposta_html", "saida.imagens3d", "saida.docx_simples",
+                  "saida.proposta_html", "saida.proposta_compacta", "saida.imagens3d", "saida.docx_simples",
                   "celular", "celular.servidor", "celular.web", "celular.certificado", "celular.nuvem",  # celular: só no dev até a Fase 1 fechar
                   "licencas_dev",                       # a tela das licenças (11/10): só no desenvolvimento
                   # os módulos do _extensoes_dev do app.py (pré-moldado; arquitetura, 30/10): no git desde 02/11 (base
