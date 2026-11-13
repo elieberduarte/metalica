@@ -113,7 +113,9 @@ def test_deposito_sem_cobertura_plana():
     cel = _celulas(p)
     assert not any("– COBERTURA" in str(c.get("titulo")) for c in p.metadados["prancha"]["celulas"])      # a de 4° saiu
     fachadas = [c for k, c in cel.items() if k.startswith("FACE")]
-    assert len(fachadas) == 7 and all(float(c["escala"]) <= 125.0 for c in fachadas)                     # legíveis
+    assert len(fachadas) == 6 and all(float(c["escala"]) <= 125.0 for c in fachadas)                     # legíveis
+    # as FACES 7 e 8 são iguais (TL1 8x): uma só, "FACES 7 E 8" (usuário, 13/11: "Juntar sempre as iguais")
+    assert any(k.startswith("FACES 7 E 8") for k in cel), list(cel)
     tipos = _caixa(cel["TIPOS DE TELHA"])
     assert float(cel["TIPOS DE TELHA"]["escala"]) <= 250.0                                              # os tipos também
     assert all(_caixa(c)[0] > tipos[2] for c in fachadas)                                               # à direita
