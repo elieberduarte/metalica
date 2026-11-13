@@ -20,10 +20,18 @@ def _gerente(tmp_path):
     return g, (r.get("slug") or r.get("id") or "quadra")
 
 
+
+def _envios(tmp_path):
+    """A pasta de envios da pasta de dados do teste: o arquivo_local só vale de dentro dela (D12, 13/11)."""
+    pasta = os.path.join(str(tmp_path), ".envios")
+    os.makedirs(pasta, exist_ok=True)
+    return pasta
+
+
 def _foto(tmp_path, nome="IMG_2026.jpg", tam=(4000, 3000), girada=False):
     from PIL import Image
     im = Image.new("RGB", tam, (90, 120, 80))
-    caminho = os.path.join(str(tmp_path), "envio-" + nome)
+    caminho = os.path.join(_envios(tmp_path), "envio-" + nome)
     if girada:                                            # o celular deitado: os pixels em pé e o EXIF dizendo "gire 90°"
         exif = Image.Exif()
         exif[0x0112] = 6
@@ -165,7 +173,7 @@ def test_imagem_pronta_vai_para_a_pasta_cenas(tmp_path):
     g, s = _gerente(tmp_path)
     i = C.nova(g, s, _foto(tmp_path))["id"]
     C.gravar(g, s, i, {"nome": "Vista: da entrada"})
-    png = os.path.join(str(tmp_path), "envio.png")
+    png = os.path.join(_envios(tmp_path), "envio.png")
     with open(png, "wb") as f:
         f.write(b"\x89PNG\r\n\x1a\n" + b"0" * 100)
     r = C.rota_post(g, s, [i, "imagem"], {"arquivo_local": png})
@@ -185,7 +193,7 @@ def test_render_vai_ao_lado_da_imagem(tmp_path):
     i = C.nova(g, s, _foto(tmp_path))["id"]
 
     def enviar(nome, fmt):
-        caminho = os.path.join(str(tmp_path), "envio-" + nome)
+        caminho = os.path.join(_envios(tmp_path), "envio-" + nome)
         Image.new("RGB", (20, 10)).save(caminho, fmt)
         return C.rota_post(g, s, [i, "imagem"], {"arquivo_local": caminho, "nome": nome})
     assert enviar("cena.png", "PNG")["nome"] == "Cena - IMG_2026.png"
@@ -245,7 +253,7 @@ def test_apagar_com_a_foto_presa(tmp_path, monkeypatch):
 
 def test_so_jpg_e_png(tmp_path):
     g, s = _gerente(tmp_path)
-    caminho = os.path.join(str(tmp_path), "doc.pdf")
+    caminho = os.path.join(_envios(tmp_path), "doc.pdf")
     with open(caminho, "wb") as f:
         f.write(b"%PDF")
     with pytest.raises(C.ErroCena, match="JPG ou PNG"):
@@ -440,7 +448,7 @@ def test_pdf_do_exportar_vai_para_a_pasta_cenas(tmp_path):
     g, s = _gerente(tmp_path)
 
     def enviar(nome, conteudo=b"%PDF-1.4\n%%EOF\n"):
-        caminho = os.path.join(str(tmp_path), "envio.pdf")
+        caminho = os.path.join(_envios(tmp_path), "envio.pdf")
         with open(caminho, "wb") as f:
             f.write(conteudo)
         return C.rota_post(g, s, ["pdf"], {"arquivo_local": caminho, "nome": nome})
@@ -460,7 +468,7 @@ def test_video_do_exportar_vai_para_a_pasta_cenas(tmp_path):
     mp4 = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomavc1" + b"\x00" * 64
 
     def enviar(nome, conteudo=mp4):
-        caminho = os.path.join(str(tmp_path), "envio.mp4")
+        caminho = os.path.join(_envios(tmp_path), "envio.mp4")
         with open(caminho, "wb") as f:
             f.write(conteudo)
         return C.rota_post(g, s, ["video"], {"arquivo_local": caminho, "nome": nome})
@@ -470,7 +478,7 @@ def test_video_do_exportar_vai_para_a_pasta_cenas(tmp_path):
     assert enviar(r"..\..\fora")["nome"] == "fora.mp4"
     with pytest.raises(C.ErroCena):
         enviar("x.mp4", b"%PDF-1.4\n%%EOF\n")                         # não é MP4
-    assert not os.path.exists(os.path.join(str(tmp_path), "envio.mp4"))  # o recusado não fica no disco
+    assert not os.path.exists(os.path.join(_envios(tmp_path), "envio.mp4"))  # o recusado não fica no disco
     with pytest.raises(C.ErroCena):
         C.rota_post(g, "nao-existe", ["video"], {"arquivo_local": "x", "nome": "a.mp4"})
     assert C.nova_3d(g, s, {"nome": "Video", "camera": _CAM})["id"] == "video-cena"
@@ -550,7 +558,7 @@ def test_mostrar_o_render_na_pasta(tmp_path, monkeypatch):
     abertos = []
     monkeypatch.setattr(C, "_abrir_no_explorador", lambda pasta, arquivo=None: abertos.append((pasta, arquivo)))
     i = C.nova(g, s, _foto(tmp_path))["id"]
-    caminho = os.path.join(str(tmp_path), "envio-render.jpg")
+    caminho = os.path.join(_envios(tmp_path), "envio-render.jpg")
     Image.new("RGB", (20, 10)).save(caminho, "JPEG")
     nome = C.rota_post(g, s, [i, "imagem"], {"arquivo_local": caminho, "nome": "render.jpg"})["nome"]
     pasta = os.path.join(g.pasta(s), "cenas")

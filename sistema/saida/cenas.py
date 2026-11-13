@@ -30,6 +30,7 @@ import unicodedata
 from typing import Optional
 
 from nucleo.base import ErroDeDados
+from nucleo import envios
 
 PASTA = "cenas"
 FOTO_LADO_MAX = 6000                       # px: a foto do celular (4000 × 3000, 12 Mpx) passa inteira
@@ -336,7 +337,7 @@ def arquivo_da_marca(g, s: str, empresa: str, tom: str) -> str:
 
 def gravar_miniatura(g, s: str, i: str, corpo: dict) -> dict:
     """A miniatura da cena para a lista da tela (a imagem pequena feita na tela), em cenas/dados/<id>/miniatura.jpg."""
-    origem = corpo.get("arquivo_local")
+    origem = envios.arquivo(g.raiz, corpo, ErroCena)
     if not origem or not os.path.isfile(origem):
         raise ErroCena("nenhuma imagem recebida.")
     from PIL import Image
@@ -413,7 +414,7 @@ def _novo_id(pasta: str, nome: str) -> str:
 
 def nova(g, s: str, corpo: dict) -> dict:
     """A foto chega pelo envio binário ({"arquivo_local", "nome"}); o nome da cena é o da foto sem a extensão."""
-    origem, nome_arq = corpo.get("arquivo_local"), os.path.basename(str(corpo.get("nome") or "foto.jpg"))
+    origem, nome_arq = envios.arquivo(g.raiz, corpo, ErroCena), os.path.basename(str(corpo.get("nome") or "foto.jpg"))
     if not origem or not os.path.isfile(origem):
         raise ErroCena("nenhuma foto recebida.")
     ext = os.path.splitext(nome_arq)[1].lower()
@@ -699,7 +700,7 @@ def gravar_imagem(g, s: str, i: str, corpo: dict) -> dict:
     "Cena - <nome> (render).jpg" pelo Renderizar (27/10: "a resolução ainda é meio baixa… uma opção para 'renderizar' a
     imagem") — o envio chamado render.jpg; um não apaga o outro."""
     c = ler(g, s, i)
-    origem = corpo.get("arquivo_local")
+    origem = envios.arquivo(g.raiz, corpo, ErroCena)
     if not origem or not os.path.isfile(origem):
         raise ErroCena("nenhuma imagem recebida.")
     pasta = os.path.join(g.pasta(s), PASTA)
@@ -765,7 +766,7 @@ def gravar_pdf(g, s: str, corpo: dict) -> dict:
     vem da tela ("Cena - <nome> (render).pdf" ou "Cenas - <obra> (render).pdf"), só o nome do arquivo e sempre .pdf."""
     if not os.path.isdir(g.pasta(s)):
         raise ErroCena("projeto não encontrado: %s" % s)
-    origem = corpo.get("arquivo_local")
+    origem = envios.arquivo(g.raiz, corpo, ErroCena)
     if not origem or not os.path.isfile(origem):
         raise ErroCena("nenhum PDF recebido.")
     with open(origem, "rb") as f:
@@ -789,7 +790,7 @@ def gravar_video(g, s: str, corpo: dict) -> dict:
     na tela) na pasta cenas/: o nome vem da tela ("Vídeo - <obra> (cenas).mp4"), só o nome do arquivo e sempre .mp4."""
     if not os.path.isdir(g.pasta(s)):
         raise ErroCena("projeto não encontrado: %s" % s)
-    origem = corpo.get("arquivo_local")
+    origem = envios.arquivo(g.raiz, corpo, ErroCena)
     if not origem or not os.path.isfile(origem):
         raise ErroCena("nenhum vídeo recebido.")
     with open(origem, "rb") as f:

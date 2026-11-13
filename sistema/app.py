@@ -616,7 +616,7 @@ def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
     g = _gerente()
     pasta = g._existente(s)
     dados = corpo.get("conteudo_b64")
-    local = corpo.get("arquivo_local")             # enviado como ele é (_corpo_binario), já no disco
+    local = _envio(corpo)                          # enviado como ele é (_corpo_binario), já no disco
     if not dados and not local:
         raise ErroDeDados("nenhum arquivo IFC recebido.")
     nome = os.path.basename(corpo.get("nome") or "modelo.ifc")
@@ -6131,12 +6131,18 @@ def exportar_ifc(corpo: dict) -> dict:
             "entidades": len(doc.entidades), "terreno": bool(terreno)}
 
 
+def _envio(corpo: dict):
+    """O arquivo do envio binário ({"arquivo_local"}), só de dentro de PROJETOS/.envios (D12, 13/11: nucleo/envios.py)."""
+    from nucleo import envios
+    return envios.arquivo(PROJETOS, corpo)
+
+
 def _gravar_ifc_recebido(corpo: dict, nome_padrao: str) -> str:
     """Grava o IFC recebido — em base64 no JSON, ou o arquivo como ele é, já no disco (_corpo_binario) — e devolve o
     caminho."""
     import base64
     dados = corpo.get("conteudo_b64")
-    local = corpo.get("arquivo_local")
+    local = _envio(corpo)
     if not dados and not local:
         raise ErroDeDados("nenhum arquivo IFC recebido.")
     nome = os.path.basename(corpo.get("nome") or nome_padrao)
@@ -6358,9 +6364,14 @@ class Handler(BaseHTTPRequestHandler):
         if n > 400 * 1024 * 1024:
             raise ErroDeDados("arquivo grande demais (limite de 400 MB).")
         try:
-            return json.loads(self.rfile.read(n).decode("utf-8"))
+            corpo = json.loads(self.rfile.read(n).decode("utf-8"))
         except json.JSONDecodeError as e:
             raise ErroDeDados(f"JSON inválido: {e}")
+        if isinstance(corpo, dict):
+            # o "arquivo_local" nasce só no servidor (_corpo_binario); vindo no JSON, um caminho qualquer do disco era
+            # lido, movido para a obra ou apagado pelas rotas de envio (D12, usuario-desastrado, 13/11)
+            corpo.pop("arquivo_local", None)
+        return corpo
 
     def _corpo_binario(self) -> dict:
         """O arquivo enviado como ele é (Content-Type application/octet-stream, o nome em X-Nome-Arquivo), gravado em
@@ -6372,7 +6383,8 @@ class Handler(BaseHTTPRequestHandler):
         if n > 4 * 1024 ** 3:
             raise ErroDeDados("arquivo grande demais (limite de 4 GB).")
         nome = os.path.basename(unquote(self.headers.get("X-Nome-Arquivo") or "arquivo"))
-        pasta = os.path.join(PROJETOS, ".envios")
+        from nucleo import envios
+        pasta = envios.pasta(PROJETOS)
         os.makedirs(pasta, exist_ok=True)
         destino = os.path.join(pasta, "%d-%s" % (int(time.time() * 1000), re.sub(r"[^\w.\-]+", "_", nome)))
         falta = n

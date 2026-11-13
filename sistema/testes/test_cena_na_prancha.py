@@ -23,7 +23,8 @@ def _obra(tmp_path, render=True, cor=(30, 90, 200)):
     s = r.get("slug") or r.get("id") or "obra"
     i = C.nova_3d(g, s, {"nome": "Fachada", "camera": _CAM})["id"]
     if render:
-        caminho = os.path.join(str(tmp_path), "envio.jpg")
+        caminho = os.path.join(str(tmp_path), ".envios", "envio.jpg")
+        os.makedirs(os.path.dirname(caminho), exist_ok=True)
         Image.new("RGB", (320, 180), cor).save(caminho, "JPEG")
         C.rota_post(g, s, [i, "imagem"], {"arquivo_local": caminho, "nome": "render.jpg"})
     return g, s, i

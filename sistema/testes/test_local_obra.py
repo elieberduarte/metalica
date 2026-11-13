@@ -655,6 +655,13 @@ def test_bloco_que_falha_e_pedido_de_novo(tmp_path, monkeypatch):
 E0, N0, PX = 254000.0, 7240350.0, 0.04          # o canto noroeste do ortomosaico (UTM 22S, Cascavel) e o pixel (4 cm)
 
 
+
+def _envios(tmp_path):
+    """A pasta de envios da pasta de dados do teste: o arquivo_local só vale de dentro dela (D12, 13/11)."""
+    (tmp_path / ".envios").mkdir(exist_ok=True)
+    return tmp_path / ".envios"
+
+
 def _ortomosaico(caminho, formato="tif", w=4000, h=3000):
     """O ortomosaico de 160 × 120 m com o alvo vermelho (1 m) em E0+100, N0−60 e o canto sem voo (transparente)."""
     from PIL import Image, TiffImagePlugin
@@ -699,7 +706,7 @@ def test_ortomosaico_geotiff_por_cima_da_imagem_do_portal(tmp_path, monkeypatch)
     L.gravar(g, s, {"lat": lat, "lon": lon, "ponto": [0, 0], "norte": 0, "fonte": "teste"})
     L.baixar_imagem(g, s, {"caixa": [-30_000, -20_000, 30_000, 20_000]})
     portal = L.estado(g, s)["imagem"]
-    e = L.rota_post(g, s, ["importar-imagem"], {"arquivo_local": _ortomosaico(str(tmp_path / "orto.tif")),
+    e = L.rota_post(g, s, ["importar-imagem"], {"arquivo_local": _ortomosaico(str(_envios(tmp_path) / "orto.tif")),
                                                 "nome": "Ortomosaico Lote 12.tif"}, lambda *a: None)
     assert e["georreferenciada"] and e["propria"]["px"] == [4000, 3000] and not e["propria"]["colocada"]
     etapas = []
@@ -730,7 +737,7 @@ def test_imagem_com_arquivo_de_mundo_e_sem_lugar(tmp_path):
     """JPG + .jgw + .prj (o DroneDeploy, o QGIS): no lugar pelos dois; e sem o local da obra gravado, o lugar vem da
     imagem (o meio da obra no meio dela)."""
     g, s = _gerente(tmp_path)
-    jpg = _ortomosaico(str(tmp_path / "orto.jpg"), "jpg")
+    jpg = _ortomosaico(str(_envios(tmp_path) / "orto.jpg"), "jpg")
     jgw = "%r\n0\n0\n%r\n%r\n%r\n" % (PX, -PX, E0 + PX / 2, N0 - PX / 2)          # o meio do primeiro pixel
     prj = ('PROJCS["SIRGAS 2000 / UTM zone 22S",GEOGCS["SIRGAS 2000",DATUM["Sistema_de_Referencia_Geocentrico_para_las_'
            'AmericaS_2000",SPHEROID["GRS 1980",6378137,298.257222101]]],PROJECTION["Transverse_Mercator"],'
@@ -758,7 +765,7 @@ def test_imagem_sem_coordenadas(tmp_path):
     (ou 1,5 × a obra), sozinha, o norte para cima; mudar a largura mantém o meio."""
     from PIL import Image
     g, s = _gerente(tmp_path)
-    png = str(tmp_path / "foto.png")
+    png = str(_envios(tmp_path) / "foto.png")
     Image.new("RGB", (1200, 800), (90, 90, 200)).save(png)
     L.importar_imagem(g, s, {"arquivo_local": png, "nome": "foto.png"})
     with pytest.raises(L.ErroTerreno, match="endereço"):
@@ -780,7 +787,7 @@ def test_imagem_sem_coordenadas(tmp_path):
     with pytest.raises(L.ErroTerreno, match="largura"):
         L.posicionar_propria(g, s, {"largura_m": 2})
     # o arquivo que não é imagem
-    ruim = tmp_path / "planta.dxf"
+    ruim = _envios(tmp_path) / "planta.dxf"
     ruim.write_text("0\nSECTION\n")
     with pytest.raises(L.ErroTerreno, match="GeoTIFF"):
         L.importar_imagem(g, s, {"arquivo_local": str(ruim), "nome": "planta.dxf"})
@@ -797,7 +804,7 @@ def test_projeto_antigo_vira_base(tmp_path, monkeypatch):
     pasta = os.path.join(g.pasta(s), "terreno")
     for n in ("base.jpg", "base.json"):
         os.remove(os.path.join(pasta, n))                                  # como era antes da imagem própria
-    L.importar_imagem(g, s, {"arquivo_local": _ortomosaico(str(tmp_path / "o.tif")), "nome": "o.tif"})
+    L.importar_imagem(g, s, {"arquivo_local": _ortomosaico(str(_envios(tmp_path) / "o.tif")), "nome": "o.tif"})
     e = L.posicionar_propria(g, s, {})
     assert "sobre Teste" in e["imagem"]["fonte"] and os.path.isfile(os.path.join(pasta, "base.jpg"))
     tr = L.para_ifc(e["terreno"], e["imagem"], os.path.join(pasta, "imagem.jpg"))

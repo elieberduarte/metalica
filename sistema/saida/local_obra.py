@@ -31,6 +31,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, Optional
 
 from nucleo.base import ErroDeDados
+from nucleo import envios
 
 R_TERRA = 6378137.0                       # o raio do Web Mercator (m)
 PIXELS_MAX = 4096                         # o lado da imagem baixada: cabe em toda placa de vídeo
@@ -991,7 +992,7 @@ def _abrir_propria(caminho: str):
 def importar_imagem(g, s: str, corpo: dict, progresso: Callable = lambda *a: None) -> dict:
     """Recebe o arquivo da imagem própria (o envio binário: {"arquivo_local", "nome"}) e lê as coordenadas dela, se
     tiver (GeoTIFF). Fica em terreno/propria.<ext>; a colocação vem em posicionar_propria."""
-    origem, nome = corpo.get("arquivo_local"), os.path.basename(str(corpo.get("nome") or "imagem"))
+    origem, nome = envios.arquivo(g.raiz, corpo, ErroTerreno), os.path.basename(str(corpo.get("nome") or "imagem"))
     if not origem or not os.path.isfile(origem):
         raise ErroTerreno("nenhuma imagem recebida.")
     ext = os.path.splitext(nome)[1].lower()
