@@ -30,6 +30,7 @@ origem do projeto.
 import array
 import json
 import math
+import re
 import struct
 import time
 from typing import Dict, List, Optional, Tuple
@@ -848,6 +849,132 @@ def _pranchas(pasta_projeto: str, destino: str) -> List[dict]:
     return saida
 
 
+#: As pranchas que o projetista mandou (13/11, usuário: "preciso ver na versão mobile para mostrar as pranchas originais"):
+#: os PDFs das subpastas de documentos/ com "projetista" no nome (documentos/pranchas-do-projetista-R02/ no Posto, a
+#: convenção das obras), os de 01-RECEBIDOS/ (o padrão da obra, saida/documentos_obra.py) e os de origem/ (o arquivo
+#: recebido que virou o 3D). Os PDFs soltos em documentos/ são relatórios do sistema e não entram.
+PASTAS_ORIGINAIS = ("01-RECEBIDOS", "origem")
+#: nunca entram: a revisão velha (Obsoleto/), o apagado (.lixeira, e toda pasta com ponto) e as cópias de trabalho
+_FORA_ORIGINAIS = ("obsoleto", "historico", "backup", "cache", "__pycache__")
+_REVISAO = re.compile(r"(?:^|[\s_.\-])R(?:EV\.?\s?)?(\d{1,2})$", re.I)
+_FOLHA = re.compile(r"(?:^|[\s_\-])(\d{1,3})\.(\d{1,3})$")
+
+
+def _sem_acento(s: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn").lower()
+
+
+def _revisao(nome: str) -> Tuple[str, int]:
+    """(nome sem a revisão, número da revisão ou -1): "…_LOC_01.15_R02" → ("…_LOC_01.15", 2)."""
+    mt = _REVISAO.search(nome)
+    if not mt:
+        return nome, -1
+    return nome[:mt.start()].rstrip(" -_."), int(mt.group(1))
+
+
+def originais(pasta_projeto: str) -> List[dict]:
+    """Os PDFs do projetista da obra, só a revisão em vigor, na ordem das folhas: [{caminho, rel, nome, revisao, folha,
+    titulo, alterado, bytes}]. Revisão em vigor: do mesmo documento (o nome e a pasta sem o "R02"), só a revisão mais alta;
+    o que foi para Obsoleto/ ou .lixeira nunca entra."""
+    import os
+    achados = []
+    for raiz in ("documentos",) + PASTAS_ORIGINAIS:
+        base = os.path.join(pasta_projeto, raiz)
+        if not os.path.isdir(base):
+            continue
+        for d, pastas, arquivos in os.walk(base):
+            pastas[:] = sorted(p for p in pastas if not p.startswith(".") and not _sem_acento(p).startswith(_FORA_ORIGINAIS))
+            rel_d = os.path.relpath(d, pasta_projeto).replace("\\", "/")
+            if raiz == "documentos" and (rel_d == "documentos" or "projetista" not in _sem_acento(rel_d)):
+                continue
+            for n in arquivos:
+                if n.startswith((".", "~$")) or not n.lower().endswith(".pdf"):
+                    continue
+                c = os.path.join(d, n)
+                try:
+                    st = os.stat(c)
+                except OSError:
+                    continue
+                if not st.st_size:
+                    continue
+                base_n, rev_n = _revisao(os.path.splitext(n)[0])
+                base_p, rev_p = _revisao(rel_d)
+                rev = max(rev_n, rev_p)
+                achados.append({"caminho": c, "rel": rel_d + "/" + n, "nome": n, "revisao": "R%02d" % rev if rev >= 0 else "",
+                                "alterado": st.st_mtime, "bytes": st.st_size,
+                                "_chave": (base_p.lower(), base_n.lower()), "_rev": rev, "_base": base_n})
+    vigor: Dict[tuple, dict] = {}
+    for a in achados:
+        v = vigor.get(a["_chave"])
+        if v is None or (a["_rev"], a["alterado"]) > (v["_rev"], v["alterado"]):
+            vigor[a["_chave"]] = a
+    saida = list(vigor.values())
+    # a folha: "…_LOC_01.15" → 01/15; o título: o nome sem a folha e sem o começo que as da mesma pasta têm em comum
+    # (MET_PE_PHD_POSTO_)
+    por_pasta: Dict[str, list] = {}
+    for a in saida:
+        a["_partes"] = [p for p in re.split(r"[\s_\-]+", _FOLHA.sub("", a["_base"])) if p]
+        por_pasta.setdefault(os.path.dirname(a["rel"]), []).append(a)
+    for grupo in por_pasta.values():
+        comum = 0
+        if len(grupo) > 1:
+            while (all(len(a["_partes"]) > comum + 1 for a in grupo)
+                   and len({a["_partes"][comum].lower() for a in grupo}) == 1):
+                comum += 1
+        for a in grupo:
+            a["titulo"] = " ".join(a["_partes"][comum:]) or a["_base"]
+    pastas_ordem = {p: i for i, p in enumerate(sorted(por_pasta, key=lambda p: (not p.startswith("documentos"), p.lower())))}
+    for a in saida:
+        mf = _FOLHA.search(a["_base"])
+        a["folha"] = "%s/%s" % (mf.group(1).zfill(2), mf.group(2).zfill(2)) if mf else ""
+        a["_ordem"] = (pastas_ordem[os.path.dirname(a["rel"])], int(mf.group(1)) if mf else 10 ** 6, a["rel"].lower())
+    saida.sort(key=lambda a: a["_ordem"])
+    return [{k: v for k, v in a.items() if not k.startswith("_")} for a in saida]
+
+
+def _originais_no_pacote(pasta_projeto: str, destino: str) -> List[dict]:
+    """Copia os PDFs do projetista para originais/NN.pdf (nome simples: o endereço no celular não leva acento nem espaço),
+    com a miniatura da primeira folha; o que saiu da obra sai do pacote."""
+    import os
+    import shutil
+    pasta = os.path.join(destino, "originais")
+    lista = originais(pasta_projeto)
+    if not lista:
+        if os.path.isdir(pasta):
+            shutil.rmtree(pasta, ignore_errors=True)
+        return []
+    os.makedirs(pasta, exist_ok=True)
+    import pymupdf
+    saida, ficam = [], set()
+    for i, a in enumerate(lista):
+        nome, mini = "originais/%02d.pdf" % (i + 1), "originais/%02d.png" % (i + 1)
+        alvo, alvo_mini = os.path.join(destino, *nome.split("/")), os.path.join(destino, *mini.split("/"))
+        refazer = (not os.path.exists(alvo) or not os.path.exists(alvo_mini) or os.path.getsize(alvo) != a["bytes"]
+                   or abs(os.path.getmtime(alvo) - a["alterado"]) > 1)
+        try:
+            if refazer:
+                shutil.copy2(a["caminho"], alvo + ".tmp")
+                os.replace(alvo + ".tmp", alvo)
+            with pymupdf.open(alvo) as doc:
+                paginas = doc.page_count
+                if refazer and paginas:
+                    pg = doc[0]
+                    zoom = 480.0 / max(pg.rect.width, pg.rect.height, 1.0)
+                    pg.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False).save(alvo_mini)
+        except Exception:                               # noqa: BLE001 — PDF que não abre não vai para o celular; o resto vai
+            paginas = 0
+        if not paginas:
+            continue
+        ficam.update((os.path.basename(alvo), os.path.basename(alvo_mini)))
+        saida.append({"arquivo": nome, "miniatura": mini, "nome": a["nome"], "pasta": os.path.dirname(a["rel"]),
+                      "folha": a["folha"], "titulo": a["titulo"], "revisao": a["revisao"], "paginas": paginas})
+    for n in os.listdir(pasta):
+        if n not in ficam:
+            os.remove(os.path.join(pasta, n))
+    return saida
+
+
 #: os arquivos da outra situação da cobertura retrátil (a do modelo gravado é o modelo3d.mcel de sempre)
 _COBERTURA_EXTRAS = ("modelo3d-aberta.mcel", "modelo3d-retraida.mcel", "pecas-aberta.json", "pecas-retraida.json",
                      "cobertura-movel.json")
@@ -994,6 +1121,9 @@ def gerar_pacote(pasta_projeto: str, destino: str, slug: str = "", progresso=Non
     # pranchas
     pranchas = _pranchas(pasta_projeto, destino)
     numeros["pranchas"] = len(pranchas)
+    originais_ = _originais_no_pacote(pasta_projeto, destino)       # as do projetista (13/11)
+    if originais_:
+        numeros["originais"] = len(originais_)
 
     arquivos = []
     for raiz, _pastas, nomes in os.walk(destino):
@@ -1014,6 +1144,7 @@ def gerar_pacote(pasta_projeto: str, destino: str, slug: str = "", progresso=Non
         "fontes": {"modelo": _quando(modelo), "lista": _quando(os.path.join(det, "lista-de-materiais.json")),
                    "pranchas": _quando(os.path.join(pasta_projeto, "desenhos-2d", "pranchas.desenho.json"))},
         "numeros": numeros, "resumos": resumos, "pranchas": pranchas, "arquivos": arquivos,
+        **({"originais": originais_} if originais_ else {}),
         **({"cobertura_movel": cobertura} if cobertura else {}),
         **({"referencia": "referencia.json"} if tem_ref else {}),
         **({"terreno": "terreno.json", "terreno_imagem": "terreno.jpg"} if tem_terreno else {}),

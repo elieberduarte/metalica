@@ -367,6 +367,12 @@ class Celular:
                 partes.append("%s:%d:%d" % (rel, int(st.st_mtime), st.st_size))
             except OSError:
                 partes.append(rel + ":-")
+        # as pranchas do projetista (13/11): entrou, saiu ou mudou uma, o pacote está velho
+        from saida.pacote_celular import originais
+        try:
+            partes += ["%s:%d:%d" % (a["rel"], int(a["alterado"]), a["bytes"]) for a in originais(pasta)]
+        except OSError:
+            pass
         from saida.pacote_celular import FORMATO_PACOTE, VERSAO_3D, VERSAO_FICHAS, GERACAO_MALHAS
         # gerador novo ou pacote com coisa nova: o pacote é refeito (o FORMATO_PACOTE entrou com a cobertura retrátil, 19/10)
         partes.append("formato:%d:%d:%d:%d" % (VERSAO_3D, VERSAO_FICHAS, GERACAO_MALHAS, FORMATO_PACOTE))

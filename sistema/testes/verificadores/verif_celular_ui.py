@@ -61,6 +61,17 @@ for i in range(2):
     pg.draw_rect(pymupdf.Rect(60, 120, 780, 540), color=(0, 0, 0.6), width=2)
 doc.save(os.path.join(proj, "detalhamento", "resumo-da-obra.pdf"))
 doc.close()
+# as pranchas do projetista (13/11, usuário: "preciso ver na versão mobile para mostrar as pranchas originais"): as R02 em
+# vigor entram no celular, a revisão no Obsoleto/ não
+for _rel, _txt in (("documentos/pranchas-do-projetista-R02/OBRA_CEL_LOC_01.02_R02.pdf", "Original LOC R02"),
+                   ("documentos/pranchas-do-projetista-R02/OBRA_CEL_CORTES_02.02_R02.pdf", "Original CORTES R02"),
+                   ("documentos/pranchas-do-projetista-R02/Obsoleto/OBRA_CEL_CORTES_02.02_R01.pdf", "OBSOLETA R01")):
+    os.makedirs(os.path.dirname(os.path.join(proj, _rel)), exist_ok=True)
+    doc = pymupdf.open()
+    pg = doc.new_page(width=842, height=595)
+    pg.insert_text((60, 80), _txt, fontsize=28)
+    doc.save(os.path.join(proj, _rel))
+    doc.close()
 
 amb = dict(os.environ, METALICA_CELULAR_PORTA=str(PORTA_CEL), METALICA_CELULAR_HOST="127.0.0.1", PYTHONIOENCODING="utf-8")
 srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--dev", "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
@@ -280,6 +291,20 @@ try:
     ap.avaliar("document.getElementById('pg-prox').click()")
     ok(esperar(ap, "document.getElementById('pg-num').textContent.indexOf('2 de 2') === 0", 20), "passa para a folha 2")
     foto(ap, "celular_4_leitor.png")
+    # as pranchas do projetista na aba Pranchas (13/11): o grupo dos originais, só a revisão em vigor, e o leitor abre a folha
+    ap.avaliar("location.hash = '#/p/obra-celular/pranchas'")
+    ok(esperar(ap, "document.querySelectorAll('.folhas.originais a').length === 2", 20), "Pranchas: o grupo Do projetista (originais) com as 2 folhas R02")
+    tit = ap.avaliar("[...document.querySelectorAll('.folhas.originais a div')].map(d => d.textContent.trim()).join(' | ')")
+    ok("01/02LOC" in tit.replace(" ", "") and "CORTES" in tit and "R02" in tit and "R01" not in tit,
+       f"na ordem das folhas, com o número e a revisão; a R01 do Obsoleto fica fora ({tit!r})")
+    ok(ap.avaliar("(document.getElementById('grupo-originais') || {}).textContent") == "Do projetista (originais)",
+       "o título do grupo")
+    ap.avaliar("document.querySelector('.folhas.originais a').click()")
+    ok(esperar(ap, "(() => { const c = document.querySelector('#pagina-pdf canvas'); return c && c.width > 300; })()", 40),
+       "tocar o original abre a folha no leitor")
+    topo_txt = ap.avaliar("document.getElementById('titulo').textContent")
+    ok("LOC" in topo_txt and "R02" in topo_txt, f"o título do leitor diz a folha e a revisão ({topo_txt[:80]!r})")
+    foto(ap, "celular_4b_originais.png")
     ap.avaliar("location.hash = '#/diagnostico'")
     ok(esperar(ap, "document.querySelectorAll('.ficha dt').length >= 8", 15), "diagnóstico: os números do aparelho")
     ok(esperar(ap, "!!document.getElementById('medir')", 5), "diagnóstico: o último 3D aberto e o botão de medir")

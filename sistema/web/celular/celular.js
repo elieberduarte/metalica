@@ -920,17 +920,31 @@ async function telaResumos(slug, m) {
 // ------------------------------------------------------------------ Pranchas
 
 async function telaPranchas(slug, m) {
-  const fl = m.pranchas || [];
-  if (!fl.length) {
-    tela.innerHTML = '<div class="vazio"><b>Sem pranchas</b>As pranchas deste projeto ainda não foram montadas no CAD do computador.</div>';
+  // dois grupos (13/11, usuário: "preciso ver na versão mobile para mostrar as pranchas originais"): as que o projetista
+  // mandou (só a revisão em vigor — o pacote já tira Obsoleto/ e .lixeira) e as que o sistema montou no CAD
+  const fl = m.pranchas || [], orig = m.originais || [];
+  if (!fl.length && !orig.length) {
+    tela.innerHTML = '<div class="vazio"><b>Sem pranchas</b>As pranchas deste projeto ainda não foram montadas no CAD do computador, e não há pranchas do projetista na pasta da obra.</div>';
     return;
   }
-  const leitor = pg => `#/leitor/${encodeURIComponent(slug)}/pranchas.pdf/${pg}`;
-  tela.innerHTML = `<div class="linha" style="margin-bottom:12px"><span class="fraco">${fl.length} folhas · desenho de ${dataHora(m.fontes && m.fontes.pranchas)}</span>
+  const leitor = (nome, pg) => `#/leitor/${encodeURIComponent(slug)}/${encodeURIComponent(nome)}/${pg}`;
+  let html = '';
+  if (orig.length) {
+    html += `<div class="titulo-secao" id="grupo-originais">Do projetista (originais)</div>
+      <div class="linha" style="margin-bottom:12px"><span class="fraco">${orig.length} ${orig.length === 1 ? 'arquivo' : 'arquivos'}${orig[0].revisao && orig.every(o => o.revisao === orig[0].revisao) ? ' · revisão ' + esc(orig[0].revisao) : ''}</span></div>
+      <div class="folhas originais">${orig.map(o => `<a href="${leitor(o.arquivo, 1)}" data-original="${esc(o.nome)}">
+        <img loading="lazy" src="${arquivo(m, o.miniatura)}" alt="${esc(o.titulo)}">
+        <div>${o.folha ? `<b>${esc(o.folha)}</b>` : ''}${esc(o.titulo)} <span class="mais-fraco">${esc(o.revisao || '')}${o.paginas > 1 ? ' · ' + o.paginas + ' folhas' : ''}</span></div></a>`).join('')}</div>`;
+  }
+  if (fl.length) {
+    html += `${orig.length ? '<div class="titulo-secao" id="grupo-sistema">Do sistema</div>' : ''}
+      <div class="linha" style="margin-bottom:12px"><span class="fraco">${fl.length} folhas · desenho de ${dataHora(m.fontes && m.fontes.pranchas)}</span>
       <a class="botao" href="${arquivo(m, 'pranchas.pdf')}" target="_blank" style="text-decoration:none">PDF inteiro</a></div>
-    <div class="folhas">${fl.map(f => `<a href="${leitor(f.pagina)}">
+    <div class="folhas">${fl.map(f => `<a href="${leitor('pranchas.pdf', f.pagina)}">
       <img loading="lazy" src="${arquivo(m, f.miniatura)}" alt="Prancha ${f.numero}">
       <div><b>${String(f.numero).padStart(2, '0')}</b>${esc(f.titulo)} <span class="mais-fraco">${esc(f.formato)}</span></div></a>`).join('')}</div>`;
+  }
+  tela.innerHTML = html;
 }
 
 // ------------------------------------------------------------------ cópia para a obra
@@ -1025,7 +1039,10 @@ async function telaLeitor(slug, nome, pagina) {
   liberar3D();
   const m = await json(`${slug}/manifesto.json`);
   conexao(m.gerado);
-  const titulo = nome === 'pranchas.pdf' ? 'Pranchas' : ((m.resumos || []).find(r => r.arquivo === nome) || {}).titulo || nome;
+  const orig = (m.originais || []).find(o => o.arquivo === nome);
+  const titulo = nome === 'pranchas.pdf' ? 'Pranchas'
+    : orig ? [orig.folha, orig.titulo, orig.revisao].filter(Boolean).join(' · ')
+    : ((m.resumos || []).find(r => r.arquivo === nome) || {}).titulo || nome;
   topo(titulo, m.projeto.nome, () => { history.length > 1 ? history.back() : (location.hash = `#/p/${encodeURIComponent(slug)}/pranchas`); });
   abas(null);
   document.body.classList.add('tela-cheia');
