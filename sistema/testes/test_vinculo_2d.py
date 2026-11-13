@@ -234,7 +234,13 @@ def test_gravar_pelo_script_da_obra(tmp_path):
 def _raiz_dev():
     """a pasta de obras do desenvolvimento: METALICA_DADOS (desde 04/11 os dados ficam fora do OneDrive, em
     C:/Metálica/dados, opção A do DESEMPENHO), senão Documentos/Metálica como antes"""
-    candidatas = [os.environ.get("METALICA_DADOS") or "", r"C:\Metálica\dados",
+    # a pasta temporária do conftest (09/11) não é a das obras: com ela este teste conferia uma pasta vazia e passava sem
+    # olhar obra nenhuma (achado na conferência da 0.9.3, 13/11 — a Cobertura Filipin só apareceu quando um teste
+    # apagou a variável)
+    dados = os.environ.get("METALICA_DADOS") or ""
+    if "metalica-dados-teste-" in dados:
+        dados = ""
+    candidatas = [dados, r"C:\Metálica\dados",
                   os.path.join(os.path.expanduser("~"), "OneDrive", "Documentos", "Metálica"),
                   os.path.join(os.path.expanduser("~"), "Documents", "Metálica")]
     for base in candidatas:
