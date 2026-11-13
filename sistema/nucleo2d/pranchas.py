@@ -516,13 +516,14 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     pecas_telha.append(c)
                 continue
             m_f = re.match(r"FACE (\d+) – (.*)", t)
-            if m_f and "COBERTURA" in m_f.group(2).upper():
-                igual = faces.get(m_f.group(2))
+            chave_f = _chave_da_face(m_f.group(2), c) if m_f else None
+            if chave_f is not None:
+                igual = faces.get(chave_f)
                 if igual is not None:
                     fora_t.append(c)
                     igual["faces_iguais"].append(m_f.group(1))
                     continue
-                faces[m_f.group(2)] = c
+                faces[chave_f] = c
                 c["faces_iguais"] = [m_f.group(1)]
         from saida.detalhamento import _ordem_natural
         pecas_telha.sort(key=lambda c: _ordem_natural(str((c.get("item") or {}).get("nome") or "")))
@@ -2795,6 +2796,22 @@ def _caber_numa_prancha(cels: Sequence[dict], largura: float, altura: float, tet
     # na ordem das prateleiras: as mais altas primeiro
     for i, c in enumerate(sorted(cels, key=lambda c_: -c_["h"])):
         c["_ordem"] = i
+
+
+def _chave_da_face(resto_do_titulo: str, c: dict):
+    """A face que vale por outra igual sai uma vez só, "FACES 3 E 4 – …". A cobertura pelo título ("COBERTURA (0°) – 34
+    chapas", 28/09). A fachada também (usuário, 13/11, Depósito, com a externa e a interna separadas e 11 fachadas na
+    folha 14: "Juntar sempre as iguais"), mas só a do mesmo lado (externa com externa) e com as mesmas telhas e os mesmos
+    comprimentos: o título, o resumo (TL1 26x · TL18 1x) e os números das cotas. Duas faces de 27 chapas com telhas
+    diferentes não são iguais. None: a face não se junta."""
+    t = resto_do_titulo.upper()
+    if "COBERTURA" in t:
+        return resto_do_titulo
+    if "FACHADA" not in t:
+        return None
+    resumo = sorted(str(e.texto) for e in c["entidades"] if isinstance(e, Texto) and (e.atributos or {}).get("cabecalho") == 1)
+    cotas = sorted(str(getattr(e, "texto", "") or "") for e in c["entidades"] if isinstance(e, Cota))
+    return resto_do_titulo, tuple(resumo), tuple(cotas)
 
 
 def _renomear_face(c: dict, novo: str):

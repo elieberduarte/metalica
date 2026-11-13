@@ -1160,7 +1160,7 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
                      vol_ * comp / max(max(proj) - min(proj), 1.0))
             lista.append({"contorno": contorno, "corte": corte, "comprimento": comp, "_bruto": bruto, "nome": ch["nome"], "saia": desce,
                           "peso": peso_, "perfil": str(_marcas(ch["e"]).get("perfil") or ch["e"].nome or ""),
-                          "corte_arco": corte_arco,
+                          "corte_arco": corte_arco, "_c": ch["c"], "_n": ch["n"],
                           "x": (min(xs) + max(xs)) / 2, "y0": min(ys), "y1": max(ys), "cumeeira": ch["cumeeira"],
                           "multidobra": bool(ch["multidobra"]), "alinhada": abs(_dot(uu, u)) > 0.9})
         inclinacao = math.degrees(math.acos(max(-1.0, min(1.0, abs(n[2])))))
@@ -1192,9 +1192,95 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
                 ch["comprimento"] = novo
             ch.pop("_bruto", None)
     saida.sort(key=lambda f: (f["tipo"] != "cobertura", -len(f["chapas"])))
+    saida = _separar_externa_interna(saida)
+    numero = 0
+    for i, f in enumerate(saida):
+        # a externa e a interna da mesma fachada levam o mesmo número (FACE 3 – FACHADA EXTERNA / INTERNA)
+        if not (f.get("lado") == "interna" and i and saida[i - 1].get("par") is f.get("par") is not None):
+            numero += 1
+        f["numero"] = numero
+    for f in saida:
+        f.pop("par", None)
+        for ch in f["chapas"]:
+            ch.pop("_c", None)
+            ch.pop("_n", None)
     for f in saida:                                  # a opção do projeto chega ao rótulo da perna na paginação
         f["cumeeira_desenvolvida"] = (md or {}).get("cumeeira_desenvolvida")
     return saida
+
+
+#: Na fachada, um salto de pelo menos isto (mm) entre os planos das chapas separa a telha externa da interna (a
+#: platibanda do Depósito: 150 mm; numa camada só as chapas variam menos que a onda, 40).
+SALTO_EXTERNA_INTERNA = 80.0
+#: Altura (mm no papel) do nome e da cota de cada chapa na paginação (era 1,8: "Texto muito grande", usuário, 13/11).
+TEXTO_PAGINACAO = 1.5
+
+
+def _separar_externa_interna(faces: List[dict]) -> List[dict]:
+    """A fachada com telha externa e interna (a platibanda: dois planos a 150 mm, juntos pela tolerância de 400 da
+    face) vira dois recortes, a externa e a interna, um seguido do outro (usuário, 13/11, Depósito Químico, FACE 6:
+    "coloque um recorte para mostrar telha externa ... separar um recorte para as externas um para as internas, que as
+    internas tem muito mais recorte"). O plano de cada chapa vem pela normal média das chapas da face (a da primeira
+    chapa, 0,6° torta, dava 330 mm em 33 m); a externa é a mais longe do meio das telhas da obra."""
+    todas = [ch["_c"] for f in faces for ch in f["chapas"] if "_c" in ch]
+    if not todas:
+        return faces
+    meio = tuple(sum(c[j] for c in todas) / len(todas) for j in range(3))
+    saida: List[dict] = []
+    for f in faces:
+        chs = [ch for ch in f["chapas"] if "_c" in ch]
+        if f["tipo"] != "fachada" or len(chs) < 2:
+            saida.append(f)
+            continue
+        nm = _norm(tuple(sum(ch["_n"][j] * (1.0 if _dot(ch["_n"], f["normal"]) > 0 else -1.0) for ch in chs)
+                         for j in range(3)))
+        planos = sorted((_dot(ch["_c"], nm), k) for k, ch in enumerate(chs))
+        salto, corte = max((planos[k + 1][0] - planos[k][0], k) for k in range(len(planos) - 1))
+        if salto < SALTO_EXTERNA_INTERNA:
+            saida.append(f)
+            continue
+        de_baixo = {k for _, k in planos[:corte + 1]}
+        grupos = [[ch for k, ch in enumerate(chs) if k in de_baixo], [ch for k, ch in enumerate(chs) if k not in de_baixo]]
+        longe = [abs(sum(_dot(ch["_c"], nm) for ch in g) / len(g) - _dot(meio, nm)) for g in grupos]
+        externa, interna = (grupos[0], grupos[1]) if longe[0] >= longe[1] else (grupos[1], grupos[0])
+        # a que não tem plano (a reta da multi-dobra) fica com a externa
+        externa = externa + [ch for ch in f["chapas"] if "_c" not in ch]
+        for lado, g in (("externa", externa), ("interna", interna)):
+            h = dict(f)
+            h["chapas"], h["lado"], h["par"] = g, lado, f
+            saida.append(h)
+    return saida
+
+
+def _linhas_do_corte(p, T, corte, xa: float, xb: float, ya: float, yb: float, deitada: bool = False) -> None:
+    """Da telha recortada, só a linha do corte (usuário, 13/11, Depósito: "preciso deixar apenas a linha onde a telha
+    será recortada"; o contorno inteiro, com as laterais de 980 dentro da chapa de 1.050, era "muita linha sem
+    utilidade"): sai o lado do contorno que corre junto da lateral da chapa e o que fica na ponta dela; o resto vai de
+    borda a borda da chapa comprada. `deitada`: a chapa com a onda atravessada (o comprimento em x)."""
+    troca_ = (lambda q: (q[1], q[0])) if deitada else (lambda q: q)        # noqa: E731
+    pts = [troca_(q) for q in corte]
+    if deitada:
+        xa, xb, ya, yb = ya, yb, xa, xb
+    cxa, cxb = min(q[0] for q in pts), max(q[0] for q in pts)
+    cya, cyb = min(q[1] for q in pts), max(q[1] for q in pts)
+    for i in range(len(pts)):
+        a, b = pts[i], pts[(i + 1) % len(pts)]
+        if abs(a[0] - b[0]) < 1.0 and (abs(a[0] - cxa) < 1.0 or abs(a[0] - cxb) < 1.0):
+            continue                                    # a lateral da chapa
+        deitado = abs(a[1] - b[1]) <= 0.02 * abs(a[0] - b[0]) + 0.05     # a água do oitão cai 7,5 %: não é deitado
+        if deitado and (abs(a[1] - ya) < 3.0 or abs(a[1] - yb) < 3.0):
+            continue                                    # a ponta da chapa
+        if deitado and (abs(a[1] - cya) < 1.0 or abs(a[1] - cyb) < 1.0):
+            continue                                    # a ponta da peça, abaixo da chapa arredondada (803 em 805)
+        (x1, y1), (x2, y2) = sorted((a, b))
+        if x2 - x1 >= 1.0:
+            k = (y2 - y1) / (x2 - x1)
+            if abs(x1 - cxa) < 1.0:
+                x1, y1 = xa, y1 + k * (xa - x1)
+            if abs(x2 - cxb) < 1.0:
+                x2, y2 = xb, y2 + k * (xb - x2)
+        q1, q2 = troca_((x1, y1)), troca_((x2, y2))
+        p.linha(*T(q1), *T(q2), "OCULTA")
 
 
 #: Chapas com o mesmo nome cuja medida no modelo difere até isto (mm) são a mesma telha, com um comprimento só.
@@ -1492,7 +1578,7 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
             area_ = abs(sum(corte_[i][0] * corte_[(i + 1) % len(corte_)][1] - corte_[(i + 1) % len(corte_)][0] * corte_[i][1]
                             for i in range(len(corte_)))) / 2.0 if len(corte_) >= 3 else 0.0
             if area_ and area_ < 0.99 * (max(q[0] for q in corte_) - min(q[0] for q in corte_)) * larg_y:
-                p.polilinha([T(q) for q in corte_], fechada=True, camada="OCULTA")
+                _linhas_do_corte(p, T, corte_, xa_, xb_, ya_, yb_, deitada=True)
             rep = {"repete_tipica": True} if id(ch) in repetidas else {}
             if anel:
                 # a cota só nas pontas do lado: a linha no meio, o número fixo de um lado (texto_pos) e o nome do outro —
@@ -1500,14 +1586,14 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
                 if id(ch) in pontas_anel:
                     tp_ = p._p(*T(((xa_ + xb_) / 2.0, yc_ + (yb_ - ya_) * 0.25)))
                     desenho.add(Cota(modo="h", p1=p._p(*T((xa_, yc_))), p2=p._p(*T((xb_, yc_))), deslocamento=0.0,
-                                     texto="%d" % round(ch["comprimento"]), altura=1.8, texto_pos=tp_,
+                                     texto="%d" % round(ch["comprimento"]), altura=TEXTO_PAGINACAO, texto_pos=tp_,
                                      atributos=dict(atr, chapa=ch["nome"])))
-                p.texto((xa_ + xb_) / 2.0 - x0, yc_ - y0 - (yb_ - ya_) * 0.25 - 0.9 * esc, ch["nome"], 1.8 * esc,
+                p.texto((xa_ + xb_) / 2.0 - x0, yc_ - y0 - (yb_ - ya_) * 0.25 - 0.9 * esc, ch["nome"], TEXTO_PAGINACAO * esc,
                         alinhamento="centro", atributos={"nome_dentro": True})
                 continue
             desenho.add(Cota(modo="h", p1=p._p(*T((xa_, yc_))), p2=p._p(*T((xb_, yc_))), deslocamento=0.0,
-                             texto="%d" % round(ch["comprimento"]), altura=1.8, atributos=dict(atr, chapa=ch["nome"], **rep)))
-            p.texto(xa_ - x0 - 4.0 * esc, yc_ - y0 - 0.9 * esc, ch["nome"], 1.8 * esc, alinhamento="direita", atributos=rep)
+                             texto="%d" % round(ch["comprimento"]), altura=TEXTO_PAGINACAO, atributos=dict(atr, chapa=ch["nome"], **rep)))
+            p.texto(xa_ - x0 - 4.0 * esc, yc_ - y0 - 0.9 * esc, ch["nome"], TEXTO_PAGINACAO * esc, alinhamento="direita", atributos=rep)
             continue
         # a chapa com a largura total de catálogo (1050, com os transpasses) em volta do
         # centro dela; o passo entre chapas é o do modelo (a largura útil)
@@ -1528,7 +1614,7 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         area_c = abs(sum(corte[i][0] * corte[(i + 1) % len(corte)][1] - corte[(i + 1) % len(corte)][0] * corte[i][1]
                          for i in range(len(corte)))) / 2.0 if len(corte) >= 3 else 0.0
         if area_c and area_c < 0.99 * (cxb - cxa) * (yb - ya):
-            p.polilinha([T(q) for q in corte], fechada=True, camada="OCULTA")
+            _linhas_do_corte(p, T, corte, xa, xb, ya, yb)
         if k != 1.0 and not cotada and (da_largura is None or ch is da_largura):
             cotada = True
             xa = min(q[0] for q in contorno) - x0
@@ -1536,7 +1622,7 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
             # abaixo dos nomes das chapas (em pé, descendo 4 mm abaixo da chapa): o nome mais
             # longo da face decide onde as cotas da largura começam
             nome_max = max(len(str(c["nome"])) for c in ordenadas)
-            d_util = max(14.0, 4.0 + nome_max * 1.8 * 0.8 + 5.0)
+            d_util = max(14.0, 4.0 + nome_max * TEXTO_PAGINACAO * 0.8 + 5.0)
             desenho.add(Cota(modo="h", p1=p._p(xa, yb), p2=p._p(xa + LARGURA_COMPRA_TELHA, yb), deslocamento=-d_util,
                              texto="%d útil" % LARGURA_COMPRA_TELHA, atributos=dict(atr)))
             desenho.add(Cota(modo="h", p1=p._p(xa, yb), p2=p._p(xa + LARGURA_TOTAL_TELHA, yb),
@@ -1563,12 +1649,12 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
             # a face em anel: a cota só nas pontas do lado; o nome dentro da chapa, de pé, ao lado da linha da cota
             if id(ch) in pontas_anel:
                 tp_ = p._p(xm - larg * k * 0.25, (a[1] + b[1]) / 2.0)
-                desenho.add(Cota(modo="v", p1=p._p(*a), p2=p._p(*b), deslocamento=0.0, texto=texto, altura=1.8, texto_pos=tp_,
+                desenho.add(Cota(modo="v", p1=p._p(*a), p2=p._p(*b), deslocamento=0.0, texto=texto, altura=TEXTO_PAGINACAO, texto_pos=tp_,
                                  atributos=dict(atr, chapa=ch["nome"])))
-            p.texto(xm + larg * k * 0.25 + 0.9 * esc, (ch["y0"] + ch["y1"]) / 2.0 - y0, ch["nome"], 1.8 * esc, angulo=90.0,
+            p.texto(xm + larg * k * 0.25 + 0.9 * esc, (ch["y0"] + ch["y1"]) / 2.0 - y0, ch["nome"], TEXTO_PAGINACAO * esc, angulo=90.0,
                     alinhamento="centro", atributos={"nome_dentro": True})
             continue
-        desenho.add(Cota(modo="v", p1=p._p(*a), p2=p._p(*b), deslocamento=-desl, texto=texto, altura=1.8,
+        desenho.add(Cota(modo="v", p1=p._p(*a), p2=p._p(*b), deslocamento=-desl, texto=texto, altura=TEXTO_PAGINACAO,
                          atributos=dict(atr, chapa=ch["nome"], **rep)))
         # o nome vai abaixo da chapa; na face com telhas emendadas no comprimento, abaixo dela
         # já começa a chapa de baixo (com a cota dela no mesmo alinhamento) — aí o nome fica
@@ -1576,16 +1662,16 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         emendada = any(o is not ch and o.get("alinhada", True) == ch.get("alinhada", True) and id(o) not in no_canto
                        and abs(o["x"] - ch["x"]) < 0.25 * LARGURA_COMPRA_TELHA
                        and o["y0"] < ch["y0"] - 1.0 and o["y1"] > ch["y0"] - 20.0 * esc for o in ordenadas)
-        cabe = (ch["y1"] - ch["y0"]) / esc >= len(str(ch["nome"])) * 1.8 * 0.8 + 8.0
+        cabe = (ch["y1"] - ch["y0"]) / esc >= len(str(ch["nome"])) * TEXTO_PAGINACAO * 0.8 + 8.0
         if emendada and cabe:
-            p.texto(xm + (desl + 3.0) * esc, ch["y0"] - y0 + 3.0 * esc, ch["nome"], 1.8 * esc, angulo=90.0,
+            p.texto(xm + (desl + 3.0) * esc, ch["y0"] - y0 + 3.0 * esc, ch["nome"], TEXTO_PAGINACAO * esc, angulo=90.0,
                     alinhamento="esquerda", atributos=rep)
         elif emendada:
             # chapa curta demais para o nome: abaixo dela, mas do outro lado da linha de cota
-            p.texto(xm + (desl + 3.0) * esc, ch["y0"] - y0 - 4.0 * esc, ch["nome"], 1.8 * esc, angulo=90.0,
+            p.texto(xm + (desl + 3.0) * esc, ch["y0"] - y0 - 4.0 * esc, ch["nome"], TEXTO_PAGINACAO * esc, angulo=90.0,
                     alinhamento="direita", atributos=rep)
         else:
-            p.texto(xm + desl * esc, ch["y0"] - y0 - 4.0 * esc, ch["nome"], 1.8 * esc, angulo=90.0,
+            p.texto(xm + desl * esc, ch["y0"] - y0 - 4.0 * esc, ch["nome"], TEXTO_PAGINACAO * esc, angulo=90.0,
                     alinhamento="direita", atributos=rep)
     for g in cantos.values():
         _desenhar_canto(p, g, T, fx0, fx1, fy0, fy1, esc)
@@ -1634,15 +1720,15 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         # o rótulo termina na última chapa (a linha segue até a cota): na ponta da linha ele passava da face e
         # alargava a célula — o usuário o puxou para dentro à mão (01/10)
         x_ult = max(q[0] for ch in ordenadas for q in ch["contorno"]) - x0
-        p.texto(x_ult, y_ref + 1.0 * esc, "ÚLTIMA LONGARINA — saia %d abaixo" % SAIA_TELHA, 1.8 * esc, alinhamento="direita")
+        p.texto(x_ult, y_ref + 1.0 * esc, "ÚLTIMA LONGARINA — saia %d abaixo" % SAIA_TELHA, TEXTO_PAGINACAO * esc, alinhamento="direita")
         desenho.add(Cota(modo="v", p1=p._p(xb_f, y_fundo), p2=p._p(xb_f, y_ref), deslocamento=-4.0,
-                         texto="%d" % SAIA_TELHA, altura=1.8, atributos=dict(atr)))
+                         texto="%d" % SAIA_TELHA, altura=TEXTO_PAGINACAO, atributos=dict(atr)))
         p._p(xb_f + 14.0 * esc, y_fundo)
     alt = max(q[1] for ch in chapas for q in ch["contorno"]) - y0
     # na chapa curta o número da cota passa do topo (e, se nem cabe entre as setas, a cota o
     # põe para fora, depois da ponta de cima — `desenho._cota_dxf`): o título e o resumo sobem
     for ch in ordenadas:
-        comp, h, n_txt = ch["y1"] - ch["y0"], 1.8 * esc, len("%d" % round(ch["comprimento"]))
+        comp, h, n_txt = ch["y1"] - ch["y0"], TEXTO_PAGINACAO * esc, len("%d" % round(ch["comprimento"]))
         tam = min(2.5 * esc, max(esc, comp / 4.0))
         ponta = (2.4 * tam + 0.8 * h * n_txt) if comp < 3.0 * tam else 0.4 * h * n_txt
         alt = max(alt, (ch["y0"] + ch["y1"]) / 2.0 - y0 + ponta + 1.0 * esc)
@@ -1664,7 +1750,8 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
     if any(ch.get("corte_arco") for ch in chapas):
         resumo += "   canto cortado pelo arco da multi-dobra (R%d int., tracejado; corte em obra)" % RAIO_INTERNO_COMERCIAL
     n_ch = len(chapas) - len(pernas)
-    titulo = "FACE %d – %s%s – %d chapa%s%s" % (indice, face["tipo"].upper(),
+    titulo = "FACE %d – %s%s – %d chapa%s%s" % (face.get("numero") or indice,
+                                                (face["tipo"] + (" " + face["lado"] if face.get("lado") else "")).upper(),
                                                 (" (%.0f°)" % face["inclinacao"]) if face["tipo"] == "cobertura" else "",
                                                 n_ch, "" if n_ch == 1 else "s",
                                                 (" + %d perna%s de cumeeira" % (len(pernas), "" if len(pernas) == 1 else "s"))
