@@ -13,15 +13,15 @@ banzos U, 6 diagonais, 4 presilhas), um pilar PS, um contravento Ø16, uma viga 
   D. sem erros no console;
   F. pela barra única da área de trabalho (a tela do usuário): Modelo › Explodir com critério… explode no quadro do 3D;
   G. pelo menu do botão direito no sólido (clique direito de verdade);
-  E. o Galpão Viena de verdade (C:\Metálica\dados\galpão-viena, quando existe nesta máquina; uma CÓPIA na pasta do teste):
-     1.903 pedaços → as treliças e as peças em menos de 60 s, a da frente com as 1.014 presilhas dentro.
+  E. o Galpão Viena de verdade (o sólido único copiado em testes/dados_cad/viena_solido_unico.json.gz):
+     1.907 pedaços → as treliças e as peças em menos de 60 s, a da frente com as 1.014 presilhas dentro.
 Porta livre, nunca a 8765/8766."""
 import base64, json, os, shutil, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
-from test_explodir_criterio import _modelo
+from test_explodir_criterio import _modelo, viena_solido_unico
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 except Exception:                                   # noqa: BLE001
@@ -37,12 +37,16 @@ json.dump({"nome": "viena", "unidade": "mm", "camadas": {"Layer0": {"nome": "Lay
                                           "material": "", "vertices": V, "faces": F, "arestas_vivas": [],
                                           "atributos": {"tipo_ifc": "IfcBuildingElementProxy"}}]},
           open(os.path.join(pasta, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
-VIENA = r"C:\Metálica\dados\galpão-viena\modelo.json"
-if os.path.isfile(VIENA):
-    os.makedirs(os.path.join(DADOS, "viena-real"))
-    shutil.copyfile(VIENA, os.path.join(DADOS, "viena-real", "modelo.json"))
-    json.dump({"formato": 1, "nome": "viena-real", "tipo": "ifc", "criado": "2026-11-12T00:00:00", "alterado": "2026-11-12T00:00:00"},
-              open(os.path.join(DADOS, "viena-real", "projeto.json"), "w", encoding="utf-8"))
+# E: o sólido único do Galpão Viena da cópia fixa em testes/dados_cad (nunca a obra do usuário, que já foi explodida)
+_v = viena_solido_unico()
+os.makedirs(os.path.join(DADOS, "viena-real"))
+json.dump({"nome": "viena-real", "unidade": "mm", "camadas": {"Layer0": {"nome": "Layer0", "cor": "#8a94a6", "visivel": True, "bloqueada": False}},
+           "materiais": {}, "entidades": [{"id": "tudo", "tipo": "solido", "nome": _v["nome"], "camada": "Layer0", "material": "",
+                                          "vertices": _v["vertices"], "faces": _v["faces"], "arestas_vivas": [],
+                                          "atributos": {"tipo_ifc": "IfcBuildingElementProxy"}}]},
+          open(os.path.join(DADOS, "viena-real", "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
+json.dump({"formato": 1, "nome": "viena-real", "tipo": "ifc", "criado": "2026-11-12T00:00:00", "alterado": "2026-11-12T00:00:00"},
+          open(os.path.join(DADOS, "viena-real", "projeto.json"), "w", encoding="utf-8"))
 json.dump({"formato": 1, "nome": "viena", "tipo": "ifc", "criado": "2026-11-12T00:00:00", "alterado": "2026-11-12T00:00:00"},
           open(os.path.join(pasta, "projeto.json"), "w", encoding="utf-8"))
 srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],

@@ -11,8 +11,6 @@ import math
 import os
 import sys
 
-import pytest
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from nucleo3d.explodir_criterio import explodir           # noqa: E402
@@ -144,15 +142,22 @@ def test_sem_diagonais_nao_ha_trelica():
     assert {p["nome"] for p in r["pecas"]} <= {"PS 300×150×6×9", "W 310×21,0", "W 310×23,8"}
 
 
-VIENA = r"C:\Metálica\dados\galpão-viena\modelo.json"
+# o sólido único do Galpão Viena como chegou do SketchUp (12/11, antes de explodir), copiado do histórico da obra para cá:
+# o teste nunca lê a obra do usuário (ela já foi explodida e muda — GESTÃO N.8, 13/11)
+VIENA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dados_cad", "viena_solido_unico.json.gz")
 
 
-@pytest.mark.skipif(not os.path.isfile(VIENA), reason="o Galpão Viena só existe na máquina do usuário")
+def viena_solido_unico():
+    """{nome, vertices, faces} do sólido único do Galpão Viena (cópia fixa em dados_cad)."""
+    import gzip
+    with gzip.open(VIENA, "rt", encoding="utf-8") as f:
+        return json.load(f)
+
+
 def test_galpao_viena():
-    """O caso que pediu a ferramenta: o IFC do SketchUp 2025 (1 proxy, 1.903 pedaços). A treliça da frente (135 m) inteira
+    """O caso que pediu a ferramenta: o IFC do SketchUp 2025 (1 proxy, 1.907 pedaços). A treliça da frente (135 m) inteira
     com as 1.014 presilhas; as do mezanino; os contraventos Ø16; os pilares PS; as 4 vigas mestras duplas separadas."""
-    m = json.load(open(VIENA, encoding="utf-8"))
-    (e,) = [x for x in m["entidades"] if x["tipo"] == "solido"]
+    e = viena_solido_unico()
     r = explodir(e["vertices"], e["faces"], e["nome"])
     R = r["resumo"]
     assert R["trelicas"] >= 11 and R["vigas_duplas"] == 4, R
