@@ -123,7 +123,10 @@ const ESTILO = `
 #exportar-varias { display: flex; flex-direction: column; margin: 0 0 2px 22px; max-height: 120px; overflow: auto; }
 #exportar-varias label { font-size: 12px; }
 #exportar-varias .linha-cena { display: flex; align-items: center; gap: 4px; }
-#exportar-varias .linha-cena label { flex: 1; min-width: 0; }
+#exportar-varias .linha-cena .nome-cena { flex: 1; min-width: 0; font-size: 12px; cursor: pointer; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#exportar-varias .linha-cena .nome-cena:hover { text-decoration: underline; }
+#exportar-varias .linha-cena.vendo { background: rgba(31, 95, 191, .13); border-radius: 3px; }
+#exportar-varias .linha-cena.copia .nome-cena i { color: var(--texto2); font-style: normal; }
 #exportar-varias .linha-cena button { padding: 0 5px; font-size: 11px; line-height: 16px; border: 1px solid var(--borda); border-radius: 3px; background: var(--painel); color: var(--texto2); }
 #exportar-voo-linha { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 #exportar-voo { width: 100%; border-radius: 6px; background: #000; }
@@ -234,11 +237,13 @@ export function ligarExportar(ctx) {
   function opcoesDaTela() {
     const v = (n) => (fundo.querySelector(`input[name=${n}]:checked`) || {}).value;
     const ch = (id) => fundo.querySelector('#' + id).checked;
-    return { quais: v('quais'), marcadas: [...fundo.querySelectorAll('#exportar-varias input:checked')].map(i => i.value),
+    const linhas = [...fundo.querySelectorAll('#exportar-varias .linha-cena')];
+    return { quais: v('quais'), marcadas: linhas.filter(l => !l.dataset.copia && l.querySelector('input').checked).map(l => l.dataset.cena),
              lado: v('lado'), qualidade: v('qualidade'), formato: v('formato'), gravar: ch('exportar-gravar'),
              baixar: ch('exportar-baixar'), abrirPasta: ch('exportar-abrir'), velocidade: v('velocidade') || 'normal', parar: ch('exportar-parar'),
              fecho: v('fecho') || 'A', abertura: v('abertura') || 'nenhuma', textoLogo: ch('exportar-texto'),
-             ordem: [...fundo.querySelectorAll('#exportar-varias .linha-cena')].map(l => l.dataset.cena), montagem: ch('exportar-montagem') };
+             ordem: linhas.filter(l => !l.dataset.copia).map(l => l.dataset.cena), montagem: ch('exportar-montagem'),
+             sequencia: linhas.map(l => ({ id: l.dataset.cena, copia: !!l.dataset.copia, marcada: l.querySelector('input').checked })) };
   }
 
   /** As cenas na ordem da lista da janela (13/11: "mexer na ordem das cenas, por exemplo colocar vista de cima por primeiro
@@ -248,10 +253,17 @@ export function ligarExportar(ctx) {
     return [...todas].sort((a, b) => pos(a) - pos(b));
   }
 
+  /** As escolhidas sem repetição (as imagens e o PDF: a cena repetida só vale no vídeo). */
+  const semRepetir = (lista) => [...new Map(lista.map(c => [c.id, c])).values()];
+
   function escolhidas(o) {
     const todas = naOrdem(o.ordem), atual = ctx.atual();
     if (o.quais === 'todas') return todas;
-    if (o.quais === 'varias') return todas.filter(c => o.marcadas.includes(c.id));
+    if (o.quais === 'varias') {
+      const porId = new Map(todas.map(c => [c.id, c]));
+      if (Array.isArray(o.sequencia) && o.sequencia.length) return o.sequencia.filter(s => s.marcada && porId.has(s.id)).map(s => porId.get(s.id));
+      return todas.filter(c => o.marcadas.includes(c.id));
+    }
     return atual ? todas.filter(c => c.id === atual.id) : [];
   }
 
@@ -292,7 +304,7 @@ export function ligarExportar(ctx) {
 
   function mostrarResumo() {
     if (!fundo) return;
-    const o = opcoesDaTela(), lista = escolhidas(o), atual = ctx.atual();
+    const o = opcoesDaTela(), lista = semRepetir(escolhidas(o)), atual = ctx.atual();
     fundo.querySelector('#exportar-varias').hidden = o.quais !== 'varias';
     fundo.querySelector('#exportar-marca').textContent = ctx.marca();
     fundo.querySelector('#exportar-abrir').disabled = !o.gravar;
@@ -458,8 +470,9 @@ export function ligarExportar(ctx) {
   }
 
   async function renderizarLote() {
-    const o = opcoesDaTela(), lista = escolhidas(o);
+    const o = opcoesDaTela();
     if (o.formato === 'mp4') return gravarVideo(o);
+    const lista = semRepetir(escolhidas(o));
     if (!lista.length || rodando) return;
     pararVoo();
     if (vooAcabando) await vooAcabando;
@@ -537,6 +550,53 @@ export function ligarExportar(ctx) {
     window.ultimoLoteCenas = { gravados, pulados, erro: erro ? erro.message : null, paginas: paginas.length, baixados: feitos.map(f => f.nome) };
   }
 
+  /** Uma linha da lista Várias: a caixinha, o nome (clicar mostra a cena na prévia — 13/11: "quando clico em uma cena ele
+   *  não mostra no preview"), ↑ ↓ e ⧉ (repetir — 13/11: "duplicar uma cena… a vista de cima ser a cena inicial e a final")
+   *  ou ✕ na repetição. */
+  function linhaHtml(c, marcada, copia) {
+    return `<div class="linha-cena${copia ? ' copia' : ''}" data-cena="${esc(c.id)}"${copia ? ' data-copia="1"' : ''}>`
+      + `<input type="checkbox" value="${esc(c.id)}"${marcada ? ' checked' : ''} aria-label="Incluir ${esc(c.nome)}">`
+      + `<span class="nome-cena" title="Ver esta cena na prévia">${esc(c.nome)}${copia ? ' <i>(de novo)</i>' : ''} <small>${c.tipo === '3d' ? '3D' : 'foto'}</small></span>`
+      + `<button type="button" data-mover="-1" title="Mais para cima (o vídeo e o PDF seguem esta ordem)">↑</button><button type="button" data-mover="1" title="Mais para baixo">↓</button>`
+      + (copia ? `<button type="button" data-tirar title="Tirar esta repetição">✕</button>`
+               : `<button type="button" data-repetir title="Repetir esta cena no vídeo: uma cópia logo abaixo, leve-a com ↑ ↓ (por ex. a mesma vista no começo e no fim)">⧉</button>`)
+      + '</div>';
+  }
+
+  /** As linhas ao abrir: a sequência guardada (a 1ª vez de cada cena é a dela, as outras são repetições), as cenas novas no fim. */
+  function linhasIniciais(o, atual) {
+    const porId = new Map(ctx.cenas().map(c => [c.id, c]));
+    if (Array.isArray(o.sequencia) && o.sequencia.length) {
+      const vistas = new Set(), out = [];
+      for (const s of o.sequencia) {
+        const c = porId.get(s.id);
+        if (!c) continue;
+        out.push(linhaHtml(c, !!s.marcada, vistas.has(c.id)));
+        vistas.add(c.id);
+      }
+      for (const c of naOrdem(o.ordem)) if (!vistas.has(c.id)) out.push(linhaHtml(c, false, false));
+      return out.join('');
+    }
+    return naOrdem(o.ordem).map(c => linhaHtml(c, o.marcadas.length ? o.marcadas.includes(c.id) : c.id === (atual && atual.id), false)).join('');
+  }
+
+  /** Mostra a cena na prévia: abre-a na tela (como clicar no cartão) e refaz a imagem de "Como vai sair". */
+  async function verCena(id) {
+    if (!fundo || rodando) return;
+    pararVoo();
+    if (vooAcabando) await vooAcabando;
+    for (const l of fundo.querySelectorAll('#exportar-varias .linha-cena')) l.classList.toggle('vendo', l.dataset.cena === id);
+    if (!ctx.atual() || ctx.atual().id !== id) {
+      if (await ctx.abrir(id) === false) { andamento('Essa cena é da outra situação da cobertura: abra-a na tela.', 0, ''); return; }
+    }
+    if (!fundo) return;
+    const esta = fundo.querySelector('input[name=quais][value=esta]'), c = ctx.atual();
+    esta.disabled = false; esta.closest('label').classList.remove('off');
+    esta.closest('label').querySelector('span').textContent = `Esta cena — ${c ? c.nome : ''}`;
+    mostrarResumo();
+    agendarPrevia();
+  }
+
   function abrirJanela() {
     if (fundo) return;
     const o = lerOpcoes(), todas = ctx.cenas(), atual = ctx.atual();
@@ -553,7 +613,7 @@ export function ligarExportar(ctx) {
         <h3>Quais cenas</h3>
         ${radio('quais', 'esta', `Esta cena${atual ? ' — ' + esc(atual.nome) : ''}`, '', o.quais === 'esta' || !['varias', 'todas'].includes(o.quais), !atual)}
         ${radio('quais', 'varias', 'Várias:', '', o.quais === 'varias')}
-        <div id="exportar-varias">${naOrdem(o.ordem).map(c => `<div class="linha-cena" data-cena="${esc(c.id)}"><label><input type="checkbox" value="${esc(c.id)}"${(o.marcadas.length ? o.marcadas.includes(c.id) : c.id === (atual && atual.id)) ? ' checked' : ''}> ${esc(c.nome)} <small>${c.tipo === '3d' ? '3D' : 'foto'}</small></label><button type="button" data-mover="-1" title="Mais para cima (o vídeo e o PDF seguem esta ordem)">↑</button><button type="button" data-mover="1" title="Mais para baixo">↓</button></div>`).join('')}</div>
+        <div id="exportar-varias">${linhasIniciais(o, atual)}</div>
         ${radio('quais', 'todas', `Todas as cenas da obra (${todas.length})`, '', o.quais === 'todas')}
         <h3>Tamanho</h3>
         ${LADOS.map(([v, t, sub]) => radio('lado', v, v === 'tela' ? t : `${t} — ${v} px no lado maior`, v === 'tela' && atual ? `${nf(w0)} × ${nf(h0)}, ${sub}` : sub, o.lado === v)).join('')}
@@ -599,11 +659,17 @@ export function ligarExportar(ctx) {
     fundo.querySelector('#exportar-voo-bt').onclick = () => tocarVoo().catch(e => andamento('A prévia parou: ' + e.message, 0, ''));
     // ↑ ↓ na lista: a ordem do vídeo e do PDF (guardada nas opções; a dos cartões não muda)
     fundo.querySelector('#exportar-varias').addEventListener('click', (ev) => {
-      const b = ev.target.closest('button[data-mover]');
+      const nome = ev.target.closest('.nome-cena');
+      if (nome) { verCena(nome.closest('.linha-cena').dataset.cena).catch(e => andamento('A cena não abriu: ' + e.message, 0, '')); return; }
+      const b = ev.target.closest('button[data-mover], button[data-repetir], button[data-tirar]');
       if (!b) return;
       ev.preventDefault();
       const linha = b.closest('.linha-cena'), lista = linha.parentElement;
-      if (+b.dataset.mover < 0 && linha.previousElementSibling) lista.insertBefore(linha, linha.previousElementSibling);
+      if (b.hasAttribute('data-repetir')) {
+        const c = ctx.cenas().find(x => x.id === linha.dataset.cena);
+        if (c) linha.insertAdjacentHTML('afterend', linhaHtml(c, true, true));
+      } else if (b.hasAttribute('data-tirar')) linha.remove();
+      else if (+b.dataset.mover < 0 && linha.previousElementSibling) lista.insertBefore(linha, linha.previousElementSibling);
       else if (+b.dataset.mover > 0 && linha.nextElementSibling) lista.insertBefore(linha.nextElementSibling, linha);
       fundo.querySelector('input[name=quais][value=varias]').checked = true;
       pararVoo();

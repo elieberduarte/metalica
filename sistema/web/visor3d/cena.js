@@ -835,7 +835,9 @@ function voltaEmTorno(cam, segundos, fps) {
 async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada = 0, ss = 1, fecho = 'A', abertura = 'nenhuma', texto = false,
                                aoAndar = null, cancelado = () => false, previa = null, montagem = false }) {
   if (fecho === true) fecho = 'A'; else if (fecho === false) fecho = 'nenhum';
-  const lista = ids.map(id => todasCenas.find(c => c.id === id)).filter(c => c && c.tipo === '3d' && c.camera && c.camera.posicao && c.camera.alvo);
+  // a mesma cena repetida no Exportar (13/11: "a vista de cima ser a cena inicial e a final"); duas seguidas viram uma (trecho de comprimento zero)
+  const lista = ids.map(id => todasCenas.find(c => c.id === id)).filter(c => c && c.tipo === '3d' && c.camera && c.camera.posicao && c.camera.alvo)
+    .filter((c, k, l) => k === 0 || c.id !== l[k - 1].id);
   if (lista.length < (montagem ? 1 : 2)) throw new Error(montagem ? 'escolha uma cena do 3D ou mais' : 'escolha duas cenas do 3D ou mais');
   // com a montagem, o voo dura ao menos as etapas + a pausa no prédio pronto (o trecho fica mais lento se precisar)
   const tMontagem = MONTAGEM_ETAPAS * MONTAGEM_POR_ETAPA + MONTAGEM_PAUSA;
@@ -851,7 +853,7 @@ async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada
     : caminhoContinuo(lista.map(c => c.camera), { porTrecho, fps });
   // a montagem ao longo do voo: do quadro 0 (só o que já existe) até a pausa final (pronta)
   const ocultasAntes = new Set(visor.ocultas || []), qMontagem = Math.max(1, linha.total - Math.round(MONTAGEM_PAUSA * fps));
-  let fAtual = 0;
+  let fAtual = 0, ultimoTrecho = '';
   const gravador = previa ? saidaDePrevia(previa, fps) : await GravadorMp4.abrir(w, h, fps);
   const visuais = new Map();                                 // o visual de cada cena, lido uma vez (com a cena dela)
   const visual = (c) => { if (!visuais.has(c.id)) visuais.set(c.id, visualDaCena(cena && cena.id === c.id ? cena : c)); return visuais.get(c.id); };
@@ -895,7 +897,10 @@ async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada
       if (cancelado()) throw new Error('cancelado');
       const q = linha.quadro(f), A = lista[q.i], B = lista[q.j];
       fAtual = f;
-      if (previa && gravador.atraso() > 1) { gravador.pular(); quadros++; continue; }   // a prévia atrasada: este quadro fica de fora
+      // a prévia atrasada: este quadro fica de fora — menos o 1º de cada trecho (numa máquina lenta a prévia pulava uma cena)
+      const trecho = q.i + '-' + q.j, novoTrecho = trecho !== ultimoTrecho;
+      ultimoTrecho = trecho;
+      if (previa && !novoTrecho && gravador.atraso() > 1) { gravador.pular(); quadros++; continue; }
       if (q.parado && img && !montagem) { await gravador.quadro(img); quadros++; continue; }
       img = await quadroDoVoo(q);
       await gravador.quadro(img); quadros++;

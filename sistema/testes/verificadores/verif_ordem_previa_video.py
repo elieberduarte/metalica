@@ -7,6 +7,10 @@ renderizar só para ver como o vídeo está ficando"). Na tela das Cenas, com o 
   C. ▶ Prévia do voo: um canvas no lugar da imagem, desenhado; os trechos na ordem escolhida; no tempo do vídeo (pula
      quadros quando atrasa, não vira câmera lenta); termina sozinha;
   D. ■ Parar e mudar uma opção param a prévia (a imagem parada volta);
+  F. clicar no nome de uma cena na lista mostra ela na prévia (abre-a na tela; 13/11: "quando clico em uma cena ele não mostra
+     no preview");
+  G. ⧉ repete uma cena (13/11: "duplicar uma cena… a vista de cima ser a cena inicial e a final"): a cópia levada ao fim, o
+     vídeo C → A → B → C, guardada ao reabrir, a prévia volta à C; nas imagens a repetição não conta; ✕ tira;
   E. sem erro no console.
 Porta livre, nunca a 8765/8766."""
 import json, os, shutil, subprocess, sys, tempfile, time
@@ -131,6 +135,9 @@ try:
     ok(aba.avaliar("document.getElementById('exportar-voo-bt').textContent") == "▶ Prévia do voo", "o botão volta a ▶")
 
     print("D — parar")
+    # no lento (8 s de voo): o clique de parar chega com a prévia ainda tocando (no rápido, 4 s, às vezes ela já tinha acabado)
+    clicar_no(aba, "#exportar-caixa input[name=velocidade][value=lento]")
+    aba.drenar(0.5)
     clicar_no(aba, "#exportar-voo-bt")
     esperar(aba, "window.previaDoVoo && window.previaDoVoo.tocando && window.previaDoVoo.quadros > 1", 30)
     clicar_no(aba, "#exportar-voo-bt")
@@ -139,11 +146,46 @@ try:
     aba.drenar(2.0)
     clicar_no(aba, "#exportar-voo-bt")
     esperar(aba, "window.previaDoVoo && window.previaDoVoo.tocando && window.previaDoVoo.quadros > 1", 30)
-    clicar_no(aba, "#exportar-caixa input[name=velocidade][value=lento]")
+    clicar_no(aba, "#exportar-caixa input[name=velocidade][value=normal]")
     ok(esperar(aba, "!document.getElementById('exportar-voo') && !window.previaDoVoo.tocando", 10), "mudar uma opção para a prévia")
     aba.drenar(2.0)
     clicar_no(aba, "#exportar-cancelar")
     ok(esperar(aba, "!document.getElementById('exportar-caixa')", 5), "a janela fecha")
+
+    print("F — clicar no nome mostra a cena na prévia (13/11)")
+    abrir_janela(aba)
+    aba.avaliar("window.previaAntes = document.getElementById('exportar-previa').style.backgroundImage; 1")
+    clicar_no(aba, "#exportar-varias .linha-cena[data-cena=b] .nome-cena")
+    ok(esperar(aba, "cenaApi.estado().cena && cenaApi.estado().cena.id === 'b'", 30), "a cena B abre na tela")
+    ok(aba.avaliar("document.querySelector('#exportar-varias .linha-cena.vendo').dataset.cena") == "b", "a linha da B destacada")
+    ok("Esta cena — B" in aba.avaliar("document.querySelector('input[name=quais][value=esta]').closest('label').textContent"), "\"Esta cena — B\"")
+    ok(esperar(aba, "document.getElementById('exportar-previa').style.backgroundImage !== window.previaAntes", 60), "a imagem de \"Como vai sair\" refeita")
+    ok(aba.avaliar("document.querySelector('#exportar-varias input[value=b]').checked"), "clicar no nome não desmarca a cena")
+
+    print("G — repetir uma cena (⧉): começar e terminar na mesma")
+    clicar_no(aba, "#exportar-varias .linha-cena[data-cena=c]:not([data-copia]) button[data-repetir]")
+    ok(aba.avaliar("[...document.querySelectorAll('#exportar-varias .linha-cena')].map(l => l.dataset.cena + (l.dataset.copia ? '*' : ''))") == ["c", "c*", "a", "b"],
+       "a cópia logo abaixo, marcada (de novo)")
+    for _ in range(3):
+        clicar_no(aba, "#exportar-varias .linha-cena[data-copia] button[data-mover='1']")
+    seq = aba.avaliar("[...document.querySelectorAll('#exportar-varias .linha-cena')].map(l => l.dataset.cena + (l.dataset.copia ? '*' : ''))")
+    ok(seq == ["c", "a", "b", "c*"], f"a cópia levada ao fim ({seq})")
+    info = aba.avaliar("document.getElementById('exportar-info').textContent")
+    ok("C → A → B → C" in info and "4 cenas" in info, f"o vídeo começa e termina na C ({info})")
+    clicar_no(aba, "#exportar-cancelar"); esperar(aba, "!document.getElementById('exportar-caixa')", 5)
+    abrir_janela(aba)
+    seq = aba.avaliar("[...document.querySelectorAll('#exportar-varias .linha-cena')].map(l => l.dataset.cena + (l.dataset.copia ? '*' : ''))")
+    ok(seq == ["c", "a", "b", "c*"], f"ao reabrir, a sequência com a repetição ({seq})")
+    clicar_no(aba, "#exportar-voo-bt")
+    ok(esperar(aba, "window.previaDoVoo && window.previaDoVoo.terminou", 120), "a prévia toca até o fim")
+    trechos = aba.avaliar("window.previaDoVoo.trechos")
+    ok(trechos[:1] == ["C → A"] and trechos[-1] == "B → C", f"a prévia volta à C no fim ({trechos})")
+    clicar_no(aba, "#exportar-caixa input[name=formato][value=jpg]")
+    info = aba.avaliar("document.getElementById('exportar-info').textContent")
+    ok("3 cenas" in info, f"nas imagens a repetição não conta duas vezes ({info})")
+    clicar_no(aba, "#exportar-varias .linha-cena[data-copia] button[data-tirar]")
+    ok(aba.avaliar("document.querySelectorAll('#exportar-varias .linha-cena[data-copia]').length") == 0, "✕ tira a repetição")
+    clicar_no(aba, "#exportar-cancelar"); esperar(aba, "!document.getElementById('exportar-caixa')", 5)
 
     print("E — o console")
     erros = [c for c in aba.console if c[0] in ("excecao", "error") and "Failed to load resource" not in c[1]]
