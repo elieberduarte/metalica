@@ -46,3 +46,22 @@ def test_todo_modulo_do_gancho_fica_fora_do_instalado():
         if os.path.isdir(os.path.join(SISTEMA, "web", pacote)) and not any(fnmatch.fnmatch(pacote, t) for t in telas):
             faltam.append("TELAS_SO_DEV: web/" + pacote)
     assert not faltam, "módulo do dev que iria no instalado: " + "; ".join(faltam)
+
+
+def _modulos_da(funcao):
+    arv = ast.parse(open(os.path.join(SISTEMA, "app.py"), encoding="utf-8").read())
+    func = next(n for n in arv.body if isinstance(n, ast.FunctionDef) and n.name == funcao)
+    return sorted({a.name for n in ast.walk(func) if isinstance(n, ast.Import) for a in n.names})
+
+
+def test_o_controle_de_producao_vai_no_instalado():
+    """13/11 (FERRAMENTA · OBRA COMPARTILHADA, item 3 da 1a): o Controle de produção vai no programa instalado — só para
+    a obra compartilhada (a trava está no producao/web.py) — pelo `_extensoes_gerais`; nada dele fica nas listas do dev."""
+    modulos, telas = _listas_do_construir()
+    gerais = _modulos_da("_extensoes_gerais")
+    assert "producao.web" in gerais and "producao.web" not in _modulos_do_gancho()
+    for m in gerais:
+        assert m.split(".")[0] not in modulos and m not in modulos, "módulo geral deixado fora do instalado: " + m
+        assert not any(fnmatch.fnmatch(m.split(".")[0], t) for t in telas), "telas de módulo geral fora do instalado: " + m
+    # e o que ele importa também vai (obra_compartilhada, licenca, versao)
+    assert not {"obra_compartilhada", "licenca", "versao"} & set(modulos)

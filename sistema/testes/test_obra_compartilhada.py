@@ -463,3 +463,50 @@ def test_tesoura_montada_o_lote_viaja_e_o_estorno_no_outro_pc_desfaz_o_lote_inte
     OC.sincronizar(dev)
     ultimo = next(e for e in OC._ler_eventos(dev) if e["id"] == c["id"])
     assert "montada" not in ultimo and "lote" not in ultimo
+
+
+def test_no_instalado_o_controle_e_so_da_obra_compartilhada(controle_web, nuvem, monkeypatch):
+    """Item 3 da 1a (13/11): o Fernando usa o programa instalado. Lá o Controle vale só para a obra compartilhada: a obra
+    só local não tem a tela na barra de cima e as rotas recusam; o que o ERP lê fica no dev; sem saber o papel (nunca
+    sincronizou) não aponta — e, sabido uma vez, sem internet aponta e a fila espera (decisão 9)."""
+    from nucleo.base import ErroDeDados
+    from test_producao_controle import _H
+    web, pastas = controle_web
+    app_dev = web._app()
+
+    class _Instalado(app_dev):
+        DEV = False
+
+        @staticmethod
+        def etapas_do_projeto(s):
+            return {"etapas": [{"chave": "producao", "itens": []}]}
+    monkeypatch.setattr(web, "_app", lambda: _Instalado)
+    nuvem.eu = "fer"
+    # a obra só local: sem a tela Controle (o app responde as etapas de sempre) e as rotas recusam
+    assert web.rota_get(_H("/api/projetos/local/etapas"), "/api/projetos/local/etapas") is False
+    for chamar in (lambda: _ver(web, "local"),
+                   lambda: _post(web, "/api/producao/apontar", {"projeto": "local", "item": "T38-1", "etapa": "producao", "quantidade": 1})):
+        with pytest.raises(ErroDeDados, match="só para obra compartilhada"):
+            chamar()
+    assert not os.path.exists(os.path.join(pastas["local"], "producao"))
+    # o ERP: só no dev
+    assert web.rota_get(_H("/api/producao/erp?projeto=fer"), "/api/producao/erp") is False
+    # a obra compartilhada: a tela na barra de cima e o apontamento sobe
+    h = _H("/api/projetos/fer/etapas")
+    assert web.rota_get(h, "/api/projetos/fer/etapas")
+    assert [t["texto"] for t in h.resposta["etapas"][0]["telas"]] == ["Lista de materiais", "Controle de produção"]
+    # sem internet e sem nunca ter sabido o papel: não aponta (a mensagem pede a internet)
+    nuvem.fora_do_ar = True
+    with pytest.raises(ErroDeDados, match="conecte à internet"):
+        _post(web, "/api/producao/apontar", {"projeto": "fer", "item": "T38-1", "etapa": "producao", "quantidade": 1})
+    nuvem.fora_do_ar = False
+    r = _post(web, "/api/producao/apontar", {"projeto": "fer", "item": "T38-1", "etapa": "producao", "quantidade": 1})
+    assert r["ok"] and r["nuvem"]["papel"] == "editor" and r["nuvem"]["pendentes"] == 0
+    # o papel ficou guardado: a internet cai e o apontamento segue, na fila
+    nuvem.fora_do_ar = True
+    r = _post(web, "/api/producao/apontar", {"projeto": "fer", "item": "T74", "etapa": "producao", "quantidade": 1})
+    assert r["ok"] and r["nuvem"]["pendentes"] == 1
+    # no dev (o app de verdade com DEV), a obra só local continua com o Controle
+    monkeypatch.setattr(web, "_app", lambda: app_dev)
+    nuvem.fora_do_ar = False
+    assert _ver(web, "local")["nuvem"] is None

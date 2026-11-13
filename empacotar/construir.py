@@ -58,14 +58,14 @@ MODULOS_SO_DEV = ["saida.orcamento", "saida.comercial", "saida.comercial_servico
                   # limpa), só no desenvolvimento — testes/test_so_no_dev.py confere que todo módulo do gancho está aqui
                   "premoldado", "arquitetura",
                   "painel_dev", "painel_dev.chats", "painel_dev.web",   # o Painel DEV (16/10): os chats do Claude Code
-                  "producao", "producao.controle", "producao.web",      # o controle de produção (12/11): aba Controle e ERP
                   "obra_compartilhada_dev"]                             # as obras compartilhadas na tela Licenças (13/11)
+# (o controle de produção — producao/ e web/producao/ — vai no instalado desde 13/11: só para a obra compartilhada, pelo
+# _extensoes_gerais do app.py; testes/test_so_no_dev.py confere)
 # (saida.pacote_celular vai no instalado: é ele que monta o 3D leve do modo "ver" do modelo 3D, saida/modelo_leve.py)
 TELAS_SO_DEV = ["comercial.html", "comercial.js", "celular", "acesso-celular*", "qrcode.js", "premoldado",
                 "licencas.html",                       # a tela das licenças (11/10): só no desenvolvimento
                 "painel_dev",                          # o Painel DEV (16/10)
                 "arquitetura",                         # a área Arquitetura da tela de projetos (30/10)
-                "producao",                            # a aba Controle da lista de materiais (12/11)
                 "compartilhadas_dev.js"]               # as obras compartilhadas na tela Licenças (13/11)
 
 #: Partes de bibliotecas que o programa não usa (07/10): do scipy só entram as matrizes esparsas

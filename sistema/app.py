@@ -197,11 +197,6 @@ def _extensoes_dev() -> list:
     except ImportError:
         pass
     try:
-        import producao.web as _prod      # o controle de produção: a aba Controle da lista e o que o ERP lê (12/11)
-        out.append(_prod)
-    except ImportError:
-        pass
-    try:
         import obra_compartilhada_dev as _oc   # as obras compartilhadas na tela Licenças: quem tem acesso e o papel (13/11)
         out.append(_oc)
     except ImportError:
@@ -228,8 +223,22 @@ def _pasta_de_dados() -> str:
     return os.path.join(BASE, "projetos")
 
 
+def _extensoes_gerais() -> list:
+    """os módulos com rotas próprias que vão também no programa instalado (o mesmo rota_get/rota_post das extensões do
+    dev). O controle de produção (12/11): no dev, todas as obras; no instalado, só a obra compartilhada (13/11, FERRAMENTA ·
+    OBRA COMPARTILHADA — o Fernando aponta no Posto pelo instalado; a trava está no próprio producao/web.py)."""
+    out = []
+    try:
+        import producao.web as _prod
+        out.append(_prod)
+    except ImportError:
+        pass
+    return out
+
+
 PROJETOS = _pasta_de_dados()
 EXTENSOES_DEV = _extensoes_dev()
+EXTENSOES_GERAIS = _extensoes_gerais()
 
 from nucleo.base import ErroDeDados            # noqa: E402
 from nucleo.modelo_galpao import DadosGalpao   # noqa: E402
@@ -6481,6 +6490,9 @@ class Handler(BaseHTTPRequestHandler):
                 for ext in EXTENSOES_DEV:
                     if ext.rota_get(self, rota):
                         return
+            for ext in EXTENSOES_GERAIS:
+                if ext.rota_get(self, rota):
+                    return
             if rota == "/":
                 return self._arquivo(os.path.join(WEB, "inicio.html"), WEB)
             if rota in ("/dimensionar", "/index.html"):
@@ -6791,6 +6803,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self._licencas_dev(lambda L: L.liberar_aparelho(int(m.group(1))))
             # as extensões do desenvolvimento ficam fora do git (app.py de trabalho): na cópia limpa não há EXTENSOES_DEV
             for ext in globals().get("EXTENSOES_DEV", ()):
+                if ext.rota_post(self, rota, corpo):
+                    return
+            for ext in globals().get("EXTENSOES_GERAIS", ()):
                 if ext.rota_post(self, rota, corpo):
                     return
             if rota == "/api/ligacoes/montar":

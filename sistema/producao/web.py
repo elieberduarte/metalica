@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
-"""As rotas do controle de produção (extensão do modo desenvolvimento: app.py `_extensoes_dev`; o programa instalado
-não tem nada disto até o usuário aprovar).
+"""As rotas do controle de produção. No desenvolvimento valem para todas as obras; no programa instalado (13/11, FERRAMENTA ·
+OBRA COMPARTILHADA, item 3 da 1a: o Fernando aponta no Posto pelo instalado) só para a obra compartilhada — a obra sem o
+obra_id não tem a tela Controle na barra de cima e as rotas recusam; o que o ERP lê fica só no dev. Carregado pelo
+`_extensoes_gerais` do app.py (o mesmo no dev e no instalado).
 
 * GET  /controle-producao?projeto=          a tela do controle (web/producao/controle.html); era uma aba da lista de
                                             materiais até 12/11, o usuário pediu no menu Produção do topo
@@ -50,6 +52,16 @@ def _pasta(slug: str) -> str:
     if not slug:
         raise _erro("falta o projeto")
     return _app()._gerente()._existente(slug)
+
+
+def _so_compartilhadas() -> bool:
+    """o programa instalado: o Controle só para obra compartilhada (o dev, e os testes com o app de mentira, todas)"""
+    return not getattr(_app(), "DEV", True)
+
+
+def _exigir_compartilhada(pasta: str):
+    if _so_compartilhadas() and not obra_compartilhada.info(pasta):
+        raise _erro("no programa instalado o Controle de produção é só para obra compartilhada")
 
 
 def _quem() -> str:
@@ -140,6 +152,12 @@ def rota_get(h, rota: str) -> bool:
     if rota.startswith("/api/projetos/") and rota.endswith("/etapas"):
         partes = rota.split("/api/projetos/", 1)[1].strip("/").split("/")
         if len(partes) == 2:
+            if _so_compartilhadas():                    # no instalado, a tela Controle só na obra compartilhada
+                try:
+                    if not obra_compartilhada.info(_pasta(partes[0])):
+                        return False                    # o app responde as etapas de sempre
+                except Exception:                       # noqa: BLE001 — projeto que não existe: o app responde o erro
+                    return False
             _etapas(h, partes[0])
             return True
     if rota == "/api/producao/controle.js":
@@ -154,6 +172,7 @@ def rota_get(h, rota: str) -> bool:
     if rota == "/api/producao/controle":
         s = _consulta(h).get("projeto", "")
         pasta = _pasta(s)
+        _exigir_compartilhada(pasta)
         try:
             lista = controle.ler_lista(pasta)
         except controle.ErroControle as e:
@@ -167,7 +186,7 @@ def rota_get(h, rota: str) -> bool:
         r["tem_3d"] = os.path.isfile(os.path.join(pasta, "modelo.json"))      # sem modelo, a tela nem abre o 3D ao lado
         h._json(r)
         return True
-    if rota == "/api/producao/erp":
+    if rota == "/api/producao/erp" and not _so_compartilhadas():       # o ERP: só no dev
         q = _consulta(h)
         s = q.get("projeto", "")
         pasta = _pasta(s)
@@ -193,9 +212,15 @@ def rota_post(h, rota: str, corpo: dict) -> bool:
         return False
     corpo = corpo if isinstance(corpo, dict) else {}
     pasta = _pasta(str(corpo.get("projeto") or ""))
+    _exigir_compartilhada(pasta)
     nuvem = _sincronizar(pasta)
     if nuvem is not None and nuvem.get("papel") and not nuvem.get("pode_apontar"):
         raise _erro("o seu papel nesta obra compartilhada é %s: só vê, não aponta" % (nuvem.get("papel_nome") or nuvem["papel"]))
+    if nuvem is not None and not nuvem.get("papel") and _so_compartilhadas():
+        # no instalado, o papel vem da nuvem: sem ele (nunca sincronizou, ou a licença perdeu o acesso) não aponta; depois
+        # de uma vez com internet ele fica guardado (nuvem.json) e sem internet o apontamento segue (decisão 9)
+        raise _erro("não deu para saber o seu papel nesta obra compartilhada (%s) — conecte à internet e abra o Controle de "
+                    "novo" % (nuvem.get("erro") or "sem resposta da nuvem"))
     try:
         if rota == "/api/producao/apontar":
             lista = controle.ler_lista(pasta)
