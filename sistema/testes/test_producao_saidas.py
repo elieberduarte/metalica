@@ -109,3 +109,19 @@ def test_celulas_nao_se_encostam():
     B._empilhar(d, [celula(300, "P1 – título comprido da peça"), celula(300, "P2 – outro título comprido")])
     a, b = d.metadados["celulas"]
     assert b[0] >= a[2] + 1.0 * d.escala, (a, b)
+
+
+def test_telha_cortada_so_na_largura_e_a_mesma_marca():
+    """A TL24 do Depósito (10.320, 920 úteis: a primeira da água, cortada na largura na obra) é a mesma chapa que a TL5
+    (10.320, 980): a mesma marca em todo lugar (usuário, 13/11: "Juntar em todo lugar")."""
+    def telha(marca, H, comp):
+        return Posicao(marca=marca, tipo_ifc="IfcPlate", perfil="TELHA TP40 ESP.0.50", material="", quantidade=33 if H > 950 else 1,
+                       classe="telha", L=comp, H=H, T=40.0, comprimento=comp, volume=comp * H * 0.5)
+    out = B.fundir_posicoes_iguais([telha("T10320", 980.0, 10320.0), telha("T10320b", 920.0, 10320.0),
+                                    telha("T10270", 980.0, 10270.0)], {})
+    assert sorted((p.marca, p.quantidade) for p in out) == [("T10270", 33), ("T10320 / T10320b", 34)]
+    # a base é a inteira (a de mais peças): é dela o nome que fica e a largura de 980
+    j = next(p for p in out if p.quantidade == 34)
+    assert j.marcas[0] == "T10320" and j.H == 980.0
+    out = B.fundir_posicoes_iguais([telha("A10320", 920.0, 10320.0), telha("B10320", 980.0, 10320.0)], {})
+    assert out[0].marcas[0] == "B10320" and out[0].H == 980.0

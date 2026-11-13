@@ -1548,7 +1548,10 @@ def _assinatura_posicao(p: Posicao) -> tuple:
     # quando o comprimento de corte é o mesmo
     redonda = p.classe in ("barra_redonda", "barra_conformada") and _eh_redonda_perfil(p.perfil)
     classe = "redonda" if redonda else p.classe
-    altura = None if redonda else round(p.H)
+    # a telha cortada só na largura (a primeira da água, 920 úteis em vez de 980; a do canto da fachada, 220) é a mesma chapa
+    # comprada inteira: a mesma marca da do mesmo comprimento (usuário, 13/11, Depósito: TL24 = TL5 — "Não entendi porque
+    # essas ficaram com nomes diferentes, se tem o mesmo tamanho"; escolheu "Juntar em todo lugar")
+    altura = None if (redonda or p.classe == "telha") else round(p.H)
     espessura = None if redonda else round(p.T, 1)
     from nucleo.nomes_catalogo import chave_de_perfil            # "TQ 50×50×2,0" = "TQ 50×50×2,00" (padrão de 27/10)
     return (classe, chave_de_perfil(p.perfil), re.sub(r"\s+", "", p.material or "").upper(),
@@ -1765,6 +1768,10 @@ def fundir_posicoes_iguais(posicoes: Sequence[Posicao], camadas: Dict[str, str])
             fora.append(grupo[0])
             continue
         grupo.sort(key=lambda q: _ordem_natural(q.marca))
+        if grupo[0].classe == "telha":
+            # a telha cortada na largura junta à inteira: a base (marca, nome guardado, largura) é a de mais peças — a TL5
+            # (33) e não a TL24 (1), que passava o nome dela às 34
+            grupo.sort(key=lambda q: -q.quantidade)
         base = grupo[0]
         base.marcas = [q.marca for q in grupo]
         base.marca = " / ".join(base.marcas)
