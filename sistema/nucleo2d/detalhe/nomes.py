@@ -221,6 +221,8 @@ def _conjuntos_do_projeto(pecas: Sequence[Solido]) -> Dict[str, str]:
 PECA_CURTA = 600.0
 #: Tipos que, na obra sem cobertura, a barra troca pelo papel (os de cobertura e o "barra" genérico).
 _TIPOS_DE_COBERTURA = ("agulhamento", "agulhamento_lateral", "barra", "cantoneira_forro", "perfil_fechamento")
+#: Os prefixos de nome que são de cobertura: na obra sem cobertura não ficam nem na obra que já tinha nomes.
+_PREFIXOS_DE_COBERTURA = ("A.C.", "A.L.", "A.D.", "T", "MT", "DP.", "A.T.", "F.T.", "T.C.", "T.L.", "T.O.", "T.M.")
 
 
 def _eixo_da_marca(pecas_da_marca) -> Optional[Tuple[tuple, tuple]]:
@@ -703,6 +705,16 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
     for p in posicoes:
         if p.marca not in nomes_pos and p.marca not in fixos:
             t_ = tipo[p.marca]
+            if sem_cobertura and t_ in ("pilar", "viga", "peca_curta"):
+                # a obra que já tem nomes (pranchas na fábrica) guarda o nome neutro que a peça tinha (o B.1 dos 724
+                # suportes do Vicente); só o nome de cobertura (A.C., A.L., T, DP.) troca pelo do papel (Drugovich 13/11)
+                n_ant = next((ant_pos[k] for k in [p.marca] + marcas_de(p) if ant_pos.get(k)), "")
+                pre = next((x for x in sorted(set(PREFIXO_NOME.values()), key=len, reverse=True)
+                            if x and _nome_numero(n_ant, x)), "")
+                if pre and pre not in _PREFIXOS_DE_COBERTURA and _nome_numero(n_ant, pre)[0] not in usados_por_prefixo[pre]:
+                    nomes_pos[p.marca] = n_ant
+                    usados_por_prefixo[pre].add(_nome_numero(n_ant, pre)[0])
+                    continue
             # a cantoneira (barra) com papel de chapa: o nome CT.n — a legenda dizia "CH = Chapa" numa cantoneira (Q14);
             # o tipo dela (suporte de terça…) não muda, só o prefixo do nome
             if PREFIXO_NOME.get(t_) == "CH" and str(p.classe or "").startswith("barra"):

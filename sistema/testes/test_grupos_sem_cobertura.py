@@ -23,9 +23,9 @@ def _ifc(conj, pos):
     return {"marcas": {"posicao": pos, "conjunto": conj}, "origem_ifc": "guid-%s-%s" % (conj, pos)}
 
 
-def _mezanino(doc):
+def _mezanino(doc, secundarias=8):
     """O Drugovich em miniatura: 4 pilares W150 em pé, 2 vigas W310 com 8 tocos W250 de 430 mm soldados (8+ barras: a
-    regra antiga fazia "tesoura" / "viga caixote") e 3 secundárias W250 — sem telha nem terça."""
+    regra antiga fazia "tesoura" / "viga caixote") e as secundárias W250 — sem telha nem terça."""
     k = 0
     for x in (0.0, 6000.0):
         for y in (0.0, 4000.0):
@@ -40,7 +40,7 @@ def _mezanino(doc):
             x = 600.0 + i * 650.0
             doc.add(Barra(nome="T", inicio=(x, y + 80.0, 2715.0), fim=(x, y + 510.0, 2715.0), perfil="W 250×17,9", papel="",
                           atributos=_ifc(conj, "W5")))
-    for i, x in enumerate((1500.0, 3000.0, 4500.0)):
+    for i, x in enumerate([600.0 + 4800.0 * k / max(1, secundarias - 1) for k in range(secundarias)]):
         doc.add(Barra(nome="S", inicio=(x, 510.0, 2715.0), fim=(x, 3490.0, 2715.0), perfil="W 250×17,9", papel="",
                       atributos=_ifc("00%02dA" % (68 + i), "W7")))
 
@@ -82,7 +82,7 @@ def test_mezanino_sem_cobertura_grupos_pelo_papel():
     X = R["dossie"]
     assert [b["chave"] for b in X["estrutura"]] == ["pilares", "vigas"]
     assert [b["titulo"] for b in X["estrutura"]] == ["Pilares", "Vigas"]
-    assert {b["chave"]: b["qtd"] for b in X["estrutura"]} == {"pilares": 4, "vigas": 5}
+    assert {b["chave"]: b["qtd"] for b in X["estrutura"]} == {"pilares": 4, "vigas": 10}
     assert [g["grupo"] for g in R["grupos_peso"]] == ["Pilares", "Vigas"]
     t = _texto(R)
     for errado in ("caixote", "Trechos da cobertura", "gulhamento", "esoura", "Dispositivos", "Ala 1", "Transição"):
@@ -136,3 +136,27 @@ def test_posicao_fundida_vai_a_familia_do_tipo():
                       atributos=_ifc(conj, "W22")))
     R, _nomes = _resumo(doc, EIXOS)
     assert "Vigas e barras" not in [g["grupo"] for g in R["grupos_peso"]]
+
+
+def test_topo_das_vigas_sem_piso():
+    """o Kaefer (13/11): a quadra com 2 vigas a +8,000 e a cobertura do cliente — não é piso, é o topo das vigas"""
+    doc = Documento(nome="mezanino")
+    _mezanino(doc, secundarias=2)
+    R, _nomes = _resumo(doc, EIXOS)
+    t = _texto(R)
+    assert "Nível do piso" not in t and "Topo das vigas" in t and "+2,840 m" in t
+
+
+def test_obra_com_nomes_guarda_o_nome_neutro_e_troca_o_de_cobertura():
+    """a obra que já tem pranchas (o Vicente: os 724 suportes B.1) guarda o nome neutro; o nome de cobertura (o A.C. das
+    secundárias do Drugovich) troca pelo do papel"""
+    doc = Documento(nome="mezanino")
+    _mezanino(doc)
+    for i in range(3):
+        doc.add(Barra(nome="C", inicio=(6100.0, 500.0 + 1000.0 * i, 2715.0), fim=(6490.0, 500.0 + 1000.0 * i, 2715.0),
+                      perfil="W 250×17,9", papel="", atributos=_ifc("0063A", "W12")))
+    r = detalhar(doc, grupos=["localizacao"], converter=False,
+                 nomes={"posicoes": {"W12": "B.1", "W7": "A.C.6", "W10": "A.L.1"}, "conjuntos": {}})
+    np_ = resumos._por_marca((r.get("nomes") or {}).get("posicoes"))
+    assert np_["W12"] == "B.1"
+    assert np_["W7"].startswith("VG") and np_["W10"].startswith("PL")

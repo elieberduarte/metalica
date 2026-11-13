@@ -518,12 +518,22 @@ def quantidade_por_camada(doc, pecas, fam_pos: dict, telhas: dict, funil: List[d
     return {c: {k: round(v, 3) for k, v in q.items()} for c, q in saida.items() if any(q.values())}
 
 
-def nivel_do_piso(pecas, tipos: dict) -> Optional[float]:
-    """A obra sem cobertura (o mezanino): o nível do piso = o topo mais comum das vigas deitadas (mm, de 5 em 5), pelo
-    comprimento delas — no Drugovich, +2,840 (o "nível de apoio, ponto mais baixo das tesouras" dava +2,530). None sem viga."""
+#: Vigas no mesmo nível a partir das quais o topo delas é um piso (o mezanino); menos que isso é só o topo das vigas (a
+#: quadra do Kaefer, 2 vigas a +8,000, não tem piso).
+VIGAS_DE_UM_PISO = 10
+
+
+def nivel_do_piso(pecas, tipos: dict) -> Tuple[Optional[float], int]:
+    """A obra sem cobertura (o mezanino): (o topo mais comum das vigas deitadas, mm de 5 em 5, pelo comprimento; quantas
+    vigas nele) — no Drugovich, +2,840 com 136 vigas (o "nível de apoio, ponto mais baixo das tesouras" dava +2,530).
+    (None, 0) sem viga."""
     votos: Dict[float, float] = collections.Counter()
+    pecas_no: Dict[float, int] = collections.Counter()
     for e in pecas:
-        if not e.vertices or tipos.get(str(_marcas(e).get("posicao") or e.nome or e.id), "") not in ("viga", "barra", ""):
+        # a viga solta e a de dentro do conjunto (a W310 com os tocos é "parte" do conjunto dela); a chapa não
+        if not e.vertices or tipos.get(str(_marcas(e).get("posicao") or e.nome or e.id), "") not in ("viga", "barra", "parte", ""):
+            continue
+        if (getattr(e, "atributos", None) or {}).get("tipo_ifc") == "IfcPlate" or type(e).__name__ == "Chapa":
             continue
         try:
             ax = _eixo_da_peca(e)
@@ -534,8 +544,13 @@ def nivel_do_piso(pecas, tipos: dict) -> Optional[float]:
         L = math.dist(ax[0], ax[1])
         if L < 600.0 or abs(ax[1][2] - ax[0][2]) > 0.05 * L:
             continue
-        votos[5.0 * round(max(v[2] for v in e.vertices) / 5.0)] += L
-    return max(votos.items(), key=lambda kv: (kv[1], kv[0]))[0] if votos else None
+        z = 5.0 * round(max(v[2] for v in e.vertices) / 5.0)
+        votos[z] += L
+        pecas_no[z] += 1
+    if not votos:
+        return None, 0
+    z = max(votos.items(), key=lambda kv: (kv[1], kv[0]))[0]
+    return z, pecas_no[z]
 
 
 def vaos_entre_eixos(eixos: Optional[dict]) -> List[Tuple[str, float]]:
@@ -1045,7 +1060,7 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
             tesouras_lugar.append({"tipo": t["tipo"], "eixo": t.get("eixo", ""), "xy": (cc[0] + (topo[0] - cc[0]) * 0.82,
                                                                                       cc[1] + (topo[1] - cc[1]) * 0.82, 0.0)})
     import time as _time
-    nivel_piso = None if cobertura else nivel_do_piso(pecas, tipos)
+    nivel_piso, vigas_no_piso = (None, 0) if cobertura else nivel_do_piso(pecas, tipos)
     return {
         "gerado": _time.strftime("%d/%m/%Y %H:%M"), "pendencias": pendencias, "pintura": pintura, "compra": compra,
         "maior": maior, "mais_pesada": pesada, "tesouras_lugar": tesouras_lugar,
@@ -1063,7 +1078,7 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
                       "trechos": [{k: v for k, v in tr.items() if k not in ("inicio", "fim", "tesouras")} for tr in trechos],
                       "projecao": projecao_total, "projecao_entre_eixos": entre_eixos and not informada,
                       "projecao_informada": bool(informada), "area_m2": area_m2, "nivel_apoio": nivel_apoio, "apoio_por_chapa": apoio_por_chapa,
-                      "n_tesouras": len(tes_inst), "nivel_piso": nivel_piso},
+                      "n_tesouras": len(tes_inst), "nivel_piso": nivel_piso, "vigas_no_piso": vigas_no_piso},
         "tesouras": tipos_tes, "tercas": tercas, "grupos_peso": grupos_peso, "telhas": telhas, "parafusos": parafusos,
         "telhas_lancadas": _telhas_lancadas(lista),
         "familias": familias, "chaparia": chaparia, "chaparia_total": chaparia_total, "funilaria": funil, "camadas": camadas_qtd,
@@ -2425,8 +2440,10 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
                       "Projeção entre eixos" if dim.get("projecao_entre_eixos") else "Projeção com beirais", "%s × %s m" % (_n(dim["projecao"][0] / 1000.0, 2), _n(dim["projecao"][1] / 1000.0, 2)),
                       "área %s m²" % _n(dim.get("area_m2") or 0.0, 2)))
         if not coberta and dim.get("nivel_piso") is not None:
-            c.append(("Nível do piso", "%s%s m" % ("+" if dim["nivel_piso"] >= 0 else "", _n(dim["nivel_piso"] / 1000.0, 3)),
-                      "topo das vigas"))
+            piso = (dim.get("vigas_no_piso") or 0) >= VIGAS_DE_UM_PISO
+            c.append(("Nível do piso" if piso else "Topo das vigas",
+                      "%s%s m" % ("+" if dim["nivel_piso"] >= 0 else "", _n(dim["nivel_piso"] / 1000.0, 3)),
+                      "topo das vigas" if piso else "%d vigas neste nível" % (dim.get("vigas_no_piso") or 0)))
         elif coberta and dim.get("nivel_apoio") is not None:
             c.append(("Nível de apoio", "%s%s m" % ("+" if dim["nivel_apoio"] >= 0 else "", _n(dim["nivel_apoio"] / 1000.0, 3)),
                       "face de cima da chapa de apoio" if dim.get("apoio_por_chapa") else "ponto mais baixo das tesouras"))
