@@ -578,6 +578,7 @@ export class Visor3D {
     this.corMaterial = this.corBase.slice();
     this.modoPintura = 'material';
     this._repintar();
+    this.posicionarPiso();                                  // o chão sem os chumbadores (zDoPiso precisa das fichas)
   }
 
   /** O vidro transparente como no editor (22/10, SESI: as fachadas de vidro do arquitetônico escondiam os brises no modo
@@ -975,14 +976,30 @@ export class Visor3D {
     this.cena.add(this.piso);
   }
 
-  /** O piso logo abaixo das peças à vista, maior que elas. */
+  /** A altura do chão (mundo): o pé das peças à vista SEM os chumbadores, que ficam enterrados — o chão passa na face de baixo
+   *  da chapa de base (13/11, Posto, vídeo das Cenas: "a sombra está considerando que o chumbador está acima do chão; na
+   *  verdade ele está abaixo do solo, ela deveria sair da chapinha"). Chumbador = papel "chumbador" ou camada/nome com
+   *  "chumbador". Sem as fichas (ou só chumbadores), o fundo da caixa, como antes. */
+  zDoPiso(cx = this.caixaVisivel()) {
+    const F = this.fichas, n = F ? Math.min(F.length, this.nPecas) : 0, cams = (this.cabecalho && this.cabecalho.camadas) || [];
+    let z = Infinity;
+    for (let i = 0; i < n; i++) {
+      const f = F[i];
+      if (!f || !f.b || this.visivelCamada[f.c || 0] === false) continue;
+      if (f.pp === 'chumbador' || /chumbador/i.test(f.n || '') || /chumbador/i.test((cams[f.c || 0] || {}).nome || '')) continue;
+      if (f.b[2] < z) z = f.b[2];
+    }
+    return Number.isFinite(z) && z >= cx.min.z ? z : cx.min.z;
+  }
+
+  /** O piso logo abaixo das peças à vista (o pé da obra sem os chumbadores), maior que elas. */
   posicionarPiso() {
     if (!this.piso || !this.cabecalho) return;
     const cx = this.caixaVisivel();
     const s = cx.getSize(new THREE.Vector3()), c = cx.getCenter(new THREE.Vector3());
     const lado = Math.max(s.x, s.y, 10000) * 40;          // até o horizonte (na cor do fundo, a borda não aparece)
     this.piso.scale.set(lado, lado, 1);
-    this.piso.position.set(c.x, c.y, cx.min.z - 10);
+    this.piso.position.set(c.x, c.y, this.zDoPiso(cx) - 10);
     this.piso.material.uniforms.uCentro.value.set(c.x, c.y);
     this.piso.material.uniforms.uRaio.value = Math.max(s.x, s.y) * 0.85 + 15000;
     this._sombraSuja = true;

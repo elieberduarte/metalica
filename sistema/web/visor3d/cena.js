@@ -2011,10 +2011,11 @@ function cancelar() {
 }
 
 /** O ponto do 3D sob o clique (mm do projeto): a peça, ou o chão da imagem do terreno (sem terreno, o pé do modelo). */
-/** O chão da cena (coordenadas do visor): o da imagem do terreno, ou o pé do modelo. Os pontos do chão e a sombra no chão. */
+/** O chão da cena (coordenadas do visor): o da imagem do terreno, ou o pé do modelo sem os chumbadores (enterrados: o chão
+ *  passa na chapa de base — 13/11, Posto). Os pontos do chão e a sombra no chão. */
 function zDoChao() {
   const o = visor.cabecalho.origem;
-  return terreno && Number.isFinite(terreno.zChao) && terreno.malha ? terreno.zChao - o[2] : visor._caixaModelo.min.z;
+  return terreno && Number.isFinite(terreno.zChao) && terreno.malha ? terreno.zChao - o[2] : visor.zDoPiso(visor._caixaModelo.clone());
 }
 
 function pontoDo3d(x, y) {
