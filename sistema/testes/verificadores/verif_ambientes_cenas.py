@@ -142,6 +142,17 @@ try:
                   if (lambda p: p[0] > 120 and p[0] > p[2] + 35)(rgb.getpixel((x, y))))
     ok(quentes > 30, f"o render: a luz quente no prédio ({quentes} pontos)")
 
+    print("A2 — a Noite azul mais suave (12/11: a estrutura aberta do Posto ficava quase branca)")
+    forcas = "(() => { const L = visor._luz; return L.uLuzC.value.slice(0, L.uNLuz.value).map(v => v.w); })()"
+    noite_max = max(aba.avaliar(forcas) or [0])
+    clicar_no(aba, "#ambiente3d [data-v=noite-azul]")
+    aba.drenar(1.0)
+    f_azul = aba.avaliar(forcas) or []
+    ok(f_azul and 0 < max(f_azul) <= 0.45 and max(f_azul) < noite_max / 4,
+       f"as luzes da Noite azul a ~1/4 das de antes (no máximo 0,4; a Noite: {noite_max}; agora {max(f_azul or [0])})")
+    clicar_no(aba, "#ambiente3d [data-v=noite]")
+    ok(esperar(aba, f"Math.max(...{forcas}) === {noite_max}", 10), "a Noite de volta, com as luzes dela")
+
     print("B — as luzes")
     clicar_no(aba, "#luz-ref"); clicar_no(aba, "#luz-int")
     aba.drenar(0.8)

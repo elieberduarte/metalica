@@ -228,7 +228,9 @@ const AMBIENTES = {
              luz: { ambCeu: [0.92, 0.93, 0.95], ambChao: [0.80, 0.80, 0.80], ambK: 0.92, solCor: [1, 1, 1], solK: 0.18 } },
   estudio: { nome: 'Estúdio', ceu: ['#f7f8fa', '#e3e6ea'], radial: true, piso: '#e6e8eb', luzChao: 1,
              luz: { ambCeu: [0.86, 0.87, 0.90], ambChao: [0.70, 0.70, 0.72], ambK: 0.82, solCor: [1, 1, 1], solK: 0.45 } },
-  'noite-azul': { nome: 'Noite azul', ceu: ['#0d1a36', '#28467a', '#6b7fa6'], piso: '#3c4a66', noite: [1.6, 1.3], luzChao: 1,
+  // as luzes da Noite azul a 1/4 das de antes ([1.6, 1.3]): a estrutura aberta do Posto ficava quase branca (usuário, 12/11:
+  // "pode mexer"); medido no Posto — a soma das luzes satura, metade quase não mudava; sem luzes a cor da pintura volta
+  'noite-azul': { nome: 'Noite azul', ceu: ['#0d1a36', '#28467a', '#6b7fa6'], piso: '#3c4a66', noite: [0.4, 0.33], luzChao: 1,
                   luz: { ambCeu: [0.26, 0.31, 0.48], ambChao: [0.16, 0.16, 0.22], ambK: 0.75, solCor: [0.55, 0.62, 0.9], solK: 0.12, pisoAmb: 0.75, aresta: 0.45 } },
   noite: { nome: 'Noite', ceu: ['#03050b', '#0b1222', '#1a2338'], estrelas: true, piso: '#121826', noite: [2.2, 1.8], luzChao: 1,
            luz: { ambCeu: [0.09, 0.11, 0.17], ambChao: [0.05, 0.05, 0.07], ambK: 0.8, solCor: [0.55, 0.65, 0.95], solK: 0.08, pisoAmb: 0.6, aresta: 0.25 } },
