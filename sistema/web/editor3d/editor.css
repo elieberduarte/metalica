@@ -710,6 +710,13 @@ kbd {
 .rodape .barra-progresso-cheio { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--azul2, #1f6fd0); border-radius: 4px; transition: width .4s ease; }
 .rodape .barra-progresso-pct { font-family: var(--mono); font-size: 11px; color: var(--texto3); min-width: 34px; }
 .rodape .estado-servidor { font-size: 11px; color: var(--texto3); font-family: var(--mono); }
+/* a barra de andamento do progresso.js entra logo depois da dica (D08 do usuario-desastrado, 13/11: no quadro 3D da tela
+   dividida o "malhas: locais · lote" quebrava em duas linhas por cima do Cancelar da barra). Quem cede lugar é a dica
+   (reticências); a barra não encolhe abaixo do que mostra; o indicador das malhas sai enquanto a barra está no rodapé. */
+.rodape .dica { min-width: 0; flex: 0 1 auto; }
+.rodape .barra-andamento { flex-shrink: 0; }
+.rodape .estado-servidor { white-space: nowrap; flex: 0 0 auto; }
+.rodape:has(.barra-andamento) .estado-servidor { display: none; }
 
 .caixa-medidas { display: flex; align-items: center; gap: 6px; }
 .caixa-medidas span { font-size: 11px; color: var(--texto3); text-transform: uppercase;
