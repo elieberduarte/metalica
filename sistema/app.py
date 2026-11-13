@@ -1202,7 +1202,7 @@ def detalhar_premoldado(s: str, corpo: dict) -> dict:
                                           % (nome, mm["folhas"], mm["atualizadas"]))
                     except ErroDeDados:
                         pass
-                    g.excluir_desenho(s, nome)
+                    g.guardar_na_lixeira(s, nome)
                 desenho.metadados["gerado_por"] = "detalhamento-premoldado"
                 desenho.metadados["versao"] = versao.VERSAO
                 desenho.metadados["geracao"] = geracao
@@ -1231,7 +1231,7 @@ def detalhar_premoldado(s: str, corpo: dict) -> dict:
             completo = PF.desenho_completo(partes)
             if completo is not None:
                 completo.metadados.update(gerado_por="detalhamento-premoldado", versao=versao.VERSAO, geracao=geracao)
-                g.excluir_desenho(s, completo.nome)
+                g.guardar_na_lixeira(s, completo.nome)
                 with _TRAVA_GRAVAR_DESENHO:
                     _vivos().registrar_desenho(s, _slug(completo.nome), geracao)
                     salvo = g.salvar_desenho(s, completo.nome, completo.dict())
@@ -1554,7 +1554,7 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
                             if mm["sem_modelo"] else ""))
             except ErroDeDados:
                 pass                                   # o desenho de antes não abre: vai para a lixeira como sempre
-            g.excluir_desenho(s, nome)
+            g.guardar_na_lixeira(s, nome)
         desenho.metadados["gerado_por"] = "detalhamento"
         desenho.metadados["versao"] = versao.VERSAO
         desenho.metadados["geracao"] = geracao       # o CAD recarrega o desenho aberto quando ela muda
@@ -2144,7 +2144,7 @@ def detalhar_posicao_projeto(s: str, corpo: dict) -> dict:
             referencias = edicao_chapa.acrescentar_referencias(desenho, refs, chapa=((cont[0] + cont[2]) / 2.0, (cont[1] + cont[3]) / 2.0))
     nome = desenho.nome
     if corpo.get("substituir", True) is not False and os.path.exists(g._caminho_desenho(s, nome)):
-        g.excluir_desenho(s, nome)
+        g.guardar_na_lixeira(s, nome)
     desenho.metadados["gerado_por"] = "detalhamento"
     desenho.metadados["versao"] = versao.VERSAO
     salvo = g.salvar_desenho(s, nome, desenho.dict())
@@ -2253,7 +2253,7 @@ def atualizar_pecas_projeto(s: str, corpo: dict) -> dict:
             if any(i.get("titulo") == titulo or i["nome"] == _slug(titulo) for i in g.listar_desenhos(s, contar=False)):
                 desenho, _ = det.detalhar_posicao(doc, det.marcas_de(p)[0], ajustes=_ajustes_furos(s), nomes=_nomes_producao(s))
                 if os.path.exists(g._caminho_desenho(s, desenho.nome)):
-                    g.excluir_desenho(s, desenho.nome)
+                    g.guardar_na_lixeira(s, desenho.nome)
                 desenho.metadados["gerado_por"] = "detalhamento"
                 desenho.metadados["versao"] = versao.VERSAO
                 g.salvar_desenho(s, desenho.nome, desenho.dict())
@@ -2398,7 +2398,7 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
             vinculadas = vincular(marca, meta.get("furos") or [], furos)
         novo, pos = det.detalhar_posicao(doc, marca, ajustes=ajustes, nomes=_nomes_producao(s))
         if os.path.exists(g._caminho_desenho(s, novo.nome)):
-            g.excluir_desenho(s, novo.nome)
+            g.guardar_na_lixeira(s, novo.nome)
         novo.metadados["gerado_por"] = "detalhamento"
         novo.metadados["versao"] = versao.VERSAO
         salvo = g.salvar_desenho(s, novo.nome, novo.dict())
@@ -4266,7 +4266,7 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
         for d in g.listar_desenhos(s, contar=False):
             n = d["nome"]
             if n == _slug(titulo):
-                g.excluir_desenho(s, n)
+                g.guardar_na_lixeira(s, n)
             elif n.startswith("prancha-") and n[len("prancha-"):].isdigit():
                 meta = (g.abrir_desenho(s, n) or {}).get("metadados") or {}
                 if meta.get("gerado_por") == "pranchas":

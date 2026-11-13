@@ -927,6 +927,23 @@ class Projetos:
                 pass
         return {"excluido": slug(nome)}
 
+    def guardar_na_lixeira(self, s: str, nome: str) -> None:
+        """Uma CÓPIA do desenho na lixeira, antes de ele ser substituído por um novo com o mesmo nome — o desenho fica
+        no lugar até a gravação nova (que troca o arquivo de uma vez, _gravar_json). Antes ele ia para a lixeira e só
+        depois o novo era gravado: o servidor caído no meio ("gravando os desenhos…" do Detalhar) deixava a obra sem o
+        desenho, e o desenhado à mão nele só na lixeira, podada depois de 3 Detalhar (D02, usuario-desastrado, 13/11)."""
+        caminho = self._caminho_desenho(s, nome)
+        if not os.path.exists(caminho):
+            return
+        lixo = os.path.join(self.raiz, LIXEIRA)
+        os.makedirs(lixo, exist_ok=True)
+        destino = os.path.join(lixo, "%s-%s-%s" % (s, os.path.basename(caminho), time.strftime("%Y%m%d-%H%M%S")))
+        shutil.copy2(caminho, destino)
+        try:                                     # só as últimas cópias deste desenho ficam
+            podar_copias_da_lixeira(self.raiz, so_de="%s-%s" % (s, os.path.basename(caminho)))
+        except OSError:
+            pass
+
     # ------------------------------------------------------------ modelo 3D
     def caminho_modelo(self, s: str) -> str:
         return os.path.join(self._existente(s), MODELO)
