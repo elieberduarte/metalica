@@ -201,6 +201,11 @@ def _extensoes_dev() -> list:
         out.append(_prod)
     except ImportError:
         pass
+    try:
+        import obra_compartilhada_dev as _oc   # as obras compartilhadas na tela Licenças: quem tem acesso e o papel (13/11)
+        out.append(_oc)
+    except ImportError:
+        pass
     return out
 
 

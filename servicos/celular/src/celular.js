@@ -29,6 +29,12 @@
 //   GET  /pc/recebidos                   os pendentes para esta licença (menos os que saíram deste PC)
 //   GET  /pc/recebidos/<id>/parte/<sha1>   POST /pc/recebidos/<id>/recebido|recusar
 //
+// — a obra compartilhada (13/11, qualquer licença ativa; o papel vem da tabela obra_acessos) —
+//   GET  /pc/compartilhadas              as obras compartilhadas com esta licença e o papel nela
+//   GET  /pc/compartilhada/<obra_id>     uma delas (403 sem acesso)
+//   POST /pc/compartilhada/<obra_id>/eventos {eventos}   apontamentos e estornos (dono, editor, apontador)
+//   GET  /pc/compartilhada/<obra_id>/eventos?depois=<seq> os eventos que chegaram depois de <seq> (qualquer papel)
+//
 // R2: arquivos/<sha1> (o conteúdo, uma vez só), obras/<obra>/manifesto.json, indice.json, telas.json, envios/partes/<sha1>.
 import { agora, b64url, deB64url, normalizarChave, evento, json } from '../../licencas/src/comum.js';
 
@@ -379,9 +385,97 @@ async function envios(env, req, rota, quem, url) {
   return null;
 }
 
+// ------------------------------------------------------------------ a obra compartilhada (13/11/2026)
+// O usuário: "todos os usuários terem acesso ao mesmo projeto … e outros usuários, conforme forem acessando, com
+// permissões diferentes: leitura, apontamento…". Aqui, os registros leves: os apontamentos de produção, um evento por
+// linha, gravados por todos ao mesmo tempo, mesmo sem a vez de editar. Quem garante é a nuvem: o papel vem de
+// obra_acessos (dado só pela tela do dev) e o "quem" é a pessoa da licença que assinou o pedido.
+
+// os papéis: dono, editor, apontador, leitor (o leitor só lê)
+const APONTAM = new Set(['dono', 'editor', 'apontador']);
+const OBRA_ID = /^[0-9a-f]{32}$/;
+const EV_ID = /^[0-9A-Za-z_-]{6,40}$/;
+const ETAPA = /^[a-z_]{1,30}$/;
+const EVENTOS_POR_PEDIDO = 500;
+const EVENTOS_POR_LEITURA = 1000;
+
+async function acessoDa(env, obraId, chave) {
+  return env.DB.prepare(`SELECT o.obra_id, o.nome, o.dono_chave, a.papel, l.pessoa AS dono FROM obras o
+                         JOIN obra_acessos a ON a.obra_id = o.obra_id AND a.chave = ?
+                         LEFT JOIN licencas l ON l.chave = o.dono_chave
+                         WHERE o.obra_id = ? AND o.ativa = 1`).bind(chave, obraId).first();
+}
+
+/** um evento do PC conferido e no formato do banco, ou null */
+function eventoValido(e) {
+  if (!e || typeof e !== 'object' || !EV_ID.test(String(e.id || '')) || !ETAPA.test(String(e.etapa || ''))) return null;
+  const q = Number(e.quantidade);
+  if (!Number.isInteger(q) || q < 1 || q > 1e6) return null;
+  const item = txt(e.item, 150);
+  if (!item) return null;
+  if (e.estorno_de != null && !EV_ID.test(String(e.estorno_de))) return null;
+  const refs = Array.isArray(e.refs) ? e.refs.slice(0, 50).map(r => txt(r, 150)) : [];
+  return { id: String(e.id), quando: txt(e.quando, 40), data: /^\d{4}-\d{2}-\d{2}$/.test(String(e.data || '')) ? e.data : '',
+           etapa: e.etapa, item, refs: JSON.stringify(refs), quantidade: q, kg: Number.isFinite(+e.kg) ? +e.kg : 0,
+           estorno_de: e.estorno_de == null ? null : String(e.estorno_de), obs: txt(e.obs, 300) };
+}
+
+async function compartilhada(env, req, rota, quem, url) {
+  const eu = quem.p.chave;
+  if (rota === '/pc/compartilhadas' && req.method === 'GET') {
+    const r = (await env.DB.prepare(`SELECT o.obra_id, o.nome, a.papel, l.pessoa AS dono FROM obra_acessos a
+        JOIN obras o ON o.obra_id = a.obra_id AND o.ativa = 1 LEFT JOIN licencas l ON l.chave = o.dono_chave
+        WHERE a.chave = ? ORDER BY o.nome`).bind(eu).all()).results || [];
+    return json({ obras: r, pessoa: quem.lic.pessoa });
+  }
+  const m = /^\/pc\/compartilhada\/([^/]+)(\/eventos)?$/.exec(rota);
+  if (!m) return null;
+  if (!OBRA_ID.test(m[1])) return json({ erro: 'obra inválida' }, 400);
+  const ac = await acessoDa(env, m[1], eu);
+  if (!ac) return json({ erro: 'esta licença não tem acesso a esta obra compartilhada — peça ao responsável' }, 403);
+  await env.DB.prepare('UPDATE obra_acessos SET ultima_vez = ? WHERE obra_id = ? AND chave = ?').bind(agora(), m[1], eu).run();
+  const obra = { obra_id: ac.obra_id, nome: ac.nome, papel: ac.papel, dono: ac.dono || '', pessoa: quem.lic.pessoa };
+  if (!m[2]) return req.method === 'GET' ? json(obra) : vazio(405, { Allow: 'GET' });
+  if (req.method === 'GET') {
+    const depois = Math.max(0, parseInt(url.searchParams.get('depois') || '0', 10) || 0);
+    const r = (await env.DB.prepare(`SELECT seq, id, pessoa, maquina, quando, data, etapa, item, refs, quantidade, kg, estorno_de, obs
+        FROM apontamentos WHERE obra_id = ? AND seq > ? ORDER BY seq LIMIT ?`).bind(m[1], depois, EVENTOS_POR_LEITURA + 1).all()).results || [];
+    const mais = r.length > EVENTOS_POR_LEITURA;
+    const evs = r.slice(0, EVENTOS_POR_LEITURA).map(e => ({
+      seq: e.seq, id: e.id, quando: e.quando, data: e.data, quem: e.pessoa, maquina: e.maquina, etapa: e.etapa, item: e.item,
+      refs: (() => { try { return JSON.parse(e.refs); } catch (x) { return []; } })(), quantidade: e.quantidade, kg: e.kg,
+      estorno_de: e.estorno_de, obs: e.obs }));
+    return json({ ...obra, eventos: evs, ultimo: evs.length ? evs[evs.length - 1].seq : depois, mais });
+  }
+  if (req.method !== 'POST') return vazio(405, { Allow: 'GET, POST' });
+  if (!APONTAM.has(ac.papel)) return json({ erro: `o seu papel nesta obra é ${ac.papel}: só vê, não aponta` }, 403);
+  const c = await req.json().catch(() => ({}));
+  const lista = Array.isArray(c.eventos) ? c.eventos : [];
+  if (!lista.length || lista.length > EVENTOS_POR_PEDIDO) return json({ erro: `envie de 1 a ${EVENTOS_POR_PEDIDO} eventos por pedido` }, 400);
+  const bons = [], recusados = [];
+  for (const e of lista) {
+    const v = eventoValido(e);
+    if (v) bons.push(v); else recusados.push({ id: String((e && e.id) || ''), erro: 'evento inválido' });
+  }
+  const t = agora();
+  const sql = `INSERT OR IGNORE INTO apontamentos (obra_id, id, chave, pessoa, maquina, quando, data, etapa, item, refs, quantidade, kg,
+               estorno_de, obs, recebido) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+  if (bons.length) {
+    await env.DB.batch(bons.map(v => env.DB.prepare(sql).bind(m[1], v.id, eu, quem.lic.pessoa || '', quem.maq.nome_pc || '', v.quando,
+      v.data, v.etapa, v.item, v.refs, v.quantidade, v.kg, v.estorno_de, v.obs, t)));
+  }
+  return json({ aceitos: bons.map(v => v.id), recusados, pessoa: quem.lic.pessoa || '' });
+}
+
 // ------------------------------------------------------------------ o PC envia
 
 async function pc(env, req, url, rota) {
+  // a obra compartilhada: qualquer licença ativa; o papel é conferido em cada rota
+  if (rota === '/pc/compartilhadas' || rota.startsWith('/pc/compartilhada/')) {
+    const quem = await doPC(env, req, false);
+    if (quem.recusa) return quem.recusa;
+    return (await compartilhada(env, req, rota, quem, url)) || json({ erro: 'rota desconhecida' }, 404);
+  }
   // a obra para outro usuário: qualquer licença ativa (não depende de "envia obras")
   if (rota === '/pc/pessoas' || rota === '/pc/envios' || rota.startsWith('/pc/envio/') || rota.startsWith('/pc/recebidos')) {
     const quem = await doPC(env, req, false);
