@@ -37,6 +37,13 @@ def _obra(slug, nome, lista, nomes):
 
 
 OBRA = _obra("obra-controle", "OBRA DO CONTROLE", _lista(), NOMES)
+# a tesoura montada (13/11): T60 = TESOURA 9 + TESOURA 10, que a fábrica gabarita junta — aponta-se inteira
+LISTA_M = {"gerado": "2026-11-13 15:00", "projeto": {"nome": "Montada"}, "totais": {"peso": 300.0}, "posicoes": [],
+           "conjuntos": [{"marca": "M500", "nome": "TESOURA 9", "instancias": 1, "peso_total": 180.0, "pecas_unidade": 40, "composicao": {}},
+                         {"marca": "M501", "nome": "TESOURA 10", "instancias": 1, "peso_total": 120.0, "pecas_unidade": 30, "composicao": {}}]}
+NOMES_M = {"montadas": {"M500 + M501": "T60"}, "montadas_unidades": {"T60": [{"nome": "T60", "meio": [0, 0, 0], "meias": [
+    {"marca": "M500", "ids": ["a1", "a2"]}, {"marca": "M501", "ids": ["b1", "b2"]}]}]}}
+OBRA_M = _obra("obra-montada", "OBRA DA MONTADA", LISTA_M, NOMES_M)
 TEM_POSTO = os.path.exists(os.path.join(POSTO, "detalhamento", "lista-de-materiais.json"))
 if TEM_POSTO:
     _lista_posto = json.load(open(os.path.join(POSTO, "detalhamento", "lista-de-materiais.json"), encoding="utf-8"))
@@ -252,6 +259,30 @@ try:
        "o histórico mostra 'T39-1 (era T38-1)'")
     linhas_ap = open(arq, encoding="utf-8").read()
     ok('"item": "T38-1"' in linhas_ap and "T39-1" not in linhas_ap, "o arquivo de apontamentos não foi reescrito")
+
+    # a tesoura montada: uma linha, as partes juntas, o estorno do lote
+    aba.navegar(base + "/controle-producao?projeto=obra-montada", limite=40)
+    ok(esperar(aba, "!!document.querySelector('#controle-corpo tr[data-item=\"T60\"]')", 30), "a tesoura montada T60 é uma linha")
+    linhas_m = aba.avaliar("[...document.querySelectorAll('#controle-corpo tbody tr[data-item]')].map(r => r.dataset.item)") or []
+    ok(linhas_m == ["T60"], f"as partes (TESOURA 9 e 10) não ficam soltas na lista ({linhas_m})")
+    ok("TESOURA 9 + TESOURA 10" in (aba.avaliar(celula("T60", "Descrição")) or ""), "a descrição diz as partes")
+    clicar(aba, "#controle-corpo button[data-item='T60']")
+    esperar(aba, "!!document.querySelector('#ctl-dialogo[open]')", 10)
+    dica = aba.avaliar("document.querySelector('#ctl-dialogo small.nota').textContent") or ""
+    ok("TESOURA 9 + TESOURA 10" in dica, f"a janela diz que aponta a montada inteira ({dica})")
+    clicar(aba, "#ctl-confirmar")
+    ok(esperar(aba, celula("T60", "Produção") + " === '✓'", 15), "Apontar a T60 a deixa produzida (✓)")
+    arq_m = os.path.join(OBRA_M, "producao", "apontamentos.jsonl")
+    evm = [json.loads(l) for l in open(arq_m, encoding="utf-8")] if os.path.exists(arq_m) else []
+    ok(sorted(e["item"] for e in evm) == ["TESOURA 10", "TESOURA 9"] and len({e.get("lote") for e in evm}) == 1
+       and all(e.get("montada") == "T60" for e in evm), "um apontamento por parte, no mesmo lote, com a montada")
+    ok(aba.avaliar("[...document.querySelectorAll('#controle-corpo tr[data-evento] td')].some(t => t.textContent === 'T60 · TESOURA 9')"),
+       "o histórico mostra 'T60 · TESOURA 9'")
+    aba.avaliar("window.confirm = (t) => { window._confirmou = t; return true; }")
+    clicar(aba, f"#controle-corpo tr[data-evento='{evm[0]['id'] if evm else ''}'] button")
+    ok(esperar(aba, celula("T60", "Produção") + " === '—'", 15), "o estorno de uma parte desfaz a montada inteira")
+    ok("tesoura montada T60" in (aba.avaliar("window._confirmou") or ""), "a pergunta do estorno fala da montada")
+    ok(len(open(arq_m, encoding="utf-8").read().strip().splitlines()) == 4, "os dois estornos ficam no arquivo (nada apagado)")
 
     if TEM_POSTO:
         aba.navegar(base + "/controle-producao?projeto=posto-copia", limite=60)

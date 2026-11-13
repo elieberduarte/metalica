@@ -2408,7 +2408,7 @@ def _gravar_nomes_producao(s: str, nomes: dict):
     pasta = os.path.join(_gerente()._existente(s), "detalhamento")
     _gravar_ajuste(os.path.join(pasta, "nomes.json"),
                    {k: nomes.get(k) or {} for k in ("posicoes", "conjuntos", "tipos", "tipos_conjuntos", "ifc", "ifc_conjuntos", "camadas_2d",
-                                                     "montadas", "suportes", "telhas", "variantes", "unidades")})      # D9 (11/10): T, S.T., MD/CU guardados; 13/11: o lugar das unidades (Controle de produção)
+                                                     "montadas", "suportes", "telhas", "variantes", "unidades", "montadas_unidades")})      # D9 (11/10): T, S.T., MD/CU guardados; 13/11: o lugar das unidades e das tesouras montadas (Controle de produção)
 
 
 def _nomes_no_modelo(doc, nomes: dict) -> int:

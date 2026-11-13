@@ -3840,8 +3840,15 @@ def tesouras_montadas(meias: Sequence[tuple]) -> Tuple[List[dict], set]:
         # da esquerda para a direita no desenho (ao longo do vão)
         pl.sort(key=lambda t: t[4][0] + t[4][1])
         chave = tuple(sorted(t[0] for t in pl))
-        m = montadas.setdefault(chave, {"rotulos": chave, "pecas": [e for t in pl for e in t[1]], "n": 0})
+        m = montadas.setdefault(chave, {"rotulos": chave, "pecas": [e for t in pl for e in t[1]], "n": 0, "instancias": []})
         m["n"] += 1
+        # cada montada no lugar: as meias dela (a marca e as peças) e o meio — o Controle de produção aponta a montada
+        # inteira e acende as peças dela no 3D (usuário 13/11: "as partes só serão apontadas juntas com o conjunto inteiro")
+        pts = [t[4] for t in pl]
+        m["instancias"].append({
+            "meias": [{"marca": collections.Counter(str(_marcas(e).get("conjunto") or "") for e in t[1]).most_common(1)[0][0],
+                       "ids": [str(e.id) for e in t[1]]} for t in pl],
+            "meio": [round(sum(c[k] for c in pts) / len(pts), 1) for k in range(3)]})
     cobertos = {r for r in total if not fora.get(r)} if montadas else set()
     return list(montadas.values()), cobertos
 

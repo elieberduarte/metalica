@@ -214,8 +214,9 @@ def rota_post(h, rota: str, corpo: dict) -> bool:
         raise _erro(str(e))
     novos = r["eventos"] if rota == "/api/producao/apontar-varios" else [ev]
     if nuvem is not None:
-        for x in novos:
-            obra_compartilhada.na_fila(pasta, x["id"])
+        # a tesoura montada grava uma linha por parte ("junto"), e o estorno dela desfaz o lote inteiro
+        for i in [x["id"] for x in novos] + [j for x in novos for j in x.get("junto") or []]:
+            obra_compartilhada.na_fila(pasta, i)
         nuvem = _sincronizar(pasta)
     if rota == "/api/producao/apontar-varios":
         h._json({"ok": True, "eventos": novos, "pulados": r["pulados"], "nuvem": nuvem})

@@ -8,7 +8,7 @@ Servidor de teste com --dev e uma CÓPIA do Posto (modelo.json + lista + nomes) 
 verdade:
   1. a tela abre com o 3D ao lado; tudo o que está no controle começa cinza (não feita);
   2. as 7 TESOURA 1 (uma marca, 7 unidades) se separam no 3D: cada unidade com as suas peças, nenhuma repetida;
-  3. clicar na linha TESOURA 14-1 destaca as peças dela no 3D (na cor de destaque) e enquadra;
+  3. clicar na linha TESOURA 2-1 destaca as peças dela no 3D (na cor de destaque) e enquadra;
   4. clicar numa peça do 3D (mouse de verdade) marca a linha do item na lista;
   5. Apontar TESOURA 1-3 na Produção → as peças dela azuis; na Pintura → verdes; as outras TESOURA 1 seguem cinza;
   6. peças avulsas iguais pintam na proporção (T.C.1: metade apontada → metade azul);
@@ -16,7 +16,7 @@ verdade:
   8. Cores…: trocar a produzida para #ff0000 muda o 3D na hora; Gravar guarda em _producao-cores.json e vale ao
      recarregar; a sugestão Padrão + Gravar apaga o arquivo;
   9. o botão 3D esconde e mostra o painel; sem erro no console;
-  10. apontar vários pelo 3D (13/11): Ctrl+clique numa peça da TESOURA 1-5 e numa da 1-6 escolhe as duas na lista, o 3D
+  10. apontar vários pelo 3D (13/11): Ctrl+clique numa peça da TESOURA 1-6 e numa da 1-7 escolhe as duas na lista, o 3D
       acende as peças das duas juntas, Ctrl+clique de novo tira; "Apontar os escolhidos" deixa as duas azuis.
 Porta livre, nunca a 8765/8766. Sem o Posto nesta máquina, o verificador avisa e sai sem falha."""
 import base64, json, os, shutil, subprocess, sys, tempfile, time
@@ -40,6 +40,9 @@ os.makedirs(os.path.join(OBRA, "detalhamento"))
 for rel in ("modelo.json", "projeto.json", os.path.join("detalhamento", "lista-de-materiais.json"),
             os.path.join("detalhamento", "nomes.json")):
     shutil.copy2(os.path.join(POSTO, rel), os.path.join(OBRA, rel))
+# VERIF_NOMES=<nomes.json>: usa outro nomes.json na cópia (o de um Detalhar feito em memória, antes do Detalhar da obra)
+if os.environ.get("VERIF_NOMES"):
+    shutil.copy2(os.environ["VERIF_NOMES"], os.path.join(OBRA, "detalhamento", "nomes.json"))
 
 # o lugar das unidades pela ordem dos eixos (13/11, detalhe/unidades.py): o nomes.json da cópia ganha as "unidades" como o
 # Detalhar grava (o Posto real só as terá no próximo Detalhar da obra) — o 3D acende as peças gravadas de cada unidade
@@ -56,6 +59,8 @@ if not _nomes.get("unidades"):
                                     json.load(open(os.path.join(OBRA, "projeto.json"), encoding="utf-8")).get("eixos"))[1]
     json.dump(_nomes, open(os.path.join(OBRA, "detalhamento", "nomes.json"), "w", encoding="utf-8"), ensure_ascii=False)
 LUGAR = _nomes["unidades"]
+# as tesouras montadas (13/11): o lugar delas vem do Detalhar (nomes.json → montadas_unidades); antes dele, o passo 11 pula
+MONTADAS = _nomes.get("montadas_unidades") or {}
 
 srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--dev", "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -163,22 +168,28 @@ try:
     ok(contas[1] > 1000 and contas[2] == 0 and contas[3] == 0, f"sem apontamento: só não feitas no 3D ({contas})")
     sem = aba.avaliar(f"{S}.mapa.semPeca")
     ok(sem == 0, f"todo item tem peça no 3D (sem peça: {sem})")
-    ok(cores_de("TESOURA 14-1") == [padrao.get("falta")], f"TESOURA 14-1 cinza ({cores_de('TESOURA 14-1')})")
+    ok(cores_de("TESOURA 2-1") == [padrao.get("falta")], f"TESOURA 2-1 cinza ({cores_de('TESOURA 2-1')})")
     foto("_controle_3d.png")
 
     # 2. as unidades no lugar gravado: a TESOURA 1-1 é a do eixo A (o y maior no Posto) e acende as peças gravadas dela
     t11 = next((u for uns in LUGAR.values() for u in uns if u["nome"] == "TESOURA 1-1"), None)
     if t11:
-        pecas_t11 = aba.avaliar(f"(() => {{ const k = {K('TESOURA 1-1')}; const F = {V}.fichas; return {S}.mapa.pecas[k].map(i => String(F[i].id)).sort(); }})()") or []
+        # a TESOURA 1-1 sozinha, ou como parte da tesoura montada (T52, 13/11): as peças gravadas dela, no item ou na parte
+        pecas_t11 = aba.avaliar(f"""(() => {{ const F = {V}.fichas, I = {S}.dados.itens, M = {S}.mapa; const k = {K('TESOURA 1-1')};
+          if (k >= 0) return M.pecas[k].map(i => String(F[i].id)).sort();
+          const g = M.grupos.find(g => g.parte && g.parte.id === 'TESOURA 1-1'); return g ? g.pecas.map(i => String(F[i].id)).sort() : []; }})()""") or []
         ok(pecas_t11 == sorted(t11["ids"]), f"TESOURA 1-1 acende as {len(t11['ids'])} peças gravadas dela ({len(pecas_t11)})")
         ys = [u["meio"][1] for uns in LUGAR.values() for u in uns if u["nome"].startswith("TESOURA 1-")]
         ok(t11["meio"][1] == max(ys), "a TESOURA 1-1 é a do eixo A (o primeiro pela letra)")
     else:
         ok(False, "a TESOURA 1-1 tem lugar gravado")
     # as 7 TESOURA 1 separadas
-    sep = aba.avaliar(f"""(() => {{ const M = {S}.mapa, I = {S}.dados.itens; const ks = I.map((x, k) => k).filter(k => /^TESOURA 1-\\d+$/.test(I[k].id));
-      const todas = ks.flatMap(k => M.pecas[k]); return {{ n: ks.length, juntas: ks.some(k => M.juntasDe.has(k)),
-      vazias: ks.filter(k => !M.pecas[k].length).length, repetidas: todas.length - new Set(todas).size }}; }})()""") or {}
+    # as soltas (itens) e as que estão dentro de montadas (partes, cada uma um grupo no 3D)
+    sep = aba.avaliar(f"""(() => {{ const M = {S}.mapa, I = {S}.dados.itens, eh = (id) => /^TESOURA 1-\\d+$/.test(id);
+      const ks = I.map((x, k) => k).filter(k => eh(I[k].id)); const gs = M.grupos.filter(g => g.parte && eh(g.parte.id));
+      const todas = ks.flatMap(k => M.pecas[k]).concat(gs.flatMap(g => g.pecas)); return {{ n: ks.length + gs.length,
+      juntas: ks.some(k => M.juntasDe.has(k)), vazias: ks.filter(k => !M.pecas[k].length).length + gs.filter(g => !g.pecas.length).length,
+      repetidas: todas.length - new Set(todas).size }}; }})()""") or {}
     ok(sep.get("n") == 7 and not sep.get("juntas") and not sep.get("vazias") and not sep.get("repetidas"),
        f"as 7 TESOURA 1 se separam no 3D, cada uma com as suas peças ({sep})")
 
@@ -191,12 +202,12 @@ try:
        f"as variantes acendem só as suas peças, fora de grupo ({va.get('n')} itens; erradas: {va.get('erradas')}; grupos juntos na obra: {va.get('juntas')})")
 
     # 3. a linha destaca no 3D
-    clicar(aba, "#controle-corpo tr[data-item='TESOURA 14-1'] td:nth-child(3)")
-    ok(esperar(aba, f"{V}.selecaoVarias.size > 0 && {V}.selecaoVarias.size === {S}.mapa.pecas[{K('TESOURA 14-1')}].length", 10),
-       "clicar na linha TESOURA 14-1 destaca as peças dela no 3D")
-    ok(aba.avaliar("document.querySelector(\"#controle-corpo tr[data-item='TESOURA 14-1']\").classList.contains('escolhida')"),
+    clicar(aba, "#controle-corpo tr[data-item='TESOURA 2-1'] td:nth-child(3)")
+    ok(esperar(aba, f"{V}.selecaoVarias.size > 0 && {V}.selecaoVarias.size === {S}.mapa.pecas[{K('TESOURA 2-1')}].length", 10),
+       "clicar na linha TESOURA 2-1 destaca as peças dela no 3D")
+    ok(aba.avaliar("document.querySelector(\"#controle-corpo tr[data-item='TESOURA 2-1']\").classList.contains('escolhida')"),
        "a linha fica marcada")
-    ok("TESOURA 14-1" in (aba.avaliar("document.querySelector('#p3-situacao').textContent") or ""), "a situação do 3D diz o item")
+    ok("TESOURA 2-1" in (aba.avaliar("document.querySelector('#p3-situacao').textContent") or ""), "a situação do 3D diz o item")
     foto("_controle_3d_escolhida.png")
     livre = aba.avaliar("(() => { const b = document.querySelector('#p3-cores').getBoundingClientRect(); const e = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);"
                         " return e && e.id === 'p3-cores'; })()")
@@ -204,25 +215,25 @@ try:
 
     # 4. a peça do 3D marca a linha (mouse de verdade no quadro)
     alvo = aba.avaliar(f"""(() => {{ const q = document.querySelector('#p3-quadro').getBoundingClientRect();
-      const ps = {S}.mapa.pecas[{K('TESOURA 14-1')}];
+      const ps = {S}.mapa.pecas[{K('TESOURA 2-1')}];
       for (const i of ps) {{ const p = {V}.paraTela(i); if (!p) continue;
         if ({V}.escolher(p[0], p[1]) === i) return [q.left + p[0], q.top + p[1]]; }}
       return null; }})()""")
     if alvo:
         aba.avaliar("document.querySelectorAll('#controle-corpo tr.escolhida').forEach(t => t.classList.remove('escolhida'))")
         clicar_em(aba, alvo[0], alvo[1])
-        ok(esperar(aba, "!!document.querySelector(\"#controle-corpo tr[data-item='TESOURA 14-1'].escolhida\")", 10),
-           "clicar numa peça da TESOURA 14-1 no 3D marca a linha dela na lista")
+        ok(esperar(aba, "!!document.querySelector(\"#controle-corpo tr[data-item='TESOURA 2-1'].escolhida\")", 10),
+           "clicar numa peça da TESOURA 2-1 no 3D marca a linha dela na lista")
     else:
-        ok(False, "achar na tela uma peça da TESOURA 14-1 para clicar")
+        ok(False, "achar na tela uma peça da TESOURA 2-1 para clicar")
 
     # 5. apontar muda a cor
     ok(apontar(aba, "TESOURA 1-3", "producao"), "apontar TESOURA 1-3 na produção")
     ok(esperar(aba, f"(() => {{ const k = {K('TESOURA 1-3')}; return k >= 0 && ({S}.dados.itens[k].feito.producao === 1); }})()", 15), "o apontamento chega no 3D")
     esperar(aba, "false", 0.6)
     ok(cores_de("TESOURA 1-3") == [padrao.get("producao")], f"TESOURA 1-3 azul ({cores_de('TESOURA 1-3')})")
-    ok(cores_de("TESOURA 1-2") == [padrao.get("falta")] and cores_de("TESOURA 1-4") == [padrao.get("falta")],
-       "as TESOURA 1-2 e 1-4 seguem cinza")
+    ok(cores_de("TESOURA 1-2") == [padrao.get("falta")] and cores_de("TESOURA 1-7") == [padrao.get("falta")],
+       "as TESOURA 1-2 e 1-7 seguem cinza")
     ok(apontar(aba, "TESOURA 1-3", "pintura"), "apontar TESOURA 1-3 na pintura")
     ok(esperar(aba, f"{S}.dados.itens[{K('TESOURA 1-3')}].feito.pintura === 1", 15), "a pintura chega no 3D")
     esperar(aba, "false", 0.6)
@@ -286,35 +297,48 @@ try:
 
     # 10. apontar vários pelo 3D
     marcados = "[...document.querySelectorAll('#controle-corpo input.ctl-marcar:checked')].map(c => c.dataset.item).sort().join(',')"
-    a5, a6 = peca_na_tela("TESOURA 1-5", True), True
+    a5, a6 = peca_na_tela("TESOURA 1-6", True), True
     if a5 and a6:
         clicar_em(aba, a5[0], a5[1], ctrl=True)
-        ok(esperar(aba, marcados + " === 'TESOURA 1-5'", 10), "Ctrl+clique numa peça da TESOURA 1-5 escolhe a linha dela")
-        a6 = peca_na_tela("TESOURA 1-6", True)
+        ok(esperar(aba, marcados + " === 'TESOURA 1-6'", 10), "Ctrl+clique numa peça da TESOURA 1-6 escolhe a linha dela")
+        a6 = peca_na_tela("TESOURA 1-7", True)
         clicar_em(aba, a6[0], a6[1], ctrl=True)
-        ok(esperar(aba, marcados + " === 'TESOURA 1-5,TESOURA 1-6'", 10), "Ctrl+clique numa da 1-6 soma (as duas escolhidas)")
-        n56 = aba.avaliar(f"{S}.mapa.pecas[{K('TESOURA 1-5')}].length + {S}.mapa.pecas[{K('TESOURA 1-6')}].length")
+        ok(esperar(aba, marcados + " === 'TESOURA 1-6,TESOURA 1-7'", 10), "Ctrl+clique numa da 1-7 soma (as duas escolhidas)")
+        n56 = aba.avaliar(f"{S}.mapa.pecas[{K('TESOURA 1-6')}].length + {S}.mapa.pecas[{K('TESOURA 1-7')}].length")
         ok(esperar(aba, f"{V}.selecaoVarias.size === {n56}", 10), f"o 3D acende as peças das duas juntas ({n56})")
         ok("2 item(ns) escolhido(s)" in (aba.avaliar("document.querySelector('#p3-situacao').textContent") or ""), "a situação do 3D diz 2 itens escolhidos")
         foto("_controle_3d_varios.png")
-        a6 = peca_na_tela("TESOURA 1-6", True)
+        a6 = peca_na_tela("TESOURA 1-7", True)
         clicar_em(aba, a6[0], a6[1], ctrl=True)
-        ok(esperar(aba, marcados + " === 'TESOURA 1-5'", 10), "Ctrl+clique de novo na 1-6 tira ela da escolha")
-        a6 = peca_na_tela("TESOURA 1-6", True)
+        ok(esperar(aba, marcados + " === 'TESOURA 1-6'", 10), "Ctrl+clique de novo na 1-7 tira ela da escolha")
+        a6 = peca_na_tela("TESOURA 1-7", True)
         clicar_em(aba, a6[0], a6[1], ctrl=True)
-        esperar(aba, marcados + " === 'TESOURA 1-5,TESOURA 1-6'", 10)
+        esperar(aba, marcados + " === 'TESOURA 1-6,TESOURA 1-7'", 10)
         clicar(aba, "#ctl-apontar-varios")
         ok(esperar(aba, "!!document.querySelector('#ctl-dialogo-varios[open]')", 10), "Apontar os escolhidos abre a janela")
         clicar(aba, "#ctl-dialogo-varios input[name=ctl-etapa][value=producao]")
         clicar(aba, "#ctl-dialogo-varios #ctl-confirmar")
-        ok(esperar(aba, f"{S}.dados.itens[{K('TESOURA 1-5')}].feito.producao === 1 && {S}.dados.itens[{K('TESOURA 1-6')}].feito.producao === 1", 20),
+        ok(esperar(aba, f"{S}.dados.itens[{K('TESOURA 1-6')}].feito.producao === 1 && {S}.dados.itens[{K('TESOURA 1-7')}].feito.producao === 1", 20),
            "as duas produzidas de uma vez")
         esperar(aba, "false", 0.6)
-        ok(cores_de("TESOURA 1-5") == [padrao.get("producao")] and cores_de("TESOURA 1-6") == [padrao.get("producao")],
-           f"as duas azuis no 3D ({cores_de('TESOURA 1-5')}, {cores_de('TESOURA 1-6')})")
+        ok(cores_de("TESOURA 1-6") == [padrao.get("producao")] and cores_de("TESOURA 1-7") == [padrao.get("producao")],
+           f"as duas azuis no 3D ({cores_de('TESOURA 1-6')}, {cores_de('TESOURA 1-7')})")
         ok(esperar(aba, f"{V}.selecaoVarias.size === 0 && " + marcados + " === ''", 10), "a escolha se limpa na lista e no 3D")
     else:
-        ok(False, f"achar na tela peças da TESOURA 1-5 e 1-6 para clicar ({a5}, {a6})")
+        ok(False, f"achar na tela peças da TESOURA 1-6 e 1-7 para clicar ({a5}, {a6})")
+
+    # 11. a tesoura montada: uma linha que acende as peças de todas as partes; cada parte pinta pela sua situação
+    um = next(((n, i) for n, insts in MONTADAS.items() for i in insts if len(i.get("meias") or []) >= 2), None)
+    if um:
+        nome_m = um[1]["nome"]
+        ids_m = sorted(str(i) for me in um[1]["meias"] for i in me["ids"])
+        acesas = aba.avaliar(f"(() => {{ const k = {K(nome_m)}; if (k < 0) return null; const F = {V}.fichas;"
+                             f" return {S}.mapa.pecas[k].map(i => String(F[i].id)).sort(); }})()")
+        ok(acesas == ids_m, f"a montada {nome_m} acende as peças das {len(um[1]['meias'])} partes ({len(acesas or [])} de {len(ids_m)})")
+        partes = aba.avaliar(f"{S}.mapa.grupos.filter(g => g.parte && g.itens[0] === {K(nome_m)}).length")
+        ok(partes == len(um[1]["meias"]), f"cada parte da {nome_m} é um grupo no 3D ({partes})")
+    else:
+        print("  (o nomes.json do Posto ainda sem as montadas: o próximo Detalhar grava — passo 11 pulado)", flush=True)
 
     erros = [c for c in aba.console if c[0] in ("error", "excecao")]
     ok(not erros, f"sem erro no console ({erros[:3]})")

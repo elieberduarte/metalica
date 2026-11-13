@@ -142,6 +142,17 @@
     return el('span', { class: 'ctl-nada', texto: '—' });
   }
 
+  /** a tesoura montada (13/11): feita quando todas as partes estão; antes, "1 de 2 partes" */
+  function situacaoMontada(x, etapa) {
+    const pf = (x.partes_feitas || {})[etapa] || 0, total = x.partes.length;
+    const quais = x.partes.filter(p => ((p.feito || {})[etapa] || 0) >= 1).map(p => p.id);
+    if ((x.feito[etapa] || 0) >= 1) return el('span', { class: 'ctl-ok', texto: '✓', title: x.partes.map(p => p.id).join(' + ') });
+    if (pf > 0) return el('span', { class: 'ctl-meio', texto: `${n(pf)} de ${n(x.partes.length)} partes`,
+      title: `feita${quais.length > 1 ? 's' : ''}: ${quais.join(', ')}; falta${total - pf > 1 ? 'm' : ''}: `
+        + x.partes.filter(p => !quais.includes(p.id)).map(p => p.id).join(', ') });
+    return el('span', { class: 'ctl-nada', texto: '—' });
+  }
+
   async function carregar() {
     if (ESTADO.carregando) return;
     ESTADO.carregando = true;
@@ -224,7 +235,8 @@
       { titulo: 'Descrição', chave: 'descricao' },
       { titulo: 'Qtd', chave: 'quantidade', classe: 'r', num: true },
       { titulo: 'kg', chave: 'kg', classe: 'r', num: true, casas: 1 },
-      ...etapas.map(et => ({ titulo: et.titulo, classe: 'c', valor: (x) => situacaoCelula(x.feito[et.chave] || 0, x.quantidade) })),
+      ...etapas.map(et => ({ titulo: et.titulo, classe: 'c', valor: (x) => x.partes ? situacaoMontada(x, et.chave)
+        : situacaoCelula(x.feito[et.chave] || 0, x.quantidade) })),
       { titulo: '', classe: 'c', valor: (x) => podeApontar() ? el('button', { type: 'button', class: 'ctl-btn', 'data-item': x.id, texto: 'Apontar', onclick: () => abrirDialogo(x) }) : '' },
     ];
     const kgLinhas = linhas.reduce((s, x) => s + x.kg, 0);
@@ -248,7 +260,8 @@
     }
     partes.push(secao('O que se controla', 'cada tesoura/conjunto pela unidade (T38-1, T38-2); as peças avulsas iguais pela posição, com a quantidade',
       el('div', {}, el('div', { class: 'ctl-barra' }, busca, selEtapa, selTipo,
-        el('span', { texto: `${n(D.total.unidades_conjunto)} unidades de conjunto · ${n(D.total.itens - D.total.unidades_conjunto)} grupos de peças · ${n(D.total.kg, 1)} kg` })),
+        el('span', { texto: (D.total.montadas ? `${n(D.total.montadas)} tesouras montadas · ` : '')
+          + `${n(D.total.unidades_conjunto)} unidades de conjunto · ${n(D.total.itens - D.total.unidades_conjunto - (D.total.montadas || 0))} grupos de peças · ${n(D.total.kg, 1)} kg` })),
         el('div', { class: 'ctl-varios', id: 'ctl-varios', hidden: true }), quadro)));
     partes.push(secao('Últimos apontamentos', 'o mais novo em cima; estorno não apaga, desfaz', tabelaEventos(D.eventos || [])));
     corpo.replaceChildren(...partes);
@@ -331,7 +344,9 @@
       confirmar.textContent = vao.length ? `Apontar ${n(vao.length)}` : 'Apontar';
       lista.replaceChildren(el('table', {}, el('tbody', {}, its.map(x => el('tr', { class: falta(x, etapa) ? '' : 'ctl-estornado' },
         el('td', { class: 'b', texto: x.id }), el('td', { texto: x.descricao || x.tipo }),
-        el('td', { class: 'r', texto: falta(x, etapa) ? `${n(falta(x, etapa))} de ${n(x.quantidade)}` : 'completo' }))))));
+        el('td', { class: 'r', texto: !falta(x, etapa) ? 'completo' : x.partes
+          ? x.partes.filter(p => ((p.feito || {})[etapa] || 0) < 1).map(p => p.id).join(' + ')
+          : `${n(falta(x, etapa))} de ${n(x.quantidade)}` }))))));
     };
     const radios = el('div', { class: 'etapas' }, etapas.map(et => {
       const r = el('input', { type: 'radio', name: 'ctl-etapa', value: et.chave });
@@ -408,7 +423,8 @@
         el('td', { texto: dataBRc(e.data) }),
         el('td', { texto: e.quem || '—' }),
         el('td', { texto: (estorno ? 'estorno · ' : '') + (titulo[e.etapa] || e.etapa) }),
-        el('td', { class: 'b', texto: e.item_atual ? `${e.item_atual} (era ${e.item})` : e.item,
+        el('td', { class: 'b', texto: (e.montada_atual || e.montada ? `${e.montada_atual || e.montada} · ` : '')
+          + (e.item_atual ? `${e.item_atual} (era ${e.item})` : e.item),
           title: e.item_atual ? 'O detalhamento mudou o nome; o apontamento seguiu a peça' : null }),
         el('td', { class: 'r', texto: (estorno ? '−' : '') + n(e.quantidade) }),
         el('td', { class: 'r', texto: n(e.kg, 1) }),
@@ -438,7 +454,10 @@
       qtd.max = String(Math.max(f, 0));
       qtd.value = String(Math.max(f, 0));
       qtd.disabled = f <= 0 || item.quantidade === 1;
-      dica.textContent = f > 0 ? `faltam ${n(f)} de ${n(item.quantidade)} na ${etapa === 'producao' ? 'produção' : 'pintura'}` : 'esta etapa já está completa';
+      const faltamPartes = (item.partes || []).filter(p => ((p.feito || {})[etapa] || 0) < 1).map(p => p.id);
+      dica.textContent = f <= 0 ? 'esta etapa já está completa'
+        : item.partes ? `a montada inteira: aponta ${faltamPartes.join(' + ')} (o que falta na ${etapa === 'producao' ? 'produção' : 'pintura'})`
+        : `faltam ${n(f)} de ${n(item.quantidade)} na ${etapa === 'producao' ? 'produção' : 'pintura'}`;
     };
     const radios = el('div', { class: 'etapas' }, etapas.map(et => {
       const r = el('input', { type: 'radio', name: 'ctl-etapa', value: et.chave });
@@ -482,7 +501,9 @@
 
   async function estornar(e) {
     const titulo = Object.fromEntries((ESTADO.dados.etapas || []).map(x => [x.chave, x.titulo]));
-    if (!confirm(`Estornar o apontamento de ${e.item} (${titulo[e.etapa] || e.etapa}, ${e.quantidade})? Ele continua no histórico, riscado.`)) return;
+    const lote = e.lote ? (ESTADO.dados.eventos || []).filter(x => x.lote === e.lote && !x.estorno_de).map(x => x.item) : [];
+    const oque = lote.length > 1 ? `da tesoura montada ${e.montada} (${lote.join(' + ')}, apontadas juntas)` : `de ${e.item}`;
+    if (!confirm(`Estornar o apontamento ${oque} (${titulo[e.etapa] || e.etapa}, ${e.quantidade})? Ele continua no histórico, riscado.`)) return;
     try {
       await pedir('/api/producao/estornar', { projeto: PROJETO, evento: e.id });
       await carregar();

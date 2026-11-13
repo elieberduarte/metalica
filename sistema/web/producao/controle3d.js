@@ -127,11 +127,27 @@
     const gravadas = (ks) => {
       if (!ks.every(k => (itens[k].pecas3d || []).length)) return null;
       if (!porId) { porId = new Map(); for (let i = 0; i < n; i++) if (F[i].id != null) porId.set(String(F[i].id), i); }
-      const gs = ks.map(k => itens[k].pecas3d.map(id => porId.get(String(id))).filter(i => i !== undefined));
+      const gs = ks.map(k => itens[k].pecas3d.map(id => porId.get(String(id))).filter(i => i !== undefined && itemDaPeca[i] < 0));
       return gs.every(g => g.length) ? gs : null;
     };
+    // as tesouras montadas (13/11): cada parte com as peças da meia dela, pintada pela situação da parte
+    itens.forEach((x, k) => {
+      if (x.origem !== 'montada' || !x.partes) return;
+      if (!porId) { porId = new Map(); for (let i = 0; i < n; i++) if (F[i].id != null) porId.set(String(F[i].id), i); }
+      for (const pt of x.partes) {
+        const g = [];
+        for (const id of pt.pecas3d || []) {
+          const i = porId.get(String(id));
+          if (i === undefined || itemDaPeca[i] >= 0) continue;
+          itemDaPeca[i] = k;
+          pecas[k].push(i);
+          g.push(i);
+        }
+        grupos.push({ itens: [k], pecas: g, parte: pt });
+      }
+    });
     for (const [m, ks] of unidades) {
-      const ps = porCj.get(m) || [];
+      const ps = (porCj.get(m) || []).filter(i => itemDaPeca[i] < 0);
       const separadas = ks.length > 1 ? (gravadas(ks) || separarUnidades(ps, F, ks.length)) : [ps];
       if (separadas) {
         separadas.forEach((g, j) => {
@@ -218,7 +234,7 @@
     for (const g of M.grupos) {
       let q = 0, prod = 0, pint = 0;
       for (const k of g.itens) {
-        const x = itens[k], f = x.feito || {};
+        const x = g.parte || itens[k], f = x.feito || {};
         q += x.quantidade;
         pint += Math.min(f.pintura || 0, x.quantidade);
         prod += Math.min(Math.max(f.producao || 0, f.pintura || 0), x.quantidade);

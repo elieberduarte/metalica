@@ -1164,6 +1164,19 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         nomes_montadas = numerar_estavel([" + ".join(m["rotulos"]) for m in montadas], (nomes or {}).get("montadas"), "T",
                                          reservados=set(nomes_conj.values()))
         nomeacao["montadas"] = nomes_montadas
+        # o lugar de cada montada (13/11, Controle de produção): {nome: [{nome, meias: [{marca, ids}], meio}]}, na ordem dos
+        # eixos como as unidades (T58-1, T58-2…; a única fica sem número)
+        from nucleo2d.detalhe import unidades as _unidades
+        lugar_montadas = {}
+        for m in montadas:
+            nome_m = nomes_montadas.get(" + ".join(m["rotulos"]))
+            insts = list(m.get("instancias") or [])
+            if not nome_m or not insts:
+                continue
+            ordem = _unidades.ordenar([i["meio"] for i in insts], eixos)
+            lugar_montadas[nome_m] = [dict(insts[j], nome=nome_m if len(insts) == 1 else "%s-%d" % (nome_m, k + 1))
+                                      for k, j in enumerate(ordem)]
+        nomeacao["montadas_unidades"] = lugar_montadas
         for i_m, m in enumerate(montadas, start=1):
             rot_m = " + ".join(m["rotulos"])
             # cada tesoura montada com o nome dela, em sequência — T1 (03x), T2 (02x)…; "T1 + T1" (as metades)

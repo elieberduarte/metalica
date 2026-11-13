@@ -114,6 +114,8 @@ def itens(lista: dict, nomes: Optional[dict] = None) -> List[dict]:
                 if p is not None:
                     usados[id(p)] += q
 
+    saida = _juntar_montadas(saida, (nomes or {}).get("montadas_unidades") or {})
+
     # --- as peças que sobram fora dos conjuntos: uma linha por posição, com a quantidade
     ids = {x["id"] for x in saida}
     # as variantes que o 3D não distingue pelo nome (nomes.json → "variantes" {id da peça: [posição, conjunto]}: as chapas
@@ -143,6 +145,76 @@ def itens(lista: dict, nomes: Optional[dict] = None) -> List[dict]:
             if len(pv) == resto:                        # só quando fecha com a quantidade da linha
                 saida[-1]["pecas3d"] = pv
     return saida
+
+
+def _juntar_montadas(saida: List[dict], lugar: dict) -> List[dict]:
+    """as tesouras montadas (a fábrica gabarita as meias juntas: T52 = TESOURA 1-1 + TESOURA 5) viram um item só, com as
+    partes dentro (usuário 13/11: "as partes só serão apontadas juntas com o conjunto inteiro"). `lugar` = nomes.json →
+    montadas_unidades {nome: [{nome, meias: [{marca, ids}], meio}]}, gravado pelo Detalhar. Cada meia acha a sua unidade
+    pela marca (e, com várias unidades na marca, pelas peças); a montada que não acha todas fica de fora (as partes seguem
+    soltas, como antes). O apontamento continua gravado na parte."""
+    if not lugar:
+        return saida
+    por_marca: Dict[str, List[int]] = {}
+    for k, x in enumerate(saida):
+        if x["origem"] == "conjunto":
+            por_marca.setdefault(str(x["refs"][0]), []).append(k)
+    usadas: Dict[int, str] = {}
+    montadas: List[tuple] = []                          # (posição da 1ª parte, item da montada)
+    for nome in sorted(lugar, key=_ordem_natural):
+        for inst in lugar[nome] or []:
+            partes, ids_m = [], []
+            for meia in inst.get("meias") or []:
+                ids = {str(i) for i in meia.get("ids") or []}
+                cand = [k for k in por_marca.get(str(meia.get("marca")), []) if k not in usadas]
+                if len(cand) > 1:
+                    cand = sorted(cand, key=lambda k: -len(ids & {str(i) for i in saida[k].get("pecas3d") or []}))
+                    if not ids & {str(i) for i in saida[cand[0]].get("pecas3d") or []}:
+                        cand = []
+                if not cand or cand[0] in [q for q, _ in partes]:
+                    partes = None
+                    break
+                partes.append((cand[0], sorted(ids)))
+                ids_m += sorted(ids)
+            if not partes or len(partes) < 2:
+                continue
+            for k, _ids in partes:
+                usadas[k] = inst.get("nome") or nome
+            ps = []
+            for k, ids in partes:
+                parte = dict(saida[k])
+                parte["pecas3d"] = ids                  # as peças da meia (a âncora do apontamento e o 3D)
+                parte["montada"] = inst.get("nome") or nome
+                ps.append(parte)
+            ps.sort(key=lambda x: _ordem_natural(x["id"]))  # BASE 1-1 + BASE 1-2 (o Detalhar dá na ordem do desenho)
+            kg = round(sum(x["kg"] for x in ps), 3)
+            montadas.append((min(k for k, _ in partes), {
+                "id": inst.get("nome") or nome, "nome": nome, "tipo": "tesoura montada", "origem": "montada",
+                "refs": [r for x in ps for r in x["refs"]], "descricao": " + ".join(x["id"] for x in ps),
+                "quantidade": 1, "kg_unidade": kg, "kg": kg, "partes": ps, "pecas3d": ids_m}))
+    if not montadas:
+        return saida
+    na_posicao = {}
+    for k, x in montadas:
+        na_posicao.setdefault(k, []).append(x)
+    out = []
+    for k, x in enumerate(saida):
+        out.extend(na_posicao.get(k, []))
+        if k not in usadas:
+            out.append(x)
+    return out
+
+
+def _ordem_natural(s: str):
+    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", str(s))]
+
+
+def alvos(its: List[dict]) -> List[dict]:
+    """o que recebe apontamento: os itens, com a montada trocada pelas partes dela (o apontamento fica na parte)"""
+    out = []
+    for x in its:
+        out.extend(x["partes"] if x.get("partes") else [x])
+    return out
 
 
 def _mm(v) -> str:
@@ -217,7 +289,8 @@ def resolver(eventos: List[dict], its: List[dict]) -> Dict[str, Optional[str]]:
       2. pelo nome, quando ele continua na mesma marca;
       3. pela marca: a peça avulsa da mesma posição; a unidade de conjunto sem lugar, a da marca com menos apontado
          naquela etapa (unidades sem lugar são iguais entre si).
-    O que não se acha fica None ("fora da lista", como antes)."""
+    O que não se acha fica None ("fora da lista", como antes). A montada conta pelas partes (o apontamento é da parte)."""
+    its = alvos(its)
     por_id = {x["id"]: x for x in its}
     por_peca: Dict[str, str] = {}
     avulso: Dict[str, str] = {}
@@ -300,7 +373,17 @@ def apontar(pasta_projeto: str, lista: dict, item: str, etapa: str, quantidade, 
     por_id = {x["id"]: x for x in its}
     it = por_id.get(item)
     if it is None:
+        dona = next((x["id"] for x in its for pt in x.get("partes") or [] if pt["id"] == item), None)
+        if dona:
+            raise ErroControle("%s é parte da tesoura montada %s: aponte a %s inteira" % (item, dona, dona))
         raise ErroControle("%s não está na lista de materiais atual" % item)
+    if it.get("partes"):
+        if q != 1:
+            raise ErroControle("a tesoura montada %s se aponta inteira (quantidade 1)" % item)
+        r = apontar_varios(pasta_projeto, lista, [item], etapa, quem, data=data, obs=obs, nomes=nomes)
+        ev = dict(r["eventos"][0])
+        ev["junto"] = [e["id"] for e in r["eventos"][1:]]
+        return ev
     dia = _data(data)
     with _TRAVA:
         eventos = ler_eventos(pasta_projeto)
@@ -355,6 +438,17 @@ def apontar_varios(pasta_projeto: str, lista: dict, ids: List[str], etapa: str, 
         for i in pedidos:
             it = por_id[i]
             falta = it["quantidade"] - ja.get(i, Counter())[etapa]
+            if it.get("partes"):                         # a montada: as partes que faltam, juntas (um lote)
+                faltam = [pt for pt in it["partes"] if ja.get(pt["id"], Counter())[etapa] < 1]
+                if not faltam:
+                    pulados.append(i)
+                    continue
+                lote = uuid.uuid4().hex[:12]
+                for pt in faltam:
+                    ev = _evento(pt, etapa, 1, quem, dia, obs)
+                    ev["montada"], ev["lote"] = it["id"], lote
+                    novos.append(ev)
+                continue
             if falta <= 0:
                 pulados.append(i)
                 continue
@@ -379,13 +473,24 @@ def estornar(pasta_projeto: str, evento: str, quem: str, obs: str = "") -> dict:
             raise ErroControle("isto já é um estorno")
         if any(e.get("estorno_de") == evento for e in eventos):
             raise ErroControle("este apontamento já foi estornado")
-        ev = {"id": uuid.uuid4().hex[:12], "quando": _agora(), "data": _hoje().isoformat(), "quem": quem or "",
-              "etapa": orig.get("etapa"), "item": orig.get("item"), "refs": orig.get("refs") or [],
-              "quantidade": int(orig.get("quantidade") or 0), "kg": orig.get("kg") or 0, "estorno_de": evento,
-              "obs": str(obs or "")[:300]}
-        if orig.get("ancora"):
-            ev["ancora"] = list(orig["ancora"])
-        _gravar(pasta_projeto, ev)
+        # a tesoura montada apontada inteira (um lote): o estorno desfaz o lote inteiro
+        ja = {e.get("estorno_de") for e in eventos if e.get("estorno_de")}
+        origs = [orig] + ([e for e in eventos if orig.get("lote") and e.get("lote") == orig["lote"] and e is not orig
+                           and not e.get("estorno_de") and e.get("id") not in ja])
+        feitos = []
+        for o in origs:
+            ev = {"id": uuid.uuid4().hex[:12], "quando": _agora(), "data": _hoje().isoformat(), "quem": quem or "",
+                  "etapa": o.get("etapa"), "item": o.get("item"), "refs": o.get("refs") or [],
+                  "quantidade": int(o.get("quantidade") or 0), "kg": o.get("kg") or 0, "estorno_de": o.get("id"),
+                  "obs": str(obs or "")[:300]}
+            for k in ("ancora", "montada", "lote"):
+                if o.get(k):
+                    ev[k] = list(o[k]) if isinstance(o[k], list) else o[k]
+            _gravar(pasta_projeto, ev)
+            feitos.append(ev)
+    ev = dict(feitos[0])
+    if len(feitos) > 1:
+        ev["junto"] = [e["id"] for e in feitos[1:]]
     return ev
 
 
@@ -397,9 +502,18 @@ def situacao(lista: dict, eventos: List[dict], nomes: Optional[dict] = None, ult
     mapa = resolver(eventos, its)
     f = feito(eventos, mapa)
     kg_total = round(sum(x["kg"] for x in its), 1)
+    # a montada fica feita quando todas as partes estão (usuário 13/11: "só quando todas as partes estiverem pintadas");
+    # no kg do andamento entram as partes já feitas
+    for x in its:
+        for pt in x.get("partes") or []:
+            pt["feito"] = {e: int(f.get(pt["id"], Counter())[e]) for e in ETAPAS}
+        if x.get("partes"):
+            x["partes_feitas"] = {e: sum(1 for pt in x["partes"] if pt["feito"][e] >= 1) for e in ETAPAS}
+            f[x["id"]] = Counter({e: 1 if x["partes_feitas"][e] == len(x["partes"]) else 0 for e in ETAPAS})
     andamento = OrderedDict()
     for etapa, titulo in ETAPAS.items():
-        kg = sum(min(f.get(x["id"], Counter())[etapa], x["quantidade"]) * x["kg_unidade"] for x in its)
+        kg = sum((sum(pt["kg"] for pt in x["partes"] if pt["feito"][etapa] >= 1) if x.get("partes")
+                  else min(f.get(x["id"], Counter())[etapa], x["quantidade"]) * x["kg_unidade"]) for x in its)
         completos = sum(1 for x in its if f.get(x["id"], Counter())[etapa] >= x["quantidade"])
         andamento[etapa] = {"titulo": titulo, "kg": round(kg, 1), "pct": round(100.0 * kg / kg_total, 1) if kg_total else 0.0,
                             "itens_completos": completos}
@@ -417,15 +531,19 @@ def situacao(lista: dict, eventos: List[dict], nomes: Optional[dict] = None, ult
     hoje = _hoje().isoformat()
     validos_hoje = [e for e in _validos(eventos) if str(e.get("quando", ""))[:10] == hoje]
     estornados = {e.get("estorno_de") for e in eventos if e.get("estorno_de")}
+    montada_de = {pt["id"]: x["id"] for x in its for pt in x.get("partes") or []}
     recentes = []
     for e in reversed(eventos[-ultimos:] if ultimos else eventos):
         r = dict(e)
         r["estornado"] = e.get("id") in estornados
         if mapa.get(e.get("id")) and mapa[e.get("id")] != e.get("item"):
             r["item_atual"] = mapa[e.get("id")]
+        if mapa.get(e.get("id")) in montada_de:
+            r["montada_atual"] = montada_de[mapa[e.get("id")]]
         recentes.append(r)
     return {"etapas": [{"chave": k, "titulo": t} for k, t in ETAPAS.items()],
             "total": {"kg": kg_total, "itens": len(its), "unidades_conjunto": sum(1 for x in its if x["origem"] == "conjunto"),
+                      "montadas": sum(1 for x in its if x["origem"] == "montada"),
                       "peso_lista": (lista.get("totais") or {}).get("peso")},
             "andamento": andamento, "itens": its, "fora_da_lista": fora,
             "seguiram": [{"era": a, "agora": b} for a, b in seguiram],
@@ -484,6 +602,7 @@ def para_erp(slug: str, nome: str, lista: dict, eventos: List[dict], nomes: Opti
     """o que o ERP lê (só leitura): o andamento já somado, cada item e os eventos (com `desde`, só os de depois)"""
     s = situacao(lista, eventos, nomes, ultimos=0)
     mapa = resolver(eventos, itens(lista, nomes))
+    montada_de = {pt["id"]: x["id"] for x in s["itens"] for pt in x.get("partes") or []}
     evs = [e for e in eventos if not desde or str(e.get("quando", "")) > str(desde)]
     return {"obra": slug, "nome": nome, "atualizado": _agora(), "lista_gerada": lista.get("gerado"),
             "etapas": list(ETAPAS.keys()),
@@ -494,6 +613,7 @@ def para_erp(slug: str, nome: str, lista: dict, eventos: List[dict], nomes: Opti
                       for x in s["itens"]],
             "eventos": [{"id": e.get("id"), "quando": e.get("quando"), "data": e.get("data"), "quem": e.get("quem"),
                          "etapa": e.get("etapa"), "marca": e.get("item"), "marca_atual": mapa.get(e.get("id")),
+                         "montada": e.get("montada") or montada_de.get(mapa.get(e.get("id"))),
                          "quantidade": e.get("quantidade"),
                          "kg": e.get("kg"), "estorno_de": e.get("estorno_de")} for e in evs]}
 
