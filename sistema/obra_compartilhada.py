@@ -25,6 +25,7 @@ import datetime
 import json
 import os
 import re
+import time
 import threading
 import urllib.error
 import urllib.request
@@ -40,7 +41,13 @@ ESTADO = "nuvem.json"
 PAPEIS = ("dono", "editor", "apontador", "leitor")
 APONTAM = ("dono", "editor", "apontador")
 NOME_PAPEL = {"dono": "Dono", "editor": "Editor", "apontador": "Apontador", "leitor": "Leitor"}
-POR_PEDIDO = 500
+#: eventos por POST. A nuvem aceita até 500, mas cada evento é uma consulta no D1 e o plano gratuito da Cloudflare
+#: permite 50 por chamada (mais as ~4 da licença e do acesso): 40 cabe em qualquer plano (13/11, o "apontar vários" do
+#: Controle manda até 2.000 de uma vez)
+POR_PEDIDO = 40
+#: segundos, no máximo, subindo lotes numa sincronização (um pedido leva ~0,3 s: centenas de eventos): o resto fica na
+#: fila e sobe na próxima (a tela relê a cada 60 s) — o apontar não espera minutos
+PRAZO_ENVIO = 8.0
 _OBRA_ID = re.compile(r"^[0-9a-f]{32}$")
 _CAMPOS = ("id", "quando", "data", "quem", "etapa", "item", "refs", "quantidade", "kg", "estorno_de", "obs")
 
@@ -270,7 +277,10 @@ def sincronizar(pasta_projeto: str, timeout: float = 6.0, trava=None) -> Optiona
             if e["fila"]:
                 locais = {ev.get("id"): ev for ev in _ler_eventos(pasta_projeto)}
                 fila = [i for i in e["fila"] if i in locais]
+                inicio = time.monotonic()
                 for k in range(0, len(fila), POR_PEDIDO):
+                    if k and time.monotonic() - inicio > PRAZO_ENVIO:
+                        break                                   # o resto sobe na próxima sincronização
                     lote = fila[k:k + POR_PEDIDO]
                     r = _pedir("POST", "/pc/compartilhada/%s/eventos" % oid,
                                {"eventos": [locais[i] for i in lote]}, timeout=timeout)

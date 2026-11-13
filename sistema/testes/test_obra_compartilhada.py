@@ -391,3 +391,36 @@ def test_a_ancora_viaja_e_volta_no_fim_do_evento_so_quando_existe(tmp_path, nuve
     a, b = OC._ler_eventos(dev)
     assert a["id"] == com["id"] and list(a)[-1] == "ancora" and a["ancora"] == ["p101", "p102", "p103"]
     assert "ancora" not in b and list(b) == list(OC._CAMPOS)
+
+
+def test_apontar_varios_sobe_em_lotes_que_cabem_no_d1(tmp_path, nuvem, monkeypatch):
+    """O "apontar vários" do Controle (13/11) manda até 2.000 itens de uma vez. Cada evento é uma consulta no D1, e o plano
+    gratuito da Cloudflare aceita 50 por chamada: os POSTs levam no máximo 40. Numa sincronização sobe o que cabe no
+    prazo; o resto fica na fila e sobe na próxima, sem perder nem repetir."""
+    fer = _projeto(tmp_path, "fer")
+    nuvem.eu = "fer"
+    tamanhos = []
+    pedir = nuvem.pedir
+
+    def contando(metodo, rota, corpo=None, timeout=6.0):
+        if metodo == "POST":
+            tamanhos.append(len(corpo["eventos"]))
+        return pedir(metodo, rota, corpo, timeout)
+    monkeypatch.setattr(OC, "_pedir", contando)
+    evs = [{"id": "v%06d" % i, "quando": "2026-11-13T11:00:00", "data": "2026-11-13", "quem": "x", "etapa": "producao",
+            "item": "COMP %d-1" % i, "refs": ["M%d" % i], "quantidade": 1, "kg": 2.0, "estorno_de": None, "obs": ""}
+           for i in range(2000)]
+    OC._acrescentar(fer, evs)
+    for ev in evs:
+        OC.na_fila(fer, ev["id"])
+    # a nuvem lenta: o prazo acaba depois do 2º lote
+    relogio = iter([0.0, 0.0, 1.0, OC.PRAZO_ENVIO + 1] + [10 ** 6] * 100)
+    monkeypatch.setattr(OC.time, "monotonic", lambda: next(relogio))
+    r = OC.sincronizar(fer)
+    assert max(tamanhos) <= 40 and r["enviados"] == 3 * OC.POR_PEDIDO and r["pendentes"] == 2000 - 3 * OC.POR_PEDIDO
+    monkeypatch.undo()
+    monkeypatch.setattr(OC, "_pedir", contando)
+    monkeypatch.setattr(OC, "_maquina", lambda: "pc-fer")
+    r = OC.sincronizar(fer)
+    assert r["pendentes"] == 0 and max(tamanhos) <= 40
+    assert len(nuvem.eventos) == 2000 and len({e["id"] for e in nuvem.eventos}) == 2000
