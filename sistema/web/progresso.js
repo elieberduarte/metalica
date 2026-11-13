@@ -219,6 +219,26 @@ export async function pedirCancelar(projeto, { rotulo = '', etapa = '', desde_s 
   }
 }
 
+/** O diálogo acabou de fechar no clique: o clique seguinte (o 2º do clique duplo, até `ms`) que cair onde ele estava não
+ *  chega ao que está atrás — o cartão de baixo abria outro projeto e, no 3D, começava uma seleção por janela (D09 do
+ *  usuario-desastrado, 13/11). Só no retângulo do diálogo (com 4 px de folga) e só nesse tempo: um clique noutro ponto da
+ *  tela, ou dentro de outro diálogo aberto, passa. */
+export function segurarCliqueAtras(ret, ms = 400) {
+  if (!ret || !(ret.width > 0) || !(ret.height > 0) || typeof window === 'undefined') return;
+  const ate = performance.now() + ms, F = 4;
+  const TIPOS = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'dblclick', 'contextmenu'];
+  const dentro = (ev) => ev.clientX >= ret.left - F && ev.clientX <= ret.right + F && ev.clientY >= ret.top - F && ev.clientY <= ret.bottom + F;
+  const engolir = (ev) => {
+    if (performance.now() > ate) { soltar(); return; }
+    if (!dentro(ev)) return;
+    if (ev.target && ev.target.closest && ev.target.closest('dialog[open]')) return;
+    ev.preventDefault(); ev.stopImmediatePropagation();
+  };
+  const soltar = () => { for (const t of TIPOS) window.removeEventListener(t, engolir, true); };
+  for (const t of TIPOS) window.addEventListener(t, engolir, true);
+  setTimeout(soltar, ms + 50);
+}
+
 function _confirmar(descricao) {
   return new Promise((pronto) => {
     const dlg = document.createElement('dialog');
@@ -232,7 +252,11 @@ function _confirmar(descricao) {
     const bts = document.createElement('div'); bts.className = 'bts'; bts.append(continuar, cancelar);
     dlg.append(p, bts);
     document.body.appendChild(dlg);
-    const fechar = (v) => { try { dlg.close(); } catch (e) { /* já fechado */ } dlg.remove(); pronto(v); };
+    const fechar = (v) => {
+      segurarCliqueAtras(dlg.getBoundingClientRect());     // o 2º clique do clique duplo não cai no cartão de baixo (D09)
+      try { dlg.close(); } catch (e) { /* já fechado */ }
+      dlg.remove(); pronto(v);
+    };
     continuar.addEventListener('click', () => fechar(false));
     cancelar.addEventListener('click', () => fechar(true));
     dlg.addEventListener('cancel', (ev) => { ev.preventDefault(); fechar(false); });
@@ -328,4 +352,4 @@ export function vigiarChamadas() {
   };
 }
 
-if (typeof window !== 'undefined') window.metalicaProgresso = { acompanhar, fracaoDaBarra, tarefaDaChamada, vigiarChamadas, pedirCancelar, projetoDaUrl };
+if (typeof window !== 'undefined') window.metalicaProgresso = { acompanhar, fracaoDaBarra, tarefaDaChamada, vigiarChamadas, pedirCancelar, projetoDaUrl, segurarCliqueAtras };

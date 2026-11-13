@@ -22,7 +22,7 @@ import { Cena, MODOS, ESCALA, PESADOS, medir } from './nucleo/cena.js';
 import { carregarTerrenoNoEditor } from './modulos/terreno.js';
 import { lerPerfil, nomeDoPerfil, trocarSecao, BITOLAS } from './nucleo/trocar_perfil.js';
 import { Camera, VISTAS } from './nucleo/camera.js';
-import { acompanhar as acompanharTarefa } from '../progresso.js';
+import { acompanhar as acompanharTarefa, segurarCliqueAtras } from '../progresso.js';
 import { Selecao } from './nucleo/selecao.js';
 import { Esqueleto, pecaDe } from './nucleo/esqueleto.js';
 import { Inferencia } from './nucleo/inferencia.js';
@@ -2707,11 +2707,18 @@ export class Editor {
     if (ok) this.el.dialogoOk.textContent = ok;
     this.el.dialogoCancelar.textContent = ok ? cancelar : 'Fechar';
     return new Promise((resolver) => {
+      // onde o diálogo estava no último clique nele: fechado pelo clique, o 2º clique do clique duplo ("Detalhar e abrir")
+      // não cai no 3D atrás e não começa uma seleção por janela (D09 do usuario-desastrado, 13/11)
+      let ret = null;
+      const marcar = () => { ret = d.getBoundingClientRect(); };
       const fim = () => {
         d.removeEventListener('close', fim);
+        d.removeEventListener('pointerdown', marcar, true);
+        if (ret) segurarCliqueAtras(ret);
         resolver(d.returnValue === 'ok' ? 'ok' : 'cancelar');
       };
       d.addEventListener('close', fim);
+      d.addEventListener('pointerdown', marcar, true);
       d.returnValue = '';
       d.showModal();
       const primeiro = this.el.dialogoCorpo.querySelector('input, select, button');
