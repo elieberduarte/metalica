@@ -2205,6 +2205,390 @@ def desenho_do_corte_do_beiral(c: dict, desenho, dx: float, dy: float, nome_md: 
     return p.extremos
 
 
+TITULO_CORTE_COBERTURA = "CORTE DA COBERTURA"
+TITULO_DETALHE_CUMEEIRA = "DETALHE DA CUMEEIRA"
+TITULO_DETALHE_EMENDA = "DETALHE DA EMENDA DAS TELHAS"
+#: a escala dos detalhes do corte da cobertura (exemplo B aprovado pelo usuário, 13/11: o corte a 1:50 e os transpasses
+#: ampliados a 1:10)
+ESCALA_DETALHE_COBERTURA = 10.0
+#: a espessura de desenho de uma telha sobre a outra (mm): a TL por cima da MD, a cumeeira por cima da TL
+ONDA_DESENHO = 18.0
+
+
+def corte_da_cobertura(pecas: Sequence, md: dict, nome_de=None, comprimentos: Optional[dict] = None,
+                       cumeeira_desenvolvida: Optional[float] = None) -> Optional[dict]:
+    """O CORTE DA COBERTURA de beiral a beiral, no plano de uma tesoura (usuário, 13/11, pelo OBRA · SOORO COMPRESSORES
+    N.2: "um corte da cobertura com as telhas na tesoura, completo … para ver todos os transpasses"; escolhido o exemplo B:
+    o corte a 1:50 com os comprimentos das telhas e os transpasses nos detalhes ampliados).
+
+    A estrutura (tesoura, terças, longarinas) e as telhas que não são a multidobra nem a cumeeira saem do corte do 3D; a
+    multidobra (a reta, o raio e a perna de pé), a TL que a continua e a cumeeira (as pernas da fábrica, 500 + 500) saem
+    pela regra, como no resto do 2D. Devolve, no referencial do corte (x horizontal, y = z), {segs, telhas, aguas,
+    cumeeira, multidobras, emendas, pecas_cortadas} ou None."""
+    nome_de = nome_de or (lambda m: m)
+    comprimentos = comprimentos or {}
+    ts = list(md.get("telhas") or [])
+    ids_md = {i for t in ts for i in (t.get("ids") or ())}
+    ids_cu = {i for c in (md.get("cumeeiras") or []) for i in (c.get("ids") or ())}
+    telha_de = lambda e: _eh_telha(str(_marcas(e).get("perfil") or e.nome or ""))          # noqa: E731
+    def de_cobertura(e):
+        # a telha da água (a normal dela, o eixo mais fino, mais de pé que deitada): a de fachada daria a largura no
+        # plano da tesoura (o Depósito Químico, 13/11, saía sem corte)
+        try:
+            return abs(_norm(_medidas(e)[1][2])[2]) > 0.7
+        except Exception:                      # noqa: BLE001
+            return False
+    ref = [e for e in pecas if e.id in ids_md and e.vertices] or [e for e in pecas if telha_de(e) and e.vertices and e.id not in ids_cu
+                                                                  and de_cobertura(e)]
+    if not ref:
+        return None
+    e0 = max(ref, key=lambda e: (len(e.vertices), _medidas(e)[2][0]))
+    _c0, eixos, ext = _medidas(e0)
+    w = next((ax for ax, x in zip(eixos, ext) if 900.0 < x < 1250.0), eixos[0])
+    n = _norm((w[0], w[1], 0.0)) if abs(w[0]) + abs(w[1]) > 1e-6 else (1.0, 0.0, 0.0)
+    ex = _norm(_cruz((0.0, 0.0, 1.0), n))
+    contagem = collections.Counter()
+    for e in pecas:
+        if not e.vertices or len(e.vertices) < 4 or telha_de(e) or e.id in ids_md or e.id in ids_cu:
+            continue
+        pn = [_dot(v, n) for v in e.vertices]
+        zs = [v[2] for v in e.vertices]
+        if max(pn) - min(pn) < 400.0 and max(zs) - min(zs) > 100.0:
+            contagem[round(sum(pn) / len(pn) / 25.0) * 25.0] += 1
+    centro = sum(_dot(v, n) for e in ref for v in e.vertices) / sum(len(e.vertices) for e in ref)
+    candidatos = [v for v, q in contagem.items() if q >= 3]
+    d = (max(candidatos, key=lambda v: (contagem[v], -abs(v - centro))) if candidatos else centro) + 0.37
+    segs, telhas, pecas_cortadas, pts_md, seg_md = [], [], [], [], []
+    for e in pecas:
+        if not e.vertices or not e.faces:
+            continue
+        pn = [_dot(v, n) for v in e.vertices]
+        planos = (d, d + 300.0, d - 300.0) if max(pn) - min(pn) > 400.0 else (d,)
+        d_e = next((x for x in planos if min(pn) + 20.0 < x < max(pn) - 20.0), None)
+        if d_e is None:
+            continue
+        ss = [((_dot(a, ex), a[2]), (_dot(b, ex), b[2])) for a, b in _corte_da_malha(e, n, d_e)]
+        if not ss:
+            continue
+        if e.id in ids_md:
+            pts_md += [q for s_ in ss for q in s_]
+            seg_md += ss
+            continue
+        if e.id in ids_cu:
+            continue
+        xs_ = [q[0] for s_ in ss for q in s_]
+        ys_ = [q[1] for s_ in ss for q in s_]
+        if telha_de(e):
+            nm = str(nome_de(_posicao(e)) or "")
+            telhas.append({"nome": nm, "segs": ss, "comp": comprimentos.get(nm), "caixa": (min(xs_), min(ys_), max(xs_), max(ys_))})
+            continue
+        cortada = max(xs_) - min(xs_) < 300.0 and max(ys_) - min(ys_) < 300.0
+        segs.append((ss, "ACO" if cortada else "VISTA-FINA"))
+        if cortada:
+            pecas_cortadas.append({"nome": str(nome_de(_posicao(e)) or ""), "perfil": str(_marcas(e).get("perfil") or e.nome or ""),
+                                   "caixa": (min(xs_), min(ys_), max(xs_), max(ys_))})
+    # as águas: pelo sentido da inclinação dos trechos longos das telhas inclinadas (e da reta da multidobra); a face de
+    # cima de cada uma. Descendo para a direita, a ponta (o beiral) fica à direita (lado +1)
+    inclinadas = [t for t in telhas if (t["caixa"][2] - t["caixa"][0]) > 300.0 and
+                  0.03 < (t["caixa"][3] - t["caixa"][1]) / max(t["caixa"][2] - t["caixa"][0], 1.0) < 1.5]
+    trechos = [s_ for t in inclinadas for s_ in t["segs"]] + seg_md
+    por_lado: Dict[float, list] = {1.0: [], -1.0: []}
+    for a, b in trechos:
+        dx_, dy_ = b[0] - a[0], b[1] - a[1]
+        if abs(dx_) < 300.0 or not (0.02 < abs(dy_ / dx_) < 1.5):
+            continue
+        por_lado[1.0 if dy_ / dx_ < 0 else -1.0] += [a, b]
+    if not por_lado[1.0] and not por_lado[-1.0]:
+        return None
+    aguas = []
+    for lado, pts_l in por_lado.items():
+        if len(pts_l) < 2:
+            continue
+        X = [q[0] for q in pts_l]
+        Y = [q[1] for q in pts_l]
+        mx, my = sum(X) / len(X), sum(Y) / len(Y)
+        sxx = sum((x - mx) ** 2 for x in X) or 1.0
+        a_ = sum((x - mx) * (y - my) for x, y in zip(X, Y)) / sxx
+        b_ = max(y - a_ * x for x, y in zip(X, Y))
+        aguas.append({"lado": lado, "a": a_, "b": b_, "x_ponta": max(X) if lado > 0 else min(X), "x_alto": min(X) if lado > 0 else max(X)})
+    aguas.sort(key=lambda ag: ag["lado"])
+    if len(aguas) == 2 and abs(aguas[0]["a"] - aguas[1]["a"]) > 1e-6:
+        xc = (aguas[1]["b"] - aguas[0]["b"]) / (aguas[0]["a"] - aguas[1]["a"])
+        cumeeira_pt = (xc, aguas[0]["a"] * xc + aguas[0]["b"])
+    else:
+        ag = aguas[0]
+        cumeeira_pt = (ag["x_alto"], ag["a"] * ag["x_alto"] + ag["b"])
+    meio = cumeeira_pt[0]
+    R = float(ts[0].get("raio_ext") or 490.0) if ts else 0.0
+    # a multidobra de cada lado (pela regra): onde a curva começa, o arco e a perna de pé; a TL que a continua até a cumeeira
+    multidobras = []
+    if ts and pts_md:
+        t0 = ts[0]
+        cb = t0.get("cobrimento") or {}
+        for ag in aguas:
+            md_l = [q for q in pts_md if (q[0] - meio) * ag["lado"] > 0]
+            if not md_l:
+                continue
+            lado = ag["lado"]
+            xv = max(q[0] for q in md_l) if lado > 0 else min(q[0] for q in md_l)
+            zfim = min(q[1] for q in md_l if abs(q[0] - xv) < 100.0)
+            a_, b_ = ag["a"], ag["b"]
+            nrm = math.hypot(a_, 1.0)
+            up = (-a_ / nrm, 1.0 / nrm)
+            cx_ = xv - lado * R
+            cz_ = a_ * cx_ + b_ - R * nrm
+            if up[1] < 0:
+                up = (-up[0], -up[1])
+            multidobras.append({"lado": lado, "xv": xv, "zfim": zfim, "R": R, "C": (cx_, cz_),
+                                "T": (cx_ + up[0] * R, cz_ + up[1] * R), "reta": float(cb.get("reta_nova") or t0.get("reta1") or 0.0),
+                                "nome": t0.get("nome") or "MD1", "nome_c": t0.get("nome_c") or "",
+                                "tl_ini": (float(cb["terca_ini"]) - COBRIMENTO_TERCA) if cb else None,
+                                "tl_comp": float(cb.get("resto") or 0.0), "transpasse": float(cb.get("transpasse") or 0.0)})
+    cms = md.get("cumeeiras") or []
+    perna = pernas_da_cumeeira(0.0, 0.0, cumeeira_desenvolvida)[0]
+    cumeeira = {"ponto": cumeeira_pt, "perna": perna, "nome": (cms[0].get("nome") or cms[0].get("conjunto")) if cms else ""} if cms else None
+    # as emendas: duas telhas da mesma água que se sobrepõem ao longo dela
+    emendas = []
+
+    def na_agua(t, ag):
+        # a telha da água: todos os pontos dela perto da face de cima (o forro e a fachada, perto do beiral, não)
+        nrm_ = math.hypot(ag["a"], 1.0)
+        return all(abs(q[1] - (ag["a"] * q[0] + ag["b"])) / nrm_ < 150.0 for s_ in t["segs"] for q in s_)
+    for ag in aguas:
+        nrm = math.hypot(ag["a"], 1.0)
+        u = (-ag["lado"] / nrm, -ag["a"] * ag["lado"] / nrm)            # da ponta para a cumeeira
+        do_lado = sorted(((min(q[0] * u[0] + q[1] * u[1] for s_ in t["segs"] for q in s_),
+                           max(q[0] * u[0] + q[1] * u[1] for s_ in t["segs"] for q in s_), t)
+                          for t in inclinadas if (sum(t["caixa"][::2]) / 2.0 - meio) * ag["lado"] > 0 and na_agua(t, ag)),
+                         key=lambda v: v[0])
+        def na_linha(s_, ag=ag, u=u):
+            # o ponto da face de cima da água cuja projeção em u é s_
+            x_ = (s_ - ag["b"] * u[1]) / (u[0] + ag["a"] * u[1])
+            return (x_, ag["a"] * x_ + ag["b"])
+        # a mesma faixa duas vezes (as duas telhas vizinhas que o plano corta no transpasse lateral) é uma só
+        unicas = []
+        for v in do_lado:
+            if not any(abs(v[0] - u_[0]) < 50.0 and abs(v[1] - u_[1]) < 50.0 for u_ in unicas):
+                unicas.append(v)
+        for (s0, s1, ta), (r0, r1, tb) in zip(unicas, unicas[1:]):
+            # a emenda é um transpasse curto (até metade da telha menor); mais que isso não é emenda
+            if 5.0 < s1 - r0 < 0.5 * min(s1 - s0, r1 - r0):
+                emendas.append({"lado": ag["lado"], "de": ta["nome"], "para": tb["nome"], "transpasse": s1 - r0,
+                                "a": na_linha(r0), "b": na_linha(s1), "ponto": na_linha((r0 + s1) / 2.0)})
+    return {"segs": segs, "telhas": telhas, "aguas": aguas, "cumeeira": cumeeira, "multidobras": multidobras,
+            "emendas": emendas, "pecas_cortadas": pecas_cortadas, "plano": d, "normal": n}
+
+
+def _agua_de(c: dict, lado: float) -> Optional[dict]:
+    return next((ag for ag in c["aguas"] if ag["lado"] == lado), None)
+
+
+def _na_agua(c: dict, ag: dict, de_cima: float, acima: float = 0.0):
+    """o ponto da água a `de_cima` mm da cumeeira, descendo, `acima` mm acima da face de cima"""
+    nrm = math.hypot(ag["a"], 1.0)
+    u = (ag["lado"] / nrm, ag["a"] * ag["lado"] / nrm)                  # da cumeeira para a ponta
+    up = (-ag["a"] / nrm, 1.0 / nrm)
+    x0, y0 = c["cumeeira"]["ponto"] if c.get("cumeeira") else (c["aguas"][0]["x_ponta"], 0.0)
+    return (x0 + u[0] * de_cima + up[0] * acima, y0 + u[1] * de_cima + up[1] * acima)
+
+
+def _desenhar_telhas_do_corte(p, c: dict, X, janela=None, esc=50.0, h=2.0, nomes=True):
+    """as telhas do corte da cobertura: as do 3D, a multidobra e a TL dela pela regra, e a cumeeira por cima"""
+    x0, y0, x1, y1 = janela or (-1e12, -1e12, 1e12, 1e12)
+
+    def seg(a, b, camada="ACO"):
+        r = _recortar(a, b, x0, y0, x1, y1)
+        if r is not None and math.dist(*r) > 0.5:
+            p.linha(*X(r[0]), *X(r[1]), camada)
+    for t in c["telhas"]:
+        for a, b in t["segs"]:
+            seg(a, b)
+    ponto_c = (c.get("cumeeira") or {}).get("ponto")
+    for m in c["multidobras"]:
+        ag = _agua_de(c, m["lado"])
+        nrm = math.hypot(ag["a"], 1.0)
+        up = (-ag["a"] / nrm, 1.0 / nrm)
+        dirv = (-m["lado"] / nrm, -ag["a"] * m["lado"] / nrm)            # subindo a água
+        T = m["T"]
+        ao = lambda dd, ac=0.0: (T[0] + dirv[0] * dd + up[0] * ac, T[1] + dirv[1] * dd + up[1] * ac)    # noqa: E731
+        ang0 = math.atan2(up[1], up[0])
+        ang1 = 0.0 if m["lado"] > 0 else math.pi
+        if m["lado"] < 0 and ang0 < 0:
+            ang0 += 2 * math.pi
+        arco = [(m["C"][0] + m["R"] * math.cos(ang0 + (ang1 - ang0) * i / 24.0),
+                 m["C"][1] + m["R"] * math.sin(ang0 + (ang1 - ang0) * i / 24.0)) for i in range(25)]
+        pts_m = [ao(m["reta"])] + arco + [(m["xv"], m["zfim"])]
+        for a, b in zip(pts_m, pts_m[1:]):
+            seg(a, b)
+        if m["tl_ini"] is not None and m["nome_c"]:
+            fim = ponto_c if ponto_c else ao(m["tl_ini"] + m["tl_comp"])
+            fim = (fim[0] + up[0] * ONDA_DESENHO, fim[1] + up[1] * ONDA_DESENHO)
+            seg(ao(m["tl_ini"], ONDA_DESENHO), fim)
+    cu = c.get("cumeeira")
+    if cu:
+        for ag in c["aguas"]:
+            seg(_na_agua(c, ag, 0.0, 2 * ONDA_DESENHO), _na_agua(c, ag, cu["perna"], 2 * ONDA_DESENHO))
+
+
+def desenho_do_corte_da_cobertura(c: dict, desenho, dx: float, dy: float):
+    """O CORTE DA COBERTURA (exemplo B aprovado, 13/11): a 1:50, de beiral a beiral — a tesoura cortada no plano dela, as
+    terças e longarinas cortadas, as telhas de cada água com a marca e o comprimento, a cumeeira por cima, e os balões
+    dos detalhes ampliados (1 – o do beiral, 2 – o da cumeeira, 3 – o da emenda)."""
+    from nucleo2d.detalhe.base import _Papel
+    esc = desenho.escala
+    p = _Papel(desenho, {"detalhe": "corte_cobertura"}, dx, dy, camada_peca="TELHAS")
+    xs = [q[0] for ss, _c in c["segs"] for s_ in ss for q in s_] + [q[0] for t in c["telhas"] for s_ in t["segs"] for q in s_]
+    ys = [q[1] for ss, _c in c["segs"] for s_ in ss for q in s_] + [q[1] for t in c["telhas"] for s_ in t["segs"] for q in s_]
+    for m in c["multidobras"]:
+        xs.append(m["xv"])
+        ys.append(m["zfim"])
+    if c.get("cumeeira"):
+        ys.append(c["cumeeira"]["ponto"][1] + 200.0)
+    x0, y0 = min(xs) - 200.0, min(ys) - 200.0
+    X = lambda q: (q[0] - x0, q[1] - y0)          # noqa: E731
+    for ss, camada in c["segs"]:
+        for a, b in ss:
+            p.linha(*X(a), *X(b), camada)
+    _desenhar_telhas_do_corte(p, c, X, esc=esc)
+    h = 2.0 * esc
+    balao = 5.0 * esc
+
+    def texto_na_agua(ag, de_cima, txt, acima):
+        q = X(_na_agua(c, ag, de_cima, acima))
+        ang = math.degrees(math.atan(ag["a"]))
+        p.texto(q[0], q[1], txt, h, angulo=ang, alinhamento="centro")
+
+    def marcar(pt, numero):
+        q = X(pt)
+        p.circulo(q[0], q[1], balao, camada="COTA")
+        p.texto(q[0] + balao * 0.8, q[1] + balao * 0.8, numero, 3.0 * esc, alinhamento="esquerda")
+    # as telhas de cada água: a marca e o comprimento ao longo dela
+    vistos = set()
+    x_c = c["cumeeira"]["ponto"][0] if c.get("cumeeira") else None
+    for t in c["telhas"]:
+        bx0, by0, bx1, by1 = t["caixa"]
+        txt = "%s – %d" % (t["nome"], round(t["comp"])) if t.get("comp") else t["nome"]
+        inclinada = (bx1 - bx0) > 300.0 and (by1 - by0) > 30.0
+        ag = None
+        if inclinada:
+            ag = next((a_ for a_ in c["aguas"] if x_c is None or ((bx0 + bx1) / 2.0 - x_c) * a_["lado"] > 0), None)
+        chave = (txt, round(by0 / 200.0), round(bx0 / 200.0) if not inclinada else (ag or {}).get("lado"))
+        if not t["nome"] or chave in vistos:
+            continue
+        vistos.add(chave)
+        q = X(((bx0 + bx1) / 2.0, (by0 + by1) / 2.0 if inclinada else by1))
+        ang = math.degrees(math.atan(ag["a"])) if ag else 0.0
+        p.texto(q[0], q[1] + 2.0 * esc, txt, h, angulo=ang, alinhamento="centro")
+    for m in c["multidobras"]:
+        ag = _agua_de(c, m["lado"])
+        nrm = math.hypot(ag["a"], 1.0)
+        up = (-ag["a"] / nrm, 1.0 / nrm)
+        dirv = (-m["lado"] / nrm, -ag["a"] * m["lado"] / nrm)
+        ang = math.degrees(math.atan(ag["a"]))
+        T = m["T"]
+        q = X((T[0] + dirv[0] * m["reta"] * 0.4 + up[0] * 3.0 * esc, T[1] + dirv[1] * m["reta"] * 0.4 + up[1] * 3.0 * esc))
+        p.texto(q[0], q[1], m["nome"], h, angulo=ang, alinhamento="centro")
+        if m["tl_ini"] is not None and m["nome_c"]:
+            meio_tl = m["tl_ini"] + m["tl_comp"] / 2.0
+            q = X((T[0] + dirv[0] * meio_tl + up[0] * 4.0 * esc, T[1] + dirv[1] * meio_tl + up[1] * 4.0 * esc))
+            p.texto(q[0], q[1], "%s – %d" % (m["nome_c"], round(m["tl_comp"])), h, angulo=ang, alinhamento="centro")
+        marcar((T[0] + m["lado"] * 0.3 * m["R"], T[1] - 0.3 * m["R"]), "1")
+    if c.get("cumeeira"):
+        cu = c["cumeeira"]
+        q = X(cu["ponto"])
+        p.texto(q[0], q[1] + 9.0 * esc, "%s (%d + %d)" % (cu["nome"] or "CUMEEIRA", round(cu["perna"]), round(cu["perna"])), h,
+                alinhamento="centro")
+        marcar(cu["ponto"], "2")
+    for em in c["emendas"][:1]:
+        marcar(em["ponto"], "3")
+    detalhes = []
+    if c["multidobras"]:
+        detalhes.append("1 beiral")
+    if c.get("cumeeira"):
+        detalhes.append("2 cumeeira")
+    if c["emendas"]:
+        detalhes.append("3 emenda")
+    alt = max(ys) - y0 + 200.0
+    p.texto(0, alt + 14.0 * esc, TITULO_CORTE_COBERTURA, 3.5 * esc, atributos={"cabecalho": 0})
+    p.texto(0, alt + 9.5 * esc, "no plano da tesoura – detalhes: " + " · ".join(detalhes), 2.0 * esc, atributos={"cabecalho": 1})
+    return p.extremos
+
+
+def desenho_do_detalhe_da_cumeeira(c: dict, desenho, dx: float, dy: float):
+    """DETALHE 2 – a cumeeira por cima das telhas das duas águas, a 1:10: as pernas da fábrica (500 + 500) cotadas — é o
+    transpasse dela sobre a telha —, a TL de cada lado e o topo da tesoura com a terça da cumeeira."""
+    from nucleo2d.detalhe.base import _Papel
+    from nucleo2d.desenho import Cota
+    cu = c.get("cumeeira")
+    if not cu:
+        return None
+    esc = desenho.escala
+    amp = max(1.0, esc / ESCALA_DETALHE_COBERTURA)
+    atr = {"detalhe": "detalhe_cumeeira"}
+    if amp > 1.0:
+        atr["ampliacao"] = amp
+    p = _Papel(desenho, atr, dx, dy, camada_peca="TELHAS")
+    cx, cy = cu["ponto"]
+    meia = cu["perna"] + 350.0
+    x0, x1, y0, y1 = cx - meia, cx + meia, cy - 650.0, cy + 250.0
+    X = lambda q: ((q[0] - x0) * amp, (q[1] - y0) * amp)      # noqa: E731
+    for ss, camada in c["segs"]:
+        for a, b in ss:
+            r = _recortar(a, b, x0, y0, x1, y1)
+            if r is not None and math.dist(*r) > 0.5:
+                p.linha(*X(r[0]), *X(r[1]), camada)
+    _desenhar_telhas_do_corte(p, c, X, janela=(x0, y0, x1, y1))
+    for ag in c["aguas"]:
+        a_, b_ = X(_na_agua(c, ag, 0.0, 2 * ONDA_DESENHO)), X(_na_agua(c, ag, cu["perna"], 2 * ONDA_DESENHO))
+        desenho.add(Cota(modo="alinhada", p1=p._p(*b_), p2=p._p(*a_), deslocamento=10.0 * (1 if ag["lado"] > 0 else -1),
+                         texto="%d" % round(cu["perna"]), atributos=dict(atr)))
+    q = X((cx, cy))
+    p.chamada(q[0], q[1] + 2 * ONDA_DESENHO * amp, q[0] + 4.0 * esc, q[1] + 24.0 * esc,
+              "%s – pernas %d + %d" % (cu["nome"] or "CUMEEIRA", round(cu["perna"]), round(cu["perna"])),
+              altura=2.5)
+    for m in c["multidobras"][:1]:
+        if m["nome_c"]:
+            ag = _agua_de(c, m["lado"])
+            q = X(_na_agua(c, ag, cu["perna"] + 200.0, ONDA_DESENHO))
+            p.chamada(q[0], q[1], q[0] + m["lado"] * 6.0 * esc, q[1] + 14.0 * esc, "%s – telha reta" % m["nome_c"], altura=2.5)
+    alt = (y1 - y0) * amp
+    p.texto(0, alt + 9.0 * esc, "%s (2)" % TITULO_DETALHE_CUMEEIRA, 3.5 * esc, atributos={"cabecalho": 0})
+    p.texto(0, alt + 4.5 * esc, "a cumeeira sobre as telhas – mm", 2.0 * esc, atributos={"cabecalho": 1})
+    return p.extremos
+
+
+def desenho_do_detalhe_da_emenda(c: dict, desenho, dx: float, dy: float):
+    """DETALHE 3 – a emenda de duas telhas na mesma água (a de cima por cima da de baixo), a 1:10, com o transpasse."""
+    from nucleo2d.detalhe.base import _Papel
+    from nucleo2d.desenho import Cota
+    if not c["emendas"]:
+        return None
+    em = c["emendas"][0]
+    a_, b_ = em["a"], em["b"]
+    esc = desenho.escala
+    amp = max(1.0, esc / ESCALA_DETALHE_COBERTURA)
+    atr = {"detalhe": "detalhe_emenda"}
+    if amp > 1.0:
+        atr["ampliacao"] = amp
+    p = _Papel(desenho, atr, dx, dy, camada_peca="TELHAS")
+    cx, cy = (a_[0] + b_[0]) / 2.0, (a_[1] + b_[1]) / 2.0
+    meia = em["transpasse"] / 2.0 + 500.0
+    x0, x1, y0, y1 = cx - meia, cx + meia, cy - 500.0, cy + 300.0
+    X = lambda q: ((q[0] - x0) * amp, (q[1] - y0) * amp)      # noqa: E731
+    for ss, camada in c["segs"]:
+        for a, b in ss:
+            r = _recortar(a, b, x0, y0, x1, y1)
+            if r is not None and math.dist(*r) > 0.5:
+                p.linha(*X(r[0]), *X(r[1]), camada)
+    _desenhar_telhas_do_corte(p, c, X, janela=(x0, y0, x1, y1))
+    desenho.add(Cota(modo="alinhada", p1=p._p(*X(a_)), p2=p._p(*X(b_)), deslocamento=12.0,
+                     texto="transpasse %d" % round(em["transpasse"]), atributos=dict(atr)))
+    alt = (y1 - y0) * amp
+    p.texto(0, alt + 9.0 * esc, "%s (3)" % TITULO_DETALHE_EMENDA, 3.5 * esc, atributos={"cabecalho": 0})
+    p.texto(0, alt + 4.5 * esc, "%s por cima de %s – medidas em mm" % (em["para"], em["de"]), 2.0 * esc, atributos={"cabecalho": 1})
+    return p.extremos
+
+
 TITULO_PARAFUSOS_TELHAS = "RELAÇÃO DE PARAFUSOS DAS TELHAS"
 
 #: a "edição" do detalhamento das telhas, gravada nele: 2 = a rodada 2 da prancha padrão (12/11 — a relação dos parafusos,

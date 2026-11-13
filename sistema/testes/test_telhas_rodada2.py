@@ -213,3 +213,58 @@ def test_multidobra_sem_a_cota_da_corda():
     amp = max(float((e.atributos or {}).get("ampliacao") or 1.0) for e in _ents(d))
     maior = max(math.dist(c.p1, c.p2) for c in cotas) / amp
     assert maior < 0.9 * t["corda"], (maior, t["corda"])
+
+
+def _recorte(nome):
+    with gzip.open(os.path.join(os.path.dirname(RECORTE), nome), "rt", encoding="utf-8") as f:
+        return _pecas(Documento.de_dict(json.load(f)))
+
+
+def test_corte_da_cobertura_da_sala():
+    """o CORTE DA COBERTURA (usuário, 13/11, pelo SOORO N.2: "um corte da cobertura com as telhas na tesoura, completo … para
+    ver todos os transpasses"; escolhido o exemplo B — o corte com os comprimentos e os transpasses nos detalhes)"""
+    pecas = _pecas(_doc())
+    md = T.multidobras(pecas)
+    for t in md["telhas"]:
+        t["nome"], t["nome_c"] = "MD1", "TL18"
+    for cm in md["cumeeiras"]:
+        cm["nome"] = "CU1"
+    c = T.corte_da_cobertura(pecas, md)
+    assert c is not None and len(c["aguas"]) == 1 and abs(c["aguas"][0]["a"] - 0.2) < 0.01        # 11,3°
+    assert len(c["multidobras"]) == 1 and c["cumeeira"]["perna"] == 500.0 and not c["emendas"]
+    d = Desenho(nome="t", escala=50.0)
+    T.desenho_do_corte_da_cobertura(c, d, 0.0, 0.0)
+    textos = [str(getattr(e, "texto", "") or "") for e in _ents(d)]
+    assert T.TITULO_CORTE_COBERTURA in textos
+    assert "TL18 – 8050" in textos and "MD1" in textos and "CU1 (500 + 500)" in textos
+    assert "1" in textos and "2" in textos                                  # os balões dos detalhes
+    d2 = Desenho(nome="t", escala=50.0)
+    T.desenho_do_detalhe_da_cumeeira(c, d2, 0.0, 0.0)
+    cotas = [e for e in _ents(d2) if isinstance(e, Cota)]
+    assert cotas and all(e.texto == "500" for e in cotas)
+    assert any((e.atributos or {}).get("ampliacao") == 5.0 for e in _ents(d2))         # 1:50 ampliado = 1:10
+
+
+def test_corte_da_cobertura_sem_multidobra_pela_telha_da_agua():
+    """no Depósito (sem multidobra) a largura da telha, que dá o plano do corte, vinha de uma telha de FACHADA — no plano
+    da tesoura — e o corte não saía; agora vem de uma telha da água"""
+    c = T.corte_da_cobertura(_recorte("deposito_quimico_canto.json.gz"), {"telhas": [], "cumeeiras": []})
+    assert c is not None and len(c["aguas"]) == 1 and abs(abs(c["aguas"][0]["a"]) - 0.071) < 0.005
+    pecas = _recorte("deposito_quimico_cumeeira.json.gz")
+    md = T.multidobras(pecas)
+    c = T.corte_da_cobertura(pecas, md)
+    assert len(c["aguas"]) == 2 and c["cumeeira"] and not c["multidobras"]
+    assert not c["emendas"]
+    # a vizinha da telha, sobreposta 70 mm na largura (o transpasse lateral): o plano corta as duas, com o mesmo comprimento —
+    # não é emenda (no Depósito saíam "emendas" de 10.270 mm)
+    import copy as _copy
+    n = c["normal"]
+    tl = next(e for e in pecas if "TELHA" in str(e.nome).upper() and e.id not in {i for cm in md["cumeeiras"] for i in cm["ids"]}
+              and min(sum(v[i] * n[i] for i in range(3)) for v in e.vertices) < c["plano"] < max(sum(v[i] * n[i] for i in range(3)) for v in e.vertices))
+    viz = _copy.deepcopy(tl)
+    viz.id = tl.id + "-vizinha"
+    m0 = min(sum(v[i] * n[i] for i in range(3)) for v in tl.vertices)
+    desloc = max(c["plano"] - m0 - 35.0, 1.0)                 # a vizinha começa logo antes do plano: o corte pega as duas
+    viz.vertices = [tuple(v[i] + n[i] * desloc for i in range(3)) for v in tl.vertices]
+    c2 = T.corte_da_cobertura(pecas + [viz], md)
+    assert not c2["emendas"], [(e["de"], e["para"], round(e["transpasse"])) for e in c2["emendas"]]

@@ -274,7 +274,7 @@ QUADROS = [("tesoura", "TESOURAS"), ("viga", "VIGAS"), ("pilar", "PILARES"), ("c
 
 #: Título do quadro de cada tipo de posição (peça avulsa), na ordem em que saem.
 QUADROS_POSICOES = [("planta_telhas", "PAGINAÇÃO DAS TELHAS DA COBERTURA (PLANTA)"), ("quadro_telhas", "QUADRO DAS TELHAS DA COBERTURA"),
-                    ("parafusos_telhas", "PARAFUSOS DAS TELHAS"), ("corte_beiral", "DETALHE DO BEIRAL"),
+                    ("parafusos_telhas", "PARAFUSOS DAS TELHAS"), ("corte_beiral", "DETALHE DO BEIRAL"), ("corte_cobertura", "CORTE DA COBERTURA"),
                     ("paginacao", "PAGINAÇÃO DAS TELHAS – COMPRIMENTOS REAIS"), ("multidobra", "TELHAS MULTI-DOBRA"), ("cumeeira", "CUMEEIRAS"), ("terca_cobertura", "TERÇAS DE COBERTURA"), ("terca_marquise", "TERÇAS DE MARQUISE"),
                     ("terca_lateral", "TERÇAS LATERAIS"), ("terca_oitao", "TERÇAS DE OITÃO"),     # saíam "TERCA LATERALS" (PRATI, 13/10)
                     ("suporte_terca", "SUPORTES DE TERÇA"), ("suporte_tirante", "SUPORTES DE TIRANTE"), ("montagem", "PEÇAS MONTADAS – FRENTE E LATERAL"), ("agulhamento", "AGULHAMENTOS"),
@@ -1472,6 +1472,19 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                                 c_, dd, x, y, t_.get("nome") or "MD1", t_.get("nome_c") or ""))))
                     except Exception as exc:      # noqa: BLE001
                         avisos.append("detalhe do beiral não gerado: %s" % exc)
+                # o corte da cobertura de beiral a beiral e os transpasses ampliados (usuário, 13/11, pelo SOORO N.2; o exemplo B)
+                try:
+                    from nucleo2d.detalhe.telhas import (corte_da_cobertura, desenho_do_corte_da_cobertura,
+                                                         desenho_do_detalhe_da_cumeeira, desenho_do_detalhe_da_emenda)
+                    c_c = corte_da_cobertura(pecas, md, nome_tl, comp_tl, cumeeira_do_projeto(doc))
+                    if c_c:
+                        celulas_g.append(("corte_cobertura", (lambda dd, x, y, c_=c_c: desenho_do_corte_da_cobertura(c_, dd, x, y))))
+                        if c_c.get("cumeeira"):
+                            celulas_g.append(("corte_cobertura", (lambda dd, x, y, c_=c_c: desenho_do_detalhe_da_cumeeira(c_, dd, x, y))))
+                        if c_c.get("emendas"):
+                            celulas_g.append(("corte_cobertura", (lambda dd, x, y, c_=c_c: desenho_do_detalhe_da_emenda(c_, dd, x, y))))
+                except Exception as exc:          # noqa: BLE001
+                    avisos.append("corte da cobertura não gerado: %s" % exc)
             celulas_g += [("paginacao", (lambda dd, x, y, f=f, i=i: desenho_da_paginacao(f, dd, x, y, i)))
                           for i, f in enumerate(faces, 1)]
         celulas_g += [("multidobra", (lambda dd, x, y, t=t: desenho_da_multidobra(t, dd, x, y, t["nome"]))) for t in extra_md]

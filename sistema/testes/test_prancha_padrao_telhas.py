@@ -74,8 +74,15 @@ def test_sala_no_arranjo_aprovado():
     bb = _caixa(beiral)
     assert bb[3] < f5[1] and bb[0] > max(face1[2], cu1[2])
     assert any(t.startswith("ESC. 1:20") for t in textos)
+    # o corte da cobertura (13/11, exemplo B) e o detalhe da cumeeira também na coluna da direita, embaixo das fachadas
+    corte = next(c for k, c in cel.items() if k.startswith("CORTE DA COBERTURA"))
+    cume = next(c for k, c in cel.items() if k.startswith("DETALHE DA CUMEEIRA"))
+    for c_ in (corte, cume):
+        cx_ = _caixa(c_)
+        assert cx_[3] < f5[1] and cx_[0] > max(face1[2], cu1[2]), c_["titulo"]
+    assert float(corte["escala"]) <= 100.0 and float(cel["FACE 4"]["escala"]) <= 125.0
     # a relação dos parafusos no quadro de baixo, abaixo de tudo
-    assert paraf[3] < min(md1[1], cu1[1], bb[1])
+    assert paraf[3] < min(md1[1], cu1[1], bb[1], _caixa(corte)[1], _caixa(cume)[1])
     assert any(t.startswith("OA ") for t in textos) and any(t.startswith('Costura 7/8"') for t in textos)
     # a FACE 1 em pé (girada −90°), como os tipos, e o título dela de pé
     assert (face1[3] - face1[1]) > (face1[2] - face1[0])
@@ -104,7 +111,7 @@ def test_forro_girado_sem_numero_em_cima_do_nome():
 def test_deposito_sem_cobertura_plana():
     p = _prancha("deposito_detalhamento_telhas.json.gz")
     cel = _celulas(p)
-    assert not any("COBERTURA" in str(c.get("titulo")) for c in p.metadados["prancha"]["celulas"])        # a de 4° saiu
+    assert not any("– COBERTURA" in str(c.get("titulo")) for c in p.metadados["prancha"]["celulas"])      # a de 4° saiu
     fachadas = [c for k, c in cel.items() if k.startswith("FACE")]
     assert len(fachadas) == 7 and all(float(c["escala"]) <= 125.0 for c in fachadas)                     # legíveis
     tipos = _caixa(cel["TIPOS DE TELHA"])
@@ -112,6 +119,10 @@ def test_deposito_sem_cobertura_plana():
     assert all(_caixa(c)[0] > tipos[2] for c in fachadas)                                               # à direita
     assert _caixa(cel["CU1"])[3] < tipos[1]                                                            # o detalhe embaixo
     assert "RELAÇÃO DE PARAFUSOS DAS TELHAS" in cel
+    # o corte da cobertura (sem multidobra: as retas do Depósito) e a cumeeira, à direita, sem os tipos a 1:500
+    corte = next(c for k, c in cel.items() if k.startswith("CORTE DA COBERTURA"))
+    assert _caixa(corte)[0] > tipos[2] and float(corte["escala"]) <= 250.0
+    assert any(k.startswith("DETALHE DA CUMEEIRA") for k in cel)
 
 
 def test_chamada_do_canto_girada_sem_linhas_encavaladas():

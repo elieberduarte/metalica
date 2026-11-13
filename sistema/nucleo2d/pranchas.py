@@ -2524,6 +2524,11 @@ def _quebrar_cabecalho(c: dict, largura: float) -> None:
     c["entidades"] = list(ents)
 
 
+#: as células que vão embaixo das fachadas na prancha padrão de telhas, nesta ordem (os títulos dos desenhos de
+#: nucleo2d/detalhe/telhas: o corte da cobertura, 13/11; o detalhe do beiral, 12/11; os da cumeeira e da emenda, 13/11)
+TITULOS_EXTRAS_TELHAS = ("CORTE DA COBERTURA", "DETALHE DO BEIRAL", "DETALHE DA CUMEEIRA", "DETALHE DA EMENDA")
+
+
 def _prancha_padrao_de_telhas(itens: list, tipos: dict, faces: List[dict], detalhes: List[dict], largura: float,
                               altura: float, ordem: dict, titulos_q: dict) -> list:
     """A PRANCHA PADRÃO DE TELHAS (usuário, 12/11, sobre a revisão à mão da prancha 13 da Sala: "Sim, é assim"; regras
@@ -2546,8 +2551,12 @@ def _prancha_padrao_de_telhas(itens: list, tipos: dict, faces: List[dict], detal
     if planta is not None and (tipos["h"] > tipos["w"]) != (planta["h"] > planta["w"]):
         _girar_celula(planta, -90.0)
     parafusos = [c for c in detalhes if str(c.get("titulo") or "").upper().startswith("RELAÇÃO DE PARAFUSOS")]
-    # o detalhe do beiral (a tesoura e a telha no recorte, 12/11): embaixo das fachadas, na coluna da direita
-    beiral = [c for c in detalhes if str(c.get("titulo") or "").upper().startswith("DETALHE DO BEIRAL")]
+    # embaixo das fachadas, na coluna da direita: o corte da cobertura (13/11, exemplo B), o detalhe do beiral (a tesoura e
+    # a telha no recorte, 12/11), o da cumeeira e o da emenda (os transpasses do corte, ampliados)
+    def ordem_extra(c_):
+        t_ = str(c_.get("titulo") or "").upper()
+        return next((i_ for i_, k_ in enumerate(TITULOS_EXTRAS_TELHAS) if t_.startswith(k_)), None)
+    beiral = sorted((c for c in detalhes if ordem_extra(c) is not None), key=ordem_extra)
     detalhes = [c for c in detalhes if not any(c is x for x in parafusos + beiral)]
     de_cima = [tipos] + ([planta] if planta is not None else [])
     for i, c in enumerate(de_cima + detalhes):
@@ -2563,7 +2572,11 @@ def _prancha_padrao_de_telhas(itens: list, tipos: dict, faces: List[dict], detal
     for i, c in enumerate(beiral):
         c["categoria"] = "TELHAS_DET"
         c["_ordem"] = len(resto) + i
-        c["quebra_antes"] = True                       # numa fileira só dele, embaixo das fachadas
+        # o corte e o beiral numa fileira cada; a cumeeira e a emenda podem ir ao lado do beiral
+        if ordem_extra(c) in (0, 1) or i == 0:
+            c["quebra_antes"] = True
+        else:
+            c.pop("quebra_antes", None)
     for i, c in enumerate(parafusos):
         c["categoria"] = "TELHAS_PARAF"
         c["_ordem"] = i
@@ -2600,7 +2613,7 @@ def _prancha_padrao_de_telhas(itens: list, tipos: dict, faces: List[dict], detal
             w, h = medir(c, f[id(c)] if isinstance(f, dict) else f)
             if w > larg:
                 return None
-            if x > 0 and x + w > larg:
+            if x > 0 and (x + w > larg or c.get("quebra_antes")):
                 y += alt_l + FOLGA
                 x, alt_l = 0.0, 0.0
             x += w + FOLGA
@@ -2626,21 +2639,24 @@ def _prancha_padrao_de_telhas(itens: list, tipos: dict, faces: List[dict], detal
     def cabe(g, d, f, ncol):
         """os tipos e a planta em g, os detalhes em d, as fachadas em f (ncol por fileira): o quadro das fachadas na
         altura e o da esquerda no que sobra da largura"""
-        larg_dir, alt_dir = larg_dir_de(f, ncol)
+        larg_f, alt_f = larg_dir_de(f, ncol)
         if beiral:
-            # o detalhe do beiral na largura da coluna (ou a coluna na dele, se não há fachadas), o maior que cabe embaixo
-            fb = next((x for x in fatores
-                       if (not resto or medir(beiral[0], x)[0] + 2 * QUADRO_MARGEM <= larg_dir + 1e-6)
-                       and alt_dir + (FOLGA if resto else 0.0) + medir(beiral[0], x)[1] <= altura), None)
-            if fb is None:
+            # o corte e os detalhes embaixo das fachadas: cabem pelo menos na redução mínima deles (`fb_min`; depois cada um
+            # cresce no que sobrar); a coluna pode alargar para eles, se o quadro da esquerda ainda couber
+            fb = fb_min[0]
+            larg_dir = max(larg_f, max(medir(c, fb)[0] for c in beiral) + 2 * QUADRO_MARGEM)
+            alt_b = fileiras(beiral, fb, larg_dir - 2 * QUADRO_MARGEM + 1e-6)
+            if alt_b is None or alt_f + (FOLGA if resto else 0.0) + alt_b > altura:
                 return False
-            red_b[(g, d, f, ncol)] = fb
-            if not resto:
-                larg_dir = medir(beiral[0], fb)[0] + 2 * QUADRO_MARGEM
-            alt_dir += (FOLGA if resto else 0.0) + medir(beiral[0], fb)[1]
-        if alt_dir > altura:
+            if esquerda_cabe(g, d, largura - larg_dir - 2 * QUADRO_MARGEM):
+                red_b[(g, d, f, ncol)] = (fb, larg_dir)
+                return True
             return False
-        larg_esq = largura - larg_dir - 2 * QUADRO_MARGEM
+        if alt_f > altura:
+            return False
+        return esquerda_cabe(g, d, largura - larg_f - 2 * QUADRO_MARGEM)
+
+    def esquerda_cabe(g, d, larg_esq):
         if sum(medir(c, g)[0] + FOLGA for c in de_cima) - FOLGA > larg_esq:
             return False
         alt_det = fileiras(detalhes, d, larg_esq) if detalhes else 0.0
@@ -2653,13 +2669,31 @@ def _prancha_padrao_de_telhas(itens: list, tipos: dict, faces: List[dict], detal
     trios = sorted(((g, d, f, n) for g in fatores for d in fatores for f in fatores
                     for n in range(1, max(1, min(len(resto), 4)) + 1)),
                    key=lambda t: (0 if legivel(t[2], t[0]) else 1 if legivel(t[2]) else 2, max(t[:3]), t[2], t[0], t[1], t[3]))
-    escolha = next((t for t in trios if cabe(*t)), (fatores[-1],) * 3 + (max(1, min(len(resto), 4)),))
+    # o corte da cobertura e os detalhes dele pelo menos na metade da escala deles (o corte a 1:100, o beiral a 1:40, a
+    # cumeeira a 1:20); sem jeito, menores
+    fb_min = [2.0]
+    escolha, melhor = None, None
+    nivel = lambda t: 0 if legivel(t[2], t[0]) else 1 if legivel(t[2]) else 2          # noqa: E731
+    for fb_ in ((2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0) if beiral else (2.0,)):
+        # as fachadas e os tipos legíveis antes do tamanho do corte: o Depósito punha os tipos a 1:500 para o corte caber
+        fb_min[0] = fb_
+        achou = next((t for t in trios if cabe(*t)), None)
+        if achou is not None and (melhor is None or nivel(achou) < melhor[0]):
+            melhor = (nivel(achou), fb_, achou)
+            if melhor[0] == 0:
+                break
+    if melhor is not None:
+        fb_min[0] = melhor[1]
+        escolha = melhor[2]
+        cabe(*escolha)                                   # o red_b da escolha com a redução dela
+    if escolha is None:
+        escolha = (fatores[-1],) * 3 + (max(1, min(len(resto), 4)),)
     g, d, f, ncol = escolha
     # cada detalhe o maior que cabe na fileira de baixo: o detalhe pequeno (a cumeeira) não reduz junto com o grande (a
     # multidobra, que decide a altura) — a CU1 da Sala ia a 1:125, miúda num quadro vazio
     red_d = {id(c): d for c in detalhes}
     if detalhes:
-        larg_esq = largura - larg_dir_de(f, ncol)[0] - 2 * QUADRO_MARGEM
+        larg_esq = largura - max(larg_dir_de(f, ncol)[0], (red_b.get(escolha) or (0, 0.0))[1]) - 2 * QUADRO_MARGEM
         alt_livre = altura - max(medir(c, g)[1] for c in de_cima) - FOLGA
         for c in detalhes:
             for f2 in [x for x in fatores if x < d]:
@@ -2675,10 +2709,23 @@ def _prancha_padrao_de_telhas(itens: list, tipos: dict, faces: List[dict], detal
         _reescalar(c, escala_normalizada(base[id(c)] * red_d[id(c)] - 1e-6))
     for c in resto:
         _reescalar(c, escala_normalizada(base[id(c)] * f - 1e-6))
+    fb, larg_b = red_b.get(escolha, (fatores[-1], 0.0))
+    # cada um o maior que cabe na coluna (na ordem: o corte primeiro), sem alargar a coluna nem passar da altura
+    red_e = {id(c): fb for c in beiral}
+    if beiral and larg_b:
+        alt_livre_b = altura - larg_dir_de(f, ncol)[1] - (FOLGA if resto else 0.0)
+        for c in beiral:
+            for f2 in [x for x in fatores if x < fb]:
+                tenta = dict(red_e)
+                tenta[id(c)] = f2
+                alt_t = fileiras(beiral, tenta, larg_b - 2 * QUADRO_MARGEM + 1e-6)
+                if alt_t is not None and alt_t <= alt_livre_b:
+                    red_e = tenta
+                    break
     for c in beiral:
-        _reescalar(c, escala_normalizada(base[id(c)] * red_b.get(escolha, fatores[-1]) - 1e-6))
-    if resto:
-        resto[0]["_larg_quadro"] = larg_dir_de(f, ncol)[0] + 0.5
+        _reescalar(c, escala_normalizada(base[id(c)] * red_e[id(c)] - 1e-6))
+    if resto or beiral:
+        (resto or beiral)[0]["_larg_quadro"] = max(larg_dir_de(f, ncol)[0], larg_b) + 0.5
     return itens
 
 
