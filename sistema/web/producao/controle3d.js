@@ -121,9 +121,18 @@
       unidades.get(m).push(k);
     });
     let juntas = 0;
+    // as peças de cada unidade gravadas pelo Detalhar (nomes.json → unidades, 13/11: o número pela ordem dos eixos):
+    // valem primeiro; sem elas, as unidades se separam aqui pelas peças que se tocam
+    let porId = null;
+    const gravadas = (ks) => {
+      if (!ks.every(k => (itens[k].pecas3d || []).length)) return null;
+      if (!porId) { porId = new Map(); for (let i = 0; i < n; i++) if (F[i].id != null) porId.set(String(F[i].id), i); }
+      const gs = ks.map(k => itens[k].pecas3d.map(id => porId.get(String(id))).filter(i => i !== undefined));
+      return gs.every(g => g.length) ? gs : null;
+    };
     for (const [m, ks] of unidades) {
       const ps = porCj.get(m) || [];
-      const separadas = ks.length > 1 ? separarUnidades(ps, F, ks.length) : [ps];
+      const separadas = ks.length > 1 ? (gravadas(ks) || separarUnidades(ps, F, ks.length)) : [ps];
       if (separadas) {
         separadas.forEach((g, j) => {
           pecas[ks[j]] = g;

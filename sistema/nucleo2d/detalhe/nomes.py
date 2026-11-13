@@ -254,7 +254,7 @@ def _rotulo_das_unidades(ids: Sequence[str]) -> str:
 
 def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence[Solido],
            conjuntos_info: Sequence[dict], anteriores: Optional[dict] = None,
-           fixadores: Sequence[Solido] = ()) -> dict:
+           fixadores: Sequence[Solido] = (), eixos: Optional[dict] = None) -> dict:
     """Nome de produção de cada posição e conjunto, no padrão da fábrica:
 
     * tesouras (conjuntos com 8+ barras) T1, T2…; terças de cobertura T.C.n (mesmo
@@ -521,7 +521,11 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
         por_un = sum(pecas_da_marca.get(m, 0) for m in ms) / float(n_c)
         for m in ms:
             inst_da_marca[m] = max(int(round(pecas_da_marca.get(m, 0) / por_un)), 1) if por_un else 1
-    unidades = numerar_unidades((m, proj_conj[m], inst_da_marca.get(m, 1)) for m in sorted(proj_conj, key=_ordem_natural))
+    # o número de cada unidade pela ordem dos eixos da obra (usuário, Posto 12/11: "TESOURA 1-1 é a do primeiro eixo"):
+    # detalhe/unidades.py separa as unidades no modelo; sem separar, a ordem das marcas (numerar_unidades) como antes
+    from nucleo2d.detalhe import unidades as _unidades
+    unidades, lugar_das_unidades = _unidades.numerar(
+        [(m, proj_conj[m], inst_da_marca.get(m, 1)) for m in sorted(proj_conj, key=_ordem_natural)], pecas, eixos)
     repetidos = collections.Counter()
     for c in conjuntos_info:
         for nome in {proj_conj[m] for m in (c.get("marcas") or [c["marca"]]) if m in proj_conj}:
@@ -671,8 +675,14 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
         for m in marcas_de(p):
             if p.nome:
                 ifc[m] = p.nome
+    # o lugar das unidades dos conjuntos da fábrica (T38 × 2 → T38-1 e T38-2 pelos eixos), como os do projeto acima: o
+    # Controle de produção e o 3D ao lado dele acendem a unidade certa (nomes.json → "unidades")
+    fabrica_ = [(m, ifc_conj[m], inst_da_marca.get(m, 1)) for m in sorted(ifc_conj, key=_ordem_natural)
+                if m not in proj_conj and ifc_conj.get(m)]
+    _n, lugar_fab = _unidades.numerar(fabrica_, pecas, eixos)
+    lugar_das_unidades.update(lugar_fab)
     return {"posicoes": nomes_pos, "conjuntos": nomes_conj, "tipos": tipo, "tipos_conjuntos": tipo_conj,
-            "ifc": ifc, "ifc_conjuntos": ifc_conj}
+            "ifc": ifc, "ifc_conjuntos": ifc_conj, "unidades": lugar_das_unidades}
 
 
 def aplicar_nomes(posicoes: Sequence[Posicao], nomes: Optional[dict]):

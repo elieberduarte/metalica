@@ -39,6 +39,22 @@ for rel in ("modelo.json", "projeto.json", os.path.join("detalhamento", "lista-d
             os.path.join("detalhamento", "nomes.json")):
     shutil.copy2(os.path.join(POSTO, rel), os.path.join(OBRA, rel))
 
+# o lugar das unidades pela ordem dos eixos (13/11, detalhe/unidades.py): o nomes.json da cópia ganha as "unidades" como o
+# Detalhar grava (o Posto real só as terá no próximo Detalhar da obra) — o 3D acende as peças gravadas de cada unidade
+_nomes = json.load(open(os.path.join(OBRA, "detalhamento", "nomes.json"), encoding="utf-8"))
+if not _nomes.get("unidades"):
+    from nucleo3d.modelo import Documento
+    from nucleo2d import detalhar as _det
+    from nucleo2d.detalhe import unidades as _U
+    print("  (o lugar das unidades da cópia: levantando as peças do Posto, ~1 min)", flush=True)
+    _lista = json.load(open(os.path.join(OBRA, "detalhamento", "lista-de-materiais.json"), encoding="utf-8"))
+    _doc = Documento.de_dict(json.load(open(os.path.join(OBRA, "modelo.json"), encoding="utf-8")))
+    _nomes["unidades"] = _U.numerar([(c["marca"], c["nome"], c["instancias"]) for c in _lista["conjuntos"]],
+                                    _det.levantar(_doc, regra_tercas=False)["pecas"],
+                                    json.load(open(os.path.join(OBRA, "projeto.json"), encoding="utf-8")).get("eixos"))[1]
+    json.dump(_nomes, open(os.path.join(OBRA, "detalhamento", "nomes.json"), "w", encoding="utf-8"), ensure_ascii=False)
+LUGAR = _nomes["unidades"]
+
 srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--dev", "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 base = f"http://localhost:{PORTA}"
@@ -134,7 +150,16 @@ try:
     ok(cores_de("TESOURA 14-1") == [padrao.get("falta")], f"TESOURA 14-1 cinza ({cores_de('TESOURA 14-1')})")
     foto("_controle_3d.png")
 
-    # 2. as 7 TESOURA 1 separadas
+    # 2. as unidades no lugar gravado: a TESOURA 1-1 é a do eixo A (o y maior no Posto) e acende as peças gravadas dela
+    t11 = next((u for uns in LUGAR.values() for u in uns if u["nome"] == "TESOURA 1-1"), None)
+    if t11:
+        pecas_t11 = aba.avaliar(f"(() => {{ const k = {K('TESOURA 1-1')}; const F = {V}.fichas; return {S}.mapa.pecas[k].map(i => String(F[i].id)).sort(); }})()") or []
+        ok(pecas_t11 == sorted(t11["ids"]), f"TESOURA 1-1 acende as {len(t11['ids'])} peças gravadas dela ({len(pecas_t11)})")
+        ys = [u["meio"][1] for uns in LUGAR.values() for u in uns if u["nome"].startswith("TESOURA 1-")]
+        ok(t11["meio"][1] == max(ys), "a TESOURA 1-1 é a do eixo A (o primeiro pela letra)")
+    else:
+        ok(False, "a TESOURA 1-1 tem lugar gravado")
+    # as 7 TESOURA 1 separadas
     sep = aba.avaliar(f"""(() => {{ const M = {S}.mapa, I = {S}.dados.itens; const ks = I.map((x, k) => k).filter(k => /^TESOURA 1-\\d+$/.test(I[k].id));
       const todas = ks.flatMap(k => M.pecas[k]); return {{ n: ks.length, juntas: ks.some(k => M.juntasDe.has(k)),
       vazias: ks.filter(k => !M.pecas[k].length).length, repetidas: todas.length - new Set(todas).size }}; }})()""") or {}

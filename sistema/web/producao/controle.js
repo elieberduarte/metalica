@@ -108,6 +108,7 @@
     dialog.ctl-dlg .acoes { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
     dialog.ctl-dlg .erro { color: var(--verm, #b23b3b); font-size: 13px; margin-top: 8px; }
     .ctl-estornado td { text-decoration: line-through; color: var(--texto3); }
+    .ctl-a-mais { color: var(--verm, #b23b3b); font-weight: 600; }
     .controle tbody tr[data-item] { cursor: pointer; }
     .controle tbody tr.escolhida td { background: color-mix(in srgb, var(--ctl-destaque, #f2b01e) 26%, var(--painel)); }
     .controle tbody tr.escolhida td:first-child { box-shadow: inset 3px 0 0 var(--ctl-destaque, #f2b01e); }
@@ -122,6 +123,8 @@
   const horaBR = (iso) => iso && String(iso).length > 11 ? String(iso).slice(11, 16) : '';
 
   function situacaoCelula(feito, total) {
+    if (feito > total) return el('span', { class: 'ctl-a-mais', title: 'Apontado a mais: confira e estorne o que sobrou',
+      texto: `✓ ${n(total)} +${n(feito - total)} a mais` });
     if (feito >= total) return el('span', { class: 'ctl-ok', texto: total > 1 ? `✓ ${n(total)}` : '✓' });
     if (feito > 0) return el('span', { class: 'ctl-meio', texto: `${n(feito)} de ${n(total)}` });
     return el('span', { class: 'ctl-nada', texto: '—' });

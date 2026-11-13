@@ -89,17 +89,26 @@ def itens(lista: dict, nomes: Optional[dict] = None) -> List[dict]:
     from nucleo2d.detalhe.nomes import numerar_unidades
     ids_de = numerar_unidades((c.get("marca"), nome, int(c.get("instancias") or 1))
                               for nome, grupo in por_nome.items() for c in grupo)
+    # o lugar de cada unidade (nomes.json → "unidades", detalhe/unidades.py, 13/11): o número pela ordem dos eixos e as
+    # peças dela no 3D. Vale só quando o Detalhar separou o mesmo número de unidades que a lista tem
+    lugar = (nomes or {}).get("unidades") or {}
     for nome, grupo in por_nome.items():
         for c in grupo:
             n = int(c.get("instancias") or 1)
             kg_u = float(c.get("peso_total") or 0.0) / n if n else 0.0
             tipo = tipos_cj.get(c.get("marca")) or _TIPO_CATEGORIA.get(str(c.get("categoria") or "").upper(), "conjunto")
             ids_c = list(ids_de.get(str(c.get("marca")), []))
+            un = lugar.get(str(c.get("marca"))) or []
+            if len(un) != n or any(not u.get("nome") for u in un):
+                un = []
             for k in range(n):
-                saida.append({"id": ids_c[k] if k < len(ids_c) else "%s-%d" % (nome, k + 1), "nome": nome, "tipo": tipo,
-                              "origem": "conjunto", "refs": [c.get("marca")],
-                              "descricao": "%d peças" % int(c.get("pecas_unidade") or 0),
-                              "quantidade": 1, "kg_unidade": round(kg_u, 3), "kg": round(kg_u, 3)})
+                x = {"id": un[k]["nome"] if un else (ids_c[k] if k < len(ids_c) else "%s-%d" % (nome, k + 1)), "nome": nome,
+                     "tipo": tipo, "origem": "conjunto", "refs": [c.get("marca")],
+                     "descricao": "%d peças" % int(c.get("pecas_unidade") or 0),
+                     "quantidade": 1, "kg_unidade": round(kg_u, 3), "kg": round(kg_u, 3)}
+                if un and un[k].get("ids"):
+                    x["pecas3d"] = list(un[k]["ids"])      # as peças desta unidade no modelo 3D (controle3d.js)
+                saida.append(x)
             for k, q in _total_por_posicao(c).items():
                 p = por_marca.get(k)
                 if p is not None:
@@ -262,6 +271,11 @@ def situacao(lista: dict, eventos: List[dict], nomes: Optional[dict] = None, ult
                             "itens_completos": completos}
     for x in its:
         x["feito"] = {e: int(f.get(x["id"], Counter())[e]) for e in ETAPAS}
+        # apontado a mais (duas pessoas no mesmo item ao mesmo tempo, com a obra compartilhada — 13/11): fica à vista para
+        # alguém estornar, em vez de sumir no "completo"
+        mais = {e: q - x["quantidade"] for e, q in x["feito"].items() if q > x["quantidade"]}
+        if mais:
+            x["a_mais"] = mais
     ids = {x["id"] for x in its}
     fora = sorted({e.get("item") for e in _validos(eventos) if e.get("item") not in ids})
     hoje = _hoje().isoformat()

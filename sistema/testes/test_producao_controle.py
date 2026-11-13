@@ -380,3 +380,19 @@ def test_rotas_das_cores_e_do_script_do_3d(monkeypatch, tmp_path):
     assert '<script src="/api/producao/controle3d.js"></script>' in html and 'id="painel3d"' in html and 'id="btn-3d"' in html
     vis = open(os.path.join(os.path.dirname(AQUI), "web", "visor3d", "visor3d.js"), encoding="utf-8").read()
     assert "pintarComCores(cores, selecao = null)" in vis
+
+
+def test_apontado_a_mais_fica_a_vista(tmp_path):
+    """13/11 (obra compartilhada): duas pessoas apontando o mesmo item ao mesmo tempo podem passar da quantidade; a
+    situação marca o que sobrou ("a_mais") em vez de esconder no "completo" """
+    lista = _lista()
+    it = next(x for x in C.itens(lista, NOMES) if x["quantidade"] == 1)
+    ev = {"id": "a1", "quando": "2026-11-13 08:00:00", "data": "2026-11-13", "quem": "x", "etapa": "producao",
+          "item": it["id"], "refs": it["refs"], "quantidade": 1, "kg": 1.0, "estorno_de": None, "obs": ""}
+    s = C.situacao(lista, [ev, dict(ev, id="a2", quem="y")], NOMES)
+    x = next(i for i in s["itens"] if i["id"] == it["id"])
+    assert x["feito"]["producao"] == 2 and x["a_mais"] == {"producao": 1}
+    s = C.situacao(lista, [ev], NOMES)
+    assert "a_mais" not in next(i for i in s["itens"] if i["id"] == it["id"])
+    js = open(os.path.join(os.path.dirname(AQUI), "web", "producao", "controle.js"), encoding="utf-8").read()
+    assert "a mais" in js and "ctl-a-mais" in js
