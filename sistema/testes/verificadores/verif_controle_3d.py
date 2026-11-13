@@ -243,11 +243,11 @@ try:
         ok(False, "achar um item de peças avulsas iguais com todas as peças no 3D")
 
     # 7. só o que falta produzir
-    aba.avaliar("const s = document.querySelector('#p3-mostrar'); s.value = 'falta-producao'; s.dispatchEvent(new Event('change'))")
+    aba.avaliar("(() => { const s = document.querySelector('#p3-mostrar'); s.value = 'falta-producao'; s.dispatchEvent(new Event('change')); })()")
     esperar(aba, "false", 0.4)
     esc = aba.avaliar(f"(() => {{ const ps = {S}.mapa.pecas[{K('TESOURA 1-3')}]; return ps.every(i => {V}.ocultas.has(i)) && !{S}.mapa.pecas[{K('TESOURA 1-2')}].some(i => {V}.ocultas.has(i)); }})()")
     ok(esc, "'Só o que falta produzir' esconde a TESOURA 1-3 e deixa a 1-2")
-    aba.avaliar("const s = document.querySelector('#p3-mostrar'); s.value = 'tudo'; s.dispatchEvent(new Event('change'))")
+    aba.avaliar("(() => { const s = document.querySelector('#p3-mostrar'); s.value = 'tudo'; s.dispatchEvent(new Event('change')); })()")
 
     # 8. a ferramenta das cores
     clicar(aba, "#p3-cores")
