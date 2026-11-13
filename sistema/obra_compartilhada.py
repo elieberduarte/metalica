@@ -216,8 +216,13 @@ def _agora() -> str:
 
 
 def _do_formato_local(ev: dict) -> dict:
-    """o evento da nuvem no formato do apontamentos.jsonl (o do Controle: os mesmos campos, na mesma ordem)"""
-    return {k: ev.get(k) for k in _CAMPOS}
+    """o evento da nuvem no formato do apontamentos.jsonl (o do Controle: os mesmos campos, na mesma ordem). A "ancora"
+    (13/11, os ids das peças do 3D da unidade: o apontamento segue a peça quando o nome do item muda) vai no fim e só
+    quando existe, como o Controle grava"""
+    out = {k: ev.get(k) for k in _CAMPOS}
+    if ev.get("ancora"):
+        out["ancora"] = [str(x) for x in ev["ancora"]]
+    return out
 
 
 def _receber(pasta_projeto: str, oid: str, e: dict, timeout: float, trava) -> int:

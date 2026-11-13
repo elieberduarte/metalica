@@ -96,11 +96,13 @@ def projeto(nome, obra_id=OBRA):
 N = [0]
 
 
-def apontar(pasta, item, q=1, etapa="producao", quem="?", estorno_de=None):
-    """o que o Controle faz: grava a linha no formato dele e põe na fila"""
+def apontar(pasta, item, q=1, etapa="producao", quem="?", estorno_de=None, ancora=None):
+    """o que o Controle faz: grava a linha no formato dele e põe na fila (a âncora no fim, só quando existe)"""
     N[0] += 1
     ev = {"id": "ev%010d" % N[0], "quando": "2026-11-13T10:%02d:00" % (N[0] % 60), "data": "2026-11-13", "quem": quem,
           "etapa": etapa, "item": item, "refs": ["M1"], "quantidade": q, "kg": 10.5 * q, "estorno_de": estorno_de, "obs": ""}
+    if ancora:
+        ev["ancora"] = list(ancora)
     OC._acrescentar(pasta, [ev])
     OC.na_fila(pasta, ev["id"])
     return ev
@@ -117,6 +119,7 @@ try:
     sql(arquivo="migracao-celular.sql")
     sql(arquivo="migracao-obra-compartilhada.sql")
     sql(arquivo="migracao-obra-compartilhada.sql")          # de novo: a migração pode rodar duas vezes sem erro
+    sql(arquivo="migracao-obra-compartilhada-2.sql")        # a âncora do apontamento (13/11)
     lics = ", ".join(f"('{ch}', '{pes}', 2, {0 if k == 'bloq' else 1}, '2026-11-13')" for k, (ch, _, pes) in PCS.items())
     maqs = ", ".join(f"('{ch}', '{maq}', '2026-11-13', '2026-11-13')" for ch, maq, _ in PCS.values())
     sql(f"INSERT INTO licencas (chave, pessoa, maquinas_max, ativa, criada) VALUES {lics};"
@@ -150,7 +153,7 @@ try:
 
     # ------------------------------------------------------------------ o Fernando aponta 3
     for item in ("TESOURA 14-1", "COMP 18-1", "PAINEL 15"):
-        apontar(fer, item, quem="Fernando (o que o PC diz)")
+        apontar(fer, item, quem="Fernando (o que o PC diz)", ancora=["p14a", "p14b"] if item == "TESOURA 14-1" else None)
     ok(OC.estado(fer)["pendentes"] == 3, "3 apontamentos do Fernando esperando a nuvem")
     r = OC.sincronizar(fer)
     ok(r["enviados"] == 3 and r["pendentes"] == 0 and r["papel"] == "editor" and not r["erro"],
@@ -160,7 +163,9 @@ try:
     r = OC.sincronizar(dev)
     ls = linhas(dev)
     ok(r["recebidos"] == 3 and len(ls) == 3, f"o dev recebe os 3: {r['recebidos']} recebidos, {len(ls)} linhas")
-    ok(all(list(x.keys()) == list(OC._CAMPOS) for x in ls), "as linhas recebidas têm o formato do Controle (mesmos campos, mesma ordem)")
+    ok(all(list(x.keys())[:len(OC._CAMPOS)] == list(OC._CAMPOS) for x in ls), "as linhas recebidas têm o formato do Controle (mesmos campos, mesma ordem)")
+    ok(ls[0].get("ancora") == ["p14a", "p14b"] and list(ls[0])[-1] == "ancora" and "ancora" not in ls[1],
+       f"a âncora chega no fim do evento, e só no que tinha: {ls[0].get('ancora')}")
     ok({x["quem"] for x in ls} == {"Fernando"}, f"o 'quem' é a pessoa da licença que assinou, não o que o PC disse: {ls[0]['quem']}")
     ok([x["item"] for x in ls] == ["TESOURA 14-1", "COMP 18-1", "PAINEL 15"] and ls[0]["kg"] == 10.5 and ls[0]["refs"] == ["M1"],
        "itens, kg e refs chegam iguais")

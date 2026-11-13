@@ -263,3 +263,131 @@ def test_painel_sem_as_tabelas_avisa(tmp_path, monkeypatch):
         raise licencas_dev.ErroLicencas("o banco das licenças recusou: no such table: obras")
     monkeypatch.setattr(licencas_dev, "_sql", _sql)
     assert D.painel(Gerente(str(tmp_path)))["sem_tabelas"] is True
+
+
+# ------------------------------------------------------------------ o gancho no Controle (producao/web.py)
+@pytest.fixture
+def controle_web(tmp_path, monkeypatch, nuvem):
+    """o Controle de dois computadores sobre a mesma obra (pastas diferentes, o mesmo obra_id) e uma obra só local"""
+    from producao import web
+    from test_producao_controle import _lista
+    pastas = {}
+    for s, comp in (("dev", True), ("fer", True), ("lei", True), ("local", False)):
+        p = tmp_path / s
+        (p / "detalhamento").mkdir(parents=True)
+        json.dump(_lista(), open(p / "detalhamento" / "lista-de-materiais.json", "w", encoding="utf-8"), ensure_ascii=False)
+        pj = {"nome": "OBRA " + s}
+        if comp:
+            pj["compartilhada"] = {"obra_id": OBRA, "nome": "OBRA"}
+        json.dump(pj, open(p / "projeto.json", "w", encoding="utf-8"))
+        pastas[s] = str(p)
+
+    class _G:
+        @staticmethod
+        def ler(s):
+            return json.load(open(os.path.join(pastas[s], "projeto.json"), encoding="utf-8"))
+
+        @staticmethod
+        def _existente(s):
+            return pastas[s]
+
+    class _App:
+        @staticmethod
+        def _gerente():
+            return _G
+    monkeypatch.setattr(web, "_app", lambda: _App)
+    monkeypatch.setattr(web, "_quem", lambda: nuvem.pessoa.get(nuvem.eu, "?"))
+    return web, pastas
+
+
+def _ver(web, slug):
+    from test_producao_controle import _H
+    h = _H("/api/producao/controle?projeto=" + slug)
+    assert web.rota_get(h, "/api/producao/controle")
+    return h.resposta
+
+
+def _post(web, rota, corpo):
+    from test_producao_controle import _H
+    h = _H(rota)
+    assert web.rota_post(h, rota, corpo)
+    return h.resposta
+
+
+def test_controle_de_obra_so_local_nao_toca_a_nuvem(controle_web, nuvem):
+    web, pastas = controle_web
+    nuvem.fora_do_ar = True                                  # se tentasse ir à nuvem, daria erro
+    assert _ver(web, "local")["nuvem"] is None
+    r = _post(web, "/api/producao/apontar", {"projeto": "local", "item": "T38-1", "etapa": "producao", "quantidade": 1})
+    assert r["ok"] and r["nuvem"] is None
+    assert not os.path.exists(os.path.join(pastas["local"], "producao", OC.ESTADO))
+
+
+def test_o_que_o_fernando_aponta_aparece_no_controle_do_dev(controle_web, nuvem):
+    web, pastas = controle_web
+    nuvem.eu = "fer"
+    for item in ("T38-1", "T74"):
+        r = _post(web, "/api/producao/apontar", {"projeto": "fer", "item": item, "etapa": "producao", "quantidade": 1})
+        assert r["nuvem"]["pendentes"] == 0 and r["nuvem"]["papel"] == "editor"
+    r = _post(web, "/api/producao/apontar", {"projeto": "fer", "item": "T.C.1", "etapa": "producao", "quantidade": 30})
+    assert len(nuvem.eventos) == 3
+    nuvem.eu = "dev"
+    d = _ver(web, "dev")
+    feito = {x["id"]: x["feito"].get("producao", 0) for x in d["itens"]}
+    assert (feito["T38-1"], feito["T74"], feito["T.C.1"], feito["T38-2"]) == (1, 1, 30, 0)
+    assert d["nuvem"]["papel"] == "dono" and {e["quem"] for e in d["eventos"]} == {"Fernando"}
+    # o dev estorna um do Fernando; o estorno chega ao Fernando
+    ev = next(e for e in d["eventos"] if e["item"] == "T74")
+    _post(web, "/api/producao/estornar", {"projeto": "dev", "evento": ev["id"]})
+    nuvem.eu = "fer"
+    d = _ver(web, "fer")
+    assert {x["id"]: x["feito"].get("producao", 0) for x in d["itens"]}["T74"] == 0
+
+
+def test_leitor_nao_aponta_pelo_controle(controle_web, nuvem):
+    web, pastas = controle_web
+    from nucleo.base import ErroDeDados
+    nuvem.eu = "lei"
+    d = _ver(web, "lei")
+    assert d["nuvem"]["papel"] == "leitor" and d["nuvem"]["pode_apontar"] is False
+    with pytest.raises(ErroDeDados, match="só vê"):
+        _post(web, "/api/producao/apontar", {"projeto": "lei", "item": "T38-1", "etapa": "producao", "quantidade": 1})
+    assert OC._ler_eventos(pastas["lei"]) == [] and nuvem.eventos == []
+
+
+def test_sem_internet_o_controle_aponta_e_a_fila_espera(controle_web, nuvem):
+    web, pastas = controle_web
+    nuvem.eu = "fer"
+    nuvem.fora_do_ar = True
+    r = _post(web, "/api/producao/apontar", {"projeto": "fer", "item": "T38-2", "etapa": "pintura", "quantidade": 1})
+    assert r["ok"] and r["nuvem"]["pendentes"] == 1 and "sem conexão" in r["nuvem"]["erro"]
+    d = _ver(web, "fer")
+    assert {x["id"]: x["feito"].get("pintura", 0) for x in d["itens"]}["T38-2"] == 1     # o local segue valendo
+    nuvem.fora_do_ar = False
+    d = _ver(web, "fer")
+    assert d["nuvem"]["pendentes"] == 0 and not d["nuvem"]["erro"] and len(nuvem.eventos) == 1
+
+
+def test_a_tela_do_controle_mostra_o_selo_e_esconde_apontar_do_leitor():
+    js = open(os.path.join(BASE, "web", "producao", "controle.js"), encoding="utf-8").read()
+    assert "seloDaNuvem(D.nuvem)" in js and "esperando a internet" in js
+    assert js.count("podeApontar()") >= 2                    # Apontar e Estornar
+    assert "setInterval" in js and "dialog[open]" in js        # relê a cada minuto, não no meio de um apontamento
+
+
+def test_a_ancora_viaja_e_volta_no_fim_do_evento_so_quando_existe(tmp_path, nuvem):
+    """13/11 (CONTROLE): o apontamento de unidade de conjunto leva "ancora" (ids das peças do 3D) para seguir a peça
+    quando o Detalhar muda o nome do item; a nuvem guarda e devolve; o evento sem âncora continua sem a chave"""
+    dev, fer = _projeto(tmp_path, "dev"), _projeto(tmp_path, "fer")
+    nuvem.eu = "fer"
+    com = _apontar(fer, "TESOURA 1-1")
+    linhas = OC._ler_eventos(fer)
+    linhas[-1]["ancora"] = ["p101", "p102", "p103"]
+    open(os.path.join(fer, "producao", OC.EVENTOS), "w", encoding="utf-8").write("".join(json.dumps(x) + "\n" for x in linhas))
+    _apontar(fer, "T.C.1")
+    OC.sincronizar(fer)
+    nuvem.eu = "dev"
+    OC.sincronizar(dev)
+    a, b = OC._ler_eventos(dev)
+    assert a["id"] == com["id"] and list(a)[-1] == "ancora" and a["ancora"] == ["p101", "p102", "p103"]
+    assert "ancora" not in b and list(b) == list(OC._CAMPOS)

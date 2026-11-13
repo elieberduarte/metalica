@@ -415,7 +415,9 @@ function eventoValido(e) {
   if (!item) return null;
   if (e.estorno_de != null && !EV_ID.test(String(e.estorno_de))) return null;
   const refs = Array.isArray(e.refs) ? e.refs.slice(0, 50).map(r => txt(r, 150)) : [];
-  return { id: String(e.id), quando: txt(e.quando, 40), data: /^\d{4}-\d{2}-\d{2}$/.test(String(e.data || '')) ? e.data : '',
+  // a âncora (13/11, migracao-obra-compartilhada-2.sql): até 12 ids de peças do 3D da unidade — o apontamento segue a peça
+  const ancora = Array.isArray(e.ancora) ? e.ancora.slice(0, 12).map(r => txt(r, 80)).filter(Boolean) : [];
+  return { id: String(e.id), ancora: JSON.stringify(ancora), quando: txt(e.quando, 40), data: /^\d{4}-\d{2}-\d{2}$/.test(String(e.data || '')) ? e.data : '',
            etapa: e.etapa, item, refs: JSON.stringify(refs), quantidade: q, kg: Number.isFinite(+e.kg) ? +e.kg : 0,
            estorno_de: e.estorno_de == null ? null : String(e.estorno_de), obs: txt(e.obs, 300) };
 }
@@ -438,13 +440,13 @@ async function compartilhada(env, req, rota, quem, url) {
   if (!m[2]) return req.method === 'GET' ? json(obra) : vazio(405, { Allow: 'GET' });
   if (req.method === 'GET') {
     const depois = Math.max(0, parseInt(url.searchParams.get('depois') || '0', 10) || 0);
-    const r = (await env.DB.prepare(`SELECT seq, id, pessoa, maquina, quando, data, etapa, item, refs, quantidade, kg, estorno_de, obs
+    const r = (await env.DB.prepare(`SELECT seq, id, pessoa, maquina, quando, data, etapa, item, refs, quantidade, kg, estorno_de, obs, ancora
         FROM apontamentos WHERE obra_id = ? AND seq > ? ORDER BY seq LIMIT ?`).bind(m[1], depois, EVENTOS_POR_LEITURA + 1).all()).results || [];
     const mais = r.length > EVENTOS_POR_LEITURA;
     const evs = r.slice(0, EVENTOS_POR_LEITURA).map(e => ({
       seq: e.seq, id: e.id, quando: e.quando, data: e.data, quem: e.pessoa, maquina: e.maquina, etapa: e.etapa, item: e.item,
       refs: (() => { try { return JSON.parse(e.refs); } catch (x) { return []; } })(), quantidade: e.quantidade, kg: e.kg,
-      estorno_de: e.estorno_de, obs: e.obs }));
+      estorno_de: e.estorno_de, obs: e.obs, ancora: (() => { try { return JSON.parse(e.ancora || '[]'); } catch (x) { return []; } })() }));
     return json({ ...obra, eventos: evs, ultimo: evs.length ? evs[evs.length - 1].seq : depois, mais });
   }
   if (req.method !== 'POST') return vazio(405, { Allow: 'GET, POST' });
@@ -459,10 +461,10 @@ async function compartilhada(env, req, rota, quem, url) {
   }
   const t = agora();
   const sql = `INSERT OR IGNORE INTO apontamentos (obra_id, id, chave, pessoa, maquina, quando, data, etapa, item, refs, quantidade, kg,
-               estorno_de, obs, recebido) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+               estorno_de, obs, recebido, ancora) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
   if (bons.length) {
     await env.DB.batch(bons.map(v => env.DB.prepare(sql).bind(m[1], v.id, eu, quem.lic.pessoa || '', quem.maq.nome_pc || '', v.quando,
-      v.data, v.etapa, v.item, v.refs, v.quantidade, v.kg, v.estorno_de, v.obs, t)));
+      v.data, v.etapa, v.item, v.refs, v.quantidade, v.kg, v.estorno_de, v.obs, t, v.ancora)));
   }
   return json({ aceitos: bons.map(v => v.id), recusados, pessoa: quem.lic.pessoa || '' });
 }

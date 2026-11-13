@@ -15,11 +15,17 @@ não tem nada disto até o usuário aprovar).
 * POST /api/producao/cores                  {cores: {...}} grava para todas as obras; {cores: {}} volta ao padrão
 
 "Quem" é sempre a pessoa da licença desta máquina (decisão do usuário, 12/11: só a engenharia aponta).
+
+Obra compartilhada (13/11, FERRAMENTA · OBRA COMPARTILHADA; obra_compartilhada.py): quando o projeto.json tem o obra_id,
+o controle sincroniza com a nuvem antes de mostrar e antes de apontar (traz o que os outros apontaram), põe na fila o que
+foi apontado ou estornado aqui e sincroniza de novo (sobe). Sem internet tudo segue local e a fila espera. O papel vem da
+nuvem: o Leitor não aponta nem estorna (a nuvem recusa de qualquer jeito; aqui a mensagem sai antes).
 """
 import os
 import sys
 from urllib.parse import parse_qs, quote, urlparse
 
+import obra_compartilhada
 from producao import controle
 
 _AQUI = os.path.dirname(os.path.abspath(__file__))
@@ -60,6 +66,21 @@ def _nome_da_obra(slug: str, lista: dict) -> str:
     except Exception:                                   # noqa: BLE001 — sem o projeto, o da lista
         nome = None
     return nome or (lista.get("projeto") or {}).get("nome") or slug
+
+
+#: o tempo de cada pedido à nuvem na obra compartilhada: sem internet a tela não pode ficar presa
+TEMPO_NUVEM = 4.0
+
+
+def _sincronizar(pasta: str):
+    """a obra compartilhada com a nuvem (None se não é compartilhada); nunca levanta erro de rede"""
+    try:
+        return obra_compartilhada.sincronizar(pasta, timeout=TEMPO_NUVEM, trava=controle._TRAVA)
+    except Exception as e:                              # noqa: BLE001 — o controle local continua
+        est = obra_compartilhada.estado(pasta)
+        if est is not None:
+            est["erro"] = "falha ao sincronizar: %s" % e
+        return est
 
 
 def _consulta(h) -> dict:
@@ -136,8 +157,10 @@ def rota_get(h, rota: str) -> bool:
         except controle.ErroControle as e:
             h._json({"sem_lista": True, "erro": str(e)})
             return True
+        nuvem = _sincronizar(pasta)
         r = controle.situacao(lista, controle.ler_eventos(pasta), controle.ler_nomes(pasta))
         r["quem"] = _quem()
+        r["nuvem"] = nuvem                              # None: obra só deste computador
         r["obra"] = _nome_da_obra(s, lista)
         r["tem_3d"] = os.path.isfile(os.path.join(pasta, "modelo.json"))      # sem modelo, a tela nem abre o 3D ao lado
         h._json(r)
@@ -168,6 +191,9 @@ def rota_post(h, rota: str, corpo: dict) -> bool:
         return False
     corpo = corpo if isinstance(corpo, dict) else {}
     pasta = _pasta(str(corpo.get("projeto") or ""))
+    nuvem = _sincronizar(pasta)
+    if nuvem is not None and nuvem.get("papel") and not nuvem.get("pode_apontar"):
+        raise _erro("o seu papel nesta obra compartilhada é %s: só vê, não aponta" % (nuvem.get("papel_nome") or nuvem["papel"]))
     try:
         if rota == "/api/producao/apontar":
             lista = controle.ler_lista(pasta)
@@ -178,5 +204,8 @@ def rota_post(h, rota: str, corpo: dict) -> bool:
             ev = controle.estornar(pasta, str(corpo.get("evento") or ""), _quem(), obs=corpo.get("obs") or "")
     except controle.ErroControle as e:
         raise _erro(str(e))
-    h._json({"ok": True, "evento": ev})
+    if nuvem is not None:
+        obra_compartilhada.na_fila(pasta, ev["id"])
+        nuvem = _sincronizar(pasta)
+    h._json({"ok": True, "evento": ev, "nuvem": nuvem})
     return True

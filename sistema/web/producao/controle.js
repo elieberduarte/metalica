@@ -139,6 +139,7 @@
       if (D.obra) { $('#obra-nome').textContent = D.obra; document.title = `Controle de produção — ${D.obra}`; }
       if (D.lista_gerada) $('#quando').textContent = `lista levantada em ${dataBRc(D.lista_gerada)} ${horaBR(D.lista_gerada)}`;
       window.controleDados = D;
+      seloDaNuvem(D.nuvem);
       if (D.itens) document.dispatchEvent(new CustomEvent('controle:dados', { detail: D }));   // o 3D ao lado (controle3d.js)
     } catch (e) {
       ESTADO.dados = { erro: e.message };
@@ -146,6 +147,23 @@
       ESTADO.carregando = false;
     }
     desenhar();
+  }
+
+  // a obra compartilhada (13/11, obra_compartilhada.py): o selo da nuvem embaixo do nome; o Leitor não vê Apontar nem Estornar
+  const podeApontar = () => { const nv = ESTADO.dados && ESTADO.dados.nuvem; return !nv || nv.pode_apontar !== false; };
+  function seloDaNuvem(nv) {
+    let p = $('#ctl-nuvem');
+    if (!nv) { if (p) p.remove(); return; }
+    if (!p) {
+      p = el('p', { id: 'ctl-nuvem', style: 'margin:4px 0 0;font-size:12.5px' });
+      $('#obra-sub').after(p);
+    }
+    const papel = nv.papel_nome ? ` · você é ${nv.papel_nome}` : '';
+    const fila = nv.pendentes ? ` · ${n(nv.pendentes)} apontamento${nv.pendentes > 1 ? 's' : ''} esperando a internet` : '';
+    const dia = nv.quando ? ` (${horaBR(nv.quando)})` : '';
+    p.textContent = '☁ Obra compartilhada' + papel + (fila || (nv.erro ? '' : ' · em dia com a nuvem' + dia)) + (nv.erro ? ' — ' + nv.erro : '');
+    p.title = 'Os apontamentos desta obra vão para a nuvem e chegam aos computadores de quem tem acesso. Sem internet, ficam aqui e sobem sozinhos depois.';
+    p.className = nv.erro || nv.pendentes ? 'ctl-meio' : 'ctl-ok';
   }
 
   function desenhar() {
@@ -192,7 +210,7 @@
       { titulo: 'Qtd', chave: 'quantidade', classe: 'r', num: true },
       { titulo: 'kg', chave: 'kg', classe: 'r', num: true, casas: 1 },
       ...etapas.map(et => ({ titulo: et.titulo, classe: 'c', valor: (x) => situacaoCelula(x.feito[et.chave] || 0, x.quantidade) })),
-      { titulo: '', classe: 'c', valor: (x) => el('button', { type: 'button', class: 'ctl-btn', 'data-item': x.id, texto: 'Apontar', onclick: () => abrirDialogo(x) }) },
+      { titulo: '', classe: 'c', valor: (x) => podeApontar() ? el('button', { type: 'button', class: 'ctl-btn', 'data-item': x.id, texto: 'Apontar', onclick: () => abrirDialogo(x) }) : '' },
     ];
     const kgLinhas = linhas.reduce((s, x) => s + x.kg, 0);
     const quadro = linhas.length
@@ -262,7 +280,7 @@
         el('td', { class: 'r', texto: (estorno ? '−' : '') + n(e.quantidade) }),
         el('td', { class: 'r', texto: n(e.kg, 1) }),
         el('td', { class: 'quebra', texto: e.obs || '' }),
-        el('td', { class: 'c' }, (!estorno && !e.estornado)
+        el('td', { class: 'c' }, (!estorno && !e.estornado && podeApontar())
           ? el('button', { type: 'button', class: 'ctl-btn perigo', texto: 'Estornar', onclick: () => estornar(e) }) : null));
       tb.append(tr);
     }
@@ -363,6 +381,11 @@
     document.addEventListener('controle:marcar', (ev) => marcarLinhas(ev.detail.ids, true));
     desenhar();
     carregar();
+    // a obra compartilhada: o que os outros apontaram chega sozinho, a cada minuto (não no meio de um apontamento)
+    setInterval(() => {
+      const D = ESTADO.dados;
+      if (D && D.nuvem && !document.hidden && !document.querySelector('dialog[open]')) carregar();
+    }, 60000);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
   else iniciar();
