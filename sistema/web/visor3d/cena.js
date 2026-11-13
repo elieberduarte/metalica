@@ -126,6 +126,7 @@ async function abrir() {
   await carregarMarcas();
   await listar(escolhida ? escolhida.id : null);
   window.cenaPronta = true;
+  if (q.get('gerar')) janelaGerarCenas();                   // o menu Cenas › Gerar cenas aéreas… da barra única
   requestAnimationFrame(desenharMarcas);
 }
 
@@ -854,6 +855,99 @@ function pedirTexto(titulo, valor) {
   });
 }
 
+// ------------------------------------------------------------------ gerar cenas (roteiro de refino, item 3)
+// (usuário, 12/11: "ter uma opção para gerar algumas cenas como essas pré-programadas, sem eu precisar ir tirando cena por
+// cena"; amostra-16 aprovada no SESI: os 4 cantos, a 30°). Cada aérea: a câmera num canto do prédio (azimute 45/135/225/315°
+// no eixo do desenho, y para cima = norte), o prédio inteiro no quadro 16:9 com folga — os cantos de cada CAMADA ligada (a
+// caixa da obra inteira tem quinas no ar e o prédio ficava pequeno) — e centrado; o sol de trás de quem olha (azimute da
+// câmera + 40°, 45° de altura: as fachadas à vista iluminadas, uma mais que a outra).
+const AEREAS = [['Aérea sudoeste', 225], ['Aérea sudeste', 315], ['Aérea nordeste', 45], ['Aérea noroeste', 135]];
+const AEREA_ELEVACAO = 30, AEREA_LENTE = 40, AEREA_FOLGA = 1.08;
+
+/** A câmera da aérea (mm do projeto) para o azimute e a elevação (graus), na lente e na proporção do quadro. */
+function cameraAerea(az, el, fov = AEREA_LENTE, aspecto = 16 / 9) {
+  const cx = visor.caixaVisivel(), o = visor.cabecalho.origem;
+  const a = az * Math.PI / 180, e = el * Math.PI / 180;
+  const v = new THREE.Vector3(Math.cos(e) * Math.cos(a), Math.cos(e) * Math.sin(a), Math.sin(e));
+  const fr = v.clone().negate(), r = new THREE.Vector3().crossVectors(fr, new THREE.Vector3(0, 0, 1)).normalize();
+  const u = new THREE.Vector3().crossVectors(r, fr).normalize();
+  const tv = Math.tan(fov * Math.PI / 360), th = tv * aspecto;
+  const cantos = [];
+  visor.cabecalho.camadas.forEach((cm, i) => {
+    if (visor.visivelCamada[i] === false || !cm.caixa) return;
+    for (let k = 0; k < 8; k++) cantos.push(new THREE.Vector3(cm.caixa[k & 1 ? 1 : 0][0], cm.caixa[k & 2 ? 1 : 0][1], cm.caixa[k & 4 ? 1 : 0][2]));
+  });
+  if (!cantos.length) for (let k = 0; k < 8; k++) cantos.push(new THREE.Vector3(k & 1 ? cx.max.x : cx.min.x, k & 2 ? cx.max.y : cx.min.y, k & 4 ? cx.max.z : cx.min.z));
+  const alvo = cx.getCenter(new THREE.Vector3());
+  let dist = 0;
+  for (let volta = 0; volta < 4; volta++) {
+    // a distância em que todos os cantos cabem; depois o alvo vai para o meio do que a imagem mostra
+    dist = 0;
+    for (const q of cantos) { const p = q.clone().sub(alvo), z = p.dot(v); dist = Math.max(dist, z + Math.abs(p.dot(r)) / th, z + Math.abs(p.dot(u)) / tv); }
+    dist *= AEREA_FOLGA;
+    if (volta === 3) break;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const q of cantos) {
+      const p = q.clone().sub(alvo), d = dist - p.dot(v), x = p.dot(r) / (d * th), y = p.dot(u) / (d * tv);
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+    }
+    alvo.addScaledVector(r, (x0 + x1) / 2 * dist * th).addScaledVector(u, (y0 + y1) / 2 * dist * tv);
+  }
+  const pos = alvo.clone().addScaledVector(v, dist);
+  const mm = (p) => [p.x + o[0], p.y + o[1], p.z + o[2]].map(n => Math.round(n));
+  return { posicao: mm(pos), alvo: mm(alvo), fov, projecao: 'perspectiva' };
+}
+
+/** As 4 aéreas como cenas novas (as camadas e o estilo de agora; o nome repetido ganha um número). → os ids */
+async function gerarAereas() {
+  const base = eh3d() ? { pintar: cena.pintar, arestas: cena.arestas, cantos: cena.cantos, fundo: cena.fundo } : { fundo: 'ceu' };
+  const nomes = new Set(todasCenas.map(c => c.nome)), ids = [];
+  for (const [nome0, az] of AEREAS) {
+    let nome = nome0, k = 2;
+    while (nomes.has(nome)) nome = `${nome0} ${k++}`;
+    nomes.add(nome);
+    const c = await pedir(`${API}/nova-3d`, { nome, ...base, proporcao: '16:9', camera: cameraAerea(az, AEREA_ELEVACAO),
+      desligadas: desligadasAgora(), situacao: situacaoAberta, sol: { ligado: true, direcao: (az + 40) % 360, altura: 45 } });
+    ids.push(c.id);
+  }
+  return ids;
+}
+
+/** A janela Gerar cenas: o que gerar (por enquanto as aéreas dos 4 cantos; as próximas sugestões entram nesta lista). */
+function janelaGerarCenas() {
+  if (!visor || document.getElementById('gerar-cenas')) return;
+  const fundo = document.createElement('div');
+  fundo.id = 'gerar-cenas';
+  fundo.style.cssText = 'position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.25)';
+  fundo.innerHTML = `<div style="width:min(420px,calc(100vw - 32px));padding:14px 16px;background:var(--painel);border:1px solid var(--borda);border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.3);display:flex;flex-direction:column;gap:10px">
+    <b>Gerar cenas</b>
+    <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="gerar-aereas" checked>
+      <span>Aéreas dos 4 cantos <small class="fraco" style="display:block;color:var(--texto2)">a ${AEREA_ELEVACAO}° de altura, o prédio inteiro no quadro 16:9, o sol de trás de quem olha; com as camadas ligadas agora</small></span></label>
+    <span id="gerar-aviso" style="font-size:12px;color:var(--texto2)"></span>
+    <div class="linha"><button type="button" class="forte" id="gerar-ok">Gerar</button><button type="button" id="gerar-nao">Cancelar</button></div></div>`;
+  document.body.append(fundo);
+  const fechar = () => fundo.remove();
+  const ok = fundo.querySelector('#gerar-ok');
+  fundo.querySelector('#gerar-nao').onclick = fechar;
+  fundo.onkeydown = (ev) => { ev.stopPropagation(); if (ev.key === 'Escape') fechar(); };
+  fundo.querySelector('#gerar-aereas').onchange = (ev) => { ok.disabled = !ev.target.checked; };
+  ok.onclick = async () => {
+    ok.disabled = true;
+    fundo.querySelector('#gerar-aviso').textContent = 'Gerando as aéreas…';
+    try {
+      const ids = await gerarAereas();
+      fechar();
+      await listar(ids[0]);
+      aviso(`${ids.length} cenas aéreas geradas (também nas abas do modo ver). Apague as que não quiser com o botão direito no cartão.`);
+      window.cenasGeradas = ids;
+    } catch (e) {
+      ok.disabled = false;
+      fundo.querySelector('#gerar-aviso').textContent = 'Não deu: ' + e.message;
+    }
+  };
+  ok.focus();
+}
+
 /** A cena nova pela vista de agora: a câmera (a lente do quadro 16:9 na primeira), as camadas, o sol e o estilo de agora. */
 async function novaCena3d(nome) {
   if (!visor) return null;
@@ -1027,6 +1121,7 @@ function ligar3d() {
     if (c) menuDoCartao(c, b);
   };
   $('#nova-3d').onclick = () => novaCena3d();
+  $('#gerar-cenas-bt').onclick = () => janelaGerarCenas();
   $('#apagar-3d').onclick = () => { $('#menu-mais').hidden = true; if (cena) apagarCena(cena); };
   $('#copiar-3d').onclick = () => { $('#menu-mais').hidden = true; if (cena) copiarAjustes(cena); };
   $('#mais-cena').onclick = (ev) => { ev.stopPropagation(); $('#menu-mais').hidden = !$('#menu-mais').hidden; };
@@ -2777,7 +2872,7 @@ function desenharMarcas() {
 window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado, desenho, paredes: paredes.length, fina: !telaFina.hidden,
                                     fovCena, quadro: quadroAtual, vistaMudou, cenas: todasCenas.map(c => c.id) }), mostrarModo, pontoDo3d, fazerEncaixe,
                    concluir, desfazer, refazer, geometriaDoContorno, bordaDeBaixo, montarImagem, abrirCena, novaCena3d, imagemDaCena3d, cameraDaTela,
-                   exportar: () => exportar, tamanhoExportar, medidaDoLogo, videoDasCenas, cartaoDoVideo };
+                   exportar: () => exportar, tamanhoExportar, medidaDoLogo, videoDasCenas, cartaoDoVideo, cameraAerea, gerarAereas, janelaGerarCenas };
 // saindo da página (o ← 3D antes de o 3D terminar de chegar): o pedido cortado pela troca de página não é erro
 let saindoDaPagina = false;
 addEventListener('beforeunload', () => { saindoDaPagina = true; });

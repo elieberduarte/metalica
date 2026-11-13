@@ -290,6 +290,7 @@
     { nome: 'Cenas', itens: [
       { texto: 'Cenas da obra…', link: '/visor3d/cena.html?projeto={projeto}', dica: 'a tela das Cenas: criar, tratar, renderizar e exportar — as do 3D e as pela foto' },
       F('Nova cena pela vista atual', 'cena-nova-3d', { kbd: 'Alt+0', dica: 'grava a câmera, as camadas, o Pintar e o sol do modo ver' }),
+      { texto: 'Gerar cenas aéreas…', link: '/visor3d/cena.html?projeto={projeto}&gerar=1', dica: 'as 4 aéreas dos cantos sozinhas: o prédio inteiro no quadro, o sol de trás de quem olha (12/11)' },
       { texto: 'Nova cena pela foto…', link: '/visor3d/cena.html?projeto={projeto}', dica: 'a estrutura encaixada numa foto do local, para a apresentação' },
     ] },
     { nome: '?', itens: [
