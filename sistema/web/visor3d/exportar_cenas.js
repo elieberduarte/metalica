@@ -7,6 +7,8 @@
 // O render em si é o da tela (cena.js): a janela abre cada cena, pede a imagem e grava. O PDF e o ZIP são montados aqui,
 // sem biblioteca (o JPEG entra no PDF como está; o ZIP só guarda — JPEG e PNG já vêm comprimidos).
 
+import { ceder } from './video_cenas.js';
+
 const enc = new TextEncoder();
 
 // ------------------------------------------------------------------ CRC-32, ZIP e PDF
@@ -437,7 +439,7 @@ export function ligarExportar(ctx) {
         aoAndar: async (f, n, txt) => {
           const fr = f / n, gasto = (performance.now() - t0) / 1000, falta = fr > 0.02 ? Math.max(0, gasto / fr - gasto) : NaN;
           andamento(`Vídeo · quadro ${nf(f)} de ${nf(n)} — ${txt}`, fr, isFinite(falta) ? `~${falta > 90 ? nf(falta / 60) + ' min' : nf(falta) + ' s'}` : '');
-          await new Promise(res => setTimeout(res, 0));
+          await ceder();                                   // não setTimeout: a janela minimizada o segura (13/11)
         } });
       if (estado.cancelado) throw new Error('cancelado');
       andamento('Vídeo · gravando o arquivo…', 1, '');
@@ -501,7 +503,7 @@ export function ligarExportar(ctx) {
           const fr = (i + k / n) / lista.length, gasto = (performance.now() - t0) / 1000;
           const falta = fr > 0.02 ? Math.max(0, gasto / fr - gasto) : NaN;
           andamento(`${cab} · ${nf(w)} × ${nf(h)} · bloco ${k} de ${n}`, fr, isFinite(falta) ? `~${nf(falta)} s` : '');
-          await new Promise(res => setTimeout(res, 0));
+          await ceder();                                   // não setTimeout: a janela minimizada o segura (13/11)
         } });
         if (estado.cancelado) throw new Error('cancelado');
         andamento(`${cab} · gravando…`, (i + 1) / lista.length, '');

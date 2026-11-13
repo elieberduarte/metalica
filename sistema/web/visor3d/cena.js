@@ -25,7 +25,7 @@ import { ligarExportar } from './exportar_cenas.js';
 import { ligarVideos } from './assistir_videos.js';
 import { Oclusao } from './oclusao.js';
 import { Figuras, TIPOS_FIGURA, arvoresDoFundo } from './figuras_cena.js';
-import { linhaDoTempo, caminhoContinuo, cameraEntre, anguloEntre, GravadorMp4 } from './video_cenas.js';
+import { linhaDoTempo, caminhoContinuo, cameraEntre, anguloEntre, GravadorMp4, ceder } from './video_cenas.js';
 
 const $ = s => document.querySelector(s);
 const q = new URLSearchParams(location.search);
@@ -2594,7 +2594,7 @@ async function renderizar3d() {
   try {
     const saida = await imagemDaCena3d(w, h, 2, async (i, n) => {
       aviso(`Renderizando ${nf(w)} × ${nf(h)} px: bloco ${i} de ${n}…`);
-      await new Promise(res => setTimeout(res, 0));
+      await ceder();                                       // não setTimeout: a janela minimizada o segura (13/11)
     }, true, null, { cantos: true });
     devolver();
     aviso('Gravando a imagem renderizada…');
@@ -2621,7 +2621,7 @@ async function renderizar() {
   try {
     const saida = await montarImagem(w, h, 2, async (i, n) => {
       aviso(`Renderizando ${nf(w)} × ${nf(h)} px: bloco ${i} de ${n}…`);
-      await new Promise(res => setTimeout(res, 0));
+      await ceder();                                       // não setTimeout: a janela minimizada o segura (13/11)
     });
     devolver();
     await marcaNaImagem(saida);
@@ -2817,7 +2817,7 @@ function ligarExportarCenas() {
   exportar = ligarExportar({
     cenas: () => todasCenas,
     atual: () => cena,
-    abrir: async (id) => { const r = await abrirCena(id, { recarregar: false }); await new Promise(res => requestAnimationFrame(res)); return r; },
+    abrir: async (id) => { const r = await abrirCena(id, { recarregar: false }); await (document.hidden ? ceder() : new Promise(res => requestAnimationFrame(res))); return r; },
     podeRender: (c) => (c && c.tipo !== '3d' && !c.camera ? 'a foto ainda não está encaixada' : ''),
     tamanho: tamanhoExportar,
     imagem: imagemParaExportar,

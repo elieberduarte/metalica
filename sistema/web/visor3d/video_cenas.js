@@ -124,6 +124,13 @@ export async function podeGravar(w, h, fps = 30) {
   return null;
 }
 
+/** Dá a vez ao navegador (a barra de andamento, o Cancelar) entre um quadro e outro, também com a janela minimizada.
+ *  O setTimeout numa janela minimizada ou escondida espera 1 s ou mais (depois de 5 min, até 1 min) e o requestAnimationFrame
+ *  nem dispara: o vídeo parava até o usuário voltar à janela (13/11). A mensagem do MessageChannel não tem esse freio. */
+export function ceder() {
+  return new Promise(res => { const c = new MessageChannel(); c.port1.onmessage = () => { c.port1.close(); res(); }; c.port2.postMessage(0); });
+}
+
 const taxa = (w, h, fps) => Math.round(Math.min(60e6, Math.max(4e6, w * h * fps * 0.2)));   // ~12 Mbit/s em Full HD a 30
 
 /** Grava os quadros (canvas) num MP4: `quadro(canvas, vezes)` põe a imagem `vezes` quadros seguidos (a parada: desenhada uma
@@ -147,7 +154,7 @@ export class GravadorMp4 {
         this.amostras.push(dados); this.tempos.push(chunk.timestamp);
         if (chunk.type === 'key') this.chaves.push(this.amostras.length);
       },
-      error: (e) => { this.erro = e; },
+      error: (e) => { this.erro = e; if (this.acordar) this.acordar(); },
     });
     this.enc.configure(cfg);
   }
@@ -155,12 +162,19 @@ export class GravadorMp4 {
   async quadro(canvas, vezes = 1) {
     for (let v = 0; v < vezes; v++) {
       if (this.erro) throw this.erro;
-      while (this.enc.encodeQueueSize > 3) await new Promise(r => setTimeout(r, 2));
+      while (this.enc.encodeQueueSize > 3 && !this.erro) await this.esperarFila();
+      if (this.erro) throw this.erro;
       const vf = new VideoFrame(canvas, { timestamp: Math.round(this.n * 1e6 / this.fps), duration: Math.round(1e6 / this.fps) });
       this.enc.encode(vf, { keyFrame: this.n % (this.fps * 2) === 0 });
       vf.close();
       this.n++;
     }
+  }
+
+  /** A fila do codificador andou (o evento dequeue; sem ele, só dá a vez). Sem setTimeout: ver ceder(). */
+  esperarFila() {
+    if (!('ondequeue' in this.enc)) return ceder();
+    return new Promise(r => { this.acordar = r; this.enc.addEventListener('dequeue', r, { once: true }); });
   }
 
   async fim() {
