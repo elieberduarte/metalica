@@ -541,7 +541,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
                            "observacoes": ["começa %d mm antes da terça %s (transpasse %.0f mm)" % (150, cb["terca"], cb["transpasse"])]})
 
     for i, t in enumerate(md["cumeeiras"], 1):
-        linhas.append({"marca": t["conjunto"], "nome": (nomes_telhas or {}).get(str(t["conjunto"])) or "CU%d" % i,
+        linhas.append({"marca": t["conjunto"], "nome": (nomes_telhas or {}).get(str(t["conjunto"])) or "CM%d" % i,
                        "categoria": "TELHAS", "classe": "Cumeeira",
                        "perfil": t["perfil"], "material": t["material"], "quantidade": t["instancias"],
                        "comprimento": round(t["desenv"]), "largura": 980, "espessura": 0,

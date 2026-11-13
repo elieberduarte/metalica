@@ -68,7 +68,7 @@ def _telhas(projeto) -> list:
     agua = d.comprimento_agua
     saida.append(_posicao("TL", "Telha da cobertura (duas águas)", "telha", nome, "Telha", 2 * n_c, agua,
                           kg_m2 * agua * LARGURA_UTIL_TELHA, largura_mm=larg, obs=obs))
-    saida.append(_posicao("CU", "Cumeeira", "Cumeeira", "Cumeeira", "Telha", math.ceil(d.comprimento / PECA_CUMEEIRA),
+    saida.append(_posicao("CM", "Cumeeira", "Cumeeira", "Cumeeira", "Telha", math.ceil(d.comprimento / PECA_CUMEEIRA),
                           PECA_CUMEEIRA, 0.0, obs=["estimativa do estudo"]))
     if "telha" in str(d.fechamento_lateral or "").lower():
         h = d.altura_fechamento or d.altura_beiral

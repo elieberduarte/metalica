@@ -111,7 +111,7 @@ def test_resumo_nao_conta_a_cumeeira_duas_vezes():
     lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"],
            "avisos": r["avisos"], "fora_por_camada": {}}
     R = resumos.levantar_resumos(doc, lev, lista, r.get("nomes") or {}, {})
-    cus = [t for t in R["telhas"]["itens"] if t["codigo"] == "CU"]
+    cus = [t for t in R["telhas"]["itens"] if t["codigo"] == "CM"]
     assert len(cus) == 1 and cus[0]["qtd"] > 0
     # no recorte, a cumeeira é a única funilaria: nada nos rufos e calhas
     assert R["numeros"]["peso_funilaria"] == 0.0
@@ -131,3 +131,14 @@ def test_sem_telha_das_duas_aguas_nao_e_cumeeira():
         return min(q[1] for q in vs)
     b["entidades"] = [e for e in b["entidades"] if str(e.get("nome") or "").startswith("CUMEEIRA") or _y(e) < meio]
     assert not T.cumeeiras_de_funilaria(_pecas(b))["cumeeiras"]
+
+
+def test_cumeeira_e_cm_e_a_obra_que_tinha_cu_fica_com_o_numero():
+    """A sigla da cumeeira é CM (usuário, 13/11, Sooro: "Preciso que padronize o nome CM - Cumeeira"); era CU desde 25/09.
+    A obra detalhada antes, com "CU1" guardado no nomes.json, passa a CM1 (não CM2)."""
+    from nucleo2d.detalhar import detalhar
+    r = detalhar(Documento.de_dict(_bruto()), grupos=["localizacao"], converter=False)
+    assert r["nomes"]["telhas"]["CUMEEIRA I7.5"] == "CM1"
+    r = detalhar(Documento.de_dict(_bruto()), grupos=["localizacao"], converter=False,
+                 nomes={"telhas": {"CUMEEIRA I7.5": "CU7"}})
+    assert r["nomes"]["telhas"]["CUMEEIRA I7.5"] == "CM7"

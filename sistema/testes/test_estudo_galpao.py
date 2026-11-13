@@ -26,7 +26,7 @@ def test_lista_do_estudo_tem_o_aco_do_calculo_e_as_telhas():
     # telha da cobertura nas duas águas, no comprimento da água; cumeeira; fechamento e oitões (telha metálica)
     marcas = {x["marca"]: x for x in pos}
     assert marcas["TL"]["quantidade"] == 2 * 40 and marcas["TL"]["comprimento"] == round(p.dados.comprimento_agua * 1000)
-    assert "CU" in marcas and "TF" in marcas and "TO" in marcas
+    assert "CM" in marcas and "TF" in marcas and "TO" in marcas
     assert not any(x["marca"] == "TF" for x in E.lista_do_estudo(dimensionar(DadosGalpao(
         fechamento_lateral="alvenaria cerâmica 14 cm", desloc_horizontal=150)))["posicoes"])
 

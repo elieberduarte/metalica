@@ -1421,7 +1421,7 @@ def _telhas(lev: dict, lista: dict, pecas_por_marca, nivel_apoio, dados) -> dict
         if "multi-dobra" in classe.lower() and "complemento" not in classe.lower():
             trecho, codigo = "cobertura", "MD"
         elif "cumeeira" in classe.lower():
-            trecho, codigo = "cobertura", "CU"
+            trecho, codigo = "cobertura", "CM"
         else:
             codigo = "TL"
             # pela geometria da peça: normal quase vertical = cobertura ou forro
@@ -1446,7 +1446,7 @@ def _telhas(lev: dict, lista: dict, pecas_por_marca, nivel_apoio, dados) -> dict
                       "qtd": qtd, "comprimento": comp, "ml": ml, "m2": float(li.get("area_m2") or ml * LARGURA_UTIL_TELHA / 1000.0),
                       "kg": float(li.get("peso_total") or 0.0), "cortada": cortada, "classe": classe})
     ordem_trecho = {"cobertura": 0, "fechamento": 1, "forro": 2}
-    itens.sort(key=lambda t: (ordem_trecho[t["trecho"]], {"TL": 0, "MD": 1, "CU": 2}[t["codigo"]], -t["comprimento"]))
+    itens.sort(key=lambda t: (ordem_trecho[t["trecho"]], {"TL": 0, "MD": 1, "CM": 2}[t["codigo"]], -t["comprimento"]))
     n_por = collections.Counter()
     for t in itens:
         n_por[t["codigo"]] += 1
@@ -2551,7 +2551,7 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
             miudos = [it for it in itens if it not in soltos]
             for it in soltos:
                 texto = "%s - %s%s" % (it.get("descricao") or desc or ("Telha %s" % it["perfil"]), rot_trecho[trecho],
-                                       " - multidobra" if it["codigo"] == "MD" else (" - cumeeira" if it["codigo"] == "CU" else "")) \
+                                       " - multidobra" if it["codigo"] == "MD" else (" - cumeeira" if it["codigo"] == "CM" else "")) \
                     + (" - cortada na largura" if it["cortada"] else "")
                 linhas.append([it["codigo_n"], texto, (it["qtd"], "c"), (_n(it["comprimento"] / 1000.0, 2), "r"), (_n(it["ml"], 2), "r"),
                                (_n(it.get("m2") or 0.0, 2), "r"), (_coef(it["kg"], it.get("m2") or 0.0), "r"), (_n(it["kg"], 1), "r")])

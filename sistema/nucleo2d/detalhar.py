@@ -1312,7 +1312,10 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
     md.setdefault("cumeeiras", [])
     ant_telhas = (nomes or {}).get("telhas") or {}
     nomes_telhas = numerar_estavel([t["conjunto"] for t in md["telhas"]], ant_telhas, "MD")
-    nomes_telhas.update(numerar_estavel([cm["conjunto"] for cm in md["cumeeiras"]], ant_telhas, "CU"))
+    # a cumeeira é CM (usuário, 13/11, Sooro: "Preciso que padronize o nome CM - Cumeeira"; era CU desde 25/09): o número
+    # que a obra já tinha fica (CU1 → CM1)
+    ant_cm = {k: re.sub(r"^CU(\d+)$", r"CM\1", str(v)) for k, v in ant_telhas.items()}
+    nomes_telhas.update(numerar_estavel([cm["conjunto"] for cm in md["cumeeiras"]], ant_cm, "CM"))
     for t in md["telhas"]:
         t["nome"] = nomes_telhas[str(t["conjunto"])]
     for cm in md["cumeeiras"]:
