@@ -33,8 +33,10 @@ async function pedir(rota, opcoes = {}) {
   }
   if (!resposta.ok || (dados && dados.erro)) {
     const msg = (dados && dados.erro) || `${resposta.status} ${resposta.statusText}`;
-    throw new ErroServidor(String(msg), resposta.status,
-                           (dados && dados.detalhe) || texto.slice(0, 2000), rota);
+    const erro = new ErroServidor(String(msg), resposta.status,
+                                  (dados && dados.detalhe) || texto.slice(0, 2000), rota);
+    erro.dados = dados;                        // o 409 "conflito" traz a data do modelo no disco (D01, 13/11)
+    throw erro;
   }
   return dados;
 }
@@ -110,9 +112,13 @@ export class Api {
   /** O documento vai como texto JSON e o servidor o grava como veio, sem ler e reescrever (no Bella
    *  Casa, 05/10, eram 200 MB por json.loads e json.dumps a cada gravação automática). */
   /** `documentoJSON` pode vir já como texto (documento.paraTexto / paraTextoAosPoucos); aí `entidades` diz quantas são. */
-  salvarModeloDoProjeto(slug, documentoJSON, baseAlterado = null, entidades = null) {
+  /** `opcoes.porCima`: grava mesmo com o modelo do disco mais novo (a versão do disco vai antes para o histórico);
+   *  `opcoes.paraHistorico`: as edições vão só para o histórico, o modelo.json não muda (D01, 13/11). */
+  salvarModeloDoProjeto(slug, documentoJSON, baseAlterado = null, entidades = null, opcoes = {}) {
     if (this._cobertura()) return Promise.reject(new Error('o modelo da foto (cobertura em outra situação) não se grava'));
     const cab = { 'Content-Type': 'application/json; charset=utf-8', 'X-Modelo-Cru': '1' };
+    if (opcoes.porCima) cab['X-Por-Cima'] = '1';
+    if (opcoes.paraHistorico) cab['X-Para-Historico'] = '1';
     if (baseAlterado !== null && baseAlterado !== undefined) cab['X-Base-Alterado'] = String(baseAlterado);
     const texto = typeof documentoJSON === 'string' ? documentoJSON : JSON.stringify(documentoJSON);
     const n = entidades !== null && entidades !== undefined ? entidades

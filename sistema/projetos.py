@@ -55,6 +55,7 @@ PACOTE_SUFIXO = ".metalica.zip"
 PACOTE_MANIFESTO = "pacote.json"
 
 MODELO = "modelo.json"
+ROTULOS_HISTORICO = "rotulos.json"          # historico/rotulos.json: {arquivo: o que a cópia é} (D01, 13/11)
 LIXEIRA = ".lixeira"
 #: Pastas da pasta de dados que não são projetos. "fabrica" é a da empresa (empresa.json,
 #: logo, tabela de preços, numeração das propostas — fabrica.py, saida/comercial.py).
@@ -973,32 +974,62 @@ class Projetos:
     def _pasta_historico(self, s: str) -> str:
         return os.path.join(self._existente(s), HISTORICO)
 
-    def _guardar_historico(self, s: str, marco: bool):
-        import gzip
-        import shutil
+    def _guardar_historico(self, s: str, marco: bool, rotulo: str = "") -> Optional[str]:
+        """Copia o modelo.json atual para o histórico; devolve o nome da cópia (None se não copiou). `rotulo` diz o que
+        ela é na lista do Restaurar (ex.: "antes de gravar por cima — …", D01 13/11)."""
         caminho = self.caminho_modelo(s)
         if not os.path.exists(caminho):
-            return
+            return None
+        with open(caminho, "rb") as f:
+            return self._para_o_historico(s, f, marco, rotulo)
+
+    def guardar_no_historico(self, s: str, bruto: bytes, rotulo: str) -> str:
+        """Um modelo que NÃO vai para o modelo.json (as edições da aba desatualizada, quando o usuário abre a versão
+        gravada pela outra aba — D01, 13/11) entra no histórico como marco, com o rótulo; dá para voltar a ele pelo
+        Restaurar."""
+        import io as _io
+        if not bruto[:64].lstrip().startswith(b"{") or not bruto[-64:].rstrip().endswith(b"}"):
+            raise ErroDeDados("documento 3D ausente ou inválido.")
+        return self._para_o_historico(s, _io.BytesIO(bruto), True, rotulo)
+
+    def _para_o_historico(self, s: str, fonte, marco: bool, rotulo: str = "") -> Optional[str]:
+        import gzip
+        import shutil
         pasta = self._pasta_historico(s)
         os.makedirs(pasta, exist_ok=True)
         anteriores = sorted(f for f in os.listdir(pasta) if f.startswith("modelo-") and f.endswith(".json.gz"))
         if anteriores and not marco:
             ultimo = os.path.getmtime(os.path.join(pasta, anteriores[-1]))
             if time.time() - ultimo < INTERVALO_HISTORICO:
-                return
+                return None
         base = "modelo-%s%s" % (datetime.datetime.now().strftime("%Y%m%d-%H%M%S"), "-marco" if marco else "")
         nome, k = base + ".json.gz", 1
         while os.path.exists(os.path.join(pasta, nome)):        # duas gravações no mesmo segundo
             k += 1
             nome = "%s-%d.json.gz" % (base, k)
-        with open(caminho, "rb") as f, gzip.open(os.path.join(pasta, nome), "wb", compresslevel=6) as g:
-            shutil.copyfileobj(f, g)
+        with gzip.open(os.path.join(pasta, nome), "wb", compresslevel=6) as g:
+            shutil.copyfileobj(fonte, g)
         anteriores.append(nome)
         for velho in anteriores[:-MAX_HISTORICO]:
             try:
                 os.remove(os.path.join(pasta, velho))
             except OSError:
                 pass
+        rotulos = self._rotulos_do_historico(s)
+        if rotulo:
+            rotulos[nome] = rotulo
+        vivos = {k: v for k, v in rotulos.items() if os.path.exists(os.path.join(pasta, k))}
+        if rotulo or len(vivos) != len(rotulos):
+            _gravar_json(os.path.join(pasta, ROTULOS_HISTORICO), vivos)
+        return nome
+
+    def _rotulos_do_historico(self, s: str) -> dict:
+        try:
+            with open(os.path.join(self._pasta_historico(s), ROTULOS_HISTORICO), encoding="utf-8") as f:
+                r = json.load(f)
+            return r if isinstance(r, dict) else {}
+        except (OSError, ValueError):
+            return {}
 
     def listar_historico(self, s: str) -> List[dict]:
         """Gravações anteriores do modelo, da mais nova para a mais antiga."""
@@ -1006,7 +1037,15 @@ class Projetos:
         if not os.path.isdir(pasta):
             return []
         fora = []
-        for f in sorted(os.listdir(pasta), reverse=True):
+        rotulos = self._rotulos_do_historico(s)
+        # da mais nova para a mais antiga pela hora em que a cópia foi feita: no mesmo segundo, o nome não ordena
+        # ("…-204944.json.gz" vinha antes de "…-204944-marco.json.gz", feita depois — D01, 13/11)
+        def _quando_feita(f):
+            try:
+                return os.path.getmtime(os.path.join(pasta, f))
+            except OSError:
+                return 0.0
+        for f in sorted(os.listdir(pasta), key=lambda f: (f[:22], _quando_feita(f), f), reverse=True):
             if not (f.startswith("modelo-") and f.endswith(".json.gz")):
                 continue
             m = re.match(r"modelo-(\d{8})-(\d{6})(-marco)?(?:-\d+)?\.json\.gz$", f)
@@ -1014,7 +1053,7 @@ class Projetos:
             if m:
                 quando = "%s-%s-%sT%s:%s:%s" % (m.group(1)[:4], m.group(1)[4:6], m.group(1)[6:], m.group(2)[:2], m.group(2)[2:4], m.group(2)[4:])
             fora.append({"arquivo": f, "quando": quando, "marco": bool(m and m.group(3)),
-                         "mb": round(os.path.getsize(os.path.join(pasta, f)) / 1048576, 2)})
+                         "mb": round(os.path.getsize(os.path.join(pasta, f)) / 1048576, 2), "rotulo": rotulos.get(f, "")})
         return fora
 
     def restaurar_modelo(self, s: str, arquivo: str) -> dict:

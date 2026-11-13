@@ -551,18 +551,40 @@ def _igual_ao_disco(s: str, bruto: bytes) -> bool:
         return False
 
 
-def salvar_modelo_cru(s: str, bruto: bytes, base_alterado=None, entidades=None) -> dict:
+def _quando(t: float) -> str:
+    return time.strftime("%d/%m %H:%M", time.localtime(t)) if t else "?"
+
+
+def salvar_modelo_cru(s: str, bruto: bytes, base_alterado=None, entidades=None, por_cima: bool = False) -> dict:
     """POST /api/projetos/<s>/modelo com o cabeçalho X-Modelo-Cru: o editor manda o documento já
     em texto JSON, e ele vai para o disco como veio. No Bella Casa (05/10) cada gravação automática
-    passava os 200 MB por json.loads e json.dumps. Mesmas regras da ação "modelo"."""
+    passava os 200 MB por json.loads e json.dumps. Mesmas regras da ação "modelo".
+    `por_cima` (X-Por-Cima: 1, a escolha "Gravar as minhas por cima" da aba desatualizada, D01 13/11): grava mesmo com o
+    modelo do disco mais novo; antes, a versão do disco vai para o histórico com o rótulo — nada se perde de vez."""
     if _igual_ao_disco(s, bruto):
         return {"salvo": "modelo.json", "projeto": s, "entidades": entidades, "alterado": _alterado_modelo(s),
                 "sem_mudanca": True}
+    if por_cima:
+        disco = _alterado_modelo(s)
+        guardada = _gerente()._guardar_historico(
+            s, True, "antes de gravar por cima — a versão gravada em %s, substituída em %s" % (_quando(disco), _quando(time.time())))
+        r = _gerente().salvar_modelo_bruto(s, bruto, entidades)
+        r["alterado"] = _alterado_modelo(s)
+        r["historico"] = guardada
+        _vivos().modelo_gravado(s)
+        return r
     _conferir_base_do_modelo(s, base_alterado)
     r = _gerente().salvar_modelo_bruto(s, bruto, entidades)
     r["alterado"] = _alterado_modelo(s)
     _vivos().modelo_gravado(s)
     return r
+
+
+def guardar_edicoes_no_historico(s: str, bruto: bytes) -> dict:
+    """POST /api/projetos/<s>/modelo com X-Para-Historico: 1 (a escolha "Abrir a versão gravada" da aba desatualizada,
+    D01 13/11): as edições da aba vão para o histórico, com o rótulo; o modelo.json não muda."""
+    nome = _gerente().guardar_no_historico(s, bruto, "edições não gravadas de uma aba desatualizada — %s" % _quando(time.time()))
+    return {"historico": nome, "alterado": _alterado_modelo(s)}
 
 
 def acao_de_projeto(s: str, acao: str, corpo: dict) -> dict:
@@ -6866,8 +6888,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not n or n > 4 * 1024 ** 3:
                     raise ErroDeDados("modelo vazio ou grande demais (limite de 4 GB).")
                 base, ent = self.headers.get("X-Base-Alterado"), self.headers.get("X-Entidades")
+                if self.headers.get("X-Para-Historico") == "1":
+                    return self._json(guardar_edicoes_no_historico(partes[0], self.rfile.read(n)))
                 return self._json(salvar_modelo_cru(partes[0], self.rfile.read(n), float(base) if base else None,
-                                                    int(ent) if ent else None))
+                                                    int(ent) if ent else None, por_cima=self.headers.get("X-Por-Cima") == "1"))
             # o arquivo grande vem como ele é, sem base64 nem JSON (o IFC de 321 MB, 05/10)
             binario = (self.headers.get("Content-Type") or "").startswith("application/octet-stream")
             corpo = self._corpo_binario() if binario else self._corpo()

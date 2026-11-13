@@ -219,7 +219,7 @@ export class Editor {
     this._ligarBlocos();          // o elemento treliçado é um bloco: o clique pega ele inteiro
     this._ligarDivisao();         // na tela dividida, a seleção conversa com o 2D ao lado
     if (this.el.salvar) {
-      this.el.salvar.addEventListener('click', () => this.salvar());
+      this.el.salvar.addEventListener('click', () => (this._conflito ? this.resolverConflito() : this.salvar()));
       setInterval(() => this._mostrarEstadoGravacao(), 600);
     }
     this.inferencia = new Inferencia(this.documento, this.cena, this.camera,
@@ -1197,7 +1197,7 @@ export class Editor {
     try {
       if (this.projeto && !nome) {
         if (this._modeloNaoAbriu) throw new Error('o modelo do projeto não abriu nesta tela; nada foi gravado, para não sobrescrevê-lo — recarregue (F5)');
-        if (this._conflito) { this._avisarConflito(); return; }
+        if (this._conflito) { await this.resolverConflito(); return; }
         // nada mudou desde a última gravação: não regrava (regravar trocava a data do modelo e a OUTRA aba aberta na
         // mesma obra perdia as edições dela — D01 do usuario-desastrado, 13/11)
         if (!this._autosavePendente && !this._autosalvando && !this._autosaveTimer && this._modeloAlterado) {
@@ -1235,6 +1235,7 @@ export class Editor {
     const conflito = e && (e.status === 409 || /outra tela|outra janela|recarregue/i.test(e.message || ''));
     if (!conflito || !this.projeto) return false;
     this._conflito = true;
+    if (e.dados && e.dados.alterado) this._conflitoDisco = e.dados.alterado;
     this._autosavePendente = true;
     if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
     this._avisarConflito();
@@ -1243,9 +1244,73 @@ export class Editor {
   }
 
   _avisarConflito() {
-    this.aviso('Este modelo foi gravado por outra tela (outra aba, o CAD ou outra máquina) depois de aberto aqui. ' +
-               'As suas edições desta aba NÃO foram gravadas e continuam só nesta aba. Recarregar (F5) mostra a versão ' +
-               'gravada e descarta as edições desta aba.', 'erro', 0);
+    const bt = el('button', { type: 'button', class: 'botao principal', texto: 'Escolher…' });
+    bt.addEventListener('click', () => this.resolverConflito());
+    this.aviso(el('span', {}, 'Este modelo foi gravado por outra tela (outra aba, o CAD ou outra máquina) depois de aberto aqui. ' +
+                  'As suas edições desta aba NÃO foram gravadas e continuam só nesta aba. ', bt), 'erro', 0);
+  }
+
+  /** A escolha do usuário para a aba desatualizada (D01, decisão de 13/11: "Escolher, com histórico"): gravar as minhas
+   *  por cima (com confirmação; a versão do disco vai antes para o histórico) ou abrir a versão gravada (as minhas vão
+   *  para o histórico). Nada se perde de vez: as duas saídas aparecem no Restaurar com o rótulo. */
+  async resolverConflito() {
+    if (!this._conflito || !this.projeto) return;
+    const quando = this._conflitoDisco ? this._dataHora(this._conflitoDisco) : 'há pouco';
+    let escolha = null;
+    const abrirGravada = el('button', { type: 'button', class: 'botao', texto: 'Abrir a versão gravada' });
+    abrirGravada.addEventListener('click', () => { escolha = 'abrir'; this.el.dialogo.close('abrir'); });
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: `Depois que esta aba abriu, a obra foi gravada por outra aba, pelo CAD ou por outra máquina (${quando}). ` +
+        'As mudanças desta aba ainda não foram gravadas.' }),
+      el('div', { class: 'explica', texto: '• Gravar as minhas por cima: a versão gravada vai para o histórico.' }),
+      el('div', { class: 'explica', texto: '• Abrir a versão gravada: as mudanças desta aba vão para o histórico.' }),
+      el('div', { class: 'explica', texto: 'Nos dois casos dá para voltar pelo Arquivo › Restaurar modelo anterior.' }),
+      el('div', { class: 'linha' }, abrirGravada));
+    const r = await this.dialogo({ titulo: 'A obra foi gravada em outro lugar', corpo, ok: 'Gravar as minhas por cima', cancelar: 'Decidir depois' });
+    if (r === 'ok') return this._gravarPorCima(quando);
+    if (escolha === 'abrir') return this._abrirVersaoGravada();
+  }
+
+  _dataHora(t) {
+    const d = new Date(t * 1000);
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  async _gravarPorCima(quando) {
+    const corpo = el('div', { class: 'explica', texto: `A versão gravada em ${quando} será substituída pelas mudanças desta aba. ` +
+      'Ela vai para o histórico (Arquivo › Restaurar modelo anterior), com o nome "antes de gravar por cima".' });
+    if (await this.dialogo({ titulo: 'Gravar as minhas por cima?', corpo, ok: 'Gravar por cima', cancelar: 'Voltar' }) !== 'ok') return;
+    if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
+    this._autosalvando = true;
+    const versao = this._versaoEdicao || 0;
+    try {
+      const s = await this.api.salvarModeloDoProjeto(this.projeto, await this._textoParaGravar(), this._modeloAlterado,
+                                                     this.documento.tamanho, { porCima: true });
+      if (s && s.alterado) this._modeloAlterado = s.alterado;
+      this._conflito = false; this._conflitoDisco = null;
+      if ((this._versaoEdicao || 0) === versao) this._autosavePendente = false;
+      this._salvoEm = new Date(); this._erroGravacao = null;
+      this.aviso(`Gravado por cima. A versão de ${quando} está no histórico (Arquivo › Restaurar modelo anterior).`, 'info', 10000);
+    } catch (e) {
+      this.aviso(`Não foi possível gravar por cima: ${e.message}`, 'erro', 0);
+    } finally {
+      this._autosalvando = false;
+      this._mostrarEstadoGravacao();
+      if (this._autosavePendente && !this._conflito) this._agendarAutosave();
+    }
+  }
+
+  async _abrirVersaoGravada() {
+    try {
+      await this.api.salvarModeloDoProjeto(this.projeto, await this._textoParaGravar(), null, this.documento.tamanho, { paraHistorico: true });
+    } catch (e) {
+      this.aviso(`As mudanças desta aba não foram para o histórico (${e.message}); a versão gravada não foi aberta, para nada se perder.`, 'erro', 0);
+      return;
+    }
+    try { sessionStorage.setItem('metalica.avisoAoAbrir', 'Aberta a versão gravada. As mudanças da outra aba estão no histórico (Arquivo › Restaurar modelo anterior), com o nome "edições não gravadas de uma aba desatualizada".'); } catch { /* sem armazenamento */ }
+    this._conflito = false; this._autosavePendente = false;
+    if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
+    window.location.reload();
   }
 
   async salvarComo() {
@@ -1733,7 +1798,8 @@ export class Editor {
       const r = el('input', { type: 'radio', name: 'hist' });
       r.addEventListener('change', () => { if (r.checked) escolhido = h.arquivo; });
       const quando = h.quando ? h.quando.replace('T', ' ') : h.arquivo;
-      opcoes.append(el('label', { class: 'linha' }, r, ` ${quando}  ·  ${String(h.mb).replace('.', ',')} MB${h.marco ? '  ·  marco (furos, detalhamento…)' : ''}`));
+      const oQue = h.rotulo ? `  ·  ${h.rotulo}` : (h.marco ? '  ·  marco (furos, detalhamento…)' : '');
+      opcoes.append(el('label', { class: 'linha' }, r, ` ${quando}  ·  ${String(h.mb).replace('.', ',')} MB${oQue}`));
     }
     const corpo = el('div', {},
       el('div', { class: 'explica', texto: 'Gravações anteriores do modelo 3D deste projeto. Escolha uma para voltar a ela: o modelo atual vai para o histórico antes, então dá para desfazer. Os desenhos 2D não mudam; gere o detalhamento de novo depois.' }),
@@ -3143,7 +3209,11 @@ window.__antesDeAtualizar = () => editor.gravarConfirmado();
 window.addEventListener('beforeunload', (e) => {
   if ((editor._autosavePendente || editor._autosalvando || editor._conflito) && !(editor.projeto && editor._modeloNaoAbriu)) { e.preventDefault(); e.returnValue = ''; }
 });
-editor.iniciar().catch((e) => {
+editor.iniciar().then(() => {
+  let m = null;
+  try { m = sessionStorage.getItem('metalica.avisoAoAbrir'); sessionStorage.removeItem('metalica.avisoAoAbrir'); } catch { /* sem armazenamento */ }
+  if (m) editor.aviso(m, 'info', 12000);
+}).catch((e) => {
   console.error('o editor não conseguiu iniciar:', e);
   editor.aviso(`O editor não conseguiu iniciar: ${e.message}`, 'erro', 0);
 });

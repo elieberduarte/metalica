@@ -8,9 +8,13 @@ Duas abas de verdade no mesmo projeto (dois alvos do Chrome), teclas e cliques d
   C. aba B (que carregou antes da gravação da A): Delete noutra peça → o servidor recusa (409) e a B mostra
      "⚠ Não gravado" (data-estado="conflito"), não "✓ Salvo"; o modelo.json continua o da A;
   D. a B pergunta antes de sair (o beforeunload cancelado);
+  F. a escolha (usuário, 13/11: "Escolher, com histórico"), pelo clique no "⚠ Não gravado": F1 "Gravar as minhas por
+     cima" com a confirmação que diz de quando é a versão substituída, e ela no histórico; F2 a outra aba cai no
+     "⚠ Não gravado" e "Abrir a versão gravada" recarrega, com as mudanças dela no histórico (capturas
+     duas_abas_escolha.png e duas_abas_confirmar_por_cima.png);
   E. sem erros no console (fora o 409 esperado).
 Falha sem a correção (o botão da B volta a "salvo" e o beforeunload não pergunta). Porta livre, nunca a 8765/8766."""
-import json, os, shutil, subprocess, sys, tempfile, time
+import json, os, re, shutil, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
@@ -137,6 +141,53 @@ try:
     # --- D. sair da B pergunta
     pergunta = B.avaliar("(() => { const ev = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(ev); return ev.defaultPrevented; })()")
     ok(pergunta is True, "[D] sair da B pergunta antes (beforeunload)")
+
+    # --- F. a escolha (usuário, 13/11: "Escolher, com histórico"), pelo botão "⚠ Não gravado" de verdade
+    import base64
+
+    def clicar(aba, seletor):
+        c = aba.avaliar(f"(() => {{ const b = document.querySelector({json.dumps(seletor)}); if (!b) return null; const q = b.getBoundingClientRect(); return q.width ? [q.left + q.width / 2, q.top + q.height / 2] : null; }})()")
+        if not c: return False
+        for tipo in ("mouseMoved", "mousePressed", "mouseReleased"):
+            aba.cmd("Input.dispatchMouseEvent", type=tipo, x=c[0], y=c[1], button="left", clickCount=1)
+        aba.drenar(0.4)
+        return True
+
+    def foto(aba, nome):
+        open(os.path.join(os.path.dirname(os.path.abspath(__file__)), nome), "wb").write(
+            base64.b64decode(aba.cmd("Page.captureScreenshot", format="png")["data"]))
+
+    ok(clicar(B, ".btn-salvar"), "[F] clique no \"⚠ Não gravado\" da B")
+    txt = esperar(B, "(() => { const d = document.querySelector('#dialogo'); return d && d.open ? d.textContent : null; })()", 10) or ""
+    ok("Gravar as minhas por cima" in txt and "Abrir a versão gravada" in txt, f"[F] a escolha abre com as duas saídas ({' '.join(txt.split())[:120]!r})")
+    foto(B, "duas_abas_escolha.png")
+    # F1. gravar por cima: confirmação com a data da versão substituída, depois grava; a da A vai para o histórico
+    clicar(B, "#dialogo-ok")
+    txt = esperar(B, "(() => { const d = document.querySelector('#dialogo'); return d && d.open && /Gravar as minhas por cima\\?/.test(d.textContent) ? d.textContent : null; })()", 10) or ""
+    ok(bool(re.search(r"gravada em \d\d/\d\d \d\d:\d\d será substituída", txt)), f"[F1] a confirmação diz de quando é a versão substituída ({' '.join(txt.split())[:140]!r})")
+    foto(B, "duas_abas_confirmar_por_cima.png")
+    clicar(B, "#dialogo-ok")
+    t0 = time.time()
+    while time.time() - t0 < 20 and ids_no_disco() != ["P1", "P3", "P4", "P5", "P6"]:
+        B.drenar(0.5)
+    ok(ids_no_disco() == ["P1", "P3", "P4", "P5", "P6"], f"[F1] gravou a da B por cima ({ids_no_disco()})")
+    ok((esperar(B, f"{ESTADO}.startsWith('salvo') ? {ESTADO} : null", 15) or "").startswith("salvo"), "[F1] a B diz \"✓ Salvo\" de verdade")
+    hist = _json(f"{base}/api/projetos/duas-abas/historico")["historico"]
+    ok(hist and hist[0]["rotulo"].startswith("antes de gravar por cima"), f"[F1] a versão da A está no histórico ({hist[:1]})")
+    # F2. agora a A está desatualizada: apaga o P1 → "⚠ Não gravado" → "Abrir a versão gravada"
+    apagar(A, "P1")
+    est = esperar(A, f"{ESTADO}.startsWith('conflito') ? {ESTADO} : null", 25)
+    ok(bool(est), f"[F2] a A cai no \"⚠ Não gravado\" na gravação seguinte ({est!r})")
+    clicar(A, ".btn-salvar")
+    esperar(A, "document.querySelector('#dialogo').open", 10)
+    A.avaliar("[...document.querySelectorAll('#dialogo-corpo button')].find(b => /Abrir a versão gravada/.test(b.textContent)).setAttribute('data-verif', 'abrir'); 1")
+    clicar(A, '[data-verif="abrir"]')
+    ok(bool(esperar(A, "window.editor && editor.documento && editor.documento.entidades.size === 5 && document.body.dataset.pronto === '1' && !editor._conflito", 60)),
+       "[F2] a A recarregou com a versão gravada (a da B, 5 peças)")
+    ok(bool(esperar(A, "/Aberta a versão gravada/.test(document.body.innerText)", 10)), "[F2] o aviso diz onde ficaram as mudanças da A")
+    ok(ids_no_disco() == ["P1", "P3", "P4", "P5", "P6"], f"[F2] o disco não mudou ({ids_no_disco()})")
+    hist = _json(f"{base}/api/projetos/duas-abas/historico")["historico"]
+    ok(hist and hist[0]["rotulo"].startswith("edições não gravadas"), f"[F2] as mudanças da A estão no histórico ({hist[:1]})")
 
     # --- E. console
     for nome, aba in (("A", A), ("B", B)):
