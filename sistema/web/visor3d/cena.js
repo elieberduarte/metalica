@@ -775,19 +775,83 @@ function saidaDePrevia(cv, fps) {
   };
 }
 
+// ------------------------------------------------------------------ a montagem por etapas no vídeo (roteiro de refino, item 4;
+// amostra-18 aprovada em 13/11: "B" — cada etapa cresce de uma ponta à outra do prédio; as 5 etapas, ~2 s cada, uma pausa no
+// prédio pronto; a montagem espalhada pelo voo, e com uma cena só a câmera dá a volta). As etapas pelo papel das peças:
+// 0 o que já existe (o concreto, o que não é aço) — sempre à vista; 1 pilares e chumbadores; 2 vigas e tesouras; 3 terças,
+// correntes, contraventos e suportes; 4 telhas, fechamentos, brises e calhas.
+const MONTAGEM_POR_ETAPA = 2, MONTAGEM_PAUSA = 1.5, MONTAGEM_ETAPAS = 4;
+let etapasCache = null;
+
+/** A etapa de cada peça e, em cada etapa, as peças na ordem do eixo comprido do prédio (a etapa cresce de uma ponta à outra). */
+function etapasDaMontagem() {
+  const F = visor.fichas || [], n = Math.min(F.length, visor.nPecas);
+  if (etapasCache && etapasCache.fichas === F) return etapasCache;
+  const cams = visor.cabecalho.camadas.map(c => String(c.nome || '').toLowerCase());
+  const etapa = new Int8Array(n);
+  for (let i = 0; i < n; i++) {
+    const f = F[i], pp = String(f.pp || '').toLowerCase(), cm = cams[f.c || 0] || '', m = String(f.m || '').toLowerCase();
+    if (/telha|fechamento|brise|calha|rufo|forro|platibanda/.test(cm) && !/viga|suporte|terça|pilar/.test(pp)) etapa[i] = 4;
+    else if (pp === 'pilar' || pp === 'chumbador' || /chumbador|base/.test(cm)) etapa[i] = 1;
+    else if (/viga|banzo|montante|diagonal|tesoura/.test(pp) || /tesoura|viga/.test(cm)) etapa[i] = 2;
+    else if (/terça|corrente|contravent|suporte|barra/.test(pp) || /terça|corrente|contravent|suporte/.test(cm)) etapa[i] = 3;
+    else if (!(f.kg > 0) || /concreto|alvenaria|vidro/.test(m)) etapa[i] = 0;
+    else etapa[i] = 3;
+  }
+  const cx = visor.caixaVisivel(), eixo = (cx.max.x - cx.min.x) >= (cx.max.y - cx.min.y) ? 0 : 1;
+  const ordem = [[], [], [], [], []];
+  for (let i = 0; i < n; i++) ordem[etapa[i]].push(i);
+  const pos = (i) => (F[i].x || [0, 0, 0])[eixo];
+  for (const lista of ordem) lista.sort((a, b) => pos(a) - pos(b));
+  etapasCache = { fichas: F, etapa, ordem, conta: ordem.map(l => l.length) };
+  return etapasCache;
+}
+
+/** A estrutura no momento `t` da montagem (1 = só o que já existe … 5 = pronta): as etapas antes de floor(t) inteiras, a
+ *  etapa floor(t) até a fração (t − floor) do comprimento; o resto escondido (visor.ocultas, por cima do que a cena esconde). */
+function mostrarMontagem(t, base) {
+  const E = etapasDaMontagem(), k = Math.floor(t), fr = t - k, ocultas = new Set(base);
+  for (let e = 1; e <= MONTAGEM_ETAPAS; e++) {
+    const lista = E.ordem[e];
+    const de = e < k ? lista.length : e === k ? Math.floor(fr * lista.length) : 0;
+    for (let q = de; q < lista.length; q++) ocultas.add(lista[q]);
+  }
+  visor.ocultas = ocultas;
+  visor._repintar();
+}
+
+/** A volta lenta em torno do prédio (a montagem com uma cena só): a câmera da cena girando 90° em volta do alvo, suave no
+ *  começo e no fim; o mesmo formato das linhas do tempo do voo. */
+function voltaEmTorno(cam, segundos, fps) {
+  const total = Math.max(2, Math.round(segundos * fps)), a = cam.alvo, d = [0, 1].map(x => cam.posicao[x] - a[x]);
+  function quadro(f) {
+    const s = Math.min(1, Math.max(0, f / (total - 1))), ang = (s * s * (3 - 2 * s)) * Math.PI / 2;
+    const c = Math.cos(ang), sn = Math.sin(ang);
+    return { i: 0, j: 0, k: 0, cam: { posicao: [a[0] + d[0] * c - d[1] * sn, a[1] + d[0] * sn + d[1] * c, cam.posicao[2]], alvo: [...a], fov: cam.fov || FOV_PADRAO } };
+  }
+  return { total, fps, quadro, segundos: total / fps };
+}
+
 async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada = 0, ss = 1, fecho = 'A', abertura = 'nenhuma', texto = false,
-                               aoAndar = null, cancelado = () => false, previa = null }) {
+                               aoAndar = null, cancelado = () => false, previa = null, montagem = false }) {
   if (fecho === true) fecho = 'A'; else if (fecho === false) fecho = 'nenhum';
   const lista = ids.map(id => todasCenas.find(c => c.id === id)).filter(c => c && c.tipo === '3d' && c.camera && c.camera.posicao && c.camera.alvo);
-  if (lista.length < 2) throw new Error('escolha duas cenas do 3D ou mais');
+  if (lista.length < (montagem ? 1 : 2)) throw new Error(montagem ? 'escolha uma cena do 3D ou mais' : 'escolha duas cenas do 3D ou mais');
+  // com a montagem, o voo dura ao menos as etapas + a pausa no prédio pronto (o trecho fica mais lento se precisar)
+  const tMontagem = MONTAGEM_ETAPAS * MONTAGEM_POR_ETAPA + MONTAGEM_PAUSA;
+  if (montagem && lista.length > 1) porTrecho = Math.max(porTrecho, (tMontagem - lista.length * parada) / (lista.length - 1));
   const voltar = cena && cena.id;
   if (!(await abrirCena(lista[0].id, { recarregar: false }))) {
     if (!cena || cena.id !== lista[0].id) throw new Error(`a cena ${lista[0].nome} é da outra situação da cobertura`);
   }
   let [w, h] = tamanho3d(lado); w -= w % 2; h -= h % 2;
   // sem parada (o padrão, 12/11: "como se fosse um drone sobrevoando a estrutura"): uma curva só, na velocidade constante
-  const marca = marcaDaCena(), linha = parada > 0 ? linhaDoTempo(lista.length, { porTrecho, parada, fps })
+  const marca = marcaDaCena(), linha = lista.length === 1 ? voltaEmTorno(lista[0].camera, tMontagem, fps)
+    : parada > 0 ? linhaDoTempo(lista.length, { porTrecho, parada, fps })
     : caminhoContinuo(lista.map(c => c.camera), { porTrecho, fps });
+  // a montagem ao longo do voo: do quadro 0 (só o que já existe) até a pausa final (pronta)
+  const ocultasAntes = new Set(visor.ocultas || []), qMontagem = Math.max(1, linha.total - Math.round(MONTAGEM_PAUSA * fps));
+  let fAtual = 0;
   const gravador = previa ? saidaDePrevia(previa, fps) : await GravadorMp4.abrir(w, h, fps);
   const visuais = new Map();                                 // o visual de cada cena, lido uma vez (com a cena dela)
   const visual = (c) => { if (!visuais.has(c.id)) visuais.set(c.id, visualDaCena(cena && cena.id === c.id ? cena : c)); return visuais.get(c.id); };
@@ -807,6 +871,7 @@ async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada
     fovCena = cam.fov;
     let ceu = null;
     if (q.i !== q.j && q.k > 0 && q.k < 1) ceu = misturarVisual(visual(A), visual(B), q.k);
+    if (montagem) mostrarMontagem(1 + MONTAGEM_ETAPAS * Math.min(1, fAtual / qMontagem), ocultasAntes);   // depois de abrir a cena
     const quadro = await imagemDaCena3d(w, h, ss, null, false, ceu);
     await desenharMarca(quadro, marca);
     return quadro;
@@ -829,8 +894,9 @@ async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada
     for (let f = 0; f < linha.total; f++) {
       if (cancelado()) throw new Error('cancelado');
       const q = linha.quadro(f), A = lista[q.i], B = lista[q.j];
+      fAtual = f;
       if (previa && gravador.atraso() > 1) { gravador.pular(); quadros++; continue; }   // a prévia atrasada: este quadro fica de fora
-      if (q.parado && img) { await gravador.quadro(img); quadros++; continue; }
+      if (q.parado && img && !montagem) { await gravador.quadro(img); quadros++; continue; }
       img = await quadroDoVoo(q);
       await gravador.quadro(img); quadros++;
       if (aoAndar) await aoAndar(f + 1, linha.total, q.i === q.j ? lista[q.i].nome : `${A.nome} → ${B.nome}`);
@@ -853,6 +919,7 @@ async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada
   } catch (e) { gravador.cancelar(); throw e; }
   finally {
     renderizando = false;
+    if (montagem) { visor.ocultas = ocultasAntes; visor._repintar(); }     // a estrutura inteira de volta
     if (voltar && (!cena || cena.id !== voltar)) await abrirCena(voltar, { recarregar: false }).catch(() => {});
     else if (eh3d()) { aplicarEstilo3d(); aplicarSol(); aplicarVistaDaCena(); }
     mostrarBotoes();
@@ -2977,7 +3044,7 @@ function desenharMarcas() {
 window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado, desenho, paredes: paredes.length, fina: !telaFina.hidden,
                                     fovCena, quadro: quadroAtual, vistaMudou, cenas: todasCenas.map(c => c.id) }), mostrarModo, pontoDo3d, fazerEncaixe,
                    concluir, desfazer, refazer, geometriaDoContorno, bordaDeBaixo, montarImagem, abrirCena, novaCena3d, imagemDaCena3d, cameraDaTela,
-                   exportar: () => exportar, tamanhoExportar, medidaDoLogo, videoDasCenas, cartaoDoVideo, cameraAerea, cameraPedestre, gerarAereas, gerarCenas, janelaGerarCenas };
+                   exportar: () => exportar, tamanhoExportar, medidaDoLogo, videoDasCenas, cartaoDoVideo, cameraAerea, cameraPedestre, gerarAereas, gerarCenas, janelaGerarCenas, etapasDaMontagem, mostrarMontagem };
 // saindo da página (o ← 3D antes de o 3D terminar de chegar): o pedido cortado pela troca de página não é erro
 let saindoDaPagina = false;
 addEventListener('beforeunload', () => { saindoDaPagina = true; });

@@ -135,7 +135,7 @@ try:
     esperar(aba, "window.previaDoVoo && window.previaDoVoo.tocando && window.previaDoVoo.quadros > 1", 30)
     clicar_no(aba, "#exportar-voo-bt")
     ok(esperar(aba, "!document.getElementById('exportar-voo') && !document.getElementById('exportar-previa').hidden && !window.previaDoVoo.tocando", 10),
-       "■ Parar: o canvas sai, a imagem parada volta")
+       "■ Parar: o canvas sai, a imagem parada volta (" + str(aba.avaliar("[document.querySelectorAll('#exportar-voo').length, document.getElementById('exportar-voo-bt').textContent, JSON.stringify(window.previaDoVoo)]")) + ")")
     aba.drenar(2.0)
     clicar_no(aba, "#exportar-voo-bt")
     esperar(aba, "window.previaDoVoo && window.previaDoVoo.tocando && window.previaDoVoo.quadros > 1", 30)
