@@ -63,30 +63,30 @@ def test_titulo_da_face_externa_e_interna():
                                                          ["FACE 3", "FACHADA EXTERNA"], ["FACE 3", "FACHADA INTERNA"]]
 
 
-def test_so_a_linha_do_corte_de_borda_a_borda_da_chapa():
+def test_o_recorte_numa_polilinha_so():
+    """O recorte das chapas da face vai numa polilinha tracejada só, o contorno da união dos cortes (a base, as laterais e
+    a água), não em pedaços por chapa (usuário, 13/11, refazendo à mão as FACES 4 e 5 da Sala no DXF do fornecedor: "a
+    linha que seria da recorte estava toda explodida, preciso que ela fique da forma que deixei")."""
     faces = _faces()
     oitao = next(f for f in faces if f.get("lado") == "interna" and len({round(c["comprimento"]) for c in f["chapas"]}) > 1)
     ents = _ents(oitao)
-    # nenhum contorno tracejado: só linhas soltas, as do corte
-    assert not [e for e in ents if isinstance(e, Polilinha) and "OCULTA" in e.camada]
-    cortes = [e for e in ents if isinstance(e, Linha) and "OCULTA" in e.camada]
+    assert not [e for e in ents if isinstance(e, Linha) and "OCULTA" in e.camada]
+    contornos = [e for e in ents if isinstance(e, Polilinha) and "OCULTA" in e.camada]
+    assert len(contornos) == 1 and contornos[0].fechada, len(contornos)
+    c = contornos[0]
+    xs = [v[0] for v in c.vertices]
+    ys = [v[1] for v in c.vertices]
     chapas = [e for e in ents if isinstance(e, Polilinha) and e.fechada and "OCULTA" not in e.camada]
-    assert len(cortes) >= len(oitao["chapas"]) - 1, (len(cortes), len(oitao["chapas"]))
-    for ln in cortes:
-        # inclinada (a água), não a lateral nem a ponta da chapa
-        assert abs(ln.a[0] - ln.b[0]) > 1.0, (ln.a, ln.b)
-    # em cada chapa recortada, o corte vai de uma borda a outra da chapa de 1.050 (não das laterais de 980 do modelo)
-    for c in chapas:
-        xa, xb = min(v[0] for v in c.vertices), max(v[0] for v in c.vertices)
-        dela = [ln for ln in cortes if xa - 0.01 <= min(ln.a[0], ln.b[0]) and max(ln.a[0], ln.b[0]) <= xb + 0.01]
-        if dela:
-            # cada ponta do corte numa borda da chapa ou no pé/topo dela (a água que chega ao pé da última chapa)
-            ya, yb = min(v[1] for v in c.vertices), max(v[1] for v in c.vertices)
-            pontas = [min((q for ln in dela for q in (ln.a, ln.b))), max((q for ln in dela for q in (ln.a, ln.b)))]
-            for q, borda in zip(pontas, (xa, xb)):
-                assert abs(q[0] - borda) < 0.01 or min(abs(q[1] - ya), abs(q[1] - yb)) < 0.01, (q, xa, xb, ya, yb)
-    assert all(any(min(v[0] for v in c.vertices) - 0.01 <= min(ln.a[0], ln.b[0]) and max(ln.a[0], ln.b[0])
-                   <= max(v[0] for v in c.vertices) + 0.01 for c in chapas) for ln in cortes)
+    cx0 = min(v[0] for e in chapas for v in e.vertices)
+    cx1 = max(v[0] for e in chapas for v in e.vertices)
+    # dentro das chapas de 1.050 (o corte é na posição real, 980 de passo) e cobrindo quase toda a face
+    assert cx0 <= min(xs) and max(xs) <= cx1 and (max(xs) - min(xs)) > 0.9 * (cx1 - cx0)
+    # a água: no oitão interno as chapas descem do topo até a água — a base do contorno é inclinada (não é um retângulo)
+    pe_esq = min(y for x, y in zip(xs, ys) if abs(x - min(xs)) < 1.0)
+    pe_dir = min(y for x, y in zip(xs, ys) if abs(x - max(xs)) < 1.0)
+    assert abs(pe_esq - pe_dir) > 100.0, (pe_esq, pe_dir)
+    # uma polilinha só, sem os centenas de pedaços (o oitão do canto tem 5 chapas)
+    assert len(c.vertices) < 40
 
 
 def test_texto_das_chapas_com_1_5_mm():

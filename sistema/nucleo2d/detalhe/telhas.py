@@ -1283,6 +1283,30 @@ def _linhas_do_corte(p, T, corte, xa: float, xb: float, ya: float, yb: float, de
         p.linha(*T(q1), *T(q2), "OCULTA")
 
 
+def _contorno_dos_recortes(p, T, recortes: Sequence[tuple]) -> None:
+    """O recorte das chapas da face numa polilinha só, tracejada: o contorno da união dos cortes de cada chapa na posição
+    real — a base, as laterais, a água e o arco da multi-dobra nos cantos (usuário, 13/11, Sala de Compressores, FACES 4
+    e 5 do DXF do fornecedor, refeitas à mão: "o recorte da fachada a linha que seria da recorte estava toda explodida,
+    preciso que ela fique da forma que deixei"). Sem o shapely, a linha do corte de cada chapa (_linhas_do_corte)."""
+    try:
+        from shapely.geometry import Polygon
+        from shapely.ops import unary_union
+    except ImportError:                                  # pragma: no cover — o programa leva o shapely
+        for corte, (xa, xb, ya, yb) in recortes:
+            _linhas_do_corte(p, T, corte, xa, xb, ya, yb)
+        return
+    polis = [Polygon(c).buffer(0) for c, _r in recortes if len(c) >= 3]
+    # as chapas vizinhas se encostam no passo de 980 (a folga de décimos não pode partir o contorno)
+    uniao = unary_union([q.buffer(1.0, join_style=2) for q in polis if not q.is_empty]).buffer(-1.0, join_style=2)
+    uniao = uniao.simplify(0.2)
+    for g in getattr(uniao, "geoms", [uniao]):
+        if g.is_empty or not hasattr(g, "exterior"):
+            continue
+        pts = list(g.exterior.coords)[:-1]
+        if len(pts) >= 3:
+            p.polilinha([T(q) for q in pts], fechada=True, camada="OCULTA")
+
+
 #: Chapas com o mesmo nome cuja medida no modelo difere até isto (mm) são a mesma telha, com um comprimento só.
 MESMA_TELHA = 2.0
 
@@ -1517,6 +1541,7 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
     ordenadas = sorted((ch for ch in chapas if not ch.get("cumeeira")), key=lambda c: c["x"])
     repetidas = _repetidas_na_fileira(ordenadas)
     cotada = False
+    recortes: List[tuple] = []          # o corte de cada chapa recortada (posição real) e o retângulo dela
     # a cota da largura (980 útil / 1050 total) na chapa de baixo, para fora do desenho: na primeira da esquerda, a
     # face em anel (a cobertura plana da Sala, 01/10) a punha dentro, em cima das chapas da lateral
     fx0, fx1 = 0.0, max(q[0] for ch in chapas for q in ch["contorno"]) - x0
@@ -1614,7 +1639,7 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         area_c = abs(sum(corte[i][0] * corte[(i + 1) % len(corte)][1] - corte[(i + 1) % len(corte)][0] * corte[i][1]
                          for i in range(len(corte)))) / 2.0 if len(corte) >= 3 else 0.0
         if area_c and area_c < 0.99 * (cxb - cxa) * (yb - ya):
-            _linhas_do_corte(p, T, corte, xa, xb, ya, yb)
+            recortes.append((list(corte), (xa, xb, ya, yb)))
         if k != 1.0 and not cotada and (da_largura is None or ch is da_largura):
             cotada = True
             xa = min(q[0] for q in contorno) - x0
@@ -1673,6 +1698,8 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         else:
             p.texto(xm + desl * esc, ch["y0"] - y0 - 4.0 * esc, ch["nome"], TEXTO_PAGINACAO * esc, angulo=90.0,
                     alinhamento="direita", atributos=rep)
+    if recortes:
+        _contorno_dos_recortes(p, T, recortes)
     for g in cantos.values():
         _desenhar_canto(p, g, T, fx0, fx1, fy0, fy1, esc)
     if pernas:
@@ -1716,7 +1743,7 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         y_ref = y_fundo + SAIA_TELHA
         xa_f = min(q[0] for ch in ordenadas for q in ch["contorno"]) - x0 - 0.1 * _LT
         xb_f = max(q[0] for ch in ordenadas for q in ch["contorno"]) - x0 + 0.3 * _LT
-        p.linha(xa_f, y_ref, xb_f, y_ref, "EIXO")
+        p.linha(xa_f, y_ref, xb_f, y_ref, "OCULTA")       # tracejada, como o usuário a pôs no DXF do fornecedor (13/11)
         # o rótulo termina na última chapa (a linha segue até a cota): na ponta da linha ele passava da face e
         # alargava a célula — o usuário o puxou para dentro à mão (01/10)
         x_ult = max(q[0] for ch in ordenadas for q in ch["contorno"]) - x0
