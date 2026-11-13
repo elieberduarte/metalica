@@ -2563,6 +2563,24 @@ def desenho_do_corte_da_cobertura(c: dict, desenho, dx: float, dy: float):
         if not t["nome"] or chave in vistos:
             continue
         vistos.add(chave)
+        de_pe = not inclinada and (by1 - by0) > 2.0 * (bx1 - bx0) and (by1 - by0) > 300.0
+        if de_pe:
+            # a telha de fachada (de pé): o nome ao longo dela, de pé. A externa e a interna da platibanda ficam a 150 mm e os
+            # dois nomes deitados saíam um em cima do outro ("TL1 TL2 550 30", Depósito, 13/11): a de fora com o nome por
+            # fora, a de dentro com o nome por dentro
+            meio_x = (bx0 + bx1) / 2.0
+            fora = 1.0 if x_c is None or meio_x >= x_c else -1.0
+            vizinhas = [u for u in c["telhas"] if u is not t and abs((u["caixa"][0] + u["caixa"][2]) / 2.0 - meio_x) < 400.0
+                        and (u["caixa"][3] - u["caixa"][1]) > 300.0 and (u["caixa"][2] - u["caixa"][0]) < 300.0]
+            # a mais de fora (a 30 mm: a mesma telha cortada em dois pedaços vizinhos conta como uma)
+            de_fora = all(((u["caixa"][0] + u["caixa"][2]) / 2.0 - meio_x) * fora < 30.0 for u in vizinhas)
+            lado_txt = fora if de_fora else -fora
+            borda = bx1 if lado_txt > 0 else bx0
+            q = X((borda, (by0 + by1) / 2.0))
+            # de pé a 90°, a letra fica à esquerda da linha de base: a base um pouco além da telha, do lado escolhido
+            xq = q[0] + (2.5 * esc + h if lado_txt > 0 else -1.5 * esc)
+            p.texto(xq, q[1], txt, h, angulo=90.0, alinhamento="centro")
+            continue
         q = X(((bx0 + bx1) / 2.0, (by0 + by1) / 2.0 if inclinada else by1))
         ang = math.degrees(math.atan(ag["a"])) if ag else 0.0
         p.texto(q[0], q[1] + 2.0 * esc, txt, h, angulo=ang, alinhamento="centro")

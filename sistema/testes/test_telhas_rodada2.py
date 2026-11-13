@@ -20,7 +20,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from nucleo2d.desenho import Cota, Desenho, Polilinha, Texto     # noqa: E402
+from nucleo2d.desenho import Cota, Desenho, Linha, Polilinha, Texto     # noqa: E402
 from nucleo2d.detalhe import telhas as T                         # noqa: E402
 from nucleo3d.modelo import Documento                            # noqa: E402
 
@@ -268,3 +268,24 @@ def test_corte_da_cobertura_sem_multidobra_pela_telha_da_agua():
     viz.vertices = [tuple(v[i] + n[i] * desloc for i in range(3)) for v in tl.vertices]
     c2 = T.corte_da_cobertura(pecas + [viz], md)
     assert not c2["emendas"], [(e["de"], e["para"], round(e["transpasse"])) for e in c2["emendas"]]
+
+
+def test_corte_da_cobertura_telhas_de_fachada_externa_e_interna_sem_encavalar():
+    """a platibanda do Depósito (13/11): a telha externa e a interna a 150 mm; os nomes deitados em cima de cada uma saíam um
+    sobre o outro ("TL1 TL2 550 30"). Agora de pé, ao longo da telha: a de fora com o nome por fora, a de dentro por dentro"""
+    def telha_de_pe(nome, x, comp):
+        segs = [((x, 0.0), (x, comp)), ((x + 1.0, 0.0), (x + 1.0, comp))]
+        return {"nome": nome, "segs": segs, "comp": comp, "caixa": (x, 0.0, x + 1.0, comp)}
+    c = {"segs": [], "multidobras": [], "emendas": [],
+         "telhas": [telha_de_pe("TL1", 0.0, 1550.0), telha_de_pe("TL2", 150.0, 830.0)],
+         "aguas": [{"lado": -1.0, "a": 0.075, "b": 800.0, "x_ponta": 0.0}],
+         "cumeeira": {"ponto": (10000.0, 1550.0), "perna": 500.0, "nome": "CU1"}}
+    d = Desenho(nome="t", escala=75.0)
+    T.desenho_do_corte_da_cobertura(c, d, 0.0, 0.0)
+    nomes = {e.texto: e for e in _ents(d) if isinstance(e, Texto) and str(e.texto).startswith(("TL1", "TL2"))}
+    tl1, tl2 = nomes["TL1 – 1550"], nomes["TL2 – 830"]
+    assert (tl1.angulo or 0.0) == 90.0 and (tl2.angulo or 0.0) == 90.0
+    # de pé a 90°, a letra fica entre (x − altura) e x da base: TL1 toda à esquerda da externa, TL2 toda à direita da interna
+    x_ext = min(q[0] for e in _ents(d) if isinstance(e, Linha) for q in (e.a, e.b))
+    assert tl1.posicao[0] <= x_ext + 0.01
+    assert tl2.posicao[0] - tl2.altura * 75.0 >= x_ext + 150.0 - 0.01
