@@ -94,7 +94,7 @@ const MBIT_VIDEO = (w, h) => Math.min(60, Math.max(4, w * h * 30 * 0.2 / 1e6)); 
 
 function lerOpcoes() {
   const padrao = { quais: 'esta', marcadas: [], lado: '3840', qualidade: 'refinada', formato: 'jpg', gravar: true, baixar: false, abrirPasta: true,
-                   velocidade: 'normal', parar: false, fecho: 'A', abertura: 'nenhuma', textoLogo: false };
+                   velocidade: 'normal', parar: false, fecho: 'A', abertura: 'nenhuma', textoLogo: false, ordem: [] };
   let o = padrao;
   try { o = { ...padrao, ...(JSON.parse(localStorage.getItem(CHAVE) || '{}')) }; } catch (e) { /* o padrão */ }
   if (o.fecho === true) o.fecho = 'A'; else if (o.fecho === false) o.fecho = 'nenhum';     // a opção de antes (sim/não)
@@ -120,12 +120,17 @@ const ESTILO = `
 #exportar-varias[hidden] { display: none; }
 #exportar-varias { display: flex; flex-direction: column; margin: 0 0 2px 22px; max-height: 120px; overflow: auto; }
 #exportar-varias label { font-size: 12px; }
+#exportar-varias .linha-cena { display: flex; align-items: center; gap: 4px; }
+#exportar-varias .linha-cena label { flex: 1; min-width: 0; }
+#exportar-varias .linha-cena button { padding: 0 5px; font-size: 11px; line-height: 16px; border: 1px solid var(--borda); border-radius: 3px; background: var(--painel); color: var(--texto2); }
+#exportar-voo-linha { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+#exportar-voo { width: 100%; border-radius: 6px; background: #000; }
 #exportar-previa { width: 100%; aspect-ratio: 16 / 9; border: 1px solid var(--borda); border-radius: 6px; background: var(--painel) center/contain no-repeat; }
 #exportar-caixa footer { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--borda); }
 #exportar-situacao { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
 #exportar-barra { flex: 1; height: 8px; border-radius: 4px; background: var(--borda); overflow: hidden; min-width: 60px; }
 #exportar-barra i { display: block; height: 100%; width: 0; background: var(--azul2, #1f5fbf); transition: width .2s; }
-#exportar-pasta[hidden], #exportar-video[hidden], #exportar-cartoes[hidden], #exportar-previa[hidden] { display: none; }
+#exportar-pasta[hidden], #exportar-video[hidden], #exportar-cartoes[hidden], #exportar-previa[hidden], #exportar-voo-linha[hidden] { display: none; }
 #exportar-cartoes .cartoes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 #exportar-caixa label.cartao-op { flex-direction: column; align-items: stretch; gap: 2px; position: relative; }
 .cartao-op input { position: absolute; opacity: 0; pointer-events: none; }
@@ -158,11 +163,68 @@ export function ligarExportar(ctx) {
   if (!document.getElementById('exportar-estilo')) {
     const s = document.createElement('style'); s.id = 'exportar-estilo'; s.textContent = ESTILO; document.head.append(s);
   }
-  let fundo = null, rodando = null, tempoPrevia = 0, ultimaPrevia = null, urlVideo = null;
+  let fundo = null, rodando = null, tempoPrevia = 0, ultimaPrevia = null, urlVideo = null, voo = null, vooAcabando = null;
+
+  // ------------------------------------------------------------------ a prévia do voo (13/11: "ao lado ter um preview sem
+  // renderizar só para ver como o vídeo está ficando"): o mesmo caminho do vídeo, pequeno e rápido, no quadro "Como vai sair"
+  function pararVoo() {
+    if (!voo && !(fundo && fundo.querySelector('#exportar-voo'))) return;
+    if (voo) voo.cancelado = true;
+    const cv = fundo && fundo.querySelector('#exportar-voo');
+    if (cv) cv.remove();
+    if (fundo) {
+      if (!fundo.querySelector('#exportar-player')) fundo.querySelector('#exportar-previa').hidden = false;
+      fundo.querySelector('#exportar-voo-bt').textContent = '▶ Prévia do voo';
+    }
+    voo = null;
+    window.previaDoVoo = { tocando: false };
+  }
+
+  async function tocarVoo() {
+    if (voo) { pararVoo(); return; }
+    const o = opcoesDaTela(), lista = escolhidas(o).filter(c => c.tipo === '3d');
+    if (lista.length < 2 || rodando) return;
+    if (vooAcabando) await vooAcabando;                     // a prévia de antes ainda devolvendo a tela
+    if (!fundo) return;
+    pararVoo();                                               // a última imagem da prévia que terminou sozinha sai do quadro
+    tirarVideo();
+    const caixa = fundo.querySelector('#exportar-previa');
+    const cv = document.createElement('canvas');
+    cv.id = 'exportar-voo';
+    cv.width = Math.min(960, Math.round((caixa.clientWidth || 420) * (window.devicePixelRatio || 1)));
+    cv.height = Math.round(cv.width * 9 / 16);
+    caixa.hidden = true; caixa.before(cv);
+    const estado = voo = { cancelado: false };
+    fundo.querySelector('#exportar-voo-bt').textContent = '■ Parar a prévia';
+    window.previaDoVoo = { tocando: true, quadros: 0, trechos: [] };
+    const fim = (async () => {
+      try {
+        await ctx.previaVoo({ ids: lista.map(c => c.id), canvas: cv, porTrecho: VELOCIDADES[o.velocidade] || 3, parada: o.parar ? PARADA_VIDEO : 0,
+          fecho: o.fecho, abertura: o.abertura, texto: o.textoLogo, cancelado: () => estado.cancelado,
+          aoAndar: async (f, n, txt) => {
+            if (estado.cancelado || !fundo) return;
+            fundo.querySelector('#exportar-situacao').textContent = `Prévia do voo · ${txt}`;
+            const p = window.previaDoVoo; p.quadros = f; if (p.trechos[p.trechos.length - 1] !== txt) p.trechos.push(txt);
+          } });
+        if (fundo && voo === estado) fundo.querySelector('#exportar-situacao').textContent = 'Prévia do voo: fim. A imagem do vídeo sai refinada.';
+      } catch (e) {
+        if (fundo && e.message !== 'cancelado') fundo.querySelector('#exportar-situacao').textContent = 'A prévia parou: ' + e.message;
+      }
+    })();
+    vooAcabando = fim;
+    await fim;
+    if (vooAcabando === fim) vooAcabando = null;
+    if (voo === estado) {                                     // terminou sozinha: a última imagem fica no quadro até mudar algo
+      fundo && (fundo.querySelector('#exportar-voo-bt').textContent = '▶ Prévia do voo');
+      voo = null;
+      window.previaDoVoo = { ...window.previaDoVoo, tocando: false, terminou: true };
+    }
+  }
 
   function fechar() {
     if (rodando) { rodando.cancelado = true; return; }
     clearTimeout(tempoPrevia);
+    pararVoo();
     tirarVideo();
     if (fundo) { fundo.remove(); fundo = null; }
   }
@@ -173,11 +235,19 @@ export function ligarExportar(ctx) {
     return { quais: v('quais'), marcadas: [...fundo.querySelectorAll('#exportar-varias input:checked')].map(i => i.value),
              lado: v('lado'), qualidade: v('qualidade'), formato: v('formato'), gravar: ch('exportar-gravar'),
              baixar: ch('exportar-baixar'), abrirPasta: ch('exportar-abrir'), velocidade: v('velocidade') || 'normal', parar: ch('exportar-parar'),
-             fecho: v('fecho') || 'A', abertura: v('abertura') || 'nenhuma', textoLogo: ch('exportar-texto') };
+             fecho: v('fecho') || 'A', abertura: v('abertura') || 'nenhuma', textoLogo: ch('exportar-texto'),
+             ordem: [...fundo.querySelectorAll('#exportar-varias .linha-cena')].map(l => l.dataset.cena) };
+  }
+
+  /** As cenas na ordem da lista da janela (13/11: "mexer na ordem das cenas, por exemplo colocar vista de cima por primeiro
+   *  para ele iniciar por ela"): a ordem guardada primeiro; as que não estão nela, na ordem dos cartões. */
+  function naOrdem(ordem) {
+    const todas = ctx.cenas(), pos = (c) => { const i = (ordem || []).indexOf(c.id); return i < 0 ? 1e6 + todas.indexOf(c) : i; };
+    return [...todas].sort((a, b) => pos(a) - pos(b));
   }
 
   function escolhidas(o) {
-    const todas = ctx.cenas(), atual = ctx.atual();
+    const todas = naOrdem(o.ordem), atual = ctx.atual();
     if (o.quais === 'todas') return todas;
     if (o.quais === 'varias') return todas.filter(c => o.marcadas.includes(c.id));
     return atual ? todas.filter(c => c.id === atual.id) : [];
@@ -196,8 +266,10 @@ export function ligarExportar(ctx) {
       i.disabled = off; i.closest('label').classList.toggle('off', off);
     }
     if (video && !LADOS_VIDEO.includes(o.lado)) { fundo.querySelector('input[name=lado][value="1920"]').checked = true; o.lado = '1920'; }
-    if (!video) return false;
     const lista = escolhidas(o).filter(c => c.tipo === '3d'), n = lista.length, atual = ctx.atual();
+    fundo.querySelector('#exportar-voo-linha').hidden = !video || n < 2;
+    fundo.querySelector('#exportar-voo-bt').disabled = !!rodando;
+    if (!video) return false;
     const [w, h] = atual && atual.tipo === '3d' ? ctx.tamanho(o.lado) : [+o.lado, Math.round(+o.lado * 9 / 16)];
     const seg = n * (o.parar ? PARADA_VIDEO : 0) + Math.max(0, n - 1) * (VELOCIDADES[o.velocidade] || 3) + (o.fecho !== 'nenhum' ? FECHO_VIDEO : 0)
       + (o.abertura !== 'nenhuma' ? ABERTURA_VIDEO : 0), mb = MBIT_VIDEO(w, h) * seg / 8;
@@ -330,6 +402,8 @@ export function ligarExportar(ctx) {
   async function gravarVideo(o) {
     const lista = escolhidas(o).filter(c => c.tipo === '3d');
     if (lista.length < 2 || rodando) return;
+    pararVoo();
+    if (vooAcabando) await vooAcabando;                       // a prévia devolve a tela antes de o vídeo começar
     rodando = { cancelado: false };
     const estado = rodando;
     for (const el of fundo.querySelectorAll('.corpo input, #exportar-ir')) el.disabled = true;
@@ -382,6 +456,8 @@ export function ligarExportar(ctx) {
     const o = opcoesDaTela(), lista = escolhidas(o);
     if (o.formato === 'mp4') return gravarVideo(o);
     if (!lista.length || rodando) return;
+    pararVoo();
+    if (vooAcabando) await vooAcabando;
     const antes = ctx.atual() && ctx.atual().id;
     rodando = { cancelado: false };
     const estado = rodando;
@@ -472,7 +548,7 @@ export function ligarExportar(ctx) {
         <h3>Quais cenas</h3>
         ${radio('quais', 'esta', `Esta cena${atual ? ' — ' + esc(atual.nome) : ''}`, '', o.quais === 'esta' || !['varias', 'todas'].includes(o.quais), !atual)}
         ${radio('quais', 'varias', 'Várias:', '', o.quais === 'varias')}
-        <div id="exportar-varias">${todas.map(c => `<label><input type="checkbox" value="${esc(c.id)}"${(o.marcadas.length ? o.marcadas.includes(c.id) : c.id === (atual && atual.id)) ? ' checked' : ''}> ${esc(c.nome)} <small>${c.tipo === '3d' ? '3D' : 'foto'}</small></label>`).join('')}</div>
+        <div id="exportar-varias">${naOrdem(o.ordem).map(c => `<div class="linha-cena" data-cena="${esc(c.id)}"><label><input type="checkbox" value="${esc(c.id)}"${(o.marcadas.length ? o.marcadas.includes(c.id) : c.id === (atual && atual.id)) ? ' checked' : ''}> ${esc(c.nome)} <small>${c.tipo === '3d' ? '3D' : 'foto'}</small></label><button type="button" data-mover="-1" title="Mais para cima (o vídeo e o PDF seguem esta ordem)">↑</button><button type="button" data-mover="1" title="Mais para baixo">↓</button></div>`).join('')}</div>
         ${radio('quais', 'todas', `Todas as cenas da obra (${todas.length})`, '', o.quais === 'todas')}
         <h3>Tamanho</h3>
         ${LADOS.map(([v, t, sub]) => radio('lado', v, v === 'tela' ? t : `${t} — ${v} px no lado maior`, v === 'tela' && atual ? `${nf(w0)} × ${nf(h0)}, ${sub}` : sub, o.lado === v)).join('')}
@@ -493,6 +569,8 @@ export function ligarExportar(ctx) {
       </div><div class="col">
         <h3 id="exportar-titulo-previa">Como vai sair</h3>
         <div id="exportar-previa"></div>
+        <div id="exportar-voo-linha" hidden><button type="button" id="exportar-voo-bt">▶ Prévia do voo</button>
+          <span class="fraco">rápida, sem renderizar — só para ver o caminho e a ordem</span></div>
         <div id="exportar-info" class="fraco" style="font-size:12.5px;color:var(--texto)"></div>
         <div id="exportar-cartoes" hidden>
           <h3>Abertura <small class="fraco">(3 s)</small></h3><div class="cartoes">${cartoes('abertura', o.abertura, 'nenhuma', 'Nenhuma')}</div>
@@ -512,7 +590,21 @@ export function ligarExportar(ctx) {
     fundo.querySelector('#exportar-x').onclick = fechar;
     fundo.querySelector('#exportar-cancelar').onclick = fechar;
     fundo.querySelector('#exportar-ir').onclick = () => renderizarLote().catch(e => andamento('O render parou: ' + e.message, 0, ''));
+    fundo.querySelector('#exportar-voo-bt').onclick = () => tocarVoo().catch(e => andamento('A prévia parou: ' + e.message, 0, ''));
+    // ↑ ↓ na lista: a ordem do vídeo e do PDF (guardada nas opções; a dos cartões não muda)
+    fundo.querySelector('#exportar-varias').addEventListener('click', (ev) => {
+      const b = ev.target.closest('button[data-mover]');
+      if (!b) return;
+      ev.preventDefault();
+      const linha = b.closest('.linha-cena'), lista = linha.parentElement;
+      if (+b.dataset.mover < 0 && linha.previousElementSibling) lista.insertBefore(linha, linha.previousElementSibling);
+      else if (+b.dataset.mover > 0 && linha.nextElementSibling) lista.insertBefore(linha.nextElementSibling, linha);
+      fundo.querySelector('input[name=quais][value=varias]').checked = true;
+      pararVoo();
+      mostrarResumo();
+    });
     fundo.addEventListener('change', (ev) => {
+      pararVoo();
       if (ev.target.closest('#exportar-varias')) fundo.querySelector('input[name=quais][value=varias]').checked = true;
       mostrarResumo();
       if (ev.target.name === 'formato' || ev.target.name === 'qualidade') agendarPrevia();

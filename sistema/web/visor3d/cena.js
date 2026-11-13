@@ -754,8 +754,29 @@ async function dissolver(gravador, de, para, segundos, fps, cancelado, aoAndar) 
 /** O vídeo das cenas `ids` (as do 3D, nessa ordem): o lado maior `lado` na proporção da 1ª cena, `porTrecho` segundos de uma
  *  cena à outra, `parada` segundos parado em cada uma; `aoAndar(f, total, texto)` a cada quadro; `cancelado()` para. Devolve o
  *  MP4 (Blob) e os números. */
+/** A prévia do voo na janela do Exportar (usuário, 13/11: "ter ao lado um preview sem renderizar só para ver como o vídeo está
+ *  ficando"): no lugar do gravador, os quadros vão para o `canvas` no tempo do vídeo; o que atrasa é pulado (atraso/pular),
+ *  para a prévia não virar câmera lenta numa máquina sem placa. */
+function saidaDePrevia(cv, fps) {
+  const g = cv.getContext('2d');
+  let t0 = 0, n = 0;
+  return {
+    async quadro(img, vezes = 1) {
+      if (!t0) { t0 = performance.now(); cv.height = Math.round(cv.width * img.height / img.width); }
+      g.drawImage(img, 0, 0, cv.width, cv.height);
+      n += vezes;
+      const falta = t0 + n * 1000 / fps - performance.now();
+      await new Promise(res => (falta > 0 ? setTimeout(res, falta) : requestAnimationFrame(res)));
+    },
+    atraso() { return t0 ? Math.floor((performance.now() - t0) * fps / 1000) - n : 0; },
+    pular(k = 1) { n += k; },
+    async fim() { return null; },
+    cancelar() {},
+  };
+}
+
 async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada = 0, ss = 1, fecho = 'A', abertura = 'nenhuma', texto = false,
-                               aoAndar = null, cancelado = () => false }) {
+                               aoAndar = null, cancelado = () => false, previa = null }) {
   if (fecho === true) fecho = 'A'; else if (fecho === false) fecho = 'nenhum';
   const lista = ids.map(id => todasCenas.find(c => c.id === id)).filter(c => c && c.tipo === '3d' && c.camera && c.camera.posicao && c.camera.alvo);
   if (lista.length < 2) throw new Error('escolha duas cenas do 3D ou mais');
@@ -767,7 +788,7 @@ async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada
   // sem parada (o padrão, 12/11: "como se fosse um drone sobrevoando a estrutura"): uma curva só, na velocidade constante
   const marca = marcaDaCena(), linha = parada > 0 ? linhaDoTempo(lista.length, { porTrecho, parada, fps })
     : caminhoContinuo(lista.map(c => c.camera), { porTrecho, fps });
-  const gravador = await GravadorMp4.abrir(w, h, fps);
+  const gravador = previa ? saidaDePrevia(previa, fps) : await GravadorMp4.abrir(w, h, fps);
   const visuais = new Map();                                 // o visual de cada cena, lido uma vez (com a cena dela)
   const visual = (c) => { if (!visuais.has(c.id)) visuais.set(c.id, visualDaCena(cena && cena.id === c.id ? cena : c)); return visuais.get(c.id); };
   const t0 = performance.now();
@@ -808,6 +829,7 @@ async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada
     for (let f = 0; f < linha.total; f++) {
       if (cancelado()) throw new Error('cancelado');
       const q = linha.quadro(f), A = lista[q.i], B = lista[q.j];
+      if (previa && gravador.atraso() > 1) { gravador.pular(); quadros++; continue; }   // a prévia atrasada: este quadro fica de fora
       if (q.parado && img) { await gravador.quadro(img); quadros++; continue; }
       img = await quadroDoVoo(q);
       await gravador.quadro(img); quadros++;
@@ -825,6 +847,7 @@ async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada
         fechou = true;
       }
     }
+    if (cancelado()) throw new Error('cancelado');
     const mp4 = await gravador.fim();
     return { mp4, w, h, fps, quadros, segundos: quadros / fps, demorou: (performance.now() - t0) / 1000, cenas: lista.length, fecho: fechou, abertura: abriu };
   } catch (e) { gravador.cancelar(); throw e; }
@@ -2730,6 +2753,7 @@ function ligarExportarCenas() {
     enviar: (blob, nome) => pedir(`${API}/${encodeURIComponent(cena.id)}/imagem`, undefined, { dados: blob, nome }),
     enviarPdf: (blob, nome) => pedir(`${API}/pdf`, undefined, { dados: blob, nome }),
     video: (o) => videoDasCenas(o),
+    previaVoo: (o) => videoDasCenas({ ...o, ss: 1, previa: o.canvas, lado: o.canvas.width }),
     cartao: (jeito, vista, texto) => cartaoDoVideo(vista.width, vista.height, marcaDaCena(), jeito, vista, texto),
     enviarVideo: (blob, nome) => pedir(`${API}/video`, undefined, { dados: blob, nome }),
     abrirPasta: (nome) => mostrarNaPasta(nome),
