@@ -9,6 +9,8 @@ não tem nada disto até o usuário aprovar).
 * GET  /api/producao/controle?projeto=      a situação da obra (controle.situacao)
 * POST /api/producao/apontar                {projeto, item, etapa, quantidade, data?, obs?}
 * POST /api/producao/estornar               {projeto, evento, obs?}
+* POST /api/producao/apontar-varios         {projeto, itens: [ids], etapa, data?, obs?} — tudo o que falta na etapa em cada
+                                            um (escolhidos na lista ou no 3D); devolve {eventos, pulados}
 * GET  /api/producao/erp?projeto=&desde=    o que o ERP lê (só leitura; controle.para_erp)
 * GET  /api/producao/controle3d.js          o 3D ao lado da lista (web/producao/controle3d.js): clicar destaca, cor = situação
 * GET  /api/producao/cores                  as cores do 3D (não feita, produzida, pintada, destaque) e o padrão
@@ -187,7 +189,7 @@ def rota_post(h, rota: str, corpo: dict) -> bool:
             raise _erro(str(e))
         _cores(h)
         return True
-    if rota not in ("/api/producao/apontar", "/api/producao/estornar"):
+    if rota not in ("/api/producao/apontar", "/api/producao/estornar", "/api/producao/apontar-varios"):
         return False
     corpo = corpo if isinstance(corpo, dict) else {}
     pasta = _pasta(str(corpo.get("projeto") or ""))
@@ -200,12 +202,23 @@ def rota_post(h, rota: str, corpo: dict) -> bool:
             ev = controle.apontar(pasta, lista, str(corpo.get("item") or ""), str(corpo.get("etapa") or ""),
                                   corpo.get("quantidade"), _quem(), data=corpo.get("data"), obs=corpo.get("obs") or "",
                                   nomes=controle.ler_nomes(pasta))
+        elif rota == "/api/producao/apontar-varios":
+            lista = controle.ler_lista(pasta)
+            ids = corpo.get("itens")
+            r = controle.apontar_varios(pasta, lista, ids if isinstance(ids, list) else [], str(corpo.get("etapa") or ""),
+                                        _quem(), data=corpo.get("data"), obs=corpo.get("obs") or "",
+                                        nomes=controle.ler_nomes(pasta))
         else:
             ev = controle.estornar(pasta, str(corpo.get("evento") or ""), _quem(), obs=corpo.get("obs") or "")
     except controle.ErroControle as e:
         raise _erro(str(e))
+    novos = r["eventos"] if rota == "/api/producao/apontar-varios" else [ev]
     if nuvem is not None:
-        obra_compartilhada.na_fila(pasta, ev["id"])
+        for x in novos:
+            obra_compartilhada.na_fila(pasta, x["id"])
         nuvem = _sincronizar(pasta)
-    h._json({"ok": True, "evento": ev, "nuvem": nuvem})
+    if rota == "/api/producao/apontar-varios":
+        h._json({"ok": True, "eventos": novos, "pulados": r["pulados"], "nuvem": nuvem})
+    else:
+        h._json({"ok": True, "evento": ev, "nuvem": nuvem})
     return True

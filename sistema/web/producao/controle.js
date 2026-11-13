@@ -8,7 +8,7 @@
 (function () {
   const $ = (s, raiz = document) => raiz.querySelector(s);
   const PROJETO = new URLSearchParams(location.search).get('projeto') || '';
-  const ESTADO = { dados: null, corpo: null, carregando: false, filtroEtapa: '', filtroTipo: '', busca: '', escolhidos: [] };
+  const ESTADO = { dados: null, corpo: null, carregando: false, filtroEtapa: '', filtroTipo: '', busca: '', escolhidos: [], marcados: new Set() };
 
   function el(tag, attrs = {}, ...filhos) {
     const e = document.createElement(tag);
@@ -45,7 +45,7 @@
   const secao = (titulo, sub, conteudo) => el('section', {}, el('h3', {}, titulo, sub ? el('small', { texto: sub }) : null), conteudo);
   /** tabela ordenável pelo clique no título: colunas = [{titulo, chave|valor(l), classe, num, casas}] */
   function tabela(colunas, linhas, rodape, chaveFiltro) {
-    const thead = el('thead', {}, el('tr', {}, colunas.map((c, i) => el('th', {
+    const thead = el('thead', {}, el('tr', {}, colunas.map((c, i) => c.cabeca ? el('th', { class: c.classe || '' }, c.cabeca()) : el('th', {
       class: c.classe || '', texto: c.titulo, title: 'Clique para ordenar', onclick: (ev) => ordenar(ev.currentTarget.closest('table'), i, c) }))));
     const tbody = el('tbody');
     for (const li of linhas) {
@@ -81,6 +81,7 @@
     for (const tr of document.querySelectorAll('#controle-corpo tbody tr[data-filtro]')) {
       tr.classList.toggle('oculta', !!termo && !tr.dataset.filtro.includes(termo));
     }
+    faixaDosMarcados();                                     // o "todos" vale para o que está à vista
   }
 
   const estilo = document.createElement('style');
@@ -110,6 +111,17 @@
     .ctl-estornado td { text-decoration: line-through; color: var(--texto3); }
     .ctl-a-mais { color: var(--verm, #b23b3b); font-weight: 600; }
     .controle tbody tr[data-item] { cursor: pointer; }
+    th.ctl-marca, td.ctl-marca { width: 30px; padding-left: 8px !important; padding-right: 4px !important; }
+    .ctl-marca input { cursor: pointer; width: 15px; height: 15px; margin: 0; }
+    .ctl-varios { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 8px; padding: 7px 10px; font-size: 13px;
+      border: 1px solid var(--ctl-destaque, #f2b01e); border-radius: var(--raio-p); background: color-mix(in srgb, var(--ctl-destaque, #f2b01e) 14%, var(--painel)); }
+    .ctl-varios[hidden] { display: none; }
+    .ctl-varios span { color: var(--texto2); }
+    .ctl-btn.principal { background: var(--azul-tinta, #1f5fa8); color: #fff; border-color: var(--azul-tinta, #1f5fa8); }
+    dialog.ctl-dlg .ctl-varios-lista { max-height: 34vh; overflow: auto; margin-top: 8px; border: 1px solid var(--borda); border-radius: var(--raio-p); font-size: 12.5px; }
+    dialog.ctl-dlg .ctl-varios-lista table { width: 100%; border-collapse: collapse; }
+    dialog.ctl-dlg .ctl-varios-lista td { padding: 3px 8px; border-bottom: 1px solid var(--borda); }
+    dialog.ctl-dlg .ctl-varios-lista td.r { text-align: right; white-space: nowrap; }
     .controle tbody tr.escolhida td { background: color-mix(in srgb, var(--ctl-destaque, #f2b01e) 26%, var(--painel)); }
     .controle tbody tr.escolhida td:first-child { box-shadow: inset 3px 0 0 var(--ctl-destaque, #f2b01e); }
   `;
@@ -204,6 +216,9 @@
     const linhas = D.itens.filter(x => (!ESTADO.filtroTipo || x.tipo === ESTADO.filtroTipo)
       && (!ESTADO.filtroEtapa || (x.feito[ESTADO.filtroEtapa] || 0) < x.quantidade));
     const colunas = [
+      ...(podeApontar() ? [{ titulo: '', classe: 'c ctl-marca', cabeca: caixaDeTodos,
+        valor: (x) => el('input', { type: 'checkbox', class: 'ctl-marcar', 'data-item': x.id, title: 'Escolher para apontar vários de uma vez',
+          checked: ESTADO.marcados.has(x.id), onchange: (ev) => marcar([x.id], ev.target.checked) }) }] : []),
       { titulo: 'Item', chave: 'id', classe: 'b' },
       { titulo: 'Tipo', chave: 'tipo' },
       { titulo: 'Descrição', chave: 'descricao' },
@@ -214,7 +229,7 @@
     ];
     const kgLinhas = linhas.reduce((s, x) => s + x.kg, 0);
     const quadro = linhas.length
-      ? el('div', { class: 'rolagem' }, tabela(colunas, linhas, ['TOTAL', '', `${n(linhas.length)} itens`, '', n(kgLinhas, 1), ...etapas.map(() => ''), ''],
+      ? el('div', { class: 'rolagem' }, tabela(colunas, linhas, [...(podeApontar() ? [''] : []), 'TOTAL', '', `${n(linhas.length)} itens`, '', n(kgLinhas, 1), ...etapas.map(() => ''), ''],
         (x) => `${x.id} ${x.tipo} ${x.descricao} ${(x.refs || []).join(' ')}`))
       : vazio('Nenhum item com este filtro.');
 
@@ -233,11 +248,129 @@
     }
     partes.push(secao('O que se controla', 'cada tesoura/conjunto pela unidade (T38-1, T38-2); as peças avulsas iguais pela posição, com a quantidade',
       el('div', {}, el('div', { class: 'ctl-barra' }, busca, selEtapa, selTipo,
-        el('span', { texto: `${n(D.total.unidades_conjunto)} unidades de conjunto · ${n(D.total.itens - D.total.unidades_conjunto)} grupos de peças · ${n(D.total.kg, 1)} kg` })), quadro)));
+        el('span', { texto: `${n(D.total.unidades_conjunto)} unidades de conjunto · ${n(D.total.itens - D.total.unidades_conjunto)} grupos de peças · ${n(D.total.kg, 1)} kg` })),
+        el('div', { class: 'ctl-varios', id: 'ctl-varios', hidden: true }), quadro)));
     partes.push(secao('Últimos apontamentos', 'o mais novo em cima; estorno não apaga, desfaz', tabelaEventos(D.eventos || [])));
     corpo.replaceChildren(...partes);
     filtrar();
     marcarLinhas(ESTADO.escolhidos, false);
+    faixaDosMarcados();
+  }
+
+  // ------------------------------------------------------------------ apontar vários de uma vez (13/11)
+  // as caixinhas da lista (ou Ctrl+clique na linha ou numa peça do 3D) escolhem os itens; "Apontar os escolhidos" aponta
+  // tudo o que falta na etapa em cada um (as 6 MT71 de uma vez). As peças deles acendem juntas no 3D ao lado.
+
+  const itemPorId = (id) => ((ESTADO.dados && ESTADO.dados.itens) || []).find(x => x.id === id);
+  const visiveis = () => [...document.querySelectorAll('#controle-corpo tbody tr[data-item]:not(.oculta)')].map(tr => tr.dataset.item);
+
+  function caixaDeTodos() {
+    const c = el('input', { type: 'checkbox', id: 'ctl-marcar-todos', title: 'Escolher todos os itens à vista (o filtro e a busca valem)' });
+    c.addEventListener('change', () => marcar(visiveis(), c.checked));
+    return c;
+  }
+
+  /** põe (sim) ou tira os itens da escolha; sim = null alterna cada um */
+  function marcar(ids, sim) {
+    for (const id of ids) {
+      const quer = sim === null ? !ESTADO.marcados.has(id) : sim;
+      if (quer) ESTADO.marcados.add(id); else ESTADO.marcados.delete(id);
+    }
+    for (const c of document.querySelectorAll('#controle-corpo input.ctl-marcar')) c.checked = ESTADO.marcados.has(c.dataset.item);
+    faixaDosMarcados();
+    document.dispatchEvent(new CustomEvent('controle:varios', { detail: { ids: [...ESTADO.marcados] } }));
+  }
+
+  function faixaDosMarcados() {
+    // o que saiu da lista (outro Detalhar) sai da escolha
+    if (ESTADO.dados && ESTADO.dados.itens) for (const id of [...ESTADO.marcados]) if (!itemPorId(id)) ESTADO.marcados.delete(id);
+    const todos = $('#ctl-marcar-todos');
+    if (todos) {
+      const vs = visiveis();
+      const m = vs.filter(id => ESTADO.marcados.has(id)).length;
+      todos.checked = vs.length > 0 && m === vs.length;
+      todos.indeterminate = m > 0 && m < vs.length;
+    }
+    const f = $('#ctl-varios');
+    if (!f) return;
+    const ids = [...ESTADO.marcados];
+    f.hidden = !ids.length;
+    if (!ids.length) { f.replaceChildren(); return; }
+    const kg = ids.reduce((s, id) => s + (itemPorId(id).kg || 0), 0);
+    f.replaceChildren(
+      el('b', { texto: `${n(ids.length)} ${ids.length === 1 ? 'item escolhido' : 'itens escolhidos'}` }),
+      el('span', { texto: `${n(kg, 1)} kg · ${ids.slice(0, 6).join(', ')}${ids.length > 6 ? '…' : ''}` }),
+      el('button', { type: 'button', class: 'ctl-btn principal', id: 'ctl-apontar-varios', texto: 'Apontar os escolhidos…', onclick: dialogoDeVarios }),
+      el('button', { type: 'button', class: 'ctl-btn', id: 'ctl-limpar-escolha', texto: 'Limpar a escolha', onclick: () => marcar(ids, false) }));
+  }
+
+  function dialogoDeVarios() {
+    const D = ESTADO.dados;
+    const etapas = D.etapas || [];
+    const its = [...ESTADO.marcados].map(itemPorId).filter(Boolean);
+    if (!its.length) return;
+    const falta = (x, k) => Math.max(0, x.quantidade - (x.feito[k] || 0));
+    let etapa = (etapas.find(et => its.some(x => falta(x, et.chave) > 0)) || etapas[0]).chave;
+    const dlg = el('dialog', { class: 'ctl-dlg', id: 'ctl-dialogo-varios' });
+    const data = el('input', { type: 'date', id: 'ctl-data', value: hojeISO(), max: hojeISO() });
+    const obs = el('textarea', { id: 'ctl-obs', rows: '2', maxlength: '300', placeholder: 'opcional' });
+    const erro = el('div', { class: 'erro', hidden: true });
+    const resumo = el('div', { class: 'nota', id: 'ctl-varios-resumo' });
+    const lista = el('div', { class: 'ctl-varios-lista' });
+    const confirmar = el('button', { type: 'submit', class: 'principal', id: 'ctl-confirmar', texto: 'Apontar' });
+    const ajustar = () => {
+      const vao = its.filter(x => falta(x, etapa) > 0), pulam = its.length - vao.length;
+      const qtd = vao.reduce((s, x) => s + falta(x, etapa), 0);
+      const kg = vao.reduce((s, x) => s + falta(x, etapa) * (x.kg_unidade || 0), 0);
+      const nome = ((etapas.find(et => et.chave === etapa) || {}).titulo || etapa).toLowerCase();
+      resumo.textContent = vao.length
+        ? `Vai apontar na ${nome} tudo o que falta: ${n(vao.length)} item(ns), ${n(qtd)} peça(s)/unidade(s), ${n(kg, 1)} kg.`
+          + (pulam ? ` ${n(pulam)} já completo(s) nesta etapa fica(m) de fora.` : '')
+        : `Os ${n(its.length)} itens escolhidos já estão completos na ${nome}.`;
+      confirmar.disabled = !vao.length;
+      confirmar.textContent = vao.length ? `Apontar ${n(vao.length)}` : 'Apontar';
+      lista.replaceChildren(el('table', {}, el('tbody', {}, its.map(x => el('tr', { class: falta(x, etapa) ? '' : 'ctl-estornado' },
+        el('td', { class: 'b', texto: x.id }), el('td', { texto: x.descricao || x.tipo }),
+        el('td', { class: 'r', texto: falta(x, etapa) ? `${n(falta(x, etapa))} de ${n(x.quantidade)}` : 'completo' }))))));
+    };
+    const radios = el('div', { class: 'etapas' }, etapas.map(et => {
+      const r = el('input', { type: 'radio', name: 'ctl-etapa', value: et.chave });
+      r.checked = et.chave === etapa;
+      r.addEventListener('change', () => { etapa = et.chave; ajustar(); });
+      return el('label', {}, r, et.titulo);
+    }));
+    const form = el('form', { method: 'dialog', novalidate: true },
+      el('h3', { texto: `Apontar ${n(its.length)} ${its.length === 1 ? 'item' : 'itens'} de uma vez` }),
+      el('label', { texto: 'Etapa' }), radios, resumo, lista,
+      el('label', { texto: 'Data em que foi feito' }), data,
+      el('label', { texto: 'Observação (vai em todos)' }), obs,
+      el('div', { class: 'nota', texto: `Quem aponta: ${D.quem || '—'} · cada item vira um apontamento; o estorno desfaz um por um` }),
+      erro,
+      el('div', { class: 'acoes' }, el('button', { type: 'button', texto: 'Cancelar', onclick: () => dlg.close() }), confirmar));
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      erro.hidden = true;
+      confirmar.disabled = true;
+      try {
+        const r = await pedir('/api/producao/apontar-varios', { projeto: PROJETO, itens: its.map(x => x.id), etapa, data: data.value, obs: obs.value });
+        dlg.close();
+        ESTADO.marcados.clear();
+        document.dispatchEvent(new CustomEvent('controle:varios', { detail: { ids: [] } }));
+        await carregar();
+        aviso(`${n(r.eventos.length)} apontamento(s) gravado(s)`
+          + (r.pulados.length ? ` · ${n(r.pulados.length)} já estava(m) completo(s): ${r.pulados.slice(0, 6).join(', ')}` : ''));
+        setTimeout(() => aviso(''), 6000);
+      } catch (e) {
+        erro.textContent = e.message;
+        erro.hidden = false;
+        confirmar.disabled = false;
+      }
+    });
+    dlg.append(form);
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg);
+    ajustar();
+    dlg.showModal();
   }
 
   /** as linhas escolhidas (pelo clique nela ou numa peça do 3D ao lado) ficam marcadas; `rolar` traz a primeira à vista */
@@ -375,10 +508,17 @@
     ESTADO.corpo.addEventListener('click', (ev) => {
       const tr = ev.target.closest('tr[data-item]');
       if (!tr || ev.target.closest('button, a, input, select')) return;
+      if ((ev.ctrlKey || ev.shiftKey || ev.metaKey) && podeApontar()) { marcar([tr.dataset.item], null); return; }   // soma à escolha de vários
       marcarLinhas([tr.dataset.item], false);
       document.dispatchEvent(new CustomEvent('controle:item', { detail: { id: tr.dataset.item } }));
     });
     document.addEventListener('controle:marcar', (ev) => marcarLinhas(ev.detail.ids, true));
+    document.addEventListener('controle:alternar', (ev) => {         // Ctrl+clique numa peça do 3D
+      if (!podeApontar()) return;
+      const ids = ev.detail.ids || [];
+      marcar(ids, !ids.every(id => ESTADO.marcados.has(id)));
+      marcarLinhas(ids.filter(id => ESTADO.marcados.has(id)), true);
+    });
     desenhar();
     carregar();
     // a obra compartilhada: o que os outros apontaram chega sozinho, a cada minuto (não no meio de um apontamento)

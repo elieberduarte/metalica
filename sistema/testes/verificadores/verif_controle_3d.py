@@ -15,7 +15,9 @@ verdade:
   7. "Só o que falta produzir" esconde as produzidas;
   8. Cores…: trocar a produzida para #ff0000 muda o 3D na hora; Gravar guarda em _producao-cores.json e vale ao
      recarregar; a sugestão Padrão + Gravar apaga o arquivo;
-  9. o botão 3D esconde e mostra o painel; sem erro no console.
+  9. o botão 3D esconde e mostra o painel; sem erro no console;
+  10. apontar vários pelo 3D (13/11): Ctrl+clique numa peça da TESOURA 1-5 e numa da 1-6 escolhe as duas na lista, o 3D
+      acende as peças das duas juntas, Ctrl+clique de novo tira; "Apontar os escolhidos" deixa as duas azuis.
 Porta livre, nunca a 8765/8766. Sem o Posto nesta máquina, o verificador avisa e sai sem falha."""
 import base64, json, os, shutil, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -76,9 +78,23 @@ def esperar(aba, expr, limite=30):
     return False
 
 
-def clicar_em(aba, x, y):
+def clicar_em(aba, x, y, ctrl=False):
     for t in ("mousePressed", "mouseReleased"):
-        aba.cmd("Input.dispatchMouseEvent", type=t, x=x, y=y, button="left", clickCount=1)
+        aba.cmd("Input.dispatchMouseEvent", type=t, x=x, y=y, button="left", clickCount=1, modifiers=2 if ctrl else 0)
+
+
+def peca_na_tela(item, enquadrar=False):
+    """um ponto da página sobre uma peça do item que o clique acerta (a de cima naquele ponto); `enquadrar` traz o item à
+    vista antes (a câmera pode estar perto de outro)"""
+    if enquadrar:
+        aba.avaliar(f"{V}.enquadrarPecas({S}.mapa.pecas[{K(item)}])")
+        esperar(aba, "false", 1.0)
+    return aba.avaliar(f"""(() => {{ const q = document.querySelector('#p3-quadro').getBoundingClientRect();
+      const ps = {S}.mapa.pecas[{K(item)}] || [];
+      for (const i of ps) {{ const p = {V}.paraTela(i); if (!p) continue;
+        if (p[0] < 2 || p[1] < 2 || p[0] > q.width - 2 || p[1] > q.height - 2) continue;      // fora do quadro
+        if ({V}.escolher(p[0], p[1]) === i) return [q.left + p[0], q.top + p[1]]; }}
+      return null; }})()""")
 
 
 def clicar(aba, seletor):
@@ -141,7 +157,7 @@ try:
     aba.navegar(base + "/controle-producao?projeto=posto-3d", limite=60)
     ok(esperar(aba, "!!document.querySelector('#ctl-cartoes') && !!document.querySelector('#p3-quadro')", 60),
        "a tela abre com a lista e o quadro do 3D ao lado")
-    ok(esperar(aba, f"!!({S} && {S}.visor && {S}.mapa && {S}.estado)", 240), "o 3D abre e as peças ganham a cor da situação")
+    ok(esperar(aba, f"!!({S} && {S}.visor && {S}.mapa && {S}.estado)", 600), "o 3D abre e as peças ganham a cor da situação")
     padrao = aba.avaliar(f"{S}.padrao") or {}
     contas = aba.avaliar(f"(() => {{ const e = {S}.estado; const c = [0, 0, 0, 0]; for (const v of e) c[v]++; return c; }})()") or [0, 0, 0, 0]
     ok(contas[1] > 1000 and contas[2] == 0 and contas[3] == 0, f"sem apontamento: só não feitas no 3D ({contas})")
@@ -165,6 +181,14 @@ try:
       vazias: ks.filter(k => !M.pecas[k].length).length, repetidas: todas.length - new Set(todas).size }}; }})()""") or {}
     ok(sep.get("n") == 7 and not sep.get("juntas") and not sep.get("vazias") and not sep.get("repetidas"),
        f"as 7 TESOURA 1 se separam no 3D, cada uma com as suas peças ({sep})")
+
+    # 2b. as variantes ("Suporte de terça ST1 (aa)"…, todas com o mesmo nome no 3D): cada uma com as suas peças, fora de grupo
+    va = aba.avaliar(f"""(() => {{ const M = {S}.mapa, I = {S}.dados.itens;
+      const ks = I.map((x, k) => k).filter(k => I[k].origem === 'pecas' && (I[k].pecas3d || []).length);
+      return {{ n: ks.length, erradas: ks.filter(k => M.juntasDe.has(k) || M.pecas[k].length !== I[k].quantidade).map(k => I[k].id),
+        juntas: M.juntas }}; }})()""") or {}
+    ok(va.get("n", 0) > 0 and not va.get("erradas"),
+       f"as variantes acendem só as suas peças, fora de grupo ({va.get('n')} itens; erradas: {va.get('erradas')}; grupos juntos na obra: {va.get('juntas')})")
 
     # 3. a linha destaca no 3D
     clicar(aba, "#controle-corpo tr[data-item='TESOURA 14-1'] td:nth-child(3)")
@@ -242,7 +266,7 @@ try:
     lista_proj = projetos.get("projetos", projetos) if isinstance(projetos, dict) else projetos
     ok(not any("producao-cores" in json.dumps(p, ensure_ascii=False) for p in lista_proj), "o arquivo das cores não vira projeto")
     aba.navegar(base + "/controle-producao?projeto=posto-3d", limite=60)
-    ok(esperar(aba, f"!!({S} && {S}.estado)", 240), "recarregar abre o 3D de novo")
+    ok(esperar(aba, f"!!({S} && {S}.estado)", 600), "recarregar abre o 3D de novo")
     ok(cores_de("TESOURA 1-3") == ["#ff0000"], "ao recarregar a cor gravada continua")
     clicar(aba, "#p3-cores")
     esperar(aba, "!!document.querySelector('#p3-dlg-cores[open]')", 10)
@@ -259,6 +283,38 @@ try:
     ok(escondeu, f"o botão 3D esconde o painel (o botão em {onde})")
     clicar(aba, "#btn-3d")
     ok(esperar(aba, "!document.querySelector('#painel3d').hidden", 5), "e mostra de novo")
+
+    # 10. apontar vários pelo 3D
+    marcados = "[...document.querySelectorAll('#controle-corpo input.ctl-marcar:checked')].map(c => c.dataset.item).sort().join(',')"
+    a5, a6 = peca_na_tela("TESOURA 1-5", True), True
+    if a5 and a6:
+        clicar_em(aba, a5[0], a5[1], ctrl=True)
+        ok(esperar(aba, marcados + " === 'TESOURA 1-5'", 10), "Ctrl+clique numa peça da TESOURA 1-5 escolhe a linha dela")
+        a6 = peca_na_tela("TESOURA 1-6", True)
+        clicar_em(aba, a6[0], a6[1], ctrl=True)
+        ok(esperar(aba, marcados + " === 'TESOURA 1-5,TESOURA 1-6'", 10), "Ctrl+clique numa da 1-6 soma (as duas escolhidas)")
+        n56 = aba.avaliar(f"{S}.mapa.pecas[{K('TESOURA 1-5')}].length + {S}.mapa.pecas[{K('TESOURA 1-6')}].length")
+        ok(esperar(aba, f"{V}.selecaoVarias.size === {n56}", 10), f"o 3D acende as peças das duas juntas ({n56})")
+        ok("2 item(ns) escolhido(s)" in (aba.avaliar("document.querySelector('#p3-situacao').textContent") or ""), "a situação do 3D diz 2 itens escolhidos")
+        foto("_controle_3d_varios.png")
+        a6 = peca_na_tela("TESOURA 1-6", True)
+        clicar_em(aba, a6[0], a6[1], ctrl=True)
+        ok(esperar(aba, marcados + " === 'TESOURA 1-5'", 10), "Ctrl+clique de novo na 1-6 tira ela da escolha")
+        a6 = peca_na_tela("TESOURA 1-6", True)
+        clicar_em(aba, a6[0], a6[1], ctrl=True)
+        esperar(aba, marcados + " === 'TESOURA 1-5,TESOURA 1-6'", 10)
+        clicar(aba, "#ctl-apontar-varios")
+        ok(esperar(aba, "!!document.querySelector('#ctl-dialogo-varios[open]')", 10), "Apontar os escolhidos abre a janela")
+        clicar(aba, "#ctl-dialogo-varios input[name=ctl-etapa][value=producao]")
+        clicar(aba, "#ctl-dialogo-varios #ctl-confirmar")
+        ok(esperar(aba, f"{S}.dados.itens[{K('TESOURA 1-5')}].feito.producao === 1 && {S}.dados.itens[{K('TESOURA 1-6')}].feito.producao === 1", 20),
+           "as duas produzidas de uma vez")
+        esperar(aba, "false", 0.6)
+        ok(cores_de("TESOURA 1-5") == [padrao.get("producao")] and cores_de("TESOURA 1-6") == [padrao.get("producao")],
+           f"as duas azuis no 3D ({cores_de('TESOURA 1-5')}, {cores_de('TESOURA 1-6')})")
+        ok(esperar(aba, f"{V}.selecaoVarias.size === 0 && " + marcados + " === ''", 10), "a escolha se limpa na lista e no 3D")
+    else:
+        ok(False, f"achar na tela peças da TESOURA 1-5 e 1-6 para clicar ({a5}, {a6})")
 
     erros = [c for c in aba.console if c[0] in ("error", "excecao")]
     ok(not erros, f"sem erro no console ({erros[:3]})")

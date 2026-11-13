@@ -91,7 +91,7 @@ def celula(item, coluna):
     """o texto da célula da coluna (pelo título) na linha do item"""
     return (f"(() => {{ const t = document.querySelector('#controle-corpo table'); if (!t) return null;"
             f" const i = [...t.tHead.rows[0].cells].findIndex(c => c.textContent.trim().startsWith({json.dumps(coluna)}));"
-            f" const tr = [...t.tBodies[0].rows].find(r => r.cells[0].textContent.trim() === {json.dumps(item)});"
+            f" const tr = [...t.tBodies[0].rows].find(r => r.dataset.item === {json.dumps(item)});"
             f" return tr ? tr.cells[i].textContent.trim() : null; }})()")
 
 
@@ -142,7 +142,7 @@ try:
     # 2. o começo
     cartoes = aba.avaliar("[...document.querySelectorAll('#ctl-cartoes .cartao-n[data-etapa] b')].map(b => b.textContent)") or []
     ok(cartoes == ["0,0 %", "0,0 %"], f"Produção e Pintura começam em 0 % ({cartoes})")
-    ids = aba.avaliar("[...document.querySelectorAll('#controle-corpo table tbody tr')].map(r => r.cells[0].textContent.trim())") or []
+    ids = aba.avaliar("[...document.querySelectorAll('#controle-corpo table tbody tr[data-item]')].map(r => r.dataset.item)") or []
     ok({"T38-1", "T38-2", "T74", "MT71-1", "MT71-3", "T.C.1", "CV.2"} <= set(ids) and "T38" not in ids,
        f"itens numerados (T38-1, T38-2, T74, MT71-1..3) e peças pela posição ({len(ids)} linhas)")
     ok(aba.avaliar(celula("T.C.1", "Qtd")) == "46", "T.C.1 com 46 peças")
@@ -176,7 +176,7 @@ try:
        "'Falta na produção' esconde a T38-1 e mostra a T38-2")
     aba.avaliar("(() => { const s = document.querySelector('#ctl-filtro-etapa'); s.value = ''; s.dispatchEvent(new Event('change')); })()")
     digitar(aba, "#filtro", "t.c")
-    visiveis = aba.avaliar("[...document.querySelectorAll('#controle-corpo tbody tr[data-filtro]:not(.oculta)')].map(r => r.cells[0].textContent.trim())") or []
+    visiveis = aba.avaliar("[...document.querySelectorAll('#controle-corpo tbody tr[data-filtro]:not(.oculta)')].map(r => r.dataset.item)") or []
     ok(visiveis == ["T.C.1"], f"a busca 'T.C' deixa só a T.C.1 ({visiveis})")
     digitar(aba, "#filtro", "")
     aba.avaliar("document.querySelector('#filtro').dispatchEvent(new Event('input'))")
@@ -190,6 +190,40 @@ try:
        "o apontamento original continua no histórico, riscado")
     linhas = open(arq, encoding="utf-8").read().strip().splitlines()
     ok(len(linhas) == 3 and json.loads(linhas[-1]).get("estorno_de") == ev_id, "o estorno é mais uma linha; nada apagado")
+
+    # 7b. apontar vários de uma vez (13/11): a busca "MT71" e a caixinha de todos escolhe as 3; Ctrl+clique na linha soma a CV.2
+    digitar(aba, "#filtro", "mt71")
+    aba.avaliar("document.querySelector('#filtro').dispatchEvent(new Event('input'))")
+    clicar(aba, "#ctl-marcar-todos")
+    ok(esperar(aba, "(() => { const f = document.querySelector('#ctl-varios'); return f && !f.hidden && /3 itens escolhidos/.test(f.textContent); })()", 10),
+       "a caixinha de cima escolhe os 3 MT71 à vista e a faixa diz '3 itens escolhidos'")
+    digitar(aba, "#filtro", "")
+    aba.avaliar("document.querySelector('#filtro').dispatchEvent(new Event('input'))")
+    ok(esperar(aba, "document.querySelector('#ctl-marcar-todos').indeterminate", 5), "sem a busca, a caixinha de cima fica pela metade")
+    r = aba.avaliar("(() => { const tr = document.querySelector('#controle-corpo tr[data-item=\"CV.2\"] td:nth-child(3)'); tr.scrollIntoView({block: 'center'});"
+                    " const b = tr.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; })()")
+    for t in ("mousePressed", "mouseReleased"):
+        aba.cmd("Input.dispatchMouseEvent", type=t, x=r[0], y=r[1], button="left", clickCount=1, modifiers=2)   # Ctrl
+    ok(esperar(aba, "/4 itens escolhidos/.test(document.querySelector('#ctl-varios').textContent)"
+                    " && document.querySelector('input.ctl-marcar[data-item=\"CV.2\"]').checked", 5),
+       "Ctrl+clique na linha da CV.2 soma à escolha (4 itens)")
+    clicar(aba, "#ctl-apontar-varios")
+    ok(esperar(aba, "!!document.querySelector('#ctl-dialogo-varios[open]')", 10), "Apontar os escolhidos abre a janela de vários")
+    clicar(aba, "#ctl-dialogo-varios input[name=ctl-etapa][value=producao]")
+    res = aba.avaliar("document.querySelector('#ctl-varios-resumo').textContent") or ""
+    ok("4 item(ns), 9 peça(s)/unidade(s)" in res, f"a janela diz o que vai: 4 itens, 3 MT71 + 6 CV.2 ({res[:90]})")
+    digitar(aba, "#ctl-dialogo-varios #ctl-obs", "lote MT71")
+    clicar(aba, "#ctl-dialogo-varios #ctl-confirmar")
+    ok(esperar(aba, "!document.querySelector('#ctl-dialogo-varios')", 15), "a janela fecha depois de apontar")
+    ok(esperar(aba, " && ".join(celula(i, "Produção") + " === '✓'" for i in ("MT71-1", "MT71-2", "MT71-3"))
+               + " && " + celula("CV.2", "Produção") + " === '✓ 6'", 15),
+       "MT71-1..3 e CV.2 (6) produzidos de uma vez")
+    ok(esperar(aba, "document.querySelector('#ctl-varios').hidden && !document.querySelector('input.ctl-marcar:checked')", 5),
+       "a escolha se limpa depois de apontar")
+    novos = [json.loads(l) for l in open(arq, encoding="utf-8").read().strip().splitlines()][3:]
+    ok(sorted((e["item"], e["quantidade"]) for e in novos) == [("CV.2", 6), ("MT71-1", 1), ("MT71-2", 1), ("MT71-3", 1)]
+       and all(e["obs"] == "lote MT71" and e["etapa"] == "producao" for e in novos),
+       f"um apontamento por item, com a observação em todos ({[(e['item'], e['quantidade']) for e in novos]})")
 
     # recarregar abre a mesma tela, com o histórico
     aba.navegar(base + "/controle-producao?projeto=obra-controle", limite=40)

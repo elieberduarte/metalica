@@ -116,6 +116,13 @@ def itens(lista: dict, nomes: Optional[dict] = None) -> List[dict]:
 
     # --- as peças que sobram fora dos conjuntos: uma linha por posição, com a quantidade
     ids = {x["id"] for x in saida}
+    # as variantes que o 3D não distingue pelo nome (nomes.json → "variantes" {id da peça: [posição, conjunto]}: as chapas
+    # "Suporte de terça ST1 (aa)", "(ab)"… do Posto, todas "Suporte de terça ST1" no 3D e sem marca de posição) — com as
+    # peças de cada uma, o 3D acende a variante sozinha em vez do grupo todo (13/11)
+    pecas_var: Dict[str, List[str]] = {}
+    for pid, (vpos, vcj) in ((k, (list(v) + ["", ""])[:2]) for k, v in ((nomes or {}).get("variantes") or {}).items()):
+        if vpos and not vcj:
+            pecas_var.setdefault(str(vpos), []).append(str(pid))
     for p in posicoes:
         resto = int(p.get("quantidade") or 0) - usados[id(p)]
         if resto <= 0:
@@ -130,6 +137,11 @@ def itens(lista: dict, nomes: Optional[dict] = None) -> List[dict]:
                       "descricao": " ".join(x for x in dim if x), "quantidade": resto,
                       "kg_unidade": round(float(p.get("peso") or 0.0), 3),
                       "kg": round(resto * float(p.get("peso") or 0.0), 3)})
+        partes = [m.strip() for m in str(p.get("marca") or "").split(" / ") if m.strip()]
+        if partes and all(m in pecas_var for m in partes):
+            pv = sorted({i for m in partes for i in pecas_var[m]})
+            if len(pv) == resto:                        # só quando fecha com a quantidade da linha
+                saida[-1]["pecas3d"] = pv
     return saida
 
 
@@ -299,13 +311,61 @@ def apontar(pasta_projeto: str, lista: dict, item: str, etapa: str, quantidade, 
         if q > falta:
             raise ErroControle("%s: só falta%s %d na %s (pedido: %d)"
                                % (item, "m" if falta != 1 else "", falta, ETAPAS[etapa].lower(), q))
-        ev = {"id": uuid.uuid4().hex[:12], "quando": _agora(), "data": dia, "quem": quem or "", "etapa": etapa,
-              "item": item, "refs": it["refs"], "quantidade": q, "kg": round(q * it["kg_unidade"], 3),
-              "estorno_de": None, "obs": str(obs or "")[:300]}
-        if ancora(it):
-            ev["ancora"] = ancora(it)                   # as peças da unidade: o apontamento segue a peça (resolver)
+        ev = _evento(it, etapa, q, quem, dia, obs)
         _gravar(pasta_projeto, ev)
     return ev
+
+
+def _evento(it: dict, etapa: str, q: int, quem: str, dia: str, obs) -> dict:
+    ev = {"id": uuid.uuid4().hex[:12], "quando": _agora(), "data": dia, "quem": quem or "", "etapa": etapa,
+          "item": it["id"], "refs": it["refs"], "quantidade": q, "kg": round(q * it["kg_unidade"], 3),
+          "estorno_de": None, "obs": str(obs or "")[:300]}
+    if ancora(it):
+        ev["ancora"] = ancora(it)                       # as peças da unidade: o apontamento segue a peça (resolver)
+    return ev
+
+
+#: o máximo de itens num apontamento de vários (a obra inteira do Posto tem 652)
+MAIS_ITENS = 2000
+
+
+def apontar_varios(pasta_projeto: str, lista: dict, ids: List[str], etapa: str, quem: str,
+                   data=None, obs: str = "", nomes: Optional[dict] = None) -> dict:
+    """aponta, de uma vez, TUDO o que falta na etapa em cada item escolhido (na lista ou no 3D ao lado; usuário 13/11,
+    "apontar vários de uma vez", as 6 MT71). Um evento por item — o ERP, a nuvem e o estorno seguem como no apontar de
+    um. Item já completo na etapa é pulado (volta em "pulados"); item fora da lista recusa tudo, sem gravar nada.
+    Devolve {"eventos": [...], "pulados": [ids]}."""
+    if etapa not in ETAPAS:
+        raise ErroControle("etapa desconhecida: %r" % etapa)
+    pedidos = list(OrderedDict.fromkeys(str(i) for i in (ids or []) if str(i or "").strip()))
+    if not pedidos:
+        raise ErroControle("nenhum item escolhido")
+    if len(pedidos) > MAIS_ITENS:
+        raise ErroControle("escolha até %d itens de uma vez (pedido: %d)" % (MAIS_ITENS, len(pedidos)))
+    its = itens(lista, nomes)
+    por_id = {x["id"]: x for x in its}
+    fora = [i for i in pedidos if i not in por_id]
+    if fora:
+        raise ErroControle("fora da lista de materiais atual: %s" % ", ".join(fora[:10]) + ("…" if len(fora) > 10 else ""))
+    dia = _data(data)
+    with _TRAVA:
+        eventos = ler_eventos(pasta_projeto)
+        ja = feito(eventos, resolver(eventos, its))
+        novos, pulados = [], []
+        for i in pedidos:
+            it = por_id[i]
+            falta = it["quantidade"] - ja.get(i, Counter())[etapa]
+            if falta <= 0:
+                pulados.append(i)
+                continue
+            novos.append(_evento(it, etapa, falta, quem, dia, obs))
+        if not novos:
+            raise ErroControle("%s já est%s completo%s na %s" % (
+                pulados[0] if len(pulados) == 1 else "os %d itens escolhidos" % len(pulados),
+                "á" if len(pulados) == 1 else "ão", "" if len(pulados) == 1 else "s", ETAPAS[etapa].lower()))
+        for ev in novos:
+            _gravar(pasta_projeto, ev)
+    return {"eventos": novos, "pulados": pulados}
 
 
 def estornar(pasta_projeto: str, evento: str, quem: str, obs: str = "") -> dict:

@@ -29,7 +29,7 @@
   ];
   const ESTADOS = ['fora', 'falta', 'producao', 'pintura'];
   const S = { dados: null, cores: null, padrao: null, visor: null, quadro: null, mapa: null, estado: null,
-    mostrar: 'tudo', ligado: true, escolhido: null, espera: null };
+    mostrar: 'tudo', ligado: true, escolhido: null, espera: null, varios: [], somar: false };
   window.controle3d = S;                                  // os testes de tela leem o mapa e a situação
 
   const $ = (s, raiz = document) => raiz.querySelector(s);
@@ -148,9 +148,22 @@
     }
     const partes = (x) => String((x.refs || [])[0] || '').split(' / ').map(p => p.trim()).filter(Boolean);
     const avulsos = [];
+    // as variantes com as peças gravadas pelo Detalhar (nomes.json → variantes): primeiro, antes que a peça-base do mesmo
+    // nome no 3D ("Suporte de terça ST1", CH36) pegue todas
+    itens.forEach((x, k) => {
+      if (x.origem !== 'pecas' || !(x.pecas3d || []).length) return;
+      if (!porId) { porId = new Map(); for (let i = 0; i < n; i++) if (F[i].id != null) porId.set(String(F[i].id), i); }
+      for (const id of x.pecas3d) {
+        const i = porId.get(String(id));
+        if (i === undefined || itemDaPeca[i] >= 0) continue;
+        itemDaPeca[i] = k;
+        pecas[k].push(i);
+      }
+    });
     itens.forEach((x, k) => {
       if (x.origem !== 'pecas') return;
       avulsos.push(k);
+      if (pecas[k].length) return;
       for (const p of partes(x)) {
         for (const i of porPos.get(p) || []) {
           if (unidades.has(String(F[i].cj || '')) || itemDaPeca[i] >= 0) continue;
@@ -230,8 +243,10 @@
       for (let i = 0; i < n; i++) if (esconder.includes(estado[i])) ids.push(i);
       V.ocultarPecas(ids, true);
     }
+    S.conta = conta;
     legenda(conta);
-    if (S.escolhido !== null) destacarItem(S.escolhido, false);
+    if (S.varios.length) destacarVarios(S.varios);
+    else if (S.escolhido !== null) destacarItem(S.escolhido, false);
   }
 
   function legenda(conta) {
@@ -249,7 +264,7 @@
     const notas = [];
     if (M && M.juntas) notas.push(`${nf(M.juntas)} grupo(s) de itens juntos no 3D (unidades ou variantes que o modelo não separa)`);
     if (M && M.semPeca) notas.push(`${nf(M.semPeca)} item(ns) sem peça no 3D`);
-    situacao(notas.length ? notas.join(' · ') : 'Clique numa linha da lista ou numa peça do modelo.');
+    situacao((notas.length ? notas.join(' · ') + ' · ' : '') + 'Clique numa linha da lista ou numa peça do modelo; Ctrl+clique soma à escolha para apontar vários de uma vez.');
   }
 
   // ------------------------------------------------------------------ escolher
@@ -274,10 +289,36 @@
       + (juntas ? ` · junto com mais ${nf(juntas.length - 1)} item(ns) que o modelo não separa (${juntas.filter(t => t !== k).slice(0, 4).map(t => S.dados.itens[t].id).join(', ')}${juntas.length > 5 ? '…' : ''})` : ''));
   }
 
+  /** os itens marcados na lista para apontar de uma vez (ids): todas as peças deles acendem juntas */
+  function destacarVarios(ids) {
+    const V = S.visor, M = S.mapa;
+    S.varios = ids || [];
+    if (!V || !M || !S.dados) return;
+    const ks = S.varios.map(id => S.dados.itens.findIndex(x => x.id === id)).filter(k => k >= 0);
+    if (!ks.length) { V.selecionarVarias([], false); if (S.conta) legenda(S.conta); return; }
+    const pecas = [...new Set(ks.flatMap(k => M.pecas[k] || []))];
+    const sem = ks.filter(k => !(M.pecas[k] || []).length).length;
+    V.ocultarPecas(pecas, false);
+    V.selecionarVarias(pecas, false);
+    S.escolhido = null;
+    situacao(`${nf(ks.length)} item(ns) escolhido(s) para apontar · ${nf(pecas.length)} peça(s) no 3D`
+      + (sem ? ` · ${nf(sem)} sem peça no modelo` : '') + ' · Ctrl+clique numa peça põe ou tira o item dela');
+  }
+
   function aoClicarNo3D() {
     const V = S.visor, M = S.mapa;
     if (!V || !M) return;
     const i = V.selecionada;
+    // Ctrl (ou Shift) + clique: o item da peça entra ou sai da escolha de vários (a lista marca e o 3D acende todos)
+    if (S.somar) {
+      S.somar = false;
+      const k = i === undefined || i < 0 ? -1 : M.itemDaPeca[i];
+      if (k >= 0) {
+        const ks = M.juntasDe.get(k) || [k];
+        document.dispatchEvent(new CustomEvent('controle:alternar', { detail: { ids: ks.map(t => S.dados.itens[t].id) } }));
+      } else destacarVarios(S.varios);                   // clicou no vazio ou fora do controle: a escolha fica
+      return;
+    }
     if (i === undefined || i < 0) {
       S.escolhido = null;
       if (!V.selecaoVarias || !V.selecaoVarias.size) document.dispatchEvent(new CustomEvent('controle:marcar', { detail: { ids: [] } }));
@@ -317,11 +358,18 @@
         clearInterval(S.espera);
         S.visor = w.visor;
         enxugar(w.document);
+        // a tecla no clique: Ctrl/Shift soma à escolha de vários (o modo ver sozinho troca a escolhida)
+        const tecla = (e) => { S.somar = !!(e.ctrlKey || e.shiftKey || e.metaKey); };
+        w.document.addEventListener('pointerdown', tecla, true);
+        w.document.addEventListener('pointerup', tecla, true);
         montarMapa();
         pintar();
-      } else if (Date.now() - t0 > 180000) {
+      } else if (Date.now() - t0 > 900000) {
         clearInterval(S.espera);
         situacao('O modelo 3D não abriu. Abra pelo menu Engenharia para ver o que houve.');
+      } else if (Date.now() - t0 > 60000) {
+        // obra grande com a máquina ocupada (o 3D leve do Posto passou de 6 min com 17 chats abertos): segue esperando
+        situacao(`Abrindo o modelo 3D… (${Math.round((Date.now() - t0) / 60000)} min; obra grande, a primeira vez demora)`);
       }
     }, 300);
   }
@@ -515,6 +563,7 @@
       if (S.visor) { montarMapa(); pintar(); }
       else ligar(S.ligado, false);
     });
+    document.addEventListener('controle:varios', (ev) => destacarVarios(ev.detail.ids));
     document.addEventListener('controle:item', (ev) => {
       if (!S.dados || !S.mapa) return;
       const k = S.dados.itens.findIndex(x => x.id === ev.detail.id);
