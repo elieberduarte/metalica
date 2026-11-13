@@ -159,10 +159,54 @@ def test_unidades_de_tamanho_diferente_nao_valem():
     pecas = []
     for k in range(4):
         pecas += _tesoura("M157", 3000.0 * k, "PM6#%d" % k, n=2)                 # 8 de 2… e
-    pecas += _tesoura("M157", 20000, "PM6#9", n=8) + _tesoura("M157", 20000, "PM6#9", y=5000.0, n=8)
+    grandes = _tesoura("M157", 20000, "PM6#9", n=8) + _tesoura("M157", 20000, "PM6#9", y=5000.0, n=8)
+    for e in grandes:                                   # e a composição não divide por 6 (8× P1, 16× P2)
+        e.atributos["marcas"]["posicao"] = "P2"
+    pecas += grandes
     assert U.separar(pecas, 6) is None
     nomes, lugar = U.numerar([("M157", "T1", 6)], pecas, EIXOS_123)
     assert nomes["M157"] == ["T1-%d" % i for i in range(1, 7)] and lugar == {}
+
+
+def _meia(conj, peca, x, y, ao_longo_de_x, ponta):
+    """meia-tesoura da T1 do Posto (8 peças em linha, 2 m): 3× P31, P136…P139 e a ponta (P257 em X, P259 em Y)"""
+    pos = ["P31", "P31", "P31", "P136", "P137", "P138", "P139", ponta]
+    out = []
+    for k, ps in enumerate(pos):
+        if ao_longo_de_x:
+            e = _P(conj, x + 250.0 * k, y, dx=250.0, dy=150.0, dz=2300.0, peca=peca)
+        else:
+            e = _P(conj, x, y + 250.0 * k, dx=150.0, dy=250.0, dz=2300.0, peca=peca)
+        e.atributos["marcas"]["posicao"] = ps
+        out.append(e)
+    return out
+
+
+def test_t1_do_posto_meia_tesoura_em_x_e_em_y_numera_pelos_eixos():
+    """13/11: as 6 T1 (M157, 16 peças) ficavam sem lugar. Na cabeça de cada pilar PM6 (3 cópias da elevação "PM6 copa")
+    há 4 meias-tesouras em cruz que não se tocam (95 mm); a lista diz 1× P257 + 1× P259 por unidade: cada T1 é uma
+    meia em X e uma em Y. Pela cópia saíam 3 de 32, pelo contato 12 de 8; pela composição (como o Detalhar), 6 de 16."""
+    pecas = []
+    for c, (x0, y0) in enumerate([(32342.0, 23435.0), (38329.0, 36036.0), (39661.0, 48436.0)]):
+        peca = "PM6 copa#%d" % c
+        pecas += _meia("M157", peca, x0, y0, True, "P257")                        # X, antes do pilar
+        pecas += _meia("M157", peca, x0 + 2325.0, y0, True, "P257")               # X, depois do pilar
+        pecas += _meia("M157", peca, x0 + 2080.0, y0 - 2095.0, False, "P259")     # Y, antes
+        pecas += _meia("M157", peca, x0 + 2080.0, y0 + 245.0, False, "P259")      # Y, depois
+    grupos = U.separar(pecas, 6)
+    assert grupos is not None and sorted(len(g) for g in grupos) == [16] * 6
+    for g in grupos:
+        pos = [e.atributos["marcas"]["posicao"] for e in g]
+        assert pos.count("P257") == 1 and pos.count("P259") == 1
+        assert len({e.atributos["origem"]["peca"] for e in g}) == 1                # as duas metades do mesmo pilar
+    nomes, lugar = U.numerar([("M157", "T1", 6)], pecas, EIXOS_POSTO)
+    assert [u["nome"] for u in lugar["M157"]] == ["T1-%d" % i for i in range(1, 7)]
+    # pela ordem dos eixos: as duas do pilar do eixo 10 (x 34,5 m) primeiro; os pilares dos eixos 11 e 12 estão a 1,3 m
+    # e o meio de cada T1 (em L) fica a ~0,6 m do pilar — as do mesmo eixo vão pela letra (do A, o y maior)
+    dono = {e.id: e.atributos["origem"]["peca"] for e in pecas}
+    copias = [dono[u["ids"][0]] for u in lugar["M157"]]
+    assert copias[:2] == ["PM6 copa#0", "PM6 copa#0"] and sorted(copias[2:]) == ["PM6 copa#1"] * 2 + ["PM6 copa#2"] * 2
+    assert [lugar["M157"][i]["meio"] for i in U.ordenar([u["meio"] for u in lugar["M157"]], EIXOS_POSTO)] ==         [u["meio"] for u in lugar["M157"]]
 
 
 def test_mesmo_eixo_em_cadeia_e_nao_por_faixa():

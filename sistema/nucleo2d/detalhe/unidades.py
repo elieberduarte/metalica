@@ -9,8 +9,9 @@ TESOURA 1 juntas. Agora:
 * **as unidades de uma marca** se separam pelo que o modelo diz — `marcas.instancia` (o conjunto do IFC, o do editor), a
   cópia da elevação de onde as barras vieram (`origem.peca`, "PAINEL 3#173", gravada pela montagem pela planta) — e, sem
   isso, pelas peças que se tocam (como o Detalhar acha as instâncias). A peça sem chave (a chapa soldada) vai para a
-  unidade em que encosta. Só vale quando dá o número de unidades da marca; senão a marca fica sem lugar e o nome todo
-  numera como antes;
+  unidade em que encosta. Por último, como o Detalhar acha as instâncias: pela composição da unidade (a T1 do Posto,
+  duas meias-tesouras em L que não se tocam). Só vale quando dá o número de unidades da marca; senão a marca fica sem
+  lugar e o nome todo numera como antes;
 * **a ordem**: pelo meio de cada unidade em planta, primeiro ao longo dos eixos de número (do eixo 1 em diante),
   depois ao longo dos de letra (do A em diante), depois a altura. Sem eixos no projeto, x, y e z;
 * **o nome**: as unidades do mesmo nome (em todas as marcas) numeram juntas — "TESOURA 1-1"…; o nome com uma unidade só
@@ -104,6 +105,23 @@ def _pelo_contato(pecas) -> Optional[List[list]]:
     return _instancias(list(pecas), folga=ENCOSTA)
 
 
+def _pela_composicao(pecas, n: int) -> Optional[List[list]]:
+    """as unidades como o Detalhar acha as instâncias (conjuntos._instancias_do_conjunto, pela composição da unidade): a
+    T1 do Posto (16 peças) é uma meia-tesoura em X (P257) e uma em Y (P259) na cabeça do pilar PM6, que não se tocam
+    (95 mm) — pelo contato saíam 12 metades, pela cópia da elevação 3 pares; a lista diz 1× P257 + 1× P259 por unidade"""
+    from nucleo2d.detalhe.conjuntos import _instancias_do_conjunto, posicao_base
+    if not all(getattr(e, "vertices", None) for e in pecas):
+        return None
+    total = collections.Counter(posicao_base(e) for e in pecas)
+    if not total or any(q % n for q in total.values()):
+        return None
+    unidade = collections.Counter({k: q // n for k, q in total.items()})
+    grupos = _instancias_do_conjunto(list(pecas), unidade)
+    if len(grupos) == n and all(collections.Counter(posicao_base(e) for e in g) == unidade for g in grupos):
+        return grupos
+    return None
+
+
 def _meio(g) -> Tuple[float, float, float]:
     pts = [v for e in g for v in (getattr(e, "vertices", None) or [])]
     if not pts:
@@ -137,8 +155,8 @@ def separar(pecas: Sequence, n: int) -> Optional[List[list]]:
         return [pecas] if pecas else None
     if len(pecas) < n:
         return None
-    for jeito in (_pelas_chaves, _pelo_contato):
-        grupos = jeito(pecas)
+    for jeito in (_pelas_chaves, _pelo_contato, _pela_composicao):
+        grupos = jeito(pecas, n) if jeito is _pela_composicao else jeito(pecas)
         if not grupos:
             continue
         if len(grupos) > n and jeito is _pelo_contato:
