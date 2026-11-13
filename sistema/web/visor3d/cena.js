@@ -2015,7 +2015,7 @@ function cancelar() {
  *  passa na chapa de base — 13/11, Posto). Os pontos do chão e a sombra no chão. */
 function zDoChao() {
   const o = visor.cabecalho.origem;
-  return terreno && Number.isFinite(terreno.zChao) && terreno.malha ? terreno.zChao - o[2] : visor.zDoPiso(visor._caixaModelo.clone());
+  return terreno && Number.isFinite(terreno.zChao) && terreno.malha ? terreno.zChao - o[2] : visor.zDoChao(visor._caixaModelo.clone());
 }
 
 function pontoDo3d(x, y) {

@@ -992,14 +992,28 @@ export class Visor3D {
     return Number.isFinite(z) && z >= cx.min.z ? z : cx.min.z;
   }
 
-  /** O piso logo abaixo das peças à vista (o pé da obra sem os chumbadores), maior que elas. */
+  /** O chão escolhido no painel Terreno — também sem a imagem de satélite (13/11, usuário: "o terreno não habilita a parte de
+   *  ajuste fino que já temos quando não tem uma imagem de satélite importada"): {cota: z do mundo ou null (o pé da obra),
+   *  ajuste: mm}; null = o pé da obra. */
+  definirChao(d) {
+    this.chaoDefinido = d || null;
+    this.posicionarPiso();
+  }
+
+  /** A altura do chão (mundo): a cota do painel Terreno, ou o pé da obra sem os chumbadores, mais o ajuste fino. */
+  zDoChao(cx = this.caixaVisivel()) {
+    const d = this.chaoDefinido;
+    return (d && Number.isFinite(d.cota) ? d.cota : this.zDoPiso(cx)) + (d && Number.isFinite(d.ajuste) ? d.ajuste : 0);
+  }
+
+  /** O piso logo abaixo das peças à vista (o pé da obra sem os chumbadores, ou o chão do painel Terreno), maior que elas. */
   posicionarPiso() {
     if (!this.piso || !this.cabecalho) return;
     const cx = this.caixaVisivel();
     const s = cx.getSize(new THREE.Vector3()), c = cx.getCenter(new THREE.Vector3());
     const lado = Math.max(s.x, s.y, 10000) * 40;          // até o horizonte (na cor do fundo, a borda não aparece)
     this.piso.scale.set(lado, lado, 1);
-    this.piso.position.set(c.x, c.y, this.zDoPiso(cx) - 10);
+    this.piso.position.set(c.x, c.y, this.zDoChao(cx) - 10);
     this.piso.material.uniforms.uCentro.value.set(c.x, c.y);
     this.piso.material.uniforms.uRaio.value = Math.max(s.x, s.y) * 0.85 + 15000;
     this._sombraSuja = true;

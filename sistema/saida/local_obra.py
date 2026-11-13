@@ -179,26 +179,7 @@ def validar(t: dict) -> dict:
     for k in ("endereco",):
         if t.get(k):
             saida[k] = str(t[k])[:300]
-    # a altura da imagem (mm do projeto); sem ela, no pé da obra. O usuário, 20/10, no Mercado (subsolo): "preciso deixar a
-    # imagem no nível 0 para a fundação não ficar voando"
-    if t.get("cota") is not None and str(t.get("cota")).strip() != "":
-        try:
-            cota = float(t["cota"])
-        except (TypeError, ValueError):
-            raise ErroTerreno("a altura da imagem precisa ser um número (mm).")
-        if not math.isfinite(cota):
-            raise ErroTerreno("a altura da imagem precisa ser um número (mm).")
-        saida["cota"] = round(cota, 1)
-    # o ajuste fino em cima do nível de referência (mm; usuário, 21/10: "ajuste fino igual tem da rotação… de 5 em 5 cm com
-    # base em um nível de referência, tipo nível doca (−20 cm)"); a imagem fica na cota (ou no pé da obra) + o ajuste
-    try:
-        ajuste = float(t.get("ajuste") or 0.0)
-    except (TypeError, ValueError):
-        raise ErroTerreno("o ajuste da altura da imagem precisa ser um número (mm).")
-    if not math.isfinite(ajuste) or abs(ajuste) > 100_000:
-        raise ErroTerreno("o ajuste da altura da imagem vai até 100 m para cima ou para baixo.")
-    if round(ajuste, 1):
-        saida["ajuste"] = round(ajuste, 1)
+    saida.update(altura_do_chao(t))
     # a transparência da imagem, 0 a 0,9 (usuário, 20/10: "colocar a imagem com uma certa transparência para ver o subsolo")
     try:
         transp = float(t.get("transparencia") or 0.0)
@@ -225,6 +206,48 @@ def validar(t: dict) -> dict:
     if planos:
         saida["planos"] = planos
     return saida
+
+
+def altura_do_chao(t: dict) -> dict:
+    """A altura do chão (mm do projeto): {cota?, ajuste?} — sem cota, no pé da obra (a chapa de base, sem os chumbadores).
+    Vale para a imagem do terreno e, sem imagem, para o chão liso do 3D (usuário, 13/11: "o terreno não habilita a parte de
+    ajuste fino que já temos quando não tem uma imagem de satélite importada")."""
+    saida = {}
+    # a altura (mm do projeto); sem ela, no pé da obra. O usuário, 20/10, no Mercado (subsolo): "preciso deixar a
+    # imagem no nível 0 para a fundação não ficar voando"
+    if t.get("cota") is not None and str(t.get("cota")).strip() != "":
+        try:
+            cota = float(t["cota"])
+        except (TypeError, ValueError):
+            raise ErroTerreno("a altura do chão precisa ser um número (mm).")
+        if not math.isfinite(cota) or abs(cota) > 1e6:
+            raise ErroTerreno("a altura do chão precisa ser um número (mm).")
+        saida["cota"] = round(cota, 1)
+    # o ajuste fino em cima do nível de referência (mm; usuário, 21/10: "ajuste fino igual tem da rotação… de 5 em 5 cm com
+    # base em um nível de referência, tipo nível doca (−20 cm)"); o chão fica na cota (ou no pé da obra) + o ajuste
+    try:
+        ajuste = float(t.get("ajuste") or 0.0)
+    except (TypeError, ValueError):
+        raise ErroTerreno("o ajuste da altura do chão precisa ser um número (mm).")
+    if not math.isfinite(ajuste) or abs(ajuste) > 100_000:
+        raise ErroTerreno("o ajuste da altura do chão vai até 100 m para cima ou para baixo.")
+    if round(ajuste, 1):
+        saida["ajuste"] = round(ajuste, 1)
+    return saida
+
+
+def gravar_chao(g, s: str, corpo: dict) -> dict:
+    """POST …/terreno/chao: a altura do chão sem o local da obra (`chao` no projeto). Com o local, ela é a do terreno."""
+    p = g.ler(s)
+    if isinstance(p.get("terreno"), dict):
+        t = dict(p["terreno"])
+        for k in ("cota", "ajuste"):
+            t.pop(k, None)
+        t.update(altura_do_chao(corpo or {}))
+        g.tocar(s, terreno=t)
+    else:
+        g.tocar(s, chao=altura_do_chao(corpo or {}) or None)
+    return estado(g, s)
 
 
 PLANOS_MAX, CANTOS_MAX = 200, 200
@@ -436,12 +459,25 @@ def estado(g, s: str) -> dict:
     if propria:                                               # a imagem própria importada (o painel mostra e ajusta)
         propria = dict({k: propria.get(k) for k in ("nome", "px", "colocada", "modo", "crs", "largura_m")},
                        georreferenciada=bool(propria.get("georef")))
-    return {"terreno": p.get("terreno"), "imagem": _meta_imagem(g.pasta(s)), "fontes": fontes, "propria": propria}
+    return {"terreno": p.get("terreno"), "chao": p.get("chao") if isinstance(p.get("chao"), dict) else None,
+            "imagem": _meta_imagem(g.pasta(s)), "fontes": fontes, "propria": propria}
 
 
 def gravar(g, s: str, corpo: dict) -> dict:
-    t = validar(corpo or {})
-    g.tocar(s, terreno=t)
+    corpo = corpo or {}
+    p = g.ler(s)
+    if not isinstance(p.get("terreno"), dict) and isinstance(p.get("chao"), dict) and "cota" not in corpo and "ajuste" not in corpo:
+        corpo = {**p["chao"], **corpo}                       # o local novo herda a altura do chão dada sem ele
+    t = validar(corpo)
+    g.tocar(s, terreno=t, chao=None)
+    return estado(g, s)
+
+
+def esquecer(g, s: str) -> dict:
+    """Tira o local; a altura do chão fica (volta a ser a do chão sem local)."""
+    t = g.ler(s).get("terreno")
+    alt = altura_do_chao(t) if isinstance(t, dict) else {}
+    g.tocar(s, terreno=None, chao=alt or None)
     return estado(g, s)
 
 
@@ -1356,8 +1392,9 @@ def rota_post(g, s: str, resto: list, corpo: dict, progresso: Callable) -> dict:
     if resto == ["baixar-imagem"]:
         return baixar_imagem(g, s, corpo, progresso)
     if resto == ["esquecer"]:
-        g.tocar(s, terreno=None)
-        return estado(g, s)
+        return esquecer(g, s)
+    if resto == ["chao"]:                                     # a altura do chão sem o local (13/11)
+        return gravar_chao(g, s, corpo)
     if resto == ["importar-imagem"]:                          # a imagem própria (o drone do cliente, 21/10)
         return importar_imagem(g, s, corpo, progresso)
     if resto == ["posicionar-imagem"]:
