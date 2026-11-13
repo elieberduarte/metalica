@@ -4026,6 +4026,34 @@ def contraventos_nas_vistas(ents: Sequence[dict], eixos: Optional[dict], pilares
     return feitas, avisos
 
 
+def rotulo_da_base(pt, rotulos) -> Tuple[int, str]:
+    """(índice, nome) do rótulo "BASE n" mais perto do ponto (x, y): "BASE1" → "BASE 1"."""
+    i = min(range(len(rotulos)), key=lambda k: math.dist(pt, rotulos[k][:2]))
+    m = re.match(r"(?i)^\s*BASE\s*(\d+)\s*$", str(rotulos[i][2]))
+    return i, ("BASE %s" % m.group(1)) if m else str(rotulos[i][2]).strip().upper()
+
+
+def bases_pelos_rotulos(doc, rotulos) -> int:
+    """O modelo já montado (sem remontar): as barras das bases das caixas d'água (origem.estrado) passam à base do rótulo
+    "BASE n" mais perto — `rotulos` [(x, y, texto)] nas coordenadas do modelo —, com o nome do projetista
+    (marcas.conjunto_projeto) e a instância de cada base (marcas.instancia), como estrados_da_planta faz agora. Devolve
+    quantas barras mudaram."""
+    n = 0
+    for e in doc.entidades.values():
+        a = e.atributos or {}
+        o = a.get("origem") or {}
+        m = a.get("marcas")
+        if "estrado" not in o or not isinstance(m, dict) or getattr(e, "inicio", None) is None:
+            continue
+        i, nome = rotulo_da_base(((e.inicio[0] + e.fim[0]) / 2.0, (e.inicio[1] + e.fim[1]) / 2.0), rotulos)
+        inst = "%s#%d" % (nome, i)
+        if m.get("instancia") != inst or m.get("conjunto_projeto") != nome:
+            m["instancia"], m["conjunto_projeto"] = inst, nome
+            o["estrado"] = i
+            n += 1
+    return n
+
+
 def estrados_da_planta(ents: Sequence[dict], caixa, desl: Tuple[float, float], apoios: Sequence,
                        nivel: float) -> Tuple[List[dict], List[str]]:
     """As bases das caixas d'água de 500 L do Posto CB ("PLANTA DAS BASES DE CAIXA DÁGUA", folha 15: BASE 1 8X, BASE 2
@@ -4064,8 +4092,9 @@ def estrados_da_planta(ents: Sequence[dict], caixa, desl: Tuple[float, float], a
                         "perfil": "U 100×40×2,65 (FF)", "mult": mult, "largura": round(larg)})
     # só as peças das bases: a planta da folha 15 desenha também o contorno do prédio (eixos curtos soltos); vale o que
     # fica a ≤ 3 m de um rótulo "BASE1"/"BASE 2"
-    rot_b = [(e["posicao"][0] + desl[0], e["posicao"][1] + desl[1]) for e in ents
-             if e["tipo"] == "texto" and _dentro(e["posicao"], caixa) and re.match(r"(?i)^\s*BASE\s*\d+\s*$", str(e.get("texto") or ""))]
+    rotulos = [(e["posicao"][0] + desl[0], e["posicao"][1] + desl[1], str(e.get("texto") or "")) for e in ents
+               if e["tipo"] == "texto" and _dentro(e["posicao"], caixa) and re.match(r"(?i)^\s*BASE\s*\d+\s*$", str(e.get("texto") or ""))]
+    rot_b = [(x_, y_) for x_, y_, _t in rotulos]
     if rot_b:
         pecas_e = [pc for pc in pecas_e
                    if min(math.dist(r_, ((pc["a"][0] + pc["b"][0]) / 2, (pc["a"][1] + pc["b"][1]) / 2)) for r_ in rot_b) <= 3000.0]
@@ -4125,7 +4154,14 @@ def estrados_da_planta(ents: Sequence[dict], caixa, desl: Tuple[float, float], a
         pf = _perfil(pc["perfil"])
         d = float(pf.d or 100.0) if pf else 100.0
         z = base + d / 2.0 if pc["mult"] == 2 else base + d + d / 2.0      # 2U embaixo, U em cima
-        out.append(dict(pc, z=z, base=r_))
+        q = dict(pc, z=z, base=r_)
+        if rotulos:
+            # cada base é a do rótulo dela: as duas bases de um local encostam no meio (as pontas dos 2U se tocam) e o grupo
+            # das peças que se tocam juntava as duas — 4 unidades de 16 barras onde o projeto tem "BASE 1 - 8X" com 8
+            # rótulos (Posto, 12/11)
+            i_r, nome_r = rotulo_da_base(((pc["a"][0] + pc["b"][0]) / 2, (pc["a"][1] + pc["b"][1]) / 2), rotulos)
+            q.update(base=i_r, rotulo=nome_r)
+        out.append(q)
     if sem:
         avisos.append("%d peça(s) de base sem banzo ou viga embaixo — no nível %.2f m." % (sem, nivel / 1000.0))
     return out, avisos
@@ -6302,6 +6338,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         for pc in pecas_est:
             conj_e = "BASE %s#%d" % (t_e["texto"].strip()[:4], pc["base"])
             orig_e = {"planta": t_e["texto"].strip(), "estrado": pc["base"]}
+            if pc.get("rotulo"):
+                orig_e["rotulo"] = pc["rotulo"]             # "BASE 1": o nome do projetista (marcas, mais abaixo)
             if pc["mult"] == 2:
                 (tx, ty), _L = _unit(pc["a"], pc["b"])
                 nx, ny = -ty, tx
@@ -6371,6 +6409,12 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         a["marcas"] = {"posicao": pos, "conjunto": m, "perfil": p["perfil"]}
         if p["conjunto"]:
             a["marcas"]["nome_conjunto"] = _bonito(p["conjunto"].split("#")[0])
+        o_e = a.get("origem") or {}
+        if isinstance(o_e, dict) and "estrado" in o_e and o_e.get("rotulo"):
+            # a base da caixa d'água: o nome do projetista e a instância de cada base (as bases de um local se encostam e o
+            # agrupamento no espaço juntava as duas — bases_pelos_rotulos)
+            a["marcas"]["conjunto_projeto"] = o_e["rotulo"]
+            a["marcas"]["instancia"] = "%s#%d" % (o_e["rotulo"], o_e["estrado"])
         a["peso_kg"] = kg
         p["ent"].atributos = a
 

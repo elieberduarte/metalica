@@ -1549,6 +1549,13 @@ def test_estrado_da_base_de_caixa_pelos_eixos_das_pecas():
     assert len({p["base"] for p in out}) == 1                        # as duas se cruzam: a mesma base
     topo = 6000.0 + de_planta._faixa_z(bz)[1]
     assert all(p["z"] == pytest.approx(topo + 50.0, abs=0.1) for p in out)
+    # duas bases encostadas no meio (Posto, 12/11: as pontas dos 2U de uma tocam as da outra), um rótulo em cada: duas
+    # bases, cada uma com o nome do rótulo — o grupo das peças que se tocam juntava as duas (4 × 16 no lugar de 8 × 8)
+    ents2 = [linha((800.0, 0.0), (800.0, 1500.0), "Eixo"), linha((760.0, 0.0), (760.0, 1500.0)), linha((840.0, 0.0), (840.0, 1500.0)),
+             linha((800.0, 1500.0), (800.0, 3000.0), "Eixo"), linha((760.0, 1500.0), (760.0, 3000.0)),
+             linha((840.0, 1500.0), (840.0, 3000.0)), texto((300.0, 700.0), "BASE1"), texto((300.0, 2300.0), "BASE1")]
+    out2, _av = de_planta.estrados_da_planta(ents2, (-1000.0, -1000.0, 5000.0, 4000.0), (0.0, 0.0), [], 6000.0)
+    assert len(out2) == 2 and len({p["base"] for p in out2}) == 2 and {p["rotulo"] for p in out2} == {"BASE 1"}
 
 
 def test_transicao_abaixo_das_tesouras_nao_e_apoio_da_terca():

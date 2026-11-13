@@ -93,3 +93,28 @@ def test_numeracao_das_unidades_igual_no_controle_e_na_prancha():
         {"marca": "M111", "nome": "TESOURA 14", "instancias": 1, "peso_total": 228.1, "pecas_unidade": 66, "composicao": {}}]}
     ids = {tuple(i["refs"]): i["id"] for i in controle.itens(lista)}
     assert ids[("M111",)] == "TESOURA 14-1" and ids[("M112",)] == "TESOURA 14-2"
+
+
+# os 8 rótulos "BASE1" da planta das bases do DXF do Posto (folha 15, "BASE 1 - 8X"), nas coordenadas do modelo: o y do
+# desenho menos 28.533,5 (o encaixe dos 4 locais do 3D nos pares de rótulos; resto < 1 mm), o x no meio das bases
+ROTULOS_BASES = [(2042.0, y - 28533.5, "BASE1") for y in (79863, 78281, 68368, 66786, 48773, 47190, 37278, 35695)]
+
+
+def test_bases_das_caixas_uma_por_rotulo():
+    """Posto: as bases das caixas d'água são 8 ("BASE 1 - 8X", um rótulo em cada), duas por local, encostadas no meio
+    (as pontas dos 2U se tocam). O grupo das peças que se tocam juntava as duas: a lista e as pranchas diziam 4 × 16
+    barras (e a lista antiga 16 × 4). Cada barra vai para a base do rótulo mais perto, com a instância e o nome dela."""
+    from saida import lista_producao as lp
+    doc = Documento.de_dict(json.loads(gzip.decompress(open(os.path.join(AQUI, "dados_cad", "posto_bases_caixas.json.gz"),
+                                                            "rb").read())))
+    assert de_planta.bases_pelos_rotulos(doc, ROTULOS_BASES) == 64
+    assert de_planta.bases_pelos_rotulos(doc, ROTULOS_BASES) == 0           # de novo: nada muda
+    por_base = {}
+    for e in doc.entidades.values():
+        por_base.setdefault(e.atributos["marcas"]["instancia"], []).append(e.atributos["marcas"]["posicao"])
+    assert len(por_base) == 8 and all(sorted(v) == ["P35"] * 4 + ["P85"] * 2 + ["P87"] * 2 for v in por_base.values())
+    lev = det.levantar(doc)
+    lista = lp.montar(lev["posicoes"], lev["categorias"], lev["acessorios"], pecas=lev["pecas"])
+    c = lista["conjuntos"][0]
+    assert (c["instancias"], c["pecas_unidade"]) == (8, 8)
+    assert nm._conjuntos_do_projeto(lev["pecas"]) == {"M158": "BASE 1"}
