@@ -206,6 +206,13 @@
         `Apontamentos de itens que não estão mais na lista de materiais (o detalhamento foi refeito?): ${D.fora_da_lista.join(', ')}. `
         + 'Eles continuam guardados; confira e estorne se for o caso.'));
     }
+    if ((D.seguiram || []).length) {
+      // o Detalhar renumerou (o número pela ordem dos eixos, 13/11): o apontamento seguiu a peça, não o nome
+      const lista = D.seguiram.slice(0, 8).map(s => `${s.era} → ${s.agora}`).join(', ');
+      partes.push(el('div', { class: 'aviso-topo', id: 'ctl-seguiram' },
+        `${n(D.seguiram.length)} apontamento(s) seguiram a peça depois que o detalhamento mudou os nomes: ${lista}`
+        + (D.seguiram.length > 8 ? '…' : '') + '. Nada foi apagado; o histórico mostra o nome de antes.'));
+    }
     partes.push(secao('O que se controla', 'cada tesoura/conjunto pela unidade (T38-1, T38-2); as peças avulsas iguais pela posição, com a quantidade',
       el('div', {}, el('div', { class: 'ctl-barra' }, busca, selEtapa, selTipo,
         el('span', { texto: `${n(D.total.unidades_conjunto)} unidades de conjunto · ${n(D.total.itens - D.total.unidades_conjunto)} grupos de peças · ${n(D.total.kg, 1)} kg` })), quadro)));
@@ -250,7 +257,8 @@
         el('td', { texto: dataBRc(e.data) }),
         el('td', { texto: e.quem || '—' }),
         el('td', { texto: (estorno ? 'estorno · ' : '') + (titulo[e.etapa] || e.etapa) }),
-        el('td', { class: 'b', texto: e.item }),
+        el('td', { class: 'b', texto: e.item_atual ? `${e.item_atual} (era ${e.item})` : e.item,
+          title: e.item_atual ? 'O detalhamento mudou o nome; o apontamento seguiu a peça' : null }),
         el('td', { class: 'r', texto: (estorno ? '−' : '') + n(e.quantidade) }),
         el('td', { class: 'r', texto: n(e.kg, 1) }),
         el('td', { class: 'quebra', texto: e.obs || '' }),

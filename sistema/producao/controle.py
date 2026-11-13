@@ -177,12 +177,79 @@ def _validos(eventos: List[dict]) -> List[dict]:
     return [e for e in eventos if not e.get("estorno_de") and e.get("id") not in estornados]
 
 
-def feito(eventos: List[dict]) -> Dict[str, Counter]:
-    """{item: Counter({etapa: quantidade})} dos apontamentos que valem"""
+def feito(eventos: List[dict], mapa: Optional[Dict[str, Optional[str]]] = None) -> Dict[str, Counter]:
+    """{item: Counter({etapa: quantidade})} dos apontamentos que valem; com `mapa` (resolver), cada apontamento conta no
+    item de agora (o que seguiu a peça depois de um Detalhar que renumerou); o sem item de agora fica no nome dele"""
     out: Dict[str, Counter] = {}
     for e in _validos(eventos):
-        out.setdefault(e.get("item"), Counter())[e.get("etapa")] += int(e.get("quantidade") or 0)
+        item = (mapa or {}).get(e.get("id")) or e.get("item")
+        out.setdefault(item, Counter())[e.get("etapa")] += int(e.get("quantidade") or 0)
     return out
+
+
+# ------------------------------------------------------------------ o apontamento segue a peça
+#: quantos ids de peças da unidade o apontamento guarda ("ancora"): o bastante para achar a unidade de novo no modelo
+ANCORA = 12
+
+
+def ancora(it: dict) -> List[str]:
+    """as peças que identificam a unidade no modelo 3D (as primeiras, em ordem), [] quando o item não tem lugar"""
+    return sorted(str(i) for i in (it.get("pecas3d") or []))[:ANCORA]
+
+
+def resolver(eventos: List[dict], its: List[dict]) -> Dict[str, Optional[str]]:
+    """{id do apontamento: item de agora (ou None)} — o apontamento guarda o NOME do item, e o Detalhar pode renumerar
+    (13/11: o número pela ordem dos eixos trocou 35 nomes no Posto; a TESOURA 1-1 de antes é a 1-7 de agora). Nunca
+    reescreve o arquivo; acha o item de agora, nesta ordem:
+      1. pela âncora (as peças da unidade no 3D): a peça física vence o nome — o mesmo nome pode ser outra tesoura agora;
+      2. pelo nome, quando ele continua na mesma marca;
+      3. pela marca: a peça avulsa da mesma posição; a unidade de conjunto sem lugar, a da marca com menos apontado
+         naquela etapa (unidades sem lugar são iguais entre si).
+    O que não se acha fica None ("fora da lista", como antes)."""
+    por_id = {x["id"]: x for x in its}
+    por_peca: Dict[str, str] = {}
+    avulso: Dict[str, str] = {}
+    unidades: Dict[str, List[str]] = {}
+    for x in its:
+        for i in x.get("pecas3d") or []:
+            por_peca[str(i)] = x["id"]
+        refs = [str(r) for r in x.get("refs") or []]
+        if x.get("origem") == "pecas":
+            for r in refs:
+                avulso[r] = x["id"]
+                for parte in r.split(" / "):
+                    avulso.setdefault(parte.strip(), x["id"])
+        elif refs:
+            unidades.setdefault(refs[0], []).append(x["id"])
+    usado: Dict[tuple, int] = Counter()
+    mapa: Dict[str, Optional[str]] = {}
+    for e in eventos:
+        if e.get("estorno_de"):
+            continue
+        alvo = None
+        anc = [str(i) for i in e.get("ancora") or []]
+        if anc:
+            votos = Counter(por_peca[i] for i in anc if i in por_peca)
+            if votos:
+                cand, n = votos.most_common(1)[0]
+                if 2 * n >= len(anc):
+                    alvo = cand
+        refs = [str(r) for r in e.get("refs") or []]
+        if alvo is None and e.get("item") in por_id and (not refs or [str(r) for r in por_id[e["item"]].get("refs") or []] == refs):
+            alvo = e["item"]
+        if alvo is None and refs:
+            if refs[0] in avulso:
+                alvo = avulso[refs[0]]
+            elif refs[0] in unidades:
+                etapa = e.get("etapa")
+                alvo = min(unidades[refs[0]], key=lambda u: (usado[(u, etapa)], unidades[refs[0]].index(u)))
+        if alvo is not None:
+            usado[(alvo, e.get("etapa"))] += int(e.get("quantidade") or 0)
+        mapa[e.get("id")] = alvo
+    for e in eventos:                                   # o estorno vai para onde foi o original
+        if e.get("estorno_de"):
+            mapa[e.get("id")] = mapa.get(e["estorno_de"])
+    return mapa
 
 
 def _hoje() -> datetime.date:
@@ -217,13 +284,15 @@ def apontar(pasta_projeto: str, lista: dict, item: str, etapa: str, quantidade, 
         raise ErroControle("quantidade inválida: %r" % quantidade)
     if q < 1:
         raise ErroControle("a quantidade precisa ser 1 ou mais")
-    por_id = {x["id"]: x for x in itens(lista, nomes)}
+    its = itens(lista, nomes)
+    por_id = {x["id"]: x for x in its}
     it = por_id.get(item)
     if it is None:
         raise ErroControle("%s não está na lista de materiais atual" % item)
     dia = _data(data)
     with _TRAVA:
-        ja = feito(ler_eventos(pasta_projeto)).get(item, Counter())[etapa]
+        eventos = ler_eventos(pasta_projeto)
+        ja = feito(eventos, resolver(eventos, its)).get(item, Counter())[etapa]
         falta = it["quantidade"] - ja
         if falta <= 0:
             raise ErroControle("%s já está completo na %s" % (item, ETAPAS[etapa].lower()))
@@ -233,6 +302,8 @@ def apontar(pasta_projeto: str, lista: dict, item: str, etapa: str, quantidade, 
         ev = {"id": uuid.uuid4().hex[:12], "quando": _agora(), "data": dia, "quem": quem or "", "etapa": etapa,
               "item": item, "refs": it["refs"], "quantidade": q, "kg": round(q * it["kg_unidade"], 3),
               "estorno_de": None, "obs": str(obs or "")[:300]}
+        if ancora(it):
+            ev["ancora"] = ancora(it)                   # as peças da unidade: o apontamento segue a peça (resolver)
         _gravar(pasta_projeto, ev)
     return ev
 
@@ -252,6 +323,8 @@ def estornar(pasta_projeto: str, evento: str, quem: str, obs: str = "") -> dict:
               "etapa": orig.get("etapa"), "item": orig.get("item"), "refs": orig.get("refs") or [],
               "quantidade": int(orig.get("quantidade") or 0), "kg": orig.get("kg") or 0, "estorno_de": evento,
               "obs": str(obs or "")[:300]}
+        if orig.get("ancora"):
+            ev["ancora"] = list(orig["ancora"])
         _gravar(pasta_projeto, ev)
     return ev
 
@@ -261,7 +334,8 @@ def situacao(lista: dict, eventos: List[dict], nomes: Optional[dict] = None, ult
     """o que a aba Controle mostra: os itens com o feito por etapa, o andamento em kg e %, os últimos eventos e os
     apontamentos de itens que não estão mais na lista"""
     its = itens(lista, nomes)
-    f = feito(eventos)
+    mapa = resolver(eventos, its)
+    f = feito(eventos, mapa)
     kg_total = round(sum(x["kg"] for x in its), 1)
     andamento = OrderedDict()
     for etapa, titulo in ETAPAS.items():
@@ -276,8 +350,10 @@ def situacao(lista: dict, eventos: List[dict], nomes: Optional[dict] = None, ult
         mais = {e: q - x["quantidade"] for e, q in x["feito"].items() if q > x["quantidade"]}
         if mais:
             x["a_mais"] = mais
-    ids = {x["id"] for x in its}
-    fora = sorted({e.get("item") for e in _validos(eventos) if e.get("item") not in ids})
+    fora = sorted({e.get("item") for e in _validos(eventos) if not mapa.get(e.get("id"))})
+    # os que seguiram a peça para outro nome (o Detalhar renumerou): a tela avisa "era TESOURA 1-1, agora 1-7"
+    seguiram = sorted({(e.get("item"), mapa[e.get("id")]) for e in _validos(eventos)
+                       if mapa.get(e.get("id")) and mapa[e.get("id")] != e.get("item")})
     hoje = _hoje().isoformat()
     validos_hoje = [e for e in _validos(eventos) if str(e.get("quando", ""))[:10] == hoje]
     estornados = {e.get("estorno_de") for e in eventos if e.get("estorno_de")}
@@ -285,11 +361,14 @@ def situacao(lista: dict, eventos: List[dict], nomes: Optional[dict] = None, ult
     for e in reversed(eventos[-ultimos:] if ultimos else eventos):
         r = dict(e)
         r["estornado"] = e.get("id") in estornados
+        if mapa.get(e.get("id")) and mapa[e.get("id")] != e.get("item"):
+            r["item_atual"] = mapa[e.get("id")]
         recentes.append(r)
     return {"etapas": [{"chave": k, "titulo": t} for k, t in ETAPAS.items()],
             "total": {"kg": kg_total, "itens": len(its), "unidades_conjunto": sum(1 for x in its if x["origem"] == "conjunto"),
                       "peso_lista": (lista.get("totais") or {}).get("peso")},
             "andamento": andamento, "itens": its, "fora_da_lista": fora,
+            "seguiram": [{"era": a, "agora": b} for a, b in seguiram],
             "hoje": {"apontamentos": len(validos_hoje), "kg": round(sum(float(e.get("kg") or 0) for e in validos_hoje), 1)},
             "eventos": recentes, "lista_gerada": lista.get("gerado")}
 
@@ -344,6 +423,7 @@ def para_erp(slug: str, nome: str, lista: dict, eventos: List[dict], nomes: Opti
              desde: Optional[str] = None) -> dict:
     """o que o ERP lê (só leitura): o andamento já somado, cada item e os eventos (com `desde`, só os de depois)"""
     s = situacao(lista, eventos, nomes, ultimos=0)
+    mapa = resolver(eventos, itens(lista, nomes))
     evs = [e for e in eventos if not desde or str(e.get("quando", "")) > str(desde)]
     return {"obra": slug, "nome": nome, "atualizado": _agora(), "lista_gerada": lista.get("gerado"),
             "etapas": list(ETAPAS.keys()),
@@ -353,7 +433,8 @@ def para_erp(slug: str, nome: str, lista: dict, eventos: List[dict], nomes: Opti
                                    ("kg_unidade", x["kg_unidade"])] + [(e, x["feito"][e]) for e in ETAPAS])
                       for x in s["itens"]],
             "eventos": [{"id": e.get("id"), "quando": e.get("quando"), "data": e.get("data"), "quem": e.get("quem"),
-                         "etapa": e.get("etapa"), "marca": e.get("item"), "quantidade": e.get("quantidade"),
+                         "etapa": e.get("etapa"), "marca": e.get("item"), "marca_atual": mapa.get(e.get("id")),
+                         "quantidade": e.get("quantidade"),
                          "kg": e.get("kg"), "estorno_de": e.get("estorno_de")} for e in evs]}
 
 

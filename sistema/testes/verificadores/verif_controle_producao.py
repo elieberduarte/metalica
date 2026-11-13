@@ -199,6 +199,26 @@ try:
        "obra sem modelo 3D: o painel do 3D não aparece, o botão fica desligado e o 3D nem é pedido")
     open(os.path.join(AQUI, "_controle_producao.png"), "wb").write(base64.b64decode(aba.cmd("Page.captureScreenshot", format="png")["data"]))
 
+    # o detalhamento muda o nome (13/11: o número pela ordem dos eixos trocou 35 nomes no Posto): T38 passa a T39 na lista;
+    # o apontamento da T38-1 segue a marca para a T39-1, a tela avisa e o histórico diz o nome de antes — nada apagado
+    arq_lista = os.path.join(OBRA, "detalhamento", "lista-de-materiais.json")
+    _l = json.load(open(arq_lista, encoding="utf-8"))
+    for c in _l["conjuntos"]:
+        if c.get("nome") == "T38":
+            c["nome"] = "T39"
+    json.dump(_l, open(arq_lista, "w", encoding="utf-8"), ensure_ascii=False)
+    aba.navegar(base + "/controle-producao?projeto=obra-controle", limite=40)
+    ok(esperar(aba, "!!document.querySelector('#ctl-seguiram')", 30), "o aviso de que o apontamento seguiu a peça aparece")
+    aviso_seg = aba.avaliar("document.querySelector('#ctl-seguiram').textContent") or ""
+    ok("T38-1 → T39-1" in aviso_seg, f"o aviso diz T38-1 → T39-1 ({aviso_seg[:90]})")
+    ok(aba.avaliar(celula("T39-1", "Produção")) == "✓", "a T39-1 continua produzida")
+    ok(not aba.avaliar("[...document.querySelectorAll('.aviso-topo')].some(a => a.textContent.includes('não estão mais na lista'))"),
+       "nada fica 'fora da lista'")
+    ok(aba.avaliar("[...document.querySelectorAll('#controle-corpo tr[data-evento] td')].some(t => t.textContent === 'T39-1 (era T38-1)')"),
+       "o histórico mostra 'T39-1 (era T38-1)'")
+    linhas_ap = open(arq, encoding="utf-8").read()
+    ok('"item": "T38-1"' in linhas_ap and "T39-1" not in linhas_ap, "o arquivo de apontamentos não foi reescrito")
+
     if TEM_POSTO:
         aba.navegar(base + "/controle-producao?projeto=posto-copia", limite=60)
         ok(esperar(aba, "!!document.querySelector('#ctl-cartoes')", 60), "a cópia do Posto V2 abre no controle de produção")
