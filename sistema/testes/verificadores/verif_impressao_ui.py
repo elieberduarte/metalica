@@ -15,7 +15,8 @@ Projeto/ANALISES/Interface/Impressao-gerenciador-proposta-2026-11-12.pdf), com o
      mudaram (1)" marca só ela;
   G. "Salvar a seleção como…" guarda um conjunto da obra, que marca as folhas dele e continua lá ao abrir de novo; o ×
      apaga;
-  H. pelo menu Desenho › Imprimir pranchas…, a cor lembrada; Cancelar fecha sem imprimir.
+  H. pelo menu Desenho › Imprimir pranchas…, a cor lembrada; Cancelar fecha sem imprimir;
+  I. o Enter no campo Cópias não imprime (D04 do usuario-desastrado, 13/11: imprimia na hora, com a plotter marcada).
 
 Nunca imprime na impressora padrão da máquina nem na plotter: antes do clique em Imprimir confere que a escolhida é a
 Microsoft Print to PDF, e sem ela o verificador para."""
@@ -271,6 +272,24 @@ try:
     ok(lembrado == [PLOTTER or impressao.impressoras()["padrao"], "preto"], f"H. a plotter de novo (não a última usada) e a cor lembrada: {lembrado}")
     clicar("document.querySelector('#dialogo-cancelar')")
     ok(js("return !document.querySelector('dialog[open]');"), "H. Cancelar fecha sem imprimir")
+
+    # ------------------------------------------------------------------ I. o Enter em Cópias não imprime (D04, 13/11)
+    # antes, a Microsoft Print to PDF marcada (se o Enter imprimir, sai no arquivo) e o pedido de imprimir interceptado
+    ok(abrir_pelo_teclado(), "I. aberto de novo")
+    escolher("dialog[open] select[name=impressora]", PDF_DO_WINDOWS)
+    js("""window.__imprimiu = 0; const f0 = window.fetch;
+        window.fetch = (u, o) => { if (String(u).includes('/impressao/imprimir')) { window.__imprimiu++; return Promise.resolve(new Response('{}')); }
+                                   return f0(u, o); }; return 1;""")
+    clicar("document.querySelector('dialog[open] input[name=copias]')")
+    js("const c = document.querySelector('dialog[open] input[name=copias]'); c.select(); return 1;")
+    aba.cmd("Input.insertText", text="2")
+    aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="Enter", code="Enter", windowsVirtualKeyCode=13, text="\r")
+    aba.cmd("Input.dispatchKeyEvent", type="keyUp", key="Enter", code="Enter", windowsVirtualKeyCode=13)
+    aba.drenar(1.5)
+    estado = js("return [!!document.querySelector('dialog[open] .impressao-folhas'), window.__imprimiu, (document.querySelector('dialog[open] input[name=copias]') || {}).value];")
+    ok(estado == [True, 0, "2"], f"I. o Enter em Cópias não imprime: o diálogo aberto, nenhum pedido de imprimir, as 2 cópias no campo ({estado})")
+    clicar("document.querySelector('#dialogo-cancelar')")
+    ok(js("return !document.querySelector('dialog[open]') && window.__imprimiu === 0;"), "I. Cancelar fecha sem imprimir")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:3]]}")
 finally:

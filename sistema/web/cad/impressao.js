@@ -22,6 +22,16 @@ function el(tag, attrs = {}, ...filhos) {
   return e;
 }
 
+// o Enter num campo do diálogo (Cópias, Escala…) não imprime: o diálogo é um <form>, e o Enter num campo o enviava na
+// hora, com a plotter marcada (D04 do usuario-desastrado, 13/11). Só o botão Imprimir manda; o Enter num botão segue.
+function semEnterNosCampos(corpo) {
+  corpo.addEventListener('keydown', (ev) => {
+    const t = ev.target;
+    if (ev.key === 'Enter' && t && (t.tagName === 'INPUT' || t.tagName === 'SELECT')) ev.preventDefault();
+  });
+  return corpo;
+}
+
 async function postar(rota, corpo) {
   let r;
   try {
@@ -338,6 +348,7 @@ export class MetodosImpressaoCAD {
     // a folha em foco: a da tela, senão a primeira (depois que o diálogo está na tela, para o canvas ter tamanho)
     const inicial = Math.max(0, folhas.findIndex(f => f.indice === naTela));
     requestAnimationFrame(() => requestAnimationFrame(() => focar(inicial)));
+    semEnterNosCampos(corpo);
     const resposta = await this.dialogo({ titulo: 'Imprimir pranchas', corpo, ok: 'Imprimir' });
     this._previaImpressao = null;
     if (irPenas) { if (await this.dialogoPenas()) return this.dialogoImprimir(true); return; }
@@ -512,6 +523,7 @@ export class MetodosImpressaoCAD {
     let irPenas = false;
     atualizar();
     carregarPapeis();
+    semEnterNosCampos(corpo);
     const r = await this.dialogo({ titulo: 'Imprimir este desenho', corpo, ok: 'Imprimir' });
     if (irPranchas) return this.dialogoImprimir(true);
     if (irPenas) { if (await this.dialogoPenas()) return this._imprimirEsteDesenho(base, desenhosPranchas); return; }
