@@ -154,10 +154,10 @@ export class MetodosImpressaoCAD {
     if (!soPranchas && this.nomeDesenho && !desenhos.includes(this.nomeDesenho)) return this._imprimirEsteDesenho(base, desenhos);
     if (!desenhos.length) { this.aviso('O projeto não tem pranchas ainda: Desenho → Montar pranchas (automático)… ou Gerar pranchas das folhas.', 'atencao'); return; }
     if (this.nomeDesenho && desenhos.includes(this.nomeDesenho)) await this.salvar({ avisar: false });
-    let folhas, imps, conjuntos;
+    let folhas, imps, conjuntos, resolvidos;
     try {
       const [rf, ri] = await Promise.all([postar(`${base}/folhas`, { desenhos }), postar(`${base}/impressoras`, {})]);
-      folhas = rf.folhas || []; conjuntos = rf.conjuntos || {}; imps = ri;
+      folhas = rf.folhas || []; conjuntos = rf.conjuntos || {}; resolvidos = rf.resolvidos || {}; imps = ri;
     } catch (e) { this.aviso(`Não foi possível preparar a impressão: ${e.message}`, 'erro', 0); return; }
     if (!folhas.length) { this.aviso('As pranchas do projeto não têm folhas para imprimir.', 'atencao'); return; }
     const lista = imps.impressoras || [];
@@ -200,14 +200,26 @@ export class MetodosImpressaoCAD {
     const selConj = el('select', { name: 'conjunto' });
     const montarConjuntos = () => {
       selConj.replaceChildren(el('option', { value: '', texto: Object.keys(conjuntos).length ? '— conjunto —' : '(nenhum guardado)' }),
-        ...Object.keys(conjuntos).sort((a, b) => a.localeCompare(b, 'pt-BR')).map(n => el('option', { value: n, texto: `${n} (${conjuntos[n].length})` })));
+        ...Object.keys(conjuntos).sort((a, b) => a.localeCompare(b, 'pt-BR')).map(n => {
+          // a contagem real: as folhas do conjunto que ainda estão nas pranchas (D05, 13/11)
+          const r = resolvidos[n] || { chaves: [], total: (conjuntos[n] || []).length };
+          return el('option', { value: n, texto: `${n} (${r.chaves.length}${r.chaves.length !== r.total ? ` de ${r.total}` : ''})` });
+        }));
       apagarConj.hidden = !selConj.value;
     };
     selConj.addEventListener('change', () => {
       apagarConj.hidden = !selConj.value;
       if (!selConj.value) return;
-      const ch = new Set(conjuntos[selConj.value] || []);
+      // o conjunto segue o título da folha: montadas as pranchas de novo, a 02 pode ser outra (D05 do usuario-desastrado,
+      // 13/11: o "C2" marcava a folha errada, calado — pela plotter sairia a folha errada)
+      const r = resolvidos[selConj.value] || { chaves: [], mudaram: [], faltam: [] };
+      const ch = new Set(r.chaves || []);
       marcar(f => ch.has(f.chave));
+      const avisos = [];
+      if ((r.mudaram || []).length) avisos.push(`mudaram de número: ${r.mudaram.map(m => `"${m.titulo}"`).join(', ')}`);
+      if ((r.faltam || []).length) avisos.push(`não estão mais nas pranchas: ${r.faltam.map(t => `"${t}"`).join(', ')}`);
+      if (r.antigo) avisos.push('guardado pelo número da folha, antes de 13/11 — confira as folhas e salve de novo');
+      if (avisos.length) this.aviso(`O conjunto "${selConj.value}": ${avisos.join('; ')}. As pranchas mudaram: confira antes de imprimir.`, 'atencao', 0);
     });
     const gravarConjuntos = async (novos) => {
       try { conjuntos = (await postar(`${base}/conjuntos`, { conjuntos: novos })).conjuntos || {}; }
@@ -221,7 +233,10 @@ export class MetodosImpressaoCAD {
     const guardar = async () => {
       const nome = nomeConj.value.trim();
       if (!nome) return;
-      await gravarConjuntos({ ...conjuntos, [nome]: marcadas().map(f => f.chave) });
+      // a chave e o título de cada folha: o título segue a folha quando as pranchas são montadas de novo (D05)
+      const itens = marcadas().map(f => ({ chave: f.chave, titulo: f.titulo }));
+      await gravarConjuntos({ ...conjuntos, [nome]: itens });
+      resolvidos = { ...resolvidos, [nome]: { chaves: itens.map(i => i.chave), total: itens.length, mudaram: [], faltam: [] } };
       nomeConj.value = ''; nomeConj.hidden = okConj.hidden = true; salvarConj.hidden = false;
       montarConjuntos(); selConj.value = nome; apagarConj.hidden = false;
     };

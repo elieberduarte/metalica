@@ -10,8 +10,9 @@ Impressao-gerenciador-proposta-2026-11-12.pdf):
 * os conjuntos de folhas guardados por obra ("Fabricação", "Montagem"…).
 
 Tudo fica no projeto, em `impressoes.json`: {"historico": [{quando, impressora, folhas: [{chave, desenho, numero, titulo,
-revisao, assinatura}]}], "conjuntos": {nome: [chave, …]}}. A chave da folha é "<desenho>|<número>": a folha 03 continua
-a 03 quando as pranchas são montadas de novo."""
+revisao, assinatura}]}], "conjuntos": {nome: [{chave, titulo}, …]}}. A chave da folha é "<desenho>|<número>". O conjunto
+guarda também o título de cada folha: montadas as pranchas de novo, a folha 03 pode ser outra (D05 do usuario-desastrado,
+13/11 — o conjunto "C2" marcava a nova 02, outra folha, sem aviso); ele segue o título (`resolver_conjunto`)."""
 import collections
 import datetime
 import hashlib
@@ -122,12 +123,59 @@ def gravar(pasta_projeto: str, dados: dict) -> None:
     os.replace(tmp, caminho)
 
 
-def conjuntos_validos(conjuntos) -> Dict[str, List[str]]:
+def conjuntos_validos(conjuntos) -> Dict[str, list]:
+    """{nome: [{chave, titulo}]}; o conjunto antigo (só a chave, antes de 13/11) fica como está"""
     out = {}
-    for nome, chaves in (conjuntos or {}).items() if isinstance(conjuntos, dict) else []:
+    for nome, itens in (conjuntos or {}).items() if isinstance(conjuntos, dict) else []:
         nome = str(nome or "").strip()[:60]
-        if nome and isinstance(chaves, list):
-            out[nome] = [str(c) for c in chaves if isinstance(c, (str, int))][:500]
+        if not nome or not isinstance(itens, list):
+            continue
+        lst = []
+        for c in itens[:500]:
+            if isinstance(c, dict) and c.get("chave") not in (None, ""):
+                lst.append({"chave": str(c["chave"]), "titulo": str(c.get("titulo") or "")[:200]})
+            elif isinstance(c, (str, int)):
+                lst.append(str(c))
+        out[nome] = lst
+    return out
+
+
+def resolver_conjunto(itens, folhas: Sequence[dict]) -> dict:
+    """As folhas de hoje de um conjunto guardado (D05, 13/11): pela chave quando o título dela é o mesmo; senão pelo
+    título (a folha mudou de número quando as pranchas foram montadas de novo); a que não está mais nas pranchas falta.
+    {chaves: [as de hoje], total: quantas o conjunto tinha, mudaram: [{titulo, de, para}], faltam: [títulos],
+    antigo: o conjunto guardado só pelo número (antes de 13/11) — não dá para conferir}"""
+    por_chave = {f.get("chave"): f for f in folhas}
+    usadas = set()
+    out = {"chaves": [], "total": len(itens or []), "mudaram": [], "faltam": [], "antigo": False}
+    pendentes = []
+    for it in itens or []:
+        if not isinstance(it, dict):
+            out["antigo"] = True
+            if it in por_chave and it not in usadas:
+                usadas.add(it)
+                out["chaves"].append(it)
+            else:
+                out["faltam"].append(str(it))
+            continue
+        f = por_chave.get(it.get("chave"))
+        if f is not None and str(f.get("titulo") or "") == str(it.get("titulo") or "") and f["chave"] not in usadas:
+            usadas.add(f["chave"])
+            out["chaves"].append(f["chave"])
+        else:
+            pendentes.append(it)
+    for it in pendentes:
+        tit = str(it.get("titulo") or "")
+        des = str(it.get("chave") or "").split("|")[0]
+        cands = [f for f in folhas if tit and str(f.get("titulo") or "") == tit and f.get("chave") not in usadas]
+        cands.sort(key=lambda f: (f.get("desenho") != des, str(f.get("chave"))))
+        if cands:
+            f = cands[0]
+            usadas.add(f["chave"])
+            out["chaves"].append(f["chave"])
+            out["mudaram"].append({"titulo": tit, "de": it.get("chave"), "para": f["chave"]})
+        else:
+            out["faltam"].append(tit or str(it.get("chave")))
     return out
 
 

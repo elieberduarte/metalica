@@ -16,7 +16,8 @@ Projeto/ANALISES/Interface/Impressao-gerenciador-proposta-2026-11-12.pdf), com o
   G. "Salvar a seleção como…" guarda um conjunto da obra, que marca as folhas dele e continua lá ao abrir de novo; o ×
      apaga;
   H. pelo menu Desenho › Imprimir pranchas…, a cor lembrada; Cancelar fecha sem imprimir;
-  I. o Enter no campo Cópias não imprime (D04 do usuario-desastrado, 13/11: imprimia na hora, com a plotter marcada).
+  I. o Enter no campo Cópias não imprime (D04 do usuario-desastrado, 13/11: imprimia na hora, com a plotter marcada);
+  J. o conjunto segue o título da folha quando as pranchas são montadas de novo, com a contagem real e o aviso (D05, 13/11).
 
 Nunca imprime na impressora padrão da máquina nem na plotter: antes do clique em Imprimir confere que a escolhida é a
 Microsoft Print to PDF, e sem ela o verificador para."""
@@ -290,6 +291,34 @@ try:
     ok(estado == [True, 0, "2"], f"I. o Enter em Cópias não imprime: o diálogo aberto, nenhum pedido de imprimir, as 2 cópias no campo ({estado})")
     clicar("document.querySelector('#dialogo-cancelar')")
     ok(js("return !document.querySelector('dialog[open]') && window.__imprimiu === 0;"), "I. Cancelar fecha sem imprimir")
+    # ------------------------------------------------------------------ J. o conjunto segue o título da folha (D05, 13/11)
+    # guardado com a FOLHA 2; as pranchas montadas de novo trocam a 01 e a 02 de lugar: o conjunto marca a "FOLHA 2" (agora
+    # a 01) e avisa que ela mudou de número — antes marcava a 02 pelo número, que é outra folha, calado
+    ok(abrir_pelo_teclado(), "J. aberto de novo")
+    clicar(botao("Nenhuma"))
+    clicar("document.querySelectorAll('dialog[open] .folhas tbody tr input')[1]")
+    clicar(botao("Salvar a seleção como"))
+    clicar("document.querySelector('dialog[open] input[name=nome-conjunto]')")
+    aba.cmd("Input.insertText", text="C2")
+    aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="Enter", code="Enter", windowsVirtualKeyCode=13, text="\r")
+    aba.cmd("Input.dispatchKeyEvent", type="keyUp", key="Enter", code="Enter", windowsVirtualKeyCode=13)
+    ok(esperar("[...document.querySelectorAll('dialog[open] select[name=conjunto] option')].some(o => o.value === 'C2')", 10),
+       "J. o conjunto C2 guardado")
+    guardado = json.load(open(os.path.join(PASTA, "impressoes.json"), encoding="utf-8"))["conjuntos"].get("C2")
+    ok(guardado == [{"chave": "prancha-02|2", "titulo": "FOLHA 2"}], f"J. o conjunto guarda a chave e o título: {guardado}")
+    clicar("document.querySelector('#dialogo-cancelar')")
+    _gravar(_a4("FOLHA 2", 1, 3, (25,)), "prancha-01")
+    _gravar(_a4("FOLHA 1", 2, 3, (50,)), "prancha-02")
+    ok(abrir_pelo_teclado(), "J. aberto depois de montar as pranchas de novo")
+    rotulo = js("return [...document.querySelectorAll('dialog[open] select[name=conjunto] option')].find(o => o.value === 'C2').textContent;")
+    ok(rotulo == "C2 (1)", f"J. a contagem real: {rotulo}")
+    escolher("dialog[open] select[name=conjunto]", "C2")
+    marc = [x["marcada"] for x in linhas()]
+    tits = [x["titulo"] for x in linhas()]
+    ok(marc == [True, False, False, False, False] and tits[0] == "FOLHA 2", f"J. o C2 marca a FOLHA 2 (agora a 01): {marc} {tits[:2]}")
+    ok(esperar("[...document.querySelectorAll('.aviso, .avisos *')].some(a => a.textContent.includes('C2') && a.textContent.includes('mudaram de número'))", 10),
+       "J. o aviso de que a folha do conjunto mudou de número")
+    clicar("document.querySelector('#dialogo-cancelar')")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:3]]}")
 finally:

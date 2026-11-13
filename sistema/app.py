@@ -5477,8 +5477,11 @@ def rota_impressao(s: str, acao: str, corpo: dict) -> dict:
     try:
         if acao == "folhas":
             from nucleo2d import impressoes as reg_imp
-            return {"folhas": _folhas_para_imprimir(s, nomes, detalhes=True),
-                    "conjuntos": reg_imp.ler(_gerente()._existente(s))["conjuntos"]}
+            folhas = _folhas_para_imprimir(s, nomes, detalhes=True)
+            conjuntos = reg_imp.ler(_gerente()._existente(s))["conjuntos"]
+            # cada conjunto já resolvido nas folhas de hoje (pelo título, não só pelo número — D05, 13/11)
+            return {"folhas": folhas, "conjuntos": conjuntos,
+                    "resolvidos": {n: reg_imp.resolver_conjunto(c, folhas) for n, c in conjuntos.items()}}
         if acao == "conjuntos":
             # os conjuntos de folhas guardados da obra ("Fabricação", "Montagem"…): sem "conjuntos" no pedido, lê; com, grava
             from nucleo2d import impressoes as reg_imp

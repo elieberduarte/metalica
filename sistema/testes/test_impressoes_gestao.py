@@ -188,3 +188,60 @@ def test_rota_folhas_historico_papel_e_conjuntos(tmp_path, monkeypatch):
     assert c == {"Fabricação": ["prancha-01|1", "prancha-03|3"]}
     assert app.rota_impressao(s, "conjuntos", {})["conjuntos"] == c
     assert app.rota_impressao(s, "folhas", {"desenhos": nomes})["conjuntos"] == c
+
+
+# ------------------------------------------------------------------ D05: o conjunto segue o título da folha
+def _folhas(*titulos, desenho="pranchas"):
+    return [{"chave": impressoes.chave(desenho, i), "desenho": desenho, "numero": i, "titulo": t} for i, t in enumerate(titulos, 1)]
+
+
+def test_conjunto_segue_o_titulo_quando_as_pranchas_sao_montadas_de_novo():
+    """D05 do usuario-desastrado (13/11): o "C2" com a 02 "Terças" e a 04 "Barras, Tirantes…"; montadas de novo sem a
+    localização e as terças, a nova 02 é "Barras, Tirantes…" — o conjunto marcava a 02 pelo número (outra folha) e dizia
+    "C2 (2)", calado; pela plotter sairia a folha errada."""
+    antes = _folhas("Localização", "Terças", "Contraventamentos", "Barras, Tirantes")
+    c2 = impressoes.conjuntos_validos({"C2": [{"chave": f["chave"], "titulo": f["titulo"]} for f in (antes[1], antes[3])]})["C2"]
+    assert c2 == [{"chave": "pranchas|2", "titulo": "Terças"}, {"chave": "pranchas|4", "titulo": "Barras, Tirantes"}]
+    depois = _folhas("Contraventamentos", "Barras, Tirantes")
+    r = impressoes.resolver_conjunto(c2, depois)
+    assert r["chaves"] == ["pranchas|2"]                                   # a folha "Barras, Tirantes", agora a 02
+    assert r["mudaram"] == [{"titulo": "Barras, Tirantes", "de": "pranchas|4", "para": "pranchas|2"}]
+    assert r["faltam"] == ["Terças"] and r["total"] == 2 and not r["antigo"]
+    # as mesmas pranchas: o conjunto marca as mesmas folhas, sem aviso
+    r = impressoes.resolver_conjunto(c2, antes)
+    assert r["chaves"] == ["pranchas|2", "pranchas|4"] and not r["mudaram"] and not r["faltam"]
+
+
+def test_conjunto_antigo_so_com_o_numero_avisa():
+    # o guardado antes de 13/11 (só a chave): marca pelo número, mas não dá para conferir — a tela pede para salvar de novo
+    r = impressoes.resolver_conjunto(["pranchas|2", "pranchas|9"], _folhas("A", "B"))
+    assert r["chaves"] == ["pranchas|2"] and r["faltam"] == ["pranchas|9"] and r["antigo"]
+
+
+def test_titulos_repetidos_nao_marcam_a_mesma_folha_duas_vezes():
+    c = [{"chave": "pranchas|1", "titulo": "Detalhamento"}, {"chave": "pranchas|2", "titulo": "Detalhamento"}]
+    r = impressoes.resolver_conjunto(c, _folhas("Capa", "Detalhamento", "Detalhamento"))
+    assert sorted(r["chaves"]) == ["pranchas|2", "pranchas|3"] and not r["faltam"]
+
+
+def test_rota_folhas_resolve_os_conjuntos(tmp_path, monkeypatch):
+    """a rota das folhas devolve cada conjunto já resolvido nas folhas de hoje (a tela marca por ele e avisa)"""
+    import app
+    monkeypatch.setattr(app, "PROJETOS", str(tmp_path))
+    g = app._gerente()
+    r = g.criar("Obra conjuntos", tipo="ifc")
+    s = r.get("slug") or r.get("id") or r.get("nome")
+    for i in (1, 2, 3):
+        d = _a4(i, 3)
+        g.salvar_desenho(s, d.nome, d.dict())
+    nomes = sorted(d["nome"] for d in g.listar_desenhos(s))
+    f = app.rota_impressao(s, "folhas", {"desenhos": nomes})["folhas"]
+    app.rota_impressao(s, "conjuntos", {"conjuntos": {"C2": [{"chave": f[2]["chave"], "titulo": f[2]["titulo"]}]}})
+    # montada de novo: a folha 3 ("FOLHA 3") passa a ser a prancha 01, e a 03 vira outra
+    for i, tit in ((1, "FOLHA 3"), (3, "FOLHA 9")):
+        d = _a4(i, 3)
+        d.metadados["prancha"]["titulo"] = tit
+        g.salvar_desenho(s, d.nome, d.dict())
+    r = app.rota_impressao(s, "folhas", {"desenhos": nomes})
+    res = r["resolvidos"]["C2"]
+    assert res["chaves"] == [r["folhas"][0]["chave"]] and res["mudaram"] and not res["faltam"]
