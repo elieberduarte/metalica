@@ -83,6 +83,9 @@ def test_rota_aponta_varios_e_a_tela_tem_a_escolha(monkeypatch, tmp_path):
     monkeypatch.setattr(web, "_pasta", lambda s: str(pasta))
     monkeypatch.setattr(web, "_quem", lambda: "Fulano")
     monkeypatch.setattr(web, "_sincronizar", lambda p: None)
+    # o dev, dito com todas as letras: no pytest inteiro outro teste já importou o app de verdade (DEV False, sem --dev),
+    # e a rota recusava a obra não compartilhada como no instalado — o teste passava sozinho e caía na conferência (13/11)
+    monkeypatch.setattr(web, "_app", lambda: type("_AppDev", (), {"DEV": True}))
     h = _H("/api/producao/apontar-varios")
     assert web.rota_post(h, "/api/producao/apontar-varios",
                          {"projeto": "obra", "itens": ["MT71-1", "MT71-2"], "etapa": "producao", "data": "2026-11-13"})
