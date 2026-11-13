@@ -38,13 +38,32 @@ def _app():
     return sys.modules.get("app") or sys.modules["__main__"]
 
 
+def em_teste() -> bool:
+    """O programa roda num teste (pacotes e aparelhos numa pasta própria, dentro dos dados): `--dados <pasta>` (os
+    verificadores), a marca METALICA_TESTE, ou METALICA_DADOS numa pasta temporária (o conftest do pytest).
+
+    METALICA_DADOS sozinha NÃO é teste: desde 04/11 os dados de verdade estão em C:/Metálica/dados por ela, e o "teste"
+    de antes mandava o dev para uma C:/Metálica/dados/.celular vazia — nuvem desligada, sem aparelhos, nada subia
+    desde 04/11 (13/11, usuário: "não temos essa opção de enviar para o celular novamente")."""
+    import tempfile
+    if "--dados" in sys.argv or os.environ.get("METALICA_TESTE"):
+        return True
+    dados = os.environ.get("METALICA_DADOS")
+    if not dados:
+        return False
+    try:
+        tmp = os.path.normcase(os.path.realpath(tempfile.gettempdir()))
+        return os.path.commonpath([os.path.normcase(os.path.realpath(dados)), tmp]) == tmp
+    except ValueError:                               # outra unidade de disco: não é a temporária
+        return False
+
+
 def celular() -> Celular:
     global _UNICO
     with _TRAVA:
         if _UNICO is None:
             app = _app()
-            teste = "--dados" in sys.argv or bool(os.environ.get("METALICA_DADOS"))
-            _UNICO = Celular(app.PROJETOS, pasta_de_trabalho(app.PROJETOS, teste))
+            _UNICO = Celular(app.PROJETOS, pasta_de_trabalho(app.PROJETOS, em_teste()))
             # o desenho do piso vai no pacote (as camadas "No piso" do celular), pela mesma conta do modo ver do PC
             _UNICO.referencia = lambda s: app.referencia_do_lancamento(s)
         return _UNICO
