@@ -1197,6 +1197,13 @@ export class Editor {
     try {
       if (this.projeto && !nome) {
         if (this._modeloNaoAbriu) throw new Error('o modelo do projeto não abriu nesta tela; nada foi gravado, para não sobrescrevê-lo — recarregue (F5)');
+        if (this._conflito) { this._avisarConflito(); return; }
+        // nada mudou desde a última gravação: não regrava (regravar trocava a data do modelo e a OUTRA aba aberta na
+        // mesma obra perdia as edições dela — D01 do usuario-desastrado, 13/11)
+        if (!this._autosavePendente && !this._autosalvando && !this._autosaveTimer && this._modeloAlterado) {
+          this.aviso('Nada mudou desde a última gravação: o modelo já está gravado.', 'info');
+          return;
+        }
         // Ctrl+S junto com a gravação automática: espera ela terminar (senão a segunda
         // gravação levava a data velha e dava o falso "gravado por outra tela")
         if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
@@ -1216,8 +1223,29 @@ export class Editor {
       this._salvoEm = new Date(); this._erroGravacao = null;
       this.aviso(`Modelo salvo: projetos/modelos/${r.salvo} (${r.entidades} objetos).`, 'info');
     } catch (e) {
+      if (this._marcarConflito(e)) return;
       this.aviso(`Não foi possível salvar: ${e.message}`, 'erro');
     }
+  }
+
+  /** A gravação recusada porque o modelo no disco é mais novo (outra aba, o CAD, outra máquina gravou depois que esta
+   *  abriu): o servidor responde 409 "conflito". As edições desta aba ficam nela, por gravar ("⚠ Não gravado"), e
+   *  sair da página pergunta antes. Antes (D01, 13/11) a tela marcava "✓ Salvo" e o F5 descartava tudo calado. */
+  _marcarConflito(e) {
+    const conflito = e && (e.status === 409 || /outra tela|outra janela|recarregue/i.test(e.message || ''));
+    if (!conflito || !this.projeto) return false;
+    this._conflito = true;
+    this._autosavePendente = true;
+    if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
+    this._avisarConflito();
+    this._mostrarEstadoGravacao();
+    return true;
+  }
+
+  _avisarConflito() {
+    this.aviso('Este modelo foi gravado por outra tela (outra aba, o CAD ou outra máquina) depois de aberto aqui. ' +
+               'As suas edições desta aba NÃO foram gravadas e continuam só nesta aba. Recarregar (F5) mostra a versão ' +
+               'gravada e descarta as edições desta aba.', 'erro', 0);
   }
 
   async salvarComo() {
@@ -1270,6 +1298,7 @@ export class Editor {
   _agendarAutosave() {
     this._autosavePendente = true;
     this._versaoEdicao = (this._versaoEdicao || 0) + 1;
+    if (this._conflito) return;                // o servidor recusa (modelo mais novo no disco): não insiste
     if (this._autosaveTimer) clearTimeout(this._autosaveTimer);
     this._autosaveTimer = setTimeout(() => this._autosalvar(), ATRASO_AUTOSAVE);
   }
@@ -1305,11 +1334,9 @@ export class Editor {
       this._erroGravacao = e.message;
       this.dica(`Gravação automática falhou: ${e.message}`);
       this._autosavePendente = true;           // continua por gravar (antes a marca sumia e a edição ficava sem gravar)
-      if (/outra tela|recarregue/i.test(e.message || '')) {
-        // modelo mais novo no servidor: parar de insistir e avisar com destaque
-        this._autosavePendente = false;
-        this.aviso(`Este modelo foi alterado por outra tela (por exemplo, "Aplicar furos" no CAD) depois de aberto aqui. Recarregue a página (F5) para ver a versão atual; as suas edições desde então não foram gravadas.`, 'erro', 0);
-      }
+      // modelo mais novo no servidor: parar de insistir e avisar com destaque — e continuar "por gravar" (antes zerava o
+      // pendente e o botão dizia "✓ Salvo"; D01, 13/11)
+      this._marcarConflito(e);
     } finally {
       this._autosalvando = false;
       if (this._autosavePendente) this._agendarAutosave();
@@ -1868,7 +1895,7 @@ export class Editor {
     try { await this.gravarConfirmado(); } catch (e) {
       const corpo = el('div', { class: 'explica', texto: `Não foi possível gravar o modelo: ${e.message}. Sair perde o que não foi gravado.` });
       if (await this.dialogo({ titulo: 'Modelo não gravado', corpo, ok: 'Sair mesmo assim' }) !== 'ok') return;
-      this._autosavePendente = false;
+      this._autosavePendente = false; this._conflito = false;
     }
     (window.metalicaNavegar || ((u) => { location.href = u; }))(url);
   }
@@ -1952,6 +1979,7 @@ export class Editor {
     }
     if (!this._autosavePendente || !this.documento.tamanho) return;
     if (this.projeto && this._modeloNaoAbriu) throw new Error('o modelo do projeto não abriu nesta tela; nada foi gravado, para não sobrescrevê-lo');
+    if (this._conflito) throw new Error('o modelo foi gravado por outra tela depois de aberto aqui; as edições desta aba não foram gravadas');
     this._autosalvando = true;
     const versao = this._versaoEdicao || 0;
     try {
@@ -1967,6 +1995,9 @@ export class Editor {
       }
       if ((this._versaoEdicao || 0) === versao) this._autosavePendente = false;
       this._salvoEm = new Date(); this._erroGravacao = null;
+    } catch (e) {
+      this._marcarConflito(e);
+      throw e;
     } finally {
       this._autosalvando = false;
       if (this._autosavePendente) this._agendarAutosave();
@@ -1978,7 +2009,8 @@ export class Editor {
     const b = this.el.salvar;
     if (!b) return;
     let cls, txt, dica;
-    if (this._autosalvando) { cls = 'gravando'; txt = 'Salvando…'; dica = 'Gravando o modelo no servidor.'; }
+    if (this._conflito) { cls = 'conflito'; txt = '⚠ Não gravado'; dica = 'O modelo foi gravado por outra tela (outra aba, o CAD ou outra máquina) depois de aberto aqui: as edições desta aba não foram gravadas. Recarregar (F5) descarta as edições desta aba.'; }
+    else if (this._autosalvando) { cls = 'gravando'; txt = 'Salvando…'; dica = 'Gravando o modelo no servidor.'; }
     else if (this._erroGravacao && this._autosavePendente) { cls = 'erro'; txt = '⚠ Salvar'; dica = `A última gravação falhou: ${this._erroGravacao}. Clique para tentar de novo.`; }
     else if (this._autosavePendente) { cls = 'pendente'; txt = '● Salvar'; dica = 'Há mudanças ainda não gravadas (gravam sozinhas em alguns segundos). Clique ou Ctrl+S para gravar agora.'; }
     else {
@@ -3102,7 +3134,7 @@ window.editor = editor;                // útil no console do navegador
 window.__antesDeAtualizar = () => editor.gravarConfirmado();
 // fechar a janela com edição por gravar avisa (o navegador pergunta se quer sair)
 window.addEventListener('beforeunload', (e) => {
-  if ((editor._autosavePendente || editor._autosalvando) && !(editor.projeto && editor._modeloNaoAbriu)) { e.preventDefault(); e.returnValue = ''; }
+  if ((editor._autosavePendente || editor._autosalvando || editor._conflito) && !(editor.projeto && editor._modeloNaoAbriu)) { e.preventDefault(); e.returnValue = ''; }
 });
 editor.iniciar().catch((e) => {
   console.error('o editor não conseguiu iniciar:', e);

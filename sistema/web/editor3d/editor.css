@@ -237,6 +237,7 @@ kbd {
 .btn-salvar.gravando { color: #fbbf24; border-color: rgba(251, 191, 36, .5); }
 .btn-salvar.salvo { color: #86efac; border-color: rgba(134, 239, 172, .35); }
 .btn-salvar.erro { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+.btn-salvar.conflito { background: #b91c1c; border-color: #b91c1c; color: #fff; font-weight: 600; }
 .nome-modelo input {
   background: rgba(255, 255, 255, .09); border: 1px solid transparent;
   color: var(--topo-texto); border-radius: var(--raio-p);
@@ -912,6 +913,7 @@ html.embutida .marca { padding: 0 8px 0 10px; }
   .btn-salvar.pendente::before { content: '●'; }
   .btn-salvar.gravando::before { content: '…'; }
   .btn-salvar.erro::before { content: '⚠'; }
+  .btn-salvar.conflito::before { content: '⚠'; }
   .seletor-vista a { padding: 0 8px; }
   html.embutida #link-projetos { font-size: 0; padding: 0 9px; }
   html.embutida #link-projetos::before { content: '⌂'; font-size: 16px; }

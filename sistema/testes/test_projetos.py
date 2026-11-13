@@ -380,7 +380,8 @@ def test_modelo_gravado_como_veio_do_editor():
             assert app.modelo_do_projeto(s)["documento"]["nome"] == "Viga ç"
             # outra tela gravou depois que o editor abriu: recusa sem gravar
             try:
-                app.salvar_modelo_cru(s, texto, r["alterado"] - 60, 1)
+                # (outro texto: o mesmo texto do disco não é gravação, volta "sem_mudanca" — D01, 13/11)
+                app.salvar_modelo_cru(s, texto.replace(b"Viga", b"Pilar"), r["alterado"] - 60, 1)
             except ErroDeDados as e:
                 assert "outra tela" in str(e)
             else:

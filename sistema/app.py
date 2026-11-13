@@ -517,18 +517,47 @@ def projeto_completo(s: str) -> dict:
     return {"projeto": g.ler(s), "resumo": g.resumo(s)}
 
 
+class ModeloMaisNovo(ErroDeDados):
+    """A gravação veio de uma tela que abriu o modelo antes da última gravação (outra aba, o CAD, outra máquina).
+    A rota responde 409 com {"conflito": true, "alterado": <a data do modelo no disco>}: a tela sabe que NADA foi
+    gravado e guarda as edições dela (D01 do usuario-desastrado, 13/11: a aba velha mostrava "✓ Salvo")."""
+
+    def __init__(self, mensagem: str, alterado: float):
+        super().__init__(mensagem)
+        self.alterado = alterado
+
+
 def _conferir_base_do_modelo(s: str, base):
     """O editor manda a data do modelo que carregou: se o arquivo mudou depois disso (o CAD
     aplicou furos, outra janela ou outra máquina gravou), não sobrescreve."""
-    if base is not None and _alterado_modelo(s) - float(base) > 0.5:
-        raise ErroDeDados("o modelo deste projeto foi gravado por outra tela, janela ou máquina depois de "
-                          "você abri-lo; recarregue o modelo (F5) antes de continuar. Nada foi gravado.")
+    if base is None:
+        return
+    disco = _alterado_modelo(s)
+    if disco - float(base) > 0.5:
+        raise ModeloMaisNovo("o modelo deste projeto foi gravado por outra tela, janela ou máquina depois de "
+                             "você abri-lo; recarregue o modelo (F5) antes de continuar. Nada foi gravado.", disco)
+
+
+def _igual_ao_disco(s: str, bruto: bytes) -> bool:
+    """O texto mandado é o mesmo do arquivo (o Ctrl+S sem mudança nenhuma): não regrava. Regravar trocava a data
+    do modelo e fazia a OUTRA aba aberta perder as edições dela (D01, 13/11)."""
+    caminho = _gerente().caminho_modelo(s)
+    try:
+        if os.path.getsize(caminho) != len(bruto):
+            return False
+        with open(caminho, "rb") as f:
+            return f.read() == bruto
+    except OSError:
+        return False
 
 
 def salvar_modelo_cru(s: str, bruto: bytes, base_alterado=None, entidades=None) -> dict:
     """POST /api/projetos/<s>/modelo com o cabeçalho X-Modelo-Cru: o editor manda o documento já
     em texto JSON, e ele vai para o disco como veio. No Bella Casa (05/10) cada gravação automática
     passava os 200 MB por json.loads e json.dumps. Mesmas regras da ação "modelo"."""
+    if _igual_ao_disco(s, bruto):
+        return {"salvo": "modelo.json", "projeto": s, "entidades": entidades, "alterado": _alterado_modelo(s),
+                "sem_mudanca": True}
     _conferir_base_do_modelo(s, base_alterado)
     r = _gerente().salvar_modelo_bruto(s, bruto, entidades)
     r["alterado"] = _alterado_modelo(s)
@@ -7126,6 +7155,8 @@ class Handler(BaseHTTPRequestHandler):
             if rota == "/api/modelo/salvar":
                 return self._json(salvar_modelo(corpo))
             return self._erro("rota desconhecida: " + rota, 404)
+        except ModeloMaisNovo as e:
+            return self._json({"erro": str(e), "conflito": True, "alterado": e.alterado}, 409)
         except ErroDeDados as e:
             return self._erro(e, 400)
         except ModuleNotFoundError as e:
