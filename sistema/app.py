@@ -1416,8 +1416,8 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     else:
         opcoes = {k: (("metrico" if corpo[k] == "metrico" else "polegada") if k == "parafuso_compra" else bool(corpo[k]))
                   for k in OPCOES_DETALHAMENTO if k in corpo}
-        if opcoes:
-            g.tocar(s, opcoes_detalhamento=dict(g.ler(s).get("opcoes_detalhamento") or {}, **opcoes))
+        # gravadas no projeto.json só no fim, junto com os desenhos: gravadas aqui, o Cancelar via o projeto.json mudado,
+        # achava que a tarefa "já gravava" e nunca cancelava o Detalhar (D03, usuario-desastrado, 13/11)
     gravar = not automatico or not _vivos().editor_aberto(s)
     import copy as _copy
     alvo = doc if gravar else _copy.deepcopy(doc)
@@ -1564,7 +1564,10 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
                                                                                     "suportes_fora_da_maquina": r.get("suportes_fora_da_maquina") or [],
                                                                                     "suportes_fora_da_maquina_pecas": r.get("suportes_fora_da_maquina_pecas") or [],
                                                                                     "desfeito": None})
-    g.tocar(s)
+    if not automatico and opcoes:
+        g.tocar(s, opcoes_detalhamento=dict(g.ler(s).get("opcoes_detalhamento") or {}, **opcoes))
+    else:
+        g.tocar(s)
     return {"desenhos": desenhos, "posicoes": len(r["posicoes"]), "conjuntos": len(r["conjuntos"]),
             "pecas": sum(p["quantidade"] for p in r["posicoes"]), "peso_total": r["peso_total"],
             "regra_tercas": r["regra_tercas"], "avisos": r["avisos"], "convertidas": r.get("convertidas", 0),
@@ -1860,8 +1863,10 @@ class TarefaCancelada(BaseException):
 _CANCELAR: Dict[str, float] = {}
 #: a etapa que diz que a tarefa está gravando no projeto ("gravando o modelo…", "gravando a lista e os CSVs…")
 _GRAVANDO = re.compile(r"^\s*(gravando|regravando|salvando|escrevendo)\b", re.I)
-#: o que muda na pasta do projeto sem ser a tarefa (as marcas, o 3D leve que se refaz sozinho, o histórico)
-_NAO_E_GRAVACAO = {"atualizando.json", "cancelar.json", ".3d-leve", "historico", "__pycache__"}
+#: o que muda na pasta do projeto sem ser a tarefa (as marcas, o 3D leve que se refaz sozinho, o histórico; o aberto.json
+#: que o sinal de vida de toda tela aberta na obra regrava a cada 60 s e as cenas, gravadas pela tela delas — sem eles o
+#: Cancelar não parava tarefa nenhuma com a obra aberta, D03, 13/11)
+_NAO_E_GRAVACAO = {"atualizando.json", "cancelar.json", "aberto.json", ".3d-leve", "historico", "cenas", "__pycache__"}
 
 
 def _e_gravacao(etapa) -> bool:
