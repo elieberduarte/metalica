@@ -531,6 +531,7 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
     # Mezanino Drugovich 13/11: os pilares W150 saíam "agulhamento lateral" e as vigas W250 "agulhamento de cobertura")
     from nucleo2d.detalhe.base import obra_tem_cobertura
     sem_cobertura = not obra_tem_cobertura(posicoes, tipo)
+    tipo_antes = dict(tipo)
     if sem_cobertura:
         _por_papel_sem_cobertura(posicoes, pecas, tipo)
     classe_de = {m: str(p.classe or "") for p in posicoes for m in marcas_de(p)}
@@ -679,12 +680,35 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
         usados.add(k)
 
     # ---- posições que só existem dentro de um conjunto (não tesoura): nome do conjunto + .k
+    # Na obra sem cobertura, o conjunto que virou viga/pilar/peça curta só pela regra do papel e que antes da regra era
+    # agulhamento (uma barra com chapinhas, até 6 peças, fora da parede — o mesmo teste de cima, com os tipos de antes)
+    # guarda o nome próprio das chapas, como antes: o agulhamento dava o nome do conjunto só à barra, e a chapa de fixação
+    # com os químicos do Vicente é a CH1 da chumbação ("4 em CH1"), não VG1.1 (VERSÃO 0.9.3, 13/11). Os outros (o A.L.6.1,
+    # o DP.1.1) já numeravam as chapas no conjunto e continuam.
+    do_papel = set()
+    if sem_cobertura:
+        for c in conjuntos_info:
+            if tipo_conj.get(c["marca"]) not in ("viga", "pilar", "peca_curta"):
+                continue
+            comp = {fundidas.get(m, m): q for m, q in (c.get("composicao") or {}).items()}
+            ant = collections.Counter()
+            for m, q in comp.items():
+                ant[tipo_antes.get(m, "")] += q
+            barras_a = [m for m, q in comp.items() if tipo_antes.get(m) in ("barra", "agulhamento", "agulhamento_lateral")
+                        for _ in range(q)]
+            n_c = sum(comp.values())
+            if len(barras_a) == 1 and n_c <= 6 and n_c == 1 + ant.get("chapa", 0) + ant.get("suporte_terca", 0)                     and not ant.get("pilar") and not ant.get("viga"):
+                pb = next((q for q in posicoes if q.marca == barras_a[0]), None)
+                if pb is None or de_parede(pb) is None:
+                    do_papel.add(c["marca"])
     nomes_pos: Dict[str, str] = {}
     partes: Dict[str, List[Posicao]] = collections.defaultdict(list)
     for p in posicoes:
         cs = {c for c in conjuntos_de(p) if c in nomes_conj}
         if len(cs) == 1 and conjuntos_de(p) == cs:
             c = next(iter(cs))
+            if c in do_papel and (str(p.classe or "") == "chapa" or tipo[p.marca] == "chapa"):
+                continue                                    # a chapa fica com o nome dela (CH), pelo tipo
             if tipo_conj.get(c) != "tesoura":
                 partes[c].append(p)
     principais = {"contraventamento": "contraventamento", "agulhamento": "agulhamento"}

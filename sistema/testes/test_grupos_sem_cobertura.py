@@ -160,3 +160,30 @@ def test_obra_com_nomes_guarda_o_nome_neutro_e_troca_o_de_cobertura():
     np_ = resumos._por_marca((r.get("nomes") or {}).get("posicoes"))
     assert np_["W12"] == "B.1"
     assert np_["W7"].startswith("VG") and np_["W10"].startswith("PL")
+
+
+
+def test_chapa_do_toco_que_era_agulhamento_guarda_o_nome():
+    """VERSÃO 0.9.3 (13/11, test_predio): o conjunto barra + chapinha que antes da regra era agulhamento virou viga e a
+    chapa ganhou o nome do conjunto (VG1.1) — a chumbação do Vicente dizia "4 em VG1.1" no lugar de "4 em CH1". A chapa
+    fica com o nome dela; a barra leva o do conjunto. No mezanino: o toco W250 com a chapa de ponta (0063A do Drugovich)."""
+    from nucleo3d.modelo import Solido
+    doc = Documento(nome="mezanino")
+    _mezanino(doc)
+    for i in range(1):                                                 # um conjunto (a composição é por unidade)
+        y = 600.0 + 1500.0 * i
+        doc.add(Barra(nome="C", inicio=(6100.0, y, 2715.0), fim=(6490.0, y, 2715.0), perfil="W 250×17,9", papel="",
+                      atributos=_ifc("0063A", "W30")))
+        v = [(6490, y - 60, 2600), (6502, y - 60, 2600), (6502, y + 60, 2600), (6490, y + 60, 2600),
+             (6490, y - 60, 2830), (6502, y - 60, 2830), (6502, y + 60, 2830), (6490, y + 60, 2830)]
+        ch = Solido(nome="PL8", vertices=v, faces=[[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6],
+                                                      [3, 0, 4, 7]], material="Aço")
+        ch.atributos.update(_ifc("0063A", "PL8"))
+        ch.atributos["tipo_ifc"] = "IfcPlate"
+        ch.atributos["marcas"]["perfil"] = "PL 12"
+        doc.add(ch)
+    r = detalhar(doc, grupos=["localizacao"], converter=False)
+    np_ = resumos._por_marca((r.get("nomes") or {}).get("posicoes"))
+    assert np_["PL8"].startswith("CH"), np_["PL8"]
+    assert resumos._por_marca((r.get("nomes") or {}).get("tipos_conjuntos"))["0063A"] == "peca_curta"
+
