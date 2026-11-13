@@ -32,7 +32,7 @@ FAMILIAS = collections.OrderedDict([
     ("chumbadores", "Chumbadores"), ("pilares", "Pilares PL"), ("vigas_portico", "Vigas de pórtico VG"),
     ("tesouras", "Tesouras"),
     ("tercas_cob", "Terças cob. T.C."), ("tercas_lat", "Terças lat. T.L."), ("tercas_oit", "Terças oit. T.O."),
-    ("tercas_marq", "Terças de marquise T.M."), ("vigas", "Vigas e barras B."),
+    ("tercas_marq", "Terças de marquise T.M."), ("vigas", "Vigas e barras B."), ("pecas_curtas", "Peças curtas PC"),
     ("fix_telha", "Fixação de telha F.T."), ("acabamento", "Acabamento A.T."),
     ("agul_cob", "Agulhamentos cob. A.C."), ("agul_lat", "Agulhamentos lat. e oit. A.L."),
     ("agul_diag", "Agulhamentos diagonais A.D."), ("contrav", "Contraventos CV."),
@@ -49,12 +49,17 @@ _FAMILIA_DO_TIPO = {
     "conjunto": "dispositivos", "perfil_fechamento": "fix_telha", "cantoneira_forro": "acabamento",
     "chumbador": "chumbadores", "barra": "vigas", "chapa": "chapas", "suporte_terca": "chapas", "castanha": "chapas",
     "suporte_agulhamento": "chapas", "suporte_contraventamento": "chapas",
-    "rufo": "funilaria", "calha": "funilaria",
+    "rufo": "funilaria", "calha": "funilaria", "peca_curta": "pecas_curtas",
 }
+#: A obra sem cobertura (o mezanino, o edifício): os títulos pelo papel da peça, sem "pórtico", "cobertura" nem "agulhamento"
+#: (usuário, Mezanino Drugovich 13/11: "não é cobertura… sugiro partirmos para nomes mais genéricos" — regra GER-…,
+#: nomes.py `_por_papel_sem_cobertura`)
+TITULOS_SEM_COBERTURA = {"vigas_portico": "Vigas VG", "Vigas de pórtico": "Vigas", "agul_cob": "Travamentos A.C.",
+                         "agul_lat": "Travamentos A.L.", "Agulhamentos (correntes rígidas)": "Travamentos"}
 #: Grupos do quadro de pesos do resumo da obra, na ordem.
 GRUPOS_PESO = [
     ("Pilares", ("pilares",)), ("Vigas de pórtico", ("vigas_portico",)), ("Tesouras", ("tesouras",)), ("Terças e longarinas", ("tercas_cob", "tercas_lat", "tercas_oit", "tercas_marq")),
-    ("Vigas e barras", ("vigas",)), ("Perfis de fixação e acabamento de telhas", ("fix_telha", "acabamento")),
+    ("Vigas e barras", ("vigas",)), ("Peças curtas", ("pecas_curtas",)), ("Perfis de fixação e acabamento de telhas", ("fix_telha", "acabamento")),
     ("Agulhamentos (correntes rígidas)", ("agul_cob", "agul_lat")), ("Agulhamentos diagonais", ("agul_diag",)),
     ("Contraventamentos", ("contrav",)), ("Dispositivos", ("dispositivos",)), ("Chapas soltas", ("chapas",)),
     ("Chumbadores", ("chumbadores",)),
@@ -513,6 +518,37 @@ def quantidade_por_camada(doc, pecas, fam_pos: dict, telhas: dict, funil: List[d
     return {c: {k: round(v, 3) for k, v in q.items()} for c, q in saida.items() if any(q.values())}
 
 
+def nivel_do_piso(pecas, tipos: dict) -> Optional[float]:
+    """A obra sem cobertura (o mezanino): o nível do piso = o topo mais comum das vigas deitadas (mm, de 5 em 5), pelo
+    comprimento delas — no Drugovich, +2,840 (o "nível de apoio, ponto mais baixo das tesouras" dava +2,530). None sem viga."""
+    votos: Dict[float, float] = collections.Counter()
+    for e in pecas:
+        if not e.vertices or tipos.get(str(_marcas(e).get("posicao") or e.nome or e.id), "") not in ("viga", "barra", ""):
+            continue
+        try:
+            ax = _eixo_da_peca(e)
+        except Exception:                                   # noqa: BLE001
+            ax = None
+        if not ax:
+            continue
+        L = math.dist(ax[0], ax[1])
+        if L < 600.0 or abs(ax[1][2] - ax[0][2]) > 0.05 * L:
+            continue
+        votos[5.0 * round(max(v[2] for v in e.vertices) / 5.0)] += L
+    return max(votos.items(), key=lambda kv: (kv[1], kv[0]))[0] if votos else None
+
+
+def vaos_entre_eixos(eixos: Optional[dict]) -> List[Tuple[str, float]]:
+    """[("Vão 1–2", mm), …, ("Vão A–B", mm), …] pelos eixos do projeto — a obra sem cobertura no lugar dos "trechos da
+    cobertura" (usuário, Drugovich 13/11: "Vão A–B")."""
+    saida: List[Tuple[str, float]] = []
+    for chave in ("numeros", "letras"):
+        es = sorted((x for x in (eixos or {}).get(chave) or [] if x.get("pos") is not None), key=lambda x: float(x["pos"]))
+        for a, b in zip(es, es[1:]):
+            saida.append(("Vão %s–%s" % (a["nome"], b["nome"]), float(b["pos"]) - float(a["pos"])))
+    return saida
+
+
 def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados: Optional[dict] = None) -> dict:
     """Todos os números dos dois documentos, a partir do levantamento (`lev`), da lista de
     materiais montada (`lista`) e dos nomes de produção (`nomes`)."""
@@ -528,7 +564,11 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
     for c in lista.get("conjuntos") or []:
         # a tesoura pelo tipo do conjunto também (no depósito, os conjuntos de tesoura vêm na categoria CONJUNTOS: o
         # resumo saía com 0 tesouras e as dimensões vazias, 05/10)
-        cat = "TESOURAS" if tipos_conj.get(c["marca"]) == "tesoura" else c.get("categoria")
+        # e o contrário: na obra sem cobertura, o conjunto de 8+ barras que não é treliça (a viga W com os tocos soldados do
+        # Drugovich, 13/11) os nomes dão viga — não é tesoura nem viga caixote
+        tc_ = tipos_conj.get(c["marca"]) or ""
+        cat = "TESOURAS" if tc_ == "tesoura" else ("CONJUNTOS" if c.get("categoria") == "TESOURAS" and tc_ in ("viga", "pilar", "peca_curta")
+                                                   else c.get("categoria"))
         if cat != c.get("categoria"):
             conj_info[c["marca"]] = dict(c, categoria=cat)
         r = por_conj_nome.setdefault(c.get("nome") or c["marca"], {"nome": c.get("nome") or c["marca"], "marcas": [], "instancias": 0,
@@ -553,7 +593,9 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
         return _FAMILIA_DO_TIPO.get(tipos_conj.get(marca_conj, ""))
 
     def familia_da_posicao(p) -> str:
-        t = tipos.get(p.marca) or ""
+        # a posição fundida ("0073A / 0075A": duas marcas da mesma peça) pelo tipo de uma das marcas — `tipos` tem as chaves
+        # abertas, e a fundida caía em "Vigas e barras" (as W250×32,7 do Drugovich, 13/11)
+        t = tipos.get(p.marca) or next((tipos[m] for m in marcas_de(p) if tipos.get(m)), "")
         conjs = [c for c in p.conjuntos if c not in set(marcas_de(p))]
         fams = {familia_do_conjunto(c) for c in conjs} - {None}
         if p.classe == "telha":
@@ -904,6 +946,8 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
     for chave, titulo in FAMILIAS.items():
         if chave == "tesouras":
             titulo = titulo_trelica
+        elif not cobertura:
+            titulo = TITULOS_SEM_COBERTURA.get(chave, titulo)
         ps = fam_pos.get(chave) or []
         conjs = [r for r in por_conj_nome.values() if (r["categoria"] == "TESOURAS" and chave == "tesouras")
                  or (r["categoria"] != "TESOURAS" and familia_do_conjunto(r["marcas"][0]) == chave)]
@@ -958,7 +1002,8 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
     for titulo, chaves in GRUPOS_PESO:
         kg = sum(peso_fam.get(c, 0.0) for c in chaves)
         if kg > 0:
-            grupos_peso.append({"grupo": titulo_trelica if chaves == ("tesouras",) else titulo, "kg": kg})
+            grupos_peso.append({"grupo": titulo_trelica if chaves == ("tesouras",) else
+                                (titulo if cobertura else TITULOS_SEM_COBERTURA.get(titulo, titulo)), "kg": kg})
     peso_aco = sum(kg for f, kg in peso_fam.items() if f not in FORA_DO_ACO)
     peso_telhas = telhas["kg_total"]
     ml_telhas = telhas["ml_total"]
@@ -1000,6 +1045,7 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
             tesouras_lugar.append({"tipo": t["tipo"], "eixo": t.get("eixo", ""), "xy": (cc[0] + (topo[0] - cc[0]) * 0.82,
                                                                                       cc[1] + (topo[1] - cc[1]) * 0.82, 0.0)})
     import time as _time
+    nivel_piso = None if cobertura else nivel_do_piso(pecas, tipos)
     return {
         "gerado": _time.strftime("%d/%m/%Y %H:%M"), "pendencias": pendencias, "pintura": pintura, "compra": compra,
         "maior": maior, "mais_pesada": pesada, "tesouras_lugar": tesouras_lugar,
@@ -1017,7 +1063,7 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
                       "trechos": [{k: v for k, v in tr.items() if k not in ("inicio", "fim", "tesouras")} for tr in trechos],
                       "projecao": projecao_total, "projecao_entre_eixos": entre_eixos and not informada,
                       "projecao_informada": bool(informada), "area_m2": area_m2, "nivel_apoio": nivel_apoio, "apoio_por_chapa": apoio_por_chapa,
-                      "n_tesouras": len(tes_inst)},
+                      "n_tesouras": len(tes_inst), "nivel_piso": nivel_piso},
         "tesouras": tipos_tes, "tercas": tercas, "grupos_peso": grupos_peso, "telhas": telhas, "parafusos": parafusos,
         "telhas_lancadas": _telhas_lancadas(lista),
         "familias": familias, "chaparia": chaparia, "chaparia_total": chaparia_total, "funilaria": funil, "camadas": camadas_qtd,
@@ -1159,7 +1205,10 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
         tc = tipos_conj.get(conj, "") if conj and conj != pos else ""
         if conj_info.get(conj, {}).get("categoria") == "TESOURAS":
             return ("tesoura", nomes_conj.get(conj) or conj)
-        if tc in ("agulhamento", "agulhamento_lateral", "agulhamento_diagonal", "contraventamento", "conjunto", "chumbador"):
+        # a chapa de ponta da viga, do pilar e do toco (a obra sem cobertura, Drugovich 13/11): o local é o conjunto — "viga
+        # (VG) x pilar (PL)", não "chapa solta (CH) x peça"
+        if tc in ("agulhamento", "agulhamento_lateral", "agulhamento_diagonal", "contraventamento", "conjunto", "chumbador",
+                  "viga", "pilar", "peca_curta"):
             return (tc, nomes_conj.get(conj) or conj)
         return (t or "peca", nomes_pos.get(pos) or pos)
     rotulos = {"tesoura": "tesoura", "conjunto": "dispositivo (DP.)", "terca_cobertura": "terça de cobertura (T.C.)",
@@ -1169,7 +1218,9 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
                "chumbador": "chumbador (CB)", "suporte_terca": "chapa (CH)", "chapa": "chapa solta (CH)", "castanha": "chapa (CH)",
                "suporte_agulhamento": "chapa (CH)", "suporte_contraventamento": "chapa (CH)", "perfil_fechamento": "fixação de telha (F.T.)",
                "cantoneira_forro": "acabamento (A.T.)", "barra_roscada": "barra roscada (BR)", "gancho": "gancho", "barra": "barra (B.)",
-               "parte": "peça", "telha": "telha"}
+               "parte": "peça", "telha": "telha",
+               # a obra sem cobertura, pelo papel (Drugovich 13/11): "viga x pilar", não "agulhamento x tesoura"
+               "pilar": "pilar (PL)", "viga": "viga (VG)", "peca_curta": "peça curta (PC)"}
     contagem: Dict[str, dict] = collections.OrderedDict()
     # as porcas e arruelas soltas de ponta roscada saem no padrão da fábrica (1 porca + 2 arruelas por
     # ponta, na bitola da barra — pedido do usuário, 28/09), no local da barra; as outras, como estão
@@ -2363,14 +2414,20 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
         c = []
         if dim.get("n_tesouras", 0) > 1 and not X.get("eixos"):
             c.append(("Comprimento entre tesouras", "%s m" % _n(dim["comprimento_total"] / 1000.0, 2), "%s a %s" % (dim["eixos"].split()[0], dim["eixos"].split()[-1])))
-        vaos = sorted({round(tr["vao"]) for tr in dim.get("trechos") or [] if tr.get("vao")}, reverse=True)
+        # sem cobertura (o mezanino): sem vão de tesoura, nível de apoio e trechos da cobertura — o nível do piso e os vãos
+        # entre eixos (usuário, Drugovich 13/11)
+        coberta = R.get("cobertura", True)
+        vaos = sorted({round(tr["vao"]) for tr in dim.get("trechos") or [] if tr.get("vao")}, reverse=True) if coberta else []
         if vaos:
             c.append(("Vão entre apoios", " · ".join("%s m" % _n(v / 1000.0, 2) for v in vaos), "das tesouras"))
         if dim.get("projecao"):
             c.append(("Projeção informada" if dim.get("projecao_informada") else
                       "Projeção entre eixos" if dim.get("projecao_entre_eixos") else "Projeção com beirais", "%s × %s m" % (_n(dim["projecao"][0] / 1000.0, 2), _n(dim["projecao"][1] / 1000.0, 2)),
                       "área %s m²" % _n(dim.get("area_m2") or 0.0, 2)))
-        if dim.get("nivel_apoio") is not None:
+        if not coberta and dim.get("nivel_piso") is not None:
+            c.append(("Nível do piso", "%s%s m" % ("+" if dim["nivel_piso"] >= 0 else "", _n(dim["nivel_piso"] / 1000.0, 3)),
+                      "topo das vigas"))
+        elif coberta and dim.get("nivel_apoio") is not None:
             c.append(("Nível de apoio", "%s%s m" % ("+" if dim["nivel_apoio"] >= 0 else "", _n(dim["nivel_apoio"] / 1000.0, 3)),
                       "face de cima da chapa de apoio" if dim.get("apoio_por_chapa") else "ponto mais baixo das tesouras"))
         if n.get("inclinacao"):
@@ -2378,7 +2435,12 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
         if c:
             partes.append("<div class=\"cartoes\">%s</div>" % "".join(
                 "<div><span>%s</span><b>%s</b><em>%s</em></div>" % (_esc(a), _esc(b), _esc(d)) for a, b, d in c))
-        trechos = [tr for tr in dim.get("trechos") or [] if tr.get("nome")]
+        trechos = [tr for tr in dim.get("trechos") or [] if tr.get("nome")] if coberta else []
+        vaos_eixos = [] if coberta else vaos_entre_eixos(X.get("eixos"))
+        if vaos_eixos:
+            partes.append("<h3>Vãos entre eixos</h3>" + _tabela(["Vão", ("Medida", "r")],
+                                                               [[v, ("%s m" % _n(mm / 1000.0, 2), "r")] for v, mm in vaos_eixos],
+                                                               larguras=["50%", "50%"]))
         if len(trechos) > 1:
             linhas = []
             for tr in trechos:
@@ -2575,9 +2637,11 @@ def html_resumo_materiais(R: dict, paginado: bool = False) -> str:
     # os números da compra e da obra numa olhada, nos cartões da proposta (08/10)
     C = R.get("compra") or {}
     q = [("Estrutura metálica", _n(n["peso_aco"], 1), "kg", "perfis %s + chaparia %s kg" % (_n(R["perfis_kg"], 1), _n(R["chaparia_total"]["kg"], 1)))]
-    if dim["trechos"]:
+    if dim["trechos"] and R.get("cobertura", True):
         # só o total (o usuário, 09/10: a conta de cada ala enchia o cartão; o detalhe fica no resumo da obra)
         q.append(("Área de projeção", _n(dim["area_m2"], 2), "m²", "com beirais"))
+    elif not R.get("cobertura", True) and dim.get("area_m2"):
+        q.append(("Área de projeção", _n(dim["area_m2"], 2), "m²", "informada" if dim.get("projecao_informada") else "entre eixos"))
     if C.get("perfis"):
         q.append(("Compra de perfis", _n(sum(p.get("kg_compra") or 0.0 for p in C["perfis"]), 1), "kg",
                   _barras_e_sob_medida(sum(p["barras"] for p in C["perfis"]), sum(p.get("sob_medida_pecas") or 0 for p in C["perfis"]),

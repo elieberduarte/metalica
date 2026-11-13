@@ -718,9 +718,17 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
     if cobertura is None:
         cobertura = any(p.classe == "telha" or categorias.get(p.marca) in ("TELHAS", "TERÇAS") for p in posicoes)
     if not cobertura:
-        from nucleo2d.detalhe.base import TITULO_SEM_COBERTURA
+        from nucleo2d.detalhe.base import TITULO_SEM_COBERTURA, marcas_de
+        from nucleo2d.detalhe.nomes import _parece_trelica
+        classe_de = {m: str(p.classe or "") for p in posicoes for m in marcas_de(p)}
         for c in conjuntos:
-            if c.get("categoria") == "TESOURAS":
+            if c.get("categoria") != "TESOURAS":
+                continue
+            # 8+ barras sem banzos nem montantes (a viga W com tocos soldados do Drugovich, 13/11): conjunto, não "viga
+            # caixote" — o mesmo critério dos nomes (nomes._parece_trelica); sem as peças, como antes
+            if pecas and not _parece_trelica(c, pecas, classe_de):
+                c["categoria"] = "CONJUNTOS"
+            else:
                 c["titulo_categoria"] = TITULO_SEM_COBERTURA
     return {
         "gerado": datetime.now().strftime("%Y-%m-%d %H:%M"),

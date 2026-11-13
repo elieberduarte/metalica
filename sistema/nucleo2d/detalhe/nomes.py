@@ -216,6 +216,91 @@ def _conjuntos_do_projeto(pecas: Sequence[Solido]) -> Dict[str, str]:
     return saida
 
 
+#: A obra sem cobertura: abaixo disto (mm) a barra é peça curta (toco, console), não viga nem pilar — o mesmo corte do
+#: dossiê (`saida.dossie.CURTA`).
+PECA_CURTA = 600.0
+#: Tipos que, na obra sem cobertura, a barra troca pelo papel (os de cobertura e o "barra" genérico).
+_TIPOS_DE_COBERTURA = ("agulhamento", "agulhamento_lateral", "barra", "cantoneira_forro", "perfil_fechamento")
+
+
+def _eixo_da_marca(pecas_da_marca) -> Optional[Tuple[tuple, tuple]]:
+    for e in pecas_da_marca:
+        try:
+            ax = _eixo_da_peca(e)
+        except Exception:                                   # noqa: BLE001
+            ax = None
+        if ax:
+            return ax
+    return None
+
+
+def _por_papel_sem_cobertura(posicoes: Sequence[Posicao], pecas: Sequence[Solido], tipo: Dict[str, str]) -> None:
+    """Na obra sem cobertura, a barra de perfil (não a redonda, a chapa, o chumbador) troca o tipo de cobertura pelo papel:
+    `peca_curta` (< PECA_CURTA), `pilar` (em pé: |dz| ≥ 0,85 do comprimento) ou `viga` (o resto). Usuário, Mezanino
+    Drugovich 13/11: "ou colocamos um nome genérico, ou um nome mais adequado, sugiro partirmos para nomes mais genéricos"."""
+    por_marca: Dict[str, list] = collections.defaultdict(list)
+    for e in pecas:
+        por_marca[str(_marcas(e).get("posicao") or e.nome or e.id)].append(e)
+    for p in posicoes:
+        if tipo.get(p.marca) not in _TIPOS_DE_COBERTURA or p.classe not in ("barra", "barra_conformada"):
+            continue
+        if p.classe == "barra_conformada" and _eh_redonda_perfil(p.perfil):
+            continue
+        if float(p.comprimento or 0.0) < PECA_CURTA:
+            tipo[p.marca] = "peca_curta"
+            continue
+        ax = _eixo_da_marca(e for m in marcas_de(p) for e in por_marca.get(m, ()))
+        em_pe = bool(ax) and abs(ax[1][2] - ax[0][2]) >= 0.85 * (math.dist(ax[0], ax[1]) or 1.0)
+        tipo[p.marca] = "pilar" if em_pe else "viga"
+
+
+def _parece_trelica(c: dict, pecas: Sequence[Solido], classe_de: Dict[str, str]) -> bool:
+    """O conjunto de 8+ barras é treliça de verdade (a viga caixote do Vicente, a tesoura) e não uma viga com peças
+    soldadas (a W310 com os tocos W250 do Drugovich, 13/11)? Sem contar as chapas: 4 ou mais barras em pé ou inclinadas
+    (montantes, diagonais: |dz| ≥ 0,3 do comprimento, ≥ 300 mm) ou dois banzos — duas barras compridas (≥ metade da maior)
+    paralelas, uma acima da outra (≥ 100 mm) no mesmo plano em pé."""
+    ms = set(c.get("marcas") or [c["marca"]])
+    eixos_b = []
+    for e in pecas:
+        mk = _marcas(e)
+        if str(mk.get("conjunto") or "") not in ms or not e.vertices or isinstance(e, Chapa):
+            continue
+        if _tipo_ifc(e) == "IfcPlate" or not classe_de.get(str(mk.get("posicao") or e.nome or ""), "barra").startswith("barra"):
+            continue
+        ax = _eixo_da_marca([e])
+        if ax:
+            eixos_b.append((math.dist(ax[0], ax[1]), ax))
+    if sum(1 for L, (a, b) in eixos_b if L >= 300.0 and abs(b[2] - a[2]) >= 0.3 * L) >= 4:
+        return True
+    if len(eixos_b) < 2:
+        return False
+    l_max = max(L for L, _ax in eixos_b)
+    longas = [(L, ax) for L, ax in eixos_b if L >= 0.5 * l_max and L > 0]
+    for i, (L1, (a1, b1)) in enumerate(longas):
+        d1 = [(b1[k] - a1[k]) / L1 for k in range(3)]
+        m1 = [(a1[k] + b1[k]) / 2.0 for k in range(3)]
+        for L2, (a2, b2) in longas[i + 1:]:
+            d2 = [(b2[k] - a2[k]) / L2 for k in range(3)]
+            m2 = [(a2[k] + b2[k]) / 2.0 for k in range(3)]
+            if abs(sum(d1[k] * d2[k] for k in range(3))) >= 0.9 and abs(m1[2] - m2[2]) >= 100.0 \
+                    and math.hypot(m1[0] - m2[0], m1[1] - m2[1]) <= 0.25 * l_max:
+                return True
+    return False
+
+
+def _conjuntos_do_ifc(pecas: Sequence[Solido]) -> List[str]:
+    """As marcas de conjunto que vieram do IFC do projetista (todas as peças com `origem_ifc`): Tekla "0055A",
+    TecnoMETAL "M17"."""
+    todas: Dict[str, bool] = {}
+    for e in pecas:
+        c = str(_marcas(e).get("conjunto") or "")
+        if not c:
+            continue
+        veio = bool(getattr(e, "origem_ifc", "") or (getattr(e, "atributos", None) or {}).get("origem_ifc"))
+        todas[c] = todas.get(c, True) and veio
+    return [c for c, ok in todas.items() if ok]
+
+
 def numerar_unidades(conjuntos) -> Dict[str, List[str]]:
     """{marca do conjunto: [nome de cada unidade]} a partir de (marca, nome, instâncias): as unidades do mesmo nome
     numeram juntas, na ordem natural das marcas, com o número na frente (TESOURA 14-1, TESOURA 14-2 — usuário, Posto,
@@ -439,12 +524,25 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             t = "barra"
         tipo[p.marca] = t
 
+    # ---- a obra sem cobertura (o mezanino, o edifício: sem telha nem terça de cobertura ou de marquise): a barra pelo
+    # papel — pilar (em pé), viga (deitada) ou peça curta (< 600 mm), não agulhamento nem "barra" de cobertura (usuário,
+    # Mezanino Drugovich 13/11: os pilares W150 saíam "agulhamento lateral" e as vigas W250 "agulhamento de cobertura")
+    from nucleo2d.detalhe.base import obra_tem_cobertura
+    sem_cobertura = not obra_tem_cobertura(posicoes, tipo)
+    if sem_cobertura:
+        _por_papel_sem_cobertura(posicoes, pecas, tipo)
+    classe_de = {m: str(p.classe or "") for p in posicoes for m in marcas_de(p)}
+
     # ---- tipo de cada conjunto pela composição
     tipo_conj: Dict[str, str] = {}
     for c in conjuntos_info:
         if c.get("categoria") == "TESOURAS":
-            tipo_conj[c["marca"]] = "tesoura"
-            continue
+            if not sem_cobertura or _parece_trelica(c, pecas, classe_de):
+                tipo_conj[c["marca"]] = "tesoura"
+                continue
+            # 8+ barras sem banzos nem montantes (a viga W com os tocos soldados do Drugovich): não é treliça — nem
+            # tesoura nem "viga caixote"; a categoria muda junto (os quadros das pranchas, a lista, os resumos)
+            c["categoria"] = "CONJUNTOS"
         comp = c.get("composicao") or {}
         cont = collections.Counter()
         for m, q in comp.items():
@@ -459,6 +557,8 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             tipo_conj[c["marca"]] = "pilar"                 # o pilar com a placa de base
         elif cont.get("viga"):
             tipo_conj[c["marca"]] = "viga"                  # a viga de alma cheia com mísulas e chapas de topo
+        elif sem_cobertura and cont.get("peca_curta"):
+            tipo_conj[c["marca"]] = "peca_curta"            # o toco/console com a chapa de ponta (sem cobertura)
         elif cont.get("chumbador") and (n == cont.get("chumbador") or 2 * cont["chumbador"] >= n):
             # só chumbadores, ou chumbadores com a peça de ancoragem no pé (o depósito químico: 2
             # barras e uma cantoneira por apoio, que saía como conjunto comum, "DP.1")
@@ -485,7 +585,8 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
         from nucleo3d.eixos import conjuntos_trelicados
         trel = conjuntos_trelicados(pecas)
         for c in conjuntos_info:
-            if tipo_conj.get(c["marca"]) == "conjunto" and any(m in trel for m in [c["marca"]] + list(c.get("marcas") or [])):
+            if tipo_conj.get(c["marca"]) == "conjunto" and any(m in trel for m in [c["marca"]] + list(c.get("marcas") or [])) \
+                    and (not sem_cobertura or _parece_trelica(c, pecas, classe_de)):
                 tipo_conj[c["marca"]] = "tesoura"
     for p in posicoes:
         cs = conjuntos_de(p)
@@ -511,6 +612,12 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
     # desenho que junta conjuntos de nomes diferentes com a mesma geometria (o MT71 do Posto: TESOURA 1 e TESOURA 2) leva
     # os dois nomes; cada conjunto (a lista, o romaneio, o Controle e o 3D) leva o dele
     proj_conj = _conjuntos_do_projeto(pecas)
+    if sem_cobertura:
+        # a obra sem cobertura que veio do IFC do projetista (Tekla, TecnoMETAL…): o conjunto leva a marca dele, a mesma
+        # das listas e dos desenhos dele (Drugovich 13/11, "as do projetista, senão PL/VG/PC"; a regra de 12/11, "o nome
+        # do projetista vence")
+        for m in _conjuntos_do_ifc(pecas):
+            proj_conj.setdefault(m, m)
     nomes_conj: Dict[str, str] = {}
     # as unidades de cada conjunto (marca) dentro do desenho: as peças da marca sobre as peças de uma unidade
     pecas_da_marca = collections.Counter(str(_marcas(e).get("conjunto") or "") for e in pecas)

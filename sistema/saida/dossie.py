@@ -47,6 +47,9 @@ PAPEIS = collections.OrderedDict([
     # a parte do cliente (a cobertura retrátil industrializada, 19/10): só desenhada, fora das contas
     ("cliente", ("Fora do escopo (do cliente)", "#c3c9d1")),
 ])
+#: Os títulos na obra sem cobertura (o mezanino, o edifício), pelo papel da peça — "agulhamento" é de cobertura (usuário,
+#: Mezanino Drugovich 13/11: "não é cobertura… sugiro partirmos para nomes mais genéricos").
+TITULOS_SEM_COBERTURA = {"suportes": "Peças curtas", "travamentos": "Travamentos"}
 #: Tipo de peça (nucleo2d.detalhe.nomes) → papel, para o que não se decide pela geometria.
 _PAPEL_DO_TIPO = {
     "terca_cobertura": "tercas", "terca_marquise": "tercas", "terca_lateral": "longarinas", "terca_oitao": "longarinas",
@@ -198,11 +201,15 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
 
     pecas_conj: Dict[str, list] = collections.defaultdict(list)
     pecas_soltas: Dict[str, list] = collections.defaultdict(list)
+    # os conjuntos da lista (uma marca, ou as fundidas "0055A / 0056A" abertas): a barra sozinha que o IFC marca como
+    # conjunto (o pilar 0041A sem placa do Tekla) não é conjunto na lista e sumia do dossiê — vai como peça solta (13/11)
+    na_lista = {m.strip() for c in lista.get("conjuntos") or [] for k in [c.get("marca")] + list(c.get("marcas") or [])
+                for m in str(k or "").split(" / ") if m.strip()}
     for e in pecas:
         mk = _marcas(e)
         cj = str(mk.get("conjunto") or "")
         pos = _base(str(mk.get("posicao") or e.nome or ""))
-        if cj and cj != pos:
+        if cj and cj != pos and cj in na_lista:
             pecas_conj[cj].append(e)
         else:
             pecas_soltas[pos].append(e)
@@ -240,7 +247,8 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
         principal, q_p = max(barras, key=lambda pq: float(pq[0].comprimento or 0.0))
         principais = [e for e in es if _base(str(_marcas(e).get("posicao") or "")) == principal.marca] or es[:1]
         tc = tipos_conj.get(marca) or ""
-        trelica = tc == "tesoura" or c.get("categoria") == "TESOURAS"
+        # a viga W com tocos soldados (8+ barras, sem banzos nem montantes) da obra sem cobertura não é treliça (Drugovich 13/11)
+        trelica = tc == "tesoura" or (c.get("categoria") == "TESOURAS" and tc not in ("viga", "pilar", "peca_curta"))
         unidades.append({"marca": marca, "nome": c.get("nome") or marca, "conjunto": True, "tipo": tc, "trelica": trelica,
                          "principal": principal, "q_principal": max(1, int(q_p)), "pecas": es, "principais": principais,
                          "kg_un": float(c.get("peso_unitario") or 0.0), "instancias": int(c.get("instancias") or 0)})
@@ -268,6 +276,18 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
             u["papel"] = "trelicas_v"
         elif u["trelica"]:
             u["papel"] = "tesouras" if tem_cobertura else "caixote"
+        elif not tem_cobertura and (u["tipo"] in ("viga", "pilar", "peca_curta")
+                                    or (not u["conjunto"] and tipos.get(u["marca"]) in ("viga", "pilar", "peca_curta"))):
+            # a obra sem cobertura, pelo papel da peça (nomes.py: pilar, viga, peça curta — Drugovich 13/11): uma linha
+            # "Vigas" (o perfil vai na linha), sem separar I, U e tubo
+            t_ = u["tipo"] if u["tipo"] in ("viga", "pilar", "peca_curta") else tipos.get(u["marca"])
+            if t_ == "peca_curta" or u["comprimento"] < CURTA:
+                u["papel"] = "suportes"
+            elif t_ == "pilar" or u["dir"] == "v":
+                ref = max((vert_max.get(pav_de.get(e.id, ""), 0.0) for e in u["principais"]), default=0.0)
+                u["papel"] = "pilares" if u["comprimento"] >= 0.75 * ref else "pilaretes"
+            else:
+                u["papel"] = "vigas"
         elif _PAPEL_DO_TIPO.get(u["tipo"]):
             u["papel"] = _PAPEL_DO_TIPO[u["tipo"]]
             if u["papel"] == "tercas" and not tem_cobertura:
@@ -292,6 +312,8 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
     for u in unidades:
         chave = u["papel"]
         titulo, cor = PAPEIS.get(chave, PAPEIS["outros"])
+        if not tem_cobertura:
+            titulo = TITULOS_SEM_COBERTURA.get(chave, titulo)
         bloco = papeis.setdefault(chave, {"chave": chave, "titulo": titulo, "cor": cor, "linhas": {}, "ids": [],
                                           "qtd": 0, "m": 0.0, "kg": 0.0})
         onde: Dict[str, float] = collections.Counter()

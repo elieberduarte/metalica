@@ -2737,6 +2737,8 @@ PREFIXO_NOME = collections.OrderedDict([
     ("cantoneira", "CT."),
     # a meia-tesoura (metade de uma tesoura montada): MT; a montada, nas pranchas, segue T (decisão do usuário, 16/10 — N01)
     ("meia_tesoura", "MT"),
+    # a peça curta (toco, console, < 600 mm) da obra sem cobertura (Mezanino Drugovich, 13/11: grupos pelo papel)
+    ("peca_curta", "PC"),
 ])
 TIPOS_NOME = {
     "tesoura": "Tesoura", "pilar": "Pilar", "viga": "Viga de pórtico", "terca_cobertura": "Terça de cobertura", "terca_lateral": "Terça lateral",
@@ -2751,6 +2753,7 @@ TIPOS_NOME = {
     "rufo": "Rufo", "calha": "Calha",
     "cantoneira": "Cantoneira (furada na fábrica)",
     "meia_tesoura": "Meia-tesoura (metade da tesoura montada)",
+    "peca_curta": "Peça curta",
 }
 #: Diâmetro (mm) abaixo do qual a barra redonda comprida é agulhamento diagonal (Ø3/8"
 #: com gancho), não contraventamento (Ø1/2" com esticador).
