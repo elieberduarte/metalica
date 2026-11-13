@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
 """Gerar cenas (roteiro de refino, item 3; usuário, 12/11: "ter uma opção para gerar algumas cenas como essas pré-programadas,
-sem eu precisar ir tirando cena por cena"; amostra-16 aprovada no SESI: os 4 cantos a 30°). Na tela das Cenas, com o galpão
-de exemplo e cliques de verdade:
-  A. ✨ Gerar cenas… abre a janela; Gerar cria as 4 aéreas (sudoeste, sudeste, nordeste, noroeste) no servidor;
-  B. cada uma: a câmera no canto certo (azimute 225/315/45/135° ± 1°), a 30° de altura, lente 40°, quadro 16:9; o sol de trás
-     de quem olha (azimute + 40°, 45°);
-  C. o prédio inteiro no quadro e grande: os cantos de todas as camadas ligadas dentro da imagem, e pelo menos um lado
-     ocupando ≥ 85 % (antes, pela caixa da obra inteira, o prédio ficava pequeno);
+sem eu precisar ir tirando cena por cena"; amostra-16 aprovada no SESI: os 4 cantos a 30°; amostra-17 aprovada em 13/11: as
+fachadas no quadro 21:9, entardecer, noite, de cima; o pedestre na lista desmarcado). Na tela das Cenas, com o galpão de
+exemplo e cliques de verdade:
+  A. ✨ Gerar cenas… abre a janela: 6 tipos, o pedestre desmarcado, o botão "Gerar 11 cenas"; Gerar cria as 11 no servidor;
+  B. as aéreas: o canto certo (azimute 225/315/45/135° ± 1°), a 30°, lente 40, 16:9; as fachadas: o lado certo (270/0/90/180°),
+     a 3°, lente 30, 21:9; o entardecer (sol a 9°) e a noite (noite-azul); a vista de cima a 80°; o sol de trás de quem olha;
+  C. o prédio inteiro no quadro e grande (na proporção de cada uma): os cantos das camadas ligadas dentro, um lado ≥ 85 %;
   D. de novo: os nomes repetidos ganham número (Aérea sudoeste 2…), nenhuma cena some;
-  E. a camada desligada fica desligada nas aéreas e não conta no enquadramento;
+  E. a camada desligada fica desligada nas aéreas e o enquadramento segue certo;
+  H. o pedestre (marcado à mão): 1,6 m acima do chão (no galpão sem calçada: o piso do visor, não o telhado), lente 60;
   F. o menu Cenas › Gerar cenas aéreas… (?gerar=1) abre a janela direto;
   G. o render de uma aérea sai (com a sombra nos cantos) e sem erro no console.
 Porta livre, nunca a 8765/8766."""
@@ -33,7 +34,14 @@ srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--sem-nav
 base = f"http://localhost:{PORTA}"
 API = f"{base}/api/projetos/obra/terreno/cenas"
 falhas = []
-AZ = {"Aérea sudoeste": 225, "Aérea sudeste": 315, "Aérea nordeste": 45, "Aérea noroeste": 135}
+# nome → (azimute, elevação, lente, proporção, fundo, altura do sol)
+ESPERADO = {"Aérea sudoeste": (225, 30, 40, "16:9", None, 45), "Aérea sudeste": (315, 30, 40, "16:9", None, 45),
+            "Aérea nordeste": (45, 30, 40, "16:9", None, 45), "Aérea noroeste": (135, 30, 40, "16:9", None, 45),
+            "Fachada sul": (270, 3, 30, "21:9", None, 45), "Fachada leste": (0, 3, 30, "21:9", None, 45),
+            "Fachada norte": (90, 3, 30, "21:9", None, 45), "Fachada oeste": (180, 3, 30, "21:9", None, 45),
+            "Aérea sudeste ao entardecer": (315, 30, 40, "16:9", "entardecer", 9), "Aérea sudeste à noite": (315, 30, 40, "16:9", "noite-azul", 45),
+            "Vista de cima": (270, 80, 40, "16:9", None, 45)}
+AEREAS4 = ["Aérea sudoeste", "Aérea sudeste", "Aérea nordeste", "Aérea noroeste"]
 
 
 def ok(c, m):
@@ -66,13 +74,13 @@ def servidor():
     return json.loads(urllib.request.urlopen(API, timeout=30).read())["cenas"]
 
 
-# quanto da imagem 16:9 os cantos das camadas ligadas ocupam, pela câmera gravada da cena (mm do projeto): [max |x|, max |y|]
-OCUPA = r"""((cam) => {
+# quanto da imagem (na proporção dela) os cantos das camadas ligadas ocupam, pela câmera gravada da cena (mm do projeto): [max |x|, max |y|]
+OCUPA = r"""((cam, aspecto) => {
   const T = visor.camera.position.constructor, o = visor.cabecalho.origem;
   const pos = new T(cam.posicao[0] - o[0], cam.posicao[1] - o[1], cam.posicao[2] - o[2]);
   const alv = new T(cam.alvo[0] - o[0], cam.alvo[1] - o[1], cam.alvo[2] - o[2]);
   const fr = alv.clone().sub(pos).normalize(), r = new T().crossVectors(fr, new T(0, 0, 1)).normalize(), u = new T().crossVectors(r, fr);
-  const tv = Math.tan(cam.fov * Math.PI / 360), th = tv * 16 / 9;
+  const tv = Math.tan(cam.fov * Math.PI / 360), th = tv * aspecto;
   let mx = 0, my = 0;
   visor.cabecalho.camadas.forEach((cm, i) => { if (visor.visivelCamada[i] === false || !cm.caixa) return;
     for (let k = 0; k < 8; k++) { const p = new T(cm.caixa[k & 1 ? 1 : 0][0], cm.caixa[k & 2 ? 1 : 0][1], cm.caixa[k & 4 ? 1 : 0][2]).sub(pos);
@@ -83,21 +91,26 @@ OCUPA = r"""((cam) => {
 
 def conferir(aba, cenas, rotulo):
     for c in cenas:
-        nome = c["nome"].rstrip(" 0123456789")
-        az = AZ.get(nome)
+        nome = c["nome"]
+        while nome not in ESPERADO and nome[-1:].isdigit(): nome = nome.rstrip("0123456789").rstrip()
+        esp = ESPERADO.get(nome)
         cam = c.get("camera") or {}
         p, a = cam.get("posicao"), cam.get("alvo")
-        if not (az is not None and p and a):
+        if not (esp and p and a):
             ok(False, f"{rotulo} {c['nome']}: câmera ({cam})"); continue
+        az, elev, lente, prop, fundo, sol_alt = esp
         dx, dy, dz = (p[i] - a[i] for i in range(3))
         azc = math.degrees(math.atan2(dy, dx)) % 360
         el = math.degrees(math.atan2(dz, math.hypot(dx, dy)))
         dif = min(abs(azc - az), 360 - abs(azc - az))
-        ok(dif < 1 and abs(el - 30) < 1 and abs(cam.get("fov", 0) - 40) < 0.01 and c.get("proporcao") == "16:9",
-           f"{rotulo} {c['nome']}: no canto (azimute {azc:.1f}°), a 30° ({el:.1f}°), lente 40, 16:9")
+        ok(dif < 1 and abs(el - elev) < 1 and abs(cam.get("fov", 0) - lente) < 0.01 and c.get("proporcao") == prop,
+           f"{rotulo} {c['nome']}: azimute {azc:.1f}° (de {az}°), {el:.1f}° (de {elev}°), lente {cam.get('fov')}, {c.get('proporcao')}")
+        if fundo:
+            ok(c.get("fundo") == fundo, f"{rotulo} {c['nome']}: o ambiente {c.get('fundo')}")
         sol = c.get("sol") or {}
-        ok(abs(sol.get("direcao", -99) - (az + 40) % 360) < 0.2 and sol.get("altura") == 45, f"{rotulo} {c['nome']}: o sol de trás de quem olha ({sol})")
-        mx, my = aba.avaliar(f"{OCUPA}({json.dumps(cam)})")
+        ok(abs(sol.get("direcao", -99) - (az + 40) % 360) < 0.2 and sol.get("altura") == sol_alt, f"{rotulo} {c['nome']}: o sol de trás de quem olha ({sol})")
+        asp = 21 / 9 if prop == "21:9" else 16 / 9
+        mx, my = aba.avaliar(f"{OCUPA}({json.dumps(cam)}, {asp})")
         ok(mx <= 1.0 and my <= 1.0 and max(mx, my) >= 0.85, f"{rotulo} {c['nome']}: o prédio inteiro e grande no quadro (x {mx:.2f}, y {my:.2f})")
 
 
@@ -119,26 +132,32 @@ try:
     aba.navegar(f"{base}/visor3d/cena.html?projeto=obra&tema=claro", limite=90)
     ok(esperar(aba, "!!window.cenaPronta", 180), "a tela das Cenas abriu")
 
-    print("A — Gerar as aéreas")
+    print("A — a janela e o conjunto padrão")
     ok(clicar_no(aba, "#gerar-cenas-bt") and esperar(aba, "!!document.getElementById('gerar-cenas')", 5), "✨ Gerar cenas… abre a janela")
-    ok(aba.avaliar("document.getElementById('gerar-aereas').checked"), "Aéreas dos 4 cantos já marcada")
+    tipos = aba.avaliar("[...document.querySelectorAll('#gerar-cenas input[data-tipo]')].map(i => [i.dataset.tipo, i.checked])")
+    ok(tipos == [["aereas", True], ["fachadas", True], ["pedestre", False], ["entardecer", True], ["noite", True], ["cima", True]],
+       f"6 tipos, o pedestre desmarcado ({tipos})")
+    ok(aba.avaliar("document.getElementById('gerar-ok').textContent") == "Gerar 11 cenas", "o botão conta as cenas: Gerar 11 cenas")
+    clicar_no(aba, "#gerar-cenas input[data-tipo=pedestre]")
+    ok(aba.avaliar("document.getElementById('gerar-ok').textContent") == "Gerar 12 cenas", "marcar o pedestre: 12")
+    clicar_no(aba, "#gerar-cenas input[data-tipo=pedestre]")
     clicar_no(aba, "#gerar-ok")
-    ok(esperar(aba, "!!window.cenasGeradas && !document.getElementById('gerar-cenas')", 60), "Gerar: a janela fecha")
+    ok(esperar(aba, "!!window.cenasGeradas && !document.getElementById('gerar-cenas')", 120), "Gerar: a janela fecha")
     cenas = servidor()
     nomes = [c["nome"] for c in cenas]
-    ok(sorted(nomes) == sorted(AZ), f"as 4 aéreas no servidor ({nomes})")
-    ok(esperar(aba, "document.querySelectorAll('.cartao-cena').length === 4", 10), "os 4 cartões na lista")
+    ok(sorted(nomes) == sorted(ESPERADO), f"as 11 no servidor ({nomes})")
+    ok(esperar(aba, "document.querySelectorAll('.cartao-cena').length === 11", 10), "os 11 cartões na lista")
 
-    print("B/C — o canto, a altura, o sol e o enquadramento")
+    print("B/C — o lado, a altura, a lente, o quadro, o ambiente, o sol e o enquadramento")
     conferir(aba, cenas, "1ª")
 
     print("D — de novo: os nomes ganham número")
     clicar_no(aba, "#gerar-cenas-bt"); esperar(aba, "!!document.getElementById('gerar-cenas')", 5)
     aba.avaliar("window.cenasGeradas = null; 1")
     clicar_no(aba, "#gerar-ok")
-    esperar(aba, "!!window.cenasGeradas", 60)
+    esperar(aba, "!!window.cenasGeradas", 120)
     nomes2 = sorted(c["nome"] for c in servidor())
-    ok(len(nomes2) == 8 and "Aérea sudoeste 2" in nomes2 and "Aérea noroeste 2" in nomes2, f"8 cenas, as novas com o 2 ({nomes2})")
+    ok(len(nomes2) == 22 and "Aérea sudoeste 2" in nomes2 and "Fachada oeste 2" in nomes2 and "Vista de cima 2" in nomes2, f"22 cenas, as novas com o 2 ({nomes2[:6]}…)")
 
     print("E — a camada desligada")
     camadas = aba.avaliar("visor.cabecalho.camadas.map(c => c.nome)")
@@ -157,12 +176,27 @@ try:
            f"as aéreas novas com \"{alvo}\" desligada ({[c.get('desligadas') for c in novas][:1]})")
         conferir(aba, novas, "sem a camada")
 
+    print("H — o pedestre")
+    aba.avaliar("window.pedestre = null; cenaApi.gerarCenas(['pedestre']).then(r => window.pedestre = r, e => window.pedestre = { erro: e.message }); 1")
+    ok(esperar(aba, "!!window.pedestre", 60), "gerar só o pedestre")
+    r = aba.avaliar("window.pedestre") or {}
+    ped = [c for c in servidor() if c["id"] in (r.get("ids") or [])]
+    ok(len(ped) == 1 and ped[0]["nome"] == "Do pedestre (sudeste)", f"1 cena: Do pedestre (sudeste) ({r})")
+    if ped:
+        cam = ped[0]["camera"]
+        piso = aba.avaliar("visor.piso.position.z + visor.cabecalho.origem[2]")
+        ok(abs(cam["posicao"][2] - (piso + 1600)) < 2 and cam.get("fov") == 60,
+           f"a 1,6 m do chão (o piso do visor: o galpão não tem calçada; a sonda não pega o telhado) — z {cam['posicao'][2]:.0f}, piso {piso:.0f}, lente {cam.get('fov')}")
+        mx, my = aba.avaliar(f"{OCUPA}({json.dumps(cam)}, {16 / 9})")
+        ok(mx <= 1.0 and my <= 1.0, f"o prédio inteiro no quadro do pedestre (x {mx:.2f}, y {my:.2f})")
+    aba.avaliar("visor.controles.target.toArray(); 1")
+
     print("F — o menu Cenas › Gerar cenas aéreas… (?gerar=1)")
     aba.navegar(f"{base}/visor3d/cena.html?projeto=obra&tema=claro&gerar=1", limite=90)
     ok(esperar(aba, "!!window.cenaPronta && !!document.getElementById('gerar-cenas')", 180), "a janela abre direto")
     aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="Escape", code="Escape", windowsVirtualKeyCode=27)
     ok(esperar(aba, "!document.getElementById('gerar-cenas')", 5) or clicar_no(aba, "#gerar-nao"), "Esc / Cancelar fecha sem gerar")
-    ok(len(servidor()) == 12, "nada gerado ao fechar")
+    ok(len(servidor()) == 27, "nada gerado ao fechar")
 
     print("G — o render de uma aérea")
     cid = next(c["id"] for c in servidor() if c["nome"] == "Aérea sudeste")

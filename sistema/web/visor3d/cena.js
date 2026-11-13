@@ -216,7 +216,7 @@ async function abrirCena(id, { recarregar = true } = {}) {
 
 // ------------------------------------------------------------------ a cena do 3D na tela das Cenas (11/11)
 
-const PROPORCOES = { '16:9': 16 / 9, '4:3': 4 / 3, '3:4': 3 / 4, 'A3': 420 / 297, 'livre': null };
+const PROPORCOES = { '16:9': 16 / 9, '21:9': 21 / 9, '4:3': 4 / 3, '3:4': 3 / 4, 'A3': 420 / 297, 'livre': null };
 const FOV_PADRAO = 45;
 // os AMBIENTES (11/11, amostra-6 aprovada: "criar umas cenas noturnas… opções de fundos diferentes"): o céu (de cima até o
 // horizonte, onde o chão começa na cor `piso`), a luz do 3D (visor.definirAmbiente: o céu e o chão nas faces, a cor e a força
@@ -898,47 +898,128 @@ function cameraAerea(az, el, fov = AEREA_LENTE, aspecto = 16 / 9) {
   return { posicao: mm(pos), alvo: mm(alvo), fov, projecao: 'perspectiva' };
 }
 
-/** As 4 aéreas como cenas novas (as camadas e o estilo de agora; o nome repetido ganha um número). → os ids */
-async function gerarAereas() {
-  const base = eh3d() ? { pintar: cena.pintar, arestas: cena.arestas, cantos: cena.cantos, fundo: cena.fundo } : { fundo: 'ceu' };
-  const nomes = new Set(todasCenas.map(c => c.nome)), ids = [];
-  for (const [nome0, az] of AEREAS) {
-    let nome = nome0, k = 2;
-    while (nomes.has(nome)) nome = `${nome0} ${k++}`;
-    nomes.add(nome);
-    const c = await pedir(`${API}/nova-3d`, { nome, ...base, proporcao: '16:9', camera: cameraAerea(az, AEREA_ELEVACAO),
-      desligadas: desligadasAgora(), situacao: situacaoAberta, sol: { ligado: true, direcao: (az + 40) % 360, altura: 45 } });
-    ids.push(c.id);
+/** A câmera do pedestre (mm do projeto): 1,6 m acima do chão de verdade daquele canto — achado OLHANDO PARA BAIXO em vários
+ *  pontos da diagonal (o mais baixo achado: a calçada, a praça, o terreno; nada achado = o piso do visor) —, olhando o meio
+ *  do prédio a 40 % da altura; a menor distância em que todas as camadas ligadas cabem no quadro. null = não coube. */
+function cameraPedestre(az, fov = 60, aspecto = 16 / 9) {
+  const cx = visor.caixaVisivel(), o = visor.cabecalho.origem, c0 = cx.getCenter(new THREE.Vector3());
+  const a = az * Math.PI / 180, diag = Math.hypot(cx.max.x - cx.min.x, cx.max.y - cx.min.y);
+  const cam = visor.camera, p0 = cam.position.clone(), t0 = visor.controles.target.clone();
+  const chaoEm = (x, y) => {
+    cam.position.set(x, y, cx.max.z + 5000); visor.controles.target.set(x, y + 1, cx.min.z);
+    cam.lookAt(visor.controles.target); cam.updateMatrixWorld();
+    const r = visor.pontoEm(visor.tela.clientWidth / 2, visor.tela.clientHeight / 2);
+    return r ? r.local[2] : null;
+  };
+  let z0 = null;
+  try {
+    for (let f = 0.62; f >= 0.3; f -= 0.04) {
+      const z = chaoEm(c0.x + f * diag * Math.cos(a), c0.y + f * diag * Math.sin(a));
+      // só o que está no terço de baixo da obra é chão (no galpão sem calçada a sonda de dentro acha o telhado)
+      if (z !== null && z <= cx.min.z + (cx.max.z - cx.min.z) / 3 && (z0 === null || z < z0)) z0 = z;
+    }
+  } finally {
+    cam.position.copy(p0); visor.controles.target.copy(t0); visor.controles.update(); visor.pedirQuadro();
   }
-  return ids;
+  if (z0 === null) z0 = visor.piso ? visor.piso.position.z : cx.min.z;
+  const cantos = [];
+  visor.cabecalho.camadas.forEach((cm, i) => {
+    if (visor.visivelCamada[i] === false || !cm.caixa) return;
+    for (let k = 0; k < 8; k++) cantos.push(new THREE.Vector3(cm.caixa[k & 1 ? 1 : 0][0], cm.caixa[k & 2 ? 1 : 0][1], cm.caixa[k & 4 ? 1 : 0][2]));
+  });
+  const alvo = new THREE.Vector3(c0.x, c0.y, z0 + 0.4 * (cx.max.z - z0));
+  const tv = Math.tan(fov * Math.PI / 360), th = tv * aspecto;
+  for (let D = 0.55 * diag; D < 4 * diag; D *= 1.04) {
+    const pos = new THREE.Vector3(c0.x + D * Math.cos(a), c0.y + D * Math.sin(a), z0 + 1600);
+    const fr = alvo.clone().sub(pos).normalize(), r = new THREE.Vector3().crossVectors(fr, new THREE.Vector3(0, 0, 1)).normalize();
+    const u = new THREE.Vector3().crossVectors(r, fr);
+    const cabe = cantos.every(q => { const p = q.clone().sub(pos), d = p.dot(fr); return d > 0 && Math.abs(p.dot(r)) / (d * th) <= 0.96 && Math.abs(p.dot(u)) / (d * tv) <= 0.96; });
+    if (cabe) {
+      const mm = (p) => [p.x + o[0], p.y + o[1], p.z + o[2]].map(n => Math.round(n));
+      return { posicao: mm(pos), alvo: mm(alvo), fov, projecao: 'perspectiva' };
+    }
+  }
+  return null;
 }
 
-/** A janela Gerar cenas: o que gerar (por enquanto as aéreas dos 4 cantos; as próximas sugestões entram nesta lista). */
+// as cenas que a janela Gerar cenas oferece (13/11, amostra-17 aprovada: "pode manter assim"; o pedestre na lista desmarcado;
+// as fachadas no quadro 21:9). Cada uma: o nome, o azimute (graus no eixo do desenho), a elevação, a lente, a proporção e o
+// que muda na cena (o ambiente; a altura do sol)
+const TIPOS_GERAR = [
+  { id: 'aereas', rotulo: 'Aéreas dos 4 cantos', dica: `a ${AEREA_ELEVACAO}°, o prédio inteiro no quadro 16:9`, marcada: true,
+    cenas: AEREAS.map(([nome, az]) => ({ nome, az, el: AEREA_ELEVACAO })) },
+  { id: 'fachadas', rotulo: 'Fachadas (os 4 lados)', dica: 'quase de frente, de longe, no quadro largo 21:9', marcada: true,
+    cenas: [['Fachada sul', 270], ['Fachada leste', 0], ['Fachada norte', 90], ['Fachada oeste', 180]]
+      .map(([nome, az]) => ({ nome, az, el: 3, lente: 30, proporcao: '21:9' })) },
+  { id: 'pedestre', rotulo: 'Do pedestre (canto sudeste)', dica: 'a 1,6 m do chão — bom em prédio térreo; sem o terreno no modelo o prédio parece flutuar', marcada: false,
+    cenas: [{ nome: 'Do pedestre (sudeste)', az: 315, pedestre: true, lente: 60 }] },
+  { id: 'entardecer', rotulo: 'Aérea ao entardecer', dica: 'a aérea do sudeste com o sol baixo (9°)', marcada: true,
+    cenas: [{ nome: 'Aérea sudeste ao entardecer', az: 315, el: AEREA_ELEVACAO, fundo: 'entardecer', solAltura: 9 }] },
+  { id: 'noite', rotulo: 'Aérea na Noite azul', dica: 'a aérea do sudeste com as luzes acesas', marcada: true,
+    cenas: [{ nome: 'Aérea sudeste à noite', az: 315, el: AEREA_ELEVACAO, fundo: 'noite-azul' }] },
+  { id: 'cima', rotulo: 'Vista de cima', dica: 'a cobertura inteira, o norte do desenho para cima', marcada: true,
+    cenas: [{ nome: 'Vista de cima', az: 270, el: 80 }] },
+];
+
+/** As cenas dos tipos escolhidos (ids de TIPOS_GERAR), como cenas novas: as camadas e o estilo de agora; o sol de trás de
+ *  quem olha (azimute + 40°); o nome repetido ganha um número. → {ids, puladas} */
+async function gerarCenas(tipos) {
+  const base = eh3d() ? { pintar: cena.pintar, arestas: cena.arestas, cantos: cena.cantos, fundo: cena.fundo } : { fundo: 'ceu' };
+  const nomes = new Set(todasCenas.map(c => c.nome)), ids = [], puladas = [];
+  for (const t of TIPOS_GERAR.filter(t => tipos.includes(t.id))) {
+    for (const g of t.cenas) {
+      const proporcao = g.proporcao || '16:9', aspecto = PROPORCOES[proporcao];
+      const camera = g.pedestre ? cameraPedestre(g.az, g.lente, aspecto) : cameraAerea(g.az, g.el, g.lente || AEREA_LENTE, aspecto);
+      if (!camera) { puladas.push(g.nome); continue; }
+      let nome = g.nome, k = 2;
+      while (nomes.has(nome)) nome = `${g.nome} ${k++}`;
+      nomes.add(nome);
+      const c = await pedir(`${API}/nova-3d`, { nome, ...base, ...(g.fundo ? { fundo: g.fundo } : {}), proporcao, camera,
+        desligadas: desligadasAgora(), situacao: situacaoAberta, sol: { ligado: true, direcao: (g.az + 40) % 360, altura: g.solAltura || 45 } });
+      ids.push(c.id);
+    }
+  }
+  return { ids, puladas };
+}
+
+/** As 4 aéreas (o menu antigo e os testes). → os ids */
+async function gerarAereas() { return (await gerarCenas(['aereas'])).ids; }
+
+/** A janela Gerar cenas: uma caixinha por tipo (as aprovadas marcadas; o pedestre desmarcado). */
 function janelaGerarCenas() {
   if (!visor || document.getElementById('gerar-cenas')) return;
   const fundo = document.createElement('div');
   fundo.id = 'gerar-cenas';
   fundo.style.cssText = 'position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.25)';
-  fundo.innerHTML = `<div style="width:min(420px,calc(100vw - 32px));padding:14px 16px;background:var(--painel);border:1px solid var(--borda);border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.3);display:flex;flex-direction:column;gap:10px">
+  const caixas = TIPOS_GERAR.map(t => `<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="checkbox" data-tipo="${t.id}"${t.marcada ? ' checked' : ''}>
+      <span>${esc(t.rotulo)} <small style="color:var(--texto2)">(${t.cenas.length === 1 ? '1 cena' : t.cenas.length + ' cenas'})</small><small style="display:block;color:var(--texto2)">${esc(t.dica)}</small></span></label>`).join('');
+  fundo.innerHTML = `<div style="width:min(460px,calc(100vw - 32px));padding:14px 16px;background:var(--painel);border:1px solid var(--borda);border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.3);display:flex;flex-direction:column;gap:9px">
     <b>Gerar cenas</b>
-    <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="gerar-aereas" checked>
-      <span>Aéreas dos 4 cantos <small class="fraco" style="display:block;color:var(--texto2)">a ${AEREA_ELEVACAO}° de altura, o prédio inteiro no quadro 16:9, o sol de trás de quem olha; com as camadas ligadas agora</small></span></label>
+    <span style="font-size:12px;color:var(--texto2)">O prédio inteiro no quadro e o sol de trás de quem olha; com as camadas ligadas agora.</span>
+    ${caixas}
     <span id="gerar-aviso" style="font-size:12px;color:var(--texto2)"></span>
     <div class="linha"><button type="button" class="forte" id="gerar-ok">Gerar</button><button type="button" id="gerar-nao">Cancelar</button></div></div>`;
   document.body.append(fundo);
   const fechar = () => fundo.remove();
   const ok = fundo.querySelector('#gerar-ok');
+  const escolhidos = () => [...fundo.querySelectorAll('input[data-tipo]:checked')].map(i => i.dataset.tipo);
+  const contar = () => {
+    const n = TIPOS_GERAR.filter(t => escolhidos().includes(t.id)).reduce((s, t) => s + t.cenas.length, 0);
+    ok.disabled = !n; ok.textContent = n ? `Gerar ${n} ${n === 1 ? 'cena' : 'cenas'}` : 'Gerar';
+  };
   fundo.querySelector('#gerar-nao').onclick = fechar;
   fundo.onkeydown = (ev) => { ev.stopPropagation(); if (ev.key === 'Escape') fechar(); };
-  fundo.querySelector('#gerar-aereas').onchange = (ev) => { ok.disabled = !ev.target.checked; };
+  fundo.addEventListener('change', contar);
+  contar();
   ok.onclick = async () => {
     ok.disabled = true;
-    fundo.querySelector('#gerar-aviso').textContent = 'Gerando as aéreas…';
+    fundo.querySelector('#gerar-aviso').textContent = 'Gerando as cenas…';
     try {
-      const ids = await gerarAereas();
+      const { ids, puladas } = await gerarCenas(escolhidos());
       fechar();
-      await listar(ids[0]);
-      aviso(`${ids.length} cenas aéreas geradas (também nas abas do modo ver). Apague as que não quiser com o botão direito no cartão.`);
+      if (ids.length) await listar(ids[0]);
+      aviso(`${ids.length} ${ids.length === 1 ? 'cena gerada' : 'cenas geradas'} (também nas abas do modo ver). Apague as que não quiser com o botão direito no cartão.`
+        + (puladas.length ? ` Ficaram de fora (o prédio não coube): ${puladas.join(', ')}.` : ''));
       window.cenasGeradas = ids;
     } catch (e) {
       ok.disabled = false;
@@ -2872,7 +2953,7 @@ function desenharMarcas() {
 window.cenaApi = { estado: () => ({ modo, marcando, cena, selecionado, desenho, paredes: paredes.length, fina: !telaFina.hidden,
                                     fovCena, quadro: quadroAtual, vistaMudou, cenas: todasCenas.map(c => c.id) }), mostrarModo, pontoDo3d, fazerEncaixe,
                    concluir, desfazer, refazer, geometriaDoContorno, bordaDeBaixo, montarImagem, abrirCena, novaCena3d, imagemDaCena3d, cameraDaTela,
-                   exportar: () => exportar, tamanhoExportar, medidaDoLogo, videoDasCenas, cartaoDoVideo, cameraAerea, gerarAereas, janelaGerarCenas };
+                   exportar: () => exportar, tamanhoExportar, medidaDoLogo, videoDasCenas, cartaoDoVideo, cameraAerea, cameraPedestre, gerarAereas, gerarCenas, janelaGerarCenas };
 // saindo da página (o ← 3D antes de o 3D terminar de chegar): o pedido cortado pela troca de página não é erro
 let saindoDaPagina = false;
 addEventListener('beforeunload', () => { saindoDaPagina = true; });

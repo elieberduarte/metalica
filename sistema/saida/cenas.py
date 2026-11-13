@@ -36,7 +36,8 @@ FOTO_LADO_MAX = 6000                       # px: a foto do celular (4000 × 3000
 FOTO_EXT = (".jpg", ".jpeg", ".png")
 FRENTE_MAX = 30                            # contornos do que fica na frente da estrutura, por cena
 #: o quadro da imagem da cena do 3D (largura ÷ altura; "livre" = o palco inteiro) e o fundo (11/11, a tela das Cenas)
-PROPORCOES = {"16:9": 16 / 9, "4:3": 4 / 3, "3:4": 3 / 4, "A3": 420 / 297, "livre": None}
+#: 21:9 (13/11, amostra-17 aprovada: "pode usar o quadro mais largo" nas fachadas geradas)
+PROPORCOES = {"16:9": 16 / 9, "21:9": 21 / 9, "4:3": 4 / 3, "3:4": 3 / 4, "A3": 420 / 297, "livre": None}
 FUNDOS = ("ceu", "branco", "transparente", "terreno",
           # os ambientes (11/11, amostra-6 aprovada): o céu, o chão e a luz juntos; "ceu" é o Dia
           "entardecer", "nublado", "estudio", "noite-azul", "noite")

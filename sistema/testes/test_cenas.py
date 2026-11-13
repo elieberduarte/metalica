@@ -333,8 +333,9 @@ def test_quadro_e_fundo_da_cena_do_3d(tmp_path):
     c = C.ler(g, s, i)
     assert c["proporcao"] == "4:3" and c["fundo"] == "transparente"
     assert C.gravar(g, s, i, {"proporcao": "A3", "fundo": "ceu"})["proporcao"] == "A3"
+    assert C.gravar(g, s, i, {"proporcao": "21:9"})["proporcao"] == "21:9"     # 13/11: o quadro largo das fachadas geradas
     with pytest.raises(C.ErroCena, match="proporção"):
-        C.gravar(g, s, i, {"proporcao": "21:9"})
+        C.gravar(g, s, i, {"proporcao": "2:1"})
     with pytest.raises(C.ErroCena, match="fundo"):
         C.gravar(g, s, i, {"fundo": "nuvens"})
 
