@@ -254,11 +254,15 @@ class CAD {
     }
     // os avisos fixos (erros sem tempo) eram do desenho anterior (P11)
     if (this.nomeDesenho !== nome) for (const c of [...this.el.avisos.querySelectorAll('[data-fixo]')]) c.remove();
+    // o Desfazer de cada desenho fica guardado enquanto a janela está aberta: trocar de desenho e voltar não perde mais o
+    // que foi feito antes da troca (D10 do usuario-desastrado, 13/11 — o Ctrl+Z não fazia nada, calado, e a linha ia na prancha)
+    if (this.nomeDesenho && this.nomeDesenho !== nome && !this._desenhoBloqueado()) this._guardarPilha(this.nomeDesenho);
     try {
       const r = await pedir(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(nome)}`);
       this.nomeDesenho = nome;
       this._naoAbriu = null;
       this.carregar(r.desenho);
+      this._devolverPilha(nome);
       const url = new URL(location.href); url.searchParams.set('desenho', nome); history.replaceState(null, '', url);
       // a área de trabalho (/dividida) guarda o desenho aberto no endereço dela: o F5 volta a ele, não ao
       // completo (pedido do usuário, 28/09)
@@ -611,7 +615,36 @@ class CAD {
     const f = this.ferramenta;
     if (f && typeof f.desfazerPasso === 'function' && f.desfazerPasso()) { this.tela.pedirQuadro(); return; }
     const c = this.pilha.desfazer();
-    if (c) { this.dica(`Desfeito: ${c.rotulo}`); if (f && typeof f.aposDesfazer === 'function') f.aposDesfazer(c); }
+    if (c) { this.dica(`Desfeito: ${c.rotulo}`); if (f && typeof f.aposDesfazer === 'function') f.aposDesfazer(c); return; }
+    // nada para desfazer: o recado, nunca o silêncio (D10, 13/11)
+    this.aviso(this._pilhaPerdida === this.nomeDesenho
+      ? 'Nada para desfazer: este desenho mudou (foi refeito ou gravado por outra tela) depois que você saiu dele, e o que tinha para desfazer ficou com a versão de antes.'
+      : 'Nada para desfazer neste desenho desde que ele foi aberto.', 'atencao', 6000);
+  }
+
+  /** a marca do desenho aberto para o Desfazer guardado: a geração (o detalhamento refeito muda) e os ids dos objetos —
+   * o desenho que volta com outra marca mudou por fora, e a pilha guardada não serve nele */
+  _marcaDoDesenho() {
+    const ids = [...this.doc.entidades.keys()].sort();
+    let h = 2166136261;
+    for (const id of ids) for (let i = 0; i < id.length; i++) { h ^= id.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return `${ids.length}|${(this.doc.metadados || {}).geracao || ''}|${h}`;
+  }
+
+  _guardarPilha(nome) {
+    this._pilhas = this._pilhas || new Map();
+    if (!this.pilha.podeDesfazer && !this.pilha.podeRefazer) { this._pilhas.delete(nome); return; }
+    this._pilhas.set(nome, { feitos: this.pilha.feitos, desfeitos: this.pilha.desfeitos, marca: this._marcaDoDesenho() });
+  }
+
+  _devolverPilha(nome) {
+    const g = this._pilhas && this._pilhas.get(nome);
+    if (!g) return;
+    this._pilhas.delete(nome);
+    if (g.marca !== this._marcaDoDesenho()) { this._pilhaPerdida = nome; return; }
+    this._pilhaPerdida = null;
+    this.pilha.feitos = g.feitos; this.pilha.desfeitos = g.desfeitos;
+    this.pilha._avisar();
   }
   refazer() { const c = this.pilha.refazer(); if (c) this.dica(`Refeito: ${c.rotulo}`); }
 
