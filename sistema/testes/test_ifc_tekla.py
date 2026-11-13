@@ -104,5 +104,32 @@ class TestFuncoes(unittest.TestCase):
         self.assertEqual(medida_do_chumbador_tekla('PBA_1/2"X5"_ANCORA', {}), (12.7, 127.0))
 
 
+class TestTeklaSP91(unittest.TestCase):
+    """O mesmo Tekla, outra versão (SP9.1: o "Projeto Mezanino (1).ifc" R02 do Drugovich, 13/11 — o usuário: "no IFC tem o piso
+    wall e no nosso modelo não foi importado, tenho medo de termos deixado passar algum outro material"). As peças vêm SEM os
+    psets "Tekla Common/Quantity", o "Tekla Bolt" grava "Bolt Size"/"Bolt Length" e NÃO grava "Bolt count" nem as contagens de
+    porca e arruela, e as soldas não têm pset do Tekla. A leitura de 11/11 tomava os 577 grupos de parafusos por "só furo"
+    (nenhum parafuso na lista), as soldas viravam porca/arruela solta e o parabolt barra. O trecho
+    `dados_ifc/tekla_sp91_drugovich_trecho.ifc`: conjuntos XXX0080A (W250×17,9 + CH8×158 + CH8×241 + parafusos), XXX0062A (a
+    L76×4,8 do apoio do piso wall), XXX0070A (pilar W150×18 com a placa de base e o "só furo") e 0001A (parabolt + porca/arruela)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.doc = importar(os.path.join(AQUI, "dados_ifc", "tekla_sp91_drugovich_trecho.ifc"))
+
+    def test_parafusos_pelas_partes_da_malha(self):
+        t = self.doc.metadados["importacao"]["tekla"]
+        self.assertEqual((t["grupos_de_parafusos"], t["parafusos"], t["furos_sem_parafuso"]), (4, 16, 1))
+        self.assertEqual(t["soldas"], 11)
+
+    def test_lista_de_materiais(self):
+        from nucleo2d import detalhar
+        L = detalhar.levantar(self.doc, regra_tercas=False)
+        ac = L.get("acessorios") or {}
+        self.assertEqual(ac, {"PARABOLT 12.7x127": 1, "BOLT (A325N) 12.7x44.5": 12, "BOLT (A325N) 12.7x38.1": 4})
+        perfis = {str(p.perfil) for p in L["posicoes"]}
+        self.assertTrue({"W150X18", "L76X4.8", "CH8x158"} <= perfis, perfis)
+
+
 if __name__ == "__main__":
     unittest.main()

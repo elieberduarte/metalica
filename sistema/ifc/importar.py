@@ -444,6 +444,7 @@ class Importador:
         # parafusos vêm em grupos ("Bolt count"), o "só furo" sem porca nem arruela, e o chumbador (PBA = parabolt) com a porca
         # e a arruela do kit como IfcColumn soltas
         self._conjunto_tekla: Optional[str] = None
+        self._arquivo_tekla = "tekla" in str(getattr(arquivo, "aplicacao", "") or "").lower()
         self._soltas_tekla: List[Solido] = []
         self.tekla = {"furos_sem_parafuso": 0, "grupos_de_parafusos": 0, "parafusos": 0, "chumbadores": 0,
                       "porcas_arruelas_do_kit": 0, "porcas_arruelas_soltas": 0, "soldas": 0}
@@ -2468,13 +2469,18 @@ class Importador:
             return s
         if papel == "parafusos":
             b = propriedades.get("Tekla Bolt") or {}
-            n = int(_num_pset(b.get("Bolt count")) or 1)
-            d = bitola_nominal(_num_pset(b.get("Bolt size")) or 0.0, b.get("Bolt Name"))
-            L = float(_num_pset(b.get("Bolt length")) or 0.0)
-            classe = str(b.get("Bolt standard") or "").strip()
+            # 13/11: o Tekla SP9.1 (o "R02" do Drugovich) grava "Bolt Size"/"Bolt Length"/"Bolt Standard" e NÃO grava o
+            # "Bolt count": a quantidade sai das partes da malha
+            cnt = _num_pset(_ci(b, "Bolt count"))
+            n = int(cnt) if cnt else None
+            d = bitola_nominal(_num_pset(_ci(b, "Bolt size")) or 0.0, _ci(b, "Bolt Name"))
+            L = float(_num_pset(_ci(b, "Bolt length")) or 0.0)
+            classe = str(_ci(b, "Bolt standard") or "").strip()
             nome_b = "BOLT (%s) %gx%g" % (classe, round(d, 3), round(L, 1))
             par = {"d": d, "L": L, "classe": classe}
             partes = separar_em_partes(malha.vertices, malha.faces, n)
+            if n is None:
+                n = len(partes) if partes else 1
             self.tekla["grupos_de_parafusos"] += 1
             self.tekla["parafusos"] += n
             if partes is None:
@@ -2589,14 +2595,16 @@ class Importador:
         propriedades = self.propriedades_de(prod)
         material, material_ifc = self.material_de(prod, corpo, propriedades)
         marcas = marcas_de(nome, descricao, propriedades)
-        tekla = e_tekla(propriedades)
+        # o Tekla pelos psets dele ou pelo cabeçalho do arquivo (o SP9.1 do "R02" do Drugovich manda as peças sem os psets
+        # "Tekla Common/Quantity", só "Additional Properties"; 13/11)
+        tekla = e_tekla(propriedades) or self._arquivo_tekla
         tekla_papel = ""
         if tekla:
             marcas = marcas_tekla(marcas, descricao, prod.arg(7), self._conjunto_tekla, propriedades)
             tekla_papel = papel_tekla(tipo, nome, descricao, propriedades)
             if tekla_papel == "so_furo":
                 # o "só furo" do Tekla (Nut count = Washer count = 0): o furo da placa de base para o chumbador — não é parafuso
-                self.tekla["furos_sem_parafuso"] += int(_num_pset(propriedades.get("Tekla Bolt", {}).get("Bolt count")) or 1)
+                self.tekla["furos_sem_parafuso"] += int(_num_pset(_ci(propriedades.get("Tekla Bolt", {}), "Bolt count")) or 1)
                 return
             if tekla_papel == "solda":
                 self.tekla["soldas"] += 1                # o cordão de solda: nem peça nem fixador (1.261 no Drugovich)
@@ -2917,6 +2925,15 @@ def e_tekla(propriedades: dict) -> bool:
     return isinstance(propriedades, dict) and any(str(k).startswith("Tekla ") for k in propriedades)   # Common, Quantity, Bolt, Weld…
 
 
+def _ci(pset: dict, chave: str):
+    """o valor do pset pela chave sem caixa nem espaço ("Bolt size" = "Bolt Size" = "BoltSize"), ou None"""
+    alvo = re.sub(r"\s+", "", chave).lower()
+    for k, v in (pset or {}).items():
+        if re.sub(r"\s+", "", str(k)).lower() == alvo:
+            return v
+    return None
+
+
 def _num_pset(v) -> Optional[float]:
     try:
         return float(v)
@@ -2960,7 +2977,13 @@ def papel_tekla(tipo: str, nome: str, descricao: str, propriedades: dict) -> str
         return "solda"                                  # o cordão de solda do Tekla: a lista o lia como porca/arruela solta
     if tipo == "IFCMECHANICALFASTENER" and isinstance((propriedades or {}).get("Tekla Bolt"), dict):
         b = propriedades["Tekla Bolt"]
-        if not int(_num_pset(b.get("Nut count")) or 0) and not int(_num_pset(b.get("Washer count")) or 0):
+        # só furo quando o arquivo DIZ zero porcas e zero arruelas (o SP9.1 não grava as contagens: é parafuso, 13/11)
+        nut, was = _ci(b, "Nut count"), _ci(b, "Washer count")
+        if nut is not None and was is not None and not int(_num_pset(nut) or 0) and not int(_num_pset(was) or 0):
+            return "so_furo"
+        # sem as contagens (SP9.1): o "parafuso" mais curto que o próprio diâmetro (14 × 12,7 na placa de base) é o só furo
+        dd, LL = _num_pset(_ci(b, "Bolt size")), _num_pset(_ci(b, "Bolt length"))
+        if nut is None and dd and LL and LL < dd:
             return "so_furo"
         return "parafusos"
     if tipo in ("IFCCOLUMN", "IFCMEMBER", "IFCBEAM", "IFCDISCRETEACCESSORY"):
@@ -3014,7 +3037,7 @@ def separar_em_partes(vertices, faces, n: int):
     """A malha de um grupo de `n` parafusos do Tekla em `n` partes: as cascas ligadas (faces que dividem vértice) e, delas,
     as que se tocam (caixas a até 1 mm: cabeça, corpo, porca e arruela do mesmo parafuso) viram uma parte. Devolve
     [(vértices, faces)] reindexados, ou None quando não dá exatamente `n`."""
-    if n <= 1:
+    if n is not None and n <= 1:
         return [(list(vertices), [list(f) for f in faces])]
     pai = list(range(len(vertices)))
 
@@ -3053,7 +3076,7 @@ def separar_em_partes(vertices, faces, n: int):
                     break
             if juntou:
                 break
-    if len(caixas) != n:
+    if n is not None and len(caixas) != n:
         return None
     partes = []
     for cx in caixas:
