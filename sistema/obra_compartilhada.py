@@ -225,10 +225,14 @@ def _agora() -> str:
 def _do_formato_local(ev: dict) -> dict:
     """o evento da nuvem no formato do apontamentos.jsonl (o do Controle: os mesmos campos, na mesma ordem). A "ancora"
     (13/11, os ids das peças do 3D da unidade: o apontamento segue a peça quando o nome do item muda) vai no fim e só
-    quando existe, como o Controle grava"""
+    quando existe, como o Controle grava; depois dela, também só quando existem, a "montada" e o "lote" da tesoura montada
+    (13/11, 283c7e8: as partes apontadas juntas; o estorno de uma desfaz o lote inteiro, também no outro computador)"""
     out = {k: ev.get(k) for k in _CAMPOS}
     if ev.get("ancora"):
         out["ancora"] = [str(x) for x in ev["ancora"]]
+    for k in ("montada", "lote"):
+        if ev.get(k):
+            out[k] = str(ev[k])
     return out
 
 

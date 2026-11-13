@@ -96,13 +96,15 @@ def projeto(nome, obra_id=OBRA):
 N = [0]
 
 
-def apontar(pasta, item, q=1, etapa="producao", quem="?", estorno_de=None, ancora=None):
+def apontar(pasta, item, q=1, etapa="producao", quem="?", estorno_de=None, ancora=None, montada=None, lote=None):
     """o que o Controle faz: grava a linha no formato dele e põe na fila (a âncora no fim, só quando existe)"""
     N[0] += 1
     ev = {"id": "ev%010d" % N[0], "quando": "2026-11-13T10:%02d:00" % (N[0] % 60), "data": "2026-11-13", "quem": quem,
           "etapa": etapa, "item": item, "refs": ["M1"], "quantidade": q, "kg": 10.5 * q, "estorno_de": estorno_de, "obs": ""}
     if ancora:
         ev["ancora"] = list(ancora)
+    if montada:                                               # a tesoura montada do Controle (283c7e8): depois da âncora
+        ev["montada"], ev["lote"] = montada, lote
     OC._acrescentar(pasta, [ev])
     OC.na_fila(pasta, ev["id"])
     return ev
@@ -120,6 +122,7 @@ try:
     sql(arquivo="migracao-obra-compartilhada.sql")
     sql(arquivo="migracao-obra-compartilhada.sql")          # de novo: a migração pode rodar duas vezes sem erro
     sql(arquivo="migracao-obra-compartilhada-2.sql")        # a âncora do apontamento (13/11)
+    sql(arquivo="migracao-obra-compartilhada-3.sql")        # a montada e o lote da tesoura montada (13/11)
     lics = ", ".join(f"('{ch}', '{pes}', 2, {0 if k == 'bloq' else 1}, '2026-11-13')" for k, (ch, _, pes) in PCS.items())
     maqs = ", ".join(f"('{ch}', '{maq}', '2026-11-13', '2026-11-13')" for ch, maq, _ in PCS.values())
     sql(f"INSERT INTO licencas (chave, pessoa, maquinas_max, ativa, criada) VALUES {lics};"
@@ -153,7 +156,8 @@ try:
 
     # ------------------------------------------------------------------ o Fernando aponta 3
     for item in ("TESOURA 14-1", "COMP 18-1", "PAINEL 15"):
-        apontar(fer, item, quem="Fernando (o que o PC diz)", ancora=["p14a", "p14b"] if item == "TESOURA 14-1" else None)
+        apontar(fer, item, quem="Fernando (o que o PC diz)", ancora=["p14a", "p14b"] if item == "TESOURA 14-1" else None,
+                montada="T52" if item == "COMP 18-1" else None, lote="lote52abc" if item == "COMP 18-1" else None)
     ok(OC.estado(fer)["pendentes"] == 3, "3 apontamentos do Fernando esperando a nuvem")
     r = OC.sincronizar(fer)
     ok(r["enviados"] == 3 and r["pendentes"] == 0 and r["papel"] == "editor" and not r["erro"],
@@ -166,6 +170,9 @@ try:
     ok(all(list(x.keys())[:len(OC._CAMPOS)] == list(OC._CAMPOS) for x in ls), "as linhas recebidas têm o formato do Controle (mesmos campos, mesma ordem)")
     ok(ls[0].get("ancora") == ["p14a", "p14b"] and list(ls[0])[-1] == "ancora" and "ancora" not in ls[1],
        f"a âncora chega no fim do evento, e só no que tinha: {ls[0].get('ancora')}")
+    ok((ls[1].get("montada"), ls[1].get("lote")) == ("T52", "lote52abc") and list(ls[1])[-2:] == ["montada", "lote"]
+       and "montada" not in ls[0] and "lote" not in ls[2],
+       f"a montada e o lote chegam no fim do evento, e só no que tinha: {ls[1].get('montada')!r} {ls[1].get('lote')!r}")
     ok({x["quem"] for x in ls} == {"Fernando"}, f"o 'quem' é a pessoa da licença que assinou, não o que o PC disse: {ls[0]['quem']}")
     ok([x["item"] for x in ls] == ["TESOURA 14-1", "COMP 18-1", "PAINEL 15"] and ls[0]["kg"] == 10.5 and ls[0]["refs"] == ["M1"],
        "itens, kg e refs chegam iguais")
@@ -235,6 +242,10 @@ try:
     r = OC.sincronizar(fer)
     ok(r["pendentes"] == 0 and ruim["id"] in OC._ler_estado(fer, OBRA).get("recusados", []),
        "evento inválido (quantidade 0) é recusado, sai da fila e fica anotado")
+    ruim = apontar(fer, "COMP 18-2", quem="Fernando", montada="T53", lote="lote com espaço!")
+    r = OC.sincronizar(fer)
+    ok(r["pendentes"] == 0 and ruim["id"] in OC._ler_estado(fer, OBRA).get("recusados", []),
+       "lote com caracteres fora do padrão é recusado (o lote é um id, como o do evento)")
     nova = projeto("iniciar")
     shutil.copy(os.path.join(dev, "producao", "apontamentos.jsonl"), os.path.join(nova, "producao", "apontamentos.jsonl"))
     no_pc("dev")

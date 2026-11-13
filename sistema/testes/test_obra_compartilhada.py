@@ -424,3 +424,42 @@ def test_apontar_varios_sobe_em_lotes_que_cabem_no_d1(tmp_path, nuvem, monkeypat
     r = OC.sincronizar(fer)
     assert r["pendentes"] == 0 and max(tamanhos) <= 40
     assert len(nuvem.eventos) == 2000 and len({e["id"] for e in nuvem.eventos}) == 2000
+
+
+def test_tesoura_montada_o_lote_viaja_e_o_estorno_no_outro_pc_desfaz_o_lote_inteiro(tmp_path, nuvem):
+    """A tesoura montada do Controle (283c7e8): apontada inteira, grava uma linha por parte com "montada" e "lote". Os dois
+    campos têm de chegar ao outro computador (no fim do evento, depois da âncora, como o Controle grava) — sem o "lote",
+    o estorno feito no dev desfaria só uma parte."""
+    from producao import controle
+    fer, dev = _projeto(tmp_path, "fer"), _projeto(tmp_path, "dev")
+    nuvem.eu = "fer"
+    a = _apontar(fer, "TESOURA 1-1")
+    b = _apontar(fer, "TESOURA 5")
+    evs = OC._ler_eventos(fer)
+    for ev in evs:
+        ev.update(ancora=["p" + ev["id"]], montada="T52", lote="lote52abc")
+    with open(os.path.join(fer, "producao", "apontamentos.jsonl"), "w", encoding="utf-8") as f:
+        f.writelines(json.dumps(ev, ensure_ascii=False) + "\n" for ev in evs)
+    OC.sincronizar(fer)
+    nuvem.eu = "dev"
+    OC.sincronizar(dev)
+    chegou = OC._ler_eventos(dev)
+    assert [(e["montada"], e["lote"]) for e in chegou] == [("T52", "lote52abc")] * 2
+    assert list(chegou[0])[-3:] == ["ancora", "montada", "lote"]
+    # o dev estorna uma parte: o lote inteiro sai, e os dois estornos voltam ao Fernando
+    controle.estornar(dev, a["id"], "Elieber")
+    estornos = [e for e in OC._ler_eventos(dev) if e.get("estorno_de")]
+    assert sorted(e["estorno_de"] for e in estornos) == sorted([a["id"], b["id"]])
+    for e in estornos:
+        OC.na_fila(dev, e["id"])
+    OC.sincronizar(dev)
+    nuvem.eu = "fer"
+    OC.sincronizar(fer)
+    assert sorted(e["estorno_de"] for e in OC._ler_eventos(fer) if e.get("estorno_de")) == sorted([a["id"], b["id"]])
+    # o apontamento comum continua sem os campos novos
+    c = _apontar(fer, "TERÇA 3")
+    OC.sincronizar(fer)
+    nuvem.eu = "dev"
+    OC.sincronizar(dev)
+    ultimo = next(e for e in OC._ler_eventos(dev) if e["id"] == c["id"])
+    assert "montada" not in ultimo and "lote" not in ultimo
