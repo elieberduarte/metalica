@@ -390,7 +390,7 @@ def _perfil_da_face(md: dict, lado: float):
 def desenho_da_multidobra(md: dict, desenho, dx: float, dy: float, nome: str = ""):
     """Célula da telha multi-dobra: o perfil longitudinal duas vezes — medidas externas e
     medidas internas —, cada um com as retas entre tangências, o raio, o ângulo, o arco e
-    a corda, e o comprimento desenvolvido no título do painel (como a fábrica pede)."""
+    o comprimento desenvolvido no título do painel (como a fábrica pede); a corda saiu (13/11)."""
     from nucleo2d.detalhe.base import _Papel
     from nucleo2d.desenho import Cota
     esc = desenho.escala
@@ -417,8 +417,8 @@ def desenho_da_multidobra(md: dict, desenho, dx: float, dy: float, nome: str = "
         t = ("%%.%df" % casas % v).rstrip("0").rstrip(".")
         return t.replace(".", ",")
     # o formato da fábrica: dois quadros lado a lado (medidas internas e externas), cada um
-    # com o título e o desenvolvido em metros, as retas cotadas por fora, a corda por
-    # dentro, o ângulo cotado em arco, o comprimento do arco e o raio sobre a linha
+    # com o título e o desenvolvido em metros, as retas cotadas por fora, o ângulo cotado em
+    # arco, o comprimento do arco e o raio sobre a linha (a corda saiu em 13/11)
     margem = 44.0 * esc                                   # em volta do perfil, dentro do quadro
     passo = larg + 2 * margem + 12.0 * esc                # de um quadro ao outro
     topo_q = alt + margem + 14.0 * esc                    # altura do quadro acima do perfil (título em 2 linhas)
@@ -446,7 +446,9 @@ def desenho_da_multidobra(md: dict, desenho, dx: float, dy: float, nome: str = "
             p._p(pa[0] - uy / L * desl * sinal * esc, pa[1] + ux / L * desl * sinal * esc)
         cota(r1[0], r1[1], 12.0)                           # reta 1, por fora
         cota(r2[0], r2[1], 12.0)                           # reta 2, por fora
-        cota(r1[0], r2[1], 30.0)                           # corda, por fora do canto (como a fábrica)
+        # sem a cota da corda: as linhas de chamada dela, longas, por fora do canto, pareciam a sombra do recorte da telha
+        # (usuário, 13/11, Sooro Sala: "tem duas linhas externas representando a sombra do recorte da telha"; escolheu
+        # tirar — o perfil fica cotado pelas retas, o raio, o ângulo e o arco)
         # as terças/longarinas debaixo da telha (só para conferir fixação e espaçamento)
         for ap in md.get("apoios") or []:
             for poli in ap["secao"]:

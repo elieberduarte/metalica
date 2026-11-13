@@ -4,7 +4,11 @@ se edita — apagar um furo ou esticar uma linha dela é recusado, com o caminho
 apagar a célula inteira (arrumar a prancha) passa; no ambiente de edição (faixa EDITANDO) a peça é livre e a camada
 REFERENCIA continua travada para tudo. O símbolo de solda é anotação, como a chamada (Sooro, T1 da Sala, 09/11: "não
 estou conseguindo apagar esse detalhe da solda"): na prancha das tesouras ele se apaga e se move, a linha do banzo ao
-lado continua travada, e o apagado continua apagado quando as pranchas são montadas de novo."""
+lado continua travada, e o apagado continua apagado quando as pranchas são montadas de novo.
+
+13/11 (usuário, Sooro Sala: "a prancha seria uma fotografia do projeto"): na PRANCHA a peça é livre — apagar a linha do
+banzo e esticar outra passam, com o aviso da fotografia na 1ª vez, e as duas mexidas continuam na montagem seguinte. Nos
+desenhos de detalhamento (passos 1 a 3) a trava continua."""
 import json, os, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
@@ -120,13 +124,27 @@ try:
         const sobrou = daCel.filter(e => cad.doc.get(e.id)).length;
         const aviso = [...document.querySelectorAll('.aviso')].map(x => x.textContent).join(' | ');
         const banzoApaga = banzo ? !!cad.executar(new C.ComandoRemover([banzo.id], 'apagar banzo')) : null;
-        return { cel, n: daCel.length, tipos: [...new Set(daCel.map(e => e.tipo))], moveu, sobrou, aviso, banzo: banzo && banzo.camada, banzoApaga }; })()""" % JS_CMD)
+        const avisoFoto = [...document.querySelectorAll('.aviso')].map(x => x.textContent).join(' | ');
+        // outra linha da peça esticada 30 mm (a fotografia: a forma mexida à mão fica)
+        const outra = [...cad.doc.entidades.values()].find(e => e.tipo === 'linha' && e.atributos && e.atributos.cel === cel
+                                                            && cad._pecaTravada(e) && Math.abs(e.b[0] - e.a[0]) > 20);
+        let esticada = null;
+        if (outra) {
+          const n = JSON.parse(JSON.stringify(outra));
+          const sx = Math.sign(n.b[0] - n.a[0]);
+          n.b = [n.b[0] + 30 * sx, n.b[1]];
+          if (cad.executar(new C.ComandoSubstituir([n], 'esticar'))) esticada = { a: n.a, b: n.b, camada: n.camada };
+        }
+        return { cel, n: daCel.length, tipos: [...new Set(daCel.map(e => e.tipo))], moveu, sobrou, aviso, banzo: banzo && banzo.camada,
+                 banzoApaga, avisoFoto, esticada }; })()""" % JS_CMD)
     ok(r is not None, "a prancha das tesouras tem símbolo de solda na célula do conjunto")
     r = r or {}
     ok(r.get("moveu"), f"mover o símbolo de solda passa ({r.get('cel')}: {r.get('n')} objetos {r.get('tipos')})")
     ok(r.get("n") and r.get("sobrou") == 0 and "Peça gerada" not in (r.get("aviso") or ""),
        f"apagar o símbolo de solda passa, sem o aviso de peça gerada ({r.get('sobrou')} sobraram; aviso: {r.get('aviso')!r})")
-    ok(r.get("banzoApaga") is False, f"apagar uma linha da peça ao lado ({r.get('banzo')}) continua recusado")
+    ok(r.get("banzoApaga") is True, f"na prancha, apagar uma linha da peça ao lado ({r.get('banzo')}) passa (a fotografia, 13/11)")
+    ok("fotografia" in (r.get("avisoFoto") or ""), f"com o aviso da fotografia na 1ª vez ({(r.get('avisoFoto') or '')[:90]!r})")
+    ok(r.get("esticada") is not None, f"esticar outra linha da peça passa ({r.get('esticada')})")
     for _ in range(20):
         if aba.avaliar("!window.cad._editado && !window.cad._salvando"):
             break
@@ -138,6 +156,10 @@ try:
     da = [e for e in ents if (e.get("atributos") or {}).get("cel") == r.get("cel")]
     ok(da and not [e for e in da if e.get("camada") == "SOLDA"],
        f"montadas de novo, o símbolo apagado continua apagado e a célula fica ({len(da)} objetos nela)")
+    est = r.get("esticada") or {}
+    perto = lambda p, q: abs(p[0] - q[0]) < 0.05 and abs(p[1] - q[1]) < 0.05      # noqa: E731
+    ok(est and any(e.get("tipo") == "linha" and perto(e["a"], est["a"]) and perto(e["b"], est["b"]) for e in da),
+       "montadas de novo, a linha esticada à mão continua esticada")
     # o desenho ficou com edição por gravar (os apagamentos acima) e a navegação para o outro dispara o aviso de sair sem
     # gravar — o comportamento certo do CAD; o Chrome 154 passou a registrar o aviso bloqueado como erro (11/10)
     erros = [m for m in aba.console if m[0] in ("error", "excecao") and "beforeunload' confirmation panel" not in m[1]]

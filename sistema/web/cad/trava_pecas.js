@@ -1,5 +1,5 @@
 // Trava da peça gerada (regra R5, combinada com o usuário em 02/10): nos desenhos que o sistema gera do 3D —
-// detalhamento, "Detalhe – marca" e pranchas —, a geometria da peça (vista, contorno, furo) é do 3D e não se edita
+// detalhamento e "Detalhe – marca" (as pranchas saíram em 13/11: nelas a peça é uma fotografia, livre) —, a geometria da peça (vista, contorno, furo) é do 3D e não se edita
 // no desenho: furo apagado ou contorno esticado ali não voltava ao 3D e sumia na próxima atualização. Para mudar a
 // peça: "Editar peça" (o ambiente de edição, faixa EDITANDO … Concluir, que leva ao 3D). Continua livre o que é
 // apresentação: mover, copiar ou apagar a célula inteira, cotas, textos, chamadas, a aparência (cor, espessura) e
@@ -21,8 +21,16 @@ export class MetodosTravaPecasCAD {
   /** Desenho gerado do 3D (e não o ambiente de edição da peça, onde ela é livre). */
   _desenhoGerado() {
     const m = this.doc.metadados || {};
-    if (m.edicao) return false;
-    return !!(m.gerado_por || m.detalhe_posicao || m.detalhamento || m.pranchas || m.prancha);
+    if (m.edicao || this._ePrancha()) return false;
+    return !!(m.gerado_por || m.detalhe_posicao || m.detalhamento);
+  }
+
+  /** As pranchas: a peça nelas é uma fotografia do projeto (usuário, 13/11, Sooro Sala: "a prancha seria uma fotografia
+   *  do projeto") — move, apaga, estica, recorta à mão; a remontagem guarda o que foi feito (nucleo2d/ajustes_pranchas,
+   *  também a forma) e nada disso muda o 3D nem a lista. A trava da peça fica nos desenhos de detalhamento. */
+  _ePrancha() {
+    const m = this.doc.metadados || {};
+    return !!(m.pranchas || m.prancha);
   }
 
   /** A entidade é geometria de peça gerada: detalhe de uma posição ou conjunto, fora das camadas de anotação. */
@@ -87,7 +95,14 @@ export class MetodosTravaPecasCAD {
       else if (cmd instanceof ComandoSubstituir) cmd.novas = cmd.novas.filter(n => !travadas.has(n.id));
       return this._recusaDaTrava(cmd);
     }
-    if (!this._desenhoGerado()) return null;
+    if (!this._desenhoGerado()) {
+      if (this._ePrancha() && !this._fotografiaAvisada && this._mexeEmPeca(cmd, ids)) {
+        // na 1ª vez que mexe numa peça da prancha, um aviso discreto (a escolha do usuário, 13/11)
+        this._fotografiaAvisada = true;
+        this.aviso('Na prancha a peça é uma fotografia do projeto: o que você mudar aqui fica na prancha (e volta nas próximas montagens), mas não muda a peça no 3D nem a lista. Para mudar a peça, "Editar isolada" ou "Editar no local".', 'info', 12000);
+      }
+      return null;
+    }
     const editarPeca = 'Para mudar furos, tamanho ou recortes, selecione a peça e use "Editar isolada" ou "Editar no local" (vai ao 3D); para arrumar a prancha, mova ou apague a célula inteira.';
     if (cmd instanceof ComandoAdicionar) {
       // cópia de pedaço de peça gerada (um furo, uma linha da vista) solta no desenho: não vira peça nem volta ao 3D
@@ -118,6 +133,12 @@ export class MetodosTravaPecasCAD {
       return `Peça gerada do 3D${n ? ` (${n})` : ''}: ${o_que} não muda a peça. ${editarPeca}`;
     }
     return null;
+  }
+
+  /** O comando mexe em geometria de peça gerada (não só em anotação). */
+  _mexeEmPeca(cmd, ids) {
+    if (cmd instanceof ComandoAdicionar) return (cmd.entidades || []).some(e => this._pecaTravada(e));
+    return (ids || []).some(id => this._pecaTravada(this.doc.get(id)));
   }
 
   /** As peças copiadas formam células inteiras (a cópia de um detalhe inteiro, para arrumar a prancha). */

@@ -194,3 +194,22 @@ def test_detalhe_do_beiral_com_terca_que_termina_na_tesoura():
     assert "U150X50X2.28" in perfis and "C150X50X17X2.25" in perfis, perfis
     textos, _d = _textos_do_beiral(c, t)
     assert "saia 150" in textos and any(x.startswith("TERÇA ") for x in textos)
+
+
+def test_multidobra_sem_a_cota_da_corda():
+    """a cota da corda da MD1 (1790,07 por dentro, 1841,1 por fora), com as linhas de chamada longas por fora do canto,
+    parecia a sombra do recorte da telha (usuário, 13/11: "tem duas linhas externas representando a sombra do recorte
+    da telha"); escolhido tirar. As retas, o raio e o ângulo continuam."""
+    t = T.multidobras(_pecas(_doc()))["telhas"][0]
+    d = Desenho(nome="t", escala=50.0)
+    T.desenho_da_multidobra(t, d, 0.0, 0.0, "MD1")
+    cotas = [e for e in _ents(d) if isinstance(e, Cota)]
+    textos = {str(c.texto or "") for c in cotas}
+    assert "560" in textos and "990" in textos                          # as retas
+    import math
+    numeros = [float(x.replace(",", ".")) for x in textos if re.match(r"^\d+(,\d+)?$", x)]
+    assert not any(abs(v - t["corda"]) < 1.0 for v in numeros), (numeros, t["corda"])   # nenhuma com o tamanho da corda
+    # a cota mais longa do desenho é a da reta maior (990 × ampliação), não a corda de ~1800
+    amp = max(float((e.atributos or {}).get("ampliacao") or 1.0) for e in _ents(d))
+    maior = max(math.dist(c.p1, c.p2) for c in cotas) / amp
+    assert maior < 0.9 * t["corda"], (maior, t["corda"])

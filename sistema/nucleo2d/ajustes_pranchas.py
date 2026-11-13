@@ -28,9 +28,10 @@ import math
 import os
 import random
 import time
+from dataclasses import asdict
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from nucleo2d.desenho import Arco, Chamada, Circulo, Cota, Desenho, Hachura, Linha, Polilinha, Texto
+from nucleo2d.desenho import Arco, Chamada, Circulo, Cota, Desenho, Hachura, Linha, Polilinha, Texto, entidade_de_dict
 
 #: Abaixo disto (mm de papel) não é ajuste — o arredondamento das coordenadas gravadas.
 TOLERANCIA = 0.3
@@ -151,6 +152,34 @@ def _transformar_pontos(e, f, s: float = 1.0):
     elif getattr(e, "tipo", "") == "imagem":          # a cena na prancha (11/11): o canto levado, o tamanho na escala
         e.posicao = f(e.posicao)
         e.largura, e.altura = round(e.largura * s, 3), round(e.altura * s, 3)
+
+
+def _forma_mudou(e, g: dict, o, s: float, giro: float, mov=(0.0, 0.0), d=None) -> bool:
+    """a entidade mudou de forma (não só de lugar) desde a geração: levada de volta pelo movimento da célula e pelo dela,
+    com o texto gerado, a assinatura não é mais a do gerado"""
+    volta = copy.deepcopy(e)
+    if d:
+        _transformar(volta, lambda p: (p[0] - d[0], p[1] - d[1]))
+    c, sn = math.cos(math.radians(-giro)), math.sin(math.radians(-giro))
+    ox, oy = float(o[0]), float(o[1])
+    dx, dy = float(mov[0]), float(mov[1])
+
+    def inv(p):
+        x, y = (p[0] - dx - ox) / s, (p[1] - dy - oy) / s
+        return (ox + c * x - sn * y, oy + sn * x + c * y)
+    _transformar(volta, inv, 1.0 / s, -giro)
+    if isinstance(volta, (Texto, Cota)) and "x" in g:
+        volta.texto = g["x"] or (None if isinstance(volta, Cota) else "")
+    if assinatura(volta, o) == g["s"]:
+        return False
+    if isinstance(volta, Texto):
+        # o mesmo ângulo escrito de outro jeito (−55,3° e 304,7°, 0° e 360°): não é forma mudada
+        a0 = (volta.angulo or 0.0) % 360.0
+        for a in (a0, a0 - 360.0, 0.0 if abs(a0 - 360.0) < 0.05 else a0):
+            volta.angulo = a
+            if assinatura(volta, o) == g["s"]:
+                return False
+    return True
 
 
 def _levar(o, s: float = 1.0, giro: float = 0.0, d=(0.0, 0.0)):
@@ -559,6 +588,14 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
                     if assinatura(volta, o) == g["s"]:
                         aj.pop("d")
                         aj["solta"] = [round(r[0] - g["r"][0], 3), round(r[1] - g["r"][1], 3)]
+                if "solta" not in aj and _forma_mudou(e, g, o, s, giro, (dx, dy), aj.get("d")):
+                    # a forma mexida à mão (a linha esticada, o canto recortado, a cota puxada): a prancha é uma fotografia
+                    # do projeto — a entidade como o usuário a deixou volta na próxima montagem, no lugar da gerada
+                    # (usuário, 13/11: "a prancha seria uma fotografia do projeto"; antes a peça era travada, regra R5)
+                    base = leva(g["r"])
+                    if aj.get("d"):
+                        base = (base[0] + aj["d"][0], base[1] + aj["d"][1])
+                    aj["forma"] = {"e": asdict(e), "ref": [round(base[0], 3), round(base[1], 3)]}
                 if aj:
                     ents_aj[g["s"]] = aj
             # só o que mudou de LUGAR conta (o texto trocado à mão não: o "CU1" que virou "CUM1" na Sala, 12/11), e só
@@ -696,6 +733,7 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
         rel["descartadas"] += 1
         rel.setdefault("descartadas_celulas", []).append(cel)
     tirar = []
+    trocar: Dict[str, object] = {}                              # a forma mexida à mão no lugar da gerada (13/11)
     lugar = {cel: tuple(o) for cel, o in origens.items()}       # onde cada célula ficou (o desenho à mão a segue)
     for cel, aj in celulas.items():
         ents = por_cel.get(cel)
@@ -748,11 +786,27 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
                     e.posicao = (round(e.posicao[0] + ex["p"][0], 3), round(e.posicao[1] + ex["p"][1], 3))
                 if "x" in ex and isinstance(e, (Texto, Cota)):
                     e.texto = ex["x"] or (None if isinstance(e, Cota) else "")
+                if ex.get("forma"):
+                    # a forma mexida à mão (a prancha é uma fotografia, 13/11): a guardada, levada para onde a gerada ficou
+                    n = entidade_de_dict(ex["forma"]["e"])
+                    r_now = _ref(e)
+                    if n is not None and r_now is not None:
+                        ddx = r_now[0] - float(ex["forma"]["ref"][0])
+                        ddy = r_now[1] - float(ex["forma"]["ref"][1])
+                        _transformar(n, lambda p, ddx=ddx, ddy=ddy: (round(p[0] + ddx, 3), round(p[1] + ddy, 3)))
+                        n.id = e.id
+                        n.atributos = dict(n.atributos or {}, **{k: v for k, v in (e.atributos or {}).items()
+                                                                 if k in ("cel", "g", "fonte", "prancha_numero")})
+                        trocar[e.id] = n
+                        rel["formas"] = rel.get("formas", 0) + 1
         lugar[cel] = _caixa_levada(o, tam.get(cel) or [0.0, 0.0], s, giro, (dx, dy))[:2]
         rel["entidades"] += len(achadas)
         rel["sem_alvo"] += len(set(ents_aj) - achadas)
     for i in tirar:
         junto.entidades.pop(i, None)
+    for i, n in trocar.items():
+        if i in junto.entidades:
+            junto.entidades[i] = n
     bruto = (ajustes or {}).get("a_mao")
     if bruto:
         tmp = Desenho.de_dict(bruto)
