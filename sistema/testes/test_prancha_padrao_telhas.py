@@ -113,7 +113,8 @@ def test_deposito_sem_cobertura_plana():
     cel = _celulas(p)
     assert not any("– COBERTURA" in str(c.get("titulo")) for c in p.metadados["prancha"]["celulas"])      # a de 4° saiu
     fachadas = [c for k, c in cel.items() if k.startswith("FACE")]
-    assert len(fachadas) == 6 and all(float(c["escala"]) <= 125.0 for c in fachadas)                     # legíveis
+    # as externas e as internas separadas (13/11) e as iguais juntas: 8 recortes
+    assert len(fachadas) == 8 and all(float(c["escala"]) <= 125.0 for c in fachadas)                     # legíveis
     # as FACES 7 e 8 são iguais (TL1 8x): uma só, "FACES 7 E 8" (usuário, 13/11: "Juntar sempre as iguais")
     assert any(k.startswith("FACES 7 E 8") for k in cel), list(cel)
     tipos = _caixa(cel["TIPOS DE TELHA"])
@@ -121,10 +122,14 @@ def test_deposito_sem_cobertura_plana():
     assert all(_caixa(c)[0] > tipos[2] for c in fachadas)                                               # à direita
     assert _caixa(cel["CU1"])[3] < tipos[1]                                                            # o detalhe embaixo
     assert "RELAÇÃO DE PARAFUSOS DAS TELHAS" in cel
-    # o corte da cobertura (sem multidobra: as retas do Depósito) e a cumeeira, à direita, sem os tipos a 1:500
+    # o corte da cobertura (sem multidobra: as retas do Depósito) e a cumeeira: com as 8 fachadas a coluna da direita não os
+    # leva sem pôr os tipos a 1:500 — descem para a esquerda, embaixo da CU1 (13/11)
     corte = next(c for k, c in cel.items() if k.startswith("CORTE DA COBERTURA"))
-    assert _caixa(corte)[0] > tipos[2] and float(corte["escala"]) <= 250.0
-    assert any(k.startswith("DETALHE DA CUMEEIRA") for k in cel)
+    cume = next(c for k, c in cel.items() if k.startswith("DETALHE DA CUMEEIRA"))
+    for c_ in (corte, cume):
+        cx_ = _caixa(c_)
+        assert cx_[3] < _caixa(cel["CU1"])[1] and cx_[2] < min(_caixa(f)[0] for f in fachadas), c_["titulo"]
+    assert float(corte["escala"]) <= 100.0
 
 
 def test_chamada_do_canto_girada_sem_linhas_encavaladas():
