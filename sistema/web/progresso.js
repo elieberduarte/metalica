@@ -147,7 +147,9 @@ export function acompanhar({ url = '', tarefa = 'tarefa', rotulo = '', onde = nu
       barra.setAttribute('aria-valuenow', String(v));
     }
     const etapa = (ultimoP && ultimoP.etapa) || '';
-    if (botao && ultimoP && ultimoP.cancelando && !botao.disabled) mostrarCancelamento(botao, ultimoP);
+    // o botão segue o servidor também depois de apertado: "cancelando…" vira "terminando de gravar…" quando a tarefa
+    // entra na gravação (D03, causa 3: ficava "cancelando…" até o fim e a tela depois abria o resultado)
+    if (botao && estadoDoCancelar(ultimoP, botao.textContent) !== null) mostrarCancelamento(botao, ultimoP);
     const linha = `${rotulo ? rotulo + (etapa ? ': ' : '…') : ''}${etapa}${decorrido >= 3 ? ` · ${_tempo(decorrido)}` : ''}`;
     texto.textContent = linha;
     barra.title = linha;
@@ -176,6 +178,8 @@ export function acompanhar({ url = '', tarefa = 'tarefa', rotulo = '', onde = nu
     NA_TELA.delete(naTela);
     if (ok) _guardar(tarefa, (performance.now() - inicio) / 1000);
     barra.remove();
+    const recado = recadoDoFim(botao ? botao.textContent : '', ultimoP);
+    if (recado) _recado(recado);
   };
   return naTela.parar;
 }
@@ -189,6 +193,31 @@ export function projetoDaUrl(url) {
 }
 
 /** O botão depois do pedido: "cancelando…", ou a tarefa já gravava e termina sozinha. */
+/** O que o botão Cancelar deve passar a dizer com o andamento `p` do servidor, ou null (fica como está):
+ *  'cancelando' (o cancelamento foi pedido, de qualquer tela) ou 'terminando' (pedido, mas a tarefa já grava). */
+export function estadoDoCancelar(p, textoAtual = '') {
+  if (!p || !p.cancelando) return null;
+  if (p.gravando) return textoAtual === 'terminando de gravar…' ? null : 'terminando';
+  return textoAtual === 'cancelando…' || textoAtual === 'terminando de gravar…' ? null : 'cancelando';
+}
+
+/** O recado do fim quando o cancelamento foi pedido mas a tarefa já gravava: ela terminou, o resultado ficou. '' sem recado. */
+export function recadoDoFim(textoDoBotao, p) {
+  return textoDoBotao === 'terminando de gravar…' || (textoDoBotao === 'cancelando…' && p && p.gravando)
+    ? 'A tarefa já estava gravando quando o cancelamento foi pedido: terminou, para o projeto não ficar pela metade, e o resultado ficou.'
+    : '';
+}
+
+function _recado(texto) {
+  _injetarEstilo();
+  const r = document.createElement('div');
+  r.className = 'barra-andamento flutuante barra-andamento-recado';
+  r.setAttribute('role', 'status');
+  r.textContent = texto;
+  document.body.appendChild(r);
+  setTimeout(() => r.remove(), 9000);           // sai sozinho (TEL-01)
+}
+
 function mostrarCancelamento(botao, r) {
   botao.disabled = true;
   if (r.gravando) {
@@ -352,4 +381,4 @@ export function vigiarChamadas() {
   };
 }
 
-if (typeof window !== 'undefined') window.metalicaProgresso = { acompanhar, fracaoDaBarra, tarefaDaChamada, vigiarChamadas, pedirCancelar, projetoDaUrl, segurarCliqueAtras };
+if (typeof window !== 'undefined') window.metalicaProgresso = { acompanhar, fracaoDaBarra, tarefaDaChamada, vigiarChamadas, pedirCancelar, projetoDaUrl, segurarCliqueAtras, estadoDoCancelar, recadoDoFim };
