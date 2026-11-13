@@ -54,6 +54,9 @@ TIPOS_FIGURA = ("pessoa", "operario", "carro", "caminhonete", "caminhao", "arvor
 ESTILOS_FIGURA = ("auto", "cor", "neutro")
 FIGURAS_MAX = 60
 MINIATURA_LADO = 480                       # px: a miniatura da lista das cenas
+#: a sombra suave nos cantos do render da cena do 3D (12/11, amostra-15 aprovada: médio por padrão, no Renderizar e no Exportar
+#: refinado; o vídeo sem ela por enquanto). Os raios e as forças de cada nível são da tela (cena.js NIVEIS_CANTOS)
+NIVEIS_CANTOS = ("sem", "suave", "medio", "forte")
 
 
 class ErroCena(ErroDeDados):
@@ -557,6 +560,11 @@ def _gravar_campos(g, s: str, i: str, corpo: dict) -> dict:
                 c[chave] = corpo[chave]
         if "piso_oculto" in corpo:
             c["piso_oculto"] = _lista_de_textos(corpo["piso_oculto"] or [], 50)
+        # a sombra suave nos cantos do render (12/11, amostra-15 aprovada: "médio" como padrão; a cena sem o campo = médio)
+        if "cantos" in corpo:
+            if corpo["cantos"] not in NIVEIS_CANTOS:
+                raise ErroCena("nível da sombra nos cantos desconhecido: %s" % corpo["cantos"])
+            c["cantos"] = corpo["cantos"]
         # a tela das Cenas (11/11, amostra-4 aprovada): o quadro da imagem e o fundo
         if "proporcao" in corpo:
             if corpo["proporcao"] not in PROPORCOES:
@@ -705,7 +713,7 @@ def gravar_imagem(g, s: str, i: str, corpo: dict) -> dict:
 
 #: Copiar ajustes (usuário, 11/11: "quando ajusto as configurações em uma cena poderia… ter a opção de copiar de uma cena para
 #: (sol, terreno...)"): os grupos e os campos de cada um; os marcados com * só existem na cena do 3D
-GRUPOS_COPIA = {"sol": ("sol",), "ambiente": ("*fundo", "*luzes", "*entorno"), "figuras": ("*figuras",), "camadas": ("desligadas",), "estilo": ("*pintar", "*arestas"),
+GRUPOS_COPIA = {"sol": ("sol",), "ambiente": ("*fundo", "*luzes", "*entorno"), "figuras": ("*figuras",), "camadas": ("desligadas",), "estilo": ("*pintar", "*arestas", "*cantos"),
                 "enquadramento": ("*proporcao", "*lente"), "marca": ("marca",)}
 
 

@@ -475,6 +475,26 @@ def test_video_do_exportar_vai_para_a_pasta_cenas(tmp_path):
     assert C.nova_3d(g, s, {"nome": "Video", "camera": _CAM})["id"] == "video-cena"
 
 
+def test_sombra_nos_cantos_da_cena(tmp_path):
+    """12/11 (amostra-15 aprovada: "médio" como padrão, um seletor no Estilo): o nível da sombra suave nos cantos gravado na
+    cena do 3D (sem o campo = médio, decidido na tela); só os 4 níveis; vai na cena nova e no Copiar ajustes › Estilo."""
+    g, s = _gerente(tmp_path)
+    a = C.nova_3d(g, s, {"nome": "A", "camera": _CAM})
+    assert "cantos" not in a                                            # o padrão (médio) é da tela
+    b = C.nova_3d(g, s, {"nome": "B", "camera": _CAM, "cantos": "forte"})
+    assert b["cantos"] == "forte"
+    for nivel in ("sem", "suave", "medio", "forte"):
+        assert C.rota_post(g, s, [a["id"]], {"cantos": nivel})["cantos"] == nivel
+    with pytest.raises(C.ErroCena):
+        C.rota_post(g, s, [a["id"]], {"cantos": "muito"})
+    with pytest.raises(C.ErroCena):
+        C.nova_3d(g, s, {"nome": "C", "camera": _CAM, "cantos": 3})
+    assert C.ler(g, s, a["id"])["cantos"] == "forte"                    # o recusado não mudou nada
+    C.rota_post(g, s, [b["id"]], {"cantos": "suave"})
+    C.rota_post(g, s, ["copiar"], {"de": b["id"], "para": [a["id"]], "grupos": ["estilo"]})
+    assert C.ler(g, s, a["id"])["cantos"] == "suave"
+
+
 def _mp4(segundos, escala=1000, versao=0):
     """Um MP4 mínimo como o do vídeo das cenas: ftyp, mdat e a moov no fim, com a mvhd (a duração)."""
     import struct

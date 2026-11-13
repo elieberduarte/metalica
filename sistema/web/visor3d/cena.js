@@ -23,6 +23,7 @@ import { encaixar } from './encaixe.js';
 import { SOL_PADRAO, definirSol, controlesDoSol, ligarControlesDoSol } from './sol.js';
 import { ligarExportar } from './exportar_cenas.js';
 import { ligarVideos } from './assistir_videos.js';
+import { Oclusao } from './oclusao.js';
 import { Figuras, TIPOS_FIGURA, arvoresDoFundo } from './figuras_cena.js';
 import { linhaDoTempo, caminhoContinuo, cameraEntre, anguloEntre, GravadorMp4 } from './video_cenas.js';
 
@@ -555,7 +556,7 @@ function resumirPainel() {
     .map(([g, um, varios]) => { const n = conta(g); return n ? `${n} ${n === 1 ? um : varios}` : ''; }).filter(Boolean);
   if (amb && +entornoDaCena().arvores) partes.push('árvores no fundo');
   pos('res-figuras', partes.join(' · ') || 'nenhuma');
-  pos('res-estilo', `cores por ${cena.pintar && cena.pintar !== 'editor' ? cena.pintar : 'material'} · ${cena.arestas === false ? 'sem arestas' : 'arestas finas'}`);
+  pos('res-estilo', `cores por ${cena.pintar && cena.pintar !== 'editor' ? cena.pintar : 'material'} · ${cena.arestas === false ? 'sem arestas' : 'arestas finas'} · ${NOMES_CANTOS[nivelCantos()]}`);
 }
 
 function mostrarPainel3d() {
@@ -564,6 +565,7 @@ function mostrarPainel3d() {
   marcar('#proporcao', cena.proporcao || '16:9');
   marcar('#pintar3d', cena.pintar && cena.pintar !== 'editor' ? cena.pintar : 'material');
   marcar('#arestas3d', cena.arestas === false ? '0' : '1');
+  marcar('#cantos3d', nivelCantos());
   marcar('#fundo3d', cena.fundo || 'ceu');
   marcar('#ambiente3d', cena.fundo || 'ceu');
   const amb = AMBIENTES[cena.fundo || 'ceu'], lz = luzesDaCena();
@@ -619,13 +621,23 @@ async function gerarMiniatura() {
 
 /** A imagem da cena do 3D em w × h: a lente da cena, o quadro inteiro; o céu pintado antes (o degradê da tela se repetiria
  *  em cada bloco do render) e o 3D por cima. Devolve a tela com a lente do quadro. */
-async function imagemDaCena3d(w, h, ss = 1, aoBloco = null, comMarca = true, ceu = null) {
+// a SOMBRA SUAVE NOS CANTOS (roteiro de refino, item 2; amostra-15 aprovada em 12/11: "médio" como padrão, ligada no
+// Renderizar e no Exportar refinado, desligada no vídeo e no Salvar imagem): o raio em mm e a força de cada nível
+const NIVEIS_CANTOS = { sem: null, suave: { raio: 600, forca: 1.2 }, medio: { raio: 1000, forca: 1.8 }, forte: { raio: 1500, forca: 2.6 } };
+const NOMES_CANTOS = { sem: 'sem sombra nos cantos', suave: 'cantos suaves', medio: 'cantos médios', forte: 'cantos fortes' };
+const MARGEM_CANTOS = 64;                                   // px do bloco: o raio da sombra na imagem nunca passa disto
+const nivelCantos = () => (cena && cena.cantos in NIVEIS_CANTOS ? cena.cantos : 'medio');
+function cantosDaCena() { return eh3d() ? NIVEIS_CANTOS[nivelCantos()] : null; }
+
+/** A imagem da cena do 3D. `opcoes.cantos`: com a sombra suave nos cantos (o nível da cena) — o render e o exportar
+ *  refinado; o Salvar imagem (como na tela) e o vídeo saem sem ela. */
+async function imagemDaCena3d(w, h, ss = 1, aoBloco = null, comMarca = true, ceu = null, opcoes = {}) {
   // `ceu(g, w, h, cam)`: o fundo pintado por quem chama (o vídeo, no meio de um trecho entre dois ambientes)
   const amb = ambienteDaCena(), fundoAntes = visor.cena.background, pintar = ceu || (amb ? (g, w_, h_, cam) => pintarCeu(g, w_, h_, amb, cam) : null);
   visor.camera.fov = fovCena;
   if (pintar) visor.cena.background = null;
   try {
-    const img = await montarImagem(w, h, ss, aoBloco, { comFoto: false, frente: false,
+    const img = await montarImagem(w, h, ss, aoBloco, { comFoto: false, frente: false, cantos: opcoes.cantos ? cantosDaCena() : null,
       antes: pintar ? (g) => {                              // o céu do ambiente pela câmera da imagem (a lente e a proporção dela)
         const cam = visor.camera.clone(); cam.fov = fovCena; cam.aspect = w / h; cam.clearViewOffset();
         cam.updateProjectionMatrix(); cam.updateMatrixWorld(); pintar(g, w, h, cam);
@@ -854,7 +866,7 @@ async function novaCena3d(nome) {
     const W = palco.clientWidth, H = palco.clientHeight, qh = Math.min(H - 120, (W - 48) / (16 / 9));
     fov = Math.atan(Math.tan(visor.camera.fov * Math.PI / 360) * qh / H) * 360 / Math.PI;
   }
-  const base = eh3d() ? { pintar: cena.pintar, arestas: cena.arestas, fundo: cena.fundo, proporcao: cena.proporcao } : { proporcao: '16:9', fundo: 'ceu' };
+  const base = eh3d() ? { pintar: cena.pintar, arestas: cena.arestas, cantos: cena.cantos, fundo: cena.fundo, proporcao: cena.proporcao } : { proporcao: '16:9', fundo: 'ceu' };
   const c = visor.lerCamera();
   try {
     const nova = await pedir(`${API}/nova-3d`, { nome, ...base, camera: { posicao: c.posicao, alvo: c.alvo, fov, projecao: 'perspectiva' },
@@ -912,7 +924,7 @@ function menuDoCartao(c, el) {
       atualizarCartoes();
     }]];
   if (c.tipo === '3d') itens.push(['Duplicar', async () => {
-    const campos = ['camera', 'desligadas', 'pintar', 'arestas', 'planta', 'piso_oculto', 'sol', 'situacao', 'guarda', 'proporcao', 'fundo',
+    const campos = ['camera', 'desligadas', 'pintar', 'arestas', 'cantos', 'planta', 'piso_oculto', 'sol', 'situacao', 'guarda', 'proporcao', 'fundo',
                     'luzes', 'entorno', 'figuras', 'marca'];
     const copia = Object.fromEntries(campos.filter(f => c[f] !== undefined).map(f => [f, c[f]]));
     try { const n = await pedir(`${API}/nova-3d`, { ...copia, nome: c.nome + ' (cópia)' }); await listar(n.id); } catch (e) { aviso('Não deu: ' + e.message); }
@@ -1044,6 +1056,7 @@ function ligar3d() {
   opcoes('#proporcao', 'proporcao');
   opcoes('#pintar3d', 'pintar');
   opcoes('#arestas3d', 'arestas', v => v === '1');
+  opcoes('#cantos3d', 'cantos');
   // o ambiente ou o fundo liso (11/11, amostra-6): o entardecer abaixa o sol (sombra comprida); voltar ao dia com o sol
   // muito baixo o sobe para o padrão
   const escolherFundo = (e) => {
@@ -2117,7 +2130,8 @@ function ligarFrente() {
 /** A foto com o 3D por cima, num canvas de w × h. O 3D sai em blocos (camera.setViewOffset): qualquer tamanho, sem passar
  *  do que a placa de vídeo desenha de uma vez; cada bloco `ss` vezes maior e reduzido (supersampling — as terças finas
  *  sem serrilhado nem moiré). `aoBloco(i, n)` depois de cada bloco. */
-async function montarImagem(w, h, ss = 1, aoBloco = null, { comFoto = true, frente = true, bloco = 2048, antes = null } = {}) {
+let oclusao = null;                                         // a sombra suave nos cantos (oclusao.js), criada no 1º uso
+async function montarImagem(w, h, ss = 1, aoBloco = null, { comFoto = true, frente = true, bloco = 2048, antes = null, cantos = null } = {}) {
   const saida = document.createElement('canvas');
   saida.width = w; saida.height = h;
   const g = saida.getContext('2d');
@@ -2145,6 +2159,21 @@ async function montarImagem(w, h, ss = 1, aoBloco = null, { comFoto = true, fren
       if (visor.apresentacao) { visor._desenharSombra(); visor._luz.uDesloc.value = desloc; }
       r.render(visor.cena, cam);
       g.drawImage(r.domElement, 0, 0, bw * ss, bh * ss, x, y, bw, bh);     // na mesma tarefa: o quadro ainda está lá
+      if (cantos) {
+        // a sombra dos cantos por cima do bloco: o bloco com uma margem em volta (os pontos perto da borda enxergam o vizinho
+        // — sem a margem a emenda dos blocos apareceria), só a parte de dentro entra na imagem
+        if (!oclusao) oclusao = new Oclusao(r);
+        const m = Math.ceil(MARGEM_CANTOS / ss), ex = Math.min(m, x), ey = Math.min(m, y);
+        const W2 = bw + ex + Math.min(m, w - x - bw), H2 = bh + ey + Math.min(m, h - y - bh);
+        r.setSize(W2 * ss, H2 * ss, false);
+        cam.setViewOffset(w * ss, h * ss, (x - ex) * ss, (y - ey) * ss, W2 * ss, H2 * ss);
+        oclusao.desenhar(visor.cena, cam, W2 * ss, H2 * ss, { raio: cantos.raio, forca: cantos.forca, raioMaxPx: MARGEM_CANTOS,
+          chaoZ: visor.piso && visor.piso.visible ? visor.piso.position.z : null });
+        const alfa = g.globalAlpha; g.globalAlpha = 1;
+        g.drawImage(r.domElement, ex * ss, ey * ss, bw * ss, bh * ss, x, y, bw, bh);
+        g.globalAlpha = alfa;
+        window.cantosUsados = (window.cantosUsados || 0) + 1;  // os testes: quais imagens saíram com a sombra dos cantos
+      }
       if (aoBloco) await aoBloco(k + 1, blocos.length);
     }
   } finally {
@@ -2294,7 +2323,7 @@ async function renderizar3d() {
     const saida = await imagemDaCena3d(w, h, 2, async (i, n) => {
       aviso(`Renderizando ${nf(w)} × ${nf(h)} px: bloco ${i} de ${n}…`);
       await new Promise(res => setTimeout(res, 0));
-    });
+    }, true, null, { cantos: true });
     devolver();
     aviso('Gravando a imagem renderizada…');
     const j = await enviarImagem(saida, png ? 'render.png' : 'render.jpg', png ? 'image/png' : 'image/jpeg', 0.95);
@@ -2478,8 +2507,9 @@ function tamanhoExportar(lado) {
   return [Math.round(cena.px[0] * k), Math.round(cena.px[1] * k)];
 }
 
-/** A imagem da cena aberta para a janela (a prévia e o lote): a marca d'água junto; refinada = a sombra maior. */
-async function imagemParaExportar({ lado, ss = 1, refinada = false, aoBloco = null }) {
+/** A imagem da cena aberta para a janela (a prévia e o lote): a marca d'água junto; refinada = a sombra maior e a sombra
+ *  suave nos cantos (a prévia da qualidade refinada pede só os cantos: `cantos`). */
+async function imagemParaExportar({ lado, ss = 1, refinada = false, cantos = refinada, aoBloco = null }) {
   const [w, h] = tamanhoExportar(lado);
   if (!w || !h) throw new Error('a cena não tem tamanho');
   if (ehFoto() && !cena.camera) throw new Error('a foto ainda não está encaixada');
@@ -2487,7 +2517,7 @@ async function imagemParaExportar({ lado, ss = 1, refinada = false, aoBloco = nu
   renderizando = true; mostrarBotoes();
   const devolver = refinada ? sombraDoRender() : () => {};
   try {
-    if (eh3d()) return await imagemDaCena3d(w, h, ss, aoBloco, true);
+    if (eh3d()) return await imagemDaCena3d(w, h, ss, aoBloco, true, null, { cantos });
     mostrarModo('foto');
     tela.style.visibility = 'hidden';                       // os blocos passando pela tela não piscam na vista
     const saida = await montarImagem(w, h, ss, aoBloco);

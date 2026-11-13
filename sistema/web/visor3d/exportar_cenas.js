@@ -245,7 +245,8 @@ export function ligarExportar(ctx) {
   async function desenharPrevia() {
     if (!fundo || rodando || !ctx.atual()) return;
     try {
-      const img = await ctx.imagem({ lado: 640, ss: 1, aoBloco: null });
+      // a refinada leva a sombra suave nos cantos (12/11, amostra-15): a prévia mostra como vai sair
+      const img = await ctx.imagem({ lado: 640, ss: 1, aoBloco: null, cantos: opcoesDaTela().qualidade !== 'rapida' });
       if (!fundo || rodando) return;
       const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height;
       const g = cv.getContext('2d');
@@ -476,7 +477,7 @@ export function ligarExportar(ctx) {
         <h3>Tamanho</h3>
         ${LADOS.map(([v, t, sub]) => radio('lado', v, v === 'tela' ? t : `${t} — ${v} px no lado maior`, v === 'tela' && atual ? `${nf(w0)} × ${nf(h0)}, ${sub}` : sub, o.lado === v)).join('')}
         <h3>Qualidade</h3>
-        ${radio('qualidade', 'refinada', 'Refinada', 'sombra fina e bordas suaves (em blocos, como o Renderizar)', o.qualidade !== 'rapida')}
+        ${radio('qualidade', 'refinada', 'Refinada', 'sombra fina, bordas suaves e a sombra nos cantos (em blocos, como o Renderizar)', o.qualidade !== 'rapida')}
         ${radio('qualidade', 'rapida', 'Rápida', 'como está na tela', o.qualidade === 'rapida')}
         <h3>Formato e destino</h3>
         <div class="linha" style="gap:14px">${radio('formato', 'jpg', 'JPG', '(menor)', !['png', 'pdf'].includes(o.formato))}${radio('formato', 'png', 'PNG', '(fundo transparente possível)', o.formato === 'png')}${radio('formato', 'pdf', 'PDF', '(uma página por cena)', o.formato === 'pdf')}</div>
@@ -514,7 +515,7 @@ export function ligarExportar(ctx) {
     fundo.addEventListener('change', (ev) => {
       if (ev.target.closest('#exportar-varias')) fundo.querySelector('input[name=quais][value=varias]').checked = true;
       mostrarResumo();
-      if (ev.target.name === 'formato') agendarPrevia();
+      if (ev.target.name === 'formato' || ev.target.name === 'qualidade') agendarPrevia();
       if (ev.target.id === 'exportar-texto') desenharCartoes();
     });
     fundo.addEventListener('keydown', (ev) => { ev.stopPropagation(); if (ev.key === 'Escape') fechar(); });
