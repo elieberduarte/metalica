@@ -19,7 +19,7 @@ import math
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from saida.detalhamento import _autovetores, _eh_telha, RHO_ACO, _ordem_natural
-from nucleo2d.detalhe.base import _marcas, _dot, _sub, _norm, _cruz, arredondar_telha
+from nucleo2d.detalhe.base import _marcas, _dot, _sub, _norm, _cruz, arredondar_telha, PASSO_DOBRADA
 
 #: Peça mais curta que isto (mm) na fileira é faceta da dobra; a reta é bem mais longa.
 FACETA_MAX = 400.0
@@ -248,10 +248,11 @@ def _analisar_instancia(inst, barras: Sequence = ()) -> Optional[dict]:
                 L2, p2 = novo, novo_p
             else:
                 L1, p1 = novo, novo_p
-    # retas arredondadas para cima (regra da fábrica: sobra nas pontas livres)
+    # retas arredondadas para cima (regra da fábrica: sobra nas pontas livres) — no passo fino: a multidobra vai no
+    # desenvolvido exato (13/11); a TL que a continua (`resto`, uma reta) vai no passo da telha reta
     t1_ = (I[0] - d1[0] * T, I[1] - d1[1] * T)
     t2_ = (I[0] + d2[0] * T, I[1] + d2[1] * T)
-    L1, L2 = arredondar_telha(L1), arredondar_telha(L2)
+    L1, L2 = arredondar_telha(L1, PASSO_DOBRADA), arredondar_telha(L2, PASSO_DOBRADA)
     p1 = (t1_[0] - d1[0] * L1, t1_[1] - d1[1] * L1)
     p2 = (t2_[0] + d2[0] * L2, t2_[1] + d2[1] * L2)
     if cobrimento:
@@ -758,7 +759,7 @@ def cumeeiras(pecas: Sequence, desenvolvida: Optional[float] = None) -> Dict[str
             continue
         A, B, topo, da, db, ang = pares[0]
         L1, L2 = pernas_da_cumeeira(A["L"], B["L"], desenvolvida)
-        M1, M2 = arredondar_telha(A["L"]), arredondar_telha(B["L"])          # como o modelo traz
+        M1, M2 = arredondar_telha(A["L"], PASSO_DOBRADA), arredondar_telha(B["L"], PASSO_DOBRADA)          # como o modelo traz
         # a perna 1 é a da esquerda no desenho
         if da[0] > db[0]:
             L1, L2, da, db, M1, M2 = L2, L1, db, da, M2, M1
@@ -877,7 +878,7 @@ def cumeeiras_de_funilaria(pecas: Sequence, desenvolvida: Optional[float] = None
         pos = _posicao(e)
         saida.append({"tipo": "cumeeira", "conjunto": pos, "instancias": inst, "composicao": {pos: 1},
                       "ids": [e.id], "perna1": L1, "perna2": L2, "angulo": round(ang, 1), "desenv": L1 + L2,
-                      "pernas_modelo": [arredondar_telha(pernas_m[0]), arredondar_telha(pernas_m[1])],
+                      "pernas_modelo": [arredondar_telha(pernas_m[0], PASSO_DOBRADA), arredondar_telha(pernas_m[1], PASSO_DOBRADA)],
                       "desenv_ext": L1 + L2, "altura_onda": 40.0, "perfil": perfil, "material": _material(ref[0]),
                       "peso": round(peso, 3), "topo": (0.0, 0.0),
                       "d1": (-math.cos(incl_e), -math.sin(incl_e)), "d2": (math.cos(incl_d), -math.sin(incl_d)),
@@ -1182,7 +1183,7 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
             novo = None
             if b_ and ch.get("_bruto") is not None:
                 ref = (comprimentos or {}).get(ch["nome"])
-                if ref and abs(ch["_bruto"] - ref) <= max(1.5 * PASSO_TELHA, 0.01 * ref):
+                if ref and abs(ch["_bruto"] - ref) <= max(PASSO_TELHA, 0.01 * ref):   # o arredondamento para cima: até um passo
                     novo = float(ref)
                 elif max(b_) - min(b_) <= MESMA_TELHA:
                     novo = arredondar_telha(min(b_))

@@ -72,9 +72,13 @@ LIMITE_TERCA = 200.0
 LARGURA_COMPRA_TELHA = 980.0
 LARGURA_TOTAL_TELHA = 1050.0
 
-#: Comprimento de telha arredondado PARA CIMA neste passo (mm) — regra da fábrica: sempre
-#: sobra um pouco (1449 → 1450, 1891 → 1895), nunca falta.
-PASSO_TELHA = 5.0
+#: Comprimento da telha reta arredondado PARA CIMA neste passo (mm) — sempre sobra um pouco, nunca falta. De 5 em 5 cm
+#: (usuário, 13/11, o padrão do Fábio: "o passo de 5 cm vale no sistema todo" — relação, compra, resumo e lista; as retas
+#: do oitão do CD Bom Dia, 3101,7 … 5670,7 mm, foram pedidas 3100 … 5700). Era 5 mm (1449 → 1450, 1891 → 1895).
+PASSO_TELHA = 50.0
+#: A telha dobrada (as retas da multidobra) e as pernas da cumeeira ficam no passo fino: a multidobra vai no desenvolvido
+#: exato (usuário, 13/11: "multidobra continua no desenvolvido exato em mm"); a cumeeira é a chapa de 1,00 m.
+PASSO_DOBRADA = 5.0
 
 #: Texto das cotas e das chamadas das pranchas geradas (mm de papel). Era 2,5 (cota) e 2,0 (chamada); o usuário
 #: aumentou à mão na T1 da Sala de Compressores para ler na prancha (26/10: "foram aumentados o tamanho das cotas para
@@ -86,10 +90,11 @@ ALTURA_CHAMADA = 5.0
 ESPACO_CADEIA = 3.0 * 2.5
 
 
-def arredondar_telha(mm: float) -> float:
-    """Comprimento de compra/corte da telha: o múltiplo de PASSO_TELHA logo acima (com
-    0,05 mm de folga, para 1450,00 não virar 1455)."""
-    return float(math.ceil((float(mm) - 0.05) / PASSO_TELHA) * PASSO_TELHA) if mm > 0 else 0.0
+def arredondar_telha(mm: float, passo: float = None) -> float:
+    """Comprimento de compra/corte da telha: o múltiplo de `passo` (PASSO_TELHA, a reta) logo acima (com
+    0,05 mm de folga, para 1450,00 não virar 1500)."""
+    passo = float(passo or PASSO_TELHA)
+    return float(math.ceil((float(mm) - 0.05) / passo) * passo) if mm > 0 else 0.0
 
 
 def _area_casco(pontos) -> float:

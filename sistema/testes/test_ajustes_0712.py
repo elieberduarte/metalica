@@ -11,12 +11,15 @@ from nucleo3d.modelo import Documento, Solido, Chapa
 
 
 def test_telha_arredondada_para_cima_de_5_em_5():
+    # a reta: de 5 em 5 cm desde 13/11 (o padrão do Fábio, test_passo_telha_50.py); o passo de 5 mm ficou na dobrada
+    from nucleo2d.detalhe.base import PASSO_DOBRADA
     assert arredondar_telha(1449.0) == 1450.0
     assert arredondar_telha(1450.0) == 1450.0
-    assert arredondar_telha(1450.02) == 1450.0          # décimo de malha não vira 5 mm
-    assert arredondar_telha(1450.3) == 1455.0
-    assert arredondar_telha(1891.0) == 1895.0
-    assert arredondar_telha(2087.0) == 2090.0
+    assert arredondar_telha(1450.02) == 1450.0          # décimo de malha não vira mais um passo
+    assert arredondar_telha(1450.3) == 1500.0
+    assert arredondar_telha(1891.0) == 1900.0
+    assert arredondar_telha(1450.3, PASSO_DOBRADA) == 1455.0
+    assert arredondar_telha(2087.0, PASSO_DOBRADA) == 2090.0
 
     class P:
         L, comprimento, H, local, peso, saia = 1449.0, 1449.0, 1031.0, None, 10.0, 0.0
