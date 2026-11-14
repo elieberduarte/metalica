@@ -6,7 +6,21 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import pytest  # noqa: E402
+
 import desenhos_vivos as dv  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _configuracao_de_antes():
+    """Cada teste daqui entrega ao desenhos_vivos um gerente de mentira (e às vezes o detalhar): no fim volta o que
+    estava. Sem isso o último gerente ficava para os testes seguintes do mesmo processo — e quando um teste anterior já
+    tinha chamado o app._vivos() (o test_cancelar_d03, 13/11), o app não configurava de novo: as pranchas de outro
+    teste eram recusadas com "os desenhos estão sendo atualizados com o 3D (o modelo 3D mudou)"."""
+    antes = dict(dv._funcoes)
+    yield
+    dv._funcoes.clear()
+    dv._funcoes.update(antes)
 
 
 class _Gerente:
@@ -296,3 +310,16 @@ def test_no_dev_o_programa_novo_nao_avisa(tmp_path, monkeypatch):
     monkeypatch.setattr(dv, "_impressao", "programa-de-hoje")
     monkeypatch.setattr(dv, "AVISAR_PROGRAMA_NOVO", False)
     assert dv.programa_novo("p") is False and dv.estado("p", conferir=False)["programa_novo"] is False
+
+
+_DE_MENTIRA = lambda: None                                    # noqa: E731
+
+
+def test_a_configuracao_de_um_teste_nao_fica_para_o_seguinte_1():
+    """A dupla com o teste de baixo (13/11): o gerente entregue aqui não pode estar lá."""
+    dv.configurar(gerente=_DE_MENTIRA)
+    assert dv._funcoes["gerente"] is _DE_MENTIRA
+
+
+def test_a_configuracao_de_um_teste_nao_fica_para_o_seguinte_2():
+    assert dv._funcoes.get("gerente") is not _DE_MENTIRA
