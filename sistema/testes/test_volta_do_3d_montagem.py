@@ -1219,3 +1219,45 @@ def test_a_rota_nao_regrava_a_planta_nem_diz_atualizada_quando_nada_foi_alterado
     assert texto == "Planta atualizada pelo 3D: 1 mudança(s)." and tipo == "info" and itens[0].startswith("viga TC: topo")
     sem = _aviso_da_volta({"alteracoes": [], "planta_alterada": False})
     assert sem[0] == "Nada mudou no 3D em relação a esta planta."
+
+
+# ------------------------------------------------------------------ a revisão do delta (14/11)
+def test_a_ponta_puxada_movida_ao_longo_da_tesoura_vai_para_a_planta_sem_o_aviso():
+    """(a) regressão do 31013f3: a ponta da aleta levada 100 mm ao longo da tesoura (para outro ponto do banzo) tinha a
+    componente no eixo da barra tirada como "ajuste da ponta puxada" — a ponta da planta ia para fora da tesoura e a
+    volta dizia "encurtada". Ponta que sai do eixo da barra é a barra mudando de lugar: vem para a planta"""
+    real, ids = _planta_pequena("aleta", 5000.0)
+    des = _na_montagem(real, 0.0)
+    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    a0 = _real(des, ids[0]).a
+    cv = _cv(doc, ids[0])
+    cv.inicio = (cv.inicio[0], cv.inicio[1] + 100.0, cv.inicio[2])
+    r = DPE.montagem_do_modelo(des, doc, [])
+    assert len(r["alteracoes"]) == 1 and "a ponta foi" not in r["alteracoes"][0], r["alteracoes"]
+    assert _real(des, ids[0]).a == pytest.approx((a0[0], a0[1] + 100.0), abs=0.01)
+
+
+def test_a_ponta_puxada_encurtada_e_a_outra_alongada_diferente_a_puxada_fica_e_a_outra_vem():
+    """(c) a ponta do oitão encurtada 30 e a outra alongada 100: o comum (30) saía antes como translação, a linha andava
+    30 e saía do cruzamento (a extensão e o ST2 sumiam no 3D refeito), sem aviso"""
+    des, ids = _planta_com_tercas_na_tesoura_da_ponta()
+    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    tc = _cv(doc, ids[0])
+    tc.inicio = (tc.inicio[0] + 30.0, tc.inicio[1], tc.inicio[2])
+    tc.fim = (tc.fim[0] + 100.0, tc.fim[1], tc.fim[2])
+    r = DPE.planta_do_modelo(des, doc, [])
+    assert r["alteracoes"] == ["viga TC: comprimento 5000 → 5100 mm, movida 50 mm; " + _puxada("até a face da tesoura", "encurtada", 30)]
+    e = des.entidades[ids[0]]
+    assert e.a == pytest.approx((0.0, 3000.0), abs=0.01) and e.b == pytest.approx((5100.0, 3000.0), abs=0.01)
+    novo, _ = DPE.modelo_da_planta(copy.deepcopy(des), [])      # no cruzamento: a extensão continua
+    assert _cv(novo, ids[0]).inicio[0] == pytest.approx(-63.5, abs=0.5)
+
+
+def test_a_ponta_puxada_levantada_no_banzo_inclinado_vem_como_cota_sem_o_aviso(hangar):
+    """(a), a outra forma: o contravento de cima (no banzo inclinado) com só a ponta da aleta levantada 40 mm — parte do
+    Δz caía no eixo da barra e virava "alongada"; é a ponta mudando de lugar: a cota vem para a planta"""
+    des, niveis, doc = hangar
+    cv, _eid = _barra_de(doc, des, "contraventamento", "CV1", "sup")
+    cv.inicio = (cv.inicio[0], cv.inicio[1], cv.inicio[2] + 40.0)
+    r = DPE.montagem_do_modelo(des, doc, niveis)
+    assert len(r["alteracoes"]) == 1 and "a ponta foi" not in r["alteracoes"][0] and "topo" in r["alteracoes"][0], r["alteracoes"]

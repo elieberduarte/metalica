@@ -2861,30 +2861,38 @@ def _ajuste_das_pontas_puxadas(e, ref, pi, pf, onde: str, tol: float):
     """Tira das pontas puxadas pela montagem (a de referência fora da ponta da linha, em planta) o ajuste ao longo do
     eixo que o usuário fez no 3D, e diz qual foi: (pi, pf, aviso ou None). Mexida essa ponta, a volta somava o delta à
     linha: a terça saía do cruzamento (sem a extensão e sem o suporte ST2 da ponta) e o contravento voltava ao furo no
-    3D refeito — o ajuste se perdia calado (14/11). Só sai o ajuste daquela ponta ao longo do eixo: subir, mover de lado
-    e a outra ponta seguem para a planta (ponto 1 do GESTÃO N.10). Mover a barra ao longo dela é mover: a translação
-    comum às duas pontas sai antes (encurtar uma ponta X e alongar a outra X é, na geometria, a barra movida X)."""
+    3D refeito — o ajuste se perdia calado (14/11).
+
+    Cada ponta andou um tanto de lado (perpendicular ao eixo) e um tanto no eixo. Revisão do delta, 14/11:
+    * de lado diferente nas duas pontas → a barra girou ou mudou de lugar (a ponta da aleta levada ao longo do banzo,
+      levantada no banzo inclinado): não é ajuste de ponta, vem para a planta (a);
+    * igual no eixo nas duas pontas → a barra movida ao longo dela: é mover;
+    * sem nada de lado → cada ponta é dela: a puxada fica com o ajuste dela e a outra vem (c);
+    * deslocada de lado junto (levantada, movida de lado) → o quanto andou no eixo junto é o que deixa o menor ajuste
+      nas pontas (0, o da ponta a ou o da b; no empate, 0) — a terça inclinada levantada e encurtada.
+    Subir, mover de lado e a outra ponta seguem para a planta (ponto 1 do GESTÃO N.10)."""
     r0, r1 = ref
     Lr = math.dist(r0, r1)
     if Lr < 1e-6:
         return pi, pf, None
-    L1 = math.dist(pi, pf)
-    if L1 < 1e-6 or abs(L1 - Lr) <= tol:
-        return pi, pf, None                               # mover e girar não mudam o comprimento: não é ajuste de ponta
     u = tuple((r1[k] - r0[k]) / Lr for k in range(3))
-    # o giro desloca as pontas ao longo do eixo antigo em até L·(1 − cos θ) sem ser ajuste delas (achado 4): abaixo
-    # disso, girada junto, a ponta segue pela conta de sempre
-    cos_t = max(-1.0, min(1.0, sum((pf[k] - pi[k]) / L1 * u[k] for k in range(3))))
-    margem = Lr * (1.0 - cos_t) + tol
-    da = sum((pi[k] - r0[k]) * u[k] for k in range(3))
-    db = sum((pf[k] - r1[k]) * u[k] for k in range(3))
-    t = math.copysign(min(abs(da), abs(db)), da) if da * db > 0 else 0.0
+    Da = tuple(pi[k] - r0[k] for k in range(3))
+    Db = tuple(pf[k] - r1[k] for k in range(3))
+    xa, xb = sum(Da[k] * u[k] for k in range(3)), sum(Db[k] * u[k] for k in range(3))
+    pa = tuple(Da[k] - xa * u[k] for k in range(3))
+    pb = tuple(Db[k] - xb * u[k] for k in range(3))
+    if math.dist(pa, pb) > tol or abs(xa - xb) <= tol:
+        return pi, pf, None                               # girou/mudou de lugar, ou movida ao longo dela
+    if math.hypot(*pa) <= tol:
+        m = 0.0                                           # nada de lado: cada ponta é dela
+    else:
+        m = min((0.0, xa, xb), key=lambda c: abs(xa - c) + abs(xb - c) + (0.0 if c == 0.0 else 1e-9))
     novas, mexidas = [], []
-    for nome, P, R, E, d_, sentido in (("começo", pi, r0, e.a, da, -1.0), ("fim", pf, r1, e.b, db, 1.0)):
-        resto = d_ - t
-        if math.dist(R[:2], E) > tol and abs(resto) > margem:
-            P = tuple(P[k] - u[k] * resto for k in range(3))
-            fora = sentido * resto
+    for nome, P, R, E, x, sentido in (("começo", pi, r0, e.a, xa, -1.0), ("fim", pf, r1, e.b, xb, 1.0)):
+        ajuste = x - m
+        if math.dist(R[:2], E) > tol and abs(ajuste) > tol:
+            P = tuple(P[k] - u[k] * ajuste for k in range(3))
+            fora = sentido * ajuste
             mexidas.append((nome, "alongada" if fora > 0 else "encurtada", mm_inteiro(abs(fora))))
         novas.append(P)
     if not mexidas:
