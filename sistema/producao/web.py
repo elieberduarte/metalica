@@ -98,6 +98,21 @@ def _sincronizar(pasta: str):
         return est
 
 
+def _sem_papel(erro: str) -> str:
+    """a recusa do Apontar quando o papel nunca veio da nuvem, em palavras (14/11): o texto do Windows/urllib
+    ("[WinError 10061] Nenhuma conexão pôde ser feita…", obra_compartilhada._pedir) vai para o log, não para a tela"""
+    e = (erro or "").strip()
+    if e:
+        sys.stderr.write("[controle] obra compartilhada sem o papel: %s\n" % e)
+    inicio = "não deu para saber o seu papel nesta obra compartilhada"
+    if not e or e.startswith(("sem conexão com a nuvem", "a nuvem recusou o pedido", "falha ao sincronizar")):
+        motivo = ("a nuvem do Metálica não respondeu a tempo" if "timed out" in e
+                  else "sem internet" if e.startswith("sem conexão com a nuvem") else "a nuvem do Metálica não respondeu")
+        return "%s (%s) — conecte à internet e abra o Controle de novo" % (inicio, motivo)
+    # os recados da própria nuvem já vêm em palavras (a licença bloqueada, sem acesso a esta obra, computador desligado…)
+    return "%s: %s" % (inicio, e)
+
+
 def _consulta(h) -> dict:
     return {k: v[0] for k, v in parse_qs(urlparse(h.path).query).items()}
 
@@ -231,8 +246,7 @@ def rota_post(h, rota: str, corpo: dict) -> bool:
     if nuvem is not None and not nuvem.get("papel") and _so_compartilhadas():
         # no instalado, o papel vem da nuvem: sem ele (nunca sincronizou, ou a licença perdeu o acesso) não aponta; depois
         # de uma vez com internet ele fica guardado (nuvem.json) e sem internet o apontamento segue (decisão 9)
-        raise _erro("não deu para saber o seu papel nesta obra compartilhada (%s) — conecte à internet e abra o Controle de "
-                    "novo" % (nuvem.get("erro") or "sem resposta da nuvem"))
+        raise _erro(_sem_papel(nuvem.get("erro")))
     try:
         if rota == "/api/producao/apontar":
             lista = controle.ler_lista(pasta)
