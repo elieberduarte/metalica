@@ -608,7 +608,7 @@ def _saidas_do_modelo(app, raiz, modelo):
     nomes = sorted(d["nome"] for d in app.detalhar_projeto(s, {})["desenhos"])
     pr = app.montar_pranchas_projeto(s, {"desenhos": [n for n in nomes if n.startswith("detalhamento-")], "formato": "A1", "titulo": "Pranchas"})
     lista = app.lista_de_materiais(s, recalcular=True)
-    fora = ("id", "geracao", "alterado", "quando", "data")
+    fora = ("id", "geracao", "gerado", "alterado", "quando", "data")      # "gerado": a hora da lista, com o minuto
 
     def limpo(x):
         if isinstance(x, dict):
