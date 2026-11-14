@@ -816,6 +816,10 @@ export class MetodosEstruturaCAD {
         // lançadas não chegaram ao 3D). Com outra gravação em curso, o salvar do CAD só marca a pendente e volta na
         // hora: a sincronia lia no disco a planta ainda sem as tesouras, anotava a impressão COM elas e, quando a
         // gravação pendente as gravava, achava que o 3D já estava em dia. A pendente passa por aqui de novo.
+        // Desde 14/11 o salvar do CAD espera a gravação em curso e grava de novo (quem faz "await salvar()" e depois pede
+        // ao servidor o desenho recebia o de antes): aqui também se espera, e a impressão é a da planta que vai ser gravada.
+        const t0 = Date.now();
+        while (this._salvando && Date.now() - t0 < 90000) await new Promise(r => setTimeout(r, 150));
         const adiada = !!this._salvando;
         const impressao = this._impressaoDaPlanta();
         const r = await gravar(...args);

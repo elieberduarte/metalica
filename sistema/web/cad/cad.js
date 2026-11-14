@@ -436,7 +436,14 @@ class CAD {
     }
     if (!this.nomeDesenho) this.nomeDesenho = slug(this.el.nome.value || this.doc.nome || 'desenho');
     this.doc.nome = this.el.nome.value.trim() || this.doc.nome;
-    if (this._salvando) { this._autosavePendente = true; return; }
+    // com uma gravação em curso (o autosave), espera ela terminar e grava de novo: quem faz "await salvar()" e depois pede ao
+    // servidor que leia o desenho recebia o de antes (14/11, verif_identificacao_ui: o "Lançar os apoios" leu a Implantação
+    // sem os 16 pilares que o autosave ainda estava gravando — "Nenhum apoio lido"); como no gravarConfirmado
+    if (this._salvando) {
+      const t0 = Date.now();
+      while (this._salvando && Date.now() - t0 < 90000) await new Promise(r => setTimeout(r, 150));
+      if (this._salvando) { this._autosavePendente = true; return; }
+    }
     this._salvando = true;
     this.el.estadoSalvo.textContent = 'gravando…';
     const versao = this._versaoEdicao || 0;
