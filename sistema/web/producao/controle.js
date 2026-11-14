@@ -110,6 +110,10 @@
     dialog.ctl-dlg .erro { color: var(--verm, #b23b3b); font-size: 13px; margin-top: 8px; }
     .ctl-estornado td { text-decoration: line-through; color: var(--texto3); }
     dialog.ctl-dlg { max-width: min(920px, 94vw); }
+    /* a janela não pula (14/11): o topo fica preso (o que cresce, cresce para baixo) e a janela do item nasce na largura final —
+       a lista dos apontamentos chega depois (/api/producao/historico) e alargava e recentrava a janela: a Pintura andava 110–250 px */
+    dialog.ctl-dlg { margin-top: 8vh; }
+    #ctl-dialogo, #ctl-dialogo-historico { width: min(680px, 94vw); box-sizing: border-box; }
     .ctl-historico { font-size: 12.5px; }
     .ctl-confirma .ctl-confirma-texto { font-size: 16px; font-weight: 650; margin: 10px 0 6px; }
     .ctl-confirma #ctl-sim:disabled { opacity: .45; cursor: default; }
