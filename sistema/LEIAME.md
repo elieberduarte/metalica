@@ -182,9 +182,9 @@ posição ganha `saia`, que entra na compra, na célula, na lista e na paginaç�
 cada telha sai **inteira** (retângulo até o ponto mais alto) e o corte do modelo — a empena
 inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois de instalada.
 
-**0.9.4.** (14/11/2026) Telhas para o fornecedor no padrão do Fábio, o Controle de produção mais seguro para a obra, as Cenas refinadas, o "Trazer do 3D" que traz só o que foi mexido e correções de gravação no 3D, no CAD 2D, na importação e no Detalhar. São 73 mudanças desde a 0.9.3.
+**0.9.4.** (14/11/2026) Telhas para o fornecedor no padrão do Fábio, o Controle de produção mais seguro para a obra, as Cenas refinadas, o "Trazer do 3D" que traz só o que foi mexido e correções de gravação no 3D, no CAD 2D, na importação e no Detalhar. São 76 mudanças desde a 0.9.3.
 
-**Telhas para o fornecedor.** Arquivo › Telhas para o fornecedor: depois do Detalhar, o desenho das telhas em tamanho real (DXF) e a relação em Word, gravados na pasta da obra com revisão. A telha reta vai de 5 em 5 cm, sempre para cima, no sistema todo (relação, compra, resumo e lista); a multidobra e a cumeeira seguem de 5 em 5 mm.
+**Telhas para o fornecedor.** Arquivo › Telhas para o fornecedor: depois do Detalhar, o desenho das telhas em tamanho real (DXF) e a relação em Word, gravados na pasta da obra com revisão; o comando também está na barra (Arquivo › Exportar). A telha reta vai ao mm inteiro mais próximo e então sobe de 5 em 5 cm, no sistema todo (relação, compra, resumo e lista); a multidobra e a cumeeira seguem de 5 em 5 mm.
 
 **Controle de produção.** Apontar mais de uma unidade pede confirmação com a quantidade, a marca e o peso (o Enter ou o clique duplo repetidos não aceitam sozinhos); a janela Apontar de cada item mostra todos os apontamentos dele, cada um com Estornar; só se pinta o que já foi produzido, e a cor do 3D e o número da tabela saem da mesma conta. A janela Apontar não pula mais quando chega a lista dos apontamentos, e sem internet o selo diz o que houve em palavras do programa, não o erro do Windows. Quando a nuvem recusa o Apontar, o motivo também vem em palavras: sem internet, a nuvem não respondeu (ou não a tempo), ou a licença não tem acesso.
 
