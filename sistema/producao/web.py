@@ -10,7 +10,8 @@ obra_id não tem a tela Controle na barra de cima e as rotas recusam; o que o ER
 * GET  /api/producao/controle.js            o script da tela (web/producao/controle.js)
 * GET  /api/producao/controle?projeto=      a situação da obra (controle.situacao)
 * POST /api/producao/apontar                {projeto, item, etapa, quantidade, data?, obs?}
-* POST /api/producao/estornar               {projeto, evento, obs?}
+* POST /api/producao/estornar               {projeto, evento, obs?} — qualquer apontamento, não só os 30 da tela
+* GET  /api/producao/historico?projeto=&item=  todos os apontamentos do item, para estornar dali (controle.historico)
 * POST /api/producao/apontar-varios         {projeto, itens: [ids], etapa, data?, obs?} — tudo o que falta na etapa em cada
                                             um (escolhidos na lista ou no 3D); devolve {eventos, pulados}
 * GET  /api/producao/erp?projeto=&desde=    o que o ERP lê (só leitura; controle.para_erp)
@@ -185,6 +186,17 @@ def rota_get(h, rota: str) -> bool:
         r["obra"] = _nome_da_obra(s, lista)
         r["tem_3d"] = os.path.isfile(os.path.join(pasta, "modelo.json"))      # sem modelo, a tela nem abre o 3D ao lado
         h._json(r)
+        return True
+    if rota == "/api/producao/historico":
+        q = _consulta(h)
+        pasta = _pasta(q.get("projeto", ""))
+        _exigir_compartilhada(pasta)
+        try:
+            evs = controle.historico(controle.ler_lista(pasta), controle.ler_eventos(pasta), q.get("item", ""),
+                                     controle.ler_nomes(pasta))
+        except controle.ErroControle as e:
+            raise _erro(str(e))
+        h._json({"item": q.get("item", ""), "eventos": evs})
         return True
     if rota == "/api/producao/erp" and not _so_compartilhadas():       # o ERP: só no dev
         q = _consulta(h)

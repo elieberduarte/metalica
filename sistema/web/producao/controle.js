@@ -109,6 +109,9 @@
     dialog.ctl-dlg .acoes { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
     dialog.ctl-dlg .erro { color: var(--verm, #b23b3b); font-size: 13px; margin-top: 8px; }
     .ctl-estornado td { text-decoration: line-through; color: var(--texto3); }
+    dialog.ctl-dlg { max-width: min(920px, 94vw); }
+    .ctl-historico { font-size: 12.5px; }
+    .ctl-historico .rolagem { max-height: 28vh !important; }
     .ctl-a-mais { color: var(--verm, #b23b3b); font-weight: 600; }
     .controle tbody tr[data-item] { cursor: pointer; }
     th.ctl-marca, td.ctl-marca { width: 30px; padding-left: 8px !important; padding-right: 4px !important; }
@@ -275,9 +278,11 @@
 
     const partes = [cartoes];
     if ((D.fora_da_lista || []).length) {
-      partes.push(el('div', { class: 'aviso-topo' },
-        `Apontamentos de itens que não estão mais na lista de materiais (o detalhamento foi refeito?): ${D.fora_da_lista.join(', ')}. `
-        + 'Eles continuam guardados; confira e estorne se for o caso.'));
+      partes.push(el('div', { class: 'aviso-topo', id: 'ctl-fora' },
+        'Apontamentos de itens que não estão mais na lista de materiais (o detalhamento foi refeito?): ',
+        D.fora_da_lista.flatMap((nome, i) => [i ? ', ' : '', el('button', { type: 'button', class: 'ctl-btn', 'data-fora': nome, texto: nome,
+          title: 'Ver os apontamentos deste nome e estornar', onclick: () => dialogoHistorico(nome) })]),
+        '. Eles continuam guardados; clique no nome para conferir e estornar se for o caso.'));
     }
     if ((D.seguiram || []).length) {
       // o Detalhar renumerou (o número pela ordem dos eixos, 13/11): o apontamento seguiu a peça, não o nome
@@ -291,7 +296,8 @@
         el('span', { texto: (D.total.montadas ? `${n(D.total.montadas)} tesouras montadas · ` : '')
           + `${n(D.total.unidades_conjunto)} unidades de conjunto · ${n(D.total.itens - D.total.unidades_conjunto - (D.total.montadas || 0))} grupos de peças · ${n(D.total.kg, 1)} kg` })),
         el('div', { class: 'ctl-varios', id: 'ctl-varios', hidden: true }), quadro)));
-    partes.push(secao('Últimos apontamentos', 'o mais novo em cima; estorno não apaga, desfaz', tabelaEventos(D.eventos || [])));
+    partes.push(secao('Últimos apontamentos', 'os 30 mais novos da obra; os de um item, todos, ficam na janela Apontar dele · estorno não apaga, desfaz',
+      tabelaEventos(D.eventos || [])));
     corpo.replaceChildren(...partes);
     filtrar();
     marcarLinhas(ESTADO.escolhidos, false);
@@ -443,7 +449,28 @@
     }
   }
 
-  function tabelaEventos(eventos) {
+  /** TODOS os apontamentos de um item, com Estornar (risco 2, 13/11: a tabela de baixo mostra só os 30 últimos da obra;
+   *  um erro mais velho se desfaz por aqui). Vai na janela Apontar do item e no aviso "fora da lista". */
+  function secaoHistorico(itemId) {
+    const caixa = el('div', { class: 'ctl-historico', 'data-item': itemId }, el('div', { class: 'nota', texto: 'Lendo os apontamentos do item…' }));
+    pedir(`/api/producao/historico?projeto=${encodeURIComponent(PROJETO)}&item=${encodeURIComponent(itemId)}`)
+      .then(r => caixa.replaceChildren(r.eventos.length ? tabelaEventos(r.eventos, r.eventos) : vazio('Nenhum apontamento deste item.')))
+      .catch(e => caixa.replaceChildren(el('div', { class: 'erro', texto: e.message })));
+    return el('div', {}, el('label', { texto: 'Apontamentos deste item (todos, o mais novo em cima)' }), caixa);
+  }
+
+  function dialogoHistorico(itemId) {
+    const dlg = el('dialog', { class: 'ctl-dlg', id: 'ctl-dialogo-historico' },
+      el('h3', { texto: `Apontamentos de ${itemId}` }),
+      el('div', { class: 'nota', texto: 'Este nome não está na lista de materiais atual (o detalhamento mudou). Confira e estorne se for o caso.' }),
+      secaoHistorico(itemId),
+      el('div', { class: 'acoes' }, el('button', { type: 'button', texto: 'Fechar', onclick: () => dlg.close() })));
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg);
+    dlg.showModal();
+  }
+
+  function tabelaEventos(eventos, doLote) {
     if (!eventos.length) return vazio('Nenhum apontamento ainda. Use "Apontar" na linha do item.');
     const tb = el('tbody');
     const titulo = Object.fromEntries((ESTADO.dados.etapas || []).map(e => [e.chave, e.titulo]));
@@ -461,7 +488,7 @@
         el('td', { class: 'r', texto: n(e.kg, 1) }),
         el('td', { class: 'quebra', texto: e.obs || '' }),
         el('td', { class: 'c' }, (!estorno && !e.estornado && podeApontar())
-          ? el('button', { type: 'button', class: 'ctl-btn perigo', texto: 'Estornar', onclick: () => estornar(e) }) : null));
+          ? el('button', { type: 'button', class: 'ctl-btn perigo', texto: 'Estornar', onclick: () => estornar(e, doLote) }) : null));
       tb.append(tr);
     }
     return el('div', { class: 'rolagem', style: 'max-height:40vh' }, el('table', {},
@@ -530,21 +557,24 @@
         confirmar.disabled = false;
       }
     });
-    dlg.append(form);
+    dlg.append(form, secaoHistorico(item.id));
     dlg.addEventListener('close', () => dlg.remove());
     document.body.append(dlg);
     ajustar();
     dlg.showModal();
   }
 
-  async function estornar(e) {
+  async function estornar(e, doLote) {
     const titulo = Object.fromEntries((ESTADO.dados.etapas || []).map(x => [x.chave, x.titulo]));
-    const lote = e.lote ? (ESTADO.dados.eventos || []).filter(x => x.lote === e.lote && !x.estorno_de).map(x => x.item) : [];
+    const lote = e.lote ? (doLote || ESTADO.dados.eventos || []).filter(x => x.lote === e.lote && !x.estorno_de).map(x => x.item) : [];
     const oque = lote.length > 1 ? `da tesoura montada ${e.montada} (${lote.join(' + ')}, apontadas juntas)` : `de ${e.item}`;
-    if (!confirm(`Estornar o apontamento ${oque} (${titulo[e.etapa] || e.etapa}, ${e.quantidade})? Ele continua no histórico, riscado.`)) return;
+    if (!confirm(`Estornar o apontamento ${oque} (${titulo[e.etapa] || e.etapa}, ${e.quantidade}, de ${dataBRc(e.data)})? Ele continua no histórico, riscado.`)) return;
     try {
       await pedir('/api/producao/estornar', { projeto: PROJETO, evento: e.id });
+      for (const d of document.querySelectorAll('dialog.ctl-dlg[open]')) d.close();   // a janela do item mostrava o antes
       await carregar();
+      aviso(`Estornado: ${e.item} (${titulo[e.etapa] || e.etapa}, ${e.quantidade})`);
+      setTimeout(() => aviso(''), 6000);
     } catch (err) {
       aviso(err.message, true);
     }

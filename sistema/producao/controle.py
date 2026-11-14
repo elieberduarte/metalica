@@ -544,6 +544,36 @@ def estornar(pasta_projeto: str, evento: str, quem: str, obs: str = "") -> dict:
     return ev
 
 
+def historico(lista: dict, eventos: List[dict], item: str, nomes: Optional[dict] = None) -> List[dict]:
+    """TODOS os apontamentos de um item (o mais novo em cima), com os estornos, para o item estornar dali — a lista de
+    "Últimos apontamentos" da tela mostra só os 30 últimos da obra, e um erro mais velho ficava sem como desfazer (risco 2
+    do GESTÃO, 13/11). Conta pelo item de agora (resolver: o apontamento que seguiu a peça vem junto); a montada traz os
+    das partes. Item que não está mais na lista: os apontamentos "fora da lista" com aquele nome."""
+    its = itens(lista, nomes)
+    alvo = next((x for x in its if x["id"] == item), None)
+    mapa = resolver(eventos, its)
+    if alvo is not None:
+        ids = {item} | {pt["id"] for pt in alvo.get("partes") or []}
+        meus = lambda e: mapa.get(e.get("id")) in ids                     # noqa: E731
+    else:
+        meus = lambda e: not mapa.get(e.get("id")) and e.get("item") == item   # noqa: E731
+    estornados = {e.get("estorno_de") for e in eventos if e.get("estorno_de")}
+    out = []
+    for e in reversed(eventos):
+        if not meus(e):
+            continue
+        r = dict(e)
+        r["estornado"] = e.get("id") in estornados
+        if mapa.get(e.get("id")) and mapa[e.get("id")] != e.get("item"):
+            r["item_atual"] = mapa[e.get("id")]
+        if alvo is not None and alvo.get("partes"):
+            r["montada_atual"] = alvo["id"]
+        out.append(r)
+    if alvo is None and not out:
+        raise ErroControle("%s não está na lista de materiais atual" % item)
+    return out
+
+
 # ------------------------------------------------------------------ o andamento
 def situacao(lista: dict, eventos: List[dict], nomes: Optional[dict] = None, ultimos: int = 30) -> dict:
     """o que a aba Controle mostra: os itens com o feito por etapa, o andamento em kg e %, os últimos eventos e os
