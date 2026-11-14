@@ -486,11 +486,7 @@ export class Terreno {
   /** Grava a altura: com o local, junto dele; sem, como o chão do projeto (…/terreno/chao). */
   _gravarAltura() {
     if (this.t) { this._gravarLogo(); return; }
-    clearTimeout(this._esperaAltura);
-    this._esperaAltura = setTimeout(async () => {
-      try { this.estado = { ...this.estado, ...(await this._pedir('/chao', this.estado.chao || {})) }; }
-      catch (e) { this.ui.situacao('Terreno: a altura do chão não gravou (' + e.message + ')'); }
-    }, 500);
+    this._agendarGravacao('chao');
   }
 
   _ligarPainel() {
@@ -915,12 +911,60 @@ export class Terreno {
     if (this.ui.painelAtual() === 'terreno') this.painel();
   }
 
-  _gravarLogo() {
-    clearTimeout(this._espera);
-    this._espera = setTimeout(async () => {
-      try { this.estado = { ...this.estado, ...(await this._pedir('', this.t)) }; }
-      catch (e) { this.ui.situacao('Terreno: não gravou (' + e.message + ')'); }
+  _gravarLogo() { this._agendarGravacao('local'); }
+
+  /** Grava o local (`this.t`, a rota '') ou o chão sem local (a rota '/chao') meio segundo depois da última mudança.
+   *  A resposta do servidor NÃO apaga o que a tela mudou com o pedido no ar (14/11, conferência da 0.9.4: com a máquina
+   *  carregada, o 2º clique no +5 cm sumia — a volta da gravação de antes trocava o chão da tela pelo que tinha ido, e o
+   *  clique seguinte somava em cima dele; o mesmo com os planos do chão). Cada mudança conta uma `_mexidas`: se houve
+   *  mudança depois do envio, a tela vale (o local e o chão ficam os dela) e a gravação dela já está marcada em seguida.
+   *  Os pedidos vão um de cada vez, na ordem (o disco fica com o último). Fechar o painel não perde nada (a espera é
+   *  desta peça, não do painel); fechar a página com gravação por fazer manda o que falta (pagehide, keepalive). */
+  _agendarGravacao(qual) {
+    this._mexidas = (this._mexidas || 0) + 1;
+    if (!this._esperas) { this._esperas = {}; this._porMandar = new Set(); this._ligarSaida(); }
+    this._porMandar.add(qual);
+    clearTimeout(this._esperas[qual]);
+    this._esperas[qual] = setTimeout(() => {
+      delete this._esperas[qual];
+      this._fila = (this._fila || Promise.resolve()).then(() => this._mandar(qual));
     }, 500);
+  }
+
+  /** [sufixo da rota, corpo] do que se grava; null quando não há o que gravar (o local já saiu). */
+  _gravacaoDe(qual) {
+    if (qual === 'local') return this.t ? ['', this.t] : null;
+    return ['/chao', (this.estado && this.estado.chao) || {}];
+  }
+
+  async _mandar(qual) {
+    this._porMandar.delete(qual);
+    const g = this._gravacaoDe(qual);
+    if (!g) return;
+    const mexidas = this._mexidas, antes = this.estado;
+    try {
+      const resp = await this._pedir(g[0], g[1]);      // o corpo vira texto aqui, antes de esperar a resposta
+      if (this.estado !== antes) return;               // o estado veio inteiro de outro pedido (escolher/tirar o local): vale ele
+      this.estado = this._mexidas === mexidas ? { ...this.estado, ...resp }
+        : { ...this.estado, ...resp, terreno: this.estado.terreno, chao: this.estado.chao };
+    } catch (e) {
+      this.ui.situacao(qual === 'local' ? 'Terreno: não gravou (' + e.message + ')' : 'Terreno: a altura do chão não gravou (' + e.message + ')');
+    }
+  }
+
+  _ligarSaida() {
+    if (typeof window === 'undefined') return;
+    window.addEventListener('pagehide', () => {
+      for (const qual of this._porMandar) {
+        clearTimeout(this._esperas[qual]); delete this._esperas[qual];
+        const g = this._gravacaoDe(qual);
+        if (!g) continue;
+        try {
+          fetch(this.api + g[0], { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(g[1]) });
+        } catch (e) { /* a página já foi */ }
+      }
+      this._porMandar.clear();
+    });
   }
 
   // ---------------------------------------------------------------- o Ajustar (arrastar a imagem)
