@@ -50,6 +50,62 @@ _ROTULO_PERFIL = {
 }
 
 
+# As faixas de entrada do galpão: (campo, rótulo, mínimo, máximo, unidade). Uma tabela só para o cálculo
+# (DadosGalpao.validar, na ordem de sempre), para o Salvar do formulário (fora_da_faixa) e para a tela, que as recebe
+# no catálogo dos campos (D11, 13/11: o Salvar gravava vão 0 e comprimento −40 no projeto; e a tela tinha as faixas
+# dela, que já não eram as do cálculo — inclinação até 100, flechas até 600).
+FAIXAS = (
+    ("vao", "Vão", 5, 60, "m"),
+    ("comprimento", "Comprimento", 5, 300, "m"),
+    ("pe_direito", "Pé-direito", 2.5, 20, "m"),
+    ("espacamento_porticos", "Espaçamento entre pórticos", 3, 12, "m"),
+    ("inclinacao", "Inclinação do telhado", 2, 99, "%"),
+    ("espacamento_tercas", "Espaçamento de terças", 0.8, 3.0, "m"),
+    ("v0", "Velocidade básica do vento", 25, 55, "m/s"),
+    ("sobrecarga_cobertura", "Sobrecarga de cobertura", 0, 5, "kN/m²"),
+    ("fck_MPa", "fck do concreto", 15, 50, "MPa"),
+    ("linhas_correntes", "Linhas de correntes", 0, 4, ""),
+)
+FAIXAS_DOS_CRITERIOS = (
+    ("flecha_terca", "Flecha da terça (L/…)", 100, 1000, ""),
+    ("flecha_viga", "Flecha da viga (L/…)", 100, 1000, ""),
+    ("desloc_horizontal", "Deslocamento horizontal (H/…)", 50, 1000, ""),
+)
+
+
+def _texto_da_faixa(rotulo, valor, minimo, maximo, unidade="") -> str:
+    def br(v):      # 4,5 e não 4.5 (P06, primeiro uso 16/10)
+        return ("%g" % v).replace(".", ",") if isinstance(v, (int, float)) else str(v)
+    return (f"{rotulo}: valor {br(valor)} fora da faixa aceitável "
+            f"({br(minimo)} a {br(maximo)} {unidade}).".replace("  ", " "))
+
+
+def faixas_de_entrada() -> dict:
+    """{campo: (mínimo, máximo, unidade)} — o que a tela do formulário recebe no catálogo dos campos."""
+    return {campo: (minimo, maximo, unidade) for campo, _r, minimo, maximo, unidade in FAIXAS + FAIXAS_DOS_CRITERIOS}
+
+
+def fora_da_faixa(dados: dict) -> dict:
+    """{campo: motivo} dos números do formulário do galpão que não são números ou estão fora da faixa de entrada — as
+    mesmas faixas e o mesmo texto do `validar`. Campo ausente ou em branco não entra: o formulário incompleto é rascunho
+    de trabalho; o valor errado é que não pode ser gravado como se valesse."""
+    ruins = {}
+    for campo, rotulo, minimo, maximo, unidade in FAIXAS + FAIXAS_DOS_CRITERIOS:
+        v = (dados or {}).get(campo)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            continue
+        try:
+            if isinstance(v, bool):
+                raise ValueError
+            x = float(v.strip().replace(",", ".")) if isinstance(v, str) else float(v)
+        except (TypeError, ValueError):
+            ruins[campo] = "%s: '%s' não é um número." % (rotulo, v)
+            continue
+        if x != x or not (minimo <= x <= maximo):
+            ruins[campo] = _texto_da_faixa(rotulo, int(x) if x == int(x) else x, minimo, maximo, unidade)
+    return ruins
+
+
 @dataclass
 class DadosGalpao:
     """Tudo que o usuário informa para dimensionar um galpão de duas águas."""
@@ -143,28 +199,15 @@ class DadosGalpao:
         """Erros de entrada com mensagem em português e faixa aceitável."""
         def faixa(campo, valor, minimo, maximo, unidade=""):
             if valor is None or not (minimo <= valor <= maximo):
-                def br(v):      # 4,5 e não 4.5 (P06, primeiro uso 16/10)
-                    return ("%g" % v).replace(".", ",") if isinstance(v, (int, float)) else str(v)
-                raise ErroDeDados(
-                    f"{campo}: valor {br(valor)} fora da faixa aceitável "
-                    f"({br(minimo)} a {br(maximo)} {unidade}).".replace("  ", " "))
-        faixa("Vão", self.vao, 5, 60, "m")
-        faixa("Comprimento", self.comprimento, 5, 300, "m")
-        faixa("Pé-direito", self.pe_direito, 2.5, 20, "m")
-        faixa("Espaçamento entre pórticos", self.espacamento_porticos, 3, 12, "m")
-        faixa("Inclinação do telhado", self.inclinacao, 2, 99, "%")
-        faixa("Espaçamento de terças", self.espacamento_tercas, 0.8, 3.0, "m")
-        faixa("Velocidade básica do vento", self.v0, 25, 55, "m/s")
-        faixa("Sobrecarga de cobertura", self.sobrecarga_cobertura, 0, 5, "kN/m²")
-        faixa("fck do concreto", self.fck_MPa, 15, 50, "MPa")
-        faixa("Linhas de correntes", self.linhas_correntes, 0, 4, "")
+                raise ErroDeDados(_texto_da_faixa(campo, valor, minimo, maximo, unidade))
+        for campo, rotulo, minimo, maximo, unidade in FAIXAS:
+            faixa(rotulo, getattr(self, campo), minimo, maximo, unidade)
         if self.categoria_rugosidade not in ("I", "II", "III", "IV", "V"):
             raise ErroDeDados("Categoria de rugosidade deve ser I, II, III, IV ou V.")
         if self.classe not in ("A", "B", "C"):
             raise ErroDeDados("Classe da edificação deve ser A, B ou C.")
-        faixa("Flecha da terça (L/…)", self.flecha_terca, 100, 1000, "")
-        faixa("Flecha da viga (L/…)", self.flecha_viga, 100, 1000, "")
-        faixa("Deslocamento horizontal (H/…)", self.desloc_horizontal, 50, 1000, "")
+        for campo, rotulo, minimo, maximo, unidade in FAIXAS_DOS_CRITERIOS:
+            faixa(rotulo, getattr(self, campo), minimo, maximo, unidade)
         if self.comprimento < self.espacamento_porticos:
             raise ErroDeDados("O comprimento do galpão é menor que o espaçamento entre pórticos.")
         if str(self.topo_pilar_oitao or "").strip().lower() not in ("", "apoiado", "solto"):

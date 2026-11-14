@@ -1778,12 +1778,24 @@ async function gravarNoProjeto({ avisar = false } = {}) {
   gravandoProjeto = true;
   estadoSalvo('gravando…');
   try {
-    /* o formulário como está, mesmo com campo em branco: é rascunho de trabalho */
-    await api('/api/projetos/' + encodeURIComponent(PROJETO) + '/dados', {
+    /* o formulário como está, mesmo com campo em branco: é rascunho de trabalho. A exceção (D11, 13/11): o número
+       fora da faixa do cálculo (vão 0, comprimento −40) o servidor não grava — fica o valor de antes no projeto — e
+       devolve em nao_gravados; aqui o valor digitado continua no campo, marcado, e o recado diz qual e por quê */
+    const r = await api('/api/projetos/' + encodeURIComponent(PROJETO) + '/dados', {
       method: 'POST', body: JSON.stringify({ dados: dadosParaEnvio() }),
     });
-    estadoSalvo('gravado às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
-    if (avisar) recado('Projeto salvo', estado.dados.nome || PROJETO, 'ok');
+    const fora = (r && r.nao_gravados) || [];
+    const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    estadoSalvo('gravado às ' + hora + (fora.length ? ` — menos ${fora.length} campo${fora.length > 1 ? 's' : ''} a corrigir` : ''));
+    if (fora.length) {
+      const erros = validar();
+      mostrarErros(erros);
+      atualizarSinais(erros);
+    }
+    if (avisar && fora.length) {
+      recado(`Salvo, menos ${fora.length} campo${fora.length > 1 ? 's' : ''} a corrigir`,
+        fora.map(f => f.motivo).join(' ') + ' No projeto ficou o valor de antes; corrija o campo marcado e salve de novo.', 'erro');
+    } else if (avisar) recado('Projeto salvo', estado.dados.nome || PROJETO, 'ok');
   } catch (e) {
     estadoSalvo('não foi possível gravar');
     if (avisar) { const d = descreverErro(e); recado(d.titulo, d.texto, 'erro'); }
@@ -1943,6 +1955,9 @@ async function iniciar() {
     for (const item of grupo.campos) {
       estado.tipos[item.campo] = item.tipo;
       estado.rotulos[item.campo] = item.rotulo;
+      // a faixa do cálculo vem no catálogo e vale por cima da daqui: a tela, o Salvar e o Modelo 3D recusam o mesmo
+      // valor (D11, 13/11 — a inclinação ia até 100 aqui e 99 no cálculo; as flechas, 600 aqui e 1000 lá)
+      if (Array.isArray(item.faixa) && CONFIG[item.campo]) CONFIG[item.campo].faixa = item.faixa;
       estado.dados[item.campo] = (item.tipo === 'bool')
         ? Boolean(item.valor)
         : (item.valor === null || item.valor === undefined ? '' : String(item.valor));

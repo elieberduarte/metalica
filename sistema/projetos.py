@@ -76,6 +76,29 @@ def slug(nome: str) -> str:
     return re.sub(r"[\s_-]+", "-", s)[:60].strip("-") or "projeto"
 
 
+def _so_o_que_vale(dados, anteriores):
+    """(dados, não gravados) do formulário do galpão: o número fora da faixa de entrada sai — fica o que estava gravado
+    antes, se esse vale; senão o campo fica sem valor, como em branco (nunca um padrão inventado). Não gravados:
+    [{campo, valor, motivo}], o motivo com o rótulo, o valor digitado e a faixa aceita."""
+    if not isinstance(dados, dict) or not dados:
+        return dados, []
+    from nucleo.modelo_galpao import fora_da_faixa
+    ruins = fora_da_faixa(dados)
+    if not ruins:
+        return dados, []
+    dados = dict(dados)
+    antes = anteriores if isinstance(anteriores, dict) else {}
+    antes_ruins = fora_da_faixa({k: antes[k] for k in ruins if k in antes})
+    nao_gravados = []
+    for campo, motivo in ruins.items():
+        nao_gravados.append({"campo": campo, "valor": dados[campo], "motivo": motivo})
+        if campo in antes and campo not in antes_ruins:
+            dados[campo] = antes[campo]
+        else:
+            del dados[campo]
+    return dados, nao_gravados
+
+
 def _agora() -> str:
     return datetime.datetime.now().replace(microsecond=0).isoformat()
 
@@ -531,6 +554,7 @@ class Projetos:
             raise ErroDeDados("tipo de projeto desconhecido: %r" % tipo)
         s = self._slug_livre(nome)
         agora = _agora()
+        dados, nao_gravados = _so_o_que_vale(dados, None)       # o número fora da faixa não nasce gravado (D11)
         p = {"formato": 1, "nome": nome, "cliente": str(cliente or "").strip(),
              "local": str(local or "").strip(), "responsavel": str(responsavel or "").strip(),
              "tipo": tipo, "criado": agora, "alterado": agora, "programa": versao.VERSAO,
@@ -538,7 +562,10 @@ class Projetos:
         if p["dados"]:
             p["dados"].update({k: p[k] for k in IDENTIFICACAO})
         _gravar_json(os.path.join(self.pasta(s), ARQUIVO), p, indent=1)
-        return self.resumo(s)
+        r = self.resumo(s)
+        if nao_gravados:
+            r["nao_gravados"] = nao_gravados
+        return r
 
     def _atualizar(self, s: str, **campos) -> dict:
         with _trava_do_projeto(self._existente(s)):
@@ -562,7 +589,11 @@ class Projetos:
     def salvar_dados(self, s: str, dados: dict) -> dict:
         """Guarda o formulário do dimensionamento como está, mesmo incompleto: é
         rascunho de trabalho, e quem valida é o cálculo. A identificação do projeto
-        acompanha o que está no formulário."""
+        acompanha o que está no formulário.
+        A exceção (D11, 13/11): o número fora da faixa de entrada do cálculo (vão 0, comprimento −40) não serve de
+        rascunho e não é gravado — fica o valor gravado antes, ou o campo em branco se não havia —, e a resposta diz
+        quais campos ficaram de fora e por quê (`nao_gravados`), para a tela avisar. A tela marcava "2 campos a
+        corrigir" e o Salvar gravava assim mesmo, com "Projeto salvo"."""
         if not isinstance(dados, dict):
             raise ErroDeDados("dados do projeto inválidos.")
         tipo = self.ler(s).get("tipo") or "galpao"
@@ -571,13 +602,17 @@ class Projetos:
             # gravava o formulário padrão nele só de abrir (02/11, casa piloto no instalado)
             raise ErroDeDados("este projeto é de um módulo que esta versão do programa não tem (%s): o formulário do "
                               "galpão não é gravado nele." % tipo)
+        dados, nao_gravados = _so_o_que_vale(dados, self.ler(s).get("dados"))
         campos = {"dados": dados}
         for k in IDENTIFICACAO:
             v = dados.get(k)
             if isinstance(v, str) and (v.strip() or k != "nome"):
                 campos[k] = v.strip()
         self._atualizar(s, **campos)
-        return self.resumo(s)
+        r = self.resumo(s)
+        if nao_gravados:
+            r["nao_gravados"] = nao_gravados
+        return r
 
     def tocar(self, s: str, **campos):
         """Marca o projeto como alterado agora (entrega gerada, modelo salvo). Com o

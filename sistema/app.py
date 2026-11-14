@@ -298,6 +298,8 @@ def _campos_formulario() -> list:
         "criterios": ("Critérios de projeto", ["flecha_terca", "flecha_viga",
                                                "desloc_horizontal", "custo_kg"]),
     }
+    from nucleo.modelo_galpao import faixas_de_entrada
+    faixas = faixas_de_entrada()      # as do cálculo: a tela marca o campo com as mesmas (uma fonte só, D11 13/11)
     tipos = {f.name: f.type for f in dataclasses.fields(DadosGalpao)}
     padrao = DadosGalpao()
     saida = []
@@ -308,6 +310,8 @@ def _campos_formulario() -> list:
             nome_tipo = getattr(t, "__name__", str(t))
             itens.append({"campo": c, "tipo": nome_tipo,
                           "valor": getattr(padrao, c), "rotulo": _rotulo(c)})
+            if c in faixas:
+                itens[-1]["faixa"] = [faixas[c][0], faixas[c][1]]
         saida.append({"grupo": chave, "titulo": titulo, "campos": itens})
     return saida
 
