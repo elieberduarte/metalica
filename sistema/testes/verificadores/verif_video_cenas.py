@@ -12,6 +12,7 @@ das Cenas, com cliques de verdade:
      claro; a última vista some no branco, só o logo ("não colocaria esse texto"); o vídeo tocando na janela;
   D. depois do vídeo a tela volta à cena de antes, com a vista dela;
   E. Cancelar no meio para e não grava;
+  G. a cena gravada com o alvo a 1,36 km (o zoom na roda apontando o céu; 14/11, Filipin): o voo olha para a obra o tempo todo;
   F. sem erro no console.
 Porta livre, nunca a 8765/8766. Capturas na pasta temporária metalica_saida_video_cenas."""
 import json, os, shutil, subprocess, sys, tempfile, time, urllib.request
@@ -246,6 +247,29 @@ try:
        "Vídeo cancelado")
     ok(not os.path.exists(arq), f"nada gravado ({videos()})")
     ok(aba.avaliar("cenaApi.estado().cena.id") == "lado", "a cena de antes de volta")
+
+    print("G — a cena com o alvo a quilômetros (14/11, Filipin: 28 dos 55 s do vídeo só de céu)")
+    # O zoom na roda apontando o céu leva o alvo da câmera a quilômetros e "Atualizar a cena" grava assim (a Cena 5 do Filipin,
+    # 12/11: 1,36 km). Ao abrir a cena o visor o traz para perto; o voo usava o alvo cru e o trecho de 1,3 km comia o vídeo.
+    # A câmera do Lado gravada com o alvo a 1,36 km; o voo Frente → Lado → Topo olha para a obra o tempo todo.
+    arq_lado = os.path.join(DADOS, "obra", "cenas", "dados", "lado", "cena.json")
+    c = json.load(open(arq_lado, encoding="utf-8"))
+    p, a = c["camera"]["posicao"], c["camera"]["alvo"]
+    d = [a[k] - p[k] for k in range(3)]; n = sum(x * x for x in d) ** 0.5
+    c["camera"]["alvo"] = [p[k] + d[k] / n * 1360000 for k in range(3)]
+    json.dump(c, open(arq_lado, "w", encoding="utf-8"), ensure_ascii=False)
+    aba.navegar(f"{base}/visor3d/cena.html?projeto=obra&cena=frente", limite=90)
+    ok(esperar(aba, "!!window.cenaPronta && !!visor._esferaModelo", 180), "a tela de novo, com o alvo do Lado a 1,36 km")
+    aba.avaliar("""window.__alvos = []; window.__vooG = null; const def = visor.definirCamera.bind(visor);
+      visor.definirCamera = (c) => { const r = def(c); const k = visor.lerCamera(); window.__alvos.push(k.posicao, k.alvo); return r; };
+      const tela = document.createElement('canvas'); tela.width = 320; tela.height = 180;
+      cenaApi.videoDasCenas({ ids: ['frente', 'lado', 'topo'], previa: tela, lado: 320, ss: 1, fecho: 'nenhum' })
+        .then(r => { window.__vooG = 'ok'; }, e => { window.__vooG = 'erro: ' + e.message; }); 1""")
+    ok(esperar(aba, "!!window.__vooG", 600) and aba.avaliar("window.__vooG") == "ok", f"o voo das três cenas ({aba.avaliar('window.__vooG')})")
+    r = aba.avaliar("""(() => { const e = visor._esferaModelo, o = visor.cabecalho.origem, c = [e.center.x + o[0], e.center.y + o[1], e.center.z + o[2]];
+      const q = window.__alvos.map(a => Math.hypot(a[0] - c[0], a[1] - c[1], a[2] - c[2]) / e.radius);
+      return { n: q.length, max: Math.max(...q), longe: q.filter(x => x > 3).length }; })()""")
+    ok(r["n"] >= 10 and r["max"] < 6, f"em todo o voo a câmera fica perto da obra e olha para ela ({r['n'] // 2} câmeras; a posição e o alvo a até {r['max']:.1f} raios; além de 3: {r['longe']})")
 
     print("F — o console")
     erros = [c for c in aba.console if c[0] in ("excecao", "error") and "Failed to load resource" not in c[1]]

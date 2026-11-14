@@ -820,6 +820,21 @@ function mostrarMontagem(t, base) {
   visor._repintar();
 }
 
+/** A câmera da cena como o visor a põe ao abri-la (visor3d.definirCamera): o alvo levado a quilômetros (o zoom na roda
+ *  apontando o céu) volta para perto, na mesma direção do olhar. O voo do vídeo usava o alvo cru: o caminho anda em
+ *  velocidade constante pelo comprimento, um trecho de 1,3 km comia o vídeo — 28 dos 55 s só de céu, as outras cenas
+ *  passando correndo (14/11, Filipin, a Cena 5 de 12/11). */
+function cameraDoVoo(cam) {
+  const esf = visor._esferaModelo, o = visor.cabecalho && visor.cabecalho.origem;
+  if (!cam || !cam.posicao || !cam.alvo || !esf || !o) return cam;
+  const c = [esf.center.x + o[0], esf.center.y + o[1], esf.center.z + o[2]], R = esf.radius;
+  const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+  if (dist(cam.alvo, c) <= R * 3) return cam;
+  const d = [0, 1, 2].map(x => cam.alvo[x] - cam.posicao[x]), n = Math.hypot(...d) || 1;
+  const longe = Math.max(R * 0.5, Math.min(R * 2, dist(cam.posicao, c)));
+  return { ...cam, alvo: [0, 1, 2].map(x => cam.posicao[x] + d[x] / n * longe) };
+}
+
 /** A volta lenta em torno do prédio (a montagem com uma cena só): a câmera da cena girando 90° em volta do alvo, suave no
  *  começo e no fim; o mesmo formato das linhas do tempo do voo. */
 function voltaEmTorno(cam, segundos, fps) {
@@ -848,9 +863,10 @@ async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada
   }
   let [w, h] = tamanho3d(lado); w -= w % 2; h -= h % 2;
   // sem parada (o padrão, 12/11: "como se fosse um drone sobrevoando a estrutura"): uma curva só, na velocidade constante
-  const marca = marcaDaCena(), linha = lista.length === 1 ? voltaEmTorno(lista[0].camera, tMontagem, fps)
+  const cams = lista.map(c => cameraDoVoo(c.camera));
+  const marca = marcaDaCena(), linha = lista.length === 1 ? voltaEmTorno(cams[0], tMontagem, fps)
     : parada > 0 ? linhaDoTempo(lista.length, { porTrecho, parada, fps })
-    : caminhoContinuo(lista.map(c => c.camera), { porTrecho, fps });
+    : caminhoContinuo(cams, { porTrecho, fps });
   // a montagem ao longo do voo: do quadro 0 (só o que já existe) até a pausa final (pronta)
   const ocultasAntes = new Set(visor.ocultas || []), qMontagem = Math.max(1, linha.total - Math.round(MONTAGEM_PAUSA * fps));
   let fAtual = 0, ultimoTrecho = '';
@@ -868,7 +884,7 @@ async function videoDasCenas({ ids, lado = 1920, fps = 30, porTrecho = 3, parada
       aberta = chegando.id;
       renderizando = true;
     }
-    const cam = q.cam || cameraEntre(A.camera, B.camera, q.k);
+    const cam = q.cam || cameraEntre(cams[q.i], cams[q.j], q.k);
     visor.definirCamera({ posicao: cam.posicao, alvo: cam.alvo });
     fovCena = cam.fov;
     let ceu = null;
