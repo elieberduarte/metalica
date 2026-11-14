@@ -419,8 +419,12 @@ def marcar(junto: Desenho) -> dict:
         cel = a.get("cel")
         if not cel or cel not in origens:
             continue
-        s = assinatura(e, origens[cel])
         r = _ref(e)
+        if r is None:
+            # sem ponto (uma entidade vazia, um tipo que o _pontos não conhece): não há posição para aprender; fica sem a
+            # marca do ajuste — o aprender só olha as que têm "g" — e as pranchas saem (14/11: o _ref None derrubava com 500)
+            continue
+        s = assinatura(e, origens[cel])
         g = {"s": s, "r": [round(r[0], 3), round(r[1], 3)]}
         if isinstance(e, Cota) and e.texto_pos:
             g["t"] = [round(e.texto_pos[0], 3), round(e.texto_pos[1], 3)]

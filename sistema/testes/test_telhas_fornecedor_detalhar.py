@@ -107,3 +107,18 @@ def test_a_cota_especial_nao_derruba_a_montagem_das_pranchas(projeto):
     g.salvar_desenho(s, d.nome, d.dict())
     p = app.montar_pranchas_projeto(s, {"desenhos": [app._slug(d.nome)], "formato": "A1"})
     assert len(p["pranchas"]) == 1
+
+
+def test_uma_entidade_sem_pontos_nao_derruba_a_montagem_das_pranchas(projeto):
+    # o reforço (GESTÃO N.10, 14/11): o próximo tipo que o _pontos não conhecer, ou uma entidade vazia, não pode voltar a
+    # derrubar o marcar (o _ref None no round): a entidade fica sem a marca do ajuste e as pranchas saem
+    from nucleo2d.desenho import Desenho, Linha, Polilinha, Texto
+    app, g, s = projeto
+    d = Desenho(nome="Corte com polilinha vazia", escala=20.0)
+    d.add(Linha(camada="VISTA", a=(0.0, 0.0), b=(3000.0, 0.0)))
+    d.add(Linha(camada="VISTA", a=(0.0, 0.0), b=(0.0, 1500.0)))
+    d.add(Polilinha(camada="VISTA", vertices=[]))                       # sem ponto nenhum
+    d.add(Texto(camada="TEXTO", posicao=(100.0, 100.0), texto="CORTE", altura=2.5))
+    g.salvar_desenho(s, d.nome, d.dict())
+    p = app.montar_pranchas_projeto(s, {"desenhos": [app._slug(d.nome)], "formato": "A1"})
+    assert len(p["pranchas"]) == 1
