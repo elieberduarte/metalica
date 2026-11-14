@@ -1343,3 +1343,19 @@ def test_armadilha_a_montagem_de_hoje_e_a_da_v092_para_os_modelos_sem_carimbo(ha
     assert len(V) == 275
     assert not difere, ("a montagem de hoje difere da v0.9.2 em %d elemento(s) do Hangar: modelos sem carimbo — rever "
                         "o critério do grupo movido junto (_onde_a_regua_vale) para os papéis afetados" % len(difere))
+
+
+def test_a_regua_e_a_translacao_olham_a_barra_escolhida_nao_a_primeira_do_modelo():
+    """(e) _translacao_rigida e _como_a_montagem_fez olhavam a 1ª barra do elemento na ordem do modelo (e a caixa de
+    todas): a cópia do CV1 posta na frente fazia o CV1, que está onde a montagem o pôs, parecer mexido"""
+    real, ids = _planta_pequena("aleta", 5000.0)
+    des = _na_montagem(real, 0.0)
+    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    _sem_carimbo(doc)
+    c = copy.deepcopy(_cv(doc, ids[0]))
+    c.id = "copia-do-cv1"
+    _andar(c, (0.0, 1500.0, 0.0))
+    doc.entidades = {c.id: c, **doc.entidades}
+    _andar(_cv(doc, ids[1]), (0.0, 200.0, 0.0))
+    r = DPE.montagem_do_modelo(des, doc, [])
+    assert r["alteracoes"] == ["viga CV2: movida 200 mm"], r["alteracoes"]

@@ -2946,6 +2946,18 @@ COPIAS = "há %d barras no 3D para esta linha (cópias): a planta seguiu a mais 
 COPIAS_EMPATE = "há %d barras no 3D para esta linha, à mesma distância dela: a planta não foi alterada"
 
 
+def _pecas_da_barra_escolhida(tipo: str, e, a: dict, pecas: list, tol: float) -> list:
+    """as peças do elemento com a barra que a volta mede na frente e sem as outras barras dele (as cópias): a régua e a
+    translação olhavam a 1ª barra na ordem do modelo e a caixa de todas — a cópia posta na frente fazia a barra que
+    está onde a montagem a pôs parecer mexida (revisão do delta, 14/11, (e))"""
+    if tipo != "viga":
+        return pecas
+    sel = _barra_do_elemento(e, a, pecas, tol)[0]
+    if sel is None:
+        return pecas
+    return [sel] + [q for q in pecas if q is not sel and not (isinstance(q, Barra) and (q.atributos or {}).get("elemento") == "viga")]
+
+
 def _barra_do_elemento(e, a: dict, pecas: list, tol: float = 1.0) -> Tuple[Optional[Barra], int, bool]:
     """(a barra que a volta mede, quantas barras inteiras a linha tem no 3D, empate). Sem carimbo, era a 1ª peça na ordem do
     modelo — a cópia posta na frente (desfazer um Apagar recoloca a original no fim) levava a linha da planta até ela
@@ -3044,6 +3056,7 @@ def _onde_a_regua_vale(des: Desenho, doc: Documento, niveis: Optional[Sequence[d
         acusado = e.id in acusados
         if e.id not in difere:
             continue                                      # a régua é a linha: mede-se pela linha
+        pecas = _pecas_da_barra_escolhida(tipo, e, a, pecas, tol)
         bate = _como_a_montagem_fez(pecas, refs, tol)
         if not acusado:
             votos[papel]["linha"] += 1
@@ -3157,7 +3170,7 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
             out["alteracoes"].append("%s %s: %s" % (tipo, marca, ambiguos[e.id]))
             continue
         refs = da_montagem.get(e.id) if not propria and (usar_regua is None or e.id in usar_regua) else None
-        if refs and _como_a_montagem_fez(pecas, refs, tol):
+        if refs and _como_a_montagem_fez(_pecas_da_barra_escolhida(tipo, e, a, pecas, tol) if carimbada is None else pecas, refs, tol):
             continue
         x0, x1 = min(c[0] for c in cx3), max(c[1] for c in cx3)
         y0, y1 = min(c[2] for c in cx3), max(c[3] for c in cx3)
