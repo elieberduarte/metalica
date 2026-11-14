@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Guarda de modelo antigo: editor aberto antes do "Aplicar furos" não pode gravar por
-cima; parafusos acompanham o furo; fantasma opaco no Ver no 3D."""
-import json, os, shutil, subprocess, sys, tempfile, time, urllib.request
+cima (desde o D01, 13/11: 409 de conflito, "⚠ Não gravado" e a escolha, sem mandar recarregar); parafusos
+acompanham o furo; fantasma opaco no Ver no 3D."""
+import json, os, re, shutil, subprocess, sys, tempfile, time, urllib.request
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
@@ -74,7 +75,13 @@ try:
     t0 = time.time()
     while time.time() - t0 < 60 and aba.avaliar("window.editor._autosalvando"): aba.drenar(0.5)
     ok(p77(modelo()) == novo, "modelo continua com a furação nova depois do autosave do editor velho (%s)" % (novo[:2],))
-    ok(aba.avaliar("!!document.querySelector('.aviso.erro, .avisos .erro, [class*=aviso]') && /Recarregue/i.test(document.body.textContent)"), "editor velho avisou para recarregar")
+    # desde o D01 (0ceb715, 13/11 — "Escolher, com histórico"): o servidor responde 409 (conflito) e a aba velha não manda
+    # recarregar (o F5 descartaria as edições dela) — marca "⚠ Não gravado" e oferece a escolha no botão
+    ok(aba.avaliar("window.editor._conflito === true"), "editor velho ficou em conflito (as edições dele não foram gravadas)")
+    ok(aba.avaliar("(b => !!b && b.classList.contains('conflito') && b.textContent === '⚠ Não gravado')(window.editor.el.salvar)"),
+       "o botão de gravar diz \"⚠ Não gravado\" (classe conflito): %r" % aba.avaliar("window.editor.el.salvar && window.editor.el.salvar.textContent"))
+    dica = aba.avaliar("window.editor.el.dica.textContent") or ""
+    ok("Não gravado" in dica and not re.search(r"recarregue|F5", dica, re.I), "o rodapé aponta a escolha, sem mandar recarregar: %r" % dica[:120])
     # 4) editor recarregado grava normalmente
     aba.navegar(base + "/editor?projeto=compressores", limite=60)
     t0 = time.time()
@@ -94,10 +101,10 @@ try:
     while time.time() - t0 < 60 and not aba.avaliar("window.editor && window.editor.selecao && window.editor.selecao.ids.size > 0"): aba.drenar(1.0)
     aba.drenar(2.5)
     ok(aba.avaliar("(() => { const c = window.editor.cena; const m = c._materialFantasma(); return m.transparent === false && c.destaque && c.destaque.size === 18; })()"), "fantasma opaco ligado no Ver no 3D")
-    # o 400 do /modelo é a recusa do servidor à gravação do editor velho, provocada no passo 3
-    recusas = [m for m in aba.console if m[0] == "error" and "400" in m[1] and "/api/projetos/compressores/modelo" in m[1]]
+    # o 409 do /modelo é a recusa do servidor à gravação do editor velho (o conflito do D01), provocada no passo 3
+    recusas = [m for m in aba.console if m[0] == "error" and "409" in m[1] and "/api/projetos/compressores/modelo" in m[1]]
     erros = [m for m in aba.console if m[0] in ("error", "excecao") and m not in recusas]
-    ok(len(recusas) == 1, "uma única recusa (400) do /modelo, a do editor velho: %d" % len(recusas))
+    ok(len(recusas) == 1, "uma única recusa (409) do /modelo, a do editor velho: %d" % len(recusas))
     ok(not erros, "sem outros erros no console: %s" % erros[:3])
 finally:
     nav.kill(); srv.kill(); shutil.rmtree(perfil, ignore_errors=True)
