@@ -197,6 +197,7 @@ try:
     clicar(aba, "#controle-corpo button[data-item='T.C.1']")
     esperar(aba, "!!document.querySelector('#ctl-dialogo[open]')", 10)
     clicar(aba, "#ctl-dialogo input[name=ctl-etapa][value=pintura]")
+    esperar(aba, "/pintura/.test((document.querySelector('#ctl-dialogo small.nota') || {}).textContent || '')", 3)   # a janela redesenha a dica
     dica = aba.avaliar("document.querySelector('#ctl-dialogo small.nota').textContent") or ""
     ok("só 30 com a produção apontada" in dica and aba.avaliar("document.querySelector('#ctl-qtd').value") == "30",
        f"na pintura da T.C.1 vão só as 30 produzidas ({dica})")
@@ -205,6 +206,7 @@ try:
     clicar(aba, "#controle-corpo button[data-item='T38-2']")
     esperar(aba, "!!document.querySelector('#ctl-dialogo[open]')", 10)
     clicar(aba, "#ctl-dialogo input[name=ctl-etapa][value=pintura]")
+    esperar(aba, "/pintura/.test((document.querySelector('#ctl-dialogo small.nota') || {}).textContent || '')", 3)   # a janela redesenha a dica
     dica = aba.avaliar("document.querySelector('#ctl-dialogo small.nota').textContent") or ""
     ok("falta apontar a produção antes da pintura" in dica and aba.avaliar("document.querySelector('#ctl-confirmar').disabled"),
        f"a T38-2 sem produção não deixa apontar a pintura ({dica})")
