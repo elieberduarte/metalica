@@ -3564,7 +3564,15 @@ class CAD {
     caixa.append(typeof conteudo === 'string' ? document.createTextNode(conteudo) : conteudo);
     caixa.append(el('button', { type: 'button', title: 'fechar', texto: '×', onclick: () => caixa.remove() }));
     this.el.avisos.append(caixa);
-    while (this.el.avisos.children.length > 4) this.el.avisos.firstElementChild.remove();
+    // o limite tira primeiro o mais velho que tem prazo para sair; o fixo (duração 0) só sai pelo limite quando o novo
+    // também é fixo. Com 4 fixos e um novo com prazo, a pilha fica com 5 até o novo sair sozinho (GESTÃO N.9, 14/11: o
+    // "Planta atualizada pelo 3D" fixo saía em milissegundos, empurrado pelos 3 avisos da sincronia do 3D, de 10 s)
+    while (this.el.avisos.children.length > 4) {
+      const filhos = [...this.el.avisos.children];
+      const sai = filhos.find(c => c !== caixa && !c.dataset.fixo) || (caixa.dataset.fixo ? filhos.find(c => c !== caixa) : null);
+      if (!sai) break;
+      sai.remove();
+    }
     if (duracao) setTimeout(() => caixa.remove(), duracao);
   }
 
