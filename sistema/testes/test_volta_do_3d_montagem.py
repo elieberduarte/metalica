@@ -513,12 +513,14 @@ def test_o_editor_aberto_que_grava_o_modelo_dele_depois_da_volta_nao_faz_a_mudan
 
 
 # ------------------------------------------------------------------ copiar, dividir e trocar o perfil no editor 3D
-def _terca_solta():
+def _terca_solta(nivel_topo=6454.5, nivel_fim=None):
     """uma terça de 5,46 m que a montagem não ajusta: (planta, 3D, id) — para ver só o efeito da ferramenta do editor"""
     des = Desenho(nome="planta", escala=100.0)
     e = Linha(camada="ESTRUTURA", a=(0.0, 0.0), b=(5460.0, 0.0), atributos={
         "elemento": "viga", "material": "aco", "papel": "terça", "marca": "T.C.1",
-        "secao": {"perfil": "U 127×50×2,25 (FF)", "aco": "ASTM A36"}, "nivel_topo": 6454.5, "alinhamento": "base"})
+        "secao": {"perfil": "U 127×50×2,25 (FF)", "aco": "ASTM A36"}, "nivel_topo": nivel_topo, "alinhamento": "base"})
+    if nivel_fim is not None:
+        e.atributos["nivel_fim"] = nivel_fim
     des.add(e)
     doc, _ = DPE.modelo_da_planta(copy.deepcopy(des), [])
     return des, doc, e.id
@@ -639,3 +641,36 @@ def test_detalhar_pranchas_e_lista_sao_os_mesmos_com_e_sem_o_carimbo(tmp_path, m
         assert s_com[nome] == s_de_novo[nome], nome             # a geração repete
         assert s_com[nome] == s_sem[nome], nome                 # e o carimbo não muda nada
         assert "gerada" not in s_com[nome], nome
+
+
+# ------------------------------------------------------------------ os achados da revisão independente (14/11)
+@pytest.mark.parametrize("nivel_fim", [None, 6454.0, 6700.0])
+@pytest.mark.parametrize("caso, sobe_a, sobe_b", [("só a ponta a", 100.0, 0.0), ("só a ponta b", 0.0, 100.0),
+                                                   ("as duas, diferente", 100.0, 40.0), ("as duas, igual", 70.0, 70.0),
+                                                   ("uma sobe e a outra desce", 60.0, -30.0)])
+def test_a_ponta_levantada_no_3d_leva_so_ela_na_planta(caso, sobe_a, sobe_b, nivel_fim):
+    """achado 1: com a terça sem `nivel_fim`, só a ponta `inicio` levantada 100 mm no 3D dava "topo 6454 → 6554" e a
+    ponta b ia junto (o 3D refeito punha as duas em cima). Cada ponta leva a cota dela: o 3D refeito da planta fica
+    como o usuário deixou"""
+    des, doc, eid = _terca_solta(nivel_topo=6454.0, nivel_fim=nivel_fim)
+    b = _cv(doc, eid)
+    za, zb = b.inicio[2], b.fim[2]
+    b.inicio = (b.inicio[0], b.inicio[1], za + sobe_a)
+    b.fim = (b.fim[0], b.fim[1], zb + sobe_b)
+    r = DPE.planta_do_modelo(des, doc, [])
+    assert len(r["alteracoes"]) == 1 and "movida" not in r["alteracoes"][0] and "comprimento" not in r["alteracoes"][0]
+    at = des.entidades[eid].atributos
+    assert at["nivel_topo"] == 6454.0 + sobe_a
+    fim_esperado = (nivel_fim if nivel_fim is not None else 6454.0) + sobe_b
+    if nivel_fim is None and sobe_a == sobe_b:
+        assert "nivel_fim" not in at                             # as duas juntas: a ponta b segue a cota da barra
+    else:
+        assert at["nivel_fim"] == fim_esperado
+    # o 3D refeito da planta nova: as duas pontas onde o usuário as deixou
+    novo, _ = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    b2 = _cv(novo, eid)
+    assert b2.inicio[2] == pytest.approx(za + sobe_a, abs=0.01) and b2.fim[2] == pytest.approx(zb + sobe_b, abs=0.01)
+    assert DPE.planta_do_modelo(des, doc, [])["alteracoes"] == []
+    if caso == "só a ponta a" and nivel_fim is None:
+        assert r["alteracoes"] == ["viga T.C.1: topo 6454.0 → 6554, a outra ponta fica em 6454"]
+

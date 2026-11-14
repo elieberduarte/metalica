@@ -2932,6 +2932,11 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
                     mud.append("topo da outra ponta %s → %s" % (a.get("nivel_fim") if a.get("nivel_fim") is not None else "—",
                                                                  round(fim0 + df[2])))
                     a["nivel_fim"] = round(fim0 + df[2])
+                elif a.get("nivel_fim") is None and abs(df[2] - di[2]) > tol:
+                    # só a ponta a mudou de cota e a b não tinha a dela: sem `nivel_fim` a b ia junto (revisão de 14/11)
+                    # — a b fica com a cota em que estava, sem arredondar (ela não mudou)
+                    a["nivel_fim"] = int(fim0) if float(fim0).is_integer() else fim0
+                    mud.append("a outra ponta fica em %s" % a["nivel_fim"])
                 if mud:
                     # veio: a linha guarda a peça e onde ela estava (a volta seguinte mede a partir daí)
                     a[TRAZIDO] = {"peca": p3.id, "barra": [list(pi), list(pf)]}
