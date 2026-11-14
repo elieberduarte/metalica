@@ -1264,7 +1264,7 @@ export class Editor {
         'As mudanças desta aba ainda não foram gravadas.' }),
       el('div', { class: 'explica', texto: '• Gravar as minhas por cima: a versão gravada vai para o histórico.' }),
       el('div', { class: 'explica', texto: '• Abrir a versão gravada: as mudanças desta aba vão para o histórico.' }),
-      el('div', { class: 'explica', texto: 'Nos dois casos dá para voltar pelo Arquivo › Restaurar modelo anterior.' }),
+      el('div', { class: 'explica', texto: 'Nos dois casos dá para voltar pelo Arquivo › Versões anteriores do modelo.' }),
       el('div', { class: 'linha' }, abrirGravada));
     const r = await this.dialogo({ titulo: 'A obra foi gravada em outro lugar', corpo, ok: 'Gravar as minhas por cima', cancelar: 'Decidir depois' });
     if (r === 'ok') return this._gravarPorCima(quando);
@@ -1278,7 +1278,7 @@ export class Editor {
 
   async _gravarPorCima(quando) {
     const corpo = el('div', { class: 'explica', texto: `A versão gravada em ${quando} será substituída pelas mudanças desta aba. ` +
-      'Ela vai para o histórico (Arquivo › Restaurar modelo anterior), com o nome "antes de gravar por cima".' });
+      'Ela vai para o histórico (Arquivo › Versões anteriores do modelo), com o nome "antes de gravar por cima".' });
     if (await this.dialogo({ titulo: 'Gravar as minhas por cima?', corpo, ok: 'Gravar por cima', cancelar: 'Voltar' }) !== 'ok') return;
     if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
     this._autosalvando = true;
@@ -1290,7 +1290,7 @@ export class Editor {
       this._conflito = false; this._conflitoDisco = null;
       if ((this._versaoEdicao || 0) === versao) this._autosavePendente = false;
       this._salvoEm = new Date(); this._erroGravacao = null;
-      this.aviso(`Gravado por cima. A versão de ${quando} está no histórico (Arquivo › Restaurar modelo anterior).`, 'info', 10000);
+      this.aviso(`Gravado por cima. A versão de ${quando} está no histórico (Arquivo › Versões anteriores do modelo).`, 'info', 10000);
     } catch (e) {
       this.aviso(`Não foi possível gravar por cima: ${e.message}`, 'erro', 0);
     } finally {
@@ -1307,7 +1307,7 @@ export class Editor {
       this.aviso(`As mudanças desta aba não foram para o histórico (${e.message}); a versão gravada não foi aberta, para nada se perder.`, 'erro', 0);
       return;
     }
-    try { sessionStorage.setItem('metalica.avisoAoAbrir', 'Aberta a versão gravada. As mudanças da outra aba estão no histórico (Arquivo › Restaurar modelo anterior), com o nome "edições não gravadas de uma aba desatualizada".'); } catch { /* sem armazenamento */ }
+    try { sessionStorage.setItem('metalica.avisoAoAbrir', 'Aberta a versão gravada. As mudanças da outra aba estão no histórico (Arquivo › Versões anteriores do modelo), com o nome "edições não gravadas de uma aba desatualizada".'); } catch { /* sem armazenamento */ }
     this._conflito = false; this._autosavePendente = false;
     if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
     window.location.reload();
