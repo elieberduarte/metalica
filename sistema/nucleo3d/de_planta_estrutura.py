@@ -2752,20 +2752,27 @@ def _trazida(a: dict, p3) -> Optional[Tuple[tuple, tuple]]:
         return None
 
 
-def _pontas_da_barra(p3: Barra, pecas: list, tol: float = 1.0) -> Tuple[tuple, tuple]:
-    """As pontas da barra do elemento. A barra dividida no editor 3D (Dividir: o 1º pedaço fica com o id, os outros são
-    cópias, todos com `emenda_de`) conta inteira — do começo do 1º pedaço ao fim do último, na linha dela; sem isso a
-    volta encurtava a linha da planta até o 1º pedaço. A cópia que não está na linha da barra não entra."""
-    de = (p3.atributos or {}).get("emenda_de")
-    if not de:
-        return tuple(p3.inicio), tuple(p3.fim)
+def _pontas_da_barra(p3: Barra, pecas: list, tol: float = 1.0, L_ref: Optional[float] = None) -> Tuple[tuple, tuple, bool]:
+    """As pontas da barra do elemento: (início, fim, inteira). A barra dividida no editor 3D (Dividir: o 1º pedaço fica
+    com o id, os outros são cópias, todos com `emenda_de`) conta inteira — do começo do 1º pedaço ao fim do último, na
+    linha dela; sem isso a volta encurtava a linha da planta até o 1º pedaço.
+
+    Conta como pedaço TODA barra do elemento com `emenda_de`: dividir de novo um pedaço regrava o `emenda_de` dele com o
+    id dele mesmo, então não há cadeia a seguir até a barra de origem (revisão de 14/11, achado 2b). Os pedaços na reta
+    de `p3` que se tocam formam a barra, a partir de `p3`. `inteira` é False quando sobra pedaço fora da reta ou
+    separado por um vão E o trecho junto é mais curto que a referência (`L_ref`): os pedaços já não são uma barra reta
+    só e a volta não pode ler a linha deles (achado 2a — a linha da planta nunca encurta por causa de divisão). Com a
+    barra inteira na reta, o pedaço fora dela é cópia e não conta. O último pedaço apagado (nada fora da reta, nenhum
+    vão) é a barra que o usuário encurtou: inteira, mais curta."""
+    if not (p3.atributos or {}).get("emenda_de"):
+        return tuple(p3.inicio), tuple(p3.fim), True
     L = math.dist(p3.inicio, p3.fim)
     if L < 1e-6:
-        return tuple(p3.inicio), tuple(p3.fim)
+        return tuple(p3.inicio), tuple(p3.fim), True
     d = tuple((p3.fim[k] - p3.inicio[k]) / L for k in range(3))
-    s0, s1 = 0.0, L
+    na_reta, fora = [], False
     for q in pecas:
-        if q is p3 or not isinstance(q, Barra) or (q.atributos or {}).get("emenda_de") != de:
+        if q is p3 or not isinstance(q, Barra) or not (q.atributos or {}).get("emenda_de"):
             continue
         ss = []
         for P in (q.inicio, q.fim):
@@ -2773,11 +2780,29 @@ def _pontas_da_barra(p3: Barra, pecas: list, tol: float = 1.0) -> Tuple[tuple, t
             s = sum(v[k] * d[k] for k in range(3))
             if math.dist(v, tuple(d[k] * s for k in range(3))) > tol:
                 ss = []
-                break                                     # fora da linha da barra: é cópia, não pedaço
+                break                                     # fora da reta da barra
             ss.append(s)
         if ss:
-            s0, s1 = min(s0, *ss), max(s1, *ss)
-    return (tuple(p3.inicio[k] + d[k] * s0 for k in range(3)), tuple(p3.inicio[k] + d[k] * s1 for k in range(3)))
+            na_reta.append((min(ss), max(ss)))
+        else:
+            fora = True
+    s0, s1 = 0.0, L
+    juntou = True
+    while juntou:                                         # junta os pedaços que tocam o trecho, até não sobrar nenhum
+        juntou = False
+        for t in list(na_reta):
+            if t[0] <= s1 + tol and t[1] >= s0 - tol:
+                s0, s1 = min(s0, t[0]), max(s1, t[1])
+                na_reta.remove(t)
+                juntou = True
+    inteira = True
+    if (fora or na_reta) and L_ref is not None and (s1 - s0) < L_ref - tol:
+        inteira = False
+    return (tuple(p3.inicio[k] + d[k] * s0 for k in range(3)), tuple(p3.inicio[k] + d[k] * s1 for k in range(3)), inteira)
+
+
+#: a volta não lê a linha dos pedaços que já não formam uma barra reta só (revisão de 14/11, achado 2a)
+FORA_DA_RETA = "barra dividida com pedaço fora da reta: a planta não foi alterada"
 
 
 def _pecas_da_montagem(des: Desenho, niveis: Optional[Sequence[dict]]) -> Dict[str, list]:
@@ -2891,10 +2916,19 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
             if tipo in ("tesoura", "painel", "escada"):
                 # a tesoura são três ou quatro sólidos: a linha de apoio pela caixa de todos, o nível só na volta do 3D gerado
                 p3 = Solido(vertices=[v for q in pecas for v in (getattr(q, "vertices", None) or [])])
-            pi, pf = _pontas_da_barra(p3, pecas, tol) if isinstance(p3, Barra) else (None, None)
             # de onde medir: as pontas em que a peça estava quando já veio; senão, onde a montagem a deixou (o carimbo,
             # ou a barra da régua)
             ref = ja_veio or _carimbo(p3) or ((refs[0].inicio, refs[0].fim) if refs and isinstance(refs[0], Barra) and isinstance(p3, Barra) else None)
+            pi, pf, inteira = (_pontas_da_barra(p3, pecas, tol, math.dist(ref[0], ref[1]) if ref is not None else math.dist(e.a, e.b))
+                               if isinstance(p3, Barra) else (None, None, True))
+            if not inteira:
+                # a barra dividida que já não é uma reta só: a linha da planta fica, e a volta diz (nada calado). Sem
+                # referência (modelo de antes do carimbo), pede a régua da montagem: a linha da planta pode ter outro
+                # comprimento que o 3D
+                if ref is None and not propria and da_montagem.get(e.id) is None:
+                    out["sem_carimbo"].append(e.id)
+                out["alteracoes"].append("%s %s: %s" % (tipo, marca, FORA_DA_RETA))
+                continue
             if ref is not None:
                 # só o que o usuário fez no 3D: a ponta da barra menos a ponta de referência, somada à da planta
                 di = tuple(pi[k] - ref[0][k] for k in range(3))
