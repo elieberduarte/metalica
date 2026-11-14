@@ -333,7 +333,7 @@ def test_terca_estendida_ate_a_face_da_tesoura_da_ponta_nao_volta_como_mudanca()
     assert DPE.planta_do_modelo(des, doc, [])["alteracoes"] == []
 
 
-# ------------------------------------------------------------------ o carimbo da montagem na barra do 3D
+# ------------------------------------------------------------------ o carimbo da montagem (no 3D) e o que já veio (na planta)
 def _pequena_com_a_volta_feita(giro=0.0):
     """a tesoura pequena com aleta na Montagem, o CV1 movido 150 mm no 3D e a volta feita: (planta, 3D, ids)"""
     real, ids = _planta_pequena("aleta", 5000.0)
@@ -341,13 +341,32 @@ def _pequena_com_a_volta_feita(giro=0.0):
     doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
     cv1 = next(b for b in doc.entidades.values() if isinstance(b, Barra) and b.atributos.get("origem_2d") == ids[0])
     _andar(cv1, (0.0, 150.0, 0.0))
+    modelo_antes = json.dumps(doc.dict(), sort_keys=True)
     r = DPE.montagem_do_modelo(des, doc, [])
-    assert r["alteracoes"] == ["viga CV1: movida 150 mm"] and r["modelo_mudou"] == [cv1.id]
+    assert r["alteracoes"] == ["viga CV1: movida 150 mm"] and r["modelo_mudou"] == []
+    assert json.dumps(doc.dict(), sort_keys=True) == modelo_antes              # a volta não mexe no modelo
     return des, doc, ids
 
 
 def _cv(doc, eid):
     return next(b for b in doc.entidades.values() if isinstance(b, Barra) and b.atributos.get("origem_2d") == eid)
+
+
+def _node(roteiro, entrada):
+    """roda um roteiro do editor no Node (os módulos de web/), com `entrada` em JSON pela entrada padrão"""
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("sem o Node: os módulos do editor não rodam aqui")
+    web = "file:///" + os.path.abspath(os.path.join(os.path.dirname(AQUI), "web")).replace("\\", "/").replace(" ", "%20")
+    r = subprocess.run([node, "--input-type=module", "-e", roteiro.replace("WEB", web)], input=json.dumps(entrada),
+                       capture_output=True, text=True, encoding="utf-8", timeout=120)
+    assert r.returncode == 0, r.stderr
+    return json.loads(r.stdout)
+
+
+LER = "let t = ''; process.stdin.on('data', d => t += d); process.stdin.on('end', () => {\n  const E = JSON.parse(t);\n"
 
 
 def test_a_montagem_carimba_a_barra_de_cada_viga_de_aco_e_so_ela():
@@ -357,101 +376,106 @@ def test_a_montagem_carimba_a_barra_de_cada_viga_de_aco_e_so_ela():
     assert sorted(p3.atributos["origem_2d"] for p3 in com) == sorted(ids)      # os dois contraventos; a tesoura e as aletas não
     for b in com:
         assert b.atributos[DPE.GERADA] == [list(b.inicio), list(b.fim)]         # depois do alongamento: onde a montagem a deixou
-    assert DPE.GERADA not in json.dumps(real.dict(), ensure_ascii=False)       # a planta não guarda nada
+    assert "gerada" not in _texto(real) and DPE.TRAZIDO not in _texto(real)    # a montagem não escreve na planta
 
 
-def test_projeto_antigo_sem_o_carimbo_a_primeira_volta_funciona_e_carimba(hangar_bruto):
-    """o modelo gravado antes de 14/11 não tem o carimbo em peça nenhuma: a 1ª volta traz a mudança pela régua da
-    montagem, só a barra que mudou ganha o carimbo, e a planta não ganha atributo nenhum"""
+def test_projeto_antigo_sem_carimbo_nem_guardado_a_primeira_volta_funciona(hangar_bruto):
+    """o projeto gravado antes de 14/11: o modelo sem o carimbo em peça nenhuma e a planta sem o guardado. A 1ª volta
+    traz a mudança pela régua da montagem, não grava o modelo, e só a linha que mudou passa a guardar o que veio"""
     bruto, niveis, modelo = hangar_bruto
     des, doc = Desenho.de_dict(copy.deepcopy(bruto)), _sem_carimbo(Documento.de_dict(copy.deepcopy(modelo)))
-    assert DPE.GERADA not in json.dumps(doc.dict(), ensure_ascii=False)
+    assert DPE.GERADA not in json.dumps(doc.dict(), ensure_ascii=False) and DPE.TRAZIDO not in _texto(des)
     cv, eid = _barra_de(doc, des, "contraventamento", "CV5", "inf")
-    chaves_antes = {k: set(e.atributos) for k, e in des.entidades.items()}
     _andar(cv, (0.0, 200.0, 0.0))
+    modelo_antes = json.dumps(doc.dict(), sort_keys=True)
     r = DPE.montagem_do_modelo(des, doc, niveis)
-    assert r["alteracoes"] == ["viga CV5: movida 200 mm"] and r["modelo_mudou"] == [cv.id]
-    assert [p3.id for p3 in doc.entidades.values() if DPE.GERADA in (p3.atributos or {})] == [cv.id]
-    assert {k: set(e.atributos) for k, e in des.entidades.items()} == chaves_antes
+    assert r["alteracoes"] == ["viga CV5: movida 200 mm"] and r["modelo_mudou"] == []
+    assert json.dumps(doc.dict(), sort_keys=True) == modelo_antes
+    assert [k for k, e in des.entidades.items() if DPE.TRAZIDO in (e.atributos or {})] == [eid]
+    assert des.entidades[eid].atributos[DPE.TRAZIDO]["peca"] == cv.id
     assert DPE.montagem_do_modelo(des, doc, niveis)["alteracoes"] == []
+    _andar(cv, (0.0, 0.0, 30.0))                                # mexida de novo no 3D: vem só o que mudou desde a última
+    r = DPE.montagem_do_modelo(des, doc, niveis)
+    assert len(r["alteracoes"]) == 1 and r["alteracoes"][0].startswith("viga CV5: topo 6063.5 → 6094") and "movida" not in r["alteracoes"][0]
 
 
-def test_o_carimbo_sobrevive_a_gravar_e_reabrir_o_modelo(tmp_path):
-    """pelo gerente de projetos (o que a rota grava) e pelo documento do editor 3D (abrir, mover a barra e gravar)"""
-    import shutil
-    import subprocess
+def test_o_guardado_e_o_carimbo_sobrevivem_a_gravar_e_reabrir(tmp_path):
+    """a planta pelo gerente de projetos (o que a rota grava) e pelo documento do CAD (abrir e gravar na tela); o
+    modelo pelo gerente e pelo documento do editor 3D (abrir, mover a barra e gravar)"""
     from projetos import Projetos
     des, doc, ids = _pequena_com_a_volta_feita()
     cv1 = _cv(doc, ids[0])
+    guardado = json.loads(json.dumps(des.entidades[ids[0]].atributos[DPE.TRAZIDO]))
     carimbo = json.loads(json.dumps(cv1.atributos[DPE.GERADA]))
-    assert carimbo == [list(cv1.inicio), list(cv1.fim)]                         # atualizado na volta: onde a barra está
+    assert guardado == {"peca": cv1.id, "barra": [list(cv1.inicio), list(cv1.fim)]} and carimbo != guardado["barra"]
     g = Projetos(str(tmp_path))
     s = g.criar("Volta", tipo="desenho")["slug"]
+    g.salvar_desenho(s, "montagem", des.dict())
     g.salvar_modelo(s, doc.dict(), marco=True)
-    aberto = g.abrir_modelo(s)
-    doc2 = Documento.de_dict(copy.deepcopy(aberto))
-    assert _cv(doc2, ids[0]).atributos[DPE.GERADA] == carimbo
-    assert DPE.montagem_do_modelo(des, doc2, [])["alteracoes"] == []           # reaberto, o que já veio não vem de novo
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("sem o Node: o documento do editor 3D não roda aqui")
-    js = "file:///" + os.path.abspath(os.path.join(os.path.dirname(AQUI), "web", "editor3d", "nucleo", "documento.js")).replace("\\", "/")
-    # no editor: abrir, mover a barra 80 mm em y (as pontas mudam, os atributos ficam) e gravar
-    roteiro = ("import { Documento } from %s;\n"
-               "let t = ''; process.stdin.on('data', d => t += d); process.stdin.on('end', () => {\n"
-               "  const { modelo, id } = JSON.parse(t); const doc = Documento.deJSON(modelo); const e = doc.entidades.get(id);\n"
-               "  e.inicio = [e.inicio[0], e.inicio[1] + 80, e.inicio[2]]; e.fim = [e.fim[0], e.fim[1] + 80, e.fim[2]];\n"
-               "  process.stdout.write(doc.paraTexto());\n"
-               "});\n" % json.dumps(js.replace(" ", "%20")))
-    r = subprocess.run([node, "--input-type=module", "-e", roteiro], input=json.dumps({"modelo": aberto, "id": cv1.id}),
-                       capture_output=True, text=True, encoding="utf-8", timeout=60)
-    assert r.returncode == 0, r.stderr
-    doc3 = Documento.de_dict(json.loads(r.stdout))
-    assert _cv(doc3, ids[0]).atributos[DPE.GERADA] == carimbo                  # o carimbo ficou; a barra andou
-    assert DPE.montagem_do_modelo(des, doc3, [])["alteracoes"] == ["viga CV1: movida 80 mm"]
+    planta, modelo = g.abrir_desenho(s, "montagem"), g.abrir_modelo(s)
+    des2, doc2 = Desenho.de_dict(copy.deepcopy(planta)), Documento.de_dict(copy.deepcopy(modelo))
+    assert des2.entidades[ids[0]].atributos[DPE.TRAZIDO] == guardado and _cv(doc2, ids[0]).atributos[DPE.GERADA] == carimbo
+    assert DPE.montagem_do_modelo(des2, doc2, [])["alteracoes"] == []          # reabertos, o que já veio não vem de novo
+    # pela tela: o CAD abre e grava a planta; o editor 3D abre o modelo, move a barra 80 mm em y e grava
+    sai = _node("import { Desenho2D } from 'WEB/cad/nucleo/desenho2d.js';\n"
+                "import { Documento } from 'WEB/editor3d/nucleo/documento.js';\n" + LER +
+                "  const doc = Documento.deJSON(E.modelo); const e = doc.entidades.get(E.id);\n"
+                "  e.inicio = [e.inicio[0], e.inicio[1] + 80, e.inicio[2]]; e.fim = [e.fim[0], e.fim[1] + 80, e.fim[2]];\n"
+                "  process.stdout.write(JSON.stringify({ planta: Desenho2D.deJSON(E.planta).paraJSON(), modelo: JSON.parse(doc.paraTexto()) }));\n"
+                "});\n", {"planta": planta, "modelo": modelo, "id": cv1.id})
+    des3, doc3 = Desenho.de_dict(sai["planta"]), Documento.de_dict(sai["modelo"])
+    assert des3.entidades[ids[0]].atributos[DPE.TRAZIDO] == guardado and _cv(doc3, ids[0]).atributos[DPE.GERADA] == carimbo
+    assert DPE.montagem_do_modelo(des3, doc3, [])["alteracoes"] == ["viga CV1: movida 80 mm"]      # só os 80 mm novos
 
 
-def test_o_carimbo_nao_sai_do_modelo(tmp_path):
-    """é da peça do 3D, só para a volta: não vai para a planta, para o IFC exportado, para a lista de materiais nem
-    para o DXF do desenho"""
+def test_o_carimbo_e_o_guardado_nao_saem_para_as_saidas(tmp_path):
+    """o carimbo é da peça do 3D e o guardado é da linha da planta, só para a volta: um não vai para a planta, o outro
+    não vai para o 3D, e nenhum para o DXF do desenho, o IFC exportado ou as estatísticas"""
     from ifc import exportar as ifc_exportar
     des, doc, ids = _pequena_com_a_volta_feita()
-    assert DPE.GERADA in _cv(doc, ids[0]).atributos
-    assert "gerada" not in _texto(des)                                          # a planta (e o que sai dela)
-    assert "gerada" not in des.para_dxf().dxf().lower()
+    assert DPE.GERADA in _cv(doc, ids[0]).atributos and DPE.TRAZIDO in des.entidades[ids[0]].atributos
+    assert "gerada" not in _texto(des)
+    dxf = des.para_dxf().dxf().lower()
+    assert "trazido" not in dxf and "gerada" not in dxf and "line" in dxf
+    novo, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])                   # o 3D refeito da planta com o guardado
+    assert "trazido" not in json.dumps(novo.dict(), ensure_ascii=False)
     caminho = os.path.join(str(tmp_path), "volta.ifc")
     ifc_exportar.exportar(doc, caminho)
     with open(caminho, encoding="utf-8", errors="replace") as f:
-        assert "gerada" not in f.read().lower()
+        ifc = f.read().lower()
+    assert "gerada" not in ifc and "trazido" not in ifc
     assert "gerada" not in json.dumps(doc.estatisticas(), ensure_ascii=False, default=str).lower()
 
 
-def test_a_planta_nao_guarda_nada_apagar_redesenhar_copiar_e_mover_a_linha():
-    """o que já veio mora na barra do 3D, não na linha: a linha apagada não deixa nada; a redesenhada e a copiada
-    seguem a vida delas; e a linha movida na planta depois da volta não é desfeita pela volta seguinte"""
+def test_apagar_redesenhar_copiar_e_mover_a_linha_na_planta():
+    """o guardado mora na linha e vale para uma peça do 3D: a linha apagada o leva junto; a redesenhada e a copiada
+    (Copiar do CAD leva os atributos) têm outra peça no 3D e não ficam presas nele; e a linha movida na planta depois
+    da volta não é desfeita pela volta seguinte"""
     des, doc, ids = _pequena_com_a_volta_feita()
     antiga = des.entidades[ids[0]]
-    assert set(antiga.atributos) == {"elemento", "material", "papel", "marca", "secao", "nivel_topo", "alinhamento", "quadro"}
-    # apagada: a peça do 3D fica sem elemento (a volta não quebra; a sincronia do CAD a tira)
+    # apagada: nada fica na planta (a peça do 3D fica sem elemento: a volta não quebra, a sincronia do CAD a tira)
     des_a = copy.deepcopy(des)
     del des_a.entidades[ids[0]]
+    assert DPE.TRAZIDO not in _texto(des_a)
     assert DPE.montagem_do_modelo(des_a, copy.deepcopy(doc), [])["alteracoes"] == []
-    # redesenhada no mesmo lugar: elemento novo, 3D refeito, a volta mede pela barra nova
+    # redesenhada no mesmo lugar, levando até o guardado da antiga: o 3D é refeito, a peça é outra
     des_r = copy.deepcopy(des)
     del des_r.entidades[ids[0]]
-    nova = Linha(camada=antiga.camada, a=antiga.a, b=antiga.b, atributos=dict(antiga.atributos))
+    nova = Linha(camada=antiga.camada, a=antiga.a, b=antiga.b, atributos=copy.deepcopy(antiga.atributos))
     des_r.add(nova)
     doc_r, _av = DPE.modelo_da_planta(copy.deepcopy(des_r), [])
     assert DPE.montagem_do_modelo(des_r, doc_r, [])["alteracoes"] == []
     _andar(_cv(doc_r, nova.id), (0.0, 120.0, 0.0))
     assert DPE.montagem_do_modelo(des_r, doc_r, [])["alteracoes"] == ["viga CV1: movida 120 mm"]
-    # copiada 20 mm de papel adiante (Copiar do CAD leva os atributos)
+    # copiada 20 mm de papel adiante, com os atributos: sem o 3D refeito não tem peça; com ele, mede pela peça dela
     des_c = copy.deepcopy(des)
     copia = copy.deepcopy(antiga)
     copia.id = "copia-do-cv1"
     copia.a, copia.b = (antiga.a[0], antiga.a[1] + 20.0), (antiga.b[0], antiga.b[1] + 20.0)
-    copia.atributos = dict(antiga.atributos, marca="CV9")
+    copia.atributos = dict(copy.deepcopy(antiga.atributos), marca="CV9")
     des_c.entidades[copia.id] = copia
+    r = DPE.montagem_do_modelo(des_c, copy.deepcopy(doc), [])
+    assert r["alteracoes"] == [] and r["sem_peca"] == ["CV9"]
     doc_c, _av = DPE.modelo_da_planta(copy.deepcopy(des_c), [])
     assert DPE.montagem_do_modelo(des_c, doc_c, [])["alteracoes"] == []
     _andar(_cv(doc_c, copia.id), (0.0, 100.0, 0.0))
@@ -476,3 +500,142 @@ def test_a_planta_mexida_sem_o_3d_acompanhar_nao_e_desfeita_pela_volta(hangar_br
     _andar(tb, tuple(300.0 * c for c in tb.direcao))
     assert DPE.montagem_do_modelo(des, doc, niveis)["alteracoes"] == ["viga T.C.1: movida 300 mm"]
     assert des.entidades[eid].a == pytest.approx(e.a) and des.entidades[eid].b == pytest.approx(e.b)
+
+
+def test_o_editor_aberto_que_grava_o_modelo_dele_depois_da_volta_nao_faz_a_mudanca_vir_de_novo():
+    """a tela dividida: o editor 3D tem o modelo em memória e grava de novo depois da volta (com outra peça mexida). A
+    volta não escreveu nada no modelo, então não há o que ele desfazer: o que já veio não vem de novo, o novo vem"""
+    des, doc, ids = _pequena_com_a_volta_feita()                # o CV1 +150 já veio
+    do_editor = Documento.de_dict(json.loads(json.dumps(doc.dict())))          # o modelo que o editor tinha, regravado
+    _andar(_cv(do_editor, ids[1]), (0.0, -90.0, 0.0))                           # e o usuário mexeu no CV2
+    assert DPE.montagem_do_modelo(des, do_editor, [])["alteracoes"] == ["viga CV2: movida 90 mm"]
+    assert DPE.montagem_do_modelo(des, do_editor, [])["alteracoes"] == []
+
+
+# ------------------------------------------------------------------ copiar, dividir e trocar o perfil no editor 3D
+def _terca_solta():
+    """uma terça de 5,46 m que a montagem não ajusta: (planta, 3D, id) — para ver só o efeito da ferramenta do editor"""
+    des = Desenho(nome="planta", escala=100.0)
+    e = Linha(camada="ESTRUTURA", a=(0.0, 0.0), b=(5460.0, 0.0), atributos={
+        "elemento": "viga", "material": "aco", "papel": "terça", "marca": "T.C.1",
+        "secao": {"perfil": "U 127×50×2,25 (FF)", "aco": "ASTM A36"}, "nivel_topo": 6454.5, "alinhamento": "base"})
+    des.add(e)
+    doc, _ = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    return des, doc, e.id
+
+
+@pytest.mark.parametrize("modelo", ["de agora", "de antes"])
+def test_a_barra_copiada_no_3d_nao_mexe_na_linha_da_planta(modelo):
+    """Copiar do editor 3D (copiasTransformadas: clone com id novo) leva o `origem_2d` e o carimbo da original: a linha
+    da planta continua sendo a da original — não anda até a cópia nem muda de tamanho. (Já era assim antes do carimbo:
+    a volta sempre mediu pela primeira peça do elemento.)"""
+    des, doc, eid = _terca_solta()
+    if modelo == "de antes":
+        _sem_carimbo(doc)
+    sai = _node("import { Documento } from 'WEB/editor3d/nucleo/documento.js';\n"
+                "import { copiasTransformadas } from 'WEB/editor3d/ferramentas/_comum.js';\n" + LER +
+                "  const doc = Documento.deJSON(E.modelo); const e = doc.entidades.get(E.id);\n"
+                "  for (const c of copiasTransformadas([e], p => [p[0] + 700, p[1] + 1500, p[2]], v => v)) doc.entidades.set(c.id, c);\n"
+                "  process.stdout.write(doc.paraTexto());\n});\n", {"modelo": doc.dict(), "id": _cv(doc, eid).id})
+    doc2 = Documento.de_dict(sai)
+    barras = [b for b in doc2.entidades.values() if isinstance(b, Barra) and b.atributos.get("origem_2d") == eid]
+    assert len(barras) == 2 and abs(barras[1].inicio[1] - barras[0].inicio[1] - 1500.0) < 0.01          # a cópia existe, 1,5 m ao lado
+    antes = _texto(des)
+    r = DPE.planta_do_modelo(des, doc2, [])
+    assert r["alteracoes"] == [] and _texto(des) == antes
+    _andar(barras[0], (0.0, 250.0, 0.0))                        # a original movida: a linha anda com ela
+    assert DPE.planta_do_modelo(des, doc2, [])["alteracoes"] == ["viga T.C.1: movida 250 mm"]
+    assert des.entidades[eid].a == pytest.approx((0.0, 250.0))
+
+
+@pytest.mark.parametrize("modelo", ["de agora", "de antes"])
+def test_a_barra_dividida_no_3d_nao_encurta_a_linha_da_planta(modelo):
+    """Dividir do editor 3D: o 1º pedaço fica com o id (encurtado), os outros são cópias, todos com `emenda_de`. A
+    barra conta inteira: a linha da planta não muda. (Antes de 14/11 a volta media pelo 1º pedaço e encurtava a linha
+    da planta até ele — "comprimento 5460 → 2000 mm, movida 1730 mm".)"""
+    des, doc, eid = _terca_solta()
+    if modelo == "de antes":
+        _sem_carimbo(doc)
+    sai = _node("import { Documento } from 'WEB/editor3d/nucleo/documento.js';\n"
+                "import { clonarEntidade } from 'WEB/editor3d/ferramentas/_comum.js';\n"
+                "import { pedacosDaBarra } from 'WEB/editor3d/ferramentas/dividir.js';\n" + LER +
+                "  const doc = Documento.deJSON(E.modelo); const b = doc.entidades.get(E.id);\n"
+                "  const pedacos = pedacosDaBarra(b, [2000]); const novas = [];\n"       # como FerramentaDividir.dividir
+                "  const atr = (extra) => ({ ...(b.atributos || {}), ...extra });\n"
+                "  let primeiro = null;\n"
+                "  pedacos.forEach((p, i) => {\n"
+                "    const campos = { inicio: p.inicio, fim: p.fim, cortes_inicio: p.cortes_inicio, cortes_fim: p.cortes_fim,\n"
+                "                     recorte_inicio: p.recorte_inicio, recorte_fim: p.recorte_fim, atributos: atr({ emenda_de: b.id }) };\n"
+                "    if (i === 0) { primeiro = campos; return; }\n"
+                "    const c = clonarEntidade(b, 'b'); Object.assign(c, campos); novas.push(c);\n"
+                "  });\n"
+                "  Object.assign(b, primeiro); for (const c of novas) doc.entidades.set(c.id, c);\n"
+                "  process.stdout.write(doc.paraTexto());\n});\n", {"modelo": doc.dict(), "id": _cv(doc, eid).id})
+    doc2 = Documento.de_dict(sai)
+    barras = [b for b in doc2.entidades.values() if isinstance(b, Barra) and b.atributos.get("origem_2d") == eid]
+    assert sorted(round(b.comprimento) for b in barras) == [2000, 3460]         # dividida em 2,00 + 3,46 m
+    antes = _texto(des)
+    r = DPE.planta_do_modelo(des, doc2, [])
+    assert r["alteracoes"] == [] and _texto(des) == antes
+    for b in barras:                                            # os dois pedaços movidos juntos: a linha anda inteira
+        _andar(b, (0.0, 250.0, 0.0))
+    assert DPE.planta_do_modelo(des, doc2, [])["alteracoes"] == ["viga T.C.1: movida 250 mm"]
+    assert des.entidades[eid].a == pytest.approx((0.0, 250.0)) and des.entidades[eid].b == pytest.approx((5460.0, 250.0))
+
+
+def test_o_perfil_trocado_no_3d_nao_vira_mudanca_de_posicao():
+    """trocar o perfil da barra no editor 3D (o mesmo objeto, outro `perfil`): a volta não acusa nada — ela traz
+    posição, comprimento e cota; o perfil da planta continua o da planta (já era assim)"""
+    des, doc, eid = _terca_solta()
+    _cv(doc, eid).perfil = "U 150×50×3,00 (FF)"
+    antes = _texto(des)
+    assert DPE.planta_do_modelo(des, doc, [])["alteracoes"] == [] and _texto(des) == antes
+
+
+# ------------------------------------------------------------------ o carimbo não muda o que sai do modelo
+def _saidas_do_modelo(app, raiz, modelo):
+    """Detalhar + Montar pranchas + lista de materiais do `modelo` num projeto novo em `raiz`: os desenhos e a lista sem
+    o que muda a cada geração (ids, o nome sorteado das folhas, datas e horas)"""
+    import re
+    app.PROJETOS = raiz
+    os.makedirs(raiz, exist_ok=True)
+    g = app._gerente()
+    s = g.criar("Obra", tipo="ifc")["slug"]
+    g.salvar_modelo(s, modelo)
+    nomes = sorted(d["nome"] for d in app.detalhar_projeto(s, {})["desenhos"])
+    pr = app.montar_pranchas_projeto(s, {"desenhos": [n for n in nomes if n.startswith("detalhamento-")], "formato": "A1", "titulo": "Pranchas"})
+    lista = app.lista_de_materiais(s, recalcular=True)
+    fora = ("id", "geracao", "alterado", "quando", "data")
+
+    def limpo(x):
+        if isinstance(x, dict):
+            return {k: limpo(v) for k, v in sorted(x.items()) if k not in fora}
+        return [limpo(v) for v in x] if isinstance(x, list) else x
+
+    def texto(x):
+        return re.sub(r"folha-[0-9a-f]{6,}", "folha-X", json.dumps(limpo(x), sort_keys=True, ensure_ascii=False))
+    saidas = {n: texto(g.abrir_desenho(s, n)) for n in nomes + [pr["desenho"]]}
+    saidas["lista de materiais"] = texto(lista)
+    return saidas, len(pr.get("pranchas") or [])
+
+
+def test_detalhar_pranchas_e_lista_sao_os_mesmos_com_e_sem_o_carimbo(tmp_path, monkeypatch):
+    """de ponta a ponta: o modelo da tesoura pequena (12 peças) detalhado, montado em pranchas e levantado na lista com
+    o carimbo da montagem nas barras e sem ele — os mesmos 7 desenhos, as mesmas 4 folhas, a mesma lista; e o carimbo
+    não aparece em nenhum deles. (A mesma geração duas vezes dá o mesmo: a comparação vale.)"""
+    import app
+    monkeypatch.setattr(app, "PROJETOS", str(tmp_path))
+    real, _ids = _planta_pequena("aleta", 5000.0)
+    doc, _av = DPE.modelo_da_planta(real, [])
+    com = doc.dict()
+    sem = _sem_carimbo(Documento.de_dict(copy.deepcopy(com))).dict()
+    assert json.dumps(com).count(DPE.GERADA) == 2 and DPE.GERADA not in json.dumps(sem)
+    s_com, folhas_com = _saidas_do_modelo(app, os.path.join(str(tmp_path), "com"), com)
+    s_sem, folhas_sem = _saidas_do_modelo(app, os.path.join(str(tmp_path), "sem"), sem)
+    s_de_novo, _n = _saidas_do_modelo(app, os.path.join(str(tmp_path), "de_novo"), com)
+    assert len(s_com) >= 7 and folhas_com == folhas_sem and folhas_com >= 1
+    assert sorted(s_com) == sorted(s_sem)
+    for nome in s_com:
+        assert s_com[nome] == s_de_novo[nome], nome             # a geração repete
+        assert s_com[nome] == s_sem[nome], nome                 # e o carimbo não muda nada
+        assert "gerada" not in s_com[nome], nome

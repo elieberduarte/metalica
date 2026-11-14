@@ -5028,7 +5028,8 @@ def estrutura_do_3d_na_planta(s: str, corpo: dict) -> dict:
     if not m:
         raise ErroDeDados("o projeto não tem modelo 3D: use Estrutura → Gerar 3D da planta")
     doc = Documento.de_dict(m)
-    # a volta compara o 3D com o que a montagem gera da planta de agora (14/11): no modelo grande são segundos
+    # a volta mede pelo carimbo da montagem nas barras; o modelo de antes de 14/11, sem carimbo, é comparado com o que a
+    # montagem gera da planta de agora — uma montagem a mais, segundos no modelo grande
     _progresso(s, "comparando o 3D com a planta…")
     r = DPE.montagem_do_modelo(des, doc, pj.get("niveis") or [])
     if r["alteracoes"]:
