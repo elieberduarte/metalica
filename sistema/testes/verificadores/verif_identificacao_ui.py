@@ -101,6 +101,14 @@ try:
     def painel():
         return aba.avaliar("(document.querySelector('#painel-ident') || {}).textContent || ''") or ""
 
+    def painel_mostra(*trechos, limite=30.0):
+        """O painel se redesenha só depois de gravar a Implantação (await salvar): a peça já está no desenho e o painel
+        ainda é o de antes. Lido na hora, o texto caía conforme a demora da gravação (BUGS N.3 e GESTÃO N.9, 14/11:
+        terças/laterais, P07/CB1, CE1/CL1, correntes A DEFINIR — a cada rodada um); espera o texto e devolve o painel."""
+        cond = " && ".join(f"t.includes({json.dumps(x)})" for x in trechos)
+        esperar(f"(() => {{ const t = (document.querySelector('#painel-ident') || {{}}).textContent || ''; return {cond}; }})()", limite)
+        return painel()
+
     aba.navegar(f"{base}/cad?projeto={s}", limite=60)
     esperar("window.cad && window.montagem && document.body.dataset.pronto === '1'")
     aba.console.clear()
@@ -167,7 +175,7 @@ try:
     ok(marcas == {"T.C.1": 14, "T.C.2": 12, "T.C.2-A": 8, "T.C.2-B": 8, "T.C.3": 14}, f"as marcas batem com a tabela das folhas 1 e 2: {marcas}")
     zs = aba.avaliar("[...new Set([...window.cad.doc.entidades.values()].filter(e => (e.atributos || {}).identificacao === 'terca').map(e => e.atributos.nivel_topo))].sort((a, b) => a - b)") or []
     ok(zs and abs(zs[0] - 6454.5) < 1 and abs(zs[-1] - 7303.1) < 1, f"o pé das terças sobe de +6,45 (borda) a +7,30 (cumeeira): {zs[:3]}…{zs[-2:]}")
-    t = painel()
+    t = painel_mostra("56 terça(s) lançada(s)", "T.L.1")
     ok("56 terça(s) lançada(s)" in t and "T.L.1" in t, "o painel mostra as terças lançadas e o aviso das laterais (fechamento)")
     # o 3D acompanha a planta (a gravação sincroniza): as terças e as tesouras no modelo do projeto
     def modelo3d():
@@ -195,7 +203,7 @@ try:
       const k = a.elemento === 'trelica' ? 'VC' : a.marca === 'VT' ? 'VT' : a.papel; c[k] = (c[k] || 0) + 1; } return c; })()""") or {}
     ok(conta.get("contraventamento") == 32 and conta.get("VC") == 6 and conta.get("VT") == 6 and conta.get("corrente", 0) >= 80,
        f"32 contraventos (CV1–CV8), 6 VC, 6 VT e as correntes: {conta}")
-    t = painel()
+    t = painel_mostra("A DEFINIR", "alma não tem perfil escrito")
     ok("A DEFINIR" in t and "alma não tem perfil escrito" in t, "os avisos: as correntes A DEFINIR e a alma da VC sem perfil")
     t0 = time.time()
     while time.time() - t0 < 60 and sum(1 for e in modelo3d() if e.get("papel") == "contraventamento") < 32:
@@ -237,7 +245,7 @@ try:
       .map(e => [e.atributos.marca, e.atributos.nivel_topo])""") or []
     baixos = sorted(m for m, z in topos if z == 5992)
     ok(baixos == sorted(["PM3", "PM4", "PM5", "PM6", "PM7", "PM8"]), f"os pilares sob a T2 com o topo na face de baixo da CB (+5,992): {baixos}")
-    t = painel()
+    t = painel_mostra("PM14", "A DEFINIR")
     ok("PM14" in t and "A DEFINIR" in t, "os avisos: o P07 sem apoio e a CB1 A DEFINIR da folha 36")
     t0 = time.time()
     while time.time() - t0 < 60 and sum(1 for e in modelo3d() if e.get("papel") == "chumbador") < 60:
@@ -255,7 +263,7 @@ try:
     clicar_em(botao("Pôr os suportes nas terças"))
     ok(esperar("[...window.cad.doc.entidades.values()].filter(e => (e.atributos || {}).identificacao === 'terca' && (e.atributos || {}).suporte).length === 56", 30),
        "o ST1 nas 56 terças da Implantação")
-    ok("ST1 em 56 terça(s)" in painel() and "SL1" in painel(), "o painel: ST1 nas terças e o SL1 que fica para as laterais")
+    ok("ST1 em 56 terça(s)" in painel_mostra("ST1 em 56 terça(s)", "SL1") and "SL1" in painel(), "o painel: ST1 nas terças e o SL1 que fica para as laterais")
 
     # ---- Etapa 7: as chapas da emenda e das ligações (21/10) — CE1/CL1 da T2 pelas folhas 30 e 32; o 3D faz a emenda
     # na cumeeira (as duas CE e os 8 parafusos) e a CL1 nos montantes onde as VC e as VT chegam
@@ -264,7 +272,7 @@ try:
     clicar_em(botao("Pôr as chapas nas tesouras"))
     ok(esperar("[...window.cad.doc.entidades.values()].filter(e => (e.atributos || {}).elemento === 'trelica' && (e.atributos || {}).chapas).length === 3", 30),
        "as chapas nas 3 T2 da Implantação")
-    t = painel()
+    t = painel_mostra("CE1 (T2", "CL1 (T2", "8 parafusos")
     ok("CE1 (T2" in t and "CL1 (T2" in t and "8 parafusos" in t, f"o painel: CE1 e CL1 da T2 e os parafusos da emenda: «{t[-400:]}»")
     t0 = time.time()
     while time.time() - t0 < 60 and sum(1 for e in modelo3d() if (e.get("atributos") or {}).get("marca") == "CE1") < 6:
@@ -280,7 +288,7 @@ try:
     clicar_em(botao("Pôr as aletas nas tesouras"))
     ok(esperar("[...window.cad.doc.entidades.values()].filter(e => (e.atributos || {}).elemento === 'trelica' && (e.atributos || {}).aletas).length === 3", 30),
        "as aletas nas 3 T2 da Implantação")
-    ok("AC1 (T2" in painel(), "o painel: a AC1 da T2")
+    ok("AC1 (T2" in painel_mostra("AC1 (T2"), "o painel: a AC1 da T2")
     t0 = time.time()
     while time.time() - t0 < 60 and sum(1 for e in modelo3d() if (e.get("atributos") or {}).get("papel_chapa") == "aleta") < 32:
         aba.drenar(1.0)
