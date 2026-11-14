@@ -1860,7 +1860,8 @@ export class MetodosEstruturaCAD {
       for (const a of itens) { const li = document.createElement('li'); li.textContent = a; lista.append(li); }
       caixa.append(lista);
       this.aviso(caixa, tipo, duracao);
-    } else this.aviso(cabecalho, tipo, duracao);    if ((r.sem_peca || []).length) this.aviso(`Sem peça no 3D (apagadas lá? ficam na planta): ${r.sem_peca.join(', ')}.`, 'atencao', 0);
+    } else this.aviso(cabecalho, tipo, duracao);
+    if ((r.sem_peca || []).length) this.aviso(`Sem peça no 3D (apagadas lá? ficam na planta): ${r.sem_peca.join(', ')}.`, 'atencao', 0);
     // a sincronia de antes da volta não é calada (GESTÃO N.9, 14/11)
     if (levouAntes) this.aviso('A planta tinha mudanças ainda não levadas ao 3D; foram levadas antes de trazer o que mudou no 3D.', 'info', 12000);
   }
