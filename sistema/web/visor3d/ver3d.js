@@ -458,8 +458,8 @@ async function carregarReferencia() {
     niveisDoProjeto = (r && r.niveis) || [];
     atualizarRodape();
     visor.definirReferencia(tem ? r : null);
-    if (b) b.hidden = !tem;
-  } catch (e) { if (b) b.hidden = true; }
+    pontaDaBarra('planta', !!tem);
+  } catch (e) { pontaDaBarra('planta', false); }
 }
 
 /** A obra no terreno do cliente (20/10, terreno.js): a imagem de satélite no chão pela amarração do projeto. O botão
@@ -468,7 +468,32 @@ async function carregarTerreno() {
   terreno = new Terreno(visor, PROJETO, { abrirPainel, corpo: () => $('#painel-corpo'), situacao, palco: $('#palco'),
     painelAtual: () => painelAtual, aoMudar: marcarTerreno });
   window.terreno = terreno;
-  try { if (await terreno.carregar()) { $('#btn-terreno').hidden = false; marcarTerreno(); } } catch (e) { /* sem o terreno */ }
+  let tem = false;
+  try { tem = !!(await terreno.carregar()); } catch (e) { /* sem o terreno */ }
+  pontaDaBarra('terreno', tem);
+  if (tem) marcarTerreno();
+}
+
+/** A ponta da barra (GESTÃO N.9, 14/11 — a conferência da 0.9.3: o Terreno aparecia logo à esquerda do Cenas quando a
+ *  rota do terreno respondia, e quem clicava no Cenas nesse instante acertava o Terreno). Regra: nenhum botão da barra
+ *  muda de lugar depois que ela já aceita clique. Por isso o que só se sabe depois (a cobertura retrátil, a planta no
+ *  chão, o terreno) fica no fim da barra, nesta ordem, e cada um só entra quando os de antes já estão decididos: o que
+ *  entra fica sempre à direita de tudo o que já está na tela. Sem terreno ou sem planta não fica buraco (some de vez).
+ *  Depois da primeira decisão (a planta mudou na tela dividida) vale direto. */
+const ORDEM_DA_PONTA = ['cobertura', 'planta', 'terreno'];
+const PECAS_DA_PONTA = { cobertura: ['[data-cobertura]', '#cobertura'], planta: ['#btn-planta'], terreno: ['#btn-terreno'] };
+const pontaDecidida = {};
+let pontaSolta = 0;
+function pontaDaBarra(nome, ver) {
+  pontaDecidida[nome] = !!ver;
+  if (ORDEM_DA_PONTA.indexOf(nome) < pontaSolta) { mostrarNaPonta(nome); return; }
+  while (pontaSolta < ORDEM_DA_PONTA.length && ORDEM_DA_PONTA[pontaSolta] in pontaDecidida) mostrarNaPonta(ORDEM_DA_PONTA[pontaSolta++]);
+  if (pontaSolta === ORDEM_DA_PONTA.length) window.ver3dBarraAssentada = true;
+}
+function mostrarNaPonta(nome) {
+  for (const s of PECAS_DA_PONTA[nome]) { const e = $(s); if (e) e.hidden = !pontaDecidida[nome]; }
+  const sep = $('#sep-chao');                                  // o espaço antes da planta e do terreno: só com um deles
+  if (sep) sep.hidden = !['planta', 'terreno'].some(n => !$(PECAS_DA_PONTA[n][0]).hidden);
 }
 function marcarTerreno() { $('#btn-terreno').classList.toggle('ligado', !!(terreno && terreno.malha && terreno.ligado)); }
 
@@ -1005,13 +1030,11 @@ async function coberturaRetratil() {
   try {
     const j = await (await fetch(`/api/projetos/${encodeURIComponent(PROJETO)}`, { cache: 'no-store' })).json();
     pj = j.projeto || j;
-  } catch (e) { return; }
-  if (!((pj.analise_parametros || {}).cobertura_movel || pj.cobertura_movel_vista)) return;
+  } catch (e) { return false; }
+  if (!((pj.analise_parametros || {}).cobertura_movel || pj.cobertura_movel_vista)) return false;
   const atual = SIT_COBERTURA || pj.cobertura_movel_vista || null;
   const caixa = $('#cobertura');
   const botoes = caixa.querySelectorAll('button');
-  caixa.hidden = false;
-  document.querySelector('[data-cobertura]').hidden = false;
   botoes.forEach(b => {
     b.classList.toggle('ligado', b.dataset.situacao === atual);
     b.onclick = async () => {
@@ -1047,8 +1070,11 @@ async function coberturaRetratil() {
       }
     };
   });
+  return true;
 }
-if (PROJETO) coberturaRetratil();
+// a cobertura entra na ponta da barra (pontaDaBarra): a primeira da ordem, sabida pelo projeto
+if (PROJETO) coberturaRetratil().then(v => pontaDaBarra('cobertura', v), () => pontaDaBarra('cobertura', false));
+else pontaDaBarra('cobertura', false);
 
 abrir().catch(e => {
   console.error(e);

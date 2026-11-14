@@ -45,8 +45,6 @@
   <button type="button" data-vista="topo" title="Planta">Topo</button>
   <button type="button" data-vista="frente" title="Frente">Frente</button>
   <button type="button" data-vista="lado" title="Lateral">Lado</button>
-  <button type="button" id="btn-planta" class="ligado" title="A planta no chão (arquitetônico do lançamento), os eixos e os níveis — um a um em Camadas, no alto">Planta e níveis</button>
-  <button type="button" id="btn-terreno" hidden title="A obra no terreno do cliente: a imagem de satélite (ou a ortofoto do geoportal) no chão, pelo endereço ou pela coordenada">Terreno</button>
   <button type="button" id="btn-cenas" title="Cenas: a vista atual gravada com nome (abas no rodapé, como no SketchUp) e a estrutura encaixada numa foto do local">Cenas</button>
   <button type="button" id="btn-arestas" class="ligado" title="Arestas das peças">Arestas</button>
   <button type="button" id="btn-apresentacao" title="Para mostrar ao cliente: o sol com sombras nas peças e no chão — e a posição do sol">Apresentação</button>
@@ -54,6 +52,11 @@
   <span class="sep" data-cobertura hidden></span>
   <span id="cobertura" hidden title="A cobertura retrátil deste projeto: as tesouras e a sanfona da análise, na situação escolhida"><button
     type="button" data-situacao="aberta">Aberta</button> <button type="button" data-situacao="retraida">Retraída</button></span>
+  <!-- A ponta da barra (14/11): só o que aparece depois que a barra já aceita clique, na ordem em que fica sabido
+       (ver3d.js, pontaDaBarra). No meio, um botão que aparecia empurrava os outros e o clique no Cenas caía no Terreno. -->
+  <span class="sep" id="sep-chao" hidden></span>
+  <button type="button" id="btn-planta" class="ligado" hidden title="A planta no chão (arquitetônico do lançamento), os eixos e os níveis — um a um em Camadas, no alto">Planta e níveis</button>
+  <button type="button" id="btn-terreno" hidden title="A obra no terreno do cliente: a imagem de satélite (ou a ortofoto do geoportal) no chão, pelo endereço ou pela coordenada">Terreno</button>
 </div>
 
 <aside id="painel" hidden>
