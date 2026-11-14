@@ -103,8 +103,12 @@ try:
     ok(aba.avaliar("(() => { const c = window.editor.cena; const m = c._materialFantasma(); return m.transparent === false && c.destaque && c.destaque.size === 18; })()"), "fantasma opaco ligado no Ver no 3D")
     # o 409 do /modelo é a recusa do servidor à gravação do editor velho (o conflito do D01), provocada no passo 3
     recusas = [m for m in aba.console if m[0] == "error" and "409" in m[1] and "/api/projetos/compressores/modelo" in m[1]]
-    erros = [m for m in aba.console if m[0] in ("error", "excecao") and m not in recusas]
+    # sair da aba velha com as edições não gravadas (o conflito) pede confirmação (beforeunload) — o certo: o F5 as
+    # descartaria; o Chrome sem janela não mostra o painel sem um gesto do usuário e avisa no console, uma vez
+    saida = [m for m in aba.console if m[0] == "error" and "beforeunload" in m[1] and "/editor?projeto=compressores" in m[1]]
+    erros = [m for m in aba.console if m[0] in ("error", "excecao") and m not in recusas and m not in saida]
     ok(len(recusas) == 1, "uma única recusa (409) do /modelo, a do editor velho: %d" % len(recusas))
+    ok(len(saida) == 1, "sair da aba velha em conflito pede confirmação (beforeunload), uma vez: %d" % len(saida))
     ok(not erros, "sem outros erros no console: %s" % erros[:3])
 finally:
     nav.kill(); srv.kill(); shutil.rmtree(perfil, ignore_errors=True)
