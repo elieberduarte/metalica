@@ -40,11 +40,22 @@ def hangar_bruto():
     return bruto["desenho"], bruto["niveis"], doc.dict()
 
 
-@pytest.fixture
-def hangar(hangar_bruto):
-    """(a Montagem, os níveis, o 3D que a montagem fez dela) — cópias novas a cada teste"""
+def _sem_carimbo(doc):
+    """o modelo como era gravado antes de 14/11/2026: as barras sem o carimbo da montagem"""
+    for p3 in doc.entidades.values():
+        if DPE.GERADA in (p3.atributos or {}):
+            p3.atributos = {k: v for k, v in p3.atributos.items() if k != DPE.GERADA}
+    return doc
+
+
+@pytest.fixture(params=["modelo de agora", "modelo de antes"])
+def hangar(hangar_bruto, request):
+    """(a Montagem, os níveis, o 3D que a montagem fez dela) — cópias novas a cada teste. "modelo de agora": as barras
+    com o carimbo da montagem; "modelo de antes": sem ele (o projeto gravado antes de 14/11), pela régua da montagem"""
     des, niveis, modelo = hangar_bruto
-    return Desenho.de_dict(copy.deepcopy(des)), niveis, Documento.de_dict(copy.deepcopy(modelo))
+    doc = Documento.de_dict(copy.deepcopy(modelo))
+    assert sum(1 for p3 in doc.entidades.values() if DPE.GERADA in (p3.atributos or {})) >= 56 + 32
+    return Desenho.de_dict(copy.deepcopy(des)), niveis, (_sem_carimbo(doc) if request.param == "modelo de antes" else doc)
 
 
 def _texto(des):
@@ -166,15 +177,17 @@ def test_hangar_duas_voltas_seguidas_a_segunda_nao_devolve_nada(hangar, caso):
     assert DPE.montagem_do_modelo(des, novo, niveis)["alteracoes"] == []
 
 
-def test_hangar_o_que_veio_e_foi_desfeito_na_planta_volta_a_vir(hangar):
-    """o "já veio" vale para aquela planta: a linha levada de volta no CAD e o mesmo 3D → a volta traz de novo"""
+def test_hangar_o_que_veio_e_foi_desfeito_na_planta_nao_volta_sozinho(hangar):
+    """a mudança veio do 3D e o usuário a desfez na planta, com o 3D ainda sem acompanhar: a volta seguinte não a traz
+    de novo — a barra já está carimbada onde está, e a planta mexida depois é que vale (o 3D a segue na sincronia)"""
     des, niveis, doc = hangar
     cv, eid = _barra_de(doc, des, "contraventamento", "CV5", "inf")
     antes = copy.deepcopy(des.entidades[eid])
     _andar(cv, (0.0, 200.0, 0.0))
     assert len(DPE.montagem_do_modelo(des, doc, niveis)["alteracoes"]) == 1
     des.entidades[eid].a, des.entidades[eid].b = antes.a, antes.b          # o usuário desfez na planta
-    assert DPE.montagem_do_modelo(des, doc, niveis)["alteracoes"] == ["viga CV5: movida 200 mm"]
+    assert DPE.montagem_do_modelo(des, doc, niveis)["alteracoes"] == []
+    assert des.entidades[eid].a == antes.a and des.entidades[eid].b == antes.b
 
 
 # ------------------------------------------------------------------ outra forma: tesoura pequena, cota e giro diferentes
@@ -277,3 +290,189 @@ def test_a_peca_que_a_montagem_nao_refaz_segue_pela_conta_de_sempre():
     des.entidades[p.id].atributos["nivel_topo"] = -100          # agora a montagem recusa: "o topo não está acima da base"
     r = DPE.planta_do_modelo(des, doc, [])
     assert r["alteracoes"] == ["pilar P1: topo -100 → 5000"]
+
+
+# ------------------------------------------------------------------ as terças que a montagem estende (Hangar V12)
+def _planta_com_tercas_na_tesoura_da_ponta():
+    """três tesouras e duas terças com o suporte do projeto: nas tesouras da ponta (o oitão) a montagem leva a terça
+    até a face de fora da tesoura (usuário, 22/10) — no Hangar V12 de verdade a volta antiga dava 28 terças "movidas" """
+    st = {"marca": "ST1", "perfil": "L 127×50×3,75 (FF)", "comprimento": 150.0, "folga": 10.0,
+          "furos": [{"ao_longo": a, "altura": h, "d": 14.0} for a in (-30.0, 30.0) for h in (38.5, 88.5)]}
+    des = Desenho(nome="planta", escala=1.0)
+    barras = [[0, 0, 6000, 0, "banzo_inf"], [0, 600, 6000, 600, "banzo_sup"], [0, 0, 0, 600, "extremidade"],
+              [6000, 0, 6000, 600, "extremidade"], [3000, 0, 3000, 600, "montante"], [0, 600, 3000, 0, "diagonal"],
+              [3000, 0, 6000, 600, "diagonal"]]
+    for x in (0.0, 5000.0, 10000.0):
+        des.add(Linha(camada="E", a=(x, 0.0), b=(x, 6000.0), atributos={
+            "elemento": "trelica", "material": "aco", "marca": "T",
+            "perfis": {"banzo_sup": "U 127×50×3,00 (FF)", "banzo_inf": "U 127×50×3,00 (FF)", "diagonal": "L 25×3 (FF)"},
+            "nivel_base": 5000, "desenho": {"barras": barras, "vao": 6000, "altura": 600}}))
+    ids = []
+    for x0, x1 in ((0.0, 5000.0), (5000.0, 10000.0)):
+        e = Linha(camada="E", a=(x0, 3000.0), b=(x1, 3000.0), atributos={
+            "elemento": "viga", "material": "aco", "papel": "terça", "marca": "TC", "secao": {"perfil": "U 127×50×2,25 (FF)"},
+            "nivel_topo": 5000 + 600 + 63.5 + 1.5, "alinhamento": "base", "suporte": st})
+        des.add(e)
+        ids.append(e.id)
+    return des, ids
+
+
+def test_terca_estendida_ate_a_face_da_tesoura_da_ponta_nao_volta_como_mudanca():
+    des, ids = _planta_com_tercas_na_tesoura_da_ponta()
+    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    tc = {b.atributos["origem_2d"]: b for b in doc.entidades.values() if isinstance(b, Barra) and b.papel == "terça"}
+    assert all(b.comprimento > 5010.0 for b in tc.values())     # a montagem estendeu as duas: é o caso
+    antes = _texto(des)
+    r = DPE.planta_do_modelo(des, doc, [])
+    assert r["alteracoes"] == [], r["alteracoes"]
+    assert _texto(des) == antes
+    _andar(tc[ids[0]], (0.0, 200.0, 0.0))                       # a terça andou 200 mm ao longo da tesoura
+    r = DPE.planta_do_modelo(des, doc, [])
+    assert r["alteracoes"] == ["viga TC: movida 200 mm"]
+    assert des.entidades[ids[0]].a == pytest.approx((0.0, 3200.0)) and des.entidades[ids[0]].b == pytest.approx((5000.0, 3200.0))
+    assert DPE.planta_do_modelo(des, doc, [])["alteracoes"] == []
+
+
+# ------------------------------------------------------------------ o carimbo da montagem na barra do 3D
+def _pequena_com_a_volta_feita(giro=0.0):
+    """a tesoura pequena com aleta na Montagem, o CV1 movido 150 mm no 3D e a volta feita: (planta, 3D, ids)"""
+    real, ids = _planta_pequena("aleta", 5000.0)
+    des = _na_montagem(real, giro)
+    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    cv1 = next(b for b in doc.entidades.values() if isinstance(b, Barra) and b.atributos.get("origem_2d") == ids[0])
+    _andar(cv1, (0.0, 150.0, 0.0))
+    r = DPE.montagem_do_modelo(des, doc, [])
+    assert r["alteracoes"] == ["viga CV1: movida 150 mm"] and r["modelo_mudou"] == [cv1.id]
+    return des, doc, ids
+
+
+def _cv(doc, eid):
+    return next(b for b in doc.entidades.values() if isinstance(b, Barra) and b.atributos.get("origem_2d") == eid)
+
+
+def test_a_montagem_carimba_a_barra_de_cada_viga_de_aco_e_so_ela():
+    real, ids = _planta_pequena("aleta", 5000.0)
+    doc, _av = DPE.modelo_da_planta(real, [])
+    com = [p3 for p3 in doc.entidades.values() if DPE.GERADA in (p3.atributos or {})]
+    assert sorted(p3.atributos["origem_2d"] for p3 in com) == sorted(ids)      # os dois contraventos; a tesoura e as aletas não
+    for b in com:
+        assert b.atributos[DPE.GERADA] == [list(b.inicio), list(b.fim)]         # depois do alongamento: onde a montagem a deixou
+    assert DPE.GERADA not in json.dumps(real.dict(), ensure_ascii=False)       # a planta não guarda nada
+
+
+def test_projeto_antigo_sem_o_carimbo_a_primeira_volta_funciona_e_carimba(hangar_bruto):
+    """o modelo gravado antes de 14/11 não tem o carimbo em peça nenhuma: a 1ª volta traz a mudança pela régua da
+    montagem, só a barra que mudou ganha o carimbo, e a planta não ganha atributo nenhum"""
+    bruto, niveis, modelo = hangar_bruto
+    des, doc = Desenho.de_dict(copy.deepcopy(bruto)), _sem_carimbo(Documento.de_dict(copy.deepcopy(modelo)))
+    assert DPE.GERADA not in json.dumps(doc.dict(), ensure_ascii=False)
+    cv, eid = _barra_de(doc, des, "contraventamento", "CV5", "inf")
+    chaves_antes = {k: set(e.atributos) for k, e in des.entidades.items()}
+    _andar(cv, (0.0, 200.0, 0.0))
+    r = DPE.montagem_do_modelo(des, doc, niveis)
+    assert r["alteracoes"] == ["viga CV5: movida 200 mm"] and r["modelo_mudou"] == [cv.id]
+    assert [p3.id for p3 in doc.entidades.values() if DPE.GERADA in (p3.atributos or {})] == [cv.id]
+    assert {k: set(e.atributos) for k, e in des.entidades.items()} == chaves_antes
+    assert DPE.montagem_do_modelo(des, doc, niveis)["alteracoes"] == []
+
+
+def test_o_carimbo_sobrevive_a_gravar_e_reabrir_o_modelo(tmp_path):
+    """pelo gerente de projetos (o que a rota grava) e pelo documento do editor 3D (abrir, mover a barra e gravar)"""
+    import shutil
+    import subprocess
+    from projetos import Projetos
+    des, doc, ids = _pequena_com_a_volta_feita()
+    cv1 = _cv(doc, ids[0])
+    carimbo = json.loads(json.dumps(cv1.atributos[DPE.GERADA]))
+    assert carimbo == [list(cv1.inicio), list(cv1.fim)]                         # atualizado na volta: onde a barra está
+    g = Projetos(str(tmp_path))
+    s = g.criar("Volta", tipo="desenho")["slug"]
+    g.salvar_modelo(s, doc.dict(), marco=True)
+    aberto = g.abrir_modelo(s)
+    doc2 = Documento.de_dict(copy.deepcopy(aberto))
+    assert _cv(doc2, ids[0]).atributos[DPE.GERADA] == carimbo
+    assert DPE.montagem_do_modelo(des, doc2, [])["alteracoes"] == []           # reaberto, o que já veio não vem de novo
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("sem o Node: o documento do editor 3D não roda aqui")
+    js = "file:///" + os.path.abspath(os.path.join(os.path.dirname(AQUI), "web", "editor3d", "nucleo", "documento.js")).replace("\\", "/")
+    # no editor: abrir, mover a barra 80 mm em y (as pontas mudam, os atributos ficam) e gravar
+    roteiro = ("import { Documento } from %s;\n"
+               "let t = ''; process.stdin.on('data', d => t += d); process.stdin.on('end', () => {\n"
+               "  const { modelo, id } = JSON.parse(t); const doc = Documento.deJSON(modelo); const e = doc.entidades.get(id);\n"
+               "  e.inicio = [e.inicio[0], e.inicio[1] + 80, e.inicio[2]]; e.fim = [e.fim[0], e.fim[1] + 80, e.fim[2]];\n"
+               "  process.stdout.write(doc.paraTexto());\n"
+               "});\n" % json.dumps(js.replace(" ", "%20")))
+    r = subprocess.run([node, "--input-type=module", "-e", roteiro], input=json.dumps({"modelo": aberto, "id": cv1.id}),
+                       capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert r.returncode == 0, r.stderr
+    doc3 = Documento.de_dict(json.loads(r.stdout))
+    assert _cv(doc3, ids[0]).atributos[DPE.GERADA] == carimbo                  # o carimbo ficou; a barra andou
+    assert DPE.montagem_do_modelo(des, doc3, [])["alteracoes"] == ["viga CV1: movida 80 mm"]
+
+
+def test_o_carimbo_nao_sai_do_modelo(tmp_path):
+    """é da peça do 3D, só para a volta: não vai para a planta, para o IFC exportado, para a lista de materiais nem
+    para o DXF do desenho"""
+    from ifc import exportar as ifc_exportar
+    des, doc, ids = _pequena_com_a_volta_feita()
+    assert DPE.GERADA in _cv(doc, ids[0]).atributos
+    assert "gerada" not in _texto(des)                                          # a planta (e o que sai dela)
+    assert "gerada" not in des.para_dxf().dxf().lower()
+    caminho = os.path.join(str(tmp_path), "volta.ifc")
+    ifc_exportar.exportar(doc, caminho)
+    with open(caminho, encoding="utf-8", errors="replace") as f:
+        assert "gerada" not in f.read().lower()
+    assert "gerada" not in json.dumps(doc.estatisticas(), ensure_ascii=False, default=str).lower()
+
+
+def test_a_planta_nao_guarda_nada_apagar_redesenhar_copiar_e_mover_a_linha():
+    """o que já veio mora na barra do 3D, não na linha: a linha apagada não deixa nada; a redesenhada e a copiada
+    seguem a vida delas; e a linha movida na planta depois da volta não é desfeita pela volta seguinte"""
+    des, doc, ids = _pequena_com_a_volta_feita()
+    antiga = des.entidades[ids[0]]
+    assert set(antiga.atributos) == {"elemento", "material", "papel", "marca", "secao", "nivel_topo", "alinhamento", "quadro"}
+    # apagada: a peça do 3D fica sem elemento (a volta não quebra; a sincronia do CAD a tira)
+    des_a = copy.deepcopy(des)
+    del des_a.entidades[ids[0]]
+    assert DPE.montagem_do_modelo(des_a, copy.deepcopy(doc), [])["alteracoes"] == []
+    # redesenhada no mesmo lugar: elemento novo, 3D refeito, a volta mede pela barra nova
+    des_r = copy.deepcopy(des)
+    del des_r.entidades[ids[0]]
+    nova = Linha(camada=antiga.camada, a=antiga.a, b=antiga.b, atributos=dict(antiga.atributos))
+    des_r.add(nova)
+    doc_r, _av = DPE.modelo_da_planta(copy.deepcopy(des_r), [])
+    assert DPE.montagem_do_modelo(des_r, doc_r, [])["alteracoes"] == []
+    _andar(_cv(doc_r, nova.id), (0.0, 120.0, 0.0))
+    assert DPE.montagem_do_modelo(des_r, doc_r, [])["alteracoes"] == ["viga CV1: movida 120 mm"]
+    # copiada 20 mm de papel adiante (Copiar do CAD leva os atributos)
+    des_c = copy.deepcopy(des)
+    copia = copy.deepcopy(antiga)
+    copia.id = "copia-do-cv1"
+    copia.a, copia.b = (antiga.a[0], antiga.a[1] + 20.0), (antiga.b[0], antiga.b[1] + 20.0)
+    copia.atributos = dict(antiga.atributos, marca="CV9")
+    des_c.entidades[copia.id] = copia
+    doc_c, _av = DPE.modelo_da_planta(copy.deepcopy(des_c), [])
+    assert DPE.montagem_do_modelo(des_c, doc_c, [])["alteracoes"] == []
+    _andar(_cv(doc_c, copia.id), (0.0, 100.0, 0.0))
+    assert DPE.montagem_do_modelo(des_c, doc_c, [])["alteracoes"] == ["viga CV9: movida 100 mm"]
+    # movida na planta depois da volta, com o 3D ainda sem acompanhar: a volta não a leva de volta
+    des_m = copy.deepcopy(des)
+    e = des_m.entidades[ids[0]]
+    e.a, e.b = (e.a[0], e.a[1] + 4.0), (e.b[0], e.b[1] + 4.0)                   # 4 mm de papel = 200 mm
+    depois = _texto(des_m)
+    assert DPE.montagem_do_modelo(des_m, doc, [])["alteracoes"] == [] and _texto(des_m) == depois
+
+
+def test_a_planta_mexida_sem_o_3d_acompanhar_nao_e_desfeita_pela_volta(hangar_bruto):
+    """a planta e o 3D fora de dia (a sincronia que não chegou, ou a que refez o 3D pela planta antiga no meio do
+    clique — 14/11): com o carimbo, a volta só traz o que o usuário mexeu no 3D; a linha que ele mexeu na planta fica"""
+    bruto, niveis, modelo = hangar_bruto
+    des, doc = Desenho.de_dict(copy.deepcopy(bruto)), Documento.de_dict(copy.deepcopy(modelo))
+    _cv5, eid = _barra_de(doc, des, "contraventamento", "CV5", "inf")
+    e = des.entidades[eid]
+    e.a, e.b = (e.a[0], e.a[1] + 4.0), (e.b[0], e.b[1] + 4.0)                   # 300 mm na planta; o 3D é o de antes
+    tb, _ = _barra_de(doc, des, "terça", "T.C.1")
+    _andar(tb, tuple(300.0 * c for c in tb.direcao))
+    assert DPE.montagem_do_modelo(des, doc, niveis)["alteracoes"] == ["viga T.C.1: movida 300 mm"]
+    assert des.entidades[eid].a == pytest.approx(e.a) and des.entidades[eid].b == pytest.approx(e.b)

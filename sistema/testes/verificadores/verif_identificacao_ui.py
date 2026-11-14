@@ -346,7 +346,12 @@ try:
     tb["inicio"] = [tb["inicio"][i] + 300 * d_[i] for i in range(3)]
     tb["fim"] = [tb["fim"][i] + 300 * d_[i] for i in range(3)]
     origem = tb["atributos"]["origem_2d"]
-    json.dump(mod, open(os.path.join(pasta, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
+    # pelo arquivo temporário e com ele fechado: gravado direto, a sincronia que lesse no meio achava o modelo pela
+    # metade e o servidor respondia "arquivo danificado" (o 500 intermitente em /estrutura/3d — CAD 2D N.3, 14/11)
+    _tmp = os.path.join(pasta, "modelo.json.verif-tmp")
+    with open(_tmp, "w", encoding="utf-8") as _f:
+        json.dump(mod, _f, ensure_ascii=False)
+    os.replace(_tmp, os.path.join(pasta, "modelo.json"))
     aba.navegar(f"{base}/cad?projeto={s}", limite=60)
     esperar("window.cad && window.montagem && document.body.dataset.pronto === '1'")
     clicar('.menu[data-menu="desenho"] > button')

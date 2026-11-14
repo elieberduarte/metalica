@@ -2545,6 +2545,7 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
             avisos.append("furo %s: fora de todas as chapas (o 3D não tem onde furar)" % (a.get("marca") or e.id))
             continue
         alvo.furos.append({"x": c[0], "y": c[1], "diametro": float(a.get("diametro") or 0.0), "origem_2d": e.id})
+    _carimbar_as_barras(doc)
     doc.metadados["de_planta_estrutura"] = {"elementos": len(elementos(des)), "aco": n_aco, "avisos": list(avisos)}
     # o elemento vinculado a um nível que não existe mais (apagado ou renomeado fora do CAD): o 3D usa o padrão, e isso
     # não pode passar calado (06/10)
@@ -2699,17 +2700,44 @@ def _cm(v: float) -> str:
 #: as peças que as ferramentas do 3D do pré-moldado criam (editor_pm.js): o `peca` delas, sem eixo do galpão
 PECAS_DO_3D = {"P": "pilar", "V": "viga", "SP": "fundacao", "CS": "consolo"}
 
-#: o que a volta guarda no elemento da planta quando traz a mudança de uma barra: a barra do 3D que ela leu e a planta
-#: que ficou. Enquanto as duas forem as mesmas, a mudança já veio e não vem de novo (_ja_veio_do_3d)
-TRAZIDO = "trazido_do_3d"
+#: o carimbo da montagem na barra de cada viga de aço da planta: as pontas em que a montagem a deixou, depois de todos
+#: os ajustes (_carimbar_as_barras). A volta do 3D mede por ele o que o usuário mexeu, e o atualiza quando traz a
+#: mudança para a planta: o que já veio não vem de novo. Fica na peça do 3D; a planta não guarda nada
+GERADA = "gerada_da_planta"
+
+
+def _carimbar_as_barras(doc: Documento) -> None:
+    """No fim da montagem: a barra de cada viga de aço da planta guarda as pontas em que a montagem a deixou. A montagem
+    ajusta peças depois de lê-las da planta — a ponta do contravento alongada até o comprimento de corte e levada ao furo
+    da aleta ou da castanha, a terça levada até a face da tesoura da ponta — e a volta do 3D lia esse ajuste como
+    mudança do usuário (Hangar, 14/11/2026: 32 contraventos "movidos" sem ninguém mexer). Com o carimbo, "mudou no 3D"
+    é a barra fora de onde a montagem a pôs — vale para qualquer ajuste, sem ninguém anotar, e não depende de a planta
+    e o 3D estarem em dia um com o outro."""
+    vistos = set()
+    for b in doc.entidades.values():
+        at = b.atributos or {}
+        o = at.get("origem_2d")
+        if isinstance(b, Barra) and o and at.get("elemento") == "viga" and o not in vistos:
+            vistos.add(o)                                 # a primeira barra do elemento é a dele (o suporte vem depois)
+            b.atributos = dict(at, **{GERADA: [list(b.inicio), list(b.fim)]})
+
+
+def _carimbo(p3) -> Optional[Tuple[tuple, tuple]]:
+    """as pontas carimbadas da barra: (início, fim) ou None (peça que não é barra, modelo de antes do carimbo)"""
+    c = (getattr(p3, "atributos", None) or {}).get(GERADA) if isinstance(p3, Barra) else None
+    try:
+        i, f = c
+        i, f = tuple(float(v) for v in i), tuple(float(v) for v in f)
+        return (i, f) if len(i) == 3 and len(f) == 3 else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _pecas_da_montagem(des: Desenho, niveis: Optional[Sequence[dict]]) -> Dict[str, list]:
-    """O 3D que a montagem gera da planta de agora, por elemento (`origem_2d`): a régua da volta. A montagem ajusta
-    peças depois de lê-las da planta — a ponta do contravento alongada até o comprimento de corte e levada ao furo da
-    aleta ou da castanha (_aletas_das_tesouras, _castanhas_das_tesouras) — e a volta lia esse ajuste como mudança do
-    usuário (Hangar, 14/11/2026: 32 contraventos "movidos" sem ninguém mexer). A planta vai numa cópia. A planta de
-    que a montagem não tira peça nenhuma não tem régua: a volta segue pela conta de sempre."""
+    """O 3D que a montagem gera da planta de agora, por elemento (`origem_2d`): a régua da volta para o que não tem o
+    carimbo da montagem — o modelo gerado antes de 14/11/2026 e as peças que não são barra. Custa uma montagem (segundos
+    no modelo grande): só é feita quando a volta acha mudança num elemento sem carimbo (planta_do_modelo). A planta vai
+    numa cópia. A planta de que a montagem não tira peça nenhuma não tem régua: a volta segue pela conta de sempre."""
     try:
         ref, _avisos = modelo_da_planta(copy.deepcopy(des), niveis)
     except ErroDeDados:
@@ -2737,20 +2765,21 @@ def _como_a_montagem_fez(pecas: list, refs: list, tol: float) -> bool:
     return True
 
 
-def _ja_veio_do_3d(guardado, barra: Barra, e, a: dict) -> bool:
-    """a mudança desta barra já foi trazida para esta planta: a barra do 3D e a linha (com as cotas) são as que a volta
-    anterior guardou. Sem isso, onde a montagem não acompanha o que o usuário fez no 3D (a ponta que ela repõe no furo
-    da aleta), cada clique somava a mesma diferença de novo — a família da terça que subia a cada ida e volta (20/10)"""
-    try:
-        (bi, bf), (pa, pb, zt, zf) = guardado["barra"], guardado["planta"]
-        return (math.dist(bi, barra.inicio) <= 0.05 and math.dist(bf, barra.fim) <= 0.05
-                and math.dist(pa, e.a) <= 0.01 and math.dist(pb, e.b) <= 0.01
-                and zt == a.get("nivel_topo") and zf == a.get("nivel_fim"))
-    except (TypeError, ValueError, KeyError):
-        return False
+def planta_do_modelo(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]] = None, tol: float = 1.0,
+                     novas: bool = True) -> Dict[str, list]:
+    """A volta do lançamento: o que mudou no 3D vai para a planta (mm) — a conta está em _volta_do_3d. Primeiro um ensaio
+    numa cópia da planta, sem a régua da montagem: a barra com o carimbo da montagem resolve-se por ele. Se sobrar
+    mudança num elemento sem carimbo, a régua é montada (_pecas_da_montagem) e a conta vale com ela. `novas`: as peças
+    feitas no 3D entram na planta (na Montagem não entram)."""
+    ensaio = _volta_do_3d(copy.deepcopy(des), doc, niveis, tol, None, ensaio=True)
+    regua = _pecas_da_montagem(des, niveis) if ensaio["sem_carimbo"] else None
+    out = _volta_do_3d(des, doc, niveis, tol, regua, novas=novas)
+    out.pop("sem_carimbo", None)
+    return out
 
 
-def planta_do_modelo(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]] = None, tol: float = 1.0) -> Dict[str, list]:
+def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]], tol: float,
+                 da_montagem: Optional[Dict[str, list]], ensaio: bool = False, novas: bool = True) -> Dict[str, list]:
     """a volta do lançamento: o que mudou no 3D vai para a planta (mm).
 
     * a peça que veio da planta (`origem_2d`) e foi movida no 3D move o elemento (e o rótulo dele);
@@ -2760,15 +2789,20 @@ def planta_do_modelo(des: Desenho, doc: Documento, niveis: Optional[Sequence[dic
       como elemento novo, e a peça 3D ganha o `origem_2d` dele (o modelo precisa ser gravado de novo);
     * o elemento da planta cuja peça sumiu do 3D fica na planta e vira apontamento (apagar é do usuário).
 
-    "Mudou no 3D" é em relação ao que a montagem gera da planta de agora (_pecas_da_montagem), não à linha da planta:
-    a peça que está onde a montagem a põe não mudou, com os ajustes que a montagem faz (14/11/2026). Na barra de aço só
-    a diferença vai para a planta, ponta por ponta, e o que já veio não vem de novo (TRAZIDO).
+    "Mudou no 3D" não é em relação à linha da planta: a montagem ajusta as peças depois de lê-las (14/11/2026). Na
+    barra de aço é em relação ao carimbo da montagem (GERADA: onde a montagem a deixou); sem carimbo, ao que a montagem
+    gera da planta de agora (`da_montagem`, a régua de _pecas_da_montagem — a peça que está onde a montagem a põe não
+    mudou). Na barra só a diferença vai para a planta, ponta por ponta, e a barra passa a ter o carimbo de onde está:
+    o que já veio não vem de novo (o modelo precisa ser gravado de novo), nem quando a montagem não acompanha o que o
+    usuário fez (a ponta que ela repõe no furo da aleta) — a família da terça que subia a cada ida e volta (20/10).
+    `ensaio`: não mexe no modelo (sem carimbar, sem as peças novas do 3D); `novas`: as peças feitas no 3D entram.
 
-    Devolve {"alteracoes": [...], "novos": [ids 2D], "sem_peca": [marcas], "modelo_mudou": [ids 3D], "mudados": [ids
-    2D dos elementos em que a volta mexeu]}."""
+    Devolve {"alteracoes": [...], "novos": [ids 2D], "sem_peca": [marcas], "modelo_mudou": [ids 3D — as peças novas
+    que ganharam `origem_2d` e as barras carimbadas de novo], "mudados": [ids 2D dos elementos em que a volta mexeu],
+    "sem_carimbo": [os mudados que não se resolveram pelo carimbo]}."""
     tab = {str(n.get("nome")): float(n.get("z") or 0.0) for n in (niveis or []) if isinstance(n, dict) and n.get("nome")}
-    out: Dict[str, list] = {"alteracoes": [], "novos": [], "sem_peca": [], "modelo_mudou": [], "mudados": []}
-    da_montagem = _pecas_da_montagem(des, niveis)
+    out: Dict[str, list] = {"alteracoes": [], "novos": [], "sem_peca": [], "modelo_mudou": [], "mudados": [], "sem_carimbo": []}
+    da_montagem = da_montagem or {}
     rotulos: Dict[str, list] = {}
     for e in des.entidades.values():
         r = (e.atributos or {}).get("rotulo_de")
@@ -2791,9 +2825,11 @@ def planta_do_modelo(des: Desenho, doc: Documento, niveis: Optional[Sequence[dic
         cx3 = [c for c in (_caixa3d(p) for p in pecas) if c]
         if not cx3:
             continue
-        # a régua: o que a montagem gera deste elemento. Igual → nada mudou no 3D. (O elemento que a montagem de agora
-        # não gera — recusado por um dado da planta — segue pela conta de sempre, contra a linha da planta.)
-        refs = da_montagem.get(e.id)
+        # a barra carimbada pela montagem mede-se pelo carimbo. Sem carimbo, a régua: o que a montagem gera deste
+        # elemento — igual → nada mudou no 3D. (O elemento que a montagem de agora não gera — recusado por um dado da
+        # planta — segue pela conta de sempre, contra a linha da planta.)
+        carimbada = next((q for q in pecas if _carimbo(q)), None) if tipo == "viga" else None
+        refs = da_montagem.get(e.id) if carimbada is None else None
         if refs and _como_a_montagem_fez(pecas, refs, tol):
             continue
         x0, x1 = min(c[0] for c in cx3), max(c[1] for c in cx3)
@@ -2801,17 +2837,16 @@ def planta_do_modelo(des: Desenho, doc: Documento, niveis: Optional[Sequence[dic
         z0, z1 = min(c[4] for c in cx3), max(c[5] for c in cx3)
         mud = []
         if tipo in ("viga", "tesoura", "painel", "escada") and isinstance(e, Linha):
-            p3 = pecas[0]
+            p3 = carimbada or pecas[0]
             if tipo in ("tesoura", "painel", "escada"):
                 # a tesoura são três ou quatro sólidos: a linha de apoio pela caixa de todos, o nível só na volta do 3D gerado
                 p3 = Solido(vertices=[v for q in pecas for v in (getattr(q, "vertices", None) or [])])
-            ref = refs[0] if refs and isinstance(refs[0], Barra) and isinstance(p3, Barra) else None
+            # as pontas em que a montagem deixou a barra: o carimbo, ou a barra da régua
+            ref = _carimbo(p3) or ((refs[0].inicio, refs[0].fim) if refs and isinstance(refs[0], Barra) and isinstance(p3, Barra) else None)
             if ref is not None:
-                if _ja_veio_do_3d(a.get(TRAZIDO), p3, e, a):
-                    continue
-                # só o que o usuário fez no 3D: a ponta da barra menos a ponta que a montagem gera, somada à da planta
-                di = tuple(p3.inicio[k] - ref.inicio[k] for k in range(3))
-                df = tuple(p3.fim[k] - ref.fim[k] for k in range(3))
+                # só o que o usuário fez no 3D: a ponta da barra menos a ponta em que a montagem a deixou, somada à da planta
+                di = tuple(p3.inicio[k] - ref[0][k] for k in range(3))
+                df = tuple(p3.fim[k] - ref[1][k] for k in range(3))
                 na, nb, zt = (e.a[0] + di[0], e.a[1] + di[1]), (e.b[0] + df[0], e.b[1] + df[1]), 0.0
             elif isinstance(p3, Barra):
                 na, nb, zt = (p3.inicio[0], p3.inicio[1]), (p3.fim[0], p3.fim[1]), p3.inicio[2]
@@ -2845,9 +2880,10 @@ def planta_do_modelo(des: Desenho, doc: Documento, niveis: Optional[Sequence[dic
                     mud.append("topo da outra ponta %s → %s" % (a.get("nivel_fim") if a.get("nivel_fim") is not None else "—",
                                                                  round(fim0 + df[2])))
                     a["nivel_fim"] = round(fim0 + df[2])
-                if mud:
-                    a[TRAZIDO] = {"barra": [list(p3.inicio), list(p3.fim)],
-                                  "planta": [list(e.a), list(e.b), a.get("nivel_topo"), a.get("nivel_fim")]}
+                if mud and not ensaio:
+                    # veio: a barra fica carimbada onde está (a volta seguinte não traz de novo)
+                    p3.atributos = dict(p3.atributos or {}, **{GERADA: [list(p3.inicio), list(p3.fim)]})
+                    out["modelo_mudou"].append(p3.id)
             elif tipo == "viga" and isinstance(p3, Barra) and a.get("material") == "aco":
                 # o nível gravado é o do eixo, o da face de cima ou o da de baixo (alinhamento): a barra está no eixo — sem
                 # descontar meio perfil, a terça apoiada pela face de baixo "subia" 63,5 mm a cada volta do 3D (20/10)
@@ -2924,7 +2960,11 @@ def planta_do_modelo(des: Desenho, doc: Documento, niveis: Optional[Sequence[dic
         if mud:
             e.atributos = a
             out["mudados"].append(e.id)
+            if carimbada is None:
+                out["sem_carimbo"].append(e.id)
             out["alteracoes"].append("%s %s: %s" % (tipo, marca, ", ".join(mud)))
+    if ensaio or not novas:
+        return out
     # as peças novas do 3D
     for p3 in list(doc.entidades.values()):
         at = p3.atributos or {}
@@ -2976,7 +3016,7 @@ def montagem_do_modelo(des: Desenho, doc: Documento, niveis: Optional[Sequence[d
             if r:
                 inversos[q.get("id")] = r
     real = planta_real(des)
-    r = planta_do_modelo(real, doc, niveis, tol)
+    r = planta_do_modelo(real, doc, niveis, tol, novas=False)
     # ao papel só o que a volta mexeu: a ida e volta pelo mapa do quadro não é exata na última casa, e a planta em que
     # nada mudou tem de ficar igual (14/11/2026)
     for k in r["mudados"]:
@@ -2996,5 +3036,5 @@ def montagem_do_modelo(des: Desenho, doc: Documento, niveis: Optional[Sequence[d
         if isinstance(at.get("centro"), (list, tuple)) and len(at["centro"]) >= 2:
             at["centro"] = list(f(at["centro"]))
         orig.atributos = at
-    r["novos"], r["modelo_mudou"] = [], []
+    r["novos"] = []                                       # (modelo_mudou: só as barras carimbadas de novo)
     return r
