@@ -1818,7 +1818,7 @@ export class MetodosEstruturaCAD {
     // modelo.json ao mesmo tempo). Agora: espera a sincronia em curso, grava a planta sem sincronizar, pede a volta e, no
     // fim, a planta e o 3D dizem a mesma coisa (a impressão da planta nova é a do 3D: a próxima gravação não refaz nada).
     this._voltaDo3D = true;
-    let r;
+    let r, levouAntes = false;
     try {
       await this._esperarSincronia();
       // a planta mudada nesta tela desde a última sincronia (o autosave ainda não levou ao 3D): leva antes, e esperando,
@@ -1828,7 +1828,10 @@ export class MetodosEstruturaCAD {
       await (this._salvarSemSincronia || this.salvar)({ avisar: false });
       await this._esperarSincronia();               // a do autosave que terminou de gravar enquanto se esperava
       const agora = this._impressaoDaPlanta();
-      if (ultima !== undefined && ultima !== null && agora !== ultima && this._sincroniaUltima !== agora) await this._sincronizar3D(true, agora);
+      if (ultima !== undefined && ultima !== null && agora !== ultima && this._sincroniaUltima !== agora) {
+        await this._sincronizar3D(true, agora);
+        levouAntes = true;
+      }
       try {
         r = await pedir(`/api/projetos/${encodeURIComponent(this.projeto)}/estrutura/do3d`, { desenho: this.nomeDesenho || '' });
       } catch (e) { this.aviso(`Não foi possível ler o 3D: ${e.message}`, 'erro', 0); return; }
@@ -1849,6 +1852,8 @@ export class MetodosEstruturaCAD {
       this.aviso(caixa, 'info', 0);
     } else this.aviso('Nada mudou no 3D em relação a esta planta.', 'atencao', 6000);
     if ((r.sem_peca || []).length) this.aviso(`Sem peça no 3D (apagadas lá? ficam na planta): ${r.sem_peca.join(', ')}.`, 'atencao', 0);
+    // a sincronia de antes da volta não é calada (GESTÃO N.9, 14/11)
+    if (levouAntes) this.aviso('A planta tinha mudanças ainda não levadas ao 3D; foram levadas antes de trazer o que mudou no 3D.', 'info', 12000);
   }
 
   // ---- gerar o 3D da planta

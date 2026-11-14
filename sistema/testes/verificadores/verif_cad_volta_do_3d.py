@@ -10,7 +10,8 @@ antigo, a planta com ela 300 mm adiante, e um 2º clique levava a terça de volt
   B. depois de tudo terminar: a planta com a T1 300 mm adiante E o 3D com ela 300 mm adiante (a mesma barra, o mesmo id);
   C. o 2º clique: "Nada mudou no 3D em relação a esta planta", e a planta e o 3D continuam com a T1 movida;
   D. uma terça nova na planta (T3) e o clique logo em seguida, antes do autosave: a mudança da planta vai ao 3D antes da
-     volta (a T3 no 3D, sem "Sem peça no 3D"), e a T1 continua movida nos dois.
+     volta (a T3 no 3D, sem "Sem peça no 3D") e a volta diz isso numa linha; a T1 continua movida nos dois. Nos cliques A e C
+     (nada mudado na planta), essa linha não aparece.
 
 Rodar: PYTHONIOENCODING=utf-8 python testes/verificadores/verif_cad_volta_do_3d.py"""
 import json, math, os, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request
@@ -151,9 +152,13 @@ try:
     ok(t1b and math.dist(t1b["inicio"], movida) < 2, f"B. o 3D continua com a T1 300 mm adiante ({t1b.get('inicio')} × {movida}; antes voltava ao lugar antigo)")
     ok(t1b.get("id") == id_t1 and (b1.get("t2") or {}).get("id") == b0["t2"]["id"], "B. as mesmas barras no 3D (o 3D não foi refeito pela planta de antes)")
     print("     rotas:", js("return window.__rotas;"))
+    def levou():
+        return js("return [...document.querySelectorAll('#avisos .aviso')].some(a => a.textContent.includes('ainda não levadas ao 3D'));")
+    ok(not levou(), "A. sem mudança na planta, a volta não diz que levou algo antes")
 
     # ------------------------------------------------------------------ C. o 2º clique
     ok(volta("Nada mudou no 3D"), f"C. o 2º clique: \"Nada mudou no 3D em relação a esta planta\" ({js('return [...document.querySelectorAll(\"#avisos .aviso\")].map(a => a.textContent.slice(0, 80));')})")
+    ok(not levou(), "C. sem mudança na planta, a volta não diz que levou algo antes")
     a2 = t1_na_planta()
     t1c = barras(pasta).get("t1") or {}
     ok(a2 and abs(math.dist(a2, [0.0, 0.0]) - 300) < 2 and t1c and math.dist(t1c["inicio"], movida) < 2,
@@ -168,6 +173,7 @@ try:
     t3 = [e for e in modelo(pasta)[1] if (e.get("atributos") or {}).get("origem_2d") == "t3"]
     ok(len(t3) == 1, f"D. a T3 foi ao 3D antes da volta ({len(t3)})")
     ok(not js("return [...document.querySelectorAll('#avisos .aviso')].some(a => a.textContent.includes('Sem peça no 3D'));"), "D. sem \"Sem peça no 3D\"")
+    ok(levou(), "D. a volta diz que a planta tinha mudanças ainda não levadas ao 3D e que foram levadas antes")
     a3 = t1_na_planta()
     ok(a3 and abs(math.dist(a3, [0.0, 0.0]) - 300) < 2 and math.dist((b3.get("t1") or {}).get("inicio", [0, 0, 0]), movida) < 2,
        f"D. a T1 continua movida na planta ({a3}) e no 3D ({(b3.get('t1') or {}).get('inicio')})")
