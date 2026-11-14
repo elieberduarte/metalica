@@ -94,7 +94,7 @@ try:
     url0 = aba.avaliar("location.href")
     aba.avaliar(CONTADOR)
     aba.avaliar("window.__resp = 'esperando'; window.metalicaProgresso.pedirCancelar('obra-b', { rotulo: 'Detalhando' }).then(r => { window.__resp = r; }); 1")
-    ok(bool(esperar("document.querySelector('dialog.dlg-cancelar-tarefa[open]')", 10)), "[A] o diálogo \"Cancelar a tarefa?\" abriu")
+    ok(bool(esperar("!!document.querySelector('dialog.dlg-cancelar-tarefa[open]')", 10)), "[A] o diálogo \"Cancelar a tarefa?\" abriu")
     c = centro("dialog.dlg-cancelar-tarefa .bts button:not(.perigo)")
     clique_duplo(*c)
     ok(aba.avaliar("!document.querySelector('dialog.dlg-cancelar-tarefa')") is True, "[A] o diálogo fechou no 1º clique")
@@ -105,7 +105,7 @@ try:
     # --- C. o clique legítimo noutro ponto, logo depois, passa
     aba.avaliar("window.__atras = 0; window.__atrasTipos = []; 1")
     aba.avaliar("window.metalicaProgresso.pedirCancelar('obra-b', {}); 1")
-    esperar("document.querySelector('dialog.dlg-cancelar-tarefa[open]')", 10)
+    esperar("!!document.querySelector('dialog.dlg-cancelar-tarefa[open]')", 10)
     c = centro("dialog.dlg-cancelar-tarefa .bts button:not(.perigo)")
     for tipo in ("mousePressed", "mouseReleased"):
         aba.cmd("Input.dispatchMouseEvent", type=tipo, x=c[0], y=c[1], button="left", clickCount=1)
