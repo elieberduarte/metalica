@@ -798,3 +798,52 @@ def test_a_mudanca_ja_trazida_nao_soma_de_novo_na_barra_copiada_com_a_original_a
         assert r["alteracoes"] == ["viga CV1: movida 80 mm"]
         assert _real(des, ids[0]).a == pytest.approx((a0[0], a0[1] + 80.0), abs=0.01)
     assert DPE.montagem_do_modelo(des, doc, [])["alteracoes"] == []
+
+
+def _girar(b, graus):
+    """gira a barra em planta em torno do meio dela, sem mudar o comprimento"""
+    mx, my = (b.inicio[0] + b.fim[0]) / 2, (b.inicio[1] + b.fim[1]) / 2
+    c, s = math.cos(math.radians(graus)), math.sin(math.radians(graus))
+
+    def g(p):
+        x, y = p[0] - mx, p[1] - my
+        return (mx + x * c - y * s, my + x * s + y * c, p[2])
+    b.inicio, b.fim = g(b.inicio), g(b.fim)
+
+
+def test_a_barra_girada_no_3d_em_torno_do_meio_vai_para_a_planta_e_diz():
+    """achado 4: a barra girada 5° em torno do meio, sem mudar o comprimento — a volta mexia a linha na memória sem
+    entrada nenhuma (alteracoes = [], mudados = []): na Montagem nunca chegava ao papel, e na planta só era gravada se
+    outra peça mudasse junto. Agora diz "girada 5,0°" e entra nos mudados"""
+    des, doc, eid = _terca_solta()
+    _girar(_cv(doc, eid), 5.0)
+    r = DPE.planta_do_modelo(des, doc, [])
+    assert r["alteracoes"] == ["viga T.C.1: girada 5,0°"] and r["mudados"] == [eid]
+    e = des.entidades[eid]
+    ang = math.degrees(math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]))
+    assert ang == pytest.approx(5.0, abs=0.01) and math.dist(e.a, e.b) == pytest.approx(5460.0, abs=0.01)
+    assert DPE.planta_do_modelo(des, doc, [])["alteracoes"] == []
+
+
+def test_a_barra_girada_no_3d_chega_ao_papel_da_montagem():
+    """o mesmo na Montagem: o CV1 girado 5° em torno do meio chega ao papel (pelo mapa inverso do quadro)"""
+    real, ids = _planta_pequena("aleta", 5000.0)
+    des = _na_montagem(real, 0.0)
+    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    a0 = _real(des, ids[0])
+    ang0 = math.degrees(math.atan2(a0.b[1] - a0.a[1], a0.b[0] - a0.a[0]))
+    _girar(_cv(doc, ids[0]), 5.0)
+    r = DPE.montagem_do_modelo(des, doc, [])
+    assert r["alteracoes"] == ["viga CV1: girada 5,0°"] and r["mudados"] == [ids[0]]
+    e = _real(des, ids[0])
+    assert math.degrees(math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0])) == pytest.approx(ang0 + 5.0, abs=0.05)
+    assert DPE.montagem_do_modelo(des, doc, [])["alteracoes"] == []
+
+
+def test_a_ponta_ajustada_de_lado_pouco_mais_que_1_mm_nao_e_calada():
+    """a ponta b 1,5 mm de lado: nem comprimento, nem movida, nem giro passam da tolerância — mas a linha mudava calada"""
+    des, doc, eid = _terca_solta()
+    b = _cv(doc, eid)
+    b.fim = (b.fim[0], b.fim[1] + 1.5, b.fim[2])
+    r = DPE.planta_do_modelo(des, doc, [])
+    assert r["alteracoes"] == ["viga T.C.1: ponta ajustada 2 mm"] and r["mudados"] == [eid]

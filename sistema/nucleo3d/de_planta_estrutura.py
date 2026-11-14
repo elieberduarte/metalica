@@ -2960,6 +2960,17 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
                     mud.append("comprimento %d → %d mm" % (round(math.dist(e.a, e.b)), round(math.dist(na, nb))))
                 if math.hypot(dx, dy) > tol:
                     mud.append("movida %d mm" % round(math.hypot(dx, dy)))
+                # o giro em torno do meio não muda o comprimento nem o meio: sem esta entrada a linha mudava calada (e na
+                # Montagem, fora dos `mudados`, nunca chegava ao papel — revisão de 14/11, achado 4)
+                L0, L1 = math.dist(e.a, e.b), math.dist(na, nb)
+                if L0 > 1e-6 and L1 > 1e-6:
+                    giro = math.atan2((e.b[0] - e.a[0]) * (nb[1] - na[1]) - (e.b[1] - e.a[1]) * (nb[0] - na[0]),
+                                      (e.b[0] - e.a[0]) * (nb[0] - na[0]) + (e.b[1] - e.a[1]) * (nb[1] - na[1]))
+                    if min(L0, L1) / 2.0 * abs(giro) > tol:
+                        mud.append(("girada %.1f°" % abs(math.degrees(giro))).replace(".", ","))
+                if not mud:
+                    # a ponta deslocada pouco mais que a tolerância, sem comprimento, meio nem giro que passem dela
+                    mud.append("ponta ajustada %d mm" % round(max(math.dist(na, e.a), math.dist(nb, e.b))))
                 for r in rotulos.get(e.id, []):
                     _mover_2d(r, dx, dy)
                 e.a, e.b = na, nb
