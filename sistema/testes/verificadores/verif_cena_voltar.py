@@ -79,10 +79,29 @@ try:
     # o botão ganha o clique quando o modo ver termina de abrir o modelo
     ok(esperar(aba, "(() => { try { const b = document.querySelector('#f3d').contentDocument.querySelector('#btn-cenas'); return !!(b && b.onclick && b.offsetWidth); } catch (e) { return false; } })()", 90),
        "o modo ver no quadro, com o botão Cenas")
+    # A barra do modo ver ainda se arruma depois de o botão ganhar o clique: o botão Terreno, o vizinho da esquerda do Cenas,
+    # só aparece quando a rota do terreno responde (ver3d.js carregarTerreno, depois do ligar()) e empurra o Cenas para a
+    # direita. Com a máquina carregada a resposta chegava no meio do clique e ele caía no Terreno (14/11, 3ª rodada da
+    # conferência da 0.9.3, ritmo cheio: "o botão Cenas abre o painel" e "a cena abre dentro do quadro" falharam juntos).
+    # Clica só com o terreno lido e a barra parada.
+    ok(esperar(aba, "(() => { try { const w = document.querySelector('#f3d').contentWindow; return !!(w.terreno && w.terreno.estado); } catch (e) { return false; } })()", 90),
+       "o modo ver leu o terreno (a barra de cima completa)")
+    POSICAO = ("(() => { try { const d = document.querySelector('#f3d').contentDocument; const q = d.querySelector('#btn-cenas').getBoundingClientRect();"
+               " return [Math.round(q.x), Math.round(q.y), d.querySelector('#btn-terreno').hidden].join(' '); } catch (e) { return ''; } })()")
+    antes, t0 = aba.avaliar(POSICAO), time.time()
+    agora = None
+    while time.time() - t0 < 30:
+        aba.drenar(0.6)
+        agora = aba.avaliar(POSICAO)
+        if agora and agora == antes:
+            break
+        antes = agora
+    ok(bool(antes) and antes == agora, f"a barra parou de mexer antes do clique ({antes} → {agora})")
     # 11/11 (cenas3d.js): o botão Cenas abre o painel das cenas; a da foto sai dele ("📷 Nova cena pela foto…")
     clicar_no(aba, "document.querySelector('#f3d').contentDocument", "#btn-cenas")
     ok(esperar(aba, "(() => { try { const b = document.querySelector('#f3d').contentDocument.querySelector('#cena-foto'); return !!(b && b.offsetWidth); } catch (e) { return false; } })()", 15),
-       "o botão Cenas abre o painel das cenas")
+       "o botão Cenas abre o painel das cenas (aberto: %s)" % aba.avaliar(
+           "(() => { try { const d = document.querySelector('#f3d').contentDocument; return d.querySelector('#painel').hidden ? 'nenhum' : d.querySelector('#painel-titulo').textContent; } catch (e) { return '?'; } })()"))
     clicar_no(aba, "document.querySelector('#f3d').contentDocument", "#cena-foto")
     ok(esperar(aba, "(() => { try { const d = document.querySelector('#f3d').contentDocument; return d.location.pathname === '/visor3d/cena.html' && !!d.querySelector('#voltar'); } catch (e) { return false; } })()", 30),
        "a cena abre dentro do quadro")
