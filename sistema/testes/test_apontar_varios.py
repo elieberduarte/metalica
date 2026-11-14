@@ -43,6 +43,7 @@ def test_aponta_tudo_o_que_falta_em_cada_um(tmp_path):
 
 def test_o_completo_e_pulado_e_o_repetido_conta_uma_vez(tmp_path):
     pasta = str(tmp_path)
+    C.apontar_varios(pasta, _lista(), ["T74", "CV.2"], "producao", "x", nomes=NOMES)     # só se pinta o produzido (14/11)
     C.apontar(pasta, _lista(), "T74", "pintura", 1, "x", nomes=NOMES)
     r = C.apontar_varios(pasta, _lista(), ["T74", "CV.2", "CV.2", "T74"], "pintura", "x", nomes=NOMES)
     assert r["pulados"] == ["T74"] and [(e["item"], e["quantidade"]) for e in r["eventos"]] == [("CV.2", 6)]

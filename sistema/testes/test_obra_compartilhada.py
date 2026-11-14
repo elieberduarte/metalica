@@ -359,10 +359,10 @@ def test_sem_internet_o_controle_aponta_e_a_fila_espera(controle_web, nuvem):
     web, pastas = controle_web
     nuvem.eu = "fer"
     nuvem.fora_do_ar = True
-    r = _post(web, "/api/producao/apontar", {"projeto": "fer", "item": "T38-2", "etapa": "pintura", "quantidade": 1})
+    r = _post(web, "/api/producao/apontar", {"projeto": "fer", "item": "T38-2", "etapa": "producao", "quantidade": 1})
     assert r["ok"] and r["nuvem"]["pendentes"] == 1 and "sem conexão" in r["nuvem"]["erro"]
     d = _ver(web, "fer")
-    assert {x["id"]: x["feito"].get("pintura", 0) for x in d["itens"]}["T38-2"] == 1     # o local segue valendo
+    assert {x["id"]: x["feito"].get("producao", 0) for x in d["itens"]}["T38-2"] == 1    # o local segue valendo (era a pintura; 14/11 só se pinta o produzido)
     nuvem.fora_do_ar = False
     d = _ver(web, "fer")
     assert d["nuvem"]["pendentes"] == 0 and not d["nuvem"]["erro"] and len(nuvem.eventos) == 1

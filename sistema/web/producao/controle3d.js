@@ -234,10 +234,12 @@
     for (const g of M.grupos) {
       let q = 0, prod = 0, pint = 0;
       for (const k of g.itens) {
-        const x = g.parte || itens[k], f = x.feito || {};
+        // a conta do servidor (controle.contagem): a mesma da coluna da tabela e do cartão — antes de 14/11 o 3D contava
+        // a pintada como produzida e a coluna Produção não (risco 3 do GESTÃO, 13/11)
+        const x = g.parte || itens[k], c = x.conta || {};
         q += x.quantidade;
-        pint += Math.min(f.pintura || 0, x.quantidade);
-        prod += Math.min(Math.max(f.producao || 0, f.pintura || 0), x.quantidade);
+        pint += c.pintura || 0;
+        prod += c.producao || 0;
       }
       const N = g.pecas.length;
       const nPint = q ? Math.round(N * pint / q) : 0, nProd = q ? Math.round(N * prod / q) : 0;
@@ -299,7 +301,7 @@
     V.ocultarPecas(ids, false);                          // o filtro "só o que falta" não esconde a escolhida
     V.selecionarVarias(ids, false);
     if (enquadrar) V.enquadrarPecas(ids);
-    const f = x.feito || {};
+    const f = x.conta || {};                              // a mesma conta da tabela (controle.contagem)
     const juntas = M.juntasDe.get(k);
     situacao(`${x.id} · ${nf(ids.length)} peça(s) no 3D · produção ${nf(f.producao)}/${nf(x.quantidade)} · pintura ${nf(f.pintura)}/${nf(x.quantidade)}`
       + (juntas ? ` · junto com mais ${nf(juntas.length - 1)} item(ns) que o modelo não separa (${juntas.filter(t => t !== k).slice(0, 4).map(t => S.dados.itens[t].id).join(', ')}${juntas.length > 5 ? '…' : ''})` : ''));

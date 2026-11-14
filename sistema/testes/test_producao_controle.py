@@ -96,6 +96,7 @@ def test_peca_a_mais_do_difere_nao_sobra_avulsa():
 # ------------------------------------------------------------------ apontar e estornar
 def test_apontar_grava_no_projeto_e_soma(tmp_path):
     L = _lista()
+    C.apontar(str(tmp_path), L, "T.C.1", "producao", 30, "Engenharia", nomes=NOMES)     # só se pinta o produzido (14/11)
     ev = C.apontar(str(tmp_path), L, "T.C.1", "pintura", 30, "Engenharia", nomes=NOMES)
     assert os.path.exists(tmp_path / "producao" / "apontamentos.jsonl")
     assert ev["kg"] == pytest.approx(30 * 13.6)
@@ -136,10 +137,11 @@ def test_data_do_que_foi_feito_ontem(tmp_path):
 
 def test_estorno_desfaz_sem_apagar(tmp_path):
     L = _lista()
+    C.apontar(str(tmp_path), L, "T.C.1", "producao", 46, "E", nomes=NOMES)              # só se pinta o produzido (14/11)
     ev = C.apontar(str(tmp_path), L, "T.C.1", "pintura", 46, "E", nomes=NOMES)
     est = C.estornar(str(tmp_path), ev["id"], "E")
     eventos = C.ler_eventos(str(tmp_path))
-    assert [e["id"] for e in eventos] == [ev["id"], est["id"]]          # o original continua no arquivo
+    assert [e["id"] for e in eventos][1:] == [ev["id"], est["id"]]          # o original continua no arquivo
     assert C.feito(eventos).get("T.C.1", {}).get("pintura", 0) == 0
     with pytest.raises(C.ErroControle, match="já foi estornado"):
         C.estornar(str(tmp_path), ev["id"], "E")
@@ -178,12 +180,13 @@ def test_situacao_andamento_e_fora_da_lista(tmp_path):
 
 def test_o_que_o_erp_le(tmp_path):
     L = _lista()
+    C.apontar(str(tmp_path), L, "T.C.1", "producao", 30, "Engenharia", nomes=NOMES)     # só se pinta o produzido (14/11)
     a = C.apontar(str(tmp_path), L, "T.C.1", "pintura", 30, "Engenharia", nomes=NOMES)
     r = C.para_erp("obra-teste", "Obra de teste", L, C.ler_eventos(str(tmp_path)), NOMES)
     assert r["obra"] == "obra-teste" and r["etapas"] == ["producao", "pintura"]
     assert set(r["andamento"]) == {"producao", "pintura"}
     tc = next(x for x in r["itens"] if x["marca"] == "T.C.1")
-    assert tc == {"marca": "T.C.1", "tipo": "terça", "quantidade": 46, "kg_unidade": 13.6, "producao": 0, "pintura": 30}
+    assert tc == {"marca": "T.C.1", "tipo": "terça", "quantidade": 46, "kg_unidade": 13.6, "producao": 30, "pintura": 30}
     assert r["eventos"][0]["marca"] == "T.C.1" and r["eventos"][0]["quem"] == "Engenharia"
     json.dumps(r)                                                      # vai em JSON
     # desde: só o que veio depois

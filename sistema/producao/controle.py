@@ -271,6 +271,35 @@ def feito(eventos: List[dict], mapa: Optional[Dict[str, Optional[str]]] = None) 
     return out
 
 
+def anterior(etapa: str) -> Optional[str]:
+    """a etapa que vem antes (a pintura depois da produção); None na primeira"""
+    ks = list(ETAPAS)
+    i = ks.index(etapa)
+    return ks[i - 1] if i > 0 else None
+
+
+def contagem(feito_item, quantidade: int) -> Dict[str, int]:
+    """o que CONTA de cada etapa num item: o apontado, até a quantidade do item e até o que conta na etapa de antes (só se
+    pinta o que foi produzido). É a conta única da coluna da tabela, do cartão, do andamento em kg e da cor do 3D — antes
+    de 14/11 o 3D contava a pintada como produzida e a coluna Produção não, e a cor e o número diziam coisas diferentes
+    (risco 3 do GESTÃO, 13/11)."""
+    out: Dict[str, int] = {}
+    teto = int(quantidade)
+    for e in ETAPAS:
+        teto = min(teto, int((feito_item or {}).get(e, 0) or 0))
+        out[e] = max(teto, 0)
+    return out
+
+
+def _sem_anterior(etapa: str, item_id: str, pedido: int, pode: int) -> str:
+    """a mensagem da pintura pedida além do produzido: "T.C.1: falta apontar a produção de 10 antes da pintura (só 20
+    produzidas ainda sem pintura)" """
+    ant = ETAPAS[anterior(etapa)].lower()
+    pode = max(pode, 0)
+    return ("%s: falta apontar a %s de %d antes da %s" % (item_id, ant, pedido - pode, ETAPAS[etapa].lower())
+            + (" (só %d com a %s apontada ainda sem %s)" % (pode, ant, ETAPAS[etapa].lower()) if pode else ""))
+
+
 # ------------------------------------------------------------------ o apontamento segue a peça
 #: quantos ids de peças da unidade o apontamento guarda ("ancora"): o bastante para achar a unidade de novo no modelo
 ANCORA = 12
@@ -387,13 +416,19 @@ def apontar(pasta_projeto: str, lista: dict, item: str, etapa: str, quantidade, 
     dia = _data(data)
     with _TRAVA:
         eventos = ler_eventos(pasta_projeto)
-        ja = feito(eventos, resolver(eventos, its)).get(item, Counter())[etapa]
+        fi = feito(eventos, resolver(eventos, its)).get(item, Counter())
+        ja = fi[etapa]
         falta = it["quantidade"] - ja
         if falta <= 0:
             raise ErroControle("%s já está completo na %s" % (item, ETAPAS[etapa].lower()))
         if q > falta:
             raise ErroControle("%s: só falta%s %d na %s (pedido: %d)"
                                % (item, "m" if falta != 1 else "", falta, ETAPAS[etapa].lower(), q))
+        ant = anterior(etapa)
+        if ant:                                          # só se pinta o que foi produzido (risco 3, 13/11)
+            pode = min(fi[ant], it["quantidade"]) - ja
+            if q > pode:
+                raise ErroControle(_sem_anterior(etapa, item, q, pode))
         ev = _evento(it, etapa, q, quem, dia, obs)
         _gravar(pasta_projeto, ev)
     return ev
@@ -417,7 +452,9 @@ def apontar_varios(pasta_projeto: str, lista: dict, ids: List[str], etapa: str, 
     """aponta, de uma vez, TUDO o que falta na etapa em cada item escolhido (na lista ou no 3D ao lado; usuário 13/11,
     "apontar vários de uma vez", as 6 MT71). Um evento por item — o ERP, a nuvem e o estorno seguem como no apontar de
     um. Item já completo na etapa é pulado (volta em "pulados"); item fora da lista recusa tudo, sem gravar nada.
-    Devolve {"eventos": [...], "pulados": [ids]}."""
+    Na pintura vai só o que já foi produzido (risco 3, 13/11): o item sem nada produzido para pintar fica de fora e volta
+    em "sem_anterior"; a montada só se pinta com todas as partes que faltam produzidas.
+    Devolve {"eventos": [...], "pulados": [ids], "sem_anterior": [ids]}."""
     if etapa not in ETAPAS:
         raise ErroControle("etapa desconhecida: %r" % etapa)
     pedidos = list(OrderedDict.fromkeys(str(i) for i in (ids or []) if str(i or "").strip()))
@@ -434,14 +471,19 @@ def apontar_varios(pasta_projeto: str, lista: dict, ids: List[str], etapa: str, 
     with _TRAVA:
         eventos = ler_eventos(pasta_projeto)
         ja = feito(eventos, resolver(eventos, its))
-        novos, pulados = [], []
+        ant = anterior(etapa)
+        novos, pulados, sem_ant = [], [], []
         for i in pedidos:
             it = por_id[i]
-            falta = it["quantidade"] - ja.get(i, Counter())[etapa]
+            fi = ja.get(i, Counter())
+            falta = it["quantidade"] - fi[etapa]
             if it.get("partes"):                         # a montada: as partes que faltam, juntas (um lote)
                 faltam = [pt for pt in it["partes"] if ja.get(pt["id"], Counter())[etapa] < 1]
                 if not faltam:
                     pulados.append(i)
+                    continue
+                if ant and any(ja.get(pt["id"], Counter())[ant] < 1 for pt in faltam):
+                    sem_ant.append(i)
                     continue
                 lote = uuid.uuid4().hex[:12]
                 for pt in faltam:
@@ -452,14 +494,22 @@ def apontar_varios(pasta_projeto: str, lista: dict, ids: List[str], etapa: str, 
             if falta <= 0:
                 pulados.append(i)
                 continue
+            if ant:
+                falta = min(falta, min(fi[ant], it["quantidade"]) - fi[etapa])
+                if falta <= 0:
+                    sem_ant.append(i)
+                    continue
             novos.append(_evento(it, etapa, falta, quem, dia, obs))
+        if not novos and sem_ant:
+            raise ErroControle("falta apontar a %s antes da %s: %s" % (
+                ETAPAS[ant].lower(), ETAPAS[etapa].lower(), ", ".join(sem_ant[:10]) + ("…" if len(sem_ant) > 10 else "")))
         if not novos:
             raise ErroControle("%s já est%s completo%s na %s" % (
                 pulados[0] if len(pulados) == 1 else "os %d itens escolhidos" % len(pulados),
                 "á" if len(pulados) == 1 else "ão", "" if len(pulados) == 1 else "s", ETAPAS[etapa].lower()))
         for ev in novos:
             _gravar(pasta_projeto, ev)
-    return {"eventos": novos, "pulados": pulados}
+    return {"eventos": novos, "pulados": pulados, "sem_anterior": sem_ant}
 
 
 def estornar(pasta_projeto: str, evento: str, quem: str, obs: str = "") -> dict:
@@ -504,26 +554,36 @@ def situacao(lista: dict, eventos: List[dict], nomes: Optional[dict] = None, ult
     kg_total = round(sum(x["kg"] for x in its), 1)
     # a montada fica feita quando todas as partes estão (usuário 13/11: "só quando todas as partes estiverem pintadas");
     # no kg do andamento entram as partes já feitas
+    # "feito" = o apontado (o que o ERP lê, o "a mais"); "conta" = o que vale na tabela, nos cartões e na cor do 3D, pela
+    # mesma `contagem` (a pintura só até o produzido — risco 3, 13/11)
     for x in its:
         for pt in x.get("partes") or []:
             pt["feito"] = {e: int(f.get(pt["id"], Counter())[e]) for e in ETAPAS}
+            pt["conta"] = contagem(pt["feito"], 1)
         if x.get("partes"):
-            x["partes_feitas"] = {e: sum(1 for pt in x["partes"] if pt["feito"][e] >= 1) for e in ETAPAS}
+            x["partes_feitas"] = {e: sum(1 for pt in x["partes"] if pt["conta"][e] >= 1) for e in ETAPAS}
             f[x["id"]] = Counter({e: 1 if x["partes_feitas"][e] == len(x["partes"]) else 0 for e in ETAPAS})
-    andamento = OrderedDict()
-    for etapa, titulo in ETAPAS.items():
-        kg = sum((sum(pt["kg"] for pt in x["partes"] if pt["feito"][etapa] >= 1) if x.get("partes")
-                  else min(f.get(x["id"], Counter())[etapa], x["quantidade"]) * x["kg_unidade"]) for x in its)
-        completos = sum(1 for x in its if f.get(x["id"], Counter())[etapa] >= x["quantidade"])
-        andamento[etapa] = {"titulo": titulo, "kg": round(kg, 1), "pct": round(100.0 * kg / kg_total, 1) if kg_total else 0.0,
-                            "itens_completos": completos}
     for x in its:
         x["feito"] = {e: int(f.get(x["id"], Counter())[e]) for e in ETAPAS}
+        x["conta"] = contagem(x["feito"], x["quantidade"])
         # apontado a mais (duas pessoas no mesmo item ao mesmo tempo, com a obra compartilhada — 13/11): fica à vista para
         # alguém estornar, em vez de sumir no "completo"
         mais = {e: q - x["quantidade"] for e, q in x["feito"].items() if q > x["quantidade"]}
         if mais:
             x["a_mais"] = mais
+        # apontado sem a etapa de antes (pintura de antes de 14/11, ou chegada da nuvem de outro computador): não conta
+        # na cor nem no número, e fica à vista
+        sem = {e: min(q, x["quantidade"]) - x["conta"][e] for e, q in x["feito"].items()
+               if anterior(e) and min(q, x["quantidade"]) > x["conta"][e]}
+        if sem:
+            x["sem_anterior"] = sem
+    andamento = OrderedDict()
+    for etapa, titulo in ETAPAS.items():
+        kg = sum((sum(pt["kg"] for pt in x["partes"] if pt["conta"][etapa] >= 1) if x.get("partes")
+                  else x["conta"][etapa] * x["kg_unidade"]) for x in its)
+        completos = sum(1 for x in its if x["conta"][etapa] >= x["quantidade"])
+        andamento[etapa] = {"titulo": titulo, "kg": round(kg, 1), "pct": round(100.0 * kg / kg_total, 1) if kg_total else 0.0,
+                            "itens_completos": completos}
     fora = sorted({e.get("item") for e in _validos(eventos) if not mapa.get(e.get("id"))})
     # os que seguiram a peça para outro nome (o Detalhar renumerou): a tela avisa "era TESOURA 1-1, agora 1-7"
     seguiram = sorted({(e.get("item"), mapa[e.get("id")]) for e in _validos(eventos)

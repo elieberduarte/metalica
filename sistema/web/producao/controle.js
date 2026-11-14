@@ -134,19 +134,47 @@
   const dataBRc = (iso) => iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—';
   const horaBR = (iso) => iso && String(iso).length > 11 ? String(iso).slice(11, 16) : '';
 
-  function situacaoCelula(feito, total) {
-    if (feito > total) return el('span', { class: 'ctl-a-mais', title: 'Apontado a mais: confira e estorne o que sobrou',
-      texto: `✓ ${n(total)} +${n(feito - total)} a mais` });
-    if (feito >= total) return el('span', { class: 'ctl-ok', texto: total > 1 ? `✓ ${n(total)}` : '✓' });
-    if (feito > 0) return el('span', { class: 'ctl-meio', texto: `${n(feito)} de ${n(total)}` });
-    return el('span', { class: 'ctl-nada', texto: '—' });
+  /** a célula da etapa: o número é a `conta` do servidor (controle.contagem) — a mesma que pinta o 3D ao lado; a pintura só
+   *  conta até o produzido (risco 3, 13/11). O apontado a mais e o pintado sem produção ficam à vista. */
+  function situacaoCelula(x, etapa) {
+    const total = x.quantidade, apont = (x.feito || {})[etapa] || 0, conta = (x.conta || {})[etapa] || 0;
+    const sem = (x.sem_anterior || {})[etapa] || 0;
+    if (apont > total) return el('span', { class: 'ctl-a-mais', title: 'Apontado a mais: confira e estorne o que sobrou',
+      texto: `✓ ${n(total)} +${n(apont - total)} a mais` });
+    const s = conta >= total ? el('span', { class: 'ctl-ok', texto: total > 1 ? `✓ ${n(total)}` : '✓' })
+      : conta > 0 ? el('span', { class: 'ctl-meio', texto: `${n(conta)} de ${n(total)}` })
+      : el('span', { class: 'ctl-nada', texto: '—' });
+    if (!sem) return s;
+    const ant = nomeDaAnterior(etapa);
+    return el('span', {}, s, el('span', { class: 'ctl-a-mais ctl-sem-anterior', texto: ` · ${n(sem)} sem ${ant}`,
+      title: `Apontado na ${nomeDaEtapa(etapa)} sem a ${ant} apontada: não conta até apontar a ${ant}` }));
   }
+  const _etapas = () => ((ESTADO.dados && ESTADO.dados.etapas) || []).map(e => e.chave);
+  const nomeDaEtapa = (k) => (((ESTADO.dados && ESTADO.dados.etapas) || []).find(e => e.chave === k) || { titulo: k }).titulo.toLowerCase();
+  const etapaAnterior = (k) => { const ks = _etapas(), i = ks.indexOf(k); return i > 0 ? ks[i - 1] : null; };
+  const nomeDaAnterior = (k) => etapaAnterior(k) ? nomeDaEtapa(etapaAnterior(k)) : '';
+  /** o que ainda se pode apontar na etapa: o que falta, e na pintura só o que já tem a produção apontada (o servidor recusa
+   *  o resto); a montada inteira ou nada */
+  function faltaNa(x, k) {
+    const ant = etapaAnterior(k);
+    if (x.partes) {
+      const faltam = x.partes.filter(p => ((p.feito || {})[k] || 0) < 1);
+      if (!faltam.length || (ant && faltam.some(p => ((p.feito || {})[ant] || 0) < 1))) return 0;
+      return 1;
+    }
+    const f = x.feito || {};
+    const teto = ant ? Math.min(x.quantidade, f[ant] || 0) : x.quantidade;
+    return Math.max(0, teto - (f[k] || 0));
+  }
+  /** falta na etapa, mas espera a etapa de antes */
+  const esperaAnterior = (x, k) => !!etapaAnterior(k) && faltaNa(x, k) <= 0
+    && (x.partes ? x.partes.some(p => ((p.feito || {})[k] || 0) < 1) : ((x.feito || {})[k] || 0) < x.quantidade);
 
   /** a tesoura montada (13/11): feita quando todas as partes estão; antes, "1 de 2 partes" */
   function situacaoMontada(x, etapa) {
     const pf = (x.partes_feitas || {})[etapa] || 0, total = x.partes.length;
-    const quais = x.partes.filter(p => ((p.feito || {})[etapa] || 0) >= 1).map(p => p.id);
-    if ((x.feito[etapa] || 0) >= 1) return el('span', { class: 'ctl-ok', texto: '✓', title: x.partes.map(p => p.id).join(' + ') });
+    const quais = x.partes.filter(p => ((p.conta || {})[etapa] || 0) >= 1).map(p => p.id);
+    if (((x.conta || {})[etapa] || 0) >= 1) return el('span', { class: 'ctl-ok', texto: '✓', title: x.partes.map(p => p.id).join(' + ') });
     if (pf > 0) return el('span', { class: 'ctl-meio', texto: `${n(pf)} de ${n(x.partes.length)} partes`,
       title: `feita${quais.length > 1 ? 's' : ''}: ${quais.join(', ')}; falta${total - pf > 1 ? 'm' : ''}: `
         + x.partes.filter(p => !quais.includes(p.id)).map(p => p.id).join(', ') });
@@ -225,7 +253,7 @@
     busca.addEventListener('input', () => { ESTADO.busca = busca.value; filtrar(); });
 
     const linhas = D.itens.filter(x => (!ESTADO.filtroTipo || x.tipo === ESTADO.filtroTipo)
-      && (!ESTADO.filtroEtapa || (x.feito[ESTADO.filtroEtapa] || 0) < x.quantidade));
+      && (!ESTADO.filtroEtapa || ((x.conta || {})[ESTADO.filtroEtapa] || 0) < x.quantidade));
     const colunas = [
       ...(podeApontar() ? [{ titulo: '', classe: 'c ctl-marca', cabeca: caixaDeTodos,
         valor: (x) => el('input', { type: 'checkbox', class: 'ctl-marcar', 'data-item': x.id, title: 'Escolher para apontar vários de uma vez',
@@ -236,7 +264,7 @@
       { titulo: 'Qtd', chave: 'quantidade', classe: 'r', num: true },
       { titulo: 'kg', chave: 'kg', classe: 'r', num: true, casas: 1 },
       ...etapas.map(et => ({ titulo: et.titulo, classe: 'c', valor: (x) => x.partes ? situacaoMontada(x, et.chave)
-        : situacaoCelula(x.feito[et.chave] || 0, x.quantidade) })),
+        : situacaoCelula(x, et.chave) })),
       { titulo: '', classe: 'c', valor: (x) => podeApontar() ? el('button', { type: 'button', class: 'ctl-btn', 'data-item': x.id, texto: 'Apontar', onclick: () => abrirDialogo(x) }) : '' },
     ];
     const kgLinhas = linhas.reduce((s, x) => s + x.kg, 0);
@@ -322,7 +350,7 @@
     const etapas = D.etapas || [];
     const its = [...ESTADO.marcados].map(itemPorId).filter(Boolean);
     if (!its.length) return;
-    const falta = (x, k) => Math.max(0, x.quantidade - (x.feito[k] || 0));
+    const falta = faltaNa;                                   // na pintura, só o produzido
     let etapa = (etapas.find(et => its.some(x => falta(x, et.chave) > 0)) || etapas[0]).chave;
     const dlg = el('dialog', { class: 'ctl-dlg', id: 'ctl-dialogo-varios' });
     const data = el('input', { type: 'date', id: 'ctl-data', value: hojeISO(), max: hojeISO() });
@@ -332,19 +360,21 @@
     const lista = el('div', { class: 'ctl-varios-lista' });
     const confirmar = el('button', { type: 'submit', class: 'principal', id: 'ctl-confirmar', texto: 'Apontar' });
     const ajustar = () => {
-      const vao = its.filter(x => falta(x, etapa) > 0), pulam = its.length - vao.length;
+      const vao = its.filter(x => falta(x, etapa) > 0);
+      const esperam = its.filter(x => esperaAnterior(x, etapa)), pulam = its.length - vao.length - esperam.length;
       const qtd = vao.reduce((s, x) => s + falta(x, etapa), 0);
       const kg = vao.reduce((s, x) => s + falta(x, etapa) * (x.kg_unidade || 0), 0);
       const nome = ((etapas.find(et => et.chave === etapa) || {}).titulo || etapa).toLowerCase();
-      resumo.textContent = vao.length
+      resumo.textContent = (vao.length
         ? `Vai apontar na ${nome} tudo o que falta: ${n(vao.length)} item(ns), ${n(qtd)} peça(s)/unidade(s), ${n(kg, 1)} kg.`
           + (pulam ? ` ${n(pulam)} já completo(s) nesta etapa fica(m) de fora.` : '')
-        : `Os ${n(its.length)} itens escolhidos já estão completos na ${nome}.`;
+        : esperam.length ? `Nada para apontar na ${nome}.` : `Os ${n(its.length)} itens escolhidos já estão completos na ${nome}.`)
+        + (esperam.length ? ` ${n(esperam.length)} sem a ${nomeDaAnterior(etapa)} apontada fica(m) de fora: ${esperam.slice(0, 6).map(x => x.id).join(', ')}${esperam.length > 6 ? '…' : ''}.` : '');
       confirmar.disabled = !vao.length;
       confirmar.textContent = vao.length ? `Apontar ${n(vao.length)}` : 'Apontar';
       lista.replaceChildren(el('table', {}, el('tbody', {}, its.map(x => el('tr', { class: falta(x, etapa) ? '' : 'ctl-estornado' },
         el('td', { class: 'b', texto: x.id }), el('td', { texto: x.descricao || x.tipo }),
-        el('td', { class: 'r', texto: !falta(x, etapa) ? 'completo' : x.partes
+        el('td', { class: 'r', texto: !falta(x, etapa) ? (esperaAnterior(x, etapa) ? `falta a ${nomeDaAnterior(etapa)}` : 'completo') : x.partes
           ? x.partes.filter(p => ((p.feito || {})[etapa] || 0) < 1).map(p => p.id).join(' + ')
           : `${n(falta(x, etapa))} de ${n(x.quantidade)}` }))))));
     };
@@ -373,7 +403,8 @@
         document.dispatchEvent(new CustomEvent('controle:varios', { detail: { ids: [] } }));
         await carregar();
         aviso(`${n(r.eventos.length)} apontamento(s) gravado(s)`
-          + (r.pulados.length ? ` · ${n(r.pulados.length)} já estava(m) completo(s): ${r.pulados.slice(0, 6).join(', ')}` : ''));
+          + (r.pulados.length ? ` · ${n(r.pulados.length)} já estava(m) completo(s): ${r.pulados.slice(0, 6).join(', ')}` : '')
+          + ((r.sem_anterior || []).length ? ` · ${n(r.sem_anterior.length)} sem a ${nomeDaAnterior(etapa)} apontada ficou(aram) de fora: ${r.sem_anterior.slice(0, 6).join(', ')}` : ''));
         setTimeout(() => aviso(''), 6000);
       } catch (e) {
         erro.textContent = e.message;
@@ -440,7 +471,7 @@
   function abrirDialogo(item) {
     const D = ESTADO.dados;
     const etapas = D.etapas || [];
-    const falta = (k) => item.quantidade - (item.feito[k] || 0);
+    const falta = (k) => faltaNa(item, k);                  // na pintura, só o produzido (o servidor recusa o resto)
     const primeira = (etapas.find(et => falta(et.chave) > 0) || etapas[0]).chave;
     const dlg = el('dialog', { class: 'ctl-dlg', id: 'ctl-dialogo' });
     const qtd = el('input', { type: 'number', id: 'ctl-qtd', min: '1', step: '1' });
@@ -455,17 +486,24 @@
       qtd.value = String(Math.max(f, 0));
       qtd.disabled = f <= 0 || item.quantidade === 1;
       const faltamPartes = (item.partes || []).filter(p => ((p.feito || {})[etapa] || 0) < 1).map(p => p.id);
-      dica.textContent = f <= 0 ? 'esta etapa já está completa'
-        : item.partes ? `a montada inteira: aponta ${faltamPartes.join(' + ')} (o que falta na ${etapa === 'producao' ? 'produção' : 'pintura'})`
-        : `faltam ${n(f)} de ${n(item.quantidade)} na ${etapa === 'producao' ? 'produção' : 'pintura'}`;
+      const nome = nomeDaEtapa(etapa), ant = nomeDaAnterior(etapa);
+      const naEtapa = item.quantidade - ((item.feito || {})[etapa] || 0);   // o que falta, sem olhar a etapa de antes
+      dica.textContent = esperaAnterior(item, etapa) ? `falta apontar a ${ant} antes da ${nome}`
+          + (item.partes ? '' : ` (${n(naEtapa)} sem ${nome}, nenhuma com a ${ant} apontada)`)
+        : f <= 0 ? `já está completo na ${nome}`
+        : item.partes ? `a montada inteira: aponta ${faltamPartes.join(' + ')} (o que falta na ${nome})`
+        : `faltam ${n(naEtapa)} de ${n(item.quantidade)} na ${nome}`
+          + (f < naEtapa ? ` — só ${n(f)} com a ${ant} apontada podem ir agora` : '');
+      if (confirmar) confirmar.disabled = f <= 0;
     };
+    let confirmar = null;
     const radios = el('div', { class: 'etapas' }, etapas.map(et => {
       const r = el('input', { type: 'radio', name: 'ctl-etapa', value: et.chave });
       r.checked = et.chave === etapa;
       r.addEventListener('change', () => { etapa = et.chave; ajustar(); });
       return el('label', {}, r, et.titulo);
     }));
-    const confirmar = el('button', { type: 'submit', class: 'principal', id: 'ctl-confirmar', texto: 'Apontar' });
+    confirmar = el('button', { type: 'submit', class: 'principal', id: 'ctl-confirmar', texto: 'Apontar' });
     const form = el('form', { method: 'dialog', novalidate: true },
       el('h3', { texto: `Apontar ${item.id}` }),
       el('div', { class: 'nota', texto: `${item.tipo} · ${item.descricao} · ${n(item.kg_unidade, 1)} kg cada` }),

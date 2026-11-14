@@ -97,6 +97,7 @@ def test_as_tres_partes_juntas_e_o_estorno_desfaz_o_lote(tmp_path):
 
 def test_pintada_so_com_todas_as_partes_pintadas(tmp_path):
     pasta = str(tmp_path)
+    C.apontar_varios(pasta, LISTA, ["BASE 1-5", "BASE 1-6"], "producao", "x", nomes=ANTES)   # só se pinta o produzido (14/11)
     C.apontar(pasta, LISTA, "BASE 1-5", "pintura", 1, "x", nomes=ANTES)       # uma BASE pintada antes
     s = C.situacao(LISTA, C.ler_eventos(pasta), DEPOIS)
     t = _por(s["itens"])["T58-3"]
