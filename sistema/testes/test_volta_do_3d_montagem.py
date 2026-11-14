@@ -375,7 +375,7 @@ def test_a_montagem_carimba_a_barra_de_cada_viga_de_aco_e_so_ela():
     com = [p3 for p3 in doc.entidades.values() if DPE.GERADA in (p3.atributos or {})]
     assert sorted(p3.atributos["origem_2d"] for p3 in com) == sorted(ids)      # os dois contraventos; a tesoura e as aletas não
     for b in com:
-        assert b.atributos[DPE.GERADA] == [list(b.inicio), list(b.fim)]         # depois do alongamento: onde a montagem a deixou
+        assert b.atributos[DPE.GERADA] == {"peca": b.id, "pontas": [list(b.inicio), list(b.fim)]}      # depois do alongamento: onde a montagem a deixou
     assert "gerada" not in _texto(real) and DPE.TRAZIDO not in _texto(real)    # a montagem não escreve na planta
 
 
@@ -407,7 +407,7 @@ def test_o_guardado_e_o_carimbo_sobrevivem_a_gravar_e_reabrir(tmp_path):
     cv1 = _cv(doc, ids[0])
     guardado = json.loads(json.dumps(des.entidades[ids[0]].atributos[DPE.TRAZIDO]))
     carimbo = json.loads(json.dumps(cv1.atributos[DPE.GERADA]))
-    assert guardado == {"peca": cv1.id, "barra": [list(cv1.inicio), list(cv1.fim)]} and carimbo != guardado["barra"]
+    assert guardado == {"peca": cv1.id, "barra": [list(cv1.inicio), list(cv1.fim)]} and carimbo["pontas"] != guardado["barra"] and carimbo["peca"] == cv1.id
     g = Projetos(str(tmp_path))
     s = g.criar("Volta", tipo="desenho")["slug"]
     g.salvar_desenho(s, "montagem", des.dict())
@@ -770,3 +770,27 @@ def test_a_barra_dividida_com_pedaco_copiado_apagado_ou_faltando_no_meio():
     del d3.entidades[ids2[1]]
     assert DPE.planta_do_modelo(des, d3, [])["alteracoes"] == ["viga T.C.1: comprimento 5460 → 3500 mm, movida 980 mm"]
 
+
+
+@pytest.mark.parametrize("onde", ["no mesmo lugar", "80 mm ao lado"])
+def test_a_mudanca_ja_trazida_nao_soma_de_novo_na_barra_copiada_com_a_original_apagada(onde):
+    """achado 3: a volta trouxe o CV1 +150; antes de a sincronia refazer o 3D, a barra ganha outro id com os mesmos
+    atributos (copiar e apagar a original). O guardado da planta aponta para o id antigo e deixa de valer; a volta media
+    pelo carimbo copiado e trazia os +150 de novo (300 no total). O carimbo vale só na peça para a qual a montagem o fez:
+    a cópia mede-se pela régua da montagem"""
+    des, doc, ids = _pequena_com_a_volta_feita()                # o CV1 +150 já veio
+    a0 = _real(des, ids[0]).a                                 # em mm reais (a Montagem é o papel, em escala)
+    cv1 = _cv(doc, ids[0])
+    c = copy.deepcopy(cv1)
+    c.id = "copia-do-cv1"
+    del doc.entidades[cv1.id]
+    if onde == "80 mm ao lado":
+        _andar(c, (0.0, 80.0, 0.0))
+    doc.entidades[c.id] = c
+    r = DPE.montagem_do_modelo(des, doc, [])
+    if onde == "no mesmo lugar":
+        assert r["alteracoes"] == [] and _real(des, ids[0]).a == pytest.approx(a0)
+    else:
+        assert r["alteracoes"] == ["viga CV1: movida 80 mm"]
+        assert _real(des, ids[0]).a == pytest.approx((a0[0], a0[1] + 80.0), abs=0.01)
+    assert DPE.montagem_do_modelo(des, doc, [])["alteracoes"] == []

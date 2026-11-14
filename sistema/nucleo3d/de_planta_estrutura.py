@@ -2724,17 +2724,22 @@ def _carimbar_as_barras(doc: Documento) -> None:
         o = at.get("origem_2d")
         if isinstance(b, Barra) and o and at.get("elemento") == "viga" and o not in vistos:
             vistos.add(o)                                 # a primeira barra do elemento é a dele (o suporte vem depois)
-            b.atributos = dict(at, **{GERADA: [list(b.inicio), list(b.fim)]})
+            b.atributos = dict(at, **{GERADA: {"peca": b.id, "pontas": [list(b.inicio), list(b.fim)]}})
 
 
 def _carimbo(p3) -> Optional[Tuple[tuple, tuple]]:
-    """as pontas carimbadas da barra: (início, fim) ou None (peça que não é barra, modelo de antes do carimbo)"""
+    """as pontas carimbadas da barra: (início, fim) ou None (peça que não é barra, modelo de antes do carimbo). O
+    carimbo vale só na peça para a qual a montagem o fez: copiar a barra leva os atributos, e a cópia com a original
+    apagada media pelo carimbo dela e trazia de novo o que já tinha vindo (revisão de 14/11, achado 3) — a cópia, o
+    pedaço de uma divisão e o formato antigo (lista sem o id, que não saiu do ramo) contam como sem carimbo"""
     c = (getattr(p3, "atributos", None) or {}).get(GERADA) if isinstance(p3, Barra) else None
     try:
-        i, f = c
+        if str(c["peca"]) != str(p3.id):
+            return None
+        i, f = c["pontas"]
         i, f = tuple(float(v) for v in i), tuple(float(v) for v in f)
         return (i, f) if len(i) == 3 and len(f) == 3 else None
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, KeyError, AttributeError):
         return None
 
 
