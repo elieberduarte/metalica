@@ -713,3 +713,50 @@ def test_a_lista_nao_perde_a_cena_que_esta_sendo_gravada(tmp_path):
     finally:
         parar.set(); t.join()
     assert faltou == 0 and not erros, (faltou, erros[:1])
+
+
+def test_renomear_a_cena_leva_as_imagens_dela(tmp_path):
+    """13/11 (refinamento das Cenas, item 14): a imagem pronta é achada pelo NOME da cena ("Cena - <nome> (render).jpg") e o
+    renomear só trocava o nome no cena.json — o cartão voltava a "sem render" e a imagem VIVA da prancha sumia. Agora o
+    render e a imagem salva acompanham o nome; a cena de mesmo nome não perde as dela e nada é gravado por cima."""
+    from PIL import Image
+    g, s = _gerente(tmp_path)
+    pasta = os.path.join(g.pasta(s), "cenas")
+    i = C.nova_3d(g, s, {"nome": "Cena 3", "camera": _CAM})["id"]
+
+    def enviar(cena, nome):
+        caminho = os.path.join(_envios(tmp_path), "envio-" + nome)
+        Image.new("RGB", (20, 10)).save(caminho, "JPEG" if nome.endswith(".jpg") else "PNG")
+        return C.rota_post(g, s, [cena, "imagem"], {"arquivo_local": caminho, "nome": nome})["nome"]
+
+    def prontas():
+        return sorted(a for a in os.listdir(pasta) if a != "dados")
+
+    enviar(i, "render.jpg"), enviar(i, "cena.png")
+    assert prontas() == ["Cena - Cena 3 (render).jpg", "Cena - Cena 3.png"]
+    C.gravar(g, s, i, {"nome": "Fachada da avenida"})
+    cena = C.listar(g, s)["cenas"][0]
+    assert cena["render_arquivo"] == "Cena - Fachada da avenida (render).jpg" and cena["imagem_arquivo"] == "Cena - Fachada da avenida.png"
+    assert C.arquivo_da_imagem(g.pasta(s), i, True) == os.path.join(pasta, "Cena - Fachada da avenida (render).jpg")   # a viva da prancha
+    assert prontas() == ["Cena - Fachada da avenida (render).jpg", "Cena - Fachada da avenida.png"]
+    # só a caixa das letras (no Windows é o mesmo arquivo): o nome do arquivo acompanha
+    C.gravar(g, s, i, {"nome": "FACHADA da avenida"})
+    assert prontas() == ["Cena - FACHADA da avenida (render).jpg", "Cena - FACHADA da avenida.png"]
+    # gravar outra coisa, ou o mesmo nome, não mexe em arquivo nenhum
+    C.gravar(g, s, i, {"nome": "FACHADA da avenida", "proporcao": "21:9"})
+    assert prontas() == ["Cena - FACHADA da avenida (render).jpg", "Cena - FACHADA da avenida.png"]
+    # duas cenas com o mesmo nome dividem a imagem: renomear uma não tira a da outra
+    a = C.nova_3d(g, s, {"nome": "Aérea", "camera": _CAM})["id"]
+    b = C.nova_3d(g, s, {"nome": "Aérea", "camera": _CAM})["id"]
+    enviar(a, "render.jpg")
+    C.gravar(g, s, b, {"nome": "Aérea de trás"})
+    cenas = {c["id"]: c for c in C.listar(g, s)["cenas"]}
+    assert cenas[a]["render_arquivo"] == "Cena - Aérea (render).jpg" and not cenas[b].get("render_arquivo")
+    # o nome novo já tem imagem na pasta: nada por cima, a de antes fica onde estava
+    enviar(b, "render.jpg")
+    antes = os.path.getsize(os.path.join(pasta, "Cena - Aérea (render).jpg"))
+    with open(os.path.join(pasta, "Cena - Aérea (render).jpg"), "ab") as f:
+        f.write(b"x")
+    C.gravar(g, s, b, {"nome": "Aérea"})
+    assert os.path.getsize(os.path.join(pasta, "Cena - Aérea (render).jpg")) == antes + 1
+    assert "Cena - Aérea de trás (render).jpg" in prontas()

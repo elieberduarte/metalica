@@ -515,6 +515,7 @@ def gravar(g, s: str, i: str, corpo: dict) -> dict:
 
 def _gravar_campos(g, s: str, i: str, corpo: dict) -> dict:
     c = ler(g, s, i)
+    nome_antes = _nome_arquivo(c)
     if "nome" in corpo:
         c["nome"] = str(corpo["nome"] or c["nome"]).strip()[:80] or c["nome"]
     if "pares" in corpo:
@@ -692,7 +693,31 @@ def _gravar_campos(g, s: str, i: str, corpo: dict) -> dict:
         c["concluida"] = corpo["concluida"]
     c["alterada"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     _gravar(os.path.join(_pasta(g, s), i, "cena.json"), c)
+    _levar_imagens(g, s, i, nome_antes, _nome_arquivo(c))
     return c
+
+
+def _levar_imagens(g, s: str, i: str, antes: str, depois: str) -> None:
+    """A cena renomeada leva as imagens prontas dela (13/11): elas são achadas pelo nome ("Cena - <nome> (render).jpg",
+    "Cena - <nome>.png") e, sem isto, o cartão voltava a "sem render" e a imagem viva da prancha sumia. Ficam onde estão
+    quando outra cena tem o nome de antes (a imagem também é dela) e quando o nome novo já tem arquivo (nada por cima)."""
+    raiz = os.path.join(g.pasta(s), PASTA)
+    if antes == depois or not os.path.isdir(raiz):
+        return
+    dados = _pasta(g, s)
+    for outra in os.listdir(dados):
+        if outra != i and not outra.startswith("."):
+            o = _ler(os.path.join(dados, outra, "cena.json"))
+            if o and _nome_arquivo(o) == antes:
+                return
+    for fim in (" (render).jpg", " (render).png", ".png", ".jpg"):
+        de, para = os.path.join(raiz, "Cena - " + antes + fim), os.path.join(raiz, "Cena - " + depois + fim)
+        so_a_caixa = os.path.normcase(de) == os.path.normcase(para)        # no Windows "cena" e "Cena" são o mesmo arquivo
+        if os.path.isfile(de) and (so_a_caixa or not os.path.exists(para)):
+            try:
+                os.replace(de, para)
+            except OSError:                                                # aberta noutro programa: fica com o nome de antes
+                pass
 
 
 def gravar_imagem(g, s: str, i: str, corpo: dict) -> dict:
