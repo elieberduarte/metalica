@@ -1261,3 +1261,20 @@ def test_a_ponta_puxada_levantada_no_banzo_inclinado_vem_como_cota_sem_o_aviso(h
     cv.inicio = (cv.inicio[0], cv.inicio[1], cv.inicio[2] + 40.0)
     r = DPE.montagem_do_modelo(des, doc, niveis)
     assert len(r["alteracoes"]) == 1 and "a ponta foi" not in r["alteracoes"][0] and "topo" in r["alteracoes"][0], r["alteracoes"]
+
+
+@pytest.mark.parametrize("ordem", ["cópia na frente", "cópia atrás"])
+def test_duas_barras_a_mesma_distancia_da_linha_a_planta_nao_muda_e_a_volta_diz(ordem):
+    """(d) a original movida +300 e a cópia −300: "a mais próxima" dependia da ordem do modelo. Empate e nenhuma no
+    lugar → a planta fica e a volta diz"""
+    des, doc, eid = _terca_solta()
+    _sem_carimbo(doc)
+    orig = _cv(doc, eid)
+    c = copy.deepcopy(orig)
+    c.id = "copia-da-terca"
+    _andar(c, (0.0, -300.0, 0.0))
+    _andar(orig, (0.0, 300.0, 0.0))
+    doc.entidades = ({c.id: c, **doc.entidades} if ordem == "cópia na frente" else {**doc.entidades, c.id: c})
+    antes = _texto(des)
+    r = DPE.planta_do_modelo(des, doc, [])
+    assert r["alteracoes"] == ["viga T.C.1: " + DPE.COPIAS_EMPATE % 2] and r["mudados"] == [] and _texto(des) == antes
