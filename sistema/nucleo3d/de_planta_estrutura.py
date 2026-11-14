@@ -2757,8 +2757,8 @@ def _trazida(a: dict, p3) -> Optional[Tuple[tuple, tuple]]:
         return None
 
 
-def _pontas_da_barra(p3: Barra, pecas: list, tol: float = 1.0, L_ref: Optional[float] = None) -> Tuple[tuple, tuple, bool]:
-    """As pontas da barra do elemento: (início, fim, inteira). A barra dividida no editor 3D (Dividir: o 1º pedaço fica
+def _pontas_da_barra(p3: Barra, pecas: list, tol: float = 1.0, L_ref: Optional[float] = None) -> Tuple[tuple, tuple, bool, bool]:
+    """As pontas da barra do elemento: (início, fim, inteira, encurtada). A barra dividida no editor 3D (Dividir: o 1º pedaço fica
     com o id, os outros são cópias, todos com `emenda_de`) conta inteira — do começo do 1º pedaço ao fim do último, na
     linha dela; sem isso a volta encurtava a linha da planta até o 1º pedaço.
 
@@ -2768,12 +2768,13 @@ def _pontas_da_barra(p3: Barra, pecas: list, tol: float = 1.0, L_ref: Optional[f
     separado por um vão E o trecho junto é mais curto que a referência (`L_ref`): os pedaços já não são uma barra reta
     só e a volta não pode ler a linha deles (achado 2a — a linha da planta nunca encurta por causa de divisão). Com a
     barra inteira na reta, o pedaço fora dela é cópia e não conta. O último pedaço apagado (nada fora da reta, nenhum
-    vão) é a barra que o usuário encurtou: inteira, mais curta."""
+    vão) é a barra que o usuário encurtou: inteira, mais curta — `encurtada`, para a volta dizer com as palavras o que
+    aconteceu (GESTÃO N.10, 14/11)."""
     if not (p3.atributos or {}).get("emenda_de"):
-        return tuple(p3.inicio), tuple(p3.fim), True
+        return tuple(p3.inicio), tuple(p3.fim), True, False
     L = math.dist(p3.inicio, p3.fim)
     if L < 1e-6:
-        return tuple(p3.inicio), tuple(p3.fim), True
+        return tuple(p3.inicio), tuple(p3.fim), True, False
     d = tuple((p3.fim[k] - p3.inicio[k]) / L for k in range(3))
     na_reta, fora = [], False
     for q in pecas:
@@ -2800,10 +2801,10 @@ def _pontas_da_barra(p3: Barra, pecas: list, tol: float = 1.0, L_ref: Optional[f
                 s0, s1 = min(s0, t[0]), max(s1, t[1])
                 na_reta.remove(t)
                 juntou = True
-    inteira = True
-    if (fora or na_reta) and L_ref is not None and (s1 - s0) < L_ref - tol:
-        inteira = False
-    return (tuple(p3.inicio[k] + d[k] * s0 for k in range(3)), tuple(p3.inicio[k] + d[k] * s1 for k in range(3)), inteira)
+    curta = L_ref is not None and (s1 - s0) < L_ref - tol
+    inteira = not ((fora or na_reta) and curta)
+    return (tuple(p3.inicio[k] + d[k] * s0 for k in range(3)), tuple(p3.inicio[k] + d[k] * s1 for k in range(3)), inteira,
+            inteira and curta)
 
 
 #: a volta não lê a linha dos pedaços que já não formam uma barra reta só (revisão de 14/11, achado 2a)
@@ -2924,8 +2925,8 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
             # de onde medir: as pontas em que a peça estava quando já veio; senão, onde a montagem a deixou (o carimbo,
             # ou a barra da régua)
             ref = ja_veio or _carimbo(p3) or ((refs[0].inicio, refs[0].fim) if refs and isinstance(refs[0], Barra) and isinstance(p3, Barra) else None)
-            pi, pf, inteira = (_pontas_da_barra(p3, pecas, tol, math.dist(ref[0], ref[1]) if ref is not None else math.dist(e.a, e.b))
-                               if isinstance(p3, Barra) else (None, None, True))
+            pi, pf, inteira, encurtada = (_pontas_da_barra(p3, pecas, tol, math.dist(ref[0], ref[1]) if ref is not None else math.dist(e.a, e.b))
+                                          if isinstance(p3, Barra) else (None, None, True, False))
             if not inteira:
                 # a barra dividida que já não é uma reta só: a linha da planta fica, e a volta diz (nada calado). Sem
                 # referência (modelo de antes do carimbo), pede a régua da montagem: a linha da planta pode ter outro
@@ -2953,6 +2954,8 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
                 zt = z1
             if math.dist(na, e.a) > tol or math.dist(nb, e.b) > tol:
                 dx, dy = (na[0] + nb[0]) / 2 - (e.a[0] + e.b[0]) / 2, (na[1] + nb[1]) / 2 - (e.a[1] + e.b[1]) / 2
+                if encurtada:
+                    mud.append("encurtada no 3D (barra dividida, o pedaço da ponta apagado)")
                 if abs(math.dist(na, nb) - math.dist(e.a, e.b)) > tol:
                     mud.append("comprimento %d → %d mm" % (round(math.dist(e.a, e.b)), round(math.dist(na, nb))))
                 if math.hypot(dx, dy) > tol:

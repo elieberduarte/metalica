@@ -768,7 +768,11 @@ def test_a_barra_dividida_com_pedaco_copiado_apagado_ou_faltando_no_meio():
     # o último pedaço apagado: a barra ficou com 3,50 m
     d3 = Documento.de_dict(copy.deepcopy(m))
     del d3.entidades[ids2[1]]
-    assert DPE.planta_do_modelo(des, d3, [])["alteracoes"] == ["viga T.C.1: comprimento 5460 → 3500 mm, movida 980 mm"]
+    # (o GESTÃO N.10, 14/11: a linha acompanha, mas a mensagem diz com as palavras o que aconteceu)
+    assert DPE.planta_do_modelo(des, d3, [])["alteracoes"] == [
+        "viga T.C.1: encurtada no 3D (barra dividida, o pedaço da ponta apagado), comprimento 5460 → 3500 mm, movida 980 mm"]
+    assert des.entidades[eid].a == pytest.approx((0.0, 0.0)) and des.entidades[eid].b == pytest.approx((3500.0, 0.0))
+    assert DPE.planta_do_modelo(des, d3, [])["alteracoes"] == []
 
 
 
