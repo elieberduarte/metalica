@@ -2858,41 +2858,36 @@ def _cotas_pelas_pontas(a: dict, mud: list, tab: Dict[str, float], da: float, db
 
 
 def _ajuste_das_pontas_puxadas(e, ref, pi, pf, onde: str, tol: float):
-    """Tira das pontas puxadas pela montagem (a de referência fora da ponta da linha, em planta) o ajuste ao longo do
-    eixo que o usuário fez no 3D, e diz qual foi: (pi, pf, aviso ou None). Mexida essa ponta, a volta somava o delta à
-    linha: a terça saía do cruzamento (sem a extensão e sem o suporte ST2 da ponta) e o contravento voltava ao furo no
-    3D refeito — o ajuste se perdia calado (14/11).
+    """A ponta que a montagem puxa (a de referência fora da ponta da linha, em planta) encurtada ou alongada no 3D:
+    (pi, pf, aviso ou None). Somar o delta à linha tirava a terça do cruzamento (sem a extensão e sem o suporte ST2 da
+    ponta) ou deixava a planta diferente do que a montagem refaz (o contravento volta ao furo) — o ajuste se perdia
+    calado (14/11).
 
-    Cada ponta andou um tanto de lado (perpendicular ao eixo) e um tanto no eixo. Revisão do delta, 14/11:
-    * de lado diferente nas duas pontas → a barra girou ou mudou de lugar (a ponta da aleta levada ao longo do banzo,
-      levantada no banzo inclinado): não é ajuste de ponta, vem para a planta (a);
-    * igual no eixo nas duas pontas → a barra movida ao longo dela: é mover;
-    * sem nada de lado → cada ponta é dela: a puxada fica com o ajuste dela e a outra vem (c);
-    * deslocada de lado junto (levantada, movida de lado) → o quanto andou no eixo junto é o que deixa o menor ajuste
-      nas pontas (0, o da ponta a ou o da b; no empate, 0) — a terça inclinada levantada e encurtada.
-    Subir, mover de lado e a outra ponta seguem para a planta (ponto 1 do GESTÃO N.10)."""
+    SÓ NO CASO PURO (decisão do GESTÃO N.10, 14/11, depois de três rodadas de casos de borda da decomposição): a barra
+    não mudou em nada além de uma ou das duas pontas puxadas andando NO EIXO dela — o perpendicular de cada ponta ≤ tol
+    (em planta e em z) e a outra ponta, se não é puxada, parada (≤ tol). Aí o ajuste não vai para a planta e a volta
+    diz. Qualquer outra combinação (de lado, giro, cota, a outra ponta mexida, deriva > tol) segue o caminho de antes:
+    o delta vai para a planta — nunca pior que antes; o ajuste da puxada perdido na edição mista é o limite declarado,
+    coberto pela regra nova (a peça guardar o ajuste) que está com o usuário."""
     r0, r1 = ref
     Lr = math.dist(r0, r1)
     if Lr < 1e-6:
         return pi, pf, None
     u = tuple((r1[k] - r0[k]) / Lr for k in range(3))
-    Da = tuple(pi[k] - r0[k] for k in range(3))
-    Db = tuple(pf[k] - r1[k] for k in range(3))
-    xa, xb = sum(Da[k] * u[k] for k in range(3)), sum(Db[k] * u[k] for k in range(3))
-    pa = tuple(Da[k] - xa * u[k] for k in range(3))
-    pb = tuple(Db[k] - xb * u[k] for k in range(3))
-    if math.dist(pa, pb) > tol or abs(xa - xb) <= tol:
-        return pi, pf, None                               # girou/mudou de lugar, ou movida ao longo dela
-    if math.hypot(*pa) <= tol:
-        m = 0.0                                           # nada de lado: cada ponta é dela
-    else:
-        m = min((0.0, xa, xb), key=lambda c: abs(xa - c) + abs(xb - c) + (0.0 if c == 0.0 else 1e-9))
+    pontas = []
+    for nome, P, R, E, sentido in (("começo", pi, r0, e.a, -1.0), ("fim", pf, r1, e.b, 1.0)):
+        D = tuple(P[k] - R[k] for k in range(3))
+        x = sum(D[k] * u[k] for k in range(3))
+        de_lado = math.dist(D, tuple(x * u[k] for k in range(3)))
+        puxada = math.dist(R[:2], E) > tol
+        if de_lado > tol or (not puxada and math.hypot(*D) > tol):
+            return pi, pf, None                           # não é o caso puro: o caminho de antes
+        pontas.append((nome, P, x, sentido, puxada))
     novas, mexidas = [], []
-    for nome, P, R, E, x, sentido in (("começo", pi, r0, e.a, xa, -1.0), ("fim", pf, r1, e.b, xb, 1.0)):
-        ajuste = x - m
-        if math.dist(R[:2], E) > tol and abs(ajuste) > tol:
-            P = tuple(P[k] - u[k] * ajuste for k in range(3))
-            fora = sentido * ajuste
+    for nome, P, x, sentido, puxada in pontas:
+        if puxada and abs(x) > tol:
+            P = tuple(P[k] - u[k] * x for k in range(3))
+            fora = sentido * x
             mexidas.append((nome, "alongada" if fora > 0 else "encurtada", mm_inteiro(abs(fora))))
         novas.append(P)
     if not mexidas:

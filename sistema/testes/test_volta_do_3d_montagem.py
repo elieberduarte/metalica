@@ -165,22 +165,8 @@ def test_hangar_duas_voltas_seguidas_a_segunda_nao_devolve_nada(hangar, caso):
     a montagem não acompanha o que o usuário fez (a ponta que ela repõe no furo da aleta)"""
     des, niveis, doc = hangar
     _mexer(caso, doc, des)
-    antes = _texto(des)
     r1 = DPE.montagem_do_modelo(des, doc, niveis)
     assert len(r1["alteracoes"]) == 1, r1["alteracoes"]
-    if caso == "ponta esticada":
-        # a ponta que a montagem leva ao furo da aleta, puxada mais 50 mm no 3D: a planta não muda (o 3D refeito põe a
-        # ponta de volta no furo de qualquer jeito) e a volta diz, a cada vez — até então ela trazia +100 mm e o 3D
-        # refeito desfazia calado (GESTÃO N.10, 14/11, saída A)
-        # (ponto 1 do GESTÃO N.10: só a ponta da aleta é puxada; o alongamento da outra vem para a planta)
-        aviso = "viga CV6: " + _puxada("até o furo da ligação", "alongada", 50)
-        assert r1["alteracoes"] == [aviso.replace("viga CV6: ", "viga CV6: comprimento 6542 → 6592 mm, movida 25 mm; ")]
-        depois = _texto(des)
-        assert depois != antes
-        assert DPE.montagem_do_modelo(des, doc, niveis)["alteracoes"] == [aviso] and _texto(des) == depois
-        novo, _ = DPE.modelo_da_planta(copy.deepcopy(des), niveis)
-        assert DPE.montagem_do_modelo(des, novo, niveis)["alteracoes"] == []
-        return
     # a 2ª volta na planta gravada e aberta de novo (o que a rota faz entre um clique e outro)
     des = Desenho.de_dict(json.loads(json.dumps(des.dict())))
     depois_da_1a = _texto(des)
@@ -1051,33 +1037,6 @@ def _terca_do_oitao_encurtada(modelo):
     return des, doc, ids, tc
 
 
-@pytest.mark.parametrize("modelo", ["de agora", "de antes"])
-def test_a_ponta_puxada_encurtada_e_a_terca_levantada_o_topo_vem_e_a_ponta_e_dita(modelo):
-    """ponto 1 do GESTÃO N.10 (14/11): a ponta puxada mexida E outra mudança na mesma barra — o `continue` da 8563caf
-    deixava tudo de fora, calado. Da ponta puxada sai só o ajuste ao longo do eixo; o resto vem para a planta"""
-    des, doc, ids, tc = _terca_do_oitao_encurtada(modelo)
-    _andar(tc, (0.0, 0.0, 50.0))                                # e a terça levantada 50 mm
-    r = DPE.planta_do_modelo(des, doc, [])
-    assert r["alteracoes"] == ["viga TC: topo 5665.0 → 5715; " + _puxada("até a face da tesoura", "encurtada", 38)]
-    e = des.entidades[ids[0]]
-    assert e.atributos["nivel_topo"] == 5715 and r["mudados"] == [ids[0]]
-    assert e.a == pytest.approx((0.0, 3000.0), abs=0.01) and e.b == pytest.approx((5000.0, 3000.0), abs=0.01)
-    novo, _ = DPE.modelo_da_planta(copy.deepcopy(des), [])      # o 3D refeito: em cima, e a ponta de novo na face
-    assert _cv(novo, ids[0]).inicio[2] == pytest.approx(tc.inicio[2], abs=0.5)
-    assert _cv(novo, ids[0]).inicio[0] == pytest.approx(-63.5, abs=0.5)
-
-
-def test_a_ponta_puxada_encurtada_e_a_terca_movida_de_lado_a_linha_anda_de_lado_e_continua_no_cruzamento():
-    des, doc, ids, tc = _terca_do_oitao_encurtada("de agora")
-    _andar(tc, (0.0, 100.0, 0.0))
-    r = DPE.planta_do_modelo(des, doc, [])
-    assert r["alteracoes"] == ["viga TC: movida 100 mm; " + _puxada("até a face da tesoura", "encurtada", 38)]
-    e = des.entidades[ids[0]]
-    assert e.a == pytest.approx((0.0, 3100.0), abs=0.01) and e.b == pytest.approx((5000.0, 3100.0), abs=0.01)
-    novo, _ = DPE.modelo_da_planta(copy.deepcopy(des), [])      # no cruzamento: a montagem ainda estende e põe o ST2
-    assert _cv(novo, ids[0]).inicio[0] == pytest.approx(-63.5, abs=0.5)
-
-
 def test_a_ponta_puxada_encurtada_e_a_outra_alongada_o_mesmo_tanto_e_a_barra_movida():
     """ponto 3a, LIMITE anotado: encurtar a ponta puxada X e alongar a outra X é, na geometria, mover a barra X ao longo
     dela — é lido como movimento (como sempre foi). A linha anda X; na terça do oitão ela sai do cruzamento"""
@@ -1222,7 +1181,7 @@ def test_a_rota_nao_regrava_a_planta_nem_diz_atualizada_quando_nada_foi_alterado
     assert r["planta_alterada"] is True and r["desenho"] is not None
     assert json.dumps(g.abrir_desenho(s, "planta"), sort_keys=True) != gravada
     texto, tipo, _dur, itens = _aviso_da_volta(r)
-    assert texto == "Planta atualizada pelo 3D: 1 mudança(s)." and tipo == "info" and itens[0].startswith("viga TC: topo")
+    assert texto == "Planta atualizada pelo 3D: 1 mudança(s)." and tipo == "info" and itens[0].startswith("viga TC: ")
     sem = _aviso_da_volta({"alteracoes": [], "planta_alterada": False})
     assert sem[0] == "Nada mudou no 3D em relação a esta planta."
 
@@ -1241,22 +1200,6 @@ def test_a_ponta_puxada_movida_ao_longo_da_tesoura_vai_para_a_planta_sem_o_aviso
     r = DPE.montagem_do_modelo(des, doc, [])
     assert len(r["alteracoes"]) == 1 and "a ponta foi" not in r["alteracoes"][0], r["alteracoes"]
     assert _real(des, ids[0]).a == pytest.approx((a0[0], a0[1] + 100.0), abs=0.01)
-
-
-def test_a_ponta_puxada_encurtada_e_a_outra_alongada_diferente_a_puxada_fica_e_a_outra_vem():
-    """(c) a ponta do oitão encurtada 30 e a outra alongada 100: o comum (30) saía antes como translação, a linha andava
-    30 e saía do cruzamento (a extensão e o ST2 sumiam no 3D refeito), sem aviso"""
-    des, ids = _planta_com_tercas_na_tesoura_da_ponta()
-    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
-    tc = _cv(doc, ids[0])
-    tc.inicio = (tc.inicio[0] + 30.0, tc.inicio[1], tc.inicio[2])
-    tc.fim = (tc.fim[0] + 100.0, tc.fim[1], tc.fim[2])
-    r = DPE.planta_do_modelo(des, doc, [])
-    assert r["alteracoes"] == ["viga TC: comprimento 5000 → 5100 mm, movida 50 mm; " + _puxada("até a face da tesoura", "encurtada", 30)]
-    e = des.entidades[ids[0]]
-    assert e.a == pytest.approx((0.0, 3000.0), abs=0.01) and e.b == pytest.approx((5100.0, 3000.0), abs=0.01)
-    novo, _ = DPE.modelo_da_planta(copy.deepcopy(des), [])      # no cruzamento: a extensão continua
-    assert _cv(novo, ids[0]).inicio[0] == pytest.approx(-63.5, abs=0.5)
 
 
 def test_a_ponta_puxada_levantada_no_banzo_inclinado_vem_como_cota_sem_o_aviso(hangar):
@@ -1359,3 +1302,143 @@ def test_a_regua_e_a_translacao_olham_a_barra_escolhida_nao_a_primeira_do_modelo
     _andar(_cv(doc, ids[1]), (0.0, 200.0, 0.0))
     r = DPE.montagem_do_modelo(des, doc, [])
     assert r["alteracoes"] == ["viga CV2: movida 200 mm"], r["alteracoes"]
+
+
+
+# ------------------------------------------------------------------ a ponta puxada só no caso puro (GESTÃO N.10, 14/11)
+# Fora do caso puro a volta é a de antes da ponta puxada. O oráculo é o próprio ramo antes dela (a10fa80, o 8563caf
+# rebaseado menos um): dados_cad/gerar_volta_antes_da_puxada.py roda a volta daquele código uma vez sobre cada caso
+# abaixo e grava em dados_cad/volta_antes_da_puxada.json o que ela fez na planta. (O main não serve de oráculo: nas
+# peças puxadas ele tem o defeito do c290e43.)
+_HANGAR_CACHE = {}
+
+
+def _hangar_carregado():
+    """(a Montagem crua, os níveis, o modelo de hoje) do Hangar, lidos uma vez (fora do pytest também: o gerador)"""
+    if "h" not in _HANGAR_CACHE:
+        with open(HANGAR, encoding="utf-8") as f:
+            bruto = json.load(f)
+        doc, _avisos = DPE.modelo_da_planta(Desenho.de_dict(copy.deepcopy(bruto["desenho"])), bruto["niveis"])
+        _HANGAR_CACHE["h"] = (bruto["desenho"], bruto["niveis"], doc.dict())
+    des, niveis, modelo = _HANGAR_CACHE["h"]
+    return Desenho.de_dict(copy.deepcopy(des)), niveis, Documento.de_dict(copy.deepcopy(modelo))
+
+
+def _girar_3d(b, graus):
+    _girar(b, graus)
+
+
+def _no_eixo(b, qual, mm):
+    """a ponta `qual` da barra andando `mm` no eixo dela (+ = para fora, alonga)"""
+    d = b.direcao
+    if qual == "inicio":
+        b.inicio = tuple(b.inicio[k] - d[k] * mm for k in range(3))
+    else:
+        b.fim = tuple(b.fim[k] + d[k] * mm for k in range(3))
+
+
+def _caso_terca(edicao):
+    des, ids = _planta_com_tercas_na_tesoura_da_ponta()
+    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    edicao(_cv(doc, ids[0]))
+    return des, doc, [], False
+
+
+def _caso_pequena(edicao, quem=0):
+    real, ids = _planta_pequena("aleta", 5000.0)
+    des = _na_montagem(real, 0.0)
+    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    edicao(_cv(doc, ids[quem]))
+    return des, doc, [], True
+
+
+def _caso_terca_entre_dois_oitoes(edicao):
+    """duas tesouras de ponta e uma terça só entre elas: a montagem estende as DUAS pontas até a face de fora (nenhum
+    contravento do Hangar tem as duas pontas puxadas — 16 numa ponta, 16 na outra)"""
+    des, ids = _planta_com_tercas_na_tesoura_da_ponta()
+    for k in [k for k, e in des.entidades.items() if (e.atributos or {}).get("elemento") == "trelica" and e.a[0] > 9000.0]:
+        del des.entidades[k]
+    del des.entidades[ids[1]]
+    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    b = _cv(doc, ids[0])
+    assert b.inicio[0] < -10.0 and b.fim[0] > 5010.0, (b.inicio, b.fim)     # as duas pontas estendidas
+    edicao(b)
+    return des, doc, [], False
+
+
+def _caso_hangar(edicao):
+    des, niveis, doc = _hangar_carregado()
+    edicao(des, doc)
+    return des, doc, niveis, True
+
+
+def _inclinada(des, doc):
+    b, _ = _barra_de(doc, des, "contraventamento", "CV1", "sup")
+    _no_eixo(b, "inicio", -30.0)                                # a puxada encurtada 30
+    _andar(b, (0.0, 0.0, 50.0))                                 # e a barra levantada 50 (as duas pontas)
+
+
+CASOS_FORA_DO_PURO = {
+    # 2-1: o (c) com a barra também de lado; a inclinada levantada com a puxada encurtada; as duas puxadas de lado
+    "c com +100 em y": lambda: _caso_terca(lambda b: (_no_eixo(b, "inicio", -30.0), _no_eixo(b, "fim", 100.0),
+                                                       _andar(b, (0.0, 100.0, 0.0)))),
+    "inclinada levantada, puxada encurtada": lambda: _caso_hangar(_inclinada),
+    "duas puxadas de lado": lambda: _caso_terca_entre_dois_oitoes(lambda b: (_no_eixo(b, "inicio", -20.0), _no_eixo(b, "fim", 30.0),
+                                                                              _andar(b, (0.0, 100.0, 0.0)))),
+    # 2-2: a deriva de 2 mm no arrasto da ponta; o giro de 0,1°
+    "deriva de 2 mm": lambda: _caso_terca(lambda b: (_no_eixo(b, "inicio", -30.0),
+                                                      setattr(b, "inicio", (b.inicio[0], b.inicio[1] + 2.0, b.inicio[2])))),
+    "giro de 0,1°": lambda: _caso_terca(lambda b: (_no_eixo(b, "inicio", -30.0), _girar_3d(b, 0.1))),
+    # o (a) da leitura anterior; o giro; a translação
+    "aleta +100 ao longo da tesoura": lambda: _caso_pequena(lambda b: setattr(b, "inicio", (b.inicio[0], b.inicio[1] + 100.0, b.inicio[2]))),
+    "giro de 5°": lambda: _caso_pequena(lambda b: _girar_3d(b, 5.0)),
+    "translação no eixo": lambda: _caso_terca(lambda b: (_no_eixo(b, "inicio", -38.1), _no_eixo(b, "fim", 38.1))),
+}
+
+
+def _o_que_a_volta_fez(dpe, nome):
+    """roda a volta do módulo `dpe` no caso `nome`: [{a, b, atributos}] das linhas da planta que ela mudou, em ordem (sem
+    o id: a planta dos casos é montada de novo a cada vez)"""
+    from dataclasses import asdict
+    des, doc, niveis, montagem = CASOS_FORA_DO_PURO[nome]()
+    antes = {k: json.dumps(asdict(e), sort_keys=True, default=str) for k, e in des.entidades.items()}
+    (dpe.montagem_do_modelo if montagem else dpe.planta_do_modelo)(des, doc, niveis)
+    out = []
+    for k, e in des.entidades.items():
+        if json.dumps(asdict(e), sort_keys=True, default=str) != antes.get(k):
+            d = json.loads(json.dumps(asdict(e), default=str))
+            out.append({"a": d.get("a"), "b": d.get("b"),
+                        "atributos": {c: v for c, v in (d.get("atributos") or {}).items() if c != DPE.TRAZIDO}})
+    return sorted(out, key=lambda x: json.dumps(x, sort_keys=True))
+
+
+def _iguais(x, y, tol=0.01):
+    if isinstance(x, dict) and isinstance(y, dict):
+        return x.keys() == y.keys() and all(_iguais(x[k], y[k], tol) for k in x)
+    if isinstance(x, (list, tuple)) and isinstance(y, (list, tuple)):
+        return len(x) == len(y) and all(_iguais(a, b, tol) for a, b in zip(x, y))
+    if isinstance(x, (int, float)) and isinstance(y, (int, float)) and not isinstance(x, bool):
+        return abs(x - y) <= tol
+    return x == y
+
+
+@pytest.mark.parametrize("nome", sorted(CASOS_FORA_DO_PURO))
+def test_fora_do_caso_puro_a_volta_e_a_de_antes_da_ponta_puxada(nome):
+    """os contraexemplos das revisões (2-1, 2-2, o (a), o giro, a translação), com carimbo: a planta sai como a volta de
+    antes da ponta puxada a deixava (dados_cad/volta_antes_da_puxada.json, do a10fa80) — nunca pior que antes"""
+    with open(os.path.join(AQUI, "dados_cad", "volta_antes_da_puxada.json"), encoding="utf-8") as f:
+        esperado = json.load(f)["casos"][nome]
+    agora = _o_que_a_volta_fez(DPE, nome)
+    assert esperado, "o caso não mexe na planta nem antes: não prova nada"
+    assert _iguais(agora, esperado), (agora, esperado)
+
+
+def test_o_caso_puro_da_ponta_puxada_e_so_ele_fica_fora_da_planta():
+    """o caso puro: só a ponta puxada andando no eixo (a terça do oitão encurtada 38,1; a ponta do contravento na
+    aleta encurtada 22,9). A planta não muda e a volta diz"""
+    des, ids = _planta_com_tercas_na_tesoura_da_ponta()
+    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    _no_eixo(_cv(doc, ids[0]), "inicio", -38.1)
+    antes = _texto(des)
+    assert DPE.planta_do_modelo(des, doc, [])["alteracoes"] == ["viga TC: " + _puxada("até a face da tesoura", "encurtada", 38)]
+    assert _texto(des) == antes
