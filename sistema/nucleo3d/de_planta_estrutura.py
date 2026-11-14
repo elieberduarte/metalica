@@ -2821,32 +2821,58 @@ def _pontas_da_barra(p3: Barra, pecas: list, tol: float = 1.0, L_ref: Optional[f
 
 #: a ponta que a montagem puxa (a terça até a face da tesoura do oitão, o contravento até o furo da aleta/castanha)
 #: mexida no 3D: (encurtada/alongada, mm, até onde, mm, comprida/curta) — GESTÃO N.10, 14/11, saída A
-PUXADA = ("a ponta foi %s %d mm no 3D, mas é a montagem que leva essa ponta %s — a planta não foi alterada, e o 3D "
-          "gerado de novo pela planta põe a ponta de volta lá (%d mm mais %s do que você deixou)")
+PUXADA = ("a ponta foi %s %d mm no 3D, mas é a montagem que leva essa ponta %s — esse ajuste não foi trazido para a "
+          "planta, e o 3D gerado de novo pela planta põe a ponta de volta lá (%d mm mais %s do que você deixou)")
+#: as duas pontas puxadas e mexidas: (a do começo …, a do fim …; até onde)
+PUXADA2 = ("as duas pontas foram mexidas no 3D (%s), mas é a montagem que leva essas pontas %s — esses ajustes não foram "
+           "trazidos para a planta, e o 3D gerado de novo pela planta põe as pontas de volta lá")
+#: os papéis em que a montagem puxa a ponta em planta, e até onde: a terça até a face de fora da tesoura do oitão (só
+#: com a ponta da linha a até 1 mm do cruzamento, _suportes_das_tercas); o contravento até o furo da aleta e o
+#: comprimento de corte (_aletas_das_tesouras) ou até o furo da aba da castanha (_castanhas_das_tesouras). Todas são
+#: "puxar até" um lugar ou um comprimento absoluto; nenhuma é recuo fixo (14/11). Outro papel com a ponta fora da linha
+#: (uma regra de recuo fixo que viesse) segue trazendo o ajuste para a planta
+PONTA_PUXADA = {"terça": "até a face da tesoura", "terca": "até a face da tesoura",
+                "contraventamento": "até o furo da ligação"}
 
 
-def _ponta_puxada(e, ref, pi, pf, tol: float) -> Optional[Tuple[str, int]]:
-    """A ponta que a montagem puxou (a de referência fora da ponta da linha da planta, em planta) e que o usuário
-    encurtou ou alongou no 3D: ("encurtada"/"alongada", mm) ou None. A montagem só puxa com a ponta da linha no lugar
-    (a terça: a até 1 mm do cruzamento com a tesoura; o contravento: sempre ao furo) — somar o delta à linha tirava a
-    terça do cruzamento (sem a extensão e sem o suporte ST2 da ponta) ou deixava a planta diferente do que a montagem
-    refaz (o contravento volta ao furo), e o ajuste se perdia calado (14/11). Mover a barra inteira não é isto."""
+def _ajuste_das_pontas_puxadas(e, ref, pi, pf, onde: str, tol: float):
+    """Tira das pontas puxadas pela montagem (a de referência fora da ponta da linha, em planta) o ajuste ao longo do
+    eixo que o usuário fez no 3D, e diz qual foi: (pi, pf, aviso ou None). Mexida essa ponta, a volta somava o delta à
+    linha: a terça saía do cruzamento (sem a extensão e sem o suporte ST2 da ponta) e o contravento voltava ao furo no
+    3D refeito — o ajuste se perdia calado (14/11). Só sai o ajuste daquela ponta ao longo do eixo: subir, mover de lado
+    e a outra ponta seguem para a planta (ponto 1 do GESTÃO N.10). Mover a barra ao longo dela é mover: a translação
+    comum às duas pontas sai antes (encurtar uma ponta X e alongar a outra X é, na geometria, a barra movida X)."""
     r0, r1 = ref
     Lr = math.dist(r0, r1)
-    if Lr < 1e-6 or abs(math.dist(pi, pf) - Lr) <= tol:
-        return None
+    if Lr < 1e-6:
+        return pi, pf, None
+    L1 = math.dist(pi, pf)
+    if L1 < 1e-6 or abs(L1 - Lr) <= tol:
+        return pi, pf, None                               # mover e girar não mudam o comprimento: não é ajuste de ponta
     u = tuple((r1[k] - r0[k]) / Lr for k in range(3))
-    mexidas = []
-    for P, R, E, sentido in ((pi, r0, e.a, -1.0), (pf, r1, e.b, 1.0)):
-        if math.dist(R[:2], E) <= tol:
-            continue                                      # a montagem deixou esta ponta na ponta da linha
-        ao_longo = sentido * sum((P[k] - R[k]) * u[k] for k in range(3))
-        if abs(ao_longo) > tol:
-            mexidas.append(ao_longo)
+    # o giro desloca as pontas ao longo do eixo antigo em até L·(1 − cos θ) sem ser ajuste delas (achado 4): abaixo
+    # disso, girada junto, a ponta segue pela conta de sempre
+    cos_t = max(-1.0, min(1.0, sum((pf[k] - pi[k]) / L1 * u[k] for k in range(3))))
+    margem = Lr * (1.0 - cos_t) + tol
+    da = sum((pi[k] - r0[k]) * u[k] for k in range(3))
+    db = sum((pf[k] - r1[k]) * u[k] for k in range(3))
+    t = math.copysign(min(abs(da), abs(db)), da) if da * db > 0 else 0.0
+    novas, mexidas = [], []
+    for nome, P, R, E, d_, sentido in (("começo", pi, r0, e.a, da, -1.0), ("fim", pf, r1, e.b, db, 1.0)):
+        resto = d_ - t
+        if math.dist(R[:2], E) > tol and abs(resto) > margem:
+            P = tuple(P[k] - u[k] * resto for k in range(3))
+            fora = sentido * resto
+            mexidas.append((nome, "alongada" if fora > 0 else "encurtada", mm_inteiro(abs(fora))))
+        novas.append(P)
     if not mexidas:
-        return None
-    m = max(mexidas, key=abs)
-    return ("alongada" if m > 0 else "encurtada"), mm_inteiro(abs(m))
+        return pi, pf, None
+    if len(mexidas) == 1:
+        _n, mexeu, mm = mexidas[0]
+        aviso = PUXADA % (mexeu, mm, onde, mm, "comprida" if mexeu == "encurtada" else "curta")
+    else:
+        aviso = PUXADA2 % (", ".join("a do %s %s %d mm" % m for m in mexidas), onde.replace("essa ponta", "essas pontas"))
+    return novas[0], novas[1], aviso
 
 
 #: a volta não lê a linha dos pedaços que já não formam uma barra reta só (revisão de 14/11, achado 2a)
@@ -3046,6 +3072,7 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
         y0, y1 = min(c[2] for c in cx3), max(c[3] for c in cx3)
         z0, z1 = min(c[4] for c in cx3), max(c[5] for c in cx3)
         mud = []
+        aviso_pux = None
         if tipo in ("viga", "tesoura", "painel", "escada") and isinstance(e, Linha):
             p3 = carimbada or pecas[0]
             if tipo in ("tesoura", "painel", "escada"):
@@ -3064,16 +3091,10 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
                     out["sem_carimbo"].append(e.id)
                 out["alteracoes"].append("%s %s: %s" % (tipo, marca, FORA_DA_RETA))
                 continue
-            pux = (_ponta_puxada(e, ref, pi, pf, tol)
-                   if ref is not None and ja_veio is None and tipo == "viga" and isinstance(p3, Barra) else None)
-            if pux:
-                # a ponta que a montagem puxa, mexida no 3D: a planta fica como a montagem a lê, e a volta diz
-                mexeu, mm = pux
-                onde = {"terça": "até a face da tesoura", "contraventamento": "até o furo da ligação"}.get(
-                    str(a.get("papel")), "até onde ela a põe")
-                out["alteracoes"].append("%s %s: %s" % (tipo, marca, PUXADA % (
-                    mexeu, mm, onde, mm, "comprida" if mexeu == "encurtada" else "curta")))
-                continue
+            if ref is not None and tipo == "viga" and isinstance(p3, Barra) and str(a.get("papel")) in PONTA_PUXADA:
+                # a ponta que a montagem puxa, mexida no 3D: o ajuste dela ao longo do eixo fica fora da planta (a
+                # montagem o desfaria) e a volta diz; o resto do que o usuário fez segue
+                pi, pf, aviso_pux = _ajuste_das_pontas_puxadas(e, ref, pi, pf, PONTA_PUXADA[str(a.get("papel"))], tol)
             if ref is not None:
                 # só o que o usuário fez no 3D: a ponta da barra menos a ponta de referência, somada à da planta
                 di = tuple(pi[k] - ref[0][k] for k in range(3))
@@ -3210,7 +3231,9 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
             out["mudados"].append(e.id)
             if not propria:
                 out["sem_carimbo"].append(e.id)
-            out["alteracoes"].append("%s %s: %s" % (tipo, marca, ", ".join(mud)))
+            out["alteracoes"].append("%s %s: %s" % (tipo, marca, ", ".join(mud) + ("; " + aviso_pux if aviso_pux else "")))
+        elif aviso_pux:
+            out["alteracoes"].append("%s %s: %s" % (tipo, marca, aviso_pux))      # nada mais mudou: a planta fica
     if ensaio or not novas:
         return out
     # as peças novas do 3D

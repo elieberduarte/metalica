@@ -172,9 +172,12 @@ def test_hangar_duas_voltas_seguidas_a_segunda_nao_devolve_nada(hangar, caso):
         # a ponta que a montagem leva ao furo da aleta, puxada mais 50 mm no 3D: a planta não muda (o 3D refeito põe a
         # ponta de volta no furo de qualquer jeito) e a volta diz, a cada vez — até então ela trazia +100 mm e o 3D
         # refeito desfazia calado (GESTÃO N.10, 14/11, saída A)
-        aviso = ["viga CV6: " + _puxada("até o furo da ligação", "alongada", 50)]
-        assert r1["alteracoes"] == aviso and _texto(des) == antes
-        assert DPE.montagem_do_modelo(des, doc, niveis)["alteracoes"] == aviso and _texto(des) == antes
+        # (ponto 1 do GESTÃO N.10: só a ponta da aleta é puxada; o alongamento da outra vem para a planta)
+        aviso = "viga CV6: " + _puxada("até o furo da ligação", "alongada", 50)
+        assert r1["alteracoes"] == [aviso.replace("viga CV6: ", "viga CV6: comprimento 6542 → 6592 mm, movida 25 mm; ")]
+        depois = _texto(des)
+        assert depois != antes
+        assert DPE.montagem_do_modelo(des, doc, niveis)["alteracoes"] == [aviso] and _texto(des) == depois
         novo, _ = DPE.modelo_da_planta(copy.deepcopy(des), niveis)
         assert DPE.montagem_do_modelo(des, novo, niveis)["alteracoes"] == []
         return
@@ -1022,3 +1025,69 @@ def test_a_ponta_estendida_e_encurtada_no_3d_o_3d_refeito_fica_onde_o_usuario_de
     DPE.planta_do_modelo(des, doc, [])
     novo, _ = DPE.modelo_da_planta(copy.deepcopy(des), [])
     assert _cv(novo, ids[0]).inicio[0] == pytest.approx(tc.inicio[0], abs=0.5), (_cv(novo, ids[0]).inicio, tc.inicio)
+
+
+def _terca_do_oitao_encurtada(modelo):
+    """a terça TC da planta das tesouras, a ponta do oitão encurtada 38,1 mm no 3D (60 % da extensão até a face)"""
+    des, ids = _planta_com_tercas_na_tesoura_da_ponta()
+    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    if modelo == "de antes":
+        _sem_carimbo(doc)
+    tc = _cv(doc, ids[0])
+    tc.inicio = (tc.inicio[0] + 38.1, tc.inicio[1], tc.inicio[2])
+    return des, doc, ids, tc
+
+
+@pytest.mark.parametrize("modelo", ["de agora", "de antes"])
+def test_a_ponta_puxada_encurtada_e_a_terca_levantada_o_topo_vem_e_a_ponta_e_dita(modelo):
+    """ponto 1 do GESTÃO N.10 (14/11): a ponta puxada mexida E outra mudança na mesma barra — o `continue` da 8563caf
+    deixava tudo de fora, calado. Da ponta puxada sai só o ajuste ao longo do eixo; o resto vem para a planta"""
+    des, doc, ids, tc = _terca_do_oitao_encurtada(modelo)
+    _andar(tc, (0.0, 0.0, 50.0))                                # e a terça levantada 50 mm
+    r = DPE.planta_do_modelo(des, doc, [])
+    assert r["alteracoes"] == ["viga TC: topo 5665.0 → 5715; " + _puxada("até a face da tesoura", "encurtada", 38)]
+    e = des.entidades[ids[0]]
+    assert e.atributos["nivel_topo"] == 5715 and r["mudados"] == [ids[0]]
+    assert e.a == pytest.approx((0.0, 3000.0), abs=0.01) and e.b == pytest.approx((5000.0, 3000.0), abs=0.01)
+    novo, _ = DPE.modelo_da_planta(copy.deepcopy(des), [])      # o 3D refeito: em cima, e a ponta de novo na face
+    assert _cv(novo, ids[0]).inicio[2] == pytest.approx(tc.inicio[2], abs=0.5)
+    assert _cv(novo, ids[0]).inicio[0] == pytest.approx(-63.5, abs=0.5)
+
+
+def test_a_ponta_puxada_encurtada_e_a_terca_movida_de_lado_a_linha_anda_de_lado_e_continua_no_cruzamento():
+    des, doc, ids, tc = _terca_do_oitao_encurtada("de agora")
+    _andar(tc, (0.0, 100.0, 0.0))
+    r = DPE.planta_do_modelo(des, doc, [])
+    assert r["alteracoes"] == ["viga TC: movida 100 mm; " + _puxada("até a face da tesoura", "encurtada", 38)]
+    e = des.entidades[ids[0]]
+    assert e.a == pytest.approx((0.0, 3100.0), abs=0.01) and e.b == pytest.approx((5000.0, 3100.0), abs=0.01)
+    novo, _ = DPE.modelo_da_planta(copy.deepcopy(des), [])      # no cruzamento: a montagem ainda estende e põe o ST2
+    assert _cv(novo, ids[0]).inicio[0] == pytest.approx(-63.5, abs=0.5)
+
+
+def test_a_ponta_puxada_encurtada_e_a_outra_alongada_o_mesmo_tanto_e_a_barra_movida():
+    """ponto 3a, LIMITE anotado: encurtar a ponta puxada X e alongar a outra X é, na geometria, mover a barra X ao longo
+    dela — é lido como movimento (como sempre foi). A linha anda X; na terça do oitão ela sai do cruzamento"""
+    des, doc, ids, tc = _terca_do_oitao_encurtada("de agora")
+    tc.fim = (tc.fim[0] + 38.1, tc.fim[1], tc.fim[2])
+    r = DPE.planta_do_modelo(des, doc, [])
+    assert r["alteracoes"] == ["viga TC: movida 38 mm"]
+    assert des.entidades[ids[0]].a == pytest.approx((38.1, 3000.0), abs=0.01)
+
+
+def test_o_recuo_da_ponta_so_e_lido_nos_papeis_que_a_montagem_puxa():
+    """ponto 2 do GESTÃO N.10: só a terça e o contravento têm regra de "puxar até" em planta (a face da tesoura do
+    oitão; o furo da aleta/castanha e o comprimento de corte). Uma viga de outro papel com a ponta fora da linha (uma
+    regra de recuo fixo que viesse a existir) continua trazendo o ajuste para a planta"""
+    des, doc, eid = _terca_solta()
+    e = des.entidades[eid]
+    e.atributos = dict(e.atributos, papel="travamento")
+    doc, _ = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    b = _cv(doc, eid)
+    car = dict(b.atributos[DPE.GERADA])                       # uma montagem que recuasse a ponta 20 mm
+    b.inicio = (b.inicio[0] + 20.0, b.inicio[1], b.inicio[2])
+    car["pontas"] = [list(b.inicio), list(b.fim)]
+    b.atributos = dict(b.atributos, **{DPE.GERADA: car})
+    b.inicio = (b.inicio[0] + 30.0, b.inicio[1], b.inicio[2])  # e o usuário encurtou mais 30 no 3D
+    r = DPE.planta_do_modelo(des, doc, [])
+    assert r["alteracoes"] == ["viga T.C.1: comprimento 5460 → 5430 mm, movida 15 mm"]
