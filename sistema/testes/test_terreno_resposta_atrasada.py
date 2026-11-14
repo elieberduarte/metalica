@@ -4,7 +4,7 @@
 servidor não desfaz a mudança feita na tela enquanto o pedido estava no ar; a tela vale e o que mudou é gravado em seguida.
 
 Sem navegador: a classe Terreno de web/visor3d/terreno.js rodada no Node, com um fetch falso que guarda o que chega e
-responde 0,4 s depois. O clique no +5 cm é o do painel (`ajustar(aj0() + 50)`: soma em cima de `altura.ajuste`). A tela de
+responde 0,4 s depois (e um 2º caso: o local tirado com a gravação dele no ar não volta). O clique no +5 cm é o do painel (`ajustar(aj0() + 50)`: soma em cima de `altura.ajuste`). A tela de
 verdade (cliques do mouse, o F5, o fechar da página) é o verif_terreno_resposta_atrasada.py."""
 import json
 import os
@@ -47,7 +47,7 @@ console.log(JSON.stringify({ logo, tela: t.altura, guardado, chegou: chegou.leng
 """
 
 
-def _rodar(local):
+def _rodar(local, corpo=None):
     pasta = tempfile.mkdtemp(prefix="terreno_atrasado_")
     try:
         three = os.path.join(WEB, "lib", "three.module.js")
@@ -56,7 +56,7 @@ def _rodar(local):
         open(os.path.join(pasta, "terreno.mjs"), "w", encoding="utf-8", newline="").write(js)
         shutil.copy(os.path.join(WEB, "visor3d", "chao.js"), os.path.join(pasta, "chao.js"))
         script = os.path.join(pasta, "t.mjs")
-        open(script, "w", encoding="utf-8", newline="").write(NODE % {"terreno": json.dumps("./terreno.mjs"), "local": json.dumps(local)})
+        open(script, "w", encoding="utf-8", newline="").write((corpo or NODE) % {"terreno": json.dumps("./terreno.mjs"), "local": json.dumps(local)})
         r = subprocess.run(["node", script], capture_output=True, text=True, encoding="utf-8", timeout=60, cwd=pasta)
         assert r.returncode == 0, r.stderr
         return json.loads(r.stdout.strip().splitlines()[-1])
@@ -72,4 +72,27 @@ def test_dois_cliques_com_a_gravacao_no_ar_dao_10_cm(local):
     assert a["logo"] == 100, a                           # a frase e o chão logo depois do 2º clique
     assert a["tela"].get("cota") == -500 and a["tela"].get("ajuste") == 100, a
     assert a["guardado"].get("cota") == -500 and a["guardado"].get("ajuste") == 100, a
+    assert not a["avisos"], a
+
+
+# o estado trocado inteiro com a gravação no ar (Tirar o local: a rota /esquecer devolve o estado sem o terreno): a resposta
+# atrasada do local, que saiu antes, não traz o local de volta (o ramo `this.estado !== antes` do _mandar)
+NODE_TIRAR = NODE.split("const clique =")[0] + r"""
+const clique = mm => { const a = t._alvoAltura(); a.ajuste = (t.altura.ajuste || 0) + mm; t._gravarAltura(); };
+clique(50);                                            // +5 com o local: a gravação do local sai aos 0,5 s
+await espera(600);                                     // ... e está no ar (responde aos 0,9 s)
+servidor.chao = { cota: servidor.terreno.cota, ajuste: servidor.terreno.ajuste };   // o que o /esquecer faz no servidor
+servidor.terreno = null;
+t.estado = JSON.parse(JSON.stringify(servidor));       // Tirar o local: o estado inteiro novo, sem o terreno
+await espera(1500);                                    // a resposta atrasada do local volta
+console.log(JSON.stringify({ local: t.t || null, tela: t.altura, guardado: servidor, chegou: chegou.length, avisos }));
+"""
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="sem Node no computador")
+def test_o_local_tirado_com_a_gravacao_no_ar_nao_volta():
+    a = _rodar({"lat": -24.956, "lon": -53.456, "ponto": [0, 0], "norte": 0, "fonte": "teste", "cota": -500}, NODE_TIRAR)
+    assert a["chegou"] == 1, a                           # a gravação do local saiu antes de tirar
+    assert a["local"] is None, a                         # e a resposta dela não trouxe o local de volta
+    assert a["tela"].get("ajuste") == 50 and a["tela"].get("cota") == -500, a   # a altura ficou no chão, como o /esquecer deixa
     assert not a["avisos"], a
