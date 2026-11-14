@@ -674,3 +674,99 @@ def test_a_ponta_levantada_no_3d_leva_so_ela_na_planta(caso, sobe_a, sobe_b, niv
     if caso == "só a ponta a" and nivel_fim is None:
         assert r["alteracoes"] == ["viga T.C.1: topo 6454.0 → 6554, a outra ponta fica em 6454"]
 
+
+def _dividir_no_editor(modelo, bid, corte):
+    """Dividir do editor 3D na barra `bid`, a `corte` mm do começo dela — o que FerramentaDividir.dividir faz: o 1º
+    pedaço fica com o id, os outros são cópias (clonarEntidade), todos com `emenda_de` = o id da barra dividida.
+    Devolve (o modelo, os ids dos pedaços)"""
+    sai = _node("import { Documento } from 'WEB/editor3d/nucleo/documento.js';\n"
+                "import { clonarEntidade } from 'WEB/editor3d/ferramentas/_comum.js';\n"
+                "import { pedacosDaBarra } from 'WEB/editor3d/ferramentas/dividir.js';\n" + LER +
+                "  const doc = Documento.deJSON(E.modelo); const b = doc.entidades.get(E.id);\n"
+                "  const pedacos = pedacosDaBarra(b, [E.corte]); const novas = []; let primeiro = null;\n"
+                "  const atr = (extra) => ({ ...(b.atributos || {}), ...extra });\n"
+                "  pedacos.forEach((p, i) => {\n"
+                "    const campos = { inicio: p.inicio, fim: p.fim, cortes_inicio: p.cortes_inicio, cortes_fim: p.cortes_fim,\n"
+                "                     recorte_inicio: p.recorte_inicio, recorte_fim: p.recorte_fim, atributos: atr({ emenda_de: b.id }) };\n"
+                "    if (i === 0) { primeiro = campos; return; }\n"
+                "    const c = clonarEntidade(b, 'b'); Object.assign(c, campos); novas.push(c);\n"
+                "  });\n"
+                "  Object.assign(b, primeiro); for (const c of novas) doc.entidades.set(c.id, c);\n"
+                "  process.stdout.write(JSON.stringify({ modelo: JSON.parse(doc.paraTexto()), ids: [b.id, ...novas.map(c => c.id)] }));\n});\n",
+                {"modelo": modelo, "id": bid, "corte": corte})
+    return sai["modelo"], sai["ids"]
+
+
+FORA_DA_RETA = "viga T.C.1: barra dividida com pedaço fora da reta: a planta não foi alterada"
+
+
+@pytest.mark.parametrize("modelo", ["de agora", "de antes"])
+def test_a_barra_dividida_com_um_pedaco_fora_da_reta_nao_altera_a_planta_e_a_volta_diz(modelo):
+    """achado 2a: a terça dividida em duas e só o 2º pedaço levantado 10 mm — o pedaço saía da reta, era tratado como
+    cópia e a linha da planta encurtava até o 1º ("comprimento 5460 → 2000 mm, movida 1730 mm"). A linha da planta
+    nunca encurta por causa de divisão: quando os pedaços não formam mais uma barra reta só, a volta não altera a
+    linha e diz isso"""
+    des, doc, eid = _terca_solta()
+    if modelo == "de antes":
+        _sem_carimbo(doc)
+    m, ids = _dividir_no_editor(doc.dict(), _cv(doc, eid).id, 2000)
+    doc2 = Documento.de_dict(m)
+    _andar(doc2.entidades[ids[1]], (0.0, 0.0, 10.0))
+    antes = _texto(des)
+    for _vez in (1, 2):
+        r = DPE.planta_do_modelo(des, doc2, [])
+        assert r["alteracoes"] == [FORA_DA_RETA] and r["mudados"] == [] and _texto(des) == antes
+    # e pelo lado: o 2º pedaço 300 mm para o lado também não encurta a linha
+    _andar(doc2.entidades[ids[1]], (0.0, 300.0, -10.0))
+    assert DPE.planta_do_modelo(des, doc2, [])["alteracoes"] == [FORA_DA_RETA] and _texto(des) == antes
+    # o pedaço de volta ao lugar: a barra é uma só de novo e nada mudou
+    _andar(doc2.entidades[ids[1]], (0.0, -300.0, 0.0))
+    assert DPE.planta_do_modelo(des, doc2, [])["alteracoes"] == [] and _texto(des) == antes
+
+
+@pytest.mark.parametrize("modelo", ["de agora", "de antes"])
+def test_a_barra_dividida_duas_vezes_conta_inteira(modelo):
+    """achado 2b: dividir de novo o 2º pedaço — o dividir.js grava `emenda_de` com o id do pedaço que está sendo
+    dividido, os pedaços novos saíam da conta e a linha encurtava (5460 → 2000). Todos os pedaços do elemento contam"""
+    des, doc, eid = _terca_solta()
+    if modelo == "de antes":
+        _sem_carimbo(doc)
+    m, ids = _dividir_no_editor(doc.dict(), _cv(doc, eid).id, 2000)
+    m, ids2 = _dividir_no_editor(m, ids[1], 1500)                 # o 2º pedaço (3,46 m) em 1,50 + 1,96
+    doc2 = Documento.de_dict(m)
+    barras = [b for b in doc2.entidades.values() if isinstance(b, Barra) and b.atributos.get("origem_2d") == eid]
+    assert sorted(round(b.comprimento) for b in barras) == [1500, 1960, 2000]
+    assert {b.atributos["emenda_de"] for b in barras} == {ids[0], ids[1]}       # a cadeia: o 3º aponta para o 2º
+    antes = _texto(des)
+    r = DPE.planta_do_modelo(des, doc2, [])
+    assert r["alteracoes"] == [] and _texto(des) == antes
+    for b in barras:
+        _andar(b, (0.0, 250.0, 0.0))
+    assert DPE.planta_do_modelo(des, doc2, [])["alteracoes"] == ["viga T.C.1: movida 250 mm"]
+    assert des.entidades[eid].a == pytest.approx((0.0, 250.0)) and des.entidades[eid].b == pytest.approx((5460.0, 250.0))
+
+
+def test_a_barra_dividida_com_pedaco_copiado_apagado_ou_faltando_no_meio():
+    """os outros jeitos de a divisão deixar de ser uma barra só: a cópia de um pedaço posta ao lado não conta (a barra
+    está inteira na reta); o pedaço do meio apagado deixa um vão — a volta não altera e diz; o último pedaço apagado é
+    a barra que o usuário encurtou no 3D (não tem pedaço fora da reta): a linha acompanha"""
+    des, doc, eid = _terca_solta()
+    m, ids = _dividir_no_editor(doc.dict(), _cv(doc, eid).id, 2000)
+    m, ids2 = _dividir_no_editor(m, ids[1], 1500)
+    antes = _texto(des)
+    # a cópia do 2º pedaço 800 mm ao lado
+    d1 = Documento.de_dict(copy.deepcopy(m))
+    c = copy.deepcopy(d1.entidades[ids[1]])
+    c.id = "copia-do-pedaco"
+    _andar(c, (0.0, 800.0, 0.0))
+    d1.entidades[c.id] = c
+    assert DPE.planta_do_modelo(des, d1, [])["alteracoes"] == [] and _texto(des) == antes
+    # o pedaço do meio apagado
+    d2 = Documento.de_dict(copy.deepcopy(m))
+    del d2.entidades[ids[1]]
+    assert DPE.planta_do_modelo(des, d2, [])["alteracoes"] == [FORA_DA_RETA] and _texto(des) == antes
+    # o último pedaço apagado: a barra ficou com 3,50 m
+    d3 = Documento.de_dict(copy.deepcopy(m))
+    del d3.entidades[ids2[1]]
+    assert DPE.planta_do_modelo(des, d3, [])["alteracoes"] == ["viga T.C.1: comprimento 5460 → 3500 mm, movida 980 mm"]
+
