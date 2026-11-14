@@ -1116,6 +1116,19 @@ def test_no_modelo_sem_carimbo_a_copia_na_frente_da_original_nao_leva_a_linha():
     assert r["alteracoes"] == [] and _texto(des) == antes, r["alteracoes"]
 
 
+def test_todos_os_contraventos_de_um_modelo_sem_carimbo_da_montagem_de_hoje_movidos_juntos_voltam():
+    """achado 3b: o usuário move juntos TODOS os contraventos de um modelo sem carimbo (gravado até a 0.9.3, montagem
+    igual à de hoje): nenhum vizinho não mexido vota, e o empate 0 a 0 recusava todos com "versão anterior" — falso"""
+    real, ids = _planta_pequena("aleta", 5000.0)
+    des = _na_montagem(real, 0.0)
+    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    _sem_carimbo(doc)
+    for eid in ids:
+        _andar(_cv(doc, eid), (0.0, 200.0, 0.0))
+    r = DPE.montagem_do_modelo(des, doc, [])
+    assert sorted(r["alteracoes"]) == ["viga CV1: movida 200 mm", "viga CV2: movida 200 mm"], r["alteracoes"]
+
+
 def test_no_modelo_sem_carimbo_a_copia_atras_da_original_tambem_nao_leva_a_linha():
     des, doc, eid = _terca_solta()
     _sem_carimbo(doc)
@@ -1142,3 +1155,25 @@ def test_no_modelo_sem_carimbo_a_original_e_a_copia_mexidas_a_planta_segue_a_mai
     r = DPE.planta_do_modelo(des, doc, [])
     assert r["alteracoes"] == ["viga T.C.1: movida 300 mm, " + DPE.COPIAS % 2]
     assert des.entidades[eid].a == pytest.approx((0.0, 300.0))
+
+
+def test_montagem_antiga_diferente_num_papel_nao_e_desempatada_por_outro_papel(hangar_bruto):
+    """achado 3a (régua forjada): os 32 contraventos montados por uma montagem "antiga" diferente da de hoje (a ponta do
+    começo 10 mm mais curta), as terças do oitão iguais a hoje, e o usuário move só o CV5. Nenhum contravento bate com a
+    linha nem com a régua: o papel empata 0 a 0, e o desempate pelo modelo (as terças votam "régua") trazia os 32 como
+    mudança. Sem o desempate pelo modelo: a planta não muda e a volta diz, sem afirmar o que não sabe"""
+    bruto, niveis, modelo = hangar_bruto
+    des, doc = Desenho.de_dict(copy.deepcopy(bruto)), Documento.de_dict(copy.deepcopy(modelo))
+    cvs = [e.id for e in des.entidades.values() if (e.atributos or {}).get("papel") == "contraventamento"]
+    assert len(cvs) == 32
+    for eid in cvs:                                             # os contraventos sem carimbo; as terças com o desta versão
+        b = _cv(doc, eid)                                       # (votam "régua" no desempate pelo modelo)
+        b.atributos = {k: v for k, v in b.atributos.items() if k != DPE.GERADA}
+        d = b.direcao
+        b.inicio = tuple(b.inicio[k] + 10.0 * d[k] for k in range(3))
+    cv5, _ = _barra_de(doc, des, "contraventamento", "CV5", "inf")
+    _andar(cv5, (0.0, 200.0, 0.0))
+    antes = _texto(des)
+    r = DPE.montagem_do_modelo(des, doc, niveis)
+    assert _texto(des) == antes and r["mudados"] == []
+    assert len(r["alteracoes"]) == 32 and all(DPE.SEM_REFERENCIA in t for t in r["alteracoes"]), r["alteracoes"][:3]

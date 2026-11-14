@@ -2960,8 +2960,24 @@ VERSAO_ANTERIOR = ("o 3D desta peça foi montado por uma versão anterior do pro
                    "de novo pela planta refaz a peça e o que foi mexido só no 3D se perde")
 
 
+#: o empate sem nenhum voto (2ª revisão de 14/11, achado 3): nada no papel serve de referência — não afirmar versão
+SEM_REFERENCIA = ("não deu para separar o que você mexeu do que a montagem mudou: nenhuma peça deste tipo está onde a "
+                  "planta ou a montagem de agora a põem, para servir de referência — a planta não foi alterada")
+
+
+def _translacao_rigida(pecas: list, refs: list, tol: float) -> Optional[Tuple[float, float, float]]:
+    """o deslocamento comum às duas pontas da barra em relação à régua (a barra movida sem mudar), ou None"""
+    p = next((q for q in pecas if isinstance(q, Barra) and (q.atributos or {}).get("elemento") == "viga"), None)
+    r = refs[0] if refs and isinstance(refs[0], Barra) else None
+    if p is None or r is None:
+        return None
+    di = tuple(p.inicio[k] - r.inicio[k] for k in range(3))
+    df = tuple(p.fim[k] - r.fim[k] for k in range(3))
+    return di if math.dist(di, df) <= tol else None
+
+
 def _onde_a_regua_vale(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]], tol: float, acusados: set,
-                       regua: Dict[str, list], doc_regua: Optional[Documento]) -> Tuple[set, set]:
+                       regua: Dict[str, list], doc_regua: Optional[Documento]) -> Tuple[set, Dict[str, str]]:
     """Em que elementos sem carimbo a régua da montagem de agora mede a volta: (usar_regua, ambiguos).
 
     A régua é a montagem de AGORA; o modelo gravado por outra versão da montagem não é o dela (o Hangar da 0.9.0 difere
@@ -2971,12 +2987,15 @@ def _onde_a_regua_vale(des: Desenho, doc: Documento, niveis: Optional[Sequence[d
     2. no acusado em que a régua difere da linha, decidem os vizinhos do mesmo papel em que a régua também difere da
        linha: o que não foi acusado bate com a linha (vota "linha": montagem antiga), o acusado que bate com a régua vota
        "régua" (montagem de agora), e a barra carimbada por esta versão também vota "régua" (a marca de versão do
-       carimbo); a maioria do papel decide, depois a do modelo; empate ou nenhum voto → `ambiguos`
-       (a planta fica e a volta diz, VERSAO_ANTERIOR). Não há corte por quantidade: 10 terças mexidas de verdade voltam.
+       carimbo); a maioria do papel decide. NÃO há desempate pelo modelo (2ª revisão de 14/11, achado 3: outro papel
+       tem outra história de montagem — os 32 contraventos voltavam pelo voto das terças). No empate: se todos os
+       acusados do papel andaram juntos, a mesma translação rígida em relação à régua (o usuário moveu o grupo), mede-se
+       pela régua; senão → `ambiguos` {id: texto}: VERSAO_ANTERIOR se vizinhos não mexidos mostram montagem antiga,
+       SEM_REFERENCIA se não há voto nenhum. Não há corte por quantidade: 10 terças mexidas de verdade voltam.
     Onde a régua não difere da linha, tanto faz (mede-se pela linha). A sincronia troca todas as peças de uma planta
     de uma vez: as peças sem carimbo de uma volta vêm da mesma montagem."""
     if not acusados or not regua or doc_regua is None:
-        return set(), set()
+        return set(), {}
     # onde a régua difere da linha da planta: o ensaio da própria régua, sem o carimbo dela
     sem = copy.deepcopy(doc_regua)
     for p3 in sem.entidades.values():
@@ -3011,19 +3030,21 @@ def _onde_a_regua_vale(des: Desenho, doc: Documento, niveis: Optional[Sequence[d
             votos[papel]["regua"] += 1
             usar.add(e.id)                                # igual à régua: a volta não acusa nada
         else:
-            decidir.append((e.id, papel))
-    modelo = collections.Counter()
-    for c in votos.values():
-        modelo.update(c)
-    ambiguos = set()
-    for eid, papel in decidir:
-        for c in (votos.get(papel) or collections.Counter(), modelo):
-            if c["regua"] != c["linha"]:
-                if c["regua"] > c["linha"]:
-                    usar.add(eid)
-                break
-        else:
-            ambiguos.add(eid)
+            decidir.append((e.id, papel, _translacao_rigida(pecas, refs, tol)))
+    ambiguos: Dict[str, str] = {}
+    for papel in sorted({d[1] for d in decidir}):
+        grupo = [d for d in decidir if d[1] == papel]
+        c = votos.get(papel) or collections.Counter()
+        if c["regua"] != c["linha"]:
+            if c["regua"] > c["linha"]:
+                usar.update(d[0] for d in grupo)
+            continue
+        t0 = grupo[0][2]
+        if t0 is not None and all(d[2] is not None and math.dist(d[2], t0) <= tol for d in grupo):
+            usar.update(d[0] for d in grupo)              # o grupo movido junto: a régua mede
+            continue
+        for d in grupo:
+            ambiguos[d[0]] = VERSAO_ANTERIOR if c["linha"] else SEM_REFERENCIA
     return usar, ambiguos
 
 
@@ -3059,7 +3080,7 @@ def planta_do_modelo(des: Desenho, doc: Documento, niveis: Optional[Sequence[dic
 
 def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]], tol: float,
                  da_montagem: Optional[Dict[str, list]], ensaio: bool = False, novas: bool = True,
-                 usar_regua: Optional[set] = None, ambiguos: Optional[set] = None) -> Dict[str, list]:
+                 usar_regua: Optional[set] = None, ambiguos: Optional[Dict[str, str]] = None) -> Dict[str, list]:
     """a volta do lançamento: o que mudou no 3D vai para a planta (mm).
 
     * a peça que veio da planta (`origem_2d`) e foi movida no 3D move o elemento (e o rótulo dele);
@@ -3112,7 +3133,7 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
         carimbada, ja_veio = _medida_propria(tipo, a, pecas)
         propria = carimbada is not None or ja_veio is not None       # mede-se sem a régua da montagem
         if not propria and ambiguos and e.id in ambiguos:
-            out["alteracoes"].append("%s %s: %s" % (tipo, marca, VERSAO_ANTERIOR))
+            out["alteracoes"].append("%s %s: %s" % (tipo, marca, ambiguos[e.id]))
             continue
         refs = da_montagem.get(e.id) if not propria and (usar_regua is None or e.id in usar_regua) else None
         if refs and _como_a_montagem_fez(pecas, refs, tol):
