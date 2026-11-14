@@ -2546,7 +2546,8 @@ def modelo_da_planta(des: Desenho, niveis: Optional[Sequence[dict]] = None, nome
             continue
         alvo.furos.append({"x": c[0], "y": c[1], "diametro": float(a.get("diametro") or 0.0), "origem_2d": e.id})
     _carimbar_as_barras(doc)
-    doc.metadados["de_planta_estrutura"] = {"elementos": len(elementos(des)), "aco": n_aco, "avisos": list(avisos)}
+    doc.metadados["de_planta_estrutura"] = {"elementos": len(elementos(des)), "aco": n_aco, "avisos": list(avisos),
+                                            "versao_montagem": _versao_da_montagem()}
     # o elemento vinculado a um nível que não existe mais (apagado ou renomeado fora do CAD): o 3D usa o padrão, e isso
     # não pode passar calado (06/10)
     perdidos = collections.defaultdict(list)
@@ -2711,6 +2712,17 @@ GERADA = "gerada_da_planta"
 TRAZIDO = "trazido_do_3d"
 
 
+def _versao_da_montagem() -> str:
+    """a versão do programa que montou a peça (no carimbo e nos metadados do modelo): o modelo gravado por outra versão
+    da montagem é reconhecível (revisão de 14/11, reforço A — a régua da volta é a montagem de agora, e o Hangar gerado
+    pela 0.9.0 difere dela em 92 de 275 elementos). Só registra: a volta ainda não a usa"""
+    try:
+        from versao import VERSAO
+        return str(VERSAO)
+    except ImportError:                                   # o núcleo usado fora do programa
+        return ""
+
+
 def _carimbar_as_barras(doc: Documento) -> None:
     """No fim da montagem: a barra de cada viga de aço da planta guarda as pontas em que a montagem a deixou. A montagem
     ajusta peças depois de lê-las da planta — a ponta do contravento alongada até o comprimento de corte e levada ao furo
@@ -2724,7 +2736,7 @@ def _carimbar_as_barras(doc: Documento) -> None:
         o = at.get("origem_2d")
         if isinstance(b, Barra) and o and at.get("elemento") == "viga" and o not in vistos:
             vistos.add(o)                                 # a primeira barra do elemento é a dele (o suporte vem depois)
-            b.atributos = dict(at, **{GERADA: {"peca": b.id, "pontas": [list(b.inicio), list(b.fim)]}})
+            b.atributos = dict(at, **{GERADA: {"peca": b.id, "pontas": [list(b.inicio), list(b.fim)], "versao": _versao_da_montagem()}})
 
 
 def _carimbo(p3) -> Optional[Tuple[tuple, tuple]]:

@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.dirname(AQUI))
 from nucleo2d.desenho import Desenho, Linha                   # noqa: E402
 from nucleo3d import de_planta_estrutura as DPE               # noqa: E402
 from nucleo3d.modelo import Barra, Chapa, Documento           # noqa: E402
+from versao import VERSAO                                     # noqa: E402
 
 #: a Montagem do verif_identificacao_ui logo depois de "Montar o modelo 3D": 56 terças, 32 contraventos com a aleta AC1
 #: numa ponta só (as T2 dos eixos 3 e 5), as T2, as VC, as VT, os apoios — a forma em que o defeito apareceu
@@ -376,7 +377,9 @@ def test_a_montagem_carimba_a_barra_de_cada_viga_de_aco_e_so_ela():
     com = [p3 for p3 in doc.entidades.values() if DPE.GERADA in (p3.atributos or {})]
     assert sorted(p3.atributos["origem_2d"] for p3 in com) == sorted(ids)      # os dois contraventos; a tesoura e as aletas não
     for b in com:
-        assert b.atributos[DPE.GERADA] == {"peca": b.id, "pontas": [list(b.inicio), list(b.fim)]}      # depois do alongamento: onde a montagem a deixou
+        assert b.atributos[DPE.GERADA] == {"peca": b.id, "pontas": [list(b.inicio), list(b.fim)],      # depois do alongamento: onde a montagem a deixou
+                                           "versao": VERSAO}                                  # e qual versão montou (reforço A)
+    assert doc.metadados["de_planta_estrutura"]["versao_montagem"] == VERSAO
     assert "gerada" not in _texto(real) and DPE.TRAZIDO not in _texto(real)    # a montagem não escreve na planta
 
 
@@ -869,3 +872,112 @@ def test_a_cota_que_vem_do_3d_e_mm_inteiro_o_meio_para_o_maior(modelo):
         _andar(_cv(doc, eid), (0.0, 0.0, 100.0))
         r = DPE._volta_do_3d(des, doc, [], 1.0, None)
         assert r["alteracoes"] == ["viga T.C.1: topo 6454.5 → 6555"] and des.entidades[eid].atributos["nivel_topo"] == 6555
+
+
+# ------------------------------------------------------------------ o modelo gravado por uma versão anterior (reforço A)
+def _hangar_da_versao(hangar_bruto, versao):
+    """a Montagem de hoje e o 3D que a montagem da `versao` publicada fez dela (dados_cad/hangar_gerado_<versao>.json,
+    feito por dados_cad/gerar_hangar_de_versao_antiga.py: só as peças com origem_2d fora das tesouras, sem carimbo)"""
+    bruto, niveis, _modelo = hangar_bruto
+    with open(os.path.join(AQUI, "dados_cad", "hangar_gerado_%s.json" % versao), encoding="utf-8") as f:
+        antigo = json.load(f)
+    doc = Documento.de_dict(antigo["modelo"])
+    assert DPE.GERADA not in json.dumps(antigo["modelo"], ensure_ascii=False) and len(doc.entidades) == 275
+    return Desenho.de_dict(copy.deepcopy(bruto)), niveis, doc
+
+
+@pytest.mark.parametrize("versao", ["v0_9_2", "v0_9_0"])
+def test_modelo_de_versao_anterior_sem_mexer_a_volta_nao_devolve_nada(hangar_bruto, versao):
+    des, niveis, doc = _hangar_da_versao(hangar_bruto, versao)
+    antes = _texto(des)
+    assert DPE.montagem_do_modelo(des, doc, niveis)["alteracoes"] == [] and _texto(des) == antes
+
+
+def test_modelo_da_v092_um_contravento_movido_volta_so_ele(hangar_bruto):
+    """a v0.9.2 monta o Hangar igual à de hoje (0 de 275 elementos diferem): a régua vale"""
+    des, niveis, doc = _hangar_da_versao(hangar_bruto, "v0_9_2")
+    cv, _eid = _barra_de(doc, des, "contraventamento", "CV5", "inf")
+    _andar(cv, (0.0, 200.0, 0.0))
+    assert DPE.montagem_do_modelo(des, doc, niveis)["alteracoes"] == ["viga CV5: movida 200 mm"]
+
+
+@pytest.mark.xfail(strict=True, reason="reforço A (14/11): a régua da volta é a montagem de HOJE; o Hangar gravado "
+                   "pela 0.9.0 difere dela em 92 de 275 elementos, e 1 contravento movido faz os 32 voltarem — a saída "
+                   "está com o GESTÃO N.10 / o usuário. Quando a correção entrar, este teste passa e o xfail sai")
+def test_modelo_da_v090_um_contravento_movido_nao_traz_os_outros_31(hangar_bruto):
+    """a 0.9.0 (21/10) não alongava a ponta do contravento até o furo da aleta: as barras dela não são as da régua de
+    hoje. 1 CV movido 200 mm dava 32 alterações (CV1–CV8 ×4, "comprimento 6575 → 6493 mm, movida 231 mm…"). Vale só
+    "viga CV5: movida 200 mm", ou nada na planta com um aviso — nunca as 32 caladas"""
+    des, niveis, doc = _hangar_da_versao(hangar_bruto, "v0_9_0")
+    cv, _eid = _barra_de(doc, des, "contraventamento", "CV5", "inf")
+    _andar(cv, (0.0, 200.0, 0.0))
+    antes = _texto(des)
+    r = DPE.montagem_do_modelo(des, doc, niveis)
+    so_ele = r["alteracoes"] == ["viga CV5: movida 200 mm"]
+    recusa = _texto(des) == antes and len(r["alteracoes"]) == 1 and "versão" in r["alteracoes"][0]
+    assert so_ele or recusa, r["alteracoes"][:4]
+
+
+def test_varias_tercas_mexidas_de_verdade_no_modelo_sem_carimbo_voltam_todas(hangar):
+    """o caso que NÃO pode ser barrado: 10 terças movidas de verdade no 3D (com e sem o carimbo — o modelo gravado
+    pela montagem de hoje antes de 14/11): as 10 voltam, cada uma com o que andou, e só elas"""
+    des, niveis, doc = hangar
+    tercas = []
+    for e in des.entidades.values():
+        a = e.atributos or {}
+        if a.get("papel") == "terça" and len(tercas) < 10:
+            b = next((x for x in doc.entidades.values() if isinstance(x, Barra) and (x.atributos or {}).get("origem_2d") == e.id), None)
+            if b is not None:
+                tercas.append((a.get("marca"), b))
+    assert len(tercas) == 10
+    for _m, b in tercas:
+        _andar(b, tuple(150.0 * c for c in b.direcao))
+    r = DPE.montagem_do_modelo(des, doc, niveis)
+    assert sorted(r["alteracoes"]) == sorted("viga %s: movida 150 mm" % m for m, _b in tercas)
+
+
+@pytest.mark.parametrize("modelo", ["de agora", "de antes"])
+def test_a_ponta_estendida_pela_montagem_e_encurtada_no_3d_vale_a_regua(modelo):
+    """o contraexemplo do GESTÃO N.10 (14/11) ao "vence a referência com menos deslocamento": a montagem de hoje estende
+    a terça até a face de fora da tesoura do oitão; o usuário encurta no 3D essa ponta em 60 % do que a montagem
+    estendeu (o ajuste fino de verdade). Pela régua (onde a montagem a pôs) a ponta andou −0,6·L; pela linha da planta,
+    +0,4·L — o menor deslocamento escolheria a linha, a planta ganharia +0,4·L e a próxima montagem estenderia de novo:
+    o 3D ficaria mais comprido do que o usuário deixou. Vale a régua: a linha da planta encurta 0,6·L na ponta dela"""
+    des, ids = _planta_com_tercas_na_tesoura_da_ponta()
+    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    if modelo == "de antes":
+        _sem_carimbo(doc)
+    tc = _cv(doc, ids[0])
+    estendida = -tc.inicio[0]                                   # a terça vai de x = 0 a 5000 na planta; no 3D, além do 0
+    assert estendida > 10.0 and abs(tc.fim[0] - 5000.0) < estendida, (tc.inicio, tc.fim)
+    s = round(0.6 * estendida, 1)
+    tc.inicio = (tc.inicio[0] + s, tc.inicio[1], tc.inicio[2])  # a ponta do oitão encurtada no 3D
+    r = DPE.planta_do_modelo(des, doc, [])
+    assert len(r["alteracoes"]) == 1 and r["alteracoes"][0].startswith("viga TC: comprimento 5000 → %d mm" % round(5000 - s))
+    e = des.entidades[ids[0]]
+    assert e.a == pytest.approx((s, 3000.0), abs=0.01) and e.b == pytest.approx((5000.0, 3000.0), abs=0.01)
+
+
+@pytest.mark.xfail(strict=True, reason="LIMITE do 'puxar até' (14/11, BUGS N.4 → GESTÃO N.10 → usuário, 4º caso do "
+                   "'é assim?' do Trazer do 3D): a montagem leva a ponta da terça até a face da tesoura do oitão (−63,5) só "
+                   "com a ponta da linha a até 1 mm do cruzamento; o usuário encurta no 3D até −25,4, a volta soma o delta "
+                   "à linha (+38,1), a linha sai do cruzamento e o 3D refeito fica em +38,1 — 63,5 mm mais curto, calado. "
+                   "Vale hoje com carimbo e na 0.9.2/0.9.3 pela régua. Saída recomendada (B): a ponta da linha onde está a "
+                   "do 3D quando a montagem a tinha puxado. Quando a decisão entrar, este teste passa e o xfail sai")
+@pytest.mark.parametrize("modelo", ["de agora", "de antes"])
+def test_a_ponta_estendida_e_encurtada_no_3d_o_3d_refeito_fica_onde_o_usuario_deixou(modelo):
+    """a mesma ponta encurtada no 3D, pelo que importa ao usuário: o 3D refeito da planta depois da volta tem a ponta
+    onde ele a deixou. A extensão até a face da tesoura do oitão só acontece com a ponta da linha no cruzamento com a
+    tesoura (±1 mm, _suportes_das_tercas): a linha que a volta tira de lá deixa de ser estendida — então a referência
+    que "devolve" o ajuste depende da regra de montagem da peça, e este teste diz qual vale aqui (14/11, para o GESTÃO)"""
+    des, ids = _planta_com_tercas_na_tesoura_da_ponta()
+    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    if modelo == "de antes":
+        _sem_carimbo(doc)
+    tc = _cv(doc, ids[0])
+    estendida = -tc.inicio[0]
+    s = round(0.6 * estendida, 1)
+    tc.inicio = (tc.inicio[0] + s, tc.inicio[1], tc.inicio[2])
+    DPE.planta_do_modelo(des, doc, [])
+    novo, _ = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    assert _cv(novo, ids[0]).inicio[0] == pytest.approx(tc.inicio[0], abs=0.5), (_cv(novo, ids[0]).inicio, tc.inicio)
