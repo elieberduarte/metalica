@@ -137,6 +137,9 @@ try:
     ok(str(est2).startswith("conflito"), f"[C] e continua assim (não volta a \"✓ Salvo\": {est2!r})")
     ok(ids_no_disco() == ["P1", "P2", "P3", "P4", "P6"], f"[C] o disco continua o da A ({ids_no_disco()})")
     ok(bool(esperar(B, "/NÃO foram gravadas/.test(document.body.innerText)", 5)), "[C] o aviso diz que as edições da B não foram gravadas")
+    # o rodapé não manda recarregar (o F5 descartaria as mudanças da B): manda para a escolha (14/11)
+    dica = B.avaliar("document.getElementById('dica').textContent") or ""
+    ok("F5" not in dica and "recarregue" not in dica and "Não gravado" in dica, f"[C] o rodapé leva à escolha, sem mandar recarregar ({dica[:90]!r})")
 
     # --- D. sair da B pergunta
     pergunta = B.avaliar("(() => { const ev = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(ev); return ev.defaultPrevented; })()")

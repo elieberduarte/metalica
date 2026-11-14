@@ -1238,6 +1238,10 @@ export class Editor {
     if (e.dados && e.dados.alterado) this._conflitoDisco = e.dados.alterado;
     this._autosavePendente = true;
     if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
+    // o rodapé não repete o "recarregue (F5)" do servidor: o F5 descartaria as mudanças desta aba — a saída é a escolha
+    // (14/11, a imagem da 1ª rodada no Chrome)
+    this.dica('Não gravado: a obra foi gravada em outro lugar depois que esta aba abriu. Clique em "⚠ Não gravado" para ' +
+              'escolher: gravar as suas por cima ou abrir a versão gravada (nos dois casos a outra vai para o histórico).');
     this._avisarConflito();
     this._mostrarEstadoGravacao();
     return true;
