@@ -68,15 +68,24 @@ export function caminhoContinuo(cameras, { porTrecho = 3, fps = 30 } = {}) {
     const a = P(m - 1), b = P(m), c = P(m + 1), d = P(m + 2), u2 = u * u, u3 = u2 * u;
     return b.map((_, x) => 0.5 * (2 * b[x] + (c[x] - a[x]) * u + (2 * a[x] - 5 * b[x] + 4 * c[x] - d[x]) * u2 + (3 * b[x] - a[x] - 3 * c[x] + d[x]) * u3));
   };
-  const camera = (v) => {
+  const camera0 = (v) => {
     const [ax, ay, az_, lr, ang, el0, fov] = v, r = Math.exp(lr), el = Math.max(-0.05, Math.min(1.55, el0));
     return { posicao: [ax + r * Math.cos(el) * Math.cos(ang), ay + r * Math.cos(el) * Math.sin(ang), az_ + r * Math.sin(el)], alvo: [ax, ay, az_], fov };
   };
+  // a câmera no trecho m nunca abaixo da mais baixa das duas cenas dele: a curva passa do ponto na inclinação e, num arco de
+  // 70 m entre duas fachadas (3° de inclinação), a câmera descia a −2,7 m — o vídeo mostrava a obra por baixo do chão
+  // (14/11, Filipin, da Fachada sul para a leste)
+  const Z = cameras.map(c => c.posicao[2]);
+  const camera = (v, m) => {
+    const c = camera0(v), piso = Math.min(Z[m], Z[Math.min(n - 1, m + 1)]);
+    if (c.posicao[2] < piso) c.posicao[2] = piso;
+    return c;
+  };
   // o comprimento do caminho (a câmera e o alvo), em amostras: a velocidade constante vem dele
   const A = 48, tabela = [{ m: 0, u: 0, s: 0 }];
-  let s = 0, antes = camera(ponto(0, 0));
+  let s = 0, antes = camera(ponto(0, 0), 0);
   for (let m = 0; m < n - 1; m++) for (let k = 1; k <= A; k++) {
-    const c = camera(ponto(m, k / A));
+    const c = camera(ponto(m, k / A), m);
     s += Math.hypot(...[0, 1, 2].map(x => c.posicao[x] - antes.posicao[x])) + 0.5 * Math.hypot(...[0, 1, 2].map(x => c.alvo[x] - antes.alvo[x])) + 1e-6;
     tabela.push({ m, u: k / A, s }); antes = c;
   }
@@ -94,7 +103,7 @@ export function caminhoContinuo(cameras, { porTrecho = 3, fps = 30 } = {}) {
     const a = tabela[lo], b = tabela[hi], w = b.s > a.s ? (alvoS - a.s) / (b.s - a.s) : 0;
     let m = b.m, u = a.m === b.m ? a.u + (b.u - a.u) * w : b.u * w;
     if (hi === 0) { m = 0; u = 0; }
-    return { i: m, j: Math.min(n - 1, m + 1), k: u, parado: false, cam: camera(ponto(m, u)) };
+    return { i: m, j: Math.min(n - 1, m + 1), k: u, parado: false, cam: camera(ponto(m, u), m) };
   }
   return { total, fps, quadro, segundos: total / fps };
 }

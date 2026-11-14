@@ -128,6 +128,15 @@ try:
     ok(r["perto"] < 2 * r["med"], f"passa pela cena do meio ({r['perto']:.0f} mm dela)")
     ok(r["min"] > 0.8 and r["max"] < 1.25, f"a velocidade igual no voo, sem parar na cena do meio ({r['min']:.2f}–{r['max']:.2f} da média)")
     ok(r["primeiro"] < 0.3, "só a saída suave")
+    # 14/11, Filipin: a curva passava do ponto na inclinação e, da Fachada sul para a leste (arco de 70–80 m a 3°), a câmera
+    # descia a −2,7 m: o vídeo mostrava a obra por baixo do chão. As câmeras de lá (mm): a vista de cima e três fachadas.
+    r = json.loads(aba.avaliar("""(async () => { const M = await import('/visor3d/video_cenas.js');
+        const cams = [{ posicao: [11600, 16100, 118000], alvo: [11600, 36100, 4400], fov: 40 }, { posicao: [11700, -32400, 3500], alvo: [11700, 37200, -200], fov: 30 },
+                      { posicao: [93700, 37500, 8000], alvo: [11600, 37500, 3700], fov: 30 }, { posicao: [11700, 107400, 3500], alvo: [11700, 37800, -200], fov: 30 }];
+        const V = M.caminhoContinuo(cams, { porTrecho: 3, fps: 30 }); let z = Infinity;
+        for (let f = 0; f < V.total; f++) z = Math.min(z, V.quadro(f).cam.posicao[2]);
+        return JSON.stringify({ z }); })()"""))
+    ok(r["z"] >= 3500 - 1, f"a câmera nunca abaixo da cena mais baixa do trecho (a menor altura no voo: {r['z']:.0f} mm; as fachadas a 3.500)")
 
     # três cenas do 3D: frente (Dia), lado (Entardecer), topo (Noite)
     for nome, vista, fundo in (("Frente", "frente", "ceu"), ("Lado", "lado", "entardecer"), ("Topo", "iso", "noite")):
