@@ -2963,7 +2963,9 @@ def _barra_do_elemento(e, a: dict, pecas: list, tol: float = 1.0) -> Tuple[Optio
     barras = [q for q in pecas if isinstance(q, Barra) and (q.atributos or {}).get("elemento") == "viga"]
     if not barras:
         return None, 0, False
-    inteiras = sum(1 for q in barras if not (q.atributos or {}).get("emenda_de"))
+    # a barra dividida conta como uma barra (3ª leitura de 14/11, 2-3)
+    inteiras = (sum(1 for q in barras if not (q.atributos or {}).get("emenda_de"))
+                + (1 if any((q.atributos or {}).get("emenda_de") for q in barras) else 0))
     g = a.get(TRAZIDO)
     pid = str(g.get("peca")) if isinstance(g, dict) else None
     guardada = next((q for q in barras if str(q.id) == pid), None)
@@ -2973,12 +2975,24 @@ def _barra_do_elemento(e, a: dict, pecas: list, tol: float = 1.0) -> Tuple[Optio
         return min(barras, key=lambda q: str(q.id)), inteiras, False
 
     def longe(q):
-        i, f = q.inicio[:2], q.fim[:2]
+        # o pedaço de uma divisão mede-se pelas pontas da cadeia dos pedaços (a barra inteira): pedaço por pedaço, a
+        # cópia inteira 300 mm ao lado da terça dividida no lugar ganhava (600 < 2000) e a planta andava 300 mm
+        if (q.atributos or {}).get("emenda_de"):
+            i, f, _m, _c = _pontas_da_barra(q, pecas)
+            i, f = i[:2], f[:2]
+        else:
+            i, f = q.inicio[:2], q.fim[:2]
         return min(math.dist(i, e.a) + math.dist(f, e.b), math.dist(i, e.b) + math.dist(f, e.a))
     ordem = sorted(barras, key=lambda q: (longe(q), str(q.id)))
-    inteiras_ord = [q for q in ordem if not (q.atributos or {}).get("emenda_de")]
-    empate = (len(inteiras_ord) > 1 and longe(inteiras_ord[0]) > tol
-              and longe(inteiras_ord[1]) - longe(inteiras_ord[0]) <= tol)
+    # o empate é entre barras diferentes: os pedaços da mesma divisão dão a mesma distância e contam como uma
+    vistas, distintas = set(), []
+    for q in ordem:
+        chave = "divisão" if (q.atributos or {}).get("emenda_de") else q.id
+        if chave not in vistas:
+            vistas.add(chave)
+            distintas.append(q)
+    empate = (len(distintas) > 1 and longe(distintas[0]) > tol
+              and longe(distintas[1]) - longe(distintas[0]) <= tol)
     return ordem[0], inteiras, empate
 
 

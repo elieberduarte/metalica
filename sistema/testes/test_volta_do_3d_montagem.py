@@ -1442,3 +1442,22 @@ def test_o_caso_puro_da_ponta_puxada_e_so_ele_fica_fora_da_planta():
     antes = _texto(des)
     assert DPE.planta_do_modelo(des, doc, [])["alteracoes"] == ["viga TC: " + _puxada("até a face da tesoura", "encurtada", 38)]
     assert _texto(des) == antes
+
+
+def test_a_barra_dividida_no_lugar_e_uma_copia_ao_lado_a_planta_fica():
+    """C (3ª leitura, 2-3): "a mais próxima" media a barra dividida pedaço por pedaço — a terça dividida no lugar (2000 +
+    3460) e uma cópia inteira 300 mm ao lado, sem carimbo: a cópia ganhava (600 < 2000) e a planta andava 300 mm sem o
+    usuário ter mexido. A barra dividida mede-se pelas pontas da cadeia dos pedaços"""
+    des, doc, eid = _terca_solta()
+    _sem_carimbo(doc)
+    original = copy.deepcopy(_cv(doc, eid))
+    m, ids = _dividir_no_editor(doc.dict(), original.id, 2000)
+    doc2 = Documento.de_dict(m)
+    c = copy.deepcopy(original)
+    c.id = "copia-inteira"
+    c.atributos = {k: v for k, v in c.atributos.items() if k != "emenda_de"}
+    _andar(c, (0.0, 300.0, 0.0))
+    doc2.entidades = {c.id: c, **doc2.entidades}
+    antes = _texto(des)
+    r = DPE.planta_do_modelo(des, doc2, [])
+    assert r["alteracoes"] == [] and _texto(des) == antes, r["alteracoes"]
