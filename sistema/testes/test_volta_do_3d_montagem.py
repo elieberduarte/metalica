@@ -901,9 +901,6 @@ def test_modelo_da_v092_um_contravento_movido_volta_so_ele(hangar_bruto):
     assert DPE.montagem_do_modelo(des, doc, niveis)["alteracoes"] == ["viga CV5: movida 200 mm"]
 
 
-@pytest.mark.xfail(strict=True, reason="reforço A (14/11): a régua da volta é a montagem de HOJE; o Hangar gravado "
-                   "pela 0.9.0 difere dela em 92 de 275 elementos, e 1 contravento movido faz os 32 voltarem — a saída "
-                   "está com o GESTÃO N.10 / o usuário. Quando a correção entrar, este teste passa e o xfail sai")
 def test_modelo_da_v090_um_contravento_movido_nao_traz_os_outros_31(hangar_bruto):
     """a 0.9.0 (21/10) não alongava a ponta do contravento até o furo da aleta: as barras dela não são as da régua de
     hoje. 1 CV movido 200 mm dava 32 alterações (CV1–CV8 ×4, "comprimento 6575 → 6493 mm, movida 231 mm…"). Vale só

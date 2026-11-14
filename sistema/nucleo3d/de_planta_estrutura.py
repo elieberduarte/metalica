@@ -2823,21 +2823,103 @@ def _pontas_da_barra(p3: Barra, pecas: list, tol: float = 1.0, L_ref: Optional[f
 FORA_DA_RETA = "barra dividida com pedaço fora da reta: a planta não foi alterada"
 
 
-def _pecas_da_montagem(des: Desenho, niveis: Optional[Sequence[dict]]) -> Dict[str, list]:
+def _pecas_da_montagem(des: Desenho, niveis: Optional[Sequence[dict]]) -> Tuple[Dict[str, list], Optional[Documento]]:
     """O 3D que a montagem gera da planta de agora, por elemento (`origem_2d`): a régua da volta para o que não tem o
     carimbo da montagem — o modelo gerado antes de 14/11/2026 e as peças que não são barra. Custa uma montagem (segundos
     no modelo grande): só é feita quando a volta acha mudança num elemento sem carimbo (planta_do_modelo). A planta vai
-    numa cópia. A planta de que a montagem não tira peça nenhuma não tem régua: a volta segue pela conta de sempre."""
+    numa cópia. A planta de que a montagem não tira peça nenhuma não tem régua: a volta segue pela conta de sempre.
+    Devolve (as peças por elemento, o modelo da régua)."""
     try:
         ref, _avisos = modelo_da_planta(copy.deepcopy(des), niveis)
     except ErroDeDados:
-        return {}
+        return {}, None
     out: Dict[str, list] = {}
     for p3 in ref.entidades.values():
         o = (p3.atributos or {}).get("origem_2d")
         if o:
             out.setdefault(str(o), []).append(p3)
-    return out
+    return out, ref
+
+
+def _medida_propria(tipo: str, a: dict, pecas: list):
+    """(a barra carimbada, as pontas em que ela estava quando já veio): o elemento que se mede por um dos dois não usa
+    a régua da montagem"""
+    carimbada = next((q for q in pecas if _carimbo(q)), None) if tipo == "viga" else None
+    ja_veio = _trazida(a, carimbada or pecas[0]) if tipo == "viga" else None
+    return carimbada, ja_veio
+
+
+#: o elemento acusado num modelo de outra versão da montagem que nem os vizinhos decidem (revisão de 14/11, reforço A)
+VERSAO_ANTERIOR = ("o 3D desta peça foi montado por uma versão anterior do programa e não dá para separar o que você "
+                   "mexeu do que a montagem mudou — a planta não foi alterada. Faça o mesmo ajuste na planta: gerar o 3D "
+                   "de novo pela planta refaz a peça e o que foi mexido só no 3D se perde")
+
+
+def _onde_a_regua_vale(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]], tol: float, acusados: set,
+                       regua: Dict[str, list], doc_regua: Optional[Documento]) -> Tuple[set, set]:
+    """Em que elementos sem carimbo a régua da montagem de agora mede a volta: (usar_regua, ambiguos).
+
+    A régua é a montagem de AGORA; o modelo gravado por outra versão da montagem não é o dela (o Hangar da 0.9.0 difere
+    da de hoje em 92 de 275 elementos) — usada em todo elemento sem carimbo, 1 contravento movido fazia os 32 voltarem
+    (revisão de 14/11, reforço A). Então:
+    1. só o elemento que o ensaio (pela linha da planta) acusou pode usar a régua: o que a linha explica não mudou;
+    2. no acusado em que a régua difere da linha, decidem os vizinhos do mesmo papel em que a régua também difere da
+       linha: o que não foi acusado bate com a linha (vota "linha": montagem antiga), o acusado que bate com a régua vota
+       "régua" (montagem de agora), e a barra carimbada por esta versão também vota "régua" (a marca de versão do
+       carimbo); a maioria do papel decide, depois a do modelo; empate ou nenhum voto → `ambiguos`
+       (a planta fica e a volta diz, VERSAO_ANTERIOR). Não há corte por quantidade: 10 terças mexidas de verdade voltam.
+    Onde a régua não difere da linha, tanto faz (mede-se pela linha). A sincronia troca todas as peças de uma planta
+    de uma vez: as peças sem carimbo de uma volta vêm da mesma montagem."""
+    if not acusados or not regua or doc_regua is None:
+        return set(), set()
+    # onde a régua difere da linha da planta: o ensaio da própria régua, sem o carimbo dela
+    sem = copy.deepcopy(doc_regua)
+    for p3 in sem.entidades.values():
+        if GERADA in (p3.atributos or {}):
+            p3.atributos = {k: v for k, v in p3.atributos.items() if k != GERADA}
+    difere = set(_volta_do_3d(copy.deepcopy(des), sem, niveis, tol, None, ensaio=True)["mudados"])
+    por_origem: Dict[str, list] = {}
+    for p3 in doc.entidades.values():
+        o = (p3.atributos or {}).get("origem_2d")
+        if o:
+            por_origem.setdefault(str(o), []).append(p3)
+    votos: Dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+    usar, decidir = set(), []
+    for it in elementos(des):
+        e, a, tipo = it["entidade"], it["atributos"], it["elemento"]
+        pecas, refs = por_origem.get(e.id), regua.get(e.id)
+        if tipo in ("furo", "trelica") or not pecas or not refs:
+            continue
+        carimbada, ja_veio = _medida_propria(tipo, a, pecas)
+        papel = str(a.get("papel") or tipo)
+        if carimbada is not None and (carimbada.atributos or {}).get(GERADA, {}).get("versao") == _versao_da_montagem():
+            votos[papel]["regua"] += 1                    # montada por esta versão: o modelo é da montagem de agora
+        if carimbada is not None or ja_veio is not None:
+            continue
+        acusado = e.id in acusados
+        if e.id not in difere:
+            continue                                      # a régua é a linha: mede-se pela linha
+        bate = _como_a_montagem_fez(pecas, refs, tol)
+        if not acusado:
+            votos[papel]["linha"] += 1
+        elif bate:
+            votos[papel]["regua"] += 1
+            usar.add(e.id)                                # igual à régua: a volta não acusa nada
+        else:
+            decidir.append((e.id, papel))
+    modelo = collections.Counter()
+    for c in votos.values():
+        modelo.update(c)
+    ambiguos = set()
+    for eid, papel in decidir:
+        for c in (votos.get(papel) or collections.Counter(), modelo):
+            if c["regua"] != c["linha"]:
+                if c["regua"] > c["linha"]:
+                    usar.add(eid)
+                break
+        else:
+            ambiguos.add(eid)
+    return usar, ambiguos
 
 
 def _como_a_montagem_fez(pecas: list, refs: list, tol: float) -> bool:
@@ -2860,16 +2942,19 @@ def planta_do_modelo(des: Desenho, doc: Documento, niveis: Optional[Sequence[dic
     """A volta do lançamento: o que mudou no 3D vai para a planta (mm) — a conta está em _volta_do_3d. Primeiro um ensaio
     numa cópia da planta, sem a régua da montagem: a barra com o carimbo da montagem (ou já trazida) resolve-se por ele.
     Se sobrar mudança num elemento sem carimbo, a régua é montada (_pecas_da_montagem) e a conta vale com ela. `novas`:
-    as peças feitas no 3D entram na planta (na Montagem não entram)."""
+    as peças feitas no 3D entram na planta (na Montagem não entram). A régua só vale onde _onde_a_regua_vale diz (o
+    modelo gravado por outra versão da montagem, reforço A de 14/11)."""
     ensaio = _volta_do_3d(copy.deepcopy(des), doc, niveis, tol, None, ensaio=True)
-    regua = _pecas_da_montagem(des, niveis) if ensaio["sem_carimbo"] else None
-    out = _volta_do_3d(des, doc, niveis, tol, regua, novas=novas)
+    regua, doc_regua = _pecas_da_montagem(des, niveis) if ensaio["sem_carimbo"] else ({}, None)
+    usar, ambiguos = _onde_a_regua_vale(des, doc, niveis, tol, set(ensaio["sem_carimbo"]), regua, doc_regua)
+    out = _volta_do_3d(des, doc, niveis, tol, regua, novas=novas, usar_regua=usar, ambiguos=ambiguos)
     out.pop("sem_carimbo", None)
     return out
 
 
 def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]], tol: float,
-                 da_montagem: Optional[Dict[str, list]], ensaio: bool = False, novas: bool = True) -> Dict[str, list]:
+                 da_montagem: Optional[Dict[str, list]], ensaio: bool = False, novas: bool = True,
+                 usar_regua: Optional[set] = None, ambiguos: Optional[set] = None) -> Dict[str, list]:
     """a volta do lançamento: o que mudou no 3D vai para a planta (mm).
 
     * a peça que veio da planta (`origem_2d`) e foi movida no 3D move o elemento (e o rótulo dele);
@@ -2919,10 +3004,12 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
         # a barra carimbada pela montagem mede-se pelo carimbo. Sem carimbo, a régua: o que a montagem gera deste
         # elemento — igual → nada mudou no 3D. (O elemento que a montagem de agora não gera — recusado por um dado da
         # planta — segue pela conta de sempre, contra a linha da planta.)
-        carimbada = next((q for q in pecas if _carimbo(q)), None) if tipo == "viga" else None
-        ja_veio = _trazida(a, carimbada or pecas[0]) if tipo == "viga" else None
+        carimbada, ja_veio = _medida_propria(tipo, a, pecas)
         propria = carimbada is not None or ja_veio is not None       # mede-se sem a régua da montagem
-        refs = da_montagem.get(e.id) if not propria else None
+        if not propria and ambiguos and e.id in ambiguos:
+            out["alteracoes"].append("%s %s: %s" % (tipo, marca, VERSAO_ANTERIOR))
+            continue
+        refs = da_montagem.get(e.id) if not propria and (usar_regua is None or e.id in usar_regua) else None
         if refs and _como_a_montagem_fez(pecas, refs, tol):
             continue
         x0, x1 = min(c[0] for c in cx3), max(c[1] for c in cx3)
