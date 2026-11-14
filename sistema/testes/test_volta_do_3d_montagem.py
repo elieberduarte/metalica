@@ -637,6 +637,11 @@ def _saidas_do_modelo(app, raiz, modelo):
     def texto(x):
         return re.sub(r"folha-[0-9a-f]{6,}", "folha-X", json.dumps(limpo(x), sort_keys=True, ensure_ascii=False))
     saidas = {n: texto(g.abrir_desenho(s, n)) for n in nomes + [pr["desenho"]]}
+    # a lista dos arquivos da obra vem "o mais novo primeiro", pela hora em segundos (arquivos_projeto.listar): dois
+    # arquivos gravados no mesmo segundo numa geração e em segundos diferentes na outra trocam de lugar — pelo nome
+    if isinstance((lista.get("arquivos") or {}).get("todos"), list):
+        lista = dict(lista, arquivos=dict(lista["arquivos"], todos=sorted(lista["arquivos"]["todos"],
+                                                                          key=lambda a: (a.get("pasta"), a.get("nome")))))
     saidas["lista de materiais"] = texto(lista)
     return saidas, len(pr.get("pranchas") or [])
 
