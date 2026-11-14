@@ -91,10 +91,20 @@ ESPACO_CADEIA = 3.0 * 2.5
 
 
 def arredondar_telha(mm: float, passo: float = None) -> float:
-    """Comprimento de compra/corte da telha: o múltiplo de `passo` (PASSO_TELHA, a reta) logo acima (com
-    0,05 mm de folga, para 1450,00 não virar 1500)."""
+    """Comprimento de compra/corte da telha: o múltiplo de `passo` logo acima.
+
+    A reta (PASSO_TELHA, 50): primeiro o mm inteiro MAIS PRÓXIMO (meio mm sobe), depois o passo — 1.550,06 → 1.550;
+    1.550,5 → 1.600 (usuário, 14/11: com o passo de 50 o ruído da geometria virava 5 cm de telha; no Depósito Químico as
+    TL1 de 1.550,1 no corte). O ponto flutuante de um meio mm de verdade (1.550,4999999…) conta como meio mm: a medida é
+    arredondada a 1e-6 mm antes. A dobrada (PASSO_DOBRADA: multidobra, cumeeira) segue a conta de antes, só com 0,05 mm
+    de folga (DET-03, o desenvolvido exato para cima)."""
     passo = float(passo or PASSO_TELHA)
-    return float(math.ceil((float(mm) - 0.05) / passo) * passo) if mm > 0 else 0.0
+    if not mm or mm <= 0:
+        return 0.0
+    if passo == PASSO_TELHA:
+        inteiro = math.floor(round(float(mm), 6) + 0.5)
+        return float(-(-inteiro // int(passo)) * int(passo))
+    return float(math.ceil((float(mm) - 0.05) / passo) * passo)
 
 
 def _area_casco(pontos) -> float:

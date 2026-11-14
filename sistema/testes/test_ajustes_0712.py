@@ -16,7 +16,8 @@ def test_telha_arredondada_para_cima_de_5_em_5():
     assert arredondar_telha(1449.0) == 1450.0
     assert arredondar_telha(1450.0) == 1450.0
     assert arredondar_telha(1450.02) == 1450.0          # décimo de malha não vira mais um passo
-    assert arredondar_telha(1450.3) == 1500.0
+    assert arredondar_telha(1450.3) == 1450.0          # o mm mais próximo antes do passo (14/11; era 1500)
+    assert arredondar_telha(1450.5) == 1500.0
     assert arredondar_telha(1891.0) == 1900.0
     assert arredondar_telha(1450.3, PASSO_DOBRADA) == 1455.0
     assert arredondar_telha(2087.0, PASSO_DOBRADA) == 2090.0
