@@ -2835,6 +2835,25 @@ PONTA_PUXADA = {"terça": "até a face da tesoura", "terca": "até a face da tes
                 "contraventamento": "até o furo da ligação"}
 
 
+def _cotas_pelas_pontas(a: dict, mud: list, tab: Dict[str, float], da: float, db: float, tol: float) -> None:
+    """As cotas da viga pelas pontas, com o quanto cada ponta subiu (`da`, `db`, mm): a de `nivel_topo` é a da ponta a;
+    a ponta b tem a dela (`nivel_fim`) ou a mesma. Só a ponta a mudando e a b sem `nivel_fim`: a b passa a guardar a
+    cota em que estava (sem ele ia junto — 1ª revisão de 14/11, achado 1). Mexe em `a` e diz em `mud`."""
+    topo0 = _nivel(a.get("nivel_topo"), tab, 3000.0)
+    fim0 = _nivel(a.get("nivel_fim"), tab, 0.0) if a.get("nivel_fim") is not None else topo0
+    if abs(da) > tol:
+        mud.append("topo %s → %s" % (a.get("nivel_topo"), mm_inteiro(topo0 + da)))
+        a["nivel_topo"] = mm_inteiro(topo0 + da)                        # o meio para o maior (DET-03)
+    if abs(db) > tol and (a.get("nivel_fim") is not None or abs(db - da) > tol):
+        mud.append("topo da outra ponta %s → %s" % (a.get("nivel_fim") if a.get("nivel_fim") is not None else "—",
+                                                     mm_inteiro(fim0 + db)))
+        a["nivel_fim"] = mm_inteiro(fim0 + db)
+    elif a.get("nivel_fim") is None and abs(db - da) > tol:
+        # a b fica com a cota em que estava, sem arredondar (ela não mudou)
+        a["nivel_fim"] = int(fim0) if float(fim0).is_integer() else fim0
+        mud.append("a outra ponta fica em %s" % a["nivel_fim"])
+
+
 def _ajuste_das_pontas_puxadas(e, ref, pi, pf, onde: str, tol: float):
     """Tira das pontas puxadas pela montagem (a de referência fora da ponta da linha, em planta) o ajuste ao longo do
     eixo que o usuário fez no 3D, e diz qual foi: (pi, pf, aviso ou None). Mexida essa ponta, a volta somava o delta à
@@ -3134,22 +3153,10 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
                 for r in rotulos.get(e.id, []):
                     _mover_2d(r, dx, dy)
                 e.a, e.b = na, nb
+            cotas_feitas = False
             if ref is not None:
                 # as cotas pelas pontas: a de `nivel_topo` é a da ponta a; a ponta b tem a dela (`nivel_fim`) ou a mesma
-                topo0 = _nivel(a.get("nivel_topo"), tab, 3000.0)
-                fim0 = _nivel(a.get("nivel_fim"), tab, 0.0) if a.get("nivel_fim") is not None else topo0
-                if abs(di[2]) > tol:
-                    mud.append("topo %s → %s" % (a.get("nivel_topo"), mm_inteiro(topo0 + di[2])))
-                    a["nivel_topo"] = mm_inteiro(topo0 + di[2])                # o meio para o maior (DET-03)
-                if abs(df[2]) > tol and (a.get("nivel_fim") is not None or abs(df[2] - di[2]) > tol):
-                    mud.append("topo da outra ponta %s → %s" % (a.get("nivel_fim") if a.get("nivel_fim") is not None else "—",
-                                                                 mm_inteiro(fim0 + df[2])))
-                    a["nivel_fim"] = mm_inteiro(fim0 + df[2])
-                elif a.get("nivel_fim") is None and abs(df[2] - di[2]) > tol:
-                    # só a ponta a mudou de cota e a b não tinha a dela: sem `nivel_fim` a b ia junto (revisão de 14/11)
-                    # — a b fica com a cota em que estava, sem arredondar (ela não mudou)
-                    a["nivel_fim"] = int(fim0) if float(fim0).is_integer() else fim0
-                    mud.append("a outra ponta fica em %s" % a["nivel_fim"])
+                _cotas_pelas_pontas(a, mud, tab, di[2], df[2], tol)
                 if mud:
                     # veio: a linha guarda a peça e onde ela estava (a volta seguinte mede a partir daí)
                     a[TRAZIDO] = {"peca": p3.id, "barra": [list(pi), list(pf)]}
@@ -3158,8 +3165,14 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
                 # descontar meio perfil, a terça apoiada pela face de baixo "subia" 63,5 mm a cada volta do 3D (20/10)
                 alin = a.get("alinhamento") or "eixo"
                 h = _altura_do_perfil((a.get("secao") or {}).get("perfil", "W 310×38,7"))
-                zt -= {"topo": -h / 2.0, "base": h / 2.0}.get(alin, 0.0)
-            if ref is None and tipo == "viga" and abs(_nivel(a.get("nivel_topo"), tab, zt) - zt) > tol:
+                desc = {"topo": -h / 2.0, "base": h / 2.0}.get(alin, 0.0)
+                # e cada ponta com a cota dela, como no caminho com carimbo: a conta de sempre lia só a ponta a — a b subia
+                # junto, ou mexida sozinha se perdia calada (2ª revisão de 14/11, achado 1; já era assim na 0.9.3)
+                topo0 = _nivel(a.get("nivel_topo"), tab, 3000.0)
+                fim0 = _nivel(a.get("nivel_fim"), tab, 0.0) if a.get("nivel_fim") is not None else topo0
+                _cotas_pelas_pontas(a, mud, tab, pi[2] - desc - topo0, pf[2] - desc - fim0, tol)
+                cotas_feitas = True
+            if ref is None and not cotas_feitas and tipo == "viga" and abs(_nivel(a.get("nivel_topo"), tab, zt) - zt) > tol:
                 mud.append("topo %s → %s" % (a.get("nivel_topo"), mm_inteiro(zt)))
                 a["nivel_topo"] = mm_inteiro(zt)
             if tipo == "tesoura" and abs(_nivel(a.get("nivel_base"), tab, z0) - min(z0, _nivel(a.get("nivel_fim"), tab, z0))) > tol:

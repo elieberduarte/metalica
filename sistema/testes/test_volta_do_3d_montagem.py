@@ -662,15 +662,18 @@ def test_detalhar_pranchas_e_lista_sao_os_mesmos_com_e_sem_o_carimbo(tmp_path, m
 
 
 # ------------------------------------------------------------------ os achados da revisão independente (14/11)
+@pytest.mark.parametrize("modelo", ["de agora", "de antes"])
 @pytest.mark.parametrize("nivel_fim", [None, 6454.0, 6700.0])
 @pytest.mark.parametrize("caso, sobe_a, sobe_b", [("só a ponta a", 100.0, 0.0), ("só a ponta b", 0.0, 100.0),
                                                    ("as duas, diferente", 100.0, 40.0), ("as duas, igual", 70.0, 70.0),
                                                    ("uma sobe e a outra desce", 60.0, -30.0)])
-def test_a_ponta_levantada_no_3d_leva_so_ela_na_planta(caso, sobe_a, sobe_b, nivel_fim):
+def test_a_ponta_levantada_no_3d_leva_so_ela_na_planta(caso, sobe_a, sobe_b, nivel_fim, modelo):
     """achado 1: com a terça sem `nivel_fim`, só a ponta `inicio` levantada 100 mm no 3D dava "topo 6454 → 6554" e a
     ponta b ia junto (o 3D refeito punha as duas em cima). Cada ponta leva a cota dela: o 3D refeito da planta fica
     como o usuário deixou"""
     des, doc, eid = _terca_solta(nivel_topo=6454.0, nivel_fim=nivel_fim)
+    if modelo == "de antes":                                    # 2ª revisão, achado 1: o modelo sem carimbo também
+        _sem_carimbo(doc)
     b = _cv(doc, eid)
     za, zb = b.inicio[2], b.fim[2]
     b.inicio = (b.inicio[0], b.inicio[1], za + sobe_a)
@@ -1091,3 +1094,4 @@ def test_o_recuo_da_ponta_so_e_lido_nos_papeis_que_a_montagem_puxa():
     b.inicio = (b.inicio[0] + 30.0, b.inicio[1], b.inicio[2])  # e o usuário encurtou mais 30 no 3D
     r = DPE.planta_do_modelo(des, doc, [])
     assert r["alteracoes"] == ["viga T.C.1: comprimento 5460 → 5430 mm, movida 15 mm"]
+
