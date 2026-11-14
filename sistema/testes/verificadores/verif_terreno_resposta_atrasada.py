@@ -99,7 +99,7 @@ def abrir(aba, pronto):
     return esperar(aba, "!!document.getElementById('terreno-ajuste')", 10)
 
 
-def dois_cliques_com_o_pedido_no_ar(aba):
+def dois_cliques_com_o_pedido_no_ar(aba, quem="Chão"):
     """Outra cota −0,50 → o pedido sai (0,5 s) → 1º +5 com ele no ar → a resposta volta (1,5 s) → 2º +5."""
     g0 = aba.avaliar("window.__gravacoes")
     aba.avaliar("(s => { s.value = 'outra'; s.dispatchEvent(new Event('change')); return 1; })(document.getElementById('terreno-cota-sel'))")
@@ -110,11 +110,11 @@ def dois_cliques_com_o_pedido_no_ar(aba):
     clicar_no(aba, "[data-ajuste='50']")                # o 2º clique
     aba.drenar(0.1)
     frase = aba.avaliar(FRASE)
-    ok(frase == "Chão em −0,40 (cota −0,50 + 10 cm).", f"a frase logo depois do 2º clique: 10 cm ({frase!r})")
+    ok(frase == f"{quem} em −0,40 (cota −0,50 + 10 cm).", f"a frase logo depois do 2º clique: 10 cm ({frase!r})")
     ok(esperar(aba, f"Math.abs({PISO} + 400) < 1", 2), f"o chão liso em −0,40 ({aba.avaliar(PISO):.0f} mm)")
     aba.drenar(4.5)                                     # as respostas atrasadas todas de volta
     frase = aba.avaliar(FRASE)
-    ok(frase == "Chão em −0,40 (cota −0,50 + 10 cm).", f"depois de todas as respostas, a frase segue em 10 cm ({frase!r})")
+    ok(frase == f"{quem} em −0,40 (cota −0,50 + 10 cm).", f"depois de todas as respostas, a frase segue em 10 cm ({frase!r})")
     ok(abs(aba.avaliar(PISO) + 400) < 1, f"e o chão liso em −0,40 ({aba.avaliar(PISO):.0f} mm)")
     ok(abs(aba.avaliar(SOMBRA) + 400) < 1, f"e a sombra em −0,40 ({aba.avaliar(SOMBRA):.0f} mm)")
     ok(aba.avaliar("document.getElementById('terreno-ajuste').value") == "10", "o campo do ajuste em 10")
@@ -152,7 +152,7 @@ try:
     post("/chao", {})
     post("/baixar-imagem", {"caixa": [-5000, -5000, 5000, 5000]})
     ok(abrir(aba, " && window.terreno.malha"), "o painel abre com a imagem")
-    dois_cliques_com_o_pedido_no_ar(aba)
+    dois_cliques_com_o_pedido_no_ar(aba, "Imagem")                # com o local, a frase fala da imagem
     z = aba.avaliar("window.terreno.zChao")
     ok(abs(z - (-500 - 3 + 100)) < 1, f"a imagem em −0,40 ({z:.0f} mm)")
     t = _json(API)["terreno"]

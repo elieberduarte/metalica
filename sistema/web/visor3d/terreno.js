@@ -960,7 +960,9 @@ export class Terreno {
         const g = this._gravacaoDe(qual);
         if (!g) continue;
         try {
-          fetch(this.api + g[0], { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(g[1]) });
+          // o mesmo pedido do _pedir (a licença é do servidor, não vai no cabeçalho); a resposta ninguém lê: a página já foi
+          fetch(this.api + g[0], { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(g[1]) })
+            .catch(() => { /* o corpo passou de 64 kB do keepalive, ou o servidor caiu: fica a última gravação */ });
         } catch (e) { /* a página já foi */ }
       }
       this._porMandar.clear();
