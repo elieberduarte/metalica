@@ -28,6 +28,7 @@ def _texto(nome, n=2):
 
 def test_ctrl_s_sem_mudanca_na_aba_b_nao_derruba_a_aba_a():
     with tempfile.TemporaryDirectory() as raiz:
+        antes = os.environ.get("METALICA_DADOS")           # a pasta temporária do conftest: volta no fim
         os.environ["METALICA_DADOS"] = raiz
         try:
             import app
@@ -45,12 +46,16 @@ def test_ctrl_s_sem_mudanca_na_aba_b_nao_derruba_a_aba_a():
             with open(caminho, "rb") as f:
                 assert f.read() == _texto("Obra", 1)
         finally:
-            del os.environ["METALICA_DADOS"]
+            if antes is None:
+                os.environ.pop("METALICA_DADOS", None)
+            else:
+                os.environ["METALICA_DADOS"] = antes
             importlib.reload(app)
 
 
 def test_gravacao_sobre_versao_velha_e_recusada_como_conflito():
     with tempfile.TemporaryDirectory() as raiz:
+        antes = os.environ.get("METALICA_DADOS")           # a pasta temporária do conftest: volta no fim
         os.environ["METALICA_DADOS"] = raiz
         try:
             import app
@@ -68,7 +73,10 @@ def test_gravacao_sobre_versao_velha_e_recusada_como_conflito():
             with open(app._gerente().caminho_modelo(s), "rb") as f:
                 assert f.read() == _texto("Obra B", 3)                            # o da aba B ficou
         finally:
-            del os.environ["METALICA_DADOS"]
+            if antes is None:
+                os.environ.pop("METALICA_DADOS", None)
+            else:
+                os.environ["METALICA_DADOS"] = antes
             importlib.reload(app)
 
 
@@ -144,6 +152,7 @@ def test_gravar_as_minhas_por_cima_guarda_a_outra_no_historico():
     """A aba desatualizada escolhe "Gravar as minhas por cima": grava mesmo com a base velha, e a versão que estava no
     disco (a da outra aba) vai antes para o histórico com o rótulo — dá para voltar pelo Restaurar."""
     with tempfile.TemporaryDirectory() as raiz:
+        antes = os.environ.get("METALICA_DADOS")           # a pasta temporária do conftest: volta no fim
         os.environ["METALICA_DADOS"] = raiz
         try:
             import app
@@ -162,13 +171,17 @@ def test_gravar_as_minhas_por_cima_guarda_a_outra_no_historico():
             app._gerente().restaurar_modelo(s, app._gerente().listar_historico(s)[0]["arquivo"])
             assert app.modelo_do_projeto(s)["documento"]["nome"] == "Obra B"
         finally:
-            del os.environ["METALICA_DADOS"]
+            if antes is None:
+                os.environ.pop("METALICA_DADOS", None)
+            else:
+                os.environ["METALICA_DADOS"] = antes
             importlib.reload(app)
 
 
 def test_abrir_a_versao_gravada_guarda_as_minhas_no_historico():
     """"Abrir a versão gravada": as edições da aba desatualizada vão para o histórico com o rótulo; o modelo.json não muda."""
     with tempfile.TemporaryDirectory() as raiz:
+        antes = os.environ.get("METALICA_DADOS")           # a pasta temporária do conftest: volta no fim
         os.environ["METALICA_DADOS"] = raiz
         try:
             import app
@@ -184,5 +197,8 @@ def test_abrir_a_versao_gravada_guarda_as_minhas_no_historico():
             rot, conteudo = _historico(app, s)[0]
             assert rot.startswith("edições não gravadas") and conteudo == _texto("Obra A", 1), rot
         finally:
-            del os.environ["METALICA_DADOS"]
+            if antes is None:
+                os.environ.pop("METALICA_DADOS", None)
+            else:
+                os.environ["METALICA_DADOS"] = antes
             importlib.reload(app)
