@@ -1306,3 +1306,40 @@ def test_empate_de_votos_acima_de_zero_nao_afirma_versao(hangar_bruto):
     r = DPE.montagem_do_modelo(des, antigo, niveis)
     assert _texto(des) == antes and r["mudados"] == []
     assert len(r["alteracoes"]) == 2 and all(t.endswith(DPE.VIZINHOS_DISCORDAM) for t in r["alteracoes"]), r["alteracoes"]
+
+
+def test_armadilha_a_montagem_de_hoje_e_a_da_v092_para_os_modelos_sem_carimbo(hangar_bruto):
+    """(b) ARMADILHA (revisão do delta, 14/11): o "grupo movido junto" (_onde_a_regua_vale) lê como do usuário uma
+    diferença de montagem que seja translação — não há como separar pelos dados. Vale enquanto a montagem de hoje for a
+    que gravou os modelos sem carimbo (0.9.2/0.9.3: 0 de 275 elementos do Hangar diferem). Quando uma regra de montagem
+    mudar, este teste cai: rever o critério do grupo para os papéis afetados antes de publicar"""
+    _b, _niveis, modelo = hangar_bruto
+    with open(os.path.join(AQUI, "dados_cad", "hangar_gerado_v0_9_2.json"), encoding="utf-8") as f:
+        v092 = Documento.de_dict(json.load(f)["modelo"])
+    hoje = Documento.de_dict(copy.deepcopy(modelo))
+
+    def por_origem(doc):
+        out = {}
+        for p in doc.entidades.values():
+            o = (p.atributos or {}).get("origem_2d")
+            if o:
+                out.setdefault(o, []).append(p)
+        return out
+    H, V = por_origem(hoje), por_origem(v092)
+    difere = []
+    for o, pv in V.items():
+        ph = H.get(o) or []
+        if len(ph) != len(pv):
+            difere.append(o)
+            continue
+        for x, y in zip(pv, ph):
+            if isinstance(x, Barra) and isinstance(y, Barra):
+                if max(math.dist(x.inicio, y.inicio), math.dist(x.fim, y.fim)) > 0.01:
+                    difere.append(o)
+                    break
+            elif json.dumps(x.dict().get("vertices"), default=str) != json.dumps(y.dict().get("vertices"), default=str):
+                difere.append(o)
+                break
+    assert len(V) == 275
+    assert not difere, ("a montagem de hoje difere da v0.9.2 em %d elemento(s) do Hangar: modelos sem carimbo — rever "
+                        "o critério do grupo movido junto (_onde_a_regua_vale) para os papéis afetados" % len(difere))
