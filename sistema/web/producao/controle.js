@@ -219,12 +219,27 @@
       p = el('p', { id: 'ctl-nuvem', style: 'margin:4px 0 0;font-size:12.5px' });
       $('#obra-sub').after(p);
     }
+    const s = textoDoSelo(nv);
+    p.textContent = s.texto;
+    p.title = s.dica;
+    p.className = nv.erro || nv.pendentes ? 'ctl-meio' : 'ctl-ok';
+  }
+
+  // o texto do selo (14/11): sem internet, a frase do programa — o texto do Windows ("[WinError 10061] Nenhuma conexão pôde
+  // ser feita…", obra_compartilhada._pedir) não vai para a tela; fica no balão, para o suporte
+  function textoDoSelo(nv) {
     const papel = nv.papel_nome ? ` · você é ${nv.papel_nome}` : '';
+    const sobre = 'Os apontamentos desta obra vão para a nuvem e chegam aos computadores de quem tem acesso. Sem internet, ficam aqui e sobem sozinhos depois.';
+    if (/^sem conexão com a nuvem/i.test(nv.erro || '')) {
+      const k = nv.pendentes || 0;
+      const guardados = k ? `${n(k)} apontamento${k > 1 ? 's' : ''} guardado${k > 1 ? 's' : ''} aqui; ${k > 1 ? 'sobem' : 'sobe'} quando a conexão voltar`
+        : 'os apontamentos ficam guardados aqui e sobem quando a conexão voltar';
+      return { texto: '☁ Obra compartilhada' + papel + ' — sem internet: ' + guardados, dica: sobre + '\n\nDetalhe: ' + nv.erro };
+    }
     const fila = nv.pendentes ? ` · ${n(nv.pendentes)} apontamento${nv.pendentes > 1 ? 's' : ''} esperando a internet` : '';
     const dia = nv.quando ? ` (${horaBR(nv.quando)})` : '';
-    p.textContent = '☁ Obra compartilhada' + papel + (fila || (nv.erro ? '' : ' · em dia com a nuvem' + dia)) + (nv.erro ? ' — ' + nv.erro : '');
-    p.title = 'Os apontamentos desta obra vão para a nuvem e chegam aos computadores de quem tem acesso. Sem internet, ficam aqui e sobem sozinhos depois.';
-    p.className = nv.erro || nv.pendentes ? 'ctl-meio' : 'ctl-ok';
+    return { texto: '☁ Obra compartilhada' + papel + (fila || (nv.erro ? '' : ' · em dia com a nuvem' + dia)) + (nv.erro ? ' — ' + nv.erro : ''),
+             dica: sobre };
   }
 
   function desenhar() {
