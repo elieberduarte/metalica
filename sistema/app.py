@@ -678,14 +678,25 @@ def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
         nome += ".ifc"
     destino = os.path.join(pasta, "origem", nome)
     os.makedirs(os.path.dirname(destino), exist_ok=True)
+    chegando = destino + ".recebendo"
     try:
         _progresso(s, "gravando o IFC na pasta do projeto…")
-        if local:
-            import shutil
-            shutil.move(local, destino)
-        else:
-            with open(destino, "wb") as f:
-                f.write(base64.b64decode(dados))
+        try:
+            if local:
+                import shutil
+                shutil.move(local, chegando)
+            else:
+                with open(chegando, "wb") as f:
+                    f.write(base64.b64decode(dados))
+            if not eh_skp:
+                # o que não é IFC (imagem, PDF, ZIP renomeado, 0 bytes) é recusado antes de entrar na pasta da obra —
+                # e de tomar o lugar do IFC de antes com o mesmo nome (D06, 13/11: virava um projeto com 0 peças, calado)
+                imp.conferir_ifc(chegando, nome)
+            from projetos import trocar_arquivo
+            trocar_arquivo(chegando, destino)
+        finally:
+            if os.path.exists(chegando):
+                os.remove(chegando)
         _progresso(s, "lendo o %s (%.0f MB; leva uns 20 s)…" % ("SKP" if eh_skp else "IFC", os.path.getsize(destino) / 1048576))
         if eh_skp:
             from ifc import skp as _skp
@@ -706,7 +717,18 @@ def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
     finally:
         _fim_progresso(s)
     return {"projeto": s, "estatisticas": doc.estatisticas(),
-            "relatorio": doc.metadados.get("importacao", {}), "resumo": resumo}
+            "relatorio": doc.metadados.get("importacao", {}), "resumo": resumo,
+            "avisos": [resumo["aviso"]] if resumo.get("aviso") else []}
+
+
+def _aviso_ifc_truncado(relatorio: dict, pecas: int) -> str:
+    """O recado do IFC que chegou cortado (D06, 13/11: 176 peças de 434 entraram sem aviso nenhum — o importador sabia,
+    `truncado` no relatório, e nenhuma tela usava). "" quando o arquivo veio inteiro."""
+    if not (relatorio or {}).get("truncado"):
+        return ""
+    return ("O arquivo IFC está INCOMPLETO: termina no meio, sem a marca do fim (END-ISO-10303-21). Só o que vinha antes do "
+            "corte foi lido — %s — e o modelo pode estar faltando peças. Peça o arquivo de novo a quem enviou e importe outra vez."
+            % ("%d peça%s" % (pecas, "" if pecas == 1 else "s") if pecas else "nenhuma peça"))
 
 
 def _resumo_da_importacao(doc) -> dict:
@@ -735,11 +757,16 @@ def _resumo_da_importacao(doc) -> dict:
     pos = {str(_marcas(e).get("posicao")) for e in pecas if _marcas(e).get("posicao")}
     conj = {str(_marcas(e).get("conjunto")) for e in pecas if _marcas(e).get("conjunto")}
     ordem = lambda m: (_re.sub(r"\d+", "", m), int((_re.findall(r"\d+", m) or ["0"])[0]))        # noqa: E731
-    return {"pecas": len(ents), "barras": len(ba), "chapas": len(ch), "fixadores": len(fix), "telhas": len(tel),
-            "outras": max(0, len(ents) - len(ba) - len(ch) - len(fix) - len(tel)),
-            "perfis_fora": fora[:30], "n_perfis_fora": len(fora),
-            "marcas": {"pecas": len(pos), "conjuntos": len(conj),
-                       "exemplo": ", ".join(sorted(pos, key=ordem)[:1] + sorted(pos, key=ordem)[-1:]) if pos else ""}}
+    resumo = {"pecas": len(ents), "barras": len(ba), "chapas": len(ch), "fixadores": len(fix), "telhas": len(tel),
+              "outras": max(0, len(ents) - len(ba) - len(ch) - len(fix) - len(tel)),
+              "perfis_fora": fora[:30], "n_perfis_fora": len(fora),
+              "marcas": {"pecas": len(pos), "conjuntos": len(conj),
+                         "exemplo": ", ".join(sorted(pos, key=ordem)[:1] + sorted(pos, key=ordem)[-1:]) if pos else ""}}
+    aviso = _aviso_ifc_truncado(doc.metadados.get("importacao"), len(ents))
+    if aviso:                                   # fica no projeto.json (importacao_resumo): as telas o mostram sempre
+        resumo["truncado"] = True
+        resumo["aviso"] = aviso
+    return resumo
 
 
 # ---- desenhos 2D (CAD): ver nucleo2d/
@@ -6257,9 +6284,10 @@ def importar_ifc(corpo: dict) -> dict:
     from ifc import importar as imp
     destino = _gravar_ifc_recebido(corpo, "importado.ifc")
     doc = imp.importar(destino)
+    aviso = _aviso_ifc_truncado(doc.metadados.get("importacao"), len(doc.entidades))
     return {"documento": doc.dict(),
             "relatorio": doc.metadados.get("importacao", {}),
-            "estatisticas": doc.estatisticas()}
+            "estatisticas": doc.estatisticas(), "avisos": [aviso] if aviso else []}
 
 
 def inspecionar_ifc(corpo: dict) -> dict:

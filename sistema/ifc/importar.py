@@ -57,7 +57,7 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if RAIZ not in sys.path:
     sys.path.insert(0, RAIZ)
 
-from ifc.step import Arquivo, Entidade, Ref, Tipado, ler                # noqa: E402
+from ifc.step import Arquivo, Entidade, Ref, Tipado, eh_step, ler       # noqa: E402
 from nucleo3d.modelo import (Barra, Camada, Chapa, Documento, Grupo,   # noqa: E402
                              Material, Solido)
 
@@ -3902,6 +3902,7 @@ def importar(caminho: str, **opcoes) -> Documento:
     # O coletor de ciclos do Python varre de tempos em tempos os milhões de objetos que a leitura
     # cria: pausado, o Bella Casa (05/10) importa em 68 s em vez de 84. O que a importação cria
     # se solta pela contagem de referências; o coletor volta ao estado de antes no fim.
+    conferir_ifc(caminho)
     ligado = gc.isenabled()
     gc.disable()
     try:
@@ -3910,6 +3911,30 @@ def importar(caminho: str, **opcoes) -> Documento:
     finally:
         if ligado:
             gc.enable()
+
+
+def conferir_ifc(caminho: str, nome: str = "") -> None:
+    """Recusa o arquivo que não é um IFC em texto (D06, 13/11: uma imagem renomeada para .ifc virava um projeto com 0
+    peças, calado). O leitor é tolerante de propósito — lê o que der de um arquivo quebrado —, então quem diz "isto não
+    é um IFC" é a marca do começo. O arquivo cortado no meio continua entrando, com `truncado` no relatório."""
+    if not os.path.isfile(caminho) or eh_step(caminho):
+        return                                   # o que não existe segue para o `ler`, que diz isso
+    from nucleo.base import ErroDeDados
+    nome = nome or os.path.basename(caminho)
+    try:
+        with open(caminho, "rb") as f:
+            comeco = f.read(64).lstrip(b"\xef\xbb\xbf \t\r\n")
+    except OSError:
+        comeco = b""
+    if not comeco:
+        raise ErroDeDados("%s está vazio (0 bytes): não é um IFC." % nome)
+    if comeco.startswith(b"PK"):
+        o_que = "é um arquivo compactado (IFC-ZIP ou .zip): descompacte e envie o .ifc de dentro dele"
+    elif comeco.startswith(b"<"):
+        o_que = "é um arquivo XML (IFC-XML): exporte no formato .ifc (STEP)"
+    else:
+        o_que = "não começa com ISO-10303-21, como todo IFC em texto"
+    raise ErroDeDados("%s não é um IFC: %s." % (nome, o_que))
 
 
 def importar_texto(texto: str, **opcoes) -> Documento:
@@ -3924,6 +3949,7 @@ def inspecionar(caminho: str) -> dict:
     Não constrói geometria nenhuma — serve para a interface mostrar o que há dentro de
     um arquivo grande antes de o usuário decidir importar.
     """
+    conferir_ifc(caminho)
     inicio = time.time()
     arq = ler(caminho)
     imp = Importador(arq)

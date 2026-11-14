@@ -383,6 +383,7 @@ window.visorLeve = {
 
 async function abrir() {
   if (!PROJETO) { situacao('Nenhum projeto na URL.'); return; }
+  avisoDoIfcIncompleto();            // antes do modelo: vale também quando o corte não deixou peça nenhuma
   let r;
   for (;;) {
     r = await fetch(API_3D, { cache: 'no-cache' });
@@ -441,6 +442,29 @@ async function abrir() {
   cenas3d = ligarCenas3d({ visor, projeto: PROJETO, estado: estadoParaCena, aplicar: aplicarDaCena, abrirPainel, fecharPainel,
     painelAtual: () => painelAtual, situacao, cobertura: () => SIT_COBERTURA, trocarCobertura });
   if (NA_DIVIDIDA) { try { window.parent.postMessage({ metalica: 'pronto3d' }, location.origin); } catch (e) { /* sem a tela de fora */ } }
+}
+
+/** O IFC que chegou cortado (D06, 13/11: 176 peças de 434 abriam aqui sem aviso nenhum): a faixa no alto, em toda
+ *  abertura, até vir o arquivo inteiro. O texto vem pronto do servidor (importacao_resumo.aviso). */
+async function avisoDoIfcIncompleto() {
+  let aviso = '';
+  try {
+    const j = await (await fetch(`/api/projetos/${encodeURIComponent(PROJETO)}`, { cache: 'no-store' })).json();
+    aviso = (((j.projeto || j).importacao_resumo) || {}).aviso || '';
+  } catch (e) { return; }
+  if (!aviso) return;
+  const faixa = document.createElement('div');
+  faixa.id = 'aviso-ifc';
+  faixa.setAttribute('role', 'alert');
+  const texto = document.createElement('span');
+  texto.textContent = '⚠ ' + aviso;
+  const fechar = document.createElement('button');
+  fechar.type = 'button';
+  fechar.textContent = '×';
+  fechar.setAttribute('aria-label', 'Fechar o aviso');
+  fechar.onclick = () => faixa.remove();
+  faixa.append(texto, fechar);
+  document.body.append(faixa);
 }
 
 /** A planta no chão e os níveis (os mesmos do editor): o arquitetônico da Planta de lançamento, os eixos e os níveis do

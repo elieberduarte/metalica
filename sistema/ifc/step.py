@@ -46,7 +46,7 @@ import re
 from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
 __all__ = ["ler", "ler_texto", "ler_cabecalho", "Arquivo", "Entidade", "Ref",
-           "Enumeracao", "Tipado", "DERIVADO", "ErroStep"]
+           "Enumeracao", "Tipado", "DERIVADO", "ErroStep", "eh_step"]
 
 MAX_AVISOS = 500
 
@@ -397,6 +397,8 @@ class Arquivo:
         self.entidades: Dict[int, Entidade] = {}
         self.avisos: List[str] = []
         self.truncado = False
+        self.inicio = False         # a marca ISO-10303-21 apareceu
+        self.fim = False            # a marca END-ISO-10303-21 apareceu
         self._indice: Optional[Dict[str, List[Entidade]]] = None
         self._inversos_tipos: Optional[frozenset] = None
         self._inversos: Optional[Dict[int, List[int]]] = None
@@ -720,6 +722,7 @@ _MARCAS = {"ISO-10303-21": "inicio", "END-ISO-10303-21": "fim", "HEADER": "cabec
 
 def _analisar_fluxo(linhas: Iterable[str], arq: Arquivo, so_cabecalho=False) -> Arquivo:
     secao = "dados"        # sem marcação explícita, assume seção de dados
+    so_o_cabecalho_lido = False
     for bruto, completa in _instrucoes(linhas):
         texto = bruto.strip()
         if not texto:
@@ -731,10 +734,14 @@ def _analisar_fluxo(linhas: Iterable[str], arq: Arquivo, so_cabecalho=False) -> 
             break
         marca = _MARCAS.get(texto.upper())
         if marca is not None:
+            if marca == "inicio":
+                arq.inicio = True
             if marca == "fim":
+                arq.fim = True
                 break
             if marca in ("cabecalho", "dados", "nenhuma"):
                 if marca == "dados" and so_cabecalho:
+                    so_o_cabecalho_lido = True
                     break
                 secao = marca
             continue
@@ -770,9 +777,25 @@ def _analisar_fluxo(linhas: Iterable[str], arq: Arquivo, so_cabecalho=False) -> 
                 # instrução sem `#id` fora do cabeçalho: não há onde guardar
         except ValueError as erro:
             arq.avisar("instrução ignorada (%s): %s" % (erro, texto[:80].replace("\n", " ")))
+    if arq.inicio and not arq.fim and not arq.truncado and not so_o_cabecalho_lido:
+        # cortado bem no fim de uma linha: nenhuma instrução fica pela metade, mas o arquivo que começou com
+        # ISO-10303-21 não chegou ao END-ISO-10303-21 (D06, 13/11: o IFC cortado entrava como se fosse inteiro)
+        arq.truncado = True
+        arq.avisar("arquivo truncado: termina sem a marca END-ISO-10303-21")
     arq._indice = None
     arq._inversos = None
     return arq
+
+
+def eh_step(caminho: str) -> bool:
+    """O arquivo começa como um arquivo de troca ISO-10303-21 (o IFC em texto)? Olha só o começo: a marca vem na
+    primeira linha, e uma imagem, um PDF, um ZIP ou um XML renomeados para .ifc não a têm."""
+    try:
+        with open(caminho, "rb") as f:
+            comeco = f.read(4096)
+    except OSError:
+        return False
+    return b"ISO-10303-21" in comeco.replace(b"\x00", b"").upper()      # sem os zeros: o UTF-16 também
 
 
 # --------------------------------------------------------------- API

@@ -1646,6 +1646,7 @@ export class Editor {
                  `(${e.barras} barras, ${e.chapas} chapas, ${e.solidos} sólidos).`, 'info', 9000);
       this.dica(`${arquivo.name} importado.`);
       const rel = r.relatorio || {};
+      for (const t of r.avisos || []) this.aviso(t, 'atencao', 0);                 // o IFC incompleto (D06): fica até fechar
       for (const t of (rel.avisos || rel.ignorados || []).slice(0, 3)) this.aviso(textoDe(t), 'atencao');
     } catch (e) {
       this.aviso(`Não foi possível ${modo === 'importar' ? 'importar' : 'ler'} ${arquivo.name}: ${e.message}`, 'erro', 0);
@@ -2221,6 +2222,8 @@ export class Editor {
     try { pj = (await (await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}`)).json()).projeto; } catch { return; }
     const r = pj && pj.importacao_resumo;
     if (!r) return;
+    // o IFC que chegou cortado (D06, 13/11): o aviso em toda abertura, até vir o arquivo inteiro — não só uma vez
+    if (r.aviso) this.aviso(r.aviso, 'atencao', 0);
     const chave = `metalica.importado.${this.projeto}.${pj.origem_ifc || ''}.${r.pecas}`;
     try { if (localStorage.getItem(chave)) return; localStorage.setItem(chave, '1'); } catch { /* sem armazenamento: mostra */ }
     const n = (x) => Number(x || 0).toLocaleString('pt-BR');

@@ -479,6 +479,8 @@ class Projetos:
                 "tem_modelo": os.path.exists(modelo),
                 "modelo_mb": round(os.path.getsize(modelo) / 1048576, 1) if os.path.exists(modelo) else 0,
                 "origem_ifc": p.get("origem_ifc"), "entregas": entregas, "pasta": pasta,
+                # o IFC que chegou cortado (D06, 13/11): o cartão da lista diz, enquanto não vier o arquivo inteiro
+                "ifc_incompleto": bool((p.get("importacao_resumo") or {}).get("truncado")),
                 "tem_materiais": os.path.exists(os.path.join(pasta, "detalhamento", "lista-de-materiais.json")),
                 "tem_comercial": os.path.exists(os.path.join(pasta, "comercial", "comercial.json")),
                 "etapas": self._etapas(s, pasta, p),

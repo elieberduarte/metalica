@@ -192,7 +192,8 @@ function cartao(p) {
         el('h3', { texto: p.nome }),
         el('span', { class: 'etiqueta ' + p.tipo, texto: p.tipo_rotulo })),
       el('div', { class: 'cartao-sub' },
-        [onde, medidas, p.origem_ifc].filter(Boolean).join('  ·  ') || 'sem cliente nem local informados'),
+        [onde, medidas, p.origem_ifc && (p.origem_ifc + (p.ifc_incompleto ? ' — ⚠ IFC INCOMPLETO (termina no meio)' : ''))]
+          .filter(Boolean).join('  ·  ') || 'sem cliente nem local informados'),
       p.atualizando ? blocoAtualizando(p) : null,
       etapasDoCartao(p),
       el('div', { class: 'cartao-conteudo' }, conteudo.map(([rot, cls, pasta, url, dica]) =>
@@ -520,7 +521,13 @@ function novoDeIFC() {
       const mb = arquivo.size / 1048576;
       carregando(true, `Importando ${arquivo.name} (${mb.toFixed(0)} MB)… ` +
                        (mb > 150 ? 'arquivo muito grande: pode levar 10 minutos ou mais.' : 'arquivo grande leva um minuto ou dois.'));
-      await enviarArquivo(`/api/projetos/${encodeURIComponent(criado.slug)}/importar-ifc`, arquivo);
+      const r = await enviarArquivo(`/api/projetos/${encodeURIComponent(criado.slug)}/importar-ifc`, arquivo);
+      // o IFC que chegou cortado entrava calado, com parte das peças (D06, 13/11): o recado antes de abrir o 3D
+      if (r && r.avisos && r.avisos.length) {
+        carregando(false);
+        const segue = await perguntar({ titulo: 'O arquivo IFC está incompleto', texto: r.avisos[0], campos: [], ok: 'Abrir assim mesmo' });
+        if (!segue) { carregar(); return; }
+      }
       location.href = urlDoProjeto(criado, 'editor');
     } catch (e) {
       carregando(false);

@@ -79,6 +79,13 @@ html, body.ver3d { height: 100%; margin: 0; overflow: hidden; background: var(--
 #situacao.com-barra { left: 252px; line-height: 16px; max-width: calc(100vw - 262px); white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; }
 
+/* o IFC que chegou cortado (D06, 13/11): a faixa no alto, abaixo dos botões, até o usuário fechar */
+#aviso-ifc { position: fixed; top: 52px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; align-items: flex-start;
+  gap: 10px; max-width: min(760px, calc(100vw - 24px)); padding: 8px 12px; font: 13px var(--sans); line-height: 1.35;
+  color: #5c3d00; background: #fff3cd; border: 1px solid #e0b44c; border-left: 4px solid #d89000; border-radius: var(--raio-p);
+  box-shadow: var(--sombra); }
+#aviso-ifc button { border: 0; background: none; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
+
 /* o 3D sem a placa de vídeo (ver3d.js, vigiarPlacaDeVideo): o aviso por cima do quadro vazio */
 #placa-perdida { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; background: var(--painel, #f3f5f8); color: var(--texto, #1d232b); z-index: 5; }
 #placa-perdida > div { max-width: 360px; }
