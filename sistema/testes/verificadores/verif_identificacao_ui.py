@@ -356,6 +356,9 @@ try:
     clicar_em(botao("Trazer do 3D o que mudou"))
     ok(esperar("[...document.querySelectorAll('#avisos .aviso')].some(a => a.textContent.includes('Planta atualizada pelo 3D') && a.textContent.includes('movida 300 mm'))", 30),
        "a volta diz o que mudou: a terça movida 300 mm")
+    # 14/11: vinham junto 32 contraventos CV1–CV8 que ninguém mexeu (o alongamento da ponta com aleta, que é da montagem)
+    volta = aba.avaliar("[...document.querySelectorAll('#avisos .aviso')].map(a => a.textContent).find(t => t.includes('Planta atualizada pelo 3D')) || ''") or ""
+    ok("movida 300 mm" in volta and ";" not in volta and "CV" not in volta, f"e só ela — nada do que a montagem ajustou: «{volta[:220]}»")
     depois_a = aba.avaliar(f"window.cad.doc.get('{origem}').a")
     esc = aba.avaliar("window.montagem.m.quadros.find(q => q.tipo === 'implantacao').escala")
     anda = _m.dist(antes_a, depois_a) * esc if antes_a and depois_a else 0
