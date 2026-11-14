@@ -124,6 +124,9 @@ try:
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1600, height=950, deviceScaleFactor=1, mobile=False)
     aba.navegar(f"http://localhost:{PORTA}/dividida?projeto=obra-rodape&vista=ambos", limite=90)
     F = "document.getElementById('f3d')"
+    # o quadro 3D abre no modo ver (o 3D leve); o rodapé do D08 é o do editor: entra pelo "✎ Editar", como o usuário
+    esperar(f"{F} && {F}.contentWindow.ver3dPronto && {F}.contentDocument.getElementById('btn-editar')", 120)
+    aba.avaliar(f"{F}.contentDocument.getElementById('btn-editar').click(), 1")
     ok(esperar(f"{F} && {F}.contentWindow.editor && {F}.contentWindow.editor.documento && {F}.contentWindow.document.body.dataset.pronto === '1' && {F}.contentWindow.metalicaProgresso", 120),
        "[B] a tela dividida abriu com o 3D")
     larg = aba.avaliar(f"{F}.getBoundingClientRect().width")

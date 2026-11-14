@@ -175,6 +175,9 @@ try:
     hist = _json(f"{base}/api/projetos/duas-abas/historico")["historico"]
     ok(hist and hist[0]["rotulo"].startswith("antes de gravar por cima"), f"[F1] a versão da A está no histórico ({hist[:1]})")
     # F2. agora a A está desatualizada: apaga o P1 → "⚠ Não gravado" → "Abrir a versão gravada"
+    # quem clica na escolha está olhando a aba A: ela vem para a frente (no Chrome sem janela a aba de trás, escondida,
+    # não chegava a montar o texto do modelo depois do clique — 14/11, 1ª rodada; ninguém clica numa aba que não vê)
+    A.cmd("Page.bringToFront")
     apagar(A, "P1")
     est = esperar(A, f"{ESTADO}.startsWith('conflito') ? {ESTADO} : null", 25)
     ok(bool(est), f"[F2] a A cai no \"⚠ Não gravado\" na gravação seguinte ({est!r})")
