@@ -70,7 +70,11 @@ def _pontos(e) -> List[Tuple[float, float]]:
         return [tuple(q) for c in e.contornos for q in c]
     if isinstance(e, Chamada):
         return [tuple(e.alvo)]
-    return []
+    # as outras (a cota especial da multidobra, 14/11: o _ref None derrubava a montagem das pranchas com 500)
+    try:
+        return [tuple(q) for q in (e.pontos() or [])]
+    except Exception:                           # noqa: BLE001
+        return []
 
 
 def _ref(e) -> Optional[Tuple[float, float]]:

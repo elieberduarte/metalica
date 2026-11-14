@@ -1679,11 +1679,13 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
         # a família que não sai mais (o "agulhamentos" do Vicente Residence, quando o concreto do TQS deixou de entrar
         # como aço, 09/10) não fica para trás com o conteúdo velho — as pranchas a montavam, e as vigas de concreto
         # iam para a fábrica. Só o que o Detalhar gerou; vai para a lixeira, como o desenho substituído
+        from nucleo2d.detalhe.telhas_fornecedor import NOME_DESENHO as NOME_FORNECEDOR
         feitos = {os.path.basename(g._caminho_desenho(s, d["nome"])) for d in desenhos}
         pasta_d = os.path.dirname(g._caminho_desenho(s, "x"))
         for arq in sorted(os.listdir(pasta_d)) if os.path.isdir(pasta_d) else []:
             base = arq[:-len(".desenho.json")] if arq.endswith(".desenho.json") else None
-            if not base or not base.startswith("detalhamento-") or arq in feitos:
+            # o "Telhas para o fornecedor" também (14/11): o modelo perdeu as telhas, o desenho delas não fica
+            if not base or not (base.startswith("detalhamento-") or base == _slug(NOME_FORNECEDOR)) or arq in feitos:
                 continue
             try:
                 meta = (g.abrir_desenho(s, base) or {}).get("metadados") or {}
@@ -4305,14 +4307,27 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     if any(nome_de(it).startswith("detalhamento-") and "completo" not in nome_de(it) for it in pedidos):
         pedidos = [it for it in pedidos if nome_de(it) != "detalhamento-completo"]
     fontes = []
+    do_fornecedor = []
     for item in pedidos:
         nome = item.get("nome") if isinstance(item, dict) else str(item)
         d = Desenho.de_dict(g.abrir_desenho(s, nome))
         if d.metadados.get("prancha") or d.metadados.get("pranchas"):
             raise ErroDeDados("\"%s\" já é uma prancha; escolha os desenhos de origem." % d.nome)
+        if (d.metadados.get("fornecedor") or {}).get("tamanho_real"):
+            # o "Telhas para o fornecedor" é o DXF em tamanho real que vai ao fornecedor, não folha de prancha (14/11:
+            # montado nas pranchas, a cota da multidobra derrubava a rota com 500)
+            do_fornecedor.append(d.nome)
+            continue
         fontes.append({"nome": _slug(nome), "desenho": d,
                        "escala": (item.get("escala") if isinstance(item, dict) else None),
                        "chaves": (item.get("chaves") if isinstance(item, dict) else None)})
+    aviso_fornecedor = ""
+    if do_fornecedor:
+        explica = ("\"%s\" é o desenho em tamanho real para o fornecedor das telhas, não vai em prancha: o DXF e a relação "
+                   "saem em Arquivo › Exportar › Telhas para o fornecedor (DXF + Word)…" % ", ".join(do_fornecedor))
+        if not fontes:
+            raise ErroDeDados(explica + "; escolha os desenhos de detalhamento.")
+        aviso_fornecedor = explica + "; ficou de fora das pranchas."
     p = g.ler(s)
     cp = p.get("carimbo_pranchas") or {}
     carimbo = {"obra": cp.get("obra") or p.get("nome") or s, "cliente": p.get("cliente") or "",
@@ -4388,7 +4403,7 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
               "celulas": len(f.metadados["prancha"]["celulas"])} for f in folhas]
     g.tocar(s)
     return {"desenho": salvo["nome"], "pranchas": saida, "formato": corpo.get("formato") or "A1",
-            **({"aviso": aviso_telhas} if aviso_telhas else {})}
+            **({"aviso": " ".join(a for a in (aviso_telhas, aviso_fornecedor) if a)} if aviso_telhas or aviso_fornecedor else {})}
 
 
 def _logo_do_carimbo(p: dict) -> Optional[dict]:

@@ -1703,7 +1703,9 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
     for chave in antigos:
         if chave in base and chave not in desenhos:
             desenhos[chave] = base[chave]
-    if fornecedor is not None:
+    # só quando as telhas são pedidas (ou o pedido é tudo): os grupos-base são montados sempre por dentro, e o desenho
+    # vinha de carona no Detalhar de qualquer grupo (conferência da 0.9.4, 14/11: o verif_excluir via 5 desenhos)
+    if fornecedor is not None and "telhas" in pedidos:
         desenhos["telhas_fornecedor"] = fornecedor
 
     resumo_pos = []

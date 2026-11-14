@@ -85,10 +85,8 @@ def _modelo_com_telhas():
         return Documento.de_dict(json.load(f))
 
 
-@pytest.mark.parametrize("modelo", ["sem telhas", pytest.param("com telhas", marks=pytest.mark.xfail(
-    strict=True, raises=AssertionError,
-    reason="a carona do 'Telhas para o fornecedor' (detalhar.py: os grupos-base montados por dentro; o desenho entra "
-           "sem olhar o pedido) — a correção é do CAD 2D (14/11); quando ela entrar, este caso passa e o xfail sai"))])
+# "com telhas": a carona do "Telhas para o fornecedor" (corrigida pelo CAD 2D em 14/11; era xfail estrito)
+@pytest.mark.parametrize("modelo", ["sem telhas", "com telhas"])
 def test_detalhar_duas_vezes_com_substituir_nao_duplica_desenhos(tmp_path, monkeypatch, modelo):
     """o verif_detalhar_rota, sem o Chrome (conferência da 0.9.4, 14/11): Detalhar tudo, depois só um grupo com
     substituir — a lista de desenhos da obra é a mesma, e o 2º Detalhar devolve só o grupo pedido. Sem telhas é a guarda

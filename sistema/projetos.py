@@ -310,7 +310,11 @@ def _ler_cabecalho_do_desenho(caminho: str, contar: bool = True) -> dict:
                 "entidades": len(d.get("entidades") or []),
                 "vistas": [v.get("nome") or v.get("tipo") for v in d.get("vistas") or []],
                 # quantas folhas: o desenho das pranchas lado a lado, ou a prancha solta
-                "pranchas": len(meta.get("pranchas") or []) or (1 if meta.get("prancha") else 0)}
+                "pranchas": len(meta.get("pranchas") or []) or (1 if meta.get("prancha") else 0),
+                # de onde veio (o "Marcar detalhamentos" do CAD marca pela origem) e o desenho do fornecedor das telhas
+                # (o DXF 1:1, fora do diálogo das pranchas) — 14/11
+                "gerado_por": meta.get("gerado_por") or None,
+                "fornecedor": bool((meta.get("fornecedor") or {}).get("tamanho_real"))}
     fora: dict = {}
     with open(caminho, "rb") as f:
         if contar:

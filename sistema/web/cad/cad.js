@@ -2789,7 +2789,7 @@ class CAD {
     }
     const marcar = (teste) => { for (const d of lista) caixas.get(d.nome).checked = teste(d); };
     const atalhos = el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin:8px 0' },
-      el('button', { type: 'button', onclick: () => marcar(d => /^detalhamento/i.test(d.nome)) }, 'Marcar detalhamentos'),
+      el('button', { type: 'button', onclick: () => marcar(d => /^detalhamento/i.test(d.nome) || d.gerado_por === 'detalhamento') }, 'Marcar detalhamentos'),
       el('button', { type: 'button', onclick: () => marcar(d => d.pranchas || /^prancha(-\d+)?$/i.test(d.nome)) }, 'Marcar pranchas'),
       el('button', { type: 'button', onclick: () => marcar(() => true) }, 'Marcar todos'),
       el('button', { type: 'button', onclick: () => marcar(() => false) }, 'Desmarcar'));
@@ -3502,7 +3502,7 @@ class CAD {
   async dialogoPranchas() {
     if (!this.projeto) { this.aviso('Montar pranchas precisa de um projeto aberto.', 'atencao'); return; }
     if (this.doc.tamanho && this.nomeDesenho) await this.salvar({ avisar: false });
-    const lista = (await this._listaDesenhos()).filter(d => !d.pranchas && !/^prancha(-\d+)?$/i.test(d.nome));
+    const lista = (await this._listaDesenhos()).filter(d => !d.pranchas && !d.fornecedor && !/^prancha(-\d+)?$/i.test(d.nome));
     if (!lista.length) { this.aviso('O projeto ainda não tem desenhos: gere cortes, vistas ou o detalhamento primeiro.', 'atencao'); return; }
     let projeto = {};
     try { projeto = (await pedir(`/api/projetos/${encodeURIComponent(this.projeto)}`)).projeto || {}; } catch { /* sem dados */ }
