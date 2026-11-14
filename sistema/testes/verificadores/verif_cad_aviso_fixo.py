@@ -9,7 +9,10 @@ pelo limite quando o novo também é fixo.
      e uma peça sem 3D), e logo depois os 3 avisos da sincronia do 3D (o _sincronizar3D de verdade, com a resposta do
      servidor trocada): "Planta atualizada pelo 3D" e "Sem peça no 3D" continuam na tela;
   B. 4 fixos e chega um aviso de 1,5 s: os 4 fixos ficam (a pilha tem 5 enquanto ele está) e ele sai sozinho;
-  C. 4 fixos e chega outro fixo: o mais velho sai (o limite de 4 do P11 continua valendo entre fixos).
+  C. 4 fixos e chega outro fixo: o mais velho sai (o limite de 4 do P11 continua valendo entre fixos);
+  D. o tamanho (GESTÃO N.9, 14/11, aprovado): "Planta atualizada pelo 3D: 33 mudança(s)." na primeira linha e uma mudança
+     por linha, com o texto do servidor igual; a caixa não passa da altura e a lista rola; o × fecha;
+  E. com 1 mudança: "1 mudança(s)." e a lista com ela, sem rolar.
 
 Rodar: PYTHONIOENCODING=utf-8 python testes/verificadores/verif_cad_aviso_fixo.py"""
 import json, os, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request
@@ -100,7 +103,7 @@ try:
       const resp = (o) => new Response(JSON.stringify(o), {{ status: 200, headers: {{ 'Content-Type': 'application/json' }} }});
       window.fetch = async (url, op) => {{
         const u = String(url && url.url || url);
-        if (u.includes('/estrutura/do3d')) return resp({{ ok: true, alteracoes: {json.dumps(ALTERACOES)}, novos: [], sem_peca: ['P9'], desenho: null }});
+        if (u.includes('/estrutura/do3d')) return resp({{ ok: true, alteracoes: window.__alteracoes || {json.dumps(ALTERACOES)}, novos: [], sem_peca: ['P9'], desenho: null }});
         if (u.includes('/estrutura/3d')) {{
           if (!window.__sinc) return resp({{ ok: true, mudou: false }});
           await new Promise(r => setTimeout(r, 150));
@@ -140,6 +143,35 @@ try:
     # ------------------------------------------------------------------ C. 4 fixos e mais um fixo
     js("c.aviso('fixo 5', 'atencao', 0); return 1;")
     ok(avisos() == ["fixo 2", "fixo 3", "fixo 4", "fixo 5"], f"C. entre fixos, o mais velho sai (limite 4): {avisos()}")
+
+    def volta_do_3d(alteracoes):
+        limpar()
+        js(f"window.__sinc = false; window.__alteracoes = {json.dumps(alteracoes)}; return 1;")
+        clicar("document.querySelector('[data-menu=\"estrutura\"] .menu-botao')")
+        esperar("(() => { const b = document.querySelector('[data-acao=\"estr-do-3d\"]'); return b && b.getBoundingClientRect().height > 0; })()", 5)
+        clicar("document.querySelector('[data-acao=\"estr-do-3d\"]')")
+        esperar("[...document.querySelectorAll('#avisos .aviso')].some(a => a.textContent.includes('Planta atualizada pelo 3D'))", 15)
+        aba.drenar(0.3)
+        return js("""const a = [...document.querySelectorAll('#avisos .aviso')].find(a => a.textContent.includes('Planta atualizada pelo 3D'));
+          if (!a) return null; const ul = a.querySelector('ul'), b = a.getBoundingClientRect();
+          return { primeira: (a.querySelector('span') || a).firstChild.textContent, itens: ul ? [...ul.children].map(li => li.textContent) : [],
+                   altura: b.height, rola: ul ? ul.scrollHeight > ul.clientHeight + 4 : false, fixo: a.dataset.fixo === '1',
+                   tela: innerHeight, sem_peca: [...document.querySelectorAll('#avisos .aviso')].some(x => x !== a && x.textContent.includes('Sem peça no 3D')) };""")
+
+    # ------------------------------------------------------------------ D. 33 mudanças: a contagem e a lista que rola
+    v = volta_do_3d(ALTERACOES)
+    ok(v and v["primeira"] == "Planta atualizada pelo 3D: 33 mudança(s).", f"D. a primeira linha diz quantas: {v and v['primeira']!r}")
+    ok(v and v["itens"] == ALTERACOES, f"D. uma mudança por linha, o texto igual ao do servidor ({v and len(v['itens'])} itens)")
+    ok(v and v["altura"] <= 300 and v["rola"], f"D. a caixa não passa da altura e a lista rola ({v and round(v['altura'])} px, rola: {v and v['rola']})")
+    ok(v and v["fixo"], "D. continua fixo")
+    ok(v and v["sem_peca"], "D. o \"Sem peça no 3D\" segue como aviso à parte")
+    ok(clicar("[...document.querySelectorAll('#avisos .aviso')].find(a => a.textContent.includes('Planta atualizada pelo 3D')).querySelector(':scope > button')")
+       and not tem("Planta atualizada pelo 3D"), "D. o × fecha")
+
+    # ------------------------------------------------------------------ E. 1 mudança
+    v = volta_do_3d(ALTERACOES[:1])
+    ok(v and v["primeira"] == "Planta atualizada pelo 3D: 1 mudança(s)." and v["itens"] == ALTERACOES[:1] and not v["rola"],
+       f"E. com 1 mudança: a contagem e a lista com ela, sem rolar ({v})")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {[x[1][:200] for x in erros[:3]]}")
 finally:

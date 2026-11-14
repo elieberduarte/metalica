@@ -1804,7 +1804,17 @@ export class MetodosEstruturaCAD {
     } catch (e) { this.aviso(`Não foi possível ler o 3D: ${e.message}`, 'erro', 0); return; }
     if (r.desenho) this.carregar(r.desenho, { enquadrar: false });
     const alt = r.alteracoes || [];
-    this.aviso(alt.length ? `Planta atualizada pelo 3D: ${alt.join('; ')}.` : 'Nada mudou no 3D em relação a esta planta.', alt.length ? 'info' : 'atencao', alt.length ? 0 : 6000);
+    if (alt.length) {
+      // a contagem na primeira linha e uma mudança por linha, com rolagem (GESTÃO N.9, 14/11: a volta com 1 + 32 mudanças
+      // numa linha só, separadas por "; ", fazia uma caixa que cobria o desenho); o texto de cada mudança é o do servidor
+      const caixa = document.createElement('span');
+      caixa.append(`Planta atualizada pelo 3D: ${alt.length} mudança(s).`);
+      const lista = document.createElement('ul');
+      lista.className = 'lista-ver-no-3d lista-mudancas-3d';
+      for (const a of alt) { const li = document.createElement('li'); li.textContent = a; lista.append(li); }
+      caixa.append(lista);
+      this.aviso(caixa, 'info', 0);
+    } else this.aviso('Nada mudou no 3D em relação a esta planta.', 'atencao', 6000);
     if ((r.sem_peca || []).length) this.aviso(`Sem peça no 3D (apagadas lá? ficam na planta): ${r.sem_peca.join(', ')}.`, 'atencao', 0);
   }
 
