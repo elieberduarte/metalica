@@ -2819,6 +2819,36 @@ def _pontas_da_barra(p3: Barra, pecas: list, tol: float = 1.0, L_ref: Optional[f
             inteira and curta)
 
 
+#: a ponta que a montagem puxa (a terça até a face da tesoura do oitão, o contravento até o furo da aleta/castanha)
+#: mexida no 3D: (encurtada/alongada, mm, até onde, mm, comprida/curta) — GESTÃO N.10, 14/11, saída A
+PUXADA = ("a ponta foi %s %d mm no 3D, mas é a montagem que leva essa ponta %s — a planta não foi alterada, e o 3D "
+          "gerado de novo pela planta põe a ponta de volta lá (%d mm mais %s do que você deixou)")
+
+
+def _ponta_puxada(e, ref, pi, pf, tol: float) -> Optional[Tuple[str, int]]:
+    """A ponta que a montagem puxou (a de referência fora da ponta da linha da planta, em planta) e que o usuário
+    encurtou ou alongou no 3D: ("encurtada"/"alongada", mm) ou None. A montagem só puxa com a ponta da linha no lugar
+    (a terça: a até 1 mm do cruzamento com a tesoura; o contravento: sempre ao furo) — somar o delta à linha tirava a
+    terça do cruzamento (sem a extensão e sem o suporte ST2 da ponta) ou deixava a planta diferente do que a montagem
+    refaz (o contravento volta ao furo), e o ajuste se perdia calado (14/11). Mover a barra inteira não é isto."""
+    r0, r1 = ref
+    Lr = math.dist(r0, r1)
+    if Lr < 1e-6 or abs(math.dist(pi, pf) - Lr) <= tol:
+        return None
+    u = tuple((r1[k] - r0[k]) / Lr for k in range(3))
+    mexidas = []
+    for P, R, E, sentido in ((pi, r0, e.a, -1.0), (pf, r1, e.b, 1.0)):
+        if math.dist(R[:2], E) <= tol:
+            continue                                      # a montagem deixou esta ponta na ponta da linha
+        ao_longo = sentido * sum((P[k] - R[k]) * u[k] for k in range(3))
+        if abs(ao_longo) > tol:
+            mexidas.append(ao_longo)
+    if not mexidas:
+        return None
+    m = max(mexidas, key=abs)
+    return ("alongada" if m > 0 else "encurtada"), mm_inteiro(abs(m))
+
+
 #: a volta não lê a linha dos pedaços que já não formam uma barra reta só (revisão de 14/11, achado 2a)
 FORA_DA_RETA = "barra dividida com pedaço fora da reta: a planta não foi alterada"
 
@@ -3033,6 +3063,16 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
                 if ref is None and not propria and da_montagem.get(e.id) is None:
                     out["sem_carimbo"].append(e.id)
                 out["alteracoes"].append("%s %s: %s" % (tipo, marca, FORA_DA_RETA))
+                continue
+            pux = (_ponta_puxada(e, ref, pi, pf, tol)
+                   if ref is not None and ja_veio is None and tipo == "viga" and isinstance(p3, Barra) else None)
+            if pux:
+                # a ponta que a montagem puxa, mexida no 3D: a planta fica como a montagem a lê, e a volta diz
+                mexeu, mm = pux
+                onde = {"terça": "até a face da tesoura", "contraventamento": "até o furo da ligação"}.get(
+                    str(a.get("papel")), "até onde ela a põe")
+                out["alteracoes"].append("%s %s: %s" % (tipo, marca, PUXADA % (
+                    mexeu, mm, onde, mm, "comprida" if mexeu == "encurtada" else "curta")))
                 continue
             if ref is not None:
                 # só o que o usuário fez no 3D: a ponta da barra menos a ponta de referência, somada à da planta

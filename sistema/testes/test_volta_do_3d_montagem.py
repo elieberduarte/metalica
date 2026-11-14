@@ -165,8 +165,19 @@ def test_hangar_duas_voltas_seguidas_a_segunda_nao_devolve_nada(hangar, caso):
     a montagem não acompanha o que o usuário fez (a ponta que ela repõe no furo da aleta)"""
     des, niveis, doc = hangar
     _mexer(caso, doc, des)
+    antes = _texto(des)
     r1 = DPE.montagem_do_modelo(des, doc, niveis)
     assert len(r1["alteracoes"]) == 1, r1["alteracoes"]
+    if caso == "ponta esticada":
+        # a ponta que a montagem leva ao furo da aleta, puxada mais 50 mm no 3D: a planta não muda (o 3D refeito põe a
+        # ponta de volta no furo de qualquer jeito) e a volta diz, a cada vez — até então ela trazia +100 mm e o 3D
+        # refeito desfazia calado (GESTÃO N.10, 14/11, saída A)
+        aviso = ["viga CV6: " + _puxada("até o furo da ligação", "alongada", 50)]
+        assert r1["alteracoes"] == aviso and _texto(des) == antes
+        assert DPE.montagem_do_modelo(des, doc, niveis)["alteracoes"] == aviso and _texto(des) == antes
+        novo, _ = DPE.modelo_da_planta(copy.deepcopy(des), niveis)
+        assert DPE.montagem_do_modelo(des, novo, niveis)["alteracoes"] == []
+        return
     # a 2ª volta na planta gravada e aberta de novo (o que a rota faz entre um clique e outro)
     des = Desenho.de_dict(json.loads(json.dumps(des.dict())))
     depois_da_1a = _texto(des)
@@ -933,26 +944,59 @@ def test_varias_tercas_mexidas_de_verdade_no_modelo_sem_carimbo_voltam_todas(han
     assert sorted(r["alteracoes"]) == sorted("viga %s: movida 150 mm" % m for m, _b in tercas)
 
 
+def _puxada(papel_onde, mexeu, mm):
+    """o texto da volta para a ponta que a montagem puxa e o usuário mexeu no 3D (DPE.PUXADA)"""
+    return DPE.PUXADA % ({"encurtada": "encurtada", "alongada": "alongada"}[mexeu], mm, papel_onde, mm,
+                         "comprida" if mexeu == "encurtada" else "curta")
+
+
 @pytest.mark.parametrize("modelo", ["de agora", "de antes"])
-def test_a_ponta_estendida_pela_montagem_e_encurtada_no_3d_vale_a_regua(modelo):
-    """o contraexemplo do GESTÃO N.10 (14/11) ao "vence a referência com menos deslocamento": a montagem de hoje estende
-    a terça até a face de fora da tesoura do oitão; o usuário encurta no 3D essa ponta em 60 % do que a montagem
-    estendeu (o ajuste fino de verdade). Pela régua (onde a montagem a pôs) a ponta andou −0,6·L; pela linha da planta,
-    +0,4·L — o menor deslocamento escolheria a linha, a planta ganharia +0,4·L e a próxima montagem estenderia de novo:
-    o 3D ficaria mais comprido do que o usuário deixou. Vale a régua: a linha da planta encurta 0,6·L na ponta dela"""
+def test_a_ponta_estendida_pela_montagem_e_encurtada_no_3d_a_planta_fica_e_a_volta_diz(modelo):
+    """a ponta da terça que a montagem leva até a face de fora da tesoura do oitão (63,5 mm além do eixo), encurtada no
+    3D em 38,1 mm (60 %). Somar o delta à linha (4962 mm, +38,1) tirava a linha do cruzamento: a montagem deixava de
+    estender a terça e de pôr o suporte ST2 da ponta, e o 3D refeito ficava 63,5 mm mais curto do que o usuário deixou,
+    calado. A planta não muda (coerente com o que a montagem refaz) e a volta diz o que acontece, com os milímetros
+    (GESTÃO N.10, 14/11: saída A). Guardar o ajuste na peça é regra nova, com o usuário (o teste de baixo, xfail)"""
     des, ids = _planta_com_tercas_na_tesoura_da_ponta()
     doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
     if modelo == "de antes":
         _sem_carimbo(doc)
     tc = _cv(doc, ids[0])
     estendida = -tc.inicio[0]                                   # a terça vai de x = 0 a 5000 na planta; no 3D, além do 0
-    assert estendida > 10.0 and abs(tc.fim[0] - 5000.0) < estendida, (tc.inicio, tc.fim)
+    assert estendida == pytest.approx(63.5, abs=0.01) and abs(tc.fim[0] - 5000.0) < estendida, (tc.inicio, tc.fim)
     s = round(0.6 * estendida, 1)
     tc.inicio = (tc.inicio[0] + s, tc.inicio[1], tc.inicio[2])  # a ponta do oitão encurtada no 3D
-    r = DPE.planta_do_modelo(des, doc, [])
-    assert len(r["alteracoes"]) == 1 and r["alteracoes"][0].startswith("viga TC: comprimento 5000 → %d mm" % round(5000 - s))
-    e = des.entidades[ids[0]]
-    assert e.a == pytest.approx((s, 3000.0), abs=0.01) and e.b == pytest.approx((5000.0, 3000.0), abs=0.01)
+    antes = _texto(des)
+    for _vez in (1, 2):
+        r = DPE.planta_do_modelo(des, doc, [])
+        assert r["alteracoes"] == ["viga TC: " + _puxada("até a face da tesoura", "encurtada", 38)]
+        assert r["mudados"] == [] and _texto(des) == antes
+    tc.inicio = (tc.inicio[0] - 2 * s, tc.inicio[1], tc.inicio[2])   # e alongada 38,1 além da face
+    assert DPE.planta_do_modelo(des, doc, [])["alteracoes"] == ["viga TC: " + _puxada("até a face da tesoura", "alongada", 38)]
+    assert _texto(des) == antes
+
+
+@pytest.mark.parametrize("ligacao, ext", [("aleta", 38.2), ("castanha", 37.1)])
+def test_o_contravento_levado_ao_furo_e_encurtado_no_3d_a_planta_fica_e_a_volta_diz(ligacao, ext):
+    """o contravento que a montagem alonga até o furo da aleta ou da castanha, encurtado no 3D em 60 % disso: a volta
+    trazia "comprimento 4101 → 4078 mm" e o 3D refeito punha a ponta de novo no furo — o ajuste se perdia inteiro,
+    calado. A planta não muda e a volta diz"""
+    real, ids = _planta_pequena(ligacao, 5000.0)
+    des = _na_montagem(real, 0.0)
+    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    cv = _cv(doc, ids[0])
+    r0 = _real(des, ids[0])
+    L = math.dist(cv.inicio[:2], cv.fim[:2])
+    d = ((cv.fim[0] - cv.inicio[0]) / L, (cv.fim[1] - cv.inicio[1]) / L)
+    along = -((cv.inicio[0] - r0.a[0]) * d[0] + (cv.inicio[1] - r0.a[1]) * d[1])
+    assert along == pytest.approx(ext, abs=0.1)                 # a montagem alongou a ponta do começo até o furo
+    s = round(0.6 * along, 1)
+    u = tuple((cv.fim[k] - cv.inicio[k]) / cv.comprimento for k in range(3))
+    cv.inicio = tuple(cv.inicio[k] + u[k] * s for k in range(3))
+    antes = _texto(des)
+    r = DPE.montagem_do_modelo(des, doc, [])
+    assert r["alteracoes"] == ["viga CV1: " + _puxada("até o furo da ligação", "encurtada", round(s))]
+    assert r["mudados"] == [] and _texto(des) == antes
 
 
 @pytest.mark.xfail(strict=True, reason="LIMITE do 'puxar até' (14/11, BUGS N.4 → GESTÃO N.10 → usuário, 4º caso do "
