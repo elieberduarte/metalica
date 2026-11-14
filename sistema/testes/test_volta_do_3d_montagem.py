@@ -787,13 +787,15 @@ def test_a_barra_dividida_com_pedaco_copiado_apagado_ou_faltando_no_meio():
     # o pedaço do meio apagado
     d2 = Documento.de_dict(copy.deepcopy(m))
     del d2.entidades[ids[1]]
-    assert DPE.planta_do_modelo(des, d2, [])["alteracoes"] == [FORA_DA_RETA] and _texto(des) == antes
+    # (o vão não é "fora da reta": a mensagem diz o que houve — 2ª revisão, achado 8)
+    assert DPE.planta_do_modelo(des, d2, [])["alteracoes"] == ["viga T.C.1: " + DPE.VAO_NA_BARRA] and _texto(des) == antes
     # o último pedaço apagado: a barra ficou com 3,50 m
     d3 = Documento.de_dict(copy.deepcopy(m))
     del d3.entidades[ids2[1]]
     # (o GESTÃO N.10, 14/11: a linha acompanha, mas a mensagem diz com as palavras o que aconteceu)
     assert DPE.planta_do_modelo(des, d3, [])["alteracoes"] == [
-        "viga T.C.1: encurtada no 3D (barra dividida, o pedaço da ponta apagado), comprimento 5460 → 3500 mm, movida 980 mm"]
+        "viga T.C.1: encurtada no 3D (barra dividida: os pedaços somam menos que a barra), comprimento 5460 → 3500 mm, "
+        "movida 980 mm"]                                        # (sem afirmar o que não sabe — 2ª revisão, achado 8)
     assert des.entidades[eid].a == pytest.approx((0.0, 0.0)) and des.entidades[eid].b == pytest.approx((3500.0, 0.0))
     assert DPE.planta_do_modelo(des, d3, [])["alteracoes"] == []
 
@@ -1177,3 +1179,43 @@ def test_montagem_antiga_diferente_num_papel_nao_e_desempatada_por_outro_papel(h
     r = DPE.montagem_do_modelo(des, doc, niveis)
     assert _texto(des) == antes and r["mudados"] == []
     assert len(r["alteracoes"]) == 32 and all(DPE.SEM_REFERENCIA in t for t in r["alteracoes"]), r["alteracoes"][:3]
+
+
+
+def _aviso_da_volta(r):
+    """o aviso que a tela do CAD dá depois do "Trazer do 3D" (avisoDaVolta de web/cad/estrutura.js, pelo Node)"""
+    return _node("import { avisoDaVolta } from 'WEB/cad/estrutura.js';\n" + LER +
+                 "  process.stdout.write(JSON.stringify(avisoDaVolta(E.r)));\n});\n", {"r": r})
+
+
+def test_a_rota_nao_regrava_a_planta_nem_diz_atualizada_quando_nada_foi_alterado(tmp_path, monkeypatch):
+    """achado 8: só avisos (a ponta puxada, a barra dividida fora da reta, a recusa) — a rota regravava a planta sem
+    mudança e a tela dizia "Planta atualizada pelo 3D: … a planta não foi alterada". Agora a rota diz se alterou, só
+    grava quando alterou, e a tela escolhe o cabeçalho por isso"""
+    import app
+    monkeypatch.setattr(app, "PROJETOS", str(tmp_path))
+    g = app._gerente()
+    s = g.criar("Volta", tipo="desenho")["slug"]
+    des, ids = _planta_com_tercas_na_tesoura_da_ponta()
+    g.salvar_desenho(s, "planta", des.dict())
+    doc, _av = DPE.modelo_da_planta(copy.deepcopy(des), [])
+    tc = _cv(doc, ids[0])
+    tc.inicio = (tc.inicio[0] + 38.1, tc.inicio[1], tc.inicio[2])    # só a ponta puxada: só o aviso
+    g.salvar_modelo(s, doc.dict(), marco=True)
+    gravada = json.dumps(g.abrir_desenho(s, "planta"), sort_keys=True)
+    r = app.estrutura_do_3d_na_planta(s, {"desenho": "planta"})
+    assert r["planta_alterada"] is False and r["desenho"] is None and len(r["alteracoes"]) == 1
+    assert json.dumps(g.abrir_desenho(s, "planta"), sort_keys=True) == gravada
+    texto, tipo, _dur, itens = _aviso_da_volta(r)
+    assert texto == "A planta não foi alterada pelo 3D: 1 aviso(s)." and tipo == "atencao"
+    assert itens == r["alteracoes"] and itens[0].startswith("viga TC: a ponta foi encurtada 38 mm")
+    # e com mudança de verdade: grava e diz "atualizada"
+    _andar(tc, (0.0, 0.0, 50.0))
+    g.salvar_modelo(s, doc.dict(), marco=True)
+    r = app.estrutura_do_3d_na_planta(s, {"desenho": "planta"})
+    assert r["planta_alterada"] is True and r["desenho"] is not None
+    assert json.dumps(g.abrir_desenho(s, "planta"), sort_keys=True) != gravada
+    texto, tipo, _dur, itens = _aviso_da_volta(r)
+    assert texto == "Planta atualizada pelo 3D: 1 mudança(s)." and tipo == "info" and itens[0].startswith("viga TC: topo")
+    sem = _aviso_da_volta({"alteracoes": [], "planta_alterada": False})
+    assert sem[0] == "Nada mudou no 3D em relação a esta planta."

@@ -5032,12 +5032,16 @@ def estrutura_do_3d_na_planta(s: str, corpo: dict) -> dict:
     # montagem gera da planta de agora — uma montagem a mais, segundos no modelo grande
     _progresso(s, "comparando o 3D com a planta…")
     r = DPE.montagem_do_modelo(des, doc, pj.get("niveis") or [])
-    if r["alteracoes"]:
+    # só os elementos mudados (e os novos) alteram a planta: as outras entradas são avisos ("a planta não foi alterada",
+    # a ponta puxada, a recusa) — a rota regravava a planta sem mudança e a tela dizia "Planta atualizada" (2ª revisão
+    # de 14/11, achado 8)
+    alterada = bool(r.get("mudados") or r.get("novos"))
+    if alterada:
         g.salvar_desenho(s, nome, des.dict())
     if r["modelo_mudou"]:
         g.salvar_modelo(s, doc.dict(), marco=True)
     return {"ok": True, "alteracoes": r["alteracoes"], "novos": r["novos"], "sem_peca": r["sem_peca"],
-            "desenho": des.dict() if r["alteracoes"] else None}
+            "planta_alterada": alterada, "desenho": des.dict() if alterada else None}
 
 
 def dados_do_lancamento(s: str) -> dict:

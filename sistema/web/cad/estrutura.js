@@ -22,6 +22,16 @@ import { ComandoAdicionar, ComandoAlterar, ComandoComposto, ComandoRemover } fro
 import { Ferramenta, paraMilimetros, naUnidade, unidadeAtual } from './ferramentas.js';
 
 export const CAMADA_ESTRUTURA = 'ESTRUTURA';
+
+// o aviso depois do "Trazer do 3D": [cabeçalho, tipo, duração, itens — uma linha cada na caixa]. "Planta atualizada" só quando a rota alterou a planta —
+// as entradas que só avisam ("a planta não foi alterada", a ponta puxada, a recusa) saíam sob esse cabeçalho (2ª revisão
+// de 14/11, achado 8)
+export function avisoDaVolta(r) {
+  const alt = (r && r.alteracoes) || [];
+  if (!alt.length) return ['Nada mudou no 3D em relação a esta planta.', 'atencao', 6000, []];
+  if (r.planta_alterada === false) return [`A planta não foi alterada pelo 3D: ${alt.length} aviso(s).`, 'atencao', 0, alt];
+  return [`Planta atualizada pelo 3D: ${alt.length} mudança(s).`, 'info', 0, alt];
+}
 const CHAVE = 'cad.estrutura.medidas';
 const $ = (s, r = document) => r.querySelector(s);
 const numero = (v, casas = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
@@ -1839,19 +1849,18 @@ export class MetodosEstruturaCAD {
       this._sincroniaChave = chave;
       this._sincroniaUltima = this._impressaoDaPlanta();
     } finally { this._voltaDo3D = false; }
-    const alt = r.alteracoes || [];
-    if (alt.length) {
+    const [cabecalho, tipo, duracao, itens] = avisoDaVolta(r);
+    if (itens.length) {
       // a contagem na primeira linha e uma mudança por linha, com rolagem (GESTÃO N.9, 14/11: a volta com 1 + 32 mudanças
       // numa linha só, separadas por "; ", fazia uma caixa que cobria o desenho); o texto de cada mudança é o do servidor
       const caixa = document.createElement('span');
-      caixa.append(`Planta atualizada pelo 3D: ${alt.length} mudança(s).`);
+      caixa.append(cabecalho);
       const lista = document.createElement('ul');
       lista.className = 'lista-ver-no-3d lista-mudancas-3d';
-      for (const a of alt) { const li = document.createElement('li'); li.textContent = a; lista.append(li); }
+      for (const a of itens) { const li = document.createElement('li'); li.textContent = a; lista.append(li); }
       caixa.append(lista);
-      this.aviso(caixa, 'info', 0);
-    } else this.aviso('Nada mudou no 3D em relação a esta planta.', 'atencao', 6000);
-    if ((r.sem_peca || []).length) this.aviso(`Sem peça no 3D (apagadas lá? ficam na planta): ${r.sem_peca.join(', ')}.`, 'atencao', 0);
+      this.aviso(caixa, tipo, duracao);
+    } else this.aviso(cabecalho, tipo, duracao);    if ((r.sem_peca || []).length) this.aviso(`Sem peça no 3D (apagadas lá? ficam na planta): ${r.sem_peca.join(', ')}.`, 'atencao', 0);
     // a sincronia de antes da volta não é calada (GESTÃO N.9, 14/11)
     if (levouAntes) this.aviso('A planta tinha mudanças ainda não levadas ao 3D; foram levadas antes de trazer o que mudou no 3D.', 'info', 12000);
   }
