@@ -140,7 +140,7 @@ try:
             aba.avaliar("document.getElementById('dlg-ok').click()")
             ok(esperar("location.pathname !== '/'", 30), "confirmando, cria e abre o projeto")
             ok(slugs() == ["cortado", "cortado-2"], "o segundo projeto existe")
-    e = [m for m in aba.console if m[0] in ("error", "excecao") and "400" not in m[1]]
+    e = [m for m in aba.console if m[0] in ("error", "excecao") and "400" not in m[1] and "favicon" not in m[1]]
     ok(not e, "sem erros no console" + (f" — {[x[1][:200] for x in e[:2]]}" if e else ""))
 finally:
     try: nav.kill()

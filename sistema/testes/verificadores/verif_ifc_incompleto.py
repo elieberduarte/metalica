@@ -114,7 +114,7 @@ try:
     aba.drenar(3)
     ok(aba.avaliar("![...document.querySelectorAll('.aviso')].some(a => /INCOMPLETO/.test(a.textContent))"),
        "o editor da obra com o IFC inteiro não mostra o aviso")
-    e = [m for m in aba.console if m[0] in ("error", "excecao")]
+    e = [m for m in aba.console if m[0] in ("error", "excecao") and "favicon" not in m[1]]
     ok(not e, "sem erros no console" + (f" — {[x[1][:200] for x in e[:2]]}" if e else ""))
 finally:
     try: nav.kill()

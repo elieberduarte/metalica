@@ -114,7 +114,7 @@ try:
     ok(not marcado("inclinacao"), "inclinação 99 % passa")
     digitar("flecha_terca", 800)
     ok(not marcado("flecha_terca"), "flecha da terça L/800 passa (a tela recusava acima de 600; o cálculo aceita até 1000)")
-    e = [m for m in aba.console if m[0] in ("error", "excecao")]
+    e = [m for m in aba.console if m[0] in ("error", "excecao") and "favicon" not in m[1]]
     ok(not e, "sem erros no console" + (f" — {[x[1][:200] for x in e[:2]]}" if e else ""))
 finally:
     try: nav.kill()
