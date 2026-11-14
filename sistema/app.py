@@ -6666,6 +6666,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(modelo_do_projeto(partes[0]))
                 if len(partes) >= 2 and partes[1] == "3d-leve":
                     return self._modelo_leve(partes[0], partes[2:])
+                if len(partes) >= 2 and partes[1] == "terreno" and not TERRENO:
+                    # desligado (METALICA_TERRENO=0): "não tem", e não a ficha do projeto pela rota de baixo — o modo ver
+                    # lia a ficha como terreno e mostrava o botão (14/11, verif_barra_ver_nao_pula)
+                    return self._json({"erro": "a obra no terreno está desligada neste computador"}, 404)
                 if len(partes) >= 2 and partes[1] == "terreno" and TERRENO:
                     # a obra no terreno (20/10): a amarração, a imagem guardada no projeto e a busca do endereço
                     from saida import local_obra
@@ -6964,6 +6968,8 @@ class Handler(BaseHTTPRequestHandler):
                                                           lambda etapa, fracao=None: _progresso(s_e, etapa, fracao),
                                                           nota=str((corpo or {}).get("nota") or ""),
                                                           pessoa=str((corpo or {}).get("pessoa") or "")))
+                if len(partes) >= 2 and partes[1] == "terreno" and not TERRENO:
+                    return self._json({"erro": "a obra no terreno está desligada neste computador"}, 404)
                 if len(partes) >= 2 and partes[1] == "terreno" and TERRENO:
                     from saida import local_obra
                     s_t = partes[0]
