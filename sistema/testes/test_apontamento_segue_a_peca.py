@@ -59,6 +59,7 @@ def test_a_tesoura_apontada_segue_a_peca_e_nao_o_nome(tmp_path):
 
 def test_peca_avulsa_segue_a_posicao_e_unidade_sem_lugar_segue_a_marca(tmp_path):
     pasta = str(tmp_path)
+    C.apontar(pasta, LISTA, "T.C.1", "producao", 4, "x")        # só se pinta o que foi produzido (risco 3, 14/11)
     C.apontar(pasta, LISTA, "T.C.1", "pintura", 4, "x")
     C.apontar(pasta, LISTA, "PAINEL 3-1", "producao", 1, "x")
     C.apontar(pasta, LISTA, "PAINEL 3-2", "producao", 1, "x")
@@ -67,7 +68,7 @@ def test_peca_avulsa_segue_a_posicao_e_unidade_sem_lugar_segue_a_marca(tmp_path)
             "conjuntos": LISTA["conjuntos"][:2] + [dict(LISTA["conjuntos"][2], nome="PAINEL 30")]}
     s = C.situacao(nova, C.ler_eventos(pasta), DEPOIS)
     por = _por(s)
-    assert por["T.C.4"]["feito"]["pintura"] == 4
+    assert por["T.C.4"]["feito"]["producao"] == 4 and por["T.C.4"]["feito"]["pintura"] == 4
     assert por["PAINEL 30-1"]["feito"]["producao"] == 1 and por["PAINEL 30-2"]["feito"]["producao"] == 1
     assert s["fora_da_lista"] == []
     assert {"era": "T.C.1", "agora": "T.C.4"} in s["seguiram"]
