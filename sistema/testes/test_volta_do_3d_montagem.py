@@ -564,7 +564,9 @@ def test_a_barra_copiada_no_3d_nao_mexe_na_linha_da_planta(modelo):
     r = DPE.planta_do_modelo(des, doc2, [])
     assert r["alteracoes"] == [] and _texto(des) == antes
     _andar(barras[0], (0.0, 250.0, 0.0))                        # a original movida: a linha anda com ela
-    assert DPE.planta_do_modelo(des, doc2, [])["alteracoes"] == ["viga T.C.1: movida 250 mm"]
+    # (sem carimbo, nenhuma das duas ficou onde estava: a volta diz que seguiu a mais próxima — 2ª revisão, achado 2)
+    assert DPE.planta_do_modelo(des, doc2, [])["alteracoes"] == [
+        "viga T.C.1: movida 250 mm" + (", " + DPE.COPIAS % 2 if modelo == "de antes" else "")]
     assert des.entidades[eid].a == pytest.approx((0.0, 250.0))
 
 
@@ -1095,3 +1097,48 @@ def test_o_recuo_da_ponta_so_e_lido_nos_papeis_que_a_montagem_puxa():
     r = DPE.planta_do_modelo(des, doc, [])
     assert r["alteracoes"] == ["viga T.C.1: comprimento 5460 → 5430 mm, movida 15 mm"]
 
+
+
+# ------------------------------------------------------------------ a 2ª revisão independente (14/11)
+def test_no_modelo_sem_carimbo_a_copia_na_frente_da_original_nao_leva_a_linha():
+    """achado 2: sem carimbo, a volta media pela 1ª peça do elemento na ordem do modelo; copiar a terça 1,5 m ao lado,
+    apagar a original e desfazer o apagar (o desfazer a recoloca no fim) punha a cópia na frente — a linha da planta ia
+    para a cópia ("movida 1500 mm"), com a original intacta no 3D"""
+    des, doc, eid = _terca_solta()
+    _sem_carimbo(doc)
+    orig = _cv(doc, eid)
+    c = copy.deepcopy(orig)
+    c.id = "copia-da-terca"
+    _andar(c, (0.0, 1500.0, 0.0))
+    doc.entidades = {c.id: c, **{k: v for k, v in doc.entidades.items()}}       # a cópia na frente (o desfazer do editor)
+    antes = _texto(des)
+    r = DPE.planta_do_modelo(des, doc, [])
+    assert r["alteracoes"] == [] and _texto(des) == antes, r["alteracoes"]
+
+
+def test_no_modelo_sem_carimbo_a_copia_atras_da_original_tambem_nao_leva_a_linha():
+    des, doc, eid = _terca_solta()
+    _sem_carimbo(doc)
+    c = copy.deepcopy(_cv(doc, eid))
+    c.id = "copia-da-terca"
+    _andar(c, (0.0, 1500.0, 0.0))
+    doc.entidades[c.id] = c                                     # a cópia no fim
+    antes = _texto(des)
+    assert DPE.planta_do_modelo(des, doc, [])["alteracoes"] == [] and _texto(des) == antes
+
+
+@pytest.mark.parametrize("ordem", ["cópia na frente", "cópia atrás"])
+def test_no_modelo_sem_carimbo_a_original_e_a_copia_mexidas_a_planta_segue_a_mais_proxima_e_diz(ordem):
+    """achado 2, nada calado (GESTÃO N.10): nenhuma das barras da linha ficou onde estava — a planta segue a mais
+    próxima dela e a volta diz que há cópias"""
+    des, doc, eid = _terca_solta()
+    _sem_carimbo(doc)
+    orig = _cv(doc, eid)
+    c = copy.deepcopy(orig)
+    c.id = "copia-da-terca"
+    _andar(c, (0.0, 1500.0, 0.0))
+    _andar(orig, (0.0, 300.0, 0.0))
+    doc.entidades = ({c.id: c, **doc.entidades} if ordem == "cópia na frente" else {**doc.entidades, c.id: c})
+    r = DPE.planta_do_modelo(des, doc, [])
+    assert r["alteracoes"] == ["viga T.C.1: movida 300 mm, " + DPE.COPIAS % 2]
+    assert des.entidades[eid].a == pytest.approx((0.0, 300.0))

@@ -2918,10 +2918,40 @@ def _pecas_da_montagem(des: Desenho, niveis: Optional[Sequence[dict]]) -> Tuple[
 
 def _medida_propria(tipo: str, a: dict, pecas: list):
     """(a barra carimbada, as pontas em que ela estava quando já veio): o elemento que se mede por um dos dois não usa
-    a régua da montagem"""
+    a régua da montagem. O "já veio" vale na peça que ele guarda, onde quer que ela esteja na ordem do modelo"""
     carimbada = next((q for q in pecas if _carimbo(q)), None) if tipo == "viga" else None
-    ja_veio = _trazida(a, carimbada or pecas[0]) if tipo == "viga" else None
-    return carimbada, ja_veio
+    if tipo != "viga":
+        return carimbada, None
+    pid = str(((a.get(TRAZIDO) or {}) if isinstance(a.get(TRAZIDO), dict) else {}).get("peca"))
+    guardada = next((q for q in pecas if str(q.id) == pid), None)
+    return carimbada, _trazida(a, carimbada or guardada or pecas[0])
+
+
+#: mais de uma barra inteira no 3D para a mesma linha, nenhuma onde estava (2ª revisão de 14/11, achado 2: nada calado)
+COPIAS = "há %d barras no 3D para esta linha (cópias): a planta seguiu a mais próxima dela"
+
+
+def _barra_do_elemento(e, a: dict, pecas: list) -> Tuple[Optional[Barra], int]:
+    """(a barra que a volta mede, quantas barras inteiras a linha tem no 3D). Sem carimbo, era a 1ª peça na ordem do
+    modelo — a cópia posta na frente (desfazer um Apagar recoloca a original no fim) levava a linha da planta até ela
+    ("movida 1500 mm", 2ª revisão de 14/11, achado 2; já era assim na 0.9.3). Agora: a peça do "já veio", se ainda
+    existe; senão a mais próxima da linha da planta. O suporte da terça e os pedaços de uma divisão não são cópia."""
+    barras = [q for q in pecas if isinstance(q, Barra) and (q.atributos or {}).get("elemento") == "viga"]
+    if not barras:
+        return None, 0
+    inteiras = sum(1 for q in barras if not (q.atributos or {}).get("emenda_de"))
+    g = a.get(TRAZIDO)
+    pid = str(g.get("peca")) if isinstance(g, dict) else None
+    guardada = next((q for q in barras if str(q.id) == pid), None)
+    if guardada is not None:
+        return guardada, inteiras
+    if not isinstance(e, Linha):
+        return barras[0], inteiras
+
+    def longe(q):
+        i, f = q.inicio[:2], q.fim[:2]
+        return min(math.dist(i, e.a) + math.dist(f, e.b), math.dist(i, e.b) + math.dist(f, e.a))
+    return min(barras, key=longe), inteiras
 
 
 #: o elemento acusado num modelo de outra versão da montagem que nem os vizinhos decidem (revisão de 14/11, reforço A)
@@ -3093,7 +3123,8 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
         mud = []
         aviso_pux = None
         if tipo in ("viga", "tesoura", "painel", "escada") and isinstance(e, Linha):
-            p3 = carimbada or pecas[0]
+            sem_carimbo_barra, inteiras = _barra_do_elemento(e, a, pecas) if tipo == "viga" and carimbada is None else (None, 0)
+            p3 = carimbada or sem_carimbo_barra or pecas[0]
             if tipo in ("tesoura", "painel", "escada"):
                 # a tesoura são três ou quatro sólidos: a linha de apoio pela caixa de todos, o nível só na volta do 3D gerado
                 p3 = Solido(vertices=[v for q in pecas for v in (getattr(q, "vertices", None) or [])])
@@ -3181,6 +3212,8 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
                     a["nivel_base"] = round(_nivel(a.get("nivel_base"), tab, z0) + dz)
                     a["nivel_fim"] = round(_nivel(a.get("nivel_fim"), tab, z0) + dz)
                     mud.append("apoio %+d mm" % round(dz))
+            if mud and inteiras > 1:
+                mud.append(COPIAS % inteiras)
         elif isinstance(e, Circulo) and tipo == "parafuso":
             cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
             dx, dy = cx - e.centro[0], cy - e.centro[1]
