@@ -106,6 +106,9 @@ try:
     ok(esperar("[...document.querySelectorAll('.aviso, .avisos *')].some(a => /detalhe as telhas/i.test(a.textContent))", 15)
        and not js("return !!document.querySelector('dialog[open]');"), f"A. sem o desenho do fornecedor: o que fazer, sem diálogo ({avisos()[:160]})")
 
+    # o 400 da rota no caso A é a resposta esperada (o Chrome o põe no console como "Failed to load resource"): não conta
+    aba.console.clear()
+
     # ------------------------------------------------------------------ B. o diálogo
     d = desenho_do_fornecedor()
     post(f"/api/projetos/{slug}/desenhos/telhas-para-o-fornecedor", {"desenho": d.dict()})
