@@ -111,6 +111,9 @@
     .ctl-estornado td { text-decoration: line-through; color: var(--texto3); }
     dialog.ctl-dlg { max-width: min(920px, 94vw); }
     .ctl-historico { font-size: 12.5px; }
+    .ctl-confirma .ctl-confirma-texto { font-size: 16px; font-weight: 650; margin: 10px 0 6px; }
+    .ctl-confirma #ctl-sim:disabled { opacity: .45; cursor: default; }
+    form[hidden] { display: none; }
     .ctl-historico .rolagem { max-height: 28vh !important; }
     .ctl-a-mais { color: var(--verm, #b23b3b); font-weight: 600; }
     .controle tbody tr[data-item] { cursor: pointer; }
@@ -400,8 +403,18 @@
       el('div', { class: 'acoes' }, el('button', { type: 'button', texto: 'Cancelar', onclick: () => dlg.close() }), confirmar));
     form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
+      if (confirmar.disabled) return;
       erro.hidden = true;
       confirmar.disabled = true;
+      const vao = its.filter(x => falta(x, etapa) > 0);
+      const qtd = vao.reduce((s, x) => s + falta(x, etapa), 0);
+      const kg = vao.reduce((s, x) => s + falta(x, etapa) * (x.kg_unidade || 0), 0);
+      if (qtd > 1 && !(await confirmarNoDialogo(dlg, form,
+        `Apontar ${n(qtd)} peça(s)/unidade(s) em ${n(vao.length)} ${vao.length === 1 ? 'item' : 'itens'} na ${nomeDaEtapa(etapa)} — ${n(kg, 1)} kg?`,
+        `${vao.slice(0, 8).map(x => falta(x, etapa) > 1 ? `${n(falta(x, etapa))} × ${x.id}` : x.id).join(', ')}${vao.length > 8 ? '…' : ''} · feito em ${dataBRc(data.value)}`))) {
+        confirmar.disabled = false;
+        return;
+      }
       try {
         const r = await pedir('/api/producao/apontar-varios', { projeto: PROJETO, itens: its.map(x => x.id), etapa, data: data.value, obs: obs.value });
         dlg.close();
@@ -495,6 +508,46 @@
       el('thead', {}, el('tr', {}, ['Quando', 'Data', 'Quem', 'Etapa', 'Item', 'Qtd', 'kg', 'Observação', ''].map(t => el('th', { texto: t })))), tb));
   }
 
+  // ------------------------------------------------------------------ a confirmação de mais de 1 unidade (risco 1, 13/11)
+  // A quantidade vem cheia com o que falta (fechar o lote é o caso comum), e um Enter apontava os 331 suportes. Agora mais de
+  // 1 unidade pede o 2º passo, que diz a quantidade, a marca e os kg. Ele só ARMA depois de ARMAR_MS: o mesmo Enter, a
+  // tecla segurada (repetição) e o 2º clique do clique duplo (no Windows, até 500 ms) não confirmam — o D09 do EDITOR 3D
+  // foi o clique duplo atravessando o diálogo. 1 unidade segue sem pergunta.
+  const ARMAR_MS = 700;
+  function confirmarNoDialogo(dlg, form, texto, detalhe) {
+    return new Promise((pronto) => {
+      let armado = false, fim = false;
+      const sim = el('button', { type: 'button', class: 'principal', id: 'ctl-sim', texto: 'Sim, apontar', disabled: true });
+      const voltar = el('button', { type: 'button', id: 'ctl-voltar', texto: 'Voltar' });
+      const painel = el('div', { class: 'ctl-confirma', id: 'ctl-confirma' },
+        el('h3', { texto: 'Confirme o apontamento' }),
+        el('p', { class: 'ctl-confirma-texto', texto }),
+        detalhe ? el('div', { class: 'nota', texto: detalhe }) : null,
+        el('div', { class: 'acoes' }, voltar, sim));
+      const teclas = (ev) => {                                // antes de armar, nenhum Enter/Espaço; depois, só tecla nova
+        if ((ev.key === 'Enter' || ev.key === ' ') && (!armado || ev.repeat)) { ev.preventDefault(); ev.stopPropagation(); }
+      };
+      const acabar = (v) => {
+        if (fim) return;
+        fim = true;
+        dlg.removeEventListener('keydown', teclas, true);
+        dlg.removeEventListener('close', aoFechar);
+        painel.remove();
+        form.hidden = false;
+        pronto(v);
+      };
+      const aoFechar = () => acabar(false);
+      sim.addEventListener('click', () => { if (armado) acabar(true); });
+      voltar.addEventListener('click', () => acabar(false));
+      dlg.addEventListener('keydown', teclas, true);
+      dlg.addEventListener('close', aoFechar);
+      form.hidden = true;
+      form.after(painel);                                     // no lugar do formulário (o histórico do item fica embaixo)
+      voltar.focus();                                         // o foco sai do campo: o Enter que vier não grava
+      setTimeout(() => { if (fim) return; armado = true; sim.disabled = false; sim.focus(); }, ARMAR_MS);
+    });
+  }
+
   function abrirDialogo(item) {
     const D = ESTADO.dados;
     const etapas = D.etapas || [];
@@ -543,10 +596,17 @@
       el('div', { class: 'acoes' }, el('button', { type: 'button', texto: 'Cancelar', onclick: () => dlg.close() }), confirmar));
     form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
+      if (confirmar.disabled) return;
       erro.hidden = true;
+      const q = Number(qtd.value || (item.quantidade === 1 ? 1 : 0));
       confirmar.disabled = true;
+      if (q > 1 && !(await confirmarNoDialogo(dlg, form, `Apontar ${n(q)} × ${item.id} na ${nomeDaEtapa(etapa)} — ${n(q * (item.kg_unidade || 0), 1)} kg?`,
+        `${item.descricao || item.tipo} · ${n(q)} de ${n(item.quantidade)} · feito em ${dataBRc(data.value)}`))) {
+        confirmar.disabled = false;
+        return;
+      }
       try {
-        await pedir('/api/producao/apontar', { projeto: PROJETO, item: item.id, etapa, quantidade: Number(qtd.value || (item.quantidade === 1 ? 1 : 0)),
+        await pedir('/api/producao/apontar', { projeto: PROJETO, item: item.id, etapa, quantidade: q,
           data: data.value, obs: obs.value });
         dlg.close();
         await carregar();

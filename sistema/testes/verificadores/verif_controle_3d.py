@@ -123,7 +123,15 @@ def apontar(aba, item, etapa, qtd=None):
     if qtd is not None:
         digitar(aba, "#ctl-qtd", str(qtd))
     clicar(aba, "#ctl-confirmar")
+    sim_depois_de_armar(aba)
     return esperar(aba, "!document.querySelector('#ctl-dialogo[open]')", 15)
+
+
+def sim_depois_de_armar(aba):
+    """mais de 1 unidade: o 2o passo (risco 1, 14/11) - espera armar (700 ms) e clica "Sim, apontar"; 1 unidade nao pergunta"""
+    if esperar(aba, "!!document.querySelector('#ctl-confirma')", 1.5):
+        esperar(aba, "!document.querySelector('#ctl-sim').disabled", 3)
+        clicar(aba, "#ctl-sim")
 
 
 S = "window.controle3d"
@@ -318,6 +326,7 @@ try:
         ok(esperar(aba, "!!document.querySelector('#ctl-dialogo-varios[open]')", 10), "Apontar os escolhidos abre a janela")
         clicar(aba, "#ctl-dialogo-varios input[name=ctl-etapa][value=producao]")
         clicar(aba, "#ctl-dialogo-varios #ctl-confirmar")
+        sim_depois_de_armar(aba)                         # 2 unidades: o 2o passo (risco 1, 14/11)
         ok(esperar(aba, f"{S}.dados.itens[{K('TESOURA 1-6')}].feito.producao === 1 && {S}.dados.itens[{K('TESOURA 1-7')}].feito.producao === 1", 20),
            "as duas produzidas de uma vez")
         esperar(aba, "false", 0.6)

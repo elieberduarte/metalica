@@ -7,11 +7,15 @@ pytest (tesoura T38 ×2, T74, MT71 em duas marcas, terças T.C.1 ×46, contraven
   1. a lista de materiais não tem mais a aba; o clique em "Produção" no topo abre a lista das telas (Lista de materiais,
      Controle de produção) e "Controle de produção" leva à tela, com a Produção acesa;
   2. os cartões começam em 0 % e a lista tem T38-1, T38-2, T74, MT71-1..3 e T.C.1 (46);
-  3. "Apontar" na T.C.1, etapa Pintura, 30 → a linha mostra "30 de 46" e o registro fica em producao/apontamentos.jsonl;
+  3. "Apontar" na T.C.1, etapa Produção, 30 → o 2º passo diz "30 × T.C.1 … 408,0 kg"; o Enter logo em seguida e o 2º
+     clique do clique duplo não gravam (risco 1, 14/11); "Sim, apontar" depois de armar grava; a linha mostra "30 de 46";
+  3b. a pintura só do produzido (risco 3, 14/11): a T.C.1 diz "só 30 com a produção apontada"; a T38-2 sem produção não
+     deixa apontar a pintura;
   4. 17 a mais é recusado no próprio diálogo ("só faltam 16"), sem gravar;
   5. T38-1 na Produção (quantidade 1) → ✓ e o cartão da Produção sai do 0 %;
   6. o filtro "Falta na produção" esconde a T38-1; a busca "T.C" deixa só a T.C.1;
-  7. "Estornar" desfaz a pintura (a linha volta a "—") e o histórico mostra o original riscado;
+  7. "Estornar" pela janela do item (todos os apontamentos dele — risco 2, 14/11) desfaz a produção (a linha volta a
+     "—") e a tabela de baixo mostra o original riscado;
   8. sem erro no console.
 Se o Posto V2 estiver nesta máquina, a tela também abre com a lista dele (os itens que producao.controle.itens dá para a lista dele).
 Porta livre, nunca a 8765/8766."""
@@ -102,7 +106,7 @@ def celula(item, coluna):
             f" return tr ? tr.cells[i].textContent.trim() : null; }})()")
 
 
-def apontar(aba, item, etapa=None, qtd=None):
+def apontar(aba, item, etapa=None, qtd=None, confirmar=True):
     clicar(aba, f"#controle-corpo button[data-item={json.dumps(item)}]")
     if not esperar(aba, "!!document.querySelector('#ctl-dialogo[open]')", 10): return False
     if etapa:
@@ -110,7 +114,21 @@ def apontar(aba, item, etapa=None, qtd=None):
     if qtd is not None:
         digitar(aba, "#ctl-qtd", str(qtd))
     clicar(aba, "#ctl-confirmar")
+    if confirmar:
+        sim_depois_de_armar(aba)
     return True
+
+
+def sim_depois_de_armar(aba):
+    """mais de 1 unidade: o 2º passo (risco 1, 14/11) — espera armar (700 ms) e clica "Sim, apontar"; 1 unidade não pergunta"""
+    if esperar(aba, "!!document.querySelector('#ctl-confirma')", 1.5):
+        esperar(aba, "!document.querySelector('#ctl-sim').disabled", 3)
+        clicar(aba, "#ctl-sim")
+
+
+def tecla_enter(aba):
+    aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="Enter", code="Enter", windowsVirtualKeyCode=13, text="\r")
+    aba.cmd("Input.dispatchKeyEvent", type="keyUp", key="Enter", code="Enter", windowsVirtualKeyCode=13)
 
 
 exe = next(c for c in CHROMES if os.path.exists(c)); cdp = _porta_livre(); perfil = tempfile.mkdtemp(prefix="verif_controle_")
@@ -154,17 +172,47 @@ try:
        f"itens numerados (T38-1, T38-2, T74, MT71-1..3) e peças pela posição ({len(ids)} linhas)")
     ok(aba.avaliar(celula("T.C.1", "Qtd")) == "46", "T.C.1 com 46 peças")
 
-    # 3. apontar 30 terças na pintura
-    ok(apontar(aba, "T.C.1", "pintura", 30), "o diálogo de apontar abre pela linha da T.C.1")
-    ok(esperar(aba, "!document.querySelector('#ctl-dialogo')", 15), "o diálogo fecha depois de apontar")
-    ok(esperar(aba, celula("T.C.1", "Pintura") + " === '30 de 46'", 15), f"a linha mostra 30 de 46 na pintura ({aba.avaliar(celula('T.C.1', 'Pintura'))})")
+    # 3. apontar 30 terças na produção: o 2º passo, que o mesmo Enter e o clique duplo não aceitam (risco 1)
     arq = os.path.join(OBRA, "producao", "apontamentos.jsonl")
+    n_linhas = lambda: len(open(arq, encoding="utf-8").read().strip().splitlines()) if os.path.exists(arq) else 0   # noqa: E731
+    ok(apontar(aba, "T.C.1", "producao", 30, confirmar=False), "o diálogo de apontar abre pela linha da T.C.1")
+    ok(esperar(aba, "!!document.querySelector('#ctl-confirma')", 5), "30 terças: a janela pede a confirmação")
+    txt = aba.avaliar("document.querySelector('#ctl-confirma').textContent") or ""
+    ok("30 × T.C.1" in txt and "408,0 kg" in txt, f"a confirmação diz a quantidade, a marca e os kg ({txt[:90]})")
+    tecla_enter(aba)
+    r_btn = aba.avaliar("(() => { const b = document.querySelector('#ctl-sim').getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; })()")
+    for t in ("mousePressed", "mouseReleased"):
+        aba.cmd("Input.dispatchMouseEvent", type=t, x=r_btn[0], y=r_btn[1], button="left", clickCount=2)
+    aba.drenar(0.3)
+    ok(n_linhas() == 0 and aba.avaliar("!!document.querySelector('#ctl-confirma')"),
+       "o Enter logo em seguida e o 2º clique do clique duplo não gravam")
+    sim_depois_de_armar(aba)
+    ok(esperar(aba, "!document.querySelector('#ctl-dialogo')", 15), "o diálogo fecha depois do Sim, apontar")
+    ok(esperar(aba, celula("T.C.1", "Produção") + " === '30 de 46'", 15), f"a linha mostra 30 de 46 na produção ({aba.avaliar(celula('T.C.1', 'Produção'))})")
     evs = [json.loads(l) for l in open(arq, encoding="utf-8")] if os.path.exists(arq) else []
-    ok(len(evs) == 1 and evs[0]["item"] == "T.C.1" and evs[0]["etapa"] == "pintura" and evs[0]["quantidade"] == 30 and evs[0]["quem"],
+    ok(len(evs) == 1 and evs[0]["item"] == "T.C.1" and evs[0]["etapa"] == "producao" and evs[0]["quantidade"] == 30 and evs[0]["quem"],
        "o apontamento ficou no projeto (producao/apontamentos.jsonl), com quem apontou")
 
+    # 3b. a pintura só do produzido (risco 3)
+    clicar(aba, "#controle-corpo button[data-item='T.C.1']")
+    esperar(aba, "!!document.querySelector('#ctl-dialogo[open]')", 10)
+    clicar(aba, "#ctl-dialogo input[name=ctl-etapa][value=pintura]")
+    dica = aba.avaliar("document.querySelector('#ctl-dialogo small.nota').textContent") or ""
+    ok("só 30 com a produção apontada" in dica and aba.avaliar("document.querySelector('#ctl-qtd').value") == "30",
+       f"na pintura da T.C.1 vão só as 30 produzidas ({dica})")
+    clicar(aba, "#ctl-dialogo .acoes button[type=button]")
+    esperar(aba, "!document.querySelector('#ctl-dialogo')", 5)
+    clicar(aba, "#controle-corpo button[data-item='T38-2']")
+    esperar(aba, "!!document.querySelector('#ctl-dialogo[open]')", 10)
+    clicar(aba, "#ctl-dialogo input[name=ctl-etapa][value=pintura]")
+    dica = aba.avaliar("document.querySelector('#ctl-dialogo small.nota').textContent") or ""
+    ok("falta apontar a produção antes da pintura" in dica and aba.avaliar("document.querySelector('#ctl-confirmar').disabled"),
+       f"a T38-2 sem produção não deixa apontar a pintura ({dica})")
+    clicar(aba, "#ctl-dialogo .acoes button[type=button]")
+    esperar(aba, "!document.querySelector('#ctl-dialogo')", 5)
+
     # 4. a mais é recusado no diálogo
-    apontar(aba, "T.C.1", "pintura", 17)
+    apontar(aba, "T.C.1", "producao", 17)
     ok(esperar(aba, "(() => { const e = document.querySelector('#ctl-dialogo .erro'); return e && !e.hidden && /só faltam 16/.test(e.textContent); })()", 10),
        "17 a mais é recusado no diálogo (só faltam 16)")
     clicar(aba, "#ctl-dialogo .acoes button[type=button]")
@@ -188,11 +236,14 @@ try:
     digitar(aba, "#filtro", "")
     aba.avaliar("document.querySelector('#filtro').dispatchEvent(new Event('input'))")
 
-    # 7. estorno
+    # 7. estorno pela janela do item, que tem todos os apontamentos dele (risco 2)
     aba.avaliar("window.confirm = () => true")
     ev_id = evs[0]["id"] if evs else ""
-    clicar(aba, f"#controle-corpo tr[data-evento='{ev_id}'] button")
-    ok(esperar(aba, celula("T.C.1", "Pintura") + " === '—'", 15), "o estorno desfaz a pintura da T.C.1")
+    clicar(aba, "#controle-corpo button[data-item='T.C.1']")
+    ok(esperar(aba, f"!!document.querySelector(\"#ctl-dialogo .ctl-historico tr[data-evento='{ev_id}'] button\")", 15),
+       "a janela da T.C.1 mostra os apontamentos dela, com Estornar")
+    clicar(aba, f"#ctl-dialogo .ctl-historico tr[data-evento='{ev_id}'] button")
+    ok(esperar(aba, celula("T.C.1", "Produção") + " === '—'", 15), "o estorno desfaz a produção da T.C.1")
     ok(esperar(aba, f"(() => {{ const tr = document.querySelector(\"#controle-corpo tr[data-evento='{ev_id}']\"); return tr && tr.classList.contains('ctl-estornado'); }})()", 5),
        "o apontamento original continua no histórico, riscado")
     linhas = open(arq, encoding="utf-8").read().strip().splitlines()
@@ -221,6 +272,9 @@ try:
     ok("4 item(ns), 9 peça(s)/unidade(s)" in res, f"a janela diz o que vai: 4 itens, 3 MT71 + 6 CV.2 ({res[:90]})")
     digitar(aba, "#ctl-dialogo-varios #ctl-obs", "lote MT71")
     clicar(aba, "#ctl-dialogo-varios #ctl-confirmar")
+    ok(esperar(aba, "((document.querySelector('#ctl-confirma') || {}).textContent || '').includes('9 peça(s)/unidade(s) em 4 itens')", 5),
+       "vários: a confirmação diz 9 peças/unidades em 4 itens")
+    sim_depois_de_armar(aba)
     ok(esperar(aba, "!document.querySelector('#ctl-dialogo-varios')", 15), "a janela fecha depois de apontar")
     ok(esperar(aba, " && ".join(celula(i, "Produção") + " === '✓'" for i in ("MT71-1", "MT71-2", "MT71-3"))
                + " && " + celula("CV.2", "Produção") + " === '✓ 6'", 15),
