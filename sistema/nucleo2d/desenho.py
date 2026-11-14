@@ -759,8 +759,15 @@ def formatar_cota(v: float, casas=None) -> str:
                 return formatar_mm(v, int(casas))
         except (TypeError, ValueError):
             pass
-    n = math.floor(v + 0.5)
-    return "%d" % (0 if n == 0 else n)
+    return "%d" % mm_inteiro(v)
+
+
+def mm_inteiro(v: float) -> int:
+    """A cota em mm inteiro, o meio para o MAIOR (DET-03, "na dúvida, o maior"), também no negativo: o número de quem
+    grava uma cota (a volta do 3D para a planta) e o de formatar_cota. Não usar o round() do Python numa cota: ele leva
+    o meio para o par (6554,5 → 6554 — a volta do 3D, revisão de 14/11, reincidência da DET-03)."""
+    n = math.floor(float(v) + 0.5)
+    return 0 if n == 0 else int(n)
 
 
 def escala_sugerida(largura_mm: float, altura_mm: float, folha_util=(750.0, 520.0)) -> float:

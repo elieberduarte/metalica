@@ -33,7 +33,7 @@ import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from nucleo.base import ErroDeDados
-from nucleo2d.desenho import Circulo, Desenho, Linha, Polilinha
+from nucleo2d.desenho import Circulo, Desenho, Linha, Polilinha, mm_inteiro
 from nucleo3d.geometria import extrudar
 from nucleo3d.modelo import Barra, Camada, Chapa, Documento, Solido
 
@@ -2979,12 +2979,12 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
                 topo0 = _nivel(a.get("nivel_topo"), tab, 3000.0)
                 fim0 = _nivel(a.get("nivel_fim"), tab, 0.0) if a.get("nivel_fim") is not None else topo0
                 if abs(di[2]) > tol:
-                    mud.append("topo %s → %s" % (a.get("nivel_topo"), round(topo0 + di[2])))
-                    a["nivel_topo"] = round(topo0 + di[2])
+                    mud.append("topo %s → %s" % (a.get("nivel_topo"), mm_inteiro(topo0 + di[2])))
+                    a["nivel_topo"] = mm_inteiro(topo0 + di[2])                # o meio para o maior (DET-03)
                 if abs(df[2]) > tol and (a.get("nivel_fim") is not None or abs(df[2] - di[2]) > tol):
                     mud.append("topo da outra ponta %s → %s" % (a.get("nivel_fim") if a.get("nivel_fim") is not None else "—",
-                                                                 round(fim0 + df[2])))
-                    a["nivel_fim"] = round(fim0 + df[2])
+                                                                 mm_inteiro(fim0 + df[2])))
+                    a["nivel_fim"] = mm_inteiro(fim0 + df[2])
                 elif a.get("nivel_fim") is None and abs(df[2] - di[2]) > tol:
                     # só a ponta a mudou de cota e a b não tinha a dela: sem `nivel_fim` a b ia junto (revisão de 14/11)
                     # — a b fica com a cota em que estava, sem arredondar (ela não mudou)
@@ -3000,8 +3000,8 @@ def _volta_do_3d(des: Desenho, doc: Documento, niveis: Optional[Sequence[dict]],
                 h = _altura_do_perfil((a.get("secao") or {}).get("perfil", "W 310×38,7"))
                 zt -= {"topo": -h / 2.0, "base": h / 2.0}.get(alin, 0.0)
             if ref is None and tipo == "viga" and abs(_nivel(a.get("nivel_topo"), tab, zt) - zt) > tol:
-                mud.append("topo %s → %s" % (a.get("nivel_topo"), round(zt)))
-                a["nivel_topo"] = round(zt)
+                mud.append("topo %s → %s" % (a.get("nivel_topo"), mm_inteiro(zt)))
+                a["nivel_topo"] = mm_inteiro(zt)
             if tipo == "tesoura" and abs(_nivel(a.get("nivel_base"), tab, z0) - min(z0, _nivel(a.get("nivel_fim"), tab, z0))) > tol:
                 dz = z0 - min(_nivel(a.get("nivel_base"), tab, z0), _nivel(a.get("nivel_fim"), tab, z0))
                 if abs(dz) > tol:

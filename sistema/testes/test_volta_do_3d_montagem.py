@@ -272,8 +272,9 @@ def test_sem_ajuste_da_montagem_a_volta_continua_como_era():
     assert DPE.planta_do_modelo(des, doc, [])["alteracoes"] == []
     _andar(b, (300.0, 0.0, 100.0))
     r = DPE.planta_do_modelo(des, doc, [])
-    assert r["alteracoes"] == ["viga T.C.1: movida 300 mm, topo 6454.5 → 6554"]         # a cota que muda vira mm inteiro
-    assert des.entidades[e.id].a == pytest.approx((300.0, 0.0)) and des.entidades[e.id].atributos["nivel_topo"] == 6554
+    # a cota que muda vira mm inteiro, o meio para o MAIOR (DET-03; o round() do Python dava 6554 — revisão de 14/11, achado 5)
+    assert r["alteracoes"] == ["viga T.C.1: movida 300 mm, topo 6454.5 → 6555"]
+    assert des.entidades[e.id].a == pytest.approx((300.0, 0.0)) and des.entidades[e.id].atributos["nivel_topo"] == 6555
     assert DPE.planta_do_modelo(des, doc, [])["alteracoes"] == []
 
 
@@ -847,3 +848,24 @@ def test_a_ponta_ajustada_de_lado_pouco_mais_que_1_mm_nao_e_calada():
     b.fim = (b.fim[0], b.fim[1] + 1.5, b.fim[2])
     r = DPE.planta_do_modelo(des, doc, [])
     assert r["alteracoes"] == ["viga T.C.1: ponta ajustada 2 mm"] and r["mudados"] == [eid]
+
+
+@pytest.mark.parametrize("modelo", ["de agora", "pela conta de sempre"])
+def test_a_cota_que_vem_do_3d_e_mm_inteiro_o_meio_para_o_maior(modelo):
+    """achado 5 (reincidência da DET-03, "mm inteiro; na dúvida, o MAIOR"): o round() do Python leva o meio para o par —
+    6554,5 → 6554 e 6800,5 → 6800. As três cotas da volta (o topo, a outra ponta e a da conta sem referência) sobem o
+    meio, como o formatar_cota das pranchas e o numeroDaCota do CAD"""
+    if modelo == "de agora":
+        des, doc, eid = _terca_solta(nivel_topo=6454.5, nivel_fim=6700.5)
+        _andar(_cv(doc, eid), (0.0, 0.0, 100.0))
+        r = DPE.planta_do_modelo(des, doc, [])
+        assert r["alteracoes"] == ["viga T.C.1: topo 6454.5 → 6555, topo da outra ponta 6700.5 → 6801"]
+        at = des.entidades[eid].atributos
+        assert (at["nivel_topo"], at["nivel_fim"]) == (6555, 6801)
+    else:
+        # sem carimbo e sem a régua da montagem: a cota pela barra (o elemento que a montagem de agora não refaz)
+        des, doc, eid = _terca_solta(nivel_topo=6454.5)
+        _sem_carimbo(doc)
+        _andar(_cv(doc, eid), (0.0, 0.0, 100.0))
+        r = DPE._volta_do_3d(des, doc, [], 1.0, None)
+        assert r["alteracoes"] == ["viga T.C.1: topo 6454.5 → 6555"] and des.entidades[eid].atributos["nivel_topo"] == 6555

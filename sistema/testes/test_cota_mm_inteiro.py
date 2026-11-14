@@ -110,3 +110,15 @@ def test_tela_ao_mm_pelo_node():
     finally:
         shutil.rmtree(pasta, ignore_errors=True)
     assert a == ["700", "700", "700,1", "773", "0", "700", "700,1", "R13"], a
+
+
+def test_mm_inteiro_o_meio_para_o_maior():
+    """o número em mm inteiro de quem grava uma cota (a volta do 3D para a planta, 14/11 — reincidência da DET-03): o
+    meio vai para o MAIOR, também no negativo, igual ao formatar_cota. O round() do Python leva o meio para o par
+    (6554,5 → 6554), e não pode ser usado para cota"""
+    from nucleo2d.desenho import mm_inteiro
+    casos = {6554.5: 6555, 6555.5: 6556, 2.5: 3, 0.5: 1, -0.5: 0, -1.5: -1, -2.5: -2, 700.099: 700, 6454.4999: 6454, 0.0: 0}
+    for v, n in casos.items():
+        assert mm_inteiro(v) == n and isinstance(mm_inteiro(v), int), v
+        assert formatar_cota(v) == str(n), v                    # o mesmo número que a cota da prancha
+    assert str(mm_inteiro(-0.4)) == "0"                         # sem "-0"
