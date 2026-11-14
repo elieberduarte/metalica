@@ -83,6 +83,25 @@ try:
     ok(get("/api/projetos/compressores/desenhos") == [], "desenho excluído pelo ×")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, "sem erros no console do editor: %s" % erros[:3])
+    # o Detalhar das telhas grava também o "Telhas para o fornecedor" (o nome não começa por "detalhamento"): o
+    # "Marcar detalhamentos" marca os dois pela origem (14/11, conferência da 0.9.4)
+    r = post("/api/projetos/compressores/detalhar", {"grupos": ["telhas"]})
+    nomes_t = sorted(d["nome"] for d in r["desenhos"])
+    ok(len(nomes_t) == 2 and "telhas-para-o-fornecedor" in nomes_t, "o Detalhar das telhas: %s" % nomes_t)
+    aba.console.clear()
+    aba.navegar(base + "/cad?projeto=compressores&desenho=" + nomes_t[0], limite=30)
+    t0 = time.time()
+    while time.time() - t0 < 30 and not aba.avaliar("document.body.dataset.pronto === '1' && !!window.cad"): aba.drenar(0.5)
+    aba.avaliar("window.cad.dialogoExcluir(); 1")
+    t0 = time.time()
+    while time.time() - t0 < 15 and aba.avaliar("document.querySelectorAll('dialog[open] input[type=checkbox]').length") != 2: aba.drenar(0.5)
+    aba.avaliar("[...document.querySelectorAll('dialog[open] button')].find(b => b.textContent === 'Marcar detalhamentos').click(); 1")
+    marcados = aba.avaliar("[...document.querySelectorAll('dialog[open] input[type=checkbox]')].filter(c => c.checked).length")
+    ok(marcados == 2, "'Marcar detalhamentos' marca também o das telhas para o fornecedor (%s de 2)" % marcados)
+    aba.avaliar("document.querySelector('dialog[open] .botao-ok').click(); 1")
+    t0 = time.time()
+    while time.time() - t0 < 30 and get("/api/projetos/compressores/desenhos"): aba.drenar(0.5)
+    ok(get("/api/projetos/compressores/desenhos") == [], "os dois excluídos")
 finally:
     try: nav.kill()
     except Exception: pass

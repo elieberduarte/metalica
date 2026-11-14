@@ -49,9 +49,13 @@ try:
     n_desenhos = len(r["desenhos"])
     ok(len(lista) == n_desenhos, "desenhos listados no projeto: %d" % len(lista))
     # de novo com substituir: continua o mesmo número
+    antes = {d["nome"] for d in lista}
     r2 = post("/api/projetos/compressores/detalhar", {"grupos": ["chaparias"], "substituir": True})
     lista = json.load(urllib.request.urlopen(base + "/api/projetos/compressores/desenhos"))
-    ok(len(lista) == n_desenhos and len(r2["desenhos"]) == 1, "repetir com substituir não duplica desenhos")
+    agora = {d["nome"] for d in lista}
+    ok(len(lista) == n_desenhos and len(r2["desenhos"]) == 1,
+       "repetir com substituir não duplica desenhos (lista %d, antes %d; o 2º Detalhar devolveu %s; novos %s, sumidos %s)"
+       % (len(lista), n_desenhos, [d["nome"] for d in r2["desenhos"]], sorted(agora - antes), sorted(antes - agora)))
 
     for _ in range(60):
         alvos = [t for t in _json(f"http://127.0.0.1:{cdp}/json/list") if t.get("type") == "page"]
