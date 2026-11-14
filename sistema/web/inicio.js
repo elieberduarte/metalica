@@ -34,7 +34,9 @@ async function api(url, opcoes = {}) {
   let corpo = null;
   try { corpo = await r.json(); } catch (e) { corpo = null; }
   if (!r.ok || (corpo && corpo.erro)) {
-    throw new Error((corpo && corpo.erro) || `${r.status} ${r.statusText}`);
+    const erro = new Error((corpo && corpo.erro) || `${r.status} ${r.statusText}`);
+    erro.corpo = corpo;                 // o que o servidor mandou junto do erro (nome_repetido…)
+    throw erro;
   }
   return corpo;
 }
@@ -431,8 +433,10 @@ function perguntar({ titulo, texto = '', campos, ok = 'OK' }) {
     $('#dlg-cancelar').onclick = () => fechar(null);
     dlg.oncancel = (ev) => { ev.preventDefault(); fechar(null); };
     dlg.showModal();
-    const primeiro = entradas[campos[0].id];
-    if (primeiro.focus) { primeiro.focus(); primeiro.select(); }
+    // sem campos é só uma confirmação (o IFC incompleto, o nome repetido): o foco fica no Cancelar, o primeiro botão —
+    // o Enter distraído não confirma
+    const primeiro = campos.length ? entradas[campos[0].id] : null;
+    if (primeiro && primeiro.focus) { primeiro.focus(); primeiro.select(); }
   });
 }
 
@@ -462,7 +466,8 @@ async function novoProjetoPeloCad() {
   const tipo = { recebido: 'recebido', arquitetonico: 'lancamento' }[comeco] || 'desenho';
   try {
     carregando(true, 'Criando o projeto…');
-    const criado = await postar('/api/projetos', { ...dados, tipo });
+    const criado = await criarProjeto({ ...dados, tipo });
+    if (!criado) { carregando(false); return; }
     location.href = `/cad?projeto=${encodeURIComponent(criado.slug)}` + ({ recebido: '&recebido=1', lancamento: '&arquitetonico=1' }[tipo] || '');
   } catch (e) {
     carregando(false);
@@ -479,6 +484,21 @@ const CAMPOS_PROJETO = [
 
 /* ------------------------------------------------------------------ ações */
 
+/** Cria o projeto. Com outro do mesmo nome na lista, pergunta antes (D07, 13/11: o segundo "PORTARIA HERMES" entrava
+ *  calado, e a lista ficava com dois cartões iguais). Devolve null quando o usuário desiste. */
+async function criarProjeto(dados) {
+  try {
+    return await postar('/api/projetos', { ...dados, conferir_nome: true });
+  } catch (e) {
+    if (!(e.corpo && e.corpo.nome_repetido)) throw e;
+    carregando(false);
+    const segue = await perguntar({ titulo: 'Já existe um projeto com este nome', texto: e.message + ' Criar mesmo assim?',
+      campos: [], ok: 'Criar outro com o mesmo nome' });
+    if (!segue) return null;
+    return postar('/api/projetos', dados);
+  }
+}
+
 async function novoProjeto() {
   const v = await perguntar({
     titulo: 'Novo projeto de galpão',
@@ -486,7 +506,8 @@ async function novoProjeto() {
     campos: CAMPOS_PROJETO, ok: 'Criar e abrir' });
   if (!v) return;
   try {
-    const p = await postar('/api/projetos', { ...v, tipo: 'galpao' });
+    const p = await criarProjeto({ ...v, tipo: 'galpao' });
+    if (!p) return;
     location.href = urlDoProjeto(p);
   } catch (e) { recado('Não foi possível criar o projeto', e.message, 'erro'); }
 }
@@ -506,6 +527,8 @@ function novoDeIFC() {
   entrada.onchange = async () => {
     const arquivo = entrada.files && entrada.files[0];
     if (!arquivo) return;
+    // o arquivo vazio nem cria o projeto (D07, 13/11: ficava um projeto sem modelo na lista a cada tentativa)
+    if (!arquivo.size) { recado('Não foi possível importar o IFC', `${arquivo.name} está vazio (0 bytes).`, 'erro'); return; }
     const sugestao = arquivo.name.replace(/\.ifc$/i, '').replace(/[._-]+/g, ' ').trim();
     const v = await perguntar({
       titulo: 'Novo projeto a partir de IFC',
@@ -517,7 +540,8 @@ function novoDeIFC() {
     let criado = null;
     try {
       carregando(true, 'Criando o projeto…');
-      criado = await postar('/api/projetos', { ...v, tipo: 'ifc' });
+      criado = await criarProjeto({ ...v, tipo: 'ifc', aguardando_ifc: true });
+      if (!criado) { carregando(false); return; }
       const mb = arquivo.size / 1048576;
       carregando(true, `Importando ${arquivo.name} (${mb.toFixed(0)} MB)… ` +
                        (mb > 150 ? 'arquivo muito grande: pode levar 10 minutos ou mais.' : 'arquivo grande leva um minuto ou dois.'));
@@ -531,8 +555,19 @@ function novoDeIFC() {
       location.href = urlDoProjeto(criado, 'editor');
     } catch (e) {
       carregando(false);
-      recado('Não foi possível importar o IFC', e.message, 'erro');
-      if (criado) carregar();          // o projeto existe, vazio: aparece na lista para tentar de novo
+      // o projeto criado só para este IFC não fica na lista, vazio (D07, 13/11): o servidor o descarta quando a
+      // importação falha; o que falha antes dela (o envio cortado) é descartado por aqui
+      let ficou = false, texto = e.message;
+      if (criado) {
+        try {
+          const d = await postar(`/api/projetos/${encodeURIComponent(criado.slug)}/descartar-novo`);
+          ficou = d.existe !== false;
+        } catch (e2) { ficou = true; }
+        if (ficou) texto += ` O projeto "${criado.nome}" ficou na lista, sem modelo: exclua-o ou importe o IFC de novo pelo 3D dele.`;
+        else if (!/O projeto não foi criado\.$/.test(texto)) texto += ' O projeto não foi criado.';
+        carregar();
+      }
+      recado('Não foi possível importar o IFC', texto, 'erro');
     }
   };
   entrada.click();

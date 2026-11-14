@@ -507,9 +507,70 @@ def _pasta_do_projeto(corpo: dict, nome_padrao: str):
 
 
 def criar_projeto(corpo: dict) -> dict:
-    return _gerente().criar(corpo.get("nome"), corpo.get("cliente"), corpo.get("local"),
-                            corpo.get("responsavel"), corpo.get("tipo") or "galpao",
-                            corpo.get("dados") if isinstance(corpo.get("dados"), dict) else None)
+    """POST /api/projetos. `conferir_nome` (a tela de Projetos manda): com outro projeto do mesmo nome na lista, recusa
+    dizendo qual — a tela pergunta e, confirmado, pede de novo sem o campo (D07, 13/11: dois "PORTARIA HERMES" na lista,
+    sem diferença à vista, e nenhum aviso). `aguardando_ifc`: o projeto nasce para receber um IFC em seguida; se a
+    importação falhar ele é descartado (descartar_projeto_novo)."""
+    g = _gerente()
+    if corpo.get("conferir_nome"):
+        _recusar_nome_repetido(g, corpo.get("nome"))
+    r = g.criar(corpo.get("nome"), corpo.get("cliente"), corpo.get("local"),
+                corpo.get("responsavel"), corpo.get("tipo") or "galpao",
+                corpo.get("dados") if isinstance(corpo.get("dados"), dict) else None)
+    if corpo.get("aguardando_ifc"):
+        g._atualizar(r["slug"], aguardando_ifc=True)
+    return r
+
+
+def _recusar_nome_repetido(g, nome):
+    """ErroDeDados (com `nome_repetido`, que vai na resposta) quando a lista já tem um projeto com este nome — sem
+    diferenciar maiúsculas, pontuação nem espaços a mais (o mesmo critério do nome da pasta)."""
+    from projetos import ARQUIVO, RESERVADAS, slug as _slug_de
+    alvo = _slug_de(re.sub(r"\s+", " ", str(nome or "")).strip())
+    if not alvo or not os.path.isdir(g.raiz):
+        return
+    for s in sorted(os.listdir(g.raiz)):
+        if s.startswith((".", "_")) or s in RESERVADAS or not os.path.exists(os.path.join(g.raiz, s, ARQUIVO)):
+            continue
+        try:
+            p = g.ler(s)
+        except (OSError, ErroDeDados):
+            continue
+        if _slug_de(str(p.get("nome") or "")) != alvo:
+            continue
+        e = ErroDeDados('Já existe um projeto chamado "%s" na lista%s. Criar outro com o mesmo nome deixa dois iguais à '
+                        'vista, sem diferença no cartão.' % (p.get("nome") or s, " (arquivado)" if p.get("arquivado") else ""))
+        e.nome_repetido = {"nome": p.get("nome") or s, "slug": s, "arquivado": bool(p.get("arquivado"))}
+        raise e
+
+
+def descartar_projeto_novo(s: str) -> dict:
+    """O projeto criado só para receber um IFC (`aguardando_ifc`) e que ficou sem modelo — a importação falhou — sai da
+    lista (D07, 13/11: cada tentativa com um arquivo ruim deixava um projeto vazio). Só com o projeto.json dentro, a
+    pasta é apagada; com mais alguma coisa (o IFC que chegou a entrar em origem/), vai para a lixeira, como todo
+    projeto excluído. Qualquer outro projeto fica como está."""
+    g = _gerente()
+    from projetos import ABERTO, ARQUIVO
+    pasta = g.pasta(s)
+    if not os.path.isdir(pasta):
+        return {"descartado": False, "existe": False}
+    try:
+        p = g.ler(s)
+    except (OSError, ErroDeDados):
+        return {"descartado": False, "existe": True}
+    if p.get("aguardando_ifc") is not True or os.path.exists(g.caminho_modelo(s)):
+        return {"descartado": False, "existe": True}
+    so_o_projeto = all(raiz == pasta and a in (ARQUIVO, ABERTO)
+                       for raiz, _dirs, arqs in os.walk(pasta) for a in arqs)
+    if so_o_projeto:
+        import shutil
+        try:
+            shutil.rmtree(pasta)
+            return {"descartado": True, "existe": False, "lixeira": False}
+        except OSError:
+            pass                                       # o Windows segura um arquivo: vai para a lixeira
+    g.excluir(s)
+    return {"descartado": True, "existe": False, "lixeira": True}
 
 
 def projeto_completo(s: str) -> dict:
@@ -614,6 +675,8 @@ def acao_de_projeto(s: str, acao: str, corpo: dict) -> dict:
         return r
     if acao == "importar-ifc":
         return importar_ifc_no_projeto(s, corpo)
+    if acao == "descartar-novo":
+        return descartar_projeto_novo(s)
     if acao == "restaurar-modelo":
         r = g.restaurar_modelo(s, corpo.get("arquivo"))
         r["alterado"] = _alterado_modelo(s)
@@ -661,7 +724,19 @@ def importar_pacote_de_projeto(corpo: dict) -> dict:
 
 def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
     """Guarda o IFC em <projeto>/origem, importa e grava o modelo do editor. Devolve só
-    o relatório: o documento tem dezenas de megabytes e o editor o busca ao abrir."""
+    o relatório: o documento tem dezenas de megabytes e o editor o busca ao abrir.
+    A importação que falha no projeto criado só para ela (`aguardando_ifc`) leva o projeto junto: nada fica na lista."""
+    try:
+        return _importar_ifc_no_projeto(s, corpo)
+    except Exception as e:
+        if not descartar_projeto_novo(s).get("descartado"):
+            raise
+        if isinstance(e, ErroDeDados):
+            raise ErroDeDados("%s O projeto não foi criado." % str(e).rstrip()) from e
+        raise
+
+
+def _importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
     import base64
     from ifc import importar as imp
     g = _gerente()
@@ -713,7 +788,8 @@ def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
             g._atualizar(s, eixos=eixos)
             resumo["eixos"] = len(eixos.get("numeros") or []) + len(eixos.get("letras") or []) + sum(
                 len(m.get("numeros") or []) + len(m.get("letras") or []) for m in eixos.get("malhas") or [])
-        g.tocar(s, tipo="ifc", origem_ifc=nome, importacao_resumo=resumo)
+        g.tocar(s, tipo="ifc", origem_ifc=nome, importacao_resumo=resumo,
+                **({"aguardando_ifc": False} if g.ler(s).get("aguardando_ifc") else {}))
     finally:
         _fim_progresso(s)
     return {"projeto": s, "estatisticas": doc.estatisticas(),
@@ -6444,6 +6520,8 @@ class Handler(BaseHTTPRequestHandler):
         corpo = {"erro": str(mensagem), "detalhe": detalhe}
         if getattr(mensagem, "pecas", None):              # o caminho até cada peça do erro (o PDF recusado, Q01)
             corpo["pecas"] = mensagem.pecas
+        if getattr(mensagem, "nome_repetido", None):      # a tela pergunta "criar mesmo assim?" (D07)
+            corpo["nome_repetido"] = mensagem.nome_repetido
         self._json(corpo, status)
 
     def _modelo_leve(self, s: str, resto: list):
