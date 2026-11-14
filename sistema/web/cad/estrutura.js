@@ -811,6 +811,7 @@ export class MetodosEstruturaCAD {
     if (!this._sincroniaInstalada) {
       this._sincroniaInstalada = true;
       const gravar = this.salvar.bind(this);
+      this._salvarSemSincronia = gravar;            // a volta do 3D grava a planta sem refazer o 3D por ela (14/11)
       this.salvar = async (...args) => {
         // Só depois de uma gravação de verdade, e com a planta como foi gravada (07/10, Docas: as 7 tesouras
         // lançadas não chegaram ao 3D). Com outra gravação em curso, o salvar do CAD só marca a pendente e volta na
@@ -1264,6 +1265,9 @@ export class MetodosEstruturaCAD {
    */
   async _sincronizar3D(forcar = false, impressao = null) {
     if (!this.projeto || !this.nomeDesenho) return null;
+    // durante o "Atualizar a planta pelo 3D" a planta ainda é a de antes da volta: refazer o 3D por ela desfazia o que o
+    // usuário fez no 3D (14/11, BUGS N.3 pelo GESTÃO N.9); a volta acerta a impressão no fim
+    if (this._voltaDo3D && !forcar) return null;
     const agora = impressao ?? this._impressaoDaPlanta();          // a da planta gravada, quando vem do salvar
     const chave = `${this.projeto}|${this.nomeDesenho}`;
     if (this._sincroniaChave !== chave) { this._sincroniaChave = chave; this._sincroniaUltima = undefined; }
@@ -1276,8 +1280,10 @@ export class MetodosEstruturaCAD {
     if (!forcar && agora === this._sincroniaUltima) return null;
     this._sincroniaUltima = agora;
     let r;
+    const pedido = pedir(`/api/projetos/${encodeURIComponent(this.projeto)}/estrutura/3d`, { desenho: this.nomeDesenho, sincronizar: true });
+    this._sincroniaEmCurso = pedido.catch(() => null);
     try {
-      r = await pedir(`/api/projetos/${encodeURIComponent(this.projeto)}/estrutura/3d`, { desenho: this.nomeDesenho, sincronizar: true });
+      r = await pedido;
     } catch (e) { this.aviso(`O 3D não acompanhou a planta: ${e.message}`, 'atencao', 8000); this._sincroniaUltima = null; return null; }
     if (!r.mudou) return r;
     // a cobertura retrátil redesenhada na planta pelo servidor (as linhas das tesouras): carrega sem mexer na vista
@@ -1286,6 +1292,15 @@ export class MetodosEstruturaCAD {
     for (const a of r.avisos || []) this.aviso(a, 'atencao', 10000);
     if (window.parent !== window) { try { window.parent.postMessage({ metalica: 'modelo-mudou', origem: '2d' }, location.origin); } catch { /* */ } }
     return r;
+  }
+
+  /** Espera a sincronia do 3D em curso (e a que começar enquanto se espera). */
+  async _esperarSincronia() {
+    for (let i = 0; i < 20 && this._sincroniaEmCurso; i++) {
+      const p = this._sincroniaEmCurso;
+      await p;
+      if (this._sincroniaEmCurso === p) { this._sincroniaEmCurso = null; break; }
+    }
   }
 
   _guardarMedidas() { try { localStorage.setItem(CHAVE, JSON.stringify(this.medidasEstrutura)); } catch { /* */ } }
@@ -1797,12 +1812,30 @@ export class MetodosEstruturaCAD {
   // ---- a volta: o que mudou no 3D vem para a planta (R5)
   async atualizarPlantaPelo3D() {
     if (!this.projeto) { this.aviso('Atualizar pelo 3D precisa de um projeto aberto.', 'atencao'); return; }
-    await this.salvar({ avisar: false });
+    // A volta não deixa a sincronia correr junto (14/11, BUGS N.3 pelo GESTÃO N.9): a gravação de antes dela disparava a
+    // sincronia, que refazia o 3D pela planta de ANTES da volta e terminava depois dela — o 3D com a terça de volta ao
+    // lugar antigo, a planta com ela adiante, e o 2º clique desfazia na planta o que o usuário fez no 3D (as duas gravavam o
+    // modelo.json ao mesmo tempo). Agora: espera a sincronia em curso, grava a planta sem sincronizar, pede a volta e, no
+    // fim, a planta e o 3D dizem a mesma coisa (a impressão da planta nova é a do 3D: a próxima gravação não refaz nada).
+    this._voltaDo3D = true;
     let r;
     try {
-      r = await pedir(`/api/projetos/${encodeURIComponent(this.projeto)}/estrutura/do3d`, { desenho: this.nomeDesenho || '' });
-    } catch (e) { this.aviso(`Não foi possível ler o 3D: ${e.message}`, 'erro', 0); return; }
-    if (r.desenho) this.carregar(r.desenho, { enquadrar: false });
+      await this._esperarSincronia();
+      // a planta mudada nesta tela desde a última sincronia (o autosave ainda não levou ao 3D): leva antes, e esperando,
+      // senão a volta desfaria a mudança da planta; sem mudança conhecida (a planta recém-aberta), não refaz o 3D
+      const chave = `${this.projeto}|${this.nomeDesenho}`;
+      const ultima = this._sincroniaChave === chave ? this._sincroniaUltima : undefined;
+      await (this._salvarSemSincronia || this.salvar)({ avisar: false });
+      await this._esperarSincronia();               // a do autosave que terminou de gravar enquanto se esperava
+      const agora = this._impressaoDaPlanta();
+      if (ultima !== undefined && ultima !== null && agora !== ultima && this._sincroniaUltima !== agora) await this._sincronizar3D(true, agora);
+      try {
+        r = await pedir(`/api/projetos/${encodeURIComponent(this.projeto)}/estrutura/do3d`, { desenho: this.nomeDesenho || '' });
+      } catch (e) { this.aviso(`Não foi possível ler o 3D: ${e.message}`, 'erro', 0); return; }
+      if (r.desenho) this.carregar(r.desenho, { enquadrar: false });
+      this._sincroniaChave = chave;
+      this._sincroniaUltima = this._impressaoDaPlanta();
+    } finally { this._voltaDo3D = false; }
     const alt = r.alteracoes || [];
     if (alt.length) {
       // a contagem na primeira linha e uma mudança por linha, com rolagem (GESTÃO N.9, 14/11: a volta com 1 + 32 mudanças
