@@ -64,6 +64,8 @@
         I('PDF do desenho aberto', '2d', 'exportar-pdf', { antes: 'Arquivo › PDF deste desenho' }),
         I('PDF de todas as pranchas…', '2d', 'pdf-pranchas', { antes: 'Arquivo › PDF de todas as pranchas…' }),
         I('DXF de todas as pranchas…', '2d', 'dxf-pranchas', { dica: 'todas juntas num arquivo, e uma por arquivo num ZIP', antes: 'Arquivo › DXF de todas as pranchas…' }),
+        // as telhas no padrão do Fábio (13/11): faltou aqui e a TEL-11 pegou na conferência da 0.9.4 (14/11)
+        I('Telhas para o fornecedor (DXF + Word)…', '2d', 'telhas-fornecedor', { dica: 'o DXF em tamanho real e a relação em Word, na pasta da obra com a revisão', antes: 'Arquivo › Telhas para o fornecedor (DXF + Word)…' }),
       ]),
       HR,
       // a lista de tudo o que o projeto tem (15/10: "vou usar isso como caminho padrão de procura de informações")
