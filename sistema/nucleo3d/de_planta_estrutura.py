@@ -2975,10 +2975,10 @@ def _barra_do_elemento(e, a: dict, pecas: list, tol: float = 1.0) -> Tuple[Optio
     return ordem[0], inteiras, empate
 
 
-#: o elemento acusado num modelo de outra versão da montagem que nem os vizinhos decidem (revisão de 14/11, reforço A)
-VERSAO_ANTERIOR = ("o 3D desta peça foi montado por uma versão anterior do programa e não dá para separar o que você "
-                   "mexeu do que a montagem mudou — a planta não foi alterada. Faça o mesmo ajuste na planta: gerar o 3D "
-                   "de novo pela planta refaz a peça e o que foi mexido só no 3D se perde")
+#: o empate com votos dos dois lados (revisão do delta, 14/11): os vizinhos não mexidos não concordam — não afirmar versão
+VIZINHOS_DISCORDAM = ("não deu para separar o que você mexeu do que a montagem mudou: as peças deste tipo que ficaram "
+                      "sem mexer não concordam entre si (umas como a planta, outras como a montagem de agora) — a planta "
+                      "não foi alterada")
 
 
 #: o empate sem nenhum voto (2ª revisão de 14/11, achado 3): nada no papel serve de referência — não afirmar versão
@@ -3011,8 +3011,8 @@ def _onde_a_regua_vale(des: Desenho, doc: Documento, niveis: Optional[Sequence[d
        carimbo); a maioria do papel decide. NÃO há desempate pelo modelo (2ª revisão de 14/11, achado 3: outro papel
        tem outra história de montagem — os 32 contraventos voltavam pelo voto das terças). No empate: se todos os
        acusados do papel andaram juntos, a mesma translação rígida em relação à régua (o usuário moveu o grupo), mede-se
-       pela régua; senão → `ambiguos` {id: texto}: VERSAO_ANTERIOR se vizinhos não mexidos mostram montagem antiga,
-       SEM_REFERENCIA se não há voto nenhum. Não há corte por quantidade: 10 terças mexidas de verdade voltam.
+       pela régua; senão → `ambiguos` {id: texto}: VIZINHOS_DISCORDAM se há votos (empatados) dos dois lados,
+       SEM_REFERENCIA se não há voto nenhum — nenhum dos dois afirma versão (revisão do delta, 14/11). Não há corte por quantidade: 10 terças mexidas de verdade voltam.
     Onde a régua não difere da linha, tanto faz (mede-se pela linha). A sincronia troca todas as peças de uma planta
     de uma vez: as peças sem carimbo de uma volta vêm da mesma montagem."""
     if not acusados or not regua or doc_regua is None:
@@ -3065,7 +3065,7 @@ def _onde_a_regua_vale(des: Desenho, doc: Documento, niveis: Optional[Sequence[d
             usar.update(d[0] for d in grupo)              # o grupo movido junto: a régua mede
             continue
         for d in grupo:
-            ambiguos[d[0]] = VERSAO_ANTERIOR if c["linha"] else SEM_REFERENCIA
+            ambiguos[d[0]] = VIZINHOS_DISCORDAM if c["linha"] else SEM_REFERENCIA
     return usar, ambiguos
 
 

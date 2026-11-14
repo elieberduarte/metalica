@@ -937,7 +937,8 @@ def test_modelo_da_v090_um_contravento_movido_nao_traz_os_outros_31(hangar_bruto
     antes = _texto(des)
     r = DPE.montagem_do_modelo(des, doc, niveis)
     so_ele = r["alteracoes"] == ["viga CV5: movida 200 mm"]
-    recusa = _texto(des) == antes and len(r["alteracoes"]) == 1 and "versão" in r["alteracoes"][0]
+    recusa = _texto(des) == antes and len(r["alteracoes"]) == 1 and r["alteracoes"][0].endswith(
+        (DPE.SEM_REFERENCIA, DPE.VIZINHOS_DISCORDAM))
     assert so_ele or recusa, r["alteracoes"][:4]
 
 
@@ -1283,3 +1284,25 @@ def test_duas_barras_a_mesma_distancia_da_linha_a_planta_nao_muda_e_a_volta_diz(
     antes = _texto(des)
     r = DPE.planta_do_modelo(des, doc, [])
     assert r["alteracoes"] == ["viga T.C.1: " + DPE.COPIAS_EMPATE % 2] and r["mudados"] == [] and _texto(des) == antes
+
+
+def test_empate_de_votos_acima_de_zero_nao_afirma_versao(hangar_bruto):
+    """o 1 a 1 (revisão do delta, 14/11): 15 contraventos como a montagem de hoje (votam "régua"), 15 como a da 0.9.0
+    (votam "linha") e 2 mexidos de jeitos diferentes. O empate recusava com "montado por uma versão anterior" — sem
+    base. A recusa diz o que se sabe: os vizinhos não concordam"""
+    des, niveis, antigo = _hangar_da_versao(hangar_bruto, "v0_9_0")
+    _b, _n, modelo = hangar_bruto
+    hoje = _sem_carimbo(Documento.de_dict(copy.deepcopy(modelo)))
+    cvs = sorted(e.id for e in des.entidades.values() if (e.atributos or {}).get("papel") == "contraventamento")
+    for eid in cvs[:15]:                                        # 15 como a montagem de hoje
+        for k in [k for k, p in antigo.entidades.items() if (p.atributos or {}).get("origem_2d") == eid]:
+            del antigo.entidades[k]
+        for p in hoje.entidades.values():
+            if (p.atributos or {}).get("origem_2d") == eid:
+                antigo.entidades[p.id] = copy.deepcopy(p)
+    _andar(_cv(antigo, cvs[15]), (0.0, 200.0, 0.0))             # e 2 dos da 0.9.0 mexidos, cada um de um jeito
+    _andar(_cv(antigo, cvs[16]), (0.0, 0.0, 150.0))
+    antes = _texto(des)
+    r = DPE.montagem_do_modelo(des, antigo, niveis)
+    assert _texto(des) == antes and r["mudados"] == []
+    assert len(r["alteracoes"]) == 2 and all(t.endswith(DPE.VIZINHOS_DISCORDAM) for t in r["alteracoes"]), r["alteracoes"]
