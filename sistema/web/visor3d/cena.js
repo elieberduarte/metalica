@@ -2417,6 +2417,10 @@ async function montarImagem(w, h, ss = 1, aoBloco = null, { comFoto = true, fren
   r.setPixelRatio(1);
   cam.aspect = w / h;
   cam.updateProjectionMatrix();
+  // a lente e a proporção da imagem, repostas em cada bloco: entre um bloco e o outro a tela anda (o lote cede a vez), e o
+  // resize da janela (maximizar, mudar o tamanho, a conexão que mexe na tela) devolvia à câmera a lente e a proporção da
+  // tela — os blocos seguintes saíam com outra vista e a imagem ficava com uma emenda reta (14/11, Filipin, Exportar 4K)
+  const fov = cam.fov;
   if (frente) montarParedes();                              // o que fica na frente: sempre na imagem (aplicarCamera devolve a tela)
   g.globalAlpha = comFoto ? +$('#opacidade').value : 1;
   visor._recorteSombra = recorteDoBloco;                    // a sombra refeita para cada bloco, só com o que ele mostra
@@ -2426,6 +2430,8 @@ async function montarImagem(w, h, ss = 1, aoBloco = null, { comFoto = true, fren
   try {
     for (let k = 0; k < blocos.length; k++) {
       const [x, y, bw, bh] = blocos[k];
+      r.setPixelRatio(1);
+      cam.fov = fov; cam.aspect = w / h;                    // o setViewOffset refaz a projeção com elas
       r.setSize(bw * ss, bh * ss, false);
       cam.setViewOffset(w * ss, h * ss, x * ss, y * ss, bw * ss, bh * ss);
       if (visor.apresentacao) { visor._desenharSombra(); visor._luz.uDesloc.value = desloc; }

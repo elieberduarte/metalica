@@ -7,6 +7,7 @@ das cenas"; amostra-5 aprovada em Projeto/BRIEFINGS/imagens/cenas-3d/). Pela tel
      fora, dito no fim; a tela volta à cena de antes;
   C. Várias (as duas do 3D), PNG, só baixar → um ZIP com os dois PNG (1920 × 1080 e 1920 × 1440), nada novo na pasta;
   D. Cancelar no meio do render: para no bloco, diz "Cancelado", a tela volta a renderizar;
+  G. a janela muda de tamanho no meio do render (14/11): cada bloco igual ao do render quieto, sem emenda;
   E. sem erro no console.
 Porta livre, nunca a 8765/8766. Capturas na pasta temporária metalica_saida_exportar_cenas."""
 import json, os, shutil, subprocess, sys, tempfile, time, urllib.request, base64, zipfile, io, re
@@ -221,6 +222,43 @@ try:
     ok(aba.avaliar("!document.getElementById('renderizar').disabled && !cenaApi.estado().cena.__x"), "a tela volta a renderizar")
     clicar_no(aba, "#exportar-cancelar")
     ok(esperar(aba, "!document.getElementById('exportar-caixa')", 5), "Fechar fecha a janela")
+
+    print("G — a janela muda de tamanho no meio do render (14/11, Filipin: a emenda reta no 4K)")
+    # O render sai em blocos e o lote cede a vez entre eles; o resize da janela devolvia à câmera a lente e a proporção da
+    # tela, e os blocos seguintes saíam com outra vista. A mesma cena duas vezes: quieta, e com resize o tempo todo (e uma
+    # mudança de tamanho de verdade) — cada bloco igual ao da quieta.
+    clicar_no(aba, "#exportar")
+    esperar(aba, "!!document.getElementById('exportar-caixa')", 5)
+    marcar(aba, "#exportar-caixa input[name=quais][value=esta]")
+    marcar(aba, "#exportar-caixa input[name=lado][value='1920']")
+    marcar(aba, "#exportar-caixa input[name=qualidade][value=refinada]")
+    marcar(aba, "#exportar-caixa input[name=formato][value=jpg]")
+    marcar(aba, "#exportar-gravar", True); marcar(aba, "#exportar-baixar", False); marcar(aba, "#exportar-abrir", False)
+    arq = os.path.join(PASTA_CENAS, "Cena - Fachada (render).jpg")
+    r = lote(aba)
+    quieta = Image.open(arq).convert("L") if r and not r["erro"] and os.path.isfile(arq) else None
+    aba.avaliar("window.__resizes = 0; window.__mexer = setInterval(() => { window.__resizes++; window.dispatchEvent(new Event('resize')); }, 25); 1")
+    aba.avaliar("window.ultimoLoteCenas = null; 1")
+    clicar_no(aba, "#exportar-ir")
+    if esperar(aba, "/bloco 1 de/.test(document.getElementById('exportar-situacao').textContent)", 60):
+        aba.cmd("Emulation.setDeviceMetricsOverride", width=1300, height=860, deviceScaleFactor=1, mobile=False)
+    esperar(aba, "!!window.ultimoLoteCenas", 300)
+    n_resize = aba.avaliar("clearInterval(window.__mexer); window.__resizes")
+    aba.cmd("Emulation.setDeviceMetricsOverride", width=1500, height=900, deviceScaleFactor=1, mobile=False)
+    aba.drenar(1.0)
+    r = aba.avaliar("window.ultimoLoteCenas")
+    if quieta is not None and r and not r["erro"] and os.path.isfile(arq):
+        mexida = Image.open(arq).convert("L")
+        Image.open(arq).save(os.path.join(SAIDA, "3-render-com-resize.jpg"))
+        import numpy as np
+        a, b = np.asarray(quieta, dtype=np.float32), np.asarray(mexida, dtype=np.float32)
+        difs = [round(float(np.abs(a[y:y + 1024, x:x + 1024] - b[y:y + 1024, x:x + 1024]).mean()), 1)
+                for y in range(0, 1080, 1024) for x in range(0, 1920, 1024)]
+        ok(mexida.size == quieta.size and max(difs) < 4, f"com {n_resize} resize no meio, cada bloco igual ao da imagem quieta (diferença média por bloco: {difs})")
+    else:
+        ok(False, f"os dois renders da Fachada ({r})")
+    clicar_no(aba, "#exportar-cancelar")
+    esperar(aba, "!document.getElementById('exportar-caixa')", 5)
 
     print("F — o acesso rápido à pasta (11/11: \"um acesso rápido a pasta para encontrar o arquivo\")")
     # o pedido de abrir o Explorador é guardado aqui, sem abrir janela nenhuma na máquina
