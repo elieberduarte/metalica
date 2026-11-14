@@ -709,6 +709,7 @@ def relacao_das_telhas(faces, md: dict, acabamento: str = "", acabamentos: Optio
     def acab(perfil):
         return (acabamentos or {}).get(str(perfil or "")) or acabamento
     por_lugar = collections.OrderedDict((k, collections.OrderedDict()) for k in ORDEM_LUGARES)
+    meta = {}                                     # o título → (a forma, o perfil): a cor entra depois (com_acabamentos)
     for f in faces:
         lugar = lugar_da_face(f, faces)
         lado = {"externa": "externa", "interna": "interna"}.get(f.get("lado") or "", "")
@@ -716,7 +717,8 @@ def relacao_das_telhas(faces, md: dict, acabamento: str = "", acabamentos: Optio
         for ch in f["chapas"]:
             if ch.get("cumeeira") or ch.get("multidobra"):
                 continue
-            tipo = "TELHA %s (Tamanho útil %sm)" % (descricao_da_telha(ch.get("perfil") or "", acab(ch.get("perfil"))), util)
+            tipo = titulo_do_tipo("TELHA", ch.get("perfil") or "", acab(ch.get("perfil")))
+            meta[tipo] = ("TELHA", str(ch.get("perfil") or ""))
             g = por_lugar[lugar].setdefault(tipo, collections.OrderedDict())
             item = g.setdefault((round(float(ch["comprimento"])), lado, onde), {"qtd": 0, "modelo": []})
             item["qtd"] += 1
@@ -740,7 +742,7 @@ def relacao_das_telhas(faces, md: dict, acabamento: str = "", acabamentos: Optio
             linhas = sorted(linhas_d.values(), key=lambda l_: (-l_["comp"], l_["obs"]))
             for l_ in linhas:
                 l_["modelo"] = [min(l_["modelo"]), max(l_["modelo"])]
-            lista.append({"titulo": titulo, "linhas": linhas,
+            lista.append({"titulo": titulo, "forma": meta[titulo][0], "perfil": meta[titulo][1], "linhas": linhas,
                           "total": sum(l_["qtd"] * l_["comp"] for l_ in linhas) / 1000.0})
         if lista:
             blocos.append({"lugar": lugar + ":", "tipos": lista})
@@ -749,28 +751,65 @@ def relacao_das_telhas(faces, md: dict, acabamento: str = "", acabamentos: Optio
     if cms:
         tipos_cm = collections.OrderedDict()
         for cm in cms:
-            tit = "CUMEEIRA %s" % descricao_da_telha(cm.get("perfil") or "", acab(cm.get("perfil")))
+            tit = titulo_do_tipo("CUMEEIRA", cm.get("perfil") or "", acab(cm.get("perfil")))
+            meta[tit] = ("CUMEEIRA", str(cm.get("perfil") or ""))
             p1, p2 = float(cm.get("perna1") or 0.0), float(cm.get("perna2") or 0.0)
             obs = "Aba %sm x %sm" % (_num(p1 / 1000.0), _num(p2 / 1000.0))
             tipos_cm.setdefault(tit, []).append({"qtd": int(cm.get("instancias") or 0), "comp": p1 + p2, "casas": 2,
                                                  "obs": obs, "com": "com"})
-        bloco_cm = {"lugar": "", "tipos": [{"titulo": t, "linhas": ls, "total": None} for t, ls in tipos_cm.items()]}
+        bloco_cm = {"lugar": "", "tipos": [{"titulo": t, "forma": meta[t][0], "perfil": meta[t][1], "linhas": ls, "total": None}
+                                         for t, ls in tipos_cm.items()]}
         i = next((k + 1 for k, b in enumerate(blocos) if b["lugar"] == "COBERTURA:"), 0)
         blocos.insert(i, bloco_cm)
     mds = list(md.get("telhas") or [])
     if mds:
         tipos_md = collections.OrderedDict()
         for t in mds:
-            tit = "TELHA MULTIDOBRA %s" % descricao_da_telha(t.get("perfil") or "", acab(t.get("perfil")))
+            tit = titulo_do_tipo("TELHA MULTIDOBRA", t.get("perfil") or "", acab(t.get("perfil")))
+            meta[tit] = ("TELHA MULTIDOBRA", str(t.get("perfil") or ""))
             tipos_md.setdefault(tit, []).append({"qtd": int(t.get("instancias") or 0), "comp": float(t["desenv_ext"]), "casas": 3,
                                                  "obs": "", "com": "c/.", "multidobra": t.get("conjunto")})
-        bloco_md = {"lugar": "", "tipos": [{"titulo": t, "linhas": ls, "total": sum(l_["qtd"] * l_["comp"] for l_ in ls) / 1000.0}
+        bloco_md = {"lugar": "", "tipos": [{"titulo": t, "forma": meta[t][0], "perfil": meta[t][1], "linhas": ls,
+                                           "total": sum(l_["qtd"] * l_["comp"] for l_ in ls) / 1000.0}
                                          for t, ls in tipos_md.items()]}
         i = next((k + 1 for k, b in enumerate(blocos) if b["lugar"] in ("COBERTURA:", "")), 0)
         while i < len(blocos) and blocos[i]["lugar"] == "":
             i += 1
         blocos.insert(i, bloco_md)
     return blocos
+
+
+def titulo_do_tipo(forma: str, perfil: str, acabamento: str = "") -> str:
+    """"TELHA TP40-0,50mm pré-pintada CINZA RAL 7035 (Tamanho útil 0,98m)"; a cumeeira e a multidobra sem o tamanho útil"""
+    from nucleo2d.detalhe.base import LARGURA_COMPRA_TELHA
+    t = "%s %s" % (forma, descricao_da_telha(perfil, acabamento))
+    if forma == "TELHA":
+        t += " (Tamanho útil %sm)" % ("%.2f" % (LARGURA_COMPRA_TELHA / 1000.0)).replace(".", ",")
+    return t
+
+
+def perfis_da_relacao(blocos: list) -> list:
+    """os tipos de telha da relação, uma vez cada ({perfil, descricao}): o que pede o acabamento e a cor (opção da obra)"""
+    vistos, out = set(), []
+    for b in blocos or []:
+        for t in b["tipos"]:
+            p = t.get("perfil")
+            if p is not None and p not in vistos:
+                vistos.add(p)
+                out.append({"perfil": p, "descricao": descricao_da_telha(p)})
+    return out
+
+
+def com_acabamentos(blocos: list, acabamentos: Optional[dict]) -> list:
+    """a relação com o acabamento e a cor de cada tipo de telha (as opções da obra; usuário, 13/11: "um campo por tipo de
+    telha nas opções da obra, preenchido uma vez") — o título de cada tipo refeito; o tipo sem cor fica sem"""
+    import copy
+    out = copy.deepcopy(blocos or [])
+    for b in out:
+        for t in b["tipos"]:
+            if t.get("forma") and t.get("perfil") is not None:
+                t["titulo"] = titulo_do_tipo(t["forma"], t["perfil"], (acabamentos or {}).get(t["perfil"]) or "")
+    return out
 
 
 def linha_da_relacao(l_: dict) -> str:
@@ -803,7 +842,7 @@ def texto_da_relacao(blocos: list, obra: str = "", local: str = "", data: str = 
 ESPACO = 2500.0
 #: o nome do desenho do fornecedor no projeto (desenhos-2d/<nome>.desenho.json) — o Detalhar grava, a saída "Telhas
 #: para o fornecedor" exporta (o DXF em tamanho real e a relação em Word)
-NOME_DESENHO = "telhas-fornecedor"
+NOME_DESENHO = "Telhas para o fornecedor"
 
 
 def _colar(destino, fazer, x: float, y_topo: float):

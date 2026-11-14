@@ -11,6 +11,7 @@ Projeto/BRIEFINGS/Briefing-padrao-telhas-fabio-2026-11-13.md).
 - O Word: o formato do .doc do Fábio (Times New Roman 12, A4; título, lugar e tipo em negrito sublinhado; "Total" em
   negrito), com a imagem dos quadros de cada multidobra.
 """
+import copy
 import math
 import os
 import re
@@ -202,3 +203,71 @@ def gerar(desenho, pasta_saida: str, base: str, obra: str = "", local: str = "",
                     por_linha[linha_da_relacao(l_)] = imgs[str(l_["multidobra"])]
     docx_ = gravar_docx(texto_da_relacao(blocos, obra, local, data), os.path.join(pasta_saida, base + ".docx"), por_linha)
     return {"dxf": dxf, "docx": docx_, "imagens": imgs}
+
+
+# ============================================================ a saída na pasta da obra, com revisão
+#: a pasta do padrão da obra (saida/documentos_obra.py): 04-EXECUCAO (pranchas, DXF/CNC, romaneio)
+PASTA_DA_OBRA = "04"
+
+
+def prefixo(obra: str) -> str:
+    """o começo do nome dos arquivos: "<OBRA>-telhas-fornecedor" (sem acento estranho nem espaço)"""
+    t = re.sub(r"[^\w]+", "-", str(obra or "OBRA"), flags=re.U).strip("-") or "OBRA"
+    return "%s-telhas-fornecedor" % t.upper()
+
+
+def revisao_seguinte(pasta_projeto: str, pre: str) -> str:
+    """a revisão nova: a maior que já saiu (na pasta da obra ou no Obsoleto dela) mais um; a primeira é R00"""
+    from saida.documentos_obra import nome_da_pasta
+    from saida.entrega import PASTA_OBSOLETO
+    pasta = os.path.join(pasta_projeto, nome_da_pasta(PASTA_DA_OBRA))
+    padrao = re.compile(r"^%s-\d{4}-\d{2}-\d{2}-R(\d+)\.(?:dxf|docx)$" % re.escape(pre), re.I)
+    maior = -1
+    for p in (pasta, os.path.join(pasta, PASTA_OBSOLETO)):
+        if os.path.isdir(p):
+            for x in os.listdir(p):
+                m = padrao.match(x)
+                if m:
+                    maior = max(maior, int(m.group(1)))
+    return "R%02d" % (maior + 1)
+
+
+def gerar_na_obra(pasta_projeto: str, desenho, obra: str = "", local: str = "", acabamentos: Optional[dict] = None,
+                  revisao: Optional[str] = None, data=None) -> dict:
+    """O DXF e o Word do fornecedor gravados UMA vez na pasta da obra (04-EXECUCAO), com a revisão no nome; a revisão
+    anterior vai para Obsoleto\\ no mesmo passo (regra de 06/11; a aberta no Word fica, com o aviso). Avisa a cor em
+    branco (o tipo de telha sem acabamento) e a cidade em branco (usuário, 13/11: "em branco, a relação sai sem a cor e a
+    tela avisa"; o título sem a cidade). {"arquivos", "obsoletos", "revisao", "avisos"}"""
+    import datetime
+    import shutil
+    import tempfile
+    from saida import documentos_obra as DO
+    from nucleo2d.detalhe.telhas_fornecedor import com_acabamentos, perfis_da_relacao
+    data = data or datetime.date.today()
+    pre = prefixo(obra)
+    rev = str(revisao or "").strip().upper() or revisao_seguinte(pasta_projeto, pre)
+    if not re.match(r"^R\d{2,3}$", rev):
+        raise ValueError("revisão fora do padrão (R00, R01…): %r" % rev)
+    blocos = (desenho.metadados or {}).get("relacao") or []
+    avisos = []
+    sem_cor = [p["descricao"] or p["perfil"] for p in perfis_da_relacao(blocos) if not (acabamentos or {}).get(p["perfil"])]
+    if sem_cor:
+        avisos.append("a relação saiu sem o acabamento e a cor de: %s (preencha no diálogo e gere de novo)" % ", ".join(sem_cor))
+    if not str(local or "").strip():
+        avisos.append("o título da relação saiu sem a cidade: o local da obra está em branco nos dados do projeto")
+    d = copy.deepcopy(desenho)
+    d.metadados["relacao"] = com_acabamentos(blocos, acabamentos)
+    tmp = tempfile.mkdtemp(prefix="telhas_fornecedor_")
+    try:
+        base = "%s-%s-%s" % (pre, data.isoformat(), rev)
+        r = gerar(d, tmp, base, obra, str(local or "").strip(), data.strftime("%d/%m/%Y"))
+        arquivos, obsoletos = [], []
+        for chave in ("dxf", "docx"):
+            g = DO.gravar(pasta_projeto, PASTA_DA_OBRA, os.path.basename(r[chave]), origem=r[chave], mover=True)
+            arquivos.append(g["caminho"])
+            obsoletos += g["obsoletos"]
+            if g.get("aviso"):
+                avisos.append(g["aviso"])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return {"arquivos": arquivos, "obsoletos": obsoletos, "revisao": rev, "avisos": avisos}

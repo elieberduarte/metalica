@@ -21,6 +21,7 @@ import { MetodosEstruturaCAD } from './estrutura.js';
 import { MetodosEdicaoChapaCAD } from './edicao_chapa.js';
 import { MetodosTravaPecasCAD } from './trava_pecas.js';
 import { MetodosImpressaoCAD } from './impressao.js';
+import { MetodosTelhasFornecedorCAD } from './telhas_fornecedor.js';
 import { MetodosRevisoesCAD } from './revisoes.js';
 import { MetodosLocalizarCAD } from './localizar.js';
 import { MetodosBlocosCAD, blocosUsados } from './blocos.js';
@@ -1509,6 +1510,7 @@ class CAD {
       'inserir-bloco': () => this.ativarFerramenta('inserir_bloco'),
       'editar-bloco': () => this.editarBlocoSelecionado(),
       'dxf-pranchas': () => this.dxfDasPranchas(),
+      'telhas-fornecedor': () => this.dialogoTelhasFornecedor(),
       'abrir-pasta': () => this.projeto && postar(`/api/projetos/${encodeURIComponent(this.projeto)}/abrir-pasta`, { sub: 'desenhos-2d' }).catch(e => this.aviso(e.message, 'erro')),
       corte: () => this.dialogoCorte(),
       estilos: () => this.dialogoEstilos(),
@@ -3603,7 +3605,7 @@ function lerTema() { try { return localStorage.getItem(CHAVE_TEMA); } catch { re
 
 // os métodos da planta de lançamento (menu Lançamento) moram em lancamento.js; os do
 // projeto recebido montado pela planta, em montar_planta.js
-for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEstruturaCAD, MetodosEdicaoChapaCAD, MetodosTravaPecasCAD, MetodosImpressaoCAD, MetodosRevisoesCAD, MetodosLocalizarCAD, MetodosBlocosCAD, MetodosCenaNaPranchaCAD]) {
+for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEstruturaCAD, MetodosEdicaoChapaCAD, MetodosTravaPecasCAD, MetodosImpressaoCAD, MetodosTelhasFornecedorCAD, MetodosRevisoesCAD, MetodosLocalizarCAD, MetodosBlocosCAD, MetodosCenaNaPranchaCAD]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) {
     if (k === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(CAD.prototype, k)) throw new Error(`método repetido no CAD: ${k}`);

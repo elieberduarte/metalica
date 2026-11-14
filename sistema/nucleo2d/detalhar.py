@@ -966,6 +966,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
     variantes_3d = {e.id: [str(_marcas(e).get("posicao") or ""), str(_marcas(e).get("conjunto") or "")]
                     for e in pecas if re.search(r" \([a-z]+\)$", str(_marcas(e).get("posicao") or ""))}
     desenhos: Dict[str, Desenho] = collections.OrderedDict()
+    fornecedor = None                        # o desenho das telhas para o fornecedor: entra por último, depois do detalhamento
     base: Dict[str, Desenho] = {}             # os desenhos por classe (GRUPOS_BASE)
     avisos: List[str] = list(lev.get("avisos") or [])
 
@@ -1489,6 +1490,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                     except Exception as exc:      # noqa: BLE001
                         avisos.append("detalhe do beiral não gerado: %s" % exc)
                 # o corte da cobertura de beiral a beiral e os transpasses ampliados (usuário, 13/11, pelo SOORO N.2; o exemplo B)
+                c_c = None
                 try:
                     from nucleo2d.detalhe.telhas import (corte_da_cobertura, desenho_do_corte_da_cobertura,
                                                          desenho_do_detalhe_da_cumeeira, desenho_do_detalhe_da_emenda)
@@ -1501,6 +1503,13 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                             celulas_g.append(("corte_cobertura", (lambda dd, x, y, c_=c_c: desenho_do_detalhe_da_emenda(c_, dd, x, y))))
                 except Exception as exc:          # noqa: BLE001
                     avisos.append("corte da cobertura não gerado: %s" % exc)
+                # as telhas para o fornecedor no padrão do Fábio (usuário, 13/11; o "é assim?" aprovado no dia 14): o desenho
+                # em tamanho real e a relação, pelos mesmos dados — a saída "Telhas para o fornecedor" grava o DXF e o Word
+                try:
+                    from nucleo2d.detalhe.telhas_fornecedor import desenho_para_fornecedor
+                    fornecedor = desenho_para_fornecedor(faces, md, c_c, pecas, eixos=eixos_t)
+                except Exception as exc:          # noqa: BLE001 — o resto das telhas sai
+                    avisos.append("telhas para o fornecedor não geradas: %s" % exc)
             celulas_g += [("paginacao", (lambda dd, x, y, f=f, i=i: desenho_da_paginacao(f, dd, x, y, i)))
                           for i, f in enumerate(faces, 1)]
         celulas_g += [("multidobra", (lambda dd, x, y, t=t: desenho_da_multidobra(t, dd, x, y, t["nome"]))) for t in extra_md]
@@ -1694,6 +1703,8 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
     for chave in antigos:
         if chave in base and chave not in desenhos:
             desenhos[chave] = base[chave]
+    if fornecedor is not None:
+        desenhos["telhas_fornecedor"] = fornecedor
 
     resumo_pos = []
     for p in _ordenar(posicoes):

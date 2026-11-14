@@ -4090,6 +4090,43 @@ def gravar_lote_de_atualizacao(lote: str, instalador: str, exe_atual: str, esper
     return lote
 
 
+def telhas_fornecedor_projeto(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/telhas-fornecedor: as telhas para o fornecedor no padrão do Fábio (usuário, 13/11; o "é
+    assim?" aprovado no dia 14) — o DXF em tamanho real e a relação em Word, do desenho "Telhas para o fornecedor" que o
+    Detalhar grava (nucleo2d/detalhe/telhas_fornecedor.py). Sem "acao": o que o diálogo mostra (os tipos de telha com o
+    acabamento e a cor guardados, a obra, o local, a revisão seguinte). acao "gerar": grava o acabamento e a cor de cada
+    tipo nas opções da obra (preenchidos uma vez) e grava o DXF e o Word na pasta da obra (04-EXECUCAO), com a revisão
+    anterior para Obsoleto\\ (saida/telhas_fornecedor.gerar_na_obra)."""
+    from nucleo2d.desenho import Desenho
+    from nucleo2d.detalhe.telhas_fornecedor import NOME_DESENHO, perfis_da_relacao
+    from saida import telhas_fornecedor as TF
+    g = _gerente()
+    p = g.ler(s)
+    pasta = g._existente(s)
+    try:
+        d = Desenho.de_dict(g.abrir_desenho(s, _slug(NOME_DESENHO)))
+    except ErroDeDados:
+        raise ErroDeDados("o desenho das telhas para o fornecedor ainda não existe: detalhe as telhas (Desenho 2D → Detalhar "
+                          "peças e conjuntos, com as telhas) e volte aqui.")
+    op = dict(p.get("opcoes_detalhamento") or {})
+    acab = {str(k): str(v) for k, v in (op.get("acabamentos_telhas") or {}).items()}
+    obra = str((p.get("carimbo_pranchas") or {}).get("obra") or p.get("nome") or s)
+    local = str(p.get("local") or "")
+    if corpo.get("acao") != "gerar":
+        tipos = perfis_da_relacao((d.metadados or {}).get("relacao"))
+        return {"tipos": [dict(t, acabamento=acab.get(t["perfil"], "")) for t in tipos], "obra": obra, "local": local,
+                "revisao": TF.revisao_seguinte(pasta, TF.prefixo(obra)), "pasta": "04-EXECUCAO"}
+    novos = {str(k): str(v or "").strip()[:120] for k, v in (corpo.get("acabamentos") or {}).items()}
+    if novos:
+        acab.update(novos)
+        op["acabamentos_telhas"] = acab
+        g.tocar(s, opcoes_detalhamento=op)
+    try:
+        return TF.gerar_na_obra(pasta, d, obra, local, acab, revisao=corpo.get("revisao"))
+    except ValueError as e:
+        raise ErroDeDados(str(e))
+
+
 def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     """Pranchas a partir de desenhos 2D do projeto: uma célula por posição/conjunto dos
     desenhos de detalhamento, ou o desenho inteiro, em folhas ISO com carimbo. Todas ficam lado a
@@ -6994,6 +7031,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(memorial_do_lancamento(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "pranchas":
                     return self._json(montar_pranchas_projeto(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "telhas-fornecedor":
+                    return self._json(telhas_fornecedor_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "importar-dxf":
                     return self._json(importar_dxf_no_desenho(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "colar-autocad":

@@ -262,3 +262,59 @@ def test_a_fachada_enviesada_do_canto_leva_o_lugar_pela_posicao():
     assert F.titulo_da_face(env, faces) == "CANTO FRENTE DIREITA"
     assert F.titulo_da_face(dir_, faces) == "LATERAL DIREITA"
     assert F.titulo_da_face(oitoes[1], faces) == "OITÃO FRENTE"
+
+
+def _detalhar_o_recorte_do_deposito():
+    import gzip, json, os
+    from nucleo3d.modelo import Documento
+    from nucleo2d import detalhar as det
+    arq = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dados_telhas", "deposito_quimico_cumeeira.json.gz")
+    with gzip.open(arq, "rt", encoding="utf-8") as f:
+        doc = Documento.de_dict(json.load(f))
+    return det.detalhar(doc, grupos=["telhas"])
+
+
+def test_o_detalhar_grava_o_desenho_do_fornecedor():
+    # o recorte do modelo do Depósito (as telhas das duas águas e a cumeeira): o Detalhar das telhas devolve também o
+    # desenho "Telhas para o fornecedor", com a relação nos metadados
+    r = _detalhar_o_recorte_do_deposito()
+    d = r["desenhos"].get("telhas_fornecedor")
+    assert d is not None and d.nome == F.NOME_DESENHO
+    assert d.metadados["fornecedor"]["tamanho_real"]
+    lugares = [b["lugar"] for b in d.metadados["relacao"]]
+    assert lugares[0] == "COBERTURA:"
+    assert any(t["titulo"].startswith("CUMEEIRA") for b in d.metadados["relacao"] for t in b["tipos"])
+
+
+def test_a_rota_grava_na_obra_com_revisao_e_guarda_a_cor(tmp_path, monkeypatch):
+    import os
+    import docx
+    import app
+    monkeypatch.setattr(app, "PROJETOS", str(tmp_path))
+    g = app._gerente()
+    r = g.criar("Depósito teste", tipo="ifc")
+    s = r.get("slug") or r.get("id") or r.get("nome")
+    with pytest.raises(app.ErroDeDados):
+        app.telhas_fornecedor_projeto(s, {})                       # sem o Detalhar das telhas: diz o que fazer
+    d = _detalhar_o_recorte_do_deposito()["desenhos"]["telhas_fornecedor"]
+    g.salvar_desenho(s, d.nome, d.dict())
+    info = app.telhas_fornecedor_projeto(s, {})
+    assert info["revisao"] == "R00" and info["pasta"] == "04-EXECUCAO" and info["local"] == ""
+    perfil = info["tipos"][0]["perfil"]
+    assert info["tipos"][0]["acabamento"] == ""
+    # 1ª: com a cor de um tipo; o local em branco avisa
+    r1 = app.telhas_fornecedor_projeto(s, {"acao": "gerar", "acabamentos": {perfil: "GALVALUME NATURAL"}})
+    pasta = os.path.join(g._existente(s), "04-EXECUCAO")
+    nomes = sorted(os.listdir(pasta))
+    assert r1["revisao"] == "R00" and [n.rsplit(".", 1)[1] for n in nomes if "." in n] == ["docx", "dxf"]
+    assert all(re.match(r"^DEP\w*-TESTE-telhas-fornecedor-\d{4}-\d{2}-\d{2}-R00\.(dxf|docx)$", n) for n in nomes if "." in n), nomes
+    assert any("cidade" in a for a in r1["avisos"])
+    texto = "\n".join(p.text for p in docx.Document(next(c for c in r1["arquivos"] if c.endswith(".docx"))).paragraphs)
+    assert "GALVALUME NATURAL" in texto
+    assert g.ler(s)["opcoes_detalhamento"]["acabamentos_telhas"][perfil] == "GALVALUME NATURAL"   # guardada na obra
+    # 2ª: a revisão sobe e a anterior vai para o Obsoleto; a cor guardada vale sem digitar de novo
+    assert app.telhas_fornecedor_projeto(s, {})["tipos"][0]["acabamento"] == "GALVALUME NATURAL"
+    r2 = app.telhas_fornecedor_projeto(s, {"acao": "gerar"})
+    assert r2["revisao"] == "R01" and len(r2["obsoletos"]) == 2
+    assert sorted(n for n in os.listdir(pasta) if "." in n) == sorted(n.replace("R00", "R01") for n in nomes if "." in n)
+    assert sorted(os.listdir(os.path.join(pasta, "Obsoleto"))) == sorted(n for n in nomes if "." in n)
